@@ -181,13 +181,28 @@ struct MCLink {
 };
 
 // Stack snapshot header.
+
+constexpr size_t LJ_MAX_VIRTUAL_CONTEXTS = 8;
+
+enum ContextCallState : uint8_t {
+  CONTEXT_CALL_NONE,
+  CONTEXT_CALL_VIRTUAL,
+  CONTEXT_CALL_MATERIALISED,
+  CONTEXT_CALL_EXEMPT,
+  CONTEXT_CALL_METAMETHOD_VIRTUAL,
+  CONTEXT_CALL_METAMETHOD_MATERIALISED
+};
 struct SnapShot {
   uint32_t mapofs;   //  Offset into snapshot map.
   IRRef1 ref;      //  First IR ref for this snapshot.
+  IRRef1 context_refs[LJ_MAX_VIRTUAL_CONTEXTS]; // Virtual contextual receivers restored outermost first.
+  uint16_t context_owner_slots[LJ_MAX_VIRTUAL_CONTEXTS]; // Root-frame slots owning virtual activations.
   uint16_t mcofs;   //  Offset into machine code in MCode units.
+  uint16_t multres; //  Unscaled MULTRES value at the snapshot.
   uint8_t nslots;   //  Number of valid slots.
   uint8_t topslot;   //  Maximum frame extent.
   uint8_t nent;      //  Number of compressed entries.
+  uint8_t context_count; // Number of virtual contextual activations reconstructed on exit.
   uint8_t count;   //  Count of taken exits for this snapshot.
 };
 
@@ -294,6 +309,10 @@ struct GCtrace {
   uint8_t topslot;   //  Top stack slot already checked to be allocated.
   TraceLink linktype;   //  Type of link.
   uint8_t unused1;
+  uint32_t try_stores;   //  Try materialisation stores emitted while recording this trace.
+  uint32_t try_skipped_stores;   //  Try materialisation stores skipped by tracking.
+  uint32_t try_enter_stores;   //  Forced stores emitted at BC_TRYENTER.
+  uint32_t try_enter_snap_removed;   //  Snapshot entries removed near BC_TRYENTER.
 #ifdef LUAJIT_USE_GDBJIT
   void *gdbjit_entry;   //  GDB JIT entry.
 #endif
@@ -462,6 +481,9 @@ struct jit_State {
   int32_t tailcalled;   //  Number of successive tailcalls.
   int32_t framedepth;   //  Current frame depth.
   int32_t retdepth;     //  Return frame depth (count of RETF).
+  uint8_t trydepth;     //  Current try block depth while recording.
+  uint8_t checkalldepth; //  Current checkall block depth while recording.
+  uint16_t multres;     //  Unscaled implicit multi-result VM state.
 
   uint32_t k32[unsigned(K32::_MAX)];  //  Common 4 byte constants used by backends.
   TValue ksimd[unsigned(KSimd::_MAX)*2+1];  //  16 byte aligned SIMD constants.
@@ -486,6 +508,14 @@ struct jit_State {
 
   IRRef1 chain[IR__MAX];  //  IR instruction skip-list chain anchors.
   TRef slot[LJ_MAX_JSLOTS+LJ_STACK_EXTRA];  //  Stack slot map.
+  // Callable, receiver and result refs retained across contextual calls and result shifts.
+  TRef context_call_func[LJ_MAX_JSLOTS+LJ_STACK_EXTRA];
+  TRef context_call_receiver[LJ_MAX_JSLOTS+LJ_STACK_EXTRA];
+  TRef context_call_result[LJ_MAX_JSLOTS+LJ_STACK_EXTRA];
+  uint8_t context_call_state[LJ_MAX_JSLOTS+LJ_STACK_EXTRA];
+   bool context_tail_call[LJ_MAX_JSLOTS + LJ_STACK_EXTRA];  // Physical tail transfers emitted in this trace.
+  uint16_t context_call_activation_count;
+  int32_t context_virtual_slot;
 
   int32_t param[JIT_P__MAX];  //  JIT engine parameters.
 
@@ -521,6 +551,14 @@ struct jit_State {
   TValue errinfo;     //  Additional info element for trace errors.
   uint8_t retryrec;   //  Retry recording.
   bool abort_in_progress; //  True while aborting trace recording (skip try handlers)
+  uint32_t try_stores;   //  Try materialisation stores emitted while recording the current trace.
+  uint32_t try_skipped_stores;   //  Try materialisation stores skipped by tracking.
+  uint32_t try_enter_stores;   //  Forced stores emitted at BC_TRYENTER.
+  uint32_t try_enter_snap_removed;   //  Snapshot entries removed near BC_TRYENTER.
+
+  // Optimisation cache for try-block stack materialisation.  Correctness comes from forced
+  // BC_TRYENTER materialisation and CCI_T materialisation before throwable helper calls.
+  TRef trymat[LJ_MAX_JSLOTS+LJ_STACK_EXTRA];
 };
 
 #ifdef LUA_USE_ASSERT

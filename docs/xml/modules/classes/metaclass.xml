@@ -8,7 +8,7 @@
     <module>Core</module>
     <comment>The MetaClass is used to manage all classes supported by the system core.</comment>
     <version>1</version>
-    <id>8bf5f002</id>
+    <id>883d1872</id>
     <idstring>METACLASS</idstring>
     <category>System</category>
     <copyright>Paul Manias 1996-2026</copyright>
@@ -27,6 +27,7 @@
       <name>FindField</name>
       <comment>Search a class definition for a specific field.</comment>
       <prototype>ERR mc::FindField(OBJECTPTR Object, INT ID, struct Field ** Field, objMetaClass ** Source)</prototype>
+      <tiriPrototype>err, Field:any, Source:obj = FindField(ID:num)</tiriPrototype>
       <input>
         <param type="INT" name="ID">The field ID to search for.  Field names can be converted to ID's by using the <code>fieldhash()</code> function.</param>
         <param type="struct Field **" name="Field">Pointer to the <st>Field</st> if discovered, otherwise <code>NULL</code>.</param>
@@ -36,6 +37,21 @@
 <p>This method checks if a class has defined a given field by scanning its blueprint for a matching <code>ID</code>.  If found, a direct pointer to the <code>Field</code> struct will be returned to the client.</p>
 <p>In some classes the field might not be present in the main class spec, but does appear in an integral class.  In that case, a reference to the class will be returned in the <code>Source</code> parameter.</p>
       </description>
+      <tags>pure-query, object-owns-result</tags>
+    </method>
+
+    <method>
+      <name>GetMembers</name>
+      <comment>Returns a list of all objects that are members of the class.</comment>
+      <prototype>ERR mc::GetMembers(OBJECTPTR Object, kt::vector&lt;OBJECTID&gt; List)</prototype>
+      <tiriPrototype>err = GetMembers(List:array)</tiriPrototype>
+      <input>
+        <param type="kt::vector&lt;OBJECTID&gt;" name="List">Pointer to an array of object IDs that will be filled with the results.</param>
+      </input>
+      <description>
+<p>This method will compile a list of all objects that are members of the class.  The list is unordered, but identifier values reflect their age with lower IDs being older.</p>
+      </description>
+      <tags>mutates-input</tags>
     </method>
 
   </methods>
@@ -45,7 +61,7 @@
       <name>ActionTable</name>
       <comment>This field can be read to retrieve a MetaClass object's internal action table.</comment>
       <access read="G">Get</access>
-      <type>APTR []</type>
+      <type>ActionEntry[]</type>
       <description>
 <p>This field retrieves the internal action table of a class. The action table is arranged into a jump table of action routines, with each routine pointing directly to the object support functions.  The size of the jump table is defined by the global constant <code>AC::END</code>.  The table is sorted by action ID.</p>
 <p>It is possible to check if an action is supported by a class by looking up its index within the ActionTable, for example <code>Routine[AC::Read]</code>.  Calling an action routine directly from client code is an illegal operation.</p>
@@ -60,20 +76,20 @@
       <description>
 <p>Action routines are associated with a new class by referring to a list of <st>ActionArray</st> items in this field. Each provided action ID must be paired with its associated routine.</p>
 <p>Internally, the provided list is copied to the <fl>ActionTable</fl> and the original values will serve no further purpose.</p>
-<p>The following example shows a list of <st>ActionArray</st> structures borrowed from the <class name="Picture">Picture</class> class.  Note that such lists can also be auto-generated using our IDL scripts - an approach that we strongly recommend.</p>
+<p>The following example shows a list of <st>ActionArray</st> structures borrowed from the <class name="Image">Image</class> class.  Note that such lists can also be auto-generated using our IDL scripts - an approach that we strongly recommend.</p>
 <pre>ActionArray clActions[] = {
-   { AC::Free,          PIC_Free },
-   { AC::NewObject,     PIC_NewObject },
-   { AC::Init,          PIC_Init },
-   { AC::Query,         PIC_Query },
-   { AC::Read,          PIC_Read },
-   { AC::SaveToObject,  PIC_SaveToObject },
-   { AC::Seek,          PIC_Seek },
-   { AC::Write,         PIC_Write },
+   { AC::Free,         PIC_Free },
+   { AC::New,          PIC_New },
+   { AC::Init,         PIC_Init },
+   { AC::Query,        PIC_Query },
+   { AC::Read,         PIC_Read },
+   { AC::SaveToObject, PIC_SaveToObject },
+   { AC::Seek,         PIC_Seek },
+   { AC::Write,        PIC_Write },
    { AC::NIL, nullptr }
 };
 </pre>
-<p>Note: Never refer to method ID's in an action list - the <fl>Methods</fl> field is provided for this purpose.</p>
+<p>Note: Never refer to method IDs in an action list - the <fl>Methods</fl> field is provided for this purpose.</p>
       </description>
     </field>
 
@@ -84,7 +100,7 @@
       <type>CLASSID</type>
       <description>
 <p>The BaseClassID must always be set prior to the initialisation of a new MetaClass object unless <fl>ClassName</fl> is considered sufficient.  If the BaseClassID is zero then the hash of <fl>ClassName</fl> is computed and set as the value of BaseClassID.</p>
-<p>When defining a sub-class, it is required that the BaseClassID refers to the class that is being supported.</p>
+<p>When defining a derived class, it is required that the BaseClassID refers to the class that is being supported.</p>
       </description>
     </field>
 
@@ -105,7 +121,7 @@
       <access read="R" write="I">Read/Init</access>
       <type>CLASSID</type>
       <description>
-<p>The ClassID uniquely identifies a class.  If this value differs from the BaseClassID, then the class is determined to be a sub-class.  The ClassID value always reflects the <code>strihash()</code> computation of the <fl>ClassName</fl>, and is automatically set on initialisation if not already set by the client.</p>
+<p>The ClassID uniquely identifies a class.  If this value differs from the BaseClassID, then the class is determined to be a derived class.  The ClassID value always reflects the <code>strihash()</code> computation of the <fl>ClassName</fl>, and is automatically set on initialisation if not already set by the client.</p>
       </description>
     </field>
 
@@ -113,7 +129,7 @@
       <name>ClassName</name>
       <comment>The name of the represented class.</comment>
       <access read="R" write="I">Read/Init</access>
-      <type>CSTRING</type>
+      <type>STRING</type>
       <description>
 <p>This field specifies the name of the represented class.  Characters should be limited to those in the range of A-Z and written in camel case, e.g. <code>KeyValue</code> and not <code>Keyvalue</code> or <code>KEYVALUE</code>.  Setting this field value is compulsory prior to initialisation.</p>
       </description>
@@ -126,7 +142,7 @@
       <type>DOUBLE</type>
       <description>
 <p>This field value must reflect the version of the class structure.  Legal version numbers start from 1.0 and ascend. Revision numbers can be used to indicate bug-fixes or very minor changes.</p>
-<p>If declaring a sub-class then this value can be <code>0</code>, but base classes must set a value here.</p>
+<p>If declaring a derived class then this value can be <code>0</code>, but base classes must set a value here.</p>
       </description>
     </field>
 
@@ -134,9 +150,9 @@
       <name>Dictionary</name>
       <comment>Returns a field lookup table sorted by field IDs.</comment>
       <access read="G">Get</access>
-      <type>struct Field *</type>
+      <type>Field[]</type>
       <description>
-<p>Following initialisation of the MetaClass, the Dictionary can be read to retrieve the internal field lookup table. For base-classes, the client can use the binary search technique to find fields by their ID.  For sub-classes, use linear scanning.</p>
+<p>Following initialisation of the MetaClass, the Dictionary can be read to retrieve the internal field lookup table. For base-classes, the client can use the binary search technique to find fields by their ID.  For derived classes, use linear scanning.</p>
       </description>
     </field>
 
@@ -144,7 +160,7 @@
       <name>Fields</name>
       <comment>Points to a <st>FieldArray</st> that describes the class' object structure.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>const struct FieldArray *</type>
+      <type>const struct FieldArray[]</type>
       <description>
 <p>This field points to an array that describes the structure of objects that will be generated for this class.  It is compulsory that base classes define this array.  Sub-classes will inherit the structure of their base, but they may set Fields with additional virtual fields if desired.</p>
 <p>Refer to the Kotuku Wiki on class development for more information.</p>
@@ -155,9 +171,9 @@
       <name>FileDescription</name>
       <comment>Describes the file type represented by the class.</comment>
       <access read="R" write="I">Read/Init</access>
-      <type>CSTRING</type>
+      <type>STRING</type>
       <description>
-<p>This field allows you to specify a description of the class' file type, if the class is designed to be file related. This setting can be important, as it helps to distinguish your class from the other file based classes.  Always make sure that your file description is short, descriptive and unique.  A file description such as <code>JPEG</code> is not acceptable, but <code>JPEG Picture</code> would be appropriate.</p>
+<p>This field allows you to specify a description of the class' file type, if the class is designed to be file related. This setting can be important, as it helps to distinguish your class from the other file based classes.  Always make sure that your file description is short, descriptive and unique.  A file description such as <code>JPEG</code> is not acceptable, but <code>JPEG Image</code> would be appropriate.</p>
       </description>
     </field>
 
@@ -165,7 +181,7 @@
       <name>FileExtension</name>
       <comment>Describes the file extension represented by the class.</comment>
       <access read="R" write="I">Read/Init</access>
-      <type>CSTRING</type>
+      <type>STRING</type>
       <description>
 <p>This field describes the file extension/s that the class will recognise.  For example: <code>*.wav|*.wave|*.snd</code>.</p>
 <p>Use of the vertical bar allows more than one file extension to be supported by the class. The file extension that is preferred for saving data must come first.</p>
@@ -176,7 +192,7 @@
       <name>FileHeader</name>
       <comment>Defines a string expression that will allow relevant file data to be matched to the class.</comment>
       <access read="R" write="I">Read/Init</access>
-      <type>CSTRING</type>
+      <type>STRING</type>
       <description>
 <p>If a class supports file data, then the FileHeader field is used to identify the types of data that the class supports. This feature is used by routines that need to analyse files and determine which classes support them.</p>
 <p>For example, the JPEG class supports files that start with a 32-bit token to identify them as JPEG.  Declaring a FileHeader expression to match these tokens will allow the FileView feature to detect JPEG files and display an appropriate icon for each JPEG entry in the file list.</p>
@@ -199,8 +215,8 @@
     <field>
       <name>Icon</name>
       <comment>Associates an icon with the file data for this class.</comment>
-      <access>-/-</access>
-      <type>CSTRING</type>
+      <access read="R" write="I">Read/Init</access>
+      <type>STRING</type>
       <description>
 <p>Files that belong to a class can be associated with an icon that is declared in this field.  The icon string format is <code>folder/icon</code>.  Valid icons are available in the icon database.</p>
       </description>
@@ -209,7 +225,7 @@
     <field>
       <name>Location</name>
       <comment>Returns the path from which the class binary is loaded.</comment>
-      <access read="R">Read</access>
+      <access read="G">Get</access>
       <type>STRING</type>
       <description>
 <p>The path from which the class binary was loaded is readable from this field.  The path may not necessarily include the file extension of the source binary.</p>
@@ -220,7 +236,7 @@
       <name>Methods</name>
       <comment>Set this field to define the methods supported by the class.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>STRUCT []</type>
+      <type>MethodEntry[]</type>
       <description>
 <p>If a class design will include support for methods, create a MethodEntry list and set this field prior to initialisation.  The array must provide information on each method's ID, name, parameters, and structure size.</p>
 <p>Note that method lists can be auto-generated using our IDL scripts - an approach that we strongly recommend.</p>
@@ -232,17 +248,6 @@
       <comment>The name of the module binary that initialised the class.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
-    </field>
-
-    <field>
-      <name>Objects</name>
-      <comment>Returns an allocated list of all objects that belong to this class.</comment>
-      <access read="G">Get</access>
-      <type>INT []</type>
-      <description>
-<p>This field will compile a list of all objects that belong to the class.  The list is sorted with the oldest object appearing first.</p>
-<p>The resulting array must be terminated with <function>FreeResource</function> after use.</p>
-      </description>
     </field>
 
     <field>
@@ -259,9 +264,19 @@
       <name>Path</name>
       <comment>The path to the module binary that represents the class.</comment>
       <access read="R" write="I">Read/Init</access>
-      <type>CSTRING</type>
+      <type>STRING</type>
       <description>
 <p>The Path field must be set on initialisation and refers to the default location of the class' module binary, for example <code>modules:display</code>. For reasons of platform portability, the file extension must not be specified at the end of the file name.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>PublicSize</name>
+      <comment>The size of the class in bytes, as seen by the client.</comment>
+      <access read="R" write="I">Read/Init</access>
+      <type>INT</type>
+      <description>
+<p>The public size reflects the size of the class before any private variables are taken into account.</p>
       </description>
     </field>
 
@@ -278,26 +293,36 @@
       <access read="R" write="I">Read/Init</access>
       <type>INT</type>
       <description>
-<p>This field value must indicate the byte size of the objects that will be created from the MetaClass.  For example, the <class name="Picture">Picture</class> class defines this value as <code>sizeof(objPicture)</code>.</p>
+<p>This field value must indicate the byte size of the objects that will be created from the MetaClass.  For example, the <class name="Image">Image</class> class defines this value as <code>sizeof(objImage)</code>.</p>
 <p>If the size is not explicitly defined, the initialisation process will determine the structure size by evaluating the field definitions that have been provided.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>SubClasses</name>
+      <comment>Returns a list of all derived classes of the class.</comment>
+      <access read="G">Get</access>
+      <type>OBJECTPTR []</type>
+      <description>
+<p>This field returns an array listing all active derived classes of the class (classes that have not been loaded are not included).  This feature applies to base-classes only.</p>
       </description>
     </field>
 
   </fields>
   <types>
     <constants lookup="CCF" comment="Class categories">
-      <const name="AUDIO">Audio classes interface with audio hardware and drivers for audio playback and recording purposes.</const>
-      <const name="COMMAND">Command classes perform specific procedures, like copying or moving a file, managing volumes or executing a program.</const>
-      <const name="DATA">Data classes parse, query and manipulate data.</const>
-      <const name="FILESYSTEM">FileSystem classes are based on file management and interaction with file based data.</const>
-      <const name="GRAPHICS">Graphics classes provide graphics management and drawing services.</const>
-      <const name="GUI">GUI classes are used in the development of graphical user interfaces.</const>
-      <const name="IO">I/O classes manage hardware and software based input and output.</const>
-      <const name="MISC">Miscellaneous classes do not fit into any of the other available categories.</const>
-      <const name="MULTIMEDIA">Classes that represent more than one media type, e.g. video files.</const>
-      <const name="NETWORK">Network classes interface with system drivers to simplify network communications.</const>
-      <const name="SYSTEM">System classes are designed to provide low-level services related to system management.</const>
-      <const name="TOOL">Tools provide interactive services for the user.</const>
+      <const name="AUDIO">Audio classes interface with audio hardware and drivers for audio playback and recording purposes</const>
+      <const name="COMMAND">Command classes perform specific procedures, like copying or moving a file, managing volumes or executing a program</const>
+      <const name="DATA">Data classes parse, query and manipulate data</const>
+      <const name="FILESYSTEM">FileSystem classes are based on file management and interaction with file based data</const>
+      <const name="GRAPHICS">Graphics classes provide graphics management and drawing services</const>
+      <const name="GUI">GUI classes are used in the development of graphical user interfaces</const>
+      <const name="IO">I/O classes manage hardware and software based input and output</const>
+      <const name="MISC">Miscellaneous classes do not fit into any of the other available categories</const>
+      <const name="MULTIMEDIA">Classes that represent more than one media type, e.g. video files</const>
+      <const name="NETWORK">Network classes interface with system drivers to simplify network communications</const>
+      <const name="SYSTEM">System classes are designed to provide low-level services related to system management</const>
+      <const name="TOOL">Tools provide interactive services for the user</const>
     </constants>
 
     <constants lookup="CLF" comment="Flags for the MetaClass.">
@@ -313,12 +338,12 @@
     </struct>
 
     <struct name="Field" comment="Used to describe the public fields of a class.">
-      <field name="Arg" type="MAXINT">An option to complement the field type.  Can be a pointer or an integer value</field>
-      <field name="GetValue" type="FUNCTION *" prototype="ERR (*GetValue)(APTR, APTR)">A virtual function that will retrieve the value for this field.</field>
-      <field name="SetValue" type="APTR">A virtual function that will set the value for this field.</field>
-      <field name="WriteValue" type="FUNCTION *" prototype="ERR (*WriteValue)(OBJECTPTR, struct Field *, int, const void *, int)">An internal function for writing to this field.</field>
+      <field name="Arg" type="INT64">An option to complement the field type.  Can be a pointer or an integer value</field>
+      <field name="GetValue" type="FUNCTION *" prototype="ERR (*GetValue)(APTR, APTR)">A virtual function that will retrieve the value for this field</field>
+      <field name="SetValue" type="FUNCTION *" prototype="ERR (*SetValue)(APTR, APTR)">A virtual function that will set the value for this field</field>
+      <field name="WriteValue" type="FUNCTION *" prototype="ERR (*WriteValue)(OBJECTPTR, const struct Field *, int, const void *)">An internal function for writing to this field</field>
       <field name="Name" type="CSTRING">The English name for the field, e.g. <code>Width</code></field>
-      <field name="FieldID" type="UINT">32-bit hash from fieldhash(). Represented by FID constants, e.g. <code>FID_Width</code></field>
+      <field name="FieldID" type="UINT">32-bit hash from fieldhash()</field>
       <field name="Offset" type="UINT16">Field offset within the object</field>
       <field name="Index" type="UINT16">Field array index</field>
       <field name="Flags" type="UINT">Special flags that describe the field</field>
@@ -328,7 +353,7 @@
       <field name="Name" type="CSTRING">The name of the field, e.g. <code>Width</code></field>
       <field name="GetField" type="APTR"><code>void GetField(*Object, APTR Result);</code></field>
       <field name="SetField" type="APTR"><code>ERR SetField(*Object, APTR Value);</code></field>
-      <field name="Arg" type="MAXINT">Can be a pointer or an integer value</field>
+      <field name="Arg" type="INT64">Can be a pointer or an integer value</field>
       <field name="Flags" type="UINT">Special flags that describe the field</field>
     </struct>
 

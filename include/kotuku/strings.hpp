@@ -4,17 +4,32 @@
 
 #include <sstream>
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <string_view>
 #include <charconv>
 #include <concepts>
+#include <cstring>
 #include <ranges>
 #include <span>
 #include <cstdint>
+#include <type_traits>
 
-namespace pf {
+#if defined(_MSC_VER) && defined(_M_X64)
+   #include <intrin.h>
+   #define PF_HAS_HW_CRC32C 1
+   #define PF_CRC32C_RUNTIME_CHECK 1
+#elif defined(__x86_64__) && defined(__SSE4_2__)
+   #include <nmmintrin.h>
+   #define PF_HAS_HW_CRC32C 1
+#elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+   #include <arm_acle.h>
+   #define PF_HAS_HW_CRC32C 1
+#endif
 
-// USAGE: std::vector<std::string> list; pf::split(value, std::back_inserter(list));
+namespace kt {
+
+// USAGE: std::vector<std::string> list; kt::split(value, std::back_inserter(list));
 
 template <class InType, class OutIt>
 void split(InType Input, OutIt Output, char Sep = ',') noexcept
@@ -185,25 +200,146 @@ inline void camelcase(std::string &s) noexcept {
    return true;
 }
 
+namespace detail {
+
+inline constexpr uint32_t crc32c_init = 0xffffffffu;
+
+[[nodiscard]] consteval std::array<uint32_t, 256> make_crc32c_table() noexcept
+{
+   std::array<uint32_t, 256> table = { };
+   for (std::size_t i = 0; i < table.size(); i++) {
+      uint32_t crc = uint32_t(i);
+      for (int j = 0; j < 8; j++) {
+         if (crc & 1u) crc = (crc >> 1) ^ 0x82f63b78u;
+         else crc >>= 1;
+      }
+      table[i] = crc;
+   }
+   return table;
+}
+
+inline constexpr auto glCRC32cTable = make_crc32c_table();
+
+[[nodiscard]] inline bool has_hw_crc32c() noexcept
+{
+#if defined(PF_CRC32C_RUNTIME_CHECK)
+   static const bool available = []() noexcept {
+      int cpu_info[4] = { };
+      __cpuid(cpu_info, 1);
+      return (cpu_info[2] & (1 << 20)) ? true : false;
+   }();
+   return available;
+#elif defined(PF_HAS_HW_CRC32C)
+   return true;
+#else
+   return false;
+#endif
+}
+
+[[nodiscard]] constexpr inline uint32_t crc32c_finalise(const uint32_t Crc) noexcept
+{
+   return Crc ^ crc32c_init;
+}
+
+[[nodiscard]] constexpr inline uint8_t to_lower_ascii(const char Value) noexcept
+{
+   auto byte = uint8_t(Value);
+   if ((byte >= 'A') and (byte <= 'Z')) return byte - 'A' + 'a';
+   return byte;
+}
+
+[[nodiscard]] constexpr inline uint32_t crc32c_byte(const uint32_t Crc, const uint8_t Byte) noexcept
+{
+   return (Crc >> 8) ^ glCRC32cTable[(Crc ^ Byte) & 0xffu];
+}
+
+[[nodiscard]] constexpr inline uint32_t crc32c_constexpr(const std::string_view String) noexcept
+{
+   uint32_t crc = crc32c_init;
+   for (char value : String) {
+      crc = crc32c_byte(crc, uint8_t(value));
+   }
+   return crc32c_finalise(crc);
+}
+
+[[nodiscard]] inline uint32_t crc32c_runtime_byte(const uint32_t Crc, const uint8_t Byte) noexcept
+{
+   if (has_hw_crc32c()) {
+      #if defined(PF_HAS_HW_CRC32C)
+         #if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+            return __crc32cb(Crc, Byte);
+         #else
+            return uint32_t(_mm_crc32_u8(Crc, Byte));
+         #endif
+      #endif
+   }
+
+   return crc32c_byte(Crc, Byte);
+}
+
+[[nodiscard]] inline uint32_t crc32c_runtime(const std::string_view String) noexcept
+{
+   uint32_t crc = crc32c_init;
+
+   if (has_hw_crc32c()) {
+      #if defined(PF_HAS_HW_CRC32C)
+         auto data = (const uint8_t *)String.data();
+         auto size = String.size();
+         while (size >= sizeof(uint64_t)) {
+            uint64_t chunk = 0;
+            std::memcpy(&chunk, data, sizeof(chunk));
+            #if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+               crc = __crc32cd(crc, chunk);
+            #else
+               crc = uint32_t(_mm_crc32_u64(crc, chunk));
+            #endif
+            data += sizeof(uint64_t);
+            size -= sizeof(uint64_t);
+         }
+
+         while (size > 0) {
+            #if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+               crc = __crc32cb(crc, *data++);
+            #else
+               crc = uint32_t(_mm_crc32_u8(crc, *data++));
+            #endif
+            size--;
+         }
+      #endif
+   }
+   else {
+      for (char value : String) {
+         crc = crc32c_byte(crc, uint8_t(value));
+      }
+   }
+
+   return crc32c_finalise(crc);
+}
+
+} // namespace detail
+
 // Standardised hash functions, case sensitive and insensitive versions
 
 [[nodiscard]] constexpr inline uint32_t strhash(const std::string_view String) noexcept
 {
-   uint32_t hash = 5381;
-   std::for_each(String.begin(), String.end(), [&hash](char a) {
-      hash = (hash<<5) + hash + a;
-   });
-   return hash;
+   if (std::is_constant_evaluated()) return detail::crc32c_constexpr(String);
+   else return detail::crc32c_runtime(String);
 }
 
 [[nodiscard]] constexpr inline uint32_t strihash(const std::string_view String) noexcept
 {
-   uint32_t hash = 5381;
-   std::for_each(String.begin(), String.end(), [&hash](char c) {
-      if ((c >= 'A') and (c <= 'Z')) c = c - 'A' + 'a';
-      hash = (hash<<5) + hash + c;
-   });
-   return hash;
+   uint32_t crc = detail::crc32c_init;
+   if (std::is_constant_evaluated()) {
+      for (char value : String) {
+         crc = detail::crc32c_byte(crc, detail::to_lower_ascii(value));
+      }
+   }
+   else {
+      for (char value : String) {
+         crc = detail::crc32c_runtime_byte(crc, detail::to_lower_ascii(value));
+      }
+   }
+   return detail::crc32c_finalise(crc);
 }
 
 // Hash designed to handle conversion from `UID` -> `uid` and `RGBValue` -> `rgbValue`.  This keeps hashes compatible
@@ -211,19 +347,22 @@ inline void camelcase(std::string &s) noexcept {
 
 [[nodiscard]] constexpr inline uint32_t fieldhash(const std::string_view String) noexcept
 {
-   uint32_t hash = 5381;
+   uint32_t crc = detail::crc32c_init;
    size_t k = 0;
    while ((k < String.size()) and (String[k] >= 'A') and (String[k] <= 'Z')) {
-      hash = (hash<<5) + hash + (String[k] - 'A' + 'a');
+      auto value = detail::to_lower_ascii(String[k]);
+      if (std::is_constant_evaluated()) crc = detail::crc32c_byte(crc, value);
+      else crc = detail::crc32c_runtime_byte(crc, value);
       if (++k >= String.size()) break;
       if ((k + 1 >= String.size()) or ((String[k+1] >= 'A') and (String[k+1] <= 'Z'))) continue;
       else break;
    }
    while (k < String.size()) {
-      hash = (hash<<5) + hash + String[k];
+      if (std::is_constant_evaluated()) crc = detail::crc32c_byte(crc, uint8_t(String[k]));
+      else crc = detail::crc32c_runtime_byte(crc, uint8_t(String[k]));
       k++;
    }
-   return hash;
+    return detail::crc32c_finalise(crc);
 }
 
 // Simple string copy.  Supports std::string and CSTRING only
@@ -298,16 +437,76 @@ inline int strcopy(T &&Source, std::span<char, N> Dest) noexcept
    return -1;
 }
 
+[[nodiscard]] inline int strisearch(const std::string_view Keyword, const std::string_view String) noexcept
+{
+   if (Keyword.size() > String.size()) return -1;
+   size_t string_pos = 0;
+   while (string_pos < String.size()) {
+      size_t keyword_pos;
+      for (keyword_pos=0; keyword_pos < Keyword.size(); keyword_pos++) {
+         if (string_pos + keyword_pos >= String.size()) break;
+         if (std::toupper(uint8_t(String[string_pos + keyword_pos])) != std::toupper(uint8_t(Keyword[keyword_pos]))) {
+            break;
+         }
+      }
+      if (keyword_pos == Keyword.size()) return int(string_pos);
+      for (++string_pos; (string_pos < String.size()) and ((uint8_t(String[string_pos]) & 0xc0) == 0x80);
+         string_pos++);
+   }
+
+   return -1;
+}
+
 // std::string_view conversion to numeric type.  Returns zero on error.
-// Leading whitespace is not ignored, unlike strtol() and strtod()
+// Leading whitespace, an optional '+' sign and an optional '0x' hex prefix are
+// all supported to match strtol() and strtod() behaviour.
 
 template <class T>
 requires std::is_arithmetic_v<T>
-[[nodiscard]] T svtonum(const std::string_view String) noexcept {
+[[nodiscard]] T svtonum(std::string_view String) noexcept {
+   std::size_t i = 0;
+   while ((i < String.size()) and (unsigned(String[i]) <= 0x20)) i++;
+   String.remove_prefix(i);
+
+   // std::from_chars rejects a leading '+', whereas strtol()/strtod() accept it.
+
+   bool negative = false;
+   if (not String.empty()) {
+      if (String.front() == '+') String.remove_prefix(1);
+      else if (String.front() == '-') { negative = true; String.remove_prefix(1); }
+   }
+
+   // Detect and strip an '0x' / '0X' prefix.  std::from_chars does not consume the
+   // prefix itself, so hexadecimal parsing requires us to remove it first.
+
+   bool hex = false;
+   if ((String.size() >= 2) and (String[0] == '0') and ((String[1] == 'x') or (String[1] == 'X'))) {
+      hex = true;
+      String.remove_prefix(2);
+   }
+
    T val;
-   auto [ v, error ] = std::from_chars(String.data(), String.data() + String.size(), val);
-   if (error == std::errc()) return val;
-   else return 0;
+   std::errc error;
+   if constexpr (std::is_floating_point_v<T>) {
+      const auto fmt = hex ? std::chars_format::hex : std::chars_format::general;
+      error = std::from_chars(String.data(), String.data() + String.size(), val, fmt).ec;
+   }
+   else {
+      const int base = hex ? 16 : 10;
+      error = std::from_chars(String.data(), String.data() + String.size(), val, base).ec;
+   }
+
+   if (error != std::errc()) return 0;
+   return negative ? T(-val) : val;
+}
+
+// Output-parameter variant.  Deduces the numeric type from the destination, so the caller
+// can write svtonum(string, value) without an explicit template argument.
+
+template <class T>
+requires std::is_arithmetic_v<T>
+void svtonum(std::string_view String, T &Result) noexcept {
+   Result = svtonum<T>(String);
 }
 
 } // namespace

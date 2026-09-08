@@ -1,29 +1,85 @@
 -- $TIRI
 -- Flute tests for Font functionality
 
-   mFont ?= mod.load("font")
-
-function GetList()
-
-end
-
-function StringWidth()
-
-end
+   module font as mFont
 
 @Test function SelectFont()
-   err, path, meta = mFont.selectFont("Noto Sans", "Regular")
+   err, path, meta = mFont.SelectFont("Noto Sans", "Regular")
    assert(err is ERR_Okay, "SelectFont() returned error " .. mSys.GetErrorMsg(err))
 
-   err, path, meta = mFont.selectFont("Does Not Exist,*", "Regular")
+   err, path, meta = mFont.SelectFont("Does Not Exist,*", "Regular")
    assert(err != ERR_Okay, "SelectFont() returned error " .. mSys.GetErrorMsg(err))
 
-   err, path, meta = mFont.selectFont("Does Not Exist", "Regular")
+   err, path, meta = mFont.SelectFont("Does Not Exist", "Regular")
    assert(err != ERR_Okay, "SelectFont() returned error " .. mSys.GetErrorMsg(err))
 end
 
 @Test function ResolveFamily()
-   err, name = mFont.resolveFamilyName("Does Not Exist,*")
+   err, name = mFont.ResolveFamilyName("Does Not Exist,*")
    assert(err is ERR_Okay, "ResolveFamilyName() returned error " .. mSys.GetErrorMsg(err))
    assert(name is "Noto Sans", "Expected ResolveFamilyName() to return 'Noto Sans' as the default font")
+end
+
+@Test function FontFieldSetters()
+   font <close> = obj.new('font')
+
+   font.face = 'Noto Sans'
+   assert(font.face is 'Noto Sans', 'Face parsing did not isolate the family name')
+
+   font.italic = true
+   font.bold = false
+   assert(font.style is 'Italic', 'Clearing Bold should preserve Italic')
+
+   font.italic = false
+   assert(font.style is 'Regular', 'Clearing Italic should restore Regular')
+
+   font.string = 'abc'
+   assert(font.string is 'abc', 'String field did not store the assigned value')
+
+   font.string = nil
+   assert(font.string is nil, 'Clearing String should remove the previous value')
+end
+
+@Test(hotpath=true) function StructFieldLiveView()
+   font <close> = obj.new('font')
+
+   colour = font.colour
+   assert(type(colour) is 'struct', 'Font.colour should be exposed as a native struct')
+
+   colour.red = 17
+   colour.green = 29
+   assert(font.colour.red is 17, 'Writing through the struct view should update the object field')
+   assert(font.colour.green is 29, 'Repeated object field reads should observe live struct changes')
+
+   replacement = struct.new('RGB8', { red=41, green=53, blue=67, alpha=79 })
+   font.colour = replacement
+   assert(colour.red is 41, 'Whole-struct assignment should update an existing live view')
+   assert(font.colour.alpha is 79, 'Whole-struct assignment should copy every field')
+end
+
+@Test function StructFieldStaleView()
+   font = obj.new('font')
+
+   colour = font.colour
+   assert(type(colour) is 'struct', 'Font.colour should be exposed as a native struct')
+
+   font.free()
+
+   read_caught = false
+   try
+      -- NB: '_ = colour.red' would elide the read entirely; a real local is required to trigger the access.
+      local red = colour.red
+      read_caught = red < 0 -- Unreachable; keeps the read live
+   except e
+      read_caught = true
+   end
+   assert(read_caught, 'Reading a struct view after object destruction should raise an exception')
+
+   write_caught = false
+   try
+      colour.green = 1
+   except e
+      write_caught = true
+   end
+   assert(write_caught, 'Writing a struct view after object destruction should raise an exception')
 end

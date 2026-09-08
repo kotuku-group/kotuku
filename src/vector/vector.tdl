@@ -1,47 +1,54 @@
 --$TIRI:Include
 
-module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, timestamp=20240611 }, function()
-  c_include("<kotuku/modules/display.h>", "<kotuku/modules/picture.h>")
+module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, timestamp=20240611,
+    src={ 'vector_functions.cpp', 'vector_readpainter.cpp' }
+  }, function()
+  c_include('<kotuku/modules/display.h>', '<kotuku/modules/image.h>', '<kotuku/modules/config.h>')
 
   restrict(function()
     loadFile(glPath .. 'common.tdl')
     loadFile(glPath .. 'common-graphics.tdl')
   end)
 
-  flags("ARC", { comment="Options for drawing arcs." },
-    "LARGE: The arc will take the longest available drawing path rather than the shortest.",
-    "SWEEP: Inverts the default behaviour in generating the arc path (go clockwise).")
+  flags('ARC', { comment='Options for drawing arcs.' },
+    'LARGE: The arc will take the longest available drawing path rather than the shortest.',
+    'SWEEP: Inverts the default behaviour in generating the arc path (go clockwise).')
 
-  flags("VCLF", { comment="Options for VectorClip." },
-    "APPLY_FILLS: Apply fill instructions when drawing the clipping path(s).",
-    "APPLY_STROKES: Apply stroke instructions when drawing the clipping path(s).")
+  flags('VCLF', { comment='Options for VectorClip.' },
+    'APPLY_FILLS: Apply fill instructions when drawing the clipping path(s).',
+    'APPLY_STROKES: Apply stroke instructions when drawing the clipping path(s).')
 
-  flags("VF", { comment="Optional flags and indicators for the Vector class." },
+  flags('VF', { comment='Optional flags and indicators for the Vector class.' },
      "DISABLED: The vector is disabled and user input should be ignored.",
      "HAS_FOCUS: The vector holds the user's input focus.",
      "JOIN_PATHS: When appending a new path, use a join operation to connect the tail end to the head.",
      "ISOLATED: Enables isolation mode, which results in a bitmap buffer being allocated for the vector and its children while drawing.")
 
-  enum("VFA", { type="int", comment="Define the aspect ratio for VectorFilter unit scaling." },
+  enums("GMT", { type="int", start=0, comment="Available modes for the GradientMesh class." },
+    "UNDEFINED: Either the default setting will be applied or the setting will be inherited from a parent object.",
+    "LINEAR: Use linear interpolation for the patch colours.",
+    "BICUBIC: Use bicubic interpolation for the patch colours.")
+
+  enums("VFA", { type="int", comment="Define the aspect ratio for VectorFilter unit scaling." },
      "MEET: Scale X/Y values independently and in relation to the width/height of the parent viewport.",
      "NONE: Scale X/Y values on a `1:1` basis, in relation to the diagonal of the parent viewport.")
 
-  enum("LS", { type="int", comment="Light source identifiers." },
+  enums("LS", { type="int", comment="Light source identifiers." },
     "DISTANT: Distant light source.",
     "SPOT: Spot light source.",
     "POINT: Point light source.")
 
-  enum("LT", { type="int", start=0, comment="Lighting algorithm for the LightingFX class." },
+  enums("LT", { type="int", start=0, comment="Lighting algorithm for the LightingFX class." },
     "DIFFUSE: Select diffuse lighting.",
     "SPECULAR: Select specular lighting.")
 
-  enum("VUNIT", { type="int", start=0 },
+  enums("VUNIT", { type="int", start=0 },
     "UNDEFINED: Either the default setting will be applied or the setting will be inherited from a parent object.",
     "BOUNDING_BOX: Coordinates are scaled to the object's bounding box.",
     "USERSPACE: Coordinates are scaled to the current viewport.",
     "END: Private")
 
-  enum("VSPREAD", { type="int", start=0, comment="Spread method options define the method to use for tiling filled graphics." },
+  enums("VSPREAD", { type="int", start=0, comment="Spread method options define the method to use for tiling filled graphics." },
     "UNDEFINED: Either the default setting will be applied or the setting will be inherited from a parent object.",
     "PAD: Scale the graphic to the object bounds.",
     "REFLECT: Tile the graphic, reflecting the image alternately on the X and Y axis.",
@@ -51,28 +58,28 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
     "CLIP: Do not scale the graphic.  Clip it if it extends past imposed boundaries.",
     "END: Private")
 
-  enum("EM", { type="int", start=1, "Edge mode options for the convolve effect." },
+  enums("EM", { type="int", start=1, "Edge mode options for the convolve effect." },
     "DUPLICATE: The input image is extended along its borders by duplicating the color values at its edges.",
     "WRAP: The input image is extended by taking the color values from the opposite edge of the image.",
     "NONE: The input image is extended with colour values of zero.")
 
-  enum("PE", { type="int", start=1 }, "Move", "MoveRel", "Line", "LineRel", "HLine", "HLineRel", "VLine", "VLineRel",
+  enums("PE", { type="int", start=1 }, "Move", "MoveRel", "Line", "LineRel", "HLine", "HLineRel", "VLine", "VLineRel",
     "Curve", "CurveRel", "Smooth", "SmoothRel", "QuadCurve", "QuadCurveRel", "QuadSmooth", "QuadSmoothRel",
     "Arc", "ArcRel", "ClosePath")
 
-  enum("VFR", { type="int", start=1, comment="Vector fill rules for the FillRule field in the Vector class." },
+  enums("VFR", { type="int", start=1, comment="Vector fill rules for the FillRule field in the Vector class." },
     "NON_ZERO: This is the default.  This rule determines the 'insideness' of a point on the canvas by drawing a ray from that point to infinity in any direction and then examining the places where a segment of the shape crosses the ray. Starting with a count of zero, add one each time a path segment crosses the ray from left to right and subtract one each time a path segment crosses the ray from right to left. After counting the crossings, if the result is zero then the point is outside the path. Otherwise, it is inside.",
     "EVEN_ODD: This rule determines the 'insideness' of a point on the canvas by drawing a ray from that point to infinity in any direction and counting the number of path segments from the given shape that the ray crosses. If this number is odd, the point is inside; if even, the point is outside.",
     "INHERIT: The rule is inherited from the parent vector(s).",
     "END: Private")
 
-  enum("VIS", { type="int", start=0, comment="Options for the Vector class' Visibility field." },
+  enums("VIS", { type="int", start=0, comment="Options for the Vector class' Visibility field." },
     "HIDDEN: Hide the vector and its children.",
     "VISIBLE: The default.  Ensures that the vector is visible.",
     "COLLAPSE: Hide the vector and its children.  Do not use - provided for SVG compatibility only.",
     "INHERIT: Inherit the visibility state from the parent.")
 
-  enum("VOF", { type="int", comment="Viewport overflow options." },
+  enums("VOF", { type="int", comment="Viewport overflow options." },
     "VISIBLE: The content is not clipped to the viewport's boundary.  This is the default.",
     "HIDDEN: All content is clipped to within the viewport's boundary.",
     "SCROLL: All content is clipped to within the viewport's boundary.  A mechanism to scroll the viewport's content may be provided to the user (SVG capability not currently implemented).",
@@ -80,14 +87,14 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
 
   -- NB: There is a code dependency on the CMP order for RGBA being maintained at 0, 1, 2, 3.
 
-  enum("CMP", { type="int", start=-1, comment="Component selection for RemapFX methods." },
+  enums("CMP", { type="int", start=-1, comment="Component selection for RemapFX methods." },
     "ALL: All colour channels.",
     "RED: The red colour channel.",
     "GREEN: The green colour channel.",
     "BLUE: The blue colour channel.",
     "ALPHA: The alpha channel.")
 
-  enum("VLJ", { type="int", start=0, comment="Options for the look of line joins." }, // Match to agg::line_join_e
+  enums("VLJ", { type="int", start=0, comment="Options for the look of line joins." },
     "MITER: The default.  A sharp corner is used to join path segments.  The corner is formed by extending the outer edges of the stroke at the tangents of the path segments until they intersect. If the ‘stroke-miterlimit’ is exceeded, the line join falls back to BEVEL.",
     "MITER_SMART: An alternative form of MITER that extends beyond the intersection point, similarly to the miter-clip SVG rules.",
     "ROUND: The join is rounded.",
@@ -95,45 +102,38 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
     "MITER_ROUND: Default to `MITER`, but switch to `ROUND` if the miter limit is exceeded.",
     "INHERIT: Inherit the join option from the parent.")
 
-  enum("VLC", { type="int", start=1, comment="Line-cap options." }, // Match to agg::line_cap_e
+  enums("VLC", { type="int", start=1, comment="Line-cap options." },
     "BUTT: The default.  The line is sharply squared off at its exact end point.",
     "SQUARE: Similar to butt, the line is sharply squared off but will extend past the end point by `StrokeWidth / 2`.",
     "ROUND: The line cap is a half-circle and the line's end-point forms the center point.",
     "INHERIT: The cap type is inherited from the parent (defaults to butt if unspecified).")
 
-  enum("VIJ", { type="int", start=1, comment="Inner join options for angled lines." },  // Match to agg::inner_join_e
+  enums("VIJ", { type="int", start=1, comment="Inner join options for angled lines." },
     "BEVEL: Blunts the edge of the join.",
     "MITER: Forms a sharp point at the join.  Typically not the best looking option.",
     "JAG: A special non-SVG option.",
     "ROUND: Rounds the edge of the join to produce the best looking results.",
     "INHERIT: Inherit the parent's join value.")
 
-  enum("VGT", { type="int", start=0, comment="VectorGradient options." },
-    "LINEAR: A linear gradient is drawn from `(X1, Y1)` to `(X2, Y2)`.",
-    "RADIAL: A radial gradient is drawn from `CenterX, CenterY` to `Radius`.  An optional focal point can be expressed with `FX` and `FY`.",
-    "CONIC: The conic gradient is a variant on the radial type, whereby the colour values are drawn as a line that revolves around the cone's center point.",
-    "DIAMOND: A diamond gradient is drawn as a square emanating from the center point.",
-    "CONTOUR: Contoured gradients follow the contours of the vector path in which they are rendered.")
+  enums('VTS', { type='int', start=0, comment='Options for stretching text in VectorText.' },
+    'INHERIT',
+    'NORMAL',
+    'WIDER',
+    'NARROWER',
+    'ULTRA_CONDENSED',
+    'EXTRA_CONDENSED',
+    'CONDENSED',
+    'SEMI_CONDENSED',
+    'EXPANDED',
+    'SEMI_EXPANDED',
+    'ULTRA_EXPANDED',
+    'EXTRA_EXPANDED')
 
-  enum("VTS", { type="int", start=0, comment="Options for stretching text in VectorText." },
-    "INHERIT",
-    "NORMAL",
-    "WIDER",
-    "NARROWER",
-    "ULTRA_CONDENSED",
-    "EXTRA_CONDENSED",
-    "CONDENSED",
-    "SEMI_CONDENSED",
-    "EXPANDED",
-    "SEMI_EXPANDED",
-    "ULTRA_EXPANDED",
-    "EXTRA_EXPANDED")
+  enums('MOP', { type='int', start=0, comment='MorphologyFX options.' },
+    'ERODE: Erode (thin) the input source.',
+    'DILATE: Dilate (fatten) the input source.')
 
-  enum("MOP", { type="int", start=0, comment="MorphologyFX options." },
-    "ERODE: Erode (thin) the input source.",
-    "DILATE: Dilate (fatten) the input source.")
-
-   enum("OP", { type="int", start=0, comment="Operators for CompositionFX." },
+   enums('OP', { type='int', start=0, comment='Operators for CompositionFX.' },
     "OVER: The Porter-Duff 'over' operator, this is the default operation for standard alpha blending.",
     "IN: The Porter-Duff 'in' operator; the input alpha channel has priority and the mix channel is secondary.",
     "OUT: The Porter-Duff 'out' operator; the mix alpha channel is inversed with the input channel.",
@@ -141,16 +141,16 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
     "XOR: The Porter-Duff 'xor' operator; blend as normal but occlusion occurs when input and mix alpha channels interact.",
     "ARITHMETIC: The SVG 'arithmetic' blending algorithm.",
     "SCREEN: Produces a result brighter than the input.",
-    "MULTIPLY",
+    "MULTIPLY: Multiplies the input and mix colour components, producing a darker result unless one source is white.",
     "LIGHTEN: Use the lighter colour components of the mix and input values.",
     "DARKEN: Use the darker colour components of the mix and input values.",
-    "INVERT_RGB",
-    "INVERT",
-    "CONTRAST",
+    "INVERT_RGB: Invert the mix colour components using the input colour channels as the per-channel strength.",
+    "INVERT: Invert the mix colour components using the input alpha channel as the strength.",
+    "CONTRAST: Adjust the mix contrast using the input colour values as the contrast strength.",
     "DODGE: Gives a brighter result than `SCREEN` by decreasing the contrast between the input and mix colours.",
-    "BURN",
-    "HARD_LIGHT",
-    "SOFT_LIGHT",
+    "BURN: Gives a darker result than `MULTIPLY` by increasing the contrast between the input and mix colours.",
+    "HARD_LIGHT: Apply `MULTIPLY` or `SCREEN` according to the input colour, producing a high-contrast result.",
+    "SOFT_LIGHT: Apply a softer variant of `HARD_LIGHT`, subtly darkening or lightening the mix from the input colour.",
     "DIFFERENCE: Output the difference between the input and mix colours.",
     "EXCLUSION: Produce the difference between the mix and input values around a reference point of mid-grey.",
     "PLUS: Add the input and mix colour values together.",
@@ -169,7 +169,7 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
     "SECRET: Hide all characters from the UI by using generic symbols in place of glyphs.",
     "RASTER: Rasterise glyphs to a texture cache for very fast rendering.  This feature is not compatible with scalable graphics conventions.")
 
-  flags("VMF", { comment="Morph flags" },
+  flags("VMF", { comment="Guide path flags" },
     "STRETCH: Applicable when used on @VectorText, the stretch option converts glyph outlines into paths, and then all end points and control points will be adjusted to be along the perpendicular vectors from the path, thereby stretching and possibly warping the glyphs.  With this approach, connected glyphs, such as in cursive scripts, will maintain their connections.",
     "AUTO_SPACING: Applicable when used on @VectorText, auto-spacing allows the spacing between glyphs to be shrunk or expanded along the target path so that they can produce a better fit.  The default is for the glyphs to conform to their original spacing requirements.",
     "X_MIN: Align the source so that it is morphed along the left of the target path.",
@@ -179,12 +179,12 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
     "Y_MID: Align the source so that it is morphed along the middle of the target path.",
     "Y_MAX: Align the source so that it is morphed along the bottom of the target path.")
 
-  enum("VCS", { type="int", start=0, comment="Colour space options." },
+  enums("VCS", { type="int", start=0, comment="Colour space options." },
     "INHERIT: Inherit the colour space option from the parent vector.",
     "SRGB: The default colour-space is sRGB, recommended for its speed.",
     "LINEAR_RGB: Linear RGB is the default colour space for SVG and produces the best results.")
 
-  enum("VSF", { type="int", start=0, comment="Filter source types - these are used internally", restrict="c" },
+  enums("VSF", { type="int", start=0, comment="Filter source types - these are used internally", restrict="c" },
     "IGNORE|NONE: The filter does not require an input source.",
     "GRAPHIC: Represents the graphics elements that were the original input into the filter element.",
     "ALPHA: As for `GRAPHIC` except that only the alpha channel is used.",
@@ -195,17 +195,52 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
     "REFERENCE: This value is an assigned name for the filter primitive in the form of a custom-ident. If supplied, then graphics that result from processing this filter primitive can be referenced by an in attribute on a subsequent filter primitive within the same filter element. If no value is provided, the output will only be available for re-use as the implicit input into the next filter primitive if that filter primitive provides no value for its in attribute.",
     "PREVIOUS: Use the previous effect as input, or source graphic if no previous effect.")
 
-  enum("WVC", { type="int", start=1, comment="Wave options." },
-    "NONE: Do not close the path.",
+  enums("WVC", { type="int", start=1, comment="Wave options." },
     "TOP: Close the path across the top of its area.",
     "BOTTOM: Close the path across the bottom of its area.")
 
-  enum("WVS", { type="int", start=1, comment="Wave style options." },
-    "CURVED: Standard sine-wave curvature, this is the default.",
-    "ANGLED: Chevron style angles at 45 degrees either side of the peak and bottom edge.",
-    "SAWTOOTH: Sawtooth patterns rise at 45 degrees to the peak, then direct 90 degrees to the bottom.")
+  enums("WVT", { type="int", start=1, comment="Wave style options." },
+    "SINE: Standard sine-wave curvature, this is the default.",
+    "TRIANGLE: Chevron style angles at 45 degrees either side of the peak and bottom edge.",
+    "SAWTOOTH: Sawtooth patterns rise at 45 degrees to the peak, then direct 90 degrees to the bottom.",
+    "SQUARE: Stepped pattern that alternates between the peak and bottom edge with vertical transitions.")
 
-  enum("CM", { type="int", start=0, comment="Colour modes for ColourFX." },
+  enums("WVE", { type="int", start=1, comment="Wave envelope options." },
+    "LINEAR: Linear decay from start to end, this is the default.",
+    "QUADRATIC: Quadratic decay, weighted towards the end of the wave.",
+    "SMOOTHSTEP: Smoothstep decay with ease-in and ease-out.",
+    "EXPONENTIAL: Exponential decay, weighted strongly towards the start of the wave.")
+
+  enums("GFALL", { type="int", start=1, comment="Gradient fall-off options." },
+    "OPAQUE:     No fall-off.",
+    "LINEAR:     Linear fall-off (even taper).",
+    "QUADRATIC:  Quadratic fall-off - fast drop, thin tail — natural glow.",
+    "CUBIC:      Cubic fall-off - very tight glow hugging the outline.",
+    "SMOOTHSTEP: Smoothstep fall-off - S-curve; brightest, holds the inner half.",
+    "CLEAR:      Disables the gradient.")
+
+  enums("GEZ", { type="int", start=0, comment="Gradient easing functions." },
+    "LINEAR:       Linear interpolation (no easing) - the default.",
+    "IN:           Ease-in (slow start).",
+    "OUT:          Ease-out (slow end).",
+    "IN_OUT:       Smoothstep-style ease-in and ease-out.",
+    "CUBIC_IN:     Cubic ease-in.",
+    "CUBIC_OUT:    Cubic ease-out.",
+    "CUBIC_IN_OUT: Cubic ease-in and ease-out.")
+
+  enums("WLF", { type="int", start=0, comment="Worley field modes." },
+    "F1: Distance to nearest point.",
+    "F2_F1: Distance between the nearest and second-nearest points.",
+    "F2: Distance to second-nearest point.",
+    "WEIGHTED: Additively-weighted Voronoi using per-point heights.",
+    "PEAKS: Additive peaks or terrain using per-point heights.")
+
+  enums("WLM", { type="int", start=0, comment="Worley distance metrics." },
+    "EUCLIDEAN",
+    "MANHATTAN",
+    "CHEBYSHEV")
+
+  enums("CM", { type="int", start=0, comment="Colour modes for ColourFX." },
     "NONE: Do nothing.",
     "MATRIX: Process the supplied 5x4 matrix values.",
     "SATURATE: Adjust colour saturation with the first parameter defining the multiplier.",
@@ -217,55 +252,55 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
     "DESATURATE: Desaturate the input completely so that it is rendered in greyscale.",
     "COLOURISE: Colourise the input with the first 3 parameters used as RGB multipliers and the fourth parameter controlling intensity from 0 - 1.0.")
 
-  flags("VGF", { comment="Gradient flags" },
-    "SCALED_X1: X1 is scaled",
-    "SCALED_Y1: Y1 is scaled",
-    "SCALED_X2: X2 is scaled",
-    "SCALED_Y2: Y2 is scaled",
-    "SCALED_CX: CX is scaled",
-    "SCALED_CY: CY is scaled",
-    "SCALED_FX: FX is scaled",
-    "SCALED_FY: FY is scaled",
-    "SCALED_RADIUS: Radius is scaled",
-    "SCALED_FOCAL_RADIUS: Focal radius is scaled",
-    "FIXED_X1: X1 is fixed",
-    "FIXED_Y1: Y1 is fixed",
-    "FIXED_X2: X2 is fixed",
-    "FIXED_Y2: Y2 is fixed",
-    "FIXED_CX: CX is fixed",
-    "FIXED_CY: CY is fixed",
-    "FIXED_FX: FX is fixed",
-    "FIXED_FY: FY is fixed",
-    "FIXED_RADIUS: Radius is fixed",
-    "FIXED_FOCAL_RADIUS: Focal radius is fixed",
-    "CONTAIN_FOCAL: Contain the FX,FY point to the base radius.")
+  flags('VGF', { comment='Gradient flags' },
+    'SCALED_X1: X1 is scaled',
+    'SCALED_Y1: Y1 is scaled',
+    'SCALED_X2: X2 is scaled',
+    'SCALED_Y2: Y2 is scaled',
+    'SCALED_CX: CX is scaled',
+    'SCALED_CY: CY is scaled',
+    'SCALED_FX: FX is scaled',
+    'SCALED_FY: FY is scaled',
+    'SCALED_RADIUS: Radius is scaled',
+    'SCALED_FOCAL_RADIUS: Focal radius is scaled',
+    'FIXED_X1: X1 is fixed',
+    'FIXED_Y1: Y1 is fixed',
+    'FIXED_X2: X2 is fixed',
+    'FIXED_Y2: Y2 is fixed',
+    'FIXED_CX: CX is fixed',
+    'FIXED_CY: CY is fixed',
+    'FIXED_FX: FX is fixed',
+    'FIXED_FY: FY is fixed',
+    'FIXED_RADIUS: Radius is fixed',
+    'FIXED_FOCAL_RADIUS: Focal radius is fixed')
 
   flags("VPF", { comment="Optional flags for the VectorScene object." },
     "BITMAP_SIZED: Automatically adjust the @VectorScene.PageWidth and @VectorScene.PageHeight to match the target @Bitmap.Width and @Bitmap.Height.",
     "RENDER_TIME: Compute the drawing frame-rate for the `RenderTime` field.",
     "RESIZE: The vector will be stretched to fit the @VectorScene.PageWidth and @VectorScene.PageHeight values, if defined by the client.",
-    "OUTLINE_VIEWPORTS: Draw a green outline around all viewport paths.  Extremely useful for debugging layout issues.")
+    "OUTLINE_VIEWPORTS: Draw a green outline around all viewport paths.  Extremely useful for debugging layout issues.",
+    "STABLE_RENDER: Use rendering algorithms that are stable across all platforms.")
 
-  enum("TB", { type="int", start=0, "Function identifier for TurbulenceFX." },
+  enums("TB", { type="int", start=0, "Function identifier for TurbulenceFX." },
     "TURBULENCE: Use the standard turbulence function.",
     "NOISE: Use the fractal noise function.")
 
-  enum("VSM", { type="int", start=0, comments="Options for the VectorScene SampleMethod." },
+  enums("VSM", { type="int", start=0, comments="Options for the VectorScene SampleMethod." },
     "AUTO: The default option is chosen by the system.  This will typically be `BILINEAR`, but slow machines may switch to nearest neighbour and high speed machines could use more advanced methods.",
     "NEIGHBOUR: Nearest neighbour is the fastest sampler at the cost of poor quality.",
     "BILINEAR: Bilinear is a common algorithm that produces a reasonable quality image quickly.",
     "BICUBIC: Produces a similar result to `BILINEAR` at a slightly higher CPU cost and a marginally sharper after-effect.",
-    "SPLINE16: About twice as slow as `BILINEAR`, this method produces a considerably better result, and is a good choice for enlarging images without producing artifacts when contrasting colours are present.",
-    "KAISER",
-    "QUADRIC",
-    "GAUSSIAN",
-    "BESSEL",
-    "MITCHELL",
+    "SPLINE16: About twice as slow as `BILINEAR`, this method samples a 4x4 area and produces a considerably better result, and is a good choice for enlarging images without producing artifacts when contrasting colours are present.",
+    "KAISER: Uses a Kaiser-windowed filter, giving smooth interpolation with low ringing and a cost close to `BILINEAR`.",
+    "QUADRIC: Uses a quadratic filter with a modest kernel, giving smoother results than `BILINEAR` with limited extra cost.",
+    "GAUSSIAN: Uses a Gaussian filter that softens the result, reducing aliasing at the cost of sharp edge detail.",
+    "BESSEL: Uses a broad Bessel filter that can preserve detail during resampling, but is slower than the smaller-kernel methods.",
+    "MITCHELL: Uses a Mitchell-Netravali filter, balancing sharpness and smoothness at a cost similar to `BICUBIC`.",
     "SINC: Five times slower than `BILINEAR`, the final result is of very good quality.",
     "LANCZOS: This well known algorithm may serve as a point of comparison for evaluating the results of other methods.  It shares characteristics with `SINC` and `BLACKMAN`.",
     "BLACKMAN: Five times slower than `BILINEAR`, the final result will be less sharp than SINC.")
 
-  enum("RQ", { type="int", start=0, comments="Options for determining the quality of a rendered path." },
+  enums("RQ", { type="int", start=0, comments="Options for determining the quality of a rendered path." },
     "AUTO: The default option is chosen by the system.",
     "FAST: Use the fastest renderer available and allow accuracy to be compromised in favour of speed.  Recommended for normalised paths that are known to be rectangular.",
     "CRISP: Use a good quality renderer that produces crisp outlines (no anti-aliasing).",
@@ -300,28 +335,64 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
      "CHILD_HAS_FOCUS: A child of the vector has gained the user focus.",
      "LOST_FOCUS: The vector has lost the user focus.")
 
-  struct("GradientStop", { comment="Describes a colour stop for the VectorGradient Stops field." }, [[
-   double Offset     # An offset in the range of 0 - 1.0
-   struct(FRGB) RGB  # A floating point RGB value.
+  structdef('GradientStop', { comment='Describes a colour stop for the Gradient Stops field.' }, [[
+    double Offset     # An offset in the range of 0 - 1.0
+    struct(FRGB) RGB  # A floating point RGB value.
   ]])
 
-  struct("Transition", { comment="For VectorTransition definitions" }, [[
-    double Offset   # An offset from 0.0 to 1.0 at which to apply the transform.
-    cstr Transform  # A transform string, as per SVG guidelines.
+  structdef('GouraudVertex', { comment='Describes a coloured vertex for the GradientGouraud Vertices field.' }, [[
+    double X             # The X coordinate of the vertex.
+    double Y             # The Y coordinate of the vertex.
+    struct(FRGB) Colour  # The floating point RGB colour assigned to this vertex.
   ]])
 
-  struct("VectorPoint", { comment="Structure for the VectorPolygon PointsArray field." }, [[
+  structdef('MeshControl', { comment='Describes one control point for the GradientMesh.' }, [[
+    double StartX   # Starting X coordinate.
+    double StartY   # Starting Y coordinate.
+    double EndX     # Ending X coordinate.
+    double EndY     # Ending Y coordinate.
+    double X1       # First control point X coordinate.
+    double Y1       # First control point Y coordinate.
+    double X2       # Second control point X coordinate.
+    double Y2       # Second control point Y coordinate.
+  ]])
+
+  structdef('MeshPatchRecord', { comment='Describes one bilinear Coons patch for the GradientMesh Patches field.' }, [[
+    struct(MeshControl) Top    # Top edge
+    struct(MeshControl) Right  # Right edge
+    struct(MeshControl) Bottom # Bottom edge
+    struct(MeshControl) Left   # Left edge
+    struct(FRGB) TopLeft       # Colour assigned to the top-left patch corner.
+    struct(FRGB) TopRight      # Colour assigned to the top-right patch corner.
+    struct(FRGB) BottomRight   # Colour assigned to the bottom-right patch corner.
+    struct(FRGB) BottomLeft    # Colour assigned to the bottom-left patch corner.
+  ]])
+
+  structdef('DiffusionCurveRecord', { comment='Describes one curve for the GradientDiffusion Curves field.' }, [[
+    struct(MeshControl) Curve  # Cubic Bezier geometry for this curve segment.
+    struct(FRGB) LeftStart     # Colour on the left side at the start of the curve.
+    struct(FRGB) LeftEnd       # Colour on the left side at the end of the curve.
+    struct(FRGB) RightStart    # Colour on the right side at the start of the curve.
+    struct(FRGB) RightEnd      # Colour on the right side at the end of the curve.
+  ]])
+
+  structdef('Transition', { comment='For VectorTransition definitions' }, [[
+    double Offset     # An offset from 0.0 to 1.0 at which to apply the transform.
+    string Transform  # A transform string, as per SVG guidelines.
+  ]])
+
+  structdef("VectorPoint", { comment="Structure for the VectorPolygon PointsArray field." }, [[
     double X   # The X coordinate of this point.
     double Y   # The Y coordinate of this point.
     bit(uchar) XScaled # `TRUE` if the `X` value is scaled to its viewport (between 0 and 1.0).
     bit(uchar) YScaled # `TRUE` if the `Y` value is scaled to its viewport (between 0 and 1.0).
   ]])
 
-  struct("VectorPainter", { comment="Deserialised painter information; compliant with SVG painter definitions." }, [[
-    obj(VectorPattern)  Pattern   # A @VectorPattern object, suitable for pattern based fills.
-    obj(VectorImage)    Image     # A @VectorImage object, suitable for image fills.
-    obj(VectorGradient) Gradient  # A @VectorGradient object, suitable for gradient fills.
-    struct(FRGB) Colour           # A single RGB colour definition, suitable for block colour fills.  Colour values are unclamped to support all possible colour spaces.
+  structdef("VectorPainter", { comment="Deserialised painter information; compliant with SVG painter definitions." }, [[
+    obj(VectorPattern) Pattern   # A @VectorPattern object, suitable for pattern based fills.
+    obj(VectorImage)   Image     # A @VectorImage object, suitable for image fills.
+    obj(Gradient)      Gradient  # A @Gradient object, suitable for gradient fills.
+    struct(FRGB)       Colour    # A single RGB colour definition, suitable for block colour fills.  Colour values are unclamped to support all possible colour spaces.
   ]],
   [[
    void reset() {
@@ -332,7 +403,7 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
    }
   ]])
 
-  struct("PathCommand", { comment="Base structure for path commands." }, [[
+  structdef("PathCommand", { comment="Base structure for path commands." }, [[
     int(PE) Type         # The command type
     uchar   LargeArc     # Equivalent to the large-arc-flag in SVG, it ensures that the arc follows the longest drawing path when `TRUE`.
     uchar   Sweep        # Equivalent to the sweep-flag in SVG, it inverts the default behaviour in generating arc paths.
@@ -348,7 +419,7 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
     double  Angle        # Arc angle
   ]])
 
-  struct("VectorMatrix", { comment="Vector transformation matrix." }, [[
+  structdef("VectorMatrix", { comment="Vector transformation matrix." }, [[
     struct(*VectorMatrix) Next  # The next transform in the list.
     obj(Vector) Vector          # The vector associated with the transform.
     double ScaleX               # Matrix value A
@@ -358,9 +429,36 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
     double TranslateX           # Matrix value E
     double TranslateY           # Matrix value F
     int    Tag                  # An optional tag value defined by the client for matrix identification.
+  ]],
+  [[
+   void reset() {
+      Next = nullptr;
+      Vector = nullptr;
+      ScaleX = 1.0;
+      ShearY = 0.0;
+      ShearX = 0.0;
+      ScaleY = 1.0;
+      TranslateX = 0.0;
+      TranslateY = 0.0;
+      Tag = 0;
+   }
+
+   VectorMatrix() : Next(nullptr), Vector(nullptr), ScaleX(1), ShearY(0), ShearX(0), ScaleY(1), TranslateX(0), TranslateY(0), Tag(0) {}
+
+   VectorMatrix(const VectorMatrix &Other) {
+      Next = nullptr;
+      Vector = nullptr;
+      ScaleX = Other.ScaleX;
+      ShearY = Other.ShearY;
+      ShearX = Other.ShearX;
+      ScaleY = Other.ScaleY;
+      TranslateX = Other.TranslateX;
+      TranslateY = Other.TranslateY;
+      Tag = Other.Tag;
+   }
   ]])
 
-  // Pre-defined tags for VectorMatrix
+  -- Pre-defined tags for VectorMatrix
 
   hash("MTAG", "0x%s",
      "ANIMATE-MOTION",
@@ -369,16 +467,16 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
      "USE-TRANSFORM",
      "SVG-TRANSFORM")
 
-  struct("FontMetrics", { comment="Font metrics, measured in pixels relative to the display" }, [[
+  structdef("FontMetrics", { comment="Font metrics, measured in pixels relative to the display" }, [[
     int Height       # Full font height equivalent to `Ascent (cap-height) + Descent (gutter)`.  Does NOT include accents.
     int LineSpacing  # Vertical advance from one line to the next.  Includes coverage for accents and additional whitespace.
     int Ascent       # Height from the baseline to the top (cap-height) of the font.  Does NOT include accents.
     int Descent      # Height from the baseline to the bottom of the font (gutter)
   ]])
 
-  // Use SET_VECTOR_COLOUR() to configure the RGB values in VectorColour
+  -- Use SET_VECTOR_COLOUR() to configure the RGB values in VectorColour
 
-  class("VectorColour", {
+  klass("VectorColour", {
     src="painters/colour.cpp",
     comment="VectorColour is a basic stub class that is used for the DrawPath() routine when filling or stroking solid colour values"
   }, [[
@@ -386,22 +484,27 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
    double Green
    double Blue
    double Alpha
+  ]],
+  [[
+   objVectorColour(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID), Alpha(1.0) {}
   ]])
 
-  class('VectorTransition', {
+  klass('VectorTransition', {
     src='transformers/transition.cpp',
-    references={ 'Transition' },
+    references={ 'Transition' }, extended=true,
     comment="Transitions are used to gradually apply transforms over distance."
+  }, [[
+    ~vector(struct(Transition)) Stops
+    ~string XMLDef
+  ]])
+
+  methods('vectorscene', 'Sc', {
+    { id=1, name='AddDef' },
+    { id=2, name='FindDef' },
+    { id=3, name='Debug' }
   })
 
-  methods("vectorscene", "Sc", {
-    { id=1, name="AddDef" },
-    { id=2, name="SearchByID" },
-    { id=3, name="FindDef" },
-    { id=4, name="Debug" }
-  })
-
-  class("VectorScene", { src="scene/scene.cpp", output="scene/scene_def.c" }, [[
+  klass('VectorScene', { src='scene/scene.cpp', output='scene/scene_def.c', extended=true }, [[
    large  RenderTime             # Microseconds elapsed during the last rendering operation.
    double Gamma                  # Not currently implemented.
    obj(VectorScene)    HostScene # Reference to a controlling VectorScene at the top of the hierarchy, if applicable.
@@ -414,22 +517,31 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
    int(VSM) SampleMethod         # Method to use for resampling images and patterns.
   ]])
 
-  class("VectorImage", { src="painters/image.cpp" }, [[
-    double X                   # Starting horizontal coordinate
-    double Y                   # Starting vertical coordinate
-    obj(Picture) Picture
+  klass('VectorImage', { src='painters/image.cpp', extended=true, output='painters/image_def.cpp' }, [[
+    unit X                     # Starting horizontal coordinate
+    unit Y                     # Starting vertical coordinate
+    obj(Image)   Image
     obj(Bitmap)  Bitmap
     int(VUNIT)   Units         # Defines the coordinate system for `(X, Y)`
-    int(DMF)     Dimensions
     int(VSPREAD) SpreadMethod
     int(ARF)     AspectRatio   # Defines how the referenced image should fit in the boundary of its target shape.
+  ]],
+  [[
+   objVectorImage(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
+      X            = Unit(0);
+      Y            = Unit(0);
+      Units        = VUNIT::BOUNDING_BOX;
+      SpreadMethod = VSPREAD::CLIP;
+      AspectRatio  = ARF::X_MID|ARF::Y_MID|ARF::MEET; // SVG defaults
+   }
   ]])
 
-  class("VectorPattern", { src="painters/pattern.cpp" }, [[
-    double X                      # Starting horizontal coordinate
-    double Y                      # Starting vertical coordinate
-    double Width                  # Width of the canvas
-    double Height                 # Height of the canvas
+  klass('VectorPattern', { src='painters/pattern.cpp', output='painters/pattern_def.cpp', extended=true }, [[
+    unit X                        # Starting horizontal coordinate
+    unit Y                        # Starting vertical coordinate
+    unit Width                    # Width of the canvas
+    unit Height                   # Height of the canvas
+    vector(struct(VectorMatrix)) Matrices
     double Opacity                # Level of opacity from 0 - 1.0
     obj(VectorScene) Scene        # Internal scene
     obj(VectorViewport) Viewport  # Internal viewport
@@ -437,44 +549,102 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
     int(VSPREAD) SpreadMethod     # Behaviour to use when pattern bounds do not match the vector path.
     int(VUNIT) Units              # VUNIT constant
     int(VUNIT) ContentUnits       # VUNIT constant
-    int(DMF) Dimensions           # Flags for the dimension values.
+  ]],
+  [[
+   objVectorPattern(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
+      SpreadMethod = VSPREAD::REPEAT;
+      Units        = VUNIT::BOUNDING_BOX;
+      ContentUnits = VUNIT::USERSPACE;
+      Opacity      = 1.0;
+      X            = Unit(0);
+      Y            = Unit(0);
+   }
   ]])
 
-  class("VectorGradient", { src="painters/gradient.cpp", output="painters/gradient_def.c" }, [[
-    double X1                    # Starting X coordinate of the gradient 'line'
-    double Y1                    # Starting Y coordinate of the gradient 'line'
-    double X2                    # Ending X of the gradient 'line'
-    double Y2                    # Ending Y of the gradient 'line'
-    double CenterX               # Center X coordinate of radial gradient shapes.
-    double CenterY               # Center Y coordinate of radial gradient shapes.
-    double FocalX                # Focal X coordinate for radial gradient shapes.
-    double FocalY                # Focal Y coordinate for radial gradient shapes.
-    double Radius                # The radius size for radial gradients.
-    double FocalRadius           # The size of the focal radius for radial gradients.
+  structdef('VoronoiPoint', {
+   comment='Describes a feature point for the GradientVoronoi Points field.'
+  }, [[
+    double X       # The X coordinate of the feature point.
+    double Y       # The Y coordinate of the feature point.
+    double Height  # The per-point height used by WEIGHTED and PEAKS modes.
+  ]])
+
+  klass('Gradient', { src='painters/gradient.cpp', output='painters/gradient_def.c', extended=true }, [[
+    vector(struct(VectorMatrix)) Matrices
+    vector(struct(GradientStop)) Stops
+    string SID
+    string ColourMap             # Name of a gradient colour map.
+    struct(FRGB) Colour
     double Resolution            # Alters the rate of change for gradient colours.
+    double Gamma                 # Applies a gamma curve to the gradient ramp.
     int(VSPREAD) SpreadMethod    # Defines the spread method to use for gradient fills.
-    int(VUNIT) Units             # Defines the coordinate system for `(X1, Y1), (X2, Y2)`
-    int(VGT) Type
-    int(VGF) Flags               # Optional flags.
+    int(VUNIT) Units             # Defines the coordinate system for gradient coordinates.
     int(VCS) ColourSpace         # The colour space or method to use for interpolating the gradient colours.
+    int(GEZ) Easing              # Easing function applied between gradient stops.
+    int   NumericID
+  ]],
+  [[
+   class GradientColours *Colours;
+   RGB8   ColourRGB; // A cached conversion of the FRGB value
+  ]],
+  [[
+   objGradient(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
+      Gamma        = 1.0;
+      Easing       = GEZ::LINEAR;
+      SpreadMethod = VSPREAD::PAD;
+      Units        = VUNIT::BOUNDING_BOX;
+      Resolution   = 1;
+   }
   ]])
 
-  class("FilterEffect", { src="filters/filter_effect.cpp", output="filters/filter_effect_def.c", references={ 'VSF' } }, [[
+  klass('GradientLinear', { base='Gradient', src='painters/gradient_linear.cpp', output='painters/gradient_linear_def.cpp', extended=true })
+
+  klass('GradientRadial', { base='Gradient', src='painters/gradient_radial.cpp', output='painters/gradient_radial_def.cpp', extended=true })
+
+  klass('GradientConic', { base='Gradient', src='painters/gradient_conic.cpp', output='painters/gradient_conic_def.cpp', extended=true })
+
+  klass('GradientDiamond', { base='Gradient', src='painters/gradient_diamond.cpp', output='painters/gradient_diamond_def.cpp', extended=true })
+
+  klass('GradientContour', { base='Gradient', src='painters/gradient_contour.cpp', output='painters/gradient_contour_def.cpp', extended=true })
+
+  klass('GradientGouraud', { base='Gradient', src='painters/gradient_gouraud.cpp', output='painters/gradient_gouraud_def.cpp', extended=true }, [[
+    ~vector(struct(GouraudVertex)) Vertices
+  ]])
+
+  klass('GradientMesh', { base='Gradient', src='painters/gradient_mesh.cpp', output='painters/gradient_mesh_def.cpp', references={ 'GMT' }, extended=true }, [[
+    ~int Rows
+    ~int Columns
+    ~int(GMT) Mode
+    ~vector(struct(MeshPatchRecord)) Patches
+  ]])
+
+  klass('GradientDiffusion', { base='Gradient', src='painters/gradient_diffusion.cpp', output='painters/gradient_diffusion_def.cpp', extended=true }, [[
+    ~vector(struct(DiffusionCurveRecord)) Curves
+  ]])
+
+  klass('GradientDistal', { base='Gradient', src='painters/gradient_distal.cpp', output='painters/gradient_distal_def.cpp', references={ 'GFALL' }, extended=true })
+
+  klass('GradientVoronoi', { base='Gradient', src='painters/gradient_voronoi.cpp', output='painters/gradient_voronoi_def.cpp', references={ 'WLF', 'WLM' }, extended=true }, [[
+    ~vector(struct(VoronoiPoint)) Points # Optional list of Voronoi feature points provided by the client
+    ~int(WLF) WorleyMode
+    ~int(WLM) WorleyMetric
+  ]])
+
+  klass('FilterEffect', { src='filters/filter_effect.cpp', output='filters/filter_effect_def.c', references={ 'VSF' }, extended=true }, [[
     obj(FilterEffect) Next  # Next filter in the chain.
     obj(FilterEffect) Prev  # Previous filter in the chain.
     obj(Bitmap) Target      # Target bitmap for rendering the effect.
     obj(FilterEffect) Input # The effect uses another effect as an input.
     obj(FilterEffect) Mix   # Reference to an additional effect for mixing, e.g. compositing
-    double X                # Primitive x coordinate.
-    double Y                # Primitive y coordinate.
-    double Width            # Primitive width.
-    double Height           # Primitive height.
-    int(DMF) Dimensions     # Primitive dimensions.
+    unit X                  # Primitive x coordinate.
+    unit Y                  # Primitive y coordinate.
+    unit Width              # Primitive width.
+    unit Height             # Primitive height.
     int(VSF) SourceType     # Desired source input.
     int(VSF) MixType        # Optional input for mixing.
   ]])
 
-  struct("MergeSource", { comment="Input source declaration for MergeFX" }, [[
+  structdef('MergeSource', { comment='Input source declaration for MergeFX' }, [[
    int(VSF) SourceType        # The type of the required source.
    obj(FilterEffect) Effect   # Effect pointer if the `SourceType` is `REFERENCE`.
   ]],
@@ -482,99 +652,127 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
   MergeSource(VSF pType, objFilterEffect *pEffect = nullptr) : SourceType(pType), Effect(pEffect) { };
   ]])
 
-  methods("RemapFX", "RF", {
-    { id=20, name="SelectGamma" },
-    { id=21, name="SelectTable" },
-    { id=22, name="SelectLinear" },
-    { id=23, name="SelectIdentity" },
-    { id=24, name="SelectDiscrete" },
-    { id=25, name="SelectInvert" },
-    { id=26, name="SelectMask" }
+  methods('RemapFX', 'RF', {
+    { id=20, name='SelectGamma' },
+    { id=21, name='SelectTable' },
+    { id=22, name='SelectLinear' },
+    { id=23, name='SelectIdentity' },
+    { id=24, name='SelectDiscrete' },
+    { id=25, name='SelectInvert' },
+    { id=26, name='SelectMask' }
   })
 
-  methods("LightingFX", "LT", {
-    { id=20, name="SetDistantLight" },
-    { id=22, name="SetPointLight" },
-    { id=21, name="SetSpotLight" }
+  methods('LightingFX', 'LT', {
+    { id=20, name='SetDistantLight' },
+    { id=22, name='SetPointLight' },
+    { id=21, name='SetSpotLight' }
   })
 
-  class("ImageFX",        { base='FilterEffect', src="filters/filter_image.cpp", output="filters/filter_image_def.c", comment="Image filter support class." })
+  klass('ImageFX',        { base='FilterEffect', src='filters/filter_image.cpp', output='filters/filter_image_def.c', comment='Image filter support class.', extended=true, references={ 'VSM' } }, [[
+    ~int(VSM) ResampleMethod
+    ~int(ARF) AspectRatio
+  ]])
 
-  class("SourceFX",       { base='FilterEffect', src="filters/filter_source.cpp", output="filters/filter_source_def.c", comment="Source filter support class." })
+  klass('SourceFX',       { base='FilterEffect', src='filters/filter_source.cpp', output='filters/filter_source_def.c', comment='Source filter support class.', extended=true }, [[
+    ~int(ARF) AspectRatio
+  ]])
 
-  class("BlurFX",         { base='FilterEffect', src="filters/filter_blur.cpp", output="filters/filter_blur_def.c", comment="Blur filter support class." })
+  klass('BlurFX',         { base='FilterEffect', src='filters/filter_blur.cpp', output='filters/filter_blur_def.c', comment='Blur filter support class.', extended=true })
 
-  class("ColourFX",       { base='FilterEffect', src="filters/filter_colourmatrix.cpp", output="filters/filter_colourmatrix_def.c", comment="Colour filter support class." })
+  klass('ColourFX',       { base='FilterEffect', src='filters/filter_colourmatrix.cpp', output='filters/filter_colourmatrix_def.c', comment='Colour filter support class.', extended=true, references={ 'CM' } }, [[
+    ~int(CM) Mode
+  ]])
 
-  class("CompositeFX",    { base='FilterEffect', src="filters/filter_composite.cpp", output="filters/filter_composite_def.c", comment="Composite filter support class." })
+  klass('CompositeFX',    { base='FilterEffect', src='filters/filter_composite.cpp', output='filters/filter_composite_def.c', comment='Composite filter support class.', extended=true, references={ 'OP'  } }, [[
+    ~int(OP) Operator
+  ]])
 
-  class("ConvolveFX",     { base='FilterEffect', src="filters/filter_convolve.cpp", output="filters/filter_convolve_def.c", comment="Convolve filter support class." })
+  klass('ConvolveFX',     { base='FilterEffect', src='filters/filter_convolve.cpp', output='filters/filter_convolve_def.c', comment='Convolve filter support class.', extended=true, references={ 'EM' } }, [[
+    ~int(EM) EdgeMode
+  ]])
 
-  class("DisplacementFX", { base='FilterEffect', src="filters/filter_displacement.cpp", output="filters/filter_displacement_def.c", comment="Displacement filter support class." })
+  klass('DisplacementFX', { base='FilterEffect', src='filters/filter_displacement.cpp', output='filters/filter_displacement_def.c', comment='Displacement filter support class.', extended=true, references= { 'CMP', 'VSM' } }, [[
+    ~int(VSM) ResampleMethod
+    ~int(CMP) XChannel
+    ~int(CMP) YChannel
+  ]])
 
-  class("FloodFX",        { base='FilterEffect', src="filters/filter_flood.cpp", output="filters/filter_flood_def.c", comment="Flood filter support class." })
+  klass('FloodFX',        { base='FilterEffect', src='filters/filter_flood.cpp', output='filters/filter_flood_def.c', comment='Flood filter support class.', extended=true }, [[
+    ~struct(FRGB) Colour
+  ]])
 
-  class("LightingFX",     { base='FilterEffect', src="filters/filter_lighting.cpp", output="filters/filter_lighting_def.c", comment="Lighting filter support class." })
+  klass('LightingFX',     { base='FilterEffect', src='filters/filter_lighting.cpp', output='filters/filter_lighting_def.c', comment='Lighting filter support class.', extended=true, references={ 'LT' } }, [[
+    ~struct(FRGB) Colour
+    ~int(LT) Type
+  ]])
 
-  class("MergeFX",        { base='FilterEffect', src="filters/filter_merge.cpp", output="filters/filter_merge_def.c", comment="Merge filter support class." })
+  klass('MergeFX',        { base='FilterEffect', src='filters/filter_merge.cpp', output='filters/filter_merge_def.c', comment='Merge filter support class.', extended=true }, [[
+    ~array(struct(MergeSource)) SourceList
+  ]])
 
-  class("MorphologyFX",   { base='FilterEffect', src="filters/filter_morphology.cpp", output="filters/filter_morphology_def.c", comment="Morphology filter support class." })
+  klass('MorphologyFX',   { base='FilterEffect', src='filters/filter_morphology.cpp', output='filters/filter_morphology_def.c', comment='Morphology filter support class.', extended=true, references={ 'MOP' } }, [[
+    ~int(MOP) Operator
+  ]])
 
-  class("OffsetFX",       { base='FilterEffect', src="filters/filter_offset.cpp", output="filters/filter_offset_def.c", comment="Offset filter support class." })
+  klass('OffsetFX',       { base='FilterEffect', src='filters/filter_offset.cpp', output='filters/filter_offset_def.c', comment='Offset filter support class.', extended=true })
 
-  class("RemapFX",        { base='FilterEffect', src="filters/filter_remap.cpp", output="filters/filter_remap_def.c", comment="Remap filter support class." })
+  klass('RemapFX',        { base='FilterEffect', src='filters/filter_remap.cpp', output='filters/filter_remap_def.c', comment='Remap filter support class.', extended=true })
 
-  class("TurbulenceFX",   { base='FilterEffect', src="filters/filter_turbulence.cpp", output="filters/filter_turbulence_def.c", comment="Turbulence filter support class." })
+  klass('TurbulenceFX',   { base='FilterEffect', src='filters/filter_turbulence.cpp', output='filters/filter_turbulence_def.c', comment='Turbulence filter support class.', references={ 'TB' }, extended=true }, [[
+    ~int(TB) Type
+  ]])
 
-  class("WaveFunctionFX",   { base='FilterEffect', src="filters/filter_wavefunction.cpp", output="filters/filter_wavefunction_def.c", comment="WaveFunction filter support class." })
+  klass('WaveFunctionFX',   { base='FilterEffect', src='filters/filter_wavefunction.cpp', output='filters/filter_wavefunction_def.c', comment='WaveFunction filter support class.', extended=true }, [[
+    ~vector(struct(GradientStop)) Stops
+    ~int(ARF) AspectRatio
+  ]])
 
-  class('VectorClip', { src='vectors/clip.cpp', output='vectors/clip_def.cpp' }, [[
+  klass('VectorClip', { src='vectors/clip.cpp', output='vectors/clip_def.cpp', extended=true }, [[
     obj(VectorViewport) Viewport # Hosts the Vector objects that will contribute to the clip path.
+    string SID
     int(VUNIT) Units             # Defines the coordinate system for fields X, Y, Width and Height.
     int(VCLF) Flags              # Optional flags.
   ]])
 
-  class("VectorFilter",   { src="filters/filter.cpp", output="filters/filter_def.c" }, [[
-    double X                  # Left-most position of filter area
-    double Y                  # Top-most position of filter area
-    double Width              # Width of filter area
-    double Height             # Height of filter area
+  klass('VectorFilter',   { src='filters/filter.cpp', output='filters/filter_def.c', extended=true }, [[
+    unit X                    # Left-most position of filter area
+    unit Y                    # Top-most position of filter area
+    unit Width                # Width of filter area
+    unit Height               # Height of filter area
     double Opacity            # Level of opacity from 0 - 1.0
     obj(VectorFilter) Inherit # Reference to another pattern from which to inherit attributes
     int ResX                  # Width of the intermediate images in pixels
     int ResY                  # Height of the intermediate images in pixels
     int(VUNIT) Units          # VUNIT constant
     int(VUNIT) PrimitiveUnits # VUNIT constant
-    int(DMF) Dimensions       # Flags for detailing area values
     int(VCS) ColourSpace      # Operating colour space for RGB values
     int(VFA) AspectRatio      # Aspect ratio to use when scaling X/Y values
   ]])
 
-  methods("vector", "Vec", {
-    { id=1, name="Push" },
-    { id=2, name="Trace" },
-    { id=3, name="GetBoundary" },
-    { id=4, name="PointInPath" },
-    { id=5, name="SubscribeInput" },
-    { id=6, name="SubscribeKeyboard" },
-    { id=7, name="SubscribeFeedback" },
-    { id=8, name="Debug" },
-    { id=9, name="NewMatrix" },
-    { id=10, name="FreeMatrix" }
+  methods('vector', 'Vec', {
+    { id=1, name='Push' },
+    { id=2, name='Trace' },
+    { id=3, name='GetBoundary' },
+    { id=4, name='PointInPath' },
+    { id=5, name='SubscribeInput' },
+    { id=6, name='SubscribeKeyboard' },
+    { id=7, name='SubscribeFeedback' },
+    { id=8, name='Debug' },
+    { id=9, name='NewMatrix' },
+    { id=10, name='FreeMatrix' }
   })
 
-  class("Vector", { src="vectors/vector.cpp", output="vectors/vector_def.c", version=1 }, [[
+  klass('Vector', { src='vectors/vector.cpp', output='vectors/vector_def.c', version=1, extended=true, references={ 'VIJ', 'VLC', 'VLJ', 'VFR', 'VMF' } }, [[
     obj(Vector) Child       # The first child vector, or `NULL`.
     obj(VectorScene) Scene  # Short-cut to the top-level @VectorScene.
     obj(Vector) Next        # The next vector in the branch, or `NULL`.
     obj(Vector) Prev        # The previous vector in the branch, or `NULL`.
     obj Parent              # The parent vector, or `NULL` if this is the top-most vector.
-    struct(*VectorMatrix) Matrices # A list of transform matrices to apply to the vector.
     double StrokeOpacity    # Defines the opacity of the path stroke.
     double FillOpacity      # The opacity to use when filling the vector.
     double Opacity          # An overall opacity value for the vector.
     double MiterLimit       # Imposes a limit on the ratio of the miter length to the `StrokeWidth`.
-    double InnerMiterLimit  # A special limit to apply when the `MITER_ROUND` line-join effect is in use.
+    double InnerMiterLimit  # Controls how far inner stroke miters can extend at concave joins.
     double DashOffset       # For the `DashArray`, applies an initial dash offset.
     int(VIS) Visibility     # Controls the visibility of a vector and its children.
     int(VF)  Flags          # Optional flags.
@@ -582,76 +780,106 @@ module({ name="Vector", copyright="Paul Manias © 2010-2026", version=1.0, times
     int(RQ)  PathQuality    # Defines the quality of rendered path outlines.
     int(VCS) ColourSpace    # Desired colour space to use when blending colours.
     int      PathTimestamp  # This counter is modified each time the path is regenerated.
+    ~struct(VectorMatrix) Matrices
+    ~struct(FRGB) StrokeColour
+    ~struct(FRGB) FillColour
+    ~int(VFR) FillRule
+    ~int(VFR) ClipRule
+    ~int(VMF) GuideFlags
+    ~int(VLJ) LineJoin
+    ~int(VLC) LineCap
+    ~int(VIJ) InnerJoin
   ]])
 
-  // VectorPath method ID's start high enough to give a cushion from inherited Vector methods.
+  -- VectorPath method ID's start high enough to give a cushion from inherited Vector methods.
 
-  methods("VectorPath", "VP", {
-    { id=30, name="AddCommand" },
-    { id=31, name="RemoveCommand" },
-    { id=32, name="SetCommand" },
-    { id=33, name="GetCommand" },
-    { id=34, name="SetCommandList" }
+  methods('VectorPath', 'VP', {
+    { id=30, name='AddCommand' },
+    { id=31, name='RemoveCommand' },
+    { id=32, name='SetCommand' },
+    { id=33, name='GetCommand' },
+    { id=34, name='SetCommandList' }
   })
 
-  class("VectorPath", { base='Vector', src="vectors/path.cpp", output="vectors/path_def.c" })
+  klass('VectorPath', { base='Vector', src='vectors/path.cpp', output='vectors/path_def.c', extended=true }, [[
+    ~array(struct(PathCommand)) Commands
+  ]])
 
-  // VectorText method ID's start high enough to give a cushion from inherited Vector methods.
+  -- VectorText method ID's start high enough to give a cushion from inherited Vector methods.
 
-  methods("VectorText", "VT", {
-    { id=30, name="DeleteLine" }
+  methods('VectorText', 'VT', {
+    { id=30, name='DeleteLine' }
   })
 
-  class('VectorText', { base='Vector', src='vectors/text.cpp', output="vectors/text_def.cpp", references={ 'VTXF', 'VTS' } })
+  klass('VectorText', { base='Vector', src='vectors/text.cpp', output='vectors/text_def.cpp', references={ 'VTXF' }, extended=true }, [[
+    ~int(ALIGN) Align
+    ~int(VTXF) TextFlags
+  ]])
 
-  class('VectorGroup', { base='Vector', src='vectors/group.cpp' })
+  klass('VectorGroup', { base='Vector', src='vectors/group.cpp', extended=true })
 
-  class('VectorWave', { base='Vector', src='vectors/wave.cpp' })
+  klass('VectorWave', {
+    base='Vector', src='vectors/wave.cpp', output='vectors/wave_def.cpp',
+    references={ 'WVT', 'WVC', 'WVE' }, extended=true },
+  [[
+    ~double FrequencyEnd
+    ~double Noise
+    ~int(WVE) Envelope
+    ~int(WVC) Close
+    ~int(WVT) Type
+  ]])
 
-  class('VectorRectangle', { base='Vector', src='vectors/rectangle.cpp' })
+  klass('VectorRectangle', { base='Vector', src='vectors/rectangle.cpp', extended=true, output='vectors/rectangle_def.cpp' })
 
-  class('VectorPolygon', { base='Vector', src='vectors/polygon.cpp' })
+  klass('VectorPolygon', { base='Vector', src='vectors/polygon.cpp', extended=true, output='vectors/polygon_def.cpp' }, [[
+    ~array(struct(VectorPoint)) PointsArray
+  ]])
 
-  class('VectorShape', { base='Vector', src='vectors/supershape.cpp' })
+  klass('VectorShape', { base='Vector', src='vectors/supershape.cpp', extended=true, output='vectors/supershape_def.cpp' })
 
-  class('VectorSpiral', { base='Vector', src='vectors/spiral.cpp' })
+  klass('VectorSpiral', { base='Vector', src='vectors/spiral.cpp', output='vectors/spiral_def.cpp', extended=true })
 
-  class('VectorEllipse', { base='Vector', src='vectors/ellipse.cpp' })
+  klass('VectorEllipse', { base='Vector', src='vectors/ellipse.cpp', extended=true, output='vectors/ellipse_def.cpp' })
 
-  class('VectorViewport', { base='Vector', references={ 'VOF', 'DMF' }, src='vectors/viewport.cpp', output='vectors/viewport_def.cpp' })
+  klass('VectorViewport', { base='Vector', references={ 'VOF' }, src='vectors/viewport.cpp', output='vectors/viewport_def.cpp', extended=true }, [[
+    ~int(ARF) AspectRatio
+    ~int(VOF) Overflow
+    ~int(VOF) OverflowX
+    ~int(VOF) OverflowY
+  ]])
 
-  functionNames("vec",
-    "DrawPath",
-    "GenerateEllipse",
-    "GeneratePath",
-    "GenerateRectangle",
-    "ReadPainter",
-    "TranslatePath",
-    "MoveTo",
-    "LineTo",
-    "ArcTo",
-    "Curve3",
-    "Smooth3",
-    "Curve4",
-    "Smooth4",
-    "ClosePath",
-    "RewindPath",
-    "GetVertex",
-    "ApplyPath",
-    "Rotate",
-    "Translate",
-    "Skew",
-    "Multiply",
-    "MultiplyMatrix",
-    "Scale",
-    "ParseTransform",
-    "ResetMatrix",
-    "GetFontHandle",
-    "GetFontMetrics",
-    "CharWidth",
-    "StringWidth",
-    "FlushMatrix",
-    "TracePath")
+  functionNames('vec',
+    'DrawPath',
+    'GenerateEllipse',
+    'GeneratePath',
+    'GenerateRectangle',
+    'ReadPainter',
+    'TranslatePath',
+    'MoveTo',
+    'LineTo',
+    'ArcTo',
+    'Curve3',
+    'Smooth3',
+    'Curve4',
+    'Smooth4',
+    'ClosePath',
+    'RewindPath',
+    'GetVertex',
+    'ApplyPath',
+    'Rotate',
+    'Translate',
+    'Skew',
+    'Multiply',
+    'MultiplyMatrix',
+    'Scale',
+    'ParseTransform',
+    'ResetMatrix',
+    'GetFontHandle',
+    'GetFontMetrics',
+    'CharWidth',
+    'StringWidth',
+    'FlushMatrix',
+    'TracePath')
 
   c_insert([[
 
@@ -669,622 +897,52 @@ inline void operator*=(VectorMatrix &This, const VectorMatrix &Other)
    This.ShearX     = t2;
    This.TranslateX = t4;
 }
-
-//********************************************************************************************************************
-
-inline void SET_VECTOR_COLOUR(objVectorColour *Colour, double Red, double Green, double Blue, double Alpha) {
-   Colour->Class->ClassID = CLASSID::VECTORCOLOUR;
-   Colour->Red   = Red;
-   Colour->Green = Green;
-   Colour->Blue  = Blue;
-   Colour->Alpha = Alpha;
-}
   ]])
 
-  hash("SVF", "0x%s",
-    "A",
-    "ACHROMATOMALY",
-    "ACHROMATOPSIA",
-    "ADDITIVE",
-    "ALIGN",
-    "ALT-FILL",
-    "AMPLITUDE",
-    "ANIMATE",
-    "ANIMATECOLOR",
-    "ANIMATEMOTION",
-    "ANIMATETRANSFORM",
-    "ARITHMETIC",
-    "ATOP",
-    "B",
-    "BACKGROUNDALPHA",
-    "BACKGROUNDIMAGE",
-    "BASEFREQUENCY",
-    "BASEPROFILE",
-    "BEVEL",
-    "BIAS",
-    "BOTTOM",
-    "BRIGHTNESS",
-    "BURN",
-    "BUTT",
-    "CIRCLE",
-    "CLIP",
-    "CLIP-PATH",
-    "CLIP-RULE",
-    "CLIP-RULE",
-    "CLIPPATH",
-    "CLIPPATHUNITS",
-    "CLOSE",
-    "COLOR",
-    "COLOUR",
-    "COLORMAP",
-    "COLOURMAP",
-    "COLOR-INTERPOLATION",
-    "COLOUR-INTERPOLATION",
-    "COLOR-INTERPOLATION-FILTERS",
-    "COLOUR-INTERPOLATION-FILTERS",
-    "COLOURISE",
-    "CONTOURGRADIENT",
-    "CONTRAST",
-    "CROSSORIGIN",
-    "CX",
-    "CY",
-    "D",
-    "DESATURATE",
-    "DESC",
-    "DEUTERANOMALY",
-    "DEUTERANOPIA",
-    "DIFFERENCE",
-    "DISPLAY",
-    "DIVISOR",
-    "DODGE",
-    "DUR",
-    "DX",
-    "DY",
-    "EDGEMODE",
-    "ELLIPSE",
-    "ENABLE-BACKGROUND",
-    "EXCLUSION",
-    "EXTERNALRESOURCESREQUIRED",
-    "FEBLEND",
-    "FEBLUR",
-    "FECOLORMATRIX",
-    "FECOLOURMATRIX",
-    "FECOMPONENTTRANSFER",
-    "FECOMPOSITE",
-    "FECONVOLVEMATRIX",
-    "FEDIFFUSELIGHTING",
-    "FEDISPLACEMENTMAP",
-    "FEDISTANTLIGHT",
-    "FEDROPSHADOW",
-    "FEFLOOD",
-    "FEGAUSSIANBLUR",
-    "FEIMAGE",
-    "FEMERGE",
-    "FEMORPHOLOGY",
-    "FEOFFSET",
-    "FEPOINTLIGHT",
-    "FESPECULARLIGHTING",
-    "FESPOTLIGHT",
-    "FETILE",
-    "FETURBULENCE",
-    "FEWAVEFUNCTION",
-    "FILL",
-    "FILL-OPACITY",
-    "FILL-RULE",
-    "FILLPAINT",
-    "FILTER",
-    "FILTERUNITS",
-    "FLOOD-COLOR",
-    "FLOOD-COLOUR",
-    "FLOOD-OPACITY",
-    "FONT",
-    "FONT-FAMILY",
-    "FONT-SIZE",
-    "FONT-SIZE-ADJUST",
-    "FONT-STRETCH",
-    "FONT-STYLE",
-    "FONT-VARIANT",
-    "FONT-WEIGHT",
-    "FREQUENCY",
-    "FROM",
-    "FX",
-    "FY",
-    "G",
-    "GRADIENTTRANSFORM",
-    "GRADIENTUNITS",
-    "HARDLIGHT",
-    "HEIGHT",
-    "HUE",
-    "HUEROTATE",
-    "ID",
-    "IMAGE",
-    "IMAGE",
-    "IMAGE-RENDERING",
-    "IN",
-    "IN2",
-    "INHERIT",
-    "INVERT",
-    "INVERT-X-AXIS",
-    "INVERT-Y-AXIS",
-    "INVERTRGB",
-    "JAG",
-    "K1",
-    "K2",
-    "K3",
-    "K4",
-    "KERNELMATRIX",
-    "KERNELUNITLENGTH",
-    "KERNING",
-    "LENGTHADJUST",
-    "LETTER-SPACING",
-    "LIGHTEN",
-    "LINE",
-    "LINEARGRADIENT",
-    "LUMINANCETOALPHA",
-    "M",
-    "MARKER",
-    "MARKER-END",
-    "MARKER-MID",
-    "MARKER-START",
-    "MASK",
-    "MATRIX",
-    "METHOD",
-    "MINUS",
-    "MITER",
-    "MITER-CLIP",
-    "MITER-REVERT",
-    "MITER-ROUND",
-    "MOD",
-    "MODE",
-    "MULTIPLY",
-    "N1",
-    "N2",
-    "N3",
-    "NONE",
-    "NUMERIC-ID",
-    "NUMOCTAVES",
-    "OFFSET",
-    "OPACITY",
-    "OPERATOR",
-    "ORDER",
-    "OUT",
-    "OVER",
-    "OVERFLOW",
-    "OVERLAY",
-    "PATH",
-    "PATHLENGTH",
-    "PATTERN",
-    "PATTERNCONTENTUNITS",
-    "PATTERNTRANSFORM",
-    "PATTERNUNITS",
-    "PHI",
-    "PLUS",
-    "POINTS",
-    "POLYGON",
-    "POLYLINE",
-    "PRESERVEALPHA",
-    "PRIMITIVEUNITS",
-    "PROTANOMALY",
-    "PROTANOPIA",
-    "R",
-    "RADIALGRADIENT",
-    "RADIUS",
-    "RECT",
-    "REPEAT",
-    "RESULT",
-    "ROTATE",
-    "ROUND",
-    "RX",
-    "RY",
-    "SATURATE",
-    "SCALE",
-    "SCREEN",
-    "SEED",
-    "SET",
-    "SHAPE-RENDERING",
-    "SOFTLIGHT",
-    "SOURCEALPHA",
-    "SOURCEGRAPHIC",
-    "SPACING",
-    "SPIRAL",
-    "SPREADMETHOD",
-    "SQUARE",
-    "STARTOFFSET",
-    "STDDEVIATION",
-    "STEP",
-    "STITCHTILES",
-    "STRING",
-    "STYLE",
-    "SVG",
-    "SYMBOL",
-    "TARGETX",
-    "TARGETY",
-    "TEXT",
-    "TEXTPATH",
-    "THICKNESS",
-    "TITLE",
-    "TO",
-    "TOP",
-    "TRANSITION",
-    "TRITANOMALY",
-    "TRITANOPIA",
-    "X",
-    "X1",
-    "X2",
-    "XOFFSET",
-    "XLINK:HREF",
-    "XML:SPACE",
-    "XMLNS",
-    "XOR",
-    "Y",
-    "Y1",
-    "Y2",
-    "YOFFSET",
-    "Z")
-
-  hash("SVF", "0x%s",
-    "ACCUMULATE",
-    "ADDITIVE",
-    "ALICEBLUE",
-    "ANTIQUEWHITE",
-    "AQUA",
-    "AQUAMARINE",
-    "ATTRIBUTENAME",
-    "ATTRIBUTETYPE",
-    "AZURE",
-    "BEGIN",
-    "BEIGE",
-    "BISQUE",
-    "BLACK",
-    "BLANCHEDALMOND",
-    "BLINK",
-    "BLUE",
-    "BLUEVIOLET",
-    "BOLD",
-    "BOLDER",
-    "BROWN",
-    "BURLYWOOD",
-    "CADETBLUE",
-    "CHARTREUSE",
-    "CHOCOLATE",
-    "CLASS",
-    "CONDENSED",
-    "CONICGRADIENT",
-    "CORAL",
-    "CORNFLOWERBLUE",
-    "CORNSILK",
-    "CRIMSON",
-    "CYAN",
-    "DARKBLUE",
-    "DARKCYAN",
-    "DARKGOLDENROD",
-    "DARKGRAY",
-    "DARKGREEN",
-    "DARKGREY",
-    "DARKKHAKI",
-    "DARKMAGENTA",
-    "DARKOLIVEGREEN",
-    "DARKORANGE",
-    "DARKORCHID",
-    "DARKRED",
-    "DARKSALMON",
-    "DARKSEAGREEN",
-    "DARKSLATEBLUE",
-    "DARKSLATEGRAY",
-    "DARKSLATEGREY",
-    "DARKTURQUOISE",
-    "DARKVIOLET",
-    "DEEPPINK",
-    "DEEPSKYBLUE",
-    "DIAMONDGRADIENT",
-    "DIMGRAY",
-    "DIMGREY",
-    "DODGERBLUE",
-    "END",
-    "EXTRA-CONDENSED",
-    "FILTERRES",
-    "FIREBRICK",
-    "FLORALWHITE",
-    "FORESTGREEN",
-    "FUCHSIA",
-    "GAINSBORO",
-    "GHOSTWHITE",
-    "GOLD",
-    "GOLDENROD",
-    "GRAY",
-    "GREEN",
-    "GREENYELLOW",
-    "GREY",
-    "HONEYDEW",
-    "HOTPINK",
-    "HREF",
-    "INDIANRED",
-    "INDIGO",
-    "IVORY",
-    "KHAKI",
-    "LAVENDER",
-    "LAVENDERBLUSH",
-    "LAWNGREEN",
-    "LEMONCHIFFON",
-    "LIGHTBLUE",
-    "LIGHTCORAL",
-    "LIGHTCYAN",
-    "LIGHTER",
-    "LIGHTGOLDENRODYELLOW",
-    "LIGHTGRAY",
-    "LIGHTGREEN",
-    "LIGHTGREY",
-    "LIGHTPINK",
-    "LIGHTSALMON",
-    "LIGHTSEAGREEN",
-    "LIGHTSKYBLUE",
-    "LIGHTSLATEGRAY",
-    "LIGHTSLATEGREY",
-    "LIGHTSTEELBLUE",
-    "LIGHTYELLOW",
-    "LIME",
-    "LIMEGREEN",
-    "LINEN",
-    "LINETHROUGH",
-    "MAGENTA",
-    "MAROON",
-    "MAX",
-    "MEDIUMAQUAMARINE",
-    "MEDIUMBLUE",
-    "MEDIUMORCHID",
-    "MEDIUMPURPLE",
-    "MEDIUMSEAGREEN",
-    "MEDIUMSLATEBLUE",
-    "MEDIUMSPRINGGREEN",
-    "MEDIUMTURQUOISE",
-    "MEDIUMVIOLETRED",
-    "MIDDLE",
-    "MIDNIGHTBLUE",
-    "MIN",
-    "MINTCREAM",
-    "MISTYROSE",
-    "MOCCASIN",
-    "NARROWER",
-    "NAVAJOWHITE",
-    "NAVY",
-    "NORMAL",
-    "OLDLACE",
-    "OLIVE",
-    "OLIVEDRAB",
-    "ORANGE",
-    "ORANGERED",
-    "ORCHID",
-    "OVERLINE",
-    "PALEGOLDENROD",
-    "PALEGREEN",
-    "PALETURQUOISE",
-    "PALEVIOLETRED",
-    "PAPAYAWHIP",
-    "PEACHPUFF",
-    "PERU",
-    "PINK",
-    "PLUM",
-    "POWDERBLUE",
-    "PRESERVEASPECTRATIO",
-    "PURPLE",
-    "RED",
-    "REPEATCOUNT",
-    "REPEATDUR",
-    "RESTART",
-    "ROSYBROWN",
-    "ROYALBLUE",
-    "SADDLEBROWN",
-    "SALMON",
-    "SANDYBROWN",
-    "SEAGREEN",
-    "SEASHELL",
-    "SEMI-CONDENSED",
-    "SIENNA",
-    "SILVER",
-    "SKYBLUE",
-    "SLATEBLUE",
-    "SLATEGRAY",
-    "SLATEGREY",
-    "SNOW",
-    "SPRINGGREEN",
-    "START",
-    "STEELBLUE",
-    "STOP-COLOR",
-    "STOP-OPACITY",
-    "STROKE",
-    "STROKE-DASHARRAY",
-    "STROKE-DASHOFFSET",
-    "STROKE-INNER-MITERLIMIT",
-    "STROKE-INNERJOIN",
-    "STROKE-LINECAP",
-    "STROKE-LINEJOIN",
-    "STROKE-MITERLIMIT",
-    "STROKE-MITERLIMIT-THETA",
-    "STROKE-OPACITY",
-    "STROKE-WIDTH",
-    "STROKEPAINT",
-    "TAN",
-    "TEAL",
-    "TEXT-ANCHOR",
-    "TEXT-DECORATION",
-    "TEXTLENGTH",
-    "THISTLE",
-    "TOMATO",
-    "TOTAL-POINTS",
-    "TRANSFORM",
-    "TURQUOISE",
-    "TYPE",
-    "ULTRA-CONDENSED",
-    "UNDERLINE",
-    "UNITS",
-    "USE",
-    "VALUES",
-    "VERSION",
-    "VERTEX-SCALING",
-    "VERTICES",
-    "VIEW-HEIGHT",
-    "VIEW-WIDTH",
-    "VIEW-X",
-    "VIEW-Y",
-    "VIEWBOX",
-    "VIOLET",
-    "VISIBILITY",
-    "WHEAT",
-    "WHITE",
-    "WHITESMOKE",
-    "WIDER",
-    "WIDTH",
-    "WORD-SPACING")
-
-  hash("SVF", "0x%s",
-    "APPEND-PATH",
-    "JOIN-PATH",
-    "AZIMUTH",
-    "DARKEN",
-    "DECAY",
-    "DECODING",
-    "DEFS",
-    "ELEVATION",
-    "FEFUNCR",
-    "FEFUNCG",
-    "FEFUNCB",
-    "FEFUNCA",
-    "FOCALPOINT",
-    "LIGHTING-COLOR",
-    "LIGHTING-COLOUR",
-    "LIMITINGCONEANGLE",
-    "LOOP-LIMIT",
-    "MASKCONTENTUNITS",
-    "MASKUNITS",
-    "KOTUKU:MORPH",
-    "KOTUKU:PATHTRANSITION",
-    "KOTUKU:SHAPE",
-    "KOTUKU:SPIRAL",
-    "KOTUKU:TRANSITION",
-    "KOTUKU:WAVE",
-    "POINTSATX",
-    "POINTSATY",
-    "POINTSATZ",
-    "SPECULARCONSTANT",
-    "SPECULAREXPONENT",
-    "TABLEVALUES",
-    "EXPONENT",
-    "SLOPE",
-    "INTERCEPT",
-    "INVERT",
-    "IDENTITY",
-    "L",
-    "M",
-    "N",
-    "LINEAR",
-    "TABLE",
-    "GAMMA",
-    "DISCRETE",
-    "DIFFUSECONSTANT",
-    "RESOLUTION",
-    "SURFACESCALE",
-    "SWITCH",
-    "XCHANNELSELECTOR",
-    "YCHANNELSELECTOR",
-    "ZOOMANDPAN",
-    "EXPANDED",
-    "SEMI-EXPANDED",
-    "EXTRA-EXPANDED",
-    "ULTRA-EXPANDED",
-    "CALCMODE",
-    "KEYPOINTS",
-    "ORIGIN",
-    "KEYTIMES",
-    "KEYSPLINES",
-    "BY",
-    "YELLOW",
-    "YELLOWGREEN",
-    "REQUIREDFEATURES",
-    "REQUIREDEXTENSIONS",
-    "SYSTEMLANGUAGE"
-  )
-
-  hash("SVF", "0x%s",
-    "ActiveBorder",
-    "ActiveCaption",
-    "AppWorkspace",
-    "Background",
-    "ButtonFace",
-    "ButtonHighlight",
-    "ButtonShadow",
-    "ButtonText",
-    "CaptionText",
-    "GrayText",
-    "Highlight",
-    "HighlightText",
-    "InactiveBorder",
-    "InactiveCaption",
-    "InactiveCaptionText",
-    "InfoBackground",
-    "InfoText",
-    "ISOLATION-MODE",
-    "Menu",
-    "MenuText",
-    "Scrollbar",
-    "ThreeDDarkShadow",
-    "ThreeDFace",
-    "ThreeDHighlight",
-    "ThreeDLightShadow",
-    "ThreeDShadow",
-    "Window",
-    "WindowFrame",
-    "WindowText"
-  )
-
-    c_insert([[
+    c_insert([==[
 namespace vec {
 inline ERR SubscribeInput(APTR Ob, JTYPE Mask, FUNCTION Callback) {
-   struct SubscribeInput args = { Mask, &Callback };
+   struct SubscribeInput args = { Mask, Callback };
    return(Action(vec::SubscribeInput::id, (OBJECTPTR)Ob, &args));
 }
 
 inline ERR SubscribeKeyboard(APTR Ob, FUNCTION Callback) {
-   struct SubscribeKeyboard args = { &Callback };
+   struct SubscribeKeyboard args = { Callback };
    return(Action(vec::SubscribeKeyboard::id, (OBJECTPTR)Ob, &args));
 }
 
 inline ERR SubscribeFeedback(APTR Ob, FM Mask, FUNCTION Callback) {
-   struct SubscribeFeedback args = { Mask, &Callback };
+   struct SubscribeFeedback args = { Mask, Callback };
    return(Action(vec::SubscribeFeedback::id, (OBJECTPTR)Ob, &args));
 }
 } // namespace
 
 namespace fl {
-   using namespace pf;
+   using namespace kt;
 
-constexpr FieldValue Flags(VCLF Value) { return FieldValue(FID_Flags, int(Value)); }
+constexpr FieldValue Flags(VCLF Value) { return FieldValue(strhash("flags"), int(Value)); }
 
-constexpr FieldValue AppendPath(OBJECTPTR Value) { return FieldValue(FID_AppendPath, Value); }
+constexpr FieldValue AppendPath(OBJECTPTR Value) { return FieldValue(strhash("appendPath"), Value); }
 
-constexpr FieldValue DragCallback(const FUNCTION &Value) { return FieldValue(FID_DragCallback, &Value); }
-constexpr FieldValue DragCallback(const FUNCTION *Value) { return FieldValue(FID_DragCallback, Value); }
+constexpr FieldValue DragCallback(const FUNCTION &Value) { return FieldValue(strhash("dragCallback"), &Value); }
+constexpr FieldValue DragCallback(const FUNCTION *Value) { return FieldValue(strhash("dragCallback"), Value); }
 
-constexpr FieldValue OnChange(const FUNCTION &Value) { return FieldValue(FID_OnChange, &Value); }
-constexpr FieldValue OnChange(const FUNCTION *Value) { return FieldValue(FID_OnChange, Value); }
+constexpr FieldValue OnChange(const FUNCTION &Value) { return FieldValue(strhash("onChange"), &Value); }
+constexpr FieldValue OnChange(const FUNCTION *Value) { return FieldValue(strhash("onChange"), Value); }
 
-constexpr FieldValue TextFlags(VTXF Value) { return FieldValue(FID_TextFlags, int(Value)); }
-constexpr FieldValue Overflow(VOF Value) { return FieldValue(FID_Overflow, int(Value)); }
+constexpr FieldValue TextFlags(VTXF Value) { return FieldValue(strhash("textFlags"), int(Value)); }
+constexpr FieldValue Overflow(VOF Value) { return FieldValue(strhash("overflow"), int(Value)); }
 
-constexpr FieldValue Sequence(CSTRING Value) { return FieldValue(FID_Sequence, Value); }
-inline FieldValue Sequence(std::string &Value) { return FieldValue(FID_Sequence, Value.c_str()); }
+[[nodiscard]] inline FieldValue Sequence(std::string_view Value) { return FieldValue(strhash("sequence"), Value); }
+[[nodiscard]] constexpr FieldValue Sequence(CSTRING Value) { return FieldValue(strhash("sequence"), Value ? std::string_view(Value) : std::string_view{}); }
 
-constexpr FieldValue FontStyle(CSTRING Value) { return FieldValue(FID_FontStyle, Value); }
-inline FieldValue FontStyle(std::string &Value) { return FieldValue(FID_FontStyle, Value.c_str()); }
+[[nodiscard]] inline FieldValue FontStyle(std::string_view Value) { return FieldValue(strhash("fontStyle"), Value); }
+[[nodiscard]] constexpr FieldValue FontStyle(CSTRING Value) { return FieldValue(strhash("fontStyle"), Value ? std::string_view(Value) : std::string_view{}); }
 
-template <pf::NumericOrScale T> FieldValue RoundX(T Value) {
-   return FieldValue(FID_RoundX, Value);
-}
-
-template <pf::NumericOrScale T> FieldValue RoundY(T Value) {
-   return FieldValue(FID_RoundY, Value);
-}
+template <kt::NumericOrScale T> FieldValue RoundX(T Value) { return FieldValue(strhash("roundX"), Value); }
+template <kt::NumericOrScale T> FieldValue RoundY(T Value) { return FieldValue(strhash("roundY"), Value); }
 
 }
-]])
+]==])
 
 end)

@@ -4,7 +4,7 @@
 XPathVal XPathFunctionLibrary::function_number(const std::vector<XPathVal> &Args, const XPathContext &Context) {
    if (Args.empty()) {
       if (Context.context_node) {
-         pf::vector<XTag *> nodes = { Context.context_node };
+         kt::vector<XTag *> nodes = { Context.context_node };
          XPathVal node_set_value(nodes);
          return XPathVal(node_set_value.to_number());
       }

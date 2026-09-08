@@ -101,7 +101,7 @@ struct TupleScope {
 };
 
 struct GroupKey {
-   pf::vector<XPathVal> values;
+   kt::vector<XPathVal> values;
 };
 
 struct GroupKeyHasher {
@@ -209,7 +209,7 @@ static size_t hash_xpath_group_value(const XPathVal &Value)
 
 XPathVal XPathEvaluator::evaluate_flwor_pipeline(const XPathNode *Node, uint32_t CurrentPrefix)
 {
-   pf::Log log("eval_flwor");
+   kt::Log log("eval_flwor");
 
    if (!Node) {
       record_error("FLWOR expression is missing its AST node.", Node, true);
@@ -258,14 +258,14 @@ XPathVal XPathEvaluator::evaluate_flwor_pipeline(const XPathNode *Node, uint32_t
    };
 
    // Note these log messages will only be compiled in debug builds.  You can include them temporarily in a release build
-   // by switching to pf::Log.msg(VLF::TRACE, ...) in the lines below.
+   // by switching to kt::Log.msg(VLF::TRACE, ...) in the lines below.
 
    auto trace_detail = [&](const char *Format, auto ...Args) {
-      if (tracing_flwor) pf::Log("XPath").trace(Format, Args...);
+      if (tracing_flwor) kt::Log("XPath").trace(Format, Args...);
    };
 
    auto trace_verbose = [&](const char *Format, auto ...Args) {
-      if (tracing_flwor) pf::Log("XPath").trace(Format, Args...);
+      if (tracing_flwor) kt::Log("XPath").trace(Format, Args...);
    };
 
    auto describe_value_for_trace = [&](const XPathVal &value) -> std::string {

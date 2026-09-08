@@ -14,8 +14,11 @@
 #include "lj_obj.h"
 #include "lj_gc.h"
 #include "lj_err.h"
+#include "lj_str.h"
 #include "lj_buf.h"
 #include "lj_tab.h"
+#include "lj_meta.h"
+#include "lj_state.h"
 #include "lj_ff.h"
 #include "lj_strfmt.h"
 #include "lib.h"
@@ -30,12 +33,20 @@
 
 LJLIB_CF(table_insert)      LJLIB_REC(.)
 {
+   // Immediate method syntax may coexist with a same-named string field.  String keys classify the table as
+   // associative, but they do not invalidate the non-negative integral prefix used by insertion.
    GCtab* t = lj_lib_checktab(L, 1);
+   if (not lj_tab_is_sequence(t)) {
+      cTValue* method_field = lj_tab_getstr(t, lj_str_newlit(L, "insert"));
+      if (not method_field or tvisnil(method_field)) {
+         luaL_error(L, ErrMsg::TABSEQ, "insert", lj_tab_kind(t));
+      }
+   }
    int32_t n, i = (int32_t)lj_tab_len(t);  // 0-based: next index = len
    int nargs = (int)((char*)L->top - (char*)L->base);
    if (nargs != 2 * sizeof(TValue)) {
       if (nargs != 3 * sizeof(TValue))
-         lj_err_caller(L, ErrMsg::TABINS);
+         luaL_error(L, ErrMsg::TABINS);
       // NOBARRIER: This just moves existing elements around.
       for (n = lj_lib_checkint(L, 2); i > n; i--) {
          // The set may invalidate the get pointer, so need to do it first!
@@ -56,7 +67,7 @@ LJLIB_CF(table_insert)      LJLIB_REC(.)
 
 LJLIB_CF(table_remove)
 {
-   GCtab *t = lj_lib_checktab(L, 1);
+   GCtab *t = lj_lib_checksequence(L, 1, "remove");
    auto len = (int32_t)lj_tab_len(t);
    int32_t pos;
 
@@ -93,7 +104,7 @@ LJLIB_CF(table_move)
 {
    GCtab *a1 = lj_lib_checktab(L, 1);
    int32_t f = lj_lib_checkint(L, 2);  // Start index
-   int32_t e = lj_lib_checkint(L, 3);  // End index
+   int32_t e = lj_lib_checkint(L, 3);  // Exclusive stop index
    int32_t t = lj_lib_checkint(L, 4);  // Target index
 
    // If a2 is nil, use a1 as destination
@@ -107,19 +118,19 @@ LJLIB_CF(table_move)
       lua_pushvalue(L, 5);  // Push a2 as return value
    }
 
-   if (e >= f) {
+   if (e > f) {
       int32_t d = t - f;
       // Choose iteration direction to handle overlapping regions correctly
-      if (t > e or t <= f or a2 != a1) {
+      if (t >= e or t <= f or a2 != a1) {
          // Forward iteration: no overlap or different tables
-         for (int32_t i = f; i <= e; i++) {
+         for (int32_t i = f; i < e; i++) {
             lua_rawgeti(L, 1, i);  // Get a1[i]
             lua_rawseti(L, (a2 IS a1) ? 1 : 5, i + d);  // Set a2[i+d]
          }
       }
       else {
          // Backward iteration: overlapping region requires reverse copy
-         for (int32_t i = e; i >= f; i--) {
+         for (int32_t i = e - 1; i >= f; i--) {
             lua_rawgeti(L, 1, i);  // Get a1[i]
             lua_rawseti(L, 1, i + d);  // Set a1[i+d] (same table)
          }
@@ -133,10 +144,14 @@ LJLIB_CF(table_move)
 
 LJLIB_CF(table_concat) LJLIB_REC(.)
 {
-   GCtab* t = lj_lib_checktab(L, 1);
+   // An explicit end index supplies the numerical domain, so any classification is acceptable.  Without one the
+   // boundary is inferred from lj_tab_len(), which requires a sequence.
+   const int explicit_stop = (L->base + 3 < L->top and !tvisnil(L->base + 3));
+   GCtab* t = explicit_stop ? lj_lib_checktab(L, 1) : lj_lib_checksequence(L, 1, "concat");
    GCstr* sep = lj_lib_optstr(L, 2);
    int32_t i = lj_lib_optint(L, 3, 0);  // 0-based: default start
-   int32_t e = (L->base + 3 < L->top and !tvisnil(L->base + 3)) ? lj_lib_checkint(L, 4) : (int32_t)lj_tab_len(t) - 1;  // 0-based: last index = len-1
+   int32_t stop = explicit_stop ? lj_lib_checkint(L, 4) : (int32_t)lj_tab_len(t);
+   int32_t e = stop > INT32_MIN ? stop - 1 : INT32_MIN;  // lj_buf_puttab() uses an inclusive endpoint.
 
    SBuf* sb = lj_buf_tmp_(L);
    SBuf* sbx = lj_buf_puttab(sb, t, sep, i, e);
@@ -144,7 +159,7 @@ LJLIB_CF(table_concat) LJLIB_REC(.)
    if (not sbx) [[unlikely]] {  // Error: bad element type.
       int32_t idx = (int32_t)(intptr_t)sb->w;
       cTValue* o = lj_tab_getint(t, idx);
-      lj_err_callerv(L, ErrMsg::TABCAT, lj_obj_itypename[o ? itypemap(o) : ~LJ_TNIL], idx);
+      luaL_error(L, ErrMsg::TABCAT, lj_obj_itypename[o ? itypemap(o) : ~LJ_TNIL], idx);
    }
 
    setstrV(L, L->top - 1, lj_buf_str(L, sbx));
@@ -215,12 +230,12 @@ static void auxsort(lua_State *L, int l, int u)
       for (;;) {  // invariant: a[l..i] <= P <= a[j..u]
          // repeat ++i until a[i] >= P
          while (lua_rawgeti(L, 1, ++i), sort_comp(L, -1, -2)) {
-            if (i >= u) lj_err_caller(L, ErrMsg::TABSORT);
+            if (i >= u) luaL_error(L, ErrMsg::TABSORT);
             lua_pop(L, 1);  //  remove a[i]
          }
          // repeat --j until a[j] <= P
          while (lua_rawgeti(L, 1, --j), sort_comp(L, -3, -1)) {
-            if (j <= l) lj_err_caller(L, ErrMsg::TABSORT);
+            if (j <= l) luaL_error(L, ErrMsg::TABSORT);
             lua_pop(L, 1);  //  remove a[j]
          }
          if (j < i) {
@@ -248,7 +263,7 @@ static void auxsort(lua_State *L, int l, int u)
 
 LJLIB_CF(table_sort)
 {
-   GCtab *t = lj_lib_checktab(L, 1);
+   GCtab *t = lj_lib_checksequence(L, 1, "sort");
    int32_t n = (int32_t)lj_tab_len(t);
    lua_settop(L, 2);
    if (!tvisnil(L->base + 1)) lj_lib_checkfunc(L, 2);
@@ -281,25 +296,73 @@ LJLIB_CF(table_empty)
       return 1;
    }
 
-   if (lj_tab_len(t) != 0) {
-      setboolV(L->top - 1, 0);
-      return 1;
-   }
-
-   TValue key, kv[2];
-   setnilV(&key);
-   if (lj_tab_next(t, &key, kv)) setboolV(L->top - 1, 0);  //  Found at least one entry.
-   else setboolV(L->top - 1, 1);  //  Confirmed empty.
+   setboolV(L->top - 1, lj_tab_empty(t));
 
    return 1;
 }
 
 //********************************************************************************************************************
+// table.kind(t)
+// Reports the table's permanent usage classification as 'sequence', 'sparse', 'associative' or 'mixed'.
+//
+// The result describes usage history rather than the table's current live shape.  In particular, 'sequence' means
+// that all observed keys are non-negative integers, not that every index below the numerical boundary is populated.
+// Removing keys or calling table.clear() does not restore the 'sequence' classification.  Raw inspection only; no
+// metamethods are invoked.
 
-LJLIB_CF(table_clear)   LJLIB_REC(.)
+LJLIB_CF(table_kind)
 {
-   lj_tab_clear(lj_lib_checktab(L, 1));
-   return 0;
+   GCtab *t = lj_lib_checktab(L, 1);
+   setstrV(L, L->top - 1, lj_str_newz(L, lj_tab_kind(t)));
+   return 1;
+}
+
+//********************************************************************************************************************
+// table.size(t)
+// Counts every live entry across the array and hash parts.
+//
+// Nodes whose value is nil are ignored, __index is never invoked, and the result is independent of the table's
+// classification and of any __len metamethod.  The traversal is O(n) in the allocated size of the table.
+
+LJLIB_CF(table_size)
+{
+   GCtab *t = lj_lib_checktab(L, 1);
+   uint32_t count = 0;
+
+   for (uint32_t i = 0; i < t->asize; i++) {
+      if (not tvisnil(arrayslot(t, i))) count++;
+   }
+
+   if (t->hmask > 0) {
+      Node *node = noderef(t->node);
+      for (uint32_t i = 0; i <= t->hmask; i++) {
+         if (not tvisnil(&node[i].val)) count++;
+      }
+   }
+
+   setintV(L->top - 1, (int32_t)count);
+   return 1;
+}
+
+//********************************************************************************************************************
+
+LJLIB_ASM(table_clear)   LJLIB_REC(.)
+{
+   GCtab *table = lj_lib_checktab(L, 1);
+   if (lj_tab_is_environment(table)) {
+      lj_err_callermsg(L, ERR::ReadOnly, "cannot clear a global environment");
+   }
+
+   cTValue *metamethod = lj_meta_lookup(L, L->base, MM_clear);
+   if (not tvisnil(metamethod)) {
+      lj_context_prepare_metamethod_call(L, L->base, L->base, 0, 1, true);
+      L->top = L->base;
+      copyTV(L, L->base - 2, metamethod);
+      return FFH_TAILCALL;
+   }
+
+   lj_tab_clear(table);
+   return FFH_RES(0);
 }
 
 //********************************************************************************************************************
@@ -576,17 +639,33 @@ extern int luaopen_table(lua_State *L)
    //lua_setfield(L, -2, "unpack");
 
    // Register table interface prototypes for compile-time type inference
-   reg_iface_prototype("table", "insert", {}, { TiriType::Table, TiriType::Any });
-   reg_iface_prototype("table", "remove", { TiriType::Any }, { TiriType::Table, TiriType::Num });
-   reg_iface_prototype("table", "move", { TiriType::Table }, { TiriType::Table, TiriType::Num, TiriType::Num, TiriType::Num, TiriType::Table });
-   reg_iface_prototype("table", "concat", { TiriType::Str }, { TiriType::Table, TiriType::Str, TiriType::Num, TiriType::Num });
-   reg_iface_prototype("table", "sort", {}, { TiriType::Table, TiriType::Func });
+   reg_iface_method(L, "table", "insert", TiriType::Table, builtin_callable_id(FastFunc::table_insert), {},
+      { TiriType::Table, TiriType::Any, TiriType::Any }, FProtoFlags::None, FProtoArity::required(2));
+   reg_iface_method(L, "table", "remove", TiriType::Table, builtin_callable_id(FastFunc::table_remove),
+      { TiriType::Any }, { TiriType::Table, TiriType::Num }, FProtoFlags::None, FProtoArity::required(1));
+   reg_iface_method(L, "table", "move", TiriType::Table, builtin_callable_id(FastFunc::table_move),
+      { TiriType::Table }, { TiriType::Table, TiriType::Num, TiriType::Num, TiriType::Num, TiriType::Table },
+      FProtoFlags::None, FProtoArity::required(4));
+   reg_iface_method(L, "table", "concat", TiriType::Table, builtin_callable_id(FastFunc::table_concat),
+      { TiriType::Str }, { TiriType::Table, TiriType::Str, TiriType::Num, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(1));
+   reg_iface_method(L, "table", "sort", TiriType::Table, builtin_callable_id(FastFunc::table_sort), {},
+      { TiriType::Table, TiriType::Func }, FProtoFlags::None, FProtoArity::required(1));
    reg_iface_prototype("table", "new", { TiriType::Table }, { TiriType::Num, TiriType::Num });
-   reg_iface_prototype("table", "empty", { TiriType::Bool }, { TiriType::Table });
-   reg_iface_prototype("table", "clear", {}, { TiriType::Table });
-   reg_iface_prototype("table", "slice", { TiriType::Table }, { TiriType::Table, TiriType::Any });
-   reg_iface_prototype("table", "sortByKeys", { TiriType::Func }, { TiriType::Table, TiriType::Func });
-   reg_iface_prototype("table", "toXML", { TiriType::Str }, { TiriType::Table });
+   reg_iface_method(L, "table", "empty", TiriType::Table, builtin_callable_id(FastFunc::table_empty),
+      { TiriType::Bool }, { TiriType::Table });
+   reg_iface_method(L, "table", "kind", TiriType::Table, builtin_callable_id(FastFunc::table_kind),
+      { TiriType::Str }, { TiriType::Table });
+   reg_iface_method(L, "table", "size", TiriType::Table, builtin_callable_id(FastFunc::table_size),
+      { TiriType::Num }, { TiriType::Table });
+   reg_iface_method(L, "table", "clear", TiriType::Table, builtin_callable_id(FastFunc::table_clear), {},
+      { TiriType::Table });
+   reg_iface_method(L, "table", "slice", TiriType::Table, builtin_callable_id(FastFunc::table_slice),
+      { TiriType::Table }, { TiriType::Table, TiriType::Any });
+   reg_iface_method(L, "table", "sortByKeys", TiriType::Table, builtin_callable_id(FastFunc::table_sortByKeys),
+      { TiriType::Func }, { TiriType::Table, TiriType::Func }, FProtoFlags::None, FProtoArity::required(1));
+   reg_iface_method(L, "table", "toXML", TiriType::Table, builtin_callable_id(FastFunc::table_toXML),
+      { TiriType::Str }, { TiriType::Table });
 
    return 1;
 }

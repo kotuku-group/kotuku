@@ -71,32 +71,23 @@ static tiri_range * get_range_from_tvalue(lua_State *L, cTValue *tv)
 
 #define LJLIB_MODULE_string
 
-LJLIB_CF(string_len)
-{
-   GCstr *s = lj_lib_checkstr(L, 1);
-   int32_t len = (int32_t)s->len;
-   setintV(L->top - 1, len);
-   return 1;
-}
-
-//********************************************************************************************************************
-// NOTE: ASM version exists
-
 LJLIB_ASM(string_byte)      LJLIB_REC(string_range 0)
 {
    GCstr *s = lj_lib_checkstr(L, 1);
    int32_t len = (int32_t)s->len;
    int32_t start = lj_lib_optint(L, 2, 0);  // 0-based: default start is 0
-   int32_t stop = lj_lib_optint(L, 3, start);
+   const bool stop_provided = not lua_isnoneornil(L, 3);
+   int32_t stop = stop_provided ? lj_lib_checkint(L, 3) : 0;
    int32_t n, i;
    const unsigned char *p;
-   if (stop < 0) stop += len;   // 0-based: -1 → len-1 (last char)
    if (start < 0) start += len;
    if (start < 0) start = 0;
-   if (stop > len - 1) stop = len - 1;  // 0-based: max valid index is len-1
-   if (start > stop) return FFH_RES(0);  //  Empty interval: return no results.
-   n = stop - start + 1;
-   if ((uint32_t)n > LUAI_MAXCSTACK) lj_err_caller(L, ErrMsg::STRSLC);
+   if (not stop_provided) stop = start + 1;
+   else if (stop < 0) stop += len;
+   if (stop > len) stop = len;
+   if (start >= stop) return FFH_RES(0);  // Empty interval: return no results.
+   n = stop - start;
+   if ((uint32_t)n > LUAI_MAXCSTACK) luaL_error(L, ErrMsg::STRSLC);
    lj_state_checkstack(L, (MSize)n);
    p = (const unsigned char*)strdata(s) + start;
    for (i = 0; i < n; i++) setintV(L->base + i - 1 - LJ_FR2, p[i]);
@@ -120,36 +111,12 @@ LJLIB_ASM(string_char)      LJLIB_REC(.)
 }
 
 //********************************************************************************************************************
-// NOTE: Backed by an ASM implementation
-// string_sub:	Declares an assembly ffunc as its primary implementation. The C code that follows is the fallback (called when the ffunc jumps to ->fff_fallback).
-// string_range 1: Tells the JIT recorder how to handle this function. string_range is the recorder function name, 1 is a parameter distinguishing it from other range operations.
 
 LJLIB_ASM(string_sub)      LJLIB_REC(string_range 1)
 {
-   pf::Log("string.sub()").warning("Use substr()");
    lj_lib_checkstr(L, 1);
    lj_lib_checkint(L, 2);
-   int32_t end_val = lj_lib_optint(L, 3, -1);
-   // Convert exclusive end to inclusive by subtracting 1, but only for positive indices.
-   // Negative indices already reference positions from the end, so no adjustment needed.
-   if (end_val > 0) end_val--;
-   setintV(L->base + 2, end_val);
-   return FFH_RETRY;
-}
-
-//********************************************************************************************************************
-// string.substr() is now an alias for string.sub() - both use exclusive end semantics.
-// The ASM implementation jumps directly to string_sub.
-
-LJLIB_ASM(string_substr)      LJLIB_REC(string_range 1)
-{
-   lj_lib_checkstr(L, 1);
-   lj_lib_checkint(L, 2);
-   int32_t end_val = lj_lib_optint(L, 3, -1);
-   // Convert exclusive end to inclusive by subtracting 1, but only for positive indices.
-   // Negative indices already reference positions from the end, so no adjustment needed.
-   if (end_val > 0) end_val--;
-   setintV(L->base + 2, end_val);
+   if (not lua_isnoneornil(L, 3)) lj_lib_checkint(L, 3);
    return FFH_RETRY;
 }
 
@@ -176,23 +143,18 @@ LJLIB_CF(string_rep)      LJLIB_REC(.)
 }
 
 //********************************************************************************************************************
-// string.alloc() is a quicker version of string.rep() for reserving space without filling it.
+// string.alloc() creates a distinct mutable byte buffer whose complete payload is NUL-filled.
 //
 // 1. Takes a size parameter - Uses lj_lib_checkint(L, 1) to get the size from the first argument
 // 2. Validates the size - Checks that size is not negative and throws an error if it is
-// 3. Reserves buffer space - Uses lj_buf_need(sb, (MSize)size) to ensure the buffer has enough capacity
-// 4. Advances the write pointer - Sets sb->w += size to reserve the space without filling it
-// 5. Returns the string - Creates and returns the string with the reserved space
+// 3. Allocates a mutable GC string buffer outside the normal string interning table.
+// 4. Returns the NUL-filled mutable string with the requested length.
 
 LJLIB_CF(string_alloc)
 {
    int32_t size = lj_lib_checkint(L, 1);
    LJ_CHECK_ARG(L, 1, size >= 0, ErrMsg::NUMRNG);
-   SBuf *sb = lj_buf_tmp_(L);
-   lj_buf_reset(sb);
-   (void)lj_buf_need(sb, (MSize)size);
-   sb->w += size;  //  Advance write pointer to reserve space
-   setstrV(L, L->top - 1, lj_buf_str(L, sb));
+   setstrV(L, L->top - 1, lj_str_newbuf(L, MSize(size)));
    lj_gc_check(L);
    return 1;
 }
@@ -214,10 +176,25 @@ static CSTRING find_separator(CSTRING Pos, CSTRING End, CSTRING Sep, MSize SepLe
    if (SepLen IS 1) return (CSTRING)memchr(Pos, Sep[0], End - Pos);
 
    // Multi-character separator.
-   for (CSTRING p = Pos; p <= End - SepLen; p++) {
+   MSize remaining = MSize(End - Pos);
+   if (SepLen > remaining) return nullptr;
+
+   CSTRING last = End - SepLen;
+   for (CSTRING p = Pos; p <= last; p++) {
       if (memcmp(p, Sep, SepLen) IS 0) return p;
    }
    return nullptr;
+}
+
+//********************************************************************************************************************
+
+LJLIB_CF(string_toArray)
+{
+   GCstr *source = lj_lib_checkstr(L, 1);
+   GCarray *array = lj_array_new(L, source->len, AET::BYTE);
+   kt::copymem(strdata(source), array->get<CSTRING>(), source->len);
+   setarrayV(L, L->top++, array);
+   return 1;
 }
 
 //********************************************************************************************************************
@@ -397,11 +374,7 @@ LJLIB_CF(string_replace)
 
 LJLIB_CF(string_trim)
 {
-   GCstr *s = lj_lib_optstr(L, 1);
-   if (not s) {
-      setstrV(L, L->top - 1, &G(L)->strempty);
-      return 1;
-   }
+   GCstr *s = lj_lib_checkstr(L, 1);
 
    CSTRING str   = strdata(s);
    MSize len     = s->len;
@@ -436,11 +409,7 @@ LJLIB_CF(string_trim)
 
 LJLIB_CF(string_rtrim)
 {
-   GCstr *s = lj_lib_optstr(L, 1);
-   if (not s) {
-      setstrV(L, L->top - 1, &G(L)->strempty);
-      return 1;
-   }
+   GCstr *s = lj_lib_checkstr(L, 1);
 
    auto str = strdata(s);
    MSize len = s->len;
@@ -518,7 +487,7 @@ LJLIB_CF(string_endsWith)
 // string.contains(s, substr) -> bool
 // Returns true if substr is found within s.  Enables the `in` operator for strings, e.g. `"ell" in "hello"`.
 
-LJLIB_CF(string_contains)
+LJLIB_NOREG LJLIB_CF(string_contains)
 {
    GCstr *s      = lj_lib_checkstr(L, 1);
    GCstr *substr = lj_lib_checkstr(L, 2);
@@ -634,8 +603,8 @@ LJLIB_CF(string_hash)
 
    auto str = strdata(s);
    uint32_t hash;
-   if (caseSensitive) hash = pf::strhash({ str, s->len });
-   else hash = pf::strihash({ str, s->len });
+   if (caseSensitive) hash = kt::strhash({ str, s->len });
+   else hash = kt::strihash({ str, s->len });
 
    setintV(L->top - 1, (int32_t)hash);
    return 1;
@@ -645,12 +614,7 @@ LJLIB_CF(string_hash)
 
 LJLIB_CF(string_unescapeXML)
 {
-   GCstr *s = lj_lib_optstr(L, 1);
-
-   if (not s) {
-      setstrV(L, L->top - 1, &G(L)->strempty);
-      return 1;
-   }
+   GCstr *s = lj_lib_checkstr(L, 1);
 
    static constexpr std::array<std::pair<std::string_view, char>, 5> entities = {{
       { "lt;", '<' }, { "gt;", '>' }, { "amp;", '&' }, { "quot;", '"' }, { "apos;", '\'' }
@@ -688,12 +652,7 @@ LJLIB_CF(string_unescapeXML)
 
 LJLIB_CF(string_escXML)
 {
-   GCstr *s = lj_lib_optstr(L, 1);
-
-   if (not s) { // Handle nil input - return empty string
-      setstrV(L, L->top - 1, &G(L)->strempty);
-      return 1;
-   }
+   GCstr *s = lj_lib_checkstr(L, 1);
 
    auto str = strdata(s);
    MSize len = s->len;
@@ -708,6 +667,7 @@ LJLIB_CF(string_escXML)
          case '&': lj_buf_putmem(sb, "&amp;", 5); break;
          case '<': lj_buf_putmem(sb, "&lt;", 4); break;
          case '>': lj_buf_putmem(sb, "&gt;", 4); break;
+         case '"': lj_buf_putmem(sb, "&quot;", 6); break;
          default: lj_buf_putb(sb, c); break;
       }
    }
@@ -743,7 +703,7 @@ LJLIB_CF(string_dump)
    int strip = L->base + 1 < L->top and tvistruecond(L->base + 1);
    SBuf* sb = lj_buf_tmp_(L);  //  Assumes lj_bcwrite() doesn't use tmpbuf.
    L->top = L->base + 1;
-   if (not isluafunc(fn) or lj_bcwrite(L, funcproto(fn), writer_buf, sb, strip)) lj_err_caller(L, ErrMsg::STRDUMP);
+   if (not isluafunc(fn) or lj_bcwrite(L, funcproto(fn), writer_buf, sb, strip)) luaL_error(L, ErrMsg::STRDUMP);
    setstrV(L, L->top - 1, lj_buf_str(L, sb));
    lj_gc_check(L);
    return 1;
@@ -769,36 +729,12 @@ LJLIB_CF(string_find)      LJLIB_REC(.)
 
    if (auto q = lj_str_findsv({strdata(s) + st, s->len - st}, {strdata(p), p->len})) {
       setintV(L->top - 2, (int32_t)(q - strdata(s)));  // 0-based start
-      setintV(L->top - 1, (int32_t)(q - strdata(s)) + (int32_t)p->len - 1);  // 0-based end (inclusive)
+      setintV(L->top - 1, (int32_t)(q - strdata(s)) + (int32_t)p->len);  // 0-based stop (exclusive)
       return 2;
    }
 
    setnilV(L->top - 1);  // Not found.
    return 1;
-}
-
-//********************************************************************************************************************
-
-LJLIB_CF(string_match)
-{
-   pf::Log("string.match()").warning("DEPRECATED");
-   return 0;
-}
-
-//********************************************************************************************************************
-
-LJLIB_CF(string_gmatch)
-{
-   pf::Log("string.gmatch()").warning("DEPRECATED");
-   return 0;
-}
-
-//********************************************************************************************************************
-
-LJLIB_CF(string_gsub)
-{
-   pf::Log("string.gsub()").warning("DEPRECATED");
-   return 0;
 }
 
 //********************************************************************************************************************
@@ -857,34 +793,8 @@ static int string_index_handler(lua_State *L)
    // Check for the range type (substring extraction)
 
    if (tiri_range *r = get_range_from_tvalue(L, key)) {
-      int32_t start = r->start;
-      int32_t stop = r->stop;
-
-      // Handle negative indices (always inclusive for negative ranges)
-      bool use_inclusive = r->inclusive;
-      if (start < 0 or stop < 0) {
-         use_inclusive = true;  // Negative indices ignore inclusive flag
-         if (start < 0) start += len;
-         if (stop < 0) stop += len;
-      }
-
-      // Apply exclusive semantics if not inclusive
-      int32_t effective_stop = stop;
-      if (not use_inclusive) effective_stop = stop - 1;
-
-      // Bounds checking
-      if (start < 0) start = 0;
-      if (effective_stop >= len) effective_stop = len - 1;
-
-      // Handle empty/invalid ranges
-      if (start > effective_stop or start >= len) {
-         lua_pushstring(L, "");
-         return 1;
-      }
-
-      int32_t sublen = effective_stop - start + 1;
-      lua_pushlstring(L, strdata(str) + start, (size_t)sublen);
-      return 1;
+      (void)r;
+      return lj_range_slice(L);
    }
 
    // Check for string key (method lookup)
@@ -906,6 +816,10 @@ extern int luaopen_string(lua_State *L)
    LJ_LIB_REG(L, "string", string);
    // At this point, L->top - 1 has the string library table on the Lua stack
 
+   // `sub()` is the canonical spelling.  Keep `substr()` as a deprecated compatibility alias.
+   lua_getfield(L, -1, "sub");
+   lua_setfield(L, -2, "substr");
+
    GCtab *mt = lj_tab_new(L, 0, 1);
 
    // NOBARRIER: basemt is a GC root.
@@ -919,7 +833,7 @@ extern int luaopen_string(lua_State *L)
    setgcref(basemt_it(g, LJ_TSTR), obj2gco(mt));
 
    // Create a closure for string_index_handler with the string library table as upvalue.
-   // This allows str[idx], str[{0..5}], and str.method() syntax.
+   // This allows str[idx], str[{0 to 5}], and str.method() syntax.
    // Stack after LJ_LIB_REG: [..., string_lib_table] at position -1
 
    lua_pushvalue(L, -1);  // Push copy of string library table for upvalue
@@ -931,6 +845,11 @@ extern int luaopen_string(lua_State *L)
    setfuncV(L, index_slot, funcV(L->top - 1));
    lua_pop(L, 1);  // Pop the closure
    // Stack: [..., string_lib_table]
+
+   lua_pushcfunction(L, lj_cf_string_contains);
+   TValue *contains_slot = lj_tab_setstr(L, mt, mmname_str(g, MM_contains));
+   setfuncV(L, contains_slot, funcV(L->top - 1));
+   lua_pop(L, 1);
 
    // Update the metatable's negative‑metamethod cache (nomm). The bitwise expression clears the bit
    // corresponding to MM_index (and sets other bits), marking that this metamethod slot should not be treated as
@@ -944,34 +863,63 @@ extern int luaopen_string(lua_State *L)
 
    // Register string interface prototypes for compile-time type inference
    reg_iface_prototype("string", "alloc", { TiriType::Str }, { TiriType::Num });
-   reg_iface_prototype("string", "byte", { TiriType::Num }, { TiriType::Str, TiriType::Num }, FProtoFlags::Variadic);
-   reg_iface_prototype("string", "cap", { TiriType::Str }, { TiriType::Str });
-   reg_iface_prototype("string", "char", { TiriType::Str }, {}, FProtoFlags::Variadic);
-   reg_iface_prototype("string", "contains", { TiriType::Bool }, { TiriType::Str, TiriType::Str });
-   reg_iface_prototype("string", "count", { TiriType::Num }, { TiriType::Str, TiriType::Str });
-   reg_iface_prototype("string", "decap", { TiriType::Str }, { TiriType::Str });
-   reg_iface_prototype("string", "dump", { TiriType::Str }, { TiriType::Func });
-   reg_iface_prototype("string", "endsWith", { TiriType::Bool }, { TiriType::Str, TiriType::Str });
-   reg_iface_prototype("string", "escXML", { TiriType::Str }, { TiriType::Str });
-   reg_iface_prototype("string", "find", { TiriType::Num, TiriType::Num }, { TiriType::Str, TiriType::Str }, FProtoFlags::Variadic);
-   reg_iface_prototype("string", "format", { TiriType::Str }, { TiriType::Str }, FProtoFlags::Variadic);
-   reg_iface_prototype("string", "hash", { TiriType::Num }, { TiriType::Str, TiriType::Bool });
-   reg_iface_prototype("string", "len", { TiriType::Num }, { TiriType::Str });
-   reg_iface_prototype("string", "lower", { TiriType::Str }, { TiriType::Str });
-   reg_iface_prototype("string", "pop", { TiriType::Str }, { TiriType::Str, TiriType::Num });
-   reg_iface_prototype("string", "rep", { TiriType::Str }, { TiriType::Str, TiriType::Num });
-   reg_iface_prototype("string", "replace", { TiriType::Str, TiriType::Num }, { TiriType::Str, TiriType::Str, TiriType::Str, TiriType::Num });
-   reg_iface_prototype("string", "reverse", { TiriType::Str }, { TiriType::Str });
-   reg_iface_prototype("string", "rtrim", { TiriType::Str }, { TiriType::Str });
-   reg_iface_prototype("string", "split", { TiriType::Array }, { TiriType::Str, TiriType::Str });
-   reg_iface_prototype("string", "startsWith", { TiriType::Bool }, { TiriType::Str, TiriType::Str });
-   reg_iface_prototype("string", "substr", { TiriType::Str }, { TiriType::Str, TiriType::Num, TiriType::Num });
-   reg_iface_prototype("string", "trim", { TiriType::Str }, { TiriType::Str });
-   reg_iface_prototype("string", "unescapeXML", { TiriType::Str }, { TiriType::Str });
-   reg_iface_prototype("string", "upper", { TiriType::Str }, { TiriType::Str });
-   // These are implemented in translate.tiri
-   reg_iface_prototype("string", "translateRefresh", { }, { });
-   reg_iface_prototype("string", "translate", { TiriType::Str }, { TiriType::Str });
+   reg_iface_method(L, "string", "byte", TiriType::Str, builtin_callable_id(FastFunc::string_byte),
+      { TiriType::Num }, { TiriType::Str, TiriType::Num, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(1));
+   reg_iface_method(L, "string", "cap", TiriType::Str, builtin_callable_id(FastFunc::string_cap),
+      { TiriType::Str }, { TiriType::Str });
+   reg_iface_prototype("string", "char", { TiriType::Str }, {}, FProtoFlags::Variadic,
+      FProtoArity::required(0));
+   reg_iface_method(L, "string", "count", TiriType::Str, builtin_callable_id(FastFunc::string_count),
+      { TiriType::Num }, { TiriType::Str, TiriType::Str });
+   reg_iface_method(L, "string", "decap", TiriType::Str, builtin_callable_id(FastFunc::string_decap),
+      { TiriType::Str }, { TiriType::Str });
+   reg_iface_prototype("string", "dump", { TiriType::Str }, { TiriType::Func, TiriType::Bool }, FProtoFlags::None,
+      FProtoArity::required(1));
+   reg_iface_method(L, "string", "endsWith", TiriType::Str, builtin_callable_id(FastFunc::string_endsWith),
+      { TiriType::Bool }, { TiriType::Str, TiriType::Str }, FProtoFlags::ContextIndependent);
+   reg_iface_method(L, "string", "escXML", TiriType::Str, builtin_callable_id(FastFunc::string_escXML),
+      { TiriType::Str }, { TiriType::Str });
+   reg_iface_method(L, "string", "find", TiriType::Str, builtin_callable_id(FastFunc::string_find),
+      { TiriType::Num, TiriType::Num }, { TiriType::Str, TiriType::Str, TiriType::Num }, FProtoFlags::Variadic,
+      FProtoArity::required(2));
+   reg_iface_method(L, "string", "format", TiriType::Str, builtin_callable_id(FastFunc::string_format),
+      { TiriType::Str }, { TiriType::Str }, FProtoFlags::Variadic, FProtoArity::required(1));
+   reg_iface_method(L, "string", "hash", TiriType::Str, builtin_callable_id(FastFunc::string_hash),
+      { TiriType::Num }, { TiriType::Str, TiriType::Bool }, FProtoFlags::None, FProtoArity::required(1));
+   reg_iface_method(L, "string", "lower", TiriType::Str, builtin_callable_id(FastFunc::string_lower),
+      { TiriType::Str }, { TiriType::Str }, FProtoFlags::ContextIndependent);
+   reg_iface_method(L, "string", "pop", TiriType::Str, builtin_callable_id(FastFunc::string_pop),
+      { TiriType::Str }, { TiriType::Str, TiriType::Num }, FProtoFlags::ContextIndependent,
+      FProtoArity::required(1));
+   reg_iface_method(L, "string", "rep", TiriType::Str, builtin_callable_id(FastFunc::string_rep),
+      { TiriType::Str }, { TiriType::Str, TiriType::Num, TiriType::Str }, FProtoFlags::None,
+      FProtoArity::required(2));
+   reg_iface_method(L, "string", "replace", TiriType::Str, builtin_callable_id(FastFunc::string_replace),
+      { TiriType::Str, TiriType::Num }, { TiriType::Str, TiriType::Str, TiriType::Str, TiriType::Num },
+      FProtoFlags::None, FProtoArity::required(3));
+   reg_iface_method(L, "string", "reverse", TiriType::Str, builtin_callable_id(FastFunc::string_reverse),
+      { TiriType::Str }, { TiriType::Str });
+   reg_iface_method(L, "string", "rtrim", TiriType::Str, builtin_callable_id(FastFunc::string_rtrim),
+      { TiriType::Str }, { TiriType::Str });
+   reg_iface_method(L, "string", "split", TiriType::Str, builtin_callable_id(FastFunc::string_split),
+      { TiriType::Array }, { TiriType::Str, TiriType::Str }, FProtoFlags::None, FProtoArity::required(1));
+   reg_iface_method(L, "string", "startsWith", TiriType::Str, builtin_callable_id(FastFunc::string_startsWith),
+      { TiriType::Bool }, { TiriType::Str, TiriType::Str }, FProtoFlags::ContextIndependent);
+   reg_iface_method(L, "string", "sub", TiriType::Str, builtin_callable_id(FastFunc::string_sub),
+      { TiriType::Str }, { TiriType::Str, TiriType::Num, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(2));
+   reg_iface_method(L, "string", "substr", TiriType::Str, builtin_callable_id(FastFunc::string_sub),
+      { TiriType::Str }, { TiriType::Str, TiriType::Num, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(2), true);
+   reg_iface_method(L, "string", "toArray", TiriType::Str, builtin_callable_id(FastFunc::string_toArray),
+      { TiriType::Array }, { TiriType::Str });
+   reg_iface_method(L, "string", "trim", TiriType::Str, builtin_callable_id(FastFunc::string_trim),
+      { TiriType::Str }, { TiriType::Str }, FProtoFlags::ContextIndependent);
+   reg_iface_method(L, "string", "unescapeXML", TiriType::Str,
+      builtin_callable_id(FastFunc::string_unescapeXML), { TiriType::Str }, { TiriType::Str });
+   reg_iface_method(L, "string", "upper", TiriType::Str, builtin_callable_id(FastFunc::string_upper),
+      { TiriType::Str }, { TiriType::Str }, FProtoFlags::NoNil | FProtoFlags::ContextIndependent);
 
    return 1;
 }

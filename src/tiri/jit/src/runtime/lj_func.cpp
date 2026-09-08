@@ -10,6 +10,7 @@
 #include "lj_obj.h"
 #include "lj_gc.h"
 #include "lj_func.h"
+#include "lj_contract.h"
 #include "lj_trace.h"
 #include "lj_vm.h"
 
@@ -17,9 +18,24 @@
 
 void lj_func_freeproto(global_State *g, GCproto *pt)
 {
+   if (auto cache = proto_contract_cache(pt)) lj_mem_free(g, cache, cache->byte_size);
+
    // Free try-except metadata if present
    if (pt->try_blocks) lj_mem_free(g, pt->try_blocks, pt->try_block_count * sizeof(TryBlockDesc));
    if (pt->try_handlers) lj_mem_free(g, pt->try_handlers, pt->try_handler_count * sizeof(TryHandlerDesc));
+   if (pt->context_blocks) {
+      lj_mem_free(g, pt->context_blocks, pt->context_block_count * sizeof(ProtoContextBlockDesc));
+   }
+
+   // The resolved dependency sidecar holds non-owning pointers into the global module registry, so releasing it must
+   // not touch the records themselves.  The registry outlives every Tiri state by contract (see expunge_modules()).
+
+   if (pt->resolved_dependencies) {
+      lj_mem_free(g, pt->resolved_dependencies, pt->resolved_count * sizeof(void *));
+   }
+   if (pt->resolved_dependency_states) {
+      lj_mem_free(g, pt->resolved_dependency_states, pt->resolved_dependency_count * sizeof(uint8_t));
+   }
 
    lj_mem_free(g, pt, pt->sizept);
 }
@@ -134,6 +150,55 @@ static GCfunc* func_newL(lua_State *L, GCproto *pt, GCtab *env)
    count = (uint32_t)pt->flags + PROTO_CLCOUNT;
    pt->flags = (uint8_t)(count - ((count >> PROTO_CLC_BITS) & PROTO_CLCOUNT));
    return fn;
+}
+
+// Trace allocation must not collect or inspect the interpreter frame.  CALLA supplies GC checks and snapshots.
+
+GCfunc *lj_func_newL_zero(lua_State *L, GCproto *Proto, GCtab *Environment)
+{
+   lj_assertL(Proto->sizeuv IS 0, "trace closure allocation with captures");
+   return func_newL(L, Proto, Environment);
+}
+
+// Share existing cells without collecting, creating open cells or inspecting the interpreter frame.
+
+GCfunc *lj_func_newL_inherited(lua_State *L, GCproto *Proto, GCfuncL *Parent)
+{
+   GCfunc *function = func_newL(L, Proto, tabref(Parent->env));
+   for (MSize index = 0; index < Proto->sizeuv; ++index) {
+      uint32_t capture = proto_uv(Proto)[index];
+      lj_assertL(not (capture & PROTO_UV_LOCAL), "trace closure allocation with local capture");
+      lj_assertL(capture < Parent->nupvalues, "invalid inherited capture index");
+      // NOBARRIER: The function is new and white; preserve the cell's immutable flag and disambiguation hash.
+      setgcrefr(function->l.uvptr[index], Parent->uvptr[capture]);
+   }
+   function->l.nupvalues = uint8_t(Proto->sizeuv);
+   return function;
+}
+
+// Trace-local captures use the logical frame supplied by the recorder.  Neither allocation path collects or
+// resizes the stack.  Create cells first so allocation failure never leaves a partially sized function in the GC list.
+
+GCfunc *lj_func_newL_local(lua_State *L, GCproto *Proto, GCfuncL *Parent, TValue *Base)
+{
+   GCupval *captures[LJ_MAX_UPVAL];
+   for (MSize index = 0; index < Proto->sizeuv; ++index) {
+      uint32_t capture = proto_uv(Proto)[index];
+      if (capture & PROTO_UV_LOCAL) {
+         GCupval *cell = func_finduv(L, Base + (capture & 0xff));
+         cell->immutable = ((capture / PROTO_UV_IMMUTABLE) & 1);
+         cell->dhash = uint32_t(uintptr_t(mref<char>(Parent->pc))) ^ (capture << 24);
+         captures[index] = cell;
+      }
+      else captures[index] = gco_to_upval(gcref(Parent->uvptr[capture]));
+   }
+   GCfunc *function = func_newL(L, Proto, tabref(Parent->env));
+   for (MSize index = 0; index < Proto->sizeuv; ++index) {
+      // NOBARRIER: The function is white, and no allocation or collection intervenes before publication.
+      setgcref(function->l.uvptr[index], obj2gco(captures[index]));
+   }
+   function->l.nupvalues = uint8_t(Proto->sizeuv);
+   return function;
 }
 
 // Create a new Lua function with empty upvalues.

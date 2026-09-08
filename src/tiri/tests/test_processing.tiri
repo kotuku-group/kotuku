@@ -2,6 +2,19 @@
 
 -----------------------------------------------------------------------------------------------------------------------
 
+@Test function HaltRequiresSeconds()
+   try
+      exec('processing.halt()')
+   except e
+      assert(e.message.find('required argument 1 is missing') != nil,
+         'processing.halt() should publish its required seconds argument')
+   success
+      assert(false, 'processing.halt() should be rejected without a seconds argument')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
 @Test function GCStatsKeyValues()
    stats = processing.gcStats()
    assert(type(stats) is 'table', 'gcStats() should return a table')
@@ -25,7 +38,7 @@
    assert(diff < 0.0001, f'memoryMB ({stats.memoryMB}) should be consistent with KB+bytes ({expected_mb})')
 
    assert(stats.isRunning != nil, 'gcStats() should have isRunning field')
-   assert(type(stats.isRunning) is 'boolean', 'isRunning should be a boolean')
+   assert(type(stats.isRunning) is 'bool', 'isRunning should be a bool')
 
    assert(stats.pause != nil, 'gcStats() should have pause field')
    assert(type(stats.pause) is 'number', 'pause should be a number')
@@ -87,15 +100,15 @@ end
    try
       processing.collect('invalid_mode')
    success
-      error('collect() with invalid mode should throw an error')
+      assert(false, 'collect() with invalid mode should throw an error')
    end
 end
 
 @Test function CollectReducesMemory()
    -- Allocate some memory
    t = {}
-   for i in {0..5000} do
-      t[i] = string.rep('x', 100)
+   for i in {0 to 5000} do
+      t[i] = 'x'.rep(100)
    end
 
    before = processing.gcStats().memoryMB
@@ -145,6 +158,12 @@ end
    processing.signal()
    processing.flush()
    -- If we get here without error, the test passes
+end
+
+@Test function ProcessingObjectFlushExists()
+   proc = processing.new()
+   assert(type(proc.flush) is 'function', 'proc.flush should be a function')
+   proc.flush()
 end
 
 -----------------------------------------------------------------------------------------------------------------------

@@ -11,12 +11,12 @@
 // Object type names.
 
 LJ_DATADEF CSTRING const lj_obj_typename[] = {  // ORDER LUA_T
-  "no value", "nil", "boolean", "userdata", "number", "string",
-  "table", "function", "userdata", "thread", "proto", "object", "array"
+  "no value", "nil", "bool", "userdata", "number", "string",
+  "table", "function", "userdata", "struct", "proto", "object", "array"
 };
 
 LJ_DATADEF CSTRING const lj_obj_itypename[] = {  // ORDER LJ_T
-  "nil", "boolean", "boolean", "userdata", "string", "upval", "thread",
+  "nil", "bool", "bool", "userdata", "string", "upval", "struct",
   "proto", "function", "trace", "object", "table", "userdata", "array", "number"
 };
 
@@ -51,9 +51,14 @@ const void * lj_obj_ptr(global_State *g, cTValue *o)
 {
    switch(elemtype) {
       case AET::BYTE:    return FD_BYTE;
+      case AET::INT8:    return FD_BYTE;
       case AET::INT16:   return FD_WORD;
       case AET::INT32:   return FD_INT;
       case AET::INT64:   return FD_INT64;
+      case AET::UINT8:   return FD_BYTE;
+      case AET::UINT16:  return FD_WORD;
+      case AET::UINT32:  return FD_INT;
+      case AET::UINT64:  return FD_INT64;
       case AET::FLOAT:   return FD_FLOAT;
       case AET::DOUBLE:  return FD_DOUBLE;
       case AET::PTR:     return FD_POINTER;

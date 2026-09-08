@@ -11,19 +11,15 @@ TiriType parse_type_name(std::string_view Name)
       { "any",       TiriType::Any },
       { "nil",       TiriType::Nil },
       { "bool",      TiriType::Bool },
-      { "boolean",   TiriType::Bool },
       { "num",       TiriType::Num },
-      { "number",    TiriType::Num },
       { "str",       TiriType::Str },
-      { "string",    TiriType::Str },
       { "table",     TiriType::Table },
       { "array",     TiriType::Array },
       { "func",      TiriType::Func },
-      { "function",  TiriType::Func },
-      { "thread",    TiriType::Thread },
+      { "struct",    TiriType::Struct },
       { "obj",       TiriType::Object },
-      { "object",    TiriType::Object },
-      { "range",     TiriType::Range }
+      { "range",     TiriType::Range },
+      { "userdata",  TiriType::Userdata }
    };
 
    auto it = type_map.find(Name);
@@ -33,16 +29,17 @@ TiriType parse_type_name(std::string_view Name)
 std::string_view type_name(TiriType Type)
 {
    switch (Type) {
-      case TiriType::Nil:    return "nil";
-      case TiriType::Bool:   return "bool";
-      case TiriType::Num:    return "num";
-      case TiriType::Str:    return "str";
-      case TiriType::Table:  return "table";
-      case TiriType::Array:  return "array";
-      case TiriType::Func:   return "func";
-      case TiriType::Thread: return "thread";
-      case TiriType::Object: return "obj";
-      case TiriType::Range:  return "range";
+      case TiriType::Nil:      return "nil";
+      case TiriType::Bool:     return "bool";
+      case TiriType::Num:      return "num";
+      case TiriType::Str:      return "str";
+      case TiriType::Table:    return "table";
+      case TiriType::Array:    return "array";
+      case TiriType::Func:     return "func";
+      case TiriType::Struct:   return "struct";
+      case TiriType::Object:   return "obj";
+      case TiriType::Range:    return "range";
+      case TiriType::Userdata: return "userdata";
       case TiriType::Any:
       default: return "any";
    }
@@ -61,13 +58,14 @@ uint8_t tiri_type_to_lj_tag(TiriType Type)
       case TiriType::Nil:    return 0;   // ~0 = LJ_TNIL
       case TiriType::Bool:   return 2;   // ~2 = LJ_TTRUE (we use true as the canonical boolean)
       case TiriType::Str:    return 4;   // ~4 = LJ_TSTR
-      case TiriType::Thread: return 6;   // ~6 = LJ_TTHREAD
+      case TiriType::Struct: return 6;   // ~6 = LJ_TSTRUCT
       case TiriType::Func:   return 8;   // ~8 = LJ_TFUNC
       case TiriType::Object: return 10;  // ~10 = LJ_TOBJECT
       case TiriType::Table:  return 11;  // ~11 = LJ_TTAB
       case TiriType::Range:  return 12;  // ~12 = LJ_TUDATA (ranges are userdata at runtime)
       case TiriType::Array:  return 13;  // ~13 = LJ_TARRAY
       case TiriType::Num:    return 14;  // ~14 = LJ_TNUMX
+      case TiriType::Userdata:
       case TiriType::Any:
       case TiriType::Unknown:
       default: return 0xFF;  // Unknown - needs evaluation
@@ -75,8 +73,67 @@ uint8_t tiri_type_to_lj_tag(TiriType Type)
 }
 
 //********************************************************************************************************************
-// Infer the result type of an expression from its AST structure.
-// This is used for type-carrying deferred expressions to store the expected result type.
+// Internal bottom marker: evaluating this expression cannot produce a value. No runtime type is introduced.
+
+bool expression_never_returns(const ExprNode &Expression)
+{
+   if (Expression.kind IS AstNodeKind::RaiseExpr) return true;
+   if (auto *ternary = std::get_if<TernaryExprPayload>(&Expression.data)) {
+      return (ternary->condition and expression_never_returns(*ternary->condition)) or
+         (ternary->if_true and ternary->if_false and expression_never_returns(*ternary->if_true) and
+          expression_never_returns(*ternary->if_false));
+   }
+   if (auto *choice = std::get_if<ChooseExprPayload>(&Expression.data)) {
+      if (choice->scrutinee and expression_never_returns(*choice->scrutinee)) return true;
+      for (const auto &item : choice->scrutinee_tuple) {
+         if (item and expression_never_returns(*item)) return true;
+      }
+      bool has_fallback = false;
+      for (const auto &branch : choice->cases) {
+         if (not branch.result or not expression_never_returns(*branch.result)) return false;
+         if ((branch.is_else or branch.is_wildcard) and not branch.guard) has_fallback = true;
+      }
+      return has_fallback;
+   }
+   auto stops = [](const ExprNodePtr &Node) { return Node and expression_never_returns(*Node); };
+   if (auto *unary = std::get_if<UnaryExprPayload>(&Expression.data)) return stops(unary->operand);
+   if (auto *binary = std::get_if<BinaryExprPayload>(&Expression.data)) {
+      if (stops(binary->left)) return true;
+      if (binary->op IS AstBinaryOperator::LogicalAnd or binary->op IS AstBinaryOperator::LogicalOr or
+          binary->op IS AstBinaryOperator::IfEmpty) return false;
+      return stops(binary->right);
+   }
+   if (auto *call = std::get_if<CallExprPayload>(&Expression.data)) {
+      if (auto *direct = std::get_if<DirectCallTarget>(&call->target)) {
+         if (stops(direct->callable)) return true;
+      }
+      if (Expression.kind IS AstNodeKind::SafeCallExpr) return false;
+      for (const auto &argument : call->arguments) if (stops(argument)) return true;
+   }
+   if (auto *member = std::get_if<MemberExprPayload>(&Expression.data)) return stops(member->table);
+   if (auto *member = std::get_if<SafeMemberExprPayload>(&Expression.data)) return stops(member->table);
+   if (auto *index = std::get_if<IndexExprPayload>(&Expression.data)) {
+      return stops(index->table) or stops(index->index);
+   }
+   if (auto *index = std::get_if<SafeIndexExprPayload>(&Expression.data)) return stops(index->table);
+   if (auto *test = std::get_if<TypeTestExprPayload>(&Expression.data)) return stops(test->value);
+   if (auto *presence = std::get_if<PresenceExprPayload>(&Expression.data)) return stops(presence->value);
+   if (auto *table = std::get_if<TableExprPayload>(&Expression.data)) {
+      for (const auto &field : table->fields) if (stops(field.key) or stops(field.value)) return true;
+   }
+   if (auto *range = std::get_if<RangeExprPayload>(&Expression.data)) {
+      return stops(range->start) or stops(range->stop) or stops(range->step);
+   }
+   if (auto *pipe = std::get_if<PipeExprPayload>(&Expression.data)) return stops(pipe->lhs) or stops(pipe->rhs_call);
+   if (auto *filter = std::get_if<ResultFilterPayload>(&Expression.data)) return stops(filter->expression);
+   if (auto *update = std::get_if<UpdateExprPayload>(&Expression.data)) return stops(update->target);
+   if (auto *chain = std::get_if<ComparisonChainExprPayload>(&Expression.data)) {
+      for (size_t i = 0; i < std::min(size_t(2), chain->operands.size()); ++i) {
+         if (stops(chain->operands[i])) return true;
+      }
+   }
+   return false;
+}
 
 TiriType infer_expression_type(const ExprNode &Expr)
 {
@@ -110,6 +167,12 @@ TiriType infer_expression_type(const ExprNode &Expr)
          break;
       }
 
+      case AstNodeKind::TypeTestExpr:
+         return TiriType::Bool;
+
+      case AstNodeKind::ComparisonChainExpr:
+         return TiriType::Bool;
+
       // Binary operators: result type depends on operator
       case AstNodeKind::BinaryExpr: {
          const auto& payload = std::get<BinaryExprPayload>(Expr.data);
@@ -131,11 +194,13 @@ TiriType infer_expression_type(const ExprNode &Expr)
             // Comparison operators return boolean
             case AstBinaryOperator::NotEqual:
             case AstBinaryOperator::Equal:
+            case AstBinaryOperator::Approx:
             case AstBinaryOperator::LessThan:
             case AstBinaryOperator::GreaterEqual:
             case AstBinaryOperator::LessEqual:
             case AstBinaryOperator::GreaterThan:
             case AstBinaryOperator::HasFlag:
+            case AstBinaryOperator::Contains:
                return TiriType::Bool;
 
             // Concatenation returns string
@@ -159,6 +224,10 @@ TiriType infer_expression_type(const ExprNode &Expr)
       // Ternary expression: type depends on branches (would need to check both)
       case AstNodeKind::TernaryExpr: {
          const auto& payload = std::get<TernaryExprPayload>(Expr.data);
+         if (payload.if_true and payload.if_false) {
+            if (expression_never_returns(*payload.if_true)) return infer_expression_type(*payload.if_false);
+            if (expression_never_returns(*payload.if_false)) return infer_expression_type(*payload.if_true);
+         }
          if (payload.if_true) {
             TiriType true_type = infer_expression_type(*payload.if_true);
             if (payload.if_false) {
@@ -170,6 +239,19 @@ TiriType infer_expression_type(const ExprNode &Expr)
             return TiriType::Unknown;
          }
          return TiriType::Unknown;
+      }
+
+      case AstNodeKind::ChooseExpr: {
+         TiriType result = TiriType::Unknown;
+         bool have_result = false;
+         for (const auto &choice : std::get<ChooseExprPayload>(Expr.data).cases) {
+            if (not choice.result or expression_never_returns(*choice.result)) continue;
+            TiriType branch = infer_expression_type(*choice.result);
+            if (have_result and branch != result) return TiriType::Unknown;
+            result = branch;
+            have_result = true;
+         }
+         return result;
       }
 
       // Presence check returns boolean
@@ -186,6 +268,10 @@ TiriType infer_expression_type(const ExprNode &Expr)
          return TiriType::Unknown;
       }
 
+      // Context is always a non-null table.  Other receiver types do not participate in context management.
+      case AstNodeKind::CurrentContextExpr:
+         return TiriType::Table;
+
       // For these, we cannot infer without runtime information
       case AstNodeKind::IdentifierExpr:
       case AstNodeKind::VarArgExpr:
@@ -196,6 +282,10 @@ TiriType infer_expression_type(const ExprNode &Expr)
       case AstNodeKind::PipeExpr:
       case AstNodeKind::ResultFilterExpr:
          return TiriType::Unknown;
+
+      // A module function selection yields the hidden callable itself
+      case AstNodeKind::ModuleFunctionExpr:
+         return TiriType::Func;
 
       // Deferred expressions return the type of their inner expression
       case AstNodeKind::DeferredExpr: {
@@ -229,6 +319,7 @@ InferredTypeInfo infer_expression_type_ext(const ExprNode &Expr)
       if (payload.result_type IS TiriType::Object) {
          result.object_class_id = payload.object_class_id;
       }
+      if (payload.result_type IS TiriType::Struct or payload.struct_def) result.struct_def = payload.struct_def;
    }
 
    return result;
@@ -240,19 +331,49 @@ namespace {
 
 inline void assert_node(bool condition, CSTRING message) { lj_assertX(condition, message); }
 
+static bool ensure_choose_case(const ChooseCase &Case)
+{
+   bool has_type_pattern = Case.type_pattern.has_value();
+   bool has_expression_pattern = Case.pattern != nullptr;
+
+   if (Case.is_else) {
+      return not has_type_pattern and not has_expression_pattern and not Case.is_wildcard and
+         not Case.is_table_pattern and not Case.is_tuple_pattern and Case.tuple_patterns.empty();
+   }
+
+   if (Case.is_tuple_pattern) {
+      return not has_type_pattern and not has_expression_pattern and not Case.is_table_pattern and
+         Case.relational_op IS ChooseRelationalOp::None and
+         Case.tuple_patterns.size() IS Case.tuple_wildcards.size();
+   }
+
+   if (Case.is_wildcard) {
+      return not has_type_pattern and not has_expression_pattern and not Case.is_table_pattern and
+         Case.relational_op IS ChooseRelationalOp::None and Case.tuple_patterns.empty();
+   }
+
+   if (has_type_pattern) {
+      return not has_expression_pattern and not Case.is_table_pattern and
+         Case.relational_op IS ChooseRelationalOp::None and Case.tuple_patterns.empty();
+   }
+
+   if (not has_expression_pattern) return false;
+   if (Case.is_table_pattern) return Case.relational_op IS ChooseRelationalOp::None;
+   return true;
+}
+
 [[nodiscard]] inline size_t block_child_count(const std::unique_ptr<BlockStmt> &block) {
    return block ? block->view().size() : 0;
 }
 
 struct CallTargetChildCounter {
    [[nodiscard]] size_t operator()(const DirectCallTarget &Target) const { return Target.callable ? 1 : 0; }
-   [[nodiscard]] size_t operator()(const MethodCallTarget &Target) const { return Target.receiver ? 1 : 0; }
-   [[nodiscard]] size_t operator()(const SafeMethodCallTarget &Target) const { return Target.receiver ? 1 : 0; }
 };
 
 struct ExpressionChildCounter {
    [[nodiscard]] inline size_t operator()(const LiteralValue &) const { return 0; }
    [[nodiscard]] inline size_t operator()(const NameRef &) const { return 0; }
+   [[nodiscard]] inline size_t operator()(const CurrentContextExprPayload &) const { return 0; }
    [[nodiscard]] inline size_t operator()(const VarArgExprPayload &) const { return 0; }
 
    [[nodiscard]] inline size_t operator()(const UnaryExprPayload &Payload) const {
@@ -263,10 +384,18 @@ struct ExpressionChildCounter {
       return Payload.target ? 1 : 0;
    }
 
+   [[nodiscard]] inline size_t operator()(const TypeTestExprPayload &Payload) const {
+      return Payload.value ? 1 : 0;
+   }
+
    [[nodiscard]] inline size_t operator()(const BinaryExprPayload &Payload) const {
       size_t total = Payload.left ? 1 : 0;
       if (Payload.right) total++;
       return total;
+   }
+
+   [[nodiscard]] inline size_t operator()(const ComparisonChainExprPayload &Payload) const {
+      return Payload.operands.size();
    }
 
    [[nodiscard]] inline size_t operator()(const TernaryExprPayload &Payload) const {
@@ -295,6 +424,12 @@ struct ExpressionChildCounter {
    [[nodiscard]] inline size_t operator()(const MemberExprPayload &Payload) const {
       return Payload.table ? 1 : 0;
    }
+
+   [[nodiscard]] inline size_t operator()(const RaisePayload &Payload) const {
+      return size_t(bool(Payload.error_code)) + size_t(bool(Payload.message));
+   }
+
+   [[nodiscard]] inline size_t operator()(const ModuleFunctionExprPayload &) const { return 0; }
 
    [[nodiscard]] inline size_t operator()(const IndexExprPayload &Payload) const {
       size_t total = Payload.table ? 1 : 0;
@@ -343,6 +478,7 @@ struct ExpressionChildCounter {
    {
       size_t total = Payload.start ? 1 : 0;
       if (Payload.stop) total++;
+      if (Payload.step) total++;
       return total;
    }
 
@@ -373,6 +509,8 @@ struct StatementChildCounter {
    {
       return Payload.values.size();
    }
+
+   [[nodiscard]] inline size_t operator()(const ExternDeclStmtPayload &) const { return 0; }
 
    [[nodiscard]] inline size_t operator()(const LocalFunctionStmtPayload &Payload) const
    {
@@ -411,6 +549,16 @@ struct StatementChildCounter {
       return total;
    }
 
+   [[nodiscard]] inline size_t operator()(const RangeForStmtPayload &Payload) const
+   {
+      size_t total = 0;
+      if (Payload.start) total++;
+      if (Payload.stop) total++;
+      if (Payload.step) total++;
+      total += block_child_count(Payload.body);
+      return total;
+   }
+
    [[nodiscard]] inline size_t operator()(const GenericForStmtPayload &Payload) const
    {
       size_t total = Payload.iterators.size();
@@ -440,6 +588,11 @@ struct StatementChildCounter {
       return block_child_count(Payload.block);
    }
 
+   [[nodiscard]] inline size_t operator()(const ContextStmtPayload &Payload) const
+   {
+      return (Payload.reference ? 1 : 0) + block_child_count(Payload.block);
+   }
+
    [[nodiscard]] inline size_t operator()(const ConditionalShorthandStmtPayload &Payload) const
    {
       size_t total = Payload.condition ? 1 : 0;
@@ -457,6 +610,11 @@ struct StatementChildCounter {
       return total;
    }
 
+   [[nodiscard]] inline size_t operator()(const CheckallStmtPayload &Payload) const
+   {
+      return block_child_count(Payload.block);
+   }
+
    [[nodiscard]] inline size_t operator()(const RaiseStmtPayload &Payload) const
    {
       size_t total = Payload.error_code ? 1 : 0;
@@ -471,7 +629,16 @@ struct StatementChildCounter {
 
    [[nodiscard]] inline size_t operator()(const ImportStmtPayload &Payload) const
    {
-      return block_child_count(Payload.inlined_body);
+      size_t total = 0;
+      for (const ImportEntryPayload &entry : Payload.entries) {
+         total += block_child_count(entry.inlined_body);
+      }
+      return total;
+   }
+
+   [[nodiscard]] inline size_t operator()(const NamespaceStmtPayload &Payload) const
+   {
+      return Payload.initialiser ? 1 : 0;
    }
 
    [[nodiscard]] inline size_t operator()(const WithStmtPayload &Payload) const
@@ -488,11 +655,11 @@ struct StatementChildCounter {
 }  // namespace
 
 DirectCallTarget::~DirectCallTarget() = default;
-MethodCallTarget::~MethodCallTarget() = default;
-SafeMethodCallTarget::~SafeMethodCallTarget() = default;
 UnaryExprPayload::~UnaryExprPayload() = default;
 UpdateExprPayload::~UpdateExprPayload() = default;
+TypeTestExprPayload::~TypeTestExprPayload() = default;
 BinaryExprPayload::~BinaryExprPayload() = default;
+ComparisonChainExprPayload::~ComparisonChainExprPayload() = default;
 TernaryExprPayload::~TernaryExprPayload() = default;
 PresenceExprPayload::~PresenceExprPayload() = default;
 PipeExprPayload::~PipeExprPayload() = default;
@@ -513,24 +680,53 @@ IfClause::~IfClause() = default;
 AssignmentStmtPayload::~AssignmentStmtPayload() = default;
 LocalDeclStmtPayload::~LocalDeclStmtPayload() = default;
 GlobalDeclStmtPayload::~GlobalDeclStmtPayload() = default;
+ExternDeclStmtPayload::~ExternDeclStmtPayload() = default;
 LocalFunctionStmtPayload::~LocalFunctionStmtPayload() = default;
 FunctionStmtPayload::~FunctionStmtPayload() = default;
 IfStmtPayload::~IfStmtPayload() = default;
 LoopStmtPayload::~LoopStmtPayload() = default;
 NumericForStmtPayload::~NumericForStmtPayload() = default;
+RangeForStmtPayload::~RangeForStmtPayload() = default;
 GenericForStmtPayload::~GenericForStmtPayload() = default;
 ReturnStmtPayload::~ReturnStmtPayload() = default;
 DeferStmtPayload::~DeferStmtPayload() = default;
 DoStmtPayload::~DoStmtPayload() = default;
+ContextStmtPayload::~ContextStmtPayload() = default;
 ExpressionStmtPayload::~ExpressionStmtPayload() = default;
 ConditionalShorthandStmtPayload::~ConditionalShorthandStmtPayload() = default;
 ExceptClause::~ExceptClause() = default;
 TryExceptPayload::~TryExceptPayload() = default;
-RaiseStmtPayload::~RaiseStmtPayload() = default;
+CheckallStmtPayload::~CheckallStmtPayload() = default;
+RaisePayload::~RaisePayload() = default;
 CheckStmtPayload::~CheckStmtPayload() = default;
+ImportEntryPayload::~ImportEntryPayload() = default;
 ImportStmtPayload::~ImportStmtPayload() = default;
+NamespaceStmtPayload::~NamespaceStmtPayload() = default;
 WithStmtPayload::~WithStmtPayload() = default;
 BlockStmt::~BlockStmt() = default;
+
+//********************************************************************************************************************
+
+bool assignment_target_is_existing_lexical(AssignmentTargetResolution Resolution) noexcept
+{
+   return Resolution IS AssignmentTargetResolution::ExistingLocal or
+      Resolution IS AssignmentTargetResolution::ExistingUpvalue;
+}
+
+//********************************************************************************************************************
+
+bool assignment_target_is_existing_storage(AssignmentTargetResolution Resolution) noexcept
+{
+   return assignment_target_is_existing_lexical(Resolution) or
+      Resolution IS AssignmentTargetResolution::ExistingGlobal;
+}
+
+//********************************************************************************************************************
+
+bool assignment_target_creates_local(AssignmentTargetResolution Resolution) noexcept
+{
+   return Resolution IS AssignmentTargetResolution::NewLocal;
+}
 
 ExprNodePtr make_literal_expr(SourceSpan Span, const LiteralValue &Literal)
 {
@@ -547,6 +743,15 @@ ExprNodePtr make_identifier_expr(SourceSpan Span, const NameRef &Reference)
    node->kind = AstNodeKind::IdentifierExpr;
    node->span = Span;
    node->data = Reference;
+   return node;
+}
+
+ExprNodePtr make_current_context_expr(SourceSpan Span)
+{
+   ExprNodePtr node = std::make_unique<ExprNode>();
+   node->kind = AstNodeKind::CurrentContextExpr;
+   node->span = Span;
+   node->data.emplace<CurrentContextExprPayload>();
    return node;
 }
 
@@ -602,11 +807,42 @@ ExprNodePtr make_binary_expr(SourceSpan Span, AstBinaryOperator op, ExprNodePtr 
    return node;
 }
 
-ExprNodePtr make_ternary_expr(SourceSpan Span, ExprNodePtr condition, ExprNodePtr if_true, ExprNodePtr if_false)
+ExprNodePtr make_type_test_expr(
+   SourceSpan Span, ExprNodePtr Value, TypeTestDescriptor Descriptor, bool Negated)
+{
+   assert_node(ensure_operand(Value), "type-test expression requires a value");
+   TypeTestExprPayload payload;
+   payload.value = std::move(Value);
+   payload.descriptor = Descriptor;
+   payload.negated = Negated;
+   ExprNodePtr node = std::make_unique<ExprNode>();
+   node->kind = AstNodeKind::TypeTestExpr;
+   node->span = Span;
+   node->data = std::move(payload);
+   return node;
+}
+
+ExprNodePtr make_comparison_chain_expr(SourceSpan Span, std::vector<AstBinaryOperator> Operators, ExprNodeList Operands)
+{
+   assert_node(Operands.size() >= 2 and Operators.size() + 1 IS Operands.size(),
+      "comparison chain requires adjacent operators and operands");
+   ComparisonChainExprPayload payload;
+   payload.operators = std::move(Operators);
+   payload.operands = std::move(Operands);
+   ExprNodePtr node = std::make_unique<ExprNode>();
+   node->kind = AstNodeKind::ComparisonChainExpr;
+   node->span = Span;
+   node->data = std::move(payload);
+   return node;
+}
+
+ExprNodePtr make_ternary_expr(SourceSpan Span, TernaryConditionMode Mode, ExprNodePtr condition, ExprNodePtr if_true,
+   ExprNodePtr if_false)
 {
    assert_node(ensure_operand(condition) and ensure_operand(if_true) and ensure_operand(if_false),
       "ternary expression requires three operands");
    TernaryExprPayload payload;
+   payload.condition_mode = Mode;
    payload.condition = std::move(condition);
    payload.if_true = std::move(if_true);
    payload.if_false = std::move(if_false);
@@ -644,26 +880,35 @@ ExprNodePtr make_pipe_expr(SourceSpan Span, ExprNodePtr lhs, ExprNodePtr rhs_cal
 }
 
 //********************************************************************************************************************
-// Helper to detect obj.new("classname", ...) pattern and extract class information.
-// Returns true if the pattern is detected and sets result_type and object_class_id.
+// Helper to detect obj.new("classname", ...) and struct.new("definition", ...) constructor calls. Returns true if a
+// known constructor is detected and sets result_type; object constructors also set object_class_id.
 
-static bool detect_obj_new_call(const ExprNode &Callee, const ExprNodeList &Arguments, TiriType &ResultType, CLASSID &ClassID)
+static bool detect_constructor_call(const ExprNode &Callee, const ExprNodeList &Arguments, TiriType &ResultType,
+   CLASSID &ClassID)
 {
    // Pattern: obj.new("classname", ...) where callee is MemberExpr(obj, "new")
    if (Callee.kind != AstNodeKind::MemberExpr) return false;
 
    const auto& member_payload = std::get<MemberExprPayload>(Callee.data);
 
-   // Check if member name is "new"
+   // Check the constructor member name.
    if (not member_payload.member.symbol) return false;
-   if (strcmp(strdata(member_payload.member.symbol), "new") != 0) return false;
+   std::string_view member_name(strdata(member_payload.member.symbol), member_payload.member.symbol->len);
+   if (member_name != "new" and member_name != "def") return false;
 
-   // Check if table is identifier "obj"
+   // Check if the constructor interface is a simple identifier.
    if (not member_payload.table) return false;
    if (member_payload.table->kind != AstNodeKind::IdentifierExpr) return false;
 
    const auto& name_ref = std::get<NameRef>(member_payload.table->data);
    if (not name_ref.identifier.symbol) return false;
+
+   if (strcmp(strdata(name_ref.identifier.symbol), "struct") IS 0) {
+      ResultType = member_name IS "def" ? TiriType::Func : TiriType::Struct;
+      return true;
+   }
+
+   if (member_name != "new") return false;
    if (strcmp(strdata(name_ref.identifier.symbol), "obj") != 0) return false;
 
    ResultType = TiriType::Object; // obj.new() always returns an Object
@@ -685,34 +930,39 @@ static bool detect_obj_new_call(const ExprNode &Callee, const ExprNodeList &Argu
 
    // Compute CLASSID from class name (case-insensitive hash)
    std::string_view class_name(strdata(literal.string_value), literal.string_value->len);
-   ClassID = CLASSID(pf::strihash(class_name));
+   ClassID = CLASSID(kt::strihash(class_name));
    return true;
 }
 
 //********************************************************************************************************************
 
-ExprNodePtr make_call_expr(SourceSpan Span, ExprNodePtr callee, ExprNodeList arguments, bool forwards_multret)
+ExprNodePtr make_call_expr(SourceSpan Span, ExprNodePtr callee, ExprNodeList arguments, bool forwards_multret,
+   CallArgumentSyntax ArgumentSyntax)
 {
    assert_node(ensure_operand(callee), "call expression requires callee");
    CallExprPayload payload;
 
-   // Detect obj.new("classname", ...) pattern before moving callee
-   detect_obj_new_call(*callee, arguments, payload.result_type, payload.object_class_id);
+   // Detect known constructor calls before moving callee.
+   detect_constructor_call(*callee, arguments, payload.result_type, payload.object_class_id);
 
    // Mark MemberExpr/SafeMemberExpr callees as call targets so type-checking can be deferred to runtime
    if (callee->kind IS AstNodeKind::MemberExpr) {
       auto *member_payload = std::get_if<MemberExprPayload>(&callee->data);
       if (member_payload) member_payload->is_call_target = true;
+      payload.dispatch = CallDispatch::MemberNamed;
    }
    else if (callee->kind IS AstNodeKind::SafeMemberExpr) {
       auto *member_payload = std::get_if<SafeMemberExprPayload>(&callee->data);
       if (member_payload) member_payload->is_call_target = true;
+      payload.dispatch = CallDispatch::SafeMemberNamed;
    }
-
+   else if (callee->kind IS AstNodeKind::IndexExpr) payload.dispatch = CallDispatch::MemberComputed;
+   else if (callee->kind IS AstNodeKind::SafeIndexExpr) payload.dispatch = CallDispatch::SafeMemberComputed;
    DirectCallTarget target;
    target.callable = std::move(callee);
    payload.target = std::move(target);
    payload.arguments = std::move(arguments);
+   payload.argument_syntax = ArgumentSyntax;
    payload.forwards_multret = forwards_multret;
    ExprNodePtr node = std::make_unique<ExprNode>();
    node->kind = AstNodeKind::CallExpr;
@@ -721,53 +971,29 @@ ExprNodePtr make_call_expr(SourceSpan Span, ExprNodePtr callee, ExprNodeList arg
    return node;
 }
 
-ExprNodePtr make_method_call_expr(SourceSpan Span, ExprNodePtr receiver, Identifier method, ExprNodeList arguments,
-   bool forwards_multret)
-{
-   assert_node(ensure_operand(receiver), "method call requires receiver");
-   CallExprPayload payload;
-   MethodCallTarget target;
-   target.receiver = std::move(receiver);
-   target.method = method;
-   payload.target = std::move(target);
-   payload.arguments = std::move(arguments);
-   payload.forwards_multret = forwards_multret;
-   ExprNodePtr node = std::make_unique<ExprNode>();
-   node->kind = AstNodeKind::CallExpr;
-   node->span = Span;
-   node->data = std::move(payload);
-   return node;
-}
-
-ExprNodePtr make_safe_method_call_expr(SourceSpan Span, ExprNodePtr receiver, Identifier method, ExprNodeList arguments,
-   bool forwards_multret)
-{
-   assert_node(ensure_operand(receiver), "safe method call requires receiver");
-   CallExprPayload payload;
-   SafeMethodCallTarget target;
-   target.receiver = std::move(receiver);
-   target.method = method;
-   payload.target = std::move(target);
-   payload.arguments = std::move(arguments);
-   payload.forwards_multret = forwards_multret;
-   ExprNodePtr node = std::make_unique<ExprNode>();
-   node->kind = AstNodeKind::SafeCallExpr;
-   node->span = Span;
-   node->data = std::move(payload);
-   return node;
-}
-
-ExprNodePtr make_member_expr(SourceSpan Span, ExprNodePtr Table, Identifier member, bool uses_method_dispatch)
+ExprNodePtr make_member_expr(SourceSpan Span, ExprNodePtr Table, Identifier member)
 {
    assert_node(ensure_operand(Table), "member expression requires table value");
    MemberExprPayload payload;
-   // Infer base type before moving the table expression
-   payload.base_type = infer_expression_type(*Table);
    payload.table = std::move(Table);
    payload.member = member;
-   payload.uses_method_dispatch = uses_method_dispatch;
    ExprNodePtr node = std::make_unique<ExprNode>();
    node->kind = AstNodeKind::MemberExpr;
+   node->span = Span;
+   node->data = std::move(payload);
+   return node;
+}
+
+ExprNodePtr make_module_function_expr(SourceSpan Span, Identifier Binding, Identifier Function,
+   StaticModuleHandle Module, GCstr *NamespaceName)
+{
+   ModuleFunctionExprPayload payload;
+   payload.binding        = Binding;
+   payload.function       = Function;
+   payload.module         = Module;
+   payload.namespace_name = NamespaceName;
+   ExprNodePtr node = std::make_unique<ExprNode>();
+   node->kind = AstNodeKind::ModuleFunctionExpr;
    node->span = Span;
    node->data = std::move(payload);
    return node;
@@ -790,8 +1016,6 @@ ExprNodePtr make_safe_member_expr(SourceSpan Span, ExprNodePtr Table, Identifier
 {
    assert_node(ensure_operand(Table), "safe member expression requires table value");
    SafeMemberExprPayload payload;
-   // Infer base type before moving the table expression
-   payload.base_type = infer_expression_type(*Table);
    payload.table = std::move(Table);
    payload.member = Member;
    ExprNodePtr node = std::make_unique<ExprNode>();
@@ -842,16 +1066,16 @@ ExprNodePtr make_table_expr(SourceSpan Span, std::vector<TableField> fields, boo
    return node;
 }
 
-ExprNodePtr make_function_expr(SourceSpan Span, std::vector<FunctionParameter> parameters, bool is_vararg, std::unique_ptr<BlockStmt> body, bool IsThunk, TiriType ThunkReturnType, FunctionReturnTypes ReturnTypes)
+ExprNodePtr make_function_expr(SourceSpan Span, std::vector<FunctionParameter> Parameters, bool IsVararg,
+   std::unique_ptr<BlockStmt> Body, bool IsThunk, FunctionReturnTypes ReturnTypes)
 {
-   assert_node(body != nullptr, "function literal body required");
+   assert_node(Body != nullptr, "function literal body required");
    FunctionExprPayload payload;
-   payload.parameters = std::move(parameters);
-   payload.is_vararg = is_vararg;
+   payload.parameters = std::move(Parameters);
+   payload.is_vararg = IsVararg;
    payload.is_thunk = IsThunk;
-   payload.thunk_return_type = ThunkReturnType;
    payload.return_types = ReturnTypes;
-   payload.body = std::move(body);
+   payload.body = std::move(Body);
    ExprNodePtr node = std::make_unique<ExprNode>();
    node->kind = AstNodeKind::FunctionExpr;
    node->span = Span;
@@ -873,13 +1097,15 @@ ExprNodePtr make_deferred_expr(SourceSpan Span, ExprNodePtr inner, TiriType Type
    return node;
 }
 
-ExprNodePtr make_range_expr(SourceSpan Span, ExprNodePtr Start, ExprNodePtr Stop, bool Inclusive)
+ExprNodePtr make_range_expr(SourceSpan Span, ExprNodePtr Start, ExprNodePtr Stop, bool Inclusive, ExprNodePtr Step)
 {
    assert_node(ensure_operand(Start), "range expression requires start expression");
    assert_node(ensure_operand(Stop), "range expression requires stop expression");
+   if (Step) assert_node(ensure_operand(Step), "range expression requires valid step expression");
    RangeExprPayload payload;
    payload.start = std::move(Start);
    payload.stop = std::move(Stop);
+   payload.step = std::move(Step);
    payload.inclusive = Inclusive;
    ExprNodePtr node = std::make_unique<ExprNode>();
    node->kind = AstNodeKind::RangeExpr;
@@ -891,6 +1117,9 @@ ExprNodePtr make_range_expr(SourceSpan Span, ExprNodePtr Start, ExprNodePtr Stop
 ExprNodePtr make_choose_expr(SourceSpan Span, ExprNodePtr Scrutinee, std::vector<ChooseCase> Cases, size_t InferredArity)
 {
    assert_node(ensure_operand(Scrutinee), "choose expression requires scrutinee expression");
+   for (const ChooseCase &case_arm : Cases) {
+      assert_node(ensure_choose_case(case_arm), "choose expression contains an invalid case pattern");
+   }
    ChooseExprPayload payload;
    payload.scrutinee = std::move(Scrutinee);
    payload.cases = std::move(Cases);
@@ -905,6 +1134,9 @@ ExprNodePtr make_choose_expr(SourceSpan Span, ExprNodePtr Scrutinee, std::vector
 ExprNodePtr make_choose_expr_tuple(SourceSpan Span, ExprNodeList ScrutineeTuple, std::vector<ChooseCase> Cases)
 {
    assert_node(ScrutineeTuple.size() >= 2, "tuple scrutinee requires at least 2 elements");
+   for (const ChooseCase &case_arm : Cases) {
+      assert_node(ensure_choose_case(case_arm), "choose expression contains an invalid case pattern");
+   }
    ChooseExprPayload payload;
    payload.scrutinee_tuple = std::move(ScrutineeTuple);
    payload.cases = std::move(Cases);
@@ -915,17 +1147,16 @@ ExprNodePtr make_choose_expr_tuple(SourceSpan Span, ExprNodeList ScrutineeTuple,
    return node;
 }
 
-std::unique_ptr<FunctionExprPayload> make_function_payload(std::vector<FunctionParameter> parameters,
-   bool is_vararg, std::unique_ptr<BlockStmt> body, bool IsThunk, TiriType ThunkReturnType, FunctionReturnTypes ReturnTypes)
+std::unique_ptr<FunctionExprPayload> make_function_payload(std::vector<FunctionParameter> Parameters,
+   bool IsVararg, std::unique_ptr<BlockStmt> Body, bool IsThunk, FunctionReturnTypes ReturnTypes)
 {
-   assert_node(body != nullptr, "function body required");
+   assert_node(Body != nullptr, "function body required");
    auto payload = std::make_unique<FunctionExprPayload>();
-   payload->parameters = std::move(parameters);
-   payload->is_vararg = is_vararg;
+   payload->parameters = std::move(Parameters);
+   payload->is_vararg = IsVararg;
    payload->is_thunk = IsThunk;
-   payload->thunk_return_type = ThunkReturnType;
    payload->return_types = ReturnTypes;
-   payload->body = std::move(body);
+   payload->body = std::move(Body);
    return payload;
 }
 
@@ -991,6 +1222,7 @@ size_t ast_expression_child_count(const ExprNode &Node)
 // Constructor for Identifier that creates an identifier from a string.
 
 Identifier::Identifier(lua_State* L, const char* Name, SourceSpan Span)
-   : symbol(lj_str_new(L, Name, std::strlen(Name))), span(Span), is_blank(false), has_close(false), type(TiriType::Unknown)
+   : symbol(lj_str_new(L, Name, std::strlen(Name))), span(Span), is_blank(false), has_close(false), has_const(false),
+     has_view(false), type(TiriType::Unknown)
 {
 }

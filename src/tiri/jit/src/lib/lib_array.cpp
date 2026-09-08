@@ -14,41 +14,54 @@
 #include "lauxlib.h"
 #include "lualib.h"
 #include "lj_obj.h"
+#include "lj_ff.h"
 #include "lj_gc.h"
 #include "lj_err.h"
 #include "lj_tab.h"
 #include "lj_str.h"
+#include "lj_strfmt.h"
+#include "lj_buf.h"
 #include "lj_array.h"
+#include "lj_bulk.h"
 #include "lj_meta.h"
+#include "lj_state.h"
+#include "lj_struct.h"
+#include "lj_vm.h"
+#include "lj_vmarray.h"
+#include "stack_helpers.h"
 #include "lib.h"
+#include "lib_utils.h"
 #include "lib_range.h"
+#include "../parser/static_type_descriptor.h"
 
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <algorithm>
+#include <string_view>
 #include <kotuku/strings.hpp>
 #include <kotuku/main.h>
 
+#include "../../defs.h"
+
 #define LJLIB_MODULE_array
 
-constexpr auto HASH_INT     = pf::strhash("int");
-constexpr auto HASH_BYTE    = pf::strhash("byte");
-constexpr auto HASH_CHAR    = pf::strhash("char");
-constexpr auto HASH_INT16   = pf::strhash("int16");
-constexpr auto HASH_INT64   = pf::strhash("int64");
-constexpr auto HASH_FLOAT   = pf::strhash("float");
-constexpr auto HASH_DOUBLE  = pf::strhash("double");
-constexpr auto HASH_STRING  = pf::strhash("string");
-constexpr auto HASH_STRUCT  = pf::strhash("struct");
-constexpr auto HASH_POINTER = pf::strhash("pointer");
-constexpr auto HASH_OBJECT  = pf::strhash("object");
-constexpr auto HASH_TABLE   = pf::strhash("table");
-constexpr auto HASH_ARRAY   = pf::strhash("array");
-constexpr auto HASH_ANY     = pf::strhash("any");
+constexpr auto HASH_INT     = kt::strhash("int");
+constexpr auto HASH_BYTE    = kt::strhash("byte");
+constexpr auto HASH_CHAR    = kt::strhash("char");
+constexpr auto HASH_INT16   = kt::strhash("int16");
+constexpr auto HASH_INT64   = kt::strhash("int64");
+constexpr auto HASH_FLOAT   = kt::strhash("float");
+constexpr auto HASH_DOUBLE  = kt::strhash("double");
+constexpr auto HASH_STR     = kt::strhash("str");
+constexpr auto HASH_STRUCT  = kt::strhash("struct");
+constexpr auto HASH_POINTER = kt::strhash("pointer");
+constexpr auto HASH_OBJECT  = kt::strhash("object");
+constexpr auto HASH_TABLE   = kt::strhash("table");
+constexpr auto HASH_ARRAY   = kt::strhash("array");
+constexpr auto HASH_ANY     = kt::strhash("any");
 
 // Forward declarations
-static int32_t find_in_array(GCarray *Arr, lua_Number Value, int32_t Start, int32_t Stop, int32_t Step);
-static int32_t find_object_in_array(GCarray *Arr, OBJECTID SearchUid, int32_t Start, int32_t Stop, int32_t Step);
 static void array_push_element(lua_State *L, GCarray *Arr, MSize Idx);
 
 const array_meta glArrayConversion[size_t(AET::MAX)] = {
@@ -66,7 +79,12 @@ const array_meta glArrayConversion[size_t(AET::MAX)] = {
    { uint8_t(LJ_TARRAY),   LUA_TARRAY, false },         // AET::ARRAY
    { uint8_t(LJ_TNIL),     0, false },                  // AET::ANY
    { uint8_t(LJ_TUDATA),   LUA_TUSERDATA, false },      // AET::STRUCT
-   { uint8_t(LJ_TOBJECT),  LUA_TOBJECT, false }         // AET::OBJECT
+   { uint8_t(LJ_TOBJECT),  LUA_TOBJECT, false },        // AET::OBJECT
+   { uint8_t(LJ_TNUMX),    LUA_TNUMBER, true },         // AET::UINT8
+   { uint8_t(LJ_TNUMX),    LUA_TNUMBER, true },         // AET::UINT16
+   { uint8_t(LJ_TNUMX),    LUA_TNUMBER, true },         // AET::UINT32
+   { uint8_t(LJ_TNUMX),    LUA_TNUMBER, true },         // AET::UINT64
+   { uint8_t(LJ_TNUMX),    LUA_TNUMBER, true }          // AET::INT8
 };
 
 //********************************************************************************************************************
@@ -86,90 +104,241 @@ static OBJECTID object_uid_from_value(lua_State *L, int ArgIndex)
 //********************************************************************************************************************
 // Helper to parse element type string
 
-static AET parse_elemtype(lua_State *L, int NArg)
+static std::string_view array_struct_name(lua_State *L, int NArg);
+bool lj_array_struct_is_trivial(const struct_record &Def);
+
+static ArrayAllocationDescriptor parse_elemtype(lua_State *L, int NArg)
 {
    GCstr *type_str = lj_lib_checkstr(L, NArg);
+   std::string_view type_name(strdata(type_str), type_str->len);
+   while (not type_name.empty() and std::isspace(uint8_t(type_name.front()))) type_name.remove_prefix(1);
+   while (not type_name.empty() and std::isspace(uint8_t(type_name.back()))) type_name.remove_suffix(1);
 
-   switch (type_str->hash) {
-      case HASH_INT:     return AET::INT32;
-      case HASH_BYTE:    return AET::BYTE;
-      case HASH_CHAR:    return AET::BYTE;
-      case HASH_INT16:   return AET::INT16;
-      case HASH_INT64:   return AET::INT64;
-      case HASH_FLOAT:   return AET::FLOAT;
-      case HASH_DOUBLE:  return AET::DOUBLE;
-      case HASH_STRING:  return AET::STR_GC;
-      case HASH_STRUCT:  return AET::STRUCT;
-      case HASH_POINTER: return AET::PTR;
-      case HASH_OBJECT:  return AET::OBJECT;
-      case HASH_TABLE:   return AET::TABLE;
-      case HASH_ARRAY:   return AET::ARRAY;
-      case HASH_ANY:     return AET::ANY;
+   if (auto element = describe_array_element(type_name, L)) {
+      ArrayAllocationDescriptor descriptor;
+      descriptor.storage = element->storage;
+      descriptor.struct_def = element->struct_def;
+      return descriptor;
+   }
+
+   if (type_name.starts_with("array")) {
+      if (auto member_identity = canonical_array_type_name(type_name, L)) {
+         std::string complete_identity = std::format("array<{}>", *member_identity);
+         return {
+            .storage = AET::ARRAY,
+            .nested_identity = lj_str_new(L, complete_identity.data(), complete_identity.size())
+         };
+      }
+   }
+   else if (auto element = parse_array_element_type(type_name, L)) {
+      return { .storage = element->storage, .struct_def = element->struct_def };
    }
 
    lj_err_argv(L, NArg, ErrMsg::BADTYPE, "valid array type", strdata(type_str));
-   return AET(0);  // unreachable
+   return {};  // unreachable
 }
 
 //********************************************************************************************************************
-// Helper to get element type name
+// Allocate a mapped-result array using the same public element type rules as array.new() and array.of().
+//
+// TypeArg may identify an optional element-type argument.  A missing or nil type requests array<any> storage.
 
-static CSTRING elemtype_name(AET Type)
+GCarray * lj_array_new_map_result(lua_State *L, MSize Length, int TypeArg)
 {
-   switch (Type) {
-      case AET::BYTE:       return "char";
-      case AET::INT16:      return "int16";
-      case AET::INT32:      return "int";
-      case AET::INT64:      return "int64";
-      case AET::FLOAT:      return "float";
-      case AET::DOUBLE:     return "double";
-      case AET::PTR:        return "pointer";
-      case AET::STRUCT:     return "struct";
-      case AET::TABLE:      return "table";
-      case AET::ARRAY:      return "array";
-      case AET::OBJECT:     return "object";
-      case AET::CSTR:
-      case AET::STR_GC:
-      case AET::STR_CPP:    return "string";
-      case AET::ANY:        return "any";
-      default: return "unknown";
+   if (TypeArg <= 0 or lua_isnoneornil(L, TypeArg)) return lj_array_new(L, Length, AET::ANY);
+
+   auto descriptor = parse_elemtype(L, TypeArg);
+   if (descriptor.storage IS AET::PTR) lj_err_argv(L, TypeArg, ErrMsg::ARRTYPE);
+   if (descriptor.storage != AET::STRUCT) return lj_array_new(L, Length, descriptor);
+
+   auto struct_name = array_struct_name(L, TypeArg);
+   if (struct_name.empty()) lj_err_argv(L, TypeArg, ErrMsg::ARRTYPE);
+   auto struct_def = find_struct(L, struct_name);
+   if ((not struct_def) or (not lj_array_struct_is_trivial(*struct_def))) {
+      lj_err_argv(L, TypeArg, ErrMsg::ARRTYPE);
    }
+   descriptor.struct_def = struct_def;
+   return lj_array_new(L, Length, descriptor);
+}
+
+static std::string_view array_struct_name(lua_State *L, int NArg)
+{
+   GCstr *type_str = lj_lib_checkstr(L, NArg);
+   std::string_view type_name(strdata(type_str), type_str->len);
+   if (type_name.starts_with("struct<") and type_name.ends_with('>') and (type_name.size() > 8)) {
+      return type_name.substr(7, type_name.size() - 8);
+   }
+   return {};
+}
+
+// Owned structure arrays use byte-wise element storage.  Reject layouts that require construction, destruction,
+// garbage-collector ownership or managed-object lifetime tracking.  Embedded structures are safe only when every
+// nested field satisfies the same contract.
+
+bool lj_array_struct_is_trivial(const struct_record &Def)
+{
+   for (auto &field : Def.Fields) {
+      if (field.Type & (FD_CPP|FD_VECTOR|FD_STRING|FD_FUNCTION|FD_OBJECT)) return false;
+      if ((field.Type & FD_STRUCT) and (not (field.Type & FD_PTR))) {
+         if ((not field.StructDefinition) or (not lj_array_struct_is_trivial(*field.StructDefinition))) return false;
+      }
+   }
+   return true;
 }
 
 //********************************************************************************************************************
-// Usage: array.new(size, type) or array.new('string')
-//
-// Creates a new array of the specified size and element type.
-//
-//   size: number of elements (must be non-negative)
-//   type: element type string ("char", "int16", "int", "int64", "float", "double", "string", "StructName")
 
-LJLIB_CF(array_new)
+template <typename... Args>
+static void append_formatted(std::string &Result, CSTRING Format, Args... Values)
 {
-   GCarray *arr;
+   constexpr size_t BUFFER_SIZE = 256;
 
-   auto type = lua_type(L, 1);
-   if (type IS LUA_TSTRING) {
-      TValue *o = L->base;
-      GCstr *s = strV(o);
-      auto elem_type = AET::BYTE;
-      arr = lj_array_new(L, s->len, elem_type);
+   if ((Result.capacity() - Result.size()) >= BUFFER_SIZE) {
+      const auto start = Result.size();
+      Result.resize(start + BUFFER_SIZE);
 
-      pf::copymem(strdata(s), arr->get<CSTRING>(), s->len);
+      const int written = snprintf(Result.data() + start, BUFFER_SIZE, Format, Values...);
+      if (written < 0) {
+         Result.resize(start);
+         return;
+      }
+
+      const auto used = strlen(Result.data() + start);
+      Result.resize(start + used);
    }
    else {
-      auto size = lj_lib_checkint(L, 1);
-      if (size < 0) lj_err_argv(L, 1, ErrMsg::NUMRNG, "non-negative", "negative");
-      auto elem_type = parse_elemtype(L, 2);
+      char buffer[BUFFER_SIZE];
+      const int written = snprintf(buffer, sizeof(buffer), Format, Values...);
+      if (written < 0) return;
 
-      if (elem_type IS AET::PTR) lj_err_argv(L, 2, ErrMsg::ARRTYPE); // For Kotuku functions only
-      else if (elem_type IS AET::STRUCT) lj_err_argv(L, 2, ErrMsg::ARRTYPE); // For Kotuku functions only (for now)
+      Result += buffer;
+   }
+}
 
-      arr = lj_array_new(L, uint32_t(size), elem_type);
+//********************************************************************************************************************
+
+static char * write_integer(char *End, uint64_t Magnitude, bool Negative)
+{
+   char *pos = End;
+
+   if (Magnitude IS 0) *--pos = '0';
+   else {
+      while (Magnitude > 0) {
+         const auto digit = Magnitude % 10;
+         *--pos = char('0' + digit);
+         Magnitude /= 10;
+      }
    }
 
-   // Per-instance metatable is null - base metatable will be used automatically
+   if (Negative) *--pos = '-';
+   return pos;
+}
 
+//********************************************************************************************************************
+
+static void append_integer(std::string &Result, int64_t Value)
+{
+   constexpr size_t BUFFER_SIZE = 21;
+
+   const bool negative = Value < 0;
+   const uint64_t magnitude = negative ? uint64_t(-(Value + 1)) + 1 : uint64_t(Value);
+
+   if ((Result.capacity() - Result.size()) >= BUFFER_SIZE) {
+      const auto start = Result.size();
+      Result.resize(start + BUFFER_SIZE);
+
+      char *end = Result.data() + start + BUFFER_SIZE;
+      char *text = write_integer(end, magnitude, negative);
+      const auto used = size_t(end - text);
+
+      memmove(Result.data() + start, text, used);
+      Result.resize(start + used);
+   }
+   else {
+      char buffer[BUFFER_SIZE];
+      char *end = buffer + BUFFER_SIZE;
+      char *text = write_integer(end, magnitude, negative);
+
+      Result.append(text, size_t(end - text));
+   }
+}
+
+//********************************************************************************************************************
+
+static void append_unsigned_integer(std::string &Result, uint64_t Value)
+{
+   constexpr size_t BUFFER_SIZE = 20;
+
+   if ((Result.capacity() - Result.size()) >= BUFFER_SIZE) {
+      const auto start = Result.size();
+      Result.resize(start + BUFFER_SIZE);
+
+      char *end = Result.data() + start + BUFFER_SIZE;
+      char *text = write_integer(end, Value, false);
+      const auto used = size_t(end - text);
+
+      memmove(Result.data() + start, text, used);
+      Result.resize(start + used);
+   }
+   else {
+      char buffer[BUFFER_SIZE];
+      char *end = buffer + BUFFER_SIZE;
+      char *text = write_integer(end, Value, false);
+      Result.append(text, size_t(end - text));
+   }
+}
+
+//********************************************************************************************************************
+
+static bool is_unsigned_format(CSTRING Format, bool Wide)
+{
+   for (const char *p = Format; *p; ++p) {
+      if (*p != '%') continue;
+      if (*(p + 1) IS '%') {
+         ++p;
+         continue;
+      }
+
+      unsigned long_count = 0;
+      for (++p; *p; ++p) {
+         if (*p IS 'l') {
+            ++long_count;
+            continue;
+         }
+         if (*p IS 'u' or *p IS 'o' or *p IS 'x' or *p IS 'X') {
+            return Wide ? long_count IS 2 : long_count IS 0;
+         }
+         if (*p IS 'd' or *p IS 'i' or *p IS 'c' or *p IS 's' or *p IS 'p' or *p IS 'f' or *p IS 'F' or
+             *p IS 'e' or *p IS 'E' or *p IS 'g' or *p IS 'G') return false;
+      }
+      return false;
+   }
+   return false;
+}
+
+//********************************************************************************************************************
+// Usage: array.new(type, size)
+//
+// Creates a new array of the specified element type and non-negative size.
+
+LJLIB_CF(array_new)      LJLIB_REC(.)
+{
+   auto size = lj_lib_checkint(L, 2);
+   if (size < 0) lj_err_argv(L, 2, ErrMsg::NUMRNG, "non-negative", "negative");
+   auto descriptor = parse_elemtype(L, 1);
+
+   if (descriptor.storage IS AET::PTR) lj_err_argv(L, 1, ErrMsg::ARRTYPE); // For Kotuku functions only
+   else if (descriptor.storage IS AET::STRUCT) {
+      auto struct_name = array_struct_name(L, 1);
+      if (struct_name.empty()) lj_err_argv(L, 1, ErrMsg::ARRTYPE);
+      auto struct_def = find_struct(L, struct_name);
+      if ((not struct_def) or (not lj_array_struct_is_trivial(*struct_def))) {
+         lj_err_argv(L, 1, ErrMsg::ARRTYPE);
+      }
+      descriptor.struct_def = struct_def;
+   }
+
+   GCarray *arr = lj_array_new(L, uint32_t(size), descriptor);
    setarrayV(L, L->top++, arr);
    return 1;
 }
@@ -179,93 +348,38 @@ LJLIB_CF(array_new)
 //
 // Creates a new array populated with the given values.
 //
-//   type: element type string ("char", "int16", "int", "int64", "float", "double", "string")
+//   type: element type string ("char", "int16", "int", "int64", "float", "double", "str")
 //   value1, value2, ...: values to populate the array with
 //
-// Example: array.of('string', 'google.com', 'kotuku.dev', 'amazon.co.uk')
+// Example: array.of('str', 'google.com', 'kotuku.dev', 'amazon.co.uk')
 // Example: array.of('int', 1, 2, 3, 4, 5)
 
 LJLIB_CF(array_of)
 {
-   auto elem_type = parse_elemtype(L, 1);
+   auto descriptor = parse_elemtype(L, 1);
 
-   if (elem_type IS AET::PTR) lj_err_argv(L, 1, ErrMsg::BADTYPE, "non-pointer type", "pointer");
-   if (elem_type IS AET::STRUCT) lj_err_argv(L, 1, ErrMsg::BADTYPE, "non-struct type", "struct");
+   if (descriptor.storage IS AET::PTR) lj_err_argv(L, 1, ErrMsg::BADTYPE, "non-pointer type", "pointer");
 
    // Count number of values provided (all arguments after the type string)
 
    int num_values = lua_gettop(L) - 1;
-   if (num_values < 1) {
-      luaL_error(L, ERR::Args, "array.of() requires at least one value");
-      return 0;
-   }
+   if (num_values < 1) luaL_error(L, ERR::Args, "array.of() requires at least one value");
 
-   GCarray *arr = lj_array_new(L, uint32_t(num_values), elem_type);
+   GCarray *arr;
+   if (descriptor.storage IS AET::STRUCT) {
+      auto struct_name = array_struct_name(L, 1);
+      if (struct_name.empty()) lj_err_argv(L, 1, ErrMsg::ARRTYPE);
+      auto struct_def = find_struct(L, struct_name);
+      if ((not struct_def) or (not lj_array_struct_is_trivial(*struct_def))) {
+         lj_err_argv(L, 1, ErrMsg::ARRTYPE);
+      }
+      descriptor.struct_def = struct_def;
+      arr = lj_array_new(L, uint32_t(num_values), descriptor);
+   }
+   else arr = lj_array_new(L, uint32_t(num_values), descriptor);
    setarrayV(L, L->top++, arr);
 
-   // Populate the array with provided values
-
-   for (int i = 0; i < num_values; i++) {
-      int arg_idx = i + 2;  // Arguments start at index 2 (after type string)
-
-      switch (elem_type) {
-         case AET::STR_GC: {
-            GCstr *s = lj_lib_checkstr(L, arg_idx);
-            setgcref(arr->get<GCRef>()[i], obj2gco(s));
-            lj_gc_objbarrier(L, arr, s);
-            break;
-         }
-         case AET::FLOAT:  arr->get<float>()[i] = float(luaL_checknumber(L, arg_idx)); break;
-         case AET::DOUBLE: arr->get<double>()[i] = luaL_checknumber(L, arg_idx); break;
-         case AET::INT64:  arr->get<int64_t>()[i] = int64_t(luaL_checknumber(L, arg_idx)); break;
-         case AET::INT32:  arr->get<int32_t>()[i] = int32_t(luaL_checkinteger(L, arg_idx)); break;
-         case AET::INT16:  arr->get<int16_t>()[i] = int16_t(luaL_checkinteger(L, arg_idx)); break;
-         case AET::BYTE:   arr->get<uint8_t>()[i] = uint8_t(luaL_checkinteger(L, arg_idx)); break;
-
-         case AET::OBJECT: {
-            if (not lua_isobject(L, arg_idx)) {
-               lj_err_argv(L, arg_idx, ErrMsg::BADTYPE, "object", luaL_typename(L, arg_idx));
-            }
-            TValue *tv = L->base + arg_idx - 1;
-            GCobject *obj = objectV(tv);
-            setgcref(arr->get<GCRef>()[i], obj2gco(obj));
-            lj_gc_objbarrier(L, arr, obj);
-            break;
-         }
-
-         case AET::TABLE: {
-            if (not lua_istable(L, arg_idx)) {
-               lj_err_argv(L, arg_idx, ErrMsg::BADTYPE, "table", luaL_typename(L, arg_idx));
-            }
-            TValue *tv = L->base + arg_idx - 1;
-            GCtab *tab = tabV(tv);
-            setgcref(arr->get<GCRef>()[i], obj2gco(tab));
-            lj_gc_objbarrier(L, arr, tab);
-            break;
-         }
-         case AET::ARRAY: {
-            if (not lua_isarray(L, arg_idx)) {
-               lj_err_argv(L, arg_idx, ErrMsg::BADTYPE, "array", luaL_typename(L, arg_idx));
-            }
-            TValue *tv = L->base + arg_idx - 1;
-            GCarray *a = arrayV(tv);
-            setgcref(arr->get<GCRef>()[i], obj2gco(a));
-            lj_gc_objbarrier(L, arr, a);
-            break;
-         }
-
-         case AET::ANY: {
-            // Copy the TValue directly (any type is allowed)
-            TValue *dest = &arr->get<TValue>()[i];
-            TValue *src = L->base + arg_idx - 1;
-            copyTV(L, dest, src);
-            // Write barrier for GC values
-            if (tvisgcv(src)) lj_gc_objbarrier(L, arr, gcV(src));
-            break;
-         }
-         default: lj_err_argv(L, 1, ErrMsg::BADTYPE, "supported type", elemtype_name(elem_type)); return 0;
-      }
-   }
+   lj_array_store_new_values(L, arr, L->base + 1, MSize(num_values));
 
    return 1;
 }
@@ -286,219 +400,348 @@ LJLIB_CF(array_table)
 }
 
 //********************************************************************************************************************
-// Usage: array.concat(StringFormat, JoinString)
-//
-// Concatenates array elements into a string using the specified format and join string.
-//
-// StringFormat specifies how each element should be formatted (e.g., "%d", "%f", "%s").
-// JoinString is placed between each concatenated element.
 
-LJLIB_CF(array_concat)
+struct array_range_span {
+   int32_t start;
+   int32_t stop;
+   int32_t step;
+   bool empty;
+};
+
+struct array_count_span {
+   MSize start;
+   MSize count;
+};
+
+static int32_t array_default_remaining(MSize Length, int32_t Start)
 {
-   GCarray *arr = lj_lib_checkarray(L, 1);
+   if (Start < 0 or MSize(Start) > Length) return 0;
+   return int32_t(Length - MSize(Start));
+}
 
-   if (arr->len < 1) {
-      lua_pushstring(L, "");
-      return 1;
+static array_range_span array_strict_half_open_span(lua_State *L, MSize Length, int32_t Start, int32_t Stop)
+{
+   if (Start < 0 or Stop < 0 or MSize(Start) > Length or MSize(Stop) > Length) {
+      luaL_error(L, ErrMsg::IDXRNG);
    }
 
-   auto format = luaL_checkstring(L, 2);
-   auto join_str = luaL_optstring(L, 3, "");
+   if (Stop <= Start) return { Start, Stop, 1, true };
+   return { Start, Stop, 1, false };
+}
 
-   // Validate format string - ensure exactly one format specifier
+static array_count_span array_strict_count_span(lua_State *L, int32_t Start, int32_t Count, MSize Length)
+{
+   if (Start < 0 or Count < 0 or MSize(Start) > Length) luaL_error(L, ErrMsg::IDXRNG);
 
-   int format_count = 0;
-   bool in_format = false;
-   for (auto p = format; *p; p++) {
-      if (*p IS '%') {
-         if (*(p+1) IS '%') {
-            p++; // Skip escaped %
-            continue;
-         }
+   auto start = MSize(Start);
+   auto count = MSize(Count);
+   if (count > Length - start) luaL_error(L, ErrMsg::IDXRNG);
+   return { start, count };
+}
 
-         if (in_format) {
-            luaL_error(L, ERR::Syntax, "Invalid format string: multiple format specifiers not allowed");
-            return 0;
-         }
-         in_format = true;
-      }
-      else if (in_format) {
-         // Check for end of format specifier
-         if (*p IS 'd' or *p IS 'i' or *p IS 'o' or *p IS 'x' or *p IS 'X' or
-             *p IS 'u' or *p IS 'c' or *p IS 's' or *p IS 'p' or
-             *p IS 'f' or *p IS 'F' or *p IS 'e' or *p IS 'E' or
-             *p IS 'g' or *p IS 'G') {
-            format_count++;
-            in_format = false;
-         }
-         // Allow format modifiers and flags
-         else if (!(*p IS '-' or *p IS '+' or *p IS ' ' or *p IS '#' or *p IS '0' or
-                    (*p >= '1' and *p <= '9') or *p IS '.' or *p IS 'l' or *p IS 'h')) {
-            luaL_error(L, ERR::Syntax, "Invalid character '%c' in format string", *p);
-            return 0;
-         }
-      }
+static array_count_span array_clamped_count_span(lua_State *L, int32_t Start, int32_t Count, MSize Length)
+{
+   if (Start < 0 or Count < 0) luaL_error(L, ErrMsg::IDXRNG);
+
+   auto start = MSize(Start);
+   if (start >= Length) return { Length, 0 };
+
+   auto count = MSize(Count);
+   if (count > Length - start) count = Length - start;
+   return { start, count };
+}
+
+static array_count_span array_clamped_half_open_span(lua_State *L, int32_t Start, int32_t Stop, MSize Length)
+{
+   if (Start < 0 or Stop < 0) luaL_error(L, ErrMsg::IDXRNG);
+
+   auto start = MSize(Start);
+   if (start >= Length) return { Length, 0 };
+
+   auto stop = MSize(Stop);
+   if (stop > Length) stop = Length;
+   if (stop <= start) return { start, 0 };
+   return { start, stop - start };
+}
+
+static array_range_span array_range_to_span(lua_State *L, const tiri_range *Range, MSize Length)
+{
+   tiri_index_range index_range;
+   range_check_index(L, Range, &index_range);
+   int32_t len = int32_t(Length);
+   int32_t start = index_range.start;
+   int32_t stop = index_range.stop;
+   int32_t step = index_range.step;
+
+   bool use_inclusive = index_range.inclusive;
+   if (start < 0 or stop < 0) {
+      use_inclusive = true;
+      if (start < 0) start += len;
+      if (stop < 0) stop += len;
    }
 
-   if (in_format) {
-      luaL_error(L, ERR::Syntax, "Incomplete format specifier");
-      return 0;
+   bool forward = start <= stop;
+   if (step IS 0) step = forward ? 1 : -1;
+   if (forward and step < 0) step = 1;
+   if (not forward and step > 0) step = -1;
+
+   int32_t effective_stop = stop;
+   if (not use_inclusive) {
+      if (forward) effective_stop = stop - 1;
+      else effective_stop = stop + 1;
    }
 
-   if (format_count != 1) {
-      luaL_error(L, ERR::Syntax, "Format string must contain exactly one format specifier, found %d", format_count);
-      return 0;
+   if (forward) {
+      if (start < 0) start = 0;
+      if (effective_stop >= len) effective_stop = len - 1;
+   }
+   else {
+      if (start >= len) start = len - 1;
+      if (effective_stop < 0) effective_stop = 0;
    }
 
-   std::string result;
-   result.reserve(arr->len * 16);
-   char buffer[256];
+   bool empty = len IS 0 or (forward and start > effective_stop) or (not forward and start < effective_stop);
+   return { start, effective_stop, step, empty };
+}
 
-   for (MSize i = 0; i < arr->len; i++) {
-      if (i > 0) result += join_str;
-
-      switch(arr->elemtype) {
-         case AET::STR_GC: {
-            GCRef ref = arr->get<GCRef>()[i];
-            if (gcref(ref)) snprintf(buffer, sizeof(buffer), format, strdata(gco_to_string(gcref(ref))));
-            else snprintf(buffer, sizeof(buffer), format, "");
-            break;
-         }
-         case AET::CSTR:
-            snprintf(buffer, sizeof(buffer), format, arr->get<CSTRING>()[i]);
-            break;
-         case AET::STR_CPP:
-            snprintf(buffer, sizeof(buffer), format, arr->get<std::string>()[i].c_str());
-            break;
-         case AET::PTR:
-            snprintf(buffer, sizeof(buffer), format, arr->get<void **>()[i]);
-            break;
-         case AET::FLOAT:
-            snprintf(buffer, sizeof(buffer), format, arr->get<float>()[i]);
-            break;
-         case AET::DOUBLE:
-            snprintf(buffer, sizeof(buffer), format, arr->get<double>()[i]);
-            break;
-         case AET::INT64:
-            snprintf(buffer, sizeof(buffer), format, arr->get<long long>()[i]);
-            break;
-         case AET::INT32:
-            snprintf(buffer, sizeof(buffer), format, arr->get<int>()[i]);
-            break;
-         case AET::INT16:
-            snprintf(buffer, sizeof(buffer), format, arr->get<int16_t>()[i]);
-            break;
-         case AET::BYTE:
-            snprintf(buffer, sizeof(buffer), format, arr->get<int8_t>()[i]);
-            break;
-         case AET::TABLE:
-         case AET::STRUCT:
-         case AET::ARRAY:
-         default:
-            luaL_error(L, ERR::InvalidType, "concat() does not support %s types.", elemtype_name(arr->elemtype));
-            return 0;
-      }
-
-      result += buffer;
+static array_count_span array_copy_span(lua_State *L, int32_t DestIdx, MSize DestLen, int32_t SrcIdx, MSize SrcLen,
+   int32_t Count, bool ClampSource)
+{
+   if (DestIdx < 0 or SrcIdx < 0 or Count < 0 or MSize(DestIdx) > DestLen or MSize(SrcIdx) > SrcLen) {
+      luaL_error(L, ErrMsg::IDXRNG);
    }
 
-   lua_pushstring(L, result.c_str());
+   auto dest_idx = MSize(DestIdx);
+   auto src_idx = MSize(SrcIdx);
+   auto count = MSize(Count);
+
+   if (count > SrcLen - src_idx) {
+      if (ClampSource) count = SrcLen - src_idx;
+      else luaL_error(L, ErrMsg::IDXRNG);
+   }
+
+   if (count > DestLen - dest_idx) luaL_error(L, ErrMsg::IDXRNG);
+   return { dest_idx, count };
+}
+
+static bool array_find_start(int32_t Start, MSize Length, int32_t *Result)
+{
+   if (Start < 0) Start = 0;
+   if (MSize(Start) >= Length) return false;
+   *Result = Start;
+   return true;
+}
+
+static int array_push_find_result(lua_State *L, int32_t Result)
+{
+   if (Result >= 0) setintV(L->top++, Result);
+   else lua_pushnil(L);
    return 1;
 }
 
 //********************************************************************************************************************
-// Usage: array.join(arr [, separator])
+// Usage: array.concat([Separator], [StringFormat], [Start], [Stop])
 //
-// Concatenates array elements into a string, inserting the separator between elements.  This is the complement to
-// string.split() which returns arrays.  Simpler than concat() which requires a format string, this also makes it
-// faster for string concatenation.
+// Concatenates array elements into a string using the specified separator and optional format.
 //
-// Parameters:
-//   arr: the array to join
-//   separator: string to insert between elements (default: "")
-//
-// Returns: concatenated string
-//
-// Note: For non-string types, elements are converted to their string representation.
+// Separator is placed between each concatenated element.  StringFormat optionally specifies how each element should be
+// formatted (e.g., "%d", "%f", "%s").  If no format is provided, the fastest available conversion path is used.
+// Start and Stop are optional zero-based indexes defining a half-open span.
 
-LJLIB_CF(array_join)
+LJLIB_CF(array_concat)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
+   const bool start_provided = not lua_isnoneornil(L, 4);
+   const bool end_provided = not lua_isnoneornil(L, 5);
 
-   if (arr->len < 1) {
+   size_t separator_len = 0;
+   auto separator = luaL_optlstring(L, 2, "", &separator_len);
+   auto format = lua_isnoneornil(L, 3) ? nullptr : luaL_checkstring(L, 3);
+   auto start = start_provided ? lj_lib_checkint(L, 4) : 0;
+   auto stop = end_provided ? lj_lib_checkint(L, 5) : int32_t(arr->len);
+
+   auto span = array_strict_half_open_span(L, arr->len, start, stop);
+   if (span.empty) {
       lua_pushstring(L, "");
       return 1;
    }
 
-   auto separator = luaL_optstring(L, 2, "");
+   if (format) {
+      // Validate format string - ensure exactly one format specifier
 
-   std::string result;
-   result.reserve(arr->len * 16);
-   char buffer[256];
+      int format_count = 0;
+      bool in_format = false;
+      for (auto p = format; *p; p++) {
+         if (*p IS '%') {
+            if (*(p + 1) IS '%') {
+               p++; // Skip escaped %
+               continue;
+            }
 
-   for (MSize i = 0; i < arr->len; i++) {
-      if (i > 0) result += separator;
-
-      switch(arr->elemtype) {
-         case AET::STR_GC: {
-            GCRef ref = arr->get<GCRef>()[i];
-            if (gcref(ref)) result += strdata(gco_to_string(gcref(ref)));
-            break;
+            if (in_format) {
+               luaL_error(L, ERR::Syntax, "Invalid format string: multiple format specifiers not allowed");
+            }
+            in_format = true;
          }
-         case AET::CSTR: {
-            CSTRING str = arr->get<CSTRING>()[i];
-            if (str) result += str;
-            break;
+         else if (in_format) {
+            // Check for end of format specifier
+            if (*p IS 'd' or *p IS 'i' or *p IS 'o' or *p IS 'x' or *p IS 'X' or
+                *p IS 'u' or *p IS 'c' or *p IS 's' or *p IS 'p' or
+                *p IS 'f' or *p IS 'F' or *p IS 'e' or *p IS 'E' or
+                *p IS 'g' or *p IS 'G') {
+               format_count++;
+               in_format = false;
+            }
+            // Allow format modifiers and flags
+            else if (!(*p IS '-' or *p IS '+' or *p IS ' ' or *p IS '#' or *p IS '0' or
+                       (*p >= '1' and *p <= '9') or *p IS '.' or *p IS 'l' or *p IS 'h')) {
+               luaL_error(L, ERR::Syntax, "Invalid character '%c' in format string", *p);
+            }
          }
-         case AET::STR_CPP:
-            result += arr->get<std::string>()[i];
-            break;
-         case AET::FLOAT:
-            snprintf(buffer, sizeof(buffer), "%g", double(arr->get<float>()[i]));
-            result += buffer;
-            break;
-         case AET::DOUBLE:
-            snprintf(buffer, sizeof(buffer), "%g", arr->get<double>()[i]);
-            result += buffer;
-            break;
-         case AET::INT64:
-            snprintf(buffer, sizeof(buffer), "%lld", arr->get<long long>()[i]);
-            result += buffer;
-            break;
-         case AET::INT32:
-            snprintf(buffer, sizeof(buffer), "%d", arr->get<int>()[i]);
-            result += buffer;
-            break;
-         case AET::INT16:
-            snprintf(buffer, sizeof(buffer), "%d", int(arr->get<int16_t>()[i]));
-            result += buffer;
-            break;
-         case AET::BYTE:
-            snprintf(buffer, sizeof(buffer), "%d", int(arr->get<uint8_t>()[i]));
-            result += buffer;
-            break;
-         case AET::PTR:
-            snprintf(buffer, sizeof(buffer), "%p", arr->get<void *>()[i]);
-            result += buffer;
-            break;
-         case AET::TABLE:
-            // Tables cannot be meaningfully converted to strings
-            result += "table";
-            break;
-         case AET::ARRAY:
-            // Arrays cannot be meaningfully converted to strings
-            result += "array";
-            break;
-         case AET::STRUCT:
-            result += "struct";
-            break;
-         default:
-            result += "?";
-            break;
+      }
+
+      if (in_format) luaL_error(L, ERR::Syntax, "Incomplete format specifier");
+
+      if (format_count != 1) {
+         luaL_error(L, ERR::Syntax, "Format string must contain exactly one format specifier, found %d", format_count);
+      }
+
+      if (arr->elemtype IS AET::UINT8 or arr->elemtype IS AET::UINT16 or arr->elemtype IS AET::UINT32) {
+         if (not is_unsigned_format(format, false)) {
+            luaL_error(L, ERR::Syntax, "Unsigned arrays require an unsigned format without an l modifier");
+         }
+      }
+      else if (arr->elemtype IS AET::UINT64 and not is_unsigned_format(format, true)) {
+         luaL_error(L, ERR::Syntax, "array<uint64> requires an unsigned long long format such as %%llu");
       }
    }
 
-   lua_pushstring(L, result.c_str());
+   std::string result;
+   result.reserve(MSize(span.stop - span.start) * 16);
+
+   for (MSize i = MSize(span.start); i < MSize(span.stop); i++) {
+      if (i > MSize(span.start)) result.append(separator, separator_len);
+
+      if (format) {
+         switch(arr->elemtype) {
+            case AET::STR_GC: {
+               GCRef ref = arr->get<GCRef>()[i];
+               if (gcref(ref)) {
+                  GCstr *str = gco_to_string(gcref(ref));
+                  if (strcmp(format, "%s") IS 0) result.append(strdata(str), str->len);
+                  else append_formatted(result, format, strdata(str));
+               }
+               else append_formatted(result, format, "");
+               break;
+            }
+            case AET::CSTR:
+               append_formatted(result, format, arr->get<CSTRING>()[i]);
+               break;
+            case AET::STR_CPP: {
+               const auto &str = arr->get<std::string>()[i];
+               if (strcmp(format, "%s") IS 0) result.append(str.data(), str.size());
+               else append_formatted(result, format, str.c_str());
+               break;
+            }
+            case AET::FLOAT:
+               append_formatted(result, format, arr->get<float>()[i]);
+               break;
+            case AET::DOUBLE:
+               append_formatted(result, format, arr->get<double>()[i]);
+               break;
+            case AET::INT64:
+               append_formatted(result, format, arr->get<long long>()[i]);
+               break;
+            case AET::UINT8:
+               append_formatted(result, format, unsigned(arr->get<uint8_t>()[i]));
+               break;
+            case AET::UINT16:
+               append_formatted(result, format, unsigned(arr->get<uint16_t>()[i]));
+               break;
+            case AET::UINT32:
+               append_formatted(result, format, unsigned(arr->get<uint32_t>()[i]));
+               break;
+            case AET::UINT64:
+               append_formatted(result, format, (unsigned long long)arr->get<uint64_t>()[i]);
+               break;
+            case AET::INT32:
+               append_formatted(result, format, arr->get<int>()[i]);
+               break;
+            case AET::INT16:
+               append_formatted(result, format, arr->get<int16_t>()[i]);
+               break;
+            case AET::INT8:
+               append_formatted(result, format, int(arr->get<int8_t>()[i]));
+               break;
+            case AET::BYTE:
+               append_formatted(result, format, unsigned(arr->get<uint8_t>()[i]));
+               break;
+            default:
+               luaL_error(L, ERR::InvalidType, "concat() does not support %s types.",
+                  lj_array_elemtype_name(arr->elemtype));
+         }
+      }
+      else {
+         switch(arr->elemtype) {
+            case AET::STR_GC: {
+               GCRef ref = arr->get<GCRef>()[i];
+               if (gcref(ref)) {
+                  GCstr *str = gco_to_string(gcref(ref));
+                  result.append(strdata(str), str->len);
+               }
+               break;
+            }
+            case AET::CSTR: {
+               CSTRING str = arr->get<CSTRING>()[i];
+               if (str) result += str;
+               break;
+            }
+            case AET::STR_CPP: {
+               const auto &str = arr->get<std::string>()[i];
+               result.append(str.data(), str.size());
+               break;
+            }
+            case AET::FLOAT:
+               append_formatted(result, "%g", double(arr->get<float>()[i]));
+               break;
+            case AET::DOUBLE:
+               append_formatted(result, "%g", arr->get<double>()[i]);
+               break;
+            case AET::INT64:
+               append_integer(result, arr->get<int64_t>()[i]);
+               break;
+            case AET::UINT8:
+               append_unsigned_integer(result, arr->get<uint8_t>()[i]);
+               break;
+            case AET::UINT16:
+               append_unsigned_integer(result, arr->get<uint16_t>()[i]);
+               break;
+            case AET::UINT32:
+               append_unsigned_integer(result, arr->get<uint32_t>()[i]);
+               break;
+            case AET::UINT64:
+               append_unsigned_integer(result, arr->get<uint64_t>()[i]);
+               break;
+            case AET::INT32:
+               append_integer(result, arr->get<int32_t>()[i]);
+               break;
+            case AET::INT16:
+               append_integer(result, arr->get<int16_t>()[i]);
+               break;
+            case AET::INT8:
+               append_integer(result, arr->get<int8_t>()[i]);
+               break;
+            case AET::BYTE:
+               append_integer(result, arr->get<uint8_t>()[i]);
+               break;
+            default:
+               luaL_error(L, ERR::InvalidType, "concat() does not support %s types.",
+                  lj_array_elemtype_name(arr->elemtype));
+         }
+      }
+   }
+
+   lua_pushlstring(L, result.data(), result.size());
    return 1;
 }
 
@@ -516,47 +759,16 @@ LJLIB_CF(array_join)
 //
 // Returns: true if found, false otherwise
 
-LJLIB_CF(array_contains)
+LJLIB_NOREG LJLIB_CF(array_contains)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
-
-   if (arr->len IS 0) {
-      lua_pushboolean(L, 0);
-      return 1;
-   }
-
-   if (arr->elemtype IS AET::OBJECT) {
-      OBJECTID search_uid = object_uid_from_value(L, 2);
-      int32_t result = find_object_in_array(arr, search_uid, 0, int32_t(arr->len - 1), 1);
-      lua_pushboolean(L, result >= 0 ? 1 : 0);
-      return 1;
-   }
-
-   // For string arrays, we need special handling
-   if (arr->elemtype IS AET::STR_GC) {
-      GCstr *search_str = lj_lib_checkstr(L, 2);
-      auto refs = arr->get<GCRef>();
-      for (MSize i = 0; i < arr->len; i++) {
-         GCRef ref = refs[i];
-         if (gcref(ref)) {
-            GCstr *elem = gco_to_string(gcref(ref));
-            if (elem->len IS search_str->len and
-                memcmp(strdata(elem), strdata(search_str), elem->len) IS 0) {
-               lua_pushboolean(L, 1);
-               return 1;
-            }
-         }
-      }
-      lua_pushboolean(L, 0);
-      return 1;
-   }
-
-   // For numeric types, use the existing find logic
-   lua_Number value = lj_lib_checknum(L, 2);
-   int32_t result = find_in_array(arr, value, 0, int32_t(arr->len - 1), 1);
-
-   lua_pushboolean(L, result >= 0 ? 1 : 0);
+   lua_pushboolean(L, lj_arr_contains(L, arr, L->base + 1));
    return 1;
+}
+
+extern "C" int32_t lj_arr_is_contains_handler(cTValue *Value)
+{
+   return tvisfunc(Value) and iscfunc(funcV(Value)) and funcV(Value)->c.f IS lj_cf_array_contains;
 }
 
 //********************************************************************************************************************
@@ -582,9 +794,14 @@ LJLIB_CF(array_first)
 
    switch (arr->elemtype) {
       case AET::BYTE:   lua_pushinteger(L, *(uint8_t *)elem); break;
+      case AET::INT8:   lua_pushinteger(L, *(int8_t *)elem); break;
       case AET::INT16:  lua_pushinteger(L, *(int16_t *)elem); break;
       case AET::INT32:  lua_pushinteger(L, *(int32_t *)elem); break;
       case AET::INT64:  lua_pushnumber(L, lua_Number(*(int64_t *)elem)); break;
+      case AET::UINT8:  lua_pushinteger(L, *(uint8_t *)elem); break;
+      case AET::UINT16: lua_pushinteger(L, *(uint16_t *)elem); break;
+      case AET::UINT32: lua_pushnumber(L, lua_Number(*(uint32_t *)elem)); break;
+      case AET::UINT64: lua_pushnumber(L, lua_Number(*(uint64_t *)elem)); break;
       case AET::FLOAT:  lua_pushnumber(L, *(float *)elem); break;
       case AET::DOUBLE: lua_pushnumber(L, *(double *)elem); break;
 
@@ -657,9 +874,14 @@ LJLIB_CF(array_last)
 
    switch (arr->elemtype) {
       case AET::BYTE:   lua_pushinteger(L, *(uint8_t *)elem); break;
+      case AET::INT8:   lua_pushinteger(L, *(int8_t *)elem); break;
       case AET::INT16:  lua_pushinteger(L, *(int16_t *)elem); break;
       case AET::INT32:  lua_pushinteger(L, *(int32_t *)elem); break;
       case AET::INT64:  lua_pushnumber(L, lua_Number(*(int64_t *)elem)); break;
+      case AET::UINT8:  lua_pushinteger(L, *(uint8_t *)elem); break;
+      case AET::UINT16: lua_pushinteger(L, *(uint16_t *)elem); break;
+      case AET::UINT32: lua_pushnumber(L, lua_Number(*(uint32_t *)elem)); break;
+      case AET::UINT64: lua_pushnumber(L, lua_Number(*(uint64_t *)elem)); break;
       case AET::FLOAT:  lua_pushnumber(L, *(float *)elem); break;
       case AET::DOUBLE: lua_pushnumber(L, *(double *)elem); break;
       case AET::STR_GC: {
@@ -713,22 +935,12 @@ LJLIB_CF(array_last)
 //
 // Note: For string arrays with GC references, this also nullifies the references to allow garbage collection.
 
-LJLIB_CF(array_clear)
+LJLIB_CF(array_clear)      LJLIB_REC(.)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
-   if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
+   if (arr->flags & ARRAY_READONLY) luaL_error(L, ErrMsg::ARRRO);
 
-   // For GC-tracked types, clear references to allow garbage collection
-   if (arr->elemtype IS AET::STR_GC or arr->elemtype IS AET::TABLE or arr->elemtype IS AET::ARRAY or
-       arr->elemtype IS AET::OBJECT) {
-      auto refs = arr->get<GCRef>();
-      for (MSize i = 0; i < arr->len; i++) setgcrefnull(refs[i]);
-   }
-   else if (arr->elemtype IS AET::ANY) {
-      auto slots = arr->get<TValue>();
-      for (MSize i = 0; i < arr->len; i++) setnilV(&slots[i]);
-   }
-
+   lj_array_clear_range(arr, 0, arr->len);
    arr->len = 0;
    return 0;
 }
@@ -745,10 +957,10 @@ LJLIB_CF(array_clear)
 //
 // Note: External arrays and cached string arrays cannot grow and will raise an error.
 
-LJLIB_CF(array_resize)
+LJLIB_CF(array_resize)      LJLIB_REC(.)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
-   if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
+   if (arr->flags & ARRAY_READONLY) luaL_error(L, ErrMsg::ARRRO);
 
    auto new_size = lj_lib_checkint(L, 2);
    if (new_size < 0) lj_err_argv(L, 2, ErrMsg::NUMRNG, "non-negative", "negative");
@@ -759,57 +971,22 @@ LJLIB_CF(array_resize)
    if (target_len > old_len) {
       // Growing: ensure capacity and zero-initialize new elements
       if (target_len > arr->capacity) {
-         if (not lj_array_grow(L, arr, target_len)) lj_err_caller(L, ErrMsg::ARREXT);
+         if (not lj_array_grow(L, arr, target_len)) luaL_error(L, ErrMsg::ARREXT);
       }
 
-      // Zero-initialize new elements based on type
-
-      switch (arr->elemtype) {
-         case AET::STR_GC:
-         case AET::TABLE:
-         case AET::ARRAY:
-         case AET::OBJECT: {
-            auto refs = arr->get<GCRef>();
-            for (MSize i = old_len; i < target_len; i++) setgcrefnull(refs[i]);
-            break;
-         }
-
-         case AET::ANY: {
-            auto slots = arr->get<TValue>();
-            for (MSize i = old_len; i < target_len; i++) setnilV(&slots[i]);
-            break;
-         }
-
-         default: {
-            // Numeric types: zero-fill the new region
-            void *start = (char*)arr->arraydata() + (old_len * arr->elemsize);
-            size_t bytes = (target_len - old_len) * arr->elemsize;
-            memset(start, 0, bytes);
-            break;
-         }
+      if (arr->elemtype IS AET::STR_GC or arr->elemtype IS AET::TABLE or arr->elemtype IS AET::ARRAY or
+          arr->elemtype IS AET::OBJECT or arr->elemtype IS AET::ANY) {
+         lj_array_clear_range(arr, old_len, target_len - old_len);
+      }
+      else {
+         // Numeric types: zero-fill the new region
+         void *start = (char*)arr->arraydata() + (old_len * arr->elemsize);
+         size_t bytes = (target_len - old_len) * arr->elemsize;
+         memset(start, 0, bytes);
       }
    }
    else if (target_len < old_len) {
-      // Shrinking: clear references for GC-tracked types
-      switch (arr->elemtype) {
-         case AET::STR_GC:
-         case AET::TABLE:
-         case AET::ARRAY:
-         case AET::OBJECT: {
-            auto refs = arr->get<GCRef>();
-            for (MSize i = target_len; i < old_len; i++) setgcrefnull(refs[i]);
-            break;
-         }
-
-         case AET::ANY: {
-            auto slots = arr->get<TValue>();
-            for (MSize i = target_len; i < old_len; i++) setnilV(&slots[i]);
-            break;
-         }
-
-         default:
-            break; // Numeric types don't need clearing
-      }
+      lj_array_clear_range(arr, target_len, old_len - target_len);
    }
 
    arr->len = target_len;
@@ -830,10 +1007,10 @@ LJLIB_CF(array_resize)
 //
 // Note: External arrays and cached string arrays cannot grow and will raise an error.
 
-LJLIB_CF(array_push)
+LJLIB_CF(array_push)      LJLIB_REC(.)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
-   if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
+   if (arr->flags & ARRAY_READONLY) luaL_error(L, ErrMsg::ARRRO);
 
    int num_values = lua_gettop(L) - 1;
    if (num_values < 1) {
@@ -841,79 +1018,64 @@ LJLIB_CF(array_push)
       return 1;
    }
 
-   // Ensure we have capacity for the new elements
-   MSize new_len = arr->len + MSize(num_values);
-   if (new_len > arr->capacity) {
-      if (not lj_array_grow(L, arr, new_len)) {
-         lj_err_caller(L, ErrMsg::ARREXT);
+   MSize append_count = MSize(num_values);
+
+   if (arr->elemtype IS AET::BYTE) {
+      append_count = 0;
+      for (int i = 0; i < num_values; i++) {
+         int arg_idx = i + 2;
+         TValue *tv = L->base + arg_idx - 1;
+         MSize value_count;
+         if (tvisstr(tv)) value_count = strV(tv)->len;
+         else {
+            lj_array_check_element(L, arr, tv);
+            value_count = 1;
+         }
+
+         if (value_count > (~MSize(0) - append_count)) luaL_error(L, ErrMsg::ARREXT);
+         append_count += value_count;
+      }
+   }
+   else {
+      for (int i = 0; i < num_values; i++) {
+         lj_array_check_element(L, arr, L->base + i + 1);
       }
    }
 
-   // Push each value
-   for (int i = 0; i < num_values; i++) {
-      int arg_idx = i + 2;
-      MSize idx = arr->len + MSize(i);
-
-      switch (arr->elemtype) {
-         case AET::STR_GC: {
-            GCstr *s = lj_lib_checkstr(L, arg_idx);
-            setgcref(arr->get<GCRef>()[idx], obj2gco(s));
-            lj_gc_objbarrier(L, arr, s);
-            break;
-         }
-
-         case AET::OBJECT: {
-            if (not lua_isobject(L, arg_idx)) {
-               lj_err_argv(L, arg_idx, ErrMsg::BADTYPE, "object", luaL_typename(L, arg_idx));
-            }
-            TValue *tv = L->base + arg_idx - 1;
-            GCobject *obj = objectV(tv);
-            setgcref(arr->get<GCRef>()[idx], obj2gco(obj));
-            lj_gc_objbarrier(L, arr, obj);
-            break;
-         }
-
-         case AET::TABLE: {
-            if (not lua_istable(L, arg_idx)) {
-               lj_err_argv(L, arg_idx, ErrMsg::BADTYPE, "table", luaL_typename(L, arg_idx));
-            }
-            TValue *tv = L->base + arg_idx - 1;
-            GCtab *tab = tabV(tv);
-            setgcref(arr->get<GCRef>()[idx], obj2gco(tab));
-            lj_gc_objbarrier(L, arr, tab);
-            break;
-         }
-
-         case AET::ARRAY: {
-            if (not lua_isarray(L, arg_idx)) {
-               lj_err_argv(L, arg_idx, ErrMsg::BADTYPE, "array", luaL_typename(L, arg_idx));
-            }
-            TValue *tv = L->base + arg_idx - 1;
-            GCarray *a = arrayV(tv);
-            setgcref(arr->get<GCRef>()[idx], obj2gco(a));
-            lj_gc_objbarrier(L, arr, a);
-            break;
-         }
-
-         case AET::FLOAT:  arr->get<float>()[idx] = float(luaL_checknumber(L, arg_idx)); break;
-         case AET::DOUBLE: arr->get<double>()[idx] = luaL_checknumber(L, arg_idx); break;
-         case AET::INT64:  arr->get<int64_t>()[idx] = int64_t(luaL_checknumber(L, arg_idx)); break;
-         case AET::INT32:  arr->get<int32_t>()[idx] = int32_t(luaL_checkinteger(L, arg_idx)); break;
-         case AET::INT16:  arr->get<int16_t>()[idx] = int16_t(luaL_checkinteger(L, arg_idx)); break;
-         case AET::BYTE:   arr->get<uint8_t>()[idx] = uint8_t(luaL_checkinteger(L, arg_idx)); break;
-
-         case AET::ANY: {
-            TValue *dest = &arr->get<TValue>()[idx];
-            TValue *src = L->base + arg_idx - 1;
-            copyTV(L, dest, src);
-            if (tvisgcv(src)) lj_gc_objbarrier(L, arr, gcV(src));
-            break;
-         }
-
-         default:
-            lj_err_argv(L, 1, ErrMsg::BADTYPE, "pushable type", elemtype_name(arr->elemtype));
-            return 0;
+   // Ensure we have capacity for the new elements
+   if (append_count > (~MSize(0) - arr->len)) luaL_error(L, ErrMsg::ARREXT);
+   MSize new_len = arr->len + append_count;
+   if (new_len > arr->capacity) {
+      if (not lj_array_grow(L, arr, new_len)) {
+         luaL_error(L, ErrMsg::ARREXT);
       }
+   }
+
+   if (arr->elemtype IS AET::BYTE) {
+      MSize idx = arr->len;
+      for (int i = 0; i < num_values; i++) {
+         int arg_idx = i + 2;
+         TValue *tv = L->base + arg_idx - 1;
+
+         if (tvisstr(tv)) {
+            GCstr *str = strV(tv);
+            if (str->len > 0) memcpy(arr->get<uint8_t>() + idx, strdata(str), str->len);
+            idx += str->len;
+         }
+         else {
+            lj_array_store_validated(L, arr, idx, tv);
+            idx++;
+         }
+      }
+
+      arr->len = new_len;
+      setintV(L->top++, int32_t(arr->len));
+      return 1;
+   }
+
+   for (int i = 0; i < num_values; i++) {
+      MSize idx = arr->len + MSize(i);
+      lj_array_store_validated(L, arr, idx, L->base + i + 1);
    }
 
    arr->len = new_len;
@@ -938,7 +1100,7 @@ LJLIB_CF(array_push)
 LJLIB_CF(array_pop)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
-   if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
+   if (arr->flags & ARRAY_READONLY) luaL_error(L, ErrMsg::ARRRO);
 
    if (arr->len IS 0) {
       lua_pushnil(L);
@@ -956,9 +1118,14 @@ LJLIB_CF(array_pop)
       // Push the value to the stack
       switch (arr->elemtype) {
          case AET::BYTE:   lua_pushinteger(L, *(uint8_t *)elem); break;
+         case AET::INT8:   lua_pushinteger(L, *(int8_t *)elem); break;
          case AET::INT16:  lua_pushinteger(L, *(int16_t *)elem); break;
          case AET::INT32:  lua_pushinteger(L, *(int32_t *)elem); break;
          case AET::INT64:  lua_pushnumber(L, lua_Number(*(int64_t *)elem)); break;
+         case AET::UINT8:  lua_pushinteger(L, *(uint8_t *)elem); break;
+         case AET::UINT16: lua_pushinteger(L, *(uint16_t *)elem); break;
+         case AET::UINT32: lua_pushnumber(L, lua_Number(*(uint32_t *)elem)); break;
+         case AET::UINT64: lua_pushnumber(L, lua_Number(*(uint64_t *)elem)); break;
          case AET::FLOAT:  lua_pushnumber(L, *(float *)elem); break;
          case AET::DOUBLE: lua_pushnumber(L, *(double *)elem); break;
 
@@ -1047,51 +1214,34 @@ LJLIB_CF(array_copy)
 {
    GCarray *dest = lj_lib_checkarray(L, 1);
 
-   if (dest->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
+   if (dest->flags & ARRAY_READONLY) luaL_error(L, ErrMsg::ARRRO);
 
-   size_t strlen;
+   size_t str_len;
    auto src_type = lua_type(L, 2);
    if (src_type IS LUA_TARRAY) {
       GCarray *src  = lj_lib_checkarray(L, 2);
       auto dest_idx = lj_lib_optint(L, 3, 0);
       auto src_idx  = lj_lib_optint(L, 4, 0);
-      auto count    = lj_lib_optint(L, 5, int32_t(src->len - src_idx));
+      auto count = lj_lib_optint(L, 5, array_default_remaining(src->len, src_idx));
 
-      lj_array_copy(L, dest, dest_idx, src, src_idx, count);
+      auto span = array_copy_span(L, dest_idx, dest->len, src_idx, src->len, count, false);
+      lj_array_copy(L, dest, span.start, src, MSize(src_idx), span.count);
       return 0;
    }
    else if (src_type IS LUA_TSTRING) {
-      // Treat string sequences as a byte array
-      auto str = lua_tolstring(L, 2, &strlen);
-      if (!str or strlen < 1) return 0; // Do nothing - no error necessary
+      if (not (dest->elemtype IS AET::BYTE)) luaL_error(L, ErrMsg::ARRTYPE);
+      auto str = lua_tolstring(L, 2, &str_len);
+      if (not str or str_len < 1) return 0; // Do nothing - no error necessary
 
       auto dest_idx   = lj_lib_optint(L, 3, 0);
       auto src_idx    = lj_lib_optint(L, 4, 0);
-      auto copy_total = lj_lib_optint(L, 5, int32_t(strlen - src_idx));
-
-      // Bounds check source
-
-      if ((src_idx < 0) or (size_t(src_idx) >= strlen)) {
-         luaL_error(L, ERR::OutOfRange, "Source index %d out of bounds (string length: %d).", src_idx, int(strlen));
-         return 0;
-      }
-      if (size_t(src_idx + copy_total) > strlen) copy_total = int32_t(strlen) - src_idx;
-
-      // Bounds check destination
-
-      if ((dest_idx < 0) or (MSize(dest_idx) >= dest->len)) {
-         luaL_error(L, ERR::OutOfRange, "Destination index %d out of bounds (array size: %d).", dest_idx, int(dest->len));
-         return 0;
-      }
-
-      if (MSize(dest_idx + copy_total) > dest->len) {
-         luaL_error(L, ERR::OutOfRange, "String copy would exceed array bounds (%d+%d > %d).", dest_idx, copy_total, int(dest->len));
-         return 0;
-      }
+      auto copy_total = lj_lib_optint(L, 5, array_default_remaining(MSize(str_len), src_idx));
+      auto span = array_copy_span(L, dest_idx, dest->len, src_idx, MSize(str_len), copy_total, true);
+      if (span.count IS 0) return 0;
 
       // Copy string bytes to array
-      auto data = dest->get<uint8_t>() + dest_idx;
-      memcpy(data, str + src_idx, copy_total);
+      auto data = dest->get<uint8_t>() + span.start;
+      memcpy(data, str + src_idx, span.count);
       return 0;
    }
    else if (src_type IS LUA_TTABLE) {
@@ -1104,142 +1254,22 @@ LJLIB_CF(array_copy)
 
       auto dest_idx   = lj_lib_optint(L, 3, 0);
       auto src_idx    = lj_lib_optint(L, 4, 0);
-      auto copy_total = lj_lib_optint(L, 5, int32_t(table_len - src_idx));
+      auto copy_total = lj_lib_optint(L, 5, array_default_remaining(table_len, src_idx));
+      auto span = array_copy_span(L, dest_idx, dest->len, src_idx, table_len, copy_total, true);
+      if (span.count IS 0) return 0;
 
-      // Bounds check source index
-      if ((src_idx < 0) or (MSize(src_idx) >= table_len)) {
-         luaL_error(L, ERR::OutOfRange, "Source index %d out of bounds (table length: %d).", src_idx, int(table_len));
-         return 0;
+      GCarray *staged = lj_array_new_like(L, dest, span.count);
+      setarrayV(L, L->top++, staged);
+
+      for (MSize i = 0; i < span.count; i++) {
+         int32_t source_index = src_idx + int32_t(i);
+         lua_pushinteger(L, source_index);
+         lua_gettable(L, 2);
+         lj_array_store_checked(L, staged, i, L->top - 1);
+         lua_pop(L, 1);
       }
 
-      if (MSize(copy_total) > table_len - MSize(src_idx)) copy_total = int32_t(table_len - MSize(src_idx));
-
-      // Check bounds for destination array
-      if ((dest_idx < 0) or (MSize(dest_idx) >= dest->len)) {
-         luaL_error(L, ERR::OutOfRange, "Destination index out of bounds: %d (array size: %d).", dest_idx, dest->len);
-         return 0;
-      }
-
-      if (MSize(dest_idx + copy_total) > dest->len) {
-         luaL_error(L, ERR::OutOfRange, "Table copy would exceed array bounds (%d+%d > %d).", dest_idx, copy_total, dest->len);
-         return 0;
-      }
-
-      // Copy table elements using ipairs-style iteration
-
-      auto c_index = dest_idx;
-
-      for (int i = 0; i < copy_total; i++) {
-         lua_pushinteger(L, src_idx + i);
-         lua_gettable(L, 2);        // Get table[src_idx + i]
-
-         MSize dest_index = c_index + i;
-
-         // Convert and store based on array type
-
-         switch(dest->elemtype) {
-            case AET::STR_CPP:
-               if (lua_tostring(L, -1)) dest->get<std::string>()[dest_index].assign(lua_tostring(L, -1));
-               else dest->get<std::string>()[dest_index].clear();
-               break;
-            case AET::STR_GC:
-               if (lua_tostring(L, -1)) {
-                  luaL_error(L, ERR::NoSupport, "Writing to string arrays from tables is not yet supported.");
-                  lua_pop(L, 1);
-                  return 0;
-               }
-               break;
-            case AET::CSTR:
-            case AET::PTR:
-               luaL_error(L, ERR::NoSupport, "Writing to pointer arrays from tables is not supported.");
-               lua_pop(L, 1);
-               return 0;
-            case AET::FLOAT:
-               dest->get<float>()[dest_index] = lua_tonumber(L, -1);
-               break;
-            case AET::DOUBLE:
-               dest->get<double>()[dest_index] = lua_tonumber(L, -1);
-               break;
-            case AET::INT64:
-               dest->get<int64_t>()[dest_index] = lua_tointeger(L, -1);
-               break;
-            case AET::INT32:
-               dest->get<int>()[dest_index] = lua_tointeger(L, -1);
-               break;
-            case AET::INT16:
-               dest->get<int16_t>()[dest_index] = lua_tointeger(L, -1);
-               break;
-            case AET::BYTE:
-               dest->get<int8_t>()[dest_index] = lua_tointeger(L, -1);
-               break;
-
-            case AET::STRUCT:
-               // TODO: We should check the struct fields to confirm if its content can be safely copied.
-               // This would only have to be done once per struct type, so we could cache the result.
-               luaL_error(L, ERR::NoSupport, "Writing to struct arrays from tables is not yet supported.");
-               lua_pop(L, 1);
-               return 0;
-
-            case AET::OBJECT:
-               if (lua_isobject(L, -1)) {
-                  TValue *tv = L->top - 1;
-                  GCobject *obj = objectV(tv);
-                  setgcref(dest->get<GCRef>()[dest_index], obj2gco(obj));
-                  lj_gc_objbarrier(L, dest, obj);
-               }
-               else if (lua_isnil(L, -1)) {
-                  setgcrefnull(dest->get<GCRef>()[dest_index]);
-               }
-               else {
-                  luaL_error(L, ERR::InvalidType, "Expected object value at index %d.", src_idx + i);
-                  lua_pop(L, 1);
-                  return 0;
-               }
-               break;
-
-            case AET::TABLE:
-               if (lua_istable(L, -1)) {
-                  TValue *tv = L->top - 1;
-                  GCtab *tab = tabV(tv);
-                  setgcref(dest->get<GCRef>()[dest_index], obj2gco(tab));
-                  lj_gc_objbarrier(L, dest, tab);
-               }
-               else if (lua_isnil(L, -1)) {
-                  setgcrefnull(dest->get<GCRef>()[dest_index]);
-               }
-               else {
-                  luaL_error(L, ERR::InvalidType, "Expected table value at index %d.", src_idx + i);
-                  lua_pop(L, 1);
-                  return 0;
-               }
-               break;
-
-            case AET::ARRAY:
-               if (lua_isarray(L, -1)) {
-                  TValue *tv = L->top - 1;
-                  GCarray *a = arrayV(tv);
-                  setgcref(dest->get<GCRef>()[dest_index], obj2gco(a));
-                  lj_gc_objbarrier(L, dest, a);
-               }
-               else if (lua_isnil(L, -1)) {
-                  setgcrefnull(dest->get<GCRef>()[dest_index]);
-               }
-               else {
-                  luaL_error(L, ERR::InvalidType, "Expected array value at index %d.", src_idx + i);
-                  lua_pop(L, 1);
-                  return 0;
-               }
-               break;
-
-            default:
-               luaL_error(L, ERR::InvalidType, "Unsupported array type $%.8x", dest->elemtype);
-               lua_pop(L, 1);
-               return 0;
-         }
-
-         lua_pop(L, 1); // Remove the value from stack
-      }
-
+      lj_array_copy(L, dest, span.start, staged, 0, span.count);
       return 0;
    }
    else {
@@ -1256,21 +1286,18 @@ LJLIB_CF(array_copy)
 //   start: starting index (0-based, default 0)
 //   len: number of bytes to extract (default: remaining bytes from start)
 
-LJLIB_CF(array_getString)
+LJLIB_CF(array_getString)      LJLIB_REC(.)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
 
-   if (arr->elemtype != AET::BYTE) lj_err_caller(L, ErrMsg::ARRSTR);
+   if (not (arr->elemtype IS AET::BYTE)) luaL_error(L, ErrMsg::ARRSTR);
 
    auto start = lj_lib_optint(L, 2, 0);
-   if (start < 0) lj_err_caller(L, ErrMsg::IDXRNG);
+   auto len = lj_lib_optint(L, 3, array_default_remaining(arr->len, start));
+   auto span = array_strict_count_span(L, start, len, arr->len);
 
-   auto len = lj_lib_optint(L, 3, arr->len - start);
-   if (len < 0) lj_err_caller(L, ErrMsg::IDXRNG);
-   if (start + len > int(arr->len)) lj_err_caller(L, ErrMsg::IDXRNG);
-
-   auto data = arr->get<const char>() + start;
-   GCstr *s = lj_str_new(L, data, len);
+   auto data = (span.count > 0) ? arr->get<const char>() + span.start : "";
+   GCstr *s = lj_str_new(L, data, span.count);
    setstrV(L, L->top++, s);
    return 1;
 }
@@ -1290,27 +1317,18 @@ LJLIB_CF(array_setString)
    GCarray *arr = lj_lib_checkarray(L, 1);
    GCstr *str = lj_lib_checkstr(L, 2);
 
-   if (arr->elemtype != AET::BYTE) lj_err_caller(L, ErrMsg::ARRSTR);
-   if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
+   if (not (arr->elemtype IS AET::BYTE)) luaL_error(L, ErrMsg::ARRSTR);
+   if (arr->flags & ARRAY_READONLY) luaL_error(L, ErrMsg::ARRRO);
 
    auto start = lj_lib_optint(L, 3, 0);
-   if (start < 0) lj_err_caller(L, ErrMsg::IDXRNG);
+   auto span = array_clamped_count_span(L, start, int32_t(str->len), arr->len);
 
-   auto len = int(str->len);
-
-   // Clamp length to fit in array
-
-   if (start >= int(arr->len)) {
-      setintV(L->top++, 0);
-      return 1;
+   if (span.count > 0) {
+      auto data = arr->get<char>() + span.start;
+      memcpy(data, strdata(str), span.count);
    }
 
-   if (start + len > int(arr->len)) len = arr->len - start;
-
-   auto data = arr->get<char>() + start;
-   memcpy(data, strdata(str), len);
-
-   setintV(L->top++, int32_t(len));
+   setintV(L->top++, int32_t(span.count));
    return 1;
 }
 
@@ -1322,7 +1340,7 @@ LJLIB_CF(array_setString)
 LJLIB_CF(array_type)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
-   auto name = elemtype_name(arr->elemtype);
+   auto name = lj_array_elemtype_name(arr->elemtype);
    setstrV(L, L->top++, lj_str_newz(L, name));
    return 1;
 }
@@ -1348,7 +1366,7 @@ LJLIB_CF(array_readOnly)
 // Template-based fill for contiguous ranges (step=1). Uses std::fill for optimal performance.
 
 template<typename T>
-static void fill_contiguous(void *Data, int32_t Start, int32_t Count, lua_Number Value)
+static void fill_contiguous(void *Data, int32_t Start, int32_t Count, T Value)
 {
    T *ptr = (T *)Data + Start;
    std::fill(ptr, ptr + Count, T(Value));
@@ -1373,252 +1391,127 @@ static void fill_stepped(void *Data, int32_t Start, int32_t Stop, int32_t Step, 
 // Helper function to fill array elements with a value.
 // Uses optimised contiguous fill when step=1, otherwise falls back to stepped fill.
 
-static void fill_array_elements(GCarray *Arr, lua_Number Value, int32_t Start, int32_t Stop, int32_t Step)
+static void fill_array_elements(lua_State *L, GCarray *Arr, cTValue *Value, int32_t Start, int32_t Stop, int32_t Step)
 {
    void *data = Arr->arraydata();
+   lj_array_store_validated(L, Arr, MSize(Start), Value);
 
-   // Optimised path for contiguous fills (step=1, forward direction)
-   if (Step IS 1) {
-      int32_t count = Stop - Start + 1;
-      switch (Arr->elemtype) {
-         case AET::BYTE:   fill_contiguous<uint8_t>(data, Start, count, Value); return;
-         case AET::INT16:  fill_contiguous<int16_t>(data, Start, count, Value); return;
-         case AET::INT32:  fill_contiguous<int32_t>(data, Start, count, Value); return;
-         case AET::INT64:  fill_contiguous<int64_t>(data, Start, count, Value); return;
-         case AET::FLOAT:  fill_contiguous<float>(data, Start, count, Value); return;
-         case AET::DOUBLE: fill_contiguous<double>(data, Start, count, Value); return;
-         default: return;
-      }
-   }
+#define ARRAY_FILL_TYPE(Type) \
+   do { \
+      Type prepared_value = Arr->get<Type>()[Start]; \
+      if (Step IS 1) fill_contiguous<Type>(data, Start, Stop - Start + 1, prepared_value); \
+      else fill_stepped<Type>(data, Start, Stop, Step, prepared_value); \
+      return; \
+   } while (false)
 
-   // Stepped fill path (non-contiguous or reverse direction)
    switch (Arr->elemtype) {
-      case AET::BYTE:   fill_stepped<uint8_t>(data, Start, Stop, Step, Value); break;
-      case AET::INT16:  fill_stepped<int16_t>(data, Start, Stop, Step, Value); break;
-      case AET::INT32:  fill_stepped<int32_t>(data, Start, Stop, Step, Value); break;
-      case AET::INT64:  fill_stepped<int64_t>(data, Start, Stop, Step, Value); break;
-      case AET::FLOAT:  fill_stepped<float>(data, Start, Stop, Step, Value); break;
-      case AET::DOUBLE: fill_stepped<double>(data, Start, Stop, Step, Value); break;
-      default: break;
+      case AET::BYTE:   ARRAY_FILL_TYPE(uint8_t);
+      case AET::INT8:   ARRAY_FILL_TYPE(int8_t);
+      case AET::INT16:  ARRAY_FILL_TYPE(int16_t);
+      case AET::INT32:  ARRAY_FILL_TYPE(int32_t);
+      case AET::INT64:  ARRAY_FILL_TYPE(int64_t);
+      case AET::UINT8:  ARRAY_FILL_TYPE(uint8_t);
+      case AET::UINT16: ARRAY_FILL_TYPE(uint16_t);
+      case AET::UINT32: ARRAY_FILL_TYPE(uint32_t);
+      case AET::UINT64: ARRAY_FILL_TYPE(uint64_t);
+      case AET::FLOAT:  ARRAY_FILL_TYPE(float);
+      case AET::DOUBLE: ARRAY_FILL_TYPE(double);
+      case AET::STR_GC:
+      case AET::TABLE:
+      case AET::ARRAY:
+      case AET::OBJECT: {
+         GCRef prepared_value = Arr->get<GCRef>()[Start];
+         if (Step > 0) {
+            for (int32_t i = Start; i <= Stop; i += Step) Arr->get<GCRef>()[i] = prepared_value;
+         }
+         else {
+            for (int32_t i = Start; i >= Stop; i += Step) Arr->get<GCRef>()[i] = prepared_value;
+         }
+         if (gcref(prepared_value)) lj_gc_objbarrier(L, Arr, gcref(prepared_value));
+         return;
+      }
+      case AET::ANY:
+         if (Step > 0) {
+            for (int32_t i = Start; i <= Stop; i += Step) {
+               copyTV(L, &Arr->get<TValue>()[i], Value);
+            }
+         }
+         else {
+            for (int32_t i = Start; i >= Stop; i += Step) {
+               copyTV(L, &Arr->get<TValue>()[i], Value);
+            }
+         }
+         if (tvisgcv(Value)) lj_gc_objbarrier(L, Arr, gcV(Value));
+         return;
+      case AET::STRUCT:
+         if (Step > 0) {
+            for (int32_t i = Start; i <= Stop; i += Step) {
+               memcpy(lj_array_index(Arr, MSize(i)), structV(Value)->data, Arr->elemsize);
+            }
+         }
+         else {
+            for (int32_t i = Start; i >= Stop; i += Step) {
+               memcpy(lj_array_index(Arr, MSize(i)), structV(Value)->data, Arr->elemsize);
+            }
+         }
+         return;
+      default: return;
    }
+
+#undef ARRAY_FILL_TYPE
 }
 
 //********************************************************************************************************************
-// Usage: array.fill(arr, value [, start [, count]]) or array.fill(arr, value, range)
+// Usage: array.fill(arr, value [, start [, stop]]) or array.fill(arr, value, range)
 //
 // Fills array elements with a value.
 //
 // Parameters (integer form):
 //   arr: the array (must not be read-only)
-//   value: value to fill with (number)
+//   value: value satisfying the array's element contract
 //   start: starting index (0-based, default 0)
-//   count: number of elements to fill (default: all remaining)
+//   stop: exclusive stopping index (default: array length)
 //
 // Parameters (range form):
 //   arr: the array (must not be read-only)
-//   value: value to fill with (number)
+//   value: value satisfying the array's element contract
 //   range: range object specifying which elements to fill
 
 LJLIB_CF(array_fill)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
-   lua_Number value = lj_lib_checknum(L, 2);
 
-   if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
+   // The fill value must be present before any early return, otherwise an omitted argument would read a stale
+   // stack slot beyond L->top.  An explicit nil is still passed through to the element validator.
+   lj_lib_checkany(L, 2);
+
+   if (arr->flags & ARRAY_READONLY) luaL_error(L, ErrMsg::ARRRO);
 
    // Check if third argument is a range
    tiri_range *r = check_range(L, 3);
    if (r) {
-      int32_t len = int32_t(arr->len);
-      int32_t start = r->start;
-      int32_t stop = r->stop;
-      int32_t step = r->step;
+      auto span = array_range_to_span(L, r, arr->len);
+      if (span.empty) return 0;
 
-      // Handle negative indices
-      bool use_inclusive = r->inclusive;
-      if (start < 0 or stop < 0) {
-         use_inclusive = true;
-         if (start < 0) start += len;
-         if (stop < 0) stop += len;
-      }
-
-      // Determine iteration direction
-      bool forward = (start <= stop);
-      if (step IS 0) step = forward ? 1 : -1;
-      if (forward and step < 0) step = 1;
-      if (not forward and step > 0) step = -1;
-
-      // Calculate effective stop for exclusive ranges
-      int32_t effective_stop = stop;
-      if (not use_inclusive) {
-         if (forward) effective_stop = stop - 1;
-         else effective_stop = stop + 1;
-      }
-
-      // Bounds clipping
-      if (forward) {
-         if (start < 0) start = 0;
-         if (effective_stop >= len) effective_stop = len - 1;
-      }
-      else {
-         if (start >= len) start = len - 1;
-         if (effective_stop < 0) effective_stop = 0;
-      }
-
-      // Check for empty/invalid ranges
-      if (len IS 0 or (forward and start > effective_stop) or (not forward and start < effective_stop)) {
-         return 0;
-      }
-
-      fill_array_elements(arr, value, start, effective_stop, step);
+      lj_array_check_element(L, arr, L->base + 1);
+      fill_array_elements(L, arr, L->base + 1, span.start, span.stop, span.step);
       return 0;
    }
 
-   // Original integer-based fill
+   // Positional half-open span
    auto start = lj_lib_optint(L, 3, 0);
-   if (start < 0) lj_err_caller(L, ErrMsg::IDXRNG);
+   auto stop = lj_lib_optint(L, 4, int32_t(arr->len));
+   auto span = array_clamped_half_open_span(L, start, stop, arr->len);
 
-   auto count = lj_lib_optint(L, 4, int32_t(arr->len - start));
-   if (count < 0) lj_err_caller(L, ErrMsg::IDXRNG);
+   if (span.count IS 0) return 0;
 
-   if (MSize(start) >= arr->len) return 0;
-   if (MSize(start + count) > arr->len) count = int32_t(arr->len) - start;
-
-   fill_array_elements(arr, value, start, start + count - 1, 1);
+   lj_array_check_element(L, arr, L->base + 1);
+   fill_array_elements(L, arr, L->base + 1, int32_t(span.start), int32_t(span.start + span.count - 1), 1);
    return 0;
 }
 
 //********************************************************************************************************************
-// Template-based find for contiguous forward search (step=1). Hoists type dispatch outside the loop.
-
-template<typename T>
-static int32_t find_forward_contiguous(const void *Data, int32_t Start, int32_t Stop, lua_Number Value)
-{
-   const T *base = (const T *)Data;
-   T val = T(Value);
-   for (int32_t i = Start; i <= Stop; i++) {
-      if (base[i] IS val) return i;
-   }
-   return -1;
-}
-
-//********************************************************************************************************************
-// Template-based find for stepped ranges. Hoists type dispatch outside the loop.
-
-template<typename T>
-static int32_t find_stepped(const void *Data, int32_t Start, int32_t Stop, int32_t Step, lua_Number Value)
-{
-   const T *base = (const T *)Data;
-   T val = T(Value);
-   if (Step > 0) {
-      for (int32_t i = Start; i <= Stop; i += Step) {
-         if (base[i] IS val) return i;
-      }
-   }
-   else {
-      for (int32_t i = Start; i >= Stop; i += Step) {
-         if (base[i] IS val) return i;
-      }
-   }
-   return -1;
-}
-
-//********************************************************************************************************************
-// Dispatches find operation based on array element type.
-// Returns index if found, -1 if not found.
-
-static int32_t find_in_array(GCarray *Arr, lua_Number Value, int32_t Start, int32_t Stop, int32_t Step)
-{
-   const void *data = Arr->arraydata();
-
-   // Optimised path for contiguous forward search (step=1)
-   if (Step IS 1) {
-      switch (Arr->elemtype) {
-         case AET::BYTE:   return find_forward_contiguous<uint8_t>(data, Start, Stop, Value);
-         case AET::INT16:  return find_forward_contiguous<int16_t>(data, Start, Stop, Value);
-         case AET::INT32:  return find_forward_contiguous<int32_t>(data, Start, Stop, Value);
-         case AET::INT64:  return find_forward_contiguous<int64_t>(data, Start, Stop, Value);
-         case AET::FLOAT:  return find_forward_contiguous<float>(data, Start, Stop, Value);
-         case AET::DOUBLE: return find_forward_contiguous<double>(data, Start, Stop, Value);
-         default: return -1;
-      }
-   }
-
-   // Stepped search path (non-contiguous or reverse direction)
-   switch (Arr->elemtype) {
-      case AET::BYTE:   return find_stepped<uint8_t>(data, Start, Stop, Step, Value);
-      case AET::INT16:  return find_stepped<int16_t>(data, Start, Stop, Step, Value);
-      case AET::INT32:  return find_stepped<int32_t>(data, Start, Stop, Step, Value);
-      case AET::INT64:  return find_stepped<int64_t>(data, Start, Stop, Step, Value);
-      case AET::FLOAT:  return find_stepped<float>(data, Start, Stop, Step, Value);
-      case AET::DOUBLE: return find_stepped<double>(data, Start, Stop, Step, Value);
-      default: return -1;
-   }
-}
-
-//********************************************************************************************************************
-// Object search by UID for stepped ranges.
-
-static int32_t find_object_in_array(GCarray *Arr, OBJECTID SearchUid, int32_t Start, int32_t Stop, int32_t Step)
-{
-   auto refs = Arr->get<GCRef>();
-   if (Step > 0) {
-      for (int32_t i = Start; i <= Stop; i += Step) {
-         GCRef ref = refs[i];
-         if (gcref(ref)) {
-            GCobject *obj = gco_to_object(gcref(ref));
-            if (obj and obj->uid IS SearchUid) return i;
-         }
-      }
-   }
-   else {
-      for (int32_t i = Start; i >= Stop; i += Step) {
-         GCRef ref = refs[i];
-         if (gcref(ref)) {
-            GCobject *obj = gco_to_object(gcref(ref));
-            if (obj and obj->uid IS SearchUid) return i;
-         }
-      }
-   }
-   return -1;
-}
-
-//********************************************************************************************************************
-// String search by value for stepped ranges.
-// Returns index if found, -1 if not found.
-
-static int32_t find_string_in_array(GCarray *Arr, GCstr *SearchStr, int32_t Start, int32_t Stop, int32_t Step)
-{
-   auto refs = Arr->get<GCRef>();
-   if (Step > 0) {
-      for (int32_t i = Start; i <= Stop; i += Step) {
-         GCRef ref = refs[i];
-         if (gcref(ref)) {
-            GCstr *elem = gco_to_string(gcref(ref));
-            if (elem->len IS SearchStr->len and
-                memcmp(strdata(elem), strdata(SearchStr), elem->len) IS 0) {
-               return i;
-            }
-         }
-      }
-   }
-   else {
-      for (int32_t i = Start; i >= Stop; i += Step) {
-         GCRef ref = refs[i];
-         if (gcref(ref)) {
-            GCstr *elem = gco_to_string(gcref(ref));
-            if (elem->len IS SearchStr->len and
-                memcmp(strdata(elem), strdata(SearchStr), elem->len) IS 0) {
-               return i;
-            }
-         }
-      }
-   }
-   return -1;
-}
-
-//********************************************************************************************************************
-// Usage: array.find(arr, value [, start]) or array.find(arr, value, {range})
+// Usage: array.indexOf(arr, value [, start]) or array.indexOf(arr, value, {range})
 //
 // Searches for a value in the array.
 //
@@ -1634,235 +1527,217 @@ static int32_t find_string_in_array(GCarray *Arr, GCstr *SearchStr, int32_t Star
 //
 // Returns: index of first occurrence, or nil if not found
 
-LJLIB_CF(array_find)
+static bool array_values_equal(lua_State *L, GCarray *Array, MSize Index, cTValue *Candidate)
+{
+   ptrdiff_t saved_top = savestack(L, L->top);
+   TValue candidate_copy;
+   copyTV(L, &candidate_copy, Candidate);
+   array_push_element(L, Array, Index);
+   TValue *element = L->top - 1;
+   bool equal = lj_obj_equal(element, &candidate_copy) != 0;
+
+   if (not equal and itype(element) IS itype(&candidate_copy) and
+       (tvistab(element) or tvisudata(element))) {
+      cTValue *method = lj_meta_fast(L, tabref(gcV(element)->gch.metatable), MM_eq);
+      if (method) {
+         if (tabref(gcV(element)->gch.metatable) != tabref(gcV(&candidate_copy)->gch.metatable)) {
+            cTValue *candidate_method = lj_meta_fast(L, tabref(gcV(&candidate_copy)->gch.metatable), MM_eq);
+            if (candidate_method IS nullptr or not lj_obj_equal(method, candidate_method)) method = nullptr;
+         }
+
+         if (method) {
+            copyTV(L, L->top++, method);
+            setnilV(L->top++);
+            TValue *base = L->top;
+            [[maybe_unused]] size_t context_depth = lj_context_depth(L);
+            size_t context_size = L->context_stack.size();
+            if (tvistab(element)) {
+               copyTV(L, L->top++, &candidate_copy);
+               element = restorestack(L, saved_top);
+               [[maybe_unused]] uint32_t argument_count =
+                  lj_context_prepare_metamethod_call(L, element, base, 1, 2);
+               lj_assertL(argument_count IS 1, "table equality metamethod retained its receiver argument");
+            }
+            else {
+               copyTV(L, L->top++, element);
+               copyTV(L, L->top++, &candidate_copy);
+            }
+            int call_error = lj_vm_pcall(L, base, 2, -1);
+            lj_context_restore_depth(L, context_size);
+            if (call_error) lua_error(L);
+            lj_assertL(lj_context_depth(L) IS context_depth,
+               "equality metamethod returned with an unbalanced context");
+            equal = tvistruecond(L->top - 1);
+         }
+      }
+   }
+
+   L->top = restorestack(L, saved_top);
+   return equal;
+}
+
+static int32_t array_find_generic(lua_State *L, GCarray *Array, cTValue *Candidate, int32_t Start, int32_t Stop,
+   int32_t Step)
+{
+   ptrdiff_t saved_top = savestack(L, L->top);
+   copyTV(L, L->top, Candidate);
+   incr_top(L);
+   ptrdiff_t candidate_offset = savestack(L, L->top - 1);
+   MSize length = Array->len;
+   int32_t result = -1;
+   if (Step > 0) {
+      for (int32_t index = Start; index <= Stop and MSize(index) < length; index += Step) {
+         if (MSize(index) >= Array->len) break;
+         if (array_values_equal(L, Array, MSize(index), restorestack(L, candidate_offset))) {
+            result = index;
+            break;
+         }
+      }
+   }
+   else {
+      for (int32_t index = Start; index >= Stop and index >= 0 and MSize(index) < length; index += Step) {
+         if (MSize(index) >= Array->len) break;
+         if (array_values_equal(L, Array, MSize(index), restorestack(L, candidate_offset))) {
+            result = index;
+            break;
+         }
+      }
+   }
+   L->top = restorestack(L, saved_top);
+   return result;
+}
+
+static int array_index_of(lua_State *L)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
+   const bool stop_provided = not lua_isnoneornil(L, 4);
+   int32_t stop = stop_provided ? lj_lib_checkint(L, 4) : int32_t(arr->len);
+
+   if (stop < 0) stop += int32_t(arr->len);
+   if (stop < 0) stop = 0;
+   if (MSize(stop) > arr->len) stop = int32_t(arr->len);
 
    if (arr->elemtype IS AET::OBJECT) {
       auto search_uid = object_uid_from_value(L, 2);
-
-      // Check if third argument is a range
-      tiri_range *r = check_range(L, 3);
-      if (r) {
-         auto len = int32_t(arr->len);
-         int32_t start = r->start;
-         int32_t stop = r->stop;
-         int32_t step = r->step;
-
-         // Handle negative indices
-         bool use_inclusive = r->inclusive;
-         if (start < 0 or stop < 0) {
-            use_inclusive = true;
-            if (start < 0) start += len;
-            if (stop < 0) stop += len;
-         }
-
-         // Determine iteration direction
-         bool forward = (start <= stop);
-         if (step IS 0) step = forward ? 1 : -1;
-         if (forward and step < 0) step = 1;
-         if (not forward and step > 0) step = -1;
-
-         // Calculate effective stop for exclusive ranges
-         int32_t effective_stop = stop;
-         if (not use_inclusive) {
-            if (forward) effective_stop = stop - 1;
-            else effective_stop = stop + 1;
-         }
-
-         // Bounds clipping
-         if (forward) {
-            if (start < 0) start = 0;
-            if (effective_stop >= len) effective_stop = len - 1;
-         }
-         else {
-            if (start >= len) start = len - 1;
-            if (effective_stop < 0) effective_stop = 0;
-         }
-
-         // Check for empty/invalid ranges
-         if (len IS 0 or (forward and start > effective_stop) or (not forward and start < effective_stop)) {
-            lua_pushnil(L);
-            return 1;
-         }
-
-         int32_t result = find_object_in_array(arr, search_uid, start, effective_stop, step);
-         if (result >= 0) {
-            setintV(L->top++, result);
-            return 1;
-         }
-         lua_pushnil(L);
-         return 1;
+      if (tiri_range *r = check_range(L, 3)) {
+         auto span = array_range_to_span(L, r, arr->len);
+         if (span.empty) return array_push_find_result(L, -1);
+         return array_push_find_result(L, lj_arr_find_object(arr, search_uid, span.start, span.stop, span.step));
       }
 
       auto start = lj_lib_optint(L, 3, 0);
-
-      if (start < 0) start = 0;
-      if (MSize(start) >= arr->len) {
-         lua_pushnil(L);
-         return 1;
-      }
-
-      int32_t result = find_object_in_array(arr, search_uid, start, int32_t(arr->len - 1), 1);
-      if (result >= 0) {
-         setintV(L->top++, result);
-         return 1;
-      }
-
-      lua_pushnil(L);
-      return 1;
+      if (not array_find_start(start, arr->len, &start)) return array_push_find_result(L, -1);
+      if (start >= stop) return array_push_find_result(L, -1);
+      return array_push_find_result(L, lj_arr_find_object(arr, search_uid, start, stop - 1, 1));
    }
-   else if (arr->elemtype IS AET::STR_GC) { // Handle string arrays (STR_GC)
+   if (arr->elemtype IS AET::STR_GC) {
       GCstr *search_str = lj_lib_checkstr(L, 2);
 
-      // Check if third argument is a range
-      tiri_range *r = check_range(L, 3);
-      if (r) {
-         auto len = int32_t(arr->len);
-         int32_t start = r->start;
-         int32_t stop = r->stop;
-         int32_t step = r->step;
-
-         // Handle negative indices
-         bool use_inclusive = r->inclusive;
-         if (start < 0 or stop < 0) {
-            use_inclusive = true;
-            if (start < 0) start += len;
-            if (stop < 0) stop += len;
-         }
-
-         // Determine iteration direction
-         bool forward = (start <= stop);
-         if (step IS 0) step = forward ? 1 : -1;
-         if (forward and step < 0) step = 1;
-         if (not forward and step > 0) step = -1;
-
-         // Calculate effective stop for exclusive ranges
-         int32_t effective_stop = stop;
-         if (not use_inclusive) {
-            if (forward) effective_stop = stop - 1;
-            else effective_stop = stop + 1;
-         }
-
-         // Bounds clipping
-         if (forward) {
-            if (start < 0) start = 0;
-            if (effective_stop >= len) effective_stop = len - 1;
-         }
-         else {
-            if (start >= len) start = len - 1;
-            if (effective_stop < 0) effective_stop = 0;
-         }
-
-         // Check for empty/invalid ranges
-         if (len IS 0 or (forward and start > effective_stop) or (not forward and start < effective_stop)) {
-            lua_pushnil(L);
-            return 1;
-         }
-
-         int32_t result = find_string_in_array(arr, search_str, start, effective_stop, step);
-         if (result >= 0) {
-            setintV(L->top++, result);
-            return 1;
-         }
-         lua_pushnil(L);
-         return 1;
+      if (tiri_range *r = check_range(L, 3)) {
+         auto span = array_range_to_span(L, r, arr->len);
+         if (span.empty) return array_push_find_result(L, -1);
+         return array_push_find_result(L, lj_arr_find_str(arr, search_str, span.start, span.stop, span.step));
       }
 
       auto start = lj_lib_optint(L, 3, 0);
-
-      if (start < 0) start = 0;
-      if (MSize(start) >= arr->len) {
-         lua_pushnil(L);
-         return 1;
-      }
-
-      int32_t result = find_string_in_array(arr, search_str, start, int32_t(arr->len - 1), 1);
-      if (result >= 0) {
-         setintV(L->top++, result);
-         return 1;
-      }
-
-      lua_pushnil(L);
-      return 1;
+      if (not array_find_start(start, arr->len, &start)) return array_push_find_result(L, -1);
+      if (start >= stop) return array_push_find_result(L, -1);
+      return array_push_find_result(L, lj_arr_find_str(arr, search_str, start, stop - 1, 1));
    }
 
-   int ok;
-   lua_Number value = lua_tonumberx(L, 2, &ok);
-   if (not ok) luaL_error(L, "Unsupported value type '%s'", lua_typename(L, lua_type(L, 2)));
+   if (glArrayConversion[size_t(arr->elemtype)].primitive) {
+      int ok;
+      lua_Number value = lua_tonumberx(L, 2, &ok);
+      if (not ok) luaL_error(L, ERR::TypeMismatch, "Unsupported value type '%s'", lua_typename(L, lua_type(L, 2)));
 
-   // Check if third argument is a range
-   tiri_range *r = check_range(L, 3);
-   if (r) {
-      int32_t len = int32_t(arr->len);
-      int32_t start = r->start;
-      int32_t stop = r->stop;
-      int32_t step = r->step;
-
-      // Handle negative indices
-      bool use_inclusive = r->inclusive;
-      if (start < 0 or stop < 0) {
-         use_inclusive = true;
-         if (start < 0) start += len;
-         if (stop < 0) stop += len;
+      if (tiri_range *r = check_range(L, 3)) {
+         auto span = array_range_to_span(L, r, arr->len);
+         if (span.empty) return array_push_find_result(L, -1);
+         return array_push_find_result(L, lj_arr_find_num(arr, value, span.start, span.stop, span.step));
       }
 
-      // Determine iteration direction
-      bool forward = (start <= stop);
-      if (step IS 0) step = forward ? 1 : -1;
-      if (forward and step < 0) step = 1;
-      if (not forward and step > 0) step = -1;
+      auto start = lj_lib_optint(L, 3, 0);
+      if (not array_find_start(start, arr->len, &start)) return array_push_find_result(L, -1);
+      if (start >= stop) return array_push_find_result(L, -1);
+      return array_push_find_result(L, lj_arr_find_num(arr, value, start, stop - 1, 1));
+   }
 
-      // Calculate effective stop for exclusive ranges
-      int32_t effective_stop = stop;
-      if (not use_inclusive) {
-         if (forward) effective_stop = stop - 1;
-         else effective_stop = stop + 1;
+   if (tiri_range *r = check_range(L, 3)) {
+      auto span = array_range_to_span(L, r, arr->len);
+      if (span.empty) return array_push_find_result(L, -1);
+      return array_push_find_result(L, array_find_generic(L, arr, L->base + 1, span.start, span.stop, span.step));
+   }
+
+   auto start = lj_lib_optint(L, 3, 0);
+   if (not array_find_start(start, arr->len, &start)) return array_push_find_result(L, -1);
+   if (start >= stop) return array_push_find_result(L, -1);
+   return array_push_find_result(L, array_find_generic(L, arr, L->base + 1, start, stop - 1, 1));
+}
+
+static int array_find_predicate(lua_State *L, bool ReturnIndex);
+
+LJLIB_CF(array_find)
+{
+   return array_find_predicate(L, false);
+}
+
+//********************************************************************************************************************
+// Equality search remains permanently available through array.indexOf().
+
+LJLIB_CF(array_indexOf)
+{
+   return array_index_of(L);
+}
+
+//********************************************************************************************************************
+// Canonical array membership helper shared by the library adapter, interpreter and trace recorder.
+
+extern "C" int32_t lj_arr_contains(lua_State *L, GCarray *Array, cTValue *Candidate)
+{
+   if (Array->len IS 0) return 0;
+
+   if (Array->elemtype IS AET::OBJECT) {
+      OBJECTID search_uid;
+      if (tvisobject(Candidate)) search_uid = objectV(Candidate)->uid;
+      else {
+         TValue converted;
+         auto candidate_uid = try_to_integer(Candidate, &converted);
+         if (not candidate_uid) {
+            lj_err_argv(L, 2, ErrMsg::BADTYPE, "object or uid", lj_typename(Candidate));
+            return 0;
+         }
+         search_uid = OBJECTID(*candidate_uid);
       }
+      return lj_arr_find_object(Array, search_uid, 0, int32_t(Array->len - 1), 1) >= 0;
+   }
 
-      // Bounds clipping
-      if (forward) {
-         if (start < 0) start = 0;
-         if (effective_stop >= len) effective_stop = len - 1;
+   if (Array->elemtype IS AET::STR_GC) {
+      GCstr *candidate_string;
+      if (tvisstr(Candidate)) candidate_string = strV(Candidate);
+      else if (tvisnumber(Candidate)) {
+         TValue converted;
+         copyTV(L, &converted, Candidate);
+         candidate_string = lj_strfmt_number(L, &converted);
       }
       else {
-         if (start >= len) start = len - 1;
-         if (effective_stop < 0) effective_stop = 0;
+         lj_err_argv(L, 2, ErrMsg::BADTYPE, "string", lj_typename(Candidate));
+         return 0;
       }
-
-      // Check for empty/invalid ranges
-      if (len IS 0 or (forward and start > effective_stop) or (not forward and start < effective_stop)) {
-         lua_pushnil(L);
-         return 1;
-      }
-
-      // Search within the range using optimised template dispatch
-      int32_t result = find_in_array(arr, value, start, effective_stop, step);
-      if (result >= 0) {
-         setintV(L->top++, result);
-         return 1;
-      }
-      lua_pushnil(L);
-      return 1;
+      return lj_arr_find_str(Array, candidate_string, 0, int32_t(Array->len - 1), 1) >= 0;
    }
 
-   // Original integer-based find
-   auto start = lj_lib_optint(L, 3, 0);
-
-   if (start < 0) start = 0;
-   if (MSize(start) >= arr->len) {
-      lua_pushnil(L);
-      return 1;
+   if (glArrayConversion[size_t(Array->elemtype)].primitive) {
+      TValue converted;
+      auto candidate_number = try_to_number(Candidate, &converted);
+      if (not candidate_number) {
+         lj_err_argv(L, 2, ErrMsg::BADTYPE, "number", lj_typename(Candidate));
+         return 0;
+      }
+      return lj_arr_find_num(Array, *candidate_number, 0, int32_t(Array->len - 1), 1) >= 0;
    }
 
-   int32_t result = find_in_array(arr, value, start, int32_t(arr->len - 1), 1);
-   if (result >= 0) {
-      setintV(L->top++, result);
-      return 1;
-   }
-
-   lua_pushnil(L);
-   return 1;
+   VMHelperGuard guard(L);
+   return array_find_generic(L, Array, Candidate, 0, int32_t(Array->len - 1), 1) >= 0;
 }
 
 //********************************************************************************************************************
@@ -1877,7 +1752,7 @@ LJLIB_CF(array_reverse)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
 
-   if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
+   if (arr->flags & ARRAY_READONLY) luaL_error(L, ErrMsg::ARRRO);
    if (arr->len < 2) return 0;
 
    void *data = arr->arraydata();
@@ -1886,9 +1761,14 @@ LJLIB_CF(array_reverse)
 
    switch (arr->elemtype) {
       case AET::BYTE:   { auto *p = (uint8_t *)data; std::reverse(p, p + arr->len); break; }
+      case AET::INT8:   { auto *p = (int8_t *)data; std::reverse(p, p + arr->len); break; }
       case AET::INT16:  { auto *p = (int16_t *)data; std::reverse(p, p + arr->len); break; }
       case AET::INT32:  { auto *p = (int32_t *)data; std::reverse(p, p + arr->len); break; }
       case AET::INT64:  { auto *p = (int64_t *)data; std::reverse(p, p + arr->len); break; }
+      case AET::UINT8:  { auto *p = (uint8_t *)data; std::reverse(p, p + arr->len); break; }
+      case AET::UINT16: { auto *p = (uint16_t *)data; std::reverse(p, p + arr->len); break; }
+      case AET::UINT32: { auto *p = (uint32_t *)data; std::reverse(p, p + arr->len); break; }
+      case AET::UINT64: { auto *p = (uint64_t *)data; std::reverse(p, p + arr->len); break; }
       case AET::FLOAT:  { auto *p = (float *)data; std::reverse(p, p + arr->len); break; }
       case AET::DOUBLE: { auto *p = (double *)data; std::reverse(p, p + arr->len); break; }
       case AET::PTR:    { auto *p = (void **)data; std::reverse(p, p + arr->len); break; }
@@ -2045,10 +1925,10 @@ static void quicksort_func(lua_State *L, GCarray *Arr, int32_t Left, int32_t Rig
       int32_t j = Right - 1;
       while (true) {
          while (array_sort_comp(L, Arr, ++i, pivot_idx, FnIdx)) {
-            if (i >= Right) lj_err_caller(L, ErrMsg::TABSORT);
+            if (i >= Right) luaL_error(L, ErrMsg::TABSORT);
          }
          while (array_sort_comp(L, Arr, pivot_idx, --j, FnIdx)) {
-            if (j <= Left) lj_err_caller(L, ErrMsg::TABSORT);
+            if (j <= Left) luaL_error(L, ErrMsg::TABSORT);
          }
          if (i >= j) break;
          elem_swap(i, j);
@@ -2105,15 +1985,14 @@ LJLIB_CF(array_sort)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
 
-   if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
+   if (arr->flags & ARRAY_READONLY) luaL_error(L, ErrMsg::ARRRO);
    if (arr->len < 2) return 0;
 
    // If the second argument is a function, use it as a custom comparator.
    // Reject element types that cannot be pushed to the stack for comparison.
    if (lua_isfunction(L, 2)) {
       if (arr->elemtype IS AET::STRUCT or arr->elemtype IS AET::PTR or arr->elemtype IS AET::STR_CPP) {
-         luaL_error(L, ERR::WrongType, "sort() with comparator does not support this array type.");
-         return 0;
+         luaL_error(L, ERR::TypeMismatch, "sort() with comparator does not support this array type.");
       }
       quicksort_func(L, arr, 0, int32_t(arr->len - 1), 2);
       return 0;
@@ -2123,9 +2002,14 @@ LJLIB_CF(array_sort)
 
    switch (arr->elemtype) {
       case AET::BYTE: quicksort(arr->get<uint8_t>(), 0, int32_t(arr->len - 1), descending); break;
+      case AET::INT8: quicksort(arr->get<int8_t>(), 0, int32_t(arr->len - 1), descending); break;
       case AET::INT16: quicksort(arr->get<int16_t>(), 0, int32_t(arr->len - 1), descending); break;
       case AET::INT32: quicksort(arr->get<int32_t>(), 0, int32_t(arr->len - 1), descending); break;
       case AET::INT64: quicksort(arr->get<int64_t>(), 0, int32_t(arr->len - 1), descending); break;
+      case AET::UINT8: quicksort(arr->get<uint8_t>(), 0, int32_t(arr->len - 1), descending); break;
+      case AET::UINT16: quicksort(arr->get<uint16_t>(), 0, int32_t(arr->len - 1), descending); break;
+      case AET::UINT32: quicksort(arr->get<uint32_t>(), 0, int32_t(arr->len - 1), descending); break;
+      case AET::UINT64: quicksort(arr->get<uint64_t>(), 0, int32_t(arr->len - 1), descending); break;
       case AET::FLOAT: quicksort(arr->get<float>(), 0, int32_t(arr->len - 1), descending); break;
       case AET::DOUBLE: quicksort(arr->get<double>(), 0, int32_t(arr->len - 1), descending); break;
       case AET::STR_GC: {
@@ -2153,7 +2037,7 @@ LJLIB_CF(array_sort)
          });
          break;
       }
-      default: luaL_error(L, ERR::WrongType, "sort() does not support this array type."); return 0;
+      default: luaL_error(L, ERR::TypeMismatch, "sort() does not support this array type."); return 0;
    }
 
    return 0;
@@ -2169,9 +2053,14 @@ static void array_push_element(lua_State *L, GCarray *Arr, MSize Idx)
 
    switch (Arr->elemtype) {
       case AET::BYTE:   lua_pushinteger(L, *(uint8_t *)elem); break;
+      case AET::INT8:   lua_pushinteger(L, *(int8_t *)elem); break;
       case AET::INT16:  lua_pushinteger(L, *(int16_t *)elem); break;
       case AET::INT32:  lua_pushinteger(L, *(int32_t *)elem); break;
       case AET::INT64:  lua_pushnumber(L, lua_Number(*(int64_t *)elem)); break;
+      case AET::UINT8:  lua_pushinteger(L, *(uint8_t *)elem); break;
+      case AET::UINT16: lua_pushinteger(L, *(uint16_t *)elem); break;
+      case AET::UINT32: lua_pushnumber(L, lua_Number(*(uint32_t *)elem)); break;
+      case AET::UINT64: lua_pushnumber(L, lua_Number(*(uint64_t *)elem)); break;
       case AET::FLOAT:  lua_pushnumber(L, *(float *)elem); break;
       case AET::DOUBLE: lua_pushnumber(L, *(double *)elem); break;
       case AET::STR_GC: {
@@ -2207,6 +2096,12 @@ static void array_push_element(lua_State *L, GCarray *Arr, MSize Idx)
       case AET::ANY: {
          TValue *source = (TValue *)elem;
          copyTV(L, L->top++, source);
+         break;
+      }
+      case AET::STRUCT: {
+         auto value = lj_struct_new(L, *Arr->struct_definition());
+         memcpy(value->data, elem, Arr->elemsize);
+         setstructV(L, L->top++, value);
          break;
       }
       default: lua_pushnil(L); break;
@@ -2302,12 +2197,17 @@ LJLIB_CF(array_each)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
    luaL_checktype(L, 2, LUA_TFUNCTION);
+   MSize count = arr->len;
 
-   for (MSize i = 0; i < arr->len; i++) {
+   for (MSize i = 0; i < count; i++) {
+      if (i >= arr->len) break;
       lua_pushvalue(L, 2);            // Push the callback function
       array_push_element(L, arr, i);  // Push value
       lua_pushinteger(L, i);          // Push index
-      lua_call(L, 2, 0);              // Call callback(value, index)
+      if (lua_pcall(L, 2, 1, 0) != 0) lua_error(L);
+      bool terminate = not lua_isnil(L, -1) and not lua_toboolean(L, -1);
+      lua_pop(L, 1);
+      if (terminate) break;
    }
 
    // Return the array for chaining
@@ -2316,7 +2216,29 @@ LJLIB_CF(array_each)
 }
 
 //********************************************************************************************************************
-// Usage: array.map(arr, transform)
+static int array_map_same(lua_State *L)
+{
+   GCarray *arr = lj_lib_checkarray(L, 1);
+   luaL_checktype(L, 2, LUA_TFUNCTION);
+   MSize count = arr->len;
+
+   GCarray *result = lj_array_new_like(L, arr, count);
+   setarrayV(L, L->top++, result);
+
+   for (MSize i = 0; i < count; i++) {
+      if (i >= arr->len) break;
+      lua_pushvalue(L, 2);
+      array_push_element(L, arr, i);
+      lua_pushinteger(L, i);
+      lua_call(L, 2, 1);
+      lj_array_store_checked(L, result, i, L->top - 1);
+      lua_pop(L, 1);
+   }
+   return 1;
+}
+
+//********************************************************************************************************************
+// Usage: array.map(arr, transform [, element_type])
 //
 // Returns a new array with each element transformed by the function.
 // The transform function receives (value, index) and returns the new value.
@@ -2325,95 +2247,79 @@ LJLIB_CF(array_each)
 //   arr: the source array
 //   transform: function(value, index) returning transformed value
 //
-// Returns: new array of the same type with transformed elements
+// Returns: a new array using element_type, or array<any> when the optional argument is omitted
 
 LJLIB_CF(array_map)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
    luaL_checktype(L, 2, LUA_TFUNCTION);
 
-   // Create new array of same type and size
-   GCarray *result = lj_array_new(L, arr->len, arr->elemtype);
+   MSize count = arr->len;
+   GCarray *result = lj_array_new_map_result(L, count, 3);
    setarrayV(L, L->top++, result);
-   int result_idx = lua_gettop(L);
 
-   for (MSize i = 0; i < arr->len; i++) {
-      lua_pushvalue(L, 2);            // Push the transform function
-      array_push_element(L, arr, i);  // Push value
-      lua_pushinteger(L, i);          // Push index
-      lua_call(L, 2, 1);              // Call transform(value, index) -> result
+   for (MSize i = 0; i < count; i++) {
+      if (i >= arr->len) break;
+      lua_pushvalue(L, 2);
+      array_push_element(L, arr, i);
+      lua_pushinteger(L, i);
+      lua_call(L, 2, 1);
+      lj_array_store_checked(L, result, i, L->top - 1);
+      lua_pop(L, 1);
+   }
+   return 1;
+}
 
-      // Store the result in the new array
-      switch (result->elemtype) {
-         case AET::STR_GC: {
-            if (lua_isstring(L, -1)) {
-               GCstr *s = lj_str_new(L, lua_tostring(L, -1), lua_strlen(L, -1));
-               setgcref(result->get<GCRef>()[i], obj2gco(s));
-               lj_gc_objbarrier(L, result, s);
-            }
-            else {
-               setgcrefnull(result->get<GCRef>()[i]);
-            }
-            break;
+//********************************************************************************************************************
+// Usage: array.mapSame(arr, transform)
+//
+// Maps values into a new array with the source array's exact storage descriptor.
+
+LJLIB_CF(array_mapSame)
+{
+   return array_map_same(L);
+}
+
+//********************************************************************************************************************
+// Usage: array.findIndex(arr, predicate)
+//
+// Returns the zero-based index of the first element for which predicate(value, index) is truthy.
+
+static int array_find_predicate(lua_State *L, bool ReturnIndex)
+{
+   GCarray *arr = lj_lib_checkarray(L, 1);
+   luaL_checktype(L, 2, LUA_TFUNCTION);
+   MSize count = arr->len;
+
+   for (MSize i = 0; i < count; i++) {
+      if (i >= arr->len) break;
+
+      // Preserve the value supplied to the predicate.  The callback may resize or rewrite the source array, but the
+      // result remains that matching value rather than an element re-read after re-entry.
+      array_push_element(L, arr, i);
+      lua_pushvalue(L, 2);
+      lua_pushvalue(L, -2);
+      lua_pushinteger(L, i);
+      lua_call(L, 2, 1);
+      bool matched = lua_toboolean(L, -1);
+      lua_pop(L, 1);
+      if (matched) {
+         if (ReturnIndex) {
+            lua_pop(L, 1);
+            lua_pushinteger(L, i);
          }
-
-         case AET::OBJECT: {
-            if (lua_isobject(L, -1)) {
-               TValue *tv = L->top - 1;
-               GCobject *obj = objectV(tv);
-               setgcref(result->get<GCRef>()[i], obj2gco(obj));
-               lj_gc_objbarrier(L, result, obj);
-            }
-            else setgcrefnull(result->get<GCRef>()[i]);
-            break;
-         }
-
-         case AET::TABLE: {
-            if (lua_istable(L, -1)) {
-               TValue *tv = L->top - 1;
-               GCtab *tab = tabV(tv);
-               setgcref(result->get<GCRef>()[i], obj2gco(tab));
-               lj_gc_objbarrier(L, result, tab);
-            }
-            else setgcrefnull(result->get<GCRef>()[i]);
-            break;
-         }
-
-         case AET::ARRAY: {
-            if (lua_isarray(L, -1)) {
-               TValue *tv = L->top - 1;
-               GCarray *a = arrayV(tv);
-               setgcref(result->get<GCRef>()[i], obj2gco(a));
-               lj_gc_objbarrier(L, result, a);
-            }
-            else setgcrefnull(result->get<GCRef>()[i]);
-            break;
-         }
-
-         case AET::ANY: {
-            TValue *dest = &result->get<TValue>()[i];
-            TValue *src = L->top - 1;
-            copyTV(L, dest, src);
-            if (tvisgcv(src)) lj_gc_objbarrier(L, result, gcV(src));
-            break;
-         }
-
-         case AET::FLOAT:  result->get<float>()[i] = float(lua_tonumber(L, -1)); break;
-         case AET::DOUBLE: result->get<double>()[i] = lua_tonumber(L, -1); break;
-         case AET::INT64:  result->get<int64_t>()[i] = int64_t(lua_tonumber(L, -1)); break;
-         case AET::INT32:  result->get<int32_t>()[i] = int32_t(lua_tointeger(L, -1)); break;
-         case AET::INT16:  result->get<int16_t>()[i] = int16_t(lua_tointeger(L, -1)); break;
-         case AET::BYTE:   result->get<uint8_t>()[i] = uint8_t(lua_tointeger(L, -1)); break;
-         default:
-            break;
+         return 1;
       }
-
-      lua_pop(L, 1);  // Pop the result value
+      lua_pop(L, 1);
    }
 
-   // Push the result array (already on stack at result_idx)
-   lua_pushvalue(L, result_idx);
+   lua_pushnil(L);
    return 1;
+}
+
+LJLIB_CF(array_findIndex)
+{
+   return array_find_predicate(L, true);
 }
 
 //********************************************************************************************************************
@@ -2432,13 +2338,15 @@ LJLIB_CF(array_filter)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
    luaL_checktype(L, 2, LUA_TFUNCTION);
+   MSize count = arr->len;
 
    // Create result array with zero length (will grow dynamically)
-   GCarray *result = lj_array_new(L, 0, arr->elemtype);
+   GCarray *result = lj_array_new_like(L, arr, 0);
    setarrayV(L, L->top++, result);
 
    // Single pass: filter and copy matching elements
-   for (MSize i = 0; i < arr->len; i++) {
+   for (MSize i = 0; i < count; i++) {
+      if (i >= arr->len) break;
       lua_pushvalue(L, 2);            // Push the predicate function
       array_push_element(L, arr, i);  // Push value
       lua_pushinteger(L, i);          // Push index
@@ -2448,41 +2356,11 @@ LJLIB_CF(array_filter)
          // Grow array to accommodate new element
          MSize new_len = result->len + 1;
          if (not lj_array_grow(L, result, new_len)) {
-            lj_err_caller(L, ErrMsg::ARREXT);
+            luaL_error(L, ErrMsg::ARREXT);
          }
 
-         // Copy element to result array
-         void *src = lj_array_index(arr, i);
-         void *dst = lj_array_index(result, result->len);
-
-         switch (result->elemtype) {
-            case AET::STR_GC:
-            case AET::TABLE:
-            case AET::ARRAY:
-            case AET::OBJECT: {
-               GCRef ref = *(GCRef *)src;
-               *(GCRef *)dst = ref;
-               if (gcref(ref)) lj_gc_objbarrier(L, result, gcref(ref));
-               break;
-            }
-            case AET::ANY: {
-               TValue *tv_src = (TValue *)src;
-               TValue *tv_dst = (TValue *)dst;
-               copyTV(L, tv_dst, tv_src);
-               if (tvisgcv(tv_src)) lj_gc_objbarrier(L, result, gcV(tv_src));
-               break;
-            }
-            case AET::FLOAT:  *(float *)dst = *(float *)src; break;
-            case AET::DOUBLE: *(double *)dst = *(double *)src; break;
-            case AET::INT64:  *(int64_t *)dst = *(int64_t *)src; break;
-            case AET::INT32:  *(int32_t *)dst = *(int32_t *)src; break;
-            case AET::INT16:  *(int16_t *)dst = *(int16_t *)src; break;
-            case AET::BYTE:   *(uint8_t *)dst = *(uint8_t *)src; break;
-            default:
-               memcpy(dst, src, arr->elemsize);
-               break;
-         }
          result->len = new_len;
+         lj_array_copy(L, result, new_len - 1, arr, i, 1);
       }
 
       lua_pop(L, 1);
@@ -2512,8 +2390,10 @@ LJLIB_CF(array_reduce)
 
    // Start with the initial value on the stack
    lua_pushvalue(L, 2);  // Push initial value as current accumulator
+   MSize count = arr->len;
 
-   for (MSize i = 0; i < arr->len; i++) {
+   for (MSize i = 0; i < count; i++) {
+      if (i >= arr->len) break;
       lua_pushvalue(L, 3);            // Push the reducer function
       lua_pushvalue(L, -2);           // Push current accumulator
       lua_remove(L, -3);              // Remove old accumulator from stack
@@ -2543,8 +2423,10 @@ LJLIB_CF(array_any)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
    luaL_checktype(L, 2, LUA_TFUNCTION);
+   MSize count = arr->len;
 
-   for (MSize i = 0; i < arr->len; i++) {
+   for (MSize i = 0; i < count; i++) {
+      if (i >= arr->len) break;
       lua_pushvalue(L, 2);            // Push the predicate function
       array_push_element(L, arr, i);  // Push value
       lua_pushinteger(L, i);          // Push index
@@ -2577,8 +2459,10 @@ LJLIB_CF(array_all)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
    luaL_checktype(L, 2, LUA_TFUNCTION);
+   MSize count = arr->len;
 
-   for (MSize i = 0; i < arr->len; i++) {
+   for (MSize i = 0; i < count; i++) {
+      if (i >= arr->len) break;
       lua_pushvalue(L, 2);            // Push the predicate function
       array_push_element(L, arr, i);  // Push value
       lua_pushinteger(L, i);          // Push index
@@ -2613,11 +2497,11 @@ LJLIB_CF(array_all)
 LJLIB_CF(array_insert)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
-   if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
+   if (arr->flags & ARRAY_READONLY) luaL_error(L, ErrMsg::ARRRO);
 
    int32_t index = lj_lib_checkint(L, 2);
    if (index < 0 or MSize(index) > arr->len) {
-      lj_err_callerv(L, ErrMsg::ARROB, index, int(arr->len));
+      luaL_error(L, ErrMsg::ARROB, index, int(arr->len));
    }
 
    int num_values = lua_gettop(L) - 2;
@@ -2626,11 +2510,15 @@ LJLIB_CF(array_insert)
       return 1;
    }
 
-   // Ensure we have capacity for the new elements
+   for (int i = 0; i < num_values; i++) {
+      lj_array_check_element(L, arr, L->base + i + 2);
+   }
+   if (MSize(num_values) > ~MSize(0) - arr->len) luaL_error(L, ErrMsg::ARREXT);
+
    MSize new_len = arr->len + MSize(num_values);
    if (new_len > arr->capacity) {
       if (not lj_array_grow(L, arr, new_len)) {
-         lj_err_caller(L, ErrMsg::ARREXT);
+         luaL_error(L, ErrMsg::ARREXT);
       }
    }
 
@@ -2639,72 +2527,13 @@ LJLIB_CF(array_insert)
    if (shift_count > 0) {
       void *src = lj_array_index(arr, index);
       void *dst = lj_array_index(arr, index + num_values);
-      memmove(dst, src, shift_count * arr->elemsize);
+      if (arr->elemtype IS AET::ANY) lj_bulk_move_tvalue((TValue *)dst, (const TValue *)src, shift_count);
+      else memmove(dst, src, shift_count * arr->elemsize);
    }
 
-   // Insert the new values
    for (int i = 0; i < num_values; i++) {
-      int arg_idx = i + 3;
       MSize idx = MSize(index) + MSize(i);
-
-      switch (arr->elemtype) {
-         case AET::STR_GC: {
-            GCstr *s = lj_lib_checkstr(L, arg_idx);
-            setgcref(arr->get<GCRef>()[idx], obj2gco(s));
-            lj_gc_objbarrier(L, arr, s);
-            break;
-         }
-
-         case AET::OBJECT: {
-            if (not lua_isobject(L, arg_idx)) {
-               lj_err_argv(L, arg_idx, ErrMsg::BADTYPE, "object", luaL_typename(L, arg_idx));
-            }
-            TValue *tv = L->base + arg_idx - 1;
-            GCobject *obj = objectV(tv);
-            setgcref(arr->get<GCRef>()[idx], obj2gco(obj));
-            lj_gc_objbarrier(L, arr, obj);
-            break;
-         }
-
-         case AET::TABLE: {
-            if (not lua_istable(L, arg_idx)) {
-               lj_err_argv(L, arg_idx, ErrMsg::BADTYPE, "table", luaL_typename(L, arg_idx));
-            }
-            TValue *tv = L->base + arg_idx - 1;
-            GCtab *tab = tabV(tv);
-            setgcref(arr->get<GCRef>()[idx], obj2gco(tab));
-            lj_gc_objbarrier(L, arr, tab);
-            break;
-         }
-
-         case AET::ARRAY: {
-            if (not lua_isarray(L, arg_idx)) {
-               lj_err_argv(L, arg_idx, ErrMsg::BADTYPE, "array", luaL_typename(L, arg_idx));
-            }
-            TValue *tv = L->base + arg_idx - 1;
-            GCarray *a = arrayV(tv);
-            setgcref(arr->get<GCRef>()[idx], obj2gco(a));
-            lj_gc_objbarrier(L, arr, a);
-            break;
-         }
-
-         case AET::FLOAT:  arr->get<float>()[idx] = float(luaL_checknumber(L, arg_idx)); break;
-         case AET::DOUBLE: arr->get<double>()[idx] = luaL_checknumber(L, arg_idx); break;
-         case AET::INT64:  arr->get<int64_t>()[idx] = int64_t(luaL_checknumber(L, arg_idx)); break;
-         case AET::INT32:  arr->get<int32_t>()[idx] = int32_t(luaL_checkinteger(L, arg_idx)); break;
-         case AET::INT16:  arr->get<int16_t>()[idx] = int16_t(luaL_checkinteger(L, arg_idx)); break;
-         case AET::BYTE:   arr->get<uint8_t>()[idx] = uint8_t(luaL_checkinteger(L, arg_idx)); break;
-         case AET::ANY: {
-            TValue *dest = &arr->get<TValue>()[idx];
-            TValue *src = L->base + arg_idx - 1;
-            copyTV(L, dest, src);
-            if (tvisgcv(src)) lj_gc_objbarrier(L, arr, gcV(src));
-            break;
-         }
-         default:
-            lj_err_argv(L, 1, ErrMsg::BADTYPE, "insertable type", elemtype_name(arr->elemtype));
-            return 0;
-      }
+      lj_array_store_validated(L, arr, idx, L->base + i + 2);
    }
 
    arr->len = new_len;
@@ -2730,18 +2559,16 @@ LJLIB_CF(array_insert)
 LJLIB_CF(array_remove)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
-   if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
+   if (arr->flags & ARRAY_READONLY) luaL_error(L, ErrMsg::ARRRO);
 
    int32_t index = lj_lib_checkint(L, 2);
    if (index < 0 or MSize(index) >= arr->len) {
-      lj_err_callerv(L, ErrMsg::ARROB, index, int(arr->len));
+      luaL_error(L, ErrMsg::ARROB, index, int(arr->len));
    }
 
    int32_t count = lj_lib_optint(L, 3, 1);
-   if (count < 0) {
-      luaL_error(L, ERR::Args, "count must be non-negative");
-      return 0;
-   }
+   if (count < 0) luaL_error(L, ERR::Args, "count must be non-negative");
+
    if (count IS 0) {
       setintV(L->top++, int32_t(arr->len));
       return 1;
@@ -2757,22 +2584,11 @@ LJLIB_CF(array_remove)
    if (shift_count > 0) {
       void *src = lj_array_index(arr, shift_start);
       void *dst = lj_array_index(arr, index);
-      memmove(dst, src, shift_count * arr->elemsize);
+      if (arr->elemtype IS AET::ANY) lj_bulk_move_tvalue((TValue *)dst, (const TValue *)src, shift_count);
+      else memmove(dst, src, shift_count * arr->elemsize);
    }
 
-   // Clear trailing elements for GC-tracked types
-   if (arr->elemtype IS AET::STR_GC or arr->elemtype IS AET::TABLE or arr->elemtype IS AET::OBJECT) {
-      auto refs = arr->get<GCRef>();
-      for (MSize i = arr->len - MSize(count); i < arr->len; i++) {
-         setgcrefnull(refs[i]);
-      }
-   }
-   else if (arr->elemtype IS AET::ANY) {
-      auto slots = arr->get<TValue>();
-      for (MSize i = arr->len - MSize(count); i < arr->len; i++) {
-         setnilV(&slots[i]);
-      }
-   }
+   lj_array_clear_range(arr, arr->len - MSize(count), MSize(count));
 
    arr->len -= MSize(count);
    setintV(L->top++, int32_t(arr->len));
@@ -2796,50 +2612,289 @@ LJLIB_CF(array_clone)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
 
+   if (arr->elemtype IS AET::STRUCT) luaL_error(L, ERR::NoSupport, "array.clone() does not support struct types.");
+
    // Create new array with same type and length
-   GCarray *result = lj_array_new(L, arr->len, arr->elemtype);
+   GCarray *result = lj_array_new_like(L, arr, arr->len);
+   lj_array_copy_to_fresh(L, result, 0, arr, 0, 1, arr->len);
    setarrayV(L, L->top++, result);
+   return 1;
+}
 
-   if (arr->len IS 0) return 1;
+//********************************************************************************************************************
+// Created exclusively for implementing array<byte> concatenation operations
 
-   // Copy elements
-   switch (arr->elemtype) {
-      case AET::STR_GC:
-      case AET::TABLE:
-      case AET::ARRAY:
-      case AET::OBJECT: {
-         // For GC-tracked types, copy references and set up barriers
-         auto src_refs = arr->get<GCRef>();
-         auto dst_refs = result->get<GCRef>();
-         for (MSize i = 0; i < arr->len; i++) {
-            GCRef ref = src_refs[i];
-            dst_refs[i] = ref;
-            if (gcref(ref)) lj_gc_objbarrier(L, result, gcref(ref));
-         }
-         break;
-      }
-      case AET::ANY: {
-         // For any-type arrays, copy TValues and set up barriers for GC values
-         auto src_slots = arr->get<TValue>();
-         auto dst_slots = result->get<TValue>();
-         for (MSize i = 0; i < arr->len; i++) {
-            copyTV(L, &dst_slots[i], &src_slots[i]);
-            if (tvisgcv(&src_slots[i])) lj_gc_objbarrier(L, result, gcV(&src_slots[i]));
-         }
-         break;
-      }
-      case AET::STRUCT: {
-         luaL_error(L, ERR::NoSupport, "array.clone() does not support struct types.");
-         break;
-      }
-      default: {
-         // For all other types, direct memory copy
-         void *src = arr->arraydata();
-         void *dst = result->arraydata();
-         memcpy(dst, src, size_t(arr->len) * arr->elemsize);
-         break;
+struct ArrayAppendPiece {
+   enum class Kind : uint8_t {
+      String,
+      Scratch,
+      ByteArray
+   };
+
+   Kind kind = Kind::String;
+   const char *data = nullptr;
+   GCarray *array = nullptr;
+   MSize offset = 0;
+   MSize len = 0;
+};
+
+static void array_append_add_len(lua_State *L, MSize &Total, MSize Len)
+{
+   if (Len > (~MSize(0) - Total)) luaL_error(L, ErrMsg::ARREXT);
+   Total += Len;
+}
+
+static constexpr int max_array_append_stack_pieces = 16;
+
+static void array_append_store_piece(ArrayAppendPiece *Pieces, int &PieceCount, const ArrayAppendPiece &Piece)
+{
+   lj_assertX(PieceCount < max_array_append_stack_pieces, "array append stack piece overflow");
+   Pieces[PieceCount] = Piece;
+   PieceCount++;
+}
+
+static void array_append_push_number(lua_State *L, SBuf *Scratch, cTValue *Value, ArrayAppendPiece *Pieces,
+   int &PieceCount, MSize &Total)
+{
+   MSize offset = sbuflen(Scratch);
+   if (tvisint(Value)) lj_strfmt_putint(Scratch, intV(Value));
+   else lj_strfmt_putnum(Scratch, Value);
+
+   MSize len = sbuflen(Scratch) - offset;
+   array_append_store_piece(Pieces, PieceCount, { ArrayAppendPiece::Kind::Scratch, nullptr, nullptr, offset, len });
+   array_append_add_len(L, Total, len);
+}
+
+static void array_append_push_piece(lua_State *L, cTValue *Value, ArrayAppendPiece *Pieces, int &PieceCount,
+   SBuf *Scratch, MSize &Total)
+{
+   if (tvisstr(Value)) {
+      GCstr *str = strV(Value);
+      array_append_store_piece(Pieces, PieceCount, { ArrayAppendPiece::Kind::String, strdata(str), nullptr, 0,
+         str->len });
+      array_append_add_len(L, Total, str->len);
+      return;
+   }
+
+   if (tvisnumber(Value)) {
+      array_append_push_number(L, Scratch, Value, Pieces, PieceCount, Total);
+      return;
+   }
+
+   if (tvisarray(Value)) {
+      GCarray *source = arrayV(Value);
+      if (source->elemtype IS AET::BYTE) {
+         array_append_store_piece(Pieces, PieceCount, { ArrayAppendPiece::Kind::ByteArray, nullptr, source, 0,
+            source->len });
+         array_append_add_len(L, Total, source->len);
+         return;
       }
    }
+
+   lj_err_optype(L, Value, ErrMsg::OPCAT);
+}
+
+static void array_append_byte_pieces(lua_State *L, GCarray *Arr, int PieceCount)
+{
+   if (Arr->flags & ARRAY_READONLY) luaL_error(L, ErrMsg::ARRRO);
+
+   if (PieceCount > max_array_append_stack_pieces) {
+      L->top = L->base + 1 + PieceCount;
+      lua_concat(L, PieceCount);
+      PieceCount = 1;
+   }
+
+   SBuf *scratch = lj_buf_tmp_(L);
+   ArrayAppendPiece pieces[max_array_append_stack_pieces];
+   int piece_count = 0;
+
+   MSize append_len = 0;
+   for (int i = 0; i < PieceCount; i++) {
+      array_append_push_piece(L, L->base + i + 1, pieces, piece_count, scratch, append_len);
+   }
+
+   if (append_len > (~MSize(0) - Arr->len)) luaL_error(L, ErrMsg::ARREXT);
+   MSize old_len = Arr->len;
+   MSize new_len = old_len + append_len;
+   if (new_len > Arr->capacity and not lj_array_grow(L, Arr, new_len)) luaL_error(L, ErrMsg::ARREXT);
+
+   uint8_t *dest_base = Arr->get<uint8_t>();
+   MSize write_pos = old_len;
+   for (int i = 0; i < piece_count; i++) {
+      const ArrayAppendPiece &piece = pieces[i];
+      if (piece.len IS 0) continue;
+
+      if (piece.kind IS ArrayAppendPiece::Kind::String) {
+         memcpy(dest_base + write_pos, piece.data, piece.len);
+      }
+      else if (piece.kind IS ArrayAppendPiece::Kind::Scratch) {
+         memcpy(dest_base + write_pos, scratch->b + piece.offset, piece.len);
+      }
+      else {
+         memmove(dest_base + write_pos, piece.array->get<const char>(), piece.len);
+      }
+      write_pos += piece.len;
+   }
+
+   Arr->len = new_len;
+}
+
+static void array_append_reduce_rhs(lua_State *L, int PieceCount)
+{
+   L->top = L->base + 1 + PieceCount;
+   if (PieceCount > 1) lua_concat(L, PieceCount);
+}
+
+LJLIB_INTRINSIC LJLIB_CF(array_append)      LJLIB_REC(.)
+{
+   TValue *left = lj_lib_checkany(L, 1);
+   int piece_count = lua_gettop(L) - 1;
+   if (piece_count < 1) lj_err_argv(L, 2, ErrMsg::NOVAL);
+
+   if (tvisarray(left)) {
+      GCarray *arr = arrayV(left);
+      if (arr->elemtype IS AET::BYTE) {
+         array_append_byte_pieces(L, arr, piece_count);
+         setarrayV(L, L->base, arr);
+         L->top = L->base + 1;
+         return 1;
+      }
+
+      array_append_reduce_rhs(L, piece_count);
+      lj_cf_array_push(L);
+      setarrayV(L, L->base, arr);
+      L->top = L->base + 1;
+      return 1;
+   }
+
+   array_append_reduce_rhs(L, piece_count);
+   lua_concat(L, 2);
+   return 1;
+}
+
+//********************************************************************************************************************
+// __tostring metamethod.
+
+static int array_tostring(lua_State *L)
+{
+   GCarray *arr = lj_lib_checkarray(L, 1);
+
+   if (arr->elemtype IS AET::BYTE) {
+      GCstr *s = lj_str_new(L, arr->get<const char>(), arr->len);
+      setstrV(L, L->top++, s);
+      return 1;
+   }
+
+   CSTRING type_name = lj_array_elemtype_name(arr->elemtype);
+   lua_pushfstring(L, "array<%s, %d>", type_name, int(arr->len));
+   return 1;
+}
+
+//********************************************************************************************************************
+// __concat metamethod.  Produces a new string value from the combination of the LHS and RHS
+
+static GCstr * array_concat_value(lua_State *L, cTValue *Value)
+{
+   if (tvisstr(Value)) return strV(Value);
+   if (tvisnumber(Value)) return lj_strfmt_number(L, Value);
+
+   if (tvisarray(Value)) {
+      GCarray *arr = arrayV(Value);
+      if (arr->elemtype IS AET::BYTE) return lj_str_new(L, arr->get<const char>(), arr->len);
+   }
+
+   return nullptr;
+}
+
+static int array_concat_meta(lua_State *L)
+{
+   const bool lhs_dispatch = boolV(L->base + 2);
+   cTValue *left = lhs_dispatch ? L->base : L->base + 1;
+   cTValue *right = lhs_dispatch ? L->base + 1 : L->base;
+
+   GCstr *left_str = array_concat_value(L, left);
+   if (not left_str) lj_err_optype(L, left, ErrMsg::OPCAT);
+   setstrV(L, L->top++, left_str);
+
+   GCstr *right_str = array_concat_value(L, right);
+   if (not right_str) lj_err_optype(L, right, ErrMsg::OPCAT);
+   setstrV(L, L->top++, right_str);
+
+   GCstr *result = lj_buf_cat2str(L, left_str, right_str);
+   L->top -= 2;
+   setstrV(L, L->top++, result);
+   return 1;
+}
+
+static bool array_string_equal(GCarray *Left, GCarray *Right)
+{
+   GCRef *left_refs = Left->get<GCRef>();
+   GCRef *right_refs = Right->get<GCRef>();
+
+   for (MSize i = 0; i < Left->len; i++) {
+      GCobj *left_obj = gcref(left_refs[i]);
+      GCobj *right_obj = gcref(right_refs[i]);
+
+      if (left_obj IS right_obj) continue;
+      if (not left_obj or not right_obj) return false;
+
+      GCstr *left_str = gco_to_string(left_obj);
+      GCstr *right_str = gco_to_string(right_obj);
+
+      if (not (left_str->hash IS right_str->hash)) return false;
+      if (not (left_str->len IS right_str->len)) return false;
+      if (not (memcmp(strdata(left_str), strdata(right_str), left_str->len) IS 0)) return false;
+   }
+
+   return true;
+}
+
+static bool array_object_equal(GCarray *Left, GCarray *Right)
+{
+   GCRef *left_refs = Left->get<GCRef>();
+   GCRef *right_refs = Right->get<GCRef>();
+
+   for (MSize i = 0; i < Left->len; i++) {
+      GCobj *left_gc = gcref(left_refs[i]);
+      GCobj *right_gc = gcref(right_refs[i]);
+
+      if (left_gc IS right_gc) continue;
+      if (not left_gc or not right_gc) return false;
+
+      GCobject *left_obj = gco_to_object(left_gc);
+      GCobject *right_obj = gco_to_object(right_gc);
+
+      if (not (left_obj->uid IS right_obj->uid)) return false;
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+// __eq metamethod.
+
+static int array_eq_meta(lua_State *L)
+{
+   GCarray *left = lj_lib_checkarray(L, 1);
+   GCarray *right = lj_lib_checkarray(L, 2);
+
+   if ((not (left->elemtype IS right->elemtype)) or (not (left->len IS right->len))) {
+      lua_pushboolean(L, 0);
+      return 1;
+   }
+
+   if (glArrayConversion[size_t(left->elemtype)].primitive) {
+      size_t byte_count = size_t(left->len) * left->elemsize;
+      bool equal = (byte_count IS 0) or (memcmp(left->arraydata(), right->arraydata(), byte_count) IS 0);
+      lua_pushboolean(L, equal);
+   }
+   else if (left->elemtype IS AET::STR_GC) {
+      lua_pushboolean(L, array_string_equal(left, right));
+   }
+   else if (left->elemtype IS AET::OBJECT) {
+      lua_pushboolean(L, array_object_equal(left, right));
+   }
+   else luaL_error(L, ErrMsg::ARRTYPE);
 
    return 1;
 }
@@ -2848,8 +2903,8 @@ LJLIB_CF(array_clone)
 // Registers the array library and sets up the base metatable for arrays.
 // Unlike the Lua table, arrays are created via conventional means, i.e. array.new().
 //
-// The array library table itself serves as the base metatable, allowing direct method
-// lookup (arr:concat(), arr:sort(), etc.) via lj_tab_get in the VM array helpers.
+// The array library table itself serves as the base metatable for ordinary field extraction and computed access.
+// Immediate named dot calls are resolved independently to canonical callables by the compiler.
 
 #include "lj_libdef.h"
 #include "lj_proto_registry.h"
@@ -2868,42 +2923,101 @@ extern "C" int luaopen_array(lua_State *L)
    lua_pushcfunction(L, array_call);
    lua_setfield(L, -2, "__call");
 
+   // Byte arrays are commonly used as string buffers, so tostring() exposes their contents directly.
+   lua_pushcfunction(L, array_tostring);
+   lua_setfield(L, -2, "__tostring");
+
+   lua_pushcfunction(L, array_concat_meta);
+   lua_setfield(L, -2, "__concat");
+
+   lua_pushcfunction(L, array_eq_meta);
+   lua_setfield(L, -2, "__eq");
+
+   lua_pushcfunction(L, lj_cf_array_contains);
+   lua_setfield(L, -2, "__contains");
+
    // NOBARRIER: basemt is a GC root.
    setgcref(basemt_it(g, LJ_TARRAY), obj2gco(lib));
 
    // Register array interface prototypes for compile-time type inference
-   reg_iface_prototype("array", "new", { TiriType::Array }, { TiriType::Num, TiriType::Str });
-   reg_iface_prototype("array", "of", { TiriType::Array }, { TiriType::Str }, FProtoFlags::Variadic);
+   reg_iface_prototype("array", "new", { TiriType::Array }, { TiriType::Str, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(2));
+   reg_iface_prototype("array", "of", { TiriType::Array }, { TiriType::Str, TiriType::Any }, FProtoFlags::Variadic,
+      FProtoArity::required(2));
    // Methods
-   reg_iface_prototype("array", "table", { TiriType::Table }, { TiriType::Array });
-   reg_iface_prototype("array", "concat", { TiriType::Str }, { TiriType::Array, TiriType::Str, TiriType::Str });
-   reg_iface_prototype("array", "join", { TiriType::Str }, { TiriType::Array, TiriType::Str });
-   reg_iface_prototype("array", "contains", { TiriType::Bool }, { TiriType::Array, TiriType::Any });
-   reg_iface_prototype("array", "first", { TiriType::Any }, { TiriType::Array, TiriType::Func });
-   reg_iface_prototype("array", "last", { TiriType::Any }, { TiriType::Array, TiriType::Func });
-   reg_iface_prototype("array", "clear", {}, { TiriType::Array });
-   reg_iface_prototype("array", "resize", {}, { TiriType::Array, TiriType::Num });
-   reg_iface_prototype("array", "push", {}, { TiriType::Array, TiriType::Any });
-   reg_iface_prototype("array", "pop", { TiriType::Any }, { TiriType::Array });
-   reg_iface_prototype("array", "copy", {}, { TiriType::Array, TiriType::Num, TiriType::Num, TiriType::Num });
-   reg_iface_prototype("array", "getString", { TiriType::Str }, { TiriType::Array, TiriType::Num, TiriType::Num });
-   reg_iface_prototype("array", "setString", {}, { TiriType::Array, TiriType::Str, TiriType::Num });
-   reg_iface_prototype("array", "type", { TiriType::Str }, { TiriType::Array });
-   reg_iface_prototype("array", "readOnly", { TiriType::Bool }, { TiriType::Array });
-   reg_iface_prototype("array", "fill", {}, { TiriType::Array, TiriType::Any, TiriType::Num, TiriType::Num });
-   reg_iface_prototype("array", "find", { TiriType::Num }, { TiriType::Array, TiriType::Any, TiriType::Num, TiriType::Num });
-   reg_iface_prototype("array", "reverse", { TiriType::Array }, { TiriType::Array });
-   reg_iface_prototype("array", "slice", { TiriType::Array }, { TiriType::Array, TiriType::Any });
-   reg_iface_prototype("array", "sort", { TiriType::Array }, { TiriType::Array, TiriType::Func });
-   reg_iface_prototype("array", "each", {}, { TiriType::Array, TiriType::Func });
-   reg_iface_prototype("array", "map", { TiriType::Array }, { TiriType::Array, TiriType::Func });
-   reg_iface_prototype("array", "filter", { TiriType::Array }, { TiriType::Array, TiriType::Func });
-   reg_iface_prototype("array", "reduce", { TiriType::Any }, { TiriType::Array, TiriType::Func, TiriType::Any });
-   reg_iface_prototype("array", "any", { TiriType::Bool }, { TiriType::Array, TiriType::Func });
-   reg_iface_prototype("array", "all", { TiriType::Bool }, { TiriType::Array, TiriType::Func });
-   reg_iface_prototype("array", "insert", {}, { TiriType::Array, TiriType::Num, TiriType::Any });
-   reg_iface_prototype("array", "remove", { TiriType::Any }, { TiriType::Array, TiriType::Num });
-   reg_iface_prototype("array", "clone", { TiriType::Array }, { TiriType::Array });
+   reg_iface_method(L, "array", "table", TiriType::Array, builtin_callable_id(FastFunc::array_table),
+      { TiriType::Table }, { TiriType::Array });
+   reg_iface_method(L, "array", "concat", TiriType::Array, builtin_callable_id(FastFunc::array_concat),
+      { TiriType::Str }, { TiriType::Array, TiriType::Str, TiriType::Str, TiriType::Num, TiriType::Num },
+      FProtoFlags::None, FProtoArity::required(1));
+   reg_iface_method(L, "array", "first", TiriType::Array, builtin_callable_id(FastFunc::array_first),
+      { TiriType::Any }, { TiriType::Array, TiriType::Func }, FProtoFlags::ContextIndependent,
+      FProtoArity::required(1));
+   reg_iface_method(L, "array", "last", TiriType::Array, builtin_callable_id(FastFunc::array_last),
+      { TiriType::Any }, { TiriType::Array, TiriType::Func }, FProtoFlags::ContextIndependent,
+      FProtoArity::required(1));
+   reg_iface_method(L, "array", "clear", TiriType::Array, builtin_callable_id(FastFunc::array_clear), {},
+      { TiriType::Array });
+   reg_iface_method(L, "array", "resize", TiriType::Array, builtin_callable_id(FastFunc::array_resize), {},
+      { TiriType::Array, TiriType::Num });
+   reg_iface_method(L, "array", "push", TiriType::Array, builtin_callable_id(FastFunc::array_push), {},
+      { TiriType::Array, TiriType::Any }, FProtoFlags::Variadic | FProtoFlags::ContextIndependent,
+      FProtoArity::required(1));
+
+   reg_iface_method(L, "array", "pop", TiriType::Array, builtin_callable_id(FastFunc::array_pop),
+      { TiriType::Any }, { TiriType::Array, TiriType::Num }, FProtoFlags::ContextIndependent,
+      FProtoArity::required(1));
+   reg_iface_method(L, "array", "copy", TiriType::Array, builtin_callable_id(FastFunc::array_copy), {},
+      { TiriType::Array, TiriType::Any, TiriType::Num, TiriType::Num, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(2));
+   reg_iface_method(L, "array", "getString", TiriType::Array, builtin_callable_id(FastFunc::array_getString),
+      { TiriType::Str }, { TiriType::Array, TiriType::Num, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(1));
+   reg_iface_method(L, "array", "setString", TiriType::Array, builtin_callable_id(FastFunc::array_setString), {},
+      { TiriType::Array, TiriType::Str, TiriType::Num }, FProtoFlags::None, FProtoArity::required(2));
+   reg_iface_method(L, "array", "type", TiriType::Array, builtin_callable_id(FastFunc::array_type),
+      { TiriType::Str }, { TiriType::Array });
+   reg_iface_method(L, "array", "readOnly", TiriType::Array, builtin_callable_id(FastFunc::array_readOnly),
+      { TiriType::Bool }, { TiriType::Array });
+   reg_iface_method(L, "array", "fill", TiriType::Array, builtin_callable_id(FastFunc::array_fill), {},
+      { TiriType::Array, TiriType::Any, TiriType::Any, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(2));
+   reg_iface_method(L, "array", "find", TiriType::Array, builtin_callable_id(FastFunc::array_find),
+      { TiriType::Any }, { TiriType::Array, TiriType::Func });
+   reg_iface_method(L, "array", "indexOf", TiriType::Array, builtin_callable_id(FastFunc::array_indexOf),
+      { TiriType::Num }, { TiriType::Array, TiriType::Any, TiriType::Any, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(2));
+   reg_iface_method(L, "array", "reverse", TiriType::Array, builtin_callable_id(FastFunc::array_reverse),
+      { TiriType::Array }, { TiriType::Array });
+   reg_iface_method(L, "array", "slice", TiriType::Array, builtin_callable_id(FastFunc::array_slice),
+      { TiriType::Array }, { TiriType::Array, TiriType::Any }, FProtoFlags::None, FProtoArity::required(2));
+   reg_iface_method(L, "array", "sort", TiriType::Array, builtin_callable_id(FastFunc::array_sort),
+      { TiriType::Array }, { TiriType::Array, TiriType::Any }, FProtoFlags::None, FProtoArity::required(1));
+   reg_iface_method(L, "array", "each", TiriType::Array, builtin_callable_id(FastFunc::array_each), {},
+      { TiriType::Array, TiriType::Func });
+   reg_iface_method(L, "array", "map", TiriType::Array, builtin_callable_id(FastFunc::array_map),
+      { TiriType::Array }, { TiriType::Array, TiriType::Func, TiriType::Str }, FProtoFlags::None,
+      FProtoArity::required(2));
+   reg_iface_method(L, "array", "mapSame", TiriType::Array, builtin_callable_id(FastFunc::array_mapSame),
+      { TiriType::Array }, { TiriType::Array, TiriType::Func });
+   reg_iface_method(L, "array", "findIndex", TiriType::Array, builtin_callable_id(FastFunc::array_findIndex),
+      { TiriType::Num }, { TiriType::Array, TiriType::Func });
+   reg_iface_method(L, "array", "filter", TiriType::Array, builtin_callable_id(FastFunc::array_filter),
+      { TiriType::Array }, { TiriType::Array, TiriType::Func });
+   reg_iface_method(L, "array", "reduce", TiriType::Array, builtin_callable_id(FastFunc::array_reduce),
+      { TiriType::Any }, { TiriType::Array, TiriType::Any, TiriType::Func });
+   reg_iface_method(L, "array", "any", TiriType::Array, builtin_callable_id(FastFunc::array_any),
+      { TiriType::Bool }, { TiriType::Array, TiriType::Func });
+   reg_iface_method(L, "array", "all", TiriType::Array, builtin_callable_id(FastFunc::array_all),
+      { TiriType::Bool }, { TiriType::Array, TiriType::Func });
+   reg_iface_method(L, "array", "insert", TiriType::Array, builtin_callable_id(FastFunc::array_insert), {},
+      { TiriType::Array, TiriType::Num, TiriType::Any }, FProtoFlags::Variadic,
+      FProtoArity::required(2));
+   reg_iface_method(L, "array", "remove", TiriType::Array, builtin_callable_id(FastFunc::array_remove),
+      { TiriType::Any }, { TiriType::Array, TiriType::Num, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(2));
+   reg_iface_method(L, "array", "clone", TiriType::Array, builtin_callable_id(FastFunc::array_clone),
+      { TiriType::Array }, { TiriType::Array });
 
    return 1;
 }

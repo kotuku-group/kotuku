@@ -38,6 +38,13 @@ XPathEvaluator::XPathEvaluator(extXQuery *Query, extXML *XML, const XPathNode *Q
 }
 
 //********************************************************************************************************************
+
+void XPathEvaluator::set_absolute_root_node(XTag *Node)
+{
+   absolute_root_node = Node;
+}
+
+//********************************************************************************************************************
 // Prepares the evaluation context for a new query, wiring prolog metadata and module caches when present.
 
 void XPathEvaluator::initialise_query_context(const XPathNode *Root)
@@ -45,6 +52,8 @@ void XPathEvaluator::initialise_query_context(const XPathNode *Root)
    context.prolog = nullptr;
    context.module_cache = nullptr;
    prolog_variable_cache.clear();
+   resolved_callback_variables.clear();
+   missing_callback_variables.clear();
    variables_in_evaluation.clear();
 
    if (Root) query_root = Root;
@@ -140,13 +149,13 @@ std::string XPathEvaluator::build_ast_signature(const XPathNode *Node) const
 void XPathEvaluator::record_error(std::string_view Message, bool Force)
 {
    expression_unsupported = true;
-   pf::Log("XPath").warning("%.*s", (int)Message.size(), Message.data());
+   kt::Log("XPath").warning("%.*s", (int)Message.size(), Message.data());
    if (Force or parse_context->error_msg.empty()) parse_context->error_msg.assign(Message);
 }
 
 void XPathEvaluator::record_error(std::string_view Message, const XPathNode *Node, bool Force)
 {
-   pf::Log log("XPath");
+   kt::Log log("XPath");
 
    expression_unsupported = true;
 
@@ -228,6 +237,11 @@ ERR XPathEvaluator::evaluate_xpath_expression(const XPathNode &XPath, XPathVal *
 {
    if (xml) {
       (void)xml->getMap(); // Ensure the tag ID and ParentID values are defined
+
+      if (xml->Tags.empty()) {
+         if (parse_context) parse_context->error_msg = "XML document contains no tags.";
+         return ERR::NoData;
+      }
 
       // Set context to document root if not already set
 

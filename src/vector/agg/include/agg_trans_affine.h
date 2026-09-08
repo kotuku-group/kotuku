@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,7 +5,7 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
-//
+// ---
 // Affine transformation classes.
 //
 // See Implementation agg_trans_affine.cpp
@@ -65,9 +64,7 @@
 // m *= agg::trans_affine_rotation(30.0 * 3.1415926 / 180.0);  // rotate
 // m *= agg::trans_affine_translation(100.0, 100.0);           // move back to (100,100)
 
-
-#ifndef AGG_TRANS_AFFINE_INCLUDED
-#define AGG_TRANS_AFFINE_INCLUDED
+#pragma once
 
 #include <math.h>
 #include "agg_basics.h"
@@ -451,5 +448,3 @@ namespace agg
             trans_affine_reflection_unit(x / sqrt(x * x + y * y), y / sqrt(x * x + y * y)) {}
    };
 }
-
-#endif

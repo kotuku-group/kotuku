@@ -8,7 +8,7 @@
     <module>Vector</module>
     <comment>Manages the scene graph for a collection of vectors.</comment>
     <version>1</version>
-    <id>890a3646</id>
+    <id>55afaac4</id>
     <idstring>VECTORSCENE</idstring>
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
@@ -27,6 +27,7 @@
       <name>Draw</name>
       <comment>Renders the scene to a bitmap.</comment>
       <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
+      <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">The X position of the region to be drawn.</param>
         <param type="INT" name="Y">The Y position of the region to be drawn.</param>
@@ -47,12 +48,14 @@
       <name>Flush</name>
       <comment>Flush buffered data from an object.</comment>
       <prototype>ERR acFlush(*Object)</prototype>
+      <tiriPrototype>err = Object.acFlush()</tiriPrototype>
     </action>
 
     <action>
       <name>Redimension</name>
       <comment>Redefines the size of the page.</comment>
       <prototype>ERR acRedimension(*Object, DOUBLE X, DOUBLE Y, DOUBLE Z, DOUBLE Width, DOUBLE Height, DOUBLE Depth)</prototype>
+      <tiriPrototype>err = Object.acRedimension(X:num, Y:num, Z:num, Width:num, Height:num, Depth:num)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="X">The new X position to apply to the target object.</param>
         <param type="DOUBLE" name="Y">The new Y position to apply to the target object.</param>
@@ -66,13 +69,15 @@
     <action>
       <name>Reset</name>
       <comment>Clears all registered definitions and resets field values.  Child vectors are unmodified.</comment>
-      <prototype>ERR acRefresh(*Object)</prototype>
+      <prototype>ERR acReset(*Object)</prototype>
+      <tiriPrototype>err = Object.acReset()</tiriPrototype>
     </action>
 
     <action>
       <name>Resize</name>
       <comment>Redefines the size of the page.</comment>
       <prototype>ERR acResize(*Object, DOUBLE Width, DOUBLE Height, DOUBLE Depth)</prototype>
+      <tiriPrototype>err = Object.acResize(Width:num, Height:num, Depth:num)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="Width">The new width of the object.</param>
         <param type="DOUBLE" name="Height">The new height of the object.</param>
@@ -86,15 +91,16 @@
     <method>
       <name>AddDef</name>
       <comment>Registers a named definition object within a scene graph.</comment>
-      <prototype>ERR sc::AddDef(OBJECTPTR Object, CSTRING Name, OBJECTPTR Def)</prototype>
+      <prototype>ERR sc::AddDef(OBJECTPTR Object, STRVIEW Name, OBJECTPTR Def)</prototype>
+      <tiriPrototype>err = AddDef(Name:str, Def:obj)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Name">The unique name to associate with the definition.</param>
+        <param type="STRVIEW" name="Name">The unique name to associate with the definition.</param>
         <param type="OBJECTPTR" name="Def">Reference to the definition object.</param>
       </input>
       <description>
 <p>This method will add a new definition object to the root of a vector tree and gives it a name.  This feature is provided to support SVG style referencing for features such as gradients, images and patterns.  By providing a name with the definition object, the object can then be referenced in URL strings.</p>
 <p>For example, if creating a gradient with a name of <code>redGradient</code> it would be possible to reference it with <code>url(#redGradient)</code> in common graphics attributes such as <code>fill</code> and <code>stroke</code>.</p>
-<p>At the time of writing, the provided object must belong to one of the following classes to be valid: <class name="Vector">Vector</class>, <class name="VectorScene">VectorScene</class>, <class name="VectorGradient">VectorGradient</class>, <class name="VectorImage">VectorImage</class>, <class name="VectorPath">VectorPath</class>, <class name="VectorPattern">VectorPattern</class>, <class name="VectorFilter">VectorFilter</class>, <class name="VectorTransition">VectorTransition</class>, <class name="VectorClip">VectorClip</class>.</p>
+<p>At the time of writing, the provided object must belong to one of the following classes to be valid: <class name="Vector">Vector</class>, <class name="VectorScene">VectorScene</class>, <class name="Gradient">Gradient</class>, <class name="VectorImage">VectorImage</class>, <class name="VectorPath">VectorPath</class>, <class name="VectorPattern">VectorPattern</class>, <class name="VectorFilter">VectorFilter</class>, <class name="VectorTransition">VectorTransition</class>, <class name="VectorClip">VectorClip</class>.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -103,26 +109,30 @@
         <error code="NullArgs">Function call missing argument value(s)</error>
         <error code="InvalidObject">The definition is not an accepted object class.</error>
       </result>
+      <tags>mutates-object, retains-input</tags>
     </method>
 
     <method>
       <name>Debug</name>
       <comment>Internal functionality for debugging.</comment>
       <prototype>ERR sc::Debug(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = Debug()</tiriPrototype>
       <description>
 <p>This internal method prints comprehensive information that describes the scene graph to the log.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
       </result>
+      <tags>private</tags>
     </method>
 
     <method>
       <name>FindDef</name>
       <comment>Search for a vector definition by name.</comment>
-      <prototype>ERR sc::FindDef(OBJECTPTR Object, CSTRING Name, OBJECTPTR * Def)</prototype>
+      <prototype>ERR sc::FindDef(OBJECTPTR Object, STRVIEW Name, OBJECTPTR * Def)</prototype>
+      <tiriPrototype>err, Def:obj = FindDef(Name:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Name">The name of the definition.</param>
+        <param type="STRVIEW" name="Name">The name of the definition.</param>
         <param type="OBJECTPTR *" name="Def">A pointer to the definition object is returned here if discovered.</param>
       </input>
       <description>
@@ -134,25 +144,7 @@
         <error code="Search">A definition with the given Name was not found.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
-    </method>
-
-    <method>
-      <name>SearchByID</name>
-      <comment>Search for a vector by numeric ID.</comment>
-      <prototype>ERR sc::SearchByID(OBJECTPTR Object, INT ID, OBJECTPTR * Result)</prototype>
-      <input>
-        <param type="INT" name="ID">The ID to search for.</param>
-        <param type="OBJECTPTR *" name="Result">This parameter will be updated with the discovered vector, or <code>NULL</code> if not found.</param>
-      </input>
-      <description>
-<p>This method will search a scene for an object that matches a given <code>ID</code> (vector ID's can be set with the <class name="Vector" field="NumericID">Vector.NumericID</class> or <class name="Vector" field="ID">Vector.ID</class> fields).  If multiple vectors are using the same ID, repeated calls can be made to this method to find them all.  This is achieved by calling this method on the vector that was last returned as a <code>Result</code>.</p>
-<p>Note that searching for string-based ID's is achieved by converting the string to a case-sensitive hash with <code>strhash()</code> and using that as the ID.</p>
-      </description>
-      <result>
-        <error code="Okay">Operation successful.</error>
-        <error code="Search">A vector with a matching ID was not found.</error>
-        <error code="NullArgs">Function call missing argument value(s)</error>
-      </result>
+      <tags>pure-query, object-owns-result</tags>
     </method>
 
   </methods>
@@ -234,7 +226,7 @@
     <field>
       <name>Surface</name>
       <comment>May refer to a <class name="Surface">Surface</class> object for enabling automatic rendering.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>OBJECTID</type>
       <description>
 <p>Setting the Surface field will enable automatic rendering to a display <class name="Surface">Surface</class>.  The use of features such as input event handling and user focus management will also require an associated surface as a pre-requisite.</p>
@@ -259,22 +251,23 @@
       <const name="OUTLINE_VIEWPORTS">Draw a green outline around all viewport paths.  Extremely useful for debugging layout issues.</const>
       <const name="RENDER_TIME">Compute the drawing frame-rate for the <code>RenderTime</code> field.</const>
       <const name="RESIZE">The vector will be stretched to fit the <class name="VectorScene" field="PageWidth">VectorScene.PageWidth</class> and <class name="VectorScene" field="PageHeight">VectorScene.PageHeight</class> values, if defined by the client.</const>
+      <const name="STABLE_RENDER">Use rendering algorithms that are stable across all platforms.</const>
     </constants>
 
     <constants lookup="VSM">
       <const name="AUTO">The default option is chosen by the system.  This will typically be <code>BILINEAR</code>, but slow machines may switch to nearest neighbour and high speed machines could use more advanced methods.</const>
-      <const name="BESSEL"/>
+      <const name="BESSEL">Uses a broad Bessel filter that can preserve detail during resampling, but is slower than the smaller-kernel methods.</const>
       <const name="BICUBIC">Produces a similar result to <code>BILINEAR</code> at a slightly higher CPU cost and a marginally sharper after-effect.</const>
       <const name="BILINEAR">Bilinear is a common algorithm that produces a reasonable quality image quickly.</const>
       <const name="BLACKMAN">Five times slower than <code>BILINEAR</code>, the final result will be less sharp than SINC.</const>
-      <const name="GAUSSIAN"/>
-      <const name="KAISER"/>
+      <const name="GAUSSIAN">Uses a Gaussian filter that softens the result, reducing aliasing at the cost of sharp edge detail.</const>
+      <const name="KAISER">Uses a Kaiser-windowed filter, giving smooth interpolation with low ringing and a cost close to <code>BILINEAR</code>.</const>
       <const name="LANCZOS">This well known algorithm may serve as a point of comparison for evaluating the results of other methods.  It shares characteristics with <code>SINC</code> and <code>BLACKMAN</code>.</const>
-      <const name="MITCHELL"/>
+      <const name="MITCHELL">Uses a Mitchell-Netravali filter, balancing sharpness and smoothness at a cost similar to <code>BICUBIC</code>.</const>
       <const name="NEIGHBOUR">Nearest neighbour is the fastest sampler at the cost of poor quality.</const>
-      <const name="QUADRIC"/>
+      <const name="QUADRIC">Uses a quadratic filter with a modest kernel, giving smoother results than <code>BILINEAR</code> with limited extra cost.</const>
       <const name="SINC">Five times slower than <code>BILINEAR</code>, the final result is of very good quality.</const>
-      <const name="SPLINE16">About twice as slow as <code>BILINEAR</code>, this method produces a considerably better result, and is a good choice for enlarging images without producing artifacts when contrasting colours are present.</const>
+      <const name="SPLINE16">About twice as slow as <code>BILINEAR</code>, this method samples a 4x4 area and produces a considerably better result, and is a good choice for enlarging images without producing artifacts when contrasting colours are present.</const>
     </constants>
 
   </types>

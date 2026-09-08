@@ -13,9 +13,9 @@ static const struct FieldDef clTaskFlags[] = {
    { nullptr, 0 }
 };
 
-FDEF maAddArgument[] = { { "Argument", FD_STR }, { 0, 0 } };
-FDEF maGetEnv[] = { { "Name", FD_STR }, { "Value", FD_STR|FD_RESULT }, { 0, 0 } };
-FDEF maSetEnv[] = { { "Name", FD_STR }, { "Value", FD_STR }, { 0, 0 } };
+FDEF maAddArgument[] = { { "Argument", FDF_CPPSTRING }, { 0, 0 } };
+FDEF maGetEnv[] = { { "Name", FDF_CPPSTRING }, { "Value", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };
+FDEF maSetEnv[] = { { "Name", FDF_CPPSTRING }, { "Value", FDF_CPPSTRING }, { 0, 0 } };
 
 static const struct MethodEntry clTaskMethods[] = {
    { AC(-1), (APTR)TASK_Expunge, "Expunge", 0, 0 },
@@ -26,12 +26,23 @@ static const struct MethodEntry clTaskMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR TASK_New(extTask *Self) {
+   new (Self) extTask(Self->Class, Self->UID);
+   return ERR::Okay;
+}
+
+static ERR TASK_Free(extTask *Self) {
+   Self->~extTask();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clTaskActions[] = {
    { AC::Activate, TASK_Activate },
    { AC::Free, TASK_Free },
    { AC::GetKey, TASK_GetKey },
    { AC::Init, TASK_Init },
-   { AC::NewPlacement, TASK_NewPlacement },
+   { AC::New, TASK_New },
+   { AC::Query, TASK_Query },
    { AC::SetKey, TASK_SetKey },
    { AC::Write, TASK_Write },
    { AC::NIL, nullptr }

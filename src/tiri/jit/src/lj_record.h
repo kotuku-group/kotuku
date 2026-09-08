@@ -24,20 +24,25 @@ typedef struct RecordIndex {
    TRef val;         //  Value reference for a store or 0 for a load.
    TRef mt;          //  Metatable reference.
    TRef mobj;        //  Metamethod object reference.
-   int idxchain;     //  Index indirections left or 0 for raw lookup.
+   int idxchain;              //  Index indirections left or 0 for raw lookup.
+   int32_t val_slot = -1;     //  Lua stack slot for a stored value, or -1 if the value is not stack-backed.
 } RecordIndex;
 
 LJ_FUNC int lj_record_objcmp(jit_State* J, TRef a, TRef b, cTValue* av, cTValue* bv);
 LJ_FUNC void lj_record_stop(jit_State* J, TraceLink linktype, TraceNo lnk);
 LJ_FUNC TRef lj_record_constify(jit_State* J, cTValue* o);
 LJ_FUNC TRef lj_record_vload(jit_State* J, TRef ref, MSize idx, IRType t);
+LJ_FUNC TRef lj_record_array_xload(jit_State *J, TRef ArrayRef, TRef IdxRef, GCarray *Arr, int32_t IdxInt);
+LJ_FUNC TRef lj_record_array_iter_load(jit_State *J, TRef ArrayRef, TRef IdxRef, GCarray *Arr, int32_t IdxInt);
 LJ_FUNC void lj_record_call(jit_State* J, BCREG func, ptrdiff_t nargs);
 LJ_FUNC void lj_record_tailcall(jit_State* J, BCREG func, ptrdiff_t nargs);
+LJ_FUNC void lj_record_metamethod_tailcall(jit_State* J, BCREG Func, ptrdiff_t ArgumentCount, TRef Receiver);
 LJ_FUNC void lj_record_ret(jit_State* J, BCREG rbase, ptrdiff_t gotresults);
 LJ_FUNC int lj_record_mm_lookup(jit_State* J, RecordIndex* ix, MMS mm);
 LJ_FUNC TRef lj_record_idx(jit_State* J, RecordIndex* ix);
+LJ_FUNC TRef lj_record_range_metatable(jit_State *J);
 LJ_FUNC int lj_record_next(jit_State* J, RecordIndex* ix);
+LJ_FUNC void lj_record_try_materialise(jit_State* J);
 LJ_FUNC void lj_record_ins(jit_State* J);
 LJ_FUNC void lj_record_setup(jit_State* J);
 #endif
-

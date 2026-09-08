@@ -1,0 +1,1540 @@
+
+-- Deferred regex patterns for folding range detection
+rx_quote_char  = <{ regex.new([["']]) }>
+rx_trim_start  = <{ regex.new([[^\s*(.*)]], regex.DOT_ALL) }>
+rx_func_sig    = <{ regex.new("\\bfunction\\s+[\\w]") }>
+rx_func_paren  = <{ regex.new([[\bfunction\s*\(]]) }>
+rx_kw_if       = <{ regex.new([[\bif\b]]) }>
+rx_kw_then     = <{ regex.new([[\bthen\b]]) }>
+rx_kw_for      = <{ regex.new([[\bfor\b]]) }>
+rx_kw_do       = <{ regex.new([[\bdo\b]]) }>
+rx_kw_while    = <{ regex.new([[\bwhile\b]]) }>
+rx_kw_repeat   = <{ regex.new([[\brepeat\b]]) }>
+rx_kw_defer    = <{ regex.new([[\bdefer\b]]) }>
+rx_kw_end      = <{ regex.new([[\bend\b]]) }>
+rx_kw_until    = <{ regex.new([[\buntil\b]]) }>
+rx_kw_struct   = <{ regex.new([[^\s*struct\s+[A-Za-z_][A-Za-z0-9_]*\b]]) }>
+
+-- Deferred regex patterns for token parsing
+rx_global_var   = <{ regex.new("^gl[A-Z]") }>
+rx_starts_upper = <{ regex.new("^[A-Z]") }>
+rx_all_upper    = <{ regex.new([[^[A-Z_]+$]]) }>
+
+-- Multi-byte (non-ASCII) operators recognised by the Tiri lexer, keyed by their UTF-8 byte sequence.  These are
+-- scanned byte-at-a-time by .sub(), so the tokeniser cannot match them with a single-character comparison and must
+-- look them up by their full sequence.  The value is the number of UTF-8 bytes the operator occupies.
+MULTIBYTE_OPERATORS = {
+   ['«'] = 2, ['»'] = 2, ['×'] = 2, ['÷'] = 2,
+   ['‥'] = 3, ['⁇'] = 3, ['≠'] = 3, ['≈'] = 3, ['≤'] = 3, ['≥'] = 3, ['↑'] = 3, ['▷'] = 3
+}
+
+----------------------------------------------------------------------------------------------------------------------
+-- Semantic Token Encoder
+
+-- Tokenize a Tiri source file and return semantic tokens
+-- Returns array of tokens: { line, startChar, length, tokenType, tokenModifiers }
+
+global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
+   tokens = array<table>
+   line = 0
+   col = 0
+   pos = 0
+   len = #Source
+   module_prefixes = ModulePrefixes or modulePrefixesForDocument({ content=Source, lineIndex=nil })
+   library_namespaces = { }
+
+   -- Helper to add a token (skips zero-length tokens)
+   function addToken(TokenLine, TokenCol, TokenLen, TokenType, TokenMod)
+      if TokenLen <= 0 then return end  -- Skip invalid tokens
+      tokens.push({
+         line   = TokenLine,
+         char   = TokenCol,
+         length = TokenLen,
+         type   = TokenType,
+         modifiers = TokenMod or 0
+      })
+   end
+
+   -- Skip whitespace and track position
+   function skipWhitespace()
+      while pos < len do
+         c = Source.sub(pos, pos + 1)
+         if c is ' ' or c is '\t' then
+            col++
+            pos++
+         elseif c is '\n' then
+            line++
+            col = 0
+            pos++
+         elseif c is '\r' then
+            pos++
+            if pos < len and Source.sub(pos, pos + 1) is '\n' then
+               pos++
+            end
+            line++
+            col = 0
+         else
+            break
+         end
+      end
+   end
+
+   -- Skip whitespace and comments whilst probing a token sequence.  Comment tokens are staged so callers can
+   -- discard them when a speculative parse fails without disturbing the main token stream.
+   function skipObjectTrivia(PendingTokens:array<table>)
+      while pos < len do
+         skipWhitespace()
+         if pos + 1 >= len or Source.sub(pos, pos + 2) != '--' then return end
+
+         comment_start = col
+         if pos + 3 < len and Source.sub(pos + 2, pos + 4) is '[[' then
+            pos += 4
+            col += 4
+            while pos < len do
+               if Source.sub(pos, pos + 2) is ']]' then
+                  pos += 2
+                  col += 2
+                  break
+               elseif Source.sub(pos, pos + 1) is '\n' then
+                  if col > comment_start then
+                     PendingTokens.push({ line = line, char = comment_start, length = col - comment_start })
+                  end
+                  line++
+                  col = 0
+                  pos++
+                  comment_start = 0
+               else
+                  pos++
+                  col++
+               end
+            end
+            if col > comment_start then
+               PendingTokens.push({ line = line, char = comment_start, length = col - comment_start })
+            end
+         else
+            while pos < len and Source.sub(pos, pos + 1) != '\n' do
+               pos++
+               col++
+            end
+            PendingTokens.push({ line = line, char = comment_start, length = col - comment_start })
+         end
+      end
+   end
+
+   -- Check if character is identifier start
+   function isIdentStart(C)
+      return (C >= 'a' and C <= 'z') or (C >= 'A' and C <= 'Z') or C is '_'
+   end
+
+   -- Check if character is identifier continuation
+   function isIdentChar(C)
+      return isIdentStart(C) or (C >= '0' and C <= '9')
+   end
+
+   function isTernarySeparator(ColonPos)
+      scan = ColonPos - 1
+      paren_depth = 0
+      brace_depth = 0
+      bracket_depth = 0
+
+      while scan >= 0 do
+         c = Source.sub(scan, scan + 1)
+         if c is '\n' or c is '\r' then return false end
+         if c is ')' then
+            paren_depth++
+         elseif c is '(' and paren_depth > 0 then
+            paren_depth -= 1
+         elseif c is '}' then
+            brace_depth++
+         elseif c is '{' and brace_depth > 0 then
+            brace_depth -= 1
+         elseif c is ']' then
+            bracket_depth++
+         elseif c is '[' and bracket_depth > 0 then
+            bracket_depth -= 1
+         elseif paren_depth is 0 and brace_depth is 0 and bracket_depth is 0 then
+            if c is '?' then return true end
+            if c is ',' or c is ';' then return false end
+         end
+         scan -= 1
+      end
+
+      return false
+   end
+
+   -- Check if character is digit
+   function isDigit(C)
+      return C >= '0' and C <= '9'
+   end
+
+   function canEndRangeExpression(Char)
+      if not Char then return false end
+      if isIdentChar(Char) or isDigit(Char) then return true end
+      return Char is ')' or Char is ']' or Char is '}'
+   end
+
+   function isRangeWord(Ident:str):bool
+      return Ident is 'to' or Ident is 'into'
+   end
+
+   function previousNonWhitespace(Pos:num):num
+      while Pos >= 0 do
+         c = Source.sub(Pos, Pos + 1)
+         if c is ' ' or c is '\t' then Pos -= 1 else break end
+      end
+      return Pos
+   end
+
+   function nextNonWhitespace(Pos:num):num
+      while Pos < len do
+         c = Source.sub(Pos, Pos + 1)
+         if c is ' ' or c is '\t' then Pos++ else break end
+      end
+      return Pos
+   end
+
+   function skipQuotedSource(Pos:num, Quote):num
+      Pos++
+      while Pos < len do
+         c = Source.sub(Pos, Pos + 1)
+         if c is '\\' then
+            Pos += 2
+         elseif c is Quote then
+            return Pos + 1
+         elseif c is '\n' or c is '\r' then
+            return Pos
+         else
+            Pos++
+         end
+      end
+      return Pos
+   end
+
+   -- A type-test primary word may carry an inner constraint: `<array int>`, `<array struct<Point>>`,
+   -- `<obj Vector>` and `<struct Point>`.  The remaining primaries (`num`, `str`, `nil`, `range`, ...) are
+   -- unconstrained.
+   type_test_types = {
+      ['any'] = true, ['nil'] = true, ['bool'] = true, ['num'] = true, ['str'] = true, ['table'] = true,
+      ['array'] = true, ['func'] = true, ['struct'] = true, ['obj'] = true, ['object'] = true, ['range'] = true,
+      ['userdata'] = true
+   }
+   type_test_constrainable = {
+      ['array'] = true, ['obj'] = true, ['object'] = true, ['struct'] = true
+   }
+
+   function hasChooseTypePatternTail():bool
+      tail_pos = pos
+      while tail_pos < len and (Source.sub(tail_pos, tail_pos + 1) is ' ' or
+         Source.sub(tail_pos, tail_pos + 1) is '\t' or Source.sub(tail_pos, tail_pos + 1) is '\r' or
+         Source.sub(tail_pos, tail_pos + 1) is '\n') do
+         tail_pos++
+      end
+
+      if Source.sub(tail_pos, tail_pos + 2) is '->' then return true end
+      if Source.sub(tail_pos, tail_pos + 4) is 'when' then
+         return tail_pos + 4 >= len or not isIdentChar(Source.sub(tail_pos + 4, tail_pos + 5))
+      end
+      return false
+   end
+
+   -- Tokenise a contextual `is <...>` / `is not <...>` type-test descriptor or a choose type pattern beginning at
+   -- the current position, which must sit on the '<' (leading spaces are skipped first).  On success the '<' and '>'
+   -- become operator tokens, the primary word a 'type' token and any inner constraint name a 'class' token, and the
+   -- function returns true with pos/col advanced past '>'.  A malformed or absent descriptor leaves pos/col untouched
+   -- and returns false so the caller continues tokenising the '<' as an ordinary less-than operator.  Type-test names
+   -- must be known, while choose patterns also highlight unknown descriptor-shaped arms for compiler diagnostics.
+   -- Descriptors do not span line breaks.
+   function tokenizeTypeTest(NotLine:num, NotCol:num, AllowUnknown:bool, RequireChooseTail:bool):bool
+      save_pos = pos
+      save_col = col
+
+      while pos < len and (Source.sub(pos, pos + 1) is ' ' or Source.sub(pos, pos + 1) is '\t') do
+         pos++
+         col++
+      end
+
+      if pos >= len or Source.sub(pos, pos + 1) != '<' then
+         pos = save_pos
+         col = save_col
+         return false
+      end
+
+      open_col = col
+      pos++
+      col++
+
+      while pos < len and (Source.sub(pos, pos + 1) is ' ' or Source.sub(pos, pos + 1) is '\t') do
+         pos++
+         col++
+      end
+
+      if pos >= len or not isIdentStart(Source.sub(pos, pos + 1)) then
+         pos = save_pos
+         col = save_col
+         return false
+      end
+
+      primary_col = col
+      primary_pos = pos
+      while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do
+         pos++
+         col++
+      end
+      primary = Source.sub(primary_pos, pos)
+      primary_len = col - primary_col
+      if not type_test_types[primary] and not AllowUnknown then
+         pos = save_pos
+         col = save_col
+         return false
+      end
+
+      inner_col = nil
+      inner_len = 0
+      nested_type_col = nil
+      nested_type_len = 0
+      nested_open_col = nil
+      nested_close_col = nil
+      if type_test_constrainable[primary] then
+         mark_pos = pos
+         mark_col = col
+         while pos < len and (Source.sub(pos, pos + 1) is ' ' or Source.sub(pos, pos + 1) is '\t') do
+            pos++
+            col++
+         end
+         if pos < len and isIdentStart(Source.sub(pos, pos + 1)) then
+            inner_pos = pos
+            inner_col = col
+            while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do
+               pos++
+               col++
+            end
+            inner_len = col - inner_col
+            inner_name = Source.sub(inner_pos, pos)
+
+            if primary is 'array' and inner_name is 'struct' then
+               nested_type_col = inner_col
+               nested_type_len = inner_len
+
+               while pos < len and (Source.sub(pos, pos + 1) is ' ' or Source.sub(pos, pos + 1) is '\t') do
+                  pos++
+                  col++
+               end
+               if pos >= len or Source.sub(pos, pos + 1) != '<' then
+                  pos = save_pos
+                  col = save_col
+                  return false
+               end
+               nested_open_col = col
+               pos++
+               col++
+
+               while pos < len and (Source.sub(pos, pos + 1) is ' ' or Source.sub(pos, pos + 1) is '\t') do
+                  pos++
+                  col++
+               end
+               if pos >= len or not isIdentStart(Source.sub(pos, pos + 1)) then
+                  pos = save_pos
+                  col = save_col
+                  return false
+               end
+               inner_col = col
+               while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do
+                  pos++
+                  col++
+               end
+               inner_len = col - inner_col
+
+               while pos < len and (Source.sub(pos, pos + 1) is ' ' or Source.sub(pos, pos + 1) is '\t') do
+                  pos++
+                  col++
+               end
+               if pos >= len or Source.sub(pos, pos + 1) != '>' then
+                  pos = save_pos
+                  col = save_col
+                  return false
+               end
+               nested_close_col = col
+               pos++
+               col++
+            end
+         else
+            pos = mark_pos
+            col = mark_col
+         end
+      end
+
+      while pos < len and (Source.sub(pos, pos + 1) is ' ' or Source.sub(pos, pos + 1) is '\t') do
+         pos++
+         col++
+      end
+
+      if pos >= len or Source.sub(pos, pos + 1) != '>' then
+         pos = save_pos
+         col = save_col
+         return false
+      end
+
+      close_col = col
+      pos++
+      col++
+
+      if RequireChooseTail and not hasChooseTypePatternTail() then
+         pos = save_pos
+         col = save_col
+         return false
+      end
+
+      if NotCol then addToken(NotLine, NotCol, 3, 1, 0) end  -- 'not' operator
+      addToken(line, open_col, 1, 1, 0)                    -- '<' operator
+      addToken(line, primary_col, primary_len, 7, 0)       -- descriptor primary: type
+      if nested_type_col then
+         addToken(line, nested_type_col, nested_type_len, 7, 0) -- nested element descriptor: type
+         addToken(line, nested_open_col, 1, 1, 0)           -- nested '<' operator
+      end
+      if inner_col then
+         addToken(line, inner_col, inner_len, 11, 0)       -- inner constraint name: class
+      end
+      if nested_close_col then addToken(line, nested_close_col, 1, 1, 0) end -- nested '>' operator
+      addToken(line, close_col, 1, 1, 0)                   -- '>' operator
+      return true
+   end
+
+   function isRangeOperator(StartPos, StopPos, Ident)
+      if not (isRangeWord(Ident) or Ident is 'by') then return false end
+
+      before = previousNonWhitespace(StartPos - 1)
+
+      if before < 0 then return false end
+      prev = Source.sub(before, before + 1)
+      if prev is '{' or prev is ',' or prev is ';' or prev is '.' or prev is ':' or
+            not canEndRangeExpression(prev) then
+         return false
+      end
+
+      depth = 0
+      brace_pos = nil
+      scan = StartPos - 1
+      while scan >= 0 do
+         sc = Source.sub(scan, scan + 1)
+         if sc is '}' or sc is ']' or sc is ')' then
+            depth++
+         elseif sc is '{' then
+            if depth is 0 then
+               brace_pos = scan
+               break
+            end
+            depth -= 1
+         elseif sc is '[' or sc is '(' then
+            if depth > 0 then depth -= 1 end
+         elseif depth is 0 and (sc is ',' or sc is ';' or sc is '\n' or sc is '\r') then
+            return false
+         end
+         scan -= 1
+      end
+
+      if not brace_pos then return false end
+
+      after = nextNonWhitespace(StopPos)
+
+      if after >= len then return false end
+      next_c = Source.sub(after, after + 1)
+      if next_c is '}' or next_c is ',' or next_c is ';' or next_c is '.' or next_c is ':' or
+            next_c is '=' then
+         return false
+      end
+
+      depth = 0
+      close_pos = nil
+      scan = after
+      while scan < len do
+         sc = Source.sub(scan, scan + 1)
+         if sc is '{' or sc is '[' or sc is '(' then
+            depth++
+         elseif sc is '}' then
+            if depth is 0 then
+               close_pos = scan
+               break
+            end
+            depth -= 1
+         elseif sc is ']' or sc is ')' then
+            if depth > 0 then depth -= 1 end
+         elseif depth is 0 and (sc is ',' or sc is ';' or sc is '\n' or sc is '\r') then
+            return false
+         end
+         scan++
+      end
+
+      if not close_pos then return false end
+
+      found_range_separator = false
+      found_step_separator = false
+      saw_start_expr = false
+      saw_stop_expr = false
+      scan = brace_pos + 1
+      depth = 0
+
+      while scan < close_pos do
+         sc = Source.sub(scan, scan + 1)
+
+         if sc is '"' or sc is "'" then
+            if depth is 0 then
+               if found_range_separator and not found_step_separator then saw_stop_expr = true
+               elseif not found_range_separator then saw_start_expr = true end
+            end
+            scan = skipQuotedSource(scan, sc)
+            continue
+         elseif sc is '{' or sc is '[' or sc is '(' then
+            if depth is 0 then
+               if found_range_separator and not found_step_separator then saw_stop_expr = true
+               elseif not found_range_separator then saw_start_expr = true end
+            end
+            depth++
+            scan++
+            continue
+         elseif sc is '}' or sc is ']' or sc is ')' then
+            if depth > 0 then depth -= 1 end
+            scan++
+            continue
+         elseif depth > 0 then
+            if scan is StartPos then return false end
+            scan++
+            continue
+         elseif sc is '\n' or sc is '\r' or sc is ',' or sc is ';' or sc is '=' then
+            return false
+         elseif isIdentStart(sc) then
+            word_start = scan
+            while scan < close_pos and isIdentChar(Source.sub(scan, scan + 1)) do
+               scan++
+            end
+
+            word = Source.sub(word_start, scan)
+            prev_pos = previousNonWhitespace(word_start - 1)
+            next_pos = nextNonWhitespace(scan)
+            prev_char = prev_pos >= 0 and Source.sub(prev_pos, prev_pos + 1) or ''
+            next_char = next_pos < len and Source.sub(next_pos, next_pos + 1) or ''
+            member_name_context = prev_char is '.' or prev_char is ':'
+            can_separate = not member_name_context and canEndRangeExpression(prev_char) and
+               not (next_char is '}' or next_char is ',' or next_char is ';' or next_char is '.' or
+               next_char is ':' or next_char is '=')
+
+            if isRangeWord(word) and not found_range_separator and saw_start_expr and can_separate then
+               if word_start is StartPos then return isRangeWord(Ident) end
+               found_range_separator = true
+            elseif word is 'by' and found_range_separator and not found_step_separator and saw_stop_expr and
+                  can_separate then
+               if word_start is StartPos then return Ident is 'by' end
+               found_step_separator = true
+            else
+               if word_start is StartPos then return false end
+               if found_range_separator and not found_step_separator then saw_stop_expr = true
+               elseif not found_range_separator then saw_start_expr = true end
+            end
+
+            continue
+         elseif sc != ' ' and sc != '\t' then
+            if found_range_separator and not found_step_separator then saw_stop_expr = true
+            elseif not found_range_separator then saw_start_expr = true end
+         end
+
+         scan++
+      end
+
+      return false
+   end
+
+   -- Main tokenization loop
+   while pos < len do
+      skipWhitespace()
+      if pos >= len then break end
+
+      c = Source.sub(pos, pos + 1)
+      start_col = col
+      start_pos = pos
+
+      -- Multi-byte operators (≈, ≠, ≤, ≥, «, », ×, ÷, ...).  .sub() is byte-indexed, so a single-byte comparison
+      -- can never match these; look up the full UTF-8 sequence and emit an operator token spanning its bytes.
+
+      op_bytes = (c.byte(0) or 0) >= 0x80 and (MULTIBYTE_OPERATORS[Source.sub(pos, pos + 3)] or
+         MULTIBYTE_OPERATORS[Source.sub(pos, pos + 2)]) or nil
+
+      if op_bytes then
+         is_not_equal = Source.sub(pos, pos + op_bytes) is '≠'
+         addToken(line, col, op_bytes, 1, 0)  -- operator
+         pos += op_bytes
+         col += op_bytes
+
+         if is_not_equal then
+            -- The Unicode not-equal operator is equivalent to `!=`, including when it introduces a type-test
+            -- descriptor.  Probe the descriptor before the generic identifier and struct-declaration branches.
+            probe_pos = pos
+            probe_col = col
+            probe_line = line
+            skipWhitespace()
+            if line is probe_line and pos < len and Source.sub(pos, pos + 1) is '<' then
+               if not tokenizeTypeTest(nil, nil) then
+                  pos = probe_pos
+                  col = probe_col
+                  line = probe_line
+               end
+            else
+               pos = probe_pos
+               col = probe_col
+               line = probe_line
+            end
+         end
+
+      -- Line comment: --
+      elseif c is '-' and pos + 1 < len and Source.sub(pos + 1, pos + 2) is '-' then
+         comment_start = col
+
+         -- Check for block comment --[[
+         if pos + 3 < len and Source.sub(pos + 2, pos + 4) is '[[' then
+            pos += 4
+            col += 4
+            -- Find closing ]]
+            while pos < len do
+               if Source.sub(pos, pos + 2) is ']]' then
+                  pos += 2
+                  col += 2
+                  break
+               elseif Source.sub(pos, pos + 1) is '\n' then
+                  -- Only add token if there's content on this line
+                  if col > comment_start then
+                     addToken(line, comment_start, col - comment_start, 6, 0)  -- comment
+                  end
+                  line++
+                  col = 0
+                  pos++
+                  comment_start = 0
+               else
+                  pos++
+                  col++
+               end
+            end
+            -- Add final line of block comment if there's content
+            if col > comment_start then
+               addToken(line, comment_start, col - comment_start, 6, 0)  -- comment
+            end
+         else
+            -- Line comment - find end of line
+            while pos < len and Source.sub(pos, pos + 1) != '\n' do
+               pos++
+               col++
+            end
+            addToken(line, comment_start, col - comment_start, 6, 0)  -- comment
+         end
+
+      -- String literals
+      elseif c is '"' or c is "'" then
+         quote = c
+         str_start = col
+         pos++
+         col++
+         while pos < len do
+            sc = Source.sub(pos, pos + 1)
+            if sc is quote then
+               pos++
+               col++
+               break
+            elseif sc is '\\' then
+               pos += 2
+               col += 2
+            elseif sc is '\n' then
+               break  -- Unterminated string
+            else
+               pos++
+               col++
+            end
+         end
+         addToken(line, str_start, col - str_start, 4, 0)  -- string
+
+      -- Multiline string [[
+      elseif c is '[' and pos + 1 < len and Source.sub(pos + 1, pos + 2) is '[' then
+         str_start_line = line
+         str_start_col = col
+         pos += 2
+         col += 2
+         segment_start = col
+         while pos < len do
+            if Source.sub(pos, pos + 2) is ']]' then
+               if col > segment_start or line is str_start_line then
+                  addToken(line, (line is str_start_line) and str_start_col or 0,
+                     (line is str_start_line) and (col - str_start_col + 2) or (col + 2), 4, 0)
+               end
+               pos += 2
+               col += 2
+               break
+            elseif Source.sub(pos, pos + 1) is '\n' then
+               if line is str_start_line then
+                  addToken(line, str_start_col, col - str_start_col, 4, 0)
+               else
+                  addToken(line, 0, col, 4, 0)
+               end
+               line++
+               col = 0
+               pos++
+               segment_start = 0
+            else
+               pos++
+               col++
+            end
+         end
+
+      -- Numbers
+      elseif isDigit(c) or (c is '.' and pos + 1 < len and isDigit(Source.sub(pos + 1, pos + 2))) then
+         num_start = col
+         -- Hex number
+         if c is '0' and pos + 1 < len and (Source.sub(pos + 1, pos + 2) is 'x' or Source.sub(pos + 1, pos + 2) is 'X') then
+            pos += 2
+            col += 2
+            while pos < len do
+               nc = Source.sub(pos, pos + 1)
+               if isDigit(nc) or (nc >= 'a' and nc <= 'f') or (nc >= 'A' and nc <= 'F') then
+                  pos++
+                  col++
+               else
+                  break
+               end
+            end
+         else
+            -- Decimal number
+            while pos < len and isDigit(Source.sub(pos, pos + 1)) do
+               pos++
+               col++
+            end
+            -- Decimal part
+            if pos < len and Source.sub(pos, pos + 1) is '.' then
+               pos++
+               col++
+               while pos < len and isDigit(Source.sub(pos, pos + 1)) do
+                  pos++
+                  col++
+               end
+            end
+            -- Exponent
+            if pos < len and (Source.sub(pos, pos + 1) is 'e' or Source.sub(pos, pos + 1) is 'E') then
+               pos++
+               col++
+               if pos < len and (Source.sub(pos, pos + 1) is '+' or Source.sub(pos, pos + 1) is '-') then
+                  pos++
+                  col++
+               end
+               while pos < len and isDigit(Source.sub(pos, pos + 1)) do
+                  pos++
+                  col++
+               end
+            end
+         end
+         addToken(line, num_start, col - num_start, 5, 0)  -- number
+      elseif isIdentStart(c) then -- Identifiers and keywords
+         ident_start = col
+         while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do
+            pos++
+            col++
+         end
+         ident = Source.sub(start_pos, pos)
+         ident_len = col - ident_start
+
+         if isRangeOperator(start_pos, pos, ident) then
+            addToken(line, ident_start, ident_len, 1, 0)  -- range separator operator
+         elseif ident is 'obj' then
+            -- `obj` remains the public namespace except for the compiler-owned `obj<Class> { ... }` constructor.
+            -- A brace following the complete angle form distinguishes construction from an obj<Class> type
+            -- constraint, which continues to be highlighted as a type reference.
+            if pos < len and Source.sub(pos, pos + 1) is '<' then
+               obj_pos = pos
+               obj_col = col
+               obj_line = line
+               pending_tokens = array<table>
+               pos++
+               col++
+               skipObjectTrivia(pending_tokens)
+               if pos < len and isIdentStart(Source.sub(pos, pos + 1)) then
+                  name_col = col
+                  name_line = line
+                  while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do
+                     pos++
+                     col++
+                  end
+                  name_len = col - name_col
+                  pending_tokens.push({ line = name_line, char = name_col, length = name_len, type = 11 })
+                  skipObjectTrivia(pending_tokens)
+                  if pos < len and Source.sub(pos, pos + 1) is '>' then
+                     pos++
+                     col++
+                     after_pos = pos
+                     after_col = col
+                     after_line = line
+                     skipWhitespace()
+                     constructor = pos < len and Source.sub(pos, pos + 1) is '{'
+                     pos = after_pos
+                     col = after_col
+                     line = after_line
+                     addToken(obj_line, ident_start, ident_len, constructor and 0 or 7, 0)
+                     for pending in values(pending_tokens) do
+                        addToken(pending.line, pending.char, pending.length, pending.type or 6, 0)
+                     end
+                     continue
+                  end
+               end
+               -- A malformed obj<... form is still an ordinary namespace use until the compiler reports it.
+               pos = obj_pos
+               col = obj_col
+               line = obj_line
+            end
+            addToken(line, ident_start, ident_len, 10, 0)  -- namespace ('obj' library)
+         elseif ident is 'struct' then
+            -- 'struct' is a soft keyword.  Followed immediately by '<' it forms a struct<Name> type reference or
+            -- explicit construction; followed by an identifier it begins an end-terminated declaration.  Anything
+            -- else is the runtime library namespace, e.g. struct.new().
+            if pos < len and Source.sub(pos, pos + 1) is '<' then
+               sk_pos = pos
+               sk_col = col
+               pos++
+               col++
+               while pos < len and (Source.sub(pos, pos + 1) is ' ' or Source.sub(pos, pos + 1) is '\t') do
+                  pos++
+                  col++
+               end
+               if pos < len and isIdentStart(Source.sub(pos, pos + 1)) then
+                  name_col = col
+                  while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do
+                     pos++
+                     col++
+                  end
+                  name_len = col - name_col
+                  while pos < len and (Source.sub(pos, pos + 1) is ' ' or Source.sub(pos, pos + 1) is '\t') do
+                     pos++
+                     col++
+                  end
+                  if pos < len and Source.sub(pos, pos + 1) is '>' then
+                     pos++
+                     col++
+                     addToken(line, ident_start, ident_len, 0, 0)  -- 'struct' keyword
+                     addToken(line, name_col, name_len, 11, 0)     -- referenced struct name: class
+                     continue
+                  end
+               end
+               -- Not a well-formed struct<Name>; rewind and fall through to the namespace token
+               pos = sk_pos
+               col = sk_col
+               addToken(line, ident_start, ident_len, 10, 0)  -- namespace ('struct' library)
+               continue
+            end
+            sk_pos = pos
+            sk_col = col
+            sk_line = line
+            sk_matched = false
+            skipWhitespace()
+            if pos < len and isIdentStart(Source.sub(pos, pos + 1)) then
+               name_line = line
+               name_col = col
+               name_pos = pos
+               while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do
+                  pos++
+                  col++
+               end
+               name_len = col - name_col
+               after_pos = pos
+               after_col = col
+               after_line = line
+               addToken(sk_line, ident_start, ident_len, 0, 0)  -- 'struct' keyword
+               addToken(name_line, name_col, name_len, 11, 1)   -- struct name: class + declaration
+               pos = after_pos
+               col = after_col
+               line = after_line
+               sk_matched = true
+            end
+            if not sk_matched then
+               pos = sk_pos
+               col = sk_col
+               line = sk_line
+               addToken(sk_line, ident_start, ident_len, 10, 0)  -- namespace ('struct' library)
+            end
+         elseif ident is 'namespace' then
+            after_keyword_pos = pos
+            after_keyword_col = col
+            after_keyword_line = line
+            while pos < len and (Source.sub(pos, pos + 1) is ' ' or Source.sub(pos, pos + 1) is '\t') do
+               pos++
+               col++
+            end
+
+            namespace_line = line
+            namespace_col = col
+            namespace_start = pos
+            if line is after_keyword_line and pos < len and isIdentStart(Source.sub(pos, pos + 1)) then
+               while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do pos++; col++ end
+               namespace_name = Source.sub(namespace_start, pos)
+               library_namespaces[namespace_name] = true
+               addToken(after_keyword_line, ident_start, ident_len, 0, 0)
+               addToken(namespace_line, namespace_col, #namespace_name, 10, 5)
+               continue
+            end
+
+            pos = after_keyword_pos
+            col = after_keyword_col
+            line = after_keyword_line
+            addToken(line, ident_start, ident_len, 0, 0)
+         elseif ident is 'module' then
+            -- 'module' remains contextual so existing module(...) functions keep function highlighting.
+            after_keyword_pos = pos
+            after_keyword_col = col
+            after_keyword_line = line
+            skipWhitespace()
+            module_line = line
+            module_col = col
+            module_start = pos
+            if pos < len and isIdentStart(Source.sub(pos, pos + 1)) then
+               while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do pos++; col++ end
+               module_len = pos - module_start
+               skipWhitespace()
+               as_line = line
+               as_col = col
+               as_start = pos
+               while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do pos++; col++ end
+               as_word = Source.sub(as_start, pos)
+               skipWhitespace()
+               namespace_line = line
+               namespace_col = col
+               namespace_start = pos
+               if as_word is 'as' and pos < len and isIdentStart(Source.sub(pos, pos + 1)) then
+                  while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do pos++; col++ end
+                  addToken(after_keyword_line, ident_start, ident_len, 0, 0)
+                  addToken(module_line, module_col, module_len, 10, 8)
+                  addToken(as_line, as_col, 2, 0, 0)
+                  addToken(namespace_line, namespace_col, pos - namespace_start, 10, 5)
+                  continue
+               end
+            end
+            pos = after_keyword_pos
+            col = after_keyword_col
+            line = after_keyword_line
+            save_pos = pos
+            save_col = col
+            save_line = line
+            skipWhitespace()
+            if pos < len and Source.sub(pos, pos + 1) is '(' then
+               addToken(save_line, ident_start, ident_len, 3, 0)
+            end
+            pos = save_pos
+            col = save_col
+            line = save_line
+         elseif ident is 'is' then
+            -- `is` is ordinarily an equality operator, but `is <...>` / `is not <...>` (contextually recognised by a
+            -- following '<') is a boolean type test.  Emit the operator, then consume the optional `not` and the
+            -- angle-bracket descriptor so its primary and inner names highlight as types rather than falling through
+            -- to the generic identifier, range and 'struct'-declaration branches below.
+            addToken(line, ident_start, ident_len, 1, 0)  -- 'is' operator
+
+            probe_pos = pos
+            probe_col = col
+            probe_line = line
+            skipWhitespace()
+            not_present = false
+            not_col = nil
+            if line is probe_line and pos + 2 <= len and Source.sub(pos, pos + 3) is 'not' and
+                  (pos + 3 >= len or not isIdentChar(Source.sub(pos + 3, pos + 4))) then
+               not_present = true
+               not_col = col
+               pos += 3
+               col += 3
+               skipWhitespace()
+            end
+
+            if line is probe_line and pos < len and Source.sub(pos, pos + 1) is '<' then
+               not_line = nil
+               if not_present then not_line = probe_line end
+               if not tokenizeTypeTest(not_line, not_col) then
+                  -- Malformed descriptor: rewind to just after 'is' so the stray 'not'/'<' tokenise normally.
+                  pos = probe_pos
+                  col = probe_col
+                  line = probe_line
+               end
+            else
+               -- Not a type-test descriptor; rewind so a trailing `not`, expression or newline tokenises normally.
+               pos = probe_pos
+               col = probe_col
+               line = probe_line
+            end
+         elseif FLUID_KEYWORDS[ident] then
+            addToken(line, ident_start, ident_len, 0, 0)  -- keyword
+         elseif FLUID_OPERATORS[ident] then
+            addToken(line, ident_start, ident_len, 1, 0)  -- operator
+         elseif FLUID_CONSTANTS[ident] then
+            addToken(line, ident_start, ident_len, 12, 4)  -- macro + readonly
+         elseif FLUID_BUILTINS[ident] then
+            addToken(line, ident_start, ident_len, 3, 128)  -- function + defaultLibrary
+         elseif FLUID_MODULES[ident] or module_prefixes[ident] or library_namespaces[ident] then
+            addToken(line, ident_start, ident_len, 10, 0)  -- namespace
+         elseif ident.startsWith('ERR_') then
+            addToken(line, ident_start, ident_len, 12, 4)  -- macro + readonly (error constants)
+         elseif rx_global_var.test(ident) then
+            addToken(line, ident_start, ident_len, 2, 8)  -- variable + static (global)
+         elseif rx_starts_upper.test(ident) and rx_all_upper.test(ident) then
+            addToken(line, ident_start, ident_len, 12, 4)  -- macro + readonly (CONSTANTS)
+         else
+            -- Check if it's a function call (followed by parenthesis)
+            -- Save all position state since skipWhitespace may cross newlines
+            save_pos = pos
+            save_col = col
+            save_line = line
+            skipWhitespace()
+            if pos < len and Source.sub(pos, pos + 1) is '(' then
+               addToken(save_line, ident_start, ident_len, 3, 0)  -- function
+            end
+            -- Restore position (we don't consume the paren)
+            pos = save_pos
+            col = save_col
+            line = save_line
+         end
+      elseif c is '@' then
+         anno_start = col
+         pos++
+         col++
+
+         if pos < len and isIdentStart(Source.sub(pos, pos + 1)) then
+            name_start = col
+            name_pos = pos
+            while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do
+               pos++
+               col++
+            end
+
+            anno_name = Source.sub(name_pos, pos)
+            token_type = 3
+            token_mod = 0
+            if FLUID_PARSER_ANNOTATIONS[anno_name] then
+               token_type = 12
+               token_mod = 4
+            elseif FLUID_KEYWORDS[anno_name] then
+               token_type = 0
+               token_mod = 0
+            end
+            addToken(line, anno_start, 1, 12, 4) -- @ marker
+            addToken(line, name_start, col - name_start, token_type, token_mod)
+         else
+            addToken(line, anno_start, 1, 12, 4)
+         end
+      elseif c is '?' then -- Symbolic operators (multi-character first, then single-character)
+         op_start = col
+         if pos + 2 < len and Source.sub(pos + 1, pos + 3) is '?=' then
+            -- ??= if-empty assignment
+            addToken(line, op_start, 3, 1, 0)
+            pos += 3
+            col += 3
+         elseif pos + 1 < len and Source.sub(pos + 1, pos + 2) is '?' then
+            -- ?? if-empty operator or extended ternary condition
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         elseif pos + 1 < len and Source.sub(pos + 1, pos + 2) is '=' then
+            -- ?= if-nil assignment
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         elseif pos + 1 < len and Source.sub(pos + 1, pos + 2) is '.' then
+            -- ?. safe navigation
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         elseif pos + 1 < len and Source.sub(pos + 1, pos + 2) is '[' then
+            -- ?[ safe index
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         else
+            -- ? standard ternary condition
+            addToken(line, op_start, 1, 1, 0)
+            pos++
+            col++
+         end
+      elseif c is '|' then
+         op_start = col
+         if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '>' then
+            -- |> pipe operator
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         else
+            -- | bitwise OR
+            addToken(line, op_start, 1, 1, 0)
+            pos++
+            col++
+         end
+      elseif c is '=' then
+         op_start = col
+         if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '>' then
+            -- => arrow function
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         else
+            -- = assignment (skip, not highlighted as operator)
+            pos++
+            col++
+         end
+      elseif c is ':' then
+         op_start = col
+         if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '>' then
+            -- Deprecated :> ternary separator
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         elseif isTernarySeparator(pos) then
+            -- : ternary separator
+            addToken(line, op_start, 1, 1, 0)
+            pos++
+            col++
+         else
+            -- Type annotation
+            pos++
+            col++
+         end
+      elseif c is '.' then
+         op_start = col
+         if pos + 2 < len and Source.sub(pos + 1, pos + 3) is '.=' then
+            -- ..= concatenation assignment
+            addToken(line, op_start, 3, 1, 0)
+            pos += 3
+            col += 3
+         elseif pos + 2 < len and Source.sub(pos + 1, pos + 3) is '..' then
+            -- ... varargs
+            addToken(line, op_start, 3, 1, 0)
+            pos += 3
+            col += 3
+         elseif pos + 1 < len and Source.sub(pos + 1, pos + 2) is '.' then
+            -- .. concatenation
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         else
+            -- . field access (skip)
+            pos++
+            col++
+         end
+      elseif c is '+' then
+         op_start = col
+         if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '+' then
+            -- ++ increment
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         elseif pos + 1 < len and Source.sub(pos + 1, pos + 2) is '=' then
+            -- += compound assignment
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         else
+            -- + addition
+            addToken(line, op_start, 1, 1, 0)
+            pos++
+            col++
+         end
+      elseif c is '-' then
+         op_start = col
+         if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '=' then
+            -- -= compound assignment
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         else
+            -- - subtraction/negation
+            addToken(line, op_start, 1, 1, 0)
+            pos++
+            col++
+         end
+      elseif c is '*' then
+         op_start = col
+         if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '=' then
+            -- *= compound assignment
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         elseif pos + 1 < len and Source.sub(pos + 1, pos + 2) is '*' then
+            -- ** exponentiation
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         else
+            -- * multiplication
+            addToken(line, op_start, 1, 1, 0)
+            pos++
+            col++
+         end
+      elseif c is '/' then
+         op_start = col
+         if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '=' then
+            -- /= compound assignment
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         else
+            -- / division
+            addToken(line, op_start, 1, 1, 0)
+            pos++
+            col++
+         end
+      elseif c is '%' then
+         op_start = col
+         if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '=' then
+            -- %= compound assignment
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         else
+            -- % remainder
+            addToken(line, op_start, 1, 1, 0)
+            pos++
+            col++
+         end
+      elseif c is '<' then
+         if tokenizeTypeTest(nil, nil, true, true) then
+            -- A descriptor-shaped choose arm was emitted by tokenizeTypeTest().
+         else
+            op_start = col
+            if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '<' then
+               -- << left shift
+               addToken(line, op_start, 2, 1, 0)
+               pos += 2
+               col += 2
+            elseif pos + 1 < len and Source.sub(pos + 1, pos + 2) is '=' then
+               -- <= less than or equal
+               addToken(line, op_start, 2, 1, 0)
+               pos += 2
+               col += 2
+            else
+               -- < less than
+               addToken(line, op_start, 1, 1, 0)
+               pos++
+               col++
+            end
+         end
+      elseif c is '>' then
+         op_start = col
+         if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '>' then
+            -- >> right shift
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         elseif pos + 1 < len and Source.sub(pos + 1, pos + 2) is '=' then
+            -- >= greater than or equal
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+         else
+            -- > greater than
+            addToken(line, op_start, 1, 1, 0)
+            pos++
+            col++
+         end
+      elseif c is '!' then
+         op_start = col
+         if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '=' then
+            -- != not equal.  Like `is`, `!= <...>` is a negated boolean type test; consume any descriptor that
+            -- follows so its primary and inner names highlight as types rather than falling through to the generic
+            -- identifier, range and 'struct'-declaration branches.
+            addToken(line, op_start, 2, 1, 0)
+            pos += 2
+            col += 2
+
+            probe_pos = pos
+            probe_col = col
+            probe_line = line
+            skipWhitespace()
+            if line is probe_line and pos < len and Source.sub(pos, pos + 1) is '<' then
+               if not tokenizeTypeTest(nil, nil) then
+                  pos = probe_pos
+                  col = probe_col
+                  line = probe_line
+               end
+            else
+               pos = probe_pos
+               col = probe_col
+               line = probe_line
+            end
+         else -- ! (used in flags like '!READ')
+            pos++
+            col++
+         end
+      elseif c is '&' then
+         if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '&' then
+            addToken(line, col, 2, 1, 0) -- && current context
+            pos += 2
+            col += 2
+         else
+            addToken(line, col, 1, 1, 0) -- & bitwise AND or context field prefix
+            pos++
+            col++
+         end
+      elseif c is '~' then -- ~ bitwise NOT
+         addToken(line, col, 1, 1, 0)
+         pos++
+         col++
+      elseif c is '^' then -- ^ bitwise XOR
+         addToken(line, col, 1, 1, 0)
+         pos++
+         col++
+      elseif c is '#' then -- # length operator
+         addToken(line, col, 1, 1, 0)
+         pos++
+         col++
+      else -- Skip other characters (punctuation, brackets, etc.)
+         pos++
+         col++
+      end
+   end
+
+   -- The scanner tracks byte columns, but the LSP wire format expects UTF-16 code units.  Convert each token's
+   -- start and length against its line so multi-byte operators (≈, ≠, ≤, ≥, ...) do not skew the highlighting of
+   -- everything that follows them on the same line.
+
+   line_starts = array<int>
+   line_starts.push(0)
+   scan = 0
+   while scan < len do
+      if Source.sub(scan, scan + 1) is '\n' then line_starts.push(scan + 1) end
+      scan++
+   end
+
+   for tok in values(tokens) do
+      line_start = line_starts[tok.line] or 0
+      line_end = Source.find('\n', line_start) or len
+      line_text = Source.sub(line_start, line_end)
+
+      byte_start = tok.char
+      byte_end = tok.char + tok.length
+      tok.char = byteColToUtf16Col(line_text, byte_start)
+      tok.length = byteColToUtf16Col(line_text, byte_end) - tok.char
+   end
+
+   return tokens
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Extract folding ranges from Tiri source
+-- Returns array of FoldingRange objects for code folding
+
+global function extractFoldingRanges(Doc:table):array<table>
+   ranges = array<table>
+   total_lines = getTotalLines(Doc)
+   block_stack = array<table>  -- Stack of { line, kind } for nested blocks
+   in_block_comment = false
+   block_comment_start = 0
+
+   for line_num in {0 to total_lines} do
+      line_text = getLine(Doc, line_num)
+
+      -- Handle block comments --[[ ... ]]
+      if in_block_comment then
+         if line_text.find(']]') then
+            -- End of block comment
+            if line_num > block_comment_start then
+               ranges.push({
+                  startLine = block_comment_start,
+                  endLine = line_num,
+                  kind = FOLDING_KIND.COMMENT
+               })
+            end
+            in_block_comment = false
+         end
+         continue
+      end
+
+      -- Check for block comment start
+      block_comment_pos = line_text.find('--[[')
+      if block_comment_pos then
+         -- Check it's not inside a string (simplified check)
+         before = line_text.sub(0, block_comment_pos)
+         if not rx_quote_char.test(before) then
+            in_block_comment = true
+            block_comment_start = line_num
+            continue
+         end
+      end
+
+      -- Check for block openers: function, if...then, for...do, while...do, repeat, defer
+      -- We need to be careful not to match keywords in comments or strings
+
+      -- Skip if line is a comment
+      trimmed = rx_trim_start.extract(line_text)
+      if trimmed.sub(0, 2) is '--' then
+         continue
+      end
+
+      -- Find comment position to avoid matching keywords in comments
+      comment_pos = line_text.find('--')
+
+      -- Check for block openers (only if not in a comment)
+      function checkKeyword(RxPattern):num
+         start_pos, stop_pos = RxPattern.findFirst(line_text)
+         if start_pos and (not comment_pos or start_pos < comment_pos) then
+            return start_pos
+         end
+         return nil
+      end
+
+      -- function ... (opens a block)
+      if checkKeyword(rx_func_sig) or checkKeyword(rx_func_paren) then
+         block_stack.push({ line = line_num, kind = 'function' })
+      end
+
+      -- if ... then (opens a block)
+      if checkKeyword(rx_kw_if) and checkKeyword(rx_kw_then) then
+         block_stack.push({ line = line_num, kind = 'if' })
+      end
+
+      -- for ... do (opens a block)
+      if checkKeyword(rx_kw_for) and checkKeyword(rx_kw_do) then
+         block_stack.push({ line = line_num, kind = 'for' })
+      end
+
+      -- while ... do (opens a block)
+      if checkKeyword(rx_kw_while) and checkKeyword(rx_kw_do) then
+         block_stack.push({ line = line_num, kind = 'while' })
+      end
+
+      -- repeat (opens a block, closed by until)
+      if checkKeyword(rx_kw_repeat) then
+         block_stack.push({ line = line_num, kind = 'repeat' })
+      end
+
+      -- defer (opens a block)
+      if checkKeyword(rx_kw_defer) then
+         block_stack.push({ line = line_num, kind = 'defer' })
+      end
+
+      -- struct Name ... end (declaration block)
+      if checkKeyword(rx_kw_struct) then
+         block_stack.push({ line = line_num, kind = 'struct' })
+      end
+
+      -- Check for block closers
+      -- 'end' closes function, if, for, while, defer and struct declarations
+      if checkKeyword(rx_kw_end) then
+         if #block_stack > 0 then
+            block_start = block_stack.pop()
+            if block_start and line_num > block_start.line then
+               ranges.push({
+                  startLine = block_start.line,
+                  endLine = line_num
+               })
+            end
+         end
+      end
+
+      -- 'until' closes repeat
+      if checkKeyword(rx_kw_until) then
+         if #block_stack > 0 then
+            block_start = block_stack.pop()
+            if block_start and block_start.kind is 'repeat' and line_num > block_start.line then
+               ranges.push({
+                  startLine = block_start.line,
+                  endLine = line_num
+               })
+            end
+         end
+      end
+   end
+
+   return ranges
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Encode tokens into LSP semantic tokens format (delta-encoded integers)
+
+global function encodeSemanticTokens(Tokens:array<table>):array<int>
+   data = array<int>
+   prev_line = 0
+   prev_char = 0
+
+   for tok in values(Tokens) do
+      delta_line = tok.line - prev_line
+      delta_char = (delta_line is 0) and (tok.char - prev_char) or tok.char
+
+      data.push(delta_line)
+      data.push(delta_char)
+      data.push(tok.length)
+      data.push(tok.type)
+      data.push(tok.modifiers)
+
+      prev_line = tok.line
+      prev_char = tok.char
+   end
+
+   return data
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Compute semantic token edits between old and new data arrays
+-- Returns array of SemanticTokensEdit: { start, deleteCount, data? }
+
+global function computeTokenEdits(OldData:array<int>, NewData:array<int>):array<table>
+   old_len = #OldData
+   new_len = #NewData
+
+   -- Find common prefix (in groups of 5 integers = 1 token)
+   prefix_tokens = 0
+   max_prefix = math.min(old_len, new_len) / 5
+   while prefix_tokens < max_prefix do
+      idx = prefix_tokens * 5
+      match = true
+      for i in {0 to 5} do
+         if OldData[idx + i] != NewData[idx + i] then
+            match = false
+            break
+         end
+      end
+      if not match then break end
+      prefix_tokens++
+   end
+
+   -- Find common suffix (in groups of 5 integers = 1 token)
+   suffix_tokens = 0
+   old_suffix_start = old_len
+   new_suffix_start = new_len
+   max_suffix = math.min((old_len / 5) - prefix_tokens, (new_len / 5) - prefix_tokens)
+
+   while suffix_tokens < max_suffix do
+      old_idx = old_len - (suffix_tokens + 1) * 5
+      new_idx = new_len - (suffix_tokens + 1) * 5
+      match = true
+      for i in {0 to 5} do
+         if OldData[old_idx + i] != NewData[new_idx + i] then
+            match = false
+            break
+         end
+      end
+      if not match then break end
+      suffix_tokens++
+   end
+
+   -- Calculate the range that differs
+   prefix_ints = prefix_tokens * 5
+   suffix_ints = suffix_tokens * 5
+
+   delete_start = prefix_ints
+   delete_count = old_len - prefix_ints - suffix_ints
+   insert_count = new_len - prefix_ints - suffix_ints
+
+   -- If nothing changed, return empty edits
+   if delete_count is 0 and insert_count is 0 then
+      return array<table>
+   end
+
+   -- Build the edit
+   edit = {
+      start = delete_start,
+      deleteCount = delete_count
+   }
+
+   -- Include new data if we're inserting anything
+   if insert_count > 0 then
+      edit.data = array<int>
+      for i in {prefix_ints to prefix_ints + insert_count} do
+         edit.data.push(NewData[i])
+      end
+   end
+
+   return array<table> { edit }
+end

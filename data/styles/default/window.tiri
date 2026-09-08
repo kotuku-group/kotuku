@@ -1,7 +1,7 @@
 
    import 'gui'
 
-   lVec = mVec
+   module vector as mVec
 
 return {
    initialise = function(Window:obj)
@@ -33,7 +33,7 @@ return {
       })
    end,
    menubar = function(Window:obj)
-      local menubar
+      local menubar:obj
       if (Window.surface.parent != nil) then -- Window is in the native desktop
          menubar = Window.surface.new('menubar', { x=5, y=Window.clientTop, xOffset=5, target=Window.surface.parent, path=Window.menu })
       else -- Window is in a hosted environment (e.g. X11, Windows)
@@ -45,20 +45,24 @@ return {
    titlebar = function(Window:obj)
       bar = Window.surface.new('surface', { drag=Window.surface, height=21, x=5, y=5, xOffset=5, flags='!StickToFront' })
 
-      lGradientA = defineGradient(nil, nil, {r=76,g=62,b=128,a=255}, {r=126,g=123,b=187,a=255}, 0, 0, '100%', 0)
-      lGradientB = defineGradient(nil, nil, {r=76,g=76,b=76,a=255}, {r=150,g=150,b=150,a=255}, 0, 0, '100%', 0)
+      lGradientA = gui.simpleGradient(Window.scene, 'window_titlebar_inactive', {
+         {r=76,g=62,b=128,a=255}, {r=126,g=123,b=187,a=255}
+      }, 0, 0, 1, 0, 'boundingbox')
+      lGradientB = gui.simpleGradient(Window.scene, 'window_titlebar_active', {
+         {r=76,g=76,b=76,a=255}, {r=150,g=150,b=150,a=255}
+      }, 0, 0, 1, 0, 'boundingbox')
 
       bar.mtAddCallback(function(Surface, Bitmap)
-         err, path = lVec.generateRectangle(0, 0, Surface.width, Surface.height)
+         err, path = mVec.GenerateRectangle(0, 0, Surface.width, Surface.height)
          if err is ERR_Okay then
             if (Surface.flags & RNF_HAS_FOCUS) != RNF_HAS_FOCUS then
-               lVec.drawPath(Bitmap, path, 0, nil, lGradientA)
+               mVec.DrawPath(Bitmap, path, 0, nil, lGradientA)
             else
-               lVec.drawPath(Bitmap, path, 0, nil, lGradientB)
+               mVec.DrawPath(Bitmap, path, 0, nil, lGradientB)
             end
-            lVec.freePath(path)
+            mSys.FreeResource(path)
          end
-         for y=1,Surface.height,2 do
+         for y in {1 into Surface.height by 2} do
             err, colShade = Bitmap.mtGetColour(0, 0, 0, 40)
             Bitmap.mtDrawRectangle(0, y, Surface.width, 1, colShade, BAF_FILL | BAF_BLEND)
          end

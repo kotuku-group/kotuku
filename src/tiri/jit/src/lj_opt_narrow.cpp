@@ -8,11 +8,13 @@
 #define LUA_CORE
 
 #include "lj_obj.h"
+#include <cmath>
 
 #if LJ_HASJIT
 
 #include "lj_bc.h"
 #include "lj_ir.h"
+#include "lj_ircall.h"
 #include "lj_jit.h"
 #include "lj_iropt.h"
 #include "lj_trace.h"
@@ -188,10 +190,10 @@
 ** the IR opcode + type or one of the following special opcodes:
 */
 enum {
-   NARROW_REF,      //  Push ref.
-   NARROW_CONV,      //  Push conversion of ref.
-   NARROW_SEXT,      //  Push sign-extension of ref.
-   NARROW_INT      //  Push KINT ref. The next code holds an int32_t.
+   NARROW_REF,     // Push ref.
+   NARROW_CONV,    // Push conversion of ref.
+   NARROW_SEXT,    // Push sign-extension of ref.
+   NARROW_INT      // Push KINT ref. The next code holds an int32_t.
 };
 
 typedef uint32_t NarrowIns;
@@ -202,11 +204,11 @@ typedef uint32_t NarrowIns;
 
 // Context used for narrowing of type conversions.
 typedef struct NarrowConv {
-   jit_State* J;      //  JIT compiler state.
-   NarrowIns* sp;   //  Current stack pointer.
-   NarrowIns* maxsp;   //  Maximum stack pointer minus redzone.
-   IRRef mode;      //  Conversion mode (IRCONV_*).
-   IRType t;      //  Destination type: IRT_INT or IRT_I64.
+   jit_State* J;      // JIT compiler state.
+   NarrowIns* sp;     // Current stack pointer.
+   NarrowIns* maxsp;  // Maximum stack pointer minus redzone.
+   IRRef mode;        // Conversion mode (IRCONV_*).
+   IRType t;          // Destination type: IRT_INT or IRT_I64.
    NarrowIns stack[NARROW_MAX_STACK];  //  Stack holding stack-machine code.
 } NarrowConv;
 
@@ -560,28 +562,64 @@ TRef lj_opt_narrow_unm(jit_State* J, TRef rc, TValue* vc)
    return emitir(IRTN(IR_NEG), rc, lj_ir_ksimd(J, LJ_KSIMD_NEG));
 }
 
-// Narrowing of modulo operator.
+#if LJ_TARGET_X64
+// Inline remainder for a constant integer divisor and a bounded dividend, including fractional dividends.
+static TRef narrow_mod_const(jit_State* J, TRef Dividend, TRef Divisor, lua_Number Value, lua_Number Modulus)
+{
+   if (!(J->flags & JIT_F_OPT_NARROW) or !(J->flags & JIT_F_SSE4_1) or !tref_isk(Divisor) or
+         !numisint(Modulus) or Modulus IS 0 or !(Value >= -0x1p52 and Value <= 0x1p52)) return 0;
+
+   bool negative = std::signbit(Value);
+   lua_Number modulus = Modulus < 0 ? -Modulus : Modulus;
+
+   // Non-negative IEEE doubles are ordered by their unsigned bit patterns.  A single unsigned bound check
+   // therefore excludes negative values (including -0), infinities and NaNs.  Normalise negative traces first;
+   // opposite-signed zeros use a side trace, while +0 stays on the ordinary positive trace.
+   TRef dividend = lj_ir_tonum(J, Dividend);
+   TRef divisor = lj_ir_knum(J, modulus);
+   if (negative) dividend = emitir(IRTN(IR_NEG), dividend, lj_ir_ksimd(J, LJ_KSIMD_NEG));
+   TRef bits = emitir(IRT(IR_CONV, IRT_U64), dividend, (IRT_U64 << IRCONV_DSH) | IRT_NUM | IRCONV_BITCAST);
+   emitir(IRTG(IR_ULE, IRT_U64), bits, lj_ir_kint64(J, UINT64_C(0x4330000000000000)));
+
+   // The existing bounded integer-divisor identity is unchanged: division cannot round across an integer
+   // multiple, the truncated quotient times the modulus is an exact integer <= 2^52, and subtraction is exact.
+   // The bit guard also proves that the quotient has a positive sign, so no ABS is needed before multiplication.
+   TRef quotient = emitir(IRTN(IR_DIV), dividend, divisor);
+   TRef truncated = emitir(IRTN(IR_FPMATH), quotient, IRFPM_TRUNC);
+   TRef product = emitir(IRTN(IR_MUL), truncated, divisor);
+   TRef remainder = emitir(IRTN(IR_SUB), dividend, product);
+   return negative ? emitir(IRTN(IR_NEG), remainder, lj_ir_ksimd(J, LJ_KSIMD_NEG)) : remainder;
+}
+#endif
+
+// Narrowing of remainder operator.
 TRef lj_opt_narrow_mod(jit_State* J, TRef rb, TRef rc, TValue* vb, TValue* vc)
 {
-   TRef tmp;
    rb = conv_str_tonum(J, rb, vb);
    rc = conv_str_tonum(J, rc, vc);
-   if ((LJ_DUALNUM or (J->flags & JIT_F_OPT_NARROW)) &&
-      tref_isinteger(rb) and tref_isinteger(rc) &&
+   if ((LJ_DUALNUM or (J->flags & JIT_F_OPT_NARROW)) and
+      tref_isinteger(rb) and tref_isinteger(rc) and
       (tvisint(vc) ? intV(vc) != 0 : !tviszero(vc))) {
       emitir(IRTGI(IR_NE), rc, lj_ir_kint(J, 0));
       return emitir(IRTI(IR_MOD), rb, rc);
    }
-   // b % c ==> b - floor(b/c)*c
+
+#if LJ_TARGET_X64
+   TRef remainder = narrow_mod_const(J, rb, rc, numberVnum(vb), numberVnum(vc));
+   if (remainder) return remainder;
+#endif
+
+   // Floating-point remainder follows fmod(): b - trunc(b/c)*c, with the sign of b.
    rb = lj_ir_tonum(J, rb);
    rc = lj_ir_tonum(J, rc);
-   tmp = emitir(IRTN(IR_DIV), rb, rc);
-   tmp = emitir(IRTN(IR_FPMATH), tmp, IRFPM_FLOOR);
-   tmp = emitir(IRTN(IR_MUL), tmp, rc);
-   return emitir(IRTN(IR_SUB), rb, tmp);
+#if LJ_TARGET_X64
+   return lj_ir_call(J, IRCALL_lj_vm_fmod, rb, rc);
+#else
+   return lj_ir_call(J, IRCALL_cmath_fmod, rb, rc);
+#endif
 }
 
-// Narrowing of power operator or math.pow.
+// Narrowing of power operator.
 TRef lj_opt_narrow_pow(jit_State* J, TRef rb, TRef rc, TValue* vb, TValue* vc)
 {
    rb = conv_str_tonum(J, rb, vb);

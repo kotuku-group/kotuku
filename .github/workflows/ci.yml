@@ -117,10 +117,12 @@ jobs:
         retention-days: 30
 
     - name: Run CTests (excluding audio/http)
-      run: ctest --build-config ${{ matrix.build_type }} --test-dir build/ci --output-on-failure -E "(audio|http|network_udp_broadcast_multicast)"
+      timeout-minutes: 10
+      run: ctest --build-config ${{ matrix.build_type }} --timeout 20 --test-dir build/ci --output-on-failure -E "(audio|http|network_udp_broadcast_multicast)"
 
     - name: Run http tests (allowed to fail)
-      run: ctest --build-config ${{ matrix.build_type }} --test-dir build/ci --output-on-failure -R "(http)" || true
+      timeout-minutes: 10
+      run: ctest --build-config ${{ matrix.build_type }} --timeout 30 --test-dir build/ci --output-on-failure -R "(http)" || true
 
     - name: Upload build artifacts on failure
       if: failure()

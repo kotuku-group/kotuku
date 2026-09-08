@@ -120,6 +120,15 @@ enum class XIF : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(XIF)
 
+// Options for XQuery evaluation flags.
+
+enum class XEF : uint32_t {
+   NIL = 0,
+   LIMIT_SCOPE = 0x00000001,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(XEF)
+
 // XQuery class definition
 
 #define VER_XQUERY (1.000000)
@@ -127,10 +136,10 @@ DEFINE_ENUM_FLAG_OPERATORS(XIF)
 // XQuery methods
 
 namespace xq {
-struct Evaluate { objXML * XML; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Search { objXML * XML; FUNCTION * Callback; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct RegisterFunction { CSTRING FunctionName; FUNCTION * Callback; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct InspectFunctions { CSTRING Name; XIF ResultFlags; CSTRING Result; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Evaluate { objXML *XML; int Index; XEF Flags; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Search { objXML *XML; FUNCTION Callback; int Index; XEF Flags; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct RegisterFunction { std::string_view FunctionName; FUNCTION Callback; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct InspectFunctions { std::string_view Name; XIF ResultFlags; std::string *Result; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -139,55 +148,134 @@ class objXQuery : public Object {
    static constexpr CLASSID CLASS_ID = CLASSID::XQUERY;
    static constexpr CSTRING CLASS_NAME = "XQuery";
 
-   using create = pf::Create<objXQuery>;
+   using create = kt::Create<objXQuery>;
+   objXQuery(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
+
+   std::string ErrorMsg;    // A readable description of the last parse or execution error.
+   std::string Path;        // Base path for resolving relative references.
+   std::string Statement;   // XQuery statements are specified here.
+   int64_t MemoryUsage;     // The total amount of memory allocated by the last compilation or evaluation.
 
    // Action stubs
 
    inline ERR activate() noexcept { return Action(AC::Activate, this, nullptr); }
    inline ERR clear() noexcept { return Action(AC::Clear, this, nullptr); }
-   inline ERR getKey(CSTRING Key, STRING Value, int Size) noexcept {
-      struct acGetKey args = { Key, Value, Size };
+   inline ERR getKey(std::string_view Key, std::string &Value) noexcept {
+      struct acGetKey args = { Key, &Value };
       auto error = Action(AC::GetKey, this, &args);
-      if ((error != ERR::Okay) and (Value)) Value[0] = 0;
+      if (error != ERR::Okay) Value.clear();
       return error;
    }
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR reset() noexcept { return Action(AC::Reset, this, nullptr); }
-   inline ERR acSetKey(CSTRING FieldName, CSTRING Value) noexcept {
+   inline ERR acSetKey(std::string_view FieldName, std::string_view Value) noexcept {
       struct acSetKey args = { FieldName, Value };
       return Action(AC::SetKey, this, &args);
    }
-   inline ERR evaluate(objXML * XML) noexcept {
-      struct xq::Evaluate args = { XML };
-      return(Action(AC(-1), this, &args));
+   inline ERR evaluate(objXML * XML, int Index, XEF Flags) noexcept {
+      struct xq::Evaluate args = { XML, Index, Flags };
+      return Action(AC(-1), this, &args);
    }
-   inline ERR search(objXML * XML, FUNCTION Callback) noexcept {
-      struct xq::Search args = { XML, &Callback };
-      return(Action(AC(-2), this, &args));
+   inline ERR search(objXML * XML, FUNCTION Callback, int Index, XEF Flags) noexcept {
+      struct xq::Search args = { XML, Callback, Index, Flags };
+      return Action(AC(-2), this, &args);
    }
-   inline ERR registerFunction(CSTRING FunctionName, FUNCTION Callback) noexcept {
-      struct xq::RegisterFunction args = { FunctionName, &Callback };
-      return(Action(AC(-3), this, &args));
+   inline ERR registerFunction(const std::string_view &FunctionName, FUNCTION Callback) noexcept {
+      struct xq::RegisterFunction args = { FunctionName, Callback };
+      return Action(AC(-3), this, &args);
    }
-   inline ERR inspectFunctions(CSTRING Name, XIF ResultFlags, CSTRING * Result) noexcept {
-      struct xq::InspectFunctions args = { Name, ResultFlags, (CSTRING)0 };
+   inline ERR inspectFunctions(const std::string_view &Name, XIF ResultFlags, std::string &Result) noexcept {
+      struct xq::InspectFunctions args = { Name, ResultFlags, &Result };
       ERR error = Action(AC(-4), this, &args);
-      if (Result) *Result = args.Result;
-      return(error);
+      return error;
    }
+
+   // Customised field getting
+
+   inline ERR getErrorMsg(std::string_view &Value) noexcept {
+      Value = this->ErrorMsg;
+      return ERR::Okay;
+   }
+
+   inline ERR getPath(std::string_view &Value) noexcept {
+      Value = this->Path;
+      return ERR::Okay;
+   }
+
+   inline ERR getStatement(std::string_view &Value) noexcept {
+      Value = this->Statement;
+      return ERR::Okay;
+   }
+
+   inline ERR getMemoryUsage(int64_t &Value) noexcept {
+      Value = this->MemoryUsage;
+      return ERR::Okay;
+   }
+
+   inline ERR getResult(struct XPathValue * &Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getResultString(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[4];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getFeatureFlags(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[12];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getResultType(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getResolveVariable(FUNCTION * &Value) noexcept {
+      auto field = &this->Class->Dictionary[14];
+      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
+      return get_field(this, Value);
+   }
+
+   inline ERR getFunctions(std::span<std::string> &Value) noexcept {
+      auto field = &this->Class->Dictionary[13];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::span<std::string> &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getVariables(std::span<std::string> &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::span<std::string> &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
-   template <class T> inline ERR setPath(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+   inline ERR setPath(const std::string_view &Value) noexcept {
+      this->Path = Value;
+      return ERR::Okay;
    }
 
-   template <class T> inline ERR setStatement(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[11];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+   inline ERR setStatement(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      return field->WriteValue(this, field, 0x00804300, &Value);
+   }
+
+   inline ERR setResolveVariable(const FUNCTION Value) noexcept {
+      auto field = &this->Class->Dictionary[14];
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
 };
@@ -195,5 +283,6 @@ class objXQuery : public Object {
 namespace xq {
 
 using XQueryFunction = ERR (*)(objXQuery *Query, std::string_view FunctionName, const std::vector<XPathValue> &Input, XPathValue &Result, APTR Meta);
+using XQueryResolveVariable = ERR (*)(objXQuery *Query, std::string_view Name, XPathValue *Result, APTR Meta);
 
 } // namespace xq

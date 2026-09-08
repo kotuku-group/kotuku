@@ -66,36 +66,6 @@ struct SampleFormatTraits<SFM::U8_BIT_MONO> {
    static constexpr bool is_stereo = false;
 };
 
-// Template-based loop type handler using constexpr if (C++17)
-template<LTYPE loop_type>
-constexpr int calculate_samples_until_end(
-   int position, int sample_length, int loop_start, int loop_end,
-   bool over_sampling, int *next_offset) {
-
-   *next_offset = 1;
-
-   if constexpr (loop_type IS LTYPE::UNIDIRECTIONAL) {
-      if (over_sampling) {
-         if ((position + 1) < loop_end) return (loop_end - 1) - position;
-         else {
-            *next_offset = loop_start - position;
-            return loop_end - position;
-         }
-      }
-      else return loop_end - position;
-   }
-   else { // Default/no loop
-      if (over_sampling) {
-         if ((position + 1) < sample_length) return (sample_length - 1) - position;
-         else {
-            *next_offset = 0;
-            return sample_length - position;
-         }
-      }
-      else return sample_length - position;
-   }
-}
-
 // Constexpr clamping functions for compile-time optimization
 
 template<typename T>
@@ -170,8 +140,13 @@ void convert_samples(const InputType* input, int count, OutputType* output) {
 static void audio_stopped_event(extAudio &Audio, int SampleHandle)
 {
    auto &sample = Audio.Samples[SampleHandle];
+   if (sample.OnStop.stale()) {
+      release_audio_callback(sample.OnStop);
+      return;
+   }
+
    if (sample.OnStop.isC()) {
-      pf::SwitchContext context(sample.OnStop.Context);
+      kt::SwitchContext context(sample.OnStop.Context);
       auto routine = (void (*)(extAudio *, int, APTR))sample.OnStop.Routine;
       routine(&Audio, SampleHandle, sample.OnStop.Meta);
    }
@@ -185,21 +160,26 @@ static void audio_stopped_event(extAudio &Audio, int SampleHandle)
 
 static BYTELEN fill_stream_buffer(int Handle, AudioSample &Sample, int Offset)
 {
+   if (Sample.Callback.stale()) {
+      release_audio_callback(Sample.Callback);
+      return BYTELEN(0);
+   }
+
    if (Sample.Callback.isC()) {
-      pf::SwitchContext context(Sample.Callback.Context);
+      kt::SwitchContext context(Sample.Callback.Context);
       auto routine = (BYTELEN (*)(int, int, uint8_t *, int, APTR))Sample.Callback.Routine;
-      return routine(Handle, Offset, Sample.Data, Sample.SampleLength<<sample_shift(Sample.SampleType), Sample.Callback.Meta);
+      return routine(Handle, Offset, Sample.Data.data(), Sample.SampleLength<<sample_shift(Sample.SampleType), Sample.Callback.Meta);
    }
    else if (Sample.Callback.isScript()) {
+      std::span span(Sample.Data.data(), Sample.SampleLength<<sample_shift(Sample.SampleType));
       const auto args = std::to_array<ScriptArg>({
          { "Handle", Handle },
          { "Offset", Offset },
-         { "Buffer", Sample.Data, FD_BUFFER },
-         { "Length", Sample.SampleLength<<sample_shift(Sample.SampleType), FD_BUFSIZE|FD_INT }
+         { "Buffer", &span, FDF_SPAN|FD_BYTE }
       });
 
       ERR result;
-      if (sc::Call(Sample.Callback, args, result) IS ERR::Okay) return BYTELEN(result);
+      if (!sc::Call(Sample.Callback, args, result)) return BYTELEN(result);
       else return BYTELEN(0);
    }
 
@@ -208,7 +188,7 @@ static BYTELEN fill_stream_buffer(int Handle, AudioSample &Sample, int Offset)
 
 //********************************************************************************************************************
 
-static ERR get_mix_amount(extAudio *Self, SAMPLE *MixLeft)
+[[maybe_unused]] static ERR get_mix_amount(extAudio *Self, SAMPLE *MixLeft)
 {
    auto ml = SAMPLE(0x7fffffff);
    for (int i=1; i < (int)Self->Sets.size(); i++) {
@@ -228,7 +208,7 @@ static ERR get_mix_amount(extAudio *Self, SAMPLE *MixLeft)
 extern "C" int dsReadData(Object *Self, void *Buffer, int Length) {
    if (Self->Class->BaseClassID IS CLASSID::SOUND) {
       int result;
-      if (((objSound *)Self)->read(Buffer, Length, &result) != ERR::Okay) return 0;
+      if (((objSound *)Self)->read(std::span<int8_t>((int8_t *)Buffer, Length), &result) != ERR::Okay) return 0;
       else return result;
    }
    else if (Self->Class->BaseClassID IS CLASSID::AUDIO) {
@@ -270,7 +250,7 @@ extern "C" void dsSeekData(Object *Self, int Offset) {
 
 static ERR set_channel_volume(extAudio *Self, AudioChannel *Channel)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if ((!Self) or (!Channel)) return log.warning(ERR::NullArgs);
 
@@ -323,9 +303,9 @@ static ERR set_channel_volume(extAudio *Self, AudioChannel *Channel)
 //********************************************************************************************************************
 // Process as many command batches as possible that will fit within MixLeft.
 
-ERR process_commands(extAudio *Self, SAMPLE Elements)
+[[maybe_unused]] static ERR process_commands(extAudio *Self, SAMPLE Elements)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    for (int index=1; index < (int)Self->Sets.size(); index++) {
       Self->Sets[index].MixLeft -= Elements;
@@ -373,7 +353,7 @@ static ERR audio_timer(extAudio *Self, int64_t Elapsed, int64_t CurrentTime)
 {
 #ifdef ALSA_ENABLED
 
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    static int16_t errcount = 0;
 
    // Check if we need to send out any OnStop events
@@ -393,8 +373,8 @@ static ERR audio_timer(extAudio *Self, int64_t Elapsed, int64_t CurrentTime)
    if (Self->Handle) {
       space_left = SAMPLE(snd_pcm_avail_update(Self->Handle)); // Returns available space measured in samples
    }
-   else if (Self->AudioBufferSize) { // Run in dummy mode - samples will be processed but not played
-      space_left = SAMPLE(Self->AudioBufferSize / Self->DriverBitSize);
+   else if (!Self->AudioBuffer.empty()) { // Run in dummy mode - samples will be processed but not played
+      space_left = SAMPLE(Self->AudioBuffer.size() / Self->DriverBitSize);
    }
    else {
       log.warning("ALSA not in an initialised state.");
@@ -414,22 +394,23 @@ static ERR audio_timer(extAudio *Self, int64_t Elapsed, int64_t CurrentTime)
 
          if (Self->activate() != ERR::Okay) {
             log.warning("Audio error is terminal, self-destructing...");
-            SendMessage(MSGID::FREE, MSF::NIL, &Self->UID, sizeof(OBJECTID));
-            return ERR::Failed;
+            SendMessage(MSGID::FREE, MSF::NIL, std::span((const int8_t *)&Self->UID, sizeof(OBJECTID)));
+            return ERR::Terminate;
          }
       }
 
       return ERR::Okay;
    }
 
-   if (space_left > SAMPLE(Self->AudioBufferSize / Self->DriverBitSize)) {
-      space_left = SAMPLE(Self->AudioBufferSize / Self->DriverBitSize);
+   auto buffer_size = SAMPLE(Self->AudioBuffer.size() / Self->DriverBitSize);
+   if (space_left > buffer_size) {
+      space_left = buffer_size;
    }
 
    // Fill our entire audio buffer with data to be sent to alsa
 
    auto space = space_left;
-   uint8_t *buffer = Self->AudioBuffer;
+   uint8_t *buffer = Self->AudioBuffer.data();
    while (space_left) {
       // Scan channels to check if an update rate is going to be met
 
@@ -454,7 +435,7 @@ static ERR audio_timer(extAudio *Self, int64_t Elapsed, int64_t CurrentTime)
 
    if (Self->Handle) {
       int err;
-      if ((err = snd_pcm_writei(Self->Handle, Self->AudioBuffer, space)) < 0) {
+      if ((err = snd_pcm_writei(Self->Handle, Self->AudioBuffer.data(), space)) < 0) {
          // If an EPIPE error is returned, a buffer underrun has probably occurred
 
          if (err IS -EPIPE) {
@@ -472,7 +453,7 @@ static ERR audio_timer(extAudio *Self, int64_t Elapsed, int64_t CurrentTime)
                if ((err = snd_pcm_prepare(Self->Handle)) >= 0) {
                   // Have another try at writing the audio data
                   if (snd_pcm_avail_update(Self->Handle) >= space) {
-                     snd_pcm_writei(Self->Handle, Self->AudioBuffer, space);
+                     snd_pcm_writei(Self->Handle, Self->AudioBuffer.data(), space);
                   }
                }
                else log.warning("snd_pcm_prepare() %s", snd_strerror(err));
@@ -494,7 +475,7 @@ static ERR audio_timer(extAudio *Self, int64_t Elapsed, int64_t CurrentTime)
 
 #else
 
-   #warning No audio timer support on this platform.
+   // No audio timer support on this platform.
    return ERR::NoSupport;
 
 #endif
@@ -575,7 +556,7 @@ static int samples_until_end_impl(int position, int sample_length, int lp_start,
 
 static int samples_until_end(extAudio *Self, AudioChannel &Channel, int &NextOffset)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    auto &sample = Self->Samples[Channel.SampleHandle];
 
@@ -653,7 +634,7 @@ static bool amiga_change(extAudio *Self, AudioChannel &Channel)
 
 static bool handle_sample_end(extAudio *Self, AudioChannel &Channel)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    int lp_start, lp_end;
    LTYPE lp_type;
 
@@ -706,15 +687,17 @@ static bool handle_sample_end(extAudio *Self, AudioChannel &Channel)
       if (sample.Stream) {
          // Read the next set of stream data into our sample buffer
          BYTELEN bytes_read = fill_stream_buffer(Channel.SampleHandle, sample, -1);
+         sample.BufferedLength = bytes_read;
          auto buffer_len = sample.SampleLength<<sample_shift(sample.SampleType);
          if (bytes_read < buffer_len) {
-            clearmem(sample.Data + bytes_read, buffer_len - bytes_read);
+            clearmem(sample.Data.data() + bytes_read, buffer_len - bytes_read);
          }
 
          if ((bytes_read <= 0) or (sample.PlayPos >= sample.StreamLength)) {
             // Loop back to the beginning if the client has defined a loop.  Otherwise finish.
             if (sample.Loop2Type != LTYPE::NIL) {
                sample.PlayPos = BYTELEN(0);
+               sample.BufferedLength = BYTELEN(0);
             }
             else Self->finish(Channel, true);
          }
@@ -780,9 +763,9 @@ static bool handle_sample_end(extAudio *Self, AudioChannel &Channel)
 //********************************************************************************************************************
 // Main entry point for mixing sound data to destination
 
-static ERR mix_data(extAudio *Self, int Elements, APTR Dest)
+[[maybe_unused]] static ERR mix_data(extAudio *Self, int Elements, APTR Dest)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    while (Elements > 0) {
       // Mix only as much as we can fit in our mixing buffer
@@ -792,37 +775,37 @@ static ERR mix_data(extAudio *Self, int Elements, APTR Dest)
       // Clear the mix buffer, then mix all channels to the buffer
 
       int window_size = sizeof(float) * (Self->Stereo ? (window<<1) : window);
-      clearmem(Self->MixBuffer, window_size);
+      clearmem(Self->MixBuffer.data(), window_size);
 
       for (auto n=1; n < (int)Self->Sets.size(); n++) {
          for (auto &c : Self->Sets[n].Channel) {
-            if (c.active()) mix_channel(Self, c, window, Self->MixBuffer);
+            if (c.active()) mix_channel(Self, c, window, Self->MixBuffer.data());
          }
 
          for (auto &c : Self->Sets[n].Shadow) {
-            if (c.active()) mix_channel(Self, c, window, Self->MixBuffer);
+            if (c.active()) mix_channel(Self, c, window, Self->MixBuffer.data());
          }
       }
 
       // Do optional post-processing
 
       if ((Self->Flags & (ADF::FILTER_LOW|ADF::FILTER_HIGH)) != ADF::NIL) {
-         if (Self->Stereo) filter_float_stereo(Self, (float *)Self->MixBuffer, window);
-         else filter_float_mono(Self, (float *)Self->MixBuffer, window);
+         if (Self->Stereo) filter_float_stereo(Self, Self->MixBuffer.data(), window);
+         else filter_float_mono(Self, Self->MixBuffer.data(), window);
       }
 
       // Convert the floating point data to the correct output format
 
       if (Self->BitDepth IS 32) { // Presumes a floating point target identical to our own
-         convert_float((float *)Self->MixBuffer, (Self->Stereo) ? window<<1 : window, (float *)Dest);
+         convert_float(Self->MixBuffer.data(), (Self->Stereo) ? window<<1 : window, (float *)Dest);
       }
       else if (Self->BitDepth IS 24) {
 
       }
       else if (Self->BitDepth IS 16) {
-         convert_float16((float *)Self->MixBuffer, (Self->Stereo) ? window<<1 : window, (int16_t *)Dest);
+         convert_float16(Self->MixBuffer.data(), (Self->Stereo) ? window<<1 : window, (int16_t *)Dest);
       }
-      else convert_float8((float *)Self->MixBuffer,  (Self->Stereo) ? window<<1 : window, (uint8_t *)Dest);
+      else convert_float8(Self->MixBuffer.data(),  (Self->Stereo) ? window<<1 : window, (uint8_t *)Dest);
 
       Dest = ((uint8_t *)Dest) + (window * Self->DriverBitSize);
       Elements -= window;
@@ -835,13 +818,13 @@ static ERR mix_data(extAudio *Self, int Elements, APTR Dest)
 
 static void mix_channel(extAudio *Self, AudioChannel &Channel, int TotalSamples, APTR Dest)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    auto &sample = Self->Samples[Channel.SampleHandle];
 
    // Check that we have something to mix
 
-   if ((!Channel.Frequency) or (!sample.Data) or (sample.SampleLength <= 0)) return;
+   if ((!Channel.Frequency) or (sample.Data.empty()) or (sample.SampleLength <= 0)) return;
 
    // Calculate resampling step (16.16 fixed point)
 
@@ -908,7 +891,7 @@ static void mix_channel(extAudio *Self, AudioChannel &Channel, int TotalSamples,
          }
 
          int mix_pos = Channel.PositionLow;
-         uint8_t *MixSample = sample.Data + (sample_size * Channel.Position); // source of sample data to mix into destination
+         uint8_t *MixSample = sample.Data.data() + (sample_size * Channel.Position); // source of sample data to mix into destination
 
          // Thread-safe: pass step direction as parameter instead of using global
          const int mix_step = ((Channel.Flags & CHF::BACKWARD) != CHF::NIL) ? -step : step;
@@ -986,7 +969,7 @@ static void mix_channel(extAudio *Self, AudioChannel &Channel, int TotalSamples,
 
          // Save state back to channel structure
          Channel.PositionLow = mix_pos & 0xffff;
-         Channel.Position = (mix_pos>>16) + ((MixSample - sample.Data) / sample_size);
+         Channel.Position = (mix_pos>>16) + ((MixSample - sample.Data.data()) / sample_size);
       }
       else if (mix_now < 0) {
          log.warning("Detected invalid mix values; TotalSamples: %d, MixNow: %d, SUE: %d, NextOffset: %d, Step: %d, ChannelPos: %d", TotalSamples, mix_now, sue, next_offset, step, Channel.Position);

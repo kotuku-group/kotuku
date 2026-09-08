@@ -4,10 +4,12 @@
 
 SSL_ERROR_CODE ssl_connect(SSL_HANDLE SSL, void *SocketHandle, const std::string &HostName)
 {
-   if ((!SSL) or ((SOCKET)SocketHandle == INVALID_SOCKET)) return SSL_ERROR_ARGS;
+   if ((!SSL) or ((SOCKET)SocketHandle IS INVALID_SOCKET)) return SSL_ERROR_ARGS;
 
    SSL->socket_handle = (SOCKET)SocketHandle;
    SSL->hostname = HostName;
+
+   if (auto error = flush_handshake_buffer(SSL); error != SSL_OK) return error;
 
    if (SSL->context_initialised) return SSL_ERROR_CONNECTING; // Already in handshake process
 
@@ -59,17 +61,7 @@ SSL_ERROR_CODE ssl_connect(SSL_HANDLE SSL, void *SocketHandle, const std::string
 
    // Send initial handshake data
    if ((out_buffer.cbBuffer > 0) and (out_buffer.pvBuffer != nullptr)) {
-      int sent = send(SSL->socket_handle, (char*)out_buffer.pvBuffer, out_buffer.cbBuffer, 0);
-      FreeContextBuffer(out_buffer.pvBuffer);
-
-      if (sent == SOCKET_ERROR) {
-         int error = WSAGetLastError();
-         SSL->last_win32_error = error;
-         if (error == WSAEWOULDBLOCK) {
-            return SSL_ERROR_WOULD_BLOCK;
-         }
-         return SSL_ERROR_FAILED;
-      }
+      if (auto error = queue_handshake_token(SSL, out_buffer.pvBuffer, out_buffer.cbBuffer); error != SSL_OK) return error;
    }
 
    // For simplicity, full handshake would need more rounds
@@ -88,9 +80,10 @@ SSL_ERROR_CODE ssl_accept(SSL_HANDLE SSL, const void* ClientData, int DataLength
 
    // Acquire server credentials if not already done
    if (!SSL->credentials_acquired) {
-      SCHANNEL_CRED cred_data;
+      KOTUKU_SCH_CREDENTIALS cred_data;
       memset(&cred_data, 0, sizeof(cred_data));
-      cred_data.dwVersion = SCHANNEL_CRED_VERSION;
+      cred_data.dwVersion = SCH_CREDENTIALS_VERSION;
+      cred_data.dwCredFormat = SCH_CRED_FORMAT_CERT_CONTEXT;
       cred_data.dwFlags = SCH_CRED_NO_SYSTEM_MAPPER | SCH_CRED_NO_DEFAULT_CREDS | SCH_CRED_MANUAL_CRED_VALIDATION |
                         SCH_CRED_IGNORE_NO_REVOCATION_CHECK | SCH_CRED_IGNORE_REVOCATION_OFFLINE;
       cred_data.cCreds = 1;
@@ -145,15 +138,14 @@ SSL_ERROR_CODE ssl_accept(SSL_HANDLE SSL, const void* ClientData, int DataLength
          nullptr,
          &in_buffer_desc,
          ASC_REQ_SEQUENCE_DETECT | ASC_REQ_REPLAY_DETECT | ASC_REQ_CONFIDENTIALITY |
-         ASC_REQ_EXTENDED_ERROR | ASC_REQ_ALLOCATE_MEMORY | ASC_REQ_STREAM |
-         ASC_REQ_MUTUAL_AUTH,
+         ASC_REQ_EXTENDED_ERROR | ASC_REQ_ALLOCATE_MEMORY | ASC_REQ_STREAM,
          SECURITY_NATIVE_DREP,
          &SSL->context,
          &out_buffer_desc,
          &context_attr,
          &expiry);
 
-      if (status == SEC_E_OK or status == SEC_I_CONTINUE_NEEDED) {
+      if (status IS SEC_E_OK or status IS SEC_I_CONTINUE_NEEDED) {
          SSL->context_initialised = true;
       }
    }
@@ -163,8 +155,7 @@ SSL_ERROR_CODE ssl_accept(SSL_HANDLE SSL, const void* ClientData, int DataLength
          &SSL->context,
          &in_buffer_desc,
          ASC_REQ_SEQUENCE_DETECT | ASC_REQ_REPLAY_DETECT | ASC_REQ_CONFIDENTIALITY |
-         ASC_REQ_EXTENDED_ERROR | ASC_REQ_ALLOCATE_MEMORY | ASC_REQ_STREAM |
-         ASC_REQ_MUTUAL_AUTH,
+         ASC_REQ_EXTENDED_ERROR | ASC_REQ_ALLOCATE_MEMORY | ASC_REQ_STREAM,
          SECURITY_NATIVE_DREP,
          &SSL->context,
          &out_buffer_desc,
@@ -172,8 +163,8 @@ SSL_ERROR_CODE ssl_accept(SSL_HANDLE SSL, const void* ClientData, int DataLength
          &expiry);
    }
 
-   if ((status == SEC_E_OK) or (status == SEC_I_CONTINUE_NEEDED)) {
-      if (status == SEC_E_OK) {
+   if ((status IS SEC_E_OK) or (status IS SEC_I_CONTINUE_NEEDED)) {
+      if (status IS SEC_E_OK) {
          auto stream_status = QueryContextAttributes(&SSL->context, SECPKG_ATTR_STREAM_SIZES, &SSL->stream_sizes);
          if (stream_status != SEC_E_OK) {
             SSL->last_security_status = stream_status;
@@ -182,14 +173,12 @@ SSL_ERROR_CODE ssl_accept(SSL_HANDLE SSL, const void* ClientData, int DataLength
       }
 
       if (out_buffer.pvBuffer and out_buffer.cbBuffer > 0) {
-         auto bytes_sent = send(SSL->socket_handle, (const char *)out_buffer.pvBuffer, out_buffer.cbBuffer, 0);
-         if (bytes_sent < 0) return SSL_ERROR_FAILED;
-         else if (unsigned(bytes_sent) != out_buffer.cbBuffer) return SSL_ERROR_FAILED;
-
-         FreeContextBuffer(out_buffer.pvBuffer);
+         if (auto error = queue_handshake_token(SSL, out_buffer.pvBuffer, out_buffer.cbBuffer); error != SSL_OK) {
+            return error;
+         }
       }
 
-      if (status == SEC_E_OK) return SSL_OK;
+      if (status IS SEC_E_OK) return SSL_OK;
       else return SSL_NEED_DATA;
    }
    else {

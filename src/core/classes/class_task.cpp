@@ -16,17 +16,13 @@ task.  Arguments can be passed to the executable by setting the #Parameters fiel
 use the #Activate() action to run the executable.  If the program executes successfully, the task object can be
 removed and this will not impact the running program.
 
-The task object that represents the active process can be acquired from ~CurrentTask().
+The task object that represents the active process can be acquired from ~Core.CurrentTask().
 
 -END-
 
 *********************************************************************************************************************/
 
 #define PRV_TASK
-
-#ifdef __CYGWIN__
-#undef __unix__
-#endif
 
 #ifdef __unix__
  #include <unistd.h>
@@ -45,13 +41,14 @@ The task object that represents the active process can be acquired from ~Current
 #endif
 
 #ifdef _WIN32
- #ifdef __CYGWIN__
-  #include <unistd.h>
- #else
-  #include <direct.h>
- #endif
+ #include <direct.h>
  #include <stdio.h>
 #endif
+
+#include <algorithm>
+#include <bit>
+#include <fstream>
+#include <vector>
 
 #include "../defs.h"
 #include <kotuku/main.h>
@@ -71,6 +68,12 @@ static void cleanup_task_fds(int input_fd, int out_fd, int out_errfd, int in_fd,
    if (out_errfd != -1) close(out_errfd);
    if (in_fd != -1)     close(in_fd);
    if (in_errfd != -1)  close(in_errfd);
+}
+
+static void set_task_pipe_nonblocking(int FD)
+{
+   auto flags = fcntl(FD, F_GETFL);
+   if (flags != -1) fcntl(FD, F_SETFL, flags | O_NONBLOCK);
 }
 #endif
 
@@ -95,7 +98,7 @@ constexpr int REG_DWORD = 4;
 constexpr int REG_DWORD_BIG_ENDIAN = 5;
 constexpr int REG_QWORD = 11;
 constexpr int REG_SZ = 1;
-constexpr int REG_EXPAND_SZ = 0x00020000;
+constexpr int REG_EXPAND_SZ = 2;
 
 #define KEY_READ  0x20019
 #define KEY_WRITE 0x20006
@@ -106,18 +109,20 @@ constexpr int MAX_PATH = 260;
 extern "C" DLLCALL int WINAPI RegOpenKeyExA(int,CSTRING,int,int,APTR *);
 extern "C" DLLCALL int WINAPI RegQueryValueExA(APTR,CSTRING,int *,int *,int8_t *,int *);
 extern "C" DLLCALL int WINAPI RegSetValueExA(APTR hKey, CSTRING lpValueName, int Reserved, int dwType, const void *lpData, int cbData);
+extern "C" DLLCALL int WINAPI RegEnumValueA(APTR hKey, int dwIndex, STRING lpValueName, int *lpcchValueName, int *lpReserved, int *lpType, int8_t *lpData, int *lpcbData);
+extern "C" DLLCALL int WINAPI RegEnumKeyExA(APTR hKey, int dwIndex, STRING lpName, int *lpcchName, int *lpReserved, STRING lpClass, int *lpcchClass, void *lpftLastWriteTime);
+extern "C" DLLCALL int WINAPI GetFileVersionInfoSizeA(CSTRING,int *);
+extern "C" DLLCALL int WINAPI GetFileVersionInfoA(CSTRING,int,int,APTR);
 
 static MSGID glProcessBreak = MSGID::NIL;
 #endif
 
-static ERR GET_LaunchPath(extTask *, CSTRING *);
-
 static ERR TASK_Activate(extTask *);
-static ERR TASK_Free(extTask *);
 static ERR TASK_GetEnv(extTask *, struct task::GetEnv *);
 static ERR TASK_GetKey(extTask *, struct acGetKey *);
 static ERR TASK_Init(extTask *);
-static ERR TASK_NewPlacement(extTask *);
+static ERR TASK_New(extTask *);
+static ERR TASK_Query(extTask *);
 static ERR TASK_SetEnv(extTask *, struct task::SetEnv *);
 static ERR TASK_SetKey(extTask *, struct acSetKey *);
 static ERR TASK_Write(extTask *, struct acWrite *);
@@ -126,31 +131,8 @@ static ERR TASK_AddArgument(extTask *, struct task::AddArgument *);
 static ERR TASK_Expunge(extTask *);
 static ERR TASK_Quit(extTask *);
 
-static const FieldDef clFlags[] = {
-   { "Wait",       TSF::WAIT },
-   { "Shell",      TSF::SHELL },
-   { "ResetPath",  TSF::RESET_PATH },
-   { "Privileged", TSF::PRIVILEGED },
-   { "LogAll",     TSF::VERBOSE },
-   { "Quiet",      TSF::QUIET },
-   { "Attached",   TSF::ATTACHED },
-   { "Detached",   TSF::DETACHED },
-   { "Pipe",       TSF::PIPE },
-   { nullptr, 0 }
-};
-
-static const ActionArray clActions[] = {
-   { AC::Activate,      TASK_Activate },
-   { AC::Free,          TASK_Free },
-   { AC::GetKey,        TASK_GetKey },
-   { AC::NewPlacement,  TASK_NewPlacement },
-   { AC::SetKey,        TASK_SetKey },
-   { AC::Init,          TASK_Init },
-   { AC::Write,         TASK_Write },
-   { AC::NIL, nullptr }
-};
-
 #include "class_task_def.c"
+#include "../microsoft/pe_metadata.cpp"
 
 //********************************************************************************************************************
 
@@ -184,15 +166,16 @@ static void task_stdinput_callback(HOSTHANDLE FD, void *Task)
       buffer[0] = 0;
    }
 
-   if (Self->InputCallback.isC()) {
-      auto routine = (void (*)(extTask *, APTR, int, ERR, APTR))Self->InputCallback.Routine;
-      routine(Self, buffer, bytes_read, error, Self->InputCallback.Meta);
+   if (Self->InputCallback.stale()) clear_callback(Self->InputCallback);
+   else if (Self->InputCallback.isC()) {
+      auto routine = (void (*)(extTask *, std::span<std::byte>, ERR, APTR))Self->InputCallback.Routine;
+      routine(Self, std::span<std::byte>((std::byte *)buffer, bytes_read), error, Self->InputCallback.Meta);
    }
    else if (Self->InputCallback.isScript()) {
+      std::span<std::byte> span((std::byte *)buffer, bytes_read);
       sc::Call(Self->InputCallback, std::to_array<ScriptArg>({
          { "Task",       Self },
-         { "Buffer",     buffer, FD_PTRBUFFER },
-         { "BufferSize", bytes_read, FD_INT|FD_BUFSIZE },
+         { "Buffer",     &span, FDF_SPAN|FD_BYTE },
          { "Status",     int(error), FD_ERROR }
       }));
    }
@@ -226,61 +209,123 @@ static void check_incoming(extTask *Self)
 // sent to a callback function.
 
 #ifdef __unix__
-static void task_stdout(HOSTHANDLE FD, APTR Task)
+static int read_task_stdout(HOSTHANDLE FD, APTR Task)
 {
-   thread_local uint8_t recursive = 0;
-
-   if (recursive) return;
-
-   recursive++;
-
    int len;
    char buffer[TASK_IO_BUFFER_SIZE];
    if ((len = read(FD, buffer, sizeof(buffer)-1)) > 0) {
       buffer[len] = 0;
 
       auto task = (extTask *)Task;
-      if (task->OutputCallback.isC()) {
-         auto routine = (void (*)(extTask *, APTR, int, APTR))task->OutputCallback.Routine;
-         routine(task, buffer, len, task->OutputCallback.Meta);
+      if (task->OutputCallback.stale()) clear_callback(task->OutputCallback);
+      else if (task->OutputCallback.isC()) {
+         auto routine = (void (*)(extTask *, std::span<std::byte> Buffer, APTR Meta))task->OutputCallback.Routine;
+         routine(task, std::span<std::byte>((std::byte *)buffer, len), task->OutputCallback.Meta);
       }
       else if (task->OutputCallback.isScript()) {
+         std::span<std::byte> span((std::byte *)buffer, len);
          sc::Call(task->OutputCallback, std::to_array<ScriptArg>({
-            { "Task",       Task,   FD_OBJECTPTR },
-            { "Buffer",     buffer, FD_PTRBUFFER },
-            { "BufferSize", len,    FD_INT|FD_BUFSIZE }
+            { "Task",   Task, FD_OBJECTPTR },
+            { "Buffer", &span, FDF_SPAN|FD_BYTE }
          }));
       }
    }
+
+   return len;
+}
+
+static void close_task_stdout(extTask *Task, HOSTHANDLE FD)
+{
+   if (Task->InFD IS FD) Task->InFD = -1;
+   RegisterFD(FD, RFD::READ|RFD::REMOVE, &task_stdout, Task);
+   close(FD);
+}
+
+static int process_task_stdout(HOSTHANDLE FD, APTR Task, bool Drain)
+{
+   thread_local uint8_t recursive = 0;
+
+   if (recursive) return -1;
+
+   int len = -1;
+   recursive++;
+   do {
+      len = read_task_stdout(FD, Task);
+      if ((not Drain) or (len <= 0)) break;
+   } while (true);
    recursive--;
+
+   return len;
+}
+
+static void task_stdout(HOSTHANDLE FD, APTR Task)
+{
+   if (process_task_stdout(FD, Task, false) IS 0) close_task_stdout((extTask *)Task, FD);
+}
+
+static bool drain_task_stdout(HOSTHANDLE FD, APTR Task)
+{
+   return process_task_stdout(FD, Task, true) IS 0;
+}
+
+static int read_task_stderr(HOSTHANDLE FD, APTR Task)
+{
+   char buffer[TASK_IO_BUFFER_SIZE];
+   int len;
+
+   if ((len = read(FD, buffer, sizeof(buffer)-1)) > 0) {
+      buffer[len] = 0;
+
+      auto task = (extTask *)Task;
+      if (task->ErrorCallback.stale()) clear_callback(task->ErrorCallback);
+      else if (task->ErrorCallback.isC()) {
+         auto routine = (void (*)(extTask *, std::span<std::byte>, APTR))task->ErrorCallback.Routine;
+         routine(task, std::span<std::byte>((std::byte *)buffer, len), task->ErrorCallback.Meta);
+      }
+      else if (task->ErrorCallback.isScript()) {
+         std::span<std::byte> span((std::byte *)buffer, len);
+         sc::Call(task->ErrorCallback, std::to_array<ScriptArg>({
+            { "Task", Task, FD_OBJECTPTR },
+            { "Data", &span, FDF_SPAN|FD_BYTE }
+         }));
+      }
+   }
+
+   return len;
+}
+
+static void close_task_stderr(extTask *Task, HOSTHANDLE FD)
+{
+   if (Task->ErrFD IS FD) Task->ErrFD = -1;
+   RegisterFD(FD, RFD::READ|RFD::REMOVE, &task_stderr, Task);
+   close(FD);
+}
+
+static int process_task_stderr(HOSTHANDLE FD, APTR Task, bool Drain)
+{
+   thread_local uint8_t recursive = 0;
+
+   if (recursive) return -1;
+
+   int len = -1;
+   recursive++;
+   do {
+      len = read_task_stderr(FD, Task);
+      if ((not Drain) or (len <= 0)) break;
+   } while (true);
+   recursive--;
+
+   return len;
 }
 
 static void task_stderr(HOSTHANDLE FD, APTR Task)
 {
-   char buffer[TASK_IO_BUFFER_SIZE];
-   int len;
-   thread_local uint8_t recursive = 0;
+   if (process_task_stderr(FD, Task, false) IS 0) close_task_stderr((extTask *)Task, FD);
+}
 
-   if (recursive) return;
-
-   recursive++;
-   if ((len = read(FD, buffer, sizeof(buffer)-1)) > 0) {
-      buffer[len] = 0;
-
-      auto task = (extTask *)Task;
-      if (task->ErrorCallback.isC()) {
-         auto routine = (void (*)(extTask *, APTR, int, APTR))task->ErrorCallback.Routine;
-         routine(task, buffer, len, task->ErrorCallback.Meta);
-      }
-      else if (task->ErrorCallback.isScript()) {
-         sc::Call(task->ErrorCallback, std::to_array<ScriptArg>({
-            { "Task", Task, FD_OBJECTPTR },
-            { "Data", buffer, FD_PTRBUFFER },
-            { "Size", len, FD_INT|FD_BUFSIZE }
-         }));
-      }
-   }
-   recursive--;
+static bool drain_task_stderr(HOSTHANDLE FD, APTR Task)
+{
+   return process_task_stderr(FD, Task, true) IS 0;
 }
 #endif
 
@@ -292,21 +337,21 @@ static void task_stderr(HOSTHANDLE FD, APTR Task)
 static void output_callback(extTask *Task, FUNCTION *Callback, APTR Buffer, int Size)
 {
    if (Callback->isC()) {
-      auto routine = (void (*)(extTask *, APTR, int, APTR))Callback->Routine;
-      routine(Task, Buffer, Size, Callback->Meta);
+      auto routine = (void (*)(extTask *, std::span<std::byte>, APTR))Callback->Routine;
+      routine(Task, std::span<std::byte>((std::byte *)Buffer, Size), Callback->Meta);
    }
    else if (Callback->isScript()) {
+      std::span<std::byte> span((std::byte *)Buffer, Size);
       sc::Call(*Callback, std::to_array<ScriptArg>({
          { "Task", Task, FD_OBJECTPTR },
-         { "Data", Buffer, FD_PTRBUFFER },
-         { "Size", Size, FD_INT|FD_BUFSIZE }
+         { "Data", &span, FDF_SPAN|FD_BYTE }
       }));
    }
 }
 
 static void task_incoming_stdout(WINHANDLE Handle, extTask *Task)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    thread_local uint8_t recursive = 0;
 
    if (recursive) return;
@@ -328,7 +373,7 @@ static void task_incoming_stdout(WINHANDLE Handle, extTask *Task)
 
 static void task_incoming_stderr(WINHANDLE Handle, extTask *Task)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    thread_local uint8_t recursive = 0;
 
    if (recursive) return;
@@ -353,14 +398,14 @@ static void task_incoming_stderr(WINHANDLE Handle, extTask *Task)
 
 extern "C" void task_register_stdout(extTask *Task, WINHANDLE Handle)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.traceBranch("Handle: %d", (int)(MAXINT)Handle);
    RegisterFD(Handle, RFD::READ, (void (*)(void *, void *))&task_incoming_stdout, Task);
 }
 
 extern "C" void task_register_stderr(extTask *Task, WINHANDLE Handle)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.traceBranch("Handle: %d", (int)(MAXINT)Handle);
    RegisterFD(Handle, RFD::READ, (void (*)(void *, void *))&task_incoming_stderr, Task);
 }
@@ -372,13 +417,6 @@ extern "C" void task_deregister_incoming(WINHANDLE Handle)
    RegisterFD(Handle, RFD::REMOVE|RFD::READ|RFD::WRITE|RFD::EXCEPT, nullptr, nullptr);
 }
 #endif
-
-//********************************************************************************************************************
-
-static ERR msg_waitforobjects(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgSize)
-{
-   return ERR::Terminate;
-}
 
 //********************************************************************************************************************
 
@@ -396,28 +434,38 @@ static CSTRING action_id_name(ACTIONID ActionID)
 
 //********************************************************************************************************************
 
-static ERR msg_action(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgSize)
+static ERR msg_action(APTR Custom, int MsgID, MSGID MsgType, std::span<std::byte> Message)
 {
-   pf::Log log("ProcessMessages");
+   kt::Log log("ProcessMessages");
    ActionMessage *action;
+   const FunctionField *copied_fields = nullptr;
+   bool executed = false;
 
-   if (not (action = (ActionMessage *)Message)) {
+   if (Message.size() < sizeof(ActionMessage)) {
       log.warning("No data attached to MSGID::ACTION message.");
-      return ERR::Okay;
+      return ERR::InvalidData;
+   }
+   action = (ActionMessage *)Message.data();
+
+   const auto payload_size = Message.size() - sizeof(ActionMessage);
+   if (action->SendArgs and ((action->ArgsSize <= 0) or (size_t(action->ArgsSize) > payload_size))) {
+      log.warning("MSGID::ACTION contains a truncated argument record.");
+      return ERR::InvalidData;
    }
 
+   copied_fields = action->Fields;
+
    #ifdef DBG_INCOMING
-      log.function("Executing action %s on object #%d, Data: %p, Size: %d", action_id_name(action->ActionID), action->ObjectID, Message, MsgSize);
+      log.function("Executing action %s on object #%d, Data: %p, Size: %d", action_id_name(action->ActionID), action->ObjectID, Message.data(), int(Message.size()));
    #endif
 
    if ((action->ObjectID) and (action->ActionID != AC::NIL)) {
       OBJECTPTR obj;
-      ERR error;
-      if ((error = AccessObject(action->ObjectID, 5000, &obj)) IS ERR::Okay) {
+      if (auto error = AccessObject(action->ObjectID, 5000, &obj); !error) {
          if (action->SendArgs IS false) {
-            obj->setFlag(NF::MESSAGE);
+            glCurrentActionMsg = action;
             Action(action->ActionID, obj, nullptr);
-            obj->clearFlag(NF::MESSAGE);
+            glCurrentActionMsg = nullptr;
             ReleaseObject(obj);
          }
          else {
@@ -430,46 +478,80 @@ static ERR msg_action(APTR Custom, int MsgID, int MsgType, APTR Message, int Msg
             }
 
             if (fields) {
-               obj->setFlag(NF::MESSAGE);
-               Action(action->ActionID, obj, action+1);
-               obj->clearFlag(NF::MESSAGE);
+               // Argument pointers were serialised as offsets by QueueAction(); rebase them against this copy.
+               if (make_args_absolute(fields, action->ArgsSize, (int8_t *)(action + 1), payload_size) != ERR::Okay) {
+                  log.warning("MSGID::ACTION contains invalid serialised argument pointers.");
+               }
+               else {
+                  glCurrentActionMsg = action;
+                  Action(action->ActionID, obj, action+1);
+                  executed = true;
+                  glCurrentActionMsg = nullptr;
+               }
                ReleaseObject(obj);
             }
+            else ReleaseObject(obj);
          }
       }
-      else {
-         if ((error != ERR::NoMatchingObject) and (error != ERR::MarkedForDeletion)) {
-            if (action->ActionID > AC::NIL) log.warning("Could not gain access to object %d to execute action %s.", action->ObjectID, action_id_name(action->ActionID));
-            else log.warning("Could not gain access to object %d to execute method %d.", action->ObjectID, int(action->ActionID));
-         }
+      else if ((error != ERR::NoMatchingObject) and (error != ERR::MarkedForDeletion)) {
+         if (action->ActionID > AC::NIL) log.warning("Could not gain access to object %d to execute action %s.", action->ObjectID, action_id_name(action->ActionID));
+         else log.warning("Could not gain access to object %d to execute method %d.", action->ObjectID, int(action->ActionID));
       }
    }
    else log.warning("Action message %s specifies an object ID of #%d.", action_id_name(action->ActionID), action->ObjectID);
+
+   if (action->SendArgs and copied_fields) {
+      release_copied_args(copied_fields, action->ArgsSize, (int8_t *)(action + 1), not executed);
+   }
 
    return ERR::Okay;
 }
 
 //********************************************************************************************************************
 
-static ERR msg_quit(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgSize)
+static ERR msg_quit(APTR Custom, int MsgID, MSGID MsgType, std::span<std::byte> Message)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.function("Processing quit message");
    glTaskState = TSTATE::STOPPING;
    return ERR::Okay;
 }
 
 //********************************************************************************************************************
+
+#ifdef __unix__
+static void task_process_end(extTask *Task, int ReturnCode, bool Returned)
+{
+   if ((Task->InFD != -1) and (drain_task_stdout(Task->InFD, Task))) close_task_stdout(Task, Task->InFD);
+   if ((Task->ErrFD != -1) and (drain_task_stderr(Task->ErrFD, Task))) close_task_stderr(Task, Task->ErrFD);
+
+   if (Returned) {
+      Task->ReturnCode = ReturnCode;
+      Task->ReturnCodeSet = true;
+   }
+
+   if (Task->ExitCallback.stale()) clear_callback(Task->ExitCallback);
+   else if (Task->ExitCallback.isC()) {
+      auto routine = (void (*)(extTask *, APTR))Task->ExitCallback.Routine;
+      routine(Task, Task->ExitCallback.Meta);
+   }
+   else if (Task->ExitCallback.isScript()) {
+      sc::Call(Task->ExitCallback, std::to_array<ScriptArg>({ { "Task", Task, FD_OBJECTPTR } }));
+   }
+}
+#endif
+
+//********************************************************************************************************************
 // Determine whether or not a process is alive
 
 extern "C" ERR validate_process(int ProcessID)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    log.function("PID: %d", ProcessID);
 
    if (glValidateProcessID IS ProcessID) glValidateProcessID = 0;
-   if ((ProcessID IS glProcessID) or (!ProcessID)) return ERR::Okay;
+   if ((ProcessID IS glProcessID) or (not ProcessID)) return ERR::Okay;
 
    #ifdef _WIN32
       // On Windows we don't check if the process is alive because validation can often occur during the final shutdown
@@ -483,15 +565,24 @@ extern "C" ERR validate_process(int ProcessID)
    #endif
 
    OBJECTID task_id = 0;
+   int return_code = 0;
+   bool returned = false;
+
    for (auto it = glTasks.begin(); it != glTasks.end(); it++) {
       if (it->ProcessID IS ProcessID) {
          task_id = it->TaskID;
+         return_code = it->ReturnCode;
+         returned = it->Returned;
          glTasks.erase(it);
          break;
       }
    }
 
    if (not task_id) return ERR::False;
+
+   #ifdef __unix__
+      if (auto task = (extTask *)GetObjectPtr(task_id)) task_process_end(task, return_code, returned);
+   #endif
 
    evTaskRemoved task_removed = { GetEventID(EVG::SYSTEM, "task", "removed"), task_id, ProcessID };
    BroadcastEvent(&task_removed, sizeof(task_removed));
@@ -507,7 +598,7 @@ extern "C" ERR validate_process(int ProcessID)
 #ifdef _WIN32
 static void task_process_end(WINHANDLE FD, extTask *Task)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    winGetExitCodeProcess(Task->Platform, &Task->ReturnCode);
    if (Task->ReturnCode != 259) {
@@ -524,7 +615,7 @@ static void task_process_end(WINHANDLE FD, extTask *Task)
 
       do {
          size = sizeof(buffer);
-         if ((!winReadStd(Task->Platform, TSTD_OUT, buffer, &size)) and (size)) {
+         if ((not winReadStd(Task->Platform, TSTD_OUT, buffer, &size)) and (size)) {
             log.msg("Processing %d remaining bytes on stdout.", size);
             output_callback(Task, &Task->OutputCallback, buffer, size);
          }
@@ -533,7 +624,7 @@ static void task_process_end(WINHANDLE FD, extTask *Task)
 
       do {
          size = sizeof(buffer);
-         if ((!winReadStd(Task->Platform, TSTD_ERR, buffer, &size)) and (size)) {
+         if ((not winReadStd(Task->Platform, TSTD_ERR, buffer, &size)) and (size)) {
             log.msg("Processing %d remaining bytes on stderr.", size);
             output_callback(Task, &Task->ErrorCallback, buffer, size);
          }
@@ -547,7 +638,8 @@ static void task_process_end(WINHANDLE FD, extTask *Task)
 
    // Call ExitCallback, if specified
 
-   if (Task->ExitCallback.isC()) {
+   if (Task->ExitCallback.stale()) clear_callback(Task->ExitCallback);
+   else if (Task->ExitCallback.isC()) {
       auto routine = (void (*)(extTask *, APTR))Task->ExitCallback.Routine;
       routine(Task, Task->ExitCallback.Meta);
    }
@@ -562,7 +654,7 @@ static void task_process_end(WINHANDLE FD, extTask *Task)
 
    // Send a break if we're waiting for this process to end
 
-   if (((Task->Flags & TSF::WAIT) != TSF::NIL) and (Task->TimeOut > 0)) SendMessage(glProcessBreak, MSF::NIL, nullptr, 0);
+   if (((Task->Flags & TSF::WAIT) != TSF::NIL) and (Task->Timeout > 0)) SendMessage(glProcessBreak, MSF::NIL, {});
 }
 #endif
 
@@ -571,14 +663,14 @@ static void task_process_end(WINHANDLE FD, extTask *Task)
 #ifdef _WIN32
 extern "C" void register_process_pipes(extTask *Self, WINHANDLE ProcessHandle)
 {
-   pf::Log log;
+   kt::Log log;
    log.traceBranch("Process: %d", (int)(MAXINT)ProcessHandle);
    RegisterFD(ProcessHandle, RFD::READ, (void (*)(void *, void *))&task_process_end, Self);
 }
 
 extern "C" void deregister_process_pipes(extTask *Self, WINHANDLE ProcessHandle)
 {
-   pf::Log log;
+   kt::Log log;
    log.traceBranch("Process: %d", (int)(MAXINT)ProcessHandle);
    if (ProcessHandle) RegisterFD(ProcessHandle, RFD::REMOVE|RFD::READ|RFD::WRITE|RFD::EXCEPT, nullptr, nullptr);
 }
@@ -595,7 +687,7 @@ On successful execution, the ProcessID will refer to the ID of the executed proc
 hosting platform's unique process numbers.
 
 If the `WAIT` flag is specified, this action will not return until the executed process has returned or the
-#TimeOut (if specified) has expired.  Messages are processed as normal during this time, ensuring that your
+#Timeout (if specified) has expired.  Messages are processed as normal during this time, ensuring that your
 process remains responsive while waiting.
 
 The process' return code can be read from the #ReturnCode field after the process has completed its execution.
@@ -612,50 +704,56 @@ DOS window from appearing.  The DOS window will also be hidden if the stdout or 
 Okay
 MissingPath: The Location field has not been set.
 Failed
-TimeOut:     Can be returned if the `WAIT` flag is used.  Indicates that the process was launched, but the timeout expired before the process returned.
+Timeout:     Can be returned if the `WAIT` flag is used.  Indicates that the process was launched, but the timeout expired before the process returned.
+ProcessCreation
+
 -END-
 
 *********************************************************************************************************************/
 
 static ERR TASK_Activate(extTask *Self)
 {
-   pf::Log log;
-   int i, j;
+   kt::Log log;
+   int i;
    ERR error;
-   #ifdef _WIN32
-      std::string launchdir;
-      bool hide_output;
-      int winerror;
-   #endif
-   #ifdef __unix__
-      int pid;
-      int8_t privileged, shell;
-   #endif
+#ifdef _WIN32
+   std::string launchdir;
+   bool hide_output;
+   int winerror;
+#endif
+#ifdef __unix__
+   int pid;
+   int8_t privileged, shell;
+   int8_t requested_shell;
+#endif
 
    Self->ReturnCodeSet = false;
 
    if (Self->Location.empty()) return log.warning(ERR::MissingPath);
 
-   if (not glJanitorActive) {
-      pf::SwitchContext ctx(glCurrentTask);
-      auto call = C_FUNCTION(process_janitor);
-      SubscribeTimer(60, &call, &glProcessJanitor);
-      glJanitorActive = true;
-   }
+   #ifndef __unix__
+      // This is a backup in case SIGCHLD signals don't work.  It terminates automatically if no processes remain.
+      if (not glJanitorActive) {
+         kt::SwitchContext ctx(glCurrentTask);
+         auto call = C_FUNCTION(process_janitor);
+         SubscribeTimer(60, &call, &glProcessJanitor);
+         glJanitorActive = true;
+      }
+   #endif
 
 #ifdef _WIN32
    // Determine the launch folder
 
    if (not Self->LaunchPath.empty()) {
       std::string rpath;
-      if (ResolvePath(Self->LaunchPath, RSF::APPROXIMATE|RSF::PATH, &rpath) IS ERR::Okay) {
+      if (!ResolvePath(Self->LaunchPath, RSF::APPROXIMATE|RSF::PATH, &rpath)) {
          launchdir.assign(rpath);
       }
       else launchdir.assign(Self->LaunchPath);
    }
    else if ((Self->Flags & TSF::RESET_PATH) != TSF::NIL) {
       std::string rpath;
-      if (ResolvePath(Self->Location, RSF::APPROXIMATE|RSF::PATH, &rpath) IS ERR::Okay) {
+      if (!ResolvePath(Self->Location, RSF::APPROXIMATE|RSF::PATH, &rpath)) {
          launchdir.assign(rpath);
       }
       else launchdir.assign(Self->Location);
@@ -670,7 +768,7 @@ static ERR TASK_Activate(extTask *Self)
    std::ostringstream buffer;
    buffer << '"';
    std::string rpath;
-   if (ResolvePath(Self->Location, RSF::APPROXIMATE|RSF::PATH, &rpath) IS ERR::Okay) {
+   if (!ResolvePath(Self->Location, RSF::APPROXIMATE|RSF::PATH, &rpath)) {
       buffer << rpath;
    }
    else buffer << Self->Location;
@@ -687,7 +785,7 @@ static ERR TASK_Activate(extTask *Self)
          // Redirection argument detected
 
          auto sv = std::string_view(param.begin()+1, param.end());
-         if (ResolvePath(sv, RSF::NO_FILE_CHECK, &redirect_stdout) IS ERR::Okay) {
+         if (!ResolvePath(sv, RSF::NO_FILE_CHECK, &redirect_stdout)) {
             redirect_stderr.assign(redirect_stdout);
          }
 
@@ -732,7 +830,7 @@ static ERR TASK_Activate(extTask *Self)
             continue;
          }
          else if (final_buffer[i] IS '\'') {
-            for (j=i+1; final_buffer[j]; j++) {
+            for (auto j=i+1; final_buffer[j]; j++) {
                if (final_buffer[j] IS '\'') {
                   if (final_buffer[j+1] <= 0x20) {
                      final_buffer[i] = '"';
@@ -771,20 +869,24 @@ static ERR TASK_Activate(extTask *Self)
    if (Self->ErrorCallback.defined()) internal_redirect |= TSTD_ERR;
    if ((Self->Flags & TSF::PIPE) != TSF::NIL) internal_redirect |= TSTD_IN;
 
-   if (not (winerror = winLaunchProcess(Self, final_buffer.data(), (!launchdir.empty()) ? launchdir.data() : 0, group,
-         internal_redirect, &Self->Platform, hide_output, redirect_stdout.data(), redirect_stderr.data(), &Self->ProcessID))) {
+   if (not (winerror = winLaunchProcess(Self, final_buffer.data(), (not launchdir.empty()) ? launchdir.data() : 0, group,
+         internal_redirect, &Self->Platform, hide_output, (not redirect_stdout.empty()) ? redirect_stdout.data() : nullptr,
+         (not redirect_stderr.empty()) ? redirect_stderr.data() : nullptr, &Self->ProcessID))) {
 
       error = ERR::Okay;
-      if (((Self->Flags & TSF::WAIT) != TSF::NIL) and (Self->TimeOut > 0)) {
-         log.msg("Waiting for process to exit.  TimeOut: %.2f sec", Self->TimeOut);
+      if (((Self->Flags & TSF::WAIT) != TSF::NIL) and (Self->Timeout > 0)) {
+         log.msg("Waiting for process to exit.  Timeout: %.2f sec", Self->Timeout);
 
          //if (not glProcessBreak) glProcessBreak = AllocateID(IDTYPE_MESSAGE);
          glProcessBreak = MSGID::BREAK;
 
-         ProcessMessages(PMF::NIL, Self->TimeOut * 1000.0);
+         auto wait_error = ProcessMessages(PMF::NIL, Self->Timeout * 1000.0);
+         if (wait_error != ERR::Okay) error = wait_error;
 
-         winGetExitCodeProcess(Self->Platform, &Self->ReturnCode);
-         if (Self->ReturnCode != 259) Self->ReturnCodeSet = true;
+         if ((not Self->ReturnCodeSet) and (Self->Platform)) {
+            winGetExitCodeProcess(Self->Platform, &Self->ReturnCode);
+            if (Self->ReturnCode != 259) Self->ReturnCodeSet = true;
+         }
       }
    }
    else {
@@ -798,37 +900,61 @@ static ERR TASK_Activate(extTask *Self)
 
    // Add a 'cd' command so that the application starts in its own folder
 
-   CSTRING path = nullptr;
-   GET_LaunchPath(Self, &path);
+   auto shell_quote = [](std::string_view Value) {
+      std::string quoted;
+      quoted.reserve(Value.size() + 2);
+      quoted += '\'';
+      for (auto ch : Value) {
+         if (ch != '\'') quoted += ch;
+         else quoted.append("'\\''");
+      }
+      quoted += '\'';
+      return quoted;
+   };
+
+   std::string_view path = Self->LaunchPath;
+   requested_shell = ((Self->Flags & TSF::SHELL) != TSF::NIL) ? 1 : 0;
 
    std::ostringstream buffer;
+   std::string fallback_path;
 
    i = 0;
-   if (((Self->Flags & TSF::RESET_PATH) != TSF::NIL) or (path)) {
+   if (((Self->Flags & TSF::RESET_PATH) != TSF::NIL) or (not path.empty())) {
       Self->Flags |= TSF::SHELL;
 
       buffer << "cd ";
 
-      if (not path) path = Self->Location.c_str();
+      if (path.empty()) {
+         fallback_path.assign(Self->Location);
+         if (auto i = fallback_path.find_last_of("/\\:"); i != std::string::npos) fallback_path.resize(i+1);
+         else fallback_path.clear();
+         path = fallback_path;
+      }
       std::string rpath;
-      if (ResolvePath(path, RSF::APPROXIMATE|RSF::PATH, &rpath) IS ERR::Okay) {
+      if (!ResolvePath(path, RSF::APPROXIMATE|RSF::PATH, &rpath)) {
          while (rpath.ends_with('/')) rpath.pop_back();
-         buffer << rpath;
+         buffer << shell_quote(rpath);
       }
       else {
-         auto p = std::string_view(path);
+         auto p = path;
          while (p.ends_with('/')) p.remove_suffix(1);
-         buffer << p;
+         buffer << shell_quote(p);
       }
+
+      buffer << " && ";
    }
 
    // Resolve the location of the executable (may contain an volume) and copy it to the command line buffer.
 
    std::string rpath;
-   if (ResolvePath(Self->Location, RSF::APPROXIMATE|RSF::PATH, &rpath) IS ERR::Okay) {
-      buffer << rpath;
+   if (!ResolvePath(Self->Location, RSF::APPROXIMATE|RSF::PATH, &rpath)) {
+      if (((Self->Flags & TSF::SHELL) != TSF::NIL) and (not requested_shell)) buffer << shell_quote(rpath);
+      else buffer << rpath;
    }
-   else buffer << Self->Location;
+   else {
+      if (((Self->Flags & TSF::SHELL) != TSF::NIL) and (not requested_shell)) buffer << shell_quote(Self->Location);
+      else buffer << Self->Location;
+   }
 
    // Following the executable path are any arguments that have been used. NOTE: This isn't needed if TSF::SHELL is used,
    // however it is extremely useful in the debug printout to see what is being executed.
@@ -836,16 +962,11 @@ static ERR TASK_Activate(extTask *Self)
    std::ostringstream params;
    if ((Self->Flags & TSF::SHELL) != TSF::NIL) {
       for (auto &param : Self->Parameters) {
-         params << ' ';
-         if (param.find(' ') != std::string::npos) params << '"' << param << '"';
-         else params << param;
+         params << ' ' << shell_quote(param);
       }
    }
 
-   // Convert single quotes into double quotes
-
    auto final_buffer = buffer.str();
-   for (int i=0; i < std::ssize(final_buffer); i++) if (final_buffer[i] IS '\'') final_buffer[i] = '"';
 
    log.msg("%s", final_buffer.c_str());
 
@@ -897,7 +1018,7 @@ static ERR TASK_Activate(extTask *Self)
 
    if ((out_fd IS -1) and ((Self->Flags & TSF::QUIET) != TSF::NIL)) {
       log.msg("Output will go to NULL");
-      out_fd = open("/dev/null", O_RDONLY);
+      out_fd = open("/dev/null", O_WRONLY);
    }
 
    if (Self->ErrorCallback.defined()) {
@@ -914,7 +1035,7 @@ static ERR TASK_Activate(extTask *Self)
    }
 
    if ((out_errfd IS -1) and ((Self->Flags & TSF::QUIET) != TSF::NIL)) {
-      out_errfd = open("/dev/null", O_RDONLY);
+      out_errfd = open("/dev/null", O_WRONLY);
    }
 
    // Fork a new task.  Remember that forking produces an exact duplicate of the process that made the fork.
@@ -922,26 +1043,12 @@ static ERR TASK_Activate(extTask *Self)
    privileged = ((Self->Flags & TSF::PRIVILEGED) != TSF::NIL) ? 1 : 0;
    shell = ((Self->Flags & TSF::SHELL) != TSF::NIL) ? 1 : 0;
 
-   // Check system resource limits before forking
-   struct rlimit rlim;
-   if (getrlimit(RLIMIT_NPROC, &rlim) IS 0) {
-      if (rlim.rlim_cur != RLIM_INFINITY) {
-         // Count current processes to see if we're near the limit
-         // Leave some margin (10% or at least 5 processes) before hitting the limit
-         auto margin = std::max(5UL, rlim.rlim_cur / 10);
-         if ((rlim.rlim_cur + margin) >= rlim.rlim_max) {
-            log.warning("Too close to process limit (%lu/%lu), refusing to fork", rlim.rlim_cur, rlim.rlim_max);
-            cleanup_task_fds(input_fd, out_fd, out_errfd, in_fd, in_errfd);
-            return ERR::ProcessCreation;
-         }
-      }
-   }
-
    pid = fork();
 
    if (pid IS -1) {
       cleanup_task_fds(input_fd, out_fd, out_errfd, in_fd, in_errfd);
-      log.warning("Failed in an attempt to fork(): %s", strerror(errno));
+      if (errno IS EAGAIN) log.warning("Failed in an attempt to fork(): process limit or system resources exhausted.");
+      else log.warning("Failed in an attempt to fork(): %s", strerror(errno));
       return ERR::ProcessCreation;
    }
 
@@ -955,12 +1062,14 @@ static ERR TASK_Activate(extTask *Self)
       glTasks.emplace_back(Self);
 
       if (in_fd != -1) {
+         set_task_pipe_nonblocking(in_fd);
          RegisterFD(in_fd, RFD::READ, &task_stdout, Self);
          Self->InFD = in_fd;
          close(out_fd);
       }
 
       if (in_errfd != -1) {
+         set_task_pipe_nonblocking(in_errfd);
          RegisterFD(in_errfd, RFD::READ, &task_stderr, Self);
          Self->ErrFD = in_errfd;
          close(out_errfd);
@@ -975,36 +1084,52 @@ static ERR TASK_Activate(extTask *Self)
 
       error = ERR::Okay;
       if ((Self->Flags & TSF::WAIT) != TSF::NIL) {
-         log.branch("Waiting for process to turn into a zombie in %.2fs.", Self->TimeOut);
+         log.branch("Waiting for process to turn into a zombie in %.2fs.", Self->Timeout);
 
          // Wait for the child process to turn into a zombie.  NB: A parent process or our own child handler may
          // potentially pick this up but that's fine as waitpid() will just fail with -1 in that case.
 
          int status = 0;
-         int64_t ticks = PreciseTime() + int64_t(Self->TimeOut * 1000000.0);
-         while (!waitpid(pid, &status, WNOHANG)) {
+         int wait_result = 0;
+         int64_t ticks = PreciseTime() + int64_t(Self->Timeout * 1000000.0);
+         while ((wait_result = waitpid(pid, &status, WNOHANG)) IS 0) {
             ProcessMessages(PMF::NIL, 100);
 
             auto remaining = ticks - PreciseTime();
             if (remaining <= 0) {
-               error = log.warning(ERR::TimeOut);
+               error = log.warning(ERR::Timeout);
                break;
             }
          }
 
          // Find out what error code was returned
 
-         if (WIFEXITED(status)) {
-            Self->ReturnCode = (int8_t)WEXITSTATUS(status);
-            Self->ReturnCodeSet = true;
-         }
+         if (wait_result IS pid) {
+            bool returned = false;
+            int return_code = 0;
 
-         if (kill(pid, 0)) {
-            for (auto it = glTasks.begin(); it != glTasks.end(); it++) {
-               if (it->ProcessID IS pid) {
-                  glTasks.erase(it);
-                  break;
+            if (WIFEXITED(status)) {
+               return_code = (int8_t)WEXITSTATUS(status);
+               returned = true;
+            }
+            else if (WIFSIGNALED(status)) {
+               return_code = 128 + WTERMSIG(status);
+               returned = true;
+            }
+
+            if (returned) {
+               Self->ReturnCode = return_code;
+               Self->ReturnCodeSet = true;
+
+               for (auto &task : glTasks) {
+                  if (task.ProcessID IS pid) {
+                     task.ReturnCode = return_code;
+                     task.Returned = true;
+                     break;
+                  }
                }
+
+               validate_process(pid);
             }
          }
       }
@@ -1051,16 +1176,12 @@ static ERR TASK_Activate(extTask *Self)
    }
 
    final_buffer.append(params.str());
-   if (shell) { // For some reason, bash terminates the argument list if it encounters a # symbol, so we'll strip those out.
-      for (j=0,i=0; i < std::ssize(final_buffer); i++) {
-         if (final_buffer[i] != '#') final_buffer[j++] = final_buffer[i];
-      }
-
+   if (shell) {
       execl("/bin/sh", "sh", "-c", final_buffer.c_str(), (char *)nullptr);
    }
    else execv(final_buffer.c_str(), (char * const *)&argslist);
 
-   exit(EXIT_FAILURE);
+   _exit(EXIT_FAILURE);
 #endif
 }
 
@@ -1073,24 +1194,29 @@ This method will add a new argument to the end of the #Parameters field array.  
 they will be removed automatically.
 
 -INPUT-
-cstr Argument: The new argument string.
+strview Argument: The new argument string.
 
 -ERRORS-
 Okay
 NullArgs
 
+-TAGS-
+mutates-object, copies-input
+
 *********************************************************************************************************************/
 
 static ERR TASK_AddArgument(extTask *Self, struct task::AddArgument *Args)
 {
-   if ((!Args) or (!Args->Argument) or (!*Args->Argument)) return ERR::NullArgs;
+   if ((not Args) or Args->Argument.empty()) return ERR::NullArgs;
 
    auto src = Args->Argument;
-   if ((*src IS '"') or (*src IS '\'')) {
-      auto end = *src++;
-      int len = 0;
-      while ((src[len]) and (src[len] != end)) len++;
-      Self->Parameters.emplace_back(std::string(src, len));
+   if ((src.front() IS '"') or (src.front() IS '\'')) {
+      auto quote = src.front();
+      src.remove_prefix(1);
+      if (auto end = src.find(quote); end != std::string_view::npos) {
+         Self->Parameters.emplace_back(src.substr(0, end));
+      }
+      else Self->Parameters.emplace_back(src);
    }
    else Self->Parameters.emplace_back(Args->Argument);
 
@@ -1107,54 +1233,14 @@ The Expunge() method releases all loaded libraries that are no longer in use by 
 -ERRORS-
 Okay
 
+-TAGS-
+mutates-object
+
 *********************************************************************************************************************/
 
 static ERR TASK_Expunge(extTask *Self)
 {
    Expunge(false);
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR TASK_Free(extTask *Self)
-{
-   pf::Log log;
-
-#ifdef __unix__
-   check_incoming(Self);
-
-   if (Self->InFD != -1) {
-      RegisterFD(Self->InFD, RFD::REMOVE, nullptr, nullptr);
-      close(Self->InFD);
-      Self->InFD = -1;
-   }
-
-   if (Self->ErrFD != -1) {
-      RegisterFD(Self->ErrFD, RFD::REMOVE, nullptr, nullptr);
-      close(Self->ErrFD);
-      Self->ErrFD = -1;
-   }
-
-   if (Self->InputCallback.defined()) RegisterFD(fileno(stdin), RFD::READ|RFD::REMOVE, &task_stdinput_callback, Self);
-#endif
-
-#ifdef _WIN32
-   if (Self->Platform) { winFreeProcess(Self->Platform); Self->Platform = nullptr; }
-   if (Self->InputCallback.defined()) RegisterFD(winGetStdInput(), RFD::READ|RFD::REMOVE, &task_stdinput_callback, Self);
-#endif
-
-   if (Self->MessageMID)        { FreeResource(Self->MessageMID);        Self->MessageMID         = 0; }
-   if (Self->MsgAction)         { FreeResource(Self->MsgAction);         Self->MsgAction          = nullptr; }
-   if (Self->MsgDebug)          { FreeResource(Self->MsgDebug);          Self->MsgDebug           = nullptr; }
-   if (Self->MsgWaitForObjects) { FreeResource(Self->MsgWaitForObjects); Self->MsgWaitForObjects  = nullptr; }
-   if (Self->MsgQuit)           { FreeResource(Self->MsgQuit);           Self->MsgQuit            = nullptr; }
-   if (Self->MsgFree)           { FreeResource(Self->MsgFree);           Self->MsgFree            = nullptr; }
-   if (Self->MsgEvent)          { FreeResource(Self->MsgEvent);          Self->MsgEvent           = nullptr; }
-   if (Self->MsgThreadCallback) { FreeResource(Self->MsgThreadCallback); Self->MsgThreadCallback  = nullptr; }
-   if (Self->MsgThreadAction)   { FreeResource(Self->MsgThreadAction);   Self->MsgThreadAction    = nullptr; }
-
-   Self->~extTask();
    return ERR::Okay;
 }
 
@@ -1176,33 +1262,40 @@ cases, the system's environment variables are queried):
 \HKEY_USERS\
 </pre>
 
-Here is a valid example for reading the 'Kotuku' key value `\HKEY_CURRENT_USER\Software\Kotuku`
+If the `Name` string ends with a trailing backslash, all keys and sub-keys held at that location are returned as a
+tab-separated list in the form `Name1\tName2...`.  Sub-key names are distinguished from values by a trailing
+backslash, e.g. `SubKey\\`.  This is useful for enumerating the complete contents of a registry key without needing
+to know names in advance.
 
-Caution: If your programming language uses backslash as an escape character (true for Tiri developers), remember to
-use double-backslashes as the key value separator in your Name string.
+NOTE: If your programming language uses backslash as an escape character, remember to use double-backslashes in the
+`Name` string.
 
 -INPUT-
-cstr Name:  The name of the environment variable to retrieve.
-&cstr Value: The value of the environment variable is returned in this parameter.
+strview Name: The name of the environment variable to retrieve.
+^&string Value: The value of the environment variable is returned in this parameter.
 
 -ERRORS-
 Okay
-Args
+NullArgs
 DoesNotExist: The environment variable is undefined.
 NoSupport: The platform does not support environment variables.
+ExecViolation
+Syntax
+
+-TAGS-
+pure-query, caller-owns-result
 -END-
 
 *********************************************************************************************************************/
 
 static ERR TASK_GetEnv(extTask *Self, struct task::GetEnv *Args)
 {
-   pf::Log log;
+   kt::Log log;
 
-   if ((!Args) or (!Args->Name)) return log.warning(ERR::NullArgs);
+   if ((not Args) or Args->Name.empty() or (not Args->Value)) return log.warning(ERR::NullArgs);
+   Args->Value->clear();
 
 #ifdef _WIN32
-
-   Args->Value = nullptr;
 
    if (glCurrentTask != Self) return ERR::ExecViolation;
 
@@ -1218,73 +1311,124 @@ static ERR TASK_GetEnv(extTask *Self, struct task::GetEnv *Args)
       };
 
       std::string full_path(Args->Name);
+
+      auto format_value = [](int Type, int8_t *Buffer, int Length, std::string &Output) -> bool {
+         switch(Type) {
+            case REG_DWORD:
+               if (unsigned(Length) >= sizeof(int)) Output = std::to_string(((int *)Buffer)[0]);
+               return true;
+
+            case REG_DWORD_BIG_ENDIAN:
+               if (unsigned(Length) >= sizeof(int)) {
+                  if constexpr (std::endian::native IS std::endian::little) {
+                     Output = std::to_string(reverse_long(((int *)Buffer)[0]));
+                  }
+                  else Output = std::to_string(((int *)Buffer)[0]);
+               }
+               return true;
+
+            case REG_QWORD:
+               if (unsigned(Length) >= sizeof(int64_t)) {
+                  Output = std::to_string(((int64_t *)Buffer)[0]);
+               }
+               return true;
+
+            case REG_SZ:
+            case REG_EXPAND_SZ:
+               Output.assign((char *)Buffer, Length);
+               while ((not Output.empty()) and (Output.back() IS 0)) Output.pop_back();
+               return true;
+
+            default:
+               return false;
+         }
+      };
+
       for (auto &key : keys) {
          if (not full_path.starts_with(key.HKey)) continue;
+
+         // A trailing backslash signals enumeration of all values at the given sub-key.
+
+         bool enumerate = full_path.back() IS '\\';
 
          auto sep = full_path.find_last_of('\\');
          if (sep IS std::string::npos) return log.warning(ERR::Syntax);
 
-         std::string folder = full_path.substr(key.HKey.size(), sep - key.HKey.size() + 1);
+         std::string folder;
+         std::string name;
+         if (enumerate) {
+            folder = full_path.substr(key.HKey.size());
+         }
+         else {
+            folder = full_path.substr(key.HKey.size(), sep - key.HKey.size() + 1);
+            name = full_path.substr(sep+1);
+         }
 
          APTR keyhandle;
          if (not RegOpenKeyExA(key.ID, folder.c_str(), 0, KEY_READ, &keyhandle)) {
-            int type;
-            int8_t buffer[4096];
-            int envlen = sizeof(buffer);
-            std::string name = full_path.substr(sep+1);
-            if (not RegQueryValueExA(keyhandle, name.c_str(), 0, &type, buffer, &envlen)) {
-               // Numerical registry types can be converted into strings
+            if (enumerate) {
+               char value_name[256];
+               int8_t buffer[4096];
 
-               switch(type) {
-                  case REG_DWORD:
-                     if (unsigned(envlen) >= sizeof(int)) Self->Env = std::to_string(((int *)buffer)[0]);
-                     break;
+               // Enumerate all key-value names stored at this key.
 
-                  case REG_DWORD_BIG_ENDIAN:
-                     if (unsigned(envlen) >= sizeof(int)) {
-                        if constexpr (std::endian::native == std::endian::little) {
-                           Self->Env = std::to_string(reverse_long(((int *)buffer)[0]));
-                        }
-                        else Self->Env = std::to_string(((int *)buffer)[0]);
-                     }
-                     break;
-
-                  case REG_QWORD:
-                     if (unsigned(envlen) >= sizeof(int64_t)) {
-                        Self->Env = std::to_string(((int64_t *)buffer)[0]);
-                     }
-                     break;
-
-                  case REG_SZ:
-                  case REG_EXPAND_SZ:
-                     Self->Env.assign((char *)buffer, envlen);
-                     // Remove any trailing null characters
-                     while ((!Self->Env.empty()) and (Self->Env.back() IS 0)) Self->Env.pop_back();
-                     break;
-
-                  default:
-                     log.warning("Unsupported registry type %d for key %s", type, Args->Name);
-                     break;
+               for (int index = 0; ; index++) {
+                  int name_len = sizeof(value_name);
+                  int data_len = sizeof(buffer);
+                  int type;
+                  if (RegEnumValueA(keyhandle, index, value_name, &name_len, 0, &type, buffer, &data_len)) break;
+                  if (not Args->Value->empty()) Args->Value->push_back('\t');
+                  Args->Value->append(value_name, name_len);
                }
 
-               Args->Value = Self->Env.c_str();
-            }
-            winCloseHandle(keyhandle);
+               // Enumerate all sub-keys (folders) at this key.  Each sub-key name is
+               // suffixed with '\' so callers can distinguish folders from values.
 
-            if (Args->Value) return ERR::Okay;
-            else return ERR::DoesNotExist;
+               for (int index = 0; ; index++) {
+                  int name_len = sizeof(value_name);
+                  if (RegEnumKeyExA(keyhandle, index, value_name, &name_len, 0, nullptr, nullptr, nullptr)) break;
+
+                  if (not Args->Value->empty()) Args->Value->push_back('\t');
+                  Args->Value->append(value_name, name_len);
+                  Args->Value->push_back('\\');
+               }
+
+               winCloseHandle(keyhandle);
+               if (Args->Value->empty()) return ERR::DoesNotExist;
+               return ERR::Okay;
+            }
+            else {
+               int type;
+               int8_t buffer[4096];
+               int envlen = sizeof(buffer);
+               bool found = false;
+               if (not RegQueryValueExA(keyhandle, name.c_str(), 0, &type, buffer, &envlen)) {
+                  if (not format_value(type, buffer, envlen, *Args->Value)) {
+                     log.warning("Unsupported registry type %d for key %.*s", type, int(Args->Name.size()),
+                        Args->Name.data());
+                  }
+                  else found = true;
+               }
+               winCloseHandle(keyhandle);
+
+               if (found) return ERR::Okay;
+               else return ERR::DoesNotExist;
+            }
          }
          else return ERR::DoesNotExist;
       }
    }
 
-   winGetEnv(Args->Name, Self->Env);
-   if (Self->Env.empty()) return ERR::DoesNotExist;
-   Args->Value = Self->Env.c_str();
+   std::string name(Args->Name);
+   winGetEnv(name.c_str(), *Args->Value);
+   if (Args->Value->empty()) return ERR::DoesNotExist;
    return ERR::Okay;
 
 #elif __unix__
-   if ((Args->Value = getenv(Args->Name))) {
+
+   std::string name(Args->Name);
+   if (auto value = getenv(name.c_str())) {
+      Args->Value->assign(value);
       return ERR::Okay;
    }
    else return ERR::DoesNotExist;
@@ -1302,21 +1446,60 @@ GetKey: Retrieves custom key values.
 
 static ERR TASK_GetKey(extTask *Self, struct acGetKey *Args)
 {
-   pf::Log log;
-   int j;
+   kt::Log log;
 
-   if ((!Args) or (!Args->Value) or (Args->Size <= 0)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Value)) return log.warning(ERR::NullArgs);
 
-   auto it = Self->Fields.find(Args->Key);
-   if (it != Self->Fields.end()) {
-      for (j=0; (it->second[j]) and (j < Args->Size-1); j++) Args->Value[j] = it->second[j];
-      Args->Value[j++] = 0;
-
-      if (j >= Args->Size) return ERR::BufferOverflow;
-      else return ERR::Okay;
+   if (auto it = Self->Fields.find(Args->Key); it != Self->Fields.end()) {
+      Args->Value->assign(it->second);
+      return ERR::Okay;
    }
+   else return log.warning(ERR::UnsupportedField);
+}
 
-   log.warning("The variable \"%s\" does not exist.", Args->Key);
+/*********************************************************************************************************************
+
+-ACTION-
+Query: Reads executable metadata from the file referenced in Location.
+
+Query() reads Windows VERSIONINFO metadata from the executable referenced by the #Location field.  Discovered string
+properties are stored in the task's key-value list and can be retrieved with #GetKey().  Existing keys with matching
+names are overwritten, while unrelated custom keys are preserved.
+
+The #Name field is updated from the ProductName, FileDescription or InternalName metadata when one of those properties
+is available.
+
+-ERRORS-
+Okay
+MissingPath: The Location field has not been set.
+File:        The executable file could not be opened.
+Query:       The executable did not contain readable VERSIONINFO metadata.
+
+-TAGS-
+mutates-object
+-END-
+
+*********************************************************************************************************************/
+
+static ERR TASK_Query(extTask *Self)
+{
+   kt::Log log;
+
+   if (Self->Location.empty()) return log.warning(ERR::MissingPath);
+
+   std::string path;
+   if (ResolvePath(Self->Location, RSF::APPROXIMATE|RSF::PATH, &path) != ERR::Okay) return log.warning(ERR::ResolvePath);
+
+   TaskVersionMetadata metadata;
+   if (auto error = load_task_version_metadata(path, metadata); error != ERR::Okay) return log.warning(error);
+
+   for (auto &field : metadata.Fields) Self->Fields[field.first] = field.second;
+
+   // Promote relevant metadata to the Name field
+
+   if (auto it = metadata.Fields.find("ProductName"); it != metadata.Fields.end()) Self->Name = it->second;
+   else if (auto desc = metadata.Fields.find("FileDescription"); desc != metadata.Fields.end()) Self->Name = desc->second;
+   else if (auto name = metadata.Fields.find("InternalName"); name != metadata.Fields.end()) Self->Name = name->second;
 
    return ERR::Okay;
 }
@@ -1325,7 +1508,7 @@ static ERR TASK_GetKey(extTask *Self, struct acGetKey *Args)
 
 static ERR TASK_Init(extTask *Self)
 {
-   pf::Log log;
+   kt::Log log;
 
    if (not fs_initialised) { // Perform the following if this is a Task representing the current process
       Self->ProcessID = glProcessID;
@@ -1381,41 +1564,42 @@ static ERR TASK_Init(extTask *Self)
 
       // Initialise message handlers so that the task can process messages.
 
+      MsgHandler *handler;
       FUNCTION call;
       call.Type = CALL::STD_C;
       call.Routine = (APTR)msg_action;
-      AddMsgHandler(MSGID::ACTION, &call, &Self->MsgAction);
+      call.Context = Self;
+      AddMsgHandler(MSGID::ACTION, &call, &handler);
+      Self->MsgAction.reset(handler);
 
       call.Routine = (APTR)msg_free;
-      AddMsgHandler(MSGID::FREE, &call, &Self->MsgFree);
+      AddMsgHandler(MSGID::FREE, &call, &handler);
+      Self->MsgFree.reset(handler);
 
       call.Routine = (APTR)msg_quit;
-      AddMsgHandler(MSGID::QUIT, &call, &Self->MsgQuit);
+      AddMsgHandler(MSGID::QUIT, &call, &handler);
+      Self->MsgQuit.reset(handler);
 
-      call.Routine = (APTR)msg_waitforobjects;
-      AddMsgHandler(MSGID::WAIT_FOR_OBJECTS, &call, &Self->MsgWaitForObjects);
+      call.Routine = (APTR)msg_waitforobjects; // lib_messages.cpp
+      AddMsgHandler(MSGID::WAIT_FOR_OBJECTS, &call, &handler);
+      Self->MsgWaitForObjects.reset(handler);
 
       call.Routine = (APTR)msg_event; // lib_events.c
-      AddMsgHandler(MSGID::EVENT, &call, &Self->MsgEvent);
+      AddMsgHandler(MSGID::EVENT, &call, &handler);
+      Self->MsgEvent.reset(handler);
 
       call.Routine = (APTR)msg_threadcallback; // class_thread.c
-      AddMsgHandler(MSGID::THREAD_CALLBACK, &call, &Self->MsgThreadCallback);
+      AddMsgHandler(MSGID::THREAD_CALLBACK, &call, &handler);
+      Self->MsgThreadCallback.reset(handler);
 
       call.Routine = (APTR)msg_threadaction; // lib_objects.cpp
-      AddMsgHandler(MSGID::THREAD_ACTION, &call, &Self->MsgThreadAction);
+      AddMsgHandler(MSGID::THREAD_ACTION, &call, &handler);
+      Self->MsgThreadAction.reset(handler);
 
       log.msg("Process Path: %s", Self->ProcessPath.c_str());
       log.msg("Working Path: %s", Self->Path.c_str());
    }
 
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR TASK_NewPlacement(extTask *Self)
-{
-   new (Self) extTask; // See constructor for initialisation
    return ERR::Okay;
 }
 
@@ -1436,13 +1620,16 @@ On Windows systems, the method uses `winTerminateApp()` with a timeout for proce
 
 -ERRORS-
 Okay
+
+-TAGS-
+blocking, mutates-object
 -END-
 
 *********************************************************************************************************************/
 
 static ERR TASK_Quit(extTask *Self)
 {
-   pf::Log log;
+   kt::Log log;
 
    if ((Self->ProcessID) and (Self->ProcessID != glProcessID)) {
       #ifdef __unix__
@@ -1464,7 +1651,7 @@ static ERR TASK_Quit(extTask *Self)
    }
    else {
       log.branch("Sending QUIT message to self.");
-      SendMessage(MSGID::QUIT, MSF::NIL, nullptr, 0);
+      SendMessage(MSGID::QUIT, MSF::NIL, {});
    }
 
    return ERR::Okay;
@@ -1476,7 +1663,7 @@ static ERR TASK_Quit(extTask *Self)
 SetEnv: Sets environment variables for the active process.
 
 On platforms that support environment variables, SetEnv() is used for defining values for named variables.  A `Name`
-and accompanying `Value` string are required.  If the `Value` is `NULL`, the environment variable is removed if it
+and accompanying `Value` string are required.  If the `Value` is empty, the environment variable is removed if it
 already exists.
 
 In Windows, it is possible to set registry keys if the string starts with one of the following (in all other cases, the
@@ -1494,26 +1681,34 @@ the existing key value is a number such as `DWORD` or `QWORD`, then the Value wi
 key is set.
 
 -INPUT-
-cstr Name:  The name of the environment variable to set.
-cstr Value: The value to assign to the environment variable.
+strview Name:  The name of the environment variable to set.
+strview Value: The value to assign to the environment variable.  If empty, the variable is removed.
 
 -ERRORS-
 Okay
-Args
+NullArgs
 NoSupport: The platform does not support environment variables.
+Syntax
+TaskExecutionFailed
+
+-TAGS-
+mutates-object, copies-input
 -END-
 
 *********************************************************************************************************************/
 
 static ERR TASK_SetEnv(extTask *Self, struct task::SetEnv *Args)
 {
-   pf::Log log;
+   kt::Log log;
 
-   if ((!Args) or (!Args->Name)) return log.warning(ERR::NullArgs);
+   if ((not Args) or Args->Name.empty()) return log.warning(ERR::NullArgs);
+
+   std::string name(Args->Name);
+   std::string value(Args->Value);
 
 #ifdef _WIN32
 
-   if (Args->Name[0] IS '\\') {
+   if (name.starts_with('\\')) {
       int ki, len;
       const struct {
          uint32_t ID;
@@ -1525,11 +1720,11 @@ static ERR TASK_SetEnv(extTask *Self, struct task::SetEnv *Args)
          { HKEY_USERS,          "\\HKEY_USERS\\" }
       };
 
-      log.msg("Registry: %s = %s", Args->Name, Args->Value);
+      log.msg("Registry: %s = %s", name.c_str(), value.c_str());
 
       for (ki=0; ki < std::ssize(keys); ki++) {
-         if (startswith(keys[ki].HKey, Args->Name)) {
-            CSTRING str = Args->Name + strlen(keys[ki].HKey); // str = Kotuku\Something
+         if (startswith(keys[ki].HKey, name)) {
+            CSTRING str = name.c_str() + strlen(keys[ki].HKey); // str = Kotuku\Something
 
             for (len=strlen(str); (len > 0) and (str[len] != '\\'); len--);
 
@@ -1543,23 +1738,23 @@ static ERR TASK_SetEnv(extTask *Self, struct task::SetEnv *Args)
 
                      switch(type) {
                         case REG_DWORD: {
-                           int int32 = strtol(Args->Value, nullptr, 0);
+                           int int32 = strtol(value.c_str(), nullptr, 0);
                            RegSetValueExA(keyhandle, str+len+1, 0, REG_DWORD, &int32, sizeof(int32));
                            break;
                         }
 
                         case REG_QWORD: {
-                           int64_t int64 = strtoll(Args->Value, nullptr, 0);
+                           int64_t int64 = strtoll(value.c_str(), nullptr, 0);
                            RegSetValueExA(keyhandle, str+len+1, 0, REG_QWORD, &int64, sizeof(int64));
                            break;
                         }
 
                         default: {
-                           RegSetValueExA(keyhandle, str+len+1, 0, REG_SZ, Args->Value, strlen(Args->Value)+1);
+                           RegSetValueExA(keyhandle, str+len+1, 0, REG_SZ, value.c_str(), value.size() + 1);
                         }
                      }
                   }
-                  else RegSetValueExA(keyhandle, str+len+1, 0, REG_SZ, Args->Value, strlen(Args->Value)+1);
+                  else RegSetValueExA(keyhandle, str+len+1, 0, REG_SZ, value.c_str(), value.size() + 1);
 
                   winCloseHandle(keyhandle);
                }
@@ -1573,14 +1768,14 @@ static ERR TASK_SetEnv(extTask *Self, struct task::SetEnv *Args)
       return log.warning(ERR::TaskExecutionFailed);
    }
    else {
-      winSetEnv(Args->Name, Args->Value);
+      winSetEnv(name.c_str(), value.empty() ? nullptr : value.c_str());
       return ERR::Okay;
    }
 
 #elif __unix__
 
-   if (Args->Value) setenv(Args->Name, Args->Value, 1);
-   else unsetenv(Args->Name);
+   if (value.empty()) unsetenv(name.c_str());
+   else setenv(name.c_str(), value.c_str(), 1);
    return ERR::Okay;
 
 #else
@@ -1599,7 +1794,7 @@ SetKey: Variable fields are supported for the general storage of program variabl
 
 static ERR TASK_SetKey(extTask *Self, struct acSetKey *Args)
 {
-   if ((!Args) or (!Args->Key) or (!Args->Value)) return ERR::NullArgs;
+   if (not Args) return ERR::NullArgs;
 
    Self->Fields[Args->Key] = Args->Value;
    return ERR::Okay;
@@ -1618,13 +1813,15 @@ process that no more data is incoming).
 
 static ERR TASK_Write(extTask *Task, struct acWrite *Args)
 {
-   pf::Log log;
+   kt::Log log;
 
    if (not Args) return log.warning(ERR::NullArgs);
 
 #ifdef _WIN32
    if (Task->Platform) {
-      if (auto winerror = winWriteStd(Task->Platform, Args->Buffer, Args->Length); !winerror) {
+      if (Args->Buffer.size() > size_t(INT_MAX)) return log.warning(ERR::OutOfRange);
+      if (auto winerror = winWriteStd(Task->Platform, Args->Buffer.data(), int(Args->Buffer.size())); !winerror) {
+         Args->Result = int(Args->Buffer.size());
          return ERR::Okay;
       }
       else return log.warning(ERR::Write);
@@ -1641,15 +1838,15 @@ static ERR TASK_Write(extTask *Task, struct acWrite *Args)
 Actions: Used to gain direct access to a task's actions.
 
 This field provides direct access to the actions of a task, and is intended for use with the active task object
-returned from ~CurrentTask().  Hooking into the action table allows the running executable to 'blend-in' with
+returned from ~Core.CurrentTask().  Hooking into the action table allows the running executable to 'blend-in' with
 Kotuku's object oriented design.
 
-The Actions field points to a lookup table of !ActionEntry items.  Hooking into an action involves writing its `AC`
-index in the table with a pointer to the action routine.  For example:
+The Actions field points to a lookup table of !ActionEntry items.  To create an action hook, set its `AC`
+table index with a pointer to the action routine.  For example:
 
 <pre>
-if (not AccessObject(CurrentTask(), 5000, &task)) {
-   task->get(FID_Actions, actions);
+if (!AccessObject(CurrentTask(), 5000, &task)) {
+   task->getActions(actions);
    actions[AC::Seek] = PROGRAM_Seek;
    ReleaseObject(task);
 }
@@ -1657,9 +1854,9 @@ if (not AccessObject(CurrentTask(), 5000, &task)) {
 
 *********************************************************************************************************************/
 
-static ERR GET_Actions(extTask *Self, struct ActionEntry **Value)
+static ERR GET_Actions(extTask *Self, std::span<ActionEntry> &Value)
 {
-   *Value = Self->Actions;
+   Value = std::span<ActionEntry>(Self->Actions.data(), Self->Actions.size());
    return ERR::Okay;
 }
 
@@ -1689,7 +1886,9 @@ static ERR GET_AffinityMask(extTask *Self, int64_t *Value)
 
    // Convert cpu_set_t to bitmask
    int64_t mask = 0;
-   for (int cpu = 0; cpu < CPU_SETSIZE; cpu++) {
+   constexpr int max_mask_bits = sizeof(mask) * 8;
+   const int max_cpu = (CPU_SETSIZE < max_mask_bits) ? CPU_SETSIZE : max_mask_bits;
+   for (int cpu = 0; cpu < max_cpu; cpu++) {
       if (CPU_ISSET(cpu, &cpuset)) {
          mask |= (1LL << cpu);
       }
@@ -1715,10 +1914,11 @@ static ERR SET_AffinityMask(extTask *Self, int64_t Value)
    CPU_ZERO(&cpuset);
 
    // Convert bitmask to cpu_set_t
-   for (int cpu = 0; cpu < CPU_SETSIZE; cpu++) {
-      if (Value & (1LL << cpu)) {
-         CPU_SET(cpu, &cpuset);
-      }
+   auto mask = uint64_t(Value);
+   while (mask) {
+      int cpu = int(std::countr_zero(mask));
+      CPU_SET(cpu, &cpuset);
+      mask &= mask - 1;
    }
 
    // Set affinity for current process
@@ -1752,36 +1952,39 @@ Security Limits: To prevent buffer overflow attacks, the following limits are en
 
 *********************************************************************************************************************/
 
-static ERR SET_Args(extTask *Self, CSTRING Value)
+static ERR SET_Args(extTask *Self, const std::string_view &Value)
 {
-   if ((!Value) or (!*Value)) return ERR::Okay;
+   if (Value.empty()) return ERR::Okay;
 
    const size_t MAX_INPUT_LEN = 65536;
-   size_t input_len = strlen(Value);
+   size_t input_len = Value.size();
    if (input_len > MAX_INPUT_LEN) return ERR::BufferOverflow;
 
-   while (*Value) {
-      while (*Value <= 0x20) Value++; // Skip whitespace
+   auto cursor = Value.data();
+   auto end = cursor + Value.size();
 
-      if (*Value) { // Extract the argument
+   while (cursor < end) {
+      while ((cursor < end) and (*cursor <= 0x20)) cursor++; // Skip whitespace
+
+      if (cursor < end) { // Extract the argument
          std::string buffer;
          buffer.reserve(512); // Pre-allocate reasonable size
 
          bool in_quotes = false;
-         while (*Value and (in_quotes or (*Value > 0x20))) {
-            if (*Value IS '"') {
+         while ((cursor < end) and (in_quotes or (*cursor > 0x20))) {
+            if (*cursor IS '"') {
                in_quotes = !in_quotes;
-               Value++;
+               cursor++;
             }
             else {
-               buffer += *Value++;
+               buffer += *cursor++;
                // Prevent buffer overflow from malicious input
                if (buffer.size() > 8192) return ERR::BufferOverflow; // 8KB max per argument
             }
          }
 
-         if (in_quotes) return pf::Log().warning(ERR::Syntax);
-         if (*Value) while (*Value > 0x20) Value++;
+         if (in_quotes) return kt::Log().warning(ERR::Syntax);
+         if (cursor < end) while ((cursor < end) and (*cursor > 0x20)) cursor++;
          Self->addArgument(buffer.c_str());
       }
    }
@@ -1795,17 +1998,17 @@ static ERR SET_Args(extTask *Self, CSTRING Value)
 ErrorCallback: This callback returns incoming data from STDERR.
 
 The ErrorCallback field can be set with a function reference that will be called when an active process sends data via
-STDERR.  The callback must follow the prototype `Function(*Task, APTR Data, int Size)`
+STDERR.  The callback must follow the prototype `Function(*Task, std::span<std::byte> Data)`
 
-The information read from STDERR will be returned in the Data pointer and the byte-length of the data will be
-indicated by the `Size`.  The data pointer is temporary and will be invalid once the callback function has returned.
+The information read from STDERR will be returned in the Data span.  The reference is temporary and will be invalid
+once the callback function has returned.
 
 *********************************************************************************************************************/
 
-static ERR GET_ErrorCallback(extTask *Self, FUNCTION **Value)
+static ERR GET_ErrorCallback(extTask *Self, FUNCTION * &Value)
 {
    if (Self->ErrorCallback.defined()) {
-      *Value = &Self->ErrorCallback;
+      Value = &Self->ErrorCallback;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -1813,8 +2016,11 @@ static ERR GET_ErrorCallback(extTask *Self, FUNCTION **Value)
 
 static ERR SET_ErrorCallback(extTask *Self, FUNCTION *Value)
 {
-   if (Value) Self->ErrorCallback = *Value;
-   else Self->ErrorCallback.clear();
+   clear_callback(Self->ErrorCallback);
+   if (Value) {
+      Self->ErrorCallback = *Value;
+      if (Self->ErrorCallback.defined()) Self->ErrorCallback.pin();
+   }
    return ERR::Okay;
 }
 
@@ -1831,10 +2037,10 @@ called on termination because the `Task` object no longer exists for the control
 
 *********************************************************************************************************************/
 
-static ERR GET_ExitCallback(extTask *Self, FUNCTION **Value)
+static ERR GET_ExitCallback(extTask *Self, FUNCTION * &Value)
 {
    if (Self->ExitCallback.defined()) {
-      *Value = &Self->ExitCallback;
+      Value = &Self->ExitCallback;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -1842,8 +2048,27 @@ static ERR GET_ExitCallback(extTask *Self, FUNCTION **Value)
 
 static ERR SET_ExitCallback(extTask *Self, FUNCTION *Value)
 {
-   if (Value) Self->ExitCallback = *Value;
-   else Self->ExitCallback.clear();
+   clear_callback(Self->ExitCallback);
+   if (Value) {
+      Self->ExitCallback = *Value;
+      if (Self->ExitCallback.defined()) Self->ExitCallback.pin();
+   }
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+Keys: Returns a list of all key names available to the GetKeys() action.
+
+*********************************************************************************************************************/
+
+static ERR GET_Keys(extTask *Self, std::span<std::string> &Value)
+{
+   Self->Keys.clear();
+   Self->Keys.reserve(Self->Fields.size());
+   for (const auto &kv : Self->Fields) Self->Keys.emplace_back(kv.first);
+   Value = std::span<std::string>(Self->Keys.data(), Self->Keys.size());
    return ERR::Okay;
 }
 
@@ -1854,20 +2079,20 @@ InputCallback: This callback returns incoming data from STDIN.
 
 The InputCallback field is available to the active task object only (i.e. the current process).
 The referenced function will be called when process receives data from STDIN.  The callback must match the
-prototype `void Function(*Task, APTR Data, int Size, ERR Status)`.  In Tiri the prototype is
+prototype `void Function(*Task, std::span<std::byte> Data, ERR Status)`.  In Tiri the prototype is
 'function callback(Task, Array, Status)` where `Array` is an array interface.
 
-The information read from STDOUT will be returned in the `Data` pointer and the byte-length of the data will be indicated
-by the `Size`.  The data buffer is temporary and will be invalid once the callback function has returned.
+The information read from STDOUT will be returned in the `Data` span reference.  The data buffer is temporary and
+will be invalid once the callback function has returned.
 
 A status of `ERR::Finished` is sent if the stdinput handle has been closed.
 
 *********************************************************************************************************************/
 
-static ERR GET_InputCallback(extTask *Self, FUNCTION **Value)
+static ERR GET_InputCallback(extTask *Self, FUNCTION * &Value)
 {
    if (Self->InputCallback.defined()) {
-      *Value = &Self->InputCallback;
+      Value = &Self->InputCallback;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -1880,11 +2105,13 @@ static ERR SET_InputCallback(extTask *Self, FUNCTION *Value)
    if (Value) {
       #ifdef __unix__
       fcntl(fileno(stdin), F_SETFL, fcntl(fileno(stdin), F_GETFL) | O_NONBLOCK);
-      if (auto error = RegisterFD(fileno(stdin), RFD::READ, &task_stdinput_callback, Self); error IS ERR::Okay) {
+      if (auto error = RegisterFD(fileno(stdin), RFD::READ, &task_stdinput_callback, Self); !error) {
       #elif _WIN32
-      if (auto error = RegisterFD(winGetStdInput(), RFD::READ, &task_stdinput_callback, Self); error IS ERR::Okay) {
+      if (auto error = RegisterFD(winGetStdInput(), RFD::READ, &task_stdinput_callback, Self); !error) {
       #endif
+         clear_callback(Self->InputCallback);
          Self->InputCallback = *Value;
+         if (Self->InputCallback.defined()) Self->InputCallback.pin();
       }
       else return error;
    }
@@ -1894,7 +2121,7 @@ static ERR SET_InputCallback(extTask *Self, FUNCTION *Value)
       #else
       if (Self->InputCallback.defined()) RegisterFD(fileno(stdin), RFD::READ|RFD::REMOVE, &task_stdinput_callback, Self);
       #endif
-      Self->InputCallback.clear();
+      clear_callback(Self->InputCallback);
    }
 
    return ERR::Okay;
@@ -1906,18 +2133,18 @@ static ERR SET_InputCallback(extTask *Self, FUNCTION *Value)
 OutputCallback: This callback returns incoming data from STDOUT.
 
 The OutputCallback field can be set with a function reference that will be called when an active process sends data via
-STDOUT.  For C++ the callback must match the prototype `void Function(*Task, APTR Data, int Size)`.  In Tiri the
+STDOUT.  For C++ the callback must match the prototype `void Function(*Task, std::span<std::byte> Data)`.  In Tiri the
 prototype is 'function callback(Task, Array)` where `Array` is an array interface.
 
-The information read from STDOUT will be returned in the `Data` pointer and the byte-length of the data will be indicated
-by the `Size`.  The `Data` pointer is temporary and will be invalid once the callback function has returned.
+The information read from STDOUT will be returned in the `Data` reference.  The `Data` buffer is temporary and will
+be invalid once the callback function has returned.
 
 *********************************************************************************************************************/
 
-static ERR GET_OutputCallback(extTask *Self, FUNCTION **Value)
+static ERR GET_OutputCallback(extTask *Self, FUNCTION * &Value)
 {
    if (Self->OutputCallback.defined()) {
-      *Value = &Self->OutputCallback;
+      Value = &Self->OutputCallback;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -1925,8 +2152,11 @@ static ERR GET_OutputCallback(extTask *Self, FUNCTION **Value)
 
 static ERR SET_OutputCallback(extTask *Self, FUNCTION *Value)
 {
-   if (Value) Self->OutputCallback = *Value;
-   else Self->OutputCallback.clear();
+   clear_callback(Self->OutputCallback);
+   if (Value) {
+      Self->OutputCallback = *Value;
+      if (Self->OutputCallback.defined()) Self->OutputCallback.pin();
+   }
    return ERR::Okay;
 }
 
@@ -1942,23 +2172,6 @@ LaunchPath: Launched executables will start in the path specified here.
 Use the LaunchPath field to specify the folder that a launched executable will start in when the task object is
 activated.  This will override all other path options, such as the `RESET_PATH` flag.
 
-*********************************************************************************************************************/
-
-static ERR GET_LaunchPath(extTask *Self, CSTRING *Value)
-{
-   *Value = Self->LaunchPath.c_str();
-   return ERR::Okay;
-}
-
-static ERR SET_LaunchPath(extTask *Self, CSTRING Value)
-{
-   if ((Value) and (*Value)) Self->LaunchPath.assign(Value);
-   else Self->LaunchPath.clear();
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 Location: Location of an executable file to launch.
 
@@ -1971,23 +2184,19 @@ only the quoted portion of the string will be used as the source path.
 
 *********************************************************************************************************************/
 
-static ERR GET_Location(extTask *Self, CSTRING *Value)
+static ERR SET_Location(extTask *Self, const std::string_view &Value)
 {
-   *Value = Self->Location.c_str();
-   return ERR::Okay;
-}
-
-static ERR SET_Location(extTask *Self, CSTRING Value)
-{
-   if ((Value) and (*Value)) {
-      while ((*Value) and (*Value <= 0x20)) Value++;
-      if (*Value IS '"') {
-         Value++;
-         const char* start = Value;
-         while (*Value && *Value != '"') ++Value;
-         Self->Location.assign(start, Value - start);
+   if (not Value.empty()) {
+      auto cursor = Value.data();
+      auto end = cursor + Value.size();
+      while ((cursor < end) and (*cursor <= 0x20)) cursor++;
+      if ((cursor < end) and (*cursor IS '"')) {
+         cursor++;
+         auto start = cursor;
+         while ((cursor < end) and (*cursor != '"')) cursor++;
+         Self->Location.assign(start, cursor - start);
       }
-      else Self->Location.assign(Value);
+      else Self->Location.assign(cursor, end - cursor);
    }
    else Self->Location.clear();
    return ERR::Okay;
@@ -1998,25 +2207,7 @@ static ERR SET_Location(extTask *Self, CSTRING Value)
 -FIELD-
 Name: Name of the task.
 
-This field specifies the name of the task or program that has been initialised. It is up to the developer of the
-program to set the Name which will appear in this field.  If there is no name for the task then the system may
-assign a randomly generated name.
-
-*********************************************************************************************************************/
-
-static ERR GET_Name(extTask *Self, STRING *Value)
-{
-   *Value = Self->Name;
-   return ERR::Okay;
-}
-
-static ERR SET_Name(extTask *Self, CSTRING Value)
-{
-   strcopy(Value, Self->Name, sizeof(Self->Name));
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
+This field specifies the task's name, which may be derived from the source program's metadata, if available.
 
 -FIELD-
 Parameters: Command line arguments (list format).
@@ -2026,36 +2217,15 @@ string.  To illustrate, the following command-line string:
 
 <pre>1&gt; YourProgram PREFS MyPrefs -file "documents:readme.txt"</pre>
 
-Would be represented as follows:
+Would be represented as a list containing `"PREFS"`, `"MyPrefs"`, `"-file"` and `"documents:readme.txt"`.
+
+The list is compatible with Tiri, and can be iterated as follows:
 
 <pre>
-pf::vector&lt;std::string&gt; Args = {
-   "PREFS",
-   "MyPrefs",
-   "-file",
-   "documents:readme.txt"
-};
+for index, value in processing.task().parameters do
+   print(index, ' = ', value)
+end
 </pre>
-
-NOTE: Scripts should use the #Args field instead.
-
-*********************************************************************************************************************/
-
-static ERR GET_Parameters(extTask *Self, pf::vector<std::string> **Value, int *Elements)
-{
-   *Value = &Self->Parameters;
-   *Elements = Self->Parameters.size();
-   return ERR::Okay;
-}
-
-static ERR SET_Parameters(extTask *Self, const pf::vector<std::string> *Value, int Elements)
-{
-   if (Value) Self->Parameters = Value[0];
-   else Self->Parameters.clear();
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 ProcessID: Reflects the process ID when an executable is launched.
@@ -2073,31 +2243,28 @@ process, such as that of a terminal shell.
 The working folder can be changed at any time by updating the Path with a new folder location.  If changing to the
 new folder fails for any reason, the working folder will remain unchanged and the path value will not be updated.
 
+The path string must be fully qualified with a slash or colon at the end of the string.  Non-viable characters are
+truncated.
+
 *********************************************************************************************************************/
 
-static ERR GET_Path(extTask *Self, CSTRING *Value)
-{
-   *Value = Self->Path.c_str();
-   return ERR::Okay;
-}
-
-static ERR SET_Path(extTask *Self, CSTRING Value)
+static ERR SET_Path(extTask *Self, const std::string_view &Value)
 {
    std::string new_path;
 
-   pf::Log log;
+   kt::Log log;
 
-   log.trace("ChDir: %s", Value);
+   log.trace("ChDir: %.*s", int(Value.size()), Value.data());
 
    ERR error = ERR::Okay;
-   if ((Value) and (*Value)) {
-      int len = strlen(Value);
-      while ((len > 1) and (Value[len-1] != '/') and (Value[len-1] != '\\') and (Value[len-1] != ':')) len--;
-      new_path.assign(Value, len);
+   if (not Value.empty()) {
+      auto len = Value.find_last_of(":/\\");
+      if (len IS std::string::npos) return ERR::InvalidPath;
+      new_path.assign(Value, 0, len + 1);
 
 #ifdef __unix__
          std::string path;
-         if (ResolvePath(new_path.c_str(), RSF::NO_FILE_CHECK, &path) IS ERR::Okay) {
+         if (!ResolvePath(new_path, RSF::NO_FILE_CHECK, &path)) {
             if (chdir(path.c_str())) {
                error = ERR::InvalidPath;
                log.msg("Failed to switch current path to: %s", path.c_str());
@@ -2106,7 +2273,7 @@ static ERR SET_Path(extTask *Self, CSTRING Value)
          else error = log.warning(ERR::ResolvePath);
 #elif _WIN32
          std::string path;
-         if (ResolvePath(new_path, RSF::NO_FILE_CHECK|RSF::PATH, &path) IS ERR::Okay) {
+         if (!ResolvePath(new_path, RSF::NO_FILE_CHECK|RSF::PATH, &path)) {
             if (chdir(path.c_str())) {
                error = ERR::InvalidPath;
                log.msg("Failed to switch current path to: %s", path.c_str());
@@ -2119,7 +2286,7 @@ static ERR SET_Path(extTask *Self, CSTRING Value)
    }
    else error = ERR::EmptyString;
 
-   if (error IS ERR::Okay) Self->Path.assign(new_path);
+   if (!error) Self->Path.assign(new_path);
 
    return error;
 }
@@ -2134,16 +2301,6 @@ executable file name).  This value is managed internally and cannot be altered.
 
 In Microsoft Windows it is not always possible to determine the origins of an executable, in which case the
 ProcessPath is set to the working folder in use at the time the process was launched.
-
-*********************************************************************************************************************/
-
-static ERR GET_ProcessPath(extTask *Self, CSTRING *Value)
-{
-   *Value = Self->ProcessPath.c_str();
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Priority: The task priority in relation to other tasks is be defined here.
@@ -2201,7 +2358,7 @@ DoesNotExist: The task is yet to be successfully launched with the #Activate() a
 
 static ERR GET_ReturnCode(extTask *Self, int *Value)
 {
-   pf::Log log;
+   kt::Log log;
 
    if (Self->ReturnCodeSet) {
       *Value = Self->ReturnCode;
@@ -2221,16 +2378,32 @@ static ERR GET_ReturnCode(extTask *Self, int *Value)
    int status = 0;
    int result = waitpid(Self->ProcessID, &status, WNOHANG);
 
-   if ((result IS -1) or (result IS Self->ProcessID)) {
+   if (result IS Self->ProcessID) {
       // The process has exited.  Find out what error code was returned and pass it as the result.
 
       if (WIFEXITED(status)) {
          Self->ReturnCode = (int8_t)WEXITSTATUS(status);
          Self->ReturnCodeSet = true;
       }
+      else if (WIFSIGNALED(status)) {
+         Self->ReturnCode = 128 + WTERMSIG(status);
+         Self->ReturnCodeSet = true;
+      }
 
       *Value = Self->ReturnCode;
+      for (auto &task : glTasks) {
+         if (task.ProcessID IS Self->ProcessID) {
+            task.ReturnCode = Self->ReturnCode;
+            task.Returned = true;
+            break;
+         }
+      }
+
+      validate_process(Self->ProcessID);
       return ERR::Okay;
+   }
+   else if (result IS -1) {
+      return ERR::TaskStillExists;
    }
    else return ERR::TaskStillExists;
 
@@ -2261,35 +2434,68 @@ static ERR SET_ReturnCode(extTask *Self, int Value)
 /*********************************************************************************************************************
 
 -FIELD-
-TimeOut: Limits the amount of time to wait for a launched process to return.
+Timeout: Limits the amount of time to wait for a launched process to return.
 
 This field can be set in conjunction with the `WAIT` flag to define the time limit when waiting for a launched
 process to return.  The time out is defined in seconds.
 
 *********************************************************************************************************************/
 
+extTask::~extTask()
+{
+#ifdef __unix__
+   check_incoming(this);
+
+   if (InFD != -1) {
+      RegisterFD(InFD, RFD::REMOVE, nullptr, nullptr);
+      close(InFD);
+      InFD = -1;
+   }
+
+   if (ErrFD != -1) {
+      RegisterFD(ErrFD, RFD::REMOVE, nullptr, nullptr);
+      close(ErrFD);
+      ErrFD = -1;
+   }
+
+   if (InputCallback.defined()) RegisterFD(fileno(stdin), RFD::READ|RFD::REMOVE, &task_stdinput_callback, this);
+#endif
+
+#ifdef _WIN32
+   if (Platform) { winFreeProcess(Platform); Platform = nullptr; }
+   if (InputCallback.defined()) RegisterFD(winGetStdInput(), RFD::READ|RFD::REMOVE, &task_stdinput_callback, this);
+#endif
+
+   clear_callback(ErrorCallback);
+   clear_callback(OutputCallback);
+   clear_callback(ExitCallback);
+   clear_callback(InputCallback);
+}
+
+//********************************************************************************************************************
+
 static const FieldArray clFields[] = {
-   { "TimeOut",         FDF_DOUBLE|FDF_RW },
-   { "Flags",           FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clFlags },
+   { "LaunchPath",      FDF_CPPSTRING|FDF_RW },
+   { "Name",            FDF_CPPSTRING|FDF_RW },
+   { "Location",        FDF_CPPSTRING|FDF_RW, nullptr, SET_Location },
+   { "Src",             FDF_SYNONYM },
+   { "Path",            FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
+   { "ProcessPath",     FDF_CPPSTRING|FDF_R },
+   { "Timeout",         FDF_DOUBLE|FDF_RW },
+   { "Parameters",      FDF_VECTOR|FDF_CPPSTRING|FDF_RW },
+   { "Flags",           FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clTaskFlags },
    { "ReturnCode",      FDF_INT|FDF_RW, GET_ReturnCode, SET_ReturnCode },
    { "ProcessID",       FDF_INT|FDF_RI },
    // Virtual fields
-   { "Actions",        FDF_POINTER|FDF_R,  GET_Actions },
-   { "AffinityMask",   FDF_INT64|FDF_RW,   GET_AffinityMask, SET_AffinityMask },
-   { "Args",           FDF_STRING|FDF_W,   nullptr, SET_Args },
-   { "Parameters",     FDF_CPP|FDF_ARRAY|FDF_STRING|FDF_RW, GET_Parameters, SET_Parameters },
-   { "ErrorCallback",  FDF_FUNCTIONPTR|FDF_RI, GET_ErrorCallback,   SET_ErrorCallback }, // STDERR
-   { "ExitCallback",   FDF_FUNCTIONPTR|FDF_RW, GET_ExitCallback,    SET_ExitCallback },
-   { "InputCallback",  FDF_FUNCTIONPTR|FDF_RW, GET_InputCallback,   SET_InputCallback }, // STDIN
-   { "LaunchPath",     FDF_STRING|FDF_RW,      GET_LaunchPath,      SET_LaunchPath },
-   { "Location",       FDF_STRING|FDF_RW,      GET_Location,        SET_Location },
-   { "Name",           FDF_STRING|FDF_RW,      GET_Name,            SET_Name },
-   { "OutputCallback", FDF_FUNCTIONPTR|FDF_RI, GET_OutputCallback,  SET_OutputCallback }, // STDOUT
-   { "Path",           FDF_STRING|FDF_RW,      GET_Path,            SET_Path },
-   { "ProcessPath",    FDF_STRING|FDF_R,       GET_ProcessPath },
-   { "Priority",       FDF_INT|FDF_RW,         GET_Priority, SET_Priority },
-   // Synonyms
-   { "Src",            FDF_SYNONYM|FDF_STRING|FDF_RW, GET_Location, SET_Location },
+   { "Actions",         FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_R|FDF_PURE, GET_Actions, nullptr, "ActionEntry" },
+   { "AffinityMask",    FDF_VIRTUAL|FDF_INT64|FDF_RW|FDF_PURE,       GET_AffinityMask, SET_AffinityMask },
+   { "Args",            FDF_VIRTUAL|FDF_CPPSTRING|FDF_W,             nullptr, SET_Args },
+   { "Keys",            FDF_VIRTUAL|FDF_VECTOR|FDF_CPPSTRING|FDF_R,  GET_Keys },
+   { "ErrorCallback",   FDF_VIRTUAL|FDF_FUNCTION|FDF_RI|FDF_PURE,    GET_ErrorCallback,   SET_ErrorCallback }, // STDERR
+   { "ExitCallback",    FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE,    GET_ExitCallback,    SET_ExitCallback },
+   { "InputCallback",   FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE,    GET_InputCallback,   SET_InputCallback }, // STDIN
+   { "OutputCallback",  FDF_VIRTUAL|FDF_FUNCTION|FDF_RI|FDF_PURE,    GET_OutputCallback,  SET_OutputCallback }, // STDOUT
+   { "Priority",        FDF_VIRTUAL|FDF_INT|FDF_RW,                  GET_Priority, SET_Priority },
    END_FIELD
 };
 
@@ -2301,11 +2507,11 @@ extern ERR add_task_class(void)
       fl::ClassVersion(VER_TASK),
       fl::Name("Task"),
       fl::Category(CCF::SYSTEM),
-      fl::FileExtension("*.exe|*.bat|*.com"),
+      fl::FileExtension("exe|bat|com"),
       fl::FileDescription("Executable File"),
       fl::FileHeader("[0:$4d5a]|[0:$7f454c46]"),
       fl::Icon("items/launch"),
-      fl::Actions(clActions),
+      fl::Actions(clTaskActions),
       fl::Methods(clTaskMethods),
       fl::Fields(clFields),
       fl::Size(sizeof(extTask)),

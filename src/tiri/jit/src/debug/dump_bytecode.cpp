@@ -3,6 +3,7 @@
 #define LUA_CORE
 
 #include "lj_obj.h"
+#include "lj_ff.h"
 #include "lj_gc.h"
 #include "lj_err.h"
 #include "lj_debug.h"
@@ -23,6 +24,7 @@
 #include "filesource.h"
 #include "token_types.h"
 #include "parse_types.h"
+#include "../parser/ast/nodes.h"
 #include "dump_bytecode.h"
 #include "../../../defs.h"
 
@@ -81,7 +83,7 @@ static std::string describe_gc_constant(GCproto *Proto, ptrdiff_t Index)
 
    if (not gc_obj) {
       // Most likely an invalid index - could indicate an invalid bytecode stream has been generated.
-      pf::Log("ByteCode").warning("describe_gc_constant: null GC object at index %" PRId64, uint64_t(Index));
+      kt::Log("ByteCode").warning("describe_gc_constant: null GC object at index %" PRId64, uint64_t(Index));
       return "K<null>";
    }
    else if (gc_obj->gch.gct IS (uint8_t)~LJ_TSTR) {
@@ -291,6 +293,82 @@ static BytecodeInfo extract_instruction_info(BCIns Ins)
 
 //********************************************************************************************************************
 
+static std::string_view signature_origin_name(ProtoTypeOrigin Origin)
+{
+   switch (Origin) {
+      case ProtoTypeOrigin::Declared: return "declared";
+      case ProtoTypeOrigin::Inferred: return "inferred";
+      default: return "unspecified";
+   }
+}
+
+static std::string_view signature_strength_name(ProtoTypeStrength Strength)
+{
+   switch (Strength) {
+      case ProtoTypeStrength::Checked: return "checked";
+      case ProtoTypeStrength::Trusted: return "trusted";
+      default: return "advisory";
+   }
+}
+
+static std::string signature_type_name(lua_State *L, const ProtoTypeEntry &Entry)
+{
+   std::string name(type_name(Entry.type));
+   if (not Entry.constraint) return name;
+
+   if (Entry.type IS TiriType::Struct) {
+      if (auto definition = find_struct(L, Entry.constraint)) return std::format("struct<{}>", definition->Name);
+      return std::format("struct<#{:08x}>", Entry.constraint);
+   }
+   if (Entry.type IS TiriType::Object) {
+      if (auto class_name = ResolveClassID(CLASSID(Entry.constraint))) return std::format("obj<{}>", class_name);
+      return std::format("obj<#{:08x}>", Entry.constraint);
+   }
+   if (Entry.type IS TiriType::Array and proto_array_member(Entry) != AET::MAX) {
+      ArrayElementDescriptor element;
+      element.storage = proto_array_member(Entry);
+      element.known = true;
+      if (element.storage IS AET::STRUCT and Entry.constraint) element.struct_def = find_struct(L, Entry.constraint);
+      return std::format("array<{}>", array_element_name(element));
+   }
+   return name;
+}
+
+static void trace_proto_signature(lua_State *L, const GCproto *Proto, BytecodeLogger Logger, void *Meta,
+   std::string_view Indent)
+{
+   const auto signature = proto_signature(Proto);
+   if (not signature) {
+      Logger(std::format("{}Signature: <none>", Indent), Meta);
+      return;
+   }
+
+   std::string flags;
+   if (signature->flags & proto_signature_flag(ProtoSignatureFlag::ParameterVariadic)) flags += " param-variadic";
+   if (signature->flags & proto_signature_flag(ProtoSignatureFlag::ResultVariadic)) flags += " result-variadic";
+   if (signature->flags & proto_signature_flag(ProtoSignatureFlag::ExplicitResults)) flags += " explicit-results";
+   if (signature->flags & proto_signature_flag(ProtoSignatureFlag::DynamicResults)) flags += " dynamic-results";
+   if (flags.empty()) flags = " none";
+
+   Logger(std::format("{}Signature: params={}, results={}, stored-results={}, flags:{}",
+      Indent, signature->parameter_count, signature->result_count, signature->result_entry_count, flags), Meta);
+
+   auto log_entries = [&](std::string_view Prefix, const ProtoTypeEntry *Entries, size_t Count) {
+      for (size_t i = 0; i < Count; ++i) {
+         const auto &entry = Entries[i];
+         Logger(std::format("{}  {}{}:{} [{},{},{},{}]", Indent, Prefix, i + 1,
+            signature_type_name(L, entry), proto_type_nullable(entry) ? "nullable" : "non-null",
+            proto_type_required(entry) ? "required" : "optional", signature_origin_name(proto_type_origin(entry)),
+            signature_strength_name(proto_type_strength(entry))), Meta);
+      }
+   };
+
+   log_entries("P", proto_parameter_types(Proto), signature->parameter_count);
+   log_entries("R", proto_result_types(Proto), signature->result_entry_count);
+}
+
+//********************************************************************************************************************
+
 void format_bc_line(lua_State *L, BCLine Line, int FileWidth, BytecodeLogger Logger, std::string_view Indent, BCPOS pc,
    const std::string &Operands, void *Meta, BytecodeInfo &Info, bool JumpTarget, bool Verbose)
 {
@@ -302,12 +380,13 @@ void format_bc_line(lua_State *L, BCLine Line, int FileWidth, BytecodeLogger Log
          const FileSource *src = get_file_source(L, Line.fileIndex());
 
          std::string_view sv("<unknown>");
-         if (src) sv = std::string_view(src->filename);
+         if (src) {
+            sv = std::string_view(src->filename);
+            if (src->total_lines > 10000) line_no_width += 2;
+            else if (src->total_lines > 1000) line_no_width++;
+         }
          if (sv.size() > size_t(FileWidth)) sv.remove_suffix(sv.size() - FileWidth);
          file_and_line = std::format("{}:{}", sv, Line.lineNumber());
-
-         if (src->total_lines > 10000) line_no_width += 2;
-         else if (src->total_lines > 1000) line_no_width++;
       }
       else file_and_line = "<unknown>:-";
 
@@ -368,6 +447,8 @@ void trace_proto_bytecode(lua_State *L, GCproto *Proto, BytecodeLogger Logger, v
          indent_str, first_line, last_line, int(Proto->sizebc)), Meta);
    }
 
+   trace_proto_signature(L, Proto, Logger, Meta, indent_str);
+
    auto file_width = widest_file_source(L, false);
 
    for (BCPOS pc = 0; pc < Proto->sizebc; ++pc) {
@@ -379,11 +460,24 @@ void trace_proto_bytecode(lua_State *L, GCproto *Proto, BytecodeLogger Logger, v
       if (info.mode_a != BCMnone) append_operand(operands, "A", describe_operand_value(Proto, nullptr, info.mode_a, info.value_a, pc));
 
       if (bcmode_hasd(info.op)) {
-         if (info.mode_d != BCMnone) append_operand(operands, "D", describe_operand_value(Proto, nullptr, info.mode_d, info.value_d, pc));
+         if (info.op IS BC_BFUNC) {
+            const char *name = builtin_callable_name(BuiltinCallableID(info.value_d));
+            append_operand(operands, "D", name ? name : std::format("#{}<invalid>", info.value_d));
+         }
+         else if (info.mode_d != BCMnone) {
+            append_operand(operands, "D", describe_operand_value(Proto, nullptr, info.mode_d, info.value_d, pc));
+         }
       }
       else {
          if (info.mode_b != BCMnone) append_operand(operands, "B", describe_operand_value(Proto, nullptr, info.mode_b, info.value_b, pc));
          if (info.mode_c != BCMnone) append_operand(operands, "C", describe_operand_value(Proto, nullptr, info.mode_c, info.value_c, pc));
+      }
+      if (info.op IS BC_STGETF or info.op IS BC_STSETF) {
+         uint32_t field_index = bc_p32(instruction);
+         append_operand(operands, "P", field_index IS 0xFFFFFFFFu ? "dynamic" : std::format("#{}", field_index));
+      }
+      else if (info.op IS BC_BMETH) {
+         append_operand(operands, "P", describe_operand_value(Proto, nullptr, BCMstr, bc_p32(instruction), pc));
       }
 
       BCLine line = get_proto_line(Proto, pc);
@@ -412,7 +506,7 @@ void trace_proto_bytecode(lua_State *L, GCproto *Proto, BytecodeLogger Logger, v
 
 extern void dump_bytecode(FuncState &fs)
 {
-   pf::Log log("ByteCode");
+   kt::Log log("ByteCode");
 
    auto log_callback = [](std::string_view Msg, void *Meta) {
       fprintf(stderr, "%.*s\n", int(Msg.size()), Msg.data());
@@ -431,11 +525,24 @@ extern void dump_bytecode(FuncState &fs)
       if (info.mode_a != BCMnone) append_operand(operands, "A", describe_operand_value(nullptr, &fs, info.mode_a, info.value_a, pc));
 
       if (bcmode_hasd(info.op)) {
-         if (info.mode_d != BCMnone) append_operand(operands, "D", describe_operand_value(nullptr, &fs, info.mode_d, info.value_d, pc));
+         if (info.op IS BC_BFUNC) {
+            const char *name = builtin_callable_name(BuiltinCallableID(info.value_d));
+            append_operand(operands, "D", name ? name : std::format("#{}<invalid>", info.value_d));
+         }
+         else if (info.mode_d != BCMnone) {
+            append_operand(operands, "D", describe_operand_value(nullptr, &fs, info.mode_d, info.value_d, pc));
+         }
       }
       else {
          if (info.mode_b != BCMnone) append_operand(operands, "B", describe_operand_value(nullptr, &fs, info.mode_b, info.value_b, pc));
          if (info.mode_c != BCMnone) append_operand(operands, "C", describe_operand_value(nullptr, &fs, info.mode_c, info.value_c, pc));
+      }
+      if (info.op IS BC_STGETF or info.op IS BC_STSETF) {
+         uint32_t field_index = bc_p32(iline.ins);
+         append_operand(operands, "P", field_index IS 0xFFFFFFFFu ? "dynamic" : std::format("#{}", field_index));
+      }
+      else if (info.op IS BC_BMETH) {
+         append_operand(operands, "P", describe_operand_value(nullptr, &fs, BCMstr, bc_p32(iline.ins), pc));
       }
 
       format_bc_line(fs.L, iline.line, file_width, log_callback, "", pc, operands, nullptr, info, false, true);

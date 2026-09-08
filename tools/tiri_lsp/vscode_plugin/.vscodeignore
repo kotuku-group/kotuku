@@ -1,0 +1,8 @@
+node_modules/**
+extension.js
+package-lock.json
+*.vsix
+.vscode/**
+.vscode-test/**
+npm-debug.log
+yarn-error.log

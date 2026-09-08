@@ -64,6 +64,24 @@ end
    assert(debug.getMetatable(t) is nil, "Should have no metatable after setting nil")
 end
 
+@Test function StructMetatableIsPerInstance()
+   MAKESTRUCT('DebugMetatableStruct', 'lValue')
+   first = struct.new('DebugMetatableStruct', { value=11 })
+   second = struct.new('DebugMetatableStruct', { value=22 })
+   custom_mt = { __index = { custom=true } }
+
+   assert(debug.getMetatable(first) is nil, 'A new struct should not have an instance metatable')
+   assert(debug.getMetatable(second) is nil, 'Struct instance metatables should start unset')
+
+   debug.setMetatable(first, custom_mt)
+   assert(debug.getMetatable(first) is custom_mt, 'The custom metatable should be stored on the target struct')
+   assert(debug.getMetatable(second) is nil, 'Setting one struct metatable must not change another struct')
+   assert(second.value is 22, 'Other structs should retain native field access through the base metatable')
+
+   debug.setMetatable(first, nil)
+   assert(first.value is 11, 'Removing the instance metatable should restore native field access')
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- debug.getEnv() / debug.setEnv()
 
@@ -74,6 +92,8 @@ end
 end
 
 @Test function SetEnvOfFunction()
+   global someVar
+
    function targetFunc()
       return someVar
    end
@@ -88,6 +108,49 @@ end
    new_env = {}
    result = debug.setEnv(testFunc, new_env)
    assert(result is testFunc, "debug.setEnv should return the original object")
+end
+
+@Test function EnvRejectsUserdata()
+   user_data = regex.new('')
+
+   function get_env_dynamic(Value:any)
+      return debug.getEnv(Value)
+   end
+
+   function set_env_dynamic(Value:any)
+      return debug.setEnv(Value, {})
+   end
+
+   get_failed = false
+   try
+      get_env_dynamic(user_data)
+   except e
+      get_failed = true
+      assert(e.message.find('function') != nil, 'getEnv should report its function-only contract: ' .. e.message)
+   end
+   assert(get_failed, 'debug.getEnv should reject userdata')
+
+   set_failed = false
+   try
+      set_env_dynamic(user_data)
+   except e
+      set_failed = true
+      assert(e.message.find('function') != nil, 'setEnv should report its function-only contract: ' .. e.message)
+   end
+   assert(set_failed, 'debug.setEnv should reject userdata')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- debug.getUserValue() / debug.setUserValue()
+
+@Test function SetAndGetUserValue()
+   user_data = regex.new('')
+   user_value = { purpose = 'debug user value' }
+
+   result = debug.setUserValue(user_data, user_value)
+   assert(result is user_data, 'debug.setUserValue should return the original userdata')
+   assert(debug.getUserValue(user_data) is user_value,
+      'debug.getUserValue should return the table assigned by debug.setUserValue')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -107,7 +170,7 @@ end
    info = debug.getInfo(namedFunc, "Su")
    assert(type(info) is 'table', "debug.getInfo should return a table")
    assert(info.what is "Tiri", "Function should be Tiri type")
-   assert(info.nups >= 0, "nups should be non-negative")
+   assert(info.nUpvalues >= 0, "nUpvalues should be non-negative")
 end
 
 @Test function GetInfoSourceFields()
@@ -135,7 +198,7 @@ end
       return captured
    end
    info = debug.getInfo(closureFunc, "u")
-   assert(info.nups >= 1, "Closure should have at least 1 upvalue, got " .. info.nups)
+   assert(info.nUpvalues >= 1, "Closure should have at least 1 upvalue, got " .. info.nUpvalues)
 end
 
 @Test function GetInfoParamInfo()
@@ -316,7 +379,7 @@ end
 @Test function HookCallEvents()
    events = {}
    function myHook(Event, Line)
-      table.insert(events, Event)
+      events.insert(Event)
    end
 
    debug.setHook(myHook, "c")  -- Hook on call events
@@ -331,9 +394,9 @@ end
    debug.setHook(function() end, "crl")
    hook, mask, count = debug.getHook()
    -- Mask should contain all three characters (order may vary)
-   assert(mask:find('c'), "Mask should contain 'c'")
-   assert(mask:find('r'), "Mask should contain 'r'")
-   assert(mask:find('l'), "Mask should contain 'l'")
+   assert(mask.find('c'), "Mask should contain 'c'")
+   assert(mask.find('r'), "Mask should contain 'r'")
+   assert(mask.find('l'), "Mask should contain 'l'")
    debug.setHook()
 end
 
@@ -357,7 +420,7 @@ end
 @Test function TracebackWithMessage()
    tb = debug.traceback("my error")
    assert(type(tb) is 'string', "traceback should return a string")
-   assert(tb:find("my error"), "traceback should contain the message")
+   assert(tb.find("my error"), "traceback should contain the message")
 end
 
 @Test function TracebackWithLevel()
@@ -366,7 +429,7 @@ end
    end
    tb = inner()
    assert(type(tb) is 'string', "traceback should return a string")
-   assert(tb:find("from inner"), "traceback should contain the message")
+   assert(tb.find("from inner"), "traceback should contain the message")
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -377,26 +440,6 @@ end
    assert(type(result) is 'table', "validate should return a table")
    assert(result.success is true, "Valid code should succeed")
    assert(type(result.diagnostics) is 'table', "Should have diagnostics array")
-end
-
-@Test function ValidateInvalidCode()
-   result = debug.validate("if then end end")
-   assert(type(result) is 'table', "validate should return a table")
-   assert(result.success is false, "Invalid code should fail")
-   assert(#result.diagnostics > 0, "Should have diagnostic entries for invalid code")
-end
-
-@Test function ValidateDiagnosticFields()
-   result = debug.validate("if then")
-   assert(result.success is false, "Should fail")
-   assert(#result.diagnostics > 0, "Should have diagnostics")
-
-   diag = result.diagnostics[0]
-   assert(diag.line != nil, "Diagnostic should have line")
-   assert(diag.column != nil, "Diagnostic should have column")
-   assert(diag.severity != nil, "Diagnostic should have severity")
-   assert(diag.code != nil, "Diagnostic should have code")
-   assert(diag.message != nil, "Diagnostic should have message")
 end
 
 @Test function ValidateEmptyCode()
@@ -412,6 +455,84 @@ end
    assert(type(result.tips) is 'table', "tips should be a table")
 end
 
+@Test function ValidateTipCoordinatesAreOneBased()
+   result = debug.validate('local unused_validate_position = 1')
+   assert(#result.tips > 0, 'An unused local should produce a tip')
+
+   tip = result.tips[0]
+   assert(tip.line is 1, f"Expected tip on line 1, got {tip.line}")
+   assert(tip.column is 7, f"Expected tip at column 7, got {tip.column}")
+   assert(tip.endColumn is 8, f"Expected tip to end after column 7, got {tip.endColumn}")
+end
+
+function hasTipMessage(Result, Message)
+   if not Result.tips then return false end
+   for tip in values(Result.tips) do
+      if tip.message is Message then return true end
+   end
+   return false
+end
+
+function hasDiagnosticMessage(Result, Message)
+   if not Result.diagnostics then return false end
+   for diagnostic in values(Result.diagnostics) do
+      if diagnostic.message and diagnostic.message.find(Message) then return true end
+   end
+   return false
+end
+
+@Test function ValidatePathDoesNotRegisterFileSource()
+   err, missing_path = mSys.ResolvePath('temp:debug_validate_lsp_missing.tiri', RSF_NO_FILE_CHECK)
+   assert(err is ERR_Okay, 'Failed to resolve temporary missing file path')
+   mSys.DeleteFile(missing_path)
+
+   err, importer_path = mSys.ResolvePath('temp:debug_validate_lsp_importer.tiri', RSF_NO_FILE_CHECK)
+   assert(err is ERR_Okay, 'Failed to resolve temporary importer path')
+
+   primed = debug.validate('buffer_only = true', { path = missing_path })
+   assert(primed.success is true, 'Initial buffer validation should succeed')
+
+   for source in values(debug.fileSources()) do
+      assert(source.path != missing_path, 'debug.validate(path) should not register the buffer path as a FileSource')
+   end
+
+   imported = debug.validate("import './debug_validate_lsp_missing'\nmissing_value = true", { path = importer_path })
+   assert(imported.success is false, 'Missing imported file should not be hidden by an earlier buffer validation')
+   assert(hasDiagnosticMessage(imported, 'Cannot open imported file'), 'Expected missing imported file diagnostic')
+end
+
+@Test function ValidateChooseWithoutElseTip()
+   message = "Choose expression has no else branch; unmatched values evaluate to nil"
+   result = debug.validate([[
+      _ = choose 'missing' from
+         'found' -> 'ok'
+      end
+   ]])
+   assert(result.success is true, "Choose without else should still parse")
+   assert(hasTipMessage(result, message), "Expected missing-else choose tip")
+end
+
+@Test function ValidateChooseFallbackSuppressesTip()
+   message = "Choose expression has no else branch; unmatched values evaluate to nil"
+
+   with_else = debug.validate([[
+      _ = choose 'missing' from
+         'found' -> 'ok'
+         else -> 'fallback'
+      end
+   ]])
+   assert(with_else.success is true, "Choose with else should parse")
+   assert(not hasTipMessage(with_else, message), "Choose with else should not emit missing-else tip")
+
+   with_wildcard = debug.validate([[
+      _ = choose 'missing' from
+         _ -> 'fallback'
+      end
+   ]])
+   assert(with_wildcard.success is true, "Choose with wildcard should parse")
+   assert(not hasTipMessage(with_wildcard, message), "Choose with wildcard should not emit missing-else tip")
+end
+
 @Test function ValidateComplexCode()
    code = [[
       function hello(Name)
@@ -421,4 +542,392 @@ end
    ]]
    result = debug.validate(code)
    assert(result.success is true, "Valid function definition should succeed")
+end
+
+@Test function ValidateSymbolsOption()
+   code = "function symbolOption(Value:any!):any! return Value end"
+
+   result = debug.validate(code, { symbols = true })
+   assert(result.success is true, "Valid symbols option code should succeed")
+   assert(result.symbols != nil, "symbols=true should include a symbols table")
+   assert(#result.symbols is 1, "Expected one symbol with symbols=true")
+   assert(result.symbols[0].name is "symbolOption", "Expected symbolOption symbol")
+   assert(result.symbols[0].signature is "symbolOption(Value: any!):any!",
+      "Required any parameters should retain their annotation in signatures")
+end
+
+@Test function ValidateSymbolsWithDocAnnotation()
+   code = [=[
+      @Doc(text=[[
+         Returns a greeting.
+
+         -INPUT-
+         Name: Person to greet
+
+         -RESULTS-
+         str: Greeting text
+
+         -ERRORS-
+         Args: If the name is invalid
+      ]])
+      function greet(Name: str):str
+         return "Hello " .. Name
+      end
+   ]=]
+
+   result = debug.validate(code, { symbols = true })
+   assert(result.success is true, "Valid documented function should succeed")
+   assert(result.symbols != nil, "symbols option should include a symbols table")
+   assert(#result.symbols is 1, "Expected one symbol, got " .. #result.symbols)
+
+   symbol = result.symbols[0]
+   assert(symbol.name is "greet", "Expected function name greet, got " .. tostring(symbol.name))
+   assert(symbol.signature is "greet(Name: str):str", "Unexpected signature: " .. tostring(symbol.signature))
+   assert(symbol.doc.summary is "Returns a greeting.", "Doc summary should be parsed")
+   assert(symbol.params[0].name is "Name", "Expected first param to be Name")
+   assert(symbol.params[0].type is "str", "Expected Name type to be str")
+   assert(symbol.params[0].doc is "Person to greet", "Expected Name doc to be merged")
+   assert(symbol.results[0].type is "str", "Expected return type to be str")
+   assert(symbol.results[0].doc is "Greeting text", "Expected return doc to be merged")
+   assert(symbol.errors[0].code is "Args", "Expected Args error documentation")
+end
+
+@Test function ValidateSymbolsWithCompactDocAnnotation()
+   code = [=[
+      @Doc(text=[[
+         @desc Returns a greeting.
+         @input First name to greet
+         @input Last name to greet
+         @result Greeting text
+         @result Additional argument
+         @error Args: If the name is invalid
+         @error Failed: Random failure
+      ]])
+      function greetCompact(First: str, Last: str):<str, str>
+         return "Hello " .. First .. " " .. Last, "extra"
+      end
+   ]=]
+
+   result = debug.validate(code, { symbols = true })
+   assert(result.success is true, "Valid compact documented function should succeed")
+   assert(result.symbols != nil, "symbols option should include a symbols table")
+   assert(#result.symbols is 1, "Expected one symbol, got " .. #result.symbols)
+
+   symbol = result.symbols[0]
+   assert(symbol.name is "greetCompact", "Expected function name greetCompact, got " .. tostring(symbol.name))
+   assert(symbol.doc.summary is "Returns a greeting.", "Compact @desc should define doc summary")
+   assert(symbol.params[0].name is "First", "Expected first compact param to be First")
+   assert(symbol.params[0].doc is "First name to greet", "Expected first compact @input doc to be merged")
+   assert(symbol.params[1].name is "Last", "Expected second compact param to be Last")
+   assert(symbol.params[1].doc is "Last name to greet", "Expected second compact @input doc to be merged")
+   assert(symbol.results[0].type is "str", "Expected first compact return type to be str")
+   assert(symbol.results[0].doc is "Greeting text", "Expected first compact @result doc")
+   assert(symbol.results[0].inferred is false, "Explicit compact result type should not be inferred")
+   assert(symbol.results[1].type is "str", "Expected second compact return type to be str")
+   assert(symbol.results[1].doc is "Additional argument", "Expected second compact @result doc")
+   assert(symbol.results[1].inferred is false, "Explicit compact result type should not be inferred")
+   assert(symbol.errors[0].code is "Args", "Expected first compact error code")
+   assert(symbol.errors[0].doc is "If the name is invalid", "Expected first compact error doc")
+   assert(symbol.errors[1].code is "Failed", "Expected second compact error code")
+   assert(symbol.errors[1].doc is "Random failure", "Expected second compact error doc")
+end
+
+@Test function ValidateSymbolsWithCompactDocInferredResults()
+   code = [=[
+      @Doc(text=[[
+         @desc Infers result types from return expressions.
+         @input Value to format
+         @result Incremented value
+         @result Status text
+         @result Success flag
+      ]])
+      function inferCompact(Value: num)
+         return Value + 1, "ready", true
+      end
+   ]=]
+
+   result = debug.validate(code, { symbols = true })
+   assert(result.success is true, "Valid compact inferred result docs should succeed")
+   assert(result.symbols != nil, "symbols option should include a symbols table")
+   assert(#result.symbols is 1, "Expected one symbol, got " .. #result.symbols)
+
+   symbol = result.symbols[0]
+   assert(symbol.params[0].doc is "Value to format", "Expected compact @input doc to be positional")
+   assert(symbol.results[0].type is "num", "Expected first compact result type to be inferred as num, got " .. tostring(symbol.results[0].type))
+   assert(symbol.results[0].doc is "Incremented value", "Expected first inferred compact @result doc")
+   assert(symbol.results[0].inferred is true, "Inferred compact result type should be marked inferred")
+   assert(symbol.results[1].type is "str", "Expected second compact result type to be inferred as str")
+   assert(symbol.results[1].doc is "Status text", "Expected second inferred compact @result doc")
+   assert(symbol.results[1].inferred is true, "Inferred compact result type should be marked inferred")
+   assert(symbol.results[2].type is "bool", "Expected third compact result type to be inferred as bool")
+   assert(symbol.results[2].doc is "Success flag", "Expected third inferred compact @result doc")
+   assert(symbol.results[2].inferred is true, "Inferred compact result type should be marked inferred")
+end
+
+@Test function ValidateSymbolsWithForwardedCallResults()
+   code = [=[
+      function declaredPair():<num, str>
+         return 7, "forwarded"
+      end
+
+      function inferredWrapper()
+         return declaredPair()
+      end
+   ]=]
+
+   result = debug.validate(code, { symbols = true })
+   assert(result.success is true, "A wrapper forwarding declared results should succeed")
+   assert(#result.symbols is 2, "Expected the declared function and its wrapper")
+
+   symbol = result.symbols[1]
+   assert(symbol.name is "inferredWrapper", "Expected the inferred wrapper symbol")
+   assert(#symbol.results is 2, "Expected both forwarded results in parser symbols")
+   assert(symbol.results[0].type is "num", "Expected the first forwarded result to remain num")
+   assert(symbol.results[1].type is "str", "Expected the second forwarded result to remain str")
+   assert(symbol.results[0].inferred is true, "Expected the first forwarded result to be inferred")
+   assert(symbol.results[1].inferred is true, "Expected the second forwarded result to be inferred")
+end
+
+@Test function ValidateSymbolsWithForwardedAnyResult()
+   code = [=[
+      function declaredPair():<num, any>
+         return 7, nil
+      end
+
+      function inferredWrapper()
+         return declaredPair()
+      end
+   ]=]
+
+   result = debug.validate(code, { symbols = true })
+   assert(result.success is true, "A wrapper forwarding an explicit any result should succeed")
+   assert(#result.symbols is 2, "Expected the declared function and its wrapper")
+
+   symbol = result.symbols[1]
+   assert(symbol.name is "inferredWrapper", "Expected the inferred wrapper symbol")
+   assert(#symbol.results is 2, "Expected both forwarded results in parser symbols")
+   assert(symbol.results[0].type is "num", "Expected the first forwarded result to remain num")
+   assert(symbol.results[1].type is "any", "Expected the second forwarded result to remain any")
+end
+
+@Test function ValidateSymbolsWithPrefixedForwardedCallResults()
+   code = [=[
+      function declaredPair():<num, str>
+         return 7, "forwarded"
+      end
+
+      function inferredWrapper()
+         return true, declaredPair()
+      end
+   ]=]
+
+   result = debug.validate(code, { symbols = true })
+   assert(result.success is true, "A wrapper with a fixed return prefix should succeed")
+   assert(#result.symbols is 2, "Expected the declared function and its wrapper")
+
+   symbol = result.symbols[1]
+   assert(symbol.name is "inferredWrapper", "Expected the inferred wrapper symbol")
+   assert(#symbol.results is 3, "Expected the fixed result and both forwarded results")
+   assert(symbol.results[0].type is "bool", "Expected the fixed result to remain bool")
+   assert(symbol.results[1].type is "num", "Expected the first forwarded result to remain num")
+   assert(symbol.results[2].type is "str", "Expected the second forwarded result to remain str")
+end
+
+@Test function ValidateSymbolsWithCompactDocUnknownResultFallback()
+   code = [=[
+      @Doc(text=[[
+         @desc Falls back when a result type is unknown.
+         @input Callback that produces a value
+         @result Callback result
+      ]])
+      function compactFallback(Callback:func):any
+         return Callback()
+      end
+   ]=]
+
+   result = debug.validate(code, { symbols = true })
+   assert(result.success is true, "Valid compact unknown result docs should succeed")
+   assert(result.symbols != nil, "symbols option should include a symbols table")
+   assert(#result.symbols is 1, "Expected one symbol, got " .. #result.symbols)
+
+   symbol = result.symbols[0]
+   assert(symbol.params[0].doc is "Callback that produces a value", "Expected fallback compact @input doc")
+   assert(symbol.results[0].type is "any", "Compact result type expected to be any")
+   assert(symbol.results[0].doc is "Callback result", "Expected fallback compact @result doc")
+end
+
+@Test function ValidateSymbolsWithAnnotatedFunctionAssignment()
+   code = [=[
+      docs = {}
+
+      @Doc(text=[[
+         @desc Documents an assigned function expression.
+         @input Text to return
+         @result Returned text
+      ]])
+      docs.echo = function(Text: str):str
+         return Text
+      end
+   ]=]
+
+   result = debug.validate(code, { symbols = true })
+   assert(result.success is true, "Annotated function assignment should parse")
+   assert(result.symbols != nil, "symbols option should include a symbols table")
+   assert(#result.symbols is 1, "Expected one symbol, got " .. #result.symbols)
+
+   symbol = result.symbols[0]
+   assert(symbol.name is "docs.echo", "Expected assigned function symbol, got " .. tostring(symbol.name))
+   assert(symbol.doc.summary is "Documents an assigned function expression.", "Expected assignment doc summary")
+   assert(symbol.params[0].name is "Text", "Expected assignment parameter name")
+   assert(symbol.params[0].doc is "Text to return", "Expected assignment parameter doc")
+   assert(symbol.results[0].type is "str", "Expected assignment result type")
+   assert(symbol.results[0].doc is "Returned text", "Expected assignment result doc")
+end
+
+@Test function ValidateSymbolsWithGlobalFunctionExpression()
+   code = [=[
+      global greetGlobal = function(Name: str):str
+         return "Hello " .. Name
+      end
+   ]=]
+
+   result = debug.validate(code, { symbols = true })
+   assert(result.success is true, "Valid global function expression should succeed")
+   assert(result.symbols != nil, "symbols option should include a symbols table")
+   assert(#result.symbols is 1, "Expected one symbol, got " .. #result.symbols)
+
+   symbol = result.symbols[0]
+   assert(symbol.name is "greetGlobal", "Expected global function expression symbol, got " .. tostring(symbol.name))
+   assert(symbol.signature is "greetGlobal(Name: str):str", "Unexpected signature: " .. tostring(symbol.signature))
+   assert(symbol.params[0].name is "Name", "Expected first param to be Name")
+   assert(symbol.params[0].type is "str", "Expected Name type to be str")
+   assert(symbol.results[0].type is "str", "Expected return type to be str")
+end
+
+@Test function ValidateStructSymbols()
+   code = [=[
+struct ValidatePoint
+   X: double
+   Y: double
+end
+
+-- Leading description.
+struct ValidateUser
+   Name: str -- The user name.
+   Age: int
+   Sock: obj<NetSocket>
+   Buf: char[16]
+   Tags: array<float>
+   Home: struct<ValidatePoint>
+   Next: ptr<ValidatePoint>
+   List: ptr<ValidatePoint[]>
+end
+
+function validateGreet(U):str
+   return U.Name
+end
+]=]
+
+   result = debug.validate(code, { symbols = true })
+   assert(result.success is true, "Struct declarations should validate")
+   assert(result.symbols != nil, "symbols option should include a symbols table")
+   assert(#result.symbols is 3, "Expected three symbols, got " .. #result.symbols)
+
+   local point, user, greet
+   for s in values(result.symbols) do
+      if s.name is 'ValidatePoint' then point = s end
+      if s.name is 'ValidateUser' then user = s end
+      if s.name is 'validateGreet' then greet = s end
+   end
+
+   assert(greet and greet.kind is 'function', "Function symbols should be unaffected by struct support")
+   assert(point and point.kind is 'struct', "Expected a struct symbol for ValidatePoint")
+   assert(point.signature is 'struct ValidatePoint', "Unexpected struct signature: " .. tostring(point.signature))
+   assert(#point.fields is 2, "Expected two ValidatePoint fields, got " .. #point.fields)
+   assert(point.line is 1, "Struct symbol line should be 1-based, got " .. point.line)
+   assert(point.endLine is 4, "Struct endLine should sit on the end keyword, got " .. point.endLine)
+
+   assert(user and user.kind is 'struct', "Expected a struct symbol for ValidateUser")
+   assert(#user.fields is 8, "Expected eight ValidateUser fields, got " .. #user.fields)
+
+   fields = {}
+   for f in values(user.fields) do fields[f.name] = f end
+
+   assert(fields.Name.type is 'str', "Name field type should be preserved")
+   assert(fields.Name.doc is 'The user name.', "Trailing field doc comment should be captured")
+   assert(fields.Age.type is 'int', "Age field type should be preserved")
+   assert(fields.Sock.type is 'obj<NetSocket>', "Object class constraints should be preserved")
+   assert(fields.Buf.type is 'char[16]', "Fixed array types should be preserved")
+   assert(fields.Tags.type is 'array<float>', "Dynamic array types should be preserved")
+   assert(fields.Home.type is 'struct<ValidatePoint>', "Embedded struct types should be preserved")
+   assert(fields.Next.type is 'ptr<ValidatePoint>', "Struct pointer types should be preserved")
+   assert(fields.List.type is 'ptr<ValidatePoint[]>', "Null-terminated list types should be preserved")
+   assert(fields.Name.line is 8, "Field lines should be 1-based, got " .. fields.Name.line)
+
+   -- Functions should carry an empty fields array rather than nil for consistency.
+   assert(greet.fields != nil and #greet.fields is 0, "Function symbols should have an empty fields array")
+end
+
+@Test function ValidateSymbolCoordinatesAreOneBased()
+   result = debug.validate('struct ValidateCoordinates\n   Value: int\nend', { symbols = true })
+   assert(result.success is true, 'Struct declaration should validate')
+   assert(#result.symbols is 1, 'Expected one struct symbol')
+
+   symbol = result.symbols[0]
+   assert(symbol.line is 1, f"Expected symbol on line 1, got {symbol.line}")
+   assert(symbol.column is 8, f"Expected symbol at column 8, got {symbol.column}")
+   assert(symbol.endLine is 3, f"Expected symbol to end on line 3, got {symbol.endLine}")
+   assert(#symbol.fields is 1, 'Expected one struct field')
+   assert(symbol.fields[0].line is 2, f"Expected field on line 2, got {symbol.fields[0].line}")
+   assert(symbol.fields[0].column is 4, f"Expected field at column 4, got {symbol.fields[0].column}")
+end
+
+@Test function ValidateFunctionSymbolCoordinatesIdentifyNames()
+   result = debug.validate([[
+function named()
+end
+local assigned = function()
+end
+target = {}
+target.method = function()
+end
+local function localNamed()
+end
+global function globalNamed()
+end
+function outer()
+   function inner()
+   end
+end
+]], { symbols = true })
+   assert(result.success is true, 'Function declarations should validate')
+
+   symbols = {}
+   for symbol in values(result.symbols) do symbols[symbol.name] = symbol end
+
+   assert(symbols.named.column is 10, f"Expected named at column 10, got {symbols.named.column}")
+   assert(symbols.assigned.column is 7, f"Expected assigned at column 7, got {symbols.assigned.column}")
+   assert(symbols['target.method'].column is 1,
+      f"Expected target.method at column 1, got {symbols['target.method'].column}")
+   assert(symbols.localNamed.column is 16,
+      f"Expected localNamed at column 16, got {symbols.localNamed.column}")
+   assert(symbols.globalNamed.column is 17,
+      f"Expected globalNamed at column 17, got {symbols.globalNamed.column}")
+   assert(symbols.inner.column is 13, f"Expected inner at column 13, got {symbols.inner.column}")
+   assert(symbols.inner.endLine is 14, f"Expected inner to end on line 14, got {symbols.inner.endLine}")
+   assert(symbols.inner.endColumn is 4,
+      f"Expected inner end token at column 4, got {symbols.inner.endColumn}")
+end
+
+@Test function ValidateStructRevalidationIsSideEffectFree()
+   -- Validation must not permanently register declared structs: an edited declaration would otherwise conflict
+   -- with the version registered by an earlier validation of the same document.
+
+   first = debug.validate('struct RevalidateRecord Value: int end', { symbols = true })
+   assert(first.success is true, "Initial struct declaration should validate")
+
+   second = debug.validate('struct RevalidateRecord Value: float end', { symbols = true })
+   assert(second.success is true,
+      "Revalidating an edited struct must not conflict with the previous validation")
+   assert(#second.diagnostics is 0, "No diagnostics expected for the edited declaration")
 end

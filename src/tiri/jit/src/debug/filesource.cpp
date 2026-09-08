@@ -12,7 +12,7 @@
 uint8_t register_file_source(lua_State *L, std::string &Path, const std::string &Filename, BCLine FirstLine,
    BCLine SourceLines, uint8_t ParentIndex, BCLine ImportLine)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (L->file_sources.size() >= FILESOURCE_MAX_INDEX) { // Check if we've hit the file limit
       if (L->file_sources.size() IS FILESOURCE_MAX_INDEX) { // Initialise the overflow entry if not already done
@@ -35,11 +35,11 @@ uint8_t register_file_source(lua_State *L, std::string &Path, const std::string 
    }
 
    std::string resolved_path;
-   if (ResolvePath(Path, RSF::NO_FILE_CHECK, &resolved_path) IS ERR::Okay) {
+   if (!ResolvePath(Path, RSF::NO_FILE_CHECK, &resolved_path)) {
       Path = resolved_path;
    }
 
-   auto path_hash = pf::strihash(Path);
+   auto path_hash = kt::strihash(Path);
 
    // Check if this file is already registered
 

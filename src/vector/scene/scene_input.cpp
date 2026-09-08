@@ -6,11 +6,11 @@
 
 extVectorViewport * get_viewport_at_xy(extVectorScene *Scene, double X, double Y)
 {
-   //pf::Log log(__FUNCTION__);
+   //kt::Log log(__FUNCTION__);
    //log.branch("Scene: %d", Scene->UID);
 
    auto inspect_xy = [](auto &Self, extVector *Vector, double X, double Y) -> extVectorViewport * {
-      //pf::Log log("get_viewport_node");
+      //kt::Log log("get_viewport_node");
       //log.branch("Vector: %d %s", Vector->UID, Vector->Name);
 
       // Always scan backwards since the last vector in the branch is top-most in its stack.
@@ -70,20 +70,26 @@ static void send_input_events(extVector *Vector, InputEvent *Event, bool Propaga
       return;
    }
 
-   //pf::Log log(__FUNCTION__);
+   //kt::Log log(__FUNCTION__);
    //log.branch("Vector: %d, Type: %d", Vector->UID, Event->Type);
 
    bool consumed = false;
    for (auto it=Vector->InputSubscriptions->begin(); it != Vector->InputSubscriptions->end(); ) {
       auto &sub = *it;
 
-      if (((Event->Mask & JTYPE::REPEATED) != JTYPE::NIL) and ((sub.Mask & JTYPE::REPEATED) IS JTYPE::NIL)) it++;
+      if (sub.Callback.Context->terminating()) {
+         release_callback(sub.Callback);
+         it = Vector->InputSubscriptions->erase(it);
+         update_input_subscription_state(Vector);
+         mark_input_boundary_dirty(Vector);
+      }
+      else if (((Event->Mask & JTYPE::REPEATED) != JTYPE::NIL) and ((sub.Mask & JTYPE::REPEATED) IS JTYPE::NIL)) it++;
       else if ((sub.Mask & Event->Mask) != JTYPE::NIL) {
          ERR result = ERR::Terminate;
          consumed = true;
 
          if (sub.Callback.isC()) {
-            pf::SwitchContext ctx(sub.Callback.Context);
+            kt::SwitchContext ctx(sub.Callback.Context);
             auto callback = (ERR (*)(objVector *, InputEvent *, APTR))sub.Callback.Routine;
             result = callback(Vector, Event, sub.Callback.Meta);
          }
@@ -95,6 +101,7 @@ static void send_input_events(extVector *Vector, InputEvent *Event, bool Propaga
          }
 
          if (result IS ERR::Terminate) {
+            release_callback(sub.Callback);
             it = Vector->InputSubscriptions->erase(it);
             update_input_subscription_state(Vector);
             mark_input_boundary_dirty(Vector);
@@ -185,7 +192,7 @@ static void send_wheel_event(extVectorScene *Scene, extVector *Vector, const Inp
 
 ERR scene_input_events(const InputEvent *Events, int Handle)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    auto Self = (extVectorScene *)CurrentContext();
    if (not Self->SurfaceID) return ERR::Okay; // Sanity check
@@ -219,13 +226,13 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
 
       if (input->Type IS JET::WHEEL) {
          if (Self->ActiveVector) {
-            pf::ScopedObjectLock<extVector> lock(Self->ActiveVector);
+            kt::ScopedObjectLock<extVector> lock(Self->ActiveVector);
             if (lock.granted()) send_wheel_event(Self, lock.obj, input);
          }
       }
       else if (input->Type IS JET::CROSSED_OUT) {
          if (Self->ActiveVector) {
-            pf::ScopedObjectLock<extVector> lock(Self->ActiveVector);
+            kt::ScopedObjectLock<extVector> lock(Self->ActiveVector);
             if (lock.granted()) send_left_event(lock.obj, input, Self->ActiveVectorX, Self->ActiveVectorY);
          }
       }
@@ -234,7 +241,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
          OBJECTID target = Self->ButtonLock ? Self->ButtonLock : Self->ActiveVector;
 
          if (target) {
-            pf::ScopedObjectLock<extVector> lk_vector(target);
+            kt::ScopedObjectLock<extVector> lk_vector(target);
             if (lk_vector.granted()) {
                InputEvent event = *input;
                event.Next   = nullptr;
@@ -264,7 +271,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
 
                   if (not bounds.bounds.hit_test(input->X, input->Y)) continue;
 
-                  pf::ScopedObjectLock<extVector> lock(bounds.vector_id);
+                  kt::ScopedObjectLock<extVector> lock(bounds.vector_id);
                   if (not lock.granted()) continue;
                   auto vector = lock.obj;
 
@@ -287,7 +294,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
                      invert.transform(&tx, &ty);
 
                      if ((Self->ActiveVector) and (Self->ActiveVector != vector->UID)) {
-                        pf::ScopedObjectLock<extVector> lock(Self->ActiveVector);
+                        kt::ScopedObjectLock<extVector> lock(Self->ActiveVector);
                         if (lock.granted()) send_left_event(lock.obj, input, Self->ActiveVectorX, Self->ActiveVectorY);
                      }
 
@@ -306,7 +313,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
                // cursor left its area.
 
                if ((Self->ActiveVector) and (not processed)) {
-                  pf::ScopedObjectLock<extVector> lock(Self->ActiveVector);
+                  kt::ScopedObjectLock<extVector> lock(Self->ActiveVector);
                   Self->ActiveVector = 0;
                   if (lock.granted()) send_left_event(lock.obj, input, Self->ActiveVectorX, Self->ActiveVectorY);
                }
@@ -332,7 +339,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
                if (not in_bounds) continue;
             }
 
-            pf::ScopedObjectLock<extVector> lock(bounds.vector_id);
+            kt::ScopedObjectLock<extVector> lock(bounds.vector_id);
             if (not lock.granted()) {
                log.warning("Unable to lock vector #%d", bounds.vector_id);
                continue;
@@ -375,7 +382,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
                   send_input_events(vector, &event);
 
                   if ((Self->ActiveVector) and (Self->ActiveVector != vector->UID)) {
-                     pf::ScopedObjectLock<extVector> lock(Self->ActiveVector);
+                     kt::ScopedObjectLock<extVector> lock(Self->ActiveVector);
                      if (lock.granted()) send_left_event(lock.obj, input, Self->ActiveVectorX, Self->ActiveVectorY);
                   }
 
@@ -395,7 +402,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
          // cursor left its area.
 
          if ((Self->ActiveVector) and (not processed)) {
-            pf::ScopedObjectLock<extVector> lock(Self->ActiveVector);
+            kt::ScopedObjectLock<extVector> lock(Self->ActiveVector);
             Self->ActiveVector = 0;
             if (lock.granted()) send_left_event(lock.obj, input, Self->ActiveVectorX, Self->ActiveVectorY);
          }
@@ -408,7 +415,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
 
       if (Self->Cursor != cursor) {
          Self->Cursor = cursor;
-         pf::ScopedObjectLock<objSurface> surface(Self->SurfaceID);
+         kt::ScopedObjectLock<objSurface> surface(Self->SurfaceID);
          if (surface.granted() and (surface.obj->Cursor != Self->Cursor)) {
             surface.obj->setCursor(cursor);
          }

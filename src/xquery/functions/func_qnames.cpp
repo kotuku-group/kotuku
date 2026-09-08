@@ -129,8 +129,8 @@ static std::string encode_canonical_qname(const std::string &NamespaceURI, const
 
 static std::string find_namespace_for_prefix(XTag *Node, extXML *Document, const std::string &Prefix)
 {
-   if (pf::iequals(Prefix, "xml")) return std::string("http://www.w3.org/XML/1998/namespace");
-   if (pf::iequals(Prefix, "xmlns")) return std::string("http://www.w3.org/2000/xmlns/");
+   if (kt::iequals(Prefix, "xml")) return std::string("http://www.w3.org/XML/1998/namespace");
+   if (kt::iequals(Prefix, "xmlns")) return std::string("http://www.w3.org/2000/xmlns/");
 
    if (not Document) return std::string();
    return find_in_scope_namespace(Node, Document, Prefix);
@@ -184,23 +184,23 @@ static std::vector<std::string> collect_in_scope_prefixes(XTag *Node, extXML *Do
 
 XPathVal XPathFunctionLibrary::function_QName(const std::vector<XPathVal> &Args, const XPathContext &Context)
 {
-   if (Args.size() < 2) return XPathVal(pf::vector<XTag *>());
+   if (Args.size() < 2) return XPathVal(kt::vector<XTag *>());
 
    std::string namespace_uri;
    if (not Args[0].is_empty()) namespace_uri = trim_whitespace(Args[0].to_string());
 
-   if (Args[1].is_empty()) return XPathVal(pf::vector<XTag *>());
+   if (Args[1].is_empty()) return XPathVal(kt::vector<XTag *>());
    std::string lexical = trim_whitespace(Args[1].to_string());
    std::string prefix;
    std::string local;
    if (not parse_lexical_qname(lexical, prefix, local)) {
       if (Context.expression_unsupported) *Context.expression_unsupported = true;
-      return XPathVal(pf::vector<XTag *>());
+      return XPathVal(kt::vector<XTag *>());
    }
 
    if ((not prefix.empty()) and namespace_uri.empty()) {
       if (Context.expression_unsupported) *Context.expression_unsupported = true;
-      return XPathVal(pf::vector<XTag *>());
+      return XPathVal(kt::vector<XTag *>());
    }
 
    std::string encoded = encode_canonical_qname(namespace_uri, prefix, local);
@@ -209,15 +209,15 @@ XPathVal XPathFunctionLibrary::function_QName(const std::vector<XPathVal> &Args,
 
 XPathVal XPathFunctionLibrary::function_resolve_QName(const std::vector<XPathVal> &Args, const XPathContext &Context)
 {
-   if (Args.size() < 2) return XPathVal(pf::vector<XTag *>());
-   if (Args[0].is_empty()) return XPathVal(pf::vector<XTag *>());
+   if (Args.size() < 2) return XPathVal(kt::vector<XTag *>());
+   if (Args[0].is_empty()) return XPathVal(kt::vector<XTag *>());
 
    std::string lexical = trim_whitespace(Args[0].to_string());
    std::string prefix;
    std::string local;
    if (not parse_lexical_qname(lexical, prefix, local)) {
       if (Context.expression_unsupported) *Context.expression_unsupported = true;
-      return XPathVal(pf::vector<XTag *>());
+      return XPathVal(kt::vector<XTag *>());
    }
 
    XTag *element_node = nullptr;
@@ -226,7 +226,7 @@ XPathVal XPathFunctionLibrary::function_resolve_QName(const std::vector<XPathVal
    }
 
    if (not element_node) element_node = Context.context_node;
-   if ((not element_node) or (not element_node->isTag())) return XPathVal(pf::vector<XTag *>());
+   if ((not element_node) or (not element_node->isTag())) return XPathVal(kt::vector<XTag *>());
 
    std::string namespace_uri;
    if (prefix.empty()) namespace_uri = find_in_scope_namespace(element_node, Context.xml, std::string());
@@ -234,7 +234,7 @@ XPathVal XPathFunctionLibrary::function_resolve_QName(const std::vector<XPathVal
 
    if ((not prefix.empty()) and namespace_uri.empty()) {
       if (Context.expression_unsupported) *Context.expression_unsupported = true;
-      return XPathVal(pf::vector<XTag *>());
+      return XPathVal(kt::vector<XTag *>());
    }
 
    std::string encoded = encode_canonical_qname(namespace_uri, prefix, local);
@@ -243,43 +243,43 @@ XPathVal XPathFunctionLibrary::function_resolve_QName(const std::vector<XPathVal
 
 XPathVal XPathFunctionLibrary::function_prefix_from_QName(const std::vector<XPathVal> &Args, const XPathContext &Context)
 {
-   if (Args.empty()) return XPathVal(pf::vector<XTag *>());
-   if (Args[0].is_empty()) return XPathVal(pf::vector<XTag *>());
+   if (Args.empty()) return XPathVal(kt::vector<XTag *>());
+   if (Args[0].is_empty()) return XPathVal(kt::vector<XTag *>());
 
    CanonicalQName qname = decode_qname_string(Args[0].to_string());
    if (not qname.valid) {
       if (Context.expression_unsupported) *Context.expression_unsupported = true;
-      return XPathVal(pf::vector<XTag *>());
+      return XPathVal(kt::vector<XTag *>());
    }
 
-   if (qname.prefix.empty()) return XPathVal(pf::vector<XTag *>());
+   if (qname.prefix.empty()) return XPathVal(kt::vector<XTag *>());
    return XPathVal(qname.prefix);
 }
 
 XPathVal XPathFunctionLibrary::function_local_name_from_QName(const std::vector<XPathVal> &Args, const XPathContext &Context)
 {
-   if (Args.empty()) return XPathVal(pf::vector<XTag *>());
-   if (Args[0].is_empty()) return XPathVal(pf::vector<XTag *>());
+   if (Args.empty()) return XPathVal(kt::vector<XTag *>());
+   if (Args[0].is_empty()) return XPathVal(kt::vector<XTag *>());
 
    CanonicalQName qname = decode_qname_string(Args[0].to_string());
    if (not qname.valid) {
       if (Context.expression_unsupported) *Context.expression_unsupported = true;
-      return XPathVal(pf::vector<XTag *>());
+      return XPathVal(kt::vector<XTag *>());
    }
 
-   if (qname.local_name.empty()) return XPathVal(pf::vector<XTag *>());
+   if (qname.local_name.empty()) return XPathVal(kt::vector<XTag *>());
    return XPathVal(qname.local_name);
 }
 
 XPathVal XPathFunctionLibrary::function_namespace_uri_from_QName(const std::vector<XPathVal> &Args, const XPathContext &Context)
 {
-   if (Args.empty()) return XPathVal(pf::vector<XTag *>());
-   if (Args[0].is_empty()) return XPathVal(pf::vector<XTag *>());
+   if (Args.empty()) return XPathVal(kt::vector<XTag *>());
+   if (Args[0].is_empty()) return XPathVal(kt::vector<XTag *>());
 
    CanonicalQName qname = decode_qname_string(Args[0].to_string());
    if (not qname.valid) {
       if (Context.expression_unsupported) *Context.expression_unsupported = true;
-      return XPathVal(pf::vector<XTag *>());
+      return XPathVal(kt::vector<XTag *>());
    }
 
    if (qname.namespace_uri.empty()) return XPathVal(std::string());
@@ -288,7 +288,7 @@ XPathVal XPathFunctionLibrary::function_namespace_uri_from_QName(const std::vect
 
 XPathVal XPathFunctionLibrary::function_namespace_uri_for_prefix(const std::vector<XPathVal> &Args, const XPathContext &Context)
 {
-   if (Args.size() < 2) return XPathVal(pf::vector<XTag *>());
+   if (Args.size() < 2) return XPathVal(kt::vector<XTag *>());
 
    std::string prefix;
    if (not Args[0].is_empty()) prefix = trim_whitespace(Args[0].to_string());
@@ -299,13 +299,13 @@ XPathVal XPathFunctionLibrary::function_namespace_uri_for_prefix(const std::vect
    }
 
    if (not element_node) element_node = Context.context_node;
-   if ((not element_node) or (not element_node->isTag())) return XPathVal(pf::vector<XTag *>());
+   if ((not element_node) or (not element_node->isTag())) return XPathVal(kt::vector<XTag *>());
 
    std::string namespace_uri;
    if (prefix.empty()) namespace_uri = find_in_scope_namespace(element_node, Context.xml, std::string());
    else namespace_uri = find_namespace_for_prefix(element_node, Context.xml, prefix);
 
-   if (namespace_uri.empty()) return XPathVal(pf::vector<XTag *>());
+   if (namespace_uri.empty()) return XPathVal(kt::vector<XTag *>());
    return XPathVal(namespace_uri);
 }
 

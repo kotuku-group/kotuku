@@ -1,0 +1,5 @@
+interface:
+  display_name: "Doc Reviewer"
+  short_description: "Review Kōtuku docs for developer usability"
+  default_prompt: "Use $doc-reviewer to review this Kōtuku documentation for clarity, completeness, and developer
+    usability."

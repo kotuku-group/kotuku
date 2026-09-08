@@ -28,26 +28,52 @@ std::vector<XPathEvaluator::AxisMatch> XPathEvaluator::dispatch_axis(AxisType Ax
    XTag *ContextNode, const XMLAttrib *ContextAttribute)
 {
    std::vector<AxisMatch> matches;
+   XTag *root_scope = absolute_root_node;
+   bool scope_active = root_scope != nullptr;
 
    size_t estimated_capacity = axis_evaluator.estimate_result_size(Axis, ContextNode);
    matches.reserve(estimated_capacity);
 
-   auto append_nodes = [this, &matches](NODES &nodes) {
+   auto is_within_root_scope = [this, root_scope, scope_active](XTag *Node) -> bool {
+      if (not scope_active) return true;
+      if (not Node) return false;
+      if (Node IS root_scope) return true;
+
+      XTag *current = Node;
+      while (current) {
+         auto &parent_buffer = arena.acquire_node_vector(1);
+         axis_evaluator.evaluate_axis(AxisType::PARENT, current, parent_buffer);
+         XTag *parent = parent_buffer.empty() ? nullptr : parent_buffer[0];
+         arena.release_node_vector(parent_buffer);
+
+         if (parent IS root_scope) return true;
+         current = parent;
+      }
+
+      return false;
+   };
+
+   auto append_nodes = [this, &matches, &is_within_root_scope](NODES &nodes) {
       matches.reserve(matches.size() + nodes.size());
       for (auto *node : nodes) {
+         if (not is_within_root_scope(node)) continue;
          matches.push_back({ node, nullptr });
       }
       arena.release_node_vector(nodes);
    };
 
    bool attribute_context = ContextAttribute != nullptr;
+   bool context_in_scope = (not scope_active) or is_within_root_scope(ContextNode);
 
    switch (Axis) {
       case AxisType::CHILD: {
          if (attribute_context) break;
 
          if (not ContextNode) {
-            if (xml) {
+            if (root_scope) {
+               matches.push_back({ root_scope, nullptr });
+            }
+            else if (xml) {
                for (auto &tag : xml->Tags) {
                   if (not tag.isTag()) continue;
                   matches.push_back({ &tag, nullptr });
@@ -66,7 +92,13 @@ std::vector<XPathEvaluator::AxisMatch> XPathEvaluator::dispatch_axis(AxisType Ax
          if (attribute_context) break;
 
          if (not ContextNode) {
-            if (xml) {
+            if (root_scope) {
+               matches.push_back({ root_scope, nullptr });
+               auto &desc_buffer = arena.acquire_node_vector();
+               axis_evaluator.evaluate_axis(AxisType::DESCENDANT, root_scope, desc_buffer);
+               append_nodes(desc_buffer);
+            }
+            else if (xml) {
                for (auto &tag : xml->Tags) {
                   if (not tag.isTag()) continue;
                   matches.push_back({ &tag, nullptr });
@@ -86,13 +118,19 @@ std::vector<XPathEvaluator::AxisMatch> XPathEvaluator::dispatch_axis(AxisType Ax
 
       case AxisType::DESCENDANT_OR_SELF: {
          if (attribute_context) {
-            matches.push_back({ ContextNode, ContextAttribute });
+            if (context_in_scope) matches.push_back({ ContextNode, ContextAttribute });
             break;
          }
 
          if (not ContextNode) {
             matches.push_back({ nullptr, nullptr });
-            if (xml) {
+            if (root_scope) {
+               matches.push_back({ root_scope, nullptr });
+               auto &desc_buffer = arena.acquire_node_vector();
+               axis_evaluator.evaluate_axis(AxisType::DESCENDANT, root_scope, desc_buffer);
+               append_nodes(desc_buffer);
+            }
+            else if (xml) {
                for (auto &tag : xml->Tags) {
                   if (not tag.isTag()) continue;
                   matches.push_back({ &tag, nullptr });
@@ -103,7 +141,7 @@ std::vector<XPathEvaluator::AxisMatch> XPathEvaluator::dispatch_axis(AxisType Ax
             }
          }
          else {
-            matches.push_back({ ContextNode, nullptr });
+            if (context_in_scope) matches.push_back({ ContextNode, nullptr });
             auto &desc_buffer = arena.acquire_node_vector();
             axis_evaluator.evaluate_axis(AxisType::DESCENDANT, ContextNode, desc_buffer);
             append_nodes(desc_buffer);
@@ -113,15 +151,15 @@ std::vector<XPathEvaluator::AxisMatch> XPathEvaluator::dispatch_axis(AxisType Ax
 
       case AxisType::SELF: {
          if (attribute_context) {
-            matches.push_back({ ContextNode, ContextAttribute });
+            if (context_in_scope) matches.push_back({ ContextNode, ContextAttribute });
          }
-         else matches.push_back({ ContextNode, nullptr });
+         else if (context_in_scope) matches.push_back({ ContextNode, nullptr });
          break;
       }
 
       case AxisType::PARENT: {
          if (attribute_context) {
-            if (ContextNode) matches.push_back({ ContextNode, nullptr });
+            if (ContextNode and context_in_scope) matches.push_back({ ContextNode, nullptr });
          }
          else if (ContextNode) {
             auto &parent_buffer = arena.acquire_node_vector();
@@ -133,7 +171,7 @@ std::vector<XPathEvaluator::AxisMatch> XPathEvaluator::dispatch_axis(AxisType Ax
 
       case AxisType::ANCESTOR: {
          if (attribute_context) {
-            if (ContextNode) {
+            if (ContextNode and context_in_scope) {
                matches.push_back({ ContextNode, nullptr });
                auto &ancestor_buffer = arena.acquire_node_vector();
                axis_evaluator.evaluate_axis(AxisType::ANCESTOR, ContextNode, ancestor_buffer);
@@ -149,7 +187,7 @@ std::vector<XPathEvaluator::AxisMatch> XPathEvaluator::dispatch_axis(AxisType Ax
       }
 
       case AxisType::ANCESTOR_OR_SELF: {
-         if (attribute_context) {
+         if (attribute_context and context_in_scope) {
             matches.push_back({ ContextNode, ContextAttribute });
             if (ContextNode) {
                matches.push_back({ ContextNode, nullptr });
@@ -158,7 +196,7 @@ std::vector<XPathEvaluator::AxisMatch> XPathEvaluator::dispatch_axis(AxisType Ax
                append_nodes(ancestor_buffer);
             }
          }
-         else if (ContextNode) {
+         else if (ContextNode and context_in_scope) {
             matches.push_back({ ContextNode, nullptr });
             auto &ancestor_buffer = arena.acquire_node_vector();
             axis_evaluator.evaluate_axis(AxisType::ANCESTOR, ContextNode, ancestor_buffer);
@@ -255,12 +293,12 @@ bool XPathEvaluator::match_node_test(const XPathNode *NodeTest, AxisType Axis, X
       XTag *lookup_scope = Scope ? Scope : context.context_node;
       int tag_id = lookup_scope ? lookup_scope->ID : 0;
 
-      if (xml->resolvePrefix(prefix_string, tag_id, namespace_hash) IS ERR::Okay) {
+      if (!xml->resolvePrefix(prefix_string, tag_id, namespace_hash)) {
          return namespace_hash;
       }
 
       if (lookup_scope and context.context_node and (lookup_scope != context.context_node)) {
-         if (xml->resolvePrefix(prefix_string, context.context_node->ID, namespace_hash) IS ERR::Okay) {
+         if (!xml->resolvePrefix(prefix_string, context.context_node->ID, namespace_hash)) {
             return namespace_hash;
          }
       }
@@ -306,7 +344,7 @@ bool XPathEvaluator::match_node_test(const XPathNode *NodeTest, AxisType Axis, X
          }
 
          bool wildcard_local = expected_local.find('*') != std::string::npos;
-         bool local_matches = wildcard_local ? pf::wildcmp(expected_local, candidate_local) : pf::iequals(expected_local, candidate_local);
+         bool local_matches = wildcard_local ? kt::wildcmp(expected_local, candidate_local) : kt::iequals(expected_local, candidate_local);
          if (not local_matches) return false;
 
          if ((not xml) or ((xml->Flags & XMF::NAMESPACE_AWARE) != XMF::NIL)) {
@@ -325,7 +363,7 @@ bool XPathEvaluator::match_node_test(const XPathNode *NodeTest, AxisType Axis, X
             return candidate_prefix.empty();
          }
 
-         return pf::iequals(test_name, attribute_name);
+         return kt::iequals(test_name, attribute_name);
       }
 
       return false;
@@ -361,7 +399,7 @@ bool XPathEvaluator::match_node_test(const XPathNode *NodeTest, AxisType Axis, X
       if (candidate_name.empty()) return false;
 
       std::string candidate_target(candidate_name);
-      return pf::iequals(candidate_target, NodeTest->value);
+      return kt::iequals(candidate_target, NodeTest->value);
    }
 
    if (not Candidate) return false;
@@ -392,7 +430,7 @@ bool XPathEvaluator::match_node_test(const XPathNode *NodeTest, AxisType Axis, X
          }
 
          bool wildcard_local = expected_local.find('*') != std::string::npos;
-         bool name_matches = wildcard_local ? pf::wildcmp(expected_local, candidate_local) : pf::iequals(expected_local, candidate_local);
+         bool name_matches = wildcard_local ? kt::wildcmp(expected_local, candidate_local) : kt::iequals(expected_local, candidate_local);
          if (not name_matches) return false;
 
          if (not expected_prefix.empty()) {
@@ -409,9 +447,9 @@ bool XPathEvaluator::match_node_test(const XPathNode *NodeTest, AxisType Axis, X
          return Candidate->NamespaceID IS expected_namespace;
       }
 
-      if (test_name.find('*') != std::string::npos) return pf::wildcmp(test_name, candidate_name);
+      if (test_name.find('*') != std::string::npos) return kt::wildcmp(test_name, candidate_name);
 
-      return pf::iequals(test_name, candidate_name);
+      return kt::iequals(test_name, candidate_name);
    }
 
    return false;

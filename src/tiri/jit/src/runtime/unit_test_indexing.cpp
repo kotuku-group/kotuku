@@ -2,7 +2,7 @@
 
 #include <kotuku/main.h>
 
-#ifdef ENABLE_UNIT_TESTS
+#ifdef UNIT_TESTS
 
 #include "lua.h"
 #include "lauxlib.h"
@@ -18,7 +18,7 @@
 
 #include "../../defs.h"
 
-static objScript *glTestScript = nullptr;
+static extTiri *glTestScript = nullptr;
 
 namespace {
 
@@ -47,8 +47,21 @@ private:
 
 struct TestCase {
    const char* name;
-   bool (*fn)(pf::Log& Log);
+   bool (*fn)(kt::Log& Log);
 };
+
+static uint32_t expected_table_hash(uint32_t Lo, uint32_t Hi)
+{
+#if LJ_TARGET_X64
+   uint64_t hash = (uint64_t(Hi) << 32) | uint64_t(Lo);
+   hash = (hash ^ (hash >> 30)) * HASH_MIX64_MUL1;
+   hash = (hash ^ (hash >> 27)) * HASH_MIX64_MUL2;
+   hash ^= hash >> 31;
+   return uint32_t(hash);
+#else
+   return hashrot(Lo, Hi);
+#endif
+}
 
 // Execute Lua code and check result
 static bool run_lua_test(lua_State* L, std::string_view Code, std::string& Error)
@@ -69,7 +82,7 @@ static bool run_lua_test(lua_State* L, std::string_view Code, std::string& Error
 //********************************************************************************************************************
 // Core indexing tests - validate 0-based indexing
 
-static bool test_array_first_element_access(pf::Log& Log)
+static bool test_array_first_element_access(kt::Log& Log)
 {
    LuaStateHolder Holder;
    lua_State* L = Holder.get();
@@ -99,7 +112,7 @@ static bool test_array_first_element_access(pf::Log& Log)
    return false;
 }
 
-static bool test_table_length_operator(pf::Log& Log)
+static bool test_table_length_operator(kt::Log& Log)
 {
    LuaStateHolder Holder;
    lua_State* L = Holder.get();
@@ -122,7 +135,7 @@ static bool test_table_length_operator(pf::Log& Log)
    return false;
 }
 
-static bool test_ipairs_starting_index(pf::Log& Log)
+static bool test_ipairs_starting_index(kt::Log& Log)
 {
    LuaStateHolder Holder;
    lua_State* L = Holder.get();
@@ -135,7 +148,7 @@ static bool test_ipairs_starting_index(pf::Log& Log)
    // First, check what ipairs() returns as the initial control variable
    std::string Error;
    const char* CheckInit = R"(
-      local iter, t, init = ipairs({10, 20, 30})
+      local iter:func, t:table, init:num = ipairs({10, 20, 30})
       return init
    )";
 
@@ -149,8 +162,8 @@ static bool test_ipairs_starting_index(pf::Log& Log)
 
    // Now check the first call to ipairs_aux
    const char* CheckFirstCall = R"(
-      local iter, t, init = ipairs({10, 20, 30})
-      local idx, val = iter(t, init)
+      local iter:func, t:table, init:num = ipairs({10, 20, 30})
+      local idx:num, val:num = iter(t, init)
       return idx, val
    )";
 
@@ -165,7 +178,7 @@ static bool test_ipairs_starting_index(pf::Log& Log)
 
    // Now run the full iteration test
    const char* Code = R"(
-      local first = nil
+      local first:num = nil
       local count = 0
       for i, v in ipairs({10, 20, 30}) do
          if not first then first = i end
@@ -187,7 +200,7 @@ static bool test_ipairs_starting_index(pf::Log& Log)
    return false;
 }
 
-static bool test_table_insert_position(pf::Log& Log)
+static bool test_table_insert_position(kt::Log& Log)
 {
    LuaStateHolder Holder;
    lua_State* L = Holder.get();
@@ -224,7 +237,7 @@ static bool test_table_insert_position(pf::Log& Log)
    return false;
 }
 
-static bool test_string_find_returns_correct_index(pf::Log& Log)
+static bool test_string_find_returns_correct_index(kt::Log& Log)
 {
    LuaStateHolder Holder;
    lua_State* L = Holder.get();
@@ -248,7 +261,7 @@ static bool test_string_find_returns_correct_index(pf::Log& Log)
    return false;
 }
 
-static bool test_string_byte_default_start(pf::Log& Log)
+static bool test_string_byte_default_start(kt::Log& Log)
 {
    LuaStateHolder Holder;
    lua_State* L = Holder.get();
@@ -271,7 +284,7 @@ static bool test_string_byte_default_start(pf::Log& Log)
    return false;
 }
 
-static bool test_table_concat_default_range(pf::Log& Log)
+static bool test_table_concat_default_range(kt::Log& Log)
 {
    LuaStateHolder Holder;
    lua_State* L = Holder.get();
@@ -294,7 +307,7 @@ static bool test_table_concat_default_range(pf::Log& Log)
    return false;
 }
 
-static bool test_table_sort_operates_on_sequence(pf::Log& Log)
+static bool test_table_sort_operates_on_sequence(kt::Log& Log)
 {
    LuaStateHolder Holder;
    lua_State* L = Holder.get();
@@ -325,7 +338,7 @@ static bool test_table_sort_operates_on_sequence(pf::Log& Log)
    return false;
 }
 
-static bool test_empty_table_length(pf::Log& Log)
+static bool test_empty_table_length(kt::Log& Log)
 {
    LuaStateHolder Holder;
    lua_State* L = Holder.get();
@@ -348,7 +361,7 @@ static bool test_empty_table_length(pf::Log& Log)
    return false;
 }
 
-static bool test_negative_string_indices_unchanged(pf::Log& Log)
+static bool test_negative_string_indices_unchanged(kt::Log& Log)
 {
    LuaStateHolder Holder;
    lua_State* L = Holder.get();
@@ -359,7 +372,7 @@ static bool test_negative_string_indices_unchanged(pf::Log& Log)
    luaL_openlibs(L);
 
    std::string Error;
-   if (not run_lua_test(L, "return string.substr('hello', -1)", Error)) {
+   if (not run_lua_test(L, "return string.sub('hello', -1)", Error)) {
       Log.error("test failed: %s", Error.c_str());
       return false;
    }
@@ -374,7 +387,7 @@ static bool test_negative_string_indices_unchanged(pf::Log& Log)
 //********************************************************************************************************************
 // Low-level table API tests
 
-static bool test_lj_tab_getint_semantic_index(pf::Log& Log)
+static bool test_lj_tab_getint_semantic_index(kt::Log& Log)
 {
    LuaStateHolder Holder;
    lua_State* L = Holder.get();
@@ -401,7 +414,7 @@ static bool test_lj_tab_getint_semantic_index(pf::Log& Log)
    return false;
 }
 
-static bool test_lj_tab_len_returns_element_count(pf::Log& Log)
+static bool test_lj_tab_len_returns_element_count(kt::Log& Log)
 {
    LuaStateHolder Holder;
    lua_State* L = Holder.get();
@@ -424,11 +437,419 @@ static bool test_lj_tab_len_returns_element_count(pf::Log& Log)
    return false;
 }
 
+static bool test_table_hash_mixer_matches_expected(kt::Log& Log)
+{
+   constexpr std::array<uint32_t, 4> LoValues = { 0x00000000u, 0x89abcdefu, 0xffffffffu, 0x13579bdfu };
+   constexpr std::array<uint32_t, 4> HiValues = { 0x00000000u, 0x01234567u, 0x80000000u, 0xfedcba98u };
+
+   for (size_t index = 0; index < LoValues.size(); index++) {
+      const uint32_t hash = hashlohi_bits(LoValues[index], HiValues[index]);
+      const uint32_t expected = expected_table_hash(LoValues[index], HiValues[index]);
+      if (not (hash IS expected)) {
+         Log.error("hashlohi_bits mismatch at %u: got 0x%08x expected 0x%08x",
+            (unsigned)index, hash, expected);
+         return false;
+      }
+   }
+
+   return true;
+}
+
+static bool test_table_numeric_hash_keys_roundtrip(kt::Log& Log)
+{
+   LuaStateHolder Holder;
+   lua_State* L = Holder.get();
+   if (not L) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   GCtab* table = lj_tab_new(L, 0, 5);
+   constexpr std::array<lua_Number, 4> Keys = { 0.5, 1.5, 65536.5, 131072.5 };
+
+   for (size_t index = 0; index < Keys.size(); index++) {
+      TValue key;
+      TValue value;
+      setnumV(&key, Keys[index]);
+      setnumV(&value, lua_Number(index) + 10.0);
+      copyTV(L, lj_tab_set(L, table, &key), &value);
+   }
+
+   for (size_t index = 0; index < Keys.size(); index++) {
+      TValue key;
+      setnumV(&key, Keys[index]);
+      cTValue* found = lj_tab_get(L, table, &key);
+      const lua_Number expected = lua_Number(index) + 10.0;
+      if ((not found) or (not tvisnum(found)) or not (numV(found) IS expected)) {
+         Log.error("numeric hash key %u did not roundtrip", (unsigned)index);
+         return false;
+      }
+   }
+
+   return true;
+}
+
+static bool test_table_gc_hash_keys_roundtrip(kt::Log& Log)
+{
+   LuaStateHolder Holder;
+   lua_State* L = Holder.get();
+   if (not L) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   GCtab* table = lj_tab_new(L, 0, 5);
+   GCtab* key_one = lj_tab_new(L, 0, 0);
+   GCtab* key_two = lj_tab_new(L, 0, 0);
+   std::array<GCtab*, 2> Keys = { key_one, key_two };
+
+   for (size_t index = 0; index < Keys.size(); index++) {
+      TValue key;
+      TValue value;
+      settabV(L, &key, Keys[index]);
+      setnumV(&value, lua_Number(index) + 20.0);
+      copyTV(L, lj_tab_set(L, table, &key), &value);
+   }
+
+   for (size_t index = 0; index < Keys.size(); index++) {
+      TValue key;
+      settabV(L, &key, Keys[index]);
+      cTValue* found = lj_tab_get(L, table, &key);
+      const lua_Number expected = lua_Number(index) + 20.0;
+      if ((not found) or (not tvisnum(found)) or not (numV(found) IS expected)) {
+         Log.error("GC hash key %u did not roundtrip", (unsigned)index);
+         return false;
+      }
+   }
+
+   return true;
+}
+
+static bool test_table_string_hash_keys_unchanged(kt::Log& Log)
+{
+   LuaStateHolder Holder;
+   lua_State* L = Holder.get();
+   if (not L) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   GCtab* table = lj_tab_new(L, 0, 5);
+   GCstr* key = lj_str_newlit(L, "hash_string_key");
+   TValue value;
+   setnumV(&value, 42.0);
+   copyTV(L, lj_tab_setstr(L, table, key), &value);
+
+   cTValue* found = lj_tab_getstr(table, key);
+   if ((not found) or (not tvisnum(found)) or not (numV(found) IS 42.0)) {
+      Log.error("string hash key did not roundtrip");
+      return false;
+   }
+
+   Node* expected_node = hashmask(table, key->sid);
+   Node* actual_node = hashstr(table, key);
+   if (not (actual_node IS expected_node)) {
+      Log.error("string hash key no longer uses interned sid");
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_mutable_string_table_keys_use_identity(kt::Log& Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   GCtab *table = lj_tab_new(lua, 0, 1);
+   settabV(lua, lua->top, table);
+   incr_top(lua);
+   GCstr *key = lj_str_newbuf(lua, 4);
+   setstrV(lua, lua->top, key);
+   incr_top(lua);
+   GCstr *equal_buffer = lj_str_newbuf(lua, 4);
+   setstrV(lua, lua->top, equal_buffer);
+   incr_top(lua);
+   memcpy(strdatawr(key), "key1", 4);
+   memcpy(strdatawr(equal_buffer), "key1", 4);
+
+   TValue value;
+   setnumV(&value, 42.0);
+   copyTV(lua, lj_tab_setstr(lua, table, key), &value);
+
+   cTValue *found = lj_tab_getstr(table, key);
+   if (not found or not tvisnum(found) or numV(found) != 42.0) {
+      Log.error("mutable string key did not retrieve its table value");
+      return false;
+   }
+   if (lj_tab_getstr(table, equal_buffer) or lj_tab_getstr(table, lj_str_newlit(lua, "key1"))) {
+      Log.error("equal-content strings unexpectedly matched a mutable identity key");
+      return false;
+   }
+
+   const uint32_t sid = key->sid;
+   memcpy(strdatawr(key), "key2", 4);
+   GCstr *mutated_content = lj_str_newlit(lua, "key2");
+   if (key->sid != sid or key->hash != 0 or lj_str_cmp(key, mutated_content) != 0) {
+      Log.error("mutable string metadata or content comparison changed unexpectedly after mutation");
+      return false;
+   }
+   if (lj_tab_getstr(table, key) != found or lj_tab_getstr(table, mutated_content)) {
+      Log.error("mutable string mutation invalidated identity-key lookup semantics");
+      return false;
+   }
+
+   for (int index = 0; index < 32; index++) {
+      std::string name = "rehash_key_" + std::to_string(index);
+      GCstr *ordinary_key = lj_str_new(lua, name.data(), name.size());
+      setnumV(&value, lua_Number(index));
+      copyTV(lua, lj_tab_setstr(lua, table, ordinary_key), &value);
+   }
+   found = lj_tab_getstr(table, key);
+   if (not found or not tvisnum(found) or numV(found) != 42.0) {
+      Log.error("table rehash invalidated a mutable identity key");
+      return false;
+   }
+
+   return true;
+}
+
+// The permanent non-numeric key classification underpins the Tiri '#' operator returning nil for associative tables.
+
+static bool test_table_flags_initialise_clear(kt::Log& Log)
+{
+   LuaStateHolder Holder;
+   lua_State* L = Holder.get();
+   if (not L) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   // Both the colocated and separately allocated array paths must start unclassified.
+
+   GCtab* colocated = lj_tab_new(L, 4, 0);
+   GCtab* separated = lj_tab_new(L, 0, 3);
+   if (colocated->flags != 0) {
+      Log.error("colocated table did not initialise flags to zero");
+      return false;
+   }
+   if (separated->flags != 0) {
+      Log.error("separately allocated table did not initialise flags to zero");
+      return false;
+   }
+
+   colocated->flags |= TAB_METHOD_COMPATIBLE;
+   if (not lj_tab_is_sequence(colocated) or (colocated->flags & TAB_NOT_SEQUENCE) != 0) {
+      Log.error("method-compatible metadata affected table classification");
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_table_numeric_keys_do_not_classify(kt::Log& Log)
+{
+   LuaStateHolder Holder;
+   lua_State* L = Holder.get();
+   if (not L) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   GCtab* table = lj_tab_new(L, 4, 3);
+   TValue value;
+   setnumV(&value, 1.0);
+
+   copyTV(L, lj_tab_setint(L, table, 0), &value);     // Array part.
+   copyTV(L, lj_tab_setint(L, table, 5000), &value);  // Hash part, sparse.
+   copyTV(L, lj_tab_setint(L, table, -7), &value);    // Hash part, negative.
+
+   TValue fractional;  // Non-integral numbers take the generic lj_tab_set() path.
+   setnumV(&fractional, 1.5);
+   copyTV(L, lj_tab_set(L, table, &fractional), &value);
+
+   if (table->flags & TAB_ASSOCIATIVE) {
+      Log.error("numeric keys incorrectly classified the table as associative");
+      return false;
+   }
+
+   return true;
+}
+
+// Any key that is not a number must classify the table, not just strings.
+
+static bool test_table_non_numeric_keys_classify(kt::Log& Log)
+{
+   LuaStateHolder Holder;
+   lua_State* L = Holder.get();
+   if (not L) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   TValue value;
+   setnumV(&value, 1.0);
+
+   // Booleans, tables and functions all reach the hash part through lj_tab_set().
+
+   TValue keys[3];
+   setboolV(&keys[0], 1);
+   setboolV(&keys[1], 0);
+   settabV(L, &keys[2], lj_tab_new(L, 0, 0));
+
+   const char *names[3] = { "true", "false", "table" };
+
+   for (int i = 0; i < 3; i++) {
+      GCtab* table = lj_tab_new(L, 4, 3);
+      copyTV(L, lj_tab_setint(L, table, 0), &value);
+      copyTV(L, lj_tab_set(L, table, &keys[i]), &value);
+      if (not (table->flags & TAB_ASSOCIATIVE)) {
+         Log.error("a %s key did not classify the table as associative", names[i]);
+         return false;
+      }
+   }
+
+   // Resurrecting a nilled non-numeric key returns the existing node directly, bypassing lj_tab_newkey().
+
+   GCtab* revived = lj_tab_new(L, 4, 3);
+   TValue nil_value;
+   setnilV(&nil_value);
+   copyTV(L, lj_tab_set(L, revived, &keys[0]), &nil_value);
+   if (not (revived->flags & TAB_ASSOCIATIVE)) {
+      Log.error("assigning nil through a boolean key did not classify the table");
+      return false;
+   }
+
+   revived->flags = 0;  //  Force the resurrection path to re-establish the classification on its own.
+   copyTV(L, lj_tab_set(L, revived, &keys[0]), &value);
+   if (not (revived->flags & TAB_ASSOCIATIVE)) {
+      Log.error("resurrecting a boolean key did not classify the table");
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_table_string_key_classifies(kt::Log& Log)
+{
+   LuaStateHolder Holder;
+   lua_State* L = Holder.get();
+   if (not L) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   GCtab* table = lj_tab_new(L, 0, 3);
+   GCstr* key = lj_str_newlit(L, "name");
+   TValue value;
+   setnumV(&value, 7.0);
+   copyTV(L, lj_tab_setstr(L, table, key), &value);
+
+   if (not (table->flags & TAB_ASSOCIATIVE)) {
+      Log.error("string key did not classify the table");
+      return false;
+   }
+
+   // Storing nil through a string key must classify too, and removing the value must not clear the flag.
+
+   TValue nil_value;
+   setnilV(&nil_value);
+   copyTV(L, lj_tab_setstr(L, table, key), &nil_value);
+   if (not (table->flags & TAB_ASSOCIATIVE)) {
+      Log.error("removing the string value cleared the classification");
+      return false;
+   }
+
+   GCtab* nil_only = lj_tab_new(L, 0, 3);
+   GCstr* missing = lj_str_newlit(L, "missing");
+   copyTV(L, lj_tab_setstr(L, nil_only, missing), &nil_value);
+   if (not (nil_only->flags & TAB_ASSOCIATIVE)) {
+      Log.error("assigning nil through a string key did not classify the table");
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_table_classification_survives_mutation(kt::Log& Log)
+{
+   LuaStateHolder Holder;
+   lua_State* L = Holder.get();
+   if (not L) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   GCtab* table = lj_tab_new(L, 2, 1);
+   GCstr* key = lj_str_newlit(L, "field");
+   TValue value;
+   setnumV(&value, 3.0);
+   copyTV(L, lj_tab_setstr(L, table, key), &value);
+
+   lj_tab_clear(table);
+   if (not (table->flags & TAB_ASSOCIATIVE)) {
+      Log.error("lj_tab_clear() cleared the classification");
+      return false;
+   }
+
+   lj_tab_resize(L, table, 32, 4);
+   if (not (table->flags & TAB_ASSOCIATIVE)) {
+      Log.error("lj_tab_resize() cleared the classification");
+      return false;
+   }
+
+   GCtab* copy = lj_tab_dup(L, table);
+   if (not (copy->flags & TAB_ASSOCIATIVE)) {
+      Log.error("lj_tab_dup() did not copy the classification");
+      return false;
+   }
+
+   // A duplicate of an unclassified table must remain unclassified.
+
+   GCtab* pure = lj_tab_new(L, 4, 0);
+   GCtab* pure_copy = lj_tab_dup(L, pure);
+   if (pure_copy->flags & TAB_ASSOCIATIVE) {
+      Log.error("lj_tab_dup() invented a classification for a pure table");
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_table_layout_offsets_stable(kt::Log& Log)
+{
+   // The generated VM encodes these offsets directly.  static_assert() in lj_obj.h guards the build; this test
+   // guards the installed binary that the Flute suites exercise.
+
+   if (not (offsetof(GCtab, flags) IS 12)) {
+      Log.error("GCtab::flags is no longer at offset 12");
+      return false;
+   }
+   if (not (offsetof(GCtab, array) IS 16) or not (offsetof(GCtab, metatable) IS 32)) {
+      Log.error("GCtab array/metatable offsets have shifted");
+      return false;
+   }
+   if (not (offsetof(GCtab, asize) IS 48) or not (offsetof(GCtab, hmask) IS 52)) {
+      Log.error("GCtab asize/hmask offsets have shifted");
+      return false;
+   }
+   if (not (sizeof(GCtab) IS 80)) {
+      Log.error("sizeof(GCtab) has changed");
+      return false;
+   }
+
+   return true;
+}
+
 }  // namespace
 
 extern void indexing_unit_tests(int& Passed, int& Total)
 {
-   constexpr std::array<TestCase, 12> Tests = { {
+   constexpr std::array<TestCase, 23> Tests = { {
       { "array_first_element_access", test_array_first_element_access },
       { "table_length_operator", test_table_length_operator },
       { "ipairs_starting_index", test_ipairs_starting_index },
@@ -440,7 +861,18 @@ extern void indexing_unit_tests(int& Passed, int& Total)
       { "empty_table_length", test_empty_table_length },
       { "negative_string_indices_unchanged", test_negative_string_indices_unchanged },
       { "lj_tab_getint_semantic_index", test_lj_tab_getint_semantic_index },
-      { "lj_tab_len_returns_element_count", test_lj_tab_len_returns_element_count }
+      { "lj_tab_len_returns_element_count", test_lj_tab_len_returns_element_count },
+      { "table_hash_mixer_matches_expected", test_table_hash_mixer_matches_expected },
+      { "table_numeric_hash_keys_roundtrip", test_table_numeric_hash_keys_roundtrip },
+      { "table_gc_hash_keys_roundtrip", test_table_gc_hash_keys_roundtrip },
+      { "table_string_hash_keys_unchanged", test_table_string_hash_keys_unchanged },
+      { "mutable_string_table_keys_use_identity", test_mutable_string_table_keys_use_identity },
+      { "table_flags_initialise_clear", test_table_flags_initialise_clear },
+      { "table_numeric_keys_do_not_classify", test_table_numeric_keys_do_not_classify },
+      { "table_non_numeric_keys_classify", test_table_non_numeric_keys_classify },
+      { "table_string_key_classifies", test_table_string_key_classifies },
+      { "table_classification_survives_mutation", test_table_classification_survives_mutation },
+      { "table_layout_offsets_stable", test_table_layout_offsets_stable }
    } };
 
    if (NewObject(CLASSID::TIRI, &glTestScript) != ERR::Okay) return;
@@ -448,7 +880,7 @@ extern void indexing_unit_tests(int& Passed, int& Total)
    if (Action(AC::Init, glTestScript, nullptr) != ERR::Okay) return;
 
    for (const TestCase& Test : Tests) {
-      pf::Log Log("IndexingTests");
+      kt::Log Log("IndexingTests");
       Log.branch("Running %s", Test.name);
       ++Total;
       if (Test.fn(Log)) {
@@ -461,4 +893,4 @@ extern void indexing_unit_tests(int& Passed, int& Total)
    }
 }
 
-#endif // ENABLE_UNIT_TESTS
+#endif // UNIT_TESTS

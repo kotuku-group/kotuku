@@ -19,13 +19,13 @@
 #include "lj_meta.h"
 #include "lj_state.h"
 #include "lj_bc.h"
-#include "lj_frame.h"
 #include "lj_trace.h"
 #include "lj_vm.h"
 #include "lj_strscan.h"
 #include "lj_strfmt.h"
 #include "lib/lib_utils.h"
 #include "lj_array.h"
+#include "runtime/lj_struct.h"
 #include "runtime/lj_thunk.h"
 #include "runtime/stack_helpers.h"
 
@@ -126,24 +126,30 @@ extern TValue * resolve_index(lua_State *L, int idx)
       GCudata *ud = udataV(o);
       ThunkPayload *payload = thunk_payload(ud);
 
-      // If already resolved, just return the cached value pointer
+      // If already resolved, refresh the stack slot so resolved type checks stay consistent with raw slot reads.
 
-      if (payload->resolved) return &payload->cached_value;
+      if (payload->resolved) {
+         copyTV(L, o, &payload->cached_value);
+         return o;
+      }
 
       ptrdiff_t slot_offset = savestack(L, o); // Track slot position (may move during resolution)
 
       // Set flag to prevent infinite recursion
 
       L->resolving_thunk = 1;
-      TValue *result = lj_thunk_resolve(L, ud);
+      TValue *result = lj_thunk_resolve_protected(L, ud);
       L->resolving_thunk = 0;
 
       o = restorestack(L, slot_offset); // Restore slot pointer (stack may have been reallocated)
 
-      // If resolution failed (e.g., error in thunk function), return the original slot
-      // which still contains the thunk userdata - let caller handle the error
+      // If resolution failed (e.g., error in thunk function), propagate the original error now that the
+      // recursion flag has been cleared.  The error value was left just above the restored stack top.
 
-      if (not result) return o;
+      if (not result) {
+         L->top++;
+         lj_err_run(L);
+      }
 
       copyTV(L, o, result); // Copy resolved value to stack slot for consistency
       return o;
@@ -153,15 +159,9 @@ extern TValue * resolve_index(lua_State *L, int idx)
 
 // Const variant for read-only access - resolves but returns const pointer
 
-static cTValue * resolve_index_const(lua_State *L, int idx)
+inline cTValue * resolve_index_const(lua_State *L, int idx)
 {
    if (idx <= LUA_REGISTRYINDEX) return index2adr(L, idx);  // Pseudo-indices can't be thunks
-
-   // For positive indices, check if slot exists before attempting resolution
-   if (idx > 0) {
-      TValue *o = L->base + (idx - 1);
-      if (o >= L->top) return niltv(L);  // Slot doesn't exist, return nil
-   }
    return resolve_index(L, idx);
 }
 
@@ -182,7 +182,7 @@ extern int lua_checkstack(lua_State *L, int size)
 
 extern void luaL_checkstack(lua_State *L, int size, CSTRING msg)
 {
-   if (!lua_checkstack(L, size)) lj_err_callerv(L, ErrMsg::STKOVM, msg);
+   if (!lua_checkstack(L, size)) luaL_error(L, ErrMsg::STKOVM, msg);
 }
 
 //********************************************************************************************************************
@@ -288,6 +288,8 @@ static void copy_slot(lua_State *L, TValue * f, int idx)
 {
    if (idx IS LUA_GLOBALSINDEX) {
       lj_checkapi(tvistab(f), "stack slot %d is not a table", idx);
+      // Root replacement is an embedding boundary operation.  Native runtime code mutates this table rather than
+      // replacing L->env while Lua bytecode is active, so inherited context caches remain valid for the activation.
       // NOBARRIER: A thread (i.e. L) is never black.
       setgcref(L->env, obj2gco(tabV(f)));
    }
@@ -348,6 +350,74 @@ extern int lua_type(lua_State *L, int idx)
       lj_assertL(tt != LUA_TNIL or tvisnil(o), "bad tag conversion");
       return tt;
    }
+}
+
+//********************************************************************************************************************
+// Get the type, performing thunk resolution first.
+//
+// Note: Resolving the thunk type in advance can be an anti-pattern, normally you shouldn't perform the resolution
+// until you're ready to read the value.
+
+extern int lua_resolved_type(lua_State *L, int idx)
+{
+   cTValue *o = resolve_index_const(L, idx);
+
+   if (tvisnumber(o)) return LUA_TNUMBER;
+   else if (o IS niltv(L)) return LUA_TNONE;
+   else {  // Magic internal/external tag conversion. ORDER LJ_T
+      uint32_t t = ~itype(o);
+      // Lookup table: position 13 = LUA_TARRAY (11)
+      int tt = (int)((U64x(b75a06, 98042110) >> 4 * t) & 15u);
+      lj_assertL(tt != LUA_TNIL or tvisnil(o), "bad tag conversion");
+      return tt;
+   }
+}
+
+//********************************************************************************************************************
+// Resolve any thunks in the positive stack slot range [idx, idx+count-1] in place, without raising Lua errors.
+// Returns 0 on success, otherwise the index of the first slot whose thunk raised an error during resolution.
+// On failure the failing slot is overwritten with the error value (anchoring it against GC), so the caller can
+// retrieve the error message with lua_tostring() on the returned index.
+//
+// Intended for C code that must not be interrupted by a long jump (e.g. RAII scopes); resolving all argument
+// slots up-front means subsequent lua_tostring(), lua_tonumber() etc. calls are plain slot reads.
+
+extern int lua_resolve_thunks(lua_State *L, int idx, int count)
+{
+   if (L->resolving_thunk) return 0;  // Nested resolution is prohibited; downstream reads will skip thunks too
+
+   for (int n = idx; n < idx + count; n++) {
+      TValue *o = L->base + (n - 1);
+      if (o >= L->top) break;  // Remaining slots don't exist
+      if (not lj_is_thunk(o)) continue;
+
+      GCudata *ud = udataV(o);
+      ThunkPayload *payload = thunk_payload(ud);
+
+      if (payload->resolved) {
+         copyTV(L, o, &payload->cached_value);
+         continue;
+      }
+
+      ptrdiff_t slot_offset = savestack(L, o); // Track slot position (may move during resolution)
+
+      L->resolving_thunk = 1;
+      TValue *result = lj_thunk_resolve_protected(L, ud);
+      L->resolving_thunk = 0;
+
+      o = restorestack(L, slot_offset);
+
+      if (not result) {
+         // Anchor the error value (left just above the stack top) in the failing argument slot so that it
+         // remains GC-safe while the caller reports it.
+         copyTV(L, o, L->top);
+         return n;
+      }
+
+      copyTV(L, o, result);
+   }
+
+   return 0;
 }
 
 //********************************************************************************************************************
@@ -456,7 +526,7 @@ extern int lua_lessthan(lua_State *L, int idx1, int idx2)
    else {
       TValue *base = lj_meta_comp(L, o1, o2, 0);
       if ((uintptr_t)base <= 1) return (int)(uintptr_t)base;
-      return tvistruecond(MetaCall::invoke(L, base, 2, 1));
+      return tvistruecond(MetaCall::invoke(L, base, 3, 1));
    }
 }
 
@@ -575,6 +645,16 @@ extern GCarray * lua_toarray(lua_State *L, int Arg)
    TValue *o = (Arg > LUA_REGISTRYINDEX) ? resolve_index(L, Arg) : index2adr(L, Arg);
    if (tvisarray(o)) return &gcval(o)->arr;
    lj_err_argt(L, Arg, LUA_TARRAY);
+}
+
+//********************************************************************************************************************
+// Return struct value (does not perform any conversion)
+
+extern GCstruct * lua_tostruct(lua_State *L, int Arg)
+{
+   TValue *o = (Arg > LUA_REGISTRYINDEX) ? resolve_index(L, Arg) : index2adr(L, Arg);
+   if (tvisstruct(o)) return &gcval(o)->sct;
+   lj_err_argt(L, Arg, LUA_TSTRUCT);
 }
 
 //********************************************************************************************************************
@@ -745,15 +825,6 @@ extern void * lua_touserdata(lua_State *L, int idx)
 }
 
 //********************************************************************************************************************
-// Get thread if value is a coroutine
-
-extern lua_State * lua_tothread(lua_State *L, int idx)
-{
-   cTValue* o = index2adr(L, idx);
-   return (!tvisthread(o)) ? nullptr : threadV(o);
-}
-
-//********************************************************************************************************************
 // Get pointer representation of value
 
 extern const void* lua_topointer(lua_State *L, int idx)
@@ -811,6 +882,14 @@ extern void lua_pushstring(lua_State *L, CSTRING str)
       auto s = lj_str_newz(L, str);
       setstrV(L, L->top, s);
    }
+   incr_top(L);
+}
+
+extern void lua_pushstring(lua_State *L, std::string_view str)
+{
+   lj_gc_check(L);
+   auto s = lj_str_new(L, str.data(), str.size());
+   setstrV(L, L->top, s);
    incr_top(L);
 }
 
@@ -884,11 +963,34 @@ extern void lua_createtable(lua_State *L, int narray, int nrec)
 //********************************************************************************************************************
 // Create array and push onto stack
 
-extern void lua_createarray(lua_State *L, uint32_t Length, AET Type, void *Data, uint8_t Flags, std::string_view StructName)
+extern void lua_createarray(lua_State *L, int64_t Length, AET Type, void *Data, uint8_t Flags,
+   std::string_view StructName)
+{
+   lua_createarray(L, Length, Type, Data, Flags, StructName, nullptr);
+}
+
+extern void lua_createarray(lua_State *L, int64_t Length, AET Type, void *Data, uint8_t Flags,
+   std::string_view StructName, struct_record *StructDef)
 {
    lj_gc_check(L);
-   setarrayV(L, L->top, lj_array_new(L, Length, Type, Data, Flags, StructName));
+   setarrayV(L, L->top, lj_array_new(L, Length, Type, Data, Flags, StructName, StructDef));
    incr_top(L);
+}
+
+//********************************************************************************************************************
+// Create native struct and push onto stack.  With Data null a zeroed inline payload is allocated; otherwise the
+// struct references the external Data (pass STRUCT_DEALLOCATE in Flags to transfer ownership to the GC).
+// Lifecycle optionally binds the view to a Kotuku object whose destruction invalidates the payload; see
+// lj_struct_new_external() for the weak pin contract.
+
+extern GCstruct * lua_pushstruct(lua_State *L, struct_record &Def, void *Data, uint8_t Flags, Object *Lifecycle,
+   GCstruct *Parent)
+{
+   lj_gc_check(L);
+   auto s = Data ? lj_struct_new_external(L, Def, Data, Flags, Lifecycle, Parent) : lj_struct_new(L, Def);
+   setstructV(L, L->top, s);
+   incr_top(L);
+   return s;
 }
 
 //********************************************************************************************************************
@@ -898,6 +1000,9 @@ extern GCobject * lua_pushobject(lua_State *L, OBJECTID UID, OBJECTPTR Ptr, objM
 {
    lj_gc_check(L);
    auto obj = lj_object_new(L, UID, Ptr, ClassPtr, Flags);
+   // GCOBJ_PINNED in Flags means the caller already holds a weak pin on Ptr (e.g. via PinWeakObject())
+   // and the wrapper adopts it; otherwise pin here while the caller's liveness guarantee still holds.
+   if ((Ptr) and (not obj->is_pinned())) lj_object_pin(obj, Ptr);
    setobjectV(L, L->top, obj);
    incr_top(L);
    return obj;
@@ -921,16 +1026,6 @@ extern int luaL_newmetatable(lua_State *L, CSTRING tname)
       copyTV(L, L->top++, tv);
       return 0;
    }
-}
-
-//********************************************************************************************************************
-// Push current thread onto stack
-
-extern int lua_pushthread(lua_State *L)
-{
-   setthreadV(L, L->top, L);
-   incr_top(L);
-   return (mainthread(G(L)) IS L);
 }
 
 //********************************************************************************************************************
@@ -985,11 +1080,11 @@ extern void lua_gettable(lua_State *L, int idx)
 //********************************************************************************************************************
 // Get table field by string key
 
-extern void lua_getfield(lua_State *L, int idx, CSTRING k)
+extern void lua_getfield(lua_State *L, int idx, std::string_view k)
 {
    cTValue *t = index2adr_check(L, idx);
    TValue key;
-   setstrV(L, &key, lj_str_newz(L, k));
+   setstrV(L, &key, lj_str_newsv(L, k));
    cTValue *v = lj_meta_tget(L, t, &key);
    if (v IS nullptr) v = MetaCall::invokeGet(L);
    copyTV(L, L->top, v);
@@ -1028,6 +1123,7 @@ extern int lua_getmetatable(lua_State *L, int idx)
    if (tvistab(o)) mt = tabref(tabV(o)->metatable);
    else if (tvisudata(o)) mt = tabref(udataV(o)->metatable);
    else if (tvisarray(o)) mt = tabref(arrayV(o)->metatable);
+   else if (tvisstruct(o)) mt = tabref(structV(o)->metatable);
    else mt = tabref(basemt_obj(G(L), o));
    if (mt IS nullptr) return 0;
    settabV(L, L->top, mt);
@@ -1036,30 +1132,13 @@ extern int lua_getmetatable(lua_State *L, int idx)
 }
 
 //********************************************************************************************************************
-// Get metatable field by string key
-
-extern int luaL_getmetafield(lua_State *L, int idx, CSTRING field)
-{
-   if (lua_getmetatable(L, idx)) {
-      cTValue *tv = lj_tab_getstr(tabV(L->top - 1), lj_str_newz(L, field));
-      if (tv and !tvisnil(tv)) {
-         copyTV(L, L->top - 1, tv);
-         return 1;
-      }
-      L->top--;
-   }
-   return 0;
-}
-
-//********************************************************************************************************************
-// Get function/userdata/thread environment table
+// Get function/userdata environment table
 
 extern void lua_getfenv(lua_State *L, int idx)
 {
    cTValue *o = index2adr_check(L, idx);
    if (tvisfunc(o)) settabV(L, L->top, tabref(funcV(o)->c.env));
    else if (tvisudata(o)) settabV(L, L->top, tabref(udataV(o)->env));
-   else if (tvisthread(o)) settabV(L, L->top, tabref(threadV(o)->env));
    else setnilV(L->top);
    incr_top(L);
 }
@@ -1154,6 +1233,10 @@ extern void lua_settable(lua_State *L, int idx)
 {
    cTValue *t = index2adr_check(L, idx);
    lj_checkapi_slot(2);
+   if (tvistab(t) and lj_tab_is_environment(tabV(t)) and tvisstr(L->top - 2)) {
+      lj_env_check(L, tabV(t), strV(L->top - 2), L->top - 1);
+      t = index2adr_check(L, idx);  // The policy check may reallocate the stack.
+   }
    TValue *o = lj_meta_tset(L, t, L->top - 2);
    if (o) {
       // NOBARRIER: lj_meta_tset ensures the table is not black.
@@ -1174,6 +1257,10 @@ extern void lua_setfield(lua_State *L, int idx, CSTRING k)
    cTValue *t = index2adr_check(L, idx);
    lj_checkapi_slot(1);
    setstrV(L, &key, lj_str_newz(L, k));
+   if (tvistab(t) and lj_tab_is_environment(tabV(t))) {
+      lj_env_check(L, tabV(t), strV(&key), L->top - 1);
+      t = index2adr_check(L, idx);  // The policy check may reallocate the stack.
+   }
    TValue *o = lj_meta_tset(L, t, &key);
    if (o) {
       // NOBARRIER: lj_meta_tset ensures the table is not black.
@@ -1193,6 +1280,11 @@ extern void lua_rawset(lua_State *L, int idx)
    TValue* dst, * key;
    lj_checkapi_slot(2);
    key = L->top - 2;
+   if (lj_tab_is_environment(t) and tvisstr(key)) {
+      lj_env_store(L, t, strV(key), key + 1);
+      L->top -= 2;  // Not via 'key': the boundary may reallocate the stack.
+      return;
+   }
    dst = lj_tab_set(L, t, key);
    copyTV(L, dst, key + 1);
    lj_gc_anybarriert(L, t);
@@ -1233,20 +1325,28 @@ extern int lua_setmetatable(lua_State *L, int idx)
 
    auto g = G(L);
    if (tvistab(o)) {
-      setgcref(tabV(o)->metatable, obj2gco(mt));
-      if (mt) lj_gc_objbarriert(L, tabV(o), mt);
+      GCtab* table = tabV(o);
+      setgcref(table->metatable, obj2gco(mt));
+      if (mt) lj_gc_objbarriert(L, table, mt);
+      lj_gc_checkfinaliser(L, obj2gco(table), mt);
    }
    else if (tvisudata(o)) {
-      setgcref(udataV(o)->metatable, obj2gco(mt));
-      if (mt) lj_gc_objbarrier(L, udataV(o), mt);
+      GCudata* userdata = udataV(o);
+      setgcref(userdata->metatable, obj2gco(mt));
+      if (mt) lj_gc_objbarrier(L, userdata, mt);
+      lj_gc_checkfinaliser(L, obj2gco(userdata), mt);
    }
    else if (tvisarray(o)) {
       setgcref(arrayV(o)->metatable, obj2gco(mt));
       if (mt) lj_gc_objbarrier(L, arrayV(o), mt);
    }
+   else if (tvisstruct(o)) {
+      setgcref(structV(o)->metatable, obj2gco(mt));
+      if (mt) lj_gc_objbarrier(L, structV(o), mt);
+   }
    else {
       // Flush cache, since traces specialize to basemt. But not during __gc.
-      if (lj_trace_flushall(L)) lj_err_caller(L, ErrMsg::NOGCMM);
+      if (lj_trace_flushall(L)) luaL_error(L, ErrMsg::NOGCMM);
       if (tvisbool(o)) {
          // NOBARRIER: basemt is a GC root.
          setgcref(basemt_it(g, LJ_TTRUE), obj2gco(mt));
@@ -1282,7 +1382,7 @@ extern void lua_setbasemetatable(lua_State *L, uint32_t itype)
    auto mt = tabV(L->top - 1);
    auto g = G(L);
 
-   if (lj_trace_flushall(L)) lj_err_caller(L, ErrMsg::NOGCMM);
+   if (lj_trace_flushall(L)) luaL_error(L, ErrMsg::NOGCMM);
 
    // NOBARRIER: basemt is a GC root.
    setgcref(basemt_it(g, itype), obj2gco(mt));
@@ -1291,7 +1391,7 @@ extern void lua_setbasemetatable(lua_State *L, uint32_t itype)
 }
 
 //********************************************************************************************************************
-// Set function/userdata/thread environment table
+// Set function/userdata environment table
 
 extern int lua_setfenv(lua_State *L, int idx)
 {
@@ -1302,7 +1402,6 @@ extern int lua_setfenv(lua_State *L, int idx)
    t = tabV(L->top - 1);
    if (tvisfunc(o)) setgcref(funcV(o)->c.env, obj2gco(t));
    else if (tvisudata(o)) setgcref(udataV(o)->env, obj2gco(t));
-   else if (tvisthread(o)) setgcref(threadV(o)->env, obj2gco(t));
    else {
       L->top--;
       return 0;
@@ -1349,6 +1448,7 @@ static TValue * api_call_base(lua_State *L, int nargs)
 
 extern void lua_call(lua_State *L, int nargs, int nresults)
 {
+   [[maybe_unused]] const size_t context_depth = lj_context_depth(L);
    lj_checkapi(L->status IS LUA_OK or L->status IS LUA_ERRERR, "thread called in wrong state %d", L->status);
    lj_checkapi_slot(nargs + 1);
 
@@ -1359,6 +1459,7 @@ extern void lua_call(lua_State *L, int nargs, int nresults)
    lj_checkapi(L->top <= tvref(L->maxstack), "stack overflow");
 
    lj_vm_call(L, api_call_base(L, nargs), nresults + 1);
+   lj_assertL(lj_context_depth(L) IS context_depth, "lua_call returned with unbalanced contextual activations");
 }
 
 //********************************************************************************************************************
@@ -1366,6 +1467,7 @@ extern void lua_call(lua_State *L, int nargs, int nresults)
 
 extern int lua_pcall(lua_State *L, int nargs, int nresults, int errfunc)
 {
+   [[maybe_unused]] const size_t context_depth = lj_context_depth(L);
    global_State* g = G(L);
    uint8_t oldh = hook_save(g);
    ptrdiff_t ef;
@@ -1387,54 +1489,8 @@ extern int lua_pcall(lua_State *L, int nargs, int nresults, int errfunc)
    }
    status = lj_vm_pcall(L, api_call_base(L, nargs), nresults + 1, ef);
    if (status) hook_restore(g, oldh);
+   lj_assertL(lj_context_depth(L) IS context_depth, "lua_pcall returned with unbalanced contextual activations");
    return status;
-}
-
-//********************************************************************************************************************
-// Prepare C function call with userdata argument
-
-static TValue* cpcall(lua_State *L, lua_CFunction func, void* ud)
-{
-   GCfunc* fn = lj_func_newC(L, 0, getcurrenv(L));
-   TValue* top = L->top;
-   fn->c.f = func;
-   setfuncV(L, top++, fn);
-   setnilV(top++);
-   ud = lj_lightud_intern(L, ud);
-   setrawlightudV(top++, ud);
-   cframe_nres(L->cframe) = 1 + 0;  //  Zero results.
-   L->top = top;
-   return top - 1;  //  Now call the newly allocated C function.
-}
-
-//********************************************************************************************************************
-// Call C function with error handling
-
-extern int lua_cpcall(lua_State *L, lua_CFunction func, void *ud)
-{
-   global_State *g = G(L);
-   uint8_t oldh = hook_save(g);
-   int status;
-   lj_checkapi(L->status IS LUA_OK or L->status IS LUA_ERRERR, "thread called in wrong state %d", L->status);
-   status = lj_vm_cpcall(L, func, ud, cpcall);
-   if (status) hook_restore(g, oldh);
-   return status;
-}
-
-//********************************************************************************************************************
-// Call metamethod function
-
-extern int luaL_callmeta(lua_State *L, int idx, const char *field)
-{
-   if (luaL_getmetafield(L, idx, field)) {
-      TValue* top = L->top--;
-      setnilV(top++);
-      copyTV(L, top++, index2adr(L, idx));
-      L->top = top;
-      lj_vm_call(L, top - 1, 1 + 1);
-      return 1;
-   }
-   return 0;
 }
 
 //********************************************************************************************************************

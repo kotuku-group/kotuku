@@ -138,6 +138,114 @@ end
    assert(alternate() is 3, "third call returns number")
 end
 
+@Test function ExplicitAnyParameterInfersVariantResult()
+   function get_value(Input:any)
+      Input ?! return 'default'
+      return Input
+   end
+
+   assert(get_value(nil) is 'default', 'an empty explicit-any parameter should use the concrete fallback')
+   assert(get_value('value') is 'value', 'an explicit-any parameter should permit an inferred variant result')
+   assert(get_value(42) is 42, 'the inferred any result should accept values of different types')
+
+   function variant_first(Input:any)
+      if Input then return Input end
+      return 'default'
+   end
+
+   assert(variant_first(false) is 'default', 'a later concrete fallback should not narrow an inferred any result')
+   assert(variant_first(42) is 42, 'explicit-any inference should be independent of return source order')
+end
+
+@Test function TableIndexReadInfersAnyResult()
+   function first_entry(Values:table)
+      return Values[0]
+   end
+
+   function wrapped_entry(Values:table)
+      return first_entry(Values)
+   end
+
+   assert(first_entry({ 42 }) is 42, 'an indexed table read should infer an any result')
+   assert(first_entry({ 'value' }) is 'value', 'the inferred result should accept different table value types')
+   assert(wrapped_entry({ 42 }) is 42, 'a wrapper should preserve an inferred table variant result')
+   assert(wrapped_entry({ 'value' }) is 'value', 'a wrapped table variant should accept different value types')
+end
+
+@Test function UntypedTableKeyReadInfersAnyResult()
+   function first_member(Values)
+      val = Values.key
+      return val
+   end
+
+   function first_index(Values)
+      val = Values['key']
+      return val
+   end
+
+   function direct_index(Values)
+      return Values['key']
+   end
+
+   function deferred_member(Values)
+      local val
+      val = Values.key
+      return val
+   end
+
+   function deferred_index(Values)
+      local val
+      val = Values['key']
+      return val
+   end
+
+   assert(first_member({ key = 42 }) is 42, 'an untyped table member read should infer an any result')
+   assert(first_member({ key = 'value' }) is 'value', 'an untyped table member result should remain variant')
+   assert(first_index({ key = 42 }) is 42, 'an untyped table index read should infer an any result')
+   assert(first_index({ key = 'value' }) is 'value', 'an untyped table index result should remain variant')
+   assert(direct_index({ key = 42 }) is 42, 'a direct untyped table index read should infer an any result')
+   assert(direct_index({ key = 'value' }) is 'value', 'a direct untyped table index result should remain variant')
+   assert(deferred_member({ key = 42 }) is 42, 'a deferred member read should infer an any result')
+   assert(deferred_member({ key = 'value' }) is 'value', 'a deferred member result should remain variant')
+   assert(deferred_index({ key = 42 }) is 42, 'a deferred index read should infer an any result')
+   assert(deferred_index({ key = 'value' }) is 'value', 'a deferred index result should remain variant')
+end
+
+@Test function UnknownTableIndexInfersAnyResult()
+   exec([[
+      extern glUnspecifiedValue
+      function unresolved_entry()
+         return glUnspecifiedValue[0]
+      end
+   ]])
+end
+
+@Test function ImplicitDynamicStillRequiresResultAnnotation()
+   try
+      exec([[
+         extern glUnspecifiedValue
+         function unresolved_value()
+            return glUnspecifiedValue
+         end
+      ]])
+   success
+      assert(false, 'an unspecified dynamic return requires an explicit result annotation')
+   end
+end
+
+@Test function UnknownCallStillRequiresResultAnnotation()
+   try
+      exec([[
+         extern glUnspecifiedFunction
+         function unresolved_call()
+            return glUnspecifiedFunction()
+         end
+      ]])
+   success
+      assert(false, 'an unresolved call result requires an explicit result annotation')
+   end
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- TYPE INFERENCE FROM RETURN STATEMENTS (no explicit declaration)
 
@@ -164,7 +272,7 @@ end
 end
 
 @Test function InferredMultipleReturns()
-   function pair(A, B)
+   function pair(A:num, B:num)
       return A, B
    end
    x, y = pair(1, 2)
@@ -183,7 +291,7 @@ end
          end
       ]])
    success
-      error("should detect return type mismatch: str returned for num declaration")
+      assert(false, "should detect return type mismatch: str returned for num declaration")
    end
 end
 
@@ -194,9 +302,8 @@ end
             return 42
          end
       ]])
-   end
    success
-      error("should detect return type mismatch: num returned for str declaration")
+      assert(false, "should detect return type mismatch: num returned for str declaration")
    end
 end
 
@@ -207,9 +314,8 @@ end
             return {}
          end
       ]])
-   end
    success
-      error("should detect return type mismatch: table returned for bool declaration")
+      assert(false, "should detect return type mismatch: table returned for bool declaration")
    end
 end
 
@@ -220,25 +326,22 @@ end
             return "wrong", 42
          end
       ]])
-   end
    success
-      error("should detect return type mismatch in multiple returns")
+      assert(false, "should detect return type mismatch in multiple returns")
    end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- RETURN COUNT VALIDATION
 
-@Test function TooManyReturnsError()
-   try
-      exec([[
-         function bad():<num, str>
-            return 1, "a", "extra"
-         end
-      ]])
-   success
-      error("should detect too many return values")
+@Test function AdditionalReturnsAreTruncated()
+   function additional():<num, str>
+      return 1, "a", false
    end
+   local number, text, extra = additional()
+   assert(number is 1, "first declared result should be preserved")
+   assert(text is "a", "second declared result should be preserved")
+   assert(extra is nil, "additional undeclared results should be truncated")
 end
 
 @Test function FewerReturnsAllowed()
@@ -269,6 +372,31 @@ end
    assert(result is nil, "bare return should return nil")
 end
 
+@Test function NilOnlyReturnIsVoid()
+   function nil_only()
+      return nil
+   end
+   assert(nil_only() is nil, "an explicit nil-only return should behave like a bare return")
+end
+
+@Test function TrailingNilOnlyResultIsOmitted()
+   function value_with_trailing_nil()
+      return 42, nil
+   end
+   local value, omitted = value_with_trailing_nil()
+   assert(value is 42, "the concrete leading result should be inferred")
+   assert(omitted is nil, "a trailing nil-only result should behave like an omitted result")
+end
+
+@Test function LeadingNilResultIsPreserved()
+   function nil_then_value()
+      return nil, 'success'
+   end
+   local empty, value = nil_then_value()
+   assert(empty is nil, "a leading nil result should retain its position")
+   assert(value is 'success', "a concrete result after nil should retain its position and type")
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- RECURSIVE FUNCTIONS REQUIRE EXPLICIT TYPE
 
@@ -288,6 +416,54 @@ end
    assert(fib(10) is 55, "recursive fibonacci with type should work")
 end
 
+@Test function TypedTailRecursionDoesNotGrowTheStack()
+   function count_down(Count: num, Accumulator: num):num
+      if Count is 0 then return Accumulator end
+      return count_down(Count - 1, Accumulator + 1)
+   end
+
+   assert(count_down(100000, 0) is 100000,
+      "a typed Self-tail call should complete without exhausting the stack")
+end
+
+@Test function TypedTailRecursionPreservesTheReturnContract()
+   function typed_tail(Count: num, Value:any):num
+      if Count is 0 then return Value end
+      return typed_tail(Count - 1, Value)
+   end
+
+   try
+      typed_tail(1000, 'wrong')
+   except ex
+      assert(ex.message, "the terminal activation should report the invalid result")
+   success
+      assert(false, "a forwarded recursive return contract should still reject an invalid result")
+   end
+end
+
+@Test function TypedTailRecursionPreservesFixedArity()
+   function fixed_tail(Count: num):num
+      if Count is 0 then return 1, 2 end
+      return fixed_tail(Count - 1)
+   end
+
+   local first, truncated = fixed_tail(1000)
+   assert(first is 1, "the declared recursive result should be preserved")
+   assert(truncated is nil, "the terminal activation should truncate undeclared recursive results")
+end
+
+@Test function ExplicitVoidTailRecursionExecutesEveryCall()
+   local visits = 0
+   function void_tail(Count: num):<>
+      visits++
+      if Count is 0 then return end
+      return void_tail(Count - 1)
+   end
+
+   void_tail(100000)
+   assert(visits is 100001, "an explicit-void Self-tail call should execute every recursive activation")
+end
+
 @Test function RecursiveFunctionWithoutTypeError()
    try
       exec([[
@@ -296,9 +472,8 @@ end
             return N * factorial(N - 1)
          end
       ]])
-   end
    success
-      error("recursive function without explicit return type should error")
+      assert(false, "recursive function without explicit return type should error")
    end
 end
 
@@ -355,9 +530,8 @@ end
       exec([[
          bad = (x => num: "not a number")
       ]])
-   end
    success
-      error("arrow function with mismatched return type should error")
+      assert(false, "arrow function with mismatched return type should error")
    end
 end
 
@@ -400,9 +574,8 @@ end
             end
          end
       ]])
-   end
    success
-      error("inconsistent return types should error (first wins rule)")
+      assert(false, "inconsistent return types should error (first wins rule)")
    end
 end
 
@@ -429,9 +602,8 @@ end
             end
          end
       ]])
-   end
    success
-      error("inconsistent multiple return types should error")
+      assert(false, "inconsistent multiple return types should error")
    end
 end
 
@@ -483,10 +655,10 @@ end
 
 @Test function ReturnTypeInMethodSyntax()
    local obj = {}
-   function obj:getValue():num
+   function obj.getValue(Self):num
       return 42
    end
-   assert(obj:getValue() is 42, "method with return type should work")
+   assert(obj.getValue(obj) is 42, "method with return type should work")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -505,12 +677,13 @@ end
    -- 9th+ types should be treated as 'any' (no type checking)
    function manyReturns():<num, num, num, num, num, num, num, num, str>
       -- 9th type (str) should be treated as any due to MAX_RETURN_TYPES = 8
-      return 1, 2, 3, 4, 5, 6, 7, 8, "ninth"
+      return 1, 2, 3, 4, 5, 6, 7, 8, "ninth", false
    end
-   a, b, c, d, e, f, g, h, i = manyReturns()
+   a, b, c, d, e, f, g, h, i, j = manyReturns()
    assert(a is 1, "1st return should be 1")
    assert(h is 8, "8th return should be 8")
    assert(i is "ninth", "9th return should work (treated as any)")
+   assert(j is nil, "10th undeclared return should be truncated")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -521,7 +694,7 @@ end
       return 42
    end
 
-   result: num = getNum()
+   local result: num = getNum()
    assert(result is 42, "typed variable from typed function should work")
 end
 
@@ -533,10 +706,10 @@ end
          function getNum():num
             return 42
          end
-         result: str = getNum()
+         local result: str = getNum()
       ]])
    success
-      error("Expected exception to be raised from invalid typed assignment")
+      assert(false, "Expected exception to be raised from invalid typed assignment")
    end
 end
 
@@ -563,25 +736,18 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- TYPE ALIASES IN RETURN DECLARATIONS
 
-@Test function ReturnTypeAliasNumber()
-   function getNumber():number
+@Test function ReturnTypeNum()
+   function getNumber():num
       return 42
    end
-   assert(getNumber() is 42, "number alias in return type should work")
+   assert(getNumber() is 42, "num return type should work")
 end
 
-@Test function ReturnTypeAliasString()
-   function getString():string
+@Test function ReturnTypeString()
+   function getString():str
       return "hello"
    end
-   assert(getString() is "hello", "string alias in return type should work")
-end
-
-@Test function ReturnTypeAliasBoolean()
-   function getBoolean():boolean
-      return true
-   end
-   assert(getBoolean() is true, "boolean alias in return type should work")
+   assert(getString() is "hello", "str return type should work")
 end
 
 @Test function ReturnTypeAliasFunction()
@@ -619,7 +785,7 @@ end
       mul = function(A: num, B: num):num return A * B end
    }
    assert(ops.add(3, 4) is 7, "typed function in table should work")
-   assert(ops.substr(10, 3) is 7, "second typed function should work")
+   assert(ops.sub(10, 3) is 7, "second typed function should work")
    assert(ops.mul(3, 4) is 12, "third typed function should work")
 end
 
@@ -657,6 +823,33 @@ end
    assert(c is 3, "third from varargs should be 3")
 end
 
+@Test function DynamicReturnContractsPreserveExpandedResults()
+   local script = obj.new('tiri', { statement=[=[
+jit.opt.start('hotloop=1', 'hotexit=1')
+local aborts = 0
+function trace_event(Event, Trace, Func, Pc, Reason)
+   if Event is 'abort' then aborts++ end
+end
+jit.attach(trace_event, 'trace')
+function firstAndRest(...):<num, any, ...>
+   return ...
+end
+for i in {0 to 100} do
+   local a, b, c, d = firstAndRest(1, 2, 'third', nil)
+   assert(a is 1 and b is 2 and c is 'third' and d is nil,
+      f'Expanded results must survive trace abortion: {a}, {b}, {c}, {d}')
+end
+jit.attach(trace_event)
+assert(aborts > 0, 'The dynamic contract must exercise trace abortion')
+jit.off()
+local deferred = <{ 1 }>
+local a, b, c = firstAndRest(deferred, 2, 3)
+assert(a is 1 and b is 2 and c is 3, 'Thunk resolution must preserve the other expanded results')
+]=] })
+   check script.acActivate()
+   assert(script.error is 0, script.errorMessage)
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- ERROR MESSAGE QUALITY
 
@@ -667,12 +860,12 @@ end
             return "text"
          end
       ]])
-   success
-      error("should have caught type error")
    except ex
       -- Check that error message is helpful
-      msg = ex.message
-      assert(string.find(msg, "type") or string.find(msg, "num") or string.find(msg, "str"),
+      local msg = ex.message
+      assert(msg.find("type") or string.find(msg, "num") or string.find(msg, "str"),
          "error message should mention type information")
+   success
+      assert(false, "should have caught type error")
    end
 end

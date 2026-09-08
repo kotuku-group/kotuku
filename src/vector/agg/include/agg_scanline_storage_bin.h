@@ -6,7 +6,10 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
-
+// ---
+// Stores binary scanlines for later replay. Hooks into binary scanline generation, boolean algebra, and
+// renderer_scanline. In the vector renderer it caches hard-edged coverage regions for masks, clips, and intermediate
+// shape results.
 //
 // Adaptation for 32-bit screen coordinates has been sponsored by
 // Liberty Technology Systems, Inc., visit http://lib-sys.com
@@ -16,9 +19,7 @@
 //
 //----------------------------------------------------------------------------
 
-
-#ifndef AGG_SCANLINE_STORAGE_BIN_INCLUDED
-#define AGG_SCANLINE_STORAGE_BIN_INCLUDED
+#pragma once
 
 #include <string.h>
 #include <stdlib.h>
@@ -324,17 +325,6 @@ namespace agg
     };
 
 
-
-
-
-
-
-
-
-
-
-
-
     //---------------------------------------serialized_scanlines_adaptor_bin
     class serialized_scanlines_adaptor_bin
     {
@@ -431,7 +421,6 @@ namespace agg
             unsigned     m_num_spans;
             int          m_dx;
         };
-
 
 
     public:
@@ -574,8 +563,4 @@ namespace agg
     };
 
 
-
 }
-
-#endif
-

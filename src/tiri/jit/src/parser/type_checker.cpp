@@ -1,12 +1,14 @@
 #include "parser/type_checker.h"
 
-void TypeCheckScope::declare_parameter(GCstr *Name, TiriType Type, SourceSpan Location)
+void TypeCheckScope::declare_parameter(
+   GCstr *Name, TiriType Type, struct_record *StructDef, bool Required, SourceSpan Location)
 {
    VariableInfo info;
    info.name = Name;
    info.type.primary = Type;
    info.type.is_constant = false;
-   info.type.is_nullable = false;
+   info.type.is_nullable = not Required;
+   info.type.struct_def = StructDef;
    info.location = Location;
    info.is_parameter = true;
    info.is_used = false;
@@ -39,10 +41,20 @@ void TypeCheckScope::declare_function(GCstr *Name, const FunctionExprPayload *Fu
    this->variables_.push_back(info);
 }
 
-std::optional<TiriType> TypeCheckScope::lookup_parameter_type(GCstr *Name) const
+void TypeCheckScope::update_local_type(GCstr *Name, const InferredType &Type)
 {
    for (auto it = this->variables_.rbegin(); it != this->variables_.rend(); ++it) {
-      if (it->name IS Name and it->is_parameter) return it->type.primary;
+      if (it->name IS Name and not it->is_parameter) {
+         it->type = Type;
+         return;
+      }
+   }
+}
+
+std::optional<InferredType> TypeCheckScope::lookup_parameter_type(GCstr *Name) const
+{
+   for (auto it = this->variables_.rbegin(); it != this->variables_.rend(); ++it) {
+      if (it->name IS Name and it->is_parameter) return it->type;
    }
    return std::nullopt;
 }
@@ -63,13 +75,28 @@ const FunctionExprPayload* TypeCheckScope::lookup_function(GCstr *Name) const
    return nullptr;
 }
 
-void TypeCheckScope::fix_local_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId)
+void TypeCheckScope::fix_local_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId, struct_record *StructDef,
+   ArrayElementDescriptor ArrayElement)
 {
    for (auto it = this->variables_.rbegin(); it != this->variables_.rend(); ++it) {
       if (it->name IS Name and not it->is_parameter) {
          it->type.primary = Type;
          it->type.is_fixed = true;
          it->type.object_class_id = ObjectClassId;
+         it->type.struct_def = StructDef;
+         it->type.array_element = ArrayElement;
+         return;
+      }
+   }
+}
+
+void TypeCheckScope::mark_dynamic_ingress(GCstr *Name, bool RequiresDestination)
+{
+   for (auto it = this->variables_.rbegin(); it != this->variables_.rend(); ++it) {
+      if (it->name IS Name and not it->is_parameter) {
+         it->type.primary = TiriType::Any;
+         it->type.is_fixed = false;
+         it->type.requires_destination_type = RequiresDestination;
          return;
       }
    }

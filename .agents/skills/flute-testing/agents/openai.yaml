@@ -1,0 +1,4 @@
+interface:
+  display_name: "Flute Testing"
+  short_description: "Write and run Kotuku Flute tests"
+  default_prompt: "Use $flute-testing when creating, improving, or running Kotuku Flute tests."

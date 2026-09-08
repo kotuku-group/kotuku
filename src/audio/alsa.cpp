@@ -3,20 +3,21 @@
 #include "device_enum.h"
 
 //********************************************************************************************************************
+// NB: Can be called on destruction or deactivation.
 
 static void free_alsa(extAudio *Self)
 {
+   Self->AudioBuffer.clear();
    if (Self->sndlog) { snd_output_close(Self->sndlog); Self->sndlog = nullptr; }
    if (Self->Handle) { snd_pcm_close(Self->Handle); Self->Handle = nullptr; }
    if (Self->MixHandle) { snd_mixer_close(Self->MixHandle); Self->MixHandle = nullptr; }
-   if (Self->AudioBuffer) { FreeResource(Self->AudioBuffer); Self->AudioBuffer = nullptr; }
 }
 
 //********************************************************************************************************************
 
 static ERR init_audio(extAudio *Self)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    struct snd::SetVolume setvol;
    snd_pcm_hw_params_t *hwparams;
    snd_pcm_stream_t stream;
@@ -43,26 +44,12 @@ static ERR init_audio(extAudio *Self)
    if (!Self->Device.empty()) pcm_name = Self->Device;
    else pcm_name = "default";
 
-   // Use unified device enumeration to find the appropriate audio device
-   ALSADeviceInfo selected_device;
-
    if (iequals("default", pcm_name)) {
-      // Select best available device (most mixer controls, not a modem)
-      selected_device = ALSADeviceEnumerator::select_best_device();
-      if (selected_device.card_number IS -1) {
-         log.warning("There are no sound cards supported by audio drivers.");
-         return ERR::NoSupport;
-      }
-
-      Self->Device = selected_device.card_id;
-      pcm_name = selected_device.device_name;
-      log.msg("Selected default device: %s (%s) with %d mixer controls",
-              selected_device.card_id.c_str(), selected_device.card_name.c_str(),
-              selected_device.mixer_controls);
+      log.msg("Using the default audio output device.");
    }
    else {
       // Find specific device by ID
-      selected_device = ALSADeviceEnumerator::find_device_by_id(pcm_name);
+      auto selected_device = ALSADeviceEnumerator::find_device_by_id(pcm_name);
       if (selected_device.card_number IS -1) {
          log.warning("Requested device '%s' not found.", pcm_name.c_str());
          return ERR::NoSupport;
@@ -86,22 +73,22 @@ static ERR init_audio(extAudio *Self)
 
    if ((err = snd_mixer_open(&Self->MixHandle, 0)) < 0) {
       log.warning("snd_mixer_open() %s", snd_strerror(err));
-      return ERR::Failed;
+      return ERR::SystemCall;
    }
 
    if ((err = snd_mixer_attach(Self->MixHandle, pcm_name.c_str())) < 0) {
       log.warning("snd_mixer_attach() %s", snd_strerror(err));
-      return ERR::Failed;
+      return ERR::SystemCall;
    }
 
    if ((err = snd_mixer_selem_register(Self->MixHandle, nullptr, nullptr)) < 0) {
       log.warning("snd_mixer_selem_register() %s", snd_strerror(err));
-      return ERR::Failed;
+      return ERR::SystemCall;
    }
 
    if ((err = snd_mixer_load(Self->MixHandle)) < 0) {
       log.warning("snd_mixer_load() %s", snd_strerror(err));
-      return ERR::Failed;
+      return ERR::SystemCall;
    }
 
    // Build a list of all available volume controls
@@ -189,19 +176,19 @@ static ERR init_audio(extAudio *Self)
    stream = SND_PCM_STREAM_PLAYBACK;
    if ((err = snd_pcm_open(&pcmhandle, pcm_name.c_str(), stream, 0)) < 0) {
       log.warning("snd_pcm_open(%s) %s", pcm_name.c_str(), snd_strerror(err));
-      return ERR::Failed;
+      return ERR::SystemCall;
    }
 
    // Set access type, either SND_PCM_ACCESS_RW_INTERLEAVED or SND_PCM_ACCESS_RW_NONINTERLEAVED.
 
    if ((err = snd_pcm_hw_params_any(pcmhandle, hwparams)) < 0) {
       log.warning("Broken configuration for this PCM: no configurations available");
-      return ERR::Failed;
+      return ERR::SystemCall;
    }
 
    if ((err = snd_pcm_hw_params_set_access(pcmhandle, hwparams, SND_PCM_ACCESS_RW_INTERLEAVED)) < 0) {
       log.warning("set_access() %d %s", err, snd_strerror(err));
-      return ERR::Failed;
+      return ERR::SystemCall;
    }
 
    // Set the preferred audio bit format
@@ -209,18 +196,18 @@ static ERR init_audio(extAudio *Self)
    if (Self->BitDepth IS 32) {
       if ((err = snd_pcm_hw_params_set_format(pcmhandle, hwparams, SND_PCM_FORMAT_FLOAT_LE)) < 0) {
          log.warning("set_format(32) %s", snd_strerror(err));
-         return ERR::Failed;
+         return ERR::SystemCall;
       }
    }
    else if (Self->BitDepth IS 16) {
       if ((err = snd_pcm_hw_params_set_format(pcmhandle, hwparams, SND_PCM_FORMAT_S16_LE)) < 0) {
          log.warning("set_format(16) %s", snd_strerror(err));
-         return ERR::Failed;
+         return ERR::SystemCall;
       }
    }
    else if ((err = snd_pcm_hw_params_set_format(pcmhandle, hwparams, SND_PCM_FORMAT_U8)) < 0) {
       log.warning("set_format(8) %s", snd_strerror(err));
-      return ERR::Failed;
+      return ERR::SystemCall;
    }
 
    // Retrieve the bit rate from alsa
@@ -243,7 +230,7 @@ static ERR init_audio(extAudio *Self)
 
       default:
          log.warning("Hardware uses an unsupported audio format.");
-         return ERR::Failed;
+         return ERR::NoSupport;
    }
 
    log.msg("ALSA bit rate: %d", Self->BitDepth);
@@ -254,7 +241,7 @@ static ERR init_audio(extAudio *Self)
    dir = 0;
    if ((err = snd_pcm_hw_params_set_rate_near(pcmhandle, hwparams, (uint32_t *)&Self->OutputRate, &dir)) < 0) {
       log.warning("set_rate_near() %s", snd_strerror(err));
-      return ERR::Failed;
+      return ERR::SystemCall;
    }
 
    // Set number of channels
@@ -262,7 +249,7 @@ static ERR init_audio(extAudio *Self)
    uint32_t channels = ((Self->Flags & ADF::STEREO) != ADF::NIL) ? 2 : 1;
    if ((err = snd_pcm_hw_params_set_channels_near(pcmhandle, hwparams, &channels)) < 0) {
       log.warning("set_channels_near(%d) %s", channels, snd_strerror(err));
-      return ERR::Failed;
+      return ERR::SystemCall;
    }
 
    if (channels IS 2) Self->Stereo = true;
@@ -299,24 +286,24 @@ static ERR init_audio(extAudio *Self)
 
    if ((err = snd_pcm_hw_params_set_period_size_near(pcmhandle, hwparams, &periodsize, 0)) < 0) {
       log.warning("Period size failure: %s", snd_strerror(err));
-      return ERR::Failed;
+      return ERR::SystemCall;
    }
 
    if ((err = snd_pcm_hw_params_set_buffer_size_near(pcmhandle, hwparams, &buffersize)) < 0) {
       log.warning("Buffer size failure: %s", snd_strerror(err));
-      return ERR::Failed;
+      return ERR::SystemCall;
    }
 
    // ALSA device initialisation
 
    if ((err = snd_pcm_hw_params(pcmhandle, hwparams)) < 0) {
       log.warning("snd_pcm_hw_params() %s", snd_strerror(err));
-      return ERR::Failed;
+      return ERR::SystemCall;
    }
 
    if ((err = snd_pcm_prepare(pcmhandle)) < 0) {
       log.warning("snd_pcm_prepare() %s", snd_strerror(err));
-      return ERR::Failed;
+      return ERR::SystemCall;
    }
 
    // Retrieve ALSA buffer sizes
@@ -329,64 +316,49 @@ static ERR init_audio(extAudio *Self)
    // Note that ALSA reports the audio buffer size in samples, not bytes
 
    snd_pcm_hw_params_get_buffer_size(hwparams, &buffersize);
-   Self->AudioBufferSize = BYTELEN(buffersize);
+   auto buf_size = BYTELEN(buffersize);
 
-   if (Self->Stereo) Self->AudioBufferSize = BYTELEN(Self->AudioBufferSize<<1);
-   Self->AudioBufferSize = BYTELEN(Self->AudioBufferSize * (Self->BitDepth/8));
+   if (Self->Stereo) buf_size = BYTELEN(buf_size<<1);
+   buf_size = BYTELEN(buf_size * (Self->BitDepth/8));
 
-   log.msg("Total Periods: %d, Period Size: %d, Buffer Size: %d (bytes)", Self->Periods, Self->PeriodSize, Self->AudioBufferSize);
+   log.msg("Total Periods: %d, Period Size: %d, Buffer Size: %d (bytes)", Self->Periods, Self->PeriodSize, buf_size);
 
-   // Allocate a buffer that we will use for audio output
+   Self->AudioBuffer.resize(buf_size);
+   if ((Self->Flags & ADF::SYSTEM_WIDE) != ADF::NIL) {
+      log.msg("Applying user configured volumes.");
 
-   if (Self->AudioBuffer) { FreeResource(Self->AudioBuffer); Self->AudioBuffer = nullptr; }
+      auto oldctl = Self->Volumes;
+      Self->Volumes = volctl;
 
-   if (AllocMemory(Self->AudioBufferSize, MEM::DATA, &Self->AudioBuffer) IS ERR::Okay) {
-      if ((Self->Flags & ADF::SYSTEM_WIDE) != ADF::NIL) {
-         log.msg("Applying user configured volumes.");
-
-         auto oldctl = Self->Volumes;
-         Self->Volumes = volctl;
-
-         for (int i=0; i < (int)volctl.size(); i++) {
-            int j;
-            for (j=0; j < (int)oldctl.size(); j++) {
-               if (volctl[i].Name == oldctl[j].Name) {
-                  setvol.Index   = i;
-                  setvol.Name    = nullptr;
-                  setvol.Flags   = SVF::NIL;
-                  setvol.Channel = -1;
-                  setvol.Volume  = oldctl[j].Channels[0];
+      for (int i=0; i < std::ssize(volctl); i++) {
+         int j;
+         for (j=0; j < std::ssize(oldctl); j++) {
+            if (volctl[i].Name == oldctl[j].Name) {
+               setvol.Index   = i;
+               setvol.Name    = std::string_view{};
+               setvol.Flags   = SVF::NIL;
+               setvol.Channel = -1;
+               setvol.Volume  = oldctl[j].Channels[0];
+               if (setvol.Volume >= 0) {
                   if ((oldctl[j].Flags & VCF::MUTE) != VCF::NIL) setvol.Flags |= SVF::MUTE;
                   else setvol.Flags |= SVF::UNMUTE;
                   Action(snd::SetVolume::id, Self, &setvol);
-                  break;
                }
-            }
-
-            // If the user has no volume defined for a mixer, set our own.
-
-            if (j IS (int)oldctl.size()) {
-               setvol.Index   = i;
-               setvol.Name    = nullptr;
-               setvol.Flags   = SVF::NIL;
-               setvol.Channel = -1;
-               setvol.Volume  = 0.8;
-               Action(snd::SetVolume::id, Self, &setvol);
+               break;
             }
          }
-      }
-      else {
-         log.msg("Skipping preset volumes.");
-         Self->Volumes = volctl;
-      }
 
-      // Free existing volume measurements and apply the information that we read from alsa.
-
-      Self->Handle = pcmhandle;
+         // Mixers without user configuration retain their current system volume and mute state.
+      }
    }
    else {
-      return log.warning(ERR::AllocMemory);
+      log.msg("Skipping preset volumes.");
+      Self->Volumes = volctl;
    }
+
+   // Free existing volume measurements and apply the information that we read from alsa.
+
+   Self->Handle = pcmhandle;
 
    return ERR::Okay;
 }

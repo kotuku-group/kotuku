@@ -11,6 +11,8 @@
 #include "lj_gc.h"
 #include "lj_err.h"
 #include "lj_tab.h"
+#include "lj_bulk.h"
+#include "lj_contract.h"
 
 //********************************************************************************************************************
 // Hash an arbitrary key and return its anchor position in the hash table.
@@ -86,9 +88,12 @@ static GCtab * newtab(lua_State *L, uint32_t asize, uint32_t hbits)
       t = (GCtab*)lj_mem_newgco(L, sizetabcolo(asize));
       t->gct = ~LJ_TTAB;
       t->nomm = (uint8_t)~0;
-      t->colo = (int8_t)asize;
+      table_set_colocated_capacity(t, asize);
+      t->flags = 0;
       setmref(t->array, (TValue*)((char*)t + sizeof(GCtab)));
       setgcrefnull(t->metatable);
+      setgcrefnull(t->global_type_contracts);
+      setmref(t->global_contract_cache, nullptr);
       t->asize = asize;
       t->hmask = 0;
       nilnode = &G(L)->nilnode;
@@ -100,9 +105,12 @@ static GCtab * newtab(lua_State *L, uint32_t asize, uint32_t hbits)
       t = lj_mem_newobj(L, GCtab);
       t->gct = ~LJ_TTAB;
       t->nomm = (uint8_t)~0;
-      t->colo = 0;
+      table_set_never_colocated(t);
+      t->flags = 0;
       setmref(t->array, nullptr);
       setgcrefnull(t->metatable);
+      setgcrefnull(t->global_type_contracts);
+      setmref(t->global_contract_cache, nullptr);
       t->asize = 0;  //  In case the array allocation fails.
       t->hmask = 0;
       nilnode = &G(L)->nilnode;
@@ -167,16 +175,17 @@ GCtab * lj_tab_dup(lua_State *L, const GCtab *kt)
    t = newtab(L, kt->asize, kt->hmask > 0 ? lj_fls(kt->hmask) + 1 : 0);
    lj_assertL(kt->asize == t->asize and kt->hmask == t->hmask, "mismatched size of table and template");
    t->nomm = 0;  //  Keys with metamethod names may be present.
+   t->flags = kt->flags;  //  Permanent metadata is inherited by duplicates of a template table.
 
    asize = kt->asize;
    if (asize > 0) {
       TValue *array = tvref(t->array);
       TValue *karray = tvref(kt->array);
-      if (asize < 64) {  // An inlined loop beats memcpy for < 512 bytes.
+      if (asize < 64) {
          uint32_t i;
          for (i = 0; i < asize; i++) copyTV(L, &array[i], &karray[i]);
       }
-      else memcpy(array, karray, asize * sizeof(TValue));
+      else lj_bulk_copy_tvalue(array, karray, asize);
    }
 
    hmask = kt->hmask;
@@ -216,11 +225,14 @@ void lj_tab_clear(GCtab *t)
 
 void lj_tab_free(global_State *g, GCtab *t)
 {
+   if (auto cache = table_global_contract_cache(t)) lj_mem_free(g, cache, cache->byte_size);
    if (t->hmask > 0) lj_mem_freevec(g, noderef(t->node), t->hmask + 1, Node);
-   if (t->asize > 0 and LJ_MAX_COLOSIZE != 0 and t->colo <= 0) {
+   if (t->asize > 0 and LJ_MAX_COLOSIZE != 0 and table_array_is_separately_allocated(t)) {
       lj_mem_freevec(g, tvref(t->array), t->asize, TValue);
    }
-   if (LJ_MAX_COLOSIZE != 0 and t->colo) lj_mem_free(g, t, sizetabcolo((uint32_t)t->colo & 0x7f));
+   if (LJ_MAX_COLOSIZE != 0 and (table_array_is_colocated(t) or table_had_colocated_array(t))) {
+      lj_mem_free(g, t, sizetabcolo(table_colocated_capacity(t)));
+   }
    else lj_mem_freet(g, t);
 }
 
@@ -234,21 +246,19 @@ void lj_tab_resize(lua_State *L, GCtab *t, uint32_t asize, uint32_t hbits)
    uint32_t oldhmask = t->hmask;
    if (asize > oldasize) {  // Array part grows?
       TValue *array;
-      uint32_t i;
       if (asize > LJ_MAX_ASIZE) lj_err_msg(L, ErrMsg::TABOV);
-      if (LJ_MAX_COLOSIZE != 0 and t->colo > 0) {
+      if (LJ_MAX_COLOSIZE != 0 and table_array_is_colocated(t)) {
          // A colocated array must be separated and copied.
          TValue *oarray = tvref(t->array);
          array = lj_mem_newvec(L, asize, TValue);
-         t->colo = (int8_t)(t->colo | 0x80);  //  Mark as separated (colo < 0).
-         for (i = 0; i < oldasize; i++) copyTV(L, &array[i], &oarray[i]);
+         table_mark_array_separated(t);
+         lj_bulk_copy_tvalue(array, oarray, oldasize);
       }
       else array = (TValue*)lj_mem_realloc(L, tvref(t->array), oldasize * sizeof(TValue), asize * sizeof(TValue));
 
       setmref(t->array, array);
       t->asize = asize;
-      for (i = oldasize; i < asize; i++)  //  Clear newly allocated slots.
-         setnilV(&array[i]);
+      lj_bulk_nil_tvalue(&array[oldasize], asize - oldasize); // Clear newly allocated slots.
    }
 
    // Create new (empty) hash part.
@@ -274,7 +284,7 @@ void lj_tab_resize(lua_State *L, GCtab *t, uint32_t asize, uint32_t hbits)
 
       // Physically shrink only separated arrays.
 
-      if (LJ_MAX_COLOSIZE != 0 and t->colo <= 0) {
+      if (LJ_MAX_COLOSIZE != 0 and table_array_is_separately_allocated(t)) {
          setmref(t->array, lj_mem_realloc(L, array, oldasize * sizeof(TValue), asize * sizeof(TValue)));
       }
    }
@@ -446,6 +456,49 @@ genlookup:
 }
 
 //********************************************************************************************************************
+// Sparse classification for numerical keys.
+//
+// A numerical key is incompatible with the zero-based sequence domain when it is negative, not an exact integer, or
+// outside the supported table index range.  All three facts are decidable from the key alone, which keeps
+// classification free of any dependency on the table's current sequence end.
+//
+// Gap-based classification (storing beyond the sequence end, or deleting an interior element) is deliberately NOT
+// implemented.  The public 'sequence' classification therefore describes a compatible key domain, not a guarantee
+// that the live shape is dense.  Detecting density would require extra state or checks on the hottest table stores.
+// Positive holes retain the numerical boundary reported by '#'.
+//
+// This is kept out of the raw setters (lj_tab_setint() and friends) because internal consumers such as
+// lj_tab_resize(), snapshot restoration and bytecode reading reinsert existing entries through them.  Reclassifying
+// during a rehash would be a false positive: the logical key set does not change.
+
+void lj_tab_classify_numeric_key(GCtab *Table, int32_t Key)
+{
+   if (Key < 0) Table->flags |= TAB_SPARSE;
+}
+
+//********************************************************************************************************************
+// Classify a floating-point key.  Fractional values can never be sequence indices; exact integers are deferred to
+// the integer rule above.
+
+void lj_tab_classify_number_key(GCtab *Table, lua_Number Key)
+{
+   int32_t k = lj_num2int(Key);
+   if (Key != (lua_Number)k) Table->flags |= TAB_SPARSE;  //  Not an exact integer.
+   else lj_tab_classify_numeric_key(Table, k);
+}
+
+//********************************************************************************************************************
+// Classify any script-facing store.  This is the single entry point used by the interpreter helpers, the library
+// code and the C API so that associative and sparse history stay consistent across every route.
+
+void lj_tab_classify_store(GCtab *Table, cTValue *Key)
+{
+   if (tvisint(Key)) lj_tab_classify_numeric_key(Table, intV(Key));
+   else if (tvisnum(Key)) lj_tab_classify_number_key(Table, numV(Key));
+   else Table->flags |= TAB_ASSOCIATIVE;
+}
+
+//********************************************************************************************************************
 // Table setters
 
 // Insert new key. Use Brent's variation to optimize the chain length.
@@ -453,6 +506,11 @@ genlookup:
 TValue * lj_tab_newkey(lua_State *L, GCtab *t, cTValue *key)
 {
    Node *n = hashkey(t, key);
+   // Every new hash-part key funnels through here, including store routes that bypass lj_tab_setstr(), such as the
+   // interpreter's inline BC_TSETS chain-miss path and the JIT's IRCALL_lj_tab_newkey.  Any key that is not a number
+   // makes the sequence length meaningless, so classify the table as associative.  Numerical keys that reach the
+   // hash part are checked for sequence compatibility: negative and fractional keys are permanently sparse.
+   lj_tab_classify_store(t, key);
    if (not tvisnil(&n->val) or t->hmask == 0) {
       Node* nodebase = noderef(t->node);
       Node* collide, * freenode = getfreetop(t, nodebase);
@@ -547,6 +605,7 @@ TValue* lj_tab_setstr(lua_State* L, GCtab* t, const GCstr* key)
 {
    TValue k;
    Node* n = hashstr(t, key);
+   lj_tab_mark_associative(t);  //  Permanently classify the table as associative.
    do {
       if (tvisstr(&n->key) and strV(&n->key) == key) return &n->val;
    } while ((n = nextnode(n)));
@@ -571,11 +630,163 @@ TValue * lj_tab_set(lua_State *L, GCtab *t, cTValue *key)
    }
    else if (tvisnil(key)) lj_err_msg(L, ErrMsg::NILIDX);
 
+   // Classify before the chain search, because resurrecting an existing node whose value went nil returns its slot
+   // directly and never reaches lj_tab_newkey().  Only non-integral numbers reach here on the numeric route, and
+   // those are permanently sparse rather than associative.
+
+   lj_tab_classify_store(t, key);
+
    n = hashkey(t, key);
    do {
       if (lj_obj_equal(&n->key, key)) return &n->val;
    } while ((n = nextnode(n)));
    return lj_tab_newkey(L, t, key);
+}
+
+//********************************************************************************************************************
+// Retrieve an explicit global type contract attached to an environment table.
+
+GCstr * lj_tab_get_global_contract(GCtab *Environment, const GCstr *Name)
+{
+   if (not Environment or not Name) return nullptr;
+   GCtab *contracts = tabref(Environment->global_type_contracts);
+   if (not contracts) return nullptr;
+
+   cTValue *value = lj_tab_getstr(contracts, Name);
+   return value and tvisstr(value) ? strV(value) : nullptr;
+}
+
+//********************************************************************************************************************
+// Retrieve the decoded derivative of an explicit global contract.  The cache is authoritative only while its
+// descriptor identity matches the contracts table; lj_tab_set_global_contract() publishes both together.
+
+static const CachedGlobalContractRecord * find_cached_global_contract(
+   const GlobalContractCache *Cache, const GCstr *Name)
+{
+   if (not Cache) return nullptr;
+   const CachedGlobalContractRecord *records = global_contract_cache_records(Cache);
+   uint32_t index = Name->hash & (Cache->capacity - 1);
+   for (;;) {
+      const CachedGlobalContractRecord &record = records[index];
+      if (not record.name) return nullptr;
+      if (record.name IS Name) return &record;
+      index = (index + 1) & (Cache->capacity - 1);
+   }
+}
+
+const CachedGlobalContractRecord * lj_tab_get_cached_global_contract(
+   const GCtab *Environment, const GCstr *Name)
+{
+   if (not Environment or not Name) return nullptr;
+   const CachedGlobalContractRecord *record = find_cached_global_contract(
+      table_global_contract_cache(Environment), Name);
+   return record and record->descriptor ? record : nullptr;
+}
+
+//********************************************************************************************************************
+// Ensure space for one new decoded global contract.  Allocation and rehashing finish before the environment pointer
+// changes, so an allocation failure leaves the existing cache and persisted descriptor untouched.
+
+static GlobalContractCache * grow_global_contract_cache(lua_State *L, GCtab *Environment, bool NewName)
+{
+   GlobalContractCache *old_cache = table_global_contract_cache(Environment);
+   if (old_cache and (not NewName or (old_cache->count + 1) * 4 <= old_cache->capacity * 3)) return old_cache;
+
+   uint32_t capacity = old_cache ? old_cache->capacity << 1 : 8;
+   size_t byte_size = sizeof(GlobalContractCache) + capacity * sizeof(CachedGlobalContractRecord);
+   auto cache = (GlobalContractCache *)lj_mem_new(L, byte_size);
+   memset(cache, 0, byte_size);
+   cache->byte_size = uint32_t(byte_size);
+   cache->capacity = capacity;
+
+   if (old_cache) {
+      const CachedGlobalContractRecord *old_records = global_contract_cache_records(old_cache);
+      CachedGlobalContractRecord *records = global_contract_cache_records(cache);
+      for (uint32_t i = 0; i < old_cache->capacity; ++i) {
+         const CachedGlobalContractRecord &source = old_records[i];
+         if (not source.name) continue;
+         uint32_t index = source.name->hash & (capacity - 1);
+         while (records[index].name) index = (index + 1) & (capacity - 1);
+         records[index] = source;
+         cache->count++;
+      }
+   }
+
+   setmref(Environment->global_contract_cache, cache);
+   if (old_cache) lj_mem_free(G(L), old_cache, old_cache->byte_size);
+   return cache;
+}
+
+//********************************************************************************************************************
+// Attach an explicit global type contract to an environment table.
+
+void lj_tab_set_global_contract(lua_State *L, GCtab *Environment, const GCstr *Name, GCstr *Descriptor)
+{
+   if (not Environment or not Name or not Descriptor) return;
+
+   RuntimeContractDescriptor decoded;
+   bool cacheable = decode_runtime_contract(Descriptor, decoded) and
+      decoded.boundary IS ContractBoundary::Global and decoded.contract_count IS 1;
+
+   GCtab *contracts = tabref(Environment->global_type_contracts);
+   if (not contracts) {
+      contracts = lj_tab_new(L, 0, 1);
+      setgcref(Environment->global_type_contracts, obj2gco(contracts));
+      lj_gc_objbarriert(L, Environment, contracts);
+   }
+
+   TValue *policy_slot = lj_tab_setstr(L, contracts, Name);
+   const CachedGlobalContractRecord *existing = find_cached_global_contract(
+      table_global_contract_cache(Environment), Name);
+   GlobalContractCache *cache = grow_global_contract_cache(L, Environment, not existing);
+   CachedGlobalContractRecord *records = global_contract_cache_records(cache);
+   uint32_t index = Name->hash & (cache->capacity - 1);
+   while (records[index].name and records[index].name != Name) index = (index + 1) & (cache->capacity - 1);
+
+   CachedGlobalContractRecord replacement{};
+   replacement.name = Name;
+   if (cacheable) {
+      const RuntimeContractEntry &source = decoded.entries[0];
+      replacement.descriptor = Descriptor;
+      if (source.type IS TiriType::Object) replacement.entry.object_class_id = uint32_t(source.object_class_id);
+      else if (source.type IS TiriType::Struct or
+               (source.type IS TiriType::Array and
+                (source.array_element_type IS AET::STRUCT or source.array_element_type IS AET::ARRAY))) {
+         ptrdiff_t offset = source.constraint_name.data() - strdata(Descriptor);
+         lj_assertX(offset > 0 and uint64_t(offset) <= UINT16_MAX,
+            "global contract constraint offset is out of range");
+         replacement.entry.constraint_offset = uint16_t(offset);
+      }
+      replacement.entry.label_offset = 0;
+      if (not source.label.empty()) {
+         ptrdiff_t offset = source.label.data() - strdata(Descriptor);
+         lj_assertX(offset > 0 and uint64_t(offset) <= UINT16_MAX,
+            "global contract label offset is out of range");
+         replacement.entry.label_offset = uint16_t(offset);
+      }
+      replacement.entry.type = source.type;
+      replacement.entry.array_element_type = source.array_element_type;
+      replacement.entry.flags = source.flags;
+      replacement.entry.position = source.position;
+   }
+
+   setstrV(L, policy_slot, Descriptor);
+   lj_gc_anybarriert(L, contracts);
+   if (not records[index].name) cache->count++;
+   records[index] = replacement;
+}
+
+//********************************************************************************************************************
+// Mark a table as a global environment by eagerly attaching its contracts table.  Must run after the environment's
+// built-ins are registered and protected: from that point every store route treats the table as policy-checked.
+
+void lj_env_mark(lua_State *L, GCtab *Environment)
+{
+   if (tabref(Environment->global_type_contracts)) return;
+
+   GCtab *contracts = lj_tab_new(L, 0, 1);
+   setgcref(Environment->global_type_contracts, obj2gco(contracts));
+   lj_gc_objbarrier(L, Environment, contracts);
 }
 
 //********************************************************************************************************************
@@ -643,6 +854,18 @@ int lj_tab_next(GCtab* t, cTValue* key, TValue* o)
       }
    }
    return (int32_t)idx < 0 ? -1 : 0;  //  Invalid key or end of traversal.
+}
+
+//********************************************************************************************************************
+// Return true if the table has no array or hash entries.
+
+int lj_tab_empty(GCtab* t)
+{
+   if (lj_tab_len(t) != 0) return 0;
+
+   TValue key, kv[2];
+   setnilV(&key);
+   return lj_tab_next(t, &key, kv) IS 0;
 }
 
 //********************************************************************************************************************

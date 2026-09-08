@@ -4,10 +4,9 @@ Documentation is available in the Kotuku Wiki.
 
    import 'gui'
    import 'gui/tooltip'
-   import 'translate'
    include 'vector'
 
-   namespace 'gui'
+   namespace gui
 
 local lClickX, lClickY
 lCounter = 0
@@ -43,24 +42,24 @@ gui.toolbar = function(Options)
       end
    end
 
-   function firstIcon() -- Return the first item that is an icon
+   function firstIcon():table -- Return the first item that is an icon
       item = self._first
       while ((item != nil) and (item.type != TI_ICON)) do item = item.next end
       return item
    end
 
-   function lastIcon() -- Return the last item that is an icon
+   function lastIcon():table -- Return the last item that is an icon
       item = self._last
       while ((item != nil) and (item.type != TI_ICON)) do item = item.prev end
       return item
    end
 
    function newItem(Type, Name, ID)
-      if ID and self._lookup[ID] then error('An item with identifier ' .. ID .. ' already exists.') end
+      if ID and self._lookup[ID] then raise 'An item with identifier ' .. ID .. ' already exists.' end
 
       item = { type=Type, id=ID, name=Name, x=0, y=0, width=0, height=0 }
       if Name?? then
-         item.displayName = string.translate(Name)
+         item.displayName = Name
       end
 
       if self._last then self._last.next = item end
@@ -97,7 +96,7 @@ gui.toolbar = function(Options)
 
    -- Return the toolbar item located at position (x,y)
 
-   function getCursorItem(X, Y)
+   function getCursorItem(X, Y):table
       item = self._first
       while (item) do
          if (X >= item.x) and (X < item.x + item.width) and (Y >= item.y) and (Y <  item.y + item.height) then
@@ -158,7 +157,7 @@ gui.toolbar = function(Options)
 
       item = self._first
 
-      local x, y
+      local x:num, y:num
       if self._horizontal then
          x = 0
          y = groupOffset
@@ -179,7 +178,7 @@ gui.toolbar = function(Options)
 
             seq = string.format('M%f,%f l0,%f', x+(item.width-1) * 0.5, y+1, item.height)
             self.vg.new('VectorPath', {
-               name = 'break', stroke = self._groupBorder, sequence = seq, dashArray = '1, 1'
+               name = 'break', stroke = self._groupBorder, sequence = seq, dashArray = array<double> { 1, 1 }
             })
 
             if self._horizontal then
@@ -190,9 +189,9 @@ gui.toolbar = function(Options)
          elseif item.type is TI_GROUP then
             if not Options.flush then
                if self._horizontal then
-                  x += not item.prev ? groupOffset :> (self._iconSize * 0.25)
+                  x += not item.prev ? groupOffset : (self._iconSize * 0.25)
                else
-                  y += not item.prev ? groupOffset :> (self._iconSize * 0.25)
+                  y += not item.prev ? groupOffset : (self._iconSize * 0.25)
                end
 
                currentGroup = item
@@ -338,12 +337,12 @@ gui.toolbar = function(Options)
    -- icon can be displayed.  Set the Tip string for a user hint during hover events.  The icon string must be in the
    -- standard format of 'category/icon'.
 
-   self.addItem = function(ID:num, Name:str, Tip:str, Icon:str, Function:func)
+   self.addItem = function(ID:num!, Name:str!, Tip:str, Icon:str, Function:func!)
       item = newItem(TI_ICON, Name, ID)
       item.callback = Function
 
       if Tip then
-         item.tip = string.translate(Tip)
+         item.tip = Tip
       end
 
       if Icon then
@@ -368,7 +367,7 @@ gui.toolbar = function(Options)
    -- Create a group of items with this method.  The total number of items that will be covered by the group must be
    -- known ahead of time, then added with calls to addItem().
 
-   self.addGroup = function(ID, Name, Span)
+   self.addGroup = function(ID, Name, Span):table
       if Options.flush then
          return self.addBreak()
       else
@@ -415,7 +414,7 @@ gui.toolbar = function(Options)
 
    self.applySticker = function(ID, Content)
       item = self._lookup[ID]
-      item ?? return
+      item ?! return
 
       sticker_size = math.floor(self._iconSize * 0.5)
 
@@ -437,7 +436,7 @@ gui.toolbar = function(Options)
       end
 
       if Content then
-         if type(Content) is 'number' then
+         if Content is <num> then
             if Content > 9 then
                size = math.floor(self._iconSize * 0.33)
                gui.createIcon(self.viewport.scene, 'items/add', size, 'pearl', 'sticker_plus')
@@ -450,8 +449,8 @@ gui.toolbar = function(Options)
             end
          end
 
-         if type(Content) is 'string' then
-            if #Content > 1 then Content = Content:sub(0,1) end
+         if Content is <str> then
+            if #Content > 1 then Content = Content.sub(0,1) end
          end
 
          font_size = sticker_size * 0.75
@@ -465,7 +464,7 @@ gui.toolbar = function(Options)
 
    self.removeSticker = function(ID)
       item = self._lookup[ID]
-      item ?? return
+      item ?! return
       if item.sticker then
          item.sticker.viewport.free()
          item.sticker = { }
@@ -498,7 +497,7 @@ gui.toolbar = function(Options)
 
       if redraw then self.viewport.acDraw() end
 
-      found ?? raise ERR_Search
+      found ?! raise ERR_Search
    end
 
    function hoverUpdate(Item, StateChanged) -- Highlight items that the user hovers over.
@@ -516,7 +515,7 @@ gui.toolbar = function(Options)
       self._current = Item
 
       if self._current and (not self._current.disabled) and (not self._disabled) then
-         self._vHover.fill = self._clicked ? self._selectFill :> self._hoverFill
+         self._vHover.fill = self._clicked ? self._selectFill : self._hoverFill
 
          if Item.icon and Item.iconAltFill then
             Item.icon.fill = Item.iconAltFill
@@ -653,7 +652,7 @@ gui.toolbar = function(Options)
       self._groupMargin = 0
    end
 
-   check self.viewport.init()
+   self.viewport.init()
 
    self.viewport.subscribe('free', function(Viewport, Args)
       if self._tipTimer then mSys.UpdateTimer(self._tipTimer, 0) end

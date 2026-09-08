@@ -1,0 +1,106 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>Tiri</name>
+    <type>class</type>
+    <module>Tiri</module>
+    <comment>Extends the Script class with support for the Tiri language.</comment>
+    <fileExtension>tiri|tbc</fileExtension>
+    <fileDescription>Tiri</fileDescription>
+    <version>1</version>
+    <id>9cfbfbd4</id>
+    <idstring>TIRI</idstring>
+    <category>Data</category>
+    <copyright>Paul Manias © 2006-2026</copyright>
+    <description>
+<p>The Tiri class provides functionality for running scripts written in the Tiri programming language.</p></description>
+    <source>
+      <file>tiri_class.cpp</file>
+    </source>
+  </info>
+
+  <actions>
+    <action>
+      <name>Activate</name>
+      <comment>Performs the native action of the object.</comment>
+      <prototype>ERR acActivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acActivate()</tiriPrototype>
+    </action>
+
+    <action>
+      <name>Query</name>
+      <comment>Compiles the script and prepares it for execution.</comment>
+      <prototype>ERR acQuery(*Object)</prototype>
+      <tiriPrototype>err = Object.acQuery()</tiriPrototype>
+      <description>
+<p>Query() performs the process of compiling the Tiri script.  A Tiri script can be queried only once, at which point the object enters a configured state.   Further queries will do nothing, and return <code>ERR::NothingDone</code>.</p>
+<p>Note that due to the code not being run, declared functions and variables won't be formally registered. Introspection of available procedures will be limited until the script is activated.</p>
+      </description>
+    </action>
+
+    <action>
+      <name>SaveToObject</name>
+      <comment>Compiles the current script statement and saves it as byte code.</comment>
+      <prototype>ERR acSaveToObject(*Object, OBJECTID Dest, CLASSID ClassID)</prototype>
+      <tiriPrototype>err = Object.acSaveToObject(Dest:obj, ClassID:num)</tiriPrototype>
+      <input>
+        <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded data.</param>
+        <param type="CLASSID" name="ClassID">Can refer to a derived class that should be used when encoding the data.</param>
+      </input>
+      <description>
+<p>Use the SaveToObject action to compile the statement in the Script's String field and save the resulting byte code to a target object.  The byte code can be loaded into any script object for execution or referenced in the Tiri code for usage.</p>
+      </description>
+    </action>
+
+  </actions>
+
+  <fields>
+    <field>
+      <name>JitOptions</name>
+      <comment>Defines JIT debugging options.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type lookup="JOF">JOF</type>
+      <description>
+<p>This field allows the client to configure debugging options related to the Just-In-Time (JIT) compilation process.</p>
+<types lookup="JOF"/>
+      </description>
+    </field>
+
+    <field>
+      <name>Procedures</name>
+      <comment>Returns a string array of all named procedures defined by a script.</comment>
+      <access read="G">Get</access>
+      <type>kt::vector&lt;std::string&gt;</type>
+      <description>
+<p>This field will return a string array of all procedures loaded into the script, conditional on it being activated. It will otherwise return an empty array.</p>
+      </description>
+    </field>
+
+  </fields>
+  <types>
+    <constants lookup="JOF" comment="JIT behaviour options">
+      <const name="ALL_TIPS">Include all tips and style suggestions.</const>
+      <const name="DIAGNOSE">Cancels aborting on error so that the full script is parsed.  Enables deeper log tracing.</const>
+      <const name="DISABLE_JIT">Disable the JIT compiler.</const>
+      <const name="DUMP_BYTECODE">Print a disassembly of bytecode instructions after parsing.</const>
+      <const name="PROFILE">Use timers to profile JIT parsing.  Required to configure run-time profiling.</const>
+      <const name="TIPS">Filter tips down to performance and code quality issues.</const>
+      <const name="TOP_TIPS">Filter tips down to type safety and correctness issues.</const>
+      <const name="TRACE">Synonym for <code>TRACE_TOKENS | TRACE_EXPECT | TRACE_BOUNDARY | TRACE_OPERATORS | TRACE_REGISTERS | TRACE_CFG | TRACE_ASSIGNMENTS | TRACE_VALUE_CATEGORY | TRACE_TYPES</code></const>
+      <const name="TRACE_ASSIGNMENTS">Trace PreparedAssignment lifecycle and hazard handling.</const>
+      <const name="TRACE_BOUNDARY">Enable log messages for AST boundary crossing.</const>
+      <const name="TRACE_CFG">Trace ControlFlowGraph edge creation and patching.</const>
+      <const name="TRACE_EXPECT">Enable trace expectation messages during parsing.</const>
+      <const name="TRACE_OPERATORS">Trace OperatorEmitter method calls and decisions.</const>
+      <const name="TRACE_REGISTERS">Trace RegisterAllocator reservations and releases.</const>
+      <const name="TRACE_TOKENS">Trace the emission of tokens.</const>
+      <const name="TRACE_TYPES">Trace type inference and type checking decisions.</const>
+      <const name="TRACE_VALUE_CATEGORY">Trace ValueUse/ValueSlot/LValue operations.</const>
+    </constants>
+
+  </types>
+  <structs>
+  </structs>
+</book>

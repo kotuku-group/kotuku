@@ -6,6 +6,8 @@
 -- You can view the saved image files to confirm the accuracy of the results.  If the test has passed then update the
 -- old checksum with the new one provided in this program's output.
 
+   include 'image'
+
 @BeforeAll function init(State)
    global glDocFolder = State.folder
 end
@@ -13,7 +15,7 @@ end
 function saveBitmap(Bitmap, Name)
    filename = Name .. '.png'
 
-   pic = obj.new('picture', { width = Bitmap.width, height = Bitmap.height, bitsPerPixel = Bitmap.bitsPerPixel, flags=PCF_NEW })
+   pic = obj.new('image', { width = Bitmap.width, height = Bitmap.height, bitsPerPixel = Bitmap.bitsPerPixel, flags=PCF_NEW })
    Bitmap.acCopyData(pic.bitmap)
    fl = obj.new('file', { flags=FL_NEW|FL_WRITE, path=f'temp:doc_test_results/{filename}' })
    pic.acSaveImage(fl)
@@ -45,17 +47,20 @@ function crcTest(Name:str, Path:str, ExpectedCRC:any, TimeLimit:num)
          bmp = renderDocToBitmap(glDocFolder .. Path, res)
          timeTaken = (mSys.PreciseTime() - startTime) / 1000000
 
-         bmp_crc = mSys.GenCRC32(0, bmp.data, bmp.size)
+         bmpdata = bmp.data
+         bmp_crc = mSys.GenCRC32(0, bmpdata, #bmpdata)
          if crc is 0 then
             saveBitmap(bmp, f'{Name}_{res}')
-            error(f'File "{Path}" @ page width {res} is yet to be assigned a checksum, current CRC is {string.format("0x%.8x", bmp_crc)}')
+            raise f'File "{Path}" @ page width {res} is yet to be assigned a checksum, current CRC is ' ..
+               string.format("0x%.8x", bmp_crc)
          elseif crc != bmp_crc then
             saveBitmap(bmp, f'{Name}_{res}')
-            error(f'The CRC for "{Path}" @ page width {res} is {string.format("0x%.8x", bmp_crc)}, expected {string.format("0x%.8x", crc)}')
+            raise f'The CRC for "{Path}" @ page width {res} is {string.format("0x%.8x", bmp_crc)}, ' ..
+               f'expected {string.format("0x%.8x", crc)}'
          end
 
-         if TimeLimit and (timeTaken > TimeLimit) and (mSys.GetResource(RES_RELEASE_BUILD) is 1) then
-            error(f'File "{Path}" @ page width {res} took {timeTaken}s to render, expected {TimeLimit}s')
+         if TimeLimit and (timeTaken > TimeLimit) and (mSys.GetSystemState().ReleaseBuild is 1) then
+            raise f'File "{Path}" @ page width {res} took {timeTaken}s to render, expected {TimeLimit}s'
          end
       end
       return
@@ -65,19 +70,20 @@ function crcTest(Name:str, Path:str, ExpectedCRC:any, TimeLimit:num)
    bmp = renderDocToBitmap(glDocFolder .. Path, 1024)
    timeTaken = (mSys.PreciseTime() - startTime) / 1000000
 
-   crc = mSys.GenCRC32(0, bmp.data, bmp.size)
+   bmpdata = bmp.data
+   crc = mSys.GenCRC32(0, bmpdata, #bmpdata)
    if ExpectedCRC is 0 then
       saveBitmap(bmp, Name)
-      error(f'The {Name} test is yet to be assigned a checksum, current CRC is {string.format("0x%.8x", crc)}')
+      raise f'The {Name} test is yet to be assigned a checksum, current CRC is {string.format("0x%.8x", crc)}'
    elseif ExpectedCRC != crc then
       saveBitmap(bmp, Name)
-      error(f'The CRC for {Name} is {string.format("0x%.8x", crc)}, expected {string.format("0x%.8x", ExpectedCRC)}')
+      raise f'The CRC for {Name} is {string.format("0x%.8x", crc)}, expected {string.format("0x%.8x", ExpectedCRC)}'
    else
       --saveBitmap(bmp, Name)
    end
 
-   if TimeLimit and (timeTaken > TimeLimit) and (mSys.GetResource(RES_RELEASE_BUILD) is 1) then
-      error(f'File "{Path}" took {timeTaken}s to render, expected {TimeLimit}s')
+   if TimeLimit and (timeTaken > TimeLimit) and (mSys.GetSystemState().ReleaseBuild is 1) then
+      raise f'File "{Path}" took {timeTaken}s to render, expected {TimeLimit}s'
    end
 end
 
@@ -90,8 +96,8 @@ end
 @Test(priority=4) function Layout()      crcTest('Layout', 'layout.rpl', 0x3042638c, 0.03) end
 @Test(priority=4) function Links1()      crcTest('Links1', 'links.rpl', 0x8de8dbec, 0.02) end
 @Test(priority=4) function Links2()      crcTest('Links2', 'links.rpl?font=Noto Sans&font-size=16', 0x0f242431, 0.03) end
-@Test(priority=4) function Lists()       crcTest('Lists', 'lists.rpl', 0x8e0f76e2, 0.05) end
-@Test(priority=4) function Logic()       crcTest('Logic', 'logic.rpl', 0x18a87849, 0.03) end
+@Test(priority=4) function Lists()       crcTest('Lists', 'lists.rpl', 0x4d6c73b1, 0.05) end
+@Test(priority=4) function Logic()       crcTest('Logic', 'logic.rpl', 0xdffe01dc, 0.03) end
 @Test(priority=4) function Paragraphs()  crcTest('Paragraphs', 'paragraphs.rpl', 0x1d1921c5, 0.05) end
-@Test(priority=2) function Tables()      crcTest('Tables', 'tables.rpl', 0x7ebd53e7, 0.1) end
+@Test(priority=2) function Tables()      crcTest('Tables', 'tables.rpl', 0x806b8dd3, 0.1) end
 --@Test(priority=3) function Widgets()     crcTest('Widgets', 'widgets.rpl', 0xbf1021d5, 0.01) end

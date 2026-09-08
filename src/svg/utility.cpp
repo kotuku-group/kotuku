@@ -3,12 +3,9 @@
 [[maybe_unused]] static FRGB hsl_to_rgb(HSV Colour);
 
 #if defined(DEBUG)
-static void debug_tree(CSTRING Header, OBJECTPTR) __attribute__ ((unused));
-static void debug_branch(CSTRING Header, OBJECTPTR, int &Level) __attribute__ ((unused));
-
-static void debug_branch(CSTRING Header, OBJECTPTR Vector, int &Level)
+[[maybe_unused]] static void debug_branch(CSTRING Header, OBJECTPTR Vector, int &Level)
 {
-   pf::Log log(Header);
+   kt::Log log(Header);
 
    auto spacing = std::string(Level + 1, ' ');
    Level++;
@@ -72,8 +69,8 @@ static HSV rgb_to_hsl(FRGB Colour)
 static FRGB hsl_to_rgb(HSV Colour)
 {
    auto hueToRgb = [](float p, float q, float t) -> float {
-      if (t < 0) t += 1;
-      if (t > 1) t -= 1;
+      if (t < 0) t++;
+      if (t > 1) t--;
       if (t < 1.0/6.0) return p + (q - p) * 6.0 * t;
       if (t < 1.0/2.0) return q;
       if (t < 2.0/3.0) return p + (q - p) * (2.0/3.0 - t) * 6.0;
@@ -98,60 +95,76 @@ static FRGB hsl_to_rgb(HSV Colour)
 //********************************************************************************************************************
 // Support for the 'currentColor' colour value.  Finds the first parent with a defined fill colour and returns it.
 
-ERR svgState::current_colour(objVector *Vector, FRGB &RGB) noexcept
+bool svgState::current_colour(objVector *Vector, FRGB &RGB) noexcept
 {
-   if (!m_color.empty()) {
+   if (not m_color.empty()) {
       VectorPainter painter;
-      if (vec::ReadPainter(nullptr, m_color.c_str(), &painter, nullptr) IS ERR::Okay) {
+      if (!vec::ReadPainter(nullptr, m_color, &painter, nullptr)) {
          RGB = painter.Colour;
-         return ERR::Okay;
+         return true;
       }
    }
 
-   if (Vector->Class->BaseClassID != CLASSID::VECTOR) return ERR::Failed;
+   if (Vector->Class->BaseClassID != CLASSID::VECTOR) return false;
 
    Vector = (objVector *)Vector->Parent;
    while (Vector) {
-      if (Vector->Class->BaseClassID != CLASSID::VECTOR) return ERR::Failed;
+      if (Vector->Class->BaseClassID != CLASSID::VECTOR) return false;
 
-      int total;
-      if (Vector->get(FID_FillColour, (float * &)RGB, total) IS ERR::Okay) {
-         if (RGB.Alpha != 0) return ERR::Okay;
+      FRGB *rgb;
+      if (!Vector->getFillColour(rgb)) {
+         if (rgb->Alpha) {
+            RGB = *rgb;
+            return true;
+         }
+         else return false;
       }
       Vector = (objVector *)Vector->Parent;
    }
 
-   return ERR::Failed;
+   return false;
 }
 
 //********************************************************************************************************************
 
 static void parse_result(extSVG *Self, objFilterEffect *Effect, std::string Value)
 {
-   if (!Self->Effects.contains(Value)) {
+   if (not Self->Effects.contains(Value)) {
       Self->Effects.emplace(Value, Effect);
    }
 }
 
 //********************************************************************************************************************
 
-static void parse_input(extSVG *Self, OBJECTPTR Effect, const std::string Input, FIELD SourceField, FIELD RefField)
+static void parse_input_source(extSVG *Self, objFilterEffect *Effect, const std::string Input)
 {
-   switch (strihash(Input)) {
-      case SVF_SOURCEGRAPHIC:   Effect->set(SourceField, int(VSF::GRAPHIC)); break;
-      case SVF_SOURCEALPHA:     Effect->set(SourceField, int(VSF::ALPHA)); break;
-      case SVF_BACKGROUNDIMAGE: Effect->set(SourceField, int(VSF::BKGD)); break;
-      case SVF_BACKGROUNDALPHA: Effect->set(SourceField, int(VSF::BKGD_ALPHA)); break;
-      case SVF_FILLPAINT:       Effect->set(SourceField, int(VSF::FILL)); break;
-      case SVF_STROKEPAINT:     Effect->set(SourceField, int(VSF::STROKE)); break;
+   switch (strhash(Input)) {
+      case SVF_SourceGraphic:   Effect->setSourceType(VSF::GRAPHIC); break;
+      case SVF_SourceAlpha:     Effect->setSourceType(VSF::ALPHA); break;
+      case SVF_BackgroundImage: Effect->setSourceType(VSF::BKGD); break;
+      case SVF_BackgroundAlpha: Effect->setSourceType(VSF::BKGD_ALPHA); break;
+      case SVF_FillPaint:       Effect->setSourceType(VSF::FILL); break;
+      case SVF_StrokePaint:     Effect->setSourceType(VSF::STROKE); break;
       default:  {
-         if (Self->Effects.contains(Input)) {
-            Effect->set(RefField, Self->Effects[Input]);
-         }
-         else {
-            pf::Log log;
-            log.warning("Unrecognised input '%s'", Input.c_str());
-         }
+         if (Self->Effects.contains(Input)) Effect->setInput(Self->Effects[Input]);
+         else kt::Log().warning("Unrecognised input '%s'", Input.c_str());
+         break;
+      }
+   }
+}
+
+static void parse_input_mix(extSVG *Self, objFilterEffect *Effect, const std::string Input)
+{
+   switch (strhash(Input)) {
+      case SVF_SourceGraphic:   Effect->setMixType(VSF::GRAPHIC); break;
+      case SVF_SourceAlpha:     Effect->setMixType(VSF::ALPHA); break;
+      case SVF_BackgroundImage: Effect->setMixType(VSF::BKGD); break;
+      case SVF_BackgroundAlpha: Effect->setMixType(VSF::BKGD_ALPHA); break;
+      case SVF_FillPaint:       Effect->setMixType(VSF::FILL); break;
+      case SVF_StrokePaint:     Effect->setMixType(VSF::STROKE); break;
+      default:  {
+         if (Self->Effects.contains(Input)) Effect->setMix(Self->Effects[Input]);
+         else kt::Log().warning("Unrecognised input '%s'", Input.c_str());
          break;
       }
    }
@@ -162,16 +175,15 @@ static void parse_input(extSVG *Self, OBJECTPTR Effect, const std::string Input,
 
 static std::vector<Transition> process_transition_stops(extSVG *Self, const objXML::TAGS &Tags)
 {
-   pf::Log log("process_stops");
+   kt::Log log("process_stops");
 
    log.traceBranch();
 
    std::vector<Transition> stops;
    for (auto &scan : Tags) {
-      if (iequals("stop", scan.name())) {
+      if (svg_tag_hash(scan) IS kt::strhash("stop")) {
          Transition stop;
          stop.Offset = 0;
-         stop.Transform = nullptr;
          for (unsigned a=1; a < scan.Attribs.size(); a++) {
             auto &name = scan.Attribs[a].Name;
             auto &value = scan.Attribs[a].Value;
@@ -188,7 +200,7 @@ static std::vector<Transition> process_transition_stops(extSVG *Self, const objX
                else if (stop.Offset > 1.0) stop.Offset = 1.0;
             }
             else if (iequals("transform", name)) {
-               stop.Transform = value.c_str();
+               stop.Transform = value;
             }
             else log.warning("Unable to process stop attribute '%s'", name.c_str());
          }
@@ -202,69 +214,66 @@ static std::vector<Transition> process_transition_stops(extSVG *Self, const objX
 
 //********************************************************************************************************************
 
-static CSTRING folder(extSVG *Self)
+static std::string_view folder(extSVG *Self)
 {
-   if (!Self->Folder.empty()) return Self->Folder.c_str();
-   if (!Self->Path) return nullptr;
+   if (not Self->Folder.empty()) return Self->Folder;
+   if (Self->Path.empty()) return std::string_view{};
 
    // Setting a path of "my/house/is/red.svg" results in "my/house/is/"
 
-   if (ResolvePath(Self->Path, RSF::NO_FILE_CHECK, &Self->Folder) IS ERR::Okay) {
-      auto last = Self->Folder.find_last_of("/\\");
-      if (last != std::string::npos) {
+   if (!ResolvePath(Self->Path, RSF::NO_FILE_CHECK, &Self->Folder)) {
+      if (auto last = Self->Folder.find_last_of("/\\"); last != std::string::npos) {
          Self->Folder.resize(last + 1);
-         return Self->Folder.c_str();
+         return Self->Folder;
       }
       else Self->Folder.clear();
    }
-   return nullptr;
+   return std::string_view{};
 }
 
 //********************************************************************************************************************
 
-static void parse_transform(objVector *Vector, const std::string Value, int Tag)
+static void parse_transform(objVector *Vector, std::string_view Value, int Tag)
 {
-   if ((Vector->Class->BaseClassID IS CLASSID::VECTOR) and (!Value.empty())) {
+   if ((Vector->Class->BaseClassID IS CLASSID::VECTOR) and (not Value.empty())) {
       VectorMatrix *matrix;
-      if (Vector->newMatrix(&matrix, false) IS ERR::Okay) {
-         vec::ParseTransform(matrix, Value.c_str());
+      if (!Vector->newMatrix(&matrix, false)) {
+         vec::ParseTransform(matrix, Value);
          matrix->Tag = Tag;
       }
-      else {
-         pf::Log log(__FUNCTION__);
-         log.warning("Failed to create vector transform matrix.");
-      }
+      else kt::Log(__FUNCTION__).warning("Failed to create vector transform matrix.");
    }
 }
 
 //********************************************************************************************************************
 
-static const std::string uri_name(const std::string Ref)
+static std::string_view uri_name(const std::string_view Ref)
 {
-   int skip = 0;
-   while ((Ref[skip]) and (Ref[skip] <= 0x20)) skip++;
+   std::size_t skip = 0;
+   while ((skip < Ref.size()) and (Ref[skip] <= 0x20)) skip++;
+   if (skip >= Ref.size()) return {};
 
    if (Ref[skip] IS '#') {
-      return Ref.substr(skip+1);
+      return Ref.substr(skip + 1);
    }
-   else if (startswith("url(#", Ref.c_str() + skip)) {
-      int i;
+   else if (Ref.substr(skip).starts_with("url(#")) {
+      std::size_t i;
       skip += 5;
-      for (i=0; (Ref[skip+i] != ')') and (skip+i < int(Ref.size())); i++);
+      for (i=0; ((skip + i) < Ref.size()) and (Ref[skip+i] != ')'); i++);
       return Ref.substr(skip, i);
    }
    else return Ref.substr(skip);
-
-   return std::string("");
 }
 
 //********************************************************************************************************************
 
-static XTag * find_href_tag(extSVG *Self, std::string Ref)
+static XTag * find_href_tag(extSVG *Self, std::string_view Ref)
 {
    auto ref = uri_name(Ref);
-   if ((!ref.empty()) and (Self->IDs.contains(ref))) {
-      return Self->IDs[ref];
+   if (not ref.empty()) {
+      if (auto tag = Self->IDs.find(ref); tag != Self->IDs.end()) {
+         return tag->second;
+      }
    }
    return nullptr;
 }
@@ -311,9 +320,9 @@ static double read_time(const std::string_view Value)
          }
       }
       else if (Value.ends_with("h")) return units[0] * 60 * 60;
-      else if (Value.ends_with("s")) return units[0];
       else if (Value.ends_with("min")) return units[0] * 60;
       else if (Value.ends_with("ms")) return double(units[0]) / 1000.0;
+      else if (Value.ends_with("s")) return units[0];
       else return units[0];
    }
    else return 0;
@@ -322,10 +331,8 @@ static double read_time(const std::string_view Value)
 //********************************************************************************************************************
 // Designed for reading unit values such as '50%' and '6px'.  The returned value is scaled to pixels.
 
-static double read_unit(std::string_view &Value, int64_t *FieldID)
+static double read_unit(std::string_view &Value)
 {
-   if (FieldID) *FieldID |= TDOUBLE;
-
    const double dpi = 96.0; // TODO: Needs to be derived from the display
 
    std::size_t i = 0;
@@ -340,14 +347,13 @@ static double read_unit(std::string_view &Value, int64_t *FieldID)
 
       if (Value.starts_with('%')) {
          Value.remove_prefix(1);
-         if (FieldID) *FieldID |= TSCALE;
          return fv * 0.01;
       }
       else if (Value.starts_with("em")) { Value.remove_prefix(2); return fv * 12.0 * (4.0 / 3.0); } // Multiply the current font's pixel height by the provided em value
       else if (Value.starts_with("ex")) { Value.remove_prefix(2); return fv * 6.0 * (4.0 / 3.0); } // As for em, but multiple by the pixel height of the 'x' character.  If no x character, revert to 0.5em
       else if (Value.starts_with("in")) { Value.remove_prefix(2); return fv * dpi; } // Inches
-      else if (Value.starts_with("cm")) { Value.remove_prefix(2); return fv * (1.0 / 2.56) * dpi; } // Centimetres
-      else if (Value.starts_with("mm")) { Value.remove_prefix(2); return fv * (1.0 / 20.56) * dpi; } // Millimetres
+      else if (Value.starts_with("cm")) { Value.remove_prefix(2); return fv * (1.0 / 2.54) * dpi; } // Centimetres
+      else if (Value.starts_with("mm")) { Value.remove_prefix(2); return fv * (1.0 / 25.4) * dpi; } // Millimetres
       else if (Value.starts_with("pt")) { Value.remove_prefix(2); return fv * (4.0 / 3.0); } // Points.  A point is 4/3 of a pixel
       else if (Value.starts_with("pc")) { Value.remove_prefix(2); return fv * (4.0 / 3.0) * 12.0; } // Pica.  1 Pica is equal to 12 Points
       else if (Value.starts_with("px")) { Value.remove_prefix(2); return fv; } // Pixel
@@ -364,13 +370,12 @@ static double read_unit(std::string_view &Value, int64_t *FieldID)
 // NOTE: It would be possible to deprecate this in future if the viewport host is given a viewbox area of (0 0 1 1)
 // as it should be.
 
-inline void set_double_units(OBJECTPTR Object, FIELD FieldID, const std::string_view Value, VUNIT Units)
+inline Unit parse_units(const std::string_view Value, VUNIT Units)
 {
-   auto field = FieldID;
-   auto v = Value;
-   double num = read_unit(v, &field);
-   if (Units IS VUNIT::BOUNDING_BOX) Object->set(field, Unit(num, FD_SCALED));
-   else Object->set(field, num);
+   auto v = std::string_view(Value);
+   double num = read_unit(v);
+   if (Units IS VUNIT::BOUNDING_BOX) return Unit(num, FD_SCALED);
+   else return Unit(num);
 }
 
 //********************************************************************************************************************
@@ -404,15 +409,15 @@ template <class T = double> std::string_view read_numseq(std::string_view String
 //********************************************************************************************************************
 // Read a sequence of doubles from a string.  Commas, parenthesis and whitespace is ignored.
 
-template<class T = double> std::vector<T> read_array(const std::string Value, int Limit = 0x7fffffff)
+template<class T = double> kt::vector<T> read_array(const std::string &Value, int Limit = 0x7fffffff)
 {
-   std::vector<T> result;
+   kt::vector<T> result;
 
    if (iequals("none", Value)) return result;
 
    auto v = std::string_view(Value);
-   while ((!v.empty()) and (std::ssize(result) < Limit)) {
-      while ((!v.empty()) and ((v[0] <= 0x20) or (v[0] IS ',') or (v[0] IS '(') or (v[0] IS ')'))) v.remove_prefix(1);
+   while ((not v.empty()) and (std::ssize(result) < Limit)) {
+      while ((not v.empty()) and ((v[0] <= 0x20) or (v[0] IS ',') or (v[0] IS '(') or (v[0] IS ')'))) v.remove_prefix(1);
       if (v.empty()) return result;
 
       auto num = read_unit(v);
@@ -451,27 +456,31 @@ static void parse_ids(extSVG *Self, XTag &Tag)
 //********************************************************************************************************************
 // Parse SVG from a file or string buffer.
 
-static ERR parse_svg(extSVG *Self, CSTRING Path, CSTRING Buffer)
+static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffer)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
-   if ((!Path) and (!Buffer)) return ERR::NullArgs;
+   if ((Path.empty()) and (Buffer.empty())) return ERR::NullArgs;
 
-   log.branch("Path: %s [Log-level reduced]", Path ? Path : "<xml-statement>");
+   if (not Path.empty()) log.branch("Path: %.*s [Log-level reduced]", int(Path.size()), Path.data());
+   else log.branch("Path: <xml-statement> [Log-level reduced]");
 
 #ifndef DEBUG
    AdjustLogLevel(1);
 #endif
 
+   Self->IDs.clear();
    if (Self->XML) { FreeResource(Self->XML); Self->XML = nullptr; }
 
    objXML *xml;
    ERR error = ERR::Okay;
-   if (NewLocalObject(CLASSID::XML, &xml) IS ERR::Okay) {
+   if (!NewLocalObject(CLASSID::XML, &xml)) {
+      xml->setFlags(XMF::NAMESPACE_AWARE|XMF::WELL_FORMED);
+
       objTask *task = CurrentTask();
       std::string working_path;
 
-      if (Path) {
+      if (not Path.empty()) {
          if (wildcmp("*.svgz", Path)) {
             if (auto file = objFile::create::global(fl::Owner(xml->UID), fl::Path(Path), fl::Flags(FL::READ))) {
                if (auto stream = objCompressedStream::create::global(fl::Owner(file->UID), fl::Input(file))) {
@@ -492,22 +501,18 @@ static ERR parse_svg(extSVG *Self, CSTRING Path, CSTRING Buffer)
          }
          else xml->setPath(Path);
 
-         task->get(FID_Path, working_path);
+         std::string_view working_path_view;
+         if (!task->getPath(working_path_view)) working_path.assign(working_path_view);
 
          // Set a new working path based on the path
 
-         auto last = std::string::npos;
-         for (int i=0; Path[i]; i++) {
-            if ((Path[i] IS '/') or (Path[i] IS '\\') or (Path[i] IS ':')) last = i+1;
-         }
-         if (last != std::string::npos) {
-            auto folder = std::string(Path, last);
-            task->setPath(folder);
+         if (auto last = Path.find_last_of("/\\:"); last != std::string::npos) {
+            task->setPath(Path.substr(0, last + 1));
          }
       }
-      else if (Buffer) xml->setStatement(Buffer);
+      else if (not Buffer.empty()) xml->setStatement(Buffer);
 
-      if (InitObject(xml) IS ERR::Okay) {
+      if (!InitObject(xml)) {
          Self->SVGVersion = 1.0;
 
          Self->XML = xml;
@@ -516,7 +521,7 @@ static ERR parse_svg(extSVG *Self, CSTRING Path, CSTRING Buffer)
 
          objVector *sibling = nullptr;
          for (auto &scan : xml->Tags) {
-            if (iequals("svg", scan.name())) {
+            if (svg_tag_is(scan, SVF_svg)) {
                svgState state(Self);
 
                // Parse all tags with an 'id' reference so that href's can target them even when
@@ -533,8 +538,9 @@ static ERR parse_svg(extSVG *Self, CSTRING Path, CSTRING Buffer)
 
          for (auto &inherit : Self->Inherit) {
             OBJECTPTR ref;
-            if (Self->Scene->findDef(inherit.ID.c_str(), &ref) IS ERR::Okay) {
-               inherit.Object->set(FID_Inherit, ref);
+            if (!Self->Scene->findDef(inherit.ID, &ref)) {
+               OBJECTPTR target;
+               if (auto field = FindField(inherit.Object, strhash("inherit"), &target)) target->set(field, ref);
             }
             else log.warning("Failed to resolve ID %s for inheritance.", inherit.ID.c_str());
          }
@@ -544,12 +550,15 @@ static ERR parse_svg(extSVG *Self, CSTRING Path, CSTRING Buffer)
 
             auto view = Self->Scene->Viewport;
             while ((view) and (view->classID() != CLASSID::VECTORVIEWPORT)) view = (objVectorViewport *)view->Next;
-            if (view) view->setFields(fl::Width(SCALE(1.0)), fl::Height(SCALE(1.0)));
+            if (view) {
+               view->setWidth(Unit(1.0, FD_SCALED));
+               view->setHeight(Unit(1.0, FD_SCALED));
+            }
          }
       }
       else error = ERR::Init;
 
-      if (!working_path.empty()) task->setPath(working_path);
+      if (not working_path.empty()) task->setPath(working_path);
    }
    else error = ERR::NewObject;
 
@@ -565,11 +574,11 @@ end:
 
 static void convert_styles(objXML::TAGS &Tags)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    for (auto &tag : Tags) {
       for (int style=1; style < std::ssize(tag.Attribs); style++) {
-         if (!iequals("style", tag.Attribs[style].Name)) continue;
+         if (not iequals("style", tag.Attribs[style].Name)) continue;
 
          // Convert all the style values into real attributes.
 
@@ -600,7 +609,7 @@ static void convert_styles(objXML::TAGS &Tags)
          break;
       }
 
-      if (!tag.Children.empty()) convert_styles(tag.Children);
+      if (not tag.Children.empty()) convert_styles(tag.Children);
    }
 }
 
@@ -612,8 +621,8 @@ static void update_dpi(void)
    int64_t current_time = PreciseTime();
 
    if (current_time - last_update > 3000000LL) {
-      DISPLAYINFO *display;
-      if (gfx::GetDisplayInfo(0, &display) IS ERR::Okay) {
+      DisplayInfo *display;
+      if (!gfx::GetDisplayInfo(0, &display)) {
          last_update = PreciseTime();
          if ((display->VDensity >= 72) and (display->HDensity >= 72)) {
             glDisplayVDPI = display->VDensity;
@@ -622,4 +631,74 @@ static void update_dpi(void)
          }
       }
    }
+}
+
+//********************************************************************************************************************
+
+static bool read_integer_value(std::string_view Value, int &Result) noexcept
+{
+   Value = next_value(Value);
+   if (Value.empty()) return false;
+
+   auto [ next, error ] = std::from_chars(Value.data(), Value.data() + Value.size(), Result);
+   if (error != std::errc()) return false;
+
+   Value = next_value(std::string_view(next, Value.data() + Value.size() - next));
+   return Value.empty();
+}
+
+//********************************************************************************************************************
+
+static bool read_positive_integer_pair(std::string_view Value, int &X, int &Y) noexcept
+{
+   int values[2] = { 0, 0 };
+   int count = 0;
+
+   while (true) {
+      Value = next_value(Value);
+      if (Value.empty()) break;
+      if (count >= 2) return false;
+
+      auto [ next, error ] = std::from_chars(Value.data(), Value.data() + Value.size(), values[count]);
+      if (error != std::errc()) return false;
+
+      Value = std::string_view(next, Value.data() + Value.size() - next);
+      count++;
+   }
+
+   if (not count) return false;
+   if (values[0] <= 0) return false;
+   if ((count > 1) and (values[1] <= 0)) return false;
+
+   X = values[0];
+   Y = (count > 1) ? values[1] : X;
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool read_positive_number_pair(std::string_view Value, double &X, double &Y) noexcept
+{
+   double values[2] = { 0.0, 0.0 };
+   int count = 0;
+
+   while (true) {
+      Value = next_value(Value);
+      if (Value.empty()) break;
+      if (count >= 2) return false;
+
+      auto [ next, error ] = std::from_chars(Value.data(), Value.data() + Value.size(), values[count]);
+      if (error != std::errc()) return false;
+
+      Value = std::string_view(next, Value.data() + Value.size() - next);
+      count++;
+   }
+
+   if (not count) return false;
+   if (values[0] <= 0.0) return false;
+   if ((count > 1) and (values[1] <= 0.0)) return false;
+
+   X = values[0];
+   Y = (count > 1) ? values[1] : X;
+   return true;
 }

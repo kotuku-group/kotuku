@@ -1,0 +1,357 @@
+-- Flute tests for registry-backed enum declarations.
+
+enum BARE_ENUM {
+   ONE,
+   TWO,
+   THREE,
+}
+
+global enum GLOBAL_ENUM {
+   READY = 3,
+   RUNNING,
+   DONE,
+}
+
+enum NEG_ENUM {
+   LOW = -2,
+   MID,
+   HIGH = +5,
+}
+
+enum HEX_ENUM {
+   ZERO = 0x0,
+   TEN = 0xA,
+   NEXT,
+}
+
+enum FOLD_ENUM {
+   LEFT = 4,
+   RIGHT = 8,
+}
+
+global glDynamicEnumCounter = 0
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Successful declaration forms
+
+@Test function BareEnumDeclaration()
+   assert(BARE_ENUM_ONE is 0, 'First bare enum value should default to 0')
+   assert(BARE_ENUM_TWO is 1, 'Second bare enum value should auto-increment')
+   assert(BARE_ENUM_THREE is 2, 'Third bare enum value should auto-increment')
+   assert(debug.locality('BARE_ENUM') is 'nil', 'Enum prefix should not create a runtime binding')
+   assert(debug.locality('BARE_ENUM_ONE') is 'nil', 'Generated enum constants should not create runtime bindings')
+end
+
+@Test function GlobalEnumDeclaration()
+   assert(GLOBAL_ENUM_READY is 3, 'Explicit global enum value should be honoured')
+   assert(GLOBAL_ENUM_RUNNING is 4, 'Global enum value should auto-increment')
+   assert(GLOBAL_ENUM_DONE is 5, 'Global enum value should auto-increment')
+   assert(debug.locality('GLOBAL_ENUM') is 'nil', 'Global enum prefix should not create a runtime binding')
+   assert(debug.locality('GLOBAL_ENUM_READY') is 'nil', 'Generated global enum constants should not be variables')
+end
+
+@Test function NegativeAndTrailingComma()
+   assert(NEG_ENUM_LOW is -2, 'Negative enum value should be accepted')
+   assert(NEG_ENUM_MID is -1, 'Auto-increment should work after a negative value')
+   assert(NEG_ENUM_HIGH is 5, 'Explicit positive enum value should be accepted')
+end
+
+@Test function HexEnumValues()
+   assert(HEX_ENUM_ZERO is 0, 'Hex zero enum value should be accepted')
+   assert(HEX_ENUM_TEN is 10, 'Hex enum value should be parsed as decimal 10')
+   assert(HEX_ENUM_NEXT is 11, 'Auto-increment should work after a hex value')
+end
+
+@Test function ConstantSubstitution()
+   local combined = FOLD_ENUM_LEFT | FOLD_ENUM_RIGHT
+   assert(combined is 12, 'Enum constants should be available to expressions')
+   assert((FOLD_ENUM_LEFT + FOLD_ENUM_RIGHT) is 12, 'Enum constants should be substituted as numeric constants')
+   assert((FOLD_ENUM_RIGHT has FOLD_ENUM_LEFT) is false, 'Enum constants should work with constant-folded operators')
+end
+
+@Test function DynamicTopLevelEnum()
+   glDynamicEnumCounter++
+   local prefix = 'EXEC_ENUM_' .. tostring(glDynamicEnumCounter)
+   exec(string.format([[
+enum %s {
+   FIRST = 20,
+   SECOND,
+}
+assert(%s_FIRST is 20)
+assert(%s_SECOND is 21)
+assert(debug.locality('%s_FIRST') is 'nil')
+]], prefix, prefix, prefix, prefix))
+end
+
+@Test function FailedChunkDoesNotLeakEnumConstants()
+   glDynamicEnumCounter++
+   local prefix = 'LEAK_ENUM_' .. tostring(glDynamicEnumCounter)
+   local failed = false
+
+   try
+      exec(string.format([[
+enum %s {
+   ONE,
+}
+if true then
+]], prefix))
+   except ex
+      failed = true
+      assert(ex.message.find('expected') or ex.message.find('unexpected') or ex.message.find('end'),
+         f'Broken enum chunk should fail with a parse error: {ex.message}')
+   end
+
+   assert(failed, 'Broken enum chunk should fail before constants are committed')
+
+   exec(string.format([[
+enum %s {
+   ONE,
+}
+assert(%s_ONE is 0)
+assert(debug.locality('%s_ONE') is 'nil')
+]], prefix, prefix, prefix))
+end
+
+@Test function LexerErrorChunkDoesNotLeakEnumConstants()
+   glDynamicEnumCounter++
+   local prefix = 'LEX_LEAK_ENUM_' .. tostring(glDynamicEnumCounter)
+   local failed = false
+
+   try
+      exec(string.format([[
+enum %s {
+   ONE,
+}
+local broken = "unterminated
+]], prefix))
+   except ex
+      failed = true
+   end
+
+   assert(failed, 'Broken lexer chunk should fail before constants are committed')
+
+   exec(string.format([[
+enum %s {
+   ONE,
+}
+assert(%s_ONE is 0)
+assert(debug.locality('%s_ONE') is 'nil')
+]], prefix, prefix, prefix))
+end
+
+@Test function ImportLexerErrorDoesNotLeakParentEnumConstants()
+   glDynamicEnumCounter++
+   local prefix = 'IMPORT_LEAK_ENUM_' .. tostring(glDynamicEnumCounter)
+   local failed = false
+
+   try
+      exec(string.format([[
+enum %s {
+   ONE,
+}
+import './src/tiri/tests/import_enum_bad_lexer'
+]], prefix))
+   except ex
+      failed = true
+   end
+
+   assert(failed, 'Broken imported chunk should fail before parent constants are committed')
+
+   exec(string.format([[
+enum %s {
+   ONE,
+}
+assert(%s_ONE is 0)
+assert(debug.locality('%s_ONE') is 'nil')
+]], prefix, prefix, prefix))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Error cases
+
+@Test function EnumKeywordIsReserved()
+   try
+      exec([[enum = 7]])
+   except ex
+      assert(ex.message.find('expected identifier') or ex.message.find('Expected expression'),
+         f'Error should reject enum as an identifier: {ex.message}')
+      return
+   end
+   assert(false, 'enum should be a reserved keyword')
+end
+
+@Test function OldEnumSyntaxError()
+   try
+      exec([[OLD_ENUM = enum { ONE }]])
+   except ex
+      assert(ex.message.find('Expected expression') or ex.message.find('unexpected'),
+         f'Error should reject old enum syntax: {ex.message}')
+      return
+   end
+   assert(false, 'Old enum assignment syntax should fail')
+end
+
+@Test function LocalEnumError()
+   try
+      exec([[local enum LOCAL_ENUM { ONE }]])
+   except ex
+      assert(ex.message.find('local enum') or ex.message.find('not supported'),
+         f'Error should mention local enum is unsupported: {ex.message}')
+      return
+   end
+   assert(false, 'local enum declaration should fail')
+end
+
+@Test function EnumInsideDoBlockError()
+   try
+      exec([[
+do
+   enum BLOCK_ENUM { ONE }
+end
+]])
+   except ex
+      assert(ex.message.find('top-level'), f'Error should mention top-level enum scope: {ex.message}')
+      return
+   end
+   assert(false, 'Enum inside do block should fail')
+end
+
+@Test function EnumInsideIfBlockError()
+   try
+      exec([[
+if true then
+   enum IF_ENUM { ONE }
+end
+]])
+   except ex
+      assert(ex.message.find('top-level'), f'Error should mention top-level enum scope: {ex.message}')
+      return
+   end
+   assert(false, 'Enum inside if block should fail')
+end
+
+@Test function EnumInsideLoopError()
+   try
+      exec([[
+for i in {1 into 1} do
+   enum LOOP_ENUM { ONE }
+end
+]])
+   except ex
+      assert(ex.message.find('top-level'), f'Error should mention top-level enum scope: {ex.message}')
+      return
+   end
+   assert(false, 'Enum inside loop should fail')
+end
+
+@Test function EnumInsideFunctionError()
+   try
+      exec([[
+function defineEnum()
+   enum FUNCTION_ENUM { ONE }
+end
+]])
+   except ex
+      assert(ex.message.find('top-level'), f'Error should mention top-level enum scope: {ex.message}')
+      return
+   end
+   assert(false, 'Enum inside function should fail')
+end
+
+@Test function EmptyEnumError()
+   try
+      exec([[enum EMPTY_ENUM { }]])
+   except ex
+      assert(ex.message.find('at least one member'), f'Error should mention empty enum: {ex.message}')
+      return
+   end
+   assert(false, 'Empty enum declaration should fail')
+end
+
+@Test function LowercasePrefixError()
+   try
+      exec([[enum bad_ENUM { ONE }]])
+   except ex
+      assert(ex.message.find('uppercase'), f'Error should mention uppercase style: {ex.message}')
+      return
+   end
+   assert(false, 'Lowercase enum prefix should fail')
+end
+
+@Test function LowercaseMemberError()
+   try
+      exec([[enum BAD_ENUM { one }]])
+   except ex
+      assert(ex.message.find('uppercase'), f'Error should mention uppercase style: {ex.message}')
+      return
+   end
+   assert(false, 'Lowercase enum member should fail')
+end
+
+@Test function NonIntegerValueError()
+   try
+      exec([[enum BAD_VALUE_ENUM { ONE = 1.5 }]])
+   except ex
+      assert(ex.message.find('integer literal'), f'Error should mention integer literal: {ex.message}')
+      return
+   end
+   assert(false, 'Non-integer enum value should fail')
+end
+
+@Test function DuplicateMemberError()
+   try
+      exec([[enum DUP_ENUM { ONE, ONE }]])
+   except ex
+      assert(ex.message.find('Duplicate enum member'), f'Error should mention duplicate enum member: {ex.message}')
+      return
+   end
+   assert(false, 'Duplicate enum member should fail')
+end
+
+@Test function DuplicateRegisteredConstantError()
+   try
+      exec([[
+enum DUP_REG_ENUM { ONE }
+enum DUP_REG_ENUM { ONE }
+]])
+   except ex
+      assert(ex.message.find('Duplicate enum constant'), f'Error should mention duplicate enum constant: {ex.message}')
+      return
+   end
+   assert(false, 'Duplicate registered enum constant should fail')
+end
+
+@Test function TypeAnnotatedPrefixError()
+   try
+      exec([[enum TYPED_ENUM: num { ONE }]])
+   except ex
+      assert(ex.message.find('type annotation'), f'Error should mention type annotation: {ex.message}')
+      return
+   end
+   assert(false, 'Enum prefix with type annotation should fail')
+end
+
+@Test function ConstPrefixError()
+   try
+      exec([[enum CONST_ENUM <const> { ONE }]])
+   except ex
+      assert(ex.message.find('<const>') or ex.message.find('attribute'),
+         f'Error should mention const attribute: {ex.message}')
+      return
+   end
+   assert(false, 'Enum prefix with <const> should fail')
+end
+
+@Test function ClosePrefixError()
+   try
+      exec([[enum CLOSE_ENUM <close> { ONE }]])
+   except ex
+      assert(ex.message.find('<close>') or ex.message.find('attribute'),
+         f'Error should mention close attribute: {ex.message}')
+      return
+   end
+   assert(false, 'Enum prefix with <close> should fail')
+end

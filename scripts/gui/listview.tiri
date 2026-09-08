@@ -7,13 +7,15 @@ Documentation is available in the Kotuku Wiki.
    import 'gui'
    import 'gui/libview'
 
-   namespace 'gui'
+   namespace gui
 
 ICON_SIZE <const> = 16
 VSPACING  <const> = 1
 EDGE      <const> = 4
 
-local LINE_HEIGHT, FONT_HEIGHT, LINE_OFFSET
+local LINE_HEIGHT:num, FONT_HEIGHT:num, LINE_OFFSET:num
+
+extern itemHoverCallback
 
 function rearrangeItems(View)
    View.zones = { }
@@ -22,7 +24,7 @@ function rearrangeItems(View)
    for item in values(View.items) do
       item._y = y
       if item._vectors.viewport then
-         item._vectors.viewport.visibility = item.hidden ? VIS_HIDDEN :> VIS_VISIBLE
+         item._vectors.viewport.visibility = item.hidden ? VIS_HIDDEN : VIS_VISIBLE
          item._vectors.viewport.y = y + EDGE
       end
 
@@ -35,20 +37,18 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-gui.listView = function(Options:table)
+gui.listView = function(Options:table!):table
    lTextAttrib = Options.textAttrib ?? 'name'
    lCompact    = Options.compact ?? 0
 
    function setListTextFill(Item, Fill)
-      if Item._vectors.text then
-         Item._vectors.text.fill = Fill
-      end
+      Item._vectors.text?.fill = Fill
    end
 
    -- When an item is hovered, create a highlight for it.
 
-   function highlightItem(View, Item:table, Highlighted:bool)
-      Item._vectors.viewport ?? return
+   function highlightItem(View, Item:table, Highlighted:bool!)
+      Item._vectors.viewport ?! return
 
       if not Item._vectors.highlight then
          Item._vectors.highlight = Item._vectors.viewport.new('VectorRectangle', {
@@ -177,7 +177,7 @@ gui.listView = function(Options:table)
 
             item._vectors.text.x = MARGIN + ICON_MARGIN
             item._vectors.text.y = LINE_OFFSET
-            if type(item_name) is 'table' then
+            if item_name is <table> then
                item._vectors.text.string = item_name.value
             else
                item._vectors.text.string = item_name
@@ -190,7 +190,7 @@ gui.listView = function(Options:table)
 
             if item._selected then
                item._vectors.text.fill = View.theme.page.textSelect
-            elseif item.index and (item.index is lHighlightedItem) then
+            elseif item._highlighted then
                item._vectors.text.fill = View.theme.page.textHighlight
             else
                item._vectors.text.fill = item.colour ?? View.theme.page.text
@@ -245,7 +245,7 @@ gui.listView = function(Options:table)
 
    vw = gui.initView(Options, constructListView, newItems)
 
-   vw.sort = function(Attrib, Ascending)
+   vw.sortView = function(Attrib, Ascending)
       vw.sortItems(Attrib, Ascending)
       rearrangeItems(vw)
    end

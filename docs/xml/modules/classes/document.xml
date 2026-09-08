@@ -7,15 +7,15 @@
     <type>class</type>
     <module>Document</module>
     <comment>Provides document display and editing facilities.</comment>
-    <fileExtension>*.rpl|*.ripple|*.ripl</fileExtension>
+    <fileExtension>rpl|ripple|ripl</fileExtension>
     <version>1</version>
-    <id>155c3464</id>
+    <id>9989342d</id>
     <idstring>DOCUMENT</idstring>
     <category>GUI</category>
     <copyright>Paul Manias © 2005-2026</copyright>
     <description>
 <p>The Document class offers a complete page layout engine, providing rich text display features for creating complex documents and text-based interfaces.  Internally, document data is maintained as a serial byte stream and all object model information from the source is discarded.  This simplification of the data makes it possible to edit the document in-place, much the same as any word processor.  Alternatively it can be used for presentation purposes only, similarly to PDF or HTML formats.  Presentation is achieved by building a vector scene graph in conjunction with the <class name="Vector">Vector</class> module.  This means that the output is compatible with SVG and can be manipulated in detail with our existing vector API.  Consequently, document formatting is closely integrated with SVG concepts and seamlessly inherits SVG functionality such as filling and stroking commands.</p>
-<p>The native document format for Kōtuku is RIPL.  Documentation for RIPL is available in the Kotuku Wiki.  Other document formats may be supported as sub-classes, but bear in mind that document parsing is a one-way trip and stateful information such as the HTML DOM is not supported.</p>
+<p>The native document format for Kōtuku is RIPL.  Documentation for RIPL is available in the Kotuku Wiki.  Other document formats may be supported as derived classes, but bear in mind that document parsing is a one-way trip and stateful information such as the HTML DOM is not supported.</p>
 <p>The Document class does not include a security barrier in its current form.  Documents that include scripted code should not be processed unless they originate from a trusted source and are confirmed as such. To mitigate security problems, we recommend that the application is built with some form of sandbox that can prevent the system being compromised by bad actors.  Utilising a project such as Win32 App Isolation https://github.com/microsoft/win32-app-isolation is one potential way of doing this.</p></description>
     <source>
       <file path="../class/">document_class.cpp</file>
@@ -28,6 +28,7 @@
       <name>Activate</name>
       <comment>Activates all child objects of the document.</comment>
       <prototype>ERR acActivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acActivate()</tiriPrototype>
       <description>
 <p>Calling the Activate() action on a document object will forward Activate() calls to its child objects.</p>
       </description>
@@ -37,6 +38,7 @@
       <name>Clear</name>
       <comment>Clears all content from the object.</comment>
       <prototype>ERR acClear(*Object)</prototype>
+      <tiriPrototype>err = Object.acClear()</tiriPrototype>
       <description>
 <p>Using the Clear() action will delete all of the document's content.  The UI will be updated to reflect a clear document.</p>
       </description>
@@ -46,6 +48,7 @@
       <name>Clipboard</name>
       <comment>Full support for clipboard activity is provided through this action.</comment>
       <prototype>ERR acClipboard(*Object, OBJECTID Clipboard, CLIPMODE Mode)</prototype>
+      <tiriPrototype>err = Object.acClipboard(Clipboard:obj, Mode:CLIPMODE)</tiriPrototype>
       <input>
         <param type="CLIPMODE" name="Mode" lookup="CLIPMODE">The mode that will be used to shift data between the target object and clipboard system.</param>
       </input>
@@ -54,12 +57,12 @@
     <action>
       <name>DataFeed</name>
       <comment>Document data can be sent and consumed via feeds.</comment>
-      <prototype>ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, APTR Buffer, INT Size)</prototype>
+      <prototype>ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, std::span&lt;const int8_t&gt; Buffer)</prototype>
+      <tiriPrototype>err = Object.acDataFeed(Object:obj, Datatype:DATA, Buffer:str)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Object">Must refer to the unique ID of the object that you represent. If you do not represent an object, set this parameter to the current task ID.</param>
         <param type="DATA" name="Datatype" lookup="DATA">The type of data being sent.</param>
-        <param type="APTR" name="Buffer">The data being sent to the target object.</param>
-        <param type="INT" name="Size">The size of the data in Buffer.</param>
+        <param type="std::span&lt;const int8_t&gt;" name="Buffer">The data being sent to the target object.</param>
       </input>
       <description>
 <p>Appending content to an active document can be achieved via the data feed feature.  The Document class currently supports the <code>DATA::TEXT</code> and <code>DATA::XML</code> types for this purpose.</p>
@@ -68,7 +71,10 @@
         <error code="Okay">Operation successful.</error>
         <error code="AllocMemory">The Document's memory buffer could not be expanded.</error>
         <error code="Mismatch">The data type that was passed to the action is not supported by the Document class.</error>
+        <error code="CreateObject">A call to CreateObject() failed</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="Recursion">Detected an illegal attempt at recursion</error>
       </result>
     </action>
 
@@ -76,12 +82,14 @@
       <name>Disable</name>
       <comment>Disables user interactivity.</comment>
       <prototype>ERR acDisable(*Object)</prototype>
+      <tiriPrototype>err = Object.acDisable()</tiriPrototype>
     </action>
 
     <action>
       <name>Draw</name>
       <comment>Force a page layout update (if changes are pending) and redraw to the display.</comment>
       <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
+      <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">The X position of the region to be drawn.</param>
         <param type="INT" name="Y">The Y position of the region to be drawn.</param>
@@ -94,22 +102,24 @@
       <name>Enable</name>
       <comment>Enables object functionality.</comment>
       <prototype>ERR acEnable(*Object)</prototype>
+      <tiriPrototype>err = Object.acEnable()</tiriPrototype>
     </action>
 
     <action>
       <name>Focus</name>
       <comment>Sets the user focus on the document page.</comment>
       <prototype>ERR acFocus(*Object)</prototype>
+      <tiriPrototype>err = Object.acFocus()</tiriPrototype>
     </action>
 
     <action>
       <name>GetKey</name>
       <comment>Retrieves global variables and URI parameters.</comment>
-      <prototype>ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)</prototype>
+      <prototype>ERR acGetKey(*Object, std::string_view Key, std::string &amp;Value)</prototype>
+      <tiriPrototype>err, str = Object.acGetKey(Key:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Key">The name of a key value.</param>
+        <param type="STRVIEW" name="Key">The name of a key value.</param>
         <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
-        <param type="INT" name="Size">Indicates the byte size of the Buffer.</param>
       </input>
       <description>
 <p>Use GetKey() to access the global variables and URI parameters of a document.  Priority is given to global variables if there is a name clash.</p>
@@ -121,25 +131,28 @@
       <name>Refresh</name>
       <comment>Reloads the document data from the original source location.</comment>
       <prototype>ERR acRefresh(*Object)</prototype>
+      <tiriPrototype>err = Object.acRefresh()</tiriPrototype>
     </action>
 
     <action>
       <name>SaveToObject</name>
       <comment>Use this action to save edited information as an XML document file.</comment>
       <prototype>ERR acSaveToObject(*Object, OBJECTID Dest, CLASSID ClassID)</prototype>
+      <tiriPrototype>err = Object.acSaveToObject(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded data.</param>
-        <param type="CLASSID" name="ClassID">Can refer to a sub-class that should be used when encoding the data.</param>
+        <param type="CLASSID" name="ClassID">Can refer to a derived class that should be used when encoding the data.</param>
       </input>
     </action>
 
     <action>
       <name>SetKey</name>
       <comment>Set a global key-value in the document.</comment>
-      <prototype>ERR acSetKey(*Object, CSTRING Key, CSTRING Value)</prototype>
+      <prototype>ERR acSetKey(*Object, std::string_view Key, std::string_view Value)</prototype>
+      <tiriPrototype>err = Object.acSetKey(Key:str, Value:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Key">The name of the target key.</param>
-        <param type="CSTRING" name="Value">The string value to associate with Key.</param>
+        <param type="STRVIEW" name="Key">The name of the target key.</param>
+        <param type="STRVIEW" name="Value">The string value to associate with Key.</param>
       </input>
     </action>
 
@@ -149,10 +162,11 @@
     <method>
       <name>AddListener</name>
       <comment>Adds a listener to a document trigger for receiving special callbacks.</comment>
-      <prototype>ERR doc::AddListener(OBJECTPTR Object, DRT Trigger, FUNCTION * Function)</prototype>
+      <prototype>ERR doc::AddListener(OBJECTPTR Object, DRT Trigger, FUNCTION Function)</prototype>
+      <tiriPrototype>err = AddListener(Trigger:num, Function:func)</tiriPrototype>
       <input>
         <param type="DRT" name="Trigger" lookup="DRT">The unique identifier for the trigger.</param>
-        <param type="FUNCTION *" name="Function">The function to call when the trigger activates.</param>
+        <param type="FUNCTION" name="Function">The function to call when the trigger activates.</param>
       </input>
       <description>
 <p>Use the AddListener() method to receive feedback whenever a document event is triggered.  Triggers are a fundamental part of document page development, accessible through the <code>&lt;trigger/&gt;</code> tag.  Triggers are normally configured within the document's page code, however if you need to monitor triggers from outside the loaded document's code, then AddListener() will give you that option.</p>
@@ -173,16 +187,19 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="OutOfRange">A value is outside of the valid range</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, callback-held</tags>
     </method>
 
     <method>
       <name>CallFunction</name>
       <comment>Executes any registered function in the currently open document.</comment>
-      <prototype>ERR doc::CallFunction(OBJECTPTR Object, CSTRING Function, struct ScriptArg * Args, INT TotalArgs)</prototype>
+      <prototype>ERR doc::CallFunction(OBJECTPTR Object, STRVIEW Function, struct ScriptArg * Args, INT TotalArgs)</prototype>
+      <tiriPrototype>err = CallFunction(Function:str, Args:any, TotalArgs:num)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Function">The name of the function that will be called.</param>
+        <param type="STRVIEW" name="Function">The name of the function that will be called.</param>
         <param type="struct ScriptArg *" name="Args">Pointer to an optional list of parameters to pass to the procedure.</param>
         <param type="INT" name="TotalArgs">The total number of entries in the <code>Args</code> array.</param>
       </input>
@@ -194,14 +211,16 @@
         <error code="Okay">Operation successful.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>callback-inlines</tags>
     </method>
 
     <method>
       <name>Edit</name>
       <comment>Activates a user editing section within a document.</comment>
-      <prototype>ERR doc::Edit(OBJECTPTR Object, CSTRING Name, INT Flags)</prototype>
+      <prototype>ERR doc::Edit(OBJECTPTR Object, STRVIEW Name, INT Flags)</prototype>
+      <tiriPrototype>err = Edit(Name:str, Flags:num)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Name">The name of the edit cell that will be activated.</param>
+        <param type="STRVIEW" name="Name">The name of the edit cell that will be activated.  If empty, the current edit cell is deactivated.</param>
         <param type="INT" name="Flags">Optional flags.</param>
       </input>
       <description>
@@ -213,14 +232,16 @@
         <error code="Search">The cell was not found.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, callback-inlines</tags>
     </method>
 
     <method>
       <name>FindIndex</name>
       <comment>Searches the document stream for an index, returning the start and end points if found.</comment>
-      <prototype>ERR doc::FindIndex(OBJECTPTR Object, CSTRING Name, INT * Start, INT * End)</prototype>
+      <prototype>ERR doc::FindIndex(OBJECTPTR Object, STRVIEW Name, INT * Start, INT * End)</prototype>
+      <tiriPrototype>err, Start:num, End:num = FindIndex(Name:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Name">The name of the index to search for.</param>
+        <param type="STRVIEW" name="Name">The name of the index to search for.</param>
         <param type="INT *" name="Start">The byte position of the index is returned in this parameter.</param>
         <param type="INT *" name="End">The byte position at which the index ends is returned in this parameter.</param>
       </input>
@@ -233,14 +254,16 @@
         <error code="Search">The index was not found.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>pure-query</tags>
     </method>
 
     <method>
       <name>HideIndex</name>
       <comment>Hides the content held within a named index.</comment>
-      <prototype>ERR doc::HideIndex(OBJECTPTR Object, CSTRING Name)</prototype>
+      <prototype>ERR doc::HideIndex(OBJECTPTR Object, STRVIEW Name)</prototype>
+      <tiriPrototype>err = HideIndex(Name:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Name">The name of the index.</param>
+        <param type="STRVIEW" name="Name">The name of the index.</param>
       </input>
       <description>
 <p>The HideIndex() and <method>ShowIndex</method> methods allow the display of document content to be controlled at code level.  To control content visibility, start by encapsulating the content in the source document with an <code>&lt;index&gt;</code> tag and ensure that it is named.  Then make calls to HideIndex() and <method>ShowIndex</method> with the index name to manipulate visibility.</p>
@@ -248,17 +271,19 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Search">A search routine in this function failed.</error>
+        <error code="Search">A search routine in this function failed</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
       <name>InsertText</name>
       <comment>Inserts new content into a loaded document (raw text format).</comment>
-      <prototype>ERR doc::InsertText(OBJECTPTR Object, CSTRING Text, INT Index, INT Char, INT Preformat)</prototype>
+      <prototype>ERR doc::InsertText(OBJECTPTR Object, STRVIEW Text, INT Index, INT Char, INT Preformat)</prototype>
+      <tiriPrototype>err = InsertText(Text:str, Index:num, Char:num, Preformat:num)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Text">A UTF-8 text string.</param>
+        <param type="STRVIEW" name="Text">A UTF-8 text string.</param>
         <param type="INT" name="Index">Reference to a <code>TEXT</code> control code that will receive the content.  If <code>-1</code>, the text will be inserted at the end of the document stream.</param>
         <param type="INT" name="Char">A character offset within the <code>TEXT</code> control code that will be injected with content.  If <code>-1</code>, the text will be injected at the end of the target string.</param>
         <param type="INT" name="Preformat">If <code>true</code>, the text will be treated as pre-formatted (all whitespace, including consecutive whitespace will be recognised).</param>
@@ -270,18 +295,20 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Failed">General failure.</error>
-        <error code="OutOfRange">A value is outside of the valid range.</error>
+        <error code="Failed">General failure</error>
+        <error code="OutOfRange">A value is outside of the valid range</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
     <method>
       <name>InsertXML</name>
       <comment>Inserts new content into a loaded document (XML format).</comment>
-      <prototype>ERR doc::InsertXML(OBJECTPTR Object, CSTRING XML, INT Index)</prototype>
+      <prototype>ERR doc::InsertXML(OBJECTPTR Object, STRVIEW XML, INT Index)</prototype>
+      <tiriPrototype>err = InsertXML(XML:str, Index:num)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="XML">An XML string in RIPL format.</param>
+        <param type="STRVIEW" name="XML">An XML string in RIPL format.</param>
         <param type="INT" name="Index">The byte position at which to insert the new content.</param>
       </input>
       <description>
@@ -291,46 +318,46 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="NoData">No data is available for use.</error>
-        <error code="OutOfRange">A value is outside of the valid range.</error>
-        <error code="CreateObject">A call to CreateObject() failed.</error>
+        <error code="NoData">No data is available for use</error>
+        <error code="OutOfRange">A value is outside of the valid range</error>
+        <error code="CreateObject">A call to CreateObject() failed</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
     <method>
       <name>ReadContent</name>
       <comment>Returns selected content from the document, either as plain text, original byte code or XML.</comment>
       <prototype>ERR doc::ReadContent(OBJECTPTR Object, DATA Format, INT Start, INT End, STRING * Result)</prototype>
+      <tiriPrototype>err, Result:str = ReadContent(Format:num, Start:num, End:num)</tiriPrototype>
       <input>
         <param type="DATA" name="Format" lookup="DATA">Set to <code>TEXT</code> to receive plain-text, <code>RAW</code> to receive the original byte-code, or <code>XML</code> to receive a textual XML serialisation of the stream.</param>
         <param type="INT" name="Start">An index in the document stream from which data will be extracted.</param>
         <param type="INT" name="End">An index in the document stream at which extraction will stop.</param>
-        <param type="STRING *" name="Result">The data is returned in this parameter as an allocated string.</param>
+        <param type="STRING *" name="Result">The data is returned in this parameter.</param>
       </input>
       <description>
 <p>The ReadContent() method extracts content from the document stream, covering a specific area.  It can return the data as a RIPL binary stream, translated into plain-text (control codes are removed), or serialised as an XML document describing the byte stream.</p>
-<p>The XML format is a linear, non-nested serialisation of the byte stream intended for inspection, diffing and tooling. Each byte code becomes one XML element wrapped in a <code>
-<extract/> root, followed by the requested content in a <code>
-<stream/> element, and text content appears inside <code>
-<text/> elements with the usual XML escaping applied.  Start/end markers such as paragraphs and font runs are emitted as sibling self-closing elements rather than nested, reflecting the underlying linear storage model.  A trailing <code>
-<fonts/> section lists information for the shared cached fonts.</code>
+<p>The XML format is a linear, non-nested serialisation of the byte stream intended for inspection, diffing and tooling. Each byte code becomes one XML element wrapped in a <code>&lt;extract&gt;</code> root, followed by the requested content in a <code>&lt;stream&gt;</code> element, and text content appears inside <code>&lt;text&gt;</code> elements with the usual XML escaping applied.  Start/end markers such as paragraphs and font runs are emitted as sibling self-closing elements rather than nested, reflecting the underlying linear storage model.  A trailing <code>&lt;fonts&gt;</code> section lists information for the shared cached fonts.</p>
 <p>No post-processing is performed to fix validity errors that may arise from an invalid data range.  For instance, if an opening paragraph code is not closed with a matching paragraph end point, this will remain the case in the resulting data.</p>
-</code></code></code></p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
-        <error code="NoData">Operation successful, but no data was present for extraction.</error>
+        <error code="Args">Invalid arguments passed to function</error>
+        <error code="NoData">No data was extractable - applies to XML type only; other types return an empty string.</error>
         <error code="OutOfRange">The Start index is not within the stream.</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>pure-query, mutates-input</tags>
     </method>
 
     <method>
       <name>RemoveContent</name>
       <comment>Removes content from a loaded document.</comment>
       <prototype>ERR doc::RemoveContent(OBJECTPTR Object, INT Start, INT End)</prototype>
+      <tiriPrototype>err = RemoveContent(Start:num, End:num)</tiriPrototype>
       <input>
         <param type="INT" name="Start">The byte position at which to start the removal.</param>
         <param type="INT" name="End">The byte position at which the removal ends.</param>
@@ -340,36 +367,41 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="OutOfRange">The area to be removed is outside the bounds of the document's data stream.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
       <name>RemoveListener</name>
       <comment>Removes a previously configured listener from the document.</comment>
-      <prototype>ERR doc::RemoveListener(OBJECTPTR Object, INT Trigger, FUNCTION * Function)</prototype>
+      <prototype>ERR doc::RemoveListener(OBJECTPTR Object, INT Trigger, FUNCTION Function)</prototype>
+      <tiriPrototype>err = RemoveListener(Trigger:num, Function:func)</tiriPrototype>
       <input>
         <param type="INT" name="Trigger">The unique identifier for the trigger.</param>
-        <param type="FUNCTION *" name="Function">The function that is called when the trigger activates.</param>
+        <param type="FUNCTION" name="Function">The function that is called when the trigger activates.</param>
       </input>
       <description>
 <p>This method removes a previously configured listener from the document.  The original parameters that were passed to <method>AddListener</method> must be provided.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="OutOfRange">A value is outside of the valid range</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
       <name>SelectLink</name>
       <comment>Selects links in the document.</comment>
-      <prototype>ERR doc::SelectLink(OBJECTPTR Object, INT Index, CSTRING Name)</prototype>
+      <prototype>ERR doc::SelectLink(OBJECTPTR Object, INT Index, STRVIEW Name)</prototype>
+      <tiriPrototype>err = SelectLink(Index:num, Name:str)</tiriPrototype>
       <input>
         <param type="INT" name="Index">Index to a link (links are in the order in which they are created in the document, zero being the first link).  Ignored if the <code>Name</code> parameter is set.</param>
-        <param type="CSTRING" name="Name">The name of the link to select (set to <code>NULL</code> if an <code>Index</code> is defined).</param>
+        <param type="STRVIEW" name="Name">The name of the link to select.  Leave empty if an <code>Index</code> is defined.</param>
       </input>
       <description>
 <p>This method will select a link in the document.  Selecting a link will mean that the link in question will take on a different appearance (e.g. if a text link, the text will change colour).  If the user presses the enter key when a hyperlink is selected, that link will be activated.</p>
@@ -378,17 +410,20 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="OutOfRange">A value is outside of the valid range.</error>
+        <error code="NoSupport">Operation not supported</error>
+        <error code="OutOfRange">A value is outside of the valid range</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
       <name>ShowIndex</name>
       <comment>Shows the content held within a named index.</comment>
-      <prototype>ERR doc::ShowIndex(OBJECTPTR Object, CSTRING Name)</prototype>
+      <prototype>ERR doc::ShowIndex(OBJECTPTR Object, STRVIEW Name)</prototype>
+      <tiriPrototype>err = ShowIndex(Name:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Name">The name of the index.</param>
+        <param type="STRVIEW" name="Name">The name of the index.</param>
       </input>
       <description>
 <p>The <method>HideIndex</method> and ShowIndex() methods allow the display of document content to be controlled at code level.  To control content visibility, start by encapsulating the content in the source document with an <code>&lt;index&gt;</code> tag and ensure that it is named.  Then make calls to <method>HideIndex</method> and ShowIndex() with the index name to manipulate visibility.</p>
@@ -399,6 +434,7 @@
         <error code="Search">The index could not be found.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
   </methods>
@@ -417,8 +453,8 @@
     <field>
       <name>ClientScript</name>
       <comment>Allows an external script object to be used by a document file.</comment>
-      <access write="S">Set</access>
-      <type>OBJECTPTR</type>
+      <access write="I">Init</access>
+      <type class="Script">*Script</type>
       <description>
 <p>Set ClientScript with a <class name="Script">Script</class> object to allow document content to 'breach the firewall' and access functionality outside of its namespace.  This feature is primarily intended for applications that need to interact with their own embedded documents.</p>
 <p>If a document defines a default script in its content, it will have priority over the one referenced here.</p>
@@ -540,7 +576,7 @@
       <name>PageWidth</name>
       <comment>Measures the page width of the document, in pixels.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
+      <type>UNIT</type>
       <description>
 <p>The page width indicates the width of the longest document line, including left and right page margins.  Although the PageWidth can be pre-defined by the client, a document can override this value at any time when it is parsed.  If imposing fixed page dimensions is desired, consider setting the <code>Width</code> and <code>Height</code> values of the <fl>View</fl> viewport object instead.</p>
       </description>
@@ -549,16 +585,13 @@
     <field>
       <name>Path</name>
       <comment>Identifies the location of a document file to load.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>STRING</type>
       <description>
 <p>To load a document file into a document object, set the Path field.  Valid string formats for setting the path are:</p>
-<p>
-<code>volume:folder/filename.rpl</code></p>
-<p>
-<code>#page_name?param1&amp;param2=value</code></p>
-<p>
-<code>volume:folder/filename.rpl#page_name?param1&amp;param2=value</code></p>
+<p><code>volume:folder/filename.rpl</code></p>
+<p><code>#page_name?param1&amp;param2=value</code></p>
+<p><code>volume:folder/filename.rpl#page_name?param1&amp;param2=value</code></p>
 <p>Setting this field post-initialisation will cause a complete reload unless the path begins with a hash to signal a change to the current page and parameters.  Note: if a requested page does not exist in the currently loaded document, a dialog is displayed to bring the error to the user's attention).</p>
 <p>To leap to a bookmark in the page that has been specified with the <code>&lt;index&gt;</code> element, use the colon as a separator after the pagename, i.e. <code>#pagename:bookmark</code>.</p>
 <p>Other means of opening a document include loading the data manually and passing it via the <action>DataFeed</action> action.</p>
@@ -571,8 +604,7 @@
       <access write="S">Set</access>
       <type>STRING</type>
       <description>
-<p>Use the Pretext field to execute document code prior to the loading of a new document.  This feature is commonly used to configure a document in advance, such as setting default font values and background graphics.  It is functionally equivalent to embedding an <code>
-<include/></code> statement at the top of a document, but with the benefit of guaranteeing continued execution if the user navigates away from the first page.</p>
+<p>Use the Pretext field to execute document code prior to the loading of a new document.  This feature is commonly used to configure a document in advance, such as setting default font values and background graphics.  It is functionally equivalent to embedding an <code>&lt;include/&gt;</code> statement at the top of a document, but with the benefit of guaranteeing continued execution if the user navigates away from the first page.</p>
 <p>A Pretext will always survive document unloading and resets.  It can be removed only by setting this field with <code>NULL</code>.</p>
       </description>
     </field>

@@ -61,14 +61,60 @@ static const struct FieldDef clVectorColourSpace[] = {
    { nullptr, 0 }
 };
 
+static const struct FieldDef clVectorVIJ[] = {
+   { "Bevel", 0x00000001 },
+   { "Miter", 0x00000002 },
+   { "Jag", 0x00000003 },
+   { "Round", 0x00000004 },
+   { "Inherit", 0x00000005 },
+   { nullptr, 0 }
+};
+
+static const struct FieldDef clVectorVLC[] = {
+   { "Butt", 0x00000001 },
+   { "Square", 0x00000002 },
+   { "Round", 0x00000003 },
+   { "Inherit", 0x00000004 },
+   { nullptr, 0 }
+};
+
+static const struct FieldDef clVectorVLJ[] = {
+   { "Miter", 0x00000000 },
+   { "MiterSmart", 0x00000001 },
+   { "Round", 0x00000002 },
+   { "Bevel", 0x00000003 },
+   { "MiterRound", 0x00000004 },
+   { "Inherit", 0x00000005 },
+   { nullptr, 0 }
+};
+
+static const struct FieldDef clVectorVFR[] = {
+   { "NonZero", 0x00000001 },
+   { "EvenOdd", 0x00000002 },
+   { "Inherit", 0x00000003 },
+   { nullptr, 0 }
+};
+
+static const struct FieldDef clVectorVMF[] = {
+   { "Stretch", 0x00000001 },
+   { "AutoSpacing", 0x00000002 },
+   { "XMin", 0x00000004 },
+   { "XMid", 0x00000008 },
+   { "XMax", 0x00000010 },
+   { "YMin", 0x00000020 },
+   { "YMid", 0x00000040 },
+   { "YMax", 0x00000080 },
+   { nullptr, 0 }
+};
+
 FDEF maPush[] = { { "Position", FD_INT }, { 0, 0 } };
-FDEF maTrace[] = { { "Callback", FD_FUNCTIONPTR }, { "Scale", FD_DOUBLE }, { "Transform", FD_INT }, { 0, 0 } };
-FDEF maGetBoundary[] = { { "Flags", FD_INT }, { "X", FD_DOUBLE|FD_RESULT }, { "Y", FD_DOUBLE|FD_RESULT }, { "Width", FD_DOUBLE|FD_RESULT }, { "Height", FD_DOUBLE|FD_RESULT }, { 0, 0 } };
+FDEF maTrace[] = { { "Callback", FD_FUNCTION }, { "Scale", FD_DOUBLE }, { "Transform", FD_INT }, { 0, 0 } };
+FDEF maGetBoundary[] = { { "Flags", FD_INT }, { "X", FD_RESULT|FD_DOUBLE }, { "Y", FD_RESULT|FD_DOUBLE }, { "Width", FD_RESULT|FD_DOUBLE }, { "Height", FD_RESULT|FD_DOUBLE }, { 0, 0 } };
 FDEF maPointInPath[] = { { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { 0, 0 } };
-FDEF maSubscribeInput[] = { { "Mask", FD_INT }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
-FDEF maSubscribeKeyboard[] = { { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
-FDEF maSubscribeFeedback[] = { { "Mask", FD_INT }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
-FDEF maNewMatrix[] = { { "VectorMatrix:Transform", FD_PTR|FD_STRUCT|FD_RESOURCE|FD_RESULT }, { "End", FD_INT }, { 0, 0 } };
+FDEF maSubscribeInput[] = { { "Mask", FD_INT }, { "Callback", FD_FUNCTION }, { 0, 0 } };
+FDEF maSubscribeKeyboard[] = { { "Callback", FD_FUNCTION }, { 0, 0 } };
+FDEF maSubscribeFeedback[] = { { "Mask", FD_INT }, { "Callback", FD_FUNCTION }, { 0, 0 } };
+FDEF maNewMatrix[] = { { "VectorMatrix:Transform", FD_RESULT|FD_PTR|FD_STRUCT|FD_RESOURCE }, { "End", FD_INT }, { 0, 0 } };
 FDEF maFreeMatrix[] = { { "VectorMatrix:Matrix", FD_PTR|FD_STRUCT }, { 0, 0 } };
 
 static const struct MethodEntry clVectorMethods[] = {
@@ -85,6 +131,16 @@ static const struct MethodEntry clVectorMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR VECTOR_New(extVector *Self) {
+   new (Self) extVector(Self->Class, Self->UID);
+   return ERR::Okay;
+}
+
+static ERR VECTOR_Free(extVector *Self) {
+   Self->~extVector();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clVectorActions[] = {
    { AC::Disable, VECTOR_Disable },
    { AC::Draw, VECTOR_Draw },
@@ -94,8 +150,8 @@ static const struct ActionArray clVectorActions[] = {
    { AC::Init, VECTOR_Init },
    { AC::MoveToBack, VECTOR_MoveToBack },
    { AC::MoveToFront, VECTOR_MoveToFront },
+   { AC::New, VECTOR_New },
    { AC::NewOwner, VECTOR_NewOwner },
-   { AC::NewPlacement, VECTOR_NewPlacement },
    { AC::Show, VECTOR_Show },
    { AC::NIL, nullptr }
 };

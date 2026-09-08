@@ -57,6 +57,12 @@ typedef struct CCallInfo {
 // Helpers for conditional function definitions.
 #define IRCALLCOND_ANY(x)      x
 
+#if LJ_TARGET_X64
+#define IRCALLCOND_X64(x)      x
+#else
+#define IRCALLCOND_X64(x)      NULL
+#endif
+
 #if LJ_TARGET_X86ORX64
 #define IRCALLCOND_FPMATH(x)      NULL
 #else
@@ -151,6 +157,8 @@ typedef struct CCallInfo {
   _(ANY,    lj_tab_new_ah,         3,   A, TAB, CCI_L|CCI_T) \
   _(ANY,    lj_tab_new1,           2,  FA, TAB, CCI_L|CCI_T) \
   _(ANY,    lj_tab_dup,            2,  FA, TAB, CCI_L|CCI_T) \
+  _(ANY,    lj_func_newL_zero,     3,   A, FUNC, CCI_L|CCI_T) \
+  _(ANY,    lj_func_newL_inherited,3,   A, FUNC, CCI_L|CCI_T) \
   _(ANY,    lj_tab_clear,          1,  FS, NIL, 0) \
   _(ANY,    lj_tab_newkey,         3,   S, PGC, CCI_L|CCI_T) \
   _(ANY,    lj_tab_keyindex,       2,  FL, INT, 0) \
@@ -162,6 +170,9 @@ typedef struct CCallInfo {
   _(ANY,    lj_mem_newgco,         2,  FA, PGC, CCI_L|CCI_T) \
   _(ANY,    lj_prng_u64d,          1,  FS, NUM, CCI_CASTU64) \
   _(ANY,    lj_vm_modi,            2,  FN, INT, 0) \
+  _(X64,    lj_vm_fmod,            2,   N, NUM, XA2_FP) \
+  _(ANY,    lj_vm_min,             2,   N, NUM, XA2_FP) \
+  _(ANY,    lj_vm_max,             2,   N, NUM, XA2_FP) \
   _(ANY,    cmath_log10,           1,   N, NUM, XA_FP) \
   _(ANY,    deg,                   1,   N, NUM, XA_FP) \
   _(ANY,    rad,                   1,   N, NUM, XA_FP) \
@@ -175,6 +186,7 @@ typedef struct CCallInfo {
   _(ANY,    cmath_sinh,            1,   N, NUM, XA_FP) \
   _(ANY,    cmath_cosh,            1,   N, NUM, XA_FP) \
   _(ANY,    cmath_tanh,            1,   N, NUM, XA_FP) \
+  _(ANY,    cmath_fmod,            2,   N, NUM, XA2_FP) \
   _(ANY,    fputc,                 2,   S, INT, 0) \
   _(ANY,    fwrite,                4,   S, INT, 0) \
   _(ANY,    fflush,                1,   S, INT, 0) \
@@ -208,19 +220,71 @@ typedef struct CCallInfo {
   _(FFI,        memset,            3,   S, PTR, 0) \
   _(FFI,        lj_vm_errno,       0,   S, INT, CCI_NOFPRCLOBBER) \
   /* Native array helpers */ \
+  _(ANY,        lj_arr_new_jit,    3,   A, ARRAY, CCI_L|CCI_T) \
   _(ANY,        lj_arr_getidx,     4,   S, NIL, CCI_L|CCI_T) \
   _(ANY,        lj_arr_setidx,     4,   S, NIL, CCI_L|CCI_T) \
+  _(ANY,        lj_arr_push1,      3,   S, NIL, CCI_L|CCI_T) \
+  _(ANY,        lj_arr_putstr,     3,   S, NIL, CCI_L|CCI_T) \
+  _(ANY,        lj_arr_putsbuf,    3,   S, NIL, CCI_L|CCI_T) \
+  _(ANY,        lj_arr_putnumtv,   3,   S, NIL, CCI_L|CCI_T) \
+  _(ANY,        lj_arr_clear,      2,   S, NIL, CCI_L|CCI_T) \
+  _(ANY,        lj_arr_resize,     3,   S, INT, CCI_L|CCI_T) \
+  _(ANY,        lj_arr_getstring,  4,   S, STR, CCI_L|CCI_T) \
+  _(ANY,        lj_arr_contains,   3,   S, INT, CCI_L|CCI_T) \
+  _(ANY,        lj_arr_contains_i8,  2, S, INT, 0) \
+  _(ANY,        lj_arr_contains_u8,  2, S, INT, 0) \
+  _(ANY,        lj_arr_contains_i16, 2, S, INT, 0) \
+  _(ANY,        lj_arr_contains_u16, 2, S, INT, 0) \
+  _(ANY,        lj_arr_contains_i32, 2, S, INT, 0) \
+  _(ANY,        lj_arr_contains_u32, 2, S, INT, 0) \
+  _(ANY,        lj_arr_contains_i64, 2, S, INT, 0) \
+  _(ANY,        lj_arr_contains_u64, 2, S, INT, 0) \
+  _(ANY,        lj_arr_contains_f32, 2, S, INT, 0) \
+  _(ANY,        lj_arr_contains_f64, 2, S, INT, 0) \
+  _(ANY,        lj_arr_contains_str, 2, S, INT, 0) \
+  _(ANY,        lj_arr_getidx_noalloc, 4, S, NIL, CCI_L) \
+  /* Direct range-loop helpers */ \
+  _(ANY,        lj_range_prepare_step,  5, N, NUM, CCI_L|CCI_T) \
+  _(ANY,        lj_range_prepare_count, 5, N, NUM, CCI_L|CCI_T) \
+  _(ANY,        lj_range_integer_values,3, N, INT, 0) \
+  _(ANY,        lj_range_value,         3, N, NUM, 0) \
+  _(ANY,        lj_range_iterator_next_ordinal, 3, N, NUM, 0) \
   /* Try-except exception handling */ \
   _(ANY,        lj_try_enter,      4,  FS, NIL, CCI_L|CCI_T) \
   _(ANY,        lj_try_leave,      1,  FS, NIL, CCI_L) \
+  _(ANY,        lj_checkall_enter,  3,  FS, NIL, CCI_L) \
+  _(ANY,        lj_checkall_leave,  1,  FS, NIL, CCI_L) \
+  /* Deferred cleanup registration */ \
+  _(ANY,        lj_defer_arm,         5, S, NIL, CCI_L) \
+  _(ANY,        lj_defer_consume_jit, 3, S, NIL, CCI_L) \
+  /* State-local table context */ \
+  _(ANY,        lj_context_current_jit,  1, FS, TAB, CCI_L) \
+  _(ANY,        lj_context_enter_jit,    3,  S, NIL, CCI_L) \
+  _(ANY,        lj_context_leave_jit,    2,  S, NIL, CCI_L) \
+  _(ANY,        lj_context_tail_jit,     4,  S, NIL, CCI_L) \
+  _(ANY,        lj_context_prepare_metamethod_tail_jit, 3, S, NIL, CCI_L) \
   /* Native object field access */ \
   _(ANY,        bc_object_getfield, 5, S, NIL, CCI_L|CCI_T) \
   _(ANY,        bc_object_setfield, 5, S, NIL, CCI_L|CCI_T) \
+  /* Native struct field access */ \
+  _(ANY,        bc_struct_getfield, 5, S, NIL, CCI_L|CCI_T) \
+  _(ANY,        bc_struct_setfield, 5, S, NIL, CCI_L|CCI_T) \
   /* JIT direct field access lock/unlock */ \
   _(ANY,        jit_object_lock,   1, S, PTR, 0) \
   _(ANY,        jit_object_unlock, 1, S, NIL, 0) \
   _(ANY,        jit_object_getstr, 4, S, NIL, CCI_L|CCI_T) \
   _(ANY,        jit_object_getobj, 4, S, NIL, CCI_L|CCI_T) \
+  /* Environment mutation boundary */ \
+  _(ANY,        lj_env_check,      4, S, NIL, CCI_L|CCI_T) \
+  /* Permanent contextual table designation */ \
+  _(ANY,        lj_tab_mark_contextual_jit, 1, S, NIL, 0) \
+  _(ANY,        lj_context_begin_block_jit, 5, S, NIL, CCI_L) \
+  _(ANY,        lj_context_end_block_jit,   3, S, NIL, CCI_L) \
+  _(ANY,        lj_context_has_call_jit,    2, FS, INT, CCI_L) \
+  /* Non-allocating upvalue close; bracketed by lifetime XBARs. */ \
+  _(ANY,        lj_func_closeuv,            2, S, NIL, CCI_L) \
+  _(ANY,        lj_func_newL_local,         4, A, FUNC, CCI_L|CCI_T) \
+  _(ANY,        lj_context_leave_tail_jit,  2, S, NIL, CCI_L) \
   \
   // End of list.
 
@@ -253,3 +317,17 @@ LJ_DATA const CCallInfo lj_ir_callinfo[IRCALL__MAX+1];
 // Try-except exception handling runtime functions
 extern "C" void lj_try_enter(lua_State *L, GCfunc *Func, TValue *Base, uint16_t TryBlockIndex);
 extern "C" void lj_try_leave(lua_State *L);
+extern "C" void lj_checkall_enter(lua_State *L, GCfunc *Func, TValue *Base);
+extern "C" void lj_checkall_leave(lua_State *L);
+extern "C" void lj_defer_arm(lua_State *L, TValue *OwnerBase, uint32_t CallableSlot,
+   uint32_t ArgumentCount, uint32_t ScopeBase);
+extern "C" void lj_defer_consume_jit(lua_State *L, TValue *OwnerBase, uint32_t CallableSlot);
+
+// Permanent contextual designation of a recorded table (see lj_state.cpp).
+extern "C" void lj_tab_mark_contextual_jit(GCtab *Table) noexcept;
+extern "C" void lj_context_begin_block_jit(
+   lua_State *L, GCtab *Table, TValue *OwnerBase, uint32_t BlockIndex, uint32_t EntrySlots);
+extern "C" void lj_context_end_block_jit(lua_State *L, TValue *OwnerBase, uint32_t BlockIndex) noexcept;
+
+// Environment mutation boundary (see lj_meta.cpp).
+extern "C" void lj_env_check(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value);

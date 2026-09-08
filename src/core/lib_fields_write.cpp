@@ -11,107 +11,127 @@ Name: Fields
 
 #include "defs.h"
 #include <kotuku/main.h>
+#include <kotuku/strings.hpp>
 
 #include <stdarg.h>
 #include <stdlib.h>
 #include <cmath>
 
-#define OP_OR        0
-#define OP_AND       1
-#define OP_OVERWRITE 2
+constexpr int OP_OR        = 0;
+constexpr int OP_AND       = 1;
+constexpr int OP_OVERWRITE = 2;
 
-static ERR writeval_array(OBJECTPTR, Field *, int, CPTR , int);
-static ERR writeval_flags(OBJECTPTR, Field *, int, CPTR , int);
-static ERR writeval_long(OBJECTPTR, Field *, int, CPTR , int);
-static ERR writeval_large(OBJECTPTR, Field *, int, CPTR , int);
-static ERR writeval_double(OBJECTPTR, Field *, int, CPTR , int);
-static ERR writeval_function(OBJECTPTR, Field *, int, CPTR , int);
-static ERR writeval_ptr(OBJECTPTR, Field *, int, CPTR , int);
+static ERR writeval_flags(OBJECTPTR, const Field *, int, CPTR);
+static ERR writeval_long(OBJECTPTR, const Field *, int, CPTR);
+static ERR writeval_large(OBJECTPTR, const Field *, int, CPTR);
+static ERR writeval_double(OBJECTPTR, const Field *, int, CPTR);
+static ERR writeval_function(OBJECTPTR, const Field *, int, CPTR);
+static ERR writeval_ptr(OBJECTPTR, const Field *, int, CPTR);
+static ERR writeval_cppstr(OBJECTPTR, const Field *, int, CPTR);
+static ERR writeval_unit(OBJECTPTR, const Field *, int, CPTR);
 
-static ERR setval_large(OBJECTPTR, Field *, int Flags, CPTR , int);
-static ERR setval_pointer(OBJECTPTR, Field *, int Flags, CPTR , int);
-static ERR setval_double(OBJECTPTR, Field *, int Flags, CPTR , int);
-static ERR setval_long(OBJECTPTR, Field *, int Flags, CPTR , int);
-static ERR setval_function(OBJECTPTR, Field *, int Flags, CPTR , int);
-static ERR setval_array(OBJECTPTR, Field *, int Flags, CPTR , int);
-static ERR setval_brgb(OBJECTPTR, Field *, int Flags, CPTR , int);
-static ERR setval_unit(OBJECTPTR, Field *, int Flags, CPTR , int);
+static ERR setval_large(OBJECTPTR, const Field *, int Flags, CPTR);
+static ERR setval_pointer(OBJECTPTR, const Field *, int Flags, CPTR);
+static ERR setval_strview(OBJECTPTR, const Field *, int Flags, CPTR);
+static ERR setval_double(OBJECTPTR, const Field *, int Flags, CPTR);
+static ERR setval_long(OBJECTPTR, const Field *, int Flags, CPTR);
+static ERR setval_function(OBJECTPTR, const Field *, int Flags, CPTR);
+static ERR setval_struct(OBJECTPTR, const Field *, int Flags, CPTR);
+static ERR set_or_write_vector(OBJECTPTR, const Field *, int Flags, CPTR);
+static ERR set_or_write_array(OBJECTPTR, const Field *, int Flags, CPTR);
+static ERR setval_unit(OBJECTPTR, const Field *, int Flags, CPTR);
 
 //********************************************************************************************************************
-// Converts a CSV string into an array (or use "#0x123..." for a hexadecimal byte list)
 
-static int write_array(CSTRING String, int Flags, int16_t ArraySize, APTR Dest)
+[[nodiscard]] static std::string_view field_string_view(int Flags, CPTR Data) noexcept
 {
-   if (!ArraySize) ArraySize = 0x7fff; // If no ArraySize is specified then there is no imposed limit.
+   if (not Data) return {};
+   else return *((std::string_view *)Data);
+}
 
-   if ((String[0] IS '#') or ((String[0] IS '0') and (String[1] IS 'x'))) {
-      // Array is a sequence of hexadecimal bytes
-      String += (String[0] IS '#') ? 1 : 2;
-      int i = 0;
-      while ((i < ArraySize) and (*String)) {
-         uint8_t byte = 0;
-         for (int shift=4; shift >= 0; shift -= 4) {
-            if (*String) {
-               if (std::isdigit(*String)) byte |= (*String - '0') << shift;
-               else if (*String >= 'A' and (*String <= 'F')) byte |= (*String - 'A' + 10) << shift;
-               else if (*String >= 'a' and (*String <= 'f')) byte |= (*String - 'a' + 10) << shift;
-               String++;
-            }
-         }
-
-         if (Flags & FD_INT)         ((int *)Dest)[i]    = byte;
-         else if (Flags & FD_BYTE)   ((int8_t *)Dest)[i] = byte;
-         else if (Flags & FD_FLOAT)  ((float *)Dest)[i]  = byte;
-         else if (Flags & FD_DOUBLE) ((double *)Dest)[i] = byte;
-         i++;
-      }
-      return i;
+[[nodiscard]] static bool decimal_digits(std::string_view String) noexcept
+{
+   for (auto ch : String) {
+      if ((ch < '0') or (ch > '9')) return false;
    }
-   else {
-      // Assume String is in CSV format
-      char *end;
-      int i;
-      for (i=0; (i < ArraySize) and (*String); i++) {
-          if (Flags & FD_INT)         ((int *)Dest)[i]     = strtol(String, &end, 0);
-          else if (Flags & FD_BYTE)   ((uint8_t *)Dest)[i] = strtol(String, &end, 0);
-          else if (Flags & FD_FLOAT)  ((float *)Dest)[i]   = strtod(String, &end);
-          else if (Flags & FD_DOUBLE) ((double *)Dest)[i]  = strtod(String, &end);
-          else if (Flags & FD_STRING) {
-             // Not feasible to convert a string into an array of strings
-             pf::Log().warning(ERR::InvalidType);
-             return 0;
-          }
-          else {
-             pf::Log().warning(ERR::InvalidType);
-             return 0;
-          }
+   return true;
+}
 
-          String = end;
-          while ((*String) and (!std::isdigit(*String)) and (*String != '-')) String++;
-      }
-      return i;
+template <class T>
+requires std::is_integral_v<T>
+[[nodiscard]] static T parse_integer(std::string_view String) noexcept
+{
+   const auto start = String.find_first_not_of(" \n\r\t");
+   if (start IS std::string_view::npos) return 0;
+   String.remove_prefix(start);
+
+   bool negative = false;
+   if (String.starts_with('-')) {
+      negative = true;
+      String.remove_prefix(1);
    }
+   else if (String.starts_with('+')) String.remove_prefix(1);
+
+   int base = 10;
+   if (String.starts_with("0x") or String.starts_with("0X")) {
+      base = 16;
+      String.remove_prefix(2);
+   }
+   else if ((String.size() > 1) and (String.front() IS '0')) base = 8;
+
+   uint64_t magnitude = 0;
+   auto [ end, error ] = std::from_chars(String.data(), String.data() + String.size(), magnitude, base);
+   if (error != std::errc()) return 0;
+
+   if (negative) return T(-int64_t(magnitude));
+   else return T(magnitude);
+}
+
+[[nodiscard]] static double parse_double(std::string_view String, size_t *End = nullptr) noexcept
+{
+   const auto original_size = String.size();
+   const auto start = String.find_first_not_of(" \n\r\t");
+   if (start IS std::string_view::npos) {
+      if (End) *End = original_size;
+      return 0;
+   }
+
+   String.remove_prefix(start);
+   if (String.starts_with('+')) String.remove_prefix(1);
+
+   double value = 0;
+   auto [ end, error ] = std::from_chars(String.data(), String.data() + String.size(), value);
+   if (error != std::errc()) {
+      if (End) *End = original_size - String.size();
+      return 0;
+   }
+
+   if (End) *End = original_size - String.size() + size_t(end - String.data());
+   return value;
 }
 
 //********************************************************************************************************************
-// Used by some of the SetField() range of instructions.
+// Used by some of the SetField() and Create() range of instructions.
 
-ERR writeval_default(OBJECTPTR Object, Field *Field, int flags, CPTR Data, int Elements)
+ERR writeval_default(OBJECTPTR Object, const Field *Field, int flags, CPTR Data)
 {
-   pf::Log log("WriteField");
+   kt::Log log("WriteField");
 
    //log.trace("[%s:%d] Name: %s, SetValue: %c, FieldFlags: $%.8x, SrcFlags: $%.8x", Object->className(), Object->UID, Field->Name, Field->SetValue ? 'Y' : 'N', Field->Flags, flags);
 
-   if (!flags) flags = Field->Flags;
+   if (not flags) flags = Field->Flags;
 
-   if (!Field->SetValue) {
+   if (not Field->SetValue) {
       ERR error = ERR::Okay;
-      if (Field->Flags & FD_ARRAY)         error = writeval_array(Object, Field, flags, Data, Elements);
-      else if (Field->Flags & FD_INT)      error = writeval_long(Object, Field, flags, Data, 0);
-      else if (Field->Flags & FD_INT64)    error = writeval_large(Object, Field, flags, Data, 0);
-      else if (Field->Flags & (FD_DOUBLE|FD_FLOAT)) error = writeval_double(Object, Field, flags, Data, 0);
-      else if (Field->Flags & FD_FUNCTION) error = writeval_function(Object, Field, flags, Data, 0);
-      else if (Field->Flags & (FD_POINTER|FD_STRING)) error = writeval_ptr(Object, Field, flags, Data, 0);
+      if (Field->Flags & FD_VECTOR) error = set_or_write_vector(Object, Field, flags, Data);
+      else if (Field->Flags & FD_ARRAY) error = set_or_write_array(Object, Field, flags, Data);
+      else if (Field->Flags & FD_INT)      error = writeval_long(Object, Field, flags, Data);
+      else if (Field->Flags & FD_INT64)    error = writeval_large(Object, Field, flags, Data);
+      else if (Field->Flags & (FD_DOUBLE|FD_FLOAT)) error = writeval_double(Object, Field, flags, Data);
+      else if (Field->Flags & FD_FUNCTION) error = writeval_function(Object, Field, flags, Data);
+      else if (Field->Flags & FD_STRING)   error = writeval_cppstr(Object, Field, flags, Data);
+      else if (Field->Flags & FD_POINTER)  error = writeval_ptr(Object, Field, flags, Data);
+      else if (Field->Flags & FD_UNIT)     error = writeval_unit(Object, Field, flags, Data);
       else log.warning("Unrecognised field flags $%.8x.", Field->Flags);
 
       if (error != ERR::Okay) {
@@ -120,14 +140,16 @@ ERR writeval_default(OBJECTPTR Object, Field *Field, int flags, CPTR Data, int E
       return error;
    }
    else {
-      if (Field->Flags & FD_UNIT)          return setval_unit(Object, Field, flags, Data, 0);
-      else if (Field->Flags & FD_RGB)      return setval_brgb(Object, Field, flags, Data, 0);
-      else if (Field->Flags & FD_ARRAY)    return setval_array(Object, Field, flags, Data, Elements);
-      else if (Field->Flags & FD_FUNCTION) return setval_function(Object, Field, flags, Data, 0);
-      else if (Field->Flags & FD_INT)      return setval_long(Object, Field, flags, Data, 0);
-      else if (Field->Flags & (FD_DOUBLE|FD_FLOAT))   return setval_double(Object, Field, flags, Data, 0);
-      else if (Field->Flags & (FD_POINTER|FD_STRING)) return setval_pointer(Object, Field, flags, Data, 0);
-      else if (Field->Flags & FD_INT64)    return setval_large(Object, Field, flags, Data, 0);
+      if (Field->Flags & FD_UNIT)          return setval_unit(Object, Field, flags, Data);
+      else if (Field->Flags & FD_VECTOR) return set_or_write_vector(Object, Field, flags, Data);
+      else if (Field->Flags & FD_ARRAY) return set_or_write_array(Object, Field, flags, Data);
+      else if (Field->Flags & FD_FUNCTION) return setval_function(Object, Field, flags, Data);
+      else if (Field->Flags & FD_INT)      return setval_long(Object, Field, flags, Data);
+      else if (Field->Flags & (FD_DOUBLE|FD_FLOAT)) return setval_double(Object, Field, flags, Data);
+      else if (Field->Flags & FD_STRING)  return setval_strview(Object, Field, flags, Data);
+      else if (Field->Flags & FD_POINTER) return setval_pointer(Object, Field, flags, Data);
+      else if (Field->Flags & FD_INT64)   return setval_large(Object, Field, flags, Data);
+      else if (Field->Flags & FD_STRUCT)  return setval_struct(Object, Field, flags, Data);
       else return ERR::FieldTypeMismatch;
    }
 }
@@ -136,48 +158,17 @@ ERR writeval_default(OBJECTPTR Object, Field *Field, int flags, CPTR Data, int E
 // The writeval() functions are used as optimised calls for all cases where the client has not provided a SetValue()
 // function.
 
-static ERR writeval_array(OBJECTPTR Object, Field *Field, int SrcType, CPTR Source, int Elements)
-{
-   pf::Log log("WriteField");
-
-   if (not Field->writeable()) return ERR::NoFieldAccess;
-
-   // Direct writing to field arrays without a SET function is only supported for the RGB type.  The client should
-   // define a SET function for all other cases.
-
-   auto offset = (int8_t *)Object + Field->Offset;
-
-   if ((SrcType & FD_STRING) and (Field->Flags & FD_RGB)) {
-      if (!Source) Source = "0,0,0,0"; // A string of nullptr will 'clear' the colour (the alpha value will be zero)
-      else if (Field->Flags & FD_INT) ((RGB8 *)offset)->Alpha = 255;
-      else if (Field->Flags & FD_BYTE) ((RGB8 *)offset)->Alpha = 255;
-      write_array((CSTRING)Source, Field->Flags, 4, offset);
-      return ERR::Okay;
-   }
-   else if ((SrcType & FD_POINTER) and (Field->Flags & FD_RGB)) { // Presume the source is a pointer to an RGB structure
-      auto rgb = (RGB8 *)Source;
-      ((RGB8 *)offset)->Red   = rgb->Red;
-      ((RGB8 *)offset)->Green = rgb->Green;
-      ((RGB8 *)offset)->Blue  = rgb->Blue;
-      ((RGB8 *)offset)->Alpha = rgb->Alpha;
-      return ERR::Okay;
-   }
-
-   log.warning("Field array '%s.%s' needs a SET function.", Object->className(), Field->Name);
-   return ERR::SanityCheckFailed;
-}
-
 [[nodiscard]] inline bool flag_match(const std::string_view CamelFlag, const std::string_view ClientFlag) noexcept
 {
    std::size_t i = 0, j = 0;
    while (i < CamelFlag.size() and j < ClientFlag.size()) {
-      if (ClientFlag[j] == '_') {
+      if (ClientFlag[j] IS '_') {
           j++;
           continue;
       }
 
-      auto ca = std::tolower(static_cast<unsigned char>(CamelFlag[i]));
-      auto cb = std::tolower(static_cast<unsigned char>(ClientFlag[j]));
+      auto ca = std::tolower((unsigned char)CamelFlag[i]);
+      auto cb = std::tolower((unsigned char)ClientFlag[j]);
 
       if (ca != cb) return false;
 
@@ -185,67 +176,67 @@ static ERR writeval_array(OBJECTPTR Object, Field *Field, int SrcType, CPTR Sour
       j++;
    }
 
-   return ((i == CamelFlag.size()) and (j == ClientFlag.size()));
+   return ((i IS CamelFlag.size()) and (j IS ClientFlag.size()));
 }
 
-static ERR writeval_flags(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR writeval_flags(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data)
 {
-   pf::Log log("WriteField");
-   int j, int32;
+   kt::Log log("WriteField");
+   int int32;
 
    // Converts flags to numeric form if the source value is a string.
 
    if (Flags & FD_STRING) {
       int64_t int64 = 0;
+      auto str = field_string_view(Flags, Data);
 
-      if (auto str = (CSTRING)Data) {
-         // Check if the string is a number
-         for (j=0; str[j] and (str[j] >= '0') and (str[j] <= '9'); j++);
-         if (!str[j]) {
-            int64 = strtoll(str, nullptr, 0);
-         }
-         else if (Field->Arg) {
-            bool reverse = false;
-            int16_t op   = OP_OVERWRITE;
-            while (*str) {
-               if (*str IS '&')      { op = OP_AND;       str++; }
-               else if (*str IS '!') { op = OP_OR;        str++; }
-               else if (*str IS '^') { op = OP_OVERWRITE; str++; }
-               else if (*str IS '~') { reverse = true;    str++; }
-               else {
-                  // Find out how long this particular flag name is
-                  for (j=0; (str[j]) and (str[j] != '|'); j++);
+      // Check if the string is a number
+      if (decimal_digits(str)) {
+         int64 = parse_integer<int64_t>(str);
+      }
+      else if (Field->Arg) {
+         bool reverse = false;
+         int16_t op   = OP_OVERWRITE;
+         while (not str.empty()) {
+            if (str.front() IS '&')      { op = OP_AND;       str.remove_prefix(1); }
+            else if (str.front() IS '!') { op = OP_OR;        str.remove_prefix(1); }
+            else if (str.front() IS '^') { op = OP_OVERWRITE; str.remove_prefix(1); }
+            else if (str.front() IS '~') { reverse = true;    str.remove_prefix(1); }
+            else {
+               const auto sep = str.find('|');
+               const auto sv  = (sep IS std::string_view::npos) ? str : str.substr(0, sep);
 
-                  if (j > 0) {
-                     std::string_view sv(str, j);
-                     for (auto lk = (FieldDef *)Field->Arg; lk->Name; lk++) {
-                        if (flag_match(lk->Name, sv)) {
-                           int64 |= lk->Value;
-                           break;
-                        }
+               if (not sv.empty()) {
+                  for (auto lk = (FieldDef *)Field->Arg; lk->Name; lk++) {
+                     if (flag_match(lk->Name, sv)) {
+                        int64 |= lk->Value;
+                        break;
                      }
                   }
-
-                  str += j;
-                  while (*str IS '|') str++;
                }
-            }
 
-            if (reverse) int64 = ~int64;
-
-            // Get the current flag values from the field if special ops are requested
-
-            if (op != OP_OVERWRITE) {
-               int current_flags;
-               if (auto error = Object->get<int>(Field->FieldID, current_flags); error IS ERR::Okay) {
-                  if (op IS OP_OR) int64 = current_flags | int64;
-                  else if (op IS OP_AND) int64 = current_flags & int64;
+               if (sep IS std::string_view::npos) str = {};
+               else {
+                  str.remove_prefix(sep);
+                  while (str.starts_with('|')) str.remove_prefix(1);
                }
-               else return error;
             }
          }
-         else log.warning("Missing flag definitions for field \"%s\"", Field->Name);
+
+         if (reverse) int64 = ~int64;
+
+         // Get the current flag values from the field if special ops are requested
+
+         if (op != OP_OVERWRITE) {
+            int current_flags;
+            if (auto error = Object->get<int>(Field->FieldID, current_flags); !error) {
+               if (op IS OP_OR) int64 = current_flags | int64;
+               else if (op IS OP_AND) int64 = current_flags & int64;
+            }
+            else return error;
+         }
       }
+      else log.warning("Missing flag definitions for field \"%s\"", Field->Name);
 
       if (Field->Flags & FD_INT) {
          int32 = int64;
@@ -259,72 +250,70 @@ static ERR writeval_flags(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, 
       else return ERR::SetValueNotArray;
    }
 
-   return writeval_default(Object, Field, Flags, Data, Elements);
+   return writeval_default(Object, Field, Flags, Data);
 }
 
-static ERR writeval_lookup(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR writeval_lookup(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data)
 {
-   pf::Log log("WriteField");
    int int32;
 
    if (Flags & FD_STRING) {
-      if (Data) {
-         FieldDef *lookup;
-         int32 = strtol((CSTRING)Data, nullptr, 0); // If the Data string is a number rather than a lookup, this will extract it
-         if ((lookup = (FieldDef *)Field->Arg)) {
-            while (lookup->Name) {
-               if (iequals((CSTRING)Data, lookup->Name)) {
-                  int32 = lookup->Value;
-                  break;
-               }
-               lookup++;
+      auto str = field_string_view(Flags, Data);
+
+      FieldDef *lookup;
+      int32 = parse_integer<int>(str); // If the string is a number rather than a lookup, this will extract it
+      if ((lookup = (FieldDef *)Field->Arg)) {
+         while (lookup->Name) {
+            if (iequals(str, lookup->Name)) {
+               int32 = lookup->Value;
+               break;
             }
+            lookup++;
          }
-         else log.warning("Missing lookup table definitions for field \"%s\"", Field->Name);
       }
-      else int32 = 0;
+      else kt::Log("WriteField").warning("Missing lookup table definitions for field \"%s\"", Field->Name);
 
       Flags = FD_INT;
       Data  = &int32;
    }
 
-   return writeval_default(Object, Field, Flags, Data, Elements);
+   return writeval_default(Object, Field, Flags, Data);
 }
 
-static ERR writeval_long(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR writeval_long(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data)
 {
    auto offset = (int *)((int8_t *)Object + Field->Offset);
    if (Flags & FD_INT)         *offset = *((int *)Data);
    else if (Flags & FD_INT64)  *offset = (int)(*((int64_t *)Data));
-   else if (Flags & (FD_DOUBLE|FD_FLOAT)) *offset = F2I(*((double *)Data));
-   else if (Flags & FD_STRING) *offset = strtol((STRING)Data, nullptr, 0);
+   else if (Flags & (FD_DOUBLE|FD_FLOAT)) *offset = std::lrint(*((double *)Data));
+   else if (Flags & FD_STRING) *offset = kt::svtonum<int>(*((std::string_view *)Data));
    else return ERR::SetValueNotNumeric;
    return ERR::Okay;
 }
 
-static ERR writeval_large(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR writeval_large(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data)
 {
    auto offset = (int64_t *)((int8_t *)Object + Field->Offset);
    if (Flags & FD_INT64)      *offset = *((int64_t *)Data);
    else if (Flags & FD_INT)   *offset = *((int *)Data);
-   else if (Flags & (FD_DOUBLE|FD_FLOAT)) *offset = F2I(*((double *)Data));
-   else if (Flags & FD_STRING) *offset = strtoll((STRING)Data, nullptr, 0);
+   else if (Flags & (FD_DOUBLE|FD_FLOAT)) *offset = std::lrint(*((double *)Data));
+   else if (Flags & FD_STRING) *offset = kt::svtonum<int64_t>(*((std::string_view *)Data));
    else return ERR::SetValueNotNumeric;
    return ERR::Okay;
 }
 
-static ERR writeval_double(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR writeval_double(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data)
 {
    auto offset = (double *)((int8_t *)Object + Field->Offset);
    if (Flags & (FD_DOUBLE|FD_FLOAT)) *offset = *((double *)Data);
    else if (Flags & FD_INT)    *offset = *((int *)Data);
    else if (Flags & FD_INT64)  *offset = (*((int64_t *)Data));
-   else if (Flags & FD_STRING) *offset = strtod((STRING)Data, nullptr);
+   else if (Flags & FD_STRING) *offset = kt::svtonum<double>(*((std::string_view *)Data));
    else return ERR::SetValueNotNumeric;
    return ERR::Okay;
 }
 
-static ERR writeval_function(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR writeval_function(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data)
 {
    auto offset = (FUNCTION *)((int8_t *)Object + Field->Offset);
    if (Flags & FD_FUNCTION) {
@@ -339,11 +328,66 @@ static ERR writeval_function(OBJECTPTR Object, Field *Field, int Flags, CPTR Dat
    return ERR::Okay;
 }
 
-static ERR writeval_ptr(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR writeval_ptr(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data)
 {
-   auto offset = (APTR *)((int8_t *)Object + Field->Offset);
-   if (Flags & (FD_POINTER|FD_STRING)) *offset = (void *)Data;
+   if (Flags & FD_POINTER) {
+      auto offset = (APTR *)((int8_t *)Object + Field->Offset);
+      *offset = (APTR)Data;
+      return ERR::Okay;
+   }
    else return ERR::SetValueNotPointer;
+}
+
+static ERR writeval_cppstr(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data)
+{
+   if (Flags & FD_STRING) {
+      auto offset = (std::string *)((int8_t *)Object + Field->Offset);
+      offset->assign(*((std::string_view *)Data));
+      return ERR::Okay;
+   }
+   else return ERR::SetValueNotPointer;
+}
+
+static ERR writeval_struct(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data)
+{
+   if (Flags & FD_STRUCT) {
+      // Possibly dangerous if the struct happens to contain C++ classes, but otherwise works.
+      if (auto it = glStructSizes.find(uint32_t(Field->Arg)); it != glStructSizes.end()) {
+         auto struct_size = it->second.Size;
+         auto offset = ((int8_t *)Object + Field->Offset);
+         copymem(Data, offset, struct_size);
+         return ERR::Okay;
+      }
+      else return ERR::Search;
+   }
+   else return ERR::SetValueNotStruct;
+}
+
+static ERR writeval_unit(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data)
+{
+   auto offset = (Unit *)((int8_t *)Object + Field->Offset);
+
+   if (Flags & FD_UNIT) *offset = *((Unit *)Data);
+   else {
+      auto unit_type = Flags & (~(FD_INT|FD_INT64|FD_DOUBLE|FD_FLOAT|FD_POINTER|FD_STRING));
+
+      if (Flags & FD_INT64)    *offset = Unit(*((int64_t *)Data), unit_type);
+      else if (Flags & FD_INT) *offset = Unit(*((int *)Data), unit_type);
+      else if (Flags & (FD_DOUBLE|FD_FLOAT)) *offset = Unit(*((double *)Data), unit_type);
+      else if (Flags & FD_STRING) {
+         Unit unit;
+         auto str = field_string_view(Flags, Data);
+         size_t end = 0;
+         unit.Value = parse_double(str, &end);
+         if ((end < str.size()) and (str[end] IS '%')) {
+            unit.Type = FD_SCALED;
+            unit.Value *= 0.01;
+         }
+         *offset = unit;
+      }
+      else return ERR::SetValueNotNumeric;
+   }
+
    return ERR::Okay;
 }
 
@@ -353,7 +397,8 @@ class FieldContext : public extObjectContext {
    bool success;
 
    public:
-   FieldContext(OBJECTPTR Object, struct Field *Field) : extObjectContext(Object, AC::SetField) {
+   FieldContext(OBJECTPTR Object, const struct Field *Field) : extObjectContext(Object, AC::SetField) {
+#ifndef NDEBUG
       if ((tlContext.back().field IS Field) and (tlContext.back().obj IS Object)) { // Detect recursion
          success = false;
          return;
@@ -361,16 +406,19 @@ class FieldContext : public extObjectContext {
       else success = true;
 
       Object->ActionDepth++;
+#endif
    }
 
+#ifndef NDEBUG
    ~FieldContext() {
       if (success) obj->ActionDepth--;
    }
+#endif
 };
 
 //********************************************************************************************************************
 
-static ERR setval_unit(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR setval_unit(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data)
 {
    // Convert the value to match what the unit will accept, then call the unit field's set function.
 
@@ -384,19 +432,17 @@ static ERR setval_unit(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int
       auto unit = Unit(*((double *)Data), Flags & (~(FD_INT|FD_INT64|FD_DOUBLE|FD_POINTER|FD_STRING)));
       return ((ERR (*)(APTR, Unit *))(Field->SetValue))(Object, &unit);
    }
-   else if (Flags & (FD_POINTER|FD_STRING)) {
+   else if (Flags & FD_STRING) {
       Unit unit;
-      if (Field->Flags & FD_SCALED) {
-         // Percentages are only applicable to numeric variables, and require conversion in advance.
-         // NB: If a field needs total control over variable conversion, it should not specify FD_SCALED.
-         STRING pct;
-         unit.Value = strtod((CSTRING)Data, &pct);
-         if (pct[0] IS '%') {
-            unit.Type = FD_SCALED;
-            unit.Value *= 0.01;
-         }
+      auto str = field_string_view(Flags, Data);
+      // Percentages are only applicable to numeric variables, and require conversion in advance.
+      // NB: If a field needs total control over variable conversion, it should not specify FD_SCALED.
+      size_t end = 0;
+      unit.Value = parse_double(str, &end);
+      if ((end < str.size()) and (str[end] IS '%')) {
+         unit.Type = FD_SCALED;
+         unit.Value *= 0.01;
       }
-      else unit.Value = strtod((CSTRING)Data, nullptr);
       return ((ERR (*)(APTR, Unit *))(Field->SetValue))(Object, &unit);
    }
    else if (Flags & FD_UNIT) {
@@ -405,22 +451,77 @@ static ERR setval_unit(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int
    else return ERR::FieldTypeMismatch;
 }
 
-static ERR setval_brgb(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+// Embedded kt::vector<>
+
+template <class T>
+static ERR assign_vector_field(OBJECTPTR Object, const Field *Field, CPTR Data)
 {
-   if (Field->Flags & FD_BYTE) {
-      FieldContext ctx(Object, Field);
-
-      RGB8 rgb;
-      rgb.Alpha = 255;
-      write_array((CSTRING)Data, FD_BYTE, 4, &rgb);
-      ERR error = ((ERR (*)(APTR, RGB8 *, int))(Field->SetValue))(Object, &rgb, 4);
-
-      return error;
-   }
-   else return ERR::FieldTypeMismatch;
+   auto source = (const std::span<const T> *)Data;
+   auto dest = (kt::vector<T> *)((int8_t *)Object + Field->Offset);
+   dest->assign(source->begin(), source->end());
+   return ERR::Okay;
 }
 
-static ERR setval_array(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR set_or_write_vector(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data)
+{
+   FieldContext ctx(Object, Field);
+
+   if (Flags & FD_ARRAY) {
+      if (Field->SetValue) {
+         // Basic type checking
+         int src_type = Flags & (FD_INT|FD_INT64|FD_FLOAT|FD_DOUBLE|FD_POINTER|FD_BYTE|FD_WORD|FD_STRUCT);
+         if (src_type) {
+            int dest_type = Field->Flags & (FD_INT|FD_INT64|FD_FLOAT|FD_DOUBLE|FD_POINTER|FD_BYTE|FD_WORD|FD_STRUCT);
+            if (not (src_type & dest_type)) return ERR::SetValueNotArray;
+         }
+         // Vector arrays are fed direct data pointers and element counts to avoid conversion complications
+         return ((ERR (*)(APTR, APTR))(Field->SetValue))(Object, (APTR)Data);
+      }
+      else if (Field->Flags & FD_VECTOR) { // Embedded kt::vector<>
+         if (Field->Flags & FD_STRING) {
+            if (not (Flags & FD_STRING)) return ERR::SetValueNotArray;
+            return assign_vector_field<std::string>(Object, Field, Data);
+         }
+         else if (Field->Flags & FD_BYTE) {
+            if (not (Flags & FD_BYTE)) return ERR::SetValueNotArray;
+            return assign_vector_field<int8_t>(Object, Field, Data);
+         }
+         else if (Field->Flags & FD_WORD) {
+            if (not (Flags & FD_WORD)) return ERR::SetValueNotArray;
+            return assign_vector_field<int16_t>(Object, Field, Data);
+         }
+         else if (Field->Flags & FD_INT) {
+            if (not (Flags & FD_INT)) return ERR::SetValueNotArray;
+            return assign_vector_field<int>(Object, Field, Data);
+         }
+         else if (Field->Flags & FD_INT64) {
+            if (not (Flags & FD_INT64)) return ERR::SetValueNotArray;
+            return assign_vector_field<int64_t>(Object, Field, Data);
+         }
+         else if (Field->Flags & FD_FLOAT) {
+            if (not (Flags & FD_FLOAT)) return ERR::SetValueNotArray;
+            return assign_vector_field<float>(Object, Field, Data);
+         }
+         else if (Field->Flags & FD_DOUBLE) {
+            if (not (Flags & FD_DOUBLE)) return ERR::SetValueNotArray;
+            return assign_vector_field<double>(Object, Field, Data);
+         }
+         else if (Field->Flags & FD_POINTER) {
+            if (not (Flags & FD_POINTER)) return ERR::SetValueNotArray;
+            return assign_vector_field<APTR>(Object, Field, Data);
+         }
+      }
+      return ERR::FieldTypeMismatch;
+   }
+   else {
+      kt::Log(__FUNCTION__).warning("Arrays can only be set using the FD_ARRAY type.");
+      return ERR::SetValueNotArray;
+   }
+}
+
+// Embedded basic array (non-vector)
+
+static ERR set_or_write_array(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data)
 {
    FieldContext ctx(Object, Field);
 
@@ -429,43 +530,47 @@ static ERR setval_array(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, in
       int src_type = Flags & (FD_INT|FD_INT64|FD_FLOAT|FD_DOUBLE|FD_POINTER|FD_BYTE|FD_WORD|FD_STRUCT);
       if (src_type) {
          int dest_type = Field->Flags & (FD_INT|FD_INT64|FD_FLOAT|FD_DOUBLE|FD_POINTER|FD_BYTE|FD_WORD|FD_STRUCT);
-         if (!(src_type & dest_type)) return ERR::SetValueNotArray;
+         if (not (src_type & dest_type)) return ERR::SetValueNotArray;
       }
 
-      return ((ERR (*)(APTR, APTR, int))(Field->SetValue))(Object, (APTR)Data, Elements);
-   }
-   else if (Flags & FD_STRING) {
-      APTR arraybuffer;
-      if ((arraybuffer = malloc(strlen((CSTRING)Data) * 8))) {
-         if (!Data) {
-            if (Field->Flags & FD_RGB) {
-               Data = "0,0,0,0"; // A string of nullptr will 'clear' the colour (the alpha value will be zero)
-               Elements = write_array((CSTRING)Data, Field->Flags, Field->Arg, arraybuffer);
-            }
-            else Elements = 0;
-         }
-         else if (Field->Flags & FD_RGB) {
-            Elements = write_array((CSTRING)Data, Field->Flags, 4, arraybuffer);
-            if (Field->Flags & FD_INT)       ((RGB8 *)arraybuffer)->Alpha = 255;
-            else if (Field->Flags & FD_BYTE) ((RGB8 *)arraybuffer)->Alpha = 255;
-         }
-         else Elements = write_array((CSTRING)Data, Field->Flags, 0, arraybuffer);
-
-         auto error = ((ERR (*)(APTR, APTR, int))(Field->SetValue))(Object, arraybuffer, Elements);
-
-         free(arraybuffer);
-         return error;
+      if (Field->SetValue) {
+         // The SetValue() function will be expecting a `std::span<T> *` as the Data parameter
+         return ((ERR (*)(APTR, APTR))(Field->SetValue))(Object, (APTR)Data);
       }
-      else return ERR::AllocMemory;
+      else if (Field->Arg > 0) { // An arg value indicates an embedded fixed-size array
+         if (not Data) return ERR::InvalidValue;
+
+         // All std::span instantiations share the same {pointer, count} layout, so the element count can be read
+         // through any concrete element type.  The per-element width is derived from Flags.
+
+         auto span = (const std::span<const int8_t> *)Data;
+         size_t element_size;
+         if (Flags & FD_BYTE) element_size = sizeof(int8_t);
+         else if (Flags & FD_WORD) element_size = sizeof(int16_t);
+         else if (Flags & FD_INT) element_size = sizeof(int);
+         else if (Flags & (FD_INT64|FD_DOUBLE)) element_size = sizeof(double);
+         else if (Flags & FD_POINTER) element_size = sizeof(APTR);
+         else return ERR::FieldTypeMismatch;
+
+         // Clamp the element count to the embedded array's fixed capacity.
+         size_t elements = span->size();
+         if (elements > size_t(Field->Arg)) elements = size_t(Field->Arg);
+
+         if (span->data()) copymem(span->data(), (int8_t *)Object + Field->Offset, elements * element_size);
+
+         return ERR::Okay;
+      }
+      else return ERR::FieldTypeMismatch;
    }
-   else {
-      pf::Log log(__FUNCTION__);
-      log.warning("Arrays can only be set using the FD_ARRAY type.");
-      return ERR::SetValueNotArray;
+   else if (Flags & FD_STRING) { // Incoming CSV string - DEPRECATED
+      kt::Log(__FUNCTION__).warning("CSV support for arrays is deprecated.");
+      std::abort();
+      return ERR::Obsolete;
    }
+   else return kt::Log(__FUNCTION__).warning(ERR::SetValueNotArray);
 }
 
-static ERR setval_function(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR setval_function(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data)
 {
    OBJECTPTR caller = tlContext.back().obj;
    FieldContext ctx(Object, Field);
@@ -486,26 +591,26 @@ static ERR setval_function(OBJECTPTR Object, Field *Field, int Flags, CPTR Data,
    else return ERR::SetValueNotFunction;
 }
 
-static ERR setval_long(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR setval_long(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data)
 {
    int int32;
    if (Flags & FD_INT64)       int32 = (int)(*((int64_t *)Data));
-   else if (Flags & (FD_DOUBLE|FD_FLOAT)) int32 = F2I(*((double *)Data));
-   else if (Flags & FD_STRING) int32 = strtol((STRING)Data, nullptr, 0);
+   else if (Flags & (FD_DOUBLE|FD_FLOAT)) int32 = std::lrint(*((double *)Data));
+   else if (Flags & FD_STRING) int32 = kt::svtonum<int>(*((std::string_view *)Data));
    else if (Flags & FD_INT)    int32 = *((int *)Data);
-   else if (Flags & FD_UNIT)   int32 = F2I(((Unit *)Data)->Value);
+   else if (Flags & FD_UNIT)   int32 = std::lrint(((Unit *)Data)->Value);
    else return ERR::SetValueNotNumeric;
 
    FieldContext ctx(Object, Field);
    return ((ERR (*)(APTR, int))(Field->SetValue))(Object, int32);
 }
 
-static ERR setval_double(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR setval_double(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data)
 {
    double float64;
    if (Flags & FD_INT)         float64 = *((int *)Data);
    else if (Flags & FD_INT64)  float64 = (double)(*((int64_t *)Data));
-   else if (Flags & FD_STRING) float64 = strtod((CSTRING)Data, nullptr);
+   else if (Flags & FD_STRING) float64 = kt::svtonum<double>(*((std::string_view *)Data));
    else if (Flags & (FD_DOUBLE|FD_FLOAT)) float64 = *((double *)Data);
    else if (Flags & FD_UNIT)   float64 = ((Unit *)Data)->Value;
    else return ERR::SetValueNotNumeric;
@@ -514,12 +619,12 @@ static ERR setval_double(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, i
    return ((ERR (*)(APTR, double))(Field->SetValue))(Object, float64);
 }
 
-static ERR setval_pointer(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR setval_pointer(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data)
 {
    FieldContext ctx(Object, Field);
 
-   if (Flags & (FD_POINTER|FD_STRING)) {
-      return ((ERR (*)(APTR, CPTR ))(Field->SetValue))(Object, Data);
+   if (Flags & FD_POINTER) {
+      return ((ERR (*)(APTR, CPTR))(Field->SetValue))(Object, Data);
    }
    else if (Flags & FD_INT) {
       return ((ERR (*)(APTR, char *))(Field->SetValue))(Object, std::to_string(*((int *)Data)).data());
@@ -533,13 +638,38 @@ static ERR setval_pointer(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, 
    else return ERR::SetValueNotPointer;
 }
 
-static ERR setval_large(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, int Elements)
+static ERR setval_strview(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data)
+{
+   FieldContext ctx(Object, Field);
+
+   if (Flags & FD_STRING) {
+      return ((ERR (*)(APTR, std::string_view &))(Field->SetValue))(Object, *((std::string_view *)Data));
+   }
+   else if (Flags & FD_INT) {
+      auto string = std::to_string(*((int *)Data));
+      std::string_view view(string);
+      return ((ERR (*)(APTR, std::string_view &))(Field->SetValue))(Object, view);
+   }
+   else if (Flags & FD_INT64) {
+      auto string = std::to_string(*((int64_t *)Data));
+      std::string_view view(string);
+      return ((ERR (*)(APTR, std::string_view &))(Field->SetValue))(Object, view);
+   }
+   else if (Flags & (FD_DOUBLE|FD_FLOAT)) {
+      auto string = std::to_string(*((double *)Data));
+      std::string_view view(string);
+      return ((ERR (*)(APTR, std::string_view &))(Field->SetValue))(Object, view);
+   }
+   else return ERR::SetValueNotPointer;
+}
+
+static ERR setval_large(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data)
 {
    int64_t int64;
 
    if (Flags & FD_INT)        int64 = *((int *)Data);
    else if (Flags & (FD_DOUBLE|FD_FLOAT)) int64 = std::llround(*((double *)Data));
-   else if (Flags & FD_STRING) int64 = strtoll((CSTRING)Data, nullptr, 0);
+   else if (Flags & FD_STRING) int64 = kt::svtonum<int64_t>(*((std::string_view *)Data));
    else if (Flags & FD_INT64)  int64 = *((int64_t*)Data);
    else if (Flags & FD_UNIT)   int64 = std::llround(((Unit*)Data)->Value);
    else return ERR::SetValueNotNumeric;
@@ -548,39 +678,57 @@ static ERR setval_large(OBJECTPTR Object, Field *Field, int Flags, CPTR Data, in
    return ((ERR (*)(APTR, int64_t))(Field->SetValue))(Object, int64);
 }
 
+static ERR setval_struct(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data)
+{
+   if (Flags & (FD_STRUCT|FD_POINTER)) {
+      FieldContext ctx(Object, Field);
+      return ((ERR (*)(APTR, CPTR))(Field->SetValue))(Object, Data);
+   }
+   else return ERR::SetValueNotStruct;
+}
+
 //********************************************************************************************************************
 // This routine configures WriteValue so that it uses the correct set-field function, according to the field type that
 // has been defined.
 
 void optimise_write_field(Field &Field)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
-   if (!Field.writeable()) return;
+   if (not Field.writeable()) return;
 
    if (Field.Flags & FD_FLAGS)       Field.WriteValue = writeval_flags;
    else if (Field.Flags & FD_LOOKUP) Field.WriteValue = writeval_lookup;
-   else if (!Field.SetValue) {
-      if (Field.Flags & FD_ARRAY)      Field.WriteValue = writeval_array;
+   else if (not Field.SetValue) {
+      if (Field.Flags & FD_VECTOR) Field.WriteValue = set_or_write_vector;
+      else if (Field.Flags & FD_ARRAY) Field.WriteValue = set_or_write_array;
       else if (Field.Flags & FD_INT)   Field.WriteValue = writeval_long;
       else if (Field.Flags & FD_INT64) Field.WriteValue = writeval_large;
       else if (Field.Flags & (FD_DOUBLE|FD_FLOAT)) Field.WriteValue = writeval_double;
       else if (Field.Flags & FD_FUNCTION) Field.WriteValue = writeval_function;
-      else if (Field.Flags & (FD_POINTER|FD_STRING)) Field.WriteValue = writeval_ptr;
-      else log.warning("Invalid field flags for %s: $%.8x.", Field.Name, Field.Flags);
+      else if (Field.Flags & FD_STRING) Field.WriteValue = writeval_cppstr; // Embedded std::string
+      else if (Field.Flags & FD_POINTER) {
+         if (Field.Flags & FD_STRING) log.warning("C-style string pointers are deprecated; field: %s.", Field.Name);
+         Field.WriteValue = writeval_ptr;
+      }
+      else if (Field.Flags & FD_UNIT)  Field.WriteValue = writeval_unit;
+      else if (Field.Flags & FD_STRUCT) Field.WriteValue = writeval_struct;
+      else log.warning("Invalid field flags for %s.%s: $%.8x.", ((objMetaClass *)(tlContext.back().obj))->ClassName.c_str(), Field.Name, Field.Flags);
    }
    else {
-      if (Field.Flags & FD_UNIT) Field.WriteValue = setval_unit;
-      else if (Field.Flags & FD_RGB) {
-         if (Field.Flags & FD_BYTE) Field.WriteValue = setval_brgb;
-         else log.warning("Invalid field flags for %s: $%.8x.", Field.Name, Field.Flags);
-      }
-      else if (Field.Flags & FD_ARRAY)    Field.WriteValue = setval_array;
+      if (Field.Flags & FD_UNIT)          Field.WriteValue = setval_unit;
+      else if (Field.Flags & FD_VECTOR) Field.WriteValue = set_or_write_vector;
+      else if (Field.Flags & FD_ARRAY) Field.WriteValue = set_or_write_array;
       else if (Field.Flags & FD_FUNCTION) Field.WriteValue = setval_function;
       else if (Field.Flags & FD_INT)      Field.WriteValue = setval_long;
-      else if (Field.Flags & (FD_DOUBLE|FD_FLOAT))   Field.WriteValue = setval_double;
-      else if (Field.Flags & (FD_POINTER|FD_STRING)) Field.WriteValue = setval_pointer;
+      else if (Field.Flags & (FD_DOUBLE|FD_FLOAT)) Field.WriteValue = setval_double;
+      else if (Field.Flags & FD_STRING) Field.WriteValue = setval_strview; // Embedded std::string
+      else if (Field.Flags & FD_POINTER) {
+         if (Field.Flags & FD_STRING) log.warning("C-style string pointers are deprecated; field: %s.", Field.Name);
+         Field.WriteValue = setval_pointer;
+      }
       else if (Field.Flags & FD_INT64)    Field.WriteValue = setval_large;
-      else log.warning("Invalid field flags for %s: $%.8x.", Field.Name, Field.Flags);
+      else if (Field.Flags & FD_STRUCT)   Field.WriteValue = setval_struct;
+      else log.warning("Invalid field flags for %s.%s: $%.8x.", ((objMetaClass *)(tlContext.back().obj))->ClassName.c_str(), Field.Name, Field.Flags);
    }
 }

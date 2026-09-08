@@ -1,26 +1,26 @@
 --[[
-Window Sizing Tests
+Window Sizing Tests (Interactive)
+
+Expectations:
+* Aspect ratio should be perfectly maintained when resizing (bottom right window corner always intersects with the drawn diagonal)
+* Minimum and maximum window dimensions must be respected.
 --]]
 
-   require 'common'
-   require 'gui/window'
-   require 'gui/button'
+   import 'gui/window'
+   import 'gui/button'
 
-local INITIAL_WIDTH = 600
-local INITIAL_HEIGHT = 400
+INITIAL_WIDTH  <const> = 600
+INITIAL_HEIGHT <const> = 400
+
 local window, viewport, current_size
 
-----------------------------------------------------------------------------------------------------------------------
-
-local function createRect(Width, Height)
+function createRect(Width, Height)
    viewport.new('VectorText', { x=10, y=Height - 10, string=Width .. ' x ' .. Height, fill='black' })
 
    viewport.new('VectorRectangle', {
       width=Width, height = Height, stroke='red', strokeWidth=1, fill='none'
    })
 end
-
-----------------------------------------------------------------------------------------------------------------------
 
    window = gui.window({
       insideWidth  = INITIAL_WIDTH,
@@ -36,7 +36,7 @@ end
       }
    })
 
-   viewport = window:clientViewport({
+   viewport = window.clientViewport({
       resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
          current_size.string =  Width .. ' x ' .. Height
          current_size.acDraw()
@@ -54,6 +54,6 @@ end
       x = 10, y = 30, string = INITIAL_WIDTH .. ' x ' .. INITIAL_HEIGHT, fill = 'black', fontStyle='bold'
    })
 
-   window:show()
+   window.show()
    processing.sleep() -- Will sleep until the window sends MSGID_QUIT
 

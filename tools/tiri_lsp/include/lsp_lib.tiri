@@ -1,0 +1,822 @@
+-- Tiri Language Server Protocol (LSP) Server Library
+--
+-- Provides a TCP-based LSP server for IDE integration with Tiri scripts.
+-- Implements the JSON-RPC 2.0 protocol with LSP wire format (Content-Length framing).
+--
+-- The server supports handler registration for extending LSP functionality:
+--    server.registerHandler('textDocument/hover', function(msg, state) ... end)
+
+   include 'network'
+   import 'json'
+   import 'io/filesearch'
+
+   global CACHE_PATH = 'user:config/lsp_doc_cache.tiri'
+   global HTML_URI = 'https://kotuku.dev/modules/'
+
+   self = { }
+
+   global glTime = obj.new('time')
+   global glSelf = obj.find('self')
+
+   -- Document storage for open files.  URI indexed
+   global glDocuments = { }
+
+   -- Documentation cache and static definitions for hover
+   global glDocCache:table = nil
+   global glDefs = nil
+
+   extern lspUriToPath, registerCoreHandlers
+
+----------------------------------------------------------------------------------------------------------------------
+-- Document Line Index
+-- Lazily computes and caches an array of line byte offsets. Invalidate by setting doc.lineIndex = nil on changes.
+-- Format: array<int> with pairs of (start, stop) for each line, so line N is at indices N*2 and N*2+1.
+
+function rebuildLineIndex(Doc:table, FromLine:num)
+   if Doc.lineIndex then return end
+
+   content = Doc.content
+   len = #content
+   pos = 0
+
+   if not FromLine or not Doc.lineIndex or FromLine is 0 then
+      -- Full rebuild
+      Doc.lineIndex = array<int>
+   else
+      -- Incremental rebuild from FromLine onwards
+      -- Truncate the array to keep lines 0..FromLine-1
+      keep_count = FromLine * 2
+      if keep_count > #Doc.lineIndex then
+         keep_count = #Doc.lineIndex
+      end
+
+      -- Remove entries from FromLine onwards
+      Doc.lineIndex.resize(keep_count)
+
+      -- Start scanning from where FromLine begins
+      if keep_count >= 2 then
+         -- Position after the previous line's newline
+         pos = Doc.lineIndex[keep_count - 1] + 1  -- After stop of previous line + newline
+         if pos > len then pos = len end
+      else
+         pos = 0
+      end
+   end
+
+   while pos < len do
+      -- Find end of line (newline or end of content)
+      newline_pos = content.find('\n', pos)
+      if newline_pos then
+         Doc.lineIndex.push(pos, newline_pos - 1)
+         pos = newline_pos + 1  -- Skip past the newline
+      else
+         Doc.lineIndex.push(pos, len - 1)
+         break
+      end
+   end
+
+   -- Handle empty document or trailing newline
+   if #Doc.lineIndex is 0 or (len > 0 and content.sub(len - 1, len) is '\n') then
+      Doc.lineIndex.push(len, len)  -- start, stop
+   end
+end
+
+global function getTotalLines(Doc:table):num
+   rebuildLineIndex(Doc)
+   return #Doc.lineIndex / 2
+end
+
+global function getLine(Doc:table, LineNo:num):str
+   rebuildLineIndex(Doc)
+   total_lines = #Doc.lineIndex / 2
+   if LineNo < 0 or LineNo >= total_lines then return '' end
+
+   idx = LineNo * 2
+   return Doc.content.sub(Doc.lineIndex[idx], Doc.lineIndex[idx + 1] + 1)
+end
+
+-- Mark line N and subsequent lines for recomputation.  Currently we are very lazy about this...
+
+global function markLineIndex(Doc:table, LineNo:num)
+   Doc.lineIndex = nil
+   Doc.moduleDeclarations = nil
+   Doc.modulePrefixes = nil
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- UTF-16 <-> UTF-8 column conversion
+--
+-- LSP positions count characters in UTF-16 code units, whilst Tiri strings are byte-indexed.  Multi-byte operators
+-- such as ≈, ≠, ≤, ≥ occupy three UTF-8 bytes but a single UTF-16 unit, so edits and diagnostics on lines that
+-- contain them drift unless the column is converted.  The helpers below operate on a single line's byte text and
+-- treat the byte offset as the 0-based start used elsewhere by .sub(pos, pos + 1).
+--
+-- A UTF-8 lead byte determines both the codepoint's byte length and its UTF-16 unit count:
+--    0x00-0x7F : 1 byte,  1 unit
+--    0xC0-0xDF : 2 bytes, 1 unit
+--    0xE0-0xEF : 3 bytes, 1 unit
+--    0xF0-0xF7 : 4 bytes, 2 units (encoded as a surrogate pair in UTF-16)
+
+-- Return the UTF-8 byte length implied by a lead byte (defaults to 1 for ASCII and stray continuation bytes).
+
+function utf8SequenceLength(LeadByte:num):num
+   if LeadByte >= 0xF0 then return 4
+   elseif LeadByte >= 0xE0 then return 3
+   elseif LeadByte >= 0xC0 then return 2
+   end
+   return 1
+end
+
+-- Convert a UTF-16 column within LineText into a 0-based byte column.  Columns beyond the end of the line clamp to
+-- the line's byte length so that edits appending past the final character remain well-defined.
+
+global function utf16ColToByteCol(LineText:str, Utf16Col:num):num
+   len = #LineText
+   byte_pos = 0
+   units = 0
+
+   while units < Utf16Col and byte_pos < len do
+      lead = LineText.byte(byte_pos)   -- .byte() is 0-based
+      seq = utf8SequenceLength(lead)
+      byte_pos += seq
+      units += (seq is 4) and 2 or 1
+   end
+
+   if byte_pos > len then byte_pos = len end
+   return byte_pos
+end
+
+-- Convert a 0-based byte column within LineText into a UTF-16 column.  Used when byte-based columns from the parser
+-- or tokeniser are reported back to the client.
+
+global function byteColToUtf16Col(LineText:str, ByteCol:num):num
+   len = #LineText
+   if ByteCol > len then ByteCol = len end
+   byte_pos = 0
+   units = 0
+
+   while byte_pos < ByteCol do
+      lead = LineText.byte(byte_pos)   -- .byte() is 0-based
+      seq = utf8SequenceLength(lead)
+      byte_pos += seq
+      units += (seq is 4) and 2 or 1
+   end
+
+   return units
+end
+
+-- Convert an LSP position to its byte offset in Content.  Used by applyTextEdit() to turn incremental document
+-- change ranges into byte slices.  Feature scans such as type inference do not use this; they walk the line
+-- index instead so that comments and strings can be masked line by line.
+
+global function lspPositionToOffset(Content:str, Line:num, Character:num):num
+   offset = 0
+   current_line = 0
+
+   while current_line < Line and offset < #Content do
+      if Content.sub(offset, offset + 1) is '\n' then current_line++ end
+      offset++
+   end
+
+   line_end = Content.find('\n', offset) or (#Content + 1)
+   line_text = Content.sub(offset, line_end)
+   return offset + utf16ColToByteCol(line_text, Character)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- LSP Symbol Kinds (subset used for Tiri)
+
+global SYMBOL_KIND = {
+   FILE = 1,
+   MODULE = 2,
+   NAMESPACE = 3,
+   PACKAGE = 4,
+   CLASS = 5,
+   METHOD = 6,
+   PROPERTY = 7,
+   FIELD = 8,
+   CONSTRUCTOR = 9,
+   ENUM = 10,
+   INTERFACE = 11,
+   FUNCTION = 12,
+   VARIABLE = 13,
+   CONSTANT = 14,
+   STRING = 15,
+   NUMBER = 16,
+   BOOLEAN = 17,
+   ARRAY = 18,
+   OBJECT = 19,
+   KEY = 20,
+   NULL = 21,
+   ENUM_MEMBER = 22,
+   STRUCT = 23,
+   EVENT = 24,
+   OPERATOR = 25,
+   TYPE_PARAMETER = 26
+}
+
+-- LSP Folding Range Kinds
+
+global FOLDING_KIND = {
+   COMMENT = 'comment',
+   IMPORTS = 'imports',
+   REGION = 'region'
+}
+
+-- LSP Error Codes
+
+global LSP_ERROR = {
+   PARSE_ERROR      = -32700,
+   INVALID_REQUEST  = -32600,
+   METHOD_NOT_FOUND = -32601,
+   INVALID_PARAMS   = -32602,
+   INTERNAL_ERROR   = -32603
+}
+
+----------------------------------------------------------------------------------------------------------------------
+-- Semantic Token Types and Modifiers (LSP standard)
+
+-- Token types - order matters, index is used in the protocol
+
+global TOKEN_TYPES = array<str> {
+   'keyword',        -- 0: if, while, for, etc.
+   'operator',       -- 1: and, or, not, is
+   'variable',       -- 2: regular variables
+   'function',       -- 3: function names
+   'string',         -- 4: string literals
+   'number',         -- 5: numeric literals
+   'comment',        -- 6: comments
+   'type',           -- 7: type names
+   'parameter',      -- 8: function parameters
+   'property',       -- 9: object properties
+   'namespace',      -- 10: module/namespace
+   'class',          -- 11: class names
+   'macro'           -- 12: constants like ERR_Okay
+}
+
+-- Token modifiers (bitfield)
+global TOKEN_MODIFIERS = array<str> {
+   'declaration',    -- 0: variable/function declaration
+   'definition',     -- 1: definition site
+   'readonly',       -- 2: constants
+   'static',         -- 3: static members
+   'deprecated',     -- 4: deprecated items
+   'modification',   -- 5: modified variable
+   'documentation',  -- 6: documentation strings
+   'defaultLibrary'  -- 7: built-in functions
+}
+
+-- Tiri reserved keywords
+global FLUID_KEYWORDS = {
+   -- Control flow
+   ['if'] = true, ['then'] = true, ['else'] = true, ['elseif'] = true,
+   ['for'] = true, ['in'] = true, ['while'] = true, ['do'] = true,
+   ['repeat'] = true, ['until'] = true, ['break'] = true, ['continue'] = true,
+   ['return'] = true, ['end'] = true, ['try'] = true, ['except'] = true, ['success'] = true,
+
+   -- Pattern matching
+   ['choose'] = true, ['from'] = true, ['when'] = true,
+
+   -- Declarations
+   ['function'] = true, ['local'] = true, ['global'] = true, ['extern'] = true,
+   ['thunk'] = true,
+   ['import'] = true, ['as'] = true, ['enum'] = true,
+
+   -- Special
+   ['defer'] = true, ['catch'] = true, ['raise'] = true, ['check'] = true
+}
+
+-- Logical/comparison operators (highlighted as operators)
+global FLUID_OPERATORS = {
+   ['and'] = true, ['or'] = true, ['not'] = true, ['is'] = true
+}
+
+-- Built-in constants
+global FLUID_CONSTANTS = {
+   ['true'] = true, ['false'] = true, ['nil'] = true
+}
+
+-- Parser intrinsic annotations that can be used as expressions.
+global FLUID_PARSER_ANNOTATIONS = {
+   ['FunctionName'] = true,
+   ['SourceFile'] = true,
+   ['SourceLine'] = true
+}
+
+-- Built-in functions (default library)
+global FLUID_BUILTINS = {
+   -- Output
+   ['print'] = true, ['msg'] = true, ['error'] = true, ['assert'] = true,
+
+   -- Type conversion/introspection
+   ['type'] = true, ['tonumber'] = true, ['tostring'] = true,
+
+   -- Iteration
+   ['pairs'] = true, ['ipairs'] = true, ['next'] = true, ['values'] = true,
+
+   -- Result handling
+   ['unpack'] = true,
+
+   -- Protected calls
+   ['pcall'] = true, ['xpcall'] = true,
+
+   -- Metatable access
+   ['setmetatable'] = true, ['getmetatable'] = true,
+   ['rawget'] = true, ['rawset'] = true, ['rawequal'] = true,
+
+   -- Script/module loading
+   ['require'] = true, ['include'] = true,
+   ['loadFile'] = true, ['load'] = true, ['exec'] = true,
+
+   -- Script parameters
+   ['arg'] = true,
+
+   -- Deferred expressions
+   ['resolve'] = true,
+
+   -- Range constructor
+   ['range'] = true,
+
+   -- Events
+   ['subscribeEvent'] = true, ['unsubscribeEvent'] = true,
+
+   -- Structures
+   ['MAKESTRUCT'] = true
+}
+
+-- Kotuku modules/namespaces
+global FLUID_MODULES = {
+   -- Core interfaces
+   ['obj'] = true, ['struct'] = true, ['array'] = true, ['regex'] = true,
+   ['mod'] = true, ['thread'] = true, ['processing'] = true,
+
+   -- Kotuku API module namespaces
+   ['mSys'] = true, ['mVec'] = true, ['mGfx'] = true,
+   ['mAudio'] = true, ['mFont'] = true, ['mNet'] = true, ['mXML'] = true,
+
+   -- Standard libraries
+   ['string'] = true, ['table'] = true, ['math'] = true, ['bit'] = true,
+   ['io'] = true, ['debug'] = true,
+
+   -- Tiri script libraries
+   ['json'] = true, ['gui'] = true, ['file'] = true
+}
+
+rx_module_namespace_decl = <{ regex.new(
+   [[^\s*module\s+([A-Za-z_][A-Za-z0-9_]*)\s+as\s+([A-Za-z_][A-Za-z0-9_]*)\s*;?\s*$]]) }>
+rx_library_namespace_decl = <{ regex.new([[^\s*namespace\s+([A-Za-z_][A-Za-z0-9_]*)\b]]) }>
+
+extern maskNonCode
+
+-- Return the fixed compatibility prefixes plus parser-integrated declarations visible in this document.  The
+-- compiler owns import boundaries, so this intentionally scans only the requested compilation unit.
+
+global function moduleDeclarationsForDocument(Doc:table):table
+   if Doc?.moduleDeclarations then return Doc.moduleDeclarations end
+
+   local declarations = {}
+   if not Doc?.content then return declarations end
+
+   local in_block_comment = false
+   for line_no in {0 to getTotalLines(Doc)} do
+      local line_text = getLine(Doc, line_no)
+      local line_code
+      line_code, in_block_comment = maskNonCode(line_text, in_block_comment)
+      local _, _, captures = rx_module_namespace_decl.findFirst(line_code)
+      if captures then declarations[captures[1]] = captures[0] end
+   end
+   Doc.moduleDeclarations = declarations
+   return declarations
+end
+
+global function libraryNamespaceDeclarationsForDocument(Doc:table):table
+   local declarations = {}
+   if not Doc?.content then return declarations end
+
+   local in_block_comment = false
+   for line_no in {0 to getTotalLines(Doc)} do
+      local line_code
+      line_code, in_block_comment = maskNonCode(getLine(Doc, line_no), in_block_comment)
+      local _, _, captures = rx_library_namespace_decl.findFirst(line_code)
+      if captures then declarations[captures[0]] = true end
+   end
+   return declarations
+end
+
+global function modulePrefixesForDocument(Doc:table):table
+   if Doc?.modulePrefixes then return Doc.modulePrefixes end
+
+   local prefixes = {}
+   for namespace_name, module_name in pairs(glDefs?.modulePrefixes or {}) do
+      prefixes[namespace_name] = module_name
+   end
+   for namespace_name, module_name in pairs(moduleDeclarationsForDocument(Doc)) do
+      prefixes[namespace_name] = module_name
+   end
+   Doc.modulePrefixes = prefixes
+   return prefixes
+end
+
+global function moduleDocumentByName(Name:str):table
+   if not Name or not glDocCache?.modules then return nil end
+   local canonical_name = Name.lower()
+   for module_name, module_doc in pairs(glDocCache.modules) do
+      if module_name.lower() is canonical_name then return module_doc end
+   end
+   return nil
+end
+
+global function moduleDocumentForNamespace(Doc:table, Namespace:str):<table, str>
+   local module_name = modulePrefixesForDocument(Doc)[Namespace]
+   if not module_name then return nil, nil end
+   return moduleDocumentByName(module_name), module_name
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Utility Functions
+
+global function timestamp():str
+   glTime.acQuery()
+   return string.format('%04d-%02d-%02d %02d:%02d:%02d',
+      glTime.year, glTime.month, glTime.day, glTime.hour, glTime.minute, glTime.second)
+end
+
+global function logMessage(Self:table, Message:str)
+   Self?.logMessage(f'[{timestamp()}] {Message}')
+end
+
+global function logVerbose(Self:table, Message:str)
+   if Self.verbose then
+      Self?.logMessage(f'[{timestamp()}] [DEBUG] {Message}')
+   end
+end
+
+global function logWarning(Self:table, Message:str)
+   Self?.logMessage(f'[{timestamp()}] [WARN] {Message}')
+end
+
+   import './lsp_protocol'
+
+----------------------------------------------------------------------------------------------------------------------
+-- Compute diagnostics for a document using debug.validate()
+
+-- Convert a 1-based debug.validate() source position to the 0-based LSP equivalent.  Zero remains the sentinel for
+-- an unavailable source position.
+
+function validationPositionToLsp(Position:num):num
+   if Position > 0 then return Position - 1 end
+   return 0
+end
+
+-- Helper to check if character is alphanumeric or underscore
+
+function isIdentChar(C)
+   return (C >= 'a' and C <= 'z') or (C >= 'A' and C <= 'Z') or (C >= '0' and C <= '9') or C is '_'
+end
+
+-- Compute start and end columns for an error range based on context
+-- Returns: start_col, end_col
+
+global function computeErrorRange(Doc:table, Line:num, Column:num):<num, num>
+   -- Find the target line
+   if Line >= getTotalLines(Doc) then return Column, Column + 1 end
+
+   line_text = getLine(Doc, Line)
+   if Column >= #line_text then return Column, Column + 1 end
+
+   c = line_text.sub(Column, Column + 1)
+
+   -- If starting on an identifier/number character, extend both directions
+   if isIdentChar(c) or (c >= '0' and c <= '9') then
+      -- Extend backwards to find start of token
+
+      start_col = Column
+      while start_col > 0 do
+         prev_c = line_text.sub(start_col - 1, start_col)
+         if isIdentChar(prev_c) or (prev_c >= '0' and prev_c <= '9') then
+            start_col -= 1
+         else
+            break
+         end
+      end
+
+      -- Extend forwards to find end of token
+
+      end_col = Column + 1
+      while end_col < #line_text do
+         next_c = line_text.sub(end_col, end_col + 1)
+         if isIdentChar(next_c) or (next_c >= '0' and next_c <= '9') then
+            end_col++
+         else
+            break
+         end
+      end
+      return start_col, end_col
+   end
+
+   -- For operators and punctuation, try to capture multi-character operators
+
+   if c is '=' or c is '!' or c is '<' or c is '>' or c is '~' or c is ':' or c is '.' or c is '≈' then
+      next_c = (Column + 1 < #line_text) and line_text.sub(Column + 1, Column + 2) or ''
+      if next_c is '=' or next_c is '>' then
+         return Column, Column + 2
+      end
+   end
+
+   -- For string delimiters, try to find matching end
+
+   if c is '"' or c is "'" then
+      end_col = Column + 1
+      while end_col < #line_text do
+         sc = line_text.sub(end_col, end_col + 1)
+         if sc is c then
+            return Column, end_col + 1
+         elseif sc is '\\' then
+            end_col += 2  -- Skip escaped character
+         else
+            end_col++
+         end
+      end
+      return Column, #line_text  -- Unterminated string - highlight to end of line
+   end
+
+   -- Default: single character
+   return Column, Column + 1
+end
+
+-- Resolve deprecation through the parser so spelling alone never marks a shadowed name or member.
+global function deprecatedReferenceAt(Doc:table, Line:num, Character:num):bool
+   if not Doc or Line is nil or Character is nil then return false end
+   local path = lspUriToPath(Doc.uri)
+   local result = debug.validate(Doc.content, { path=path })
+   for diag in values(result.diagnostics or array<table>) do
+      if diag.code != 'DeprecatedApi' or (diag.file and diag.file != path) then continue end
+      local source_line = validationPositionToLsp(diag.line)
+      local source_column = validationPositionToLsp(diag.column)
+      if source_line is Line and byteColToUtf16Col(getLine(Doc, Line), source_column) is Character then
+         return true
+      end
+   end
+   return false
+end
+
+@Doc(text="Compute diagnostics for a document using debug.validate()")
+global function computeDiagnostics(Doc:table)
+   -- Pass the document's file path so relative imports ('./lib') resolve against its directory rather than the
+   -- LSP server's working directory.
+   result = debug.validate(Doc.content, { path = lspUriToPath(Doc.uri) })
+
+   lsp_diags = array<table>
+
+   if result.diagnostics then
+      rebuildLineIndex(Doc)
+
+      for diag in values(result.diagnostics) do
+         source_line = validationPositionToLsp(diag.line)
+         source_column = validationPositionToLsp(diag.column)
+         source_end_column = validationPositionToLsp(diag.endColumn)
+
+         -- Map severity: C++ (0=Info,1=Warn,2=Error) -> LSP (1=Error,2=Warn,3=Info)
+         lsp_severity = 3  -- Default to Info
+         if diag.severity is 2 then lsp_severity = 1      -- Error
+         elseif diag.severity is 1 then lsp_severity = 2  -- Warning
+         end
+
+         -- Compute a meaningful range if not provided by the parser
+         start_col = source_column
+         end_col = source_end_column
+         if end_col <= start_col+1 then
+            start_col, end_col = computeErrorRange(Doc, source_line, source_column)
+         end
+
+         -- debug.validate() reports 1-based byte columns; convert them to UTF-16 after adapting to LSP coordinates.
+         diag_line = getLine(Doc, source_line) or ''
+         start_col = byteColToUtf16Col(diag_line, start_col)
+         end_col = byteColToUtf16Col(diag_line, end_col)
+
+         lsp_diags.push({
+            range = {
+               start = { line = source_line, character = start_col },
+               ['end'] = { line = source_line, character = end_col }
+            },
+            severity = lsp_severity,
+            source = 'tiri',
+            code = diag.code,
+            tags = diag.code is 'DeprecatedApi' and array<int> { 2 } or nil,
+            message = diag.message
+         })
+      end
+   end
+
+   -- Add tips as LSP Hint diagnostics (severity 4)
+   if result.tips then
+      for tip in values(result.tips) do
+         source_line = validationPositionToLsp(tip.line)
+         source_column = validationPositionToLsp(tip.column)
+         source_end_column = validationPositionToLsp(tip.endColumn)
+         start_col = source_column
+         end_col = source_end_column
+         if end_col <= start_col+1 then
+            start_col, end_col = computeErrorRange(Doc, source_line, source_column)
+         end
+
+         -- debug.validate() reports 1-based byte columns; convert them to UTF-16 after adapting to LSP coordinates.
+         tip_line = getLine(Doc, source_line) or ''
+         start_col = byteColToUtf16Col(tip_line, start_col)
+         end_col = byteColToUtf16Col(tip_line, end_col)
+
+         lsp_diags.push({
+            range = {
+               start = { line = source_line, character = start_col },
+               ['end'] = { line = source_line, character = end_col }
+            },
+            severity = 4,  -- LSP Hint
+            source = 'tiri',
+            code = tip.category,
+            message = tip.message
+         })
+      end
+   end
+
+   return { uri = Doc.uri, version = Doc.version, diagnostics = lsp_diags }
+end
+
+   import './lsp_cache'
+   import './lsp_hover'
+   import './lsp_definition'
+   import './lsp_signature'
+   import './lsp_parsing'
+   import './lsp_symbols'
+   import './lsp_handlers'
+
+----------------------------------------------------------------------------------------------------------------------
+-- Public API
+
+-- Initialize the documentation system for hover support
+-- DocPath: Path to the XML document folder (e.g., 'sdk:docs/xml/')
+-- Returns true if successful
+
+global function lspInitDocs(DocPath)
+   DocPath ?! return false
+
+   if not (string.endsWith(DocPath, '/') or string.endsWith(DocPath, '\\')) then -- Ensure path ends with separator
+      DocPath ..= '/'
+   end
+
+   -- Load static definitions (builtins, keywords)
+   defsPath = nil
+
+   try
+      defsPath = glSelf.workingPath .. 'include/lsp_defs.tiri'
+   end
+
+   if not defsPath or mSys.AnalysePath(defsPath) != ERR_Okay then
+      try
+         defsPath = glSelf.workingPath .. '../lsp_defs.tiri'
+      except ex
+         defsPath = nil
+      end
+   end
+
+   if not defsPath or mSys.AnalysePath(defsPath) != ERR_Okay then
+      defsPath = 'sdk:tools/tiri_lsp/include/lsp_defs.tiri'
+   end
+
+   local result
+   try
+      result = loadFile(defsPath)
+   except ex
+      print('Failed to load static definitions from ' .. defsPath)
+   success
+      glDefs = result
+      print('Loaded static definitions')
+   end
+
+   -- Try to load cached documentation
+   glDocCache = loadDocCache(DocPath)
+
+   if glDocCache then
+      print('Loaded documentation cache')
+   else
+      -- Build cache if not found or invalid
+      glDocCache = buildDocCache(DocPath)
+      if glDocCache then
+         saveDocCache(CACHE_PATH, glDocCache)
+         print('Documentation cache built and saved')
+      else
+         print('Failed to build documentation cache')
+      end
+   end
+
+   return glDocCache != nil
+end
+
+function runStdioServer(Self:table)
+   local input = Self.stdioInput or io.input()
+   local output = Self.stdioOutput or io.output()
+   stdio_state = {}
+   disconnected = false
+
+   client = {
+      state = function()
+         return stdio_state
+      end,
+      acWrite = function(Data)
+         output.write(Data)
+         output.flush()
+         return ERR_Okay
+      end,
+      acDeactivate = function()
+         disconnected = true
+         stdio_state.should_disconnect = true
+         return ERR_Okay
+      end
+   }
+
+   Self._stdioClient = client
+
+   logMessage(Self, 'Tiri LSP Server using stdio')
+   if Self.verbose then
+      logMessage(Self, 'Verbose logging enabled')
+   end
+
+   while not disconnected do
+      data = input.read(8192)
+      if not data then
+         logVerbose(Self, 'Stdio input closed')
+         break
+      end
+
+      processIncomingData(Self, client, data)
+
+      if stdio_state.should_disconnect then
+         break
+      end
+   end
+end
+
+global function lspStart(Options):table
+   Options ?= {}
+
+   self.port            = Options.port or 5007
+   self.verbose         = Options.verbose or false
+   self.logMessage      = Options.logMessage or function(msg) print(msg) end
+   self.requestLog      = Options.requestLog  -- Optional request/response logging callback
+   self.stdioInput      = Options.stdioInput
+   self.stdioOutput     = Options.stdioOutput
+   self.stdioTextOutput = false
+   self._socket         = nil
+   self._stdioClient    = nil
+   self._handlers       = {}
+
+   registerCoreHandlers(self)
+
+   self.registerHandler = function(Method, Handler)
+      assert(type(Handler) is 'function', 'Handler must be a function')
+      self._handlers[Method] = Handler
+      logVerbose(self, 'Registered handler for: ' .. Method)
+   end
+
+   self.stop = function()
+      if self._socket then
+         logMessage(self, 'Stopping LSP server')
+         self._socket = nil
+         processing.collect()
+      end
+      if self._stdioClient then
+         logMessage(self, 'Stopping stdio LSP server')
+         self._stdioClient.acDeactivate()
+         self._stdioClient = nil
+      end
+   end
+
+   if self.port is 0 then
+      self.stdioTextOutput = true
+      runStdioServer(self)
+   else
+      logMessage(self, 'Starting Tiri LSP Server on port ' .. self.port)
+
+      -- Create TCP server socket
+      self._socket = obj.new('netserver', {
+         port = self.port,
+         flags = NSF_MULTI_CONNECT,
+         feedback = function(Server:obj, ClientSocket:any, State:num)
+            if State is NTC_CONNECTED then
+               logMessage(self, 'LSP client connected')
+            elseif State is NTC_DISCONNECTED then
+               logMessage(self, 'LSP client disconnected')
+            end
+         end,
+         incoming = function(Server:obj, ClientSocket:any)
+            processIncoming(self, ClientSocket)
+         end
+      })
+
+      logMessage(self, 'Tiri LSP Server listening on port ' .. self.port)
+      if self.verbose then
+         logMessage(self, 'Verbose logging enabled')
+      end
+   end
+
+   return self
+end

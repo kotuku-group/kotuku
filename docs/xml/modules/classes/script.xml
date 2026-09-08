@@ -8,13 +8,13 @@
     <module>Core</module>
     <comment>The Script class defines a common interface for script execution.</comment>
     <version>1</version>
-    <id>1b600fba</id>
+    <id>d44abc36</id>
     <idstring>SCRIPT</idstring>
     <category>Data</category>
-    <copyright>Paul Manias 1996-2026</copyright>
+    <copyright>Paul Manias © 1996-2026</copyright>
     <description>
 <p>The Script class defines a common interface for the purpose of executing scripts, such as Tiri.  The base class does not include a default parser or execution process of any kind.</p>
-<p>To execute a script file, choose a sub-class that matches the language and create the script object.  Set the <fl>Path</fl> field and then <action>Activate</action> the script.  Global input parameters for the script can be defined via the <action>SetKey</action> action.</p>
+<p>To execute a script file, choose a derived class that matches the language and create the script object.  Set the <fl>Path</fl> field and then <action>Activate</action> the script.  Global input parameters for the script can be defined via the <action>SetKey</action> action.</p>
 <p>Note that client scripts may sometimes create objects that are unmanaged by the script object that created them. Terminating the script will not remove objects that are outside its resource hierarchy.</p></description>
     <source>
       <file path="../classes/">class_script.cpp</file>
@@ -26,33 +26,40 @@
       <name>Activate</name>
       <comment>Executes the script.</comment>
       <prototype>ERR acActivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acActivate()</tiriPrototype>
     </action>
 
     <action>
       <name>GetKey</name>
-      <comment>Script parameters can be retrieved through this action.</comment>
-      <prototype>ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)</prototype>
+      <comment>Script parameters defined by SetKey() can be retrieved through this action.</comment>
+      <prototype>ERR acGetKey(*Object, std::string_view Key, std::string &amp;Value)</prototype>
+      <tiriPrototype>err, str = Object.acGetKey(Key:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Key">The name of a key value.</param>
+        <param type="STRVIEW" name="Key">The name of a key value.</param>
         <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
-        <param type="INT" name="Size">Indicates the byte size of the Buffer.</param>
       </input>
     </action>
 
     <action>
       <name>Reset</name>
       <comment>Resets an object to its original state.</comment>
-      <prototype>ERR acRefresh(*Object)</prototype>
+      <prototype>ERR acReset(*Object)</prototype>
+      <tiriPrototype>err = Object.acReset()</tiriPrototype>
     </action>
 
     <action>
       <name>SetKey</name>
-      <comment>Script parameters can be set through this action.</comment>
-      <prototype>ERR acSetKey(*Object, CSTRING Key, CSTRING Value)</prototype>
+      <comment>Script parameters can be set as key-values through this action.</comment>
+      <prototype>ERR acSetKey(*Object, std::string_view Key, std::string_view Value)</prototype>
+      <tiriPrototype>err = Object.acSetKey(Key:str, Value:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Key">The name of the target key.</param>
-        <param type="CSTRING" name="Value">The string value to associate with Key.</param>
+        <param type="STRVIEW" name="Key">The name of the target key.</param>
+        <param type="STRVIEW" name="Value">The string value to associate with Key.</param>
       </input>
+      <description>
+<p>Use SetKey() to define global parameters that the executed script can access.  The parameters are stored as key-value pairs and can be retrieved through the <action>GetKey</action> action.</p>
+<p>In Tiri, key-values can be retrieved through the <code>arg()</code> function.</p>
+      </description>
     </action>
 
   </actions>
@@ -62,6 +69,7 @@
       <name>Callback</name>
       <comment>An internal method for managing callbacks.</comment>
       <prototype>ERR sc::Callback(OBJECTPTR Object, INT64 ProcedureID, const struct ScriptArg * Args, INT TotalArgs, ERR * Error)</prototype>
+      <tiriPrototype>err, Error:num = Callback(ProcedureID:num, Args:any, TotalArgs:num)</tiriPrototype>
       <input>
         <param type="INT64" name="ProcedureID">An identifier for the target procedure.</param>
         <param type="const struct ScriptArg *" name="Args">Optional CSV string containing parameters to pass to the procedure.</param>
@@ -73,34 +81,39 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, callback-inlines, private</tags>
     </method>
 
     <method>
       <name>DebugLog</name>
       <comment>Acquire a debug log from a compiled Script.</comment>
-      <prototype>ERR sc::DebugLog(OBJECTPTR Object, CSTRING Options, CSTRING * Result)</prototype>
+      <prototype>ERR sc::DebugLog(OBJECTPTR Object, STRVIEW Options, STRING * Result)</prototype>
+      <tiriPrototype>err, Result:str = DebugLog(Options:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Options">Options to pass to the underlying language.</param>
-        <param type="CSTRING *" name="Result">Resulting log information.</param>
+        <param type="STRVIEW" name="Options">Options to pass to the underlying language.</param>
+        <param type="STRING *" name="Result">Resulting log information.</param>
       </input>
       <description>
 <p>Use the DebugLog() method to acquire debug information from a compiled script.  The exact nature of the log will depend on the scripting language in use, but will typically dump readable bytecode for analysis.  The Options parameter is a comma-separated list that may be used to pass language-specific options to the underlying implementation.</p>
-<p>The resulting log information is returned as a string, which needs to be deallocated once no longer required.</p>
+<p>The resulting log information is written to the caller-provided <code>Result</code> string.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-input</tags>
     </method>
 
     <method>
       <name>DerefProcedure</name>
       <comment>Dereferences an acquired procedure.</comment>
-      <prototype>ERR sc::DerefProcedure(OBJECTPTR Object, FUNCTION * Procedure)</prototype>
+      <prototype>ERR sc::DerefProcedure(OBJECTPTR Object, FUNCTION Procedure)</prototype>
+      <tiriPrototype>err = DerefProcedure(Procedure:func)</tiriPrototype>
       <input>
-        <param type="FUNCTION *" name="Procedure">The procedure to be dereferenced.</param>
+        <param type="FUNCTION" name="Procedure">The procedure to be dereferenced.</param>
       </input>
       <description>
 <p>This method will release a procedure reference that has been acquired through <method>GetProcedureID</method>.  It is only necessary to make this call if the scripting language is managing function references as a keyed resource.  Tiri is one such language.  Languages that do not manage functions as a resource will ignore calls to this method.</p>
@@ -110,14 +123,16 @@
         <error code="Okay">Operation successful.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
       <name>Exec</name>
       <comment>Executes a procedure in the script.</comment>
-      <prototype>ERR sc::Exec(OBJECTPTR Object, CSTRING Procedure, const struct ScriptArg * Args, INT TotalArgs)</prototype>
+      <prototype>ERR sc::Exec(OBJECTPTR Object, STRVIEW Procedure, const struct ScriptArg * Args, INT TotalArgs)</prototype>
+      <tiriPrototype>err = Exec(Procedure:str, Args:any, TotalArgs:num)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Procedure">The name of the procedure to execute, or NULL for the default entry point.</param>
+        <param type="STRVIEW" name="Procedure">The name of the procedure to execute, or leave empty for the default entry point.</param>
         <param type="const struct ScriptArg *" name="Args">Optional parameters to pass to the procedure.</param>
         <param type="INT" name="TotalArgs">Total number of <code>Args</code> provided.</param>
       </input>
@@ -152,14 +167,16 @@ struct ScriptArg {
         <error code="Args">The <code>TotalArgs</code> value is invalid.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, callback-inlines</tags>
     </method>
 
     <method>
       <name>GetProcedureID</name>
       <comment>Converts a procedure name to an ID.</comment>
-      <prototype>ERR sc::GetProcedureID(OBJECTPTR Object, CSTRING Procedure, INT64 * ProcedureID)</prototype>
+      <prototype>ERR sc::GetProcedureID(OBJECTPTR Object, STRVIEW Procedure, INT64 * ProcedureID)</prototype>
+      <tiriPrototype>err, ProcedureID:num = GetProcedureID(Procedure:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Procedure">The name of the procedure.</param>
+        <param type="STRVIEW" name="Procedure">The name of the procedure.</param>
         <param type="INT64 *" name="ProcedureID">The computed ID will be returned in this parameter.</param>
       </input>
       <description>
@@ -173,6 +190,7 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
         <error code="Okay">Operation successful.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, creates-resource</tags>
     </method>
 
   </methods>
@@ -181,7 +199,7 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
     <field>
       <name>CacheFile</name>
       <comment>Compilable script languages can be compiled to a cache file.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
 <p>Scripts that support compilation of the source code can be compiled to a target file when the script is initialised. This file is then used as a cache, so that if the cache file exists on the next initialisation then the cache file is used instead of the original source code.</p>
@@ -213,7 +231,7 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
     <field>
       <name>ErrorMessage</name>
       <comment>A human readable error string may be declared here following a script execution failure.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
     </field>
 
@@ -224,16 +242,6 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
       <type lookup="SCF">SCF</type>
       <description>
 <types lookup="SCF"/>
-      </description>
-    </field>
-
-    <field>
-      <name>Language</name>
-      <comment>Indicates the language (locale) that the source script is written in.</comment>
-      <access read="G">Get</access>
-      <type>STRING</type>
-      <description>
-<p>The Language value indicates the language in which the source script was written.  The default setting is <code>ENG</code>, the code for international English.</p>
       </description>
     </field>
 
@@ -250,7 +258,7 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
     <field>
       <name>Path</name>
       <comment>The location of a script file to be loaded.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>STRING</type>
       <description>
 <p>A script file can be loaded by setting the Path to its location.  The path must be defined prior to the initialisation process, or alternatively the client can define the <fl>Statement</fl> field.</p>
@@ -261,8 +269,8 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
 
     <field>
       <name>Procedure</name>
-      <comment>Specifies a procedure to be executed from within a script.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <comment>Specifies a procedure name to be executed.</comment>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
 <p>Sometimes scripts are split into several procedures or functions that can be executed independently from the 'main' area of the script.  If a loaded script contains procedures, the client can set the Procedure field to execute a specific routine whenever the script is activated with the <action>Activate</action> action.</p>
@@ -273,8 +281,8 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
     <field>
       <name>Results</name>
       <comment>Stores multiple string results for languages that support this feature.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>STRING []</type>
+      <access read="R" write="W">Read/Write</access>
+      <type>kt::vector&lt;std::string&gt;</type>
       <description>
 <p>If a scripting language supports the return of multiple results, this field may reflect those result values after the execution of any procedure.</p>
 <p>For maximum compatibility in type conversion, the results are stored as an array of strings.</p>
@@ -284,7 +292,7 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
     <field>
       <name>Statement</name>
       <comment>Scripts can be executed from any string passed into this field.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>STRING</type>
       <description>
 <p>Scripts may be compiled into a script object by setting the Statement field with a complete script string.  This is often convenient for embedding a small script into another script file without having to make external file references. It is also commonly used for executing scripts that have been embedded into program binaries.</p>
@@ -302,19 +310,9 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
     </field>
 
     <field>
-      <name>TotalArgs</name>
-      <comment>Reflects the total number of parameters used in a script object.</comment>
-      <access read="G">Get</access>
-      <type>INT</type>
-      <description>
-<p>The total number of parameters that have been set in a script object through the unlisted field mechanism are reflected in the value of this field.</p>
-      </description>
-    </field>
-
-    <field>
       <name>WorkingPath</name>
       <comment>Defines the script's working path (folder).</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="G" write="W">Get/Write</access>
       <type>STRING</type>
       <description>
 <p>The working path for a script is defined here.  By default this is defined as the location from which the script was loaded, without the file name.  If this cannot be determined then the working path for the parent process is used (this is usually set to the location of the program).</p>
@@ -328,6 +326,7 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
     <constants lookup="SCF" comment="Script flags">
       <const name="EXIT_ON_ERROR">The script will automatically terminate its execution process if an error is detected.</const>
       <const name="LOG_ALL">Enables execution debugging.  More information will be printed to the console in this mode.</const>
+      <const name="PROCESS_DOC">Process any embedded documentation in the script.</const>
     </constants>
 
   </types>

@@ -9,6 +9,7 @@
 
 #include <kotuku/main.h>
 #include <format>
+#include <string>
 
 #include "ast/nodes.h"  // For TiriType, tiri_type_to_lj_tag(), type_name()
 #include "lj_err.h"     // For lj_err_throw, ErrMsg
@@ -25,16 +26,10 @@ static void err_type_mismatch(FuncState *fs, TiriType actual_type, TiriType expe
    lj_lex_error(fs->ls, 0, ErrMsg::BADASSIGN, type_name(actual_type).data(), type_name(expected_type).data());
 }
 
-//********************************************************************************************************************
-// Emit a compile-time object class mismatch error.
-// This is called when both LHS and RHS are Object types but have different class IDs.
-
-static void err_object_class_mismatch(FuncState *fs, CLASSID actual_class_id, CLASSID expected_class_id)
+static void err_object_class_mismatch(FuncState *Fs, CLASSID ActualClassId, CLASSID ExpectedClassId)
 {
-   lj_lex_error(fs->ls, 0, ErrMsg::BADCLASS, ResolveClassID(expected_class_id), ResolveClassID(actual_class_id));
+   lj_lex_error(Fs->ls, 0, ErrMsg::BADCLASS, ResolveClassID(ExpectedClassId), ResolveClassID(ActualClassId));
 }
-
-[[nodiscard]] inline bool is_register_key(int32_t Aux) { return (Aux >= 0) and (Aux <= BCMAX_C); }
 
 //********************************************************************************************************************
 // Register allocation methods
@@ -93,7 +88,7 @@ void RegisterAllocator::release_span_internal(BCReg Start, BCReg Count, BCReg Ex
       }
 
       if (this->func_state->freereg > ExpectedTop.raw()) {
-         pf::Log("Parser").warning("Register depth mismatch, %d != %d, function @ line %d - "
+         kt::Log("Parser").warning("Register depth mismatch, %d != %d, function @ line %d - "
             "RegisterSpan was created with freereg=%d but released as %d. "
             "This indicates intermediate operations modified freereg or cleanup is out of order.",
             ExpectedTop.raw(), this->func_state->freereg, this->func_state->linedefined.lineNumber(),
@@ -102,7 +97,7 @@ void RegisterAllocator::release_span_internal(BCReg Start, BCReg Count, BCReg Ex
 
       // Check for span size mismatch
       if (Start.raw() + Count.raw() != ExpectedTop.raw()) {
-         pf::Log("Parser").warning("Span size mismatch: start=%u count=%u expected_top=%u at line %d",
+         kt::Log("Parser").warning("Span size mismatch: start=%u count=%u expected_top=%u at line %d",
             Start.raw(), Count.raw(), ExpectedTop.raw(), this->func_state->linedefined.lineNumber());
       }
 
@@ -110,7 +105,7 @@ void RegisterAllocator::release_span_internal(BCReg Start, BCReg Count, BCReg Ex
 
       // Check that after release, freereg equals the span start
       if (this->func_state->freereg != Start.raw()) {
-         pf::Log("Parser").warning("Bad regfree: freereg=%u should equal start=%u at line %d",
+         kt::Log("Parser").warning("Bad regfree: freereg=%u should equal start=%u at line %d",
             this->func_state->freereg, Start.raw(), this->func_state->linedefined.lineNumber());
       }
 
@@ -174,7 +169,7 @@ TableOperandCopies RegisterAllocator::duplicate_table_operands(const ExpDesc &Ex
    if (Expression.k IS ExpKind::Indexed) {
       uint32_t original_aux = Expression.u.s.aux;
       BCREG duplicate_count = 1;
-      bool has_register_index = is_register_key(int32_t(original_aux));
+      bool has_register_index = IndexOperand(original_aux).is_register();
 
       if (has_register_index) duplicate_count++;
 
@@ -192,8 +187,8 @@ TableOperandCopies RegisterAllocator::duplicate_table_operands(const ExpDesc &Ex
 
       if (has_register_index) {
          BCREG index_reg = BCREG(base_reg + 1);
-         bcemit_AD(this->func_state, BC_MOV, index_reg, BCREG(original_aux));
-         copies.duplicated.u.s.aux = index_reg;
+         bcemit_AD(this->func_state, BC_MOV, index_reg, IndexOperand(original_aux).register_index());
+         copies.duplicated.u.s.aux = IndexOperand::register_index(index_reg).raw();
       }
    }
 
@@ -284,57 +279,76 @@ static void expr_discharge(FuncState *fs, ExpDesc *e)
       ins = BCINS_AD(BC_GGET, 0, const_str(fs, e));
    }
    else if (e->k IS ExpKind::Indexed) {
-      BCREG rc = e->u.s.aux;
-      if (int32_t(rc) < 0) {
-         int32_t idx = ~rc;
+      IndexOperand key(e->u.s.aux);
+      if (key.is_string_constant()) {
+         BCREG idx = key.string_constant();
          if (idx <= BCMAX_C) {
             ins = BCINS_ABC(BC_TGETS, 0, e->u.s.info, idx);
          }
          else {
-            // Overflow: load string constant into temp register, use TGETV
-            BCREG key_reg = fs->freereg;
-            bcreg_reserve(fs, 1);
-            bcemit_AD(fs, BC_KSTR, key_reg, BCREG(idx));
-            bcreg_free(fs, key_reg);
-            ins = BCINS_ABC(BC_TGETV, 0, e->u.s.info, key_reg);
+            BCREG table_reg = e->u.s.info;
+            e->u.s.info = bcemit_tgets(fs, 0, table_reg, BCREG(idx));
+            bcreg_free(fs, table_reg);
+            e->k = ExpKind::Relocable;
+            return;
          }
       }
-      else if (rc > BCMAX_C) ins = BCINS_ABC(BC_TGETB, 0, e->u.s.info, rc - (BCMAX_C + 1));
+      else if (key.kind() IS IndexOperandKind::ByteConstant) {
+         ins = BCINS_ABC(BC_TGETB, 0, e->u.s.info, key.byte_constant());
+      }
       else {
-         bcreg_free(fs, rc);
-         ins = BCINS_ABC(BC_TGETV, 0, e->u.s.info, rc);
+         BCREG index_register = key.register_index();
+         bcreg_free(fs, index_register);
+         ins = BCINS_ABC(BC_TGETV, 0, e->u.s.info, index_register);
       }
       bcreg_free(fs, e->u.s.info);
    }
    else if (e->k IS ExpKind::IndexedArray) {
       // Array indexing - emit BC_AGETV or BC_AGETB
       // Note: Arrays don't support string keys, so no BC_AGETS equivalent
-      BCREG rc = e->u.s.aux;
-      if (rc > BCMAX_C) ins = BCINS_ABC(BC_AGETB, 0, e->u.s.info, rc - (BCMAX_C + 1));
+      IndexOperand key(e->u.s.aux);
+      if (key.kind() IS IndexOperandKind::ByteConstant) ins = BCINS_ABC(BC_AGETB, 0, e->u.s.info, key.byte_constant());
       else {
-         bcreg_free(fs, rc);
-         ins = BCINS_ABC(BC_AGETV, 0, e->u.s.info, rc);
+         BCREG index_register = key.register_index();
+         bcreg_free(fs, index_register);
+         ins = BCINS_ABC(BC_AGETV, 0, e->u.s.info, index_register);
       }
       bcreg_free(fs, e->u.s.info);
    }
    else if (e->k IS ExpKind::SafeIndexedArray) {
       // Safe array indexing - emit BC_ASGETV or BC_ASGETB (returns nil for out-of-bounds)
-      BCREG rc = e->u.s.aux;
-      if (rc > BCMAX_C) ins = BCINS_ABC(BC_ASGETB, 0, e->u.s.info, rc - (BCMAX_C + 1));
+      IndexOperand key(e->u.s.aux);
+      if (key.kind() IS IndexOperandKind::ByteConstant) ins = BCINS_ABC(BC_ASGETB, 0, e->u.s.info, key.byte_constant());
       else {
-         bcreg_free(fs, rc);
-         ins = BCINS_ABC(BC_ASGETV, 0, e->u.s.info, rc);
+         BCREG index_register = key.register_index();
+         bcreg_free(fs, index_register);
+         ins = BCINS_ABC(BC_ASGETV, 0, e->u.s.info, index_register);
       }
       bcreg_free(fs, e->u.s.info);
    }
    else if (e->k IS ExpKind::IndexedObject) {
       // Object field access - emit BC_OBGETF for string key (object fields are always strings)
       // aux holds negated string constant index (same encoding as BC_TGETS)
-      BCREG rc = e->u.s.aux;
-      fs_check_assert(fs, int32_t(rc) < 0, "object field index must be string constant");
-      BCREG idx = (BCREG)~rc;
-      fs_check_assert(fs, idx <= BCMAX_C, "object field string constant index out of range");
+      IndexOperand key(e->u.s.aux);
+      fs_check_assert(fs, key.is_string_constant(), "object field index must be string constant");
+      BCREG idx = key.string_constant();
+      if (idx > BCMAX_C) {
+         err_limit(fs, BCMAX_C + 1, "object field string constants");
+         return;
+      }
       ins = BCINS_ABCP(BC_OBGETF, 0, e->u.s.info, idx, 0xFFFFFFFFu);
+      bcreg_free(fs, e->u.s.info);
+   }
+   else if (e->k IS ExpKind::IndexedStruct) {
+      // Struct field access - emit BC_STGETF for a string key.
+      IndexOperand key(e->u.s.aux);
+      fs_check_assert(fs, key.is_string_constant(), "struct field index must be string constant");
+      BCREG idx = key.string_constant();
+      if (idx > BCMAX_C) {
+         err_limit(fs, BCMAX_C + 1, "struct field string constants");
+         return;
+      }
+      ins = BCINS_ABCP(BC_STGETF, 0, e->u.s.info, idx, e->struct_field_index);
       bcreg_free(fs, e->u.s.info);
    }
    else if (e->k IS ExpKind::Call) {
@@ -395,6 +409,7 @@ static void bcemit_nil(FuncState *fs, BCREG from, BCREG n)
 
 static void expr_toreg_nobranch(FuncState *fs, ExpDesc *e, BCREG reg)
 {
+   if (e->is_unreachable()) return;
    BCIns ins;
    expr_discharge(fs, e);
    if (e->k IS ExpKind::Str) {
@@ -427,11 +442,12 @@ static void expr_toreg_nobranch(FuncState *fs, ExpDesc *e, BCREG reg)
       bcemit_nil(fs, reg, 1);
       goto noins;
    }
-   else if (e->k <= ExpKind::True) {
+   else if (expkind_is_primitive(e->k)) {
       ins = BCINS_AD(BC_KPRI, reg, const_pri(e));
    }
    else {
-      fs_check_assert(fs,e->k IS ExpKind::Void or e->k IS ExpKind::Jmp, "bad expr type %d", int(e->k));
+      fs_check_assert(fs, e->k IS ExpKind::Void or e->k IS ExpKind::Jmp or e->k IS ExpKind::Unreachable,
+         "bad expr type %d", int(e->k));
       return;
    }
 
@@ -447,6 +463,7 @@ noins:
 
 static void expr_toreg(FuncState *fs, ExpDesc *e, BCREG reg)
 {
+   if (e->is_unreachable()) return;
    expr_toreg_nobranch(fs, e, reg);
    ControlFlowGraph cfg(fs);
 
@@ -486,6 +503,7 @@ static void expr_toreg(FuncState *fs, ExpDesc *e, BCREG reg)
 
 static void expr_tonextreg(FuncState *fs, ExpDesc *e)
 {
+   if (e->is_unreachable()) return;
    expr_discharge(fs, e);
    expr_free(fs, e);
    bcreg_reserve(fs, 1);
@@ -497,6 +515,7 @@ static void expr_tonextreg(FuncState *fs, ExpDesc *e)
 
 static BCREG expr_toanyreg(FuncState *fs, ExpDesc *e)
 {
+   if (e->is_unreachable()) return NO_REG;
    expr_discharge(fs, e);
    if (e->k IS ExpKind::NonReloc) [[likely]] {
       if (!e->has_jump()) [[likely]] return e->u.s.info;  // Already in a register.
@@ -521,111 +540,218 @@ static void expr_toval(FuncState *fs, ExpDesc *e)
 }
 
 //********************************************************************************************************************
+// Encode and emit one portable runtime contract descriptor.
+
+static void contract_append_text(FuncState *fs, std::string &Descriptor, std::string_view Text,
+   const char *Description)
+{
+   if (Text.size() > UINT8_MAX) err_limit(fs, UINT8_MAX, Description);
+   Descriptor.push_back(char(uint8_t(Text.size())));
+   Descriptor.append(Text);
+}
+
+static void contract_append_uleb32(std::string &Descriptor, uint32_t Value)
+{
+   do {
+      uint8_t byte = uint8_t(Value & 0x7f);
+      Value >>= 7;
+      if (Value) byte |= 0x80;
+      Descriptor.push_back(char(byte));
+   } while (Value);
+}
+
+static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeContract> Contracts,
+   BCREG StaticValueCount, bool DynamicCount, bool Variadic)
+{
+   if (Contracts.empty()) return;
+
+   // Dynamic result counts still require interpreter-only MRSAVE/MRRESTORE handling.  Const contracts retain
+   // prototype-wide lifecycle semantics.  Ordinary global declaration finalisers are bytecode-local side-effect
+   // boundaries handled by the recorder; other fixed contracts have exact recorder predicates.
+   if (DynamicCount) fs->flags |= PROTO_NOJIT;
+   for (const RuntimeContract &contract : Contracts) {
+      if (contract.is_const) {
+         fs->flags |= PROTO_NOJIT;
+         break;
+      }
+   }
+
+   std::string descriptor;
+   descriptor.reserve(4 + Contracts.size() * 8);
+   descriptor.push_back(char(uint8_t(Contracts.front().boundary)));
+
+   uint8_t descriptor_flags = 0;
+   if (DynamicCount) descriptor_flags |= contract_flag(ContractDescriptorFlag::DynamicCount);
+   if (Variadic) descriptor_flags |= contract_flag(ContractDescriptorFlag::Variadic);
+   descriptor.push_back(char(descriptor_flags));
+   descriptor.push_back(char(uint8_t(StaticValueCount)));
+   descriptor.push_back(char(uint8_t(Contracts.size())));
+
+   for (const RuntimeContract &contract : Contracts) {
+      descriptor.push_back(char(uint8_t(contract.type)));
+      uint8_t entry_flags = 0;
+      if (contract.nullable) entry_flags |= contract_flag(ContractEntryFlag::Nullable);
+      if (contract.required) entry_flags |= contract_flag(ContractEntryFlag::Required);
+      if (contract.is_const) entry_flags |= contract_flag(ContractEntryFlag::Const);
+      if (contract.initialising) entry_flags |= contract_flag(ContractEntryFlag::Initialising);
+      if (contract.global_hint) entry_flags |= contract_flag(ContractEntryFlag::GlobalHint);
+      if (contract.retained_value) entry_flags |= contract_flag(ContractEntryFlag::RetainedValue);
+      descriptor.push_back(char(entry_flags));
+      descriptor.push_back(char(contract.position));
+      CLASSID object_class_id = contract.type IS TiriType::Object ? contract.object_class_id : CLASSID::NIL;
+      contract_append_uleb32(descriptor, uint32_t(object_class_id));
+
+      std::string_view struct_name;
+      if (contract.type IS TiriType::Struct and contract.struct_def) struct_name = contract.struct_def->Name;
+      contract_append_text(fs, descriptor, struct_name, "runtime contract structure name");
+
+      if (contract.type IS TiriType::Array) {
+         lj_assertX(contract.array_element.known, "array runtime contracts require a member identity");
+         descriptor.push_back(char(uint8_t(contract.array_element.storage)));
+         std::string_view array_struct_name;
+         if (contract.array_element.struct_def) array_struct_name = contract.array_element.struct_def->Name;
+         else if (contract.array_element.storage IS AET::ARRAY and contract.array_element.nested_array_identity) {
+            GCstr *identity = contract.array_element.nested_array_identity;
+            array_struct_name = std::string_view(strdata(identity), identity->len);
+         }
+         contract_append_text(fs, descriptor, array_struct_name, "runtime array contract structure name");
+      }
+
+      std::string_view label;
+      if (contract.label and contract.label != NAME_BLANK) {
+         label = std::string_view(strdata(contract.label), contract.label->len);
+      }
+      contract_append_text(fs, descriptor, label, "runtime contract label");
+   }
+
+   GCstr *encoded = fs->ls->keepstr(std::string_view(descriptor.data(), descriptor.size()));
+   ExpDesc constant(encoded);
+   bcemit_AD(fs, BC_CONTRACT, Base, const_str(fs, &constant));
+}
+
+//********************************************************************************************************************
+// Emit maximal dense runs of fixed runtime contracts.  Descriptor entries are ordinal, so an unchecked register gap
+// starts a new instruction.  The descriptor entry limit is shared with return contracts and splits wider runs.
+
+static void bcemit_contracts(FuncState *Fs, std::span<const RuntimeContractSlot> Contracts)
+{
+   if (Contracts.empty()) return;
+
+   std::array<RuntimeContract, MAX_RETURN_TYPES> batch;
+   BCREG batch_base = 0;
+   BCREG previous_register = 0;
+   uint8_t batch_count = 0;
+
+   auto flush = [&]() {
+      if (not batch_count) return;
+      bcemit_contract(Fs, batch_base, std::span(batch.data(), batch_count), BCREG(batch_count));
+      batch_count = 0;
+   };
+
+   for (size_t i = 0; i < Contracts.size(); ++i) {
+      const RuntimeContractSlot &slot = Contracts[i];
+      if (i > 0) {
+         lj_assertX(slot.register_index > previous_register, "runtime contract registers are not increasing");
+         lj_assertX(slot.contract.position > Contracts[i - 1].contract.position,
+            "runtime contract positions are not increasing");
+      }
+
+      if (batch_count and (slot.register_index != BCREG(previous_register + 1) or
+          batch_count IS MAX_RETURN_TYPES or slot.contract.boundary != batch[0].boundary)) {
+         flush();
+      }
+      if (not batch_count) batch_base = slot.register_index;
+
+      batch[batch_count++] = slot.contract;
+      previous_register = slot.register_index;
+   }
+
+   flush();
+}
+
+//********************************************************************************************************************
+// Literal values are closed proofs.  Descriptor-backed values may also suppress a compatible runtime check.
+
+[[nodiscard]] static bool contract_literal_proved(FuncState *fs, ExpDesc *Value, TiriType Expected)
+{
+   if (Value->k IS ExpKind::Nil) return false;
+
+   TiriType actual = TiriType::Unknown;
+   if (Value->k IS ExpKind::False or Value->k IS ExpKind::True) actual = TiriType::Bool;
+   else if (Value->k IS ExpKind::Str) actual = TiriType::Str;
+   else if (Value->k IS ExpKind::Num) actual = TiriType::Num;
+   else return false;
+
+   if (actual IS Expected) return true;
+   err_type_mismatch(fs, actual, Expected);
+   return false;
+}
+
+static void bcemit_value_contract(
+   FuncState *fs, ExpDesc *Value, const RuntimeContract &Contract, bool ForceRuntimeCheck = false)
+{
+   if (Contract.type IS TiriType::Unknown) return;
+   if (Contract.type IS TiriType::Any) {
+      if (not ForceRuntimeCheck) return;
+      BCREG source = expr_toanyreg(fs, Value);
+      bcemit_contract(fs, source, std::span(&Contract, 1), 1);
+      Value->k = ExpKind::NonReloc;
+      Value->u.s.info = source;
+      return;
+   }
+   if (Value->k IS ExpKind::Nil and not ForceRuntimeCheck) {
+      StaticValueDescriptor descriptor{
+         .primary = TiriType::Nil,
+         .proof = StaticProof::Closed,
+         .nullable = true
+      };
+      if (static_value_satisfies_contract(descriptor, Contract)) return;
+   }
+   if (contract_literal_proved(fs, Value, Contract.type) and not ForceRuntimeCheck) return;
+   if (Value->static_value and fs->ls->active_context) {
+      const auto &descriptor = fs->ls->active_context->descriptors().value(Value->static_value);
+      if (static_value_satisfies_contract(descriptor, Contract) and not ForceRuntimeCheck) return;
+   }
+
+   BCREG source = expr_toanyreg(fs, Value);
+   bcemit_contract(fs, source, std::span(&Contract, 1), 1);
+   Value->k = ExpKind::NonReloc;
+   Value->u.s.info = source;
+}
+
+static void check_object_class_assignment(FuncState *Fs, const VarInfo &Variable, const ExpDesc &Value)
+{
+   if (Variable.fixed_type IS TiriType::Object and Variable.object_class_id != CLASSID::NIL and
+       Value.result_type IS TiriType::Object and Value.object_class_id != Variable.object_class_id) {
+      err_object_class_mismatch(Fs, Value.object_class_id, Variable.object_class_id);
+   }
+}
+
+//********************************************************************************************************************
 // Emit store for LHS expression.
 
-static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS)
+static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS,
+   const RuntimeContract *GlobalDeclarationContract, bool IsGlobalDeclaration)
 {
+   if (RHS->is_unreachable()) return;
    BCIns ins;
+   RuntimeContract global_declaration_finaliser;
+   BCREG global_declaration_base = 0;
+   bool finalise_global_declaration = false;
    if (LHS->k IS ExpKind::Local) {
       fs->ls->vstack[LHS->u.s.aux].info |= VarInfoFlag::VarReadWrite;
       VarInfo *vinfo = &fs->ls->vstack[LHS->u.s.aux];
-      TiriType fixed = vinfo->fixed_type;
-
-      // Check if this variable has a defined type and needs runtime type checking
-      if ((fixed != TiriType::Unknown) and (fixed != TiriType::Any)) {
-         bool needs_check = true;
-         TiriType static_rhs_type = TiriType::Unknown; // TODO: needs_check can emit simpler tests when RHS type is known.
-
-         // Check for statically-known types - either from literals or from expression result types
-         if (RHS->k IS ExpKind::Nil) {
-            needs_check = false;  // nil is always allowed (clears the variable)
-         }
-         else if (RHS->k IS ExpKind::False or RHS->k IS ExpKind::True) {
-            static_rhs_type = TiriType::Bool;
-            if (fixed IS TiriType::Bool) needs_check = false;
-            else err_type_mismatch(fs, TiriType::Bool, fixed);
-         }
-         else if (RHS->k IS ExpKind::Str) {
-            static_rhs_type = TiriType::Str;
-            if (fixed IS TiriType::Str) needs_check = false;
-            else err_type_mismatch(fs, TiriType::Str, fixed);
-         }
-         else if (RHS->k IS ExpKind::Num) {
-            static_rhs_type = TiriType::Num;
-            if (fixed IS TiriType::Num) needs_check = false;
-            else err_type_mismatch(fs, TiriType::Num, fixed);
-         }
-         // Check if expression has known result type (e.g., from function call with declared return type,
-         // or operators with statically known result types like arithmetic, comparison, concatenation)
-         else if (RHS->result_type != TiriType::Unknown and RHS->result_type != TiriType::Any) {
-            // TODO: For maxing optimisation, uncomment this assert to help find areas where type checks aren't
-            // being handled by the compiler.  Ideally we would handle all type checking at compile time, in which
-            // case this assert is never raised.
-            //fs_check_assert(fs, RHS->result_type IS fixed, "expected function return type (RHS) to match variable (LHS)");
-
-            static_rhs_type = RHS->result_type;
-
-            // If the RHS result type matches the variable's fixed type, skip runtime check
-            // Otherwise, fall through to runtime check (we don't emit compile-time errors for
-            // expression results unless type_confirmed is set, because source location tracking
-            // isn't accurate at this point)
-            needs_check = (RHS->result_type != fixed);
-
-            // For object field accesses with confirmed types from class dictionary lookups,
-            // emit compile-time type mismatch error
-            if (needs_check and RHS->type_confirmed) {
-               err_type_mismatch(fs, RHS->result_type, fixed);
-            }
-
-            // For Object types with known class IDs, check for class mismatch at compile time
-            if (not needs_check and fixed IS TiriType::Object and vinfo->object_class_id != CLASSID::NIL) {
-               if (vinfo->object_class_id != RHS->object_class_id) {
-                  // Object class mismatch - emit compile-time error
-                  err_object_class_mismatch(fs, RHS->object_class_id, vinfo->object_class_id);
-               }
-            }
-         }
-
-         if (needs_check) {
-            // For dynamic values, emit runtime type check
-            // First materialise value to a register
-
-            BCREG src_reg = expr_toanyreg(fs, RHS);
-
-            // Skip type check for nil values (nil is always allowed as a "clear" operation)
-            // BC_ISNEP checks if value != nil, skips next instruction if true (not nil)
-            // We want to skip BC_ISTYPE when value IS nil, so use BC_ISEQP with nil primitive
-
-            ExpDesc nilv(ExpKind::Nil);
-            bcemit_INS(fs, BCINS_AD(BC_ISEQP, src_reg, const_pri(&nilv)));
-            BCPOS skip_pos = bcemit_jmp(fs);
-
-            // Emit type check instruction
-            // For numbers, use BC_ISNUM (because BC_ISTYPE doesn't work for numbers without LJ_DUALNUM)
-            // For other types, use BC_ISTYPE with (base_tag + 1) as the D operand
-
-            if (fixed IS TiriType::Num) {
-               // BC_ISNUM checks if value is a number (any floating point value)
-               // The D operand should be ~LJ_TNUMX + 2 = 16 (see lj_meta_istype which does tp--)
-               bcemit_AD(fs, BC_ISNUM, src_reg, ~LJ_TNUMX + 2);
-            }
-            else {
-               // BC_ISTYPE - the D operand is (base_tag + 1) to match the VM's itype comparison:
-               //   itype = ~base = -(base+1), so itype + (base+1) = 0 when types match
-               uint8_t lj_tag = tiri_type_to_lj_tag(fixed);
-               bcemit_AD(fs, BC_ISTYPE, src_reg, lj_tag + 1);
-            }
-
-            // Patch jump to skip over BC_ISTYPE when value is nil
-            ControlFlowGraph cfg(fs);
-            ControlFlowEdge skip_edge = cfg.make_unconditional(BCPos(skip_pos));
-            skip_edge.patch_here();
-
-            // Update expression state - value is now in src_reg
-            RHS->k = ExpKind::NonReloc;
-            RHS->u.s.info = src_reg;
-         }
-      }
+      check_object_class_assignment(fs, *vinfo, *RHS);
+      RuntimeContract contract{
+         .type = vinfo->fixed_type,
+         .object_class_id = vinfo->object_class_id,
+         .struct_def = vinfo->struct_def,
+         .array_element = vinfo->array_element,
+         .label = strref(vinfo->name),
+         .boundary = ContractBoundary::Local,
+         .position = uint8_t(vinfo->slot + 1)
+      };
+      bcemit_value_contract(fs, RHS, contract);
 
       expr_free(fs, RHS);
       expr_toreg(fs, RHS, LHS->u.s.info);
@@ -633,8 +759,20 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS)
    }
    else if (LHS->k IS ExpKind::Upval) {
       fs->ls->vstack[LHS->u.s.aux].info |= VarInfoFlag::VarReadWrite;
+      VarInfo *vinfo = &fs->ls->vstack[LHS->u.s.aux];
+      check_object_class_assignment(fs, *vinfo, *RHS);
+      RuntimeContract contract{
+         .type = vinfo->fixed_type,
+         .object_class_id = vinfo->object_class_id,
+         .struct_def = vinfo->struct_def,
+         .array_element = vinfo->array_element,
+         .label = strref(vinfo->name),
+         .boundary = ContractBoundary::Upvalue,
+         .position = uint8_t(LHS->u.s.info + 1)
+      };
+      bcemit_value_contract(fs, RHS, contract);
       expr_toval(fs, RHS);
-      if (RHS->k <= ExpKind::True) ins = BCINS_AD(BC_USETP, LHS->u.s.info, const_pri(RHS));
+      if (expkind_is_primitive(RHS->k)) ins = BCINS_AD(BC_USETP, LHS->u.s.info, const_pri(RHS));
       else if (RHS->k IS ExpKind::Str) ins = BCINS_AD(BC_USETS, LHS->u.s.info, const_str(fs, RHS));
       else if (RHS->k IS ExpKind::Num) ins = BCINS_AD(BC_USETN, LHS->u.s.info, const_num(fs, RHS));
       else ins = BCINS_AD(BC_USETV, LHS->u.s.info, expr_toanyreg(fs, RHS));
@@ -642,99 +780,109 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS)
    else if (LHS->k IS ExpKind::Global or LHS->k IS ExpKind::Unscoped) {
       // Note: Const global reassignment is checked during type analysis phase
       // Unscoped should normally be resolved in emit_lvalue_expr(), but handle it here defensively
+      auto found = fs->ls->global_type_hints.find(LHS->u.sval);
+      if (GlobalDeclarationContract) {
+         // Declared global contracts must execute even when no predicate is required.  Concrete contracts and the
+         // explicit 'any' opt-out are both attached to the environment for separately compiled chunks.
+         bcemit_value_contract(fs, RHS, *GlobalDeclarationContract, true);
+      }
+      else if (not IsGlobalDeclaration and found != fs->ls->global_type_hints.end() and
+          found->second.contract_policy != GlobalContractPolicy::Advisory) {
+         RuntimeContract contract{
+            .type = found->second.primary,
+            .object_class_id = found->second.object_class_id,
+            .struct_def = found->second.struct_def,
+            .array_element = found->second.array_element,
+            .label = LHS->u.sval,
+            .boundary = ContractBoundary::Global,
+            .position = 1,
+            .global_hint = true
+         };
+         bcemit_value_contract(fs, RHS, contract, true);
+      }
       BCREG ra = expr_toanyreg(fs, RHS);
       ins = BCINS_AD(BC_GSET, ra, const_str(fs, LHS));
+      if (GlobalDeclarationContract) {
+         global_declaration_finaliser = *GlobalDeclarationContract;
+         global_declaration_finaliser.initialising = false;
+         global_declaration_base = ra;
+         finalise_global_declaration = true;
+      }
    }
    else if (LHS->k IS ExpKind::IndexedArray or LHS->k IS ExpKind::SafeIndexedArray) {
       // Array index assignment - emit BC_ASETV or BC_ASETB
       // Note: SafeIndexedArray uses same SET bytecodes as IndexedArray (safe is only for reads)
-      BCREG ra, rc;
+      BCREG ra;
       ra = expr_toanyreg(fs, RHS);
-      rc = LHS->u.s.aux;
-      if (rc > BCMAX_C) {
-         ins = BCINS_ABC(BC_ASETB, ra, LHS->u.s.info, rc - (BCMAX_C + 1));
+      IndexOperand key(LHS->u.s.aux);
+      if (key.kind() IS IndexOperandKind::ByteConstant) {
+         ins = BCINS_ABC(BC_ASETB, ra, LHS->u.s.info, key.byte_constant());
       }
       else {
+         BCREG index_register = key.register_index();
 #ifdef LUA_USE_ASSERT
          // Free late alloced key reg to avoid assert on free of value reg.
-         if (RHS->k IS ExpKind::NonReloc and ra >= fs->varmap.size() and rc >= ra) bcreg_free(fs, rc);
+         if (RHS->k IS ExpKind::NonReloc and ra >= fs->varmap.size() and index_register >= ra) {
+            bcreg_free(fs, index_register);
+         }
 #endif
-         ins = BCINS_ABC(BC_ASETV, ra, LHS->u.s.info, rc);
+         ins = BCINS_ABC(BC_ASETV, ra, LHS->u.s.info, index_register);
       }
    }
    else if (LHS->k IS ExpKind::IndexedObject) {
       // Object field assignment - emit BC_OBSETF for string key (object fields are always strings)
-      BCREG ra, rc;
+      BCREG ra;
       ra = expr_toanyreg(fs, RHS);
-      rc = LHS->u.s.aux;
-      fs_check_assert(fs, int32_t(rc) < 0, "object field index must be string constant");
-      ins = BCINS_ABCP(BC_OBSETF, ra, LHS->u.s.info, (~rc) & 0xFFu, 0xFFFFFFFFu);
+      IndexOperand key(LHS->u.s.aux);
+      fs_check_assert(fs, key.is_string_constant(), "object field index must be string constant");
+      BCREG idx = key.string_constant();
+      if (idx > BCMAX_C) {
+         err_limit(fs, BCMAX_C + 1, "object field string constants");
+         return;
+      }
+      ins = BCINS_ABCP(BC_OBSETF, ra, LHS->u.s.info, idx, 0xFFFFFFFFu);
+   }
+   else if (LHS->k IS ExpKind::IndexedStruct) {
+      // Struct field assignment - emit BC_STSETF for a string key.
+      BCREG ra = expr_toanyreg(fs, RHS);
+      IndexOperand key(LHS->u.s.aux);
+      fs_check_assert(fs, key.is_string_constant(), "struct field index must be string constant");
+      BCREG idx = key.string_constant();
+      if (idx > BCMAX_C) {
+         err_limit(fs, BCMAX_C + 1, "struct field string constants");
+         return;
+      }
+      ins = BCINS_ABCP(BC_STSETF, ra, LHS->u.s.info, idx, LHS->struct_field_index);
    }
    else {
       // Table index assignment - emit BC_TSETV, BC_TSETB, or BC_TSETS
-      BCREG ra, rc;
+      BCREG ra;
       fs_check_assert(fs, LHS->k IS ExpKind::Indexed, "bad expr type %d", int(LHS->k));
       ra = expr_toanyreg(fs, RHS);
-      rc = LHS->u.s.aux;
-      if (int32_t(rc) < 0) {
-         /* String constant key: rc encodes the index as ~index. */
-         int32_t stridx = ~int32_t(rc);
-         if (stridx <= BCMAX_C) {
-            ins = BCINS_ABC(BC_TSETS, ra, LHS->u.s.info, BCREG(stridx));
-         } else {
-            /* Overflow-safe path: load string constant into a register and use TSETV. */
-            BCREG key_reg = fs->freereg;
-            bcreg_reserve(fs, 1);
-            bcemit_AD(fs, BC_KSTR, key_reg, BCREG(stridx));
-            ins = BCINS_ABC(BC_TSETV, ra, LHS->u.s.info, key_reg);
-#ifdef LUA_USE_ASSERT
-            /* Free late alloced key reg to avoid assert on free of value reg. */
-            /* This can only happen when called from expr_table(). */
-            if (RHS->k IS ExpKind::NonReloc and ra >= fs->varmap.size() and rc >= ra) bcreg_free(fs, rc);
-#endif
-            bcemit_INS(fs, ins);
-            bcreg_free(fs, key_reg);
-            expr_free(fs, RHS);
-            return;
-         }
-      } else if (rc > BCMAX_C) {
-         ins = BCINS_ABC(BC_TSETB, ra, LHS->u.s.info, rc - (BCMAX_C + 1));
+      IndexOperand key(LHS->u.s.aux);
+      if (key.is_string_constant()) {
+         bcemit_tsets(fs, ra, LHS->u.s.info, key.string_constant());
+         expr_free(fs, RHS);
+         return;
+      } else if (key.kind() IS IndexOperandKind::ByteConstant) {
+         ins = BCINS_ABC(BC_TSETB, ra, LHS->u.s.info, key.byte_constant());
       } else {
+         BCREG index_register = key.register_index();
 #ifdef LUA_USE_ASSERT
          // Free late alloced key reg to avoid assert on free of value reg.
          // This can only happen when called from expr_table().
-         if (RHS->k IS ExpKind::NonReloc and ra >= fs->varmap.size() and rc >= ra) bcreg_free(fs, rc);
+         if (RHS->k IS ExpKind::NonReloc and ra >= fs->varmap.size() and index_register >= ra) {
+            bcreg_free(fs, index_register);
+         }
 #endif
-         ins = BCINS_ABC(BC_TSETV, ra, LHS->u.s.info, rc);
+         ins = BCINS_ABC(BC_TSETV, ra, LHS->u.s.info, index_register);
       }
    }
    bcemit_INS(fs, ins);
+   if (finalise_global_declaration) {
+      bcemit_contract(fs, global_declaration_base, std::span(&global_declaration_finaliser, 1), 1);
+   }
    expr_free(fs, RHS);
-}
-
-//********************************************************************************************************************
-// Emit method lookup expression.
-
-static void bcemit_method(FuncState *fs, ExpDesc *e, ExpDesc *key)
-{
-   BCREG idx, func, obj = expr_toanyreg(fs, e);
-   expr_free(fs, e);
-   func = fs->freereg;
-   bcemit_AD(fs, BC_MOV, func + 1 + LJ_FR2, obj);  // Copy object to 1st argument.
-   fs_check_assert(fs, key->is_str_constant(), "bad usage");
-   idx = const_str(fs, key);
-   if (idx <= BCMAX_C) {
-      bcreg_reserve(fs, 2 + LJ_FR2);
-      bcemit_ABC(fs, BC_TGETS, func, obj, idx);
-   }
-   else {
-      bcreg_reserve(fs, 3 + LJ_FR2);
-      bcemit_AD(fs, BC_KSTR, func + 2 + LJ_FR2, idx);
-      bcemit_ABC(fs, BC_TGETV, func, obj, func + 2 + LJ_FR2);
-      fs->freereg--;
-   }
-   e->u.s.info = func;
-   e->k = ExpKind::NonReloc;
 }
 
 //********************************************************************************************************************
@@ -797,6 +945,7 @@ inline void invertcond(FuncState *fs, ExpDesc *e)
 
 static void bcemit_branch_t(FuncState *fs, ExpDesc *e)
 {
+   if (e->is_unreachable()) return;
    BCPOS pc;
    expr_discharge(fs, e);
    if (e->k IS ExpKind::Str or e->k IS ExpKind::Num or e->k IS ExpKind::True) pc = NO_JMP;  // Never jump.
@@ -821,25 +970,23 @@ void RegisterAllocator::verify_no_leaks(const char* Context) const
    BCREG freereg = this->func_state->freereg;
 
    if (freereg > total_locals) {
-      pf::Log("Parser").warning("Register leak at %s: %d temporary registers not released (total locals=%d, free reg=%d)",
+      kt::Log("Parser").warning("Register leak at %s: %d temporary registers not released (total locals=%d, free reg=%d)",
          Context, int(freereg - total_locals), int(total_locals), int(freereg));
    }
 }
 
 void RegisterAllocator::trace_allocation(BCReg Start, BCReg Count, const char* Context) const
 {
-   auto prv = (prvTiri *)this->func_state->L->script->ChildPrivate;
-   if ((prv->JitOptions & JOF::TRACE_REGISTERS) != JOF::NIL) {
-      pf::Log("Parser").msg("Regalloc: reserve R%d..R%d (%d slots) at %s",
+   if ((this->func_state->L->script->JitOptions & JOF::TRACE_REGISTERS) != JOF::NIL) {
+      kt::Log("Parser").msg("Regalloc: reserve R%d..R%d (%d slots) at %s",
          int(Start.raw()), int(Start.raw() + Count.raw() - 1), int(Count.raw()), Context);
    }
 }
 
 void RegisterAllocator::trace_release(BCReg Start, BCReg Count, const char* Context) const
 {
-   auto prv = (prvTiri *)this->func_state->L->script->ChildPrivate;
-   if ((prv->JitOptions & JOF::TRACE_REGISTERS) != JOF::NIL) {
-      pf::Log("Parser").msg("Regalloc: release R%d..R%d (%d slots) at %s",
+   if ((this->func_state->L->script->JitOptions & JOF::TRACE_REGISTERS) != JOF::NIL) {
+      kt::Log("Parser").msg("Regalloc: release R%d..R%d (%d slots) at %s",
          int(Start.raw()), int(Start.raw() + Count.raw() - 1), int(Count.raw()), Context);
    }
 }

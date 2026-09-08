@@ -8,13 +8,14 @@
     <module>Vector</module>
     <comment>Support for applying colour transformation effects.</comment>
     <version>1</version>
-    <id>3db0d377</id>
+    <id>74dda7d1</id>
     <idstring>COLOURFX</idstring>
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>Use ColourFX to perform colour transformations on an input source.  A <fl>Mode</fl> must be selected and any required <fl>Values</fl> defined prior to rendering.</p>
-<p>SVG requires that the calculations are performed on non-premultiplied colour values.  If the input graphics consists of premultiplied colour values, those values are automatically converted into non-premultiplied colour values for this operation.</p></description>
+<p>SVG requires that the calculations are performed on non-premultiplied colour values.  If the input graphics consists of premultiplied colour values, those values are automatically converted into non-premultiplied colour values for this operation.</p>
+<p>The matrix is applied in the colour space defined by the parent <class name="VectorFilter">VectorFilter</class>'s ColourSpace field.  If set to <code>LINEAR_RGB</code> (the SVG default) then pixel values are converted to linear RGB prior to transformation and back to sRGB on output, otherwise the transformation is performed directly on the sRGB values.</p></description>
     <source>
       <file path="filters/">filter_colourmatrix.cpp</file>
     </source>
@@ -25,6 +26,7 @@
       <name>Draw</name>
       <comment>Render the effect to the target bitmap.</comment>
       <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
+      <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">The X position of the region to be drawn.</param>
         <param type="INT" name="Y">The Y position of the region to be drawn.</param>
@@ -39,8 +41,8 @@
     <field>
       <name>Mode</name>
       <comment>Defines the algorithm that will process the input source.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type lookup="CM">INT</type>
+      <access read="R" write="I">Read/Init</access>
+      <type lookup="CM">CM</type>
       <description>
 <types lookup="CM"/>
       </description>
@@ -62,6 +64,7 @@
       <comment>Returns an SVG compliant XML string that describes the effect.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
+      <tags>caller-owns-result</tags>
     </field>
 
   </fields>

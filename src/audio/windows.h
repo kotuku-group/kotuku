@@ -3,15 +3,16 @@
 ** Hardware/platform related functions.
 */
 
+#include <cstdint>
+
 int sndCheckActivity(struct PlatformData *);
+int sndGetPosition(struct PlatformData *, int64_t *);
 extern "C" const char * sndCreateBuffer(Object *, void *, int, int, struct PlatformData *, int);
 void sndFree(struct PlatformData *);
 void sndFrequency(struct PlatformData *, int);
 void sndSetPosition(struct PlatformData *, int);
-const char * sndInitialiseAudio(void);
 void sndPan(struct PlatformData *, float);
 __declspec(no_sanitize_address) int sndPlay(struct PlatformData *, bool, int);
-void sndReleaseAudio(void);
 void sndStop(struct PlatformData *);
 extern "C" int sndStreamAudio(struct PlatformData *);
 void sndVolume(struct PlatformData *, float);

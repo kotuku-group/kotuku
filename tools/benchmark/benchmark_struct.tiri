@@ -1,0 +1,124 @@
+-- Benchmark direct reads and writes on fields exposed by the native struct interface.
+
+struct BenchmarkStruct
+   Integer:int
+   Wide:int64
+   Float:float
+   Double:double
+end
+
+struct BenchmarkNarrowStruct
+   Word:int
+   Byte:int8
+   UnsignedWord:uint16
+   UnsignedByte:uint8
+end
+
+struct LargeLookupRecord
+   Zulu:int
+   Alpha:int
+   Mike:int
+   Bravo:int
+   Yankee:int
+   Charlie:int
+   Xray:int
+   Delta:int
+   Whiskey:int
+   Echo:int
+   Victor:int
+   Foxtrot:int
+end
+
+glLargeTable = { }
+
+glBenchmarkStruct = struct<BenchmarkStruct> {
+   integer = 1,
+   wide    = 2,
+   float   = 3.5,
+   double  = 4.5
+}
+
+glBenchmarkNarrowStruct = struct<BenchmarkNarrowStruct> {
+   word         = -123,
+   byte         = 120,
+   unsignedWord = 321,
+   unsignedByte = 200
+}
+
+glLargeStruct = struct<LargeLookupRecord> {}
+
+@Test function StructReadFields()
+   local count = 0
+   for i in {0 to 3000000} do
+      local integer = glBenchmarkStruct.integer
+      local wide    = glBenchmarkStruct.wide
+      local float   = glBenchmarkStruct.float
+      local double  = glBenchmarkStruct.double
+      count += integer + wide + float + double
+   end
+   return count
+end
+
+@Test function StructWriteFields()
+   for i in {0 to 12000000} do
+      glBenchmarkStruct.integer = 1
+      glBenchmarkStruct.wide    = 2
+      glBenchmarkStruct.float   = 3.5
+      glBenchmarkStruct.double  = 4.5
+   end
+   return glBenchmarkStruct.integer + glBenchmarkStruct.wide +
+      glBenchmarkStruct.float + glBenchmarkStruct.double
+end
+
+@Test function NarrowStructReadFields()
+   local count = 0
+   for i in {0 to 3000000} do
+      local word          = glBenchmarkNarrowStruct.word
+      local byte          = glBenchmarkNarrowStruct.byte
+      local unsigned_word = glBenchmarkNarrowStruct.unsignedWord
+      local unsigned_byte = glBenchmarkNarrowStruct.unsignedByte
+      count += word + byte + unsigned_word + unsigned_byte
+   end
+   return count
+end
+
+@Test function NarrowStructWriteFields()
+   for i in {0 to 1000000} do
+      glBenchmarkNarrowStruct.word         = i & 0x7fff
+      glBenchmarkNarrowStruct.byte         = i & 0x7f
+      glBenchmarkNarrowStruct.unsignedWord = i & 0xffff
+      glBenchmarkNarrowStruct.unsignedByte = i & 0xff
+   end
+   return glBenchmarkNarrowStruct.word + glBenchmarkNarrowStruct.byte +
+      glBenchmarkNarrowStruct.unsignedWord + glBenchmarkNarrowStruct.unsignedByte
+end
+
+@Test function LargeStructRW()
+   local count = 0
+   for i in {0 to 3000000} do
+      glLargeStruct.zulu = i
+      glLargeStruct.charlie = i
+      glLargeStruct.foxtrot = i
+      glLargeStruct.alpha = i
+      glLargeStruct.mike = i
+      -- NB: The JIT may collapse away the reads - benchmark still valid though
+      count += glLargeStruct.zulu + glLargeStruct.charlie + glLargeStruct.foxtrot
+   end
+   return count
+end
+
+-- Keep this test identical to LargeStructRW() for comparing performance between structs and tables.
+
+@Test function LargeStructTableCompareRW()
+   local count = 0
+   for i in {0 to 3000000} do
+      glLargeTable.zulu = i
+      glLargeTable.charlie = i
+      glLargeTable.foxtrot = i
+      glLargeTable.alpha = i
+      glLargeTable.mike = i
+      -- NB: The JIT may collapse away the reads - benchmark still valid though
+      count += glLargeTable.zulu + glLargeTable.charlie + glLargeTable.foxtrot
+   end
+   return count
+end

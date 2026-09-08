@@ -8,13 +8,14 @@ function enforce_hotpath() end
 
 @Test(priority=0) function BasicTryExcept()
    handled = false
+   local some_value = nil
 
    try
       local some_value = 42
-      error("Test error")
+      raise "Test error"
    except e
       handled = true
-      assert(e.message:find("Test error"), "Expected error message to contain 'Test error'")
+      assert(e.message.find("Test error"), "Expected error message to contain 'Test error'")
    end
 
    assert(handled, "Exception should have been handled")
@@ -33,7 +34,7 @@ end
    executed = false
    try
       executed = true
-      error('Ignore exception')
+      raise 'Ignore exception'
    end
    assert(executed, "Exception should be handled silently.")
 
@@ -49,7 +50,7 @@ end
    -- Test success block not executing when exception occurs in silent try
    success_executed = false
    try
-      error('Test error')
+      raise 'Test error'
    success
       success_executed = true
    end
@@ -85,7 +86,7 @@ end
    success_executed = false
 
    try
-      error("Test error")
+      raise "Test error"
    except
       handled = true
    success
@@ -107,10 +108,10 @@ end
 
    try
       try
-         error("Inner error")
+         raise "Inner error"
       except e
          inner_handled = true
-         assert(e.message:find("Inner"), "Inner handler should get inner error")
+         assert(e.message.find("Inner"), "Inner handler should get inner error")
       success
          inner_success = true
       end
@@ -131,23 +132,50 @@ end
 
 @Test(priority=5,hotpath=3) function Rethrow()
    outer_handled = false
+   inner_source = nil
+   inner_line = 0
 
    try
       msg("Entered outer try")
       try
          msg("Entered inner try")
-         error("Raising error")
+         raise "Raising error"
       except e
          msg("Captured inner error: " .. e.message)
-         error(e)
+         inner_source = e.source
+         inner_line = e.line
+         raise
       end
    except e
       outer_handled = true
       msg("Captured rethrown error in outer try: " .. e.message)
-      assert(e.message:find("Raising error"), "Outer should catch rethrown error, got: " .. e.message)
+      assert(e.message is "Raising error", "Outer should catch raw rethrown error, got: " .. e.message)
+      assert(e.source is inner_source, "Rethrow should preserve source")
+      assert(e.line is inner_line, "Rethrow should preserve line")
    end
 
    assert(outer_handled, "Rethrown exception should be caught by outer handler")
+end
+
+@Test(priority=5) function RethrowPreservesErrorCodeForFilters()
+   local matched_args = false
+
+   try
+      try
+         raise ERR_Args, "Rethrown args"
+      except e
+         assert(e.code is ERR_Args, "Inner handler should receive ERR_Args")
+         raise
+      end
+   except e when ERR_Args
+      matched_args = true
+      assert(e.code is ERR_Args, "Outer filtered handler should receive ERR_Args")
+      assert(e.message is "Rethrown args", "Rethrow should preserve raw message")
+   except e
+      assert(false, "Rethrown ERR_Args should not fall through to catch-all with code " .. tostring(e.code))
+   end
+
+   assert(matched_args, "Rethrown ERR_Args should match outer ERR_Args filter")
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -155,13 +183,37 @@ end
 
 @Test(priority=6) function ExceptionTableFields()
    try
-      error("Test message")
+      raise "Test message"
    except e
       assert(e.code is ERR_Exception, "Lua errors should have ERR_Exception code")
-      assert(e.message:find("Test message"), "Message should match, got " .. e.message)
+      assert(e.message is "Test message", "Message should be raw, got " .. e.message)
+      assert(e.source.find("test_try_except.tiri"), "Should have source filename, got " .. tostring(e.source))
       assert(e.line > 0, "Should have line number, got " .. tostring(e.line))
+      assert(getmetatable(e) is "exception", "Exception metatable should be protected with name 'exception'")
+      local exception_text = tostring(e)
+      assert(exception_text.find("test_try_except.tiri"), "Printable exception should include source")
+      assert(exception_text.find("Test message"), "Printable exception should include message")
+      assert(exception_text.find(tostring(e.line)), "Printable exception should include line")
+      local prefixed_text = "caught: " .. e
+      assert(prefixed_text.find("caught: "), "Prefixed concat should include prefix")
+      assert(prefixed_text.find("Test message"), "Prefixed concat should include message")
+      local suffixed_text = e .. " [handled]"
+      assert(suffixed_text.find(" [handled]"), "Suffixed concat should include suffix")
+      assert(suffixed_text.find("Test message"), "Suffixed concat should include message")
       -- TODO: trace capture not yet implemented (requires saving before stack restoration)
       -- assert(e.trace != nil, "Should have stack trace")
+   end
+end
+
+@Test(priority=7) function ExceptionMessageLocationTextIsNotParsed()
+   local message = "fake.tiri:99999: payload"
+
+   try
+      raise message
+   except e
+      assert(e.message is message, "Message should remain raw, got " .. e.message)
+      assert(e.line != 99999, "Line should come from debug metadata, got " .. tostring(e.line))
+      assert(e.source.find("test_try_except.tiri"), "Should have real source filename, got " .. tostring(e.source))
    end
 end
 
@@ -305,7 +357,7 @@ end
 
 @Test(priority=18) function EmptyExceptBlock()
    try
-      error("Test")
+      raise "Test"
    except e
    end
    -- Should not crash - empty handler is valid
@@ -317,9 +369,9 @@ end
 @Test(priority=19) function MultipleErrorsSequence()
    count = 0
 
-   for i in {0..30} do  -- Range is exclusive, so 0..3 gives 0, 1, 2
+   for i in {0 to 30} do  -- Range is exclusive, so 0..30 gives 0, 1, 2, ..., 29
       try
-         error("Error " .. i)
+         raise "Error " .. i
       except e
          count++
       end
@@ -335,10 +387,10 @@ end
    successful = 0
    failed = 0
 
-   for i in {0..5} do  -- Range is exclusive, so 0..5 gives 0, 1, 2, 3, 4
+   for i in {0 to 5} do  -- Range is exclusive, so 0..5 gives 0, 1, 2, 3, 4
       try
          if i % 2 is 0 then
-            error("Even number")
+            raise "Even number"
          end
          successful++
       except e
@@ -362,7 +414,7 @@ end
          depth = 2
          try
             depth = 3
-            error("Deep error")
+            raise "Deep error"
          except e
             assert(depth is 3, "Innermost should catch")
          end
@@ -400,7 +452,7 @@ end
    try
       exec([[
          try
-            error("test")
+            raise "test"
          except e
             print("catchall")
          except e when ERR_Failed
@@ -408,7 +460,7 @@ end
          end
       ]])
    success
-      error("catch-all before filtered should fail to parse")
+      assert(false, "catch-all before filtered should fail to parse")
    end
 
    -- Test: duplicate catch-all (should be a parse error)
@@ -416,7 +468,7 @@ end
    try
       exec([[
          try
-            error("test")
+            raise "test"
          except e
             print("first")
          except e
@@ -424,7 +476,7 @@ end
          end
       ]])
    success
-      error("duplicate catch-all should fail to parse")
+      assert(false, "duplicate catch-all should fail to parse")
    end
 
    -- Test: when without error code
@@ -432,13 +484,13 @@ end
    try
       exec([[
          try
-            error("test")
+            raise "test"
          except e when
             print("test")
          end
       ]])
    success
-      error("when without error code should fail to parse")
+      assert(false, "when without error code should fail to parse")
    end
 end
 
@@ -469,7 +521,7 @@ end
    -- Just catch-all
    handled = false
    try
-      error("test")
+      raise "test"
    except e
       handled = true
    end
@@ -521,7 +573,7 @@ end
 @Test(priority=26) function ReturnFromExcept()
    function test_return()
       try
-         error("test")
+         raise "test"
       except e
          return "from_except"
       end
@@ -538,14 +590,14 @@ end
 
 global function break_test()
    count = 0
-   for i in {0..9} do
+   for i in {0 to 9} do
       try
          count++
          if i is 3 then
             break
          end
       except e
-         error("Exception should not occur")
+         assert(false, "Exception should not occur")
       end
    end
    count++ -- We need a function to be called immediately after the break to ensure that function exit isn't broken
@@ -553,7 +605,7 @@ global function break_test()
 end
 
 @Test(priority=27) function BreakFromTry()
-   for i in {0..20} do
+   for i in {0 to 20} do
       count = break_test()
       assert(count is 5, "Expected a count of 5, got " .. count)
    end
@@ -565,7 +617,7 @@ end
 @Test(priority=28) function ContinueFromTry()
    count = 0
    sum = 0
-   for i in {0..5} do
+   for i in {0 to 5} do
       try
          count++
          if i is 2 then
@@ -586,7 +638,7 @@ end
 @Test(priority=28) function BreakFromSuccess()
    count = 0
    success_count = 0
-   for i in {0..10} do
+   for i in {0 to 10} do
       try
          count++
       except e
@@ -610,8 +662,8 @@ end
       x = nil
       y = x.field
    except e
-      assert(e.code is ERR_Exception, "Expected ERR_Exception code, got " .. tostring(e.code))
-      assert(e.message:find("nil"), "Should mention nil in message")
+      assert(e.code is ERR_TypeMismatch, "Expected ERR_TypeMismatch code, got " .. tostring(e.code))
+      assert(e.message.find("nil"), "Should mention nil in message")
    end
 
    -- Type error
@@ -630,37 +682,28 @@ end
       -- This should NOT trigger an exception (ERR_Okay is below threshold)
       err = mSys.AnalysePath(".", 0)
    except e
-      error("ERR_Okay should not trigger except, got " .. e.message)
+      assert(false, "ERR_Okay should not trigger except, got " .. e.message)
    end
 end
 
-@Test(priority=30,hotpath=false) function ErrorCodeRaised()
+@Test(priority=30,hotpath=false) function ErrorCodeIsAnOrdinaryTryResult()
+   local err = ERR_Okay
    try
-      -- Trigger an ERR_Args exception
-      err = mSys.AllocMemory(-1024, MEM_DATA)
-   except e when ERR_Args
-      -- Expected result
+      err = mSys.AllocResource(-1024, 0)
    except e
-      error(f"Expected ERR_Args code, got {e.code}")
+      assert(false, f"Plain try must not promote returned ERR values, got {e.code}")
    success
-      error("Error should have been raised by faulty sytem call.")
+      assert(err is ERR_Args, f"Expected ERR_Args as an ordinary result, got {err}")
    end
 
-   -- Try can only check ERR codes in its immediate scope, so the AllocMemory() result would not be tested in this case
+   -- Plain try only catches exceptions; calls made by another Tiri activation are likewise ordinary results.
    try
       function internal()
-         mSys.AllocMemory(-1024, MEM_DATA)
+         mSys.AllocResource(-1024, 0)
       end
       internal()
    except e
-      error(f"AllocMemory() should not have its ERR code tested.")
-   end
-
-   t = obj.new('time', { })
-   try
-      t.acDraw()
-   success
-      error("acDraw() on time object should raise an error")
+      assert(false, f"AllocResource() should not have its ERR code tested.")
    end
 end
 
@@ -672,22 +715,22 @@ end
    closed = false
    received_err = nil
    mt = {
-      __close = function(self, err)
+      __close = function(Error)
          closed = true
-         received_err = err
+         received_err = Error
       end
    }
 
    try
       local obj <close> = setmetatable({}, mt)
-      error("test error in try")
+      raise "test error in try"
    except e
       -- Exception should be caught
    end
 
    assert(closed, "<close> handler should be called when try-except catches exception")
    assert(received_err != nil, "Error should be passed to __close handler")
-   assert(tostring(received_err):find("test error in try"), "Error message should be passed to __close: got " .. tostring(received_err))
+   assert(tostring(received_err).find("test error in try"), "Error message should be passed to __close: got " .. tostring(received_err))
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -697,8 +740,8 @@ end
    order = array<int>
    function makeMt(n:num)
       return {
-         __close = function(self, err)
-            order:push(n)
+         __close = function(Error)
+            order.push(n)
          end
       }
    end
@@ -707,7 +750,7 @@ end
       local a <close> = setmetatable({}, makeMt(1))
       local b <close> = setmetatable({}, makeMt(2))
       local c <close> = setmetatable({}, makeMt(3))
-      error("multi close test")
+      raise "multi close test"
    except e
       -- Exception should be caught
    end
@@ -723,15 +766,15 @@ end
 -- Only locals created inside a try block should be closed when that try handles an exception.
 
 @Test(priority=33) function CloseInNestedTry()
-   order = array<string>
-   mt_outer = { __close = function() order:push('outer') end }
-   mt_inner = { __close = function() order:push('inner') end }
+   order = array<str>
+   mt_outer = { __close = function() order.push('outer') end }
+   mt_inner = { __close = function() order.push('inner') end }
 
    try
       local outer_obj <close> = setmetatable({}, mt_outer)
       try
          local inner_obj <close> = setmetatable({}, mt_inner)
-         error("inner error")
+         raise "inner error"
       except e
          -- Inner exception caught
       end
@@ -749,23 +792,23 @@ end
 -- <close> cleanup when no exception occurs in try block, runs before success
 
 @Test(priority=34) function CloseInTryNoException()
-   order = array<string>
+   order = array<str>
    mt = {
-      __close = function(self, err)
-         order:push('close')
+      __close = function(Error)
+         order.push('close')
       end
    }
 
    try
       local obj <close> = setmetatable({}, mt)
-      order:push('try-body')
+      order.push('try-body')
    except e
       assert(false, "No exception expected")
    success
-      order:push('success')
+      order.push('success')
    end
 
-   result = order:join(',')
+   result = order.concat(',')
    assert(result is 'try-body,close,success', "<close> should run before success: '" .. result .. "'")
 end
 
@@ -775,16 +818,16 @@ end
 @Test(priority=35) function CloseErrorInTryExcept()
    close_called = false
    mt = {
-      __close = function(self, err)
+      __close = function(Error)
          close_called = true
-         error("close handler error")
+         raise "close handler error"
       end
    }
 
    caught_error = nil
    try
       local obj <close> = setmetatable({}, mt)
-      error("original error")
+      raise "original error"
    except e
       caught_error = e
    end
@@ -792,7 +835,7 @@ end
    assert(close_called, "<close> handler should be called")
    -- Per Lua 5.4 semantics, error in __close replaces original
    assert(caught_error != nil, "Should catch an error")
-   assert(tostring(caught_error.message):find("close handler error"), "Error from __close should replace original: got " .. tostring(caught_error.message))
+   assert(tostring(caught_error.message).find("close handler error"), "Error from __close should replace original: got " .. tostring(caught_error.message))
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -801,7 +844,7 @@ end
 @Test(priority=36) function CloseOnReturnFromTry()
    closed = false
    mt = {
-      __close = function(self, err)
+      __close = function(Error)
          closed = true
       end
    }
@@ -826,7 +869,7 @@ end
 @Test(priority=37) function CloseOnReturnFromExcept()
    closed = false
    mt = {
-      __close = function(self, err)
+      __close = function(Error)
          closed = true
       end
    }
@@ -834,7 +877,7 @@ end
    function subject()
       try
          local obj <close> = setmetatable({}, mt)
-         error("return from except test")
+         raise "return from except test"
       except e
          return "from_except"
       end
@@ -851,9 +894,9 @@ end
 @Test(priority=38) function CloseOnBreakFromTry()
    function subject()
       closed = 0
-      mt = { __close = function(self, err) closed++ end }
+      mt = { __close = function(Error) closed++ end }
       count = 0
-      for i in {0..5} do
+      for i in {0 to 5} do
          try
             local obj <close> = setmetatable({}, mt)
             count++
@@ -877,9 +920,9 @@ end
 @Test(priority=39) function CloseOnContinueFromTry()
    function subject()
       closed = 0
-      mt = { __close = function(self, err) closed++ end }
+      mt = { __close = function(Error) closed++ end }
       count = 0
-      for i in {0..5} do
+      for i in {0 to 5} do
          try
             local obj <close> = setmetatable({}, mt)
             count++
@@ -903,7 +946,7 @@ end
 @Test(priority=40) function CloseOnRethrow()
    closed = false
    mt = {
-      __close = function(self, err)
+      __close = function(Error)
          closed = true
       end
    }
@@ -912,9 +955,9 @@ end
    try
       try
          local obj <close> = setmetatable({}, mt)
-         error("inner")
+         raise "inner"
       except e
-         error("outer " .. e.message)
+         raise "outer " .. e.message
       end
    except e
       caught_error = e
@@ -922,7 +965,7 @@ end
 
    assert(closed, "<close> handler should run before rethrow")
    assert(caught_error != nil, "Outer exception should be caught")
-   assert(tostring(caught_error.message):find("outer"), "Expected rethrown error, got " .. tostring(caught_error.message))
+   assert(tostring(caught_error.message).find("outer"), "Expected rethrown error, got " .. tostring(caught_error.message))
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -931,14 +974,14 @@ end
 @Test(priority=41) function CloseErrorContinuesHandlers()
    order = {}
    mt_first = {
-      __close = function(self, err)
-         table.insert(order, "first")
+      __close = function(Error)
+         order.insert("first")
       end
    }
    mt_second = {
-      __close = function(self, err)
-         table.insert(order, "second")
-         error("close second")
+      __close = function(Error)
+         order.insert("second")
+         raise "close second"
       end
    }
 
@@ -946,7 +989,7 @@ end
    try
       local a <close> = setmetatable({}, mt_first)
       local b <close> = setmetatable({}, mt_second)
-      error("original error")
+      raise "original error"
    except e
       caught_error = e
    end
@@ -954,7 +997,7 @@ end
    assert(#order is 2, "Both <close> handlers should run, got " .. tostring(#order))
    assert(order[0] is "second", "LIFO: second should close first, got " .. tostring(order[0]))
    assert(order[1] is "first", "LIFO: first should close second, got " .. tostring(order[1]))
-   assert(tostring(caught_error.message):find("close second"), "Close error should replace original: got " .. tostring(caught_error.message))
+   assert(tostring(caught_error.message).find("close second"), "Close error should replace original: got " .. tostring(caught_error.message))
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -963,178 +1006,180 @@ end
 -- Defer runs when try block exits normally (no exception), before success block
 
 @Test(priority=40) function DeferInTryBlockNormal()
-   order = array<string>
+   order = array<str>
 
    function subject()
       try
          defer
-            order:push('deferred')
+            order.push('deferred')
          end
-         order:push('try-body')
+         order.push('try-body')
       except e
-         order:push('except')
+         order.push('except')
       success
-         order:push('success')
+         order.push('success')
       end
    end
 
    subject()
-   result = order:join(',')
+   result = order.concat(',')
    assert(result is 'try-body,deferred,success', "Defer should run before success block: '" .. tostring(result) .. "'")
 end
 
 -- Test defer behavior when exception is caught by try-except
 
 @Test(priority=40) function DeferInTryWithException()
-   order = array<string>
+   order = array<str>
 
    function subject()
       try
          defer
-            order:push('deferred')
+            order.push('deferred')
          end
-         order:push('before-error')
-         error('test error')
-         order:push('after-error')
+         order.push('before-error')
+         raise 'test error'
+         order.push('after-error')
       except
-         order:push('except')
+         order.push('except')
       end
    end
 
    subject()
 
    -- Document actual behavior - defer may or may not run depending on implementation
-   assert(#order >= 2, "Should have at least before-error and except: '" .. order:join(',') .. "'")
-   assert(order[0] is 'before-error', "First should be before-error: '" .. order:join(',') .. "'")
+   assert(#order >= 2, "Should have at least before-error and except: '" .. order.concat(',') .. "'")
+   assert(order[0] is 'before-error', "First should be before-error: '" .. order.concat(',') .. "'")
 end
 
 -- Test multiple defers when exception is caught
 
 @Test(priority=40) function MultipleDeferInTryWithException()
-   order = array<string>
+   order = array<str>
 
    function subject()
       try
          defer
-            order:push('defer-1')
+            order.push('defer-1')
          end
          defer
-            order:push('defer-2')
+            order.push('defer-2')
          end
          defer
-            order:push('defer-3')
+            order.push('defer-3')
          end
-         order:push('body')
-         error('test error')
+         order.push('body')
+         raise 'test error'
       except e
-         order:push('except')
+         order.push('except')
       end
    end
 
    subject()
 
    -- Document actual behavior
-   assert(#order >= 2, "Should have at least body and except: '" .. order:join(',') .. "'")
-   assert(order[0] is 'body', "First should be body: '" .. order:join(',') .. "'")
+   assert(#order >= 2, "Should have at least body and except: '" .. order.concat(',') .. "'")
+   assert(order[0] is 'body', "First should be body: '" .. order.concat(',') .. "'")
 end
 
 -- Defer in except block runs correctly when except exits
 
 @Test(priority=40) function DeferInExceptBlock()
-   order = array<string>
+   order = array<str>
 
    function subject()
       try
-         error('test error')
+         raise 'test error'
       except
          defer
-            order:push('except-defer')
+            order.push('except-defer')
          end
-         order:push('except-body')
+         order.push('except-body')
       end
 
-      order:push('after-try')
+      order.push('after-try')
    end
 
    subject()
 
-   assert(order:join(',') is 'except-body,except-defer,after-try', "Defer in except block should run when except exits: '" .. order:join(',') .. "'")
+   assert(order.concat(',') is 'except-body,except-defer,after-try',
+      "Defer in except block should run when except exits: '" .. order.concat(',') .. "'")
 end
 
 -- Test defer behavior with nested try blocks
 
 @Test(priority=40) function DeferInNestedTry()
-   order = array<string>
+   order = array<str>
 
    function subject()
       try
          defer
-            order:push('outer-defer')
+            order.push('outer-defer')
          end
-         order:push('outer-body')
+         order.push('outer-body')
 
          try
             defer
-               order:push('inner-defer')
+               order.push('inner-defer')
             end
-            order:push('inner-body')
-            error('inner error')
+            order.push('inner-body')
+            raise 'inner error'
          except e
-            order:push('inner-except')
+            order.push('inner-except')
          end
 
-         order:push('after-inner-try')
+         order.push('after-inner-try')
       except e
-         order:push('outer-except')
+         order.push('outer-except')
       end
    end
 
    subject()
 
    -- Document actual behavior - outer-defer should run, inner-defer behavior may vary
-   assert(order[0] is 'outer-body', "First should be outer-body: '" .. order:join(',') .. "'")
-   assert(order[1] is 'inner-body', "Second should be inner-body: '" .. order:join(',') .. "'")
+   assert(order[0] is 'outer-body', "First should be outer-body: '" .. order.concat(',') .. "'")
+   assert(order[1] is 'inner-body', "Second should be inner-body: '" .. order.concat(',') .. "'")
 end
 
 -- Defer runs when returning from try block (no exception)
 
 @Test(priority=40) function DeferWithReturnFromTry()
-   order = array<string>
+   order = array<str>
 
    function subject()
       try
          defer
-            order:push('deferred')
+            order.push('deferred')
          end
-         order:push('before-return')
+         order.push('before-return')
          return 'from-try'
       except e
-         order:push('except')
+         order.push('except')
          return 'from-except'
       end
-      order:push('after-try')
+      order.push('after-try')
       return 'after'
    end
 
    result = subject()
    assert(result is 'from-try', "Should return from try block, got '" .. tostring(result) .. "'")
-   assert(order:join(',') is 'before-return,deferred', "Defer should run before return: '" .. order:join(',') .. "'")
+   assert(order.concat(',') is 'before-return,deferred',
+      "Defer should run before return: '" .. order.concat(',') .. "'")
 end
 
 -- Defer runs when breaking from try block in loop (no exception)
 
 @Test(priority=45) function DeferWithBreakInTryLoop()
-   order = array<string>
+   order = array<str>
 
    function subject()
-      for i = 1, 4 do
+      for i in {1 to 5} do
          try
             defer
-               order:push('defer-' .. tostring(i))
+               order.push('defer-' .. tostring(i))
             end
-            order:push('body-' .. tostring(i))
+            order.push('body-' .. tostring(i))
          except
-            order:push('except-' .. tostring(i))
+            order.push('except-' .. tostring(i))
          end
       end
    end
@@ -1142,27 +1187,28 @@ end
    subject()
 
    expected = 'body-1,defer-1,body-2,defer-2,body-3,defer-3,body-4,defer-4'
-   assert(order:join(',') is expected, "Defer should run on break from try:\n" .. expected .. '\n' .. order:join(','))
+   assert(order.concat(',') is expected,
+      "Defer should run on break from try:\n" .. expected .. '\n' .. order.concat(','))
 end
 
 -- Test defer behavior with continue in try loop
 
 @Test(priority=45) function DeferWithContinueInTryLoop()
-   order = array<string>
+   order = array<str>
 
    function subject()
-      for i = 1, 3 do
+      for i in {1 to 4} do
          try
             defer
-               order:push('defer-' .. tostring(i))
+               order.push('defer-' .. tostring(i))
             end
-            order:push('body-' .. tostring(i))
+            order.push('body-' .. tostring(i))
             if i is 2 then
                continue
             end
-            order:push('after-continue-' .. tostring(i))
+            order.push('after-continue-' .. tostring(i))
          except e
-            order:push('except-' .. tostring(i))
+            order.push('except-' .. tostring(i))
          end
       end
    end
@@ -1170,38 +1216,38 @@ end
    subject()
 
    -- Document actual behavior
-   assert(#order >= 3, "Should have multiple entries: '" .. order:join(',') .. "'")
+   assert(#order >= 3, "Should have multiple entries: '" .. order.concat(',') .. "'")
 end
 
 -- Test interaction between defer and <close> in try block with exception
 
 @Test(priority=45) function DeferAndCloseInTry()
-   order = array<string>
-   mt = { __close = function() order:push('close') end }
+   order = array<str>
+   mt = { __close = function() order.push('close') end }
 
    function subject()
       try
          defer
-            order:push('defer')
+            order.push('defer')
          end
          local obj <close> = setmetatable({}, mt)
-         order:push('body')
-         error('test error')
+         order.push('body')
+         raise 'test error'
       except
-         order:push('except')
+         order.push('except')
       end
    end
 
    subject()
 
    -- Document actual behavior - close should run, defer behavior may vary
-   assert(order[0] is 'body', "First should be body: '" .. order:join(',') .. "'")
+   assert(order[0] is 'body', "First should be body: '" .. order.concat(',') .. "'")
 
    local has_close = false
    for v in values(order) do
       if v is 'close' then has_close = true end
    end
-   assert(has_close, "<close> handler should be called: '" .. order:join(',') .. "'")
+   assert(has_close, "<close> handler should be called: '" .. order.concat(',') .. "'")
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -1209,7 +1255,7 @@ end
 
 @Test(priority=50) function TryTraceCapture()
    try<trace>
-      error("Test error")
+      raise "Test error"
    except e
       assert(e.trace, "Trace should be captured with try<trace>")
       assert(type(e.trace) is "array", "Trace should be array of frames")
@@ -1219,7 +1265,7 @@ end
 
 @Test(priority=51) function TryTraceFrameStructure()
    try<trace>
-      error("Test error")
+      raise "Test error"
    except e
       assert(e.trace, "Trace should be captured")
       frame = e.trace[0]
@@ -1230,17 +1276,17 @@ end
 
 @Test(priority=52) function TryTraceStackTraceString()
    try<trace>
-      error("Test error")
+      raise "Test error"
    except e
       str = e.stackTrace
       assert(type(str) is "string", "stackTrace should return string")
-      assert(str:find("stack traceback:"), "Should have traceback header")
+      assert(str.find("stack traceback:"), "Should have traceback header")
    end
 end
 
 @Test(priority=53) function TryWithoutTraceIsNil()
    try
-      error("Test error")
+      raise "Test error"
    except e
       assert(e.trace is nil, "Regular try should not capture trace")
       assert(e.stackTrace is nil, "Regular try should not have stackTrace")
@@ -1249,7 +1295,7 @@ end
 
 @Test(priority=54) function TryTraceNestedFunction()
    function innerFunc()
-      error("Inner error")
+      raise "Inner error"
    end
 
    function outerFunc()
@@ -1266,8 +1312,8 @@ end
       found_inner = false
       found_outer = false
       for i, frame in ipairs(e.trace) do
-         if frame.func and frame.func:find("innerFunc") then found_inner = true end
-         if frame.func and frame.func:find("outerFunc") then found_outer = true end
+         if frame.func and frame.func.find("innerFunc") then found_inner = true end
+         if frame.func and frame.func.find("outerFunc") then found_outer = true end
       end
       -- Note: function names may not always be available depending on how the error is raised
    end
@@ -1288,11 +1334,11 @@ end
 
    try<trace>
       try<trace>
-         error("Inner error")
+         raise "Inner error"
       except e
          inner_trace = e.trace
       end
-      error("Outer error")
+      raise "Outer error"
    except e
       outer_trace = e.trace
    end
@@ -1306,11 +1352,11 @@ end
 
    try<trace>
       try
-         error("Inner error - no trace")
+         raise "Inner error - no trace"
       except e
          -- Inner try has no trace
          assert(e.trace is nil, "Inner try should not have trace")
-         error("Rethrow")
+         raise "Rethrow"
       end
    except e
       trace_captured = e.trace
@@ -1329,7 +1375,7 @@ end
       assert(e.code is ERR_Failed, "raise should set error code")
       return
    end
-   error("raise did not throw an exception")
+   assert(false, "raise did not throw an exception")
 end
 
 @Test(priority=61) function RaiseWithMessage()
@@ -1337,29 +1383,55 @@ end
       raise ERR_Args, "Custom error message"
    except e
       assert(e.code is ERR_Args, "raise should set error code")
-      assert(e.message:find("Custom error message"), "raise should use custom message")
+      assert(e.message is "Custom error message", "raise should use raw custom message")
+      assert(e.source.find("test_try_except.tiri"), "raise should set source, got " .. tostring(e.source))
+      assert(e.line > 0, "raise should set line, got " .. tostring(e.line))
       return
    end
-   error("raise with message did not throw an exception")
+   assert(false, "raise with message did not throw an exception")
 end
 
-@Test(priority=62) function CheckBelowThreshold()
+@Test(priority=62) function RaiseWithDefaultCodeMessage()
+   try
+      raise "Default code message"
+   except e
+      assert(e.code is ERR_Exception, "raise with only a message should default to ERR_Exception")
+      assert(e.message is "Default code message", "raise should use the first string expression as the message")
+      return
+   end
+   assert(false, "raise with default code message did not throw an exception")
+end
+
+@Test(priority=63) function RaiseWithDefaultCodeMessageVariable()
+   err_text = "Variable default code message"
+
+   try
+      raise err_text
+   except e
+      assert(e.code is ERR_Exception, "raise with only a message variable should default to ERR_Exception")
+      assert(e.message is "Variable default code message", "raise should use the first string variable as the message")
+      return
+   end
+   assert(false, "raise with default code message variable did not throw an exception")
+end
+
+@Test(priority=64) function CheckBelowThreshold()
    -- ERR_Okay should not raise an exception
    check ERR_Okay
    -- If we reach here, the test passed
 end
 
-@Test(priority=63) function CheckAboveThreshold()
+@Test(priority=65) function CheckAboveThreshold()
    try
       check ERR_Failed
    except e
       assert(e.code is ERR_Failed, "check should raise for codes >= threshold, got " .. e.code)
       return
    end
-   error("check should have raised an exception for ERR_Failed")
+   assert(false, "check should have raised an exception for ERR_Failed")
 end
 
-@Test(priority=64) function CheckWithExpression()
+@Test(priority=66) function CheckWithExpression()
    function returns_error()
       return ERR_Args
    end
@@ -1369,10 +1441,72 @@ end
    except e when ERR_Args
       return  -- Expected
    end
-   error("check with expression should have thrown")
+   assert(false, "check with expression should have thrown")
 end
 
-@Test(priority=65) function RaiseWithVariable()
+@Test(priority=66) function CheckExpressionFallsThroughResults()
+   function checked_results(Fail):<num, num, str>
+      return Fail ? ERR_Args : ERR_Okay, 37, 'captured'
+   end
+
+   function inferred_checked_results()
+      return check checked_results(false)
+   end
+
+   err, count, text = check checked_results(false)
+   assert(err is ERR_Okay, "check expression should preserve the successful error result")
+   assert(count is 37, "check expression should preserve the second result")
+   assert(text is 'captured', "check expression should preserve the third result")
+
+   err, count, text = inferred_checked_results()
+   assert(err is ERR_Okay, "inferred checked return should preserve the successful error result")
+   assert(count is 37, "inferred checked return should preserve the second result")
+   assert(text is 'captured', "inferred checked return should preserve the third result")
+
+   file = obj.new('file', { path='string:native result' })
+   buffer = string.alloc(32)
+   err, bytes = check file.acRead(buffer)
+   assert(err is ERR_Okay, "check expression should preserve a successful native error result")
+   assert(bytes is 13, "check expression should preserve a native action's result")
+   assert(buffer.sub(0, bytes) is 'native result', "checked native action should populate its output buffer")
+
+   missing_path = 'no_such_volume_for_checked_expression:'
+   try
+      err, path_type = check mSys.AnalysePath(missing_path)
+   except e when ERR_FileNotFound
+      assert(e.message.find('AnalysePath()'), "checked native expression should retain the call diagnostic")
+   success
+      assert(false, "checked native expression should promote a failing first result")
+   end
+
+   try
+      err, count, text = check checked_results(true)
+   except e when ERR_Args
+      return
+   end
+   assert(false, "check expression assignment should promote a failing first result")
+end
+
+@Test(priority=0.5,hotpath=false) function CheckIncludesLocationAndTraceback()
+   expected_line = @SourceLine + 3
+
+   try
+      check ERR_Failed
+   except e
+      assert(e.line is expected_line,
+         f"check should retain source line {expected_line}, got {e.line}; message: {e.message}")
+      assert(e.message.startsWith(f'[{expected_line}:'), "check should prefix its line and column, got " .. e.message)
+      assert(e.message.find(mSys.GetErrorMsg(ERR_Failed)), "check should include the error description")
+      assert(e.message.find("stack traceback:"), "check should include a stack traceback")
+      assert(e.message.find(f'test_try_except.tiri:{expected_line}:'),
+         f"check traceback should identify source line {expected_line}")
+      return
+   end
+
+   assert(false, "check should have raised an exception with a traceback")
+end
+
+@Test(priority=67) function RaiseWithVariable()
    -- Test that raise works with variables, not just constants
    err_code = ERR_Failed
    caught = false
@@ -1387,19 +1521,19 @@ end
    assert(caught, "Exception should have been caught")
 end
 
-@Test(priority=66) function RaiseConditionalShorthand()
+@Test(priority=68) function RaiseConditionalShorthand()
    truthy_value = "has_something"
    falsy_value = nil
 
    try
-      truthy_value ?? raise ERR_Failed
+      truthy_value ?! raise ERR_Failed
    except e
-      error("Truthy value should not trigger raise")
+      assert(false, "Truthy value should not trigger raise")
    end
 
    caught = false
    try
-      falsy_value ?? raise ERR_Failed
+      falsy_value ?! raise ERR_Failed
    except e
       caught = true
       assert(e.code is ERR_Failed, "Should catch ERR_Failed")
@@ -1407,22 +1541,553 @@ end
    assert(caught, "Falsy value should have triggered raise")
 end
 
-@Test(priority=67) function CheckConditionalShorthand()
+@Test(priority=69) function CheckConditionalShorthand()
    truthy_value = true
    falsy_value = nil
 
    try
-      truthy_value ?? check ERR_Failed  -- Would fail if executed, but shouldn't execute
+      truthy_value ?! check ERR_Failed  -- Would fail if executed, but shouldn't execute
    except e
-      error("Truthy value should not trigger check")
+      assert(false, "Truthy value should not trigger check")
    end
 
    caught = false
    try
-      falsy_value ?? check ERR_Failed
+      falsy_value ?! check ERR_Failed
    except e
       caught = true
       assert(e.code is ERR_Failed, "Should catch ERR_Failed")
    end
    assert(caught, "Falsy value should have triggered check")
+end
+
+@Test(priority=68) function CheckedModuleCallUsesCallErrorMessage()
+   sentinel = 'no_such_volume_for_error_message_test:'
+
+   try
+      check mSys.AnalysePath(sentinel)
+   except e
+      assert(e.code is ERR_FileNotFound, "Expected ERR_FileNotFound, got " .. tostring(e.code))
+      assert(e.message != sentinel, "Module call error message must not be replaced by the string argument")
+      assert(e.message.find("AnalysePath() failed:"), "Module call error should identify the function")
+      assert(e.message.find(mSys.GetErrorMsg(e.code)), "Module call error should include the official message")
+      return
+   end
+
+   assert(false, "AnalysePath() should have raised an exception")
+end
+
+@Test(priority=69) function CheckedObjectActionUsesCallErrorMessage()
+   sentinel = '<body/><page>not an error message</page>'
+   time = obj.new('time')
+
+   try
+      check time.acDataFeed(nil, DATA_TEXT, sentinel)
+   except e
+      assert(e.code is ERR_NoAction, "Expected ERR_NoAction, got " .. tostring(e.code))
+      assert(e.message != sentinel, "Object action error message must not be replaced by the string argument")
+      assert(e.message.find("Time.DataFeed() failed:"), "Object action error should identify the action")
+      assert(e.message.find(mSys.GetErrorMsg(e.code)), "Object action error should include the official message")
+      return
+   end
+
+   assert(false, "Time.DataFeed() should have raised an exception")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Faults raised internally through lj_err_caller(), lj_err_msg() and lj_err_arg() carry no explicit error code at the
+-- call site.  The code is derived from the message catalogue in lj_errmsg.h and stamped into L->CaughtError by the
+-- raise entry points, so an 'except when' filter must be able to match on the specific fault rather than the generic
+-- ERR_Exception that these paths previously reported.
+
+@Test(priority=70) function CatalogueDerivedErrorCodes()
+   local function expect(Code, Name, Fn)
+      try
+         Fn()
+      except e
+         assert(e.code is Code, Name .. ": expected code " .. tostring(Code) .. ", got " .. tostring(e.code))
+         return
+      end
+      assert(false, Name .. ": no exception was raised")
+   end
+
+   expect(ERR_OutOfBounds, "array index out of bounds", function()
+      local a = array<int> { 1, 2, 3 }
+      a.remove(99)
+   end)
+
+   expect(ERR_TypeMismatch, "call a nil value", function()
+      local f = nil
+      f()
+   end)
+
+   expect(ERR_TypeMismatch, "arithmetic on a table", function()
+      local x = {} + 1
+   end)
+
+   expect(ERR_TypeMismatch, "compare number with string", function()
+      local x = 1 < 'a'
+   end)
+
+   expect(ERR_Failed, "assertion failure", function()
+      assert(false)
+   end)
+
+   expect(ERR_Args, "bad argument type", function()
+      local rep:any = string.rep
+      rep({}, 3)
+   end)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- A filter must only match the fault actually raised.  Before the codes were catalogued, every one of these faults
+-- reported ERR_Exception, so a filter naming any other code could not select between them.
+
+@Test(priority=71) function ErrorCodeFiltersDiscriminate()
+   matched = false
+
+   try
+      local a = array<int> { 1, 2, 3 }
+      a.remove(99)
+   except e when ERR_Args
+      assert(false, "array bounds fault must not be caught by an ERR_Args filter")
+   except e when ERR_TypeMismatch
+      assert(false, "array bounds fault must not be caught by an ERR_TypeMismatch filter")
+   except e when ERR_OutOfBounds
+      matched = true
+      assert(e.code is ERR_OutOfBounds, "expected ERR_OutOfBounds, got " .. tostring(e.code))
+   except e
+      raise "array bounds fault fell through to the catch-all, code " .. tostring(e.code)
+   end
+
+   assert(matched, "array bounds fault did not match the ERR_OutOfBounds filter")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- lj_err_callermsg() and lj_err_currentmsg() take a raw message and cannot derive a code from the catalogue, so the
+-- ERR code is a mandatory parameter at every call site.  These faults previously reported ERR_Exception.
+
+@Test(priority=72) function RawMessageErrorCodes()
+   local function expect(Code, Name, Fn)
+      try
+         Fn()
+      except e
+         assert(e.code is Code, Name .. ": expected code " .. tostring(Code) .. ", got " .. tostring(e.code))
+         return
+      end
+      assert(false, Name .. ": no exception was raised")
+   end
+
+   -- Environment mutation policy (env_check_contract, table_clear).  Computed keys are used so that the store is
+   -- rejected at runtime rather than by the parser.
+
+   expect(ERR_ReadOnly, "override a protected built-in", function()
+      local key = 'to' .. 'string'
+      _G[key] = 42
+   end)
+
+   expect(ERR_ReadOnly, "clear the global environment", function()
+      table.clear(_G)
+   end)
+
+   -- Runtime type contracts.  The local boundary raises through lj_err_currentmsg(), the parameter and result
+   -- boundaries through lj_err_callermsg().
+
+   local function opaque(V):any return V end
+
+   expect(ERR_TypeMismatch, "local type contract", function()
+      local v:str = opaque(42)
+   end)
+
+   local function typed(Value:str):str return Value end
+
+   expect(ERR_TypeMismatch, "parameter type contract", function()
+      typed(opaque(42))
+   end)
+
+   local function typedResult(Value:any):str return Value end
+
+   expect(ERR_TypeMismatch, "result type contract", function()
+      typedResult(opaque(42))
+   end)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- The codeless luaL_error() overloads are deprecated; every raise now names an ERR code.  These faults previously
+-- surfaced as ERR_Exception.
+
+@Test(priority=73) function CodelessRaiseMigration()
+   local function expect(Code, Name, Fn)
+      try
+         Fn()
+      except e
+         assert(e.code is Code, Name .. ": expected code " .. tostring(Code) .. ", got " .. tostring(e.code))
+         return
+      end
+      assert(false, Name .. ": no exception was raised")
+   end
+
+   expect(ERR_TypeMismatch, "iterate over a number", function()
+      for k, v in 42 do end
+   end)
+
+   expect(ERR_Args, "forEach arity", function()
+      forEach({ 1, 2, 3 })
+   end)
+
+   expect(ERR_Syntax, "exec() parse failure", function()
+      exec("this is not ++ valid tiri")
+   end)
+
+   expect(ERR_Failed, "exec() runtime failure", function()
+      exec("assert(false)")
+   end)
+
+   -- loadFile() previously discarded the ERR it had already resolved and raised a bare ERR_Exception.  The real
+   -- code now reaches the handler.
+
+   expect(ERR_DoesNotExist, "loadFile() on a missing file", function()
+      loadFile("/nonexistent/definitely_not_here.tiri")
+   end)
+
+   expect(ERR_Failed, "loadFile() runtime failure", function()
+      loadFile("sdk:src/tiri/tests/loadfile_runtime_error_fixture.tiri")
+   end)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Bare and legacy rethrows preserve the original object, metadata and nearest lexical handler.
+
+@Test function BareRethrowPreservesTracedException()
+   local original = nil
+   local metadata = nil
+   local caught = false
+   try<trace>
+      try<trace>
+         try<trace>
+            raise ERR_Args, 'original rethrow payload'
+         except e when ERR_Args
+            original = e
+            metadata = { e.code, e.message, e.source, e.line, e.trace, e.stackTrace }
+            assert(e.trace != nil and e.stackTrace != nil, 'Expected an original trace')
+            e = {}
+            processing.collect('full')
+            raise
+         end
+      except when ERR_Args
+         processing.collect('full')
+         raise
+      end
+   except e when ERR_Args
+      caught = true
+      assert(e is original, 'Two rethrows must reuse the original exception object')
+      assert(e.code is metadata[0] and e.message is metadata[1], 'Rethrow changed code or message')
+      assert(e.source is metadata[2] and e.line is metadata[3], 'Rethrow changed the origin')
+      assert(e.trace is metadata[4] and e.stackTrace is metadata[5], 'Rethrow changed the trace')
+   end
+   assert(caught, 'Both rethrows must match the original filter')
+end
+
+@Test function BareRethrowUsesNearestHandler()
+   local outer = nil
+   local inner = nil
+   local caught = false
+   try
+      try
+         raise ERR_Args, 'outer'
+      except e
+         outer = e
+         try
+            try
+               raise ERR_Failed, 'inner'
+            except e
+               inner = e
+               raise
+            end
+         except e when ERR_Failed
+            assert(e is inner, 'Nested rethrow must use the nearest handler')
+         except e
+            assert(false, 'Nested rethrow selected the wrong sibling handler')
+         end
+         raise
+      end
+   except e when ERR_Args
+      caught = true
+      assert(e is outer, 'Leaving a nested handler must restore the outer exception')
+   end
+   assert(caught, 'Outer rethrow did not reach its filtered handler')
+end
+
+@Test function RethrowPreservesAbsentTrace()
+   local caught = false
+   try<trace>
+      try
+         raise 'untraced original'
+      except
+         raise
+      end
+   except e
+      caught = true
+      assert(e.trace is nil and e.stackTrace is nil, 'Rethrow must not capture a new trace')
+      assert(e.message is 'untraced original', 'Rethrow changed the message')
+   end
+   assert(caught, 'Expected the untraced exception')
+end
+
+@Test function RethrowSurvivesCleanupAndCollection()
+   local original = nil
+   local order = ''
+   local caught = false
+   try
+      try<trace>
+         raise ERR_Args, 'cleanup rethrow'
+      except e
+         original = e
+         defer
+            order ..= 'defer'
+            try
+               raise 'caught inside defer'
+            except
+               processing.collect('full')
+            end
+         end
+         local resource <close> = setmetatable({}, {
+            __close = function(Error)
+               order ..= 'close,'
+               processing.collect('full')
+            end
+         })
+         raise
+      end
+   except e when ERR_Args
+      caught = true
+      assert(e is original, 'Cleanup lost the rooted original exception')
+      assert(e.message is 'cleanup rethrow' and e.trace != nil, 'Cleanup replaced the original metadata')
+   end
+   assert(caught, 'Cleanup changed the rethrow error code')
+   assert(order is 'close,defer', 'Rethrow changed cleanup order: ' .. order)
+end
+
+@Test function RethrowAfterBytecodeRoundTrip()
+   local subject = function()
+      try
+         try
+            raise ERR_Args, 'round trip'
+         except
+            raise
+         end
+      except e when ERR_Args
+         return e.message
+      end
+      return 'not caught'
+   end
+   for mode in {0 to 2} do
+      local result = exec(string.dump(subject, mode is 1))
+      assert(result is 'round trip', 'Dump/load must preserve hidden rethrow registers and handlers')
+   end
+end
+
+@Test function RethrowRestoresContextAndCheckallScopes()
+   local receiver = { rethrow_marker='active' }
+   local cleaned = false
+   local caught = false
+   try
+      try
+         raise ERR_Args, 'scope rethrow'
+      except
+         checkall
+            using receiver do
+               defer
+                  assert(&rethrow_marker is 'active', 'Rethrow cleanup must retain its active context')
+                  cleaned = true
+               end
+               raise
+            end
+         end
+      end
+   except e when ERR_Args
+      caught = true
+      assert(&rethrow_marker is nil, 'Rethrow must restore the caller context before the handler')
+      local err = mSys.AllocResource(-1024, 0)
+      assert(err is ERR_Args, 'The unwound checkall must not promote later returned errors')
+   end
+   assert(caught and cleaned, 'Rethrow must run cleanup and reach the outer handler')
+end
+
+@Test function ExpressionRaiseEvaluationOrder()
+   local events = ''
+   local function first():num
+      events ..= 'first;'
+      return 7
+   end
+   local function message():str
+      events ..= 'message;'
+      return 'argument failure'
+   end
+   local function last():num
+      events ..= 'last;'
+      return 9
+   end
+   local function target(A:any, B:any, C:any)
+      events ..= 'called;'
+   end
+   try<trace>
+      defer events ..= 'defer;' end
+      target(first(), (raise(ERR_Args, message())), last())
+   except e when ERR_Args
+      assert(e.message is 'argument failure')
+      assert(type(e.trace) is 'array' and type(e.stackTrace) is 'string')
+   success
+      assert(false, 'Argument raise must interrupt the call')
+   end
+   assert(events is 'first;message;defer;', 'Arguments and cleanup must run in order')
+end
+
+@Test function ExpressionRaiseNestedPositions()
+   local expressions = {
+      "(raise('nested'))",
+      "1 + raise('nested')",
+      "raise('nested') + 1",
+      "not raise('nested')",
+      "f\"before {raise('nested')} after\"",
+      "{ 1, raise('nested'), 3 }",
+      "{ [raise('nested')] = 3 }",
+      "(raise('nested')).field",
+      "({})[raise('nested')]",
+      "raise(raise('nested'))",
+      "raise(ERR_Args, raise('nested'))",
+      "true ? raise('nested') : raise('wrong')",
+      "choose 1 from 1 -> raise('nested') else -> raise('wrong') end",
+      "1 & raise('nested')",
+      "raise('nested') is num"
+   }
+   for _, expression in expressions do
+      try
+         exec('local value = ' .. expression)
+      except e
+         assert(e.code is ERR_Exception and e.message.endsWith('nested'), expression .. ': ' .. e.message)
+      success
+         assert(false, 'Nested raise must throw: ' .. expression)
+      end
+   end
+end
+
+@Test function ExpressionRaiseBytecodeRoundTrip()
+   local function subject()
+      local function pick(Value:bool):num
+         return Value ? 42 : raise(ERR_Args, 'dump expression')
+      end
+      assert(pick(true) is 42)
+      try
+         local result = pick(false)
+      except e when ERR_Args
+         return e.message
+      end
+      return 'missing exception'
+   end
+   for mode in {0 to 2} do
+      assert(exec(string.dump(subject, mode is 1)) is 'dump expression')
+   end
+end
+
+@Test function ExpressionRaiseScopesAndPayloadSnapshot()
+   local receiver = { expression_marker='active' }
+   local order = ''
+   local code = ERR_Args
+   local function message():str
+      code = ERR_Failed
+      return 'original code'
+   end
+   try
+      checkall
+         using receiver do
+            defer
+               assert(&expression_marker is 'active')
+               order ..= 'defer'
+            end
+            local resource <close> = setmetatable({}, {
+               __close = function(Error)
+                  order ..= 'close,'
+               end
+            })
+            local result = raise(code, message())
+         end
+      end
+   except e when ERR_Args
+      assert(e.message is 'original code' and code is ERR_Failed)
+      assert(&expression_marker is nil, 'Expression raise must restore the calling context')
+      local err = mSys.AllocResource(-1024, 0)
+      assert(err is ERR_Args, 'Expression raise must leave checkall')
+   success
+      assert(false, 'Expression raise must use the code evaluated before the message')
+   end
+   assert(order is 'close,defer', 'Expression raise must retain cleanup order')
+end
+
+@Test function ExpressionRaiseSafeEvaluation()
+   local skipped = {
+      "local receiver:any = nil; return receiver?[raise('wrong')]",
+      "local receiver:any = nil; return receiver?.find(raise('wrong'))",
+      "local receiver:any = {}; return receiver?.find(raise('wrong'))",
+      "local receiver:any = nil; return receiver?.custom(raise('wrong'))",
+      "local value = 0; return choose value from _ when false -> raise('wrong') end",
+      "return 3 < 2 < raise('wrong')",
+      "local receiver:any = nil; return receiver?[raise('wrong')]()",
+      "local receiver:any = nil; return raise('wrong') |> receiver?.custom()",
+      "return choose false from {key=raise('wrong')} -> 42 else -> nil end"
+   }
+   for _, source in skipped do
+      local result = exec(source)
+      assert(result is nil or result is false, 'Safe expression should skip the raise: ' .. source)
+   end
+   local selected = {
+      "local receiver:any = 'abc'; return receiver.find(raise('selected'))",
+      "local receiver:any = 'abc'; return receiver?.find(raise('selected'))",
+      "local receiver:any = {}; return receiver?[raise('selected')]",
+      "return 1 < 2 < raise('selected')",
+      "return choose 1 from 1 when raise('selected') -> 42 else -> 0 end",
+      "return choose 1 from _ when raise('selected') -> 42 end",
+      "return {0 to raise('selected')}",
+      "return choose {key=1} from {key=raise('selected')} -> 42 else -> nil end",
+      "local receiver:any = {}; return receiver?[raise('selected')]()",
+      "local function target(Value:any) end return raise('selected') |> target()",
+      "local receiver:any = 'abc'; return raise('selected') |> receiver.find()",
+      "return (raise('selected'))??"
+   }
+   for _, source in selected do
+      try
+         exec(source)
+      except e
+         assert(e.code is ERR_Exception and e.message.endsWith('selected'), source .. ': ' .. e.message)
+      success
+         assert(false, 'Selected expression should throw: ' .. source)
+      end
+   end
+end
+
+@Test function ExpressionRaiseMultilineLocation()
+   local exception = exec([[try
+   local value = raise(
+      ERR_Args,
+      'multiline payload')
+except e
+   return e
+end]])
+   assert(exception.code is ERR_Args and exception.message is 'multiline payload')
+   assert(exception.line is 2, 'Raise location must identify the keyword, not the final payload line')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Removed error() built-in
+
+@Test function ErrorBuiltinIsUndeclared()
+   assert(_G.error is nil, 'The public base environment must not register error().')
+
+   local result = debug.validate("error('removed')")
+   local undeclared = false
+   for diagnostic in values(result.diagnostics) do
+      assert(diagnostic.code != 'DeprecatedApi', 'The removed built-in must not produce a deprecation warning.')
+      if diagnostic.message.find("Undeclared variable 'error'", 0, true) then undeclared = true end
+   end
+   assert(result.success is false and undeclared, 'A direct error() call must report an undeclared variable.')
 end

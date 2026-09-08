@@ -2,6 +2,55 @@
 
 ----------------------------------------------------------------------------------------------------------------------
 
+top_level_function_name = @FunctionName
+top_level_source_file = @SourceFile
+top_level_source_line = @SourceLine
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function SourceAnnotationsResolveParserLocation()
+   function sourceLineHelper()
+      return @SourceLine
+   end
+
+   assert(top_level_source_file.endsWith('test_annotations.tiri'),
+      "Top level @SourceFile should resolve to this test file, got " .. tostring(top_level_source_file))
+   assert(top_level_source_line > 0, "Top level @SourceLine should resolve to a positive line number")
+   assert(sourceLineHelper() > top_level_source_line, "Function @SourceLine should resolve inside the function body")
+   assert(@SourceFile.endsWith('test_annotations.tiri'),
+      "Function @SourceFile should resolve to this test file, got " .. tostring(@SourceFile))
+   assert(@SourceLine > sourceLineHelper(), "Inline @SourceLine should resolve at the current statement")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function FunctionNameAnnotationResolvesScopes()
+   function namedHelper()
+      return @FunctionName
+   end
+
+   helper_table = {}
+
+   function helper_table.methodHelper(Self)
+      return @FunctionName
+   end
+
+   anonymous_helper = function()
+      return @FunctionName
+   end
+
+   arrow_helper = () => @FunctionName
+
+   assert(top_level_function_name is "Main", "Top level @FunctionName should resolve to Main")
+   assert(@FunctionName is "FunctionNameAnnotationResolvesScopes", "Current test function name should be resolved")
+   assert(namedHelper() is "namedHelper", "Named function should resolve its own name")
+   assert(helper_table.methodHelper(helper_table) is "methodHelper", "Method function should resolve the method name")
+   assert(anonymous_helper() is "Anonymous", "Anonymous function should resolve to Anonymous")
+   assert(arrow_helper() is "Anonymous", "Arrow function should resolve to Anonymous")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Test function AnnoSetTableInput()
    function sampleFunc()
       return "test"
@@ -169,6 +218,42 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@Test function AnnoCompiledStringEscaping()
+   @Note(text=[[said "hello" and used C:\Temp\docs]])
+   @Test(labels=["plain", [[quoted "label"]], [[C:\Temp\label]]])
+   function documentedFunc()
+   end
+
+   entry = debug.anno.get(documentedFunc)
+   assert(entry != nil, "Compiled annotations should register successfully")
+   assert(#entry.annotations is 2, "Expected 2 compiled annotations, got " .. #entry.annotations)
+
+   note = entry.annotations[0]
+   assert(note.name is "Note", "Expected first annotation to be Note, got " .. tostring(note.name))
+   assert(note.args.text is [[said "hello" and used C:\Temp\docs]],
+      "Annotation text should preserve quotes and backslashes, got " .. tostring(note.args.text))
+
+   labels = entry.annotations[1].args.labels
+   assert(labels[0] is "plain", "Expected first label to be plain")
+   assert(labels[1] is [[quoted "label"]], "Expected quoted array label to be preserved, got " .. tostring(labels[1]))
+   assert(labels[2] is [[C:\Temp\label]], "Expected backslash array label to be preserved, got " .. tostring(labels[2]))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AnnoDocPayloadSkippedWithoutProcessDoc()
+   @Doc(text=[[large documentation payload]])
+   function docPayloadSkipped()
+   end
+
+   entry = debug.anno.get(docPayloadSkipped)
+   assert(entry != nil, "@Doc identity should still be registered")
+   assert(entry.annotations[0].name is "Doc", "Expected Doc annotation identity")
+   assert(entry.annotations[0].args.text is nil, "@Doc text should not be registered without SCF_PROCESS_DOC")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Test function AnnoStringParsingNoArgs()
    function noArgsFunc() end
 
@@ -176,7 +261,7 @@ end
    assert(entry != nil, "No-args annotation should succeed")
    assert(#entry.annotations is 1, "Expected 1 annotation")
    assert(entry.annotations[0].name is "Disabled", "Expected annotation name 'Disabled'")
-   assert(#entry.annotations[0].args is 0, "Expected empty args table, got " .. count .. " entries")
+   assert(#entry.annotations[0].args is 0, "Expected empty args table, got " .. #entry.annotations[0].args .. " entries")
 end
 
 ----------------------------------------------------------------------------------------------------------------------

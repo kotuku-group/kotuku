@@ -1,0 +1,297 @@
+-- Module call benchmark for docs/plans/tiri/2-tiri-module-calls.md
+--
+-- Measures steady-state module call cost across scalar and fallback signature families, plus
+-- dependency activation cost.  Run with the JIT enabled and disabled to record both modes:
+--
+--    build/agents-install/origo src/tiri/tests/bench_module_calls.tiri
+--    build/agents-install/origo src/tiri/tests/bench_module_calls.tiri --jit-options off
+--
+-- Each workload is run REPEATS times and the median is reported, because a single run is sensitive to scheduling noise.
+-- Accumulators are deliberately dependent on the call result so that dead-code elimination cannot remove the loop body.
+
+module core as mCore
+module display as mDisplay
+@if(exists='modules:network')
+   include 'network'
+   module network as mNet
+   local bench_address = struct.new('IPAddress')
+   check mNet.StrToAddress('127.0.0.1', bench_address)
+@end
+
+local ITERATIONS <const> = tonumber(arg('iterations', '100000'))
+local REPEATS <const> = tonumber(arg('repeats', '9'))
+local ACTIVATIONS <const> = tonumber(arg('activations', '200'))
+
+-- Report the median of a set of samples.  Medians are used throughout because they resist the occasional outlier
+-- produced by scheduler preemption during a run.
+
+function median(Samples: array<double>): num
+   local ordered = Samples.clone()
+   ordered.sort()
+   local count = #ordered
+   if count & 1 is 1 then return ordered[count >> 1] end
+   return (ordered[(count >> 1) - 1] + ordered[count >> 1]) / 2
+end
+
+-- Time one workload.  Workload receives the iteration count and must return a value derived from every call it makes,
+-- which is then consumed so that the optimiser cannot discard the work.
+
+function measure(Name: str, Iterations: num, Workload: func)
+   local samples = array<double>
+   local sink = 0
+
+   sink += Workload(math.min(Iterations, 1000)) -- Untimed warm-up, with the result consumed.
+   for _ in {0 to REPEATS} do
+      local start = mCore.PreciseTime()
+      sink += Workload(Iterations)
+      samples.push(mCore.PreciseTime() - start)
+   end
+
+   local low, high = samples[0], samples[0]
+   for index in {0 to #samples} do
+      low = math.min(low, samples[index])
+      high = math.max(high, samples[index])
+   end
+   local elapsed = median(samples)
+   print(string.format('%-34s %10.0f us total  %8.4f us/call  sink=%s',
+      Name, elapsed, elapsed / Iterations, tostring(sink != nil)))
+   print(string.format('  sample range: %.4f .. %.4f us/call',
+      low / Iterations, high / Iterations))
+end
+
+--********************************************************************************************************************
+-- Steady-state workloads.  One per signature family named in the plan.
+
+-- Zero-argument scalar result: the plan's headline baseline.
+function bench_zero_arg(Iterations: num): num
+   local total = 0
+   for _ in {0 to Iterations} do total += mCore.PreciseTime() end
+   return total
+end
+
+-- Zero-argument signed 32-bit result.
+function bench_zero_int(Iterations: num): num
+   local total = 0
+   for _ in {0 to Iterations} do total += mCore.GetThreadID() end
+   return total
+end
+
+-- Scalar input, scalar result.
+function bench_scalar_arg(Iterations: num): num
+   local total = 0
+   for i in {0 to Iterations} do total += mCore.GetResource(i & 7) end
+   return total
+end
+
+-- Extracted scalar-input call.
+function bench_extracted_scalar(Iterations: num): num
+   local get_resource = mCore.GetResource
+   local total = 0
+   for i in {0 to Iterations} do total += get_resource(i & 7) end
+   return total
+end
+
+-- Double input and result.
+function bench_double_arg(Iterations: num): num
+   local total = 0
+   for i in {0 to Iterations} do total += mDisplay.ScaleToDPI(i + 0.5) end
+   return total
+end
+
+-- C++ string-view input (FDF_CPPSTRING), scalar result.
+function bench_string_view(Iterations: num): num
+   local total = 0
+   for _ in {0 to Iterations} do total += mCore.ResolveClassName('Tiri') end
+   return total
+end
+
+-- Extracted string view separates namespace access from bridge conversion.
+function bench_extracted_view(Iterations: num): num
+   local resolve = mCore.ResolveClassName
+   local total = 0
+   for _ in {0 to Iterations} do total += resolve('Tiri') end
+   return total
+end
+
+-- Borrowed pointer input from a string, with unsigned scalar inputs and result.
+function bench_crc_pointer(Iterations: num): num
+   local total = 0
+   for _ in {0 to Iterations} do total += mCore.GenCRC32(0, '123456789', 9) end
+   return total
+end
+
+function bench_extracted_crc(Iterations: num): num
+   local crc = mCore.GenCRC32
+   local total = 0
+   for _ in {0 to Iterations} do total += crc(0, '123456789', 9) end
+   return total
+end
+
+-- Scalar input, C-string result.
+function bench_string_result(Iterations: num): num
+   local total = 0
+   for i in {0 to Iterations} do total += #mCore.GetErrorMsg(i & 31) end
+   return total
+end
+
+-- Extracted callable: the closure is hoisted out of the loop.
+function bench_extracted(Iterations: num): num
+   local clock <const> = mCore.PreciseTime
+   local total = 0
+   for _ in {0 to Iterations} do total += clock() end
+   return total
+end
+
+-- Multiple results via FD_RESULT out-parameters.
+function bench_multiple_results(Iterations: num): num
+   local total = 0
+   for _ in {0 to Iterations} do
+      local err, path_type = mCore.AnalysePath('temp:')
+      total += tonumber(err) + tonumber(path_type ?? 0)
+   end
+   return total
+end
+
+-- A mutable C++ string result, which exercises the copy-back path.
+function bench_cpp_string_result(Iterations: num): num
+   local total = 0
+   for _ in {0 to Iterations} do
+      local err, path = mCore.ResolvePath('temp:', 0)
+      total += #(path ?? '')
+   end
+   return total
+end
+
+function bench_extracted_results(Iterations: num): num
+   local analyse = mCore.AnalysePath
+   local total = 0
+   for _ in {0 to Iterations} do
+      local err, kind = analyse('temp:')
+      total += err + kind
+   end
+   return total
+end
+
+@if(exists='modules:network')
+function bench_address_output(Iterations: num): num
+   local total = 0
+   for _ in {0 to Iterations} do
+      local err, text = mNet.AddressToStr(bench_address)
+      total += err + #text
+   end
+   return total
+end
+
+function bench_extracted_address(Iterations: num): num
+   local format = mNet.AddressToStr
+   local total = 0
+   for _ in {0 to Iterations} do
+      local err, text = format(bench_address)
+      total += err + #text
+   end
+   return total
+end
+@end
+
+--********************************************************************************************************************
+-- Activation workloads.  These measure the cost of descriptor activation rather than the call itself.
+
+-- Baseline: no module declaration at all.  Subtract this from the others to isolate the module-specific cost, since
+-- exec() also pays for tokenising, parsing and emitting the statement.
+local NO_MODULE_SOURCE <const> = [[
+   local value = 1 + 1
+]]
+
+-- One module and one referenced function.  This is the smallest workload that resolves a dependency descriptor and
+-- materialises a callable closure.
+local ACTIVATION_SOURCE <const> = [[
+   module core as mBench
+   local value = mBench.PreciseTime()
+]]
+
+-- A declaration that references no function; the dependency must still be resolved.
+local EMPTY_SOURCE <const> = [[
+   module core as mBench
+   local value = 1
+]]
+
+-- Two aliases of the same module, which must share one dependency.  Both namespaces reference PreciseTime, which must
+-- be materialised once.
+local ALIAS_SOURCE <const> = [[
+   module core as mBenchA
+   module core as mBenchB
+   local value = mBenchA.PreciseTime() + mBenchB.PreciseTime()
+]]
+
+-- A large module with a small referenced subset.  Core exports several hundred functions, so this workload shows
+-- whether activation cost scales with the referenced subset or with the module's total exports.
+local SUBSET_SOURCE <const> = [[
+   module core as mBench
+   local a = mBench.PreciseTime()
+   local b = mBench.GetErrorMsg(0)
+   local c = mBench.GetResource(1)
+]]
+
+-- Several modules in one compilation unit.
+local MULTI_SOURCE <const> = [[
+   module core as mBenchCore
+   module display as mBenchDisplay
+   local value = mBenchCore.PreciseTime()
+]]
+
+-- exec() compiles and runs the statement, so each sample covers parse plus activation.  A baseline statement that
+-- declares no module is measured separately so that the module-specific share of the cost can be isolated.
+
+function measure_activation(Name: str, Source: str)
+   local samples = array<double>
+   exec(Source) -- Untimed activation warm-up.
+   for _ in {0 to REPEATS} do
+      local start = mCore.PreciseTime()
+      for _ in {0 to ACTIVATIONS} do exec(Source) end
+      samples.push(mCore.PreciseTime() - start)
+   end
+
+   local low, high = samples[0], samples[0]
+   for index in {0 to #samples} do
+      low = math.min(low, samples[index])
+      high = math.max(high, samples[index])
+   end
+   local elapsed = median(samples)
+   print(string.format('%-34s %10.0f us total  %8.4f us/activation',
+      Name, elapsed, elapsed / ACTIVATIONS))
+   print(string.format('  sample range: %.4f .. %.4f us/activation', low / ACTIVATIONS, high / ACTIVATIONS))
+end
+
+--********************************************************************************************************************
+
+print(f"Module call benchmark: {ITERATIONS} iterations, {REPEATS} repeats, JIT {tostring(jit.status())}")
+print('-'.rep(96))
+
+print('Steady state:')
+measure('  zero-arg scalar result', ITERATIONS, bench_zero_arg)
+measure('  zero-arg signed int', ITERATIONS, bench_zero_int)
+measure('  scalar arg', ITERATIONS, bench_scalar_arg)
+measure('  extracted scalar arg', ITERATIONS, bench_extracted_scalar)
+measure('  double arg', ITERATIONS, bench_double_arg)
+measure('  C++ string-view arg', ITERATIONS, bench_string_view)
+measure('  extracted string-view arg', ITERATIONS, bench_extracted_view)
+measure('  unsigned/pointer CRC', ITERATIONS, bench_crc_pointer)
+measure('  extracted pointer CRC', ITERATIONS, bench_extracted_crc)
+measure('  C-string result', ITERATIONS, bench_string_result)
+measure('  extracted callable', ITERATIONS, bench_extracted)
+measure('  multiple results', math.floor(ITERATIONS / 10), bench_multiple_results)
+measure('  extracted multiple results', math.floor(ITERATIONS / 10), bench_extracted_results)
+@if(exists='modules:network')
+   measure('  address output', ITERATIONS, bench_address_output)
+   measure('  extracted address output', ITERATIONS, bench_extracted_address)
+@end
+measure('  mutable C++ string result', math.floor(ITERATIONS / 10), bench_cpp_string_result)
+
+print('')
+print(f"Activation ({ACTIVATIONS} exec() calls per sample; includes parse cost)")
+measure_activation('  no module (baseline)', NO_MODULE_SOURCE)
+measure_activation('  one module, one function', ACTIVATION_SOURCE)
+measure_activation('  one module, no functions', EMPTY_SOURCE)
+measure_activation('  one module, three functions', SUBSET_SOURCE)
+measure_activation('  two aliases, one module', ALIAS_SOURCE)
+measure_activation('  two modules', MULTI_SOURCE)

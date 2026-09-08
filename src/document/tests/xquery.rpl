@@ -1,0 +1,139 @@
+<?xml version="1.0"?>
+<!DOCTYPE rpl PUBLIC "-//ROCKLYTE//DTD RPL 1.0//EN">
+
+<info>
+ <title>XQuery Tests</title>
+ <author>Paul Manias</author>
+ <keywords>xquery, test</keywords>
+ <description>XQuery-backed RIPL tests.</description>
+</info>
+
+<body font-size="10pt"/>
+
+<template name="outer">
+  <p><print value="ARG-OUTER {($args?name, 'missing')[1]}"/></p>
+  <inner name="Inner Arg"/>
+  <p><print value="VARS-VIS {$vars?username}"/></p>
+</template>
+
+<template name="inner">
+  <p><print value="ARG-INNER {($args?name, 'missing')[1]}"/></p>
+</template>
+
+<template name="PageProbe">
+  <p><print value="PAGE-TEMPLATE {string($page/@name)}"/></p>
+</template>
+
+<page name="Index" next-page="NextPage" prev-page="PrevPage">
+
+<h1>XQuery Stage 1</h1>
+
+<p>The following lines verify the Stage 1 XQuery integration.</p>
+
+<!-- if@test true -->
+<if test="1 lt 2">
+  <p>IF-TEST-TRUE</p>
+</if>
+<else>
+  <p>IF-TEST-FAIL</p>
+</else>
+
+<!-- if@test false -> elseif@test -->
+<if test="1 gt 2">
+  <p>ELSEIF-FAIL-1</p>
+</if>
+<elseif test="contains('warning', 'warn')">
+  <p>ELSEIF-TEST-TRUE</p>
+</elseif>
+<else>
+  <p>ELSEIF-FAIL-2</p>
+</else>
+
+<!-- print@select -->
+<p><print select="string-join(('a', 'b', 'c'), '-')"/></p>
+<p><print select="concat('PAGE-NAME-', string((/page/@name)[1]))"/></p>
+
+<!-- print@value with AVT -->
+<p><print value="VAL {1 + 2}"/></p>
+
+<!-- parse@select -->
+<parse select="'&lt;p&gt;PARSE-SELECT-INJECTED&lt;/p&gt;'"/>
+
+<!-- while@test counting to 3, using XQuery against a legacy loop counter placeholder is not valid in Stage 1
+     (no $loop binding yet), so we keep the loop deterministic via a literal condition that will iterate once. -->
+<while test="false()">
+  <p>WHILE-SHOULD-NOT-APPEAR</p>
+</while>
+
+<if test="empty($doc)">
+  <p>DOC-EMPTY</p>
+</if>
+
+<p><print value="PAGE-DIRECT {string($page/@name)}"/></p>
+
+<PageProbe/>
+
+<data select="element data {
+   element item { attribute code {'A'}, element name {'Alpha'} },
+   element item { attribute code {'B'}, element name {'Bravo'} },
+   element item { attribute code {'C'}, element name {'Charlie'} }
+}"/>
+
+<if test="exists($doc/item[@code = 'A'])">
+  <p>DOC-LOADED</p>
+</if>
+
+<let name="label" select="'outer'">
+  <if test="$state?label = 'outer'">
+    <p>LET-TEST OUTER</p>
+  </if>
+  <p><print value="LET-AVT {$state?label}"/></p>
+  <p><print select="concat('LET-SELECT ', $state?label)"/></p>
+  <parse select="concat('&lt;p&gt;LET-PARSE ', $state?label, '&lt;/p&gt;')"/>
+  <let name="label" select="'inner'">
+    <p><print value="LET-INNER {$state?label}"/></p>
+  </let>
+  <p><print value="LET-RESTORED {$state?label}"/></p>
+</let>
+
+<let name="chosen" select="$doc/item[@code = 'B']">
+  <p><print value="LET-NODE {string($state?chosen/@code)}"/></p>
+</let>
+
+<if test="$params?mode = 'preview'">
+  <p>PARAM-MODE-PREVIEW</p>
+</if>
+
+<if test="$vars?username = 'alice'">
+  <p>VAR-USERNAME-ALICE</p>
+</if>
+
+<p><print select="concat($meta?title, ' / ', $meta?current-page, ' / ', $layout?view-width)"/></p>
+
+<parse select="concat('&lt;p&gt;PARSE-', $vars?username, '&lt;/p&gt;')"/>
+
+<outer name="Outer Arg"/>
+
+<repeat count="3">
+  <if test="$loop?index lt 2">
+    <p><print value="LOOP-TEST {$loop?index}"/></p>
+  </if>
+  <p><print value="LOOP-VALUE {$loop?index}"/></p>
+</repeat>
+
+<p><print value="MISSING {($params?does-not-exist, 'fallback')[1]}"/></p>
+
+<if test="kt:object-exists('stage4document')">
+  <p>OBJECT-EXISTS-TRUE</p>
+</if>
+
+<if test="not(kt:object-exists('MissingObject'))">
+  <p>OBJECT-EXISTS-FALSE</p>
+</if>
+
+<p><font face="courier" fill="red" style="italic" size="20"><print value="STYLE {$style?font-style} {$style?font-face} {$style?font-size} {$style?font-fill}"/></font></p>
+<p><print value="PAGE {$meta?current-page}"/></p>
+<p><print value="LAYOUT {$layout?view-width} x {$layout?view-height}"/></p>
+<p><print value="LINE {$meta?line-no}"/></p>
+
+</page>

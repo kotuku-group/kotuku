@@ -1,9 +1,7 @@
 
 //********************************************************************************************************************
 
-static std::string printable(RSTREAM &, stream_char, uint32_t = 60) __attribute__ ((unused));
-
-static std::string printable(RSTREAM &Stream, stream_char Start, uint32_t Length)
+[[maybe_unused]] static std::string printable(RSTREAM &Stream, stream_char Start, uint32_t Length = 60)
 {
    std::string result;
    result.reserve(Length);
@@ -27,7 +25,7 @@ static void print_stream(RSTREAM &Stream)
 {
    if (Stream.data.empty()) return;
 
-   pf::Log log;
+   kt::Log log;
    std::ostringstream out;
    out << "\nSTREAM: " << Stream.size() << " codes\n";
    out << "-------------------------------------------------------------------------------\n";
@@ -68,7 +66,7 @@ static void print_stream(RSTREAM &Stream)
 static void print_segments(extDocument *Self)
 {
 #ifdef DBG_SEGMENTS
-   pf::Log log;
+   kt::Log log;
    std::ostringstream out;
 
    out << "\nSEGMENTS\n--------\n";

@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE rpl PUBLIC "-//ROCKLYTE//DTD RPL 1.0//EN">
 
-<body face="[@font:courier]" font-fill="rgb(64,0,0)" font-size="10pt"/>
+<body face="{($params?font, 'courier')[1]}" font-fill="rgb(64,0,0)" font-size="10pt"/>
 
 <header>
   <p font-style="bold">HEADER IN BOLD</p>

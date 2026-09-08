@@ -21,7 +21,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       //
       // Into:
       //   function compute(x, y)
-      //      return __create_thunk(function() return x * y end, type_tag)
+      //      return __create_thunk(function() return x * y end, logical_type)
       //   end
 
       // Use lastline which was set by emit_expression() to the function definition line,
@@ -30,26 +30,32 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       SourceSpan span = Payload.body->span;
       span.line = this->lex_state.lastline;
 
-      // Create inner closure (no parameters, captures parent's as upvalues)
-      // Move original body to inner function
+      // Create inner closure (no parameters, captures parent's as upvalues).  Runtime method dispatch can emit the
+      // same argument expression for more than one call branch, so restore the body after lowering the temporary AST.
 
       auto inner_body = std::make_unique<BlockStmt>();
       inner_body->span = span;
-      for (auto& stmt : Payload.body->statements) {
-         inner_body->statements.push_back(std::move(const_cast<StmtNodePtr&>(stmt)));
-      }
+      auto &source_statements = const_cast<StmtNodeList&>(Payload.body->statements);
+      inner_body->statements = std::move(source_statements);
+      BlockStmt *lowered_body = inner_body.get();
 
-      ExprNodePtr inner_fn = make_function_expr(span, {}, false, std::move(inner_body), false, TiriType::Any);
+      ExprNodePtr inner_fn = make_function_expr(span, {}, false, std::move(inner_body));
 
-      // Create call to __create_thunk(inner_fn, type_tag)
+      // Create canonical call to __create_thunk(inner_fn, type_tag)
       NameRef create_thunk_ref;
       create_thunk_ref.identifier.symbol = lj_str_newlit(this->lex_state.L, "__create_thunk");
       create_thunk_ref.identifier.span = span;
-      create_thunk_ref.resolution = NameResolution::Unresolved;
+      create_thunk_ref.resolution = NameResolution::BuiltinCallable;
+      create_thunk_ref.slot = uint16_t(builtin_callable_id(FastFunc::__create_thunk));
       ExprNodePtr create_thunk_fn = make_identifier_expr(span, create_thunk_ref);
 
-      // Type tag argument
-      ExprNodePtr type_arg = make_literal_expr(span, LiteralValue::number(double(tiri_type_to_lj_tag(Payload.thunk_return_type))));
+      // Logical type argument.  A VM tag cannot distinguish range from full userdata or represent both full and
+      // light userdata, so deferred values retain the language-level type.
+
+      TiriType thunk_type = Payload.return_types.thunk_type();
+      uint8_t logical_type = (thunk_type IS TiriType::Any or
+         thunk_type IS TiriType::Unknown) ? 0xff : uint8_t(thunk_type);
+      ExprNodePtr type_arg = make_literal_expr(span, LiteralValue::number(double(logical_type)));
 
       // Build argument list
       ExprNodeList call_args;
@@ -76,8 +82,12 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       wrapper_payload.is_thunk = false;  // Important: wrapper is not a thunk
       wrapper_payload.body = std::move(wrapper_body);
 
-      // Recursively emit the wrapper function (which is now a regular function)
-      return this->emit_function_expr(wrapper_payload);
+      // Recursively emit the wrapper function (which is now a regular function), then restore the source thunk so
+      // another bytecode branch can emit it again.
+
+      auto result = this->emit_function_expr(wrapper_payload);
+      source_statements = std::move(lowered_body->statements);
+      return result;
    }
 
    // Regular function emission
@@ -91,10 +101,13 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
    ParserAllocator allocator = ParserAllocator::from(this->lex_state.L);
    ParserConfig inherited = this->ctx.config();
    ParserContext child_ctx = ParserContext::from(this->lex_state, child_state, allocator, inherited);
+   child_ctx.share_descriptors(this->ctx);
    ParserSession session(child_ctx, inherited);
 
    // Inherit declared globals from parent so nested functions recognize them
    child_state.declared_globals = parent_state->declared_globals;
+   child_state.const_globals = parent_state->const_globals;
+   child_state.external_symbols = parent_state->external_symbols;
 
    // Set linedefined to the earliest line that bytecode might reference.
    // Note: SourceSpan.line represents the END line of a span (due to combine_spans behavior),
@@ -116,37 +129,188 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
    FuncScope scope;
    ScopeGuard scope_guard(&child_state, &scope, FuncScopeFlag::None);
 
-   auto param_count = BCReg(BCREG(Payload.parameters.size()));
-   for (auto i = BCReg(0); i < param_count; ++i) {
+   auto visible_param_count = BCReg(BCREG(Payload.parameters.size()));
+   auto param_count = visible_param_count;
+   for (auto i = BCReg(0); i < visible_param_count; ++i) {
       const FunctionParameter& param = Payload.parameters[i.raw()];
       GCstr *symbol = (param.name.symbol and not param.name.is_blank) ? param.name.symbol : NAME_BLANK;
-      this->lex_state.var_new(i, symbol, param.name.span.line, param.name.span.column);
+      this->lex_state.var_new(i.raw(), symbol, param.name.span.line, param.name.span.column);
    }
 
    child_state.numparams = uint8_t(param_count.raw());
+   child_state.signature_parameters.reserve(param_count.raw());
+   if (Payload.is_vararg) {
+      child_state.signature_flags |= proto_signature_flag(ProtoSignatureFlag::ParameterVariadic);
+   }
+   for (auto i = BCReg(0); i < visible_param_count; ++i) {
+      const FunctionParameter &param = Payload.parameters[i.raw()];
+      TiriType parameter_type = param.type;
+      struct_record *parameter_struct = param.struct_def;
+      ProtoTypeOrigin origin = param.type_is_explicit ? ProtoTypeOrigin::Declared : ProtoTypeOrigin::Unspecified;
+      ProtoTypeStrength strength = (param.type_is_explicit and param.type != TiriType::Any and
+         param.type != TiriType::Unknown) ? ProtoTypeStrength::Checked : ProtoTypeStrength::Advisory;
+
+      if (not param.type_is_explicit and param.name.static_value) {
+         const auto &descriptor = this->ctx.descriptors().value(param.name.static_value);
+         if (descriptor.primary != TiriType::Unknown and descriptor.primary != TiriType::Any) {
+            parameter_type = descriptor.primary;
+            parameter_struct = descriptor.struct_def;
+            origin = ProtoTypeOrigin::Inferred;
+            strength = descriptor.proved() ? ProtoTypeStrength::Trusted : ProtoTypeStrength::Advisory;
+         }
+      }
+
+      ArrayElementDescriptor parameter_array = param.array_element;
+      if (not param.type_is_explicit and param.name.static_value) {
+         parameter_array = this->ctx.descriptors().value(param.name.static_value).array_element;
+      }
+      uint32_t constraint = (parameter_struct and parameter_type IS TiriType::Struct) ?
+         struct_key(parameter_struct->Name) : 0;
+      if (parameter_type IS TiriType::Array and parameter_array.storage IS AET::STRUCT and
+          parameter_array.struct_def) constraint = struct_key(parameter_array.struct_def->Name);
+      ProtoTypeEntry signature_entry{
+         .constraint = constraint,
+         .type = parameter_type,
+         .flags = proto_type_flags(not param.required, param.required, origin, strength)
+      };
+      if (parameter_type IS TiriType::Array) set_proto_array_member(signature_entry, parameter_array.storage);
+      child_state.signature_parameters.push_back(signature_entry);
+   }
+
    this->lex_state.var_add(param_count);
+   auto base = BCReg(child_state.varmap.size() - param_count.raw());
+   for (auto i = BCReg(0); i < visible_param_count; ++i) {
+      const FunctionParameter &param = Payload.parameters[i.raw()];
+      auto &param_info = child_state.var_get(base.raw() + i.raw());
+      if (param.type != TiriType::Unknown and param.type != TiriType::Any) {
+         param_info.fixed_type = param.type;
+         param_info.struct_def = param.struct_def;
+         param_info.array_element = param.array_element;
+      }
+      else if (param.name.static_value) {
+         const auto &descriptor = this->ctx.descriptors().value(param.name.static_value);
+         if (descriptor.primary != TiriType::Unknown and descriptor.primary != TiriType::Any) {
+            param_info.fixed_type = descriptor.primary;
+            param_info.struct_def = descriptor.struct_def;
+            param_info.array_element = descriptor.array_element;
+         }
+      }
+      param_info.binding_id = param.name.binding_id;
+      param_info.static_value = param.name.static_value;
+   }
+
    if (child_state.varmap.size() > 0) {
       RegisterAllocator child_allocator(&child_state);
       child_allocator.reserve(BCReg(child_state.varmap.size()));
    }
 
    IrEmitter child_emitter(child_ctx);
-   auto base = BCReg(child_state.varmap.size() - param_count.raw());
-   for (auto i = BCReg(0); i < param_count; ++i) {
+   child_emitter.current_callable = Payload.callable;
+   child_emitter.is_root_chunk = false;
+   for (auto i = BCReg(0); i < visible_param_count; ++i) {
       const FunctionParameter &param = Payload.parameters[i.raw()];
       if (param.name.is_blank or param.name.symbol IS nullptr) continue;
-      child_emitter.update_local_binding(param.name.symbol, BCReg(base.raw() + i.raw()));
+      child_emitter.update_local_binding(param.name.symbol,
+         BCReg(base.raw() + i.raw()));
    }
 
-   // Copy explicit return types to the function state BEFORE emitting the body.
-   // This ensures emit_return_stmt can see the types when deciding whether to use tail-calls
-   // and whether to emit BC_TYPEFIX instructions.
+   // Parameter contracts execute inside the callee after local bindings exist and before any user statement.
+   // Blank parameters still have a boundary and must be checked.
+
+   std::vector<RuntimeContractSlot> parameter_contracts;
+   parameter_contracts.reserve(visible_param_count.raw());
+   for (auto i = BCReg(0); i < visible_param_count; ++i) {
+      const FunctionParameter &param = Payload.parameters[i.raw()];
+      if ((param.type IS TiriType::Unknown or param.type IS TiriType::Any) and not param.required) continue;
+
+      RuntimeContract contract{
+         .type = param.type,
+         .struct_def = param.struct_def,
+         .array_element = param.array_element,
+         .label = param.name.is_blank ? nullptr : param.name.symbol,
+         .boundary = ContractBoundary::Parameter,
+         .position = uint8_t(i.raw() + 1),
+         .nullable = not param.required,
+         .required = param.required
+      };
+      parameter_contracts.push_back(RuntimeContractSlot{
+         .register_index = BCREG(base.raw() + i.raw()),
+         .contract = contract
+      });
+   }
+   bcemit_contracts(&child_state, parameter_contracts);
+
+   // Copy explicit return types to the function state before emitting the body so return lowering can preserve
+   // contracts, fixed arity and tail-call eligibility.
 
    child_state.funcname = funcname;
    if (Payload.return_types.is_explicit) {
+      child_state.return_contract_explicit = true;
+      child_state.return_declared_count = Payload.return_types.count;
+      child_state.return_contract_count = uint8_t(std::min<size_t>(
+         Payload.return_types.count, child_state.return_types.size()));
+      child_state.return_contract_variadic = Payload.return_types.is_variadic;
+      child_state.signature_flags |= proto_signature_flag(ProtoSignatureFlag::ExplicitResults);
+      if (Payload.return_types.is_variadic) {
+         child_state.signature_flags |= proto_signature_flag(ProtoSignatureFlag::ResultVariadic);
+      }
+      child_state.signature_result_count = Payload.return_types.count;
+      child_state.signature_result_entry_count = uint8_t(std::min<size_t>(
+         Payload.return_types.count, child_state.signature_results.size()));
       for (size_t i = 0; i < Payload.return_types.count and i < child_state.return_types.size(); ++i) {
          child_state.return_types[i] = Payload.return_types.types[i];
+         child_state.return_struct_defs[i] = Payload.return_types.struct_defs[i];
+         child_state.return_array_elements[i] = Payload.return_types.array_elements[i];
+         child_state.return_required[i] = Payload.return_types.required[i];
+         auto type = Payload.return_types.types[i];
+         auto struct_def = Payload.return_types.struct_defs[i];
+         auto array_element = Payload.return_types.array_elements[i];
+         uint32_t constraint = (struct_def and type IS TiriType::Struct) ? struct_key(struct_def->Name) : 0;
+         if (type IS TiriType::Array and array_element.storage IS AET::STRUCT and array_element.struct_def) {
+            constraint = struct_key(array_element.struct_def->Name);
+         }
+         ProtoTypeEntry signature_entry{
+            .constraint = constraint,
+            .type = type,
+            .flags = proto_type_flags(not Payload.return_types.required[i], Payload.return_types.required[i],
+               ProtoTypeOrigin::Declared,
+               (type IS TiriType::Any or type IS TiriType::Unknown) ?
+                  ProtoTypeStrength::Advisory : ProtoTypeStrength::Checked)
+         };
+         if (type IS TiriType::Array) set_proto_array_member(signature_entry, array_element.storage);
+         child_state.signature_results[i] = signature_entry;
       }
+   }
+   else if (Payload.return_types.is_inferred) {
+      child_state.return_inference_validated = true;
+      child_state.signature_result_count = Payload.return_types.count;
+      child_state.signature_result_entry_count = uint8_t(std::min<size_t>(
+         Payload.return_types.count, child_state.signature_results.size()));
+      for (size_t i = 0; i < Payload.return_types.count and i < child_state.signature_results.size(); ++i) {
+         auto type = Payload.return_types.types[i];
+         auto struct_def = Payload.return_types.struct_defs[i];
+         auto array_element = Payload.return_types.array_elements[i];
+         uint32_t constraint = 0;
+         if (struct_def and type IS TiriType::Struct) constraint = struct_key(struct_def->Name);
+         else if (type IS TiriType::Object) constraint = uint32_t(Payload.return_types.object_class_ids[i]);
+         else if (type IS TiriType::Array and array_element.storage IS AET::STRUCT and array_element.struct_def) {
+            constraint = struct_key(array_element.struct_def->Name);
+         }
+         ProtoTypeEntry signature_entry{
+            .constraint = constraint,
+            .type = type,
+            .flags = proto_type_flags(true, false, ProtoTypeOrigin::Inferred, ProtoTypeStrength::Trusted)
+         };
+         if (type IS TiriType::Array) set_proto_array_member(signature_entry, array_element.storage);
+         child_state.signature_results[i] = signature_entry;
+      }
+   }
+
+   auto inherited_cache = child_emitter.allocate_inherited_context_cache(*Payload.body);
+   IrEmitter::ContextSourceScope child_context_scope;
+   if (inherited_cache) {
+      child_context_scope.activate(&child_emitter, ContextSource{ .slot = inherited_cache.value(),
+         .kind = ContextSourceKind::Inherited });
    }
 
    // Save the parent's lastline - function body emission will update it, but we need
@@ -177,19 +341,20 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
 }
 
 //********************************************************************************************************************
-// Emit bytecode for a function declaration path (module.submodule.name or module:method), resolving the lvalue target.
+// Emit bytecode for a dot-qualified function declaration path, resolving the lvalue target.
 
 ParserResult<ExpDesc> IrEmitter::emit_function_lvalue(const FunctionNamePath &path)
 {
    if (path.segments.empty()) return this->unsupported_expr(AstNodeKind::FunctionExpr, SourceSpan{});
 
    NameRef base_ref = make_name_ref(path.segments.front());
-   auto base_expr = this->emit_identifier_expr(base_ref);
+   bool single_local_function = path.segments.size() IS 1;
+   auto base_expr = this->emit_identifier_expr(base_ref, single_local_function);
    if (not base_expr.ok()) return base_expr;
 
    ExpDesc target = base_expr.value_ref();
 
-   size_t traverse_limit = path.method.has_value() ? path.segments.size() : (path.segments.size() > 0 ? path.segments.size() - 1 : 0);
+   size_t traverse_limit = path.segments.size() > 0 ? path.segments.size() - 1 : 0;
    for (size_t i = 1; i < traverse_limit; ++i) {
       const Identifier &segment = path.segments[i];
       if (not segment.symbol) return this->unsupported_expr(AstNodeKind::FunctionExpr, SourceSpan{});
@@ -206,8 +371,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_lvalue(const FunctionNamePath &pa
    }
 
    const Identifier *final_name = nullptr;
-   if (path.method.has_value()) final_name = &path.method.value();
-   else if (path.segments.size() > 1) final_name = &path.segments.back();
+   if (path.segments.size() > 1) final_name = &path.segments.back();
 
    if (not final_name) return ParserResult<ExpDesc>::success(target);
 
@@ -231,7 +395,100 @@ ParserResult<ExpDesc> IrEmitter::emit_function_lvalue(const FunctionNamePath &pa
 // AllocNewLocal must be false when dealing with update operators like compound assignments (+=, -=) and (++, --)
 // where the variable must already exist.
 
-ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool AllocNewLocal, ControlFlowEdge* SafeNavSkip)
+ParserResult<ExpDesc> IrEmitter::emit_assignment_identifier(const NameRef &Reference, bool AllocNewLocal)
+{
+   const Identifier &identifier = Reference.identifier;
+   AssignmentTargetResolution category = Reference.assignment_resolution;
+   auto invariant = [&](std::string_view Message) {
+      return ParserResult<ExpDesc>::failure(
+         this->make_error(ParserErrorCode::InternalInvariant, Message, identifier.span));
+   };
+
+   if (category IS AssignmentTargetResolution::Unresolved) {
+      return invariant("assignment target reached IR emission without semantic resolution");
+   }
+
+   if (category IS AssignmentTargetResolution::Blank) {
+      if (not identifier.is_blank) return invariant("blank assignment category disagrees with its identifier");
+      ExpDesc blank;
+      blank.init(ExpKind::Global, 0);
+      blank.u.sval = NAME_BLANK;
+      return ParserResult<ExpDesc>::success(blank);
+   }
+
+   if (not identifier.symbol or identifier.is_blank) {
+      return invariant("resolved assignment category has no usable identifier");
+   }
+
+   if (assignment_target_is_existing_lexical(category)) {
+      ExpDesc resolved;
+      MSize variable_index = this->lex_state.var_lookup_symbol(identifier.symbol, &resolved);
+      ExpKind expected = category IS AssignmentTargetResolution::ExistingLocal ?
+         ExpKind::Local : ExpKind::Upval;
+      bool valid_binding = variable_index != MSize(-1) and Reference.binding_id and
+         identifier.binding_id IS Reference.binding_id and resolved.k IS expected and
+         this->lex_state.vstack[variable_index].binding_id IS Reference.binding_id;
+      if (not valid_binding) {
+         return invariant("lexical assignment target disagrees with its emitted binding");
+      }
+      if (resolved.k IS ExpKind::Local) resolved.u.s.aux = this->func_state.varmap[resolved.u.s.info];
+      return ParserResult<ExpDesc>::success(resolved);
+   }
+
+   if (category IS AssignmentTargetResolution::ExistingGlobal) {
+      if (Reference.binding_id or identifier.binding_id) {
+         return invariant("global assignment target unexpectedly has a lexical binding");
+      }
+      if ((identifier.symbol->flags & STRFLAG_PROTECTED_GLOBAL) != 0) {
+         return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::OverrideProtectedGlobal,
+            std::format("cannot override built-in '{}'",
+               std::string_view(strdata(identifier.symbol), identifier.symbol->len)), identifier.span));
+      }
+      if (lookup_constant(identifier.symbol) or this->func_state.const_globals.contains(identifier.symbol)) {
+         return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::AssignToConstant,
+            std::format("cannot assign to constant '{}'",
+               std::string_view(strdata(identifier.symbol), identifier.symbol->len)), identifier.span));
+      }
+
+      ExpDesc global;
+      global.init(ExpKind::Global, 0);
+      global.u.sval = identifier.symbol;
+      if (auto hint = this->lex_state.global_type_hints.find(identifier.symbol);
+          hint != this->lex_state.global_type_hints.end()) {
+         global.result_type = hint->second.primary;
+         global.object_class_id = hint->second.object_class_id;
+         global.struct_def = hint->second.struct_def;
+      }
+      return ParserResult<ExpDesc>::success(global);
+   }
+
+   if (category IS AssignmentTargetResolution::NewLocal) {
+      bool valid_binding = AllocNewLocal and Reference.binding_id and
+         identifier.binding_id IS Reference.binding_id and
+         Reference.binding_id.raw() < this->ctx.descriptors().binding_count();
+      if (valid_binding) {
+         valid_binding = this->ctx.descriptors().binding(Reference.binding_id).name IS identifier.symbol;
+      }
+
+      ExpDesc resolved;
+      this->lex_state.var_lookup_symbol(identifier.symbol, &resolved);
+      if (not valid_binding or resolved.k != ExpKind::Unscoped) {
+         return invariant("new-local assignment target disagrees with emitted storage");
+      }
+      return ParserResult<ExpDesc>::success(resolved);
+   }
+
+   if (category IS AssignmentTargetResolution::Invalid) {
+      std::string name(strdata(identifier.symbol), identifier.symbol->len);
+      return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::UndefinedVariable,
+         std::format("cannot use compound/update operator on undeclared variable '{}'", name), identifier.span));
+   }
+
+   return invariant("assignment target has an unknown semantic category");
+}
+
+ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(
+   const ExprNode &Expr, bool AllocNewLocal, ControlFlowEdge* SafeNavSkip, bool UseAssignmentResolution)
 {
    auto append_safe_nav_skip = [&](BCPos SkipPos) {
       if (not SafeNavSkip) return;
@@ -242,49 +499,13 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
    switch (Expr.kind) {
       case AstNodeKind::IdentifierExpr: {
          const NameRef& name_ref = std::get<NameRef>(Expr.data);
+         if (UseAssignmentResolution) return this->emit_assignment_identifier(name_ref, AllocNewLocal);
 
-         // Blank identifiers (_) are treated specially - they discard values
-         if (name_ref.identifier.is_blank) {
-            ExpDesc blank_expr;
-            blank_expr.init(ExpKind::Global, 0);
-            blank_expr.u.sval = NAME_BLANK;
-            return ParserResult<ExpDesc>::success(blank_expr);
-         }
-
-         // Check if this is a registered constant - cannot assign to constants
-         if (lookup_constant(name_ref.identifier.symbol)) {
-            std::string var_name(strdata(name_ref.identifier.symbol), name_ref.identifier.symbol->len);
-            std::string msg = "cannot assign to constant '" + var_name + "'";
-            return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::AssignToConstant, msg));
-         }
-
-         auto result = this->emit_identifier_expr(name_ref);
+         auto result = this->emit_identifier_expr(name_ref, false);
          if (not result.ok()) return result;
          ExpDesc value = result.value_ref();
-         if (value.k IS ExpKind::Local) { // Local variable already exists
-            value.u.s.aux = this->func_state.varmap[value.u.s.info];
-         }
-         else if (value.k IS ExpKind::Unscoped) { // Undeclared variable used as assignment target
-            GCstr *name = value.u.sval;
-
-            // Check if this was explicitly declared as global (in this or parent scope)
-            if (this->func_state.declared_globals.count(name) > 0) {
-               value.k = ExpKind::Global;
-            }
-            else if (AllocNewLocal) {
-               // Plain assignment: return Unscoped and let prepare_assignment_targets handle
-               // the local creation with proper timing for multi-value assignments.
-               // The ExpKind::Unscoped with name will signal that a new local should be created.
-               // value is already Unscoped with name set, so just return it.
-            }
-            else { // Compound/update assignment on an undeclared variable is an error
-               std::string var_name(strdata(name), name->len);
-               std::string msg = "cannot use compound/update operator on undeclared variable '" + var_name + "'";
-               return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::UndefinedVariable, msg));
-            }
-         }
-         // Allow Unscoped for deferred local creation in prepare_assignment_targets
-         if (not vkisvar(value.k) and value.k != ExpKind::Unscoped) return this->unsupported_expr(Expr.kind, Expr.span);
+         if (value.k IS ExpKind::Local) value.u.s.aux = this->func_state.varmap[value.u.s.info];
+         if (not expkind_is_variable_like(value.k)) return this->unsupported_expr(Expr.kind, Expr.span);
          return ParserResult<ExpDesc>::success(value);
       }
 
@@ -293,14 +514,15 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          if (not payload.table or not payload.member.symbol) return this->unsupported_expr(Expr.kind, Expr.span);
 
          auto table_result = SafeNavSkip
-            ? this->emit_lvalue_expr(*payload.table, false, SafeNavSkip)
+            ? this->emit_lvalue_expr(*payload.table, false, SafeNavSkip, false)
             : this->emit_expression(*payload.table);
          if (not table_result.ok()) return table_result;
          ExpDesc table = table_result.value_ref();
+         StaticValueHandle receiver_descriptor = table.static_value;
 
          // Save the emitted expression's result_type before discharge operations may modify it.
          // This captures type information propagated from VarInfo during variable lookup.
-         TiriType emitted_base_type = table.result_type;
+         struct_record *emitted_struct_def = table.struct_def;
 
          ExpressionValue table_toval(&this->func_state, table);
          table_toval.to_val();
@@ -313,15 +535,24 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          key.u.sval = payload.member.symbol;
          expr_index(&this->func_state, &table, &key);
 
-         // Propagate known base type information for downstream optimizations.
-         // When base_type is Object, emit specialised BC_OBSETF bytecodes via IndexedObject.
-         // Check both AST-level base_type AND emitted expression's result_type.
-         if (payload.base_type IS TiriType::Object or emitted_base_type IS TiriType::Object) {
+         // A dominating static descriptor proof selects specialised object or structure store bytecodes.
+         bool proved_object = can_use_static_receiver(
+            this->ctx.descriptors(), receiver_descriptor, TiriType::Object, true);
+         bool proved_struct = can_use_static_receiver(
+            this->ctx.descriptors(), receiver_descriptor, TiriType::Struct, true);
+         if (proved_object) {
             table.result_type = TiriType::Object;
             // Only use IndexedObject for string keys (member access always uses string keys)
-            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+            if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
                table.k = ExpKind::IndexedObject;
             }
+         }
+         else if (proved_struct) {
+            table.result_type = TiriType::Struct;
+            if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
+               table.k = ExpKind::IndexedStruct;
+            }
+            apply_struct_field_metadata(table, emitted_struct_def, payload.member.symbol);
          }
 
          return ParserResult<ExpDesc>::success(table);
@@ -332,16 +563,15 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          if (not payload.table or not payload.index) return this->unsupported_expr(Expr.kind, Expr.span);
 
          auto table_result = SafeNavSkip
-            ? this->emit_lvalue_expr(*payload.table, false, SafeNavSkip)
+            ? this->emit_lvalue_expr(*payload.table, false, SafeNavSkip, false)
             : this->emit_expression(*payload.table);
          if (not table_result.ok()) return table_result;
 
          ExpDesc table = table_result.value_ref();
+         StaticValueHandle receiver_descriptor = table.static_value;
 
          // Save the emitted expression's result_type before discharge operations may modify it.
          // This captures type information propagated from VarInfo during variable lookup.
-         TiriType emitted_base_type = table.result_type;
-
          // Materialize table BEFORE evaluating key, so nested index expressions emit bytecode in
          // the correct order (table first, then key)
 
@@ -361,18 +591,29 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          key = key_toval_idx.legacy();
          expr_index(&this->func_state, &table, &key);
 
-         // Propagate known base type information for downstream optimizations.
-         // Check both AST-level base_type AND emitted expression's result_type.
-         if (payload.base_type IS TiriType::Array or emitted_base_type IS TiriType::Array) {
+         // Select specialised store bytecodes only when the receiver's static descriptor proves its category.
+         bool proved_array = can_use_static_receiver(
+            this->ctx.descriptors(), receiver_descriptor, TiriType::Array, true);
+         bool proved_object = can_use_static_receiver(
+            this->ctx.descriptors(), receiver_descriptor, TiriType::Object, true);
+         bool proved_struct = can_use_static_receiver(
+            this->ctx.descriptors(), receiver_descriptor, TiriType::Struct, true);
+         if (proved_array) {
             // Arrays don't support string keys, so only change kind for numeric indexing
-            if (int32_t(table.u.s.aux) >= 0) {
+            if (IndexOperand(table.u.s.aux).is_numeric()) {
                table.k = ExpKind::IndexedArray;
             }
          }
-         else if (payload.base_type IS TiriType::Object or emitted_base_type IS TiriType::Object) {
+         else if (proved_object) {
             // Objects use string field access - only change kind for string const keys
-            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+            if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
                table.k = ExpKind::IndexedObject;
+            }
+         }
+         else if (proved_struct) {
+            table.result_type = TiriType::Struct;
+            if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
+               table.k = ExpKind::IndexedStruct;
             }
          }
 
@@ -388,11 +629,12 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          const auto &payload = std::get<SafeMemberExprPayload>(Expr.data);
          if (not payload.table or not payload.member.symbol) return this->unsupported_expr(Expr.kind, Expr.span);
 
-         auto table_result = this->emit_lvalue_expr(*payload.table, false, SafeNavSkip);
+         auto table_result = this->emit_lvalue_expr(*payload.table, false, SafeNavSkip, false);
          if (not table_result.ok()) return table_result;
          ExpDesc table = table_result.value_ref();
+         StaticValueHandle receiver_descriptor = table.static_value;
 
-         TiriType emitted_base_type = table.result_type;
+         struct_record *emitted_struct_def = table.struct_def;
 
          ExpressionValue table_toval(&this->func_state, table);
          table_toval.to_val();
@@ -410,11 +652,22 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          key.u.sval = payload.member.symbol;
          expr_index(&this->func_state, &table, &key);
 
-         if (payload.base_type IS TiriType::Object or emitted_base_type IS TiriType::Object) {
+         bool proved_object = can_use_static_receiver(
+            this->ctx.descriptors(), receiver_descriptor, TiriType::Object, true);
+         bool proved_struct = can_use_static_receiver(
+            this->ctx.descriptors(), receiver_descriptor, TiriType::Struct, true);
+         if (proved_object) {
             table.result_type = TiriType::Object;
-            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+            if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
                table.k = ExpKind::IndexedObject;
             }
+         }
+         else if (proved_struct) {
+            table.result_type = TiriType::Struct;
+            if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
+               table.k = ExpKind::IndexedStruct;
+            }
+            apply_struct_field_metadata(table, emitted_struct_def, payload.member.symbol);
          }
 
          return ParserResult<ExpDesc>::success(table);
@@ -429,11 +682,10 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          const auto &payload = std::get<SafeIndexExprPayload>(Expr.data);
          if (not payload.table or not payload.index) return this->unsupported_expr(Expr.kind, Expr.span);
 
-         auto table_result = this->emit_lvalue_expr(*payload.table, false, SafeNavSkip);
+         auto table_result = this->emit_lvalue_expr(*payload.table, false, SafeNavSkip, false);
          if (not table_result.ok()) return table_result;
          ExpDesc table = table_result.value_ref();
-
-         TiriType emitted_base_type = table.result_type;
+         StaticValueHandle receiver_descriptor = table.static_value;
 
          ExpressionValue table_toval_idx(&this->func_state, table);
          table_toval_idx.to_val();
@@ -456,14 +708,26 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          key = key_toval_idx.legacy();
          expr_index(&this->func_state, &table, &key);
 
-         if (payload.base_type IS TiriType::Array or emitted_base_type IS TiriType::Array) {
-            if (int32_t(table.u.s.aux) >= 0) {
+         bool proved_array = can_use_static_receiver(
+            this->ctx.descriptors(), receiver_descriptor, TiriType::Array, true);
+         bool proved_object = can_use_static_receiver(
+            this->ctx.descriptors(), receiver_descriptor, TiriType::Object, true);
+         bool proved_struct = can_use_static_receiver(
+            this->ctx.descriptors(), receiver_descriptor, TiriType::Struct, true);
+         if (proved_array) {
+            if (IndexOperand(table.u.s.aux).is_numeric()) {
                table.k = ExpKind::IndexedArray;
             }
          }
-         else if (payload.base_type IS TiriType::Object or emitted_base_type IS TiriType::Object) {
-            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+         else if (proved_object) {
+            if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
                table.k = ExpKind::IndexedObject;
+            }
+         }
+         else if (proved_struct) {
+            table.result_type = TiriType::Struct;
+            if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
+               table.k = ExpKind::IndexedStruct;
             }
          }
 
@@ -502,10 +766,17 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_function_stmt(const LocalFunction
    VarInfo &var_info = this->func_state.var_get(this->func_state.varmap.size() - 1);
    var_info.startpc = this->func_state.pc;
    var_info.fixed_type = TiriType::Func;  // Function declarations have known type
+   var_info.binding_id = Payload.name.binding_id;
+   var_info.static_value = Payload.name.static_value;
+   if (Payload.name.binding_id) {
+      const auto &binding = this->ctx.descriptors().binding(Payload.name.binding_id);
+      var_info.static_callable = binding.callable;
+      if (binding.callable) var_info.static_results = this->ctx.descriptors().callable(binding.callable).results;
+   }
    if (Payload.name.symbol and not Payload.name.is_blank) this->update_local_binding(Payload.name.symbol, slot);
 
    // Copy function return types to VarInfo for compile-time type checking at call sites
-   if (Payload.function->return_types.is_explicit) {
+   if (Payload.function->return_types.is_explicit or Payload.function->return_types.is_inferred) {
       for (size_t i = 0; i < Payload.function->return_types.count and i < var_info.result_types.size(); ++i) {
          var_info.result_types[i] = Payload.function->return_types.types[i];
       }
@@ -525,7 +796,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_function_stmt(const LocalFunction
 //********************************************************************************************************************
 // Emit bytecode for a function declaration statement.
 // With protected_globals enabled, simple function declarations (function foo()) create local functions.
-// Method syntax (function foo:bar()) and table paths (function foo.bar()) always store to the target.
+// Table paths (function foo.bar()) always store to the target.
 // Explicit global declarations (global function foo()) always store to global.
 
 ParserResult<IrEmitUnit> IrEmitter::emit_function_stmt(const FunctionStmtPayload &Payload)
@@ -536,24 +807,32 @@ ParserResult<IrEmitUnit> IrEmitter::emit_function_stmt(const FunctionStmtPayload
 
    if (Payload.name.is_explicit_global and not Payload.name.segments.empty()) {
       GCstr *name = Payload.name.segments.front().symbol;
-      if (name) this->func_state.declared_globals.insert(name);
+      if (name) {
+         bool is_direct_global_store = Payload.name.segments.size() IS 1;
+         if (is_direct_global_store and ((name->flags & STRFLAG_PROTECTED_GLOBAL) != 0)) {
+            return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::OverrideProtectedGlobal,
+               std::format("cannot override built-in '{}'", std::string_view(strdata(name), name->len)),
+               Payload.name.segments.front().span));
+         }
+         if (is_direct_global_store and lookup_constant(name)) {
+            return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::AssignToConstant,
+               std::format("cannot assign to constant '{}'", std::string_view(strdata(name), name->len)),
+               Payload.name.segments.front().span));
+         }
+         this->func_state.declared_globals.insert(name);
+      }
    }
 
-   // Check if this is a simple function name (not a path like foo.bar or method foo:bar)
+   // Check if this is a simple function name (not a path like foo.bar)
    // and if protected_globals is enabled without explicit global declaration
 
-   bool is_simple_name = Payload.name.segments.size() == 1 and not Payload.name.method.has_value();
+   bool is_simple_name = Payload.name.segments.size() IS 1;
    bool should_be_local = is_simple_name and not Payload.name.is_explicit_global;
 
    // Determine the function name for tostring() support.
    // For simple names, use the single segment. For paths like foo.bar, use the last segment.
-   // For methods like foo:bar, use the method name.
-
    GCstr *funcname = nullptr;
-   if (Payload.name.method.has_value() and Payload.name.method->symbol) {
-      funcname = Payload.name.method->symbol;
-   }
-   else if (not Payload.name.segments.empty()) {
+   if (not Payload.name.segments.empty()) {
       funcname = Payload.name.segments.back().symbol;
    }
 
@@ -581,10 +860,17 @@ ParserResult<IrEmitUnit> IrEmitter::emit_function_stmt(const FunctionStmtPayload
       VarInfo &var_info = this->func_state.var_get(this->func_state.varmap.size() - 1);
       var_info.startpc = this->func_state.pc;
       var_info.fixed_type = TiriType::Func;  // Function declarations have known type
+      var_info.binding_id = first_segment.binding_id;
+      var_info.static_value = first_segment.static_value;
+      if (first_segment.binding_id) {
+         const auto &binding = this->ctx.descriptors().binding(first_segment.binding_id);
+         var_info.static_callable = binding.callable;
+         if (binding.callable) var_info.static_results = this->ctx.descriptors().callable(binding.callable).results;
+      }
       this->update_local_binding(symbol, slot);
 
       // Copy function return types to VarInfo for compile-time type checking at call sites
-      if (Payload.function->return_types.is_explicit) {
+      if (Payload.function->return_types.is_explicit or Payload.function->return_types.is_inferred) {
          for (size_t i = 0; i < Payload.function->return_types.count and i < var_info.result_types.size(); ++i) {
             var_info.result_types[i] = Payload.function->return_types.types[i];
          }
@@ -609,6 +895,11 @@ ParserResult<IrEmitUnit> IrEmitter::emit_function_stmt(const FunctionStmtPayload
 
    ExpDesc target = target_result.value_ref();
    ExpDesc value = function_value.value_ref();
+   std::optional<RuntimeContract> global_contract;
+   bool is_direct_global_declaration = Payload.name.is_explicit_global and is_simple_name;
+   if (is_direct_global_declaration) {
+      global_contract = global_declaration_contract(Payload.name.segments.front());
+   }
 
    // For annotation registration, we need the function in a register
    // Materialise the function value to a register before the store
@@ -621,7 +912,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_function_stmt(const FunctionStmtPayload
       bcreg_reserve(&this->func_state, 1);
    }
 
-   bcemit_store(&this->func_state, &target, &value);
+   bcemit_store(&this->func_state, &target, &value,
+      global_contract ? &*global_contract : nullptr, is_direct_global_declaration);
    release_indexed_original(this->func_state, target);
 
    // Register annotations if present
@@ -639,12 +931,72 @@ ParserResult<IrEmitUnit> IrEmitter::emit_function_stmt(const FunctionStmtPayload
 // This generates code equivalent to: debug.anno.set(func, "@Anno...", source, name)
 // The function reference is expected to be in the specified register.
 
+static void append_annotation_string_literal(std::string &Out, GCstr *Value)
+{
+   Out += "\"";
+
+   if (Value) {
+      std::string_view text(strdata(Value), Value->len);
+
+      for (char c : text) {
+         switch (c) {
+            case '\\': Out += "\\\\"; break;
+            case '"':  Out += "\\\""; break;
+            case '\n': Out += "\\n";  break;
+            case '\r': Out += "\\r";  break;
+            case '\t': Out += "\\t";  break;
+            default:   Out += c;      break;
+         }
+      }
+   }
+
+   Out += "\"";
+}
+
+static void append_annotation_value(std::string &Out, const AnnotationArgValue &Value)
+{
+   switch (Value.type) {
+      case AnnotationArgValue::Type::Bool:
+         Out += Value.bool_value ? "true" : "false";
+         break;
+      case AnnotationArgValue::Type::Number:
+         Out += std::to_string(Value.number_value);
+         break;
+      case AnnotationArgValue::Type::String:
+         append_annotation_string_literal(Out, Value.string_value);
+         break;
+      case AnnotationArgValue::Type::Array: {
+         Out += "[";
+         bool first_elem = true;
+
+         for (const auto &elem : Value.array_value) {
+            if (not first_elem) Out += ",";
+            first_elem = false;
+            append_annotation_value(Out, elem);
+         }
+
+         Out += "]";
+         break;
+      }
+      default:
+         Out += "nil";
+         break;
+   }
+}
+
+static bool annotation_entry_name_is(const AnnotationEntry &Annotation, std::string_view Name)
+{
+   if (Annotation.name IS nullptr) return false;
+   return std::string_view(strdata(Annotation.name), Annotation.name->len) IS Name;
+}
+
 ParserResult<IrEmitUnit> IrEmitter::emit_annotation_registration(BCReg FuncReg, const std::vector<AnnotationEntry>& Annotations, GCstr* Funcname)
 {
    if (Annotations.empty()) return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
 
    FuncState* fs = &this->func_state;
    lua_State* L = fs->L;
+   bool process_doc = L->script and ((L->script->Flags & SCF::PROCESS_DOC) != SCF::NIL);
 
    // Build annotation string from parsed annotation entries
    // Format: @Name(key=value, ...); @Name2; ...
@@ -654,7 +1006,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_annotation_registration(BCReg FuncReg, 
       anno_str += "@";
       if (anno.name) anno_str.append(strdata(anno.name), anno.name->len);
 
-      if (not anno.args.empty()) {
+      bool include_args = not anno.args.empty();
+      if (annotation_entry_name_is(anno, "Doc") and not process_doc) include_args = false;
+
+      if (include_args) {
          anno_str += "(";
          bool first_arg = true;
          for (const auto& [key, value] : anno.args) {
@@ -662,52 +1017,18 @@ ParserResult<IrEmitUnit> IrEmitter::emit_annotation_registration(BCReg FuncReg, 
             first_arg = false;
             if (key) anno_str.append(strdata(key), key->len);
             anno_str += "=";
-            switch (value.type) {
-               case AnnotationArgValue::Type::Bool:
-                  anno_str += value.bool_value ? "true" : "false";
-                  break;
-               case AnnotationArgValue::Type::Number:
-                  anno_str += std::to_string(value.number_value);
-                  break;
-               case AnnotationArgValue::Type::String:
-                  anno_str += "\"";
-                  if (value.string_value) anno_str.append(strdata(value.string_value), value.string_value->len);
-                  anno_str += "\"";
-                  break;
-               case AnnotationArgValue::Type::Array: {
-                  anno_str += "[";
-                  bool first_elem = true;
-                  for (const auto& elem : value.array_value) {
-                     if (not first_elem) anno_str += ",";
-                     first_elem = false;
-                     if (elem.type IS AnnotationArgValue::Type::String and elem.string_value) {
-                        anno_str += "\"";
-                        anno_str.append(strdata(elem.string_value), elem.string_value->len);
-                        anno_str += "\"";
-                     }
-                     else if (elem.type IS AnnotationArgValue::Type::Number) {
-                        anno_str += std::to_string(elem.number_value);
-                     }
-                     else if (elem.type IS AnnotationArgValue::Type::Bool) {
-                        anno_str += elem.bool_value ? "true" : "false";
-                     }
-                  }
-                  anno_str += "]";
-                  break;
-               }
-               default:
-                  anno_str += "nil";
-                  break;
-            }
+            append_annotation_value(anno_str, value);
          }
          anno_str += ")";
       }
    }
 
-   // Save base register and allocate space for the call
+   // Save base register and allocate space for the call.  The callee lookup can need temporary registers when string
+   // constants exceed the short TGETS range, so the full frame must be reserved before those lookups run.
    // With LJ_FR2=1, layout is: [base]=func, [base+1]=frame, [base+2]=arg1, [base+3]=arg2, ...
    // So args start at base + 1 + LJ_FR2 = base + 2
    BCREG base_raw = fs->freereg;
+   bcreg_reserve(fs, 5 + LJ_FR2);
 
    // Helper to get constant string index
    auto str_const = [fs](GCstr* s) -> BCREG {
@@ -743,6 +1064,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_annotation_registration(BCReg FuncReg, 
    // Emit call: debug.anno.set(func, annostr, source, name)
    // BC_CALL A=base, B=2 (expect 1 result for discard), C=5 (4 args + 1)
    bcemit_ABC(fs, BC_CALL, base_raw, 2, 5);
+   fs->freereg = base_raw;
 
    return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
 }

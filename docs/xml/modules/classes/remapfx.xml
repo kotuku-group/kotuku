@@ -8,7 +8,7 @@
     <module>Vector</module>
     <comment>Provides pixel remapping; equivalent to feComponentTransfer in SVG.</comment>
     <version>1</version>
-    <id>3eb33c98</id>
+    <id>b227c685</id>
     <idstring>REMAPFX</idstring>
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
@@ -25,6 +25,7 @@
       <name>Draw</name>
       <comment>Render the effect to the target bitmap.</comment>
       <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
+      <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">The X position of the region to be drawn.</param>
         <param type="INT" name="Y">The Y position of the region to be drawn.</param>
@@ -39,21 +40,23 @@
     <method>
       <name>SelectDiscrete</name>
       <comment>Apply the discrete function to a pixel component.</comment>
-      <prototype>ERR rf::SelectDiscrete(OBJECTPTR Object, CMP Component, DOUBLE * Values, INT Size)</prototype>
+      <prototype>ERR rf::SelectDiscrete(OBJECTPTR Object, CMP Component, kt::vector&lt;double&gt; Values)</prototype>
+      <tiriPrototype>err = SelectDiscrete(Component:num, Values:array)</tiriPrototype>
       <input>
         <param type="CMP" name="Component" lookup="CMP">The pixel component to which the discrete function must be applied.</param>
-        <param type="DOUBLE *" name="Values">A list of values for the discrete function.</param>
-        <param type="INT" name="Size">Total number of elements in the <code>Values</code> list.</param>
+        <param type="kt::vector&lt;double&gt;" name="Values">A list of values for the discrete function.</param>
       </input>
       <description>
 <p>This method will apply the table function to a selected RGBA pixel component.  A list of values is required with a minimum size of 1.</p>
       </description>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
     <method>
       <name>SelectGamma</name>
       <comment>Apply the gamma function to a pixel component.</comment>
       <prototype>ERR rf::SelectGamma(OBJECTPTR Object, CMP Component, DOUBLE Amplitude, DOUBLE Offset, DOUBLE Exponent)</prototype>
+      <tiriPrototype>err = SelectGamma(Component:num, Amplitude:num, Offset:num, Exponent:num)</tiriPrototype>
       <input>
         <param type="CMP" name="Component" lookup="CMP">The pixel component to which the gamma function must be applied.</param>
         <param type="DOUBLE" name="Amplitude">The amplitude of the gamma function.</param>
@@ -63,24 +66,28 @@
       <description>
 <p>This method will apply the gamma function to a selected RGBA pixel component.  The gamma function is written as <code>C' = Amplitude * pow(C, Exponent) + Offset</code>.</p>
       </description>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
       <name>SelectIdentity</name>
       <comment>Apply the identity function to a pixel component.</comment>
       <prototype>ERR rf::SelectIdentity(OBJECTPTR Object, CMP Component)</prototype>
+      <tiriPrototype>err = SelectIdentity(Component:num)</tiriPrototype>
       <input>
         <param type="CMP" name="Component" lookup="CMP">The pixel component to which the identity function must be applied.</param>
       </input>
       <description>
 <p>Selecting the identity function for a pixel component will render it as its original value.  By default, all pixels will use this function if no other option is chosen.</p>
       </description>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
       <name>SelectInvert</name>
       <comment>Apply the invert function to a pixel component.</comment>
       <prototype>ERR rf::SelectInvert(OBJECTPTR Object, CMP Component)</prototype>
+      <tiriPrototype>err = SelectInvert(Component:num)</tiriPrototype>
       <input>
         <param type="CMP" name="Component" lookup="CMP">The pixel component to which the function must be applied.</param>
       </input>
@@ -88,12 +95,14 @@
 <p>This method will apply the invert function to a selected RGBA pixel component.  The function is written as <code>C' = 1.0 - C</code>.</p>
 <p>This feature is not compatible with SVG.</p>
       </description>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
       <name>SelectLinear</name>
       <comment>Apply the linear function to a pixel component.</comment>
       <prototype>ERR rf::SelectLinear(OBJECTPTR Object, CMP Component, DOUBLE Slope, DOUBLE Intercept)</prototype>
+      <tiriPrototype>err = SelectLinear(Component:num, Slope:num, Intercept:num)</tiriPrototype>
       <input>
         <param type="CMP" name="Component" lookup="CMP">The pixel component to which the function must be applied.</param>
         <param type="DOUBLE" name="Slope">The slope of the linear function.</param>
@@ -102,12 +111,14 @@
       <description>
 <p>This method will apply the linear function to a selected RGBA pixel component.  The function is written as <code>C' = (Slope * C) + Intercept</code>.</p>
       </description>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
       <name>SelectMask</name>
       <comment>Apply the mask function to a pixel component.</comment>
       <prototype>ERR rf::SelectMask(OBJECTPTR Object, CMP Component, INT Mask)</prototype>
+      <tiriPrototype>err = SelectMask(Component:num, Mask:num)</tiriPrototype>
       <input>
         <param type="CMP" name="Component" lookup="CMP">The pixel component to which the function must be applied.</param>
         <param type="INT" name="Mask">The bit mask to be AND'd with each value.</param>
@@ -116,21 +127,23 @@
 <p>This method will apply the mask function to a selected RGBA pixel component.  The function is written as <code>C' = C &amp; Mask</code>.  This algorithm is particularly useful for lowering the bit depth of colours, e.g. a value of <code>0xf0</code> will reduce 8 bit colours to 4 bit.</p>
 <p>This feature is not compatible with SVG.</p>
       </description>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
       <name>SelectTable</name>
       <comment>Apply the table function to a pixel component.</comment>
-      <prototype>ERR rf::SelectTable(OBJECTPTR Object, CMP Component, DOUBLE * Values, INT Size)</prototype>
+      <prototype>ERR rf::SelectTable(OBJECTPTR Object, CMP Component, kt::vector&lt;double&gt; Values)</prototype>
+      <tiriPrototype>err = SelectTable(Component:num, Values:array)</tiriPrototype>
       <input>
         <param type="CMP" name="Component" lookup="CMP">The pixel component to which the table function must be applied.</param>
-        <param type="DOUBLE *" name="Values">A list of values for the table function.</param>
-        <param type="INT" name="Size">Total number of elements in the value list.</param>
+        <param type="kt::vector&lt;double&gt;" name="Values">A list of values for the table function.</param>
       </input>
       <description>
 <p>This method will apply the table function to a selected RGBA pixel component.  A list of values is required with a minimum size of 1.</p>
 <p>If a single table value is supplied then the component will be output as a constant with no interpolation applied.</p>
       </description>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
   </methods>
@@ -141,6 +154,7 @@
       <comment>Returns an SVG compliant XML string that describes the filter.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
+      <tags>caller-owns-result</tags>
     </field>
 
   </fields>

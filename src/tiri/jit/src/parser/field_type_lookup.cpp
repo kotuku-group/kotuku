@@ -16,8 +16,10 @@ static TiriType map_field_flags_to_tiri_type(uint32_t Flags)
 {
    // NB: Order is important
 
-   if (Flags & FD_ARRAY) return TiriType::Table; // TODO: Using TiriType::Array crashes - requires further investigation
-   else if (Flags & FD_STRUCT) return TiriType::Table;
+   if (Flags & (FD_ARRAY|FD_VECTOR)) {
+      return TiriType::Any; // Defer to runtime resolution because object fields can expose different array types
+   }
+   else if (Flags & FD_STRUCT) return TiriType::Struct;
    else if (Flags & FD_STRING) return TiriType::Str;
    else if (Flags & (FD_OBJECT|FD_LOCAL)) return TiriType::Object;
    else if (Flags & FD_POINTER) return TiriType::Any; // Prefer runtime resolution for pointer types
@@ -36,13 +38,13 @@ static std::optional<FieldTypeInfo> lookup_field_type(CLASSID ClassID, uint32_t 
 
    auto *meta_class = FindClass(ClassID);
    if (not meta_class) { // This should never happen - caller probably used an uninitialised variable
-      pf::Log(__FUNCTION__).warning("Class ID $%.8x is invalid.", uint32_t(ClassID));
+      kt::Log(__FUNCTION__).warning("Class ID $%.8x is invalid.", uint32_t(ClassID));
       return std::nullopt;
    }
 
    objMetaClass *src_class;
    Field *field;
-   if (meta_class->findField(FieldID, &field, &src_class) IS ERR::Okay) {
+   if (!meta_class->findField(FieldID, &field, &src_class)) {
       TiriType type = map_field_flags_to_tiri_type(field->Flags);
       // For object fields, try to extract the class ID from the Arg field
 

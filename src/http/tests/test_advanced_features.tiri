@@ -1,0 +1,323 @@
+--[[
+Advanced Features Testing
+
+Tests advanced HTTP features including multipart form data, cookies, custom headers, route parameters, and query
+string handling.
+--]]
+
+   import 'net/httpserver'
+   import 'json'
+   include 'http'
+
+glOutFile <const> = 'temp:http-advanced-output.txt'
+SERVER_PORT <const> = 18946
+
+@BeforeAll function init(State)
+   global glPath = State.folder
+
+   global glServer = hslib.start({
+      port    = SERVER_PORT,
+      folder  = glPath,
+      verbose = true,
+      routes = {
+         { pattern = '/upload/multipart',
+            method = 'POST',
+            handler = function(req, res)
+               res.json({
+                  message = 'Multipart upload received',
+                  contentType = req.headers['content-type'],
+                  bodyLength = req.body and #req.body or 0
+               })
+            end
+         },
+         { pattern = '/cookies/test',
+            method = 'GET',
+            handler = function(req, res)
+               res.cookie('response_cookie', 'test_value', { path = '/', maxAge = 3600 })
+                  .cookie('another_cookie', 'another_value')
+                  .json({
+                     message = 'Cookie test response',
+                     cookies = req.cookies,
+                     setCookies = true
+                  })
+            end
+         },
+         { pattern = '/headers/test',
+            method = 'GET',
+            handler = function(req, res)
+               res.header('X-Response-Header', 'ResponseValue')
+                  .header('X-Server-Info', 'Kotuku HTTP Server')
+                  .json({
+                     message = 'Headers test response',
+                     receivedHeaders = req.headers,
+                     responseHeaders = true
+                  })
+            end
+         },
+         { pattern = '/api/users/:userId/posts/:postId/comments',
+            method = 'GET',
+            handler = function(req, res)
+               res.json({
+                  message = 'Complex route matched',
+                  params = req.params,
+                  path = req.path,
+                  fullPath = req.fullPath
+               })
+            end
+         },
+         { pattern = '/search',
+            method = 'GET',
+            handler = function(req, res)
+               res.json({
+                  message = 'Search endpoint',
+                  query = req.query,
+                  path = req.path
+               })
+            end
+         },
+         { pattern = '/upload/file',
+            method = 'POST',
+            handler = function(req, res)
+               filename = req.headers['x-filename'] or 'unknown'
+               expectedSize = tonumber(req.headers['x-file-size']) or 0
+               actualSize = req.body and #req.body or 0
+
+               res.json({
+                  message = 'File upload received',
+                  filename = filename,
+                  fileSize = expectedSize,
+                  contentReceived = actualSize,
+                  contentType = req.headers['content-type']
+               })
+            end
+         }
+      }
+   })
+end
+
+@AfterAll function cleanup()
+   glServer.stop()
+   mSys.DeleteFile(glOutFile)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function MultipartFormData()
+   content = ''
+
+   -- Create multipart form data
+   boundary <const> = '----WebKitFormBoundary7MA4YWxkTrZu0gW'
+   CRLF <const> = '\r\n'
+   multipartBody = '--' .. boundary .. CRLF ..
+      'Content-Disposition: form-data; name="field1"' .. CRLF .. CRLF ..
+      'value1' .. CRLF ..
+      '--' .. boundary .. CRLF ..
+      'Content-Disposition: form-data; name="field2"' .. CRLF .. CRLF ..
+      'value2' .. CRLF ..
+      '--' .. boundary .. CRLF ..
+      'Content-Disposition: form-data; name="file"; filename="test.txt"' .. CRLF ..
+      'Content-Type: text/plain' .. CRLF .. CRLF ..
+      'File content here' .. CRLF ..
+      '--' .. boundary .. '--' .. CRLF
+
+   http = obj.new('http', {
+      src         = 'http://127.0.0.1:' .. SERVER_PORT .. '/upload/multipart',
+      method      = 'POST',
+      contentType = 'multipart/form-data; boundary=' .. boundary,
+      flags       = HTF_NO_HEAD,
+      inputFile   = 'string:' .. multipartBody,
+      size        = #multipartBody,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.error is ERR_Okay, 'Multipart HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Multipart unexpected status: ' .. http.status)
+
+   response = json.decode(content)
+   assert(response.contentType.find('multipart/form-data'), 'Multipart content type not detected')
+   assert(response.bodyLength > 0, 'Multipart body should not be empty')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CookieHandling()
+   content = ''
+
+   http = obj.new('http', {
+      src     = 'http://127.0.0.1:' .. SERVER_PORT .. '/cookies/test',
+      method  = 'GET',
+      flags   = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   check http.acSetKey('Cookie', 'session_id=abc123; user_pref=dark_mode; lang=en')
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.error is ERR_Okay, 'Cookie HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Cookie unexpected status: ' .. http.status)
+
+   response = json.decode(content)
+   assert(response.cookies.session_id is 'abc123', 'Session cookie not parsed correctly')
+   assert(response.cookies.user_pref is 'dark_mode', 'User preference cookie not parsed correctly')
+   assert(response.setCookies, 'Server should set response cookies')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CustomHeaders()
+   content = ''
+
+   http = obj.new('http', {
+      src     = 'http://127.0.0.1:' .. SERVER_PORT .. '/headers/test',
+      method  = 'GET',
+      flags   = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   check http.acSetKey('X-Custom-Header', 'CustomValue')
+   check http.acSetKey('X-API-Key', 'secret123')
+   check http.acSetKey('X-Client-Version', '1.0.0')
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.error is ERR_Okay, 'Custom headers HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Custom headers unexpected status: ' .. http.status)
+
+   response = json.decode(content)
+   assert(response.receivedHeaders['x-custom-header'] is 'CustomValue', 'Custom header not received')
+   assert(response.receivedHeaders['x-api-key'] is 'secret123', 'API key header not received')
+   assert(response.responseHeaders, 'Server should return custom response headers')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function RouteParametersComplex()
+   content = ''
+
+   http = obj.new('http', {
+      src      = 'http://127.0.0.1:' .. SERVER_PORT .. '/api/users/123/posts/456/comments',
+      method   = 'GET',
+      flags    = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.error is ERR_Okay, 'Complex route HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Complex route unexpected status: ' .. http.status)
+
+   response = json.decode(content)
+   assert(response.params.userId is '123', 'User ID parameter not extracted')
+   assert(response.params.postId is '456', 'Post ID parameter not extracted')
+   assert(response.path is '/api/users/123/posts/456/comments', 'Path not preserved correctly')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function QueryParameters()
+   content = ''
+
+   http = obj.new('http', {
+      src    = 'http://127.0.0.1:' .. SERVER_PORT .. '/search?q=test+query&category=docs&sort=date&limit=10&debug',
+      method = 'GET',
+      flags  = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.error is ERR_Okay, 'Query params HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Query params unexpected status: ' .. http.status)
+
+   response = json.decode(content)
+   assert(response.query.q is 'test query', 'Query parameter with spaces not decoded correctly')
+   assert(response.query.category is 'docs', 'Category parameter not parsed')
+   assert(response.query.limit is '10', 'Limit parameter not parsed')
+   assert(response.query.debug is true, 'Boolean query parameter not handled')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function FileUpload()
+   content = ''
+
+   -- Create a simple file content
+   fileContent = 'This is test file content\nLine 2\nLine 3'
+
+   http = obj.new('http', {
+      src         = f'http://127.0.0.1:{SERVER_PORT}/upload/file',
+      method      = 'POST',
+      contentType = 'application/octet-stream',
+      flags       = HTF_NO_HEAD,
+      inputFile   = 'string:' .. fileContent,
+      size        = #fileContent,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   check http.acSetKey('X-Filename', 'test.txt')
+   check http.acSetKey('X-File-Size', tostring(#fileContent))
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.error is ERR_Okay, 'File upload HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'File upload unexpected status: ' .. http.status)
+
+   response = json.decode(content)
+   assert(response.filename is 'test.txt', 'Filename header not received')
+   assert(response.fileSize is #fileContent, 'File size mismatch')
+   assert(response.contentReceived is #fileContent, 'File content not fully received')
+end

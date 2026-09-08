@@ -28,10 +28,27 @@ class extMergeFX : public extFilterEffect {
    public:
    static constexpr CLASSID CLASS_ID = CLASSID::MERGEFX;
    static constexpr CSTRING CLASS_NAME = "MergeFX";
-   using create = pf::Create<extMergeFX>;
+   using create = kt::Create<extMergeFX>;
 
    std::vector<MergeSource> List;
+
+   extMergeFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) {
+      SourceType = VSF::IGNORE;
+   }
 };
+
+//********************************************************************************************************************
+
+static void release_merge_sources(std::vector<MergeSource> &List)
+{
+   for (auto &source : List) {
+      if ((source.SourceType IS VSF::REFERENCE) and (source.Effect)) {
+         ((extFilterEffect *)source.Effect)->UsageCount--;
+      }
+   }
+
+   List.clear();
+}
 
 /*********************************************************************************************************************
 -ACTION-
@@ -41,11 +58,12 @@ Draw: Render the effect to the target bitmap.
 
 static ERR MERGEFX_Draw(extMergeFX *Self, struct acDraw *Args)
 {
-   objBitmap *bmp;
    BAF copy_flags = (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) ? BAF::LINEAR : BAF::NIL;
+
    for (auto source : Self->List) {
-      if (source.Effect) bmp = source.Effect->Target;
-      else bmp = get_source_graphic(Self->Filter);
+      objBitmap *bmp = nullptr;
+      auto error = get_source_bitmap(Self->Filter, &bmp, source.SourceType, (extFilterEffect *)source.Effect, false);
+      if ((error != ERR::Okay) and (error != ERR::Continue)) continue;
       if (!bmp) continue;
 
       gfx::CopyArea(bmp, Self->Target, copy_flags, 0, 0, bmp->Width, bmp->Height, 0, 0);
@@ -57,21 +75,6 @@ static ERR MERGEFX_Draw(extMergeFX *Self, struct acDraw *Args)
 }
 
 //********************************************************************************************************************
-
-static ERR MERGEFX_Free(extMergeFX *Self)
-{
-   Self->~extMergeFX();
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR MERGEFX_NewPlacement(extMergeFX *Self)
-{
-   new (Self) extMergeFX;
-   Self->SourceType = VSF::IGNORE;
-   return ERR::Okay;
-}
 
 /*********************************************************************************************************************
 
@@ -85,22 +88,39 @@ direct pointer to the referenced effect in the Effect field, or an error will be
 
 *********************************************************************************************************************/
 
-static ERR MERGEFX_SET_SourceList(extMergeFX *Self, MergeSource *Value, int Elements)
+static ERR MERGEFX_SET_SourceList(extMergeFX *Self, std::span<const MergeSource> &Value)
 {
-   if ((!Value) or (Elements <= 0)) {
-      Self->List.clear();
+   if ((!Value.data()) or (Value.empty())) {
+      release_merge_sources(Self->List);
       return ERR::Okay;
    }
 
-   for (int i=0; i < Elements; i++) {
-      if (Value[i].SourceType IS VSF::REFERENCE) {
-         if (Value[i].Effect) ((extFilterEffect *)Value[i].Effect)->UsageCount++;
-         else return ERR::InvalidData;
+   std::vector<MergeSource> list;
+   list.reserve(Value.size());
+
+   for (auto &source : Value) {
+      if (source.SourceType IS VSF::REFERENCE) {
+         if (!source.Effect) return ERR::InvalidData;
       }
 
-      Self->List.push_back(Value[i]);
+      list.push_back(source);
    }
 
+   release_merge_sources(Self->List);
+
+   for (auto &source : list) {
+      if ((source.SourceType IS VSF::REFERENCE) and (source.Effect)) {
+         ((extFilterEffect *)source.Effect)->UsageCount++;
+      }
+   }
+
+   Self->List = std::move(list);
+   return ERR::Okay;
+}
+
+static ERR MERGEFX_GET_SourceList(extMergeFX *Self, std::span<MergeSource> &Value)
+{
+   Value = std::span<MergeSource>(Self->List.data(), Self->List.size());
    return ERR::Okay;
 }
 
@@ -112,9 +132,9 @@ XMLDef: Returns an SVG compliant XML string that describes the filter.
 
 *********************************************************************************************************************/
 
-static ERR MERGEFX_GET_XMLDef(extMergeFX *Self, STRING *Value)
+static ERR MERGEFX_GET_XMLDef(extMergeFX *Self, std::string &Value)
 {
-   *Value = strclone("feMerge");
+   Value = std::string("feMerge");
    return ERR::Okay;
 }
 
@@ -123,8 +143,8 @@ static ERR MERGEFX_GET_XMLDef(extMergeFX *Self, STRING *Value)
 #include "filter_merge_def.c"
 
 static const FieldArray clMergeFXFields[] = {
-   { "SourceList", FDF_VIRTUAL|FDF_STRUCT|FDF_ARRAY|FDF_RW, NULL, MERGEFX_SET_SourceList, "MergeSource" },
-   { "XMLDef",     FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R, MERGEFX_GET_XMLDef },
+   { "SourceList", FDF_VIRTUAL|FDF_STRUCT|FDF_ARRAY|FDF_RW|FDF_PURE, MERGEFX_GET_SourceList, MERGEFX_SET_SourceList, "MergeSource" },
+   { "XMLDef",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, MERGEFX_GET_XMLDef },
    END_FIELD
 };
 

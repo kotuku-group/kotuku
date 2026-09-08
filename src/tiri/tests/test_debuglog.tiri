@@ -8,7 +8,7 @@ rx_debuglog = regex.new('test_debuglog\\.tiri:\\d+')
 -- Test default behaviour (stack trace only)
 
 @Test function DefaultStackTrace()
-   function innerFunc()
+   function innerFunc():str
       err, result = glSelf.mtDebugLog()
       return result
    end
@@ -45,7 +45,6 @@ end
 
    script.acQuery()
    err, result = script.mtDebugLog('locals')
-   print(result)
 
    assert(result, 'DebugLog should return a result')
    assert(string.find(result, ':x:'), 'Should contain variable x')
@@ -63,7 +62,7 @@ end
    counter = 10
    config = { enabled = true }
 
-   function closure()
+   function closure():str
       counter++
       if config.enabled then end  -- Use config so it becomes an upvalue
       err, result = glSelf.mtDebugLog('upvalues')
@@ -150,7 +149,7 @@ end
 -- Test compact mode
 
 @Test function CompactMode()
-   function compactTest()
+   function compactTest():str
       x = 42
       err, result = glSelf.mtDebugLog('stack,locals,compact')
       return result
@@ -167,7 +166,7 @@ end
 -- Test with long strings (truncation)
 
 @Test function LongString()
-   function longStringTest()
+   function longStringTest():str
       longStr = 'This is a very long string that should be truncated to forty characters maximum'
       err, result = glSelf.mtDebugLog('locals')
       return result
@@ -184,7 +183,7 @@ end
 -- Test with various data types
 
 @Test function VariousTypes()
-   function typeTest()
+   function typeTest():str
       numVar = 3.14
       strVar = 'hello'
       boolVar = false
@@ -197,7 +196,7 @@ end
    end
 
    result = typeTest()
-print(result)
+
    assert(result, 'DebugLog should return a result')
    assert(string.find(result, 'numVar'), 'Should contain numVar')
    assert(string.find(result, '3.14'), 'Should contain number value')
@@ -215,7 +214,7 @@ end
 -- Test nested function calls in stack trace
 
 @Test function NestedStack()
-   function level3()
+   function level3():str
       err, result = glSelf.mtDebugLog('stack')
       msg(result)
       return result
@@ -241,7 +240,7 @@ end
 -- Test funcinfo option
 
 @Test function FuncInfo()
-   function calculateTotal(a, b, c)
+   function calculateTotal(a, b, c):str
       sum = a + b + c
       err, result = glSelf.mtDebugLog('funcinfo')
       return result
@@ -271,7 +270,7 @@ end
 -- Test disassembly option
 
 @Test function Disassembly()
-   function sampleFunction(a, b)
+   function sampleFunction(a, b):str
       scale = b * 2
       total = a + scale
       err, result = glSelf.mtDebugLog('disasm')
@@ -319,7 +318,7 @@ end
 -- Test binary dump option
 
 @Test function BytecodeDump()
-   function captureDump(a, b)
+   function captureDump(a, b):str
       temp = a + b
       err, result = glSelf.mtDebugLog('dump')
       msg(result)

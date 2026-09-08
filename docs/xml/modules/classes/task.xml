@@ -7,17 +7,17 @@
     <type>class</type>
     <module>Core</module>
     <comment>System processes are managed by the Task class.</comment>
-    <fileExtension>*.exe|*.bat|*.com</fileExtension>
+    <fileExtension>exe|bat|com</fileExtension>
     <fileDescription>Executable File</fileDescription>
     <version>1</version>
-    <id>7c9e5758</id>
+    <id>56332d91</id>
     <idstring>TASK</idstring>
     <category>System</category>
-    <copyright>Paul Manias 1996-2026</copyright>
+    <copyright>Paul Manias © 1996-2026</copyright>
     <description>
 <p>Tasks, also known as processes, form the basis of process execution in an operating system.  By creating a task object, it is possible to execute a program from within the host system.</p>
 <p>To execute a compiled program, set the <fl>Location</fl> field to point to the executable file before initialising the task.  Arguments can be passed to the executable by setting the <fl>Parameters</fl> field.  After initialising the task, use the <action>Activate</action> action to run the executable.  If the program executes successfully, the task object can be removed and this will not impact the running program.</p>
-<p>The task object that represents the active process can be acquired from <function>CurrentTask</function>.</p></description>
+<p>The task object that represents the active process can be acquired from <function module="Core">CurrentTask</function>.</p></description>
     <source>
       <file path="../classes/">class_task.cpp</file>
     </source>
@@ -28,18 +28,20 @@
       <name>Activate</name>
       <comment>Activating a task object will execute it.</comment>
       <prototype>ERR acActivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acActivate()</tiriPrototype>
       <description>
 <p>Activating a task results in the execution of the file referenced in the <fl>Location</fl> field.</p>
 <p>On successful execution, the ProcessID will refer to the ID of the executed process.  This ID is compatible with the hosting platform's unique process numbers.</p>
-<p>If the <code>WAIT</code> flag is specified, this action will not return until the executed process has returned or the <fl>TimeOut</fl> (if specified) has expired.  Messages are processed as normal during this time, ensuring that your process remains responsive while waiting.</p>
+<p>If the <code>WAIT</code> flag is specified, this action will not return until the executed process has returned or the <fl>Timeout</fl> (if specified) has expired.  Messages are processed as normal during this time, ensuring that your process remains responsive while waiting.</p>
 <p>The process' return code can be read from the <fl>ReturnCode</fl> field after the process has completed its execution.</p>
 <p>In Microsoft Windows, output can be redirected to a file if the redirection symbol is used to direct output in one of the task arguments.  For instance <code>&gt;C:\output.txt</code> will redirect both stderr and stdout to <code>c:\output.txt</code>.  The use of <code>1&gt;</code> to redirect stdout and <code>2&gt;</code> to redirect stderr independently of each other is also acceptable.</p>
 <p>When running a DOS program in Microsoft Windows, the <code>SHELL</code> flag can be set in the <fl>Flags</fl> field to prevent the DOS window from appearing.  The DOS window will also be hidden if the stdout or stderr pipes are redirected.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Failed">General failure.</error>
-        <error code="TimeOut">Can be returned if the <code>WAIT</code> flag is used.  Indicates that the process was launched, but the timeout expired before the process returned.</error>
+        <error code="Failed">General failure</error>
+        <error code="Timeout">Can be returned if the <code>WAIT</code> flag is used.  Indicates that the process was launched, but the timeout expired before the process returned.</error>
+        <error code="ProcessCreation">Process creation has failed</error>
         <error code="MissingPath">The Location field has not been set.</error>
       </result>
     </action>
@@ -47,31 +49,50 @@
     <action>
       <name>GetKey</name>
       <comment>Retrieves custom key values.</comment>
-      <prototype>ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)</prototype>
+      <prototype>ERR acGetKey(*Object, std::string_view Key, std::string &amp;Value)</prototype>
+      <tiriPrototype>err, str = Object.acGetKey(Key:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Key">The name of a key value.</param>
+        <param type="STRVIEW" name="Key">The name of a key value.</param>
         <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
-        <param type="INT" name="Size">Indicates the byte size of the Buffer.</param>
       </input>
+    </action>
+
+    <action>
+      <name>Query</name>
+      <comment>Reads executable metadata from the file referenced in Location.</comment>
+      <prototype>ERR acQuery(*Object)</prototype>
+      <tiriPrototype>err = Object.acQuery()</tiriPrototype>
+      <description>
+<p>Query() reads Windows VERSIONINFO metadata from the executable referenced by the <fl>Location</fl> field.  Discovered string properties are stored in the task's key-value list and can be retrieved with <action>GetKey</action>.  Existing keys with matching names are overwritten, while unrelated custom keys are preserved.</p>
+<p>The <fl>Name</fl> field is updated from the ProductName, FileDescription or InternalName metadata when one of those properties is available.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="File">The executable file could not be opened.</error>
+        <error code="Query">The executable did not contain readable VERSIONINFO metadata.</error>
+        <error code="MissingPath">The Location field has not been set.</error>
+      </result>
+      <tags>mutates-object</tags>
     </action>
 
     <action>
       <name>SetKey</name>
       <comment>Variable fields are supported for the general storage of program variables.</comment>
-      <prototype>ERR acSetKey(*Object, CSTRING Key, CSTRING Value)</prototype>
+      <prototype>ERR acSetKey(*Object, std::string_view Key, std::string_view Value)</prototype>
+      <tiriPrototype>err = Object.acSetKey(Key:str, Value:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Key">The name of the target key.</param>
-        <param type="CSTRING" name="Value">The string value to associate with Key.</param>
+        <param type="STRVIEW" name="Key">The name of the target key.</param>
+        <param type="STRVIEW" name="Value">The string value to associate with Key.</param>
       </input>
     </action>
 
     <action>
       <name>Write</name>
       <comment>Send raw data to a launched process' stdin descriptor.</comment>
-      <prototype>ERR acWrite(*Object, APTR Buffer, INT Length, INT Result)</prototype>
+      <prototype>ERR acWrite(*Object, std::span&lt;const int8_t&gt; Buffer, INT *Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acWrite(Buffer:str)</tiriPrototype>
       <input>
-        <param type="APTR" name="Buffer">A buffer containing the data that will be written to the object.</param>
-        <param type="INT" name="Length">The total number of bytes to write to the object.</param>
+        <param type="std::span&lt;const int8_t&gt;" name="Buffer">A buffer containing the data that will be written to the object.</param>
         <param type="INT" name="Result">This parameter with be updated with the total number of bytes written from the Buffer.</param>
       </input>
       <description>
@@ -85,9 +106,10 @@
     <method>
       <name>AddArgument</name>
       <comment>Adds a new argument to the Parameters field.</comment>
-      <prototype>ERR task::AddArgument(OBJECTPTR Object, CSTRING Argument)</prototype>
+      <prototype>ERR task::AddArgument(OBJECTPTR Object, STRVIEW Argument)</prototype>
+      <tiriPrototype>err = AddArgument(Argument:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Argument">The new argument string.</param>
+        <param type="STRVIEW" name="Argument">The new argument string.</param>
       </input>
       <description>
 <p>This method will add a new argument to the end of the <fl>Parameters</fl> field array.  If the string is surrounded by quotes, they will be removed automatically.</p>
@@ -96,27 +118,31 @@
         <error code="Okay">Operation successful.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
     <method>
       <name>Expunge</name>
       <comment>Forces a Task to expunge unused code.</comment>
       <prototype>ERR task::Expunge(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = Expunge()</tiriPrototype>
       <description>
 <p>The Expunge() method releases all loaded libraries that are no longer in use by the active process.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
       <name>GetEnv</name>
       <comment>Retrieves environment variables for the active process.</comment>
-      <prototype>ERR task::GetEnv(OBJECTPTR Object, CSTRING Name, CSTRING * Value)</prototype>
+      <prototype>ERR task::GetEnv(OBJECTPTR Object, STRVIEW Name, STRING * Value)</prototype>
+      <tiriPrototype>err, Value:str = GetEnv(Name:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Name">The name of the environment variable to retrieve.</param>
-        <param type="CSTRING *" name="Value">The value of the environment variable is returned in this parameter.</param>
+        <param type="STRVIEW" name="Name">The name of the environment variable to retrieve.</param>
+        <param type="STRING *" name="Value">The value of the environment variable is returned in this parameter.</param>
       </input>
       <description>
 <p>On platforms that support environment variables, GetEnv() returns the value of the environment variable matching the <code>Name</code> string.  If there is no matching variable, <code>ERR::DoesNotExist</code> is returned.</p>
@@ -126,21 +152,25 @@
 \HKEY_CLASSES_ROOT\
 \HKEY_USERS\
 </pre>
-<p>Here is a valid example for reading the 'Kotuku' key value <code>\HKEY_CURRENT_USER\Software\Kotuku</code></p>
-<p>Caution: If your programming language uses backslash as an escape character (true for Tiri developers), remember to use double-backslashes as the key value separator in your Name string.</p>
+<p>If the <code>Name</code> string ends with a trailing backslash, all keys and sub-keys held at that location are returned as a tab-separated list in the form <code>Name1\tName2...</code>.  Sub-key names are distinguished from values by a trailing backslash, e.g. <code>SubKey\\</code>.  This is useful for enumerating the complete contents of a registry key without needing to know names in advance.</p>
+<p>NOTE: If your programming language uses backslash as an escape character, remember to use double-backslashes in the <code>Name</code> string.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
         <error code="NoSupport">The platform does not support environment variables.</error>
         <error code="DoesNotExist">The environment variable is undefined.</error>
+        <error code="Syntax">Invalid syntax detected</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="ExecViolation">Execution violation - function must be called from the task that owns the object</error>
       </result>
+      <tags>pure-query, caller-owns-result, mutates-input</tags>
     </method>
 
     <method>
       <name>Quit</name>
       <comment>Sends a quit message to a task.</comment>
       <prototype>ERR task::Quit(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = Quit()</tiriPrototype>
       <description>
 <p>The Quit() method can be used as a convenient way of sending a task a quit message.  This will normally result in the destruction of the task, so long as it is still functioning correctly and has been coded to respond to the <code>MSGID::QUIT</code> message type.  It is legal for a task to ignore a quit request if it is programmed to stay alive.</p>
 <p>Signal Handling on Unix: When terminating a foreign process on Unix systems, the quit behavior follows a two-stage approach for safe process termination: The first call sends <code>SIGTERM</code> to allow the process to shutdown gracefully; A second call sends <code>SIGKILL</code> to force immediate termination if the process is unresponsive.</p>
@@ -149,18 +179,20 @@
       <result>
         <error code="Okay">Operation successful.</error>
       </result>
+      <tags>blocking, mutates-object</tags>
     </method>
 
     <method>
       <name>SetEnv</name>
       <comment>Sets environment variables for the active process.</comment>
-      <prototype>ERR task::SetEnv(OBJECTPTR Object, CSTRING Name, CSTRING Value)</prototype>
+      <prototype>ERR task::SetEnv(OBJECTPTR Object, STRVIEW Name, STRVIEW Value)</prototype>
+      <tiriPrototype>err = SetEnv(Name:str, Value:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Name">The name of the environment variable to set.</param>
-        <param type="CSTRING" name="Value">The value to assign to the environment variable.</param>
+        <param type="STRVIEW" name="Name">The name of the environment variable to set.</param>
+        <param type="STRVIEW" name="Value">The value to assign to the environment variable.  If empty, the variable is removed.</param>
       </input>
       <description>
-<p>On platforms that support environment variables, SetEnv() is used for defining values for named variables.  A <code>Name</code> and accompanying <code>Value</code> string are required.  If the <code>Value</code> is <code>NULL</code>, the environment variable is removed if it already exists.</p>
+<p>On platforms that support environment variables, SetEnv() is used for defining values for named variables.  A <code>Name</code> and accompanying <code>Value</code> string are required.  If the <code>Value</code> is empty, the environment variable is removed if it already exists.</p>
 <p>In Windows, it is possible to set registry keys if the string starts with one of the following (in all other cases, the system's environment variables are queried):</p>
 <pre>\HKEY_LOCAL_MACHINE\
 \HKEY_CURRENT_USER\
@@ -171,9 +203,12 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
         <error code="NoSupport">The platform does not support environment variables.</error>
+        <error code="Syntax">Invalid syntax detected</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="TaskExecutionFailed">Task or process execution has failed</error>
       </result>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
   </methods>
@@ -183,12 +218,12 @@
       <name>Actions</name>
       <comment>Used to gain direct access to a task's actions.</comment>
       <access read="G">Get</access>
-      <type>APTR</type>
+      <type>ActionEntry[]</type>
       <description>
-<p>This field provides direct access to the actions of a task, and is intended for use with the active task object returned from <function>CurrentTask</function>.  Hooking into the action table allows the running executable to 'blend-in' with Kotuku's object oriented design.</p>
-<p>The Actions field points to a lookup table of ActionEntry items.  Hooking into an action involves writing its <code>AC</code> index in the table with a pointer to the action routine.  For example:</p>
-<pre>if (not AccessObject(CurrentTask(), 5000, &amp;task)) {
-   task-&gt;get(FID_Actions, actions);
+<p>This field provides direct access to the actions of a task, and is intended for use with the active task object returned from <function module="Core">CurrentTask</function>.  Hooking into the action table allows the running executable to 'blend-in' with Kotuku's object oriented design.</p>
+<p>The Actions field points to a lookup table of <st>ActionEntry</st> items.  To create an action hook, set its <code>AC</code> table index with a pointer to the action routine.  For example:</p>
+<pre>if (!AccessObject(CurrentTask(), 5000, &amp;task)) {
+   task-&gt;getActions(actions);
    actions[AC::Seek] = PROGRAM_Seek;
    ReleaseObject(task);
 }
@@ -231,8 +266,8 @@
       <access read="G" write="S">Get/Set</access>
       <type>FUNCTION</type>
       <description>
-<p>The ErrorCallback field can be set with a function reference that will be called when an active process sends data via STDERR.  The callback must follow the prototype <code>Function(*Task, APTR Data, int Size)</code></p>
-<p>The information read from STDERR will be returned in the Data pointer and the byte-length of the data will be indicated by the <code>Size</code>.  The data pointer is temporary and will be invalid once the callback function has returned.</p>
+<p>The ErrorCallback field can be set with a function reference that will be called when an active process sends data via STDERR.  The callback must follow the prototype <code>Function(*Task, std::span&lt;std::byte&gt; Data)</code></p>
+<p>The information read from STDERR will be returned in the Data span.  The reference is temporary and will be invalid once the callback function has returned.</p>
       </description>
     </field>
 
@@ -263,16 +298,23 @@
       <access read="G" write="S">Get/Set</access>
       <type>FUNCTION</type>
       <description>
-<p>The InputCallback field is available to the active task object only (i.e. the current process). The referenced function will be called when process receives data from STDIN.  The callback must match the prototype <code>void Function(*Task, APTR Data, int Size, ERR Status)</code>.  In Tiri the prototype is 'function callback(Task, Array, Status)<code> where </code>Array<code> is an array interface.</code>
-<p>The information read from STDOUT will be returned in the </p>Data<code> pointer and the byte-length of the data will be indicated by the </code>Size<code>.  The data buffer is temporary and will be invalid once the callback function has returned.</code>
+<p>The InputCallback field is available to the active task object only (i.e. the current process). The referenced function will be called when process receives data from STDIN.  The callback must match the prototype <code>void Function(*Task, std::span&lt;std::byte&gt; Data, ERR Status)</code>.  In Tiri the prototype is 'function callback(Task, Array, Status)<code> where </code>Array<code> is an array interface.</code>
+<p>The information read from STDOUT will be returned in the </p>Data<code> span reference.  The data buffer is temporary and will be invalid once the callback function has returned.</code>
 <p>A status of </p>ERR::Finished` is sent if the stdinput handle has been closed.</p>
       </description>
     </field>
 
     <field>
+      <name>Keys</name>
+      <comment>Returns a list of all key names available to the GetKeys() action.</comment>
+      <access read="G">Get</access>
+      <type>kt::vector&lt;std::string&gt;</type>
+    </field>
+
+    <field>
       <name>LaunchPath</name>
       <comment>Launched executables will start in the path specified here.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
 <p>Use the LaunchPath field to specify the folder that a launched executable will start in when the task object is activated.  This will override all other path options, such as the <code>RESET_PATH</code> flag.</p>
@@ -282,7 +324,7 @@
     <field>
       <name>Location</name>
       <comment>Location of an executable file to launch.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>STRING</type>
       <description>
 <p>When a task object is activated, the Location field will be checked for a valid filename.  If the path is valid, the executable code will be loaded from this source.  The source must be in an executable format recognised by the native platform.</p>
@@ -293,10 +335,10 @@
     <field>
       <name>Name</name>
       <comment>Name of the task.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
-<p>This field specifies the name of the task or program that has been initialised. It is up to the developer of the program to set the Name which will appear in this field.  If there is no name for the task then the system may assign a randomly generated name.</p>
+<p>This field specifies the task's name, which may be derived from the source program's metadata, if available.</p>
       </description>
     </field>
 
@@ -306,39 +348,37 @@
       <access read="G" write="S">Get/Set</access>
       <type>FUNCTION</type>
       <description>
-<p>The OutputCallback field can be set with a function reference that will be called when an active process sends data via STDOUT.  For C++ the callback must match the prototype <code>void Function(*Task, APTR Data, int Size)</code>.  In Tiri the prototype is 'function callback(Task, Array)<code> where </code>Array<code> is an array interface.</code>
-<p>The information read from STDOUT will be returned in the </p>Data<code> pointer and the byte-length of the data will be indicated by the </code>Size<code>.  The </code>Data` pointer is temporary and will be invalid once the callback function has returned.</p>
+<p>The OutputCallback field can be set with a function reference that will be called when an active process sends data via STDOUT.  For C++ the callback must match the prototype <code>void Function(*Task, std::span&lt;std::byte&gt; Data)</code>.  In Tiri the prototype is 'function callback(Task, Array)<code> where </code>Array<code> is an array interface.</code>
+<p>The information read from STDOUT will be returned in the </p>Data<code> reference.  The </code>Data` buffer is temporary and will be invalid once the callback function has returned.</p>
       </description>
     </field>
 
     <field>
       <name>Parameters</name>
       <comment>Command line arguments (list format).</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>pf::vector&lt;std::string&gt;</type>
+      <access read="R" write="W">Read/Write</access>
+      <type>kt::vector&lt;std::string&gt;</type>
       <description>
 <p>Command line arguments for a program can be defined here as a vector list, whereby each argument is an independent string.  To illustrate, the following command-line string:</p>
 <pre>1&gt; YourProgram PREFS MyPrefs -file &quot;documents:readme.txt&quot;</pre>
-<p>Would be represented as follows:</p>
-<pre>pf::vector&lt;std::string&gt; Args = {
-   &quot;PREFS&quot;,
-   &quot;MyPrefs&quot;,
-   &quot;-file&quot;,
-   &quot;documents:readme.txt&quot;
-};
+<p>Would be represented as a list containing <code>&quot;PREFS&quot;</code>, <code>&quot;MyPrefs&quot;</code>, <code>&quot;-file&quot;</code> and <code>&quot;documents:readme.txt&quot;</code>.</p>
+<p>The list is compatible with Tiri, and can be iterated as follows:</p>
+<pre>for index, value in processing.task().parameters do
+   print(index, ' = ', value)
+end
 </pre>
-<p>NOTE: Scripts should use the <fl>Args</fl> field instead.</p>
       </description>
     </field>
 
     <field>
       <name>Path</name>
       <comment>The current working folder of the active process.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>STRING</type>
       <description>
 <p>The Path specifies the 'working folder' that determines where files are loaded from when an absolute path is not otherwise specified for file access.  Initially the working folder is usually set to the folder of the parent process, such as that of a terminal shell.</p>
 <p>The working folder can be changed at any time by updating the Path with a new folder location.  If changing to the new folder fails for any reason, the working folder will remain unchanged and the path value will not be updated.</p>
+<p>The path string must be fully qualified with a slash or colon at the end of the string.  Non-viable characters are truncated.</p>
       </description>
     </field>
 
@@ -367,7 +407,7 @@
     <field>
       <name>ProcessPath</name>
       <comment>The path of the executable that is associated with the task.</comment>
-      <access read="G">Get</access>
+      <access read="R">Read</access>
       <type>STRING</type>
       <description>
 <p>The ProcessPath is set to the path of the executable file that is associated with the task (not including the executable file name).  This value is managed internally and cannot be altered.</p>
@@ -386,7 +426,7 @@
     </field>
 
     <field>
-      <name>TimeOut</name>
+      <name>Timeout</name>
       <comment>Limits the amount of time to wait for a launched process to return.</comment>
       <access read="R" write="W">Read/Write</access>
       <type>DOUBLE</type>

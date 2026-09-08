@@ -12,6 +12,7 @@
 #include "lj_meta.h"
 #include "lj_state.h"
 #include "lj_frame.h"
+#include "lj_vm.h"
 #include "lj_strfmt.h"
 #include "lj_str.h"
 #include "lualib.h"
@@ -28,7 +29,7 @@ using std::pow;
 //********************************************************************************************************************
 // Create a new thunk userdata
 
-void lj_thunk_new(lua_State *L, GCfunc *func, int expected_type)
+void lj_thunk_new(lua_State *L, GCfunc *Func, uint8_t ExpectedType)
 {
    // Allocate userdata with ThunkPayload - use global environment for GC traversal
    GCudata *ud = lj_udata_new(L, sizeof(ThunkPayload), tabref(L->env));
@@ -36,15 +37,16 @@ void lj_thunk_new(lua_State *L, GCfunc *func, int expected_type)
 
    // Initialize payload
    ThunkPayload *payload = thunk_payload(ud);
-   setgcref(payload->deferred_func, obj2gco(func));
+   setgcref(payload->deferred_func, obj2gco(Func));
    setnilV(&payload->cached_value);
    payload->resolved = 0;
-   payload->expected_type = (uint8_t)expected_type;
+   payload->expected_type = ExpectedType;
    payload->padding = 0;
 
    // Set metatable from registry
    cTValue *tv = lj_tab_getstr(tabV(registry(L)), lj_str_newz(L, THUNK_METATABLE_NAME));
    if (tv and tvistab(tv)) {
+      // The trusted thunk metatable is created internally without __gc.
       setgcref(ud->metatable, obj2gco(tabV(tv)));
    }
 
@@ -53,11 +55,14 @@ void lj_thunk_new(lua_State *L, GCfunc *func, int expected_type)
    incr_top(L);
 
    // GC barrier for the function reference
-   lj_gc_objbarrier(L, obj2gco(ud), obj2gco(func));
+   lj_gc_objbarrier(L, obj2gco(ud), obj2gco(Func));
 }
 
 //********************************************************************************************************************
-// Resolve a thunk if not already resolved.
+// Resolve a thunk if not already resolved.  This protected variant never raises a Lua error; a nullptr result
+// indicates that the deferred function threw an exception.  In that case the stack is restored to its original
+// state and the error value is left in the unreferenced slot at *L->top - callers wanting to preserve or
+// propagate it must copy or re-push it before performing any further stack operations.
 //
 // IMPORTANT: Callers from VM assembler code (e.g., lj_meta_equal_thunk) must use
 // VMHelperGuard to ensure L->top is valid before calling this function.
@@ -68,7 +73,7 @@ void lj_thunk_new(lua_State *L, GCfunc *func, int expected_type)
 // boundary, which would cause snapshot_framelinks() to fail when it encounters the
 // protected C frame created by lua_pcall.
 
-TValue* lj_thunk_resolve(lua_State *L, GCudata *thunk_udata)
+TValue* lj_thunk_resolve_protected(lua_State *L, GCudata *thunk_udata)
 {
    ThunkPayload *payload = thunk_payload(thunk_udata);
 
@@ -113,9 +118,11 @@ TValue* lj_thunk_resolve(lua_State *L, GCudata *thunk_udata)
    // Restore base in case stack was reallocated
    L->base = restorestack(L, base_offset);
 
-   if (status != 0) { // Error occurred - restore stack and propagate
+   if (status != 0) {
+      // Error occurred - restore the stack and report the failure to the caller.  The error value pushed by
+      // lua_pcall() sits in the slot at the restored L->top, where the caller can retrieve it immediately.
       L->top = restorestack(L, top_offset);
-      lj_err_msg(L, ErrMsg::THUNKEX);
+      return nullptr;
    }
 
    TValue *result = L->top - 1;
@@ -133,6 +140,19 @@ TValue* lj_thunk_resolve(lua_State *L, GCudata *thunk_udata)
    }
 
    return &payload->cached_value;
+}
+
+//********************************************************************************************************************
+// Throwing variant of thunk resolution - propagates the original error if the deferred function fails.
+
+TValue* lj_thunk_resolve(lua_State *L, GCudata *thunk_udata)
+{
+   TValue *result = lj_thunk_resolve_protected(L, thunk_udata);
+   if (not result) {
+      L->top++;  // Re-expose the error value left just above the stack top
+      lj_err_run(L);
+   }
+   return result;
 }
 
 //********************************************************************************************************************
@@ -173,10 +193,64 @@ static int thunk_tostring(lua_State *L);
 
 // Helper: Get number value from TValue, handling integer and number types
 
-inline lua_Number getnumvalue(TValue *o)
+inline lua_Number getnumvalue(cTValue *o)
 {
    if (tvisint(o)) return (lua_Number)intV(o);
    return numV(o);
+}
+
+// Resolve both operands without retaining pointers into the Lua stack across either deferred call.  The original
+// stack slots keep any copied GC values rooted while thunk resolution executes arbitrary Tiri code.
+
+static void resolve_binary_operands(lua_State *L, TValue &FirstCopy, TValue &SecondCopy,
+   cTValue *&First, cTValue *&Second)
+{
+   copyTV(L, &FirstCopy, L->base);
+   copyTV(L, &SecondCopy, L->base + 1);
+   First = &FirstCopy;
+   Second = &SecondCopy;
+   if (lj_is_thunk(First)) First = lj_thunk_resolve(L, udataV(First));
+   if (lj_is_thunk(Second)) Second = lj_thunk_resolve(L, udataV(Second));
+}
+
+static void resolve_receiver_first_binary_operands(lua_State *L, TValue &FirstCopy, TValue &SecondCopy,
+   cTValue *&First, cTValue *&Second)
+{
+   const bool lhs_dispatch = boolV(L->base + 2);
+   resolve_binary_operands(L, FirstCopy, SecondCopy, First, Second);
+   // Native helpers calculate in source order even though the provider is now the first runtime argument.
+   if (not lhs_dispatch) {
+      cTValue *source_left = Second;
+      Second = First;
+      First = source_left;
+   }
+}
+
+// Invoke a table metamethod from a thunk helper using the receiver-elided table ABI.  The callable and visible
+// arguments must already be at the top of the stack in ordinary lua_call() order.  This duplicates api_call_base()
+// because the contextual activation must be attached to the final VM frame before the call begins.
+
+static void call_table_metamethod(
+   lua_State *L, cTValue *Receiver, int ArgumentCount, int ResultCount)
+{
+   lj_assertL(L and Receiver and tvistab(Receiver), "invalid thunk table metamethod receiver");
+   lj_assertL(ArgumentCount >= 0, "invalid thunk table metamethod argument count");
+
+   [[maybe_unused]] size_t context_depth = lj_context_depth(L);
+   TValue *top = L->top;
+   TValue *base = top - ArgumentCount;
+   L->top = top + 1;
+   for (TValue *slot = top; slot > base; slot--) copyTV(L, slot, slot - 1);
+   setnilV(base);
+   base++;
+
+   [[maybe_unused]] uint32_t argument_count = lj_context_prepare_metamethod_call(
+      L, Receiver, base, uint32_t(ArgumentCount), uint32_t(ArgumentCount + 1));
+   lj_assertL(argument_count IS uint32_t(ArgumentCount),
+      "thunk table metamethod retained its receiver argument");
+   lj_vm_call(L, base, ResultCount + 1);
+   lj_assertL(lj_context_depth(L) IS context_depth,
+      "thunk table metamethod returned with unbalanced contextual activations");
 }
 
 //********************************************************************************************************************
@@ -184,8 +258,9 @@ inline lua_Number getnumvalue(TValue *o)
 
 static int thunk_add(lua_State *L)
 {
-   TValue *a = resolve_at(L, 0);
-   TValue *b = resolve_at(L, 1);
+   TValue a_copy, b_copy;
+   cTValue *a, *b;
+   resolve_receiver_first_binary_operands(L, a_copy, b_copy, a, b);
 
    if (tvisnumber(a) and tvisnumber(b)) {
       lua_Number result = getnumvalue(a) + getnumvalue(b);
@@ -199,8 +274,9 @@ static int thunk_add(lua_State *L)
 
 static int thunk_sub(lua_State *L)
 {
-   TValue *a = resolve_at(L, 0);
-   TValue *b = resolve_at(L, 1);
+   TValue a_copy, b_copy;
+   cTValue *a, *b;
+   resolve_receiver_first_binary_operands(L, a_copy, b_copy, a, b);
 
    if (tvisnumber(a) and tvisnumber(b)) {
       lua_Number result = getnumvalue(a) - getnumvalue(b);
@@ -214,8 +290,9 @@ static int thunk_sub(lua_State *L)
 
 static int thunk_mul(lua_State *L)
 {
-   TValue *a = resolve_at(L, 0);
-   TValue *b = resolve_at(L, 1);
+   TValue a_copy, b_copy;
+   cTValue *a, *b;
+   resolve_receiver_first_binary_operands(L, a_copy, b_copy, a, b);
 
    if (tvisnumber(a) and tvisnumber(b)) {
       lua_Number result = getnumvalue(a) * getnumvalue(b);
@@ -229,8 +306,9 @@ static int thunk_mul(lua_State *L)
 
 static int thunk_div(lua_State *L)
 {
-   TValue *a = resolve_at(L, 0);
-   TValue *b = resolve_at(L, 1);
+   TValue a_copy, b_copy;
+   cTValue *a, *b;
+   resolve_receiver_first_binary_operands(L, a_copy, b_copy, a, b);
 
    if (tvisnumber(a) and tvisnumber(b)) {
       lua_Number result = getnumvalue(a) / getnumvalue(b);
@@ -244,8 +322,9 @@ static int thunk_div(lua_State *L)
 
 static int thunk_mod(lua_State *L)
 {
-   TValue *a = resolve_at(L, 0);
-   TValue *b = resolve_at(L, 1);
+   TValue a_copy, b_copy;
+   cTValue *a, *b;
+   resolve_receiver_first_binary_operands(L, a_copy, b_copy, a, b);
 
    if (tvisnumber(a) and tvisnumber(b)) {
       lua_Number na = getnumvalue(a);
@@ -261,8 +340,9 @@ static int thunk_mod(lua_State *L)
 
 static int thunk_pow(lua_State *L)
 {
-   TValue *a = resolve_at(L, 0);
-   TValue *b = resolve_at(L, 1);
+   TValue a_copy, b_copy;
+   cTValue *a, *b;
+   resolve_receiver_first_binary_operands(L, a_copy, b_copy, a, b);
 
    if (tvisnumber(a) and tvisnumber(b)) {
       lua_Number result = pow(getnumvalue(a), getnumvalue(b));
@@ -294,8 +374,9 @@ static int thunk_unm(lua_State *L)
 
 static int thunk_concat(lua_State *L)
 {
-   TValue *a = resolve_at(L, 0);
-   TValue *b = resolve_at(L, 1);
+   TValue a_copy, b_copy;
+   cTValue *a, *b;
+   resolve_receiver_first_binary_operands(L, a_copy, b_copy, a, b);
    lj_assertL(a != nullptr, "Invalid LHS (null)");
    lj_assertL(b != nullptr, "Invalid RHS (null)");
    copyTV(L, L->top, a);
@@ -313,8 +394,9 @@ static int thunk_concat(lua_State *L)
 
 static int thunk_eq(lua_State *L)
 {
-   TValue *a = resolve_at(L, 0);
-   TValue *b = resolve_at(L, 1);
+   TValue a_copy, b_copy;
+   cTValue *a, *b;
+   resolve_binary_operands(L, a_copy, b_copy, a, b);
 
    // Same pointer means equal
 
@@ -343,12 +425,19 @@ static int thunk_eq(lua_State *L)
             // Both objects need the same metamethod
             if (tabref(gcobj_a->gch.metatable) IS tabref(gcobj_b->gch.metatable) or
                 lj_obj_equal(mo, lj_meta_fast(L, tabref(gcobj_b->gch.metatable), MM_eq))) {
-               // Call __eq(a, b)
+               // Table receivers use dispatch context; userdata retains its native receiver argument.
                copyTV(L, L->top, mo);
-               copyTV(L, L->top + 1, a);
-               copyTV(L, L->top + 2, b);
-               L->top += 3;
-               lua_call(L, 2, 1);
+               if (tvistab(a)) {
+                  copyTV(L, L->top + 1, b);
+                  L->top += 2;
+                  call_table_metamethod(L, a, 1, 1);
+               }
+               else {
+                  copyTV(L, L->top + 1, a);
+                  copyTV(L, L->top + 2, b);
+                  L->top += 3;
+                  lua_call(L, 2, 1);
+               }
                // Result is at L->top - 1, convert to boolean
                int result = tvistruecond(L->top - 1);
                L->top--;
@@ -368,8 +457,9 @@ static int thunk_eq(lua_State *L)
 
 static int thunk_lt(lua_State *L)
 {
-   TValue *a = resolve_at(L, 0);
-   TValue *b = resolve_at(L, 1);
+   TValue a_copy, b_copy;
+   cTValue *a, *b;
+   resolve_receiver_first_binary_operands(L, a_copy, b_copy, a, b);
 
    int result;
    if (tvisnumber(a) and tvisnumber(b)) {
@@ -396,8 +486,9 @@ static int thunk_lt(lua_State *L)
 // Less than or equal - compares resolved values
 static int thunk_le(lua_State *L)
 {
-   TValue *a = resolve_at(L, 0);
-   TValue *b = resolve_at(L, 1);
+   TValue a_copy, b_copy;
+   cTValue *a, *b;
+   resolve_receiver_first_binary_operands(L, a_copy, b_copy, a, b);
 
    int result;
    if (tvisnumber(a) and tvisnumber(b)) {
@@ -440,13 +531,11 @@ static int thunk_index(lua_State *L)
          if (mt) {
             cTValue *idx = lj_tab_getstr(mt, lj_str_newlit(L, "__index"));
             if (idx and not tvisnil(idx)) {
-               if (tvisfunc(idx)) { // __index is a function: call __index(table, key)
+               if (tvisfunc(idx)) {
                   copyTV(L, L->top, idx);
-                  copyTV(L, L->top + 1, o);
-                  copyTV(L, L->top + 2, key);
-                  L->top += 3;
-                  lua_call(L, 2, 1);
-                  // Result is already at L->top-1, which is now L->top after lua_call returns
+                  copyTV(L, L->top + 1, key);
+                  L->top += 2;
+                  call_table_metamethod(L, o, 1, 1);
                   return 1;
                }
                else if (tvistab(idx)) { // __index is a table: look up key in that table
@@ -523,13 +612,11 @@ static int thunk_newindex(lua_State *L)
             cTValue *newidx = lj_tab_getstr(mt, lj_str_newlit(L, "__newindex"));
             if (newidx and not tvisnil(newidx)) {
                if (tvisfunc(newidx)) {
-                  // __newindex is a function: call __newindex(table, key, value)
                   copyTV(L, L->top, newidx);
-                  copyTV(L, L->top + 1, o);
-                  copyTV(L, L->top + 2, key);
-                  copyTV(L, L->top + 3, val);
-                  L->top += 4;
-                  lua_call(L, 3, 0);
+                  copyTV(L, L->top + 1, key);
+                  copyTV(L, L->top + 2, val);
+                  L->top += 3;
+                  call_table_metamethod(L, o, 2, 0);
                   return 0;
                }
                else if (tvistab(newidx)) {
@@ -632,19 +719,14 @@ static int thunk_call(lua_State *L)
          if (mt) {
             cTValue *call_mm = lj_tab_getstr(mt, lj_str_newlit(L, "__call"));
             if (call_mm and tvisfunc(call_mm)) {
-               // Build call: __call(resolved_table, arg1, arg2, ...)
-               // We need to insert the function at base and shift the table
-               // Push the __call function
+               ptrdiff_t result_base = savestack(L, L->top);
                copyTV(L, L->top, call_mm);
-               // Push resolved table
-               copyTV(L, L->top + 1, o);
-               // Copy arguments
                for (int i = 0; i < nargs; i++) {
-                  copyTV(L, L->top + 2 + i, L->base + 1 + i);
+                  copyTV(L, L->top + 1 + i, L->base + 1 + i);
                }
-               L->top += 2 + nargs;
-               lua_call(L, 1 + nargs, LUA_MULTRET);  // __call + table + original args
-               return (int)(L->top - L->base);
+               L->top += 1 + nargs;
+               call_table_metamethod(L, o, nargs, LUA_MULTRET);
+               return int(L->top - restorestack(L, result_base));
             }
          }
       }

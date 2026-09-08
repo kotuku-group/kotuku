@@ -9,8 +9,6 @@ Name: System
 
 *********************************************************************************************************************/
 
-#include <stdlib.h>
-
 #ifdef __unix__
  #include <stdio.h>
  #include <unistd.h>
@@ -35,6 +33,15 @@ Name: System
  #include <string.h> // Required for memmove()
 #endif
 
+#if defined(__ARM_FEATURE_CRC32)
+ #ifdef _MSC_VER
+  #include <intrin.h>
+ #else
+  #include <arm_acle.h>
+ #endif
+ #define PF_HAS_HW_CRC32 1
+#endif
+
 #ifdef __ANDROID__
  #include <android/log.h>
 #endif
@@ -43,7 +50,7 @@ Name: System
 
 #include "defs.h"
 
-using namespace pf;
+using namespace kt;
 
 //********************************************************************************************************************
 
@@ -54,8 +61,8 @@ thread_local std::shared_ptr<ThreadRecord> tlThreadRecord;
 
 void deregister_thread(void)
 {
+   auto tid = GetThreadID();
    tlThreadRecord.reset();
-   auto tid = get_thread_id();
    std::lock_guard lock(glmThreadRegistry);
    glThreadRegistry.erase(int(tid));
 }
@@ -65,11 +72,7 @@ void deregister_thread(void)
 
 std::shared_ptr<ThreadRecord> get_thread_record(void)
 {
-   if (not tlThreadRecord) {
-      auto tid = get_thread_id();
-      std::lock_guard lock(glmThreadRegistry);
-      if (auto it = glThreadRegistry.find(int(tid)); it != glThreadRegistry.end()) tlThreadRecord = it->second;
-   }
+   if (not tlThreadRecord) GetThreadID();
    return tlThreadRecord;
 }
 
@@ -93,7 +96,7 @@ int: A unique ID matching the requested type will be returned.  This function ca
 
 int AllocateID(IDTYPE Type)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (Type IS IDTYPE::MESSAGE) {
       auto id = ++glMessageIDCount;
@@ -105,6 +108,9 @@ int AllocateID(IDTYPE Type)
    }
    else if (Type IS IDTYPE::FUNCTION) {
       return ++glFunctionID;
+   }
+   else if (Type IS IDTYPE::RESOURCE) {
+      return glResourceID++;
    }
 
    return 0;
@@ -122,6 +128,9 @@ Core initialisation) then the "system task" may be returned, which has ownership
 
 -RESULT-
 obj(Task): Returns a pointer to the current Task object or NULL if failure.
+
+-TAGS-
+api-owns-result, nullable-result, pure-query
 
 *********************************************************************************************************************/
 
@@ -145,6 +154,9 @@ error Error: The error code to lookup.
 -RESULT-
 cstr: A human readable string for the error code is returned.  By default error codes are returned in English, however if a translation table exists for the user's own language, the string will be translated.
 
+-TAGS-
+api-owns-result, null-terminated-result, non-null-result, pure-query
+
 *********************************************************************************************************************/
 
 CSTRING GetErrorMsg(ERR Code)
@@ -152,18 +164,20 @@ CSTRING GetErrorMsg(ERR Code)
    if ((int(Code) < glTotalMessages) and (int(Code) > 0)) {
       return glMessages[int(Code)];
    }
-   else if (Code IS ERR::Okay) return "Operation successful.";
+   else if (!Code) return "Operation successful.";
    else return "Unknown error code.";
 }
 
 /*********************************************************************************************************************
 
 -FUNCTION-
-GenCRC32: Generates 32-bit CRC checksum values.
+GenCRC32: Generates 32-bit IEEE 802.3 CRC checksum values.
 
 This function is used internally for the generation of 32-bit CRC checksums compatible with IEEE 802.3.  It is made
 available to clients to generate CRC values over any length of buffer space.  This function may be called repeatedly
 by feeding it CRC values in a cycle, making it ideal for processing streamed data.
+
+Note that string hashes in Kotuku use CRC-32C, which is incompatible with this function.
 
 -INPUT-
 uint CRC: If streaming data to this function, this value must reflect the most recently returned CRC integer.  Otherwise set to zero.
@@ -172,6 +186,9 @@ uint Length: The length of the `Data` buffer.
 
 -RESULT-
 uint: Returns the computed 32 bit CRC value for the given data.
+
+-TAGS-
+does-not-take-ownership, pure-query
 -END-
 
 *********************************************************************************************************************/
@@ -237,10 +254,8 @@ alignas(64) static constexpr uint32_t crc_table_0[256] = {
 alignas(64) static uint32_t crc_table[8][256];
 static std::once_flag glCRCInit;
 
-uint32_t GenCRC32(uint32_t CRC, APTR Data, uint32_t Length)
+static void init_crc32_tables(void)
 {
-   if (not Data) return 0;
-
    std::call_once(glCRCInit, []() {
       // Copy table 0
       std::copy(std::begin(crc_table_0), std::end(crc_table_0), crc_table[0]);
@@ -252,14 +267,18 @@ uint32_t GenCRC32(uint32_t CRC, APTR Data, uint32_t Length)
          }
       }
    });
+}
 
-   // Process 8 bytes at a time using slice-by-8 algorithm
+static uint32_t gen_crc32_slice_by_8(uint32_t CRC, const uint8_t *Data, uint32_t Length)
+{
+   init_crc32_tables();
 
-   auto data = (const uint8_t *)Data;
-   CRC = ~CRC;
    while (Length >= 8) {
-      const uint32_t one = CRC ^ *reinterpret_cast<const uint32_t*>(data);
-      const uint32_t two = *reinterpret_cast<const uint32_t*>(data + 4);
+      uint32_t one;
+      uint32_t two;
+      memcpy(&one, Data, sizeof(one));
+      memcpy(&two, Data + 4, sizeof(two));
+      one ^= CRC;
 
       CRC = crc_table[7][(one      ) & 0xff] ^
             crc_table[6][(one >>  8) & 0xff] ^
@@ -270,15 +289,66 @@ uint32_t GenCRC32(uint32_t CRC, APTR Data, uint32_t Length)
             crc_table[1][(two >> 16) & 0xff] ^
             crc_table[0][(two >> 24) & 0xff];
 
-      data += 8;
+      Data += 8;
       Length -= 8;
    }
 
-   // Process remaining bytes with single-byte table lookup
    while (Length > 0) {
-      CRC = crc_table[0][(CRC ^ *data++) & 0xff] ^ (CRC >> 8);
+      CRC = crc_table[0][(CRC ^ *Data++) & 0xff] ^ (CRC >> 8);
       Length--;
    }
+
+   return CRC;
+}
+
+#ifdef PF_HAS_HW_CRC32
+static uint32_t gen_crc32_hardware(uint32_t CRC, const uint8_t *Data, uint32_t Length)
+{
+   while (Length >= sizeof(uint64_t)) {
+      uint64_t chunk;
+      memcpy(&chunk, Data, sizeof(chunk));
+      CRC = __crc32d(CRC, chunk);
+      Data += sizeof(chunk);
+      Length -= sizeof(chunk);
+   }
+
+   while (Length >= sizeof(uint32_t)) {
+      uint32_t chunk;
+      memcpy(&chunk, Data, sizeof(chunk));
+      CRC = __crc32w(CRC, chunk);
+      Data += sizeof(chunk);
+      Length -= sizeof(chunk);
+   }
+
+   while (Length >= sizeof(uint16_t)) {
+      uint16_t chunk;
+      memcpy(&chunk, Data, sizeof(chunk));
+      CRC = __crc32h(CRC, chunk);
+      Data += sizeof(chunk);
+      Length -= sizeof(chunk);
+   }
+
+   while (Length > 0) {
+      CRC = __crc32b(CRC, *Data++);
+      Length--;
+   }
+
+   return CRC;
+}
+#endif
+
+uint32_t GenCRC32(uint32_t CRC, APTR Data, uint32_t Length)
+{
+   if (not Data) return 0;
+
+   auto data = (const uint8_t *)Data;
+   CRC = ~CRC;
+
+   #ifdef PF_HAS_HW_CRC32
+      CRC = gen_crc32_hardware(CRC, data, Length);
+   #else
+      CRC = gen_crc32_slice_by_8(CRC, data, Length);
+   #endif
 
    return ~CRC;
 }
@@ -298,6 +368,9 @@ int(RES) Resource: The ID of the resource that you want to obtain.
 
 -RESULT-
 large: Returns the value of the resource that you have requested.  If the resource ID is not known by the Core, `NULL` is returned.
+
+-TAGS-
+blocking
 -END-
 
 *********************************************************************************************************************/
@@ -307,19 +380,20 @@ int64_t GetResource(RES Resource)
 #ifdef __linux__
    struct sysinfo sys;
 #endif
-   extern char glIDL[];
+
+   // Internal note: Choose GetResource() over GetSystemState() when a value is R/W
 
    switch(Resource) {
       case RES::PRIVILEGED:      return glPrivileged;
       case RES::LOG_LEVEL:       return glLogLevel;
-      case RES::PROCESS_STATE:   return MAXINT(glTaskState);
+      case RES::PROCESS_STATE:   return int64_t(glTaskState);
       case RES::LOG_DEPTH:       return tlDepth;
-      case RES::OPEN_INFO:       return (MAXINT)glOpenInfo;
-      case RES::JNI_ENV:         return (MAXINT)glJNIEnv;
-      case RES::THREAD_ID:       return int(get_thread_id());
-      case RES::CORE_IDL:        return (MAXINT)glIDL;
-      case RES::DISPLAY_DRIVER:  if (not glDisplayDriver.empty()) return (MAXINT)glDisplayDriver.c_str(); else return 0;
+      case RES::JNI_ENV:         return (int64_t)glJNIEnv;
+      case RES::DISPLAY_DRIVER:  if (not glDisplayDriver.empty()) return (int64_t)glDisplayDriver.c_str(); else return 0;
       case RES::MAIN_THREAD:     return tlMainThread ? true : false;
+      case RES::MAIN_THREAD_ID:  return int(glMainThreadID);
+      case RES::WINDOWS_ICON:    return glWindowsIcon;
+      case RES::STRUCT_DB:       return (int64_t)&glStructSizes;
 
       case RES::MEMORY_USAGE: {
          #ifdef __linux__
@@ -335,20 +409,6 @@ int64_t GetResource(RES Resource)
             return -1;
          #endif
       }
-
-      case RES::RELEASE_BUILD:
-         #ifdef KOTUKU_RELEASE_BUILD
-            return 1;
-         #else
-            return 0;
-         #endif
-
-      case RES::STATIC_BUILD:
-         #ifdef KOTUKU_STATIC
-            return 1;
-         #else
-            return 0;
-         #endif
 
 #ifdef __linux__
       // NB: This value is not cached.  Although unlikely, it is feasible that the total amount of physical RAM could
@@ -367,7 +427,7 @@ int64_t GetResource(RES Resource)
          char str[2048];
          int result;
          int64_t freemem = 0;
-         if (ReadFileToBuffer("/proc/meminfo", str, sizeof(str)-1, &result) IS ERR::Okay) {
+         if (!ReadFileToBuffer("/proc/meminfo", std::span((int8_t *)str, sizeof(str) - 1), &result)) {
             int i = 0;
             while (i < result) {
                if (startswith("Cached", str+i)) freemem += strtoll(str+i, nullptr, 0) * 1024LL;
@@ -396,7 +456,6 @@ int64_t GetResource(RES Resource)
          else return -1;
 
       case RES::CPU_SPEED: {
-         CSTRING line;
          static int cpu_mhz = 0;
 
          if (cpu_mhz) return cpu_mhz;
@@ -404,8 +463,11 @@ int64_t GetResource(RES Resource)
          auto file = objFile::create { fl::Path("drive1:proc/cpuinfo"), fl::Flags(FL::READ|FL::BUFFER) };
 
          if (file.ok()) {
-            while ((line = file->readLine())) {
-               if (startswith("cpu Mhz", line)) cpu_mhz = strtol(line, nullptr, 0);
+            std::string line;
+            while (!file->readLine(line)) {
+               if (startswith("cpu MHz", line)) {
+                  if (auto value = strchr(line.c_str(), ':')) cpu_mhz = int(strtod(value + 1, nullptr));
+               }
             }
          }
 
@@ -429,8 +491,13 @@ GetSystemState: Returns miscellaneous data values from the Core.
 The GetSystemState() function is used to retrieve miscellaneous resource and environment values, such as resource
 paths, the Core's version number and the name of the host platform.
 
+The state values in the structure are static and will not change during runtime.
+
 -RESULT-
 cstruct(*SystemState): A read-only !SystemState structure is returned.
+
+-TAGS-
+static-result, non-null-result
 
 *********************************************************************************************************************/
 
@@ -440,10 +507,16 @@ const SystemState * GetSystemState(void)
    static SystemState state;
 
    if (not initialised) {
+      // Initialise constants that won't change
       initialised = true;
 
       state.ConsoleFD = glConsoleFD;
-      #ifdef __unix__
+
+      state.ConsoleType = glConsoleType;
+
+      #ifdef __ANDROID__
+         state.Platform = "Android";
+      #elif __unix__
          state.Platform = "Linux";
       #elif _WIN32
          state.Platform = "Windows";
@@ -452,10 +525,63 @@ const SystemState * GetSystemState(void)
       #else
          state.Platform = "Unknown";
       #endif
+
+      #ifdef KOTUKU_RELEASE_BUILD
+         state.ReleaseBuild = 1;
+      #else
+         state.ReleaseBuild = 0;
+      #endif
+
+      #ifdef KOTUKU_STATIC
+         state.StaticBuild = 1;
+      #else
+         state.StaticBuild = 0;
+      #endif
+
+      extern char glIDL[];
+      state.IDL = glIDL;
+
+      state.OpenInfo = &glOpenInfo;
    }
 
    state.Stage = glSystemState;
    return &state;
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
+GetThreadID: Returns the UID of the current thread.
+
+Returns a unique ID for the active thread.  The ID has no relationship with the host operating system and is not
+re-used.
+
+-RESULT-
+int: A unique ID for the active thread is returned.
+
+-TAGS-
+pure-query
+
+*********************************************************************************************************************/
+
+static thread_local THREADID tlUniqueThreadID(0);
+static std::atomic_int glThreadIDCount = 1;
+
+int GetThreadID(void)
+{
+   if ((tlUniqueThreadID.defined()) and (tlThreadRecord)) return int(tlUniqueThreadID);
+   if (not tlUniqueThreadID.defined()) tlUniqueThreadID = THREADID(glThreadIDCount++);
+
+   // Register or repair the global record once, then use the thread-local record as the fast-path proof.
+
+   std::lock_guard lock(glmThreadRegistry);
+   if (auto it = glThreadRegistry.find(int(tlUniqueThreadID)); it IS glThreadRegistry.end()) {
+      tlThreadRecord = std::make_shared<ThreadRecord>();
+      glThreadRegistry[int(tlUniqueThreadID)] = tlThreadRecord;
+   }
+   else tlThreadRecord = it->second;
+
+   return int(tlUniqueThreadID);
 }
 
 /*********************************************************************************************************************
@@ -470,6 +596,9 @@ savings adjustments or manual changes by the user.
 
 -RESULT-
 large: Returns the system time in microseconds.  Could return zero in the extremely unlikely event of an error.
+
+-TAGS-
+pure-query
 
 *********************************************************************************************************************/
 
@@ -514,6 +643,9 @@ ptr Data: User specific data pointer that will be passed to the `Routine`.  Sepa
 Okay: The `FD` was successfully registered.
 Args: The `FD` was set to a value of `-1`.
 NoSupport: The host platform does not support the provided `FD`.
+
+-TAGS-
+callback-held, does-not-take-ownership, non-blocking
 -END-
 
 *********************************************************************************************************************/
@@ -524,13 +656,14 @@ ERR RegisterFD(HOSTHANDLE FD, RFD Flags, void (*Routine)(HOSTHANDLE, APTR), APTR
 ERR RegisterFD(int FD, RFD Flags, void (*Routine)(HOSTHANDLE, APTR), APTR Data)
 #endif
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    // Note that FD's < -1 are permitted for the registering of functions marked with RFD::ALWAYS_CALL
 
 #ifdef _WIN32
    if (FD IS (HOSTHANDLE)-1) return log.warning(ERR::Args);
-   if ((Flags & RFD::SOCKET) != RFD::NIL) return log.warning(ERR::NoSupport); // In MS Windows, socket handles are managed as window messages (see Network module's Windows code)
+   // Network sockets are managed by the Network module backend.
+   if ((Flags & RFD::SOCKET) != RFD::NIL) return log.warning(ERR::NoSupport);
 #else
    if (FD IS -1) return log.warning(ERR::Args);
 #endif
@@ -587,57 +720,57 @@ To read a resource path, use the ~GetSystemState() function.
 
 -INPUT-
 int(RP) PathType: The ID of the resource path to set.
-cstr Path: The new location to set for the resource path.
+strview Path: The new location to set for the resource path.
 
 -ERRORS-
 Okay:
 NullArgs:
+Args:
+
+-TAGS-
+copies-input, path-preserved
 
 *********************************************************************************************************************/
 
-ERR SetResourcePath(RP PathType, CSTRING Path)
+ERR SetResourcePath(RP PathType, const std::string_view &Path)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
-   log.function("Type: %d, Path: %s", int(PathType), Path);
+   if (Path.empty()) return ERR::NullArgs;
+
+   log.function("Type: %d, Path: %.*s", int(PathType), int(Path.size()), Path.data());
 
    switch(PathType) {
       case RP::ROOT_PATH:
-         if (Path) {
-            glRootPath = Path;
-            if ((glRootPath.back() != '/') and (glRootPath.back() != '\\')) {
-               #ifdef _WIN32
-                  glRootPath.push_back('\\');
-               #else
-                  glRootPath.push_back('/');
-               #endif
-            }
+         glRootPath = Path;
+         if ((!glRootPath.empty()) and (glRootPath.back() != '/') and (glRootPath.back() != '\\')) {
+            #ifdef _WIN32
+               glRootPath.push_back('\\');
+            #else
+               glRootPath.push_back('/');
+            #endif
          }
          return ERR::Okay;
 
       case RP::SYSTEM_PATH:
-         if (Path) {
-            glSystemPath = Path;
-            if ((glSystemPath.back() != '/') and (glSystemPath.back() != '\\')) {
-               #ifdef _WIN32
-                  glSystemPath.push_back('\\');
-               #else
-                  glSystemPath.push_back('/');
-               #endif
-            }
+         glSystemPath = Path;
+         if ((!glSystemPath.empty()) and (glSystemPath.back() != '/') and (glSystemPath.back() != '\\')) {
+            #ifdef _WIN32
+               glSystemPath.push_back('\\');
+            #else
+               glSystemPath.push_back('/');
+            #endif
          }
          return ERR::Okay;
 
       case RP::MODULE_PATH: // An alternative path to the system modules.  This was introduced for Android, which holds the module binaries in the assets folders.
-         if (Path) {
-            glModulePath = Path;
-            if ((glModulePath.back() != '/') and (glModulePath.back() != '\\')) {
-               #ifdef _WIN32
-                  glModulePath += '\\';
-               #else
-                  glModulePath += '/';
-               #endif
-            }
+         glModulePath = Path;
+         if ((!glModulePath.empty()) and (glModulePath.back() != '/') and (glModulePath.back() != '\\')) {
+            #ifdef _WIN32
+               glModulePath += '\\';
+            #else
+               glModulePath += '/';
+            #endif
          }
          return ERR::Okay;
 
@@ -649,30 +782,41 @@ ERR SetResourcePath(RP PathType, CSTRING Path)
 /*********************************************************************************************************************
 
 -FUNCTION-
-SetResource: Sets miscellaneous resource identifiers.
+SetResource: Updates a writable Core resource value.
 
-The SetResource() function is used to manipulate miscellaneous system resources.  Currently the following resources
-are supported:
+SetResource() updates Core state selected by a !RES identifier.  The following identifiers are writable:
 
-<types lookup="RES" type="Resource">
-<type name="ALLOC_MEM_LIMIT">Adjusts the memory limit imposed on ~AllocMemory().  The `Value` specifies the memory limit in bytes.</>
-<type name="LOG_LEVEL">Adjusts the current debug level.  The `Value` must be between 0 and 9, where 1 is the lowest level of debug output (errors only) and 0 is off.</>
-<type name="PRIVILEGED_USER">If the `Value` is set to 1, this resource option puts the process in privileged mode (typically this enables full administrator rights).  This feature will only work for Unix processes that are granted admin rights when launched.  Setting the Value to 0 reverts to the user's permission settings.  SetResource() will return an error code indicating the level of success.</>
-</>
+<list type="bullet">
+<li>`LOG_LEVEL` sets the logging detail from 0 (disabled) to 9 (maximum detail).  Values outside this range are
+ignored.</li>
+<li>`LOG_DEPTH` sets the logging branch depth for the current thread.  This controls indentation of subsequent log
+output.</li>
+<li>`PRIVILEGED_USER` enables elevated Unix privileges when `Value` is non-zero and releases one level of privilege
+when it is zero.  Elevation is available only when the process was launched with suitable privileges.  Calls may be
+nested; privileges are released after the corresponding number of disable requests.  On non-Unix platforms this
+identifier has no effect.</li>
+<li>`WINDOWS_ICON` sets the Microsoft Windows resource icon ID for the process.</li>
+<li>`CONSOLE_FD` and `JNI_ENV` update internal host integration values.</li>
+</list>
+
+Other !RES identifiers are read-only or unsupported by this function.
+
+For `PRIVILEGED_USER`, the result is an `ERR` value indicating whether the request succeeded.  All other supported
+resources return 0.  Unsupported identifiers also return 0 after writing a warning to the log.
 
 -INPUT-
-int(RES) Resource: The ID of the resource to be set.
-large Value:    The new value to set for the resource.
+int(RES) Resource: The writable resource identifier.
+large Value: The value to assign to the resource.
 
 -RESULT-
-large: Returns the previous value of the `Resource`.  If the `Resource` value is invalid, `NULL` is returned.
+large: Result code is dependent on the targeted resource.
 -END-
 
 *********************************************************************************************************************/
 
 int64_t SetResource(RES Resource, int64_t Value)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
 #ifdef __unix__
    static int16_t privileged = 0;
@@ -683,27 +827,15 @@ int64_t SetResource(RES Resource, int64_t Value)
    switch(Resource) {
       case RES::CONSOLE_FD: glConsoleFD = (HOSTHANDLE)(MAXINT)Value; break;
 
-      case RES::EXCEPTION_HANDLER:
-         // Note: You can set your own crash handler, or set a value of NULL - this resets the existing handler which is useful if an external DLL function is suspected to have changed the filter.
-
-         #ifdef _WIN32
-            winSetUnhandledExceptionFilter((int (*)(int, APTR, int, int *))L64PTR(Value));
-         #endif
-         break;
-
       case RES::LOG_LEVEL:
          if ((Value >= 0) and (Value <= 9)) glLogLevel = Value;
          break;
 
       case RES::LOG_DEPTH: tlDepth = Value; break;
 
-#ifdef _WIN32
-      case RES::NET_PROCESSING: glNetProcessMessages = (void (*)(int, APTR))L64PTR(Value); break;
-#else
-      case RES::NET_PROCESSING: break;
-#endif
-
       case RES::JNI_ENV: glJNIEnv = L64PTR(Value); break;
+
+      case RES::WINDOWS_ICON: glWindowsIcon = Value; break;
 
       case RES::PRIVILEGED_USER:
 #ifdef __unix__
@@ -761,7 +893,7 @@ A callback function must be provided that follows this prototype: `ERR Function(
 The `Elapsed` parameter is the total number of microseconds that have elapsed since the last call.  The `CurrentTime`
 parameter is set to the ~PreciseTime() value just prior to the `Callback` being called.  The callback function
 can return `ERR::Terminate` at any time to cancel the subscription.  All other error codes are ignored.  Tiri callbacks
-should call `check(ERR::Terminate)` to perform the equivalent of this behaviour.
+should use `raise ERR_Terminate` to perform the equivalent of this behaviour.
 
 To change the interval, call ~UpdateTimer() with the new value.  To release a timer subscription, call
 ~UpdateTimer() with the resulting `Subscription` handle and an `Interval` of zero.
@@ -780,50 +912,84 @@ ptr(func) Callback: A callback function is required that will be called on each 
 Okay:
 NullArgs:
 Args:
-ArrayFull: The task's timer array is at capacity - no more subscriptions can be granted.
 InvalidState: The subscriber is marked for termination.
 SystemLocked:
+
+-TAGS-
+creates-resource, callback-held, blocking
 
 *********************************************************************************************************************/
 
 ERR SubscribeTimer(double Interval, FUNCTION *Callback, APTR *Subscription)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
+   bool retained_callback = false;
+
+   auto consume_callback = kt::Defer([&]() {
+      if ((Callback) and (not retained_callback)) Callback->consume();
+   });
 
    if ((not Interval) or (not Callback)) return log.warning(ERR::NullArgs);
+   if (not Callback->defined()) return log.warning(ERR::Args);
    if (Interval < 0) return log.warning(ERR::Args);
 
    auto subscriber = tlContext.back().obj;
    if (subscriber->collecting()) return log.warning(ERR::InvalidState);
 
-   if (Callback->Type IS CALL::SCRIPT) log.msg(VLF::BRANCH|VLF::FUNCTION|VLF::DETAIL, "Interval: %.3fs", Interval);
+   if (Callback->isScript()) log.msg(VLF::BRANCH|VLF::FUNCTION|VLF::DETAIL, "Interval: %.3fs", Interval);
    else log.msg(VLF::BRANCH|VLF::FUNCTION|VLF::DETAIL, "Callback: %p, Interval: %.3fs", Callback->Routine, Interval);
 
    if (auto lock = std::unique_lock{glmTimer, 1000ms}) {
       auto usInterval = int64_t(Interval * 1000000.0); // Scale the interval to microseconds
+      auto subscribed = PreciseTime();
+      auto next_call = subscribed + usInterval;
+
       if (usInterval <= 40000) {
-         // TODO: Rapid timers should be synchronised with other existing timers to limit the number of
-         // interruptions that occur per second.
+         // Synchronise rapid timers that share an interval so the message loop can wake once for the group.
+         bool found_phase = false;
+         auto phase_call = next_call;
+
+         for (const auto &timer : glTimers) {
+            if ((timer.Interval != usInterval) or (timer.PendingInterval) or (timer.Routine.stale())) continue;
+
+            auto candidate = timer.NextCall;
+            if (candidate < next_call) {
+               auto cycles = ((next_call - candidate) + usInterval - 1) / usInterval;
+               candidate += cycles * usInterval;
+            }
+
+            if ((not found_phase) or (candidate < phase_call)) {
+               phase_call = candidate;
+               found_phase = true;
+            }
+         }
+
+         if (found_phase) next_call = phase_call;
       }
 
       auto it = glTimers.emplace(glTimers.end());
-      auto subscribed = PreciseTime();
-      it->SubscriberID = subscriber->UID;
-      it->Interval     = usInterval;
-      it->LastCall     = subscribed;
-      it->NextCall     = subscribed + usInterval;
-      it->Routine      = *Callback;
-      it->Locked       = false;
-      it->Cycle        = glTimerCycle - 1;
+      it->Interval        = usInterval;
+      it->PendingInterval = 0;
+      it->LastCall        = subscribed;
+      it->NextCall        = next_call;
+      it->Routine         = *Callback;
+      it->Locked          = false;
+      it->Cycle           = glTimerCycle - 1;
 
-      if (subscriber->UID > 0) it->Subscriber = subscriber;
-      else it->Subscriber = nullptr;
+      it->Routine.pin();
 
-      // For resource tracking purposes it is important for us to keep a record of the subscription so that
-      // we don't treat the object address as valid when it's been removed from the system.
+      if (subscriber->UID) {
+         // The weak pin keeps the subscriber's header readable so that the dispatcher can detect and remove
+         // orphaned subscriptions if the object_free() cleanup misses them due to a glmTimer lock timeout.
+         it->Subscriber = subscriber;
+         subscriber->pinWeak();
+      }
+      else it->Subscriber = nullptr; // Subscribed from the dummy context; internal subscriptions have no subscriber
 
+      // This flag lets object_free() cheaply detect and remove abandoned timer subscriptions.
       subscriber->setFlag(NF::TIMER_SUB);
       if (Subscription) *Subscription = &*it;
+      retained_callback = true;
       return ERR::Okay;
    }
    else return log.warning(ERR::SystemLocked);
@@ -844,25 +1010,35 @@ double Interval: The new interval for the timer (measured in seconds), or zero t
 -ERRORS-
 Okay:
 NullArgs:
+AlreadyLocked:
 SystemLocked:
-Search:
+
+-TAGS-
+blocking
 
 *********************************************************************************************************************/
 
 ERR UpdateTimer(APTR Subscription, double Interval)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (not Subscription) return log.warning(ERR::NullArgs);
 
-   log.msg(VLF::DETAIL|VLF::BRANCH|VLF::FUNCTION, "Subscription: %p, Interval: %.4f", Subscription, Interval);
-
    if (auto lock = std::unique_lock{glmTimer, 1000ms}) {
       auto timer = (CoreTimer *)Subscription;
+      log.msg(VLF::DETAIL|VLF::BRANCH|VLF::FUNCTION, "Subscription: %p, New Interval: %.4f, Current Interval: %.4f", Subscription, Interval, timer->Interval / 1000000.0);
       if (Interval < 0) {
-         // Special mode: Preserve existing timer settings for the subscriber (ticker values are not reset etc)
+         // Special mode:
+         //   Doesn't upgrade the timer immediately unless the new interval < existing interval.
+         //   Extending the interval will apply it on the following cycle.
          auto usInterval = -(int64_t(Interval * 1000000.0));
-         if (usInterval < timer->Interval) timer->Interval = usInterval;
+         if (usInterval <= timer->Interval) {
+            timer->Interval = usInterval;
+            timer->PendingInterval = 0;
+            auto next_call = PreciseTime() + usInterval;
+            if (next_call < timer->NextCall) timer->NextCall = next_call;
+         }
+         else timer->PendingInterval = usInterval;
          return ERR::Okay;
       }
       else if (Interval > 0) {
@@ -875,15 +1051,21 @@ ERR UpdateTimer(APTR Subscription, double Interval)
          if (timer->Locked) {
             // A timer can't be removed during its execution, but we can nullify the function entry
             // and ProcessMessages() will automatically terminate it on the next cycle.
-            timer->Routine.Type = CALL::NIL;
+            if (timer->Routine.isScript() and (not timer->Routine.stale())) {
+               ((objScript *)timer->Routine.Context)->derefProcedure(timer->Routine);
+            }
+            if (timer->Routine.defined()) timer->Routine.unpin();
+            timer->Routine.clear();
             return log.warning(ERR::AlreadyLocked);
          }
 
          FUNCTION script_routine;
-         if (timer->Routine.isScript()) script_routine = timer->Routine;
+         if (timer->Routine.isScript() and (not timer->Routine.stale())) script_routine = timer->Routine;
+         if (timer->Routine.defined()) timer->Routine.unpin();
 
          for (auto it=glTimers.begin(); it != glTimers.end(); it++) {
             if (timer IS &(*it)) {
+               if (it->Subscriber) it->Subscriber->unpinWeak();
                glTimers.erase(it);
                break;
             }
@@ -924,6 +1106,10 @@ double Seconds: The number of seconds to wait for.  Fractional values are suppor
 -ERRORS-
 Okay:
 Cancelled: The thread has been requested to stop and cannot pause.
+Terminate
+
+-TAGS-
+blocking
 
 -END-
 
@@ -990,12 +1176,15 @@ If `Stop` is set to true then the target thread will be put into a stopping stat
 sleep attempts in the target thread to be cancelled.
 
 -INPUT-
-int Thread: The target thread's unique ID, as returned by `GetResource(RES::THREAD_ID)`.
+int Thread: The target thread's unique ID, as returned by `GetThreadID()`.
 int Stop: If `true`, the target thread will be put into a stopping state.
 
 -ERRORS-
 Okay: The thread was successfully interrupted.
 Search: No thread with the given ID was found in the registry.
+
+-TAGS-
+blocking
 
 -END-
 
@@ -1025,7 +1214,50 @@ ERR WakeThread(int Thread, int Stop)
    if (paused) {
       record->cv.notify_one();
       cvObjects.notify_all();   // Wake threads blocked in LockObject()
-      cvResources.notify_all(); // Wake threads blocked in AccessMemory()
    }
    return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
+UnitTests: Private.  Run the unit tests that are compiled into the Core.
+
+If the Core has been built with the `UNIT_TESTS` option enabled, calling this function runs the embedded unit tests
+and returns the resulting totals.  If unit tests are not present in the build then no tests are run and both
+counters are returned as zero.
+
+A test run is considered successful when `Passed` matches `Total`.  Details of individual test failures are printed
+to the application log.
+
+-INPUT-
+cstr Options: Reserved for future use; `NULL` is acceptable.
+&int Passed: Returns the number of tests that passed.
+&int Total: Returns the total number of tests that were executed.
+
+-END-
+
+*********************************************************************************************************************/
+
+#ifdef UNIT_TESTS
+extern void object_layout_unit_tests(int &, int &);
+extern void wait_for_objects_unit_tests(int &, int &);
+#endif
+
+void UnitTests(CSTRING Options, int *Passed, int *Total)
+{
+   int passed = 0, total = 0;
+
+#ifdef UNIT_TESTS
+   {
+      kt::Log log("CoreTests");
+      log.branch("Running Object layout unit tests...");
+      object_layout_unit_tests(passed, total);
+      log.branch("Running WaitForObjects unit tests...");
+      wait_for_objects_unit_tests(passed, total);
+   }
+#endif
+
+   if (Passed) *Passed = passed;
+   if (Total) *Total = total;
 }

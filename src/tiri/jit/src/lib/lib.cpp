@@ -7,6 +7,7 @@
 #include "lauxlib.h"
 
 #include "lj_obj.h"
+#include "lj_ff.h"
 #include "lj_gc.h"
 #include "lj_err.h"
 #include "lj_str.h"
@@ -26,6 +27,44 @@
 //********************************************************************************************************************
 // Library initialization
 
+void lj_builtin_register(lua_State *L, BuiltinCallableID Id, GCfunc *Function)
+{
+   if (not builtin_callable_valid(Id) or not Function or
+       Function->c.ffid != builtin_callable_index(Id)) {
+      lj_err_callermsg(L, ERR::Args, "invalid built-in callable registration");
+   }
+
+   GCRef &slot = L2GG(L)->builtin_callables[builtin_callable_index(Id)];
+   GCobj *existing = gcref(slot);
+   if (existing and existing != obj2gco(Function)) {
+      lj_err_callermsg(L, ERR::AlreadyDefined, "conflicting built-in callable registration");
+   }
+
+   // NOBARRIER: global_State fields are roots and the slot is immutable after initial library registration.
+   setgcref(slot, obj2gco(Function));
+}
+
+GCfunc *lj_builtin_callable(lua_State *L, BuiltinCallableID Id) noexcept
+{
+   if (not builtin_callable_valid(Id)) return nullptr;
+   GCobj *callable = gcref(L2GG(L)->builtin_callables[builtin_callable_index(Id)]);
+   return callable and callable->gch.gct IS uint8_t(~LJ_TFUNC) ? gco_to_function(callable) : nullptr;
+}
+
+void lj_builtin_set_context_independent(lua_State *L, BuiltinCallableID Id)
+{
+   if (not builtin_callable_valid(Id) or not lj_builtin_callable(L, Id)) {
+      lj_err_callermsg(L, ERR::Args, "invalid context-independent built-in registration");
+   }
+   L2GG(L)->builtin_context_independent[builtin_callable_index(Id)] = 1;
+}
+
+bool lj_builtin_context_independent(lua_State *L, const GCfunc *Function) noexcept
+{
+   if (not Function or not isffunc(Function) or Function->c.ffid >= BUILTIN_CALLABLE_CAPACITY) return false;
+   return L2GG(L)->builtin_context_independent[Function->c.ffid] != 0;
+}
+
 static GCtab * lib_create_table(lua_State *L, const char *libname, int hsize)
 {
    if (libname) {
@@ -33,7 +72,7 @@ static GCtab * lib_create_table(lua_State *L, const char *libname, int hsize)
       lua_getfield(L, -1, libname);
       if (!tvistab(L->top - 1)) {
          L->top--;
-         if (luaL_findtable(L, LUA_GLOBALSINDEX, libname, hsize) != nullptr) lj_err_callerv(L, ErrMsg::BADMODN, libname);
+         if (luaL_findtable(L, LUA_GLOBALSINDEX, libname, hsize) != nullptr) luaL_error(L, ErrMsg::BADMODN, libname);
          settabV(L, L->top, tabV(L->top - 1));
          L->top++;
          lua_setfield(L, -3, libname);  //  _LOADED[libname] = new table
@@ -83,6 +122,9 @@ void lj_lib_register(lua_State *L, const char* libname, const uint8_t* p, const 
    lj_gc_anybarriert(L, tab);
    tab->nomm = 0;
 
+   // Internal namespaces need no exemption metadata: ordinary is the default, so calls through them already inherit
+   // the caller's context.  _G remains the permanent root context through the environment sentinel.
+
    for (;;) {
       uint32_t tag = *p++;
       MSize len = tag & LIBINIT_LENMASK;
@@ -105,6 +147,8 @@ void lj_lib_register(lua_State *L, const char* libname, const uint8_t* p, const 
 
          if (tag IS LIBINIT_ASM_) fn->c.f = ofn->c.f;  //  Copy handler from previous function.
          else fn->c.f = *cf++;  //  Get cf or handler from C function table.
+
+         lj_builtin_register(L, builtin_callable_id(FastFunc(fn->c.ffid)), fn);
 
          if (len) { // NOBARRIER: See above for common barrier.
             setfuncV(L, lj_tab_setstr(L, tab, lj_str_new(L, name, len)), fn);
@@ -304,29 +348,34 @@ GCtab * lj_lib_checktab(lua_State *L, int Arg)
 }
 
 //********************************************************************************************************************
-// Helper function to check argument is an object (nil not accepted)
+// Check that an argument is a table whose usage history is still inside the non-negative integral sequence domain.
+// This classification permits positive holes; it is a key-domain contract rather than a live-density check.  Library
+// operations that infer a numerical boundary from lj_tab_len() must use this instead of lj_lib_checktab(), because
+// the sequence length is meaningless once the table has been classified otherwise.
+//
+// 'Function' names the caller so that the diagnostic identifies both the operation and the classification.
 
-GCobject * lj_lib_checkobject(lua_State *L, int Arg)
+GCtab * lj_lib_checksequence(lua_State *L, int Arg, const char *Function)
 {
-   TValue *o = L->base + Arg - 1;
-   if (o < L->top) {
-      if (lj_is_thunk(o)) { // Resolve thunk if present
-         TValue *resolved = lj_thunk_resolve(L, udataV(o));
-         o = L->base + Arg - 1; // Stack may have moved, recalculate o
-         copyTV(L, o, resolved); // Replace thunk with resolved value
-      }
-
-      if (tvisobject(o)) [[likely]] return objectV(o);
-   }
-
-   lj_err_argt(L, Arg, LUA_TOBJECT);
-   return nullptr; // unreachable
+   GCtab *t = lj_lib_checktab(L, Arg);
+   if (not lj_tab_is_sequence(t)) luaL_error(L, ErrMsg::TABSEQ, Function, lj_tab_kind(t));
+   return t;
 }
 
 //********************************************************************************************************************
-// Helper function to check optional object argument (may be nil, but non-objects throw an error)
+// Helper function to check argument is an object (nil not accepted).  Throws error unless CanThrow is false
 
-GCobject * lj_lib_optobject(lua_State *L, int Arg)
+GCobject * lj_lib_checkobject(lua_State *L, int Arg, bool CanThrow)
+{
+   auto result = lj_lib_optobject(L, Arg, false);
+   if ((not result) and (CanThrow)) lj_err_argt(L, Arg, LUA_TOBJECT);
+   return result;
+}
+
+//********************************************************************************************************************
+// Helper function to check optional object argument (may be nil, but non-objects throw an error unless CanThrow is false)
+
+GCobject * lj_lib_optobject(lua_State *L, int Arg, bool CanThrow)
 {
    TValue *o = L->base + Arg - 1;
    if (o < L->top and not tvisnil(o)) {
@@ -337,15 +386,15 @@ GCobject * lj_lib_optobject(lua_State *L, int Arg)
       }
 
       if (tvisobject(o)) return objectV(o);
-      else lj_err_argt(L, Arg, LUA_TOBJECT);
+      else if (CanThrow) lj_err_argt(L, Arg, LUA_TOBJECT);
    }
    return nullptr;
 }
 
 //********************************************************************************************************************
-// Helper function to check argument is an array
+// Helper function to check argument is an array and performs thunk resolution
 
-GCarray * lj_lib_checkarray(lua_State *L, int Arg)
+GCarray * lj_lib_checkarray(lua_State *L, int Arg, bool Required)
 {
    TValue *o = L->base + Arg - 1;
    if (o < L->top) {
@@ -358,8 +407,28 @@ GCarray * lj_lib_checkarray(lua_State *L, int Arg)
       if (tvisarray(o)) [[likely]] return arrayV(o);
    }
 
-   lj_err_argt(L, Arg, LUA_TARRAY);
-   return nullptr;  //  unreachable
+   if (Required) lj_err_argt(L, Arg, LUA_TARRAY);
+   return nullptr;
+}
+
+//********************************************************************************************************************
+// Helper function to check argument is a struct and performs thunk resolution
+
+GCstruct * lj_lib_checkstruct(lua_State *L, int Arg, bool Required)
+{
+   TValue *o = L->base + Arg - 1;
+   if (o < L->top) {
+      if (lj_is_thunk(o)) { // Resolve thunk if present
+         TValue *resolved = lj_thunk_resolve(L, udataV(o));
+         o = L->base + Arg - 1; // Stack may have moved, recalculate o
+         copyTV(L, o, resolved); // Replace thunk with resolved value
+      }
+
+      if (tvisstruct(o)) [[likely]] return structV(o);
+   }
+
+   if (Required) lj_err_argt(L, Arg, LUA_TSTRUCT);
+   return nullptr;
 }
 
 //********************************************************************************************************************

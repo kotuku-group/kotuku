@@ -7,13 +7,13 @@
     <type>class</type>
     <module>Core</module>
     <comment>Manages the reading and writing of configuration files.</comment>
-    <fileExtension>*.cfg|*.cnf|*.config</fileExtension>
+    <fileExtension>cfg|cnf|config</fileExtension>
     <fileDescription>Config File</fileDescription>
     <version>1</version>
-    <id>f6e46c7b</id>
+    <id>abba1e78</id>
     <idstring>CONFIG</idstring>
     <category>Data</category>
-    <copyright>Paul Manias 1996-2026</copyright>
+    <copyright>Paul Manias © 1996-2026</copyright>
     <description>
 <p>The Config class is provided for reading text based key-values in a simple structured format.  Although basic and lacking support for trees and types, they are reliable, easy to support and use minimal resources.</p>
 <p>The following segment of a config file illustrates:</p>
@@ -46,17 +46,18 @@ print('The Action class is located at ' .. str)
       <name>Clear</name>
       <comment>Clears all configuration data.</comment>
       <prototype>ERR acClear(*Object)</prototype>
+      <tiriPrototype>err = Object.acClear()</tiriPrototype>
     </action>
 
     <action>
       <name>DataFeed</name>
       <comment>Data can be added to a Config object through this action.</comment>
-      <prototype>ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, APTR Buffer, INT Size)</prototype>
+      <prototype>ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, std::span&lt;const int8_t&gt; Buffer)</prototype>
+      <tiriPrototype>err = Object.acDataFeed(Object:obj, Datatype:DATA, Buffer:str)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Object">Must refer to the unique ID of the object that you represent. If you do not represent an object, set this parameter to the current task ID.</param>
         <param type="DATA" name="Datatype" lookup="DATA">The type of data being sent.</param>
-        <param type="APTR" name="Buffer">The data being sent to the target object.</param>
-        <param type="INT" name="Size">The size of the data in Buffer.</param>
+        <param type="std::span&lt;const int8_t&gt;" name="Buffer">The data being sent to the target object.</param>
       </input>
       <description>
 <p>This action will accept configuration data in <code>TEXT</code> format.  Any existing data that matches to the new group keys will be overwritten with new values.</p>
@@ -67,12 +68,14 @@ print('The Action class is located at ' .. str)
       <name>Flush</name>
       <comment>Diverts to <action>SaveSettings</action>.</comment>
       <prototype>ERR acFlush(*Object)</prototype>
+      <tiriPrototype>err = Object.acFlush()</tiriPrototype>
     </action>
 
     <action>
       <name>SaveSettings</name>
       <comment>Saves data to the file that the configuration data was loaded from.</comment>
       <prototype>ERR acSaveSettings(*Object)</prototype>
+      <tiriPrototype>err = Object.acSaveSettings()</tiriPrototype>
       <description>
 <p>This action will save the configuration data back to its original file source (assuming the <fl>Path</fl> remains unchanged).</p>
       </description>
@@ -82,9 +85,10 @@ print('The Action class is located at ' .. str)
       <name>SaveToObject</name>
       <comment>Saves configuration data to an object, using standard config text format.</comment>
       <prototype>ERR acSaveToObject(*Object, OBJECTID Dest, CLASSID ClassID)</prototype>
+      <tiriPrototype>err = Object.acSaveToObject(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded data.</param>
-        <param type="CLASSID" name="ClassID">Can refer to a sub-class that should be used when encoding the data.</param>
+        <param type="CLASSID" name="ClassID">Can refer to a derived class that should be used when encoding the data.</param>
       </input>
     </action>
 
@@ -94,9 +98,10 @@ print('The Action class is located at ' .. str)
     <method>
       <name>DeleteGroup</name>
       <comment>Deletes entire groups of configuration data.</comment>
-      <prototype>ERR cfg::DeleteGroup(OBJECTPTR Object, CSTRING Group)</prototype>
+      <prototype>ERR cfg::DeleteGroup(OBJECTPTR Object, STRVIEW Group)</prototype>
+      <tiriPrototype>err = DeleteGroup(Group:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Group">The name of the group that will be deleted.</param>
+        <param type="STRVIEW" name="Group">The name of the group that will be deleted.</param>
       </input>
       <description>
 <p>This method will delete an entire group of key-values from a config object if a matching group name is provided.</p>
@@ -105,49 +110,55 @@ print('The Action class is located at ' .. str)
         <error code="Okay">The group was deleted or does not exist.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, idempotent</tags>
     </method>
 
     <method>
       <name>DeleteKey</name>
       <comment>Deletes single key entries.</comment>
-      <prototype>ERR cfg::DeleteKey(OBJECTPTR Object, CSTRING Group, CSTRING Key)</prototype>
+      <prototype>ERR cfg::DeleteKey(OBJECTPTR Object, STRVIEW Group, STRVIEW Key)</prototype>
+      <tiriPrototype>err = DeleteKey(Group:str, Key:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Group">The name of the targeted group.</param>
-        <param type="CSTRING" name="Key">The name of the targeted key.</param>
+        <param type="STRVIEW" name="Group">The name of the targeted group.</param>
+        <param type="STRVIEW" name="Key">The name of the targeted key.</param>
       </input>
       <description>
 <p>This method deletes a single key from the Config object.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Search">A search routine in this function failed.</error>
+        <error code="Search">A search routine in this function failed</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
       <name>GetGroupFromIndex</name>
       <comment>Converts an index number into its matching group string.</comment>
-      <prototype>ERR cfg::GetGroupFromIndex(OBJECTPTR Object, INT Index, CSTRING * Group)</prototype>
+      <prototype>ERR cfg::GetGroupFromIndex(OBJECTPTR Object, INT Index, STRVIEW * Group)</prototype>
+      <tiriPrototype>err, Group:str = GetGroupFromIndex(Index:num)</tiriPrototype>
       <input>
         <param type="INT" name="Index">The group index that you want to identify.</param>
-        <param type="CSTRING *" name="Group">Points to the group string that matches the index number.</param>
+        <param type="STRVIEW *" name="Group">Refers to the group string that matches the index number.</param>
       </input>
       <description>
 <p>Use GetGroupFromIndex() to convert a group index number to its matching name.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="NoData">There is no data loaded into the config object.</error>
         <error code="OutOfRange">The index number is out of range of the available groups.</error>
       </result>
+      <tags>pure-query, object-owns-result, null-terminated-result</tags>
     </method>
 
     <method>
       <name>Merge</name>
       <comment>Merges two config objects together.</comment>
       <prototype>ERR cfg::Merge(OBJECTPTR Object, OBJECTPTR Source)</prototype>
+      <tiriPrototype>err = Merge(Source:obj)</tiriPrototype>
       <input>
         <param type="OBJECTPTR" name="Source">The Config object to be merged.</param>
       </input>
@@ -156,17 +167,20 @@ print('The Action class is located at ' .. str)
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="AccessObject">The source configuration object could not be accessed.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
     <method>
       <name>MergeFile</name>
       <comment>Merges a configuration file into existing configuration data.</comment>
-      <prototype>ERR cfg::MergeFile(OBJECTPTR Object, CSTRING Path)</prototype>
+      <prototype>ERR cfg::MergeFile(OBJECTPTR Object, STRVIEW Path)</prototype>
+      <tiriPrototype>err = MergeFile(Path:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Path">The location of the configuration file that you want to merge.</param>
+        <param type="STRVIEW" name="Path">The location of the configuration file that you want to merge.</param>
       </input>
       <description>
 <p>The MergeFile() method is used to pull configuration data from a file and merge it into the target config object. The path to the configuration file is all that is required.  Existing data in the target will be overwritten by the source in cases where there matching set of group keys.</p>
@@ -176,36 +190,40 @@ print('The Action class is located at ' .. str)
         <error code="File">Failed to load the source file.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>blocking, mutates-object, copies-input</tags>
     </method>
 
     <method>
       <name>ReadValue</name>
       <comment>Reads a key-value string.</comment>
-      <prototype>ERR cfg::ReadValue(OBJECTPTR Object, CSTRING Group, CSTRING Key, CSTRING * Data)</prototype>
+      <prototype>ERR cfg::ReadValue(OBJECTPTR Object, STRVIEW Group, STRVIEW Key, STRVIEW * Data)</prototype>
+      <tiriPrototype>err, Data:str = ReadValue(Group:str, Key:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Group">The name of a group to examine for a key.  If <code>NULL</code>, all groups are scanned.</param>
-        <param type="CSTRING" name="Key">The name of a key to retrieve (case sensitive).</param>
-        <param type="CSTRING *" name="Data">The key value will be stored in this parameter on returning.</param>
+        <param type="STRVIEW" name="Group">The name of a group to examine for a key.  If empty, all groups are scanned.</param>
+        <param type="STRVIEW" name="Key">The name of a key to retrieve (case sensitive).  If empty, the first key in the group is returned.</param>
+        <param type="STRVIEW *" name="Data">The key value will be stored in this parameter on return.</param>
       </input>
       <description>
 <p>This function retrieves key values in their original string format.  On success, the resulting string remains valid only for as long as the client has exclusive access to the config object.  The pointer can also be invalidated if more information is written to the config object.  For this reason, consider copying the result if it will be used extensively.</p>
-<p>If the <code>Group</code> parameter is set to <code>NULL</code>, the scan routine will treat all of the config data as a one dimensional array. If the <code>Key</code> parameter is set to <code>NULL</code> then the first key in the requested group is returned.  If both parameters are <code>NULL</code> then the first known key value will be returned.</p>
+<p>If the <code>Group</code> parameter is empty, the scan routine will treat all of the config data as a one dimensional array. If the <code>Key</code> parameter is empty then the first key in the requested group is returned.  If both parameters are empty then the first known key value will be returned.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="Search">The requested configuration entry does not exist.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>pure-query, object-owns-result, null-terminated-result</tags>
     </method>
 
     <method>
       <name>Set</name>
       <comment>Sets keys in existing config groups (aborts if the group does not exist).</comment>
-      <prototype>ERR cfg::Set(OBJECTPTR Object, CSTRING Group, CSTRING Key, CSTRING Data)</prototype>
+      <prototype>ERR cfg::Set(OBJECTPTR Object, STRVIEW Group, STRVIEW Key, STRVIEW Data)</prototype>
+      <tiriPrototype>err = Set(Group:str, Key:str, Data:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Group">The name of the group.  Wildcards are supported.</param>
-        <param type="CSTRING" name="Key">The name of the key.</param>
-        <param type="CSTRING" name="Data">The data that will be added to the given group/key.</param>
+        <param type="STRVIEW" name="Group">The name of the group.  Wildcards are supported.</param>
+        <param type="STRVIEW" name="Key">The name of the key.</param>
+        <param type="STRVIEW" name="Data">The data that will be added to the given group/key.</param>
       </input>
       <description>
 <p>This method is identical to <method>WriteValue</method> except it will abort if the name of the referred group does not exist in the config object.  The error code <code>ERR::Search</code> is returned if this is the case.  Please refer to <method>WriteValue</method> for further information on the behaviour of this function.</p>
@@ -215,14 +233,16 @@ print('The Action class is located at ' .. str)
         <error code="Search">The referred group does not exist.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
     <method>
       <name>SortByKey</name>
       <comment>Sorts config data using a sequence of sort instructions.</comment>
-      <prototype>ERR cfg::SortByKey(OBJECTPTR Object, CSTRING Key, INT Descending)</prototype>
+      <prototype>ERR cfg::SortByKey(OBJECTPTR Object, STRVIEW Key, INT Descending)</prototype>
+      <tiriPrototype>err = SortByKey(Key:str, Descending:num)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Key">The name of the key to sort on.</param>
+        <param type="STRVIEW" name="Key">The name of the key to sort on.</param>
         <param type="INT" name="Descending">Set to true if a descending sort is required.</param>
       </input>
       <description>
@@ -230,29 +250,31 @@ print('The Action class is located at ' .. str)
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="NoData">No data is available for use.</error>
+        <error code="NoData">No data is available for use</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
       <name>WriteValue</name>
       <comment>Adds new entries to config objects.</comment>
-      <prototype>ERR cfg::WriteValue(OBJECTPTR Object, CSTRING Group, CSTRING Key, CSTRING Data)</prototype>
+      <prototype>ERR cfg::WriteValue(OBJECTPTR Object, STRVIEW Group, STRVIEW Key, STRVIEW Data)</prototype>
+      <tiriPrototype>err = WriteValue(Group:str, Key:str, Data:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Group">The name of the group.</param>
-        <param type="CSTRING" name="Key">The name of the key.</param>
-        <param type="CSTRING" name="Data">The data that will be added to the given group/key.</param>
+        <param type="STRVIEW" name="Group">The name of the group.</param>
+        <param type="STRVIEW" name="Key">The name of the key.</param>
+        <param type="STRVIEW" name="Data">The data that will be added to the given group/key.</param>
       </input>
       <description>
 <p>Use the WriteValue() method to add or update information in a config object.  A <code>Group</code> name, <code>Key</code> name, and <code>Data</code> value are required.  If the <code>Group</code> and <code>Key</code> arguments match an existing entry in the config object, the data of that entry will be replaced with the new Data value.</p>
-<p>The <code>Group</code> string may refer to an index if the hash <code>#</code> character is used to precede a target index number.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="AllocMemory">The additional memory required for the new entry could not be allocated.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
   </methods>

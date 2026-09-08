@@ -109,7 +109,7 @@ void SurfacePan::InitPixMap(int width, int height, Scintilla::Surface *surface_,
 {
    if (bitmap) return;
 
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.traceBranch("Size: %dx%d", width, height);
 
    if (!(bitmap = objBitmap::create::global(fl::Name("sciPixmap"), fl::Width(width), fl::Height(height)))) {
@@ -189,7 +189,7 @@ void SurfacePan::LineTo(int x, int y)
 
 void SurfacePan::DrawRGBAImage(Scintilla::PRectangle rc, int width, int height, const unsigned char *pixelsImage)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.warning("Unsupported.");
 }
 
@@ -287,7 +287,7 @@ void SurfacePan::Ellipse(Scintilla::PRectangle rc, Scintilla::ColourAllocated fo
 
 void SurfacePan::Copy(Scintilla::PRectangle rc, Scintilla::Point from, Scintilla::Surface &surfaceSource)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    SurfacePan &src_surface = static_cast<SurfacePan&>(surfaceSource);
 
    if ((bitmap) and (src_surface.bitmap)) {
@@ -308,7 +308,7 @@ void SurfacePan::Copy(Scintilla::PRectangle rc, Scintilla::Point from, Scintilla
 
 void SurfacePan::DrawTextBase(Scintilla::PRectangle rc, Scintilla::Font &font_, int ybase, const char *String, int len, Scintilla::ColourAllocated fore)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    uint32_t col32;
 
    std::string nstr(String, len);
@@ -322,7 +322,7 @@ void SurfacePan::DrawTextBase(Scintilla::PRectangle rc, Scintilla::Font &font_, 
    if (auto font = (objFont *)GetFont(font_)) { //static_cast<OBJECTPTR>(font_.GetID());
       BitmapClipper clipper(bitmap, cliprect);
 
-      font->setFields(fl::String(nstr));
+      font->setString(nstr);
       font->Bitmap = bitmap;
       font->X = rc.left;
       font->Y = rc.top + font->Leading;
@@ -473,7 +473,7 @@ int SurfacePan::Descent(Scintilla::Font &font_)
 
 int SurfacePan::InternalLeading(Scintilla::Font &font_)
 {
-   OBJECTPTR font = GetFont(font_);//reinterpret_cast<OBJECTPTR>(font_.GetID());
+   OBJECTPTR font = GetFont(font_);//OBJECTPTR(font_.GetID());
 
    if (font) return GetFontLeading(font);
    else return 0;
@@ -484,7 +484,7 @@ int SurfacePan::InternalLeading(Scintilla::Font &font_)
 int SurfacePan::ExternalLeading(Scintilla::Font &font_)
 {
    /* NOTE: this right? */
-   OBJECTPTR font = GetFont(font_);//reinterpret_cast<OBJECTPTR>(font_.GetID());
+   OBJECTPTR font = GetFont(font_);//OBJECTPTR(font_.GetID());
 
    if (font) return GetFontGutter(font);
    else return 0;
@@ -534,7 +534,7 @@ void SurfacePan::SetClip(Scintilla::PRectangle rc)
 
 void SurfacePan::FlushCachedState()
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.trace("UNSUPPORTED");
 }
 
@@ -542,7 +542,7 @@ void SurfacePan::FlushCachedState()
 
 void SurfacePan::SetUnicodeMode(bool unicodeMode_)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 //   log.trace("%d [UNSUPPORTED]", unicodeMode_);
 }
 
@@ -550,7 +550,7 @@ void SurfacePan::SetUnicodeMode(bool unicodeMode_)
 
 void SurfacePan::SetDBCSMode(int codePage)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 //   log.trace("CodePage: %d [UNSUPPORTED]", codePage);
 }
 
@@ -574,7 +574,7 @@ OBJECTPTR SurfacePan::GetFont(Scintilla::Font& font_)
 void SurfacePan::AlphaRectangle(Scintilla::PRectangle rc, int cornerSize, Scintilla::ColourAllocated fill, int alphaFill,
 		Scintilla::ColourAllocated outline, int alphaOutline, int flags)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    log.trace("UNSUPPORTED");
 

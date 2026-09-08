@@ -1514,15 +1514,7 @@ static void asm_bitshift(ASMState* as, IRIns* ir, PPCIns pi, PPCIns pik)
 static void asm_min_max(ASMState* as, IRIns* ir, int ismax)
 {
    if (irt_isnum(ir->t)) {
-      Reg dest = ra_dest(as, ir, RSET_FPR);
-      Reg tmp = dest;
-      Reg right, left = ra_alloc2(as, ir, RSET_FPR);
-      right = (left >> 8); left &= 255;
-      if (tmp == left or tmp == right)
-         tmp = ra_scratch(as, rset_exclude(rset_exclude(rset_exclude(RSET_FPR,
-            dest), left), right));
-      emit_facb(as, PPCI_FSEL, dest, tmp, left, right);
-      emit_fab(as, PPCI_FSUB, tmp, ismax ? left : right, ismax ? right : left);
+      asm_callid(as, ir, ismax ? IRCALL_lj_vm_max : IRCALL_lj_vm_min);
    }
    else {
       Reg dest = ra_dest(as, ir, RSET_GPR);
@@ -1942,4 +1934,3 @@ void lj_asm_patchexit(jit_State* J, GCtrace* T, ExitNo exitno, MCode* target)
    }
    lj_mcode_patch(J, mcarea, 1);
 }
-

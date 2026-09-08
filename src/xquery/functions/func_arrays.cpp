@@ -88,13 +88,13 @@ XPathVal XPathFunctionLibrary::function_array_size(const std::vector<XPathVal> &
 
 XPathVal XPathFunctionLibrary::function_array_get(const std::vector<XPathVal> &Args, const XPathContext &Context)
 {
-   if (Args.size() < 2) return XPathVal(pf::vector<XTag *>{});
+   if (Args.size() < 2) return XPathVal(kt::vector<XTag *>{});
    const XPathArrayStorage *storage = view_array_storage(Args[0]);
-   if (!storage) return XPathVal(pf::vector<XTag *>{});
+   if (!storage) return XPathVal(kt::vector<XTag *>{});
 
    size_t index = 0;
    ArrayIndexState state = parse_array_index(Args[1], storage->members.size(), index, Context);
-   if (state IS ArrayIndexState::Invalid) return XPathVal(pf::vector<XTag *>{});
+   if (state IS ArrayIndexState::Invalid) return XPathVal(kt::vector<XTag *>{});
    if (state IS ArrayIndexState::OutOfRange) {
       if (Context.eval) {
          auto detail = std::format("Array index {} is outside the available range.", sequence_item_string(Args[1], 0));
@@ -102,7 +102,7 @@ XPathVal XPathFunctionLibrary::function_array_get(const std::vector<XPathVal> &A
          Context.eval->record_error(message, true);
       }
       flag_xpath_unsupported(Context);
-      return XPathVal(pf::vector<XTag *>{});
+      return XPathVal(kt::vector<XTag *>{});
    }
 
    return materialise_sequence_with_context(storage->members[index], Context);

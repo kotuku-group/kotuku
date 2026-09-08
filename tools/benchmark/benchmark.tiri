@@ -1,616 +1,401 @@
+#!/usr/bin/env origo
 --[[
 Tiri Benchmarking Tool
 
 Usage:
 
   origo benchmark.tiri [test=Name]
+  origo benchmark.tiri help
 
 Parameters:
 
   test=[s]     - Regex defining the test(s) to run.
-  duration=[n] - Duration limit for each test, in seconds.
+  duration=[n] - Duration limit for each test, e.g. 500ms, 2s, or 1m.
   warmup=[n]   - Warmup cycles per test.
   hotloop=[n]  - Cycles required before performing JIT optimisation.
   calls=[n]    - Limit each test to this many calls.
-  save         - Saves the results to the log if specified.  Used for comparison on the next run.
+  retry=[n]    - Re-run tests that regressed by n% or more against the previous run.  Use 0 to disable.
+  interpreter  - Disable JIT compilation during timing.
+  save[=all]   - Saves the results to the log.  Use save=all to store the full result tables.
+  traces       - Report on JIT trace compilation for each test instead of timing it.
+  report       - Print the comparison of the last two saved runs without benchmarking.
  --]]
 
    import 'benchmark'
    import 'git'
    import 'json'
+   import 'options'
 
-rxEmailParts   = <{ regex.new([[([^@]+)@(.+)]]) }>
-rxDateParts    = <{ regex.new([[(\d+)-(\d+)-(\d+)]]) }>
-rxLogLevel     = <{ regex.new("\\[([A-Z]+)\\]") }>
-rxTimestamp    = <{ regex.new([[(\d\d:\d\d:\d\d)]]) }>
-rxProtocol     = <{ regex.new([[^(\w+)://]]) }>
-rxUrlHost      = <{ regex.new([[:\/\/([^:\/]+)]]) }>
-rxUrlPort      = <{ regex.new([[:(\d+)/]]) }>
+rxEmailParts   = <{ r[[([^@]+)@(.+)]] }>
+rxDateParts    = <{ r[[(\d+)-(\d+)-(\d+)]] }>
+rxLogLevel     = <{ r"\[([A-Z]+)\]" }>
+rxTimestamp    = <{ r[[(\d\d:\d\d:\d\d)]] }>
+rxProtocol     = <{ r[[^(\w+)://]] }>
+rxUrlHost      = <{ r[[:\/\/([^:\/]+)]] }>
+rxUrlPort      = <{ r[[:(\d+)/]] }>
 
 global glSelf = obj.find('self')
 global glPath = glSelf.workingPath
 global glLogFile = 'user:benchmark.log'
 
+function saveOption(Value:any, Param:table):any
+   Value ?! return false
+
+   if Value is true or Value is false then
+      return Value
+   end
+
+   local value = string.lower(tostring(Value))
+
+   return choose value from
+      'all'   -> 'all'
+      'true'  -> true
+      'yes'   -> true
+      'false' -> false
+      'no'    -> false
+      else    -> raise("save must be a boolean value or 'all'.")
+   end
+end
+
+global glParser = options({
+   name        = 'benchmark',
+   description = 'Run the Tiri benchmark suite and optionally save results for comparison with the next run.',
+   autoHelp    = false,
+   epilog      = [[
+Examples:
+  origo tools/benchmark/benchmark.tiri
+  origo tools/benchmark/benchmark.tiri test=String duration=5s calls=500
+  origo tools/benchmark/benchmark.tiri test="^Regex" save
+  origo tools/benchmark/benchmark.tiri save=all
+  origo tools/benchmark/benchmark.tiri traces
+  origo tools/benchmark/benchmark.tiri traces test="^Control"
+  origo tools/benchmark/benchmark.tiri report
+]],
+   args = array<table> {
+      { name = 'test', type = 'regex', group = 'Selection',
+        comment = 'Regex defining the benchmark test names to run.' },
+
+      { name = 'duration', type = 'duration', default = '2s', group = 'Timing',
+        comment = 'Duration limit for each benchmark. Accepts values such as 500ms, 2s, or 1m.' },
+      { name = 'warmup', type = 'int', default = 10, group = 'Timing',
+        comment = 'Warmup calls per benchmark before measurements are recorded.' },
+      { name = 'hotloop', type = 'int', default = 5, group = 'Timing',
+        comment = 'Cycles required before performing JIT optimisation.' },
+      { name = 'calls', type = 'int', default = 1000, group = 'Timing',
+        comment = 'Limit each benchmark to this many measured calls.' },
+      { name = 'retry', type = 'num', default = 4, group = 'Timing',
+        comment = 'Re-run any benchmark that has regressed by this percentage or more against the previous saved ' ..
+                  'run, keeping whichever of the two measurements is faster.  Use 0 to disable.' },
+      { name = 'interpreter', kind = 'flag', group = 'Timing',
+        comment = 'Disable JIT compilation during the timing run.' },
+
+      { name = 'save', type = saveOption, implicit = true, default = false, group = 'Output',
+        comment = 'Save summary results to the log. Use "all" to include exhaustive benchmark statistics.' },
+      { name = 'traces', kind = 'flag', group = 'Output',
+        comment = 'Analyse JIT trace compilation for each benchmark and report whether it is being optimised. ' ..
+                  'Replaces the normal timing run; results are not saved or compared.' },
+      { name = 'report', kind = 'flag', group = 'Output',
+        comment = 'Print the comparison of the two most recent saved runs and exit. No benchmarks are run.' },
+      { name = 'help', kind = 'flag', hidden = true,
+        exec = function(Parser:table)
+           Parser.printHelp()
+           raise ERR_Terminate
+        end }
+   }
+})
+
    import './benchmark_array'
    import './benchmark_func'
+   import './benchmark_language'
    import './benchmark_memory'
    import './benchmark_string'
    import './benchmark_math'
    import './benchmark_table'
    import './benchmark_control'
    import './benchmark_object'
-
-----------------------------------------------------------------------------------------------------------------------
--- EXCEPTION HANDLING
-----------------------------------------------------------------------------------------------------------------------
--- Goal: Measure overhead of try-except exception handling
-
-@Test function ExceptionTryExcept()
-   -- Function that may throw an error
-   local function mayFail(shouldFail)
-      if shouldFail then
-         error("Intentional error")
-      end
-      return 42
-   end
-
-   -- Function that always succeeds
-   local function alwaysSucceeds(x)
-      return x * 2
-   end
-
-   for i in {0..10000} do
-      -- Try-except with no exception thrown
-      try
-         local result = alwaysSucceeds(i)
-      except ex
-         local msg = ex.message
-      end
-
-      -- Try-except with exception thrown occasionally
-      try
-         local result = mayFail(i % 100 is 0)
-      except ex
-         local msg = ex.message
-      end
-
-      -- Nested try-except blocks
-      try
-         try
-            local result = alwaysSucceeds(i)
-         except inner
-            local msg = inner.message
-         end
-      except outer
-         local msg = outer.message
-      end
-
-      -- Try-except with multiple operations
-      try
-         local a = alwaysSucceeds(i)
-         local b = alwaysSucceeds(i + 1)
-         local c = alwaysSucceeds(i + 2)
-         local sum = a + b + c
-      except ex
-         local msg = ex.message
-      end
-
-      -- Try-except with conditional exception
-      try
-         if i % 50 is 0 then
-            error("Periodic error")
-         end
-         local result = i * 2
-      except ex
-         local recovered = 0
-      end
-   end
-end
-
-----------------------------------------------------------------------------------------------------------------------
--- Goal: Use try-success pattern for handling successful completion
-
-@Test function ExceptionTrySuccess()
-   local function compute(x)
-      if x < 0 then
-         error("Negative value not allowed")
-      end
-      return x * x
-   end
-
-   local function fetchData(id)
-      if id is 0 then
-         error("Invalid ID")
-      end
-      return { id = id, value = id * 10 }
-   end
-
-   for i in {0..30000} do
-      local result = 0
-
-      -- Basic try-success pattern
-      try
-         result = compute(i)
-      except ex
-         result = -1
-      success
-         result = result + 1
-      end
-
-      -- Try-success with data fetching pattern
-      local data = nil
-      try
-         data = fetchData(i % 100)
-      except ex
-         data = { id = 0, value = 0 }
-      success
-         data.value = data.value * 2
-      end
-
-      -- Chained operations in success block
-      local a, b
-      try
-         a = compute(i)
-         b = compute(i + 1)
-      except ex
-         result = 0
-      success
-         result = a + b
-         result = result * 2
-      end
-
-      -- Success block with cleanup-like operations
-      local resource_acquired = false
-      try
-         resource_acquired = true
-         result = compute(i)
-      except ex
-         result = -1
-      success
-         -- Simulated successful completion handling
-         result = result + 100
-      end
-
-      -- Nested try with success blocks
-      try
-         try
-            result = compute(i)
-         except inner
-            result = 0
-         success
-            result = result + 10
-         end
-      except outer
-         result = -1
-      success
-         result = result + 20
-      end
-   end
-end
-
-----------------------------------------------------------------------------------------------------------------------
--- Goal: Measure overhead of defer statement for cleanup
-
-@Test function ExceptionDefer()
-   for i in {0..5000} do
-      local cleanup_count = 0
-
-      -- Simple defer
-      do
-         defer()
-            cleanup_count++
-         end
-         local x = i * 2
-      end
-
-      -- Multiple defers (LIFO order)
-      do
-         defer()
-            cleanup_count++
-         end
-         defer()
-            cleanup_count++
-         end
-         defer()
-            cleanup_count++
-         end
-         local x = i
-      end
-
-      -- Defer with captured variables
-      local value = i
-      do
-         local captured = value
-         defer()
-            local _ = captured
-         end
-         value = value * 2
-      end
-
-      -- Defer in nested scopes
-      do
-         defer()
-            cleanup_count++
-         end
-         do
-            defer()
-               cleanup_count++
-            end
-            local inner = i
-         end
-         local outer = i * 2
-      end
-
-      -- Defer with computation
-      local result = 0
-      do
-         defer()
-            result = result + 1
-         end
-         result = i * 2
-      end
-
-      -- Defer simulating resource cleanup pattern
-      do
-         local resource = { open = true }
-         defer()
-            resource.open = false
-         end
-         local data = resource.open and i or 0
-      end
-   end
-end
-
-----------------------------------------------------------------------------------------------------------------------
--- VARIABLE SCOPE
-----------------------------------------------------------------------------------------------------------------------
--- These benchmarks perform identical operations to enable direct performance comparison
--- between different variable scoping mechanisms.
-
-@Test function ScopeLocal()
-   for i in {0..1000000} do
-      -- Declare local variables
-      local a = 10
-      local b = 20
-      local c = 30
-      local d = 40
-      local e = 50
-
-      -- Read operations
-      local r1 = a
-      local r2 = b
-      local r3 = c
-      local r4 = d
-      local r5 = e
-
-      -- Arithmetic using locals
-      local sum = a + b + c + d + e
-      local product = a * b
-      local diff = e - a
-      local quotient = d / a
-
-      -- Write operations
-      a = i
-      b = i + 1
-      c = i + 2
-      d = i + 3
-      e = i + 4
-
-      -- Mixed read/write
-      a = b + c
-      b = a * 2
-      c = b - d
-      d = c + e
-      e = a + d
-
-      -- Compound operations
-      a += 1
-      b -= 1
-      c *= 2
-      d /= 2
-      e %= 100
-   end
-end
-
-----------------------------------------------------------------------------------------------------------------------
--- Goal: Measure performance of global variable access
-
--- Declare globals for ScopeGlobal benchmark
-global glScopeA = 10
-global glScopeB = 20
-global glScopeC = 30
-global glScopeD = 40
-global glScopeE = 50
-
-@Test function ScopeGlobal()
-   for i in {0..1000000} do
-      -- Reset global variables
-      glScopeA = 10
-      glScopeB = 20
-      glScopeC = 30
-      glScopeD = 40
-      glScopeE = 50
-
-      -- Read operations
-      local r1 = glScopeA
-      local r2 = glScopeB
-      local r3 = glScopeC
-      local r4 = glScopeD
-      local r5 = glScopeE
-
-      -- Arithmetic using globals
-      local sum = glScopeA + glScopeB + glScopeC + glScopeD + glScopeE
-      local product = glScopeA * glScopeB
-      local diff = glScopeE - glScopeA
-      local quotient = glScopeD / glScopeA
-
-      -- Write operations
-      glScopeA = i
-      glScopeB = i + 1
-      glScopeC = i + 2
-      glScopeD = i + 3
-      glScopeE = i + 4
-
-      -- Mixed read/write
-      glScopeA = glScopeB + glScopeC
-      glScopeB = glScopeA * 2
-      glScopeC = glScopeB - glScopeD
-      glScopeD = glScopeC + glScopeE
-      glScopeE = glScopeA + glScopeD
-
-      -- Compound operations
-      glScopeA += 1
-      glScopeB -= 1
-      glScopeC *= 2
-      glScopeD /= 2
-      glScopeE %= 100
-   end
-end
-
-----------------------------------------------------------------------------------------------------------------------
--- Goal: Measure performance of const-annotated local variable access
-
-@Test function ScopeConstantAccess()
-   for i in {0..1000000} do
-      -- Declare const local variables
-      local a <const> = 10
-      local b <const> = 20
-      local c <const> = 30
-      local d <const> = 40
-      local e <const> = 50
-
-      -- Read operations (const can only be read, not written)
-      local r1 = a
-      local r2 = b
-      local r3 = c
-      local r4 = d
-      local r5 = e
-
-      -- Arithmetic using consts
-      local sum = a + b + c + d + e
-      local product = a * b
-      local diff = e - a
-      local quotient = d / a
-
-      -- Write to mutable locals derived from consts
-      local ma = i
-      local mb = i + 1
-      local mc = i + 2
-      local md = i + 3
-      local me = i + 4
-
-      -- Mixed read (const) / write (mutable)
-      ma = b + c
-      mb = a * 2
-      mc = b - d
-      md = c + e
-      me = a + d
-
-      -- Compound operations on mutable copies
-      ma += 1
-      mb -= 1
-      mc *= 2
-      md /= 2
-      me %= 100
-
-      -- Additional const reads to match operation count
-      local x1 = a + b
-      local x2 = c + d
-      local x3 = e + a
-      local x4 = b + c
-      local x5 = d + e
-   end
-end
-
-----------------------------------------------------------------------------------------------------------------------
--- Goal: Measure performance of upvalue access in closures
-
-@Test function ScopeUpvalueAccess()
-   -- Declare upvalues outside the loop
-   local a = 10
-   local b = 20
-   local c = 30
-   local d = 40
-   local e = 50
-
-   -- Create closure that captures upvalues
-   local function accessUpvalues(iter)
-      -- Read operations
-      local r1 = a
-      local r2 = b
-      local r3 = c
-      local r4 = d
-      local r5 = e
-
-      -- Arithmetic using upvalues
-      local sum = a + b + c + d + e
-      local product = a * b
-      local diff = e - a
-      local quotient = d / a
-
-      -- Write operations
-      a = iter
-      b = iter + 1
-      c = iter + 2
-      d = iter + 3
-      e = iter + 4
-
-      -- Mixed read/write
-      a = b + c
-      b = a * 2
-      c = b - d
-      d = c + e
-      e = a + d
-
-      -- Compound operations
-      a += 1
-      b -= 1
-      c *= 2
-      d /= 2
-      e %= 100
-   end
-
-   for i in {0..1000000} do
-      -- Reset upvalues
-      a = 10
-      b = 20
-      c = 30
-      d = 40
-      e = 50
-
-      -- Call function that accesses upvalues
-      accessUpvalues(i)
-   end
-end
-
-----------------------------------------------------------------------------------------------------------------------
--- TYPE OPERATIONS
-----------------------------------------------------------------------------------------------------------------------
--- Goal: Measure overhead of type() function calls
-
-@Test function TypeCheckType()
-   -- Create values of different types
-   local num_int = 42
-   local num_float = 3.14159
-   local str = "hello"
-   local tbl = { a = 1, b = 2 }
-   local arr = array<int> { 1, 2, 3 }
-   local func = function() return 1 end
-   local bool_true = true
-   local bool_false = false
-   local nil_val = nil
-
-   for i in {0..500} do
-      -- Check type of numbers
-      local t1 = type(num_int)
-      local t2 = type(num_float)
-      local t3 = type(i)
-
-      -- Check type of strings
-      local t4 = type(str)
-      local t5 = type("literal")
-
-      -- Check type of tables
-      local t6 = type(tbl)
-      local t7 = type({})
-
-      -- Check type of arrays
-      local t8 = type(arr)
-
-      -- Check type of functions
-      local t9 = type(func)
-      local t10 = type(function() end)
-
-      -- Check type of booleans
-      local t11 = type(bool_true)
-      local t12 = type(bool_false)
-
-      -- Check type of nil
-      local t13 = type(nil_val)
-      local t14 = type(nil)
-
-      -- Type comparisons
-      local is_num = type(num_int) is "number"
-      local is_str = type(str) is "string"
-      local is_tbl = type(tbl) is "table"
-      local is_func = type(func) is "function"
-      local is_bool = type(bool_true) is "boolean"
-
-      -- Conditional based on type
-      local val = i % 3 is 0 and str or (i % 3 is 1 and num_int or tbl)
-      if type(val) is "string" then
-         local _ = #val
-      elseif type(val) is "number" then
-         local _ = val * 2
-      elseif type(val) is "table" then
-         local _ = val.a
-      end
-   end
-end
-
-----------------------------------------------------------------------------------------------------------------------
--- Goal: Measure overhead of tonumber() conversions
-
-@Test function NumberConversion()
-   local str_int = "12345"
-   local str_neg = "-9876"
-   local str_float = "3.14159"
-   local str_neg_float = "-2.71828"
-   local str_zero = "0"
-   local str_sci = "1.23e5"
-   local str_hex = "0xFF"
-   local str_invalid = "not_a_number"
-   local str_mixed = "123abc"
-
-   for i in {0..1000} do
-      -- Convert integer strings
-      local n1 = tonumber(str_int)
-      local n2 = tonumber(str_neg)
-      local n3 = tonumber(str_zero)
-
-      -- Convert float strings
-      local n4 = tonumber(str_float)
-      local n5 = tonumber(str_neg_float)
-
-      -- Convert scientific notation
-      local n6 = tonumber(str_sci)
-
-      -- Convert hex strings
-      local n7 = tonumber(str_hex)
-      local n8 = tonumber("0x1A2B")
-
-      -- Convert with explicit base
-      local n9 = tonumber("1010", 2)    -- Binary
-      local n10 = tonumber("777", 8)     -- Octal
-      local n11 = tonumber("FF", 16)     -- Hex without prefix
-
-      -- Convert dynamically created strings
-      local n12 = tonumber(tostring(i))
-      local n13 = tonumber(tostring(i * 2))
-
-      -- Invalid conversions (return nil)
-      local n14 = tonumber(str_invalid)
-      local n15 = tonumber(str_mixed)
-      local n16 = tonumber("")
-
-      -- Numbers passed through (already numbers)
-      local n17 = tonumber(42)
-      local n18 = tonumber(3.14)
-      local n19 = tonumber(i)
-
-      -- Conditional conversion with fallback
-      local val = tonumber(str_int) ?? 0
-      local val2 = tonumber(str_invalid) ?? -1
-   end
-end
-
-----------------------------------------------------------------------------------------------------------------------
+   import './benchmark_struct'
+   import './benchmark_const_optimisation'
 
 function logMessage(message)
    print(message)
 end
 
-   local tm = obj.new('time')
+function cmpResult(Eval:table):any
+   if Eval.min != nil then return Eval.min end
+   if Eval.stats and Eval.stats.min != nil then return Eval.stats.min end
+   return nil
+end
+
+-- Load the most recent Count records from the log, oldest first.  The log is line-delimited JSON, one record per
+-- run, so the whole file is read and the trailing lines decoded.  Records that fail to decode are skipped rather
+-- than aborting the load, because a run interrupted mid-write can leave a partial final line.
+
+function loadResults(Count:num):array<table>
+   local results = array<table> { }
+
+   local log_file = io.open(glLogFile, 'r')
+   if log_file is nil then return results end
+   defer log_file.close() end
+
+   local size = log_file.seek('end', 0)
+   if size is 0 then return results end
+   log_file.seek('set', 0)
+   local buffer = log_file.read(size)
+
+   local lines = buffer.split('\n')
+
+   -- Walk backwards over the lines, collecting decodable records until Count are found.
+   local collected = array<table> { }
+   local i = #lines - 1
+   while i >= 0 and #collected < Count do
+      local line = lines[i]
+      if line?? then
+         local decoded
+         try
+            decoded = json.decode(line)
+         except ex
+            decoded = nil
+         end
+         if decoded != nil then collected.push(decoded) end
+      end
+      i -= 1
+   end
+
+   -- Collected newest first; reverse so that the caller receives them in chronological order.
+   for entry in values(collected) do results.insert(0, entry) end
+
+   return results
+end
+
+-- Format a record's identity for the comparison header.
+
+function describeRun(Entry:table):str
+   local commit = 'unknown'
+   if Entry.git?.commit?? then commit = tostring(Entry.git.commit)[{0 to 9}] end
+   return f'{Entry.git?.branch ?? "unknown"} / {commit}'
+end
+
+-- Compare two sets of benchmark results, reporting the change for every benchmark present in both.
+-- NameWidth aligns the output with whatever else the caller has printed.
+
+function compareResults(Previous:table, Current:table, NameWidth:num)
+   if not Previous.evals?? then
+      logMessage('No results from the earlier run')
+      return
+   end
+
+   local reported = 0
+   for name, eval in Previous.evals.sortByKeys() do
+      if Current.evals[name] then
+         local cmp = Current.evals[name]
+         local last_result = cmpResult(eval)
+         local current_result = cmpResult(cmp)
+         if last_result != nil and current_result != nil then
+            local pad_name = string.format(f'%{NameWidth+2}s', name)
+            local then_and_now = string.format('%5s -> %5s', string.format('%.2f', last_result),
+                                               string.format('%.2f', current_result))
+            local pct = string.format('%8s', string.format("%.2f%%", (last_result - current_result) / current_result * 100))
+            logMessage(f'{pad_name}: {then_and_now} {pct}')
+            reported++
+         end
+      end
+   end
+
+   if reported is 0 then
+      logMessage('No benchmarks are common to both runs.')
+   end
+end
+
+-- Time a single benchmark and return its evaluation table, or nil if the benchmark raised an error.  Config carries
+-- the timing settings gathered from the command line, so that a re-run measures the benchmark on exactly the same
+-- terms as the original run.
+
+function runBenchmark(Name:str, Func:func, Config:table):any
+   local eval
+   try<trace>
+      -- Keep each benchmark independent from trace limits, blacklisting and side traces created by earlier cases.
+      jit.flush()
+      eval = bmark.run({
+         duration     = Config.duration,
+         warmupCalls  = Config.warmup,
+         feedbackRate = 100,
+         maxCalls     = Config.calls,
+         hotLoop      = Config.hotLoop
+      }, nil, Func)
+   except ex
+      logMessage(f'Error in benchmark {Name}: {ex.message}')
+      logMessage(ex.stackTrace)
+   success
+      logMessage(string.format(
+         '%s() Calls Per Second: %d; Total Calls: %d, Fastest: %.3f ms, Median: %.3f ms, Trimmed Tail: %.3f ms',
+         Name, eval.callsPerSecond, eval.benchmarkCalls, eval.stats.min, eval.stats.median, eval.stats.max))
+      if eval.memoryLeakRate / eval.callsPerSecond > 512 then
+         logMessage(string.format('Leak Rate:  %d bytes per call', eval.memoryLeakRate / eval.callsPerSecond))
+      end
+   end
+
+   return eval
+end
+
+-- Reduce an evaluation to the record that is written to the log.  Full retains the exhaustive statistics produced by
+-- bmark.run(), which is what "save=all" asks for.
+
+function summariseEval(Eval:table, Full:bool):table
+   if Full then return Eval end
+
+   return {
+      time    = Eval.benchmarkTime,
+      cps     = math.floor(Eval.callsPerSecond),
+      samples = Eval.stats.sampleSize,
+      min     = Eval.stats.min,
+      median  = Eval.stats.median,
+      p99     = Eval.stats.p99
+   }
+end
+
+-- Re-measure the benchmarks that have regressed against the previous run, keeping whichever result is faster.
+--
+-- A timing run is exposed to whatever else the machine is doing.  A scheduler hiccup or a background process inflates
+-- the measurement of whichever benchmark happens to be running at that moment, and the outcome is a regression in the
+-- report that has nothing to do with the code.  Each benchmark that appears to have regressed by Threshold percent or
+-- more is therefore measured once more, and its result is replaced only if the second measurement is faster.
+--
+-- Only regressions are re-run and only improvements are kept, so the pass can retract a false alarm but cannot
+-- manufacture one: code that is genuinely slower regresses again and keeps its original result.
+
+function retryRegressions(Report:table, Previous:table, Config:table, Threshold:num, NameList:table)
+   if not Previous.evals?? then return end
+
+   local candidates = array<table> { }
+
+   for entry in values(NameList) do
+      local current = Report.evals[entry.name]
+      local prior   = Previous.evals[entry.name]
+      if current is nil or prior is nil then continue end
+
+      local before = cmpResult(prior)
+      local after  = cmpResult(current)
+      if before is nil or after is nil or before <= 0 then continue end
+
+      local regression = (after - before) / before * 100
+      if regression >= Threshold then
+         candidates.push({ name = entry.name, func = entry.func, before = before, after = after,
+                           regression = regression })
+      end
+   end
+
+   if #candidates is 0 then return end
+
+   logMessage('')
+   logMessage(string.format('%d benchmark(s) regressed by %.1f%% or more against the previous run; re-running each ' ..
+      'once.', #candidates, Threshold))
+   logMessage('')
+
+   local replaced = 0
+   for item in values(candidates) do
+      logMessage(string.format('Re-running %s (%.3f -> %.3f ms, %.2f%% slower)', item.name, item.before, item.after,
+         item.regression))
+
+      local eval = runBenchmark(item.name, item.func, Config)
+      if eval is nil then continue end
+
+      local retimed = cmpResult(eval)
+      if retimed is nil then continue end
+
+      if retimed < item.after then
+         Report.evals[item.name] = summariseEval(eval, Config.full)
+         replaced++
+         logMessage(string.format('  Result replaced: %.3f -> %.3f ms', item.after, retimed))
+      else
+         logMessage(string.format('  Result kept: the re-run measured %.3f ms', retimed))
+      end
+   end
+
+   logMessage('')
+   logMessage(string.format('Re-ran %d regressed benchmark(s); %d improved and were replaced.', #candidates, replaced))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- JIT trace analysis.
+--
+-- A benchmark is only meaningful if the code under test is actually being compiled.  Two independent failure modes
+-- are detected, because neither one implies the other:
+--
+--   1. Aborted traces.  The recorder gave up and the code runs in the interpreter.  A small number of aborts is
+--      normal (side exits on cold paths), so this is judged as a proportion of recording attempts.
+--   2. Trace explosion.  Every recording succeeds, but the same code is recorded over and over because the
+--      generated trace is not being reused.  This produces no aborts at all yet is severely slow, so a healthy
+--      abort count alone is not evidence of a healthy benchmark.
+--
+-- A well behaved benchmark records a handful of traces once and then stays on them.
+
+global glTraceStart = 0
+global glTraceStop  = 0
+global glTraceAbort = 0
+
+-- Above this many recordings the benchmark is recording far more than a stable loop nest requires.  Measured
+-- across the existing suite, healthy cases sit well under 30 while pathological cases exceed 300, so the exact
+-- value is not sensitive.
+global glTraceExplosion <const> = 100
+
+-- Proportion of recording attempts that may abort before the code is considered to be running interpreted.
+global glAbortRatioWarn <const> = 0.25
+
+-- The abort ratio is meaningless over a handful of recordings, where a single cold-path abort is both normal and
+-- enough to breach any sensible proportion.  Require an absolute number of aborts before the ratio is applied.
+global glAbortMinimum <const> = 4
+
+function traceAnalysis(Callback:func, Calls:num, HotLoop:num):table
+   -- Discard traces, blacklisting and side traces inherited from earlier benchmarks
+   jit.flush()
+   jit.opt.start(f'hotloop={HotLoop}')
+
+   glTraceStart = 0
+   glTraceStop  = 0
+   glTraceAbort = 0
+
+   local start_time = mSys.PreciseTime()
+   for i in {0 to Calls} do
+      Callback()
+   end
+   local elapsed = (mSys.PreciseTime() - start_time) / 1000.0
+
+   local result = {
+      recorded = glTraceStart,
+      compiled = glTraceStop,
+      aborted  = glTraceAbort,
+      time     = elapsed / Calls
+   }
+
+   result.abortRatio = result.recorded > 0 and (result.aborted / result.recorded) or 0
+
+   -- Classify the outcome.  Order matters: an interpreted benchmark is the more serious diagnosis, so it is
+   -- reported ahead of a trace explosion when a benchmark somehow manages both.
+   if result.recorded is 0 then
+      result.status = 'NO TRACES'
+      result.advice = 'No trace was recorded.  The body may be too short to reach the hot loop threshold, or the ' ..
+                      'JIT may have discarded it as doing no observable work.'
+   elseif result.compiled is 0 then
+      result.status = 'INTERPRETED'
+      result.advice = 'Every recording aborted, so this runs in the interpreter.'
+   elseif result.aborted >= glAbortMinimum and result.abortRatio >= glAbortRatioWarn then
+      result.status = 'PARTIAL'
+      result.advice = string.format('%.0f%% of recordings aborted, so part of this runs in the interpreter.',
+                                    result.abortRatio * 100)
+   elseif result.recorded > glTraceExplosion then
+      result.status = 'CHURNING'
+      result.advice = 'Traces compile but are not reused, so the same code is recorded repeatedly.'
+   else
+      result.status = 'OPTIMISED'
+   end
+
+   return result
+end
+
+   global glArgs = glParser.process()
+   if glArgs is nil then return end
+
+   tm = obj.new('time')
    tm.acQuery()
 
    git_info = git.query(glPath)
@@ -619,22 +404,55 @@ end
    logMessage(f'Git branch: {git_info.branch} / {git_info.commit}')
    logMessage('')
 
-   local duration   = tonumber(arg('duration',2))
-   local warmup     = tonumber(arg('warmup',10))
-   local hotloop    = tonumber(arg('hotloop',5))
-   local call_limit = tonumber(arg('calls',1000))
-   local save_results = arg('save',false)
+   duration     = glArgs.duration
+   warmup       = glArgs.warmup
+   hotloop      = glArgs.hotloop
+   call_limit   = glArgs.calls
+   retry_limit  = glArgs.retry
+   save_results = glArgs.save
+   trace_mode   = glArgs.traces
+   interpreter_mode = glArgs.interpreter
 
-   local test_match = arg('test')
+   test_match = glArgs.test
    if test_match then
-      global rx_test = regex.new(test_match)
-      logMessage(f'Filtering benchmarks with pattern: {test_match}')
+      global rx_test = test_match
+      logMessage(f'Filtering benchmarks with pattern: {test_match.pattern}')
+   end
+
+   -- Reporting mode compares the last two saved runs and exits without benchmarking anything.
+
+   if glArgs.report then
+      local history = loadResults(2)
+
+      if #history < 2 then
+         logMessage(f'Need two saved runs to compare, but the log holds {#history}.')
+         logMessage('Run the benchmarks with "save" to record results for comparison.')
+         return
+      end
+
+      local previous = history[0]
+      local current  = history[1]
+
+      -- Align on the longest name common to both runs, so the report stands alone without the annotation list.
+      local width = 0
+      for name, _ in pairs(previous.evals ?? { }) do
+         if current.evals?[name] and #name > width then width = #name end
+      end
+
+      logMessage(f'Previous: {describeRun(previous)}')
+      logMessage(f'Current:  {describeRun(current)}')
+      logMessage('')
+      logMessage('Comparison of the last two saved runs (+ve % is better):')
+      logMessage('')
+
+      compareResults(previous, current, width)
+      return
    end
 
    report = {
       evals = { },
       config = { },
-      timestamp = tm.timeStamp,
+      timestamp = tm.timestamp,
       git = { branch=git_info.branch, commit=git_info.commit }
    }
 
@@ -644,86 +462,129 @@ end
    longest_name = 0
    for k,v in pairs(anno) do
       local func_name = tostring(k)
-      table.insert(name_list, { name = func_name, func = k })
+      name_list.insert({ name = func_name, func = k })
       if #func_name > longest_name then
          longest_name = #func_name
       end
    end
 
-   table.sort(name_list, function(a:table, b:table):bool
+   name_list.sort(function(a:table, b:table):bool
       return (a.name < b.name)
    end)
 
-   for entry in values(name_list) do
-      func = entry.func
-      name = entry.name
-      entry = anno[func]
+   if trace_mode then
+      jit.attach(function(What:str)
+         if What is 'start' then glTraceStart++
+         elseif What is 'stop' then glTraceStop++
+         elseif What is 'abort' then glTraceAbort++
+         end
+      end, 'trace')
 
-      if rx_test then
-         if not rx_test.match(name) then continue end
-      end
+      logMessage('JIT trace analysis')
+      logMessage('')
+      logMessage(string.format('%-*s  %-11s %8s %8s %8s %10s', longest_name, 'BENCHMARK', 'STATUS',
+         'RECORDED', 'COMPILED', 'ABORTED', 'MS/CALL'))
+      logMessage('-'.rep(longest_name + 50))
 
-      local eval
-      try<trace>
-         eval = bmark.run({
-            duration     = duration,
-            warmupCalls  = warmup,
-            feedbackRate = 100,
-            maxCalls     = call_limit,
-            hotLoop      = hotloop
-         }, nil, func)
-      except ex
-         logMessage(f'Error in benchmark {name}: {ex.message}')
-         logMessage(ex.stackTrace)
-      success
-         logMessage(string.format('%s() Calls Per Second: %d; Total Calls: %d, Fastest: %.3f ms', name, eval.callsPerSecond, eval.benchmarkCalls, eval.stats.min))
-         if eval.memoryLeakRate / eval.callsPerSecond > 512 then
-            logMessage(string.format('Leak Rate:  %d bytes per call', eval.memoryLeakRate / eval.callsPerSecond))
+      local advice = { }
+      local tally = { OPTIMISED=0, CHURNING=0, PARTIAL=0, INTERPRETED=0, ['NO TRACES']=0, ERROR=0 }
+
+      for entry in values(name_list) do
+         local name = entry.name
+
+         if rx_test then
+            if not rx_test.test(name) then continue end
          end
 
-         if save_results is 'all' then
-            report['evals'][name] = eval
-         else
-            report['evals'][name] = {
-               time    = eval.benchmarkTime,
-               cps     = math.floor(eval.callsPerSecond),
-               samples = eval.stats.sampleSize,
-               fastest = eval.stats.min,
-               median  = eval.stats.median,
-               p99     = eval.stats.p99
-            }
+         -- A handful of calls is enough for the trace behaviour to settle, and keeps analysis of the slowest
+         -- benchmarks fast.  Trace counts are a property of the code, not of how long it is exercised.
+         local analysis
+         try<trace>
+            analysis = traceAnalysis(entry.func, 3, hotloop)
+         except ex
+            tally.ERROR++
+            logMessage(string.format('%-*s  %-11s %s', longest_name, name, 'ERROR', ex.message))
+            continue
+         end
+
+         tally[analysis.status] += 1
+
+         logMessage(string.format('%-*s  %-11s %8d %8d %8d %10.3f', longest_name, name, analysis.status,
+            analysis.recorded, analysis.compiled, analysis.aborted, analysis.time))
+
+         if analysis.advice then
+            advice.insert({ name = name, status = analysis.status, advice = analysis.advice })
          end
       end
+
+      logMessage('')
+      logMessage(string.format('Optimised: %d, Churning: %d, Partial: %d, Interpreted: %d, No traces: %d, Errors: %d',
+         tally.OPTIMISED, tally.CHURNING, tally.PARTIAL, tally.INTERPRETED, tally['NO TRACES'], tally.ERROR))
+
+      if #advice > 0 then
+         logMessage('')
+         logMessage('Benchmarks not fully optimised:')
+         logMessage('')
+         for item in values(advice) do
+            logMessage(f'  {item.name} [{item.status}]')
+            logMessage(f'    {item.advice}')
+         end
+      end
+
+      -- Trace analysis replaces the timing run, so there is nothing to save or compare against.
+      return
    end
+
+   if interpreter_mode then
+      jit.off()
+      logMessage('Interpreter-only timing mode')
+   else
+      jit.on()
+   end
+
+   -- The previous run is loaded before any timing takes place, because the retry pass that follows the timing loop
+   -- needs it in order to identify which benchmarks have regressed.
 
    local last_result
    try
-      log_file = io.open(glLogFile, 'r')
-      local offset = 1024
-      local pos = 1
-      local buffer = ''
-      local rx = regex.new('(.*)\n(?!\n)')
-      while (pos > 0) do
-         pos     = log_file:seek('end', offset)
-         segment = log_file:read(1024)
-         buffer  = segment .. buffer
-         while buffer:endsWith('\n') do
-            buffer = buffer:rtrim()
-         end
-
-         split = buffer:find('\n')
-         if split then
-            last_result = json.decode(buffer:substr(split))
-            break
-         end
-         offset += 1024
-      end
-      log_file:close()
+      logMessage(f'Loading last results from log file "{glLogFile}"...')
+      local history = loadResults(1)
+      if #history > 0 then last_result = history[0] end
+   except ex
+      logMessage(f'Error loading last results: {ex.message}')
    end
+
+   bench_config = {
+      duration = duration,
+      warmup   = warmup,
+      hotLoop  = hotloop,
+      calls    = call_limit,
+      full     = (save_results is 'all')
+   }
+
+   for entry in values(name_list) do
+      if rx_test then
+         if not rx_test.test(entry.name) then continue end
+      end
+
+      local eval = runBenchmark(entry.name, entry.func, bench_config)
+      if eval != nil then report['evals'][entry.name] = summariseEval(eval, bench_config.full) end
+   end
+
+   -- Retry regressions before the JIT state is restored, so that a re-run is measured under the same conditions as
+   -- the original.
+
+   if retry_limit > 0 and last_result != nil then
+      retryRegressions(report, last_result, bench_config, retry_limit, name_list)
+   end
+
+   if interpreter_mode then jit.on() end
 
    -- Save the results
 
    if save_results?? then
+      logMessage(f'Saving results to log file "{glLogFile}"...')
+
       report['config'] = {
          duration  = duration,
          warmup    = warmup,
@@ -732,9 +593,9 @@ end
       }
 
       log_file = io.open(glLogFile, 'a')
-      log_file:write(json.encode(report))
-      log_file:write('\n')
-      log_file:close()
+      log_file.write(json.encode(report))
+      log_file.write('\n')
+      log_file.close()
    end
 
    if last_result then
@@ -742,15 +603,7 @@ end
       logMessage('Comparison to last run (+ve % is better):')
       logMessage('')
 
-      for name, eval in table.sortByKeys(last_result.evals) do
-         if report.evals[name] then
-            local cmp = report.evals[name]
-            if eval.p99 and cmp.p99 then
-               local pad_name = string.format(f'%{longest_name+2}s', name)
-               local then_and_now = string.format('%5s -> %5s', string.format('%.2f', eval.p99), string.format('%.2f', cmp.p99))
-               local pct = string.format('%8s', string.format("%.2f%%",(eval.p99 - cmp.p99) / cmp.p99 * 100))
-               logMessage(f'{pad_name}: {then_and_now} {pct}')
-            end
-         end
-      end
+      compareResults(last_result, report, longest_name)
+   else
+      logMessage('No previous results found')
    end

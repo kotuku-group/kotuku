@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <cstdio>
+#include <string>
 #include <kotuku/system/errors.h>
 #include "lua.h"
 #include "lj_obj.h"
@@ -20,10 +21,8 @@ struct luaL_Reg {
 
 extern void luaL_openlib(lua_State *, const char *, const luaL_Reg *, int);
 extern void luaL_register(lua_State *, const char *, const luaL_Reg *);
-extern int luaL_getmetafield(lua_State *, int, const char *);
-extern int luaL_callmeta(lua_State *, int, const char *);
-extern int luaL_typerror(lua_State *, int, const char *);
-extern int luaL_argerror(lua_State *, int, const char *);
+[[noreturn]] extern void luaL_typerror(lua_State *, int, const char *);
+[[noreturn]] extern void luaL_argerror(lua_State *, int, const char *);
 extern const char * luaL_checklstring(lua_State *, int, size_t * = nullptr);
 extern uint32_t luaL_checkstringhash(lua_State *, int);
 extern const char * luaL_optlstring(lua_State *, int, const char *, size_t * = nullptr);
@@ -37,9 +36,18 @@ extern void luaL_checkany(lua_State *, int);
 extern int  luaL_newmetatable(lua_State *, const char *);
 extern void * luaL_checkudata(lua_State *, int ud, const char *);
 extern void luaL_where(lua_State *, int lvl);
+// Codeless raises.  These cannot describe the fault, so the exception surfaces as a bare ERR::Exception and no
+// 'except when' filter can select it.  Pass an ERR code instead; use ERR::Exception explicitly if no better code
+// applies.
+
+[[deprecated("pass an ERR code: luaL_error(L, ERR::Code, fmt, ...)")]]
 [[noreturn]] extern void luaL_error(lua_State *, const char *fmt, ...);
+[[deprecated("pass an ERR code: luaL_error(L, ERR::Code, std::string)")]]
+[[noreturn]] extern void luaL_error(lua_State *, std::string);
 [[noreturn]] extern void luaL_error(lua_State *, ERR);
 [[noreturn]] extern void luaL_error(lua_State *, ERR, const char *, ...);
+[[noreturn]] extern void luaL_error(lua_State *, ERR, std::string);
+[[noreturn]] extern void luaL_error_current(lua_State *, ERR, const char *, ...);
 extern int luaL_checkoption(lua_State *, int, const char *, const char *const lst[]);
 extern TValue * resolve_index(lua_State *L, int);
 
@@ -49,7 +57,7 @@ constexpr int LUA_REFNIL = -1;
 
 extern int luaL_ref(lua_State *, int t);
 extern void luaL_unref(lua_State *, int t, int ref);
-extern lua_State * luaL_newstate(class objScript *);
+extern lua_State * luaL_newstate(class extTiri *);
 extern const char * luaL_gsub(lua_State *, const char *s, const char *p, const char *r);
 extern const char * luaL_findtable(lua_State *, int idx, const char *fname, int szhint);
 extern void luaL_traceback (lua_State *, lua_State *L1, const char *msg, int level);
@@ -60,6 +68,15 @@ extern void luaL_setmetatable(lua_State *, const char *tname);
 
 inline void luaL_argcheck(lua_State *L, bool Cond, int NumArg, const char *ExtraMsg) {
    if (not Cond) luaL_argerror(L, NumArg, ExtraMsg);
+}
+
+inline bool luaL_checkstring(lua_State *L, int N, std::string_view &SV) {
+   size_t len;
+   if (auto str = luaL_checklstring(L, N, &len)) {
+      SV = std::string_view{str, len};
+      return true;
+   }
+   else return false;
 }
 
 inline const char * luaL_checkstring(lua_State *L, int N) { return luaL_checklstring(L, N, nullptr); }

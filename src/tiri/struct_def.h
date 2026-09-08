@@ -1,77 +1,101 @@
 #pragma once
 
 #include <string>
+#include <cstdint>
 #include <vector>
 #include <string_view>
 #include <kotuku/strings.hpp>
+#include <kotuku/system/registry.h>
+
+enum class NativeStructType : uint8_t {
+   Legacy,
+   Bool,
+   Char,
+   Int8,
+   UInt8,
+   Int16,
+   UInt16,
+   Int32,
+   UInt32,
+   Int64,
+   UInt64,
+   Float,
+   Double,
+   String,
+   CStr,
+   Pointer,
+   Struct,
+   Object,
+   Function
+};
+
+[[nodiscard]] NativeStructType effective_scalar_type(uint32_t FieldFlags, NativeStructType NativeType) noexcept;
+
+struct struct_record;
 
 struct struct_field {
    std::string Name;      // Field name
-   std::string StructRef; // Named reference to other structure
+   uint32_t StructRef = 0; // struct_key() of a referenced structure; 0 = no reference
+   CLASSID ObjectClassID = CLASSID::NIL; // Optional class constraint for obj<Class> fields
+   struct_record *StructDefinition = nullptr; // Resolved definition; registry ownership remains external
    uint16_t Offset = 0;   // Offset to the field value.
    int  Type      = 0;    // FD flags
    int  ArraySize = 0;    // Set if the field is an array
+   uint16_t ElementStride = 0; // Byte stride for dynamically sized struct elements
+   bool TrivialElements = false; // Struct vectors may use type-erased ownership only when validated as trivial
+   NativeStructType NativeType = NativeStructType::Legacy;
 
-   uint32_t nameHash() {
-      if (!NameHash) NameHash = pf::strihash(Name);
-      return NameHash;
-   }
+   void precomputeNameHash() { NameHash = kt::strihash(Name); }
+   [[nodiscard]] uint32_t nameHash() const { return NameHash; }
 
    private:
    uint32_t NameHash = 0;     // Lowercase hash of the field name
 };
 
+[[nodiscard]] inline NativeStructType effective_scalar_type(const struct_field &Field) noexcept
+{
+   return effective_scalar_type(uint32_t(Field.Type), Field.NativeType);
+}
+
 struct struct_record {
    std::string Name;
    std::vector<struct_field> Fields;
    int Size = 0; // Total byte size of the structure
+   int Alignment = 1; // Strictest native member alignment, including tail padding
+   std::string DeclarationSource;
+   uint32_t DeclarationLine = 0;
    struct_record(std::string_view pName) : Name(pName) { }
    struct_record() = default;
 };
 
 //********************************************************************************************************************
-// Structure names have their own handler due to the use of colons in struct references, i.e. "OfficialStruct:SomeName"
+// Struct references may include a colon-delimited field suffix, i.e. "OfficialStruct:SomeName".
 
-struct struct_name {
-   std::string name;
-   struct_name(const std::string_view pName) {
-      auto colon = pName.find(':');
+[[nodiscard]] constexpr inline std::string_view struct_name_prefix(std::string_view Name) noexcept
+{
+   auto colon = Name.find(':');
+   return (colon IS std::string_view::npos) ? Name : Name.substr(0, colon);
+}
 
-      if (colon IS std::string::npos) name = pName;
-      else name = pName.substr(0, colon);
+[[nodiscard]] constexpr inline bool valid_struct_name(std::string_view Name) noexcept
+{
+   Name = struct_name_prefix(Name);
+   if (Name.empty()) return false;
+
+   auto first = uint8_t(Name.front());
+   if (not (((first >= 'A') and (first <= 'Z')) or ((first >= 'a') and (first <= 'z')))) return false;
+
+   for (auto value : Name.substr(1)) {
+      auto c = uint8_t(value);
+      if (not (((c >= 'A') and (c <= 'Z')) or ((c >= 'a') and (c <= 'z')) or
+            ((c >= '0') and (c <= '9')))) return false;
    }
+   return true;
+}
 
-   bool operator==(const std::string_view &other) const {
-      return (name == other);
-   }
+// Struct names are case-sensitive.  Field names remain case-insensitive via struct_field::precomputeNameHash().
 
-   bool operator==(const struct_name &other) const {
-      return (name == other.name);
-   }
-};
-
-struct struct_hash { // Stops when an invalid character is encountered (typically a colon separator)
-   std::size_t operator()(const struct_name &k) const {
-      uint32_t hash = 5381;
-      for (auto c : k.name) {
-         if ((c >= 'A') and (c <= 'Z'));
-         else if ((c >= 'a') and (c <= 'z'));
-         else if ((c >= '0') and (c <= '9'));
-         else break;
-         hash = ((hash<<5) + hash) + uint8_t(c);
-      }
-      return hash;
-   }
-
-   std::size_t operator()(const std::string_view k) const {
-      uint32_t hash = 5381;
-      for (auto c : k) {
-         if ((c >= 'A') and (c <= 'Z'));
-         else if ((c >= 'a') and (c <= 'z'));
-         else if ((c >= '0') and (c <= '9'));
-         else break;
-         hash = ((hash<<5) + hash) + uint8_t(c);
-      }
-      return hash;
-   }
-};
+[[nodiscard]] constexpr inline uint32_t struct_key(std::string_view Name) noexcept
+{
+   return kt::strhash(struct_name_prefix(Name));
+}

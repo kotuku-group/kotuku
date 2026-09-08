@@ -12,6 +12,45 @@
 #include "lua.h"
 
 //********************************************************************************************************************
+// JITStackSync: synchronise interpreter stack pointers while a recorded C helper is running.
+//
+// Compiled traces keep their active base in global_State::jit_base and do not maintain L->base or L->top.  Helpers
+// that allocate or raise must expose the trace frame to the GC and error unwinder.  restore() is deliberately explicit:
+// normal returns restore the prior interpreter view, while a non-local error leaves the synchronised state intact for
+// unwinding.
+
+class JITStackSync {
+   lua_State *lua_;
+   ptrdiff_t saved_base_;
+   ptrdiff_t saved_top_;
+   bool active_;
+
+public:
+   explicit JITStackSync(lua_State *L) noexcept :
+      lua_(L), saved_base_(0), saved_top_(0), active_(false)
+   {
+      if (auto jit_base = tvref(G(L)->jit_base); jit_base) {
+         saved_base_ = savestack(L, L->base);
+         saved_top_ = savestack(L, L->top);
+         active_ = true;
+         L->base = jit_base;
+         if (curr_funcisL(L)) L->top = curr_topL(L);
+      }
+   }
+
+   void restore() noexcept
+   {
+      if (active_) {
+         lua_->base = restorestack(lua_, saved_base_);
+         lua_->top = restorestack(lua_, saved_top_);
+      }
+   }
+
+   JITStackSync(const JITStackSync &) = delete;
+   JITStackSync & operator=(const JITStackSync &) = delete;
+};
+
+//********************************************************************************************************************
 // VMHelperGuard: RAII guard for C functions called from VM assembler code
 //
 // When the VM assembler calls C helper functions (marked LJ_FUNCA), the Lua state may be in a partially synchronised
@@ -342,15 +381,30 @@ public:
 //    return tvistruecond(MetaCall::invoke(L, base, 2, 1));
 
 namespace MetaCall {
+
+   [[nodiscard]] inline size_t outerContextDepth(lua_State *L, TValue *Base) noexcept {
+      size_t depth = lj_context_depth(L);
+      if (not L->context_stack.empty() and
+          L->context_stack.back().owner_kind IS lua_State::ContextFrame::OwnerKind::Call and
+          L->context_stack.back().owner_base IS savestack(L, Base)) return depth - 1;
+      return depth;
+   }
    // Invoke a metamethod call where base was returned by lj_meta_*
    // slotsUsed: number of slots the metamethod prepared (typically 2 for binary ops)
    // nresults: number of expected results (typically 1)
    // Returns: pointer to first result
 
    [[nodiscard]] inline TValue* invoke(lua_State* L, TValue* base, int slotsUsed, int nresults = 1) noexcept {
-      L->top = base + slotsUsed;
+      [[maybe_unused]] size_t context_depth = outerContextDepth(L, base);
+      lj_assertL(slotsUsed IS 2 or slotsUsed IS 3, "unexpected C API metamethod argument count: %d", slotsUsed);
+      int argument_count = L->metamethod_argument_count;
+      lj_assertL(argument_count <= slotsUsed, "C API metamethod prepared too many arguments");
+      L->top = base + argument_count;
       lj_vm_call(L, base, nresults + 1);
-      L->top -= slotsUsed + LJ_FR2;
+      lj_assertL(lj_context_depth(L) IS context_depth,
+         "C API metamethod returned with unbalanced contextual activations");
+      // The result replaces the metamethod slot, so caller restoration is independent of the argument count.
+      L->top -= 2 + LJ_FR2;
       return Frame::result(L);
    }
 
@@ -358,8 +412,15 @@ namespace MetaCall {
    // Returns pointer to result value
 
    [[nodiscard]] inline TValue* invokeGet(lua_State* L) noexcept {
-      L->top += 2;
-      lj_vm_call(L, L->top - 2, 1 + 1);
+      TValue *base = L->top;
+      [[maybe_unused]] size_t context_depth = outerContextDepth(L, base);
+      int argument_count = L->metamethod_argument_count;
+      lj_assertL(argument_count IS 1 or argument_count IS 2,
+         "C API __index prepared an unexpected argument count");
+      L->top += argument_count;
+      lj_vm_call(L, base, 1 + 1);
+      lj_assertL(lj_context_depth(L) IS context_depth,
+         "C API __index returned with unbalanced contextual activations");
       L->top -= 2 + LJ_FR2;
       return Frame::result(L);
    }
@@ -370,9 +431,15 @@ namespace MetaCall {
    // Value offset: 3 + 2*LJ_FR2 slots before base
 
    inline void invokeSetTable(lua_State* L, TValue* base) noexcept {
-      copyTV(L, base + 2, base - 3 - 2 * LJ_FR2);  // Copy value to arg position
-      L->top = base + 3;                           // func, nil, table, key, value -> 3 args past base
+      [[maybe_unused]] size_t context_depth = outerContextDepth(L, base);
+      int argument_count = L->metamethod_argument_count;
+      lj_assertL(argument_count IS 1 or argument_count IS 2,
+         "C API __newindex prepared an unexpected initial argument count");
+      copyTV(L, base + argument_count, base - 3 - 2 * LJ_FR2);
+      L->top = base + argument_count + 1;
       lj_vm_call(L, base, 0 + 1);                  // No results expected
+      lj_assertL(lj_context_depth(L) IS context_depth,
+         "C API __newindex returned with unbalanced contextual activations");
       L->top -= 3 + LJ_FR2;                        // Adjust stack
    }
 
@@ -380,9 +447,15 @@ namespace MetaCall {
    // Similar to invokeSetTable but different final adjustment
 
    inline void invokeSetField(lua_State* L, TValue* base) noexcept {
-      copyTV(L, base + 2, base - 3 - 2 * LJ_FR2);  // Copy value to arg position
-      L->top = base + 3;
+      [[maybe_unused]] size_t context_depth = outerContextDepth(L, base);
+      int argument_count = L->metamethod_argument_count;
+      lj_assertL(argument_count IS 1 or argument_count IS 2,
+         "C API __newindex prepared an unexpected initial argument count");
+      copyTV(L, base + argument_count, base - 3 - 2 * LJ_FR2);
+      L->top = base + argument_count + 1;
       lj_vm_call(L, base, 0 + 1);
+      lj_assertL(lj_context_depth(L) IS context_depth,
+         "C API __newindex returned with unbalanced contextual activations");
       L->top -= 2 + LJ_FR2;                        // Different adjustment for setfield
    }
 
@@ -392,9 +465,17 @@ namespace MetaCall {
    // After call, copies result to L->top - 1
 
    inline int invokeConcat(lua_State* L, TValue* top) noexcept {
+      [[maybe_unused]] size_t context_depth = outerContextDepth(L, top);
       int consumed = int(L->top - (top - 2 * LJ_FR2));
-      L->top = top + 2;
+      int argument_count = L->metamethod_argument_count;
+      lj_assertL(argument_count IS 2 or argument_count IS 3,
+         "C API __concat prepared an unexpected argument count");
+      L->top = top + argument_count;
       lj_vm_call(L, top, 1 + 1);
+      lj_assertL(lj_context_depth(L) IS context_depth,
+         "C API __concat returned with unbalanced contextual activations");
+      // lj_vm_call() restores top to the metamethod base irrespective of its argument count.  Keep the
+      // concatenation result in the same replacement slot as the two-argument layout.
       L->top -= 1 + LJ_FR2;
       copyTV(L, L->top - 1, L->top + LJ_FR2);
       return consumed;

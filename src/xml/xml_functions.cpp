@@ -41,34 +41,28 @@ static void output_attribvalue(std::string_view String, std::ostringstream &Outp
    }
 }
 
-inline void assign_string(STRING &Target, const std::string_view Value)
+static bool ci_keyword(std::string_view &View, std::string_view Keyword) noexcept
 {
-   if (Target) { FreeResource(Target); Target = nullptr; }
-   if (not Value.empty()) Target = pf::strclone(Value);
-}
+   if (Keyword.empty() or View.size() < Keyword.size()) return false;
 
-static bool ci_keyword(std::string_view &view, std::string_view keyword) noexcept
-{
-   if (keyword.empty() or view.size() < keyword.size()) return false;
-
-   for (size_t i = 0; i < keyword.size(); ++i) {
-      if (to_lower(view[i]) != to_lower(keyword[i])) return false;
+   for (size_t i = 0; i < Keyword.size(); ++i) {
+      if (to_lower(View[i]) != to_lower(Keyword[i])) return false;
    }
 
    // Check that we're not matching a partial name
-   if ((view.size() > keyword.size()) and
-       is_name_char(view[keyword.size()]) and
-       (view[keyword.size()] != '[')) return false;
+   if ((View.size() > Keyword.size()) and
+       is_name_char(View[Keyword.size()]) and
+       (View[Keyword.size()] != '[')) return false;
 
-   view.remove_prefix(keyword.size());
+   View.remove_prefix(Keyword.size());
    return true;
 }
 
-static bool ci_keyword(ParseState &State, std::string_view keyword) noexcept
+static bool ci_keyword(ParseState &State, std::string_view Keyword) noexcept
 {
    auto view = State.cursor;
-   if (ci_keyword(view, keyword)) {
-      State.next(keyword.size());
+   if (ci_keyword(view, Keyword)) {
+      State.next(Keyword.size());
       return true;
    }
    return false;
@@ -96,7 +90,7 @@ static void expand_entity_references(extXML *Self, std::string &Value,
 static ERR resolve_entity_internal(extXML *Self, const std::string &Name, std::string &Value,
    bool Parameter, ankerl::unordered_dense::set<std::string> &EntityStack, ankerl::unordered_dense::set<std::string> &ParameterStack)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    auto &stack = Parameter ? ParameterStack : EntityStack;
    if (stack.contains(Name)) return log.warning(ERR::Loop);
@@ -166,7 +160,7 @@ static void expand_entity_references(extXML *Self, std::string &Value,
             std::string resolved;
 
             // Only create string if resolution succeeds to avoid unnecessary allocation
-            if (resolve_entity_internal(Self, std::string(name_view), resolved, is_parameter, EntityStack, ParameterStack) IS ERR::Okay) {
+            if (!resolve_entity_internal(Self, std::string(name_view), resolved, is_parameter, EntityStack, ParameterStack)) {
                output.append(resolved);
             }
             else { // Reconstruct the original entity reference
@@ -248,7 +242,7 @@ static bool read_quoted(extXML *Self, ParseState &State, std::string &Result,
             std::string name(State.cursor.data(), name_length);
             std::string resolved;
 
-            if (resolve_entity_internal(Self, name, resolved, is_parameter, EntityStack, ParameterStack) IS ERR::Okay) {
+            if (!resolve_entity_internal(Self, name, resolved, is_parameter, EntityStack, ParameterStack)) {
                buffer += resolved;
             }
             else {
@@ -285,9 +279,9 @@ static void parse_doctype(extXML *Self, ParseState &State)
    auto type_view = read_name(view);
    if (type_view.empty()) return;
 
-   assign_string(Self->DocType, type_view);
-   if (Self->PublicID) { FreeResource(Self->PublicID); Self->PublicID = nullptr; }
-   if (Self->SystemID) { FreeResource(Self->SystemID); Self->SystemID = nullptr; }
+   Self->DocType = type_view;
+   Self->PublicID.clear();
+   Self->SystemID.clear();
    Self->Entities.clear();
    Self->ParameterEntities.clear();
    Self->Notations.clear();
@@ -304,19 +298,19 @@ static void parse_doctype(extXML *Self, ParseState &State)
       State.skipWhitespace(Self->LineNo);
       std::string public_id;
       if (read_quoted(Self, State, public_id, entity_stack, parameter_stack)) {
-         if (not standalone) assign_string(Self->PublicID, public_id);
+         if (not standalone) Self->PublicID = public_id;
       }
       State.skipWhitespace(Self->LineNo);
       std::string system_id;
       if (read_quoted(Self, State, system_id, entity_stack, parameter_stack)) {
-         if (not standalone) assign_string(Self->SystemID, system_id);
+         if (not standalone) Self->SystemID = system_id;
       }
    }
    else if (ci_keyword(State, "SYSTEM")) {
       State.skipWhitespace(Self->LineNo);
       std::string system_id;
       if (read_quoted(Self, State, system_id, entity_stack, parameter_stack)) {
-         if (not standalone) assign_string(Self->SystemID, system_id);
+         if (not standalone) Self->SystemID = system_id;
       }
    }
 
@@ -459,9 +453,9 @@ static void extract_content(extXML *Self, TAGS &Tags, ParseState &State)
       auto end_ptr = State.cursor.data();
       auto ptr = content.cursor.data();
 
+      // Newlines in this span were already counted by skipTo() above; this loop only strips carriage returns.
       while (ptr < end_ptr) {
          char ch = *ptr++;
-         if (ch == '\n') ++Self->LineNo;
          if (ch != '\r') str.push_back(ch);
       }
 
@@ -531,7 +525,7 @@ static ERR parse_tag(extXML *Self, TAGS &Tags, ParseState &State)
 {
    enum { RAW_NONE=0, RAW_CDATA, RAW_NDATA };
 
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    log.traceBranch("%.*s", int(State.cursor.size()), State.cursor.data());
 
@@ -713,20 +707,14 @@ static ERR parse_tag(extXML *Self, TAGS &Tags, ParseState &State)
          if (State.current() IS '"') {
             State.next();
             auto value_start = State.cursor.data();
-            while ((not State.done()) and (State.current() != '"')) {
-               if (State.current() IS '\n') Self->LineNo++;
-               State.next();
-            }
+            State.skipTo('"', Self->LineNo); // SSE4.2-accelerated scan to the closing quote
             val.assign(value_start, State.cursor.data() - value_start);
             if (State.current() IS '"') State.next();
          }
          else if (State.current() IS '\'') {
             State.next();
             auto value_start = State.cursor.data();
-            while ((not State.done()) and (State.current() != '\'')) {
-               if (State.current() IS '\n') Self->LineNo++;
-               State.next();
-            }
+            State.skipTo('\'', Self->LineNo);
             val.assign(value_start, State.cursor.data() - value_start);
             if (State.current() IS '\'') State.next();
          }
@@ -780,7 +768,7 @@ static ERR parse_tag(extXML *Self, TAGS &Tags, ParseState &State)
       }
       else tag.Attribs.emplace_back(name_string, std::string{});
 
-      if (has_value and pf::iequals(name_string, "xml:base")) {
+      if (has_value and kt::iequals(name_string, "xml:base")) {
          std::string resolved;
 
          if (value_string.empty()) {
@@ -801,10 +789,10 @@ static ERR parse_tag(extXML *Self, TAGS &Tags, ParseState &State)
 
       if (xml_instruction) {
          if (tag.Attribs.size() IS 1) {
-            is_xml_declaration = pf::iequals(tag.Attribs[0].Name, "?xml");
+            is_xml_declaration = kt::iequals(tag.Attribs[0].Name, "?xml");
          }
-         else if (is_xml_declaration and has_value and pf::iequals(name_string, "standalone")) {
-            if (pf::iequals(value_string, "yes")) Self->Flags |= XMF::STANDALONE;
+         else if (is_xml_declaration and has_value and kt::iequals(name_string, "standalone")) {
+            if (kt::iequals(value_string, "yes")) Self->Flags |= XMF::STANDALONE;
             else Self->Flags &= ~XMF::STANDALONE;
          }
       }
@@ -852,10 +840,10 @@ static ERR parse_tag(extXML *Self, TAGS &Tags, ParseState &State)
          if (error IS ERR::NothingDone) { // Extract any additional content trapped between tags
             extract_content(Self, Tags.back().Children, State);
          }
-         else if (error IS ERR::Okay) { // Extract any new content caught in-between tags
+         else if (!error) { // Extract any new content caught in-between tags
             extract_content(Self, Tags.back().Children, State);
          }
-         else return ERR::Failed;
+         else return error;
       }
 
       // There should be a closing tag - skip past it
@@ -880,12 +868,12 @@ static ERR parse_tag(extXML *Self, TAGS &Tags, ParseState &State)
 
 static ERR txt_to_xml(extXML *Self, TAGS &Tags, std::string_view Text)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (&Tags IS &Self->Tags) {
-      if (Self->DocType)  { FreeResource(Self->DocType); Self->DocType = nullptr; }
-      if (Self->PublicID) { FreeResource(Self->PublicID); Self->PublicID = nullptr; }
-      if (Self->SystemID) { FreeResource(Self->SystemID); Self->SystemID = nullptr; }
+      Self->DocType.clear();
+      Self->PublicID.clear();
+      Self->SystemID.clear();
       Self->Entities.clear();
       Self->ParameterEntities.clear();
       Self->Notations.clear();
@@ -903,7 +891,7 @@ static ERR txt_to_xml(extXML *Self, TAGS &Tags, std::string_view Text)
 
    ParseState state(Text);
 
-   if (Self->Path) state.CurrentBase = xml::uri::normalise_uri_separators(std::string(Self->Path));
+   if (not Self->Path.empty()) state.CurrentBase = xml::uri::normalise_uri_separators(Self->Path);
    else state.CurrentBase.clear();
 
    state.skipTo('<', Self->LineNo); // Skip any leading whitespace or content
@@ -948,14 +936,33 @@ static ERR txt_to_xml(extXML *Self, TAGS &Tags, std::string_view Text)
 //********************************************************************************************************************
 // Serialise XML data into string form.
 
-static void serialise_xml(XTag &Tag, std::ostringstream &Buffer, XMF Flags)
+static bool has_content_child(const XTag &Tag, XMF Flags)
 {
-   if (Tag.Attribs[0].isContent()) {
+   for (auto &child : Tag.Children) {
+      if (not child.Attribs[0].isContent()) continue;
+      if ((child.Flags & XTF::COMMENT) != XTF::NIL) continue;
+      if (((child.Flags & XTF::CDATA) != XTF::NIL) and ((Flags & XMF::STRIP_CDATA) != XMF::NIL)) continue;
+      return true;
+   }
+
+   return false;
+}
+
+static void serialise_xml(XTag &Tag, std::ostringstream &Buffer, XMF Flags, size_t Depth = 0, bool Inline = false)
+{
+   if (((Tag.Flags & XTF::CDATA) != XTF::NIL) and ((Flags & XMF::STRIP_CDATA) != XMF::NIL)) return;
+
+   const bool readable = ((Flags & XMF::READABLE) != XMF::NIL) and (not Inline);
+   if (readable) Buffer << std::string(Depth * 3, ' ');
+
+   if ((Tag.Flags & XTF::COMMENT) != XTF::NIL) {
+      Buffer << "<!--" << Tag.Attribs[0].Value << "-->";
+      if (readable) Buffer << '\n';
+   }
+   else if (Tag.Attribs[0].isContent()) {
       if (not Tag.Attribs[0].Value.empty()) {
          if ((Tag.Flags & XTF::CDATA) != XTF::NIL) {
-            if ((Flags & XMF::STRIP_CDATA) IS XMF::NIL) Buffer << "<![CDATA[";
-            Buffer << Tag.Attribs[0].Value;
-            if ((Flags & XMF::STRIP_CDATA) IS XMF::NIL) Buffer << "]]>";
+            Buffer << "<![CDATA[" << Tag.Attribs[0].Value << "]]>";
          }
          else {
             // Use lookup table for efficient escaping (matching output_attribvalue)
@@ -971,24 +978,27 @@ static void serialise_xml(XTag &Tag, std::ostringstream &Buffer, XMF Flags)
             if (last_pos < str.size()) Buffer.write(str.data() + last_pos, str.size() - last_pos);
          }
       }
+      if (readable) Buffer << '\n';
    }
    else if ((Flags & XMF::OMIT_TAGS) != XMF::NIL) {
       if (not Tag.Children.empty()) {
+         const bool inline_children = Inline or has_content_child(Tag, Flags);
          for (auto &child : Tag.Children) {
-            serialise_xml(child, Buffer, Flags);
+            serialise_xml(child, Buffer, Flags, Depth, inline_children);
          }
-         if ((Flags & XMF::READABLE) != XMF::NIL) Buffer << '\n';
       }
    }
    else {
       Buffer << '<';
 
       bool insert_space = false;
-      for (auto &scan : Tag.Attribs) {
+      for (size_t i = 0; i < Tag.Attribs.size(); i++) {
+         auto &scan = Tag.Attribs[i];
          if (insert_space) Buffer << ' ';
          if (not scan.Name.empty()) output_attribvalue(scan.Name, Buffer);
 
-         if (not scan.Value.empty()) {
+         const bool requires_value = (i > 0) and ((Tag.Flags & (XTF::INSTRUCTION|XTF::NOTATION)) IS XTF::NIL);
+         if (requires_value or (not scan.Value.empty())) {
             if (not scan.Name.empty()) Buffer << '=';
             Buffer << '"';
             output_attribvalue(scan.Value, Buffer);
@@ -999,28 +1009,30 @@ static void serialise_xml(XTag &Tag, std::ostringstream &Buffer, XMF Flags)
 
       if ((Tag.Flags & XTF::INSTRUCTION) != XTF::NIL) {
          Buffer << "?>";
-         if ((Flags & XMF::READABLE) != XMF::NIL) Buffer << '\n';
+         if (readable) Buffer << '\n';
       }
       else if ((Tag.Flags & XTF::NOTATION) != XTF::NIL) {
          Buffer << '>';
-         if ((Flags & XMF::READABLE) != XMF::NIL) Buffer << '\n';
+         if (readable) Buffer << '\n';
       }
       else if (not Tag.Children.empty()) {
+         const bool inline_children = Inline or has_content_child(Tag, Flags);
          Buffer << '>';
-         if (not Tag.Children[0].Attribs[0].isContent()) Buffer << '\n';
+         if (readable and (not inline_children)) Buffer << '\n';
 
          for (auto &child : Tag.Children) {
-            serialise_xml(child, Buffer, Flags);
+            serialise_xml(child, Buffer, Flags, Depth + 1, inline_children);
          }
 
+         if (readable and (not inline_children)) Buffer << std::string(Depth * 3, ' ');
          Buffer << "</";
          output_attribvalue(Tag.Attribs[0].Name, Buffer);
          Buffer << '>';
-         if ((Flags & XMF::READABLE) != XMF::NIL) Buffer << '\n';
+         if (readable) Buffer << '\n';
       }
       else {
          Buffer << "/>";
-         if ((Flags & XMF::READABLE) != XMF::NIL) Buffer << '\n';
+         if (readable) Buffer << '\n';
       }
    }
 }
@@ -1029,7 +1041,7 @@ static void serialise_xml(XTag &Tag, std::ostringstream &Buffer, XMF Flags)
 
 static ERR parse_source(extXML *Self)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    CacheFile *filecache;
 
    log.traceBranch();
@@ -1059,7 +1071,8 @@ static ERR parse_source(extXML *Self)
          // Read directly into the buffer
          buffer.resize(current_size + growth_threshold);
          int result;
-         if (acRead(Self->Source, buffer.data() + current_size, growth_threshold, &result) != ERR::Okay) {
+         if (acRead(Self->Source,
+             std::span<int8_t>((int8_t *)buffer.data() + current_size, growth_threshold), &result) != ERR::Okay) {
             Self->ParseError = ERR::Read;
             break;
          }
@@ -1071,11 +1084,11 @@ static ERR parse_source(extXML *Self)
          buffer.resize(current_size + result); // Adjust to actual read size
       }
 
-      if (Self->ParseError IS ERR::Okay) {
+      if (!Self->ParseError) {
          Self->ParseError = txt_to_xml(Self, Self->Tags, std::string_view(buffer));
       }
    }
-   else if (LoadFile(Self->Path, LDF::NIL, &filecache) IS ERR::Okay) {
+   else if (!LoadFile(Self->Path, LDF::NIL, &filecache)) {
       Self->ParseError = txt_to_xml(Self, Self->Tags, std::string_view((char *)filecache->Data, filecache->Size));
       UnloadFile(filecache);
    }

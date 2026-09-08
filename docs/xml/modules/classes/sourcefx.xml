@@ -8,7 +8,7 @@
     <module>Vector</module>
     <comment>Renders a source vector in the effect pipeline.</comment>
     <version>1</version>
-    <id>16f8c294</id>
+    <id>04f3ecaf</id>
     <idstring>SOURCEFX</idstring>
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
@@ -25,6 +25,7 @@
       <name>Draw</name>
       <comment>Render the source vector to the target bitmap.</comment>
       <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
+      <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">The X position of the region to be drawn.</param>
         <param type="INT" name="Y">The Y position of the region to be drawn.</param>
@@ -39,8 +40,8 @@
     <field>
       <name>AspectRatio</name>
       <comment>SVG compliant aspect ratio settings.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type lookup="ARF">INT</type>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="ARF">ARF</type>
       <description>
 <types lookup="ARF"/>
       </description>
@@ -49,7 +50,7 @@
     <field>
       <name>Source</name>
       <comment>The source <class name="Vector">Vector</class> that will be rendered.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="G" write="S">Get/Set</access>
       <type>OBJECTPTR</type>
       <description>
 <p>The Source field must refer to a <class name="Vector">Vector</class> that will be rendered in the filter pipeline.  The vector must be under the ownership of the same <class name="VectorScene">VectorScene</class> that the filter pipeline belongs.</p>
@@ -72,6 +73,7 @@
       <comment>Returns an SVG compliant XML string that describes the filter.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
+      <tags>caller-owns-result</tags>
     </field>
 
   </fields>

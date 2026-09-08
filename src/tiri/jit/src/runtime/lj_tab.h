@@ -12,6 +12,8 @@ inline constexpr int32_t HASH_BIAS = (-0x04c11db7);
 inline constexpr int HASH_ROT1 = 14;
 inline constexpr int HASH_ROT2 = 5;
 inline constexpr int HASH_ROT3 = 13;
+inline constexpr uint64_t HASH_MIX64_MUL1 = 0xbf58476d1ce4e5b9ull;
+inline constexpr uint64_t HASH_MIX64_MUL2 = 0x94d049bb133111ebull;
 
 // Scramble the bits of numbers and pointers.
 [[nodiscard]] inline constexpr uint32_t hashrot(uint32_t lo, uint32_t hi) noexcept
@@ -30,6 +32,20 @@ inline constexpr int HASH_ROT3 = 13;
    return hi;
 }
 
+// Scramble table hash bits. x64 can use full-width multiply cheaply; other targets keep the legacy JIT-matched mix.
+[[nodiscard]] inline constexpr uint32_t hashlohi_bits(uint32_t Lo, uint32_t Hi) noexcept
+{
+#if LJ_TARGET_X64
+   uint64_t hash = (uint64_t(Hi) << 32) | uint64_t(Lo);
+   hash = (hash ^ (hash >> 30)) * HASH_MIX64_MUL1;
+   hash = (hash ^ (hash >> 27)) * HASH_MIX64_MUL2;
+   hash ^= hash >> 31;
+   return uint32_t(hash);
+#else
+   return hashrot(Lo, Hi);
+#endif
+}
+
 // Hash values are masked with the table hash mask and used as an index.
 [[nodiscard]] inline constexpr Node* hashmask(const GCtab* t, uint32_t hash) noexcept
 {
@@ -37,7 +53,7 @@ inline constexpr int HASH_ROT3 = 13;
    return &n[hash & t->hmask];
 }
 
-// String IDs are generated when a string is interned.
+// Every string object has an immutable ID.  Mutable buffers therefore remain stable identity keys as bytes change.
 [[nodiscard]] inline constexpr Node* hashstr(const GCtab* t, const GCstr* s) noexcept
 {
    return hashmask(t, s->sid);
@@ -45,7 +61,7 @@ inline constexpr int HASH_ROT3 = 13;
 
 [[nodiscard]] inline constexpr Node* hashlohi(const GCtab* t, uint32_t lo, uint32_t hi) noexcept
 {
-   return hashmask(t, hashrot(lo, hi));
+   return hashmask(t, hashlohi_bits(lo, hi));
 }
 
 [[nodiscard]] inline constexpr Node* hashnum(const GCtab* t, const TValue* o) noexcept
@@ -80,10 +96,39 @@ LJ_FUNCA [[nodiscard]] cTValue* lj_tab_get(lua_State* L, GCtab* t, cTValue* key)
 
 // Caveat: all setters require a write barrier for the stored value.
 
+// Classification of script-facing stores.  These record permanent usage history (see the TAB_* flags in lj_obj.h)
+// and are called from the interpreter helpers, library code and the C API.  They are deliberately not called from
+// the raw setters below, because internal consumers reinsert existing entries through those during resizing and
+// snapshot restoration, where the logical key set does not change.
+//
+// Classification depends only on the key, never on the table's current sequence end.  See lj_tab.cpp for why
+// gap-based classification is not implemented.
+
+LJ_FUNC void lj_tab_classify_numeric_key(GCtab* Table, int32_t Key);
+LJ_FUNC void lj_tab_classify_number_key(GCtab* Table, lua_Number Key);
+LJ_FUNC void lj_tab_classify_store(GCtab* Table, cTValue* Key);
+
 LJ_FUNCA TValue* lj_tab_newkey(lua_State* L, GCtab* t, cTValue* key);
 LJ_FUNCA TValue* lj_tab_setinth(lua_State* L, GCtab* t, int32_t key);
 LJ_FUNC TValue* lj_tab_setstr(lua_State* L, GCtab* t, const GCstr* key);
 LJ_FUNC TValue* lj_tab_set(lua_State* L, GCtab* t, cTValue* key);
+
+// Explicit global type contracts are attached to the environment table so separately compiled chunks that share
+// that environment can enforce the declaration.
+LJ_FUNC [[nodiscard]] GCstr* lj_tab_get_global_contract(GCtab* Environment, const GCstr* Name);
+struct CachedGlobalContractRecord;
+LJ_FUNC [[nodiscard]] const CachedGlobalContractRecord* lj_tab_get_cached_global_contract(
+   const GCtab* Environment, const GCstr* Name);
+LJ_FUNC void lj_tab_set_global_contract(
+   lua_State* L, GCtab* Environment, const GCstr* Name, GCstr* Descriptor);
+LJ_FUNC void lj_env_mark(lua_State* L, GCtab* Environment);
+
+// A non-null contracts table doubles as the runtime marker for "this table is a global environment": every store
+// route (VM fast path, C API, rawset, JIT) must validate marked tables through lj_env_check().
+[[nodiscard]] inline bool lj_tab_is_environment(const GCtab* Table) noexcept
+{
+   return tabref(Table->global_type_contracts) != nullptr;
+}
 
 // 0-based indexing: valid array indices are [0, asize)
 #define inarray(t, key)      ((MSize)(key) < (MSize)(t)->asize)
@@ -95,6 +140,7 @@ LJ_FUNC TValue* lj_tab_set(lua_State* L, GCtab* t, cTValue* key);
 
 LJ_FUNC uint32_t lj_tab_keyindex(GCtab* t, cTValue* key);
 LJ_FUNCA int lj_tab_next(GCtab* t, cTValue* key, TValue* o);
+LJ_FUNCA int lj_tab_empty(GCtab* t);
 LJ_FUNCA MSize lj_tab_len(GCtab* t);
 #if LJ_HASJIT
 LJ_FUNC MSize lj_tab_len_hint(GCtab* t, size_t hint);

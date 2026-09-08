@@ -1,0 +1,399 @@
+   include 'display', 'vector'
+
+module display as mGfx
+
+function newBitmap(Width, Height)
+   local bmp = obj.new('bitmap', { width=Width, height=Height, bitsPerPixel=32, bkgd='0,0,0,255' })
+   bmp.acClear()
+   return bmp
+end
+
+function lineEdge(Patch, Prefix, X0, Y0, X1, Y1)
+   local dx = X1 - X0
+   local dy = Y1 - Y0
+   Patch[Prefix].StartX = X0
+   Patch[Prefix].StartY = Y0
+   Patch[Prefix].X1 = X0 + (dx / 3.0)
+   Patch[Prefix].Y1 = Y0 + (dy / 3.0)
+   Patch[Prefix].X2 = X0 + (dx * 2.0 / 3.0)
+   Patch[Prefix].Y2 = Y0 + (dy * 2.0 / 3.0)
+   Patch[Prefix].EndX = X1
+   Patch[Prefix].EndY = Y1
+end
+
+function setColour(Patch, Prefix, Red, Green, Blue)
+   Patch[Prefix].red = Red
+   Patch[Prefix].green = Green
+   Patch[Prefix].blue = Blue
+   Patch[Prefix].alpha = 1.0
+end
+
+function squarePatch()
+   local patch = struct.new('MeshPatchRecord')
+   lineEdge(patch, 'top', 0, 0, 100, 0)
+   lineEdge(patch, 'right', 100, 0, 100, 100)
+   lineEdge(patch, 'bottom', 100, 100, 0, 100)
+   lineEdge(patch, 'left', 0, 100, 0, 0)
+   setColour(patch, 'topLeft', 1.0, 0.0, 0.0)
+   setColour(patch, 'topRight', 0.0, 1.0, 0.0)
+   setColour(patch, 'bottomRight', 1.0, 1.0, 0.0)
+   setColour(patch, 'bottomLeft', 0.0, 0.0, 1.0)
+   return patch
+end
+
+function narrowPatch()
+   local patch = struct.new('MeshPatchRecord')
+   lineEdge(patch, 'top', 0, 0, 70, 0)
+   lineEdge(patch, 'right', 70, 0, 70, 100)
+   lineEdge(patch, 'bottom', 70, 100, 0, 100)
+   lineEdge(patch, 'left', 0, 100, 0, 0)
+   setColour(patch, 'topLeft', 1.0, 0.0, 0.0)
+   setColour(patch, 'topRight', 0.0, 1.0, 0.0)
+   setColour(patch, 'bottomRight', 1.0, 1.0, 0.0)
+   setColour(patch, 'bottomLeft', 0.0, 0.0, 1.0)
+   return patch
+end
+
+function greyRampPatch()
+   local patch = struct.new('MeshPatchRecord')
+   lineEdge(patch, 'top', 0, 0, 100, 0)
+   lineEdge(patch, 'right', 100, 0, 100, 100)
+   lineEdge(patch, 'bottom', 100, 100, 0, 100)
+   lineEdge(patch, 'left', 0, 100, 0, 0)
+   setColour(patch, 'topLeft', 0.0, 0.0, 0.0)
+   setColour(patch, 'topRight', 1.0, 1.0, 1.0)
+   setColour(patch, 'bottomRight', 1.0, 1.0, 1.0)
+   setColour(patch, 'bottomLeft', 0.0, 0.0, 0.0)
+   return patch
+end
+
+function recolouredPatch()
+   local patch = squarePatch()
+   setColour(patch, 'topLeft', 1.0, 1.0, 1.0)
+   setColour(patch, 'topRight', 0.5, 0.5, 0.5)
+   setColour(patch, 'bottomRight', 0.0, 0.0, 0.0)
+   setColour(patch, 'bottomLeft', 0.25, 0.25, 0.25)
+   return patch
+end
+
+-- A greyscale patch spanning X0..X1 with uniform columns, for seam/interpolation sampling.
+
+function greyColumnPatch(X0, X1, LeftVal, RightVal)
+   local patch = struct.new('MeshPatchRecord')
+   lineEdge(patch, 'top', X0, 0, X1, 0)
+   lineEdge(patch, 'right', X1, 0, X1, 100)
+   lineEdge(patch, 'bottom', X1, 100, X0, 100)
+   lineEdge(patch, 'left', X0, 100, X0, 0)
+   setColour(patch, 'topLeft', LeftVal, LeftVal, LeftVal)
+   setColour(patch, 'topRight', RightVal, RightVal, RightVal)
+   setColour(patch, 'bottomRight', RightVal, RightVal, RightVal)
+   setColour(patch, 'bottomLeft', LeftVal, LeftVal, LeftVal)
+   return patch
+end
+
+-- A patch with a vertical white -> black ramp and a strongly bowed top edge (dipping to y=37.5 at the
+-- midpoint), for verifying that colour follows the curved patch parameter space.
+
+function curvedTopPatch()
+   local patch = struct.new('MeshPatchRecord')
+   patch.top.StartX = 0;  patch.top.StartY = 0
+   patch.top.X1 = 33;     patch.top.Y1 = 50
+   patch.top.X2 = 66;     patch.top.Y2 = 50
+   patch.top.EndX = 100;  patch.top.EndY = 0
+   lineEdge(patch, 'right', 100, 0, 100, 100)
+   lineEdge(patch, 'bottom', 100, 100, 0, 100)
+   lineEdge(patch, 'left', 0, 100, 0, 0)
+   setColour(patch, 'topLeft', 1.0, 1.0, 1.0)
+   setColour(patch, 'topRight', 1.0, 1.0, 1.0)
+   setColour(patch, 'bottomRight', 0.0, 0.0, 0.0)
+   setColour(patch, 'bottomLeft', 0.0, 0.0, 0.0)
+   return patch
+end
+
+function flatVerticalPatch()
+   local patch = struct.new('MeshPatchRecord')
+   lineEdge(patch, 'top', 0, 0, 100, 0)
+   lineEdge(patch, 'right', 100, 0, 100, 100)
+   lineEdge(patch, 'bottom', 100, 100, 0, 100)
+   lineEdge(patch, 'left', 0, 100, 0, 0)
+   setColour(patch, 'topLeft', 1.0, 1.0, 1.0)
+   setColour(patch, 'topRight', 1.0, 1.0, 1.0)
+   setColour(patch, 'bottomRight', 0.0, 0.0, 0.0)
+   setColour(patch, 'bottomLeft', 0.0, 0.0, 0.0)
+   return patch
+end
+
+function newPatchesScene(Patches, Bicubic:bool)
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local gradient = scene.new('GradientMesh', { units=VUNIT_USERSPACE, patches=Patches })
+   if Bicubic then gradient.mode = GMT_BICUBIC end
+   check scene.mtAddDef('mesh', gradient)
+   viewport.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='url(#mesh)' })
+   return scene, gradient
+end
+
+-- A 1x2 grid ramping black -> white -> black; the strong corner contrast makes bicubic smoothing measurable.
+
+function newTwoPatchScene(Bicubic:bool)
+   return newPatchesScene({ greyColumnPatch(0, 50, 0.0, 1.0), greyColumnPatch(50, 100, 1.0, 0.0) }, Bicubic)
+end
+
+function newMeshScene()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local patches = { squarePatch() }
+   local gradient = scene.new('GradientMesh', { units=VUNIT_USERSPACE, patches=patches })
+   check scene.mtAddDef('mesh', gradient)
+   viewport.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='url(#mesh)' })
+   return scene, gradient
+end
+
+function newPatchScene(Patch, ColourSpace, Resolution)
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local fields = { units=VUNIT_USERSPACE, patches={ Patch } }
+
+   if ColourSpace != nil then fields.colourSpace = ColourSpace end
+   if Resolution != nil then fields.resolution = Resolution end
+
+   local gradient = scene.new('GradientMesh', fields)
+   check scene.mtAddDef('mesh', gradient)
+   local rect = viewport.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='url(#mesh)' })
+   return scene, gradient, rect
+end
+
+function drawScene(Scene, Bitmap)
+   Bitmap.acClear()
+   Scene.bitmap = Bitmap
+   check Scene.acDraw()
+end
+
+function drawHash(Scene, Bitmap)
+   drawScene(Scene, Bitmap)
+   return mSys.GenCRC32(0, Bitmap.data, Bitmap.size)
+end
+
+@Test function PatchesRoundTrip()
+   local scene, gradient = newMeshScene()
+   assert(gradient != nil, 'GradientMesh should be created')
+   assert(#gradient.patches is 1, 'Expected one mesh patch')
+end
+
+@Test function RowMetadataSurvivesFlatPatchAssignment()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local patches = { squarePatch(), squarePatch(), squarePatch(), squarePatch() }
+   local gradient = scene.new('GradientMesh', { units=VUNIT_USERSPACE })
+
+   gradient.rows = 2
+   gradient.columns = 2
+   gradient.patches = patches
+
+   assert(gradient.rows is 2, 'Expected row metadata to survive patch assignment')
+   assert(gradient.columns is 2, 'Expected column metadata to survive patch assignment')
+   assert(#gradient.patches is 4, 'Expected flat patch access to remain available')
+end
+
+@Test function RowMetadataCanBeSetAfterFlatPatches()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local patches = { squarePatch(), squarePatch(), squarePatch(), squarePatch() }
+   local gradient = scene.new('GradientMesh', { units=VUNIT_USERSPACE, patches=patches })
+
+   gradient.rows = 2
+
+   assert(gradient.rows is 2, 'Expected row metadata to update after patch assignment')
+   assert(gradient.columns is 2, 'Expected column metadata to be derived from the patch count')
+   assert(#gradient.patches is 4, 'Expected flat patch access to remain available')
+end
+
+@Test function PatchReplacementInvalidatesCache()
+   local scene, gradient = newPatchScene(squarePatch())
+   local bmp = newBitmap(100, 100)
+   local before = drawHash(scene, bmp)
+
+   gradient.patches = { recolouredPatch() }
+
+   local after = drawHash(scene, bmp)
+   assert(before != after, 'Replacing mesh patch colours should invalidate the cached mesh triangles')
+end
+
+@Test function PatchGeometryMutationInvalidatesCache()
+   local scene, gradient = newPatchScene(squarePatch())
+   local bmp = newBitmap(100, 100)
+   local before = drawHash(scene, bmp)
+
+   gradient.patches = { narrowPatch() }
+
+   local after = drawHash(scene, bmp)
+   assert(before != after, 'Replacing mesh patch geometry should invalidate the cached mesh triangles')
+end
+
+@Test function TransformChangeInvalidatesCache()
+   local scene, gradient = newPatchScene(squarePatch())
+   local bmp = newBitmap(100, 100)
+   local before = drawHash(scene, bmp)
+
+   gradient.transform = 'translate(20 0)'
+
+   local after = drawHash(scene, bmp)
+   assert(before != after, 'Changing gradientTransform should rebuild the cached mesh triangles')
+end
+
+@Test function OpacityChangeInvalidatesCache()
+   local scene, gradient, rect = newPatchScene(squarePatch())
+   local bmp = newBitmap(100, 100)
+   local before = drawHash(scene, bmp)
+
+   rect.fillOpacity = 0.5
+
+   local after = drawHash(scene, bmp)
+   assert(before != after, 'Changing fill opacity should rebuild the cached mesh triangles with new alpha')
+end
+
+@Test function ResolutionChangeUpdatesCachedRender()
+   local scene, gradient = newPatchScene(greyRampPatch(), VCS_SRGB, 1.0)
+   local bmp = newBitmap(100, 100)
+   local before = drawHash(scene, bmp)
+
+   gradient.resolution = 0.5
+
+   local after = drawHash(scene, bmp)
+   assert(before != after, 'Changing resolution should alter mesh tessellation or quantisation output')
+end
+
+@Test function ColourSpaceChangesMeshOutput()
+   local srgb_scene = newPatchScene(greyRampPatch(), VCS_SRGB)
+   local linear_scene = newPatchScene(greyRampPatch(), VCS_LINEAR_RGB)
+   local srgb_bmp = newBitmap(100, 100)
+   local linear_bmp = newBitmap(100, 100)
+
+   drawScene(srgb_scene, srgb_bmp)
+   drawScene(linear_scene, linear_bmp)
+
+   local srgb_mid = mGfx.ReadRGBPixel(srgb_bmp, 50, 50).red
+   local linear_mid = mGfx.ReadRGBPixel(linear_bmp, 50, 50).red
+
+   assert(linear_mid > srgb_mid + 20,
+      'linearRGB mesh midpoint should be brighter than sRGB (linear ' .. linear_mid .. ' vs sRGB ' .. srgb_mid .. ')')
+end
+
+@Test function CornerColoursDominate()
+   local scene = newMeshScene()
+   local bmp = newBitmap(100, 100)
+   drawScene(scene, bmp)
+
+   local tl = mGfx.ReadRGBPixel(bmp, 4, 4)
+   local tr = mGfx.ReadRGBPixel(bmp, 95, 4)
+   local br = mGfx.ReadRGBPixel(bmp, 95, 95)
+   local bl = mGfx.ReadRGBPixel(bmp, 4, 95)
+
+   assert(tl.red > tl.green and tl.red > tl.blue, 'Top-left sample should be red-dominant')
+   assert(tr.green > tr.red and tr.green > tr.blue, 'Top-right sample should be green-dominant')
+   assert(br.red > br.blue and br.green > br.blue, 'Bottom-right sample should be yellow-dominant')
+   assert(bl.blue > bl.red and bl.blue > bl.green, 'Bottom-left sample should be blue-dominant')
+end
+
+@Test function SeamContinuityAcrossSharedEdge()
+   -- A continuous grey ramp split across two patches at x=50.  Walking a scanline across the shared edge
+   -- must show no step beyond the ramp's natural slope (2.55 per pixel) plus AA tolerance, in both modes.
+
+   for mode in {0 to 2} do
+      local scene = newPatchesScene({ greyColumnPatch(0, 50, 0.0, 0.5), greyColumnPatch(50, 100, 0.5, 1.0) },
+         mode is 1)
+      local bmp = newBitmap(100, 100)
+      drawScene(scene, bmp)
+
+      local prev = -1
+      for x in {40 into 60} do
+         local value = mGfx.ReadRGBPixel(bmp, x, 50).red
+         if prev >= 0 then
+            local delta = value - prev
+            if delta < 0 then delta = -delta end
+            assert(delta <= 8, 'Seam discontinuity at x=' .. x .. ' (delta ' .. delta .. ', bicubic mode ' .. mode .. ')')
+         end
+         prev = value
+      end
+
+      local left = mGfx.ReadRGBPixel(bmp, 10, 50).red
+      local right = mGfx.ReadRGBPixel(bmp, 90, 50).red
+      assert(right > left + 100, 'The ramp should still ascend across the seam (left ' .. left .. ', right ' .. right .. ')')
+   end
+end
+
+@Test function CurvedPatchBendsIsoColourLines()
+   local flat_scene = newPatchesScene({ flatVerticalPatch() }, false)
+   local curved_scene = newPatchesScene({ curvedTopPatch() }, false)
+   local flat_bmp = newBitmap(100, 100)
+   local curved_bmp = newBitmap(100, 100)
+
+   drawScene(flat_scene, flat_bmp)
+   drawScene(curved_scene, curved_bmp)
+
+   -- The bowed top edge dips to y=37.5 at x=50, so (50,20) lies outside the curved patch entirely while the
+   -- flat patch renders a bright value there.
+
+   local flat_above = mGfx.ReadRGBPixel(flat_bmp, 50, 20).red
+   local curved_above = mGfx.ReadRGBPixel(curved_bmp, 50, 20).red
+   assert(flat_above > 180, 'Flat patch should be bright above the bow point (got ' .. flat_above .. ')')
+   assert(curved_above < 40, 'Curved patch geometry should not cover the region above its bowed edge (got ' .. curved_above .. ')')
+
+   -- Just below the bowed edge the curved patch is near v=0 (white), whereas the flat patch has already
+   -- descended to v=0.4.  Colour follows the curved parameter space, not the bounding rectangle.
+
+   local flat_mid = mGfx.ReadRGBPixel(flat_bmp, 50, 40).red
+   local curved_mid = mGfx.ReadRGBPixel(curved_bmp, 50, 40).red
+   assert(curved_mid > flat_mid + 50,
+      'Iso-colour lines should bend with the curved edge (curved ' .. curved_mid .. ' vs flat ' .. flat_mid .. ')')
+end
+
+@Test function BicubicDiffersFromBilinear()
+   local bilinear_scene = newTwoPatchScene(false)
+   local bicubic_scene = newTwoPatchScene(true)
+   local bilinear_bmp = newBitmap(100, 100)
+   local bicubic_bmp = newBitmap(100, 100)
+
+   drawScene(bilinear_scene, bilinear_bmp)
+   drawScene(bicubic_scene, bicubic_bmp)
+
+   -- Mid-edge of the first patch (u=0.5): bilinear blends the corners to 0.5; bicubic uses the boundary chord
+   -- as the left tangent and a zero centred difference at the shared seam node, lifting the midpoint to 0.625.
+
+   local bilinear_mid = mGfx.ReadRGBPixel(bilinear_bmp, 25, 50).red
+   local bicubic_mid = mGfx.ReadRGBPixel(bicubic_bmp, 25, 50).red
+   assert(bicubic_mid > bilinear_mid + 15,
+      'Bicubic mid-patch sample should exceed bilinear (bicubic ' .. bicubic_mid .. ' vs bilinear ' .. bilinear_mid .. ')')
+
+   -- Both modes share identical node colours, so the patch seam itself must render the same.
+
+   local bilinear_seam = mGfx.ReadRGBPixel(bilinear_bmp, 50, 50).red
+   local bicubic_seam = mGfx.ReadRGBPixel(bicubic_bmp, 50, 50).red
+   local seam_delta = bilinear_seam - bicubic_seam
+   if seam_delta < 0 then seam_delta = -seam_delta end
+   assert(seam_delta <= 6, 'Seam colour should match between modes (delta ' .. seam_delta .. ')')
+end
+
+@Test function BicubicToggleInvalidatesCache()
+   local scene, gradient = newTwoPatchScene(false)
+   local bmp = newBitmap(100, 100)
+   local before = drawHash(scene, bmp)
+
+   gradient.mode = GMT_BICUBIC
+
+   local after = drawHash(scene, bmp)
+   assert(before != after, 'Enabling bicubic interpolation should rebuild the cached mesh triangles')
+
+   -- Bicubic is a rendering mode, not patch data, and survives patch reassignment.
+   gradient.patches = { greyColumnPatch(0, 50, 0.0, 1.0), greyColumnPatch(50, 100, 1.0, 0.0) }
+   assert(gradient.mode is GMT_BICUBIC, 'Bicubic mode should be retained when patches are reassigned')
+end
+
+@Test function RampFieldsAreRejected()
+   local scene, gradient = newMeshScene()
+   local rejected = false
+   try
+      gradient.colourMap = 'cmap:magma'
+   except ex
+      rejected = true
+   end
+   assert(rejected, 'GradientMesh should reject inherited ramp fields')
+end

@@ -15,62 +15,88 @@ Example usage:
    origo flute.tiri file=[file]
 ]]
 
+-- Convert a comma-separated command-line filter into an array of terms.  An absent filter must yield an empty array:
+-- splitting an empty string returns a one-element array holding the separator, which would make every test look
+-- filtered out.
+--
+function splitFilter(Filter):any
+   if not Filter?? then return { } end
+   return Filter.split(',') ?? { }
+end
+
    glFile    = arg('file')
-   glTest    = arg('test')?:split(',') ?? { }
+   glTest    = splitFilter(arg('test'))
    glHotPath = arg('hotPath') -- Force hot-path execution for all tests.
    glSelf    = obj.find('self')
-   glLabels  = arg('labels')?:split(',') ?? { }
+   glLabels  = splitFilter(arg('labels'))
 
    jit.opt.start("hotloop=3") -- Lower threshold to trigger JIT sooner, simplifies debugging
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Resolve the location of the Kotuku SDK and create an 'sdk:' volume.  Created for the benefit of some tests - but
+-- is not guaranteed to work.
 
-glNetworkAvailable = thunk():bool
-   try
-      global mNet ?= mod.load('network')
+global function resolveSDKPath()
+   script_path = glSelf.workingPath
+   err = ERR_Failed
+   search_list = array<str>
+   search_path = 'CMakeLists.txt'
+   limit = 5
+   local sdk_path
+   while (err != ERR_Okay) and (limit > 0) do
+      search_list.push(search_path)
+      err, sdk_path = mSys.ResolvePath(script_path .. search_path)
+      search_path = f'../{search_path}'
+      limit -= 1
    end
-   return mNet != nil
+
+   if err is ERR_Okay then
+      rx_cmake_path = regex.new('^(.+)CMakeLists\\.txt')
+      sdk_path = rx_cmake_path.extract(sdk_path) ?? sdk_path
+   else
+      local msg = ''
+      for path in values(search_list) do
+         msg ..= path .. '\n'
+      end
+      print('Unable to find CMakeLists.txt after searching the following paths:\n' .. msg)
+   end
+
+   mSys.SetVolume('sdk', sdk_path)
 end
 
-glAudioAvailable = thunk():bool
+----------------------------------------------------------------------------------------------------------------------
+
+function moduleAvailable(Name:str):bool
+   local loaded_module
    try
-      global mAudio ?= mod.load('audio')
+      loaded_module ?= obj.new('module', { name=Name })
    end
-   return mAudio != nil
+   return loaded_module != nil
 end
 
-glFontAvailable = thunk():bool
-   try
-      global mFont ?= mod.load('font')
-   end
-   return mFont != nil
-end
+glNetworkAvailable = thunk():bool return moduleAvailable('network') end
 
-glDisplayAvailable = thunk():bool
-   try
-      global mGfx ?= mod.load('display')
-   end
-   return mGfx != nil
-end
+glAudioAvailable = thunk():bool return moduleAvailable('audio') end
+
+glFontAvailable = thunk():bool return moduleAvailable('font') end
+
+glDisplayAvailable = thunk():bool return moduleAvailable('display') end
 
 global glSSLAvailable = thunk():bool
-   glNetworkAvailable ?? return false
+   return exec([[
+      module network as mNet
+      return mNet.SetSSL(nil, nil, nil) != ERR_NoSecureSockets
+   ]])
+end
 
-   -- Test if SSL support is available by attempting to create SSL socket
+global glWindowsPlatform = thunk():bool
+   state = mSys.GetSystemState()
+   return state.platform is 'Windows'
+end
 
-   local test_socket
-   try
-      test_socket = obj.new('netsocket', { name = 'SSLSupportTest', port = 0, flags = 'SERVER|SSL' })
-   end
-
-   if test_socket then
-      supported = test_socket.error is ERR_Okay
-      test_socket = nil
-      processing.collect()
-      return supported
-   end
-
-   return false
+global glLinuxPlatform = thunk():bool
+   state = mSys.GetSystemState()
+   return state.platform is 'Linux'
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -86,8 +112,12 @@ function checkAvailable(Requirement:str, Expectation:bool):bool
       return glAudioAvailable is Expectation
    elseif Requirement is 'display' then
       return glDisplayAvailable is Expectation
+   elseif Requirement is 'windows_platform' then
+      return glWindowsPlatform is Expectation
+   elseif Requirement is 'linux_platform' then
+      return glLinuxPlatform is Expectation
    else
-      error('Invalid requirement: ' .. Requirement)
+      raise 'Invalid requirement: ' .. Requirement
    end
 end
 
@@ -96,9 +126,45 @@ end
 function sortTests(Tests:table)
    if #Tests <= 1 then return end
 
-   table.sort(Tests, function(a:table, b:table):bool
+   Tests.sort(function(a:table, b:table):bool
       return (a.priority ?? 255) < (b.priority ?? 255)
    end)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+-- Format a caught exception with its source metadata using source:line:column: message notation.  Some diagnostics
+-- already start with a [line:column] or [source:line:column] annotation, which is normalised to the same notation.
+
+function formatException(Exception:table):str
+   local message = tostring(Exception.message ?? Exception)
+   local source = Exception.source
+   local line = tonumber(Exception.line) ?? 0
+
+   if message.startsWith('[') then
+      local annotation_end = message.find(']')
+      if annotation_end and annotation_end > 1 then
+         local annotation = message.sub(1, annotation_end)
+         local detail = string.trim(message.sub(annotation_end + 1))
+         local annotation_parts = annotation.split(':')
+
+         if tonumber(annotation_parts[0]) then
+            if not source?? or source.startsWith('[') then source = glFile end
+            if source?? then annotation = source .. ':' .. annotation end
+         end
+
+         return annotation .. ': ' .. detail
+      end
+      return message
+   elseif source?? then
+      if line > 0 then return f'{source}:{line}: {message}' end
+      return source .. ': ' .. message
+   elseif line > 0 then
+      if glFile?? then return f'{glFile}:{line}: {message}' end
+      return f'{line}: {message}'
+   else
+      return message
+   end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -118,6 +184,7 @@ _ANNO = {
 function runTests()
    global glTestTotal = 0
    global glTestsPassed = 0
+   global glTestsDeclared = 0 -- @Test functions found, counted before any disabling is applied.
 
    err, glFile = mSys.ResolvePath(glFile)
    if err != ERR_Okay then
@@ -162,19 +229,21 @@ function runTests()
                disabled = true
             elseif v.name is 'BeforeEach' then
                -- BeforeEach can carry arguments that determine the default parameters for all tests.
-               table.insert(before_each, { func=func, args=v.args })
+               before_each.insert({ func=func, args=v.args })
             elseif v.name is 'AfterEach' then
-               table.insert(after_each, func)
+               after_each.insert(func)
             elseif v.name is 'BeforeAll' then
-               table.insert(before_all, func)
+               before_all.insert(func)
             elseif v.name is 'AfterAll' then
-               table.insert(after_all, func)
+               after_all.insert(func)
             elseif v.name is 'Requires' then
                for req, expect in pairs(v.args) do
                   if not checkAvailable(req, expect ?? true) then disabled = true end
                end
             end
          end
+
+         if is_test then glTestsDeclared += 1 end
 
          if #glLabels > 0 then -- User is filtering on at least one label
             if test_labels is nil then
@@ -184,9 +253,9 @@ function runTests()
                inverse = false
 
                for label_filter in values(glLabels) do
-                  if label_filter:startsWith('~') then
+                  if label_filter.startsWith('~') then
                      inverse = true
-                     label_filter = label_filter:sub(1)
+                     label_filter = label_filter.sub(1)
                   end
 
                   for test_label in values(test_labels) do
@@ -198,12 +267,12 @@ function runTests()
                   if label_present then break end
                end
 
-               disabled = inverse ? label_present :> not label_present
+               disabled = inverse ? label_present : not label_present
             end
          end
 
          if not disabled and is_test then
-            table.insert(body.tests, {
+            body.tests.insert({
                func     = func,
                name     = test_name ?? tostring(func),
                timeout  = test_timeout,
@@ -289,13 +358,14 @@ function runTests()
          local succeeded = true
          success_count = 0
 
-         for i=0,stop-1 do
+         for i in {0 to stop} do
             try
                test.func()
                success_count++
             except e
                succeeded = false
-               error_msg = e.message
+               error_msg = formatException(e)
+               break
             end
          end
 
@@ -318,7 +388,7 @@ function runTests()
          processing.collect()
 
          if not succeeded then
-            not error_msg ?? print(error_msg)
+            if error_msg then print(error_msg) end
             if success_count is 0 then
                print(string.format('FAIL: %.6f sec', totalTime))
             else
@@ -368,5 +438,7 @@ end
 
    -- Setting an error string ensures that ctest will register a failure if the tests do not complete as planned.
    glSelf.errorMessage = 'Unexpected execution failure - tests not executed as planned.'
+
+   resolveSDKPath()
 
    runTests()

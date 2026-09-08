@@ -261,18 +261,42 @@ struct XQueryFunction {
 //********************************************************************************************************************
 // String interning pool for common identifiers (QNames, namespace URIs, etc.).
 
+struct StringInternerHash {
+   using is_transparent = void;
+
+   [[nodiscard]] size_t operator()(std::string_view Value) const noexcept {
+      return std::hash<std::string_view>{}(Value);
+   }
+
+   [[nodiscard]] size_t operator()(const std::string &Value) const noexcept {
+      return (*this)(std::string_view(Value));
+   }
+
+   [[nodiscard]] size_t operator()(const char *Value) const noexcept {
+      return (*this)(std::string_view(Value));
+   }
+};
+
+struct StringInternerEqual {
+   using is_transparent = void;
+
+   [[nodiscard]] bool operator()(std::string_view Lhs, std::string_view Rhs) const noexcept {
+      return Lhs IS Rhs;
+   }
+};
+
 class StringInterner {
    private:
-   std::unordered_set<std::string> pool;
+   std::unordered_set<std::string, StringInternerHash, StringInternerEqual> pool;
    mutable std::mutex mutex;
 
    public:
-   std::string_view intern(std::string_view str) {
+   std::string_view intern(std::string_view Str) {
       std::lock_guard<std::mutex> lock(mutex);
-      auto it = pool.find(std::string(str));
+      auto it = pool.find(Str);
       if (it != pool.end()) return *it;
-      auto [it2, inserted] = pool.emplace(std::string(str));
-      return *it2;
+      auto result = pool.emplace(Str.data(), Str.size());
+      return *result.first;
    }
 };
 
@@ -714,15 +738,33 @@ struct CompiledXQuery {
    ankerl::unordered_dense::map<URI_STR, extXML *> XMLCache;
 
    CompiledXQuery() = default;
-   CompiledXQuery(CompiledXQuery &&) = default;
-   CompiledXQuery &operator=(CompiledXQuery &&) = default;
+   CompiledXQuery(CompiledXQuery &&Source) noexcept { *this = std::move(Source); }
+   CompiledXQuery &operator=(CompiledXQuery &&Source) noexcept {
+      if (this IS &Source) return *this;
+
+      clear_xml_cache();
+
+      expression   = std::move(Source.expression);
+      prolog       = std::move(Source.prolog);
+      module_cache = std::move(Source.module_cache);
+      error_msg    = std::move(Source.error_msg);
+      XMLCache     = std::move(Source.XMLCache);
+      Source.XMLCache.clear();
+
+      return *this;
+   }
    CompiledXQuery(const CompiledXQuery &) = delete;
    CompiledXQuery &operator=(const CompiledXQuery &) = delete;
 
    ~CompiledXQuery() {
+      clear_xml_cache();
+   }
+
+   void clear_xml_cache() {
       for (auto &entry : XMLCache) {
          if (entry.second) FreeResource(entry.second);
       }
+      XMLCache.clear();
    }
 
    XQF feature_flags() const;
@@ -952,25 +994,37 @@ class XPathParser {
 
 //*********************************************************************************************************************
 
+struct fi_hash {
+   using is_transparent = void;
+   [[nodiscard]] size_t operator()(std::string_view Value) const noexcept { return std::hash<std::string_view>{}(Value); }
+};
+
+struct fi_equal {
+   using is_transparent = void;
+   [[nodiscard]] bool operator()(const std::string_view &Lhs, const std::string_view &Rhs) const noexcept { return Lhs IS Rhs; }
+};
+
 class extXQuery : public objXQuery {
 public:
-   ankerl::unordered_dense::map<std::string, std::string> Variables; // XPath variable references
+   ankerl::unordered_dense::map<std::string, std::string, fi_hash, fi_equal> Variables; // XPath variable references
+   ankerl::unordered_dense::map<std::string, FUNCTION> RegisteredFunctions;
    FUNCTION Callback;
-   std::string Statement;
-   std::string ErrorMsg;
+   FUNCTION ResolveVariable;
    CompiledXQuery ParseResult; // Result of parsing the query.
    std::shared_ptr<XQueryModuleCache> ModuleCache; // Strong reference; ParseResult.module_cache is weak to break cycles
    XPathVal Result; // Result of the last execution.
-   pf::vector<std::string> ListVariables; // List of variable names.
-   pf::vector<std::string> ListFunctions; // List of function names.
+   std::vector<std::unique_ptr<XTag>> ConstructedNodes; // Keeps constructed-node results alive after evaluation.
+   kt::vector<std::string> ListVariables; // List of variable names.
+   kt::vector<std::string> ListFunctions; // List of function names.
    std::string ResultString; // Cached string representation of the result.
-   std::string Path; // Base path for resolving relative URIs.
    size_t MemUsage; // Total bytes allocated during the most recent evaluation or compilation.
    extXML *XML; // During query execution, the context XML document.
    bool StaleBuild = true; // If true, the compiled query needs to be rebuilt.
 
-   ~extXQuery() {
-   }
+   extXQuery() noexcept : objXQuery(nullptr, 0) { }
+   extXQuery(objMetaClass *pClass, OBJECTID pUID) noexcept : objXQuery(pClass, pUID) { }
+
+   ~extXQuery();
 };
 
 // Transparent string hash/equality functors for heterogeneous lookup on ankerl maps
@@ -1351,6 +1405,7 @@ class XPathEvaluator : public XPathErrorReporter {
    extXML *xml;
    const XPathNode * query_root = nullptr;
    CompiledXQuery * parse_context = nullptr;
+   XTag * absolute_root_node = nullptr;
    XPathContext context;
    XPathArena arena;
    AxisEvaluator axis_evaluator;
@@ -1361,6 +1416,8 @@ class XPathEvaluator : public XPathErrorReporter {
    // Variable storage owned by the evaluator
    ankerl::unordered_dense::map<std::string, XPathVal> variable_storage;
    ankerl::unordered_dense::map<std::string, XPathVal> prolog_variable_cache;
+   ankerl::unordered_dense::map<std::string, XPathVal> resolved_callback_variables;
+   std::unordered_set<std::string> missing_callback_variables;
    std::unordered_set<std::string> variables_in_evaluation;
 
    // Tracks in-scope namespace declarations while building constructed nodes so nested
@@ -1518,7 +1575,7 @@ class XPathEvaluator : public XPathErrorReporter {
       const std::vector<XPathVal> &Args, uint32_t CurrentPrefix, const XPathNode *FuncNode);
    XPathVal evaluate_user_defined_function(const XQueryFunction &Function,
       const std::vector<XPathVal> &Args, uint32_t CurrentPrefix, const XPathNode *FuncNode);
-   bool resolve_variable_value(std::string_view QName, uint32_t CurrentPrefix,
+   ERR resolve_variable_value(std::string_view QName, uint32_t CurrentPrefix,
       XPathVal &OutValue, const XPathNode *ReferenceNode);
 
    public:
@@ -1539,6 +1596,7 @@ class XPathEvaluator : public XPathErrorReporter {
 
    // Entry point for compiled XPath evaluation
    ERR find_tag(const XPathNode &, uint32_t);
+   void set_absolute_root_node(XTag *Node);
 
    inline bool is_trace_enabled() const { return trace_xpath_enabled; }
 

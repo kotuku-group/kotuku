@@ -72,7 +72,7 @@ constexpr ROTATE operator * (const ROTATE &lhs, const double &Num) {
 
 //********************************************************************************************************************
 
-template <class T = double> double dist(const pf::POINT<T> &A, const pf::POINT<T> &B)
+template <class T = double> double dist(const kt::POINT<T> &A, const kt::POINT<T> &B)
 {
    if (A == B) return 0;
    double a = std::abs(B.x - A.x);
@@ -90,10 +90,10 @@ private:
 
 public:
    struct spline_point {
-      pf::POINT<float> point;
+      kt::POINT<float> point;
       float angle;
       float cos_angle;
-      spline_point(pf::POINT<float> pPoint, float pAngle) : point(pPoint), angle(pAngle) { }
+      spline_point(kt::POINT<float> pPoint, float pAngle) : point(pPoint), angle(pAngle) { }
    };
 
    using DISTANCES = std::vector<float>;
@@ -117,7 +117,7 @@ public:
    std::string target_attrib;       // Name of the target attribute affected by the From and To values.
    std::string target_attrib_orig;  // Original value of the target attribute (if not freezing)
    std::string id;                  // Identifier for the animation
-   std::vector< std::pair<pf::POINT<double>, pf::POINT<double> > > splines; // Key splines
+   std::vector< std::pair<kt::POINT<double>, kt::POINT<double> > > splines; // Key splines
    std::vector<spline_path> spline_paths;
    std::vector<double> begin_series; // List of valid start times for the animation
    double begin_offset = 0;    // Start animating after this much time (in seconds) has elapsed.
@@ -139,6 +139,7 @@ public:
    ADD    additive     = ADD::REPLACE;
    bool   freeze       = false; // True if the animation freezes on the last frame
    bool   accumulate   = false;
+   bool   non_interpolating = false; // True for <set>, which applies target values directly.
    bool   begin_on_key = false; // Animation starts if the user hits a key
    bool   begin_on_click = false; // Animation starts if the user clicks anywhere in the scene graph
 
@@ -150,6 +151,9 @@ public:
    double get_total_dist();
    double get_dimension(objVector &, FIELD);
    double get_numeric_value(objVector &, FIELD);
+   static double interval_seek(double, double, double) noexcept;
+   static double mod_seek(double, int) noexcept;
+   static double spline_seek(const spline_path &, double) noexcept;
    std::string get_string();
    FRGB get_colour_value(objVector &, FIELD);
    bool started(double);
@@ -159,14 +163,14 @@ public:
    void stop(double);
 
    uint32_t hash_id() {
-      _hash_id = strihash(id);
+      _hash_id = strhash(id);
       return _hash_id;
    }
 
    virtual void perform() = 0;
 
    virtual bool is_valid() {
-      if (!values.empty()) return true;
+      if (values.size() >= 2) return true;
       if ((!to.empty()) or (!by.empty())) return true;
       return false;
    }
@@ -176,7 +180,7 @@ public:
 
 class anim_transform : public anim_base {
 public:
-   VectorMatrix matrix = { .Vector = nullptr }; // Exclusive transform matrix for animation.
+   VectorMatrix matrix; // Exclusive transform matrix for animation.
    AT type = AT::NIL;
 
    anim_transform(extSVG *pSVG, OBJECTID pTarget) : anim_base(pSVG, pTarget) { }
@@ -203,8 +207,8 @@ public:
    double rotate = 0; // Fixed angle rotation
    objVector *mpath = nullptr; // External vector path (untracked)
    VectorMatrix *matrix = nullptr;
-   pf::GuardedObject<objVector> path; // Client provided path sequence
-   std::vector<pf::POINT<float>> points;
+   kt::GuardedObject<objVector> path; // Client provided path sequence
+   std::vector<kt::POINT<float>> points;
    std::vector<float> angles; // Precalc'd angles for rotation along paths
    int path_timestamp = 0;
 
@@ -217,7 +221,7 @@ public:
    double get_total_dist();
 
    bool is_valid() {
-      if (!values.empty()) return true;
+      if (values.size() >= 2) return true;
       if (path.id) return true;
       if (mpath) return true;
       if ((!to.empty()) or (!by.empty())) return true;
@@ -238,6 +242,6 @@ public:
 
 //********************************************************************************************************************
 
-template <class T = float> double get_angle(pf::POINT<T> &A, pf::POINT<T> &B) {
+template <class T = float> double get_angle(kt::POINT<T> &A, kt::POINT<T> &B) {
    return std::atan2(B.y - A.y, B.x - A.x) * RAD2DEG;
 }

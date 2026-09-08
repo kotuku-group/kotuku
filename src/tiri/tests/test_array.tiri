@@ -3,6 +3,84 @@
 @BeforeEach(hotpath=200)
 function enforce_hotpath() end
 
+struct ArrayBindingPoint
+   Value: int
+end
+
+@Test function ArrayBindingPublicMemberKinds()
+   function identity_byte(Value:array<char>):array<byte> return Value end
+   function identity_int16(Value:array<int16>):array<int16> return Value end
+   function identity_int(Value:array<int>):array<int> return Value end
+   function identity_int64(Value:array<int64>):array<int64> return Value end
+   function identity_float(Value:array<float>):array<float> return Value end
+   function identity_double(Value:array<double>):array<double> return Value end
+   function identity_string(Value:array<str>):array<str> return Value end
+   function identity_table(Value:array<table>):array<table> return Value end
+   function identity_array(Value:array<array>):array<array> return Value end
+   function identity_object(Value:array<obj>):array<obj> return Value end
+   function identity_any(Value:array<any>):array<any> return Value end
+   function identity_struct(Value:array<struct<ArrayBindingPoint>>):array<struct<ArrayBindingPoint>> return Value end
+
+   assert(identity_byte(array<byte> {}) != nil, 'char and byte should share one binding identity')
+   assert(identity_int16(array<int16> {}) != nil, 'int16 binding identity should be accepted')
+   assert(identity_int(array<int> {}) != nil, 'int binding identity should be accepted')
+   assert(identity_int64(array<int64> {}) != nil, 'int64 binding identity should be accepted')
+   assert(identity_float(array<float> {}) != nil, 'float binding identity should be accepted')
+   assert(identity_double(array<double> {}) != nil, 'double binding identity should be accepted')
+   assert(identity_string(array<str> {}) != nil, 'string binding identity should be accepted')
+   assert(identity_table(array<table> {}) != nil, 'table binding identity should be accepted')
+   assert(identity_array(array<array> {}) != nil, 'immediate nested-array identity should be accepted')
+   assert(identity_object(array<obj> {}) != nil, 'object binding identity should be accepted')
+   assert(identity_any(array<any> {}) != nil, 'any member identity should be accepted')
+   assert(identity_struct(array<struct<ArrayBindingPoint>> {}) != nil,
+      'named-structure binding identity should be accepted')
+end
+
+@Test function UnsignedArrayBindingAndHotIndexing()
+   function identity_uint8(Value:array<uint8>):array<uint8> return Value end
+   function identity_uint16(Value:array<uint16>):array<uint16> return Value end
+   function identity_uint(Value:array<uint>):array<uint> return Value end
+   function identity_uint64(Value:array<uint64>):array<uint64> return Value end
+
+   assert(identity_uint8(array<uint8> {}) != nil and identity_uint16(array<uint16> {}) != nil,
+      'small unsigned array contracts were rejected')
+   assert(identity_uint(array<uint> {}) != nil and identity_uint64(array<uint64> {}) != nil,
+      'wide unsigned array contracts were rejected')
+
+   local contract_failed = false
+   try
+      identity_uint(array<int> {})
+   except error_value
+      contract_failed = true
+   end
+   assert(contract_failed, 'signed array satisfied an unsigned array contract')
+
+   local words = array<uint16, 1>
+   local masks = array<uint, 1>
+   local counters = array<uint64, 1>
+   for i in {0 to 400} do
+      words[0] = 32768 + i
+      masks[0] = 2147483648 + i
+      counters[0] = 9007199254740000 + i
+   end
+   assert(words[0] is 33167 and masks[0] is 2147484047 and counters[0] is 9007199254740399,
+      'hot unsigned array indexing diverged from interpreter behaviour')
+
+   local bytes = array<uint8, 1>
+   local wide_words = array<uint16, 1>
+   local negative_counters = array<uint64, 2>
+   for i in {0 to 400} do
+      bytes[0] = 4294967295.0
+      wide_words[0] = 4294967295.0
+      negative_counters[0] = -1.0
+      negative_counters[1] = -4294967295.0
+   end
+   assert(bytes.concat('', '%u') is '255' and wide_words.concat('', '%u') is '65535',
+      'hot small-width unsigned stores narrowed numeric values before modulo conversion')
+   assert(negative_counters.concat(',', '%llu') is '18446744073709551615,18446744069414584321',
+      'hot uint64 stores did not preserve negative numeric values modulo 64 bits')
+end
+
 @Test function IntegerArrayConcat()
    int_array = array<int, 5>
    int_array[0] = 10
@@ -11,12 +89,14 @@ function enforce_hotpath() end
    int_array[3] = 40
    int_array[4] = 50
 
-   result = int_array:concat('%d', ', ')
-   assert(result is '10, 20, 30, 40, 50', "Integer array concat failed, expected '10, 20, 30, 40, 50', got '" .. result .. "'")
+   result = int_array.concat(', ', '%d')
+   assert(result is '10, 20, 30, 40, 50',
+      "Integer array concat failed, expected '10, 20, 30, 40, 50', got '" .. result .. "'")
 
-   -- Test without join string
-   result2 = int_array:concat('%d', '')
-   assert(result2 is '1020304050', "Integer array concat without join failed, expected '1020304050', got '" .. result2 .. "'")
+   -- Test without separator
+   result2 = int_array.concat('', '%d')
+   assert(result2 is '1020304050',
+      "Integer array concat without separator failed, expected '1020304050', got '" .. result2 .. "'")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -27,8 +107,9 @@ end
    float_array[1] = 2.7
    float_array[2] = 3.14
 
-   result = float_array:concat('%.2f', ' | ')
-   assert(result is '1.50 | 2.70 | 3.14', "Float array concat failed, expected '1.50 | 2.70 | 3.14', got '" .. result .. "'")
+   result = float_array.concat(' | ', '%.2f')
+   assert(result is '1.50 | 2.70 | 3.14',
+      "Float array concat failed, expected '1.50 | 2.70 | 3.14', got '" .. result .. "'")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -40,15 +121,15 @@ end
    byte_array[2] = 67  -- 'C'
    byte_array[3] = 68  -- 'D'
 
-   result = byte_array:concat('%c', '')
+   result = byte_array.concat('', '%c')
    if result != 'ABCD' then
-      error("Byte array concat failed, expected 'ABCD', got '" .. result .. "'")
+      raise "Byte array concat failed, expected 'ABCD', got '" .. result .. "'"
    end
 
    -- Test with separator
-   result2 = byte_array:concat('%d', '-')
+   result2 = byte_array.concat('-', '%d')
    if result2 != '65-66-67-68' then
-      error("Byte array numeric concat failed, expected '65-66-67-68', got '" .. result2 .. "'")
+      raise "Byte array numeric concat failed, expected '65-66-67-68', got '" .. result2 .. "'"
    end
 end
 
@@ -59,7 +140,7 @@ end
    double_array[0] = 3.141592653589793
    double_array[1] = 2.718281828459045
 
-   result = double_array:concat('%.3f', ' and ')
+   result = double_array.concat(' and ', '%.3f')
    assert(result is '3.142 and 2.718', "Double array concat failed, expected '3.142 and 2.718', got '" .. result .. "'")
 end
 
@@ -71,7 +152,7 @@ end
    word_array[1] = 2000
    word_array[2] = 3000
 
-   result = word_array:concat('%04d', ', ')
+   result = word_array.concat(', ', '%04d')
    assert(result is '1000, 2000, 3000', "Word array concat failed, expected '1000, 2000, 3000', got '" .. result .. "'")
 end
 
@@ -81,7 +162,7 @@ end
    single_array = array<int, 1>
    single_array[0] = 42
 
-   result = single_array:concat('%d', ', ')
+   result = single_array.concat(', ', '%d')
    assert(result is '42', "Single element array concat failed, expected '42', got '" .. result .. "'")
 end
 
@@ -93,44 +174,46 @@ end
    int_array[1] = 20
 
    -- Test valid formats work
-   result = int_array:concat('%d', ', ')
+   result = int_array.concat(', ', '%d')
    assert(result is '10, 20', "Valid format test failed, expected '10, 20', got '" .. result .. "'")
 
    -- Test multiple format specifiers are rejected
    try
-      int_array:concat('%d %s', ', ')
+      int_array.concat(', ', '%d %s')
    success
-      error("Multiple format specifiers should be rejected")
+      assert(false, "Multiple format specifiers should be rejected")
    end
 
    -- Test no format specifier is rejected
    try
-      int_array:concat('no format', ', ')
+      int_array.concat(', ', 'no format')
    success
-      error("No format specifier should be rejected")
+      assert(false, "No format specifier should be rejected")
    end
 
    -- Test incomplete format specifier is rejected
    try
-      int_array:concat('incomplete %', ', ')
+      int_array.concat(', ', 'incomplete %')
    success
-      error("Incomplete format specifier should be rejected")
+      assert(false, "Incomplete format specifier should be rejected")
    end
 
    -- Test escaped %% works
-   result_escaped = int_array:concat('%%d:%d', ', ')
-   assert(result_escaped is '%d:10, %d:20', "Escaped %% test failed, expected '%d:10, %d:20', got '" .. result_escaped .. "'")
+   result_escaped = int_array.concat(', ', '%%d:%d')
+   assert(result_escaped is '%d:10, %d:20',
+      "Escaped %% test failed, expected '%d:10, %d:20', got '" .. result_escaped .. "'")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function StringArray()
-   string_array = array<string, 3>
+   string_array = array<str, 3>
    string_array[0] = 'hello'
    string_array[1] = 'world'
    string_array[2] = '!'
-   result = string_array:concat('%s', ' ')
-   assert(result is 'hello world !', "String array concat failed, expected 'hello world !', got '" .. tostring(result) .. "'")
+   result = string_array.concat(' ', '%s')
+   assert(result is 'hello world !',
+      "String array concat failed, expected 'hello world !', got '" .. tostring(result) .. "'")
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -147,14 +230,14 @@ end
    try
       t = arr[-1]
    success
-      error('Should reject negative array index')
+      assert(false, 'Should reject negative array index')
    end
 
    -- Test invalid high index
    try
       t = arr[10]
    success
-      error('Should reject index beyond array size')
+      assert(false, 'Should reject index beyond array size')
    end
 end
 
@@ -163,9 +246,9 @@ end
 
 @Test function ArraySizeValidation()
    try
-      t = array.new(-5, 'int')
+      t = array.new('int', -5)
    success
-      error('Should reject negative array size')
+      assert(false, 'Should reject negative array size')
    end
 end
 -----------------------------------------------------------------------------------------------------------------------
@@ -173,31 +256,57 @@ end
 
 @Test function GetStringBounds()
    str = 'Hello World'
-   arr = array.new(str, 'byte')
+   arr = string.toArray(str)
 
    -- Test valid substring extraction
-   result = arr:getString(0, 5)
+   result = arr.getString(0, 5)
    assert(result is 'Hello', 'Valid substring extraction failed')
+
+   result = arr.getString(11, 0)
+   assert(result is '', 'Zero-length getString() at the end should return an empty string')
+
+   result = arr.getString(11)
+   assert(result is '', 'Default zero-length getString() at the end should return an empty string')
 
    -- Test invalid start index
    try
-      t = arr:getString(-1, 5)
+      t = arr.getString(-1, 5)
    success
-      error('Should reject negative start index')
+      assert(false, 'Should reject negative start index')
    end
 
    -- Test invalid length (would exceed array bounds)
    try
-      t = arr:getString(5, 100)
+      t = arr.getString(5, 100)
    success
-      error('Should reject length that exceeds array bounds')
+      assert(false, 'Should reject length that exceeds array bounds')
    end
 
    -- Test negative length
    try
-      t = arr:getString(0, -5)
+      t = arr.getString(0, -5)
    success
-      error('Should reject negative length')
+      assert(false, 'Should reject negative length')
+   end
+end
+
+@Test function SetStringBounds()
+   arr = array<byte, 5>
+   written = arr.setString('Hello')
+   assert(written is 5, 'setString should write the full string when it fits')
+   assert(arr.getString() is 'Hello', 'setString should write expected bytes')
+
+   written = arr.setString('XYZ', 3)
+   assert(written is 2, 'setString should clamp writes to the available byte span')
+   assert(arr.getString() is 'HelXY', 'setString should only overwrite the clamped byte span')
+
+   written = arr.setString('!', 5)
+   assert(written is 0, 'setString at the end should write zero bytes')
+
+   try
+      arr.setString('!', -1)
+   success
+      assert(false, 'setString should reject negative start indexes')
    end
 end
 
@@ -209,27 +318,82 @@ end
    source = 'Hello'
 
    -- Test valid copy
-   dest:copy(source)
+   dest.copy(source)
 
    -- Test copy beyond array bounds
    try
-      dest:copy(source, 8) -- Target index 8, copy 5 chars = positions 8-12 (exceeds size 10)
+      dest.copy(source, 8) -- Target index 8, copy 5 chars = positions 8-12 (exceeds size 10)
    success
-      error('Should reject copy that would exceed array bounds')
+      assert(false, 'Should reject copy that would exceed array bounds')
    end
 
    try
-      dest:copy(source, -1)
+      dest.copy(source, -1)
    success
-      error('Should reject invalid destination index')
+      assert(false, 'Should reject invalid destination index')
    end
 
    -- Test destination index beyond array size
    try
-      dest:copy(source, 15) -- Beyond array size 10
+      dest.copy(source, 15) -- Beyond array size 10
    success
-      error('Should reject destination index beyond array size')
+      assert(false, 'Should reject destination index beyond array size')
    end
+
+   try
+      dest.copy(source, 0, 0, -1)
+   success
+      assert(false, 'Should reject negative string copy count')
+   end
+end
+
+@Test function ArrayCopyArraySourceBounds()
+   dest = array<int> { 0, 0, 0 }
+   source = array<int> { 10, 20, 30 }
+
+   dest.copy(source, 0, 0, 2)
+   assert(dest[0] is 10 and dest[1] is 20 and dest[2] is 0, 'Valid array-to-array copy failed')
+
+   try
+      dest.copy(source, -1, 0, 1)
+   success
+      assert(false, 'Should reject negative destination index before array copy')
+   end
+
+   try
+      dest.copy(source, 0, -1, 1)
+   success
+      assert(false, 'Should reject negative source index before array copy')
+   end
+
+   try
+      dest.copy(source, 0, 0, -1)
+   success
+      assert(false, 'Should reject negative count before array copy')
+   end
+end
+
+@Test function ArrayCopyArrayReferences()
+   first = array<int> { 1, 10 }
+   second = array<int> { 2, 20 }
+   third = array<int> { 3, 30 }
+   source = array<array> { first, second, third }
+   dest = array<array, 3>
+
+   dest.copy(source, 0, 1, 2)
+   assert(dest[0][0] is 2 and dest[0][1] is 20, "copy() should copy first nested array reference")
+   assert(dest[1][0] is 3 and dest[1][1] is 30, "copy() should copy second nested array reference")
+   assert(dest[2] is nil, "copy() should leave untouched destination slots as nil")
+
+   second.push(200)
+   assert(dest[0][2] is 200, "Array copy should preserve shallow nested array references")
+
+   second = nil
+   third = nil
+   source = nil
+   processing.collect()
+   assert(dest[0][0] is 2, "Copied nested array should survive GC")
+   assert(dest[1][0] is 3, "Second copied nested array should survive GC")
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -238,7 +402,7 @@ end
 @Test function ArrayIteratorSpecialisation()
    arr = array<int> { 4, 5, 6, 7 }
    indexes = {}
-   values = {}
+   local values = {}
    count = 0
 
    for i, v in arr do
@@ -264,14 +428,73 @@ end
    try
       arr[6] = 100
    success
-      error('Should reject write beyond array bounds')
+      assert(false, 'Should reject write beyond array bounds')
    end
 
    try
       arr[-1] = 100
    success
-      error('Should reject write at invalid index')
+      assert(false, 'Should reject write at invalid index')
    end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- A literal index and a variable index compile to different bytecode: BC_AGETB/BC_ASETB carry the index as an operand
+-- literal, BC_AGETV/BC_ASETV read it from a register.  Both forms must report the same fault.  The literal forms
+-- previously entered the fallback with an unrelated stack slot as the key, so a read reported ERR_TypeMismatch and a
+-- write reported the wrong index.
+
+@Test function ArrayBoundsFaultReporting()
+   register_sentinel = 'keep array out of register zero'
+   arr = array<int> { 10, 20, 30 }
+   idx = #arr + 6   -- 9, computed so that the index cannot be folded into an operand literal
+
+   raised = false
+   try
+      t = arr[9]
+   except e
+      raised = true
+      assert(e.code is ERR_OutOfBounds, 'Literal-index read reported ' .. tostring(e.code))
+      assert(e.message.find('index 9'), 'Literal-index read reported: ' .. e.message)
+   end
+   assert(raised, 'Literal-index read beyond bounds must raise')
+
+   raised = false
+   try
+      t = arr[idx]
+   except e
+      raised = true
+      assert(e.code is ERR_OutOfBounds, 'Variable-index read reported ' .. tostring(e.code))
+      assert(e.message.find('index 9'), 'Variable-index read reported: ' .. e.message)
+   end
+   assert(raised, 'Variable-index read beyond bounds must raise')
+
+   raised = false
+   try
+      arr[9] = 1
+   except e
+      raised = true
+      assert(e.code is ERR_OutOfBounds, 'Literal-index write reported ' .. tostring(e.code))
+      assert(e.message.find('index 9'), 'Literal-index write reported: ' .. e.message)
+   end
+   assert(raised, 'Literal-index write beyond bounds must raise')
+
+   raised = false
+   try
+      arr[idx] = 1
+   except e
+      raised = true
+      assert(e.code is ERR_OutOfBounds, 'Variable-index write reported ' .. tostring(e.code))
+      assert(e.message.find('index 9'), 'Variable-index write reported: ' .. e.message)
+   end
+   assert(raised, 'Variable-index write beyond bounds must raise')
+
+   -- In-bounds access through both forms remains unaffected.
+
+   assert(arr[1] is 20, 'Literal-index read of a valid element failed')
+   arr[1] = 99
+   assert(arr[1] is 99, 'Literal-index write of a valid element failed')
+   assert(register_sentinel is 'keep array out of register zero', 'Register sentinel was unexpectedly modified')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -282,10 +505,10 @@ end
    table_data = {10, 20, 30, 40, 50}
 
    -- Test copying entire table to array
-   arr:copy(table_data)
+   arr.copy(table_data)
 
    -- Verify values were copied correctly
-   for i = 0, 4 do
+   for i in {0 to 5} do
       assert(arr[i] is table_data[i], 'Table to integer array copy failed at index ' .. i)
    end
 end
@@ -294,10 +517,10 @@ end
    arr = array<float, 4>
    table_data = {1.5, 2.7, 3.14, 4.8}
 
-   arr:copy(table_data)
+   arr.copy(table_data)
 
    -- Check with small tolerance for float comparison
-   for i = 0, 3 do
+   for i in {0 to 4} do
       diff = math.abs(arr[i] - table_data[i])
       assert(diff < 0.0001, 'Table to float array copy failed at index ' .. i)
    end
@@ -307,9 +530,9 @@ end
    arr = array<byte, 4>
    table_data = {65, 66, 67, 68}  -- ASCII A, B, C, D
 
-   arr:copy(table_data)
+   arr.copy(table_data)
 
-   for i = 0, 3 do
+   for i in {0 to 4} do
       assert(arr[i] is table_data[i], 'Table to byte array copy failed at index ' .. i)
    end
 end
@@ -318,9 +541,9 @@ end
    arr = array<double, 3>
    table_data = {3.141592653589793, 2.718281828459045, 1.414213562373095}
 
-   arr:copy(table_data)
+   arr.copy(table_data)
 
-   for i = 0, 2 do
+   for i in {0 to 3} do
       diff = math.abs(arr[i] - table_data[i])
       assert(diff < 0.000000001, 'Table to double array copy failed at index ' .. i)
    end
@@ -330,9 +553,9 @@ end
    arr = array<int16, 3>
    table_data = {1000, 2000, 3000}
 
-   arr:copy(table_data)
+   arr.copy(table_data)
 
-   for i = 0, 2 do
+   for i in {0 to 3} do
       assert(arr[i] is table_data[i], 'Table to int16 array copy failed at index ' .. i)
    end
 end
@@ -341,14 +564,14 @@ end
    arr = array<int, 6>
 
    -- Initialize array with different values
-   for i = 0, 5 do
+   for i in {0 to 6} do
       arr[i] = i
    end
 
    -- Copy table starting at dest index 2
-   -- API: arr:copy(source, dest_idx, src_idx, count)
+   -- API: arr.copy(source, dest_idx, src_idx, count)
    table_data = {100, 200, 300}
-   arr:copy(table_data, 2, 0, 3)
+   arr.copy(table_data, 2, 0, 3)
 
    -- Check that first 2 elements are unchanged
    assert(arr[0] is 0, 'Element before copy should be unchanged')
@@ -365,13 +588,13 @@ end
 
 @Test function TableCopyWithLimitedTotal()
    arr = array<int, 5>
-   arr:fill(0)  -- Zero-initialize the array
+   arr.fill(0)  -- Zero-initialize the array
 
    table_data = {10, 20, 30, 40, 50}
 
    -- Copy only first 3 elements
-   -- API: arr:copy(source, dest_idx, src_idx, count)
-   arr:copy(table_data, 0, 0, 3)
+   -- API: arr.copy(source, dest_idx, src_idx, count)
+   arr.copy(table_data, 0, 0, 3)
 
    assert(arr[0] is 10, 'Limited copy element 1 incorrect')
    assert(arr[1] is 20, 'Limited copy element 2 incorrect')
@@ -388,24 +611,36 @@ end
 
    -- Test copying to invalid destination index
    try
-      arr:copy(table_data, 0)  -- Invalid index (0)
+      arr.copy(table_data, 0)  -- Invalid index (0)
    success
-      error('Should reject invalid destination index')
+      assert(false, 'Should reject invalid destination index')
    end
 
    -- Test copying beyond array bounds
    try
-      arr:copy(table_data, 2)  -- Start at 2, table has 4 elements, would exceed array size 3
+      arr.copy(table_data, 2)  -- Start at 2, table has 4 elements, would exceed array size 3
    success
-      error('Should reject copy that would exceed array bounds')
+      assert(false, 'Should reject copy that would exceed array bounds')
+   end
+
+   try
+      arr.copy(table_data, 0, -1, 1)
+   success
+      assert(false, 'Should reject negative table source index')
+   end
+
+   try
+      arr.copy(table_data, 0, 0, -1)
+   success
+      assert(false, 'Should reject negative table copy count')
    end
 
    -- Test with empty table
    empty_table = {}
    try
-      arr:copy(empty_table)
+      arr.copy(empty_table)
    success
-      error('Should reject empty table')
+      assert(false, 'Should reject empty table')
    end
 end
 
@@ -414,7 +649,7 @@ end
    float_arr = array<float, 3>
    int_table = {1, 2, 3}
 
-   float_arr:copy(int_table)
+   float_arr.copy(int_table)
 
    assert(math.abs(float_arr[0] - 1.0) < 0.0001, 'Integer to float conversion failed')
    assert(math.abs(float_arr[1] - 2.0) < 0.0001, 'Integer to float conversion failed')
@@ -424,7 +659,7 @@ end
    int_arr = array<int, 3>
    float_table = {1.7, 2.9, 3.1}
 
-   int_arr:copy(float_table)
+   int_arr.copy(float_table)
 
    assert(int_arr[0] is 1, 'Float to integer conversion failed')
    assert(int_arr[1] is 2, 'Float to integer conversion failed')
@@ -432,31 +667,138 @@ end
 end
 
 @Test function ToString()
-   str_array = array.new('hello')
-   assert(string.startsWith(tostring(str_array), 'array:'), "String array tostring() failed, got '" .. tostring(str_array) .. "'")
+   str_array = string.toArray('hello')
+   assert(tostring(str_array) is 'hello', "String array tostring() failed, got '" .. tostring(str_array) .. "'")
    assert(#str_array is 5, "String array length failed, expected 5, got " .. tostring(#str_array))
+
+   char_array = array<char> { 72, 101, 108, 108, 111 }
+   assert(tostring(char_array) is 'Hello', "Char array tostring() failed, got '" .. tostring(char_array) .. "'")
+   assert(string.format('%s', char_array) is 'Hello', 'Char array string.format() conversion failed')
+   assert(f'{char_array}' is 'Hello', 'Char array f-string conversion failed')
+
+   byte_array = array<byte> { 65, 66, 67 }
+   assert(tostring(byte_array) is 'ABC', "Byte array tostring() failed, got '" .. tostring(byte_array) .. "'")
+
+   nul_array = array<byte> { 65, 0, 66 }
+   nul_text = tostring(nul_array)
+   assert(nul_text is nul_array.getString(), 'Byte array tostring() should match getString() with embedded NUL bytes')
+   assert(#nul_text is 3, "Byte array tostring() should preserve full length, got " .. tostring(#nul_text))
+
+   int_array = array<int> { 1, 2, 3 }
+   assert(tostring(int_array) is 'array<int, 3>', "Integer array tostring() failed, got '" .. tostring(int_array) .. "'")
+
+   string_array = array<str> { 'hello', 'world' }
+   assert(tostring(string_array) is 'array<str, 2>', "String array tostring() failed, got '" .. tostring(string_array) .. "'")
+
+   empty_double_array = array<double, 0>
+   assert(tostring(empty_double_array) is 'array<double, 0>',
+      "Empty double array tostring() failed, got '" .. tostring(empty_double_array) .. "'")
+end
+
+@Test function ArrayConcatMetamethod()
+   char_array = array<char> { 72, 105 }
+   byte_array = array<byte> { 33 }
+
+   assert('Say: ' .. char_array is 'Say: Hi', 'String plus char array concat failed')
+   assert(char_array .. ' there' is 'Hi there', 'Char array plus string concat failed')
+   assert(char_array .. byte_array is 'Hi!', 'Char array plus byte array concat failed')
+   assert(char_array .. 123 is 'Hi123', 'Char array plus number concat failed')
+
+   nul_array = array<byte> { 65, 0, 66 }
+   nul_result = nul_array .. 'C'
+   assert(nul_result is nul_array.getString() .. 'C', 'Byte array concat should preserve embedded NUL bytes')
+   assert(#nul_result is 4, "Byte array concat should preserve full length, got " .. tostring(#nul_result))
+
+   int_array = array<int> { 1, 2, 3 }
+   try
+      bad_result = int_array .. 'x'
+   success
+      assert(false, 'Integer array left-hand concat should fail')
+   end
+
+   try
+      bad_result = 'x' .. int_array
+   success
+      assert(false, 'Integer array right-hand concat should fail')
+   end
+end
+
+@Test function ArrayEqualityMetamethod()
+   int_a = array<int> { 1, 2, 3 }
+   int_b = array<int> { 1, 2, 3 }
+   int_c = array<int> { 1, 2, 4 }
+   int_short = array<int> { 1, 2 }
+   double_array = array<double> { 1.0, 2.0, 3.0 }
+
+   assert(int_a is int_b, 'Primitive arrays with identical contents should be equal')
+   assert(int_a != int_c, 'Primitive arrays with different contents should not be equal')
+   assert(int_a != int_short, 'Primitive arrays with different lengths should not be equal')
+   assert(int_a != double_array, 'Primitive arrays with different element types should not be equal')
+
+   byte_a = array<byte> { 65, 0, 66 }
+   byte_b = array<byte> { 65, 0, 66 }
+   byte_c = array<byte> { 65, 0, 67 }
+   assert(byte_a is byte_b, 'Byte arrays with embedded NUL bytes should compare equal by raw memory')
+   assert(byte_a != byte_c, 'Byte arrays with different raw bytes should not compare equal')
+
+   string_a = array<str> { 'hello', 'world' }
+   string_b = array<str> { 'hello', 'world' }
+   string_c = array<str> { 'hello', 'there' }
+   string_short = array<str> { 'hello' }
+
+   assert(string_a is string_b, 'String arrays with identical contents should be equal')
+   assert(string_a != string_c, 'String arrays with different contents should not be equal')
+   assert(string_a != string_short, 'String arrays with different lengths should not be equal')
+
+   obj_one = obj.new('time')
+   obj_two = obj.new('file')
+   obj_one_ref = obj.find(obj_one.id)
+
+   object_a = array<obj> { obj_one, obj_two }
+   object_b = array<obj> { obj_one_ref, obj_two }
+   object_c = array<obj> { obj_two, obj_one }
+   object_short = array<obj> { obj_one }
+
+   assert(object_a is object_b, 'Object arrays with matching UIDs should be equal')
+   assert(object_a != object_c, 'Object arrays with different UID order should not be equal')
+   assert(object_a != object_short, 'Object arrays with different lengths should not be equal')
+
+   table_a = array<table> { { value = 1 } }
+   table_b = array<table> { { value = 1 } }
+   try
+      unsupported_equal = table_a is table_b
+   success
+      assert(false, 'Table array equality should fail until non-primitive equality is supported')
+   end
+
+   obj_one.free()
+   obj_two.free()
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Test array.find() functionality
+-- Test array.indexOf() functionality
 
 @Test function ArrayFind()
    arr = array<int, 10>
-   for i = 0, 9 do
+   for i in {0 to 10} do
       arr[i] = i * 10
    end
 
-   -- Find existing values
-   assert(arr:find(0) is 0, "find(0) should return 0")
-   assert(arr:find(50) is 5, "find(50) should return 5")
-   assert(arr:find(90) is 9, "find(90) should return 9")
+   -- indexOf existing values
+   assert(arr.indexOf(0) is 0, "indexOf(0) should return 0")
+   assert(arr.indexOf(50) is 5, "indexOf(50) should return 5")
+   assert(arr.indexOf(90) is 9, "indexOf(90) should return 9")
 
-   -- Find non-existing value
-   assert(arr:find(55) is nil, "find(55) should return nil")
+   -- indexOf non-existing value
+   assert(arr.indexOf(55) is nil, "indexOf(55) should return nil")
 
-   -- Find with start index
-   assert(arr:find(50, 5) is 5, "find(50, 5) should return 5")
-   assert(arr:find(50, 6) is nil, "find(50, 6) should return nil")
+   -- indexOf with start index
+   assert(arr.indexOf(50, 5) is 5, "indexOf(50, 5) should return 5")
+   assert(arr.indexOf(50, 6) is nil, "indexOf(50, 6) should return nil")
+   assert(arr.indexOf(50, 0, 5) is nil, "an exclusive stop should exclude index 5")
+   assert(arr.indexOf(50, 0, 6) is 5, "an exclusive stop should include index 5")
+   assert(arr.indexOf(90, 9, #arr) is 9, "a stop equal to array length should be valid")
+   assert(arr.indexOf(50, 5, 5) is nil, "an empty span should not return a value")
 end
 
 @Test function ArrayFindFloat()
@@ -467,20 +809,20 @@ end
    arr[3] = 2.5  -- duplicate
    arr[4] = 4.5
 
-   assert(arr:find(2.5) is 1, "find(2.5) should return 1 (first occurrence)")
-   assert(arr:find(3.5) is 2, "find(3.5) should return 2")
-   assert(arr:find(5.5) is nil, "find(5.5) should return nil")
+   assert(arr.indexOf(2.5) is 1, "indexOf(2.5) should return 1 (first occurrence)")
+   assert(arr.indexOf(3.5) is 2, "indexOf(3.5) should return 2")
+   assert(arr.indexOf(5.5) is nil, "indexOf(5.5) should return nil")
 end
 
 @Test function ArrayFindObject()
    obj_one = obj.new('time')
    obj_two = obj.new('file')
-   arr = array<object> { obj_one, obj_two }
+   arr = array<obj> { obj_one, obj_two }
 
-   assert(arr:find(obj_one) is 0, "find(object) should return 0")
-   assert(arr:find(obj_two.id) is 1, "find(uid) should return 1")
-   assert(arr:find(obj_one, 1) is nil, "find(object, 1) should return nil")
-   assert(arr:find(obj_two, {0...1}) is 1, "find(object, range) should return 1")
+   assert(arr.indexOf(obj_one) is 0, "indexOf(object) should return 0")
+   assert(arr.indexOf(obj_two.id) is 1, "indexOf(uid) should return 1")
+   assert(arr.indexOf(obj_one, 1) is nil, "indexOf(object, 1) should return nil")
+   assert(arr.indexOf(obj_two, {0 into 1}) is 1, "indexOf(object, range) should return 1")
 
    obj_one.free()
    obj_two.free()
@@ -491,11 +833,11 @@ end
 
 @Test function ArrayReverse()
    arr = array<int, 5>
-   for i = 0, 4 do
+   for i in {0 to 5} do
       arr[i] = i
    end
 
-   arr:reverse()
+   arr.reverse()
 
    assert(arr[0] is 4, "reverse arr[0] should be 4")
    assert(arr[1] is 3, "reverse arr[1] should be 3")
@@ -506,11 +848,11 @@ end
 
 @Test function ArrayReverseOddLength()
    arr = array<int, 5>
-   for i = 0, 4 do
+   for i in {0 to 5} do
       arr[i] = i + 1
    end
 
-   arr:reverse()
+   arr.reverse()
 
    assert(arr[0] is 5, "odd reverse arr[0] should be 5")
    assert(arr[2] is 3, "odd reverse arr[2] should be 3 (middle)")
@@ -521,14 +863,14 @@ end
    -- Single element array
    arr = array<int, 1>
    arr[0] = 42
-   arr:reverse()
+   arr.reverse()
    assert(arr[0] is 42, "single element reverse should preserve value")
 
    -- Two element array
    arr2 = array<int, 2>
    arr2[0] = 1
    arr2[1] = 2
-   arr2:reverse()
+   arr2.reverse()
    assert(arr2[0] is 2, "two element reverse [0] should be 2")
    assert(arr2[1] is 1, "two element reverse [1] should be 1")
 end
@@ -538,76 +880,84 @@ end
 
 @Test function ArraySlice()
    arr = array<int, 10>
-   for i = 0, 9 do
+   for i in {0 to 10} do
       arr[i] = i * 10
    end
 
    -- Slice middle portion using range (exclusive by default)
-   sliced = arr:slice({2..5})
-   assert(#sliced is 3, "slice({2..5}) should have length 3, got " .. tostring(#sliced))
+   sliced = arr.slice({2 to 5})
+   assert(#sliced is 3, "slice({2 to 5}) should have length 3, got " .. tostring(#sliced))
    assert(sliced[0] is 20, "slice[0] should be 20")
    assert(sliced[1] is 30, "slice[1] should be 30")
    assert(sliced[2] is 40, "slice[2] should be 40")
 
    -- Slice from start
-   sliced2 = arr:slice({0..3})
-   assert(#sliced2 is 3, "slice({0..3}) should have length 3")
+   sliced2 = arr.slice({0 to 3})
+   assert(#sliced2 is 3, "slice({0 to 3}) should have length 3")
    assert(sliced2[0] is 0, "slice2[0] should be 0")
 
    -- Slice to end using inclusive range
-   sliced3 = arr:slice({7...9})
-   assert(#sliced3 is 3, "slice({7...9}) should have length 3")
+   sliced3 = arr.slice({7 into 9})
+   assert(#sliced3 is 3, "slice({7 into 9}) should have length 3")
    assert(sliced3[0] is 70, "slice3[0] should be 70")
    assert(sliced3[2] is 90, "slice3[2] should be 90")
 end
 
 @Test function ArraySliceNegativeIndices()
    arr = array<int, 5>
-   for i = 0, 4 do
+   for i in {0 to 5} do
       arr[i] = i
    end
 
-   -- Slice using negative end index (negative indices are always inclusive)
-   sliced = arr:slice({0..-1})
-   assert(#sliced is 5, "slice({0..-1}) should have length 5")
-   assert(sliced[4] is 4, "slice({0..-1})[4] should be 4")
+   -- Slice using negative end index with explicit inclusive/exclusive stop semantics
+   sliced_inclusive = arr.slice({0 into -1})
+   assert(#sliced_inclusive is 5, "slice({0 into -1}) should have length 5")
+   assert(sliced_inclusive[4] is 4, "slice({0 into -1})[4] should be 4")
+
+   sliced_exclusive = arr.slice({0 to -1})
+   assert(#sliced_exclusive is 4, "slice({0 to -1}) should have length 4")
+   assert(sliced_exclusive[3] is 3, "slice({0 to -1})[3] should be 3")
 
    -- Slice using negative start index
-   sliced2 = arr:slice({-2..-1})
-   assert(#sliced2 is 2, "slice({-2..-1}) should have length 2")
-   assert(sliced2[0] is 3, "slice({-2..-1})[0] should be 3")
-   assert(sliced2[1] is 4, "slice({-2..-1})[1] should be 4")
+   sliced_negative_inclusive = arr.slice({-2 into -1})
+   assert(#sliced_negative_inclusive is 2, "slice({-2 into -1}) should have length 2")
+   assert(sliced_negative_inclusive[0] is 3, "slice({-2 into -1})[0] should be 3")
+   assert(sliced_negative_inclusive[1] is 4, "slice({-2 into -1})[1] should be 4")
+
+   sliced_negative_exclusive = arr.slice({-2 to -1})
+   assert(#sliced_negative_exclusive is 1, "slice({-2 to -1}) should have length 1")
+   assert(sliced_negative_exclusive[0] is 3, "slice({-2 to -1})[0] should be 3")
 end
 
 @Test function ArraySliceEdgeCases()
    arr = array<int, 5>
-   for i = 0, 4 do
+   for i in {0 to 5} do
       arr[i] = i
    end
 
    -- Empty slice (exclusive range where start equals stop)
-   sliced = arr:slice({3..3})
-   assert(#sliced is 0, "slice({3..3}) should be empty")
+   sliced = arr.slice({3 to 3})
+   assert(#sliced is 0, "slice({3 to 3}) should be empty")
 
    -- Out of bounds (should clamp)
-   sliced2 = arr:slice({0..100})
-   assert(#sliced2 is 5, "slice({0..100}) should clamp to array length")
+   sliced2 = arr.slice({0 to 100})
+   assert(#sliced2 is 5, "slice({0 to 100}) should clamp to array length")
 
    -- Reverse slice using inclusive range (required for reverse)
-   sliced3 = arr:slice({4...2})
-   assert(#sliced3 is 3, "slice({4...2}) should have length 3 (reverse)")
+   sliced3 = arr.slice({4 into 2})
+   assert(#sliced3 is 3, "slice({4 into 2}) should have length 3 (reverse)")
    assert(sliced3[0] is 4, "reverse slice[0] should be 4")
    assert(sliced3[2] is 2, "reverse slice[2] should be 2")
 end
 
 @Test function ArraySliceWithStep()
    arr = array<int, 10>
-   for i = 0, 9 do
+   for i in {0 to 10} do
       arr[i] = i
    end
 
    -- Slice with step of 2 using range.new(start, stop, inclusive, step)
-   sliced = arr:slice(range.new(0, 10, false, 2))
+   sliced = arr.slice(range.new(0, 10, false, 2))
    assert(#sliced is 5, "slice with step=2 should have length 5, got " .. tostring(#sliced))
    assert(sliced[0] is 0, "stepped slice[0] should be 0")
    assert(sliced[1] is 2, "stepped slice[1] should be 2")
@@ -616,7 +966,7 @@ end
    assert(sliced[4] is 8, "stepped slice[4] should be 8")
 
    -- Reverse slice with step using range.new (inclusive for reverse)
-   sliced2 = arr:slice(range.new(9, 1, true, -2))
+   sliced2 = arr.slice(range.new(9, 1, true, -2))
    assert(#sliced2 is 5, "reverse slice with step=-2 should have length 5, got " .. tostring(#sliced2))
    assert(sliced2[0] is 9, "reverse stepped slice[0] should be 9")
    assert(sliced2[1] is 7, "reverse stepped slice[1] should be 7")
@@ -624,29 +974,31 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Test array.find() with range support
+-- Test array.indexOf() with range support
 
 @Test function ArrayFindWithRange()
    arr = array<int, 10>
-   for i = 0, 9 do
+   for i in {0 to 10} do
       arr[i] = i * 10
    end
 
    -- Find within a range (exclusive)
-   assert(arr:find(30, {0..5}) is 3, "find in range: should find 30 at index 3")
-   assert(arr:find(50, {0..5}) is nil, "find in range: 50 should not be found (outside range)")
-   assert(arr:find(70, {5..10}) is 7, "find in range: should find 70 at index 7")
+   assert(arr.indexOf(30, {0 to 5}) is 3, "find in range: should find 30 at index 3")
+   assert(arr.indexOf(50, {0 to 5}) is nil, "find in range: 50 should not be found (outside range)")
+   assert(arr.indexOf(70, {5 to 10}) is 7, "find in range: should find 70 at index 7")
+   assert(arr.indexOf(30, {-20 into 3}) is 3, "find in clipped negative range should still find 30")
+   assert(arr.indexOf(30, {20 to 30}) is nil, "find in empty clipped range should return nil")
 end
 
 @Test function ArrayFindWithInclusiveRange()
    arr = array<int, 10>
-   for i = 0, 9 do
+   for i in {0 to 10} do
       arr[i] = i * 10
    end
 
    -- Find within an inclusive range
-   assert(arr:find(50, {0...5}) is 5, "find inclusive: should find 50 at index 5")
-   assert(arr:find(50, {0..5}) is nil, "find exclusive: 50 should not be found at boundary")
+   assert(arr.indexOf(50, {0 into 5}) is 5, "find inclusive: should find 50 at index 5")
+   assert(arr.indexOf(50, {0 to 5}) is nil, "find exclusive: 50 should not be found at boundary")
 end
 
 @Test function ArrayFindWithNegativeRange()
@@ -658,8 +1010,8 @@ end
    arr[4] = 40
 
    -- Find in last 3 elements using negative indices
-   assert(arr:find(20, {-3..-1}) is 3, "find negative: should find 20 at index 3")
-   assert(arr:find(10, {-3..-1}) is nil, "find negative: 10 should not be found in last 3")
+   assert(arr.indexOf(20, {-3 to -1}) is 3, "find negative: should find 20 at index 3")
+   assert(arr.indexOf(10, {-3 to -1}) is nil, "find negative: 10 should not be found in last 3")
 end
 
 @Test function ArrayFindWithReverseRange()
@@ -671,31 +1023,32 @@ end
    arr[4] = 40
 
    -- Find searching backwards (should find the later occurrence first)
-   assert(arr:find(20, {4...0}) is 3, "find reverse: should find 20 at index 3 (searching from end)")
+   assert(arr.indexOf(20, {4 into 0}) is 3, "find reverse: should find 20 at index 3 (searching from end)")
+   assert(arr.indexOf(10, range.new(4, 0, false, -1)) is nil, "exclusive reverse range should exclude the stop boundary")
 end
 
 @Test function ArrayFindWithSteppedRange()
    arr = array<int, 10>
-   for i = 0, 9 do
-      arr[i] = (i % 2 is 0) ? 100 :> i * 10
+   for i in {0 to 10} do
+      arr[i] = (i % 2 is 0) ? 100 : i * 10
    end
    -- arr = {100, 10, 100, 30, 100, 50, 100, 70, 100, 90}
 
    -- Find only checking odd indices
-   assert(arr:find(30, range.new(1, 9, false, 2)) is 3, "find stepped: should find 30 at index 3")
-   assert(arr:find(100, range.new(1, 9, false, 2)) is nil, "find stepped: 100 not at odd indices")
+   assert(arr.indexOf(30, range.new(1, 9, false, 2)) is 3, "find stepped: should find 30 at index 3")
+   assert(arr.indexOf(100, range.new(1, 9, false, 2)) is nil, "find stepped: 100 not at odd indices")
 end
 
 @Test function ArrayFindOriginalSyntax()
    -- Verify original syntax still works
    arr = array<int, 10>
-   for i = 0, 9 do
+   for i in {0 to 10} do
       arr[i] = i * 10
    end
 
-   assert(arr:find(0) is 0, "find original: should find 0 at index 0")
-   assert(arr:find(50) is 5, "find original: should find 50 at index 5")
-   assert(arr:find(50, 6) is nil, "find original: 50 should not be found starting at 6")
+   assert(arr.indexOf(0) is 0, "find original: should find 0 at index 0")
+   assert(arr.indexOf(50) is 5, "find original: should find 50 at index 5")
+   assert(arr.indexOf(50, 6) is nil, "find original: 50 should not be found starting at 6")
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -703,25 +1056,25 @@ end
 
 @Test function ArrayType()
    int_arr = array<int, 5>
-   assert(int_arr:type() is 'int', "int array type should be 'int'")
+   assert(int_arr.type() is 'int', "int array type should be 'int'")
 
    float_arr = array<float, 5>
-   assert(float_arr:type() is 'float', "float array type should be 'float'")
+   assert(float_arr.type() is 'float', "float array type should be 'float'")
 
    double_arr = array<double, 5>
-   assert(double_arr:type() is 'double', "double array type should be 'double'")
+   assert(double_arr.type() is 'double', "double array type should be 'double'")
 
    byte_arr = array<byte, 5>
-   assert(byte_arr:type() is 'char', "byte array type should be 'char'")
+   assert(byte_arr.type() is 'byte', "byte array type should be 'byte'")
 
    char_arr = array<char, 5>
-   assert(char_arr:type() is 'char', "char array type should be 'char'")
+   assert(char_arr.type() is 'byte', "char array type should be 'byte'")
 
    int16_arr = array<int16, 5>
-   assert(int16_arr:type() is 'int16', "int16 array type should be 'int16'")
+   assert(int16_arr.type() is 'int16', "int16 array type should be 'int16'")
 
    int64_arr = array<int64, 5>
-   assert(int64_arr:type() is 'int64', "int64 array type should be 'int64'")
+   assert(int64_arr.type() is 'int64', "int64 array type should be 'int64'")
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -730,7 +1083,7 @@ end
 @Test function ArrayReadOnly()
    arr = array<int, 5>
    -- Normal arrays should not be read-only
-   assert(arr:readOnly() is false, "normal array should not be read-only")
+   assert(arr.readOnly() is false, "normal array should not be read-only")
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -745,7 +1098,7 @@ end
    assert(arr[0] is 1234567890123, "int64 array should store large positive value")
    assert(arr[1] is -9876543210987, "int64 array should store large negative value")
    assert(arr[2] is 0, "int64 array should store zero")
-   assert(arr:type() is 'int64', "int64 array type should be 'int64'")
+   assert(arr.type() is 'int64', "int64 array type should be 'int64'")
 end
 
 @Test function Int64ArraySort()
@@ -756,7 +1109,7 @@ end
    arr[3] = 2000000000000
    arr[4] = 4000000000000
 
-   arr:sort()
+   arr.sort()
 
    assert(arr[0] is 1000000000000, "sorted int64 arr[0] should be smallest")
    assert(arr[4] is 5000000000000, "sorted int64 arr[4] should be largest")
@@ -769,25 +1122,25 @@ end
    -- Create zero-length arrays of different types
    empty_int = array<int>
    assert(#empty_int is 0, "empty int array should have length 0")
-   assert(empty_int:type() is 'int', "empty int array should have type 'int'")
+   assert(empty_int.type() is 'int', "empty int array should have type 'int'")
 
    empty_float = array<float>
    assert(#empty_float is 0, "empty float array should have length 0")
 
    -- concat on empty array should return empty string
-   result = empty_int:concat('%d', ', ')
+   result = empty_int.concat(', ', '%d')
    assert(result is '', "concat on empty array should return empty string")
 
    -- find on empty array should return nil
-   found = empty_int:find(42)
+   found = empty_int.indexOf(42)
    assert(found is nil, "find on empty array should return nil")
 
    -- reverse on empty array should not error
-   empty_int:reverse()
+   empty_int.reverse()
    assert(#empty_int is 0, "reverse on empty array should keep length 0")
 
    -- sort on empty array should not error
-   empty_int:sort()
+   empty_int.sort()
    assert(#empty_int is 0, "sort on empty array should keep length 0")
 end
 
@@ -796,16 +1149,16 @@ end
 
 @Test function ArrayFromString()
    str = 'Hello'
-   arr = array.new(str)
+   arr = string.toArray(str)
 
    assert(#arr is 5, "array from string should have correct length")
-   assert(arr:type() is 'char', "array from string should be char type")
+   assert(arr.type() is 'byte', "array from string should be byte type")
    assert(arr[0] is 72, "arr[0] should be 'H' (72)")
    assert(arr[1] is 101, "arr[1] should be 'e' (101)")
    assert(arr[4] is 111, "arr[4] should be 'o' (111)")
 
    -- Test getString on array created from string
-   extracted = arr:getString(0, 5)
+   extracted = arr.getString(0, 5)
    assert(extracted is 'Hello', "getString should extract original string")
 end
 
@@ -817,7 +1170,7 @@ end
    arr = array<int, 1000>
 
    -- Fill it
-   for i = 0, 999 do
+   for i in {0 to 1000} do
       arr[i] = i
    end
 
@@ -826,11 +1179,11 @@ end
    assert(arr[999] is 999, "large array last element should be 999")
 
    -- Test find on large array
-   found = arr:find(500)
+   found = arr.indexOf(500)
    assert(found is 500, "find on large array should work")
 
    -- Test reverse on large array
-   arr:reverse()
+   arr.reverse()
    assert(arr[0] is 999, "reversed large array first element should be 999")
    assert(arr[999] is 0, "reversed large array last element should be 0")
 end
@@ -839,14 +1192,14 @@ end
    arr = array<int, 100>
 
    -- Fill with descending values
-   for i = 0, 99 do
+   for i in {0 to 100} do
       arr[i] = 99 - i
    end
 
-   arr:sort()
+   arr.sort()
 
    -- Verify sorted order
-   for i = 0, 99 do
+   for i in {0 to 100} do
       assert(arr[i] is i, "sorted large array element " .. i .. " should be " .. i)
    end
 end
@@ -857,7 +1210,7 @@ end
 @Test function TableArrayBasic()
    arr = array<table, 3>
    assert(#arr is 3, "table array should have length 3")
-   assert(arr:type() is 'table', "table array type should be 'table'")
+   assert(arr.type() is 'table', "table array type should be 'table'")
 
    -- All elements should initially be nil
    assert(arr[0] is nil, "Uninitialized table array element should be nil")
@@ -916,7 +1269,7 @@ end
    arr[1] = {id = 2}
    arr[2] = {id = 3}
 
-   arr:reverse()
+   arr.reverse()
 
    assert(arr[0].id is 3, "reversed arr[0].id should be 3")
    assert(arr[1].id is 2, "reversed arr[1].id should be 2")
@@ -929,7 +1282,7 @@ end
    arr[1] = {b = 2}
    arr[2] = nil
 
-   t = arr:table()
+   t = arr.table()
 
    assert(t[0].a is 1, "converted table[0].a should be 1")
    assert(t[1].b is 2, "converted table[1].b should be 2")
@@ -939,11 +1292,11 @@ end
 @Test function ObjectArrayToTable()
    obj_one = obj.new('time')
    obj_two = obj.new('file')
-   arr = array<object, 2>
+   arr = array<obj, 2>
    arr[0] = obj_one
    arr[1] = obj_two
 
-   t = arr:table()
+   t = arr.table()
 
    assert(type(t[0]) is 'object', "converted table[0] should be object")
    assert(t[0].id is obj_one.id, "converted table[0] should match obj_one")
@@ -957,7 +1310,7 @@ end
    arr = array<table, 3>
    source = {{x = 10}, {x = 20}, {x = 30}}
 
-   arr:copy(source)
+   arr.copy(source)
 
    assert(arr[0].x is 10, "copied arr[0].x should be 10")
    assert(arr[1].x is 20, "copied arr[1].x should be 20")
@@ -968,7 +1321,7 @@ end
    arr = array<table, 3>
    source = {{a = 1}, nil, {c = 3}}
 
-   arr:copy(source)
+   arr.copy(source)
 
    assert(arr[0].a is 1, "copied arr[0].a should be 1")
    assert(arr[1] is nil, "copied arr[1] should be nil")
@@ -981,9 +1334,9 @@ end
    arr[1] = {b = 2}
 
    try
-      arr:concat('%s', ', ')
+      arr.concat(', ', '%s')
    success
-      error("Concat should be rejected for table arrays")
+      assert(false, "Concat should be rejected for table arrays")
    end
 end
 
@@ -994,20 +1347,20 @@ end
    try
       arr[0] = 42
    success
-      error("Storing number in table array should fail")
+      assert(false, "Storing number in table array should fail")
    end
 
    try
       arr[0] = "string"
    success
-      error("Storing string in table array should fail")
+      assert(false, "Storing string in table array should fail")
    end
 end
 
 @Test function TableArrayGCStress()
    -- Create table array and populate with many tables
    arr = array<table, 100>
-   for i = 0, 99 do
+   for i in {0 to 100} do
       arr[i] = {value = i * 10}
    end
 
@@ -1016,7 +1369,7 @@ end
    processing.collect()
 
    -- Verify all tables are still accessible
-   for i = 0, 99 do
+   for i in {0 to 100} do
       expected = i * 10
       assert(arr[i].value is expected, "GC stress: arr[" .. i .. "].value should be " .. expected)
    end
@@ -1061,10 +1414,10 @@ end
 -- Test array.of() functionality
 
 @Test function ArrayOfString()
-   arr = array<string> { 'google.com', 'kotuku.dev', 'amazon.co.uk' }
+   arr = array<str> { 'google.com', 'kotuku.dev', 'amazon.co.uk' }
 
    assert(#arr is 3, "array.of string should have length 3")
-   assert(arr:type() is 'string', "array.of string type should be 'string'")
+   assert(arr.type() is 'str', "array.of string type should be 'string'")
    assert(arr[0] is 'google.com', "arr[0] should be 'google.com'")
    assert(arr[1] is 'kotuku.dev', "arr[1] should be 'kotuku.dev'")
    assert(arr[2] is 'amazon.co.uk', "arr[2] should be 'amazon.co.uk'")
@@ -1074,7 +1427,7 @@ end
    arr = array<int> { 10, 20, 30, 40, 50 }
 
    assert(#arr is 5, "array.of int should have length 5")
-   assert(arr:type() is 'int', "array.of int type should be 'int'")
+   assert(arr.type() is 'int', "array.of int type should be 'int'")
    assert(arr[0] is 10, "arr[0] should be 10")
    assert(arr[1] is 20, "arr[1] should be 20")
    assert(arr[2] is 30, "arr[2] should be 30")
@@ -1086,7 +1439,7 @@ end
    arr = array<double> { 1.5, 2.7, 3.14159 }
 
    assert(#arr is 3, "array.of double should have length 3")
-   assert(arr:type() is 'double', "array.of double type should be 'double'")
+   assert(arr.type() is 'double', "array.of double type should be 'double'")
    assert(math.abs(arr[0] - 1.5) < 0.0001, "arr[0] should be 1.5")
    assert(math.abs(arr[1] - 2.7) < 0.0001, "arr[1] should be 2.7")
    assert(math.abs(arr[2] - 3.14159) < 0.00001, "arr[2] should be 3.14159")
@@ -1096,7 +1449,7 @@ end
    arr = array<float> { 1.5, 2.5, 3.5 }
 
    assert(#arr is 3, "array.of float should have length 3")
-   assert(arr:type() is 'float', "array.of float type should be 'float'")
+   assert(arr.type() is 'float', "array.of float type should be 'float'")
    assert(math.abs(arr[0] - 1.5) < 0.0001, "arr[0] should be 1.5")
    assert(math.abs(arr[1] - 2.5) < 0.0001, "arr[1] should be 2.5")
    assert(math.abs(arr[2] - 3.5) < 0.0001, "arr[2] should be 3.5")
@@ -1106,7 +1459,7 @@ end
    arr = array<int16> { 100, 200, 300 }
 
    assert(#arr is 3, "array.of int16 should have length 3")
-   assert(arr:type() is 'int16', "array.of int16 type should be 'int16'")
+   assert(arr.type() is 'int16', "array.of int16 type should be 'int16'")
    assert(arr[0] is 100, "arr[0] should be 100")
    assert(arr[1] is 200, "arr[1] should be 200")
    assert(arr[2] is 300, "arr[2] should be 300")
@@ -1116,7 +1469,7 @@ end
    arr = array<int64> { 1234567890123, -9876543210987, 0 }
 
    assert(#arr is 3, "array.of int64 should have length 3")
-   assert(arr:type() is 'int64', "array.of int64 type should be 'int64'")
+   assert(arr.type() is 'int64', "array.of int64 type should be 'int64'")
    assert(arr[0] is 1234567890123, "arr[0] should be 1234567890123")
    assert(arr[1] is -9876543210987, "arr[1] should be -9876543210987")
    assert(arr[2] is 0, "arr[2] should be 0")
@@ -1126,7 +1479,7 @@ end
    arr = array<byte> { 65, 66, 67, 68 }  -- ASCII A, B, C, D
 
    assert(#arr is 4, "array.of byte should have length 4")
-   assert(arr:type() is 'char', "array.of byte type should be 'char'")
+   assert(arr.type() is 'byte', "array.of byte type should be 'byte'")
    assert(arr[0] is 65, "arr[0] should be 65 (A)")
    assert(arr[1] is 66, "arr[1] should be 66 (B)")
    assert(arr[2] is 67, "arr[2] should be 67 (C)")
@@ -1137,8 +1490,8 @@ end
    arr = array<char> { 72, 101, 108, 108, 111 }  -- Hello
 
    assert(#arr is 5, "array.of char should have length 5")
-   assert(arr:type() is 'char', "array.of char type should be 'char'")
-   assert(arr:getString() is 'Hello', "getString should return 'Hello'")
+   assert(arr.type() is 'byte', "array.of char type should be 'byte'")
+   assert(arr.getString() is 'Hello', "getString should return 'Hello'")
 end
 
 @Test function ArrayOfSingleElement()
@@ -1149,9 +1502,9 @@ end
 end
 
 @Test function ArrayOfStringConcat()
-   arr = array<string> { 'hello', 'world', '!' }
+   arr = array<str> { 'hello', 'world', '!' }
 
-   result = arr:concat('%s', ' ')
+   result = arr.concat(' ', '%s')
    assert(result is 'hello world !', "concat should produce 'hello world !', got '" .. result .. "'")
 end
 
@@ -1159,16 +1512,16 @@ end
    arr = array<int> { 30, 10, 50, 20, 40 }
 
    -- Test sort
-   arr:sort()
+   arr.sort()
    assert(arr[0] is 10, "sorted arr[0] should be 10")
    assert(arr[4] is 50, "sorted arr[4] should be 50")
 
    -- Test find
-   idx = arr:find(30)
+   idx = arr.indexOf(30)
    assert(idx is 2, "find(30) should return 2")
 
    -- Test reverse
-   arr:reverse()
+   arr.reverse()
    assert(arr[0] is 50, "reversed arr[0] should be 50")
    assert(arr[4] is 10, "reversed arr[4] should be 10")
 end
@@ -1176,7 +1529,7 @@ end
 @Test function ArrayOfSlice()
    arr = array<int> { 0, 10, 20, 30, 40, 50 }
 
-   sliced = arr:slice({1..4})
+   sliced = arr.slice({1 to 4})
    assert(#sliced is 3, "slice should have length 3")
    assert(sliced[0] is 10, "sliced[0] should be 10")
    assert(sliced[1] is 20, "sliced[1] should be 20")
@@ -1187,34 +1540,35 @@ end
 -- Test array.of() error cases
 
 @Test function ArrayOfNoValues()
+   local array_of:any = array.of
    try
-      array.of('int')
+      array_of('int')
    success
-      error("array.of() with no values should fail")
+      assert(false, "array.of() with no values should fail")
    end
 end
 
 @Test function ArrayOfInvalidType()
    try
-      t = array<invalid> { 1, 2, 3 }
+      exec('t = array<invalid> { 1, 2, 3 }')
    success
-      error("array.of() with invalid type should fail")
+      assert(false, "array.of() with invalid type should fail")
    end
 end
 
 @Test function ArrayOfPointerRejected()
    try
-      t = array<pointer> { 1, 2, 3 }
+      exec('t = array<pointer> { 1, 2, 3 }')
    success
-      error("array.of() with pointer type should be rejected")
+      assert(false, "array.of() with pointer type should be rejected")
    end
 end
 
 @Test function ArrayOfStructRejected()
    try
-      t = array<struct> { 1, 2, 3 }
+      exec('t = array<struct> { 1, 2, 3 }')
    success
-      error("array.of() with struct type should be rejected")
+      assert(false, "array.of() with struct type should be rejected")
    end
 end
 
@@ -1228,10 +1582,10 @@ end
 @Test function ArrayOfObject()
    obj_one = obj.new('time')
    obj_two = obj.new('file')
-   arr = array<object> { obj_one, obj_two }
+   arr = array<obj> { obj_one, obj_two }
 
-   assert(#arr is 2, "array<object> should have 2 elements")
-   assert(arr:type() is 'object', "array<object> type should be 'object'")
+   assert(#arr is 2, "array<obj> should have 2 elements")
+   assert(arr.type() is 'obj', "array<obj> type should be 'obj'")
    assert(arr[0].id is obj_one.id, "first object should match obj_one")
    assert(arr[1].id is obj_two.id, "second object should match obj_two")
 
@@ -1242,9 +1596,9 @@ end
 @Test function ArrayOfStringWithTable()
    -- Tables cannot be converted to strings and should fail
    try
-      t = array<string> { 'hello', {}, 'world' }
+      t = array<str> { 'hello', {}, 'world' }
    success
-      error("array.of('string') with table value should fail")
+      assert(false, "array.of('str') with table value should fail")
    end
 end
 
@@ -1252,7 +1606,7 @@ end
    try
       t = array<int> { 1, 'not a number', 3 }
    success
-      error("array.of('int') with non-number value should fail")
+      assert(false, "array.of('int') with non-number value should fail")
    end
 end
 
@@ -1290,7 +1644,7 @@ end
 end
 
 @Test function ArrayIterationString()
-   arr = array<string> { 'a', 'b', 'c' }
+   arr = array<str> { 'a', 'b', 'c' }
    concat = ''
    for _, s in arr do
       concat ..= s
@@ -1388,7 +1742,7 @@ end
 
 @Test function ArrayIterationLarge()
    arr = array<int, 1000>
-   for i = 0, 999 do
+   for i in {0 to 1000} do
       arr[i] = i
    end
 
@@ -1401,181 +1755,301 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Test array.join() functionality
+-- Test array.concat() functionality
 
-@Test function ArrayJoinString()
-   arr = array<string> { 'hello', 'world', '!' }
-   result = arr:join(' ')
-   assert(result is 'hello world !', "join(' ') should produce 'hello world !', got '" .. result .. "'")
+@Test function ArrayConcatString()
+   arr = array<str> { 'hello', 'world', '!' }
+   result = arr.concat(' ')
+   assert(result is 'hello world !', "concat(' ') should produce 'hello world !', got '" .. result .. "'")
 end
 
-@Test function ArrayJoinStringComma()
-   arr = array<string> { 'apple', 'banana', 'cherry' }
-   result = arr:join(', ')
-   assert(result is 'apple, banana, cherry', "join(', ') failed, got '" .. result .. "'")
+@Test function ArrayConcatStringComma()
+   arr = array<str> { 'apple', 'banana', 'cherry' }
+   result = arr.concat(', ')
+   assert(result is 'apple, banana, cherry', "concat(', ') failed, got '" .. result .. "'")
 end
 
-@Test function ArrayJoinStringEmpty()
-   arr = array<string> { 'a', 'b', 'c' }
-   result = arr:join('')
-   assert(result is 'abc', "join('') should concatenate without separator, got '" .. result .. "'")
+@Test function ArrayConcatStringEmpty()
+   arr = array<str> { 'a', 'b', 'c' }
+   result = arr.concat('')
+   assert(result is 'abc', "concat('') should concatenate without separator, got '" .. result .. "'")
 end
 
-@Test function ArrayJoinStringDefault()
-   arr = array<string> { 'one', 'two', 'three' }
-   result = arr:join()
-   assert(result is 'onetwothree', "join() with no separator should concatenate directly, got '" .. result .. "'")
+@Test function ArrayConcatStringDefault()
+   arr = array<str> { 'one', 'two', 'three' }
+   result = arr.concat()
+   assert(result is 'onetwothree', "concat() with no separator should concatenate directly, got '" .. result .. "'")
 end
 
-@Test function ArrayJoinInt()
+@Test function ArrayConcatStringEmbeddedNul()
+   nul = string.char(0)
+   arr = array<str> { 'a' .. nul .. 'b', 'c' }
+   result = arr.concat('|')
+   expected = 'a' .. nul .. 'b|c'
+
+   assert(result is expected, 'concat should preserve embedded NUL bytes in string array elements')
+   assert(#result is 5, 'concat result should preserve full byte length with embedded NUL, got ' .. #result)
+end
+
+@Test function ArrayConcatStringEmbeddedNulFormat()
+   nul = string.char(0)
+   arr = array<str> { 'a' .. nul .. 'b', 'c' }
+   result = arr.concat('|', '%s')
+   expected = 'a' .. nul .. 'b|c'
+
+   assert(result is expected, 'concat with %s should preserve embedded NUL bytes in string array elements')
+   assert(#result is 5, 'formatted concat result should preserve full byte length with embedded NUL, got ' .. #result)
+end
+
+@Test function ArrayConcatStringNulSeparator()
+   nul = string.char(0)
+   arr = array<str> { 'a', 'b' }
+   result = arr.concat(nul)
+   expected = 'a' .. nul .. 'b'
+
+   assert(result is expected, 'concat should preserve embedded NUL bytes in the separator')
+   assert(#result is 3, 'concat result should preserve full byte length with NUL separator, got ' .. #result)
+end
+
+@Test function ArrayConcatInt()
    arr = array<int> { 1, 2, 3, 4, 5 }
-   result = arr:join('-')
-   assert(result is '1-2-3-4-5', "join('-') on int array failed, got '" .. result .. "'")
+   result = arr.concat('-')
+   assert(result is '1-2-3-4-5', "concat('-') on int array failed, got '" .. result .. "'")
+
+   result = arr.concat('-', nil)
+   assert(result is '1-2-3-4-5', "concat with nil format should use default conversion, got '" .. result .. "'")
+
+   result = arr.concat(nil, '%02d')
+   assert(result is '0102030405', "concat with nil separator should format without separators, got '" .. result .. "'")
 end
 
-@Test function ArrayJoinFloat()
+@Test function ArrayConcatRangeString()
+   arr = array<str> { 'a', 'b', 'c', 'd' }
+   result = arr.concat(',', nil, 1, 3)
+   assert(result is 'b,c', "concat with indexes 1 to 2 should return 'b,c', got '" .. result .. "'")
+end
+
+@Test function ArrayConcatRangeIntFormat()
+   arr = array<int> { 1, 2, 3, 4 }
+   result = arr.concat('-', '%02d', 1, 4)
+   assert(result is '02-03-04', "formatted concat with indexes 1 to 3 should return '02-03-04', got '" .. result .. "'")
+end
+
+@Test function ArrayConcatRangeNilSeparator()
+   arr = array<int> { 1, 2, 3, 4 }
+   result = arr.concat(nil, '%d', 1, 4)
+   assert(result is '234', "concat with nil separator and indexes 1 to 3 should return '234', got '" .. result .. "'")
+end
+
+@Test function ArrayConcatRangeSingleElement()
+   arr = array<str> { 'zero', 'one', 'two' }
+   result = arr.concat(', ', nil, 1, 2)
+   assert(result is 'one', "single-element concat range should return only that element, got '" .. result .. "'")
+end
+
+@Test function ArrayConcatRangeEmptySpan()
+   arr = array<str> { 'zero', 'one', 'two' }
+   result = arr.concat(', ', nil, 2, 1)
+   assert(result is '', "concat range with Stop before Start should return an empty string, got '" .. result .. "'")
+end
+
+@Test function ArrayConcatRangeOmittedIndexes()
+   arr = array<str> { 'a', 'b', 'c' }
+   result = arr.concat(',')
+   assert(result is 'a,b,c', "concat with omitted range should preserve full-array behaviour, got '" .. result .. "'")
+end
+
+@Test function ArrayConcatRangeInvalidIndexes()
+   arr = array<str> { 'a', 'b', 'c' }
+
+   try
+      arr.concat(',', nil, -1, 1)
+   success
+      assert(false, 'concat should reject negative Start indexes')
+   end
+
+   try
+      arr.concat(',', nil, 0, -1)
+   success
+      assert(false, 'concat should reject negative End indexes')
+   end
+
+   assert(arr.concat(',', nil, 3, 3) is '', 'an empty span at the array end should be valid')
+   assert(arr.concat(',', nil, 0, 3) is 'a,b,c', 'a stop equal to array length should be valid')
+
+   empty = array<str>
+   assert(empty.concat(',', nil, 0, 0) is '', 'an empty span on an empty array should be valid')
+end
+
+@Test function ArrayConcatFloat()
    arr = array<float> { 1.5, 2.5, 3.5 }
-   result = arr:join(', ')
+   result = arr.concat(', ')
    -- Float formatting may vary, check contains expected values
-   assert(string.find(result, '1.5') != nil, "join result should contain 1.5")
-   assert(string.find(result, '2.5') != nil, "join result should contain 2.5")
-   assert(string.find(result, '3.5') != nil, "join result should contain 3.5")
+   assert(result.find('1.5') != nil, "concat result should contain 1.5")
+   assert(result.find('2.5') != nil, "concat result should contain 2.5")
+   assert(result.find('3.5') != nil, "concat result should contain 3.5")
 end
 
-@Test function ArrayJoinDouble()
+@Test function ArrayConcatDouble()
    arr = array<double> { 3.14159, 2.71828 }
-   result = arr:join(' and ')
-   assert(string.find(result, '3.14') != nil, "join result should contain pi")
-   assert(string.find(result, '2.71') != nil, "join result should contain e")
-   assert(string.find(result, ' and ') != nil, "join result should contain separator")
+   result = arr.concat(' and ')
+   assert(result.find('3.14') != nil, "concat result should contain pi")
+   assert(result.find('2.71') != nil, "concat result should contain e")
+   assert(result.find(' and ') != nil, "concat result should contain separator")
 end
 
-@Test function ArrayJoinByte()
+@Test function ArrayConcatByte()
    arr = array<byte> { 65, 66, 67 }  -- ASCII codes
-   result = arr:join('-')
-   assert(result is '65-66-67', "join on byte array should use numeric representation, got '" .. result .. "'")
+   result = arr.concat('-')
+   assert(result is '65-66-67', "concat on byte array should use numeric representation, got '" .. result .. "'")
 end
 
-@Test function ArrayJoinInt16()
+@Test function ArrayConcatInt16()
    arr = array<int16> { 100, 200, 300 }
-   result = arr:join(':')
-   assert(result is '100:200:300', "join on int16 array failed, got '" .. result .. "'")
+   result = arr.concat(':')
+   assert(result is '100:200:300', "concat on int16 array failed, got '" .. result .. "'")
 end
 
-@Test function ArrayJoinInt64()
+@Test function ArrayConcatInt64()
    arr = array<int64> { 1234567890123, 9876543210987 }
-   result = arr:join(' | ')
-   assert(string.find(result, '1234567890123') != nil, "join should contain first int64")
-   assert(string.find(result, '9876543210987') != nil, "join should contain second int64")
+   result = arr.concat(' | ')
+   assert(result.find('1234567890123') != nil, "concat should contain first int64")
+   assert(result.find('9876543210987') != nil, "concat should contain second int64")
 end
 
-@Test function ArrayJoinEmpty()
-   arr = array<string>
-   result = arr:join(', ')
-   assert(result is '', "join on empty array should return empty string, got '" .. result .. "'")
+@Test function ArrayConcatEmpty()
+   arr = array<str>
+   result = arr.concat(', ')
+   assert(result is '', "concat on empty array should return empty string, got '" .. result .. "'")
 end
 
-@Test function ArrayJoinSingle()
-   arr = array<string> { 'only' }
-   result = arr:join(', ')
-   assert(result is 'only', "join on single element should return just that element, got '" .. result .. "'")
+@Test function ArrayConcatSingle()
+   arr = array<str> { 'only' }
+   result = arr.concat(', ')
+   assert(result is 'only', "concat on single element should return just that element, got '" .. result .. "'")
 end
 
-@Test function ArrayJoinSingleInt()
+@Test function ArrayConcatSingleInt()
    arr = array<int> { 42 }
-   result = arr:join('-')
-   assert(result is '42', "join on single int should return '42', got '" .. result .. "'")
+   result = arr.concat('-')
+   assert(result is '42', "concat on single int should return '42', got '" .. result .. "'")
 end
 
-@Test function ArrayJoinWithSplit()
-   -- Test that join is the inverse of split
+@Test function ArrayConcatWithSplit()
+   -- Test that concat is the inverse of split
    original = 'one,two,three,four'
    parts = string.split(original, ',')
-   rejoined = parts:join(',')
-   assert(rejoined is original, "join should reverse split, got '" .. rejoined .. "'")
+   rejoined = parts.concat(',')
+   assert(rejoined is original, "concat should reverse split, got '" .. rejoined .. "'")
 end
 
-@Test function ArrayJoinTable()
-   arr = array<table, 2>
-   arr[0] = {x = 1}
-   arr[1] = {y = 2}
-   result = arr:join(', ')
-   -- Tables should be converted to "table" placeholder
-   assert(result is 'table, table', "join on table array should use 'table' placeholder, got '" .. result .. "'")
+@Test function ArrayJoinRemoved()
+   arr = array<str> { 'a', 'b' }
+   try
+      arr.join(',')
+   success
+      assert(false, "array.join() should no longer be available")
+   end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Test array.contains() functionality
+-- Test array membership functionality
 
 @Test function ArrayContainsInt()
    arr = array<int> { 10, 20, 30, 40, 50 }
 
-   assert(arr:contains(10) is true, "contains(10) should return true")
-   assert(arr:contains(30) is true, "contains(30) should return true")
-   assert(arr:contains(50) is true, "contains(50) should return true")
-   assert(arr:contains(25) is false, "contains(25) should return false")
-   assert(arr:contains(0) is false, "contains(0) should return false")
-   assert(arr:contains(100) is false, "contains(100) should return false")
+   assert(10 in arr, "contains(10) should return true")
+   assert(30 in arr, "contains(30) should return true")
+   assert(50 in arr, "contains(50) should return true")
+   assert(not (25 in arr), "contains(25) should return false")
+   assert(not (0 in arr), "contains(0) should return false")
+   assert(not (100 in arr), "contains(100) should return false")
 end
 
 @Test function ArrayContainsFloat()
    arr = array<float> { 1.5, 2.5, 3.5 }
 
-   assert(arr:contains(1.5) is true, "contains(1.5) should return true")
-   assert(arr:contains(2.5) is true, "contains(2.5) should return true")
-   assert(arr:contains(2.0) is false, "contains(2.0) should return false")
+   assert(1.5 in arr, "contains(1.5) should return true")
+   assert(2.5 in arr, "contains(2.5) should return true")
+   assert(not (2.0 in arr), "contains(2.0) should return false")
 end
 
 @Test function ArrayContainsDouble()
    arr = array<double> { 3.141592653589793, 2.718281828459045 }
 
-   assert(arr:contains(3.141592653589793) is true, "contains(pi) should return true")
-   assert(arr:contains(2.718281828459045) is true, "contains(e) should return true")
-   assert(arr:contains(1.0) is false, "contains(1.0) should return false")
+   assert(3.141592653589793 in arr, "contains(pi) should return true")
+   assert(2.718281828459045 in arr, "contains(e) should return true")
+   assert(not (1.0 in arr), "contains(1.0) should return false")
 end
 
 @Test function ArrayContainsString()
-   arr = array<string> { 'apple', 'banana', 'cherry' }
+   arr = array<str> { 'apple', 'banana', 'cherry' }
 
-   assert(arr:contains('apple') is true, "contains('apple') should return true")
-   assert(arr:contains('banana') is true, "contains('banana') should return true")
-   assert(arr:contains('cherry') is true, "contains('cherry') should return true")
-   assert(arr:contains('grape') is false, "contains('grape') should return false")
-   assert(arr:contains('') is false, "contains('') should return false")
-   assert(arr:contains('APPLE') is false, "contains should be case-sensitive")
+   assert('apple' in arr, "contains('apple') should return true")
+   assert('banana' in arr, "contains('banana') should return true")
+   assert('cherry' in arr, "contains('cherry') should return true")
+   assert(not ('grape' in arr), "contains('grape') should return false")
+   assert(not ('' in arr), "contains('') should return false")
+   assert(not ('APPLE' in arr), "contains should be case-sensitive")
 end
 
 @Test function ArrayContainsStringEmpty()
-   arr = array<string> { '', 'nonempty' }
+   arr = array<str> { '', 'nonempty' }
 
-   assert(arr:contains('') is true, "contains('') should find empty string if present")
-   assert(arr:contains('nonempty') is true, "contains('nonempty') should return true")
+   assert('' in arr, "contains('') should find empty string if present")
+   assert('nonempty' in arr, "contains('nonempty') should return true")
+end
+
+@Test function ArrayContainsStringCoercesNumber()
+   arr = array<str> { '1', '2.5' }
+
+   assert(1 in arr and 2.5 in arr, 'string array membership should retain numeric string coercion')
+end
+
+@Test function ArrayContainsStringEmbeddedNul()
+   nul = string.char(0)
+   needle = 'a' .. nul .. 'b'
+   arr = array<str> { 'prefix', needle, 'suffix' }
+
+   assert(needle in arr, 'contains should compare the complete embedded-NUL string')
+   assert(not (('a' .. nul .. 'c') in arr), 'contains should reject a differing embedded-NUL string')
+end
+
+@Test function ArrayContainsRejectsInvalidCandidate()
+   arr = array<int> { 1, 2, 3 }
+   rejected = false
+   try
+      ignored = {} in arr
+   except error_value
+      rejected = true
+   end
+   assert(rejected, 'numeric array membership should reject a non-numeric candidate')
 end
 
 @Test function ArrayContainsByte()
    arr = array<byte> { 65, 66, 67 }
 
-   assert(arr:contains(65) is true, "contains(65) should return true")
-   assert(arr:contains(67) is true, "contains(67) should return true")
-   assert(arr:contains(68) is false, "contains(68) should return false")
+   assert(65 in arr, "contains(65) should return true")
+   assert(67 in arr, "contains(67) should return true")
+   assert(not (68 in arr), "contains(68) should return false")
 end
 
 @Test function ArrayContainsInt64()
    arr = array<int64> { 1234567890123, 9876543210987 }
 
-   assert(arr:contains(1234567890123) is true, "contains large int64 should work")
-   assert(arr:contains(9876543210987) is true, "contains negative int64 should work")
-   assert(arr:contains(0) is false, "contains(0) should return false")
+   assert(1234567890123 in arr, "contains large int64 should work")
+   assert(9876543210987 in arr, "contains negative int64 should work")
+   assert(not (0 in arr), "contains(0) should return false")
 end
 
 @Test function ArrayContainsObject()
    obj_one = obj.new('time')
    obj_two = obj.new('file')
-   arr = array<object> { obj_one }
+   arr = array<obj> { obj_one }
 
-   assert(arr:contains(obj_one) is true, "contains(object) should return true")
-   assert(arr:contains(obj_one.id) is true, "contains(uid) should return true")
-   assert(arr:contains(obj_two) is false, "contains(object) should return false")
+   assert(obj_one in arr, "contains(object) should return true")
+   assert(obj_one.id in arr, "contains(uid) should return true")
+   assert(not (obj_two in arr), "contains(object) should return false")
 
    obj_one.free()
    obj_two.free()
@@ -1584,43 +2058,43 @@ end
 @Test function ArrayContainsEmpty()
    arr = array<int>
 
-   assert(arr:contains(42) is false, "contains on empty array should return false")
+   assert(not (42 in arr), "contains on empty array should return false")
 end
 
 @Test function ArrayContainsSingle()
    arr = array<int> { 42 }
 
-   assert(arr:contains(42) is true, "contains single element should work")
-   assert(arr:contains(0) is false, "contains non-existent should return false")
+   assert(42 in arr, "contains single element should work")
+   assert(not (0 in arr), "contains non-existent should return false")
 end
 
 @Test function ArrayContainsFirst()
    arr = array<int> { 1, 2, 3, 4, 5 }
-   assert(arr:contains(1) is true, "contains should find first element")
+   assert(1 in arr, "contains should find first element")
 end
 
 @Test function ArrayContainsLast()
    arr = array<int> { 1, 2, 3, 4, 5 }
-   assert(arr:contains(5) is true, "contains should find last element")
+   assert(5 in arr, "contains should find last element")
 end
 
 @Test function ArrayContainsDuplicate()
    arr = array<int> { 10, 20, 10, 30, 10 }
-   assert(arr:contains(10) is true, "contains should find duplicated value")
+   assert(10 in arr, "contains should find duplicated value")
 end
 
 @Test function ArrayContainsVsFind()
-   -- Verify contains() is consistent with find()
+   -- Verify contains() is consistent with indexOf()
    arr = array<int> { 5, 10, 15, 20, 25 }
 
    for _, v in arr do
-      found = arr:find(v) != nil
-      has_v = arr:contains(v)
-      assert(found is has_v, "contains() should agree with find() for value " .. v)
+      found = arr.indexOf(v) != nil
+      has_v = v in arr
+      assert(found is has_v, "contains() should agree with indexOf() for value " .. v)
    end
 
    -- Test non-existent value
-   assert((arr:find(99) != nil) is arr:contains(99), "contains and find should agree on missing value")
+   assert((arr.indexOf(99) != nil) is (99 in arr), "contains and indexOf should agree on missing value")
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -1635,7 +2109,7 @@ end
 end
 
 @Test function ArrayInOperatorString()
-   arr = array<string> { 'apple', 'banana', 'cherry' }
+   arr = array<str> { 'apple', 'banana', 'cherry' }
    assert('banana' in arr, "'banana' should be in array")
    assert(not ('grape' in arr), "'grape' should not be in array")
    assert(not ('APPLE' in arr), "'APPLE' should not be in array (case-sensitive)")
@@ -1647,7 +2121,7 @@ end
 end
 
 @Test function ArrayInOperatorInCondition()
-   arr = array<string> { 'red', 'green', 'blue' }
+   arr = array<str> { 'red', 'green', 'blue' }
    found = false
    if 'green' in arr then
       found = true
@@ -1660,47 +2134,47 @@ end
 
 @Test function ArrayFirstInt()
    arr = array<int> { 10, 20, 30, 40, 50 }
-   assert(arr:first() is 10, "first() should return 10")
+   assert(arr.first() is 10, "first() should return 10")
 end
 
 @Test function ArrayFirstString()
-   arr = array<string> { 'alpha', 'beta', 'gamma' }
-   assert(arr:first() is 'alpha', "first() should return 'alpha'")
+   arr = array<str> { 'alpha', 'beta', 'gamma' }
+   assert(arr.first() is 'alpha', "first() should return 'alpha'")
 end
 
 @Test function ArrayFirstFloat()
    arr = array<float> { 1.5, 2.5, 3.5 }
-   assert(math.abs(arr:first() - 1.5) < 0.0001, "first() should return 1.5")
+   assert(math.abs(arr.first() - 1.5) < 0.0001, "first() should return 1.5")
 end
 
 @Test function ArrayFirstDouble()
    arr = array<double> { 3.14159, 2.71828 }
-   assert(math.abs(arr:first() - 3.14159) < 0.00001, "first() should return pi")
+   assert(math.abs(arr.first() - 3.14159) < 0.00001, "first() should return pi")
 end
 
 @Test function ArrayFirstByte()
    arr = array<byte> { 65, 66, 67 }
-   assert(arr:first() is 65, "first() should return 65")
+   assert(arr.first() is 65, "first() should return 65")
 end
 
 @Test function ArrayFirstInt64()
    arr = array<int64> { 1234567890123, 9876543210987 }
-   assert(arr:first() is 1234567890123, "first() should return large int64")
+   assert(arr.first() is 1234567890123, "first() should return large int64")
 end
 
 @Test function ArrayFirstTable()
    arr = array<table, 2>
    arr[0] = {x = 100}
    arr[1] = {y = 200}
-   result = arr:first()
+   result = arr.first()
    assert(result.x is 100, "first() should return table with x=100")
 end
 
 @Test function ArrayFirstObject()
    obj_one = obj.new('time')
    obj_two = obj.new('file')
-   arr = array<object> { obj_one, obj_two }
-   result = arr:first()
+   arr = array<obj> { obj_one, obj_two }
+   result = arr.first()
    assert(result.id is obj_one.id, "first() should return obj_one")
    obj_one.free()
    obj_two.free()
@@ -1708,12 +2182,12 @@ end
 
 @Test function ArrayFirstEmpty()
    arr = array<int>
-   assert(arr:first() is nil, "first() on empty array should return nil")
+   assert(arr.first() is nil, "first() on empty array should return nil")
 end
 
 @Test function ArrayFirstSingle()
    arr = array<int> { 42 }
-   assert(arr:first() is 42, "first() on single element should return that element")
+   assert(arr.first() is 42, "first() on single element should return that element")
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -1721,47 +2195,47 @@ end
 
 @Test function ArrayLastInt()
    arr = array<int> { 10, 20, 30, 40, 50 }
-   assert(arr:last() is 50, "last() should return 50")
+   assert(arr.last() is 50, "last() should return 50")
 end
 
 @Test function ArrayLastString()
-   arr = array<string> { 'alpha', 'beta', 'gamma' }
-   assert(arr:last() is 'gamma', "last() should return 'gamma'")
+   arr = array<str> { 'alpha', 'beta', 'gamma' }
+   assert(arr.last() is 'gamma', "last() should return 'gamma'")
 end
 
 @Test function ArrayLastFloat()
    arr = array<float> { 1.5, 2.5, 3.5 }
-   assert(math.abs(arr:last() - 3.5) < 0.0001, "last() should return 3.5")
+   assert(math.abs(arr.last() - 3.5) < 0.0001, "last() should return 3.5")
 end
 
 @Test function ArrayLastDouble()
    arr = array<double> { 3.14159, 2.71828 }
-   assert(math.abs(arr:last() - 2.71828) < 0.00001, "last() should return e")
+   assert(math.abs(arr.last() - 2.71828) < 0.00001, "last() should return e")
 end
 
 @Test function ArrayLastByte()
    arr = array<byte> { 65, 66, 67 }
-   assert(arr:last() is 67, "last() should return 67")
+   assert(arr.last() is 67, "last() should return 67")
 end
 
 @Test function ArrayLastInt64()
    arr = array<int64> { 1234567890123, 9876543210987 }
-   assert(arr:last() is 9876543210987, "last() should return large int64")
+   assert(arr.last() is 9876543210987, "last() should return large int64")
 end
 
 @Test function ArrayLastTable()
    arr = array<table, 2>
    arr[0] = {x = 100}
    arr[1] = {y = 200}
-   result = arr:last()
+   result = arr.last()
    assert(result.y is 200, "last() should return table with y=200")
 end
 
 @Test function ArrayLastObject()
    obj_one = obj.new('time')
    obj_two = obj.new('file')
-   arr = array<object> { obj_one, obj_two }
-   result = arr:last()
+   arr = array<obj> { obj_one, obj_two }
+   result = arr.last()
    assert(result.id is obj_two.id, "last() should return obj_two")
    obj_one.free()
    obj_two.free()
@@ -1769,51 +2243,51 @@ end
 
 @Test function ArrayLastEmpty()
    arr = array<int>
-   assert(arr:last() is nil, "last() on empty array should return nil")
+   assert(arr.last() is nil, "last() on empty array should return nil")
 end
 
 @Test function ArrayLastSingle()
    arr = array<int> { 42 }
-   assert(arr:last() is 42, "last() on single element should return that element")
+   assert(arr.last() is 42, "last() on single element should return that element")
 end
 
 @Test function ArrayFirstLastConsistency()
    -- For single element array, first() and last() should return same value
-   arr = array<string> { 'only' }
-   assert(arr:first() is arr:last(), "first() and last() should be same for single element")
+   arr = array<str> { 'only' }
+   assert(arr.first() is arr.last(), "first() and last() should be same for single element")
 end
 
 @Test function ArrayFirstLastVsIndexing()
    -- Verify first() and last() match direct indexing
    arr = array<int> { 100, 200, 300, 400, 500 }
-   assert(arr:first() is arr[0], "first() should match arr[0]")
-   assert(arr:last() is arr[#arr - 1], "last() should match arr[#arr - 1]")
+   assert(arr.first() is arr[0], "first() should match arr[0]")
+   assert(arr.last() is arr[#arr - 1], "last() should match arr[#arr - 1]")
 end
 
 @Test function ArrayFirstLastAfterPush()
    arr = array<int>
-   arr:push(10)
-   assert(arr:first() is 10 and arr:last() is 10, "first() and last() should be 10")
+   arr.push(10)
+   assert(arr.first() is 10 and arr.last() is 10, "first() and last() should be 10")
 
-   arr:push(20)
-   assert(arr:first() is 10, "first() should still be 10")
-   assert(arr:last() is 20, "last() should be 20")
+   arr.push(20)
+   assert(arr.first() is 10, "first() should still be 10")
+   assert(arr.last() is 20, "last() should be 20")
 
-   arr:push(30)
-   assert(arr:first() is 10, "first() should still be 10")
-   assert(arr:last() is 30, "last() should be 30")
+   arr.push(30)
+   assert(arr.first() is 10, "first() should still be 10")
+   assert(arr.last() is 30, "last() should be 30")
 end
 
 @Test function ArrayFirstLastAfterPop()
    arr = array<int> { 10, 20, 30 }
-   assert(arr:last() is 30, "last() should be 30")
+   assert(arr.last() is 30, "last() should be 30")
 
-   arr:pop()
-   assert(arr:last() is 20, "last() should be 20 after pop")
+   arr.pop()
+   assert(arr.last() is 20, "last() should be 20 after pop")
 
-   arr:pop()
-   assert(arr:first() is arr:last(), "first() and last() should be same after pops")
-   assert(arr:first() is 10, "first() should be 10")
+   arr.pop()
+   assert(arr.first() is arr.last(), "first() and last() should be same after pops")
+   assert(arr.first() is 10, "first() should be 10")
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -1854,7 +2328,7 @@ end
 end
 
 @Test function ArrayPairsStrings()
-   str_arr = array<string> { 'a', 'b', 'c' }
+   str_arr = array<str> { 'a', 'b', 'c' }
    concat = ''
    for i, s in ipairs(str_arr) do
       concat ..= s
@@ -1870,24 +2344,24 @@ end
 @Test function JITStringArrayGCBarrier()
    -- Store freshly-allocated strings into an array in a hot loop, interleaving
    -- GC collection to trigger the write barrier while traces are active.
-   arr = array<string, 200>
-   for i = 0, 199 do
+   arr = array<str, 200>
+   for i in {0 to 200} do
       arr[i] = f"item-{i}"
    end
    processing.collect('full')
 
    -- Verify all strings survived collection
-   for i = 0, 199 do
+   for i in {0 to 200} do
       assert(arr[i] is f"item-{i}", f"String at [{i}] corrupted after GC: got '{arr[i]}'")
    end
 
    -- Overwrite with new strings (JIT trace should be compiled by now) and collect again
-   for i = 0, 199 do
+   for i in {0 to 200} do
       arr[i] = f"replaced-{i}"
    end
    processing.collect('full')
 
-   for i = 0, 199 do
+   for i in {0 to 200} do
       assert(arr[i] is f"replaced-{i}", f"Replaced string at [{i}] corrupted after GC: got '{arr[i]}'")
    end
 end
@@ -1895,23 +2369,23 @@ end
 @Test function JITTableArrayGCBarrier()
    -- Same pattern for table arrays: hot-loop stores + GC + verification
    arr = array<table, 200>
-   for i = 0, 199 do
+   for i in {0 to 200} do
       arr[i] = { id = i, label = f"t-{i}" }
    end
    processing.collect('full')
 
-   for i = 0, 199 do
+   for i in {0 to 200} do
       assert(arr[i].id is i, f"Table at [{i}].id corrupted after GC: got {arr[i].id}")
       assert(arr[i].label is f"t-{i}", f"Table at [{i}].label corrupted after GC")
    end
 
    -- Overwrite and collect again
-   for i = 0, 199 do
+   for i in {0 to 200} do
       arr[i] = { id = i + 1000 }
    end
    processing.collect('full')
 
-   for i = 0, 199 do
+   for i in {0 to 200} do
       assert(arr[i].id is i + 1000, f"Replaced table at [{i}].id corrupted after GC")
    end
 end
@@ -1919,8 +2393,8 @@ end
 @Test function JITStringArrayGCInterleaved()
    -- Interleave GC steps with stores in a hot loop to maximise the chance of
    -- the write barrier firing during incremental marking.
-   arr = array<string, 300>
-   for i = 0, 299 do
+   arr = array<str, 300>
+   for i in {0 to 300} do
       arr[i] = f"val-{i}"
       if i % 50 is 0 then
          processing.collect('step')
@@ -1928,7 +2402,7 @@ end
    end
    processing.collect('full')
 
-   for i = 0, 299 do
+   for i in {0 to 300} do
       assert(arr[i] is f"val-{i}", f"Interleaved string at [{i}] corrupted: got '{arr[i]}'")
    end
 end
@@ -1936,7 +2410,7 @@ end
 @Test function JITTableArrayGCInterleaved()
    -- Interleave GC steps with table stores
    arr = array<table, 300>
-   for i = 0, 299 do
+   for i in {0 to 300} do
       arr[i] = { n = i }
       if i % 50 is 0 then
          processing.collect('step')
@@ -1944,25 +2418,25 @@ end
    end
    processing.collect('full')
 
-   for i = 0, 299 do
+   for i in {0 to 300} do
       assert(arr[i].n is i, f"Interleaved table at [{i}].n corrupted: got {arr[i].n}")
    end
 end
 
 @Test function JITStringArrayNilStoreGC()
    -- Verify nil stores (clearing slots) work correctly under GC pressure
-   arr = array<string, 100>
-   for i = 0, 99 do
+   arr = array<str, 100>
+   for i in {0 to 100} do
       arr[i] = f"temp-{i}"
    end
 
    -- Nil out every other element in a hot loop
-   for i = 0, 99, 2 do
+   for i in {0 into 99 by 2} do
       arr[i] = nil
    end
    processing.collect('full')
 
-   for i = 0, 99 do
+   for i in {0 to 100} do
       if i % 2 is 0 then
          assert(arr[i] is nil, f"Nil'd string at [{i}] should be nil, got '{arr[i]}'")
       else
@@ -1974,16 +2448,16 @@ end
 @Test function JITTableArrayNilStoreGC()
    -- Verify nil stores work correctly for table arrays under GC pressure
    arr = array<table, 100>
-   for i = 0, 99 do
+   for i in {0 to 100} do
       arr[i] = { v = i }
    end
 
-   for i = 0, 99, 2 do
+   for i in {0 into 99 by 2} do
       arr[i] = nil
    end
    processing.collect('full')
 
-   for i = 0, 99 do
+   for i in {0 to 100} do
       if i % 2 is 0 then
          assert(arr[i] is nil, f"Nil'd table at [{i}] should be nil")
       else
@@ -1995,9 +2469,9 @@ end
 @Test function JITStringArrayReadGCStress()
    -- Verify JIT-compiled reads of string arrays survive GC cycles.
    -- The read loop should compile to inline XLOAD with null-guard.
-   arr = array<string> { 'alpha', 'bravo', 'charlie', 'delta', 'echo' }
-   for round = 0, 99 do
-      for i = 0, 4 do
+   arr = array<str> { 'alpha', 'bravo', 'charlie', 'delta', 'echo' }
+   for round in {0 to 100} do
+      for i in {0 to 5} do
          s = arr[i]
       end
       if round % 20 is 0 then
@@ -2013,11 +2487,11 @@ end
 @Test function JITTableArrayReadGCStress()
    -- Verify JIT-compiled reads of table arrays survive GC cycles.
    arr = array<table, 5>
-   for i = 0, 4 do
+   for i in {0 to 5} do
       arr[i] = { k = i * 7 }
    end
-   for round = 0, 99 do
-      for i = 0, 4 do
+   for round in {0 to 100} do
+      for i in {0 to 5} do
          t = arr[i]
          assert(t.k is i * 7, f"Read stress round {round}: arr[{i}].k wrong")
       end
@@ -2028,4 +2502,63 @@ end
    processing.collect('full')
 
    assert(arr[3].k is 21, "Read stress final: arr[3].k corrupted")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Final collection search APIs
+
+@Test function IndexOfRetainsTypedSearchBounds()
+   arr = array<int> { 10, 20, 30, 20, 40 }
+   assert(arr.indexOf(20) is 1, 'indexOf() should return the first matching index')
+   assert(arr.indexOf(20, 2) is 3, 'indexOf() should honour a zero-based start')
+   assert(arr.indexOf(20, 2, 3) is nil, 'indexOf() should honour an exclusive stop')
+   assert(arr.indexOf(20, {4 into 0}) is 3, 'indexOf() should preserve reverse range traversal')
+end
+
+@Test function IndexOfSearchesVariantCallableValues()
+   local identity = function(Value:any):any
+      return Value
+   end
+   local items = array<any> { identity, 'value' }
+   assert(items.indexOf(identity) is 0, 'indexOf() should compare callable values instead of invoking them')
+   assert(items.indexOf(function(Value:any):any return Value end) is nil,
+      'indexOf() should use callable identity for distinct functions')
+end
+
+@Test function IndexOfSearchesReferenceValues()
+   local first = { id=1 }
+   local second = { id=2 }
+   local items = array<any> { first, second }
+   assert(items.indexOf(second) is 1, 'indexOf() should search variant reference values')
+   assert(items.indexOf({ id=2 }) is nil, 'indexOf() should retain reference identity without an equality metamethod')
+end
+
+@Test function IndexOfHonoursReferenceEqualityMetamethods()
+   local equality_mt = {
+      __eq = function(Other:table!):bool return &id is Other.id end
+   }
+   local first = setmetatable({ id=7 }, equality_mt)
+   local second = setmetatable({ id=7 }, equality_mt)
+   local values = array<any> { first }
+   assert(values.indexOf(second) is 0, 'indexOf() should honour the same equality metamethod as is')
+end
+
+@Test function IndexOfPropagatesEqualityMetamethodErrors()
+   local equality_mt = {
+      __eq = function(First:table!, Second:table!):bool return First.id is Second.id end
+   }
+   local values = array<any> { setmetatable({ id=1 }, equality_mt) }
+   local error_caught = false
+   try
+      values.indexOf(setmetatable({ id=1 }, equality_mt))
+   except error_value
+      error_caught = true
+   end
+   assert(error_caught, 'indexOf() should propagate equality metamethod errors to the caller')
+end
+
+@Test function FindUsesPredicateDuringStageB()
+   local items = array<int> { 10, 20, 30 }
+   assert(items.find(Value => Value > 10) is 20, 'find() should return the first value selected by its predicate')
+   assert(items.indexOf(20) is 1, 'indexOf() should retain equality-search semantics')
 end

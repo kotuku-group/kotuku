@@ -8,7 +8,7 @@ Scintilla::Menu::Menu() {}
 
 void Scintilla::Menu::CreatePopUp()
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    OBJECTID display_id;
    //OBJECTPTR menu;
 
@@ -27,7 +27,7 @@ void Scintilla::Menu::CreatePopUp()
       return;
    }*/
 
-   FindObject((STRING)"SystemSurface", CLASSID::SURFACE, FOF::NIL, &display_id);
+   FindObject((STRING)"SystemSurface", CLASSID::SURFACE, &display_id);
 
    //id = *reinterpret_cast<MenuID *>(&surface_id);
 /*
@@ -48,7 +48,7 @@ void Scintilla::Menu::CreatePopUp()
 
 void Scintilla::Menu::Destroy()
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.traceBranch();
 
    //OBJECTID surface_id;
@@ -65,7 +65,7 @@ void Scintilla::Menu::Destroy()
 
 void Scintilla::Menu::Show(Scintilla::Point pt, Window &Window)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.branch("%dx%d", pt.x, pt.y);
 
 #if 0
@@ -74,7 +74,9 @@ void Scintilla::Menu::Show(Scintilla::Point pt, Window &Window)
 
    winsurface_id = getSurfaceID(&Window);
 
-   menu->setFields(fl::Relative(winsurface_id), fl::X(pt.x), fl::Y(pt.y));
+   menu->setRelative(winsurface_id);
+   menu->setX(pt.x);
+   menu->setY(pt.y);
 
    /* Get the surface ID */
    //OBJECTID surface_id;

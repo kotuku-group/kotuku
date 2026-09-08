@@ -18,6 +18,7 @@ enum class TokenKind : uint16_t {
    Identifier = TK_name,
    Number = TK_number,
    String = TK_string,
+   RegexString = TK_regex_string,
    Nil = TK_nil,
    AsToken = TK_as,
    TrueToken = TK_true,
@@ -32,6 +33,8 @@ enum class TokenKind : uint16_t {
    NamespaceToken = TK_namespace,
    Else = TK_else,
    ElseIf = TK_elseif,
+   Enum = TK_enum,
+   ExternToken = TK_extern,
    For = TK_for,
    WhileToken = TK_while,
    WithToken = TK_with,
@@ -51,8 +54,8 @@ enum class TokenKind : uint16_t {
    TernarySep = TK_ternary_sep,
    Dots = TK_dots,
    Cat = TK_concat,
-   Equal = TK_eq,
    NotEqual = TK_ne,
+   Approx = TK_approx,
    LessEqual = TK_le,
    GreaterEqual = TK_ge,
    ShiftLeft = TK_shl,
@@ -69,6 +72,7 @@ enum class TokenKind : uint16_t {
    SafeIndex = TK_safe_index,
    SafeMethod = TK_safe_method,
    Presence = TK_if_empty, // NOTE: This single token covers use of both `if present?? then` (postfix) and `(variable ?? default_value)` (if empty).
+   Guard = TK_guard,
    PlusPlus = TK_plusplus,
    Power = TK_pow,
    Pipe = TK_pipe,
@@ -77,19 +81,32 @@ enum class TokenKind : uint16_t {
    DeferredTyped = TK_defer_typed,
    DeferredClose = TK_defer_close,
    ArrayTyped = TK_array_typed,
+   StructTyped = TK_struct_typed,
    ThunkToken = TK_thunk,
    Choose = TK_choose,
    From = TK_from,
    When = TK_when,
    CaseArrow = TK_case_arrow,
+   CurrentContext = TK_current_context,
    Annotate = TK_annotate,
    CompileIf = TK_compif,
    CompileEnd = TK_compend,
    TryToken = TK_try,
+   CheckallToken = TK_checkall,
    ExceptToken = TK_except,
    SuccessToken = TK_success,
    RaiseToken = TK_raise,
    CheckToken = TK_check,
+   ClassToken = TK_class,
+   InterfaceToken = TK_interface,
+   RecordToken = TK_record,
+   ExtendsToken = TK_extends,
+   ExportToken = TK_export,
+   AwaitToken = TK_await,
+   FinallyToken = TK_finally,
+   YieldToken = TK_yield,
+   UsingToken = TK_using,
+   WhereToken = TK_where,
    EndOfFile = TK_eof,
 #undef TOKEN_KIND_ENUM
 #undef TOKEN_KIND_ENUM_SYM
@@ -107,6 +124,7 @@ enum class TokenKind : uint16_t {
    Plus = '+',
    Minus = '-',
    Multiply = '*',
+   Ampersand = '&',
    Divide = '/',
    Modulo = '%',
    Question = '?',
@@ -116,6 +134,26 @@ enum class TokenKind : uint16_t {
 
 [[nodiscard]] inline CSTRING token_kind_name(TokenKind kind, LexState &lex) { return lex.token2str((LexToken)kind); }
 
+[[nodiscard]] constexpr bool token_kind_has_flag(TokenKind Kind, uint32_t Flag) noexcept {
+   LexToken raw = (LexToken)Kind;
+   if (raw > TK_OFS) {
+      size_t index = size_t(raw - TK_OFS - 1);
+      if (index < TOKEN_DEFINITIONS.size()) return TOKEN_DEFINITIONS[index].has_flag(Flag);
+   }
+
+   switch (Kind) {
+      case TokenKind::RightParen:
+      case TokenKind::RightBracket:
+      case TokenKind::RightBrace:
+         return (Flag & TKF_CAN_END_RANGE_EXPRESSION) != 0;
+      case TokenKind::Dot:
+      case TokenKind::Colon:
+         return (Flag & TKF_MEMBER_NAME_CONTEXT) != 0;
+      default:
+         return false;
+   }
+}
+
 // Constexpr alternative for compile-time token name lookup
 // Returns a string_view without requiring a LexState reference.
 [[nodiscard]] constexpr std::string_view token_kind_name_constexpr(TokenKind kind) noexcept {
@@ -123,6 +161,7 @@ enum class TokenKind : uint16_t {
       case TokenKind::Identifier: return "<name>";
       case TokenKind::Number: return "<number>";
       case TokenKind::String: return "<string>";
+      case TokenKind::RegexString: return "<regex_string>";
       case TokenKind::Nil: return "nil";
       case TokenKind::AsToken: return "as";
       case TokenKind::TrueToken: return "true";
@@ -137,6 +176,8 @@ enum class TokenKind : uint16_t {
       case TokenKind::NamespaceToken: return "namespace";
       case TokenKind::Else: return "else";
       case TokenKind::ElseIf: return "elseif";
+      case TokenKind::Enum: return "enum";
+      case TokenKind::ExternToken: return "extern";
       case TokenKind::For: return "for";
       case TokenKind::WhileToken: return "while";
       case TokenKind::WithToken: return "with";
@@ -156,8 +197,8 @@ enum class TokenKind : uint16_t {
       case TokenKind::TernarySep: return ":>";
       case TokenKind::Dots: return "...";
       case TokenKind::Cat: return "..";
-      case TokenKind::Equal: return "==";
       case TokenKind::NotEqual: return "!=";
+      case TokenKind::Approx: return "≈";
       case TokenKind::LessEqual: return "<=";
       case TokenKind::GreaterEqual: return ">=";
       case TokenKind::ShiftLeft: return "<<";
@@ -174,6 +215,7 @@ enum class TokenKind : uint16_t {
       case TokenKind::SafeIndex: return "?[";
       case TokenKind::SafeMethod: return "?:";
       case TokenKind::Presence: return "??";
+      case TokenKind::Guard: return "?!";
       case TokenKind::PlusPlus: return "++";
       case TokenKind::Power: return "**";
       case TokenKind::Pipe: return "|>";
@@ -182,6 +224,7 @@ enum class TokenKind : uint16_t {
       case TokenKind::DeferredTyped: return "<type{";
       case TokenKind::DeferredClose: return "}>";
       case TokenKind::ArrayTyped: return "array<type>";
+      case TokenKind::StructTyped: return "struct<name>";
       case TokenKind::Choose: return "choose";
       case TokenKind::From: return "from";
       case TokenKind::When: return "when";
@@ -190,10 +233,21 @@ enum class TokenKind : uint16_t {
       case TokenKind::CompileIf: return "@if";
       case TokenKind::CompileEnd: return "@end";
       case TokenKind::TryToken: return "try";
+      case TokenKind::CheckallToken: return "checkall";
       case TokenKind::ExceptToken: return "except";
       case TokenKind::SuccessToken: return "success";
       case TokenKind::RaiseToken: return "raise";
       case TokenKind::CheckToken: return "check";
+      case TokenKind::ClassToken: return "class";
+      case TokenKind::InterfaceToken: return "interface";
+      case TokenKind::RecordToken: return "record";
+      case TokenKind::ExtendsToken: return "extends";
+      case TokenKind::ExportToken: return "export";
+      case TokenKind::AwaitToken: return "await";
+      case TokenKind::FinallyToken: return "finally";
+      case TokenKind::YieldToken: return "yield";
+      case TokenKind::UsingToken: return "using";
+      case TokenKind::WhereToken: return "where";
       case TokenKind::EndOfFile: return "<eof>";
       case TokenKind::LeftParen: return "(";
       case TokenKind::RightParen: return ")";
@@ -209,6 +263,7 @@ enum class TokenKind : uint16_t {
       case TokenKind::Plus: return "+";
       case TokenKind::Minus: return "-";
       case TokenKind::Multiply: return "*";
+      case TokenKind::Ampersand: return "&";
       case TokenKind::Divide: return "/";
       case TokenKind::Modulo: return "%";
       case TokenKind::Question: return "?";
@@ -263,10 +318,33 @@ public:
    [[nodiscard]] inline LexToken raw() const { return this->raw_token; }
    [[nodiscard]] inline SourceSpan span() const { return this->source; }
    [[nodiscard]] inline bool is(TokenKind kind) const { return this->token_kind IS kind; }
+   [[nodiscard]] constexpr bool has_flag(uint32_t Flag) const noexcept {
+      return token_kind_has_flag(this->token_kind, Flag);
+   }
    [[nodiscard]] inline bool is_literal() const;
    [[nodiscard]] inline const TokenPayload & payload() const { return this->data; }
 
    [[nodiscard]] constexpr bool is_identifier() const noexcept { return this->token_kind IS TokenKind::Identifier; }
+   [[nodiscard]] constexpr bool is_future_reserved_keyword() const noexcept {
+      switch (this->token_kind) {
+         case TokenKind::ClassToken:
+         case TokenKind::InterfaceToken:
+         case TokenKind::RecordToken:
+         case TokenKind::ExtendsToken:
+         case TokenKind::ExportToken:
+         case TokenKind::AwaitToken:
+         case TokenKind::FinallyToken:
+         case TokenKind::YieldToken:
+         case TokenKind::UsingToken:
+         case TokenKind::WhereToken:
+            return true;
+         default:
+            return false;
+      }
+   }
+   [[nodiscard]] constexpr bool is_identifier_or_future_reserved() const noexcept {
+      return this->is_identifier() or this->is_future_reserved_keyword();
+   }
    [[nodiscard]] constexpr bool is_eof() const noexcept { return this->token_kind IS TokenKind::EndOfFile; }
    [[nodiscard]] inline GCstr * identifier() const { return this->data.as_string(); }
 

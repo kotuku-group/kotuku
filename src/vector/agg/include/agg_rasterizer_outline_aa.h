@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,9 +5,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Rasterises anti-aliased outlines directly from line geometry. Hooks into renderer_outline_aa, line_aa_basics, and
+// outline renderers. In the vector renderer it handles high-quality stroked outline paths when direct outline rendering
+// is preferred.
 
-#ifndef AGG_RASTERIZER_OUTLINE_AA_INCLUDED
-#define AGG_RASTERIZER_OUTLINE_AA_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_line_aa_basics.h"
@@ -16,14 +18,9 @@
 
 namespace agg
 {
-
-    //-------------------------------------------------------------------------
     inline bool cmp_dist_start(int d) { return d > 0;  }
     inline bool cmp_dist_end(int d)   { return d <= 0; }
 
-
-
-    //-----------------------------------------------------------line_aa_vertex
     // Vertex (x, y) with the distance to the next one. The last vertex has
     // the distance between the last and the first points
     struct line_aa_vertex
@@ -49,21 +46,17 @@ namespace agg
         }
     };
 
-
-    //----------------------------------------------------------outline_aa_join_e
     enum outline_aa_join_e
     {
-        outline_no_join,             //-----outline_no_join
-        outline_miter_join,          //-----outline_miter_join
-        outline_round_join,          //-----outline_round_join
-        outline_miter_accurate_join  //-----outline_accurate_join
+        outline_no_join,
+        outline_miter_join,
+        outline_round_join,
+        outline_miter_accurate_join
     };
 
-    //=======================================================rasterizer_outline_aa
     template<class Renderer, class Coord=line_coord> class rasterizer_outline_aa
     {
     private:
-        //------------------------------------------------------------------------
         struct draw_vars
         {
             unsigned idx;
@@ -91,7 +84,6 @@ namespace agg
         {}
         void attach(Renderer& ren) { m_ren = &ren; }
 
-        //------------------------------------------------------------------------
         void line_join(outline_aa_join_e join)
         {
             m_line_join = m_ren->accurate_join_only() ?
@@ -100,80 +92,54 @@ namespace agg
         }
         bool line_join() const { return m_line_join; }
 
-        //------------------------------------------------------------------------
         void round_cap(bool v) { m_round_cap = v; }
         bool round_cap() const { return m_round_cap; }
 
-        //------------------------------------------------------------------------
         void move_to(int x, int y)
         {
             m_src_vertices.modify_last(vertex_type(m_start_x = x, m_start_y = y));
         }
 
-        //------------------------------------------------------------------------
         void line_to(int x, int y)
         {
             m_src_vertices.add(vertex_type(x, y));
         }
 
-        //------------------------------------------------------------------------
         void move_to_d(double x, double y)
         {
             move_to(Coord::conv(x), Coord::conv(y));
         }
 
-        //------------------------------------------------------------------------
         void line_to_d(double x, double y)
         {
             line_to(Coord::conv(x), Coord::conv(y));
         }
 
-        //------------------------------------------------------------------------
         void render(bool close_polygon);
 
-        //------------------------------------------------------------------------
-        void add_vertex(double x, double y, unsigned cmd)
-        {
-            if(is_move_to(cmd))
-            {
-                render(false);
-                move_to_d(x, y);
+        void add_vertex(double x, double y, unsigned cmd) {
+            if (is_move_to(cmd)) {
+               render(false);
+               move_to_d(x, y);
             }
-            else
-            {
-                if(is_end_poly(cmd))
-                {
-                    render(is_closed(cmd));
-                    if(is_closed(cmd))
-                    {
-                        move_to(m_start_x, m_start_y);
-                    }
+            else {
+                if (is_end_poly(cmd)) {
+                   render(is_closed(cmd));
+                   if (is_closed(cmd)) move_to(m_start_x, m_start_y);
                 }
-                else
-                {
-                    line_to_d(x, y);
-                }
+                else line_to_d(x, y);
             }
         }
 
-        //------------------------------------------------------------------------
         template<class VertexSource>
-        void add_path(VertexSource& vs, unsigned path_id=0)
-        {
-            double x;
-            double y;
-
+        void add_path(VertexSource& vs, unsigned path_id=0) {
+            double x, y;
             unsigned cmd;
             vs.rewind(path_id);
-            while(!is_stop(cmd = vs.vertex(&x, &y)))
-            {
-                add_vertex(x, y, cmd);
-            }
+            while(!is_stop(cmd = vs.vertex(&x, &y))) add_vertex(x, y, cmd);
             render(false);
         }
 
-
-        //------------------------------------------------------------------------
         template<class VertexSource, class ColorStorage, class PathId>
         void render_all_paths(VertexSource& vs,
                               const ColorStorage& colors,
@@ -588,7 +554,3 @@ namespace agg
 
 
 }
-
-
-#endif
-

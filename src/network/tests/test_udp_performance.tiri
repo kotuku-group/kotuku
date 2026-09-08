@@ -3,7 +3,7 @@ UDP Performance and Stress Test
 --]]
 
    include 'network'
-   if not mNet then mNet = mod.load('network') end
+module network as mNet
 
    glBasePort = 19830  -- Base port for performance tests
    glTestTimeout = 5.0
@@ -11,27 +11,26 @@ UDP Performance and Stress Test
 ------------------------------------------------------------------------------------------------------------------------
 -- Test high-frequency UDP messaging
 
-@Test(requires='network') function UDPHighFrequency()
+@Test; @Requires(network=true) function UDPHighFrequency()
    glBasePort++
    serverPort = glBasePort
-   proc = processing.new({ timeout = glTestTimeout })
    messagesReceived = 0
    targetMessages = 100
    sv_source = struct.new('IPAddress')
 
    print('Testing high-frequency UDP messaging (' .. targetMessages .. ' messages)')
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       port    = serverPort,
       address = '127.0.0.1',
-      flags   = 'SERVER|UDP',
+      flags   = 'UDP',
       incoming = function(Socket)
-         buffer = string.alloc(1024)
+         buffer = array<byte, 1024>
          err, bytesRead = Socket.mtRecvFrom(sv_source, buffer)
          if (err is ERR_Okay) and (bytesRead > 0) then
             messagesReceived = messagesReceived + 1
             if messagesReceived >= targetMessages then
-               proc.signal()
+               Socket.acSignal()
             elseif messagesReceived % 20 is 0 then
                print('[High-Freq Server] Received ' .. messagesReceived .. ' messages so far')
             end
@@ -39,6 +38,7 @@ UDP Performance and Stress Test
       end
    })
 
+   proc = processing.new({ timeout = glTestTimeout, signals = array<obj> { server } })
    client = obj.new('netsocket', { flags = 'UDP' })
 
    dest = struct.new('IPAddress')
@@ -47,21 +47,21 @@ UDP Performance and Stress Test
 
    -- Send messages rapidly
    startTime = mSys.PreciseTime()
-   for i = 1, targetMessages do
+   for i in {0 to targetMessages} do
       message = 'Message #' .. i
       err, bytesSent = client.mtSendTo(dest, message)
       assert(err is ERR_Okay, 'Failed to send message #' .. i .. ': ' .. mSys.GetErrorMsg(err))
 
       -- Small delay to prevent overwhelming the system
       if (i % 10 is 0) then
-         proc.sleep(0.001)  -- 1ms pause every 10 messages
+         processing.halt(0.001)  -- 1ms pause every 10 messages
       end
    end
 
    sendTime = mSys.PreciseTime() - startTime
    print('Sent ' .. targetMessages .. ' messages in ' .. sendTime .. ' seconds')
 
-   proc.sleep()
+   check proc.sleep()
 
    print('Received ' .. messagesReceived .. ' out of ' .. targetMessages .. ' messages')
    -- Allow some packet loss in high-frequency testing
@@ -74,31 +74,31 @@ end
 ------------------------------------------------------------------------------------------------------------------------
 -- Test large UDP packet transmission
 
-@Test(requires='network') function UDPLargePackets()
+@Test; @Requires(network=true) function UDPLargePackets()
    glBasePort++
    serverPort = glBasePort
-   proc = processing.new({ timeout = glTestTimeout })
    largePacketReceived = false
    receivedSize = 0
    sv_source = struct.new('IPAddress')
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       port    = serverPort,
       address = '127.0.0.1',
-      flags   = 'SERVER|UDP',
+      flags   = 'UDP',
       maxPacketSize = 65507,  -- Maximum UDP payload size
       incoming = function(Socket)
-         buffer = string.alloc(65600)  -- Slightly larger buffer
+         buffer = array<byte, 65600>  -- Slightly larger buffer
          err, bytesRead = Socket.mtRecvFrom(sv_source, buffer)
          if (err is ERR_Okay) and (bytesRead > 0) then
             print('[Large Packet Server] Received packet of size: ' .. bytesRead)
             receivedSize = bytesRead
             largePacketReceived = true
-            proc.signal()
+            Socket.acSignal()
          end
       end
    })
 
+   proc = processing.new({ timeout = glTestTimeout, signals = array<obj> { server } })
    client = obj.new('netsocket', { flags = 'UDP' })
 
    -- Test different large packet sizes
@@ -110,7 +110,7 @@ end
 
    for i, size in ipairs(packetSizes) do
       print('Sending packet of size: ' .. size)
-      largeMessage = string.rep('X', size)
+      largeMessage = 'X'.rep(size)
       err, bytesSent = client.mtSendTo(dest, largeMessage)
 
       if (err is ERR_Okay) then
@@ -124,10 +124,10 @@ end
          end
       end
 
-      processing.sleep(0.1)  -- Brief pause between packets
+      processing.halt(0.1)  -- Brief pause between packets
    end
 
-   proc.sleep()
+   check proc.sleep()
 
    assert(largePacketReceived, 'No large packets were received')
    print('Large packet test completed (largest received: ' .. receivedSize .. ' bytes)')
@@ -136,10 +136,9 @@ end
 ------------------------------------------------------------------------------------------------------------------------
 -- Test UDP concurrent connections
 
-@Test(requires='network') function UDPConcurrency()
+@Test; @Requires(network=true) function UDPConcurrency()
    glBasePort++
    serverPort = glBasePort
-   proc = processing.new({ timeout = glTestTimeout })
    clientsConnected = 0
    targetClients = 5
    messagesPerClient = 10
@@ -148,31 +147,33 @@ end
 
    print('Testing UDP concurrency with ' .. targetClients .. ' concurrent clients')
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       port    = serverPort,
       address = '127.0.0.1',
-      flags   = 'SERVER|UDP',
+      flags   = 'UDP',
       incoming = function(Socket)
-         buffer = string.alloc(1024)
+         buffer = array<byte, 1024>
          err, bytesRead = Socket.mtRecvFrom(sv_source, buffer)
          if (err is ERR_Okay) and (bytesRead > 0) then
             totalReceived = totalReceived + 1
-            msg = buffer:sub(0, bytesRead)
+            local msg = buffer.getString(0, bytesRead)
 
             if totalReceived % 10 is 0 then
                print('[Concurrent Server] Received ' .. totalReceived .. ' messages total')
             end
 
             if totalReceived >= targetClients * messagesPerClient then
-               proc.signal()
+               Socket.acSignal()
             end
          end
       end
    })
 
+   proc = processing.new({ timeout = glTestTimeout, signals = array<obj> { server } })
+
    -- Create multiple client sockets
    clients = {}
-   for i = 1, targetClients do
+   for i in {0 to targetClients} do
       clients[i] = obj.new('netsocket', {
          flags = 'UDP'
       })
@@ -183,8 +184,8 @@ end
    dest.port = server.port
 
    -- Each client sends multiple messages
-   for clientId = 1, targetClients do
-      for msgId = 1, messagesPerClient do
+   for clientId in {0 to targetClients} do
+      for msgId in {0 to messagesPerClient} do
          message = 'Client' .. clientId .. '_Msg' .. msgId
          err, bytesSent = clients[clientId].mtSendTo(dest, message)
          assert(err is ERR_Okay, 'Client ' .. clientId .. ' failed to send message ' .. msgId)
@@ -192,7 +193,7 @@ end
       print('Client ' .. clientId .. ' sent all ' .. messagesPerClient .. ' messages')
    end
 
-   proc.sleep()
+   check proc.sleep()
 
    print('Received ' .. totalReceived .. ' out of ' .. (targetClients * messagesPerClient) .. ' messages')
    successRate = (totalReceived / (targetClients * messagesPerClient)) * 100
@@ -204,7 +205,7 @@ end
 ------------------------------------------------------------------------------------------------------------------------
 -- Test buffer overflow handling
 
-@Test(requires='network') function UDPBufferHandling()
+@Test; @Requires(network=true) function UDPBufferHandling()
    glBasePort++
 
    client = obj.new('netsocket', { flags = 'UDP' })
@@ -220,7 +221,7 @@ end
    check(mNet.StrToAddress('127.0.0.1', dest))
    dest.port = 12345
 
-   for i = 1, rapidMessages do
+   for i in {0 to rapidMessages} do
       message = 'Rapid message #' .. i
       err, bytesSent = client.mtSendTo(dest, message)  -- Non-existent server
 
@@ -242,7 +243,7 @@ end
 ------------------------------------------------------------------------------------------------------------------------
 -- Test UDP performance benchmarks
 
-@Test(requires='network') function UDPPerformanceBenchmark()
+@Test; @Requires(network=true) function UDPPerformanceBenchmark()
    glBasePort++
    serverPort = glBasePort
    proc = processing.new({ timeout = 10.0 })  -- Longer timeout for benchmark
@@ -254,12 +255,12 @@ end
 
    print('Running UDP performance benchmark for ' .. benchmarkDuration .. ' seconds')
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       port = serverPort,
       address = '127.0.0.1',
-      flags = 'SERVER|UDP',
+      flags = 'UDP',
       incoming = function(Socket)
-         buffer = string.alloc(1024)
+         buffer = array<byte, 1024>
          err, bytesRead = Socket.mtRecvFrom(sv_source, buffer)
          if err is ERR_Okay and bytesRead > 0 then
              messagesReceived = messagesReceived + 1
@@ -286,12 +287,12 @@ end
 
       -- Brief processing break every 100 messages
       if messagesSent % 100 is 0 then
-         proc.sleep(0.1)
+         processing.halt(0.1)
       end
    end
 
    benchmarkActive = false
-   proc.sleep(0.5)  -- Allow final messages to be received
+   processing.halt(0.5)  -- Allow final messages to be received
 
    actualDuration = mSys.PreciseTime() - startTime
    sendRate       = messagesSent / actualDuration

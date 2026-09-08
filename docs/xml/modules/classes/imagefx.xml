@@ -8,14 +8,14 @@
     <module>Vector</module>
     <comment>Renders a bitmap image in the effect pipeline.</comment>
     <version>1</version>
-    <id>9bba5446</id>
+    <id>1208408a</id>
     <idstring>IMAGEFX</idstring>
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p>The ImageFX class will render a source image into a given rectangle within the current user coordinate system.  The client has the option of providing a pre-allocated <class name="Bitmap">Bitmap</class> or the path to a <class name="Picture">Picture</class> file as the source.</p>
+<p>The ImageFX class will render a source image into a given rectangle within the current user coordinate system.  The client has the option of providing a pre-allocated <class name="Bitmap">Bitmap</class> or the path to a <class name="Image">Image</class> file as the source.</p>
 <p>If a pre-allocated <class name="Bitmap">Bitmap</class> is to be used, it must be created under the ownership of the ImageFX object, and this must be configured prior to initialisation.  It is required that the bitmap uses 32 bits per pixel and that the alpha channel is enabled.</p>
-<p>If a source picture file is referenced, it will be upscaled to meet the requirements automatically as needed.</p>
+<p>If a source image file is referenced, it will be upscaled to meet the requirements automatically as needed.</p>
 <p>Technically the ImageFX object is represented by a new viewport, the bounds of which are defined by attributes <code>X</code>, <code>Y</code>, <code>Width</code> and <code>Height</code>.  The placement and scaling of the referenced image is controlled by the <fl>AspectRatio</fl> field.</p></description>
     <source>
       <file path="filters/">filter_image.cpp</file>
@@ -27,6 +27,7 @@
       <name>Draw</name>
       <comment>Render the effect to the target bitmap.</comment>
       <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
+      <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">The X position of the region to be drawn.</param>
         <param type="INT" name="Y">The Y position of the region to be drawn.</param>
@@ -41,8 +42,8 @@
     <field>
       <name>AspectRatio</name>
       <comment>SVG compliant aspect ratio settings.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type lookup="ARF">INT</type>
+      <access read="R" write="W">Read/Write</access>
+      <type lookup="ARF">ARF</type>
       <description>
 <types lookup="ARF"/>
       </description>
@@ -51,17 +52,17 @@
     <field>
       <name>Bitmap</name>
       <comment>The <class name="Bitmap">Bitmap</class> being used as the image source.</comment>
-      <access read="G">Get</access>
+      <access read="R">Read</access>
       <type>OBJECTPTR</type>
       <description>
 <p>Reading the Bitmap field will return the <class name="Bitmap">Bitmap</class> that is being used as the image source.  Note that if a custom Bitmap is to be used, the correct way to do this as to assign it to the ImageFX object via ownership rules.</p>
-<p>If a picture image has been processed by setting the <fl>Path</fl>, the Bitmap will refer to the content that has been processed.</p>
+<p>If an image has been processed by setting the <fl>Path</fl>, the Bitmap will refer to the content that has been processed.</p>
       </description>
     </field>
 
     <field>
       <name>Path</name>
-      <comment>Path to an image file supported by the <class name="Picture">Picture</class> class.</comment>
+      <comment>Path to an image file supported by the <class name="Image">Image</class> class.</comment>
       <access read="G" write="S">Get/Set</access>
       <type>STRING</type>
     </field>
@@ -69,8 +70,8 @@
     <field>
       <name>ResampleMethod</name>
       <comment>The resample algorithm to use for transforming the source image.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
+      <access read="R" write="W">Read/Write</access>
+      <type lookup="VSM">VSM</type>
       <description>
 <types lookup="VSM"/>
       </description>
@@ -81,6 +82,7 @@
       <comment>Returns an SVG compliant XML string that describes the filter.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
+      <tags>caller-owns-result</tags>
     </field>
 
   </fields>
@@ -99,18 +101,18 @@
 
     <constants lookup="VSM">
       <const name="AUTO">The default option is chosen by the system.  This will typically be <code>BILINEAR</code>, but slow machines may switch to nearest neighbour and high speed machines could use more advanced methods.</const>
-      <const name="BESSEL"/>
+      <const name="BESSEL">Uses a broad Bessel filter that can preserve detail during resampling, but is slower than the smaller-kernel methods.</const>
       <const name="BICUBIC">Produces a similar result to <code>BILINEAR</code> at a slightly higher CPU cost and a marginally sharper after-effect.</const>
       <const name="BILINEAR">Bilinear is a common algorithm that produces a reasonable quality image quickly.</const>
       <const name="BLACKMAN">Five times slower than <code>BILINEAR</code>, the final result will be less sharp than SINC.</const>
-      <const name="GAUSSIAN"/>
-      <const name="KAISER"/>
+      <const name="GAUSSIAN">Uses a Gaussian filter that softens the result, reducing aliasing at the cost of sharp edge detail.</const>
+      <const name="KAISER">Uses a Kaiser-windowed filter, giving smooth interpolation with low ringing and a cost close to <code>BILINEAR</code>.</const>
       <const name="LANCZOS">This well known algorithm may serve as a point of comparison for evaluating the results of other methods.  It shares characteristics with <code>SINC</code> and <code>BLACKMAN</code>.</const>
-      <const name="MITCHELL"/>
+      <const name="MITCHELL">Uses a Mitchell-Netravali filter, balancing sharpness and smoothness at a cost similar to <code>BICUBIC</code>.</const>
       <const name="NEIGHBOUR">Nearest neighbour is the fastest sampler at the cost of poor quality.</const>
-      <const name="QUADRIC"/>
+      <const name="QUADRIC">Uses a quadratic filter with a modest kernel, giving smoother results than <code>BILINEAR</code> with limited extra cost.</const>
       <const name="SINC">Five times slower than <code>BILINEAR</code>, the final result is of very good quality.</const>
-      <const name="SPLINE16">About twice as slow as <code>BILINEAR</code>, this method produces a considerably better result, and is a good choice for enlarging images without producing artifacts when contrasting colours are present.</const>
+      <const name="SPLINE16">About twice as slow as <code>BILINEAR</code>, this method samples a 4x4 area and produces a considerably better result, and is a good choice for enlarging images without producing artifacts when contrasting colours are present.</const>
     </constants>
 
   </types>

@@ -1,8 +1,8 @@
 # XQuery Module
 
 # Enable unit tests for deep testing of non-release builds only.
-if (NOT DEFINED ENABLE_UNIT_TESTS)
-#   set (ENABLE_UNIT_TESTS ON)
+if (NOT DEFINED UNIT_TESTS)
+#   set (UNIT_TESTS ON)
 endif ()
 
 set (MOD xquery)
@@ -11,7 +11,6 @@ set (INC_MOD_XQUERY TRUE PARENT_SCOPE)
 idl_gen ("${MOD}.tdl"
    NAME ${MOD}_defs
    OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h"
-   FILES "xquery.cpp"
    ARGS  "output-defs=xquery_def.cpp" "output-proto=xquery_def.cpp"
    APPEND_IDL "${MOD}_def.cpp")
 
@@ -42,7 +41,8 @@ add_library (${MOD}_lib OBJECT
 target_include_directories (${MOD}_lib PRIVATE "${PROJECT_SOURCE_DIR}/include")
 set_target_properties (${MOD}_lib PROPERTIES CXX_STANDARD 20 POSITION_INDEPENDENT_CODE ON)
 target_compile_definitions (${MOD}_lib PRIVATE "PRV_XML" "PRV_XQUERY_MODULE")
-add_dependencies (${MOD} build_headers xml)
+add_dependencies (${MOD} xml)
+add_generated_header_dependencies (${MOD}_lib core_defs xml_defs xquery_defs regex_defs)
 
 # Enable precompiled headers for the xquery functions object library
 # This must be done before the module target to avoid circular dependencies
@@ -81,8 +81,8 @@ target_sources (${MOD} PRIVATE
    $<TARGET_OBJECTS:${MOD}_lib>
    $<TARGET_OBJECTS:xml_schema>)
 
-if (ENABLE_UNIT_TESTS)
-   target_compile_definitions(${MOD}_lib PRIVATE "ENABLE_UNIT_TESTS")
+if (UNIT_TESTS)
+   target_compile_definitions(${MOD}_lib PRIVATE "UNIT_TESTS")
 endif ()
 
 # Tests
@@ -114,6 +114,6 @@ flute_test (${MOD}_math "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_math.tiri")
 flute_test (${MOD}_qt_math "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_qt_math.tiri")
 flute_test (${MOD}_qt_maps_arrays "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_qt_maps_arrays.tiri")
 
-if (ENABLE_UNIT_TESTS)
-   flute_test (xquery_unit_tests "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_unit_tests.tiri")
+if (UNIT_TESTS)
+   flute_test (${MOD}_unit_tests "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_unit_tests.tiri")
 endif ()

@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,20 +5,18 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Generates offset contour vertices from an input path. Hooks into conv_contour through conv_adaptor_vcgen. In the
+// vector renderer it expands or contracts shapes before they are rasterised as fills.
+//
+// See Implementation agg_vcgen_contour.cpp
 
-
-#ifndef AGG_VCGEN_CONTOUR_INCLUDED
-#define AGG_VCGEN_CONTOUR_INCLUDED
+#pragma once
 
 #include "agg_math_stroke.h"
 
 namespace agg
 {
-
-    //----------------------------------------------------------vcgen_contour
-    //
-    // See Implementation agg_vcgen_contour.cpp
-    //
     class vcgen_contour
     {
         enum status_e
@@ -38,13 +35,13 @@ namespace agg
 
         vcgen_contour();
 
-        void line_cap(line_cap_e lc)     { m_stroker.line_cap(lc); }
-        void line_join(line_join_e lj)   { m_stroker.line_join(lj); }
-        void inner_join(inner_join_e ij) { m_stroker.inner_join(ij); }
+        void line_cap(VLC LineCap)     { m_stroker.line_cap(LineCap); }
+        void line_join(VLJ LineJoin)   { m_stroker.line_join(LineJoin); }
+        void inner_join(VIJ InnerJoin) { m_stroker.inner_join(InnerJoin); }
 
-        line_cap_e   line_cap()   const { return m_stroker.line_cap(); }
-        line_join_e  line_join()  const { return m_stroker.line_join(); }
-        inner_join_e inner_join() const { return m_stroker.inner_join(); }
+        VLC line_cap()   const { return m_stroker.line_cap(); }
+        VLJ line_join()  const { return m_stroker.line_join(); }
+        VIJ inner_join() const { return m_stroker.inner_join(); }
 
         void width(double w) { m_stroker.width(m_width = w); }
         void miter_limit(double ml) { m_stroker.miter_limit(ml); }
@@ -85,5 +82,3 @@ namespace agg
     };
 
 }
-
-#endif

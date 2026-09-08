@@ -8,10 +8,10 @@
     <module>Core</module>
     <comment>Enables access to the file system.</comment>
     <version>1.2</version>
-    <id>7c96cb25</id>
+    <id>4ca5c5b3</id>
     <idstring>FILE</idstring>
     <category>System</category>
-    <copyright>Paul Manias 1996-2026</copyright>
+    <copyright>Paul Manias © 1996-2026</copyright>
     <description>
 <p>The File class provides extensive support for file management and I/O.  The class supports the notion of individual file compression and file finding capabilities.  Since all File objects are tracked, there is no chance of the system leaving locked files behind after a program exits.  Folder management is also integrated into this class to ease the management of both file types.</p>
 <p>To read or write to a file, set the <fl>Path</fl> of the file as well as the correct I/O file flags before initialisation. See the <fl>Flags</fl> field for information on the available I/O flags.  Functionality for read and write operations is provided through the <action>Read</action> and <action>Write</action> actions.  The <action>Seek</action> action can be used to change the read/write position in a file.</p></description>
@@ -25,17 +25,18 @@
       <name>Activate</name>
       <comment>Opens the file.  Performed automatically if <code>NEW</code>, <code>READ</code> or <code>WRITE</code> flags were specified on initialisation.</comment>
       <prototype>ERR acActivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acActivate()</tiriPrototype>
     </action>
 
     <action>
       <name>DataFeed</name>
       <comment>Data can be streamed to any file as a method of writing content.</comment>
-      <prototype>ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, APTR Buffer, INT Size)</prototype>
+      <prototype>ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, std::span&lt;const int8_t&gt; Buffer)</prototype>
+      <tiriPrototype>err = Object.acDataFeed(Object:obj, Datatype:DATA, Buffer:str)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Object">Must refer to the unique ID of the object that you represent. If you do not represent an object, set this parameter to the current task ID.</param>
         <param type="DATA" name="Datatype" lookup="DATA">The type of data being sent.</param>
-        <param type="APTR" name="Buffer">The data being sent to the target object.</param>
-        <param type="INT" name="Size">The size of the data in Buffer.</param>
+        <param type="std::span&lt;const int8_t&gt;" name="Buffer">The data being sent to the target object.</param>
       </input>
       <description>
 <p>Streaming data of any type to a file will result in the content being written to the file at the current seek <fl>Position</fl>.</p>
@@ -43,9 +44,17 @@
     </action>
 
     <action>
+      <name>Flush</name>
+      <comment>Flushes all pending write operations.</comment>
+      <prototype>ERR acFlush(*Object)</prototype>
+      <tiriPrototype>err = Object.acFlush()</tiriPrototype>
+    </action>
+
+    <action>
       <name>Init</name>
       <comment>Initialises a file.</comment>
       <prototype>ERR InitObject(*Object)</prototype>
+      <tiriPrototype>Object.init()</tiriPrototype>
       <description>
 <p>This action will prepare a file or folder at the given <fl>Path</fl> for use.</p>
 <p>To create a new file from scratch, specify the <code>NEW</code> flag.  This will overwrite any file that exists at the target path.</p>
@@ -56,12 +65,18 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="File">File error, e.g. file not found</error>
         <error code="Search">The file could not be found.</error>
-        <error code="FileNotFound">File not found.</error>
+        <error code="FileNotFound">File not found</error>
         <error code="NoPermission">Permission was denied when accessing or creating the file.</error>
+        <error code="InvalidPath">Invalid file or folder path detected</error>
         <error code="SetField">An error occurred while updating the <fl>Path</fl> field.</error>
-        <error code="MissingPath">The object is missing a path reference.</error>
-        <error code="ResolvePath">A volume could not be resolved.</error>
+        <error code="MissingPath">The object is missing a path reference</error>
+        <error code="VirtualVolume">ResolvePath() failed to resolve the path because it is a virtual reference</error>
+        <error code="ResolvePath">A call to ResolvePath() failed</error>
+        <error code="ExpectedFile">The operation expected a path to a file</error>
+        <error code="CreateFile">A new file could not be created</error>
+        <error code="UseDerived">Requested to use a registered derived class (not an error)</error>
       </result>
     </action>
 
@@ -69,15 +84,16 @@
       <name>Query</name>
       <comment>Read a file's meta information from source.</comment>
       <prototype>ERR acQuery(*Object)</prototype>
+      <tiriPrototype>err = Object.acQuery()</tiriPrototype>
     </action>
 
     <action>
       <name>Read</name>
       <comment>Reads data from a file.</comment>
-      <prototype>ERR acRead(*Object, APTR Buffer, INT Length, INT *Result)</prototype>
+      <prototype>ERR acRead(*Object, std::span&lt;int8_t&gt; Buffer, INT *Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acRead(Buffer:array&lt;any&gt;)</tiriPrototype>
       <input>
-        <param type="APTR" name="Buffer">Points a buffer that will receive the data.</param>
-        <param type="INT" name="Length">The total number of bytes to read from the object.  This value cannot exceed the size of the Buffer.</param>
+        <param type="std::span&lt;int8_t&gt;" name="Buffer">A mutable buffer that will receive the data.</param>
         <param type="INT" name="Result">The Read action will write this parameter with the total number of bytes read into the Buffer.</param>
       </input>
       <description>
@@ -87,10 +103,12 @@
       <result>
         <error code="Okay">The file information was read into the buffer.</error>
         <error code="Failed">The file object refers to a folder, or the object is corrupt.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="OutOfRange">Invalid <code>Length</code> parameter.</error>
         <error code="FileReadFlag">The <code>FL::READ</code> flag was not specified on initialisation.</error>
-        <error code="NotInitialised">The resource has not been initialised.</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
+        <error code="SystemCall">A call to the host system has failed</error>
+        <error code="ExpectedFile">The operation expected a path to a file</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
         <error code="ExpectedFolder">The file object refers to a folder.</error>
       </result>
@@ -99,22 +117,25 @@
     <action>
       <name>Rename</name>
       <comment>Changes the name of a file.</comment>
-      <prototype>ERR acRename(*Object, CSTRING Name)</prototype>
+      <prototype>ERR acRename(*Object, std::string_view Name)</prototype>
+      <tiriPrototype>err = Object.acRename(Name:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Name">The new name for the object.</param>
+        <param type="STRVIEW" name="Name">The new name for the object.</param>
       </input>
     </action>
 
     <action>
       <name>Reset</name>
       <comment>If the file represents a folder, the file list index is reset by this action.</comment>
-      <prototype>ERR acRefresh(*Object)</prototype>
+      <prototype>ERR acReset(*Object)</prototype>
+      <tiriPrototype>err = Object.acReset()</tiriPrototype>
     </action>
 
     <action>
       <name>Seek</name>
       <comment>Seeks to a new read/write position within a file.</comment>
       <prototype>ERR acSeek(*Object, DOUBLE Offset, INT Position)</prototype>
+      <tiriPrototype>err = Object.acSeek(Offset:num, Position:SEEK)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="Offset">The desired offset to seek to, relative to the Position parameter.</param>
         <param type="POS" name="Position">The position that defines the starting point for Offset.</param>
@@ -124,10 +145,10 @@
     <action>
       <name>Write</name>
       <comment>Writes data to a file.</comment>
-      <prototype>ERR acWrite(*Object, APTR Buffer, INT Length, INT Result)</prototype>
+      <prototype>ERR acWrite(*Object, std::span&lt;const int8_t&gt; Buffer, INT *Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acWrite(Buffer:str)</tiriPrototype>
       <input>
-        <param type="APTR" name="Buffer">A buffer containing the data that will be written to the object.</param>
-        <param type="INT" name="Length">The total number of bytes to write to the object.</param>
+        <param type="std::span&lt;const int8_t&gt;" name="Buffer">A buffer containing the data that will be written to the object.</param>
         <param type="INT" name="Result">This parameter with be updated with the total number of bytes written from the Buffer.</param>
       </input>
       <description>
@@ -136,11 +157,10 @@
       <result>
         <error code="Okay">All of the data was written to the file.</error>
         <error code="LimitedSuccess">Only some of the data was written to the file.  Check the Result parameter to see how much data was written.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="FileWriteFlag">The <code>FL::WRITE</code> flag was not specified when initialising the file.</error>
-        <error code="ObjectCorrupt">The object structure is corrupt or has not been initialised.</error>
-        <error code="ReallocMemory">The reallocation of a memory block failed.</error>
-        <error code="ExpectedFile">The operation expected a path to a file.</error>
+        <error code="ObjectCorrupt">The object structure is corrupt or has not been initialised</error>
+        <error code="ExpectedFile">The operation expected a path to a file</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </action>
@@ -152,24 +172,28 @@
       <name>BufferContent</name>
       <comment>Reads all file content into a local memory buffer.</comment>
       <prototype>ERR fl::BufferContent(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = BufferContent()</tiriPrototype>
       <description>
 <p>File content may be buffered at any time by calling the BufferContent method.  This will allocate a buffer that matches the current file size and the file's content will be read into that buffer.  The <code>BUFFER</code> flag is set in the file object and a pointer to the content is referenced in the file's <fl>Buffer</fl> field.  Standard file operations such as read, write and seek have the same effect when a file is in buffer mode.</p>
 <p>Once a file has been buffered, the original file handle and any locks on that file are returned to the system. Physical operations on the file object such as delete, rename and attribute settings no longer have meaning when applied to a buffered file.  It is not possible to drop the buffer and return the file object to its original state once buffering has been enabled.</p>
       </description>
       <result>
         <error code="Okay">The file content was successfully buffered.</error>
-        <error code="Read">Failed to read the file content.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block.</error>
+        <error code="NothingDone">The file is already buffered.</error>
+        <error code="Read">Error reading data</error>
+        <error code="InvalidState">The targeted file is not open for read operations.</error>
       </result>
+      <tags>blocking, mutates-object, creates-resource, updates-seek-index</tags>
     </method>
 
     <method>
       <name>Copy</name>
       <comment>Copies the data of a file to another location.</comment>
-      <prototype>ERR fl::Copy(OBJECTPTR Object, CSTRING Dest, FUNCTION * Callback)</prototype>
+      <prototype>ERR fl::Copy(OBJECTPTR Object, STRVIEW Dest, FUNCTION Callback)</prototype>
+      <tiriPrototype>err = Copy(Dest:str, Callback:func)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Dest">The destination file path for the copy operation.</param>
-        <param type="FUNCTION *" name="Callback">Optional callback for receiving feedback during the operation.</param>
+        <param type="STRVIEW" name="Dest">The destination file path for the copy operation.</param>
+        <param type="FUNCTION" name="Callback">Optional callback for receiving feedback during the operation.</param>
       </input>
       <description>
 <p>This method is used to copy the data of a file object to another location.  All of the data will be copied, effectively creating a clone of the original file information.  The file object must have been initialised with the <code>FL::READ</code> flag, or the copy operation will not work (this restriction does not apply to directories).  If a matching file name already exists at the destination path, it will be over-written with the new data.</p>
@@ -178,47 +202,53 @@
       </description>
       <result>
         <error code="Okay">The file data was copied successfully.</error>
-        <error code="Failed">General failure.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Failed">General failure</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="Read">Data could not be read from the source path.</error>
         <error code="Write">Data could not be written to the destination path.</error>
         <error code="FieldNotSet">The <fl>Path</fl> field has not been set in the file object.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block.</error>
         <error code="Loop">Performing the copy would cause infinite recursion.</error>
-        <error code="ResolvePath">A volume could not be resolved.</error>
+        <error code="ResolvePath">A call to ResolvePath() failed</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>blocking, updates-seek-index, callback-inlines</tags>
     </method>
 
     <method>
       <name>Delete</name>
       <comment>Deletes a file from its source location.</comment>
-      <prototype>ERR fl::Delete(OBJECTPTR Object, FUNCTION * Callback)</prototype>
+      <prototype>ERR fl::Delete(OBJECTPTR Object, FUNCTION Callback)</prototype>
+      <tiriPrototype>err = Delete(Callback:func)</tiriPrototype>
       <input>
-        <param type="FUNCTION *" name="Callback">Optional callback for receiving feedback during the operation.</param>
+        <param type="FUNCTION" name="Callback">Optional callback for receiving feedback during the operation.</param>
       </input>
       <description>
 <p>This method is used to delete files from their source location.  If used on a folder, all of the folder's contents will be deleted in the call.   Once a file is deleted, the object effectively becomes unusable.  For this reason, file deletion should normally be followed up with a call to the Free action.</p>
       </description>
       <result>
         <error code="Okay">File deleted successfully.</error>
+        <error code="Cancelled">Operation cancelled</error>
         <error code="Failed">The deletion attempt failed (specific condition not available).</error>
         <error code="NoPermission">The user does not have the necessary permissions to delete the file.</error>
-        <error code="MissingPath">The object is missing a path reference.</error>
+        <error code="MissingPath">The object is missing a path reference</error>
         <error code="BufferOverflow">The file path string is too long.</error>
-        <error code="ResolvePath">A volume could not be resolved.</error>
+        <error code="ResolvePath">A call to ResolvePath() failed</error>
+        <error code="SystemCall">A call to the host system has failed</error>
+        <error code="DeleteFile">Deletion of a folder or file failed (e.g. permissions, read-only media)</error>
         <error code="ReadOnly">The file is on a read-only filesystem.</error>
         <error code="Locked">The file is in use.</error>
       </result>
+      <tags>blocking, mutates-object, closes-handle, callback-inlines</tags>
     </method>
 
     <method>
       <name>Move</name>
       <comment>Moves a file to a new location.</comment>
-      <prototype>ERR fl::Move(OBJECTPTR Object, CSTRING Dest, FUNCTION * Callback)</prototype>
+      <prototype>ERR fl::Move(OBJECTPTR Object, STRVIEW Dest, FUNCTION Callback)</prototype>
+      <tiriPrototype>err = Move(Dest:str, Callback:func)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Dest">The desired path for the file.</param>
-        <param type="FUNCTION *" name="Callback">Optional callback for receiving feedback during the operation.</param>
+        <param type="STRVIEW" name="Dest">The desired path for the file.</param>
+        <param type="FUNCTION" name="Callback">Optional callback for receiving feedback during the operation.</param>
       </input>
       <description>
 <p>This method is used to move the data of a file to another location.  If the file object represents a folder, then the folder and all of its contents will be moved.  The file object must have been initialised with the <code>FL::READ</code> flag, or the move operation will not work (this restriction does not apply to directories).  If a file already exists at the destination path then it will be over-written with the new data.</p>
@@ -226,17 +256,19 @@
       </description>
       <result>
         <error code="Okay">The File was moved successfully.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="InvalidPath">Attempted to move a volume.</error>
         <error code="FieldNotSet">The <fl>Path</fl> field has not been set in the file object.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>blocking, mutates-object, updates-seek-index, callback-inlines</tags>
     </method>
 
     <method>
       <name>Next</name>
       <comment>Retrieve meta information describing the next indexed file in the folder list.</comment>
       <prototype>ERR fl::Next(OBJECTPTR Object, objFile ** File)</prototype>
+      <tiriPrototype>err, File:obj = Next()</tiriPrototype>
       <input>
         <param type="objFile **" name="File">A pointer to a new File object will be returned in this parameter if the call is successful.</param>
       </input>
@@ -248,38 +280,46 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="DirEmpty">The index has reached the end of the file list.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="EndOfSequence">The index has reached the end of the file list.</error>
+        <error code="Args">Invalid arguments passed to function</error>
+        <error code="CreateObject">A call to CreateObject() failed</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="ExpectedFolder">The operation expected a folder path</error>
       </result>
+      <tags>blocking, updates-seek-index, caller-owns-result</tags>
     </method>
 
     <method>
       <name>ReadLine</name>
       <comment>Reads the next line from the file.</comment>
       <prototype>ERR fl::ReadLine(OBJECTPTR Object, STRING * Result)</prototype>
+      <tiriPrototype>err, Result:str = ReadLine()</tiriPrototype>
       <input>
-        <param type="STRING *" name="Result">The resulting string is returned in this parameter.</param>
+        <param type="STRING *" name="Result">The string provided in this parameter will be updated with the line read from the file.</param>
       </input>
       <description>
-<p>Reads one line from the file into an internal buffer, which is returned in the Result argument.  Reading a line will increase the <fl>Position</fl> field by the amount of bytes read from the file.  You must have set the <code>FL::READ</code> bit in the <fl>Flags</fl> field when you initialised the file, or the call will fail.</p>
-<p>The line buffer is managed internally, so there is no need to free the <code>Result</code> string.  <code>ERR::NoData</code> is returned once all lines have been read.</p>
+<p>Reads one line from the file into a provided string buffer, which is required in the Result argument.  Reading a line will increase the <fl>Position</fl> field by the amount of bytes read from the file.  You must have set the <code>FL::READ</code> bit in the <fl>Flags</fl> field when you initialised the file, or the call will fail.</p>
+<p><code>ERR::NoData</code> is returned once all lines have been read.</p>
       </description>
       <result>
         <error code="Okay">The file information was read into the buffer.</error>
         <error code="Failed">The file object refers to a folder.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="NoData">There is no more data left to read.</error>
         <error code="FileReadFlag">The <code>FL::READ</code> flag was not specified on initialisation.</error>
         <error code="ObjectCorrupt">The internal file handle is missing.</error>
         <error code="BufferOverflow">The line is too long for the read routine (4096 byte limit).</error>
+        <error code="ExpectedFile">The operation expected a path to a file</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>blocking, updates-seek-index, object-owns-result, null-terminated-result, mutates-input</tags>
     </method>
 
     <method>
       <name>SetDate</name>
       <comment>Sets the date on a file.</comment>
       <prototype>ERR fl::SetDate(OBJECTPTR Object, INT Year, INT Month, INT Day, INT Hour, INT Minute, INT Second, FDT Type)</prototype>
+      <tiriPrototype>err = SetDate(Year:num, Month:num, Day:num, Hour:num, Minute:num, Second:num, Type:num)</tiriPrototype>
       <input>
         <param type="INT" name="Year">Year (-ve for BC, +ve for AD).</param>
         <param type="INT" name="Month">Month (1 - 12)</param>
@@ -298,16 +338,18 @@
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="NoSupport">The platform does not support file date setting.</error>
-        <error code="ResolvePath">A volume could not be resolved.</error>
-        <error code="SystemCall">A call to the host system has failed.</error>
+        <error code="ResolvePath">A call to ResolvePath() failed</error>
+        <error code="SystemCall">A call to the host system has failed</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>blocking, mutates-object</tags>
     </method>
 
     <method>
       <name>StartStream</name>
       <comment>Starts streaming data from a file source.</comment>
       <prototype>ERR fl::StartStream(OBJECTPTR Object, OBJECTID Subscriber, FL Flags, INT Length)</prototype>
+      <tiriPrototype>err = StartStream(Subscriber:obj, Flags:num, Length:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Subscriber">Reference to an object that will receive streamed data notifications.</param>
         <param type="FL" name="Flags" lookup="FL">Use <code>READ</code> for incoming data, <code>WRITE</code> for outgoing data.</param>
@@ -323,47 +365,54 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="NoSupport">The file is not streamed.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>non-blocking, mutates-object, callback-held</tags>
     </method>
 
     <method>
       <name>StopStream</name>
       <comment>Stops streaming data from a file source.</comment>
       <prototype>ERR fl::StopStream(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = StopStream()</tiriPrototype>
       <description>
 <p>This method terminates data streaming from a file (instantiated by the <method>StartStream</method> method).  Any resources related to the streaming process will be deallocated.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="NoSupport">The file is not streamed.</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
       <name>Watch</name>
       <comment>Monitors files and folders for file system events.</comment>
-      <prototype>ERR fl::Watch(OBJECTPTR Object, FUNCTION * Callback, INT64 Custom, MFF Flags)</prototype>
+      <prototype>ERR fl::Watch(OBJECTPTR Object, FUNCTION Callback, MFF Flags)</prototype>
+      <tiriPrototype>err = Watch(Callback:func, Flags:num)</tiriPrototype>
       <input>
-        <param type="FUNCTION *" name="Callback">The routine that will be called when a file change is triggered by the system.</param>
-        <param type="INT64" name="Custom">A custom 64-bit value that will passed to the Callback routine as a parameter.</param>
+        <param type="FUNCTION" name="Callback">The routine that will be called when a file change is triggered by the system.</param>
         <param type="MFF" name="Flags" lookup="MFF">Filter events to those indicated in these flags.</param>
       </input>
       <description>
 <p>The Watch() method configures event based reporting for changes to any file or folder in the file system. The capabilities of this method are dependent on the host platform, with Windows and Linux systems being able to support most of the current feature set.</p>
 <p>The path that will be monitored is determined by the File object's <fl>Path</fl> field.  Both files and folders are supported as targets.</p>
 <p>The optional <lk>MFF</lk> Flags are used to filter events to those that are desired for monitoring.</p>
-<p>The client must provide a <code>Callback</code> that will be triggered when a monitored event is triggered.  The <code>Callback</code> must follow the format <code>ERR Routine(*File, STRING Path, INT64 Custom, INT Flags)</code></p>
-<p>Each event will be delivered in the sequence that they are originally raised.  The <code>Flags</code> parameter will reflect the specific event that has occurred.  The <code>Custom</code> parameter is identical to the <code>Custom</code> argument originally passed to this method.  The <code>Path</code> is a string that is relative to the File's <fl>Path</fl> field.</p>
-<p>If the callback routine returns <code>ERR::Terminate</code>, the watch will be disabled.  It is also possible to disable an existing watch by calling this method with no parameters, or by setting the <code>Flags</code> parameter to <code>0</code>.</p>
+<p>The client must provide a <code>Callback</code> that will be triggered when a monitored event is triggered.  The <code>Callback</code> must follow the format <code>ERR Routine(*File, std::string_view Path, MFF Flags, APTR Meta)</code></p>
+<p>Each event will be delivered in the sequence that they are originally raised.  The <code>Flags</code> parameter will reflect the specific event that has occurred.  The <code>Path</code> is a string that is relative to the File's <fl>Path</fl> field.</p>
+<p>If the callback routine returns <code>ERR::Terminate</code>, the watch will be disabled.  It is also possible to disable an existing watch by calling this method with no parameters, or by setting the <code>Flags</code> parameter to <code>MFF::NIL</code>.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
+        <error code="NoSupport">Operation not supported</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>non-blocking, mutates-object, callback-held</tags>
     </method>
 
   </methods>
@@ -373,7 +422,7 @@
       <name>Buffer</name>
       <comment>Points to the internal data buffer if the file content is held in memory.</comment>
       <access read="G">Get</access>
-      <type>INT8 *</type>
+      <type>kt::vector&lt;int8_t&gt;</type>
       <description>
 <p>If a file has been created with an internal buffer (by setting the <code>BUFFER</code> flag on creation), this field will point to the address of that buffer.  The size of the buffer will match the <fl>Size</fl> field.</p>
       </description>
@@ -382,8 +431,8 @@
     <field>
       <name>Created</name>
       <comment>The creation date stamp for the file.</comment>
-      <access read="G" write="W">Get/Write</access>
-      <type>APTR</type>
+      <access read="G">Get</access>
+      <type>struct DateTime</type>
       <description>
 <p>The Created field returns the time at which the file was first created, if supported by the filesystem.  If not supported directly, the most recent 'modification date' is normally returned.</p>
 <p>To simplify time management, information is read and set via a <st>DateTime</st> structure.</p>
@@ -394,7 +443,7 @@
       <name>Date</name>
       <comment>The 'last modified' date stamp on the file.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>APTR</type>
+      <type>struct DateTime</type>
       <description>
 <p>The Date field reflects the time at which the file was last modified.  It can also be used to set a new modification date.  Please note that if the file is open for writing, then date-stamped, then modified; the file system driver will overwrite the previously defined date stamp with the time at which the file was last written.</p>
 <p>Information is read and set using a standard <st>DateTime</st> structure.</p>
@@ -458,7 +507,7 @@
     <field>
       <name>Path</name>
       <comment>Specifies the location of a file or folder.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>STRING</type>
       <description>
 <p>This field is required for initialisation and must either be in the format of a universal path string, or a path that is compatible with the host system.  The standard format for a universal path is <code>volume:folder/file</code>, for instance <code>kotuku:system/classes.bin</code>.</p>
@@ -467,13 +516,14 @@
 <p>The accepted method for referencing parent folders is <code>../</code>, which can be repeated for as many parent folders as needed to traverse the folder hierarchy.</p>
 <p>Access to <code>std*</code> handles is achieved by using the path strings <code>std:in</code>, <code>std:out</code> and <code>std:err</code>.</p>
       </description>
+      <tags>null-terminated-result</tags>
     </field>
 
     <field>
       <name>Permissions</name>
       <comment>Manages the permissions of a file.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type lookup="PERMIT">INT</type>
+      <type lookup="PERMIT">PERMIT</type>
       <description>
 <types lookup="PERMIT"/>
       </description>
@@ -496,7 +546,7 @@
       <access read="G">Get</access>
       <type>STRING</type>
       <description>
-<p>The ResolvedPath will return a resolved copy of the <fl>Path</fl> string.  The resolved path will be in a format that is native to the host platform.  Please refer to the <function>ResolvePath</function> function for further information.</p>
+<p>The ResolvedPath will return a resolved copy of the <fl>Path</fl> string.  The resolved path will be in a format that is native to the host platform.  Please refer to the <function module="Core">ResolvePath</function> function for further information.</p>
       </description>
     </field>
 
@@ -511,33 +561,12 @@
     </field>
 
     <field>
-      <name>Static</name>
-      <comment>Set to <code>true</code> if a file object should be static.</comment>
-      <access read="R" write="I">Read/Init</access>
-      <type>INT</type>
-      <description>
-<p>This field applies when a file object has been created in an object script.  By default, a file object will auto-terminate when a closing tag is received.  If the object must remain live, set this field to <code>true</code>.</p>
-      </description>
-    </field>
-
-    <field>
-      <name>Target</name>
-      <comment>Specifies a surface ID to target for user feedback and dialog boxes.</comment>
-      <access read="R" write="W">Read/Write</access>
-      <type>OBJECTID</type>
-      <description>
-<p>User feedback can be enabled for certain file operations by setting the Target field to a valid surface ID, or zero for the default target for new windows.  This field is set to <code>-1</code> by default, in order to disable this feature.</p>
-<p>If set correctly, operations such as file deletion or copying will pop-up a progress box after a certain amount of time has elapsed during the operation.  The dialog box will also provide the user with a cancel option to terminate the process early.</p>
-      </description>
-    </field>
-
-    <field>
-      <name>TimeStamp</name>
+      <name>Timestamp</name>
       <comment>The last modification time set on a file, represented as a 64-bit integer.</comment>
       <access read="G">Get</access>
       <type>INT64</type>
       <description>
-<p>The TimeStamp field is a 64-bit representation of the last modification date/time set on a file.  It is not guaranteed that the value represents seconds from the epoch, so it should only be used for purposes such as sorting, or for comparison to the time stamps of other files.  For a parsed time structure, refer to the <fl>Date</fl> field.</p>
+<p>The Timestamp field is a 64-bit representation of the last modification date/time set on a file.  It is not guaranteed that the value represents seconds from the epoch, so it should only be used for purposes such as sorting, or for comparison to the time stamps of other files.  For a parsed time structure, refer to the <fl>Date</fl> field.</p>
       </description>
     </field>
 
@@ -563,7 +592,7 @@
     </constants>
 
     <constants lookup="FL" comment="File flags">
-      <const name="APPROXIMATE">Allows fuzzy matching of the file path when opening an existing file.  This means that the file extension will be ignored; for instance attempting to open a file of 'screenshot.png' when only a file name of 'screenshot.jpg' exists in the same folder, the 'screenshot.jpg' file will be opened instead.  If multiple files could potentially match to the file name, the file object will select the first match that is encountered.</const>
+      <const name="APPROXIMATE">Allows fuzzy matching of the file path by ignoring the file extension; for instance opening 'screenshot.png' when only 'screenshot.jpg' exists in the same folder, the 'screenshot.jpg' file will be opened.  If multiple files could potentially match to the file name, the file object will select the first match that is encountered.</const>
       <const name="BUFFER">Activates a special mode in which the file data is stored in a memory buffer rather than a disk file.  Set the Size field to a value of at least 1 so that the initial buffer size is configured.  In this mode many of the available file operations are meaningless except for the Read, Write and Seek actions.</const>
       <const name="DEVICE">The file is a system device (must set if opening a device for read/write operations)</const>
       <const name="DIRECTORY">The file object represents a folder.</const>
@@ -577,6 +606,7 @@
       <const name="READ">Required if the file needs to be opened for read access.</const>
       <const name="RESET_DATE">For internal use only</const>
       <const name="STREAM">File data is streamed (e.g. PIPE, FIFO, socket) and may be accessed locally or via a network.</const>
+      <const name="VIRTUAL">Path is to a virtual device.</const>
       <const name="WRITE">Prepares a file for writing data, starting at byte position 0.  To start writing from the end of a file, use the Seek action after the file has been initialised.</const>
     </constants>
 
@@ -603,51 +633,42 @@
       <const name="ALL_EXEC">Synonym for <code>EVERYONE_EXEC</code></const>
       <const name="ALL_READ">Synonym for <code>EVERYONE_READ</code></const>
       <const name="ALL_WRITE">Synonym for <code>EVERYONE_WRITE</code></const>
-      <const name="ARCHIVE">Marks the file for future backup.  The flag should be cleared after the backup has succeeded.</const>
-      <const name="DELETE">Owner can delete.  If the file system does not support this, deletion is enabled via the <code>WRITE</code> flag.</const>
+      <const name="ARCHIVE">Marks the file for future backup.  The flag should be cleared after the backup has succeeded</const>
+      <const name="DELETE">Owner can delete.  If the file system does not support this, deletion is enabled via the <code>WRITE</code> flag</const>
       <const name="EVERYONE_ACCESS">Synonym for <code>EVERYONE_READ | EVERYONE_WRITE | EVERYONE_EXEC | EVERYONE_DELETE</code></const>
       <const name="EVERYONE_DELETE">Synonym for <code>DELETE | GROUP_DELETE | OTHERS_DELETE</code></const>
       <const name="EVERYONE_EXEC">Synonym for <code>EXEC | GROUP_EXEC | OTHERS_EXEC</code></const>
       <const name="EVERYONE_READ">Synonym for <code>READ | GROUP_READ | OTHERS_READ</code></const>
       <const name="EVERYONE_READWRITE">Synonym for <code>EVERYONE_READ | EVERYONE_WRITE</code></const>
       <const name="EVERYONE_WRITE">Synonym for <code>WRITE | GROUP_WRITE | OTHERS_WRITE</code></const>
-      <const name="EXEC">User/Owner can execute.</const>
+      <const name="EXEC">User/Owner can execute</const>
       <const name="GROUP">Synonym for <code>GROUP_READ | GROUP_WRITE | GROUP_EXEC | GROUP_DELETE</code></const>
-      <const name="GROUPID">Allows executables to run with a set group id.</const>
-      <const name="GROUP_DELETE">Group members can delete.</const>
-      <const name="GROUP_EXEC">Group members can execute.</const>
-      <const name="GROUP_READ">Group members can read.</const>
-      <const name="GROUP_WRITE">Group members can write.</const>
-      <const name="HIDDEN">Recommends that the file is hidden from view by default.</const>
-      <const name="INHERIT">Inherit permissions from parent folder and logical OR them with preset permission flags.</const>
-      <const name="NETWORK">File is hosted on another machine.</const>
-      <const name="OFFLINE">File content for this networked file has not been cached on the local PC.</const>
+      <const name="GROUPID">Allows executables to run with a set group id</const>
+      <const name="GROUP_DELETE">Group members can delete</const>
+      <const name="GROUP_EXEC">Group members can execute</const>
+      <const name="GROUP_READ">Group members can read</const>
+      <const name="GROUP_WRITE">Group members can write</const>
+      <const name="HIDDEN">Recommends that the file is hidden from view by default</const>
+      <const name="INHERIT">Inherit permissions from parent folder and logical OR them with preset permission flags</const>
+      <const name="META">Synonym for <code>HIDDEN | PASSWORD | OFFLINE | NETWORK</code></const>
+      <const name="NETWORK">File is hosted on another machine</const>
+      <const name="OFFLINE">File content for this networked file has not been cached on the local PC</const>
       <const name="OTHERS">Synonym for <code>OTHERS_READ | OTHERS_WRITE | OTHERS_EXEC | OTHERS_DELETE</code></const>
-      <const name="OTHERS_DELETE">Others can delete.</const>
-      <const name="OTHERS_EXEC">Others can execute.</const>
-      <const name="OTHERS_READ">Others can read.</const>
-      <const name="OTHERS_WRITE">Others can write.</const>
-      <const name="PASSWORD">File is password protected.</const>
-      <const name="READ">User/Owner has read access.  This will not allow compiled code to be executed.</const>
+      <const name="OTHERS_DELETE">Others can delete</const>
+      <const name="OTHERS_EXEC">Others can execute</const>
+      <const name="OTHERS_READ">Others can read</const>
+      <const name="OTHERS_WRITE">Others can write</const>
+      <const name="PASSWORD">File is password protected</const>
+      <const name="READ">User/Owner has read access.  This will not allow compiled code to be executed</const>
       <const name="USER">Synonym for <code>READ | WRITE | EXEC | DELETE</code></const>
-      <const name="USERID">Allows executables to run with a set user id.</const>
+      <const name="USERID">Allows executables to run with a set user id</const>
       <const name="USER_EXEC">Synonym for <code>EXEC</code></const>
       <const name="USER_READ">Synonym for <code>READ</code></const>
       <const name="USER_WRITE">Synonym for <code>WRITE</code></const>
-      <const name="WRITE">User/Owner can write.</const>
+      <const name="WRITE">User/Owner can write</const>
     </constants>
 
   </types>
   <structs>
-    <struct name="DateTime" comment="Generic structure for date-time management.">
-      <field name="Year" type="INT16">Year</field>
-      <field name="Month" type="INT8">Month 1 to 12</field>
-      <field name="Day" type="INT8">Day 1 to 31</field>
-      <field name="Hour" type="INT8">Hour 0 to 23</field>
-      <field name="Minute" type="INT8">Minute 0 to 59</field>
-      <field name="Second" type="INT8">Second 0 to 59</field>
-      <field name="TimeZone" type="INT8">TimeZone -13 to +13</field>
-    </struct>
-
   </structs>
 </book>

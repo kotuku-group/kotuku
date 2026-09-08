@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,10 +5,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Stores and manages vertex sequences for vertex-conversion generators. Hooks into vcgen_stroke, vcgen_dash, contour,
+// and smoothing generators. In the vector renderer it provides the ordered vertex cache used while converters generate
+// derived geometry.
 
-
-#ifndef AGG_VCGEN_VERTEX_SEQUENCE_INCLUDED
-#define AGG_VCGEN_VERTEX_SEQUENCE_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_vertex_sequence.h"
@@ -17,8 +18,6 @@
 
 namespace agg
 {
-
-    //===================================================vcgen_vertex_sequence
     class vcgen_vertex_sequence
     {
     public:
@@ -126,5 +125,3 @@ namespace agg
 
 
 }
-
-#endif

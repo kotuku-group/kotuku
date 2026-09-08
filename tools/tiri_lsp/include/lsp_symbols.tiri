@@ -1,0 +1,661 @@
+extern maskNonCode
+
+----------------------------------------------------------------------------------------------------------------------
+-- Document Symbol Support
+
+rx_symbol_trim            = <{ regex.new([[^\s*(.*)]], regex.DOT_ALL) }>
+rx_symbol_named_function  = <{ regex.new([[\s*(local\s+|global\s+)?(function|thunk)\s+([A-Za-z_][A-Za-z0-9_:.]*)\s*\(]]) }>
+rx_symbol_assign_function = <{ regex.new([[\s*(local\s+|global\s+)?([A-Za-z_][A-Za-z0-9_]*(?:[.:][A-Za-z_][A-Za-z0-9_]*)*)\s*=\s*(function|thunk)\s*\(]]) }>
+rx_symbol_decl            = <{ regex.new([[\s*(local|global)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<const>)?]]) }>
+rx_symbol_assign          = <{ regex.new([[\s*([A-Za-z_][A-Za-z0-9_]*(?:[.:][A-Za-z_][A-Za-z0-9_]*)*)\s*(<const>)?\s*=]]) }>
+rx_symbol_struct          = <{ regex.new([[^\s*struct\s+([A-Za-z_][A-Za-z0-9_]*)\b]]) }>
+rx_symbol_struct_field    = <{ regex.new([[([A-Za-z_][A-Za-z0-9_]*)\s*:]]) }>
+rx_symbol_struct_end      = <{ regex.new([[\s+end\s*$]]) }>
+rx_symbol_module_decl = <{ regex.new(
+   [[^\s*module\s+([A-Za-z_][A-Za-z0-9_]*)\s+as\s+([A-Za-z_][A-Za-z0-9_]*)\s*$]]) }>
+rx_symbol_namespace_decl = <{ regex.new([[^\s*namespace\s+([A-Za-z_][A-Za-z0-9_]*)\b]]) }>
+
+----------------------------------------------------------------------------------------------------------------------
+
+function symbolIsIdentStart(Char:str):bool
+   return (Char >= 'a' and Char <= 'z') or (Char >= 'A' and Char <= 'Z') or Char is '_'
+end
+
+function symbolIsIdentChar(Char:str):bool
+   return symbolIsIdentStart(Char) or (Char >= '0' and Char <= '9')
+end
+
+function symbolIsBlockTokenChar(Char:str):bool
+   return symbolIsIdentChar(Char)
+end
+
+function symbolCountBlockKeyword(LineCode:str, Keyword:str):num
+   count = 0
+   pos = 0
+   len = #LineCode
+
+   while pos < len do
+      c = LineCode.sub(pos, pos + 1)
+      if symbolIsBlockTokenChar(c) then
+         token_start = pos
+         pos++
+
+         while pos < len and symbolIsBlockTokenChar(LineCode.sub(pos, pos + 1)) do
+            pos++
+         end
+
+         if LineCode.sub(token_start, pos) is Keyword then
+            count++
+         end
+      else
+         pos++
+      end
+   end
+
+   return count
+end
+
+function symbolCountChar(LineCode:str, Char:str):num
+   count = 0
+   for i in {0 to #LineCode} do
+      if LineCode.sub(i, i + 1) is Char then count++ end
+   end
+   return count
+end
+
+function symbolCurrentParent(Stack:array<table>):table
+   for i in {#Stack - 1 into 0 by -1} do
+      if Stack[i].symbol then return Stack[i].symbol end
+   end
+   return nil
+end
+
+function symbolAddChild(Roots:array<table>, Stack:array<table>, Symbol:table)
+   parent = symbolCurrentParent(Stack)
+   if parent then
+      parent.children.push(Symbol)
+   else
+      Roots.push(Symbol)
+   end
+end
+
+function symbolCloseFrame(Frame:table, LineNo:num, LineText:str)
+   if Frame and Frame.symbol then
+      Frame.symbol.range['end'].line = LineNo
+      Frame.symbol.range['end'].character = #LineText
+   end
+end
+
+function symbolMakeRange(LineNo:num, StartChar:num, EndChar:num):table
+   return {
+      start = { line = LineNo, character = StartChar },
+      ['end'] = { line = LineNo, character = EndChar }
+   }
+end
+
+function symbolAnnotationLabels(Annotations:array<table>):array<str>
+   labels = array<str>
+   for anno in values(Annotations or array<table>) do
+      labels.push('@' .. anno.name)
+   end
+   return labels
+end
+
+function symbolHasAnnotation(Annotations:array<table>, Name:str):bool
+   for anno in values(Annotations or array<table>) do
+      if anno.name is Name then return true end
+   end
+   return false
+end
+
+function symbolBuildDetail(Base:str, Annotations:array<table>):str
+   parts = array<str>
+   if Base and Base != '' then parts.push(Base) end
+   for label in values(symbolAnnotationLabels(Annotations)) do
+      parts.push(label)
+   end
+   if #parts is 0 then return nil end
+   return parts.concat(' ')
+end
+
+function symbolMergeAnnotations(Left:array<table>, Right:array<table>):array<table>
+   merged = array<table>
+   for anno in values(Left or array<table>) do merged.push(anno) end
+   for anno in values(Right or array<table>) do merged.push(anno) end
+   return merged
+end
+
+function symbolSkipSpaces(Text:str, Pos:num):num
+   while Pos < #Text do
+      c = Text.sub(Pos, Pos + 1)
+      if c != ' ' and c != '\t' then break end
+      Pos++
+   end
+   return Pos
+end
+
+function symbolReadAnnotationArgs(Text:str, Pos:num):<str,num>
+   start_pos = Pos
+   depth = 0
+
+   while Pos < #Text do
+      c = Text.sub(Pos, Pos + 1)
+
+      if c is '"' or c is "'" then
+         quote = c
+         Pos++
+         while Pos < #Text do
+            sc = Text.sub(Pos, Pos + 1)
+            if sc is '\\' and Pos + 1 < #Text then
+               Pos += 2
+            elseif sc is quote then
+               Pos++
+               break
+            else
+               Pos++
+            end
+         end
+      elseif c is '(' then
+         depth++
+         Pos++
+      elseif c is ')' then
+         depth -= 1
+         Pos++
+         if depth <= 0 then
+            return Text.sub(start_pos + 1, Pos - 1), Pos
+         end
+      else
+         Pos++
+      end
+   end
+
+   return Text.sub(start_pos + 1), Pos
+end
+
+function symbolParseAnnotationPrefix(LineText:str):<array<table>,num>
+   annotations = array<table>
+   pos = 0
+
+   while pos < #LineText do
+      pos = symbolSkipSpaces(LineText, pos)
+      if pos < #LineText and LineText.sub(pos, pos + 1) is ';' then
+         pos++
+         continue
+      end
+      if pos >= #LineText or LineText.sub(pos, pos + 1) != '@' then break end
+
+      pos++
+      name_start = pos
+      if pos >= #LineText or not symbolIsIdentStart(LineText.sub(pos, pos + 1)) then break end
+
+      pos++
+      while pos < #LineText and symbolIsIdentChar(LineText.sub(pos, pos + 1)) do
+         pos++
+      end
+
+      name = LineText.sub(name_start, pos)
+      args = nil
+      pos = symbolSkipSpaces(LineText, pos)
+      if pos < #LineText and LineText.sub(pos, pos + 1) is '(' then
+         args, pos = symbolReadAnnotationArgs(LineText, pos)
+      end
+
+      annotations.push({ name = name, args = args })
+      pos = symbolSkipSpaces(LineText, pos)
+
+      if pos < #LineText and LineText.sub(pos, pos + 1) is ';' then
+         pos++
+      end
+   end
+
+   return annotations, pos
+end
+
+function symbolMakeDocumentSymbol(Name:str, Kind:num, LineNo:num, LineText:str, NameStart:num, Detail:str, Annotations:array<table>):table
+   name_start = NameStart or 0
+   symbol = {
+      name = Name,
+      kind = Kind,
+      range = {
+         start = { line = LineNo, character = 0 },
+         ['end'] = { line = LineNo, character = #LineText }
+      },
+      selectionRange = symbolMakeRange(LineNo, name_start, name_start + #Name),
+      children = array<table>
+   }
+
+   if Detail then symbol.detail = Detail end
+   if symbolHasAnnotation(Annotations, 'Deprecated') then
+      symbol.tags = array<int> { 1 }
+   end
+
+   return symbol
+end
+
+function symbolDetectFunction(LineCode:str, LineText:str, LineNo:num, Annotations:array<table>):table
+   start_pos, stop_pos, cap = rx_symbol_named_function.findFirst(LineCode)
+   if start_pos then
+      scope = nil
+      if cap[0] then
+         prefix = cap[0].trim()
+         if prefix is 'local' or prefix is 'global' then scope = prefix end
+      end
+
+      name = cap[2]
+      name_start = LineText.find(name, start_pos, true) or start_pos
+      kind = name.find(':', 0, true) and SYMBOL_KIND.METHOD or SYMBOL_KIND.FUNCTION
+      detail = symbolBuildDetail(scope, Annotations)
+      return symbolMakeDocumentSymbol(name, kind, LineNo, LineText, name_start, detail, Annotations)
+   end
+
+   start_pos, stop_pos, cap = rx_symbol_assign_function.findFirst(LineCode)
+   if start_pos then
+      scope = nil
+      if cap[0] then
+         prefix = cap[0].trim()
+         if prefix is 'local' or prefix is 'global' then scope = prefix end
+      end
+
+      name = cap[1]
+      name_start = LineText.find(name, start_pos, true) or start_pos
+      kind = name.find('.', 0, true) and SYMBOL_KIND.METHOD or SYMBOL_KIND.FUNCTION
+      if name.find(':', 0, true) then kind = SYMBOL_KIND.METHOD end
+
+      detail_base = scope
+      if kind is SYMBOL_KIND.METHOD then detail_base = scope and (scope .. ' method') or 'method' end
+      detail = symbolBuildDetail(detail_base, Annotations)
+      return symbolMakeDocumentSymbol(name, kind, LineNo, LineText, name_start, detail, Annotations)
+   end
+
+   return nil
+end
+
+function symbolDetectModuleValue(LineCode:str, LineText:str, LineNo:num):table
+   local namespace_start, namespace_stop, namespace_cap = rx_symbol_namespace_decl.findFirst(LineCode)
+   if namespace_start then
+      local namespace_name = namespace_cap[0]
+      local name_start = LineText.find(namespace_name, namespace_start, true) or namespace_start
+      local remainder = LineCode.sub(namespace_stop).trim()
+      local detail = remainder is '' and 'readonly namespace join' or 'readonly namespace'
+      return symbolMakeDocumentSymbol(namespace_name, SYMBOL_KIND.NAMESPACE, LineNo, LineText, name_start,
+         detail, nil)
+   end
+
+   local decl_start, _, decl_cap = rx_symbol_module_decl.findFirst(LineCode)
+   if decl_start then
+      local module_name = decl_cap[0]
+      local namespace_name = decl_cap[1]
+      local name_start = LineText.find(namespace_name, decl_start, true) or decl_start
+      return symbolMakeDocumentSymbol(namespace_name, SYMBOL_KIND.NAMESPACE, LineNo, LineText, name_start,
+         'module ' .. module_name, nil)
+   end
+
+   start_pos, stop_pos, cap = rx_symbol_decl.findFirst(LineCode)
+   if start_pos then
+      scope = cap[0]
+      name = cap[1]
+      if name is 'function' then return nil end
+
+      name_start = LineText.find(name, start_pos, true) or start_pos
+      is_const = cap[2] and cap[2] != ''
+      detail = is_const and (scope .. ' const') or scope
+      kind = is_const and SYMBOL_KIND.CONSTANT or SYMBOL_KIND.VARIABLE
+      return symbolMakeDocumentSymbol(name, kind, LineNo, LineText, name_start, detail, nil)
+   end
+
+   start_pos, stop_pos, cap = rx_symbol_assign.findFirst(LineCode)
+   if start_pos then
+      line_start = symbolSkipSpaces(LineCode, 0)
+      if start_pos != line_start then return nil end
+
+      name = cap[0]
+      is_const = cap[1] and cap[1] != ''
+      name_start = LineText.find(name, start_pos, true) or start_pos
+
+      eq_pos = stop_pos - 1
+      if eq_pos > 0 then
+         prev_char = LineCode.sub(eq_pos - 1, eq_pos)
+         if prev_char is '=' or prev_char is '<' or prev_char is '>' or prev_char is '!' or prev_char is '~' then return nil end
+      end
+      if eq_pos + 1 < #LineCode then
+         next_char = LineCode.sub(eq_pos + 1, eq_pos + 2)
+         if next_char is '=' then return nil end
+      end
+
+      after_assign = LineCode.sub(stop_pos)
+      is_table = rx_symbol_trim.extract(after_assign).startsWith('{')
+      kind = is_table and SYMBOL_KIND.OBJECT or (is_const and SYMBOL_KIND.CONSTANT or SYMBOL_KIND.VARIABLE)
+      detail = is_table and 'table' or (is_const and 'const' or nil)
+      return symbolMakeDocumentSymbol(name, kind, LineNo, LineText, name_start, detail, nil)
+   end
+
+   return nil
+end
+
+-- Detect a top-level end-terminated struct declaration.
+
+function symbolDetectStruct(LineCode:str, LineText:str, LineNo:num):table
+   start_pos, stop_pos, cap = rx_symbol_struct.findFirst(LineCode)
+   if not start_pos then return nil end
+
+   name = cap[0]
+   name_start = LineText.find(name, start_pos, true) or start_pos
+   return symbolMakeDocumentSymbol(name, SYMBOL_KIND.STRUCT, LineNo, LineText, name_start, 'struct', nil)
+end
+
+-- Add 'Name: type' field children found in LineCode to a struct symbol.  Fields may be comma-separated on a
+-- single line; SearchFrom anchors name position lookups within LineText.
+
+function symbolAddStructFields(Symbol:table, LineCode:str, LineText:str, LineNo:num, SearchFrom:num)
+   search_pos = SearchFrom or 0
+   for segment in values(LineCode.split(',')) do
+      s, e, cap = rx_symbol_struct_field.findFirst(segment)
+      if s then
+         field_name = cap[0]
+         field_type = segment.sub(e)
+         close_pos = rx_symbol_struct_end.findFirst(field_type)
+         if close_pos then field_type = field_type.sub(0, close_pos) end
+         field_type = field_type.trim()
+         name_start = LineText.find(field_name, search_pos, true) or search_pos
+         child = symbolMakeDocumentSymbol(field_name, SYMBOL_KIND.FIELD, LineNo, LineText, name_start,
+            field_type, nil)
+         Symbol.children.push(child)
+         search_pos = name_start + #field_name
+      end
+   end
+end
+
+-- Keywords that open an anonymous frame terminated by `end`.  A `do` opens exactly one frame whether it stands
+-- alone or closes a `for`, `while` or `with` header, so counting `do` is both simpler and more reliable than
+-- pairing it with the loop keyword that introduced it.  Every entry here must be balanced by an `end` or `until`,
+-- otherwise symbolCloseBlockFrames() will pop an enclosing function frame and truncate its range.
+-- `struct` is deliberately absent because extractDocumentSymbols() pushes that frame itself.
+
+symbol_block_openers = array<str> { 'do', 'defer', 'try', 'choose', 'checkall', 'checkup' }
+
+function symbolPushBlockFrames(Stack:array<table>, LineCode:str, FunctionFrame:table)
+   function_count = symbolCountBlockKeyword(LineCode, 'function') + symbolCountBlockKeyword(LineCode, 'thunk')
+   if FunctionFrame and function_count > 0 then function_count -= 1 end
+
+   for i in {1 to function_count+1} do
+      Stack.push({ kind = 'function' })
+   end
+
+   -- `elseif` continues the frame opened by its `if`, so only leading `if` keywords open a new one.
+
+   if symbolCountBlockKeyword(LineCode, 'then') > 0 then
+      if_count = symbolCountBlockKeyword(LineCode, 'if')
+      for i in {1 to if_count+1} do
+         Stack.push({ kind = 'block' })
+      end
+   end
+
+   for keyword in values(symbol_block_openers) do
+      open_count = symbolCountBlockKeyword(LineCode, keyword)
+      for i in {1 to open_count+1} do
+         Stack.push({ kind = 'block' })
+      end
+   end
+
+   repeat_count = symbolCountBlockKeyword(LineCode, 'repeat')
+   for i in {1 to repeat_count+1} do
+      Stack.push({ kind = 'repeat' })
+   end
+end
+
+function symbolCloseBlockFrames(Stack:array<table>, LineCode:str, LineNo:num, LineText:str)
+   close_count = symbolCountBlockKeyword(LineCode, 'end') + symbolCountBlockKeyword(LineCode, 'until')
+   for i in {1 to close_count+1} do
+      if #Stack > 0 then
+         frame = Stack.pop()
+         symbolCloseFrame(frame, LineNo, LineText)
+      end
+   end
+end
+
+function symbolIsBraceFrame(Frame:table):bool
+   return Frame.kind is 'table'
+end
+
+function symbolFindTopTableFrame(Stack:array<table>):table
+   for i in {#Stack - 1 into 0 by -1} do
+      frame = Stack[i]
+      if symbolIsBraceFrame(frame) then
+         return frame
+      end
+   end
+   return nil
+end
+
+function symbolCloseTables(Stack:array<table>, LineCode:str, LineNo:num, LineText:str)
+   table_frame = symbolFindTopTableFrame(Stack)
+   if not table_frame then return end
+
+   if table_frame.awaiting_brace then
+      if symbolCountChar(LineCode, '{') is 0 then return end
+      table_frame.awaiting_brace = false
+   end
+
+   table_frame.brace_depth += symbolCountChar(LineCode, '{') - symbolCountChar(LineCode, '}')
+   if table_frame.brace_depth > 0 then return end
+
+   for i in {#Stack - 1 into 0 by -1} do
+      frame = Stack[i]
+      if symbolIsBraceFrame(frame) then
+         Stack.remove(i)
+         symbolCloseFrame(frame, LineNo, LineText)
+         break
+      end
+   end
+end
+
+function symbolLastContentLine(Doc:table, TotalLines:num):num
+   line_no = TotalLines > 0 and TotalLines - 1 or 0
+   while line_no > 0 and getLine(Doc, line_no) is '' do
+      line_no -= 1
+   end
+   return line_no
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Extract document symbols from Tiri source.
+
+global function extractDocumentSymbols(Doc:table):array<table>
+   symbols = array<table>
+   total_lines = getTotalLines(Doc)
+   stack = array<table>
+   in_block_comment = false
+   pending_annotations = array<table>
+
+   for line_num in {0 to total_lines} do
+      line_text = getLine(Doc, line_num)
+      line_code, in_block_comment = maskNonCode(line_text, in_block_comment)
+      trimmed = rx_symbol_trim.extract(line_code)
+
+      if trimmed is '' then
+         pending_annotations = array<table>
+         continue
+      end
+
+      inline_annotations, annotation_end = symbolParseAnnotationPrefix(line_text)
+      line_annotations = pending_annotations
+      symbol_code = line_code
+
+      if #inline_annotations > 0 then
+         line_annotations = symbolMergeAnnotations(pending_annotations, inline_annotations)
+         symbol_code = line_code.sub(annotation_end)
+
+         if rx_symbol_trim.extract(symbol_code) is '' then
+            pending_annotations = line_annotations
+            continue
+         end
+      end
+
+      current_symbol = symbolDetectFunction(symbol_code, line_text, line_num, line_annotations)
+      function_frame = nil
+
+      if current_symbol then
+         symbolAddChild(symbols, stack, current_symbol)
+         function_frame = { kind = 'function', symbol = current_symbol }
+         stack.push(function_frame)
+         pending_annotations = array<table>
+      elseif #stack is 0 then
+         struct_symbol = symbolDetectStruct(symbol_code, line_text, line_num)
+         if struct_symbol then
+            symbolAddChild(symbols, stack, struct_symbol)
+            name_start = line_text.find(struct_symbol.name, 0, true) or 0
+            remainder_start = name_start + #struct_symbol.name
+            symbolAddStructFields(struct_symbol, symbol_code.sub(remainder_start), line_text, line_num,
+               remainder_start)
+            stack.push({ kind = 'struct', symbol = struct_symbol })
+         else
+            module_symbol = symbolDetectModuleValue(symbol_code, line_text, line_num)
+            if module_symbol then
+               symbolAddChild(symbols, stack, module_symbol)
+               open_count = symbolCountChar(symbol_code, '{')
+               close_count = symbolCountChar(symbol_code, '}')
+               if (module_symbol.kind is SYMBOL_KIND.OBJECT or module_symbol.kind is SYMBOL_KIND.NAMESPACE) and
+                     open_count > close_count then
+                  stack.push({ kind = 'table', symbol = module_symbol, brace_depth = 0 })
+               end
+            end
+         end
+         pending_annotations = array<table>
+      elseif stack[#stack - 1].kind is 'struct' then
+         symbolAddStructFields(stack[#stack - 1].symbol, symbol_code, line_text, line_num, 0)
+         pending_annotations = array<table>
+      else
+         pending_annotations = array<table>
+      end
+
+      symbolPushBlockFrames(stack, symbol_code, function_frame)
+      symbolCloseBlockFrames(stack, symbol_code, line_num, line_text)
+      symbolCloseTables(stack, symbol_code, line_num, line_text)
+   end
+
+   last_line = symbolLastContentLine(Doc, total_lines)
+   last_text = getLine(Doc, last_line)
+   while #stack > 0 do
+      frame = stack.pop()
+      symbolCloseFrame(frame, last_line, last_text)
+   end
+
+   return symbols
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Lexical Scope Extraction
+--
+-- Document symbols describe named declarations only, so they cannot decide whether a local binding is still live at
+-- a later position.  Rename resolution needs the complete lexical picture, including the anonymous do, conditional,
+-- loop and exception blocks that carry no symbol of their own.  The scanner below records every block terminated by
+-- `end` or `until`, nested to mirror the source.
+
+-- Keywords that open a block.  `then` and `do` stand in for `if`, `for`, `while` and `with` because the body always
+-- begins at those keywords, which keeps loop and condition expressions in the enclosing scope where they belong.
+
+scope_openers = {
+   ['function'] = true, ['thunk'] = true, ['do'] = true, ['then'] = true, ['repeat'] = true,
+   ['defer'] = true, ['try'] = true, ['choose'] = true, ['checkall'] = true, ['checkup'] = true
+}
+
+-- Keywords that terminate the enclosing block and immediately open a sibling.
+
+scope_dividers = { ['else'] = true, ['except'] = true, ['success'] = true }
+
+-- Keywords that terminate the enclosing block.  `elseif` belongs here rather than with the dividers because its own
+-- `then` re-opens the scope.
+
+scope_closers = { ['end'] = true, ['until'] = true, ['elseif'] = true }
+
+-- Split a masked code line into its identifier-like words.  Each entry records the word, its byte column and the
+-- character that follows it, which is enough to distinguish a `struct Name` declaration from a `struct.new()` call.
+
+function scopeLineWords(LineCode:str):array<table>
+   words = array<table>
+   pos = 0
+   len = #LineCode
+
+   while pos < len do
+      if symbolIsBlockTokenChar(LineCode.sub(pos, pos + 1)) then
+         word_start = pos
+         pos++
+         while pos < len and symbolIsBlockTokenChar(LineCode.sub(pos, pos + 1)) do pos++ end
+         words.push({ text = LineCode.sub(word_start, pos), column = word_start,
+            following = LineCode.sub(pos, pos + 1) })
+      else
+         pos++
+      end
+   end
+
+   return words
+end
+
+function scopeOpen(Roots:array<table>, Stack:array<table>, LineNo:num, Column:num)
+   scope = {
+      range = {
+         start = { line = LineNo, character = Column },
+         ['end'] = { line = LineNo, character = Column }
+      },
+      children = array<table>
+   }
+
+   if #Stack > 0 then
+      Stack[#Stack - 1].children.push(scope)
+   else
+      Roots.push(scope)
+   end
+   Stack.push(scope)
+end
+
+function scopeClose(Stack:array<table>, LineNo:num, Column:num)
+   if #Stack is 0 then return end
+   scope = Stack.pop()
+   scope.range['end'].line = LineNo
+   scope.range['end'].character = Column
+end
+
+-- `struct` doubles as the declaration keyword and as a library namespace, so only accept it as a block opener when
+-- it leads the line and is followed by whitespace, matching symbolDetectStruct().
+
+function scopeOpensStruct(Word:table, Index:num):bool
+   if Word.text != 'struct' or Index != 0 then return false end
+   return Word.following is ' ' or Word.following is '\t'
+end
+
+@Doc(text="Extract the nested lexical block scopes of a document as { range, children } nodes.")
+
+global function extractLexicalScopes(Doc:table):array<table>
+   roots = array<table>
+   stack = array<table>
+   in_block_comment = false
+   total_lines = getTotalLines(Doc)
+
+   for line_num in {0 to total_lines} do
+      line_code, in_block_comment = maskNonCode(getLine(Doc, line_num), in_block_comment)
+      words = scopeLineWords(line_code)
+
+      for i in {0 to #words} do
+         word = words[i]
+         if scope_closers[word.text] then
+            scopeClose(stack, line_num, word.column + #word.text)
+         elseif scope_dividers[word.text] then
+            scopeClose(stack, line_num, word.column)
+            scopeOpen(roots, stack, line_num, word.column)
+         elseif scope_openers[word.text] or scopeOpensStruct(word, i) then
+            scopeOpen(roots, stack, line_num, word.column)
+         end
+      end
+   end
+
+   -- Unterminated blocks (an incomplete edit, or source that the masker mis-read) extend to the last content line
+   -- so that trailing references still resolve against them.
+
+   last_line = symbolLastContentLine(Doc, total_lines)
+   last_char = #getLine(Doc, last_line)
+   while #stack > 0 do
+      scopeClose(stack, last_line, last_char)
+   end
+
+   return roots
+end

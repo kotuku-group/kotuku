@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="StorageDevice" mod="Core" c="Queries the meta data of file system volumes." cat="System" id="63e19c4a" v="1">
-  <ai:f n="BytesFree" c="Total amount of storage space that is available, measured in bytes." t="INT64" a="R"/>
-  <ai:f n="BytesUsed" c="Total amount of storage space in use." t="INT64" a="R"/>
-  <ai:f n="DeviceFlags" c="These read-only flags identify the type of device and its features." t="DEVICE" a="R"/>
-  <ai:f n="DeviceID" c="A unique ID for the mounted device (platform dependent, NULL if unavailable)." t="STRING" a="G"/>
-  <ai:f n="DeviceSize" c="The storage size of the device in bytes, without accounting for the file system format." t="INT64" a="R"/>
-  <ai:f n="Volume" c="The volume name of the device to query." t="STRING" a="GS"/>
-</ai:cl>

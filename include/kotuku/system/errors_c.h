@@ -15,7 +15,7 @@
 #define ERR_Continue 5
 #define ERR_Skip 6
 #define ERR_Retry 7
-#define ERR_DirEmpty 8
+#define ERR_EndOfSequence 8
 #define ERR_Terminate 9
 #define ERR_ExceptionThreshold 9
 #define ERR_NoMemory 10
@@ -63,7 +63,7 @@
 #define ERR_LostOwner 47
 #define ERR_DoNotExpunge 48
 #define ERR_MemoryCorrupt 49
-#define ERR_FieldSearch 50
+#define ERR_FieldNotFound 50
 #define ERR_InvalidPath 51
 #define ERR_SetField 52
 #define ERR_MarkedForDeletion 53
@@ -89,7 +89,7 @@
 #define ERR_Draw 72
 #define ERR_NoMethods 73
 #define ERR_NoMatchingObject 74
-#define ERR_AccessMemory 75
+#define ERR_DEP01 75
 #define ERR_MissingPath 76
 #define ERR_NotLocked 77
 #define ERR_NoSearchResult 78
@@ -190,7 +190,7 @@
 #define ERR_ThreadAlreadyActive 164
 #define ERR_OpenGL 165
 #define ERR_OutsideMainThread 166
-#define ERR_UseSubClass 167
+#define ERR_UseDerived 167
 #define ERR_WrongType 168
 #define ERR_ThreadNotLocked 169
 #define ERR_LockMutex 170

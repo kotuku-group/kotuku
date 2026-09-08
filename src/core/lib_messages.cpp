@@ -24,12 +24,6 @@ Name: Messages
 #include <sys/wait.h>
 #endif
 
-#ifdef _WIN32
-#include <time.h>
-#include <stdlib.h>
-#include <stdio.h>
-#endif
-
 #include "defs.h"
 
 #include <deque>
@@ -44,32 +38,41 @@ ERR write_nonblock(int Handle, APTR Data, int Size, int64_t EndTime);
 
 static const int MAX_MSEC = 1000;
 
-static std::recursive_mutex glQueueLock;
+static constexpr size_t MESSAGE_BATCH_LIMIT = 30;
+static std::mutex glQueueLock;
 static std::deque<TaskMessage> glQueue; // Available to all threads, use glQueueLock
+static std::atomic_size_t glQueuedMessages = 0;
+static bool glWFOAnySignal = false; // Main-thread state for the active WaitForObjects() call
+static bool glWFOSignalReceived = false;
 
 template <class T> inline APTR ResolveAddress(T *Pointer, int Offset) {
    return APTR(((int8_t *)Pointer) + Offset);
 }
 
-static ERR msghandler_free(APTR Address)
+static ERR msghandler_free(ResourceRecord &Resource, APTR Address)
 {
-   pf::Log log("RemoveMsgHandler");
+   kt::Log log("RemoveMsgHandler");
    log.trace("Handle: %p", Address);
 
-   if (auto lock = std::unique_lock{glmMsgHandler}) {
-      MsgHandler *h = (MsgHandler *)Address;
-      if (h IS glLastMsgHandler) glLastMsgHandler = h->Prev;
-      if (h IS glMsgHandlers) glMsgHandlers = h->Next;
-      if (h->Next) h->Next->Prev = h->Prev;
-      if (h->Prev) h->Prev->Next = h->Next;
+   std::unique_lock lock(glmMsgHandler);
+   MsgHandler *h = (MsgHandler *)Address;
+   if (h IS glLastMsgHandler) glLastMsgHandler = h->Prev;
+   if (h IS glMsgHandlers) glMsgHandlers = h->Next;
+   if (h->Next) h->Next->Prev = h->Prev;
+   if (h->Prev) h->Prev->Next = h->Next;
+
+   if (h->Function.defined()) {
+      if (h->Function.isScript() and (not h->Function.stale())) {
+         ((objScript *)h->Function.Context)->derefProcedure(h->Function);
+      }
+      h->Function.unpin();
+      h->Function.disable();
    }
-   return ERR::Okay;
+
+   return ERR::Terminate;
 }
 
-static ResourceManager glResourceMsgHandler = {
-   "MsgHandler",
-   &msghandler_free
-};
+static ResourceManager glResourceMsgHandler = { "Message", &msghandler_free, true };
 
 //********************************************************************************************************************
 // Handler for WaitForObjects().  If an object on the list is signalled then it is removed from the list.  A
@@ -77,24 +80,86 @@ static ResourceManager glResourceMsgHandler = {
 
 static void notify_signal_wfo(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
+   if (!tlMainThread) {
+      // Signals and frees can be initiated from any thread, but glWFOList is owned by the main thread.  Defer
+      // processing by posting the object ID back to the main queue; see msg_waitforobjects() for the follow-up.
+      OBJECTID object_id = Object->UID;
+      SendMessage(MSGID::WAIT_FOR_OBJECTS, MSF::NIL,
+         std::span((const int8_t *)&object_id, sizeof(object_id)));
+      return;
+   }
+
    if (auto lref = glWFOList.find(Object->UID); lref != glWFOList.end()) {
-      pf::Log log;
+      kt::Log log;
       auto &ref = lref->second;
       log.trace("Object #%d has been signalled from action %d.", Object->UID, ActionID);
 
       // Clean up subscriptions and clear the signal
 
-      UnsubscribeAction(ref.Object, AC::Free);
-      UnsubscribeAction(ref.Object, AC::Signal);
+      UnsubscribeAction(ref.Object, AC::Free, nullptr);
+      UnsubscribeAction(ref.Object, AC::Signal, nullptr);
       ref.Object->clearFlag(NF::SIGNALLED);
 
       glWFOList.erase(lref);
 
-      if (glWFOList.empty()) {
-         log.trace("All objects signalled.");
-         SendMessage(MSGID::WAIT_FOR_OBJECTS, MSF::NIL, nullptr, 0); // Will result in ProcessMessages() terminating
+      if ((glWFOAnySignal) or (glWFOList.empty())) {
+         glWFOSignalReceived = true;
+         log.trace(glWFOAnySignal ? "An object was signalled." : "All objects signalled.");
+         SendMessage(MSGID::WAIT_FOR_OBJECTS, MSF::NIL, {}); // Will result in ProcessMessages() terminating
       }
    }
+}
+
+//********************************************************************************************************************
+// Handler for MSGID::WAIT_FOR_OBJECTS messages, called from ProcessMessages() on the main thread.  A message with
+// no payload indicates that the monitored object list is exhausted and the WaitForObjects() message loop can
+// terminate.  A message carrying an object ID is a signal or free that occurred on a child thread, deferred by
+// notify_signal_wfo() so that glWFOList is only ever modified by the main thread.
+
+ERR msg_waitforobjects(APTR Custom, int MsgID, MSGID MsgType, std::span<std::byte> Message)
+{
+   if (Message.size() >= sizeof(OBJECTID)) {
+      auto object_id = ((OBJECTID *)Message.data())[0];
+      if (auto lref = glWFOList.find(object_id); lref != glWFOList.end()) {
+         kt::Log log;
+         bool signal_received = false;
+         kt::ScopedObjectLock lock(object_id); // Locking by ID fails safely if the object has been freed
+         if (lock.granted()) {
+            if (lock.obj->defined(NF::SIGNALLED)) {
+               log.trace("Object #%d was signalled from a child thread.", object_id);
+               UnsubscribeAction(lock.obj, AC::Free, nullptr);
+               UnsubscribeAction(lock.obj, AC::Signal, nullptr);
+               lock.obj->clearFlag(NF::SIGNALLED);
+               glWFOList.erase(lref);
+               signal_received = true;
+            }
+            // An unsignalled object indicates a stale message from an earlier wait; leave it monitored.
+         }
+         else if ((lock.error IS ERR::MarkedForDeletion) or (lock.error IS ERR::DoesNotExist) or
+                  (lock.error IS ERR::NoMatchingObject)) {
+            // The object was freed - or its destruction is already guaranteed - on the child thread.  Freeing is
+            // equivalent to a signal, so the entry is removed; any remaining subscriptions die with the object.
+            log.trace("Object #%d was freed from a child thread.", object_id);
+            glWFOList.erase(lref);
+            signal_received = true;
+         }
+         else {
+            // A transient lock failure (e.g. time-out).  Requeue the deferral so that the wake-up is not lost;
+            // an indefinite WaitForObjects() would otherwise sleep forever on an already-signalled object.
+            log.trace("Deferred signal for object #%d requeued (%s).", object_id, GetErrorMsg(lock.error));
+            SendMessage(MSGID::WAIT_FOR_OBJECTS, MSF::NIL,
+               std::span((const int8_t *)&object_id, sizeof(object_id)));
+         }
+
+         if (((glWFOAnySignal) and (signal_received)) or (glWFOList.empty())) {
+            glWFOSignalReceived = true;
+            return ERR::Terminate;
+         }
+      }
+      return ERR::Okay; // Never terminate the message loop on a stale deferral
+   }
+
+   return ERR::Terminate;
 }
 
 /*********************************************************************************************************************
@@ -116,7 +181,7 @@ be passed to the handler.  The `Routine` parameter must point to the function ha
 The handler must return `ERR::Okay` if the message was handled.  This means that the message will not be passed to message
 handlers that are yet to receive the message.  Throw `ERR::NothingDone` if the message has been ignored or `ERR::Continue`
 if the message was processed but may be analysed by other handlers.  Throw `ERR::Terminate` to break the current
-~ProcessMessages() loop.  When using Tiri, this is best achieved by writing `check(errorcode)` in the handler.
+~ProcessMessages() loop.  When using Tiri, this is best achieved with `raise ERR_Terminate` in the handler.
 
 The handler will be identified by a unique pointer returned in the Handle parameter.  This handle will be garbage
 collected or can be passed to ~FreeResource() once it is no longer required.
@@ -130,42 +195,46 @@ ptr(func) Routine: Refers to the function that will handle incoming messages.
 Okay: Message handler successfully processed.
 NullArgs
 AllocMemory
+Lock
+
+-TAGS-
+caller-owns-result, creates-resource, callback-held, blocking
 -END-
 
 *********************************************************************************************************************/
 
 ERR AddMsgHandler(MSGID MsgType, FUNCTION *Routine, MsgHandler **Handle)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (!Routine) return log.warning(ERR::NullArgs);
 
    log.branch("MsgType: %d", int(MsgType));
 
-   if (auto lock = std::unique_lock{glmMsgHandler}) {
-      MsgHandler *handler;
-      if (AllocMemory(sizeof(MsgHandler), MEM::MANAGED, (APTR *)&handler, nullptr) IS ERR::Okay) {
-         SetResourceMgr(handler, &glResourceMsgHandler);
+   std::unique_lock lock(glmMsgHandler);
+   MsgHandler *handler;
+   if (!AllocResource(sizeof(MsgHandler), MEM::NIL, (APTR *)&handler, &glResourceMsgHandler)) {
+      handler->Prev     = nullptr;
+      handler->Next     = nullptr;
+      handler->MsgType  = MsgType;
+      handler->Function = *Routine;
+      handler->Function.pin();
 
-         handler->Prev     = nullptr;
-         handler->Next     = nullptr;
-         handler->MsgType  = MsgType;
-         handler->Function = *Routine;
-
-         if (!glMsgHandlers) glMsgHandlers = handler;
-         else {
-            if (glLastMsgHandler) glLastMsgHandler->Next = handler;
-            handler->Prev = glLastMsgHandler;
-         }
-
-         glLastMsgHandler = handler;
-
-         if (Handle) *Handle = handler;
-         return ERR::Okay;
+      if (!glMsgHandlers) glMsgHandlers = handler;
+      else {
+         if (glLastMsgHandler) glLastMsgHandler->Next = handler;
+         handler->Prev = glLastMsgHandler;
       }
-      else return log.warning(ERR::AllocMemory);
+
+      glLastMsgHandler = handler;
+
+      if (Handle) *Handle = handler;
+      return ERR::Okay;
    }
-   else return log.warning(ERR::Lock);
+   else {
+      Routine->consume();
+      return log.warning(ERR::AllocMemory);
+   }
 }
 
 /*********************************************************************************************************************
@@ -192,19 +261,27 @@ If a message with a `MSGID::QUIT` ID is found on the queue, then the function re
 
 -INPUT-
 int(PMF) Flags: Optional flags are specified here (clients should set a value of zero).
-int TimeOut: A TimeOut value, measured in milliseconds.  If zero, the function will return as soon as all messages on the queue are processed.  If less than zero, the function does not return until a request for termination is received or a user message requires processing.
+int Timeout: A Timeout value, measured in milliseconds.  If zero, the function will return as soon as all messages on the queue are processed.  If less than zero, the function does not return until a request for termination is received or a user message requires processing.
 
 -ERRORS-
 Okay:
+OutsideMainThread:
+Recursion:
+SystemLocked:
 Terminate: A `MSGID::QUIT` message type was found on the message queue.
-TimeOut:
+Timeout:
+AccessObject
+NoSupport
+
+-TAGS-
+main-thread-only, blocking, callback-inlines
 -END-
 
 *********************************************************************************************************************/
 
-ERR ProcessMessages(PMF Flags, int TimeOut)
+ERR ProcessMessages(PMF Flags, int Timeout)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    // Message processing is only possible from the main thread (for system design and synchronisation reasons)
    if (!tlMainThread) return log.warning(ERR::OutsideMainThread);
@@ -233,20 +310,19 @@ ERR ProcessMessages(PMF Flags, int TimeOut)
    tlMsgRecursion++;
 
    int64_t timeout_end;
-   if (TimeOut IS -1) timeout_end = 0x7fffffffffffffffLL; // Infinite loop
-   else timeout_end = PreciseTime() + ((int64_t)TimeOut * 1000LL);
+   if (Timeout IS -1) timeout_end = 0x7fffffffffffffffLL; // Infinite loop
+   else timeout_end = PreciseTime() + ((int64_t)Timeout * 1000LL);
 
-   log.traceBranch("Flags: $%.8x, TimeOut: %d", int(Flags), TimeOut);
+   log.traceBranch("Flags: $%.8x, Timeout: %d", int(Flags), Timeout);
 
    ERR returncode = ERR::Okay;
    bool breaking = false;
    ERR error;
 
-   auto granted = std::unique_lock{glmMsgHandler}; // A persistent lock on message handlers is optimal
-   if (!granted) {
-      tlContext.pop_back();
-      return log.warning(ERR::SystemLocked);
-   }
+   std::unique_lock granted(glmMsgHandler); // A persistent lock on message handlers is optimal
+
+   std::vector<TaskMessage> local_batch;
+   local_batch.reserve(MESSAGE_BATCH_LIMIT);
 
    do { // Standard message handler for the core process.
       // Call all objects on the timer list (managed by SubscribeTimer()).  To manage timer locking cleanly, the loop
@@ -259,66 +335,123 @@ timer_cycle:
       else if (glmTimer.try_lock_for(200ms)) {
          int64_t current_time = PreciseTime();
          for (auto timer=glTimers.begin(); timer != glTimers.end(); ) {
+            if ((timer->Subscriber) and (not timer->Locked) and (timer->Subscriber->terminating())) {
+               // Sweep orphaned subscriptions ahead of the deadline gate; a subscriber freed during its own
+               // callback would otherwise retain its entry and weak pin until the next interval elapsed.
+               // Locked entries belong to a dispatcher mid-callback and are left for it to remove.
+               if (timer->Routine.isScript() and (not timer->Routine.stale())) {
+                  ((objScript *)timer->Routine.Context)->derefProcedure(timer->Routine);
+               }
+               if (timer->Routine.defined()) timer->Routine.unpin();
+               timer->Subscriber->unpinWeak();
+               timer = glTimers.erase(timer);
+               continue;
+            }
             if (current_time < timer->NextCall) { timer++; continue; }
             if (timer->Cycle IS glTimerCycle) { timer++; continue; }
+            if (timer->Routine.releaseIfStale()) {
+               if (timer->Subscriber) timer->Subscriber->unpinWeak();
+               timer = glTimers.erase(timer);
+               continue;
+            }
 
             int64_t elapsed = current_time - timer->LastCall;
+
+            if (timer->PendingInterval) {
+               timer->Interval = timer->PendingInterval;
+               timer->PendingInterval = 0;
+            }
 
             timer->NextCall += timer->Interval;
             if (timer->NextCall < current_time) timer->NextCall = current_time;
             timer->LastCall = current_time;
             timer->Cycle = glTimerCycle;
 
-            //log.trace("Subscriber: %d, Interval: %d, Time: %" PRId64, timer->SubscriberID, timer->Interval, current_time);
-
             timer->Locked = true; // Prevents termination of the structure irrespective of having a TL_TIMER lock.
 
             bool relock = false;
-            if (timer->Routine.isC()) {
-               OBJECTPTR subscriber;
-               if (!timer->SubscriberID) { // Internal subscriptions like process_janitor() don't have a subscriber
+            if ((timer->Subscriber) and (timer->Subscriber->terminating())) {
+               // Orphaned entry: the subscriber terminated but object_free() could not acquire glmTimer to remove
+               // the subscription.  The weak pin keeps the subscriber's header readable for this detection.
+               error = ERR::Terminate;
+            }
+            else if ((timer->Subscriber) and (timer->Subscriber->collecting())) {
+               // The subscriber is marked for deletion; skip the callback and leave entry removal to object_free().
+               error = ERR::AccessObject;
+            }
+            else if (timer->Routine.isC()) {
+               if (auto subscriber = timer->Subscriber) {
+                  if (!LockObject(subscriber, 50)) {
+                     if (subscriber->collecting()) {
+                        // Re-validate after locking: the preceding checks can race with object_free(), which may
+                        // run to completion in the interim, and LockObject()'s fast path will succeed on a zombie
+                        // header.  Once the lock is held any new free attempt is deferred, so this test is final.
+                        // Refer to AccessObject() for the same pattern.
+                        ReleaseObject(subscriber);
+                        error = ERR::AccessObject;
+                     }
+                     else {
+                        kt::SwitchContext context(subscriber);
+
+                        auto routine = (ERR (*)(OBJECTPTR, int64_t, int64_t, APTR))timer->Routine.Routine;
+                        glmTimer.unlock();
+                        relock = true;
+
+                        error = routine(subscriber, elapsed, current_time, timer->Routine.Meta);
+
+                        ReleaseObject(subscriber);
+                     }
+                  }
+                  else error = ERR::AccessObject;
+               }
+               else { // Internal subscriptions like process_janitor() don't have a subscriber
                   auto routine = (ERR (*)(OBJECTPTR, int64_t, int64_t, APTR))timer->Routine.Routine;
                   glmTimer.unlock();
                   relock = true;
                   error = routine(nullptr, elapsed, current_time, timer->Routine.Meta);
                }
-               else if (AccessObject(timer->SubscriberID, 50, &subscriber) IS ERR::Okay) {
-                  pf::SwitchContext context(subscriber);
-
-                  auto routine = (ERR (*)(OBJECTPTR, int64_t, int64_t, APTR))timer->Routine.Routine;
+            }
+            else if (timer->Routine.isScript()) {
+               OBJECTID subscriber_id = timer->Subscriber ? timer->Subscriber->UID : 0;
+               if ((timer->Subscriber) and (not subscriber_id)) error = ERR::Terminate; // Zombie; discard orphan
+               else {
                   glmTimer.unlock();
                   relock = true;
 
-                  error = routine(subscriber, elapsed, current_time, timer->Routine.Meta);
-
-                  ReleaseObject(subscriber);
+                  if (sc::Call(timer->Routine, std::to_array<ScriptArg>({
+                        { "Subscriber",  subscriber_id, FDF_OBJECTID },
+                        { "Elapsed",     elapsed },
+                        { "CurrentTime", current_time }
+                     }), error) != ERR::Okay) error = ERR::Terminate;
                }
-               else error = ERR::AccessObject;
-            }
-            else if (timer->Routine.isScript()) {
-               glmTimer.unlock();
-               relock = true;
-
-               if (sc::Call(timer->Routine, std::to_array<ScriptArg>({
-                     { "Subscriber",  timer->SubscriberID, FDF_OBJECTID },
-                     { "Elapsed",     elapsed },
-                     { "CurrentTime", current_time }
-                  }), error) != ERR::Okay) error = ERR::Terminate;
             }
             else error = ERR::Terminate;
+
+            if (relock) {
+               // Reacquire glmTimer before clearing Locked.  The moment an entry is observed unlocked,
+               // object_free() on another thread is free to erase it and release its pins, so completing the
+               // entry here must be mutually exclusive with the concurrent erasers.  Blocking indefinitely is
+               // safe because all other holders of glmTimer acquire it with a timeout.
+               glmTimer.lock();
+            }
 
             timer->Locked = false;
 
             if (error IS ERR::Terminate) {
-               if (timer->Routine.isScript()) {
+               if (timer->Routine.isScript() and (not timer->Routine.stale())) {
                   ((objScript *)timer->Routine.Context)->derefProcedure(timer->Routine);
                }
+               if (timer->Routine.defined()) timer->Routine.unpin();
+               if (timer->Subscriber) timer->Subscriber->unpinWeak();
 
                timer = glTimers.erase(timer);
             }
             else timer++;
 
-            if (relock) goto timer_cycle;
+            if (relock) {
+               glmTimer.unlock();
+               goto timer_cycle;
+            }
          } // for
 
          glmTimer.unlock();
@@ -328,17 +461,17 @@ timer_cycle:
       // Consume queued messages.  Drain a batch from the shared queue under the lock, then process
       // outside the lock to reduce contention with threads calling SendMessage().
 
-      std::vector<TaskMessage> local_batch;
+      local_batch.clear();
 
       {
-         const std::lock_guard<std::recursive_mutex> lock(glQueueLock);
-         auto count = std::min(glQueue.size(), size_t(30));
+         const std::lock_guard<std::mutex> lock(glQueueLock);
+         auto count = std::min(glQueue.size(), MESSAGE_BATCH_LIMIT);
          if (count > 0) {
-            local_batch.reserve(count);
             for (size_t n = 0; n < count; n++) {
-               local_batch.emplace_back(std::move(glQueue[n]));
+               local_batch.emplace_back(std::move(glQueue.front()));
+               glQueue.pop_front();
             }
-            glQueue.erase(glQueue.begin(), glQueue.begin() + count);
+            glQueuedMessages.fetch_sub(count, std::memory_order_release);
          }
       }
 
@@ -355,21 +488,25 @@ timer_cycle:
          for (auto hdl=glMsgHandlers; hdl; hdl=hdl->Next) {
             if ((hdl->MsgType IS MSGID::NIL) or (hdl->MsgType IS msg.Type)) {
                auto result = ERR::NoSupport;
-               if (hdl->Function.isC()) {
-                  auto msghandler = (ERR (*)(APTR, int, MSGID, APTR, int))hdl->Function.Routine;
-                  if (msg.Size) result = msghandler(hdl->Function.Meta, msg.UID, msg.Type, msg.getBuffer(), msg.Size);
-                  else result = msghandler(hdl->Function.Meta, msg.UID, msg.Type, nullptr, 0);
+               if (hdl->Function.stale()) continue;
+               else if (hdl->Function.isC()) {
+                  auto msghandler = (ERR (*)(APTR, int, MSGID, std::span<std::byte>))hdl->Function.Routine;
+                  if (msg.Size) {
+                     result = msghandler(hdl->Function.Meta, msg.UID, msg.Type,
+                        std::span<std::byte>((std::byte *)msg.getBuffer(), msg.Size));
+                  }
+                  else result = msghandler(hdl->Function.Meta, msg.UID, msg.Type, std::span<std::byte>());
                }
                else if (hdl->Function.isScript()) {
+                  std::span<std::byte> span((std::byte *)msg.getBuffer(), msg.Size);
                   if (sc::Call(hdl->Function, std::to_array<ScriptArg>({
                      { "UID",  msg.UID },
                      { "Type", int(msg.Type) },
-                     { "Data", msg.getBuffer(), FD_PTR|FD_BUFFER },
-                     { "Size", msg.Size, FD_INT|FD_BUFSIZE }
+                     { "Data", &span, FDF_SPAN|FD_BYTE }
                   }), result) != ERR::Okay) result = ERR::Terminate;
                }
 
-               if (result IS ERR::Okay) { // If the message was handled, do not pass it to anyone else
+               if (!result) { // If the message was handled, do not pass it to anyone else
                   break;
                }
                else if (result IS ERR::Terminate) { // Terminate the ProcessMessages() loop, but don't quit the program
@@ -388,18 +525,16 @@ timer_cycle:
       if (glValidateProcessID) { validate_process(glValidateProcessID); glValidateProcessID = 0; }
 
       #ifdef _WIN32
-         // Process any incoming window messages that occurred during our earlier processing. The hook for glNetProcessMessages() is found
-         // in the network module and is required to prevent flooding of the Windows message queue.
+         // Process any incoming window messages that occurred during our earlier processing.
 
          if (tlMainThread) {
-            if (glNetProcessMessages) glNetProcessMessages(NETMSG_START, nullptr);
             winProcessMessages();
-            if (glNetProcessMessages) glNetProcessMessages(NETMSG_END, nullptr);
          }
       #endif
 
       int64_t wait = 0;
-      if ((!glQueue.empty()) or (breaking) or ((glTaskState IS TSTATE::STOPPING) and ((Flags & PMF::SYSTEM_NO_BREAK) IS PMF::NIL)));
+      if ((glQueuedMessages.load(std::memory_order_acquire) > 0) or (breaking) or
+          ((glTaskState IS TSTATE::STOPPING) and ((Flags & PMF::SYSTEM_NO_BREAK) IS PMF::NIL)));
       else if (timeout_end > 0) {
          // Wait for someone to communicate with us, or stall until an interrupt is due.
 
@@ -423,9 +558,7 @@ timer_cycle:
             tlMessageBreak = false;
 
             if (wait) {
-               if (glNetProcessMessages) glNetProcessMessages(NETMSG_START, nullptr);
                winProcessMessages();
-               if (glNetProcessMessages) glNetProcessMessages(NETMSG_END, nullptr);
             }
          }
          else {
@@ -436,15 +569,15 @@ timer_cycle:
 
       // Continue the loop?
 
-      if (!glQueue.empty()) continue; // There are messages left unprocessed
+      if (glQueuedMessages.load(std::memory_order_acquire) > 0) continue; // There are messages left unprocessed
       else if (((glTaskState IS TSTATE::STOPPING) and ((Flags & PMF::SYSTEM_NO_BREAK) IS PMF::NIL)) or (breaking)) {
          log.trace("Breaking message loop.");
          break;
       }
       else if (PreciseTime() >= timeout_end) {
-         if (TimeOut) {
-            log.trace("Breaking message loop - timeout of %dms.", TimeOut);
-            if (timeout_end > 0) returncode = ERR::TimeOut;
+         if (Timeout) {
+            log.trace("Breaking message loop - timeout of %dms.", Timeout);
+            if (timeout_end > 0) returncode = ERR::Timeout;
          }
          break;
       }
@@ -469,63 +602,65 @@ an error code other than `ERR::Okay`.
 The following example illustrates a scan for `MSGID::QUIT` messages:
 
 <pre>
-while (!ScanMessages(&handle, MSGID::QUIT, nullptr, nullptr)) {
+while (!ScanMessages(&handle, MSGID::QUIT, {})) {
    ...
 }
 </pre>
 
 Messages will often (but not always) carry data that is relevant to the message type.  To retrieve this data a buffer
-must be supplied.  If the `Buffer` is too small as indicated by the `Size`, the message data will be trimmed to fit
-without any further indication.
+must be supplied.  If the `Buffer` is too small, the message data will be trimmed to fit without any further indication.
 
 -INPUT-
 &int Handle: Pointer to a 32-bit value that must initially be set to zero.  The ScanMessages() function will automatically update this variable with each call so that it can remember its analysis position.
 int(MSGID) Type:   The message type to filter for, or zero to scan all messages in the queue.
-buf(ptr) Buffer: Optional pointer to a buffer that is large enough to hold any message data.
-bufsize Size: The byte-size of the supplied `Buffer`.
+^array(char) Buffer: Optional buffer that is large enough to hold a !Message header and any message data.
 
 -ERRORS-
 Okay:
 NullArgs:
+Args: The supplied buffer is too large for the internal message interface.
+OutOfRange:
 Search: No more messages are left on the queue, or no messages that match the given `Type` are on the queue.
+
+-TAGS-
+mutates-input, blocking
 -END-
 
 *********************************************************************************************************************/
 
-ERR ScanMessages(int *Handle, MSGID Type, APTR Buffer, int BufferSize)
+ERR ScanMessages(int *Handle, MSGID Type, const std::span<int8_t> &Buffer)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (!Handle) return log.warning(ERR::NullArgs);
-   if (!Buffer) BufferSize = 0;
+   if (not span_size_fits_int(Buffer.size_bytes())) return log.warning(ERR::Args);
 
    if (*Handle < 0) {
       *Handle = -1;
       return ERR::Search;
    }
 
-   const std::lock_guard<std::recursive_mutex> lock(glQueueLock);
+   const std::lock_guard<std::mutex> lock(glQueueLock);
 
    int index = *Handle;
    if (index >= int(glQueue.size())) return ERR::OutOfRange;
 
    for (auto it = glQueue.begin() + index; it != glQueue.end(); it++) {
       if ((it->Type != MSGID::NIL) and ((it->Type IS Type) or (Type IS MSGID::NIL))) {
-         if ((Buffer) and ((size_t)BufferSize >= sizeof(Message))) {
-            ((Message *)Buffer)->UID  = it->UID;
-            ((Message *)Buffer)->Type = it->Type;
-            ((Message *)Buffer)->Size = it->Size;
-            ((Message *)Buffer)->Time = it->Time;
+         if (Buffer.size_bytes() >= sizeof(Message)) {
+            const auto payload_capacity = Buffer.size_bytes() - sizeof(Message);
+            const auto payload_size = std::min(payload_capacity, size_t(it->Size));
 
-            BufferSize -= sizeof(Message);
-            if (BufferSize < it->Size) {
-               ((Message *)Buffer)->Size = BufferSize;
-               copymem(it->getBuffer(), ((int8_t *)Buffer) + sizeof(Message), BufferSize);
-            }
-            else copymem(it->getBuffer(), ((int8_t *)Buffer) + sizeof(Message), it->Size);
+            Message message = {};
+            message.UID  = it->UID;
+            message.Type = it->Type;
+            message.Size = int(payload_size);
+            message.Time = it->Time;
+            copymem(&message, Buffer.data(), sizeof(message));
+            copymem(it->getBuffer(), Buffer.data() + sizeof(Message), payload_size);
          }
 
-         *Handle = index + 1;
+         *Handle = int(std::distance(glQueue.begin(), it)) + 1;
          return ERR::Okay;
       }
    }
@@ -546,46 +681,55 @@ pre-defined, such as `MSGID::QUIT`.  Custom messages should use a unique type ID
 -INPUT-
 int(MSGID) Type:  The message Type/ID being sent.  Unique type ID's can be obtained from ~AllocateID().
 int(MSF) Flags: Optional flags.
-buf(ptr) Data:  Pointer to the data that will be written to the queue.  Set to `NULL` if there is no data to write.
-bufsize Size:   The byte-size of the `Data` being written to the message queue.
+array(char) Data: Optional data to copy to the message queue.  An empty buffer sends a message without payload data.
 
 -ERRORS-
 Okay: The message was successfully written to the message queue.
 Args:
+
+-TAGS-
+copies-input, blocking
 -END-
 
 *********************************************************************************************************************/
 
-ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size)
+ERR SendMessage(MSGID Type, MSF Flags, const std::span<const int8_t> &Data)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
+
+   if ((Type IS MSGID::NIL) or (not span_size_fits_int(Data.size_bytes()))) return log.warning(ERR::Args);
+
+   const auto data_size = int(Data.size_bytes());
 
    if (glLogLevel >= 9) {
-      if (Type IS MSGID::ACTION) {
-         auto action = (ActionMessage *)Data;
-         if (action->ActionID > AC::NIL) log.branch("Action: %s, Object: %d, Size: %d", ActionTable[int(action->ActionID)].Name, action->ObjectID, Size);
+      if ((Type IS MSGID::ACTION) and (Data.size_bytes() >= sizeof(ActionMessage))) {
+         ActionMessage action = {};
+         copymem(Data.data(), &action, sizeof(action));
+         if (action.ActionID > AC::NIL) {
+            log.branch("Action: %s, Object: %d, Size: %d", ActionTable[int(action.ActionID)].Name,
+               action.ObjectID, data_size);
+         }
       }
-      else log.branch("Type: %d, Data: %p, Size: %d", int(Type), Data, Size);
+      else log.branch("Type: %d, Data: %p, Size: %d", int(Type), Data.data(), data_size);
    }
 
-   if ((Type IS MSGID::NIL) or (Size < 0)) return log.warning(ERR::Args);
-
    {
-      const std::lock_guard<std::recursive_mutex> lock(glQueueLock);
+      const std::lock_guard<std::mutex> lock(glQueueLock);
 
       if ((Flags & (MSF::NO_DUPLICATE|MSF::UPDATE)) != MSF::NIL) {
          for (auto it=glQueue.begin(); it != glQueue.end(); it++) {
             if (it->Type IS Type) {
                if ((Flags & MSF::NO_DUPLICATE) != MSF::NIL) return ERR::Okay;
                else {
-                  it->setBuffer(Data, Size);
+                  it->setBuffer((APTR)Data.data(), data_size);
                   return ERR::Okay;
                }
             }
          }
       }
 
-      glQueue.emplace_back(Type, Data, Size); // Deque keeps message storage stable for re-entrant handlers.
+      glQueue.emplace_back(Type, (APTR)Data.data(), data_size); // Deque keeps storage stable for re-entrant handlers.
+      glQueuedMessages.fetch_add(1, std::memory_order_release);
    }
 
    wake_task(); // Alert the process to indicate that there are messages available.
@@ -600,8 +744,11 @@ WaitForObjects: Process incoming messages while waiting on objects to complete t
 
 WaitForObjects() acts as a front-end to ~ProcessMessages(), with an ability to wait for a list of objects that are
 expected to signal an end to their activities.  An object can be signalled via the Signal() action, or via termination.
-This function will only return once ALL of the objects are signalled or a time-out occurs.  It is guaranteed that
-the message queue will be processed at least once before returning.
+By default, this function will only return once ALL of the objects are signalled or a time-out occurs.  Use the
+`PMF::ANY_SIGNAL` flag to return once ANY of the objects are signalled.
+
+It is guaranteed that the message queue will be consumed by ~ProcessMessages() at least once before this function
+returns.
 
 Note that if an object has been signalled prior to entry to this function, its signal flag will be cleared and the
 object will not be monitored.
@@ -611,34 +758,42 @@ affected by subsequent calls.
 
 -INPUT-
 int(PMF) Flags: Optional flags are specified here.
-int TimeOut: A time-out value measured in milliseconds.  If this value is negative then no time-out applies and the function will not return until an incoming message or signal breaks it.
+int Timeout: A time-out value measured in milliseconds.  If this value is negative then no time-out applies and the function will not return until an incoming message or signal breaks it.
 struct(*ObjectSignal) ObjectSignals: A null-terminated array of objects to monitor for signals.
 
 -ERRORS-
 Okay
-NullArgs
-Failed
-TimeOut
 OutsideMainThread
+MessageOperation
+Recursion
+SystemLocked
+Terminate
+Timeout
+ExceptionThreshold
+
+-TAGS-
+main-thread-only, blocking, callback-inlines
 
 -END-
 
 *********************************************************************************************************************/
 
-ERR WaitForObjects(PMF Flags, int TimeOut, ObjectSignal *ObjectSignals)
+ERR WaitForObjects(PMF Flags, int Timeout, ObjectSignal *ObjectSignals)
 {
    // Refer to the Task class for the message interception routines
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    std::unordered_map<OBJECTID, ObjectSignal> saved_list;
+   bool saved_any_signal = glWFOAnySignal;
+   bool saved_signal_received = glWFOSignalReceived;
 
    // Message processing is only possible from the main thread (for system design and synchronisation reasons)
    if (!tlMainThread) return log.warning(ERR::OutsideMainThread);
 
-   log.branch("Flags: $%.8x, Timeout: %d, Signals: %p", int(Flags), TimeOut, ObjectSignals);
+   log.branch("Flags: $%.8x, Timeout: %d, Signals: %p", int(Flags), Timeout, ObjectSignals);
 
    // Set the current task as the context to ensure predictable behaviour.  Note: Don't use SwitchContext here as
-   // it retains a lock on the task when we definitely don't actually want to.
+   // it retains a lock on the task and we don't want that.
 
    SetObjectContext(glCurrentTask, nullptr, AC::NIL);
 
@@ -646,24 +801,32 @@ ERR WaitForObjects(PMF Flags, int TimeOut, ObjectSignal *ObjectSignals)
 
    if (!glWFOList.empty()) std::swap(saved_list, glWFOList);
    glWFOList.clear();
+   glWFOAnySignal = (Flags & PMF::ANY_SIGNAL) != PMF::NIL;
+   glWFOSignalReceived = false;
 
    if (ObjectSignals) {
-      for (int i=0; ((error IS ERR::Okay) and (ObjectSignals[i].Object)); i++) {
-         pf::ScopedObjectLock lock(ObjectSignals[i].Object); // For thread safety
+      for (int i=0; ((!error) and (not glWFOSignalReceived) and (ObjectSignals[i].Object)); i++) {
+         kt::ScopedObjectLock lock(ObjectSignals[i].Object); // For thread safety
 
          if (lock.granted()) {
             if (ObjectSignals[i].Object->defined(NF::SIGNALLED)) {
                // Objects that have already been signalled do not require monitoring and we switch off the
                // signal flag.
                ObjectSignals[i].Object->clearFlag(NF::SIGNALLED);
+               if (glWFOAnySignal) glWFOSignalReceived = true;
             }
             else {
                // NB: An object being freed is treated as equivalent to it receiving a signal.
                // Refer to notify_signal_wfo() for notification handling and clearing of signals.
                log.detail("Monitoring object #%d", ObjectSignals[i].Object->UID);
-               if ((SubscribeAction(ObjectSignals[i].Object, AC::Free, C_FUNCTION(notify_signal_wfo)) IS ERR::Okay) and
-                   (SubscribeAction(ObjectSignals[i].Object, AC::Signal, C_FUNCTION(notify_signal_wfo)) IS ERR::Okay)) {
-                  glWFOList.insert(std::make_pair(ObjectSignals[i].Object->UID, ObjectSignals[i]));
+               if (!SubscribeAction(ObjectSignals[i].Object, AC::Free, C_FUNCTION(notify_signal_wfo))) {
+                  if (!SubscribeAction(ObjectSignals[i].Object, AC::Signal, C_FUNCTION(notify_signal_wfo))) {
+                     glWFOList.insert(std::make_pair(ObjectSignals[i].Object->UID, ObjectSignals[i]));
+                  }
+                  else {
+                     UnsubscribeAction(ObjectSignals[i].Object, AC::Free, nullptr);
+                     error = ERR::MessageOperation;
+                  }
                }
                else error = ERR::MessageOperation;
             }
@@ -671,23 +834,23 @@ ERR WaitForObjects(PMF Flags, int TimeOut, ObjectSignal *ObjectSignals)
       }
    }
 
-   if ((error IS ERR::Okay) and (not glWFOList.empty())) {
-      if (TimeOut < 0) { // No time-out will apply
-         while ((not glWFOList.empty()) and (error IS ERR::Okay)) {
+   if ((!error) and (not glWFOSignalReceived) and (not glWFOList.empty())) {
+      if (Timeout < 0) { // No time-out will apply
+         while ((not glWFOSignalReceived) and (not glWFOList.empty()) and (!error)) {
             error = ProcessMessages(Flags, -1);
          }
       }
       else {
          auto current_time = PreciseTime();
-         auto end_time = current_time + (TimeOut * 1000LL);
-         while ((not glWFOList.empty()) and (current_time < end_time) and (error IS ERR::Okay)) {
+         auto end_time = current_time + (Timeout * 1000LL);
+         while ((not glWFOSignalReceived) and (not glWFOList.empty()) and (current_time < end_time) and (!error)) {
             log.detail("Waiting on %d objects.", (int)glWFOList.size());
             error = ProcessMessages(Flags, (end_time - current_time) / 1000LL);
             current_time = PreciseTime();
          }
       }
 
-      if ((error IS ERR::Okay) and (not glWFOList.empty())) error = ERR::TimeOut;
+      if ((!error) and (not glWFOSignalReceived) and (not glWFOList.empty())) error = ERR::Timeout;
    }
    else {
       // At least one call to ProcessMessages() is needed (the caller's message loop may
@@ -697,18 +860,22 @@ ERR WaitForObjects(PMF Flags, int TimeOut, ObjectSignal *ObjectSignals)
 
    if (not glWFOList.empty()) { // Clean up if there are dangling subscriptions
       for (auto &ref : glWFOList) {
-         pf::ScopedObjectLock lock(ref.second.Object); // For thread safety
+         // Lock by ID rather than pointer; a child thread may have freed the object with its
+         // deferred notification still unprocessed (see msg_waitforobjects()).
+         kt::ScopedObjectLock lock(ref.first);
          if (lock.granted()) {
-            UnsubscribeAction(ref.second.Object, AC::Free);
-            UnsubscribeAction(ref.second.Object, AC::Signal);
+            UnsubscribeAction(lock.obj, AC::Free, nullptr);
+            UnsubscribeAction(lock.obj, AC::Signal, nullptr);
          }
       }
       glWFOList.clear();
    }
 
    if (!saved_list.empty()) std::swap(glWFOList, saved_list);
+   glWFOAnySignal = saved_any_signal;
+   glWFOSignalReceived = saved_signal_received;
 
-   if ((error > ERR::ExceptionThreshold) and (error != ERR::TimeOut)) log.warning(error);
+   if ((error > ERR::ExceptionThreshold) and (error != ERR::Timeout)) log.warning(error);
 
    tlContext.pop_back();
    return error;
@@ -723,7 +890,7 @@ ERR send_thread_msg(WINHANDLE Handle, MSGID Type, APTR Data, int Size)
 ERR send_thread_msg(int Handle, MSGID Type, APTR Data, int Size)
 #endif
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    ERR error;
 
    log.function("Type: %d, Data: %p, Size: %d", int(Type), Data, Size);
@@ -751,7 +918,7 @@ ERR send_thread_msg(int Handle, MSGID Type, APTR Data, int Size)
 #else
    int64_t end_time = (PreciseTime() / 1000LL) + 10000LL;
    error = write_nonblock(Handle, &msg, sizeof(msg), end_time);
-   if ((error IS ERR::Okay) and (Data) and (Size > 0)) { // Write the main message.
+   if ((!error) and (Data) and (Size > 0)) { // Write the main message.
       error = write_nonblock(Handle, Data, Size, end_time);
    }
 #endif
@@ -770,7 +937,7 @@ ERR write_nonblock(int Handle, APTR Data, int Size, int64_t EndTime)
    int offset = 0;
    ERR error = ERR::Okay;
 
-   while ((offset < Size) and (error IS ERR::Okay)) {
+   while ((offset < Size) and (!error)) {
       int write_size = Size - offset;
       if (write_size > 1024) write_size = 1024;  // Limiting the size will make the chance of an EWOULDBLOCK error less likely.
       int len = write(Handle, (char *)Data+offset, write_size);
@@ -781,14 +948,14 @@ ERR write_nonblock(int Handle, APTR Data, int Size, int64_t EndTime)
          if ((errno IS EAGAIN) or (errno IS EWOULDBLOCK)) { // The write() failed because it would have blocked.  Try again!
             fd_set wfds;
             struct timeval tv;
-            while (((PreciseTime() / 1000LL) < EndTime) and (error IS ERR::Okay)) {
+            while (((PreciseTime() / 1000LL) < EndTime) and (!error)) {
                FD_ZERO(&wfds);
                FD_SET(Handle, &wfds);
                tv.tv_sec = (EndTime - (PreciseTime() / 1000LL)) / 1000LL;
                tv.tv_usec = 0;
-               int total = select(1, &wfds, nullptr, nullptr, &tv);
+               int total = select(Handle + 1, nullptr, &wfds, nullptr, &tv);
                if (total IS -1) error = ERR::SystemCall;
-               else if (!total) error = ERR::TimeOut;
+               else if (!total) error = ERR::Timeout;
                else break;
             }
          }
@@ -797,7 +964,7 @@ ERR write_nonblock(int Handle, APTR Data, int Size, int64_t EndTime)
       }
 
       if ((PreciseTime() / 1000LL) > EndTime) {
-         error = ERR::TimeOut;
+         error = ERR::Timeout;
          break;
       }
    }
@@ -812,36 +979,38 @@ ERR write_nonblock(int Handle, APTR Data, int Size, int64_t EndTime)
 UpdateMessage: Updates the data of any message that is queued.
 
 The UpdateMessage() function provides a facility for updating the content of existing messages on the local queue.
-The client must provide the ID of the message to update and the new message Type and/or Data to set against the
-message.
-
-If `Data` is defined, its size should equal that of the data already set against the message.  The size will be trimmed
-if it exceeds that of the existing message, as this function cannot expand the size of the queue.
+The client must provide the ID of the message to update and the new message Type and/or Data to set against the message.
+Non-empty `Data` replaces the complete existing payload, while an empty buffer leaves that payload unchanged.
 
 -INPUT-
 int Message:   The ID of the message that will be updated.
 int(MSGID) Type: The type of the message.
-buf(ptr) Data: Pointer to a buffer that contains the new data for the message.
-bufsize Size:  The byte-size of the `Data` that has been supplied.  It must not exceed the size of the message that is being updated.
+array(char) Data: Optional replacement data for the message.  An empty buffer leaves the existing payload unchanged.
 
 -ERRORS-
 Okay:   The message was successfully updated.
 NullArgs:
-AccessMemory:
+Args: The supplied data is too large for the internal message interface.
 Search: The supplied `Message` ID does not refer to a message in the queue.
+
+-TAGS-
+copies-input, blocking
 -END-
 
 *********************************************************************************************************************/
 
-ERR UpdateMessage(int MessageID, MSGID Type, APTR Buffer, int BufferSize)
+ERR UpdateMessage(int MessageID, MSGID Type, const std::span<const int8_t> &Data)
 {
    if (!MessageID) return ERR::NullArgs;
+   if (not span_size_fits_int(Data.size_bytes())) return ERR::Args;
 
-   const std::lock_guard<std::recursive_mutex> lock(glQueueLock);
+   const auto data_size = int(Data.size_bytes());
+
+   const std::lock_guard<std::mutex> lock(glQueueLock);
 
    for (auto it=glQueue.begin(); it != glQueue.end(); it++) {
       if (it->UID != MessageID) continue;
-      if (Buffer) it->setBuffer(Buffer, BufferSize);
+      if (not Data.empty()) it->setBuffer((APTR)Data.data(), data_size);
       if (Type != MSGID::NIL) it->Type = Type;
       return ERR::Okay;
    }
@@ -855,27 +1024,11 @@ ERR UpdateMessage(int MessageID, MSGID Type, APTR Buffer, int BufferSize)
 #ifdef __unix__
 ERR sleep_task(int Timeout)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (!tlMainThread) {
       log.warning("Only the main thread can call this function.");
       return ERR::MessageOperation;
-   }
-   else if (tlPublicLockCount > 0) {
-      log.warning("Cannot sleep while holding %d global locks.", tlPublicLockCount);
-      return ERR::Okay;
-   }
-   else if (tlPrivateLockCount != 0) {
-      char buffer[120];
-      size_t pos = 0;
-      for (const auto & [ id, mem ] : glPrivateMemory) {
-         if (mem.AccessCount > 0) {
-            pos += snprintf(buffer+pos, sizeof(buffer)-pos, "%d.%d ", mem.MemoryID, mem.AccessCount);
-            if (pos >= sizeof(buffer)-1) break;
-         }
-      }
-
-      if (pos > 0) log.warning("WARNING - Sleeping with %d private locks held (%s)", tlPrivateLockCount, buffer);
    }
 
    register_sleep(Timeout);
@@ -1027,27 +1180,11 @@ ERR sleep_task(int Timeout)
 #ifdef _WIN32
 ERR sleep_task(int Timeout, int8_t SystemOnly)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (!tlMainThread) {
       log.warning("Only the main thread can call this function.");
       return ERR::MessageOperation;
-   }
-   else if (tlPublicLockCount > 0) {
-      log.warning("You cannot sleep while still holding %d global locks!", tlPublicLockCount);
-      return ERR::Okay;
-   }
-   else if (tlPrivateLockCount != 0) {
-      char buffer[120];
-      size_t pos = 0;
-      for (const auto & [ id, mem ] : glPrivateMemory) {
-         if (mem.AccessCount > 0) {
-            pos += snprintf(buffer+pos, sizeof(buffer)-pos, "#%d +%d ", mem.MemoryID, mem.AccessCount);
-            if (pos >= sizeof(buffer)-1) break;
-         }
-      }
-
-      if (pos > 0) log.warning("WARNING - Sleeping with %d private locks held (%s)", tlPrivateLockCount, buffer);
    }
 
    //log.traceBranch("Time-out: %d, TotalFDs: %d", Timeout, glTotalFDs);
@@ -1080,7 +1217,7 @@ ERR sleep_task(int Timeout, int8_t SystemOnly)
       else {
          for (auto it = glFDTable.begin(); it != glFDTable.end(); ) {
             auto &fd = *it;
-            if ((fd.Flags & RFD::SOCKET) != RFD::NIL); // Ignore network socket FDs (triggered as normal windows messages)
+            if ((fd.Flags & RFD::SOCKET) != RFD::NIL); // Network sockets are managed by the Network module backend.
             else if ((fd.Flags & RFD::ALWAYS_CALL) != RFD::NIL) {
                if (fd.Routine) fd.Routine(fd.FD, fd.Data);
             }
@@ -1178,13 +1315,9 @@ static void thread_socket_init(void) { pthread_key_create(&keySocket, thread_soc
 
 static ERR wake_task(void)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (!glCurrentTask) return ERR::Okay;
-
-   if (tlPublicLockCount > 0) {
-      if (glProgramStage != STAGE_SHUTDOWN) log.warning("Illegal call while holding %d global locks.", tlPublicLockCount);
-   }
 
 #ifdef __unix__
 

@@ -4,17 +4,17 @@
 
 return {
    background = function(Slider:table, Viewport:obj)
-      slider_bkgd = Slider._theme.slider.bkgd
-      stroke = Slider._theme.slider.stroke
+      slider_bkgd = Slider.prvTheme.slider.bkgd
+      stroke = Slider.prvTheme.slider.stroke
 
       if Slider.orientation is 'V' then
-         Slider._barBkgd = Viewport.new('VectorRectangle', {
+         Slider.prvBarBkgd = Viewport.new('VectorRectangle', {
             x = '0', y = 0, width = '100%', height = '100%',
             fill = slider_bkgd, stroke = stroke,
             roundX = 4, roundY = 4
          })
       else
-         Slider._barBkgd = Viewport.new('VectorRectangle', {
+         Slider.prvBarBkgd = Viewport.new('VectorRectangle', {
             x = 0, y = '0', width = '100%', height = '100%',
             fill = slider_bkgd, stroke = stroke,
             roundX = 4, roundY = 4
@@ -22,10 +22,10 @@ return {
       end
    end,
    slider = function(Slider:table, Viewport:obj)
-      button_face      = Slider._theme.slider.fore
-      button_highlight = Slider._theme.slider.foreHighlight
+      button_face      = Slider.prvTheme.slider.fore
+      button_highlight = Slider.prvTheme.slider.foreHighlight
       gap    = gui.sizing.widget.strokeWidth
-      stroke = Slider._theme.slider.foreStroke
+      stroke = Slider.prvTheme.slider.foreStroke
 
       Slider.button = Viewport.new('VectorRectangle', {
          x = gap, y = gap, roundX = 4, roundY = 4,
@@ -41,7 +41,7 @@ return {
             if Slider.disabled then
                Slider.button.stroke = stroke
             else
-               Slider.button.stroke = Slider._theme.slider.foreStrokeFocus
+               Slider.button.stroke = Slider.prvTheme.slider.foreStrokeFocus
                Slider.events?.focus(Slider)
             end
          end

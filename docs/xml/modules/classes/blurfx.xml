@@ -8,7 +8,7 @@
     <module>Vector</module>
     <comment>Applies a Gaussian blur effect to an input source.</comment>
     <version>1</version>
-    <id>f45d03b8</id>
+    <id>36f3b651</id>
     <idstring>BLURFX</idstring>
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
@@ -25,6 +25,7 @@
       <name>Draw</name>
       <comment>Draws object graphics to drawable areas.</comment>
       <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
+      <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">The X position of the region to be drawn.</param>
         <param type="INT" name="Y">The Y position of the region to be drawn.</param>
@@ -39,7 +40,7 @@
     <field>
       <name>SX</name>
       <comment>The standard deviation of the blur on the x axis.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>DOUBLE</type>
       <description>
 <p>The (SX,SY) field values define the standard deviation of the gaussian blur along each axis.</p>
@@ -50,7 +51,7 @@
     <field>
       <name>SY</name>
       <comment>The standard deviation of the blur on the x axis.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>DOUBLE</type>
       <description>
 <p>The (SX,SY) field values define the standard deviation of the gaussian blur along each axis.</p>
@@ -63,6 +64,7 @@
       <comment>Returns an SVG compliant XML string that describes the effect.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
+      <tags>caller-owns-result</tags>
     </field>
 
   </fields>

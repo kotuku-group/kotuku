@@ -4,7 +4,7 @@
    try
       regex.new("\\x")
    success
-      error("Invalid escape should trigger compilation error")
+      assert(false, "Invalid escape should trigger compilation error")
    end
 end
 
@@ -12,7 +12,7 @@ end
    try
       regex.new("[abc")
    success
-      error("Mismatched bracket should raise error")
+      assert(false, "Mismatched bracket should raise error")
    end
 end
 
@@ -20,12 +20,12 @@ end
    try
       regex.new("\\p{NotAProperty}")
    success
-      error("Unknown Unicode property should be rejected")
+      assert(false, "Unknown Unicode property should be rejected")
    end
 end
 
 @Test function RegexObjectsSurviveGarbageCollection()
-   for index = 1, 50 do
+   for index in {1 into 50} do
       matcher = regex.new("item" .. index)
       assert(matcher.test("item" .. index), "Compiled regex should operate before GC")
    end
@@ -38,5 +38,5 @@ end
    matcher = regex.new("")
    assert(matcher.test("anything"), "Empty pattern should match any string")
    replaced = matcher.replace("abc", "-")
-   assert(replaced:sub(0, 1) is "-", "Replacement on empty pattern should insert replacement at start")
+   assert(replaced.sub(0, 1) is "-", "Replacement on empty pattern should insert replacement at start")
 end

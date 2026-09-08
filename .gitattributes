@@ -1,3 +1,5 @@
+* text=auto eol=lf
+
 *.ttf binary
 *.fon binary
 *.zip binary

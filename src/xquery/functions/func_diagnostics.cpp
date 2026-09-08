@@ -24,7 +24,7 @@ XPathVal XPathFunctionLibrary::function_error(const std::vector<XPathVal> &Args,
       if (not detail_value.is_empty()) detail = describe_xpath_value(detail_value);
    }
 
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (detail.empty()) {
       log.warning("XPath error (%s): %s", error_code.c_str(), description.c_str());
@@ -67,7 +67,7 @@ XPathVal XPathFunctionLibrary::function_trace(const std::vector<XPathVal> &Args,
    std::string summary = describe_xpath_value(value);
    if (summary.empty()) summary = std::string("()");
 
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.msg("XPath trace [%s]: %s", label.c_str(), summary.c_str());
 
    (void)Context;

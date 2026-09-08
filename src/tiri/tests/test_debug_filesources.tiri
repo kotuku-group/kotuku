@@ -13,7 +13,7 @@
    assert(main.parentIndex is 0, f"Main file parent should be 0, got {main.parentIndex}")
 
    print("File sources:")
-   for i = 0, #sources - 1 do
+   for i in {0 to #sources} do
       local src = sources[i]
       print(f"  [{src.index}] {src.filename}")
       print(f"      path: {src.path}")

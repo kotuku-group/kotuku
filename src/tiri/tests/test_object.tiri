@@ -48,6 +48,7 @@ end
    f = obj.new('time')
    child = f.new('time')
    assert(type(child) is 'object', "Expected child to be an object")
+   assert(child.owner.id is f.id, 'Expected parent.new() to retain the receiving object as owner')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -106,9 +107,56 @@ end
 @Test function ObjInit()
    -- Create object without auto-init (no fields table)
    f = obj.new('time')
-   -- Object is auto-initialised, so init() returns Okay
-   err = f.init()
-   assert(err is ERR_Okay, "Expected init() to return Okay, got " .. tostring(err))
+   -- Object is auto-initialised, so init() completes without a result.
+   result = f.init()
+   assert(result is nil, 'Expected init() to return no result')
+end
+
+@Test function ObjInitFailure()
+   f = obj.new('file')
+
+   try
+      f.init()
+   except error_value when ERR_MissingPath
+      -- Expected failure due to missing path
+   success
+      assert(false, 'Expected a file without a path to fail initialisation')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Compiler-owned obj<Class> construction performs the same immediate root initialisation as obj.new(Class, Fields).
+
+@Test function TypedObjectConstruction()
+   local typed = obj<Time> { year=2026 }
+   local explicit = obj.new('Time', { year=2026 })
+
+   assert(typed.class.name is 'Time', 'Typed construction should create the requested class')
+   assert(typed.year is 2026, 'Typed construction should assign initialiser fields before Init()')
+   assert(typed.owner.id is explicit.owner.id, 'Typed and explicit root construction should retain the same owner')
+
+   local empty = obj<Time> {}
+   empty.init()
+end
+
+@Test function TypedObjectConstructionFailures()
+   try
+      exec([[ local invalid = obj<Time> { does_not_exist=1 } ]])
+   except ex
+      assert(ex.message.find('Parsing failed') or ex.message.find('does_not_exist'),
+         'Invalid typed constructor fields should retain the regular object-field diagnostic: ' .. ex.message)
+   success
+      assert(false, 'Expected an invalid typed constructor field to fail')
+   end
+
+   try
+      local unavailable = obj<UnavailableObjectClass> {}
+   except ex
+      assert(ex.message.find('UnavailableObjectClass') or ex.message.find('class'),
+         'Unavailable typed constructor classes should fail through object creation: ' .. ex.message)
+   success
+      assert(false, 'Expected unavailable typed constructor class creation to fail')
+   end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -130,8 +178,8 @@ end
 -- Direct field access (most optimal route)
 
 @Test(hotpath=true) function ObjGetSetDirect()
-   t = obj.new('time', { })
-   f = obj.new('file')
+   local t = obj.new('time', { })
+   local f = obj.new('file')
 
    -- Set and get string field that has function backing
 
@@ -142,45 +190,45 @@ end
 
    t.year = 2025
 
-   year = t.year
+   local year = t.year
    assert(type(year) is 'number', "Expected get('year') to return a number")
    assert(year is 2025, "Expected year field to be 2025, got " .. tostring(year))
 
    -- Test compile-time detection of non-existent field (read)
    try
       exec([[
-         t = obj.new('time')
-         invalid = t.not_a_field
+         local tm = obj.new('time')
+         local invalid = tm.not_a_field
       ]])
    except ex
       -- exec() doesn't preserve full error details, just check parsing failed
-      assert(ex.message:find("Parsing failed") or ex.message:find("not_a_field"),
+      assert(ex.message.find("Parsing failed") or ex.message.find("not_a_field"),
          "Expected parsing error for invalid field, got: " .. ex.message)
    success
-      error("Expected error when accessing invalid field")
+      assert(false, "Expected error when accessing invalid field")
    end
 
-   -- Test OBSETF - write to a read-only field (runtime error, timeStamp exists in dictionary)
+   -- Test OBSETF - write to a read-only field (runtime error, timestamp exists in dictionary)
    try
-      t.timeStamp = 1
+      t.timestamp = 1
    except ex
-      assert(ex.message:find('Time.timeStamp'), "Error message should mention the accessed field, got: " .. ex.message)
+      assert(ex.message.find('Time.timestamp'), "Error message should mention the accessed field, got: " .. ex.message)
    success
-      error("Expected error when writing a read-only field")
+      assert(false, "Expected error when writing a read-only field")
    end
 
    -- Test compile-time detection of non-existent field (write)
    try
       exec([[
-         t = obj.new('time')
+         local t = obj.new('time')
          t.does_not_exist = print
       ]])
    except ex
       -- exec() doesn't preserve full error details, just check parsing failed
-      assert(ex.message:find("Parsing failed") or ex.message:find("does_not_exist"),
+      assert(ex.message.find("Parsing failed") or ex.message.find("does_not_exist"),
          "Expected parsing error for invalid field, got: " .. ex.message)
    success
-      error("Expected error when writing a non-existent field")
+      assert(false, "Expected error when writing a non-existent field")
    end
 end
 
@@ -226,20 +274,61 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Test obj._state() for per-object state storage
+-- Test obj.state() for per-object state storage
 
 @Test(hotpath=true) function ObjState()
    f = obj.new('file')
 
-   state = f._state()
-   assert(type(state) is 'table', "Expected _state() to return a table")
+   state = f.state()
+   assert(type(state) is 'table', "Expected state() to return a table")
 
    -- Store something in state
    state.myvalue = 42
 
    -- Retrieve state again and verify
-   state2 = f._state()
+   state2 = f.state()
    assert(state2.myvalue is 42, "Expected state to persist value")
+
+   f.free()
+   caught = false
+   try
+      f.state()
+   except e
+      caught = true
+   end
+   assert(caught, 'Expected state() to reject a dead object')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Registered obj.* methods, including new and state, are dispatched as canonical built-in methods with the object
+-- supplied as an explicit receiver.
+
+@Test(hotpath=true) @Requires(display=true)
+function RegisteredMethodsUseExplicitReceiver()
+   f = obj.new('file', { path='temp:' })
+   assert(f.exists(), "exists() should dispatch through the explicit receiver")
+   assert(f.get('path') is 'temp:', "get() should read a field through the explicit receiver")
+
+   scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width=50, height=50 })
+
+   err = vp.set('opacity', 0.5)
+   assert(err is ERR_Okay, "set() should update a field through the explicit receiver")
+   assert(math.abs(vp.get('opacity') - 0.5) < 0.0001, "set() should have persisted the field value")
+
+   state = f.state()
+   state.marker = 7
+   assert(f.state().marker is 7, "state() should use the explicit receiver and persist state")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ObjectMethodEscapePaths()
+   parent = obj.new('time')
+   assert(parent.new is nil, 'Bare new access should not manufacture a bound closure')
+   assert(parent.state is nil, 'Bare state access should not manufacture a bound closure')
+   assert(parent['new'] is nil, 'Computed new access should not manufacture a bound closure')
+   assert(parent['state'] is nil, 'Computed state access should not manufacture a bound closure')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -308,29 +397,32 @@ end
          time_obj = file_obj
       ]])
    success
-      error("Expected error when assigning object of different class")
+      assert(false, "Expected error when assigning object of different class")
    end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Compile-time field type checking: assigning string field to number variable should fail
+-- Typed assignment checking: assigning a string field to a number variable should fail
 
 @Test function FieldTypeCheckStrToNum()
    try
       exec([[
          c = obj.new('config')
-         count = 0
-         count = c.path
+         c.path = 'kotuku:test.cfg'
+         local count:num = 0
+         local wrong:any = c.path
+         count = wrong
       ]])
    except ex
-      assert(ex.message:find('Type mismatch'), "Expected type mismatch error, got: " .. ex.message)
+      assert(ex.message.find('Type mismatch') or ex.message.find('type contract failed'),
+         "Expected type mismatch error, got: " .. ex.message)
    success
-      error("Expected compile-time error when assigning str field to num variable")
+      assert(false, "Expected type error when assigning str field to num variable")
    end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Compile-time field type checking: assigning number field to string variable should fail
+-- Typed assignment checking: assigning a number field to a string variable should fail
 
 @Test function FieldTypeCheckNumToStr()
    try
@@ -340,9 +432,10 @@ end
          name = c.totalKeys
       ]])
    except ex
-      assert(ex.message:find('Type mismatch'), "Expected type mismatch error, got: " .. ex.message)
+      assert(ex.message.find('Type mismatch') or ex.message.find('type contract failed'),
+         "Expected type mismatch error, got: " .. ex.message)
    success
-      error("Expected compile-time error when assigning num field to str variable")
+      assert(false, "Expected type error when assigning num field to str variable")
    end
 end
 
@@ -384,4 +477,29 @@ end
 
    str_value = c.keyFilter  -- str_value is inferred as str
    assert(type(str_value) is 'string', "Expected str_value to be a string")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Object class identity remains exact for inferred bindings, while explicit obj annotations remain broad.
+
+@Test function ObjectClassAssignmentControls()
+   local matching = obj.new('time')
+   matching = obj.new('time')
+   assert(matching.class.name is 'Time', 'A matching object class assignment should remain valid')
+
+   try
+      exec([[
+local value = obj.new('time')
+value = obj.new('file')
+]])
+   except ex
+      assert(ex.message.find('object class mismatch') != nil or ex.message.find('ObjectClassMismatch') != nil,
+         'A visible cross-class assignment should retain its compile-time diagnostic: ' .. ex.message)
+   success
+      assert(false, 'Expected a compile-time object class mismatch')
+   end
+
+   local broad:obj = obj.new('time')
+   broad = obj.new('file')
+   assert(broad.class.name is 'File', 'An explicit obj annotation should accept either object class')
 end

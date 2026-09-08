@@ -27,6 +27,12 @@ constexpr uint16_t BCBIAS_J = 0x8000;
 constexpr uint8_t  NO_REG = BCMAX_A;
 #define NO_JMP      (~(BCPOS)0)
 
+// Mask bits for BC_ISFALSEY. Nil is always tested.
+#define ISFALSEY_FALSE       0x01
+#define ISFALSEY_ZERO        0x02
+#define ISFALSEY_EMPTY_STR   0x04
+#define ISFALSEY_EMPTY_COLL  0x08
+
 // Inline functions to get instruction fields (defined after BCOp enum).
 
 #define bc_op(i)   ((BCOp)((i)&0xff))
@@ -74,6 +80,7 @@ constexpr uint8_t  NO_REG = BCMAX_A;
 
 // Compose ADP format instruction: AD in lower 32 bits, P in upper 32 bits
 #define BCINS_ADP(o,a,d,p32) (BCINS_AD(o,a,d) | ((BCIns)(uint32_t)(p32) << 32))
+#define BCINS_AJP(o,a,j,p32) (BCINS_AJ(o,a,j) | ((BCIns)(uint32_t)(p32) << 32))
 
 // === Format AP: 48-bit pointer + A register ===
 // Layout: [PTR(48-bit) | A(8-bit) | OP(8-bit)]
@@ -127,7 +134,7 @@ constexpr uint8_t  NO_REG = BCMAX_A;
   _(ISF,    ___, ___, var, ___) \
   _(ISTYPE, var, ___, lit, ___) \
   _(ISNUM,  var, ___, lit, ___) \
-  _(ISEMPTYARR, var, ___, ___, ___) \
+  _(ISFALSEY, var, ___, lit, ___) \
   \
   /* Unary ops. */ \
   _(MOV, dst, ___, var, ___) \
@@ -202,6 +209,10 @@ constexpr uint8_t  NO_REG = BCMAX_A;
   _(OBSETF, var,  var, str, newindex) /* Object string field set */ \
   _(OBCALL, base, lit, lit, call)     /* Object action/method call (reserved) */ \
   \
+  /* Struct field access ops (specialised for LJ_TSTRUCT). */ \
+  _(STGETF, dst, var, str, index)     /* Struct string field get */ \
+  _(STSETF, var, var, str, newindex)  /* Struct string field set */ \
+  \
   /* Calls and vararg handling. T = tail call. */ \
   _(CALLM,  base, lit, lit,  call) \
   _(CALL,   base, lit, lit,  call) \
@@ -219,9 +230,6 @@ constexpr uint8_t  NO_REG = BCMAX_A;
   _(RET,  rbase, ___, lit, ___) \
   _(RET0, rbase, ___, lit, ___) \
   _(RET1, rbase, ___, lit, ___) \
-  \
-  /* Type fixing. */ \
-  _(TYPEFIX,   rbase,   ___,   lit,   ___) \
   \
   /* Loops and branches. I/J = interp/JIT, I/C/L = init/call/loop. */ \
   _(FORI,  base, ___, jump, ___) \
@@ -255,7 +263,52 @@ constexpr uint8_t  NO_REG = BCMAX_A;
   _(TRYENTER, base,  ___, lit, ___) \
   _(TRYLEAVE, base,  ___, ___, ___) \
   _(CHECK,    var,   ___, lit, ___) \
-  _(RAISE,    var,   ___, var, ___)
+  _(RAISE,    var,   ___, var, ___) \
+  \
+  /* Portable runtime type contracts. */ \
+  _(CONTRACT, rbase, ___, str, ___) \
+  _(MRSAVE,   rbase, ___, ___, ___) \
+  _(MRRESTORE,rbase, ___, ___, ___) \
+  \
+  /* Direct range-loop preparation and value generation. */ \
+  _(RANGEPREP, base, ___, lit, ___) \
+  _(RANGEVAL,  base, ___, ___, ___) \
+  \
+  /* Compiler-managed module dependency activation. */ \
+  _(MODACT,    base, ___, lit, ___) \
+  \
+  /* Immutable state-local built-in callable load. Appended to preserve existing opcode numbers. */ \
+  _(BFUNC,     dst,  ___, lit, ___) \
+  /* Runtime built-in method resolution. P32 is the member string constant; D is the field fallback edge. */ \
+  _(BMETH,     dst,  ___, jump, ___) \
+  /* Current table context. */ \
+  _(CTXGET,    dst,  ___, ___, ___) \
+  _(CTXCALLM,  base, lit, lit, call) \
+  _(CTXCALL,   base, lit, lit, call) \
+  _(CTXLEAVE,  base, ___, lit, ___) \
+  _(CTXENTER,  base, ___, ___, ___) \
+  _(CTXCALLT,  base, ___, lit, call) \
+  /* Permanent contextual designation of a freshly materialised table in A. */ \
+  _(TCTX,      var,  ___, ___, ___) \
+  /* Materialised temporary context blocks. */ \
+  _(CTXBEGIN,  var,  ___, lit, ___) \
+  _(CTXEND,    ___,  ___, lit, ___) \
+  _(CLOSEARM,  var,  ___, ___, ___) \
+  _(CLOSE,     var,  ___, ___, ___) \
+  /* Boolean contextual type test. */ \
+  _(TYPETEST,  var,  ___, str, ___) \
+  /* Arm or clear the one-shot object array view read mode. */ \
+  _(VIEW,      ___,  ___, lit, ___) \
+  /* Membership test: candidate in target. */ \
+  _(ISIN,      var,  ___, var, contains) \
+  _(ISNIN,     var,  ___, var, contains) \
+  /* Lexical automatic native error promotion. */ \
+  _(CHECKALLENTER, base, ___, ___, ___) \
+  _(CHECKALLLEAVE, base, ___, ___, ___) \
+  /* Runtime defer registration. Appended to preserve existing opcode numbers. */ \
+  _(DEFERARM,      var,  lit, lit, ___) \
+  _(DEFERCONSUME,  var,  ___, ___, ___) \
+  _(RETHROW,       var,  ___, ___, ___)
 
 // Bytecode opcode numbers.
 // Explicitly enumerated for debugger visibility and easy value lookup.
@@ -281,7 +334,7 @@ typedef enum {
    BC_ISF     = 15,
    BC_ISTYPE  = 16,
    BC_ISNUM   = 17,
-   BC_ISEMPTYARR = 18,  // Check if RA is an empty array (for ?? operator)
+   BC_ISFALSEY = 18,  // Check RA against the falsey conditions selected by RD; nil is always checked
 
    // Unary ops (19-22)
    BC_MOV     = 19,
@@ -353,58 +406,96 @@ typedef enum {
    BC_OBSETF  = 73,  // Object string field set: A=value, B=object, C=str const (~)
    BC_OCALL  = 74,  // Object action/method call (reserved for Phase 4)
 
-   // Calls and vararg handling (75-84)
-   BC_CALLM  = 75,
-   BC_CALL   = 76,
-   BC_CALLMT = 77,
-   BC_CALLT  = 78,
-   BC_ITERC  = 79,
-   BC_ITERN  = 80,
-   BC_ITERA  = 81,
-   BC_VARG   = 82,
-   BC_ISNEXT = 83,
-   BC_ISARR  = 84,
+   // Struct field access ops (75-76) - specialised for LJ_TSTRUCT
+   BC_STGETF = 75,  // Struct string field get: A=dst, B=struct, C=str const (~)
+   BC_STSETF = 76,  // Struct string field set: A=value, B=struct, C=str const (~)
 
-   // Returns (85-88)
-   BC_RETM   = 85,
-   BC_RET    = 86,
-   BC_RET0   = 87,
-   BC_RET1   = 88,
+   // Calls and vararg handling (77-86)
+   BC_CALLM  = 77,
+   BC_CALL   = 78,
+   BC_CALLMT = 79,
+   BC_CALLT  = 80,
+   BC_ITERC  = 81,
+   BC_ITERN  = 82,
+   BC_ITERA  = 83,
+   BC_VARG   = 84,
+   BC_ISNEXT = 85,
+   BC_ISARR  = 86,
 
-   // Type fixing (89)
-   BC_TYPEFIX = 89,
+   // Returns (87-90)
+   BC_RETM   = 87,
+   BC_RET    = 88,
+   BC_RET0   = 89,
+   BC_RET1   = 90,
 
-   // Loops and branches (90-101)
-   BC_FORI   = 90,
-   BC_JFORI  = 91,
-   BC_FORL   = 92,
-   BC_IFORL  = 93,
-   BC_JFORL  = 94,
-   BC_ITERL  = 95,
-   BC_IITERL = 96,
-   BC_JITERL = 97,
-   BC_LOOP   = 98,
-   BC_ILOOP  = 99,
-   BC_JLOOP  = 100,
-   BC_JMP    = 101,
+   // Loops and branches (91-102)
+   BC_FORI   = 91,
+   BC_JFORI  = 92,
+   BC_FORL   = 93,
+   BC_IFORL  = 94,
+   BC_JFORL  = 95,
+   BC_ITERL  = 96,
+   BC_IITERL = 97,
+   BC_JITERL = 98,
+   BC_LOOP   = 99,
+   BC_ILOOP  = 100,
+   BC_JLOOP  = 101,
+   BC_JMP    = 102,
 
-   // Function headers (102-109)
-   BC_FUNCF  = 102,
-   BC_IFUNCF = 103,
-   BC_JFUNCF = 104,
-   BC_FUNCV  = 105,
-   BC_IFUNCV = 106,
-   BC_JFUNCV = 107,
-   BC_FUNCC  = 108,
-   BC_FUNCCW = 109,
+   // Function headers (103-110)
+   BC_FUNCF  = 103,
+   BC_IFUNCF = 104,
+   BC_JFUNCF = 105,
+   BC_FUNCV  = 106,
+   BC_IFUNCV = 107,
+   BC_JFUNCV = 108,
+   BC_FUNCC  = 109,
+   BC_FUNCCW = 110,
 
-   // Exception handling (110-113)
-   BC_TRYENTER = 110,
-   BC_TRYLEAVE = 111,
-   BC_CHECK  = 112,  // Check error code, raise if >= threshold
-   BC_RAISE  = 113,  // Raise exception with error code and optional message
+   // Exception handling (111-114)
+   BC_TRYENTER = 111,
+   BC_TRYLEAVE = 112,
+   BC_CHECK  = 113,  // Check error code, raise if >= threshold
+   BC_RAISE  = 114,  // Raise exception with error code and optional message
 
-   BC__MAX   = 114
+   // Runtime contracts
+   BC_CONTRACT = 115,
+   BC_MRSAVE = 116,
+   BC_MRRESTORE = 117,
+
+   // Direct range loops
+   BC_RANGEPREP = 118,
+   BC_RANGEVAL = 119,
+   BC_MODACT = 120,
+   BC_BFUNC = 121,
+   BC_BMETH = 122,
+
+   // Current table context
+   BC_CTXGET = 123,
+   BC_CTXCALLM = 124,
+   BC_CTXCALL = 125,
+   BC_CTXLEAVE = 126,
+   BC_CTXENTER = 127,
+   BC_CTXCALLT = 128,
+
+   // Permanent contextual table designation
+   BC_TCTX   = 129,
+   BC_CTXBEGIN = 130,
+   BC_CTXEND = 131,
+   BC_CLOSEARM = 132,
+   BC_CLOSE = 133,
+   BC_TYPETEST = 134,
+   BC_VIEW = 135,
+   BC_ISIN = 136,
+   BC_ISNIN = 137,
+   BC_CHECKALLENTER = 138,
+   BC_CHECKALLLEAVE = 139,
+   BC_DEFERARM = 140,
+   BC_DEFERCONSUME = 141,
+
+   BC_RETHROW = 142,
+
+   BC__MAX   = 143
 } BCOp;
 
 [[nodiscard]] inline constexpr bool bc_is_func_header(BCOp Op) noexcept
@@ -456,11 +547,24 @@ static_assert((int)BC_FUNCV + 1 == (int)BC_IFUNCV);
 static_assert((int)BC_FUNCV + 2 == (int)BC_JFUNCV);
 
 // This solves a circular dependency problem, change as needed.
-#define FF_next_N   4
+#define FF_next_N   5
 
 // Stack slots used by FORI/FORL, relative to operand A.
 enum {
    FORL_IDX, FORL_STOP, FORL_STEP, FORL_EXT
+};
+
+// Stack slots used by direct range loops, relative to operand A.
+enum {
+   RANGE_FOR_IDX = FORL_IDX,
+   RANGE_FOR_STOP = FORL_STOP,
+   RANGE_FOR_STEP = FORL_STEP,
+   RANGE_FOR_ORDINAL = FORL_EXT,
+   RANGE_FOR_START,
+   RANGE_FOR_VALUE_STEP,
+   RANGE_FOR_FLAGS,
+   RANGE_FOR_VALUE,
+   RANGE_FOR_SLOTS
 };
 
 // Bytecode operand modes. ORDER BCMode

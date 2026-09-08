@@ -1,0 +1,308 @@
+--[[
+HTTP Methods Testing
+
+Tests various HTTP methods (PUT, DELETE, PATCH, HEAD, OPTIONS) with both the HTTP client class and httpserver.tiri
+implementation.
+
+Also demonstrates how to wait for and directly signal objects
+--]]
+
+   import 'net/httpserver'
+   import 'json'
+   include 'http'
+
+glOutFile <const> = 'temp:http-methods-output.txt'
+SERVER_PORT <const> = 18943
+
+rxStatusLine = <{ regex.new([[HTTP\/1\.[01]\s+(\d+)]]) }>
+
+function rawHttpRequest(Method:str, Path:str, Body:any, Headers:any):<num, str>
+   response = ''
+   request = f"{Method} {Path} HTTP/1.1\r\n" ..
+      "Host: 127.0.0.1\r\n" ..
+      "Connection: close\r\n"
+
+   if Headers then
+      for name, value in pairs(Headers) do
+         request ..= name .. ': ' .. value .. "\r\n"
+      end
+   end
+
+   if Body then
+      request ..= 'Content-Length: ' .. #Body .. "\r\n"
+   end
+
+   request ..= "\r\n"
+   if Body then request ..= Body end
+
+   socket = obj.new('netsocket', {
+      feedback = function(Socket, State)
+         if State is NTC_CONNECTED then
+            check Socket.acWrite(request)
+         elseif State is NTC_DISCONNECTED then
+            Socket.acSignal()
+         end
+      end,
+      incoming = function(Socket)
+         buffer = string.alloc(4096)
+         err, read_len = Socket.acRead(buffer)
+         if err is ERR_Okay then
+            response ..= buffer.sub(0, read_len)
+         elseif err is ERR_Disconnected then
+            Socket.acSignal()
+         else
+            raise 'Raw HTTP read failed: ' .. mSys.GetErrorMsg(err)
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { socket } })
+   check socket.mtConnect('127.0.0.1', SERVER_PORT, 3.0)
+   check proc.sleep()
+
+   status = rxStatusLine.extract(response)
+   return tonumber(status ?? 0), response
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function rawHttpBody(Response:str):str
+   header_end = Response.find("\r\n\r\n")
+   header_end ?! return ''
+   return Response.sub(header_end + 4)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@BeforeAll function init(State)
+   global glPath = State.folder
+
+   global glServer = hslib.start({
+      port    = SERVER_PORT,
+      folder  = glPath,
+      verbose = true,
+      routes = {
+         { pattern = '/api/resource/:id',
+            method = 'PUT',
+            handler = function(req, res)
+               res.json({
+                  method = req.method,
+                  resourceId = req.params.id,
+                  body = req.body,
+                  message = 'Resource updated'
+               })
+            end
+         },
+         { pattern = '/api/resource/:id',
+            method = 'DELETE',
+            handler = function(req, res)
+               res.status(204).send('') -- No Content
+            end
+         },
+         { pattern = '/api/resource/:id',
+            method = 'PATCH',
+            handler = function(req, res)
+               res.json({
+                  method = req.method,
+                  resourceId = req.params.id,
+                  body = req.body,
+                  message = 'Resource partially updated'
+               })
+            end
+         },
+         { pattern = '/api/resource/info',
+            method = 'GET',  -- HEAD will also match this
+            handler = function(req, res)
+               res.json({ info = 'Resource information' })
+            end
+         },
+         { pattern = '/api/resource/options',
+            method = 'OPTIONS',
+            handler = function(req, res)
+               res.header('Allow', 'GET, POST, PUT, DELETE, PATCH, OPTIONS')
+                  .header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS')
+                  .status(200)
+                  .send('')
+            end
+         },
+         { pattern = '/api/get-only',
+            method = 'GET',
+            handler = function(req, res)
+               res.json({ message = 'GET only route' })
+            end
+         }
+      }
+   })
+end
+
+@AfterAll function cleanup()
+   glServer.stop()
+   mSys.DeleteFile(glOutFile)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function PUT()
+   content = ''
+   testBody = '{"name":"updated","value":42}'
+
+   http = obj.new('http', {
+      src         = f'http://127.0.0.1:{SERVER_PORT}/api/resource/123',
+      method      = 'PUT',
+      contentType = 'application/json',
+      flags       = HTF_NO_HEAD,
+      inputFile   = 'string:' .. testBody,
+      size        = #testBody,
+      incoming = function(HTTP:obj, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP:obj, State:num)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   assert(http.acActivate() is ERR_Okay, "HTTP PUT failed to activate")
+   check proc.sleep()
+
+   assert(http.error is ERR_Okay, 'PUT HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'PUT unexpected status: ' .. http.status)
+
+   response = json.decode(content)
+   assert(response.method is 'PUT', 'PUT method not received correctly')
+   assert(response.resourceId is '123', 'PUT resource ID not parsed')
+   assert(response.body is testBody, 'PUT body not received correctly')
+
+   print('PUT test passed: ' .. content)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function DELETE()
+   content = ''
+
+   http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/api/resource/456',
+      method = 'DELETE',
+      flags = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   assert(http.acActivate() is ERR_Okay, "HTTP DELETE failed to activate")
+   check proc.sleep()
+
+   assert(http.error is ERR_Okay, 'DELETE HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 204, 'DELETE unexpected status: ' .. http.status)
+
+   -- DELETE typically returns no content (204 No Content)
+   assert(content is '', 'DELETE should return no content')
+
+   print('DELETE test passed - 204 No Content received')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function PATCH()
+   patchData = '{"value":100}'
+
+   status, content = rawHttpRequest('PATCH', '/api/resource/789', patchData, {
+      ['Content-Type'] = 'application/json'
+   })
+   assert(status is 200, 'PATCH unexpected status: ' .. status)
+
+   response = json.decode(rawHttpBody(content))
+   assert(response.method is 'PATCH', 'PATCH method not received correctly')
+   assert(response.resourceId is '789', 'PATCH resource ID not parsed')
+   assert(response.body is patchData, 'PATCH body not received correctly')
+
+   print('PATCH test passed: ' .. content)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function HEAD()
+   status, response = rawHttpRequest('HEAD', '/api/resource/info')
+   assert(status is 200, 'HEAD unexpected status: ' .. status)
+
+   -- HEAD should return no body content, only headers
+   header_end = response.find("\r\n\r\n")
+   assert(header_end != nil, 'HEAD response missing header terminator')
+   content = response.sub(header_end + 4)
+   assert(content is '', 'HEAD should return no body content')
+
+   -- Check that we received proper headers
+   assert(response.find('content-length:'), 'HEAD should include Content-Length header')
+
+   print('HEAD test passed - headers only, no body content')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function OPTIONS()
+   content = ''
+
+   http = obj.new('http', {
+      src = f'http://127.0.0.1:{SERVER_PORT}/api/resource/options',
+      method = 'OPTIONS',
+      flags = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.error is ERR_Okay, 'OPTIONS HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'OPTIONS unexpected status: ' .. http.status)
+
+   -- OPTIONS typically returns allowed methods information
+   assert(content is '', 'OPTIONS should return no body content')
+
+   print('OPTIONS test passed - CORS headers received')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function MethodNotAllowed()
+   content = ''
+
+   http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/api/get-only',
+      method = 'POST',  -- This route only accepts GET
+      flags = HTF_NO_HEAD,
+      inputFile = 'string:test',
+      size = 4,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   assert(http.acActivate() is ERR_Okay, "HTTP method test failed to activate")
+   check proc.sleep()
+   assert(http.status is 405, 'Expected 405 Method Not Allowed, got: ' .. http.status)
+
+   print('Method Not Allowed test passed - 405 status received')
+end

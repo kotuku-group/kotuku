@@ -7,20 +7,21 @@ Documentation is available in the Kotuku Wiki.
    import 'gui'
    import 'gui/libview'
 
-   namespace 'gui'
+   namespace gui
 
 lDate = nil
-VSPACING  <const> = 2
-ICON_SIZE <const> = 16
-lCounter  <const> = 1
-EDGE      <const> = 4 -- Whitespace around the page
+VSPACING <const> = 2
+EDGE     <const> = 4 -- Whitespace around the page
 
 rx_datetime <const> = <{ regex.new([[^(\d{4}-\d{1,2}-\d{1,2})[\sT]?(.*)$]]) }>
 rx_date <const> = <{ regex.new([[^(\d+)-(\d+)-(\d+)$]]) }>
 rx_time <const> = <{ regex.new([[^(\d{2}):(\d{2}):?(\d{0,2})$]]) }>
 
-local LINE_HEIGHT, FONT_HEIGHT, LINE_HEIGHT, FONT_HEIGHT, MARGIN
-local ICON_OFFSET, LINE_OFFSET, BANNER_HEIGHT, lEnableTextGradients
+local LINE_HEIGHT:num, FONT_HEIGHT:num, LINE_HEIGHT:num, FONT_HEIGHT:num, MARGIN:num
+local ICON_OFFSET:num, LINE_OFFSET:num, BANNER_HEIGHT:num, lEnableTextGradients:bool
+
+glIconSize = 16
+glCounter = 1
 
 lColours = {
    strokeButton = 'rgb(255,255,255,0.3)'
@@ -29,15 +30,15 @@ lColours = {
 ----------------------------------------------------------------------------------------------------------------------
 
 function columnText(Value:any, Type:str):any
-   if type(Value) is 'table' then
+   if Value is <table> then
       Value = Value.value
    end
 
-   Value ?? return ''
+   Value ?! return ''
 
    if Type is 'bytesize' then
       Value = tonumber(Value)
-      Value ?? return ''
+      Value ?! return ''
       if Value < 1024 then
          return string.format('%.0f', Value)
       elseif Value < 1024 * 1024 then
@@ -59,13 +60,14 @@ function columnText(Value:any, Type:str):any
 
       if not lDate then lDate = struct.new('DateTime') end
       day, time = rx_datetime.extract(Value)
-      lDate.year, lDate.month, lDate.day = rx_date.extract(day)
+      local y, m, d = rx_date.extract(day)
+      lDate.year, lDate.month, lDate.day = tonumber(y), tonumber(m), tonumber(d)
 
-      h, min, sec = rx_time.extract(time)
+      local h, min, sec = rx_time.extract(time)
       if h then
-         lDate.hour   = h
-         lDate.minute = min
-         lDate.second = sec
+         lDate.hour   = tonumber(h ?? '0')
+         lDate.minute = tonumber(min ?? '0')
+         lDate.second = tonumber(sec ?? '0')
       end
 
       return string.format('%4d-%02d-%02d %02d:%02d', lDate.year, lDate.month, lDate.day, lDate.hour, lDate.minute)
@@ -89,7 +91,7 @@ function setListTextFill(Item:table, Fill)
    end
 end
 
-function highlightItem(View:table, Item:table, Highlighted:bool)
+function highlightItem(View:table!, Item:table, Highlighted:bool)
    if not Item._vectors.highlight and (Highlighted or Item._selected) then
       Item._vectors.highlight = Item._vectors.viewport.new('VectorRectangle', {
          name = 'item_highlight',
@@ -156,12 +158,12 @@ function highlightItem(View:table, Item:table, Highlighted:bool)
    end
 end
 
-function arrangeColumns(View:table)
+function arrangeColumns(View:table!)
    View.banner.lines.acClear()
 
    pc = struct.new('PathCommand')
    for col in values(View.columns) do
-      col.vecTitle.x = col.align is 'right' ? col.px_width - MARGIN :> MARGIN
+      col.vecTitle.x = col.align is 'right' ? col.px_width - MARGIN : MARGIN
 
       pc.type = PE_Move
       pc.x    = col.x + col.px_width
@@ -180,10 +182,10 @@ function arrangeColumns(View:table)
          col.fillItem = View.theme.page.text
          col.fillItemSelect = View.theme.page.textHighlight
       elseif not col.vecGradient then
-         defName = 'colGradient' .. lCounter
-         lCounter++
-         selName = 'colSelect' .. lCounter
-         lCounter++
+         defName = 'colGradient' .. glCounter
+         glCounter++
+         selName = 'colSelect' .. glCounter
+         glCounter++
 
          if (col.align ?? 'left') is 'right' then
             col.vecGradient = gui.simpleGradient(View.scene, defName,
@@ -213,7 +215,7 @@ function arrangeColumns(View:table)
 
    if View._sort then
       col = View._sort.col
-      View._sort.icon.x = col.align is 'right' ? MARGIN :> col.px_width - MARGIN - ICON_SIZE
+      View._sort.icon.x = col.align is 'right' ? MARGIN : col.px_width - MARGIN - glIconSize
    end
 
    if View.scrollbar then
@@ -237,39 +239,39 @@ function bannerZoneClick(View, Col, X, Y, Value)
       View._sort = { col=Col, ascending=false }
       if not View.iconDescending then
          if not View._sort_desc then
-            info = gui.createIcon(View.scene, 'layout/sort_alpha_desc', ICON_SIZE, View.theme.window.icon, 'sort_desc')
+            info = gui.createIcon(View.scene, 'layout/sort_alpha_desc', glIconSize, View.theme.window.icon, 'sort_desc')
             View._sort_desc = info.fill
          end
 
          View._sort.icon = Col.bannerVP.new('VectorRectangle', {
             name   = 'banner_sort',
             fill   = View._sort_desc,
-            y      = math.round( ((BANNER_HEIGHT - ICON_SIZE) * 0.5)),
-            width  = ICON_SIZE,
-            height = ICON_SIZE
+            y      = math.round( ((BANNER_HEIGHT - glIconSize) * 0.5)),
+            width  = glIconSize,
+            height = glIconSize
          })
       end
    else
       View._sort = { col=Col, ascending=true }
       if not View.iconAscending then
          if not View._sort_asc then
-            info = gui.createIcon(View.scene, 'layout/sort_alpha_asc', ICON_SIZE, View.theme.window.icon, 'sort_asc')
+            info = gui.createIcon(View.scene, 'layout/sort_alpha_asc', glIconSize, View.theme.window.icon, 'sort_asc')
             View._sort_asc = info.fill
          end
 
          View._sort.icon = Col.bannerVP.new('VectorRectangle', {
             name   = 'banner_sort',
             fill   = View._sort_asc,
-            y      = math.round((BANNER_HEIGHT - ICON_SIZE) * 0.5),
-            width  = ICON_SIZE,
-            height = ICON_SIZE
+            y      = math.round((BANNER_HEIGHT - glIconSize) * 0.5),
+            width  = glIconSize,
+            height = glIconSize
          })
       end
    end
 
-   View._sort.icon.x = Col.align is 'right' ? MARGIN :> Col.px_width - MARGIN - ICON_SIZE
+   View._sort.icon.x = Col.align is 'right' ? MARGIN : Col.px_width - MARGIN - glIconSize
 
-   View:sortColumn(Col, View._sort.ascending)
+   View.sortColumn(View, Col, View._sort.ascending)
    View.viewport.acDraw()
 end
 
@@ -282,7 +284,7 @@ function rearrangeItems(View)
    for item in values(View.items) do
       item._y = y
       if item._vectors.viewport then
-         vis = item.hidden ? VIS_HIDDEN :> VIS_VISIBLE
+         vis = item.hidden ? VIS_HIDDEN : VIS_VISIBLE
 
          item._vectors.viewport.visibility = vis
          if item._vectors.iconImage then
@@ -319,9 +321,8 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-gui.columnView = function(Options)
-
-   function setColumns(View:table, Columns)
+gui.columnView = function(Options):table
+   function setColumns(View:table!, Columns)
       if #Columns is 0 then return end
 
       c = 0
@@ -332,7 +333,7 @@ gui.columnView = function(Options)
 
          new_col = { _index=c, width=8, title='Untitled' }
          for k, v in pairs(col) do new_col[k] = v end
-         table.insert(set, new_col)
+         set.insert(new_col)
          View.namedCol[col['attrib']] = new_col
          c++
       end
@@ -398,7 +399,7 @@ gui.columnView = function(Options)
 
          col.x = x
          col.minWidth = x + MARGIN
-         col.px_width = col.width * View.fontSize * (4 / 3)
+         col.px_width = col.width * tonumber(View.fontSize) * (4 / 3)
 
          if not col.bannerVP then
             -- Each banner viewport hosts the title and sorting icon
@@ -509,9 +510,9 @@ gui.columnView = function(Options)
 
    -- Process new items that have been added to the view
 
-   function newItems(View:table, Items)
-      View.columns ?? return
-      Items ?? return
+   function newItems(View:table!, Items)
+      View.columns ?! return
+      Items ?! return
 
       width = View.frame.width - EDGE - EDGE
       y = View._last_y
@@ -520,7 +521,7 @@ gui.columnView = function(Options)
          item._vectors ?= { }
          item._col ?= { }
 
-         vis = item.hidden ? VIS_HIDDEN :> VIS_VISIBLE
+         vis = item.hidden ? VIS_HIDDEN : VIS_VISIBLE
 
          item._y = y
 
@@ -552,13 +553,13 @@ gui.columnView = function(Options)
                try
                   local theme = item.iconTheme ?? View.theme.page.icon
                   local uid   = f'{theme}+{item.icon}'
-                  local info  = gui.createIcon(View.scene, item.icon, ICON_SIZE, theme, uid)
+                  local info  = gui.createIcon(View.scene, item.icon, glIconSize, theme, uid)
                   item._iconFill = info.fill
 
                   if View.theme.page.iconHighlight and View.theme.page.iconHighlight != theme then
                      theme = View.theme.page.iconHighlight
                      uid   = f'{theme}+{item.icon}'
-                     info  = gui.createIcon(View.scene, item.icon, ICON_SIZE, theme, uid)
+                     info  = gui.createIcon(View.scene, item.icon, glIconSize, theme, uid)
                      item._iconHighlight = info.fill
                   end
 
@@ -568,8 +569,8 @@ gui.columnView = function(Options)
                         fill   = item._iconFill,
                         x      = MARGIN * 2,
                         y      = y + ICON_OFFSET,
-                        width  = ICON_SIZE,
-                        height = ICON_SIZE,
+                        width  = glIconSize,
+                        height = glIconSize,
                         visibility = vis
                      })
                   else
@@ -581,7 +582,7 @@ gui.columnView = function(Options)
                -- Checkbox mode leverages the icon mechanisms that are already in place.
 --[[
                if not glTick and not tick_error then
-                  obj.new('picture', src='templates:images/tick') then
+                  obj.new('image', src='templates:images/tick') then
                end
 
                if item.checked then
@@ -613,7 +614,7 @@ gui.columnView = function(Options)
                   item._col[attrib].text.x = col.px_width - MARGIN
                else
                   if col.showIcons then
-                     item._col[attrib].text.x = (MARGIN * 2) + ICON_SIZE + (MARGIN * 2)
+                     item._col[attrib].text.x = (MARGIN * 2) + glIconSize + (MARGIN * 2)
                   else
                      item._col[attrib].text.x = MARGIN
                   end
@@ -647,10 +648,10 @@ gui.columnView = function(Options)
 
    function constructColumnView(View)
       LINE_HEIGHT, FONT_HEIGHT = gui.getFontHeight({ face=View.fontFace, size=View.fontSize, style=View.fontStyle })
-      ICON_SIZE     = LINE_HEIGHT
+      glIconSize    = LINE_HEIGHT
       MARGIN        = math.round(LINE_HEIGHT * 0.3) -- Min space between graphics elements
       LINE_HEIGHT   = math.round(LINE_HEIGHT * 1.5)
-      ICON_OFFSET   = math.round((LINE_HEIGHT - ICON_SIZE) * 0.5)
+      ICON_OFFSET   = math.round((LINE_HEIGHT - glIconSize) * 0.5)
       LINE_OFFSET   = math.round((LINE_HEIGHT + FONT_HEIGHT) * 0.5)
       BANNER_HEIGHT = math.round(LINE_HEIGHT * 1.15)
 
@@ -669,36 +670,36 @@ gui.columnView = function(Options)
    -- Sorts the view by column (named or index).
    -- NB: Attrib values that evaluate to nil are not permitted/supported.
 
-   vw.sortColumn = function(View:table, Column:any, Ascending:bool)
-      if type(Column) is 'string' then
+   vw.sortColumn = function(View:table!, Column:any!, Ascending:bool!)
+      if Column is <str> then
          for col in values(View.columns) do
             if col['attrib'] is Column then
                Column = col
                break
             end
          end
-      elseif type(Column) is 'number' then
+      elseif Column is <num> then
          Column = View.columns[Column]
       end
 
-      if type(Column) is 'table' then
+      if Column is <table> then
          if #View.items > 0 then
             attrib = Column['attrib']
-            if type(View.items[0][attrib]) is 'table' then
+            if View.items[0][attrib] is <table> then
                if View.items[0][attrib]['sort'] then
-                  table.sort(View.items, function(a,b)
-                     return Ascending ? a[attrib].sort < b[attrib].sort :> a[attrib].sort > b[attrib].sort
+                  View.items.sort(function(a,b)
+                     return Ascending ? a[attrib].sort < b[attrib].sort : a[attrib].sort > b[attrib].sort
                   end)
                else
-                  table.sort(View.items, function(a,b)
-                     return Ascending ? a[attrib].value < b[attrib].value :> a[attrib].value > b[attrib].value
+                  View.items.sort(function(a,b)
+                     return Ascending ? a[attrib].value < b[attrib].value : a[attrib].value > b[attrib].value
                   end)
                end
             elseif type(View.items[0][attrib]) then
-               table.sort(View.items, function(a,b)
-                  al = a[attrib] ? tostring(a[attrib]) :> ''
-                  bl = b[attrib] ? tostring(b[attrib]) :> ''
-                  return Ascending ? al:lower() < bl:lower() :> al:lower() > bl:lower()
+               View.items.sort(function(a,b)
+                  al = a[attrib] ? tostring(a[attrib]) : ''
+                  bl = b[attrib] ? tostring(b[attrib]) : ''
+                  return Ascending ? al.lower() < bl.lower() : al.lower() > bl.lower()
                end)
             end
          end
@@ -707,7 +708,7 @@ gui.columnView = function(Options)
       end
    end
 
-   vw.sort = function(Attrib, Ascending:bool)
+   vw.sortView = function(Attrib, Ascending:bool)
       vw.sortItems(Attrib, Ascending)
       rearrangeItems(vw)
    end

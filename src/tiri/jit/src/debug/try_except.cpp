@@ -12,6 +12,7 @@
 #include "lua.h"
 #include "lj_gc.h"
 #include "lj_array.h"
+#include "lj_buf.h"
 #include "lj_obj.h"
 #include "lj_debug.h"
 #include "lj_err.h"
@@ -23,21 +24,213 @@
 #include "lauxlib.h"
 #include "lj_tab.h"
 #include "lj_trace.h"
+#include "lj_strfmt.h"
+
+//********************************************************************************************************************
+// Exception table metatable.
+
+extern "C" bool lj_is_exception_table(lua_State *L, cTValue *Value)
+{
+   return tvistab(Value) and G(L)->exception_metatable and
+      tabref(tabV(Value)->metatable) IS G(L)->exception_metatable;
+}
+
+static void push_exception_string(lua_State *L, GCtab *exception)
+{
+   cTValue *msg_tv    = lj_tab_getstr(exception, lj_str_newlit(L, "message"));
+   cTValue *source_tv = lj_tab_getstr(exception, lj_str_newlit(L, "source"));
+   cTValue *line_tv   = lj_tab_getstr(exception, lj_str_newlit(L, "line"));
+
+   GCstr *message = (msg_tv and tvisstr(msg_tv)) ? strV(msg_tv) : lj_str_newlit(L, "<No message>");
+   GCstr *source  = (source_tv and tvisstr(source_tv)) ? strV(source_tv) : nullptr;
+   int line       = (line_tv and tvisnum(line_tv)) ? int(numberVint(line_tv)) : 0;
+
+   if (source and line > 0) lj_strfmt_pushf(L, "%s:%d: %s", strdata(source), line, strdata(message));
+   else if (source) lj_strfmt_pushf(L, "%s: %s", strdata(source), strdata(message));
+   else setstrV(L, L->top++, message);
+}
+
+static void push_concat_value_string(lua_State *L, cTValue *Value)
+{
+   if (lj_is_exception_table(L, Value)) {
+      cTValue *msg_tv = lj_tab_getstr(tabV(Value), lj_str_newlit(L, "message"));
+      GCstr *message = (msg_tv and tvisstr(msg_tv)) ? strV(msg_tv) : lj_str_newlit(L, "<No message>");
+      setstrV(L, L->top++, message);
+   }
+   else setstrV(L, L->top++, lj_strfmt_obj(L, Value));
+}
+
+static int exception_tostring(lua_State *L)
+{
+   GCtab *exception = lj_context_current(L);
+   TValue value;
+   settabV(L, &value, exception);
+   if (lj_is_exception_table(L, &value)) push_exception_string(L, exception);
+   else setstrV(L, L->top++, lj_str_newlit(L, "exception"));
+
+   return 1;
+}
+
+static int exception_concat(lua_State *L)
+{
+   TValue receiver;
+   settabV(L, &receiver, lj_context_current(L));
+   cTValue *other = L->base;
+   bool lhs_dispatch = tvistrue(L->base + 1);
+   push_concat_value_string(L, lhs_dispatch ? &receiver : other);
+   push_concat_value_string(L, lhs_dispatch ? other : &receiver);
+   lua_concat(L, 2);
+   return 1;
+}
+
+static void attach_exception_metatable(lua_State *L, GCtab *Table)
+{
+   if (G(L)->exception_metatable) {
+      setgcref(Table->metatable, obj2gco(G(L)->exception_metatable));
+      lj_gc_objbarriert(L, Table, G(L)->exception_metatable);
+      return;
+   }
+   GCtab *mt = lj_tab_new(L, 0, 4);
+   G(L)->exception_metatable = mt;
+   lj_assertL(mt != nullptr, "attach_exception_metatable: metatable allocation failed");
+   // Internal exception metatables are built here and never define __gc.
+   setgcref(Table->metatable, obj2gco(mt));
+   lj_gc_objbarriert(L, Table, mt);
+
+   TValue *slot = lj_tab_setstr(L, mt, lj_str_newlit(L, "__metatable"));
+   setstrV(L, slot, lj_str_newlit(L, "exception"));
+
+   slot = lj_tab_setstr(L, mt, lj_str_newlit(L, "__name"));
+   setstrV(L, slot, lj_str_newlit(L, "exception"));
+
+   GCfunc *tostring_func = lj_func_newC(L, 0, tabref(L->env));
+   tostring_func->c.f = exception_tostring;
+   slot = lj_tab_setstr(L, mt, lj_str_newlit(L, "__tostring"));
+   setfuncV(L, slot, tostring_func);
+
+   GCfunc *concat_func = lj_func_newC(L, 0, tabref(L->env));
+   concat_func->c.f = exception_concat;
+   slot = lj_tab_setstr(L, mt, lj_str_newlit(L, "__concat"));
+   setfuncV(L, slot, concat_func);
+
+   lj_gc_anybarriert(L, mt);
+}
+
+//********************************************************************************************************************
+// Rethrow keeps the original object rooted independently of registers that cleanup may discard.
+
+extern "C" void lj_err_prepare_rethrow(lua_State *L, GCtab *Exception)
+{
+   GCtab *exception = Exception;
+   L->pending_exception = exception;
+   cTValue *code = lj_tab_getstr(exception, lj_str_newlit(L, "code"));
+   L->CaughtError = (code and tvisnum(code)) ? ERR(numberVint(code)) : ERR::Exception;
+   cTValue *message = lj_tab_getstr(exception, lj_str_newlit(L, "message"));
+   cTValue *source = lj_tab_getstr(exception, lj_str_newlit(L, "source"));
+   cTValue *line = lj_tab_getstr(exception, lj_str_newlit(L, "line"));
+   L->pending_exception_message = (message and tvisstr(message)) ? strV(message) : nullptr;
+   L->pending_exception_source = (source and tvisstr(source)) ? strV(source) : nullptr;
+   L->pending_exception_line = (line and tvisnum(line)) ? int(numberVint(line)) : 0;
+   L->pending_exception_valid = true;
+}
+
+extern "C" LJ_NORET void lj_rethrow(lua_State *L, TValue *Exception)
+{
+   if (not lj_is_exception_table(L, Exception)) {
+      lj_err_currentmsg(L, ERR::Exception, "rethrow requires a caught exception");
+   }
+   GCtab *exception = tabV(Exception);
+   lj_err_prepare_rethrow(L, exception);
+
+   // VM helpers have no C frame and synchronise top to base. Preserve every live register while formatting.
+   GCfunc *func = frame_func(L->base - 1);
+   if (isluafunc(func)) L->top = L->base + funcproto(func)->framesize;
+   lj_state_checkstack(L, 1);
+   push_exception_string(L, exception);
+   lj_err_run(L);
+}
 
 //********************************************************************************************************************
 // Native bytecode helpers for BC_CHECK and BC_RAISE opcodes.
 // These are called from VM assembly after type checking and L->CaughtError is already set.
 // Both functions are noreturn - they always throw an exception.
 
+LJ_NORET static void lj_raise_recorded(lua_State *L, ERR ErrorCode, GCstr *Message)
+{
+   L->CaughtError = ErrorCode;
+   L->pending_exception = nullptr;
+
+   L->pending_exception_message = Message;
+   L->pending_exception_source  = nullptr;
+   L->pending_exception_line    = 0;
+   L->pending_exception_valid   = true;
+
+   GCfunc *func = frame_func(L->base - 1);
+   if (isluafunc(func)) L->top = L->base + funcproto(func)->framesize;
+   lj_state_checkstack(L, 1);
+
+   DebugLocation location;
+   if (lj_debug_getloc(L, L->base - 1, nullptr, &location)) {
+      L->pending_exception_source = location.source;
+      L->pending_exception_line   = location.line;
+   }
+
+   lj_debug_addloc(L, strdata(Message), L->base - 1, nullptr);
+   lj_err_run(L);
+}
+
 extern "C" LJ_NORET void lj_raise(lua_State *L, int32_t ErrorCode)
 {
-   luaL_error(L, ERR(ErrorCode));
+   ERR error = ERR(ErrorCode);
+   GCstr *message = lj_str_newz(L, GetErrorMsg(error));
+   lj_raise_recorded(L, error, message);
+}
+
+extern "C" LJ_NORET void lj_check_raise(lua_State *L, int32_t ErrorCode, uint32_t SourceColumn)
+{
+   ERR error = ERR(ErrorCode);
+   GCstr *message = lj_str_newz(L, GetErrorMsg(error));
+
+   // VM helpers enter with top synchronised to base.  Keep traceback temporaries above the current function's register
+   // frame so caught checks cannot overwrite live locals before the try handler restores execution.
+   GCfunc *func = frame_func(L->base - 1);
+   if (isluafunc(func)) L->top = L->base + funcproto(func)->framesize;
+
+   DebugLocation location;
+   int32_t line = 0;
+   if (lj_debug_getloc(L, L->base - 1, nullptr, &location)) line = location.line;
+
+   if (line > 0) {
+      SBuf *sb = lj_buf_tmp_(L);
+      lj_buf_putchar(sb, '[');
+      lj_strfmt_putint(sb, line);
+      lj_buf_putchar(sb, ':');
+      lj_strfmt_putint(sb, SourceColumn);
+      lj_buf_putmem(sb, "] ", 2);
+      lj_buf_putmem(sb, strdata(message), message->len);
+      message = lj_buf_str(L, sb);
+   }
+
+   if (not L->sent_traceback) {
+      // luaL_traceback() can collect while formatting its first string.  Root the message before exposing its data.
+      setstrV(L, L->top++, message);
+      luaL_traceback(L, L, strVdata(L->top - 1), 0);
+      message = strV(L->top - 1);
+      L->sent_traceback = true;
+   }
+
+   lj_raise_recorded(L, error, message);
 }
 
 extern "C" LJ_NORET void lj_raise_with_msg(lua_State *L, int32_t ErrorCode, TValue *Msg)
 {
-   if (tvisstr(Msg)) luaL_error(L, ERR(ErrorCode), "%s", strdata(strV(Msg)));
-   else luaL_error(L, ERR(ErrorCode));
+   ERR error = ERR(ErrorCode);
+   GCstr *message;
+
+   if (tvisstr(Msg)) message = strV(Msg);
+   else message = lj_str_newz(L, GetErrorMsg(error));
+
+   lj_raise_recorded(L, error, message);
 }
 
 //********************************************************************************************************************
@@ -64,7 +257,7 @@ extern "C" void lj_try_enter(lua_State *L, GCfunc *Func, TValue *Base, uint16_t 
 
    if (L->try_stack.depth >= LJ_MAX_TRY_DEPTH) lj_err_msg(L, ErrMsg::XNEST);  // "try blocks nested too deeply"
 
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.trace("Entering try block %u: L->base=%p, Base(VM)=%p, L->top=%p, depth=%u", TryBlockIndex, L->base, Base, L->top, L->try_stack.depth);
 
    // Sync L->base with the passed Base pointer.  This is critical for JIT mode where L->base may be stale (the JIT keeps the
@@ -99,6 +292,13 @@ extern "C" void lj_try_enter(lua_State *L, GCfunc *Func, TValue *Base, uint16_t 
    try_frame->saved_nactvar   = BCREG(block_desc->entry_slots);
    try_frame->func            = Func;
    try_frame->flags           = block_desc->flags;
+   try_frame->context_depth   = L->context_stack.size();
+   try_frame->context_floor   = L->context_root_floors.empty() ? 0 : L->context_root_floors.back();
+   try_frame->array_view_scopes = L->array_view_scopes;
+   try_frame->array_view_depth  = L->array_view_depth;
+   try_frame->checkall_depth     = uint8_t(L->checkall_stack->depth);
+   lj_assertL(try_frame->context_depth >= try_frame->context_floor,
+      "try context depth is below the active asynchronous root floor");
 }
 
 //********************************************************************************************************************
@@ -107,10 +307,39 @@ extern "C" void lj_try_enter(lua_State *L, GCfunc *Func, TValue *Base, uint16_t 
 
 extern "C" void lj_try_leave(lua_State *L)
 {
-   pf::Log(__FUNCTION__).trace("Stack Depth: %d, Base: %p, Top: %p", L->try_stack.depth, L->base, L->top);
+   kt::Log(__FUNCTION__).trace("Stack Depth: %d, Base: %p, Top: %p", L->try_stack.depth, L->base, L->top);
 
    // NB: The setup_try_handler() also decrements the depth, so the check prevents a repeat
    if (L->try_stack.depth > 0) L->try_stack.depth--;
+}
+
+//********************************************************************************************************************
+// Maintain lexical checkall frames independently from exception-handler frames.
+
+extern "C" void lj_checkall_enter(lua_State *L, GCfunc *Func, TValue *Base)
+{
+   lj_assertL(Func != nullptr and isluafunc(Func), "lj_checkall_enter: invalid Lua function");
+   lj_assertL(Base >= tvref(L->stack) and Base <= tvref(L->maxstack), "lj_checkall_enter: invalid base");
+   if (L->checkall_stack->depth >= LJ_MAX_CHECKALL_DEPTH) lj_err_msg(L, ErrMsg::XNEST);
+
+   CheckallFrame *frame = &L->checkall_stack->frames[L->checkall_stack->depth++];
+   frame->func = Func;
+   frame->frame_base = savestack(L, Base);
+}
+
+extern "C" void lj_checkall_leave(lua_State *L)
+{
+   lj_assertL(L->checkall_stack->depth > 0, "lj_checkall_leave: no active checkall frame");
+   if (L->checkall_stack->depth > 0) L->checkall_stack->depth--;
+}
+
+extern "C" void lj_checkall_cleanup_to_base(lua_State *L, TValue *TargetBase)
+{
+   ptrdiff_t target = savestack(L, TargetBase);
+   while (L->checkall_stack->depth > 0 and
+          L->checkall_stack->frames[L->checkall_stack->depth - 1].frame_base >= target) {
+      L->checkall_stack->depth--;
+   }
 }
 
 //********************************************************************************************************************
@@ -186,10 +415,15 @@ extern "C" bool lj_try_find_handler(lua_State *L, const TryFrame *Frame, ERR Err
 
 //********************************************************************************************************************
 // Build an exception table and place it in the specified register.
-// The exception table has fields: code, message, line, trace, stackTrace
+// The exception table has fields: code, message, source, line, trace, stackTrace
 
-extern "C" void lj_try_build_exception_table(lua_State *L, ERR ErrorCode, CSTRING Message, int Line, BCREG ExceptionReg, CapturedStackTrace *Trace)
+extern "C" void lj_try_build_exception_table(lua_State *L, ERR ErrorCode, GCstr *Message, GCstr *Source, int Line, BCREG ExceptionReg, CapturedStackTrace *Trace)
 {
+   if (L->pending_exception) {
+      if (ExceptionReg != 0xff) settabV(L, L->base + ExceptionReg, L->pending_exception);
+      if (Trace) lj_debug_free_trace(L, Trace);
+      return;
+   }
    if (ExceptionReg IS 0xff) { // No exception variable - just free the trace and return
       if (Trace) lj_debug_free_trace(L, Trace);
       return;
@@ -205,9 +439,10 @@ extern "C" void lj_try_build_exception_table(lua_State *L, ERR ErrorCode, CSTRIN
    // Create exception table and store immediately at target_slot to root it.
    // This protects it from GC during subsequent allocations without modifying L->top.
 
-   GCtab *t = lj_tab_new(L, 0, 5);
+   GCtab *t = lj_tab_new(L, 0, 6);
    lj_assertL(t != nullptr, "lj_try_build_exception_table: table allocation failed");
    settabV(L, target_slot, t);  // Root immediately - don't modify L->top
+   attach_exception_metatable(L, t);
 
    TValue *slot;
 
@@ -220,9 +455,15 @@ extern "C" void lj_try_build_exception_table(lua_State *L, ERR ErrorCode, CSTRIN
    // Set e.message
 
    slot = lj_tab_setstr(L, t, lj_str_newlit(L, "message"));
-   if (Message) setstrV(L, slot, lj_str_newz(L, Message));
+   if (Message) setstrV(L, slot, Message);
    else if (ErrorCode != ERR::Okay) setstrV(L, slot, lj_str_newz(L, GetErrorMsg(ErrorCode)));
    else setstrV(L, slot, lj_str_newlit(L, "<No message>"));
+
+   // Set e.source
+
+   slot = lj_tab_setstr(L, t, lj_str_newlit(L, "source"));
+   if (Source) setstrV(L, slot, Source);
+   else setnilV(slot);
 
    // Set e.line
 
@@ -237,6 +478,9 @@ extern "C" void lj_try_build_exception_table(lua_State *L, ERR ErrorCode, CSTRIN
       // Build native array of frame tables: [{source, line, func}, ...]
       // The array is rooted in the exception table t (at the "trace" field) after creation.
       GCarray *frames = lj_array_new(L, Trace->frame_count, AET::TABLE);
+      slot = lj_tab_setstr(L, t, lj_str_newlit(L, "trace"));
+      setarrayV(L, slot, frames);
+      lj_gc_anybarriert(L, t);
       GCRef *frame_refs = (GCRef *)frames->arraydata();
 
       // Build formatted traceback string at the same time

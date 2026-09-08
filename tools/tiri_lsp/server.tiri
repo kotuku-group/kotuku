@@ -1,93 +1,47 @@
+#!/usr/bin/env origo
 -- Tiri Language Server Protocol (LSP) Server
 --
--- A TCP-based LSP server for IDE integration with Tiri scripts.
+-- An LSP server for IDE integration with Tiri scripts.
 --
--- Usage: origo lsp_server.tiri port=5007 [options...]
+-- Usage: origo server.tiri port=5007 [options...]
 --
--- See --help for full usage information.
+-- See help for full usage information.
 
-glHelp = [[
-Tiri Language Server Protocol (LSP) server for IDE integration.
+   import 'options'
+   import './include/lsp_lib'
 
-This server implements the Language Server Protocol over TCP, allowing IDEs
-and editors to provide features like autocompletion, hover information, and
-diagnostics for Tiri scripts.
-
-Usage: origo lsp_server.tiri [options...]
-
-Parameters:
-
-  port        - TCP port to listen on (default: 5007)
-  verbose     - Enable verbose/debug logging (true/false, default: false)
-  config      - Path to config file (default: user:config/lsp_server_cfg.tiri)
-  request-log - Path to log file for request/response debugging
-  help        - Display this help message
-
-Examples:
-
-  origo lsp_server.tiri port=5007
-  origo lsp_server.tiri port=5007 verbose=true
-  origo lsp_server.tiri port=5007 request-log=lsp_debug.log
-  origo lsp_server.tiri config=my_lsp_config.tiri
-
-Config File Format:
-
-  The config file should define a glOptions table:
-
-    glOptions = {
-       port = 5007,
-       verbose = false
-    }
-
-Testing with netcat/telnet:
-
-  1. Start the server: origo lsp_server.tiri port=5007
-  2. Connect: nc localhost 5007
-  3. Send initialize request:
-     Content-Length: 110
-
-     {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":1,"capabilities":{},"rootUri":null}}
-
-IDE Integration:
-
-  Configure your IDE's LSP client to connect to localhost on the specified port.
-  The server supports the standard LSP lifecycle: initialize, initialized, shutdown, exit.
-]]
-
-   import './lsp_lib'
-
-   local rx_sdk_path = <{ regex.new([[(.+)CMakeLists\.txt]]) }>
+rx_sdk_path <const> = <{ regex.new([[(.+)CMakeLists\.txt]]) }>
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Resolve the location of the Kotuku SDK and create an 'sdk:' volume.
 
-function resolveSDKPath(Path)
+function resolveSDKPath(Path:str)
    local sdk_path
    err = ERR_Failed
-   search_list = array<string>
+   search_list = array<str>
    if not Path then
       search_path = 'CMakeLists.txt'
       limit = 5
       while (err != ERR_Okay) and (limit > 0) do
-         search_list:push(search_path)
+         search_list.push(search_path)
          err, sdk_path = mSys.ResolvePath(search_path)
          search_path = '../' .. search_path
          limit -= 1
       end
    else
-      search_list:push(Path .. '/CMakeLists.txt')
+      search_list.push(Path .. '/CMakeLists.txt')
       err, sdk_path = mSys.ResolvePath(Path .. '/CMakeLists.txt')
    end
 
    if err is ERR_Okay then
       sdk_path = rx_sdk_path.extract(sdk_path)
    else
-      msg = ''
+      local msg = ''
       for path in values(search_list) do
          msg ..= path .. '\n'
       end
       print('Unable to find CMakeLists.txt after searching the following paths:\n' .. msg)
-      error('A path to the Kotuku SDK could not be determined.')
+      raise 'A path to the Kotuku SDK could not be determined.'
    end
 
    mSys.SetVolume('sdk', sdk_path)
@@ -95,62 +49,114 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-   -- Load config file if available
-   glConfigFile = arg('config', 'user:config/lsp_server_cfg.tiri')
-   glDocPath = 'sdk:docs/xml/'
-   glOptions = { }
+function validatePort(Parser:table, ArgName:str, Value:any, Param:table)
+   if Value < 0 or Value > 65535 then
+      raise f"Parameter '{ArgName}' must be between 0 and 65535."
+   end
+end
 
-   if mSys.AnalysePath(glConfigFile) is ERR_Okay then
-      loadFile(glConfigFile, glOptions)
-      print('Loaded config from: ' .. glConfigFile)
+----------------------------------------------------------------------------------------------------------------------
+
+   glParser = options({
+      name        = 'Tiri LSP Server',
+      cmdName     = 'origo tools/tiri_lsp/server.tiri',
+      description = [[
+Tiri Language Server Protocol (LSP) server for IDE integration.
+
+This server implements the Language Server Protocol over TCP or stdio, allowing IDEs and editors to provide features
+like autocompletion, hover information, and diagnostics for Tiri scripts.
+]],
+      epilog      = [[
+Config files use the JSON defaults format supported by the Tiri options library.  If a config file is stored at
+user:config/lsp_server_cfg.json then it will be loaded automatically.  Options can be overridden via the command-line,
+or you can refer to a different file via the config parameter.
+
+Examples:
+  origo tools/tiri_lsp/server.tiri port=5007
+  origo tools/tiri_lsp/server.tiri port=0
+  origo tools/tiri_lsp/server.tiri port=5007 verbose
+  origo tools/tiri_lsp/server.tiri port=5007 request-log=lsp_debug.log
+  origo tools/tiri_lsp/server.tiri config=my_lsp_config.json
+
+Testing with netcat/telnet:
+  1. Start the server: origo tools/tiri_lsp/server.tiri port=5007
+  2. Connect: nc localhost 5007
+  3. Send an initialize request with a Content-Length header and JSON-RPC body.
+
+IDE Integration:
+  Configure your IDE's LSP client to connect to localhost on the selected port.  For stdio clients, launch the server
+  with port=0.
+]],
+      autoHelp    = false,
+      userConfig  = 'user:config/lsp_server_cfg.json',
+      args        = array<table> {
+         { name = 'port', type = 'int', default = 5007, group = 'Server',
+           comment = 'TCP port to listen on, or 0 for stdio mode.',
+           exec = validatePort },
+         { name = 'verbose', kind = 'flag', default = false, group = 'Behaviour',
+           comment = 'Enable verbose/debug logging.' },
+         { name = 'docs', type = 'path', default = 'sdk:docs/xml/', group = 'Paths',
+           comment = 'Path to generated XML documentation for hover support.' },
+         { name = 'sdk', type = 'path', group = 'Paths',
+           comment = 'Path to the Kotuku SDK folder; otherwise searched from the current directory.' },
+         { names = array<str> { 'requestLog', 'request-log' }, type = 'path', group = 'Diagnostics',
+           comment = 'Path to a log file for request/response debugging.' },
+         { name = 'help', kind = 'flag', hidden = true,
+           exec = function(Parser:table)
+              print(Parser.getHelp())
+              raise ERR_Terminate
+           end
+         }
+      }
+   })
+
+   glOptions = glParser.process()
+   if not glOptions then return end
+
+   -- In stdio mode, stdout is reserved for LSP frames.
+   -- Note: print() in Tiri always writes to stderr, use io.output() for stdout
+
+   if glOptions.port is 0 then
+      glOptions.stdioInput = io.input()
+      glOptions.stdioOutput = io.output()
    end
 
-   if arg('help') then
-      print(glHelp)
-      return
+   glOptions.logMessage = function(Message)
+      print(Message)
    end
 
-   if arg('port') then
-      glOptions.port = tonumber(arg('port'))
-   end
-
-   if arg('verbose') then
-      verbose = arg('verbose'):lower()
-      glOptions.verbose = (verbose is 'true' or verbose is '1')
-   end
-
-   if arg('docs') then
-      glDocPath = arg('docs')
+   if glOptions.config then
+      err, location = mSys.AnalysePath(glOptions.config)
+      if err is ERR_Okay and location is LOC_FILE then
+         glOptions.logMessage('Loaded config from: ' .. glOptions.config)
+      end
    end
 
    -- Set up request/response logging if requested
 
-   log_path = arg('request-log')
+   log_path = glOptions.requestLog
    if log_path?? then
       glReqLog = obj.new('file', { src=log_path, flags='NEW|WRITE' })
-      print('Request logging enabled: ' .. log_path)
+      glOptions.logMessage('Request logging enabled: ' .. log_path)
 
       tm = obj.new('time')
       tm.acQuery()
       glOptions.requestLog = function(Direction, Content)
-         timestamp = string.format('%04d-%02d-%02d %02d:%02d:%02d', tm.year, tm.month, tm.day, tm.hour, tm.minute, tm.second)
-         header = '\n=== ' .. Direction .. ' [' .. timestamp .. '] ===\n'
+         log_timestamp = string.format('%04d-%02d-%02d %02d:%02d:%02d',
+            tm.year, tm.month, tm.day, tm.hour, tm.minute, tm.second)
+         header = '\n=== ' .. Direction .. ' [' .. log_timestamp .. '] ===\n'
          glReqLog.acWrite(header)
          glReqLog.acWrite(Content)
          glReqLog.acWrite('\n')
       end
    end
 
-   -- Set up logging to stdout
-   glOptions.logMessage = function(Message)
-      print(Message)
-   end
+   resolveSDKPath(glOptions.sdk)
 
-   sdkPath = arg('sdk')
-   resolveSDKPath(sdkPath)
-
-   lspInitDocs(glDocPath) -- Initialize documentation for hover support
+   lspInitDocs(glOptions.docs) -- Initialize documentation for hover support
 
    glServer = lspStart(glOptions)
 
-   processing.sleep()
+   if glOptions.port != 0 then
+      processing.sleep()
+   end

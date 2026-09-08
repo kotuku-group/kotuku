@@ -6,8 +6,8 @@ set (INC_MOD_XML TRUE PARENT_SCOPE)
 idl_gen ("${MOD}.tdl"
    NAME ${MOD}_defs
    OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h"
-   FILES "xml.cpp"
    ARGS  "output-defs=xml_def.c" "output-proto=xml_def.c"
+   DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${MOD}.cpp"
    APPEND_IDL "${MOD}_def.c")
 
 add_library (${MOD})
@@ -31,9 +31,8 @@ add_library (xml_schema OBJECT
 target_include_directories (xml_schema PRIVATE "${PROJECT_SOURCE_DIR}/include")
 set_target_properties (xml_schema PROPERTIES CXX_STANDARD 20 POSITION_INDEPENDENT_CODE ON)
 
-add_dependencies (xml build_headers)
-add_dependencies (xml_schema build_headers)
-add_dependencies (xml_unescape build_headers)
+add_generated_header_dependencies (xml_schema core_defs xml_defs xquery_defs)
+add_generated_header_dependencies (xml_unescape core_defs xml_defs xquery_defs)
 
 target_compile_definitions (${MOD} PRIVATE "PRV_XML_MODULE" "PRV_XML")
 target_compile_definitions (xml_schema PRIVATE "PRV_XML_MODULE" "PRV_XML")
@@ -56,3 +55,4 @@ flute_test (${MOD}_parsing "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_xml_parsing.t
 flute_test (${MOD}_namespaces "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_namespaces.tiri")
 flute_test (${MOD}_variables "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_setvariable.tiri")
 flute_test (${MOD}_schema_validation "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_schema_validation.tiri")
+flute_test (${MOD}_simd_scanning "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_simd_scanning.tiri")

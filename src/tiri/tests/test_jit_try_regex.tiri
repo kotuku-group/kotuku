@@ -1,0 +1,148 @@
+-- Dedicated test for JIT regex failure handling and parameter name preservation.
+-- Isolated due to it printing many log messages.
+
+@BeforeEach
+function SetupJitTests()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
+end
+
+function jit_regex_failure_convert(Value:any, Param:table):any
+   global jit_regex_failure_param_name = Param.name
+   global jit_regex_failure_value = Value
+
+   try
+      return regex.new(jit_regex_failure_value)
+   except e
+      raise ERR_TypeMismatch, f"Intentional exception raised for parent to capture."
+   end
+end
+
+function jit_try_local_before_entry(Pattern)
+   local label = "before-entry"
+
+   try
+      regex.new(Pattern)
+   except e
+      return label
+   end
+
+   return "missing-error"
+end
+
+function jit_try_mutated_local_before_throw(Pattern, Iteration)
+   local status = "initial"
+
+   try
+      status = "mutated-" .. tostring(Iteration % 5)
+      regex.new(Pattern)
+   except e
+      return status
+   end
+
+   return "missing-error"
+end
+
+function jit_try_inner_locals_preserve_entry_local(Pattern, Iteration)
+   local entry_label = "entry-" .. tostring(Iteration % 7)
+
+   try
+      local inner_label = "inner-" .. tostring(Iteration)
+      local combined = inner_label .. ":" .. entry_label
+      if #combined < 1 then
+         return "impossible"
+      end
+      regex.new(Pattern)
+   except e
+      return entry_label
+   end
+
+   return "missing-error"
+end
+
+function jit_try_repeated_throwable_helpers(Pattern)
+   local stable_label = "stable-local"
+   local compiled = nil
+
+   try
+      for i in {0 to 5} do
+         compiled = regex.new("a+")
+      end
+      regex.new(Pattern)
+   except e
+      return stable_label, compiled != nil
+   end
+
+   return "missing-error", false
+end
+
+@Test(hotpath=30) function JITTryInnerLocalsPreserveEntryLocal()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
+
+   for i in {0 to 100} do
+      local expected = "entry-" .. tostring(i % 7)
+      local result = jit_try_inner_locals_preserve_entry_local("(", i)
+      assert(result is expected, f"Expected handler to see entry local '{expected}', got '{result}'")
+   end
+end
+
+@Test(hotpath=30) function JITTryRepeatedThrowableHelpersDoNotCorruptLocals()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
+
+   for i in {0 to 100} do
+      label, compiled = jit_try_repeated_throwable_helpers("(")
+      assert(label is "stable-local", f"Expected stable local after repeated helpers, got '{label}'")
+      assert(compiled is true, "Successful repeated regex.new() calls should update their local")
+   end
+end
+
+@Test(hotpath=30) function JITTryRegexFailurePreservesParamName()
+   local param = { name = 'pattern', type = 'regex' }
+   local expected_message = "Intentional exception raised for parent to capture."
+
+   local count = 0
+   for i in {0 to 80} do
+      local err
+      try
+         jit_regex_failure_convert('(', param)
+      except e
+         err = e
+      end
+
+      count++
+      assert(i < 80, 'Terminal JIT failure, index exceeded 80 iterations')
+      assert(err != nil, "Invalid regex should raise an error")
+      assert(err.code is ERR_TypeMismatch, f"Expected ERR_TypeMismatch, got {err.code}")
+      assert(err.message is expected_message, f"Expected '{expected_message}', got '{err.message}'")
+   end
+
+   assert(count is 80, f"Expected 80 iterations, got {count}")
+end
+
+@Test(hotpath=30) function JITTryLocalMutatedInsideTrySurvivesRegexThrow()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
+
+   for i in {0 to 100} do
+      expected = "mutated-" .. tostring(i % 5)
+      result = jit_try_mutated_local_before_throw("(", i)
+      assert(result is expected, f"Expected handler to see '{expected}', got '{result}'")
+   end
+end
+
+@Test(hotpath=30) function JITTryLocalBeforeEntrySurvivesRegexThrow()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
+
+   for i in {0 to 100} do
+      result = jit_try_local_before_entry("(")
+      assert(result is "before-entry", f"Expected local captured before try entry, got '{result}'")
+   end
+end

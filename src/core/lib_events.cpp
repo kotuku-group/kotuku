@@ -9,8 +9,6 @@ Name: Events
 
 *********************************************************************************************************************/
 
-#include <stdlib.h>
-
 #include "defs.h"
 
 static constexpr std::array<CSTRING, int(EVG::END)> glEventGroups = {
@@ -37,7 +35,7 @@ struct eventsub {
    void     (*Callback)(APTR Info, int Size, APTR Meta);
    APTR     CallbackMeta;
    EVG      Group;
-   uint8_t    Called;
+   uint8_t  Called;
    OBJECTID ContextID;
 
    inline CSTRING groupName() {
@@ -55,7 +53,7 @@ static ankerl::unordered_dense::map<uint32_t, std::string> glEventNames;
 
 void free_events(void)
 {
-   pf::Log log("Core");
+   kt::Log log("Core");
 
    log.function("Freeing the event list.");
 
@@ -93,21 +91,24 @@ int EventSize: The size of the `Event` structure, in bytes.
 Okay
 NullArgs
 
+-TAGS-
+does-not-take-ownership
+
 *********************************************************************************************************************/
 
 ERR BroadcastEvent(APTR Event, int EventSize)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
-   if ((!Event) or ((size_t)EventSize < sizeof(pf::Event))) return ERR::NullArgs;
+   if ((!Event) or ((size_t)EventSize < sizeof(kt::Event))) return ERR::NullArgs;
 
-   int groupmask = 1<<((((pf::Event *)Event)->EventID>>56) & 0xff);
+   int groupmask = 1<<((((kt::Event *)Event)->EventID>>56) & 0xff);
 
    if (glEventMask & groupmask) {
       log.trace("Broadcasting event $%.8x%.8x",
-         (uint32_t)(((pf::Event *)Event)->EventID>>32 & 0xffffffff),
-         (uint32_t)(((pf::Event *)Event)->EventID));
-      SendMessage(MSGID::EVENT, MSF::NIL, Event, EventSize);
+         (uint32_t)(((kt::Event *)Event)->EventID>>32 & 0xffffffff),
+         (uint32_t)(((kt::Event *)Event)->EventID));
+      SendMessage(MSGID::EVENT, MSF::NIL, std::span((const int8_t *)Event, size_t(EventSize)));
    }
 
    return ERR::Okay;
@@ -133,32 +134,42 @@ group with `SubGroup` and `Event` set to `NULL` will allow for a subscription to
 
 -INPUT-
 int(EVG) Group: The group to which the event belongs.
-cstr SubGroup: The sub-group to which the event belongs (case-sensitive).
-cstr Event:    The name of the event (case-sensitive).
+strview SubGroup: The sub-group to which the event belongs (case-sensitive).
+strview Event:    The name of the event (case-sensitive).
 
 -RESULT-
 large: The event ID is returned as a 64-bit integer.
 
+-TAGS-
+copies-input, case-sensitive
+
 *********************************************************************************************************************/
 
-int64_t GetEventID(EVG Group, CSTRING SubGroup, CSTRING Event)
+int64_t GetEventID(EVG Group, const std::string_view &SubGroup, const std::string_view &Event)
 {
-   pf::Log log(__FUNCTION__);
-
    if (Group IS EVG::NIL) return 0;
 
-   auto hash_subgroup = strhash(SubGroup) & 0x00ffffff;
-   auto hash_event = strhash(Event);
+   auto hash_subgroup = 0u;
+   auto hash_event    = 0u;
+   auto subgroup_name = SubGroup;
+   auto event_name    = Event;
+
+   if (not SubGroup.empty()) hash_subgroup = strhash(SubGroup) & 0x00ffffff;
+   else subgroup_name = "*";
+
+   if (not Event.empty()) hash_event = strhash(Event);
+   else event_name = "*";
 
    int64_t event_id = int64_t(uint8_t(Group))<<56;
-   if ((SubGroup) and (SubGroup[0] != '*')) event_id |= int64_t(hash_subgroup)<<32;
-   if ((Event) and (Event[0] != '*')) event_id |= hash_event;
+   if (not SubGroup.starts_with('*')) event_id |= int64_t(hash_subgroup)<<32;
+   if (not Event.starts_with('*')) event_id |= hash_event;
 
-   glEventNames[hash_subgroup] = SubGroup;
-   glEventNames[hash_event]    = Event;
+   if (not SubGroup.empty()) glEventNames[hash_subgroup] = SubGroup;
+   if (not Event.empty()) glEventNames[hash_event] = Event;
 
-   log.traceBranch("Group: %d, SubGroup: %s, Event: %s, Result: $%.8x%.8x",
-      int(Group), SubGroup, Event, uint32_t(event_id>>32), uint32_t(event_id));
+   kt::Log(__FUNCTION__).trace("Group: %d, SubGroup: %.*s, Event: %.*s, Result: $%.8x%.8x",
+      int(Group), int(subgroup_name.size()), subgroup_name.data(), int(event_name.size()), event_name.data(),
+      uint32_t(event_id>>32), uint32_t(event_id));
 
    return event_id;
 }
@@ -185,17 +196,24 @@ ptr(func) Callback: The function that will be subscribed to the event.
 -ERRORS-
 Okay
 NullArgs
+Args
 AllocMemory
+
+-TAGS-
+creates-resource, callback-held, does-not-take-ownership
 
 *********************************************************************************************************************/
 
 ERR SubscribeEvent(int64_t EventID, FUNCTION *Callback, APTR *Handle)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if ((!Callback) or (!EventID) or (!Handle)) return ERR::NullArgs;
 
-   if (!Callback->isC()) return ERR::Args; // Currently only StdC callbacks are accepted.
+   if (!Callback->isC()) {
+      Callback->consume();
+      return ERR::Args; // Currently only StdC callbacks are accepted.
+   }
 
    auto gid = EVG(uint8_t(EventID>>56));
 
@@ -248,13 +266,16 @@ function must be provided.
 
 -INPUT-
 ptr Handle: An event handle returned from ~SubscribeEvent()
+
+-TAGS-
+closes-handle
 -END-
 
 *********************************************************************************************************************/
 
 void UnsubscribeEvent(APTR Handle)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (!Handle) return;
    if (!glEventList) return; // All events have already been freed (i.e. Core is closing)
@@ -290,13 +311,13 @@ void UnsubscribeEvent(APTR Handle)
 //********************************************************************************************************************
 // ProcessMessages() will call this function whenever a MSGID::EVENT message is received.
 
-ERR msg_event(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgSize)
+ERR msg_event(APTR Custom, int MsgID, MSGID MsgType, std::span<std::byte> Message)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
-   if ((!Message) or ((size_t)MsgSize < sizeof(pf::Event))) return ERR::Okay;
+   if ((Message.empty()) or (Message.size() < sizeof(kt::Event))) return ERR::Okay;
 
-   pf::Event *event_msg = (pf::Event *)Message;
+   kt::Event *event_msg = (kt::Event *)Message.data();
 
    log.msg(VLF::DETAIL|VLF::BRANCH, "Event $%.8x%8x has been received.", (int)((event_msg->EventID>>32)& 0xffffffff),
       (int)(event_msg->EventID & 0xffffffff));
@@ -314,10 +335,10 @@ restart:
 
          glEventListAltered = false;
 
-         pf::ScopedObjectLock lock(event->ContextID, 3000);
+         kt::ScopedObjectLock lock(event->ContextID, 3000);
          if (lock.granted()) {
-            pf::SwitchContext ctx(lock.obj);
-            event->Callback(Message, MsgSize, event->CallbackMeta);
+            kt::SwitchContext ctx(lock.obj);
+            event->Callback(Message.data(), int(Message.size()), event->CallbackMeta);
          }
 
          if (glEventListAltered) goto restart;

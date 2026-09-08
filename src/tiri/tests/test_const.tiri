@@ -51,7 +51,7 @@ end
 -- Test const with function values
 
 @Test function ConstWithFunction()
-   add <const> = function(a, b)
+   add <const> = function(a:num, b:num)
       return a + b
    end
 
@@ -63,7 +63,7 @@ end
 
 @Test function ConstInForLoop()
    local sum = 0
-   for i = 1, 3 do
+   for i in {1 into 3} do
       local val <const> = i * 10
       sum += val
    end
@@ -84,6 +84,27 @@ end
    assert(b is 20, 'Non-const should be reassignable')
 end
 
+@Test function ConstAttributeOnLaterImplicitName()
+   mutable_value, fixed_value <const> = 1, 2
+   mutable_value = 3
+
+   assert(mutable_value is 3, 'Earlier mutable name should remain assignable')
+   assert(fixed_value is 2, 'Later const name should retain its initial value')
+   assert(debug.locality('mutable_value') is 'local', 'Earlier name should be an implicit local')
+   assert(debug.locality('fixed_value') is 'local', 'Later const name should be an implicit local')
+
+   typed_mutable, typed_fixed <const>:num = 4, 5
+   typed_mutable = 6
+   assert(typed_mutable is 6, 'Earlier name should remain mutable when the later const has a type annotation')
+   assert(typed_fixed is 5, 'Later typed const should retain its initial value')
+
+   try
+      exec('mutable_value, fixed_value <const> = 1, 2; fixed_value = 3')
+   success
+      assert(false, 'Reassigning a later const name should fail')
+   end
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- Test const with nil value (should fail - const requires initialiser)
 -- This is tested via compile error in separate tests below
@@ -94,7 +115,7 @@ end
 @Test function ConstMultipleReads()
    local value <const> = 42
    local sum = 0
-   for i = 1, 5 do
+   for i in {0 to 5} do
       sum += value
    end
    assert(sum is 210, 'Const should be readable multiple times: ' .. sum)
@@ -166,10 +187,10 @@ local x <const> = 1
 x = 2
 ]])
    except ex
-      assert(ex.message:find('cannot assign to const local'), f'Error should mention const local: {ex.message}')
+      assert(ex.message.find('cannot assign to const local'), f'Error should mention const local: {ex.message}')
       return -- Happy path
    end
-   error('Reassigning const local should fail to compile')
+   assert(false, 'Reassigning const local should fail to compile')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -182,10 +203,208 @@ global X <const> = 1
 X = 2
 ]])
    except ex
-      assert(ex.message:find('cannot assign to const global'), f'Error should mention const global: {ex.message}')
+      assert(ex.message.find('cannot assign to const global'), f'Error should mention const global: {ex.message}')
       return -- Happy path
    end
-   error('Reassigning const global should fail to compile')
+   assert(false, 'Reassigning const global should fail to compile')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Global const policy persists in the environment and applies to every mutation route.
+
+function expect_const_global_failure(Store:func, Message:str)
+   local trapped = false
+   try
+      Store()
+   except e
+      trapped = true
+      assert(tostring(e.message).find('cannot assign to const global') != nil or
+             tostring(e.message).find('cannot redeclare const global') != nil or
+             tostring(e.message).find('type contract failed for global') != nil,
+         Message .. ' should raise a const-global error, got: ' .. tostring(e.message))
+   end
+   assert(trapped, Message .. ' should raise')
+end
+
+function const_dynamic_source(Value:any):any return Value end
+
+local failed_const_test_id = 0
+
+global glConstAcrossChunks <const> = 1
+global glConstEnvironment <const> = 'original'
+global glConstTable <const> = { value = 1 }
+global glConstDynamic <const> = const_dynamic_source('dynamic')
+
+@Test function GlobalConstPersistsAcrossChunks()
+   expect_const_global_failure(function() exec('glConstAcrossChunks = 2') end, 'exec assignment')
+   expect_const_global_failure(
+      function() exec('global glConstAcrossChunks = 2') end, 'exec redeclaration')
+   expect_const_global_failure(
+      function() exec("global glConstAcrossChunks:any = 'variant'") end, 'explicit any redeclaration')
+
+   assert(glConstAcrossChunks is 1, 'Rejected cross-chunk stores should preserve the const value')
+end
+
+@Test function GlobalConstRejectsEnvironmentMutationRoutes()
+   local alias = _G
+
+   expect_const_global_failure(function() _G.glConstEnvironment = 'member' end, '_G member store')
+   expect_const_global_failure(function() _G['glConstEnvironment'] = 'index' end, '_G index store')
+   expect_const_global_failure(function() alias.glConstEnvironment = 'alias' end, 'environment alias store')
+   expect_const_global_failure(function() rawset(_G, 'glConstEnvironment', 'raw') end, 'rawset store')
+
+   assert(glConstEnvironment is 'original', 'Rejected environment stores should preserve the const value')
+end
+
+@Test function GlobalConstIsShallow()
+   glConstTable.value = 2
+   assert(glConstTable.value is 2, 'Global const should protect the binding, not table contents')
+end
+
+@Test function DynamicGlobalConstPersistsAcrossChunks()
+   expect_const_global_failure(function() exec("glConstDynamic = 'changed'") end, 'dynamic const assignment')
+   assert(glConstDynamic is 'dynamic', 'A rejected store should preserve a dynamically initialised const')
+end
+
+@Test function ReducedAnalysisGlobalConstPersists()
+   try
+      global glConstReduced <const> = 'original'
+   end
+
+   expect_const_global_failure(function() exec("glConstReduced = 'plain'") end,
+      'plain assignment after reduced const declaration')
+   expect_const_global_failure(function() exec("global glConstReduced:any = 'variant'") end,
+      'explicit any redeclaration after reduced const declaration')
+   expect_const_global_failure(function() rawset(_G, 'glConstReduced', 'indirect') end,
+      'indirect write after reduced const declaration')
+   assert(glConstReduced is 'original', 'Rejected writes must preserve a const declared in reduced analysis')
+end
+
+@Test function GlobalConstDeclarationOrderIsPreserved()
+   local const_first = f"glConstFirst{failed_const_test_id}"
+   failed_const_test_id++
+   local const_second = f"glConstSecond{failed_const_test_id}"
+   failed_const_test_id++
+
+   expect_const_global_failure(
+      function() exec(f"global {const_first} <const> = 1 global {const_first} = 2") end,
+      'non-const declaration after const declaration')
+   assert(_G[const_first] is nil,
+      'A same-chunk const redeclaration diagnostic should prevent the compilation unit from executing')
+
+   exec(f"global {const_second} = 1")
+   expect_const_global_failure(
+      function() exec(f"global {const_second} <const> = 2") end,
+      'const declaration after mutable declaration')
+   assert(_G[const_second] is 1, 'The rejected const declaration should preserve the mutable value')
+   _G[const_second] = 3
+   assert(_G[const_second] is 3, 'A rejected const declaration must not publish const policy')
+end
+
+@Test function ConstRedeclarationCannotChangeVariantContract()
+   local global_name = f"glConstTransition{failed_const_test_id}"
+   failed_const_test_id++
+   local trapped = false
+
+   exec(f"global {global_name}:any = 1")
+   try
+      exec(f"global {global_name} <const>:num = 3")
+   except e
+      trapped = true
+      assert(tostring(e.message).find('type contract failed for global') != nil,
+         'The incoming const contract should reject the policy transition: ' .. tostring(e.message))
+   end
+
+   assert(trapped, 'A const declaration must not replace an established variant contract')
+   assert(_G[global_name] is 1, 'A rejected const redeclaration should preserve the old value')
+   _G[global_name] = 'still variant'
+   assert(_G[global_name] is 'still variant', 'A rejected const redeclaration must preserve variant policy')
+end
+
+@Test function ConstTransitionRetainsExistingContractUntilStore()
+   local global_name = f"glConstExistingContract{failed_const_test_id}"
+   failed_const_test_id++
+   local source_name = f"glConstExistingSource{failed_const_test_id}"
+   failed_const_test_id++
+   local trapped = false
+
+   exec(f"global {global_name} = 'original'")
+   rawset(_G, source_name, 7)
+   try
+      exec(f"global {global_name} <const>:num = _G['{source_name}']")
+   except e
+      trapped = true
+      assert(tostring(e.message).find('type contract failed for global') != nil,
+         'The existing environment contract should reject an incompatible transition: ' .. tostring(e.message))
+   end
+
+   assert(trapped, 'An incompatible existing contract should reject the const transition')
+   assert(_G[global_name] is 'original', 'The rejected transition should preserve the old value')
+   _G[global_name] = 'retryable'
+   assert(_G[global_name] is 'retryable', 'A rejected store should not publish const policy')
+end
+
+@Test function ConditionalGlobalConstPersistsWhenStoreIsSkipped()
+   local if_nil_name = f"glConstIfNil{failed_const_test_id}"
+   failed_const_test_id++
+   local if_empty_name = f"glConstIfEmpty{failed_const_test_id}"
+   failed_const_test_id++
+
+   rawset(_G, if_nil_name, 'retained-if-nil')
+   exec(f"global {if_nil_name} <const> ?= 'fallback'")
+   assert(_G[if_nil_name] is 'retained-if-nil', '?= should retain an existing non-nil value')
+   expect_const_global_failure(function() exec(f"{if_nil_name} = 'changed'") end,
+      'cross-chunk assignment after skipped ?= const store')
+
+   rawset(_G, if_empty_name, 'retained-if-empty')
+   exec(f"global {if_empty_name} <const> ??= 'fallback'")
+   assert(_G[if_empty_name] is 'retained-if-empty', '??= should retain an existing non-empty value')
+   expect_const_global_failure(function() exec(f"{if_empty_name} = 'changed'") end,
+      'cross-chunk assignment after skipped ??= const store')
+end
+
+@Test function SkippedConditionalConstValidatesRetainedValue()
+   local global_name = f"glConstConditionalMismatch{failed_const_test_id}"
+   failed_const_test_id++
+   local trapped = false
+
+   rawset(_G, global_name, 'wrong')
+   try
+      exec(f"global {global_name} <const>:num ?= 1")
+   except e
+      trapped = true
+      local expected = f"cannot declare global '{global_name}' as num: existing value has type string"
+      assert(tostring(e.message).endsWith(expected),
+         'The retained value should be checked against the const declaration: ' .. tostring(e.message))
+   end
+
+   assert(trapped, 'An incompatible retained value should reject the const declaration')
+   assert(_G[global_name] is 'wrong', 'Rejected validation should preserve the retained value')
+   exec(f"{global_name} = 'changed'")
+   assert(_G[global_name] is 'changed', 'Rejected validation should not publish const policy')
+end
+
+@Test function FailedGlobalConstInitialisationCanRetry()
+   local previous_metatable = getmetatable(_G)
+   local trapped = false
+   local global_name = f"glRetriedConst{failed_const_test_id}"
+   failed_const_test_id++
+
+   setmetatable(_G, { __newindex = function(Key, Value) raise 'blocked const store' end })
+   try
+      exec(f"global {global_name} <const> = 'first'")
+   except e
+      trapped = true
+      assert(tostring(e.message).find('blocked const store') != nil,
+         'The failed initialisation should preserve the store error')
+   end
+   setmetatable(_G, previous_metatable)
+
+   assert(trapped, 'The first const initialisation should fail')
+   exec(f"global {global_name} <const> = 'second'")
+   assert(_G[global_name] is 'second', 'A failed store should not leave a persisted const policy')
+   expect_const_global_failure(function() exec(f"{global_name} = 'third'") end,
+      'assignment after retried const initialisation')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -195,10 +414,10 @@ end
    try
       exec([[local x <const>]])
    except ex
-      assert(ex.message:find('requires an initialiser'), 'Error should mention initialiser: {ex.message}')
+      assert(ex.message.find('requires an initialiser'), 'Error should mention initialiser: {ex.message}')
       return -- Happy path
    end
-   error('Local const without initialiser should fail to compile')
+   assert(false, 'Local const without initialiser should fail to compile')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -208,8 +427,8 @@ end
    try
       exec([[global X <const>]])
    except ex
-      assert(ex.message:find('requires an initialiser'), 'Error should mention initialiser: {ex.message}')
+      assert(ex.message.find('requires an initialiser'), 'Error should mention initialiser: {ex.message}')
       return -- Happy path
    end
-   error('Global const without initialiser should fail to compile')
+   assert(false, 'Global const without initialiser should fail to compile')
 end

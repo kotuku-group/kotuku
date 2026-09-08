@@ -1,0 +1,5 @@
+global parent_import_message = "Loaded through parent-relative import"
+
+global function parent_import_value()
+   return 73
+end

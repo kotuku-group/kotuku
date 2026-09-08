@@ -3,7 +3,7 @@
 -CLASS-
 FilterEffect: FilterEffect is a support class for managing effects hosted by the VectorFilter class.
 
-The FilterEffect class provides base-class functionality for effect classes.  FilterEffect objects mut not be
+The FilterEffect class provides base-class functionality for effect classes.  FilterEffect objects must not be
 instantiated directly by the client.
 
 The documented fields and actions here are integral to all effects that utilise this class.
@@ -12,31 +12,14 @@ The documented fields and actions here are integral to all effects that utilise 
 
 *********************************************************************************************************************/
 
-static ERR FILTEREFFECT_Free(extFilterEffect *Self)
-{
-   if (Self->Filter) {
-      for (auto e = Self->Filter->Effects; (e) and (Self->UsageCount > 0); e = (extFilterEffect *)e->Next) {
-         if (e->Input IS Self) { e->Input = nullptr; Self->UsageCount--; }
-         if (e->Mix IS Self) { e->Mix = nullptr; Self->UsageCount--; }
-      }
-
-      if (Self->Filter->Effects IS Self) Self->Filter->Effects = (extFilterEffect *)Self->Next;
-      if (Self->Filter->LastEffect IS Self) Self->Filter->LastEffect = (extFilterEffect *)Self->Prev;
-   }
-
-   if (Self->Prev) Self->Prev->Next = Self->Next;
-   if (Self->Next) Self->Next->Prev = Self->Prev;
-
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static ERR FILTEREFFECT_Init(extFilterEffect *Self)
 {
-   pf::Log log;
+   kt::Log log;
 
-   if (!Self->Filter) return log.warning(ERR::UnsupportedOwner);
+   if (not Self->Filter) {
+      if (Self->Owner->classID() IS CLASSID::VECTORFILTER) Self->Filter = (extVectorFilter *)Self->Owner;
+      else return log.warning(ERR::UnsupportedOwner);
+   }
 
    // If the client didn't specify a source input, figure out what to use.
 
@@ -45,7 +28,7 @@ static ERR FILTEREFFECT_Init(extFilterEffect *Self)
          Self->SourceType = VSF::REFERENCE;
          Self->Input = Self->Prev;
          ((extFilterEffect *)Self->Input)->UsageCount++;
-         log.msg("Using effect %s #%d as an input.", Self->Input->Class->ClassName, Self->Input->UID);
+         log.msg("Using effect %s #%d as an input.", Self->Input->Class->ClassName.c_str(), Self->Input->UID);
       }
       else {
          Self->SourceType = VSF::GRAPHIC;
@@ -87,7 +70,7 @@ static ERR FILTEREFFECT_MoveToBack(extFilterEffect *Self)
 
 /*********************************************************************************************************************
 -ACTION-
-MoveToBack: Move an effect to the front of the VectorFilter's list order.
+MoveToFront: Move an effect to the front of the VectorFilter's list order.
 -END-
 *********************************************************************************************************************/
 
@@ -109,14 +92,6 @@ static ERR FILTEREFFECT_MoveToFront(extFilterEffect *Self)
 
 //********************************************************************************************************************
 
-static ERR FILTEREFFECT_NewObject(extFilterEffect *Self)
-{
-   Self->SourceType = VSF::PREVIOUS; // Use previous effect as input, or SourceGraphic if no previous effect.
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static ERR FILTEREFFECT_NewOwner(extFilterEffect *Self, struct acNewOwner *Args)
 {
    if (Args->NewOwner->Class->BaseClassID IS CLASSID::VECTORFILTER) {
@@ -126,12 +101,6 @@ static ERR FILTEREFFECT_NewOwner(extFilterEffect *Self, struct acNewOwner *Args)
 }
 
 /*********************************************************************************************************************
-
--FIELD-
-Dimensions: Dimension flags are stored here.
-Lookup: DMF
-
-Dimension flags are automatically defined when setting the #X, #Y, #Width and #Height fields.
 
 -FIELD-
 Input: Reference to another effect to be used as an input source.
@@ -171,27 +140,8 @@ Height: Primitive height of the effect area.
 
 The `(Width, Height)` field values define the dimensions of the effect within the target clipping area.
 
-*********************************************************************************************************************/
-
-static ERR FILTEREFFECT_GET_Height(extFilterEffect *Self, Unit *Value)
-{
-   Value->set(Self->Height);
-   return ERR::Okay;
-}
-
-static ERR FILTEREFFECT_SET_Height(extFilterEffect *Self, Unit &Value)
-{
-   if (Value.scaled()) Self->Dimensions = (Self->Dimensions | DMF::SCALED_HEIGHT) & (~DMF::FIXED_HEIGHT);
-   else Self->Dimensions = (Self->Dimensions | DMF::FIXED_HEIGHT) & (~DMF::SCALED_HEIGHT);
-
-   Self->Height = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
-Mix: Reference to another effect to be used a mixer with Input.
+Mix: Reference to another effect to be used as a mixer with Input.
 
 If another effect should be used as a mixed source input, it must be referenced here.  The #MixType will be
 automatically set to `REFERENCE` as a result.
@@ -202,13 +152,24 @@ This field is the SVG equivalent to `in2`.  It does nothing if the effect does n
 
 static ERR FILTEREFFECT_SET_Mix(extFilterEffect *Self, extFilterEffect *Value)
 {
-   pf::Log log;
+   kt::Log log;
 
    if (Value IS Self) return log.warning(ERR::InvalidValue);
 
-   Self->MixType = VSF::REFERENCE;
-   Self->Mix     = Value;
-   ((extFilterEffect *)Self->Mix)->UsageCount++;
+   if ((Self->MixType IS VSF::REFERENCE) and (Self->Mix)) {
+      ((extFilterEffect *)Self->Mix)->UsageCount--;
+   }
+
+   if (Value) {
+      Self->MixType = VSF::REFERENCE;
+      Self->Mix     = Value;
+      Value->UsageCount++;
+   }
+   else {
+      Self->MixType = VSF::NIL;
+      Self->Mix     = nullptr;
+   }
+
    return ERR::Okay;
 }
 
@@ -233,47 +194,10 @@ Width: Primitive width of the effect area.
 
 The (Width,Height) field values define the dimensions of the effect within the target clipping area.
 
-*********************************************************************************************************************/
-
-static ERR FILTEREFFECT_GET_Width(extFilterEffect *Self, Unit *Value)
-{
-   Value->set(Self->Width);
-   return ERR::Okay;
-}
-
-static ERR FILTEREFFECT_SET_Width(extFilterEffect *Self, Unit &Value)
-{
-   if (Value.scaled()) Self->Dimensions = (Self->Dimensions | DMF::SCALED_WIDTH) & (~DMF::FIXED_WIDTH);
-   else Self->Dimensions = (Self->Dimensions | DMF::FIXED_WIDTH) & (~DMF::SCALED_WIDTH);
-
-   Self->Width = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 X: Primitive X coordinate for the effect.
 
 The (X,Y) field values define the offset of the effect within the target clipping area.
-
-*********************************************************************************************************************/
-
-static ERR FILTEREFFECT_GET_X(extFilterEffect *Self, Unit *Value)
-{
-   Value->set(Self->X);
-   return ERR::Okay;
-}
-
-static ERR FILTEREFFECT_SET_X(extFilterEffect *Self, Unit &Value)
-{
-   if (Value.scaled()) Self->Dimensions = (Self->Dimensions | DMF::SCALED_X) & (~DMF::FIXED_X);
-   else Self->Dimensions = (Self->Dimensions | DMF::FIXED_X) & (~DMF::SCALED_X);
-   Self->X = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Y: Primitive Y coordinate for the effect.
@@ -281,23 +205,17 @@ Y: Primitive Y coordinate for the effect.
 The (X,Y) field values define the offset of the effect within the target clipping area.
 -END-
 
+-FIELD-
+XMLDef: Returns an SVG compliant XML string that describes the effect.
+-END-
+
 *********************************************************************************************************************/
 
-static ERR FILTEREFFECT_GET_Y(extFilterEffect *Self, Unit *Value)
+static ERR FILTEREFFECT_GET_XMLDef(extFilterEffect *Self, std::string &Value)
 {
-   Value->set(Self->Y);
-   return ERR::Okay;
+   // Derived classes are expected to override this field
+   return ERR::NoSupport;
 }
-
-static ERR FILTEREFFECT_SET_Y(extFilterEffect *Self, Unit &Value)
-{
-   if (Value.scaled()) Self->Dimensions = (Self->Dimensions | DMF::SCALED_Y) & (~DMF::FIXED_Y);
-   else Self->Dimensions = (Self->Dimensions | DMF::FIXED_Y) & (~DMF::SCALED_Y);
-   Self->Y = Value;
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
 
 #include "filter_effect_def.c"
 
@@ -307,13 +225,13 @@ static const FieldArray clFilterEffectFields[] = {
    { "Target",     FDF_OBJECT|FDF_RW, nullptr, nullptr, CLASSID::BITMAP },
    { "Input",      FDF_OBJECT|FDF_RW, nullptr, FILTEREFFECT_SET_Input, CLASSID::FILTEREFFECT },
    { "Mix",        FDF_OBJECT|FDF_RW, nullptr, FILTEREFFECT_SET_Mix, CLASSID::FILTEREFFECT },
-   { "X",          FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW, FILTEREFFECT_GET_X, FILTEREFFECT_SET_X },
-   { "Y",          FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW, FILTEREFFECT_GET_Y, FILTEREFFECT_SET_Y },
-   { "Width",      FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW, FILTEREFFECT_GET_Width, FILTEREFFECT_SET_Width },
-   { "Height",     FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW, FILTEREFFECT_GET_Height, FILTEREFFECT_SET_Height },
-   { "Dimensions", FDF_INTFLAGS|FDF_R, nullptr, nullptr, &clFilterEffectDimensions },
+   { "X",          FDF_UNIT|FDF_RW },
+   { "Y",          FDF_UNIT|FDF_RW },
+   { "Width",      FDF_UNIT|FDF_RW },
+   { "Height",     FDF_UNIT|FDF_RW },
    { "SourceType", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clFilterEffectSourceType },
    { "MixType",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clFilterEffectMixType },
+   { "XMLDef",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };
 

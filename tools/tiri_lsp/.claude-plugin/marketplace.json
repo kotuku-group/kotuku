@@ -1,0 +1,23 @@
+{
+  "name": "tiri-local",
+  "description": "Local Tiri language server plugin",
+  "owner": { "name": "Kotuku" },
+  "plugins": [
+    {
+      "name": "tiri-lsp",
+      "description": "Tiri language server for code intelligence",
+      "version": "1.0.0",
+      "source": "./claude-plugins/tiri-lsp",
+      "category": "development",
+      "lspServers": {
+        "tiri": {
+          "command": "origo",
+          "args": ["tools/tiri_lsp/server.tiri", "port=0"],
+          "extensionToLanguage": {
+            ".tiri": "tiri"
+          }
+        }
+      }
+    }
+  ]
+}

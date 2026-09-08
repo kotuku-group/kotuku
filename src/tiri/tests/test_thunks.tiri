@@ -159,6 +159,44 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@Test function ThunkTableIterators()
+   pair_resolutions = 0
+   thunk pair_table():table
+      pair_resolutions++
+      return { first = 10, second = 20 }
+   end
+
+   pair_count = 0
+   pair_total = 0
+   for _, value in pairs(pair_table()) do
+      pair_count++
+      pair_total += value
+   end
+
+   assert(pair_count is 2, "pairs() should iterate over both thunk table entries")
+   assert(pair_total is 30, "pairs() should expose the resolved thunk table values")
+   assert(pair_resolutions is 1, "pairs() should resolve its thunk argument once")
+
+   ipairs_resolutions = 0
+   thunk ipairs_table():table
+      ipairs_resolutions++
+      return { 10, 20, 30 }
+   end
+
+   ipairs_count = 0
+   ipairs_total = 0
+   for _, value in ipairs(ipairs_table()) do
+      ipairs_count++
+      ipairs_total += value
+   end
+
+   assert(ipairs_count is 3, "ipairs() should iterate over all thunk table entries")
+   assert(ipairs_total is 60, "ipairs() should expose the resolved thunk table values")
+   assert(ipairs_resolutions is 1, "ipairs() should resolve its thunk argument once")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Test function ThunkControlFlow()
    -- Test thunk with if/else control flow
    thunk conditional(x):num
@@ -187,7 +225,7 @@ end
    -- Test thunk containing a loop
    thunk sum_to(n):num
       total = 0
-      for i = 1, n do
+      for i in {1 into n} do
          total += i
       end
       return total
@@ -228,6 +266,7 @@ end
    end
 
    val = untyped_thunk()
+   assert(type(val) is "userdata", "Thunk without a return annotation should retain the default userdata type")
    -- Direct comparison now works transparently
    assert(val is "default", "Untyped thunk should work")
 end
@@ -313,6 +352,15 @@ end
    -- Power
    assert(b ** 2 is 9, "3 ** 2 should be 9")
 
+   -- Right-hand thunk providers receive provider-first arguments but must preserve source-order arithmetic
+   assert(10 + b is 13, "10 + 3 should be 13 when the thunk provides the right-hand metamethod")
+   assert(10 - b is 7, "10 - 3 should be 7 when the thunk provides the right-hand metamethod")
+   assert(10 * b is 30, "10 * 3 should be 30 when the thunk provides the right-hand metamethod")
+   assert(10 / b > 3.3 and 10 / b < 3.4,
+      "10 / 3 should be ~3.33 when the thunk provides the right-hand metamethod")
+   assert(10 % b is 1, "10 % 3 should be 1 when the thunk provides the right-hand metamethod")
+   assert(2 ** b is 8, "2 ** 3 should be 8 when the thunk provides the right-hand metamethod")
+
    -- Unary minus
    assert(-a is -10, "-10 should be -10")
 end
@@ -329,6 +377,7 @@ end
 
    result = a .. " " .. b
    assert(result is "Hello World", "Concatenation should produce 'Hello World', got '" .. result .. "'")
+   assert("Start " .. b is "Start World", "A right-provider thunk concat should preserve source order")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -350,6 +399,8 @@ end
    -- Less than or equal
    assert(a <= b, "5 should be <= 10")
    assert(a <= c, "5 should be <= 5")
+   assert(5 < b, "5 should be < a right-provider thunk")
+   assert(5 <= b, "5 should be <= a right-provider thunk")
 
    -- Equality (thunk vs thunk - both must be thunks for __eq to trigger)
    assert(a is c, "Two thunks returning 5 should be equal") -- Note: This only works if both are thunks
@@ -450,8 +501,8 @@ end
    result_true = is_positive(5)
    result_false = is_positive(-5)
 
-   assert(type(result_true) is "boolean", "type() should return 'boolean' for :bool thunk")
-   assert(type(result_false) is "boolean", "type() should return 'boolean' for :bool thunk")
+   assert(type(result_true) is "bool", "type() should return 'bool' for :bool thunk")
+   assert(type(result_false) is "bool", "type() should return 'bool' for :bool thunk")
 
    -- Note: Thunks are always truthy in conditionals (userdata are truthy)
    -- Must use resolve() or tostring() to get the actual boolean value
@@ -499,4 +550,34 @@ end
    assert(r1 is 42, "First access should return 42")
    assert(r2 is 42, "Second access should return 42")
    assert(r5 is 84, "Multiplication should work with cached value")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- A thunk argument that raises an error during native call argument building must surface as a catchable script
+-- exception, and thunk resolution must continue to function afterwards.
+
+@Test function ThunkArgumentException()
+   thunk bad():str
+      raise 'boom'
+   end
+
+   thunk good():str
+      return 'disasm'
+   end
+
+   script = obj.new('tiri', { statement = 'x = 1' })
+   script.acActivate()
+
+   caught_msg = nil
+   try
+      script.mtDebugLog(bad())
+   except e
+      caught_msg = e.message ?? tostring(e)
+   end
+   assert(caught_msg != nil, 'Expected an exception from the erroring thunk argument')
+   assert(caught_msg.find('boom') != nil, 'Original thunk error should be propagated, got: ' .. caught_msg)
+
+   -- Resolution must not be left disabled by the earlier failure
+   err = script.mtDebugLog(good())
+   assert(err is 0, 'Post-error thunk argument failed with error ' .. err)
 end

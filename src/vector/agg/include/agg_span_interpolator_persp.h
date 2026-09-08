@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,19 +5,17 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Interpolates source coordinates with perspective correction. Hooks into transformed image and texture span
+// generators. In the vector renderer it supports perspective-mapped images and patterns on rasterised geometry.
 
-#ifndef AGG_SPAN_INTERPOLATOR_PERSP_INCLUDED
-#define AGG_SPAN_INTERPOLATOR_PERSP_INCLUDED
+#pragma once
 
 #include "agg_trans_perspective.h"
 #include "agg_dda_line.h"
 
 namespace agg
 {
-
-
-
-    //===========================================span_interpolator_persp_exact
     template<unsigned SubpixelShift = 8>
     class span_interpolator_persp_exact
     {
@@ -378,5 +375,3 @@ namespace agg
         dda2_line_interpolator m_scale_y;
     };
 }
-
-#endif

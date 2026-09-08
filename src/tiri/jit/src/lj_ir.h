@@ -215,7 +215,15 @@ typedef enum {
   _(ARRAY_META,   offsetof(GCarray, metatable)) \
   _(OBJ_UID,   offsetof(GCobject, uid)) \
   _(OBJ_FLAGS, offsetof(GCobject, flags)) \
-  _(OBJ_PTR,   offsetof(GCobject, ptr))
+  _(OBJ_PTR,   offsetof(GCobject, ptr)) \
+  _(STRUCT_FLAGS, offsetof(GCstruct, flags)) \
+  _(STRUCT_DATA, offsetof(GCstruct, data)) \
+  _(STRUCT_DEF, offsetof(GCstruct, def)) \
+  _(TAB_GCONTRACTS, offsetof(GCtab, global_type_contracts)) \
+  _(OBJ_CLASSPTR, offsetof(GCobject, classptr)) \
+  _(ARRAY_STRUCTDEF, offsetof(GCarray, type_metadata)) \
+  _(ARRAY_IDENTITY, offsetof(GCarray, type_metadata)) \
+  _(TAB_FLAGS, offsetof(GCtab, flags))
 
 typedef enum {
 #define FLENUM(name, ofs)   IRFL_##name,
@@ -253,6 +261,7 @@ constexpr int IRBUFHDR_WRITE = 2;    // Write to string buffer.
 constexpr int IRCONV_SRCMASK = 0x001f;   // Source IRType.
 constexpr int IRCONV_DSTMASK = 0x03e0;   // Dest. IRType (also in ir->t).
 constexpr int IRCONV_DSH = 5;
+constexpr int IRCONV_BITCAST = 0x0400;   // x64 NUM to U64 bit reinterpretation, without numeric conversion.
 constexpr int IRCONV_SEXT = 0x0800;      // Sign-extend integer to integer.
 constexpr int IRCONV_MODEMASK = 0x0fff;
 constexpr int IRCONV_CONVMASK = 0xf000;
@@ -315,7 +324,7 @@ LJ_DATA const uint8_t lj_ir_mode[IR__MAX + 1];
 // next to IRT_NUM (see the typerange macros below).
 
 #define IRTDEF(_) \
-  _(NIL, 4) _(FALSE, 4) _(TRUE, 4) _(LIGHTUD, 8) _(STR, 8) _(P32, 4) _(THREAD, 8) _(PROTO, 8) \
+  _(NIL, 4) _(FALSE, 4) _(TRUE, 4) _(LIGHTUD, 8) _(STR, 8) _(P32, 4) _(STRUCT, 8) _(PROTO, 8) \
   _(FUNC, 8) _(P64, 8) _(OBJECT, 8) _(TAB, 8) _(UDATA, 8) _(ARRAY, 8) \
   _(FLOAT, 4) _(NUM, 8) _(I8, 1) _(U8, 1) _(I16, 2) _(U16, 2) \
   _(INT, 4) _(U32, 4) _(I64, 8) _(U64, 8) \
@@ -346,10 +355,30 @@ typedef enum : uint32_t {
    IRT_T = 0xff
 } IRType;
 
-inline constexpr bool irtype_ispri(IRType irt) { return (uint32_t)(irt) <= IRT_TRUE; }
+// IRType uses five low bits for its compact type ID.  The remaining bits are independent instruction flags.
+// These invariants are deliberately asserted because the JIT stores this value in IRType1 and TRef tags.
+static_assert(uint32_t(IRT__MAX) <= uint32_t(IRT_TYPE) + 1u);
+static_assert((uint32_t(IRT_MARK) & uint32_t(IRT_TYPE)) IS 0u);
+static_assert((uint32_t(IRT_ISPHI) & uint32_t(IRT_TYPE)) IS 0u);
+static_assert((uint32_t(IRT_GUARD) & uint32_t(IRT_TYPE)) IS 0u);
+static_assert(uint32_t(IRT_T) IS 0xffu);
+
+[[nodiscard]] inline constexpr IRType irtype_base(IRType Type) noexcept
+{
+   return IRType(uint32_t(Type) & uint32_t(IRT_TYPE));
+}
+
+[[nodiscard]] inline constexpr bool irtype_is_in_range(IRType Type, IRType First, IRType Last) noexcept
+{
+   return uint32_t(irtype_base(Type)) - uint32_t(First) <= uint32_t(Last) - uint32_t(First);
+}
+
+inline constexpr bool irtype_ispri(IRType Irt) { return Irt <= IRT_TRUE; }
 
 // Stored IRType.
 struct IRType1 { uint8_t irt; };
+
+static_assert(sizeof(IRType1) IS sizeof(uint8_t));
 
 #define IRT(o, t)       ((uint32_t)(((o)<<8) | (t)))
 #define IRTI(o)         (IRT((o), IRT_INT))
@@ -357,10 +386,10 @@ struct IRType1 { uint8_t irt; };
 #define IRTG(o, t)      (IRT((o), IRT_GUARD|(t)))
 #define IRTGI(o)        (IRT((o), IRT_GUARD|IRT_INT))
 
-#define irt_t(t)         ((IRType)(t).irt)
-#define irt_type(t)      ((IRType)((t).irt & IRT_TYPE))
-#define irt_sametype(t1, t2)   ((((t1).irt ^ (t2).irt) & IRT_TYPE) == 0)
-#define irt_typerange(t, first, last) ((uint32_t)((t).irt & IRT_TYPE) - (uint32_t)(first) <= (uint32_t)(last-first))
+#define irt_t(t)         (IRType((t).irt))
+#define irt_type(t)      (irtype_base(irt_t(t)))
+#define irt_sametype(t1, t2)   (irt_type((t1)) IS irt_type((t2)))
+#define irt_typerange(t, first, last) (irtype_is_in_range(irt_t((t)), (first), (last)))
 
 #define irt_isnil(t)      (irt_type(t) == IRT_NIL)
 #define irt_ispri(t)      ((uint32_t)irt_type(t) <= IRT_TRUE)
@@ -369,6 +398,7 @@ struct IRType1 { uint8_t irt; };
 #define irt_istab(t)      (irt_type(t) == IRT_TAB)
 #define irt_isarray(t)    (irt_type(t) == IRT_ARRAY)
 #define irt_isobject(t)   (irt_type(t) == IRT_OBJECT)
+#define irt_isstruct(t)   (irt_type(t) == IRT_STRUCT)
 #define irt_isfloat(t)    (irt_type(t) == IRT_FLOAT)
 #define irt_isnum(t)      (irt_type(t) == IRT_NUM)
 #define irt_isint(t)      (irt_type(t) == IRT_INT)
@@ -390,7 +420,7 @@ struct IRType1 { uint8_t irt; };
 // Include IRT_NIL, so IR(ASMREF_L) (aka REF_NIL) is considered 64 bit.
 #define IRT_IS64 \
   ((1u<<IRT_NUM)|(1u<<IRT_I64)|(1u<<IRT_U64)|(1u<<IRT_P64)|\
-   (1u<<IRT_LIGHTUD)|(1u<<IRT_STR)|(1u<<IRT_THREAD)|(1u<<IRT_PROTO)|\
+   (1u<<IRT_LIGHTUD)|(1u<<IRT_STR)|(1u<<IRT_STRUCT)|(1u<<IRT_PROTO)|\
    (1u<<IRT_FUNC)|(1u<<IRT_OBJECT)|(1u<<IRT_TAB)|(1u<<IRT_UDATA)|\
    (1u<<IRT_ARRAY)|(1u<<IRT_NIL))
 #elif LJ_64
@@ -455,6 +485,25 @@ enum {
    REF_DROP = 0xffff
 };
 
+// References below REF_BIAS are literal operands or constants; real instructions start at REF_FIRST.  REF_BASE is
+// the boundary sentinel, used for implicit BASE-register references rather than an emitted instruction.
+static_assert(REF_BIAS IS 0x8000);
+static_assert(REF_TRUE + 1 IS REF_FALSE);
+static_assert(REF_FALSE + 1 IS REF_NIL);
+static_assert(REF_NIL + 1 IS REF_BASE);
+static_assert(REF_FIRST IS REF_BASE + 1);
+static_assert(REF_DROP IS 0xffff);
+
+[[nodiscard]] inline constexpr bool irref_is_constant_or_literal(IRRef Ref) noexcept
+{
+   return Ref < IRRef(REF_BIAS);
+}
+
+[[nodiscard]] inline constexpr bool irref_is_instruction(IRRef Ref) noexcept
+{
+   return Ref >= IRRef(REF_FIRST);
+}
+
 // Note: IRMlit operands must be < REF_BIAS, too!
 // This allows for fast and uniform manipulation of all operands
 // without looking up the operand mode in lj_ir_mode:
@@ -466,7 +515,7 @@ enum {
 
 #define IRREF2(lo, hi)      ((IRRef2)(lo) | ((IRRef2)(hi) << 16))
 
-#define irref_isk(ref)      ((ref) < REF_BIAS)
+#define irref_isk(ref)      (irref_is_constant_or_literal((ref)))
 
 // Tagged IR references (32 bit).
 //
@@ -482,6 +531,11 @@ constexpr uint32_t TREF_REFMASK = 0x0000ffff;
 constexpr uint32_t TREF_FRAME = 0x00010000;
 constexpr uint32_t TREF_CONT = 0x00020000;
 constexpr uint32_t TREF_KEYINDEX = 0x00100000;
+
+static_assert(TREF_REFMASK IS uint32_t(REF_DROP));
+static_assert((TREF_FRAME & TREF_REFMASK) IS 0u);
+static_assert((TREF_CONT & TREF_REFMASK) IS 0u);
+static_assert((TREF_KEYINDEX & TREF_REFMASK) IS 0u);
 
 static constexpr TRef TREF(uint32_t ref, IRType t) {
    return TRef((ref) + (uint32_t(t) << 24));
@@ -503,6 +557,7 @@ static constexpr TRef TREF(uint32_t ref, IRType t) {
 #define tref_istab(tr)       (tref_istype((tr), IRT_TAB))
 #define tref_isudata(tr)     (tref_istype((tr), IRT_UDATA))
 #define tref_isarray(tr)     (tref_istype((tr), IRT_ARRAY))
+#define tref_isstruct(tr)    (tref_istype((tr), IRT_STRUCT))
 #define tref_isnum(tr)       (tref_istype((tr), IRT_NUM))
 #define tref_isint(tr)       (tref_istype((tr), IRT_INT))
 #define tref_isbool(tr)      (tref_typerange((tr), IRT_FALSE, IRT_TRUE))

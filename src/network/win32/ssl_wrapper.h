@@ -11,17 +11,17 @@ typedef struct ssl_context * SSL_HANDLE;
 
 // Error codes
 typedef enum {
-    SSL_OK = 0,
-    SSL_ERROR_ARGS = -1,
-    SSL_ERROR_FAILED = -2,
-    SSL_ERROR_MEMORY = -3,
-    SSL_ERROR_WOULD_BLOCK = -4,
-    SSL_ERROR_DISCONNECTED = -5,
-    SSL_NEED_DATA = -6, // Indicates more data needed to complete operation
-    SSL_ERROR_CONNECTING = -7
+   SSL_OK = 0,
+   SSL_ERROR_ARGS = -1,
+   SSL_ERROR_FAILED = -2,
+   SSL_ERROR_MEMORY = -3,
+   SSL_ERROR_WOULD_BLOCK = -4,
+   SSL_ERROR_DISCONNECTED = -5,
+   SSL_NEED_DATA = -6, // Indicates more data needed to complete operation
+   SSL_ERROR_CONNECTING = -7,
+   SSL_ERROR_BUFFER_OVERFLOW = -8
 } SSL_ERROR_CODE;
 
-ERR ssl_wrapper_init();
 void ssl_cleanup();
 void ssl_enable_logging();
 SSL_HANDLE ssl_create_context(bool ValidateCredentials = true, bool ServerMode = false);
@@ -33,16 +33,25 @@ SSL_ERROR_CODE ssl_accept(SSL_HANDLE, const void *, int);
 void ssl_set_socket(SSL_HANDLE, void* socket_handle);
 bool ssl_has_decrypted_data(SSL_HANDLE);
 bool ssl_has_encrypted_data(SSL_HANDLE);
-int ssl_read_internal(SSL_HANDLE, void* buffer, int buffer_size, int &);
+bool ssl_has_pending_output(SSL_HANDLE);
+const void * ssl_pending_output_data(SSL_HANDLE);
+size_t ssl_pending_output_size(SSL_HANDLE);
+void ssl_consume_pending_output(SSL_HANDLE, size_t);
+SSL_ERROR_CODE ssl_queue_encrypted_input(SSL_HANDLE, const void *, int);
+SSL_ERROR_CODE ssl_prepare_read(SSL_HANDLE);
 SSL_ERROR_CODE ssl_read(SSL_HANDLE, void* buffer, int buffer_size, int* bytes_read);
 SSL_ERROR_CODE ssl_write(SSL_HANDLE, const void* buffer, size_t buffer_size, size_t* bytes_sent);
 uint32_t ssl_last_win32_error(SSL_HANDLE);
 int ssl_last_security_status(SSL_HANDLE);
+size_t ssl_encrypted_input_size(SSL_HANDLE);
+size_t ssl_encrypted_input_limit(SSL_HANDLE);
 bool ssl_get_verify_result(SSL_HANDLE);
-SSL_ERROR_CODE ssl_load_server_certificate(SSL_HANDLE, const std::string &, std::optional<const std::string> &, std::optional<const std::string> &);
-void ssl_set_server_certificate(SSL_HANDLE Server, SSL_HANDLE Client);
-bool load_pem_certificate(SSL_HANDLE SSL, const std::string &Path);
-bool load_pkcs12_certificate(SSL_HANDLE SSL, const std::string &Path);
+SSL_ERROR_CODE ssl_load_server_certificate(SSL_HANDLE, const std::string &, std::optional<const std::string> &,
+   std::optional<const std::string> &);
+SSL_ERROR_CODE ssl_set_server_certificate(SSL_HANDLE Server, SSL_HANDLE Client);
+bool load_pem_certificate(SSL_HANDLE SSL, const std::string &Path, std::optional<const std::string> &KeyPath,
+   std::optional<const std::string> &Password);
+bool load_pkcs12_certificate(SSL_HANDLE SSL, const std::string &Path, std::optional<const std::string> &Password);
 
 // Connection information structure
 struct SSL_CONNECTION_INFO {
@@ -62,9 +71,6 @@ const char* ssl_get_protocol_version(SSL_HANDLE);
 const char* ssl_get_cipher_suite(SSL_HANDLE);
 int ssl_get_key_size_bits(SSL_HANDLE);
 
-// SSL Debug callback function type
-typedef void (*SSL_DEBUG_CALLBACK)(const char* message, int level);
-
 // Debug levels
 enum SSL_DEBUG_LEVEL {
    SSL_DEBUG_ERROR = 0,
@@ -73,6 +79,4 @@ enum SSL_DEBUG_LEVEL {
    SSL_DEBUG_TRACE = 3
 };
 
-// Debug functions
-void ssl_set_debug_callback(SSL_DEBUG_CALLBACK callback);
 void ssl_debug_handshake(SSL_HANDLE, const char* operation);

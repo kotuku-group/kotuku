@@ -1,0 +1,366 @@
+global glHoverTestUri = nil
+extern lspInitDocs, lspPathToUri, getTokenAtPosition, resolveHoverContent, registerCoreHandlers
+
+@BeforeAll function SetupHoverTests(State)
+   local err, sdk_path = mSys.ResolvePath(State.folder .. '../../../')
+   assert(err is ERR_Okay, 'Failed to resolve SDK path for LSP hover tests.')
+   mSys.SetVolume('sdk', sdk_path)
+
+   loadFile('sdk:tools/tiri_lsp/include/lsp_lib.tiri')
+   assert(lspInitDocs('sdk:docs/xml/'), 'Failed to initialise LSP documentation cache.')
+   glHoverTestUri = lspPathToUri('sdk:tools/tiri_lsp/tests/test_hover.tiri')
+   assert(glHoverTestUri, 'Failed to create test document URI.')
+end
+
+function makeDoc(Content:str):table
+   return {
+      uri = glHoverTestUri,
+      languageId = 'tiri',
+      version = 1,
+      content = Content,
+      lineIndex = nil
+   }
+end
+
+function makeDocAtMarker(Content:str):<table,table>
+   marker_pos = Content.find('|', 0, true)
+   assert(marker_pos, 'Test source must include a cursor marker.')
+
+   line = 0
+   character = 0
+   for i in {0 to marker_pos} do
+      c = Content.sub(i, i + 1)
+      if c is '\n' then
+         line++
+         character = 0
+      else
+         character++
+      end
+   end
+
+   doc = makeDoc(Content.sub(0, marker_pos) .. Content.sub(marker_pos + 1))
+   return doc, { line = line, character = character }
+end
+
+function hoverAt(Content:str):<str,table>
+   doc, position = makeDocAtMarker(Content)
+   token = getTokenAtPosition(doc, position.line, position.character)
+   return resolveHoverContent(token, doc, position), token
+end
+
+function assertContains(Text:str, Needle:str, Message:str)
+   assert(Text and Text.find(Needle, 0, true), Message .. f' Expected "{Needle}" in "{Text}".')
+end
+
+@Test function HandlerAdvertisesHover()
+   server = {
+      _handlers = {},
+      verbose = false,
+      logMessage = function(Message) end
+   }
+   registerCoreHandlers(server)
+
+   init = server._handlers['initialize']({ jsonrpc = '2.0', id = 1, params = {} }, {})
+   assert(init.result.capabilities.hoverProvider is true, 'Server must advertise hoverProvider.')
+end
+
+@Test function ParserAnnotationHoverStillWorks()
+   hover, token = hoverAt('value = @Source|File\n')
+
+   assert(token and token.text is 'SourceFile', 'Hover token extraction should identify @SourceFile.')
+   assertContains(hover, '@SourceFile', 'Parser annotation hover should include the annotation name.')
+   assertContains(hover, 'Parser annotation', 'Parser annotation hover should identify the symbol kind.')
+end
+
+@Test function DeclaredModuleFunctionHover()
+   hover, token = hoverAt("module core as runtimeCore\nruntimeCore.Res|olvePath('test:')\n")
+
+   assert(token and token.text is 'ResolvePath', 'Hover should identify a declared module function.')
+   assertContains(hover, 'ResolvePath', 'Declared module hover should use generated module documentation.')
+end
+
+@Test function ExternKeywordHover()
+   hover, token = hoverAt('ex|tern runTest\n')
+
+   assert(token and token.text is 'extern', 'Hover token extraction should identify extern.')
+   assertContains(hover, '**extern** _(Keyword)_', 'Extern hover should identify the keyword.')
+   assertContains(hover, 'supplied externally', 'Extern hover should explain external symbol resolution.')
+end
+
+@Test function DocAnnotatedFunctionDeclarationHover()
+   hover, token = hoverAt([=[
+@Doc(text=[[
+   Returns a greeting.
+
+   Extra detail.
+
+   -INPUT-
+   Name: Person to greet
+   Count: Number of greetings
+
+   -RESULTS-
+   str: Greeting text
+
+   -ERRORS-
+   Args: If the name is invalid
+]])
+function gr|eet(Name: str, Count: num):str
+   return Name
+end
+]=])
+
+   assert(token and token.text is 'greet', 'Hover should identify the documented function declaration name.')
+   assertContains(hover, 'greet(Name: str, Count: num):str', 'Hover should include the parser signature.')
+   assertContains(hover, 'Returns a greeting.', 'Hover should include @Doc summary text.')
+   assertContains(hover, 'Extra detail.', 'Hover should prefer the @Doc body when available.')
+   assertContains(hover, '`Name: str` - Person to greet', 'Hover should include parameter documentation.')
+   assertContains(hover, '`Count: num` - Number of greetings', 'Hover should include all parameter documentation.')
+   assertContains(hover, '`str` - Greeting text', 'Hover should include result documentation.')
+   assertContains(hover, '`Args` - If the name is invalid', 'Hover should include error documentation.')
+end
+
+@Test function DocAnnotatedFunctionCallHover()
+   hover, token = hoverAt([=[
+@Doc(text=[[
+   Returns a greeting.
+
+   -INPUT-
+   Name: Person to greet
+]])
+function greet(Name: str):str
+   return Name
+end
+
+result = greet|('Ada')
+]=])
+
+   assert(token and token.text is 'greet', 'Hover should identify the documented function call.')
+   assertContains(hover, 'greet(Name: str):str', 'Call hover should include the parser signature.')
+   assertContains(hover, 'Returns a greeting.', 'Call hover should include @Doc text.')
+   assertContains(hover, '`Name: str` - Person to greet', 'Call hover should include parameter documentation.')
+end
+
+@Test function RecursiveArrayFunctionHover()
+   hover, token = hoverAt([=[
+function matrixFirst(Matrix:array<array<int>>!):array<array<double>>
+   return array<array<double>> {}
+end
+
+value = matrixF|irst(array<array<int>> {})
+]=])
+
+   assert(token and token.text is 'matrixFirst', 'Hover should identify the recursively typed function call.')
+   assertContains(hover, 'matrixFirst(Matrix: array<array<int>>!):array<array<double>>',
+      'Hover should preserve complete recursive array annotations.')
+end
+
+@Test function DocAnnotatedFunctionCallHoverAfterRelativeImport()
+   hover, token = hoverAt([=[
+import './relative_symbol_helper'
+
+@Doc(text=[[
+   Returns a local greeting.
+
+   -INPUT-
+   Name: Person to greet
+]])
+function localGreeting(Name: str):str
+   return Name
+end
+
+result = local|Greeting('Ada')
+]=])
+
+   assert(token and token.text is 'localGreeting', 'Hover should identify the function call after a relative import.')
+   assertContains(hover, 'localGreeting(Name: str):str',
+      'Relative imports should not stop parser symbols from feeding hover.')
+   assertContains(hover, 'Returns a local greeting.',
+      'Hover should include @Doc text after a relative import.')
+end
+
+@Test function AssignedFunctionExpressionHover()
+   hover, token = hoverAt([=[
+global greetGlobal = function(Name: str):str
+   return Name
+end
+
+result = greet|Global('Ada')
+]=])
+
+   assert(token and token.text is 'greetGlobal', 'Hover should identify the assigned function expression call.')
+   assertContains(hover, 'greetGlobal(Name: str):str',
+      'Assigned function hover should include the parser signature.')
+end
+
+@Test function UnknownSymbolReturnsNil()
+   hover, token = hoverAt('print(miss|ingSymbol)\n')
+
+   assert(token and token.text is 'missingSymbol', 'Hover should identify the unknown symbol token.')
+   assert(not hover, 'Unknown symbols should not return hover content.')
+end
+
+@Test function ObjectConstructorClassHover()
+   hover, token = hoverAt('clock = obj<Ti|me> {}\n')
+
+   assert(token and token.text is 'Time', 'Hover should identify an obj<Class> constructor class name.')
+   assertContains(hover, 'class Time', 'Object constructor class hover should resolve generated class documentation.')
+end
+
+@Test function ObjectConstructorFieldHover()
+   hover, token = hoverAt('clock = obj<Time> {}\nclock.Ye|ar\n')
+
+   assert(token and token.text is 'Year' and token.object is 'clock',
+      'Token extraction should identify a field access on an obj<Class> instance.')
+   assertContains(hover, 'Time.Year', 'Field hover should resolve the class name from obj<Class> construction.')
+end
+
+@Test function LatestObjectConstructorAssignmentControlsFieldHover()
+   hover, token = hoverAt("value = obj<Time> {}\nvalue = obj.new('File', {})\nvalue.Pa|th\n")
+
+   assert(token and token.text is 'Path' and token.object is 'value',
+      'Token extraction should identify a field access after reassignment.')
+   assertContains(hover, 'File.Path', 'The later obj.new() assignment should replace the earlier obj<Class> type.')
+end
+
+@Test function FutureObjectConstructorAssignmentDoesNotControlFieldHover()
+   hover, token = hoverAt("value = obj<Time> {}\nvalue.Ye|ar\nvalue = obj<File> {}\n")
+
+   assert(token and token.text is 'Year' and token.object is 'value',
+      'Token extraction should identify a field access before reassignment.')
+   assertContains(hover, 'Time.Year', 'An assignment after the cursor must not change the inferred object type.')
+end
+
+@Test function TrailingCommentConstructorDoesNotOverrideFieldHover()
+   hover, token = hoverAt("value = obj.new('File', {}) -- value = obj.new('Time')\nvalue.Pa|th\n")
+
+   assert(token and token.text is 'Path' and token.object is 'value',
+      'Token extraction should identify a field access on the real assignment.')
+   assertContains(hover, 'File.Path', 'A constructor inside a trailing comment must not override the real assignment.')
+end
+
+@Test function QuotedConstructorDoesNotOverrideFieldHover()
+   hover, _ = hoverAt("value = obj.new('File', {})\nnote = \"value = obj.new('Time')\"\nvalue.Pa|th\n")
+
+   assertContains(hover, 'File.Path', 'A constructor inside a string literal must not override the real assignment.')
+end
+
+@Test function BlockCommentConstructorDoesNotOverrideFieldHover()
+   hover, _ = hoverAt("value = obj.new('File', {})\n--[[\nvalue = obj.new('Time')\n]]\nvalue.Pa|th\n")
+
+   assertContains(hover, 'File.Path', 'A constructor inside a block comment must not override the real assignment.')
+end
+
+@Test function MultiLineObjectConstructorFieldHover()
+   hover, _ = hoverAt("value = obj.new(\n   'File', {})\nvalue.Pa|th\n")
+
+   assertContains(hover, 'File.Path',
+      'A constructor whose class name is on the following line should still infer a type.')
+end
+
+@Test function CommentedMultiLineObjectConstructorDoesNotAffectFieldHover()
+   hover, _ = hoverAt("value = obj<Time> {}\n-- value = obj.new(\n--    'File', {})\nvalue.Ye|ar\n")
+
+   assertContains(hover, 'Time.Year', 'A commented-out multi-line constructor must not override the real assignment.')
+end
+
+@Test function StructDeclarationHoverShowsFields()
+   hover, token = hoverAt([[
+struct Us|er
+   Name: str -- The user name
+   Age: int
+end
+]])
+
+   assert(token and token.text is 'User', 'Hover token extraction should identify the struct name.')
+   assertContains(hover, 'struct User', 'Struct hover should lead with the declaration signature.')
+   assertContains(hover, '**Fields**', 'Struct hover should include a Fields section.')
+   assertContains(hover, '`Name: str`', 'Struct hover should list field names and types.')
+   assertContains(hover, 'The user name', 'Struct hover should include field doc comments.')
+end
+
+@Test function StructFieldHoverViaStructNew()
+   hover, token = hoverAt([[
+struct User
+   Name: str -- The user name
+   Age: int
+end
+u = struct.new('User')
+print(u.Na|me)
+]])
+
+   assert(token and token.text is 'Name' and token.object is 'u', 'Token extraction should identify field access.')
+   assertContains(hover, 'User.Name', 'Field hover should be attributed to the struct.')
+   assertContains(hover, '`str`', 'Field hover should state the declared type.')
+   assertContains(hover, 'The user name', 'Field hover should include the doc comment.')
+end
+
+@Test function StructFieldHoverViaAnnotatedParameter()
+   hover, token = hoverAt([[
+struct User
+   Name: str
+   Age: int -- Age in years
+end
+function describe(Person: struct<User>)
+   return Person.Ag|e
+end
+]])
+
+   assert(token and token.text is 'Age' and token.object is 'Person', 'Token extraction should identify the parameter access.')
+   assertContains(hover, 'User.Age', 'Annotated parameter access should resolve to the struct field.')
+   assertContains(hover, 'Age in years', 'Annotated parameter hover should include the doc comment.')
+end
+
+@Test function StructFieldHoverViaConstruction()
+   hover, token = hoverAt([[
+struct User
+   Name: str -- The user name
+end
+user = struct<User> { Name = 'Paul' }
+print(user.Na|me)
+]])
+
+   assertContains(hover, 'User.Name', 'Explicit struct construction should map the variable to its struct.')
+   assertContains(hover, 'The user name', 'Constructed instance hover should include the doc comment.')
+end
+
+@Test function StructUnknownFieldHasNoHover()
+   hover, token = hoverAt([[
+struct User
+   Name: str
+end
+u = struct.new('User')
+print(u.Mis|sing)
+]])
+
+   assert(token and token.text is 'Missing', 'Token extraction should identify the unknown field.')
+   assert(not hover, 'Unknown struct fields should not produce hover content.')
+end
+
+@Test function LaterStructAssignmentDoesNotAffectEarlierHover()
+   hover, token = hoverAt([[
+struct A
+   Value: int -- Value from A
+end
+struct B
+   Value: float -- Value from B
+end
+u = struct.new('A')
+print(u.Val|ue)
+u = struct.new('B')
+]])
+
+   assert(token and token.text is 'Value' and token.object is 'u', 'Token extraction should identify field access.')
+   assertContains(hover, 'A.Value', 'A later assignment must not change the earlier field hover type.')
+   assertContains(hover, '`int`', 'The earlier field hover should use the first struct field type.')
+   assertContains(hover, 'Value from A', 'The earlier field hover should use the first struct documentation.')
+end
+
+@Test function RemovedErrorHasNoBuiltinHover()
+   local hover = hoverAt("err|or('message')")
+   assert(not hover, 'The removed error built-in must not have hover documentation.')
+
+   hover = hoverAt("local error = function(Message) end\nerr|or('local')")
+   assert(not hover or not hover.find('Deprecated'), 'A local error function must not have built-in hover.')
+   hover = hoverAt("local api = { error=function() end }\napi.err|or()")
+   assert(not hover or not hover.find('Deprecated'), 'A member named error must not have built-in hover.')
+end

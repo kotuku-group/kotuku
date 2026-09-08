@@ -8,9 +8,10 @@ SSL_ERROR_CODE ssl_continue_handshake(SSL_HANDLE SSL, const void *ServerData, in
    ConsumedOut = 0;
 
    if (!SSL->context_initialised) return SSL_ERROR_FAILED;
+   if (auto error = flush_handshake_buffer(SSL); error != SSL_OK) return error;
 
    // Append new handshake data to receive buffer to handle fragmentation
-   std::span<const unsigned char> server_data_span(static_cast<const unsigned char*>(ServerData), DataLength);
+   std::span<const unsigned char> server_data_span((const unsigned char *)ServerData, size_t(DataLength));
    if (!SSL->recv_buffer.append(server_data_span)) {
       // SSL handshake data exceeds maximum buffer size
       return SSL_ERROR_FAILED;
@@ -55,19 +56,21 @@ SSL_ERROR_CODE ssl_continue_handshake(SSL_HANDLE SSL, const void *ServerData, in
          0, SECURITY_NATIVE_DREP, &in_buffer_desc, 0,
          &SSL->context, &out_buffer_desc, &out_flags, &expiry);
 
-      // Check if we consumed some of the input data and handle extra data
-      size_t bytes_consumed = SSL->recv_buffer.size();
+      // Check if we consumed some of the input data and handle extra data.
+      size_t original_size = SSL->recv_buffer.size();
+      size_t bytes_consumed = original_size;
+      bool has_extra = false;
 
       // Check for extra data in input buffer
       for (const auto& buf : in_buffers) {
          if (buf.BufferType == SECBUFFER_EXTRA and buf.cbBuffer > 0) {
-            if (buf.cbBuffer <= SSL->recv_buffer.size()) {
-               bytes_consumed = SSL->recv_buffer.size() - buf.cbBuffer;
-               SSL->recv_buffer.compact(bytes_consumed);
+            has_extra = true;
+            if (buf.cbBuffer <= original_size) {
+               bytes_consumed = original_size - buf.cbBuffer;
             }
             else {
-               bytes_consumed = SSL->recv_buffer.size();
-               SSL->recv_buffer.reset();
+               bytes_consumed = original_size;
+               has_extra = false;
             }
             break;
          }
@@ -77,12 +80,8 @@ SSL_ERROR_CODE ssl_continue_handshake(SSL_HANDLE SSL, const void *ServerData, in
       if (status == SEC_E_OK) {
 
          if (out_buffer.cbBuffer > 0 and out_buffer.pvBuffer != nullptr) {
-            int sent = send(SSL->socket_handle, (char*)out_buffer.pvBuffer, out_buffer.cbBuffer, 0);
-            FreeContextBuffer(out_buffer.pvBuffer);
-
-            if (sent == SOCKET_ERROR) {
-               SSL->last_win32_error = WSAGetLastError();
-               return SSL_ERROR_FAILED;
+            if (auto error = queue_handshake_token(SSL, out_buffer.pvBuffer, out_buffer.cbBuffer); error != SSL_OK) {
+               return error;
             }
          }
 
@@ -92,18 +91,11 @@ SSL_ERROR_CODE ssl_continue_handshake(SSL_HANDLE SSL, const void *ServerData, in
             return SSL_ERROR_FAILED;
          }
 
-         bool found_valid_extra = false;
-         for (const auto& buf : in_buffers) {
-            if (buf.BufferType == SECBUFFER_EXTRA and buf.cbBuffer > 0 and buf.cbBuffer < SSL->recv_buffer.size() + bytes_consumed) {
-               found_valid_extra = true;
-               break;
-            }
+         if (has_extra) {
+            SSL->recv_buffer.compact(bytes_consumed);
          }
-
-         if (!SSL->recv_buffer.empty()) {
-            if (!found_valid_extra) {
-               SSL->recv_buffer.reset();
-            }
+         else if (!SSL->recv_buffer.empty()) {
+            SSL->recv_buffer.reset();
          }
 
          cache_connection_info(SSL);
@@ -113,19 +105,13 @@ SSL_ERROR_CODE ssl_continue_handshake(SSL_HANDLE SSL, const void *ServerData, in
       }
       else if (status == SEC_I_CONTINUE_NEEDED) {
          if ((out_buffer.cbBuffer > 0) and (out_buffer.pvBuffer != nullptr)) {
-            int sent = send(SSL->socket_handle, (char*)out_buffer.pvBuffer, out_buffer.cbBuffer, 0);
-            FreeContextBuffer(out_buffer.pvBuffer);
-
-            if (sent == SOCKET_ERROR) {
-               int error = WSAGetLastError();
-               SSL->last_win32_error = error;
-               if (error == WSAEWOULDBLOCK) return SSL_ERROR_WOULD_BLOCK;
-               return SSL_ERROR_FAILED;
+            if (auto error = queue_handshake_token(SSL, out_buffer.pvBuffer, out_buffer.cbBuffer); error != SSL_OK) {
+               return error;
             }
          }
 
          ConsumedOut = int(bytes_consumed);
-         if (bytes_consumed < SSL->recv_buffer.size()) {
+         if (has_extra) {
             SSL->recv_buffer.compact(bytes_consumed);
          }
          else {
@@ -138,6 +124,14 @@ SSL_ERROR_CODE ssl_continue_handshake(SSL_HANDLE SSL, const void *ServerData, in
          return SSL_NEED_DATA;
       }
       else {
+         ssl_debug_log(SSL_DEBUG_WARNING,
+            "SSL handshake continuation failed: status=0x%08X input=%lu bytes consumed=%lu first=%02X %02X %02X %02X %02X",
+            unsigned(status), unsigned long(SSL->recv_buffer.size()), unsigned long(bytes_consumed),
+            SSL->recv_buffer.size() > 0 ? SSL->recv_buffer.data()[0] : 0,
+            SSL->recv_buffer.size() > 1 ? SSL->recv_buffer.data()[1] : 0,
+            SSL->recv_buffer.size() > 2 ? SSL->recv_buffer.data()[2] : 0,
+            SSL->recv_buffer.size() > 3 ? SSL->recv_buffer.data()[3] : 0,
+            SSL->recv_buffer.size() > 4 ? SSL->recv_buffer.data()[4] : 0);
          set_error_status(SSL, status);
          SSL->recv_buffer.reset();
          return SSL_ERROR_FAILED;

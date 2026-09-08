@@ -1,0 +1,1542 @@
+-- Runtime contracts for parameters, explicit returns, typed stores and indirect call routes.
+
+import './type_contract_fixture'
+import './typ08_reduced_import_fixture'
+import './type_contract_local_store_fixture'
+
+struct ContractAlpha
+   Value: int
+end
+
+struct ContractBravo
+   Value: int
+end
+
+function dynamic_value(Value):any
+   return Value
+end
+
+function expect_contract_failure(Callback:func, Boundary:str)
+   local failed = false
+   try
+      Callback()
+   except e
+      failed = true
+      assert(e.message != nil, 'A contract failure must carry a message')
+   end
+   assert(failed, 'Expected a catchable ' .. Boundary .. ' contract failure')
+end
+
+function contract_failure_code(Callback:func):num
+   local code:num = 0
+   try
+      Callback()
+   except e
+      if e.code != nil then code = e.code end
+   end
+   assert(code != 0, 'Expected a contract failure that carries an error code')
+   return code
+end
+
+function expect_object_contract_failure(Callback:func, Boundary:str)
+   local failed = false
+   try
+      Callback()
+   except e
+      failed = true
+      assert(e.message.find('expected obj<Time>') != nil,
+         'The message should identify the expected Time class: ' .. e.message)
+      assert(e.message.find('got obj<File>') != nil or e.message.find('got obj<invalid>') != nil,
+         'The message should identify the actual object class: ' .. e.message)
+   end
+   assert(failed, 'Expected a catchable ' .. Boundary .. ' object-class contract failure')
+end
+
+function expect_diagnostic_failure(Callback:func)
+   local failed = false
+   try
+      Callback()
+   except e
+      failed = true
+      assert(e.message.find('parameter 1') != nil, 'The message should identify parameter 1: ' .. e.message)
+      assert(e.message.find('expected num') != nil, 'The message should identify the expected type: ' .. e.message)
+      assert(e.message.find('got string') != nil, 'The message should identify the actual type: ' .. e.message)
+   end
+   assert(failed, 'Expected a diagnostic contract failure')
+end
+
+function expect_batched_contract_failure(Callback:func, Boundary:str, Position:num, Label:str)
+   local failed = false
+   try
+      Callback()
+   except e
+      failed = true
+      assert(e.message.find(Boundary .. ' ' .. Position) != nil,
+         'The message should identify the failing contract position: ' .. e.message)
+      assert(e.message.find("('" .. Label .. "')") != nil,
+         'The message should identify the failing contract label: ' .. e.message)
+   end
+   assert(failed, 'Expected a batched contract failure')
+end
+
+function expect_userdata_diagnostic(Callback:func, Actual:str)
+   local failed = false
+   try
+      Callback()
+   except e
+      failed = true
+      assert(e.message.find('expected userdata') != nil,
+         'The message should identify the userdata contract: ' .. e.message)
+      assert(e.message.find('got ' .. Actual) != nil,
+         'The message should identify the actual type: ' .. e.message)
+   end
+   assert(failed, 'Expected a userdata diagnostic contract failure')
+end
+
+function expect_array_contract_failure(Callback:func, Expected:str, Actual:str)
+   local failed = false
+   try
+      Callback()
+   except e
+      failed = true
+      assert(e.message.find('expected array<' .. Expected .. '>') != nil,
+         'The message should identify the expected array member: ' .. e.message)
+      assert(e.message.find('got array<' .. Actual .. '>') != nil,
+         'The message should identify the actual array member: ' .. e.message)
+   end
+   assert(failed, 'Expected an array member contract failure')
+end
+
+@Test function ArrayBindingMemberContracts()
+   function accept_ints(Value:array<int>):array<int> return Value end
+   function checked_ints(Value:any):array<int> return dynamic_value(Value) end
+
+   local ints = array<int> { 1 }
+   local words = array<str> { 'text' }
+   assert(accept_ints(dynamic_value(ints)) is ints, 'A matching dynamic array should satisfy the member contract')
+   expect_array_contract_failure(function() accept_ints(dynamic_value(words)) end, 'int', 'str')
+   expect_array_contract_failure(function() checked_ints(words) end, 'int', 'str')
+
+   local inferred = array<int> { 2 }
+   expect_array_contract_failure(function() inferred = dynamic_value(words) end, 'int', 'str')
+   assert(inferred[0] is 2, 'A rejected inferred-array store should preserve the previous value')
+   inferred = nil
+   inferred = dynamic_value(ints)
+   assert(inferred[0] is 1, 'Nil should not clear an inferred array member contract')
+
+   local wildcard:array<any> = ints
+   wildcard = dynamic_value(words)
+   assert(wildcard[0] is 'text', 'array<any> should accept every native-array member identity')
+   expect_contract_failure(function() wildcard = dynamic_value({}) end, 'local')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Parameter matrix and exact, non-coercing predicates.
+
+@Test function ParameterContractMatrix()
+   function accept_nil(Value:nil) return Value end
+   function accept_bool(Value:bool) return Value end
+   function accept_num(Value:num) return Value end
+   function accept_str(Value:str) return Value end
+   function accept_table(Value:table) return Value end
+   function accept_array(Value:array<any>) return Value end
+   function accept_func(Value:func) return Value end
+   function accept_struct(Value:struct) return Value end
+   function accept_obj(Value:obj) return Value end
+   function accept_range(Value:range) return Value end
+   function accept_userdata(Value:userdata) return Value end
+
+   local native_array = array<int> { 1, 2 }
+   local native_struct = struct<ContractAlpha> { Value=1 }
+   local object = obj.new('time')
+   local sequence = {0 to 2}
+   local proxy = regex.new('')
+   local captured = 1
+   function capture() return captured end
+   local pointer = debug.upvalueID(capture, 0)
+   local callable = setmetatable({}, { __call = function():table return && end })
+
+   assert(accept_nil(nil) is nil, 'nil should satisfy nil')
+   assert(accept_bool(true) is true, 'true should satisfy bool')
+   assert(accept_bool(false) is false, 'false should satisfy bool')
+   assert(accept_num(3.5) is 3.5, 'number should satisfy num')
+   assert(accept_str('text') is 'text', 'string should satisfy str')
+   assert(accept_table({}) != nil, 'table should satisfy table')
+   assert(accept_array(native_array) is native_array, 'native array should satisfy array')
+   assert(type(accept_func(function() end)) is 'function', 'function should satisfy func')
+   assert(accept_func(callable) is callable, 'callable value should satisfy func')
+   assert(accept_struct(native_struct) is native_struct, 'native structure should satisfy struct')
+   assert(accept_obj(object) is object, 'Kōtuku object should satisfy obj')
+   assert(accept_range(sequence) is sequence, 'range should satisfy range')
+   assert(accept_userdata(proxy) is proxy, 'full userdata should satisfy userdata')
+   assert(accept_userdata(pointer) is pointer, 'light userdata should satisfy userdata')
+   assert(accept_userdata(nil) is nil, 'nil should satisfy a nullable userdata contract')
+
+   expect_contract_failure(function() accept_nil(dynamic_value(false)) end, 'parameter')
+   expect_contract_failure(function() accept_bool(dynamic_value(1)) end, 'parameter')
+   expect_contract_failure(function() accept_num(dynamic_value('1')) end, 'parameter')
+   expect_contract_failure(function() accept_str(dynamic_value(1)) end, 'parameter')
+   expect_contract_failure(function() accept_table(dynamic_value(native_array)) end, 'parameter')
+   expect_contract_failure(function() accept_array(dynamic_value({})) end, 'parameter')
+   expect_contract_failure(function() accept_func(dynamic_value({})) end, 'parameter')
+   expect_contract_failure(function() accept_struct(dynamic_value({})) end, 'parameter')
+   expect_contract_failure(function() accept_obj(dynamic_value({})) end, 'parameter')
+   expect_contract_failure(function() accept_range(dynamic_value(native_struct)) end, 'parameter')
+   expect_userdata_diagnostic(function() accept_userdata(dynamic_value(sequence)) end, 'range')
+   expect_contract_failure(function() accept_userdata(dynamic_value({})) end, 'parameter')
+   expect_contract_failure(function() accept_range(dynamic_value(proxy)) end, 'parameter')
+end
+
+@Test function NamedStructIdentity()
+   function accept_alpha(Value:struct<ContractAlpha>)
+      return Value.Value
+   end
+
+   local alpha = struct<ContractAlpha> { Value=7 }
+   local bravo = struct<ContractBravo> { Value=7 }
+   assert(accept_alpha(alpha) is 7, 'Matching named structure should pass')
+   expect_contract_failure(function() accept_alpha(dynamic_value(bravo)) end, 'parameter')
+end
+
+@Test function NilMissingAndExtraArguments()
+   function optional(Value:num) return Value end
+   assert(optional() is nil, 'A missing argument should arrive as acceptable nil')
+   assert(optional(nil) is nil, 'Explicit nil should satisfy a non-required contract')
+   assert(optional(4, 'ignored') is 4, 'Extra arguments should remain unchanged and ignored')
+end
+
+@Test function RequiredParameters()
+   function required(Value:str!):str! return Value end
+   local alias:any = dynamic_value(required)
+
+   assert(required('present') is 'present', 'A present matching argument should satisfy a required contract')
+   expect_contract_failure(function() alias(dynamic_value(nil)) end, 'required nil parameter')
+   expect_contract_failure(function() alias() end, 'missing required parameter')
+
+   local holder:any = { callback=dynamic_value(required) }
+   expect_contract_failure(function() holder.callback(dynamic_value(nil)) end, 'table-held required parameter')
+   expect_contract_failure(function() imported_required(dynamic_value(nil)) end, 'imported required parameter')
+
+   function required_variant(Value:any!):any! return Value end
+   local variant_alias:any = dynamic_value(required_variant)
+   assert(variant_alias(false) is false, 'any! should accept every present non-nil value')
+   expect_contract_failure(function() variant_alias(dynamic_value(nil)) end, 'required any parameter')
+
+   function argument_pair():<str, str> return 'first', 'second' end
+   function accept_pair(First:str!, Second:str!):str! return First .. Second end
+   assert(accept_pair(argument_pair()) is 'firstsecond',
+      'A forwarded argument list should satisfy every required parameter position')
+end
+
+@Test function NativeCallbackContractLocation()
+   local script = obj.new('tiri', { statement = [[local target = obj.new('config')
+target.subscribe('refresh', function(Window:table!, Args:table!) end)
+target.acRefresh()
+]] })
+
+   check script.acActivate()
+   assert(script.error != ERR_Okay, 'The native callback parameter contract should fail')
+   assert(script.errorMessage.startsWith("[script:2:0] type contract failed for parameter 1 ('Window')"),
+      'A native callback contract failure should report its Tiri source and line with an unavailable column: ' ..
+      script.errorMessage)
+end
+
+@Test function LocalStoreContractLocation()
+   local failed = false
+   try
+      imported_local_store_contract_failure(true)
+   except e
+      failed = true
+      assert(tostring(e.source).endsWith('type_contract_local_store_fixture.tiri'),
+         'A local-store contract failure should retain the defining source file: ' .. tostring(e.source))
+      assert(e.line is 3,
+         'A local-store contract failure should report the failing assignment line: ' .. tostring(e.line))
+   end
+   assert(failed, 'The incompatible local store should fail its runtime contract')
+end
+
+@Test function ImportedNativeCallbackContractLocation()
+   local launcher_path
+   local sources = debug.fileSources()
+   for i in {0 to #sources} do
+      if sources[i].filename is 'test_type_contracts.tiri' then
+         launcher_path = sources[i].path.replace(
+            'test_type_contracts.tiri', 'type_contract_callback_launcher.tiri')
+         break
+      end
+   end
+
+   assert(launcher_path != nil, 'The type-contract test source should be present in debug.fileSources()')
+   local script = obj.new('tiri', { path = launcher_path })
+
+   check script.acActivate()
+   assert(script.error != ERR_Okay, 'The imported native callback parameter contract should fail')
+   assert(script.errorMessage.startsWith(
+      "[type_contract_callback_fixture.tiri:3:0] type contract failed for parameter 1 ('Window')"),
+      'An imported native callback contract failure should report the imported source file: ' .. script.errorMessage)
+end
+
+@Test function RequiredResults()
+   function dynamic_nil():any return nil end
+   function dynamic_missing():any return end
+   function required_nil():str! return dynamic_nil() end
+   function required_missing():str! return dynamic_missing() end
+   function required_any_nil():any! return dynamic_nil() end
+   function required_fallthrough():str!
+      local marker = true
+      assert(marker)
+   end
+   function required_valid():str! return 'present' end
+   function dynamic_pair():<any, any> return 'first', 'second' end
+   function required_pair():<str!, str!> return dynamic_pair() end
+
+   assert(required_valid() is 'present', 'A present matching result should satisfy a required contract')
+   local first, second = required_pair()
+   assert(first is 'first' and second is 'second', 'A forwarded result list should satisfy required positions')
+   expect_contract_failure(required_nil, 'required nil result')
+   expect_contract_failure(required_missing, 'missing required result')
+   expect_contract_failure(required_any_nil, 'required any result')
+   expect_contract_failure(required_fallthrough, 'implicit missing required result')
+end
+
+@Test function RequiredViolationsRemainCatchableWhenHot()
+   function required_hot(Value:num!):num! return Value + 1 end
+   local alias:any = required_hot
+   for i in {0 to 250} do
+      assert(alias(i) is i + 1, 'A required contract should remain stable while its function becomes hot')
+   end
+   expect_contract_failure(function() alias(dynamic_value(nil)) end, 'hot required parameter')
+end
+
+@Test function RequiredSyntaxDiagnostics()
+   function assert_rejected(Source:str, Message:str)
+      try
+         exec(Source)
+      except e
+         assert(e.message.find(Message) != nil, 'Unexpected required-annotation diagnostic: ' .. e.message)
+      success
+         assert(false, 'Expected required annotation syntax to be rejected')
+      end
+   end
+
+   assert_rejected('function invalid(Value:nil!) end', 'contradictory')
+   assert_rejected('function invalid(Value:!) end', 'Expected type name')
+   assert_rejected('local value:str! = [[text]]', 'only permitted on function parameters and return values')
+   assert_rejected('global glRequiredValue:str! = [[text]]',
+      'only permitted on function parameters and return values')
+   assert_rejected('function invalid(Value:str!) return Value end invalid(nil)',
+      'required argument 1 cannot be nil')
+   assert_rejected('function invalid(Value:str!) return Value end invalid()', 'required argument 1 is missing')
+   assert_rejected('function invalid():str! return nil end', 'required return value 1 cannot be nil')
+   assert_rejected('function invalid():str! return end', 'required return value 1 is missing')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Every call route must enter the same callee-side guard.
+
+@Test function IndirectCallRoutes()
+   function typed(Value:num):num return Value end
+   local alias:any = typed
+   local holder = { callback = typed }
+
+   expect_contract_failure(function() typed(dynamic_value('wrong')) end, 'parameter')
+   expect_contract_failure(function() alias(dynamic_value('wrong')) end, 'parameter')
+   expect_contract_failure(function() holder.callback(dynamic_value('wrong')) end, 'parameter')
+   expect_contract_failure(function() imported_typed(dynamic_value('wrong')) end, 'parameter')
+
+   local values = array<any> { 'wrong' }
+   function native_callback(Value:num) return Value end
+   expect_contract_failure(function() values.each(native_callback) end, 'parameter')
+end
+
+@Test function SpecialParameterForms()
+   function blank(_:num) return true end
+   local blank_alias:any = blank
+   expect_contract_failure(function() blank_alias(dynamic_value('wrong')) end, 'parameter')
+
+   local methods = {}
+   function methods.typed(Self, Value:num) return Value end
+   local method_alias:any = methods.typed
+   assert(methods.typed(methods, 8) is 8, 'Method Self and typed argument should pass')
+   expect_contract_failure(function() method_alias(methods, 'wrong') end, 'parameter')
+
+   function recurse(Value:num):num
+      if Value <= 0 then return 0 end
+      return recurse(Value - 1)
+   end
+   assert(recurse(4) is 0, 'Recursive typed parameters should pass')
+
+   thunk deferred(Value:num):num
+      return Value
+   end
+   local thunk_alias:any = deferred
+   expect_contract_failure(function() thunk_alias(dynamic_value('wrong')) end, 'parameter')
+
+   global contract_mutual_odd
+   global function contract_mutual_even(Value:num):bool
+      if Value is 0 then return true end
+      return contract_mutual_odd(Value - 1)
+   end
+   global function contract_mutual_odd(Value:num):bool
+      if Value is 0 then return false end
+      return contract_mutual_even(Value - 1)
+   end
+   assert(contract_mutual_even(4), 'Mutually recursive typed parameters should pass')
+   local mutual_alias:any = contract_mutual_even
+   expect_contract_failure(function() mutual_alias('wrong') end, 'parameter')
+end
+
+@Test function GuardPrecedesSpecialisedMutation()
+   function increment(Values:array<any>)
+      Values[0] += 1
+   end
+
+   local plain = { 10 }
+   local indirect:any = increment
+   expect_contract_failure(function() indirect(dynamic_value(plain)) end, 'parameter')
+   assert(plain[0] is 10, 'The function body must not mutate before its parameter guard')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Explicit fixed return contracts validate declared positions and truncate undeclared results.
+
+@Test function DynamicReturnContracts()
+   function wrong_single():any return 'wrong' end
+   function typed_single():num return wrong_single() end
+   expect_contract_failure(function() typed_single() end, 'result')
+
+   function dynamic_pair():<any, any> return 1, false end
+   function typed_pair():<num, str> return dynamic_pair() end
+   expect_contract_failure(function() typed_pair() end, 'result')
+
+   function extra_results():num return 1, 'extra', false end
+   local first, second, third = extra_results()
+   assert(first is 1 and second is nil and third is nil,
+      'A fixed return declaration must truncate extra results')
+
+   function missing_result():<num, str> return 2 end
+   local number, missing = missing_result()
+   assert(number is 2 and missing is nil, 'Missing declared results should remain acceptable nil')
+
+   function filter_source():<any, any> return 'dropped', 'kept' end
+   function filtered_ok():str return [_*]filter_source() end
+   assert(filtered_ok() is 'kept', 'A return contract should inspect the filtered result')
+   function filtered_wrong():num return [*_]filter_source() end
+   expect_contract_failure(function() filtered_wrong() end, 'result')
+
+   function wrong_struct_result():any return struct<ContractBravo> { Value=5 } end
+   function typed_struct_result():struct<ContractAlpha> return wrong_struct_result() end
+   expect_contract_failure(function() typed_struct_result() end, 'result')
+end
+
+@Test function ReturnContractMatrix()
+   function checked_nil(Value:any):nil return dynamic_value(Value) end
+   function checked_bool(Value:any):bool return dynamic_value(Value) end
+   function checked_num(Value:any):num return dynamic_value(Value) end
+   function checked_str(Value:any):str return dynamic_value(Value) end
+   function checked_table(Value:any):table return dynamic_value(Value) end
+   function checked_array(Value:any):array<any> return dynamic_value(Value) end
+   function checked_func(Value:any):func return dynamic_value(Value) end
+   function checked_struct(Value:any):struct return dynamic_value(Value) end
+   function checked_alpha(Value:any):struct<ContractAlpha> return dynamic_value(Value) end
+   function checked_obj(Value:any):obj return dynamic_value(Value) end
+   function checked_range(Value:any):range return dynamic_value(Value) end
+   function checked_userdata(Value:any):userdata return dynamic_value(Value) end
+
+   local native_array = array<int> { 1, 2 }
+   local alpha = struct<ContractAlpha> { Value=3 }
+   local bravo = struct<ContractBravo> { Value=5 }
+   local object = obj.new('time')
+   local sequence = {0 to 3}
+   local proxy = regex.new('')
+   local callable = setmetatable({}, { __call = function():bool return true end })
+
+   assert(checked_nil(nil) is nil, 'nil should satisfy a nil result contract')
+   assert(checked_bool(true), 'bool should satisfy a bool result contract')
+   assert(checked_num(7) is 7, 'num should satisfy a num result contract')
+   assert(checked_str('text') is 'text', 'str should satisfy a str result contract')
+   assert(type(checked_table({})) is 'table', 'table should satisfy a table result contract')
+   assert(checked_array(native_array) is native_array, 'array should satisfy an array result contract')
+   assert(checked_func(callable) is callable, 'callable tables should satisfy a func result contract')
+   assert(checked_struct(alpha) is alpha, 'a native structure should satisfy a struct result contract')
+   assert(checked_alpha(alpha) is alpha, 'a matching layout should satisfy a named-structure result contract')
+   assert(checked_obj(object) is object, 'a Kōtuku object should satisfy an obj result contract')
+   assert(checked_range(sequence) is sequence, 'a range should satisfy a range result contract')
+   assert(checked_userdata(proxy) is proxy, 'full userdata should satisfy a userdata result contract')
+
+   expect_contract_failure(function() checked_nil(false) end, 'result')
+   expect_contract_failure(function() checked_bool(1) end, 'result')
+   expect_contract_failure(function() checked_num('7') end, 'result')
+   expect_contract_failure(function() checked_str(7) end, 'result')
+   expect_contract_failure(function() checked_table(native_array) end, 'result')
+   expect_contract_failure(function() checked_array({}) end, 'result')
+   expect_contract_failure(function() checked_func({}) end, 'result')
+   expect_contract_failure(function() checked_struct({}) end, 'result')
+   expect_contract_failure(function() checked_alpha(bravo) end, 'result')
+   expect_contract_failure(function() checked_obj({}) end, 'result')
+   expect_contract_failure(function() checked_range(proxy) end, 'result')
+   expect_contract_failure(function() checked_userdata(sequence) end, 'result')
+end
+
+@Test function VariadicReturnSuffix()
+   function dynamic_variadic():<any, any, any> return 1, 2, 'wrong' end
+   function typed_variadic():<num, ...> return dynamic_variadic() end
+   expect_contract_failure(function() typed_variadic() end, 'result')
+
+   function valid_variadic():<num, ...> return 1, 2, 3 end
+   local first, second, third = valid_variadic()
+   assert(first is 1 and second is 2 and third is 3,
+      'A variadic return declaration must preserve and validate additional results')
+end
+
+@Test function RequiredVariadicReturnSuffix()
+   function dynamic_variadic_empty():<any, ...> return end
+   function required_variadic_empty():<num!, ...> return dynamic_variadic_empty() end
+   expect_contract_failure(required_variadic_empty, 'missing required variadic result')
+
+   function dynamic_variadic_nil():<any, any, any> return 1, 2, nil end
+   function required_variadic():<num!, ...> return dynamic_variadic_nil() end
+   expect_contract_failure(required_variadic, 'required variadic result')
+
+   function valid_required_variadic():<num!, ...> return 1, 2, 3 end
+   local first, second, third = valid_required_variadic()
+   assert(first is 1 and second is 2 and third is 3,
+      'A required variadic suffix should accept every present matching result')
+end
+
+@Test function ReturnContractAfterTryAndDefer()
+   global glContractCleanup:bool = false
+
+   function source():any return 'wrong' end
+   function checked():num
+      defer
+         glContractCleanup = true
+      end
+      try
+         return source()
+      except e
+         return 0
+      end
+   end
+
+   expect_contract_failure(function() checked() end, 'result')
+   assert(glContractCleanup is true, 'Defer cleanup must execute before a return contract fails')
+
+   function extra_source():<any, any, any> return 4, 'extra', false end
+   function checked_extra():num
+      defer
+         glContractCleanup = true
+      end
+      return extra_source()
+   end
+   local first, second, third = checked_extra()
+   assert(first is 4 and second is nil and third is nil,
+      'Cleanup must preserve the declared result while truncating extra dynamic results')
+
+   function checked_table():table
+      local result = {}
+      defer
+         local marker = 'cleanup'
+         assert(marker is 'cleanup')
+      end
+      return result
+   end
+   assert(type(checked_table()) is 'table', 'Defer cleanup must preserve a fixed table result')
+
+   global glContractClosed:bool = false
+   function checked_close():num
+      local resource <close> = setmetatable({}, {
+         __close = function(Error)
+            glContractClosed = true
+         end
+      })
+      return source()
+   end
+   expect_contract_failure(function() checked_close() end, 'result')
+   assert(glContractClosed, '<close> cleanup must execute before a return contract fails')
+end
+
+@Test function ContractDiagnostic()
+   function diagnostic(Value:num):num return Value end
+   expect_diagnostic_failure(function() diagnostic(dynamic_value('wrong')) end)
+end
+--[[
+@Test function BatchedContractDiagnostics()
+   function checked_parameters(A:num, B:str, C:bool, D:table)
+      return A
+   end
+   local parameter_alias:any = checked_parameters
+   expect_batched_contract_failure(
+      function() parameter_alias(1, 'valid', dynamic_value('wrong'), {}) end, 'parameter', 3, 'C')
+
+   function dynamic_local_values():<any, any, any, any>
+      return 1, 'valid', 'wrong', {}
+   end
+   function checked_locals()
+      local first:num, second:str, third:bool, fourth:table = dynamic_local_values()
+      return first, second, third, fourth
+   end
+   expect_batched_contract_failure(checked_locals, 'local', 3, 'third')
+
+   local alpha = struct<ContractAlpha> { Value=3 }
+   local bravo = struct<ContractBravo> { Value=5 }
+   local alpha_values = array<struct<ContractAlpha>> { alpha }
+   local bravo_values = array<struct<ContractBravo>> { bravo }
+   local time_object = obj.new('time')
+   function checked_refined(Record:struct<ContractAlpha>, Values:array<struct<ContractAlpha>>, Clock:obj)
+      return Record.Value + Values[0].Value, Clock
+   end
+   local refined_value, refined_clock = checked_refined(alpha, alpha_values, time_object)
+   assert(refined_value is 6 and refined_clock is time_object,
+      'Batched refined contracts should preserve matching structure, array and object identities')
+
+   local refined_failed = false
+   try
+      checked_refined(alpha, dynamic_value(bravo_values), time_object)
+   except e
+      refined_failed = true
+      assert(e.message.find('parameter 2') != nil and e.message.find("('Values')") != nil,
+         'A cached refined diagnostic should preserve its position and label: ' .. e.message)
+      assert(e.message.find('array<struct<ContractAlpha>>') != nil,
+         'A cached refined diagnostic should preserve its exact expected type: ' .. e.message)
+   end
+   assert(refined_failed, 'A cached refined array contract should reject the wrong structure member type')
+end
+--]]
+----------------------------------------------------------------------------------------------------------------------
+-- Other approved write boundaries.
+
+@Test function TypedLocalInitialiserContracts()
+   expect_contract_failure(function()
+      local value:num = dynamic_value('wrong')
+   end, 'local initialiser')
+
+   expect_contract_failure(function()
+      local value <const>:num = dynamic_value('wrong')
+   end, 'const local initialiser')
+
+   function dynamic_pair():<any, any>
+      return 1, 'wrong'
+   end
+   expect_contract_failure(function()
+      local first:num, second:num = dynamic_pair()
+   end, 'secondary local initialiser')
+
+   function dynamic_single():any
+      return 1
+   end
+   local present:num, absent:str = dynamic_single()
+   assert(present is 1 and absent is nil,
+      'Result-count adjustment should supply an acceptable nil to a missing annotated position')
+
+   function dynamic_triple():<any, any, any>
+      return 'drop', 2, 'wrong'
+   end
+   expect_contract_failure(function()
+      local first:num, second:num = [_*]dynamic_triple()
+   end, 'filtered local initialiser')
+
+   function accept_varargs(...)
+      local first:num, second:num = ...
+      return first + second
+   end
+   assert(accept_varargs(2, 3) is 5, 'Matching vararg initialisers should pass local contracts')
+   expect_contract_failure(function() accept_varargs(2, 'wrong') end, 'vararg local initialiser')
+
+   local holder:any = { value='wrong' }
+   expect_contract_failure(function()
+      local value:num = holder.value
+   end, 'direct local initialiser expression')
+
+   local bravo = struct<ContractBravo> { Value=7 }
+   expect_contract_failure(function()
+      local value:struct<ContractAlpha> = dynamic_value(bravo)
+   end, 'named-structure local initialiser')
+
+   local missing:num = dynamic_value(nil)
+   assert(missing is nil, 'Nil should remain valid for a concrete local annotation')
+
+   local variant:any = dynamic_value('text')
+   variant = 42
+   assert(variant is 42, 'Explicit any local initialisers must remain variant')
+
+   function typed_initialiser(Value:any):num
+      local result:num = Value
+      return result
+   end
+   for i in {0 to 200} do
+      assert(typed_initialiser(i) is i, 'Matching initialisers should remain valid on a hot path')
+   end
+   expect_contract_failure(function() typed_initialiser('wrong') end, 'hot local initialiser')
+
+   local closed = false
+   expect_contract_failure(function()
+      local resource <close>:num = dynamic_value(setmetatable({}, {
+         __close = function(Error)
+            closed = true
+         end
+      }))
+   end, 'to-be-closed local initialiser')
+   assert(closed, 'A rejected local initialiser must unwind its <close> value')
+
+   local grouped_closed = false
+   function dynamic_close_pair():<any, any>
+      return setmetatable({}, {
+         __close = function(Error)
+            grouped_closed = true
+         end
+      }), 'wrong'
+   end
+   expect_batched_contract_failure(function()
+      local resource <close>:table, value:num = dynamic_close_pair()
+   end, 'local', 2, 'value')
+   assert(grouped_closed, 'A later failure in a grouped local contract must unwind an earlier <close> value')
+
+   local initialiser_deferred = false
+   function fail_initialiser()
+      defer
+         initialiser_deferred = true
+      end
+      local value:num = dynamic_value('wrong')
+   end
+
+   local assignment_deferred = false
+   function fail_assignment()
+      defer
+         assignment_deferred = true
+      end
+      local value:num = 1
+      value = dynamic_value('wrong')
+   end
+
+   expect_contract_failure(fail_initialiser, 'deferred local initialiser')
+   expect_contract_failure(fail_assignment, 'deferred local assignment')
+   assert(initialiser_deferred is assignment_deferred,
+      'Initialiser and assignment contract failures must unwind defer state consistently')
+end
+
+@Test function InferredLocalBindingContracts()
+   expect_contract_failure(function()
+      local value
+      value = 'text'
+      value = dynamic_value(42)
+   end, 'deferred local')
+
+   function inferred_pair():<str, str>
+      return 'first', 'second'
+   end
+   expect_contract_failure(function()
+      local first, second = inferred_pair()
+      second = dynamic_value(42)
+   end, 'secondary local result')
+
+   expect_contract_failure(function()
+      local first, second
+      first, second = inferred_pair()
+      second = dynamic_value(42)
+   end, 'deferred secondary local result')
+
+   expect_contract_failure(function()
+      local task = obj.new('task')
+      check task.acSetKey('ProductName', 'Kotuku')
+      local err, value = task.acGetKey('ProductName')
+      value = dynamic_value(42)
+   end, 'native secondary local result')
+
+   expect_contract_failure(function()
+      local value
+      value = struct<ContractAlpha> { Value=1 }
+      value = dynamic_value(struct<ContractBravo> { Value=2 })
+   end, 'deferred named-structure local')
+
+   expect_contract_failure(function()
+      local value
+      value ?= 'text'
+      value = dynamic_value(42)
+   end, 'predeclared if-nil local')
+
+   expect_contract_failure(function()
+      local value
+      value ??= 'text'
+      value = dynamic_value(42)
+   end, 'predeclared if-empty local')
+
+   expect_contract_failure(function()
+      value ?= 'text'
+      value = dynamic_value(42)
+   end, 'implicit if-nil local')
+
+   expect_contract_failure(function()
+      value ??= 'text'
+      value = dynamic_value(42)
+   end, 'implicit if-empty local')
+
+   expect_contract_failure(function()
+      local value
+      value = 'text'
+      function overwrite(Value:any)
+         value = Value
+      end
+      overwrite(42)
+   end, 'captured deferred local')
+end
+
+@Test function TypedLocalAndCapturedUpvalueStores()
+   local typed:num = 1
+   expect_contract_failure(function() typed = dynamic_value('wrong') end, 'local')
+
+   local captured:num = 2
+   function write_captured(Value:any)
+      captured = Value
+   end
+   expect_contract_failure(function() write_captured('wrong') end, 'upvalue')
+   assert(captured is 2, 'A rejected upvalue store must preserve the previous value')
+end
+
+@Test function ProvedNumericStoreAndResultContracts()
+   function accumulate():num
+      local value = 1
+      for i in {0 to 200} do
+         value += i + 1
+      end
+      return value
+   end
+
+   jit.off()
+   assert(accumulate() is 20101, 'Proved numeric stores and results should remain correct in the interpreter')
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   for i in {0 to 20} do
+      assert(accumulate() is 20101, 'Proved numeric stores and results should remain correct on compiled traces')
+   end
+
+   local value = 1
+   local overloaded:any = setmetatable({}, {
+      __add = function(Other, LHS:bool):str return 'wrong' end
+   })
+   expect_contract_failure(function() value += overloaded end, 'overloaded compound assignment')
+   assert(value is 1, 'A rejected overloaded compound result must preserve the sticky local')
+end
+
+@Test function VariantMutationInvalidatesStaticProof()
+   local overloaded:any = setmetatable({}, {
+      __add = function(Other, LHS:bool):str return 'wrong' end
+   })
+
+   local compound_source:any = 1
+   compound_source += overloaded
+   local compound_target = 0
+   expect_contract_failure(function() compound_target = compound_source end, 'variant compound result')
+   assert(compound_target is 0, 'A rejected variant compound result must preserve the sticky destination')
+
+   local empty_source:any = 0
+   empty_source ??= 'wrong'
+   local empty_target = 0
+   expect_contract_failure(function() empty_target = empty_source end, 'variant if-empty result')
+   assert(empty_target is 0, 'A rejected variant if-empty result must preserve the sticky destination')
+
+   local nil_source:any = nil
+   nil_source ?= 'wrong'
+   local nil_target = 0
+   expect_contract_failure(function() nil_target = nil_source end, 'variant if-nil result')
+   assert(nil_target is 0, 'A rejected variant if-nil result must preserve the sticky destination')
+end
+
+@Test function ObjectClassLocalAndUpvalueContracts()
+   local value = obj.new('time')
+   value = dynamic_value(obj.new('time'))
+   assert(value.class.name is 'Time', 'A dynamically sourced Time should satisfy an inferred Time local')
+
+   local file = obj.new('file')
+   expect_object_contract_failure(function() value = dynamic_value(file) end, 'local')
+   assert(value.class.name is 'Time', 'A rejected local store must preserve the previous Time object')
+
+   value = nil
+   assert(value is nil, 'Nil should clear a class-constrained local')
+   value = dynamic_value(obj.new('time'))
+   assert(value.class.name is 'Time', 'A Time should restore a nil-cleared class-constrained local')
+
+   local deferred
+   deferred = obj.new('time')
+   expect_object_contract_failure(function() deferred = dynamic_value(file) end, 'deferred local')
+   assert(deferred.class.name is 'Time', 'A deferred local should retain its first concrete object class')
+
+   local captured = obj.new('time')
+   function write_captured_object(Value:any)
+      captured = Value
+   end
+   write_captured_object(obj.new('time'))
+   expect_object_contract_failure(function() write_captured_object(file) end, 'upvalue')
+   assert(captured.class.name is 'Time', 'A rejected upvalue store must preserve the previous Time object')
+
+   local deferred_file = <{ obj.new('file') }>
+   expect_object_contract_failure(function() captured = dynamic_value(deferred_file) end, 'resolved thunk')
+   assert(captured.class.name is 'Time', 'A rejected resolved thunk must not mutate the captured object')
+
+   local invalid = obj.new('time')
+   invalid.free()
+   expect_object_contract_failure(function() captured = dynamic_value(invalid) end, 'invalid wrapper')
+
+   local broad:obj = obj.new('time')
+   broad = dynamic_value(file)
+   assert(broad.class.name is 'File', 'An explicit obj annotation should remain a broad object contract')
+end
+
+@Test function ObjectClassGlobalContracts()
+   global glContractTimeObject = obj.new('time')
+   glContractTimeObject = dynamic_value(obj.new('time'))
+   exec("glContractTimeObject = obj.new('time')")
+   assert(glContractTimeObject.class.name is 'Time', 'Matching same- and cross-chunk Time stores should pass')
+
+   local file = obj.new('file')
+   expect_object_contract_failure(
+      function() glContractTimeObject = dynamic_value(file) end, 'same-chunk global')
+   expect_object_contract_failure(
+      function() exec("glContractTimeObject = obj.new('file')") end, 'cross-chunk global')
+   local environment = _G
+   expect_object_contract_failure(
+      function() environment.glContractTimeObject = file end, 'environment alias')
+   expect_object_contract_failure(
+      function() rawset(_G, 'glContractTimeObject', file) end, 'raw global store')
+   assert(glContractTimeObject.class.name is 'Time',
+      'Rejected direct and indirect global stores must preserve the previous Time object')
+   exec("glContractTimeObject = obj.new('time')")
+
+   glContractTimeObject = nil
+   assert(glContractTimeObject is nil, 'Nil should clear a class-constrained global')
+   expect_object_contract_failure(
+      function() glContractTimeObject = dynamic_value(file) end, 'nil-cleared global')
+   exec("glContractTimeObject = obj.new('time')")
+
+   exec("global glContractTimeObject = obj.new('time')")
+   expect_contract_failure(
+      function() exec("global glContractTimeObject = obj.new('file')") end, 'global redeclaration')
+   assert(glContractTimeObject.class.name is 'Time',
+      'A rejected cross-class redeclaration must preserve the global value and policy')
+
+   try
+      global glContractReducedTime = obj.new('time')
+   end
+   expect_object_contract_failure(
+      function() exec("glContractReducedTime = obj.new('file')") end, 'reduced-analysis global')
+   assert(glContractReducedTime.class.name is 'Time',
+      'Reduced analysis should retain the inferred object class')
+
+   global glContractBroadObject:obj = obj.new('time')
+   glContractBroadObject = dynamic_value(file)
+   assert(glContractBroadObject.class.name is 'File', 'An explicit global obj contract should remain broad')
+
+   global glContractRelaxedObject = obj.new('time')
+   expect_contract_failure(
+      function() exec("global glContractRelaxedObject:any = obj.new('file')") end, 'global redeclaration')
+   assert(glContractRelaxedObject.class.name is 'Time',
+      'A rejected any redeclaration must preserve the object value and class policy')
+   expect_object_contract_failure(
+      function() exec("glContractRelaxedObject = obj.new('file')") end, 'preserved object policy')
+end
+
+@Test function ExplicitGlobalStores()
+   global glContractNumber:num = 3
+   expect_contract_failure(function() glContractNumber = dynamic_value('wrong') end, 'global')
+   assert(glContractNumber is 3, 'A rejected global store must preserve the previous value')
+
+   expect_contract_failure(function() exec("glContractNumber = 'wrong'") end, 'global')
+   assert(glContractNumber is 3, 'A rejected store from a separately compiled chunk must preserve the global value')
+
+   global glContractArray:array<any> = array<int> { 4, 8 }
+   function read_contract_array():num
+      return glContractArray[1]
+   end
+   expect_contract_failure(function() exec("glContractArray = {}") end, 'global')
+   assert(read_contract_array() is 8,
+      'A separately compiled store must not invalidate an already-compiled specialised global reader')
+
+   global glContractAny:any = 1
+   glContractAny = 'allowed'
+   local environment = _G
+   environment.glContractAny = {}
+   rawset(_G, 'glContractAny', false)
+   exec("glContractAny = 'allowed'")
+   assert(glContractAny is 'allowed', 'An initially explicit any remains variant through every store route')
+
+   expect_contract_failure(
+      function() exec('global glContractAny:num = 5') end, 'any-to-concrete global redeclaration')
+   exec('glContractAny = {}')
+   assert(type(glContractAny) is 'table',
+      'A rejected concrete redeclaration must preserve an initially variant contract')
+
+   global glContractRedeclared:num = 1
+   expect_contract_failure(
+      function() exec("global glContractRedeclared:any = 'variant'") end, 'concrete-to-any global redeclaration')
+   assert(glContractRedeclared is 1, 'A rejected any redeclaration must preserve the concrete value')
+   exec('glContractRedeclared = 2')
+   expect_contract_failure(function() exec("glContractRedeclared = 'wrong'") end, 'preserved concrete policy')
+   assert(glContractRedeclared is 2, 'The original concrete policy must survive a rejected any redeclaration')
+end
+
+@Test function InferredGlobalStores()
+   global glInferredContract = 'original'
+
+   local matching:any = 'updated'
+   glInferredContract = matching
+   assert(glInferredContract is 'updated', 'A matching dynamic value should satisfy an inferred global contract')
+
+   local wrong:any = 42
+   expect_contract_failure(function() glInferredContract = wrong end, 'global')
+   assert(glInferredContract is 'updated', 'A rejected inferred global store must preserve the previous value')
+
+   glInferredContract = nil
+   assert(glInferredContract is nil, 'Nil should clear an inferred global without removing its contract')
+   glInferredContract = dynamic_value('restored')
+   assert(glInferredContract is 'restored', 'The inferred global contract should survive a nil clear')
+
+   expect_contract_failure(function() exec('glInferredContract = 42') end, 'global')
+   assert(glInferredContract is 'restored',
+      'A separately compiled rejected store must preserve the inferred global value')
+
+   function write_inferred_global(Value:any)
+      glInferredContract = Value
+   end
+   write_inferred_global('nested')
+   assert(glInferredContract is 'nested', 'A matching nested-function store should satisfy the inferred contract')
+   expect_contract_failure(function() write_inferred_global(false) end, 'global')
+   assert(glInferredContract is 'nested', 'A rejected nested-function store must preserve the inferred global value')
+end
+
+@Test function GlobalContractRedeclarationPolicy()
+   global glContractRedeclaration = 1
+
+   exec('global glContractRedeclaration = 2')
+   assert(glContractRedeclaration is 2, 'A matching concrete redeclaration should preserve the sticky contract')
+
+   expect_contract_failure(
+      function() exec("global glContractRedeclaration = 'wrong'") end, 'global')
+   assert(glContractRedeclaration is 2,
+      'A rejected concrete redeclaration must preserve the global value and its existing contract')
+end
+
+@Test function GlobalFunctionAndThunkContracts()
+   @Typ07Marker
+   global function glContractFunction():num return 7 end
+   assert(glContractFunction() is 7, 'A global function declaration should remain callable')
+   local annotation = debug.anno.get(glContractFunction)
+   assert(annotation != nil and annotation.annotations[0].name is 'Typ07Marker',
+      'A global function contract must preserve annotation registration')
+
+   local wrong_function:any = 42
+   expect_contract_failure(function() glContractFunction = wrong_function end, 'global function')
+   assert(glContractFunction() is 7, 'A rejected same-chunk store must preserve the global function')
+
+   expect_contract_failure(function() exec('glContractFunction = 42') end, 'global function')
+   assert(glContractFunction() is 7, 'A rejected cross-chunk store must preserve the global function')
+
+   local environment = _G
+   expect_contract_failure(function() environment.glContractFunction = 42 end, 'global function alias')
+   expect_contract_failure(function() rawset(_G, 'glContractFunction', 42) end, 'global function rawset')
+   assert(glContractFunction() is 7, 'Rejected indirect stores must preserve the global function')
+
+   exec('global function glContractFunction():num return 8 end')
+   assert(glContractFunction() is 8, 'A compatible cross-chunk global function redeclaration should succeed')
+
+   global thunk glContractThunk():str return 'original' end
+   assert(glContractThunk() is 'original', 'A global thunk declaration should remain callable')
+   local wrong_thunk:any = false
+   expect_contract_failure(function() glContractThunk = wrong_thunk end, 'global thunk')
+   expect_contract_failure(function() exec('glContractThunk = 42') end, 'global thunk')
+   assert(glContractThunk() is 'original', 'Rejected stores must preserve the global thunk')
+
+   exec("global thunk glContractThunk():str return 'redeclared' end")
+   assert(glContractThunk() is 'redeclared', 'A compatible cross-chunk global thunk redeclaration should succeed')
+
+   global glContractConcrete = 'preserved'
+   expect_contract_failure(
+      function() exec('global function glContractConcrete() return 1 end') end, 'global redeclaration')
+   assert(glContractConcrete is 'preserved', 'A conflicting callable declaration must preserve the concrete global')
+
+   global glVariantCallback:any = function() return 'callable' end
+   exec('glVariantCallback = 42')
+   assert(glVariantCallback is 42, 'An explicit any variable declaration must remain the callable storage opt-out')
+end
+
+@Test function GlobalCallableForwardSignatures()
+   local result = exec([[
+global function glContractForward(Value:num):num end
+global function glContractForward(Value:num):num return Value end
+return glContractForward(4)
+]])
+   assert(result is 4, 'A matching global function definition must satisfy its forward declaration')
+
+   expect_contract_failure(function()
+      exec([[
+global function glContractForwardMismatch(Value:num):num end
+global function glContractForwardMismatch(Value:str):num return 1 end
+]])
+   end, 'global function forward signature')
+
+   local reduced_forward_failed = false
+   try
+      exec([[
+global function glContractReducedForward(Value:num):num end
+try
+   global glContractReducedForward:str = 'wrong'
+except e
+end
+global function glContractReducedForward(Value:str):str return Value end
+]])
+   except e
+      reduced_forward_failed = true
+      assert(e.message.find("signature for global function 'glContractReducedForward'") != nil,
+         'The failed reduced declaration must preserve the forward-signature diagnostic: ' .. e.message)
+   end
+   assert(reduced_forward_failed,
+      'An incompatible definition after a failed reduced declaration must fail compilation')
+
+   expect_contract_failure(function()
+      exec([[
+global thunk glContractForwardKind():num end
+global function glContractForwardKind():num return 1 end
+]])
+   end, 'global callable kind')
+end
+
+@Test function LocalCallableForwardSignatures()
+   local result = exec([[
+function local_contract_forward(Value:num):num end
+function local_contract_forward(Value:num):num return Value end
+return local_contract_forward(4)
+]])
+   assert(result is 4, 'A matching local function definition must satisfy its forward declaration')
+
+   local mismatch_failed = false
+   try
+      exec([[
+function local_contract_forward_mismatch(Value:num):num end
+function local_contract_forward_mismatch(Value:str):str return Value end
+]])
+   except e
+      mismatch_failed = true
+      assert(e.message.find("signature for local function 'local_contract_forward_mismatch'") != nil,
+         'The local-forward diagnostic must identify the function: ' .. e.message)
+      assert(e.message.find("parameter 1 has type 'str', expected 'num'") != nil,
+         'The local-forward diagnostic must identify the parameter mismatch: ' .. e.message)
+   end
+   assert(mismatch_failed, 'An incompatible local function definition must fail compilation')
+
+   local return_mismatch_failed = false
+   try
+      exec([[
+function local_contract_return(Value:num):num end
+function local_contract_return(Value:num):str return '' end
+]])
+   except e
+      return_mismatch_failed = true
+      assert(e.message.find("return 1 has type 'str', expected 'num'") != nil,
+         'The local-forward diagnostic must identify the return mismatch: ' .. e.message)
+   end
+   assert(return_mismatch_failed, 'An incompatible local function return declaration must fail compilation')
+
+   local explicit_result = exec([[
+local function explicit_local_contract(Value:num):num end
+local function explicit_local_contract(Value:num):num return Value end
+return explicit_local_contract(6)
+]])
+   assert(explicit_result is 6, 'An explicit local function definition must satisfy its forward declaration')
+
+   expect_contract_failure(function()
+      exec([[
+local function explicit_local_contract_mismatch(Value:num):num end
+local function explicit_local_contract_mismatch(Value:str):num return 0 end
+]])
+   end, 'explicit local function forward signature')
+
+   local scoped_result = exec([[
+function local_contract_scoped(Value:num):num end
+function outer()
+   function local_contract_scoped(Value:str):str return Value end
+end
+function local_contract_scoped(Value:num):num return Value end
+return local_contract_scoped(5)
+]])
+   assert(scoped_result is 5, 'A nested local function must not inherit an outer forward declaration')
+end
+
+@Test function CompiledGlobalWriterRetainsImmutablePolicy()
+   global glContractWriter:num = 1
+   global glContractVariantWriter:any = 1
+
+   function write_contract_global(Value:any)
+      glContractWriter = Value
+   end
+   function write_variant_contract_global(Value:any)
+      glContractVariantWriter = Value
+   end
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   for i in {0 to 200} do
+      write_contract_global(i)
+      write_variant_contract_global(i)
+   end
+
+   local traces = 0
+   for trace_no in {1 into 100} do
+      if jit.util.traceInfo(trace_no) != nil then traces++ end
+   end
+   assert(traces > 0, 'The immutable global writer regression must exercise a compiled trace')
+
+   expect_contract_failure(
+      function() exec("global glContractWriter:any = 'variant'") end, 'compiled-writer redeclaration')
+   expect_contract_failure(
+      function() write_contract_global('wrong') end, 'compiled writer with preserved concrete policy')
+   write_contract_global(201)
+   assert(glContractWriter is 201,
+      'A compiled writer must retain the original concrete policy after a rejected any declaration')
+
+   expect_contract_failure(
+      function() exec('global glContractVariantWriter:num = 2') end, 'compiled variant-writer redeclaration')
+   write_variant_contract_global({ retained = true })
+   assert(type(glContractVariantWriter) is 'table',
+      'A compiled writer must remain variant after a rejected concrete declaration')
+end
+
+@Test function MultiReturnGlobalContracts()
+   function global_contract_pair():<num, str>
+      return 2, 'text'
+   end
+
+   global glContractPairNumber, glContractPairText = global_contract_pair()
+
+   exec('glContractPairText = "updated"')
+   assert(glContractPairText is 'updated', 'A matching store should satisfy the secondary global contract')
+
+   expect_contract_failure(function() exec('glContractPairText = 42') end, 'global')
+   assert(glContractPairText is 'updated',
+      'A rejected store must preserve a secondary multi-return global and its contract')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Global declarations in reduced-analysis blocks must publish the same persistent policies as ordinary declarations.
+
+@Test function ReducedAnalysisGlobalContracts()
+   try
+      global glContractReducedTry = 'try'
+   end
+   exec("glContractReducedTry = 'updated'")
+   expect_contract_failure(function() exec('glContractReducedTry = 42') end, 'reduced try global')
+   assert(glContractReducedTry is 'updated', 'A rejected try-global store must preserve the previous value')
+
+   try
+      defer
+         global glContractReducedDefer = 'deferred'
+      end
+   end
+   expect_contract_failure(function() exec('glContractReducedDefer = 42') end, 'reduced defer global')
+   assert(glContractReducedDefer is 'deferred',
+      'A rejected deferred-global store must preserve the previous value')
+
+   try
+      local callback = function()
+         global glContractReducedExpression = 'expression'
+      end
+      callback()
+   end
+   expect_contract_failure(
+      function() exec('glContractReducedExpression = 42') end, 'reduced function-expression global')
+   assert(glContractReducedExpression is 'expression',
+      'A rejected function-expression global store must preserve the previous value')
+
+   try
+      raise ERR_Args
+   except e when ERR_Args
+      global glContractReducedFilteredExcept = 'filtered'
+   end
+   expect_contract_failure(
+      function() exec('glContractReducedFilteredExcept = false') end, 'reduced filtered except global')
+   assert(glContractReducedFilteredExcept is 'filtered',
+      'A rejected filtered-except global store must preserve the previous value')
+
+   try
+      raise 'expected'
+   except e
+      global glContractReducedExcept = 'except'
+   end
+   expect_contract_failure(function() exec('glContractReducedExcept = 42') end, 'reduced except global')
+   assert(glContractReducedExcept is 'except',
+      'A rejected except-global store must preserve the previous value')
+
+   try
+      local ready = true
+   success
+      global glContractReducedSuccess = 'success'
+   end
+   expect_contract_failure(function() exec('glContractReducedSuccess = 42') end, 'reduced success global')
+   assert(glContractReducedSuccess is 'success',
+      'A rejected success-global store must preserve the previous value')
+
+   local clock = obj.new('time')
+   with clock do
+      global glContractReducedWith = 'with'
+   end
+   expect_contract_failure(function() exec('glContractReducedWith = 42') end, 'reduced with global')
+   assert(glContractReducedWith is 'with', 'A rejected with-global store must preserve the previous value')
+
+   try
+      if true then
+         global glContractReducedNested = 'nested'
+      end
+   end
+   expect_contract_failure(function() exec('glContractReducedNested = 42') end, 'nested reduced global')
+   assert(glContractReducedNested is 'nested', 'A rejected nested global store must preserve the previous value')
+end
+
+@Test function ReducedAnalysisGlobalPolicyComposition()
+   global glContractReducedConflict = 1
+   local trapped = false
+   try
+      global glContractReducedConflict = 'wrong'
+   except e
+      trapped = true
+      assert(tostring(e.message).find('type contract failed for global') != nil,
+         'The conflicting declaration should raise a global contract error: ' .. tostring(e.message))
+   end
+   assert(trapped, 'An incompatible declaration inside try must remain catchable')
+   assert(glContractReducedConflict is 1, 'A rejected declaration must preserve the previous global value')
+   exec('glContractReducedConflict = 2')
+   assert(glContractReducedConflict is 2, 'A rejected declaration must preserve the previous global policy')
+
+   global glContractReducedFailedFlow:any = 'start'
+   local wrong:any = 'wrong'
+   try
+      global glContractReducedFailedFlow:num = wrong
+   except e
+   end
+   glContractReducedFailedFlow = 'allowed'
+   assert(glContractReducedFailedFlow is 'allowed',
+      'Statements after a rejected reduced declaration must use the active runtime policy')
+
+   global glContractReducedVariant:num = 1
+   local variant_trapped = false
+   try
+      global glContractReducedVariant:any = 'variant'
+   except e
+      variant_trapped = true
+      assert(tostring(e.message).find('type contract failed for global') != nil,
+         'The any redeclaration should raise a catchable global contract error: ' .. tostring(e.message))
+   end
+   assert(variant_trapped, 'An any redeclaration inside try must fail catchably')
+   expect_contract_failure(
+      function() exec('glContractReducedVariant = {}') end, 'preserved reduced concrete policy')
+   glContractReducedVariant = 2
+   assert(glContractReducedVariant is 2,
+      'A failed reduced any declaration must preserve the original concrete contract')
+end
+
+@Test function ReducedAnalysisMultiResultAndImportContracts()
+   local function reduced_pair():<num, str>
+      return 2, 'text'
+   end
+
+   try
+      global glContractReducedNumber, glContractReducedText = reduced_pair()
+   end
+   exec("glContractReducedText = 'updated'")
+   expect_contract_failure(function() exec('glContractReducedText = 42') end, 'reduced secondary global')
+   assert(glContractReducedNumber is 2 and glContractReducedText is 'updated',
+      'A rejected secondary store must preserve both reduced multi-result globals')
+
+   exec("glContractReducedImport = 'updated'")
+   expect_contract_failure(function() exec('glContractReducedImport = 42') end, 'reduced imported global')
+   assert(glContractReducedImport is 'updated',
+      'A rejected imported-global store must preserve the previous value')
+end
+
+@Test function ReducedAnalysisGlobalContractJitParity()
+   function reduced_hot_store(Value:any):bool
+      try
+         global glContractReducedHot:str = Value
+         return true
+      except e
+         return false
+      end
+   end
+
+   jit.off()
+   assert(reduced_hot_store('interpreter'), 'A matching reduced global declaration should pass in the interpreter')
+   assert(not reduced_hot_store(1), 'An incompatible reduced global declaration should fail in the interpreter')
+   assert(glContractReducedHot is 'interpreter', 'The interpreter must preserve the value after a rejected store')
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   for i in {0 to 200} do
+      assert(reduced_hot_store('compiled'), 'A matching reduced global declaration should pass on the hot path')
+   end
+   assert(not reduced_hot_store(42), 'An incompatible reduced global declaration should fail on the hot path')
+   assert(glContractReducedHot is 'compiled', 'The JIT must preserve the value after a rejected store')
+end
+
+@Test function UserdataContractBoundaries()
+   function userdata_source():any return regex.new('') end
+   function typed_userdata_result():userdata return userdata_source() end
+
+   local first = typed_userdata_result()
+   assert(rawtype(first) is 'userdata', 'a userdata result contract should preserve full userdata')
+
+   local typed_local:userdata = first
+   typed_local = userdata_source()
+   expect_contract_failure(function() typed_local = dynamic_value({}) end, 'local')
+
+   local captured:userdata = userdata_source()
+   function write_userdata(Value:any)
+      captured = Value
+   end
+   write_userdata(userdata_source())
+   expect_contract_failure(function() write_userdata('wrong') end, 'upvalue')
+   assert(rawtype(captured) is 'userdata', 'a rejected userdata upvalue store must preserve its value')
+
+   global glContractUserdata:userdata = userdata_source()
+   glContractUserdata = userdata_source()
+   expect_contract_failure(function() glContractUserdata = dynamic_value(3) end, 'global')
+   assert(rawtype(glContractUserdata) is 'userdata', 'a rejected userdata global store must preserve its value')
+
+   function wrong_userdata_result():userdata return dynamic_value({}) end
+   expect_contract_failure(function() wrong_userdata_result() end, 'result')
+end
+
+@Test function DeferredUserdataContracts()
+   function accept_userdata(Value:userdata):userdata return Value end
+
+   local deferred_proxy = <{ regex.new('') }>
+   assert(type(deferred_proxy) is 'userdata', 'a typed deferred proxy should advertise userdata')
+   local resolved_proxy = accept_userdata(deferred_proxy)
+   assert(rawtype(resolved_proxy) is 'userdata', 'a deferred proxy should resolve before its contract')
+
+   local captured = 2
+   function capture() return captured end
+   local deferred_pointer = <{ debug.upvalueID(capture, 0) }>
+   assert(type(accept_userdata(deferred_pointer)) is 'userdata',
+      'deferred light userdata should satisfy userdata after resolution')
+
+   local deferred_range = <{ {0 to 2} }>
+   expect_contract_failure(function() accept_userdata(dynamic_value(deferred_range)) end, 'parameter')
+end
+
+@Test function ContractFailureErrorCode()
+   function coded_parameter(Value:num):num return Value end
+   function coded_result(Value:any):num return Value end
+
+   assert(contract_failure_code(function() coded_parameter(dynamic_value('wrong')) end) is ERR_TypeMismatch,
+      'A parameter contract failure must report ERR_TypeMismatch')
+   assert(contract_failure_code(function() coded_result('wrong') end) is ERR_TypeMismatch,
+      'A result contract failure must report ERR_TypeMismatch')
+
+   global glContractCode:num = 1
+   assert(contract_failure_code(function() glContractCode = dynamic_value('wrong') end) is ERR_TypeMismatch,
+      'A global contract failure must report ERR_TypeMismatch')
+
+   -- The failure must be selectable by a filtered handler, not only by a catch-all.
+
+   local filtered = false
+   try
+      coded_parameter(dynamic_value('wrong'))
+   except e when ERR_TypeMismatch
+      filtered = true
+   except e
+      assert(false, 'A contract failure must match an ERR_TypeMismatch filter, got code ' .. tostring(e.code))
+   end
+   assert(filtered, 'Expected the ERR_TypeMismatch handler to run')
+end
+
+@Test function ContractFailureIgnoresStaleErrorCodes()
+   -- A soft API failure parks its ERR code in the script state without raising.  The next contract failure must
+   -- stamp its own code rather than inherit the stale one, otherwise an unrelated filter intercepts it.
+
+   function stale_parameter(Value:num):num return Value end
+
+   local config = obj.new('config', { path = '' })
+   config.get('NoSuchKeyAtAll', 'fallback')
+
+   try
+      stale_parameter(dynamic_value('wrong'))
+   except e when ERR_NoAction
+      assert(false, 'A contract failure must not inherit the stale ERR code of an earlier soft failure')
+   except e when ERR_TypeMismatch
+      assert(e.code is ERR_TypeMismatch, 'A contract failure must report ERR_TypeMismatch after a soft API failure')
+   except e
+      assert(false, 'Unexpected contract failure code: ' .. tostring(e.code))
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Interpreter/JIT parity, disassembly and bytecode persistence.
+
+@Test function HotContractParity()
+   function hot(Value:num):num return Value + 1 end
+   function hot_results(Value:num):<num, str> return Value, 'kept', false end
+   function hot_userdata(Value:userdata):userdata return Value end
+   global glHotInferredContract = 0
+   global glHotTimeObject = obj.new('time')
+   global function glHotCallableContract():num return 1 end
+   function store_hot_global(Value:any):num
+      glHotInferredContract = Value
+      return glHotInferredContract
+   end
+   function store_hot_callable(Value:any)
+      glHotCallableContract = Value
+   end
+   function store_hot_object(Value:any):obj
+      glHotTimeObject = Value
+      return glHotTimeObject
+   end
+   local hot_captured = obj.new('time')
+   function store_hot_captured_object(Value:any):obj
+      hot_captured = Value
+      return hot_captured
+   end
+   local dynamic:any = hot
+   local compatible_callable:any = function():num return 2 end
+   local proxy = regex.new('')
+   local matching_time = obj.new('time')
+   for i in {0 to 200} do
+      assert(dynamic(i) is i + 1, 'Valid hot call should preserve its argument')
+      local value, text, extra = hot_results(i)
+      assert(value is i and text is 'kept' and extra is nil,
+         'Hot fixed return contracts must truncate additional results')
+      assert(hot_userdata(proxy) is proxy, 'userdata contracts must remain stable on hot paths')
+      assert(store_hot_global(i) is i, 'An inferred global contract should preserve valid values on hot paths')
+      assert(store_hot_object(matching_time).class.name is 'Time',
+         'A matching global object class should remain valid on hot paths')
+      assert(store_hot_captured_object(matching_time).class.name is 'Time',
+         'A matching captured object class should remain valid on hot paths')
+      store_hot_callable(compatible_callable)
+      assert(glHotCallableContract() is 2, 'A hot global func contract should preserve compatible callables')
+   end
+   expect_contract_failure(function() dynamic(dynamic_value('wrong')) end, 'parameter')
+   expect_contract_failure(function() hot_userdata(dynamic_value({0 to 2})) end, 'parameter')
+   expect_contract_failure(function() store_hot_global('wrong') end, 'global')
+   expect_contract_failure(function() store_hot_callable('wrong') end, 'global function')
+   local file = obj.new('file')
+   expect_object_contract_failure(function() store_hot_object(file) end, 'hot global object')
+   expect_object_contract_failure(function() store_hot_captured_object(file) end, 'hot captured object')
+   assert(glHotTimeObject.class.name is 'Time' and hot_captured.class.name is 'Time',
+      'Rejected hot object stores must preserve both global and captured values')
+   assert(glHotCallableContract() is 2, 'A rejected hot store must preserve the global callable')
+end
+
+@Test function ContractDisassemblyOrder()
+   local script = obj.new('tiri', { statement = [[
+function first(Values:array<any>):any
+   return Values[0]
+end
+]] })
+   script.acQuery()
+   script.acActivate()
+   local _, disassembly = script.mtDebugLog('disasm')
+   local guard = disassembly.find('CONTRACT')
+   local access = disassembly.find('AGET')
+   assert(guard != nil and access != nil and guard < access,
+      'CONTRACT must precede specialised array access, got:\n' .. disassembly)
+end

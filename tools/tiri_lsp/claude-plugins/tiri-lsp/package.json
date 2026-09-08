@@ -1,0 +1,8 @@
+{
+  "name": "tiri-lsp",
+  "displayName": "Tiri Language Server",
+  "description": "Tiri language server for code intelligence",
+  "version": "1.0.0",
+  "publisher": "Kotuku",
+  "category": "development"
+}

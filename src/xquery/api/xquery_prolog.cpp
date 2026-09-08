@@ -122,7 +122,7 @@ const std::string & XQueryFunction::signature() const
 CompiledXQuery * XQueryModuleCache::fetch_or_load(std::string_view URI, const XQueryProlog &Prolog,
    XPathEvaluator &Eval) const
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    log.branch("URI: %.*s", int(URI.size()), URI.data());
 
@@ -203,7 +203,7 @@ CompiledXQuery * XQueryModuleCache::fetch_or_load(std::string_view URI, const XQ
 
    loading_in_progress.insert(uri_key);
 
-   auto cleanup = pf::Defer([&]() {
+   auto cleanup = kt::Defer([&]() {
       loading_in_progress.erase(uri_key);
    });
 
@@ -362,7 +362,7 @@ uint32_t XQueryProlog::resolve_prefix(std::string_view prefix, const extXML *doc
    }
 
    if (document) {
-      auto doc_entry = document->Prefixes.find(std::string(prefix));
+      auto doc_entry = document->Prefixes.find(prefix);
       if (doc_entry != document->Prefixes.end()) return doc_entry->second;
    }
 
@@ -375,7 +375,7 @@ uint32_t XQueryProlog::resolve_prefix(std::string_view prefix, const extXML *doc
 bool XQueryProlog::declare_namespace(std::string_view prefix, std::string_view uri, extXML *document)
 {
    std::string cleaned = xml::uri::normalise_uri_separators(std::string(uri));
-   auto hash = pf::strhash(cleaned);
+   auto hash = kt::strhash(cleaned);
    std::string prefix_key(prefix);
    auto inserted = declared_namespaces.emplace(prefix_key, hash);
    if (not inserted.second) return false;
@@ -462,7 +462,7 @@ XQueryProlog::ExportValidationResult XQueryProlog::validate_library_exports_deta
       return result;
    }
 
-   uint32_t module_hash = pf::strhash(*module_namespace_uri);
+   uint32_t module_hash = kt::strhash(*module_namespace_uri);
 
    auto matches_namespace = [&](std::string_view qname) -> bool {
       if (qname.empty()) return false;

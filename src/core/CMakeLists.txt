@@ -19,65 +19,139 @@ set (FUNCTIONS  # Full paths are required for add_custom_command() dependencies 
    "${CMAKE_CURRENT_SOURCE_DIR}/fs_resolution.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/fs_volumes.cpp")
 
-SET (CORE_DEFS
-   "${CMAKE_CURRENT_SOURCE_DIR}/compression/class_compressed_stream_def.c"
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_config_def.c"
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_file_def.c"
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_script_def.c"
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_task_def.c"
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_thread_def.c"
-   "${CMAKE_CURRENT_SOURCE_DIR}/compression/class_compression_def.c")
+if (KOTUKU_DEFS_AVAILABLE)
+   set (CORE_STAMP "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/core_defs.stamp")
 
-if (BUILD_DEFS)
-   add_custom_command (
-      OUTPUT
-         ${CORE_DEFS}
-         "${DOCS}/modules/classes/compressedstream.xml"
-         "${DOCS}/modules/classes/compression.xml"
-         "${DOCS}/modules/classes/config.xml"
-         "${DOCS}/modules/classes/file.xml"
-         "${DOCS}/modules/classes/metaclass.xml"
-         "${DOCS}/modules/classes/module.xml"
-         "${DOCS}/modules/classes/script.xml"
-         "${DOCS}/modules/classes/storagedevice.xml"
-         "${DOCS}/modules/classes/task.xml"
-         "${DOCS}/modules/classes/thread.xml"
-         "${DOCS}/modules/classes/time.xml"
-         "${INCLUDE_OUTPUT}/modules/core.h"
-         "${INCLUDE_OUTPUT}/system/errors.h"
-         "${INCLUDE_OUTPUT}/system/registry.h"
-         "${INCLUDE_OUTPUT}/system/fields.h"
-         "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
+   set (CORE_OUTPUTS
+      "${DOCS}/modules/core.xml" "${DOCS}/modules/classes/metaclass.xml"
+      "${INCLUDE_OUTPUT}/modules/core.h" "${INCLUDE_OUTPUT}/system/errors.h" "${INCLUDE_OUTPUT}/system/registry.h"
+      "${CMAKE_CURRENT_SOURCE_DIR}/data_functions.c" "${CMAKE_CURRENT_SOURCE_DIR}/idl.h" "${CMAKE_CURRENT_SOURCE_DIR}/prototypes.h")
+
+      add_custom_command (
+      OUTPUT "${CORE_STAMP}"
+      BYPRODUCTS ${CORE_OUTPUTS}
       COMMAND ${ORIGO_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=defs/errors.tdl" "output=${INCLUDE_OUTPUT}/system/errors.h" "sdk=${PROJECT_SOURCE_DIR}"
       COMMAND ${ORIGO_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=defs/registry.tdl" "output=${INCLUDE_OUTPUT}/system/registry.h" "sdk=${PROJECT_SOURCE_DIR}"
-      COMMAND ${ORIGO_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=defs/fields.tdl" "output=${INCLUDE_OUTPUT}/system/fields.h" "sdk=${PROJECT_SOURCE_DIR}"
-      COMMAND ${ORIGO_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=defs/core.tdl" "sdk=${PROJECT_SOURCE_DIR}" "output-proto=prototypes.h" "output-defs=data_functions.c" "files={" ${FUNCTIONS} "}"
-      COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/core.tdl" "output=${CMAKE_CURRENT_SOURCE_DIR}/idl.h" "sdk=${PROJECT_SOURCE_DIR}" "format=c"
+      COMMAND ${ORIGO_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=defs/core.tdl" "sdk=${PROJECT_SOURCE_DIR}" "output-proto=prototypes.h" "output-defs=data_functions.c"
+      COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/core.tdl" "output=stdout" "sdk=${PROJECT_SOURCE_DIR}" "header=#undef MOD_IDL[LF]#define MOD_IDL [DQ]" "format=serial" > "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
+      COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/time.tdl" "output=stdout" "sdk=${PROJECT_SOURCE_DIR}" "format=serial" >> "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
+      COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/filesystem.tdl" "output=stdout" "sdk=${PROJECT_SOURCE_DIR}" "format=serial" >> "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
+      COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/module.tdl" "output=stdout" "sdk=${PROJECT_SOURCE_DIR}" "format=serial" >> "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
+      COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/script.tdl" "output=stdout" "sdk=${PROJECT_SOURCE_DIR}" "format=serial" >> "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
+      COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/processes.tdl" "output=stdout" "sdk=${PROJECT_SOURCE_DIR}" "format=serial" >> "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
+      COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/compression.tdl" "output=stdout" "sdk=${PROJECT_SOURCE_DIR}" "format=serial" >> "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
+      COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/config.tdl" "output=stdout" "sdk=${PROJECT_SOURCE_DIR}" "footer=[DQ][LF]" "format=serial" >> "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
+      COMMAND ${CMAKE_COMMAND} -E touch "${CORE_STAMP}"
       DEPENDS
          "${CMAKE_CURRENT_SOURCE_DIR}/defs/core.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/time.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/compression.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/filesystem.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/module.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/config.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/time.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/processes.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/common.tdl"
          "${CMAKE_CURRENT_SOURCE_DIR}/defs/errors.tdl"
          "${CMAKE_CURRENT_SOURCE_DIR}/defs/registry.tdl"
-         "${CMAKE_CURRENT_SOURCE_DIR}/defs/fields.tdl"
          "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/idl/common.tdl"
          ${FUNCTIONS}
+         "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_metaclass.cpp"
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       COMMENT "Producing definition files for the Core library"
       VERBATIM)
 
-   add_custom_target (core_defs DEPENDS ${CORE_DEFS}
-      "${INCLUDE_OUTPUT}/modules/core.h"
-      "${INCLUDE_OUTPUT}/system/errors.h"
-      "${INCLUDE_OUTPUT}/system/registry.h"
-      "${INCLUDE_OUTPUT}/system/fields.h"
-      "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
-      "${CMAKE_CURRENT_SOURCE_DIR}/defs/core.tdl"
-      "${CMAKE_CURRENT_SOURCE_DIR}/defs/errors.tdl"
-      "${CMAKE_CURRENT_SOURCE_DIR}/defs/registry.tdl"
-      "${CMAKE_CURRENT_SOURCE_DIR}/defs/fields.tdl"
-      "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/idl/common.tdl")
+   add_custom_target (core_defs DEPENDS "${CORE_STAMP}")
 
-   add_dependencies (build_headers core_defs)
+   register_generated_header_target (core_defs)
 endif ()
+
+# Config class
+
+idl_gen ("defs/config.tdl"
+   NAME config_defs
+   OUTPUT "${INCLUDE_OUTPUT}/modules/config.h"
+   BYPRODUCTS
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_config_def.c"
+      "${DOCS}/modules/classes/config.xml"
+   DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/defs/common.tdl"
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_config.cpp")
+
+# Module class
+
+idl_gen ("defs/module.tdl"
+   NAME module_defs
+   OUTPUT "${INCLUDE_OUTPUT}/modules/module.h"
+   BYPRODUCTS
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_module_def.c"
+      "${DOCS}/modules/classes/module.xml"
+   DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/defs/common.tdl"
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_module.cpp")
+
+# Script class
+
+idl_gen ("defs/script.tdl"
+   NAME script_defs
+   OUTPUT "${INCLUDE_OUTPUT}/modules/script.h"
+   BYPRODUCTS
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_script_def.c"
+      "${DOCS}/modules/classes/script.xml"
+   DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/defs/common.tdl"
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_script.cpp")
+
+# Compression & CompressedStream class
+
+idl_gen ("defs/compression.tdl"
+   NAME compression_defs
+   OUTPUT "${INCLUDE_OUTPUT}/modules/compression.h"
+   BYPRODUCTS
+      "${CMAKE_CURRENT_SOURCE_DIR}/compression/class_compressed_stream_def.c"
+      "${CMAKE_CURRENT_SOURCE_DIR}/compression/class_compression_def.c"
+      "${DOCS}/modules/classes/compression.xml"
+      "${DOCS}/modules/classes/compressedstream.xml"
+   DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/defs/common.tdl"
+      "${CMAKE_CURRENT_SOURCE_DIR}/compression/class_compression.cpp"
+      "${CMAKE_CURRENT_SOURCE_DIR}/compression/class_compressed_stream.cpp")
+
+# File class
+
+idl_gen ("defs/filesystem.tdl"
+   NAME filesystem_defs
+   OUTPUT "${INCLUDE_OUTPUT}/modules/filesystem.h"
+   BYPRODUCTS
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_file_def.c"
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_storagedevice_def.c"
+      "${DOCS}/modules/classes/file.xml"
+      "${DOCS}/modules/classes/storagedevice.xml"
+   DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/defs/common.tdl"
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_file.cpp"
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_storagedevice.cpp")
+
+# Process classes
+
+idl_gen ("defs/processes.tdl"
+   NAME process_defs
+   OUTPUT "${INCLUDE_OUTPUT}/modules/processes.h"
+   BYPRODUCTS
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_task_def.c"
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_thread_def.c"
+      "${DOCS}/modules/classes/thread.xml"
+      "${DOCS}/modules/classes/task.xml"
+   DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/defs/common.tdl"
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_task.cpp"
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_thread.cpp")
+
+# Time class
+
+idl_gen ("defs/time.tdl" NAME time_defs OUTPUT "${INCLUDE_OUTPUT}/modules/time.h"
+   BYPRODUCTS "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_time_def.c" "${DOCS}/modules/classes/time.xml"
+   DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_time.cpp")
 
 if (NOT MSVC)
    # A bug in (MinGW?) GCC requires the following flag is applied to ensure that __packed__ works correctly.
@@ -91,10 +165,11 @@ endif ()
 
 add_library (core)
 
-target_compile_definitions (core PRIVATE "__system__" "DBG_DIAGNOSTICS" "PRV_METACLASS")
+target_compile_definitions (core PRIVATE "__system__" "DBG_DIAGNOSTICS" "PRV_METACLASS" "RESOURCE_POOL")
 
 if (MSVC)
    target_compile_definitions (core PRIVATE "_CRT_NONSTDC_NO_DEPRECATE")
+   target_compile_options (core PRIVATE /MP) # Enable multi-processor compilation
 endif ()
 
 # These definitions tell the Core where the system files are installed.
@@ -135,6 +210,13 @@ target_sources (core PRIVATE
    "classes/class_time.cpp"
    "compression/class_compression.cpp")
 
+if (UNIT_TESTS)
+   target_sources (core PRIVATE
+      "tests/unit_tests_object_layout.cpp"
+      "tests/unit_tests_wait_for_objects.cpp")
+   target_compile_definitions (core PRIVATE UNIT_TESTS)
+endif ()
+
 target_include_directories (core PRIVATE
    ${ZLIB_HEADERS})
 
@@ -143,21 +225,31 @@ target_link_libraries (core PRIVATE zlib)
 
 if (WIN32)
    target_sources (core PRIVATE microsoft/windows.cpp)
-   target_link_libraries (core PRIVATE wsock32 psapi)
+   target_link_libraries (core PRIVATE wsock32 psapi advapi32 version)
    if (KOTUKU_VLOG OR MSVC)
       # Header generation for libdbghelp: dlltool -k -d dbghelp.def -l libdbghelp.a
       # Copy libdbghelp.a to your MinGW libs folder.
       target_link_libraries (core PRIVATE dbghelp)
    endif ()
+elseif (ANDROID)
+   target_sources (core PRIVATE classes/class_assets.cpp)
+   target_link_libraries (core PRIVATE android pthread dl)
 else ()
    target_link_libraries (core PRIVATE pthread dl)
 endif ()
 
-flute_test (core_filesystem "tests/filesystem.tiri")
-flute_test (core_misc "tests/misc.tiri")
-flute_test (core_compression "tests/compression.tiri")
-flute_test (core_config "tests/config.tiri")
+flute_test (core_classes "tests/test_classes.tiri")
+flute_test (core_filesystem "tests/test_filesystem.tiri")
+flute_test (core_misc "tests/test_misc.tiri")
+flute_test (core_compression "tests/test_compression.tiri")
+flute_test (core_config "tests/test_config.tiri")
+flute_test (core_messages "tests/test_messages.tiri")
+flute_test (core_processing "tests/test_processing.tiri")
 flute_test (core_time "tests/test_time.tiri")
+flute_test (core_subscriber_lifetimes "tests/test_subscriber_lifetimes.tiri")
+if (UNIT_TESTS)
+flute_test (core_unit_tests "tests/test_unit_tests.tiri")
+endif ()
 
 if (INSTALL_TESTS)
    # Windows-compatible tests
@@ -167,15 +259,10 @@ if (INSTALL_TESTS)
    set_target_properties (test_pf_vector test_wildcmp PROPERTIES CXX_STANDARD 20 LINK_FLAGS_RELEASE "-s")
    install (TARGETS test_pf_vector test_wildcmp DESTINATION "tests/")
 
-   # Unix-only tests (require pthread)
-   if (NOT WIN32)
-      add_executable (test_objlocking "tests/object_locking.cpp")
-      add_executable (test_memlocking "tests/memory_locking.cpp")
+   add_executable (test_memlocking "tests/test_memory_locking.cpp")
 
-      target_link_libraries (test_objlocking PRIVATE ${INIT_LINK})
-      target_link_libraries (test_memlocking PRIVATE ${INIT_LINK})
+   target_link_libraries (test_memlocking PRIVATE ${INIT_LINK})
 
-      set_target_properties (test_memlocking test_objlocking PROPERTIES CXX_STANDARD 20 LINK_FLAGS_RELEASE "-s")
-      install (TARGETS test_objlocking test_memlocking DESTINATION "tests/")
-   endif ()
+   set_target_properties (test_memlocking PROPERTIES CXX_STANDARD 20 LINK_FLAGS_RELEASE "-s")
+   install (TARGETS test_memlocking DESTINATION "tests/")
 endif ()

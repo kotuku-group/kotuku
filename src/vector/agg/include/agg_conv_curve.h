@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,21 +5,18 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Converts quadratic and cubic curve commands into line segments. Hooks into path_storage or other vertex sources
+// before stroke, dash, contour, and rasteriser stages. In the vector renderer it flattens Bezier commands to the
+// polygonal form consumed by AGG scanline rasterisers.
 
-//
-// classes conv_curve
-//
-//----------------------------------------------------------------------------
-
-#ifndef AGG_CONV_CURVE_INCLUDED
-#define AGG_CONV_CURVE_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_curves.h"
 
 namespace agg
 {
-    //---------------------------------------------------------------conv_curve
     // Curve converter class. Any path storage can have Bezier curves defined
     // by their control points. There are two types of curves supported: curve3
     // and curve4. Curve3 is a conic Bezier curve with 2 endpoints and 1 control
@@ -43,7 +39,7 @@ namespace agg
     //
     // Class conv_curve recognizes commands path_cmd_curve3 and path_cmd_curve4
     // and converts these vertices into a move_to/line_to sequence.
-    //-----------------------------------------------------------------------
+
     template<class VertexSource,
              class Curve3=curve3,
              class Curve4=curve4> class conv_curve
@@ -172,5 +168,3 @@ namespace agg
         return cmd;
     }
 }
-
-#endif

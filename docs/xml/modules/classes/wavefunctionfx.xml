@@ -8,7 +8,7 @@
     <module>Vector</module>
     <comment>A filter effect that plots the probability distribution of a quantum wave function.</comment>
     <version>1</version>
-    <id>1069903c</id>
+    <id>37b24361</id>
     <idstring>WAVEFUNCTIONFX</idstring>
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
@@ -26,6 +26,7 @@
       <name>Draw</name>
       <comment>Render the effect to the target bitmap.</comment>
       <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
+      <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">The X position of the region to be drawn.</param>
         <param type="INT" name="Y">The Y position of the region to be drawn.</param>
@@ -43,8 +44,8 @@
     <field>
       <name>AspectRatio</name>
       <comment>SVG compliant aspect ratio settings.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type lookup="ARF">INT</type>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="ARF">ARF</type>
       <description>
 <types lookup="ARF"/>
       </description>
@@ -53,7 +54,7 @@
     <field>
       <name>ColourMap</name>
       <comment>Assigns a pre-defined colourmap to the wave function.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>STRING</type>
       <description>
 <p>An alternative to defining colour <fl>Stops</fl> in a wave function is available in the form of named colourmaps. Declaring a colourmap in this field will automatically populate the wave function's gradient with the colours defined in the map.</p>
@@ -65,7 +66,7 @@
     <field>
       <name>L</name>
       <comment>Azimuthal quantum number.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>This value is clamped by <code>0 &lt;= L &lt; N</code>.</p>
@@ -75,7 +76,7 @@
     <field>
       <name>M</name>
       <comment>Magnetic quantum number.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>This value is clamped by <code>0 &lt;= M &lt;= L</code>.</p>
@@ -85,7 +86,7 @@
     <field>
       <name>N</name>
       <comment>Principal quantum number.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>This value is clamped by <code>N &gt;= 1</code>.</p>
@@ -95,7 +96,7 @@
     <field>
       <name>Resolution</name>
       <comment>The pixel resolution of the internally rendered wave function.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
 <p>By default the resolution of the wave function will match the smallest dimension of the filter target region, which gives the best looking result at the cost of performance.</p>
@@ -106,15 +107,15 @@
     <field>
       <name>Scale</name>
       <comment>Multiplier that affects the scale of the plot.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
     </field>
 
     <field>
       <name>Stops</name>
       <comment>Defines the colours to use for the wave function.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>STRUCT []</type>
+      <access read="R" write="S">Read/Set</access>
+      <type>kt::vector&lt;GradientStop&gt;</type>
       <description>
 <p>The colours that will be used for drawing a wave function can be defined by the Stops array.  At least two stops are required to define a start and end point for interpolating the gradient colours.</p>
 <p>If no stops are defined, the wave function will be drawn in greyscale.</p>
@@ -126,6 +127,7 @@
       <comment>Returns an SVG compliant XML string that describes the effect.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
+      <tags>caller-owns-result</tags>
     </field>
 
   </fields>
@@ -144,5 +146,10 @@
 
   </types>
   <structs>
+    <struct name="GradientStop" comment="Describes a colour stop for the Gradient Stops field.">
+      <field name="Offset" type="DOUBLE">An offset in the range of 0 - 1.0</field>
+      <field name="RGB" type="struct FRGB">A floating point RGB value.</field>
+    </struct>
+
   </structs>
 </book>

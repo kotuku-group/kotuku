@@ -1,14 +1,17 @@
 -- Stress testing for the parser and JIT compiler.  For most of these tests the main objective is to not crash
 -- or fail during parsing, so use of assert() isn't strictly necessary.
 
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
 @Test function LongAdditionChain()
    count = 40000
    terms = {}
-   for index = 0, count do
+   for index in {0 to count} do
       terms[index] = tostring(index)
    end
 
-   statement = table.concat(terms, ' + ')
+   statement = terms.concat(' + ')
    assert(statement, "Addition chain constructed successfully")
 end
 
@@ -26,18 +29,18 @@ end
 
    -- Build a chain of 1000 nested function calls
    expr = "increment(increment(increment(increment(increment("
-   for i = 1, 995 do
+   for i in {0 to 995} do
       expr ..= "increment("
    end
    expr ..= "0"
-   for i = 1, 1000 do
+   for i in {0 to 1000} do
       expr ..= ")"
    end
 
    -- Test deeply nested table construction
    deep_table = {}
    current = deep_table
-   for i = 1, 500 do
+   for i in {0 to 500} do
       current.next = {}
       current = current.next
    end
@@ -49,13 +52,13 @@ end
 @Test function LargeTableConstruction()
    -- Test creating very large tables
    large_array = {}
-   for i = 0, 50000 do
+   for i in {0 to 50000} do
       large_array[i] = i * 2
    end
 
    -- Test large hash table
    large_hash = {}
-   for i = 0, 25000 do
+   for i in {0 to 25000} do
       large_hash["key_" .. i] = "value_" .. i
    end
 
@@ -69,7 +72,7 @@ end
 @Test function StringConcatenation()
    -- Test very long string concatenation chains
    result = ""
-   for i = 0, 10000 do
+   for i in {0 to 10000} do
       result ..= tostring(i)
       if i < 10000 then
          result ..= ","
@@ -78,7 +81,7 @@ end
 
    -- Test the ..= operator with compound assignments
    compound = "start"
-   for i = 0, 1000 do
+   for i in {0 to 1000} do
       compound ..= "_" .. i
    end
 end
@@ -115,7 +118,7 @@ end
    a, b, c, d = 10, 20, 30, 40
 
    -- Test ternary operator chains
-   --result1 = a > 5 ? b > 15 ? c > 25 ? d :> c :> b :> a
+   --result1 = a > 5 ? b > 15 ? c > 25 ? d : c : b : a
    --assert(result1 is 40, "Nested ternary failed")
 
    -- Test compound operators
@@ -154,9 +157,9 @@ end
    -- Test intensive nested loops
    counter = 0
 
-   for i = 1, 100 do
-      for j = 1, 100 do
-         for k = 1, 10 do
+   for i in {1 into 100} do
+      for j in {1 into 100} do
+         for k in {1 into 10} do
             counter++
             if counter % 1000 is 0 then
                continue
@@ -206,6 +209,7 @@ end
    assert(result is 832040, "Fibonacci calculation failed")
 
    -- Test mutual recursion
+   global function is_odd(N):bool end
    global function is_even(N)
       if N is 0 then
          return true
@@ -214,7 +218,7 @@ end
       end
    end
 
-   global function is_odd(N)
+   global function is_odd(N):bool
       if N is 0 then
          return false
       else
@@ -233,16 +237,16 @@ end
    execution_order = {}
 
    function test_defer_scope()
-      table.insert(execution_order, 1)
+      execution_order.insert(1)
 
       defer
-         table.insert(execution_order, 4)
+         execution_order.insert(4)
       end
 
-      table.insert(execution_order, 2)
+      execution_order.insert(2)
 
       defer
-         table.insert(execution_order, 3)
+         execution_order.insert(3)
       end
    end
 
@@ -256,7 +260,7 @@ end
 
    -- Test multiple nested defer statements
    defer_counter = 0
-   for i = 1, 100 do
+   for i in {0 to 100} do
       defer
          defer_counter++
       end

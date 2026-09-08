@@ -1,71 +1,29 @@
 --$TIRI:Include
 
-module({ name="Core", copyright="Paul Manias 1996-2026", timestamp=20241015 }, function()
+module({ name="Core", copyright="Paul Manias 1996-2026", timestamp=20241015,
+  src={ "../core.cpp", "../lib_objects.cpp", "../lib_events.cpp", "../lib_fields_read.cpp", "../lib_fields_write.cpp", "../lib_filesystem.cpp",
+        "../lib_functions.cpp", "../lib_locking.cpp", "../lib_log.cpp", "../lib_messages.cpp", "../lib_memory.cpp", "../fs_folders.cpp",
+        "../fs_identify.cpp", "../fs_resolution.cpp", "../fs_volumes.cpp"
+  } }, function()
   c_include("<stdarg.h>", "<inttypes.h>", "<string.h>", "<stdlib.h>")
-  cpp_include("<list>", "<map>", "<string>", "<set>", "<vector>", "<unordered_map>", "<bit>", "<atomic>", "<array>", "<charconv>", "<sstream>", "<cmath>", "<type_traits>", "ankerl/unordered_dense.h")
+  cpp_include("<list>", "<map>", "<string>", "<set>", "<vector>", "<unordered_map>", "<bit>", "<atomic>",
+     "<array>", "<charconv>", "<sstream>", "<cmath>", "<type_traits>", "<kotuku/strings.hpp>",
+     "ankerl/unordered_dense.h")
 
-  platform("Windows", function()
-     enum("NETMSG", {}, "START", "END")
-  end)
+  privateNames({ "CoreBase", "DateTime", "ResourceManager" })
 
-  privateNames({ "ScriptArg", "CoreBase", "RootModule" })
+  moduleTimestamp()
 
-  priority([==[
-#ifndef NDEBUG
- #ifndef _MSC_VER
-  #include <signal.h>
- #endif
-#endif
-
-// For use in requires statements
-template <typename T> concept pcPointer = std::is_pointer_v<T>;
-template <typename T> concept pcObject = std::is_base_of_v<Object, T>;
-
-#ifndef DEFINE_ENUM_FLAG_OPERATORS
-template <size_t S> struct _ENUM_FLAG_INTEGER_FOR_SIZE;
-template <> struct _ENUM_FLAG_INTEGER_FOR_SIZE<1> { typedef int8_t type; };
-template <> struct _ENUM_FLAG_INTEGER_FOR_SIZE<2> { typedef int16_t type; };
-template <> struct _ENUM_FLAG_INTEGER_FOR_SIZE<4> { typedef int type; };
-template <> struct _ENUM_FLAG_INTEGER_FOR_SIZE<8> { typedef int64_t type; };
-// used as an approximation of std::underlying_type<T>
-template <class T> struct _ENUM_FLAG_SIZED_INTEGER { typedef typename _ENUM_FLAG_INTEGER_FOR_SIZE<sizeof(T)>::type type; };
-
-#define DEFINE_ENUM_FLAG_OPERATORS(ENUMTYPE) \
-constexpr ENUMTYPE operator | (ENUMTYPE a, ENUMTYPE b) noexcept { return ENUMTYPE(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)a) | ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); } \
-constexpr ENUMTYPE operator & (ENUMTYPE a, ENUMTYPE b) noexcept { return ENUMTYPE(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)a) & ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); } \
-constexpr ENUMTYPE operator ~ (ENUMTYPE a) noexcept { return ENUMTYPE(~((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)a)); } \
-constexpr ENUMTYPE operator ^ (ENUMTYPE a, ENUMTYPE b) noexcept { return ENUMTYPE(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)a) ^ ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); } \
-constexpr ENUMTYPE &operator |= (ENUMTYPE &a, ENUMTYPE b) noexcept { return (ENUMTYPE &)(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type &)a) |= ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); } \
-constexpr ENUMTYPE &operator &= (ENUMTYPE &a, ENUMTYPE b) noexcept { return (ENUMTYPE &)(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type &)a) &= ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); }
-#endif
-
-template<typename T>
-constexpr bool defined(T flags, T test_flag) noexcept {
-   static_assert(std::is_enum_v<T>, "Type must be an enum");
-   using underlying = std::underlying_type_t<T>;
-   return (static_cast<underlying>(flags) & static_cast<underlying>(test_flag)) != 0;
-}
-
-  ]==])
-
-  loadFile(glPath .. 'common.tdl')
   loadFile(glPath .. 'common-graphics.tdl')
 
-  flags("SCF", { comment="Script flags" },
-     "EXIT_ON_ERROR: The script will automatically terminate its execution process if an error is detected.",
-     "LOG_ALL: Enables execution debugging.  More information will be printed to the console in this mode.")
-
-  flags("STR", { bits=32 },
-     "MATCH_CASE|CASE: Perform a case-sensitive match.",
-     "MATCH_LEN: The strings must be of equal length to be matched.")
-
   flags("MSF", { comment="Message flags." },
-     "UPDATE: If the `Type` parameter matches a message already inside the queue, the data for that message will be deleted, then the new message will be added to the end of the queue.",
+     "UPDATE: If `Type` matches a queued message, update that message's data in place.",
      "NO_DUPLICATE: If the `Type` parameter matches a message already inside the queue, the new message will not be added and the function will immediately return with `ERR::Okay`.")
 
   flags("PMF", { comment="Flags for ProcessMessages" },
      "EVENT_LOOP: Set if this is the program's main event loop.  Should be accompanied with an infinite timeout.",
-     "SYSTEM_NO_BREAK: Private.  For system calls that need to avoid early termination.")
+     "SYSTEM_NO_BREAK: Private.  For system calls that need to avoid early termination.",
+     "ANY_SIGNAL: Return from WaitForObjects() when any monitored object is signalled.")
 
   flags("RFD", { bits=32, comment="Flags for RegisterFD()" },
      "WRITE: Activate the callback if there is room to write to the FD's buffer.",
@@ -78,48 +36,9 @@ constexpr bool defined(T flags, T test_flag) noexcept {
      "RECALL: Set if the subscriber needs to manually check for incoming/outgoing data.  This is supported as a one-off check, so the flag will be disabled automatically when the subscriber is called.",
      "ALWAYS_CALL: Always call this FD's handler prior to the process going to sleep.")
 
-  flags("TSF", { comment="Task flags" },
-    "WAIT: The parent process will halt when the task is running.  Control is returned to the parent process once the child process terminates.",
-    "RESET_PATH: The new process will start in its own folder and not the folder of the parent process.",
-    "PRIVILEGED: The child process will inherit the system privileges of its parent.",
-    "SHELL: Enables shell mode.  On Unix systems, this means that a shell (usually BASH) will be used to launch the process.",
-    "VERBOSE: Enable verbose logging.",
-    "QUIET: Divert all process output to `/dev/null` or the nearest equivalent for non-Unix systems.",
-    "DETACHED: Forces the new process to be detached from the parent.",
-    "ATTACHED: Forces the new process to be attached to the parent (child will close when parent closes).",
-    "PIPE: Enable the output pipe to the launched process so that it can read data.")
-
-  hash("AHASH", "0x%s",
-    "ACTIVATE",     "CLEAR",         "FREEWARNING",  "COPYDATA",
-    "DATAFEED",     "DEACTIVATE",    "DRAW",         "FLUSH",       "FOCUS",        "FREE",
-    "GETKEY",       "DRAGDROP",      "HIDE",         "INIT",        "LOCK",         "LOSTFOCUS",    "MOVE",
-    "MOVETOBACK",   "MOVETOFRONT",   "NEWCHILD",     "NEWOWNER",    "NEWOBJECT",    "REDO",         "QUERY",
-    "READ",         "RENAME",        "RESET",        "RESIZE",      "SAVEIMAGE",    "SAVETOOBJECT",
-    "SEEK",         "SETKEY",        "SHOW",         "TIMER",       "UNLOCK",       "NEXT",         "PREV",
-    "WRITE",        "SETFIELD",      "CLIPBOARD",    "REFRESH",     "DISABLE",      "ENABLE",       "REDIMENSION",
-    "MOVETOPOINT",  "SORT",          "SAVESETTINGS", "SIGNAL",      "NEWPLACEMENT", "UNDO")
-
-  flags("MHF", { comment="Internal options for requesting function tables from modules." },
-    "STATIC: Keep the module code in memory",
-    "STRUCTURE|DEFAULT: Use structures to group exported functions (Linux, C/C++ standard)")
-
   flags("MTF", { comment="MoveToPoint flags" }, "X", "Y", "Z", "ANIM", "RELATIVE")
 
   flags("VLF", { comment="VlogF flags" }, "BRANCH", "ERROR", "WARNING", "CRITICAL", "INFO", "API", "DETAIL", "TRACE", "FUNCTION")
-
-  flags("MOF", { comment="Module flags" },
-    "LINK_LIBRARY: Module refers to a symbolic link library (e.g. libz DLL or SO)",
-    "STATIC: This flag prevents the loaded module code from being unloaded when the module object is freed.  This may be needed in cases where a module is designed with the presumption that it will remain in memory after being loaded by the developer.",
-    "SYSTEM_PROBE: Indicates that the module is being probed.  Do not use outside of the core library.")
-
-  flags("THF", { comment="Thread flags" },
-    "AUTO_FREE: Automatically destroy the Thread object when the user routine has completed.")
-
-  enum("FDT", { type="int", start=0, comment="Flags for the SetDate() file method." },
-    "MODIFIED: The date on which the file was last modified.",
-    "CREATED: The date on which the file was created.  On some host platforms this datestamp may be read-only.",
-    "ACCESSED: The date on which the file was last accessed by a user or application.",
-    "ARCHIVED: The date on which the file was most recently archived.  Not supported by most filesystems.")
 
   flags("VOLUME", { comment="Options for SetVolume()" },
     "REPLACE: If the volume already exists, all paths that are attached to it will be replaced with the new path setting.",
@@ -130,14 +49,6 @@ constexpr bool defined(T flags, T test_flag) noexcept {
   flags("FDL", { comment="Options for the File Delete() method." },
     "FEEDBACK: Automatically manage user feedback for deleting files by presenting dialog boxes.")
 
-  flags("CMF", { comment="Compression flags" },
-    "PASSWORD: A password has been set on the object.",
-    "NEW: Force the creation of a new file archive.  Any existing file data at the target location will be destroyed.",
-    "CREATE_FILE: Create a new archive only if the source file does not already exist.",
-    "READ_ONLY: Forces read-only access, which is strongly recommended if an existing archive is being opened with no modifications intended.  If this flag is not set, initialisation can fail if the user does not have write access to the source file.",
-    "NO_LINKS: Treat symbolic links as normal files/folders.",
-    "APPLY_SECURITY: When decompressing, apply individual file permissions if they are available in the compression file.")
-
   flags("RSF", { comment="Flags for ResolvePath()"},
     "NO_FILE_CHECK: Do not test for the existence of the targeted file or folder during the resolution process.",
     "CHECK_VIRTUAL: If the volume referenced by Path is traced to another volume that is reserved by a virtual file system driver, `ERR::VirtualVolume` is returned. The volume is still resolved as far as possible and the resulting path will be returned by this function.",
@@ -146,24 +57,7 @@ constexpr bool defined(T flags, T test_flag) noexcept {
     "PATH: Use the `PATH` environment variable to resolve the file name in the `Path` parameter.",
     "CASE_SENSITIVE: For use on host systems that use case-insensitive file systems such as Windows; this option checks that the discovered file is a case-sensitive match to the Path.")
 
-  -- NB: The MFF flags are duplicated in the FileSystem's Win32 code if you're going to change these
-
-  flags("MFF", { comment="Flags for the File Watch() method." },
-    "READ: File was accessed (read).",
-    "MODIFY|WRITE: File modified via write or truncation.",
-    "CREATE: New file/link created or renamed in folder.",
-    "DELETE: Existing file deleted",
-    "MOVED|RENAME: Existing file moved or renamed.",
-    "ATTRIB: File permissions or datestamp changed.",
-    "OPENED: Existing file was opened.",
-    "CLOSED: An opened file has been closed.",
-    "UNMOUNT: Host filesystem was unmounted.",
-    "FOLDER: Folder identifier; if passed to @File.Watch() then indicates a preference for folder events only.",
-    "FILE: File identifier; if passed to @File.Watch() then indicates a preference for file events only.",
-    "SELF: Event applies to the monitored folder and not a contained item",
-    "DEEP: Receive notifications from sub-folders (Windows only).")
-
-  enum("STT", { type="int", start=1, comment="Types for StrDatatype()." },
+  enums("STT", { type="int", start=1, comment="Types for StrDatatype()." },
     "NUMBER: The string represents a whole number.",
     "FLOAT: The string represents a floating point number.",
     "HEX: The string represents a hexadecimal number.",
@@ -177,14 +71,19 @@ constexpr bool defined(T flags, T test_flag) noexcept {
     "SHOW_IO",
     "SHOW_ERRORS",
     "ARGS",
-    "ERROR",
     "PRIVILEGED",
     "SYSTEM_PATH",
     "MODULE_PATH",
     "ROOT_PATH",
     "SCAN_MODULES")
 
-  enum("TOI", { type="int" },
+  enums("CONTYPE", { type="int", start=0, comment="Console types" },
+    "NONE: No console available",
+    "TERMINAL: Launched from a terminal",
+    "HANDLE: Redirected to a handle",
+    "MANUAL: Console created manually")
+
+  enums("TOI", { type="int" },
     "LOCAL_CACHE",        -- For Android.  Defines the path of the local cache for assignment to localcache:
     "LOCAL_STORAGE",      -- For Android.  Defines the path of the local storage for assignment to localstorage:
     "ANDROID_ENV",        -- For Android.
@@ -200,32 +99,14 @@ constexpr bool defined(T flags, T test_flag) noexcept {
     "VOLUME: Feedback only - indicates a volume.",
     "LINK: Feedback only - file/folder is actually a link to another location.",
     "TAGS: Receive additional information for each file, such as comments, author and copyright.  The results are stored in the `Tags` field of each file.",
-    "HIDDEN: Feedback only - file/folder is hidden.",
     "QUALIFY|QUALIFIED: Return fully qualified folder names (i.e. trailing slash or colon for each name).",
     "VIRTUAL: Path is to a virtual device.",
     "STREAM: Path is connected via a stream, e.g. network connection.",
-    "READ_ONLY: Read-only (not permissions related and might indicate read-only media).",
-    "ARCHIVE: Feedback only - archive bit is set.",
+    "READ_ONLY: Read-only (not permissions related, can indicate read-only media).",
     "OPENDIR: Internal option.",
     { READ_ALL = "SIZE|DATE|PERMISSIONS|FILES|FOLDERS" })
 
-  flags("FL", { comment="File flags" },
-    "WRITE: Prepares a file for writing data, starting at byte position 0.  To start writing from the end of a file, use the Seek action after the file has been initialised.",
-    "NEW: Required when creating a new file.  If a file with the same name exists, its contents will be destroyed. If however the existing file is locked, the initalisation process will fail.",
-    "READ: Required if the file needs to be opened for read access.",
-    "FOLDER|DIRECTORY: The file object represents a folder.",
-    "APPROXIMATE: Allows fuzzy matching of the file path when opening an existing file.  This means that the file extension will be ignored; for instance attempting to open a file of 'screenshot.png' when only a file name of 'screenshot.jpg' exists in the same folder, the 'screenshot.jpg' file will be opened instead.  If multiple files could potentially match to the file name, the file object will select the first match that is encountered.",
-    "LINK: Read-Only.  Indicates that the file is a symbolic link or shortcut to another file.",
-    "BUFFER: Activates a special mode in which the file data is stored in a memory buffer rather than a disk file.  Set the Size field to a value of at least 1 so that the initial buffer size is configured.  In this mode many of the available file operations are meaningless except for the Read, Write and Seek actions.",
-    "LOOP: In loop mode, the file object's position marker for read/write operations is allowed to extend past the actual file size.  Any read/write operation beyond the file size will loop back to the file at a corrected offset - for example, reading position 330 of a 100 byte file will start the operation from the 30th byte.  Loop mode does not affect any other area besides the read, write and seek operations.  The loop feature is typically used to create multimedia data streams with minimal effort.",
-    "FILE: Explicitly declares the file object as an entity that stores content (as opposed to a device or folder for example).",
-    "RESET_DATE: For internal use only",
-    "DEVICE: The file is a system device (must set if opening a device for read/write operations)",
-    "STREAM: File data is streamed (e.g. PIPE, FIFO, socket) and may be accessed locally or via a network.",
-    "EXCLUDE_FILES: Exclude files when scanning this folder.",
-    "EXCLUDE_FOLDERS: Exclude folders when scanning this folder.")
-
-  enum("LOC", { type="int", start=1, comment="AnalysePath() values" },
+  enums("LOC", { type="int", start=1, comment="AnalysePath() values" },
     "DIRECTORY|FOLDER: The path refers to a folder.",
     "VOLUME: The path refers to a volume name.",
     "FILE: The path refers to a file.")
@@ -233,73 +114,55 @@ constexpr bool defined(T flags, T test_flag) noexcept {
   flags("LDF", { comment="Flags for LoadFile()" },
     "CHECK_EXISTS: Limits the routine to checking the file cache for the existence of the file.  If found, the relevant cache entry is returned. The open count is not incremented by this action (it is therefore unnecessary to follow-up with a call to UnloadFile()).  If no up-to-date cache entry is available, `ERR::Search` is returned.")
 
-  enum("FBK", { type="int", start=1, comment="Flags for file feedback." },
+  enums("FBK", { type="int", start=1, comment="Flags for file feedback." },
     "MOVE_FILE: A file is to be, or has been moved.",
     "COPY_FILE: A file is to be, or has been copied.",
     "DELETE_FILE: A file is to be, or has been deleted.")
 
-  enum("FFR", { type="int", start=0, comment="Return codes available to the feedback routine" },
+  enums("FFR", { type="int", start=0, comment="Return codes available to the feedback routine" },
     "OKAY|CONTINUE: Continue processing uninterrupted.",
     "SKIP: Skip processing of this entity.",
     "ABORT: Abort the entire operation.")
 
-  enum("VAS", { type="int", start=1, comment="For use by VirtualVolume()" },
+  enums("VAS", { type="int", start=1, comment="For use by VirtualVolume()" },
     "DEREGISTER: Remove the virtual volume from the system.",
-    "SCAN_DIR",
-    "DELETE",
-    "RENAME",
-    "OPEN_DIR",
-    "CLOSE_DIR",
-    "TEST_PATH",
-    "WATCH_PATH",
-    "IGNORE_FILE",
-    "GET_INFO",
-    "GET_DEVICE_INFO",
-    "IDENTIFY_FILE",
-    "MAKE_DIR",
-    "SAME_FILE",
+    "SCAN_DIR: Register the callback used to retrieve entries from an opened virtual folder.",
+    "DELETE: Register the callback used to delete a virtual file or folder.",
+    "RENAME: Register the callback used to rename or move a virtual path.",
+    "OPEN_DIR: Register the callback used to open a virtual folder for scanning.",
+    "CLOSE_DIR: Register the callback used to close an opened virtual folder.",
+    "TEST_PATH: Register the callback used to test and resolve a virtual path.",
+    "WATCH_PATH: Register the callback used to watch a virtual path for changes.",
+    "IGNORE_FILE: Register the callback used when a virtual file object no longer needs to be watched.",
+    "GET_INFO: Register the callback used to retrieve information for a virtual file or folder.",
+    "GET_DEVICE_INFO: Register the callback used to retrieve storage device information for a virtual path.",
+    "IDENTIFY_FILE: Register the callback used to identify the class associated with a virtual file.",
+    "MAKE_DIR: Register the callback used to create a virtual folder.",
+    "SAME_FILE: Register the callback used to determine if two virtual paths refer to the same file.",
     "CASE_SENSITIVE: Set to true if the volume's paths are case-sensitive.",
-    "READ_LINK",
-    "CREATE_LINK",
-    "DRIVER_SIZE")
-
-  enum("FDB", { type="int", start=1, comment="Feedback event indicators." },
-    "DECOMPRESS_FILE",
-    "COMPRESS_FILE",
-    "REMOVE_FILE",
-    "DECOMPRESS_OBJECT")
-
-  enum("CF", { type="int", start=1, comment="Compression stream formats" },
-    "GZIP: The 'gzip' format",
-    "ZLIB: The 'zlib' format",
-    "DEFLATE: The 'deflate' format")
-
-  flags("FOF", { comment="Flags that can be passed to FindObject()" },
-    "SMART_NAMES: Parse numeric object names as ID references and support use of the 'Owner' reserved keyword.")
+    "READ_LINK: Register the callback used to read a symbolic link target from a virtual path.",
+    "CREATE_LINK: Register the callback used to create a symbolic link on a virtual volume.",
+    "DRIVER_SIZE: Set the size of the driver-specific data attached to folder scans.")
 
   flags("NF", { comment="Flags that can be passed to NewObject().  If a flag needs to be stored with the object, it must be specified in the lower word." },
     "UNTRACKED: An object created with this flag will not be tracked back to the object that created it.",
     "INITIALISED: Read-only indicator if the object has been initialised.",
     "LOCAL: Classes can allocate local objects to stop them from being associated with the client.",
-    "FREE_ON_UNLOCK: Read-only indicator for when the object is marked for deletion.",
+    "FREE_ON_UNLOCK: Set if FreeResource() was called on an object under lock conditions.  Immediately collects when unlocked.",
     "FREE: Read-only indicator for when the object is being freed.",
     "TIMER_SUB: The object is subscribed to a timer interval.",
     "SUPPRESS_LOG: Private.  Turns off the initial log message.",
-    "COLLECT: Marked for garbage collection.",
-    "RECLASSED: The object switched from the base-class to a sub-class during initialisation.",
-    "MESSAGE: Action has been called against the object through the message system (managed by ~Core.ProcessMessages()).",
+    "RECLASSED: The object switched from the base-class to a derived class during initialisation.",
     "SIGNALLED: The object has been signalled and is awaiting processing.",
     "PERMIT_TERMINATE: Private.  Permits termination when a lock is held on the object.",
     "ASYNC_ACTIVE: Read-only indicator that asynchronous actions are queued or executing against this object.",
-    { UNIQUE = "0x40000000: Use to allocate an object that has a guaranteed unique name.  This will prevent code from shadowing any object that exists with the same name, which can be imperative when creating shared objects.  If it is discovered that an identically named object exists, ~Core.NewObject() will return `ERR::ObjectExists`.  This flag works in conjunction with the `Name` parameter.",
-      NAME   = "0x80000000: Use the Name parameter to name the created object.  This flag is not required if using `UNIQUE`.",
-      PRIVATE = 0
-    }
+    "ZOMBIE: Private.  The object has been terminated but is waiting for the RefCount to reach zero before being destroyed.",
+    { PRIVATE = 0 }
   )
 
   constants("MAX", { }, {
      FILENAME = 256, -- Maximum length for file names (not necessarily including path)
-     NAME_LEN = 31   -- Refer to the 'Object' struct for more info on the NAME_LEN value
+     NAME_LEN = 32   -- Refer to the 'Object' struct for more info on the NAME_LEN value
   })
 
   constants("MSGID", { type="int", comment="Reserved message ID's that are handled internally." }, {
@@ -318,19 +181,20 @@ constexpr bool defined(T flags, T test_flag) noexcept {
      WAIT_FOR_OBJECTS = 91
   })
 
-  enum("IDTYPE", { type="int", start=1, comment="Types for AllocateID()" },
-    "MESSAGE: Message ID's are allocated for the purpose of sending uniquely identifiable messages between tasks.",
-    "GLOBAL: Global ID's have no specific association with anything.",
-    "FUNCTION: Function ID's are used to track `FUNCTION` types and are assigned to the function ID field."
+  enums("IDTYPE", { type="int", start=1, comment="Types for AllocateID()" },
+    "MESSAGE: Message IDs are allocated for the purpose of sending uniquely identifiable messages between tasks.",
+    "GLOBAL: Global IDs have no specific association with anything.",
+    "FUNCTION: Function IDs are used to track `FUNCTION` types and are assigned to the function ID field.",
+    "RESOURCE: Resource identifier for TrackResource()"
   )
 
-  enum("TSTATE", { type="char", comment="Indicates the state of a process." },
+  enums("TSTATE", { type="char", comment="Indicates the state of a process." },
     "RUNNING: The process is currently executing code.",
     "PAUSED: The process is asleep.",
     "STOPPING: The process is in its termination phase.",
     "TERMINATED: The process has closed.")
 
-  enum("RES", { type="int", start=1 },
+  enums("RES", { type="int", start=1 },
     "FREE_SWAP: The total amount of free swap memory.",
     "CONSOLE_FD: Internal reference to the FD of the console.",
     "KEY_STATE: Maintains the state of key qualifiers such as caps-lock and the shift keys.",
@@ -338,27 +202,23 @@ constexpr bool defined(T flags, T test_flag) noexcept {
     "DISPLAY_DRIVER: Internal.  Passes the name of the preferred display driver to the display module.",
     "PRIVILEGED_USER: If this value is set to 1, the process will operate in privileged mode (typically this enables full administrator rights).  This feature will only work for Unix processes that are granted admin rights when launched.  Setting the Value to 0 reverts to the user's permission settings.  SetResource() will return an error code indicating the level of success.",
     "PRIVILEGED: This is set to `true` if the process has elevated privileges (such as superuser or administrative rights).",
-    "CORE_IDL: Refers to the Core module's compressed IDL string.",
-    "STATIC_BUILD: Returns true if the runtime is a statically linked build.",
-    "RELEASE_BUILD: Returns true if the runtime is a release build.",
     "LOG_LEVEL: The current level of log detail (larger numbers indicate more detail).",
     "TOTAL_SHARED_MEMORY: The total amount of shared memory in use (system wide).",
     "LOG_DEPTH: The current depth of log messages.",
     "JNI_ENV: Return the current JNI environment string.",
-    "THREAD_ID: Return the ID of the current thread.",
-    "OPEN_INFO: Pointer to the OpenInfo structure originally used to initialise the system.",
-    "EXCEPTION_HANDLER: Internal",
-    "NET_PROCESSING: Internal windows resource for Network module",
     "PROCESS_STATE: Life-cycle stage of the running process",
     "TOTAL_MEMORY: The total amount of installed memory.",
     "TOTAL_SWAP: The total amount of available swap space.",
     "CPU_SPEED: The average top-speed of all CPU cores in Mhz.",
     "FREE_MEMORY: The total amount of free memory.",
     "MEMORY_USAGE: The total amount of memory used by the current process, in bytes.",
-    "MAIN_THREAD: Read-only, returns `true` if called from the main thread."
+    "MAIN_THREAD: Read-only, returns `true` if called from the main thread.",
+    "MAIN_THREAD_ID: Read-only, returns the ID of the main thread.",
+    "WINDOWS_ICON: The Microsoft Windows resource icon ID for this process.",
+    "STRUCT_DB: Returns a map of hashed struct names and corresponding struct sizes."
   )
 
-  enum("RP", { type="int", start=1, comment="Path types for SetResourcePath()" },
+  enums("RP", { type="int", start=1, comment="Path types for SetResourcePath()" },
     "MODULE_PATH: An alternative path leading to the system modules (normally `system:modules/`).  Introduced for platforms such as Android, where modules are stored in asset folders.",
     "SYSTEM_PATH: The path of the `system:` volume, which otherwise defaults to `[root]:system/`.",
     "ROOT_PATH: Overrides the root path, which defaults to the location at which Kōtuku is installed.")
@@ -366,12 +226,6 @@ constexpr bool defined(T flags, T test_flag) noexcept {
   flags("CLF", { comment="Flags for the MetaClass." },
     "INHERIT_LOCAL: Inherit the functionality of local objects defined in the class spec.",
     "NO_OWNERSHIP: Objects created will not be tracked to the creating process, nor any parent object (~Core.SetOwner() will not work either).")
-
-  flags("CNF", { comment="Flags for the Config class." },
-    "STRIP_QUOTES: Removes quotes from key values that are quote-encapsulated.",
-    "AUTO_SAVE: When the configuration object is freed, automatically save the configuration data back to the original file source.",
-    "OPTIONAL_FILES: Files are optional (do not fail if a requested file does not exist).",
-    "NEW: On initialisation, do not load any data from the referenced configuration file.")
 
 -- Please note that when the user is using an international keyboard, the name of the key will not
 -- actually match what the symbol represents for some key types.
@@ -535,119 +389,22 @@ constexpr bool defined(T flags, T test_flag) noexcept {
     LIST_END    = 150
   })
 
+  -- Load local definitions for IDL generation
+  loadFile('./common.tdl')
+
   c_insert([==[
 
 typedef AC ACTIONID;
 
-#ifndef __GNUC__
-#define __attribute__(a)
-#endif
-
-typedef const std::vector<std::pair<std::string, uint32_t>> STRUCTS;
-typedef std::map<std::string, std::string, std::less<>> KEYVALUE;
-
-#ifndef STRINGIFY
-#define STRINGIFY(x) #x
-#define TOSTRING(x) STRINGIFY(x)
-#endif
-
-#define MOD_IDL nullptr
-
-#ifdef KOTUKU_STATIC
-__export void CloseCore(void);
-__export ERR OpenCore(struct OpenInfo *, struct CoreBase **);
-#else
-__export struct ModHeader ModHeader;
-#endif
-
-#ifdef MOD_NAME
-#ifdef KOTUKU_STATIC
-#define KOTUKU_MOD(init,close,open,expunge,test,IDL,Structures) static struct ModHeader ModHeader(init, close, open, expunge, test, IDL, Structures, TOSTRING(MOD_NAME), TOSTRING(MOD_NAMESPACE));
-#else
-#define KOTUKU_MOD(init,close,open,expunge,test,IDL,Structures) struct ModHeader ModHeader(init, close, open, expunge, test, IDL, Structures, TOSTRING(MOD_NAME), TOSTRING(MOD_NAMESPACE));
-#endif
-#define MOD_PATH ("modules:" TOSTRING(MOD_NAME))
-#else
-#define MOD_NAME nullptr
-#endif
-
-namespace pf {
-
-template <class T> T roundup(T Num, int Alignment) {
-   return (Num + Alignment) - (Num % Alignment); // Round up to Alignment value, e.g. (14,8) = 16
-}
-
-#ifdef PRINTF64I
-  #define PF64 "I64d"
-#elif PRINTF64_PRID
-  #define PF64 PRId64
-#else
-  #define PF64 "lld"
-#endif
-
-// Use DEBUG_BREAK in critical areas where you would want to break in gdb.  This feature will only be compiled
-// in to debug builds.
-
-#ifndef NDEBUG
- #ifdef _MSC_VER
-  #define DEBUG_BREAK __debugbreak();
- #elif __linux__
-  #define DEBUG_BREAK raise(SIGTRAP);
- #else
-  #define DEBUG_BREAK
- #endif
-#else
- #define DEBUG_BREAK
-#endif
-
-// Fast float-2-int conversion, with rounding to the nearest integer (F2I)
-
-#if defined(__GNUC__) && defined(__x86__)
-
-constexpr int F2I(double val) noexcept {
-   if (std::is_constant_evaluated()) return (int)std::round(val);
-   // This will round if the CPU is kept in its default rounding mode
-   int ret;
-   asm ("fistpl %0" : "=m" (ret) : "t" (val) : "st");
-   return(ret);
-}
-
-#else
-
-inline int F2I(double val) {
-   double t = val + 6755399441055744.0;
-   return *((int *)(&t));
-}
-
-#endif
-
-} // namespace
-
-// Structures to pass to OpenCore()
-
-struct OpenTag {
-   TOI Tag;
-   union {
-      int Int;
-      int64_t Int64;
-      APTR Pointer;
-      CSTRING String;
-   } Value;
+struct StructInfo {
+   uint16_t Size;       // Byte size of the structure (sizeof)
+   uint16_t Alignment;  // Alignment requirement of the structure (alignof)
+   std::string Name;     // Readable structure name
 };
 
-struct OpenInfo {
-   CSTRING Name;            // OPF::NAME
-   CSTRING *Args;           // OPF::ARGS
-   CSTRING SystemPath;      // OPF::SYSTEM_PATH
-   CSTRING ModulePath;      // OPF::MODULE_PATH
-   CSTRING RootPath;        // OPF::ROOT_PATH
-   OpenTag *Options;        // OPF::OPTIONS Typecast to va_list (defined in stdarg.h)
-   OPF     Flags;           // OPF::flags need to be set for fields that have been defined in this structure.
-   int     MaxDepth;        // OPF::MAX_DEPTH
-   int     Detail;          // OPF::DETAIL
-   int     ArgCount;        // OPF::ARGS
-   ERR     Error;           // OPF::ERROR
-};
+using LOG_CALLBACK = void(*)(CSTRING Header, CSTRING Message, int Depth, int MsgLevel, int LogLevel);
+
+constexpr RESOURCEID RESOURCEID_INHERIT = 1;
 
 #ifdef _LP64
 #define FD_PTR64 FD_POINTER
@@ -655,102 +412,97 @@ struct OpenInfo {
 #define FD_PTR64 0
 #endif
 
-#define nextutf8(str) if (*(str)) for (++(str); (*(str) & 0xc0) IS 0x80; (str)++);
+// Forward declared classes
 
-//********************************************************************************************************************
-
-namespace pf {
-
-class FloatRect {
-   public:
-   double X, Y, Width, Height;
-   constexpr FloatRect() noexcept = default;
-   constexpr FloatRect(double Value) noexcept : X(Value), Y(Value), Width(Value), Height(Value) { }
-   constexpr FloatRect(double pX, double pY, double pWidth, double pHeight) noexcept : X(pX), Y(pY), Width(pWidth), Height(pHeight) { }
-   constexpr double left() const noexcept { return X; }
-   constexpr double top() const noexcept { return Y; }
-   constexpr double right() const noexcept { return X + Width; }
-   constexpr double bottom() const noexcept { return Y + Height; }
-};
-
-}
+class objScript;
+class objConfig;
+class objCompression;
+class objCompressedStream;
+class objFile;
+class objModule;
+class objStorageDevice;
+class objThread;
+class objTask;
 
 ]==])
 
-  struct("ObjectSignal", { comment="Required in calls to WaitForObjects()." }, [[
+  structdef('OpenTag', { comment='Tags for OpenInfo.Options' }, [[
+   int(TOI) Tag          # Tag identifier
+   ]],
+   [[
+   union {
+      int Int;
+      int64_t Int64;
+      APTR Pointer;
+      CSTRING String;
+   } Value;
+  ]])
+
+  structdef('OpenInfo', { comment='Client options for passing to Kotuku on startup' }, [[
+     string Name          # Program name
+     string SystemPath    # Path to system files
+     string ModulePath    # Path to module files
+     string RootPath      # Kotuku root directory
+     cstr *Args           # Command-line arguments
+     cstruct(*OpenTag) Options # Tag-list of additional options.  Typecast to va_list
+     int(OPF) Flags       # Client flags indicating the values that have been defined in this structure
+     int MaxDepth         # Maximum debug depth
+     int Detail           # Debug detail level (0 none - 9 trace)
+     int ArgCount         # Total arguments in Args
+  ]])
+
+  structdef('ResourceRecord', { comment='Unified resource management record' }, [[
+     ptr Address               # Direct pointer to the resource (optional, can rely on ResourceID instead)
+     struct(*ResourceManager) Manager # Reference to the resource manager for this record
+     res ResourceID            # Unique identifier
+     int OwnerID               # Owner of the resource, could be another resource or object
+     uint PinCount             # Number of active lifetime pins
+     bool CollectOnUnlock      # Collection is pending until the final resource pin is released
+     bool Terminating          # A FreeResource() call currently owns the destruction path
+  ]],
+  [[
+   ResourceRecord() :
+      Address(nullptr), Manager(nullptr), ResourceID(0), OwnerID(0), PinCount(0), CollectOnUnlock(false),
+      Terminating(false) { };
+
+   ResourceRecord(RESOURCEID pResourceID, APTR pAddress, int pOwnerID, ResourceManager *pManager) :
+      Address(pAddress), Manager(pManager), ResourceID(pResourceID), OwnerID(pOwnerID), PinCount(0),
+      CollectOnUnlock(false), Terminating(false) { };
+  ]])
+
+  structdef("ObjectSignal", { comment="Required in calls to WaitForObjects()." }, [[
      obj Object # Reference to an object to monitor.
   ]])
 
-  struct("ResourceManager", { comment="This structure must be placed at the start of any memory block allocated with the MEM::MANAGED flag.", restrict="c" }, [[
-     cstr Name             # The name of the resource.
-     fptr(error ptr) Free  # A function that will remove the resource's content when terminated.
+  structdef("ResourceManager", { comment="Defines custom cleanup behaviour for resources registered with TrackResource().", restrict="c" }, [[
+     cstr Name             # The name of the resource
+     fptr(error struct(&ResourceRecord) ptr) Free  # A function that will remove the resource's content when terminated
+     bool CanBlock         # True if the Free callback might wait on locks, callbacks or external resources
   ]])
 
-  struct("FunctionField", { comment="Used by ActionTable and Function structures to declare lists of parameters." }, [[
-    cstr Name   # Name of the field
-    uint Type   # Type of the field
-  ]])
-
-  struct("Function", { comment="Function list array structure" }, [[
-    ptr Address     # Pointer to the function entry point
-    cstr Name       # Name of the function
-    cstruct(*FunctionField) Args  # A list of parameters accepted by the function
-  ]])
-
-  c_insert([[
-using ModClose   = void (*)(OBJECTPTR);
-using ModInit    = ERR (*)(OBJECTPTR, struct CoreBase*);
-using ModOpen    = ERR (*)(OBJECTPTR);
-using ModExpunge = ERR (*)(void);
-using ModTest    = void (*)(CSTRING, int *, int *);
-
-  ]])
-
-  struct("ModHeader", { comment="Module file header", restrict="c" }, [[
-    int(MHF) Flags                 # Special flags, type of function table wanted from the Core
-    cstr Definitions               # Module definition string, usable by run-time languages such as Tiri
-    fptr(error obj struct(*CoreBase)) Init # A one-off initialisation routine for when the module is first opened.
-    fptr(void obj) Close           # A function that will be called each time the module is closed.
-    fptr(error obj) Open           # A function that will be called each time the module is opened.
-    fptr(error) Expunge            # Reference to an expunge function to terminate the module.
-    fptr(void cstr &int &int) Test # A function that can run embedded unit tests in development builds.
-    cstr Name                      # Name of the module
-    cstr Namespace                 # A reserved system-wide namespace for function names.
+  structdef("FieldArray", { comment="Used to construct class blueprints for the MetaClass." }, [[
+    cstr  Name      # The name of the field, e.g. `Width`
+    ptr   GetField  # `void GetField(*Object, APTR Result);`
+    ptr   SetField  # `ERR SetField(*Object, APTR Value);`
+    large Arg       # Can be a pointer or an integer value
+    uint  Flags     # Special flags that describe the field
   ]],
   [[
-   STRUCTS *StructDefs;
-   class RootModule *Root;
-
-   ModHeader(ModInit pInit, ModClose pClose, ModOpen pOpen, ModExpunge pExpunge, ModTest pTest,
-      CSTRING pDef, STRUCTS *pStructs, CSTRING pName, CSTRING pNamespace) {
-      Flags         = MHF::DEFAULT;
-      Definitions   = pDef;
-      StructDefs    = pStructs;
-      Init          = pInit;
-      Close         = pClose;
-      Open          = pOpen;
-      Expunge       = pExpunge;
-      Test          = pTest;
-      Name          = pName;
-      Namespace     = pNamespace;
-      Root          = nullptr;
+   template <class T> static int64_t encode_arg(uint32_t Flags, T Arg) {
+      if constexpr (std::is_convertible_v<T, CSTRING>) {
+         if ((Flags & FD_STRUCT) and CSTRING(Arg)) return int64_t(uint32_t(kt::strhash(CSTRING(Arg))));
+      }
+      return int64_t((MAXINT)Arg);
    }
+
+   template <class G = APTR, class S = APTR, class T = MAXINT>
+   FieldArray(CSTRING FieldName, uint32_t FieldFlags, G GetFieldFn = nullptr, S SetFieldFn = nullptr,
+      T FieldArg = 0) :
+      Name(FieldName), GetField((APTR)GetFieldFn), SetField((APTR)SetFieldFn),
+      Arg(encode_arg(FieldFlags, FieldArg)), Flags(FieldFlags) { }
   ]])
 
-  struct("FieldArray", { comment="Used to construct class blueprints for the MetaClass." }, [[
-    cstr   Name      # The name of the field, e.g. `Width`
-    ptr    GetField  # `void GetField(*Object, APTR Result);`
-    ptr    SetField  # `ERR SetField(*Object, APTR Value);`
-    maxint Arg       # Can be a pointer or an integer value
-    uint   Flags     # Special flags that describe the field
-  ]],
-  [[
-  template <class G = APTR, class S = APTR, class T = MAXINT> FieldArray(CSTRING pName, uint32_t pFlags, G pGetField = nullptr, S pSetField = nullptr, T pArg = 0) :
-     Name(pName), GetField((APTR)pGetField), SetField((APTR)pSetField), Arg((MAXINT)pArg), Flags(pFlags)
-     { }
-  ]])
-
-  struct("FieldDef", { comment="Used to define constants for field references." }, [[
+  structdef("FieldDef", { comment="Used to define constants for field references." }, [[
     cstr Name  # The name of the constant.
     int Value  # The value of the constant.
   ]],
@@ -758,47 +510,71 @@ using ModTest    = void (*)(CSTRING, int *, int *);
    template <class T> FieldDef(CSTRING pName, T pValue) : Name(pName), Value(int(pValue)) { }
   ]])
 
-  struct("SystemState", { comment="Returned by the GetSystemState() function." }, [[
+  structdef("SystemState", { comment="Returned by the GetSystemState() function." }, [[
     cstr Platform      # String-based field indicating the user's platform.  Currently returns `Native`, `Windows`, `OSX` or `Linux`.
+    cstr IDL           # The Core module's compressed IDL string
+    cstruct(*OpenInfo) OpenInfo # The OpenInfo structure originally used to initialise the system
     hhandle ConsoleFD  # Internal
-    int  Stage         # The current operating stage.  `-1` = Initialising, `0` indicates normal operating status; `1` means that the program is shutting down; `2` indicates a program restart; `3` is for mode switches.
+    int(CONTYPE) ConsoleType # The console type for stdout and stderr, if any
+    short  Stage         # The current operating stage.  `-1` = Initialising, `0` indicates normal operating status; `1` means that the program is shutting down; `2` indicates a program restart; `3` is for mode switches.
+    uchar  ReleaseBuild  # `1` = Release build, `0` = Debug build
+    uchar  StaticBuild   # `1` = Static build, `0` = Dynamic build
   ]])
 
-  struct("Unit", { }, [[
+  structdef("Unit", { }, [[
     double Value  # The unit value.
     uint   Type   # Additional type information
   ]],
   [[
-   constexpr Unit(double pValue, int pType = FD_DOUBLE) : Value(pValue), Type(pType) { }
-   constexpr Unit() : Value(0), Type(0) { }
-   explicit Unit(std::string_view String) { read(String); }
+   static constexpr double DefaultDPI = 96.0;
+   static constexpr double DefaultFontSize = 16.0;
+   // Note that the type holds optional FD metadata; the use of FD_DOUBLE is unnecessary
+   constexpr Unit(double pValue, int pType = 0) : Value(pValue), Type(pType) { }
+   constexpr Unit() : Value(std::numeric_limits<double>::quiet_NaN()), Type(0) { }
+   explicit Unit(std::string_view String, double FontSize = DefaultFontSize, double DPI = DefaultDPI) :
+      Value(std::numeric_limits<double>::quiet_NaN()), Type(0) { read(String, FontSize, DPI); }
+
    constexpr operator double() const { return Value; }
+   constexpr int round() const { return int(Value + 0.5); }
+
+   double operator*() const { return Value; };
+
    constexpr void set(const double pValue) { Value = pValue; }
-   constexpr bool scaled() { return (Type & FD_SCALED) ? true : false; }
-   inline void read(std::string_view String) {
+   constexpr bool scaled() const { return (Type & FD_SCALED) ? true : false; }
+   constexpr bool verbatim() const { return (Type & FD_PURE) ? true : false; }
+   inline bool defined() const { return !std::isnan(Value); } // A NaN value denotes an undefined unit
+
+   void read(std::string_view String, double FontSize = DefaultFontSize, double DPI = DefaultDPI) {
+      Type = 0;
       const auto start = String.find_first_not_of(" \n\r\t");
       if (start != std::string::npos) String.remove_prefix(start);
       if (String.starts_with('+')) String.remove_prefix(1);
       auto [ end, error ] = std::from_chars(String.data(), String.data() + String.size(), Value);
-      if (error != std::errc()) { Value = 0; return; }
+      if (error != std::errc()) { Value = std::numeric_limits<double>::quiet_NaN(); return; }
 
       String = String.substr(end - String.data());
-      if (String.starts_with("%")) { Value *= 0.01; Type = FD_DOUBLE|FD_SCALED; }
-      else Type = FD_DOUBLE;
+      if (String.starts_with("%")) { Value *= 0.01; Type = FD_SCALED; }
+      else if (String.starts_with("em")) Value *= FontSize;
+      else if (String.starts_with("ex")) Value *= FontSize * 0.5;
+      else if (String.starts_with("in")) Value *= DPI;
+      else if (String.starts_with("cm")) Value *= (1.0 / 2.54) * DPI;
+      else if (String.starts_with("mm")) Value *= (1.0 / 25.4) * DPI;
+      else if (String.starts_with("pt")) Value *= (4.0 / 3.0);
+      else if (String.starts_with("pc")) Value *= (4.0 / 3.0) * 12.0;
    }
    ]])
 
   -- Structures for defining method and action invocations.
 
-  struct("ActionArray", { }, [[
-    ptr Routine     # Pointer to the function entry point
+  structdef("ActionArray", { }, [[
+    ptr Routine         # Pointer to the function entry point
     int(AC) ActionCode  # Action identifier
   ]],
   [[
   template <class T> ActionArray(AC pID, T pRoutine) : Routine((APTR)pRoutine), ActionCode(pID) { }
   ]])
 
-  struct("MethodEntry", { restrict="c" }, [[
+  structdef("MethodEntry", { restrict="c" }, [[
     int(AC) MethodID  # Unique method identifier
     ptr  Routine      # The method entry point, defined as `ERR (*Routine)(OBJECTPTR, APTR);`
     cstr Name         # Name of the method
@@ -811,97 +587,45 @@ using ModTest    = void (*)(CSTRING, int *, int *);
       MethodID(pID), Routine(pRoutine), Name(pName), Args(pArgs), Size(pSize) { }
   ]])
 
-  struct("ActionTable", { comment="Structure for ActionList" }, [[
+  structdef("ActionTable", { comment="Structure for ActionList" }, [[
     uint Hash   # Hash of the action name.
     int  Size   # Byte-size of the structure for this action.
     cstr Name   # Name of the action.
     cstruct(*FunctionField) Args  # List of fields that are passed to this action.
   ]])
 
-  struct("ChildEntry", { comment="Structure for ListChildren() function" }, [[
+  structdef("ChildEntry", { comment="Structure for ListChildren() function" }, [[
     oid ObjectID  # Object ID
     cid ClassID   # The class ID of the referenced object.
   ]])
 
-  struct("Message", { comment="Message header." }, [[
-     large Time  # A timestamp acquired from ~Core.PreciseTime() when the message was first passed to ~Core.SendMessage().
-     int UID     # A unique identifier automatically created by ~Core.SendMessage().
+  structdef("Message", { comment="Message header." }, [[
+     large Time      # A timestamp acquired from ~Core.PreciseTime() when the message was first passed to ~Core.SendMessage().
+     int UID         # A unique identifier automatically created by ~Core.SendMessage().
      int(MSGID) Type # A message type identifier as defined by the client.
-     int Size    # The byte-size of the message data, or zero if no data is provided.
+     int Size        # The byte-size of the message data, or zero if no data is provided.
   ]])
 
-  struct("MemInfo", { type="meminfo" }, [[
-    ptr  Start         # The starting address of the memory block (does not apply to shared blocks).
-    oid  ObjectID      # The object that owns the memory block.
-    uint Size          # The size of the memory block.
-    int(MEM) Flags     # The type of memory.
-    mem   MemoryID     # The unique ID for this block.
-    short AccessCount  # Total number of active locks on this block.
-  ]])
-
-  struct("MsgHandler", { restrict="c" }, [[
+  structdef("MsgHandler", { restrict="c" }, [[
     ptr(struct(MsgHandler)) Prev  # Previous message handler in the chain.
     ptr(struct(MsgHandler)) Next  # Next message handler in the chain.
     func Function                 # Call this function to handle the message.
     int(MSGID) MsgType            # Type of message being filtered.
   ]])
 
-  struct("CacheFile", { restrict="c", comment="Internal structure for managing files cached by LoadFile()." }, [[
-    large TimeStamp   # The file's last-modified timestamp.
+  structdef("CacheFile", { restrict="c", comment="Internal structure for managing files cached by LoadFile()." }, [[
+    large Timestamp   # The file's last-modified timestamp.
     large Size        # Byte size of the cached data.
     large LastUse     # The last time that this file was requested.
     cstr Path         # Pointer to the resolved file path.
     ptr Data          # Pointer to the cached data.
   ]])
 
-  struct("CompressionFeedback", { }, [[
-    int(FDB) FeedbackID     # Set to one of the FDB event indicators
-    int   Index             # Index of the current file
-    cstr  Path              # Name of the current file/path in the archive
-    cstr  Dest              # Destination file/path during decompression
-    large Progress          # Progress indicator (byte position for the file being de/compressed).
-    large OriginalSize      # Original size of the file
-    large CompressedSize    # Compressed size of the file
-    short Year              # Year of the original file's datestamp.
-    short Month             # Month of the original file's datestamp.
-    short Day               # Day of the original file's datestamp.
-    short Hour              # Hour of the original file's datestamp.
-    short Minute            # Minute of the original file's datestamp.
-    short Second            # Second of the original file's datestamp.
-  ]],
-  [[
-   CompressionFeedback() : FeedbackID(FDB::NIL), Index(0), Path(nullptr), Dest(nullptr),
-      Progress(0), OriginalSize(0), CompressedSize(0),
-      Year(0), Month(0), Day(0), Hour(0), Minute(0), Second(0) { }
-
-   CompressionFeedback(FDB pFeedback, int pIndex, CSTRING pPath, CSTRING pDest) :
-      FeedbackID(pFeedback), Index(pIndex), Path(pPath), Dest(pDest),
-      Progress(0), OriginalSize(0), CompressedSize(0),
-      Year(0), Month(0), Day(0), Hour(0), Minute(0), Second(0) { }
-  ]])
-
-  struct("CompressedItem", { }, [[
-    large OriginalSize            # Original size of the file
-    large CompressedSize          # Compressed size of the file
-    struct(*CompressedItem) Next  # Used only if this is a linked-list.
-    cstr Path                     # Path to the file (includes folder prefixes).  Archived folders will include the trailing slash.
-    int(PERMIT) Permissions       # Original permissions - see `PERMIT` flags.
-    int  UserID                   # Original user ID
-    int  GroupID                  # Original group ID
-    int  OthersID                 # Original others ID
-    int(FL) Flags                 # `FL` flags
-    struct(DateTime) Created      # Date and time of the file's creation.
-    struct(DateTime) Modified     # Date and time last modified.
-  ]],
-  [[
-    ankerl::unordered_dense::map<std::string, std::string> *Tags;
-  ]])
-
-  struct("FileInfo", { comment="Metadata for describing a file." }, [[
+  structdef("FileInfo", { comment="Metadata for describing a file." }, [[
     large Size                 # The size of the file's content.
-    large TimeStamp            # 64-bit time stamp - usable only for comparison (e.g. sorting).
+    large Timestamp            # 64-bit time stamp - usable only for comparison (e.g. sorting).
     struct(*FileInfo) Next     # Next structure in the list, or `NULL`.
-    str Name                   # The name of the file.
+    string Name                # The name of the file.
     int(RDF) Flags             # Additional flags to describe the file.
     int(PERMIT) Permissions    # Standard permission flags.
     int UserID                 # User  ID (Unix systems only).
@@ -909,11 +633,33 @@ using ModTest    = void (*)(CSTRING, int *, int *);
     struct(DateTime) Created   # The date/time of the file's creation.
     struct(DateTime) Modified  # The date/time of the last file modification.
   ]],
-  [[
-    ankerl::unordered_dense::map<std::string, std::string> *Tags;
-  ]]) -- NB: Private fields can follow this structure.
+  [==[
+   struct fi_hash {
+      using is_transparent = void;
+      [[nodiscard]] size_t operator()(std::string_view Value) const noexcept { return std::hash<std::string_view>{}(Value); }
+   };
 
-  struct("DirInfo", { comment="Used by OpenDir() only" }, [[
+   struct fi_equal {
+      using is_transparent = void;
+      [[nodiscard]] bool operator()(const std::string_view &Lhs, const std::string_view &Rhs) const noexcept { return Lhs IS Rhs; }
+   };
+
+   using TagMap = ankerl::unordered_dense::map<std::string, std::string, fi_hash, fi_equal>;
+
+   TagMap *Tags;
+
+   inline void clearTags() { if (Tags) { delete Tags; Tags = nullptr; } }
+
+   inline TagMap * getTags() {
+      if (not Tags) {
+         Tags = new (std::nothrow) TagMap();
+         if (not Tags) return nullptr;
+      }
+      return Tags;
+   }
+  ]==]) -- NB: Private fields can follow this structure.
+
+  structdef("DirInfo", { comment="Used by OpenDir() only" }, [[
     struct(*FileInfo) Info # Pointer to a !FileInfo structure
   ]],
   [[
@@ -934,7 +680,7 @@ using ModTest    = void (*)(CSTRING, int *, int *);
   ]])
 
   -- NB: Duplicated to windows.c
-  struct("FileFeedback", { }, [[
+  structdef("FileFeedback", { }, [[
     large Size          # Size of the file
     large Position      # Current seek position within the file if moving or copying
     str Path            # Path to the file
@@ -946,66 +692,58 @@ using ModTest    = void (*)(CSTRING, int *, int *);
   FileFeedback() : Size(0), Position(0), Path(nullptr), Dest(nullptr), FeedbackID(FBK::NIL) { }
   ]])
 
-  struct("Field", { comment="Used to describe the public fields of a class." }, [[
-    maxint Arg         # An option to complement the field type.  Can be a pointer or an integer value
-    fptr(error ptr ptr) GetValue # A virtual function that will retrieve the value for this field.
-    ptr SetValue       # A virtual function that will set the value for this field.
-    fptr(error obj struct(*Field) int cptr int) WriteValue # An internal function for writing to this field.
+  -- WriteValue signature is Object, *Field, Flags, *Value
+
+  structdef("Field", { comment="Used to describe the public fields of a class." }, [[
+    large Arg         # An option to complement the field type.  Can be a pointer or an integer value
+    fptr(error ptr ptr) GetValue # A virtual function that will retrieve the value for this field
+    fptr(error ptr ptr) SetValue # A virtual function that will set the value for this field
+    fptr(error obj cstruct(*Field) int cptr) WriteValue # An internal function for writing to this field
     cstr Name          # The English name for the field, e.g. `Width`
-    uint FieldID       # 32-bit hash from fieldhash(). Represented by FID constants, e.g. `FID_Width`
+    uint FieldID       # 32-bit hash from fieldhash()
     ushort Offset      # Field offset within the object
     ushort Index       # Field array index
     uint Flags         # Special flags that describe the field
   ]],
   [[
-   inline bool readable() { return (Flags & FD_READ) ? true : false; }
-   inline bool writeable() { return (Flags & (FD_WRITE|FD_INIT)) ? true : false; }
-  ]]) -- [32/52]
+   inline bool readable() const { return (Flags & FD_READ) ? true : false; }
+   inline bool writeable() const { return (Flags & (FD_WRITE|FD_INIT)) ? true : false; }
+   inline bool pure() const { return (Flags & FD_PURE) ? true : false; }
+  ]])
 
-  c_insert([[
-struct ScriptArg { // For use with sc::Exec
-   CSTRING Name;
-   uint32_t Type;
-   union {
-      APTR    Address;
-      int     Int;
-      int64_t Int64;
-      double  Double;
-   };
-
-   ScriptArg(CSTRING pName, OBJECTPTR pValue, uint32_t pType = FD_OBJECTPTR) : Name(pName), Type(pType), Address((APTR)pValue) { }
-   ScriptArg(CSTRING pName, std::string &pValue, uint32_t pType = FD_STRING) : Name(pName), Type(pType), Address((APTR)pValue.data()) { }
-   ScriptArg(CSTRING pName, const std::string &pValue, uint32_t pType = FD_STRING) : Name(pName), Type(pType), Address((APTR)pValue.data()) { }
-   ScriptArg(CSTRING pName, CSTRING pValue, uint32_t pType = FD_STRING) : Name(pName), Type(pType), Address((APTR)pValue) { }
-   ScriptArg(CSTRING pName, APTR pValue, uint32_t pType = FD_PTR) : Name(pName), Type(pType), Address(pValue) { }
-   ScriptArg(CSTRING pName, int pValue, uint32_t pType = FD_INT) : Name(pName), Type(pType), Int(pValue) { }
-   ScriptArg(CSTRING pName, uint32_t pValue, uint32_t pType = FD_INT) : Name(pName), Type(pType), Int(pValue) { }
-   ScriptArg(CSTRING pName, int64_t pValue, uint32_t pType = FD_INT64) : Name(pName), Type(pType), Int64(pValue) { }
-   ScriptArg(CSTRING pName, double pValue, uint32_t pType = FD_DOUBLE) : Name(pName), Type(pType), Double(pValue) { }
-};
-]])
+  structdef("ClassRecord", { comment="Meta information for a class, as recorded in the class database." }, [[
+    cid ClassID        # Unique class identifier (hash of Name)
+    cid ParentID       # Parent class ID if this is a derived class
+    int(CCF) Category  # Assigned category
+    string Name        # Name of the class
+    string Path        # Path to the class file
+    string Extension   # Wildcards for matching by file extension, e.g. `jpeg|jpg`
+    string Header      # File identification instruction, e.g. `[0:$89504e470d0a1a0a]`
+    string Icon        # Icon reference in `group/name` format
+    string Description # File description
+  ]])
 
   functionNames(nil,
-    "AccessMemory",
     "Action",
     "ActionList",
     "DeleteFile",
     "ResolveClassID",
     "AllocateID",
-    "AllocMemory",
+    "AllocResource",
     "AccessObject",
     "CheckAction",
-    "CheckMemoryExists",
-    "CheckObjectExists",
+    "CheckResourceExists",
     "InitObject",
     "VirtualVolume",
     "CurrentContext",
+    "SetLogCallback",
     "AdjustLogLevel",
     "ReadFileToBuffer",
     "FindObject",
     "FindClass",
     "AnalysePath",
     "FreeResource",
+    "ReleaseZombie",
     "GetClassID",
     "GetOwnerID",
     "CompareFilePaths",
@@ -1013,19 +751,15 @@ struct ScriptArg { // For use with sc::Exec
     "ListChildren",
     "RegisterFD",
     "ResolvePath",
-    "MemoryIDInfo",
-    "MemoryPtrInfo",
+    "TrackResource",
     "NewObject",
     "NotifySubscribers",
     "CopyFile",
     "ProcessMessages",
     "IdentifyFile",
-    "ReallocMemory",
-    "ReleaseMemory",
     "ResolveClassName",
     "SendMessage",
     "SetOwner",
-    "ProtectMemory",
     "SetObjectContext",
     "FieldName",
     "ScanDir",
@@ -1074,18 +808,29 @@ struct ScriptArg { // For use with sc::Exec
     "ResolveUserID",
     "CreateLink",
     "ParentContext",
-    "SetResourceMgr",
     "WakeThread",
     "AsyncCancel",
     "AsyncPending",
-    "AsyncWait")
+    "AsyncWait",
+    "ClassDatabase",
+    "GetThreadID",
+    "UnitTests",
+    "PinWeakObject",
+    "FreeObject",
+    "PinResource",
+    "UnpinResource")
 
   c_insert([==[
 
 //********************************************************************************************************************
 
-template <class T> inline MEMORYID GetMemoryID(T &&A) {
-   return ((MEMORYID *)A)[-2];
+template <pcObjectPointer T> inline MEMORYID GetMemoryID(T) {
+   static_assert(not pcObjectPointer<T>, "GetMemoryID() cannot be called on object pointers; use Object->UID.");
+   return 0;
+}
+
+template <class T> requires (not pcObjectPointer<T>) inline MEMORYID GetMemoryID(T &&A) {
+   return ((MEMORYID *)A)[RESOURCE_ID_OFFSET];
 }
 
 inline ERR DeregisterFD(HOSTHANDLE Handle) {
@@ -1094,36 +839,54 @@ inline ERR DeregisterFD(HOSTHANDLE Handle) {
 
 inline APTR GetResourcePtr(RES ID) { return (APTR)(MAXINT)GetResource(ID); }
 
-[[nodiscard]] constexpr inline const char* to_cstring(const char* A) { return A; }
-[[nodiscard]] inline const char* to_cstring(const std::string &A) { return A.c_str(); }
+[[nodiscard]] constexpr inline CSTRING to_cstring(CSTRING A) { return A; }
+[[nodiscard]] inline CSTRING to_cstring(const std::string &A) { return A.c_str(); }
 
 #ifndef PRV_CORE_DATA
 // These overloaded functions can't be used in the Core as they will confuse the compiler in key areas.
 
 inline ERR SubscribeAction(OBJECTPTR Object, AC Action, FUNCTION Callback) {
-   return SubscribeAction(Object,Action,&Callback);
+   return SubscribeAction(Object, Action, &Callback);
 }
 
 inline ERR SubscribeEvent(int64_t Event, FUNCTION Callback, APTR *Handle) {
-   return SubscribeEvent(Event,&Callback,Handle);
+   return SubscribeEvent(Event, &Callback, Handle);
 }
 
 inline ERR SubscribeTimer(double Interval, FUNCTION Callback, APTR *Subscription) {
-   return SubscribeTimer(Interval,&Callback,Subscription);
+   return SubscribeTimer(Interval, &Callback, Subscription);
 }
 
-inline ERR ReleaseMemory(const void *Address) {
-   if (!Address) return ERR::NullArgs;
-   return ReleaseMemory(((MEMORYID *)Address)[-2]);
+inline ERR UnsubscribeAction(OBJECTPTR Object, ACTIONID ActionID) {
+   return UnsubscribeAction(Object, ActionID, nullptr);
+}
+
+// This template leverages pcObject to be the preferred entry point for any Object type or derivation.
+
+template <pcObject T> inline ERR FreeResource(T *Object) {
+   if (not Object) return ERR::NullArgs;
+   return FreeObject(Object->UID);
+}
+
+template <class T> requires ((not pcComplete<T>) and (not std::is_void_v<std::remove_cv_t<T>>))
+inline ERR FreeResource(T *) {
+   static_assert(pcComplete<T>, "FreeResource() cannot be called with a pointer to an incomplete type.");
+   return ERR::NullArgs;
 }
 
 inline ERR FreeResource(const void *Address) {
-   if (!Address) return ERR::NullArgs;
-   return FreeResource(((int *)Address)[-2]);
+   if (not Address) return ERR::NullArgs;
+   return FreeResource(((const int *)Address)[RESOURCE_ID_OFFSET]);
 }
 
-inline ERR AllocMemory(int Size, MEM Flags, APTR Address) {
-   return AllocMemory(Size, Flags, (APTR *)Address, nullptr);
+inline ERR PinResource(const void *Address) {
+   if (not Address) return ERR::NullArgs;
+   return PinResource(((const int *)Address)[RESOURCE_ID_OFFSET]);
+}
+
+inline ERR UnpinResource(const void *Address) {
+   if (not Address) return ERR::NullArgs;
+   return UnpinResource(((const int *)Address)[RESOURCE_ID_OFFSET]);
 }
 
 template<class T> inline ERR NewObject(CLASSID ClassID, T **Result) {
@@ -1134,42 +897,10 @@ template<class T> inline ERR NewLocalObject(CLASSID ClassID, T **Result) {
    return NewObject(ClassID, NF::LOCAL, (OBJECTPTR *)Result);
 }
 
-inline ERR MemoryIDInfo(MEMORYID ID, struct MemInfo * MemInfo) {
-   return MemoryIDInfo(ID,MemInfo,sizeof(struct MemInfo));
-}
-
-inline ERR MemoryPtrInfo(APTR Address, struct MemInfo * MemInfo) {
-   return MemoryPtrInfo(Address,MemInfo,sizeof(struct MemInfo));
-}
-
 inline ERR QueueAction(AC Action, OBJECTID ObjectID) {
    return QueueAction(Action, ObjectID, nullptr);
 }
 #endif
-
-typedef KEYVALUE ConfigKeys;
-typedef std::pair<std::string, ConfigKeys> ConfigGroup;
-typedef std::vector<ConfigGroup> ConfigGroups;
-
-namespace pf {
-
-inline void copymem(const void *Src, APTR Dest, std::size_t Length) {
-   memmove(Dest, Src, Length);
-}
-
-inline void clearmem(APTR Memory, std::size_t Length) {
-   if (Memory) memset(Memory, 0, Length);
-}
-
-static thread_local int _tlUniqueThreadID = 0;
-
-[[nodiscard]] inline int _get_thread_id(void) {
-   if (_tlUniqueThreadID) return _tlUniqueThreadID;
-   _tlUniqueThreadID = GetResource(RES::THREAD_ID);
-   return _tlUniqueThreadID;
-}
-
-} // namespace
 
 #include <kotuku/log.h>
 #include <kotuku/objects.h>
@@ -1177,6 +908,7 @@ static thread_local int _tlUniqueThreadID = 0;
 inline OBJECTID CurrentTaskID() { return ((OBJECTPTR)CurrentTask())->UID; }
 inline APTR SetResourcePtr(RES Res, APTR Value) { return (APTR)(MAXINT)(SetResource(Res, (MAXINT)Value)); }
 
+#ifdef PRV_METACLASS
 // obj_read is used to build efficient customised jump tables for object calls.
 
 struct obj_read {
@@ -1204,11 +936,11 @@ typedef std::vector<obj_read> READ_TABLE;
 // Object field write handler structure for Tiri code
 
 struct obj_write {
-   typedef ERR JUMP(struct lua_State *, OBJECTPTR, struct Field *, int);
+   typedef ERR JUMP(struct lua_State *, OBJECTPTR, const struct Field *, int);
 
    uint32_t Hash;
    JUMP *Call;
-   struct Field *Field;
+   const struct Field *Field;
 
    auto operator<=>(const obj_write &Other) const {
        if (Hash < Other.Hash) return -1;
@@ -1216,7 +948,7 @@ struct obj_write {
        return 0;
    }
 
-   obj_write(uint32_t pHash, JUMP pJump, struct Field *pField) : Hash(pHash), Call(pJump), Field(pField) { }
+   obj_write(uint32_t pHash, JUMP pJump, const struct Field *pField) : Hash(pHash), Call(pJump), Field(pField) { }
    obj_write(uint32_t pHash, JUMP pJump) : Hash(pHash), Call(pJump) { }
    obj_write(uint32_t pHash) : Hash(pHash) { }
 };
@@ -1224,29 +956,46 @@ struct obj_write {
 inline auto write_hash = [](const obj_write &a, const obj_write &b) { return a.Hash < b.Hash; };
 
 typedef std::vector<obj_write> WRITE_TABLE;
-
+#endif // PRV_METACLASS
 ]==])
 
+  -- Declare classes for their inclusion in outgoing Core documentation
+
+  klass("Script")
+  klass("Config")
+  klass("Compression")
+  klass("CompressedStream")
+  klass("File")
+  klass("StorageDevice")
+  klass("Thread")
+  klass("Task")
+  klass("Time")
+  klass("Module")
+
   methods("MetaClass", "mc", {
-    { id=1, name="FindField" }
+    { id=1, name="FindField" },
+    { id=2, name="GetMembers" }
   })
 
-  class("MetaClass", { src="../classes/class_metaclass.cpp" }, [[
+  klass("MetaClass", { src="../classes/class_metaclass.cpp" }, [[
     double ClassVersion    # Version of the class
-    cstruct(*FieldArray) Fields  # Original field array supplied by the module.
+    array(cstruct(FieldArray)) Fields  # Original field array supplied by the module
     array(struct(Field)) Dictionary # Field lookup by ID
-    cstr ClassName         # Name of the class
-    cstr FileExtension     # File extension that is supported by this class.
-    cstr FileDescription   # File description
-    cstr FileHeader        # Internal file header for identifying the file
-    cstr Path              # Module path to the class
-    cstr Icon              # An icon that can be used to represent class data.
+    string ClassName       # Name of the class
+    string FileExtension   # File extension(s) supported by this class
+    string FileDescription # File description
+    string FileHeader      # Internal file header for identifying the file
+    string Path            # Module path to the class
+    string Icon            # An icon that can be used to represent class data
     int Size               # Byte-size of the class when produced as an object
     int(CLF) Flags         # Special flags
     cid ClassID            # ID of this class
     cid BaseClassID        # Base-class ID
     int OpenCount          # Number of objects allocated to this class
     int(CCF) Category      # Assigned category
+    int PublicSize         # Byte-size of the class as seen by the client
+    ~array(struct(ActionEntry)) ActionTable
+    ~array(struct(MethodEntry)) Methods
   ]],
   [[
     // Field table cache for Tiri - eliminates per-instance hash tables.
@@ -1255,328 +1004,26 @@ typedef std::vector<obj_write> WRITE_TABLE;
   ]])
 
 c_insert([[
-inline bool Object::isSubClass() { return Class->ClassID != Class->BaseClassID; }
+inline bool Object::isDerived() { return Class->ClassID != Class->BaseClassID; }
 inline CLASSID Object::classID() { return Class->ClassID; }
 inline CLASSID Object::baseClassID() { return Class->BaseClassID; }
 ]])
 
-  class("StorageDevice", { src="../classes/class_storagedevice.cpp" }, [[
-    large(DEVICE) DeviceFlags  # Flags identifying the type of media
-    large DeviceSize           # Size of the device
-    large BytesFree            # Bytes available to the user
-    large BytesUsed            # Bytes already used
-  ]])
-
-  methods("File", "Fl", {
-    { id=1,  name="StartStream" },
-    { id=2,  name="StopStream" },
-    { id=3,  name="Delete" },
-    { id=4,  name="Move" },
-    { id=5,  name="Copy" },
-    { id=6,  name="SetDate" },
-    { id=7,  name="ReadLine" },
-    { id=8,  name="BufferContent" },
-    { id=9,  name="Next" },
-    { id=10, name="Watch" }
-  })
-
-  class("File", { version=1.2, src="../classes/class_file.cpp", output="../classes/class_file_def.c" }, [[
-    large     Position  # The current read/write byte position in a file.
-    int(FL)   Flags     # File flags and options.
-    int       Static    # Set to `true` if a file object should be static.
-    oid       Target    # Specifies a surface ID to target for user feedback and dialog boxes.
-    ptr(char) Buffer    # Points to the internal data buffer if the file content is held in memory.
-  ]],
-  nil,
-  [[
-   inline CSTRING readLine() {
-      struct fl::ReadLine args;
-      if (Action(fl::ReadLine::id, this, &args) IS ERR::Okay) return args.Result;
-      else return nullptr;
-   }
-  ]])
-
-  methods("config", "Cfg", {
-    { id=1,  name="ReadValue" },
-    { id=2,  name="Set" },
-    { id=3,  name="WriteValue" },
-    { id=4,  name="DeleteKey" },
-    { id=5,  name="DeleteGroup" },
-    { id=6,  name="GetGroupFromIndex" },
-    { id=7,  name="SortByKey" },
-    { id=9,  name="MergeFile" },
-    { id=10, name="Merge" }
-  })
-
-  class("Config", { src="../classes/class_config.cpp", output="../classes/class_config_def.c" }, [[
-    str Path          # The location pointer
-    str KeyFilter     # Enables key filtering, removing any unwanted keys on load.
-    str GroupFilter   # Enables group filtering, removing any unwanted groups on load.
-    int(CNF) Flags    # Not currently in use
-  ]],
-  nil,
-  [[
-   ConfigGroups *Groups;
-
-   // For C++ only, these read variants avoid method calls for speed, but apply identical logic.
-
-   inline ERR read(std::string_view pGroup, std::string_view pKey, double &pValue) {
-      for (auto& [group, keys] : Groups[0]) {
-         if ((!pGroup.empty()) and (group.compare(pGroup))) continue;
-         if (pKey.empty()) pValue = strtod(keys.cbegin()->second.c_str(), nullptr);
-         else if (auto it = keys.find(pKey); it != keys.end()) pValue = strtod(it->second.c_str(), nullptr);
-         else return ERR::Search;
-         return ERR::Okay;
-      }
-      return ERR::Search;
-   }
-
-   inline ERR read(std::string_view pGroup, std::string_view pKey, int &pValue) {
-      for (auto& [group, keys] : Groups[0]) {
-         if ((!pGroup.empty()) and (group.compare(pGroup))) continue;
-         if (pKey.empty()) pValue = strtol(keys.cbegin()->second.c_str(), nullptr, 0);
-         else if (auto it = keys.find(pKey); it != keys.end()) pValue = strtol(it->second.c_str(), nullptr, 0);
-         else return ERR::Search;
-         return ERR::Okay;
-      }
-      return ERR::Search;
-   }
-
-   inline ERR read(std::string_view pGroup, std::string_view pKey, std::string &pValue) {
-      for (auto & [group, keys] : Groups[0]) {
-         if ((!pGroup.empty()) and (group.compare(pGroup))) continue;
-         if (pKey.empty()) pValue = keys.cbegin()->second;
-         else if (auto it = keys.find(pKey); it != keys.end()) pValue = it->second;
-         else return ERR::Search;
-         return ERR::Okay;
-      }
-      return ERR::Search;
-   }
-
-   inline ERR write(std::string_view Group, std::string_view Key, std::string_view Value) {
-      ConfigGroups &groups = *Groups;
-      for (auto& [group, keys] : groups) {
-         if (!group.compare(Group)) {
-            if (auto it = keys.find(Key); it != keys.end()) {
-               it->second.assign(Value);
-            }
-            else keys.emplace(Key, Value);
-            return ERR::Okay;
-         }
-      }
-
-      auto &new_group = Groups->emplace_back();
-      new_group.first.assign(Group);
-      new_group.second.emplace(Key, Value);
-      return ERR::Okay;
-   }
-  ]])
-
-  methods("Script", "Sc", {
-    { id=1, name="Exec" },
-    { id=2, name="DerefProcedure" },
-    { id=3, name="Callback" },
-    { id=4, name="GetProcedureID" },
-    { id=5, name="DebugLog" }
-  })
-
-  class("Script", { src={ "../classes/class_script.cpp" }, output="../classes/class_script_def.c" }, [[
-    oid Target           # The object that script objects must be initialised to, e.g. for obj.new()
-    int(SCF) Flags       # Optional flags
-    error Error          # If an error occurred, this field will indicate the error number
-    int CurrentLine      # Current line being executed, or failed line if script execution terminated
-    int LineOffset       # An optional offset to use when reporting line numbers
-  ]],
-  [[
-   int64_t    ProcedureID;          // For callbacks
-   KEYVALUE Vars; // Global parameters
-   STRING   *Results;
-   char     Language[4];          // 3-character language code, null-terminated
-   const ScriptArg *ProcArgs;     // Procedure args - applies during Exec
-   STRING   Path;                 // File location of the script
-   STRING   String;
-   STRING   WorkingPath;
-   STRING   ErrorMessage;
-   CSTRING  Procedure;
-   STRING   CacheFile;
-   int      ActivationCount;      // Incremented every time the script is activated.
-   int      ResultsTotal;
-   int      TotalArgs;            // Total number of ProcArgs
-   char     LanguageDir[32];      // Directory to use for language files
-   OBJECTID ScriptOwnerID;
-  ]])
-
   c_insert([==[
-namespace sc {
-template <std::size_t SIZE> ERR Call(const FUNCTION &Function, const std::array<ScriptArg, SIZE> &Args) noexcept {
-   struct Callback args = { Function.ProcedureID, Args.data(), int(std::ssize(Args)), ERR::Okay };
-   return Action(sc::Callback::id, Function.Context, &args);
-}
-
-template <std::size_t SIZE> ERR Call(const FUNCTION &Function, const std::array<ScriptArg, SIZE> &Args, ERR &Result) noexcept {
-   struct Callback args = { Function.ProcedureID, Args.data(), int(std::ssize(Args)), ERR::Okay };
-   ERR error = Action(sc::Callback::id, Function.Context, &args);
-   Result = args.Error;
-   return(error);
-}
-
-inline ERR Call(const FUNCTION &Function) noexcept {
-   struct Callback args = { Function.ProcedureID, nullptr, 0, ERR::Okay };
-   return Action(sc::Callback::id, Function.Context, &args);
-}
-
-inline ERR Call(const FUNCTION &Function, ERR &Result) noexcept {
-   struct Callback args = { Function.ProcedureID, nullptr, 0, ERR::Okay };
-   ERR error = Action(sc::Callback::id, Function.Context, &args);
-   Result = args.Error;
-   return(error);
-}
-} // namespace
-  ]==])
-
-  struct("ActionEntry", { restrict='c', comment="For the Task Actions field." }, [[
-     fptr(error obj ptr) PerformAction # Pointer to a custom action hook.
-  ]])
-
-  methods("Task", "Task", {
-    { id=1, name="Expunge" },
-    { id=2, name="AddArgument" },
-    { id=3, name="Quit" },
-    { id=4, name="GetEnv" },
-    { id=5, name="SetEnv" }
-  })
-
-  class("Task", { src="../classes/class_task.cpp", output="../classes/class_task_def.c" }, [[
-    double TimeOut
-    int(TSF) Flags
-    int ReturnCode
-    int ProcessID    # Native process ID of the activated task
-  ]])
-
-  methods("Thread", "Th", {
-    { id=1, name="SetData" }
-  })
-
-  class("Thread", { src="../classes/class_thread.cpp", output="../classes/class_thread_def.c" }, [[
-   ptr   Data         # User data pointer.
-   int   DataSize     # Size of user data.
-   error Error        # Error code returned by the thread on completion.
-   int(THF) Flags     # Optional flags.
-  ]])
-
-  methods("Module", "Mod", {
-    { id=1, name="ResolveSymbol" },
-    { id=2, name="Test" }
-  })
-
-  class("Module", { src="../classes/class_module.cpp" }, [[
-    cstruct(*Function) FunctionList # Array of functions
-    ptr ModBase                     # Ptr to function jump table
-    class(*RootModule) Root         # Shared details on the module
-    struct(*ModHeader) Header       # For creating in-memory modules only.
-    int(MOF) Flags                  # Optional flags
-  ]],
-  nil,
-  [[
-   static ERR load(std::string Name, OBJECTPTR *Module = nullptr, APTR Functions = nullptr) {
-      if (auto module = objModule::create::global(pf::FieldValue(FID_Name, Name.c_str()))) {
-         #ifdef KOTUKU_STATIC
-            if (Module) *Module = module;
-            if (Functions) ((APTR *)Functions)[0] = nullptr;
-            return ERR::Okay;
-         #else
-            APTR functionbase;
-            if (module->get(FID_ModBase, functionbase) IS ERR::Okay) {
-               if (Module) *Module = module;
-               if (Functions) ((APTR *)Functions)[0] = functionbase;
-               return ERR::Okay;
-            }
-            else return ERR::GetField;
-         #endif
-      }
-      else return ERR::CreateObject;
-   }
-  ]])
-
-  -- Note that the fields following SystemTime are identical to struct DateTime
-
-  methods("Time", "Pt", {
-    { id=1, name="SetTime" },
-  })
-
-  class("Time", { src="../classes/class_time.cpp" }, [[
-    large SystemTime  # Total number of microseconds passed since the system base time
-    int Year          # Year   (-ve for BC, +ve for AD)
-    int Month         # Month  (1 - 12)
-    int Day           # Day    (1 - 31)
-    int Hour          # Hour   (0 - 23)
-    int Minute        # Minute (0 - 59)
-    int Second        # Second (0 - 59)
-    int TimeZone      # 0 is GMT, range is +1300 or -1300
-    int DayOfWeek     # Day of week (0 = Sunday ..)
-    int MilliSecond   # Millisecond (0 - 999)
-    int MicroSecond   # Microsecond  (0 - 999999)
-  ]])
-
-  methods("Compression", "Cmp", {
-    { id=1, name="CompressBuffer" },
-    { id=2, name="CompressFile" },
-    { id=3, name="DecompressBuffer" },
-    { id=4, name="DecompressFile" },
-    { id=5, name="RemoveFile" },
-    { id=6, name="CompressStream" },
-    { id=7, name="DecompressStream" },
-    { id=8, name="CompressStreamStart" },
-    { id=9, name="CompressStreamEnd" },
-    { id=10, name="DecompressStreamEnd" },
-    { id=11, name="DecompressStreamStart" },
-    { id=12, name="DecompressObject" },
-    { id=13, name="Scan" },
-    { id=14, name="Find" }
-  })
-
-  class("Compression", { src={ "../compression/class_compression.cpp", "../compression/compression_fields.cpp" }, output="../compression/class_compression_def.c" }, [[
-    large TotalOutput       # Total number of bytes output (e.g. during compression of a stream)
-    oid Output              # Reference to output object for user messages
-    int CompressionLevel    # Compression level (percentage - 0% none, 100% high)
-    int(CMF) Flags          # Optional flags
-    int SegmentSize         # Splits the compressed file if it surpasses a set byte limit (e.g. 1.44MB)
-    int(PERMIT) Permissions # Default permissions to use for decompressed files
-    int MinOutputSize       # Minimum recommended output buffer size
-    int WindowBits          # Window bits, currently applicable to the default (zlib) compression
-  ]])
-
-  class("CompressedStream", { src="../compression/class_compressed_stream.cpp", output="../compression/class_compressed_stream_def.c" }, [[
-    large TotalOutput  # Count of the total bytes that have been output.
-    obj Input          # The object that is the source of the compressed data.
-    obj Output         # The object that is the destination for the compressed data.
-    int(CF) Format     # CF_GZIP, CF_ZLIB, CF_DEFLATE
-  ]])
-
-  c_insert([==[
-#ifndef PRV_CORE
-
-// Note that the length of the data is only needed when messaging between processes, so we can skip it for these
-// direct-access data channel macros.
-
-#define acDataContent(a,b)  acDataFeed((a),0,DATA::CONTENT,(b),0)
-#define acDataXML(a,b)      acDataFeed((a),0,DATA::XML,(b),0)
-#define acDataText(a,b)     acDataFeed((a),0,DATA::TEXT,(b),0)
-
-#endif // PRV_CORE
-
 #ifdef __unix__
 #include <pthread.h>
 #endif
 
-namespace pf {
+namespace kt {
 
 #ifdef __system__
    struct ActionMessage {
       OBJECTID ObjectID;  // The object that is to receive the action
       int  Time;
-      AC ActionID;        // ID of the action or method to execute
+      AC   ActionID;      // ID of the action or method to execute
       bool SendArgs;
+      const FunctionField *Fields;
+      int ArgsSize;
 
       // Action arguments follow this structure in a buffer
    };
@@ -1645,106 +1092,14 @@ struct evHotplug {
       int ProductID;    // USB product or device ID
       int DeviceID;
    };
-   char  ID[20];         // Typically the PCI bus ID or USB bus ID, serial number or unique identifier
-   char  Group[32];      // Group name in the config file
-   char  Class[32];      // Class identifier (USB)
-   union {
-      char Product[40];  // Name of product or the hardware device
-      char Device[40];
-   };
-   char Vendor[40];      // Name of vendor
+   char ID[20];         // Typically the PCI bus ID or USB bus ID, serial number or unique identifier
+   char Group[32];      // Group name in the config file
+   char Class[32];      // Class identifier (USB)
+   char Product[40];    // Name of product or the hardware device
+   char Vendor[40];     // Name of vendor
 };
 
-// Speed efficient way of setting a string field that is managed with AllocMemory().
-
-inline ERR set_string_field(const std::string_view Source, STRING &Dest)
-{
-   MemInfo info;
-   if (auto error = MemoryIDInfo(GetMemoryID(Dest), &info, sizeof(info)); error IS ERR::Okay) {
-      if (Source.size()+1 < info.Size) {
-         copymem(Source.data(), Dest, Source.size());
-         Dest[Source.size()] = 0;
-         return ERR::Okay;
-      }
-      else {
-         FreeResource(GetMemoryID(Dest));
-         if (AllocMemory(Source.size() + 1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&Dest, nullptr) IS ERR::Okay) {
-            copymem(Source.data(), Dest, Source.size());
-            Dest[Source.size()] = 0;
-            return ERR::Okay;
-         }
-         else return ERR::AllocMemory;
-      }
-   }
-   else return error;
-}
-
-[[nodiscard]] inline char * strclone(const std::string_view String) noexcept
-{
-   char *newstr;
-   if (AllocMemory(String.size()+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&newstr, nullptr) IS ERR::Okay) {
-      copymem(String.data(), newstr, String.size());
-      newstr[String.size()] = 0;
-      return newstr;
-   }
-   else return nullptr;
-}
-
 } // pf namespace
-
-namespace fl {
-
-// Read endian values from files and objects.
-
-template<class T> ERR ReadLE(OBJECTPTR Object, T *Result)
-{
-   uint8_t data[sizeof(T)];
-   struct acRead read = { .Buffer = data, .Length = sizeof(T) };
-   if (Action(AC::Read, Object, &read) IS ERR::Okay) {
-      if (read.Result IS sizeof(T)) {
-         if constexpr (std::endian::native == std::endian::little) {
-            *Result = ((T *)data)[0];
-         }
-         else {
-            switch(sizeof(T)) {
-               case 2:  *Result = (data[1]<<8) | data[0]; break;
-               case 4:  *Result = (data[0]<<24)|(data[1]<<16)|(data[2]<<8)|(data[3]); break;
-               case 8:  *Result = ((int64_t)data[0]<<56)|((int64_t)data[1]<<48)|((int64_t)data[2]<<40)|((int64_t)data[3]<<32)|(data[4]<<24)|(data[5]<<16)|(data[6]<<8)|(data[7]); break;
-               default: *Result = ((T *)data)[0];
-            }
-         }
-         return ERR::Okay;
-      }
-      else return ERR::Read;
-   }
-   else return ERR::Read;
-}
-
-template<class T> ERR ReadBE(OBJECTPTR Object, T *Result)
-{
-   uint8_t data[sizeof(T)];
-   struct acRead read = { .Buffer = data, .Length = sizeof(T) };
-   if (Action(AC::Read, Object, &read) IS ERR::Okay) {
-      if (read.Result IS sizeof(T)) {
-         if constexpr (std::endian::native == std::endian::little) {
-            switch(sizeof(T)) {
-               case 2:  *Result = (data[1]<<8) | data[0]; break;
-               case 4:  *Result = (data[0]<<24)|(data[1]<<16)|(data[2]<<8)|(data[3]); break;
-               case 8:  *Result = ((int64_t)data[0]<<56)|((int64_t)data[1]<<48)|((int64_t)data[2]<<40)|((int64_t)data[3]<<32)|(data[4]<<24)|(data[5]<<16)|(data[6]<<8)|(data[7]); break;
-               default: *Result = ((T *)data)[0];
-            }
-         }
-         else {
-            *Result = ((T *)data)[0];
-         }
-         return ERR::Okay;
-      }
-      else return ERR::Read;
-   }
-   else return ERR::Read;
-}
-
-} // fl namespace
 
 // Function construction (refer types.h)
 
@@ -1756,7 +1111,14 @@ template <class T, class X = APTR> FUNCTION C_FUNCTION(T *pRoutine, X pMeta = 0)
    return func;
 };
 
-inline CSTRING Object::className() { return Class->ClassName; }
+inline CSTRING Object::className() { return Class->ClassName.c_str(); }
+
+// Weak-pin management for callback holders (refer to the zombie object contract in objects.h).  A pinned
+// Context header remains readable after termination, allowing stale() to be tested lazily at invoke time.
+
+inline void FUNCTION::pin() { Context->pinWeak(); }
+inline void FUNCTION::unpin() { Context->unpinWeak(); }
+inline bool FUNCTION::stale() const { return defined() and (Context->terminating()); }
   ]==])
 
   if (glProgram is "idl-compile") then

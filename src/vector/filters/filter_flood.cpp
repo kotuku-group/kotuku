@@ -18,21 +18,16 @@ class extFloodFX : public extFilterEffect {
    public:
    static constexpr CLASSID CLASS_ID = CLASSID::FLOODFX;
    static constexpr CSTRING CLASS_NAME = "FloodFX";
-   using create = pf::Create<extFloodFX>;
+   using create = kt::Create<extFloodFX>;
 
    FRGB   Colour;
+   double Opacity = 1.0;
    RGB8   ColourRGB; // A cached conversion of the FRGB value
-   double Opacity;
+
+   extFloodFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) {
+      SourceType = VSF::NONE;
+   }
 };
-
-//********************************************************************************************************************
-
-static ERR FLOODFX_NewObject(extFloodFX *Self)
-{
-   Self->Opacity = 1.0;
-   Self->SourceType = VSF::NONE;
-   return ERR::Okay;
-}
 
 /*********************************************************************************************************************
 -ACTION-
@@ -85,29 +80,14 @@ The colour is complemented by the #Opacity field.
 
 *********************************************************************************************************************/
 
-static ERR FLOODFX_GET_Colour(extFloodFX *Self, float **Value, int *Elements)
+static ERR FLOODFX_SET_Colour(extFloodFX *Self, FRGB *Value)
 {
-   *Value = (float *)&Self->Colour;
-   *Elements = 4;
-   return ERR::Okay;
-}
-
-static ERR FLOODFX_SET_Colour(extFloodFX *Self, float *Value, int Elements)
-{
-   pf::Log log;
    if (Value) {
-      if (Elements >= 3) {
-         Self->Colour.Red   = Value[0];
-         Self->Colour.Green = Value[1];
-         Self->Colour.Blue  = Value[2];
-         Self->Colour.Alpha = (Elements >= 4) ? Value[3] : 1.0;
-
-         Self->ColourRGB.Red   = int(Self->Colour.Red * 255.0);
-         Self->ColourRGB.Green = int(Self->Colour.Green * 255.0);
-         Self->ColourRGB.Blue  = int(Self->Colour.Blue * 255.0);
-         Self->ColourRGB.Alpha = int(Self->Colour.Alpha * 255.0);
-      }
-      else return log.warning(ERR::InvalidValue);
+      Self->Colour = *Value;
+      Self->ColourRGB.Red   = std::clamp(Self->Colour.Red * 255.0, 0.0, 255.0);
+      Self->ColourRGB.Green = std::clamp(Self->Colour.Green * 255.0, 0.0, 255.0);
+      Self->ColourRGB.Blue  = std::clamp(Self->Colour.Blue * 255.0, 0.0, 255.0);
+      Self->ColourRGB.Alpha = std::clamp(Self->Colour.Alpha * 255.0, 0.0, 255.0);
    }
    else Self->Colour.Alpha = 0;
    return ERR::Okay;
@@ -120,15 +100,9 @@ Opacity: Modifies the opacity of the flood colour.
 
 *********************************************************************************************************************/
 
-static ERR FLOODFX_GET_Opacity(extFloodFX *Self, double *Value)
-{
-   *Value = Self->Opacity;
-   return ERR::Okay;
-}
-
 static ERR FLOODFX_SET_Opacity(extFloodFX *Self, double Value)
 {
-   pf::Log log;
+   kt::Log log;
    if ((Value >= 0.0) and (Value <= 1.0)) {
       Self->Opacity = Value;
       return ERR::Okay;
@@ -144,13 +118,13 @@ XMLDef: Returns an SVG compliant XML string that describes the effect.
 
 *********************************************************************************************************************/
 
-static ERR FLOODFX_GET_XMLDef(extFloodFX *Self, STRING *Value)
+static ERR FLOODFX_GET_XMLDef(extFloodFX *Self, std::string &Value)
 {
    std::stringstream stream;
 
-   stream << "<feFlood opacity=\"" << Self->Opacity << "\"/>";
+   stream << "feFlood opacity=\"" << Self->Opacity << "\"";
 
-   *Value = strclone(stream.str());
+   Value = stream.str();
    return ERR::Okay;
 }
 
@@ -159,9 +133,9 @@ static ERR FLOODFX_GET_XMLDef(extFloodFX *Self, STRING *Value)
 #include "filter_flood_def.c"
 
 static const FieldArray clFloodFXFields[] = {
-   { "Colour",  FDF_VIRTUAL|FD_FLOAT|FDF_ARRAY|FD_RW,   FLOODFX_GET_Colour, FLOODFX_SET_Colour },
-   { "Opacity", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW,          FLOODFX_GET_Opacity, FLOODFX_SET_Opacity },
-   { "XMLDef",  FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R, FLOODFX_GET_XMLDef },
+   { "Colour",  FDF_STRUCT|FDF_RW, nullptr, FLOODFX_SET_Colour, "FRGB" },
+   { "Opacity", FDF_DOUBLE|FDF_RW, nullptr, FLOODFX_SET_Opacity },
+   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FLOODFX_GET_XMLDef },
    END_FIELD
 };
 

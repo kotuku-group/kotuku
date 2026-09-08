@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,13 +5,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Defines the reusable vertex sequence container and duplicate-removal helpers. Hooks into vcgen_vertex_sequence and
+// path conversion code that stores path vertices with metadata. In the vector renderer it keeps converter input stable
+// and compact before derived outlines or dashes are emitted.
 
-//
-// vertex_sequence container and vertex_dist struct
-//
-//----------------------------------------------------------------------------
-#ifndef AGG_VERTEX_SEQUENCE_INCLUDED
-#define AGG_VERTEX_SEQUENCE_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_array.h"
@@ -104,5 +102,3 @@ namespace agg
       vertex_dist_cmd(double x_, double y_, unsigned cmd_) : vertex_dist(x_, y_), cmd(cmd_) { }
    };
 }
-
-#endif

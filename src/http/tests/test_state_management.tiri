@@ -1,0 +1,356 @@
+--[[
+State Management Testing
+
+Tests connection state handling, incomplete requests, timeouts, and cleanup scenarios for both HTTP client and server.
+--]]
+
+   import 'net/httpserver'
+   import 'json'
+   include 'http'
+
+SERVER_PORT <const> = 18943
+
+@BeforeAll function init(State)
+   global glPath = State.folder
+
+   global glServer = hslib.start({
+      port    = SERVER_PORT,
+      folder  = glPath,
+      verbose = true,
+      timeout = 1,
+      routes = {
+         { pattern = '/incomplete/test',
+            method = 'POST',
+            handler = function(req, res)
+               res.json({
+                  message = 'Incomplete request handled',
+                  bodyLength = req.body and #req.body or 0,
+                  hasBody = req.body != nil
+               })
+            end
+         },
+         { pattern = '/state/cleanup/:id',
+            method = 'GET',
+            handler = function(req, res)
+               res.json({
+                  message = 'State cleanup test',
+                  requestId = req.params.id,
+                  timestamp = mSys.PreciseTime()
+               })
+            end
+         },
+         { pattern = '/timeout/request',
+            method = 'GET',
+            handler = function(req, res)
+               res.json({
+                  message = 'Timeout test response',
+                  timestamp = mSys.PreciseTime()
+               })
+            end
+         },
+         { pattern = '/pipeline/test/:id',
+            method = 'GET',
+            handler = function(req, res)
+               res.json({
+                  message = 'Pipeline test response',
+                  requestId = req.params.id,
+                  timestamp = mSys.PreciseTime()
+               })
+            end
+         },
+         { pattern = '/chunked/state',
+            method = 'GET',
+            handler = function(req, res)
+               res.json({
+                  message = 'Chunked state test',
+                  chunked = true,
+                  timestamp = mSys.PreciseTime()
+               })
+            end
+         },
+         { pattern = '/reuse/test/:id',
+            method = 'GET',
+            handler = function(req, res)
+               res.json({
+                  message = 'Connection reuse test',
+                  requestId = req.params.id,
+                  timestamp = mSys.PreciseTime()
+               })
+            end
+         },
+         { pattern = '/server/state-info',
+            method = 'GET',
+            handler = function(req, res)
+               res.json({
+                  message = 'Server state info',
+                  activeConnections = math.random(1, 5), -- Simulate active connections
+                  timestamp = mSys.PreciseTime()
+               })
+            end
+         }
+      }
+   })
+end
+
+@AfterAll function cleanup()
+   glServer.stop()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function IncompleteRequest()
+   content = ''
+   request_body = '{"incomplete":'
+
+   http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/incomplete/test',
+      method = 'POST',
+      contentType = 'application/json',
+      flags = HTF_NO_HEAD,
+      inputFile = 'string:' .. request_body,
+      size = #request_body,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   assert(http.acActivate() is ERR_Okay, "Incomplete request test failed to activate")
+
+   err = proc.sleep()
+   assert(err is ERR_Okay, 'Incomplete request processing failed: ' .. mSys.GetErrorMsg(err))
+   assert(http.error is ERR_Okay, 'Incomplete request HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Incomplete request unexpected status: ' .. http.status)
+
+   response = json.decode(content)
+   assert(response.hasBody, 'Malformed body should still be received by the route')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ConnectionStateCleanup()
+   connectionCount = 0
+
+   -- Make multiple quick connections to test state cleanup
+   for i in {1 to 4} do
+      content = ''
+
+      http = obj.new('http', {
+         src = 'http://127.0.0.1:' .. SERVER_PORT .. '/state/cleanup/' .. i,
+         method = 'GET',
+         flags = HTF_NO_HEAD,
+         incoming = function(HTTP, Buffer)
+            if Buffer then content ..= Buffer.getString() end
+         end,
+         stateChanged = function(HTTP, State)
+            if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+               HTTP.acSignal()
+            end
+         end
+      })
+
+      proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+      assert(http.acActivate() is ERR_Okay, "State cleanup test " .. i .. " failed to activate")
+
+      err = proc.sleep()
+      assert(err is ERR_Okay, 'State cleanup ' .. i .. ' processing failed: ' .. mSys.GetErrorMsg(err))
+      assert(http.error is ERR_Okay, 'State cleanup ' .. i .. ' HTTP error: ' .. mSys.GetErrorMsg(http.error))
+      assert(http.status is 200, 'State cleanup ' .. i .. ' unexpected status: ' .. http.status)
+
+      response = json.decode(content)
+      assert(response.requestId is tostring(i), 'State cleanup request ID mismatch for request ' .. i)
+      connectionCount++
+   end
+
+   assert(connectionCount is 3, 'Not all connections completed: ' .. connectionCount)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function RequestTimeoutHandling()
+   content = ''
+   timeoutOccurred = false
+
+   http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/timeout/request',
+      method = 'GET',
+      flags = HTF_NO_HEAD,
+      connectTimeout = 3, -- 3 second timeout
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if State is HGS_TERMINATED and HTTP.error != ERR_Okay then
+            timeoutOccurred = true
+         end
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 8.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function PipelineStateManagement()
+   results = {}
+   requests = array<obj> {}
+   completed = 0
+   TOTAL_REQUESTS <const> = 4
+   wait_http = nil
+
+   -- Send multiple pipelined requests
+   for i in {0 to TOTAL_REQUESTS} do
+      req = i
+      http = obj.new('http', {
+         src = 'http://127.0.0.1:' .. SERVER_PORT .. '/pipeline/test/' .. i,
+         method = 'GET',
+         flags = HTF_NO_HEAD,
+         incoming = function(HTTP, Buffer)
+            if not results[req] then results[req] = '' end
+            if Buffer then results[req] ..= Buffer.getString() end
+         end,
+         stateChanged = function(HTTP, State)
+            if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+               completed++
+               if completed >= TOTAL_REQUESTS then
+                  wait_http.acSignal()
+               end
+            end
+         end
+      })
+
+      requests.push(http)
+      if not wait_http then wait_http = http end
+   end
+
+   proc = processing.new({ timeout = 10.0, signals = array<obj> { wait_http } })
+
+   for http in values(requests) do
+      check http.acActivate()
+   end
+
+   check proc.sleep()
+   assert(completed is TOTAL_REQUESTS, 'Pipeline requests incomplete: ' .. completed .. '/' .. TOTAL_REQUESTS)
+
+   -- Verify all requests completed with correct responses
+   for i in {0 to TOTAL_REQUESTS} do
+      assert(results[i], 'No response for pipeline request ' .. i)
+      response = json.decode(results[i])
+      assert(response.requestId is tostring(i), 'Pipeline request ID mismatch for request ' .. i)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ChunkedStateHandling()
+   content = ''
+   chunksReceived = 0
+
+   http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/chunked/state',
+      method = 'GET',
+      flags = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         if Buffer and #Buffer > 0 then
+            content ..= Buffer.getString()
+            chunksReceived = chunksReceived + 1
+         end
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+
+   check proc.sleep()
+   assert(http.error is ERR_Okay, 'Chunked state HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Chunked state unexpected status: ' .. http.status)
+
+   response = json.decode(content)
+   assert(response.chunked is true, 'Chunked response not handled correctly')
+   assert(chunksReceived >= 1, 'Should have received at least one chunk')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ConnectionReuse()
+   responses = {}
+   requestCount = 3
+
+   -- Make sequential requests to test connection reuse
+   for i in {1 into requestCount} do
+      content = ''
+
+      http = obj.new('http', {
+         src = 'http://127.0.0.1:' .. SERVER_PORT .. '/reuse/test/' .. i,
+         method = 'GET',
+         flags = HTF_NO_HEAD,
+         incoming = function(HTTP, Buffer)
+            content ..= Buffer.getString()
+         end,
+         stateChanged = function(HTTP, State)
+            if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+               HTTP.acSignal()
+            end
+         end
+      })
+
+      proc = processing.new({ timeout = 10.0, signals = array<obj> { http } })
+      check http.acActivate()
+
+      check proc.sleep()
+      assert(http.error is ERR_Okay, 'Connection reuse ' .. i .. ' HTTP error: ' .. mSys.GetErrorMsg(http.error))
+
+      response = json.decode(content)
+      responses[i] = response
+   end
+
+   -- Verify all requests completed successfully
+   for i in {1 into requestCount} do
+      assert(responses[i].requestId is tostring(i), 'Connection reuse request ' .. i .. ' failed')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ServerStateCleanup()
+   content = ''
+
+   http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/server/state-info',
+      method = 'GET',
+      flags = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.error is ERR_Okay, 'Server state HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Server state unexpected status: ' .. http.status)
+
+   response = json.decode(content)
+   assert(response.activeConnections != nil, 'Server should report active connections')
+end

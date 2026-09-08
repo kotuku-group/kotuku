@@ -2,10 +2,12 @@
 
 #include <kotuku/main.h>
 
+#include <span>
+
 int UTF8Copy(CSTRING String, STRING Dest, int Chars, int Size);
 uint32_t UTF8ReadValue(CSTRING String, int *Length);
 //CSTRING UTF8ValidEncoding(CSTRING String, CSTRING Encoding);
-int UTF8WriteValue(int Value, STRING String, int StringSize);
+int UTF8WriteValue(int Value, std::span<int8_t> Buffer);
 
 /*********************************************************************************************************************
 
@@ -20,6 +22,9 @@ cstr String: Pointer to a UTF-8 string.
 
 -RESULT-
 int: Returns the number of bytes used to create the UTF-8 character referred to by the String argument.
+
+-TAGS-
+pure-query
 
 *********************************************************************************************************************/
 
@@ -46,6 +51,9 @@ int Offset: The character number to translate to a byte offset.
 
 -RESULT-
 int: Returns the byte offset of the character.
+
+-TAGS-
+pure-query
 
 *********************************************************************************************************************/
 
@@ -74,6 +82,9 @@ cstr String: Pointer to a UTF-8 string.
 -RESULT-
 int: Returns the total number of characters used in the supplied UTF-8 string.
 
+-TAGS-
+pure-query
+
 *********************************************************************************************************************/
 
 [[nodiscard]] static inline int UTF8Length(CSTRING String)
@@ -101,18 +112,22 @@ int Offset: The byte offset that you need a character number for.
 -RESULT-
 int: Returns the number of the character at the given byte position.
 
+-TAGS-
+pure-query
+
 *********************************************************************************************************************/
 
 [[nodiscard]] static inline int UTF8OffsetToChar(CSTRING String, int Offset)
 {
-   if (!String) return 0;
+   if ((!String) or (Offset <= 0)) return 0;
 
-   int pos = 0;
-   while ((Offset) and (String[pos])) {
+   int pos        = 0;
+   int char_index = 0;
+   while ((String[pos]) and (pos < Offset)) {
       for (++pos; ((String[pos] & 0xc0) IS 0x80); pos++);
-      Offset--;
+      char_index++;
    }
-   return pos;
+   return char_index;
 }
 
 /*********************************************************************************************************************
@@ -130,12 +145,17 @@ int Offset: The byte index from which the size of the previous character should 
 -RESULT-
 int: Returns the byte-length of the previous character.
 
+-TAGS-
+pure-query
+
 *********************************************************************************************************************/
 
 [[nodiscard]] static inline int UTF8PrevLength(CSTRING String, int ByteIndex)
 {
+   if ((!String) or (ByteIndex <= 0)) return 0;
+
    int len = 0;
-   for (--ByteIndex; ByteIndex > 0; --ByteIndex) {
+   for (--ByteIndex; ByteIndex >= 0; --ByteIndex) {
       len++;
       if ((String[ByteIndex] & 0xc0) != 0x80) return len;
    }

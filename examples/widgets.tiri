@@ -19,11 +19,11 @@ A demonstration of standard widgets
    import 'gui/window'
    import 'vfx'
 
-   glSelf = <{ obj.find('self') }>
-   glPath = <{ glSelf.workingPath }>
+   glSelf = <obj{ obj.find('self') }>
+   glPath = <str{ glSelf.workingPath }>
 
    win = gui.window({ title='Widget Examples', insideWidth=600, insideHeight=400 })
-   viewport = win:clientViewport({ aspectRatio = ARF_MEET })
+   viewport = win.clientViewport({ aspectRatio = ARF_MEET })
 
 function itemCallback(Bar, Item)
    print(f'Callback: {Item.id}, {Item.name}')
@@ -43,15 +43,19 @@ end
 
 function widgetFocus(Widget)
    --if Widget.effect then return end
-   --Widget.effect = vfx.shake((Widget.inputViewport ? Widget.viewport), 0.2, 0, 0.2, function(Effect)
-   --   Widget.effect = nil
-   --end)
+   --Widget.effect = vfx.shake((Widget.inputViewport ? Widget.viewport), {
+   --   seconds = 0.2,
+   --   intensity = 0.2,
+   --   callback = function(Effect)
+   --      Widget.effect = nil
+   --   end
+   --})
 end
 
    menubar = gui.menubar({
       target = viewport,
       createItems = function(Bar)
-         Bar.addItem(1, 'File', 'devices/harddisk', menuCallback, {
+         Bar.addItem(1, 'File', 'devices/harddisk', menuCallback, array<table> {
             { item='New File', icon='items/file_new', qualifier='CTRL', key='N', feedback=itemClicked },
             { item='Open File', icon='office/documents', qualifier='CTRL', key='O', feedback=itemClicked },
             { item='Reload Document', icon='items/reload', key='F5', feedback=itemClicked },
@@ -108,7 +112,7 @@ end
       x     = 30,
       y     = 50,
       popup = true,
-      config = {
+      config = array<table> {
          { group='Files' },
          { item='New File', icon='items/file_new', qualifier='CTRL', key='N', feedback=itemClicked },
          { item='Open File', icon='office/documents', qualifier='CTRL', key='O', feedback=itemClicked },
@@ -133,8 +137,9 @@ end
       x=win.margins.left, y=y, string='Kōtuku interfaces are drawn using real-time vector graphics',
       face='Noto Sans', fontSize=20, fill=win.theme.window.text, textFlags='!editable'
    })
-   text.y += text.fontSize
-   y += text.fontSize + 14
+   font_size = tonumber(text.fontSize)
+   text.y += font_size
+   y += font_size + 14
 
    msgButton = gui.button({
       target = viewport,
@@ -151,7 +156,7 @@ end
                message       = 'To be or not to be?',
                userInput     = 'That is the question',
                checkboxLabel = '\'Tis nobler to suffer',
-               options = {
+               options = array<table> {
                   { id=1, text='To be', icon='items/checkmark' },
                   { id=2, text='Not to be', icon='items/cancel' }
                },
@@ -236,12 +241,12 @@ end
       events = {
          activate = function(Widget)
             gui.dialog.file({
-               filterList  = { { name='All Files', ext='' }, { name='MP3 Audio Files', ext='.mp3' }, { name='Text Files', ext='.txt' } },
+               filterList  = array<table> { { name='MP3 Audio Files', ext='mp3' }, { name='Text Files', ext='txt' } },
                okText      = 'Select File',
                cancelText  = 'Exit',
                modal       = true,
                popOver     = win.surface,
-               warnExists  = true,
+               warnExists  = false,
                multiSelect = true,
                feedback = function(Dialog, Path, Files)
                   if not Files then
@@ -315,7 +320,7 @@ end
    })
    y += combobox.viewport.height + 12
 
-   input = gui.input({
+   local input = gui.input({
       target = viewport,
       x      = win.margins.left,
       y      = y,
@@ -344,13 +349,17 @@ end
       size   = 80,
       events = {
          show = function(Icon)
-            vfx.fadeIn(Icon.viewport, 1.0, 0.1)
+            vfx.fadeIn(Icon.viewport, { seconds=1.0, delay=0.1 })
          end,
          activate = function(Icon)
             if Icon.effect then return end
-            Icon.effect = vfx.shake(Icon.viewport, 1.0, 0, 1.0, function(Effect)
-               Icon.effect = nil
-            end)
+            Icon.effect = vfx.shake(Icon.viewport, {
+               seconds = 1.0,
+               intensity = 1.0,
+               callback = function(Effect)
+                  Icon.effect = nil
+               end
+            })
 
             sndAlarm?.acActivate()
          end
@@ -369,15 +378,15 @@ end
       text   = 'Wilhelm\'s House',
       events = {
          show = function(Icon)
-            vfx.rotate(Icon.viewport, 0.8, 0)
-            vfx.zoomIn(Icon.viewport, 0.4, 0.3)
+            vfx.rotate(Icon.viewport, { seconds=0.8 })
+            vfx.zoomIn(Icon.viewport, { seconds=0.4, delay=0.3 })
          end,
          activate = function(Icon)
             if Icon.effect then return end
 
             Icon.effect = vfx.chain({
-               vfx.rotate(Icon.viewport, 0.8),
-               vfx.zoomOut(Icon.viewport, 0.8)
+               vfx.rotate(Icon.viewport, { seconds=0.8 }),
+               vfx.zoomOut(Icon.viewport, { seconds=0.8 })
             }, function()
                Icon.viewport.free()
                Icon.viewport = nil
@@ -388,5 +397,5 @@ end
       }
    })
 
-   win:show(true)
+   win.show()
    processing.sleep() -- Will sleep until the window sends MSGID_QUIT

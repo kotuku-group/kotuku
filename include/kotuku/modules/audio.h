@@ -163,12 +163,12 @@ struct AudioLoop {
 namespace snd {
 struct OpenChannels { int Total; int Result; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct CloseChannels { int Handle; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct AddSample { FUNCTION OnStop; SFM SampleFormat; APTR Data; int DataSize; struct AudioLoop * Loop; int LoopSize; int Result; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddSample { FUNCTION OnStop; SFM SampleFormat; std::span<const int8_t> Data; struct AudioLoop *Loop; int Result; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct RemoveSample { int Handle; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetSampleLength { int Sample; int64_t Length; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct AddStream { FUNCTION Callback; FUNCTION OnStop; SFM SampleFormat; int SampleLength; int PlayOffset; struct AudioLoop * Loop; int LoopSize; int Result; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddStream { FUNCTION Callback; FUNCTION OnStop; SFM SampleFormat; int SampleLength; int PlayOffset; struct AudioLoop *Loop; int Result; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Beep { int Pitch; int Duration; int Volume; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SetVolume { int Index; CSTRING Name; SVF Flags; int Channel; double Volume; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SetVolume { int Index; std::string_view Name; SVF Flags; int Channel; double Volume; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -177,7 +177,8 @@ class objAudio : public Object {
    static constexpr CLASSID CLASS_ID = CLASSID::AUDIO;
    static constexpr CSTRING CLASS_NAME = "Audio";
 
-   using create = pf::Create<objAudio>;
+   using create = kt::Create<objAudio>;
+   objAudio(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    int OutputRate;    // Determines the frequency to use for the output of audio data.
    int InputRate;     // Determines the frequency to use when recording audio data.
@@ -201,107 +202,168 @@ class objAudio : public Object {
       struct snd::OpenChannels args = { Total, (int)0 };
       ERR error = Action(AC(-1), this, &args);
       if (Result) *Result = args.Result;
-      return(error);
+      return error;
    }
    inline ERR closeChannels(int Handle) noexcept {
       struct snd::CloseChannels args = { Handle };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
-   inline ERR addSample(FUNCTION OnStop, SFM SampleFormat, APTR Data, int DataSize, struct AudioLoop * Loop, int LoopSize, int * Result) noexcept {
-      struct snd::AddSample args = { OnStop, SampleFormat, Data, DataSize, Loop, LoopSize, (int)0 };
+   inline ERR addSample(FUNCTION OnStop, SFM SampleFormat, std::span<const int8_t> Data, struct AudioLoop * Loop, int * Result) noexcept {
+      struct snd::AddSample args = { OnStop, SampleFormat, Data, Loop, (int)0 };
       ERR error = Action(AC(-3), this, &args);
       if (Result) *Result = args.Result;
-      return(error);
+      return error;
    }
    inline ERR removeSample(int Handle) noexcept {
       struct snd::RemoveSample args = { Handle };
-      return(Action(AC(-4), this, &args));
+      return Action(AC(-4), this, &args);
    }
    inline ERR setSampleLength(int Sample, int64_t Length) noexcept {
       struct snd::SetSampleLength args = { Sample, Length };
-      return(Action(AC(-5), this, &args));
+      return Action(AC(-5), this, &args);
    }
-   inline ERR addStream(FUNCTION Callback, FUNCTION OnStop, SFM SampleFormat, int SampleLength, int PlayOffset, struct AudioLoop * Loop, int LoopSize, int * Result) noexcept {
-      struct snd::AddStream args = { Callback, OnStop, SampleFormat, SampleLength, PlayOffset, Loop, LoopSize, (int)0 };
+   inline ERR addStream(FUNCTION Callback, FUNCTION OnStop, SFM SampleFormat, int SampleLength, int PlayOffset, struct AudioLoop * Loop, int * Result) noexcept {
+      struct snd::AddStream args = { Callback, OnStop, SampleFormat, SampleLength, PlayOffset, Loop, (int)0 };
       ERR error = Action(AC(-6), this, &args);
       if (Result) *Result = args.Result;
-      return(error);
+      return error;
    }
    inline ERR beep(int Pitch, int Duration, int Volume) noexcept {
       struct snd::Beep args = { Pitch, Duration, Volume };
-      return(Action(AC(-7), this, &args));
+      return Action(AC(-7), this, &args);
    }
-   inline ERR setVolume(int Index, CSTRING Name, SVF Flags, int Channel, double Volume) noexcept {
+   inline ERR setVolume(int Index, const std::string_view &Name, SVF Flags, int Channel, double Volume) noexcept {
       struct snd::SetVolume args = { Index, Name, Flags, Channel, Volume };
-      return(Action(AC(-8), this, &args));
+      return Action(AC(-8), this, &args);
    }
+
+   // Customised field getting
+
+   inline ERR getOutputRate(int &Value) noexcept {
+      Value = this->OutputRate;
+      return ERR::Okay;
+   }
+
+   inline ERR getInputRate(int &Value) noexcept {
+      Value = this->InputRate;
+      return ERR::Okay;
+   }
+
+   inline ERR getQuality(int &Value) noexcept {
+      Value = this->Quality;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(ADF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getBitDepth(int &Value) noexcept {
+      Value = this->BitDepth;
+      return ERR::Okay;
+   }
+
+   inline ERR getPeriods(int &Value) noexcept {
+      Value = this->Periods;
+      return ERR::Okay;
+   }
+
+   inline ERR getPeriodSize(int &Value) noexcept {
+      Value = this->PeriodSize;
+      return ERR::Okay;
+   }
+
+   inline ERR getDevice(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[9];
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      return get_field(this, Value);
+   }
+
+   inline ERR getMixerLag(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getMasterVolume(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getMute(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[11];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getStereo(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      return field->GetValue(this, &Value);
+   }
+
 
    // Customised field setting
 
    inline ERR setOutputRate(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[7];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setInputRate(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->InputRate = Value;
       return ERR::Okay;
    }
 
    inline ERR setQuality(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[13];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setFlags(const ADF Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Flags = Value;
       return ERR::Okay;
    }
 
    inline ERR setBitDepth(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[15];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setPeriods(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[12];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[16];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setPeriodSize(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[13];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[4];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   template <class T> inline ERR setDevice(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[16];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+   inline ERR setDevice(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[9];
+      return field->WriteValue(this, field, 0x00904300, &Value);
    }
 
    inline ERR setMasterVolume(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[11];
-      return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
+      auto field = &this->Class->Dictionary[2];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setMute(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[11];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setStereo(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[3];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
 };
@@ -315,8 +377,10 @@ class objSound : public Object {
    static constexpr CLASSID CLASS_ID = CLASSID::SOUND;
    static constexpr CSTRING CLASS_NAME = "Sound";
 
-   using create = pf::Create<objSound>;
+   using create = kt::Create<objSound>;
+   objSound(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
+   std::string Path;    // Location of the audio sample data.
    double   Volume;     // The volume to use when playing the sound sample.
    double   Pan;        // Determines the horizontal position of a sound when played through stereo speakers.
    int64_t  Position;   // The current playback position.
@@ -342,28 +406,24 @@ class objSound : public Object {
    inline ERR deactivate() noexcept { return Action(AC::Deactivate, this, nullptr); }
    inline ERR disable() noexcept { return Action(AC::Disable, this, nullptr); }
    inline ERR enable() noexcept { return Action(AC::Enable, this, nullptr); }
-   inline ERR getKey(CSTRING Key, STRING Value, int Size) noexcept {
-      struct acGetKey args = { Key, Value, Size };
+   inline ERR getKey(std::string_view Key, std::string &Value) noexcept {
+      struct acGetKey args = { Key, &Value };
       auto error = Action(AC::GetKey, this, &args);
-      if ((error != ERR::Okay) and (Value)) Value[0] = 0;
+      if (error != ERR::Okay) Value.clear();
       return error;
    }
    inline ERR init() noexcept { return InitObject(this); }
-   template <class T, class U> ERR read(APTR Buffer, T Size, U *Result) noexcept {
-      static_assert(std::is_integral<U>::value, "Result value must be an integer type");
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
+   template <class T> ERR read(std::span<int8_t> Buffer, T *Result) noexcept {
+      static_assert(std::is_integral<T>::value, "Result value must be an integer type");
+      struct acRead read = { Buffer };
       if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
-         *Result = static_cast<U>(read.Result);
+         *Result = T(read.Result);
          return ERR::Okay;
       }
       else { *Result = 0; return error; }
    }
-   template <class T> ERR read(APTR Buffer, T Size) noexcept {
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
+   inline ERR read(std::span<int8_t> Buffer) noexcept {
+      struct acRead read = { Buffer };
       return Action(AC::Read, this, &read);
    }
    inline ERR saveToObject(OBJECTPTR Dest, CLASSID ClassID = CLASSID::NIL) noexcept {
@@ -377,65 +437,222 @@ class objSound : public Object {
    inline ERR seekStart(double Offset) noexcept { return seek(Offset, SEEK::START); }
    inline ERR seekEnd(double Offset) noexcept { return seek(Offset, SEEK::END); }
    inline ERR seekCurrent(double Offset) noexcept { return seek(Offset, SEEK::CURRENT); }
-   inline ERR acSetKey(CSTRING FieldName, CSTRING Value) noexcept {
+   inline ERR acSetKey(std::string_view FieldName, std::string_view Value) noexcept {
       struct acSetKey args = { FieldName, Value };
       return Action(AC::SetKey, this, &args);
    }
 
+   // Customised field getting
+
+   inline ERR getPath(std::string_view &Value) noexcept {
+      Value = this->Path;
+      return ERR::Okay;
+   }
+
+   inline ERR getVolume(double &Value) noexcept {
+      Value = this->Volume;
+      return ERR::Okay;
+   }
+
+   inline ERR getPan(double &Value) noexcept {
+      Value = this->Pan;
+      return ERR::Okay;
+   }
+
+   inline ERR getPosition(int64_t &Value) noexcept {
+      Value = this->Position;
+      return ERR::Okay;
+   }
+
+   inline ERR getPriority(int &Value) noexcept {
+      Value = this->Priority;
+      return ERR::Okay;
+   }
+
+   inline ERR getLength(int &Value) noexcept {
+      Value = this->Length;
+      return ERR::Okay;
+   }
+
+   inline ERR getOctave(int &Value) noexcept {
+      Value = this->Octave;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(SDF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getFrequency(int &Value) noexcept {
+      Value = this->Frequency;
+      return ERR::Okay;
+   }
+
+   inline ERR getPlayback(int &Value) noexcept {
+      Value = this->Playback;
+      return ERR::Okay;
+   }
+
+   inline ERR getCompression(int &Value) noexcept {
+      Value = this->Compression;
+      return ERR::Okay;
+   }
+
+   inline ERR getBytesPerSecond(int &Value) noexcept {
+      Value = this->BytesPerSecond;
+      return ERR::Okay;
+   }
+
+   inline ERR getBitsPerSample(int &Value) noexcept {
+      Value = this->BitsPerSample;
+      return ERR::Okay;
+   }
+
+   inline ERR getAudio(OBJECTID &Value) noexcept {
+      Value = this->AudioID;
+      return ERR::Okay;
+   }
+
+   inline ERR getLoopStart(int &Value) noexcept {
+      Value = this->LoopStart;
+      return ERR::Okay;
+   }
+
+   inline ERR getLoopEnd(int &Value) noexcept {
+      Value = this->LoopEnd;
+      return ERR::Okay;
+   }
+
+   inline ERR getStream(STREAM &Value) noexcept {
+      Value = this->Stream;
+      return ERR::Okay;
+   }
+
+   inline ERR getChannelIndex(int &Value) noexcept {
+      Value = this->ChannelIndex;
+      return ERR::Okay;
+   }
+
+   inline ERR getActive(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getDuration(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[31];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getElapsed(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[7];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getHeader(std::span<int8_t> &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      auto get_field = (ERR (*)(APTR, std::span<int8_t> &))field->GetValue;
+      return get_field(this, Value);
+   }
+
+   inline ERR getOnStop(FUNCTION * &Value) noexcept {
+      auto field = &this->Class->Dictionary[29];
+      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
+      return get_field(this, Value);
+   }
+
+   inline ERR getPlayPosition(int64_t &Value) noexcept {
+      auto field = &this->Class->Dictionary[17];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getProgress(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getRemaining(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[4];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getNote(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[30];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+
    // Customised field setting
 
+   inline ERR setPath(const std::string_view &Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
+      this->Path = Value;
+      return ERR::Okay;
+   }
+
    inline ERR setVolume(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[15];
-      return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
+      auto field = &this->Class->Dictionary[28];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setPan(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
+      auto field = &this->Class->Dictionary[18];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setPosition(const int64_t Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[17];
-      return field->WriteValue(target, field, FD_INT64, &Value, 1);
+      auto field = &this->Class->Dictionary[16];
+      return field->WriteValue(this, field, FD_INT64, &Value);
    }
 
    inline ERR setPriority(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[14];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[9];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setLength(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[4];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[33];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setOctave(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[11];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[25];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setFlags(const SDF Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[2];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setFrequency(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Frequency = Value;
       return ERR::Okay;
    }
 
    inline ERR setPlayback(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[16];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[22];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setCompression(const int Value) noexcept {
@@ -454,7 +671,7 @@ class objSound : public Object {
    }
 
    inline ERR setAudio(OBJECTID Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->AudioID = Value;
       return ERR::Okay;
    }
@@ -474,22 +691,14 @@ class objSound : public Object {
       return ERR::Okay;
    }
 
-   inline ERR setOnStop(FUNCTION Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[12];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+   inline ERR setOnStop(const FUNCTION Value) noexcept {
+      auto field = &this->Class->Dictionary[29];
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
-   template <class T> inline ERR setPath(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[21];
-      return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
-   }
-
-   template <class T> inline ERR setNote(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+   inline ERR setNote(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[30];
+      return field->WriteValue(this, field, 0x00804308, &Value);
    }
 
 };
@@ -549,4 +758,3 @@ extern ERR MixStartSequence(objAudio *Audio, int Handle);
 extern ERR MixEndSequence(objAudio *Audio, int Handle);
 } // namespace
 #endif // KOTUKU_STATIC
-

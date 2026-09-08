@@ -10,7 +10,7 @@
 //
 // NOTE: malloc/free tracking only works if you use the provided wrappers:
 //
-//   pf::tracked_malloc(), pf::tracked_free(), etc.
+//   kt::tracked_malloc(), kt::tracked_free(), etc.
 //   OR define MEMTRACK_REPLACE_MALLOC before including this header
 
 #include <cstddef>
@@ -19,7 +19,7 @@
 #include <cstdlib>
 #include <cstdint>
 
-namespace pf {
+namespace kt {
 
 class MemTracker {
 public:
@@ -146,7 +146,7 @@ inline void tracked_free(void* Ptr) {
    std::free(Ptr);
 }
 
-} // namespace pf
+} // namespace kt
 
 // Global operator overrides for tracking new/delete
 
@@ -159,7 +159,7 @@ inline void * operator new(size_t Size) {
       ptr = std::malloc(Size);
    }
 
-   if (pf::MemTracker::glActiveTracker) pf::MemTracker::glActiveTracker->recordAlloc(Size);
+   if (kt::MemTracker::glActiveTracker) kt::MemTracker::glActiveTracker->recordAlloc(Size);
    return ptr;
 }
 
@@ -172,27 +172,27 @@ inline void * operator new[](size_t Size) {
       ptr = std::malloc(Size);
    }
 
-   if (pf::MemTracker::glActiveTracker) pf::MemTracker::glActiveTracker->recordAlloc(Size);
+   if (kt::MemTracker::glActiveTracker) kt::MemTracker::glActiveTracker->recordAlloc(Size);
 
    return ptr;
 }
 
 inline void operator delete(void *Ptr) noexcept {
    if (not Ptr) return;
-   if (pf::MemTracker::glActiveTracker) pf::MemTracker::glActiveTracker->recordFree();
+   if (kt::MemTracker::glActiveTracker) kt::MemTracker::glActiveTracker->recordFree();
    std::free(Ptr);
 }
 
 inline void operator delete[](void *Ptr) noexcept {
    if (not Ptr) return;
-   if (pf::MemTracker::glActiveTracker) pf::MemTracker::glActiveTracker->recordFree();
+   if (kt::MemTracker::glActiveTracker) kt::MemTracker::glActiveTracker->recordFree();
    std::free(Ptr);
 }
 
 // Optional: Define macros to replace malloc/free globally
 #ifdef MEMTRACK_REPLACE_MALLOC
-   #define malloc(size) pf::tracked_malloc(size)
-   #define calloc(num, size) pf::tracked_calloc(num, size)
-   #define realloc(ptr, size) pf::tracked_realloc(ptr, size)
-   #define free(ptr) pf::tracked_free(ptr)
+   #define malloc(size) kt::tracked_malloc(size)
+   #define calloc(num, size) kt::tracked_calloc(num, size)
+   #define realloc(ptr, size) kt::tracked_realloc(ptr, size)
+   #define free(ptr) kt::tracked_free(ptr)
 #endif

@@ -620,7 +620,7 @@ bool XPathParser::parse_default_namespace_decl(XQueryProlog &prolog, bool IsFunc
    if (not uri) return false;
 
    std::string cleaned = xml::uri::normalise_uri_separators(*uri);
-   uint32_t hash = pf::strhash(cleaned);
+   uint32_t hash = kt::strhash(cleaned);
    if (IsFunctionNamespace) {
       prolog.default_function_namespace = hash;
       prolog.default_function_namespace_uri = cleaned;

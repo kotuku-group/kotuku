@@ -4,21 +4,86 @@
 @BeforeEach(hotpath=true)
 function enforce_hotpath() end
 
+function expect_nil_string_error(Callback:func, Name:str)
+   local failed = false
+   try
+      Callback()
+   except e
+      failed = true
+      assert('string expected' in e.message and 'got nil' in e.message,
+         Name .. '(nil) should report the standard string argument error: ' .. tostring(e.message))
+   end
+   assert(failed, Name .. '(nil) should raise an error')
+end
+
+function expect_split(Source:str, Separator:str, Expected:array<str>, Description:str)
+   local parts = Source.split(Separator)
+   assert(#parts is #Expected,
+      f'{Description}: expected {#Expected} parts, got {#parts}')
+   for index in {0 to #Expected} do
+      assert(parts[index] is Expected[index],
+         f'{Description}: part {index} has length {#parts[index]}, expected {#Expected[index]}')
+   end
+end
+
+@Test function LengthOperatorReplacesLen()
+   assert(#'' is 0 and #'abc' is 3 and #'abc\0def' is 7,
+      'The length operator should report string byte lengths, including embedded NUL bytes')
+   assert(string['len'] is nil, 'string.len() should not be exposed by the string namespace')
+   assert('abc'['len'] is nil, 'string.len() should not be exposed as a string method')
+end
+
 @Test function Alloc()
+   local sizes = array<int> { 0, 1, 2, 3, 4, 5, 7, 8, 9, 1000 }
+   for _, size in sizes do
+      local buffer = string.alloc(size)
+      assert(#buffer is size, f"string.alloc({size}) returned {#buffer} bytes")
+      for index in {0 to size} do
+         assert(buffer.byte(index) is 0,
+            f"string.alloc({size}) byte {index} was not NUL-filled")
+      end
+   end
+
    s = string.alloc(10)
-   assert(#s is 10, "String size is not 10 characters, got " .. #s)
+
+   s2 = string.alloc(10)
+   assert(not (s is s2), "Same-sized string.alloc() buffers should be distinct objects")
 
    -- Test zero size
    empty = string.alloc(0)
    assert(#empty is 0, "Zero alloc should create empty string, got " .. #empty)
 
+   empty2 = string.alloc(0)
+   assert(not (empty is empty2), "Zero-sized string.alloc() buffers should be distinct objects")
+
    -- Test large size
    big = string.alloc(1000)
    assert(#big is 1000, "Large alloc failed, expected 1000, got " .. #big)
+
+   slice = s.sub(#s, #s)
+   assert(slice is "", "Slices copied from mutable buffers should be normal interned strings")
+end
+
+@Test function AllocatedBuffersAreIdentityTableKeys()
+   local key = string.alloc(4)
+   local equal_content = string.alloc(4)
+   local values = { [key] = 'buffer' }
+
+   assert(values[key] is 'buffer', 'A mutable buffer should retrieve its own table entry')
+   assert(values[equal_content] is nil,
+      'A distinct mutable buffer with equal content must be a different table key')
+   assert(values['\0\0\0\0'] is nil,
+      'An interned string with equal content must be a different table key')
+
+   local matches = 0
+   for _ in {0 to 100} do
+      if values[key] is 'buffer' then matches++ end
+   end
+   assert(matches is 100, 'Mutable-buffer table lookup must remain stable after JIT warming')
 end
 
 @Test function Index()
---   getmetatable('').__index = function(str,i) return string.substr(str,i,i) end
+--   getmetatable('').__index = function(str,i) return str.sub(i,i) end
 --   hw = "Hello World"
 --   assert(string[1] is "H", "Expected 'H' at index 0, got '" .. tostring(string[1]) .. "'")
 end
@@ -63,6 +128,20 @@ end
    assert(nosep[0] is "hello", "Expected 'hello', got '" .. nosep[0] .. "'")
 end
 
+@Test function SplitLiteralSeparatorBoundaries()
+   expect_split('a,b,c', ',', array<str> { 'a', 'b', 'c' }, 'one-byte separator')
+   expect_split('one::two::three', '::', array<str> { 'one', 'two', 'three' }, 'multi-byte separator')
+   expect_split('a', 'separator-is-longer', array<str> { 'a' }, 'separator longer than source')
+   expect_split('alpha--x', '--', array<str> { 'alpha', 'x' }, 'separator longer than final segment')
+   expect_split('\0::alpha\0::beta', '\0::', array<str> { '', 'alpha', 'beta' },
+      'multi-byte separator containing NUL')
+   expect_split('::alpha::::beta::', '::', array<str> { '', 'alpha', '', 'beta', '' },
+      'leading, trailing and consecutive separators')
+   expect_split('aaaaa', 'aaa', array<str> { '', 'aa' }, 'overlapping separator candidates')
+   expect_split('alpha', '::', array<str> { 'alpha' }, 'absent separator')
+   expect_split('entire', 'entire', array<str> { '', '' }, 'separator equal to source')
+end
+
 @Test function SplitReturnsArray()
    -- Verify that string.split() returns a first-class array
    parts = string.split("a,b,c", ",")
@@ -71,7 +150,7 @@ end
    assert(type(parts) is "array", "Expected type 'array', got '" .. type(parts) .. "'")
 
    -- Verify array methods are available
-   assert(parts:type() is "string", "Expected array element type 'string', got '" .. tostring(parts:type()) .. "'")
+   assert(parts.type() is "str", "Expected array element type 'str', got '" .. tostring(parts.type()) .. "'")
 
    -- Verify index-based iteration works
    assert(parts[0] is "a", "parts[0] should be 'a'")
@@ -90,64 +169,71 @@ end
    assert(single[0] is "hello", "Single element should be 'hello'")
 
    -- Verify concat method works on string arrays
-   rejoined = parts:concat("%s", ",")
+   rejoined = parts.concat(",", "%s")
    assert(rejoined is "a,b,c", "concat should rejoin elements, got '" .. rejoined .. "'")
 end
 
 @Test function Trim()
    -- Basic trim
-   trimmed = string.trim("  hello world  ")
+   trimmed = "  hello world  ".trim()
    assert(trimmed is "hello world", "Expected 'hello world', got '" .. trimmed .. "'")
 
    -- Left whitespace only
-   left = string.trim("  hello")
+   left = "  hello".trim()
    assert(left is "hello", "Expected 'hello', got '" .. left .. "'")
 
    -- Right whitespace only
-   right = string.trim("hello  ")
+   right = "hello  ".trim()
    assert(right is "hello", "Expected 'hello', got '" .. right .. "'")
 
    -- Mixed whitespace types
-   mixed = string.trim("\t\n  hello world  \r\n\t")
+   mixed = "\t\n  hello world  \r\n\t".trim()
    assert(mixed is "hello world", "Expected 'hello world', got '" .. mixed .. "'")
 
    -- All whitespace
-   allspace = string.trim("   \t\n\r   ")
+   allspace = "   \t\n\r   ".trim()
    assert(allspace is "", "All whitespace should return empty string, got '" .. allspace .. "'")
 
    -- Empty string
-   empty = string.trim("")
+   empty = "".trim()
    assert(empty is "", "Empty string should remain empty, got '" .. empty .. "'")
 
    -- No whitespace
-   none = string.trim("hello")
+   none = "hello".trim()
    assert(none is "hello", "No whitespace should be unchanged, got '" .. none .. "'")
 end
 
 @Test function RTrim()
    -- Basic right trim
-   trimmed = string.rtrim("hello world  ")
+   trimmed = "hello world  ".rtrim()
    assert(trimmed is "hello world", "Expected 'hello world', got '" .. trimmed .. "'")
 
    -- Left whitespace preserved
-   left = string.rtrim("  hello world  ")
+   left = "  hello world  ".rtrim()
    assert(left is "  hello world", "Expected '  hello world', got '" .. left .. "'")
 
    -- Mixed whitespace types
-   mixed = string.rtrim("hello world  \r\n\t")
+   mixed = "hello world  \r\n\t".rtrim()
    assert(mixed is "hello world", "Expected 'hello world', got '" .. mixed .. "'")
 
    -- All whitespace
-   allspace = string.rtrim("   \t\n\r   ")
+   allspace = "   \t\n\r   ".rtrim()
    assert(allspace is "", "All whitespace should return empty string, got '" .. allspace .. "'")
 
    -- Empty string
-   empty = string.rtrim("")
+   empty = "".rtrim()
    assert(empty is "", "Empty string should remain empty, got '" .. empty .. "'")
 
    -- No whitespace
-   none = string.rtrim("hello")
+   none = "hello".rtrim()
    assert(none is "hello", "No whitespace should be unchanged, got '" .. none .. "'")
+end
+
+@Test function NilStringArguments()
+   expect_nil_string_error(function() string.trim(nil) end, 'string.trim')
+   expect_nil_string_error(function() string.rtrim(nil) end, 'string.rtrim')
+   expect_nil_string_error(function() string.escXML(nil) end, 'string.escXML')
+   expect_nil_string_error(function() string.unescapeXML(nil) end, 'string.unescapeXML')
 end
 
 @Test function StartsWith()
@@ -204,39 +290,39 @@ end
 
 @Test function Contains()
    -- Basic positive case
-   assert(string.contains("hello world", "world"), "Should contain 'world'")
+   assert("world" in "hello world", "Should contain 'world'")
 
    -- Basic negative case
-   assert(not string.contains("hello world", "xyz"), "Should not contain 'xyz'")
+   assert(not ("xyz" in "hello world"), "Should not contain 'xyz'")
 
    -- Substring in middle
-   assert(string.contains("hello world", "lo wo"), "Should contain 'lo wo'")
+   assert("lo wo" in "hello world", "Should contain 'lo wo'")
 
    -- Empty substr (should always match)
-   assert(string.contains("hello", ""), "Should match empty substr")
+   assert("" in "hello", "Should match empty substr")
 
    -- Substr longer than string
-   assert(not string.contains("hi", "hello"), "Should not match longer substr")
+   assert(not ("hello" in "hi"), "Should not match longer substr")
 
    -- Exact match
-   assert(string.contains("hello", "hello"), "Should match exact string")
+   assert("hello" in "hello", "Should match exact string")
 
    -- Empty string with empty substr
-   assert(string.contains("", ""), "Empty string should contain empty substr")
+   assert("" in "", "Empty string should contain empty substr")
 
    -- Empty string with non-empty substr
-   assert(not string.contains("", "hello"), "Empty string should not contain non-empty substr")
+   assert(not ("hello" in ""), "Empty string should not contain non-empty substr")
 
    -- Case sensitive
-   assert(not string.contains("Hello World", "hello"), "Should be case sensitive")
+   assert(not ("hello" in "Hello World"), "Should be case sensitive")
 
    -- Single character
-   assert(string.contains("hello", "e"), "Should find single character")
-   assert(not string.contains("hello", "x"), "Should not find absent character")
+   assert("e" in "hello", "Should find single character")
+   assert(not ("x" in "hello"), "Should not find absent character")
 
    -- Method syntax
-   assert("hello world":contains("world"), "Method syntax should work")
-   assert(not "hello world":contains("xyz"), "Method syntax negative case")
+   assert("world" in "hello world", "Membership syntax should work")
+   assert(not ("xyz" in "hello world"), "Membership syntax negative case")
 
    -- 'in' operator syntax
    assert("world" in "hello world", "'in' operator should find substring")
@@ -347,10 +433,10 @@ end
    assert(popSingle2 is "a", "Expected 'a', got '" .. popSingle2 .. "'")
 
    -- Method syntax
-   methodPop = "hello world":pop()
+   methodPop = "hello world".pop()
    assert(methodPop is "hello worl", "Expected 'hello worl', got '" .. methodPop .. "'")
 
-   methodPop2 = "hello world":pop(3)
+   methodPop2 = "hello world".pop(3)
    assert(methodPop2 is "hello wo", "Expected 'hello wo', got '" .. methodPop2 .. "'")
 end
 
@@ -367,7 +453,7 @@ end
 
    -- Empty string
    emptyHash = string.hash("")
-   assert(emptyHash != 0, "Empty string hash should not be 0, got " .. emptyHash)
+   assert(emptyHash is 0, "Empty string hash should be 0, got " .. emptyHash)
 
    -- Same string should produce same hash
    consistent1 = string.hash("test")
@@ -401,17 +487,17 @@ end
    empty = string.escXML("")
    assert(empty is "", "Empty string should remain empty, got '" .. empty .. "'")
 
-   -- Nil input (should return empty string)
-   nilResult = string.escXML(nil)
-   assert(nilResult is "", "Nil input should return empty string, got '" .. nilResult .. "'")
-
    -- Multiple ampersands (should not double-escape)
    amps = string.escXML("A & B & C")
    assert(amps is "A &amp; B &amp; C", "Expected 'A &amp; B &amp; C', got '" .. amps .. "'")
 
-   -- Mixed with quotes (should not escape quotes)
-   quotes = string.escXML('Hello "world" & <test>')
-   assert(quotes is 'Hello "world" &amp; &lt;test&gt;', "Expected 'Hello \"world\" &amp; &lt;test&gt;', got '" .. quotes .. "'")
+   -- Double quotes are escaped; apostrophes remain literal
+   quotes = string.escXML([[Hello "world" & 'friends' <test>]])
+   assert(quotes is "Hello &quot;world&quot; &amp; 'friends' &lt;test&gt;",
+      'Double quotes should be escaped and apostrophes preserved, got ' .. quotes)
+
+   source = [[Hello "world" & 'friends' <test>]]
+   assert(source.escXML().unescapeXML() is source, 'Escaping and unescaping should round-trip all XML entities')
 
    ue = string.unescapeXML('&amp;&quot;&apos;;')
    assert(ue is "&\"';", "Received string is incorrect: " .. tostring(ue))
@@ -420,62 +506,77 @@ end
    assert(ue is "<<>>", "Received string is incorrect: " .. tostring(ue))
 end
 
-@Test function SubStr()
-   -- string.substr() uses exclusive end index (like JavaScript substring/Python slicing)
-   -- string.substr(s, start, end) extracts chars from start to end-1
+@Test function Sub()
+   -- string.sub() uses an exclusive stop index (like JavaScript substring/Python slicing).
    s = "hello world"
 
-   for i=0,1000 do
+   for i in {0 to 1000} do
       -- Basic substring
-      sub = string.substr(s, 0, 5) -- Indices 0,1,2,3,4 (not 5)
+      sub = s.sub(0, 5) -- Indices 0,1,2,3,4 (not 5)
       assert(sub is "hello", "Expected 'hello', got '" .. sub .. "'")
 
       -- Start from middle
-      mid = string.substr(s, 6, 11) -- Indices 6,7,8,9,10 (not 11)
+      mid = s.sub(6, 11) -- Indices 6,7,8,9,10 (not 11)
       assert(mid is "world", "Expected 'world', got '" .. mid .. "'")
 
-      -- Negative indices (count from end)
-      neg = string.substr(s, -5, -1)
-      assert(neg is "world", "Expected 'world' from negative indices, got '" .. neg .. "'")
+      -- Negative stops remain exclusive after they are resolved from the end.
+      neg = s.sub(-5, -1)
+      assert(neg is "worl", "Expected 'worl' from negative indices, got '" .. neg .. "'")
 
       -- Negative start, positive end
-      mixed = string.substr(s, -5, 11)
+      mixed = s.sub(-5, 11)
       assert(mixed is "world", "Expected 'world' from mixed indices, got '" .. mixed .. "'")
 
       -- Default end
-      toEnd = string.substr(s, 6)
+      toEnd = s.sub(6)
       assert(toEnd is "world", "Expected 'world' with default end, got '" .. toEnd .. "'")
 
       -- Single character
-      single = string.substr(s, 0, 1)
+      single = s.sub(0, 1)
       assert(single is "h", "Expected 'h', got '" .. single .. "'")
 
       -- Empty range
-      empty = string.substr(s, 5, 5)
+      empty = s.sub(5, 5)
       assert(empty is "", "Expected empty string, got '" .. empty .. "'")
 
+      -- Stops before the beginning remain empty after negative-index resolution.
+      underflow = s.sub(0, -12)
+      assert(underflow is "", "Expected an underflowed stop to produce an empty string")
+
+      minimum = s.sub(0, -2147483648)
+      assert(minimum is "", "Expected the minimum integer stop to produce an empty string")
+
       -- Beyond string length
-      beyond = string.substr(s, 0, 100)
+      beyond = s.sub(0, 100)
       assert(#beyond is #s, "Expected length to match original string length, got " .. #beyond)
       assert(beyond is s, "Expected full string when end exceeds length, got '" .. beyond .. "'")
 
       -- Empty string
-      emptyStr = string.substr("", 0, 0)
+      emptyStr = "".sub(0, 0)
       assert(emptyStr is "", "Expected empty string, got '" .. emptyStr .. "'")
+
+      -- The deprecated spelling remains an exact behavioural alias.
+      assert(s.substr(0, 5) is s.sub(0, 5), "string.substr() should match string.sub()")
    end
 end
 
 @Test function Byte()
-   for i=0,1000 do
+   for i in {0 to 1000} do
       -- Single character (zero-indexed)
       b = string.byte("hello", 0)
       assert(b is 104, "Expected 104 (h), got " .. b)
 
       -- Multiple characters
-      b1, b2, b3 = string.byte("abc", 0, 2)
+      b1, b2, b3 = string.byte("abc", 0, 3)
       assert(b1 is 97, "Expected 97 (a), got " .. b1)
       assert(b2 is 98, "Expected 98 (b), got " .. b2)
       assert(b3 is 99, "Expected 99 (c), got " .. b3)
+
+      -- A final multi-result call expands into successive table elements.
+      captured = { string.byte("ABC", 0, 3) }
+      assert(#captured is 3, "Expected three captured bytes, got " .. tostring(#captured))
+      assert(captured[0] is 65 and captured[1] is 66 and captured[2] is 67,
+         "Expected captured bytes 65, 66, 67")
 
       -- Default range (single character at index 0)
       def = string.byte("hello")
@@ -486,7 +587,7 @@ end
       assert(neg is 111, "Expected 111 (o), got " .. neg)
 
       -- Range with negative end
-      b4, b5 = string.byte("hello", -2, -1)
+      b4, b5 = string.byte("hello", -2, 5)
       assert(b4 is 108, "Expected 108 (l), got " .. b4)
       assert(b5 is 111, "Expected 111 (o), got " .. b5)
 
@@ -494,14 +595,38 @@ end
       empty = string.byte("hello", 5, 3)
       assert(empty is nil, "Expected nil for empty range, got " .. tostring(empty))
 
+      -- Extreme negative stops return no results without overflowing the recorder.
+      minimum = string.byte("hello", 0, -2147483648)
+      assert(minimum is nil, "Expected the minimum integer stop to return no bytes")
+
       -- Single character at last position
       last = string.byte("hello", 4)
       assert(last is 111, "Expected 111 (o), got " .. last)
    end
 end
 
+@Test function FindAndSubComposition()
+   text = 'prefix needle suffix needle'
+
+   for i in {0 to 1000} do
+      start, stop = text.find('needle')
+      assert(start is 7 and stop is 13, 'find should return the first half-open span')
+      assert(text.sub(start, stop) is 'needle', 'find results should compose directly with sub')
+
+      final_start, final_stop = text.find('needle', 14)
+      assert(final_start is 21 and final_stop is 27, 'find should return the final half-open span')
+      assert(text.sub(final_start, final_stop) is 'needle', 'the final match should slice without adjustment')
+
+      empty_start, empty_stop = 'abc'.find('')
+      assert(empty_start is 0 and empty_stop is 0, 'an empty match should be an empty half-open span')
+
+      missing_start, missing_stop = text.find('absent')
+      assert(missing_start is nil and missing_stop is nil, 'a missing literal should return nil results')
+   end
+end
+
 @Test function Char()
-   for i=0,1000 do
+   for i in {0 to 1000} do
       -- Single character
       c = string.char(65)
       assert(c is "A", "Expected 'A', got '" .. c .. "'")
@@ -528,29 +653,29 @@ end
 end
 
 @Test function Rep()
-   for i=0,1000 do
+   for i in {0 to 1000} do
       -- Basic repetition
-      rep = string.rep("ab", 3)
+      rep = "ab".rep(3)
       assert(rep is "ababab", "Expected 'ababab', got '" .. rep .. "'")
 
       -- Single repetition
-      single = string.rep("hello", 1)
+      single = "hello".rep(1)
       assert(single is "hello", "Expected 'hello', got '" .. single .. "'")
 
       -- Zero repetitions
-      zero = string.rep("hello", 0)
+      zero = "hello".rep(0)
       assert(zero is "", "Expected empty string, got '" .. zero .. "'")
 
       -- With separator
-      withSep = string.rep("abc", 3, ",")
+      withSep = "abc".rep(3, ",")
       assert(withSep is "abc,abc,abc", "Expected 'abc,abc,abc', got '" .. withSep .. "'")
 
       -- Separator with single repetition (no separator should appear)
-      singleSep = string.rep("hello", 1, ",")
+      singleSep = "hello".rep(1, ",")
       assert(singleSep is "hello", "Expected 'hello' (no separator), got '" .. singleSep .. "'")
 
       -- Empty string repetition
-      emptyRep = string.rep("", 5)
+      emptyRep = "".rep(5)
       assert(emptyRep is "", "Expected empty string, got '" .. emptyRep .. "'")
    end
 end
@@ -620,23 +745,23 @@ end
 @Test function Find()
    -- Basic find (zero-indexed positions)
    s = "hello world"
-   start, finish = string.find(s, "world")
+   start, finish = s.find("world")
    assert(start is 6, "Expected start at 6, got " .. tostring(start))
-   assert(finish is 10, "Expected finish at 10, got " .. tostring(finish))
+   assert(finish is 11, "Expected stop at 11, got " .. tostring(finish))
 
    -- Find at beginning
-   start2, finish2 = string.find(s, "hello")
+   start2, finish2 = s.find("hello")
    assert(start2 is 0, "Expected start at 0, got " .. tostring(start2))
-   assert(finish2 is 4, "Expected finish at 4, got " .. tostring(finish2))
+   assert(finish2 is 5, "Expected stop at 5, got " .. tostring(finish2))
 
    -- Not found
-   notFound = string.find(s, "xyz")
+   notFound = s.find("xyz")
    assert(notFound is nil, "Expected nil for not found, got " .. tostring(notFound))
 
    -- With start position
-   start3, finish3 = string.find(s, "o", 5)
+   start3, finish3 = s.find("o", 5)
    assert(start3 is 7, "Expected start at 7, got " .. tostring(start3))
-   assert(finish3 is 7, "Expected finish at 7, got " .. tostring(finish3))
+   assert(finish3 is 8, "Expected stop at 8, got " .. tostring(finish3))
 end
 
 @Test function Count()
@@ -684,7 +809,7 @@ end
    assert(count11 is 1, "Expected 1 case-sensitive match, got " .. count11)
 
    -- Method syntax
-   methodCount = "hello world":count("l")
+   methodCount = "hello world".count("l")
    assert(methodCount is 3, "Expected 3 'l' characters, got " .. methodCount)
 
    -- Line endings
@@ -694,78 +819,78 @@ end
 
 @Test function Replace()
    -- Basic replacement (all occurrences)
-   result, count = string.replace("hello world", "o", "0")
+   result, count = "hello world".replace("o", "0")
    assert(result is "hell0 w0rld", "Expected 'hell0 w0rld', got '" .. result .. "'")
    assert(count is 2, "Expected 2 replacements, got " .. count)
 
    -- Replace all occurrences of a word
-   result2, count2 = string.replace("hello hello hello", "hello", "hi")
+   result2, count2 = "hello hello hello".replace("hello", "hi")
    assert(result2 is "hi hi hi", "Expected 'hi hi hi', got '" .. result2 .. "'")
    assert(count2 is 3, "Expected 3 replacements, got " .. count2)
 
    -- Limited replacements (max_count parameter)
-   result3, count3 = string.replace("hello hello hello", "hello", "hi", 2)
+   result3, count3 = "hello hello hello".replace("hello", "hi", 2)
    assert(result3 is "hi hi hello", "Expected 'hi hi hello', got '" .. result3 .. "'")
    assert(count3 is 2, "Expected 2 replacements, got " .. count3)
 
    -- Replace only first occurrence
-   result4, count4 = string.replace("aaa", "a", "b", 1)
+   result4, count4 = "aaa".replace("a", "b", 1)
    assert(result4 is "baa", "Expected 'baa', got '" .. result4 .. "'")
    assert(count4 is 1, "Expected 1 replacement, got " .. count4)
 
    -- No matches found
-   result5, count5 = string.replace("hello", "xyz", "abc")
+   result5, count5 = "hello".replace("xyz", "abc")
    assert(result5 is "hello", "Expected 'hello', got '" .. result5 .. "'")
    assert(count5 is 0, "Expected 0 replacements, got " .. count5)
 
    -- Empty search string (should return original with 0 count)
-   result6, count6 = string.replace("hello", "", "x")
+   result6, count6 = "hello".replace("", "x")
    assert(result6 is "hello", "Expected 'hello', got '" .. result6 .. "'")
    assert(count6 is 0, "Expected 0 replacements for empty search, got " .. count6)
 
    -- Empty source string
-   result7, count7 = string.replace("", "a", "b")
+   result7, count7 = "".replace("a", "b")
    assert(result7 is "", "Expected empty string, got '" .. result7 .. "'")
    assert(count7 is 0, "Expected 0 replacements for empty source, got " .. count7)
 
    -- Replacement with empty string (deletion)
-   result8, count8 = string.replace("hello world", "o", "")
+   result8, count8 = "hello world".replace("o", "")
    assert(result8 is "hell wrld", "Expected 'hell wrld', got '" .. result8 .. "'")
    assert(count8 is 2, "Expected 2 deletions, got " .. count8)
 
    -- Multi-character search and replacement
-   result9, count9 = string.replace("one::two::three", "::", "-")
+   result9, count9 = "one::two::three".replace("::", "-")
    assert(result9 is "one-two-three", "Expected 'one-two-three', got '" .. result9 .. "'")
    assert(count9 is 2, "Expected 2 replacements, got " .. count9)
 
    -- Replacement longer than search
-   result10, count10 = string.replace("a-b-c", "-", "---")
+   result10, count10 = "a-b-c".replace("-", "---")
    assert(result10 is "a---b---c", "Expected 'a---b---c', got '" .. result10 .. "'")
    assert(count10 is 2, "Expected 2 replacements, got " .. count10)
 
    -- Method syntax
-   methodResult, methodCount = "hello world":replace("world", "Lua")
+   methodResult, methodCount = "hello world".replace("world", "Lua")
    assert(methodResult is "hello Lua", "Expected 'hello Lua', got '" .. methodResult .. "'")
    assert(methodCount is 1, "Expected 1 replacement, got " .. methodCount)
 
    -- Consecutive matches
-   result11, count11 = string.replace("aaa", "aa", "b")
+   result11, count11 = "aaa".replace("aa", "b")
    assert(result11 is "ba", "Expected 'ba', got '" .. result11 .. "'")
    assert(count11 is 1, "Expected 1 replacement (non-overlapping), got " .. count11)
 
    -- CRLF to LF conversion (common use case)
-   result12, count12 = string.replace("line1\r\nline2\r\nline3", "\r\n", "\n")
+   result12, count12 = "line1\r\nline2\r\nline3".replace("\r\n", "\n")
    assert(result12 is "line1\nline2\nline3", "Expected LF-only string, got '" .. result12 .. "'")
    assert(count12 is 2, "Expected 2 CRLF replacements, got " .. count12)
 
    -- Max count of 0 (should not replace anything)
-   result13, count13 = string.replace("hello", "l", "x", 0)
+   result13, count13 = "hello".replace("l", "x", 0)
    assert(result13 is "hello", "Expected 'hello' with max_count=0, got '" .. result13 .. "'")
    assert(count13 is 0, "Expected 0 replacements with max_count=0, got " .. count13)
 end
 
 @Test function Format()
-   for i=0,1000 do
+   for i in {0 to 1000} do
       -- Basic integer
       f1 = string.format("value: %d", 42)
       assert(f1 is "value: 42", "Expected 'value: 42', got '" .. f1 .. "'")
@@ -805,4 +930,33 @@ end
       f10 = string.format("hello")
       assert(f10 is "hello", "Expected 'hello', got '" .. f10 .. "'")
    end
+end
+
+@Test function ToArrayCopiesRawBytes()
+   local source = 'A\0\255é'
+   local bytes:array<byte> = source.toArray()
+   local namespace_bytes:array<byte> = string.toArray(source)
+   assert(#bytes is #source and #namespace_bytes is #source, 'toArray should preserve the byte length')
+   for index in {0 to #source} do
+      assert(bytes[index] is source.byte(index), 'toArray method changed a source byte')
+      assert(namespace_bytes[index] is bytes[index], 'Namespace and method conversions should agree')
+   end
+   assert(bytes[1] is 0 and bytes[2] is 255, 'toArray should preserve NUL and high bytes')
+   bytes[0] = 90
+   assert(source.byte(0) is 65 and namespace_bytes[0] is 65, 'toArray should return an independent copy')
+
+   local empty = ''.toArray()
+   assert(#empty is 0 and empty.type() is 'byte', 'Empty strings should produce empty byte arrays')
+   empty.push('x')
+   assert(empty.getString() is 'x', 'Converted arrays should support byte buffer operations')
+
+   local mutable = string.alloc(3)
+   local mutable_bytes = mutable.toArray()
+   assert(#mutable_bytes is 3 and mutable_bytes[0] is 0 and mutable_bytes[2] is 0,
+      'toArray should copy mutable string buffers')
+end
+
+@Test function ToArrayRejectsMissingString()
+   local convert:any = string.toArray
+   expect_nil_string_error(() => do convert(nil) end, 'string.toArray')
 end

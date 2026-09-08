@@ -16,6 +16,7 @@
 #include "parser/parser_diagnostics.h"
 #include <kotuku/main.h>
 #include <format>
+#include "filesource.h"
 
 //********************************************************************************************************************
 // Reports a function limit error (too many locals, upvalues, etc.) and throws.
@@ -48,34 +49,50 @@ static CSTRING severity_name(ParserDiagnosticSeverity Severity)
 static CSTRING error_code_name(ParserErrorCode Code)
 {
    switch (Code) {
-      case ParserErrorCode::None:                   return "None";
-      case ParserErrorCode::UnexpectedToken:        return "Unexpected Token";
-      case ParserErrorCode::ExpectedToken:          return "Expected Token";
-      case ParserErrorCode::ExpectedIdentifier:     return "Expected Identifier";
-      case ParserErrorCode::UnexpectedEndOfFile:    return "Unexpected EOF";
-      case ParserErrorCode::InternalInvariant:      return "Internal invariant";
-      case ParserErrorCode::ExpectedTypeName:       return "Expected type name";
-      case ParserErrorCode::UnknownTypeName:        return "Unknown type name";
-      case ParserErrorCode::TypeMismatchArgument:   return "Type mismatch (argument)";
-      case ParserErrorCode::TypeMismatchAssignment: return "Type mismatch (assignment)";
-      case ParserErrorCode::TypeMismatchReturn:     return "Type mismatch (return)";
-      case ParserErrorCode::DeferredTypeRequired:   return "Deferred type required";
-      case ParserErrorCode::UndefinedVariable:      return "Undefined variable";
-      case ParserErrorCode::ThunkDirectCall:        return "Thunk direct call";
-      case ParserErrorCode::RecoverySkippedTokens:  return "Recovery skipped tokens";
-      case ParserErrorCode::AssignToConstant:       return "Assign to constant";
+      case ParserErrorCode::None:                      return "None";
+      case ParserErrorCode::UnexpectedToken:           return "Unexpected Token";
+      case ParserErrorCode::DeprecatedSyntax:          return "Deprecated syntax";
+      case ParserErrorCode::DeprecatedApi:             return "Deprecated API";
+      case ParserErrorCode::ExpectedToken:             return "Expected Token";
+      case ParserErrorCode::ExpectedIdentifier:        return "Expected Identifier";
+      case ParserErrorCode::UnexpectedEndOfFile:       return "Unexpected EOF";
+      case ParserErrorCode::InternalInvariant:         return "Internal invariant";
+      case ParserErrorCode::ExpectedTypeName:          return "Expected type name";
+      case ParserErrorCode::UnknownTypeName:           return "Unknown type name";
+      case ParserErrorCode::TypeMismatchArgument:      return "Type mismatch (argument)";
+      case ParserErrorCode::TypeMismatchAssignment:    return "Type mismatch (assignment)";
+      case ParserErrorCode::TypeMismatchReturn:        return "Type mismatch (return)";
+      case ParserErrorCode::DeferredTypeRequired:      return "Preset type required";
+      case ParserErrorCode::ReturnTypeRequired:        return "Return type required";
+      case ParserErrorCode::UndefinedVariable:         return "Undefined variable";
+      case ParserErrorCode::ThunkDirectCall:           return "Thunk direct call";
+      case ParserErrorCode::FunctionSignatureMismatch: return "Function signature mismatch";
+      case ParserErrorCode::RecoverySkippedTokens:     return "Recovery skipped tokens";
+      case ParserErrorCode::AssignToConstant:          return "Assign to constant";
+      case ParserErrorCode::ConstRequiresInitialiser:  return "Const requires initialiser";
+      case ParserErrorCode::OverrideProtectedGlobal:   return "Override protected global";
+      case ParserErrorCode::InvalidAssignment:         return "Invalid assignment";
+      case ParserErrorCode::UnresolvedMethodReceiver:  return "Unresolved method receiver";
       default: return "Unknown";
    }
 }
 
 //********************************************************************************************************************
 // Formats the diagnostic as a human-readable string for display.
-// The LineOffset parameter allows adjusting line numbers for embedded scripts.
+// The LineOffset parameter allows adjusting line numbers for embedded scripts.  When a lua_State is provided, the
+// file index encoded in the span's line is resolved to a filename so that errors in imported files are attributable.
 
-std::string ParserDiagnostic::to_string(int LineOffset) const
+std::string ParserDiagnostic::to_string(int LineOffset, lua_State *L) const
 {
    SourceSpan span = this->token.span();
-   return std::format("[{}:{}] {}: {}: {}", span.line + LineOffset, span.column,
+   std::string location = std::format("{}:{}", span.line.lineNumber() + LineOffset, span.column.lineNumber());
+
+   if (L and not L->file_sources.empty()) {
+      const FileSource *src = get_file_source(L, this->file_index);
+      if (src and not src->filename.empty()) location = src->filename + ":" + location;
+   }
+
+   return std::format("[{}] {}: {}: {}", location,
       severity_name(this->severity), error_code_name(this->code),
       this->message.empty() ? "No message" : this->message);
 }
@@ -97,14 +114,15 @@ void ParserDiagnostics::set_limit(uint32_t NewLimit)
 }
 
 //********************************************************************************************************************
-// Records a diagnostic entry. Error and Warning severities count against the configured limit;
-// Info-level diagnostics are always accepted. Once the limit is reached, additional errors
-// and warnings are silently discarded to prevent overwhelming output during error recovery.
+// Records a diagnostic entry. Errors and ordinary warnings count against the configured recovery limit.
+// Deprecation warnings are always accepted so each reference is reported without hiding subsequent errors.
+// Info-level diagnostics are also always accepted.
 
 void ParserDiagnostics::report(const ParserDiagnostic &Diagnostic)
 {
    bool counts_against_limit = Diagnostic.severity IS ParserDiagnosticSeverity::Error
-      or Diagnostic.severity IS ParserDiagnosticSeverity::Warning;
+      or (Diagnostic.severity IS ParserDiagnosticSeverity::Warning and
+          Diagnostic.code != ParserErrorCode::DeprecatedApi);
 
    if (counts_against_limit and this->counted_entries >= this->limit) return;
    this->storage.push_back(Diagnostic);

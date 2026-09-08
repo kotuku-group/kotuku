@@ -1,0 +1,12 @@
+-- Call the unit tests that are compiled into the Core.  If the Core was built without the UNIT_TESTS option
+-- then UnitTests() reports zero totals and this test passes trivially.
+
+@Test function UnitTests()
+   local passed, total = mSys.UnitTests(nil)
+   assert(passed is total, 'Passed ' .. passed .. ' of ' .. total .. ' Core unit tests.  Use --log-api for details.')
+   if total is 0 then
+      print('The Core was built without embedded unit tests.')
+   else
+      print('Passed all ' .. total .. ' embedded unit tests.')
+   end
+end

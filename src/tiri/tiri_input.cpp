@@ -31,15 +31,16 @@ For drag and drop operations, data can be requested from a source as follows:
 #include <kotuku/main.h>
 #include <kotuku/modules/display.h>
 #include <kotuku/modules/tiri.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include <inttypes.h>
 #include <string_view>
+#include <mutex>
 
 #include "lib.h"
 #include "lauxlib.h"
 #include "lj_obj.h"
-
-#include "hashes.h"
+#include "lj_state.h"
 #include "defs.h"
 #include "lj_proto_registry.h"
 
@@ -51,14 +52,24 @@ static void key_event(evKey *, int, struct finput *);
 
 //********************************************************************************************************************
 
+static void release_input_subscription(lua_State *Lua, struct finput *Input)
+{
+   if (Input->InputValue)  { luaL_unref(Lua, LUA_REGISTRYINDEX, Input->InputValue); Input->InputValue = 0; }
+   release_tiri_function(Lua, &Input->Callback);
+   if (Input->KeyEvent)    { UnsubscribeEvent(Input->KeyEvent); Input->KeyEvent = nullptr; }
+   if (Input->InputHandle) { gfx::UnsubscribeInput(Input->InputHandle); Input->InputHandle = 0; }
+}
+
+//********************************************************************************************************************
+
 [[nodiscard]] static ERR consume_input_events(const InputEvent *Events, int Handle)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
-   auto Self = (objScript *)CurrentContext();
-   auto prv = (prvTiri *)Self->ChildPrivate;
+   auto Self = (extTiri *)CurrentContext();
+   LuaContextRootGuard context_guard(Self->Lua);
 
-   auto list = prv->InputList;
+   auto list = Self->InputList;
    for (; (list) and (list->InputHandle != Handle); list=list->Next);
 
    if (not list) {
@@ -76,23 +87,25 @@ static void key_event(evKey *, int, struct finput *);
             while ((Events->Next) and ((Events->Next->Flags & JTYPE::MOVEMENT) != JTYPE::NIL)) Events = Events->Next;
          }
 
-         lua_rawgeti(prv->Lua, LUA_REGISTRYINDEX, list->Callback); // +1 Reference to callback
-         lua_rawgeti(prv->Lua, LUA_REGISTRYINDEX, list->InputValue); // +1 Optional input value registered by the Tiri client
-         named_struct_to_table(prv->Lua, "InputEvent", Events); // +1 Input message
-
-         if (lua_pcall(prv->Lua, 2, 0, 0)) {
-            process_error(Self, "Input DataFeed Callback");
+         LuaCallbackContextGuard callback_context(Self->Lua);
+         if (push_tiri_function(Self->Lua, list->Callback, callback_context) != ERR::Okay) {
+            log.warning("Input subscription callback is no longer valid.");
+            return ERR::InvalidData;
          }
+         lua_rawgeti(Self->Lua, LUA_REGISTRYINDEX, list->InputValue); // +1 Optional input value registered by the Tiri client
+         if (!named_struct_to_table(Self->Lua, "InputEvent", Events)) { // +1 Input message
+            if (lua_pcall(Self->Lua, 2, 0, 0)) {
+               process_error(Self, "Input DataFeed Callback");
+            }
+         }
+         else process_error(Self, "Failed to process InputEvent struct");
 
          Events = Events->Next;
       }
 
    SetResource(RES::LOG_DEPTH, branch);
 
-   if (lua_gc(prv->Lua, LUA_GCISRUNNING, 0)) {
-      log.traceBranch("Collecting garbage.");
-      lua_gc(prv->Lua, LUA_GCCOLLECT, 0);
-   }
+   collect_garbage(Self->Lua);
    return ERR::Okay;
 }
 
@@ -101,7 +114,7 @@ static void key_event(evKey *, int, struct finput *);
 
 [[nodiscard]] static int input_index(lua_State *Lua)
 {
-   pf::Log log;
+   kt::Log log;
 
    if (auto input = (struct finput *)luaL_checkudata(Lua, 1, "Tiri.input")) {
       auto field = lua_checkstringview(Lua, 2);
@@ -110,7 +123,7 @@ static void key_event(evKey *, int, struct finput *);
       log.trace("input.index(#%d, %.*s)", input->SurfaceID, int(field.size()), field.data());
 
       switch (strihash(field)) {
-         case HASH_UNSUBSCRIBE:
+         case strhash("unsubscribe"):
             lua_pushvalue(Lua, 1); // Duplicate the interface reference
             lua_pushcclosure(Lua, input_unsubscribe, 1);
             return 1;
@@ -127,8 +140,8 @@ static void key_event(evKey *, int, struct finput *);
 
 [[nodiscard]] static int input_keyboard(lua_State *Lua)
 {
-   pf::Log log("input.keyboard");
-   auto prv = (prvTiri *)Lua->script->ChildPrivate;
+   kt::Log log("input.keyboard");
+   auto tiri = Lua->script;
 
    OBJECTID object_id;
    GCobject *obj;
@@ -137,63 +150,61 @@ static void key_event(evKey *, int, struct finput *);
 
    if ((object_id) and (GetClassID(object_id) != CLASSID::SURFACE)) luaL_argerror(Lua, 1, "Surface object required.");
 
-   int function_type = lua_type(Lua, 2);
-   if ((function_type IS LUA_TFUNCTION) or (function_type IS LUA_TSTRING));
-   else {
-      luaL_argerror(Lua, 2, "Function reference required.");
-      return 0;
-   }
+   if (lua_type(Lua, 2) != LUA_TFUNCTION) luaL_argerror(Lua, 2, "Function reference required.");
 
    log.traceBranch("Surface: %d", object_id);
 
    bool sub_keyevent = false;
    if (object_id) {
-      if (not prv->FocusEventHandle) { // Monitor the focus state of the target surface with a global function.
-         SubscribeEvent(EVID_GUI_SURFACE_FOCUS, C_FUNCTION(focus_event, Lua), &prv->FocusEventHandle);
+      if (not tiri->FocusEventHandle) { // Monitor the focus state of the target surface with a global function.
+         if (auto error = SubscribeEvent(EVID_GUI_SURFACE_FOCUS, C_FUNCTION(focus_event, Lua),
+               &tiri->FocusEventHandle); error != ERR::Okay) {
+            luaL_error(Lua, error, "Failed to subscribe to surface focus events.");
+         }
       }
 
       if (ScopedObjectLock<objSurface> surface(object_id, 5000); surface.granted()) {
          if (surface->hasFocus()) sub_keyevent = true;
       }
-      else {
-         luaL_error(Lua, ERR::AccessObject, "Failed to access surface #%d.", object_id);
-         return 0;
-      }
+      else luaL_error(Lua, ERR::AccessObject, "Failed to access surface #%d.", object_id);
    }
    else sub_keyevent = true; // Global subscription independent of any surface.
 
 
-   if (auto input = (struct finput *)lua_newuserdata(Lua, sizeof(struct finput))) {
+   if (auto input = new (lua_newuserdata(Lua, sizeof(struct finput))) finput {}) {
       luaL_getmetatable(Lua, "Tiri.input");
       lua_setmetatable(Lua, -2);
-
-      APTR event = nullptr;
-      if (sub_keyevent) SubscribeEvent(EVID_IO_KEYBOARD_KEYPRESS, C_FUNCTION(key_event, input), &event);
 
       input->InputHandle = 0;
       input->Script      = Lua->script;
       input->SurfaceID   = object_id;
-      input->KeyEvent    = event;
-      if (function_type IS LUA_TFUNCTION) {
-         lua_pushvalue(Lua, 2);
-         input->Callback = luaL_ref(Lua, LUA_REGISTRYINDEX);
-      }
-      else {
-         lua_getglobal(Lua, (STRING)lua_tostring(Lua, 2));
-         input->Callback = luaL_ref(Lua, LUA_REGISTRYINDEX);
+      input->KeyEvent    = nullptr;
+      input->InputValue  = 0;
+      input->Mask        = JTYPE::NIL;
+      input->Mode        = FIM_KEYBOARD;
+      input->Next        = nullptr;
+      if (capture_tiri_function(Lua, 2, input->Callback) != ERR::Okay) {
+         luaL_argerror(Lua, 2, "Function reference required.");
       }
 
       lua_pushvalue(Lua, lua_gettop(Lua)); // Take a copy of the Tiri.input object
       input->InputValue = luaL_ref(Lua, LUA_REGISTRYINDEX);
-      input->Mode = FIM_KEYBOARD;
-      input->Next = prv->InputList;
-      prv->InputList = input;
-      return 1;
+
+      if (sub_keyevent) {
+         if (auto error = SubscribeEvent(EVID_IO_KEYBOARD_KEYPRESS, C_FUNCTION(key_event, input),
+               &input->KeyEvent); error != ERR::Okay) {
+            if (input->InputValue) { luaL_unref(Lua, LUA_REGISTRYINDEX, input->InputValue); input->InputValue = 0; }
+            release_tiri_function(Lua, &input->Callback);
+            luaL_error(Lua, error, "Failed to subscribe to keyboard input events.");
+         }
+      }
+
+      input->Next = tiri->InputList;
+      tiri->InputList = input;
    }
-   else {
-      luaL_error(Lua, ERR::Memory, "Failed to create Tiri.input object.");
-      return 0;
-   }
+   else luaL_error(Lua, ERR::Memory, "Failed to create Tiri.input object.");
+
+   return 1;
 }
 
 //********************************************************************************************************************
@@ -203,74 +214,79 @@ static void key_event(evKey *, int, struct finput *);
 
 [[nodiscard]] static int input_request_item(lua_State *Lua)
 {
-   auto prv = (prvTiri *)Lua->script->ChildPrivate;
+   auto tiri = Lua->script;
 
-   if (not lua_isfunction(Lua, 4)) {
-      luaL_argerror(Lua, 4, "Function expected.");
-      return 0;
-   }
+   if (not lua_isfunction(Lua, 4)) luaL_argerror(Lua, 4, "Function expected.");
 
    auto obj = lj_lib_optobject(Lua, 1);
    OBJECTID source_id;
 
    if (obj) source_id = obj->uid;
-   else if (not (source_id = lua_tointeger(Lua, 1))) {
-      luaL_argerror(Lua, 1, "Invalid object reference");
-      return 0;
-   }
+   else if (not (source_id = lua_tointeger(Lua, 1))) luaL_argerror(Lua, 1, "Invalid object reference");
 
    int item = lua_tointeger(Lua, 2);
 
    DATA datatype;
    if (lua_isstring(Lua, 3)) {
       auto dt = lua_tostringview(Lua, 3);
-      if (pf::iequals("text", dt))              datatype = DATA::TEXT;
-      else if (pf::iequals("raw", dt))          datatype = DATA::RAW;
-      else if (pf::iequals("device_input", dt)) datatype = DATA::DEVICE_INPUT;
-      else if (pf::iequals("xml", dt))          datatype = DATA::XML;
-      else if (pf::iequals("audio", dt))        datatype = DATA::AUDIO;
-      else if (pf::iequals("record", dt))       datatype = DATA::RECORD;
-      else if (pf::iequals("image", dt))        datatype = DATA::IMAGE;
-      else if (pf::iequals("request", dt))      datatype = DATA::REQUEST;
-      else if (pf::iequals("receipt", dt))      datatype = DATA::RECEIPT;
-      else if (pf::iequals("file", dt))         datatype = DATA::FILE;
-      else if (pf::iequals("content", dt))      datatype = DATA::CONTENT;
-      else {
-         luaL_argerror(Lua, 3, "Unrecognised datatype");
-         return 0;
-      }
+      if (kt::iequals("text", dt))              datatype = DATA::TEXT;
+      else if (kt::iequals("raw", dt))          datatype = DATA::RAW;
+      else if (kt::iequals("device_input", dt)) datatype = DATA::DEVICE_INPUT;
+      else if (kt::iequals("xml", dt))          datatype = DATA::XML;
+      else if (kt::iequals("audio", dt))        datatype = DATA::AUDIO;
+      else if (kt::iequals("record", dt))       datatype = DATA::RECORD;
+      else if (kt::iequals("image", dt))        datatype = DATA::IMAGE;
+      else if (kt::iequals("request", dt))      datatype = DATA::REQUEST;
+      else if (kt::iequals("receipt", dt))      datatype = DATA::RECEIPT;
+      else if (kt::iequals("file", dt))         datatype = DATA::FILE;
+      else if (kt::iequals("content", dt))      datatype = DATA::CONTENT;
+      else luaL_argerror(Lua, 3, "Unrecognised datatype");
    }
    else {
       datatype = DATA(lua_tointeger(Lua, 3));
-      if (int(datatype) <= 0) {
-         luaL_argerror(Lua, 3, "Datatype invalid");
-         return 0;
-      }
+      if (int(datatype) <= 0) luaL_argerror(Lua, 3, "Datatype invalid");
    }
 
-   auto function_type = lua_type(Lua, 4);
-   if (function_type IS LUA_TFUNCTION) {
-      lua_pushvalue(Lua, 4);
-      prv->Requests.emplace_back(source_id, luaL_ref(Lua, LUA_REGISTRYINDEX));
-   }
-   else if (function_type IS LUA_TSTRING) {
-      lua_getglobal(Lua, (STRING)lua_tostring(Lua, 4));
-      prv->Requests.emplace_back(source_id, luaL_ref(Lua, LUA_REGISTRYINDEX));
-   }
+   FUNCTION callback;
+   if (capture_tiri_function(Lua, 4, callback) != ERR::Okay) luaL_argerror(Lua, 4, "Function expected.");
+   tiri->Requests.emplace_back(source_id, callback);
 
    {
       // The source will return a DATA::RECEIPT for the items that we've asked for (see the DataFeed action).
-      pf::Log log("input.request_item");
+      kt::Log log("input.request_item");
       log.branch();
-      pf::ScopedObjectLock src(source_id);
+      kt::ScopedObjectLock src(source_id);
       if (src.granted()) {
          struct dcRequest dcr {
             .Item = item,
             .Preference = { char(datatype), 0 }
          };
 
-         auto error = acDataFeed(*src, Lua->script, DATA::REQUEST, &dcr, sizeof(dcr));
-         if (error != ERR::Okay) luaL_error(Lua, ERR::Failed, "Failed to request item %d from source #%d: %s", item, source_id, GetErrorMsg(error));
+         auto error = acDataFeed(*src, Lua->script, DATA::REQUEST,
+            std::span<const int8_t>((const int8_t *)&dcr, sizeof(dcr)));
+         if (error != ERR::Okay) {
+            for (auto it = tiri->Requests.begin(); it != tiri->Requests.end(); it++) {
+               if ((it->SourceID IS source_id) and it->Callback.identical(callback)) {
+                  release_tiri_function(Lua, &it->Callback);
+                  tiri->Requests.erase(it);
+                  break;
+               }
+            }
+
+            src.unlock();
+            luaL_error(Lua, error, "Failed to request item %d from source #%d: %s", item, source_id,
+               GetErrorMsg(error));
+         }
+      }
+      else {
+         for (auto it = tiri->Requests.begin(); it != tiri->Requests.end(); it++) {
+            if ((it->SourceID IS source_id) and it->Callback.identical(callback)) {
+               release_tiri_function(Lua, &it->Callback);
+               tiri->Requests.erase(it);
+               break;
+            }
+         }
+         luaL_error(Lua, ERR::AccessObject, "Failed to access data source #%d.", source_id);
       }
    }
 
@@ -284,8 +300,8 @@ static void key_event(evKey *, int, struct finput *);
 
 [[nodiscard]] static int input_subscribe(lua_State *Lua)
 {
-   pf::Log log("input.subscribe");
-   auto prv = (prvTiri *)Lua->script->ChildPrivate;
+   kt::Log log("input.subscribe");
+   auto tiri = Lua->script;
 
    auto mask = JTYPE(lua_tointeger(Lua, 1)); // Optional
 
@@ -296,59 +312,57 @@ static void key_event(evKey *, int, struct finput *);
 
    int device_id = lua_tointeger(Lua, 3); // Optional
 
-   int function_type = lua_type(Lua, 4);
-   if ((function_type IS LUA_TFUNCTION) or (function_type IS LUA_TSTRING));
-   else {
-      luaL_argerror(Lua, 4, "Function reference required.");
-      return 0;
-   }
+   if (lua_type(Lua, 4) != LUA_TFUNCTION) luaL_argerror(Lua, 4, "Function reference required.");
 
-   ERR error;
-   if (not modDisplay) {
-      pf::SwitchContext context(modTiri);
-      if ((error = objModule::load("display", &modDisplay, &DisplayBase)) != ERR::Okay) {
-         luaL_error(Lua, ERR::LoadModule);
-         return 0;
+   ERR error = ERR::Okay;
+   {
+      static std::mutex display_load_lock;
+      const std::lock_guard<std::mutex> lock(display_load_lock);
+
+      if (not modDisplay) {
+         kt::SwitchContext context(modTiri);
+         error = objModule::load("display", &modDisplay, &DisplayBase);
       }
    }
+   if (error != ERR::Okay) luaL_error(Lua, ERR::LoadModule);
 
    log.msg("Surface: %d, Mask: $%.8x, Device: %d", object_id, int(mask), device_id);
 
    struct finput *input;
-   if ((input = (struct finput *)lua_newuserdata(Lua, sizeof(struct finput)))) {
+   if ((input = new (lua_newuserdata(Lua, sizeof(struct finput))) finput {})) {
       luaL_getmetatable(Lua, "Tiri.input");
       lua_setmetatable(Lua, -2);
 
       input->SurfaceID = object_id;
 
-      if (function_type IS LUA_TFUNCTION) {
-         lua_pushvalue(Lua, 4);
-         input->Callback = luaL_ref(Lua, LUA_REGISTRYINDEX);
-      }
-      else {
-         lua_getglobal(Lua, (STRING)lua_tostring(Lua, 1));
-         input->Callback = luaL_ref(Lua, LUA_REGISTRYINDEX);
+      if (capture_tiri_function(Lua, 4, input->Callback) != ERR::Okay) {
+         luaL_argerror(Lua, 4, "Function reference required.");
       }
 
       lua_pushvalue(Lua, lua_gettop(Lua)); // Take a copy of the Tiri.input object
       input->InputValue = luaL_ref(Lua, LUA_REGISTRYINDEX);
+      input->Script      = Lua->script;
       input->KeyEvent    = nullptr;
       input->InputHandle = 0;
       input->Mask        = mask;
       input->Mode        = FIM_DEVICE;
-      input->Next        = prv->InputList;
-
-      prv->InputList = input;
+      input->Next        = nullptr;
 
       auto callback = C_FUNCTION(consume_input_events);
-      if ((error = gfx::SubscribeInput(&callback, input->SurfaceID, mask, device_id, &input->InputHandle)) != ERR::Okay) {
+      if ((error = gfx::SubscribeInput(&callback, input->SurfaceID, mask, device_id,
+            &input->InputHandle)) != ERR::Okay) {
+         if (input->InputHandle) { gfx::UnsubscribeInput(input->InputHandle); input->InputHandle = 0; }
+         if (input->InputValue)  { luaL_unref(Lua, LUA_REGISTRYINDEX, input->InputValue); input->InputValue = 0; }
+         release_tiri_function(Lua, &input->Callback);
          luaL_error(Lua, error);
       }
 
-      return 1;
+      input->Next = tiri->InputList;
+      tiri->InputList = input;
    }
    else luaL_error(Lua, ERR::Memory, "Failed to initialise input subscription.");
-   return 0;
+
+   return 1;
 }
 
 //********************************************************************************************************************
@@ -357,19 +371,12 @@ static void key_event(evKey *, int, struct finput *);
 [[nodiscard]] static int input_unsubscribe(lua_State *Lua)
 {
    auto input = (struct finput *)get_meta(Lua, lua_upvalueindex(1), "Tiri.input");
-   if (not input) {
-      luaL_argerror(Lua, 1, "Expected input interface.");
-      return 0;
-   }
+   if (not input) luaL_argerror(Lua, 1, "Expected input interface.");
 
-   pf::Log log("input.unsubscribe");
+   kt::Log log("input.unsubscribe");
    log.traceBranch();
 
-   if (input->InputValue)  { luaL_unref(Lua, LUA_REGISTRYINDEX, input->InputValue); input->InputValue = 0; }
-   if (input->Callback)    { luaL_unref(Lua, LUA_REGISTRYINDEX, input->Callback); input->Callback = 0; }
-   if (input->KeyEvent)    { UnsubscribeEvent(input->KeyEvent); input->KeyEvent = nullptr; }
-   if (input->InputHandle) { gfx::UnsubscribeInput(input->InputHandle); input->InputHandle = 0; }
-
+   release_input_subscription(Lua, input);
    input->Script = nullptr;
    input->Mode   = 0;
    return 0;
@@ -380,23 +387,21 @@ static void key_event(evKey *, int, struct finput *);
 
 [[nodiscard]] static int input_destruct(lua_State *Lua)
 {
-   pf::Log log("input.destroy");
+   kt::Log log("input.destroy");
 
    auto input = (struct finput *)lua_touserdata(Lua, 1);
    if (input) {
-      log.traceBranch("Surface: %d, CallbackRef: %d, KeyEvent: %p", input->SurfaceID, input->Callback, input->KeyEvent);
+      log.traceBranch("Surface: %d, CallbackRef: %u, KeyEvent: %p", input->SurfaceID,
+         input->Callback.procedureID(), input->KeyEvent);
 
       if (input->SurfaceID)   input->SurfaceID = 0;
-      if (input->InputHandle) { gfx::UnsubscribeInput(input->InputHandle); input->InputHandle = 0; }
-      if (input->InputValue)  { luaL_unref(Lua, LUA_REGISTRYINDEX, input->InputValue); input->InputValue = 0; }
-      if (input->Callback)    { luaL_unref(Lua, LUA_REGISTRYINDEX, input->Callback); input->Callback = 0; }
-      if (input->KeyEvent)    { UnsubscribeEvent(input->KeyEvent); input->KeyEvent = nullptr; }
+      release_input_subscription(Lua, input);
 
       if (Lua->script) { // Remove from the chain.
-         auto prv = (prvTiri *)Lua->script->ChildPrivate;
-         if (prv->InputList IS input) prv->InputList = input->Next;
+         auto tiri = Lua->script;
+         if (tiri->InputList IS input) tiri->InputList = input->Next;
          else {
-            auto list = prv->InputList;
+            auto list = tiri->InputList;
             while (list) {
                if (list->Next IS input) {
                   list->Next = input->Next;
@@ -416,37 +421,39 @@ static void key_event(evKey *, int, struct finput *);
 
 static void key_event(evKey *Event, int Size, struct finput *Input)
 {
-   pf::Log log("input.key_event");
-   objScript *script = Input->Script;
-   auto prv = (prvTiri *)script->ChildPrivate;
+   kt::Log log("input.key_event");
 
-   if ((not script) or (not prv)) {
+   auto tiri = Input->Script;
+   if (not tiri) {
       log.trace("Input->Script undefined.");
       return;
    }
 
    log.traceBranch("Incoming keyboard input");
 
+   auto lua = tiri->Lua;
+   LuaContextRootGuard context_guard(lua);
    int depth = GetResource(RES::LOG_DEPTH); // Required because thrown errors cause the debugger to lose its step position
-   int top = lua_gettop(prv->Lua);
-   lua_rawgeti(prv->Lua, LUA_REGISTRYINDEX, Input->Callback); // Get the function reference in Lua and place it on the stack
-   lua_rawgeti(prv->Lua, LUA_REGISTRYINDEX, Input->InputValue); // Arg: Input value registered by the client
-   lua_pushinteger(prv->Lua, Input->SurfaceID);  // Arg: Surface (if applicable)
-   lua_pushinteger(prv->Lua, uint32_t(Event->Qualifiers)); // Arg: Key Flags
-   lua_pushinteger(prv->Lua, int(Event->Code));       // Arg: Key Value
-   lua_pushinteger(prv->Lua, Event->Unicode);    // Arg: Unicode character
+   int top = lua_gettop(lua);
+   LuaCallbackContextGuard callback_context(lua);
+   if (push_tiri_function(lua, Input->Callback, callback_context) != ERR::Okay) {
+      log.warning("Keyboard input callback is no longer valid.");
+      return;
+   }
+   lua_rawgeti(lua, LUA_REGISTRYINDEX, Input->InputValue); // Arg: Input value registered by the client
+   lua_pushinteger(lua, Input->SurfaceID);  // Arg: Surface (if applicable)
+   lua_pushinteger(lua, uint32_t(Event->Qualifiers)); // Arg: Key Flags
+   lua_pushinteger(lua, int(Event->Code));       // Arg: Key Value
+   lua_pushinteger(lua, Event->Unicode);    // Arg: Unicode character
 
-   if (lua_pcall(prv->Lua, 5, 0, 0)) {
-      process_error(script, "Keyboard event callback");
+   if (lua_pcall(lua, 5, 0, 0)) {
+      process_error(tiri, "Keyboard event callback");
    }
 
-   lua_settop(prv->Lua, top);
+   lua_settop(lua, top);
    SetResource(RES::LOG_DEPTH, depth);
 
-   if (lua_gc(prv->Lua, LUA_GCISRUNNING, 0)) {
-      log.traceBranch("Collecting garbage.");
-      lua_gc(prv->Lua, LUA_GCCOLLECT, 0);
-   }
+   collect_garbage(lua);
 }
 
 //********************************************************************************************************************
@@ -454,18 +461,27 @@ static void key_event(evKey *Event, int Size, struct finput *Input)
 
 static void focus_event(evFocus *Event, int Size, lua_State *Lua)
 {
-   pf::Log log(__FUNCTION__);
-   auto prv = (prvTiri *)Lua->script->ChildPrivate;
-   objScript *script = Lua->script;
+   kt::Log log(__FUNCTION__);
 
-   if ((not script) or (not prv)) {
+   auto tiri = Lua->script;
+   if (not tiri) {
       log.trace("Script undefined.");
       return;
    }
 
-   log.traceBranch("Incoming focus event targeting #%d, focus lost from #%d.", Event->FocusList[0], Event->FocusList[Event->TotalWithFocus]);
+   if ((Event->TotalWithFocus > 0) and (Event->TotalLostFocus > 0)) {
+      log.traceBranch("Incoming focus event targeting #%d, focus lost from #%d.", Event->FocusList[0],
+         Event->FocusList[Event->TotalWithFocus]);
+   }
+   else if (Event->TotalWithFocus > 0) {
+      log.traceBranch("Incoming focus event targeting #%d.", Event->FocusList[0]);
+   }
+   else if (Event->TotalLostFocus > 0) {
+      log.traceBranch("Incoming focus event lost from #%d.", Event->FocusList[Event->TotalWithFocus]);
+   }
+   else log.traceBranch("Incoming focus event with no focus changes.");
 
-   for (auto input=prv->InputList; input; input=input->Next) {
+   for (auto input=tiri->InputList; input; input=input->Next) {
       if (input->Mode != FIM_KEYBOARD) continue;
       if (input->KeyEvent) continue;
 
@@ -473,13 +489,16 @@ static void focus_event(evFocus *Event, int Size, lua_State *Lua)
       for (int i=0; i < Event->TotalWithFocus; i++) {
          if (input->SurfaceID IS Event->FocusList[i]) {
             log.trace("Focus notification received for key events on surface #%d.", input->SurfaceID);
-            SubscribeEvent(EVID_IO_KEYBOARD_KEYPRESS, callback, &input->KeyEvent);
+            if (auto error = SubscribeEvent(EVID_IO_KEYBOARD_KEYPRESS, callback, &input->KeyEvent);
+                  error != ERR::Okay) {
+               log.warning("Failed to subscribe to keyboard input events: %s", GetErrorMsg(error));
+            }
             break;
          }
       }
    }
 
-   for (auto input=prv->InputList; input; input=input->Next) {
+   for (auto input=tiri->InputList; input; input=input->Next) {
       if (input->Mode != FIM_KEYBOARD) continue;
       if (not input->KeyEvent) continue;
 
@@ -522,7 +541,7 @@ void register_input_class(lua_State *Lua)
       { nullptr, nullptr }
    };
 
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.trace("Registering input interface.");
 
    luaL_newmetatable(Lua, "Tiri.input");
@@ -532,6 +551,8 @@ void register_input_class(lua_State *Lua)
 
    luaL_openlib(Lua, nullptr, inputlib_methods, 0);
    luaL_openlib(Lua, "input", inputlib_functions, 0);
+
+   lua_pop(Lua, 2); // Drop the Tiri.input metatable and the input library table
 
    // Register input interface prototypes for compile-time type inference
    reg_iface_prototype("input", "subscribe", { TiriType::Any }, { TiriType::Num, TiriType::Any, TiriType::Num, TiriType::Func });

@@ -8,20 +8,17 @@
     <module>Network</module>
     <comment>Represents a single client IP address.</comment>
     <version>1</version>
-    <id>05bdfa0b</id>
+    <id>34852165</id>
     <idstring>NETCLIENT</idstring>
     <category>Network</category>
     <copyright>Paul Manias © 2005-2026</copyright>
     <description>
-<p>When a connection is opened between a client IP and a <class name="NetSocket">NetSocket</class> object, a new NetClient object will be created for the client's IP address if one does not already exist.  All <class name="ClientSocket">ClientSocket</class> connections to that IP address are then tracked under the single NetClient object.</p>
+<p>When a connection is opened between a client IP and a <class name="NetServer">NetServer</class> object, a new NetClient object will be created for the client's IP address if one does not already exist.  All <class name="ClientSocket">ClientSocket</class> connections to that IP address are then tracked under the single NetClient object.</p>
 <p>NetClient objects are intended to be created from the network interfacing code exclusively.</p></description>
     <source>
       <file path="netclient/">netclient.cpp</file>
     </source>
   </info>
-
-  <actions>
-  </actions>
 
   <fields>
     <field>
@@ -41,20 +38,20 @@
     <field>
       <name>IP</name>
       <comment>The IP address of the client.</comment>
-      <access read="R">Read</access>
-      <type>INT8</type>
+      <access read="G">Get</access>
+      <type>struct IPAddress *</type>
     </field>
 
     <field>
       <name>Next</name>
-      <comment>The next client IP with connections to the server socket.</comment>
+      <comment>The next client IP with connections to the NetServer.</comment>
       <access read="R">Read</access>
       <type class="NetClient">*NetClient</type>
     </field>
 
     <field>
       <name>Prev</name>
-      <comment>The previous client IP with connections to the server socket.</comment>
+      <comment>The previous client IP with connections to the NetServer.</comment>
       <access read="R">Read</access>
       <type class="NetClient">*NetClient</type>
     </field>
@@ -67,6 +64,19 @@
     </field>
 
   </fields>
+  <types>
+    <constants lookup="IPADDR" comment="Address types for the IPAddress structure.">
+      <const name="V4"/>
+      <const name="V6"/>
+    </constants>
+
+  </types>
   <structs>
+    <struct name="IPAddress">
+      <field name="Data" type="INT" size="4">128-bit array for supporting both V4 (32-bit host order) and V6 (8-bit byte order) IP addresses.</field>
+      <field name="Type" type="IPADDR" lookup="IPADDR">Identifies the address Data value as a V4 or V6 address type.</field>
+      <field name="Port" type="INT">For UDP packets, identifies the client port number in host byte order.</field>
+    </struct>
+
   </structs>
 </book>

@@ -7,10 +7,70 @@ Name: Bitmap
 *********************************************************************************************************************/
 
 #include "defs.h"
+#include "../link/simd.h"
 
-#ifdef _WIN32
-using namespace display;
-#endif
+#include <algorithm>
+#include <cstring>
+
+#ifdef KOTUKU_SSE2
+
+// SIMD helpers for the 32-bit blitting routines.  All arithmetic is performed on 16-bit lanes so that the
+// scalar formulae are reproduced exactly; callers handle trailing pixels with the original scalar loops.
+
+inline __m128i simd_select(__m128i Mask, __m128i A, __m128i B) // Mask ? A : B, per bit
+{
+   return _mm_or_si128(_mm_and_si128(Mask, A), _mm_andnot_si128(Mask, B));
+}
+
+// Broadcast the alpha byte of each 32-bit pixel across all four of its byte lanes.
+
+inline __m128i simd_broadcast_alpha(__m128i Pixels, int AlphaPos)
+{
+   auto a = _mm_and_si128(_mm_srl_epi32(Pixels, _mm_cvtsi32_si128(AlphaPos)), _mm_set1_epi32(0xff));
+   a = _mm_or_si128(a, _mm_slli_epi32(a, 8));
+   return _mm_or_si128(a, _mm_slli_epi32(a, 16));
+}
+
+// Exact equivalent of a glAlphaLookup table read: round((Value * Alpha) / 255) on 16-bit lanes.
+
+inline __m128i simd_mul_div255(__m128i Value, __m128i Alpha)
+{
+   auto t = _mm_add_epi16(_mm_mullo_epi16(Value, Alpha), _mm_set1_epi16(128));
+   return _mm_srli_epi16(_mm_add_epi16(t, _mm_srli_epi16(t, 8)), 8);
+}
+
+// Blend four 32-bit source pixels onto four destination pixels with the (S*A + D*(255-A) + 255)>>8 formula
+// used by CopyArea(), updating the destination alpha channel as 255 - (((255-A) * (255-D))>>8).  The source
+// alpha is first scaled by Opacity with (A*Opacity + 255)>>8, which is an exact identity when Opacity is 255.
+// AlphaPos is the bit position of the alpha channel and AlphaLane is the matching 16-bit lane mask.
+
+inline __m128i simd_blend4(__m128i S, __m128i D, int AlphaPos, __m128i AlphaLane, __m128i Opacity)
+{
+   const auto zero = _mm_setzero_si128();
+   const auto max  = _mm_set1_epi16(255);
+
+   auto a8  = simd_broadcast_alpha(S, AlphaPos);
+   auto slo = _mm_unpacklo_epi8(S, zero),  shi = _mm_unpackhi_epi8(S, zero);
+   auto dlo = _mm_unpacklo_epi8(D, zero),  dhi = _mm_unpackhi_epi8(D, zero);
+   auto alo = _mm_unpacklo_epi8(a8, zero), ahi = _mm_unpackhi_epi8(a8, zero);
+
+   alo = _mm_srli_epi16(_mm_add_epi16(_mm_mullo_epi16(alo, Opacity), max), 8);
+   ahi = _mm_srli_epi16(_mm_add_epi16(_mm_mullo_epi16(ahi, Opacity), max), 8);
+
+   auto calo = _mm_sub_epi16(max, alo), cahi = _mm_sub_epi16(max, ahi);
+
+   auto blo = _mm_srli_epi16(_mm_add_epi16(_mm_add_epi16(_mm_mullo_epi16(slo, alo), _mm_mullo_epi16(dlo, calo)), max), 8);
+   auto bhi = _mm_srli_epi16(_mm_add_epi16(_mm_add_epi16(_mm_mullo_epi16(shi, ahi), _mm_mullo_epi16(dhi, cahi)), max), 8);
+
+   auto xlo = _mm_sub_epi16(max, _mm_srli_epi16(_mm_mullo_epi16(calo, _mm_sub_epi16(max, dlo)), 8));
+   auto xhi = _mm_sub_epi16(max, _mm_srli_epi16(_mm_mullo_epi16(cahi, _mm_sub_epi16(max, dhi)), 8));
+
+   blo = simd_select(AlphaLane, xlo, blo);
+   bhi = simd_select(AlphaLane, xhi, bhi);
+   return _mm_packus_epi16(blo, bhi);
+}
+
+#endif // KOTUKU_SSE2
 
 //********************************************************************************************************************
 // NOTE: Please ensure that the Width and Height are already clipped to meet the restrictions of BOTH the source and
@@ -34,10 +94,10 @@ static ERR dither(extBitmap *Bitmap, extBitmap *Dest, ColourFormat *Format, int 
    // Do a straight copy if the bitmap is too small for dithering
 
    if ((Height < 2) or (Width < 2)) {
-      for (y=SrcY; y < SrcY+Height; y++) {
-         for (x=SrcX; x < SrcX+Width; x++) {
-            Bitmap->ReadUCRPixel(Bitmap, x, y, &brgb);
-            Dest->DrawUCRPixel(Dest, x, y, &brgb);
+      for (y=0; y < Height; y++) {
+         for (x=0; x < Width; x++) {
+            Bitmap->ReadUCRPixel(Bitmap, SrcX + x, SrcY + y, &brgb);
+            Dest->DrawUCRPixel(Dest, DestX + x, DestY + y, &brgb);
          }
       }
       return ERR::Okay;
@@ -63,15 +123,17 @@ static ERR dither(extBitmap *Bitmap, extBitmap *Dest, ColourFormat *Format, int 
       }
    };
 
-   std::vector<RGB16> calc_buffer(Width * sizeof(RGB16) * 2);
+   std::vector<RGB16> calc_buffer(Width * 2);
 
    buf1 = calc_buffer.data();
    buf2 = buf1 + Width;
 
-   // Prime buf2, which will be copied to buf1 at the start of the loop.  We work with six binary "decimal places" to reduce roundoff errors.
+   // Prime buf2, which will be copied to buf1 at the start of the loop.
+   // We work with six binary "decimal places" to reduce roundoff errors.
 
+   auto srcdata = Bitmap->Data + (SrcY * Bitmap->LineWidth);
    for (x=0,index=0; x < Width; x++,index+=Bitmap->BytesPerPixel) {
-      Bitmap->ReadUCRIndex(Bitmap, Bitmap->Data + index, &brgb);
+      Bitmap->ReadUCRIndex(Bitmap, srcdata + (SrcX * Bitmap->BytesPerPixel) + index, &brgb);
       buf2[x].Red   = brgb.Red<<6;
       buf2[x].Green = brgb.Green<<6;
       buf2[x].Blue  = brgb.Blue<<6;
@@ -80,7 +142,7 @@ static ERR dither(extBitmap *Bitmap, extBitmap *Dest, ColourFormat *Format, int 
 
    if (!Format) Format = &Dest->prvColourFormat;
 
-   auto srcdata = Bitmap->Data + ((SrcY+1) * Bitmap->LineWidth);
+   srcdata = Bitmap->Data + ((SrcY+1) * Bitmap->LineWidth);
    auto destdata = Dest->Data + (DestY * Dest->LineWidth);
    uint8_t rmask = Format->RedMask   << Format->RedShift;
    uint8_t gmask = Format->GreenMask << Format->GreenShift;
@@ -177,7 +239,7 @@ static ERR dither(extBitmap *Bitmap, extBitmap *Dest, ColourFormat *Format, int 
    if (Bitmap != Dest) {
       for (x=0,index=0; x < Width; x++,index+=Dest->BytesPerPixel) {
          brgb = { uint8_t(buf2[x].Red>>6), uint8_t(buf2[x].Green>>6), uint8_t(buf2[x].Blue>>6), uint8_t(buf2[x].Alpha) };
-         Dest->DrawUCRIndex(Dest, destdata+index, &brgb);
+         Dest->DrawUCRIndex(Dest, destdata + (DestX * Dest->BytesPerPixel) + index, &brgb);
       }
    }
 
@@ -223,15 +285,19 @@ int YDest:  The vertical position to copy the area to.
 -ERRORS-
 Okay:
 NullArgs: The `Dest` parameter was not specified.
-Mismatch: The destination bitmap is not a close enough match to the source bitmap in order to perform the operation.
+InvalidObject: The `Dest` parameter does not refer to a Bitmap object.
+NotInitialised: The source Bitmap has not been initialised.
 InvalidState: The `LINEAR` flag was used when at least one bitmap is using a linear colourspace.
+
+-TAGS-
+mutates-object, blocking
 -END-
 
 *********************************************************************************************************************/
 
 uint8_t validate_clip(CSTRING Header, CSTRING Name, extBitmap *Bitmap)
 {
-   pf::Log log(Header);
+   kt::Log log(Header);
 
 #ifndef NDEBUG // Force break if clipping is wrong (use gdb)
    if (((Bitmap->Clip.Right) > Bitmap->Width) or
@@ -278,7 +344,7 @@ uint8_t validate_clip(CSTRING Header, CSTRING Name, extBitmap *Bitmap)
 
 ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Width, int Height, int DestX, int DestY)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    RGB8 pixel, srgb;
    uint8_t *srctable, *desttable;
    int i;
@@ -409,231 +475,18 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
    if (Width < 1) return ERR::Okay;
    if (Height < 1) return ERR::Okay;
 
-#ifdef _WIN32
-   if (dest->win.Drawable) { // Destination is a window
-
-      if (src->win.Drawable) { // Both the source and destination are window areas
-         int error;
-         if ((error = winBlit(dest->win.Drawable, DestX, DestY, Width, Height, src->win.Drawable, X, Y))) {
-            char buffer[80];
-            buffer[0] = 0;
-            winGetError(error, buffer, sizeof(buffer));
-            log.warning("BitBlt(): %s", buffer);
-         }
-      }
-      else { // The source is a software image
-         if (((Flags & BAF::BLEND) != BAF::NIL) and (src->BitsPerPixel IS 32) and ((src->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL)) {
-            uint32_t *srcdata;
-            uint8_t destred, destgreen, destblue, red, green, blue, alpha;
-
-            // 32-bit alpha blending is enabled
-
-            srcdata = (uint32_t *)(src->Data + (Y * src->LineWidth) + (X<<2));
-
-            while (Height > 0) {
-               for (i=0; i < Width; i++) {
-                  alpha = 255 - CFUnpackAlpha(&src->prvColourFormat, srcdata[i]);
-
-                  if (alpha >= BLEND_MAX_THRESHOLD) {
-                     red   = srcdata[i] >> src->prvColourFormat.RedPos;
-                     green = srcdata[i] >> src->prvColourFormat.GreenPos;
-                     blue  = srcdata[i] >> src->prvColourFormat.BluePos;
-                     SetPixelV(dest->win.Drawable, DestX+i, DestY, (blue<<16) | (green<<8) | red);
-                  }
-                  else if (alpha >= BLEND_MIN_THRESHOLD) {
-                     colour = GetPixel(dest->win.Drawable, DestX+i, DestY);
-                     destred   = colour & 0xff;
-                     destgreen = (colour>>8) & 0xff;
-                     destblue  = (colour>>16) & 0xff;
-                     red   = srcdata[i] >> src->prvColourFormat.RedPos;
-                     green = srcdata[i] >> src->prvColourFormat.GreenPos;
-                     blue  = srcdata[i] >> src->prvColourFormat.BluePos;
-                     red   = destred   + (((red   - destred)   * alpha)>>8);
-                     green = destgreen + (((green - destgreen) * alpha)>>8);
-                     blue  = destblue  + (((blue  - destblue)  * alpha)>>8);
-                     SetPixelV(dest->win.Drawable, DestX+i, DestY, (blue<<16) | (green<<8) | red);
-                  }
-               }
-               srcdata = (uint32_t *)(((uint8_t *)srcdata) + src->LineWidth);
-               DestY++;
-               Height--;
-            }
-         }
-         else if ((src->Flags & BMF::TRANSPARENT) != BMF::NIL) {
-            uint32_t wincolour;
-            while (Height > 0) {
-               for (i=0; i < Width; i++) {
-                  colour = src->ReadUCPixel(src, X + i, Y);
-                  if (colour != (uint32_t)src->TransIndex) {
-                     wincolour = src->unpackRed(colour);
-                     wincolour |= src->unpackGreen(colour)<<8;
-                     wincolour |= src->unpackBlue(colour)<<16;
-                     SetPixelV(dest->win.Drawable, DestX + i, DestY, wincolour);
-                  }
-               }
-               Y++; DestY++;
-               Height--;
-            }
-         }
-         else  {
-            winSetDIBitsToDevice(dest->win.Drawable, DestX, DestY, Width, Height, X, Y,
-               src->Width, src->Height, src->BitsPerPixel, src->Data,
-               src->ColourFormat->RedMask   << src->ColourFormat->RedPos,
-               src->ColourFormat->GreenMask << src->ColourFormat->GreenPos,
-               src->ColourFormat->BlueMask  << src->ColourFormat->BluePos);
-         }
-      }
-
-      return ERR::Okay;
+   if (glDriver) {
+      if (auto error = glDriver->blitBitmap(dest, src, Flags, X, Y, Width, Height, DestX, DestY);
+            error != ERR::NoSupport) return error;
    }
-
-#elif __xwindows__
-
-   // Use this routine if the destination is a pixmap (write only memory).  X11 windows are always represented as pixmaps.
-
-   if (((Dest->Flags & BMF::X11_DGA) != BMF::NIL) and (glDGAAvailable) and (Dest != Source)) {
-      // We have direct access to the graphics address, so drop through to the software routine
-      Dest->Data = (uint8_t *)glDGAVideo;
-   }
-   else if (dest->x11.drawable) {
-      if (!src->x11.drawable) {
-         if (((Flags & BAF::BLEND) != BAF::NIL) and (src->BitsPerPixel IS 32) and ((src->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL)) {
-            auto save_clip = dest->Clip;
-            Dest->Clip.Left   = DestX;
-            Dest->Clip.Right  = DestX + Width;
-            Dest->Clip.Top    = DestY;
-            Dest->Clip.Bottom = DestY + Height;
-            if (lock_surface(dest, SURFACE_READ|SURFACE_WRITE) IS ERR::Okay) {
-               auto srcdata = (uint32_t *)(src->Data + (Y * src->LineWidth) + (X<<2));
-
-               while (Height > 0) {
-                  for (i=0; i < Width; i++) {
-                     uint8_t alpha = 255 - src->unpackAlpha(srcdata[i]);
-
-                     if (alpha >= BLEND_MAX_THRESHOLD) {
-                        pixel.Red   = (uint8_t)(srcdata[i] >> src->prvColourFormat.RedPos);
-                        pixel.Green = (uint8_t)(srcdata[i] >> src->prvColourFormat.GreenPos);
-                        pixel.Blue  = (uint8_t)(srcdata[i] >> src->prvColourFormat.BluePos);
-                        dest->DrawUCRPixel(dest, DestX+i, DestY, &pixel);
-                     }
-                     else if (alpha >= BLEND_MIN_THRESHOLD) {
-                        dest->ReadUCRPixel(dest, DestX+i, DestY, &pixel);
-                        pixel.Red   += ((((uint8_t)(srcdata[i] >> src->prvColourFormat.RedPos)   - pixel.Red)   * alpha)>>8);
-                        pixel.Green += ((((uint8_t)(srcdata[i] >> src->prvColourFormat.GreenPos) - pixel.Green) * alpha)>>8);
-                        pixel.Blue  += ((((uint8_t)(srcdata[i] >> src->prvColourFormat.BluePos)  - pixel.Blue)  * alpha)>>8);
-                        dest->DrawUCRPixel(dest, DestX+i, DestY, &pixel);
-                     }
-                  }
-                  srcdata = (uint32_t *)(((uint8_t *)srcdata) + src->LineWidth);
-                  DestY++;
-                  Height--;
-               }
-               unlock_surface(dest);
-            }
-            dest->Clip = save_clip;
-         }
-         else if ((src->Flags & BMF::TRANSPARENT) != BMF::NIL) {
-            while (Height > 0) {
-               for (auto i=0; i < Width; i++) {
-                  colour = src->ReadUCPixel(src, X + i, Y);
-                  if (colour != (uint32_t)src->TransIndex) dest->DrawUCPixel(dest, DestX + i, DestY, colour);
-               }
-               Y++; DestY++;
-               Height--;
-            }
-         }
-         else { // Source is an ximage, destination is a pixmap
-            if ((src->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL) src->premultiply();
-
-            if (src->x11.XShmImage IS true)  {
-               XShmPutImage(XDisplay, dest->x11.drawable, dest->getGC(), &src->x11.ximage, X, Y, DestX, DestY, Width, Height, False);
-            }
-            else XPutImage(XDisplay, dest->x11.drawable, dest->getGC(), &src->x11.ximage, X, Y, DestX, DestY, Width, Height);
-
-            if ((src->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL) { // Composite window
-               XSync(XDisplay, False);
-            }
-            else XClearWindow(XDisplay, dest->x11.window); // 'Clear' the window to the pixmap background
-
-            if ((src->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL) src->demultiply();
-         }
-      }
-      else { // Both the source and the destination are pixmaps
-         XCopyArea(XDisplay, src->x11.drawable, dest->x11.drawable, dest->getGC(), X, Y, Width, Height, DestX, DestY);
-      }
-
-      return ERR::Okay;
-   }
-
-#elif _GLES_
-
-   if ((dest->DataFlags & MEM::VIDEO) != MEM::NIL) { // Destination is the video display.
-      if ((src->DataFlags & MEM::VIDEO) != MEM::NIL) { // Source is the video display.
-         // No simple way to support this in OpenGL - we have to copy the display into a texture buffer, then copy the texture back to the display.
-
-         ERR error;
-         if (!lock_graphics_active(__func__)) {
-            GLuint texture;
-            if (alloc_texture(src->Width, src->Height, &texture) IS GL_NO_ERROR) {
-               //glViewport(0, 0, src->Width, src->Height);  // Set viewport so it matches texture size of ^2
-               glCopyTexImage2D(GL_TEXTURE_2D, 0, src->prvGLPixel, 0, 0, src->Width, src->Height, 0); // Copy screen to texture
-               //glViewport(0, 0, src->Width, src->Height);  // Restore viewport to display size
-               glDrawTexiOES(DestX, -DestY, 1, src->Width, src->Height);
-               glBindTexture(GL_TEXTURE_2D, 0);
-               eglSwapBuffers(glEGLDisplay, glEGLSurface);
-               glDeleteTextures(1, &texture);
-               error = ERR::Okay;
-            }
-            else error = log.warning(ERR::OpenGL);
-
-            unlock_graphics();
-         }
-         else error = ERR::LockFailed;
-
-         return error;
-      }
-      else if ((src->DataFlags & MEM::TEXTURE) != MEM::NIL) {
-         // Texture-to-video blitting (
-
-
-      }
-      else {
-         // RAM-to-video blitting.  We have to allocate a temporary texture, copy the data to it and then blit that to the display.
-
-         ERR error;
-         if (!lock_graphics_active(__func__)) {
-            GLuint texture;
-            if (alloc_texture(src->Width, src->Height, &texture) IS GL_NO_ERROR) {
-               glTexImage2D(GL_TEXTURE_2D, 0, src->prvGLPixel, src->Width, src->Height, 0, src->prvGLPixel, src->prvGLFormat, src->Data); // Copy the bitmap content to the texture.
-               if (glGetError() IS GL_NO_ERROR) {
-                  glDrawTexiOES(0, 0, 1, src->Width, src->Height);
-                  glBindTexture(GL_TEXTURE_2D, 0);
-                  eglSwapBuffers(glEGLDisplay, glEGLSurface);
-               }
-               else error = ERR::OpenGL;
-
-               glDeleteTextures(1, &texture);
-               error = ERR::Okay;
-            }
-            else error = log.warning(ERR::OpenGL);
-
-            unlock_graphics();
-         }
-         else error = ERR::LockFailed;
-
-         return error;
-      }
-   }
-
-#endif
 
    // GENERIC SOFTWARE BLITTING ROUTINES
 
    if (((Flags & BAF::BLEND) != BAF::NIL) and (src->BitsPerPixel IS 32) and ((src->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL)) {
       // 32-bit alpha blending support
 
-      if (lock_surface(src, SURFACE_READ) IS ERR::Okay) {
-         if (lock_surface(dest, SURFACE_WRITE) IS ERR::Okay) {
+      if (!lock_surface(src, SURFACE_READ)) {
+         if (!lock_surface(dest, SURFACE_WRITE)) {
             uint8_t red, green, blue, *dest_lookup;
             uint16_t alpha;
 
@@ -651,6 +504,13 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
 
                uint8_t *sdata = src->Data + (Y * src->LineWidth) + (X<<2);
                uint8_t *ddata = dest->Data + (DestY * dest->LineWidth) + (DestX<<2);
+
+#ifdef KOTUKU_SSE2
+               // The SIMD blends operate per byte lane, so the channel layout of both bitmaps must match.
+               const bool simd_ok = (sR IS dR) and (sG IS dG) and (sB IS dB) and (sA IS dA);
+               const auto simd_amask = _mm_set1_epi32(int(uint32_t(0xff) << (sA<<3)));
+               const auto simd_alpha_lane = _mm_cmpeq_epi16(_mm_unpacklo_epi8(simd_amask, _mm_setzero_si128()), _mm_set1_epi16(0xff));
+#endif
 
                if ((Flags & BAF::COPY) != BAF::NIL) { // Avoids blending in cases where the destination pixel is zero alpha.
                   for (int y=0; y < Height; y++) {
@@ -683,7 +543,22 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                         }
                      }
                      else {
-                        for (int x=0; x < Width; x++) {
+                        int x = 0;
+#ifdef KOTUKU_SSE2
+                        if (simd_ok) {
+                           const auto zero = _mm_setzero_si128();
+                           const auto op = _mm_set1_epi16(255);
+                           for (; x + 4 <= Width; x += 4, sp += 16, dp += 16) {
+                              auto s = _mm_loadu_si128((const __m128i *)sp);
+                              auto d = _mm_loadu_si128((const __m128i *)dp);
+                              auto src_zero  = _mm_cmpeq_epi32(_mm_and_si128(s, simd_amask), zero);
+                              auto dest_zero = _mm_cmpeq_epi32(_mm_and_si128(d, simd_amask), zero);
+                              auto blended = simd_blend4(s, d, sA<<3, simd_alpha_lane, op);
+                              _mm_storeu_si128((__m128i *)dp, simd_select(dest_zero, s, simd_select(src_zero, d, blended)));
+                           }
+                        }
+#endif
+                        for (; x < Width; x++) {
                            if (dp[dA]) {
                               if (sp[sA] IS 0xff) ((uint32_t *)dp)[0] = ((uint32_t *)sp)[0];
                               else if (auto a = sp[sA]) {
@@ -733,7 +608,21 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                            }
                         }
                         else {
-                           for (i=0; i < Width; i++) {
+                           i = 0;
+#ifdef KOTUKU_SSE2
+                           if (simd_ok) {
+                              const auto zero = _mm_setzero_si128();
+                              const auto op = _mm_set1_epi16(255);
+                              for (; i + 4 <= Width; i += 4, sp += 16, dp += 16) {
+                                 auto s = _mm_loadu_si128((const __m128i *)sp);
+                                 auto d = _mm_loadu_si128((const __m128i *)dp);
+                                 auto src_zero = _mm_cmpeq_epi32(_mm_and_si128(s, simd_amask), zero);
+                                 auto blended = simd_blend4(s, d, sA<<3, simd_alpha_lane, op);
+                                 _mm_storeu_si128((__m128i *)dp, simd_select(src_zero, d, blended));
+                              }
+                           }
+#endif
+                           for (; i < Width; i++) {
                               if (sp[sA] IS 0xff) ((uint32_t *)dp)[0] = ((uint32_t *)sp)[0];
                               else if (auto a = sp[sA]) {
                                  const uint8_t ca = 0xff - a;
@@ -773,7 +662,21 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                         }
                      }
                      else {
-                        for (i=0; i < Width; i++) {
+                        i = 0;
+#ifdef KOTUKU_SSE2
+                        if (simd_ok) {
+                           const auto zero = _mm_setzero_si128();
+                           const auto op = _mm_set1_epi16(src->Opacity);
+                           for (; i + 4 <= Width; i += 4, sp += 16, dp += 16) {
+                              auto s = _mm_loadu_si128((const __m128i *)sp);
+                              auto d = _mm_loadu_si128((const __m128i *)dp);
+                              auto src_zero = _mm_cmpeq_epi32(_mm_and_si128(s, simd_amask), zero);
+                              auto blended = simd_blend4(s, d, sA<<3, simd_alpha_lane, op);
+                              _mm_storeu_si128((__m128i *)dp, simd_select(src_zero, d, blended));
+                           }
+                        }
+#endif
+                        for (; i < Width; i++) {
                            if (auto oa = sp[sA]) {
                               const uint8_t a = (oa * src->Opacity + 0xff)>>8;
                               const uint8_t ca = 0xff - a;
@@ -869,8 +772,8 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
    else if ((src->Flags & BMF::TRANSPARENT) != BMF::NIL) {
       // Transparent colour copying.  In this mode, the alpha component of individual source pixels is ignored
 
-      if (lock_surface(src, SURFACE_READ) IS ERR::Okay) {
-         if (lock_surface(dest, SURFACE_WRITE) IS ERR::Okay) {
+      if (!lock_surface(src, SURFACE_READ)) {
+         if (!lock_surface(dest, SURFACE_WRITE)) {
             if (src->Opacity < 255) { // Transparent mask with translucent pixels (consistent blend level)
                srctable  = glAlphaLookup.data() + (src->Opacity<<8);
                desttable = glAlphaLookup.data() + ((255-src->Opacity)<<8);
@@ -899,7 +802,16 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                   ddata = (uint32_t *)(dest->Data + (DestY * dest->LineWidth) + (DestX<<2));
                   colour = src->TransIndex;
                   while (Height > 0) {
-                     for (i=0; i < Width; i++) if (sdata[i] != colour) ddata[i] = sdata[i];
+                     i = 0;
+#ifdef KOTUKU_SSE2
+                     const auto key = _mm_set1_epi32(int(colour));
+                     for (; i + 4 <= Width; i += 4) {
+                        auto s = _mm_loadu_si128((const __m128i *)(sdata + i));
+                        auto d = _mm_loadu_si128((const __m128i *)(ddata + i));
+                        _mm_storeu_si128((__m128i *)(ddata + i), simd_select(_mm_cmpeq_epi32(s, key), d, s));
+                     }
+#endif
+                     for (; i < Width; i++) if (sdata[i] != colour) ddata[i] = sdata[i];
                      ddata = (uint32_t *)(((int8_t *)ddata) + dest->LineWidth);
                      sdata = (uint32_t *)(((int8_t *)sdata) + src->LineWidth);
                      Height--;
@@ -912,7 +824,18 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                   ddata = (uint16_t *)(dest->Data + (DestY * dest->LineWidth) + (DestX<<1));
                   colour = src->TransIndex;
                   while (Height > 0) {
-                     for (i=0; i < Width; i++) if (sdata[i] != colour) ddata[i] = sdata[i];
+                     i = 0;
+#ifdef KOTUKU_SSE2
+                     if (colour <= 0xffff) { // The 16-bit lane comparison cannot represent larger keys
+                        const auto key = _mm_set1_epi16(int16_t(colour));
+                        for (; i + 8 <= Width; i += 8) {
+                           auto s = _mm_loadu_si128((const __m128i *)(sdata + i));
+                           auto d = _mm_loadu_si128((const __m128i *)(ddata + i));
+                           _mm_storeu_si128((__m128i *)(ddata + i), simd_select(_mm_cmpeq_epi16(s, key), d, s));
+                        }
+                     }
+#endif
+                     for (; i < Width; i++) if (sdata[i] != colour) ddata[i] = sdata[i];
                      ddata = (uint16_t *)(((int8_t *)ddata) + dest->LineWidth);
                      sdata = (uint16_t *)(((int8_t *)sdata) + src->LineWidth);
                      Height--;
@@ -960,8 +883,8 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
       return ERR::Okay;
    }
    else { // Straight copy operation
-      if (lock_surface(src, SURFACE_READ) IS ERR::Okay) {
-         if (lock_surface(dest, SURFACE_WRITE) IS ERR::Okay) {
+      if (!lock_surface(src, SURFACE_READ)) {
+         if (!lock_surface(dest, SURFACE_WRITE)) {
             if (src->Opacity < 255) { // Translucent draw
                srctable  = glAlphaLookup.data() + (src->Opacity<<8);
                desttable = glAlphaLookup.data() + ((255-src->Opacity)<<8);
@@ -973,8 +896,36 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                   sdata = (uint32_t *)(src->Data + (Y * src->LineWidth) + (X<<2));
                   ddata = (uint32_t *)(dest->Data + (DestY * dest->LineWidth) + (DestX<<2));
                   cmp_alpha = 255 << src->prvColourFormat.AlphaPos;
+
+#ifdef KOTUKU_SSE2
+                  // The SIMD path blends per byte lane, so the RGB channels must be byte-aligned and share
+                  // the same positions in both bitmaps.
+                  const bool simd_ok = (src->prvColourFormat.RedPos IS dest->prvColourFormat.RedPos) and
+                     (src->prvColourFormat.GreenPos IS dest->prvColourFormat.GreenPos) and
+                     (src->prvColourFormat.BluePos IS dest->prvColourFormat.BluePos) and
+                     (((src->prvColourFormat.RedPos | src->prvColourFormat.GreenPos | src->prvColourFormat.BluePos) & 7) IS 0);
+#endif
                   while (Height > 0) {
-                     for (i=0; i < Width; i++) {
+                     i = 0;
+#ifdef KOTUKU_SSE2
+                     if (simd_ok) {
+                        const auto zero = _mm_setzero_si128();
+                        const auto op   = _mm_set1_epi16(src->Opacity);
+                        const auto cop  = _mm_set1_epi16(255 - src->Opacity);
+                        const auto rgb_mask = _mm_set1_epi32(int((uint32_t(0xff) << dest->prvColourFormat.RedPos) |
+                           (uint32_t(0xff) << dest->prvColourFormat.GreenPos) | (uint32_t(0xff) << dest->prvColourFormat.BluePos)));
+                        const auto alpha = _mm_set1_epi32(int(cmp_alpha));
+                        for (; i + 4 <= Width; i += 4) {
+                           auto s = _mm_loadu_si128((const __m128i *)(sdata + i));
+                           auto d = _mm_loadu_si128((const __m128i *)(ddata + i));
+                           auto blo = _mm_add_epi16(simd_mul_div255(_mm_unpacklo_epi8(s, zero), op), simd_mul_div255(_mm_unpacklo_epi8(d, zero), cop));
+                           auto bhi = _mm_add_epi16(simd_mul_div255(_mm_unpackhi_epi8(s, zero), op), simd_mul_div255(_mm_unpackhi_epi8(d, zero), cop));
+                           auto packed = _mm_packus_epi16(blo, bhi);
+                           _mm_storeu_si128((__m128i *)(ddata + i), _mm_or_si128(_mm_and_si128(packed, rgb_mask), alpha));
+                        }
+                     }
+#endif
+                     for (; i < Width; i++) {
                         ddata[i] = ((srctable[(uint8_t)(sdata[i]>>src->prvColourFormat.RedPos)]   + desttable[(uint8_t)(ddata[i]>>dest->prvColourFormat.RedPos)]) << dest->prvColourFormat.RedPos) |
                                    ((srctable[(uint8_t)(sdata[i]>>src->prvColourFormat.GreenPos)] + desttable[(uint8_t)(ddata[i]>>dest->prvColourFormat.GreenPos)]) << dest->prvColourFormat.GreenPos) |
                                    ((srctable[(uint8_t)(sdata[i]>>src->prvColourFormat.BluePos)]  + desttable[(uint8_t)(ddata[i]>>dest->prvColourFormat.BluePos)]) << dest->prvColourFormat.BluePos) |
@@ -1030,7 +981,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                   data    += dest->LineWidth * (Height-1);
 
                   while (Height > 0) {
-                     for (i=Width-1; i >= 0; i--) data[i] = srcdata[i];
+                     memmove(data, srcdata, Width);
                      srcdata -= src->LineWidth;
                      data    -= dest->LineWidth;
                      Height--;
@@ -1038,10 +989,7 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
                }
                else {
                   while (Height > 0) {
-                     for (i=0; (size_t)i > sizeof(int); i += sizeof(int)) {
-                        ((int *)(data+i))[0] = ((int *)(srcdata+i))[0];
-                     }
-                     while (i < Width) { data[i] = srcdata[i]; i++; }
+                     memcpy(data, srcdata, Width);
                      srcdata += src->LineWidth;
                      data    += dest->LineWidth;
                      Height--;
@@ -1126,6 +1074,9 @@ Okay:
 Args:
 NullArgs:
 
+-TAGS-
+mutates-object, blocking
+
 *********************************************************************************************************************/
 
 template <class INT> uint8_t UnpackSRed(BITMAPSURFACE *S, INT C)  { return (((C >> S->Format.RedPos)   & S->Format.RedMask) << S->Format.RedShift); }
@@ -1165,7 +1116,7 @@ static uint32_t read_surface32(BITMAPSURFACE *Surface, int16_t X, int16_t Y)
 ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, int Y, int Width, int Height,
    int XDest, int YDest)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    RGB8 pixel, src;
    uint8_t *srctable, *desttable;
    int i;
@@ -1186,9 +1137,9 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
    // Check if the destination that we are copying to is within the drawable area.
 
    if ((XDest < Bitmap->Clip.Left)) {
-      Width = Width - (Bitmap->Clip.Left - X);
+      Width = Width - (Bitmap->Clip.Left - XDest);
       if (Width < 1) return ERR::Okay;
-      X = X + (Bitmap->Clip.Left - X);
+      X = X + (Bitmap->Clip.Left - XDest);
       XDest = Bitmap->Clip.Left;
    }
    else if (XDest >= Bitmap->Clip.Right) return ERR::Okay;
@@ -1249,55 +1200,56 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
       default: return log.warning(ERR::Args);
    }
 
-#ifdef __xwindows__
 
-   // Use this routine if the destination is a pixmap (write only memory).  X11 windows are always represented as pixmaps.
-
-   if (dest->x11.drawable) {
-      // Source is an ximage, destination is a pixmap.  NB: If DGA is enabled, we will avoid using these routines because mem-copying from software
-      // straight to video RAM is a lot faster.
-
-      int16_t alignment;
-
-      if (dest->LineWidth & 0x0001) alignment = 8;
-      else if (dest->LineWidth & 0x0002) alignment = 16;
-      else alignment = 32;
-
-      XImage ximage;
-      ximage.width            = Surface->LineWidth / Surface->BytesPerPixel;
-      ximage.height           = Surface->Height;
-      ximage.xoffset          = 0;               // Number of pixels offset in X direction
-      ximage.format           = ZPixmap;         // XYBitmap, XYPixmap, ZPixmap
-      ximage.data             = (char *)Surface->Data;
-      ximage.byte_order       = LSBFirst;        // LSBFirst / MSBFirst
-      ximage.bitmap_unit      = alignment;       // Quant. of scanline - 8, 16, 32
-      ximage.bitmap_bit_order = LSBFirst;        // LSBFirst / MSBFirst
-      ximage.bitmap_pad       = alignment;       // 8, 16, 32, either XY or Zpixmap
-      if ((Surface->BitsPerPixel IS 32) and ((dest->Flags & BMF::ALPHA_CHANNEL) IS BMF::NIL)) ximage.depth = 24;
-      else ximage.depth = Surface->BitsPerPixel;
-      ximage.bytes_per_line   = Surface->LineWidth;
-      ximage.bits_per_pixel   = Surface->BytesPerPixel * 8;
-      ximage.red_mask         = 0;
-      ximage.green_mask       = 0;
-      ximage.blue_mask        = 0;
-      XInitImage(&ximage);
-
-      XPutImage(XDisplay, dest->x11.drawable, dest->getGC(),
-         &ximage, X, Y, XDest, YDest, Width, Height);
-
-      return ERR::Okay;
-   }
-
-#endif // __xwindows__
-
-   if (lock_surface((extBitmap *)Bitmap, SURFACE_WRITE) IS ERR::Okay) {
+   if (!lock_surface((extBitmap *)Bitmap, SURFACE_WRITE)) {
       if (((Flags & CSRF::ALPHA) != CSRF::NIL) and (Surface->BitsPerPixel IS 32)) { // 32-bit alpha blending support
          uint32_t *sdata = (uint32_t *)((int8_t *)Surface->Data + (Y * Surface->LineWidth) + (X<<2));
 
          if (Bitmap->BitsPerPixel IS 32) {
             uint32_t *ddata = (uint32_t *)(Bitmap->Data + (YDest * Bitmap->LineWidth) + (XDest<<2));
+
+#ifdef KOTUKU_SSE2
+            // The SIMD path blends per byte lane, so the RGB channels must be byte-aligned and share the
+            // same positions in both the surface and the destination bitmap.
+            const bool simd_ok = (Surface->Format.RedPos IS dest->prvColourFormat.RedPos) and
+               (Surface->Format.GreenPos IS dest->prvColourFormat.GreenPos) and
+               (Surface->Format.BluePos IS dest->prvColourFormat.BluePos) and
+               (((Surface->Format.RedPos | Surface->Format.GreenPos | Surface->Format.BluePos | Surface->Format.AlphaPos) & 7) IS 0);
+#endif
             while (Height > 0) {
-               for (int i=0; i < Width; i++) {
+               int i = 0;
+#ifdef KOTUKU_SSE2
+               if (simd_ok) {
+                  const auto zero  = _mm_setzero_si128();
+                  const auto max16 = _mm_set1_epi16(255);
+                  const auto op    = _mm_set1_epi16(Surface->Opacity);
+                  const auto rgb_mask = _mm_set1_epi32(int((uint32_t(0xff) << dest->prvColourFormat.RedPos) |
+                     (uint32_t(0xff) << dest->prvColourFormat.GreenPos) | (uint32_t(0xff) << dest->prvColourFormat.BluePos)));
+                  const auto alpha_or = _mm_set1_epi32(int(uint32_t(0xff) << dest->prvColourFormat.AlphaPos));
+                  for (; i + 4 <= Width; i += 4) {
+                     auto s = _mm_loadu_si128((const __m128i *)(sdata + i));
+                     auto d = _mm_loadu_si128((const __m128i *)(ddata + i));
+
+                     // Scale the source alpha by the overall opacity, then build per-pixel masks for the
+                     // fully opaque (straight copy) and fully transparent (no-op) cases.
+
+                     auto a8  = simd_broadcast_alpha(s, Surface->Format.AlphaPos);
+                     auto alo = simd_mul_div255(_mm_unpacklo_epi8(a8, zero), op);
+                     auto ahi = simd_mul_div255(_mm_unpackhi_epi8(a8, zero), op);
+                     auto a8s = _mm_packus_epi16(alo, ahi);
+                     auto opaque = _mm_cmpeq_epi8(a8s, _mm_set1_epi8(char(0xff)));
+                     auto transparent = _mm_cmpeq_epi8(a8s, zero);
+
+                     auto blo = _mm_add_epi16(simd_mul_div255(_mm_unpacklo_epi8(s, zero), alo),
+                                              simd_mul_div255(_mm_unpacklo_epi8(d, zero), _mm_sub_epi16(max16, alo)));
+                     auto bhi = _mm_add_epi16(simd_mul_div255(_mm_unpackhi_epi8(s, zero), ahi),
+                                              simd_mul_div255(_mm_unpackhi_epi8(d, zero), _mm_sub_epi16(max16, ahi)));
+                     auto blended = _mm_or_si128(_mm_and_si128(_mm_packus_epi16(blo, bhi), rgb_mask), alpha_or);
+                     _mm_storeu_si128((__m128i *)(ddata + i), simd_select(opaque, s, simd_select(transparent, d, blended)));
+                  }
+               }
+#endif
+               for (; i < Width; i++) {
                   colour = sdata[i];
 
                   uint8_t alpha = ((uint8_t)(colour >> Surface->Format.AlphaPos));
@@ -1391,7 +1343,16 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
                uint32_t *ddata = (uint32_t *)(Bitmap->Data + (YDest * Bitmap->LineWidth) + (XDest<<2));
                colour = Surface->Colour;
                while (Height > 0) {
-                  for (i=0; i < Width; i++) if (sdata[i] != colour) ddata[i] = sdata[i];
+                  i = 0;
+#ifdef KOTUKU_SSE2
+                  const auto key = _mm_set1_epi32(int(colour));
+                  for (; i + 4 <= Width; i += 4) {
+                     auto s = _mm_loadu_si128((const __m128i *)(sdata + i));
+                     auto d = _mm_loadu_si128((const __m128i *)(ddata + i));
+                     _mm_storeu_si128((__m128i *)(ddata + i), simd_select(_mm_cmpeq_epi32(s, key), d, s));
+                  }
+#endif
+                  for (; i < Width; i++) if (sdata[i] != colour) ddata[i] = sdata[i];
                   ddata = (uint32_t *)(((int8_t *)ddata) + Bitmap->LineWidth);
                   sdata = (uint32_t *)(((int8_t *)sdata) + Surface->LineWidth);
                   Height--;
@@ -1404,7 +1365,18 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
                ddata = (uint16_t *)(Bitmap->Data + (YDest * Bitmap->LineWidth) + (XDest<<1));
                colour = Surface->Colour;
                while (Height > 0) {
-                  for (i=0; i < Width; i++) if (sdata[i] != colour) ddata[i] = sdata[i];
+                  i = 0;
+#ifdef KOTUKU_SSE2
+                  if (colour <= 0xffff) { // The 16-bit lane comparison cannot represent larger keys
+                     const auto key = _mm_set1_epi16(int16_t(colour));
+                     for (; i + 8 <= Width; i += 8) {
+                        auto s = _mm_loadu_si128((const __m128i *)(sdata + i));
+                        auto d = _mm_loadu_si128((const __m128i *)(ddata + i));
+                        _mm_storeu_si128((__m128i *)(ddata + i), simd_select(_mm_cmpeq_epi16(s, key), d, s));
+                     }
+                  }
+#endif
+                  for (; i < Width; i++) if (sdata[i] != colour) ddata[i] = sdata[i];
                   ddata = (uint16_t *)(((int8_t *)ddata) + Bitmap->LineWidth);
                   sdata = (uint16_t *)(((int8_t *)sdata) + Surface->LineWidth);
                   Height--;
@@ -1447,8 +1419,34 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
 
                sdata = (uint32_t *)((int8_t *)Surface->Data + (Y * Surface->LineWidth) + (X<<2));
                ddata = (uint32_t *)(Bitmap->Data + (YDest * Bitmap->LineWidth) + (XDest<<2));
+
+#ifdef KOTUKU_SSE2
+               // The SIMD path blends per byte lane, so the RGB channels must be byte-aligned and share
+               // the same positions in both the surface and the destination bitmap.
+               const bool simd_ok = (Surface->Format.RedPos IS dest->prvColourFormat.RedPos) and
+                  (Surface->Format.GreenPos IS dest->prvColourFormat.GreenPos) and
+                  (Surface->Format.BluePos IS dest->prvColourFormat.BluePos) and
+                  (((Surface->Format.RedPos | Surface->Format.GreenPos | Surface->Format.BluePos) & 7) IS 0);
+#endif
                while (Height > 0) {
-                  for (int i=0; i < Width; i++) {
+                  int i = 0;
+#ifdef KOTUKU_SSE2
+                  if (simd_ok) {
+                     const auto zero = _mm_setzero_si128();
+                     const auto op   = _mm_set1_epi16(Surface->Opacity);
+                     const auto cop  = _mm_set1_epi16(255 - Surface->Opacity);
+                     const auto rgb_mask = _mm_set1_epi32(int((uint32_t(0xff) << dest->prvColourFormat.RedPos) |
+                        (uint32_t(0xff) << dest->prvColourFormat.GreenPos) | (uint32_t(0xff) << dest->prvColourFormat.BluePos)));
+                     for (; i + 4 <= Width; i += 4) {
+                        auto s = _mm_loadu_si128((const __m128i *)(sdata + i));
+                        auto d = _mm_loadu_si128((const __m128i *)(ddata + i));
+                        auto blo = _mm_add_epi16(simd_mul_div255(_mm_unpacklo_epi8(s, zero), op), simd_mul_div255(_mm_unpacklo_epi8(d, zero), cop));
+                        auto bhi = _mm_add_epi16(simd_mul_div255(_mm_unpackhi_epi8(s, zero), op), simd_mul_div255(_mm_unpackhi_epi8(d, zero), cop));
+                        _mm_storeu_si128((__m128i *)(ddata + i), _mm_and_si128(_mm_packus_epi16(blo, bhi), rgb_mask));
+                     }
+                  }
+#endif
+                  for (; i < Width; i++) {
                      ddata[i] = ((srctable[(uint8_t)(sdata[i]>>Surface->Format.RedPos)]   + desttable[(uint8_t)(ddata[i]>>dest->prvColourFormat.RedPos)]) << dest->prvColourFormat.RedPos) |
                                 ((srctable[(uint8_t)(sdata[i]>>Surface->Format.GreenPos)] + desttable[(uint8_t)(ddata[i]>>dest->prvColourFormat.GreenPos)]) << dest->prvColourFormat.GreenPos) |
                                 ((srctable[(uint8_t)(sdata[i]>>Surface->Format.BluePos)]  + desttable[(uint8_t)(ddata[i]>>dest->prvColourFormat.BluePos)]) << dest->prvColourFormat.BluePos);
@@ -1501,10 +1499,7 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
             Width   = Width * Surface->BytesPerPixel;
 
             while (Height > 0) {
-               for (i=0; (size_t)i > sizeof(int); i += sizeof(int)) {
-                  ((int *)(data+i))[0] = ((int *)(srcdata+i))[0];
-               }
-               while (i < Width) { data[i] = srcdata[i]; i++; }
+               memcpy(data, srcdata, Width);
                srcdata += Surface->LineWidth;
                data    += Bitmap->LineWidth;
                Height--;
@@ -1552,11 +1547,14 @@ int Height:  The height of the rectangle.
 uint Colour: The colour value to use for the rectangle.
 int(BAF) Flags: Use `FILL` to fill the rectangle.
 
+-TAGS-
+mutates-object, blocking
+
 *********************************************************************************************************************/
 
 void DrawRectangle(objBitmap *Target, int X, int Y, const int Width, const int Height, uint32_t Colour, BAF Flags)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    uint8_t *data;
    uint16_t *word;
    uint32_t *longdata;
@@ -1607,33 +1605,12 @@ void DrawRectangle(objBitmap *Target, int X, int Y, const int Width, const int H
 
    // Standard rectangle (no translucency) video support
 
-   #ifdef _GLES_
-      if ((Bitmap->DataFlags & MEM::VIDEO) != MEM::NIL) {
-      log.warning("TODO: Draw rectangles to opengl");
-         glClearColor(0.5, 0.5, 0.5, 1.0);
-         glClear(GL_COLOR_BUFFER_BIT);
-         return;
-      }
-   #endif
+   if ((glDriver) and (glDriver->fillBitmap(Bitmap, X, Y, w, h, Colour) IS ERR::Okay)) return;
 
-   #ifdef _WIN32
-      if (Bitmap->win.Drawable) {
-         winDrawRectangle(Bitmap->win.Drawable, X, Y, w, h, red, green, blue);
-         return;
-      }
-   #endif
-
-   #ifdef __xwindows__
-      if ((Bitmap->DataFlags & (MEM::VIDEO|MEM::TEXTURE)) != MEM::NIL) {
-         XSetForeground(XDisplay, Bitmap->getGC(), Colour);
-         XFillRectangle(XDisplay, Bitmap->x11.drawable, Bitmap->getGC(), X, Y, w, h);
-         return;
-      }
-   #endif
 
    // Standard rectangle data support
 
-   if (lock_surface(Bitmap, SURFACE_WRITE) IS ERR::Okay) {
+   if (!lock_surface(Bitmap, SURFACE_WRITE)) {
       if (!Bitmap->Data) {
          unlock_surface(Bitmap);
          return;
@@ -1643,7 +1620,7 @@ void DrawRectangle(objBitmap *Target, int X, int Y, const int Width, const int H
          if (Bitmap->BitsPerPixel IS 32) {
             longdata = (uint32_t *)(Bitmap->Data + (Bitmap->LineWidth * Y));
             while (h > 0) {
-               for (x=X; x < (X+w); x++) longdata[x] = Colour;
+               std::fill_n(longdata + X, w, Colour);
                longdata = (uint32_t *)(((uint8_t *)longdata) + Bitmap->LineWidth);
                h--;
             }
@@ -1662,18 +1639,16 @@ void DrawRectangle(objBitmap *Target, int X, int Y, const int Width, const int H
          }
          else if ((Bitmap->BitsPerPixel IS 16) or (Bitmap->BitsPerPixel IS 15)) {
             word = (uint16_t *)(Bitmap->Data + (Bitmap->LineWidth * Y));
-            xend = X + w;
             while (h > 0) {
-               for (x=X; x < xend; x++) word[x] = (uint16_t)Colour;
+               std::fill_n(word + X, w, uint16_t(Colour));
                word = (uint16_t *)(((int8_t *)word) + Bitmap->LineWidth);
                h--;
             }
          }
          else if (Bitmap->BitsPerPixel IS 8) {
             data = Bitmap->Data + (Bitmap->LineWidth * Y);
-            xend = X + w;
             while (h > 0) {
-               for (x=X; x < xend;) data[x++] = Colour;
+               memset(data + X, int(Colour), w);
                data += Bitmap->LineWidth;
                h--;
             }
@@ -1710,6 +1685,9 @@ int X: Horizontal coordinate of the pixel.
 int Y: Vertical coordinate of the pixel.
 struct(*RGB8) RGB: The colour to be drawn, in RGB format.
 
+-TAGS-
+mutates-object
+
 *********************************************************************************************************************/
 
 void DrawRGBPixel(objBitmap *Bitmap, int X, int Y, RGB8 *Pixel)
@@ -1732,6 +1710,9 @@ obj(Bitmap) Bitmap: The target bitmap object.
 int X: The horizontal coordinate of the pixel.
 int Y: The vertical coordinate of the pixel.
 uint Colour: The colour value to use for the pixel.
+
+-TAGS-
+mutates-object
 
 *********************************************************************************************************************/
 
@@ -1770,6 +1751,9 @@ int RedMask:      Red component bit mask value.  Set this value to zero if the `
 int GreenMask:    Green component bit mask value.
 int BlueMask:     Blue component bit mask value.
 int AlphaMask:    Alpha component bit mask value.
+
+-TAGS-
+mutates-input, pure-query
 
 *********************************************************************************************************************/
 
@@ -1850,6 +1834,9 @@ int X: The horizontal coordinate of the pixel.
 int Y: The vertical coordinate of the pixel.
 &struct(RGB8) RGB: The colour values will be stored in this !RGB8 structure.
 
+-TAGS-
+api-owns-result, volatile-result, non-null-result
+
 *********************************************************************************************************************/
 
 void ReadRGBPixel(objBitmap *Bitmap, int X, int Y, RGB8 **Pixel)
@@ -1882,6 +1869,9 @@ int Y: The vertical coordinate of the pixel.
 -RESULT-
 uint: The colour value of the pixel will be returned.  Zero is returned if the pixel is out of bounds.
 
+-TAGS-
+pure-query
+
 *********************************************************************************************************************/
 
 uint32_t ReadPixel(objBitmap *Bitmap, int X, int Y)
@@ -1911,6 +1901,9 @@ struct(*ColourFormat) ColourFormat: The new colour format to be applied to the b
 Okay
 NullArgs
 
+-TAGS-
+mutates-object
+
 *********************************************************************************************************************/
 
 ERR Resample(objBitmap *Bitmap, ColourFormat *Format)
@@ -1926,32 +1919,23 @@ ERR Resample(objBitmap *Bitmap, ColourFormat *Format)
 -FUNCTION-
 SetClipRegion: Sets a clipping region for a bitmap object.
 
-The SetClipRegion() method is used to manage the clipping regions assigned to a bitmap object.  Each new bitmap that is
-created has at least one clip region assigned to it, but by using SetClipRegion() you can also define multiple clipping
-areas, which is useful for complex graphics management.
-
-Each clipping region that you set is assigned a Number, starting from zero which is the default.  Each time that you
-set a new clip region you must specify the number of the region that you wish to set.  If you attempt to 'skip'
-regions - for instance, if you set regions 0, 1, 2 and 3, then skip 4 and set 5, the routine will set region 4 instead.
-If you have specified multiple clip regions and want to lower the count or reset the list, set the number of the last
-region that you want in your list and set the `Terminate` parameter to `true` to kill the regions specified beyond it.
-
-The `ClipLeft`, `ClipTop`, `ClipRight` and `ClipBottom` fields in the target `Bitmap` will be updated to reflect
-the overall area that is covered by the clipping regions that have been set.
+The SetClipRegion() method is used to manage the clipping region assigned to a bitmap object.  The `ClipLeft`,
+`ClipTop`, `ClipRight` and `ClipBottom` fields in the target `Bitmap` will be updated to reflect
+the area covered by the provided parameter values.
 
 -INPUT-
 obj(Bitmap) Bitmap: The target bitmap.
-int Number:    The number of the clip region to set.
 int Left:      The horizontal start of the clip region.
 int Top:       The vertical start of the clip region.
 int Right:     The right-most edge of the clip region.
 int Bottom:    The bottom-most edge of the clip region.
-int Terminate: Set to `true` if this is the last clip region in the list, otherwise `false`.
+
+-TAGS-
+mutates-object
 
 *********************************************************************************************************************/
 
-void SetClipRegion(objBitmap *Bitmap, int Number, int Left, int Top, int Right, int Bottom,
-   int Terminate)
+void SetClipRegion(objBitmap *Bitmap, int Left, int Top, int Right, int Bottom)
 {
    Bitmap->Clip.Left   = Left;
    Bitmap->Clip.Top    = Top;
@@ -1974,6 +1958,9 @@ safe to write to video memory with the CPU, preventing any possibility of clashe
 
 -INPUT-
 obj(Bitmap) Bitmap: Pointer to the bitmap that you want to synchronise or `NULL` to sleep on the graphics accelerator.
+
+-TAGS-
+blocking
 -END-
 
 *********************************************************************************************************************/

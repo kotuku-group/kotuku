@@ -8,7 +8,7 @@
     <module>HTTP</module>
     <comment>Provides a complete working implementation of HTTP.</comment>
     <version>1</version>
-    <id>7c9813c5</id>
+    <id>8ab62046</id>
     <idstring>HTTP</idstring>
     <category>Network</category>
     <copyright>Paul Manias © 2005-2026</copyright>
@@ -32,8 +32,8 @@
    src        = 'http://www.kotuku.dev/index.html',
    method     = 'get',
    outputFile = 'temp:index.html',
-   stateChanged = function(HTTP, State)
-      if (State == HGS::COMPLETED) then print(content) end
+   stateChanged = function(HTTP:obj, State:num)
+      if (State is HGS::COMPLETED) then print(content) end
    end
 })
 
@@ -45,7 +45,7 @@ http = obj.new('http', {
    src        = 'http://www.kotuku.dev/index.html',
    method     = 'get',
    datatype   = 'text',
-   objectMode = 'DATA_FEED',
+   objectMode = 'FEED',
    outputObject = doc
 })
 http.acActivate()
@@ -67,6 +67,7 @@ http.acActivate()
       <name>Activate</name>
       <comment>Sends an HTTP request to the host.</comment>
       <prototype>ERR acActivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acActivate()</tiriPrototype>
       <description>
 <p>This action sends an HTTP request to the targeted <fl>Host</fl>.  Based on the desired <fl>Method</fl>, an HTTP request will be sent to the host and the action will return whilst the HTTP object waits for a response from the server.  If the host fails to respond within the time period indicated by the <fl>ConnectTimeout</fl>, the HTTP object will be deactivated and the <fl>CurrentState</fl> set to <code>TERMINATED</code>.</p>
 <p>Successful parsing of the HTTP request at the host will result in a response being received, followed by content data (if applicable). The HTTP response code will be stored in the <fl>Status</fl> field.  The response will be parsed automatically with the header strings stored as key-values.  To receive notice of the parsed response, hook into the <fl>StateChanged</fl> callback.</p>
@@ -79,12 +80,14 @@ http.acActivate()
         <error code="File">Failed to create a target file if the OutputFile field was set.</error>
         <error code="NoData">Input file is empty or has no data for POST/PUT operations.</error>
         <error code="Write">Failed to write data to the HTTP <class name="NetSocket">NetSocket</class>.</error>
+        <error code="Lock">Failed to lock a required resource</error>
         <error code="FieldNotSet">Required fields are not set (e.g. destination for COPY/MOVE methods, or data source for POST/PUT methods).</error>
         <error code="CreateObject">Failed to create a <class name="NetSocket">NetSocket</class> object.</error>
         <error code="NotInitialised">The HTTP object has not been initialised.</error>
         <error code="HostNotFound">DNS resolution of the domain name in the URI failed.</error>
         <error code="ConnectionRefused">The connection to the server was refused.</error>
         <error code="Recursion">Function was called recursively.</error>
+        <error code="NoSecureSockets">A secure sockets layer is not available in this environment</error>
       </result>
     </action>
 
@@ -92,6 +95,7 @@ http.acActivate()
       <name>Deactivate</name>
       <comment>Ends the current HTTP request.</comment>
       <prototype>ERR acDeactivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acDeactivate()</tiriPrototype>
       <description>
 <p>Following the completion of an HTTP request, the Deactivate() action will be called internally to signal an end to the process.  Subscribing to Deactivate() is an effective means of responding to the end of a single HTTP request.</p>
 <p>Active HTTP requests can be manually cancelled by calling Deactivate() at any time.  Deactivation does not necessarily result in closure of the socket.</p>
@@ -101,31 +105,32 @@ http.acActivate()
     <action>
       <name>GetKey</name>
       <comment>Entries in the HTTP response header can be read as key-values.</comment>
-      <prototype>ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)</prototype>
+      <prototype>ERR acGetKey(*Object, std::string_view Key, std::string &amp;Value)</prototype>
+      <tiriPrototype>err, str = Object.acGetKey(Key:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Key">The name of a key value.</param>
+        <param type="STRVIEW" name="Key">The name of a key value.</param>
         <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
-        <param type="INT" name="Size">Indicates the byte size of the Buffer.</param>
       </input>
     </action>
 
     <action>
       <name>SetKey</name>
       <comment>Options for the HTTP header can be set as key-values.</comment>
-      <prototype>ERR acSetKey(*Object, CSTRING Key, CSTRING Value)</prototype>
+      <prototype>ERR acSetKey(*Object, std::string_view Key, std::string_view Value)</prototype>
+      <tiriPrototype>err = Object.acSetKey(Key:str, Value:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Key">The name of the target key.</param>
-        <param type="CSTRING" name="Value">The string value to associate with Key.</param>
+        <param type="STRVIEW" name="Key">The name of the target key.</param>
+        <param type="STRVIEW" name="Value">The string value to associate with Key.</param>
       </input>
     </action>
 
     <action>
       <name>Write</name>
       <comment>Writes data to objects that provide storage or output services.</comment>
-      <prototype>ERR acWrite(*Object, APTR Buffer, INT Length, INT Result)</prototype>
+      <prototype>ERR acWrite(*Object, std::span&lt;const int8_t&gt; Buffer, INT *Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acWrite(Buffer:str)</tiriPrototype>
       <input>
-        <param type="APTR" name="Buffer">A buffer containing the data that will be written to the object.</param>
-        <param type="INT" name="Length">The total number of bytes to write to the object.</param>
+        <param type="std::span&lt;const int8_t&gt;" name="Buffer">A buffer containing the data that will be written to the object.</param>
         <param type="INT" name="Result">This parameter with be updated with the total number of bytes written from the Buffer.</param>
       </input>
     </action>
@@ -315,7 +320,7 @@ http.acActivate()
       <access read="R" write="W">Read/Write</access>
       <type lookup="HOM">HOM</type>
       <description>
-<p>ObjectMode defines the data transfer mode when <fl>OutputObject</fl> field has been set for receiving incoming data. The default setting is <code>DATA::FEED</code>, which passes data through the data feed system (see also the <fl>Datatype</fl> to define the type of data being sent to the object).  The alternative method is <code>READ_WRITE</code>, which uses the Write action to send data to the targeted object.</p>
+<p>ObjectMode defines the data transfer mode when the <fl>OutputObject</fl> field has been set for receiving incoming data. The default setting is <code>DATA::FEED</code>, which passes data through the data feed system (see also the <fl>Datatype</fl> to define the type of data being sent to the object).  The alternative method is <code>READ_WRITE</code>, which uses the Write action to send data to the targeted object.</p>
 <types lookup="HOM"/>
       </description>
     </field>
@@ -427,6 +432,16 @@ http.acActivate()
     </field>
 
     <field>
+      <name>ResponseKeys</name>
+      <comment>Returns a string list of received response keys.</comment>
+      <access read="G">Get</access>
+      <type>kt::vector&lt;std::string&gt;</type>
+      <description>
+<p>This field returns a string list of all the keys found in the HTTP response header.  An empty list will be returned if no keys are found.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Size</name>
       <comment>Set this field to define the length of a data transfer when issuing a <code>POST</code> command.</comment>
       <access read="R" write="W">Read/Write</access>
@@ -462,7 +477,7 @@ http.acActivate()
     <field>
       <name>UserAgent</name>
       <comment>Specifies the name of the user-agent string that is sent in HTTP requests.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="G" write="S">Get/Set</access>
       <type>STRING</type>
       <description>
 <p>This field describes the <code>user-agent</code> value that will be sent in HTTP requests.  The default value is <code>Kotuku Client</code>.</p>
@@ -482,6 +497,21 @@ http.acActivate()
 
   </fields>
   <types>
+    <constants lookup="DATA" comment="Data codes">
+      <const name="AUDIO">Audio file data, recognised by the Sound class</const>
+      <const name="CONTENT">Document content (between XML tags) - sent by document objects only</const>
+      <const name="DEVICE_INPUT">Device activity</const>
+      <const name="FILE">File location (the data will reflect the complete file path)</const>
+      <const name="IMAGE">Image file data, recognised by the Image class</const>
+      <const name="INPUT_READY">Device input that has been transformed into user input</const>
+      <const name="RAW">Raw unprocessed data</const>
+      <const name="RECEIPT">Receipt for item data, in response to an earlier request</const>
+      <const name="RECORD">Database record</const>
+      <const name="REQUEST">Make a request for item data</const>
+      <const name="TEXT">Standard ASCII text</const>
+      <const name="XML">Markup based text data.  NOTE - For clipboard data, the top-level encapsulating tag must declare the type of XML, e.g. 'html', 'ripple'.  For plain XML, use 'xml'</const>
+    </constants>
+
     <constants lookup="HGS" comment="Options for defining an HTTP object's state.">
       <const name="AUTHENTICATED">Following successful authentication, this state value will be set.</const>
       <const name="AUTHENTICATING">If authentication is requested from the server, the HTTP object will enter this state.</const>
@@ -503,6 +533,7 @@ http.acActivate()
       <const name="DISABLE_SERVER_VERIFY">Disable SSL server certificate verification (use with caution).</const>
       <const name="MESSAGE">When activating child objects, send delayed messages to postpone execution rather than making direct calls.</const>
       <const name="MOVED">Read-only.  Indicates that the HTTP source was moved (<code>HTS::MOVED_PERMANENTLY</code>).</const>
+      <const name="NO_AUTO_REDIRECT">Do not automatically follow <code>301</code> responses.</const>
       <const name="NO_DIALOG">Turn off the username/password dialog.</const>
       <const name="NO_HEAD">Do not send a <code>HEAD</code> prior to executing a <code>PUT</code> or <code>POST</code> (removes the authentication check).</const>
       <const name="RAW">Forcibly turns off chunk detection and chunk handling on incoming data.  Also turns off automatic chunk encoding for outgoing data.</const>
@@ -527,6 +558,7 @@ http.acActivate()
       <const name="MOVE">WebDAV instruction.</const>
       <const name="NOTIFY">WebDAV instruction.</const>
       <const name="OPTIONS">Request permitted communication options for a given URL or server.</const>
+      <const name="PATCH">Applies partial modifications to a resource.</const>
       <const name="POLL">WebDAV instruction.</const>
       <const name="POST">Sends information to the HTTP server.</const>
       <const name="PROPFIND">WebDAV instruction.</const>

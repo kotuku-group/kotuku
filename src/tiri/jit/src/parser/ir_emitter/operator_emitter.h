@@ -12,7 +12,7 @@
 //
 // EXTENDED FALSEY SEMANTICS:
 // Tiri's falsey semantics differ from standard Lua:
-// - Falsey values: nil, false, 0 (numeric zero), "" (empty string)
+// - Falsey values: nil, false, 0 (numeric zero), "" (empty string), and empty collections
 // - All other values are truthy
 // - This affects the ?? (if-empty) operator and ? (presence check) operator
 // - Use ExpDesc::is_falsey() for compile-time constant checks
@@ -49,7 +49,7 @@ public:
    // Uses constant folding when possible
    void emit_binary_arith(BinOpr opr, ExprValue left, ExpDesc right);
 
-   // Emit comparison operator (eq, ne, lt, le, gt, ge)
+   // Emit comparison operator (eq, ne, lt, le, gt, ge, approx)
    // Emits comparison bytecode with jump, stores jump in left operand
    void emit_comparison(BinOpr opr, ExprValue left, ExpDesc right);
 
@@ -90,7 +90,7 @@ public:
 
    // Presence check operator (x?)
    // Emits bytecode to check if value is truthy (extended falsey semantics)
-   // Returns boolean: true if truthy, false if falsey (nil, false, 0, "")
+   // Returns boolean: true if truthy, false if falsey (nil, false, 0, "", empty collections)
    void emit_presence_check(ExprValue operand);
 
 private:

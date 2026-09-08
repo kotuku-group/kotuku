@@ -1,0 +1,3 @@
+import './type_contract_callback_fixture'
+
+imported_callback_contract_failure()

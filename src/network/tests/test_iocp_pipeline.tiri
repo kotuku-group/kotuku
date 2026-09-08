@@ -1,0 +1,538 @@
+--[[
+IOCP pipeline regression tests.
+
+These tests exercise Windows IOCP accept and receive depth without changing the public Network API.
+--]]
+
+   include 'network'
+
+   module network as mNet
+
+   glIocpPipelinePort = 18740
+
+function nextPort()
+   glIocpPipelinePort++
+   return glIocpPipelinePort
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test; @Requires(network=true, windows_platform=true)
+function RapidAcceptBurst()
+   client_count    = 32
+   connected       = 0
+   server_received = 0
+   client_received = 0
+   port            = nextPort()
+   client_data     = { }
+
+   server = obj.new('netserver', {
+      name        = 'IocpAcceptBurstServer',
+      address     = '127.0.0.1',
+      port        = port,
+      flags       = NSF_MULTI_CONNECT,
+      backlog     = client_count,
+      clientLimit = client_count + 4,
+      socketLimit = client_count + 4,
+      feedback = function(Socket, Client, State)
+         if State is NTC_CONNECTED then
+            connected++
+            err, len = Client.acWrite('ready')
+            assert(err is ERR_Okay, 'Server failed to write ready message: ' .. mSys.GetErrorMsg(err))
+         end
+      end,
+      incoming = function(Socket, Client)
+         buffer = array<byte, 128>
+         err, read_len = Client.acRead(buffer)
+         if err is ERR_Disconnected then return end
+         assert(err is ERR_Okay, 'Server failed to read burst message: ' .. mSys.GetErrorMsg(err))
+
+         server_received++
+         err, len = Client.acWrite('ack:' .. buffer.getString(0, read_len))
+         assert(err is ERR_Okay, 'Server failed to write ack: ' .. mSys.GetErrorMsg(err))
+      end
+   })
+
+   clients = { }
+   proc = processing.new({ timeout = 8.0, signals = array<obj> { server } })
+
+   for i in {0 to client_count} do
+      clients[i] = obj.new('netsocket', {
+         name     = 'IocpAcceptBurstClient' .. i,
+         incoming = function(Socket)
+            data   = client_data[Socket.id]
+            buffer = array<byte, 128>
+            err, read_len = Socket.acRead(buffer)
+            assert(err is ERR_Okay, 'Client failed to read burst response: ' .. mSys.GetErrorMsg(err))
+
+            local msg = buffer.getString(0, read_len)
+            if msg is 'ready' then
+               err, len = Socket.acWrite('hello:' .. data.id)
+               assert(err is ERR_Okay, 'Client failed to write hello: ' .. mSys.GetErrorMsg(err))
+            elseif msg.startsWith('ack:') then
+               if not data.done then
+                  data.done = true
+                  client_received++
+                  if client_received is client_count then server.acSignal() end
+               end
+            end
+         end
+      })
+
+      client_data[clients[i].id] = { id = i, done = false }
+   end
+
+   for i in {0 to client_count} do
+      check clients[i].mtConnect('127.0.0.1', port)
+   end
+
+   check proc.sleep()
+
+   assert(connected is client_count, 'Accepted connection count mismatch')
+   assert(server_received is client_count, 'Server did not receive all burst messages')
+   assert(client_received is client_count, 'Clients did not receive all acknowledgements')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test; @Requires(network=true, windows_platform=true)
+function LargeTCPReceive()
+   target_size = 2 * 1024 * 1024
+   payload     = 'P'.rep(target_size)
+   received    = 0
+   bad_data    = false
+   port        = nextPort()
+
+   server = obj.new('netserver', {
+      name     = 'IocpLargeReceiveServer',
+      address  = '127.0.0.1',
+      port     = port,
+      msgLimit = target_size + 65536,
+      incoming = function(Socket, Client)
+         buffer        = array<byte, 65536>
+         err, read_len = Client.acRead(buffer)
+         if err is ERR_Disconnected then return end
+         assert(err is ERR_Okay, 'Server failed to read large payload: ' .. mSys.GetErrorMsg(err))
+         if read_len <= 0 then return end
+
+         chunk = buffer.getString(0, read_len)
+         if chunk != 'P'.rep(read_len) then
+            bad_data = true
+         end
+         received += read_len
+
+         if received >= target_size then Socket.acSignal() end
+      end
+   })
+
+   client = obj.new('netsocket', {
+      name = 'IocpLargeReceiveClient',
+      msgLimit = target_size + 65536,
+      feedback = function(Socket, State)
+         if State is NTC_CONNECTED then
+            err, len = Socket.acWrite(payload)
+            assert(err is ERR_Okay, 'Client failed to write large payload: ' .. mSys.GetErrorMsg(err))
+            assert(len is target_size, 'Large payload write length mismatch')
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 10.0, signals = array<obj> { server } })
+   check client.mtConnect('127.0.0.1', port)
+   check proc.sleep()
+
+   assert(not bad_data, 'Large receive payload was corrupted')
+   assert(received is target_size, 'Large receive size mismatch')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test; @Requires(network=true, windows_platform=true)
+function LargeBidirectionalTCPTransfer()
+   target_size     = 2 * 1024 * 1024
+   server_payload  = 'B'.rep(target_size)
+   client_payload  = 'C'.rep(target_size)
+   server_received = 0
+   client_received = 0
+   server_bad_data = false
+   client_bad_data = false
+   server_done     = false
+   client_done     = false
+   port            = nextPort()
+
+   server = obj.new('netserver', {
+      name     = 'IocpBidirectionalServer',
+      address  = '127.0.0.1',
+      port     = port,
+      msgLimit = target_size + 65536,
+      feedback = function(Socket, Client, State)
+         if State is NTC_CONNECTED then
+            err, len = Client.acWrite(server_payload)
+            assert(err is ERR_Okay, 'Server failed to queue bidirectional payload: ' .. mSys.GetErrorMsg(err))
+            assert(len is target_size, 'Server bidirectional write length mismatch')
+         end
+      end,
+      incoming = function(Socket, Client)
+         buffer = array<byte, 65536>
+         while true do
+            err, read_len = Client.acRead(buffer)
+            if err is ERR_Disconnected then return end
+            assert(err is ERR_Okay, 'Server failed to read bidirectional payload: ' .. mSys.GetErrorMsg(err))
+            if read_len <= 0 then break end
+
+            chunk = buffer.getString(0, read_len)
+            if chunk != 'C'.rep(read_len) then server_bad_data = true end
+            server_received += read_len
+            if server_received >= target_size then break end
+         end
+
+         if (server_received >= target_size) and (not server_done) then
+            server_done = true
+            if client_done then Socket.acSignal() end
+         end
+      end
+   })
+
+   client = obj.new('netsocket', {
+      name     = 'IocpBidirectionalClient',
+      msgLimit = target_size + 65536,
+      feedback = function(Socket, State)
+         if State is NTC_CONNECTED then
+            err, len = Socket.acWrite(client_payload)
+            assert(err is ERR_Okay, 'Client failed to queue bidirectional payload: ' .. mSys.GetErrorMsg(err))
+            assert(len is target_size, 'Client bidirectional write length mismatch')
+         end
+      end,
+      incoming = function(Socket)
+         buffer = array<byte, 65536>
+         while true do
+            err, read_len = Socket.acRead(buffer)
+            if err is ERR_Disconnected then return end
+            assert(err is ERR_Okay, 'Client failed to read bidirectional payload: ' .. mSys.GetErrorMsg(err))
+            if read_len <= 0 then break end
+
+            chunk = buffer.getString(0, read_len)
+            if chunk != 'B'.rep(read_len) then client_bad_data = true end
+            client_received += read_len
+            if client_received >= target_size then break end
+         end
+
+         if (client_received >= target_size) and (not client_done) then
+            client_done = true
+            if server_done then server.acSignal() end
+         end
+      end
+   })
+
+   check client.mtConnect('127.0.0.1', port)
+
+   for i in {0 to 200} do
+      if server_done and client_done then break end
+      processing.halt(0.05)
+   end
+
+   assert(not server_bad_data, 'Server received corrupted bidirectional payload')
+   assert(not client_bad_data, 'Client received corrupted bidirectional payload')
+   assert(server_received is target_size, 'Server bidirectional receive size mismatch: ' .. server_received)
+   assert(client_received is target_size, 'Client bidirectional receive size mismatch: ' .. client_received)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test; @Requires(network=true, windows_platform=true)
+function SlowReaderBackpressure()
+   target_size = 1536 * 1024
+   payload     = 'S'.rep(target_size)
+   received    = 0
+   delayed     = false
+   port        = nextPort()
+
+   server = obj.new('netserver', {
+      name     = 'IocpSlowReaderServer',
+      address  = '127.0.0.1',
+      port     = port,
+      msgLimit = target_size + 65536,
+      incoming = function(Socket, Client)
+         if not delayed then
+            delayed = true
+            processing.halt(0.25)
+         end
+
+         buffer = array<byte, 65536>
+         while received < target_size do
+            err, read_len = Client.acRead(buffer)
+            if err is ERR_Disconnected then return end
+            assert(err is ERR_Okay, 'Slow reader failed to read: ' .. mSys.GetErrorMsg(err))
+            if read_len <= 0 then break end
+            received += read_len
+         end
+
+      end
+   })
+
+   client = obj.new('netsocket', {
+      name     = 'IocpSlowReaderClient',
+      msgLimit = target_size + 65536,
+      feedback = function(Socket, State)
+         if State is NTC_CONNECTED then
+            err, len = Socket.acWrite(payload)
+            assert(err is ERR_Okay, 'Slow reader client failed to write: ' .. mSys.GetErrorMsg(err))
+            assert(len is target_size, 'Slow reader write length mismatch')
+         end
+      end
+   })
+
+   check client.mtConnect('127.0.0.1', port)
+
+   for i in {0 to 200} do
+      if received >= target_size then break end
+      processing.halt(0.05)
+   end
+
+   assert(received is target_size, 'Slow reader did not drain the complete payload: ' .. received)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test; @Requires(network=true, windows_platform=true)
+function PendingOperationTeardown()
+   port = nextPort()
+   connected = false
+
+   server = obj.new('netserver', {
+      name    = 'IocpPendingTeardownServer',
+      address = '127.0.0.1',
+      port    = port,
+      feedback = function(Socket, Client, State)
+         if State is NTC_CONNECTED then connected = true end
+      end,
+      incoming = function(Socket, Client)
+         processing.halt(0.1)
+      end
+   })
+
+   client = obj.new('netsocket', {
+      name = 'IocpPendingTeardownClient',
+      feedback = function(Socket, State)
+         if State is NTC_CONNECTED then
+            Socket.acWrite(string.rep('T', 262144))
+         end
+      end
+   })
+
+   check client.mtConnect('127.0.0.1', port)
+   processing.halt(0.3)
+   client.acDeactivate()
+   server.acDeactivate()
+   processing.halt(0.3)
+
+   assert(connected, 'Pending teardown test did not establish a connection')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test; @Requires(network=true, windows_platform=true)
+function PendingConnectFreeDropsCompletion()
+   late_feedback = 0
+   freed         = false
+
+   client = obj.new('netsocket', {
+      name = 'IocpPendingConnectFreeClient',
+      feedback = function(Socket, State)
+         if freed then late_feedback++ end
+      end
+   })
+
+   err = client.mtConnect('192.0.2.1', 12345, 2.0)
+   if err != ERR_Okay then
+      logOutput('Pending connect completed synchronously: ' .. mSys.GetErrorMsg(err))
+      return
+   end
+
+   freed = true
+   client.free()
+   client = nil
+
+   processing.collect()
+   processing.halt(0.6)
+
+   assert(late_feedback is 0, 'Freed pending connect received a late feedback callback')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test; @Requires(network=true, windows_platform=true)
+function PendingAcceptFreeDropsCompletion()
+   late_accept_feedback = 0
+   freed                = false
+   port                 = nextPort()
+
+   server = obj.new('netserver', {
+      name    = 'IocpPendingAcceptFreeServer',
+      address = '127.0.0.1',
+      port    = port,
+      feedback = function(Socket, Client, State)
+         if freed then late_accept_feedback++ end
+      end
+   })
+
+   processing.halt(0.1)
+
+   freed = true
+   server.free()
+   server = nil
+
+   processing.collect()
+   processing.halt(0.6)
+
+   assert(late_accept_feedback is 0, 'Freed listener received a late accept feedback callback')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test; @Requires(network=true, windows_platform=true)
+function PendingTCPReadWriteFreeDropsCompletion()
+   port                  = nextPort()
+   connected             = false
+   client_freed          = false
+   late_client_callbacks = 0
+   accepted_client       = nil
+   target_size           = 2 * 1024 * 1024
+   payload               = 'W'.rep(target_size)
+
+   server = obj.new('netserver', {
+      name     = 'IocpPendingTCPFreeServer',
+      address  = '127.0.0.1',
+      port     = port,
+      msgLimit = target_size + 65536,
+      feedback = function(Socket, Client, State)
+         if State is NTC_CONNECTED then
+            accepted_client = Client
+            connected = true
+            Socket.acSignal()
+         end
+      end,
+      incoming = function(Socket, Client)
+         processing.halt(0.25)
+         buffer = array<byte, 65536>
+         err, read_len = Client.acRead(buffer)
+         if (err != ERR_Okay) and (err != ERR_Disconnected) then
+            raise 'Server read failed during pending TCP free test: ' .. mSys.GetErrorMsg(err)
+         end
+      end
+   })
+
+   client = obj.new('netsocket', {
+      name     = 'IocpPendingTCPFreeClient',
+      msgLimit = target_size + 65536,
+      feedback = function(Socket, State)
+         if client_freed then late_client_callbacks++ end
+      end,
+      incoming = function(Socket)
+         if client_freed then late_client_callbacks++ end
+         buffer = array<byte, 256>
+         err, read_len = Socket.acRead(buffer)
+         if (err != ERR_Okay) and (err != ERR_Disconnected) then
+            raise 'Client read failed during pending TCP free test: ' .. mSys.GetErrorMsg(err)
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 4.0, signals = array<obj> { server } })
+   check client.mtConnect('127.0.0.1', port)
+   check proc.sleep()
+
+   assert(connected, 'Pending TCP free test did not establish a connection')
+
+   err, len = client.acWrite(payload)
+   assert((err is ERR_Okay) or (err is ERR_BufferOverflow),
+      'Client write failed during pending TCP free test: ' .. mSys.GetErrorMsg(err))
+   assert(len > 0, 'Client write did not queue any data during pending TCP free test')
+
+   client_freed = true
+   client.free()
+   client = nil
+
+   processing.collect()
+
+   if accepted_client then
+      err, len = accepted_client.acWrite('late-read-trigger')
+      if (err != ERR_Okay) and (err != ERR_Disconnected) then
+         raise 'Server write failed during pending TCP free test: ' .. mSys.GetErrorMsg(err)
+      end
+   end
+
+   processing.halt(0.8)
+   server.acDeactivate()
+
+   assert(late_client_callbacks is 0, 'Freed TCP client received a late read, write, or feedback callback')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test; @Requires(network=true, windows_platform=true)
+function PendingUDPReceiveSendFreeDropsCompletion()
+   port               = nextPort()
+   server_freed       = false
+   sender_freed       = false
+   late_udp_callbacks = 0
+
+   source = struct.new('IPAddress')
+   buffer = array<byte, 65536>
+
+   server = obj.new('netserver', {
+      name          = 'IocpPendingUDPFreeServer',
+      address       = '127.0.0.1',
+      port          = port,
+      flags         = NSF_UDP,
+      maxPacketSize = 65507,
+      incoming = function(Socket)
+         if server_freed then late_udp_callbacks++ end
+         err, read_len = Socket.mtRecvFrom(source, buffer)
+         if (err != ERR_Okay) and (err != ERR_Disconnected) then
+            raise 'UDP receive failed during pending UDP free test: ' .. mSys.GetErrorMsg(err)
+         end
+      end
+   })
+
+   sender = obj.new('netsocket', {
+      name          = 'IocpPendingUDPFreeSender',
+      flags         = NSF_UDP,
+      maxPacketSize = 65507,
+      incoming = function(Socket)
+         if sender_freed then late_udp_callbacks++ end
+      end,
+      feedback = function(Socket, State)
+         if sender_freed then late_udp_callbacks++ end
+      end
+   })
+
+   dest = struct.new('IPAddress')
+   check mNet.StrToAddress('127.0.0.1', dest)
+   dest.port = server.port
+
+   processing.halt(0.1)
+
+   server_freed = true
+   server.free()
+   server = nil
+
+   processing.collect()
+
+   packet = 'U'.rep(4096)
+   for i in {0 to 64} do
+      err, len = sender.mtSendTo(dest, packet)
+      if (err != ERR_Okay) and (err != ERR_BufferOverflow) and (err != ERR_Disconnected) then
+         raise 'UDP send failed during pending UDP free test: ' .. mSys.GetErrorMsg(err)
+      end
+   end
+
+   sender_freed = true
+   sender.free()
+   sender = nil
+
+   processing.collect()
+   processing.halt(0.8)
+
+   assert(late_udp_callbacks is 0, 'Freed UDP socket received a late receive, send, or feedback callback')
+end

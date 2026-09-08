@@ -8,7 +8,7 @@
     <module>Audio</module>
     <comment>Supports a machine's audio hardware and provides a client-server audio management service.</comment>
     <version>1</version>
-    <id>0f1c28b7</id>
+    <id>eb1aa922</id>
     <idstring>AUDIO</idstring>
     <category>Audio</category>
     <copyright>Paul Manias © 2002-2026</copyright>
@@ -27,6 +27,7 @@
       <name>Activate</name>
       <comment>Enables access to the audio hardware and initialises the mixer.</comment>
       <prototype>ERR acActivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acActivate()</tiriPrototype>
       <description>
 <p>An audio object must be activated before it can play audio samples. The activation process involves several critical steps: hardware resource acquisition, mixer buffer allocation, and platform-specific driver initialisation.</p>
 <p>Activation attempts to gain exclusive or shared access to the audio hardware device. On some platforms, this may fail if another process has obtained an exclusive lock on the audio device. The specific behaviour depends on the underlying audio system (ALSA on Linux, DirectSound on Windows).</p>
@@ -35,8 +36,8 @@
       </description>
       <result>
         <error code="Okay">Hardware activation completed successfully.</error>
-        <error code="Failed">Hardware device unavailable or driver initialisation failed.</error>
-        <error code="AllocMemory">Failed to allocate internal mixing buffers.</error>
+        <error code="Activate">The hardware device could not begin playback.</error>
+        <error code="CreateResource">The hardware audio buffer could not be created.</error>
       </result>
     </action>
 
@@ -44,6 +45,7 @@
       <name>Deactivate</name>
       <comment>Disables the audio mixer and returns device resources to the system.</comment>
       <prototype>ERR acDeactivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acDeactivate()</tiriPrototype>
       <description>
 <p>Deactivating an audio object will switch off the mixer, clear the output buffer and return any allocated device resources back to the host system.  The audio object will remain in a suspended state until it is reactivated.</p>
       </description>
@@ -53,15 +55,17 @@
       <name>SaveSettings</name>
       <comment>Saves the current audio settings.</comment>
       <prototype>ERR acSaveSettings(*Object)</prototype>
+      <tiriPrototype>err = Object.acSaveSettings()</tiriPrototype>
     </action>
 
     <action>
       <name>SaveToObject</name>
       <comment>Saves the current audio settings to another object.</comment>
       <prototype>ERR acSaveToObject(*Object, OBJECTID Dest, CLASSID ClassID)</prototype>
+      <tiriPrototype>err = Object.acSaveToObject(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded data.</param>
-        <param type="CLASSID" name="ClassID">Can refer to a sub-class that should be used when encoding the data.</param>
+        <param type="CLASSID" name="ClassID">Can refer to a derived class that should be used when encoding the data.</param>
       </input>
     </action>
 
@@ -71,14 +75,13 @@
     <method>
       <name>AddSample</name>
       <comment>Adds a new sample to an audio object for channel-based playback.</comment>
-      <prototype>ERR snd::AddSample(OBJECTPTR Object, FUNCTION OnStop, SFM SampleFormat, APTR Data, INT DataSize, struct AudioLoop * Loop, INT LoopSize, INT * Result)</prototype>
+      <prototype>ERR snd::AddSample(OBJECTPTR Object, FUNCTION OnStop, SFM SampleFormat, std::span&lt;const int8_t&gt; Data, struct AudioLoop * Loop, INT * Result)</prototype>
+      <tiriPrototype>err, Result:num = AddSample(OnStop:func, SampleFormat:num, Data:array, Loop:any)</tiriPrototype>
       <input>
         <param type="FUNCTION" name="OnStop">This optional callback function will be called when the stream stops playing.</param>
         <param type="SFM" name="SampleFormat" lookup="SFM">Indicates the format of the sample data that you are adding.</param>
-        <param type="APTR" name="Data">Points to the address of the sample data.</param>
-        <param type="INT" name="DataSize">Size of the sample data, in bytes.</param>
+        <param type="std::span&lt;const int8_t&gt;" name="Data">Points to the address of the sample data.</param>
         <param type="struct AudioLoop *" name="Loop">Optional sample loop information.</param>
-        <param type="INT" name="LoopSize">Must be set to <code>sizeof(AudioLoop)</code> if <code>Loop</code> is defined.</param>
         <param type="INT *" name="Result">The resulting sample handle will be returned in this parameter.</param>
       </input>
       <description>
@@ -99,20 +102,21 @@
         <error code="AllocMemory">Failed to allocate enough memory to hold the sample data.</error>
         <error code="NullArgs">Required parameters are null or missing.</error>
       </result>
+      <tags>mutates-object, copies-input, callback-held, creates-resource</tags>
     </method>
 
     <method>
       <name>AddStream</name>
       <comment>Adds a new sample-stream to an Audio object for channel-based playback.</comment>
-      <prototype>ERR snd::AddStream(OBJECTPTR Object, FUNCTION Callback, FUNCTION OnStop, SFM SampleFormat, INT SampleLength, INT PlayOffset, struct AudioLoop * Loop, INT LoopSize, INT * Result)</prototype>
+      <prototype>ERR snd::AddStream(OBJECTPTR Object, FUNCTION Callback, FUNCTION OnStop, SFM SampleFormat, INT SampleLength, INT PlayOffset, struct AudioLoop * Loop, INT * Result)</prototype>
+      <tiriPrototype>err, Result:num = AddStream(Callback:func, OnStop:func, SampleFormat:num, SampleLength:num, PlayOffset:num, Loop:any)</tiriPrototype>
       <input>
-        <param type="FUNCTION" name="Callback">This callback function must be able to return raw audio data for streaming.</param>
-        <param type="FUNCTION" name="OnStop">This optional callback function will be called when the stream stops playing.</param>
+        <param type="FUNCTION" name="Callback">This callback function must be able to return raw audio data for streaming.  The function context will be pinned as a safety measure.</param>
+        <param type="FUNCTION" name="OnStop">This optional callback function will be called when the stream stops playing.  The function context will be pinned as a safety measure.</param>
         <param type="SFM" name="SampleFormat" lookup="SFM">Indicates the format of the sample data that you are adding.</param>
         <param type="INT" name="SampleLength">Total byte-length of the sample data that is being streamed.  May be set to zero if the length is infinite or unknown.</param>
         <param type="INT" name="PlayOffset">Offset the playing position by this byte index.</param>
         <param type="struct AudioLoop *" name="Loop">Refers to sample loop information, or <code>NULL</code> if no loop is required.</param>
-        <param type="INT" name="LoopSize">Must be set to <code>sizeof(AudioLoop)</code>.</param>
         <param type="INT *" name="Result">The resulting sample handle will be returned in this parameter.</param>
       </input>
       <description>
@@ -134,12 +138,14 @@
         <error code="AllocMemory">Failed to allocate the stream buffer.</error>
         <error code="NullArgs">Required parameters are null or missing.</error>
       </result>
+      <tags>mutates-object, retains-input, callback-held, creates-resource</tags>
     </method>
 
     <method>
       <name>Beep</name>
       <comment>Generates system alert tones through the platform's audio notification system.</comment>
       <prototype>ERR snd::Beep(OBJECTPTR Object, INT Pitch, INT Duration, INT Volume)</prototype>
+      <tiriPrototype>err = Beep(Pitch:num, Duration:num, Volume:num)</tiriPrototype>
       <input>
         <param type="INT" name="Pitch">The pitch of the beep in HZ.</param>
         <param type="INT" name="Duration">The duration of the beep in milliseconds.</param>
@@ -153,12 +159,14 @@
         <error code="NoSupport">PC speaker support is not available.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>blocking</tags>
     </method>
 
     <method>
       <name>CloseChannels</name>
       <comment>Frees audio channels that have been allocated for sample playback.</comment>
       <prototype>ERR snd::CloseChannels(OBJECTPTR Object, INT Handle)</prototype>
+      <tiriPrototype>err = CloseChannels(Handle:num)</tiriPrototype>
       <input>
         <param type="INT" name="Handle">Must refer to a channel handle returned from the <method>OpenChannels</method> method.</param>
       </input>
@@ -167,15 +175,17 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
       <name>OpenChannels</name>
       <comment>Allocates audio channels that can be used for sample playback.</comment>
       <prototype>ERR snd::OpenChannels(OBJECTPTR Object, INT Total, INT * Result)</prototype>
+      <tiriPrototype>err, Result:num = OpenChannels(Total:num)</tiriPrototype>
       <input>
         <param type="INT" name="Total">Total of channels to allocate.</param>
         <param type="INT *" name="Result">The resulting channel handle is returned in this parameter.</param>
@@ -191,12 +201,14 @@
         <error code="AllocMemory">Memory for the audio channels could not be allocated.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, creates-resource</tags>
     </method>
 
     <method>
       <name>RemoveSample</name>
       <comment>Removes a sample from the global sample list and deallocates its resources.</comment>
       <prototype>ERR snd::RemoveSample(OBJECTPTR Object, INT Handle)</prototype>
+      <tiriPrototype>err = RemoveSample(Handle:num)</tiriPrototype>
       <input>
         <param type="INT" name="Handle">The handle of the sample that requires removal.</param>
       </input>
@@ -209,12 +221,14 @@
         <error code="OutOfRange">The provided sample handle is not within the valid range.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
       <name>SetSampleLength</name>
       <comment>Sets the byte length of a streaming sample.</comment>
       <prototype>ERR snd::SetSampleLength(OBJECTPTR Object, INT Sample, INT64 Length)</prototype>
+      <tiriPrototype>err = SetSampleLength(Sample:num, Length:num)</tiriPrototype>
       <input>
         <param type="INT" name="Sample">A sample handle from AddStream().</param>
         <param type="INT64" name="Length">Byte length of the sample stream.</param>
@@ -225,19 +239,21 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Failed">Sample is not a stream.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
+        <error code="NoSupport">Sample is not a stream.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
       <name>SetVolume</name>
       <comment>Sets the volume for input and output mixers.</comment>
-      <prototype>ERR snd::SetVolume(OBJECTPTR Object, INT Index, CSTRING Name, SVF Flags, INT Channel, DOUBLE Volume)</prototype>
+      <prototype>ERR snd::SetVolume(OBJECTPTR Object, INT Index, STRVIEW Name, SVF Flags, INT Channel, DOUBLE Volume)</prototype>
+      <tiriPrototype>err = SetVolume(Index:num, Name:str, Flags:num, Channel:num, Volume:num)</tiriPrototype>
       <input>
         <param type="INT" name="Index">The index of the mixer that you want to set.</param>
-        <param type="CSTRING" name="Name">If the correct index number is unknown, the name of the mixer may be set here.</param>
+        <param type="STRVIEW" name="Name">If the correct index number is unknown, the name of the mixer may be set here.</param>
         <param type="SVF" name="Flags" lookup="SVF">Optional flags.</param>
         <param type="INT" name="Channel">A specific channel to modify (e.g. <code>0</code> for left, <code>1</code> for right).  If <code>-1</code>, all channels are affected.</param>
         <param type="DOUBLE" name="Volume">The volume to set for the mixer, from 0 to 1.0.  If <code>-1</code>, the current volume values are retained.</param>
@@ -252,10 +268,14 @@
       </description>
       <result>
         <error code="Okay">The new volume was applied successfully.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Search">A search routine in this function failed</error>
+        <error code="Args">Invalid arguments passed to function</error>
+        <error code="NoSupport">Operation not supported</error>
         <error code="OutOfRange">The <code>Volume</code> or <code>Index</code> is out of the acceptable range.</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>blocking, mutates-object</tags>
     </method>
 
   </methods>
@@ -353,24 +373,18 @@
       <description>
 <p>The PeriodSize field determines the granularity of audio buffer management, affecting system responsiveness, processing efficiency, and overall audio quality. This setting works in conjunction with the <fl>Periods</fl> field to define the complete buffering architecture.</p>
 <list type="bullet">
-<li>
-<b>Minimum</b>: 1024 bytes (1KB) - Enables very low latency but requires high-performance processing.</li>
-<li>
-<b>Maximum</b>: 16384 bytes (16KB) - Provides maximum buffering and processing time per period.</li>
-<li>
-<b>Recommended</b>: 2048 bytes (2KB) - Optimal balance for most applications and hardware configurations.</li>
+<li><b>Minimum</b>: 1024 bytes (1KB) - Enables very low latency but requires high-performance processing.</li>
+<li><b>Maximum</b>: 16384 bytes (16KB) - Provides maximum buffering and processing time per period.</li>
+<li><b>Recommended</b>: 2048 bytes (2KB) - Optimal balance for most applications and hardware configurations.</li>
 </list>
 <p>Period latency (in seconds) = <code>PeriodSize ÷ (SampleRate × Channels × BytesPerSample)</code></p>
 <p>For example, with a 2048-byte period at 44100Hz stereo 16-bit <code>Latency = 2048 ÷ (44100 × 2 × 2) = 11.6ms per period</code></p>
 <p>The combination of PeriodSize and <fl>Periods</fl> creates a multi-stage buffering system where audio data flows through sequential periods, providing time for processing whilst maintaining continuous playback.</p>
 <header>Application Guidelines</header>
 <list type="bullet">
-<li>
-<b>Real-time applications</b>: Use smaller periods (1-2KB) with fewer periods for minimal latency.</li>
-<li>
-<b>General applications</b>: Use medium periods (2-4KB) with 4 periods for reliable performance.</li>
-<li>
-<b>Background audio</b>: Use larger periods (8-16KB) with more periods for maximum efficiency.</li>
+<li><b>Real-time applications</b>: Use smaller periods (1-2KB) with fewer periods for minimal latency.</li>
+<li><b>General applications</b>: Use medium periods (2-4KB) with 4 periods for reliable performance.</li>
+<li><b>Background audio</b>: Use larger periods (8-16KB) with more periods for maximum efficiency.</li>
 </list>
       </description>
     </field>
@@ -384,12 +398,9 @@
 <p>The Periods field controls the segmentation of the internal audio buffer, directly affecting latency, performance, and audio continuity. This setting is particularly relevant for ALSA-based systems where period-based buffering is fundamental to audio driver operation.</p>
 <p>The total audio buffer is divided into discrete periods, each representing a contiguous block of audio data. The audio system processes data period by period, allowing for predictable latency characteristics and efficient interrupt handling.</p>
 <list type="bullet">
-<li>
-<b>Minimum</b>: 2 periods (provides double-buffering for basic audio continuity)</li>
-<li>
-<b>Maximum</b>: 16 periods (enables extensive buffering for demanding applications)</li>
-<li>
-<b>Recommended</b>: 4 periods (balances latency and reliability for most use cases)</li>
+<li><b>Minimum</b>: 2 periods (provides double-buffering for basic audio continuity)</li>
+<li><b>Maximum</b>: 16 periods (enables extensive buffering for demanding applications)</li>
+<li><b>Recommended</b>: 4 periods (balances latency and reliability for most use cases)</li>
 </list>
 <p>Fewer periods reduce overall system latency but increase the risk of audio dropouts if processing cannot keep pace with audio consumption. More periods provide greater buffering security at the cost of increased latency.</p>
       </description>
@@ -405,14 +416,10 @@
 <p>The value range spans from 0 (minimal processing) to 100 (maximum fidelity), with recommended settings between 70-80 for most applications. This range provides an optimal balance between audio clarity and system performance.</p>
 <p>Setting the Quality value automatically adjusts the following processing flags:</p>
 <list type="bullet">
-<li>
-<b>Quality 0-9</b>: Minimal processing, no filtering or oversampling applied.</li>
-<li>
-<b>Quality 10-32</b>: Enables <code>ADF::FILTER_LOW</code> for basic output filtering.</li>
-<li>
-<b>Quality 33-65</b>: Activates <code>ADF::FILTER_HIGH</code> for enhanced frequency response.</li>
-<li>
-<b>Quality 66-100</b>: Implements <code>ADF::OVER_SAMPLING</code> and <code>ADF::FILTER_HIGH</code> for maximum fidelity.</li>
+<li><b>Quality 0-9</b>: Minimal processing, no filtering or oversampling applied.</li>
+<li><b>Quality 10-32</b>: Enables <code>ADF::FILTER_LOW</code> for basic output filtering.</li>
+<li><b>Quality 33-65</b>: Activates <code>ADF::FILTER_HIGH</code> for enhanced frequency response.</li>
+<li><b>Quality 66-100</b>: Implements <code>ADF::OVER_SAMPLING</code> and <code>ADF::FILTER_HIGH</code> for maximum fidelity.</li>
 </list>
       </description>
     </field>

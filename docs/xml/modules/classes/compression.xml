@@ -7,19 +7,19 @@
     <type>class</type>
     <module>Core</module>
     <comment>Compresses data into archives, supporting a variety of compression formats.</comment>
-    <fileExtension>*.zip</fileExtension>
+    <fileExtension>zip</fileExtension>
     <fileDescription>ZIP File</fileDescription>
     <version>1</version>
-    <id>700c0197</id>
+    <id>2aebea46</id>
     <idstring>COMPRESSION</idstring>
     <category>Data</category>
-    <copyright>Paul Manias 1996-2026</copyright>
+    <copyright>Paul Manias © 1996-2026</copyright>
     <description>
-<p>The Compression class provides an interface to compress and decompress data.  It provides support for file based compression as well as memory based compression routines.  The base class uses zip algorithms to support pkzip files, while other forms of compressed data can be supported by installing additional compression sub-classes.</p>
+<p>The Compression class provides an interface to compress and decompress data.  It provides support for file based compression as well as memory based compression routines.  The base class uses zip algorithms to support pkzip files, while other forms of compressed data can be supported by installing additional compression derived classes.</p>
 <p>The following examples demonstrate basic usage of compression objects in Tiri:</p>
 <pre>// Create a new zip archive and compress two files.
 
-cmp = obj.new('compression', { path='temp:result.zip', flags='!NEW' } )
+cmp = obj.new('compression', { path='temp:result.zip', flags=CMF_NEW } )
 err = cmp.mtCompressFile('config:defs/compression.def', '')
 err = cmp.mtCompressFile('config:defs/core.def', '')
 
@@ -44,6 +44,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <name>Flush</name>
       <comment>Flushes all pending actions.</comment>
       <prototype>ERR acFlush(*Object)</prototype>
+      <tiriPrototype>err = Object.acFlush()</tiriPrototype>
     </action>
 
   </actions>
@@ -52,12 +53,11 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
     <method>
       <name>CompressBuffer</name>
       <comment>Compresses a plain memory area into an empty buffer.</comment>
-      <prototype>ERR cmp::CompressBuffer(OBJECTPTR Object, APTR Input, INT InputSize, APTR Output, INT OutputSize, INT * Result)</prototype>
+      <prototype>ERR cmp::CompressBuffer(OBJECTPTR Object, std::span&lt;const int8_t&gt; Input, std::span&lt;int8_t&gt; Output, INT * Result)</prototype>
+      <tiriPrototype>err, Result:num = CompressBuffer(Input:array, Output:array)</tiriPrototype>
       <input>
-        <param type="APTR" name="Input">Pointer to the source data.</param>
-        <param type="INT" name="InputSize">Byte length of the source data.</param>
-        <param type="APTR" name="Output">Pointer to a destination buffer.</param>
-        <param type="INT" name="OutputSize">Available space in the destination buffer.</param>
+        <param type="std::span&lt;const int8_t&gt;" name="Input">Pointer to the source data.</param>
+        <param type="std::span&lt;int8_t&gt;" name="Output">Pointer to a destination buffer.</param>
         <param type="INT *" name="Result">The size of the compressed data will be returned in this parameter.</param>
       </input>
       <description>
@@ -67,20 +67,23 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       </description>
       <result>
         <error code="Okay">The data was compressed successfully.  The Result parameter indicates the size of the compressed data.</error>
-        <error code="Failed">General failure.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Failed">General failure</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="BufferOverflow">The output buffer is not large enough.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="InvalidCompression">The compression data is invalid or corrupted</error>
       </result>
+      <tags>mutates-input, mutates-object</tags>
     </method>
 
     <method>
       <name>CompressFile</name>
       <comment>Add files to a compression object.</comment>
-      <prototype>ERR cmp::CompressFile(OBJECTPTR Object, CSTRING Location, CSTRING Path)</prototype>
+      <prototype>ERR cmp::CompressFile(OBJECTPTR Object, STRVIEW Location, STRVIEW Path)</prototype>
+      <tiriPrototype>err = CompressFile(Location:str, Path:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Location">The location of the file(s) to add.</param>
-        <param type="CSTRING" name="Path">The path that is prefixed to the file name when added to the compression object.  May be <code>NULL</code> for no path.</param>
+        <param type="STRVIEW" name="Location">The location of the file(s) to add.</param>
+        <param type="STRVIEW" name="Path">The path that is prefixed to the file name when added to the compression object.  May be empty for no path.</param>
       </input>
       <description>
 <p>The CompressFile method is used to add new files and folders to a compression object. The client must supply the <code>Location</code> of the file to compress, as well as the <code>Path</code> that is prefixed to the file name when it is in the compression object.  The <code>Location</code> parameter accepts wildcards, allowing multiple files to be processed in a single function call.</p>
@@ -90,49 +93,51 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <result>
         <error code="Okay">The file was added to the compression object.</error>
         <error code="File">An error was encountered when trying to open the source file.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
-        <error code="NoSupport">The sub-class does not support this method.</error>
+        <error code="Args">Invalid arguments passed to function</error>
+        <error code="NoSupport">The derived class does not support this method.</error>
         <error code="NoPermission">The <code>READ_ONLY</code> flag has been set on the compression object.</error>
+        <error code="MissingPath">The object is missing a path reference</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>blocking, mutates-object, copies-input, callback-inlines</tags>
     </method>
 
     <method>
       <name>CompressStream</name>
       <comment>Compresses streamed data into a buffer.</comment>
-      <prototype>ERR cmp::CompressStream(OBJECTPTR Object, APTR Input, INT Length, FUNCTION * Callback, APTR Output, INT OutputSize)</prototype>
+      <prototype>ERR cmp::CompressStream(OBJECTPTR Object, std::span&lt;const int8_t&gt; Input, FUNCTION Callback, std::span&lt;int8_t&gt; Output)</prototype>
+      <tiriPrototype>err = CompressStream(Input:array, Callback:func, Output:array)</tiriPrototype>
       <input>
-        <param type="APTR" name="Input">Pointer to the source data.</param>
-        <param type="INT" name="Length">Amount of data to compress, in bytes.</param>
-        <param type="FUNCTION *" name="Callback">This callback function will be called with a pointer to the compressed data.</param>
-        <param type="APTR" name="Output">Optional.  Points to a buffer that will receive the compressed data.  Must be equal to or larger than the <fl>MinOutputSize</fl> field.</param>
-        <param type="INT" name="OutputSize">Indicates the size of the <code>Output</code> buffer, otherwise set to zero.</param>
+        <param type="std::span&lt;const int8_t&gt;" name="Input">Pointer to the source data.</param>
+        <param type="FUNCTION" name="Callback">This callback function will be called with a pointer to the compressed data.</param>
+        <param type="std::span&lt;int8_t&gt;" name="Output">Optional.  Points to a buffer that will receive the compressed data.  Must be equal to or larger than the <fl>MinOutputSize</fl> field.</param>
       </input>
       <description>
 <p>Use the CompressStream method to compress incoming streams of data whilst using a minimal amount of memory.  The compression process is handled in three phases of Start, Compress and End.  The methods provided for each phase are <method>CompressStreamStart</method>, <method>CompressStream</method> and <method>CompressStreamEnd</method>.</p>
 <p>A compression object can manage only one compression stream at any given time.  If it is necessary to compress multiple streams at once, create a compression object for each individual stream.</p>
-<p>No meta-information is written to the stream, so the client will need a way to record the total number of bytes that have been output during the compression process. This value must be stored somewhere in order to decompress the stream correctly.  There is also no header information recorded to identify the type of algorithm used to compress the stream.  We recommend that the compression object's sub-class ID is stored for future reference.</p>
+<p>No meta-information is written to the stream, so the client will need a way to record the total number of bytes that have been output during the compression process. This value must be stored somewhere in order to decompress the stream correctly.  There is also no header information recorded to identify the type of algorithm used to compress the stream.  We recommend that the compression object's derived class ID is stored for future reference.</p>
 <p>The following C code illustrates a simple means of compressing a file to another file using a stream:</p>
-<pre>if (auto error = mtCompressStreamStart(compress); error IS ERR::Okay) {
-   LONG len;
-   LONG cmpsize = 0;
-   UBYTE input[4096];
-   while ((error = acRead(file, input, sizeof(input), &amp;len)) IS ERR::Okay) {
+<pre>if (auto error = mtCompressStreamStart(compress); !error) {
+   int len;
+   int cmpsize = 0;
+   uint8_t input[4096];
+   while (!(error = acRead(file, std::span&lt;int8_t&gt;((int8_t *)input, sizeof(input)), &amp;len))) {
       if (!len) break; // No more data to read.
 
-      error = mtCompressStream(compress, input, len, &amp;callback, NULL, 0);
+      error = mtCompressStream(compress, std::span&lt;const int8_t&gt;((int8_t *)input, len), callback, {});
       if (error != ERR::Okay) break;
 
       if (result &gt; 0) {
          cmpsize += result;
-         error = acWrite(outfile, output, result, &amp;len);
+         error = acWrite(outfile, std::span&lt;const int8_t&gt;((int8_t *)output, result), &amp;len);
          if (error != ERR::Okay) break;
       }
    }
 
-   if (error IS ERR::Okay) {
-      if ((error = mtCompressStreamEnd(compress, NULL, 0)) IS ERR::Okay) {
+   if (!error) {
+      if (!(error = mtCompressStreamEnd(compress, callback, {}))) {
          cmpsize += result;
-         error = acWrite(outfile, output, result, &amp;len);
+         error = acWrite(outfile, std::span&lt;const int8_t&gt;((int8_t *)output, result), &amp;len);
       }
    }
 }
@@ -142,20 +147,24 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="Retry">Please recall the method using a larger output buffer.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
         <error code="BufferOverflow">The output buffer is not large enough to contain the compressed data.</error>
+        <error code="InvalidState">Object was in an incorrect state for the operation</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="Function">A function call failed</error>
       </result>
+      <tags>mutates-input, mutates-object, callback-inlines</tags>
     </method>
 
     <method>
       <name>CompressStreamEnd</name>
       <comment>Ends the compression of an open stream.</comment>
-      <prototype>ERR cmp::CompressStreamEnd(OBJECTPTR Object, FUNCTION * Callback, APTR Output, INT OutputSize)</prototype>
+      <prototype>ERR cmp::CompressStreamEnd(OBJECTPTR Object, FUNCTION Callback, std::span&lt;int8_t&gt; Output)</prototype>
+      <tiriPrototype>err = CompressStreamEnd(Callback:func, Output:array)</tiriPrototype>
       <input>
-        <param type="FUNCTION *" name="Callback">Refers to a function that will be called for each compressed block of data.</param>
-        <param type="APTR" name="Output">Optional pointer to a buffer that will receive the compressed data.  If not set, the compression object will use its own buffer.</param>
-        <param type="INT" name="OutputSize">Size of the <code>Output</code> buffer (ignored if Output is <code>NULL</code>).</param>
+        <param type="FUNCTION" name="Callback">Refers to a function that will be called for each compressed block of data.</param>
+        <param type="std::span&lt;int8_t&gt;" name="Output">Optional pointer to a buffer that will receive the compressed data.  If not set, the compression object will use its own buffer.</param>
       </input>
       <description>
 <p>To end the compression process, this method must be called to write any final blocks of data and remove the resources that were allocated.</p>
@@ -163,32 +172,38 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="FieldNotSet">A required field value is undefined</error>
         <error code="BufferOverflow">The supplied Output buffer is not large enough (check the <fl>MinOutputSize</fl> field for the minimum allowable size).</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="Function">A function call failed</error>
       </result>
+      <tags>mutates-input, mutates-object, callback-inlines</tags>
     </method>
 
     <method>
       <name>CompressStreamStart</name>
       <comment>Initialises a new compression stream.</comment>
       <prototype>ERR cmp::CompressStreamStart(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = CompressStreamStart()</tiriPrototype>
       <description>
 <p>The level of compression is determined by the <fl>CompressionLevel</fl> field value.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="Failed">Failed to initialise the decompression process.</error>
+        <error code="InvalidCompression">The compression data is invalid or corrupted</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
       <name>DecompressBuffer</name>
       <comment>Decompresses data originating from the <method>CompressBuffer</method> method.</comment>
-      <prototype>ERR cmp::DecompressBuffer(OBJECTPTR Object, APTR Input, APTR Output, INT OutputSize, INT * Result)</prototype>
+      <prototype>ERR cmp::DecompressBuffer(OBJECTPTR Object, std::span&lt;const int8_t&gt; Input, std::span&lt;int8_t&gt; Output, INT * Result)</prototype>
+      <tiriPrototype>err, Result:num = DecompressBuffer(Input:array, Output:array)</tiriPrototype>
       <input>
-        <param type="APTR" name="Input">Pointer to the compressed data.</param>
-        <param type="APTR" name="Output">Pointer to the decompression buffer.</param>
-        <param type="INT" name="OutputSize">Size of the decompression buffer.</param>
+        <param type="std::span&lt;const int8_t&gt;" name="Input">Pointer to the compressed data.</param>
+        <param type="std::span&lt;int8_t&gt;" name="Output">Pointer to the decompression buffer.</param>
         <param type="INT *" name="Result">The amount of bytes decompressed will be returned in this parameter.</param>
       </input>
       <description>
@@ -196,18 +211,22 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="BufferOverflow">The output buffer is not large enough to hold the decompressed information.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="InvalidCompression">The compression data is invalid or corrupted</error>
       </result>
+      <tags>mutates-input, mutates-object</tags>
     </method>
 
     <method>
       <name>DecompressFile</name>
       <comment>Extracts one or more files from a compression object.</comment>
-      <prototype>ERR cmp::DecompressFile(OBJECTPTR Object, CSTRING Path, CSTRING Dest, INT Flags)</prototype>
+      <prototype>ERR cmp::DecompressFile(OBJECTPTR Object, STRVIEW Path, STRVIEW Dest, INT Flags)</prototype>
+      <tiriPrototype>err = DecompressFile(Path:str, Dest:str, Flags:num)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Path">The full path name of the file to extract from the archive.</param>
-        <param type="CSTRING" name="Dest">The destination to extract the file to.</param>
+        <param type="STRVIEW" name="Path">The full path name of the file to extract from the archive.</param>
+        <param type="STRVIEW" name="Dest">The destination to extract the file to.</param>
         <param type="INT" name="Flags">Optional flags.  Currently unused.</param>
       </input>
       <description>
@@ -218,23 +237,30 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <result>
         <error code="Okay">The file was successfully extracted.</error>
         <error code="Cancelled">The decompression process was cancelled by the feedback mechanism.</error>
-        <error code="Failed">General failure.</error>
+        <error code="Skip">Skip this operation</error>
+        <error code="Terminate">Termination requested</error>
+        <error code="Failed">General failure</error>
         <error code="File">A destination file could not be created.</error>
-        <error code="Args">Invalid arguments passed to function.</error>
-        <error code="NoData">No data is available for use.</error>
+        <error code="Search">A search routine in this function failed</error>
+        <error code="Args">Invalid arguments passed to function</error>
+        <error code="NoData">No data is available for use</error>
         <error code="Write">Failed to write uncompressed information to a destination file.</error>
-        <error code="MissingPath">The object is missing a path reference.</error>
-        <error code="Seek">An error occurred during a seek operation.</error>
+        <error code="NoSupport">Operation not supported</error>
+        <error code="MissingPath">The object is missing a path reference</error>
+        <error code="Seek">An error occurred during a seek operation</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="InvalidCompression">The compression data is invalid or corrupted</error>
       </result>
+      <tags>blocking, mutates-object, callback-inlines</tags>
     </method>
 
     <method>
       <name>DecompressObject</name>
       <comment>Decompresses one file to a target object.</comment>
-      <prototype>ERR cmp::DecompressObject(OBJECTPTR Object, CSTRING Path, OBJECTPTR Object)</prototype>
+      <prototype>ERR cmp::DecompressObject(OBJECTPTR Object, STRVIEW Path, OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = DecompressObject(Path:str, Object:obj)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Path">The location of the source file within the archive.  If a wildcard is used, the first matching file is extracted.</param>
+        <param type="STRVIEW" name="Path">The location of the source file within the archive.  If a wildcard is used, the first matching file is extracted.</param>
         <param type="OBJECTPTR" name="Object">The target object for the decompressed source data.</param>
       </input>
       <description>
@@ -244,27 +270,31 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Failed">General failure.</error>
-        <error code="Write">Error writing data.</error>
-        <error code="MissingPath">The object is missing a path reference.</error>
-        <error code="Seek">An error occurred during a seek operation.</error>
+        <error code="Failed">General failure</error>
+        <error code="Search">A search routine in this function failed</error>
+        <error code="Write">Error writing data</error>
+        <error code="NoSupport">Operation not supported</error>
+        <error code="MissingPath">The object is missing a path reference</error>
+        <error code="Seek">An error occurred during a seek operation</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="Decompression">Unspecified failure during decompression of a data stream</error>
+        <error code="InvalidCompression">The compression data is invalid or corrupted</error>
       </result>
+      <tags>blocking, mutates-object, updates-seek-index, callback-inlines</tags>
     </method>
 
     <method>
       <name>DecompressStream</name>
       <comment>Decompresses streamed data to an output buffer.</comment>
-      <prototype>ERR cmp::DecompressStream(OBJECTPTR Object, APTR Input, INT Length, FUNCTION * Callback, APTR Output, INT OutputSize)</prototype>
+      <prototype>ERR cmp::DecompressStream(OBJECTPTR Object, std::span&lt;const int8_t&gt; Input, FUNCTION Callback, std::span&lt;int8_t&gt; Output)</prototype>
+      <tiriPrototype>err = DecompressStream(Input:array, Callback:func, Output:array)</tiriPrototype>
       <input>
-        <param type="APTR" name="Input">Pointer to data to decompress.</param>
-        <param type="INT" name="Length">Amount of data to decompress from the Input parameter.</param>
-        <param type="FUNCTION *" name="Callback">Refers to a function that will be called for each decompressed block of information.</param>
-        <param type="APTR" name="Output">Optional pointer to a buffer that will receive the decompressed data.  If not set, the compression object will use its own buffer.</param>
-        <param type="INT" name="OutputSize">Size of the buffer specified in Output (value ignored if <code>Output</code> is <code>NULL</code>).</param>
+        <param type="std::span&lt;const int8_t&gt;" name="Input">Pointer to data to decompress.</param>
+        <param type="FUNCTION" name="Callback">Refers to a function that will be called for each decompressed block of information.</param>
+        <param type="std::span&lt;int8_t&gt;" name="Output">Optional pointer to a buffer that will receive the decompressed data.  If not set, the compression object will use its own buffer.</param>
       </input>
       <description>
-<p>Call DecompressStream repeatedly to decompress a data stream and process the results in a callback routine.  The client will need to provide a pointer to the data in the <code>Input</code> parameter and indicate its size in <code>Length</code>.  The decompression routine will call the routine that was specified in <code>Callback</code> for each block that is decompressed.</p>
+<p>Call DecompressStream repeatedly to decompress a data stream and process the results in a callback routine.  The client provides the data in the <code>Input</code> parameter.  The decompression routine will call the routine that was specified in <code>Callback</code> for each block that is decompressed.</p>
 <p>The format of the <code>Callback</code> routine is <code>ERR Function(*Compression, APTR Buffer, LONG Length)</code></p>
 <p>The <code>Buffer</code> will refer to the start of the decompressed data and its size will be indicated in <code>Length</code>.  If the <code>Callback</code> routine returns an error of any kind, the decompression process will be stopped and the error code will be immediately returned by the method.</p>
 <p>Optionally, the client can specify an output buffer in the <code>Output</code> parameter.  This can be a valuable optimisation technique, as it will eliminate the need to copy data out of the compression object's internal buffer.</p>
@@ -272,18 +302,21 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block.</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
         <error code="BufferOverflow">The output buffer is not large enough.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="Function">A function call failed</error>
       </result>
+      <tags>mutates-input, mutates-object, callback-inlines</tags>
     </method>
 
     <method>
       <name>DecompressStreamEnd</name>
       <comment>Must be called at the end of the decompression process.</comment>
-      <prototype>ERR cmp::DecompressStreamEnd(OBJECTPTR Object, FUNCTION * Callback)</prototype>
+      <prototype>ERR cmp::DecompressStreamEnd(OBJECTPTR Object, FUNCTION Callback)</prototype>
+      <tiriPrototype>err = DecompressStreamEnd(Callback:func)</tiriPrototype>
       <input>
-        <param type="FUNCTION *" name="Callback">Refers to a function that will be called for each decompressed block of information.</param>
+        <param type="FUNCTION" name="Callback">Refers to a function that will be called for each decompressed block of information.</param>
       </input>
       <description>
 <p>To end the decompression process, this method must be called to write any final blocks of data and remove the resources that were allocated during decompression.</p>
@@ -292,12 +325,14 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
         <error code="Okay">Operation successful.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, callback-inlines</tags>
     </method>
 
     <method>
       <name>DecompressStreamStart</name>
       <comment>Initialises a new decompression stream.</comment>
       <prototype>ERR cmp::DecompressStreamStart(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = DecompressStreamStart()</tiriPrototype>
       <description>
 <p>Use the DecompressStreamStart method to initialise a new decompression stream.  No parameters are required.</p>
 <p>If a decompression stream is already active at the time that this method is called, all resources associated with that stream will be deallocated so that the new stream can be initiated.</p>
@@ -306,15 +341,18 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="Failed">Failed to initialise the decompression process.</error>
+        <error code="InvalidCompression">The compression data is invalid or corrupted</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
       <name>Find</name>
       <comment>Find the first item that matches a given filter.</comment>
-      <prototype>ERR cmp::Find(OBJECTPTR Object, CSTRING Path, INT CaseSensitive, INT Wildcard, struct CompressedItem ** Item)</prototype>
+      <prototype>ERR cmp::Find(OBJECTPTR Object, STRVIEW Path, INT CaseSensitive, INT Wildcard, struct CompressedItem ** Item)</prototype>
+      <tiriPrototype>err, Item:any = Find(Path:str, CaseSensitive:num, Wildcard:num)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Path">Search for a specific item or items, using wildcards.</param>
+        <param type="STRVIEW" name="Path">Search for a specific item or items, using wildcards.</param>
         <param type="INT" name="CaseSensitive">Set to <code>true</code> if <code>Path</code> comparisons are case-sensitive.</param>
         <param type="INT" name="Wildcard">Set to <code>true</code> if <code>Path</code> uses wildcards.</param>
         <param type="struct CompressedItem **" name="Item">The discovered item is returned in this parameter, or <code>NULL</code> if the search failed.</param>
@@ -325,18 +363,20 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Search">A search routine in this function failed.</error>
-        <error code="NoSupport">Operation not supported.</error>
+        <error code="Search">A search routine in this function failed</error>
+        <error code="NoSupport">Operation not supported</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>pure-query, api-owns-result</tags>
     </method>
 
     <method>
       <name>RemoveFile</name>
       <comment>Deletes one or more files from a compression object.</comment>
-      <prototype>ERR cmp::RemoveFile(OBJECTPTR Object, CSTRING Path)</prototype>
+      <prototype>ERR cmp::RemoveFile(OBJECTPTR Object, STRVIEW Path)</prototype>
+      <tiriPrototype>err = RemoveFile(Path:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Path">The full path name of the file to delete from the archive.</param>
+        <param type="STRVIEW" name="Path">The full path name of the file to delete from the archive.</param>
       </input>
       <description>
 <p>This method deletes compressed files from a compression object.  If the file is in a folder then the client must specify the complete path in conjunction with the file name.  Wild cards are accepted if you want to delete multiple files.  A <code>Path</code> setting of <code>*</code> will delete an archive's entire contents, while a more conservative <code>Path</code> of <code>documents/ *</code> would delete all files and directories under the documents path.  Directories can be declared using either the back-slash or the forward-slash characters.</p>
@@ -344,19 +384,21 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       </description>
       <result>
         <error code="Okay">The file was successfully deleted.</error>
-        <error code="NoSupport">Operation not supported.</error>
+        <error code="NoSupport">Operation not supported</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>blocking, mutates-object</tags>
     </method>
 
     <method>
       <name>Scan</name>
       <comment>Scan the archive's index of compressed data.</comment>
-      <prototype>ERR cmp::Scan(OBJECTPTR Object, CSTRING Folder, CSTRING Filter, FUNCTION * Callback)</prototype>
+      <prototype>ERR cmp::Scan(OBJECTPTR Object, STRVIEW Folder, STRVIEW Filter, FUNCTION Callback)</prototype>
+      <tiriPrototype>err = Scan(Folder:str, Filter:str, Callback:func)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Folder">If defined, only items within the specified folder are returned.  Use an empty string for files in the root folder.</param>
-        <param type="CSTRING" name="Filter">Search for a specific item or items by name, using wildcards.  If <code>NULL</code> or an empty string, all items will be scanned.</param>
-        <param type="FUNCTION *" name="Callback">This callback function will be called with a pointer to a <st>CompressedItem</st> structure.</param>
+        <param type="STRVIEW" name="Folder">Only items within the specified folder are returned.  Use an empty string for files in the root folder.</param>
+        <param type="STRVIEW" name="Filter">Search for a specific item or items by name, using wildcards.  If empty, all items will be scanned.</param>
+        <param type="FUNCTION" name="Callback">This callback function will be called with a pointer to a <st>CompressedItem</st> structure.</param>
       </input>
       <description>
 <p>Use the Scan() method to search an archive's list of items.  Optional filtering can be applied using the <code>Folder</code> parameter to limit results to those within a folder, and <code>Filter</code> parameter to apply wildcard matching to item names.  Each item that is discovered during the scan will be passed to the function referenced in the <code>Callback</code> parameter.  If the <code>Callback</code> function returns <code>ERR::Terminate</code>, the scan will stop immediately.  The prototype of the <code>Callback</code> function is <code>ERR Function(*Compression, *CompressedItem)</code>.</p>
@@ -366,9 +408,12 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="NoSupport">Operation not supported.</error>
+        <error code="NoSupport">Operation not supported</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="TypeMismatch">The provided value does not match the expected type</error>
+        <error code="Function">A function call failed</error>
       </result>
+      <tags>pure-query, callback-inlines</tags>
     </method>
 
   </methods>
@@ -442,7 +487,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
     <field>
       <name>Password</name>
       <comment>Required if an archive needs an encryption password for access.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>STRING</type>
       <description>
 <p>Set the Password field if an archive will use a password for the encryption of its contents.  The string must be null-terminated and not more than 128 bytes in length.</p>
@@ -453,7 +498,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
     <field>
       <name>Path</name>
       <comment>Set if the compressed data originates from, or is to be saved to a file source.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
 <p>To load or create a new file archive, set the Path field to the path of that file.</p>
@@ -518,43 +563,63 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <const name="READ_ONLY">Forces read-only access, which is strongly recommended if an existing archive is being opened with no modifications intended.  If this flag is not set, initialisation can fail if the user does not have write access to the source file.</const>
     </constants>
 
+    <constants lookup="FL" comment="File flags">
+      <const name="APPROXIMATE">Allows fuzzy matching of the file path by ignoring the file extension; for instance opening 'screenshot.png' when only 'screenshot.jpg' exists in the same folder, the 'screenshot.jpg' file will be opened.  If multiple files could potentially match to the file name, the file object will select the first match that is encountered.</const>
+      <const name="BUFFER">Activates a special mode in which the file data is stored in a memory buffer rather than a disk file.  Set the Size field to a value of at least 1 so that the initial buffer size is configured.  In this mode many of the available file operations are meaningless except for the Read, Write and Seek actions.</const>
+      <const name="DEVICE">The file is a system device (must set if opening a device for read/write operations)</const>
+      <const name="DIRECTORY">The file object represents a folder.</const>
+      <const name="EXCLUDE_FILES">Exclude files when scanning this folder.</const>
+      <const name="EXCLUDE_FOLDERS">Exclude folders when scanning this folder.</const>
+      <const name="FILE">Explicitly declares the file object as an entity that stores content (as opposed to a device or folder for example).</const>
+      <const name="FOLDER">The file object represents a folder.</const>
+      <const name="LINK">Read-Only.  Indicates that the file is a symbolic link or shortcut to another file.</const>
+      <const name="LOOP">In loop mode, the file object's position marker for read/write operations is allowed to extend past the actual file size.  Any read/write operation beyond the file size will loop back to the file at a corrected offset - for example, reading position 330 of a 100 byte file will start the operation from the 30th byte.  Loop mode does not affect any other area besides the read, write and seek operations.  The loop feature is typically used to create multimedia data streams with minimal effort.</const>
+      <const name="NEW">Required when creating a new file.  If a file with the same name exists, its contents will be destroyed. If however the existing file is locked, the initalisation process will fail.</const>
+      <const name="READ">Required if the file needs to be opened for read access.</const>
+      <const name="RESET_DATE">For internal use only</const>
+      <const name="STREAM">File data is streamed (e.g. PIPE, FIFO, socket) and may be accessed locally or via a network.</const>
+      <const name="VIRTUAL">Path is to a virtual device.</const>
+      <const name="WRITE">Prepares a file for writing data, starting at byte position 0.  To start writing from the end of a file, use the Seek action after the file has been initialised.</const>
+    </constants>
+
     <constants lookup="PERMIT" comment="Permission flags">
       <const name="ALL_DELETE">Synonym for <code>EVERYONE_DELETE</code></const>
       <const name="ALL_EXEC">Synonym for <code>EVERYONE_EXEC</code></const>
       <const name="ALL_READ">Synonym for <code>EVERYONE_READ</code></const>
       <const name="ALL_WRITE">Synonym for <code>EVERYONE_WRITE</code></const>
-      <const name="ARCHIVE">Marks the file for future backup.  The flag should be cleared after the backup has succeeded.</const>
-      <const name="DELETE">Owner can delete.  If the file system does not support this, deletion is enabled via the <code>WRITE</code> flag.</const>
+      <const name="ARCHIVE">Marks the file for future backup.  The flag should be cleared after the backup has succeeded</const>
+      <const name="DELETE">Owner can delete.  If the file system does not support this, deletion is enabled via the <code>WRITE</code> flag</const>
       <const name="EVERYONE_ACCESS">Synonym for <code>EVERYONE_READ | EVERYONE_WRITE | EVERYONE_EXEC | EVERYONE_DELETE</code></const>
       <const name="EVERYONE_DELETE">Synonym for <code>DELETE | GROUP_DELETE | OTHERS_DELETE</code></const>
       <const name="EVERYONE_EXEC">Synonym for <code>EXEC | GROUP_EXEC | OTHERS_EXEC</code></const>
       <const name="EVERYONE_READ">Synonym for <code>READ | GROUP_READ | OTHERS_READ</code></const>
       <const name="EVERYONE_READWRITE">Synonym for <code>EVERYONE_READ | EVERYONE_WRITE</code></const>
       <const name="EVERYONE_WRITE">Synonym for <code>WRITE | GROUP_WRITE | OTHERS_WRITE</code></const>
-      <const name="EXEC">User/Owner can execute.</const>
+      <const name="EXEC">User/Owner can execute</const>
       <const name="GROUP">Synonym for <code>GROUP_READ | GROUP_WRITE | GROUP_EXEC | GROUP_DELETE</code></const>
-      <const name="GROUPID">Allows executables to run with a set group id.</const>
-      <const name="GROUP_DELETE">Group members can delete.</const>
-      <const name="GROUP_EXEC">Group members can execute.</const>
-      <const name="GROUP_READ">Group members can read.</const>
-      <const name="GROUP_WRITE">Group members can write.</const>
-      <const name="HIDDEN">Recommends that the file is hidden from view by default.</const>
-      <const name="INHERIT">Inherit permissions from parent folder and logical OR them with preset permission flags.</const>
-      <const name="NETWORK">File is hosted on another machine.</const>
-      <const name="OFFLINE">File content for this networked file has not been cached on the local PC.</const>
+      <const name="GROUPID">Allows executables to run with a set group id</const>
+      <const name="GROUP_DELETE">Group members can delete</const>
+      <const name="GROUP_EXEC">Group members can execute</const>
+      <const name="GROUP_READ">Group members can read</const>
+      <const name="GROUP_WRITE">Group members can write</const>
+      <const name="HIDDEN">Recommends that the file is hidden from view by default</const>
+      <const name="INHERIT">Inherit permissions from parent folder and logical OR them with preset permission flags</const>
+      <const name="META">Synonym for <code>HIDDEN | PASSWORD | OFFLINE | NETWORK</code></const>
+      <const name="NETWORK">File is hosted on another machine</const>
+      <const name="OFFLINE">File content for this networked file has not been cached on the local PC</const>
       <const name="OTHERS">Synonym for <code>OTHERS_READ | OTHERS_WRITE | OTHERS_EXEC | OTHERS_DELETE</code></const>
-      <const name="OTHERS_DELETE">Others can delete.</const>
-      <const name="OTHERS_EXEC">Others can execute.</const>
-      <const name="OTHERS_READ">Others can read.</const>
-      <const name="OTHERS_WRITE">Others can write.</const>
-      <const name="PASSWORD">File is password protected.</const>
-      <const name="READ">User/Owner has read access.  This will not allow compiled code to be executed.</const>
+      <const name="OTHERS_DELETE">Others can delete</const>
+      <const name="OTHERS_EXEC">Others can execute</const>
+      <const name="OTHERS_READ">Others can read</const>
+      <const name="OTHERS_WRITE">Others can write</const>
+      <const name="PASSWORD">File is password protected</const>
+      <const name="READ">User/Owner has read access.  This will not allow compiled code to be executed</const>
       <const name="USER">Synonym for <code>READ | WRITE | EXEC | DELETE</code></const>
-      <const name="USERID">Allows executables to run with a set user id.</const>
+      <const name="USERID">Allows executables to run with a set user id</const>
       <const name="USER_EXEC">Synonym for <code>EXEC</code></const>
       <const name="USER_READ">Synonym for <code>READ</code></const>
       <const name="USER_WRITE">Synonym for <code>WRITE</code></const>
-      <const name="WRITE">User/Owner can write.</const>
+      <const name="WRITE">User/Owner can write</const>
     </constants>
 
   </types>

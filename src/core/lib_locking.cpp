@@ -12,7 +12,7 @@ that is distributed with this package.  Please refer to it for further informati
 #include <array>
 #include <mutex>
 
-using namespace pf;
+using namespace kt;
 using namespace std::chrono;
 
 #ifdef _WIN32
@@ -48,10 +48,10 @@ private:
          WINHANDLE expected = WINHANDLE(0);
          WINHANDLE new_lock;
 
-         if (alloc_public_waitlock(&new_lock, nullptr) IS ERR::Okay) {
+         if (!alloc_public_waitlock(&new_lock, nullptr)) {
             if (thread_locks[index].compare_exchange_weak(expected, new_lock, std::memory_order_acquire)) {
-               pf::Log log("ThreadLockManager");
-               log.trace("Allocated thread-lock #%d for thread #%d", index, get_thread_id());
+               kt::Log log("ThreadLockManager");
+               log.trace("Allocated thread-lock #%d for thread #%d", index, GetThreadID());
                return new_lock;
             }
             free_public_waitlock(new_lock);
@@ -108,11 +108,11 @@ struct WaitLock {
    #ifdef _WIN32
    WINHANDLE Lock;
    #endif
-   int64_t WaitingTime;
+   int64_t  WaitingTime;
    THREADID WaitingForThreadID;
-   int  WaitingForResourceID;
-   int  WaitingForResourceType;
-   uint8_t Flags; // WLF flags
+   int      WaitingForResourceID;
+   int      WaitingForResourceType;
+   uint8_t  Flags; // WLF flags
 
    #define WLF_REMOVED 0x01  // Set if the resource was removed by the thread that was holding it.
 
@@ -204,7 +204,7 @@ void register_sleep(int Timeout)
 {
    const std::lock_guard<std::mutex> lock(glWaitLockMutex);
 
-   register_waitlock(get_thread_id(), THREADID(0), 0, RT_SLEEP);
+   register_waitlock(THREADID(GetThreadID()), THREADID(0), 0, RT_SLEEP);
    glWaitLocks[glWLIndex].WaitingTime = Timeout;
 }
 
@@ -221,13 +221,13 @@ void deregister_sleep(void)
 // Prepare a thread for going to sleep on a resource.  Checks for deadlocks in advance.  Once a thread has added a
 // WakeLock entry, it must keep it until either the thread or process is destroyed.
 //
-// Used by AccessMemory() and LockObject()
+// Used by LockObject()
 
 ERR init_sleep(THREADID OtherThreadID, int ResourceID, int ResourceType)
 {
    //log.trace("Sleeping on thread %d for resource #%d, Total Threads: %d", OtherThreadID, ResourceID, int(glWaitLocks.size()));
 
-   auto our_thread = get_thread_id();
+   auto our_thread = THREADID(GetThreadID());
    if (OtherThreadID IS our_thread) return ERR::Args;
 
    const std::lock_guard<std::mutex> lock(glWaitLockMutex);
@@ -239,7 +239,7 @@ ERR init_sleep(THREADID OtherThreadID, int ResourceID, int ResourceType)
    #endif
 
    if (would_deadlock(our_thread, OtherThreadID)) {
-      pf::Log log(__FUNCTION__);
+      kt::Log log(__FUNCTION__);
       log.warning("Deadlock: Thread %d contends with thread %d for resource #%d.", int(our_thread), int(OtherThreadID), ResourceID);
       glWaitLocks[glWLIndex].notWaiting();
       return ERR::DeadLock;
@@ -254,10 +254,10 @@ ERR init_sleep(THREADID OtherThreadID, int ResourceID, int ResourceType)
 
 void remove_process_waitlocks(void)
 {
-   pf::Log log("Shutdown");
+   kt::Log log("Shutdown");
    log.trace("Removing process waitlocks...");
 
-   auto const our_thread = get_thread_id();
+   auto const our_thread = THREADID(GetThreadID());
 
    const std::lock_guard<std::mutex> lock(glWaitLockMutex);
 
@@ -302,104 +302,6 @@ void free_threadlock(void)
 /*********************************************************************************************************************
 
 -FUNCTION-
-AccessMemory: Grants access to memory blocks by identifier.
-Category: Memory
-
-Call AccessMemory() to resolve a memory ID to its address and acquire a lock so that it is inaccessible to other
-threads.
-
-Memory blocks should never be locked for extended periods of time.  Ensure that all locks are matched with a
-call to ~ReleaseMemory() within the same code block.
-
--INPUT-
-mem Memory:       The ID of the memory block to access.
-int(MEM) Flags:   Set to `READ`, `WRITE` or `READ_WRITE`.
-int MilliSeconds: The millisecond interval to wait before a timeout occurs.  Use at least 40ms for best results.
-&ptr Result:      Must refer to an `APTR` for storing the resolved address.
-
--ERRORS-
-Okay
-Args: The `MilliSeconds` value is less or equal to zero.
-NullArgs
-SystemLocked
-TimeOut
-Cancelled: The thread has been requested to stop whilst sleeping.
-MemoryDoesNotExist: The supplied `Memory` ID does not refer to an existing memory block.
--END-
-
-*********************************************************************************************************************/
-
-ERR AccessMemory(MEMORYID MemoryID, MEM Flags, int MilliSeconds, APTR *Result)
-{
-   pf::Log log(__FUNCTION__);
-
-   if ((not MemoryID) or (not Result)) return log.warning(ERR::NullArgs);
-   if (MilliSeconds <= 0) return log.warning(ERR::Args);
-
-   // NB: Logging AccessMemory() calls is usually a waste of time unless the process is going to sleep.
-   //log.trace("MemoryID: %d, Flags: $%x, TimeOut: %d", MemoryID, int(Flags), MilliSeconds);
-
-   *Result = nullptr;
-   if (auto lock = std::unique_lock{glmMemory}) {
-      auto mem = glPrivateMemory.find(MemoryID);
-      if ((mem != glPrivateMemory.end()) and (mem->second.Address)) {
-         auto our_thread = get_thread_id();
-
-         // This loop condition verifies that the block is available and protects against recursion.
-         // wait_for() is awoken with a global wake-up, not necessarily on the desired block, hence the need for while().
-
-         auto end_time = steady_clock::now() + milliseconds(MilliSeconds);
-         if ((mem->second.AccessCount > 0) and (mem->second.ThreadLockID != our_thread)) {
-            auto record = get_thread_record();
-            record->state.store(TSTATE::PAUSED, std::memory_order_release);
-
-            while ((mem->second.AccessCount > 0) and (mem->second.ThreadLockID != our_thread)) {
-               // Check if woken or stopped by WakeThread() before blocking
-               {
-                  if (record->interrupted.load(std::memory_order_acquire) or
-                      record->state.load(std::memory_order_acquire) IS TSTATE::STOPPING) {
-                     record->interrupted.store(false, std::memory_order_release);
-                     auto expected = TSTATE::PAUSED;
-                     record->state.compare_exchange_strong(expected, TSTATE::RUNNING, std::memory_order_acq_rel);
-                     return ERR::Cancelled;
-                  }
-               }
-
-               auto now = steady_clock::now();
-               if (now >= end_time) {
-                  {
-                     if (record->state.load(std::memory_order_acquire) IS TSTATE::STOPPING) return ERR::Cancelled;
-                     record->state.store(TSTATE::RUNNING, std::memory_order_release);
-                  }
-                  return log.warning(ERR::TimeOut);
-               }
-
-               auto timeout_remaining = end_time - now;
-               //log.msg("Sleep on memory #%d, Access %d, Threads %d/%d", MemoryID, mem->second.AccessCount, (int)mem->second.ThreadLockID, our_thread);
-               cvResources.wait_for(glmMemory, timeout_remaining);
-            }
-
-            auto expected = TSTATE::PAUSED;
-            record->state.compare_exchange_strong(expected, TSTATE::RUNNING, std::memory_order_acq_rel);
-         }
-
-         mem->second.ThreadLockID = our_thread;
-         mem->second.AccessCount++;
-         tlPrivateLockCount++;
-
-         *Result = mem->second.Address;
-         return ERR::Okay;
-      }
-      else log.traceWarning("Cannot find memory ID #%d", MemoryID); // This is not uncommon, so trace only
-   }
-   else return log.warning(ERR::SystemLocked);
-
-   return ERR::MemoryDoesNotExist;
-}
-
-/*********************************************************************************************************************
-
--FUNCTION-
 AccessObject: Grants exclusive access to objects via unique ID.
 Category: Objects
 
@@ -420,7 +322,7 @@ direct calls to AccessObject().  The following example illustrates lock acquisit
 
 <pre>
 {
-   pf::ScopedObjectLock&lt;OBJECTPTR&gt; obj(my_object_id, 1000);
+   kt::ScopedObjectLock&lt;OBJECTPTR&gt; obj(my_object_id, 1000);
    if (lock.granted()) {
       obj.acDraw();
    }
@@ -436,39 +338,66 @@ int MilliSeconds: The limit in milliseconds before a timeout occurs.  The maximu
 -ERRORS-
 Okay
 NullArgs
+Args
 NoMatchingObject
 TimeOut
 SystemLocked
+Cancelled: The thread has been requested to stop whilst sleeping.
+MarkedForDeletion: The object is being removed and cannot be locked.
+DoesNotExist: The object was removed while waiting for the lock.
+LockFailed: Failed to initialise the sleep record for the waiting thread.
+
+-TAGS-
+blocking
 -END-
 
 *********************************************************************************************************************/
 
 ERR AccessObject(OBJECTID ObjectID, int MilliSeconds, OBJECTPTR *Result)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if ((not Result) or (not ObjectID)) return log.warning(ERR::NullArgs);
    if (MilliSeconds <= 0) log.warning(ERR::Args); // Warn but do not fail
 
-   if (auto lock = std::unique_lock{glmMemory}) {
-      auto mem = glPrivateMemory.find(ObjectID);
-      if ((mem != glPrivateMemory.end()) and (mem->second.Address)) {
-         if (auto error = LockObject((OBJECTPTR)mem->second.Address, MilliSeconds); error IS ERR::Okay) {
-            *Result = (OBJECTPTR)mem->second.Address;
-            return ERR::Okay;
-         }
-         else return error;
+   *Result = nullptr;
+
+   if (ObjectID IS glMetaClass.UID) { // Access to the MetaClass requires this special case handler.
+      if (auto error = LockObject(&glMetaClass, MilliSeconds); !error) {
+         *Result = &glMetaClass;
+         return ERR::Okay;
       }
-      else if (ObjectID IS glMetaClass.UID) { // Access to the MetaClass requires this special case handler.
-         if (auto error = LockObject(&glMetaClass, MilliSeconds); error IS ERR::Okay) {
-            *Result = &glMetaClass;
-            return ERR::Okay;
-         }
-         else return error;
-      }
-      else return ERR::NoMatchingObject;
+      else return error;
    }
-   else return log.warning(ERR::SystemLocked);
+
+   OBJECTPTR object = nullptr;
+
+   {
+      std::lock_guard lock(glmObjects);
+
+      auto object_rec = glObjects.find(ObjectID);
+      if ((object_rec IS glObjects.end()) or (not object_rec->second.Object)) return ERR::NoMatchingObject;
+      if (object_rec->second.CollectOnUnlock or object_rec->second.Terminating) return ERR::MarkedForDeletion;
+
+      object = object_rec->second.Object;
+      if (object->collecting()) return ERR::MarkedForDeletion;
+
+      object->pin();
+   }
+
+   auto error = LockObject(object, MilliSeconds);
+
+   // Sanity check in case a thread called FreeResource() on the object before LockObject()
+
+   if ((!error) and (object->collecting())) {
+      ReleaseObject(object);
+      error = ERR::MarkedForDeletion;
+   }
+
+   object->unpin(error != ERR::Okay);
+
+   if (!error) *Result = object;
+   return error;
 }
 
 /*********************************************************************************************************************
@@ -499,6 +428,9 @@ TimeOut:
 Cancelled: The thread has been requested to stop and cannot pause.
 DoesNotExist: The object was removed while waiting for the lock.
 LockFailed: Failed to initialise the sleep record for the waiting thread.
+
+-TAGS-
+blocking
 -END-
 
 *********************************************************************************************************************/
@@ -510,7 +442,7 @@ ERR LockObject(OBJECTPTR Object, int Timeout)
       return ERR::NullArgs;
    }
 
-   auto our_thread = get_thread_id();
+   auto our_thread = THREADID(GetThreadID());
 
    // Using an atomic increment we can achieve a 'quick lock' of the object without having to resort to locks.
    // This is quite safe so long as the developer is being careful with use of the object between threads (i.e. not
@@ -531,7 +463,7 @@ ERR LockObject(OBJECTPTR Object, int Timeout)
       return ERR::Okay;
    }
 
-   if (Object->defined(NF::FREE|NF::FREE_ON_UNLOCK)) return ERR::MarkedForDeletion; // If the object is currently being removed by another thread, sleeping on it is pointless.
+   if (Object->collecting()) return ERR::MarkedForDeletion; // If the object is currently being removed by another thread, sleeping on it is pointless.
 
    // Problem: What if ReleaseObject() in another thread were to release the object prior to our glmObjectLocking lock?  This means that we would never receive the wake signal.
    // Solution: Prior to wait_until(), increment the object queue to attempt a lock.  This is *slightly* less efficient than doing it after the cond_wait(), but
@@ -560,12 +492,12 @@ ERR LockObject(OBJECTPTR Object, int Timeout)
    else (void)lock.try_lock_for(std::chrono::milliseconds(Timeout));
 
    if (lock.owns_lock()) {
-      pf::Log log(__FUNCTION__);
+      kt::Log log(__FUNCTION__);
 
       //log.function("TID: %d, Sleeping on #%d, Timeout: %d, Queue: %d, Locked By: %d", our_thread, Object->UID, Timeout, Object->Queue, Object->ThreadID);
 
       ERR error = ERR::TimeOut;
-      if (init_sleep(THREADID(Object->ThreadID), Object->UID, RT_OBJECT) IS ERR::Okay) { // Indicate that our thread is sleeping.
+      if (!init_sleep(THREADID(Object->ThreadID), Object->UID, RT_OBJECT)) { // Indicate that our thread is sleeping.
          auto record = get_thread_record();
          record->state.store(TSTATE::PAUSED, std::memory_order_release);
 
@@ -608,7 +540,7 @@ ERR LockObject(OBJECTPTR Object, int Timeout)
          // Failure: Either a timeout occurred, the object no longer exists, or the thread is stopping.
 
          if (glWaitLocks[glWLIndex].Flags & WLF_REMOVED) {
-            log.warning("TID %d: The resource no longer exists.", int(get_thread_id()));
+            log.warning("TID %d: The resource no longer exists.", GetThreadID());
             error = ERR::DoesNotExist;
          }
          else if ((record->interrupted.load(std::memory_order_acquire) or
@@ -640,67 +572,6 @@ ERR LockObject(OBJECTPTR Object, int Timeout)
 /*********************************************************************************************************************
 
 -FUNCTION-
-ReleaseMemory: Releases a lock from a memory based resource.
-Category: Memory
-
-Successful calls to ~AccessMemory() must be paired with a call to ReleaseMemory() so that the memory can be made
-available to other processes.  Releasing the resource decreases the access count, and if applicable a
-thread that is in the queue for access may then be able to acquire a lock.
-
--INPUT-
-mem MemoryID: A reference to a memory resource for release.
-
--ERRORS-
-Okay
-NullArgs
-Search
-SystemLocked
--END-
-
-*********************************************************************************************************************/
-
-ERR ReleaseMemory(MEMORYID MemoryID)
-{
-   pf::Log log(__FUNCTION__);
-
-   if (not MemoryID) return log.warning(ERR::NullArgs);
-
-   std::lock_guard lock(glmMemory);
-   auto mem = glPrivateMemory.find(MemoryID);
-
-   if ((mem IS glPrivateMemory.end()) or (not mem->second.Address)) { // Sanity check; this should never happen
-      if (tlContext.back().obj->Class) log.warning("Unable to find a record for memory address #%d [Context %d, Class %s].", MemoryID, tlContext.back().obj->UID, tlContext.back().obj->className());
-      else log.warning("Unable to find a record for memory #%d.", MemoryID);
-      return ERR::Search;
-   }
-
-   int16_t access;
-   if (mem->second.AccessCount > 0) { // Sometimes ReleaseMemory() is called on addresses that aren't actually locked.  This is OK - we simply don't do anything in that case.
-      access = --mem->second.AccessCount;
-      tlPrivateLockCount--;
-   }
-   else access = -1;
-
-   if (not access) {
-      mem->second.ThreadLockID = THREADID(0);
-
-      if ((mem->second.Flags & MEM::COLLECT) != MEM::NIL) {
-         log.trace("Collecting memory block #%d", MemoryID);
-         FreeResource(mem->second.Address);
-      }
-      else if ((mem->second.Flags & MEM::EXCLUSIVE) != MEM::NIL) {
-         mem->second.Flags &= ~MEM::EXCLUSIVE;
-      }
-
-      cvResources.notify_all();
-   }
-
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FUNCTION-
 ReleaseObject: Release a locked object.
 Category: Objects
 
@@ -710,6 +581,9 @@ for every lock that has been granted.
 -INPUT-
 obj Object: Pointer to the object to be released.
 
+-TAGS-
+blocking
+
 *********************************************************************************************************************/
 
 void ReleaseObject(OBJECTPTR Object)
@@ -718,8 +592,8 @@ void ReleaseObject(OBJECTPTR Object)
 
    #ifndef NDEBUG
    if (Object->Queue.load(std::memory_order_relaxed) <= 0) {
-      pf::Log("ReleaseObject").warning("Queue underflow on #%d (%s), Queue: %d, ThreadID: %d, OurThread: %d",
-         Object->UID, Object->className(), Object->Queue.load(), Object->ThreadID.load(), int(get_thread_id()));
+      kt::Log("ReleaseObject").warning("Queue underflow on #%d (%s), Queue: %d, ThreadID: %d, OurThread: %d",
+         Object->UID, Object->className(), Object->Queue.load(), Object->ThreadID.load(), GetThreadID());
       DEBUG_BREAK
    }
    #endif
@@ -727,11 +601,12 @@ void ReleaseObject(OBJECTPTR Object)
    if (Object->Queue.fetch_sub(1, std::memory_order_release) > 1) return;
 
    if (Object->SleepQueue > 0) { // Other threads are waiting on this object
-      pf::Log log(__FUNCTION__);
+      kt::Log log(__FUNCTION__);
       log.traceBranch("Waking %d threads for this object.", Object->SleepQueue.load());
 
-      if (auto lock = std::unique_lock{glmObjectLocking}) {
-         if (Object->defined(NF::FREE|NF::FREE_ON_UNLOCK)) { // We have to tell other threads that the object is marked for deletion.
+      {
+         std::unique_lock lock(glmObjectLocking);
+         if (Object->collecting()) { // We have to tell other threads that the object is marked for deletion.
             // NB: A lock on glWaitLocks is not required because we're already protected by the glmObjectLocking
             // barrier (which is common between LockObject() and ReleaseObject()
             for (unsigned i=0; i < glWaitLocks.size(); i++) {

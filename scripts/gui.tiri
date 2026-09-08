@@ -1,42 +1,94 @@
 -- Graphical User Interface functions
 
-   namespace 'gui'
+   include 'vector'
 
-global mVec ?= mod.load('vector') -- Configure mVec as a global convenience.  For fast access, clients assign to lVec
-local lVec = mVec
+   module vector as mVec
 
-_LIB[_NS] = {
-   theme = nil,
-   _counter = 0,
-   configureScene = function(Window, Scene)
-      -- Themes can set a custom configuration function that adds definitions to all window scenes, e.g. images
-      -- and patterns for fills.
+   namespace gui {
+      theme = nil,
+      _counter = 0,
+      configureScene = function(Window, Scene)
+         -- Themes can set a custom configuration function that adds definitions to all window scenes, e.g. images
+         -- and patterns for fills.
+      end
+   }
+
+rxPixel    <const> = <{ regex.new([[^(\d+)([a-zA-Z]*)$]]) }>
+rxFontSize <const> = <{ regex.new([[^(-?\d+)%$]]) }>
+
+glStyleConfig = 'user:config/style.cfg'
+glPainter = struct.new('VectorPainter')
+
+gui.fontList = thunk():table
+   return exec([[
+   import 'config'
+
+   local fonts = { }
+   catalogue = config.decode(io.readAll('fonts:fonts.cfg'))
+   local options = { }
+   try
+      options = config.decode(io.readAll('fonts:options.cfg'))
    end
-}
 
-gui = _LIB[_NS]
+   -- Merge
+   for group_name, option_group in options do
+      local cat_group:table = catalogue[group_name]
+      if not cat_group then
+         cat_group = { }
+         catalogue[group_name] = cat_group
+      end
 
-local rxPixel    <const> = <{ regex.new([[^(\d+)([a-zA-Z]*)$]]) }>
-local rxFontSize <const> = <{ regex.new([[^(-?\d+)%$]]) }>
-local rxNum      <const> = <{ regex.new([[\d+]]) }>
+      for key, value in option_group do
+         cat_group[key] = value
+      end
+   end
 
-local glStyleConfig = 'user:config/style.cfg'
-local glPainter = struct.new('VectorPainter')
+   for group_name, entry in catalogue do
+      local name = entry.Name ?? group_name
+      local font = { name=name }
+
+      if entry.Alias then font.alias = entry.Alias end
+
+      if entry.Styles then
+         font.styles = entry.Styles.split(',')
+      else
+         font.styles = array<str> { 'Regular' }
+      end
+
+      if entry.Points then
+         local sizes = array<int>
+         for point in values(entry.Points.split(',')) do
+            local size = tonumber(point.trim())
+            if size then sizes.push(size) end
+         end
+         if #sizes > 0 then font.sizes = sizes end
+      end
+
+      font.hidden = (entry.Hidden ?? '').lower() is 'yes'
+      font.scalable = (entry.Scalable ?? '').lower() is 'yes'
+      fonts[name] = font
+   end
+
+   return fonts
+   ]])
+end
 
 ----------------------------------------------------------------------------------------------------------------------
 
 gui.mtHSV = { -- HSV metatable
-   __newindex = function(Self, Key, Value)
-      error(f'Table structure is immutable: Cannot set {Key}')
+   __context = true,
+   __name = "HSV",
+   __newindex = function(Key, Value)
+      raise f'Table structure is immutable: Cannot set {Key}'
    end,
-   __eq = function(A:table, B:table):bool
-      return A.h is B.h and A.s is B.s and A.v is B.v and A.a is B.a
+   __eq = function(Other:table!):bool
+      return &h is Other.h and &s is Other.s and &v is Other.v and &a is Other.a
    end,
-   __tostring = function(Self):str -- Returns an SVG compliant colour string
-      if Self.a is 1 or Self.a is nil then
-         return string.format('hsv(%d %d %d)', Self.r ?? -1, Self.g ?? -1, Self.b ?? -1)
+   __tostring = function():str -- Returns an SVG compliant colour string
+      if &a is 1 or &a is nil then
+         return string.format('hsv(%d %d %d)', &r ?? -1, &g ?? -1, &b ?? -1)
       else
-         return string.format('hsv(%d %d %d / %g)', Self.r ?? -1, Self.g ?? -1, Self.b ?? -1, Self.a)
+         return string.format('hsv(%d %d %d / %g)', &r ?? -1, &g ?? -1, &b ?? -1, &a)
       end
    end
 }
@@ -51,20 +103,20 @@ gui.hsv = function(H:num, S:num, V:num, A:num):table -- HSV values
    return setmetatable({ h = H, s = S, v = V, a = A }, gui.mtHSV)
 end
 
-function gui.mtHSV:interpolate(New:table, Ratio:num):table
+function gui.mtHSV.interpolate(New:table!, Ratio:num):table
    Ratio ?= 0.5
    return setmetatable({
-      a = self.a + ((New.a - self.a) * Ratio),
-      h = self.h + ((New.h - self.h) * Ratio),
-      s = self.s + ((New.s - self.s) * Ratio),
-      v = self.v + ((New.v - self.v) * Ratio)
+      a = &a + ((New.a - &a) * Ratio),
+      h = &h + ((New.h - &h) * Ratio),
+      s = &s + ((New.s - &s) * Ratio),
+      v = &v + ((New.v - &v) * Ratio)
    }, gui.mtHSV)
 end
 
-function gui.mtHSV:toRGB():table
-   h = self.h / 60
-   s = self.s
-   v = self.v
+function gui.mtHSV.toRGB():table
+   h = &h / 60
+   s = &s
+   v = &v
    i = math.floor(h)
    f = h - i
    if (i & 1) is 0 then f = 1 - f end
@@ -72,36 +124,38 @@ function gui.mtHSV:toRGB():table
    n = v * (1 - s * f)
 
    if i is 6 or i is 0 then
-      return setmetatable({ r = v, g = n, b = m, a = self.a }, gui.mtRGB)
+      return setmetatable({ r = v, g = n, b = m, a = &a }, gui.mtRGB)
    elseif i is 1 then
-      return setmetatable({ r = n, g = v, b = m, a = self.a }, gui.mtRGB)
+      return setmetatable({ r = n, g = v, b = m, a = &a }, gui.mtRGB)
    elseif i is 2 then
-      return setmetatable({ r = m, g = v, b = n, a = self.a }, gui.mtRGB)
+      return setmetatable({ r = m, g = v, b = n, a = &a }, gui.mtRGB)
    elseif i is 3 then
-      return setmetatable({ r = m, g = n, b = v, a = self.a }, gui.mtRGB)
+      return setmetatable({ r = m, g = n, b = v, a = &a }, gui.mtRGB)
    elseif i is 4 then
-      return setmetatable({ r = n, g = m, b = v, a = self.a }, gui.mtRGB)
+      return setmetatable({ r = n, g = m, b = v, a = &a }, gui.mtRGB)
    elseif i is 5 then
-      return setmetatable({ r = v, g = m, b = n, a = self.a }, gui.mtRGB)
+      return setmetatable({ r = v, g = m, b = n, a = &a }, gui.mtRGB)
    else
-      return setmetatable({ r = 0, g = 0, b = 0, a = self.a }, gui.mtRGB)
+      return setmetatable({ r = 0, g = 0, b = 0, a = &a }, gui.mtRGB)
    end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
 gui.mtRGB = { -- sRGB metatable
-   __newindex = function(Self, Key, Value)
-      error(f'Table structure is immutable: Cannot set {Key}')
+   __context = true,
+   __name = "RGB",
+   __newindex = function(Key, Value)
+      raise f'Table structure is immutable: Cannot set {Key}'
    end,
-   __eq = function(A:table, B:table):bool
-      return A.r is B.r and A.g is B.g and A.b is B.b and A.a is B.a
+   __eq = function(Other:table!):bool
+      return &r is Other.r and &g is Other.g and &b is Other.b and &a is Other.a
    end,
-   __tostring = function(Self):str -- Returns an SVG compliant colour string
-      if Self.a >= 1 or Self.a is nil then
-         return string.format('rgb(%d %d %d)', Self.r ? Self.r * 255 :> 0, Self.g ? Self.g * 255 :> 0, Self.b ? Self.b * 255 :> 0)
+   __tostring = function():str -- Returns an SVG compliant colour string
+      if &a >= 1 or &a is nil then
+         return string.format('rgb(%d %d %d)', &r ? &r * 255 : 0, &g ? &g * 255 : 0, &b ? &b * 255 : 0)
       else
-         return string.format('rgb(%d %d %d / %g)', Self.r ? Self.r * 255 :> 0, Self.g ? Self.g * 255 :> 0, Self.b ? Self.b * 255 :> 0, Self.a)
+         return string.format('rgb(%d %d %d / %g)', &r ? &r * 255 : 0, &g ? &g * 255 : 0, &b ? &b * 255 : 0, &a)
       end
    end
 }
@@ -113,54 +167,54 @@ gui.srgb = function(R:num, G:num, B:num, A:num, KV:table):table -- sRGB values
    G ?= 0
    B ?= 0
    A ?= 255
-   result = { r = R/255, g = G/255, b = B/255, a = A/255 }
+   result = entity { r = R/255, g = G/255, b = B/255, a = A/255 }
    if KV then
-      for k, v in pairs(KV) do
+      for k, v in KV do
          result[k] = v
       end
    end
    return setmetatable(result, gui.mtRGB)
 end
 
-gui.nrgb = function(R:num, G:num, B:num, A:num, KV:table):table -- Normalised RGB values
-   result = { r = R, g = G, b = B, a = A ? A :> 1 }
+gui.nrgb = function(R:num!, G:num!, B:num!, A:num, KV:table):table -- Normalised RGB values
+   result = entity { r = R, g = G, b = B, a = A ? A : 1 }
    if KV then
-      for k, v in pairs(KV) do
+      for k, v in KV do
          result[k] = v
       end
    end
    return setmetatable(result, gui.mtRGB)
 end
 
-function gui.mtRGB:interpolate(New:table, Ratio:num):table
+function gui.mtRGB.interpolate(New:table!, Ratio:num):table
    Ratio ?= 0.5
    return setmetatable({
-      a = self.a + ((New.a - self.a) * Ratio),
-      r = self.r + ((New.r - self.r) * Ratio),
-      g = self.g + ((New.g - self.g) * Ratio),
-      b = self.b + ((New.b - self.b) * Ratio)
+      a = &a + ((New.a - &a) * Ratio),
+      r = &r + ((New.r - &r) * Ratio),
+      g = &g + ((New.g - &g) * Ratio),
+      b = &b + ((New.b - &b) * Ratio)
    }, gui.mtRGB)
 end
 
-function gui.mtRGB:toHSV():table -- Normalised HSV
-   max = self:brightness()
-   hsv = { v = max }
+function gui.mtRGB.toHSV():table -- Normalised HSV
+   max = &brightness()
+   hsv = entity { v = max }
    if max > 0 then
-      min = self.b
-      if self.g < min then min = self.g end
-      if self.r < min then min = self.r end
+      min = &b
+      if &g < min then min = &g end
+      if &r < min then min = &r end
 
       delta = max - min
       hsv.s = delta / max
       if hsv.s is 0 then
          hsv.h = 0
       else
-         if self.r >= max then
-            hsv.h = (self.g - self.b) / delta
-         elseif self.g >= max then
-            hsv.h = 2.0 + (self.b - self.r) / delta
+         if &r >= max then
+            hsv.h = (&g - &b) / delta
+         elseif &g >= max then
+            hsv.h = 2.0 + (&b - &r) / delta
          else
-            hsv.h = 4.0 + (self.r - self.g) / delta
+            hsv.h = 4.0 + (&r - &g) / delta
          end
          hsv.h = hsv.h * 60
          if hsv.h < 0 then hsv.h = hsv.h + 360 end
@@ -174,34 +228,34 @@ end
 
 -- Return the light value of an RGB colour (i.e. the V in HSV)
 
-function gui.mtRGB:brightness():num
-   local max = self.b
-   if self.g > max then max = self.g end
-   if self.r > max then max = self.r end
+function gui.mtRGB.brightness():num
+   local max:num = &b
+   if &g > max then max = &g end
+   if &r > max then max = &r end
    return max
 end
 
-function gui.mtRGB:withAlpha(Alpha:num):table
-   return setmetatable({ r = self.r, g = self.g, b = self.b, a = self.a * Alpha }, gui.mtRGB)
+function gui.mtRGB.withAlpha(Alpha:num!):table
+   return setmetatable({ r = &r, g = &g, b = &b, a = &a * Alpha }, gui.mtRGB)
 end
 
-function gui.mtRGB:linearise():table
+function gui.mtRGB.linearise():table
    function lineariseRGB(u)
-      return (u <= 0.04045) ? (u / 12.92) :> (((u + 0.055) / 1.055) ** 2.4)
+      return (u <= 0.04045) ? (u / 12.92) : (((u + 0.055) / 1.055) ** 2.4)
    end
 
-   return { r = lineariseRGB(self.r), g = lineariseRGB(self.g), b = lineariseRGB(self.b), a = self.a }
+   return { r = lineariseRGB(&r), g = lineariseRGB(&g), b = lineariseRGB(&b), a = &a }
 end
 
 -- Convert RGB table { r, g, b, a } (0-1) to HSL table { h, s, l }
 -- h is hue in degrees [0,360), s and l are in [0,1].
 
-function gui.mtRGB:toHSL():table
-   local r = self.r
-   local g = self.g
-   local b = self.b
+function gui.mtRGB.toHSL():table
+   local r:num = &r
+   local g:num = &g
+   local b:num = &b
 
-   local max = r
+   local max:num = r
    if g > max then max = g end
    if b > max then max = b end
 
@@ -215,7 +269,7 @@ function gui.mtRGB:toHSL():table
    end
 
    local delta = max - min
-   local s = (l > 0.5) ? (delta / (2 - max - min)) :> (delta / (max + min))
+   local s = (l > 0.5) ? (delta / (2 - max - min)) : (delta / (max + min))
    local h
 
    if r >= max then
@@ -234,16 +288,16 @@ end
 -- Return the relative luminance of the colour per WCAG 2.x (BT.709 coefficients).
 -- Result is in [0,1] where 0 is black and 1 is white.
 
-function gui.mtRGB:luminance():num
-   local linear = self:linearise()
+function gui.mtRGB.luminance():num
+   local linear = &linearise()
    return (0.2126 * linear.r) + (0.7152 * linear.g) + (0.0722 * linear.b)
 end
 
 -- Convert RGB table { r, g, b, a } (0-255) to Display P3 table { r, g, b }
 -- Values are in [0,1].  Out-of-gamut sRGB colours may produce values outside [0,1].
 
-function gui.mtRGB:toDisplayP3():table
-   local linear = self:linearise()
+function gui.mtRGB.toDisplayP3():table
+   local linear = &linearise()
 
    -- sRGB linear → XYZ D65
    local x =  0.4124564 * linear.r + 0.3575761 * linear.g + 0.1804375 * linear.b
@@ -256,7 +310,7 @@ function gui.mtRGB:toDisplayP3():table
    local pb =  0.0358458 * x - 0.0761724 * y + 0.9568845 * z
 
    -- Apply sRGB-style gamma (Display P3 uses the same transfer function)
-   gamma = (u) => (u <= 0.0031308) ? (u * 12.92) :> (1.055 * (u ** (1 / 2.4)) - 0.055)
+   gamma = (u) => (u <= 0.0031308) ? (u * 12.92) : (1.055 * (u ** (1 / 2.4)) - 0.055)
 
    return { r = gamma(pr), g = gamma(pg), b = gamma(pb) }
 end
@@ -264,8 +318,8 @@ end
 -- Convert RGB table { r, g, b, a } (0-255) to OKLab table { okl, oka, okb, a }
 -- okl is lightness in [0,1], oka is green-red axis, okb is blue-yellow axis (both typically -0.5 to 0.5).
 
-function gui.mtRGB:toOKLab():table
-   local linear = self:linearise()
+function gui.mtRGB.toOKLab():table
+   local linear = &linearise()
 
    -- Linear sRGB → LMS (OKLab M1 matrix)
    lms_l = 0.4122214708 * linear.r + 0.5363325363 * linear.g + 0.0514459929 * linear.b
@@ -282,22 +336,22 @@ function gui.mtRGB:toOKLab():table
       okl = 0.2104542553 * lms_l + 0.7936177850 * lms_m - 0.0040720468 * lms_s,
       oka = 1.9779984951 * lms_l - 2.4285922050 * lms_m + 0.4505937099 * lms_s,
       okb = 0.0259040371 * lms_l + 0.7827717662 * lms_m - 0.8086757660 * lms_s,
-      a   = self.a
+      a   = &a
    }
 end
 
 -- Convert RGB table { r, g, b, a } (0-255) to OKLCH table { okl, okc, okh, a }
 -- okl is lightness in [0,1], okc is chroma (unbounded, typically 0-0.4), okh is hue in degrees [0,360).
 
-function gui.mtRGB:toOKLCH():table
-   local lab = self:toOKLab()
+function gui.mtRGB.toOKLCH():table
+   local lab = &toOKLab()
    local c = math.sqrt(lab.oka * lab.oka + lab.okb * lab.okb)
    local h = math.deg(math.atan2(lab.okb, lab.oka))
    if h < 0 then h = h + 360 end
-   return setmetatable({ okl = lab.okl, okc = c, okh = h, a = self.a },
-      { __tostring = (Self) => Self.a is 1 ?
-         string.format('oklch(%.3f %.3f %.3f)', Self.okl, Self.okc, Self.okh) :>
-         string.format('oklch(%.3f %.3f %.3f / %.3f)', Self.okl, Self.okc, Self.okh, Self.a)
+   return setmetatable({ okl = lab.okl, okc = c, okh = h, a = &a },
+      { __tostring = () => &a is 1 ?
+         string.format('oklch(%.3f %.3f %.3f)', &okl, &okc, &okh) :
+         string.format('oklch(%.3f %.3f %.3f / %.3f)', &okl, &okc, &okh, &a)
       }
    )
 end
@@ -307,15 +361,15 @@ end
 gui.getFontHeight = function(Font:table):<num,num>
    try<trace>
       if not Font.height then
-         err, handle = lVec.getFontHandle(Font.face, 'Regular', 0, Font.size)
+         err, handle = mVec.GetFontHandle(Font.face, 'Regular', 0, tonumber(Font.size))
          metrics = struct.new('FontMetrics')
-         lVec.getFontMetrics(handle, metrics)
+         mVec.GetFontMetrics(handle, metrics)
          Font.height  = metrics.height
          Font.spacing = metrics.lineSpacing
       end
       return Font.spacing, Font.height
    except ex
-      error(f'{ex.message}\n{ex.stackTrace}')
+      raise f'{ex.message}\n{ex.stackTrace}'
    end
 end
 
@@ -323,7 +377,7 @@ end
 -- Read a style value and return it in pixel units.  Supports px, in, mm, pt, dp
 
 gui.pixel = function(val:str):num
-   val ?? return 0
+   val ?! return 0
    num, alpha = rxPixel.extract(val)
    num = tonumber(num)
    assert(num, f'Invalid graphics unit \'{val}\'')
@@ -340,38 +394,37 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Convert a colour string to an RGB table.
 
-gui.strToRGB = function(Value:str):table
+gui.strToRGB = function(Value:str!):table
    assert(Value, 'Empty value passed to strToRGB()')
 
    try<trace>
-      lVec.ReadPainter(nil, Value, glPainter)
+      mVec.ReadPainter(nil, Value, glPainter)
       nrgb = glPainter.Colour
-      if nrgb.Red < 0 then nrgb.Red = 0 end
-      if nrgb.Red > 1 then nrgb.Red = 1 end
-      if nrgb.Green < 0 then nrgb.Green = 0 end
-      if nrgb.Green > 1 then nrgb.Green = 1 end
-      if nrgb.Blue < 0 then nrgb.Blue = 0 end
-      if nrgb.Blue > 1 then nrgb.Blue = 1 end
-      return setmetatable({ r=nrgb.red, g=nrgb.green, b=nrgb.blue, a=nrgb.alpha }, gui.mtRGB)
+      return setmetatable({
+         r = math.clamp(nrgb.red, 0, 1),
+         g = math.clamp(nrgb.green, 0, 1),
+         b = math.clamp(nrgb.blue, 0, 1),
+         a = nrgb.alpha
+      }, gui.mtRGB)
    except ex
-      error(f'Parsing "{Value}" failed: {ex.message}\n{ex.stackTrace}')
+      raise f'Parsing "{Value}" failed: {ex.message}\n{ex.stackTrace}'
    end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-gui.rgbToIconTheme = function(Value:any):str
-   if type(Value) is 'string' then
+gui.rgbToIconTheme = function(Value:any!):str
+   if Value is <str> then
       Value = gui.strToRGB(Value)
    end
 
-   return (Value:brightness() > 0.5) ? 'pearl' :> 'carbon'
+   return (Value.brightness() > 0.5) ? 'pearl' : 'carbon'
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Call a client function for each vector in the tree
 
-gui.forVector = function(Vector:obj, Function)
+gui.forVector = function(Vector:obj!, Function)
    while Vector do
       Function(Vector)
       child = Vector.child
@@ -382,7 +435,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-gui.applyFill = function(Vector:obj, Fill)
+gui.applyFill = function(Vector:obj!, Fill)
    while Vector do
       if Vector.fill != 'none' then
          Vector.fill = Fill
@@ -397,24 +450,37 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Generate a simple gradient fill for vectors.
 
-gui.simpleGradient = function(Scene:obj, Name:str, Colours, X1:num, Y1:num, X2:num, Y2:num, Units:str, IgnoreClashes:bool)
+gui.simpleGradient = function(Scene:obj!, Name:str!, Colours:any!, X1:num!, Y1:num!, X2:num!, Y2:num!, Units:str,
+   IgnoreClashes:bool)
    assert(Name, 'A name for the gradient is required.')
+
+   local colours:any
+
+   if #Colours then
+      colours = Colours
+   else
+      colours = array<table>
+      colours.push(Colours.first)
+      colours.push(Colours.last)
+   end
+
+   assert(#colours > 1, 'At least two colours are required to create a gradient.')
 
    stops = { }
    i = 0
-   for col in values(Colours) do
+   for col in values(colours) do
       vc = struct.new('GradientStop')
-      vc.offset    = col.offset ? col.offset :> (i / (#Colours - 1))
+      vc.offset    = col.offset ? col.offset : (i / (#colours - 1))
       vc.rgb.red   = col.r
       vc.rgb.green = col.g
       vc.rgb.blue  = col.b
-      vc.rgb.alpha = col.a ? col.a :> 1.0
-      table.insert(stops, vc)
+      vc.rgb.alpha = col.a ? col.a : 1.0
+      stops.insert(vc)
       i++
    end
 
-   local gradient = Scene.new('VectorGradient', {
-      name=Name, type='linear', stops=stops, x1=X1, y1=Y1, x2=X2, y2=Y2, units=(Units ?? 'boundingbox')
+   local gradient = Scene.new('GradientLinear', {
+      name=Name, stops=stops, x1=X1, y1=Y1, x2=X2, y2=Y2, units=(Units ?? 'boundingbox')
    })
 
    if IgnoreClashes then -- Do not fail if a resource with the same name already exists (nb: will return nil).
@@ -425,7 +491,7 @@ gui.simpleGradient = function(Scene:obj, Name:str, Colours, X1:num, Y1:num, X2:n
             gradient.free()
             return
          else
-            error(ex)
+            raise
          end
       end
    else
@@ -440,7 +506,7 @@ end
 -- i.e. "url(#Path)".  Using it in a VectorRectangle is akin to a cached bitmap (fast), or apply to a VectorViewport
 -- for live rendering (higher quality transforms).
 
-gui.createIcon = function(Scene:obj, Path:str, Size:num, Theme:any, Name:str):table
+gui.createIcon = function(Scene:obj!, Path:str!, Size:num, Theme:any!, Name:str):table
    Size ??= 16
    assert(Path, 'No Path specified.')
    lGradient = gui.iconThemes.default
@@ -449,19 +515,19 @@ gui.createIcon = function(Scene:obj, Path:str, Size:num, Theme:any, Name:str):ta
    gui._counter++
    gname = 'icon_grd' .. gui._counter
 
-   if type(Theme) is 'table' then
+   if Theme is <table> then
       lGradient = Theme
-   elseif type(Theme) is 'string' then
+   elseif Theme is <str> then
       gname = f'icon_{Theme}'
       if gui.iconThemes[Theme] then
          lGradient = gui.iconThemes[Theme]
       else
-         error(f'gui.createIcon() theme {Theme} not recognised.')
+         raise f'gui.createIcon() theme {Theme} not recognised.'
       end
 
-      Name ??= Theme:lower() .. '/' .. Path:lower()
+      Name ??= Theme.lower() .. '/' .. Path.lower()
    else
-      error('Invalid Theme specified.')
+      raise 'Invalid Theme specified.'
    end
 
    Name ??= Path
@@ -472,7 +538,7 @@ gui.createIcon = function(Scene:obj, Path:str, Size:num, Theme:any, Name:str):ta
 
    icon.pattern  = Scene.new('VectorPattern', { pageWidth=Size, pageHeight=Size, spreadMethod=VSPREAD_PAD })
    icon.gradient = gui.simpleGradient(icon.pattern.scene, gname, { lGradient.first, lGradient.last }, 0, 0, 0, 1, 'boundingbox', true)
-   if not Path:startsWith('icons:') then
+   if not Path.startsWith('icons:') then
       Path = f'icons:{Path}.svg'
    end
    icon.svg = obj.new('svg', { target=icon.pattern.viewport, path=Path })
@@ -500,8 +566,8 @@ end
 -- Pos & MarginX can be numbers or proportional values, e.g. 100%
 -- Negative positions, including -0.0, are interpreted as offsets from the end
 
-gui.separator = function(Viewport:obj, Orientation:str, Pos:any, MarginA:any, MarginB:any):num
-   local o = Orientation:substr(0, 1)
+gui.separator = function(Viewport:obj!, Orientation:str!, Pos:any!, MarginA:any, MarginB:any):num
+   local o = Orientation.sub(0, 1)
    local options = { fill=tostring(gui.getTheme(Viewport).window.stroke) }
 
    if o is 'h' or o is 'H' then
@@ -509,7 +575,7 @@ gui.separator = function(Viewport:obj, Orientation:str, Pos:any, MarginA:any, Ma
       options.xOffset = MarginB ?? 0
       options.height  = gui.sizing.widget.strokeWidth
 
-      if type(Pos) is 'number' and (Pos < 0 or (Pos is 0 and (1/Pos) < 0)) then -- Include negative zero
+      if Pos is <num> and (Pos < 0 or (Pos is 0 and (1/Pos) < 0)) then -- Include negative zero
          options.yOffset = -Pos
          subvp = Viewport.new('VectorViewport', options)
          subvp.new('VectorRectangle', { fill=options.fill, width='100%', height='100%' })
@@ -521,7 +587,7 @@ gui.separator = function(Viewport:obj, Orientation:str, Pos:any, MarginA:any, Ma
       options.y       = MarginA ?? 0
       options.yOffset = MarginB ?? 0
       options.width   = gui.sizing.widget.strokeWidth
-      if type(Pos) is 'number' and (Pos < 0 or (Pos is 0 and (1/Pos) < 0)) then
+      if Pos is <num> and (Pos < 0 or (Pos is 0 and (1/Pos) < 0)) then
          options.xOffset = -Pos
          subvp = Viewport.new('VectorViewport', options)
          subvp.new('VectorRectangle', { fill=options.fill, width='100%', height='100%' })
@@ -538,7 +604,7 @@ end
 -- display Window).  NB: If a viewport is provided then the nearest parent scene is queried.
 
 gui.getTheme = function(Object:obj):table
-   local scene
+   local scene:obj
 
    if not Object then
       return gui.themes[gui.theme]
@@ -549,10 +615,10 @@ gui.getTheme = function(Object:obj):table
    elseif obj.class(Object).name is 'VectorScene' then
       scene = Object
    else
-      error(f'Provided object class {Object.class()} is unsupported.')
+      raise f'Provided object class {Object.class()} is unsupported.'
    end
 
-   state = scene._state()
+   state = scene.state()
    themeName = state.theme -- Get pre-defined theme
    if not themeName then -- Theme undefined, apply the default
       state.theme = gui.theme
@@ -568,21 +634,21 @@ end
 -- user preference that provides the 'accents' that colour chosen theme.  Although the light and dark themes rely
 -- on palette colours heavily, alternative themes may ignore them entirely.
 
-gui.setTheme = function(Object:obj, Theme:str):table
+gui.setTheme = function(Object:obj, Theme:str!):table
    msg(f'gui.setTheme({Object}, {Theme})')
 
    local state
    if Object then
-      local scene
+      local scene:obj
       if obj.class(Object).name is 'VectorViewport' then
          scene = Object.scene
       elseif obj.class(Object).name is 'VectorScene' then
          scene = Object
       else
-         error(f'Provided object class {Object.class()} is unsupported.')
+         raise f'Provided object class {Object.class()} is unsupported.'
       end
 
-      state = scene._state()
+      state = scene.state()
    end
 
    if not gui.themes[Theme] then
@@ -606,11 +672,11 @@ gui.setTheme = function(Object:obj, Theme:str):table
    return gui.themes[Theme]
 end
 
-local function modifyAlpha(Colour:str, Alpha:num):str
-   lVec.ReadPainter(nil, Colour, glPainter)
+function modifyAlpha(Colour:str!, Alpha:num!):str
+   mVec.ReadPainter(nil, Colour, glPainter)
    nrgb = glPainter.Colour
    rgb = gui.nrgb(nrgb.red, nrgb.green, nrgb.blue, nrgb.alpha)
-   return tostring(rgb:withAlpha(Alpha))
+   return tostring(rgb.withAlpha(Alpha))
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -628,14 +694,14 @@ gui.sizing = {
 }
 
 gui.fonts = {
-   -- Use percentages for scalable sizes, where 100% is equivalent to the value of gui.interface.fontSize
+   -- Percentages are scaled against gui.interface.fontSize
    default  = { face='Noto Sans,Source Sans Pro', size='100%' },
    window   = { face='Noto Sans,Source Sans Pro', style='medium', size='100%' }, -- For non-widget text
-   button   = { face='Noto Sans,Source Sans Pro', size='12' }, -- Text inside buttons
-   filesys  = { face='Inconsolata', size='12', style='medium' }, -- Text for files, folders
-   icon     = { face='Noto Sans,Source Sans Pro', size='10', size='100%' }, -- Labeling for icons
-   menu     = { face='Noto Sans,Source Sans Pro', style='medium', size='12' }, -- Menu & dropdown item text
-   page     = { face='Noto Sans,Source Sans Pro', size='12' }, -- Multiple lines of text
+   button   = { face='Noto Sans,Source Sans Pro', size=12 }, -- Text inside buttons
+   filesys  = { face='Inconsolata', size=12, style='medium' }, -- Text for files, folders
+   icon     = { face='Noto Sans,Source Sans Pro', size='100%' }, -- Labeling for icons
+   menu     = { face='Noto Sans,Source Sans Pro', style='medium', size=12 }, -- Menu & dropdown item text
+   page     = { face='Noto Sans,Source Sans Pro', size=12 }, -- Multiple lines of text
    titlebar = { face='Noto Sans', size='100%' }, -- Window titlebar text
    small    = { face='Tiny', size='60%' }, -- Recommended text for small sizes
    large    = { face='Noto Sans,Source Sans Pro', size='130%' }, -- Recommended text for headers
@@ -736,7 +802,7 @@ gui.palettes = {
             paletteTheme = [_*]cfg.mtReadValue('Style', 'PaletteTheme')
             gui.theme = theme
             if gui.palettes[palette] then
-               gui.paletteTheme = gui.palettes?[palette]?[paletteTheme] ? paletteTheme :> 'light'
+               gui.paletteTheme = gui.palettes?[palette]?[paletteTheme] ? paletteTheme : 'light'
                gui.palette = gui.palettes[palette]
             end
          except ex

@@ -4,7 +4,7 @@ SSL Communication Test
 This test suite verifies SSL-enabled network communications using the NSF_SSL flag.
 
 Tests include:
-- SSL server socket creation and certificate handling
+- SSL NetServer creation and certificate handling
 - SSL client connection establishment and handshake
 - Encrypted data transfer verification
 - SSL-specific error conditions and recovery
@@ -19,7 +19,7 @@ If SSL is not available, tests will be skipped with appropriate messages.
 
    include 'network'
 
-   mNet ?= mod.load('network')
+module network as mNet
 
 glPort = 21605
 glSSLTestData = 'SECRET_SSL_MESSAGE_123'
@@ -30,35 +30,38 @@ rxContentLength = <{ regex.new([[Content-Length:\s*(\d+)]]) }>
 ----------------------------------------------------------------------------------------------------------------------
 
 function printableState(State)
-   if State is NTC_CONNECTED then return 'CONNECTED'
-   elseif State is NTC_DISCONNECTED then return 'DISCONNECTED'
-   elseif State is NTC_HANDSHAKING then return 'HANDSHAKING'
-   else return tostring(State) end
+   return choose State from
+      NTC_CONNECTED -> 'CONNECTED'
+      NTC_CONNECTING -> 'CONNECTING'
+      NTC_DISCONNECTED -> 'DISCONNECTED'
+      NTC_HANDSHAKING -> 'HANDSHAKING'
+      NTC_RESOLVING -> 'RESOLVING'
+      else -> tostring(State)
+   end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Simple localised connectivity test between server and client.  The client manually enables the SSL handshake
 -- with SetSSL().
 
-@Test; @Requires(ssl=true)
+@Test(priority=10); @Requires(ssl=true)
 function BasicSSLCommunication()
-   proc = processing.new({ timeout = 5.0 })
    ssl_handshake_complete = false
    ssl_data_received = false
 
    glPort++
 
-   ssl_server = obj.new('netsocket', {
+   ssl_server = obj.new('netserver', {
       name = 'server',
       feedback = function(Socket, Client, State)
          logOutput('[Server] Client state: ' .. printableState(State))
 
          assert(Client, 'Client parameter is empty')
 
-         if (State is NTC_HANDSHAKING) then
+         if State is NTC_HANDSHAKING then
             logOutput('[Server] SSL handshake in progress...')
 
-         elseif (State is NTC_CONNECTED) then
+         elseif State is NTC_CONNECTED then
             logOutput('[Server] SSL handshake completed, client connected securely')
             ssl_handshake_complete = true
 
@@ -69,39 +72,39 @@ function BasicSSLCommunication()
          elseif State is NTC_DISCONNECTED then
             logOutput('[Server] SSL client disconnected')
             if ssl_handshake_complete and ssl_data_received then
-               proc.signal()
+               Socket.acSignal()
             end
          end
       end,
-      incoming = function(Socket, Client)
-         buffer = string.alloc(1024)
+      incoming = function(Socket:obj, Client:obj)
+         buffer = array<byte, 1024>
          err, read_len = Client.acRead(buffer)
 
          if err is ERR_Okay then
-            assert(read_len > 0, 'Received incoming data notification with no data to read.')
+            if read_len is 0 then return end
 
-            emsg = buffer:substr(0, read_len)
+            emsg = buffer.getString(0, read_len)
             logOutput('[Server] Received encrypted message of ' .. read_len .. ' bytes: "' .. tostring(emsg) .. '"')
 
             -- Verify message integrity over SSL
-            if emsg:startsWith('SSL_ECHO:' .. glSSLTestData) then
+            if emsg.startsWith('SSL_ECHO:' .. glSSLTestData) then
                logOutput('[Server] SSL message integrity verified!')
                ssl_data_received = true
                Socket.mtDisconnectSocket(Client)
             else
-               error('[Server] SSL message integrity check failed. Got: "' .. emsg .. '"')
+               raise '[Server] SSL message integrity check failed. Got: "' .. emsg .. '"'
             end
          elseif err is ERR_Disconnected then
             raise ERR_Terminate
          else
-            error('[Server] SSL read error: ' .. mSys.GetErrorMsg(err))
+            raise '[Server] SSL read error: ' .. mSys.GetErrorMsg(err)
          end
       end,
       port = glPort,
-      flags = 'SERVER|SSL'
+      flags = NSF_SSL
    })
 
-   assert(ssl_server, 'Failed to create SSL server socket')
+   assert(ssl_server, 'Failed to create SSL NetServer')
    assert(ssl_server.error is ERR_Okay, 'SSL server error: ' .. mSys.GetErrorMsg(ssl_server.error))
 
    ssl_client = obj.new('netsocket', {
@@ -109,27 +112,27 @@ function BasicSSLCommunication()
       feedback = function(Socket, State)
          logOutput('[Client] Connection state: ' .. printableState(State))
 
-         if (State is NTC_HANDSHAKING) then
+         if State is NTC_HANDSHAKING then
             logOutput('[Client] Performing SSL handshake...')
 
-         elseif (State is NTC_CONNECTED) then
+         elseif State is NTC_CONNECTED then
             logOutput('[Client] SSL connection established successfully')
 
             -- Convert the socket to SSL using SetSSL
             err = mNet.SetSSL(Socket, "EnableSSL")
             assert(err is ERR_Okay, '[Client] Failed to enable SSL: ' .. mSys.GetErrorMsg(err))
-         elseif (State is NTC_DISCONNECTED) then
+         elseif State is NTC_DISCONNECTED then
             logOutput('[Client] SSL connection closed')
          end
       end,
       incoming = function(Socket)
-         buffer = string.alloc(1024)
+         buffer = array<byte, 1024>
          err, read_len = Socket.acRead(buffer)
 
          if err is ERR_Okay then
-            assert(read_len > 0, 'Received incoming data notification with no data to read.')
+            if read_len is 0 then return end
 
-            emsg = buffer:substr(0, read_len)
+            emsg = buffer.getString(0, read_len)
             logOutput('[Client] Received encrypted message of ' .. read_len .. ' bytes: "' .. tostring(emsg) .. '"')
 
             -- Echo back the message to verify bidirectional SSL
@@ -140,20 +143,15 @@ function BasicSSLCommunication()
          elseif err is ERR_Disconnected then
             raise ERR_Terminate
          else
-            error('[Client] SSL read error: ' .. mSys.GetErrorMsg(err))
+            raise '[Client] SSL read error: ' .. mSys.GetErrorMsg(err)
          end
       end,
       flags = 'DISABLE_SERVER_VERIFY'
    })
 
-   assert(ssl_client, 'Failed to create SSL client socket')
-
-   logOutput('[Client] Connecting to SSL server...')
-   err = ssl_client.mtConnect('127.0.0.1', glPort)
-   assert(err is ERR_Okay, 'SSL client connection failed: ' .. mSys.GetErrorMsg(err))
-
-   err = proc.sleep()
-   assert(err is ERR_Okay, 'SSL communication test failed: ' .. mSys.GetErrorMsg(err))
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { ssl_server } })
+   check ssl_client.mtConnect('127.0.0.1', glPort)
+   check proc.sleep()
 
    assert(ssl_handshake_complete, 'SSL handshake did not complete')
    assert(ssl_data_received, 'SSL data exchange did not complete')
@@ -161,95 +159,83 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-@Test; @Requires(ssl=true)
+@Test(priority=20); @Requires(ssl=true)
 function SSLStateTransitions()
-   proc = processing.new({ timeout = 5.0 })
    state_sequence = {}
    ssl_handshake_complete = false
    data_exchange_complete = false
 
    glPort++
 
-   ssl_server = obj.new('netsocket', {
+   ssl_server = obj.new('netserver', {
       name = 'SSLStateServer',
       feedback = function(Socket, Client, State)
-         table.insert(state_sequence, 'SERVER:' .. printableState(State))
+         state_sequence.insert('SERVER:' .. printableState(State))
          logOutput('[Server] State transition: ' .. printableState(State) .. ' (' .. mSys.GetErrorMsg(Socket.error) .. ')')
 
          if (State is NTC_CONNECTED) then
             logOutput('[Server] SSL handshake completed successfully!')
             ssl_handshake_complete = true
-            -- Send test message
             logOutput('[Server] Sending test message...')
-            err, len = Client.acWrite('SSL_STATE_TEST_COMPLETE')
-            if (err != ERR_Okay) then
-               error('[Server] Failed to send message: ' .. mSys.GetErrorMsg(err))
-            else
-               logOutput('[Server] Message sent successfully')
-            end
-         elseif (State is NTC_DISCONNECTED) then
-            if (ssl_handshake_complete and data_exchange_complete) then
+            check Client.acWrite('SSL_STATE_TEST_COMPLETE')
+            logOutput('[Server] Message sent successfully')
+         elseif State is NTC_DISCONNECTED then
+            if ssl_handshake_complete and data_exchange_complete then
                logOutput('[Server] Test completed successfully')
-            elseif (ssl_handshake_complete) then
+            elseif ssl_handshake_complete then
                logOutput('[Server] Handshake completed but data exchange failed')
             else
                logOutput('[Server] Connection failed before handshake completion')
             end
-            proc.signal()
+            Socket.acSignal()
          end
       end,
       incoming = function(Socket, Client)
          logOutput('[Server] Incoming data callback triggered')
-         buffer = string.alloc(1024)
+         buffer = array<byte, 1024>
          err, read_len = Client.acRead(buffer)
-         if (err is ERR_Okay) then
-            emsg = buffer:substr(0, read_len)
+         if err is ERR_Okay then
+            if read_len is 0 then return end
+            emsg = buffer.getString(0, read_len)
             logOutput('[Server] Received: ' .. emsg)
             data_exchange_complete = true
             Socket.mtDisconnectSocket(Client)
          elseif (err != ERR_Disconnected) then
-            error('[Server] Read error: ' .. mSys.GetErrorMsg(err))
+            raise '[Server] Read error: ' .. mSys.GetErrorMsg(err)
          end
       end,
       port = glPort,
-      flags = 'SERVER|SSL'
+      flags = NSF_SSL
    })
 
    ssl_client = obj.new('netsocket', {
       name = 'SSLStateClient',
       feedback = function(Socket, State)
-         table.insert(state_sequence, 'CLIENT:' .. printableState(State))
+         state_sequence.insert('CLIENT:' .. printableState(State))
          logOutput('[Client] State transition: ' .. printableState(State))
          if State is NTC_DISCONNECTED then
-            proc.signal()
+            ssl_server.acSignal()
          end
       end,
       incoming = function(Socket)
          logOutput('[Client] Incoming data callback triggered')
-         buffer = string.alloc(1024)
+         buffer = array<byte, 1024>
          err, read_len = Socket.acRead(buffer)
          if err is ERR_Okay then
-            emsg = buffer:substr(0, read_len)
+            if read_len is 0 then return end
+            emsg = buffer.getString(0, read_len)
             logOutput('[Client] Received: ' .. emsg)
-            logOutput('[Client] Sending acknowledgment...')
-            err, len = Socket.acWrite('SSL_STATES_VERIFIED')
-            if (err != ERR_Okay) then
-               error('[Client] Failed to send acknowledgment: ' .. mSys.GetErrorMsg(err))
-            else
-               logOutput('[Client] Acknowledgment sent successfully')
-            end
+            check Socket.acWrite('SSL_STATES_VERIFIED')
          elseif (err != ERR_Disconnected) then
-            error('[Client] Read error: ' .. mSys.GetErrorMsg(err))
+            raise '[Client] Read error: ' .. mSys.GetErrorMsg(err)
          end
       end,
-      flags = 'SSL|DISABLE_SERVER_VERIFY'
+      flags = NSF_SSL|NSF_DISABLE_SERVER_VERIFY
    })
 
-   logOutput('[Client] Initiating connection...')
-   ssl_client.mtConnect('127.0.0.1', glPort)
-
-   err = proc.sleep()
-   assert(err is ERR_Okay, 'sleep() returned ' ..  mSys.GetErrorMsg(err))
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { ssl_server } })
+   check ssl_client.mtConnect('127.0.0.1', glPort)
+   check proc.sleep()
 
    -- Always print the state sequence for debugging
    logOutput('SSL State Sequence:')
@@ -261,9 +247,9 @@ function SSLStateTransitions()
    local server_connected, client_connected
 
    for state in values(state_sequence) do
-      if state:startsWith('SERVER:CONNECTED') then
+      if state.startsWith('SERVER:CONNECTED') then
          server_connected = true
-      elseif state:startsWith('CLIENT:CONNECTED') then
+      elseif state.startsWith('CLIENT:CONNECTED') then
          client_connected = true
       end
    end
@@ -274,12 +260,11 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-@Test; @Requires(ssl=true)
+@Test(priority=30); @Requires(ssl=true)
 function SSLDataIntegrity()
-   proc = processing.new({ timeout = 3.0 })
-   test_messages = {
+   test_messages = array<str> {
       'Binary data: ' .. string.char(0, 1, 2, 3, 255, 254, 253),
-      string.rep('Large SSL message ', 500), -- ~9KB message
+      'Large SSL message '.rep(500), -- ~9KB message
       'Special chars: àáâãäåæçèéêë',
       'JSON: {"encrypted": true, "secure": "data"}',
       'Empty message test: '
@@ -289,22 +274,22 @@ function SSLDataIntegrity()
    glPort++
 
    msgIndex = 0
-   ssl_server = obj.new('netsocket', {
+   ssl_server = obj.new('netserver', {
       name = 'SSLIntegrityServer',
-      feedback = function(Socket, Client, State)
-         if (State is NTC_CONNECTED) then
+      feedback = function(Socket:obj, Client:obj, State:num)
+         if State is NTC_CONNECTED then
             -- Send first test message
             emsg = test_messages[msgIndex]
             logOutput('[Server] Sending message ' .. msgIndex .. ' (' .. #emsg .. ' bytes)')
             Client.acWrite(emsg)
          end
       end,
-      incoming = function(Socket, Client)
-         buffer = string.alloc(10240) -- Large buffer for big messages
+      incoming = function(Socket:obj, Client:obj)
+         buffer = array<byte, 10240> -- Large buffer for big messages
          err, read_len = Client.acRead(buffer)
 
-         if err is ERR_Okay then
-            received = buffer:substr(0, read_len)
+         if err is ERR_Okay and read_len > 0 then
+            received = buffer.getString(0, read_len)
             expected = test_messages[msgIndex]
 
             logOutput('[Server] Received echo ' .. msgIndex .. ' (' .. read_len .. ' bytes)')
@@ -321,25 +306,25 @@ function SSLDataIntegrity()
                   Client.acWrite(next_msg)
                else
                   logOutput('[Server] All messages verified successfully!')
-                  proc.signal()
+                  Socket.acSignal()
                end
             else
-               error('[Server] Message integrity failed for message ' .. msgIndex)
+               raise '[Server] Message integrity failed for message ' .. msgIndex
             end
          end
       end,
       port = glPort,
-      flags = 'SERVER|SSL'
+      flags = 'SSL'
    })
 
    ssl_client = obj.new('netsocket', {
       name = 'SSLIntegrityClient',
       incoming = function(Socket)
-         buffer = string.alloc(10240)
+         buffer = array<byte, 10240>
          err, read_len = Socket.acRead(buffer)
 
          if err is ERR_Okay then
-            emsg = buffer:substr(0, read_len)
+            emsg = buffer.getString(0, read_len)
             logOutput('[Client] Received message (' .. read_len .. ' bytes), echoing back...')
 
             -- Echo back exactly what was received
@@ -350,10 +335,9 @@ function SSLDataIntegrity()
       flags = 'SSL|DISABLE_SERVER_VERIFY'
    })
 
-   ssl_client.mtConnect('127.0.0.1', glPort)
-
-   err = proc.sleep()
-   assert(err is ERR_Okay, 'SSL data integrity test failed: ' .. mSys.GetErrorMsg(err))
+   proc = processing.new({ timeout = 3.0, signals = array<obj> { ssl_server } })
+   check ssl_client.mtConnect('127.0.0.1', glPort)
+   check proc.sleep()
 
    assert(messages_verified is #test_messages,
       'Not all messages verified. Expected: ' .. #test_messages .. ', Verified: ' .. messages_verified)
@@ -361,9 +345,8 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-@Test; @Requires(ssl=true)
+@Test(priority=90); @Requires(ssl=true)
 function HTTPSConnection()
-   proc = processing.new({ timeout = 5.0 })
    data_received     = false
    page_content      = ""
    response_complete = false
@@ -374,12 +357,14 @@ function HTTPSConnection()
    headers_complete  = false
    expected_content_length = 0
    connection_established  = false
+   read_failed             = false
+   read_error              = ''
 
    logOutput('Testing HTTPS connection to ' .. SITE .. '...')
 
    https_client = obj.new('netsocket', {
       name = 'HTTPSGoogleClient',
-      feedback = function(Socket, State)
+      feedback = function(Socket:obj, State:num)
          logOutput('Connection state: ' .. printableState(State))
 
          if State is NTC_HANDSHAKING then
@@ -403,18 +388,17 @@ function HTTPSConnection()
             -- Try to read any remaining data before disconnection
             if connection_established and not data_received then
                logOutput('Attempting final data read...')
-               buffer = string.alloc(8192)
+               buffer = array<byte, 8192>
                err, read_len = Socket.acRead(buffer)
                if err is ERR_Okay and read_len > 0 then
-                  chunk = buffer:substr(0, read_len)
-                  page_content = page_content .. chunk
-                  logOutput('Read ' .. read_len .. ' bytes during disconnect (total: ' .. #page_content .. ')')
+                  chunk = buffer.getString(0, read_len)
+                  page_content ..= chunk
+                  logOutput(f'Read {read_len} bytes during disconnect (total: {#page_content})')
                   data_received = true
                end
             end
 
-            proc.signal()
-            raise ERR_Terminate
+            Socket.acSignal()
          end
       end,
       incoming = function(Socket)
@@ -424,16 +408,20 @@ function HTTPSConnection()
 
          -- Read all available data in this callback
          while true do
-            buffer = string.alloc(8192)
+            buffer = array<byte, 8192>
             err, read_len = Socket.acRead(buffer)
 
             if err is ERR_Okay then
-               assert(read_len > 0, 'Received incoming data notification with no data to read.')
+               if read_len is 0 then
+                  -- This is a common issue because the SSL protocol can send unfinished encrypted blocks
+                  msg('Received incoming data notification with no data to read.')
+                  return
+               end
 
                chunks_received++
                callback_total += read_len
-               chunk = buffer:substr(0, read_len)
-               page_content = page_content .. chunk
+               chunk = buffer.getString(0, read_len)
+               page_content ..= chunk
 
                logOutput('Chunk ' .. chunks_received .. ' received: ' .. read_len .. ' bytes from ' ..
                      SITE .. ' at ' .. elapsed .. 's (total: ' .. #page_content .. ' bytes)')
@@ -441,10 +429,10 @@ function HTTPSConnection()
 
                -- Parse headers if not done yet
                if not headers_complete then
-                  stop = page_content:find('\r\n\r\n')
+                  stop = page_content.find('\r\n\r\n')
                   if stop then
                      headers_complete = true
-                     headers = page_content:substr(0, stop)
+                     headers = page_content.sub(0, stop)
                      logOutput('HTTP headers received (' .. #headers .. ' bytes)')
 
                      -- Extract Content-Length if present
@@ -466,11 +454,14 @@ function HTTPSConnection()
                logOutput('Server closed connection after sending data')
                response_complete = true
                if #page_content > 0 then data_received = true end
-               proc.signal()
-               raise ERR_Terminate
+               Socket.acSignal()
+               return
             else
-               logOutput('HTTPS read error: ' .. mSys.GetErrorMsg(err))
-               raise ERR_Terminate
+               read_failed = true
+               read_error = mSys.GetErrorMsg(err)
+               logOutput('HTTPS read error: ' .. read_error)
+               Socket.acSignal()
+               return
             end
          end
 
@@ -478,15 +469,11 @@ function HTTPSConnection()
             logOutput('Incoming callback processed ' .. callback_total .. ' bytes total in this call')
          end
       end,
-      flags = 'SSL'
+      flags = NSF_SSL
    })
 
-   assert(https_client, 'Failed to create HTTPS client socket')
-
-   logOutput('Connecting to ' .. SITE .. ':443...')
-   err = https_client.mtConnect(SITE, 443)
-   assert(err is ERR_Okay, 'HTTPS client connection failed: ' .. mSys.GetErrorMsg(err))
-
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { https_client } })
+   check https_client.mtConnect(SITE, 443)
    err = proc.sleep()
 
    -- Don't fail if timeout occurred but we got some response
@@ -495,22 +482,23 @@ function HTTPSConnection()
       if connection_established and data_received and #page_content > 0 then
          logOutput('Timeout but data was received - acceptable for this test')
       else
-         error('HTTPS connection test timed out without receiving data')
+         raise 'HTTPS connection test timed out without receiving data'
       end
    elseif err != ERR_Okay then
-      error('HTTPS connection test failed: ' .. mSys.GetErrorMsg(err))
+      raise 'HTTPS connection test failed: ' .. mSys.GetErrorMsg(err)
    end
 
    assert(connection_established, 'HTTPS connection was not established')
    assert(data_received, 'No data was received from the HTTPS server')
    assert(#page_content != 0, 'Index page content is empty')
+   assert(not read_failed, 'HTTPS read failed unexpectedly: ' .. read_error)
 
    final_time = mSys.PreciseTime()
    total_duration = string.format("%.3f", (final_time - start_time) / 1000000.0)
    logOutput('Received ' .. chunks_received .. ' chunks, ' .. #page_content .. ' total bytes')
 
    if expected_content_length > 0 then
-      content_start = page_content:find('\r\n\r\n')
+      content_start = page_content.find('\r\n\r\n')
       if content_start then
          actual_content_length = #page_content - content_start - 3
          logOutput('Body length: ' .. actual_content_length .. ' bytes (expected: ' .. expected_content_length .. ')')
@@ -520,8 +508,8 @@ function HTTPSConnection()
       end
    end
 
-   if rxHTTP.test(page_content) and (page_content:find('200 OK') or page_content:find('301') or
-      page_content:find('302') or page_content:find('404')) then
+   if rxHTTP.test(page_content) and (page_content.find('200 OK') or page_content.find('301') or
+      page_content.find('302') or page_content.find('404')) then
       logOutput(f'Received valid HTTP response ({#page_content} bytes total)')
 
       if #page_content < 2048 then
@@ -529,95 +517,228 @@ function HTTPSConnection()
          logOutput(page_content)
       else
          logOutput('Response preview (first 500 chars):')
-         logOutput(page_content:substr(0, 500) .. '...')
+         logOutput(page_content.sub(0, 500) .. '...')
       end
    else
-      logOutput('Response content preview: ' .. page_content:substr(0, 200))
-      error('Invalid HTTP response received from ' .. SITE)
+      logOutput('Response content preview: ' .. page_content.sub(0, 200))
+      raise 'Invalid HTTP response received from ' .. SITE
    end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-@Test; @Requires(ssl=true)
-function CustomCertificate()
-   proc = processing.new({ timeout = 10.0 })
+function customCertificateFilesAvailable(CertPath, KeyPath)
+   if mSys.AnalysePath(CertPath) != ERR_Okay then
+      logOutput('Test certificate not installed, skipping test: ' .. CertPath)
+      return false
+   end
+
+   if KeyPath and mSys.AnalysePath(KeyPath) != ERR_Okay then
+      logOutput('Test private key not installed, skipping test: ' .. KeyPath)
+      return false
+   end
+
+   return true
+end
+
+function requireCustomCertificateFile(CertPath)
+   assert(mSys.AnalysePath(CertPath) is ERR_Okay,
+      'Required PKCS#12 test certificate is not installed: ' .. CertPath)
+end
+
+function runCustomCertificateHandshake(TestName, CertPath, KeyPath, KeyPassword)
    custom_cert_test_complete = false
    handshake_successful = false
-   CERT_PATH = 'config:ssl/localhost.p12'
 
    glPort++
 
-   if (mSys.AnalysePath(CERT_PATH) != ERR_Okay) then
-      logOutput('Test certificate not installed, skipping test...')
-      return
-   end
-
-   -- Test with localhost.p12 certificate if available
-   ssl_server = obj.new('netsocket', {
-      name = 'CustomCertServer',
-      sslCertificate = CERT_PATH,
+   server_config = {
+      name = TestName .. 'Server',
+      sslCertificate = CertPath,
       feedback = function(Socket, Client, State)
          logOutput('[Server] State: ' .. printableState(State))
 
          if State is NTC_CONNECTED then
             handshake_successful = true
             logOutput('[Server] SSL handshake with custom certificate successful!')
-
-            -- Send confirmation message
-            err, len = Client.acWrite('CUSTOM_CERT_CONFIRMED')
-            if err is ERR_Okay then
-               logOutput('[Server] Custom certificate test message sent')
-            else
-               error('[Server] Failed to send test message: ' .. mSys.GetErrorMsg(err))
-            end
-
+            check Client.acWrite('CUSTOM_CERT_CONFIRMED')
+            logOutput('[Server] Custom certificate test message sent')
          elseif State is NTC_DISCONNECTED then
             if not (handshake_successful and custom_cert_test_complete) then
                logOutput('Disconnected before test was completed.')
             end
-            proc.signal()
+            Socket.acSignal()
          end
       end,
       incoming = function(Socket, Client)
-         buffer = string.alloc(1024)
+         buffer = array<byte, 1024>
          err, read_len = Client.acRead(buffer)
-         if err is ERR_Okay then
-            message = buffer:substr(0, read_len)
+         if err is ERR_Okay and read_len > 0 then
+            message = buffer.getString(0, read_len)
             logOutput('[Server] Received: ' .. message)
             custom_cert_test_complete = true
             Socket.mtDisconnectSocket(Client)
          end
       end,
       port = glPort,
-      flags = 'SERVER|SSL'
-   })
+      flags = NSF_SSL
+   }
 
-   assert(ssl_server, 'Failed to create custom certificate SSL server')
+   if KeyPath then server_config.sslPrivateKey = KeyPath end
+   if KeyPassword then server_config.sslKeyPassword = KeyPassword end
+
+   ssl_server = obj.new('netserver', server_config)
 
    ssl_client = obj.new('netsocket', {
-      name = 'CustomCertClient',
+      name = TestName .. 'Client',
       feedback = function(Socket, State)
          logOutput('[Client] State: ' .. printableState(State))
 
          if State is NTC_CONNECTED then
             logOutput('Connected to custom certificate server')
-
-            err, len = Socket.acWrite('CLIENT_RESPONSE')
-            assert(err is ERR_Okay, 'Failed to send response: ' .. mSys.GetErrorMsg(err))
+            check Socket.acWrite('CLIENT_RESPONSE')
          end
       end,
-      flags = 'SSL|DISABLE_SERVER_VERIFY'  -- Use no-verify for test certificate
+      flags = NSF_SSL|NSF_DISABLE_SERVER_VERIFY  -- Use no-verify for test certificate
    })
 
-   assert(ssl_client, 'Failed to create custom certificate SSL client')
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { ssl_server } })
+   check ssl_client.mtConnect('127.0.0.1', glPort)
+   check proc.sleep()
 
-   err = ssl_client.mtConnect('127.0.0.1', glPort)
-   assert(err is ERR_Okay, 'Failed to initiate connection to custom cert server: ' .. mSys.GetErrorMsg(err))
-
-   logOutput('[Custom Cert] Connecting to custom certificate server...')
-
-   err = proc.sleep()
-   assert(err is ERR_Okay, 'Custom certificate test failed: ' .. mSys.GetErrorMsg(err))
    assert(handshake_successful, 'Custom certificate SSL handshake failed')
+end
+
+@Test(priority=40); @Requires(ssl=true)
+function CustomCertificate()
+   cert_path = 'config:ssl/localhost.p12'
+   requireCustomCertificateFile(cert_path)
+
+   runCustomCertificateHandshake('CustomCert', cert_path, nil, nil)
+end
+
+@Test(priority=41); @Requires(ssl=true)
+function PasswordProtectedCustomCertificate()
+   cert_path = 'config:ssl/localhost-password.p12'
+   requireCustomCertificateFile(cert_path)
+
+   runCustomCertificateHandshake('PasswordCert', cert_path, nil, 'kotuku-test')
+end
+
+@Test(priority=42); @Requires(ssl=true)
+function PasswordProtectedCustomCertificateRejectsWrongPassword()
+   cert_path = 'config:ssl/localhost-password.p12'
+   requireCustomCertificateFile(cert_path)
+
+   glPort++
+
+   rejected = false
+   local ssl_server
+   try
+      ssl_server = obj.new('netserver', {
+         name = 'WrongPasswordCertServer',
+         sslCertificate = cert_path,
+         sslKeyPassword = 'wrong-password',
+         port = glPort,
+         flags = NSF_SSL
+      })
+      rejected = (not ssl_server) or (ssl_server.error != ERR_Okay)
+   except ex
+      rejected = true
+   end
+
+   assert(rejected,
+      'Password-protected custom certificate should reject an incorrect password')
+end
+
+@Test(priority=43); @Requires(ssl=true)
+function PEMCustomCertificate()
+   -- Windows installs only the PKCS#12 localhost certificates because Schannel currently cannot acquire the
+   -- private keys imported through this PEM path.  The missing key skips this test there; OpenSSL platforms still
+   -- install the PEM key and exercise this path.
+   cert_path = 'config:ssl/localhost.pem'
+   key_path = 'config:ssl/localhost-key.pem'
+   if not customCertificateFilesAvailable(cert_path, key_path) then return end
+
+   runCustomCertificateHandshake('PEMCert', cert_path, key_path, nil)
+end
+
+@Test(priority=44); @Requires(ssl=true)
+function TraditionalRSAPEMCustomCertificate()
+   -- Windows intentionally omits this generated RSA PEM key for now.  The Schannel private-key import path needs
+   -- follow-up work before this certificate form can be validated on Windows.
+   cert_path = 'config:ssl/localhost.pem'
+   key_path = 'config:ssl/localhost-rsa-key.pem'
+   if not customCertificateFilesAvailable(cert_path, key_path) then return end
+
+   runCustomCertificateHandshake('TraditionalRSACert', cert_path, key_path, nil)
+end
+
+@Test(priority=45); @Requires(ssl=true)
+function TraditionalECPEMCustomCertificate()
+   -- Windows intentionally omits this generated EC PEM certificate/key pair for now.  PKCS#12 coverage remains
+   -- active there while Schannel PEM private-key acquisition is unresolved.
+   cert_path = 'config:ssl/localhost-ec.pem'
+   key_path = 'config:ssl/localhost-ec-key.pem'
+   if not customCertificateFilesAvailable(cert_path, key_path) then return end
+
+   runCustomCertificateHandshake('TraditionalECCert', cert_path, key_path, nil)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(priority=46); @Requires(network=true, ssl=true, windows_platform=true)
+function PendingSSLFreeDropsCompletion()
+   glPort++
+   port                  = glPort
+   client_freed          = false
+   late_client_callbacks = 0
+
+   server = obj.new('netserver', {
+      name    = 'IocpPendingSSLFreeServer',
+      address = '127.0.0.1',
+      port    = port,
+      flags   = NSF_SSL,
+      feedback = function(Socket, Client, State)
+         if State is NTC_CONNECTED then
+            Client.acWrite('ssl-late-read-trigger')
+         end
+      end,
+      incoming = function(Socket, Client)
+         buffer = array<byte, 256>
+         err, read_len = Client.acRead(buffer)
+         if (err != ERR_Okay) and (err != ERR_Disconnected) and (err != ERR_InvalidState) then
+            raise 'SSL server read failed during pending SSL free test: ' .. mSys.GetErrorMsg(err)
+         end
+      end
+   })
+
+   client = obj.new('netsocket', {
+      name  = 'IocpPendingSSLFreeClient',
+      flags = NSF_SSL|NSF_DISABLE_SERVER_VERIFY,
+      feedback = function(Socket, State)
+         if client_freed then late_client_callbacks++ end
+      end,
+      incoming = function(Socket)
+         if client_freed then late_client_callbacks++ end
+         buffer = array<byte, 256>
+         err, read_len = Socket.acRead(buffer)
+         if (err != ERR_Okay) and (err != ERR_Disconnected) and (err != ERR_InvalidState) then
+            raise 'SSL client read failed during pending SSL free test: ' .. mSys.GetErrorMsg(err)
+         end
+      end
+   })
+
+   check client.mtConnect('127.0.0.1', port)
+   processing.halt(0.05)
+
+   client_freed = true
+   client.free()
+   client = nil
+
+   processing.collect()
+   processing.halt(1.0)
+   server.acDeactivate()
+
+   assert(late_client_callbacks is 0, 'Freed SSL client received a late handshake or read callback')
 end

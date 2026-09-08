@@ -35,7 +35,7 @@ end
 
    assert(type(arr[0]) is 'number', "element 0 should be number")
    assert(type(arr[1]) is 'string', "element 1 should be string")
-   assert(type(arr[2]) is 'boolean', "element 2 should be boolean")
+   assert(type(arr[2]) is 'bool', "element 2 should be bool")
    assert(arr[3] is nil, "element 3 should be nil")
    assert(type(arr[4]) is 'table', "element 4 should be table")
    assert(type(arr[5]) is 'number', "element 5 should be number")
@@ -203,7 +203,7 @@ end
 
 @Test function ArrayAnyMap()
    arr = array<any> { 1, 2, 3 }
-   mapped = array.map(arr, i => i * 10)
+   mapped = array.mapSame(arr, i => i * 10)
 
    assert(mapped[0] is 10, "first should be 10, got " .. tostring(mapped[0]))
    assert(mapped[1] is 20, "second should be 20, got " .. tostring(mapped[1]))
@@ -214,7 +214,7 @@ end
 
 @Test function ArrayAnyReduce()
    arr = array<any> { 1, 2, 3, 4 }
-   sum = array.reduce(arr, 0, function(acc, v)
+   sum = array.reduce(arr, 0, function(acc, v):num
       return acc + v
    end)
 
@@ -266,7 +266,7 @@ end
 
 @Test function ArrayAnyGCStress()
    -- Create many any arrays with GC objects to stress-test garbage collection
-   for i = 0, 100 do
+   for i in {0 to 100} do
       arr = array<any> { { x = i }, 'str' .. i, { y = i * 2 } }
       local t = array.table(arr)
       assert(t[0].x is i, "table x should match i")

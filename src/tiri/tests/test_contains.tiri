@@ -1,0 +1,371 @@
+-- Language-level membership tests for `Candidate in Target` and __contains dispatch.
+
+struct ContainsStruct
+   Present: int
+end
+
+@BeforeEach(hotpath=40)
+function enforce_hotpath() end
+
+function builtin_array_membership_workload(Values:array<int>, Count:num):num
+   local matches = 0
+   for index in {0 to Count} do
+      if 4 in Values then matches++ end
+      if not (9 in Values) then matches++ end
+   end
+   return matches
+end
+
+function generic_array_membership_workload(Values:array<any>, Candidate:any, Count:num):num
+   local matches = 0
+   for index in {0 to Count} do
+      if Candidate in Values then matches++ end
+   end
+   return matches
+end
+
+function numeric_array_membership_workload(Values:array<any>, Present:num, Missing:num, Count:num):num
+   local matches = 0
+   for _ in {0 to Count} do
+      if Present in Values then matches++ end
+      if not (Missing in Values) then matches++ end
+   end
+   return matches
+end
+
+function numeric_membership_call_address(Values:array<any>, Candidate:num):any
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+   generic_array_membership_workload(Values, Candidate, 100)
+
+   jit.off()
+   local address:any
+   for trace_no in {1 into 40} do
+      local info = jit.util.traceInfo(trace_no)
+      -- Inspect the membership loop, excluding helper calls in return and exit traces.
+      if info is nil or info.linktype != 'loop' then continue end
+
+      for instruction in {1 into info.nins} do
+         local _, ir_ot, _, call_id = jit.util.traceIR(trace_no, instruction)
+         if ir_ot != nil and (ir_ot >> 8) is 98 then
+            local call_address = jit.util.irCallAddr(call_id)
+            if call_address != nil then address = call_address end
+         end
+      end
+   end
+   jit.on()
+   jit.opt.start()
+   return address
+end
+
+function builtin_struct_membership_workload(Value:struct<ContainsStruct>, Count:num):num
+   local matches = 0
+   for index in {0 to Count} do
+      if 'Present' in Value then matches++ end
+      if not ('Missing' in Value) then matches++ end
+   end
+   return matches
+end
+
+@Test function PlainTablesUseRawKeyPresence()
+   local values = { ready=false, present=true }
+   assert('ready' in values, 'A false table value must still count as present')
+   assert('present' in values, 'A non-nil table value must count as present')
+   assert(not ('missing' in values), 'A missing table key must be absent')
+
+   local index_calls = 0
+   local proxy = setmetatable({}, {
+      __index = function(Key):str
+         index_calls++
+         return Key
+      end
+   })
+   assert(not ('generated' in proxy), 'Table membership must not use __index')
+   assert(index_calls is 0, 'The raw table fallback must not invoke __index')
+
+   local ignored = { contains = function(Value) return true end }
+   assert(not ('needle' in ignored), 'An ordinary contains field must not affect the operator')
+end
+
+@Test function TableHandlersReceiveContextAndCandidate()
+   local colours:any
+   local set_mt = {
+      __contains = function(Value):any
+         assert(&& is colours, '__contains must enter the selected table context')
+         return &items[Value]
+      end
+   }
+   colours = setmetatable({ items = { red=true, green=true } }, set_mt)
+
+   local red = 'red' in colours
+   local blue = 'blue' in colours
+   assert(red is true and blue is false, '__contains should determine table membership')
+
+   local truthy = setmetatable({}, { __contains = function(Value:any):any return Value end })
+   assert('value' in truthy, 'Truthy handler results must normalise to true')
+   assert(not (false in truthy), 'False handler results must normalise to false')
+end
+
+@Test function BuiltinTargetsUseMembershipHandlers()
+   local numbers = array<int> { 2, 4, 6 }
+   local struct_value = struct<ContainsStruct> { }
+   assert(4 in numbers and not (5 in numbers), 'Array membership must remain value based')
+   assert(5 in {0 to 10} and not (10 in {0 to 10}), 'Range boundaries must remain unchanged')
+   assert('tuk' in 'Kōtuku' and not ('xyz' in 'Kōtuku'), 'String membership must remain substring based')
+   assert('Present' in struct_value and not ('Missing' in struct_value),
+      'Struct membership must use field presence rather than field values')
+end
+
+@Test function MutableStringArrayMembershipUsesContent()
+   local first = string.alloc(3)
+   local equal = string.alloc(3)
+   local shorter = string.alloc(2)
+   local values = array<str, 3>
+   values[1] = first
+
+   assert(not (first is equal), 'Separately allocated mutable strings must have distinct identities')
+   assert(equal in values,
+      'Mutable strings with equal embedded-NUL content must compare by bytes during array membership')
+   assert(values.indexOf(equal) is 1,
+      'Mutable-string indexOf() must share membership content semantics')
+   assert(not (shorter in values), 'Mutable strings with different lengths must not compare equal')
+
+   local mutable_empty = string.alloc(0)
+   local interned_empty_values = array<str> { '' }
+   local mutable_empty_values = array<str> { mutable_empty }
+   assert(mutable_empty in interned_empty_values,
+      'A mutable string must match an equal ordinary interned string')
+   assert('' in mutable_empty_values,
+      'An ordinary interned string must match an equal mutable array element')
+
+   local matches = 0
+   for _ in {0 to 100} do
+      if equal in values then matches++ end
+      if mutable_empty in interned_empty_values then matches++ end
+      if '' in mutable_empty_values then matches++ end
+   end
+   assert(matches is 300, 'Mutable-string content equality must remain stable after JIT warming')
+end
+
+@Test function VariantArrayMembershipUsesEqualitySemantics()
+   local equality_mt = {
+      __eq = function(Other:table!):bool return &id is Other.id end
+   }
+   local first = setmetatable({ id=1 }, equality_mt)
+   local second = setmetatable({ id=2 }, equality_mt)
+   local probe = setmetatable({ id=2 }, equality_mt)
+   local values = array<any> { first, second }
+
+   assert(first in values, 'Variant array membership should find an identical reference')
+   assert(probe in values,
+      'Variant array membership should honour reference equality metamethods')
+   assert(not (setmetatable({ id=3 }, equality_mt) in values),
+      'Variant array membership should reject a non-matching reference')
+
+   local plain = { id=4 }
+   local plain_values = array<any> { plain }
+   assert(plain in plain_values and not ({ id=4 } in plain_values),
+      'Variant array membership should use identity when no equality metamethod exists')
+
+   local matches = 0
+   for _ in {0 to 100} do
+      if probe in values then matches++ end
+   end
+   assert(matches is 100, 'Variant array membership should remain correct after reaching the JIT threshold')
+end
+
+@Test function VariantArrayMembershipRootsCandidateAcrossStackGrowth()
+   function grow_stack(Depth:num):bool
+      if Depth is 0 then return true end
+      return grow_stack(Depth - 1)
+   end
+
+   local equality_mt = {
+      __eq = function(Other:table!):bool
+         if &id is 1 then grow_stack(500) end
+         return &id is Other.id
+      end
+   }
+   local first = setmetatable({ id=1 }, equality_mt)
+   local second = setmetatable({ id=2 }, equality_mt)
+   local probe = setmetatable({ id=2 }, equality_mt)
+   local items = array<any> { first, second }
+
+   assert(probe in items,
+      'Variant array membership should retain its candidate when an earlier comparison relocates the stack')
+end
+
+function interpreted_variant_membership(Items:array<any>, Probe:table):bool
+   local v00, v01, v02, v03, v04, v05, v06, v07 = 0, 1, 2, 3, 4, 5, 6, 7
+   local v08, v09, v10, v11, v12, v13, v14, v15 = 8, 9, 10, 11, 12, 13, 14, 15
+   local v16, v17, v18, v19, v20, v21, v22, v23 = 16, 17, 18, 19, 20, 21, 22, 23
+   local v24, v25, v26, v27, v28, v29, v30, v31 = 24, 25, 26, 27, 28, 29, 30, 31
+   local found = Probe in Items
+   assert(v00 is 0 and v07 is 7 and v15 is 15 and v23 is 23 and v31 is 31,
+      'Interpreted membership should preserve live frame slots')
+   return found
+end
+
+@Test function InterpretedVariantMembershipSynchronisesVMTop()
+   jit.off()
+   defer jit.on() end
+
+   local equality_mt = {
+      __eq = function(Other:table!):bool return &id is Other.id end
+   }
+   local first = setmetatable({ id=1 }, equality_mt)
+   local second = setmetatable({ id=2 }, equality_mt)
+   local probe = setmetatable({ id=2 }, equality_mt)
+   local items = array<any> { first, second }
+
+   assert(interpreted_variant_membership(items, probe),
+      'Interpreted variant membership should enter re-entrant equality with a valid VM top')
+end
+
+@Test function LegacyBuiltinMembershipApisAreUnavailable()
+   assert(array.contains is nil and string.contains is nil and range.contains is nil,
+      'Built-in membership APIs must not remain publicly callable')
+
+   local values = array<int> { 1 }
+   local available = false
+   try
+      values.contains(1)
+      available = true
+   end
+   assert(not available, 'Array instances must not retain a contains method')
+end
+
+@Test function MembershipEvaluatesCandidateBeforeTargetOnce()
+   local events = array<str> {}
+   function candidate():str
+      events.push('candidate')
+      return 'key'
+   end
+   function target():table
+      events.push('target')
+      return { key=true }
+   end
+
+   assert(candidate() in target(), 'The returned key should be present')
+   assert(events[0] is 'candidate' and events[1] is 'target' and #events is 2,
+      'Membership operands must evaluate once in source order')
+end
+
+@Test function MembershipRunsInHotCode()
+   local target = setmetatable({}, { __contains = function(Value:any):bool return Value is 'needle' end })
+   local matches = 0
+   for index in {0 to 200} do
+      if 'needle' in target then matches++ end
+   end
+   assert(matches is 200, 'Membership should retain its result after JIT compilation')
+end
+
+@Test function StructMembershipRunsInHotCode()
+   local value = struct<ContainsStruct> { }
+   assert(builtin_struct_membership_workload(value, 200) is 400,
+      'Struct membership should preserve presence and negation after JIT compilation')
+end
+
+@Test function StructContainsMutationUsesGenericDispatch()
+   local value = struct<ContainsStruct> { }
+   local canonical_handler = struct.__contains
+   defer struct.__contains = canonical_handler end
+
+   struct.__contains = function(Target:struct<ContainsStruct>, Candidate:any):bool
+      return Candidate is 'replacement'
+   end
+   assert('replacement' in value and not ('Present' in value),
+      'Replacing struct.__contains should change generic membership dispatch')
+end
+
+@Test function BuiltinArrayMembershipUsesNativeTrace()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+
+   local values = array<int> { 2, 4, 6, 8 }
+   assert(builtin_array_membership_workload(values, 100) is 200,
+      'Built-in array membership should preserve in and negated-in results on trace')
+
+   jit.off()
+   local native_calls = 0
+   for trace_no in {1 into 40} do
+      local info = jit.util.traceInfo(trace_no)
+      if info is nil then continue end
+
+      for instruction in {1 into info.nins} do
+         local _, ir_ot, _, call_id = jit.util.traceIR(trace_no, instruction)
+         if ir_ot != nil and (ir_ot >> 8) is 98 and jit.util.irCallAddr(call_id) != nil then native_calls++ end
+      end
+   end
+   jit.on()
+   jit.opt.start()
+
+   assert(native_calls > 0, 'Canonical array membership should lower to a native side-effecting helper call')
+end
+
+@Test function NumericArrayRepresentationsUseNativeMembership()
+   assert(numeric_array_membership_workload(array<int8> { -128, 0, 127 }, 127, 12, 100) is 200,
+      'Signed eight-bit membership failed after JIT warming')
+   assert(numeric_array_membership_workload(array<int> { -2147483648, 0, 2147483647 }, 2147483647, 12, 100) is 200,
+      'Signed integer membership failed after JIT warming')
+   assert(numeric_array_membership_workload(array<uint64> { 0, 17, 9007199254740991 }, 9007199254740991, 12, 100)
+      is 200, 'Unsigned 64-bit membership failed after JIT warming')
+   assert(numeric_array_membership_workload(array<float> { -1.25, 0.0, 7.5 }, 7.5, 12.0, 100) is 200,
+      'Float membership failed after JIT warming')
+   assert(numeric_array_membership_workload(array<double> { -1.25, 0.0, 7.5 }, 7.5, 12.0, 100) is 200,
+      'Double membership failed after JIT warming')
+end
+
+@Test function NumericArrayRepresentationsUseDistinctTraceCalls()
+   local integer_address = numeric_membership_call_address(array<int> { 2, 4, 6 }, 4)
+   local double_address = numeric_membership_call_address(array<double> { 2.0, 4.0, 6.0 }, 4.0)
+   assert(integer_address != nil and double_address != nil,
+      'Numeric membership traces must contain native helper calls')
+   assert(integer_address != double_address,
+      'Integer and double membership traces must call representation-specific helpers')
+end
+
+@Test function BuiltinArrayMembershipGuardsElementType()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+
+   local strings = array<str> { '2', '4', '6' }
+   local integers = array<int> { 2, 4, 6 }
+   assert(generic_array_membership_workload(strings, '4', 100) is 100,
+      'String array membership should warm the generic-array trace')
+   assert(generic_array_membership_workload(integers, '4', 100) is 100,
+      'A reused trace must not treat numeric array storage as strings')
+
+   jit.flush()
+   assert(generic_array_membership_workload(integers, 4, 100) is 100,
+      'Numeric array membership should warm the generic-array trace')
+   assert(generic_array_membership_workload(strings, 4, 100) is 100,
+      'A reused trace must retain numeric coercion for string arrays')
+
+   jit.opt.start()
+end
+
+@Test function ArrayContainsMutationLeavesCanonicalFastPath()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+
+   local values = array<int> { 2, 4, 6, 8 }
+   assert(builtin_array_membership_workload(values, 100) is 200,
+      'The canonical array handler should warm successfully before mutation')
+
+   local metatable = getmetatable(values)
+   local canonical_handler = metatable.__contains
+   defer metatable.__contains = canonical_handler end
+
+   metatable.__contains = function(Target:array<int>, Candidate:num):bool
+      return Candidate is 9
+   end
+   assert(not (4 in values) and 9 in values,
+      'Changing __contains should side-exit and select the custom array handler')
+
+   jit.opt.start()
+end

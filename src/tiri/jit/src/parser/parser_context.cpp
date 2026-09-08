@@ -6,7 +6,9 @@
 #include "parser/parser_context.h"
 
 #include <cstdio>
+#include <format>
 
+#include "filesource.h"
 #include "parser/parse_types.h"
 #include "parser.h"
 #ifdef INCLUDE_TIPS
@@ -28,11 +30,16 @@ ParserContext & ParserContext::operator=(ParserContext &&other) noexcept
       this->diag.set_limit(this->current_config.max_diagnostics);
       this->token_stream     = other.token_stream;
       this->previous_context = other.previous_context;
+      this->error_rollback_callback = other.error_rollback_callback;
+      this->error_rollback_user_data = other.error_rollback_user_data;
+      this->descriptors_ = std::move(other.descriptors_);
       if (this->lex_state) this->lex_state->active_context = this;
       other.lex_state        = nullptr;
       other.func_state       = nullptr;
       other.lua_state        = nullptr;
       other.previous_context = nullptr;
+      other.error_rollback_callback = nullptr;
+      other.error_rollback_user_data = nullptr;
    }
    return *this;
 }
@@ -47,14 +54,14 @@ ParserResult<Token> ParserContext::match(TokenKind kind)
       return ParserResult<Token>::success(current);
    }
 
-   auto prv = (prvTiri *)this->lua_state->script->ChildPrivate;
-   if ((prv->JitOptions & JOF::TRACE_EXPECT) != JOF::NIL) {
+   if ((this->lua_state->script->JitOptions & JOF::TRACE_EXPECT) != JOF::NIL) {
       std::string expectation = this->format_expected_message(kind);
       ParserDiagnostic diagnostic;
-      diagnostic.severity = ParserDiagnosticSeverity::Info;
-      diagnostic.code     = ParserErrorCode::ExpectedToken;
-      diagnostic.message  = expectation;
-      diagnostic.token    = current;
+      diagnostic.severity   = ParserDiagnosticSeverity::Info;
+      diagnostic.code       = ParserErrorCode::ExpectedToken;
+      diagnostic.file_index = this->lex_state->current_file_index;
+      diagnostic.message    = expectation;
+      diagnostic.token      = current;
       this->diag.report(diagnostic);
       this->log_trace(ParserChannel::Expect, current, expectation);
    }
@@ -152,8 +159,9 @@ void ParserContext::err_syntax(ErrMsg message)
 {
    Token current = this->tokens().current();
    ParserDiagnostic diagnostic;
-   diagnostic.severity = ParserDiagnosticSeverity::Error;
-   diagnostic.code     = ParserErrorCode::UnexpectedToken;
+   diagnostic.severity   = ParserDiagnosticSeverity::Error;
+   diagnostic.code       = ParserErrorCode::UnexpectedToken;
+   diagnostic.file_index = this->lex_state->current_file_index;
    GCstr *text = lj_err_str(this->lua_state, message);
    if (text) diagnostic.message.assign(strdata(text), text->len);
    diagnostic.token = current;
@@ -167,10 +175,11 @@ void ParserContext::err_token(LexToken Token)
 {
    ::Token current = this->tokens().current();
    ParserDiagnostic diagnostic;
-   diagnostic.severity = ParserDiagnosticSeverity::Error;
-   diagnostic.code     = ParserErrorCode::UnexpectedToken;
-   diagnostic.message  = this->format_lex_error(Token);
-   diagnostic.token    = current;
+   diagnostic.severity   = ParserDiagnosticSeverity::Error;
+   diagnostic.code       = ParserErrorCode::UnexpectedToken;
+   diagnostic.file_index = this->lex_state->current_file_index;
+   diagnostic.message    = this->format_lex_error(Token);
+   diagnostic.token      = current;
    this->diag.report(diagnostic);
    lj_lex_error(this->lex_state, this->lex_state->tok, ErrMsg::XTOKEN, this->lex_state->token2str(Token));
 }
@@ -180,10 +189,11 @@ void ParserContext::err_token(LexToken Token)
 void ParserContext::report_limit_error(FuncState &FState, uint32_t Limit, CSTRING What)
 {
    ParserDiagnostic diagnostic;
-   diagnostic.severity = ParserDiagnosticSeverity::Error;
-   diagnostic.code     = ParserErrorCode::UnexpectedToken;
-   diagnostic.message  = std::string("function limit exceeded for ") + What;
-   diagnostic.token    = this->tokens().current();
+   diagnostic.severity   = ParserDiagnosticSeverity::Error;
+   diagnostic.code       = ParserErrorCode::UnexpectedToken;
+   diagnostic.file_index = this->lex_state->current_file_index;
+   diagnostic.message    = std::string("function limit exceeded for ") + What;
+   diagnostic.token      = this->tokens().current();
    this->diag.report(diagnostic);
    if (FState.linedefined IS 0) {
       lj_lex_error(FState.ls, 0, ErrMsg::XLIMM, Limit, What);
@@ -208,6 +218,7 @@ ParserError ParserContext::make_error(ParserErrorCode code, const Token &token, 
 {
    ParserError error;
    error.code = code;
+   error.file_index = this->lex_state->current_file_index;
    error.token = token;
    error.message.assign(Message.begin(), Message.end());
    return error;
@@ -217,9 +228,7 @@ ParserError ParserContext::make_error(ParserErrorCode code, const Token &token, 
 
 void ParserContext::trace_token_advance(const Token &previous, const Token &current) const
 {
-   auto prv = (prvTiri *)this->lua_state->script->ChildPrivate;
-
-   if ((prv->JitOptions & JOF::TRACE_TOKENS) != JOF::NIL) {
+   if ((this->lua_state->script->JitOptions & JOF::TRACE_TOKENS) != JOF::NIL) {
       std::string detail = std::string("previous: ") + this->describe_token(previous);
       this->log_trace(ParserChannel::Advance, current, detail);
    }
@@ -230,36 +239,83 @@ void ParserContext::trace_token_advance(const Token &previous, const Token &curr
 
 void ParserContext::emit_error(ParserErrorCode code, const Token &token, std::string_view Message)
 {
+   this->emit_error(ParserError(code, token, Message, this->lex_state->current_file_index));
+}
+
+//********************************************************************************************************************
+// Overload that preserves the error's own file_index.  Errors propagated from a child parser context (e.g. an
+// imported file) carry the child's file index; recomputing it from this context's lexer would attribute the
+// diagnostic to the importing file.
+
+void ParserContext::emit_error(const ParserError &Error)
+{
    ParserDiagnostic diagnostic;
-   diagnostic.severity = ParserDiagnosticSeverity::Error;
-   diagnostic.code     = code;
-   diagnostic.message.assign(Message.begin(), Message.end());
-   diagnostic.token    = token;
+   diagnostic.severity   = ParserDiagnosticSeverity::Error;
+   diagnostic.code       = Error.code;
+   diagnostic.file_index = Error.file_index;
+   diagnostic.message    = Error.message;
+   diagnostic.token      = Error.token;
    this->diag.report(diagnostic);
 
    if (this->current_config.abort_on_error) {
       // Log immediately since we're about to throw
-      this->log_trace(ParserChannel::Error, token, Message);
+      this->log_trace(ParserChannel::Error, Error.token, Error.message, Error.file_index);
 
       // Save the diagnostics for client analysis
       if (this->lua().parser_diagnostics) delete (ParserDiagnostics*)this->lua().parser_diagnostics;
       this->lua().parser_diagnostics = new ParserDiagnostics(this->diagnostics());
 
-      lj_lex_error(this->lex_state, this->lex_state->tok, ErrMsg::XTOKEN, this->lex_state->token2str(token.raw()));
+      this->rollback_before_error();
+      if (Error.token.raw() IS 0 or Error.token.kind() IS TokenKind::Unknown) {
+         std::string message = Error.message;
+         if (message.empty()) message = "Parser error";
+         lj_lex_error(this->lex_state, 0, ErrMsg::XPARSER, message.c_str());
+         return;
+      }
+      lj_lex_error(this->lex_state, this->lex_state->tok, ErrMsg::XTOKEN, this->lex_state->token2str(Error.token.raw()));
    }
    // In DIAGNOSE mode (abort_on_error=false), skip logging - errors will be reported later
 }
 
 //********************************************************************************************************************
+
+void ParserContext::set_error_rollback_callback(ErrorRollbackCallback Callback, void *UserData)
+{
+   this->error_rollback_callback = Callback;
+   this->error_rollback_user_data = UserData;
+}
+
+void ParserContext::clear_error_rollback_callback(void *UserData)
+{
+   if (this->error_rollback_user_data IS UserData) {
+      this->error_rollback_callback = nullptr;
+      this->error_rollback_user_data = nullptr;
+   }
+}
+
+void ParserContext::rollback_before_error()
+{
+   if (this->error_rollback_callback) {
+      auto callback = this->error_rollback_callback;
+      auto user_data = this->error_rollback_user_data;
+      this->error_rollback_callback = nullptr;
+      this->error_rollback_user_data = nullptr;
+      callback(user_data);
+   }
+}
+
+//********************************************************************************************************************
 // Emit a warning diagnostic (non-fatal)
 
-void ParserContext::emit_warning(ParserErrorCode code, const Token &Token, std::string_view Message)
+void ParserContext::emit_warning(ParserErrorCode Code, const Token &Token, std::string_view Message, size_t Length)
 {
    ParserDiagnostic diagnostic;
-   diagnostic.severity = ParserDiagnosticSeverity::Warning;
-   diagnostic.code     = code;
+   diagnostic.severity   = ParserDiagnosticSeverity::Warning;
+   diagnostic.code       = Code;
+   diagnostic.file_index = this->lex_state->current_file_index;
    diagnostic.message.assign(Message.begin(), Message.end());
-   diagnostic.token    = Token;
+   diagnostic.token      = Token;
+   diagnostic.length = Length;
    this->diag.report(diagnostic);
 
    this->log_trace(ParserChannel::Warning, Token, Message);
@@ -297,6 +353,8 @@ std::string ParserContext::format_lex_error(LexToken Token) const
 
 std::string ParserContext::describe_token(const Token &Token) const
 {
+   if (Token.raw() IS 0 or Token.kind() IS TokenKind::Unknown) return {};
+
    auto name = token_kind_name(Token.kind(), this->lex());
    std::string result;
 
@@ -317,9 +375,10 @@ std::string ParserContext::describe_token(const Token &Token) const
 
 //********************************************************************************************************************
 
-void ParserContext::log_trace(ParserChannel Channel, const Token &Token, std::string_view Note) const
+void ParserContext::log_trace(ParserChannel Channel, const Token &Token, std::string_view Note,
+   std::optional<uint8_t> FileIndex) const
 {
-   pf::Log log("Parser");
+   kt::Log log("Parser");
 
    std::string name = this->describe_token(Token);
    BCLine line = Token.span().line;
@@ -335,12 +394,29 @@ void ParserContext::log_trace(ParserChannel Channel, const Token &Token, std::st
       default:                     channel = "Unknown"; break;
    }
 
+   // Resolve the file index to a filename so that errors reference their source file.  Token spans store raw
+   // (unencoded) lines, so the index comes from the caller or falls back to the lexer's current file.
+
+   std::string location = std::format("{}:{}", line.lineNumber(), column.lineNumber());
+   if (this->lua_state and this->lex_state and not this->lua_state->file_sources.empty()) {
+      uint8_t file_index = FileIndex.value_or(this->lex_state->current_file_index);
+      const FileSource *src = get_file_source(this->lua_state, file_index);
+      if (src and not src->filename.empty()) location = src->filename + ":" + location;
+   }
+
    if (Note.empty()) {
-      log.msg(level, "[%d:%d] %s: %s", (int)line, (int)column, channel, name.c_str());
+      if (name.empty()) log.msg(level, "[%s] %s", location.c_str(), channel);
+      else log.msg(level, "[%s] %s: %s", location.c_str(), channel, name.c_str());
       return;
    }
 
-   log.msg(level, "[%d:%d] %s: %s - %.*s", (int)line, (int)column, channel, name.c_str(), (int)Note.size(), Note.data());
+   if (name.empty()) {
+      log.msg(level, "[%s] %s: %.*s", location.c_str(), channel, (int)Note.size(), Note.data());
+   }
+   else {
+      log.msg(level, "[%s] %s: %s - %.*s", location.c_str(), channel, name.c_str(),
+         (int)Note.size(), Note.data());
+   }
 }
 
 //********************************************************************************************************************
@@ -387,9 +463,18 @@ std::string ParserContext::resolve_lib_to_path(std::string_view &Library) const
    int slash_count = 0;
 
    bool local = false;
+   std::string parent_prefix;
    if (Library.starts_with("./")) { // Local libraries are permitted if the name starts with "./" and otherwise adheres to path rules
       local = true;
       Library.remove_prefix(2);
+   }
+   else {
+      while (Library.starts_with("../")) {
+         local = true;
+         parent_prefix.append("../");
+         Library.remove_prefix(3);
+         slash_count++;
+      }
    }
 
    size_t i;
@@ -407,7 +492,8 @@ std::string ParserContext::resolve_lib_to_path(std::string_view &Library) const
       return "";
    }
 
-   std::string result(Library);
+   std::string result(parent_prefix);
+   result.append(Library);
 
    // Prepend the base path
 
@@ -428,13 +514,15 @@ std::string ParserContext::resolve_lib_to_path(std::string_view &Library) const
             result = dir + result;
          }
          else { // Use script's working path as fallback
-            auto working_path = this->lua_state->script->get<CSTRING>(FID_WorkingPath);
-            if (working_path) result.insert(0, working_path);
+            std::string_view working_path;
+            this->lua_state->script->getWorkingPath(working_path);
+            if (not working_path.empty()) result.insert(0, working_path.data(), working_path.size());
          }
       }
       else { // Use script's working path as fallback
-         auto working_path = this->lua_state->script->get<CSTRING>(FID_WorkingPath);
-         if (working_path) result.insert(0, working_path);
+         std::string_view working_path;
+         this->lua_state->script->getWorkingPath(working_path);
+         if (not working_path.empty()) result.insert(0, working_path.data(), working_path.size());
       }
    }
    else result.insert(0, "scripts:");

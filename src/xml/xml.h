@@ -14,11 +14,13 @@
 #include <ankerl/unordered_dense.h>
 
 #include "schema/schema_parser.h"
+#include "../link/simd.h"
 #include <kotuku/modules/xquery.h>
 
 #include <concepts>
 #include <ranges>
 #include <algorithm>
+#include <bit>
 
 // XML entity escape sequences
 constexpr std::string_view xml_entities[] = {
@@ -40,12 +42,32 @@ constexpr std::array<const char*, 256> xml_escape_table = []() {
    return table;
 }();
 
+struct XMLStringHash {
+   using is_avalanching = void;
+   using is_transparent = void;
+
+   [[nodiscard]] size_t operator()(std::string_view Value) const noexcept {
+      return ankerl::unordered_dense::hash<std::string_view>{}(Value);
+   }
+
+   [[nodiscard]] size_t operator()(const std::string &Value) const noexcept {
+      return (*this)(std::string_view(Value));
+   }
+
+   [[nodiscard]] size_t operator()(CSTRING Value) const noexcept {
+      return (*this)(std::string_view(Value));
+   }
+};
+
+template<typename Value> using XMLStringLookupMap = ankerl::unordered_dense::map<std::string, Value, XMLStringHash, std::equal_to<>>;
+using XMLStringMap = XMLStringLookupMap<std::string>;
+
 struct ParseState {
    std::string_view cursor;
    int   Balance;  // Indicates that the tag structure is correctly balanced if zero
 
    // Namespace context for this parsing scope
-   ankerl::unordered_dense::map<std::string, uint32_t> PrefixMap;  // Prefix -> namespace URI hash
+   XMLStringLookupMap<uint32_t> PrefixMap;  // Prefix -> namespace URI hash
    uint32_t DefaultNamespace;                  // Default namespace URI hash
    std::string CurrentBase;
    inline char current() const { return cursor.empty() ? '\0' : cursor.front(); }
@@ -56,7 +78,36 @@ struct ParseState {
       return cursor.starts_with(str);
    }
 
+#ifdef KOTUKU_SSE42
+   // Count '\n' bytes in the leading Len bytes of Block (Len in 0..16).  Used to keep the line counter accurate as
+   // the SIMD scanners skip over blocks of text in bulk rather than one byte at a time.  The caller passes the
+   // block it has already loaded so the same 16 bytes are not read and compared twice per iteration.
+   static inline int countNewlines(__m128i Block, int Len) {
+      __m128i eq = _mm_cmpeq_epi8(Block, _mm_set1_epi8('\n'));
+      unsigned mask = unsigned(_mm_movemask_epi8(eq)) & ((1u << Len) - 1);
+      return int(std::popcount(mask));
+   }
+#endif
+
    inline void skipTo(char ch, int &line) {
+#ifdef KOTUKU_SSE42
+      // Advance 16 bytes per iteration until 'ch' is located, tallying any newlines that were skipped.  A plain
+      // SSE2 equality compare with a movemask locates the byte; every value (including embedded nulls) is treated
+      // as ordinary data, matching the scalar loop's behaviour.
+      const __m128i needle = _mm_set1_epi8(ch);
+      while (cursor.size() >= 16) {
+         __m128i block = _mm_loadu_si128((const __m128i *)cursor.data());
+         unsigned mask = unsigned(_mm_movemask_epi8(_mm_cmpeq_epi8(block, needle)));
+         if (mask) {
+            int idx = int(std::countr_zero(mask));
+            line += countNewlines(block, idx);
+            next(idx);
+            return;
+         }
+         line += countNewlines(block, 16);
+         next(16);
+      }
+#endif
       while ((not done()) and (current() != ch)) {
          if (current() == '\n') line++;
          next();
@@ -71,6 +122,27 @@ struct ParseState {
    }
 
    inline char skipWhitespace(int &line) {
+#ifdef KOTUKU_SSE42
+      // Find the first byte that is NOT whitespace/control (i.e. > 0x20), 16 bytes at a time.  An SSE2 unsigned
+      // compare is used here rather than a PCMPESTRI range scan because it has unambiguous semantics for every byte
+      // value (including embedded nulls) and no dependence on string-termination behaviour.  Bytes are biased by
+      // 0x80 so the signed _mm_cmpgt_epi8 acts as an unsigned '> 0x20' test.
+      const __m128i bias = _mm_set1_epi8((char)0x80);
+      const __m128i threshold = _mm_set1_epi8((char)(0x20 - 0x80)); // 0x20 biased into signed space
+      while (cursor.size() >= 16) {
+         __m128i block = _mm_loadu_si128((const __m128i *)cursor.data());
+         __m128i gt = _mm_cmpgt_epi8(_mm_sub_epi8(block, bias), threshold); // 0xFF where byte > 0x20
+         unsigned mask = unsigned(_mm_movemask_epi8(gt));
+         if (mask) {
+            int idx = int(std::countr_zero(mask));
+            line += countNewlines(block, idx);
+            next(idx);
+            return current();
+         }
+         line += countNewlines(block, 16);
+         next(16);
+      }
+#endif
       while ((not done()) and (uint8_t(current()) <= 0x20)) {
          if (current() == '\n') line++;
          next();
@@ -98,7 +170,7 @@ struct ParseState {
 };
 
 using TAGS = objXML::TAGS;
-using CURSOR = pf::vector<XTag>::iterator;
+using CURSOR = kt::vector<XTag>::iterator;
 
 //********************************************************************************************************************
 // Generic lookup templates with concepts
@@ -106,20 +178,18 @@ using CURSOR = pf::vector<XTag>::iterator;
 template<typename Key>
 concept MapKey = std::equality_comparable<Key> and std::default_initializable<Key>;
 
-template<MapKey Key, typename Value>
-[[nodiscard]] inline auto find_in_map(const ankerl::unordered_dense::map<Key, Value> &Map,
-   const Key& SearchKey) noexcept -> const Value *
+template<typename Map, typename SearchKey>
+[[nodiscard]] inline auto find_in_map(const Map &SourceMap, const SearchKey &Key) noexcept -> const typename Map::mapped_type *
 {
-   auto it = Map.find(SearchKey);
-   return (it != Map.end()) ? &it->second : nullptr;
+   auto it = SourceMap.find(Key);
+   return (it != SourceMap.end()) ? &it->second : nullptr;
 }
 
-template<MapKey Key, typename Value>
-[[nodiscard]] inline auto find_in_map(ankerl::unordered_dense::map<Key, Value> &Map,
-   const Key& SearchKey) noexcept -> Value *
+template<typename Map, typename SearchKey>
+[[nodiscard]] inline auto find_in_map(Map &SourceMap, const SearchKey &Key) noexcept -> typename Map::mapped_type *
 {
-   auto it = Map.find(SearchKey);
-   return (it != Map.end()) ? &it->second : nullptr;
+   auto it = SourceMap.find(Key);
+   return (it != SourceMap.end()) ? &it->second : nullptr;
 }
 
 //********************************************************************************************************************
@@ -131,25 +201,26 @@ class extXML : public objXML {
    public:
    ankerl::unordered_dense::map<int, XTag *> Map; // Lookup for any indexed tag.
    ankerl::unordered_dense::map<int, std::string> BaseURIMap;
-   std::string ErrorMsg;    // The most recent error message for an activity, e.g. XPath parsing error
    std::string Statement;
-   bool   ReadOnly;
    bool   StaleMap;         // True if map requires a rebuild
 
    std::shared_ptr<xml::schema::SchemaContext> SchemaContext;
-   ankerl::unordered_dense::map<std::string, std::string> Entities; // For general entities
-   ankerl::unordered_dense::map<std::string, std::string> ParameterEntities; // For parameter entities
-   ankerl::unordered_dense::map<std::string, std::string> Notations; // For notation declarations
+   XMLStringMap Entities; // For general entities
+   XMLStringMap ParameterEntities; // For parameter entities
+   XMLStringMap Notations; // For notation declarations
 
-   // Namespace registry using pf::strhash() values, this allows us to store URIs in compact form in XTag structures.
+   // Namespace registry using kt::strhash() values, this allows us to store URIs in compact form in XTag structures.
    ankerl::unordered_dense::map<uint32_t, std::string> NSRegistry; // hash(URI) -> URI
 
    // Link prefixes to namespace URIs
    // WARNING: If the XML document overwrites namespace URIs on the same prefix name (legal!)
    // then this lookup table returns the most recently assigned URI.
-   ankerl::unordered_dense::map<PREFIX, uint32_t> Prefixes; // hash(Prefix) -> hash(URI)
+   XMLStringLookupMap<uint32_t> Prefixes; // hash(Prefix) -> hash(URI)
 
-   extXML() : ReadOnly(false), StaleMap(true) { }
+   extXML(objMetaClass *ClassPtr, OBJECTID ObjectID) : objXML(ClassPtr, ObjectID), StaleMap(true) {
+      LineNo = 1;
+      ParseError = ERR::Okay;
+   }
 
    ~extXML() {
    }
@@ -219,10 +290,10 @@ class extXML : public objXML {
 
    // Namespace utility methods
 
-   inline uint32_t registerNamespace(const std::string &URI) {
+   inline uint32_t registerNamespace(std::string_view URI) {
       if (URI.empty()) return 0;
-      auto hash = pf::strhash(URI);
-      NSRegistry[hash] = URI;
+      auto hash = kt::strhash(URI);
+      NSRegistry[hash] = std::string(URI);
       return hash;
    }
 
@@ -247,7 +318,7 @@ class extXML : public objXML {
          });
 
          if (it != attribs_view.end()) {
-            Result = pf::strhash(it->Value);
+            Result = kt::strhash(it->Value);
             return ERR::Okay;
          }
 
@@ -386,4 +457,4 @@ constexpr std::array<char, 256> to_lower_table = []() {
    return output;
 }
 
-using NODES = pf::vector<XTag *>;
+using NODES = kt::vector<XTag *>;

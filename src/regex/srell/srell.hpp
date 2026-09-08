@@ -4730,6 +4730,7 @@ private:
       cvars_type cvars;
       state_type flstate;
 
+      piecesize.reset();
       this->reset(flags);
       cvars.reset(flags, begin);
 

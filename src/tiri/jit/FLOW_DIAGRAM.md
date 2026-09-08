@@ -280,7 +280,7 @@
   ┌────────────────────────────────────────────────────────────────┐
   │ function sum(n)                                                │
   │   local total = 0                                              │
-  │   for i = 1, n do                                              │
+  │   for i in {1 into n} do                                       │
   │     total = total + i                                          │
   │   end                                                          │
   │   return total                                                 │

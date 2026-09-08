@@ -7,39 +7,37 @@
     <type>class</type>
     <module>Core</module>
     <comment>Manages the loading of system libraries.</comment>
-    <fileExtension>*.mod|*.so|*.dll</fileExtension>
+    <fileExtension>mod|so|dll</fileExtension>
     <fileDescription>System Module</fileDescription>
     <version>1</version>
-    <id>0e32c72b</id>
+    <id>cd79e511</id>
     <idstring>MODULE</idstring>
     <category>System</category>
-    <copyright>Paul Manias 1996-2026</copyright>
+    <copyright>Paul Manias © 1996-2026</copyright>
     <description>
 <p>The Module class is used to load and maintain the modules that are installed on the user's system.  A number of modules are available in the core platform as standard, which you can use in the development of your programs.  Examples of existing modules can be found in both the <code>modules:</code> folder.</p>
 <p>To load a module and interact with its API, create a module object and initialise it.  The following code segment illustrates in C++:</p>
 <pre>DisplayBase *DisplayBase;
 auto modDisplay = objModule::create::global(fl::Name(&quot;display&quot;));
-if (modDisplay) modDisplay-&gt;get(FID_ModBase, DisplayBase);
+if (modDisplay) modDisplay-&gt;getModBase(DisplayBase);
 </pre>
 <p>To do the same in Tiri:</p>
-<pre>mGfx = mod.load('display')
+<pre>module display as mGfx
 </pre>
-<p>It is critical that the module object is permanently retained until the program no longer needs its functionality.</p></description>
+<p>Tiri retains the module in its process-wide store until the Tiri module is expunged.</p></description>
     <source>
       <file path="../classes/">class_module.cpp</file>
     </source>
   </info>
 
-  <actions>
-  </actions>
-
   <methods>
     <method>
       <name>ResolveSymbol</name>
       <comment>Resolves library symbol names to their address pointers.</comment>
-      <prototype>ERR mod::ResolveSymbol(OBJECTPTR Object, CSTRING Name, APTR * Address)</prototype>
+      <prototype>ERR mod::ResolveSymbol(OBJECTPTR Object, STRVIEW Name, APTR * Address)</prototype>
+      <tiriPrototype>err, Address:any = ResolveSymbol(Name:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Name">The name of the symbol to resolve.</param>
+        <param type="STRVIEW" name="Name">The name of the symbol to resolve.</param>
         <param type="APTR *" name="Address">The address of the symbol will be returned in this parameter.</param>
       </input>
       <description>
@@ -52,14 +50,16 @@ if (modDisplay) modDisplay-&gt;get(FID_ModBase, DisplayBase);
         <error code="FieldNotSet">The module has not been successfully initialised.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>pure-query, static-result</tags>
     </method>
 
     <method>
       <name>Test</name>
       <comment>Run unit tests for the module, if present.</comment>
-      <prototype>ERR mod::Test(OBJECTPTR Object, CSTRING Options, INT * Passed, INT * Total)</prototype>
+      <prototype>ERR mod::Test(OBJECTPTR Object, STRVIEW Options, INT * Passed, INT * Total)</prototype>
+      <tiriPrototype>err, Passed:num, Total:num = Test(Options:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Options">Optional CSV list of testing options.</param>
+        <param type="STRVIEW" name="Options">Optional CSV list of testing options.</param>
         <param type="INT *" name="Passed">The number of tests that passed will be returned in this parameter.</param>
         <param type="INT *" name="Total">The total number of tests that were executed will be returned in this parameter.</param>
       </input>
@@ -71,6 +71,7 @@ if (modDisplay) modDisplay-&gt;get(FID_ModBase, DisplayBase);
         <error code="Okay">Operation successful.</error>
         <error code="NoSupport">Unit tests are not defined for the module.</error>
       </result>
+      <tags>callback-inlines</tags>
     </method>
 
   </methods>
@@ -121,10 +122,10 @@ if (modDisplay) modDisplay-&gt;get(FID_ModBase, DisplayBase);
     <field>
       <name>Name</name>
       <comment>The name of the module.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>STRING</type>
       <description>
-<p>This string pointer specifies the name of the module.  This name will be used to load the module from the <code>modules:</code> folder, so this field actually reflects part of the module file name.  It is also possible to specify sub-directories before the module name itself - this could become more common in module loading in future.</p>
+<p>This string specifies the name of the module, which doubles as its location when loaded from the <code>system:modules/</code> folder.  It is permissible to specify sub-directories before the module name itself - this could become more common in module loading in future.</p>
 <p>It is critical that file extensions do not appear in the Name string, e.g. <code>display.dll</code> as not all systems may use a <code>.dll</code> extension.</p>
       </description>
     </field>

@@ -1,14 +1,32 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(cmake --build build/agents *)",
+      "Bash(cmake --install build/agents *)",
+      "Bash(cmake -S . -B build/agents *)",
+      "Bash(ctest --build-config Debug --test-dir build/agents *)"
+    ]
+  },
   "env": {
-     "BASH_DEFAULT_TIMEOUT_MS": 300000
+    "BASH_DEFAULT_TIMEOUT_MS": "300000"
   },
   "hooks": {
     "SessionStart": [
       {
         "matcher": "startup",
-        "hooks": [
-        ]
+        "hooks": []
       }
     ]
+  },
+  "enabledPlugins": {
+    "tiri-lsp@tiri-local": true
+  },
+  "extraKnownMarketplaces": {
+    "tiri-local": {
+      "source": {
+        "source": "directory",
+        "path": "tools/tiri_lsp"
+      }
+    }
   }
 }

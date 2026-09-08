@@ -14,12 +14,17 @@
 ** dump   = header proto+ 0U
 ** header = ESC 'L' 'J' versionB flagsU [namelenU nameB*]
 ** proto  = lengthU pdata
-** pdata  = phead bcinsW* uvdataH* kgc* knum* [debugB*]
-** phead  = flagsB numparamsB framesizeB numuvB numkgcU numknU numbcU
+** pdata  = phead signatureB* dependB* bcinsW* uvdataH* kgc* knum* [debugB*]
+** phead  = flagsB numparamsB framesizeB numuvB numkgcU numknU numbcU siglenU deplenU
 **          [debuglenU [firstlineU numlineU]]
+** signature = sigversionB sigflagsB paramcountU resultcountU resultentriesU typeentry*
+** typeentry = typeB metaflagsB constraintU
+** depend = depversionB depcountU funccountU depentry* funcentry*
+** depentry  = namelenU nameB* funcfirstU funccountU
+** funcentry = namelenU nameB* moduleU
 ** kgc    = kgctypeU { ktab | (loU hiU) | (rloU rhiU iloU ihiU) | strB* }
 ** knum   = intU0 | (loU1 hiU)
-** ktab   = narrayU nhashU karray* khash*
+** ktab   = flagsU narrayU nhashU karray* khash*
 ** karray = ktabk
 ** khash  = ktabk ktabk
 ** ktabk  = ktabtypeU { intU | (loU hiU) | strB* }
@@ -35,7 +40,29 @@ constexpr uint8_t BCDUMP_HEAD3 = 0x4a;
 // If you perform *any* kind of private modifications to the bytecode itself
 // or to the dump format, you *must* set BCDUMP_VERSION to 0x80 or higher.
 
-constexpr int BCDUMP_VERSION = 2;
+// 0x86 added the per-prototype module dependency descriptor block.  Version 0x87 replaces the compiler-private
+// mod['\31dependency'] activation call with BC_MODACT.  Version 0x88 adds BC_BFUNC and makes generated fast-function
+// ordering part of the private bytecode ABI.  Version 0x8a adds BC_BMETH runtime method dispatch.  Version 0x8c adds
+// BC_TCTX contextual table designation and cuts over to opt-in table context, which changes the meaning of every
+// existing contextual call sequence.  Version 0x8d adds materialised temporary context blocks and consuming close
+// activation bytecodes.  Version 0x8e adds the canonical regex.new identity used by regex literals.  Version 0x8f
+// separates object.create, object.new and object._state callable identities.  Version 0x90 accepts a struct reference
+// in struct.size, which shifts the generated fast-function ordering.  Version 0x92 expands private array member
+// identities with uint8, uint16, uint32 and uint64.  Version 0x93 gives int8 its own signed array member identity.
+// Version 0x96 adds BC_ISIN and BC_ISNIN. Version 0x97 adds rawtype and shifts the generated fast-function ordering.
+// Version 0x98 adds forEach and shifts the generated fast-function ordering.  Version 0x99 adds the Stage A array
+// and range collection compatibility callables. Version 0x9a adds BC_CHECKALLENTER and BC_CHECKALLLEAVE. Version 0x9b
+// adds BC_DEFERARM and BC_DEFERCONSUME. Version 0x9c removes math.fmod from the generated fast-function ordering.
+// Version 0x9d removes math.pow from that ordering.  Older chunks are rejected rather than retaining compatibility
+// shims.  Version 0x9e renames the canonical object._state callable to object.state.
+
+// Version 0x9f reorders array.new arguments and adds the string.toArray callable.
+
+// Version 0xa0 adds BC_RETHROW, the hidden exception debug variable and a portable exception metadata trailer.
+// Version 0xa1 removes the public error callable and shifts the generated fast-function ordering.
+// Version 0xa2 removes string.len and shifts the generated fast-function ordering.
+// Version 0xa3 removes collectgarbage and newproxy from the generated fast-function ordering.
+constexpr uint8_t BCDUMP_VERSION = 0xa3;
 
 // Compatibility flags.
 

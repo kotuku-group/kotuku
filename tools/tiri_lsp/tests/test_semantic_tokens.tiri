@@ -1,0 +1,802 @@
+
+global glSemanticTokensTestUri = nil
+
+extern lspInitDocs, lspPathToUri, tokenizeTiri, computeDiagnostics, getTokenAtPosition, resolveHoverContent, registerCoreHandlers
+
+@BeforeAll function SetupSemanticTokenTests(State)
+   local err, sdk_path = mSys.ResolvePath(State.folder .. '../../../')
+   assert(err is ERR_Okay, 'Failed to resolve SDK path for LSP semantic token tests.')
+   mSys.SetVolume('sdk', sdk_path)
+
+   loadFile('sdk:tools/tiri_lsp/include/lsp_lib.tiri')
+   assert(lspInitDocs('sdk:docs/xml/'), 'Failed to initialise LSP documentation cache.')
+   glSemanticTokensTestUri = lspPathToUri('sdk:tools/tiri_lsp/tests/test_semantic_tokens.tiri')
+   assert(glSemanticTokensTestUri, 'Failed to create test document URI.')
+end
+
+function makeDoc(Content:str):table
+   return {
+      uri = glSemanticTokensTestUri,
+      languageId = 'tiri',
+      version = 1,
+      content = Content,
+      lineIndex = nil
+   }
+end
+
+function findToken(Tokens:array<table>, Line:num, Char:num, Text:str):table
+   for token in values(Tokens) do
+      if token.line is Line and token.char is Char and token.length is #Text then
+         return token
+      end
+   end
+end
+
+function assertOperatorToken(Tokens:array<table>, Line:num, Char:num, Text:str, Message:str)
+   token = findToken(Tokens, Line, Char, Text)
+   assert(token and token.type is 1, Message)
+end
+
+function assertNoToken(Tokens:array<table>, Line:num, Char:num, Text:str, Message:str)
+   token = findToken(Tokens, Line, Char, Text)
+   assert(not token, Message)
+end
+
+@Test function CurrentContextReceivesOneSemanticToken()
+   source = 'local current = &&\n' ..
+      'local field = &name\n' ..
+      'local masked = flags & mask\n'
+   tokens = tokenizeTiri(source)
+
+   assertOperatorToken(tokens, 0, 16, '&&',
+      'Current-context syntax should be highlighted as one two-character operator.')
+   assertOperatorToken(tokens, 1, 14, '&',
+      'Context-prefixed field access should retain its single-character operator token.')
+   assertOperatorToken(tokens, 2, 21, '&',
+      'Bitwise AND should retain its single-character operator token.')
+   assertNoToken(tokens, 0, 16, '&',
+      'Current-context syntax should not be emitted as two unrelated ampersand tokens.')
+
+   doc = makeDoc('local current = &&\nreturn current\n')
+   result = computeDiagnostics(doc)
+   assert(#result.diagnostics is 0, 'LSP diagnostics should accept current-context materialisation.')
+end
+
+@Test function ParserAnnotationsReceiveSemanticTokens()
+   source = 'value = @SourceFile\n' ..
+      'line = @SourceLine\n' ..
+      'name = @FunctionName\n' ..
+      '@Test function sample()\n' ..
+      '@if(debug=true)\n' ..
+      '@end\n' ..
+      'end\n'
+
+   tokens = tokenizeTiri(source)
+
+   source_file = findToken(tokens, 0, 9, 'SourceFile')
+   source_line = findToken(tokens, 1, 8, 'SourceLine')
+   function_name = findToken(tokens, 2, 8, 'FunctionName')
+   test_annotation = findToken(tokens, 3, 1, 'Test')
+   compile_if = findToken(tokens, 4, 1, 'if')
+   compile_end = findToken(tokens, 5, 1, 'end')
+
+   assert(source_file and source_file.type is 12, '@SourceFile should be highlighted as a macro token.')
+   assert(source_line and source_line.type is 12, '@SourceLine should be highlighted as a macro token.')
+   assert(function_name and function_name.type is 12, '@FunctionName should be highlighted as a macro token.')
+   assert(test_annotation and test_annotation.type is 3, 'Declaration annotations should remain function tokens.')
+   assert(compile_if and compile_if.type is 0, '@if should retain keyword highlighting.')
+   assert(compile_end and compile_end.type is 0, '@end should retain keyword highlighting.')
+
+   assert((source_file.modifiers & 4) != 0, '@SourceFile should be marked readonly.')
+   assert((source_line.modifiers & 4) != 0, '@SourceLine should be marked readonly.')
+   assert((function_name.modifiers & 4) != 0, '@FunctionName should be marked readonly.')
+end
+
+@Test function ImportKeywordAndAliasReceiveSemanticTokens()
+   source = "import '../server' as serverLib\n"
+
+   tokens = tokenizeTiri(source)
+
+   import_keyword = findToken(tokens, 0, 0, 'import')
+   alias_keyword = findToken(tokens, 0, 19, 'as')
+   import_path = findToken(tokens, 0, 7, "'../server'")
+
+   assert(import_keyword and import_keyword.type is 0, 'import should be highlighted as a keyword.')
+   assert(alias_keyword and alias_keyword.type is 0, 'import alias keyword should be highlighted as a keyword.')
+   assert(import_path and import_path.type is 4, 'Parent-relative import path should remain a string token.')
+end
+
+@Test function ModuleDeclarationsReceiveContextualSemanticTokens()
+   source = 'module core as runtimeCore\n' ..
+      'runtimeCore.PreciseTime()\n' ..
+      'module({}, function() end)\n'
+   tokens = tokenizeTiri(source)
+
+   module_keyword = findToken(tokens, 0, 0, 'module')
+   module_name = findToken(tokens, 0, 7, 'core')
+   as_keyword = findToken(tokens, 0, 12, 'as')
+   namespace_decl = findToken(tokens, 0, 15, 'runtimeCore')
+   namespace_ref = findToken(tokens, 1, 0, 'runtimeCore')
+   compatibility_call = findToken(tokens, 2, 0, 'module')
+
+   assert(module_keyword and module_keyword.type is 0, 'Declaration module should be a contextual keyword.')
+   assert(module_name and module_name.type is 10, 'Declared module name should use namespace highlighting.')
+   assert(as_keyword and as_keyword.type is 0, 'Declaration as should remain a keyword.')
+   assert(namespace_decl and namespace_decl.type is 10 and (namespace_decl.modifiers & 5) is 5,
+      'Module namespace declaration should be readonly declaration highlighting.')
+   assert(namespace_ref and namespace_ref.type is 10, 'Declared namespace references should be highlighted.')
+   assert(compatibility_call and compatibility_call.type is 3,
+      'Existing module(...) identifiers should retain function highlighting.')
+end
+
+@Test function LibraryNamespacesReceiveSemanticTokens()
+   source = 'namespace toolkit { version = "1.0" }\n' ..
+      'toolkit.version = "2.0"\n' ..
+      'namespaceOnly(toolkit)\n'
+   tokens = tokenizeTiri(source)
+
+   keyword = findToken(tokens, 0, 0, 'namespace')
+   declaration = findToken(tokens, 0, 10, 'toolkit')
+   reference = findToken(tokens, 1, 0, 'toolkit')
+
+   assert(keyword and keyword.type is 0, 'Library namespace keyword should receive keyword highlighting.')
+   assert(declaration and declaration.type is 10 and (declaration.modifiers & 5) is 5,
+      'Library namespace declarations should be readonly declaration namespace tokens.')
+   assert(reference and reference.type is 10, 'Library namespace references should retain namespace highlighting.')
+end
+
+@Test function ImportListPathsReceiveSemanticTokens()
+   source = "import 'json',\n   'options'\n"
+
+   tokens = tokenizeTiri(source)
+
+   import_keyword = findToken(tokens, 0, 0, 'import')
+   first_path = findToken(tokens, 0, 7, "'json'")
+   second_path = findToken(tokens, 1, 3, "'options'")
+
+   assert(import_keyword and import_keyword.type is 0, 'import list keyword should be highlighted as a keyword.')
+   assert(first_path and first_path.type is 4, 'First import list path should remain a string token.')
+   assert(second_path and second_path.type is 4, 'Wrapped import list path should remain a string token.')
+end
+
+@Test function ExternKeywordReceivesSemanticTokens()
+   source = 'extern runTest, assertEqId\n'
+
+   tokens = tokenizeTiri(source)
+
+   extern_keyword = findToken(tokens, 0, 0, 'extern')
+
+   assert(extern_keyword and extern_keyword.type is 0, 'extern should be highlighted as a keyword.')
+end
+
+@Test function MetamethodIdentifierIsNotAKeyword()
+   source = 'local metamethod = function() end\n' ..
+      'metamethod()\n'
+
+   tokens = tokenizeTiri(source)
+
+   metamethod_call = findToken(tokens, 1, 0, 'metamethod')
+
+   assert(metamethod_call and metamethod_call.type is 3,
+      'metamethod should be available as an ordinary identifier and function call.')
+end
+
+@Test function ExternDiagnosticsUseCurrentParser()
+   doc = makeDoc('extern runTest\nlocal runner = runTest\nprint(runner)\n')
+   result = computeDiagnostics(doc)
+
+   assert(#result.diagnostics is 0, 'LSP diagnostics should accept extern declarations.')
+
+   doc = makeDoc('extern *\nlocal runner = missingRunner\n')
+   result = computeDiagnostics(doc)
+
+   assert(#result.diagnostics > 0, 'LSP diagnostics should reject the removed extern wildcard.')
+   assert(result.diagnostics[0].code is 'UnexpectedToken',
+      'LSP diagnostics should preserve the extern wildcard parser code.')
+   assert(result.diagnostics[0].message.find('list external symbols by name') != nil,
+      'LSP diagnostics should explain how to replace the extern wildcard.')
+end
+
+@Test function RangeSeparatorsReceiveContextualSemanticTokens()
+   source = 'range_value = {0 to 5}\n' ..
+      'range_value = {0 into 5}\n' ..
+      'range_value = {0 to 10 by 2}\n' ..
+      'to = 1\n' ..
+      'into = 2\n' ..
+      'by = 3\n' ..
+      'range_value = {to to into}\n' ..
+      'range_value = {0 to 10 by by}\n' ..
+      'config = { into=1, to=2, by=3 }\n' ..
+      'range_value = {config.to into limit by config.by}\n' ..
+      'range_value = {0 to config.into + by}\n' ..
+      'range_value = {0 to (config.into + by) by 2}\n'
+
+   tokens = tokenizeTiri(source)
+
+   assertOperatorToken(tokens, 0, 17, 'to', 'Exclusive range separator should be highlighted as an operator.')
+   assertOperatorToken(tokens, 1, 17, 'into', 'Inclusive range separator should be highlighted as an operator.')
+   assertOperatorToken(tokens, 2, 17, 'to', 'Exclusive separator in stepped range should be highlighted.')
+   assertOperatorToken(tokens, 2, 23, 'by', 'Step separator should be highlighted as an operator.')
+   assertNoToken(tokens, 3, 0, 'to', 'Variable named to should not be highlighted as a range separator.')
+   assertNoToken(tokens, 4, 0, 'into', 'Variable named into should not be highlighted as a range separator.')
+   assertNoToken(tokens, 5, 0, 'by', 'Variable named by should not be highlighted as a step separator.')
+   assertNoToken(tokens, 6, 15, 'to', 'Range start variable named to should not be highlighted as a separator.')
+   assertOperatorToken(tokens, 6, 18, 'to', 'Second to in {to to into} should be the range separator.')
+   assertNoToken(tokens, 6, 21, 'into', 'Range stop variable named into should not be highlighted as a separator.')
+   assertOperatorToken(tokens, 7, 23, 'by', 'First by in {0 to 10 by by} should be the step separator.')
+   assertNoToken(tokens, 7, 26, 'by', 'Second by in {0 to 10 by by} should be a step expression variable.')
+   assertNoToken(tokens, 8, 11, 'into', 'Table key named into should not be highlighted as a range separator.')
+   assertNoToken(tokens, 8, 19, 'to', 'Table key named to should not be highlighted as a range separator.')
+   assertNoToken(tokens, 8, 25, 'by', 'Table key named by should not be highlighted as a step separator.')
+   assertNoToken(tokens, 9, 22, 'to', 'Member named to should not be highlighted as a range separator.')
+   assertOperatorToken(tokens, 9, 25, 'into', 'Range separator after a member access should be highlighted.')
+   assertOperatorToken(tokens, 9, 36, 'by', 'Step separator after a stop expression should be highlighted.')
+   assertNoToken(tokens, 9, 46, 'by', 'Member named by should not be highlighted as a step separator.')
+   assertNoToken(tokens, 10, 34, 'by',
+      'Stop expression variable named by should not be highlighted as a step separator.')
+   assertNoToken(tokens, 11, 35, 'by', 'Nested variable named by should not be highlighted as a step separator.')
+   assertOperatorToken(tokens, 11, 39, 'by', 'Step separator after a parenthesised stop should be highlighted.')
+end
+
+@Test function RangeSyntaxDiagnosticsUseCurrentParser()
+   doc = makeDoc('sum = 0\nfor i in {0 to 10 by 2} do\n   sum += i\nend\n' ..
+      'value = {0 into 10 by 2}\n')
+   result = computeDiagnostics(doc)
+
+   assert(#result.diagnostics is 0, 'LSP diagnostics should accept current to/into/by range syntax.')
+end
+
+@Test function RemovedNumericForProducesLspDiagnostic()
+   doc = makeDoc('for i = 0, 8 do\n   print(i)\nend\n')
+   result = computeDiagnostics(doc)
+
+   assert(#result.diagnostics > 0, 'Removed numeric for syntax should produce an LSP diagnostic.')
+   diagnostic = result.diagnostics[0]
+   assert(diagnostic.code is 'DeprecatedSyntax', 'LSP should preserve the DeprecatedSyntax diagnostic code.')
+   assert(diagnostic.severity is 1, 'Removed numeric for syntax should be an LSP error.')
+   assert(diagnostic.range.start.line is 0, 'Removed numeric for diagnostic should identify the loop header.')
+   assert(diagnostic.range.start.character is 6, "Removed numeric for diagnostic should start at '='.")
+end
+
+@Test function RemovedColonCallProducesLspDiagnostic()
+   doc = makeDoc("value = 'hello'\nresult = value:upper()\n")
+   result = computeDiagnostics(doc)
+
+   assert(#result.diagnostics > 0, 'Removed colon call syntax should produce an LSP diagnostic.')
+   diagnostic = result.diagnostics[0]
+   assert(diagnostic.code is 'UnexpectedToken', 'Colon diagnostics should use the ordinary parser error code.')
+   assert(diagnostic.severity is 1, 'Removed colon call syntax should be an LSP error.')
+   assert(diagnostic.range.start.line is 1, 'Colon call diagnostic should identify the call line.')
+end
+
+@Test function TernaryModesReceiveSemanticTokens()
+   source = 'standard = value ? \'yes\' : \'no\'\n' ..
+      'extended = value ?? \'yes\' : \'no\'\n' ..
+      'comparison = options.scale is false ?? nil : true\n' ..
+      'coalesce = value ?? \'fallback\'\n'
+
+   tokens = tokenizeTiri(source)
+
+   assertOperatorToken(tokens, 0, 17, '?', 'Standard ternary condition should be highlighted as an operator.')
+   assertOperatorToken(tokens, 0, 25, ':', 'Standard ternary separator should be highlighted as an operator.')
+   assertOperatorToken(tokens, 1, 17, '??', 'Extended ternary condition should be highlighted as an operator.')
+   assertOperatorToken(tokens, 1, 26, ':', 'Extended ternary separator should be highlighted as an operator.')
+   assertOperatorToken(tokens, 2, 27, 'is', 'Comparison before extended ternary should remain an operator.')
+   assertOperatorToken(tokens, 2, 36, '??', 'Extended ternary after comparison should be highlighted.')
+   assertOperatorToken(tokens, 2, 43, ':', 'Extended ternary after comparison should keep its separator.')
+   assertOperatorToken(tokens, 3, 17, '??', 'Binary if-empty operator should remain highlighted.')
+end
+
+@Test function TernarySeparatorScanStopsAtLineBoundary()
+   source = 'answer = flag ? 1 : 0\n' ..
+      'function f():num return 1 end\n'
+   tokens = tokenizeTiri(source)
+
+   assertOperatorToken(tokens, 0, 18, ':', 'The ternary separator should remain highlighted.')
+   assertNoToken(tokens, 1, 12, ':', 'A later function return annotation must not be a ternary separator.')
+end
+
+@Test function TernaryDiagnosticsUseCurrentParser()
+   doc = makeDoc('value = 0 ? \'truthy\' : \'falsey\'\n' ..
+      'extended = 0 ?? \'truthy\' : \'falsey\'\n' ..
+      'options = { scale=false }\n' ..
+      'value = options.scale is false ?? nil : true\n')
+   result = computeDiagnostics(doc)
+
+   assert(#result.diagnostics is 0, 'LSP diagnostics should accept standard and extended ternary syntax.')
+end
+
+@Test function FStringEscapedBracesUseCurrentParser()
+   doc = makeDoc([=[
+glFunctionPrefix = 'fl'
+proto = f'namespace {glFunctionPrefix} {{\n'
+i = 42
+test_data = f'{{"id":{i},"data":"test_data_{i}"}}'
+]=])
+   result = computeDiagnostics(doc)
+
+   assert(#result.diagnostics is 0, 'LSP diagnostics should accept escaped braces in f-strings.')
+end
+
+@Test function MultiByteOperatorsReceiveSemanticTokens()
+   -- ≈, ≠, ≤, ≥ are three UTF-8 bytes but a single UTF-16 column.  The operator itself should be highlighted, and
+   -- the number following it must sit at the correct UTF-16 column rather than drifting by the operator's extra bytes.
+
+   source = '1.0 ≈ 2.0\n' ..   -- 3-byte operator
+      '1.0 ≠ 2.0\n' ..        -- 3-byte operator
+      '1.0 × 2.0\n'           -- 2-byte operator
+
+   tokens = tokenizeTiri(source)
+
+   -- The operator occupies UTF-16 column 4 with a width of one unit on every line.
+   for line in {0 to 3} do
+      op = nil
+      for token in values(tokens) do
+         if token.line is line and token.char is 4 then op = token end
+      end
+      assert(op and op.type is 1, 'Multi-byte operator on line ' .. line .. ' should be highlighted as an operator.')
+      assert(op.length is 1, 'Multi-byte operator on line ' .. line .. ' should span one UTF-16 column.')
+   end
+
+   -- The trailing number aligns to UTF-16 column 6 on every line, independent of the operator's byte width.
+   for line in {0 to 3} do
+      number = findToken(tokens, line, 6, '2.0')
+      assert(number and number.type is 5,
+         'Number after a multi-byte operator on line ' .. line .. ' should keep its UTF-16 alignment.')
+   end
+end
+
+@Test function MultiByteOperatorDiagnosticsUseCurrentParser()
+   doc = makeDoc('result = 1.0 ≈ 1.000001\n' ..
+      'unequal = 1.0 ≠ 2.0\n')
+   result = computeDiagnostics(doc)
+
+   assert(#result.diagnostics is 0, 'LSP diagnostics should accept multi-byte comparison operators.')
+end
+
+@Test function MultiByteOperatorHoverUsesUtf16Position()
+   doc = makeDoc('result = 1.0 ≈ value\n')
+   token = getTokenAtPosition(doc, 0, 15)
+
+   assert(token and token.text is 'value', 'Hover token extraction should convert UTF-16 columns to byte offsets.')
+   assert(token.startCol is 15, 'Hover token range should report the UTF-16 start column.')
+   assert(token.endCol is 20, 'Hover token range should report the UTF-16 end column.')
+end
+
+@Test function IncrementalEditAtEndOfLineUsesFullLineText()
+   uri = glSemanticTokensTestUri .. '#edit'
+   glDocuments[uri] = {
+      uri = uri,
+      languageId = 'tiri',
+      version = 1,
+      content = 'abc\n',
+      lineIndex = nil
+   }
+
+   server = {
+      _handlers = {},
+      verbose = false,
+      logMessage = function(Message) end
+   }
+   state = {
+      clientSocket = {
+         acWrite = function(Text):num return ERR_Okay end
+      }
+   }
+
+   registerCoreHandlers(server)
+   server._handlers['textDocument/didChange']({
+      jsonrpc = '2.0',
+      params = {
+         textDocument = { uri = uri, version = 2 },
+         contentChanges = array<table> {
+            {
+               range = {
+                  start = { line = 0, character = 3 },
+                  ['end'] = { line = 0, character = 3 }
+               },
+               text = '!'
+            }
+         }
+      }
+   }, state)
+
+   assert(glDocuments[uri].content is 'abc!\n',
+      'Incremental edit at an end-of-line UTF-16 column should append after the final character.')
+   glDocuments[uri] = nil
+end
+
+@Test function ParserAnnotationHoverDocumentation()
+   doc = makeDoc('value = @SourceFile\n')
+   token = getTokenAtPosition(doc, 0, 10)
+   hover = resolveHoverContent(token, doc)
+
+   assert(token and token.text is 'SourceFile', 'Hover token extraction should identify SourceFile.')
+   assert(hover and hover.find('@SourceFile', 0, true), 'Hover should document @SourceFile.')
+   assert(hover.find('Parser annotation', 0, true), 'Hover should identify parser annotations.')
+end
+
+@Test function StructDeclarationReceivesKeywordToken()
+   source = 'struct User\n' ..
+      '   Name: str\n' ..
+      'end\n'
+
+   tokens = tokenizeTiri(source)
+
+   struct_keyword = findToken(tokens, 0, 0, 'struct')
+   struct_name = findToken(tokens, 0, 7, 'User')
+
+   assert(struct_keyword and struct_keyword.type is 0, 'struct declarations should highlight struct as a keyword.')
+   assert(struct_name and struct_name.type is 11, 'The declared struct name should be a class token.')
+   assert((struct_name.modifiers & 1) != 0, 'The declared struct name should carry the declaration modifier.')
+end
+
+@Test function StructTypedReferenceReceivesClassToken()
+   source = 'user = struct<User> { Name="Paul" }\n' ..
+      'function age(Value: struct<User>):num\n' ..
+      '   return Value.Age\n' ..
+      'end\n'
+
+   tokens = tokenizeTiri(source)
+
+   construct_keyword = findToken(tokens, 0, 7, 'struct')
+   construct_name = findToken(tokens, 0, 14, 'User')
+   anno_keyword = findToken(tokens, 1, 20, 'struct')
+   anno_name = findToken(tokens, 1, 27, 'User')
+
+   assert(construct_keyword and construct_keyword.type is 0, 'struct<Name> construction should highlight struct as a keyword.')
+   assert(construct_name and construct_name.type is 11, 'The constructed struct name should be a class token.')
+   assert(construct_name.modifiers is 0, 'A struct<Name> reference should not carry the declaration modifier.')
+   assert(anno_keyword and anno_keyword.type is 0, 'struct<Name> annotations should highlight struct as a keyword.')
+   assert(anno_name and anno_name.type is 11, 'The annotated struct name should be a class token.')
+end
+
+@Test function StructDeclarationNameOnNextLine()
+   source = 'struct\n' ..
+      'User\n' ..
+      '   Name: str\n' ..
+      'end\n'
+
+   tokens = tokenizeTiri(source)
+
+   struct_keyword = findToken(tokens, 0, 0, 'struct')
+   struct_name = findToken(tokens, 1, 0, 'User')
+
+   assert(struct_keyword and struct_keyword.type is 0, 'struct should remain a declaration keyword before a newline.')
+   assert(struct_name and struct_name.type is 11, 'A declaration name on the following line should be a class token.')
+end
+
+@Test function StructLibraryRemainsNamespace()
+   source = "user = struct.new('User')\n" ..
+      'struct.size(user)\n'
+
+   tokens = tokenizeTiri(source)
+
+   assign_namespace = findToken(tokens, 0, 7, 'struct')
+   call_namespace = findToken(tokens, 1, 0, 'struct')
+
+   assert(assign_namespace and assign_namespace.type is 10, 'struct.new() usage should remain a namespace token.')
+   assert(call_namespace and call_namespace.type is 10, 'struct.size() usage should remain a namespace token.')
+end
+
+@Test function ObjectConstructorAndTypeConstraintReceiveDistinctTokens()
+   source = 'clock = obj<Time> {}\n' ..
+      'function use(Clock: obj<Time>) end\n' ..
+      "replacement = obj.new('Time', {})\n"
+
+   tokens = tokenizeTiri(source)
+
+   constructor_keyword = findToken(tokens, 0, 8, 'obj')
+   constructor_class = findToken(tokens, 0, 12, 'Time')
+   constraint_type = findToken(tokens, 1, 20, 'obj')
+   constraint_class = findToken(tokens, 1, 24, 'Time')
+   namespace_token = findToken(tokens, 2, 14, 'obj')
+
+   assert(constructor_keyword and constructor_keyword.type is 0,
+      'obj<Class> construction should highlight obj as a compiler-owned keyword.')
+   assert(constructor_class and constructor_class.type is 11,
+      'The constructed object class should receive a class token.')
+   assert(constraint_type and constraint_type.type is 7,
+      'obj<Class> constraints should retain type highlighting.')
+   assert(constraint_class and constraint_class.type is 11,
+      'The constrained object class should receive a class token.')
+   assert(namespace_token and namespace_token.type is 10, 'obj.new() should retain namespace highlighting.')
+end
+
+@Test function ObjectConstructorTriviaReceivesSemanticTokens()
+   source = 'clock = obj<\n' ..
+      '   -- class name\n' ..
+      '   Time\n' ..
+      '> {}\n'
+
+   tokens = tokenizeTiri(source)
+
+   constructor_keyword = findToken(tokens, 0, 8, 'obj')
+   comment = findToken(tokens, 1, 3, '-- class name')
+   constructor_class = findToken(tokens, 2, 3, 'Time')
+
+   assert(constructor_keyword and constructor_keyword.type is 0,
+      'A multiline obj<Class> constructor should highlight obj as a compiler-owned keyword.')
+   assert(comment and comment.type is 6, 'Comments inside obj<Class> should retain comment highlighting.')
+   assert(constructor_class and constructor_class.type is 11,
+      'A class name after constructor trivia should retain its source line and column.')
+   assertNoToken(tokens, 0, 11, '<', 'The constructor opening angle should not be emitted as an operator.')
+   assertNoToken(tokens, 3, 0, '>', 'The constructor closing angle should not be emitted as an operator.')
+end
+
+@Test function EnumIsAKeyword()
+   source = 'enum Colour { Red, Green }\n'
+
+   tokens = tokenizeTiri(source)
+
+   enum_keyword = findToken(tokens, 0, 0, 'enum')
+   assert(enum_keyword and enum_keyword.type is 0, 'enum should be highlighted as a keyword.')
+end
+
+@Test function SimpleTypeTestDescriptorReceivesTypeToken()
+   source = 'if value is <num> then end\n'
+
+   tokens = tokenizeTiri(source)
+
+   is_op = findToken(tokens, 0, 9, 'is')
+   open = findToken(tokens, 0, 12, '<')
+   primary = findToken(tokens, 0, 13, 'num')
+   close = findToken(tokens, 0, 16, '>')
+
+   assert(is_op and is_op.type is 1, 'is should remain an operator token in a type test.')
+   assert(open and open.type is 1, 'The descriptor opening < should be an operator token.')
+   assert(primary and primary.type is 7, 'A simple type-test descriptor should be a type token.')
+   assert(close and close.type is 1, 'The descriptor closing > should be an operator token.')
+end
+
+@Test function NegatedTypeTestEmitsNotAndDescriptor()
+   source = 'flag = value is not <str>\n'
+
+   tokens = tokenizeTiri(source)
+
+   is_op = findToken(tokens, 0, 13, 'is')
+   not_op = findToken(tokens, 0, 16, 'not')
+   primary = findToken(tokens, 0, 21, 'str')
+
+   assert(is_op and is_op.type is 1, 'is should remain an operator token in a negated type test.')
+   assert(not_op and not_op.type is 1, 'not should be an operator token between is and the descriptor.')
+   assert(primary and primary.type is 7, 'The negated descriptor primary should be a type token.')
+end
+
+@Test function ConstrainedObjectTypeTestReceivesClassToken()
+   source = 'if node is <obj Vector> then end\n'
+
+   tokens = tokenizeTiri(source)
+
+   primary = findToken(tokens, 0, 12, 'obj')
+   inner = findToken(tokens, 0, 16, 'Vector')
+
+   assert(primary and primary.type is 7, 'The obj descriptor primary should be a type token.')
+   assert(inner and inner.type is 11, 'A constrained object class name should be a class token.')
+end
+
+@Test function ConstrainedArrayTypeTestReceivesClassToken()
+   source = 'ok = buffer is <array int>\n'
+
+   tokens = tokenizeTiri(source)
+
+   primary = findToken(tokens, 0, 16, 'array')
+   inner = findToken(tokens, 0, 22, 'int')
+
+   assert(primary and primary.type is 7, 'The array descriptor primary should be a type token.')
+   assert(inner and inner.type is 11, 'A constrained array element name should be a class token.')
+end
+
+@Test function StructArrayTypeTestReceivesNestedTypeTokens()
+   source = 'ok = points is <array struct<Point>>\n'
+
+   tokens = tokenizeTiri(source)
+
+   array_type = findToken(tokens, 0, 16, 'array')
+   struct_type = findToken(tokens, 0, 22, 'struct')
+   struct_name = findToken(tokens, 0, 29, 'Point')
+
+   assert(array_type and array_type.type is 7, 'The array descriptor primary should be a type token.')
+   assert(struct_type and struct_type.type is 7, 'The nested struct descriptor should be a type token.')
+   assert(struct_name and struct_name.type is 11, 'The nested structure name should be a class token.')
+end
+
+@Test function StructTypeTestIsNotAStructDeclaration()
+   -- A mid-line `<struct Name>` type test must not trip the struct-declaration branch, which would emit the name
+   -- with a declaration modifier and mislead go-to-definition and document symbols.
+   source = 'ok = shape is <struct Point>\n'
+
+   tokens = tokenizeTiri(source)
+
+   primary = findToken(tokens, 0, 15, 'struct')
+   inner = findToken(tokens, 0, 22, 'Point')
+
+   assert(primary and primary.type is 7, 'A struct type-test primary should be a type token, not a keyword.')
+   assert(inner and inner.type is 11, 'The struct name in a type test should be a class token.')
+   assert(inner.modifiers is 0, 'A struct type-test name must not carry the declaration modifier.')
+end
+
+@Test function NotEqualTypeTestReceivesTypeToken()
+   -- `!= <...>` is the symbolic equivalent of `is not <...>` and must highlight its descriptor the same way.
+   source = 'flag = x != <num>\n'
+
+   tokens = tokenizeTiri(source)
+
+   not_equal = findToken(tokens, 0, 9, '!=')
+   primary = findToken(tokens, 0, 13, 'num')
+
+   assert(not_equal and not_equal.type is 1, '!= should remain an operator token in a type test.')
+   assert(primary and primary.type is 7, 'A != descriptor primary should be a type token.')
+end
+
+@Test function NotEqualStructTypeTestIsNotAStructDeclaration()
+   source = 'ok = shape != <struct Point>\n'
+
+   tokens = tokenizeTiri(source)
+
+   primary = findToken(tokens, 0, 15, 'struct')
+   inner = findToken(tokens, 0, 22, 'Point')
+
+   assert(primary and primary.type is 7, 'A != struct type-test primary should be a type token, not a keyword.')
+   assert(inner and inner.type is 11, 'The struct name in a != type test should be a class token.')
+   assert(inner.modifiers is 0, 'A != struct type-test name must not carry the declaration modifier.')
+end
+
+@Test function UnicodeNotEqualTypeTestReceivesTypeToken()
+   source = 'flag = x ≠ <num>\n'
+
+   tokens = tokenizeTiri(source)
+
+   not_equal = nil
+   for token in values(tokens) do
+      if token.line is 0 and token.char is 9 and token.length is 1 then not_equal = token end
+   end
+   primary = findToken(tokens, 0, 12, 'num')
+
+   assert(not_equal and not_equal.type is 1, '≠ should remain an operator token in a type test.')
+   assert(primary and primary.type is 7, 'A ≠ descriptor primary should be a type token.')
+end
+
+@Test function UnicodeNotEqualStructTypeTestIsNotAStructDeclaration()
+   source = 'ok = shape ≠ <struct Point>\n'
+
+   tokens = tokenizeTiri(source)
+
+   primary = findToken(tokens, 0, 14, 'struct')
+   inner = findToken(tokens, 0, 21, 'Point')
+
+   assert(primary and primary.type is 7, 'A ≠ struct type-test primary should be a type token, not a keyword.')
+   assert(inner and inner.type is 11, 'The struct name in a ≠ type test should be a class token.')
+   assert(inner.modifiers is 0, 'A ≠ struct type-test name must not carry the declaration modifier.')
+end
+
+@Test function OrdinaryNotEqualIsUnchanged()
+   -- Without a following '<', `!=` remains a plain comparison operator with no descriptor tokens.
+   source = 'flag = left != right\n'
+
+   tokens = tokenizeTiri(source)
+
+   not_equal = findToken(tokens, 0, 12, '!=')
+   assert(not_equal and not_equal.type is 1, 'Ordinary != comparison should remain an operator token.')
+   assertNoToken(tokens, 0, 15, 'right', 'Ordinary != right operand should not become a descriptor type token.')
+end
+
+@Test function OrdinaryIsEqualityIsUnchanged()
+   -- Without a following '<', `is` and `is not` remain plain equality operators with no descriptor tokens.
+   source = 'a = (left is right)\n' ..
+      'b = left is not right\n'
+
+   tokens = tokenizeTiri(source)
+
+   is_op = findToken(tokens, 0, 10, 'is')
+   assert(is_op and is_op.type is 1, 'Ordinary is equality should remain an operator token.')
+   assertNoToken(tokens, 0, 13, 'right', 'Ordinary equality right operand should not become a descriptor type token.')
+
+   is_not_op = findToken(tokens, 1, 9, 'is')
+   not_op = findToken(tokens, 1, 12, 'not')
+   assert(is_not_op and is_not_op.type is 1, 'Ordinary is-not equality should remain an operator token.')
+   assert(not_op and not_op.type is 1, 'not in ordinary equality should remain an operator token.')
+end
+
+@Test function MalformedTypeTestFallsBackToLessThan()
+   -- An opening '<' with no valid descriptor must not be consumed as a type test; the '<' stays a comparison
+   -- operator so the surrounding expression still tokenises.
+   source = 'flag = count is < limit\n'
+
+   tokens = tokenizeTiri(source)
+
+   is_op = findToken(tokens, 0, 13, 'is')
+   less_than = findToken(tokens, 0, 16, '<')
+
+   assert(is_op and is_op.type is 1, 'is preceding a bare < should remain an operator token.')
+   assert(less_than and less_than.type is 1, 'A bare < after is should tokenise as a less-than operator.')
+end
+
+@Test function MalformedNegatedTypeTestDoesNotDuplicateNotToken()
+   source = 'flag = count is not < limit\n'
+
+   tokens = tokenizeTiri(source)
+
+   matching_not_tokens = 0
+   for token in values(tokens) do
+      if token.line is 0 and token.char is 16 and token.length is 3 then matching_not_tokens++ end
+   end
+
+   assert(matching_not_tokens is 1, 'A malformed is-not type test should emit exactly one not token.')
+   less_than = findToken(tokens, 0, 20, '<')
+   assert(less_than and less_than.type is 1, 'A malformed negated descriptor should retain its less-than token.')
+end
+
+@Test function UnknownTypeTestNameFallsBackToOrdinaryTokens()
+   source = 'flag = value is <integer>\n'
+
+   tokens = tokenizeTiri(source)
+
+   less_than = findToken(tokens, 0, 16, '<')
+   assert(less_than and less_than.type is 1, 'An unknown descriptor should retain its less-than token.')
+   assertNoToken(tokens, 0, 17, 'integer', 'An unknown descriptor name should not receive a type token.')
+end
+
+@Test function ChooseTypePatternsReceiveSemanticTokens()
+   source = 'result = choose value from\n' ..
+      '   <table> -> \'table\'\n' ..
+      '   <array int> when ready(value) -> \'integer array\'\n' ..
+      '   <integer> -> \'invalid descriptor\'\n' ..
+      '   < limit -> \'less than\'\n' ..
+      '   < lower > upper -> \'between\'\n' ..
+      '   else -> \'other\'\n' ..
+      'end\n'
+
+   tokens = tokenizeTiri(source)
+
+   table_type = findToken(tokens, 1, 4, 'table')
+   array_type = findToken(tokens, 2, 4, 'array')
+   array_constraint = findToken(tokens, 2, 10, 'int')
+   unknown_type = findToken(tokens, 3, 4, 'integer')
+
+   assert(table_type and table_type.type is 7, 'An unconstrained choose type pattern should emit a type token.')
+   assert(array_type and array_type.type is 7, 'A constrained choose type pattern should emit a type token.')
+   assert(array_constraint and array_constraint.type is 11,
+      'A constrained choose type pattern should emit a class token for its constraint.')
+   assert(unknown_type and unknown_type.type is 7,
+      'An unknown descriptor-shaped choose arm should retain type highlighting for its compiler diagnostic.')
+
+   assertOperatorToken(tokens, 4, 3, '<', 'A relational choose arm should retain its less-than token.')
+   assertNoToken(tokens, 4, 5, 'limit', 'A relational choose operand must not become a type token.')
+   assertOperatorToken(tokens, 5, 3, '<', 'A relational choose range should retain its less-than token.')
+   assertOperatorToken(tokens, 5, 11, '>', 'A relational choose range should retain its greater-than token.')
+   assertNoToken(tokens, 5, 5, 'lower', 'A relational arm ending in an arrow must not become a type pattern.')
+end
+
+@Test function RemovedErrorDiagnostic()
+   local doc = makeDoc("error('message')")
+   local result = computeDiagnostics(doc)
+   local undeclared = false
+   for diagnostic in values(result.diagnostics) do
+      assert(diagnostic.code != 'DeprecatedApi', 'The removed error name must not emit a deprecation warning.')
+      if diagnostic.message.find("Undeclared variable 'error'", 0, true) then undeclared = true end
+   end
+   assert(undeclared, 'The removed error built-in must be reported as an undeclared variable.')
+end
+
+@Test function ErrorRemovalIgnoresUnrelatedNames()
+   local source = [[
+local error = function(Message) end
+error('local')
+local api = { error=function() end }
+api.error()
+local text = "error('string')"
+-- error('comment')
+local query = 'fn:error()'
+]]
+   local result = computeDiagnostics(makeDoc(source))
+   for diagnostic in values(result.diagnostics) do
+      assert(diagnostic.code != 'DeprecatedApi', 'Local names, members, keys, strings and comments must not warn.')
+   end
+
+   local tokens = tokenizeTiri("raise('message')\ntry except\nraise\nend")
+   local keyword = findToken(tokens, 0, 0, 'raise')
+   assert(keyword and keyword.type is 0, 'Expression raise must retain keyword highlighting.')
+   keyword = findToken(tokens, 2, 0, 'raise')
+   assert(keyword and keyword.type is 0, 'Bare raise must retain keyword highlighting.')
+end

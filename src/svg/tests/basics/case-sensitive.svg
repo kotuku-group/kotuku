@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
+   <defs>
+      <linearGradient id="goodGradient" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="120" y2="0">
+         <stop offset="0" stop-color="#e31b23"/>
+         <stop offset="1" stop-color="#f4c542"/>
+      </linearGradient>
+      <lineargradient id="badGradient">
+         <stop offset="0" stop-color="#2447ff"/>
+         <stop offset="1" stop-color="#2447ff"/>
+      </lineargradient>
+   </defs>
+
+   <rect x="0" y="0" width="120" height="120" fill="#ffffff"/>
+   <rect x="10" y="10" width="45" height="45" fill="url(#goodGradient)"/>
+   <Rect x="65" y="10" width="45" height="45" fill="#2447ff"/>
+   <rect X="10" y="65" width="45" height="45" fill="#159947"/>
+   <rect x="65" y="65" Width="45" height="45" fill="#8f3bb8"/>
+</svg>

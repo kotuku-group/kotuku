@@ -1,0 +1,382 @@
+-- $TIRI
+-- Flute tests for the Compression module
+
+global glScanItems = { }
+global glScanCount = 0
+
+@AfterAll function cleanup()
+   mSys.DeleteFile('temp:cmp_test/')
+   mSys.DeleteFile('temp:cmp_icons/')
+   mSys.DeleteFile('temp:cmp_test_json.zip')
+   mSys.DeleteFile('temp:cmp_test_scripts.zip')
+   mSys.DeleteFile('temp:cmp_empty_args.zip')
+   mSys.DeleteFile('temp:cmp_decompress_object.tiri')
+   mSys.DeleteFile('temp:scripts.gz')
+   mSys.DeleteFile('temp:compressed_stream.gz')
+   mSys.DeleteFile('temp:gui.tiri')
+   mSys.DeleteFile('temp:window.tiri')
+end
+
+global function streamedOutput(CompressedID, Data)
+   err, len = glOutFile.acWrite(Data)
+   if err != ERR_Okay then return ERR_Write end
+   return ERR_Okay
+end
+
+global function compressionScanCallback(Compression, Item)
+   glScanCount++
+   glScanItems[Item.path] = true
+   return ERR_Okay
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- This test takes advantage of the icon archive to test our compatibility levels (icons are compressed by the host
+-- system rather than our compression API).
+
+@Test(priority=0) function IconArchive()
+   if mSys.AnalysePath('styles:icons/Default.zip') != ERR_Okay then
+      print('Icon archive not found; skipping test.')
+      return
+   end
+
+   local cmp
+   file_count = 0
+   try
+      cmp = obj.new('compression', {
+         path     = 'styles:icons/Default.zip',
+         feedback = function(Compression, Info)
+            if Info.progress is 0 then
+               file_count++
+            end
+         end
+      })
+   except e
+      print('Icon archive could not be opened; skipping test: ' .. e.message)
+      return
+   end
+
+   if not cmp then return end -- Non-existance of the icon archive means this test is skipped
+
+   err = cmp.mtDecompressFile('devices/harddisk.svg', 'temp:cmp_icons/')
+   assert(err is ERR_Okay, 'DecompressFile() failed: ' .. mSys.GetErrorMsg(err))
+
+   err = cmp.mtDecompressFile('nature/*', 'temp:cmp_icons/')
+   assert(err is ERR_Okay, 'DecompressFile() failed: ' .. mSys.GetErrorMsg(err))
+
+   assert(file_count is 5, 'Decompressed file count is ' .. file_count)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Compress a few files and then decompress them.
+
+@Test(priority=1) function CreateCompress()
+   local cmp = obj.new('compression', { path='temp:cmp_test_json.zip', flags=FL_NEW } )
+
+   err = cmp.mtCompressFile('scripts:gui.tiri', '')
+   assert(err is ERR_Okay, 'CompressFile() failed: ' .. mSys.GetErrorMsg(err))
+
+   err = cmp.mtCompressFile('config:styles/default/window.tiri', '')
+   assert(err is ERR_Okay, 'CompressFile() failed: ' .. mSys.GetErrorMsg(err))
+
+   cmp = nil
+   processing.collect()  -- Flush the compressed file to disk
+end
+
+@Test(priority=2) function DecompressWild()
+   cmp = obj.new('compression', { path='temp:cmp_test_json.zip' } )
+
+   err = cmp.mtDecompressFile('*.tiri', 'temp:')
+   assert(err is ERR_Okay, 'DecompressFile() failed: ' .. mSys.GetErrorMsg(err))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test(priority=3) function StringViewMethodInputs()
+   cmp = obj.new('compression', { path='temp:cmp_test_json.zip' } )
+
+   glScanItems = { }
+   glScanCount = 0
+
+   err = cmp.mtScan('', '', compressionScanCallback)
+   assert(err is ERR_Okay, 'Scan() failed: ' .. mSys.GetErrorMsg(err))
+   assert(glScanCount is 2, 'Root Scan() returned ' .. glScanCount .. ' entries.')
+   assert(glScanItems['gui.tiri'], 'Root Scan() did not return gui.tiri.')
+   assert(glScanItems['window.tiri'], 'Root Scan() did not return window.tiri.')
+
+   glScanItems = { }
+   glScanCount = 0
+
+   err = cmp.mtScan('', 'gui.tiri', compressionScanCallback)
+   assert(err is ERR_Okay, 'Filtered Scan() failed: ' .. mSys.GetErrorMsg(err))
+   assert(glScanCount is 1, 'Filtered Scan() returned ' .. glScanCount .. ' entries.')
+   assert(glScanItems['gui.tiri'], 'Filtered Scan() did not return gui.tiri.')
+
+   err, item = cmp.mtFind('gui.tiri', false, false)
+   assert(err is ERR_Okay, 'Find() failed: ' .. mSys.GetErrorMsg(err))
+   assert(item.path is 'gui.tiri', 'Find() returned ' .. tostring(item.path))
+
+   source_file = obj.new('file', { path='scripts:gui.tiri' })
+   source_size = source_file.size
+   source_data = array<byte, source_size>
+   err = mSys.ReadFileToBuffer('scripts:gui.tiri', source_data)
+   assert(err is ERR_Okay, 'Failed to read source data: ' .. mSys.GetErrorMsg(err))
+
+   output = obj.new('file', { path='temp:cmp_decompress_object.tiri', flags=FL_WRITE|FL_NEW })
+   err = cmp.mtDecompressObject('gui.tiri', output)
+   assert(err is ERR_Okay, 'DecompressObject() failed: ' .. mSys.GetErrorMsg(err))
+   output = nil
+   processing.collect()
+
+   output_file = obj.new('file', { path='temp:cmp_decompress_object.tiri' })
+   assert(output_file.size is source_size, f"DecompressObject() wrote {output_file.size} bytes, expected {source_size}.")
+   output_data = array<byte, source_size>
+   err = mSys.ReadFileToBuffer('temp:cmp_decompress_object.tiri', output_data)
+   assert(err is ERR_Okay, 'Failed to read decompressed output: ' .. mSys.GetErrorMsg(err))
+   assert(output_data.getString() is source_data.getString(), 'DecompressObject() output does not match the source.')
+
+   err = cmp.mtRemoveFile('window.tiri')
+   assert(err is ERR_Okay, 'RemoveFile() failed: ' .. mSys.GetErrorMsg(err))
+
+   err, item = cmp.mtFind('window.tiri', false, false)
+   assert(err is ERR_Search, 'Find() should not locate removed file, got ' .. mSys.GetErrorMsg(err))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test(priority=4) function EmptyRequiredStringArguments()
+   cmp = obj.new('compression', { path='temp:cmp_empty_args.zip', flags=FL_NEW } )
+   output = obj.new('file', { path='temp:cmp_decompress_object.tiri', flags=FL_WRITE|FL_NEW })
+
+   err = cmp.mtCompressFile('', '')
+   assert(err is ERR_NullArgs, 'Expected CompressFile() to reject empty Location, got ' .. mSys.GetErrorMsg(err))
+
+   err = cmp.mtDecompressFile('', 'temp:')
+   assert(err is ERR_NullArgs, 'Expected DecompressFile() to reject empty Path, got ' .. mSys.GetErrorMsg(err))
+
+   err = cmp.mtDecompressFile('gui.tiri', '')
+   assert(err is ERR_NullArgs, 'Expected DecompressFile() to reject empty Dest, got ' .. mSys.GetErrorMsg(err))
+
+   err = cmp.mtRemoveFile('')
+   assert(err is ERR_NullArgs, 'Expected RemoveFile() to reject empty Path, got ' .. mSys.GetErrorMsg(err))
+
+   err = cmp.mtDecompressObject('', output)
+   assert(err is ERR_NullArgs, 'Expected DecompressObject() to reject empty Path, got ' .. mSys.GetErrorMsg(err))
+
+   err, item = cmp.mtFind('', false, false)
+   assert(err is ERR_NullArgs, 'Expected Find() to reject empty Path, got ' .. mSys.GetErrorMsg(err))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Compress an entire folder and then decompress it to a new location.
+
+@Test(priority=5) function CompressFolder()
+   file_count = 0
+   global glCompressedFiles = { }
+
+   cmp = obj.new('compression', {
+      path     = 'temp:cmp_test_scripts.zip',
+      flags    = '!NEW',
+      feedback = function(Compression, Info)
+         if Info.progress is 0 then
+            print('Compressing file #' .. Info.index .. ', Path: \"' .. tostring(Info.dest) .. '"')
+            glCompressedFiles[Info.dest] = Info
+            file_count++
+         end
+      end
+   } )
+
+   err = cmp.mtCompressFile('scripts:gui/', 'scripts')
+   assert(err is ERR_Okay, 'CompressFile() failed: ' .. mSys.GetErrorMsg(err))
+
+   print('Compressed ' .. file_count .. ' files.')
+   glCompressedFiles['COUNT'] = file_count
+
+   cmp = nil
+   processing.collect() -- Flush the compressed file to disk
+end
+
+@Test(priority=6) function DecompressFolder()
+   file_count = 0
+   cmp = obj.new('compression', {
+      path     = 'temp:cmp_test_scripts.zip',
+      feedback = function(Compression, Info)
+         if Info.progress is 0 then
+            file_count++
+            if glCompressedFiles[Info.path] then
+               glCompressedFiles[Info.path].found = true
+            else
+               print('File "' .. Info.path .. '" not registered.')
+            end
+         end
+      end
+   } )
+
+   err = cmp.mtDecompressFile('*', 'temp:cmp_test/')
+   assert(err is ERR_Okay, 'DecompressFile() failed: ' .. mSys.GetErrorMsg(err))
+   assert(file_count is glCompressedFiles['COUNT'], 'Decompressed file count of ' .. file_count .. ' != ' .. glCompressedFiles['COUNT'])
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test streamed compression
+
+@Test(priority=7) function StreamedCompression()
+   cmp = obj.new('compression' , { } )
+   file = obj.new('file', { src='scripts:gui.tiri', flags=FL_READ } )
+
+   global glOutFile = obj.new('file', { src='temp:scripts.gz', flags=FL_WRITE|FL_NEW } )
+   if cmp.mtCompressStreamStart() is ERR_Okay then
+      local input = string.alloc(16384)
+      err = ERR_Okay
+      while err is ERR_Okay do
+         err, len = file.acRead(input)
+         if (err != ERR_Okay) or (len <= 0) then break end
+         err = cmp.mtCompressStream(input.sub(0, len), streamedOutput)
+      end
+
+      assert(err is ERR_Okay, 'Inner compression loop failed: ' .. mSys.GetErrorMsg(err))
+      err = cmp.mtCompressStreamEnd(streamedOutput)
+   end
+
+   assert(glOutFile.size > 0, "The size of the compressed output file is zero.")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test(priority=8) function ArchiveVolume()
+   cmp = obj.new('compression', { path='temp:cmp_test_scripts.zip', archiveName='test' } )
+   file = obj.new('file', { path='scripts:gui/button.tiri' } )
+   file_size = file.size
+
+   cmpbuffer = array<byte, file_size>
+   cmpsrc = array<byte, file_size>
+
+   err = mSys.ReadFileToBuffer('scripts:gui/button.tiri', cmpsrc)
+   assert(err is ERR_Okay, 'Failed to read original source file for comparison: ' .. mSys.GetErrorMsg(err))
+   cmpstr = cmpsrc.getString()
+   assert(#cmpstr is file_size, f"Array length of {#cmpstr} does not match expected file length of {file_size}.")
+
+   -- Big buffer test
+
+   cmpfile = obj.new('file', { src='archive:test/scripts/button.tiri', flags=FL_READ })
+   err, len = cmpfile.acRead(cmpbuffer)
+   assert(err is ERR_Okay, 'Failed to read decompressed data from file archive: ' .. mSys.GetErrorMsg(err))
+   assert(cmpbuffer.getString() is cmpstr, "The decompressed data does not match the original file.")
+
+   -- Small buffer test
+
+   cmpfile.acSeek(0, SEEK_START)
+   smallbuffer = array<byte, 256>
+   cmpbuffer = array<byte, file_size>
+   di = 0
+   repeat
+      err, len = cmpfile.acRead(smallbuffer)
+      assert(err is ERR_Okay, 'Failed to read decompressed data from file archive: ' .. mSys.GetErrorMsg(err))
+      if len < #smallbuffer then
+         cmpbuffer.copy(smallbuffer.getString(0, len), di)
+      else
+         cmpbuffer.copy(smallbuffer.getString(), di)
+      end
+      di += len
+   until (len is 0)
+
+   assert(di is file_size, f"Decompressed data length of {di} does not match original file length of {#cmpstr}.")
+   assert(cmpbuffer.getString() is cmpstr, "The decompressed data does not match the original file.")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Test streamed decompression
+
+@Test(priority=9) function StreamedDecompression()
+   cmp = obj.new('compression' , { } )
+   file = obj.new('file', { src='temp:scripts.gz', flags=FL_READ } )
+
+   global glOutFile = obj.new('file', { src='temp:gui.tiri', flags=FL_WRITE|FL_NEW } )
+   assert(cmp.mtDecompressStreamStart() is ERR_Okay, 'Failed to initialise decompression.')
+   local input = string.alloc(16384)
+   err = ERR_Okay
+   while err is ERR_Okay do
+      err, len = file.acRead(input)
+      if err is ERR_Okay then
+         if len <= 0 then break end
+         err = cmp.mtDecompressStream(input.sub(0, len), streamedOutput)
+      end
+   end
+
+   assert(err is ERR_Okay, 'Inner decompression loop failed: ' .. mSys.GetErrorMsg(err))
+   err = cmp.mtDecompressStreamEnd(streamedOutput)
+   assert(err is ERR_Okay, 'DecompressStreamEnd() failed: ' .. mSys.GetErrorMsg(err))
+   glOutFile = nil
+   processing.collect() -- Flush the decompressed output to disk
+
+   -- Verify that the streamed round-trip reproduced the original source exactly.
+
+   source_file = obj.new('file', { path='scripts:gui.tiri' })
+   source_size = source_file.size
+
+   output_file = obj.new('file', { path='temp:gui.tiri' })
+   assert(output_file.size is source_size, f"Decompressed size {output_file.size} does not match source size {source_size}.")
+
+   source_data = array<byte, source_size>
+   output_data = array<byte, source_size>
+   assert(mSys.ReadFileToBuffer('scripts:gui.tiri', source_data) is ERR_Okay, 'Failed to read source data.')
+   assert(mSys.ReadFileToBuffer('temp:gui.tiri', output_data) is ERR_Okay, 'Failed to read decompressed output.')
+   assert(output_data.getString() is source_data.getString(), 'Round-tripped stream output does not match the source.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Exercise span-only buffer methods, including output capacity and encoded input validation.
+
+@Test(priority=10) function BufferCompression()
+   cmp = obj.new('compression')
+   source_data = array<byte> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }
+   compressed = array<byte, 128>
+
+   err, compressed_size = cmp.mtCompressBuffer(source_data, compressed)
+   assert(err is ERR_Okay, 'CompressBuffer() failed: ' .. mSys.GetErrorMsg(err))
+   assert(compressed_size > 8, 'CompressBuffer() did not return a complete encoded buffer.')
+
+   restored = array<byte, 64>
+   err, restored_size = cmp.mtDecompressBuffer(compressed, restored)
+   assert(err is ERR_Okay, 'DecompressBuffer() failed: ' .. mSys.GetErrorMsg(err))
+   assert(restored_size is #source_data,
+      f'DecompressBuffer() returned {restored_size} bytes, expected {#source_data}.')
+   assert(restored.getString(0, restored_size) is source_data.getString(),
+      'Buffer compression round-trip changed the input.')
+
+   short_output = array<byte, 9>
+   err = cmp.mtCompressBuffer(source_data, short_output)
+   assert(err is ERR_BufferOverflow, 'A short compression output span should return BufferOverflow.')
+
+   truncated_size = compressed_size - 1
+   truncated = compressed.slice({0 to truncated_size})
+   err = cmp.mtDecompressBuffer(truncated, restored)
+   assert(err is ERR_InvalidCompression, 'A truncated encoded input span should return InvalidCompression.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- A null empty write must finish the compressed stream so its trailer is available to a decoder.
+
+@Test(priority=11) function CompressedStreamFinalisation()
+   local source = 'Finalised compressed streams include a complete trailer.'
+   local output = obj.new('file', { path='temp:compressed_stream.gz', flags=FL_WRITE|FL_NEW })
+   local encoder = obj.new('compressedstream', { output=output })
+
+   local err, written = encoder.acWrite(source)
+   assert(err is ERR_Okay, 'CompressedStream write failed: ' .. mSys.GetErrorMsg(err))
+   assert(written is #source, f'CompressedStream consumed {written} bytes, expected {#source}.')
+
+   err = encoder.acWrite(nil)
+   assert(err is ERR_Okay, 'CompressedStream finalisation failed: ' .. mSys.GetErrorMsg(err))
+
+   encoder = nil
+   output = nil
+   processing.collect()
+
+   local input = obj.new('file', { path='temp:compressed_stream.gz', flags=FL_READ })
+   local decoder = obj.new('compressedstream', { input=input })
+   local restored = string.alloc(65536)
+   local restored_size
+   err, restored_size = decoder.acRead(restored)
+   assert(err is ERR_Okay, 'Finalised stream could not be decompressed: ' .. mSys.GetErrorMsg(err))
+   assert(restored.sub(0, restored_size) is source, 'Finalised compressed stream did not round-trip correctly.')
+end

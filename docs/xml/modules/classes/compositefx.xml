@@ -8,7 +8,7 @@
     <module>Vector</module>
     <comment>Composite two sources together with a mixing algorithm.</comment>
     <version>1</version>
-    <id>a9110956</id>
+    <id>a1aa4f67</id>
     <idstring>COMPOSITEFX</idstring>
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
@@ -24,6 +24,7 @@
       <name>Draw</name>
       <comment>Render the effect to the target bitmap.</comment>
       <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
+      <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">The X position of the region to be drawn.</param>
         <param type="INT" name="Y">The Y position of the region to be drawn.</param>
@@ -38,36 +39,36 @@
     <field>
       <name>K1</name>
       <comment>Input value for the arithmetic operation.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>DOUBLE</type>
     </field>
 
     <field>
       <name>K2</name>
       <comment>Input value for the arithmetic operation.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>DOUBLE</type>
     </field>
 
     <field>
       <name>K3</name>
       <comment>Input value for the arithmetic operation.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>DOUBLE</type>
     </field>
 
     <field>
       <name>K4</name>
       <comment>Input value for the arithmetic operation.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>DOUBLE</type>
     </field>
 
     <field>
       <name>Operator</name>
       <comment>The compositing algorithm to use for rendering.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type lookup="OP">INT</type>
+      <access read="R" write="W">Read/Write</access>
+      <type lookup="OP">OP</type>
       <description>
 <p>Setting the Operator will determine the algorithm that is used for compositing.  The default is <code>OVER</code>.</p>
 <types lookup="OP"/>
@@ -79,6 +80,7 @@
       <comment>Returns an SVG compliant XML string that describes the filter.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
+      <tags>caller-owns-result</tags>
     </field>
 
   </fields>
@@ -86,25 +88,25 @@
     <constants lookup="OP" comment="Operators for CompositionFX.">
       <const name="ARITHMETIC">The SVG 'arithmetic' blending algorithm.</const>
       <const name="ATOP">The Porter-Duff 'atop' operator; the mix alpha channel has priority and the input channel does not occlude.</const>
-      <const name="BURN"/>
-      <const name="CONTRAST"/>
+      <const name="BURN">Gives a darker result than <code>MULTIPLY</code> by increasing the contrast between the input and mix colours.</const>
+      <const name="CONTRAST">Adjust the mix contrast using the input colour values as the contrast strength.</const>
       <const name="DARKEN">Use the darker colour components of the mix and input values.</const>
       <const name="DIFFERENCE">Output the difference between the input and mix colours.</const>
       <const name="DODGE">Gives a brighter result than <code>SCREEN</code> by decreasing the contrast between the input and mix colours.</const>
       <const name="EXCLUSION">Produce the difference between the mix and input values around a reference point of mid-grey.</const>
-      <const name="HARD_LIGHT"/>
+      <const name="HARD_LIGHT">Apply <code>MULTIPLY</code> or <code>SCREEN</code> according to the input colour, producing a high-contrast result.</const>
       <const name="IN">The Porter-Duff 'in' operator; the input alpha channel has priority and the mix channel is secondary.</const>
-      <const name="INVERT"/>
-      <const name="INVERT_RGB"/>
+      <const name="INVERT">Invert the mix colour components using the input alpha channel as the strength.</const>
+      <const name="INVERT_RGB">Invert the mix colour components using the input colour channels as the per-channel strength.</const>
       <const name="LIGHTEN">Use the lighter colour components of the mix and input values.</const>
       <const name="MINUS">The input colour value is subtracted from the mix.</const>
-      <const name="MULTIPLY"/>
+      <const name="MULTIPLY">Multiplies the input and mix colour components, producing a darker result unless one source is white.</const>
       <const name="OUT">The Porter-Duff 'out' operator; the mix alpha channel is inversed with the input channel.</const>
       <const name="OVER">The Porter-Duff 'over' operator, this is the default operation for standard alpha blending.</const>
       <const name="OVERLAY">Combines the multiply and screen blend modes, with the mix determining tonal strength.</const>
       <const name="PLUS">Add the input and mix colour values together.</const>
       <const name="SCREEN">Produces a result brighter than the input.</const>
-      <const name="SOFT_LIGHT"/>
+      <const name="SOFT_LIGHT">Apply a softer variant of <code>HARD_LIGHT</code>, subtly darkening or lightening the mix from the input colour.</const>
       <const name="XOR">The Porter-Duff 'xor' operator; blend as normal but occlusion occurs when input and mix alpha channels interact.</const>
     </constants>
 

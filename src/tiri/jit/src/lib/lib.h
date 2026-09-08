@@ -14,7 +14,7 @@
 // - stack overflow:      recoverable, if stack reallocation succeeds.
 // - extra handling:      recoverable.
 //
-// The unrecoverable cases throw an error with lj_err_arg(), lj_err_argtype(), lj_err_caller() or lj_err_callermsg().
+// The unrecoverable cases throw an error with lj_err_arg(), lj_err_argtype(), luaL_error() or lj_err_callermsg().
 // The recoverable cases return 0 or the number of results + 1.
 // The assembler VM retries the fast path only if 0 is returned.
 // This time the fallback must not be called again or it gets stuck in a loop.
@@ -39,12 +39,14 @@ extern int32_t     lj_lib_checkint(lua_State *, int);
 extern int32_t     lj_lib_optint(lua_State *, int, int32_t def);
 extern GCfunc *    lj_lib_checkfunc(lua_State *, int);
 extern GCtab *     lj_lib_checktab(lua_State *, int);
+extern GCtab *     lj_lib_checksequence(lua_State *, int, const char *);
 extern GCtab *     lj_lib_checktabornil(lua_State *, int);
 extern int         lj_lib_checkopt(lua_State *, int, int def, const char* lst);
 extern GCarray *   lj_lib_optarray(lua_State *L, int);
-extern GCarray *   lj_lib_checkarray(lua_State *, int);
-extern GCobject *  lj_lib_optobject(lua_State *L, int);
-extern GCobject *  lj_lib_checkobject(lua_State *, int);
+extern GCobject *  lj_lib_optobject(lua_State *L, int, bool = true);
+extern GCobject *  lj_lib_checkobject(lua_State *, int, bool = true);
+extern GCarray *   lj_lib_checkarray(lua_State *, int, bool = true);
+extern GCstruct *  lj_lib_checkstruct(lua_State *, int, bool = true);
 
 // Avoid including lj_frame.h.
 #define lj_lib_upvalue(L, n) (&gcval(L->base-2)->fn.c.upvalue[(n)-1])
@@ -61,7 +63,12 @@ inline GCobject * lj_get_object_fast(lua_State *L, int Arg) {
 }
 
 #if LJ_TARGET_WINDOWS
-#define lj_lib_checkfpu(L) do { setnumV(L->top++, (lua_Number)1437217655); if (lua_tointeger(L, -1) != 1437217655) lj_err_caller(L, ErrMsg::BADFPU); L->top--; } while (0)
+#define lj_lib_checkfpu(L) \
+   do { \
+      setnumV(L->top++, (lua_Number)1437217655); \
+      if (lua_tointeger(L, -1) != 1437217655) luaL_error(L, ErrMsg::BADFPU); \
+      L->top--; \
+   } while (0)
 #else
 #define lj_lib_checkfpu(L)   UNUSED(L)
 #endif
@@ -79,6 +86,7 @@ extern GCfunc* lj_lib_pushcc(lua_State *, lua_CFunction f, int id, int n);
 #define LJLIB_REC(handler)
 #define LJLIB_NOREGUV
 #define LJLIB_NOREG
+#define LJLIB_INTRINSIC
 
 #define LJ_LIB_REG(L, regname, name) lj_lib_register(L, regname, lj_lib_init_##name, lj_lib_cf_##name)
 

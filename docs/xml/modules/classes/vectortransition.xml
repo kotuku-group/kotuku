@@ -8,7 +8,7 @@
     <module>Vector</module>
     <comment>Transitions are used to incrementally apply transforms over distance.</comment>
     <version>1</version>
-    <id>a7c89dc3</id>
+    <id>d75cb936</id>
     <idstring>VECTORTRANSITION</idstring>
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
@@ -27,7 +27,7 @@
   &lt;rect fill=&quot;#ffffff&quot; width=&quot;100%&quot; height=&quot;100%&quot;/&gt;
   &lt;text x=&quot;3&quot; y=&quot;80&quot; font-size=&quot;19.6&quot; fill=&quot;navy&quot; transition=&quot;url(#hill)&quot;&gt;This text is morphed by a transition&lt;/text&gt;
 </pre>
-<p>Transitions are most effective when used in conjunction with the morph feature in the <class name="Vector">Vector</class> class.</p></description>
+<p>Transitions are most effective when used in conjunction with the <class name="Vector" field="GuidePath">Vector.GuidePath</class> feature.</p></description>
     <source>
       <file path="transformers/">transition.cpp</file>
     </source>
@@ -38,7 +38,7 @@
       <name>Stops</name>
       <comment>Defines the transforms that will be used at specific stop points.</comment>
       <access write="S">Set</access>
-      <type>STRUCT []</type>
+      <type>kt::vector&lt;Transition&gt;</type>
       <description>
 <p>A valid transition object must consist of at least two stop points in order to transition from one transform to another. This is achieved by setting the Stops field with an array of Transition structures that define each stop point with a transform string.  The Transition structure consists of the following fields:</p>
 <struct lookup="Transition"/>
@@ -46,20 +46,21 @@
     </field>
 
     <field>
-      <name>TotalStops</name>
-      <comment>Total number of stops defined in the Stops array.</comment>
-      <access read="R">Read</access>
-      <type>INT</type>
+      <name>XMLDef</name>
+      <comment>Returns an SVG compliant XML string that describes the transition.</comment>
+      <access read="G">Get</access>
+      <type>STRING</type>
       <description>
-<p>This read-only field indicates the total number of stops that have been defined in the <fl>Stops</fl> array.</p>
+<p>The returned XML defines the transition's stop list as <code>&lt;stop/&gt;</code> elements, excluding the wrapping <code>&lt;kotuku:transition/&gt;</code> element and <code>id</code> attribute.</p>
       </description>
+      <tags>caller-owns-result</tags>
     </field>
 
   </fields>
   <structs>
     <struct name="Transition" comment="For VectorTransition definitions">
       <field name="Offset" type="DOUBLE">An offset from 0.0 to 1.0 at which to apply the transform.</field>
-      <field name="Transform" type="CSTRING">A transform string, as per SVG guidelines.</field>
+      <field name="Transform" type="STRING">A transform string, as per SVG guidelines.</field>
     </struct>
 
   </structs>

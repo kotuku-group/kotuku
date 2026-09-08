@@ -1,4 +1,4 @@
-// Unit tests for JIT frame management abstractions.
+// Unit tests for JIT frame management abstractions and upvalue range guards.
 // Copyright © 2025-2026 Paul Manias
 //
 // These tests verify the correctness of the FrameManager class and FRC constants used in the JIT trace recorder. They
@@ -6,12 +6,19 @@
 
 #include <kotuku/main.h>
 
-#ifdef ENABLE_UNIT_TESTS
+#ifdef UNIT_TESTS
 
 #include "frame_manager.h"
 #include "../debug/lj_jit.h"
+#include "../lj_ircall.h"
+#include "../lj_dispatch.h"
 #include <array>
 #include <cstring>
+#include <memory>
+#include "../lauxlib.h"
+#include "../lualib.h"
+#include "../runtime/lj_state.h"
+#include "../../../defs.h"
 
 namespace {
 
@@ -36,7 +43,7 @@ static void init_test_jit_state(jit_State& J) {
 //********************************************************************************************************************
 // Test that FRC constants match the expected values for LJ_FR2=1
 
-static bool test_frc_constants(pf::Log& log)
+static bool test_frc_constants(kt::Log& log)
 {
    // In 2-slot frame mode (LJ_FR2=1):
    // HEADER_SIZE = 1 + LJ_FR2 = 2
@@ -57,7 +64,7 @@ static bool test_frc_constants(pf::Log& log)
 //********************************************************************************************************************
 // Test push/pop symmetry for call frames
 
-static bool test_frame_push_pop_symmetry(pf::Log& log)
+static bool test_frame_push_pop_symmetry(kt::Log& log)
 {
    jit_State J;
    init_test_jit_state(J);
@@ -85,7 +92,7 @@ static bool test_frame_push_pop_symmetry(pf::Log& log)
 //********************************************************************************************************************
 // Test delta-only pop (for vararg/pcall frames)
 
-static bool test_delta_frame_pop(pf::Log& log)
+static bool test_delta_frame_pop(kt::Log& log)
 {
    jit_State J;
    init_test_jit_state(J);
@@ -118,7 +125,7 @@ static bool test_delta_frame_pop(pf::Log& log)
 //********************************************************************************************************************
 // Test func_slot accessor
 
-static bool test_func_slot_access(pf::Log& log)
+static bool test_func_slot_access(kt::Log& log)
 {
    jit_State J;
    init_test_jit_state(J);
@@ -147,7 +154,7 @@ static bool test_func_slot_access(pf::Log& log)
 //********************************************************************************************************************
 // Test overflow detection
 
-static bool test_overflow_detection(pf::Log& log)
+static bool test_overflow_detection(kt::Log& log)
 {
    jit_State J;
    init_test_jit_state(J);
@@ -174,7 +181,7 @@ static bool test_overflow_detection(pf::Log& log)
 //********************************************************************************************************************
 // Test at_root_baseslot
 
-static bool test_root_baseslot_detection(pf::Log& log)
+static bool test_root_baseslot_detection(kt::Log& log)
 {
    jit_State J;
    init_test_jit_state(J);
@@ -199,7 +206,7 @@ static bool test_root_baseslot_detection(pf::Log& log)
 //********************************************************************************************************************
 // Test compact_tailcall memory move
 
-static bool test_compact_tailcall(pf::Log& log)
+static bool test_compact_tailcall(kt::Log& log)
 {
    jit_State J;
    init_test_jit_state(J);
@@ -231,7 +238,7 @@ static bool test_compact_tailcall(pf::Log& log)
 // RAII Scope Guards
 
 // Test FrameDepthGuard auto-increment and auto-decrement
-static bool test_frame_depth_guard_auto(pf::Log& log)
+static bool test_frame_depth_guard_auto(kt::Log& log)
 {
    jit_State J;
    init_test_jit_state(J);
@@ -256,7 +263,7 @@ static bool test_frame_depth_guard_auto(pf::Log& log)
 //********************************************************************************************************************
 // Test FrameDepthGuard release (no auto-decrement)
 
-static bool test_frame_depth_guard_release(pf::Log& log)
+static bool test_frame_depth_guard_release(kt::Log& log)
 {
    jit_State J;
    init_test_jit_state(J);
@@ -278,7 +285,7 @@ static bool test_frame_depth_guard_release(pf::Log& log)
 //********************************************************************************************************************
 // Test FrameDepthGuard manual decrement with check
 
-static bool test_frame_depth_guard_decrement(pf::Log& log)
+static bool test_frame_depth_guard_decrement(kt::Log& log)
 {
    jit_State J;
    init_test_jit_state(J);
@@ -304,7 +311,7 @@ static bool test_frame_depth_guard_decrement(pf::Log& log)
 //********************************************************************************************************************
 // Test FrameDepthGuard helper methods
 
-static bool test_frame_depth_guard_helpers(pf::Log& log)
+static bool test_frame_depth_guard_helpers(kt::Log& log)
 {
    jit_State J;
    init_test_jit_state(J);
@@ -338,7 +345,7 @@ static bool test_frame_depth_guard_helpers(pf::Log& log)
 //********************************************************************************************************************
 // Test IRRollbackPoint basic functionality
 
-static bool test_ir_rollback_point_basic(pf::Log& log)
+static bool test_ir_rollback_point_basic(kt::Log& log)
 {
    jit_State J;
    init_test_jit_state(J);
@@ -377,7 +384,7 @@ static bool test_ir_rollback_point_basic(pf::Log& log)
 //********************************************************************************************************************
 // Test IRRollbackPoint needs_rollback logic
 
-static bool test_ir_rollback_point_needs_rollback(pf::Log& log)
+static bool test_ir_rollback_point_needs_rollback(kt::Log& log)
 {
    IRRollbackPoint rbp;
    rbp.ref = 100;
@@ -412,7 +419,7 @@ static bool test_ir_rollback_point_needs_rollback(pf::Log& log)
 // SlotView Tests
 
 // Test SlotView basic read/write access
-static bool test_slotview_basic_access(pf::Log& log)
+static bool test_slotview_basic_access(kt::Log& log)
 {
    jit_State J;
    init_test_jit_state(J);
@@ -444,7 +451,7 @@ static bool test_slotview_basic_access(pf::Log& log)
 
 //********************************************************************************************************************
 // Test SlotView func() accessor
-static bool test_slotview_func_accessor(pf::Log& log)
+static bool test_slotview_func_accessor(kt::Log& log)
 {
    jit_State J;
    init_test_jit_state(J);
@@ -471,7 +478,7 @@ static bool test_slotview_func_accessor(pf::Log& log)
 
 //********************************************************************************************************************
 // Test SlotView is_loaded() helper
-static bool test_slotview_is_loaded(pf::Log& log)
+static bool test_slotview_is_loaded(kt::Log& log)
 {
    jit_State J;
    init_test_jit_state(J);
@@ -496,7 +503,7 @@ static bool test_slotview_is_loaded(pf::Log& log)
 
 //********************************************************************************************************************
 // Test SlotView clear operations
-static bool test_slotview_clear(pf::Log& log)
+static bool test_slotview_clear(kt::Log& log)
 {
    jit_State J;
    init_test_jit_state(J);
@@ -528,7 +535,7 @@ static bool test_slotview_clear(pf::Log& log)
 
 //********************************************************************************************************************
 // Test SlotView copy operation
-static bool test_slotview_copy(pf::Log& log)
+static bool test_slotview_copy(kt::Log& log)
 {
    jit_State J;
    init_test_jit_state(J);
@@ -552,7 +559,7 @@ static bool test_slotview_copy(pf::Log& log)
 
 //********************************************************************************************************************
 // Test SlotView maxslot operations
-static bool test_slotview_maxslot(pf::Log& log)
+static bool test_slotview_maxslot(kt::Log& log)
 {
    jit_State J;
    init_test_jit_state(J);
@@ -605,7 +612,7 @@ static bool test_slotview_maxslot(pf::Log& log)
 
 //********************************************************************************************************************
 // Test SlotView ptr() accessor
-static bool test_slotview_ptr(pf::Log& log)
+static bool test_slotview_ptr(kt::Log& log)
 {
    jit_State J;
    init_test_jit_state(J);
@@ -639,7 +646,7 @@ static bool test_slotview_ptr(pf::Log& log)
 // IRBuilder Tests
 
 // Test IRBuilder construction and state accessor
-static bool test_irbuilder_construction(pf::Log& log)
+static bool test_irbuilder_construction(kt::Log& log)
 {
    jit_State J;
    init_test_jit_state(J);
@@ -671,7 +678,7 @@ static bool test_irbuilder_construction(pf::Log& log)
 
 //********************************************************************************************************************
 // Test IRBuilder at() method for IR access
-static bool test_irbuilder_at(pf::Log& log)
+static bool test_irbuilder_at(kt::Log& log)
 {
    jit_State J;
    init_test_jit_state(J);
@@ -710,7 +717,7 @@ static bool test_irbuilder_at(pf::Log& log)
 
 //********************************************************************************************************************
 // Test IRBuilder constant emission wrappers
-static bool test_irbuilder_constants(pf::Log& log)
+static bool test_irbuilder_constants(kt::Log& log)
 {
    // Note: We can only test that the methods compile and the wrapper pattern is correct.
    // Full constant emission requires a properly initialised JIT state which is complex to mock.
@@ -742,7 +749,7 @@ static bool test_irbuilder_constants(pf::Log& log)
 
 //********************************************************************************************************************
 // Test IRBuilder typed emission helper signatures
-static bool test_irbuilder_typed_helpers(pf::Log& log)
+static bool test_irbuilder_typed_helpers(kt::Log& log)
 {
    // Verify the typed helper method signatures compile correctly
    jit_State J;
@@ -770,7 +777,7 @@ static bool test_irbuilder_typed_helpers(pf::Log& log)
 
 //********************************************************************************************************************
 // Test IRBuilder fload helper signatures
-static bool test_irbuilder_fload_helpers(pf::Log& log)
+static bool test_irbuilder_fload_helpers(kt::Log& log)
 {
    jit_State J;
    init_test_jit_state(J);
@@ -794,7 +801,7 @@ static bool test_irbuilder_fload_helpers(pf::Log& log)
 
 //********************************************************************************************************************
 // Test IRBuilder conversion helper signatures
-static bool test_irbuilder_conv_helpers(pf::Log& log)
+static bool test_irbuilder_conv_helpers(kt::Log& log)
 {
    jit_State J;
    init_test_jit_state(J);
@@ -815,7 +822,7 @@ static bool test_irbuilder_conv_helpers(pf::Log& log)
 
 //********************************************************************************************************************
 // Test IRBuilder guard helper signatures
-static bool test_irbuilder_guard_helpers(pf::Log& log)
+static bool test_irbuilder_guard_helpers(kt::Log& log)
 {
    jit_State J;
    init_test_jit_state(J);
@@ -837,9 +844,275 @@ static bool test_irbuilder_guard_helpers(pf::Log& log)
    return true;
 }
 
+//********************************************************************************************************************
+// A valid UCLO range that the parser cannot currently emit: capture before loop entry, close inside the loop.
+// This isolates the compiled range guard from the still-unsupported FNEW recorder path.
+
+static bool test_uclo_range_guard(kt::Log& Log)
+{
+   struct ScriptOwner {
+      objTiri* object = nullptr;
+      ~ScriptOwner() { if (object) FreeResource(object); }
+   } script;
+   if (NewObject(CLASSID::TIRI, &script.object) != ERR::Okay) return false;
+   if (script.object->setStatement("") != ERR::Okay or Action(AC::Init, script.object, nullptr) != ERR::Okay)
+      return false;
+   std::unique_ptr<lua_State, decltype(&lua_close)> state(luaL_newstate((extTiri*)script.object), lua_close);
+   if (not state) return false;
+   lua_State* lua = state.get();
+   luaL_openlibs(lua);
+   lua_pushcfunction(lua, [](lua_State* Lua) {
+      lj_state_growstack(Lua, 128);
+      lua_gc(Lua, LUA_GCCOLLECT, 0);
+      return 0;
+   });
+   lua_setglobal(lua, "range_resize");
+   constexpr auto source = R"tiri(
+global glGrow = false
+global glReadBefore = false
+global function range_worker(Mode:num):num
+   local boundary = 11
+   local above = 22
+   local payload = { value=31 }
+   local read:func = nil
+   local twin:func = nil
+   if Mode is 1 then
+      read = function(Delta:num):num boundary += Delta; return boundary end
+      twin = (() => boundary)
+   elseif Mode is 2 then
+      read = function(Delta:num):num above += Delta; return above end
+      twin = (() => above)
+   elseif Mode is 3 then
+      read = function(Delta:num):num boundary += Delta; return boundary + above end
+      twin = (() => boundary + above)
+   elseif Mode is 4 then
+      read = function(Delta:num):num payload.value += Delta; return payload.value end
+      twin = (() => payload.value)
+   end
+   if glGrow then range_resize() end
+   local index = 0
+   while index < 1000 do
+      if index < (glReadBefore and 4 or 1) then
+         index++
+         continue
+      end
+      boundary += 1
+      above += 2
+      payload = { value=index + 40 }
+      if glReadBefore then
+         assert(read(0) is twin(), 'Open references must see the latest SSA values')
+      end
+      do
+         local marker = index
+         if Mode < 0 then
+            local function unused():num return marker end
+         end
+      end
+      if index is (glReadBefore and 4 or 1) and read then
+         local previous = read(0)
+         assert(twin() is previous)
+         assert(read(1) is previous + 1)
+         assert(twin() is previous + 1, 'Closures must share the cell after closing')
+      end
+      index++
+   end
+   boundary = 111
+   above = 222
+   if read then
+      local result = read(0)
+      assert(twin() is result)
+      assert(read(1) is result + 1)
+      assert(twin() is result + 1)
+      range_resize()
+      assert(twin() is result + 1, 'Closed captures must survive GC and stack-slot reuse')
+      return result
+   end
+   return index
+end
+global function range_caller(Mode:num):num
+   local lower = 7
+   local function read():num return lower end
+   local result = range_worker(Mode)
+   lower = 9
+   assert(read() is 9, 'A caller capture below the range must remain open')
+   return result
+end
+)tiri";
+   if (lua_load(lua, source, "=uclo-range-functions") or lua_pcall(lua, 0, 0, 0)) {
+      Log.error("UCLO fixture setup: %s", lua_tostring(lua, -1));
+      return false;
+   }
+   lua_getglobal(lua, "range_worker");
+   GCproto* prototype = funcproto(funcV(lua->top - 1));
+   BCIns* bytecode = proto_bc(prototype);
+   unsigned patched = 0;
+   const BCIns* close_pc = nullptr;
+   bool boundary_slot = false;
+   bool above_slot = false;
+   for (BCPOS pc = 1; pc < prototype->sizebc; ++pc) {
+      BCIns ins = bytecode[pc];
+      if (bc_op(ins) IS BC_KSHORT and bc_a(ins) IS 1 and bc_d(ins) IS 11) boundary_slot = true;
+      if (bc_op(ins) IS BC_KSHORT and bc_a(ins) IS 2 and bc_d(ins) IS 22) above_slot = true;
+      if (bc_op(ins) IS BC_UCLO and bc_a(ins) > 3) {
+         setbc_a(&bytecode[pc], 1);
+         close_pc = &bytecode[pc];
+         ++patched;
+      }
+   }
+   lua_pop(lua, 1);
+   if (patched != 1 or not boundary_slot or not above_slot) {
+      Log.error("UCLO fixture bytecode layout changed");
+      return false;
+   }
+   constexpr auto checks = R"tiri(
+global glRangeTraces = {}
+global glRangeTrace = 0
+global glRangeExit = -1
+global glRangeFailures = 0
+global glRangeRestarts = 0
+global glRangeFallbacks = 0
+global function range_trace(Event, Trace, Func, Pc, ParentOrReason, ExitOrInfo)
+   if Event is 'start' then
+      glRangeTraces[Trace] = { func=Func }
+      if ParentOrReason is glRangeTrace and ExitOrInfo is glRangeExit then
+         local ins = jit.util.funcBC(Func, Pc)
+         assert(Func is range_worker and (ins & 255) is 51 and ((ins >> 8) & 255) is 1,
+            'The range guard must restore the exact UCLO closing level')
+         glRangeRestarts++
+      end
+   elseif Event is 'stop' then glRangeTraces[Trace].done = true
+   elseif Event is 'abort' and Func is range_worker and ParentOrReason is 7 and ExitOrInfo is 51 then
+      glRangeFallbacks++
+   end
+end
+global function range_exit(Trace, Exit)
+   if Trace is glRangeTrace and Exit is glRangeExit then glRangeFailures++ end
+end
+jit.off()
+assert(range_caller(0) is 1000)
+assert(range_caller(1) is 13)
+assert(range_caller(2) is 25)
+assert(range_caller(3) is 37)
+assert(range_caller(4) is 42)
+jit.on()
+jit.flush()
+jit.opt.start('hotloop=3', 'hotexit=1000')
+jit.attach(range_trace, 'trace')
+assert(range_caller(0) is 1000)
+jit.attach(range_trace)
+for trace, entry in pairs(glRangeTraces) do
+   local info = jit.util.traceInfo(trace)
+   if entry.done and entry.func is range_worker and info.linktype is 'loop' then
+      glRangeTrace = trace
+      local comparison = 0
+      for index in {1 into info.nins} do
+         local _, ot = jit.util.traceIR(trace, index)
+         if ((ot >> 8) is 4 or (ot >> 8) is 7) and comparison is 0 then comparison = index end
+      end
+      assert(comparison > 0, 'The original loop must contain an unsigned range guard')
+      for exit in {0 to info.nexit} do
+         local snap = jit.util.traceSnap(trace, exit)
+         if snap[0] <= comparison then glRangeExit = exit end
+      end
+   end
+end
+assert(glRangeTrace > 0 and glRangeExit >= 0, 'The intended range-guard trace must compile')
+jit.opt.start('hotexit=1')
+jit.attach(range_trace, 'trace')
+jit.attach(range_exit, 'texit')
+glGrow = true
+assert(range_caller(1) is 13, 'A capture exactly at the level must close before its slot is reused')
+assert(glRangeFailures > 0 and glRangeRestarts > 0 and glRangeFallbacks is 0,
+   f'Boundary: failures={glRangeFailures}, restarts={glRangeRestarts}, fallbacks={glRangeFallbacks}')
+glRangeFailures = 0
+glRangeRestarts = 0
+glRangeFallbacks = 0
+assert(range_caller(2) is 25, 'A capture above the level must close before its slot is reused')
+assert(glRangeFallbacks is 0,
+   f'Above: failures={glRangeFailures}, restarts={glRangeRestarts}, fallbacks={glRangeFallbacks}')
+assert(range_caller(3) is 37, 'The highest cell must guard closing of every cell in the range')
+assert(range_caller(1) is 13, 'Re-entering a close trace must use fresh cells')
+assert(range_caller(2) is 25)
+assert(range_caller(3) is 37)
+assert(range_caller(4) is 42, 'Closing must materialise a newly allocated SSA table')
+assert(range_caller(4) is 42, 'A repeated GC-value close must use the new cell and table')
+jit.attach(range_trace)
+jit.attach(range_exit)
+)tiri";
+   if (lua_load(lua, checks, "=uclo-range-checks") or lua_pcall(lua, 0, 0, 0)) {
+      Log.error("UCLO range guard: %s", lua_tostring(lua, -1));
+      return false;
+   }
+   bool close_call = false;
+   jit_State* jit = L2J(lua);
+   for (TraceNo number = 1; number < jit->sizetrace; ++number) {
+      GCtrace* trace = traceref(jit, number);
+      if (not trace) continue;
+      for (IRRef ref = REF_BASE; ref < trace->nins; ++ref) {
+         IRIns* ins = &trace->ir[ref];
+         if (ins->o IS IR_CALLS and ins->op2 IS IRCALL_lj_func_closeuv) close_call = true;
+      }
+   }
+   if (not close_call) {
+      Log.error("No compiled trace contains the actual UCLO close helper");
+      return false;
+   }
+   // Start with open cells so allocation, open UREFs, SSA updates and closing share one trace.
+   for (int mode = 1; mode <= 4; ++mode) {
+      const int expected[] = { 0, 13, 25, 37, 45 };
+      char check[512];
+      snprintf(check, sizeof(check),
+         "jit.flush(); jit.opt.start('hotloop=1', 'hotexit=1'); glReadBefore=true; "
+         "assert(range_caller(%d) is %d); assert(range_caller(%d) is %d)",
+         mode, expected[mode], mode, expected[mode]);
+      if (lua_load(lua, check, "=uclo-close-root") or lua_pcall(lua, 0, 0, 0)) {
+         Log.error("UCLO actual-close root mode %d: %s", mode, lua_tostring(lua, -1));
+         return false;
+      }
+      bool close_trace = false;
+      for (TraceNo number = 1; number < jit->sizetrace; ++number) {
+         GCtrace* trace = traceref(jit, number);
+         if (not trace or gco_to_proto(gcref(trace->startpt)) != prototype) continue;
+         bool allocated = false;
+         bool open_ref = false;
+         for (IRRef ref = REF_BASE; ref < trace->nins; ++ref) {
+            IRIns* ins = &trace->ir[ref];
+            if (ins->o IS IR_TNEW or ins->o IS IR_TDUP) allocated = true;
+            if (ins->o IS IR_UREFO) open_ref = true;
+            if (ins->o IS IR_CALLS and ins->op2 IS IRCALL_lj_func_closeuv and allocated and open_ref) {
+               bool pre_snapshot = false;
+               bool post_snapshot = false;
+               bool closed_ref = false;
+               for (SnapNo snapshot_index = 0; snapshot_index < trace->nsnap; ++snapshot_index) {
+                  SnapShot* snapshot = &trace->snap[snapshot_index];
+                  const BCIns* resume = snap_pc(&trace->snapmap[snapshot->mapofs + snapshot->nent]);
+                  if (snapshot->ref <= ref) {
+                     pre_snapshot = resume IS close_pc;
+                     continue;
+                  }
+                  // Snapshot merging may advance over pure bytecodes after the jump destination.
+                  post_snapshot = resume >= close_pc + 1 + bc_j(*close_pc)
+                     and resume < bytecode + prototype->sizebc;
+                  break;
+               }
+               for (IRRef next = ref + 1; next < trace->nins; ++next) {
+                  if (trace->ir[next].o IS IR_UREFC) closed_ref = true;
+               }
+               close_trace = close_trace or (pre_snapshot and post_snapshot and closed_ref);
+            }
+         }
+      }
+      if (not close_trace) {
+         Log.error("Mode %d lacks a close trace with allocation, open/closed references and close snapshots", mode);
+         return false;
+      }
+   }
+   return true;
+}
+
 struct TestCase {
    const char* name;
-   bool (*fn)(pf::Log&);
+   bool (*fn)(kt::Log&);
 };
 
 } // anonymous namespace
@@ -849,7 +1122,7 @@ struct TestCase {
 
 extern void jit_frame_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 27> tests = { {
+   constexpr std::array<TestCase, 28> tests = { {
       // FrameManager and FRC constants
       { "frc_constants", test_frc_constants },
       { "frame_push_pop_symmetry", test_frame_push_pop_symmetry },
@@ -880,11 +1153,12 @@ extern void jit_frame_unit_tests(int &Passed, int &Total)
       { "irbuilder_typed_helpers", test_irbuilder_typed_helpers },
       { "irbuilder_fload_helpers", test_irbuilder_fload_helpers },
       { "irbuilder_conv_helpers", test_irbuilder_conv_helpers },
-      { "irbuilder_guard_helpers", test_irbuilder_guard_helpers }
+      { "irbuilder_guard_helpers", test_irbuilder_guard_helpers },
+      { "uclo_range_guard", test_uclo_range_guard }
    } };
 
    for (const TestCase& test : tests) {
-      pf::Log log("JitFrameTests");
+      kt::Log log("JitFrameTests");
       log.branch("Running %s", test.name);
       ++Total;
       if (test.fn(log)) {
@@ -895,4 +1169,4 @@ extern void jit_frame_unit_tests(int &Passed, int &Total)
    }
 }
 
-#endif // ENABLE_UNIT_TESTS
+#endif // UNIT_TESTS

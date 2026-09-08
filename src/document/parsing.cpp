@@ -1,17 +1,87 @@
-/*
+// The parsing code converts XML data to a serial byte stream, after which the XML data can be discarded.  A DOM
+// of the original XML content is *not* maintained.  After parsing, the stream will be ready for presentation via the
+// layout code elsewhere in this code base.
+//
+// The stream consists of byte codes represented by the entity class.  Each type of code is represented by a C++
+// class prefixed with 'bc'.  Each code type has a specific purpose such as defining a new font style, paragraph,
+// hyperlink etc.  When a type is instantiated it will be assigned a UID and stored in the Codes hashmap.
 
-The parsing code converts XML data to a serial byte stream, after which the XML data can be discarded.  A DOM
-of the original XML content is *not* maintained.  After parsing, the stream will be ready for presentation via the
-layout code elsewhere in this code base.
-
-The stream consists of byte codes represented by the entity class.  Each type of code is represented by a C++
-class prefixed with 'bc'.  Each code type has a specific purpose such as defining a new font style, paragraph,
-hyperlink etc.  When a type is instantiated it will be assigned a UID and stored in the Codes hashmap.
-
-*/
-
+#include <algorithm>
+#include <cctype>
 #include <cfloat>
+#include <charconv>
+#include <format>
 
+static constexpr uint32_t HASH_let           = strhash("let");
+static constexpr uint32_t HASH_for_each      = strhash("for-each");
+static constexpr uint32_t HASH_min_width     = strhash("min-width");
+static constexpr uint32_t HASH_min_height    = strhash("min-height");
+static constexpr uint32_t HASH_minwidth      = strhash("minwidth");
+static constexpr uint32_t HASH_minheight     = strhash("minheight");
+static constexpr uint32_t HASH_maxwidth      = strhash("maxwidth");
+static constexpr uint32_t HASH_maxheight     = strhash("maxheight");
+static constexpr uint32_t HASH_xoffset       = strhash("xoffset");
+static constexpr uint32_t HASH_yoffset       = strhash("yoffset");
+static constexpr uint32_t HASH_insidewidth   = strhash("insidewidth");
+static constexpr uint32_t HASH_insideheight  = strhash("insideheight");
+static constexpr uint32_t HASH_labelwidth    = strhash("labelwidth");
+static constexpr uint32_t HASH_gap           = strhash("gap");
+static constexpr uint32_t HASH_object        = strhash("object");
+static constexpr uint32_t HASH_params        = strhash("params");
+static constexpr uint32_t HASH_args          = strhash("args");
+static constexpr uint32_t HASH_vars          = strhash("vars");
+static constexpr uint32_t HASH_meta          = strhash("meta");
+static constexpr uint32_t HASH_layout        = strhash("layout");
+static constexpr uint32_t HASH_loop          = strhash("loop");
+static constexpr uint32_t HASH_doc           = strhash("doc");
+static constexpr uint32_t HASH_state         = strhash("state");
+
+//********************************************************************************************************************
+// Presents a source XTag with either its original attributes or an AVT-expanded attribute overlay,
+// whilst preserving the original child tree and identity fields for the rest of the parser.
+
+struct tag_view {
+   const XTag *Source = nullptr;
+   const kt::vector<XMLAttrib> *AttribPtr = nullptr;
+   int ID = 0;
+   int ParentID = 0;
+   int LineNo = 0;
+   XTF Flags = XTF::NIL;
+   uint32_t NamespaceID = 0;
+   const kt::vector<XMLAttrib> &Attribs;
+   const objXML::TAGS &Children;
+
+   explicit tag_view(const XTag &Tag) :
+      Source(&Tag), AttribPtr(&Tag.Attribs), ID(Tag.ID), ParentID(Tag.ParentID), LineNo(Tag.LineNo),
+      Flags(Tag.Flags), NamespaceID(Tag.NamespaceID), Attribs(Tag.Attribs), Children(Tag.Children) { }
+
+   tag_view(const XTag &Tag, const kt::vector<XMLAttrib> &PreparedAttribs) :
+      Source(&Tag), AttribPtr(&PreparedAttribs), ID(Tag.ID), ParentID(Tag.ParentID), LineNo(Tag.LineNo),
+      Flags(Tag.Flags), NamespaceID(Tag.NamespaceID), Attribs(PreparedAttribs), Children(Tag.Children) { }
+
+   inline std::string_view name() const { return std::string_view(Attribs[0].Name); }
+   inline bool hasContent() const { return (!Children.empty()) and (Children[0].Attribs[0].Name.empty()); }
+   inline bool isContent() const { return Attribs[0].Name.empty(); }
+   inline bool isTag() const { return !Attribs[0].Name.empty(); }
+
+   inline const std::string * attrib(std::string_view Name) const {
+      for (unsigned a=1; a < Attribs.size(); a++) {
+         if (Attribs[a].Name IS Name) return &Attribs[a].Value;
+      }
+      return nullptr;
+   }
+};
+
+struct diag_attrib_name {
+   std::string_view Value;
+};
+
+static inline diag_attrib_name attrib_name(std::string_view Name)
+{
+   return { Name };
+}
+
+//********************************************************************************************************************
 // State machine for the parser.  This information is discarded after parsing.
 
 struct parser {
@@ -20,15 +90,133 @@ struct parser {
       int row_col;
    };
 
+   struct loop_frame {
+      int index = 0;
+      int iteration = 0;
+      int start = 0;
+      int end = 0;
+      int step = 1;
+      int count = 0;
+      bool count_known = false;
+      bool end_known = false;
+      std::string alias_name;
+   };
+
+   struct loop_guard {
+      parser *owner = nullptr;
+      bool active = false;
+
+      loop_guard(parser *Owner, const loop_frame &Frame) : owner(Owner), active(true) {
+         owner->m_loop_stack.push_back(Frame);
+      }
+
+      ~loop_guard() {
+         if ((active) and (owner) and (not owner->m_loop_stack.empty())) {
+            owner->m_loop_stack.pop_back();
+         }
+      }
+
+      inline loop_frame * frame() {
+         if ((not active) or (not owner) or (owner->m_loop_stack.empty())) return nullptr;
+         return &owner->m_loop_stack.back();
+      }
+
+      inline const loop_frame * frame() const {
+         if ((not active) or (not owner) or (owner->m_loop_stack.empty())) return nullptr;
+         return &owner->m_loop_stack.back();
+      }
+   };
+
+   // RAII helper for <let> lexical bindings.  The selected value is installed into
+   // m_state_values for the duration of the current scope and the previous binding
+   // (if any) is restored automatically when the guard is destroyed.
+
+   using xq_xml_owner = std::shared_ptr<objXML>;
+
+   struct xq_value_binding {
+      XPathValue value;
+      xq_xml_owner owned_xml;
+      kt::vector<objXML *> node_owners; // Aligned with value.node_set so preserved node sequences can reuse owner lookups.
+
+      xq_value_binding() : value(XPVT::String) { }
+      explicit xq_value_binding(const XPathValue &Value) : value(Value) {
+         if (Value.Type IS XPVT::NodeSet) node_owners.resize(Value.node_set.size(), nullptr);
+      }
+   };
+
+   struct state_guard {
+      parser *owner = nullptr;
+      std::string name;
+      std::optional<xq_value_binding> previous_value;
+      bool had_previous_value = false;
+      bool active = false;
+
+      state_guard(parser *Owner, std::string Name, const xq_value_binding &Value)
+         : owner(Owner), name(std::move(Name)), active(true)
+      {
+         auto existing = owner->m_state_values.find(name);
+         if (existing != owner->m_state_values.end()) {
+            had_previous_value = true;
+            previous_value = existing->second;
+            existing->second = Value;
+         }
+         else owner->m_state_values.emplace(name, Value);
+      }
+
+      ~state_guard() {
+         if ((not active) or (not owner)) return;
+
+         if (had_previous_value and previous_value.has_value()) {
+            auto existing = owner->m_state_values.find(name);
+            if (existing != owner->m_state_values.end()) existing->second = *previous_value;
+            else owner->m_state_values.emplace(name, *previous_value);
+         }
+         else owner->m_state_values.erase(name);
+      }
+   };
+
+   // Temporary XQuery context override used by <for-each> so that '.' and relative
+   // path expressions resolve against the current item rather than the parser's base
+   // document node.
+
+   struct xq_context_frame {
+      objXML *xml = nullptr;
+      const XTag *node = nullptr;
+   };
+
+   // RAII wrapper that pushes a transient XQuery context frame for the current parse
+   // branch and pops it again when the scope exits.
+
+   struct xq_context_guard {
+      parser *owner = nullptr;
+      bool active = false;
+
+      xq_context_guard(parser *Owner, objXML *XML, const XTag *Node) : owner(Owner), active(true) {
+         owner->m_xq_context_stack.push_back({ XML, Node });
+      }
+
+      ~xq_context_guard() {
+         if ((active) and (owner) and (not owner->m_xq_context_stack.empty())) {
+            owner->m_xq_context_stack.pop_back();
+         }
+      }
+   };
+
    extDocument *Self;
    objXML *m_xml;
+   objXML *m_source_xml = nullptr;
+   objXML *m_doc_xml = nullptr;
+   kt::vector<objXML *> m_doc_xml_history; // Retain replaced $doc trees until parse end so stored XQuery values stay valid.
+   ankerl::unordered_dense::map<std::string, objXQuery *> m_xq_query_cache; // Compiled XQuery cache keyed by final statement.
 
    RSTREAM *m_stream;                 // Generated stream content
    std::unique_ptr<RSTREAM> m_stream_alloc;
    objXML *m_inject_xml = nullptr;
-   objXML::TAGS *m_inject_tag = nullptr, *m_header_tag = nullptr, *m_footer_tag = nullptr, *m_body_tag = nullptr;
+   const objXML::TAGS *m_inject_tag = nullptr, *m_header_tag = nullptr, *m_footer_tag = nullptr, *m_body_tag = nullptr;
    objTime *m_time = nullptr;
-   int  m_loop_index  = 0;
+   kt::vector<loop_frame> m_loop_stack;
+   kt::vector<xq_context_frame> m_xq_context_stack; // Active XQuery context overrides for <for-each>.
+   ankerl::unordered_dense::map<std::string, xq_value_binding> m_state_values; // Lexical bindings exposed through $state.
    uint16_t m_paragraph_depth = 0;     // Incremented when inside <p> tags
    char  m_in_template = 0;
    bool  m_strip_feeds = false;
@@ -39,6 +227,7 @@ struct parser {
    bool  m_combobox_patterns = false;
    stream_char m_index;
    bc_font m_style; // Reflects the active font during parsing.
+   uint8_t m_edit_recurse = 0;
    std::stack<bc_list *> m_list_stack;
    std::stack<process_table> m_table_stack;
 
@@ -54,7 +243,7 @@ struct parser {
       }
    }
 
-   parser(extDocument *pSelf, objXML *pXML, RSTREAM *pStream = nullptr) : Self(pSelf), m_xml(pXML) {
+   parser(extDocument *pSelf, objXML *pXML, RSTREAM *pStream = nullptr) : Self(pSelf), m_xml(pXML), m_source_xml(pXML) {
       if (pStream) {
          m_stream = pStream;
          m_index = stream_char(pStream->size());
@@ -66,20 +255,13 @@ struct parser {
       }
    }
 
-   inline ERR  calc(const std::string &, double *, std::string &);
-   inline TRF  parse_tag(XTag &, IPF &);
-   inline TRF  parse_tags(objXML::TAGS &, IPF = IPF::NIL);
-   inline TRF  parse_tags_with_style(objXML::TAGS &, bc_font &, IPF = IPF::NIL);
-   inline TRF  parse_tags_with_embedded_style(objXML::TAGS &, bc_font &, IPF = IPF::NIL);
+   inline TRF  parse_tag(const XTag &, IPF &);
+   inline TRF  parse_tags(const objXML::TAGS &, IPF = IPF::NIL);
+   inline TRF  parse_tags_with_style(const objXML::TAGS &, bc_font &, IPF = IPF::NIL);
+   inline TRF  parse_tags_with_embedded_style(const objXML::TAGS &, bc_font &, IPF = IPF::NIL);
    inline void process_page(objXML *pXML);
    inline void tag_xml_content(XTag &, PXF);
-   inline void translate_attrib_args(pf::vector<XMLAttrib> &);
-   inline void translate_args(const std::string &, std::string &);
-   inline void translate_calc(std::string &, size_t);
-   inline void translate_param(std::string &, size_t);
-   inline void translate_reserved(std::string &, size_t, bool &);
-   inline ERR  tag_xml_content_eval(std::string &);
-   inline void trim_preformat(extDocument *);
+   inline void trim_preformat();
 
    // Switching out the XML object is sometimes done for things like template injection
 
@@ -89,45 +271,243 @@ struct parser {
       return old;
    }
 
-   inline void tag_advance(XTag &);
-   inline void tag_body(XTag &);
-   inline void tag_button(XTag &);
-   inline void tag_call(XTag &);
-   inline void tag_cell(XTag &);
-   inline void tag_checkbox(XTag &);
-   inline void tag_combobox(XTag &);
-   inline void tag_debug(XTag &);
-   inline void tag_div(XTag &);
-   inline void tag_editdef(XTag &);
-   inline void tag_font(XTag &);
-   inline void tag_font_style(objXML::TAGS &, FSO, std::string_view);
-   inline void tag_head(XTag &);
-   inline void tag_image(XTag &);
-   inline void tag_include(XTag &);
-   inline void tag_index(XTag &);
-   inline void tag_input(XTag &);
-   inline void tag_li(XTag &);
-   inline void tag_link(XTag &);
-   inline void tag_list(XTag &);
-   inline void tag_page(XTag &);
-   inline void tag_paragraph(XTag &);
-   inline void tag_parse(XTag &);
-   inline void tag_pre(objXML::TAGS &);
-   inline void tag_print(XTag &);
-   inline void tag_repeat(XTag &);
-   inline void tag_row(XTag &);
-   inline void tag_script(XTag &);
-   inline void tag_svg(XTag &);
-   inline void tag_table(XTag &);
-   inline void tag_template(XTag &);
-   inline void tag_trigger(XTag &);
-   inline void tag_use(XTag &);
-   inline void tag_object(XTag &);
+   inline void tag_advance(const tag_view &);
+   inline void tag_body(const tag_view &);
+   inline void tag_button(const tag_view &);
+   inline void tag_call(const tag_view &);
+   inline void tag_cell(const tag_view &);
+   inline void tag_checkbox(const tag_view &);
+   inline void tag_combobox(const tag_view &);
+   inline void tag_data(const tag_view &);
+   inline void tag_debug(const tag_view &) const;
+   inline void tag_div(const tag_view &);
+   inline void tag_editdef(const tag_view &);
+   inline TRF  tag_for_each(const tag_view &, IPF &);
+   inline void tag_font(const tag_view &);
+   inline void tag_font_style(const objXML::TAGS &, FSO, std::string_view);
+   inline void tag_head(const tag_view &);
+   inline void tag_image(const tag_view &);
+   inline void tag_include(const tag_view &);
+   inline void tag_index(const tag_view &);
+   inline void tag_input(const tag_view &);
+   inline TRF  tag_let(const tag_view &, IPF &);
+   inline void tag_li(const tag_view &);
+   inline void tag_link(const tag_view &);
+   inline void tag_list(const tag_view &);
+   inline void tag_page(const tag_view &) const;
+   inline void tag_paragraph(const tag_view &);
+   inline void tag_parse(const tag_view &);
+   inline void tag_pre(const objXML::TAGS &);
+   inline void tag_print(const tag_view &);
+   inline void tag_repeat(const tag_view &);
+   inline void tag_row(const tag_view &);
+   inline void tag_script(const tag_view &);
+   inline void tag_svg(const tag_view &);
+   inline void tag_table(const tag_view &);
+   inline void tag_template(const tag_view &);
+   inline void tag_trigger(const tag_view &);
+   inline void tag_use(const tag_view &);
    inline bool check_para_attrib(const XMLAttrib &, bc_paragraph *, bc_font &);
-   inline bool check_font_attrib(const XMLAttrib &, bc_font &);
+   inline bool check_font_attrib(const XMLAttrib &, bc_font &, const tag_view * = nullptr);
+
+   inline loop_frame * active_loop() {
+      if (m_loop_stack.empty()) return nullptr;
+      return &m_loop_stack.back();
+   }
+
+   inline const loop_frame * active_loop() const {
+      if (m_loop_stack.empty()) return nullptr;
+      return &m_loop_stack.back();
+   }
+
+   inline xq_context_frame * active_xq_context() {
+      if (m_xq_context_stack.empty()) return nullptr;
+      return &m_xq_context_stack.back();
+   }
+
+   inline const xq_context_frame * active_xq_context() const {
+      if (m_xq_context_stack.empty()) return nullptr;
+      return &m_xq_context_stack.back();
+   }
+
+   inline int current_loop_index() const {
+      if (auto frame = active_loop()) return frame->index;
+      else return 0;
+   }
+
+   inline bool resolve_loop_alias(std::string_view Name, std::string &Value) const {
+      for (int i = std::ssize(m_loop_stack) - 1; i >= 0; i--) {
+         auto &frame = m_loop_stack[i];
+         if ((not frame.alias_name.empty()) and (frame.alias_name IS Name)) {
+            Value = std::to_string(frame.index);
+            return true;
+         }
+      }
+      return false;
+   }
 
    ~parser() {
       if (m_time) FreeResource(m_time);
+      if (m_doc_xml) FreeResource(m_doc_xml);
+      for (auto *xml : m_doc_xml_history) {
+         if (xml) FreeResource(xml);
+      }
+      for (auto &[statement, query] : m_xq_query_cache) {
+         if (query) FreeResource(query);
+      }
+   }
+
+   inline void replace_doc_xml(objXML *XML) {
+      if ((m_doc_xml) and (not (m_doc_xml IS XML))) {
+         // Stored $state / <for-each> values may still point into the previous $doc tree.
+         // Keep the old XML alive until the parser is destroyed rather than invalidating those nodes mid-parse.
+         m_doc_xml_history.push_back(m_doc_xml);
+      }
+      m_doc_xml = XML;
+   }
+
+   inline void append_diagnostic(doc_diag_severity Severity, ERR Error, std::string_view Code,
+      std::string Message, const XTag *Tag = nullptr, std::string_view TagName = {},
+      std::string_view AttribName = {}) const
+   {
+      if (not Self) return;
+
+      doc_diagnostic diagnostic;
+      diagnostic.severity = Severity;
+      diagnostic.error = Error;
+      diagnostic.code.assign(Code);
+      diagnostic.message = std::move(Message);
+      diagnostic.path = Self->Path;
+      diagnostic.page_name = Self->PageName;
+
+      if (Tag) {
+         diagnostic.line_no = Tag->LineNo;
+         diagnostic.tag_id = Tag->ID;
+         diagnostic.parent_id = Tag->ParentID;
+         diagnostic.namespace_id = Tag->NamespaceID;
+
+         if (not TagName.empty()) diagnostic.tag_name.assign(TagName);
+         else if (not Tag->Attribs.empty()) diagnostic.tag_name = Tag->Attribs[0].Name;
+      }
+
+      if (not AttribName.empty()) diagnostic.attrib_name.assign(AttribName);
+
+      Self->Diagnostics.push_back(std::move(diagnostic));
+   }
+
+   inline void append_diagnostic(doc_diag_severity Severity, ERR Error, std::string_view Code,
+      std::string Message, const tag_view *Tag, std::string_view AttribName = {}) const
+   {
+      if (Tag) append_diagnostic(Severity, Error, Code, std::move(Message), Tag->Source, Tag->name(), AttribName);
+      else append_diagnostic(Severity, Error, Code, std::move(Message), (const XTag *)nullptr);
+   }
+
+   inline void emit_diagnostic_log(doc_diag_severity Severity, const std::string &Message) const
+   {
+      kt::Log log("Parser");
+      if (Severity IS doc_diag_severity::HINT) log.msg("Hint: %s", Message.c_str());
+      else if (Severity IS doc_diag_severity::WARNING) log.warning("%s", Message.c_str());
+      else log.warning("%s", Message.c_str());
+   }
+
+   template <class... Args> inline void log_hint(const tag_view *Tag, std::string_view Code,
+      std::string_view Format, Args&&... ArgsList) const
+   {
+      auto message = std::vformat(Format, std::make_format_args(ArgsList...));
+      emit_diagnostic_log(doc_diag_severity::HINT, message);
+      append_diagnostic(doc_diag_severity::HINT, ERR::Okay, Code, std::move(message), Tag);
+   }
+
+   template <class... Args> inline void log_hint(const tag_view *Tag, std::string_view Code,
+      diag_attrib_name AttribName, std::string_view Format, Args&&... ArgsList) const
+   {
+      auto message = std::vformat(Format, std::make_format_args(ArgsList...));
+      emit_diagnostic_log(doc_diag_severity::HINT, message);
+      append_diagnostic(doc_diag_severity::HINT, ERR::Okay, Code, std::move(message), Tag, AttribName.Value);
+   }
+
+   template <class... Args> inline void log_hint(const XTag *Tag, std::string_view Code,
+      std::string_view Format, Args&&... ArgsList) const
+   {
+      auto message = std::vformat(Format, std::make_format_args(ArgsList...));
+      emit_diagnostic_log(doc_diag_severity::HINT, message);
+      append_diagnostic(doc_diag_severity::HINT, ERR::Okay, Code, std::move(message), Tag);
+   }
+
+   template <class... Args> inline void log_hint(const XTag *Tag, std::string_view Code,
+      diag_attrib_name AttribName, std::string_view Format, Args&&... ArgsList) const
+   {
+      auto message = std::vformat(Format, std::make_format_args(ArgsList...));
+      emit_diagnostic_log(doc_diag_severity::HINT, message);
+      append_diagnostic(doc_diag_severity::HINT, ERR::Okay, Code, std::move(message), Tag, {}, AttribName.Value);
+   }
+
+   template <class... Args> inline void log_warning(const tag_view *Tag, std::string_view Code,
+      std::string_view Format, Args&&... ArgsList) const
+   {
+      auto message = std::vformat(Format, std::make_format_args(ArgsList...));
+      emit_diagnostic_log(doc_diag_severity::WARNING, message);
+      append_diagnostic(doc_diag_severity::WARNING, ERR::Okay, Code, std::move(message), Tag);
+   }
+
+   template <class... Args> inline void log_warning(const tag_view *Tag, std::string_view Code,
+      diag_attrib_name AttribName, std::string_view Format, Args&&... ArgsList) const
+   {
+      auto message = std::vformat(Format, std::make_format_args(ArgsList...));
+      emit_diagnostic_log(doc_diag_severity::WARNING, message);
+      append_diagnostic(doc_diag_severity::WARNING, ERR::Okay, Code, std::move(message), Tag, AttribName.Value);
+   }
+
+   template <class... Args> inline void log_warning(const XTag *Tag, std::string_view Code,
+      std::string_view Format, Args&&... ArgsList) const
+   {
+      auto message = std::vformat(Format, std::make_format_args(ArgsList...));
+      emit_diagnostic_log(doc_diag_severity::WARNING, message);
+      append_diagnostic(doc_diag_severity::WARNING, ERR::Okay, Code, std::move(message), Tag);
+   }
+
+   template <class... Args> inline void log_warning(const XTag *Tag, std::string_view Code,
+      diag_attrib_name AttribName, std::string_view Format, Args&&... ArgsList) const
+   {
+      auto message = std::vformat(Format, std::make_format_args(ArgsList...));
+      emit_diagnostic_log(doc_diag_severity::WARNING, message);
+      append_diagnostic(doc_diag_severity::WARNING, ERR::Okay, Code, std::move(message), Tag, {}, AttribName.Value);
+   }
+
+   template <class... Args> inline void log_error(const tag_view *Tag, ERR Error, std::string_view Code,
+      std::string_view Format, Args&&... ArgsList) const
+   {
+      Self->Error = Error;
+      auto message = std::vformat(Format, std::make_format_args(ArgsList...));
+      emit_diagnostic_log(doc_diag_severity::ERROR, message);
+      append_diagnostic(doc_diag_severity::ERROR, Error, Code, std::move(message), Tag);
+   }
+
+   template <class... Args> inline void log_error(const tag_view *Tag, ERR Error, std::string_view Code,
+      diag_attrib_name AttribName, std::string_view Format, Args&&... ArgsList) const
+   {
+      Self->Error = Error;
+      auto message = std::vformat(Format, std::make_format_args(ArgsList...));
+      emit_diagnostic_log(doc_diag_severity::ERROR, message);
+      append_diagnostic(doc_diag_severity::ERROR, Error, Code, std::move(message), Tag, AttribName.Value);
+   }
+
+   template <class... Args> inline void log_error(const XTag *Tag, ERR Error, std::string_view Code,
+      std::string_view Format, Args&&... ArgsList) const
+   {
+      Self->Error = Error;
+      auto message = std::vformat(Format, std::make_format_args(ArgsList...));
+      emit_diagnostic_log(doc_diag_severity::ERROR, message);
+      append_diagnostic(doc_diag_severity::ERROR, Error, Code, std::move(message), Tag);
+   }
+
+   template <class... Args> inline void log_error(const XTag *Tag, ERR Error, std::string_view Code,
+      diag_attrib_name AttribName, std::string_view Format, Args&&... ArgsList) const
+   {
+      Self->Error = Error;
+      auto message = std::vformat(Format, std::make_format_args(ArgsList...));
+      emit_diagnostic_log(doc_diag_severity::ERROR, message);
+      append_diagnostic(doc_diag_severity::ERROR, Error, Code, std::move(message), Tag, {}, AttribName.Value);
    }
 
    void config_default_pattern() {
@@ -143,9 +523,9 @@ struct parser {
             fl::Name("default_widget_bkgd"),
             fl::Owner(pattern->Scene->Viewport->UID),
             fl::X(0), fl::Y(0), fl::Width(SCALE(1.0)), fl::Height(SCALE(1.0)),
-            fl::Stroke("rgb(255,255,255)"), fl::StrokeWidth(1.0),
+            fl::Stroke("white"), fl::StrokeWidth(1.0),
             fl::RoundX(SCALE(0.03)), fl::RoundY(SCALE(0.03)),
-            fl::Fill("rgba(0,0,0,.7)")
+            fl::Fill("rgb(0 0 0 / .7)")
          });
 
          Self->Viewport->Scene->addDef("/widget/default", pattern);
@@ -162,30 +542,40 @@ struct parser {
 
 void parser::process_page(objXML *pXML)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    log.branch("Page: %s", Self->PageName.c_str());
 
-   if (!pXML) { Self->Error = ERR::NoData; return; }
+   Self->Diagnostics.clear();
+
+   if (not pXML) {
+      log_error((const XTag *)nullptr, ERR::NoData, "doc.missing-source", "No XML source is available for document '{}'", Self->Path);
+      return;
+   }
+
    m_xml = pXML;
+   m_source_xml = pXML;
+   m_state_values.clear();
+   m_xq_context_stack.clear();
+   Self->RuntimeUID = std::to_string(AllocateID(IDTYPE::GLOBAL));
 
    // Look for the first page that matches the requested page name (if a name is specified).  Pages can be located anywhere
    // within the XML source - they don't have to be at the root.
 
    XTag *page = nullptr;
    for (auto &scan : m_xml->Tags) {
-      if (!iequals("page", scan.Attribs[0].Name)) continue;
+      if (not ("page" IS scan.Attribs[0].Name)) continue;
 
-      if (!page) page = &scan;
+      if (not page) page = &scan;
 
       if (Self->PageName.empty()) break;
       else if (auto name = scan.attrib("name")) {
-         if (iequals(Self->PageName, *name)) page = &scan;
+         if (Self->PageName IS *name) page = &scan;
       }
    }
 
    Self->Error = ERR::Okay;
-   if ((page) and (!page->Children.empty())) {
+   if ((page) and (not page->Children.empty())) {
       Self->PageTag = page;
 
       bool no_header = page->attrib("no-header") ? true : false;
@@ -208,15 +598,17 @@ void parser::process_page(objXML *pXML)
       m_index = stream_char(m_stream->size());
       parse_tags(m_xml->Tags, IPF::NO_CONTENT);
 
-      if ((m_header_tag) and (!no_header)) {
+      if ((m_header_tag) and (not no_header)) {
          insert_xml(Self, m_stream, m_xml, m_header_tag[0], m_stream->size(), STYLE::RESET_STYLE);
       }
 
       if (m_body_tag) {
-         pf::Log log(__FUNCTION__);
+         kt::Log log(__FUNCTION__);
          log.traceBranch("Processing this page through the body tag.");
 
+         auto xml = m_inject_xml;
          auto tags = m_inject_tag;
+         m_inject_xml = m_xml;
          m_inject_tag = &page->Children;
          m_in_template++;
 
@@ -224,15 +616,16 @@ void parser::process_page(objXML *pXML)
 
          m_in_template--;
          m_inject_tag = tags;
+         m_inject_xml = xml;
       }
       else {
-         pf::Log log(__FUNCTION__);
+         kt::Log log(__FUNCTION__);
          auto page_name = page->attrib("name");
          log.traceBranch("Processing page '%s'.", page_name ? page_name->c_str() : "");
          insert_xml(Self, m_stream, m_xml, page->Children, m_stream->size(), STYLE::RESET_STYLE);
       }
 
-      if ((m_footer_tag) and (!no_footer)) {
+      if ((m_footer_tag) and (not no_footer)) {
          insert_xml(Self, m_stream, m_xml, m_footer_tag[0], m_stream->size(), STYLE::RESET_STYLE);
       }
 
@@ -242,10 +635,9 @@ void parser::process_page(objXML *pXML)
       if (Self->Error != ERR::Okay) unload_doc(Self);
    }
    else {
-      if (!Self->PageName.empty()) {
-         auto msg = std::string("Failed to find page '") + Self->PageName + "' in document '" + Self->Path + "'.";
-         error_dialog("Load Failed", msg);
-         Self->Error = ERR::Search;
+      if (not Self->PageName.empty()) {
+         log_error((const XTag *)nullptr, ERR::Search, "doc.page-not-found", "Failed to find page '{}' in document '{}'", Self->PageName, Self->Path);
+         error_dialog("Load Failed", std::string("Failed to find page '") + Self->PageName + "' in document '" + Self->Path + "'.");
       }
       else {
          // If no name was specified and there is no page to process, revert to performing a standard insert
@@ -257,21 +649,21 @@ void parser::process_page(objXML *pXML)
       }
    }
 /*
-   if ((!Self->Error) and (Self->MouseInPage)) {
-      DOUBLE x, y;
-      if (!gfxGetRelativeCursorPos(Self->Page->UID, &x, &y)) {
+   if ((not Self->Error) and (Self->MouseInPage)) {
+      double x, y;
+      if (not gfxGetRelativeCursorPos(Self->Page->UID, &x, &y)) {
          check_mouse_pos(Self, x, y);
       }
    }
 */
-   if (!Self->PageProcessed) {
-      for (auto &trigger : Self->Triggers[int(DRT::PAGE_PROCESSED)]) {
+   if (not Self->PageProcessed) {
+      for (auto &trigger : copy_triggers(Self, DRT::PAGE_PROCESSED)) {
          if (trigger.isScript()) {
             sc::Call(trigger);
          }
          else if (trigger.isC()) {
             auto routine = (void (*)(APTR, extDocument *, APTR))trigger.Routine;
-            pf::SwitchContext context(trigger.Context);
+            kt::SwitchContext context(trigger.Context);
             routine(trigger.Context, Self, trigger.Meta);
          }
       }
@@ -280,629 +672,20 @@ void parser::process_page(objXML *pXML)
    Self->PageProcessed = true;
 }
 
-//********************************************************************************************************************
-// Translate all arguments found in a list of XML attributes.
-
-void parser::translate_attrib_args(pf::vector<XMLAttrib> &Attribs)
-{
-   if (Attribs[0].isContent()) return;
-
-   for (int attrib=1; attrib < std::ssize(Attribs); attrib++) {
-      if (Attribs[attrib].Name.starts_with('$')) continue;
-
-      std::string output;
-      translate_args(Attribs[attrib].Value, output);
-      Attribs[attrib].Value = output;
-   }
-}
-
-//********************************************************************************************************************
-// This function converts arguments such as [@arg] in a string.
-//
-// Calculations can also be performed, e.g. [=5+7]
-//
-// The escape code for brackets are &lsqr; and &rsqr; (not in the XML escape code standard and thus are unconverted up
-// until this function is reached).
-//
-// If an attribute name is prefixed with '$' then no translation of the attribute value is attempted.
-//
-// URI parameters are referenced with [@param:default_val]
-//
-// If a major error occurs during processing, the function will abort, returning the error and also setting the Error
-// field to the resulting error code.  The most common reason for an abort is a buffer overflow or memory allocation
-// problems, so a complete abort of document processing is advisable.
-//
-// RESERVED WORDS
-//    %index        Current loop index, if within a repeat loop.
-//    %id           A unique ID that is regenerated on each document refresh.
-//    %self         ID of the document object.
-//    %platform     Windows, Linux or Native.
-//    %random       Random string of 9 digits.
-//    %current-page name of the current page.
-//    %next-page    name of the next page.
-//    %prev-page    name of the previous page.
-//    %path         Current working path.
-//    %author       Document author.
-//    %description  Document description.
-//    %copyright    Document copyright.
-//    %keywords     Document keywords.
-//    %title        Document title.
-//    %font         Face, point size and style of the current font.
-//    %font-face    Face of the current font.
-//    %font-fill    Paint-fill instruction for the current font.
-//    %font-size    Pixel size of the current font, scaled to 72 DPI.
-//    %line-no      The current 'line' (technically segmented line) in the document.
-//    %content      Inject content (same as <inject/> but usable inside tag attributes)
-//    %tm-day       The current day (0 - 31)
-//    %tm-month     The current month (1 - 12)
-//    %tm-year      The current year (2008+)
-//    %tm-hour      The current hour (0 - 23)
-//    %tm-minute    The current minute (0 - 59)
-//    %tm-second    The current second (0 - 59)
-//    %view-height  Height of the document's available viewing area
-//    %view-width   Width of the the document's available viewing area.
-
-void parser::translate_args(const std::string &Input, std::string &Output)
-{
-   pf::Log log(__FUNCTION__);
-
-   bool time_queried = false;
-   Output = Input;
-
-   // Do nothing if there are no special references being used
-
-   {
-      unsigned i;
-      for (i=0; i < Input.size(); i++) {
-         if (Input[i] IS '[') break;
-         if ((Input[i] IS '&') and
-             ((startswith("&lsqr;", std::string_view(Input.begin()+i, Input.end()))) or
-              (startswith("&rsqr;", std::string_view(Input.begin()+i, Input.end()))))) break;
-      }
-      if (i >= Input.size()) return;
-   }
-
-   for (auto pos = std::ssize(Output)-1; pos >= 0; pos--) {
-      if (Output[pos] IS '&') {
-         if (startswith("&lsqr;", std::string_view(Output.begin()+pos, Output.end()))) Output.replace(pos, 6, "[");
-         else if (startswith("&rsqr;", std::string_view(Output.begin()+pos, Output.end()))) Output.replace(pos, 6, "]");
-      }
-      else if (Output[pos] IS '[') {
-         if (Output[pos+1] IS '=') { // Perform a calcuation within [= ... ]
-            translate_calc(Output, pos);
-         }
-         else if (Output[pos+1] IS '@') {
-            translate_param(Output, pos);
-         }
-         else if (Output[pos+1] IS '%') {
-            translate_reserved(Output, pos, time_queried);
-         }
-         else { // Object translation, can be [object] or [object.field]
-            // Make sure that there is a closing bracket
-
-            int balance = 1;
-            unsigned end;
-            for (end=pos+1; (end < Output.size()) and (balance > 0); end++) {
-               if (Output[end] IS '[') balance++;
-               else if (Output[end] IS ']') balance--;
-            }
-
-            if (Output[end] != ']') {
-               log.warning("Object reference missing square end bracket.");
-               break;
-            }
-            end++;
-
-            auto name = Output.substr(pos+1, Output.find_first_of(".]")-pos);
-
-            // Get the object ID
-
-            OBJECTID objectid = 0;
-            if (!name.empty()) {
-               if (FindObject(name.c_str(), CLASSID::NIL, FOF::SMART_NAMES, &objectid) IS ERR::Okay) {
-                  if ((Self->Flags & DCF::UNRESTRICTED) IS DCF::NIL) {
-                     // Only consider objects that are children of the document
-                     bool valid = false;
-                     for (auto parent_id = GetOwnerID(objectid); parent_id; parent_id = GetOwnerID(parent_id)) {
-                        if (parent_id IS Self->UID) {
-                           valid = true;
-                           break;
-                        }
-                     }
-                     if (!valid) objectid = 0;
-                  }
-               }
-
-               if (objectid) {
-                  if (valid_objectid(Self, objectid)) {
-                     if (auto dot = Output.find('.'); dot != std::string::npos) { // Object makes a field reference
-                        pf::ScopedObjectLock object(objectid, 2000);
-                        if (object.granted()) {
-                           OBJECTPTR target;
-                           auto fieldname = Output.substr(dot+1, end-(dot+1));
-                           if (auto classfield = FindField(object.obj, strihash(fieldname), &target)) {
-                              std::string str;
-                              if (target->get(classfield->FieldID, str) IS ERR::Okay) Output.replace(pos, end-pos, str);
-                              else Output.replace(pos, end-pos, "");
-                           }
-                           else if (CheckAction(object.obj, AC::GetKey) IS ERR::Okay) {
-                              // Get field as an unlisted type and manage any buffer overflow
-                              std::string tbuffer;
-                              tbuffer.reserve(4096);
-repeat:
-                              tbuffer[tbuffer.capacity()-1] = 0;
-                              struct acGetKey var = { fieldname.c_str(), tbuffer.data(), int(tbuffer.size()) };
-                              if (Action(AC::GetKey, object.obj, &var) IS ERR::Okay) {
-                                 if (tbuffer[tbuffer.capacity()-1]) {
-                                    tbuffer.reserve(tbuffer.capacity() * 2);
-                                    goto repeat;
-                                 }
-                                 Output.replace(pos, end-pos, tbuffer);
-                              }
-                           }
-                           else Output.replace(pos, end-pos, "");
-                        }
-                        else Output.replace(pos, end-pos, "");
-                     }
-                     else { // Convert the object reference to an ID
-                        Output.replace(pos, end-pos, "#" + std::to_string(objectid));
-                     }
-                  }
-                  else log.warning("Access denied to object '%s' #%d", name.c_str(), objectid);
-               }
-               else log.warning("Object '%s' does not exist.", name.c_str());
-            }
-         }
-      }
-   }
-}
-
-//********************************************************************************************************************
-
-void parser::translate_calc(std::string &Output, size_t pos)
-{
-   std::string temp;
-   temp.reserve(Output.size());
-   unsigned j = 0;
-   auto end = pos + 2;
-   while ((end < Output.size()) and (Output[end] != ']')) {
-      if (Output[end] IS '\'') {
-         temp[j++] = '\'';
-         for (++end; (Output[end]) and (Output[end] != '\''); end++) temp[j++] = Output[end];
-         if (Output[end]) temp[j++] = Output[end++];
-      }
-      else if (Output[end] IS '"') {
-         temp[j++] = '"';
-         for (++end; (Output[end]) and (Output[end] != '"'); end++);
-         if (Output[end]) temp[j++] = Output[end++];
-      }
-      else temp[j++] = Output[end++];
-   }
-   if (end < Output.size()) end++; // Skip ']'
-   std::string calcbuffer;
-   calc(temp, 0, calcbuffer);
-   Output.replace(pos, end-pos, calcbuffer);
-}
-
-//********************************************************************************************************************
-// Translate argument reference.
-// Valid examples: [@arg] [@arg:defaultvalue] [@arg:"value[]"] [@arg:'value[[]]]']
-
-void parser::translate_param(std::string &Output, size_t pos)
-{
-   char terminator = ']';
-   auto name_end = Output.find_first_of("]:", pos);
-   if (name_end IS std::string::npos) return; // Invalid format
-
-   auto argname = Output.substr(pos+2, name_end-pos-2);
-
-   auto true_end = name_end;
-   if (Output[true_end] IS ':') {
-      true_end++;
-      if ((Output[name_end] IS '\'') or (Output[name_end] IS '"')) {
-         terminator = Output[name_end];
-         for (++true_end; (true_end < Output.size()) and (Output[true_end] != terminator); true_end++);
-         true_end++; // Skip terminator and the end bracket should appear immediately after.
-         if ((true_end >= Output.size()) or (Output[true_end] != ']')) return;
-      }
-      else {
-         true_end = Output.find(']', true_end);
-         if (true_end IS std::string::npos) return; // Invalid format
-      }
-   }
-
-   if (!Self->TemplateArgs.empty()) {
-      bool processed = false;
-      for (auto it=Self->TemplateArgs.rbegin(); (!processed) and (it != Self->TemplateArgs.rend()); it++) {
-         auto args = *it;
-         for (int arg=1; arg < std::ssize(args->Attribs); arg++) {
-            if (!iequals(args->Attribs[arg].Name, argname)) continue;
-            Output.replace(pos, true_end+1-pos, args->Attribs[arg].Value);
-            processed = true;
-            break;
-         }
-      }
-
-      if (processed) return;
-   }
-
-   // Check against global arguments / variables
-
-   if (Self->Vars.contains(argname)) {
-      Output.replace(pos, true_end+1-pos, Self->Vars[argname]);
-   }
-   else if (Self->Params.contains(argname)) {
-      Output.replace(pos, true_end+1-pos, Self->Params[argname]);
-   }
-   else if (Output[name_end] IS ':') { // Resort to the default value
-      name_end++;
-      if ((Output[name_end] IS '\'') or (Output[name_end] IS '"')) {
-         auto default_value = Output.substr(name_end + 1, true_end);
-         Output.replace(pos, true_end+1-pos, default_value);
-      }
-      else {
-         auto default_value = Output.substr(name_end, true_end - name_end);
-         Output.replace(pos, true_end+1-pos, default_value);
-      }
-   }
-   else Output.replace(pos, true_end+1-pos, "");
-}
-
-//********************************************************************************************************************
-
-void parser::translate_reserved(std::string &Output, size_t pos, bool &time_queried)
-{
-   if (!Output.compare(pos, sizeof("[%index]")-1, "[%index]")) {
-      Output.replace(pos, sizeof("[%index]")-1, std::to_string(m_loop_index));
-   }
-   else if (!Output.compare(pos, sizeof("[%id]")-1, "[%id]")) {
-      Output.replace(pos, sizeof("[%id]")-1, std::to_string(Self->UID));
-   }
-   else if (!Output.compare(pos, sizeof("[%self]")-1, "[%self]")) {
-      Output.replace(pos, sizeof("[%self]")-1, std::to_string(Self->UID));
-   }
-   else if (!Output.compare(pos, sizeof("[%platform]")-1, "[%platform]")) {
-      Output.replace(pos, sizeof("[%platform]")-1, GetSystemState()->Platform);
-   }
-   else if (!Output.compare(pos, sizeof("[%random]")-1, "[%random]")) {
-      // Generate a random string of digits
-      std::string random;
-      random.resize(10);
-      for (unsigned j=0; j < random.size(); j++) random[j] = '0' + (rand() % 10);
-      Output.replace(pos, sizeof("[%random]")-1, random);
-   }
-   else if (!Output.compare(pos, sizeof("[%current-page]")-1, "[%current-page]")) {
-      if (Self->PageTag) {
-         if (auto page_name = Self->PageTag[0].attrib("name")) {
-            Output.replace(pos, sizeof("[%current-page]")-1, page_name[0]);
-         }
-         else Output.replace(pos, sizeof("[%current-page]")-1, "");
-      }
-      else Output.replace(pos, sizeof("[%current-page]")-1, "");
-   }
-   else if (!Output.compare(pos, sizeof("[%next-page]")-1, "[%next-page]")) {
-      if (Self->PageTag) {
-         auto next = Self->PageTag->attrib("next-page");
-         Output.replace(pos, sizeof("[%next-page]")-1, next ? *next : "");
-      }
-   }
-   else if (!Output.compare(pos, sizeof("[%prev-page]")-1, "[%prev-page]")) {
-      if (Self->PageTag) {
-         auto next = Self->PageTag->attrib("prev-page");
-         Output.replace(pos, sizeof("[%prev-page]")-1, next ? *next : "");
-      }
-   }
-   else if (!Output.compare(pos, sizeof("[%path]"), "[%path]")) {
-      CSTRING workingpath = "";
-      Self->get(FID_WorkingPath, workingpath);
-      if (!workingpath) workingpath = "";
-      Output.replace(pos, sizeof("[%path]")-1, workingpath);
-   }
-   else if (!Output.compare(pos, sizeof("[%author]")-1, "[%author]")) {
-      Output.replace(pos, sizeof("[%author]")-1, Self->Author);
-   }
-   else if (!Output.compare(pos, sizeof("[%description]")-1, "[%description]")) {
-      Output.replace(pos, sizeof("[%description]")-1, Self->Description);
-   }
-   else if (!Output.compare(pos, sizeof("[%copyright]")-1, "[%copyright]")) {
-      Output.replace(pos, sizeof("[%copyright]")-1, Self->Copyright);
-   }
-   else if (!Output.compare(pos, sizeof("[%keywords]")-1, "[%keywords]")) {
-      Output.replace(pos, sizeof("[%keywords]")-1, Self->Keywords);
-   }
-   else if (!Output.compare(pos, sizeof("[%title]")-1, "[%title]")) {
-      Output.replace(pos, sizeof("[%title]")-1, Self->Title);
-   }
-   else if (!Output.compare(pos, sizeof("[%font-style]")-1, "[%font-style]")) {
-      Output.replace(pos, sizeof("[%font-style]")-1, m_style.style);
-   }
-   else if (!Output.compare(pos, sizeof("[%font-face]")-1, "[%font-face]")) {
-      Output.replace(pos, sizeof("[%font-face]")-1, m_style.face);
-   }
-   else if (!Output.compare(pos, sizeof("[%font-fill]")-1, "[%font-fill]")) {
-      Output.replace(pos, sizeof("[%font-fill]")-1, m_style.fill);
-   }
-   else if (!Output.compare(pos, sizeof("[%font-size]")-1, "[%font-size]")) {
-      char buffer[28];
-      switch(m_style.req_size.type) {
-         case DU::PIXEL:
-            snprintf(buffer, sizeof(buffer), "%gpx", m_style.req_size.value);
-            break;
-         case DU::FONT_SIZE:
-            snprintf(buffer, sizeof(buffer), "%gem", m_style.req_size.value);
-            break;
-         case DU::SCALED:
-            snprintf(buffer, sizeof(buffer), "%g%%", m_style.req_size.value * 100.0);
-            break;
-         default:
-            snprintf(buffer, sizeof(buffer), "%dpx", DEFAULT_FONTSIZE);
-            break;
-      }
-      Output.replace(pos, sizeof("[%font-size]")-1, buffer);
-   }
-   else if (!Output.compare(pos, sizeof("[%line-no]")-1, "[%line-no]")) {
-      auto num = std::to_string(Self->Segments.size());
-      Output.replace(pos, sizeof("[%line-no]")-1, num);
-   }
-   else if (!Output.compare(pos, sizeof("[%content]")-1, "[%content]")) {
-      if ((m_in_template) and (m_inject_tag)) {
-         std::string content = xml::GetContent(m_inject_tag[0][0]);
-         Output.replace(pos, sizeof("[%content]")-1, content);
-
-         //if (!xmlSerialise(m_inject_xml, m_inject_tag[0][0].ID, XMF::INCLUDE_SIBLINGS, &content)) {
-         //   Output.replace(pos, sizeof("[%content]")-1, content);
-         //   FreeResource(content);
-         //}
-      }
-   }
-   else if (!Output.compare(pos, sizeof("[%tm-day]")-1, "[%tm-day]")) {
-      if (!m_time) m_time = objTime::create::local();
-      if (!time_queried) { acQuery(m_time); time_queried = true; }
-      Output.replace(pos, sizeof("[%tm-day]")-1, std::to_string(m_time->Day));
-   }
-   else if (!Output.compare(pos, sizeof("[%tm-month]")-1, "[%tm-month]")) {
-      if (!m_time) m_time = objTime::create::local();
-      if (!time_queried) { acQuery(m_time); time_queried = true; }
-      Output.replace(pos, sizeof("[%tm-month]")-1, std::to_string(m_time->Month));
-   }
-   else if (!Output.compare(pos, sizeof("[%tm-year]")-1, "[%tm-year]")) {
-      if (!m_time) m_time = objTime::create::local();
-      if (!time_queried) { acQuery(m_time); time_queried = true; }
-      Output.replace(pos, sizeof("[%tm-year]")-1, std::to_string(m_time->Year));
-   }
-   else if (!Output.compare(pos, sizeof("[%tm-hour]")-1, "[%tm-hour]")) {
-      if (!m_time) m_time = objTime::create::local();
-      if (!time_queried) { acQuery(m_time); time_queried = true; }
-      Output.replace(pos, sizeof("[%tm-hour]")-1, std::to_string(m_time->Hour));
-   }
-   else if (!Output.compare(pos, sizeof("[%tm-minute]")-1, "[%tm-minute]")) {
-      if (!m_time) m_time = objTime::create::local();
-      if (!time_queried) { acQuery(m_time); time_queried = true; }
-      Output.replace(pos, sizeof("[%tm-minute]")-1, std::to_string(m_time->Minute));
-   }
-   else if (!Output.compare(pos, sizeof("[%tm-second]")-1, "[%tm-second]")) {
-      if (!m_time) m_time = objTime::create::local();
-      if (!time_queried) { acQuery(m_time); time_queried = true; }
-      Output.replace(pos, sizeof("[%tm-second]")-1, std::to_string(m_time->Second));
-   }
-   else if (!Output.compare(pos, sizeof("[%version]")-1, "[%version]")) {
-      Output.replace(pos, sizeof("[%version]")-1, RIPL_VERSION);
-   }
-   else if (!Output.compare(pos, sizeof("[%view-height]")-1, "[%view-height]")) {
-      char buffer[28];
-      snprintf(buffer, sizeof(buffer), "%g", Self->VPHeight);
-      Output.replace(pos, sizeof("[%view-height]")-1, buffer);
-   }
-   else if (!Output.compare(pos, sizeof("[%view-width]")-1, "[%view-width]")) {
-      char buffer[28];
-      snprintf(buffer, sizeof(buffer), "%g", Self->VPWidth);
-      Output.replace(pos, sizeof("[%view-width]")-1, buffer);
-   }
-}
-
-//********************************************************************************************************************
-
-static int8_t datatype(std::string_view String)
-{
-   size_t i = 0;
-   while ((i < String.size()) and (String[i]) and (String[i] <= 0x20)) i++; // Skip white-space
-
-   if ((i < String.size()) and (String[i] IS '0') and (i+1 < String.size()) and (String[i+1] IS 'x')) {
-      for (i+=2; (i < String.size()) and String[i]; i++) {
-         if (((String[i] >= '0') and (String[i] <= '9')) or
-             ((String[i] >= 'A') and (String[i] <= 'F')) or
-             ((String[i] >= 'a') and (String[i] <= 'f')));
-         else return 's';
-      }
-      return 'h';
-   }
-
-   bool is_number = true;
-   bool is_float  = false;
-
-   for (; (i < String.size()) and (String[i]) and (is_number); i++) {
-      if (((String[i] < '0') or (String[i] > '9')) and (String[i] != '.') and (String[i] != '-')) is_number = false;
-      if (String[i] IS '.') is_float = true;
-   }
-
-   if ((is_float) and (is_number)) return 'f';
-   else if (is_number) return 'i';
-   else return 's';
-}
-
-//********************************************************************************************************************
-
-static bool eval_condition(const std::string &String)
-{
-   pf::Log log(__FUNCTION__);
-
-   static const FieldDef table[] = {
-      { "<>", COND_NOT_EQUAL },
-      { "!=", COND_NOT_EQUAL },
-      { "=",  COND_EQUAL },
-      { "==", COND_EQUAL },
-      { "<",  COND_LESS_THAN },
-      { "<=", COND_LESS_EQUAL },
-      { ">",  COND_GREATER_THAN },
-      { ">=", COND_GREATER_EQUAL },
-      { nullptr, 0 }
-   };
-
-   int start = 0;
-   while ((start < int(String.size())) and (unsigned(String[start]) <= 0x20)) start++;
-
-   bool reverse = false;
-
-   // Find the condition statement
-
-   size_t i;
-   for (i=start; i < String.size(); i++) {
-      if ((String[i] IS '!') and (i+1 < String.size()) and (String[i+1] IS '=')) break;
-      if (String[i] IS '>') break;
-      if (String[i] IS '<') break;
-      if (String[i] IS '=') break;
-   }
-
-   // If there is no condition statement, evaluate the statement as an integer
-
-   if (i >= String.size()) {
-      if (std::stoi(String)) return true;
-      else return false;
-   }
-
-   auto cpos = i;
-
-   // Extract Test value
-
-   while ((i > 0) and (String[i-1] IS ' ')) i--;
-   std::string test(String, 0, i);
-
-   // Condition value
-
-   int condition = 0;
-   {
-      char cond[4];
-      int c;
-      for (i=cpos,c=0; (c < 2) and (i < String.size()) and ((String[i] IS '!') or (String[i] IS '=') or (String[i] IS '>') or (String[i] IS '<')); i++) {
-         cond[c++] = String[i];
-      }
-      cond[c] = 0;
-
-      for (unsigned j=0; table[j].Name; j++) {
-         if (iequals(cond, table[j].Name)) {
-            condition = table[j].Value;
-            break;
-         }
-      }
-   }
-
-   while ((i < String.size()) and (String[i]) and (unsigned(String[i]) <= 0x20)) i++; // skip white-space
-
-   bool truth = false;
-   if (!test.empty()) {
-      if (condition) {
-         // Convert the If->Compare to its specified type
-
-         auto cmp_type  = datatype(std::string_view(String.begin()+i, String.end()));
-         auto test_type = datatype(test);
-
-         if (((test_type IS 'i') or (test_type IS 'f')) and ((cmp_type IS 'i') or (cmp_type IS 'f'))) {
-            auto cmp_float  = strtod(String.c_str()+i, nullptr);
-            auto test_float = strtod(test.c_str(), nullptr);
-            switch (condition) {
-               case COND_NOT_EQUAL:     if (test_float != cmp_float) truth = true; break;
-               case COND_EQUAL:         if (test_float IS cmp_float) truth = true; break;
-               case COND_LESS_THAN:     if (test_float <  cmp_float) truth = true; break;
-               case COND_LESS_EQUAL:    if (test_float <= cmp_float) truth = true; break;
-               case COND_GREATER_THAN:  if (test_float >  cmp_float) truth = true; break;
-               case COND_GREATER_EQUAL: if (test_float >= cmp_float) truth = true; break;
-               default: log.warning("Unsupported condition type %d.", condition);
-            }
-         }
-         else if (condition IS COND_EQUAL) {
-            truth = iequals(test, String.c_str()+i);
-         }
-         else if (condition IS COND_NOT_EQUAL) {
-            truth = !iequals(test, String.c_str()+i);
-         }
-         else log.warning("String comparison for condition %d not possible.", condition);
-      }
-      else log.warning("No test condition in \"%s\".", String.c_str());
-   }
-   else log.warning("No test value in \"%s\".", String.c_str());
-
-   if (reverse) return truth ^ 1;
-   else return truth;
-}
-
-//********************************************************************************************************************
-// Used by if, elseif, while statements to check the satisfaction of conditions.
-
-static bool check_tag_conditions(extDocument *Self, XTag &Tag)
-{
-   pf::Log log("eval");
-
-   bool satisfied = false;
-   bool reverse = false;
-   for (unsigned i=1; i < Tag.Attribs.size(); i++) {
-      if (iequals("statement", Tag.Attribs[i].Name)) {
-         satisfied = eval_condition(Tag.Attribs[i].Value);
-         log.trace("Statement: %s", Tag.Attribs[i].Value);
-         break;
-      }
-      else if (iequals("exists", Tag.Attribs[i].Name)) {
-         OBJECTID object_id;
-         if (FindObject(Tag.Attribs[i].Value.c_str(), CLASSID::NIL, FOF::SMART_NAMES, &object_id) IS ERR::Okay) {
-            satisfied = valid_objectid(Self, object_id) ? true : false;
-         }
-         break;
-      }
-      else if (iequals("notnull", Tag.Attribs[i].Name)) {
-         log.trace("NotNull: %s", Tag.Attribs[i].Value);
-         if (Tag.Attribs[i].Value.empty()) satisfied = false;
-         else if (Tag.Attribs[i].Value IS "0") satisfied = false;
-         else satisfied = true;
-      }
-      else if ((iequals("isnull", Tag.Attribs[i].Name)) or (iequals("null", Tag.Attribs[i].Name))) {
-         log.trace("IsNull: %s", Tag.Attribs[i].Value);
-            if (Tag.Attribs[i].Value.empty()) satisfied = true;
-            else if (Tag.Attribs[i].Value IS "0") satisfied = true;
-            else satisfied = false;
-      }
-      else if (iequals("not", Tag.Attribs[i].Name)) {
-         reverse = true;
-      }
-   }
-
-   // Check for a not condition and invert the satisfied value if found
-
-   if (reverse) satisfied = satisfied ^ 1;
-
-   return satisfied;
-}
+#include "parsing_xquery.cpp"
 
 //********************************************************************************************************************
 // Intended for use from parse_tags(), this is the principal function for the parsing of XML tags.  Insertion into
 // the stream will occur at Index, which is updated on completion.
 
-TRF parser::parse_tag(XTag &Tag, IPF &Flags)
+TRF parser::parse_tag(const XTag &Tag, IPF &Flags)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (Self->Error != ERR::Okay) {
       log.traceWarning("Error field is set, returning immediately.");
       return TRF::NIL;
    }
-
-   XTag *object_template = nullptr;
-
-   auto saved_attribs = Tag.Attribs;
-   translate_attrib_args(Tag.Attribs);
-
-   auto tagname = Tag.Attribs[0].Name;
-   if (tagname.starts_with('$')) tagname.erase(0, 1);
-   auto tag_hash = strihash(tagname);
-   object_template = nullptr;
 
    auto result = TRF::NIL;
    if (Tag.isContent()) {
@@ -923,18 +706,30 @@ TRF parser::parse_tag(XTag &Tag, IPF &Flags)
             insert_text(Self, m_stream, m_index, Tag.Attribs[0].Value, ((m_style.options & FSO::PREFORMAT) != FSO::NIL));
          }
       }
-      Tag.Attribs = saved_attribs;
       return result;
    }
+
+   kt::vector<XMLAttrib> prepared_attribs;
+   const kt::vector<XMLAttrib> *active_attribs = &Tag.Attribs;
+   if (auto err = xq_prepare_tag(this, Tag, prepared_attribs, active_attribs); err != ERR::Okay) {
+      Self->Error = err;
+      return TRF::NIL;
+   }
+
+   auto resolved_tag = (active_attribs IS &Tag.Attribs) ? tag_view(Tag) : tag_view(Tag, *active_attribs);
+
+   auto tagname = std::string_view(resolved_tag.Attribs[0].Name);
+   if (tagname.starts_with('$')) tagname.remove_prefix(1);
+   auto tag_hash = strhash(tagname);
 
    if (Self->Templates) { // Check for templates first, as they can be used to override the default tag names.
       if (Self->RefreshTemplates) {
          Self->TemplateIndex.clear();
 
-         for (XTag &scan : Self->Templates->Tags) {
+         for (const XTag &scan : Self->Templates->Tags) {
             for (unsigned i=0; i < scan.Attribs.size(); i++) {
-               if (iequals("name", scan.Attribs[i].Name)) {
-                  Self->TemplateIndex[strihash(scan.Attribs[i].Value)] = &scan;
+               if ("name" IS scan.Attribs[i].Name) {
+                  Self->TemplateIndex[strhash(scan.Attribs[i].Value)] = &scan;
                }
             }
          }
@@ -943,27 +738,24 @@ TRF parser::parse_tag(XTag &Tag, IPF &Flags)
       }
 
       if (Self->TemplateIndex.contains(tag_hash)) {
-         // Process the template by jumping into it.  Key-values in the tag are added to a sequential
-         // list that will be processed in reverse by translate_attrib_args().
+         // Process the template by jumping into it.
 
          auto xml  = m_inject_xml;
          auto tags = m_inject_tag;
-         m_inject_xml = xml;
-         m_inject_tag = &Tag.Children;
+         m_inject_xml = m_xml;
+         m_inject_tag = &resolved_tag.Children;
          m_in_template++;
 
-         pf::Log log(__FUNCTION__);
-         log.traceBranch("Executing template '%s'.", tagname.c_str());
+         kt::Log log(__FUNCTION__);
+         log.traceBranch("Executing template '%.*s'.", int(tagname.size()), tagname.data());
 
-         Self->TemplateArgs.push_back(&Tag);
+         Self->TemplateArgs.push_back({ &Tag, active_attribs });
          auto old_xml = change_xml(Self->Templates);
 
          parse_tags(Self->TemplateIndex[tag_hash]->Children, Flags);
 
          change_xml(old_xml);
          Self->TemplateArgs.pop_back();
-
-         Tag.Attribs = saved_attribs;
 
          m_in_template--;
          m_inject_tag = tags;
@@ -986,12 +778,20 @@ TRF parser::parse_tag(XTag &Tag, IPF &Flags)
          case HASH_pre:
          case HASH_u:
          case HASH_list:
-            log.trace("Content disabled on '%s', tag not processed.", tagname.c_str());
-            Tag.Attribs = saved_attribs;
+            log.trace("Content disabled on '%.*s', tag not processed.", int(tagname.size()), tagname.data());
             return result;
          default:
             break;
       }
+   }
+
+   if (tagname IS "let") {
+      result = tag_let(resolved_tag, Flags);
+      return result;
+   }
+   else if (tagname IS "for-each") {
+      result = tag_for_each(resolved_tag, Flags);
+      return result;
    }
 
    switch (tag_hash) {
@@ -999,60 +799,60 @@ TRF parser::parse_tag(XTag &Tag, IPF &Flags)
       // The content is compulsory, otherwise tag has no effect
       case HASH_a:
       case HASH_link:
-         if (!Tag.Children.empty()) tag_link(Tag);
-         else log.trace("No content found in tag '%s'", tagname.c_str());
+         if (not resolved_tag.Children.empty()) tag_link(resolved_tag);
+         else log.trace("No content found in tag '%.*s'", int(tagname.size()), tagname.data());
          break;
 
       case HASH_b:
-         if (!Tag.Children.empty()) tag_font_style(Tag.Children, FSO::NIL, "Bold");
+         if (not resolved_tag.Children.empty()) tag_font_style(resolved_tag.Children, FSO::NIL, "Bold");
          break;
 
       case HASH_div:
-         if (!Tag.Children.empty()) tag_div(Tag);
+         if (not resolved_tag.Children.empty()) tag_div(resolved_tag);
          break;
 
-      case HASH_p: tag_paragraph(Tag); break;
+      case HASH_p: tag_paragraph(resolved_tag); break;
 
       case HASH_font:
-         if (!Tag.Children.empty()) tag_font(Tag);
+         if (not resolved_tag.Children.empty()) tag_font(resolved_tag);
          break;
 
       case HASH_i:
-         if (!Tag.Children.empty()) tag_font_style(Tag.Children, FSO::NIL, "Italic");
+         if (not resolved_tag.Children.empty()) tag_font_style(resolved_tag.Children, FSO::NIL, "Italic");
          break;
 
       case HASH_li:
-         if (!Tag.Children.empty()) tag_li(Tag);
+         if (not resolved_tag.Children.empty()) tag_li(resolved_tag);
          break;
 
       case HASH_pre:
-         if (!Tag.Children.empty()) tag_pre(Tag.Children);
+         if (not resolved_tag.Children.empty()) tag_pre(resolved_tag.Children);
          break;
 
-      case HASH_u: if (!Tag.Children.empty()) tag_font_style(Tag.Children, FSO::UNDERLINE, m_style.style); break;
+      case HASH_u: if (not resolved_tag.Children.empty()) tag_font_style(resolved_tag.Children, FSO::UNDERLINE, m_style.style); break;
 
-      case HASH_list: if (!Tag.Children.empty()) tag_list(Tag); break;
+      case HASH_list: if (not resolved_tag.Children.empty()) tag_list(resolved_tag); break;
 
-      case HASH_advance: tag_advance(Tag); break;
+      case HASH_advance: tag_advance(resolved_tag); break;
 
       case HASH_br:
          insert_text(Self, m_stream, m_index, "\n", true);
          Self->NoWhitespace = true;
          break;
 
-      case HASH_button: tag_button(Tag); break;
+      case HASH_button: tag_button(resolved_tag); break;
 
-      case HASH_checkbox: tag_checkbox(Tag); break;
+      case HASH_checkbox: tag_checkbox(resolved_tag); break;
 
-      case HASH_combobox: tag_combobox(Tag); break;
+      case HASH_combobox: tag_combobox(resolved_tag); break;
 
-      case HASH_input: tag_input(Tag); break;
+      case HASH_input: tag_input(resolved_tag); break;
 
-      case HASH_image: tag_image(Tag); break;
+      case HASH_image: tag_image(resolved_tag); break;
 
       // Conditional command tags
 
-      case HASH_repeat: if (!Tag.Children.empty()) tag_repeat(Tag); break;
+      case HASH_repeat: if (not resolved_tag.Children.empty()) tag_repeat(resolved_tag); break;
 
       case HASH_break:
          // Breaking stops executing all tags (within this section) beyond the breakpoint.  If in a loop, the loop
@@ -1068,18 +868,18 @@ TRF parser::parse_tag(XTag &Tag, IPF &Flags)
          break;
 
       case HASH_if:
-         if (check_tag_conditions(Self, Tag)) { // Statement is true
+         if (check_tag_conditions(this, resolved_tag)) { // Statement is true
             m_check_else = false;
-            result = parse_tags(Tag.Children, Flags);
+            result = parse_tags(resolved_tag.Children, Flags);
          }
          else m_check_else = true;
          break;
 
       case HASH_elseif:
          if (m_check_else) {
-            if (check_tag_conditions(Self, Tag)) { // Statement is true
+            if (check_tag_conditions(this, resolved_tag)) { // Statement is true
                m_check_else = false;
-               result = parse_tags(Tag.Children, Flags);
+               result = parse_tags(resolved_tag.Children, Flags);
             }
          }
          break;
@@ -1087,93 +887,104 @@ TRF parser::parse_tag(XTag &Tag, IPF &Flags)
       case HASH_else:
          if (m_check_else) {
             m_check_else = false;
-            result = parse_tags(Tag.Children, Flags);
+            result = parse_tags(resolved_tag.Children, Flags);
          }
          break;
 
       case HASH_while: {
-         auto saveindex = m_loop_index;
-         m_loop_index = 0;
+         if (not resolved_tag.Children.empty()) {
+            loop_frame frame;
+            frame.index = 0;
+            frame.iteration = 0;
+            frame.start = 0;
+            frame.step = 1;
 
-         if ((!Tag.Children.empty()) and (check_tag_conditions(Self, Tag))) {
-            // Save/restore the statement string on each cycle to fully evaluate the condition each time.
+            loop_guard loop(this, frame);
 
-            bool state = true;
-            while (state) {
-               state = check_tag_conditions(Self, Tag);
-               Tag.Attribs = saved_attribs;
-               translate_attrib_args(Tag.Attribs);
+            while (true) {
+               if (not check_tag_conditions(this, resolved_tag)) break;
+               if (Self->Error != ERR::Okay) break;
 
-               if ((state) and ((parse_tags(Tag.Children, Flags) & TRF::BREAK) != TRF::NIL)) break;
+               result = parse_tags(resolved_tag.Children, Flags);
+               if (Self->Error != ERR::Okay) break;
 
-               m_loop_index++;
+               if ((result & TRF::BREAK) != TRF::NIL) {
+                  result = TRF::NIL;
+                  break;
+               }
+
+               if (auto active_loop = loop.frame()) {
+                  active_loop->index += active_loop->step;
+                  active_loop->iteration++;
+               }
+
+               if ((result & TRF::CONTINUE) != TRF::NIL) {
+                  result = TRF::NIL;
+                  continue;
+               }
             }
          }
-
-         m_loop_index = saveindex;
          break;
       }
 
       // Special instructions
 
-      case HASH_call: tag_call(Tag); break;
+      case HASH_call: tag_call(resolved_tag); break;
 
-      case HASH_debug: tag_debug(Tag); break;
+      case HASH_debug: tag_debug(resolved_tag); break;
 
       case HASH_focus: Self->FocusIndex = Self->Tabs.size(); break;
 
-      case HASH_include: tag_include(Tag); break;
+      case HASH_include: tag_include(resolved_tag); break;
 
-      case HASH_print: tag_print(Tag); break;
+      case HASH_print: tag_print(resolved_tag); break;
 
-      case HASH_parse: tag_parse(Tag); break;
+      case HASH_parse: tag_parse(resolved_tag); break;
 
-      case HASH_trigger: tag_trigger(Tag); break;
+      case HASH_trigger: tag_trigger(resolved_tag); break;
 
       // Root level instructions
 
-      case HASH_page: if (!Tag.Children.empty()) tag_page(Tag); break;
+      case HASH_page: if (not resolved_tag.Children.empty()) tag_page(resolved_tag); break;
 
-      case HASH_svg: if (!Tag.Children.empty()) tag_svg(Tag); break;
+      case HASH_svg: if (not resolved_tag.Children.empty()) tag_svg(resolved_tag); break;
 
       // Table layout instructions
 
       case HASH_row:
          if ((Flags & IPF::FILTER_TABLE) IS IPF::NIL) {
-            log.warning("Invalid use of <row> - Applied to invalid parent tag.");
-            Self->Error = ERR::InvalidData;
+            log_error(&resolved_tag, ERR::InvalidData, "doc.invalid-parent-tag", "Invalid use of <row> - applied to an invalid parent tag.");
          }
-         else if (!Tag.Children.empty()) tag_row(Tag);
+         else if (not resolved_tag.Children.empty()) tag_row(resolved_tag);
          break;
 
       case HASH_td: // HTML compatibility
       case HASH_cell:
          if ((Flags & IPF::FILTER_ROW) IS IPF::NIL) {
-            log.warning("Invalid use of <cell> - Applied to invalid parent tag.");
-            Self->Error = ERR::InvalidData;
+            log_error(&resolved_tag, ERR::InvalidData, "doc.invalid-parent-tag", "Invalid use of <cell> - applied to an invalid parent tag.");
          }
-         else if (!Tag.Children.empty()) tag_cell(Tag);
+         else if (not resolved_tag.Children.empty()) tag_cell(resolved_tag);
          break;
 
-      case HASH_table: if (!Tag.Children.empty()) tag_table(Tag); break;
+      case HASH_table: if (not resolved_tag.Children.empty()) tag_table(resolved_tag); break;
 
-      case HASH_tr: if (!Tag.Children.empty()) tag_row(Tag); break;
+      case HASH_tr: if (not resolved_tag.Children.empty()) tag_row(resolved_tag); break;
 
       // Others
 
-      case HASH_data: break; // Intentionally does nothing
+      case HASH_data: tag_data(resolved_tag); break;
 
-      case HASH_edit_def: tag_editdef(Tag); break;
+      case HASH_edit_def: tag_editdef(resolved_tag); break;
 
       case HASH_footer:
-         if (!Tag.Children.empty()) m_footer_tag = &Tag.Children;
+         if (not resolved_tag.Children.empty()) m_footer_tag = &resolved_tag.Children;
          break;
 
       case HASH_header:
-         if (!Tag.Children.empty()) m_header_tag = &Tag.Children;
+         if (not resolved_tag.Children.empty()) m_header_tag = &resolved_tag.Children;
          break;
 
-      case HASH_info: tag_head(Tag); break;
+      case HASH_info: tag_head(resolved_tag); break;
 
       case HASH_inject: // This instruction can only be used from within a template.
          if (m_in_template) {
@@ -1183,39 +994,41 @@ TRF parser::parse_tag(XTag &Tag, IPF &Flags)
                change_xml(old_xml);
             }
          }
-         else log.warning("<inject/> request detected but not used inside a template.");
+         else log_warning(&resolved_tag, "doc.inject-outside-template",
+            "<inject/> request detected but not used inside a template.");
          break;
 
-      case HASH_use: tag_use(Tag); break;
+      case HASH_use: tag_use(resolved_tag); break;
 
-      case HASH_body: tag_body(Tag); break;
+      case HASH_body: tag_body(resolved_tag); break;
 
-      case HASH_index: tag_index(Tag); break;
+      case HASH_index: tag_index(resolved_tag); break;
 
-      case HASH_script: tag_script(Tag); break;
+      case HASH_script: tag_script(resolved_tag); break;
 
-      case HASH_template: tag_template(Tag); break;
+      case HASH_template: tag_template(resolved_tag); break;
 
       default:
          if ((Flags & IPF::NO_CONTENT) IS IPF::NIL) {
-            log.warning("Tag '%s' unsupported as an instruction or template.", tagname.c_str());
+            log_warning(&resolved_tag, "doc.unsupported-tag",
+               "Tag '{}' unsupported as an instruction or template.", tagname);
          }
-         else log.warning("Unrecognised tag '%s' used in a content-restricted area.", tagname.c_str());
+         else log_warning(&resolved_tag, "doc.content-restricted-tag",
+            "Unrecognised tag '{}' used in a content-restricted area.", tagname);
          break;
    } // switch
 
-   Tag.Attribs = saved_attribs;
    return result;
 }
 
 //********************************************************************************************************************
 // See also process_page(), insert_xml()
 
-TRF parser::parse_tags(objXML::TAGS &Tags, IPF Flags)
+TRF parser::parse_tags(const objXML::TAGS &Tags, IPF Flags)
 {
    TRF result = TRF::NIL;
 
-   for (auto &tag : Tags) {
+   for (const auto &tag : Tags) {
       // Note that Flags will carry state between multiple calls to parse_tag().  This allows if/else to work correctly.
       result = parse_tag(tag, Flags);
       if ((Self->Error != ERR::Okay) or ((result & (TRF::CONTINUE|TRF::BREAK)) != TRF::NIL)) break;
@@ -1226,7 +1039,7 @@ TRF parser::parse_tags(objXML::TAGS &Tags, IPF Flags)
 
 //********************************************************************************************************************
 
-TRF parser::parse_tags_with_style(objXML::TAGS &Tags, bc_font &Style, IPF Flags)
+TRF parser::parse_tags_with_style(const objXML::TAGS &Tags, bc_font &Style, IPF Flags)
 {
    bool font_change = false;
 
@@ -1253,6 +1066,7 @@ TRF parser::parse_tags_with_style(objXML::TAGS &Tags, bc_font &Style, IPF Flags)
    // pass through to a new bc_font entry, layout_font() would re-multiply it by the parent's
    // current metrics.Height and compound the size.  Substituting 1em makes the nested entry
    // resolve to the parent's already-computed pixel size rather than doubling (or worse).
+
    if ((font_change) and (Style.req_size IS m_style.req_size) and
        (Style.req_size.type IS DU::FONT_SIZE)) {
       Style.req_size = DUNIT(1.0, DU::FONT_SIZE);
@@ -1260,13 +1074,13 @@ TRF parser::parse_tags_with_style(objXML::TAGS &Tags, bc_font &Style, IPF Flags)
 
    auto result = TRF::NIL;
    if (font_change) {
-      Style.uid = glByteCodeID++;
+      Style.uid = alloc_bytecode_id();
 
       auto save_status = m_style;
       m_style = Style;
       m_stream->insert(m_index, m_style);
 
-      for (auto &tag : Tags) {
+      for (const auto &tag : Tags) {
          result = parse_tag(tag, Flags);
          if ((Self->Error != ERR::Okay) or ((result & (TRF::CONTINUE|TRF::BREAK)) != TRF::NIL)) break;
       }
@@ -1275,7 +1089,7 @@ TRF parser::parse_tags_with_style(objXML::TAGS &Tags, bc_font &Style, IPF Flags)
       m_stream->emplace<bc_font_end>(m_index);
    }
    else {
-      for (auto &tag : Tags) {
+      for (const auto &tag : Tags) {
          // Note that Flags will carry state between multiple calls to parse_tag().  This allows if/else to work correctly.
          result = parse_tag(tag, Flags);
          if ((Self->Error != ERR::Okay) or ((result & (TRF::CONTINUE|TRF::BREAK)) != TRF::NIL)) break;
@@ -1287,17 +1101,17 @@ TRF parser::parse_tags_with_style(objXML::TAGS &Tags, bc_font &Style, IPF Flags)
 
 //********************************************************************************************************************
 
-TRF parser::parse_tags_with_embedded_style(objXML::TAGS &Tags, bc_font &Style, IPF Flags)
+TRF parser::parse_tags_with_embedded_style(const objXML::TAGS &Tags, bc_font &Style, IPF Flags)
 {
    if (Tags.empty()) return TRF::NIL;
 
-   Style.uid = glByteCodeID++;
+   Style.uid = alloc_bytecode_id();
 
    auto save_style = m_style;
    m_style = Style;
 
    TRF result = TRF::NIL;
-   for (auto &tag : Tags) {
+   for (const auto &tag : Tags) {
       // Note that Flags will carry state between multiple calls to parse_tag().  This allows if/else to work correctly.
       result = parse_tag(tag, Flags);
       if ((Self->Error != ERR::Okay) or ((result & (TRF::CONTINUE|TRF::BREAK)) != TRF::NIL)) break;
@@ -1311,7 +1125,7 @@ TRF parser::parse_tags_with_embedded_style(objXML::TAGS &Tags, bc_font &Style, I
 
 bool parser::check_para_attrib(const XMLAttrib &Attrib, bc_paragraph *Para, bc_font &Style)
 {
-   switch (strihash(Attrib.Name)) {
+   switch (strhash(Attrib.Name)) {
       case HASH_no_wrap:
          Style.options |= FSO::NO_WRAP;
          return true;
@@ -1320,10 +1134,10 @@ bool parser::check_para_attrib(const XMLAttrib &Attrib, bc_paragraph *Para, bc_f
          // Vertical alignment defines the vertical position for text in cases where the line height is greater than
          // the text itself (e.g. if an image is anchored in the line).
          ALIGN align = ALIGN::NIL;
-         if (iequals("top", Attrib.Value)) align = ALIGN::TOP;
-         else if (iequals("center", Attrib.Value)) align = ALIGN::VERTICAL;
-         else if (iequals("middle", Attrib.Value)) align = ALIGN::VERTICAL; // synonym
-         else if (iequals("bottom", Attrib.Value)) align = ALIGN::BOTTOM;
+         if ("top" IS Attrib.Value) align = ALIGN::TOP;
+         else if ("center" IS Attrib.Value) align = ALIGN::VERTICAL;
+         else if ("middle" IS Attrib.Value) align = ALIGN::VERTICAL; // synonym
+         else if ("bottom" IS Attrib.Value) align = ALIGN::BOTTOM;
 
          if (align != ALIGN::NIL) {
             Style.valign &= ~(ALIGN::TOP|ALIGN::VERTICAL|ALIGN::BOTTOM);
@@ -1360,13 +1174,12 @@ bool parser::check_para_attrib(const XMLAttrib &Attrib, bc_paragraph *Para, bc_f
 //********************************************************************************************************************
 // To assist parsing of <p>, <font>, etc...
 
-bool parser::check_font_attrib(const XMLAttrib &Attrib, bc_font &Style)
+bool parser::check_font_attrib(const XMLAttrib &Attrib, bc_font &Style, const tag_view *Tag)
 {
-   pf::Log log;
-
-   switch (strihash(Attrib.Name)) {
+   switch (strhash(Attrib.Name)) {
       case HASH_colour:
-         log.warning("Font 'colour' attrib is deprecated, use 'fill'");
+         log_hint(Tag, "doc.deprecated-attribute", attrib_name(Attrib.Name),
+            "Font '{}' attrib is deprecated, use 'fill'.", Attrib.Name);
          [[fallthrough]];
       case HASH_font_fill:
          [[fallthrough]];
@@ -1377,19 +1190,21 @@ bool parser::check_font_attrib(const XMLAttrib &Attrib, bc_font &Style)
       case HASH_font_face:
          [[fallthrough]];
       case HASH_face: {
-         auto j = Attrib.Value.find(':');
-         if (j != std::string::npos) { // Font size follows
+         auto face = std::string_view(Attrib.Value);
+         auto size_sep = face.find(':');
+         if (size_sep != std::string_view::npos) { // Font size follows
             auto str = Attrib.Value.c_str();
-            j++;
-            Style.req_size = DUNIT(str+j);
-            j = Attrib.Value.find(':', j);
-            if (j != std::string::npos) { // Style follows
-               j++;
-               Style.style = str+j;
+            Style.req_size = DUNIT(str + size_sep + 1);
+
+            auto style_sep = face.find(':', size_sep + 1);
+            if (style_sep != std::string_view::npos) { // Style follows
+               Style.style = str + style_sep + 1;
             }
+
+            face = face.substr(0, size_sep);
          }
 
-         Style.face = Attrib.Value.substr(0, j);
+         Style.face.assign(face);
          return true;
       }
 
@@ -1411,7 +1226,7 @@ bool parser::check_font_attrib(const XMLAttrib &Attrib, bc_font &Style)
 
 //********************************************************************************************************************
 
-void parser::trim_preformat(extDocument *Self)
+void parser::trim_preformat()
 {
    auto i = m_index.index - 1;
    for (; i > 0; i--) {
@@ -1419,8 +1234,7 @@ void parser::trim_preformat(extDocument *Self)
          auto &text = m_stream->lookup<bc_text>(i);
 
          static const std::string ws(" \t\f\v\n\r");
-         auto found = text.text.find_last_not_of(ws);
-         if (found != std::string::npos) {
+         if (auto found = text.text.find_last_not_of(ws); found != std::string::npos) {
             text.text.erase(found + 1);
             text.invalidate_tokens();
             break;
@@ -1437,12 +1251,12 @@ void parser::trim_preformat(extDocument *Self)
 //********************************************************************************************************************
 // Advances the cursor.  It is only possible to advance positively on either axis.
 
-void parser::tag_advance(XTag &Tag)
+void parser::tag_advance(const tag_view &Tag)
 {
    auto &adv = m_stream->emplace<bc_advance>(m_index);
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      switch (strihash(Tag.Attribs[i].Name)) {
+      switch (strhash(Tag.Attribs[i].Name)) {
          case HASH_x: adv.x = DUNIT(Tag.Attribs[i].Value, DU::PIXEL); break;
          case HASH_y: adv.y = DUNIT(Tag.Attribs[i].Value, DU::PIXEL); break;
       }
@@ -1456,20 +1270,20 @@ void parser::tag_advance(XTag &Tag)
 // NB: If a <body> tag contains any children, it is treated as a template and must contain an <inject/> tag so that
 // the XML insertion point is known.
 
-void parser::tag_body(XTag &Tag)
+void parser::tag_body(const tag_view &Tag)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    static const int MAX_BODY_MARGIN = 500;
 
    // Body tag needs to be placed before any content
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      switch (strihash(Tag.Attribs[i].Name)) {
+      switch (strhash(Tag.Attribs[i].Name)) {
          case HASH_clip_path: {
             OBJECTPTR clip;
-            if (Self->Scene->findDef(Tag.Attribs[i].Value.c_str(), &clip) IS ERR::Okay) {
-               Self->Page->set(FID_Mask, clip);
+            if (!Self->Scene->findDef(Tag.Attribs[i].Value, &clip)) {
+               Self->Page->setMask(clip);
             }
             break;
          }
@@ -1487,17 +1301,17 @@ void parser::tag_body(XTag &Tag)
 
          case HASH_margins: {
             bool rel;
-            auto str = Tag.Attribs[i].Value.c_str();
+            auto str = std::string_view(Tag.Attribs[i].Value);
 
             str = read_unit(str, Self->LeftMargin, rel);
 
-            if (*str) str = read_unit(str, Self->TopMargin, rel);
+            if (not str.empty()) str = read_unit(str, Self->TopMargin, rel);
             else Self->TopMargin = Self->LeftMargin;
 
-            if (*str) str = read_unit(str, Self->RightMargin, rel);
+            if (not str.empty()) str = read_unit(str, Self->RightMargin, rel);
             else Self->RightMargin = Self->TopMargin;
 
-            if (*str) str = read_unit(str, Self->BottomMargin, rel);
+            if (not str.empty()) str = read_unit(str, Self->BottomMargin, rel);
             else Self->BottomMargin = Self->RightMargin;
 
             if (Self->LeftMargin < 0) Self->LeftMargin = 0;
@@ -1540,13 +1354,16 @@ void parser::tag_body(XTag &Tag)
             auto val = DUNIT(Tag.Attribs[i].Value);
             switch (val.type) {
                case DU::PIXEL: Self->FontSize = val.value; break;
-               default: log.warning("Invalid font size unit '%s'.", Tag.Attribs[i].Value.c_str());
+               default:
+                  log_warning(&Tag, "doc.invalid-font-unit", attrib_name(Tag.Attribs[i].Name),
+                     "Invalid font size unit '{}'.", Tag.Attribs[i].Value);
             }
             break;
          }
 
          case HASH_font_colour: // DEPRECATED, use font fill
-            log.warning("The font-colour attrib is deprecated, use font-fill.");
+            log_hint(&Tag, "doc.deprecated-attribute", attrib_name(Tag.Attribs[i].Name),
+               "The font-colour attribute is deprecated, use font-fill.");
             [[fallthrough]];
          case HASH_font_fill: // Default font fill
             Self->FontFill = Tag.Attribs[i].Value;
@@ -1568,7 +1385,8 @@ void parser::tag_body(XTag &Tag)
             break;
 
          default:
-            log.warning("Body attribute %s=%s not supported.", Tag.Attribs[i].Name.c_str(), Tag.Attribs[i].Value.c_str());
+            log_warning(&Tag, "doc.unsupported-attribute", attrib_name(Tag.Attribs[i].Name),
+               "Body attribute {}={} is not supported.", Tag.Attribs[i].Name, Tag.Attribs[i].Value);
             break;
       }
    }
@@ -1581,7 +1399,7 @@ void parser::tag_body(XTag &Tag)
    m_style.style    = Self->FontStyle;
    m_style.req_size = DUNIT(Self->FontSize, DU::PIXEL);
 
-   if (!Tag.Children.empty()) m_body_tag = &Tag.Children;
+   if (not Tag.Children.empty()) m_body_tag = &Tag.Children;
 }
 
 //********************************************************************************************************************
@@ -1597,40 +1415,40 @@ void parser::tag_body(XTag &Tag)
 //
 // <call function="[script].function" arg1="" arg2="" _global=""/>
 
-void parser::tag_call(XTag &Tag)
+void parser::tag_call(const tag_view &Tag)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    objScript *script = Self->DefaultScript;
 
    std::string function;
    if (std::ssize(Tag.Attribs) > 1) {
-      if (iequals("function", Tag.Attribs[1].Name)) {
-         if (auto i = Tag.Attribs[1].Value.find('.');  i != std::string::npos) {
-            auto script_name = Tag.Attribs[1].Value.substr(0, i);
+      if ("function" IS Tag.Attribs[1].Name) {
+         auto function_ref = std::string_view(Tag.Attribs[1].Value);
+         if (auto i = function_ref.find('.');  i != std::string_view::npos) {
+            auto script_name = function_ref.substr(0, i);
+            auto script_name_text = std::string(script_name);
 
             OBJECTID id;
-            if (FindObject(script_name.c_str(), CLASSID::NIL, FOF::NIL, &id) IS ERR::Okay) script = (objScript *)GetObjectPtr(id);
+            if (!FindObject(script_name_text, CLASSID::NIL, &id)) script = (objScript *)GetObjectPtr(id);
 
-            function.assign(Tag.Attribs[1].Value, i + 1);
+            function.assign(function_ref.substr(i + 1));
          }
          else function = Tag.Attribs[1].Value;
       }
    }
 
    if (function.empty()) {
-      log.warning("The first attribute to <call/> must be a function reference.");
-      Self->Error = ERR::Syntax;
+      log_error(&Tag, ERR::Syntax, "doc.call-missing-function", "The first attribute to <call/> must be a function reference.");
       return;
    }
 
-   if (!script) {
-      log.warning("No script in this document for a requested <call/>.");
-      Self->Error = ERR::Failed;
+   if (not script) {
+      log_error(&Tag, ERR::NotFound, "doc.call-no-script", "No script is available in this document for the requested <call/>.");
       return;
    }
 
    {
-      pf::Log log(__FUNCTION__);
+      kt::Log log(__FUNCTION__);
       log.traceBranch("Calling script #%d function '%s'", script->UID, function.c_str());
 
       if (Tag.Attribs.size() > 2) {
@@ -1638,7 +1456,7 @@ void parser::tag_call(XTag &Tag)
 
          unsigned index = 0;
          for (unsigned i=2; i < Tag.Attribs.size(); i++) {
-            if (Tag.Attribs[i].Name[0] IS '_') { // Global variable setting
+            if (Tag.Attribs[i].Name.starts_with('_')) { // Global variable setting
                acSetKey(script, Tag.Attribs[i].Name.c_str()+1, Tag.Attribs[i].Value.c_str());
             }
             else if (args[index].Name[0] IS '@') {
@@ -1654,10 +1472,10 @@ void parser::tag_call(XTag &Tag)
 
    // Check for a result and print it
 
-   CSTRING *results;
-   int size;
-   if ((script->get(FID_Results, results, size) IS ERR::Okay) and (size > 0)) {
-      auto xmlinc = objXML::create::global(fl::Statement(results[0]), fl::Flags(XMF::PARSE_HTML|XMF::STRIP_HEADERS));
+   std::span<std::string> results;
+   if ((!script->getResults(results)) and (not results.empty())) {
+      auto xmlinc = objXML::create::global(fl::Statement(results[0]),
+         fl::Flags(XMF::PARSE_HTML|XMF::STRIP_HEADERS));
       if (xmlinc) {
          auto old_xml = change_xml(xmlinc);
          parse_tags(xmlinc->Tags);
@@ -1667,7 +1485,8 @@ void parser::tag_call(XTag &Tag)
 
          Self->Resources.emplace_back(xmlinc->UID, RTD::OBJECT_TEMP);
       }
-      FreeResource(results);
+      else log_error(&Tag, ERR::Syntax, "doc.call-result-xml-parse-failed",
+         "<call/> returned content that could not be parsed as XML/RIPL.");
    }
 }
 
@@ -1675,13 +1494,13 @@ void parser::tag_call(XTag &Tag)
 // A button can have both an on and off pattern, but for our purposes we'll have one pattern and rely on the click
 // action to provide feedback that the button has been pressed.
 
-const char glButtonSVG[] = R"-(
+static const char glButtonSVG[] = R"-(
 <svg width="100%" height="100%">
   <defs>
     <linearGradient id="darkEdge" x1="0" y1="1" x2="0" y2="0" gradientUnits="objectBoundingBox">
-      <stop stop-color="#000000" stop-opacity="1" offset="0"/>
-      <stop stop-color="#050505" stop-opacity="1" offset="0.84"/>
-      <stop stop-color="#afafaf" stop-opacity="1" offset="1"/>
+      <stop stop-color="black" stop-opacity="1" offset="0"/>
+      <stop stop-color="oklch(0.115 0.000 89.876)" stop-opacity="1" offset="0.84"/>
+      <stop stop-color="oklch(0.754 0.000 89.876)" stop-opacity="1" offset="1"/>
     </linearGradient>
 
     <filter id="dropShadow" color-interpolation-filters="sRGB" primitiveUnits="objectBoundingBox">
@@ -1689,28 +1508,28 @@ const char glButtonSVG[] = R"-(
     </filter>
 
     <linearGradient id="shading" gradientUnits="objectBoundingBox" x1="0" y1="0" x2="0" y2="1.04">
-      <stop stop-color="#ffffff" stop-opacity="0.50" offset="0"/>
-      <stop stop-color="#7f7f7f" stop-opacity="0" offset="0.5"/>
-      <stop stop-color="#000000" stop-opacity="0.54" offset="1"/>
+      <stop stop-color="white" stop-opacity="0.50" offset="0"/>
+      <stop stop-color="oklch(0.596 0.000 89.876)" stop-opacity="0" offset="0.5"/>
+      <stop stop-color="black" stop-opacity="0.54" offset="1"/>
     </linearGradient>
   </defs>
 
-  <rect opacity="0.6" fill="rgb(0,0,0)" filter="url(#dropShadow)" width="95%" height="93%"
+  <rect opacity="0.6" fill="black" filter="url(#dropShadow)" width="95%" height="93%"
     x="2.5%" y="4%" ry="7.5%" rx="7.5%"/>
-  <rect fill="#555d6d" width="95%" height="93%" x="2.5%" y="2.5%" ry="7.5%" rx="7.5%"/>
+  <rect fill="oklch(0.477 0.028 264.267)" width="95%" height="93%" x="2.5%" y="2.5%" ry="7.5%" rx="7.5%"/>
   <rect rx="7.5%" ry="7.5%" width="95%" height="93%" x="2.5%" y="2.5%" fill="none" stroke="url(#darkEdge)"
     stroke-width="0.5%" stroke-linecap="round" stroke-opacity="0.7" stroke-linejoin="round" stroke-miterlimit="4"/>
   <rect rx="7.5%" ry="7.5%" width="95%" height="93%" x="2.5%" y="2.5%" fill="url(#shading)"/>
 </svg>)-";
 
-void parser::tag_button(XTag &Tag)
+void parser::tag_button(const tag_view &Tag)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    bc_button &widget = m_stream->emplace<bc_button>(m_index);
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      auto hash = strihash(Tag.Attribs[i].Name);
+      auto hash = strhash(Tag.Attribs[i].Name);
       auto &value = Tag.Attribs[i].Value;
       if (hash IS HASH_fill)          widget.fill   = value;
       else if (hash IS HASH_alt_fill) widget.alt_fill = value;
@@ -1719,12 +1538,13 @@ void parser::tag_button(XTag &Tag)
       else if (hash IS HASH_height)   widget.height = DUNIT(value);
       else if (hash IS HASH_padding)  widget.pad.parse(value); // Outer padding
       else if (hash IS HASH_cell_padding) widget.inner_padding.parse(value); // Inner padding
-      else log.warning("<button> unsupported attribute '%s'", Tag.Attribs[i].Name.c_str());
+      else log_warning(&Tag, "doc.unsupported-attribute", attrib_name(Tag.Attribs[i].Name),
+         "<button> unsupported attribute '{}'.", Tag.Attribs[i].Name);
    }
 
    widget.internal_page = true;
 
-   if (!m_button_patterns) {
+   if (not m_button_patterns) {
       // Load up the default pattern values for buttons (irrespective of this button utilising them or not)
       m_button_patterns = true;
 
@@ -1733,18 +1553,16 @@ void parser::tag_button(XTag &Tag)
             fl::SpreadMethod(VSPREAD::CLIP)
          })) {
 
+         // Object will terminate once out-of-scope
          auto svg = objSVG::create { fl::Target(pattern_active->Scene), fl::Statement(glButtonSVG) };
 
-         if (svg.ok()) {
-            FreeResource(*svg);
-         }
-         else { // Revert to a basic rectangle if the SVG didn't process
+         if (not svg.ok()) { // Revert to a basic rectangle if the SVG didn't process
             objVectorRectangle::create::global({
                fl::Owner(pattern_active->Scene->Viewport->UID),
                fl::Width(SCALE(1.0)), fl::Height(SCALE(1.0)),
-               fl::Stroke("rgba(64,64,64,.5)"), fl::StrokeWidth(2.0),
+               fl::Stroke("oklch(0.371 0.000 89.876 / 0.500)"), fl::StrokeWidth(2.0),
                fl::RoundX(SCALE(0.1)),
-               fl::Fill("rgba(0,0,0,.125)")
+               fl::Fill("oklch(0.000 0.000 0.000 / 0.125)")
             });
          }
 
@@ -1756,18 +1574,16 @@ void parser::tag_button(XTag &Tag)
             fl::SpreadMethod(VSPREAD::CLIP)
          })) {
 
+         // Object will terminate once out-of-scope
          auto svg = objSVG::create { fl::Target(pattern_inactive->Scene), fl::Statement(glButtonSVG) };
 
-         if (svg.ok()) {
-            FreeResource(*svg);
-         }
-         else {
+         if (not svg.ok()) {
             objVectorRectangle::create::global({
                fl::Owner(pattern_inactive->Scene->Viewport->UID),
                fl::Width(SCALE(1.0)), fl::Height(SCALE(1.0)),
-               fl::Stroke("rgba(0,0,0,.25)"), fl::StrokeWidth(2.0),
+               fl::Stroke("oklch(0.000 0.000 0.000 / 0.250)"), fl::StrokeWidth(2.0),
                fl::RoundX(SCALE(0.1)),
-               fl::Fill("rgba(255,255,255,.37)")
+               fl::Fill("oklch(1.000 0.000 89.876 / 0.370)")
             });
          }
 
@@ -1776,14 +1592,17 @@ void parser::tag_button(XTag &Tag)
    }
 
    if (widget.fill.empty())      widget.fill      = "url(#/widget/button/inactive)";
-   if (widget.font_fill.empty()) widget.font_fill = "rgba(255,255,255,.86)";
+   if (widget.font_fill.empty()) widget.font_fill = "rgb(255 255 255 / .86)";
 
    widget.def_size = DUNIT(1.7, DU::FONT_SIZE);
 
-   if (!Tag.Children.empty()) {
+   if (not Tag.Children.empty()) {
       Self->NoWhitespace = true; // Reset whitespace flag: false allows whitespace at the start of the cell, true prevents whitespace
 
       parser parse(Self, widget.stream);
+      parse.m_in_template = m_in_template;
+      parse.m_inject_tag  = m_inject_tag;
+      parse.m_inject_xml  = m_inject_xml;
 
       auto new_style = m_style;
       new_style.options = FSO::ALIGN_CENTER;
@@ -1800,14 +1619,14 @@ void parser::tag_button(XTag &Tag)
 
 //********************************************************************************************************************
 
-void parser::tag_checkbox(XTag &Tag)
+void parser::tag_checkbox(const tag_view &Tag)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    bc_checkbox &widget = m_stream->emplace<bc_checkbox>(m_index);
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      auto hash = strihash(Tag.Attribs[i].Name);
+      auto hash = strhash(Tag.Attribs[i].Name);
       auto &value = Tag.Attribs[i].Value;
 
       if (hash IS HASH_label)      widget.label = value;
@@ -1815,20 +1634,21 @@ void parser::tag_checkbox(XTag &Tag)
       else if (hash IS HASH_fill)  widget.fill  = value;
       else if (hash IS HASH_width) widget.width = DUNIT(value);
       else if (hash IS HASH_label_pos) {
-         if (iequals("left", value)) widget.label_pos = 0;
-         else if (iequals("right", value)) widget.label_pos = 1;
+         if ("left" IS value) widget.label_pos = 0;
+         else if ("right" IS value) widget.label_pos = 1;
       }
       else if (hash IS HASH_value) {
          widget.alt_state = (value IS "1") or (value IS "true");
       }
-      else log.warning("<checkbox> unsupported attribute '%s'", Tag.Attribs[i].Name.c_str());
+      else log_warning(&Tag, "doc.unsupported-attribute", attrib_name(Tag.Attribs[i].Name),
+         "<checkbox> unsupported attribute '{}'.", Tag.Attribs[i].Name);
    }
 
    if (widget.fill.empty()) widget.fill = "url(#/widget/checkbox/off)";
 
    if (widget.alt_fill.empty()) widget.alt_fill = "url(#/widget/checkbox/on)";
 
-   if (!m_checkbox_patterns) {
+   if (not m_checkbox_patterns) {
       m_checkbox_patterns = true;
 
       if (auto pattern_on = objVectorPattern::create::global({
@@ -1840,19 +1660,22 @@ void parser::tag_checkbox(XTag &Tag)
          objVectorRectangle::create::global({
             fl::Owner(vp->UID),
             fl::X(-8), fl::Y(-8), fl::Width(54), fl::Height(54),
-            fl::Stroke("rgb(255,255,255)"), fl::StrokeWidth(2.0),
+            fl::Stroke("white"), fl::StrokeWidth(2.0),
             fl::RoundX(6), fl::RoundY(6),
-            fl::Fill("rgba(0,0,0,.7)")
+            fl::Fill("rgb(0 0 0 / .7)")
          });
 
          objVectorPath::create::global({
             fl::Owner(vp->UID),
             fl::Sequence("M4.75 15.0832 15.8333 26.1665 33.2498 4 38 8.75 15.8333 35.6665 0 19.8332 4.75 15.0832Z"),
-            fl::Fill("rgb(255,255,255)")
+            fl::Fill("white")
          });
 
-         vp->setFields(fl::AspectRatio(ARF::X_MIN|ARF::Y_MIN|ARF::MEET),
-            fl::ViewX(-8), fl::ViewY(-8), fl::ViewWidth(54), fl::ViewHeight(54));
+         vp->setAspectRatio(ARF::X_MIN|ARF::Y_MIN|ARF::MEET);
+         vp->setViewX(-8);
+         vp->setViewY(-8);
+         vp->setViewWidth(54);
+         vp->setViewHeight(54);
 
          Self->Viewport->Scene->addDef("/widget/checkbox/on", pattern_on);
       }
@@ -1866,19 +1689,22 @@ void parser::tag_checkbox(XTag &Tag)
          objVectorRectangle::create::global({
             fl::Owner(vp->UID),
             fl::X(-8), fl::Y(-8), fl::Width(54), fl::Height(54),
-            fl::Stroke("rgb(255,255,255)"), fl::StrokeWidth(2.0),
+            fl::Stroke("white"), fl::StrokeWidth(2.0),
             fl::RoundX(6), fl::RoundY(6),
-            fl::Fill("rgba(0,0,0,.7)")
+            fl::Fill("rgb(0 0 0 / .7)")
          });
 
          objVectorPath::create::global({
             fl::Owner(vp->UID),
             fl::Sequence("M4.75 15.0832 15.8333 26.1665 33.2498 4 38 8.75 15.8333 35.6665 0 19.8332 4.75 15.0832Z"),
-            fl::Fill("rgba(255,255,255,.5)")
+            fl::Fill("rgb(255 255 255 / .5)")
          });
 
-         vp->setFields(fl::AspectRatio(ARF::X_MIN|ARF::Y_MIN|ARF::MEET),
-            fl::ViewX(-8), fl::ViewY(-8), fl::ViewWidth(54), fl::ViewHeight(54));
+         vp->setAspectRatio(ARF::X_MIN|ARF::Y_MIN|ARF::MEET);
+         vp->setViewX(-8);
+         vp->setViewY(-8);
+         vp->setViewWidth(54);
+         vp->setViewHeight(54);
 
          Self->Viewport->Scene->addDef("/widget/checkbox/off", pattern_off);
       }
@@ -1886,23 +1712,23 @@ void parser::tag_checkbox(XTag &Tag)
 
    widget.def_size = DUNIT(1.4, DU::FONT_SIZE);
 
-   if (!widget.label.empty()) widget.label_pad = DUNIT(0.5, DU::FONT_SIZE);
+   if (not widget.label.empty()) widget.label_pad = DUNIT(0.5, DU::FONT_SIZE);
 
-   if (!widget.name.empty()) Self->Vars[widget.name] = widget.alt_state ? "1" : "0";
+   if (not widget.name.empty()) Self->Vars[widget.name] = widget.alt_state ? "1" : "0";
 
    Self->NoWhitespace = false; // Widgets are treated as inline characters
 }
 
 //********************************************************************************************************************
 
-void parser::tag_combobox(XTag &Tag)
+void parser::tag_combobox(const tag_view &Tag)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    bc_combobox &widget = m_stream->emplace<bc_combobox>(m_index);
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      auto hash = strihash(Tag.Attribs[i].Name);
+      auto hash = strhash(Tag.Attribs[i].Name);
       auto &value = Tag.Attribs[i].Value;
       if (hash IS HASH_label)          widget.label = value;
       else if (hash IS HASH_value)     widget.value = value;
@@ -1910,11 +1736,12 @@ void parser::tag_combobox(XTag &Tag)
       else if (hash IS HASH_font_fill) widget.font_fill = value;
       else if (hash IS HASH_name)      widget.name = value;
       else if (hash IS HASH_label_pos) {
-         if (iequals("left", value)) widget.label_pos = 0;
-         else if (iequals("right", value)) widget.label_pos = 1;
+         if ("left" IS value) widget.label_pos = 0;
+         else if ("right" IS value) widget.label_pos = 1;
       }
       else if (hash IS HASH_width) widget.width = DUNIT(value);
-      else log.warning("<combobox> unsupported attribute '%s'", Tag.Attribs[i].Name.c_str());
+      else log_warning(&Tag, "doc.unsupported-attribute", attrib_name(Tag.Attribs[i].Name),
+         "<combobox> unsupported attribute '{}'.", Tag.Attribs[i].Name);
    }
 
    // Process <option/> tags for the drop-down menu.
@@ -1922,38 +1749,36 @@ void parser::tag_combobox(XTag &Tag)
    // The 'value' attrib, if declared, will appear in the combobox for the selected item.
    // The 'id' attrib, if declared, is a UID hidden from the user.
 
-   if (!Tag.Children.empty()) {
+   if (not Tag.Children.empty()) {
       for (auto &scan : Tag.Children) {
-         if (iequals("style", scan.name())) {
+         if ("style" IS scan.name()) {
             // Client is overriding the decorator: A custom SVG background is expected, defs and body
             // adjustments may also be provided.
             if (scan.hasContent()) {
-               STRING xml_ser;
-               if (m_xml->serialise(scan.Children[0].ID, XMF::INCLUDE_SIBLINGS, &xml_ser) IS ERR::Okay) {
+               std::string xml_ser;
+               if (!m_xml->serialise(scan.Children[0].ID, XMF::INCLUDE_SIBLINGS, xml_ser)) {
                   widget.style = xml_ser;
-                  FreeResource(xml_ser);
                }
             }
          }
-         else if (iequals("option", scan.name())) {
+         else if ("option" IS scan.name()) {
             std::string value;
 
-            if (!scan.Children.empty()) {
-               STRING xml_ser;
-               if (m_xml->serialise(scan.Children[0].ID, XMF::INCLUDE_SIBLINGS, &xml_ser) IS ERR::Okay) {
+            if (not scan.Children.empty()) {
+               std::string xml_ser;
+               if (!m_xml->serialise(scan.Children[0].ID, XMF::INCLUDE_SIBLINGS, xml_ser)) {
                   value = xml_ser;
-                  FreeResource(xml_ser);
                }
             }
 
-            if (!value.empty()) {
+            if (not value.empty()) {
                auto &option = widget.menu.m_items.emplace_back(value);
 
                auto id = scan.attrib("id");
-               if ((id) and (!id->empty())) option.id = *id;
+               if ((id) and (not id->empty())) option.id = *id;
 
                auto val = scan.attrib("value");
-               if ((val) and (!val->empty())) option.value = *val;
+               if ((val) and (not val->empty())) option.value = *val;
 
                auto icon = scan.attrib("icon");
                if (icon) option.icon = *icon;
@@ -1962,7 +1787,7 @@ void parser::tag_combobox(XTag &Tag)
       }
    }
 
-   if (!m_combobox_patterns) {
+   if (not m_combobox_patterns) {
       // The combobox uses the default fill pattern with an arrow button overlayed on the right.
       m_combobox_patterns = true;
 
@@ -1976,22 +1801,24 @@ void parser::tag_combobox(XTag &Tag)
          auto rect = objVectorRectangle::create::global({ // Button background
             fl::Owner(vp->UID),
             fl::X(-(PAD-1)), fl::Y(-(PAD-1)), fl::Width(29+((PAD-1)*2)), fl::Height(29+((PAD-1)*2)),
-            fl::Fill("rgba(0,0,0,.7)")
+            fl::Fill("rgb(0 0 0 / .7)")
          });
 
-         std::array<double, 8> round = { 0, 0, 6, 6, 6, 6, 0, 0 };
-         rect->set(FID_Rounding, round);
+         std::array<Unit, 8> round = { 0, 0, 6, 6, 6, 6, 0, 0 };
+         rect->setRounding(round);
 
          objVectorPath::create::global({ // Down arrow
             fl::Owner(vp->UID),
             fl::Sequence("M14.5 16.1 26.1 4.5 26.1 12.9 14.5 24.5 2.9 12.9 2.9 4.5 14.5 16.1Z"), // 80% size
             //fl::Sequence("M14.5 16.5 29 2 29 12.5 14.5 27 0 12.5 0 2 14.5 16.5Z"), // Original size; 29x29
-            fl::Fill("rgba(255,255,255,.86)")
+            fl::Fill("rgb(255 255 255 / .86)")
          });
 
-         vp->setFields(fl::AspectRatio(ARF::X_MAX|ARF::Y_MIN|ARF::MEET),
-            fl::ViewX(-PAD), fl::ViewY(-PAD),
-            fl::ViewWidth(29+(PAD*2)), fl::ViewHeight(29+(PAD*2)));
+         vp->setAspectRatio(ARF::X_MAX|ARF::Y_MIN|ARF::MEET);
+         vp->setViewX(-PAD);
+         vp->setViewY(-PAD);
+         vp->setViewWidth(29+(PAD*2));
+         vp->setViewHeight(29+(PAD*2));
 
          Self->Viewport->Scene->addDef("/widget/combobox", pattern_cb);
       }
@@ -2002,27 +1829,27 @@ void parser::tag_combobox(XTag &Tag)
       widget.fill = "url(#/widget/default);url(#/widget/combobox)";
    }
 
-   if (widget.font_fill.empty()) widget.font_fill = "rgb(255,255,255)";
+   if (widget.font_fill.empty()) widget.font_fill = "white";
 
    widget.def_size  = DUNIT(1.7, DU::FONT_SIZE);
    widget.label_pad = DUNIT(0.5, DU::FONT_SIZE);
 
-   if (!widget.name.empty()) Self->Vars[widget.name] = widget.value;
+   if (not widget.name.empty()) Self->Vars[widget.name] = widget.value;
 
    Self->NoWhitespace = false; // Widgets are treated as inline characters
 }
 
 //********************************************************************************************************************
 
-void parser::tag_input(XTag &Tag)
+void parser::tag_input(const tag_view &Tag)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    bc_input &widget = m_stream->emplace<bc_input>(m_index);
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
       auto &value = Tag.Attribs[i].Value;
-      switch (strihash(Tag.Attribs[i].Name)) {
+      switch (strhash(Tag.Attribs[i].Name)) {
          case HASH_label:     widget.label = value; break;
          case HASH_value:     widget.value = value; break;
          case HASH_fill:      widget.fill  = value; break;
@@ -2031,11 +1858,12 @@ void parser::tag_input(XTag &Tag)
          case HASH_name:      widget.name = value; break;
          case HASH_secret:    if (iequals(value, "true")) widget.secret = true; break;
          case HASH_label_pos:
-            if (iequals("left", value)) widget.label_pos = 0;
-            else if (iequals("right", value)) widget.label_pos = 1;
+            if ("left" IS value) widget.label_pos = 0;
+            else if ("right" IS value) widget.label_pos = 1;
             break;
-         default:
-            log.warning("<input> unsupported attribute '%s'", Tag.Attribs[i].Name.c_str());
+        default:
+            log_warning(&Tag, "doc.unsupported-attribute", attrib_name(Tag.Attribs[i].Name),
+               "<input> unsupported attribute '{}'.", Tag.Attribs[i].Name);
             break;
       }
    }
@@ -2045,23 +1873,24 @@ void parser::tag_input(XTag &Tag)
       widget.fill = "url(#/widget/default)";
    }
 
-   if (widget.font_fill.empty()) widget.font_fill = "rgb(255,255,255)";
+   if (widget.font_fill.empty()) widget.font_fill = "white";
 
    widget.def_size  = DUNIT(1.7, DU::FONT_SIZE);
    widget.label_pad = DUNIT(0.5, DU::FONT_SIZE);
 
-   if (!widget.name.empty()) Self->Vars[widget.name] = widget.value;
+   if (not widget.name.empty()) Self->Vars[widget.name] = widget.value;
 
    Self->NoWhitespace = false; // Widgets are treated as inline characters
 }
 
 //********************************************************************************************************************
 
-void parser::tag_debug(XTag &Tag)
+void parser::tag_debug(const tag_view &Tag) const
 {
-   pf::Log log("DocMsg");
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      if (iequals("msg", Tag.Attribs[i].Name)) log.warning("%s", Tag.Attribs[i].Value.c_str());
+      if ("msg" IS Tag.Attribs[i].Name) {
+         log_hint(&Tag, "doc.debug-message", attrib_name(Tag.Attribs[i].Name), "{}", Tag.Attribs[i].Value);
+      }
    }
 }
 
@@ -2073,36 +1902,35 @@ void parser::tag_debug(XTag &Tag)
 // This tag can only be used ONCE per document.  Potentially we could improve this by appending to the existing
 // SVG object via data feeds.
 
-void parser::tag_svg(XTag &Tag)
+void parser::tag_svg(const tag_view &Tag)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (Self->SVG) {
-      Self->Error = ERR::AlreadyDefined;
-      log.warning("Illegal attempt to declare <svg/> more than once.");
+      log_error(&Tag, ERR::AlreadyDefined, "doc.duplicate-svg", "Illegal attempt to declare <svg/> more than once.");
       return;
    }
 
    objVectorViewport *target = Self->Page;
-   for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      if (iequals("placement", Tag.Attribs[i].Name)) {
-         if (iequals("foreground", Tag.Attribs[i].Value)) target = Self->Page;
-         else if (iequals("background", Tag.Attribs[i].Value)) target = Self->View;
-         Tag.Attribs.erase(Tag.Attribs.begin() + i);
+   auto filtered_attribs = Tag.Attribs;
+   for (int i=1; i < std::ssize(filtered_attribs); i++) {
+      if ("placement" IS filtered_attribs[i].Name) {
+         if ("foreground" IS filtered_attribs[i].Value) target = Self->Page;
+         else if ("background" IS filtered_attribs[i].Value) target = Self->View;
+         filtered_attribs.erase(filtered_attribs.begin() + i);
          i--;
       }
    }
 
-   STRING xml_svg;
-   if (auto err = m_xml->serialise(Tag.ID, XMF::NIL, &xml_svg); err IS ERR::Okay) {
+   std::ostringstream buffer;
+   serialise_tag_fragment(tag_view(*Tag.Source, filtered_attribs), buffer);
+
+   auto xml_svg = buffer.str();
+   if (not xml_svg.empty()) {
       if ((Self->SVG = objSVG::create::local({ fl::Statement(xml_svg), fl::Target(target) }))) {
-         if (target IS Self->View) { // Put the page back in front of the background objects
-            acMoveToFront(Self->Page);
-         }
+         if (target IS Self->View) acMoveToFront(Self->Page); // Put the page back in front of the background objects
       }
       else Self->Error = ERR::CreateObject;
-
-      FreeResource(xml_svg);
    }
 }
 
@@ -2114,16 +1942,16 @@ void parser::tag_svg(XTag &Tag)
 // If more sophisticated inline or float embedding is required, the <image> tag is probably more applicable to the
 // client.
 
-void parser::tag_use(XTag &Tag)
+void parser::tag_use(const tag_view &Tag)
 {
    std::string id;
    for (int i = 1; i < std::ssize(Tag.Attribs); i++) {
-      if (iequals("href", Tag.Attribs[i].Name)) {
+      if ("href" IS Tag.Attribs[i].Name) {
          id = Tag.Attribs[i].Value;
       }
    }
 
-   if (!id.empty()) {
+   if (not id.empty()) {
       auto &use = m_stream->emplace<bc_use>(m_index);
       use.id = id;
    }
@@ -2133,24 +1961,24 @@ void parser::tag_use(XTag &Tag)
 // Use div to structure the document in a similar way to paragraphs.  The main difference is that it impacts on style
 // attributes only, avoiding the declaration of paragraph start and end points and won't cause line breaks.
 
-void parser::tag_div(XTag &Tag)
+void parser::tag_div(const tag_view &Tag)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    auto new_style = m_style;
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      if (iequals("align", Tag.Attribs[i].Name)) {
+      if ("align" IS Tag.Attribs[i].Name) {
          auto align = FSO::NIL;
          auto valid = true;
-         if ((iequals(Tag.Attribs[i].Value, "center")) or
-             (iequals(Tag.Attribs[i].Value, "middle"))) {
+         if ((Tag.Attribs[i].Value IS "center") or (Tag.Attribs[i].Value IS "middle")) {
             align = FSO::ALIGN_CENTER;
          }
-         else if (iequals(Tag.Attribs[i].Value, "right")) {
+         else if (Tag.Attribs[i].Value IS "right") {
             align = FSO::ALIGN_RIGHT;
          }
-         else if (!iequals(Tag.Attribs[i].Value, "left")) {
-            log.warning("Alignment type '%s' not supported.", Tag.Attribs[i].Value.c_str());
+         else if (not (Tag.Attribs[i].Value IS "left")) {
+            log_warning(&Tag, "doc.invalid-alignment", attrib_name(Tag.Attribs[i].Name),
+               "Alignment type '{}' is not supported.", Tag.Attribs[i].Value);
             valid = false;
          }
 
@@ -2160,7 +1988,7 @@ void parser::tag_div(XTag &Tag)
          }
       }
       else if (check_para_attrib(Tag.Attribs[i], 0, new_style));
-      else check_font_attrib(Tag.Attribs[i], new_style);
+      else check_font_attrib(Tag.Attribs[i], new_style, &Tag);
    }
 
    parse_tags_with_style(Tag.Children, new_style);
@@ -2170,15 +1998,15 @@ void parser::tag_div(XTag &Tag)
 // Creates a new edit definition.  These are stored in a linked list.  Edit definitions are used by referring to them
 // by name in table cells.
 
-void parser::tag_editdef(XTag &Tag)
+void parser::tag_editdef(const tag_view &Tag)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    doc_edit edit;
    std::string name;
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      switch (strihash(Tag.Attribs[i].Name)) {
+      switch (strhash(Tag.Attribs[i].Name)) {
          case HASH_max_chars:
             edit.max_chars = std::stoi(Tag.Attribs[i].Value);
             if (edit.max_chars < 0) edit.max_chars = -1;
@@ -2200,15 +2028,15 @@ void parser::tag_editdef(XTag &Tag)
             break;
 
          case HASH_on_change:
-            if (!Tag.Attribs[i].Value.empty()) edit.on_change = Tag.Attribs[i].Value;
+            if (not Tag.Attribs[i].Value.empty()) edit.on_change = Tag.Attribs[i].Value;
             break;
 
          case HASH_on_exit:
-            if (!Tag.Attribs[i].Value.empty()) edit.on_exit = Tag.Attribs[i].Value;
+            if (not Tag.Attribs[i].Value.empty()) edit.on_exit = Tag.Attribs[i].Value;
             break;
 
          case HASH_on_enter:
-            if (!Tag.Attribs[i].Value.empty()) edit.on_enter = Tag.Attribs[i].Value;
+            if (not Tag.Attribs[i].Value.empty()) edit.on_enter = Tag.Attribs[i].Value;
             break;
 
          default:
@@ -2221,102 +2049,66 @@ void parser::tag_editdef(XTag &Tag)
       }
    }
 
-   if (!name.empty()) Self->EditDefs[name] = std::move(edit);
+   if (not name.empty()) Self->EditDefs[name] = std::move(edit);
 }
 
 //********************************************************************************************************************
 // Use of <meta> for custom information is allowed and is ignored by the parser.
 
-void parser::tag_head(XTag &Tag)
+void parser::tag_head(const tag_view &Tag)
 {
    // The head contains information about the document
 
    for (auto &scan : Tag.Children) {
-      // Anything allocated here needs to be freed in unload_doc()
-      if (iequals("title", scan.name())) {
-         if (scan.hasContent()) {
-            if (Self->Title) FreeResource(Self->Title);
-            Self->Title = pf::strclone(scan.Children[0].Attribs[0].Value);
-         }
+      std::string_view name = scan.name();
+      if ("title" IS name) {
+         if (scan.hasContent()) Self->Title.assign(scan.Children[0].Attribs[0].Value);
       }
-      else if (iequals("author", scan.name())) {
-         if (scan.hasContent()) {
-            if (Self->Author) FreeResource(Self->Author);
-            Self->Author = pf::strclone(scan.Children[0].Attribs[0].Value);
-         }
+      else if ("author" IS name) {
+         if (scan.hasContent()) Self->Author.assign(scan.Children[0].Attribs[0].Value);
       }
-      else if (iequals("copyright", scan.name())) {
-         if (scan.hasContent()) {
-            if (Self->Copyright) FreeResource(Self->Copyright);
-            Self->Copyright = pf::strclone(scan.Children[0].Attribs[0].Value);
-         }
+      else if ("copyright" IS name) {
+         if (scan.hasContent()) Self->Copyright.assign(scan.Children[0].Attribs[0].Value);
       }
-      else if (iequals("keywords", scan.name())) {
-         if (scan.hasContent()) {
-            if (Self->Keywords) FreeResource(Self->Keywords);
-            Self->Keywords = pf::strclone(scan.Children[0].Attribs[0].Value);
-         }
+      else if ("keywords" IS name) {
+         if (scan.hasContent()) Self->Keywords.assign(scan.Children[0].Attribs[0].Value);
       }
-      else if (iequals("description", scan.name())) {
-         if (scan.hasContent()) {
-            if (Self->Description) FreeResource(Self->Description);
-            Self->Description = pf::strclone(scan.Children[0].Attribs[0].Value);
-         }
+      else if ("description" IS name) {
+         if (scan.hasContent()) Self->Description.assign(scan.Children[0].Attribs[0].Value);
       }
+      else log_hint(&scan, "doc.unknown-head-tag", "Unknown head tag '{}'.", name);
    }
 }
 
 //********************************************************************************************************************
 // Include XML from another RIPL file.
 
-void parser::tag_include(XTag &Tag)
+void parser::tag_include(const tag_view &Tag)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
+   bool found_src = false;
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      if (iequals("src", Tag.Attribs[i].Name)) {
+      if ("src" IS Tag.Attribs[i].Name) {
+         found_src = true;
          if (auto xmlinc = objXML::create::local(fl::Path(Tag.Attribs[i].Value), fl::Flags(XMF::PARSE_HTML|XMF::STRIP_HEADERS))) {
             auto old_xml = change_xml(xmlinc);
             parse_tags(xmlinc->Tags);
             Self->Resources.emplace_back(xmlinc->UID, RTD::OBJECT_TEMP);
             change_xml(old_xml);
          }
-         else log.warning("Failed to include '%s'", Tag.Attribs[i].Value.c_str());
+         else log_warning(&Tag, "doc.include-failed", attrib_name(Tag.Attribs[i].Name),
+            "Failed to include '{}'.", Tag.Attribs[i].Value);
       }
-      else if (iequals("volatile", Tag.Attribs[i].Name)) {
+      else if ("volatile" IS Tag.Attribs[i].Name) {
          // Instruct the cache manager that it should always check if the source requires reloading, irrespective of the
          // amount of time that has passed since the last load.
       }
    }
 
-   log.warning("<include> directive missing required 'src' element.");
-}
-
-//********************************************************************************************************************
-// Parse a string value as XML
-
-void parser::tag_parse(XTag &Tag)
-{
-   pf::Log log(__FUNCTION__);
-
-   // The value attribute will contain XML.  We will parse the XML as if it were part of the document source.  This feature
-   // is typically used when pulling XML information out of an object field.
-
-   if (std::ssize(Tag.Attribs) > 1) {
-      if ((iequals("value", Tag.Attribs[1].Name)) or
-          (iequals("$value", Tag.Attribs[1].Name))) {
-         log.traceBranch("Parsing string value as XML...");
-
-         if (auto xmlinc = objXML::create::local(fl::Statement(Tag.Attribs[1].Value), fl::Flags(XMF::PARSE_HTML|XMF::STRIP_HEADERS))) {
-            auto old_xml = change_xml(xmlinc);
-            parse_tags(xmlinc->Tags);
-            change_xml(old_xml);
-
-            // Add the created XML object to the document rather than destroying it
-
-            Self->Resources.emplace_back(xmlinc->UID, RTD::OBJECT_TEMP);
-         }
-      }
+   if (not found_src) {
+      log_warning(&Tag, "doc.include-missing-src",
+         "<include> directive is missing the required 'src' attribute.");
    }
 }
 
@@ -2331,9 +2123,9 @@ void parser::tag_parse(XTag &Tag)
 // A benefit to rendering SVG images in the <defs> area is that they are converted to cached bitmap textures ahead of
 // time.  This provides a considerable speed boost when drawing them, at a potential cost to image quality.
 
-void parser::tag_image(XTag &Tag)
+void parser::tag_image(const tag_view &Tag)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    bc_image img;
    img.def_size = DUNIT(0.9, DU::FONT_SIZE);
@@ -2341,7 +2133,7 @@ void parser::tag_image(XTag &Tag)
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
       auto &value = Tag.Attribs[i].Value;
 
-      switch (strihash(Tag.Attribs[i].Name)) {
+      switch (strhash(Tag.Attribs[i].Name)) {
          case HASH_float:
          case HASH_align:
             // Setting the horizontal alignment of an image will cause it to float above the text.
@@ -2349,16 +2141,19 @@ void parser::tag_image(XTag &Tag)
             {
                auto align = ALIGN::NIL;
                auto valid = true;
-            switch (strihash(value)) {
-               case HASH_left:   align = ALIGN::LEFT; break;
-               case HASH_right:  align = ALIGN::RIGHT; break;
-               case HASH_center: align = ALIGN::HORIZONTAL; break;
-               case HASH_middle: align = ALIGN::HORIZONTAL; break; // synonym
-               default:
-                  log.warning("Invalid alignment value '%s'", value.c_str());
-                  valid = false;
-                  break;
-            }
+
+               switch (strhash(value)) {
+                  case HASH_left:   align = ALIGN::LEFT; break;
+                  case HASH_right:  align = ALIGN::RIGHT; break;
+                  case HASH_center: align = ALIGN::HORIZONTAL; break;
+                  case HASH_middle: align = ALIGN::HORIZONTAL; break; // synonym
+                  default:
+                     log_warning(&Tag, "doc.invalid-alignment", attrib_name(Tag.Attribs[i].Name),
+                        "Invalid alignment value '{}'.", value);
+                     valid = false;
+                     break;
+               }
+
                if (valid) {
                   img.align &= ~(ALIGN::LEFT|ALIGN::RIGHT|ALIGN::HORIZONTAL);
                   img.align |= align;
@@ -2371,16 +2166,19 @@ void parser::tag_image(XTag &Tag)
             {
                auto align = ALIGN::NIL;
                auto valid = true;
-            switch(strihash(value)) {
-               case HASH_top:    align = ALIGN::TOP; break;
-               case HASH_center: align = ALIGN::VERTICAL; break;
-               case HASH_middle: align = ALIGN::VERTICAL; break; // synonym
-               case HASH_bottom: align = ALIGN::BOTTOM; break;
-               default:
-                  log.warning("Invalid valign value '%s'", value.c_str());
-                  valid = false;
-                  break;
-            }
+
+               switch(strhash(value)) {
+                  case HASH_top:    align = ALIGN::TOP; break;
+                  case HASH_center: align = ALIGN::VERTICAL; break;
+                  case HASH_middle: align = ALIGN::VERTICAL; break; // synonym
+                  case HASH_bottom: align = ALIGN::BOTTOM; break;
+                  default:
+                     log_warning(&Tag, "doc.invalid-vertical-alignment", attrib_name(Tag.Attribs[i].Name),
+                        "Invalid valign value '{}'.", value);
+                     valid = false;
+                     break;
+               }
+
                if (valid) {
                   img.align &= ~(ALIGN::TOP|ALIGN::VERTICAL|ALIGN::BOTTOM);
                   img.align |= align;
@@ -2395,19 +2193,20 @@ void parser::tag_image(XTag &Tag)
          case HASH_height:  img.height = DUNIT(value); break;
 
          default:
-            log.warning("<image> unsupported attribute '%s'", Tag.Attribs[i].Name.c_str());
+            log_warning(&Tag, "doc.unsupported-attribute", attrib_name(Tag.Attribs[i].Name),
+               "<image> unsupported attribute '{}'.", Tag.Attribs[i].Name);
       }
    }
 
-   if (!img.fill.empty()) {
+   if (not img.fill.empty()) {
       if (img.width.value <= 0) img.width.clear(); // Zero is equivalent to 'auto', meaning on-the-fly computation
       if (img.height.value <= 0) img.height.clear();
 
-      if (!img.floating_x()) Self->NoWhitespace = false; // Images count as characters when inline.
+      if (not img.floating_x()) Self->NoWhitespace = false; // Images count as characters when inline.
       m_stream->emplace(m_index, img);
    }
    else {
-      log.warning("No src defined for <image> tag.");
+      log_warning(&Tag, "doc.image-missing-src", "No src is defined for the <image> tag.");
       return;
    }
 }
@@ -2428,41 +2227,42 @@ void parser::tag_image(XTag &Tag)
 // The developer can use indexes to bookmark areas of code that are of interest.  The FindIndex() method is used for
 // this purpose.
 
-void parser::tag_index(XTag &Tag)
+void parser::tag_index(const tag_view &Tag)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    uint32_t name = 0;
    bool visible = true;
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      if (iequals("name", Tag.Attribs[i].Name)) {
-         name = strihash(Tag.Attribs[i].Value);
+      if ("name" IS Tag.Attribs[i].Name) {
+         name = strhash(Tag.Attribs[i].Value);
       }
-      else if (iequals("hide", Tag.Attribs[i].Name)) {
+      else if ("hide" IS Tag.Attribs[i].Name) {
          visible = false;
       }
-      else log.warning("<index> unsupported attribute '%s'", Tag.Attribs[i].Name.c_str());
+      else log_warning(&Tag, "doc.unsupported-attribute", attrib_name(Tag.Attribs[i].Name),
+         "<index> unsupported attribute '{}'.", Tag.Attribs[i].Name);
    }
 
-   if ((!name) and (!Tag.Children.empty())) {
-      if (Tag.Children[0].isContent()) name = strihash(Tag.Children[0].Attribs[0].Value);
+   if ((not name) and (not Tag.Children.empty())) {
+      if (Tag.Children[0].isContent()) name = strhash(Tag.Children[0].Attribs[0].Value);
    }
 
    if (name) {
-      bc_index index(name, glUID++, 0, visible, Self->Invisible ? false : true);
+      bc_index index(name, alloc_uid(), 0, visible, Self->Invisible ? false : true);
 
       auto &stream_index = m_stream->emplace(m_index, index);
 
-      if (!Tag.Children.empty()) {
-         if (!visible) Self->Invisible++;
+      if (not Tag.Children.empty()) {
+         if (not visible) Self->Invisible++;
          parse_tags(Tag.Children);
-         if (!visible) Self->Invisible--;
+         if (not visible) Self->Invisible--;
       }
 
       bc_index_end end(stream_index.id);
       m_stream->emplace(m_index, end);
    }
-   else if (!Tag.Children.empty()) parse_tags(Tag.Children);
+   else if (not Tag.Children.empty()) parse_tags(Tag.Children);
 }
 
 //********************************************************************************************************************
@@ -2478,16 +2278,16 @@ void parser::tag_index(XTag &Tag)
 // Dummy links that specify neither an href or onclick value can be useful in embedded documents if the
 // EventCallback feature is used.
 
-void parser::tag_link(XTag &Tag)
+void parser::tag_link(const tag_view &Tag)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    bc_link link;
    bool select = false;
    link.fill = Self->LinkFill;
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      switch (strihash(Tag.Attribs[i].Name)) {
+      switch (strhash(Tag.Attribs[i].Name)) {
          case HASH_href:
             if (link.type IS LINK::NIL) {
                link.ref = Tag.Attribs[i].Value;
@@ -2523,11 +2323,12 @@ void parser::tag_link(XTag &Tag)
          default:
             if (Tag.Attribs[i].Name.starts_with('@')) link.args.push_back(make_pair(Tag.Attribs[i].Name, Tag.Attribs[i].Value));
             else if (Tag.Attribs[i].Name.starts_with('_')) link.args.push_back(make_pair(Tag.Attribs[i].Name, Tag.Attribs[i].Value));
-            else log.warning("<a|link> unsupported attribute '%s'", Tag.Attribs[i].Name.c_str());
+            else log_warning(&Tag, "doc.unsupported-attribute", attrib_name(Tag.Attribs[i].Name),
+               "<a|link> unsupported attribute '{}'.", Tag.Attribs[i].Name);
       }
    }
 
-   if ((link.type != LINK::NIL) or (!Tag.Children.empty())) {
+   if ((link.type != LINK::NIL) or (not Tag.Children.empty())) {
       // Font modifications are saved with the link as opposed to inserting a new bc_font as it's a lot cleaner
       // this way - especially for run-time modifications.
 
@@ -2551,9 +2352,9 @@ void parser::tag_link(XTag &Tag)
 
 //********************************************************************************************************************
 
-void parser::tag_list(XTag &Tag)
+void parser::tag_list(const tag_view &Tag)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    bc_list list;
 
    list.fill     = m_style.fill; // Default fill matches the current font colour
@@ -2562,33 +2363,34 @@ void parser::tag_list(XTag &Tag)
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
       auto &name  = Tag.Attribs[i].Name;
       auto &value = Tag.Attribs[i].Value;
-      if (iequals("fill", name)) {
+      if ("fill" IS name) {
          list.fill = value;
       }
-      else if (iequals("indent", name)) {
+      else if ("indent" IS name) {
          // Affects the indenting to apply to child items.
          list.block_indent = DUNIT(value, DU::PIXEL);
       }
-      else if (iequals("v-spacing", name)) {
+      else if ("v-spacing" IS name) {
          // Affects the vertical advance from one list-item paragraph to the next.
          // Equivalent to paragraph leading, not v-spacing, which affects each line
          list.v_spacing = DUNIT(value, DU::LINE_HEIGHT);
          if (list.v_spacing.value < 0) list.v_spacing.clear();
       }
-      else if (iequals("type", name)) {
-         if (iequals("bullet", value)) {
+      else if ("type" IS name) {
+         if ("bullet" IS value) {
             list.type = bc_list::BULLET;
          }
-         else if (iequals("ordered", value)) {
+         else if ("ordered" IS value) {
             list.type = bc_list::ORDERED;
             list.item_indent.clear();
          }
-         else if (iequals("custom", value)) {
+         else if ("custom" IS value) {
             list.type = bc_list::CUSTOM;
             list.item_indent.clear();
          }
       }
-      else log.msg("Unknown list attribute '%s'", name.c_str());
+      else log_warning(&Tag, "doc.unsupported-attribute", attrib_name(name),
+         "<list> unsupported attribute '{}'.", name);
    }
 
    auto &stream_list = m_stream->emplace(m_index, list);
@@ -2596,7 +2398,7 @@ void parser::tag_list(XTag &Tag)
 
       // Refer to tag_li() to see how list items are managed
 
-      if (!Tag.Children.empty()) parse_tags(Tag.Children);
+      if (not Tag.Children.empty()) parse_tags(Tag.Children);
 
    m_list_stack.pop();
    m_stream->emplace<bc_list_end>(m_index);
@@ -2607,27 +2409,27 @@ void parser::tag_list(XTag &Tag)
 //********************************************************************************************************************
 // Also see check_para_attrib() for paragraph attributes.
 
-void parser::tag_paragraph(XTag &Tag)
+void parser::tag_paragraph(const tag_view &Tag)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    m_paragraph_depth++;
 
    bc_paragraph para(m_style);
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      if (iequals("align", Tag.Attribs[i].Name)) {
+      if ("align" IS Tag.Attribs[i].Name) {
          auto align = FSO::NIL;
          auto valid = true;
-         if ((iequals(Tag.Attribs[i].Value, "center")) or
-             (iequals(Tag.Attribs[i].Value, "middle"))) {
+         if ((iequals(Tag.Attribs[i].Value, "center")) or (iequals(Tag.Attribs[i].Value, "middle"))) {
             align = FSO::ALIGN_CENTER;
          }
          else if (iequals(Tag.Attribs[i].Value, "right")) {
             align = FSO::ALIGN_RIGHT;
          }
-         else if (!iequals(Tag.Attribs[i].Value, "left")) {
-            log.warning("Alignment type '%s' not supported.", Tag.Attribs[i].Value.c_str());
+         else if (not iequals(Tag.Attribs[i].Value, "left")) {
+            log_warning(&Tag, "doc.invalid-alignment", attrib_name(Tag.Attribs[i].Name),
+               "Alignment type '{}' is not supported.", Tag.Attribs[i].Value);
             valid = false;
          }
 
@@ -2636,14 +2438,14 @@ void parser::tag_paragraph(XTag &Tag)
             para.font.options |= align;
          }
       }
-      else if (iequals("leading", Tag.Attribs[i].Name)) {
+      else if ("leading" IS Tag.Attribs[i].Name) {
          // The leading is a line height multiplier that applies to the first line in the paragraph only.
          // It is typically used for things like headers.
 
          para.leading = DUNIT(Tag.Attribs[i].Value, DU::LINE_HEIGHT, DBL_MIN);
       }
       else if (check_para_attrib(Tag.Attribs[i], &para, para.font));
-      else check_font_attrib(Tag.Attribs[i], para.font);
+      else check_font_attrib(Tag.Attribs[i], para.font, &Tag);
    }
 
    auto &stream_para = m_stream->emplace(m_index, para);
@@ -2659,41 +2461,11 @@ void parser::tag_paragraph(XTag &Tag)
 }
 
 //********************************************************************************************************************
-
-void parser::tag_print(XTag &Tag)
-{
-   pf::Log log(__FUNCTION__);
-
-   // Copy the content from the value attribute into the document stream.  If used inside an object, the data is sent
-   // to that object as XML.
-
-   if (Tag.Attribs.size() > 1) {
-      auto tagname = Tag.Attribs[1].Name.c_str();
-      if (*tagname IS '$') tagname++;
-
-      if (iequals("value", tagname)) {
-         insert_text(Self, m_stream, m_index, Tag.Attribs[1].Value, (m_style.options & FSO::PREFORMAT) != FSO::NIL);
-      }
-      else if (iequals("src", Tag.Attribs[1].Name)) {
-         // This option is only supported in unrestricted mode
-         if ((Self->Flags & DCF::UNRESTRICTED) != DCF::NIL) {
-            CacheFile *cache;
-            if (LoadFile(Tag.Attribs[1].Value.c_str(), LDF::NIL, &cache) IS ERR::Okay) {
-               insert_text(Self, m_stream, m_index, std::string((CSTRING)cache->Data), (m_style.options & FSO::PREFORMAT) != FSO::NIL);
-               UnloadFile(cache);
-            }
-         }
-         else log.warning("Cannot <print src.../> unless in unrestricted mode.");
-      }
-   }
-}
-
-//********************************************************************************************************************
 // Templates can be used to create custom tags.
 
-void parser::tag_template(XTag &Tag)
+void parser::tag_template(const tag_view &Tag)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (m_in_template) return;
 
@@ -2701,584 +2473,58 @@ void parser::tag_template(XTag &Tag)
 
    int n;
    for (n=1; n < std::ssize(Tag.Attribs); n++) {
-      if ((iequals("name", Tag.Attribs[n].Name)) and (!Tag.Attribs[n].Value.empty())) break;
+      if (("name" IS Tag.Attribs[n].Name) and (not Tag.Attribs[n].Value.empty())) break;
    }
 
    if (n >= std::ssize(Tag.Attribs)) {
-      log.warning("A <template> is missing a name attribute.");
+      log_warning(&Tag, "doc.template-missing-name",
+         "A <template> is missing a name attribute.");
       return;
    }
 
-   STRING strxml;
-   if (m_xml->serialise(Tag.ID, XMF::NIL, &strxml) IS ERR::Okay) {
+   std::string strxml;
+   if (!m_xml->serialise(Tag.ID, XMF::NIL, strxml)) {
       // Remove any existing tag that uses the same name.
-      if (Self->TemplateIndex.contains(strihash(Tag.Attribs[n].Value))) {
+      if (Self->TemplateIndex.contains(strhash(Tag.Attribs[n].Value))) {
          Self->Templates->removeTag(Tag.ID, 1);
       }
 
       Self->Templates->insertXML(Self->Templates->Tags[0].ID, XMI::END, strxml, 0);
-      FreeResource(strxml);
 
       Self->RefreshTemplates = true; // Force a refresh of the TemplateIndex because the pointers will be changed
    }
-   else log.warning("Failed to convert template %d to an XML string.", Tag.ID);
+   else log_warning(&Tag, "doc.template-serialise-failed",
+      "Failed to convert template {} to an XML string.", Tag.ID);
 }
 
 //********************************************************************************************************************
 
-ERR parser::calc(const std::string &String, double *Result, std::string &Output)
+void parser::tag_font(const tag_view &Tag)
 {
-   enum SIGN { PLUS=1, MINUS, MULTIPLY, DIVIDE, MODULO };
-
-   if (Result) *Result = 0;
-
-   Output.clear();
-
-   // Search for brackets and translate them first
-
-   std::string in(String);
-   while (true) {
-      // Find the last bracketed reference
-
-      int last_bracket = 0;
-      for (unsigned i=0; i < in.size(); i++) {
-         if (in[i] IS '\'') { // Skip anything in quotes
-            i++;
-            while (in[i]) {
-               if (in[i] IS '\\') {
-                  i++; // Skip backslashes and the following character
-                  if (!in[i]) break;
-               }
-               else if (in[i] IS '\'') break;
-               i++;
-            }
-            if (in[i] IS '\'') i++;
-         }
-         else if (in[i] IS '(') last_bracket = i;
-      }
-
-      if (last_bracket > 0) { // Bracket found, translate its contents
-         int end;
-         for (end=last_bracket+1; (in[end]) and (in[end-1] != ')'); end++);
-         std::string buf(in, last_bracket, end - last_bracket);
-
-         double calc_float;
-         std::string out;
-         calc(buf.c_str()+1, &calc_float, out);
-         in.replace(last_bracket, end - last_bracket, out);
-      }
-      else break;
-   }
-
-   // Perform the calculation
-
-   STRING end;
-   int16_t precision = 9;
-   double total   = 0;
-   double overall = 0;
-   int index     = 0;
-   SIGN sign      = PLUS;
-   bool number    = false;
-   for (unsigned s=0; in[s];) {
-      if (unsigned(in[s]) <= 0x20); // Do nothing with whitespace
-      else if (in[s] IS '\'') {
-         if (number) { // Write the current floating point number to the buffer before the next calculation
-            Output  += write_calc(total, precision);
-            overall += total; // Reset the number
-            total   = 0;
-            number  = false;
-         }
-
-         s++;
-         while (index < int(Output.size())-1) {
-            if (in[s] IS '\\') s++; // Skip the \ character and continue so that we can copy the character immediately after it
-            else if (in[s] IS '\'') break;
-
-            Output += in[s++];
-         }
-      }
-      else if (in[s] IS 'f') { // Fixed floating point precision adjustment
-         s++;
-         precision = -strtol(in.c_str() + s, &end, 10);
-         s += end - in.c_str();
-         continue;
-      }
-      else if (in[s] IS 'p') { // Floating point precision adjustment
-         s++;
-         precision = strtol(in.c_str() + s, &end, 10);
-         s += end - in.c_str();
-         continue;
-      }
-      else if ((in[s] >= '0') and (in[s] <= '9')) {
-         number = true;
-         double fvalue = strtod(in.c_str() + s, &end);
-         s += end - in.c_str();
-
-         if (sign IS MINUS)         total = total - fvalue;
-         else if (sign IS MULTIPLY) total = total * fvalue;
-         else if (sign IS MODULO)   total = F2I(total) % F2I(fvalue);
-         else if (sign IS DIVIDE) {
-            if (fvalue) total = total / fvalue; // NB: Avoid division by zero errors
-         }
-         else total += fvalue;
-
-         sign = PLUS; // The mathematical sign is reset whenever a number is encountered
-         continue;
-      }
-      else if (in[s] IS '-') {
-         if (sign IS MINUS) sign = PLUS; // Handle double-negatives
-         else sign = MINUS;
-      }
-      else if (in[s] IS '+') sign = PLUS;
-      else if (in[s] IS '*') sign = MULTIPLY;
-      else if (in[s] IS '/') sign = DIVIDE;
-      else if (in[s] IS '%') sign = MODULO;
-
-      for (++s; (in[s] & 0xc0) IS 0x80; s++);
-   }
-
-   if (number) Output += write_calc(total, precision);
-   if (Result) *Result = overall + total;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
-This function is used to translate strings that make object and field references using the standard referencing format.
-References are made to objects by enclosing statements within square brackets.  As a result of calling this function,
-all references within the Buffer will be translated to their relevant format.  The Buffer needs to be large enough to
-accommodate these adjustments as it will be expanded during the translation.  It is recommended that the Buffer is at
-least two times the actual length of the string that you are translating.
-
-Valid references can be made to an object by name, ID or relative parameters.  Here are some examples illustrating the
-different variations:
-
-<types type="Reference">
-<type name="[surface]">Name reference.</>
-<type name="[#49302]">ID reference.</>
-<type name="[self]">Relative reference to the object that has the current context, or the document.</>
-</table>
-
-Field references are a slightly different matter and will be converted to the value of the field that they are
-referencing.  A field reference is defined using the object referencing format, but they contain a `.fieldname`
-extension.  Here are some examples:
-
-<pre>
-[surface.width]
-[file.location]
-</pre>
-
-A string such as `[mywindow.height] + [mywindow.width]` could be translated to `255 + 120` for instance.
-
-Simple calculations are possible by enclosing a statement within a `[=...]` section.  For example the aforementioned
-string can be expanded to `[=[mywindow.height] + [mywindow.width]]`, which would give a result of 375.
-
-The escape character for string translation is `$` and should be used as `[$...]`, which prevents everything within the
-square brackets from being translated.  The `[$]` characters will be removed as part of this process unless the
-KEEP_ESCAPE flag is used.  To escape a single right or left bracket, use `[rb]` or `[lb]` respectively.
-
-*********************************************************************************************************************/
-
-// Evaluate object references and calculations
-
-ERR parser::tag_xml_content_eval(std::string &Buffer)
-{
-   pf::Log log(__FUNCTION__);
-   int i;
-
-   // Quick check for translation symbols
-
-   if (Buffer.find('[') IS std::string::npos) return ERR::EmptyString;
-
-   log.traceBranch("%.80s", Buffer.c_str());
-
-   ERR error = ERR::Okay;
-   ERR majorerror = ERR::Okay;
-
-   // Skip to the end of the buffer (translation occurs 'backwards')
-
-   auto pos = std::ssize(Buffer) - 1;
-   while (pos >= 0) {
-      if ((Buffer[pos] IS '[') and ((Buffer[pos+1] IS '@') or (Buffer[pos+1] IS '%'))) {
-         // Ignore arguments, e.g. [@id] or [%id].  It's also useful for ignoring [@attrib] in xpath.
-         pos--;
-      }
-      else if (Buffer[pos] IS '[') {
-         // Make sure that there is a balanced closing bracket
-
-         int end;
-         int balance = 0;
-         for (end=pos; Buffer[end]; end++) {
-            if (Buffer[end] IS '[') balance++;
-            else if (Buffer[end] IS ']') {
-               balance--;
-               if (!balance) break;
-            }
-         }
-
-         if (Buffer[end] != ']') {
-            log.warning("Unbalanced string: %.90s ...", Buffer.c_str());
-            return ERR::InvalidData;
-         }
-
-         if (Buffer[pos+1] IS '=') { // Perform a calculation
-            std::string num;
-            num.assign(Buffer, pos+2, end-(pos+2));
-
-            std::string calcbuffer;
-            double value;
-            calc(num, &value, calcbuffer);
-            Buffer.insert(end-pos+1, calcbuffer);
-         }
-         else if (Buffer[pos+1] IS '$') { // Escape sequence - e.g. translates [$ABC] to ABC.  Note: Use [rb] and [lb] instead for brackets.
-            Buffer.erase(end, 1); // ']'
-            Buffer.erase(pos, 2); // '[$'
-            pos--;
-            continue;
-         }
-         else {
-            std::string name;
-            name.reserve(64);
-
-            for (i=pos+1; (Buffer[i] != '.') and (i < end); i++) {
-               name += std::tolower(Buffer[i]);
-            }
-
-            // Check for [lb] and [rb] escape codes
-
-            char code = 0;
-            if (name IS "rb") code = ']';
-            else if (name IS "lb") code = '[';
-
-            if (code) {
-               Buffer[pos] = code;
-               Buffer.erase(pos+1, 3);
-               pos--;
-               continue;
-            }
-            else {
-               OBJECTID objectid = 0;
-               if (iequals(name, "self")) objectid = CurrentContext()->UID;
-               else FindObject(name.c_str(), CLASSID::NIL, FOF::SMART_NAMES, &objectid);
-
-               if (objectid) {
-                  OBJECTPTR object = nullptr;
-                  if (Buffer[i] IS '.') {
-                     // Get the field from the object
-                     i++;
-
-                     std::string field(Buffer, i, end);
-                     if (AccessObject(objectid, 2000, &object) IS ERR::Okay) {
-                        OBJECTPTR target;
-                        const Field *classfield;
-                        if (((classfield = find_field(object, field, &target))) and (classfield->Flags & FD_STRING)) {
-                           CSTRING str;
-                           if (object->get(classfield->FieldID, str) IS ERR::Okay) {
-                              Buffer.insert(end-pos+1, str);
-                           }
-                        }
-                        else if (CheckAction(object, AC::GetKey) IS ERR::Okay) {
-                           // Get field as an unlisted type and manage any buffer overflow
-                           std::string tbuffer;
-                           tbuffer.reserve(4096);
-repeat:
-                           tbuffer[tbuffer.capacity()-1] = 0;
-                           struct acGetKey var{ field.c_str(), tbuffer.data(), int(tbuffer.size()) };
-                           if (Action(AC::GetKey, object, &var) IS ERR::Okay) {
-                              if (tbuffer[tbuffer.capacity()-1]) {
-                                 tbuffer.reserve(tbuffer.capacity() * 2);
-                                 goto repeat;
-                              }
-                              Buffer.insert(end-pos+1, tbuffer);
-                           }
-                        }
-                        // NB: For fields, error code is always Okay so that the reference evaluates to NULL
-
-                        ReleaseObject(object);
-                     }
-                     else error = ERR::AccessObject;
-                  }
-                  else { // Convert the object reference to an ID
-                     Buffer.insert(end-pos+1, std::move(std::string("#") + std::to_string(objectid)));
-                  }
-               }
-               else {
-                  error = ERR::NoMatchingObject;
-                  log.traceWarning("Failed to find object '%s'", name.c_str());
-               }
-            }
-         }
-
-         if (error != ERR::Okay) {
-            pos--;
-            majorerror = error;
-            error = ERR::Okay;
-         }
-      }
-      else pos--;
-   }
-
-   log.trace("Result: %s", Buffer.c_str());
-
-   return majorerror;
-}
-
-//********************************************************************************************************************
-
-void parser::tag_font(XTag &Tag)
-{
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    auto new_style = m_style;
    bool preformat = false;
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      if (iequals("preformat", Tag.Attribs[i].Name)) {
+      if ("preformat" IS Tag.Attribs[i].Name) {
          new_style.options |= FSO::PREFORMAT;
          preformat = true;
          m_strip_feeds = true;
       }
-      else check_font_attrib(Tag.Attribs[i], new_style);
+      else check_font_attrib(Tag.Attribs[i], new_style, &Tag);
    }
 
    parse_tags_with_style(Tag.Children, new_style);
 
-   if (preformat) trim_preformat(Self);
-}
-
-//********************************************************************************************************************
-
-void parser::tag_object(XTag &Tag)
-{
-   /*
-   pf::Log log(__FUNCTION__);
-
-   // NF::LOCAL is only set when the object is owned by the document
-
-   OBJECTPTR object;
-   if (NewObject(class_id, (Self->CurrentObject) ? NF::NIL : NF::LOCAL, (OBJECTPTR *)&object)) {
-      log.warning("Failed to create object of class #%d.", class_id);
-      return;
-   }
-
-   log.branch("Processing %s object from document tag, owner #%d.", object->Class->ClassName, Self->CurrentObject ? Self->CurrentObject->UID : -1);
-
-   // Setup the callback interception so that we can control the order in which objects draw their graphics to the surface.
-
-   if (Self->CurrentObject) {
-      SetOwner(object, Self->CurrentObject);
-   }
-   else if (!pagetarget.empty()) {
-      auto field_id = strihash(pagetarget);
-      if (Self->BkgdGfx) object->set(field_id, Self->View);
-      else object->set(field_id, Self->Page);
-   }
-
-   for (unsigned i=1; i < Tag.Attribs.size(); i++) {
-      auto argname = Tag.Attribs[i].Name.c_str();
-      while (*argname IS '$') argname++;
-      if (Tag.Attribs[i].Value.empty()) object->set(strihash(argname), "1");
-      else object->set(strihash(argname), Tag.Attribs[i].Value);
-   }
-
-   // Check for the 'data' tag which can be used to send data feed information prior to initialisation.
-   //
-   // <data type="text">Content</data>
-   // <data type="xml" template="TemplateName"/>
-   // <data type="xml" object="[xmlobj]"/>
-   // <data type="xml">Content</data>
-
-   bool customised = false;
-
-   if (!Tag.Children.empty()) {
-      STRING src;
-
-      for (auto &scan : Tag.Children) {
-         if (!iequals("data", scan.Attribs[0].name)) continue;
-
-         if (*e_revert > *s_revert) {
-            while (*e_revert > *s_revert) {
-               *e_revert -= 1;
-               Self->RestoreAttrib[*e_revert].Attrib[0] = Self->RestoreAttrib[*e_revert].String;
-            }
-         }
-         Self->RestoreAttrib.resize(*s_revert);
-
-         *s_revert = Self->RestoreAttrib.size();
-         *e_revert = 0;
-         translate_attrib_args(scan.Attribs);
-         *e_revert = Self->RestoreAttrib.size();
-
-         const std::string *type = scan.attrib("type");
-
-         if ((!type) or (iequals("text", type))) {
-            if (scan.Children.empty()) continue;
-            std::string buffer;
-            xmlGetContent(scan, buffer);
-            if (!buffer.empty()) acDataText(object, buffer.c_str());
-         }
-         else if (iequals("xml", type)) {
-            customised = true;
-
-            if (auto t = scan.attrib("template")) {
-               for (auto &tmp : Self->Templates->Tags) {
-                  for (unsigned i=1; i < tmp.Attribs.size(); i++) {
-                     if ((iequals("name", tmp.Attribs[i].name)) and (iequals(t, tmp.Attribs[i].Value))) {
-                        if (!xmlSerialise(Self->Templates, tmp.Children[0].ID, XMF::INCLUDE_SIBLINGS|XMF::STRIP_CDATA, &content)) {
-                           acDataXML(object, content.c_str());
-                        }
-
-                        break;
-                     }
-                  }
-               }
-            }
-            else if (auto src = scan.attrib("object")) {
-               OBJECTID objectid;
-               if (!FindObject(src.c_str(), 0, FOF::SMART_NAMES, &objectid)) {
-                  if ((objectid) and (valid_objectid(Self, objectid))) {
-                     objXML *objxml;
-                     if (!AccessObject(objectid, 3000, &objxml)) {
-                        if (objxml->classID() IS CLASSID::XML) {
-                           if (!xmlSerialise(objxml, 0, XMF::INCLUDE_SIBLINGS|XMF::STRIP_CDATA, &content)) {
-                              acDataXML(object, content.c_str());
-                           }
-                        }
-                        else log.warning("Cannot extract XML data from a non-XML object.");
-                        ReleaseObject(objxml);
-                     }
-                  }
-                  else log.warning("Invalid object reference '%s'", src);
-               }
-               else log.warning("Unable to find object '%s'", src);
-            }
-            else {
-               if (scan.Children.empty()) continue;
-               if (!xmlSerialise(XML, scan.Children.ID, XMF::INCLUDE_SIBLINGS|XMF::STRIP_CDATA, &content)) {
-                  acDataXML(object, content.c_str());
-               }
-            }
-         }
-         else log.warning("Unsupported data type '%s'", type);
-      }
-   }
-
-   // Feeds are applied to invoked objects, whereby the object's class name matches a feed.
-
-   if ((!customised) and (Template)) {
-      STRING content;
-      if (!xmlSerialise(Self->Templates, Template->Children[0].ID, XMF::INCLUDE_SIBLINGS|XMF::STRIP_CDATA, &content)) {
-         acDataXML(object, content);
-         FreeResource(content);
-      }
-   }
-
-   if (!InitObject(object)) {
-      bc_vector escobj;
-
-      if (Self->Invisible) acHide(object); // Hide the object if it's in an invisible section
-
-      // Child tags are processed as normal, but are applied with respect to the object.  Any tags that reflect
-      // document content are passed to the object as XML.
-
-      if (!Tag.Children.empty()) {
-         pf::Log log(__FUNCTION__);
-         log.traceBranch("Processing child tags for object #%d.", object->UID);
-         auto prevobject = Self->CurrentObject;
-         Self->CurrentObject = object;
-         parse_tags(Tag.Children, Flags & (~IPF::FILTER_ALL));
-         Self->CurrentObject = prevobject;
-      }
-
-      if (&Children != &Tag.Children) {
-         pf::Log log(__FUNCTION__);
-         log.traceBranch("Processing further child tags for object #%d.", object->UID);
-         auto prevobject = Self->CurrentObject;
-         Self->CurrentObject = object;
-         parse_tags(Children, Flags & (~IPF::FILTER_ALL));
-         Self->CurrentObject = prevobject;
-      }
-
-      // The object can self-destruct in ClosingTag(), so check that it still exists before inserting it into the text stream.
-
-      if (!CheckObjectExists(object->UID)) {
-         if (Self->BkgdGfx) {
-            auto &resource = Self->Resources.emplace_back(object->UID, RTD::OBJECT_UNLOAD);
-            resource.class_id = class_id;
-         }
-         else {
-            escobj.object_id = object->UID;
-            escobj.class_id  = object->classID();
-            escobj.in_line = false;
-            if (Self->CurrentObject) escobj.owned = true;
-
-            // By default objects are assumed to be in the background (thus not embedded as part of the text stream).
-            // This section is intended to confirm the graphical state of the object.
-
-            if (object->classID() IS CLASSID::VECTOR) {
-               //if (layout->Layout & (LAYOUT_BACKGROUND|LAYOUT_FOREGROUND));
-               //else if (layout->Layout & LAYOUT_EMBEDDED) escobj.Inline = true;
-            }
-            else escobj.in_line = true; // If the layout object is not present, the object is managing its own graphics and likely is embedded (button, combobox, checkbox etc are like this)
-
-            m_stream->emplace(Index, escobj);
-
-            if (Self->ObjectCache) {
-               switch (object->classID()) {
-                  // The following class types can be cached
-                  case CLASSID::XML:
-                  case CLASSID::FILE:
-                  case CLASSID::CONFIG:
-                  case CLASSID::COMPRESSION:
-                  case CLASSID::SCRIPT: {
-                     Self->Resources.emplace_back(object->UID, RTD::PERSISTENT_OBJECT);
-                     break;
-                  }
-
-                  // The following class types use their own internal caching system
-
-                  default:
-                     log.warning("Cannot cache object of class type '%s'", object->Class->ClassName);
-                  //case CLASSID::IMAGE:
-                  //   auto &res = Self->Resources.emplace_back(object->UID, RTD::OBJECT_UNLOAD);
-                     break;
-               }
-            }
-            else {
-               auto &res = Self->Resources.emplace_back(object->UID, RTD::OBJECT_UNLOAD);
-               res.class_id = class_id;
-            }
-
-            // If the object is inline, we will allow whitespace to immediately follow the object.
-
-            if (escobj.in_line) Self->NoWhitespace = false;
-
-            // Add the object to the tab-list if it is in our list of classes that support keyboard input.
-
-            static const CLASSID classes[] = { CLASSID::VECTOR };
-
-            for (unsigned i=0; i < std::ssize(classes); i++) {
-               if (classes[i] IS class_id) {
-                  add_tabfocus(Self, TT::OBJECT, object->UID);
-                  break;
-               }
-            }
-         }
-      }
-      else log.trace("Object %d self-destructed.", object->UID);
-   }
-   else {
-      FreeResource(object);
-      log.warning("Failed to initialise object of class $%.8x", class_id);
-   }
-      */
+   if (preformat) trim_preformat();
 }
 
 //********************************************************************************************************************
 // The use of pre will turn off the automated whitespace management so that all whitespace is parsed as-is.  It does
 // not switch to a monospaced font.
 
-void parser::tag_pre(objXML::TAGS &Children)
+void parser::tag_pre(const objXML::TAGS &Children)
 {
    auto save = m_strip_feeds;
    m_strip_feeds = true;
@@ -3292,7 +2538,7 @@ void parser::tag_pre(objXML::TAGS &Children)
 
    m_strip_feeds = save;
 
-   trim_preformat(Self);
+   trim_preformat();
 }
 
 //********************************************************************************************************************
@@ -3307,9 +2553,9 @@ void parser::tag_pre(objXML::TAGS &Children)
 //
 // Only the first section of content enclosed within the <script> tag (CDATA) is accepted by the script parser.
 
-void parser::tag_script(XTag &Tag)
+void parser::tag_script(const tag_view &Tag)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    objScript *script;
    ERR error;
 
@@ -3319,27 +2565,28 @@ void parser::tag_script(XTag &Tag)
    bool persistent = false;
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      auto tagname = Tag.Attribs[i].Name.c_str();
-      if (*tagname IS '$') tagname++;
-      if (*tagname IS '@') continue; // Variables are set later
+      auto tagname = std::string_view(Tag.Attribs[i].Name);
+      if (tagname.starts_with('$')) tagname.remove_prefix(1);
+      if (tagname.starts_with('@')) continue; // Variables are set later
 
-      if (iequals("type", tagname)) {
+      if ("type" IS tagname) {
          type = Tag.Attribs[i].Value;
       }
-      else if (iequals("persistent", tagname)) {
+      else if ("persistent" IS tagname) {
          // A script that is marked as persistent will survive refreshes
          persistent = true;
       }
-      else if (iequals("src", tagname)) {
+      else if ("src" IS tagname) {
          if (safe_file_path(Self, Tag.Attribs[i].Value)) {
             src = Tag.Attribs[i].Value;
          }
          else {
-            log.warning("Security violation - cannot set script src to: %s", Tag.Attribs[i].Value.c_str());
+            log_error(&Tag, ERR::NoPermission, "doc.script-src-denied", attrib_name(Tag.Attribs[i].Name),
+               "Security violation - cannot set script src to '{}'.", Tag.Attribs[i].Value);
             return;
          }
       }
-      else if (iequals("cache-file", tagname)) {
+      else if ("cache-file" IS tagname) {
          // Currently the security risk of specifying a cache file is that you could overwrite files on the user's PC,
          // so for the time being this requires unrestricted mode.
 
@@ -3347,31 +2594,34 @@ void parser::tag_script(XTag &Tag)
             cachefile = Tag.Attribs[i].Value;
          }
          else {
-            log.warning("Security violation - cannot set script cachefile to: %s", Tag.Attribs[i].Value.c_str());
+            log_error(&Tag, ERR::NoPermission, "doc.script-cachefile-denied", attrib_name(Tag.Attribs[i].Name),
+               "Security violation - cannot set script cachefile to '{}'.", Tag.Attribs[i].Value);
             return;
          }
       }
-      else if (iequals("name", tagname)) {
+      else if ("name" IS tagname) {
          name = Tag.Attribs[i].Value;
       }
-      else if (iequals("default", tagname)) {
+      else if ("default" IS tagname) {
          defaultscript = true;
       }
-      else if (iequals("external", tagname)) {
+      else if ("external" IS tagname) {
          // Reference an external script as the default for function calls
          if ((Self->Flags & DCF::UNRESTRICTED) != DCF::NIL) {
             OBJECTID id;
-            if (FindObject(Tag.Attribs[i].Value.c_str(), CLASSID::NIL, FOF::NIL, &id) IS ERR::Okay) {
+            if (!FindObject(Tag.Attribs[i].Value.c_str(), CLASSID::NIL, &id)) {
                Self->DefaultScript = (objScript *)GetObjectPtr(id);
                return;
             }
             else {
-               log.warning("Failed to find external script '%s'", Tag.Attribs[i].Value.c_str());
+               log_warning(&Tag, "doc.script-reference-missing", attrib_name(Tag.Attribs[i].Name),
+                  "Failed to find external script '{}'.", Tag.Attribs[i].Value);
                return;
             }
          }
          else {
-            log.warning("Security violation - cannot reference external script '%s'", Tag.Attribs[i].Value.c_str());
+            log_error(&Tag, ERR::NoPermission, "doc.script-reference-denied", attrib_name(Tag.Attribs[i].Name),
+               "Security violation - cannot reference external script '{}'.", Tag.Attribs[i].Value);
             return;
          }
       }
@@ -3380,9 +2630,9 @@ void parser::tag_script(XTag &Tag)
    if ((persistent) and (name.empty())) name = "mainscript";
 
    if (src.empty()) {
-      if ((Tag.Children.empty()) or (!Tag.Children[0].Attribs[0].Name.empty()) or (Tag.Children[0].Attribs[0].Value.empty())) {
+      if ((Tag.Children.empty()) or (not Tag.Children[0].Attribs[0].Name.empty()) or (Tag.Children[0].Attribs[0].Value.empty())) {
          // Ignore if script holds no content
-         log.warning("<script/> tag does not contain content.");
+         log_warning(&Tag, "doc.script-missing-content", "<script/> tag does not contain content.");
          return;
       }
    }
@@ -3395,88 +2645,97 @@ void parser::tag_script(XTag &Tag)
             script = (objScript *)GetObjectPtr(resource.object_id);
             if (iequals(name, script->Name)) {
                log.msg("Persistent script discovered.");
-               if ((!Self->DefaultScript) or (defaultscript)) Self->DefaultScript = script;
+               if ((not Self->DefaultScript) or (defaultscript)) Self->DefaultScript = script;
                return;
             }
          }
       }
    }
 
-   if (iequals("tiri", type)) {
-      error = NewLocalObject(CLASSID::TIRI, &script);
+   if ("tiri" IS type) {
+      if (error = NewLocalObject(CLASSID::TIRI, &script); error != ERR::Okay) {
+         log_error(&Tag, error, "doc.script-create-failed", "Failed to create a script object for <script type=\"{}\">.", type);
+         return;
+      }
    }
    else {
-      error = ERR::NoSupport;
-      log.warning("Unsupported script type '%s'", type.c_str());
+      log_error(&Tag, ERR::NoSupport, "doc.unsupported-script-type", "Unsupported script type '{}'.", type);
+      return;
    }
 
-   if (error IS ERR::Okay) {
-      if (!name.empty()) SetName(script, name.c_str());
+   if (not name.empty()) SetName(script, name.c_str());
 
-      if (!src.empty()) script->setPath(src);
-      else {
-         std::string content = xml::GetContent(Tag);
-         if (!content.empty()) script->setStatement(content);
+   if (not src.empty()) script->setPath(src);
+   else {
+      std::string content = xml::GetContent(*Tag.Source);
+      if (not content.empty()) script->setStatement(content);
+   }
+
+   if (not cachefile.empty()) script->setCacheFile(cachefile);
+
+   // Object references are to be limited in scope to the Document object
+
+   //script->setObjectScope(Self->Head.UID);
+
+   // Pass custom arguments in the script tag
+
+   for (unsigned i=1; i < Tag.Attribs.size(); i++) {
+      auto tagname = std::string_view(Tag.Attribs[i].Name);
+      if (tagname.starts_with('$')) tagname.remove_prefix(1);
+      if (tagname.starts_with('@')) {
+         tagname.remove_prefix(1);
+         acSetKey(script, tagname.data(), Tag.Attribs[i].Value.c_str());
       }
+   }
 
-      if (!cachefile.empty()) script->setCacheFile(cachefile);
+   if (auto init_error = InitObject(script); init_error != ERR::Okay) {
+      log_error(&Tag, init_error, "doc.script-init-failed", "Failed to initialise script '{}'.", name.empty() ? type : name);
+      FreeResource(script);
+      return;
+   }
 
-      // Object references are to be limited in scope to the Document object
+   // Pass document arguments to the script
 
-      //script->setObjectScope(Self->Head.UID);
+   script->Vars.insert(Self->Vars.begin(), Self->Vars.end());
+   script->Vars.insert(Self->Params.begin(), Self->Params.end());
 
-      // Pass custom arguments in the script tag
+   if (auto err = acActivate(script); err != ERR::Okay) {
+      log_error(&Tag, err, "doc.script-activate-failed", "Failed to activate script '{}'.", name.empty() ? type : name);
+      FreeResource(script);
+      return;
+   }
 
-      for (unsigned i=1; i < Tag.Attribs.size(); i++) {
-         auto tagname = Tag.Attribs[i].Name.c_str();
-         if (*tagname IS '$') tagname++;
-         if (*tagname IS '@') acSetKey(script, tagname+1, Tag.Attribs[i].Value.c_str());
+   Self->Resources.emplace_back(script->UID, persistent ? RTD::PERSISTENT_SCRIPT : RTD::OBJECT_UNLOAD_DELAY);
+
+   if ((not Self->DefaultScript) or (defaultscript)) {
+      log.msg("Script #%d is the default script for this document.", script->UID);
+      Self->DefaultScript = script;
+   }
+
+   // Any results returned from the script are processed as XML
+
+   std::span<std::string> results;
+   if ((!script->getResults(results)) and (not results.empty())) {
+      auto xmlinc = objXML::create::global(fl::Statement(results[0]),
+         fl::Flags(XMF::PARSE_HTML|XMF::STRIP_HEADERS));
+      if (xmlinc) {
+         auto old_xml = change_xml(xmlinc);
+         parse_tags(xmlinc->Tags);
+         change_xml(old_xml);
+
+         // Add the created XML object to the document rather than destroying it
+
+         Self->Resources.emplace_back(xmlinc->UID, RTD::OBJECT_TEMP);
       }
-
-      if (InitObject(script) IS ERR::Okay) {
-         // Pass document arguments to the script
-
-         KEYVALUE *vs;
-         if ((script->get(FID_Variables, vs) IS ERR::Okay) and (vs) and (vs->size() > 0)) {
-            Self->Vars   = *vs;
-            Self->Params = *vs;
-         }
-
-         if (acActivate(script) IS ERR::Okay) { // Persistent scripts survive refreshes.
-            Self->Resources.emplace_back(script->UID, persistent ? RTD::PERSISTENT_SCRIPT : RTD::OBJECT_UNLOAD_DELAY);
-
-            if ((!Self->DefaultScript) or (defaultscript)) {
-               log.msg("Script #%d is the default script for this document.", script->UID);
-               Self->DefaultScript = script;
-            }
-
-            // Any results returned from the script are processed as XML
-
-            CSTRING *results;
-            int size;
-            if ((script->get(FID_Results, results, size) IS ERR::Okay) and (size > 0)) {
-               auto xmlinc = objXML::create::global(fl::Statement(results[0]), fl::Flags(XMF::PARSE_HTML|XMF::STRIP_HEADERS));
-               if (xmlinc) {
-                  auto old_xml = change_xml(xmlinc);
-                  parse_tags(xmlinc->Tags);
-                  change_xml(old_xml);
-
-                  // Add the created XML object to the document rather than destroying it
-
-                  Self->Resources.emplace_back(xmlinc->UID, RTD::OBJECT_TEMP);
-               }
-            }
-         }
-         else FreeResource(script);
-      }
-      else FreeResource(script);
+      else log_error(&Tag, ERR::Syntax, "doc.script-result-xml-parse-failed",
+         "<script/> returned content that could not be parsed as XML/RIPL.");
    }
 }
 
 //********************************************************************************************************************
 // Supports FSO::UNDERLINE and named styles
 
-void parser::tag_font_style(objXML::TAGS &Children, FSO StyleFlag, std::string_view StyleName)
+void parser::tag_font_style(const objXML::TAGS &Children, FSO StyleFlag, std::string_view StyleName)
 {
    if (((m_style.options & StyleFlag) != StyleFlag) or (m_style.style != StyleName)) {
       auto new_status = m_style;
@@ -3490,12 +2749,12 @@ void parser::tag_font_style(objXML::TAGS &Children, FSO StyleFlag, std::string_v
 //********************************************************************************************************************
 // List item parser.  List items are essentially paragraphs with automated indentation management.
 
-void parser::tag_li(XTag &Tag)
+void parser::tag_li(const tag_view &Tag)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (m_list_stack.empty()) {
-      log.warning("<li> not used inside a <list> tag.");
+      log_warning(&Tag, "doc.li-outside-list", "<li> was not used inside a <list> tag.");
       return;
    }
 
@@ -3506,13 +2765,13 @@ void parser::tag_li(XTag &Tag)
    para.item_indent = list->item_indent;
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      auto tagname = Tag.Attribs[i].Name.c_str();
-      if (*tagname IS '$') tagname++;
+      std::string_view tagname = Tag.Attribs[i].Name;
+      if (tagname.starts_with('$')) tagname.remove_prefix(1);
 
-      if (iequals("value", tagname)) {
+      if ("value" IS tagname) {
          para.value = Tag.Attribs[i].Value;
       }
-      else if (iequals("aggregate", tagname)) {
+      else if ("aggregate" IS tagname) {
          if (Tag.Attribs[i].Value IS "true") para.aggregate = true;
          else if (Tag.Attribs[i].Value IS "1") para.aggregate = true;
       }
@@ -3521,7 +2780,7 @@ void parser::tag_li(XTag &Tag)
 
    m_paragraph_depth++;
 
-   if ((list->type IS bc_list::CUSTOM) and (!para.value.empty())) {
+   if ((list->type IS bc_list::CUSTOM) and (not para.value.empty())) {
       auto &stream_para = m_stream->emplace(m_index, para);
 
          parse_tags_with_embedded_style(Tag.Children, stream_para.font);
@@ -3564,42 +2823,52 @@ void parser::tag_li(XTag &Tag)
 }
 
 //********************************************************************************************************************
-
-void parser::tag_repeat(XTag &Tag)
+void parser::tag_repeat(const tag_view &Tag)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    std::string index_name;
-   int loop_start = 0, loop_end = 0, count = 0, step  = 0;
+   int loop_start = 0, loop_end = 0, count = 0, step = 0;
+   bool have_end = false;
+   bool have_count = false;
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      if (iequals("start", Tag.Attribs[i].Name)) {
+      if ("start" IS Tag.Attribs[i].Name) {
          loop_start = std::stoi(Tag.Attribs[i].Value);
          if (loop_start < 0) loop_start = 0;
       }
-      else if (iequals("count", Tag.Attribs[i].Name)) {
+      else if ("count" IS Tag.Attribs[i].Name) {
          count = std::stoi(Tag.Attribs[i].Value);
          if (count < 0) {
-            log.warning("Invalid count value of %d", count);
+            log_warning(&Tag, "doc.invalid-repeat-count", attrib_name(Tag.Attribs[i].Name),
+               "Invalid count value of {}.", count);
             return;
          }
+         have_count = true;
       }
-      else if (iequals("end", Tag.Attribs[i].Name)) {
-         loop_end = std::stoi(Tag.Attribs[i].Value) + 1;
+      else if ("end" IS Tag.Attribs[i].Name) {
+         loop_end = std::stoi(Tag.Attribs[i].Value);
+         have_end = true;
       }
-      else if (iequals("step", Tag.Attribs[i].Name)) {
+      else if ("step" IS Tag.Attribs[i].Name) {
          step = std::stoi(Tag.Attribs[i].Value);
       }
-      else if (iequals("index", Tag.Attribs[i].Name)) {
+      else if ("index" IS Tag.Attribs[i].Name) {
          // If an index name is specified, the programmer will need to refer to it as [@indexname] and [%index] will
          // remain unchanged from any parent repeat loop.
 
          index_name = Tag.Attribs[i].Value;
       }
+      else if ("select" IS Tag.Attribs[i].Name) {
+         log_warning(&Tag, "doc.repeat-select-unsupported", attrib_name(Tag.Attribs[i].Name),
+            "<repeat select=\"...\"> is not supported. Use <for-each select=\"...\"> for sequence iteration.");
+         Self->Error = ERR::InvalidData;
+         return;
+      }
    }
 
-   if (!step) {
-      if (loop_end < loop_start) step = -1;
+   if (not step) {
+      if ((have_end) and (loop_end < loop_start)) step = -1;
       else step = 1;
    }
 
@@ -3608,7 +2877,19 @@ void parser::tag_repeat(XTag &Tag)
    //
    // If the user set both count and end attributes, the count attribute will be given the priority here.
 
-   if (count > 0) loop_end = loop_start + (count * step);
+   if (have_count) {
+      if (count IS 0) return;
+      auto checked_end = int64_t(loop_start) + (int64_t(count) * int64_t(step));
+      if ((checked_end < int64_t((std::numeric_limits<int>::min)())) or
+          (checked_end > int64_t((std::numeric_limits<int>::max)()))) {
+         log_warning(&Tag, "doc.invalid-repeat-count", attrib_name("count"),
+            "Repeat count produces an out-of-range end value.");
+         return;
+      }
+      loop_end = int(checked_end);
+      have_end = true;
+   }
+   else if (not have_end) return;
 
    if (step > 0) {
       if (loop_end < loop_start) step = -step;
@@ -3617,28 +2898,48 @@ void parser::tag_repeat(XTag &Tag)
 
    log.traceBranch("Performing a repeat loop (start: %d, end: %d, step: %d).", loop_start, loop_end, step);
 
-   auto save_index = m_loop_index;
+   auto loop_count = compute_numeric_loop_count(loop_start, loop_end, step);
+   if (loop_count <= 0) return;
 
-   while (loop_start < loop_end) {
-      if (index_name.empty()) m_loop_index = loop_start;
-      else acSetKey(Self, index_name.c_str(), std::to_string(loop_start).c_str());
+   loop_frame frame;
+   frame.index = loop_start;
+   frame.iteration = 0;
+   frame.start = loop_start;
+   frame.end = loop_end;
+   frame.step = step;
+   frame.count = loop_count;
+   frame.count_known = true;
+   frame.end_known = true;
+   frame.alias_name = index_name;
 
-      parse_tags(Tag.Children);
-      loop_start += step;
+   loop_guard loop(this, frame);
+
+   while (auto active_loop = loop.frame()) {
+      if (not loop_index_in_range(active_loop->index, active_loop->end, active_loop->step)) break;
+
+      auto result = parse_tags(Tag.Children);
+      if (Self->Error != ERR::Okay) break;
+      if ((result & TRF::BREAK) != TRF::NIL) break;
+
+      active_loop = loop.frame();
+      if (not active_loop) break;
+
+      active_loop->index += active_loop->step;
+      active_loop->iteration++;
+
+      if ((result & TRF::CONTINUE) != TRF::NIL) continue;
    }
-
-   if (index_name.empty()) m_loop_index = save_index;
 
    log.trace("insert_child:","Repeat loop ends.");
 }
 
 //********************************************************************************************************************
-// <table columns="10%,90%" width="100" height="100" fill="rgb(128,128,128)">
+// <table columns="10%,90%" width="100" height="100" fill="oklch(0.600 0.000 89.876)">
 //  <row><cell>Activate<brk/>This activates the object.</cell></row>
 //  <row><cell span="2">Reset</cell></row>
 // </table>
 //
-// <table width="100" height="100" fill="rgb(128,128,128)">
+// <table width="100" height="100" fill="oklch(0.600 0.000 89.876)">
 //  <cell>Activate</cell><cell>This activates the object.</cell>
 //  <cell colspan="2">Reset</cell>
 // </table>
@@ -3647,9 +2948,9 @@ void parser::tag_repeat(XTag &Tag)
 // (repeat, if statements, etc).  The table byte code is typically generated as SCODE::TABLE_START, SCODE::ROW,
 // SCODE::CELL..., SCODE::ROW_END, SCODE::TABLE_END.
 
-void parser::tag_table(XTag &Tag)
+void parser::tag_table(const tag_view &Tag)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    auto &table = m_stream->emplace<bc_table>(m_index);
    table.min_width  = DUNIT(1, DU::PIXEL);
@@ -3658,7 +2959,7 @@ void parser::tag_table(XTag &Tag)
    std::string columns;
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
       auto &value = Tag.Attribs[i].Value;
-      switch (strihash(Tag.Attribs[i].Name)) {
+      switch (strhash(Tag.Attribs[i].Name)) {
          case HASH_columns:
             // Column preferences are processed only when the end of the table marker has been reached.
             columns = value;
@@ -3699,12 +3000,15 @@ void parser::tag_table(XTag &Tag)
             break;
 
          case HASH_align:
-            switch(strihash(value)) {
+            switch(strhash(value)) {
                case HASH_left:   table.align = ALIGN::LEFT; break;
                case HASH_right:  table.align = ALIGN::RIGHT; break;
                case HASH_center: table.align = ALIGN::HORIZONTAL; break;
                case HASH_middle: table.align = ALIGN::HORIZONTAL; break; // synonym
-               default: log.warning("Invalid alignment value '%s'", value.c_str()); break;
+               default:
+                  log_warning(&Tag, "doc.invalid-alignment", attrib_name(Tag.Attribs[i].Name),
+                     "Invalid alignment value '{}'.", value);
+                  break;
             }
             break;
 
@@ -3725,31 +3029,39 @@ void parser::tag_table(XTag &Tag)
 
    m_table_stack.pop();
 
-   if (!columns.empty()) { // The columns value, if supplied is arranged as a CSV list of column widths
-      std::vector<std::string> list;
-      for (unsigned i=0; i < columns.size(); ) {
-         auto end = columns.find(',', i);
-         if (end IS std::string::npos) end = columns.size();
-         auto val = columns.substr(i, end-i);
-         trim(val);
-         list.push_back(val);
-         i = end + 1;
-      }
+   if (not columns.empty()) { // The columns value, if supplied is arranged as a CSV list of column widths
+      size_t parsed_columns = 0;
+      auto remaining = std::string_view(columns);
+      for (; (parsed_columns < table.columns.size()) and (not remaining.empty()); parsed_columns++) {
+         auto end = remaining.find(',');
+         auto value = (end IS std::string_view::npos) ? remaining : remaining.substr(0, end);
 
-      size_t i;
-      for (i=0; (i < table.columns.size()) and (i < list.size()); i++) {
-         table.columns[i].preset_width = strtod(list[i].c_str(), nullptr);
-         if (list[i].find_first_of('%') != std::string::npos) {
-            table.columns[i].preset_width *= 0.01;
-            table.columns[i].preset_width_rel = true;
-            if ((table.columns[i].preset_width < 0.0000001) or (table.columns[i].preset_width > 1.0)) {
-               log.warning("A <table> column value is invalid.");
+         auto start_trim = value.find_first_not_of(" \t\f\v\n\r");
+         if (start_trim IS std::string_view::npos) value = std::string_view();
+         else {
+            auto end_trim = value.find_last_not_of(" \t\f\v\n\r");
+            value = value.substr(start_trim, (end_trim - start_trim) + 1);
+         }
+
+         auto column_value = std::string(value);
+         table.columns[parsed_columns].preset_width = strtod(column_value.c_str(), nullptr);
+         if (value.find('%') != std::string_view::npos) {
+            table.columns[parsed_columns].preset_width *= 0.01;
+            table.columns[parsed_columns].preset_width_rel = true;
+            if ((table.columns[parsed_columns].preset_width < 0.0000001) or (table.columns[parsed_columns].preset_width > 1.0)) {
+               log_warning(&Tag, "doc.invalid-table-column", "A <table> column value is invalid.");
                Self->Error = ERR::InvalidDimension;
             }
          }
+
+         if (end IS std::string_view::npos) break;
+         remaining.remove_prefix(end + 1);
       }
 
-      if (i < table.columns.size()) log.warning("Warning - columns attribute '%s' did not define %d columns.", columns.c_str(), int(table.columns.size()));
+      if (parsed_columns < table.columns.size()) {
+         log_warning(&Tag, "doc.incomplete-table-columns", attrib_name("columns"),
+            "columns attribute '{}' did not define all {} columns.", columns, int(table.columns.size()));
+      }
    }
 
    bc_table_end end;
@@ -3760,24 +3072,23 @@ void parser::tag_table(XTag &Tag)
 
 //********************************************************************************************************************
 
-void parser::tag_row(XTag &Tag)
+void parser::tag_row(const tag_view &Tag)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (m_table_stack.empty()) {
-      log.warning("<row> not defined inside <table> section.");
-      Self->Error = ERR::InvalidData;
+      log_error(&Tag, ERR::InvalidData, "doc.row-outside-table", "<row> is not defined inside a <table> section.");
       return;
    }
 
    bc_row escrow;
 
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      if (iequals("height", Tag.Attribs[i].Name)) {
+      if ("height" IS Tag.Attribs[i].Name) {
          escrow.min_height = std::clamp(strtod(Tag.Attribs[i].Value.c_str(), nullptr), 0.0, 4000.0);
       }
-      else if (iequals("fill", Tag.Attribs[i].Name))   escrow.fill   = Tag.Attribs[i].Value;
-      else if (iequals("stroke", Tag.Attribs[i].Name)) escrow.stroke = Tag.Attribs[i].Value;
+      else if ("fill" IS Tag.Attribs[i].Name)   escrow.fill   = Tag.Attribs[i].Value;
+      else if ("stroke" IS Tag.Attribs[i].Name) escrow.stroke = Tag.Attribs[i].Value;
    }
 
    auto &table = m_table_stack.top();
@@ -3787,7 +3098,7 @@ void parser::tag_row(XTag &Tag)
    table.table->rows++;
    table.row_col = 0;
 
-   if (!Tag.Children.empty()) {
+   if (not Tag.Children.empty()) {
       parse_tags(Tag.Children, IPF::NO_CONTENT|IPF::FILTER_ROW);
    }
 
@@ -3801,32 +3112,31 @@ void parser::tag_row(XTag &Tag)
 
 //********************************************************************************************************************
 
-void parser::tag_cell(XTag &Tag)
+void parser::tag_cell(const tag_view &Tag)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    auto new_style = m_style;
-   static uint8_t edit_recurse = 0;
 
    if (m_table_stack.empty()) {
-      log.warning("<cell> not defined inside <table> section.");
-      Self->Error = ERR::InvalidData;
+      log_error(&Tag, ERR::InvalidData, "doc.cell-outside-table",
+         "<cell> is not defined inside a <table> section.");
       return;
    }
 
-   bc_cell cell(glUID++, m_table_stack.top().row_col);
+   bc_cell cell(alloc_uid(), m_table_stack.top().row_col);
    bool select = false;
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      switch (strihash(Tag.Attribs[i].Name)) {
+      switch (strhash(Tag.Attribs[i].Name)) {
          case HASH_border: {
             std::vector<std::string> list;
-            pf::split(Tag.Attribs[i].Value, std::back_inserter(list));
+            kt::split(Tag.Attribs[i].Value, std::back_inserter(list));
 
             for (auto &v : list) {
-               if (iequals("all", v))         cell.border = CB::ALL;
-               else if (iequals("top", v))    cell.border |= CB::TOP;
-               else if (iequals("left", v))   cell.border |= CB::LEFT;
-               else if (iequals("bottom", v)) cell.border |= CB::BOTTOM;
-               else if (iequals("right", v))  cell.border |= CB::RIGHT;
+               if ("all" IS v)         cell.border = CB::ALL;
+               else if ("top" IS v)    cell.border |= CB::TOP;
+               else if ("left" IS v)   cell.border |= CB::LEFT;
+               else if ("bottom" IS v) cell.border |= CB::BOTTOM;
+               else if ("right" IS v)  cell.border |= CB::RIGHT;
             }
 
             break;
@@ -3841,15 +3151,15 @@ void parser::tag_cell(XTag &Tag)
             break;
 
          case HASH_edit:
-            if (edit_recurse) {
-               log.warning("Edit cells cannot be embedded recursively.");
-               Self->Error = ERR::Recursion;
+            if (m_edit_recurse) {
+               log_error(&Tag, ERR::Recursion, "doc.edit-cell-recursion", "Edit cells cannot be embedded recursively.");
                return;
             }
             cell.edit_def = Tag.Attribs[i].Value;
 
-            if (!Self->EditDefs.contains(Tag.Attribs[i].Value)) {
-               log.warning("Edit definition '%s' does not exist.", Tag.Attribs[i].Value.c_str());
+            if (not Self->EditDefs.contains(Tag.Attribs[i].Value)) {
+               log_warning(&Tag, "doc.missing-edit-definition", attrib_name(Tag.Attribs[i].Name),
+                  "Edit definition '{}' does not exist.", Tag.Attribs[i].Value);
                cell.edit_def.clear();
             }
             break;
@@ -3896,26 +3206,27 @@ void parser::tag_cell(XTag &Tag)
       }
    }
 
-   if (!cell.edit_def.empty()) edit_recurse++;
-
    // Edit sections enforce preformatting, which means that all whitespace entered by the user will be taken
    // into account.  The following check sets FSO::PREFORMAT if it hasn't been set already.
 
    auto cell_index = m_index;
 
-   if (!Tag.Children.empty()) {
+   if (not Tag.Children.empty()) {
       Self->NoWhitespace = true; // Reset whitespace flag: false allows whitespace at the start of the cell, true prevents whitespace
 
-      if ((!cell.edit_def.empty()) and ((m_style.options & FSO::PREFORMAT) IS FSO::NIL)) {
+      if ((not cell.edit_def.empty()) and ((m_style.options & FSO::PREFORMAT) IS FSO::NIL)) {
          new_style.options |= FSO::PREFORMAT;
       }
 
       // Cell content is managed in an internal stream
 
       parser parse(Self, cell.stream);
+      if (not cell.edit_def.empty()) parse.m_edit_recurse = m_edit_recurse + 1;
+      else parse.m_edit_recurse = m_edit_recurse;
 
       parse.m_in_template = m_in_template;
       parse.m_inject_tag  = m_inject_tag;
+      parse.m_inject_xml  = m_inject_xml;
       parse.m_paragraph_depth++;
       parse.parse_tags_with_style(Tag.Children, new_style);
       parse.m_paragraph_depth--;
@@ -3925,35 +3236,28 @@ void parser::tag_cell(XTag &Tag)
 
    m_table_stack.top().row_col += stream_cell.col_span;
 
-   if (!stream_cell.edit_def.empty()) {
+   if (not stream_cell.edit_def.empty()) {
       // Links are added to the list of tabbable points
 
       int tab = add_tabfocus(Self, TT::EDIT, stream_cell.cell_id);
       if (select) Self->FocusIndex = tab;
    }
 
-   if (!stream_cell.edit_def.empty()) edit_recurse--;
 }
 
 //********************************************************************************************************************
 // No response is required for page tags, but we can check for validity.
 
-void parser::tag_page(XTag &Tag)
+void parser::tag_page(const tag_view &Tag) const
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    if (auto name = Tag.attrib("name")) {
-      auto str = name->c_str();
-      while (*str) {
-         if (((*str >= 'A') and (*str <= 'Z')) or
-             ((*str >= 'a') and (*str <= 'z')) or
-             ((*str >= '0') and (*str <= '9'))) {
-            // Character is valid
-         }
-         else {
-            log.warning("Page has an invalid name of '%s'.  Character support is limited to [A-Z,a-z,0-9].", name->c_str());
-            break;
-         }
-         str++;
+      auto page_name = std::string_view(*name);
+      if (not std::ranges::all_of(page_name, [](char Character) {
+         return std::isalnum((unsigned char)Character) != 0;
+      })) {
+         log_warning(&Tag, "doc.invalid-page-name", attrib_name("name"),
+            "Page has an invalid name of '{}'. Character support is limited to [A-Z,a-z,0-9].", *name);
       }
    }
 }
@@ -3961,25 +3265,25 @@ void parser::tag_page(XTag &Tag)
 //********************************************************************************************************************
 // Usage: <trigger event="resize" function="script.function"/>
 
-void parser::tag_trigger(XTag &Tag)
+void parser::tag_trigger(const tag_view &Tag)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    DRT trigger_code;
    objScript *script;
    int64_t function_id;
 
    std::string event, function_name;
    for (int i=1; i < std::ssize(Tag.Attribs); i++) {
-      switch (strihash(Tag.Attribs[i].Name)) {
+      switch (strhash(Tag.Attribs[i].Name)) {
          case HASH_event: event = Tag.Attribs[i].Value; break;
          case HASH_function: function_name = Tag.Attribs[i].Value; break;
       }
    }
 
-   if ((!event.empty()) and (!function_name.empty())) {
+   if ((not event.empty()) and (not function_name.empty())) {
       // These are described in the documentation for the AddListener method
 
-      switch(strihash(event)) {
+      switch(strhash(event)) {
          case HASH_after_layout:    trigger_code = DRT::AFTER_LAYOUT; break;
          case HASH_before_layout:   trigger_code = DRT::BEFORE_LAYOUT; break;
          case HASH_on_click:        trigger_code = DRT::USER_CLICK; break;
@@ -3991,19 +3295,28 @@ void parser::tag_trigger(XTag &Tag)
          case HASH_leaving_page:    trigger_code = DRT::LEAVING_PAGE; break;
          case HASH_page_processed:  trigger_code = DRT::PAGE_PROCESSED; break;
          default:
-            log.warning("Trigger event '%s' for function '%s' is not recognised.", event.c_str(), function_name.c_str());
+            log_warning(&Tag, "doc.invalid-trigger-event", attrib_name("event"),
+               "Trigger event '{}' for function '{}' is not recognised.", event, function_name);
             return;
       }
 
       // Get the script
 
       std::string args;
-      if (extract_script(Self, function_name.c_str(), &script, function_name, args) IS ERR::Okay) {
-         if (script->getProcedureID(function_name.c_str(), &function_id) IS ERR::Okay) {
-            Self->Triggers[int(trigger_code)].emplace_back(FUNCTION(script, function_id));
+      if (!extract_script(Self, function_name, &script, function_name, args)) {
+         if (!script->getProcedureID(function_name, &function_id)) {
+            bool subscribe_context = not has_script_free_callback(Self, script);
+            Self->Triggers[int(trigger_code)].emplace_back(FUNCTION(script, uint32_t(function_id)));
+            Self->Triggers[int(trigger_code)].back().pin();
+            if (subscribe_context) SubscribeAction(script, AC::Free, C_FUNCTION(notify_free_script_context));
          }
-         else log.warning("Unable to resolve '%s' in script #%d to a function ID (the procedure may not exist)", function_name.c_str(), script->UID);
+         else log_warning(&Tag, "doc.trigger-procedure-missing", attrib_name("function"),
+            "Unable to resolve '{}' in script #{} to a function ID (the procedure may not exist).",
+            function_name, script->UID);
       }
-      else log.warning("The script for '%s' is not available - check if it is declared prior to the trigger tag.", function_name.c_str());
+      else log_warning(&Tag, "doc.trigger-script-missing", attrib_name("function"),
+         "The script for '{}' is not available - check if it is declared prior to the trigger tag.", function_name);
    }
+   else log_warning(&Tag, "doc.trigger-missing-attrib",
+      "<trigger> requires both event and function attributes.");
 }

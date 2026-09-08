@@ -10,12 +10,20 @@ ParserResult<ExpDesc> IrEmitter::emit_table_expr(const TableExprPayload &Payload
    FuncState* fs = &this->func_state;
    GCtab* template_table = nullptr;
    int vcall = 0;
+   BCPOS vcall_primary = NO_JMP;
+   BCPOS vcall_alternate = NO_JMP;
    int needarr = 0;
    int fixt = 0;
    uint32_t narr = 0;  // 0-based array indexing
    uint32_t nhash = 0;
    auto freg = fs->free_reg();
    BCPos pc = BCPos(bcemit_AD(fs, BC_TNEW, freg, 0));
+   // The contextual marker immediately follows its matching constructor so the bytecode reader can prove that the
+   // destination is a newly allocated table.  Constant-field analysis may later rewrite TNEW to TDUP in place without
+   // disturbing that adjacency.  Marking before field initialisation is safe because the unfinished result cannot be
+   // referenced by source code until the constructor expression completes.
+   if (Payload.contextual) bcemit_AD(fs, BC_TCTX, freg, 0);
+
    ExpDesc table;
    table.init(ExpKind::NonReloc, freg);
    RegisterAllocator allocator(fs);
@@ -32,7 +40,7 @@ ParserResult<ExpDesc> IrEmitter::emit_table_expr(const TableExprPayload &Payload
          case TableFieldKind::Computed: {
             if (not field.key) return this->unsupported_expr(AstNodeKind::TableExpr, field.span);
             auto key_result = this->emit_expression(*field.key);
-            if (not key_result.ok()) return key_result;
+            if (not key_result.ok() or key_result.value_ref().is_unreachable()) return key_result;
             key = key_result.value_ref();
             ExpressionValue key_toval(fs, key);
             key_toval.to_val();
@@ -64,9 +72,11 @@ ParserResult<ExpDesc> IrEmitter::emit_table_expr(const TableExprPayload &Payload
       }
 
       auto value_result = this->emit_expression(*field.value);
-      if (not value_result.ok()) return value_result;
+      if (not value_result.ok() or value_result.value_ref().is_unreachable()) return value_result;
 
       ExpDesc val = value_result.value_ref();
+      vcall_primary = val.k IS ExpKind::Call ? val.u.s.info : NO_JMP;
+      vcall_alternate = val.alternate_call;
 
       bool emit_constant = key.is_constant() and key.k != ExpKind::Nil and (key.k IS ExpKind::Str or val.is_constant_nojump());
 
@@ -76,6 +86,7 @@ ParserResult<ExpDesc> IrEmitter::emit_table_expr(const TableExprPayload &Payload
          if (not template_table) {
             BCReg kidx;
             template_table = lj_tab_new(fs->L, needarr ? narr : 0, hsize2hbits(nhash));
+            if (Payload.contextual) lj_tab_mark_contextual(template_table);
             kidx = BCReg(const_gc(fs, obj2gco(template_table), LJ_TTAB));
             fs->bcbase[pc.raw()].ins = BCINS_AD(BC_TDUP, freg - BCREG(1), kidx);
          }
@@ -116,7 +127,9 @@ ParserResult<ExpDesc> IrEmitter::emit_table_expr(const TableExprPayload &Payload
          ilp--;
       }
       ilp->ins = BCINS_AD(BC_TSETM, freg, const_num(fs, &en));
-      setbc_b(&ilp[-1].ins, 0);
+      fs_check_assert(fs, vcall_primary != NO_JMP, "multi-result table field has no call instruction");
+      setbc_b(&fs->bcbase[vcall_primary].ins, 0);
+      if (vcall_alternate != NO_JMP) setbc_b(&fs->bcbase[vcall_alternate].ins, 0);
    }
 
    if (pc IS fs->pc - 1) {

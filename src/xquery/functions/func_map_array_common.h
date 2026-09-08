@@ -68,7 +68,7 @@ inline void sequence_from_xpath_value(const XPathVal &Value, XPathValueSequence 
 inline XPathVal materialise_sequence_with_context(const XPathValueSequence &Sequence, const XPathContext &Context)
 {
    if (Context.eval) return Context.eval->materialise_sequence_value(Sequence);
-   if (Sequence.items.empty()) return XPathVal(pf::vector<XTag *>{});
+   if (Sequence.items.empty()) return XPathVal(kt::vector<XTag *>{});
 
    XPathVal clone;
    XPathValue &base = clone;

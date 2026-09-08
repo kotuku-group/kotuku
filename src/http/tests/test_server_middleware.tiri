@@ -1,0 +1,248 @@
+--[[
+Middleware & Routing Testing
+
+Tests middleware chains, route wildcards, 404/405 handling, and middleware execution order.
+--]]
+
+   import 'net/httpserver'
+   import 'json'
+   include 'http'
+
+glOutFile <const> = 'temp:http-middleware-output.txt'
+SERVER_PORT <const> = 18947
+
+@BeforeAll function init(State)
+   global glPath = State.folder
+
+   -- Create middleware functions
+   function loggingMiddleware(req, res, next)
+      if not req.middlewareOrder then req.middlewareOrder = array<str> {} end
+      req.middlewareOrder.push('logging')
+      next()
+   end
+
+   function authMiddleware(req, res, next)
+      if not req.middlewareOrder then req.middlewareOrder = array<str> {} end
+      req.middlewareOrder.push('auth')
+      next()
+   end
+
+   function timingMiddleware(req, res, next)
+      if not req.middlewareOrder then req.middlewareOrder = array<str> {} end
+      req.middlewareOrder.push('timing')
+      next()
+   end
+
+   global glServer = hslib.start({
+      port = SERVER_PORT,
+      folder = glPath,
+      verbose = true,
+      middleware = array<any> { loggingMiddleware }, -- Global middleware
+      routes = {
+         { pattern = '/api/middleware-test',
+            method = 'GET',
+            middleware = array<any> { authMiddleware, timingMiddleware }, -- Route-specific middleware
+            handler = function(req, res)
+               res.json({
+                  message = 'Middleware test response',
+                  middlewareOrder = req.middlewareOrder
+               })
+            end
+         },
+         { pattern = '/api/get-only-route',
+            method = 'GET',
+            handler = function(req, res)
+               res.json({ message = 'GET only route' })
+            end
+         },
+         { pattern = '/api/wildcard/*',
+            method = 'GET',
+            handler = function(req, res)
+               res.json({
+                  message = 'Wildcard route matched',
+                  wildcardMatch = true,
+                  capturedPath = req.path,
+                  fullPath = req.fullPath
+               })
+            end
+         },
+         { pattern = '/api/cors-test',
+            method = 'GET',
+            handler = function(req, res)
+               res.json({ message = 'CORS test endpoint' })
+            end
+         }
+      }
+   })
+end
+
+@AfterAll function cleanup()
+   glServer.stop()
+   mSys.DeleteFile(glOutFile)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function MiddlewareChain()
+   content = ''
+
+   http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/api/middleware-test',
+      method = 'GET',
+      flags = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   assert(http.acActivate() is ERR_Okay, "Middleware chain test failed to activate")
+
+   err = proc.sleep()
+   assert(err is ERR_Okay, 'Middleware chain processing failed: ' .. mSys.GetErrorMsg(err))
+   assert(http.error is ERR_Okay, 'Middleware chain HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Middleware chain unexpected status: ' .. http.status)
+
+   response = json.decode(content)
+   assert(response.middlewareOrder, 'Middleware execution order not tracked')
+   assert(#response.middlewareOrder >= 3, 'Should have multiple middleware executions')
+
+   print('Middleware chain test passed: ' .. #response.middlewareOrder .. ' middleware executed')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function RouteNotFound()
+   content = ''
+
+   http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/nonexistent/route',
+      method = 'GET',
+      flags = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   assert(http.acActivate() is ERR_Okay, "404 test failed to activate")
+
+   err = proc.sleep()
+   assert(err is ERR_Okay, '404 processing failed: ' .. mSys.GetErrorMsg(err))
+   assert(http.error is ERR_HTTPStatus, '404 response should report HTTPStatus, got: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 404, 'Expected 404 Not Found, got: ' .. http.status)
+
+   print('Route not found test passed - 404 received')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function MethodNotAllowed()
+   content = ''
+
+   http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/api/get-only-route',
+      method = 'POST', -- Route only supports GET
+      flags = HTF_NO_HEAD,
+      inputFile = 'string:test',
+      size = 4,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   assert(http.acActivate() is ERR_Okay, "405 test failed to activate")
+
+   err = proc.sleep()
+   assert(err is ERR_Okay, '405 processing failed: ' .. mSys.GetErrorMsg(err))
+   assert(http.error is ERR_HTTPStatus, '405 response should report HTTPStatus, got: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 405, 'Expected 405 Method Not Allowed, got: ' .. http.status)
+
+   print('Method not allowed test passed - 405 received')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function WildcardRoute()
+   content = ''
+
+   http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/api/wildcard/anything/here',
+      method = 'GET',
+      flags = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   assert(http.acActivate() is ERR_Okay, "Wildcard test failed to activate")
+
+   err = proc.sleep()
+   assert(err is ERR_Okay, 'Wildcard processing failed: ' .. mSys.GetErrorMsg(err))
+   assert(http.error is ERR_Okay, 'Wildcard HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Wildcard unexpected status: ' .. http.status)
+
+   response = json.decode(content)
+   assert(response.wildcardMatch, 'Wildcard route should match')
+   assert(response.capturedPath, 'Wildcard should capture remaining path')
+
+   print('Wildcard route test passed')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CORSMiddleware()
+   content = ''
+
+   http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/api/cors-test',
+      method = 'OPTIONS', -- CORS preflight
+      flags = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   check http.acSetKey('Origin', 'https://example.com')
+   check http.acSetKey('Access-Control-Request-Method', 'POST')
+   check http.acSetKey('Access-Control-Request-Headers', 'Content-Type')
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   assert(http.acActivate() is ERR_Okay, "CORS test failed to activate")
+
+   err = proc.sleep()
+   assert(err is ERR_Okay, 'CORS processing failed: ' .. mSys.GetErrorMsg(err))
+   assert(http.error is ERR_Okay, 'CORS HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'CORS unexpected status: ' .. http.status)
+
+   -- CORS preflight should return empty body with CORS headers
+   assert(content is '', 'CORS preflight should return empty body')
+
+   print('CORS middleware test passed')
+end

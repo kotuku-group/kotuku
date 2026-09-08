@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,16 +5,17 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Presents a pixel format with transposed x/y access. Hooks into renderer_base and renderers that can operate on a
+// pixel format abstraction. In the vector renderer it reuses existing rendering code for transposed output without
+// rewriting span logic.
 
-
-#ifndef AGG_PIXFMT_TRANSPOSER_INCLUDED
-#define AGG_PIXFMT_TRANSPOSER_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 
 namespace agg
 {
-    //=======================================================pixfmt_transposer
     template<class PixFmt> class pixfmt_transposer
     {
     public:
@@ -146,7 +146,3 @@ namespace agg
         pixfmt_type* m_pixf;
     };
 }
-
-#endif
-
-

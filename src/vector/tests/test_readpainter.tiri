@@ -1,5 +1,5 @@
 
-   mVec ?= mod.load('vector')
+module vector as mVec
 
 TOLERANCE <const> = 0.0099
 
@@ -9,10 +9,10 @@ end
 
 function checkRGB(Painter, Red, Green, Blue, Alpha)
    local rgb = Painter.colour
-   if not near(Red, rgb.red) then print(f'Red mismatch: expected {Red}, got {rgb.red}') return false end
-   if not near(Green, rgb.green) then print(f'Green mismatch: expected {Green}, got {rgb.green}') return false end
-   if not near(Blue, rgb.blue) then print(f'Blue mismatch: expected {Blue}, got {rgb.blue}') return false end
-   if not near(Alpha, rgb.alpha) then print(f'Alpha mismatch: expected {Alpha}, got {rgb.alpha}') return false end
+   if not (Red ≈ rgb.red) then print(f'Red mismatch: expected {Red}, got {rgb.red}') return false end
+   if not (Green ≈ rgb.green) then print(f'Green mismatch: expected {Green}, got {rgb.green}') return false end
+   if not (Blue ≈ rgb.blue) then print(f'Blue mismatch: expected {Blue}, got {rgb.blue}') return false end
+   if not (Alpha ≈ rgb.alpha) then print(f'Alpha mismatch: expected {Alpha}, got {rgb.alpha}') return false end
    return true
 end
 
@@ -194,6 +194,22 @@ end
    assert(checkRGB(painter, 1.0, 0, 0, 0.5), 'Failed hsla() red with alpha')
 end
 
+@Test function ReadHSLPercentageResult()
+   painter = struct.new('VectorPainter')
+   local err, result = mVec.ReadPainter(nil, "hsl(0,100%,50%);blue", painter)
+   check err
+   assert(checkRGB(painter, 1.0, 0, 0, 1.0), 'Failed hsl() red with percentage suffixes')
+   assert(result is ";blue", f'hsl() result should point at next painter, got {result}')
+end
+
+@Test function ReadHSLAlphaPercentage()
+   painter = struct.new('VectorPainter')
+   local err, result = mVec.ReadPainter(nil, "hsla(0,100%,50%,50%);blue", painter)
+   check err
+   assert(checkRGB(painter, 1.0, 0, 0, 0.5), 'Failed hsla() percentage alpha')
+   assert(result is ";blue", f'hsla() result should point at next painter, got {result}')
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- hsv()
 -----------------------------------------------------------------------------------------------------------------------
@@ -208,6 +224,14 @@ end
    painter = struct.new('VectorPainter')
    check mVec.ReadPainter(nil, "hsv(0,100,100,0.3)", painter)
    assert(checkRGB(painter, 1.0, 0, 0, 0.3), 'Failed hsv() with alpha')
+end
+
+@Test function ReadHSVPercentageResult()
+   painter = struct.new('VectorPainter')
+   local err, result = mVec.ReadPainter(nil, "hsv(0,100%,100%);blue", painter)
+   check err
+   assert(checkRGB(painter, 1.0, 0, 0, 1.0), 'Failed hsv() red with percentage suffixes')
+   assert(result is ";blue", f'hsv() result should point at next painter, got {result}')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -322,7 +346,7 @@ end
    painter = struct.new('VectorPainter')
    check mVec.ReadPainter(nil, "lab(50 0 0)", painter)
    local rgb = painter.colour
-   assert(near(rgb.red, rgb.green) and near(rgb.green, rgb.blue), 'lab() mid-grey: channels should be equal')
+   assert((rgb.red ≈ rgb.green) and (rgb.green ≈ rgb.blue), 'lab() mid-grey: channels should be equal')
    assert(rgb.red > 0.1 and rgb.red < 0.9, f'lab() mid-grey: expected mid value, got {rgb.red}')
 end
 
@@ -424,10 +448,10 @@ end
       results[i] = p
    end
 
-   for i = 0, #results - 2 do
+   for i in {0 to #results - 1} do
       local a = results[i].colour
       local b = results[i + 1].colour
-      assert(near(a.red, b.red) and near(a.green, b.green) and near(a.blue, b.blue),
+      assert((a.red ≈ b.red) and (a.green ≈ b.green) and (a.blue ≈ b.blue),
          f'Red cross-check failed between format {i} and {i+1}')
    end
 end

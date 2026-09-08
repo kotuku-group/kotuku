@@ -11,6 +11,8 @@
 **   - mapofs: Offset into snapmap where this snapshot's entries begin
 **   - nent:   Number of slot entries (NOT including frame links)
 **   - ref:    IR reference at which this snapshot was created
+**   - context_refs/context_owner_slots: Virtual contextual activations materialised on exit
+**   - multres: Unscaled count for restoring implicit multi-result VM state
 **   - nslots: Total number of stack slots
 **   - topslot: Top slot for stack sizing
 **
@@ -43,6 +45,7 @@
 #include "lj_ir.h"
 #include "lj_jit.h"
 #include "lj_iropt.h"
+#include "lib/lib_range.h"
 #include "lj_trace.h"
 #include "lj_snap.h"
 #include "lj_target.h"
@@ -169,9 +172,28 @@ static void snapshot_stack(jit_State* J, SnapShot* snap, MSize nsnapmap)
    nent += snapshot_framelinks(J, p + nent, &snap->topslot);
    snap->mapofs = (uint32_t)nsnapmap;
    snap->ref = (IRRef1)J->cur.nins;
+   memset(snap->context_refs, 0, sizeof(snap->context_refs));
+   memset(snap->context_owner_slots, 0, sizeof(snap->context_owner_slots));
    snap->mcofs = 0;
+   snap->multres = J->multres;
    snap->nslots = (uint8_t)nslots;
+   snap->context_count = 0;
    snap->count = 0;
+   for (size_t function_slot = 0; function_slot < std::size(J->context_call_state); function_slot++) {
+      uint8_t context_state = J->context_call_state[function_slot];
+      if (context_state != CONTEXT_CALL_VIRTUAL and context_state != CONTEXT_CALL_METAMETHOD_VIRTUAL) continue;
+      lj_assertJ(snap->context_count < LJ_MAX_VIRTUAL_CONTEXTS, "too many virtual contexts for snapshot");
+      TRef receiver = J->context_call_receiver[function_slot];
+      lj_assertJ(tref_istab(receiver), "snapshot virtual context is not a table");
+      size_t context_index = snap->context_count++;
+      snap->context_refs[context_index] = IRRef1(tref_ref(receiver));
+      snap->context_owner_slots[context_index] = uint16_t(function_slot + 1 + LJ_FR2);
+      // Side traces cannot inherit virtual VM state. A guard exit materialises it and resumes in the interpreter.
+      snap->count = SNAPCOUNT_DONE;
+   }
+   if (snap->context_count) {
+      lj_context_debug_materialise(J->L, ContextMaterialisationReason::Snapshot);
+   }
    J->cur.nsnapmap = (uint32_t)(nsnapmap + nent);
 }
 
@@ -183,7 +205,7 @@ void lj_snap_add(jit_State* J)
    MSize nsnap = J->cur.nsnap;
    MSize nsnapmap = J->cur.nsnapmap;
 
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.msg(VLF::BRANCH|VLF::DETAIL, "Adding snapshot %d, baseslot=%d, maxslot=%d, retdepth=%d, ByteCode: %d", nsnap, J->baseslot, J->maxslot, J->retdepth, bc_op(*J->pc));
 
    // Merge if no ins. inbetween or if requested and no guard inbetween.
@@ -259,7 +281,30 @@ static BCREG snap_usedef(jit_State *J, uint8_t *udf, const BCIns *pc, BCREG maxs
          case BCMjump:
          handle_jump: {
             BCREG minslot = bc_a(ins);
-            if (bc_is_for_loop(op)) minslot += FORL_EXT;
+            if (bc_is_for_loop(op)) {
+               const BCIns *loop_body = nullptr;
+               if (op IS BC_FORI or op IS BC_JFORI) {
+                  loop_body = pc;
+               }
+               else if (op IS BC_FORL or op IS BC_IFORL) {
+                  loop_body = pc + bc_j(ins);
+               }
+               else {
+                  const BCIns *proto_start = proto_bc(J->pt);
+                  for (const BCIns *candidate = pc - 2; ; candidate--) {
+                     BCOp candidate_op = bc_op(*candidate);
+                     if ((candidate_op IS BC_FORI or candidate_op IS BC_JFORI) and
+                         bc_a(*candidate) IS bc_a(ins)) {
+                        loop_body = candidate + 1;
+                        break;
+                     }
+                     if (candidate IS proto_start) break;
+                  }
+               }
+               bool range_loop = loop_body and bc_op(*loop_body) IS BC_RANGEVAL and
+                  bc_a(*loop_body) IS bc_a(ins);
+               minslot += BCREG(range_loop ? int(RANGE_FOR_VALUE) : int(FORL_EXT));
+            }
             else if (bc_is_iter_loop(op)) minslot += bc_b(pc[-2]) - 1;
             else if (op IS BC_UCLO) {
                ptrdiff_t delta = bc_j(ins);
@@ -292,14 +337,29 @@ static BCREG snap_usedef(jit_State *J, uint8_t *udf, const BCIns *pc, BCREG maxs
             if (!(op IS BC_ISTC or op IS BC_ISFC)) DEF_SLOT(bc_a(ins));
             break;
          case BCMbase:
-            if (bc_is_call_or_iter(op)) {
-               BCREG top = (op IS BC_CALLM or op IS BC_CALLMT or bc_c(ins) IS 0) ?
+            if (op IS BC_CTXLEAVE) {
+               BCIns call_ins = pc[-2];
+               lj_assertJ(bc_op(call_ins) IS BC_CTXCALL or bc_op(call_ins) IS BC_CTXCALLM,
+                  "CTXLEAVE does not follow an ordinary contextual call");
+               BCREG call_base = bc_a(ins);
+               BCREG available_results = call_base < maxslot ? maxslot - call_base : 0;
+               BCREG result_count = bc_b(call_ins) ? bc_b(call_ins) - 1 : available_results;
+               if (result_count > available_results) result_count = available_results;
+               BCREG result_shift = bc_d(ins) ? bc_d(ins) : 1;
+               lj_assertJ(result_shift <= call_base, "CTXLEAVE result shift exceeds the call base");
+               for (s = call_base; s < call_base + result_count; s++) USE_SLOT(s);
+               for (s = call_base - result_shift; s < call_base - result_shift + result_count; s++) DEF_SLOT(s);
+            }
+            else if (bc_is_call_or_iter(op) or op IS BC_CTXCALL or op IS BC_CTXCALLM or op IS BC_CTXCALLT) {
+               bool contextual_call = op IS BC_CTXCALL or op IS BC_CTXCALLM or op IS BC_CTXCALLT;
+               BCREG top = (op IS BC_CALLM or op IS BC_CALLMT or op IS BC_CTXCALLM or bc_c(ins) IS 0) ?
                   maxslot : (bc_a(ins) + bc_c(ins) + LJ_FR2);
                DEF_SLOT(bc_a(ins) + 1);
-               s = bc_a(ins) - ((op IS BC_ITERC or op IS BC_ITERN or op IS BC_ITERA) ? 3 : 0);
+               s = bc_a(ins) - ((op IS BC_ITERC or op IS BC_ITERN or op IS BC_ITERA) ? 3 :
+                  (contextual_call ? 1 : 0));
                for (; s < top; s++) USE_SLOT(s);
                for (; s < maxslot; s++) DEF_SLOT(s);
-               if (op IS BC_CALLT or op IS BC_CALLMT) {
+               if (op IS BC_CALLT or op IS BC_CALLMT or op IS BC_CTXCALLT) {
                   for (s = 0; s < bc_a(ins); s++) DEF_SLOT(s);
                   return 0;
                }
@@ -312,6 +372,25 @@ static BCREG snap_usedef(jit_State *J, uint8_t *udf, const BCIns *pc, BCREG maxs
             }
             else if (op IS BC_TSETM) {
                for (s = bc_a(ins) - 1; s < maxslot; s++) USE_SLOT(s);
+            }
+            else if (op IS BC_TRYENTER) {
+               // Operand A is the first free register at try entry, matching TryBlockDesc::entry_slots.
+               // Exception handlers can read any slot below this boundary, but not stale temporaries above it.
+               BCREG entry_slots = bc_a(ins);
+               if (entry_slots > maxslot) entry_slots = maxslot;
+               for (s = 0; s < entry_slots; s++) USE_SLOT(s);
+               for (; s < maxslot; s++) DEF_SLOT(s);
+               return entry_slots;
+            }
+            else if (op IS BC_RANGEPREP) {
+               for (s = bc_a(ins); s < bc_a(ins) + 3; s++) USE_SLOT(s);
+               BCREG prepare_slots = (bc_d(ins) & RANGE_PREP_DIRECT_INTEGER) ?
+                  BCREG(FORL_EXT + 1) : BCREG(RANGE_FOR_SLOTS);
+               for (s = bc_a(ins); s < bc_a(ins) + prepare_slots; s++) DEF_SLOT(s);
+            }
+            else if (op IS BC_RANGEVAL) {
+               for (s = bc_a(ins) + RANGE_FOR_ORDINAL; s < bc_a(ins) + RANGE_FOR_VALUE; s++) USE_SLOT(s);
+               DEF_SLOT(bc_a(ins) + RANGE_FOR_VALUE);
             }
             break;
          default: break;
@@ -402,7 +481,9 @@ void lj_snap_shrink(jit_State* J)
    uint8_t udf[SNAP_USEDEF_SLOTS];
    BCREG maxslot = J->maxslot;
    BCREG baseslot = J->baseslot;
-   BCREG minslot = snap_usedef(J, udf, snap_pc(&map[nent]), maxslot);
+   const BCIns *pc = snap_pc(&map[nent]);
+   bool try_enter_pc = bc_op(*pc) IS BC_TRYENTER;
+   BCREG minslot = snap_usedef(J, udf, pc, maxslot);
    if (minslot < maxslot) snap_useuv(J->pt, udf);
    maxslot += baseslot;
    minslot += baseslot;
@@ -413,6 +494,7 @@ void lj_snap_shrink(jit_State* J)
          map[m++] = map[n];  //  Only copy used slots.
    }
    snap->nent = (uint8_t)m;
+   if (try_enter_pc and nent > m) J->try_enter_snap_removed += uint32_t(nent - m);
    nlim = J->cur.nsnapmap - snap->mapofs - 1;
    while (n <= nlim) map[m++] = map[n++];  //  Move PC + frame links down.
    J->cur.nsnapmap = (uint32_t)(snap->mapofs + m);  //  Free up space in map.
@@ -752,10 +834,17 @@ static void snap_unsink(jit_State *J, GCtrace *T, ExitState *ex, SnapNo snapno, 
             TValue tmp, * val;
             lj_assertJ(irs->o IS IR_ASTORE or irs->o IS IR_HSTORE or irs->o IS IR_FSTORE, "sunk store with bad op %d", irs->o);
             if (irk->o IS IR_FREF) {
-               lj_assertJ(irk->op2 IS IRFL_TAB_META, "sunk store with bad field %d", irk->op2);
                snap_restoreval(J, T, ex, snapno, rfilt, irs->op2, &tmp);
-               // NOBARRIER: The table is new (marked white).
-               setgcref(t->metatable, obj2gco(tabV(&tmp)));
+               if (irk->op2 IS IRFL_TAB_META) {
+                  // NOBARRIER: The table is new (marked white).
+                  GCtab* metatable = tabV(&tmp);
+                  setgcref(t->metatable, obj2gco(metatable));
+                  lj_gc_checkfinaliser(J->L, obj2gco(t), metatable);
+               }
+               else if (irk->op2 IS IRFL_TAB_FLAGS) {
+                  t->flags = uint8_t(numberVint(&tmp));
+               }
+               else lj_assertJ(false, "sunk store with bad field %d", irk->op2);
             }
             else {
                irk = &T->ir[irk->op2];
@@ -788,7 +877,7 @@ const BCIns * lj_snap_restore(jit_State *J, void *exptr)
    const BCIns* pc = snap_pc(&map[nent]);
    lua_State* L = J->L;
 
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.traceBranch("Restoring snapshot %d for trace %d", snapno, J->parent);
    log.trace("Snapshot: nent=%d, nslots=%d, topslot=%d, mapofs=%d", nent, snap->nslots, snap->topslot, snap->mapofs);
    log.trace("Before restore: L->base=%p, L->top=%p, jit_base=%p", L->base, L->top, tvref(G(L)->jit_base));
@@ -798,8 +887,8 @@ const BCIns * lj_snap_restore(jit_State *J, void *exptr)
 
    // Make sure the stack is big enough for the slots from the snapshot.
    if (L->base + snap->topslot >= tvref(L->maxstack)) [[unlikely]] {
-      L->top = curr_topL(L);
-      lj_state_growstack(L, snap->topslot - curr_proto(L)->framesize);
+      L->top = curr_top(L);
+      lj_state_growstack(L, MSize(L->base + snap->topslot - L->top));
    }
 
    // Fill stack slots with data from the registers and spill slots.
@@ -863,14 +952,43 @@ const BCIns * lj_snap_restore(jit_State *J, void *exptr)
    L->base += base_adj;
    lj_assertJ(map + nent IS flinks, "inconsistent frames in snapshot");
 
+   for (size_t context_index = 0; context_index < snap->context_count; context_index++) {
+      TValue context;
+      TValue *context_owner = frame + snap->context_owner_slots[context_index];
+      // A root trace may be reused beneath an inherited context, and a deeper inlined activation may have been
+      // materialised after this snapshot. Preserve owners below this activation and discard owners abandoned by the
+      // restored frames before installing (or de-duplicating) the snapshot activation.
+      lj_context_unwind(L, context_owner);
+      IRRef context_ref = snap->context_refs[context_index];
+      IRIns *context_ir = &T->ir[context_ref];
+      if (context_ir->r IS RID_SUNK) {
+         bool restored_slot = false;
+         for (n = 0; n < nent; n++) {
+            SnapEntry sn = map[n];
+            if (snap_ref(sn) IS context_ref and not (sn & SNAP_NORESTORE)) {
+               copyTV(L, &context, &frame[snap_slot(sn)]);
+               restored_slot = true;
+               break;
+            }
+         }
+         if (not restored_slot) snap_unsink(J, T, ex, snapno, rfilt, context_ir, &context);
+      }
+      else {
+         snap_restoreval(J, T, ex, snapno, rfilt, context_ref, &context);
+      }
+      lj_assertJ(tvistab(&context), "virtual context snapshot did not restore a table");
+      lj_context_enter_jit(L, tabV(&context), context_owner);
+      lj_context_debug_materialise(L, ContextMaterialisationReason::SideExit);
+   }
+
    // Compute current stack top.
    BCOp op = bc_op(*pc);
    switch (op) {
    default:
-      if (bc_is_func_header(op)) L->top = frame + snap->nslots;
+      if (bc_is_func_header(op) or not curr_funcisL(L)) L->top = frame + snap->nslots;
       else L->top = curr_topL(L);
       break;
-   case BC_CALLM: case BC_CALLMT: case BC_RETM: case BC_TSETM:
+   case BC_CALLM: case BC_CALLMT: case BC_CTXCALLM: case BC_CTXLEAVE: case BC_RETM: case BC_TSETM:
       L->top = frame + snap->nslots;
       break;
    }

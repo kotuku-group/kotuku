@@ -11,7 +11,7 @@ Script: The Script class defines a common interface for script execution.
 The Script class defines a common interface for the purpose of executing scripts, such as Tiri.  The base class does
 not include a default parser or execution process of any kind.
 
-To execute a script file, choose a sub-class that matches the language and create the script object.  Set the #Path
+To execute a script file, choose a derived class that matches the language and create the script object.  Set the #Path
 field and then #Activate() the script.  Global input parameters for the script can be defined via the #SetKey()
 action.
 
@@ -21,22 +21,23 @@ Terminating the script will not remove objects that are outside its resource hie
 
 *********************************************************************************************************************/
 
-#define PRV_SCRIPT 1
+#define PRV_SCRIPT
 #include "../defs.h"
 #include <kotuku/main.h>
+#include <kotuku/vector.hpp>
+#include <kotuku/modules/script.h>
 
-static ERR GET_Results(objScript *, STRING **, int *);
-
-static ERR SET_Procedure(objScript *, CSTRING);
-static ERR SET_Results(objScript *, CSTRING *, int);
-static ERR SET_String(objScript *, CSTRING);
-
-inline CSTRING check_bom(const unsigned char *Value)
+inline std::string_view check_bom(std::string_view Value)
 {
-   if ((Value[0] IS 0xef) and (Value[1] IS 0xbb) and (Value[2] IS 0xbf)) Value += 3; // UTF-8 BOM
-   else if ((Value[0] IS 0xfe) and (Value[1] IS 0xff)) Value += 2; // UTF-16 BOM big endian
-   else if ((Value[0] IS 0xff) and (Value[1] IS 0xfe)) Value += 2; // UTF-16 BOM little endian
-   return (CSTRING)Value;
+   if ((Value.size() >= 3) and (uint8_t(Value[0]) IS 0xef) and (uint8_t(Value[1]) IS 0xbb) and
+       (uint8_t(Value[2]) IS 0xbf)) return Value.substr(3); // UTF-8 BOM
+   else if ((Value.size() >= 2) and (uint8_t(Value[0]) IS 0xfe) and (uint8_t(Value[1]) IS 0xff)) {
+      return Value.substr(2); // UTF-16 BOM big endian
+   }
+   else if ((Value.size() >= 2) and (uint8_t(Value[0]) IS 0xff) and (uint8_t(Value[1]) IS 0xfe)) {
+      return Value.substr(2); // UTF-16 BOM little endian
+   }
+   return Value;
 }
 
 /*********************************************************************************************************************
@@ -58,13 +59,10 @@ DataFeed: Script source code can be passed to the object as XML or text via data
 
 static ERR SCRIPT_DataFeed(objScript *Self, struct acDataFeed *Args)
 {
-   if (!Args) return ERR::NullArgs;
+   if (not Args) return ERR::NullArgs;
 
-   if (Args->Datatype IS DATA::XML) {
-      Self->setStatement((STRING)Args->Buffer);
-   }
-   else if (Args->Datatype IS DATA::TEXT) {
-      Self->setStatement((STRING)Args->Buffer);
+   if ((Args->Datatype IS DATA::XML) or (Args->Datatype IS DATA::TEXT)) {
+      Self->setStatement(std::string_view((const char *)Args->Buffer.data(), Args->Buffer.size()));
    }
 
    return ERR::Okay;
@@ -86,6 +84,10 @@ int TotalArgs: The total number of parameters in the Args parameter.
 -ERRORS-
 Okay:
 Args:
+NullArgs
+
+-TAGS-
+mutates-object, callback-inlines, private
 
 -END-
 
@@ -93,15 +95,15 @@ Args:
 
 static ERR SCRIPT_Callback(objScript *Self, struct sc::Callback *Args)
 {
-   pf::Log log;
+   kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
    if ((Args->TotalArgs < 0) or (Args->TotalArgs > 1024)) return log.warning(ERR::Args);
 
    auto save_id      = Self->ProcedureID;
-   auto save_name    = Self->Procedure;
+   auto save_name    = std::move(Self->Procedure);
    Self->ProcedureID = Args->ProcedureID;
-   Self->Procedure   = nullptr;
+   Self->Procedure.clear();
 
    const ScriptArg *save_args = Self->ProcArgs;
    Self->ProcArgs  = Args->Args;
@@ -109,8 +111,8 @@ static ERR SCRIPT_Callback(objScript *Self, struct sc::Callback *Args)
    auto save_total  = Self->TotalArgs;
    Self->TotalArgs  = Args->TotalArgs;
    auto saved_error = Self->Error;
-   auto saved_error_msg = Self->ErrorMessage;
-   Self->ErrorMessage = nullptr;
+   auto saved_error_msg = std::move(Self->ErrorMessage);
+   Self->ErrorMessage.clear();
    Self->Error       = ERR::Okay;
 
    ERR error = acActivate(Self);
@@ -118,11 +120,10 @@ static ERR SCRIPT_Callback(objScript *Self, struct sc::Callback *Args)
    Args->Error = Self->Error;
    Self->Error = saved_error;
    Self->ProcedureID = save_id;
-   Self->Procedure   = save_name;
+   Self->Procedure   = std::move(save_name);
    Self->ProcArgs    = save_args;
    Self->TotalArgs   = save_total;
-   if (Self->ErrorMessage) FreeResource(Self->ErrorMessage);
-   Self->ErrorMessage = saved_error_msg;
+   Self->ErrorMessage = std::move(saved_error_msg);
 
    return error;
 }
@@ -137,11 +138,11 @@ will depend on the scripting language in use, but will typically dump readable b
 parameter is a comma-separated list that may be used to pass language-specific options to the underlying
 implementation.
 
-The resulting log information is returned as a string, which needs to be deallocated once no longer required.
+The resulting log information is written to the caller-provided `Result` string.
 
 -INPUT-
-cstr Options: Options to pass to the underlying language.
-&!cstr Result: Resulting log information.
+strview Options: Options to pass to the underlying language.
+^&string Result: Resulting log information.
 
 -ERRORS-
 Okay:
@@ -151,7 +152,9 @@ NullArgs:
 
 static ERR SCRIPT_DebugLog(objScript *Self, struct sc::DebugLog *Args)
 {
-   // It is the responsibility of the sub-class to override this method with something appropriate.
+   // It is the responsibility of the derived class to override this method with something appropriate.
+   if ((not Args) or (not Args->Result)) return ERR::NullArgs;
+   Args->Result->clear();
    return ERR::Okay;
 }
 
@@ -168,17 +171,20 @@ Note that acquiring a procedure reference and then failing to release it can res
 memory until the Script is terminated.  There may also be unforeseen consequences in the garbage collection process.
 
 -INPUT-
-ptr(func) Procedure: The procedure to be dereferenced.
+func Procedure: The procedure to be dereferenced.
 
 -ERRORS-
 Okay:
 NullArgs:
 
+-TAGS-
+mutates-object
+
 *********************************************************************************************************************/
 
 static ERR SCRIPT_DerefProcedure(objScript *Self, struct sc::DerefProcedure *Args)
 {
-   // It is the responsibility of the sub-class to override this method with something appropriate.
+   // It is the responsibility of the derived class to override this method with something appropriate.
    return ERR::Okay;
 }
 
@@ -224,7 +230,7 @@ if the `Int` field is defined then an `FD_INT` `Type` must be used.  Supplementa
 documented in detail in the Kotuku Wiki.
 
 -INPUT-
-cstr Procedure: The name of the procedure to execute, or NULL for the default entry point.
+strview Procedure: The name of the procedure to execute, or leave empty for the default entry point.
 cstruct(*ScriptArg) Args: Optional parameters to pass to the procedure.
 int TotalArgs: Total number of `Args` provided.
 
@@ -232,19 +238,22 @@ int TotalArgs: Total number of `Args` provided.
 Okay: The procedure was executed.
 NullArgs
 Args: The `TotalArgs` value is invalid.
+
+-TAGS-
+mutates-object, callback-inlines
 -END-
 
 *********************************************************************************************************************/
 
 static ERR SCRIPT_Exec(objScript *Self, struct sc::Exec *Args)
 {
-   pf::Log log;
+   kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
    if ((Args->TotalArgs < 0) or (Args->TotalArgs > 32)) return log.warning(ERR::Args);
 
    auto save_id = Self->ProcedureID;
-   auto save_name = Self->Procedure;
+   auto save_name = std::move(Self->Procedure);
    Self->ProcedureID = 0;
    Self->Procedure = Args->Procedure;
 
@@ -257,26 +266,11 @@ static ERR SCRIPT_Exec(objScript *Self, struct sc::Exec *Args)
    ERR error = acActivate(Self);
 
    Self->ProcedureID = save_id;
-   Self->Procedure   = save_name;
+   Self->Procedure   = std::move(save_name);
    Self->ProcArgs    = save_args;
    Self->TotalArgs   = save_total;
 
    return error;
-}
-
-//********************************************************************************************************************
-
-static ERR SCRIPT_Free(objScript *Self)
-{
-   if (Self->CacheFile)   { FreeResource(Self->CacheFile);   Self->CacheFile = nullptr; }
-   if (Self->Path)        { FreeResource(Self->Path);        Self->Path = nullptr; }
-   if (Self->String)      { FreeResource(Self->String);      Self->String = nullptr; }
-   if (Self->WorkingPath) { FreeResource(Self->WorkingPath); Self->WorkingPath = nullptr; }
-   if (Self->Procedure)   { FreeResource(Self->Procedure);   Self->Procedure = nullptr; }
-   if (Self->ErrorMessage) { FreeResource(Self->ErrorMessage); Self->ErrorMessage = nullptr; }
-   if (Self->Results)     { FreeResource(Self->Results);     Self->Results = nullptr; }
-   Self->~objScript();
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -297,42 +291,42 @@ reference, call #DerefProcedure() once access to the procedure is no longer requ
 destroying the script will also dereference all procedures.
 
 -INPUT-
-cstr Procedure:   The name of the procedure.
+strview Procedure:   The name of the procedure.
 &large ProcedureID: The computed ID will be returned in this parameter.
 
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-object, creates-resource
 -END-
 
 *********************************************************************************************************************/
 
 static ERR SCRIPT_GetProcedureID(objScript *Self, struct sc::GetProcedureID *Args)
 {
-   pf::Log log;
-
-   if ((!Args) or (!Args->Procedure) or (!Args->Procedure[0])) return log.warning(ERR::NullArgs);
+   if ((not Args) or Args->Procedure.empty()) return kt::Log().warning(ERR::NullArgs);
    Args->ProcedureID = strihash(Args->Procedure);
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 -ACTION-
-GetKey: Script parameters can be retrieved through this action.
+GetKey: Script parameters defined by SetKey() can be retrieved through this action.
 -END-
 *********************************************************************************************************************/
 
 static ERR SCRIPT_GetKey(objScript *Self, struct acGetKey *Args)
 {
-   if ((!Args) or (!Args->Value) or (!Args->Key)) return ERR::NullArgs;
-   if (Args->Size < 2) return ERR::Args;
+   if ((not Args) or (not Args->Value)) return ERR::NullArgs;
 
    if (auto it = Self->Vars.find(Args->Key); it != Self->Vars.end()) {
-      strcopy(it->second, Args->Value, Args->Size);
+      Args->Value->assign(it->second);
       return ERR::Okay;
    }
    else {
-      Args->Value[0] = 0;
+      Args->Value->clear();
       return ERR::UnsupportedField;
    }
 }
@@ -341,38 +335,19 @@ static ERR SCRIPT_GetKey(objScript *Self, struct acGetKey *Args)
 
 static ERR SCRIPT_Init(objScript *Self)
 {
-   pf::Log log;
-
-   if (!Self->TargetID) { // Define the target if it has not been set already
-      log.detail("Target not set, defaulting to owner #%d.", Self->ownerID());
+   if (not Self->TargetID) { // Define the target if it has not been set already
+      kt::Log().detail("Target not set, defaulting to owner #%d.", Self->ownerID());
       Self->TargetID = Self->ownerID();
    }
 
-   if (Self->isSubClass()) return ERR::Okay; // Break here to let the sub-class continue initialisation
+   if (Self->isDerived()) return ERR::Okay; // Break here to let the derived class continue initialisation
 
-   return ERR::NoSupport;
+   // Clients should use IdentifyFile() to determine the type of the script file and then instantiate a derived class.
+   kt::Log().warning("Scripts must be instantiated with a derived class.");
+   return ERR::Init;
 }
 
 //********************************************************************************************************************
-
-static ERR SCRIPT_NewPlacement(objScript *Self)
-{
-   new (Self) objScript;
-
-   Self->CurrentLine = -1;
-
-   // Assume that the script is in English
-
-   Self->Language[0] = 'e';
-   Self->Language[1] = 'n';
-   Self->Language[2] = 'g';
-   Self->Language[3] = 0;
-
-   strcopy("lang", Self->LanguageDir, sizeof(Self->LanguageDir));
-
-   return ERR::Okay;
-}
-
 // If reset, the script will be reloaded from the original file location the next time an activation occurs.  All
 // parameters are also reset.
 
@@ -384,7 +359,13 @@ static ERR SCRIPT_Reset(objScript *Self)
 
 /*********************************************************************************************************************
 -ACTION-
-SetKey: Script parameters can be set through this action.
+SetKey: Script parameters can be set as key-values through this action.
+
+Use SetKey() to define global parameters that the executed script can access.  The parameters are stored as key-value
+pairs and can be retrieved through the #GetKey() action.
+
+In Tiri, key-values can be retrieved through the `arg()` function.
+
 -END-
 *********************************************************************************************************************/
 
@@ -392,13 +373,16 @@ static ERR SCRIPT_SetKey(objScript *Self, struct acSetKey *Args)
 {
    // It is acceptable to set zero-length string values (this has its uses in some scripts).
 
-   if ((!Args) or (!Args->Key) or (!Args->Value)) return ERR::NullArgs;
-   if (!Args->Key[0]) return ERR::NullArgs;
+   if ((not Args) or (Args->Key.empty())) return ERR::NullArgs;
 
-   pf::Log log;
-   log.trace("%s = %s", Args->Key, Args->Value);
+   kt::Log().trace("%.*s = %.*s", int(Args->Key.size()), Args->Key.data(), int(Args->Value.size()), Args->Value.data());
 
-   Self->Vars[Args->Key] = Args->Value;
+   auto key_it = Self->Vars.lower_bound(Args->Key);
+   if ((key_it != Self->Vars.end()) and (not Self->Vars.key_comp()(Args->Key, key_it->first))) {
+      key_it->second.assign(Args->Value);
+   }
+   else Self->Vars.emplace_hint(key_it, std::string(Args->Key), std::string(Args->Value));
+
    return ERR::Okay;
 }
 
@@ -413,23 +397,6 @@ file is used instead of the original source code.
 
 If the cache file exists, a determination on whether the source code has been edited is usually made by comparing
 date stamps on the original and cache files.
-
-*********************************************************************************************************************/
-
-static ERR GET_CacheFile(objScript *Self, STRING *Value)
-{
-   *Value = Self->CacheFile;
-   return ERR::Okay;
-}
-
-static ERR SET_CacheFile(objScript *Self, CSTRING Value)
-{
-   if (Self->CacheFile) { FreeResource(Self->CacheFile); Self->CacheFile = nullptr; }
-   if (Value) Self->CacheFile = strclone(Value);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 CurrentLine: Indicates the current line being executed when in debug mode.
@@ -450,42 +417,9 @@ propagated through the call stack.
 -FIELD-
 ErrorMessage: A human readable error string may be declared here following a script execution failure.
 
-*********************************************************************************************************************/
-
-static ERR GET_ErrorMessage(objScript *Self, STRING *Value)
-{
-   *Value = Self->ErrorMessage;
-   return ERR::Okay;
-}
-
-static ERR SET_ErrorMessage(objScript *Self, CSTRING Value)
-{
-   if (Self->ErrorMessage) { FreeResource(Self->ErrorMessage); Self->ErrorMessage = nullptr; }
-   if (Value) Self->ErrorMessage = strclone(Value);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 Flags: Optional flags.
 Lookup: SCF
-
--FIELD-
-Language: Indicates the language (locale) that the source script is written in.
-
-The Language value indicates the language in which the source script was written.  The default setting is `ENG`, the
-code for international English.
-
-*********************************************************************************************************************/
-
-static ERR GET_Language(objScript *Self, STRING *Value)
-{
-   *Value = Self->Language;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 LineOffset: For debugging purposes, this value is added to any message referencing a line number.
@@ -509,118 +443,106 @@ valid existing object).
 
 *********************************************************************************************************************/
 
-static ERR GET_Path(objScript *Self, STRING *Value)
+static ERR SET_Path(objScript *Self, std::string_view &Value)
 {
-   *Value = Self->Path;
-   return ERR::Okay;
-}
-
-static ERR SET_Path(objScript *Self, CSTRING Value)
-{
-   if (Self->Path) {
+   if (not Self->Path.empty()) {
       // If the location has already been set, throw the value to SetKey instead.
 
-      if ((Value) and (*Value)) {
-         return acSetKey(Self, "Path", Value);
-      }
+      if (not Value.empty()) return acSetKey(Self, "Path", std::string(Value));
    }
    else {
-      if (Self->Path)        { FreeResource(Self->Path); Self->Path = nullptr; }
-      if (Self->String)      { FreeResource(Self->String); Self->String = nullptr; }
-      if (Self->WorkingPath) { FreeResource(Self->WorkingPath); Self->WorkingPath = nullptr; }
+      Self->Path.clear();
+      Self->Statement.clear();
+      Self->WorkingPath.clear();
 
-      int i, len;
-      if ((Value) and (*Value)) {
-         for (len=0; (Value[len]) and (Value[len] != ';'); len++);
+      int i;
+      if (not Value.empty()) {
+         auto len = Value.find(';');
+         if (len IS std::string_view::npos) len = Value.size();
 
-         if (std::string_view(Value, len).starts_with("STRING:")) {
-            return SET_String(Self, Value + 7);
+         if (Value.substr(0, len).starts_with("string:")) {
+            Self->Statement.assign(check_bom(Value.substr(7)));
+            return ERR::Okay;
          }
 
-         if (AllocMemory(len+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&Self->Path, nullptr) IS ERR::Okay) {
-            for (i=0; i < len; i++) Self->Path[i] = Value[i];
-            Self->Path[i] = 0;
+         Self->Path.assign(Value, 0, len);
+         {
+            auto value = Value.data();
+            auto value_size = int(Value.size());
+            i = len;
 
             // If a semi-colon has been used, this indicates that a procedure follows the filename.
 
-            if (Value[i] IS ';') {
+            if ((i < value_size) and (value[i] IS ';')) {
                i++;
-               while ((Value[i]) and (unsigned(Value[i]) <= 0x20)) i++;
+               while ((i < value_size) and (unsigned(value[i]) <= 0x20)) i++;
                auto start = i, end = i;
-               while ((Value[end]) and (unsigned(Value[end]) > 0x20) and (Value[end] != ';')) end++;
+               while ((end < value_size) and (unsigned(value[end]) > 0x20) and (value[end] != ';')) end++;
                if (end > start) {
                   std::string buffer;
-                  buffer.append(Value, start, end - start);
-                  SET_Procedure(Self, buffer.c_str());
+                  buffer.append(value, start, end - start);
+                  std::string_view procedure(buffer);
+                  Self->Procedure.assign(procedure);
                }
 
                // Process optional parameters
 
-               if (Value[end] IS ';') {
+               if ((end < value_size) and (value[end] IS ';')) {
                   char arg[100];
 
                   i = end + 1;
-                  while (Value[i]) {
-                     while ((Value[i]) and (unsigned(Value[i]) <= 0x20)) i++;
-                     while (Value[i] IS ',') {
+                  while (i < value_size) {
+                     while ((i < value_size) and (unsigned(value[i]) <= 0x20)) i++;
+                     while ((i < value_size) and (value[i] IS ',')) {
                         i++;
-                        while ((Value[i]) and (unsigned(Value[i]) <= 0x20)) i++;
+                        while ((i < value_size) and (unsigned(value[i]) <= 0x20)) i++;
                      }
 
                      // Extract arg name
 
                      int j;
-                     for (j=0; (Value[i] != ',') and (Value[i] != '=') and (unsigned(Value[i]) > 0x20); j++) arg[j] = Value[i++];
+                     for (j=0; (i < value_size) and (value[i] != ',') and (value[i] != '=') and
+                          (unsigned(value[i]) > 0x20) and (j < int(sizeof(arg)) - 1); j++) arg[j] = value[i++];
                      arg[j] = 0;
 
-                     while ((Value[i]) and (Value[i] <= 0x20)) i++;
+                     while ((i < value_size) and (value[i] <= 0x20)) i++;
 
                      // Extract arg value
 
                      std::string argval("1");
-                     if (Value[i] IS '=') {
+                     if ((i < value_size) and (value[i] IS '=')) {
                         i++;
-                        while ((Value[i]) and (unsigned(Value[i]) <= 0x20)) i++;
-                        if (Value[i] IS '"') {
+                        while ((i < value_size) and (unsigned(value[i]) <= 0x20)) i++;
+                        if ((i < value_size) and (value[i] IS '"')) {
                            i++;
-                           for (j=0; (Value[i+j]) and (Value[i+j] != '"'); j++);
-                           argval.assign(Value, i, j);
+                           for (j=0; (i+j < value_size) and (value[i+j] != '"'); j++);
+                           argval.assign(value, i, j);
+                           i += j;
+                           if ((i < value_size) and (value[i] IS '"')) i++;
                         }
                         else {
-                           for (j=0; (Value[i+j]) and (Value[i+j] != ','); j++);
-                           argval.assign(Value, i, j);
+                           for (j=0; (i+j < value_size) and (value[i+j] != ','); j++);
+                           argval.assign(value, i, j);
+                           i += j;
                         }
                      }
 
                      if (iequals("target", arg)) Self->setTarget(strtol(argval.c_str(), nullptr, 0));
-                     else acSetKey(Self, arg, argval.c_str());
+                     else acSetKey(Self, arg, argval);
                   }
                }
             }
          }
-         else return ERR::AllocMemory;
       }
    }
 
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR SET_Name(objScript *Self, CSTRING Name)
-{
-   if (Name) {
-      SetName(Self, Name);
-      struct acSetKey args("Name", Name);
-      return SCRIPT_SetKey(Self, &args);
-   }
-   else return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -FIELD-
-Procedure: Specifies a procedure to be executed from within a script.
+Procedure: Specifies a procedure name to be executed.
 
 Sometimes scripts are split into several procedures or functions that can be executed independently from the 'main'
 area of the script.  If a loaded script contains procedures, the client can set the Procedure field to execute a
@@ -629,23 +551,6 @@ specific routine whenever the script is activated with the #Activate() action.
 If this field is not set, the first procedure in the script, or the 'main' procedure (as defined by the script type) is
 executed by default.
 
-*********************************************************************************************************************/
-
-static ERR GET_Procedure(objScript *Self, CSTRING *Value)
-{
-   *Value = Self->Procedure;
-   return ERR::Okay;
-}
-
-static ERR SET_Procedure(objScript *Self, CSTRING Value)
-{
-   if (Self->Procedure) { FreeResource(Self->Procedure); Self->Procedure = nullptr; }
-   if (Value) Self->Procedure = strclone(Value);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 Results: Stores multiple string results for languages that support this feature.
 
@@ -653,55 +558,6 @@ If a scripting language supports the return of multiple results, this field may 
 execution of any procedure.
 
 For maximum compatibility in type conversion, the results are stored as an array of strings.
-
-*********************************************************************************************************************/
-
-static ERR GET_Results(objScript *Self, STRING **Value, int *Elements)
-{
-   if (Self->Results) {
-      *Value = Self->Results;
-      *Elements = Self->ResultsTotal;
-      return ERR::Okay;
-   }
-   else {
-      *Value = nullptr;
-      *Elements = 0;
-      return ERR::FieldNotSet;
-   }
-}
-
-static ERR SET_Results(objScript *Self, CSTRING *Value, int Elements)
-{
-   pf::Log log;
-
-   if (Self->Results) { FreeResource(Self->Results); Self->Results = 0; }
-
-   Self->ResultsTotal = 0;
-
-   if (Value) {
-      int len = 0;
-      for (int i=0; i < Elements; i++) {
-         if (!Value[i]) return log.warning(ERR::SetValueNotString);
-         len += strlen(Value[i]) + 1;
-      }
-      Self->ResultsTotal = Elements;
-
-      if (AllocMemory((sizeof(CSTRING) * (Elements+1)) + len, MEM::STRING|MEM::NO_CLEAR, (APTR *)&Self->Results, nullptr) IS ERR::Okay) {
-         STRING str = (STRING)(Self->Results + Elements + 1);
-         int i;
-         for (i=0; Value[i]; i++) {
-            Self->Results[i] = str;
-            str += strcopy(Value[i], str) + 1;
-         }
-         Self->Results[i] = nullptr;
-         return ERR::Okay;
-      }
-      else return ERR::AllocMemory;
-   }
-   else return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Statement: Scripts can be executed from any string passed into this field.
@@ -712,18 +568,10 @@ It is also commonly used for executing scripts that have been embedded into prog
 
 *********************************************************************************************************************/
 
-static ERR GET_String(objScript *Self, CSTRING *Value)
+static ERR SET_String(objScript *Self, std::string_view &Value)
 {
-   *Value = Self->String;
-   return ERR::Okay;
-}
-
-static ERR SET_String(objScript *Self, CSTRING Value)
-{
-   if (Self->Path) { FreeResource(Self->Path); Self->Path = nullptr; } // Path removed when a statement string is being set
-   if (Self->String) { FreeResource(Self->String); Self->String = nullptr; }
-
-   if (Value) Self->String = strclone(check_bom((const unsigned char *)Value));
+   Self->Path.clear(); // Path removed when a statement string is being set
+   Self->Statement.assign(check_bom(Value));
    return ERR::Okay;
 }
 
@@ -734,32 +582,6 @@ Target: Reference to the default container that new script objects will be initi
 
 This field can refer to the target object that new objects at the root of the script will be initialised to.  If this
 field is not set, the root-level objects in the script will be initialised to the script's owner.
-
--FIELD-
-TotalArgs: Reflects the total number of parameters used in a script object.
-
-The total number of parameters that have been set in a script object through the unlisted field mechanism are reflected
-in the value of this field.
--END-
-*********************************************************************************************************************/
-
-static ERR GET_TotalArgs(objScript *Self, int *Value)
-{
-   *Value = Self->Vars.size();
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-PRIVATE: Variables
-*********************************************************************************************************************/
-
-static ERR GET_Variables(objScript *Self, KEYVALUE **Value)
-{
-   *Value = &Self->Vars;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 WorkingPath: Defines the script's working path (folder).
@@ -775,12 +597,12 @@ A client can manually change the working path by setting this field with a custo
 
 *********************************************************************************************************************/
 
-static ERR GET_WorkingPath(objScript *Self, STRING *Value)
+static ERR GET_WorkingPath(objScript *Self, std::string_view &Value)
 {
-   pf::Log log;
+   kt::Log log;
 
-   if (!Self->WorkingPath) {
-      if (!Self->Path) {
+   if (Self->WorkingPath.empty()) {
+      if (Self->Path.empty()) {
          log.warning("Script has no defined Path.");
          return ERR::MissingPath;
       }
@@ -789,56 +611,38 @@ static ERR GET_WorkingPath(objScript *Self, STRING *Value)
 
       bool path = false;
       if (Self->Path[0] IS '/') path = true;
-      else {
-        for (int j=0; (Self->Path[j]) and (Self->Path[j] != '/') and (Self->Path[j] != '\\'); j++) {
-            if (Self->Path[j] IS ':') {
-               path = true;
-               break;
-            }
-         }
+      else if (auto j = Self->Path.find_first_of(":/\\"); (j != std::string::npos) and (Self->Path[j] IS ':')) {
+         path = true;
       }
 
-      int k;
-      int j = 0;
-      for (k=0; Self->Path[k]; k++) {
-         if ((Self->Path[k] IS ':') or (Self->Path[k] IS '/') or (Self->Path[k] IS '\\')) j = k+1;
-      }
+      auto j = Self->Path.find_last_of(":/\\");
+      if (j != std::string::npos) j++;
 
       if (path) { // Extract absolute path
-         pf::SwitchContext ctx(Self);
-         char save = Self->Path[j];
-         Self->Path[j] = 0;
-         Self->WorkingPath = strclone(Self->Path);
-         Self->Path[j] = save;
+         kt::SwitchContext ctx(Self);
+         Self->WorkingPath.assign(Self->Path, 0, j);
       }
       else {
-         CSTRING working_path;
-         if ((CurrentTask()->get(FID_Path, working_path) IS ERR::Okay) and (working_path)) {
+         std::string_view working_path;
+         if ((!CurrentTask()->getPath(working_path)) and (not working_path.empty())) {
             // Using ResolvePath() can help to determine relative paths such as "../path/file"
 
-            std::string buf = working_path;
-            if (j > 0) buf.append(Self->Path, 0, j);
+            std::string buf(working_path);
+            if (j != std::string::npos) buf.append(Self->Path, 0, j);
 
-            pf::SwitchContext ctx(Self);
+            kt::SwitchContext ctx(Self);
             std::string rpath;
-            if (ResolvePath(buf, RSF::APPROXIMATE, &rpath) IS ERR::Okay) {
-               Self->WorkingPath = strclone(rpath);
+            if (!ResolvePath(buf, RSF::APPROXIMATE, &rpath)) {
+               Self->WorkingPath = rpath;
             }
-            else Self->WorkingPath = strclone(working_path);
+            else Self->WorkingPath = working_path;
          }
          else log.warning("No working path.");
       }
    }
 
-   *Value = Self->WorkingPath;
-   return ERR::Okay;
-}
-
-static ERR SET_WorkingPath(objScript *Self, STRING Value)
-{
-   if (Self->WorkingPath) { FreeResource(Self->WorkingPath); Self->WorkingPath = nullptr; }
-   if (Value) Self->WorkingPath = strclone(Value);
-   return ERR::Okay;
+   Value = Self->WorkingPath;
+   return Self->WorkingPath.empty() ? ERR::FieldNotSet : ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -846,26 +650,20 @@ static ERR SET_WorkingPath(objScript *Self, STRING Value)
 #include "class_script_def.c"
 
 static const FieldArray clScriptFields[] = {
-   { "Target",      FDF_OBJECTID|FDF_RW },
-   { "Flags",       FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clScriptFlags },
-   { "Error",       FDF_INT|FDF_R },
-   { "CurrentLine", FDF_INT|FDF_R },
-   { "LineOffset",  FDF_INT|FDF_RW },
-   // Virtual Fields
-   { "CacheFile",    FDF_STRING|FDF_RW,              GET_CacheFile, SET_CacheFile },
-   { "ErrorMessage", FDF_STRING|FDF_RW,              GET_ErrorMessage, SET_ErrorMessage },
-   { "WorkingPath",  FDF_STRING|FDF_RW,              GET_WorkingPath, SET_WorkingPath },
-   { "Language",     FDF_STRING|FDF_R,               GET_Language, nullptr },
-   { "Location",     FDF_SYNONYM|FDF_STRING|FDF_RI,  GET_Path, SET_Path },
-   { "Procedure",    FDF_STRING|FDF_RW,              GET_Procedure, SET_Procedure },
-   { "Name",         FDF_STRING|FDF_SYSTEM|FDF_RW,   nullptr, SET_Name },
-   { "Path",         FDF_STRING|FDF_RI,              GET_Path, SET_Path },
-   { "Results",      FDF_ARRAY|FDF_POINTER|FDF_STRING|FDF_RW, GET_Results, SET_Results },
-   { "Src",          FDF_SYNONYM|FDF_STRING|FDF_RI,  GET_Path, SET_Path },
-   { "Statement",    FDF_STRING|FDF_RW,              GET_String, SET_String },
-   { "String",       FDF_SYNONYM|FDF_STRING|FDF_RW,  GET_String, SET_String },
-   { "TotalArgs",    FDF_INT|FDF_R,                  GET_TotalArgs, nullptr },
-   { "Variables",    FDF_POINTER|FDF_SYSTEM|FDF_R,   GET_Variables, nullptr },
+   { "Procedure",    FDF_CPPSTRING|FDF_RW },
+   { "CacheFile",    FDF_CPPSTRING|FDF_RW },
+   { "Path",         FDF_CPPSTRING|FDF_RI, nullptr, SET_Path },
+   { "Src",          FDF_SYNONYM },
+   { "ErrorMessage", FDF_CPPSTRING|FDF_RW },
+   { "Statement",    FDF_CPPSTRING|FDF_RW, nullptr, SET_String },
+   { "String",       FDF_SYNONYM }, // Deprecated
+   { "WorkingPath",  FDF_CPPSTRING|FDF_RW, GET_WorkingPath },
+   { "Results",      FDF_VECTOR|FDF_CPPSTRING|FDF_RW },
+   { "Target",       FDF_OBJECTID|FDF_RW },
+   { "Flags",        FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clScriptFlags },
+   { "Error",        FDF_INT|FDF_R },
+   { "CurrentLine",  FDF_INT|FDF_R },
+   { "LineOffset",   FDF_INT|FDF_RW },
    END_FIELD
 };
 

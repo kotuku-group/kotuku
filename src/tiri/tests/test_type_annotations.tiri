@@ -7,12 +7,12 @@ function enforce_hotpath() end
 
 function parameter_names(Signature)
    names = {}
-   for entry in values(Signature:split(',')) do
-      trimmed = entry:trim()
+   for entry in values(Signature.split(',')) do
+      trimmed = entry.trim()
       if trimmed?? then
-         colon = string.find(trimmed, ":", 0, true)
-         if colon?? then trimmed = string.substr(trimmed, 0, colon) end
-         table.insert(names, trimmed)
+         colon = trimmed.find(":", 0, true)
+         if colon?? then trimmed = trimmed.sub(0, colon) end
+         names.insert(trimmed)
       end
    end
    return names
@@ -20,12 +20,12 @@ end
 
 function build_source(Signature)
    names = parameter_names(Signature)
-   returns = table.concat(names, ", ")
+   returns = names.concat(", ")
    if returns is "" then returns = "nil" end
    return "local function typed(" .. Signature .. ") return " .. returns .. " end return typed"
 end
 
-function compile_signature(Signature)
+function compile_signature(Signature:str):func
    factory = exec(build_source(Signature))
    assert(type(factory) is "function", "Chunk did not produce a function")
    return factory
@@ -40,7 +40,7 @@ end
 end
 
 @Test function MixedParameters()
-   mixed = compile_signature("Untyped, Typed:bool")
+   mixed = compile_signature("Untyped:any, Typed:bool")
    results = { mixed("anything", true) }
    assert(results[0] is "anything", "Untyped parameter should accept any value")
    assert(results[1] is true, "Typed boolean parameter should pass through")
@@ -53,25 +53,141 @@ end
    end
 
    assert_compiles("N:num")
-   assert_compiles("Number:number")
    assert_compiles("S:str")
-   assert_compiles("String:string")
    assert_compiles("B:bool")
-   assert_compiles("Boolean:boolean")
    assert_compiles("T:table")
    assert_compiles("F:func")
-   assert_compiles("Function:function")
    assert_compiles("A:any")
    assert_compiles("NilVal:nil")
-   assert_compiles("ThreadVal:thread")
+   assert_compiles("StructVal:struct")
    assert_compiles("ObjVal:obj")
-   assert_compiles("ObjectVal:object")
+end
+
+@Test function RemovedNumberTypeRejected()
+   function assert_rejected(Source:str, Context:str)
+      try
+         exec(Source)
+      success
+         assert(false, f"Expected number type name to be rejected in {Context}")
+      end
+   end
+
+   assert_rejected("local value:number = 1", "a local annotation")
+   assert_rejected("local function rejected(Value:number) return Value end", "a parameter annotation")
+   assert_rejected("local function rejected():number return 1 end", "a return annotation")
+   assert_rejected("local value = <number{ 1 }>", "a deferred expression")
+   assert_rejected("thunk rejected():number return 1 end", "a thunk return annotation")
+end
+
+@Test function RemovedStringTypeRejected()
+   function assert_rejected(Source:str, Context:str)
+      try
+         exec(Source)
+      success
+         assert(false, f"Expected string type name to be rejected in {Context}")
+      end
+   end
+
+   assert_rejected("local value:string = 'text'", "a local annotation")
+   assert_rejected("local values:array<string> = array<str> {}", "an array element annotation")
+   assert_rejected("local values:array<array<string>> = array<array<str>> {}", "a nested array annotation")
+   assert_rejected("local values = array<string> {}", "an array constructor")
+   assert_rejected("local values = array<array<string>> {}", "a nested array constructor")
+   assert_rejected("return array<str> {} is <array string>", "an array type-test descriptor")
+   assert_rejected("return array<array<str>> {} is <array array<string>>", "a nested array type-test descriptor")
+   assert(type('text') is 'string', "type() must continue to return the string runtime name")
+end
+
+@Test function ObjectTypeAliasRejected()
+   function assert_rejected(Source:str, Context:str)
+      try
+         exec(Source)
+      success
+         assert(false, f"Expected object type name to be rejected in {Context}")
+      end
+   end
+
+   assert_rejected("local value:object = nil", "a local annotation")
+   assert_rejected("local function rejected(Value:object) return Value end", "a parameter annotation")
+   assert_rejected("local function rejected():object return nil end", "a return annotation")
+   assert_rejected("return nil is <object>", "a type-test descriptor")
+   assert_rejected("local values:array<object> = array<obj> {}", "an array element annotation")
+   assert_rejected("local values:array<array<object>> = array<array<obj>> {}", "a nested array annotation")
+   assert_rejected("local values = array<object> {}", "an array constructor")
+   assert_rejected("local values = array<array<object>> {}", "a nested array constructor")
+   assert_rejected("return array<obj> {} is <array object>", "an array type-test descriptor")
+   assert_rejected("return array<array<obj>> {} is <array array<object>>", "a nested array type-test descriptor")
+end
+
+@Test function RemovedBooleanTypeRejected()
+   function assert_rejected(Source:str, Context:str)
+      try
+         exec(Source)
+      success
+         assert(false, f"Expected boolean type name to be rejected in {Context}")
+      end
+   end
+
+   assert_rejected("local value:boolean = true", "a local annotation")
+   assert_rejected("local function rejected(Value:boolean) return Value end", "a parameter annotation")
+   assert_rejected("local function rejected():boolean return true end", "a return annotation")
 end
 
 @Test function UnknownTypeRejected()
    try
       exec("local function rejected(Value:unknown_type) return Value end return rejected")
    success
-      error("Expected unknown type name to prevent compilation")
+      assert(false, "Expected unknown type name to prevent compilation")
    end
+end
+
+@Test function ArrayMemberAnnotations()
+   function accept_ints(Values:array<int>):array<int>
+      return Values
+   end
+
+   function accept_nested(Values:array<array<str>>):array<array<str>>
+      return Values
+   end
+
+   local values:array<int> = array<int> { 3, 5 }
+   global glAnnotatedWords:array<str> = array<str> { 'one' }
+   assert(accept_ints(values)[1] is 5, 'Concrete array annotations should work in parameters, locals and results')
+   assert(accept_nested(array<array<str>> { array<str> { 'nested' } })[0][0] is 'nested',
+      'Recursive array annotations should work in parameters and results')
+   assert(glAnnotatedWords[0] is 'one', 'Concrete array annotations should work for globals')
+
+   function assert_rejected(Source:str, Message:str)
+      try
+         exec(Source)
+         raise 'Expected array annotation syntax to be rejected'
+      except e
+         assert(e.message.find(Message) != nil, 'Unexpected array annotation diagnostic: ' .. e.message)
+      end
+   end
+
+   assert_rejected('function invalid(Value:array) end', 'element type')
+   assert_rejected('function invalid(Value:array<missing>) end', 'Unknown array element type')
+   assert_rejected('function invalid(Value:array<pointer>) end', 'Unknown array element type')
+   assert_rejected('function invalid(Value:array<int, 4>) end', 'cannot declare a size')
+   assert_rejected('function invalid(Value:array<array<int, 4>>) end', 'nested size')
+end
+
+@Test function MistypedArrayArgumentRaisesCleanly()
+   -- Annotated parameters emit specialised bytecode, so passing a mismatched value must raise a
+   -- catchable error rather than crash or silently operate on the wrong type.
+   function increment(Values:array<any>)
+      for index in {0 to #Values} do
+         Values[index] += 1
+      end
+   end
+
+   local plain_table = { 1, 2, 3 }
+   try
+      increment(plain_table)
+      raise "Expected a table argument to an array-annotated parameter to raise"
+   except e
+      assert(e.message != nil, "The mistyped argument error should carry a message")
+   end
+   assert(plain_table[0] is 1, "A rejected table argument should remain unmodified")
 end

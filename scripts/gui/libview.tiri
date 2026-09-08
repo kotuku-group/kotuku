@@ -3,22 +3,23 @@
    import 'gui'
    import 'gui/scrollbar'
 
-   namespace 'gui'
+   namespace gui
 
-   global mGfx ?= mod.load('display')
+   module display as mGfx
 
    glItemCounter = 1
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function checkCursorImage(View)
+function checkCursorImage(View:table)
    if View.pointerLocked and not View.activeZone then
-      mGfx.restoreCursor(PTC_DEFAULT, View.scene.surface)
+      mGfx.RestoreCursor(PTC_DEFAULT, View.scene.surface)
       View.pointerLocked = nil
    end
 end
 
-function highlightItem(View, Item:table)  -- Simplifies the process of highlighting an item.  Item can be nil for deselection.
+-- Simplifies the process of highlighting an item.  Item can be nil for deselection.
+function highlightItem(View:table!, Item:table)
    if Item is View.hItem then return end
 
    if Item != View.hItem then
@@ -33,7 +34,7 @@ end
 function clearItems(View)
    if View.items then
       for item in values(View.items) do
-         item?:_free()
+         item?._free(item)
       end
    end
 
@@ -52,14 +53,14 @@ function deselectAll(View)
    end
 end
 
-function deselectItem(View, Item)
+function deselectItem(View:table!, Item)
    if View.sItem is Item then View.sItem = nil end
 
    Item._selected = false
    Item?._selectEvent(View, Item)
 end
 
-function lastItem(View)
+function lastItem(View):table
    return View.items[#View.items-1]
 end
 
@@ -83,26 +84,26 @@ end
 --   user:      Selected by user interaction (click or keypress)
 --   manual:    Item was manually selected (by the application, not the user).
 
-function reportItemSelected(View, Reason, Item)
+function reportItemSelected(View:table!, Reason, Item)
    View?.itemSelected(View, Reason, Item)
 end
 
-function reportItemDeselected(View, Reason, Item)
+function reportItemDeselected(View:table!, Reason, Item)
    View?.itemDeselected(View, Reason, Item)
 end
 
-function reportItemActivated(View, Reason, Item)
+function reportItemActivated(View:table!, Reason, Item)
    if Item.activity then Item.activity(Item) end
    View?.itemActivated(View, Reason, Item)
 end
 
-function reportActiveChange(View, Reason, Item)
+function reportActiveChange(View:table!, Reason, Item)
    View?.activeChange(View, Reason, Item)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function simpleSelect(View, Item)
+function simpleSelect(View:table!, Item)
    if View.sItem then
       deselectItem(View, View.sItem)
       reportItemDeselected(View, 'user', View.sItem)
@@ -114,7 +115,7 @@ function simpleSelect(View, Item)
    View.scene.surface.mtScheduleRedraw()
 end
 
-function selectNext(View, Filter)
+function selectNext(View:table, Filter):table
    if not View.sItem then
       for item in values(View.items) do
          if (not item.hidden) and Filter(item) then
@@ -135,9 +136,9 @@ function selectNext(View, Filter)
    end
 end
 
-function selectPrev(View, Filter)
+function selectPrev(View:table, Filter):table
    if not View.sItem then
-      for i=1, #View.items do
+      for i in {1 into #View.items} do
          item = View.items[#View.items - i]
          if (not item.hidden) and Filter(item) then
             simpleSelect(View, item)
@@ -146,7 +147,7 @@ function selectPrev(View, Filter)
       end
    else
       found = false
-      for i=1, #View.items do
+      for i in {1 into #View.items} do
          item = View.items[#View.items - i]
          if item is View.sItem then
             found = true
@@ -160,7 +161,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-gui.initView = function(Options, BuildUI, NewItems)
+gui.initView = function(Options:table!, BuildUI, NewItems)
    vw = {
       lookup     = { }, -- Lookup items by ID
       activeZone = nil,
@@ -198,7 +199,7 @@ gui.initView = function(Options, BuildUI, NewItems)
       assert(Items, 'No Items provided')
 
       new_items = { }
-      for k, item in pairs(Items) do
+      for item in values(Items) do
          new_item = {
             _id = glItemCounter,
             _vectors = { },
@@ -220,8 +221,8 @@ gui.initView = function(Options, BuildUI, NewItems)
             new_item[k] = v
          end
 
-         table.insert(vw.items, new_item)
-         if NewItems then table.insert(new_items, new_item) end
+         vw.items.insert(new_item)
+         if NewItems then new_items.insert(new_item) end
          vw.lookup[glItemCounter] = new_item
          glItemCounter++
       end
@@ -272,10 +273,10 @@ gui.initView = function(Options, BuildUI, NewItems)
    -- Add a monitored click zone.  Not for client use.
    -- If Width is nil then the click zone will span the entire width of the page and X is ignored.
 
-   vw.addZone = function(X, Y, Width, Height, Item, HoverCallback)
+   vw.addZone = function(X, Y, Width, Height, Item, HoverCallback):table
       if not HoverCallback then HoverCallback = itemHoverCallback end
 
-      table.insert(vw.zones, {
+      vw.zones.insert({
          x      = X,
          y      = Y,
          width  = Width,
@@ -289,7 +290,7 @@ gui.initView = function(Options, BuildUI, NewItems)
 
    -- Clears a view of all internal content and updates the display.
 
-   vw.clear = function()
+   vw.clearView = function()
       activate = false
       if vw.sItem then
          reportItemDeselected(vw, 'clear', vw.sItem)
@@ -342,31 +343,105 @@ gui.initView = function(Options, BuildUI, NewItems)
    -- Returns the graphical dimensions of an item in the view.
 
    vw.itemDimensions = function(Item)
-      return { x=0, y=0, width=0, height=0 }
+      assert(Item, 'No Item provided')
+      vp = Item._vectors?.viewport
+      if not vp then return { x=0, y=0, width=0, height=0 } end
+      return { x=vp.x ?? 0, y=vp.y ?? 0, width=vp.width ?? 0, height=vp.height ?? 0 }
    end
 
    -- Moves an item towards the bottom of the view.
 
-   vw.lowerItem = function(XPath, Item)
-
+   vw.lowerItem = function(Item)
+      assert(Item, 'No Item provided')
+      for i in {0 to #vw.items - 1} do
+         if vw.items[i] is Item then
+            vw.items[i] = vw.items[i+1]
+            vw.items[i+1] = Item
+            vw.rebuild()
+            return
+         end
+      end
    end
 
    -- Moves an item towards the top of the view.
 
-   vw.raiseItem = function(XPath, Item)
-
+   vw.raiseItem = function(Item)
+      assert(Item, 'No Item provided')
+      for i in {1 to #vw.items} do
+         if vw.items[i] is Item then
+            vw.items[i] = vw.items[i-1]
+            vw.items[i-1] = Item
+            vw.rebuild()
+            return
+         end
+      end
    end
 
    -- Removes an item from the view.
 
-   vw.removeItem = function(XPath, Item, InvisibleRemoval)
+   vw.removeItem = function(Item)
+      assert(Item, 'No Item provided')
 
+      if Item is vw.hItem then
+         highlightItem(vw, nil)
+      end
+
+      if Item._selected then
+         deselectItem(vw, Item)
+         reportItemDeselected(vw, 'manual', Item)
+      end
+
+      if Item is vw.activeItem then
+         vw.activeItem = nil
+         reportActiveChange(vw, 'manual', nil)
+      end
+
+      for i in {0 to #vw.items} do
+         if vw.items[i] is Item then
+            vw.items.remove(i)
+            break
+         end
+      end
+
+      if Item._id then vw.lookup[Item._id] = nil end
+
+      Item._free(Item)
+
+      vw.rebuild()
    end
 
    -- Checks the visibility of an item, scrolling it into view if it is partially or fully hidden.
 
    vw.revealItem = function(Item)
+      assert(Item, 'No Item provided')
+      if not vw.scrollbar then return end
 
+      dims = vw.itemDimensions(Item)
+      if (dims.width <= 0) and (dims.height <= 0) then return end
+
+      scroll_top    = -vw.page.y
+      scroll_bottom = scroll_top + vw.frame.height
+
+      delta_y = 0
+      if dims.y < scroll_top then
+         delta_y = scroll_top - dims.y
+      elseif dims.y + dims.height > scroll_bottom then
+         delta_y = scroll_bottom - (dims.y + dims.height)
+      end
+
+      scroll_left  = -vw.page.x
+      scroll_right = scroll_left + vw.frame.width
+
+      delta_x = 0
+      if dims.x < scroll_left then
+         delta_x = scroll_left - dims.x
+      elseif dims.x + dims.width > scroll_right then
+         delta_x = scroll_right - (dims.x + dims.width)
+      end
+
+      if (delta_x != 0) or (delta_y != 0) then
+         vw.scrollbar.scrollPage(delta_x, delta_y)
+      end
    end
 
    -- Selects all items in the view for the user.
@@ -402,11 +477,11 @@ gui.initView = function(Options, BuildUI, NewItems)
 
    -- Return a table of all selected items
 
-   vw.selectedItems = function():array
+   vw.selectedItems = function():array<table>
       list = array<table> { }
       for item in values(vw.items) do
          if item._selected then
-            list:push(item)
+            list.push(item)
          end
       end
       return list
@@ -436,16 +511,20 @@ gui.initView = function(Options, BuildUI, NewItems)
    end
 
    vw.free = function()
-      vw.clear()
+      vw.clearView()
       vw.viewport.free()
       for k,v in pairs(vw) do vw[k] = nil end
       processing.collect()
    end
 
-   -- TODO: Changes the underlying attributes of any item in the view.
+   -- Changes the underlying attributes of any item in the view by setting provided key-values.
 
-   vw.setItem = function(XPath, TagIndex, Key, Value)
+   vw.setItem = function(Item:table!, KV:table!)
+      for k, v in pairs(KV) do
+         Item[k] = v
+      end
 
+      vw.rebuild()
    end
 
    -- Load a new set of items and display them for the user.  Any existing items will be cleared.
@@ -464,23 +543,24 @@ gui.initView = function(Options, BuildUI, NewItems)
 
       if #vw.items <= 1 then return end
 
-      if type(vw.items[0][Attrib]) is 'table' then
+      if vw.items[0][Attrib] is <table> then
          if vw.items[0][Attrib]['sort'] then
-            table.sort(vw.items, function(a,b)
-               return Ascending ? (a[Attrib].sort < b[Attrib].sort) :> (a[Attrib].sort > b[Attrib].sort)
+            vw.items.sort(function(a,b)
+               return Ascending ? (a[Attrib].sort < b[Attrib].sort) : (a[Attrib].sort > b[Attrib].sort)
             end)
          else
-            table.sort(vw.items, function(a,b)
-               return Ascending ? (a[Attrib].value < b[Attrib].value) :> (a[Attrib].value > b[Attrib].value)
+            vw.items.sort(function(a,b)
+               return Ascending ? (a[Attrib].value < b[Attrib].value) : (a[Attrib].value > b[Attrib].value)
             end)
          end
-      elseif type(vw.items[1][Attrib]) is 'string' then
-         table.sort(vw.items, function(a,b)
-            return Ascending ? (a[Attrib]:lower() < b[Attrib]:lower()) :> (a[Attrib]:lower() > b[Attrib]:lower())
+      elseif vw.items[1][Attrib] is <str> then
+         vw.items.sort(function(a,b)
+            return Ascending ? (string.lower(a[Attrib]) < string.lower(b[Attrib])) :
+               (string.lower(a[Attrib]) > string.lower(b[Attrib]))
          end)
       else
-         table.sort(vw.items, function(a,b)
-            return Ascending ? a[Attrib] < b[Attrib] :> a[Attrib] > b[Attrib]
+         vw.items.sort(function(a,b)
+            return Ascending ? a[Attrib] < b[Attrib] : a[Attrib] > b[Attrib]
          end)
       end
 
@@ -490,7 +570,7 @@ gui.initView = function(Options, BuildUI, NewItems)
    -- Sort items by any named attribute (Attrib must appear in all items)
    -- Functionality must be defined by the host.
 
-   vw.sort = function(Attrib, Ascending)
+   vw.sortView = function(Attrib, Ascending)
       msg('The view implementation must override the sort() method.')
    end
 
@@ -505,7 +585,7 @@ gui.initView = function(Options, BuildUI, NewItems)
 
       BuildUI(vw)
       cursorActivity() -- Reset the cursor
-      vw?.border?.acMoveToFront()
+      vw.border?.acMoveToFront()
       vw.scene.surface.mtScheduleRedraw()
    end
 
@@ -549,7 +629,7 @@ gui.initView = function(Options, BuildUI, NewItems)
       })
    end
 
-   for v in values(array<string> { 'x', 'y', 'xOffset', 'yOffset', 'width', 'height'}) do
+   for v in values(array<str> { 'x', 'y', 'xOffset', 'yOffset', 'width', 'height'}) do
       if Options[v] then vw.viewport[v] = Options[v] end
    end
 

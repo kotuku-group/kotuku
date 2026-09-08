@@ -5,7 +5,7 @@ A simple test program for confirming that our fonts and reported metrics values 
    import 'gui/window'
    import 'gui/combobox'
 
-   global mFont ?= mod.load('font')
+   module font as mFont
 
 glFontSize = 30
 local glViewport, glWindow, glTextY
@@ -13,9 +13,9 @@ local glViewport, glWindow, glTextY
 function setFont(Face, Size)
    if glText then glText.free() end
 
-   local err, font = mVec.getFontHandle(Face, "Regular", 0, Size)
-   local metrics = struct.new('FontMetrics')
-   local err = mVec.getFontMetrics(font, metrics)
+   local err, font = mVec.GetFontHandle(Face, "Regular", 0, Size)
+   metrics = struct.new('FontMetrics')
+   err = mVec.GetFontMetrics(font, metrics)
 
    if not glInitialised then
       -- CAP-HEIGHT: YELLOW
@@ -40,7 +40,7 @@ function setFont(Face, Size)
       -- METRICS ASCENT: BLUE DOTTED
       -- The ascent is the distance from the baseline to the top of the font, NOT including accents.  Generally very
       -- reliable, the margin of error is reasonably tight for our fonts.
-      global glAscent = glViewport.new('vectorpolygon', { x1 = 0, y1 = 0, x2 = '100%', y2 = 0, stroke='rgb(0,0,255,128)', dashArray="4,4" })
+      global glAscent = glViewport.new('vectorpolygon', { x1 = 0, y1 = 0, x2 = '100%', y2 = 0, stroke='rgb(0,0,255,128)', dashArray=array<double> { 4,4 } })
    end
 
    baseline = glTextY + Size
@@ -61,7 +61,7 @@ function setFont(Face, Size)
 
    -- FONTSIZE MATCHES THE CAP HEIGHT WHEN * 0.75
    glSize.y = glText.y
-   glSize.height = -glText.fontSize * 0.75
+   glSize.height = -tonumber(glText.fontSize) * 0.75
 
    glNextLine.y = glText.y + metrics.lineSpacing
    glNextHeight.y = glText.y + metrics.lineSpacing - metrics.ascent
@@ -76,26 +76,24 @@ function setFont(Face, Size)
    processing.collect()
 end
 
-   --mFont.refreshFonts()
+   --mFont.RefreshFonts()
 
-   glWindow = gui.window({ title='Widget Examples', insideWidth=600, insideHeight=400, center=true })
-   glViewport = glWindow:clientViewport({ aspectRatio = ARF_MEET })
+   glWindow = gui.window({ title='Widget Examples', insideWidth=600, insideHeight=400 })
+   glViewport = glWindow.clientViewport({ aspectRatio = ARF_MEET })
 
    y = 6
    items = array<table> { }
-   err, list = mFont.GetList()
+   list = resolve(gui.fontList)
 
-   while list do
-      if list.hidden != 1 then
-         items:push({ item=list.name })
+   for _, rec in list.sortByKeys() do
+      if not rec.hidden then
+         items.push({ item=rec.name })
       end
-      list = list.next
    end
 
    combobox = gui.combobox({
       target = glViewport,
       label  = 'Font:',
-      string = 'Noto Sans',
       x      = glWindow.margins.left, y = y,
       items  = items,
       events = {
@@ -110,5 +108,5 @@ end
 
    setFont(items[0].item, glFontSize)
 
-   glWindow:show()
+   glWindow.show()
    processing.sleep() -- Will sleep until the window sends MSGID_QUIT

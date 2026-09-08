@@ -1,11 +1,12 @@
 --$TIRI:Include
 
-module({ name="Document", copyright="Paul Manias © 2005-2026", version=1.0, timestamp=20240611 }, function()
+module({ name="Document", copyright="Paul Manias © 2005-2026", version=1.0, timestamp=20240611, src="../document.cpp" }, function()
   restrict(function()
     loadFile(glPath .. 'common-graphics.tdl')
   end)
 
-  c_include("<kotuku/modules/display.h>", "<kotuku/modules/xml.h>", "<kotuku/modules/font.h>", "<kotuku/modules/vector.h>")
+  c_include("<kotuku/modules/display.h>", "<kotuku/modules/xml.h>", "<kotuku/modules/font.h>",
+    "<kotuku/modules/vector.h>", "<kotuku/modules/script.h>")
 
   loadFile(glPath .. 'common.tdl')
 
@@ -13,7 +14,7 @@ module({ name="Document", copyright="Paul Manias © 2005-2026", version=1.0, tim
     VERSION = "\"20240126\""
   })
 
-  enum("TT", { type="char", start=1 }, "VECTOR", "LINK", "EDIT")
+  enums("TT", { type="char", start=1 }, "VECTOR", "LINK", "EDIT")
 
   flags("DEF", { comment="Event flags for selectively receiving events from the Document object." },
     "PATH: The source file path has changed.  Useful for detecting when the user has left the page.",
@@ -26,7 +27,7 @@ module({ name="Document", copyright="Paul Manias © 2005-2026", version=1.0, tim
     { ON_CROSSING = "ON_CROSSING_IN|ON_CROSSING_OUT" }
   )
 
-  enum("DRT", { type="int", start=0, comment="Internal trigger codes" },
+  enums("DRT", { type="int", start=0, comment="Internal trigger codes" },
     "BEFORE_LAYOUT",
     "AFTER_LAYOUT",
     "USER_CLICK",
@@ -71,16 +72,18 @@ module({ name="Document", copyright="Paul Manias © 2005-2026", version=1.0, tim
     { id=14, name="ReadContent" }
   })
 
-  class("Document", { src={ "../class/document_class.cpp", "../class/fields.cpp" }, output="../class/document_def.c" }, [[
-    str Description      # A description assigned by the author of the document
-    str Title            # The title of the document
-    str Author           # The author of the document
-    str Copyright        # Copyright information for the document
-    str Keywords         # Keywords for the document
+  klass("Document", { src={ "../class/document_class.cpp", "../class/fields.cpp" }, output="../class/document_def.c", extended=true }, [[
+    string Description # A description assigned by the author of the document
+    string Title       # The title of the document
+    string Author      # The author of the document
+    string Copyright   # Copyright information for the document
+    string Keywords    # Keywords for the document
+    string Path        # Optional file to load on initialisation
     obj(VectorViewport) Viewport  # The viewport that will host the document
     obj(VectorViewport) Focus     # Monitor this viewport for focus events
     obj(VectorViewport) View      # An internally created viewport that hosts the Page
     obj(VectorViewport) Page      # The Page contains the document content and is hosted by the View
+    obj(Script) ClientScript
     oid TabFocus         # If the tab key is pressed, focus can be changed to this object
     int(DEF) EventMask   # Event mask for selectively receiving events from the Document object.
     int(DCF) Flags       # Optional flags
@@ -90,12 +93,12 @@ module({ name="Document", copyright="Paul Manias © 2005-2026", version=1.0, tim
 
     c_insert([[
 namespace fl {
-   using namespace pf;
+   using namespace kt;
 
-constexpr FieldValue EventCallback(const FUNCTION &Value) { return FieldValue(FID_EventCallback, &Value); }
-constexpr FieldValue EventCallback(APTR Value) { return FieldValue(FID_EventCallback, Value); }
-constexpr FieldValue EventMask(DEF Value) { return FieldValue(FID_EventMask, int(Value)); }
-constexpr FieldValue Flags(DCF Value) { return FieldValue(FID_Flags, int(Value)); }
+constexpr FieldValue EventCallback(const FUNCTION &Value) { return FieldValue(strhash("eventCallback"), &Value); }
+constexpr FieldValue EventCallback(APTR Value) { return FieldValue(strhash("eventCallback"), Value); }
+constexpr FieldValue EventMask(DEF Value) { return FieldValue(strhash("eventMask"), int(Value)); }
+constexpr FieldValue Flags(DCF Value) { return FieldValue(strhash("flags"), int(Value)); }
 
 }
 ]])

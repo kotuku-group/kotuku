@@ -1,0 +1,58 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>GradientDiffusion</name>
+    <type>class</type>
+    <module>Vector</module>
+    <comment>Diffusion curves paint server [BETA].</comment>
+    <version>1</version>
+    <id>1e4b184d</id>
+    <idstring>GRADIENTDIFFUSION</idstring>
+    <category>Graphics</category>
+    <copyright>Paul Manias © 2010-2026</copyright>
+    <description>
+<p>This class is in beta and is not yet fully supported.  It is available for experimentation and feedback.</p>
+<p>GradientDiffusion implements diffusion curves, a vector representation for smooth-shaded images (Orzan et al., SIGGRAPH 2008).  The client supplies a sparse set of cubic Bezier curves through <fl>Curves</fl>, with an independent colour assigned to each side of every curve.  The colours diffuse outward from the curves until they meet, producing smooth, organic shading across the fill region; each curve acts simultaneously as a colour source and as a barrier that prevents the colours of other curves from bleeding across it.</p>
+<p>&quot;Left&quot; and &quot;right&quot; are relative to the direction of travel from the curve's start point to its end point, i.e. the left side is the side pointed to by the normal <code>(-dy, dx)</code>.  Colours are interpolated linearly along the length of each curve from its start colour to its end colour.  Multi-segment curves are expressed as consecutive records that share endpoints and colours.</p>
+<p>The diffusion is evaluated by relaxing a Laplace equation over a cached raster grid.  The grid is re-solved only when the curve set or solve parameters change, so static gradients render at full speed after the first frame.  The <class name="Gradient" field="Resolution">Gradient.Resolution</class> field scales the solve grid's resolution: at <code>0</code> the longest axis receives 128 texels, rising to 512 texels at <code>1.0</code>.</p>
+<p>The inherited colour-ramp fields <code>Stops</code>, <code>ColourMap</code>, <code>SpreadMethod</code> and <code>Colour</code> are not supported by this class. All colour information is supplied through <fl>Curves</fl>.</p></description>
+    <source>
+      <file path="painters/">gradient_diffusion.cpp</file>
+    </source>
+  </info>
+
+  <fields>
+    <field>
+      <name>Curves</name>
+      <comment>Defines the diffusion curves and their per-side colours.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>kt::vector&lt;DiffusionCurveRecord&gt;</type>
+      <description>
+<p>The Curves array defines one or more diffusion curves.  Each <st>DiffusionCurveRecord</st> carries the cubic Bezier geometry of one curve segment in its <code>Curve</code> member, plus a start and end colour for each side of the curve: <code>LeftStart</code>, <code>LeftEnd</code>, <code>RightStart</code> and <code>RightEnd</code>.  Colours are interpolated linearly along the curve's arc length, and the left side is the side pointed to by the normal <code>(-dy, dx)</code> when travelling from the curve's start to its end.</p>
+<p>The coordinate system for curve positions is determined by <class name="Gradient" field="Units">Gradient.Units</class>.  Under <code>BOUNDING_BOX</code>, normalised curve coordinates in the range <code>0 - 1.0</code> are scaled into the target path's bounds.  Under <code>USERSPACE</code>, positions are taken directly in the viewport's coordinate system and the colour field is solved over the target path's bounds.</p>
+<p>Colour components are clamped to the range <code>0 - 1.0</code> at assignment.  Alpha participates in the diffusion, so transparent constraints are legal.  Degenerate (zero-length) curve segments are skipped during rendering.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>XMLDef</name>
+      <comment>Returns an SVG compliant XML string that describes the effect.</comment>
+      <access read="G">Get</access>
+      <type>STRING</type>
+      <tags>caller-owns-result</tags>
+    </field>
+
+  </fields>
+  <structs>
+    <struct name="DiffusionCurveRecord" comment="Describes one curve for the GradientDiffusion Curves field.">
+      <field name="Curve" type="struct MeshControl">Cubic Bezier geometry for this curve segment.</field>
+      <field name="LeftStart" type="struct FRGB">Colour on the left side at the start of the curve.</field>
+      <field name="LeftEnd" type="struct FRGB">Colour on the left side at the end of the curve.</field>
+      <field name="RightStart" type="struct FRGB">Colour on the right side at the start of the curve.</field>
+      <field name="RightEnd" type="struct FRGB">Colour on the right side at the end of the curve.</field>
+    </struct>
+
+  </structs>
+</book>

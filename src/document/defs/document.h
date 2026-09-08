@@ -76,6 +76,28 @@ enum class LINK : uint8_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(LINK)
 
+enum class doc_diag_severity : uint8_t {
+   HINT = 0,
+   WARNING = 1,
+   ERROR = 2,
+};
+
+class doc_diagnostic {
+   public:
+   doc_diag_severity severity = doc_diag_severity::WARNING;
+   ERR error = ERR::Okay;
+   std::string code;
+   std::string message;
+   std::string path;
+   std::string page_name;
+   int line_no = 0;
+   int tag_id = 0;
+   int parent_id = 0;
+   uint32_t namespace_id = 0;
+   std::string tag_name;
+   std::string attrib_name;
+};
+
 enum {
    COND_NOT_EQUAL=1,
    COND_EQUAL,
@@ -122,7 +144,6 @@ DEFINE_ENUM_FLAG_OPERATORS(SCODE)
 
 enum class ULD : uint8_t {
    NIL             = 0,
-   TERMINATE       = 0x01,
    KEEP_PARAMETERS = 0x02,
    REFRESH         = 0x04,
    REDRAW          = 0x08
@@ -174,187 +195,81 @@ class RSTREAM;
 #include "dunit.h"
 
 //********************************************************************************************************************
-// UI hooks for the client
+// stream_char provides indexing to specific characters in the stream.  It is designed to handle positional changes so
+// that text string boundaries can be crossed without incident.
+//
+// The index and offset are set to -1 if the stream_char is invalidated.
 
-struct ui_hooks {
-   std::string on_click;     // Function to call after a button event in the UI
-   std::string on_motion;    // Function to call after a motion event in the UI
-   std::string on_crossing;  // Function to call after a crossing event in the UI (enter/leave)
-   JTYPE events = JTYPE::NIL; // Input events that the client is interested in.
-};
+struct stream_char {
+   INDEX index;     // Byte code position within the stream
+   size_t offset;   // Specific character offset within the bc_text.text string
 
-//********************************************************************************************************************
+   stream_char() : index(-1), offset(-1) { }
+   stream_char(INDEX pIndex, uint32_t pOffset) : index(pIndex), offset(pOffset) { }
+   stream_char(INDEX pIndex) : index(pIndex), offset(0) { }
 
-struct padding {
-   double left = 0, top = 0, right = 0, bottom = 0;
-   bool left_scl = false, right_scl = false, top_scl = false, bottom_scl = false;
-   bool configured = false;
-
-   padding() = default;
-
-   padding(double pLeft, double pTop, double pRight, double pBottom) :
-      left(pLeft), top(pTop), right(pRight), bottom(pBottom), configured(true) { }
-
-   void parse(const std::string &Value);
-
-   void scale_all() { left_scl = right_scl = top_scl = bottom_scl = true; }
-};
-
-//********************************************************************************************************************
-
-struct scroll_mgr {
-   struct scroll_slider {
-      double offset = 0;
-      double length = 20;
-   };
-
-   struct scroll_bar {
-      scroll_mgr *m_mgr = nullptr;
-      objVectorViewport *m_bar_vp = nullptr; // Main viewport for managing the scrollbar
-      objVectorViewport *m_slider_host = nullptr;
-      objVectorViewport *m_slider_vp = nullptr;
-      objVectorRectangle *m_slider_rect = nullptr;
-      scroll_slider m_slider_pos;
-      char m_direction = 0; // 'V' or 'H'
-      double m_breadth = 10;
-
-      scroll_slider calc_slider(double, double, double, double);
-      void init(scroll_mgr *, char, objVectorViewport *);
-      void clear();
-   };
-
-   extDocument *m_doc = nullptr;
-   objVectorViewport *m_page = nullptr; // Monitored page
-   objVectorViewport *m_view = nullptr; // Monitored owner of the page
-   double m_min_width = 0;    // For dynamic width mode, this is the minimum required width
-   bool m_fixed_mode = false;
-   bool m_auto_adjust_view_size = true; // Automatically adjust the view to accomodate the visibility of the scrollbars
-
-   scroll_bar m_vbar;
-   scroll_bar m_hbar;
-
-   scroll_mgr() {}
-
-   void   init(extDocument *, objVectorViewport *, objVectorViewport *);
-   void   scroll_page(double, double);
-   void   recalc_sliders_from_view();
-   void   fix_page_size(double, double);
-   void   dynamic_page_size(double, double, double);
-};
-
-//********************************************************************************************************************
-// Tab is used to represent interactive entities within the document that can be tabbed to.
-
-struct tab {
-   // The ref is a UID for the Type, so you can use it to find the tab in the document stream
-   std::variant<int, uint32_t> ref; // For TT::VECTOR: VectorID; TT::LINK: LinkID
-   TT    type;
-   bool  active;     // true if the tabbable entity is active/visible
-
-   tab(TT pType, BYTECODE pReference, bool pActive) : ref(pReference), type(pType), active(pActive) { }
-};
-
-//********************************************************************************************************************
-
-struct edit_cell {
-   CELL_ID cell_id;
-   double x, y, width, height;
-};
-
-//********************************************************************************************************************
-
-struct link_activated {
-   std::map<std::string, std::string> Values;  // All key-values associated with the link.
-};
-
-//********************************************************************************************************************
-// Every instruction in the document stream is represented by a stream_code entity.  The code refers to what the thing
-// is, while the UID hash refers to further information in the Codes table.
-
-struct stream_code {
-   SCODE code;  // Type
-   BYTECODE uid; // Lookup for the Codes table
-
-   stream_code() : code(SCODE::NIL), uid(0) { }
-   stream_code(SCODE pCode, BYTECODE pID) : code(pCode), uid(pID) { }
-};
-
-//********************************************************************************************************************
-
-class entity {
-public:
-   BYTECODE uid;   // Unique identifier for lookup
-   SCODE code = SCODE::NIL; // Byte code
-
-   entity() { uid = glByteCodeID++; }
-   entity(SCODE pCode) : code(pCode) { uid = glByteCodeID++; }
-};
-
-//********************************************************************************************************************
-
-class docresource {
-public:
-   OBJECTID object_id;
-   CLASSID class_id;
-   RTD type;
-   bool terminate = false; // If true, can be freed immediately and not on a delay
-
-   docresource(OBJECTID pID, RTD pType, CLASSID pClassID = CLASSID::NIL) :
-      object_id(pID), class_id(pClassID), type(pType) { }
-
-   ~docresource() {
-      if ((type IS RTD::PERSISTENT_SCRIPT) or (type IS RTD::PERSISTENT_OBJECT)) {
-         if (terminate) FreeResource(object_id);
-         else SendMessage(MSGID::FREE, MSF::NIL, &object_id, sizeof(OBJECTID));
-      }
-      else if (type IS RTD::OBJECT_UNLOAD_DELAY) {
-         if (terminate) FreeResource(object_id);
-         else SendMessage(MSGID::FREE, MSF::NIL, &object_id, sizeof(OBJECTID));
-      }
-      else if (type != RTD::NIL) FreeResource(object_id);
+   bool operator==(const stream_char &Other) const {
+      return (this->index IS Other.index) and (this->offset IS Other.offset);
    }
 
-   docresource(docresource &&other) noexcept { // Move constructor
-      object_id = other.object_id;
-      class_id  = other.class_id;
-      type      = other.type;
-      terminate = other.terminate;
-      other.type = RTD::NIL;
+   bool operator<(const stream_char &Other) const {
+      if (this->index < Other.index) return true;
+      else if ((this->index IS Other.index) and (this->offset < Other.offset)) return true;
+      else return false;
    }
 
-   docresource(const docresource &other) { // Copy constructor
-      object_id = other.object_id;
-      class_id  = other.class_id;
-      type      = other.type;
-      terminate = other.terminate;
+   bool operator>(const stream_char &Other) const {
+      if (this->index > Other.index) return true;
+      else if ((this->index IS Other.index) and (this->offset > Other.offset)) return true;
+      else return false;
    }
 
-   docresource& operator=(docresource &&other) noexcept { // Move assignment
-      if (this IS &other) return *this;
-      object_id = other.object_id;
-      class_id  = other.class_id;
-      type      = other.type;
-      terminate = other.terminate;
-      other.type = RTD::NIL;
-      return *this;
+   bool operator<=(const stream_char &Other) const {
+      if (this->index < Other.index) return true;
+      else if ((this->index IS Other.index) and (this->offset <= Other.offset)) return true;
+      else return false;
    }
 
-   docresource& operator=(const docresource& other) { // Copy assignment
-      if (this IS &other) return *this;
-      object_id = other.object_id;
-      class_id  = other.class_id;
-      type      = other.type;
-      terminate = other.terminate;
-      return *this;
+   bool operator>=(const stream_char &Other) const {
+      if (this->index > Other.index) return true;
+      else if ((this->index IS Other.index) and (this->offset >= Other.offset)) return true;
+      else return false;
    }
-};
 
-//********************************************************************************************************************
-
-struct case_insensitive_map {
-   bool operator() (const std::string &lhs, const std::string &rhs) const {
-      return ::strcasecmp(lhs.c_str(), rhs.c_str()) < 0;
+   void operator+=(const int Value) {
+      offset += Value;
    }
+
+   inline void reset() { index = -1; offset = -1; }
+   inline bool valid() { return index != -1; }
+
+   inline void set(INDEX pIndex, uint32_t pOffset = 0) {
+      index  = pIndex;
+      offset = pOffset;
+   }
+
+   inline INDEX prev_code() {
+      index--;
+      if (index < 0) { index = -1; offset = -1; }
+      else offset = 0;
+      return index;
+   }
+
+   inline INDEX next_code() {
+      offset = 0;
+      index++;
+      return index;
+   }
+
+   // NB: None of these support unicode.
+
+   uint8_t get_char(RSTREAM &);
+   uint8_t get_char(RSTREAM &, int);
+   uint8_t get_prev_char(RSTREAM &);
+   uint8_t get_prev_char_or_inline(RSTREAM &);
+   void erase_char(RSTREAM &); // Erase a character OR an escape code.
+   void next_char(RSTREAM &);
+   void prev_char(RSTREAM &);
 };
 
 //********************************************************************************************************************
@@ -441,6 +356,328 @@ struct font_entry {
    }
 };
 
+class FloatRect {
+   public:
+   double X, Y, Width, Height;
+   constexpr FloatRect() noexcept = default;
+   constexpr FloatRect(double Value) noexcept : X(Value), Y(Value), Width(Value), Height(Value) { }
+   constexpr FloatRect(double pX, double pY, double pWidth, double pHeight) noexcept : X(pX), Y(pY), Width(pWidth), Height(pHeight) { }
+   constexpr double left() const noexcept { return X; }
+   constexpr double top() const noexcept { return Y; }
+   constexpr double right() const noexcept { return X + Width; }
+   constexpr double bottom() const noexcept { return Y + Height; }
+};
+
+//********************************************************************************************************************
+// Refer to layout::new_segment().  A segment represents graphical content, which can be in the form of text,
+// graphics or both.  A segment can consist of one line only - so if the layout process encounters a boundary causing
+// wordwrap then a new segment must be created.
+
+struct doc_segment {
+   stream_char start;       // Starting index (including character if text)
+   stream_char stop;        // Stop at this index/character
+   stream_char trim_stop;   // The stopping point when whitespace is removed
+   FloatRect area;          // Dimensions of the segment.
+   double  descent;         // The largest descent (gutter) value in pixels after taking into account all fonts used on the line
+   double  align_width;     // Full width of this segment if it were non-breaking
+   RSTREAM *stream;         // The stream that this segment refers to
+   bool    edit;            // true if this segment represents content that can be edited
+   bool    allow_merge;     // true if this segment can be merged with siblings that have allow_merge set to true
+
+   inline double x(double Advance, FSO StyleOptions) {
+      if ((StyleOptions & FSO::ALIGN_CENTER) != FSO::NIL) return Advance + ((align_width - area.Width) * 0.5);
+      else if ((StyleOptions & FSO::ALIGN_RIGHT) != FSO::NIL) return Advance + (align_width - area.Width);
+      else return Advance;
+   }
+
+   inline double y(ALIGN VAlign, font_entry *Font) {
+      if ((VAlign & ALIGN::TOP) != ALIGN::NIL) return area.Y + Font->metrics.Ascent;
+      else if ((VAlign & ALIGN::VERTICAL) != ALIGN::NIL) {
+         const double avail_space = area.Height - descent;
+         return area.Y + avail_space - ((avail_space - Font->metrics.Ascent) * 0.5);
+      }
+      else return area.Y + area.Height - descent;
+   }
+};
+
+struct doc_clip {
+   double left = 0, top = 0, right = 0, bottom = 0;
+   INDEX index = 0; // The stream index of the object/table/item that is creating the clip.
+   bool transparent = false; // If true, wrapping will not be performed around the clip region.
+   std::string name;
+
+   doc_clip() = default;
+
+   doc_clip(double pLeft, double pTop, double pRight, double pBottom, int pIndex, bool pTransparent, const std::string &pName) :
+      left(pLeft), top(pTop), right(pRight), bottom(pBottom), index(pIndex), transparent(pTransparent), name(pName) {
+
+      if ((right - left > 20000) or (bottom - top > 20000)) {
+         kt::Log log;
+         log.warning("%s set invalid clip dimensions: %.0f,%.0f,%.0f,%.0f", name.c_str(), left, top, right, bottom);
+         right = left;
+         bottom = top;
+      }
+   }
+};
+
+struct doc_edit {
+   int max_chars;
+   std::string name;
+   std::string on_enter, on_exit, on_change;
+   std::vector<std::pair<std::string, std::string>> args;
+   bool line_breaks;
+
+   doc_edit() : max_chars(-1), args(0), line_breaks(false) { }
+};
+
+struct bc_link;
+struct bc_cell;
+
+struct mouse_over {
+   std::string function; // name of function to call.
+   double top, left, bottom, right;
+   int element_id;
+};
+
+struct tablecol {
+   double preset_width = 0;
+   double min_width = 0;   // For assisting layout
+   double width = 0;
+   bool preset_width_rel = false;
+};
+
+//********************************************************************************************************************
+
+struct link_activated {
+   std::map<std::string, std::string> Values;  // All key-values associated with the link.
+};
+
+//********************************************************************************************************************
+// Every instruction in the document stream is represented by a stream_code entity.  The code refers to what the thing
+// is, while the UID hash refers to further information in the Codes table.
+
+struct stream_code {
+   SCODE code;  // Type
+   BYTECODE uid; // Lookup for the Codes table
+
+   stream_code() : code(SCODE::NIL), uid(0) { }
+   stream_code(SCODE pCode, BYTECODE pID) : code(pCode), uid(pID) { }
+};
+
+//********************************************************************************************************************
+
+class entity {
+public:
+   BYTECODE uid;   // Unique identifier for lookup
+   SCODE code = SCODE::NIL; // Byte code
+
+   entity() { uid = alloc_bytecode_id(); }
+   entity(SCODE pCode) : code(pCode) { uid = alloc_bytecode_id(); }
+};
+
+//********************************************************************************************************************
+
+static ERR  activate_cell_edit(extDocument *, int, stream_char);
+static ERR  add_document_class(void);
+static int add_tabfocus(extDocument *, TT, BYTECODE);
+static void advance_tabfocus(extDocument *, int8_t);
+static void deactivate_edit(extDocument *, bool);
+static ERR  extract_script(extDocument *, std::string_view, objScript **, std::string &, std::string &);
+static void error_dialog(std::string_view, const std::string_view);
+static void error_dialog(std::string_view, ERR);
+static SEGINDEX find_segment(std::vector<doc_segment> &, stream_char, bool);
+static int  find_tabfocus(extDocument *, TT, BYTECODE);
+static ERR  flash_cursor(extDocument *, int64_t, int64_t);
+static int getutf8(CSTRING, int *);
+static ERR  insert_text(extDocument *, RSTREAM *, stream_char &, const std::string_view, bool);
+static ERR  insert_xml(extDocument *, RSTREAM *, objXML *, const objXML::TAGS &, int, STYLE = STYLE::NIL, IPF = IPF::NIL);
+static ERR  key_event(objVectorViewport *, KQ, KEY, int);
+static void layout_doc(extDocument *);
+static ERR  load_doc(extDocument *, std::string_view, bool, ULD = ULD::NIL);
+static void notify_disable_viewport(OBJECTPTR, ACTIONID, ERR, APTR);
+static void notify_enable_viewport(OBJECTPTR, ACTIONID, ERR, APTR);
+static void notify_focus_viewport(OBJECTPTR, ACTIONID, ERR, APTR);
+static void notify_free_script_context(OBJECTPTR, ACTIONID, ERR, APTR);
+static void notify_lostfocus_viewport(OBJECTPTR, ACTIONID, ERR, APTR);
+static ERR  feedback_view(objVectorViewport *, FM);
+static void process_parameters(extDocument *, const std::string_view);
+static std::string_view read_unit(std::string_view, double &, bool &);
+static void redraw(extDocument *, bool);
+static ERR  report_event(extDocument *, DEF, entity *, KEYVALUE *);
+static void reset_cursor(extDocument *);
+static ERR  resolve_fontx_by_index(extDocument *, stream_char, double &);
+static int  safe_file_path(extDocument *, std::string_view);
+static void set_focus(extDocument *, int, CSTRING);
+static void show_bookmark(extDocument *, std::string_view);
+static std::string stream_to_string(RSTREAM &, stream_char, stream_char);
+static ERR  unload_doc(extDocument *, ULD = ULD::NIL);
+static bool valid_objectid(extDocument *, OBJECTID);
+static bool view_area(extDocument *, double, double, double, double);
+
+//********************************************************************************************************************
+// UI hooks for the client
+
+struct ui_hooks {
+   std::string on_click;     // Function to call after a button event in the UI
+   std::string on_motion;    // Function to call after a motion event in the UI
+   std::string on_crossing;  // Function to call after a crossing event in the UI (enter/leave)
+   JTYPE events = JTYPE::NIL; // Input events that the client is interested in.
+};
+
+//********************************************************************************************************************
+
+struct padding {
+   double left = 0, top = 0, right = 0, bottom = 0;
+   bool left_scl = false, right_scl = false, top_scl = false, bottom_scl = false;
+   bool configured = false;
+
+   padding() = default;
+
+   padding(double pLeft, double pTop, double pRight, double pBottom) :
+      left(pLeft), top(pTop), right(pRight), bottom(pBottom), configured(true) { }
+
+   void parse(std::string_view Value);
+
+   void scale_all() { left_scl = right_scl = top_scl = bottom_scl = true; }
+};
+
+//********************************************************************************************************************
+
+struct scroll_mgr {
+   struct scroll_slider {
+      double offset = 0;
+      double length = 20;
+   };
+
+   struct scroll_bar {
+      scroll_mgr *m_mgr = nullptr;
+      objVectorViewport *m_bar_vp = nullptr; // Main viewport for managing the scrollbar
+      objVectorViewport *m_slider_host = nullptr;
+      objVectorViewport *m_slider_vp = nullptr;
+      objVectorRectangle *m_slider_rect = nullptr;
+      scroll_slider m_slider_pos;
+      char m_direction = 0; // 'V' or 'H'
+      double m_breadth = 10;
+
+      scroll_slider calc_slider(double, double, double, double);
+      void init(scroll_mgr *, char, objVectorViewport *);
+      void clear();
+   };
+
+   extDocument *m_doc = nullptr;
+   objVectorViewport *m_page = nullptr; // Monitored page
+   objVectorViewport *m_view = nullptr; // Monitored owner of the page
+   double m_min_width = 0;    // For dynamic width mode, this is the minimum required width
+   bool m_fixed_mode = false;
+   bool m_auto_adjust_view_size = true; // Automatically adjust the view to accomodate the visibility of the scrollbars
+
+   scroll_bar m_vbar;
+   scroll_bar m_hbar;
+
+   scroll_mgr() {}
+
+   void   init(extDocument *, objVectorViewport *, objVectorViewport *);
+   void   scroll_page(double, double);
+   void   recalc_sliders_from_view();
+   void   fix_page_size(double, double);
+   void   dynamic_page_size(double, double, double);
+};
+
+//********************************************************************************************************************
+// Tab is used to represent interactive entities within the document that can be tabbed to.
+
+struct tab {
+   // The ref is a UID for the Type, so you can use it to find the tab in the document stream
+   std::variant<int, uint32_t> ref; // For TT::VECTOR: VectorID; TT::LINK: LinkID
+   TT    type;
+   bool  active;     // true if the tabbable entity is active/visible
+
+   tab(TT pType, BYTECODE pReference, bool pActive) : ref(pReference), type(pType), active(pActive) { }
+};
+
+//********************************************************************************************************************
+
+struct edit_cell {
+   CELL_ID cell_id;
+   double x, y, width, height;
+};
+
+//********************************************************************************************************************
+
+class docresource {
+public:
+   OBJECTID object_id;
+   CLASSID class_id;
+   RTD type;
+   bool terminate = false; // If true, can be freed immediately and not on a delay
+
+   docresource(OBJECTID pID, RTD pType, CLASSID pClassID = CLASSID::NIL) :
+      object_id(pID), class_id(pClassID), type(pType) { }
+
+   void release() {
+      if ((type IS RTD::PERSISTENT_SCRIPT) or (type IS RTD::PERSISTENT_OBJECT)) {
+         if (terminate) FreeResource(object_id);
+         else SendMessage(MSGID::FREE, MSF::NIL, std::span((const int8_t *)&object_id, sizeof(OBJECTID)));
+      }
+      else if (type IS RTD::OBJECT_UNLOAD_DELAY) {
+         if (terminate) FreeResource(object_id);
+         else SendMessage(MSGID::FREE, MSF::NIL, std::span((const int8_t *)&object_id, sizeof(OBJECTID)));
+      }
+      else if (type != RTD::NIL) FreeResource(object_id);
+      type = RTD::NIL;
+   }
+
+   ~docresource() {
+      release();
+   }
+
+   docresource(docresource &&other) noexcept { // Move constructor
+      object_id = other.object_id;
+      class_id  = other.class_id;
+      type      = other.type;
+      terminate = other.terminate;
+      other.type = RTD::NIL;
+   }
+
+   docresource(const docresource &other) { // Copy constructor
+      object_id = other.object_id;
+      class_id  = other.class_id;
+      type      = other.type;
+      terminate = other.terminate;
+   }
+
+   docresource& operator=(docresource &&other) noexcept { // Move assignment
+      if (this IS &other) return *this;
+      release();
+      object_id = other.object_id;
+      class_id  = other.class_id;
+      type      = other.type;
+      terminate = other.terminate;
+      other.type = RTD::NIL;
+      return *this;
+   }
+
+   docresource& operator=(const docresource& other) { // Copy assignment
+      if (this IS &other) return *this;
+      object_id = other.object_id;
+      class_id  = other.class_id;
+      type      = other.type;
+      terminate = other.terminate;
+      return *this;
+   }
+};
+
+//********************************************************************************************************************
+
+struct case_insensitive_map {
+   bool operator() (const std::string &lhs, const std::string &rhs) const {
+      return std::lexicographical_compare(lhs.begin(), lhs.end(), rhs.begin(), rhs.end(),
+         [](unsigned char Left, unsigned char Right) {
+            return std::tolower(Left) < std::tolower(Right);
+         });
+   }
+};
+
 //********************************************************************************************************************
 // bc_font has a dual purpose - it can maintain current font style information during parsing as well as being embedded
 // in the document stream.
@@ -494,7 +731,7 @@ public:
          if ((font_index < std::ssize(glFonts)) and (font_index >= 0)) return &glFonts[font_index];
       }
 
-      pf::Log log(__FUNCTION__);
+      kt::Log log(__FUNCTION__);
       log.error("A font_index is -1."); // An index of -1 means a call to layout_font() is missing.
       return &glFonts[0];
    }
@@ -515,162 +752,6 @@ public:
 
 struct bc_font_end : public entity {
    bc_font_end() : entity(SCODE::FONT_END) { }
-};
-
-//********************************************************************************************************************
-// stream_char provides indexing to specific characters in the stream.  It is designed to handle positional changes so
-// that text string boundaries can be crossed without incident.
-//
-// The index and offset are set to -1 if the stream_char is invalidated.
-
-struct stream_char {
-   INDEX index;     // Byte code position within the stream
-   size_t offset;   // Specific character offset within the bc_text.text string
-
-   stream_char() : index(-1), offset(-1) { }
-   stream_char(INDEX pIndex, uint32_t pOffset) : index(pIndex), offset(pOffset) { }
-   stream_char(INDEX pIndex) : index(pIndex), offset(0) { }
-
-   bool operator==(const stream_char &Other) const {
-      return (this->index IS Other.index) and (this->offset IS Other.offset);
-   }
-
-   bool operator<(const stream_char &Other) const {
-      if (this->index < Other.index) return true;
-      else if ((this->index IS Other.index) and (this->offset < Other.offset)) return true;
-      else return false;
-   }
-
-   bool operator>(const stream_char &Other) const {
-      if (this->index > Other.index) return true;
-      else if ((this->index IS Other.index) and (this->offset > Other.offset)) return true;
-      else return false;
-   }
-
-   bool operator<=(const stream_char &Other) const {
-      if (this->index < Other.index) return true;
-      else if ((this->index IS Other.index) and (this->offset <= Other.offset)) return true;
-      else return false;
-   }
-
-   bool operator>=(const stream_char &Other) const {
-      if (this->index > Other.index) return true;
-      else if ((this->index IS Other.index) and (this->offset >= Other.offset)) return true;
-      else return false;
-   }
-
-   void operator+=(const int Value) {
-      offset += Value;
-   }
-
-   inline void reset() { index = -1; offset = -1; }
-   inline bool valid() { return index != -1; }
-
-   inline void set(INDEX pIndex, uint32_t pOffset = 0) {
-      index  = pIndex;
-      offset = pOffset;
-   }
-
-   inline INDEX prev_code() {
-      index--;
-      if (index < 0) { index = -1; offset = -1; }
-      else offset = 0;
-      return index;
-   }
-
-   inline INDEX next_code() {
-      offset = 0;
-      index++;
-      return index;
-   }
-
-   // NB: None of these support unicode.
-
-   uint8_t get_char(RSTREAM &);
-   uint8_t get_char(RSTREAM &, int);
-   uint8_t get_prev_char(RSTREAM &);
-   uint8_t get_prev_char_or_inline(RSTREAM &);
-   void erase_char(RSTREAM &); // Erase a character OR an escape code.
-   void next_char(RSTREAM &);
-   void prev_char(RSTREAM &);
-};
-
-//********************************************************************************************************************
-// Refer to layout::new_segment().  A segment represents graphical content, which can be in the form of text,
-// graphics or both.  A segment can consist of one line only - so if the layout process encounters a boundary causing
-// wordwrap then a new segment must be created.
-
-struct doc_segment {
-   stream_char start;       // Starting index (including character if text)
-   stream_char stop;        // Stop at this index/character
-   stream_char trim_stop;   // The stopping point when whitespace is removed
-   FloatRect area;          // Dimensions of the segment.
-   double  descent;         // The largest descent (gutter) value in pixels after taking into account all fonts used on the line
-   double  align_width;     // Full width of this segment if it were non-breaking
-   RSTREAM *stream;         // The stream that this segment refers to
-   bool    edit;            // true if this segment represents content that can be edited
-   bool    allow_merge;     // true if this segment can be merged with siblings that have allow_merge set to true
-
-   inline double x(double Advance, FSO StyleOptions) {
-      if ((StyleOptions & FSO::ALIGN_CENTER) != FSO::NIL) return Advance + ((align_width - area.Width) * 0.5);
-      else if ((StyleOptions & FSO::ALIGN_RIGHT) != FSO::NIL) return Advance + (align_width - area.Width);
-      else return Advance;
-   }
-
-   inline double y(ALIGN VAlign, font_entry *Font) {
-      if ((VAlign & ALIGN::TOP) != ALIGN::NIL) return area.Y + Font->metrics.Ascent;
-      else if ((VAlign & ALIGN::VERTICAL) != ALIGN::NIL) {
-         const double avail_space = area.Height - descent;
-         return area.Y + avail_space - ((avail_space - Font->metrics.Ascent) * 0.5);
-      }
-      else return area.Y + area.Height - descent;
-   }
-};
-
-struct doc_clip {
-   double left = 0, top = 0, right = 0, bottom = 0;
-   INDEX index = 0; // The stream index of the object/table/item that is creating the clip.
-   bool transparent = false; // If true, wrapping will not be performed around the clip region.
-   std::string name;
-
-   doc_clip() = default;
-
-   doc_clip(double pLeft, double pTop, double pRight, double pBottom, int pIndex, bool pTransparent, const std::string &pName) :
-      left(pLeft), top(pTop), right(pRight), bottom(pBottom), index(pIndex), transparent(pTransparent), name(pName) {
-
-      if ((right - left > 20000) or (bottom - top > 20000)) {
-         pf::Log log;
-         log.warning("%s set invalid clip dimensions: %.0f,%.0f,%.0f,%.0f", name.c_str(), left, top, right, bottom);
-         right = left;
-         bottom = top;
-      }
-   }
-};
-
-struct doc_edit {
-   int max_chars;
-   std::string name;
-   std::string on_enter, on_exit, on_change;
-   std::vector<std::pair<std::string, std::string>> args;
-   bool line_breaks;
-
-   doc_edit() : max_chars(-1), args(0), line_breaks(false) { }
-};
-
-struct bc_link;
-struct bc_cell;
-
-struct mouse_over {
-   std::string function; // name of function to call.
-   double top, left, bottom, right;
-   int element_id;
-};
-
-struct tablecol {
-   double preset_width = 0;
-   double min_width = 0;   // For assisting layout
-   double width = 0;
-   bool preset_width_rel = false;
 };
 
 //********************************************************************************************************************
@@ -861,7 +942,7 @@ struct bc_cell : public entity {
    GuardedObject<objVectorPath> border_path; // Only used when the border stroke is customised
    KEYVALUE args;                 // Cell attributes, intended for event hooks
    std::vector<doc_segment> segments;
-   RSTREAM *stream;               // Internally managed byte code content for the cell
+   RSTREAM *stream = nullptr;     // Internally managed byte code content for the cell
    CELL_ID cell_id = 0;           // UID for the cell
    int  column = 0;               // Column number that the cell starts in
    int  col_span = 1;             // Number of columns spanned by this cell (normally set to 1)
@@ -1048,11 +1129,13 @@ struct doc_menu {
 
 struct bc_button : public entity, widget_mgr {
    padding inner_padding;  // Defines padding around the button's content.  Not to be confused with the widget_mgr outer padding
-   RSTREAM *stream;
+   RSTREAM *stream = nullptr;
    std::vector<doc_segment> segments;
 
    bc_button();
    ~bc_button();
+   bc_button(const bc_button &Other);
+   bc_button& operator=(const bc_button &Other);
 };
 
 struct bc_checkbox : public entity, widget_mgr {
@@ -1140,7 +1223,7 @@ public:
 
    RSTREAM() { data.reserve(8 * 1024); }
 
-   RSTREAM(RSTREAM &Other) {
+   RSTREAM(const RSTREAM &Other) {
       data = Other.data;
       codes = Other.codes;
    }
@@ -1243,7 +1326,7 @@ class extDocument : public objDocument {
    FUNCTION EventCallback;
    KEYVALUE Vars;   // Variables as defined by the client program.  Transparently accessible like URI params.  Names have priority over params.
    KEYVALUE Params; // Incoming parameters provided via the URI
-   std::map<uint32_t, XTag *>   TemplateIndex;
+   std::map<uint32_t, const XTag *> TemplateIndex;
    std::vector<OBJECTID>       UIObjects;    // List of temporary objects in the UI
    std::vector<doc_segment>    Segments;
    std::vector<sorted_segment> SortSegments; // Used for UI interactivity when determining who is front-most
@@ -1253,20 +1336,25 @@ class extDocument : public objDocument {
    std::vector<docresource>    Resources; // Tracks resources that are page related.  Terminated on page unload.
    std::vector<tab>            Tabs;
    std::vector<edit_cell>      EditCells;
+   std::vector<doc_diagnostic> Diagnostics;
    doc_layout_metrics          LayoutMetrics;
    ankerl::unordered_dense::map<glyph_cache_key, glyph_cache_value, glyph_cache_hash> GlyphAdvanceCache;
    ankerl::unordered_dense::map<std::string_view, doc_edit> EditDefs;
    std::array<std::vector<FUNCTION>, size_t(DRT::END)> Triggers;
-   std::vector<const XTag *> TemplateArgs; // If a template is called, the tag is referred here so that args can be pulled from it
+   struct template_arg_view {
+      const XTag *Tag = nullptr;
+      const kt::vector<XMLAttrib> *Attribs = nullptr;
+   };
+   std::vector<template_arg_view> TemplateArgs; // If a template is called, the tag is referred here so that args can be pulled from it
    std::string FontFace;       // Default font face
    std::string WidthCacheFontFace;
    RSTREAM Stream;             // Internal stream buffer
    stream_char SelectStart, SelectEnd;  // Selection start & end (stream index)
    stream_char CursorIndex;    // Position of the cursor if text is selected, or edit mode is active.  It reflects the position at which entered text will be inserted.
    stream_char SelectIndex;    // The end of the selected text area, if text is selected.
-   std::string Path;           // Optional file to load on Init()
    std::string PageName;       // Page name to load from the Path
    std::string Bookmark;       // Bookmark name processed from the Path
+   std::string RuntimeUID;     // Refresh-local generated ID used by document-side XQuery helpers.
    std::string WorkingPath;    // String storage for the WorkingPath field
    std::string LinkFill, VisitedLinkFill, LinkSelectFill, FontFill, Highlight;
    std::string Background;     // Background fill instruction
@@ -1275,10 +1363,10 @@ class extDocument : public objDocument {
    std::string WidthCacheFontStyle;
    objXML *Templates;          // All templates for the current document are stored here
    objXML *PretextXML;         // Execute this XML prior to loading a new page.
+   objXQuery *Query;           // Standard XQuery object for xquery evaluations
    objSVG *SVG;                // Allocated by the <svg> tag
    objVectorRectangle *Bkgd;   // Background fill object
-   XTag    *PageTag;         // Refers to a specific page that is being processed for the layout
-   objScript *ClientScript;    // Allows the developer to define a custom default script.
+   const XTag *PageTag;        // Refers to a specific page that is being processed for the layout
    objScript *DefaultScript;
    doc_edit  *ActiveEditDef; // As for ActiveEditCell, but refers to the active editing definition
    objVectorScene *Scene;    // A document specific scene is required to keep our resources away from the host
@@ -1304,6 +1392,8 @@ class extDocument : public objDocument {
    int16_t  FocusIndex;         // Tab focus index
    int16_t  Invisible;          // Incremented for sections within a hidden index
    uint8_t  Processing;         // If > 0, the page layout is being altered
+   bool   Unloading;        // True if the document is being unloaded
+   bool   PathGuard;        // True if a document is currently being loaded via the Path
    bool   RefreshTemplates; // True if the template index requires refreshing.
    bool   UpdatingLayout;   // True if the page layout is in the process of being updated
    bool   PageProcessed;    // True if the parsing of page content has been completed
@@ -1317,6 +1407,12 @@ class extDocument : public objDocument {
       WidthCacheGeneration++;
       if (!WidthCacheGeneration) WidthCacheGeneration = 1;
    }
+
+   extDocument(objMetaClass *ClassPtr, OBJECTID ObjectID) : objDocument(ClassPtr, ObjectID) {
+      if (auto error = unload_doc(this); error != ERR::Okay) kt::Log().fatal(error);
+   }
+
+   ~extDocument();
 };
 
 bc_button::bc_button() {
@@ -1327,6 +1423,28 @@ bc_button::bc_button() {
 
 bc_button::~bc_button() {
    delete stream;
+}
+
+bc_button::bc_button(const bc_button &Other) : entity(Other), widget_mgr(Other)
+{
+   inner_padding = Other.inner_padding;
+   if (Other.stream) stream = new RSTREAM(*Other.stream);
+   segments = Other.segments;
+}
+
+bc_button& bc_button::operator=(const bc_button &Other)
+{
+   if (this IS &Other) return *this;
+
+   entity::operator=(Other);
+   widget_mgr::operator=(Other);
+   inner_padding = Other.inner_padding;
+   segments = Other.segments;
+
+   delete stream;
+   stream = Other.stream ? new RSTREAM(*Other.stream) : nullptr;
+
+   return *this;
 }
 
 bc_cell::~bc_cell() {

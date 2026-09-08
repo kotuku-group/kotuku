@@ -46,6 +46,8 @@ document access.  XQuery support excludes the following:
 
 #include <kotuku/modules/xml.h>
 #include <kotuku/modules/xquery.h>
+#include <kotuku/modules/script.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include <array>
 #include <format>
@@ -76,12 +78,12 @@ static std::atomic<uint32_t> glTagID = 1;
 [[nodiscard]] static bool attribute_is_xml_base(const XMLAttrib &Attribute)
 {
    if (Attribute.Name.empty()) return false;
-   return pf::iequals(Attribute.Name, "xml:base");
+   return kt::iequals(Attribute.Name, "xml:base");
 }
 
 [[nodiscard]] static std::string document_base(extXML *Document)
 {
-   if ((!Document) or (!Document->Path) or (!*Document->Path)) return std::string();
+   if ((!Document) or (Document->Path.empty())) return std::string();
    return xml::uri::normalise_uri_separators(std::string(Document->Path));
 }
 
@@ -143,7 +145,7 @@ static void refresh_base_uris_for_insert(extXML *Document, TAGS &Inserted, XTag 
 }
 
 static ERR add_xml_class(void);
-static ERR SET_Statement(extXML *, CSTRING);
+static ERR SET_Statement(extXML *, const std::string_view &);
 static ERR SET_Source(extXML *, OBJECTPTR);
 
 //********************************************************************************************************************
@@ -163,7 +165,7 @@ static ERR MODExpunge(void)
 
 static ERR MODOpen(OBJECTPTR Module)
 {
-   Module->set(FID_FunctionList, glFunctions);
+   ((objModule *)Module)->setFunctionList(glFunctions);
    return ERR::Okay;
 }
 
@@ -178,19 +180,23 @@ Call XValueToNumber() to convert an XPathValue object to a 64-bit floating point
 also includes cover support for boolean types, converting true to 1.0 and false to 0.
 
 -INPUT-
-ptr(struct(XPathValue)) Value: The XPathValue to convert.
+struct(XPathValue) Value: The XPathValue to convert.
 &double Result: The numeric representation of the value is returned here.
 
 -ERRORS-
 Okay
 NullArgs
+NoData
+
+-TAGS-
+mutates-input, pure-query
 -END-
 
 *********************************************************************************************************************/
 
 ERR XValueToNumber(XPathValue *Value, double *Result)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if ((not Value) or (not Result)) return log.warning(ERR::NullArgs);
    if (Value->Type IS XPVT::NIL) return log.warning(ERR::NoData);
@@ -211,24 +217,29 @@ the node-set array.
 Note: The integrity of the array is not guaranteed if the original XML document is modified or freed.
 
 -INPUT-
-ptr(struct(XPathValue)) Value: The XPathValue to convert.
-&cpp(array(ptr(struct(XTag)))) Result: The node-set is returned here as an array of !XTag structures.
+struct(XPathValue) Value: The XPathValue to convert.
+^&vector(struct(*XTag)) Result: The node-set is returned here as an array of !XTag structures.
 
 -ERRORS-
 Okay
 NullArgs
+NoData
+Mismatch
+
+-TAGS-
+mutates-input, pure-query
 -END-
 
 *********************************************************************************************************************/
 
-ERR XValueNodes(XPathValue *Value, pf::vector<XTag *> *Result)
+ERR XValueNodes(XPathValue *Value, kt::vector<XTag *> *Result)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    if ((not Value) or (not Result)) return log.warning(ERR::NullArgs);
    if (Value->Type IS XPVT::NIL) return log.warning(ERR::NoData);
    if (Value->Type != XPVT::NodeSet) return log.warning(ERR::Mismatch);
    auto val = (XPathVal *)Value;
-   *Result = val->to_node_set();
+   *Result = val->to_node_set(); // kt::vector<XTag *>
    return ERR::Okay;
 }
 
@@ -240,19 +251,23 @@ XValueToString: Converts an XPathValue to its string representation.
 Call XValueToString() to convert an XPathValue object into its string representation.
 
 -INPUT-
-ptr(cstruct(XPathValue)) Value: The XPathValue to convert.
-&cpp(str) Result: Receives the string representation of the value.
+cstruct(XPathValue) Value: The XPathValue to convert.
+^&string Result: Receives the string representation of the value.
 
 -ERRORS-
 Okay
 NullArgs
+NoData
+
+-TAGS-
+mutates-input, pure-query
 -END-
 
 *********************************************************************************************************************/
 
 ERR XValueToString(const XPathValue *Value, std::string *Result)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if ((not Value) or (not Result)) return log.warning(ERR::NullArgs);
    if (Value->Type IS XPVT::NIL) return log.warning(ERR::NoData);
@@ -324,9 +339,9 @@ ERR XValueToString(const XPathValue *Value, std::string *Result)
 
 #include "xml_class.cpp"
 
-static STRUCTS glStructures = {
-   { "XTag", sizeof(XTag) },
-   { "XPathValue", sizeof(XPathValue) }
+static ModHeader::STRUCTS glStructures = {
+   { "XTag", { sizeof(XTag), alignof(XTag) } },
+   { "XPathValue", { sizeof(XPathValue), alignof(XPathValue) } }
 };
 
 //********************************************************************************************************************

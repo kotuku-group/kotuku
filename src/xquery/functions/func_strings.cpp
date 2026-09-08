@@ -14,7 +14,7 @@ XPathVal XPathFunctionLibrary::function_string(const std::vector<XPathVal> &Args
       }
 
       if (Context.context_node) {
-         pf::vector<XTag *> nodes = { Context.context_node };
+         kt::vector<XTag *> nodes = { Context.context_node };
          XPathVal node_set_value(nodes);
          return XPathVal(node_set_value.to_string());
       }
@@ -90,7 +90,7 @@ XPathVal XPathFunctionLibrary::function_codepoints_to_string(const std::vector<X
 XPathVal XPathFunctionLibrary::function_string_to_codepoints(const std::vector<XPathVal> &Args,
    const XPathContext &Context)
 {
-   if (Args.empty()) return XPathVal(pf::vector<XTag *>());
+   if (Args.empty()) return XPathVal(kt::vector<XTag *>());
 
    std::string input = Args[0].to_string();
 
@@ -282,7 +282,7 @@ XPathVal XPathFunctionLibrary::function_string_length(const std::vector<XPathVal
    std::string str;
    if (Args.empty()) {
       if (Context.context_node) {
-         pf::vector<XTag *> nodes = { Context.context_node };
+         kt::vector<XTag *> nodes = { Context.context_node };
          XPathVal node_set_value(nodes);
          str = node_set_value.to_string();
       }
@@ -300,7 +300,7 @@ XPathVal XPathFunctionLibrary::function_normalize_space(const std::vector<XPathV
    std::string str;
    if (Args.empty()) {
       if (Context.context_node) {
-         pf::vector<XTag *> nodes = { Context.context_node };
+         kt::vector<XTag *> nodes = { Context.context_node };
          XPathVal node_set_value(nodes);
          str = node_set_value.to_string();
       }
@@ -437,7 +437,7 @@ XPathVal XPathFunctionLibrary::function_upper_case(const std::vector<XPathVal> &
    if (Args.empty()) {
       if (Context.attribute_node) input = Context.attribute_node->Value;
       else if (Context.context_node) {
-         pf::vector<XTag *> nodes = { Context.context_node };
+         kt::vector<XTag *> nodes = { Context.context_node };
          XPathVal node_value(nodes);
          input = node_value.to_string();
       }
@@ -459,7 +459,7 @@ XPathVal XPathFunctionLibrary::function_lower_case(const std::vector<XPathVal> &
    if (Args.empty()) {
       if (Context.attribute_node) input = Context.attribute_node->Value;
       else if (Context.context_node) {
-         pf::vector<XTag *> nodes = { Context.context_node };
+         kt::vector<XTag *> nodes = { Context.context_node };
          XPathVal node_value(nodes);
          input = node_value.to_string();
       }
@@ -481,7 +481,7 @@ XPathVal XPathFunctionLibrary::function_iri_to_uri(const std::vector<XPathVal> &
    if (Args.empty()) {
       if (Context.attribute_node) input = Context.attribute_node->Value;
       else if (Context.context_node) {
-         pf::vector<XTag *> nodes = { Context.context_node };
+         kt::vector<XTag *> nodes = { Context.context_node };
          XPathVal node_value(nodes);
          input = node_value.to_string();
       }
@@ -519,7 +519,7 @@ XPathVal XPathFunctionLibrary::function_encode_for_uri(const std::vector<XPathVa
    if (Args.empty()) {
       if (Context.attribute_node) input = Context.attribute_node->Value;
       else if (Context.context_node) {
-         pf::vector<XTag *> nodes = { Context.context_node };
+         kt::vector<XTag *> nodes = { Context.context_node };
          XPathVal node_value(nodes);
          input = node_value.to_string();
       }
@@ -541,7 +541,7 @@ XPathVal XPathFunctionLibrary::function_escape_html_uri(const std::vector<XPathV
    if (Args.empty()) {
       if (Context.attribute_node) input = Context.attribute_node->Value;
       else if (Context.context_node) {
-         pf::vector<XTag *> nodes = { Context.context_node };
+         kt::vector<XTag *> nodes = { Context.context_node };
          XPathVal node_value(nodes);
          input = node_value.to_string();
       }
@@ -615,7 +615,7 @@ XPathVal XPathFunctionLibrary::function_replace(const std::vector<XPathVal> &Arg
 
 XPathVal XPathFunctionLibrary::function_tokenize(const std::vector<XPathVal> &Args, const XPathContext &Context)
 {
-   if ((Args.size() < 2) or (Args.size() > 3)) return XPathVal(pf::vector<XTag *>());
+   if ((Args.size() < 2) or (Args.size() > 3)) return XPathVal(kt::vector<XTag *>());
 
    std::string input = Args[0].to_string();
    std::string pattern = Args[1].to_string();
@@ -623,7 +623,7 @@ XPathVal XPathFunctionLibrary::function_tokenize(const std::vector<XPathVal> &Ar
 
    std::vector<std::string> tokens;
 
-   if (load_regex() != ERR::Okay) return XPathVal(pf::vector<XTag *>());
+   if (load_regex() != ERR::Okay) return XPathVal(kt::vector<XTag *>());
 
    if (pattern.empty()) {
       for (size_t index = 0; index < input.length(); ++index) {
@@ -634,10 +634,10 @@ XPathVal XPathFunctionLibrary::function_tokenize(const std::vector<XPathVal> &Ar
       std::string error_msg;
       Regex *compiled;
       if (rx::Compile(pattern, build_regex_options(flags, Context.expression_unsupported), &error_msg, &compiled) != ERR::Okay) {
-         return XPathVal(pf::vector<XTag *>());
+         return XPathVal(kt::vector<XTag *>());
       }
 
-      pf::vector<std::string> ptokens;
+      kt::vector<std::string> ptokens;
       rx::Split(compiled, input, &ptokens, RMATCH::NIL);
       tokens = std::vector<std::string>(std::make_move_iterator(ptokens.begin()), std::make_move_iterator(ptokens.end()));
 
@@ -646,7 +646,7 @@ XPathVal XPathFunctionLibrary::function_tokenize(const std::vector<XPathVal> &Ar
       FreeResource(compiled);
    }
 
-   pf::vector<XTag *> placeholders;
+   kt::vector<XTag *> placeholders;
    for (size_t i = 0; i < tokens.size(); ++i) placeholders.push_back(nullptr);
    return XPathVal(placeholders, std::nullopt, tokens);
 }
@@ -707,18 +707,18 @@ static ERR analyze_string_cb(int Index, std::vector<std::string_view> &Captures,
 
 XPathVal XPathFunctionLibrary::function_analyze_string(const std::vector<XPathVal> &Args, const XPathContext &Context)
 {
-   if ((Args.size() < 2) or (Args.size() > 3)) return XPathVal(pf::vector<XTag *>());
+   if ((Args.size() < 2) or (Args.size() > 3)) return XPathVal(kt::vector<XTag *>());
 
    std::string input   = Args[0].to_string();
    std::string pattern = Args[1].to_string();
    std::string flags   = (Args.size() > 2) ? Args[2].to_string() : std::string();
 
-   if (load_regex() != ERR::Okay) return XPathVal(pf::vector<XTag *>());
+   if (load_regex() != ERR::Okay) return XPathVal(kt::vector<XTag *>());
 
    std::string error_msg;
    Regex *compiled;
    if (rx::Compile(pattern, build_regex_options(flags, Context.expression_unsupported), &error_msg, &compiled) != ERR::Okay) {
-      return XPathVal(pf::vector<XTag *>());
+      return XPathVal(kt::vector<XTag *>());
    }
 
    SequenceBuilder builder;
@@ -726,7 +726,7 @@ XPathVal XPathFunctionLibrary::function_analyze_string(const std::vector<XPathVa
    auto cb = C_FUNCTION(&analyze_string_cb, &state);
    ERR search_result = rx::Search(compiled, input, RMATCH::NIL, &cb);
 
-   if (search_result IS ERR::Okay) {
+   if (!search_result) {
       if (state.last_offset < state.input_length) {
          std::string_view tail(state.input_data + state.last_offset, state.input_length - state.last_offset);
          append_analyze_string_segment(builder, tail);

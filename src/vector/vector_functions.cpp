@@ -19,46 +19,280 @@ functions for creating paths and rendering them to bitmaps.
 //#include "font.h"
 #include "colours.cpp"
 
-inline char read_nibble(CSTRING Str)
-{
-   if (std::isdigit(*Str)) return (*Str - '0');
-   else if ((*Str >= 'A') and (*Str <= 'F')) return ((*Str - 'A')+10);
-   else if ((*Str >= 'a') and (*Str <= 'f')) return ((*Str - 'a')+10);
-   else return char(0xff);
+#include <charconv>
+
+// Resource management for the SimpleVector follows.
+
+static ERR simplevector_free(ResourceRecord &Resource, APTR Address) {
+   if (Address) ((SimpleVector *)Address)->~SimpleVector();
+   return ERR::Terminate;
 }
 
-// Resource management for the SimpleVector follows.  NB: This is a beta feature in the Core.
-
-static ERR simplevector_free(APTR Address) {
-   return ERR::Okay;
-}
-
-static ResourceManager glResourceSimpleVector = {
-   "SimpleVector",
-   &simplevector_free
-};
+static ResourceManager glResourceSimpleVector = { "SimpleVector", &simplevector_free, false };
 
 static SimpleVector * new_simplevector(void)
 {
    SimpleVector *vector;
-   if (AllocMemory(sizeof(SimpleVector), MEM::MANAGED, &vector) != ERR::Okay) return nullptr;
-   SetResourceMgr(vector, &glResourceSimpleVector);
+   if (AllocResource(sizeof(SimpleVector), MEM::NIL, (APTR *)&vector, &glResourceSimpleVector) != ERR::Okay) return nullptr;
    new(vector) SimpleVector;
    return vector;
 }
 
 namespace vec {
 
+//********************************************************************************************************************
+
+inline void mark_matrix_dirty(VectorMatrix *Matrix)
+{
+   if (Matrix->Vector) mark_dirty(Matrix->Vector, RC::TRANSFORM);
+}
+
+static void multiply_values(VectorMatrix &Matrix, double ScaleX, double ShearY, double ShearX, double ScaleY,
+   double TranslateX, double TranslateY)
+{
+   double t0       = (Matrix.ScaleX * ScaleX) + (Matrix.ShearY * ShearX);
+   double t2       = (Matrix.ShearX * ScaleX) + (Matrix.ScaleY * ShearX);
+   double t4       = (Matrix.TranslateX * ScaleX) + (Matrix.TranslateY * ShearX) + TranslateX;
+   Matrix.ShearY     = (Matrix.ScaleX * ShearY) + (Matrix.ShearY * ScaleY);
+   Matrix.ScaleY     = (Matrix.ShearX * ShearY) + (Matrix.ScaleY * ScaleY);
+   Matrix.TranslateY = (Matrix.TranslateX * ShearY) + (Matrix.TranslateY * ScaleY) + TranslateY;
+   Matrix.ScaleX     = t0;
+   Matrix.ShearX     = t2;
+   Matrix.TranslateX = t4;
+}
+
+inline void multiply_matrix(VectorMatrix &Target, const VectorMatrix &Source)
+{
+   multiply_values(Target, Source.ScaleX, Source.ShearY, Source.ShearX, Source.ScaleY,
+      Source.TranslateX, Source.TranslateY);
+}
+
+inline void scale_matrix(VectorMatrix &Matrix, double X, double Y)
+{
+   Matrix.ScaleX     *= X;
+   Matrix.ShearX     *= X;
+   Matrix.TranslateX *= X;
+   Matrix.ShearY     *= Y;
+   Matrix.ScaleY     *= Y;
+   Matrix.TranslateY *= Y;
+}
+
+static void rotate_matrix(VectorMatrix &Matrix, double Angle, double CenterX, double CenterY)
+{
+   Matrix.TranslateX -= CenterX;
+   Matrix.TranslateY -= CenterY;
+
+   double ca = cos(Angle * DEG2RAD);
+   double sa = sin(Angle * DEG2RAD);
+   double t0 = (Matrix.ScaleX * ca) - (Matrix.ShearY * sa);
+   double t2 = (Matrix.ShearX * ca) - (Matrix.ScaleY * sa);
+   double t4 = (Matrix.TranslateX * ca) - (Matrix.TranslateY * sa);
+   Matrix.ShearY     = (Matrix.ScaleX * sa) + (Matrix.ShearY * ca);
+   Matrix.ScaleY     = (Matrix.ShearX * sa) + (Matrix.ScaleY * ca);
+   Matrix.TranslateY = (Matrix.TranslateX * sa) + (Matrix.TranslateY * ca);
+   Matrix.ScaleX     = t0;
+   Matrix.ShearX     = t2;
+   Matrix.TranslateX = t4;
+
+   Matrix.TranslateX += CenterX;
+   Matrix.TranslateY += CenterY;
+}
+
+static ERR skew_matrix(VectorMatrix &Matrix, double X, double Y)
+{
+   if ((X > -90) and (X < 90)) {
+      VectorMatrix skew;
+      skew.ShearX = tan(X * DEG2RAD);
+      multiply_matrix(Matrix, skew);
+   }
+   else return ERR::OutOfRange;
+
+   if ((Y > -90) and (Y < 90)) {
+      VectorMatrix skew;
+      skew.ShearY = tan(Y * DEG2RAD);
+      multiply_matrix(Matrix, skew);
+   }
+   else return ERR::OutOfRange;
+
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR convert_simple_path(const SimpleVector *Vector, std::vector<PathCommand> &Commands)
+{
+   const auto &source = Vector->mPath;
+   const unsigned total_vertices = source.total_vertices();
+
+   Commands.clear();
+   Commands.reserve(total_vertices);
+
+   double current_x = 0;
+   double current_y = 0;
+   double start_x = 0;
+   double start_y = 0;
+   double control_x = 0;
+   double control_y = 0;
+   bool has_current = false;
+   bool previous_curve = false;
+
+   auto reflect_control = [&]() {
+      if (previous_curve) return agg::point_d { (current_x * 2.0) - control_x, (current_y * 2.0) - control_y };
+      else return agg::point_d { current_x, current_y };
+   };
+
+   auto append_quadratic = [&](double CtrlX, double CtrlY, double EndX, double EndY) {
+      PathCommand path = {};
+      path.Type = PE::QuadCurve;
+      path.X = EndX;
+      path.Y = EndY;
+      path.AbsX = EndX;
+      path.AbsY = EndY;
+      path.X2 = CtrlX;
+      path.Y2 = CtrlY;
+      Commands.push_back(path);
+
+      current_x = EndX;
+      current_y = EndY;
+      control_x = CtrlX;
+      control_y = CtrlY;
+      has_current = true;
+      previous_curve = true;
+   };
+
+   auto append_cubic = [&](double CtrlX1, double CtrlY1, double CtrlX2, double CtrlY2, double EndX, double EndY) {
+      PathCommand path = {};
+      path.Type = PE::Curve;
+      path.X = EndX;
+      path.Y = EndY;
+      path.AbsX = EndX;
+      path.AbsY = EndY;
+      path.X2 = CtrlX1;
+      path.Y2 = CtrlY1;
+      path.X3 = CtrlX2;
+      path.Y3 = CtrlY2;
+      Commands.push_back(path);
+
+      current_x = EndX;
+      current_y = EndY;
+      control_x = CtrlX2;
+      control_y = CtrlY2;
+      has_current = true;
+      previous_curve = true;
+   };
+
+   for (unsigned i=0; i < total_vertices; i++) {
+      double x = 0;
+      double y = 0;
+      const unsigned cmd = source.vertex(i, &x, &y);
+
+      if (agg::is_move_to(cmd)) {
+         PathCommand path = {};
+         path.Type = PE::Move;
+         path.X = x;
+         path.Y = y;
+         path.AbsX = x;
+         path.AbsY = y;
+         Commands.push_back(path);
+         current_x = x;
+         current_y = y;
+         start_x = x;
+         start_y = y;
+         has_current = true;
+         previous_curve = false;
+      }
+      else if (agg::is_line_to(cmd)) {
+         PathCommand path = {};
+         path.Type = PE::Line;
+         path.X = x;
+         path.Y = y;
+         path.AbsX = x;
+         path.AbsY = y;
+         Commands.push_back(path);
+         current_x = x;
+         current_y = y;
+         has_current = true;
+         previous_curve = false;
+      }
+      else if (agg::is_curve3(cmd)) {
+         if (i + 1 >= total_vertices) {
+            if (not has_current) return ERR::InvalidData;
+            const auto control = reflect_control();
+            append_quadratic(control.x, control.y, x, y);
+            continue;
+         }
+
+         double end_x = 0;
+         double end_y = 0;
+         const unsigned end_cmd = source.vertex(i + 1, &end_x, &end_y);
+         if (not agg::is_curve3(end_cmd)) {
+            if (not has_current) return ERR::InvalidData;
+            const auto control = reflect_control();
+            append_quadratic(control.x, control.y, x, y);
+            continue;
+         }
+
+         append_quadratic(x, y, end_x, end_y);
+         i++;
+      }
+      else if (agg::is_curve4(cmd)) {
+         if (i + 1 >= total_vertices) return ERR::InvalidData;
+
+         double ctrl2_x = 0;
+         double ctrl2_y = 0;
+         double end_x = 0;
+         double end_y = 0;
+         const unsigned ctrl2_cmd = source.vertex(i + 1, &ctrl2_x, &ctrl2_y);
+         if (not agg::is_curve4(ctrl2_cmd)) return ERR::InvalidData;
+
+         if (i + 2 >= total_vertices) {
+            if (not has_current) return ERR::InvalidData;
+            const auto control = reflect_control();
+            append_cubic(control.x, control.y, x, y, ctrl2_x, ctrl2_y);
+            i++;
+            continue;
+         }
+
+         const unsigned end_cmd = source.vertex(i + 2, &end_x, &end_y);
+         if (not agg::is_curve4(end_cmd)) {
+            if (not has_current) return ERR::InvalidData;
+            const auto control = reflect_control();
+            append_cubic(control.x, control.y, x, y, ctrl2_x, ctrl2_y);
+            i++;
+            continue;
+         }
+
+         append_cubic(x, y, ctrl2_x, ctrl2_y, end_x, end_y);
+         i += 2;
+      }
+      else if (agg::is_close(cmd)) {
+         PathCommand path = {};
+         path.Type = PE::ClosePath;
+         Commands.push_back(path);
+         current_x = start_x;
+         current_y = start_y;
+         previous_curve = false;
+      }
+      else if (agg::is_stop(cmd) or agg::is_end_poly(cmd)) {
+         previous_curve = false;
+      }
+      else return ERR::InvalidData;
+   }
+
+   return ERR::Okay;
+}
+
 /*********************************************************************************************************************
 
 -FUNCTION-
-ApplyPath: Copy a pre-generated or custom path to a VectorPath object.
+ApplyPath: Applies a generated path resource to a VectorPath object.
 
 Any path originating from ~GeneratePath(), ~GenerateEllipse() or ~GenerateRectangle() can be applied to a VectorPath
-object by calling ApplyPath().  The source Path can then be deallocated with ~Core.FreeResource() if it is no longer required.
+object by calling ApplyPath().  The source `Path` can then be deallocated with ~Core.FreeResource() if it is no longer
+required.
 
-This method is particularly useful when paths need to be generated or changed in real-time and the alternative of
-processing the path as a string is detrimental to performance.
+This function is intended for paths that are generated or changed at run-time, where converting the path back to a
+string would add unnecessary processing overhead.
 
 -INPUT-
 ptr Path: The source path to be copied.
@@ -67,17 +301,27 @@ obj(VectorPath) VectorPath: The target VectorPath object.
 -ERRORS-
 Okay
 NullArgs
+WrongClass
+InvalidData
+
+-TAGS-
+copies-input, mutates-object
 
 *********************************************************************************************************************/
 
 ERR ApplyPath(APTR Vector, objVectorPath *VectorPath)
 {
-   if ((!Vector) or (!VectorPath)) return ERR::NullArgs;
-   if (VectorPath->classID() != CLASSID::VECTORPATH) return ERR::Args;
+   if ((not Vector) or (not VectorPath)) return ERR::NullArgs;
+   if (VectorPath->classID() != CLASSID::VECTORPATH) return ERR::WrongClass;
 
-   VectorPath->set(FID_Sequence, CSTRING(nullptr)); // Clear any pre-existing path information.
+   std::vector<PathCommand> paths;
+   if (auto error = convert_simple_path((SimpleVector *)Vector, paths); error != ERR::Okay) return error;
 
-   // TODO: Apply mPath to VectorPath
+   auto path = (extVectorPath *)VectorPath;
+   path->Commands = std::move(paths);
+   path->CommandsChanged = true;
+   reset_path(VectorPath);
+   path->modified();
 
    return ERR::Okay;
 }
@@ -85,10 +329,10 @@ ERR ApplyPath(APTR Vector, objVectorPath *VectorPath)
 /*********************************************************************************************************************
 
 -FUNCTION-
-ArcTo: Alter a path by setting an arc-to command at the current vertex position.
+ArcTo: Appends an arc command to a generated path.
 
-This function will set an arc-to command at the current vertex.  It then increments the vertex position for the next
-path command.
+This function appends an arc segment from the current point to `X`,`Y`.  The `LARGE` and `SWEEP` values in `Flags`
+control which of the possible arcs is selected.
 
 -INPUT-
 ptr Path: The vector path to modify.
@@ -98,6 +342,9 @@ double Angle: The angle of the arc, expressed in radians.
 double X: The horizontal end point for the arc command.
 double Y: The vertical end point for the arc command.
 int(ARC) Flags: Optional flags.
+
+-TAGS-
+mutates-input
 
 *********************************************************************************************************************/
 
@@ -109,12 +356,12 @@ void ArcTo(APTR Vector, double RX, double RY, double Angle, double X, double Y, 
 /*********************************************************************************************************************
 
 -FUNCTION-
-CharWidth: Returns the width of a character.
+CharWidth: Returns the rendered width of a single character.
 
-This function will return the pixel width of a font character.  The character is specified as a unicode value in the
-`Char` parameter. Kerning values can also be returned, which affect the position of the character along the horizontal.
-The previous character in the word is set in `KChar` and the kerning value will be returned in the `Kerning` parameter.
-If kerning information is not required, set the `KChar` and `Kerning` parameters to zero.
+This function returns the pixel width of a font character.  The character is specified as a Unicode value in the `Char`
+parameter.  Kerning can also be returned for positioning the character against a preceding character.  Pass the
+preceding character in `KChar` and a `Kerning` pointer to receive the horizontal adjustment.  If kerning information is
+not required, set `KChar` to zero and `Kerning` to `NULL`.
 
 The font's glyph spacing value is not used in calculating the character width.
 
@@ -125,13 +372,16 @@ uint KChar: A unicode character to use for calculating the font kerning (optiona
 &double Kerning: The resulting kerning value (optional).
 
 -RESULT-
-double: The pixel width of the character will be returned.
+double: The pixel width of the character, or `0` if `FontHandle` is `NULL`.
+
+-TAGS-
+pure-query
 
 *********************************************************************************************************************/
 
 double CharWidth(APTR Handle, uint32_t Char, uint32_t KChar, double *Kerning)
 {
-   if (!Handle) return 0;
+   if (not Handle) return 0;
 
    if (((common_font *)Handle)->type IS CF_FREETYPE) {
       auto pt = (freetype_font::ft_point *)Handle;
@@ -157,16 +407,18 @@ double CharWidth(APTR Handle, uint32_t Char, uint32_t KChar, double *Kerning)
 /*********************************************************************************************************************
 
 -FUNCTION-
-ClosePath: Close the path by connecting the beginning and end points.
+ClosePath: Closes the current sub-path.
 
-This function will set a close-path command at the current vertex.  It then increments the vertex position
-for the next path command.
+This function appends a close-path command that connects the current point to the beginning of the current sub-path.
 
-Note that closing a path does not necessarily terminate the vector.  Further paths can be added to the sequence and
-interesting effects can be created by taking advantage of fill rules.
+Closing a path does not terminate the path resource.  Further sub-paths can be added to the sequence, and fill rules
+can then be used to control how overlapping areas are rendered.
 
 -INPUT-
 ptr Path: The vector path to modify.
+
+-TAGS-
+mutates-input
 
 *********************************************************************************************************************/
 
@@ -178,10 +430,10 @@ void ClosePath(APTR Vector)
 /*********************************************************************************************************************
 
 -FUNCTION-
-Curve3: Alter a path by inserting a quadratic bezier curve command at the current vertex position.
+Curve3: Appends a quadratic Bezier curve to a generated path.
 
-This function will set a quadratic bezier curve command at the current vertex.  It then increments the vertex position
-for the next path command.
+This function appends a quadratic Bezier segment from the current point to `X`,`Y` using `CtrlX`,`CtrlY` as the control
+point.
 
 -INPUT-
 ptr Path: The vector path to modify.
@@ -189,6 +441,9 @@ double CtrlX: Control point horizontal coordinate.
 double CtrlY: Control point vertical coordinate.
 double X: The horizontal end point for the curve3 command.
 double Y: The vertical end point for the curve3 command.
+
+-TAGS-
+mutates-input
 
 *********************************************************************************************************************/
 
@@ -200,10 +455,9 @@ void Curve3(APTR Vector, double CtrlX, double CtrlY, double X, double Y)
 /*********************************************************************************************************************
 
 -FUNCTION-
-Curve4: Alter a path by inserting a curve4 command at the current vertex position.
+Curve4: Appends a cubic Bezier curve to a generated path.
 
-This function will set a cubic bezier curve command at the current vertex.  It then increments the vertex position
-for the next path command.
+This function appends a cubic Bezier segment from the current point to `X`,`Y` using two control points.
 
 -INPUT-
 ptr Path: The vector path to modify.
@@ -213,6 +467,9 @@ double CtrlX2: Control point 2 horizontal coordinate.
 double CtrlY2: Control point 2 vertical coordinate.
 double X: The horizontal end point for the curve4 command.
 double Y: The vertical end point for the curve4 command.
+
+-TAGS-
+mutates-input
 
 *********************************************************************************************************************/
 
@@ -224,16 +481,17 @@ void Curve4(APTR Vector, double CtrlX1, double CtrlY1, double CtrlX2, double Ctr
 /*********************************************************************************************************************
 
 -FUNCTION-
-DrawPath: Draws a vector path to a target bitmap.
+DrawPath: Draws a generated vector path to a target bitmap.
 
 Use DrawPath() to draw a generated path to a @Bitmap, using customised fill and stroke definitions.  This
 functionality provides an effective alternative to configuring vector scenes for situations where only
 simple vector shapes are required.  However, it is limited in that advanced rendering options and effects are not
 available to the client.
 
-A `StrokeStyle` and/or `FillStyle` will be required to render the path.  Valid styles are allocated and configured using
-recognised vector style objects, specifically from the classes @VectorImage, @VectorPattern and @VectorGradient.  If a
-fill or stroke operation is not required, set the relevant parameter to `NULL`.
+At least one of `StrokeStyle` or `FillStyle` is required to render visible output.  Valid styles are allocated and
+configured using recognised vector style objects, specifically @VectorImage, @VectorPattern and @Gradient.  If a
+fill or stroke operation is not required, set the relevant parameter to `NULL`.  Stroke rendering is also disabled when
+`StrokeWidth` is less than `0.001`.
 
 -INPUT-
 obj(Bitmap) Bitmap: Pointer to a target @Bitmap object.
@@ -246,16 +504,19 @@ obj FillStyle: Pointer to a valid object for fill definition, or `NULL` if none 
 Okay
 NullArgs
 
+-TAGS-
+mutates-object, blocking
+
 *********************************************************************************************************************/
 
 ERR DrawPath(objBitmap *Bitmap, APTR Path, double StrokeWidth, OBJECTPTR StrokeStyle, OBJECTPTR FillStyle)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
-   if ((!Bitmap) or (!Path)) return log.warning(ERR::NullArgs);
+   if ((not Bitmap) or (not Path)) return log.warning(ERR::NullArgs);
    if (StrokeWidth < 0.001) StrokeStyle = nullptr;
 
-   if ((!StrokeStyle) and (!FillStyle)) {
+   if ((not StrokeStyle) and (not FillStyle)) {
       log.traceWarning("No Stroke or Fill parameter provided.");
       return ERR::Okay;
    }
@@ -267,10 +528,10 @@ ERR DrawPath(objBitmap *Bitmap, APTR Path, double StrokeWidth, OBJECTPTR StrokeS
 /*********************************************************************************************************************
 
 -FUNCTION-
-FlushMatrix: Flushes matrix changes to a vector.
+FlushMatrix: Marks a vector transform as changed after direct matrix edits.
 
-If the matrices values of a vector have been directly modified by the client, the changes will need to be flushed in
-order to have those changes reflected on the display.  This needs to be done before the next draw cycle.
+If a vector's matrix values have been modified directly by the client, call FlushMatrix() before the next draw cycle so
+the owning vector is marked for transform recalculation.
 
 Note that if the client uses API functions to modify a !VectorMatrix, a call to FlushMatrix() is unnecessary as the
 vector will have already been marked for an update.
@@ -279,17 +540,17 @@ vector will have already been marked for an update.
 struct(*VectorMatrix) Matrix: The matrix to be flushed.
 
 -ERRORS-
-Okay:
-NullArgs:
+Okay
+NullArgs
+
+-TAGS-
+mutates-input, mutates-object
 
 *********************************************************************************************************************/
 
 ERR FlushMatrix(VectorMatrix *Matrix)
 {
-   if (!Matrix) {
-      pf::Log log(__FUNCTION__);
-      return log.warning(ERR::NullArgs);
-   }
+   if (not Matrix) return kt::Log(__FUNCTION__).warning(ERR::NullArgs);
 
    if (Matrix->Vector) mark_dirty(Matrix->Vector, RC::TRANSFORM);
    return ERR::Okay;
@@ -298,10 +559,10 @@ ERR FlushMatrix(VectorMatrix *Matrix)
 /*********************************************************************************************************************
 
 -FUNCTION-
-GetVertex: Retrieve the coordinates of the current vertex.
+GetVertex: Retrieves the next vertex from a generated path.
 
-The coordinates of the current vertex are returned by this function in the `X` and `Y` parameters.  In addition, the
-internal command number for that vertex is the return value.
+The coordinates of the next vertex are returned in `X` and `Y`.  The return value is the internal command value for
+that vertex, or the path stop command when there are no more vertices to read.
 
 -INPUT-
 ptr Path: The vector path to query.
@@ -310,6 +571,9 @@ ptr Path: The vector path to query.
 
 -RESULT-
 int: The internal command value for the vertex will be returned.
+
+-TAGS-
+updates-seek-index
 
 *********************************************************************************************************************/
 
@@ -321,53 +585,38 @@ int GetVertex(APTR Vector, double *X, double *Y)
 /*********************************************************************************************************************
 
 -FUNCTION-
-GenerateEllipse: Generates an elliptical path.
+GenerateEllipse: Generates an elliptical path resource.
 
 Use GenerateEllipse() to create an elliptical path suitable for passing to vector functions that receive a Path
 parameter.  The path must be manually deallocated with ~Core.FreeResource() once it is no longer required.
 
 -INPUT-
-double CX: Horizontal center point of the ellipse.
-double CY: Vertical center point of the ellipse.
+double CX: Horizontal centre point of the ellipse.
+double CY: Vertical centre point of the ellipse.
 double RX: Horizontal radius of the ellipse.
 double RY: Vertical radius of the ellipse.
-int Vertices: Optional.  If `>= 3`, the total number of generated vertices will be limited to the specified value.
+int Vertices: Optional.  If this is `3` or greater, the ellipse will be generated with exactly this many vertices.
 &ptr Path: A pointer variable that will receive the resulting path.
 
 -ERRORS-
 Okay
 NullArgs
-AllocMemory
+CreateResource
+
+-TAGS-
+caller-owns-result, creates-resource
 
 *********************************************************************************************************************/
 
 ERR GenerateEllipse(double CX, double CY, double RX, double RY, int Vertices, APTR *Path)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
-   if (!Path) return log.warning(ERR::NullArgs);
+   if (not Path) return log.warning(ERR::NullArgs);
 
    auto vector = new_simplevector();
-   if (!vector) return log.warning(ERR::CreateResource);
+   if (not vector) return log.warning(ERR::CreateResource);
 
-#if 0
-   // Bezier curves can produce a reasonable approximation of an ellipse, but in practice there is
-   // both a noticeable loss of speed and path accuracy vs the point plotting method.
-
-   const double kappa = 0.5522848; // 4 * ((√(2) - 1) / 3)
-
-   const double ox = RX * kappa;  // control point offset horizontal
-   const double oy = RY * kappa;  // control point offset vertical
-   const double xe = CX + RX;
-   const double ye = CY + RY;
-
-   vector->mPath.move_to(CX - RX, CY);
-   vector->mPath.curve4(CX - RX, CY - oy, CX - ox, CY - RY, CX, CY - RY);
-   vector->mPath.curve4(CX + ox, CY - RY, xe, CY - oy, xe, CY);
-   vector->mPath.curve4(xe, CY + oy, CX + ox, ye, CX, ye);
-   vector->mPath.curve4(CX - ox, ye, CX - RX, CY + oy, CX - RX, CY);
-   vector->mPath.close_polygon();
-#else
    uint32_t steps;
 
    if (Vertices >= 3) steps = Vertices;
@@ -378,15 +627,23 @@ ERR GenerateEllipse(double CX, double CY, double RX, double RY, int Vertices, AP
       if (steps < 3) steps = 3; // Because you need at least 3 vertices to create a shape.
    }
 
+   const double angle_step = 2.0 * agg::pi / double(steps);
+   const double cos_step = cos(angle_step);
+   const double sin_step = sin(angle_step);
+   double cos_angle = 1.0;
+   double sin_angle = 0;
+
    for (uint32_t step=0; step < steps; step++) {
-      const double angle = double(step) / double(steps) * 2.0 * agg::pi;
-      const double x = CX + cos(angle) * RX;
-      const double y = CY + sin(angle) * RY;
-      if (step == 0) vector->mPath.move_to(x, y);
+      const double x = CX + cos_angle * RX;
+      const double y = CY + sin_angle * RY;
+      if (step IS 0) vector->mPath.move_to(x, y);
       else vector->mPath.line_to(x, y);
+
+      const double next_cos_angle = (cos_angle * cos_step) - (sin_angle * sin_step);
+      sin_angle = (sin_angle * cos_step) + (cos_angle * sin_step);
+      cos_angle = next_cos_angle;
    }
    vector->mPath.close_polygon();
-#endif
 
    *Path = vector;
    return ERR::Okay;
@@ -395,7 +652,7 @@ ERR GenerateEllipse(double CX, double CY, double RX, double RY, int Vertices, AP
 /*********************************************************************************************************************
 
 -FUNCTION-
-GenerateRectangle: Generate a rectangular path at (x,y) with size (width,height).
+GenerateRectangle: Generates a rectangular path resource.
 
 Use GenerateRectangle() to create a rectangular path suitable for passing to vector functions that receive a Path
 parameter.  The path must be manually deallocated with ~Core.FreeResource() once it is no longer required.
@@ -410,18 +667,21 @@ double Height: The height of the rectangle.
 -ERRORS-
 Okay
 NullArgs
-AllocMemory
+CreateResource
+
+-TAGS-
+caller-owns-result, creates-resource
 
 *********************************************************************************************************************/
 
 ERR GenerateRectangle(double X, double Y, double Width, double Height, APTR *Path)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
-   if (!Path) return log.warning(ERR::NullArgs);
+   if (not Path) return log.warning(ERR::NullArgs);
 
    auto vector = new_simplevector();
-   if (!vector) return log.warning(ERR::CreateResource);
+   if (not vector) return log.warning(ERR::CreateResource);
 
    vector->mPath.move_to(X, Y);
    vector->mPath.line_to(X+Width, Y);
@@ -435,15 +695,14 @@ ERR GenerateRectangle(double X, double Y, double Width, double Height, APTR *Pat
 /*********************************************************************************************************************
 
 -FUNCTION-
-GeneratePath: Generates a path from an SVG path command sequence, or an empty path for custom configuration.
+GeneratePath: Generates a path resource from an SVG path command sequence.
 
-This function will generate a vector path from a sequence of fixed point coordinates and curve instructions.  The
-resulting path can then be passed to vector functions that receive a Path parameter.  The path must be manually
+This function generates a vector path from a sequence of coordinates and path instructions.  The resulting path can
+then be passed to vector functions that receive a Path parameter.  The path must be manually
 deallocated with ~Core.FreeResource() once it is no longer required.
 
-The Sequence is a string of points and instructions that define the path.  It is based on the SVG standard for the path
-element `d` attribute, but also provides some additional features that are present in the vector engine.  Commands are
-case insensitive.
+The `Sequence` string is based on the SVG `path` element's `d` attribute.  Uppercase commands use absolute coordinates;
+lowercase commands use coordinates relative to the previous command.
 
 The following commands are supported:
 
@@ -460,37 +719,40 @@ A: Arc
 Z: Close Path
 </pre>
 
-The use of lower case characters will indicate that the provided coordinates are relative (based on the coordinate
-of the previous command).
-
-If the `Sequence` is `NULL` then an empty path resource will be generated.  This path will be suitable for passing
-to path modifying functions such as ~MoveTo() and ~LineTo() for custom path generation.
+If `Sequence` is empty, an empty path resource will be generated.  This path can be populated with functions such as
+~MoveTo() and ~LineTo().
 
 -INPUT-
-cstr Sequence: The command sequence to process.  If no sequence is specified then the path will be empty.
+strview Sequence: The command sequence to process.  If no sequence is specified then the path will be empty.
 &ptr Path: A pointer variable that will receive the resulting path.
 
 -ERRORS-
 Okay
 NullArgs
 AllocMemory
+InvalidValue
+InvalidData
+BufferOverflow
+
+-TAGS-
+caller-owns-result, creates-resource
 
 *********************************************************************************************************************/
 
-ERR GeneratePath(CSTRING Sequence, APTR *Path)
+ERR GeneratePath(const std::string_view &Sequence, APTR *Path)
 {
-   if (!Path) return ERR::NullArgs;
+   if (not Path) return ERR::NullArgs;
 
    ERR error = ERR::Okay;
 
-   if (!Sequence) {
+   if (Sequence.empty()) {
       auto vector = new_simplevector();
       if (vector) *Path = vector;
       else error = ERR::AllocMemory;
    }
    else {
       std::vector<PathCommand> paths;
-      if ((error = read_path(paths, Sequence)) IS ERR::Okay) {
+      if (!(error = read_path(paths, Sequence))) {
          auto vector = new_simplevector();
          if (vector) {
             convert_to_aggpath(nullptr, paths, vector->mPath);
@@ -506,36 +768,45 @@ ERR GeneratePath(CSTRING Sequence, APTR *Path)
 /*********************************************************************************************************************
 
 -FUNCTION-
-GetFontHandle: Returns a handle for a given font family.
+GetFontHandle: Returns a cached handle for a font family, style and size.
 
-For a given font family and size, this function will return a `Handle` that can be passed to font querying functions.
+For a given font family, style and size, this function returns a `Handle` that can be passed to font querying
+functions.
 
 The handle is deterministic and permanent, remaining valid for the lifetime of the program.
 
 -INPUT-
-cstr Family: The name of the font family to access.
-cstr Style: The preferred style to choose from the family.  Use `Regular` or `NULL` for the default.
+strview Family: The name of the font family to access.
+strview Style: The preferred style to choose from the family.  Use `Regular` or `NULL` for the default.
 int Weight: Equivalent to CSS font-weight; a value of 400 or 0 will equate to normal.
 int Size: The font-size, measured in pixels @ 72 DPI.
 &ptr Handle: The resulting font handle is returned here.
 
 -ERRORS-
-Okay:
-Args:
-NullArgs:
+Okay
+Args
+AccessObject
+AllocMemory
+CreateObject
+Failed
+File
+ResolvePath
+Search
+
+-TAGS-
+api-owns-result, non-null-result, blocking
 -END-
 
 *********************************************************************************************************************/
 
-ERR GetFontHandle(CSTRING Family, CSTRING Style, int Weight, int Size, APTR *Handle)
+ERR GetFontHandle(const std::string_view &Family, const std::string_view &Style, int Weight, int Size, APTR *Handle)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (Size < 1) return log.warning(ERR::Args);
 
-   if (!Style) Style = "Regular";
    common_font *handle;
-   if (auto error = get_font(log, Family, Style, Weight, Size, &handle); error IS ERR::Okay) {
+   if (auto error = get_font(log, Family, Style.empty() ? "Regular" : Style, Weight, Size, &handle); !error) {
       *Handle = handle;
       return ERR::Okay;
    }
@@ -545,25 +816,27 @@ ERR GetFontHandle(CSTRING Family, CSTRING Style, int Weight, int Size, APTR *Han
 /*********************************************************************************************************************
 
 -FUNCTION-
-GetFontMetrics: Returns a set of display metric values for a font.
+GetFontMetrics: Returns display metrics for a font handle.
 
-Call GetFontMetrics() to retrieve a basic set of display metrics measured in pixels (adjusted to the display's DPI)
-for a given font.
+Call GetFontMetrics() to retrieve the font height, line spacing, ascent and descent values for a font handle.
 
 -INPUT-
 ptr Handle: A font handle obtained from ~GetFontHandle().
 struct(*FontMetrics) Info: The font metrics for the `Handle` will be stored here.
 
 -ERRORS-
-Okay:
-NullArgs:
+Okay
+NullArgs
+
+-TAGS-
+mutates-input, pure-query
 -END-
 
 *********************************************************************************************************************/
 
 ERR GetFontMetrics(APTR Handle, struct FontMetrics *Metrics)
 {
-   if ((!Handle) or (!Metrics)) return ERR::NullArgs;
+   if ((not Handle) or (not Metrics)) return ERR::NullArgs;
 
    if (((common_font *)Handle)->type IS CF_FREETYPE) {
       auto pt = (freetype_font::ft_point *)Handle;
@@ -586,16 +859,16 @@ ERR GetFontMetrics(APTR Handle, struct FontMetrics *Metrics)
 /*********************************************************************************************************************
 
 -FUNCTION-
-TracePath: Returns the coordinates for a vector path, using callbacks.
+TracePath: Calls a function for each traced coordinate in a generated path.
 
-Any vector that generates a path can be traced by calling this method.  Tracing allows the caller to follow the
-`Path` from point-to-point if the path were to be rendered with a stroke.  The prototype of the callback  function
-is `ERR Function(OBJECTPTR Vector, INT Index, INT Command, double X, double Y, APTR Meta)`.
+Any generated path can be traced by calling this function.  Tracing allows the caller to follow the `Path`
+point-by-point as it would be rendered with a stroke.  The `Callback` function signature is
+`ERR Function(*Path, INT Index, INT Command, DOUBLE X, DOUBLE Y, *Meta)`.
 
-The `Index` is an incrementing counter that reflects the currently plotted point.  The `X` and `Y` parameters reflect the
-coordinate of a point on the path.
+The `Index` is an incrementing counter for each plotted point.  The `Command` value identifies the internal path
+command, and `X`,`Y` are the traced coordinates.
 
-If the `Callback` returns `ERR::Terminate`, then no further coordinates will be processed.
+If the `Callback` returns `ERR::Terminate`, processing stops and the function returns immediately.
 
 -INPUT-
 ptr Path:      The vector path to trace.
@@ -603,19 +876,28 @@ ptr(func) Callback: A function to call with the path coordinates.
 double Scale:  Set to 1.0 (recommended) to trace the path at a scale of 1 to 1.
 
 -ERRORS-
-Okay:
-NullArgs:
+Okay
+NullArgs
+Function
+Terminate
+
+-TAGS-
+callback-inlines, updates-seek-index
 
 *********************************************************************************************************************/
 
 ERR TracePath(APTR Path, FUNCTION *Callback, double Scale)
 {
-   pf::Log log;
+   auto consume_callback = kt::Defer([&]() {
+      if (Callback) Callback->consume();
+   });
 
-   if ((!Path) or (!Callback)) return ERR::NullArgs;
+   if ((not Path) or (not Callback)) return ERR::NullArgs;
 
-   ((SimpleVector *)Path)->mPath.rewind(0);
-   ((SimpleVector *)Path)->mPath.approximation_scale(Scale);
+   auto vector = (SimpleVector *)Path;
+   auto &path = vector->mPath;
+   path.rewind(0);
+   path.approximation_scale(Scale);
 
    double x, y;
    int cmd = -1;
@@ -624,12 +906,12 @@ ERR TracePath(APTR Path, FUNCTION *Callback, double Scale)
    if (Callback->isC()) {
       auto routine = ((ERR (*)(SimpleVector *, int, int, double, double, APTR))(Callback->Routine));
 
-      pf::SwitchContext context(ParentContext());
+      kt::SwitchContext context(ParentContext());
 
       do {
-         cmd = ((SimpleVector *)Path)->mPath.vertex(&x, &y);
+         cmd = path.vertex(&x, &y);
          if (agg::is_vertex(cmd)) {
-            if (routine((SimpleVector *)Path, index++, cmd, x, y, Callback->Meta) IS ERR::Terminate) {
+            if (routine(vector, index++, cmd, x, y, Callback->Meta) IS ERR::Terminate) {
                return ERR::Okay;
             }
          }
@@ -647,7 +929,7 @@ ERR TracePath(APTR Path, FUNCTION *Callback, double Scale)
 
       ERR result;
       do {
-         cmd = ((SimpleVector *)Path)->mPath.vertex(&x, &y);
+         cmd = path.vertex(&x, &y);
          if (agg::is_vertex(cmd)) {
             args[1].Int = index++;
             args[2].Int = cmd;
@@ -665,15 +947,17 @@ ERR TracePath(APTR Path, FUNCTION *Callback, double Scale)
 /*********************************************************************************************************************
 
 -FUNCTION-
-LineTo: Alter a path by setting a line-to command at the current vertex position.
+LineTo: Appends a line segment to a generated path.
 
-This function alters a path by setting a line-to command at the current vertex position.  The index is then advanced by
-one to the next vertex position.
+This function appends a straight line from the current point to `X`,`Y`.
 
 -INPUT-
 ptr Path: The vector path to modify.
 double X: The line end point on the horizontal plane.
 double Y: The line end point on the vertical plane.
+
+-TAGS-
+mutates-input
 
 *********************************************************************************************************************/
 
@@ -685,17 +969,17 @@ void LineTo(APTR Vector, double X, double Y)
 /*********************************************************************************************************************
 
 -FUNCTION-
-MoveTo: Alter a path by setting a move-to command at the current vertex position.
+MoveTo: Moves the current point in a generated path.
 
-This function will set a move-to command at the current vertex.  It then increments the vertex position for the next
-path command.
-
-The move-to command is used to move the pen to a new coordinate without drawing a line.
+This function appends a move command.  The current point is moved to `X`,`Y` without drawing a line.
 
 -INPUT-
 ptr Path: The vector path to modify.
 double X: The horizontal end point for the command.
 double Y: The vertical end point for the command.
+
+-TAGS-
+mutates-input
 
 *********************************************************************************************************************/
 
@@ -707,9 +991,9 @@ void MoveTo(APTR Vector, double X, double Y)
 /*********************************************************************************************************************
 
 -FUNCTION-
-Multiply: Combines a matrix with a series of matrix values.
+Multiply: Multiplies a matrix by explicit affine transform values.
 
-This function uses matrix multiplication to combine a set of values with a !VectorMatrix structure.
+This function multiplies the target !VectorMatrix by the supplied affine transform values.
 
 -INPUT-
 struct(*VectorMatrix) Matrix: The target transformation matrix.
@@ -721,106 +1005,86 @@ double TranslateX: Matrix value E.
 double TranslateY: Matrix value F.
 
 -ERRORS-
-Okay:
-NullArgs:
+Okay
+NullArgs
+
+-TAGS-
+mutates-input, mutates-object
 -END-
 
 *********************************************************************************************************************/
 
-ERR Multiply(VectorMatrix *Matrix, double ScaleX, double ShearY, double ShearX,
-   double ScaleY, double TranslateX, double TranslateY)
+ERR Multiply(VectorMatrix *Matrix, double ScaleX, double ShearY, double ShearX, double ScaleY,
+   double TranslateX, double TranslateY)
 {
-   if (!Matrix) {
-      pf::Log log(__FUNCTION__);
-      return log.warning(ERR::NullArgs);
-   }
+   if (not Matrix) return kt::Log(__FUNCTION__).warning(ERR::NullArgs);
 
-   auto &d = *Matrix;
-   double t0    = (d.ScaleX * ScaleX) + (d.ShearY * ShearX);
-   double t2    = (d.ShearX * ScaleX) + (d.ScaleY * ShearX);
-   double t4    = (d.TranslateX * ScaleX) + (d.TranslateY * ShearX) + TranslateX;
-   d.ShearY     = (d.ScaleX * ShearY) + (d.ShearY * ScaleY);
-   d.ScaleY     = (d.ShearX * ShearY) + (d.ScaleY * ScaleY);
-   d.TranslateY = (d.TranslateX * ShearY) + (d.TranslateY * ScaleY) + TranslateY;
-   d.ScaleX     = t0;
-   d.ShearX     = t2;
-   d.TranslateX = t4;
-
-   if (Matrix->Vector) mark_dirty(Matrix->Vector, RC::TRANSFORM);
+   multiply_values(*Matrix, ScaleX, ShearY, ShearX, ScaleY, TranslateX, TranslateY);
+   mark_matrix_dirty(Matrix);
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 
 -FUNCTION-
-MultiplyMatrix: Combines a source matrix with a target.
+MultiplyMatrix: Multiplies a target matrix by a source matrix.
 
-This function uses matrix multiplication to combine a `Source` matrix with a `Target`.
+This function multiplies `Target` by `Source` and stores the result in `Target`.
 
 -INPUT-
 struct(*VectorMatrix) Target: The target transformation matrix.
 struct(*VectorMatrix) Source: The source transformation matrix.
 
 -ERRORS-
-Okay:
-NullArgs:
+Okay
+NullArgs
+
+-TAGS-
+mutates-input, mutates-object
 -END-
 
 *********************************************************************************************************************/
 
 ERR MultiplyMatrix(VectorMatrix *Target, VectorMatrix *Source)
 {
-   if ((!Target) or (!Source)) {
-      pf::Log log(__FUNCTION__);
-      return log.warning(ERR::NullArgs);
-   }
+   if ((not Target) or (not Source)) return kt::Log(__FUNCTION__).warning(ERR::NullArgs);
 
-   auto &d = *Target;
-   auto &s = *Source;
-   double t0  = (d.ScaleX * s.ScaleX) + (d.ShearY * s.ShearX);
-   double t2  = (d.ShearX * s.ScaleX) + (d.ScaleY * s.ShearX);
-   double t4  = (d.TranslateX * s.ScaleX) + (d.TranslateY * s.ShearX) + s.TranslateX;
-   d.ShearY     = (d.ScaleX * s.ShearY) + (d.ShearY * s.ScaleY);
-   d.ScaleY     = (d.ShearX * s.ShearY) + (d.ScaleY * s.ScaleY);
-   d.TranslateY = (d.TranslateX * s.ShearY) + (d.TranslateY * s.ScaleY) + s.TranslateY;
-   d.ScaleX     = t0;
-   d.ShearX     = t2;
-   d.TranslateX = t4;
-
-   if (Target->Vector) mark_dirty(Target->Vector, RC::TRANSFORM);
+   multiply_matrix(*Target, *Source);
+   mark_matrix_dirty(Target);
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 
 -FUNCTION-
-ParseTransform: Parse an SVG transformation string and apply the values to a matrix.
+ParseTransform: Parses an SVG transform string and applies it to a matrix.
 
-This function parses a sequence of transform instructions and applies them to a matrix.
+This function parses a sequence of SVG transform instructions and applies them to a matrix.
 
-The string must be written using SVG guidelines for the transform attribute.  For example,
-`skewX(20) rotate(45 50 50)` would be valid.  Transform instructions are applied in reverse, as per the standard.
+The string must be written using SVG transform attribute syntax.  For example, `skewX(20) rotate(45 50 50)` is valid.
+Transform instructions are applied in reverse order, as required by the SVG transform model.  Unsupported transform
+text is skipped.
 
-Note that any existing transforms applied to the matrix will be cancelled as a result of calling this function.
-If existing matrix values need to be retained, create a fresh matrix and use ~Multiply() to combine them.
+Any existing values in `Matrix` are reset before the parsed transforms are applied.  If existing matrix values need to
+be retained, parse into a separate matrix and use ~MultiplyMatrix() to combine the result.
 
 -INPUT-
 struct(*VectorMatrix) Matrix: The target transformation matrix.
-cstr Transform: The transform to apply, expressed as a string instruction.
+strview Transform: The transform to apply, expressed as a string instruction.
 
 -ERRORS-
-Okay:
-NullArgs:
+Okay
+NullArgs
+
+-TAGS-
+mutates-input, mutates-object
 -END-
 
 *********************************************************************************************************************/
 
-ERR ParseTransform(VectorMatrix *Matrix, CSTRING Commands)
+ERR ParseTransform(VectorMatrix *Matrix, const std::string_view &Transform)
 {
-   if ((!Matrix) or (!Commands)) {
-      pf::Log log(__FUNCTION__);
-      return log.warning(ERR::NullArgs);
-   }
+   if (not Matrix) return kt::Log(__FUNCTION__).warning(ERR::NullArgs);
 
    enum { M_MUL, M_TRANSLATE, M_ROTATE, M_SCALE, M_SKEW };
    class cmd {
@@ -832,59 +1096,58 @@ ERR ParseTransform(VectorMatrix *Matrix, CSTRING Commands)
    };
 
    std::vector<cmd> list;
+   list.reserve(4);
 
-   auto str = Commands;
-   while (*str) {
-      if ((*str >= 'a') and (*str <= 'z')) {
-         if (startswith("matrix", str)) {
+   std::string_view str(Transform);
+   while (not str.empty()) {
+      if ((str.front() >= 'a') and (str.front() <= 'z')) {
+         if (str.starts_with("matrix")) {
             cmd m(M_MUL);
-            str += 6;
+            str.remove_prefix(6);
             read_numseq(str, { &m.sx, &m.shy, &m.shx, &m.sy, &m.tx, &m.ty });
             list.push_back(std::move(m));
          }
-         else if (startswith("translate", str)) {
+         else if (str.starts_with("translate")) {
             cmd m(M_TRANSLATE);
-            str += 9;
-            bool scaled_x, scaled_y;
+            str.remove_prefix(9);
             next_value(str);
-            m.tx = read_unit(str, scaled_x);
+            read_transform_unit(str, m.tx);
             next_value(str);
-            m.ty = read_unit(str, scaled_y);
-            read_numseq(str, { &m.tx, &m.ty });
+            read_transform_unit(str, m.ty);
             list.push_back(std::move(m));
          }
-         else if (startswith("rotate", str)) {
+         else if (str.starts_with("rotate")) {
             cmd m(M_ROTATE);
-            str += 6;
+            str.remove_prefix(6);
             read_numseq(str, { &m.angle, &m.tx, &m.ty });
             list.push_back(std::move(m));
          }
-         else if (startswith("scale", str)) {
+         else if (str.starts_with("scale")) {
             cmd m(M_SCALE);
             m.tx = 1.0;
             m.ty = DBL_EPSILON;
-            str += 5;
+            str.remove_prefix(5);
             read_numseq(str, { &m.tx, &m.ty });
             if (m.ty IS DBL_EPSILON) m.ty = m.tx;
             list.push_back(std::move(m));
          }
-         else if (startswith("skewX", str)) {
+         else if (str.starts_with("skewX")) {
             cmd m(M_SKEW);
             m.ty = 0;
-            str += 5;
+            str.remove_prefix(5);
             read_numseq(str, { &m.tx });
             list.push_back(std::move(m));
          }
-         else if (startswith("skewY", str)) {
+         else if (str.starts_with("skewY")) {
             cmd m(M_SKEW);
             m.tx = 0;
-            str += 5;
+            str.remove_prefix(5);
             read_numseq(str, { &m.ty });
             list.push_back(std::move(m));
          }
-         else str++;
+         else str.remove_prefix(1);
       }
-      else str++;
+      else str.remove_prefix(1);
    }
 
    Matrix->ScaleX = 1.0;
@@ -894,74 +1157,58 @@ ERR ParseTransform(VectorMatrix *Matrix, CSTRING Commands)
    Matrix->TranslateX = 0;
    Matrix->TranslateY = 0;
 
-   std::for_each(list.rbegin(), list.rend(), [&](auto m) {
+   for (auto it = list.rbegin(); it != list.rend(); it++) {
+      const auto &m = *it;
       switch (m.type) {
-         case M_MUL: {
-            auto &d = *Matrix;
-            auto &s = m;
-            double t0    = (d.ScaleX * s.sx) + (d.ShearY * s.shx);
-            double t2    = (d.ShearX * s.sx) + (d.ScaleY * s.shx);
-            double t4    = (d.TranslateX * s.sx) + (d.TranslateY * s.shx) + s.tx;
-            d.ShearY     = (d.ScaleX * s.shy) + (d.ShearY * s.sy);
-            d.ScaleY     = (d.ShearX * s.shy) + (d.ScaleY * s.sy);
-            d.TranslateY = (d.TranslateX * s.shy) + (d.TranslateY * s.sy) + s.ty;
-            d.ScaleX     = t0;
-            d.ShearX     = t2;
-            d.TranslateX = t4;
+         case M_MUL:
+            multiply_values(*Matrix, m.sx, m.shy, m.shx, m.sy, m.tx, m.ty);
             break;
-         }
 
          case M_TRANSLATE:
             Matrix->TranslateX += m.tx;
             Matrix->TranslateY += m.ty;
             break;
 
-         case M_ROTATE: {
-            vec::Rotate(Matrix, m.angle, m.tx, m.ty);
+         case M_ROTATE:
+            rotate_matrix(*Matrix, m.angle, m.tx, m.ty);
             break;
-         }
 
          case M_SCALE:
-            Matrix->ScaleX     *= m.tx;
-            Matrix->ShearX     *= m.tx;
-            Matrix->TranslateX *= m.tx;
-            Matrix->ShearY     *= m.ty;
-            Matrix->ScaleY     *= m.ty;
-            Matrix->TranslateY *= m.ty;
+            scale_matrix(*Matrix, m.tx, m.ty);
             break;
 
          case M_SKEW:
-            vec::Skew(Matrix, m.tx, m.ty);
+            skew_matrix(*Matrix, m.tx, m.ty);
             break;
       }
-   });
+   }
 
-   if (Matrix->Vector) mark_dirty(Matrix->Vector, RC::TRANSFORM);
+   mark_matrix_dirty(Matrix);
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 
 -FUNCTION-
-ResetMatrix: Resets a transformation matrix to its default state.
+ResetMatrix: Resets a transformation matrix to the identity transform.
 
-Call ResetMatrix() to reset a transformation matrix to its default state, undoing all former transform operations.
+Call ResetMatrix() to clear all scaling, skewing, rotation and translation from a !VectorMatrix.
 
 -INPUT-
 struct(*VectorMatrix) Matrix: The target transformation matrix.
 
 -ERRORS-
-Okay:
-NullArgs:
+Okay
+NullArgs
+
+-TAGS-
+mutates-input, mutates-object
 
 *********************************************************************************************************************/
 
 ERR ResetMatrix(VectorMatrix *Matrix)
 {
-   if (!Matrix) {
-      pf::Log log(__FUNCTION__);
-      return log.warning(ERR::NullArgs);
-   }
+   if (not Matrix) return kt::Log(__FUNCTION__).warning(ERR::NullArgs);
 
    Matrix->ScaleX     = 1.0;
    Matrix->ScaleY     = 1.0;
@@ -977,15 +1224,18 @@ ERR ResetMatrix(VectorMatrix *Matrix)
 /*********************************************************************************************************************
 
 -FUNCTION-
-RewindPath: Resets the vertex seek position to zero.
+RewindPath: Resets path iteration to the first vertex.
 
-Rewinding a path will reset the current vertex index to zero.  The next call to a vertex modification function such as
-~LineTo() would result in the first vertex being modified.
+Rewinding a path resets its internal vertex iterator to the first vertex.  The next call to ~GetVertex() will read from
+the start of the path.
 
 If the referenced `Path` is empty, this function does nothing.
 
 -INPUT-
 ptr Path: The vector path to rewind.
+
+-TAGS-
+updates-seek-index
 
 *********************************************************************************************************************/
 
@@ -997,66 +1247,52 @@ void RewindPath(APTR Vector)
 /*********************************************************************************************************************
 
 -FUNCTION-
-Rotate: Applies a rotation transformation to a matrix.
+Rotate: Applies a rotation transform to a matrix.
 
-This function will apply a rotation transformation to a matrix.  By default, rotation will occur around point `(0, 0)`
-unless `CenterX` and `CenterY` values are specified.
+This function rotates a matrix by `Angle` degrees.  Rotation occurs around `(0, 0)` unless `CenterX` and `CenterY`
+specify another centre point.
 
 -INPUT-
 struct(*VectorMatrix) Matrix: The target transformation matrix.
 double Angle: Angle of rotation, in degrees.
-double CenterX: Center of rotation on the horizontal axis.
-double CenterY: Center of rotation on the vertical axis.
+double CenterX: Centre of rotation on the horizontal axis.
+double CenterY: Centre of rotation on the vertical axis.
 
 -ERRORS-
-Okay:
-NullArgs:
+Okay
+NullArgs
+
+-TAGS-
+mutates-input, mutates-object
 
 *********************************************************************************************************************/
 
 ERR Rotate(VectorMatrix *Matrix, double Angle, double CenterX, double CenterY)
 {
-   if (!Matrix) {
-      pf::Log log(__FUNCTION__);
+   if (not Matrix) {
+      kt::Log log(__FUNCTION__);
       return log.warning(ERR::NullArgs);
    }
 
-   Matrix->TranslateX -= CenterX;
-   Matrix->TranslateY -= CenterY;
-
-   double ca = cos(Angle * DEG2RAD);
-   double sa = sin(Angle * DEG2RAD);
-   double t0 = (Matrix->ScaleX * ca) - (Matrix->ShearY * sa);
-   double t2 = (Matrix->ShearX * ca) - (Matrix->ScaleY * sa);
-   double t4 = (Matrix->TranslateX  * ca) - (Matrix->TranslateY * sa);
-   Matrix->ShearY     = (Matrix->ScaleX * sa) + (Matrix->ShearY * ca);
-   Matrix->ScaleY     = (Matrix->ShearX * sa) + (Matrix->ScaleY * ca);
-   Matrix->TranslateY = (Matrix->TranslateX * sa) + (Matrix->TranslateY * ca);
-   Matrix->ScaleX     = t0;
-   Matrix->ShearX     = t2;
-   Matrix->TranslateX = t4;
-
-   Matrix->TranslateX += CenterX;
-   Matrix->TranslateY += CenterY;
-
-   if (Matrix->Vector) mark_dirty(Matrix->Vector, RC::TRANSFORM);
+   rotate_matrix(*Matrix, Angle, CenterX, CenterY);
+   mark_matrix_dirty(Matrix);
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 
 -FUNCTION-
-Scale: Scale the size of the vector by (x,y)
+Scale: Applies a scale transform to a matrix.
 
-This function will perform a scale operation on a matrix.  Values of less than `1.0` will shrink the affected vector
-path, while values greater than `1.0` will enlarge it.
+This function scales a matrix on the x and y axes.  Values less than `1.0` shrink the affected vector path, while
+values greater than `1.0` enlarge it.
 
 Scaling is relative to position `(0, 0)`.  If the width and height of the vector path needs to be transformed without
-affecting its top-left position, the client must translate the path to `(0, 0)` around its center point.  The path
+affecting its top-left position, the client must translate the path to `(0, 0)` around its centre point.  The path
 should then be scaled before being transformed back to its original top-left coordinate.
 
 The scale operation can also be used to flip a vector path if negative values are used.  For instance, a value of
-`-1.0` on the x axis would result in a `1:1` flip across the horizontal.
+`-1.0` on the x axis results in a `1:1` horizontal flip.
 
 -INPUT-
 struct(*VectorMatrix) Matrix: The target transformation matrix.
@@ -1067,33 +1303,30 @@ double Y: The scale factor on the y-axis.
 Okay
 NullArgs
 
+-TAGS-
+mutates-input, mutates-object
+
 *********************************************************************************************************************/
 
 ERR Scale(VectorMatrix *Matrix, double X, double Y)
 {
-   if (!Matrix) {
-      pf::Log log(__FUNCTION__);
-      return log.warning(ERR::NullArgs);
-   }
+   if (not Matrix) return kt::Log(__FUNCTION__).warning(ERR::NullArgs);
 
-   Matrix->ScaleX     *= X;
-   Matrix->ShearX     *= X;
-   Matrix->TranslateX *= X;
-   Matrix->ShearY     *= Y;
-   Matrix->ScaleY     *= Y;
-   Matrix->TranslateY *= Y;
-
-   if (Matrix->Vector) mark_dirty(Matrix->Vector, RC::TRANSFORM);
+   scale_matrix(*Matrix, X, Y);
+   mark_matrix_dirty(Matrix);
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 
 -FUNCTION-
-Skew: Skews the matrix along the horizontal and/or vertical axis.
+Skew: Applies a skew transform to a matrix.
 
-The Skew function applies a skew transformation to the horizontal and/or vertical axis of the matrix.
-Valid X and Y values are in the range of `-90 < Angle < 90`.
+The Skew function applies a skew transformation to the horizontal and/or vertical axis of the matrix.  Valid `X` and
+`Y` values are in the range `-90 < Angle < 90`.
+
+If `X` is valid and `Y` is outside the valid range, the horizontal skew is applied before `ERR::OutOfRange` is
+returned.
 
 -INPUT-
 struct(*VectorMatrix) Matrix: The target transformation matrix.
@@ -1101,75 +1334,63 @@ double X: The angle to skew along the horizontal.
 double Y: The angle to skew along the vertical.
 
 -ERRORS-
-Okay:
-NullArgs:
+Okay
+NullArgs
 OutOfRange: At least one of the angles is out of the allowable range.
+
+-TAGS-
+mutates-input, mutates-object
 -END-
 
 *********************************************************************************************************************/
 
 ERR Skew(VectorMatrix *Matrix, double X, double Y)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
-   if (!Matrix) return log.warning(ERR::NullArgs);
+   if (not Matrix) return log.warning(ERR::NullArgs);
 
-   if ((X > -90) and (X < 90)) {
-      VectorMatrix skew = {
-         .ScaleX = 1.0, .ShearY = 0, .ShearX = tan(X * DEG2RAD),
-         .ScaleY = 1.0, .TranslateX = 0, .TranslateY = 0
-      };
-
-      vec::MultiplyMatrix(Matrix, &skew);
+   if (auto error = skew_matrix(*Matrix, X, Y); !error) {
+      mark_matrix_dirty(Matrix);
+      return ERR::Okay;
    }
-   else return log.warning(ERR::OutOfRange);
-
-   if ((Y > -90) and (Y < 90)) {
-      VectorMatrix skew = {
-         .ScaleX = 1.0, .ShearY = tan(Y * DEG2RAD), .ShearX = 0,
-         .ScaleY = 1.0, .TranslateX = 0, .TranslateY = 0
-      };
-
-      vec::MultiplyMatrix(Matrix, &skew);
+   else {
+      if ((X > -90) and (X < 90)) mark_matrix_dirty(Matrix);
+      return log.warning(error);
    }
-   else return log.warning(ERR::OutOfRange);
-
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 
 -FUNCTION-
-Smooth3: Alter a path by setting a smooth3 command at the current vertex position.
+Smooth3: Appends a smooth quadratic Bezier curve to a generated path.
 
-This function will set a quadratic bezier curve command at the current vertex.  It then increments the vertex position
-for the next path command.
-
-The control point from the previous curve is used as the control point for the new curve, hence the 'smooth'.
+This function appends a quadratic Bezier segment from the current point to `X`,`Y`.  The control point is reflected
+from the previous curve command.
 
 -INPUT-
 ptr Path: The vector path to modify.
 double X: The horizontal end point for the smooth3 command.
 double Y: The vertical end point for the smooth3 command.
 
+-TAGS-
+mutates-input
+
 *********************************************************************************************************************/
 
 void Smooth3(APTR Vector, double X, double Y)
 {
-   if (!Vector) return;
+   if (not Vector) return;
    ((SimpleVector *)Vector)->mPath.curve3(X, Y);
 }
 
 /*********************************************************************************************************************
 
 -FUNCTION-
-Smooth4: Alter a path by setting a smooth4 command at the current vertex position.
+Smooth4: Appends a smooth cubic Bezier curve to a generated path.
 
-This function will set a cubic bezier curve command at the current vertex.  It then increments the vertex position
-for the next path command.
-
-The control point from the previous curve will be used in addition to the CtrlX and CtrlY points, hence the
-name 'smoothed curve'.
+This function appends a cubic Bezier segment from the current point to `X`,`Y`.  The previous curve command supplies
+the reflected first control point, and `CtrlX`,`CtrlY` supply the second control point.
 
 -INPUT-
 ptr Path: The vector path to modify.
@@ -1178,41 +1399,46 @@ double CtrlY: Control point vertical coordinate.
 double X: The horizontal end point for the smooth4 instruction.
 double Y: The vertical end point for the smooth4 instruction.
 
+-TAGS-
+mutates-input
+
 *********************************************************************************************************************/
 
 void Smooth4(APTR Vector, double CtrlX, double CtrlY, double X, double Y)
 {
-   if (!Vector) return;
+   if (not Vector) return;
    ((SimpleVector *)Vector)->mPath.curve4(CtrlX, CtrlY, X, Y);
 }
 
 /*********************************************************************************************************************
 
 -FUNCTION-
-StringWidth: Calculate the pixel width of a UTF-8 string, for a given font.
+StringWidth: Calculates the rendered width of a UTF-8 string.
 
-This function calculates the pixel width of a string, in relation to a known font.  The function takes into account
-any line-feeds that are encountered, so if the `String` contains multiple lines, then the width of the longest line will
-be returned.
+This function calculates the pixel width of `String` for a known font.  Line-feeds are treated as line breaks, so for
+multi-line strings the width of the longest line is returned.
 
-The font's kerning specifications will be taken into account when computing the distance between glyphs.
+For scalable fonts, kerning is included when computing the distance between glyphs.
 
 -INPUT-
 ptr FontHandle: A font handle obtained from ~GetFontHandle().
-cstr String: Pointer to a null-terminated string.
-int Chars: The maximum number of unicode characters to process in calculating the string width.  Set to `-1` for all chars.
+strview String: Pointer to a null-terminated string.
+int Chars: Maximum number of bytes to process from `String`.  Set to `-1` for the full string.
 
 -RESULT-
-double: The pixel width of the string is returned.
+double: The pixel width of the string, or `0` if `FontHandle` or `String` is `NULL`.
+
+-TAGS-
+blocking, pure-query
 -END-
 
 *********************************************************************************************************************/
 
-double StringWidth(APTR Handle, CSTRING String, int Chars)
+double StringWidth(APTR Handle, const std::string_view &String, int Chars)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
-   if ((!Handle) or (!String)) { log.warning(ERR::NullArgs); return 0; }
+   if ((not Handle) or (String.empty())) { log.warning(ERR::NullArgs); return 0; }
 
    const std::lock_guard lock(glFontMutex);
 
@@ -1222,22 +1448,25 @@ double StringWidth(APTR Handle, CSTRING String, int Chars)
 
       if (Chars IS -1) Chars = 0x7fffffff;
 
-      int len        = 0;
-      int widest     = 0;
+      double len     = 0;
+      double widest  = 0;
       int prev_glyph = 0;
       int i = 0;
-      while ((i < Chars) and (String[i])) {
-         if (String[i] IS '\n') {
+      const bool has_kerning = FT_HAS_KERNING(pt->ft_size->face);
+      const size_t end = std::min(size_t(Chars), String.size());
+      const auto limited_string = String.substr(0, end);
+      while (i < std::ssize(limited_string)) {
+         if (limited_string[i] IS '\n') {
             if (widest < len) widest = len;
             len = 0;
             i++;
          }
          else {
             uint32_t unicode;
-            auto charlen = get_utf8(String, unicode, i);
+            auto charlen = get_utf8(limited_string, unicode, i);
             auto &glyph  = pt->get_glyph(unicode);
             len += glyph.adv_x;
-            if (prev_glyph) {;
+            if ((has_kerning) and (prev_glyph)) {
                FT_Vector delta;
                FT_Get_Kerning(pt->ft_size->face, prev_glyph, glyph.glyph_index, FT_KERNING_DEFAULT, &delta);
                len += int26p6_to_dbl(delta.x);
@@ -1256,9 +1485,9 @@ double StringWidth(APTR Handle, CSTRING String, int Chars)
 /*********************************************************************************************************************
 
 -FUNCTION-
-Translate: Translates the vector by (X,Y).
+Translate: Applies a translation transform to a matrix.
 
-This function will translate the matrix in the direction of the provided (X,Y) values.
+This function adds the supplied x and y offsets to the matrix translation values.
 
 -INPUT-
 struct(*VectorMatrix) Matrix: The target transformation matrix.
@@ -1266,16 +1495,19 @@ double X: Translation along the x-axis.
 double Y: Translation along the y-axis.
 
 -ERRORS-
-Okay:
-NullArgs:
+Okay
+NullArgs
+
+-TAGS-
+mutates-input, mutates-object
 -END-
 
 *********************************************************************************************************************/
 
 ERR Translate(VectorMatrix *Matrix, double X, double Y)
 {
-   if (!Matrix) {
-      pf::Log log(__FUNCTION__);
+   if (not Matrix) {
+      kt::Log log(__FUNCTION__);
       return log.warning(ERR::NullArgs);
    }
 
@@ -1289,14 +1521,17 @@ ERR Translate(VectorMatrix *Matrix, double X, double Y)
 /*********************************************************************************************************************
 
 -FUNCTION-
-TranslatePath: Translates a path by (x,y)
+TranslatePath: Translates every vertex in a generated path.
 
-This function will translate all vertices of a path by (X,Y).
+This function offsets all vertices in `Path` by `X`,`Y`.  If `Path` is `NULL`, the call is ignored.
 
 -INPUT-
 ptr Path: Pointer to a generated path.
-double X: Translate the path horizontally by the given value.
-double Y: Translate the path vertically by the given value.
+double X: Horizontal offset.
+double Y: Vertical offset.
+
+-TAGS-
+mutates-input
 
 -END-
 
@@ -1304,7 +1539,7 @@ double Y: Translate the path vertically by the given value.
 
 void TranslatePath(APTR Vector, double X, double Y)
 {
-   if (!Vector) return;
+   if (not Vector) return;
    ((SimpleVector *)Vector)->mPath.translate_all_paths(X, Y);
 }
 

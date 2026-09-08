@@ -474,7 +474,8 @@ static AliasRet aa_uref(IRIns* refa, IRIns* refb)
 TRef lj_opt_fwd_uload(jit_State* J)
 {
    IRRef uref = fins->op1;
-   IRRef lim = REF_BASE;  //  Search limit.
+   IRRef lim = J->chain[IR_XBAR];  // Upvalue lifetime boundary.
+   if (lim < REF_BASE) lim = REF_BASE;
    IRIns* xr = IR(uref);
    IRRef ref;
 
@@ -511,7 +512,9 @@ TRef lj_opt_dse_ustore(jit_State* J)
    IRIns* xr = IR(xref);
    IRRef1* refp = &J->chain[IR_USTORE];
    IRRef ref = *refp;
-   while (ref > xref) {  // Search for redundant or conflicting stores.
+   IRRef limit = xref;
+   if (J->chain[IR_XBAR] > limit) limit = J->chain[IR_XBAR];
+   while (ref > limit) {  // Do not eliminate stores across an upvalue lifetime transition.
       IRIns* store = IR(ref);
       switch (aa_uref(xr, IR(store->op1))) {
       case ALIAS_NO:
@@ -565,10 +568,18 @@ static AliasRet aa_fref(jit_State* J, IRIns* refa, IRIns* refb)
       return ALIAS_NO;  //  Different fields.
    if (refa->op1 == refb->op1)
       return ALIAS_MUST;  //  Same field, same object.
-   else if (refa->op2 >= IRFL_TAB_META and refa->op2 <= IRFL_TAB_NOMM)
+   else if ((refa->op2 >= IRFL_TAB_META and refa->op2 <= IRFL_TAB_NOMM) or refa->op2 IS IRFL_TAB_FLAGS)
       return aa_table(J, refa->op1, refb->op1);  //  Disambiguate tables.
+      // IRFLDEF is append-only, so IRFL_TAB_FLAGS sits outside the contiguous table-field range above.
    else
       return ALIAS_MAY;  //  Same field, possibly different object.
+}
+
+// True for C helpers that change an array's length or may reallocate its storage.
+static bool ircall_mutates_array(uint32_t CallId)
+{
+   return CallId IS IRCALL_lj_arr_push1 or CallId IS IRCALL_lj_arr_putstr or CallId IS IRCALL_lj_arr_putsbuf or
+      CallId IS IRCALL_lj_arr_putnumtv or CallId IS IRCALL_lj_arr_clear or CallId IS IRCALL_lj_arr_resize;
 }
 
 // Only the loads for mutable fields end up here (see FOLD).
@@ -578,6 +589,20 @@ TRef lj_opt_fwd_fload(jit_State* J)
    IRRef fid = fins->op2;  //  Field ID.
    IRRef lim = oref;  //  Search limit.
    IRRef ref;
+
+   // Array-mutating C calls update the length or may reallocate the storage.
+   // Limit forwarding of these fields to below the most recent call (conservative across all arrays).
+   if (fid IS IRFL_ARRAY_LEN or fid IS IRFL_ARRAY_STORAGE) {
+      ref = J->chain[IR_CALLS];
+      while (ref > lim) {
+         IRIns* calls = IR(ref);
+         if (ircall_mutates_array(calls->op2)) {
+            lim = ref;
+            break;
+         }
+         ref = calls->prev;
+      }
+   }
 
    // Search for conflicting stores.
    ref = J->chain[IR_FSTORE];
@@ -592,10 +617,17 @@ TRef lj_opt_fwd_fload(jit_State* J)
    }
 
    // No conflicting store: const-fold field loads from allocations.
-   if (fid == IRFL_TAB_META) {
+   if (fid IS IRFL_TAB_META or fid IS IRFL_TAB_GCONTRACTS) {
       IRIns* ir = IR(oref);
-      if (ir->o == IR_TNEW or ir->o == IR_TDUP)
+      if (ir->o IS IR_TNEW or ir->o IS IR_TDUP)
          return lj_ir_knull(J, IRT_TAB);
+   }
+   else if (fid IS IRFL_TAB_FLAGS) {
+      IRIns* ir = IR(oref);
+      if (ir->o IS IR_TNEW)
+         return lj_ir_kint(J, 0);
+      else if (ir->o IS IR_TDUP)
+         return lj_ir_kint(J, ir_ktab(IR(ir->op1))->flags);
    }
 
 cselim:

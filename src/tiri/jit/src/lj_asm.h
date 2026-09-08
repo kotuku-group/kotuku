@@ -10,4 +10,7 @@
 #if LJ_HASJIT
 LJ_FUNC void lj_asm_trace(jit_State *J, GCtrace *T);
 LJ_FUNC void lj_asm_patchexit(jit_State *J, GCtrace *T, ExitNo exitno, MCode *target);
+#if defined(UNIT_TESTS) and LJ_TARGET_X64
+LJ_FUNC const char* lj_asm_test_x64();
+#endif
 #endif

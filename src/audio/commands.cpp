@@ -1,36 +1,24 @@
 // Buffered command handling.  The execution of these commands is managed by process_commands()
 
-#include <type_traits>
-
-// Template helper to extract data parameter with type conversion
-template<typename T>
-inline double extract_data_parameter(T&& value) {
-   if constexpr (std::is_arithmetic_v<std::decay_t<T>>) {
-      return double(value);
-   }
-   else {
-      static_assert(std::is_arithmetic_v<std::decay_t<T>>, "Command data parameter must be numeric type");
-      return 0.0; // Unreachable, but needed for compilation
-   }
-}
+#include <utility>
 
 template<typename... tArgs>
 static ERR add_command(objAudio* Audio, CMD Command, int Handle, tArgs&&... pArgs) {
    auto ea = (extAudio *)(Audio);
    int index = Handle >> 16;
 
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    if ((index < 1) or (index >= int(ea->Sets.size()))) return log.warning(ERR::OutOfRange);
    if (ea->Sets[index].Commands.capacity() == 0) return log.warning(ERR::OutOfRange);
    if (ea->Sets[index].Commands.size() > 1024) return log.warning(ERR::BufferOverflow);
 
-   double data = 0.0;
    if constexpr (sizeof...(pArgs) > 0) {
       static_assert(sizeof...(pArgs) == 1, "Command can only accept one data parameter");
-      data = extract_data_parameter(std::forward<tArgs>(pArgs)...);
+      ea->Sets[index].Commands.emplace_back(Command, Handle, std::forward<tArgs>(pArgs)...);
    }
-
-   ea->Sets[index].Commands.emplace_back(Command, Handle, data);
+   else {
+      ea->Sets[index].Commands.emplace_back(Command, Handle);
+   }
    return ERR::Okay;
 }
 
@@ -107,13 +95,16 @@ int Handle: The target channel.
 -ERRORS-
 Okay: Command buffering successfully initiated.
 NullArgs: Required parameters are null or missing.
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
 
 ERR MixStartSequence(objAudio *Audio, int Handle)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if ((!Audio) or (!Handle)) return log.warning(ERR::NullArgs);
 
@@ -138,13 +129,16 @@ int Handle: The target channel.
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
 
 ERR MixEndSequence(objAudio *Audio, int Handle)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if ((!Audio) or (!Handle)) return log.warning(ERR::NullArgs);
 
@@ -174,13 +168,16 @@ int Handle: The target channel.
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
 
 ERR MixContinue(objAudio *Audio, int Handle)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    log.traceBranch("Audio: #%d, Channel: $%.8x", Audio->UID, Handle);
 
@@ -211,7 +208,7 @@ ERR MixContinue(objAudio *Audio, int Handle)
       shadow->State = CHS::PLAYING;
    }
 
-   pf::SwitchContext context(Audio);
+   kt::SwitchContext context(Audio);
 
    if (((extAudio *)Audio)->Timer) UpdateTimer(((extAudio *)Audio)->Timer, -MIX_INTERVAL);
    else SubscribeTimer(MIX_INTERVAL, C_FUNCTION(audio_timer), &((extAudio *)Audio)->Timer);
@@ -234,13 +231,17 @@ int Mute: Set to true to mute the channel.  A value of 0 will undo the mute sett
 -ERRORS-
 Okay
 NullArgs
+OutOfRange
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
 
 ERR MixMute(objAudio *Audio, int Handle, int Mute)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if ((!Audio) or (!Handle)) return log.warning(ERR::NullArgs);
 
@@ -274,13 +275,18 @@ int Frequency: The desired frequency.
 -ERRORS-
 Okay
 NullArgs
+OutOfRange
+Failed
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
 
 ERR MixFrequency(objAudio *Audio, int Handle, int Frequency)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if ((!Audio) or (!Handle)) return log.warning(ERR::NullArgs);
 
@@ -312,13 +318,16 @@ double Pan: The desired pan value between -1.0 and 1.0.
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
 
 ERR MixPan(objAudio *Audio, int Handle, double Pan)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if ((!Audio) or (!Handle)) return log.warning(ERR::NullArgs);
 
@@ -356,14 +365,18 @@ int Position: The new playing position, measured in bytes.
 Okay: Playback successfully initiated.
 NullArgs: Required parameters are null or missing.
 OutOfRange: Position exceeds sample boundaries.
-Failed: Channel not associated with a valid sample.
+FieldNotSet: Channel not associated with a valid sample.
+NoData: The referenced sample is unconfigured.
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
 
 ERR MixPlay(objAudio *Audio, int Handle, int Position)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if ((!Audio) or (!Handle)) return log.warning(ERR::NullArgs);
 
@@ -380,7 +393,7 @@ ERR MixPlay(objAudio *Audio, int Handle, int Position)
 
    if (!channel->SampleHandle) { // A sample must be defined for the channel.
       log.warning("Channel not associated with a sample.");
-      return ERR::Failed;
+      return ERR::FieldNotSet;
    }
 
    ((extAudio *)Audio)->finish(*channel, false); // Turn off previous sound
@@ -391,15 +404,17 @@ ERR MixPlay(objAudio *Audio, int Handle, int Position)
 
    auto bitpos = SAMPLE(Position >> sample_shift(sample.SampleType));
 
-   if (!sample.Data) { // The sample reference must be valid and not stale.
+   if (sample.Data.empty()) { // The sample reference must be valid and not stale.
       log.warning("On channel %d, referenced sample %d is unconfigured.", Handle, channel->SampleHandle);
-      return ERR::Failed;
+      return ERR::NoData;
    }
 
    if (sample.Stream) {
       if (Position > sample.StreamLength) return log.warning(ERR::OutOfRange);
-      sample.PlayPos = BYTELEN(Position) + fill_stream_buffer(Handle, sample, Position);
+      sample.BufferedLength = fill_stream_buffer(Handle, sample, Position);
+      sample.PlayPos = BYTELEN(Position) + sample.BufferedLength;
       Position = 0; // Internally we want to start from byte position zero in our stream buffer
+      bitpos = SAMPLE(0);
    }
    else if (bitpos > sample.SampleLength) return log.warning(ERR::OutOfRange);
 
@@ -426,11 +441,12 @@ ERR MixPlay(objAudio *Audio, int Handle, int Position)
          if (sample.OnStop.defined()) {
             double sec;
             if (sample.Stream) {
-               // NB: Accuracy is dependent on the StreamLength value being correct.
-               sec = double((sample.StreamLength - sample.PlayPos)>>sample_shift(sample.SampleType)) / double(channel->Frequency);
+               // NB: Accuracy is dependent on the StreamLength value being correct.  PlayPos already includes the
+               // buffered fill, which still has to be played, so it is added back to the anticipated time.
+               sec = double((sample.StreamLength - sample.PlayPos + sample.BufferedLength)>>sample_shift(sample.SampleType)) / double(channel->Frequency);
             }
-            else sec = double(sample.SampleLength - Position) / double(channel->Frequency);
-            channel->EndTime = PreciseTime() + F2I(sec * 1000000.0);
+            else sec = double(sample.SampleLength - bitpos) / double(channel->Frequency);
+            channel->EndTime = PreciseTime() + std::lrint(sec * 1000000.0);
          }
          else channel->EndTime = 0;
 
@@ -524,7 +540,7 @@ ERR MixPlay(objAudio *Audio, int Handle, int Position)
    fade_in((extAudio *)Audio, channel);
 
    if (channel->State IS CHS::PLAYING) {
-      pf::SwitchContext context(Audio);
+      kt::SwitchContext context(Audio);
       if (((extAudio *)Audio)->Timer) UpdateTimer(((extAudio *)Audio)->Timer, -MIX_INTERVAL);
       else SubscribeTimer(MIX_INTERVAL, C_FUNCTION(audio_timer), &((extAudio *)Audio)->Timer);
    }
@@ -548,13 +564,17 @@ int Rate: The new update rate in milliseconds.
 -ERRORS-
 Okay
 NullArgs
+OutOfRange
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
 
 ERR MixRate(objAudio *Audio, int Handle, int Rate)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if ((!Audio) or (!Handle)) return log.warning(ERR::NullArgs);
 
@@ -596,13 +616,19 @@ int Sample: A sample handle allocated from @Audio.AddSample() or @Audio.AddStrea
 -ERRORS-
 Okay
 NullArgs
+OutOfRange
+NoData: The sample handle refers to a dead or unconfigured sample.
+DataSize: The sample has an invalid length.
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
 
 ERR MixSample(objAudio *Audio, int Handle, int SampleIndex)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if ((!Audio) or (!Handle)) return log.warning(ERR::NullArgs);
 
@@ -613,13 +639,13 @@ ERR MixSample(objAudio *Audio, int Handle, int SampleIndex)
    if ((idx <= 0) or (idx >= (int)((extAudio *)Audio)->Samples.size())) {
       return log.warning(ERR::OutOfRange);
    }
-   else if (!((extAudio *)Audio)->Samples[idx].Data) {
+   else if (((extAudio *)Audio)->Samples[idx].Data.empty()) {
       log.warning("Sample #%d refers to a dead sample.", idx);
-      return ERR::Failed;
+      return ERR::NoData;
    }
    else if (((extAudio *)Audio)->Samples[idx].SampleLength <= 0) {
       log.warning("Sample #%d has invalid sample length %d", idx, ((extAudio *)Audio)->Samples[idx].SampleLength);
-      return ERR::Failed;
+      return ERR::DataSize;
    }
 
    auto channel = ((extAudio *)Audio)->GetChannel(Handle);
@@ -664,13 +690,16 @@ int Handle: The target channel.
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
 
 ERR MixStop(objAudio *Audio, int Handle)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    log.traceBranch("Audio: #%d, Channel: $%.8x", Audio->UID, Handle);
 
@@ -709,13 +738,16 @@ int Handle: The target channel.
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
 
 ERR MixStopLoop(objAudio *Audio, int Handle)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    log.traceBranch("Audio: #%d, Channel: $%.8x", Audio->UID, Handle);
 
@@ -755,13 +787,16 @@ double Volume: The new volume for the channel.
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
 
 ERR MixVolume(objAudio *Audio, int Handle, double Volume)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    log.traceBranch("Audio: #%d, Channel: $%.8x", Audio->UID, Handle);
 
@@ -770,7 +805,7 @@ ERR MixVolume(objAudio *Audio, int Handle, double Volume)
    auto channel = ((extAudio *)Audio)->GetChannel(Handle);
 
    if (channel->Buffering) {
-      add_command(Audio, CMD::VOLUME, Volume);
+      add_command(Audio, CMD::VOLUME, Handle, Volume);
       return ERR::Okay;
    }
 

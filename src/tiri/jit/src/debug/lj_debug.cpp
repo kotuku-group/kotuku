@@ -4,7 +4,10 @@
 #define lj_debug_c
 #define LUA_CORE
 
+#include <cstring>
+
 #include "lj_obj.h"
+#include "lj_ff.h"
 #include "lj_err.h"
 #include "lj_debug.h"
 #include "filesource.h"
@@ -16,6 +19,7 @@
 #include "lj_strfmt.h"
 #include "lj_gc.h"
 #include "lj_jit.h"
+#include "lj_dispatch.h"
 
 // Invalid bytecode position.
 #define NO_BCPOS   (~(BCPOS)0)
@@ -51,6 +55,32 @@ cTValue * lj_debug_frame(lua_State *L, int level, int *size)
 }
 
 //********************************************************************************************************************
+// Return the starting bytecode position of the active machine-code trace when it belongs to Function.
+
+static BCPOS debug_tracepc(lua_State *L, GCfunc *Function)
+{
+   global_State *global = G(L);
+   if (not tvref(global->jit_base)) return NO_BCPOS;
+
+   jit_State *jit = G2J(global);
+   GCproto *prototype = funcproto(Function);
+   GCtrace *trace = nullptr;
+
+   int32_t trace_number = global->vmstate;
+   if (trace_number > 0 and TraceNo(trace_number) < jit->sizetrace) {
+      trace = traceref(jit, TraceNo(trace_number));
+      if (trace and &gcref(trace->startpt)->pt != prototype) trace = nullptr;
+   }
+
+   if (not trace) return NO_BCPOS;
+
+   const BCIns *pc = mref<const BCIns>(trace->startpc);
+   if (not pc or pc < proto_bc(prototype) or pc >= proto_bc(prototype) + prototype->sizebc) return NO_BCPOS;
+
+   return proto_bcpos(prototype, pc);
+}
+
+//********************************************************************************************************************
 // Return bytecode position for function/frame or NO_BCPOS.
 
 static BCPOS debug_framepc(lua_State *L, GCfunc *fn, cTValue *nextframe)
@@ -58,15 +88,19 @@ static BCPOS debug_framepc(lua_State *L, GCfunc *fn, cTValue *nextframe)
    const BCIns* ins;
    GCproto* pt;
    BCPOS pos;
-   lj_assertL(fn->c.gct IS ~LJ_TFUNC or fn->c.gct IS ~LJ_TTHREAD, "function or frame expected");
+   lj_assertL(fn->c.gct IS ~LJ_TFUNC or fn->c.gct IS ~LJ_TSTRUCT, "function or frame expected");
 
    if (not isluafunc(fn)) {  //  Cannot derive a PC for non-Tiri functions.
       return NO_BCPOS;
    }
    else if (nextframe IS nullptr) {  //  Tiri function on top.
+      if (tvref(G(L)->jit_base)) return debug_tracepc(L, fn);
+
       void *cf = cframe_raw(L->cframe);
-      if (cf IS nullptr or (char*)cframe_pc(cf) IS (char*)cframe_L(cf)) return NO_BCPOS;
+      if (cf IS nullptr) return NO_BCPOS;
+
       ins = cframe_pc(cf);  //  Only happens during error/hook handling.
+      if (not ins or (char*)ins IS (char*)cframe_L(cf)) return NO_BCPOS;
    }
    else {
       if (frame_islua(nextframe)) ins = frame_pc(nextframe);
@@ -77,8 +111,8 @@ static BCPOS debug_framepc(lua_State *L, GCfunc *fn, cTValue *nextframe)
          while (true) {
             if (cf IS nullptr) return NO_BCPOS;
 
-            while (cframe_nres(cf) < 0) {
-               if (f >= restorestack(L, -cframe_nres(cf))) break;
+            while (cframe_has_stack_offset(cf)) {
+               if (f >= restorestack(L, cframe_stack_offset(cf))) break;
                cf = cframe_raw(cframe_prev(cf));
                if (cf IS nullptr) return NO_BCPOS;
             }
@@ -95,6 +129,8 @@ static BCPOS debug_framepc(lua_State *L, GCfunc *fn, cTValue *nextframe)
          if (not ins) return NO_BCPOS;
       }
    }
+
+   if (not ins) return NO_BCPOS;
 
    pt = funcproto(fn);
    pos = proto_bcpos(pt, ins) - 1;
@@ -295,6 +331,9 @@ restart:
          case BC_UGET:
             *name = lj_debug_uvname(pt, bc_d(ins));
             return "upvalue";
+         case BC_BFUNC:
+            *name = builtin_callable_name(BuiltinCallableID(bc_d(ins)));
+            return *name ? "builtin" : nullptr;
          default:
             return nullptr;
          }
@@ -374,6 +413,48 @@ void lj_debug_shortname(char *out, GCstr *str, BCLine line)
 
       strcpy(out, line.isBuiltin() ? "]" : "\"]");
    }
+}
+
+//********************************************************************************************************************
+// Resolve current location of a frame without formatting it into the error message.
+// Uses FileSource tracking to display accurate file:line for imported code.
+
+bool lj_debug_getloc(lua_State *L, cTValue *Frame, cTValue *NextFrame, DebugLocation *Location)
+{
+   Location->source = nullptr;
+   Location->line   = 0;
+   Location->valid  = false;
+
+   if (Frame) {
+      GCfunc *fn = frame_func(Frame);
+      if (isluafunc(fn)) {
+         BCLine line = debug_frameline(L, fn, NextFrame);
+         if (line.isValid()) {
+            GCproto *pt = funcproto(fn);
+            GCstr *source = nullptr;
+
+            if (not L->file_sources.empty()) {
+               const FileSource *src = get_file_source(L, line.fileIndex());
+               if (src and not src->filename.empty()) {
+                  source = lj_str_new(L, src->filename.c_str(), src->filename.size());
+               }
+            }
+
+            if (not source) {
+               char buf[LUA_IDSIZE];
+               lj_debug_shortname(buf, proto_chunk_name(pt), pt->firstline);
+               source = lj_str_newz(L, buf);
+            }
+
+            Location->source = source;
+            Location->line   = line.lineNumber();
+            Location->valid  = true;
+            return true;
+         }
+      }
+   }
+
+   return false;
 }
 
 //********************************************************************************************************************
@@ -476,6 +557,10 @@ extern CSTRING lua_setlocal(lua_State *L, const lua_Debug *ar, int n)
 {
    CSTRING name = nullptr;
    TValue *o = debug_localname(L, ar, &name, n);
+   if (name and strcmp(name, "(context cache)") IS 0) {
+      name = nullptr;
+      o = nullptr;
+   }
    if (name) copyTV(L, o, L->top - 1);
    L->top--;
    return name;
@@ -564,7 +649,7 @@ int lj_debug_getinfo(lua_State *L, CSTRING what, lj_Debug *ar, int ext)
          else ar->currentline = -1;
       }
       else if (*what IS 'u') {
-         ar->nups = fn->c.nupvalues;
+         ar->nupvalues = fn->c.nupvalues;
          if (ext) {
             if (isluafunc(fn)) {
                GCproto* pt = funcproto(fn);

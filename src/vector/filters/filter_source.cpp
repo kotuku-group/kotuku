@@ -24,23 +24,38 @@ class extSourceFX : public extFilterEffect {
    public:
    static constexpr CLASSID CLASS_ID = CLASSID::SOURCEFX;
    static constexpr CSTRING CLASS_NAME = "SourceFX";
-   using create = pf::Create<extSourceFX>;
+   using create = kt::Create<extSourceFX>;
 
-   objBitmap *Bitmap;     // Rendered image cache.
-   objVector *Source;     // The vector branch to render as source graphic.
-   objVectorScene *Scene; // Internal scene for rendering.
-   uint8_t *BitmapData;
-   ARF  AspectRatio;      // Aspect ratio flags.
-   int DataSize;
-   bool Render;           // Must be true if the bitmap cache needs to be rendered.
+   ARF  AspectRatio = ARF::X_MID|ARF::Y_MID|ARF::MEET; // Aspect ratio flags.
+   objBitmap *Bitmap = nullptr;     // Rendered image cache.
+   objVector *Source = nullptr;     // The vector branch to render as source graphic.
+   objVectorScene *Scene = nullptr; // Internal scene for rendering.
+   std::vector<uint8_t> BitmapData;
+   bool Render = true;              // Must be true if the bitmap cache needs to be rendered.
+
+   extSourceFX(objMetaClass *ClassPtr, OBJECTID ObjectID) : extFilterEffect(ClassPtr, ObjectID) {
+      SourceType = VSF::NONE;
+      if ((Scene = objVectorScene::create::local(fl::Name("fx_src_scene"), fl::PageWidth(1), fl::PageHeight(1)))) {
+         if (objVectorViewport::create::global(fl::Name("fx_src_viewport"), fl::Owner(Scene->UID))) {
+            if ((Bitmap = objBitmap::create::local(fl::Name("fx_src_cache"),
+                  fl::Width(1),
+                  fl::Height(1),
+                  fl::BitsPerPixel(32),
+                  fl::Flags(BMF::ALPHA_CHANNEL|BMF::NO_DATA)))) {
+            }
+            else kt::Log().fatal(ERR::CreateObject);
+         }
+         else kt::Log().fatal(ERR::CreateObject);
+      }
+      else kt::Log().fatal(ERR::CreateObject);
+   }
+
+   ~extSourceFX() {
+      if (Bitmap)     FreeResource(Bitmap);
+      if (Source)     Source->unpinWeak();
+      if (Scene)      FreeResource(Scene);
+   }
 };
-
-//********************************************************************************************************************
-
-static void notify_free_source(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   ((extSourceFX *)CurrentContext())->Source = nullptr;
-}
 
 /*********************************************************************************************************************
 -ACTION-
@@ -50,8 +65,7 @@ Draw: Render the source vector to the target bitmap.
 
 static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
 {
-   pf::Log log;
-
+   validate_object_link(Self->Source); // The source is weak-pinned; drop the link if it has been terminated.
    if (!Self->Source) return ERR::Okay;
 
    auto &filter = Self->Filter;
@@ -64,23 +78,23 @@ static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
    double img_height = filter->TargetHeight;
 
    if (filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
-      if (dmf::hasAnyX(Self->Dimensions)) img_x = trunc(filter->TargetX + (Self->X * filter->BoundWidth));
-      if (dmf::hasAnyY(Self->Dimensions)) img_y = trunc(filter->TargetY + (Self->Y * filter->BoundHeight));
-      if (dmf::hasAnyWidth(Self->Dimensions))  img_width = Self->Width * filter->BoundWidth;
-      if (dmf::hasAnyHeight(Self->Dimensions)) img_height = Self->Height * filter->BoundHeight;
+      if (Self->X.defined()) img_x = trunc(filter->TargetX + (Self->X * filter->BoundWidth));
+      if (Self->Y.defined()) img_y = trunc(filter->TargetY + (Self->Y * filter->BoundHeight));
+      if (Self->Width.defined()) img_width = Self->Width * filter->BoundWidth;
+      if (Self->Height.defined()) img_height = Self->Height * filter->BoundHeight;
    }
    else {
-      if (dmf::hasScaledX(Self->Dimensions)) img_x = filter->TargetX + (Self->X * filter->TargetWidth);
-      else if (dmf::hasX(Self->Dimensions))  img_x = Self->X;
+      if (Self->X.scaled()) img_x = filter->TargetX + (Self->X * filter->TargetWidth);
+      else if (Self->X.defined()) img_x = Self->X;
 
-      if (dmf::hasScaledY(Self->Dimensions)) img_y = filter->TargetY + (Self->Y * filter->TargetHeight);
-      else if (dmf::hasY(Self->Dimensions))  img_y = Self->Y;
+      if (Self->Y.scaled()) img_y = filter->TargetY + (Self->Y * filter->TargetHeight);
+      else if (Self->Y.defined()) img_y = Self->Y;
 
-      if (dmf::hasScaledWidth(Self->Dimensions)) img_width = filter->TargetWidth * Self->Width;
-      else if (dmf::hasWidth(Self->Dimensions))  img_width = Self->Width;
+      if (Self->Width.scaled()) img_width = filter->TargetWidth * Self->Width;
+      else if (Self->Width.defined()) img_width = Self->Width;
 
-      if (dmf::hasScaledHeight(Self->Dimensions)) img_height = filter->TargetHeight * Self->Height;
-      else if (dmf::hasHeight(Self->Dimensions))  img_height = Self->Height;
+      if (Self->Height.scaled()) img_height = filter->TargetHeight * Self->Height;
+      else if (Self->Height.defined()) img_height = Self->Height;
    }
 
    if ((filter->ClientViewport->Scene->PageWidth > Self->Scene->PageWidth) or
@@ -108,31 +122,33 @@ static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
       const int canvas_height = cache->Clip.Bottom - cache->Clip.Top;
       cache->LineWidth = canvas_width * cache->BytesPerPixel;
 
-      if ((Self->BitmapData) and (Self->DataSize < cache->LineWidth * canvas_height)) {
-         FreeResource(Self->BitmapData);
-         Self->BitmapData = nullptr;
-         cache->Data = nullptr;
+      if (Self->BitmapData.size() < size_t(cache->LineWidth * canvas_height)) {
+         Self->BitmapData.resize(cache->LineWidth * canvas_height);
       }
 
-      if (!cache->Data) {
-         if (AllocMemory(cache->LineWidth * canvas_height, MEM::DATA|MEM::NO_CLEAR, &Self->BitmapData) IS ERR::Okay) {
-            Self->DataSize = cache->LineWidth * canvas_height;
-         }
-         else return ERR::AllocMemory;
-      }
+      cache->Data = Self->BitmapData.data() - (cache->Clip.Left * cache->BytesPerPixel) -
+         (cache->Clip.Top * cache->LineWidth);
 
-      cache->Data = Self->BitmapData - (cache->Clip.Left * cache->BytesPerPixel) - (cache->Clip.Top * cache->LineWidth);
+      Self->Scene->Viewport->setX(img_x);
+      Self->Scene->Viewport->setY(img_y);
+      Self->Scene->Viewport->setWidth(img_width);
+      Self->Scene->Viewport->setHeight(img_height);
+      Self->Scene->Viewport->setAspectRatio(Self->AspectRatio);
 
-      Self->Scene->Viewport->setFields(fl::X(img_x), fl::Y(img_y), fl::Width(img_width), fl::Height(img_height),
-         fl::AspectRatio(Self->AspectRatio));
+      agg::trans_affine &t = filter->ClientVector->Transform;
+      auto viewport = (extVectorViewport *)Self->Scene->Viewport;
 
-      auto &t = filter->ClientVector->Transform;
-      VectorMatrix matrix = {
-         .Next = nullptr, .Vector = Self->Scene->Viewport,
-         .ScaleX = t.sx, .ShearY = t.shy, .ShearX = t.shx, .ScaleY = t.sy, .TranslateX = t.tx, .TranslateY = t.ty
-      };
+      // Temporarily inject the client's transform as the viewport's sole matrix for the duration of the render.
 
-      ((extVectorViewport *)Self->Scene->Viewport)->Matrices = &matrix;
+      viewport->Matrices.clear();
+      auto &matrix = viewport->Matrices.emplace_back();
+      matrix.Vector     = Self->Scene->Viewport;
+      matrix.ScaleX     = t.sx;
+      matrix.ShearY     = t.shy;
+      matrix.ShearX     = t.shx;
+      matrix.ScaleY     = t.sy;
+      matrix.TranslateX = t.tx;
+      matrix.TranslateY = t.ty;
 
       auto save_parent = Self->Source->Parent;
       auto const save_next = Self->Source->Next;
@@ -152,7 +168,7 @@ static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
       Self->Scene->Viewport->Child = nullptr;
       Self->Source->Parent = save_parent;
       Self->Source->Next   = save_next;
-      ((extVectorViewport *)Self->Scene->Viewport)->Matrices = nullptr;
+      viewport->Matrices.clear();
       mark_dirty(Self->Source, RC::DIRTY);
    }
 
@@ -164,50 +180,16 @@ static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
 
 //********************************************************************************************************************
 
-static ERR SOURCEFX_Free(extSourceFX *Self)
-{
-   if (Self->Bitmap)     { FreeResource(Self->Bitmap); Self->Bitmap = nullptr; }
-   if (Self->Source)     { UnsubscribeAction(Self->Source, AC::Free); Self->Source = nullptr; }
-   if (Self->Scene)      { FreeResource(Self->Scene); Self->Scene = nullptr; }
-   if (Self->BitmapData) { FreeResource(Self->BitmapData); Self->BitmapData = nullptr; }
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static ERR SOURCEFX_Init(extSourceFX *Self)
 {
-   pf::Log log;
+   kt::Log log;
 
+   validate_object_link(Self->Source);
    if (!Self->Source) return log.warning(ERR::UndefinedField);
 
    Self->Scene->Viewport->setColourSpace(Self->Filter->ColourSpace);
 
    return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR SOURCEFX_NewObject(extSourceFX *Self)
-{
-   Self->AspectRatio = ARF::X_MID|ARF::Y_MID|ARF::MEET;
-   Self->SourceType  = VSF::NONE;
-   Self->Render      = true;
-
-   if ((Self->Scene = objVectorScene::create::local(fl::Name("fx_src_scene"), fl::PageWidth(1), fl::PageHeight(1)))) {
-      if (objVectorViewport::create::global(fl::Name("fx_src_viewport"), fl::Owner(Self->Scene->UID))) {
-         if ((Self->Bitmap = objBitmap::create::local(fl::Name("fx_src_cache"),
-               fl::Width(1),
-               fl::Height(1),
-               fl::BitsPerPixel(32),
-               fl::Flags(BMF::ALPHA_CHANNEL|BMF::NO_DATA)))) {
-            return ERR::Okay;
-         }
-         else return ERR::CreateObject;
-      }
-      else return ERR::CreateObject;
-   }
-   else return ERR::CreateObject;
 }
 
 /*********************************************************************************************************************
@@ -217,12 +199,6 @@ AspectRatio: SVG compliant aspect ratio settings.
 Lookup: ARF
 
 *********************************************************************************************************************/
-
-static ERR SOURCEFX_GET_AspectRatio(extSourceFX *Self, ARF *Value)
-{
-   *Value = Self->AspectRatio;
-   return ERR::Okay;
-}
 
 static ERR SOURCEFX_SET_AspectRatio(extSourceFX *Self, ARF Value)
 {
@@ -243,14 +219,21 @@ ownership of the same @VectorScene that the filter pipeline belongs.
 
 static ERR SOURCEFX_SET_Source(extSourceFX *Self, objVector *Value)
 {
-   pf::Log log;
+   kt::Log log;
    if (!Value) return log.warning(ERR::InvalidValue);
    if (Value->Class->BaseClassID != CLASSID::VECTOR) return log.warning(ERR::WrongClass);
 
-   if (Self->Source) UnsubscribeAction(Self->Source, AC::Free);
+   if (Self->Source) Self->Source->unpinWeak();
+   Value->pinWeak();
    Self->Source = Value;
-   SubscribeAction(Value, AC::Free, C_FUNCTION(notify_free_source));
    Self->Render = true;
+   return ERR::Okay;
+}
+
+static ERR SOURCEFX_GET_Source(extSourceFX *Self, objVector **Value)
+{
+   validate_object_link(Self->Source);
+   *Value = Self->Source;
    return ERR::Okay;
 }
 
@@ -266,22 +249,22 @@ Vectors are registered via the @VectorScene.AddDef() method.
 
 *********************************************************************************************************************/
 
-static ERR SOURCEFX_SET_SourceName(extSourceFX *Self, CSTRING Value)
+static ERR SOURCEFX_SET_SourceName(extSourceFX *Self, const std::string_view &Value)
 {
-   pf::Log log;
+   kt::Log log;
 
-   if ((!Self->Filter) or (!Self->Filter->Scene)) log.warning(ERR::UndefinedField);
+   if ((not Self->Filter) or (not Self->Filter->Scene)) return log.warning(ERR::UndefinedField);
 
    if (Self->Source) {
-      UnsubscribeAction(Self->Source, AC::Free);
+      Self->Source->unpinWeak();
       Self->Source = nullptr;
    }
 
    objVector *src;
-   if (Self->Filter->Scene->findDef(Value, (OBJECTPTR *)&src) IS ERR::Okay) {
+   if (!Self->Filter->Scene->findDef(Value.data(), (OBJECTPTR *)&src)) {
       if (src->Class->BaseClassID != CLASSID::VECTOR) return log.warning(ERR::WrongClass);
+      src->pinWeak();
       Self->Source = src;
-      SubscribeAction(src, AC::Free, C_FUNCTION(notify_free_source));
       Self->Render = true;
       return ERR::Okay;
    }
@@ -296,9 +279,9 @@ XMLDef: Returns an SVG compliant XML string that describes the filter.
 
 *********************************************************************************************************************/
 
-static ERR SOURCEFX_GET_XMLDef(extSourceFX *Self, STRING *Value)
+static ERR SOURCEFX_GET_XMLDef(extSourceFX *Self, std::string &Value)
 {
-   *Value = strclone("feImage");
+   Value = std::string("feImage");
    return ERR::Okay;
 }
 
@@ -307,10 +290,10 @@ static ERR SOURCEFX_GET_XMLDef(extSourceFX *Self, STRING *Value)
 #include "filter_source_def.c"
 
 static const FieldArray clSourceFXFields[] = {
-   { "AspectRatio", FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW, SOURCEFX_GET_AspectRatio, SOURCEFX_SET_AspectRatio, &clAspectRatio },
-   { "SourceName",  FDF_VIRTUAL|FDF_STRING|FDF_I, nullptr, SOURCEFX_SET_SourceName },
-   { "Source",      FDF_VIRTUAL|FDF_OBJECT|FDF_R, nullptr, SOURCEFX_SET_Source, CLASSID::VECTOR },
-   { "XMLDef",      FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R, SOURCEFX_GET_XMLDef },
+   { "AspectRatio", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, SOURCEFX_SET_AspectRatio, &clAspectRatio },
+   { "SourceName",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_I, nullptr, SOURCEFX_SET_SourceName },
+   { "Source",      FDF_VIRTUAL|FDF_OBJECT|FDF_R|FDF_PURE, SOURCEFX_GET_Source, SOURCEFX_SET_Source, CLASSID::VECTOR },
+   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, SOURCEFX_GET_XMLDef },
    END_FIELD
 };
 

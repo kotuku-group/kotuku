@@ -1,7 +1,7 @@
 
 static ERR parse_spline(APTR Path, int Index, int Command, double X, double Y, anim_base::SPLINE_POINTS &Meta)
 {
-   Meta.emplace_back(pf::POINT<float> { float(X), float(Y) }, 0);
+   Meta.emplace_back(kt::POINT<float> { float(X), float(Y) }, 0);
 
    if (Meta.size() > 1) {
       Meta[Meta.size()-2].angle = std::atan2(Meta.back().point.y - Meta[Meta.size()-2].point.y, Meta.back().point.x - Meta[Meta.size()-2].point.x);
@@ -16,12 +16,12 @@ static ERR parse_spline(APTR Path, int Index, int Command, double X, double Y, a
 static double parse_begin(anim_base &Anim, std::string_view Value)
 {
    if (Value.ends_with(".begin")) {
-      auto ref_id = strihash(std::string(Value.substr(0, Value.size()-6)));
+      auto ref_id = strhash(std::string(Value.substr(0, Value.size()-6)));
       Anim.svg->StartOnBegin[ref_id].push_back(&Anim);
       return std::numeric_limits<double>::max();
    }
    else if (Value.ends_with(".end")) {
-      auto ref_id = strihash(std::string(Value.substr(0, Value.size()-4)));
+      auto ref_id = strhash(std::string(Value.substr(0, Value.size()-4)));
       Anim.svg->StartOnEnd[ref_id].push_back(&Anim);
       return std::numeric_limits<double>::max();
    }
@@ -33,65 +33,83 @@ static double parse_begin(anim_base &Anim, std::string_view Value)
 }
 
 //********************************************************************************************************************
+
+static void remove_animation_triggers(anim_base &Anim)
+{
+   auto remove_anim = [&Anim](auto &Map) {
+      for (auto it = Map.begin(); it != Map.end(); ) {
+         auto &list = it->second;
+         list.erase(std::remove(list.begin(), list.end(), &Anim), list.end());
+         if (list.empty()) it = Map.erase(it);
+         else ++it;
+      }
+   };
+
+   remove_anim(Anim.svg->StartOnBegin);
+   remove_anim(Anim.svg->StartOnEnd);
+}
+
+//********************************************************************************************************************
 // Set common animation properties
 
 static ERR set_anim_property(anim_base &Anim, XTag &Tag, uint32_t Hash, const std::string_view Value)
 {
    switch (Hash) {
-      case SVF_ID:
+      case SVF_id:
          Anim.id = Value;
          break;
 
-      case SVF_HREF:
-      case SVF_XLINK_HREF: {
+      case SVF_href:
+      case SVF_xlink_href: {
          OBJECTPTR ref_vector;
-         if (Anim.svg->Scene->findDef(Value.data(), &ref_vector) IS ERR::Okay) {
+         auto ref = uri_name(Value);
+         if (!Anim.svg->Scene->findDef(ref, &ref_vector)) {
             Anim.target_vector = ref_vector->UID;
          }
          break;
       }
 
-      case SVF_ATTRIBUTENAME: // Name of the target attribute affected by the From and To values.
+      case SVF_attributeName: // Name of the target attribute affected by the From and To values.
          Anim.target_attrib = Value;
          break;
 
-      case SVF_ATTRIBUTETYPE: // Namespace of the target attribute: XML, CSS, auto
-         if (iequals("XML", Value)) Anim.attrib_type = ATT::XML;
-         else if (iequals("CSS", Value)) Anim.attrib_type = ATT::CSS;
-         else if (iequals("auto", Value)) Anim.attrib_type = ATT::AUTO;
+      case SVF_attributeType: // Namespace of the target attribute: XML, CSS, auto
+         if ("XML" IS Value) Anim.attrib_type = ATT::XML;
+         else if ("CSS" IS Value) Anim.attrib_type = ATT::CSS;
+         else if ("auto" IS Value) Anim.attrib_type = ATT::AUTO;
          break;
 
-      case SVF_FILL: // freeze, remove
-         if (iequals("freeze", Value)) Anim.freeze = true; // Freeze the effect value at the last value of the duration (i.e. keep the last frame).
-         else if (iequals("remove", Value)) Anim.freeze = true; // The default.  The effect is stopped when the duration is over.
+      case SVF_fill: // freeze, remove
+         if ("freeze" IS Value) Anim.freeze = true; // Freeze the effect value at the last value of the duration (i.e. keep the last frame).
+         else if ("remove" IS Value) Anim.freeze = true; // The default.  The effect is stopped when the duration is over.
          break;
 
-      case SVF_ADDITIVE: // replace, sum
-         if (iequals("replace", Value)) Anim.additive = ADD::REPLACE; // The animation values replace the underlying values of the target vector's attributes.
-         else if (iequals("sum", Value)) Anim.additive = ADD::SUM; // The animation adds to the underlying values of the target vector.
+      case SVF_additive: // replace, sum
+         if ("replace" IS Value) Anim.additive = ADD::REPLACE; // The animation values replace the underlying values of the target vector's attributes.
+         else if ("sum" IS Value) Anim.additive = ADD::SUM; // The animation adds to the underlying values of the target vector.
          break;
 
-      case SVF_ACCUMULATE:
-         if (iequals("none", Value)) Anim.accumulate = false; // Repeat iterations are not cumulative.  This is the default.
-         else if (iequals("sum", Value)) Anim.accumulate = true; // Each repeated iteration builds on the last value of the previous iteration.
+      case SVF_accumulate:
+         if ("none" IS Value) Anim.accumulate = false; // Repeat iterations are not cumulative.  This is the default.
+         else if ("sum" IS Value) Anim.accumulate = true; // Each repeated iteration builds on the last value of the previous iteration.
          break;
 
-      case SVF_FROM: // The starting value of the animation.
+      case SVF_from: // The starting value of the animation.
          Anim.from = Value;
          break;
 
       // It is not legal to specify both 'by' and 'to' attributes - if both are specified, only the to attribute will
       // be used (the by will be ignored).
 
-      case SVF_TO: // Specifies the ending value of the animation.
+      case SVF_to: // Specifies the ending value of the animation.
          Anim.to = Value;
          break;
 
-      case SVF_BY: // Specifies a relative offset value for the animation.
+      case SVF_by: // Specifies a relative offset value for the animation.
          Anim.by = Value;
          break;
 
-      case SVF_BEGIN:
+      case SVF_begin:
          // Defines when the element should become active.  Specified as a semi-colon list.
          //   offset: A clock-value that is offset from the moment the animation is activated.
          //   id.end/begin: Reference to another animation's begin or end to determine when the animation starts.
@@ -124,54 +142,54 @@ static ERR set_anim_property(anim_base &Anim, XTag &Tag, uint32_t Hash, const st
 
          break;
 
-      case SVF_END:
+      case SVF_end:
          // The animation ends when one of the triggers is reached.  A semi-colon list of multiple values is permitted
          // and documented as the 'end-value-list'.  End is paired with 'begin' and should be parsed in the same way.
          break;
 
-      case SVF_DUR: // 4s, 02:33, 12:10:53, 45min, 4ms, 12.93, 1h, 'media', 'indefinite'
-         if (iequals("media", Value)) Anim.duration = 0; // Does not apply to animation
-         else if (iequals("indefinite", Value)) Anim.duration = -1;
+      case SVF_dur: // 4s, 02:33, 12:10:53, 45min, 4ms, 12.93, 1h, 'media', 'indefinite'
+         if ("media" IS Value) Anim.duration = 0; // Does not apply to animation
+         else if ("indefinite" IS Value) Anim.duration = -1;
          else Anim.duration = read_time(Value);
          break;
 
-      case SVF_MIN: // Specifies the minimum value of the active duration.
-         if (iequals("media", Value)) Anim.min_duration = 0; // Does not apply to animation
+      case SVF_min: // Specifies the minimum value of the active duration.
+         if ("media" IS Value) Anim.min_duration = 0; // Does not apply to animation
          else Anim.min_duration = read_time(Value);
          break;
 
-      case SVF_MAX: // Specifies the maximum value of the active duration.
-         if (iequals("media", Value)) Anim.max_duration = 0; // Does not apply to animation
+      case SVF_max: // Specifies the maximum value of the active duration.
+         if ("media" IS Value) Anim.max_duration = 0; // Does not apply to animation
          else Anim.max_duration = read_time(Value);
          break;
 
-      case SVF_CALCMODE: // Specifies the interpolation mode for the animation.
-         if (iequals("discrete", Value))    Anim.calc_mode = CMODE::DISCRETE;
-         else if (iequals("linear", Value)) Anim.calc_mode = CMODE::LINEAR;
-         else if (iequals("paced", Value))  Anim.calc_mode = CMODE::PACED;
-         else if (iequals("spline", Value)) Anim.calc_mode = CMODE::SPLINE;
+      case SVF_calcMode: // Specifies the interpolation mode for the animation.
+         if ("discrete" IS Value)    Anim.calc_mode = CMODE::DISCRETE;
+         else if ("linear" IS Value) Anim.calc_mode = CMODE::LINEAR;
+         else if ("paced" IS Value)  Anim.calc_mode = CMODE::PACED;
+         else if ("spline" IS Value) Anim.calc_mode = CMODE::SPLINE;
          break;
 
-      case SVF_RESTART: // always, whenNotActive, never
-         if (iequals("always", Value)) Anim.restart = RST::ALWAYS;
-         else if (iequals("whenNotActive", Value)) Anim.restart = RST::WHEN_NOT_ACTIVE;
-         else if (iequals("never", Value)) Anim.restart = RST::NEVER;
+      case SVF_restart: // always, whenNotActive, never
+         if ("always" IS Value) Anim.restart = RST::ALWAYS;
+         else if ("whenNotActive" IS Value) Anim.restart = RST::WHEN_NOT_ACTIVE;
+         else if ("never" IS Value) Anim.restart = RST::NEVER;
          break;
 
-      case SVF_REPEATDUR: // Specifies the total duration for repeat.
-         if (iequals("indefinite", Value)) Anim.repeat_duration = -1;
+      case SVF_repeatDur: // Specifies the total duration for repeat.
+         if ("indefinite" IS Value) Anim.repeat_duration = -1;
          else Anim.repeat_duration = read_time(Value);
          break;
 
-      case SVF_REPEATCOUNT: // Specifies the number of iterations of the animation function.  Integer, 'indefinite'
-         if (iequals("indefinite", Value)) Anim.repeat_count = -1;
+      case SVF_repeatCount: // Specifies the number of iterations of the animation function.  Integer, 'indefinite'
+         if ("indefinite" IS Value) Anim.repeat_count = -1;
          else Anim.repeat_count = read_time(Value);
          break;
 
       // Similar to 'from' and 'to', this is a series of values that are interpolated over the time line.
       // If a list of values is specified, any from, to and by attribute values are ignored.
 
-      case SVF_VALUES: {
+      case SVF_values: {
          Anim.values.clear();
          int s, v = 0;
          while (v < std::ssize(Value)) {
@@ -189,19 +207,21 @@ static ERR set_anim_property(anim_base &Anim, XTag &Tag, uint32_t Hash, const st
       // value. Distance calculations use the user agent's distance along the path algorithm. Each progress
       // value in the list corresponds to a value in the 'keyTimes' attribute list.
 
-      case SVF_KEYPOINTS: {
+      case SVF_keyPoints: {
          Anim.key_points.clear();
          int s, v = 0;
          while (v < std::ssize(Value)) {
             while (v < std::ssize(Value) and (Value[v] <= 0x20)) v++;
             for (s=v; s < std::ssize(Value) and (Value[s] != ';'); s++);
             std::string_view val = Value.substr(v, s-v);
-            double fv;
+            double fv = 0;
             auto [ ptr, error ] = std::from_chars(val.data(), val.data() + val.size(), fv);
-            fv = std::clamp(fv, 0.0, 1.0);
-            Anim.key_points.push_back(fv);
+            if ((error IS std::errc()) and (ptr IS val.data() + val.size())) {
+               fv = std::clamp(fv, 0.0, 1.0);
+               Anim.key_points.push_back(fv);
+            }
             v = s;
-            if (Value[v] IS ';') v++;
+            if ((v < std::ssize(Value)) and (Value[v] IS ';')) v++;
          }
          break;
       }
@@ -218,7 +238,7 @@ static ERR set_anim_property(anim_base &Anim, XTag &Tag, uint32_t Hash, const st
       //
       // Each successive time value must be greater than or equal to the preceding time value.
 
-      case SVF_KEYTIMES: {
+      case SVF_keyTimes: {
          Anim.timing.clear();
          int s, v = 0;
          double last_val = 0.0;
@@ -226,30 +246,32 @@ static ERR set_anim_property(anim_base &Anim, XTag &Tag, uint32_t Hash, const st
             while (v < std::ssize(Value) and (Value[v] <= 0x20)) v++;
             for (s=v; s < std::ssize(Value) and (Value[s] != ';'); s++);
             std::string_view val = Value.substr(v, s-v);
-            double fv;
+            double fv = 0;
             auto [ ptr, error ] = std::from_chars(val.data(), val.data() + val.size(), fv);
-            fv = std::clamp(fv, last_val, 1.0);
-            Anim.timing.push_back(fv);
-            last_val = fv;
+            if ((error IS std::errc()) and (ptr IS val.data() + val.size())) {
+               fv = std::clamp(fv, last_val, 1.0);
+               Anim.timing.push_back(fv);
+               last_val = fv;
+            }
             v = s;
             if ((v < std::ssize(Value)) and (Value[v] IS ';')) v++;
          }
          break;
       }
 
-      // A set of B�zier control points associated with the 'keyTimes' list, defining a cubic B�zier function
+      // A set of Bezier control points associated with the 'keyTimes' list, defining a cubic Bezier function
       // that controls interval pacing. The attribute value is a semicolon-separated list of control point
       // descriptions. Each control point description is a set of four values: x1 y1 x2 y2, describing the
-      // B�zier control points for one time segment. Note: SMIL allows these values to be separated either by
+      // Bezier control points for one time segment. Note: SMIL allows these values to be separated either by
       // commas with optional whitespace, or by whitespace alone. The 'keyTimes' values that define the
-      // associated segment are the B�zier "anchor points", and the 'keySplines' values are the control points.
+      // associated segment are the Bezier "anchor points", and the 'keySplines' values are the control points.
       // Thus, there must be one fewer sets of control points than there are 'keyTimes'.
       //
       // The values must all be in the range 0 to 1.
       // This attribute is ignored unless the 'calcMode' is set to 'spline'.
       // Parsing errors must be propagated.
 
-      case SVF_KEYSPLINES: {
+      case SVF_keySplines: {
          Anim.splines.clear();
          int s, v = 0;
          while (v < std::ssize(Value)) {
@@ -274,7 +296,7 @@ static ERR set_anim_property(anim_base &Anim, XTag &Tag, uint32_t Hash, const st
             // Convert the splines into bezier paths and generate a point-based path in advance.
             for (auto &sp : Anim.splines) {
                APTR path;
-               if (vec::GeneratePath(nullptr, &path) IS ERR::Okay) {
+               if (!vec::GeneratePath("", &path)) {
                   anim_base::SPLINE_POINTS lookup;
                   vec::MoveTo(path, 0, 0);
                   vec::Curve4(path, sp.first.x, sp.first.y, sp.second.x, sp.second.y, 1.0, 1.0);
@@ -288,11 +310,10 @@ static ERR set_anim_property(anim_base &Anim, XTag &Tag, uint32_t Hash, const st
          break;
       }
 
-      case SVF_EXTERNALRESOURCESREQUIRED:
+      case SVF_externalResourcesRequired:
          // Deprecated
          break;
    }
 
    return ERR::Okay;
 }
-

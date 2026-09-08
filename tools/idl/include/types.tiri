@@ -3,162 +3,192 @@
 global glActiveRefs = { }
 global glCustomTypes = { }
 
-local rx_special_type    = <{ regex.new([[^([!&]+)(.+)]]) }>
-local rx_cpp_type        = <{ regex.new([[^cpp\((.+)\)$]]) }>
-local rx_class_type      = <{ regex.new([[^(c?)class\((.+)\)$]]) }>
-local rx_struct_type     = <{ regex.new([[^(c?)struct\((.+)\)$]]) }>
-local rx_ptr_extract     = <{ regex.new([[\*(.+)]]) }>
-local rx_resource_type   = <{ regex.new([[^(c?)resource\((.+)\)$]]) }>
-local rx_ext_type        = <{ regex.new([[^ext\((.+)\)$]]) }>
-local rx_obj_type        = <{ regex.new([[^obj\((.+)\)$]]) }>
-local rx_bit_type        = <{ regex.new([[^bit\((.+)\)$]]) }>
-local rx_flags_type      = <{ regex.new([[^flags\(([A-Za-z]+)\)]]) }>
-local rx_int_prefix      = <{ regex.new([[^(int|large|char|short|ushort)\(([A-Za-z]+)\)]]) }>
-local rx_char_array      = <{ regex.new([[^(u?)char\((.+)\)$]]) }>
-local rx_int_array       = <{ regex.new([[^(u?)int\((\d+)\)]]) }>
-local rx_double_array    = <{ regex.new([[^double\((.+)\)]]) }>
-local rx_float_array     = <{ regex.new([[^float\((.+)\)]]) }>
-local rx_ptr_type        = <{ regex.new([[^(c?)ptr\((.+)\)]]) }>
-local rx_buf_type        = <{ regex.new([[^buf\((.+)\)]]) }>
-local rx_array_sized     = <{ regex.new([[^array\((.+),(\d+)\)$]]) }>
-local rx_array_unsized   = <{ regex.new([[^array\((.+)\)$]]) }>
-local rx_fptr_type       = <{ regex.new([[^fptr\((.+)\)$]]) }>
+rx_special_type    = <{ regex.new([[^([~!&^]+)(.+)]]) }> -- Alloc !, Result &, Mutable ^ symbols
+rx_class_type      = <{ regex.new([[^(c?)class\((.+)\)$]]) }>
+rx_struct_type     = <{ regex.new([[^(c?)struct\((.+)\)$]]) }>
+rx_ptr_extract     = <{ regex.new([[([\*&])(.+)]]) }>
+rx_resource_type   = <{ regex.new([[^(c?)resource\((.+)\)$]]) }>
+rx_ext_type        = <{ regex.new([[^ext\((.+)\)$]]) }>
+rx_obj_type        = <{ regex.new([[^obj\((.+)\)$]]) }>
+rx_bit_type        = <{ regex.new([[^bit\((.+)\)$]]) }>
+rx_flags_type      = <{ regex.new([[^flags\(([A-Za-z]+)\)]]) }>
+rx_int_prefix      = <{ regex.new([[^(int|large|char|short|ushort)\(([A-Za-z]+)\)]]) }>
+rx_char_array      = <{ regex.new([[^(u?)char\((.+)\)$]]) }>
+rx_int_array       = <{ regex.new([[^(u?)int\((\d+)\)]]) }>
+rx_double_array    = <{ regex.new([[^double\((.+)\)]]) }>
+rx_float_array     = <{ regex.new([[^float\((.+)\)]]) }>
+rx_ptr_type        = <{ regex.new([[^(c?)ptr\((.+)\)]]) }>
+rx_array_sized     = <{ regex.new([[^array\((.+),(\d+)\)$]]) }>
+rx_array_unsized   = <{ regex.new([[^array\((.+)\)$]]) }>
+rx_vector          = <{ regex.new([[^vector\((.+)\)$]]) }>
+rx_fptr_type       = <{ regex.new([[^fptr\((.+)\)$]]) }>
+rx_string_type     = <{ regex.new([[^(str|cstr|string|strview)$]]) }>
 
 -----------------------------------------------------------------------------------------------------------------------
--- Conversion table for TDL types to their C/C++ and Field Definition equivalents.
+-- Conversion table for TDL types to their C/C++ and Value Definition equivalents.
 -- Use cType() to perform conversion and don't access glTypes directly.
 
 global glTypes = {
-   arraysize  = { fd='FD_INT|FD_ARRAYSIZE',   c_type='int', doc_type='INT' },
-   bufsize    = { fd='FD_INT|FD_BUFSIZE',     c_type='int', doc_type='INT' },
-   char       = { fd='FD_BYTE',               c_type='int8_t', doc_type='INT8' },
-   cid        = { fd='FD_INT|FD_UNSIGNED',    c_type='CLASSID' },
-   cptr       = { fd='FD_PTR',                c_type='const void *' },
-   cstr       = { fd='FD_STR',                c_type='CSTRING' },
-   double     = { fd='FD_DOUBLE',             c_type='double', doc_type='DOUBLE' },
-   eid        = { fd='FD_INT',                c_type='EVENTID' },
-   error      = { fd='FD_INT|FD_ERROR',       c_type='ERR' },
-   ext        = { fd='FD_OBJECTPTR',          c_type='OBJECTPTR' },
-   fid        = { fd='FD_INT64',              c_type='FIELD' },
-   flags      = { fd='FD_INT',                c_type='int', doc_type='INT' },
-   float      = { fd='FD_FLOAT',              c_type='float', doc_type='FLOAT' },
-   func       = { fd='FD_FUNCTION',           c_type='FUNCTION' },
-   hhandle    = { fd='FD_PTR',                c_type='HOSTHANDLE' },
-   int        = { fd='FD_INT',                c_type='int', doc_type='INT' },
-   int32      = { fd='FD_INT',                c_type='int32_t', doc_type='INT' },
-   large      = { fd='FD_INT64',              c_type='int64_t', doc_type='INT64' },
-   maxint     = { fd='FD_INT64',              c_type='MAXINT' },
-   mem        = { fd='FD_INT',                c_type='MEMORYID' },
-   obj        = { fd='FD_OBJECTPTR',          c_type='OBJECTPTR' },
-   oid        = { fd='FD_OBJECTID',           c_type='OBJECTID' },
-   printf     = { fd='FD_TAGS',               c_type='...' },
-   ptr        = { fd='FD_PTR',                c_type='APTR' },
-   resource   = { fd='FD_STRUCT|FD_RESOURCE', c_type='APTR' },
-   short      = { fd='FD_WORD',               c_type='int16_t', doc_type='INT16' },
-   strview    = { fd='FD_STR',                c_type='STRING', cpp_type='const std::string_view &' }, -- For API calls only
-   str        = { fd='FD_STR',                c_type='STRING', cpp_type='std::string' },
-   struct     = { fd='FD_STRUCT',             c_type='APTR' },
-   structsize = { fd='FD_INT|FD_BUFSIZE',     c_type='int', doc_type='INT' },
-   tags       = { fd='FD_TAGS',               c_type='...' },
-   uchar      = { fd='FD_BYTE',               c_type='uint8_t', doc_type='UINT8' },
-   uint       = { fd='FD_INT|FD_UNSIGNED',    c_type='uint32_t', doc_type='UINT' },
-   ushort     = { fd='FD_WORD',               c_type='uint16_t', doc_type='UINT16' },
-   va_list    = { fd='FD_PTR',                c_type='va_list' },
-   void       = { fd='FD_VOID',               c_type='void' },
-   vtags      = { fd='FD_VARTAGS',            c_type='...' }
+   -- fd: FD flags
+   -- t_type: Tiri type
+   -- c_type: C/C++ type to use in building function signatures
+   -- doc_type: Simplified type for documentation
+   char       = { fd='FD_BYTE',               t_type='num', c_type='int8_t', doc_type='INT8' },
+   cid        = { fd='FD_INT|FD_UNSIGNED',    t_type='num', c_type='CLASSID' },
+   cptr       = { fd='FD_PTR',                t_type='any', c_type='const void *', doc_type='PTR' },
+   cstr       = { fd='FD_STR',                t_type='str', c_type='CSTRING', doc_type='CSTRING' }, -- Permitted for structs, not Kotuku classes
+   double     = { fd='FD_DOUBLE',             t_type='num', c_type='double', doc_type='DOUBLE' },
+   eid        = { fd='FD_INT',                t_type='num', c_type='EVENTID' },
+   error      = { fd='FD_INT|FD_ERROR',       t_type='num', c_type='ERR' },
+   ext        = { fd='FD_OBJECTPTR',          t_type='obj', c_type='OBJECTPTR' },
+   fid        = { fd='FD_INT64',              t_type='num', c_type='FIELD' },
+   flags      = { fd='FD_INT',                t_type='num', c_type='int', doc_type='INT' },
+   float      = { fd='FD_FLOAT',              t_type='num', c_type='float', doc_type='FLOAT' },
+   func       = { fd='FD_FUNCTION',           t_type='func', c_type='FUNCTION' },
+   hhandle    = { fd='FD_PTR',                t_type='any', c_type='HOSTHANDLE' },
+   int        = { fd='FD_INT',                t_type='num', c_type='int', doc_type='INT' },
+   int32      = { fd='FD_INT',                t_type='num', c_type='int32_t', doc_type='INT' },
+   large      = { fd='FD_INT64',              t_type='num', c_type='int64_t', doc_type='INT64' },
+   maxint     = { fd='FD_INT64',              t_type='num', c_type='MAXINT' },
+   mem        = { fd='FD_INT',                t_type='num', c_type='MEMORYID' },
+   res        = { fd='FD_INT',                t_type='num', c_type='RESOURCEID' },
+   obj        = { fd='FD_OBJECTPTR',          t_type='obj', c_type='OBJECTPTR' },
+   oid        = { fd='FD_OBJECTID',           t_type='obj', c_type='OBJECTID' },
+   printf     = { fd='FD_TAGS',               t_type=nil, c_type='...' },
+   ptr        = { fd='FD_PTR',                t_type='any', c_type='APTR' },
+   resource   = { fd='FD_STRUCT|FD_RESOURCE', t_type='any', c_type='APTR' },
+   short      = { fd='FD_WORD',               t_type='num', c_type='int16_t', doc_type='INT16' },
+   strview    = { fd='FDF_CPPSTRING',         t_type='str', c_type='std::string_view', doc_type='STRVIEW' }, -- For API calls only
+   string     = { fd='FDF_CPPSTRING',         t_type='str', c_type='std::string', doc_type='STRING' },
+   str        = { fd='FD_STR',                t_type='str', c_type='STRING', doc_type='STRING' },
+   struct     = { fd='FD_STRUCT',             t_type='any', c_type='APTR' },
+   tags       = { fd='FD_TAGS',               t_type=nil, c_type='...' },
+   uchar      = { fd='FD_BYTE',               t_type='num', c_type='uint8_t', doc_type='UINT8' },
+   uint       = { fd='FD_INT|FD_UNSIGNED',    t_type='num', c_type='uint32_t', doc_type='UINT' },
+   ushort     = { fd='FD_WORD',               t_type='num', c_type='uint16_t', doc_type='UINT16' },
+   va_list    = { fd='FD_PTR',                t_type='any', c_type='va_list' },
+   void       = { fd='FD_VOID',               t_type=nil, c_type='void' },
+   vtags      = { fd='FD_VARTAGS',            t_type=nil, c_type='...' },
+   bool       = { fd='FD_BYTE',               t_type='bool', c_type='bool', doc_type='BOOL' },
+   unit       = { fd='FD_UNIT',               t_type='any', c_type='Unit', doc_type='UNIT' }
 }
 
------------------------------------------------------------------------------------------------------------------------
+function copyOf(Type:str)
+   result = { }
+   for k, v in pairs(glTypes[Type]) do
+      result[k] = v
+   end
+   return result
+end
+
+function fieldStructType(Option:any):str
+   if Option?? and type(Option) is 'string' and Option != '' then return 'struct ' .. Option end
+   return 'STRUCT'
+end
+
 -- Convert FD flags into a printable C type.  Used by getMetaFieldDefinition() for classes.
 
 global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
    local result
 
-   if (Type & FD_CUSTOM)?? then
+   if Type has FD_CUSTOM then
       if CustomName?? then
          Def.type = CustomName
       else
          Def.type = 'APTR'
       end
-   elseif Type & FD_ARRAY != 0 then
+   elseif Type has FD_VECTOR then
+      if Type has FD_BYTE then
+         Def.innerType = 'int8_t'
+      elseif Type has FD_WORD then
+         Def.innerType = 'int16_t'
+      elseif Type has FD_INT then
+         Def.innerType = 'int'
+      elseif Type has FD_INT64 then
+         Def.innerType = 'int64_t'
+      elseif Type has FD_FLOAT then
+         Def.innerType = 'float'
+      elseif Type has FD_DOUBLE then
+         Def.innerType = 'double'
+      elseif Type has FD_STRING then
+         Def.innerType = 'std::string'
+      elseif Type has FD_POINTER then
+         Def.innerType = 'APTR'
+      elseif Type has FD_STRUCT then
+         Def.innerType = fieldStructType(Option)
+      else
+         Def.innerType = 'UNDEFINED'
+      end
+      Def.type = f'kt::vector<{Def.innerType}>'
+   elseif Type has FD_ARRAY then
       -- All arrays are pointers, with additional information indicating the type of values in the array.
 
-      if Type & FD_CPP != 0 then
-         if Type & FD_BYTE != 0 then
-            Def.type = 'pf::vector<int8_t>'
-         elseif Type & FD_WORD != 0 then
-            Def.type = 'pf::vector<int16_t>'
-         elseif Type & FD_INT != 0 then
-            Def.type = 'pf::vector<int>'
-         elseif Type & FD_FLOAT != 0 then
-            Def.type = 'pf::vector<float>'
-         elseif Type & FD_DOUBLE != 0 then
-            Def.type = 'pf::vector<double>'
-         elseif Type & FD_STRING != 0 then
-            Def.type = 'pf::vector<std::string>'
-         elseif Type & FD_POINTER != 0 then
-            Def.type = 'pf::vector<APTR>'
-         elseif Type & FD_STRUCT != 0 then
-            Def.type = 'pf::vector<STRUCT>'
-         else
-            Def.type = 'pf::vector<>'
-         end
+      if Type has FD_BYTE then
+         Def.type = 'int8_t'
+         Def.doc_type = 'INT8 []'
+      elseif Type has FD_WORD then
+         Def.type = 'int16_t'
+         Def.doc_type = 'INT16 []'
+      elseif Type has FD_INT then
+         Def.type = 'int'
+         Def.doc_type = 'INT []'
+      elseif Type has FD_FLOAT then
+         Def.type = 'float'
+         Def.doc_type = 'FLOAT []'
+      elseif Type has FD_DOUBLE then
+         Def.type = 'double'
+         Def.doc_type = 'DOUBLE []'
+      elseif Type has FD_STRING then
+         Def.type = 'STRING'
+         Def.doc_type = 'STRING []'
+      elseif Type has FD_POINTER then
+         Def.type = 'APTR'
+         Def.doc_type = 'APTR []'
+      elseif Type has FD_STRUCT then
+         Def.type = fieldStructType(Option) .. ''
+      elseif Type has FD_OBJECT then
+         Def.type = 'OBJECTPTR'
+         Def.doc_type = 'OBJECTPTR []'
+      elseif Type has FD_UNIT then
+         Def.type = 'Unit'
+         Def.doc_type = 'Unit []'
       else
-         if Type & FD_BYTE != 0 then
-            Def.type = 'int8_t []'
-            Def.doc_type = 'INT8 []'
-         elseif Type & FD_WORD != 0 then
-            Def.type = 'int16_t []'
-            Def.doc_type = 'INT16 []'
-         elseif Type & FD_INT != 0 then
-            Def.type = 'int []'
-            Def.doc_type = 'INT []'
-         elseif Type & FD_FLOAT != 0 then
-            Def.type = 'float []'
-            Def.doc_type = 'FLOAT []'
-         elseif Type & FD_DOUBLE != 0 then
-            Def.type = 'double []'
-            Def.doc_type = 'DOUBLE []'
-         elseif Type & FD_STRING != 0 then
-            Def.type = 'STRING []'
-         elseif Type & FD_POINTER != 0 then
-            Def.type = 'APTR []'
-         elseif Type & FD_STRUCT != 0 then
-            Def.type = 'STRUCT []'
-         else
-            Def.type = 'ARRAY'
-         end
+         Def.type = 'UNKNOWN_ARRAY_TYPE'
       end
-   elseif Type & FD_STRING != 0 then
+   elseif Type has FD_STRING then
       Def.type = 'STRING'
-   elseif Type & FD_FUNCTION != 0 then
+   elseif Type has FD_FUNCTION then
       Def.type = 'FUNCTION'
-   elseif Type & FD_POINTER != 0 then
+   elseif (Type has FD_UNIT) and not (Type has (FD_INT|FD_INT64|FD_DOUBLE|FD_FLOAT)) then
+      -- If UNIT is paired with a primitive, the primitive is considered the base type and the getter/setter
+      -- functions accept the Unit struct.
+      Def.type = 'Unit'
+      Def.doc_type = 'UNIT'
+   elseif Type has FD_POINTER then
       ptr = 0
-      if Type & FD_INT != 0 then
+      if Type has FD_INT then
          result = 'INT'
          ptr++
-      elseif Type & FD_INT64 != 0 then
+      elseif Type has FD_INT64 then
          result = 'INT64'
          ptr++
-      elseif Type & FD_DOUBLE != 0 then
+      elseif Type has FD_DOUBLE then
          result = 'DOUBLE'
          ptr++
-      elseif Type & (FD_OBJECT | FD_LOCAL) != 0 then
+      elseif Type has FD_OBJECT or Type has FD_LOCAL then
          Def.type = 'OBJECTPTR'
          return
-      elseif Type & FD_STRING != 0 then
+      elseif Type has FD_STRING then
          Def.type = 'STRING'
          return
-      elseif Type & FD_RGB != 0 then
-         result = 'RGB'
-         ptr++
-      elseif Type & FD_FUNCTION != 0 then
+      elseif Type has FD_FUNCTION then
          result = 'FUNCTION'
          ptr++
-      elseif Type & FD_STRUCT != 0 then
-         if Option?? then -- TODO: We need a way to convert the Option number to a string address...
-            result = 'APTR'
+      elseif Type has FD_STRUCT then
+         if Option?? then
+            -- We need the developer to declare a virtual reference in order to name the struct, e.g. `~struct(TheName)`
+            -- because Tiri can't read strings from Field.arg
+            result = 'REQUIRES_VIRTUAL_REF'
          else
             result = 'APTR'
          end
@@ -168,28 +198,32 @@ global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
       end
 
       if ptr > 0 then
-         Def.type = result .. ' ' .. string.rep('*', ptr)
+         Def.type = result .. ' ' .. '*'.rep(ptr)
       else
          Def.type = result
       end
-   elseif Type & FD_RGB != 0 then
-      Def.type = 'RGB8'
-   elseif Type & FD_INT != 0 then
-      if Type & FD_OBJECT != 0 then
+   elseif Type has FD_INT then
+      if Type has FD_OBJECT then
          Def.type = 'OBJECTID'
       else
-         Def.type = 'int'
+         Def.type     = 'int'
          Def.doc_type = 'INT'
       end
-   elseif Type & FD_INT64 != 0 then
-      Def.type = 'int64_t'
+   elseif Type has FD_INT64 then
+      Def.type     = 'int64_t'
       Def.doc_type = 'INT64'
-   elseif Type & FD_DOUBLE != 0 then
-      Def.type = 'double'
+   elseif Type has FD_DOUBLE then
+      Def.type     = 'double'
       Def.doc_type = 'DOUBLE'
-   elseif Type & FD_FLOAT != 0 then
-      Def.type = 'float'
+   elseif Type has FD_FLOAT then
+      Def.type     = 'float'
       Def.doc_type = 'FLOAT'
+   elseif Type has FD_STRUCT then
+      Def.type     = fieldStructType(Option)
+      Def.doc_type = Def.type
+   elseif Type is FD_SYNONYM then
+      Def.type = 'void'
+      Def.doc_type = 'Synonym'
    else
       print(string.format('Failed to identify field type $%.8x for field "%s"', Type, CustomName))
       Def.type = 'void'
@@ -197,97 +231,99 @@ global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Returns { cpp, type, fullType, docType, defType, sizeof, ref, lookup, bits, name, comment, basicType, allocated, result_value }
+-- Returns { type, fullType, docType, defType, ref, lookup, bits, name, comment, basicType, allocated, resultValue }
 
-global function cType(Field:table, Origin:str):table
-   assert(Field.type, "Field definition incorrect, missing 'type' value for '" .. tostring(Origin) .. "'")
+global function cType(Value:table, Origin:str):table
+   assert(Value.type, f"Value definition incorrect, missing 'type' value for '{Origin}'")
 
-   Field.defType = Field.type -- Save the original type name
+   Value.defType = Value.type -- Save the original type name
+   if Origin.startsWith('Function:') then Value.isFunction = true end
+   if Origin.startsWith('Method:') then Value.isMethod = true end
 
-   -- A ! symbol indicates that the field is a result that is allocated and can be removed with FreeResource()
-   -- A & symbol indicates that the field is a pointer to a reserved area that will store a result value, e.g. INT *
+   -- A ! symbol indicates that the value is a result that is allocated and can be removed with FreeResource()
+   -- A & symbol indicates that the value is a pointer to a reserved area that will store a result value, e.g. INT *
+   -- A ^ symbol indicates that the value's content is treated as mutable, for modification by the function
+   -- A ~ symbol indicates a virtual field declaration
 
    local result_value
-   local special, rest_type = rx_special_type.extract(Field.type)
+   local special, rest_type = rx_special_type.extract(Value.type)
    if special then
-      if special:find('!') then Field.allocated = true end
-      result_value = true
-      Field.type = rest_type
+      if special.find('!') then
+         Value.allocated = true
+         result_value = true
+      end
+      if special.find('&') then result_value = true end
+      if special.find('^') then Value.mutable = true end
+      if special.find('~') then Value.virtual = true end
+      Value.type = rest_type
    end
 
-   if Field.type:startsWith('structsize') then
-      Field.sizeof = true
-   end
-
-   -- This defer() section performs final mutations of the Field prior to returning.
+   -- This defer() section performs final mutations of the Value prior to returning.
 
    defer()
-      Field.basicType = Field.type
+      Value.basicType = Value.type -- Record type string before any amendments are made
 
       if result_value then -- If the type is a result value, append a '*'
-         Field.resultValue = true
+         Value.resultValue = true
 
-         if Field.isResponse then
+         if Value.isReturn then
             -- Do nothing
-         elseif Field.type:endsWith('*') then
-            Field.type ..= '*'
+         elseif Value.type.endsWith('*') then
+            Value.type ..= '*'
          else
-            Field.type ..= ' *'
+            Value.type ..= ' *'
          end
       end
 
-      if not Field.docType then
-         if Field.fullType and Field.fullType.doc_type and not Field.lookup then
-            Field.docType = Field.fullType.doc_type
-         elseif Field.lookup then
-            Field.docType = Field.type -- Normally refers to the name of the prefix, e.g. 'MEM'
+      if not Value.docType then
+         if Value.fullType and Value.fullType.doc_type and not Value.lookup then
+            Value.docType = Value.fullType.doc_type
+         elseif Value.lookup then
+            Value.docType = Value.type -- Normally refers to the name of the prefix, e.g. 'MEM'
          else
-            Field.docType = Field.type
+            Value.docType = Value.type
          end
       end
 
-      local count = #Field.type:split('*') - 1
-      local b_count = #Field.docType:split('*') - 1
-      if count > 0 and b_count is 0 then
-         Field.docType = Field.docType .. ' ' .. string.rep('*', count)
+      if Value.mutable and not Value.fullType.fd.find('FD_MUTABLE') then
+         Value.fullType.fd = 'FD_MUTABLE|' .. Value.fullType.fd
       end
 
-      if Field.cpp then Field.docType = Field.type end
-   end
-
-   -- The use of cpp() converts the encapsulated type to its C++ variant.  E.g. 'str' becomes a std::string
-
-   do
-      local cpp_inner = rx_cpp_type.extract(Field.type)
-      if cpp_inner then
-         Field.cpp  = true
-         Field.type = cpp_inner
-         Field = cType(Field, Origin)
-         Field.fullType = { fd='FD_CPP|' .. Field.fullType.fd, c_type=Field.fullType.c_type, doc_type=Field.fullType.doc_type }
-         return Field
+      if Value.resultValue and not Value.fullType.fd.find('FD_RESULT') then
+         Value.fullType.fd = 'FD_RESULT|' .. Value.fullType.fd
       end
+
+      if Value.isFunction or Value.isMethod then
+         local count = #Value.type.split('*') - 1
+         local b_count = #Value.docType.split('*') - 1
+         if count > 0 and b_count is 0 then
+            Value.docType = Value.docType .. ' ' .. '*'.rep(count)
+         end
+      end
+
+      --print(json.encode(Value))
    end
 
-   do
-      local const, struct = rx_class_type.extract(Field.type)
+   do -- class(Name) and struct(Name); Name can be prefixed with '*'
+      local const:any, struct:any = rx_class_type.extract(Value.type)
       if struct then
-         Field.isClass = true
+         Value.isClass = true
       else
-         const, struct = rx_struct_type.extract(Field.type)
+         const, struct = rx_struct_type.extract(Value.type)
       end
 
       if struct then
-         local ptr_struct = rx_ptr_extract.extract(struct)
+         local prefix, ptr_struct = rx_ptr_extract.extract(struct) -- Check '*' or '&' prefix
          if ptr_struct then struct = ptr_struct end
 
-         Field.struct = struct
-         Field.type = Field.isClass ? ('class ' .. struct) :> ('struct ' .. struct)
+         Value.struct = struct
+         Value.type = Value.isClass ? ('class ' .. struct) : ('struct ' .. struct)
 
          if glStructures[struct] then
-            glActiveRefs['STRUCT:' .. struct] = 1
+            glActiveRefs['STRUCT:' .. struct] = 'type-ref'
 
             if glStructures[struct].version then
-               Field.type = Field.type .. 'V' .. glStructures[struct].version
+               Value.type = Value.type .. 'V' .. glStructures[struct].version
             end
          elseif glCurrentStructure != struct then
             if not glPrivateNames[struct] then
@@ -296,324 +332,429 @@ global function cType(Field:table, Origin:str):table
          end
 
          if ptr_struct then
-            Field.type = Field.type .. ' *'
-            Field.fullType = { fd='FD_PTR|FD_STRUCT', c_type='APTR' }
-         elseif Field.isFunction then
-            if Field.isArray then
-               Field.fullType = { fd='FD_STRUCT', c_type='APTR' }
+            Value.type ..= ' ' .. prefix
+            Value.isPointer = true -- Explicit pointer
+            Value.byRef = prefix is '&'
+            Value.fullType = { fd='FD_PTR|FD_STRUCT', c_type=Value.type, t_type='any' }
+         elseif Value.isFunction then
+            if Value.isArray then
+               Value.fullType = { fd='FD_STRUCT', c_type=Value.type, t_type='any' }
             else
-               Field.type = Field.type .. ' *'
-               Field.fullType = { fd='FD_PTR|FD_STRUCT', c_type='APTR' }
+               Value.type ..= ' *'
+               Value.fullType = { fd='FD_PTR|FD_STRUCT', c_type=Value.type, t_type='any' }
             end
          else
-            Field.fullType = { fd='FD_PTR|FD_STRUCT', c_type='APTR' }
+            Value.fullType = { fd='FD_STRUCT', c_type=Value.type, t_type='any' }
          end
 
          if const?? then
-            Field.type = 'const ' .. Field.type
+            Value.type = 'const ' .. Value.type
+            Value.isConst = true
          end
 
-         return Field
+         return Value
       end
    end
 
-   do -- Resources are structs, but with an FD_RESOURCE marker.
-      local const, struct = rx_resource_type.extract(Field.type)
+   do -- resource() types are structs, but with an FD_RESOURCE marker.
+      local const:str, struct:str = rx_resource_type.extract(Value.type)
       if struct then
-         local ptr_struct = rx_ptr_extract.extract(struct)
+         local prefix:str, ptr_struct:str = rx_ptr_extract.extract(struct)
          if ptr_struct then struct = ptr_struct end
 
-         Field.struct = struct
-         Field.type = 'struct ' .. struct
+         Value.struct = struct
+         Value.type = 'struct ' .. struct
 
          if glStructures[struct] then
-            glActiveRefs['STRUCT:' .. struct] = 1
+            glActiveRefs['STRUCT:' .. struct] = 'type-ref'
 
             if glStructures[struct].version then
-               Field.type = Field.type .. 'V' .. glStructures[struct].version
+               Value.type = Value.type .. 'V' .. glStructures[struct].version
             end
          end
 
          if ptr_struct then
-            Field.type ..= ' *'
-            Field.fullType = { fd='FD_PTR|FD_STRUCT|FD_RESOURCE', c_type='APTR' }
-         elseif Field.isFunction then
-            if Field.isArray then
-               Field.fullType = { fd='FD_STRUCT|FD_RESOURCE', c_type='APTR' }
+            Value.type ..= ' ' .. prefix
+            Value.isPointer = true -- Explicit pointer
+            Value.byRef = prefix is '&'
+            Value.fullType = { fd='FD_PTR|FD_STRUCT|FD_RESOURCE', c_type='APTR', t_type='any' }
+         elseif Value.isFunction then
+            if Value.isArray then
+               Value.fullType = { fd='FD_STRUCT|FD_RESOURCE', c_type='APTR', t_type='any' }
             else
-               Field.type ..= ' *'
-               Field.fullType = { fd='FD_PTR|FD_STRUCT|FD_RESOURCE', c_type='APTR' }
+               Value.type ..= ' *'
+               Value.fullType = { fd='FD_PTR|FD_STRUCT|FD_RESOURCE', c_type='APTR', t_type='any' }
             end
          else
-            Field.fullType = { fd='FD_PTR|FD_STRUCT|FD_RESOURCE', c_type='APTR' }
+            Value.fullType = { fd='FD_PTR|FD_STRUCT|FD_RESOURCE', c_type='APTR', t_type='any' }
          end
 
          if const?? then
-            Field.type = 'const ' .. Field.type
+            Value.type = 'const ' .. Value.type
          end
 
-         return Field
+         return Value
       end
    end
 
-   do
-      local ref_obj
+   do -- obj() object references
+      local ref_obj:any
       local extended = false
-      ref_obj = rx_ext_type.extract(Field.type)
+      ref_obj = rx_ext_type.extract(Value.type)
       if ref_obj then -- 'ext' indicates an object class extended with private fields.
          extended = true
       else
-         ref_obj = rx_obj_type.extract(Field.type)
+         ref_obj = rx_obj_type.extract(Value.type)
       end
 
       if ref_obj then
-         local ptr_object = rx_ptr_extract.extract(ref_obj)
+         local prefix, ptr_object = rx_ptr_extract.extract(ref_obj)
          if ptr_object then
-            Field.type = f'obj{ptr_object} **'
-            if extended then Field.extType = f'ext{ptr_object} **' end
-            Field.className = ptr_object
+            Value.type = f'obj{ptr_object} *' .. prefix
+            Value.byRef = prefix is '&'
+            if extended then Value.extType = f'ext{ptr_object} *' .. prefix end
+            Value.className = ptr_object
          else
-            Field.type = f'obj{ref_obj} *'
-            if extended then Field.extType = f'ext{ref_obj} *' end
-            Field.className = ref_obj
+            Value.type = f'obj{ref_obj} *'
+            if extended then Value.extType = f'ext{ref_obj} *' end
+            Value.className = ref_obj
          end
-         Field.fullType = glTypes.obj
-         return Field
+         Value.fullType = copyOf('obj')
+         return Value
       end
    end
 
-   do -- Example: bit(int)
-      local bitType = rx_bit_type.extract(Field.type)
+   do -- bit(int)
+      local bitType = rx_bit_type.extract(Value.type)
       if bitType then
-         Field.type     = cType({ type=bitType, name='' }, Origin).type
-         Field.name     = Field.name
-         Field.fullType = glTypes[bitType]
-         Field.bits     = 1
-         return Field
+         Value.type     = cType({ type=bitType, name='' }, Origin).type
+         Value.name     = Value.name
+         Value.fullType = copyOf(bitType)
+         Value.bits     = 1
+         return Value
       end
    end
 
    do -- Integer flags type reference, can be used for strongly typed enum flags
-      local prefix = rx_flags_type.extract(Field.type)
+      local prefix = rx_flags_type.extract(Value.type)
       if prefix then
-         Field.type     = prefix
-         Field.fullType = glTypes.int
-         Field.ref      = glCustomTypes[prefix]
-         Field.lookup   = prefix
+         Value.type     = prefix
+         Value.fullType = copyOf('int')
+         Value.ref      = glCustomTypes[prefix]
+         Value.lookup   = prefix
 
          if glCustomTypes[prefix] then
-            glActiveRefs['TYPE:' .. prefix] = 1
+            glActiveRefs['TYPE:' .. prefix] = 'type-ref'
          else
             print('Unknown custom type "' .. prefix .. '"')
          end
-         return Field
+         return Value
       end
    end
 
-   do -- Integer/Char/Large type reference
-      local t, prefix = rx_int_prefix.extract(Field.type)
+   do -- Primitive number reference like 'int Value'
+      local t, prefix = rx_int_prefix.extract(Value.type)
       if t then
          if t is 'char' then
-            Field.type     = 'char'
-            Field.fullType = glTypes.char
+            Value.type     = 'char'
+            Value.fullType = copyOf('char')
          elseif t is 'int' then
-            Field.type     = 'int'
-            Field.fullType = glTypes.int
+            Value.type     = 'int'
+            Value.fullType = copyOf('int')
          elseif t is 'large' then
-            Field.type     = 'INT64'
-            Field.fullType = glTypes.large
+            Value.type     = 'INT64'
+            Value.fullType = copyOf('large')
          elseif t is 'short' then
-            Field.type = 'int16_t'
-            Field.fullType = glTypes.short
+            Value.type = 'int16_t'
+            Value.fullType = copyOf('short')
          elseif t is 'ushort' then
-            Field.type = 'uint16_t'
-            Field.fullType = glTypes.ushort
+            Value.type = 'uint16_t'
+            Value.fullType = copyOf('ushort')
          else
-            error('Invalid type "' .. t .. '"')
+            raise 'Invalid type "' .. t .. '"'
          end
 
-         Field.ref    = glCustomTypes[prefix]
-         Field.lookup = prefix
+         Value.ref    = glCustomTypes[prefix]
+         Value.lookup = prefix
 
          if glCustomTypes[prefix] then
-            glActiveRefs['TYPE:' .. prefix] = 1
+            glActiveRefs['TYPE:' .. prefix] = 'type-ref'
             if glCustomTypes[prefix].type then -- Strongly typed
-               Field.type = prefix
+               Value.type = prefix
             end
          else
             print('Unknown custom type "' .. prefix .. '"')
          end
-         return Field
+         return Value
       end
    end
 
-   do -- Char arrays
-      local unsigned, count = rx_char_array.extract(Field.type)
+   do -- Char arrays like 'char(4) Value'
+      local unsigned, count = rx_char_array.extract(Value.type)
       if count then
          if unsigned?? then
-            Field.type = 'unsigned char'
+            Value.type = 'unsigned char'
          else
-            Field.type = 'char'
+            Value.type = 'char'
          end
-         Field.arraySize = tonumber(count)
-         Field.fullType  = glTypes.char
-         return Field
+         Value.arraySize = tonumber(count)
+         Value.fullType  = copyOf('char')
+         Value.fullType.t_type = 'array'
+         return Value
       end
    end
 
    do -- Integer arrays
-      local unsigned, count = rx_int_array.extract(Field.type)
+      local unsigned, count = rx_int_array.extract(Value.type)
       if count then
          if unsigned?? then
-            Field.type = 'uint32_t'
+            Value.type = 'uint32_t'
          else
-            Field.type = 'int'
+            Value.type = 'int'
          end
-         Field.arraySize = tonumber(count)
-         Field.fullType  = glTypes.int
-         return Field
+         Value.arraySize = tonumber(count)
+         Value.fullType  = copyOf('int')
+         Value.fullType.t_type = 'array'
+         return Value
       end
    end
 
    do -- Double arrays
-      local count = rx_double_array.extract(Field.type)
+      local count = rx_double_array.extract(Value.type)
       if count then
-         Field.type      = 'double'
-         Field.arraySize = tonumber(count)
-         Field.fullType  = glTypes.double
-         return Field
+         Value.type      = 'double'
+         Value.arraySize = tonumber(count)
+         Value.fullType  = copyOf('double')
+         Value.fullType.t_type = 'array'
+         return Value
       end
    end
 
    do -- Float arrays
-      local count = rx_float_array.extract(Field.type)
+      local count = rx_float_array.extract(Value.type)
       if count then
-         Field.type      = 'float'
-         Field.arraySize = tonumber(count)
-         Field.fullType  = glTypes.float
-         return Field
+         Value.type      = 'float'
+         Value.arraySize = tonumber(count)
+         Value.fullType  = copyOf('float')
+         Value.fullType.t_type = 'array'
+         return Value
       end
    end
 
-   do
-      local const, ptr_type = rx_ptr_type.extract(Field.type)
+   do -- Pointer to a type; can embed any other type
+      local const, ptr_type = rx_ptr_type.extract(Value.type)
       if ptr_type then
          local ptr_ctype = cType({ type=ptr_type }, Origin)
 
-         Field.type = ptr_ctype.type .. ' *'
+         Value.type = ptr_ctype.type .. ' *'
+         Value.isPointer = true
 
          if const?? then
-            Field.type =  'const ' .. Field.type
+            Value.type =  'const ' .. Value.type
          end
 
          if ptr_type is 'func' then
-            Field.fullType = { fd='FD_FUNCTIONPTR', c_type='FUNCTION *' }
+            Value.fullType = { fd='FD_FUNCTIONPTR', c_type='FUNCTION *', t_type='func' }
          else
-            Field.fullType = { fd='FD_PTR', c_type='APTR' }
+            Value.fullType = { fd='FD_PTR', c_type='APTR', t_type='any' }
             if ptr_ctype.fullType.doc_type then
-               Field.fullType.doc_type = ptr_ctype.fullType.doc_type .. ' *'
+               Value.fullType.doc_type = ptr_ctype.fullType.doc_type .. ' *'
             end
          end
 
-         return Field
-      end
-   end
-
-   do
-      local buf_type = rx_buf_type.extract(Field.type)
-      if buf_type then
-         Field.type = buf_type
-         Field = cType(Field, Origin)
-         Field.fullType = { fd='FD_BUFFER|' .. Field.fullType.fd, c_type='APTR' }
-         return Field
+         return Value
       end
    end
 
    -- ARRAY CLIENT NOTES
    -- For primitive embedded array types, use 'type(n)' such as 'int(4)'.  See above patterns for details.
-   -- To describe a pointer to an array of any type, use 'array(type)' such as 'array(cstr)'
+   -- Callable array(type) declarations use std::span and preserve the declared element type.
+   -- For stored fields, array(type) describes a pointer to an array, such as array(cstr).
    -- To describe a pointer to a null-terminated array, use 'array(type,0)'
    -- To describe complex embedded types of fixed size, use 'array(type,n)' such as 'array(struct(RGB8),256)'
 
-   do
-      local array_type, array_size = rx_array_sized.extract(Field.type)
+   do -- Array (pre-sized)
+      local array_type:str, array_size:str = rx_array_sized.extract(Value.type)
       if array_size then
-         array_size = tonumber(array_size)
-         if array_size is 0 then
-            Field.isArray = true
-            Field.type = array_type
-            Field.arraySize = 0
-            Field = cType(Field, Origin)
-            if Field.cpp then
-               Field.type = 'pf::vector<' .. (Field.struct ? Field.struct :> Field.type) .. '>'
-            else
-               Field.type ..= ' *'
-            end
-            Field.fullType = { fd='FD_ARRAY|' .. Field.fullType.fd, c_type=Field.fullType.c_type, doc_type=Field.fullType.doc_type  }
+         assert(not (Value.isFunction or Value.isMethod),
+            f'Fixed and null-terminated arrays are not supported for callable {Origin}.')
+         size = tonumber(array_size)
+         Value.isArray = true
+         if size is 0 then
+            Value.type      = array_type
+            Value.arraySize = 0
+            Value           = cType(Value, Origin)
+            Value.type    ..= ' *'
+            Value.fullType = {
+               fd       = 'FD_ARRAY|' .. Value.fullType.fd,
+               c_type   = Value.fullType.c_type,
+               doc_type = Value.fullType.doc_type,
+               t_type   = 'array'
+            }
          else
-            Field.type = array_type
-            Field = cType(Field, Origin)
-            Field.arraySize = array_size
-            Field.fullType  = glTypes.ptr
+            Value.type      = array_type
+            Value           = cType(Value, Origin)
+            Value.arraySize = size
+            Value.fullType  = copyOf('ptr')
          end
-         return Field
+         return Value
       end
    end
 
-   do
-      local array_type = rx_array_unsized.extract(Field.type)
+   do -- Array (unsized)
+      -- Note that the pointer flag always applies to the array's inner type, not the array itself.  Whether or
+      -- not the array is a pointer depends entirely on the context of its use.
+      local array_type = rx_array_unsized.extract(Value.type)
       if array_type then
-         Field.isArray = true
-         Field.type    = array_type
-         Field = cType(Field, Origin)
-         if Field.cpp then
-            Field.type = 'pf::vector<' .. (Field.struct ? Field.struct :> Field.type) .. '>'
-         else
-            Field.type ..= ' *'
+         Value.isArray = true
+         Value.type    = array_type
+         Value         = cType(Value, Origin) -- Inner type will amend the value definition
+
+         if Value.isFunction or Value.isMethod then
+            assert(not Value.allocated, f'Allocated span results are not supported for {Origin}.')
+            assert(not result_value, f'Span result parameters are not supported for {Origin}.')
+
+            local inner_fd = Value.fullType.fd
+            assert(not inner_fd.find('FD_STRING'), f'String element spans are not supported for {Origin}.')
+            assert(not inner_fd.find('FD_OBJECT'), f'Object element spans are not supported for {Origin}.')
+            assert(not inner_fd.find('FD_FUNCTION'), f'Function element spans are not supported for {Origin}.')
+            assert(not inner_fd.find('FD_UNIT'), f'Unit element spans are not supported for {Origin}.')
+            assert(not inner_fd.find('FD_ARRAY'), f'Nested array spans are not supported for {Origin}.')
+            assert(not inner_fd.find('FD_VECTOR'), f'Nested vector spans are not supported for {Origin}.')
+            assert(not (Value.struct and Value.isPointer), f'Pointer-qualified structure spans are not supported for {Origin}.')
+
+            local element_type:str = Value.type
+            if not Value.mutable then
+               if element_type.endsWith(' *') then
+                  element_type ..= ' const'
+               elseif not element_type.startsWith('const ') then
+                  element_type = 'const ' .. element_type
+               end
+            end
+
+            Value.type       = f'std::span<{element_type}>'
+            Value.docType    = Value.type
+            Value.innerType  = element_type
+            Value.isSpan     = true
+            Value.isComplex  = true
+            Value.isCompound = true
+            Value.fullType   = {
+               fd       = 'FDF_SPAN|' .. inner_fd,
+               c_type   = Value.fullType.c_type,
+               t_type   = 'array'
+            }
+            return Value
          end
-         Field.fullType = { fd='FD_ARRAY|' .. Field.fullType.fd, c_type=Field.fullType.c_type, doc_type=Field.fullType.doc_type }
-         return Field
+
+         local inner_type = Value.struct ?? 'struct ' .. Value.struct : Value.type
+         if Value.isConst then inner_type = 'const ' .. inner_type end
+
+         if Value.docType and not Value.isFunction and not Value.isMethod then
+            Value.docType ..= '[]'
+            if Value.docType.startsWith('struct ') then
+               Value.docType = Value.docType.sub(7)
+            end
+         else
+            Value.docType = Value.type
+         end
+         Value.type  ..= ' *'
+         Value.innerType = inner_type
+         Value.fullType = {
+            fd       = 'FD_ARRAY|' .. Value.fullType.fd,
+            t_type   = 'array'
+         }
+         return Value
       end
    end
 
-   do
-      local fptr_args = rx_fptr_type.extract(Field.type)
+   do -- Vector (C++)
+      -- Note that the pointer flag always applies to the array's inner type, not the array itself.  Whether or
+      -- not the array is a pointer depends entirely on the context of its use.
+      local array_of_type = rx_vector.extract(Value.type)
+      if array_of_type then
+         Value.isArray = true
+         Value.type    = array_of_type
+         Value         = cType(Value, Origin)
+         inner_type = Value.struct ?? Value.type
+         if Value.isPointer then inner_type ..= ' *' end
+         Value.type       = f'kt::vector<{inner_type}>'
+         Value.isComplex  = true
+         Value.isCompound = true
+         Value.docType    = Value.type
+         Value.innerType  = inner_type
+
+         Value.fullType = {
+            fd       = 'FDF_VECTOR|' .. Value.fullType.fd,
+            c_type   = Value.fullType.c_type,
+            t_type   = 'array'
+         }
+
+         return Value
+      end
+   end
+
+   do -- Direction C/C++ function reference; i.e. void (*my_function)(args...)
+      local fptr_args = rx_fptr_type.extract(Value.type)
       if fptr_args then
-         local arglist = fptr_args:split(' ')
+         local arglist = fptr_args.split(' ')
 
          -- Process function result type
 
-         Field.type = ((#arglist is 0) ? 'void' :> (glTypes[arglist[0]].c_type ?? arglist[0])) .. ' (*' .. Field.name .. ')'
+         Value.type = ((#arglist is 0) ? 'void' : (glTypes[arglist[0]].c_type ?? arglist[0])) .. f' (*{Value.name})'
 
          -- Process function parameters
 
          if #arglist < 2 then
-            Field.type ..= '(void)'
+            Value.type ..= '(void)'
          else
             params = ''
-            for i=1, #arglist-1 do
+            for i in {1 to #arglist} do
                if params?? then params ..= ', ' end
                params ..=  cType({ type=arglist[i], name='' }, Origin).type
             end
-            Field.type ..= '(' .. params .. ')'
+            Value.type ..= f'({params})'
          end
 
-         Field.isFunctionPtr = true
-         Field.fullType = glTypes.ptr
-         return Field
+         Value.isFunctionPtr = true
+         Value.fullType = copyOf('ptr')
+         Value.fullType.t_type = 'func'
+         return Value
       end
    end
 
-   if not glTypes[Field.type] then
-      error("No handling for field type '" .. Field.type .. "' from " .. tostring(Origin))
+   do -- String
+      -- MUTABLE|RESULT - Client supplies an empty std::string *, Tiri returns as a result
+      -- MUTABLE        - User supplies a std::string *, contents are mutated in-place
+      -- RESULT         - No input required, a std::string * is returned in the struct
+      local string = rx_string_type.extract(Value.type)
+      if string then
+         if string is 'strview' then
+            Value.type = 'std::string_view'
+            Value.isComplex = false -- std::string_view is embeddable
+            Value.fullType = copyOf('strview')
+         elseif string is 'string' then
+            Value.type = 'std::string'
+            Value.isComplex = true
+            Value.fullType = copyOf('string')
+         elseif string is 'cstr' then
+            Value.type = 'CSTRING'
+            Value.fullType = copyOf('cstr')
+         else
+            Value.type = 'STRING'
+            Value.fullType = copyOf('str')
+         end
+         return Value
+      end
    end
 
-   Field.fullType = glTypes[Field.type]
-   if Field.cpp then
-      Field.type = glTypes[Field.type].cpp_type ?? Field.type
-   else
-      Field.type = glTypes[Field.type].c_type ?? Field.type
+   if not glTypes[Value.type] then
+      raise f"No handling for field type '{Value.type}' from {Origin}"
    end
 
-   return Field
+   -- No special handling, lookup the type table directly
+
+   Value.fullType = copyOf(Value.type)
+   Value.type = glTypes[Value.type].c_type ?? Value.type
+
+   return Value
 end

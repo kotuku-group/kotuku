@@ -1,0 +1,320 @@
+--[[
+Security Testing
+
+Tests path traversal prevention, forbidden file access,
+rate limiting, and injection attack prevention.
+--]]
+
+   import 'net/httpserver'
+   import 'json'
+   include 'http'
+
+glOutFile <const> = 'temp:http-security-output.txt'
+SERVER_PORT <const> = 18949
+
+rxStatusLine = <{ regex.new([[HTTP\/1\.[01]\s+(\d+)]]) }>
+
+function rawHttpRequest(Method:str, Path:str):<num, str>
+   response = ''
+   request = Method .. ' ' .. Path .. " HTTP/1.1\r\n" ..
+      "Host: 127.0.0.1\r\n" ..
+      "Connection: close\r\n\r\n"
+
+   socket = obj.new('netsocket', {
+      feedback = function(Socket, State)
+         if State is NTC_CONNECTED then
+            check Socket.acWrite(request)
+         elseif State is NTC_DISCONNECTED then
+            Socket.acSignal()
+         end
+      end,
+      incoming = function(Socket)
+         buffer = string.alloc(4096)
+         err, read_len = Socket.acRead(buffer)
+         if err is ERR_Okay then
+            response ..= buffer.sub(0, read_len)
+         elseif err is ERR_Disconnected then
+            Socket.acSignal()
+         else
+            raise 'Raw HTTP read failed: ' .. mSys.GetErrorMsg(err)
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { socket } })
+   check socket.mtConnect('127.0.0.1', SERVER_PORT, 3.0)
+   check proc.sleep()
+
+   status = rxStatusLine.extract(response)
+   return tonumber(status ?? 0), response
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@BeforeEach function resetRateLimits()
+   glServer._rateLimits = {}
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@BeforeAll function init(State)
+   global glPath = State.folder
+
+   global glServer = hslib.start({
+      port      = SERVER_PORT,
+      folder    = glPath,
+      verbose   = true,
+      rateLimit = 10, -- 10 requests per window for testing
+      rateLimitWindow = 60, -- 1 minute window
+      routes = {
+         { pattern = '/api/rate-test/:id',
+            method = 'GET',
+            handler = function(req, res)
+               res.json({
+                  message = 'Rate test response',
+                  requestId = req.params.id
+               })
+            end
+         },
+         { pattern = '/api/header-test',
+            method = 'GET',
+            handler = function(req, res)
+               res.json({
+                  message = 'Header test response',
+                  receivedHeaders = req.headers
+               })
+            end
+         },
+         { pattern = '/api/large-header-test',
+            method = 'GET',
+            handler = function(req, res)
+               res.json({
+                  message = 'Large header test response',
+                  headerCount = 0 -- Count headers if needed
+               })
+            end
+         },
+         { pattern = '/api/user-agent-test',
+            method = 'GET',
+            handler = function(req, res)
+               res.json({
+                  message = 'User agent test response',
+                  userAgent = req.headers['user-agent']
+               })
+            end
+         }
+      }
+   })
+end
+
+@AfterAll function cleanup()
+   glServer.stop()
+   mSys.DeleteFile(glOutFile)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function PathTraversal()
+   content = ''
+
+   -- Attempt directory traversal attack
+   http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/../../../etc/passwd',
+      method = 'GET',
+      flags = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.error is ERR_HTTPStatus, 'Path traversal should report HTTPStatus, got: ' ..
+      mSys.GetErrorMsg(http.error))
+
+   -- Server should reject with 400 Bad Request
+   assert(http.status is 400, 'Expected 400 Bad Request for path traversal, got: ' .. http.status)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ForbiddenFiles()
+   results = {}
+   requests = {}
+   completed = 0
+   wait_http = nil
+   forbiddenFiles = { '/test.exe', '/config.ini', '/app.dll', '/script.bat' }
+
+   for i, file in ipairs(forbiddenFiles) do
+      http = obj.new('http', {
+         src = 'http://127.0.0.1:' .. SERVER_PORT .. file,
+         method = 'GET',
+         flags = HTF_NO_HEAD,
+         incoming = function(HTTP, Buffer)
+            if not results[i] then results[i] = {content = ''} end
+            if Buffer then results[i].content = results[i].content .. Buffer.getString() end
+         end,
+         stateChanged = function(HTTP, State)
+            if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+               if not results[i] then results[i] = {} end
+               results[i].status = HTTP.status
+               completed++
+               if completed >= #forbiddenFiles then
+                  wait_http.acSignal()
+               end
+            end
+         end
+      })
+      requests[i] = http
+      if not wait_http then wait_http = http end
+   end
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { wait_http } })
+
+   for i, http in ipairs(requests) do
+      assert(http.acActivate() is ERR_Okay, "Forbidden file test " .. i .. " failed to activate")
+   end
+
+   check proc.sleep()
+
+   -- All forbidden files should return 403 Forbidden
+   for i, file in ipairs(forbiddenFiles) do
+      assert(results[i].status is 403, 'Expected 403 Forbidden for ' .. file .. ', got: ' .. (results[i].status or 'nil'))
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function RateLimiting()
+   totalRequests = 15 -- Exceed rate limit
+
+   -- Some requests should be rate limited (429 Too Many Requests)
+   rateLimited = 0
+   successful = 0
+
+   for i in {1 into totalRequests} do
+      status, response = rawHttpRequest('GET', '/api/rate-test/' .. i)
+      if status is 429 then
+         rateLimited++
+      elseif status is 200 then
+         successful++
+      elseif status is 0 and successful >= glServer.rateLimit then
+         rateLimited++
+      end
+   end
+
+   assert(rateLimited > 0, 'Rate limiting should have blocked some requests')
+   assert(successful > 0, 'Some requests should have succeeded')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function HeaderInjection()
+   content = ''
+
+   -- Attempt header injection attack.  Header CR/LF values must be rejected by the HTTP client before sending.
+   http = obj.new('http', {
+      src      = 'http://127.0.0.1:' .. SERVER_PORT .. '/api/header-test',
+      method   = 'GET',
+      flags    = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   assert(http.acSetKey('X-Test-Header', 'value\r\nX-Injected-Header: injected\r\nHost: evil.com') != ERR_Okay,
+      'Header injection should not succeed')
+   check http.acSetKey('X-Test-Header', 'safe-value')
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.error is ERR_Okay, 'Header injection HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Header injection unexpected status: ' .. http.status)
+
+   response = json.decode(content)
+   -- Server should sanitize headers and not be vulnerable to injection
+   assert(not response.receivedHeaders['x-injected-header'], 'Header injection should be prevented')
+   assert(response.receivedHeaders['x-test-header'] is 'safe-value', 'Safe header should be received')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function LargeHeaderAttack()
+   content = ''
+
+   -- Create oversized header to test limits
+   largeHeaderValue = 'A'.rep(8192) -- 8KB header
+
+   http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/api/large-header-test',
+      method = 'GET',
+      flags = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   check http.acSetKey('X-Large-Header', largeHeaderValue)
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   -- Server should either accept it or reject with 400/413
+   assert(http.status is 200 or http.status is 400 or http.status is 413,
+          'Large header should be accepted or rejected properly, got: ' .. http.status)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function MaliciousUserAgent()
+   content = ''
+   completed = false
+
+   http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/api/user-agent-test',
+      method = 'GET',
+      flags = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            completed = true
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   check http.acSetKey('User-Agent', '<script>alert("xss")</script>Malicious/1.0')
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+
+   if not completed then
+      check proc.sleep()
+   end
+
+   assert(http.error is ERR_Okay, 'Malicious User-Agent HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Malicious User-Agent unexpected status: ' .. http.status)
+
+   response = json.decode(content)
+   -- Server should handle malicious user agent without issues
+   assert(response.userAgent, 'User agent should be received')
+end

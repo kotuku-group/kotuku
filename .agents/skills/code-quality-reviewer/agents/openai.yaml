@@ -1,0 +1,4 @@
+interface:
+  display_name: "Code Quality Reviewer"
+  short_description: "Review Kotuku code quality and standards"
+  default_prompt: "Use $code-quality-reviewer to review recent Kotuku code changes for correctness, quality, and project style."

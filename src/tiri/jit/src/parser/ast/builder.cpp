@@ -10,12 +10,19 @@
 
 #include "ast/builder.h"
 
+#include <cmath>
+#include <cctype>
 #include <cstring>
 #include <format>
+#include <limits>
+#include <mutex>
 #include <utility>
+
+#include "../../../../defs.h"
 
 #include "../token_types.h"
 #include "../parse_types.h"
+#include "../parse_internal.h"
 #include "runtime/lj_str.h"
 #include "runtime/lj_tab.h"
 #include "runtime/lj_gc.h"
@@ -29,7 +36,12 @@
 
 // Extracts the function payload from an expression node if it's a function expression, otherwise returns null.
 
-static FunctionExprPayload * function_payload_from(ExprNode &Node)
+inline void rollback_ast_builder_constants(void *UserData)
+{
+   ((AstBuilder *)UserData)->rollback_registered_enum_hierarchy();
+}
+
+inline FunctionExprPayload * function_payload_from(ExprNode &Node)
 {
    if (Node.kind != AstNodeKind::FunctionExpr) return nullptr;
    return std::get_if<FunctionExprPayload>(&Node.data);
@@ -46,27 +58,218 @@ static std::unique_ptr<FunctionExprPayload> move_function_payload(ExprNodePtr &N
    result->parameters        = std::move(payload->parameters);
    result->is_vararg         = payload->is_vararg;
    result->is_thunk          = payload->is_thunk;
-   result->thunk_return_type = payload->thunk_return_type;
    result->return_types      = payload->return_types;  // Copy return type information
    result->body              = std::move(payload->body);
    result->annotations = std::move(payload->annotations);
    return result;
 }
 
-// Checks if a token kind is a statement keyword that can be used in conditional shorthand syntax (e.g., value ?? return).
-
-static bool is_shorthand_statement_keyword(TokenKind Kind)
+inline bool token_identifier_is(const Token &Token, std::string_view Text)
 {
-   switch (Kind) {
-      case TokenKind::ReturnToken:
-      case TokenKind::BreakToken:
-      case TokenKind::ContinueToken:
-      case TokenKind::RaiseToken:
-      case TokenKind::CheckToken:
-         return true;
-      default:
-         return false;
+   if (not Token.is_identifier()) return false;
+
+   GCstr *symbol = Token.identifier();
+   if (not symbol) return false;
+
+   return std::string_view(strdata(symbol), symbol->len) IS Text;
+}
+
+// Checks for contextual range separators.  The lexer intentionally leaves `to`, `into` and `by` as identifiers so
+// these words remain available outside range-literal separator positions.
+
+static bool token_is_range_separator(const Token &Token, bool &IsInclusive)
+{
+   if (token_identifier_is(Token, "to")) {
+      IsInclusive = false;
+      return true;
    }
+   if (token_identifier_is(Token, "into")) {
+      IsInclusive = true;
+      return true;
+   }
+
+   return false;
+}
+
+inline bool token_is_range_step_separator(const Token &Token)
+{
+   return token_identifier_is(Token, "by");
+}
+
+struct RangeLiteralScan {
+   bool has_step = false;
+   bool has_bare_string_operand = false;
+};
+
+inline bool range_word_matches(std::string_view Word)
+{
+   return Word IS "to" or Word IS "into";
+}
+
+static size_t skip_quoted_source(std::string_view Source, size_t Pos, char Quote)
+{
+   Pos++;
+   while (Pos < Source.size()) {
+      char c = Source[Pos];
+      if (c IS '\\') {
+         Pos += 2;
+         continue;
+      }
+      Pos++;
+      if (c IS Quote) break;
+   }
+   return Pos;
+}
+
+static bool source_has_range_separator_on_opening_line(ParserContext &Context, RangeLiteralScan &Scan)
+{
+   Token open_brace = Context.tokens().current();
+   std::string_view source = Context.lex().source;
+   size_t pos = open_brace.span().offset;
+   if (pos >= source.size()) return false;
+   pos++;
+
+   bool has_range_separator = false;
+   int depth = 0;
+   while (pos < source.size()) {
+      char c = source[pos];
+      if (c IS '\r' or c IS '\n') return false;
+
+      if (c IS '\'' or c IS '"') {
+         if (depth IS 0) Scan.has_bare_string_operand = true;
+         pos = skip_quoted_source(source, pos, c);
+         continue;
+      }
+
+      if (c IS '-' and pos + 1 < source.size() and source[pos + 1] IS '-') return false;
+
+      if (c IS '(' or c IS '[' or c IS '{') {
+         depth++;
+         pos++;
+         continue;
+      }
+
+      if (c IS ')' or c IS ']' or c IS '}') {
+         if (depth IS 0) return has_range_separator;
+         depth--;
+         pos++;
+         continue;
+      }
+
+      if (depth IS 0) {
+         if (c IS ',' or c IS ';' or c IS '=') return false;
+
+         if (std::isalpha(uint8_t(c)) or c IS '_') {
+            size_t start = pos;
+            pos++;
+            while (pos < source.size()) {
+               char word_char = source[pos];
+               if (not (std::isalnum(uint8_t(word_char)) or word_char IS '_')) break;
+               pos++;
+            }
+            if (range_word_matches(source.substr(start, pos - start))) has_range_separator = true;
+            continue;
+         }
+      }
+
+      pos++;
+   }
+
+   return false;
+}
+
+// Scans a braced expression without consuming tokens.  A range literal is recognised only when a top-level `to` or
+// `into` separator appears after a start expression, with an optional top-level `by` after the stop expression.
+// Range literals are not allowed to contain bare string literals, and new-lines also cause rejection.
+
+static bool scan_range_literal(ParserContext &Context, RangeLiteralScan &Scan)
+{
+   if (not Context.check(TokenKind::LeftBrace)) return false;
+   Scan = RangeLiteralScan{};
+   if (not source_has_range_separator_on_opening_line(Context, Scan)) return false;
+
+   bool found_range_separator = false;
+   bool found_step_separator = false;
+   bool has_start_expr_tokens = false;
+   bool has_stop_expr_tokens = false;
+   bool has_step_expr_tokens = false;
+   bool ended_on_right_brace = false;
+   bool invalid_top_level_shape = false;
+   TokenKind previous_top_level_kind = TokenKind::Unknown;
+   BCLine start_line = Context.tokens().current().span().line;
+   int depth = 0;
+
+   for (size_t i = 1; ; i++) {
+      Token tok = Context.tokens().peek(i);
+      auto kind = tok.kind();
+
+      if (kind IS TokenKind::EndOfFile) break;
+      if (tok.span().line != start_line) return false;
+
+      if (depth IS 0 and kind IS TokenKind::RightBrace) {
+         ended_on_right_brace = true;
+         break;
+      }
+
+      if (kind IS TokenKind::LeftParen or kind IS TokenKind::LeftBracket or kind IS TokenKind::LeftBrace) {
+         if (depth IS 0) {
+            if (found_step_separator) has_step_expr_tokens = true;
+            else if (found_range_separator) has_stop_expr_tokens = true;
+            else has_start_expr_tokens = true;
+         }
+         depth++;
+      }
+      else if (kind IS TokenKind::RightParen or kind IS TokenKind::RightBracket or kind IS TokenKind::RightBrace) {
+         depth--;
+         if (depth < 0) {
+            invalid_top_level_shape = true;
+            break;
+         }
+         if (depth IS 0) previous_top_level_kind = kind;
+      }
+      else if (depth IS 0) {
+         if (kind IS TokenKind::Comma or kind IS TokenKind::Semicolon or kind IS TokenKind::Equals) {
+            invalid_top_level_shape = true;
+            break;
+         }
+
+         bool member_name_context = token_kind_has_flag(previous_top_level_kind, TKF_MEMBER_NAME_CONTEXT);
+         bool previous_can_end_expression = token_kind_has_flag(previous_top_level_kind, TKF_CAN_END_RANGE_EXPRESSION);
+         bool separator_is_inclusive = false;
+         if (has_start_expr_tokens and not found_range_separator and not member_name_context and
+             previous_can_end_expression and
+             token_is_range_separator(tok, separator_is_inclusive)) {
+            found_range_separator = true;
+         }
+         else if (found_range_separator and has_stop_expr_tokens and not found_step_separator and
+                  not member_name_context and previous_can_end_expression and token_is_range_step_separator(tok)) {
+            found_step_separator = true;
+            Scan.has_step = true;
+         }
+         else if (found_range_separator and has_stop_expr_tokens and not found_step_separator and
+                  not member_name_context and previous_can_end_expression and
+                  token_is_range_separator(tok, separator_is_inclusive)) {
+            invalid_top_level_shape = true;
+            break;
+         }
+         else if (found_step_separator and has_step_expr_tokens and not member_name_context and
+                  previous_can_end_expression and
+                  (token_is_range_step_separator(tok) or token_is_range_separator(tok, separator_is_inclusive))) {
+            invalid_top_level_shape = true;
+            break;
+         }
+         else {
+            if (found_step_separator) has_step_expr_tokens = true;
+            else if (found_range_separator) has_stop_expr_tokens = true;
+            else has_start_expr_tokens = true;
+         }
+
+         previous_top_level_kind = kind;
+      }
+   }
+
+   return not invalid_top_level_shape and ended_on_right_brace and found_range_separator and has_start_expr_tokens and
+      has_stop_expr_tokens;
 }
 
 // Checks if a statement unconditionally terminates control flow (return, break, continue).
@@ -84,33 +287,6 @@ static bool is_terminating_statement(const StmtNode *Stmt)
    }
 }
 
-// Checks if a token kind is a compound assignment operator (+=, -=, etc.).
-// These are statements, not expressions, which helps provide better error messages.
-
-static bool is_compound_assignment(TokenKind Kind)
-{
-   switch (Kind) {
-      case TokenKind::CompoundAdd:
-      case TokenKind::CompoundSub:
-      case TokenKind::CompoundMul:
-      case TokenKind::CompoundDiv:
-      case TokenKind::CompoundMod:
-      case TokenKind::CompoundConcat:
-      case TokenKind::CompoundIfEmpty:
-      case TokenKind::CompoundIfNil:
-         return true;
-      default:
-         return false;
-   }
-}
-
-// Checks if an expression node is a presence check expression (the ?? operator).
-
-static bool is_presence_expr(const ExprNodePtr &Expr)
-{
-   return Expr and Expr->kind IS AstNodeKind::PresenceExpr;
-}
-
 // Validates that an expression can be used as an arrow function parameter (identifier only).
 
 static bool extract_arrow_parameter(const ExprNodePtr &Expr, FunctionParameter &Parameter)
@@ -120,6 +296,7 @@ static bool extract_arrow_parameter(const ExprNodePtr &Expr, FunctionParameter &
 
    auto *name_ref = std::get_if<NameRef>(&Expr->data);
    if (name_ref IS nullptr) return false;
+   if (name_ref->identifier.is_future_reserved) return false;
 
    Parameter.name = name_ref->identifier;
    return true;
@@ -141,6 +318,25 @@ static bool build_arrow_parameters(const ExprNodeList &Expressions, std::vector<
    return true;
 }
 
+static const Identifier * future_reserved_identifier_expr(const ExprNodePtr &Expression)
+{
+   if (not Expression) return nullptr;
+   if (not (Expression->kind IS AstNodeKind::IdentifierExpr)) return nullptr;
+
+   auto *name_ref = std::get_if<NameRef>(&Expression->data);
+   if (name_ref IS nullptr) return nullptr;
+   if (not name_ref->identifier.is_future_reserved) return nullptr;
+
+   return &name_ref->identifier;
+}
+
+static std::string future_reserved_variable_message(const Identifier &IdentifierValue)
+{
+   std::string_view name = "<keyword>";
+   if (IdentifierValue.symbol) name = std::string_view(strdata(IdentifierValue.symbol), IdentifierValue.symbol->len);
+   return std::format("'{}' is reserved for future syntax and cannot be used as a variable name", name);
+}
+
 static ParserResult<StmtNodePtr> make_control_stmt(ParserContext& Context, AstNodeKind Kind, const Token& Token)
 {
    auto node = std::make_unique<StmtNode>(Kind, Token.span());
@@ -150,8 +346,373 @@ static ParserResult<StmtNodePtr> make_control_stmt(ParserContext& Context, AstNo
    return ParserResult<StmtNodePtr>::success(std::move(node));
 }
 
-AstBuilder::AstBuilder(ParserContext &Context) : ctx(Context)
+AstBuilder::AstBuilder(ParserContext &Context, AstBuilder *Parent) : ctx(Context), parent_builder(Parent)
 {
+   this->ctx.set_error_rollback_callback(rollback_ast_builder_constants, this);
+}
+
+AstBuilder::~AstBuilder()
+{
+   this->rollback_registered_enum_constants();
+   this->rollback_registered_structs();
+   this->ctx.clear_error_rollback_callback(this);
+}
+
+const AstBuilder::ModuleNamespaceSymbol *AstBuilder::find_module_namespace(GCstr *Name) const
+{
+   if (not Name) return nullptr;
+   if (auto found = this->module_namespaces.find(Name); found != this->module_namespaces.end()) return &found->second;
+   return nullptr;
+}
+
+//********************************************************************************************************************
+// Test whether a name is reserved by a module namespace, without materialising an implicit dependency for it.
+//
+// Declaration sites use this to reject rebinding, which must apply to an implicit namespace whether or not the
+// compilation unit has referenced it yet.  Creating the dependency here would make a unit that merely shadows the
+// name load Core and emit an activation statement.
+
+bool AstBuilder::is_module_namespace_name(GCstr *Name) const
+{
+   if (not Name) return false;
+   if (this->find_module_namespace(Name)) return true;
+   return std::string_view(strdata(Name), Name->len) IS std::string_view("mSys");
+}
+
+//********************************************************************************************************************
+// Find the shared dependency for a canonical module, creating it when this is the first declaration or implicit use.
+
+std::pair<size_t, bool> AstBuilder::find_or_create_module_dependency(
+   std::string_view CanonicalModule, const SourceSpan &Span, bool Implicit)
+{
+   for (size_t index = 0; index < this->module_dependencies.size(); ++index) {
+      if (kt::iequals(this->module_dependencies[index]->canonical_module, CanonicalModule)) return { index, false };
+   }
+
+   auto record = std::make_unique<ModuleDependency>();
+   record->canonical_module = CanonicalModule;
+   record->descriptor = uint32_t(this->module_dependencies.size());
+   record->declaration_span = Span;
+   record->implicit = Implicit;
+   this->module_dependencies.push_back(std::move(record));
+   return { this->module_dependencies.size() - 1, true };
+}
+
+//********************************************************************************************************************
+// Build the generated declaration that activates one module dependency.
+//
+// The statement is created as soon as the dependency is recorded so that it occupies a well-defined position in the
+// statement list, but its binding names are unknown until the compilation unit has been parsed.  The descriptor
+// ordinal is stable because dependencies are append-only; finalise_module_dependencies() supplies the ordered locals.
+
+StmtNodePtr AstBuilder::make_dependency_activation(ModuleDependency &Dependency, const SourceSpan &Span)
+{
+   ExprNodeList values;
+   std::vector<Identifier> names;
+   StmtNodePtr activation = make_local_decl_stmt(Span, std::move(names), std::move(values));
+   std::get<LocalDeclStmtPayload>(activation->data).module_dependency = Dependency.descriptor;
+   Dependency.activation = activation.get();
+   return activation;
+}
+
+//********************************************************************************************************************
+// Resolve an identifier to a module namespace, creating an implicit dependency on first use where one is defined.
+//
+// 'mSys' is a compiler-managed namespace for Core rather than a script value, so it behaves as though every
+// compilation unit begins with `module core as mSys`.  The dependency is created lazily so that a unit which never
+// mentions mSys neither resolves Core nor emits an activation statement.  Its activation is prepended to the unit's
+// statement list by prepend_implicit_dependencies(), which guarantees that it dominates every reference.
+//
+// An explicit `module core as mSys` declaration is parsed before any expression can reference the namespace, so it
+// simply wins the race and no implicit record is created.
+
+const AstBuilder::ModuleNamespaceSymbol * AstBuilder::resolve_module_namespace(GCstr *Name)
+{
+   if (auto existing = this->find_module_namespace(Name)) return existing;
+   if (not Name) return nullptr;
+
+   std::string_view name_view(strdata(Name), Name->len);
+   if (name_view != "mSys") return nullptr;
+
+   // Core is a required dependency of every Tiri state, so a failure here is a host defect rather than a script
+   // error.  Fall through to ordinary identifier handling so that the resulting diagnostic names the real problem.
+
+   if (load_module_defs("core") != ERR::Okay) return nullptr;
+
+   StaticModuleHandle signature = static_module_by_name("core");
+   std::string canonical_module = signature ? std::string(static_module_name(signature)) : std::string("core");
+
+   // An explicit declaration of core may already have created the dependency, in which case mSys becomes another
+   // alias of it.  Pooling matches parse_module_decl() so that one canonical module always has one activation and
+   // one set of hidden callable bindings.
+
+   size_t dependency_index = this->find_or_create_module_dependency(canonical_module, {}, true).first;
+
+   ModuleNamespaceSymbol symbol;
+   symbol.source_name      = Name;
+   symbol.module           = signature;
+   symbol.canonical_module = std::move(canonical_module);
+   symbol.dependency       = dependency_index;
+   return &this->module_namespaces.emplace(Name, std::move(symbol)).first->second;
+}
+
+//********************************************************************************************************************
+// Insert the activation statements of implicitly created dependencies at the head of the compilation unit.
+//
+// Explicit declarations already occupy their source position.  An implicit dependency has no source position, so its
+// activation is placed first, where it dominates every reference in the unit.
+
+void AstBuilder::prepend_implicit_dependencies(BlockStmt &Block)
+{
+   for (auto &dependency : this->module_dependencies) {
+      if (not dependency->implicit or dependency->activation) continue;
+      Block.statements.insert(Block.statements.begin(),
+         this->make_dependency_activation(*dependency, Block.span));
+   }
+}
+
+//********************************************************************************************************************
+// Record a reference to a canonical module function and return the hidden local that will hold its callable.  The
+// first reference assigns the binding; later references, including those made through an alias of the same module,
+// reuse it so that exactly one closure is created per unique function.
+
+GCstr * AstBuilder::module_function_binding(ModuleDependency &Dependency, GCstr *CanonicalFunction)
+{
+   if (not CanonicalFunction) return nullptr;
+
+   for (const auto &function : Dependency.functions) {
+      if (function.function IS CanonicalFunction) return function.binding;
+   }
+
+   std::string binding_text = std::string("\x1fmodfn:") + Dependency.canonical_module + ":" +
+      std::string(strdata(CanonicalFunction), CanonicalFunction->len);
+   GCstr *binding = this->ctx.lex().keepstr(binding_text);
+   Dependency.functions.push_back({ CanonicalFunction, binding });
+   return binding;
+}
+
+//********************************************************************************************************************
+// Complete every generated dependency activation once the compilation unit has been parsed and the full set of
+// referenced functions is known.  This must run before static descriptor discovery so that the hidden locals are
+// visible to later stages as ordinary declarations.
+//
+// A declaration that references no function still emits BC_MODACT, but needs no artificial local binding.
+//
+// The same pass publishes the portable descriptors that fs_finish colocates with the prototype.  They are recorded
+// even while the hidden-local lowering remains the active dispatch path, so that serialised chunks carry canonical
+// dependency metadata that a fresh state or process can resolve without re-parsing the source.
+
+void AstBuilder::finalise_module_dependencies()
+{
+   this->publish_dependency_descriptors();
+
+   for (auto &dependency : this->module_dependencies) {
+      if (not dependency->activation) continue;
+
+      auto *payload = std::get_if<LocalDeclStmtPayload>(&dependency->activation->data);
+      if (not payload) continue;
+
+      SourceSpan span = dependency->declaration_span;
+      payload->names.clear();
+
+      for (const auto &function : dependency->functions) {
+         // The binding carries neither a declared type nor a <const> attribute.  Its name is unspellable in source
+         // and BC_MODACT initialises it directly from the matching descriptor slot.
+         payload->names.push_back(Identifier::from_keepstr(function.binding, span));
+      }
+   }
+}
+
+//********************************************************************************************************************
+// Record the compilation unit's module dependencies as portable descriptors on the function state.
+//
+// The descriptors hold canonical names only.  A native address or an export-list index is a process identity and
+// would not survive serialisation, whereas a canonical name resolves against the module's current exports in any
+// process.  Deduplication has already happened: aliases of one canonical module share a single ModuleDependency, and
+// module_function_binding() pools repeated references to one function.
+//
+// Descriptors are activation-scope isolated.  Imports use nested builders against the same root function state, so
+// each builder appends its descriptors and rebases its BC_MODACT ordinals rather than replacing earlier imports.
+
+void AstBuilder::publish_dependency_descriptors()
+{
+   if (this->module_dependencies.empty()) return;
+
+   auto &target = this->ctx.func();
+   size_t descriptor_base = target.module_descriptors.size();
+
+   if (descriptor_base + this->module_dependencies.size() > PROTO_MAX_DEPENDENCIES) {
+      this->ctx.emit_error(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+         std::format("A compilation unit may declare at most {} module dependencies", PROTO_MAX_DEPENDENCIES));
+      return;
+   }
+
+   size_t total_functions = 0;
+   for (const auto &descriptor : target.module_descriptors) total_functions += descriptor.functions.size();
+   for (const auto &dependency : this->module_dependencies) total_functions += dependency->functions.size();
+
+   if (total_functions > PROTO_MAX_DEPENDENCY_FUNCTIONS) {
+      this->ctx.emit_error(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+         std::format("A compilation unit may reference at most {} module functions",
+            PROTO_MAX_DEPENDENCY_FUNCTIONS));
+      return;
+   }
+
+   target.module_descriptors.reserve(descriptor_base + this->module_dependencies.size());
+   for (size_t index = 0; index < this->module_dependencies.size(); ++index) {
+      auto &dependency = this->module_dependencies[index];
+      dependency->descriptor = uint32_t(descriptor_base + index);
+      if (dependency->activation) {
+         std::get<LocalDeclStmtPayload>(dependency->activation->data).module_dependency = dependency->descriptor;
+      }
+
+      // Anchor every name as a GC constant of the prototype.  The descriptors outlive parsing, so a name that is not
+      // otherwise emitted as a constant - a dependency-only module in particular - would be unreachable and could be
+      // collected while the prototype still refers to it.
+
+      auto &descriptor = target.module_descriptors.emplace_back();
+      descriptor.name = this->ctx.lex().anchorstr(this->ctx.lex().keepstr(dependency->canonical_module));
+      descriptor.functions.reserve(dependency->functions.size());
+      for (const auto &function : dependency->functions) {
+         descriptor.functions.push_back(this->ctx.lex().anchorstr(function.function));
+      }
+   }
+}
+
+bool AstBuilder::module_is_available(std::string_view Name)
+{
+   AstBuilder *root = this;
+   while (root->parent_builder) root = root->parent_builder;
+
+   std::string canonical(Name);
+   std::transform(canonical.begin(), canonical.end(), canonical.begin(),
+      [](unsigned char Character) { return char(std::tolower(Character)); });
+   if (auto found = root->module_availability.find(canonical); found != root->module_availability.end()) {
+      return found->second;
+   }
+
+   AdjustLogLevel(1);
+   bool available = load_module_defs(Name) IS ERR::Okay;
+   AdjustLogLevel(-1);
+   root->module_availability.emplace(std::move(canonical), available);
+   return available;
+}
+
+void AstBuilder::append_pending_statements(StmtNodeList &Statements)
+{
+   for (auto &statement : this->pending_statements) Statements.push_back(std::move(statement));
+   this->pending_statements.clear();
+}
+
+void AstBuilder::commit_registered_enum_constants()
+{
+   this->registered_enum_constants.clear();
+   this->enum_constants_committed = true;
+}
+
+void AstBuilder::commit_registered_structs()
+{
+   this->registered_structs.clear();
+}
+
+void AstBuilder::track_registered_struct(uint32_t Key)
+{
+   this->registered_structs.push_back(Key);
+}
+
+void AstBuilder::rollback_registered_structs()
+{
+   for (const auto key : this->registered_structs) {
+      this->ctx.lua().struct_declarations.erase(key);
+   }
+   this->registered_structs.clear();
+}
+
+void AstBuilder::track_registered_enum_constant(uint32_t Hash)
+{
+   this->registered_enum_constants.push_back(Hash);
+   this->enum_constants_committed = false;
+}
+
+void AstBuilder::adopt_registered_enum_constants(AstBuilder &Child)
+{
+   this->registered_enum_constants.insert(this->registered_enum_constants.end(),
+      Child.registered_enum_constants.begin(), Child.registered_enum_constants.end());
+   Child.registered_enum_constants.clear();
+}
+
+void AstBuilder::adopt_registered_structs(AstBuilder &Child)
+{
+   this->registered_structs.insert(this->registered_structs.end(),
+      std::make_move_iterator(Child.registered_structs.begin()),
+      std::make_move_iterator(Child.registered_structs.end()));
+   Child.registered_structs.clear();
+}
+
+void AstBuilder::rollback_registered_enum_constants()
+{
+   if (this->enum_constants_committed or this->registered_enum_constants.empty()) return;
+
+   std::unique_lock lock(glConstantMutex);
+   for (uint32_t hash : this->registered_enum_constants) {
+      glConstantRegistry.erase(hash);
+   }
+   this->registered_enum_constants.clear();
+}
+
+void AstBuilder::rollback_registered_enum_hierarchy()
+{
+   this->rollback_registered_enum_constants();
+   this->rollback_registered_structs();
+   if (this->parent_builder) this->parent_builder->rollback_registered_enum_hierarchy();
+}
+
+AstBuilder::FunctionNameScope::FunctionNameScope(AstBuilder &Builder, GCstr *FunctionName) : builder(Builder),
+   saved_handler_depth(Builder.handler_depth)
+{
+   this->builder.handler_depth = 0;
+   this->builder.function_name_stack.push_back(FunctionName ? FunctionName : this->builder.anonymous_function_name());
+}
+
+AstBuilder::FunctionNameScope::~FunctionNameScope()
+{
+   this->builder.function_name_stack.pop_back();
+   this->builder.handler_depth = this->saved_handler_depth;
+}
+
+AstBuilder::BlockDepthScope::BlockDepthScope(AstBuilder &Builder) : builder(Builder)
+{
+   this->builder.block_depth++;
+}
+
+AstBuilder::BlockDepthScope::~BlockDepthScope()
+{
+   this->builder.block_depth--;
+}
+
+GCstr *AstBuilder::anonymous_function_name()
+{
+   return this->ctx.lex().keepstr("Anonymous");
+}
+
+GCstr *AstBuilder::current_function_name()
+{
+   if (this->function_name_stack.empty()) return this->ctx.lex().keepstr("Main");
+   return this->function_name_stack.back();
+}
+
+GCstr *AstBuilder::current_source_file()
+{
+   const char *chunk_arg = this->ctx.lex().chunk_arg;
+   if (not chunk_arg) return this->ctx.lex().keepstr("<runtime>");
+
+   std::string source_file(chunk_arg);
+   if (not source_file.empty() and (source_file[0] IS '@' or source_file[0] IS '=')) {
+      source_file.erase(0, 1);
+   }
+
+   if (source_file.empty()) source_file = "<runtime>";
+   return this->ctx.lex().keepstr(source_file);
 }
 
 //********************************************************************************************************************
@@ -160,7 +721,12 @@ AstBuilder::AstBuilder(ParserContext &Context) : ctx(Context)
 ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_chunk()
 {
    const TokenKind terminators[] = { TokenKind::EndOfFile };
-   return this->parse_block(terminators);
+   auto chunk = this->parse_block(terminators);
+   if (chunk.ok()) {
+      this->prepend_implicit_dependencies(*chunk.value_ref());
+      this->finalise_module_dependencies();
+   }
+   return chunk;
 }
 
 //********************************************************************************************************************
@@ -189,6 +755,10 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_block(std::span<const
          // DIAGNOSE mode: skip to next synchronisation point and continue
          Token error_token = this->ctx.tokens().current();
          [[maybe_unused]] size_t skipped = this->skip_to_synchronisation_point(terminators);
+
+         if (skipped IS 0 and not this->at_end_of_block(terminators)) {
+            this->ctx.tokens().advance();
+         }
 
          #if 0 // Quite noisy, needs a control mechanism
          if (skipped > 0) {
@@ -234,6 +804,7 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_block(std::span<const
 
          statements.push_back(std::move(stmt.value_ref()));
       }
+      this->append_pending_statements(statements);
    }
 
    Token last = this->ctx.tokens().current();
@@ -241,60 +812,31 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_block(std::span<const
 }
 
 //********************************************************************************************************************
-// Check if an identifier is followed by a <const> or <close> attribute.  Due to lexer lookahead buffer complexities,
-// we access the lexer's buffered_tokens directly when the special '<identifier' handling has been triggered.
-//
-// Patterns: `name <attr>`, `name:type <attr>`
-// Returns true if this looks like an implicit local declaration with an attribute.
+// Checks whether a bare comma-separated name list contains a type annotation or recognised declaration attribute.
+// Patterns: `name:type`, `name <attr>`, `name, name:type`, `name, name <attr>`.
 
-static bool is_implicit_local_with_attribute(TokenStreamAdapter& Tokens)
+static bool starts_bare_annotated_name_list(TokenStreamAdapter &Tokens)
 {
-   // Current token must be an identifier (the variable name)
    if (Tokens.current().kind() != TokenKind::Identifier) return false;
 
-   // The lexer has special handling for '<identifier': when it sees '<' followed immediately
-   // by an identifier, it buffers the identifier via push_front and returns '<'.
-   // This means when we peek, the buffered identifier appears BEFORE '<' in the peek order.
-   //
-   // For "b <const> = 10":
-   // - Current: b
-   // - peek(1): const (buffered via push_front by '<identifier' handling)
-   // - peek(2): <
-   // - peek(3): >
-   //
-   // We need to detect: identifier (current) followed by 'const'/'close' then '<' then '>'
-
    size_t pos = 1;
-   Token next = Tokens.peek(pos);
+   while (true) {
+      Token next = Tokens.peek(pos);
+      if (next.kind() IS TokenKind::Colon) return true;
 
-   // Handle optional type annotation before the attribute (:type <const>)
-   if (next.kind() IS TokenKind::Colon) {
-      pos++;
-      next = Tokens.peek(pos);
-      // Type name must be an identifier or reserved type keyword
-      if (next.kind() != TokenKind::Identifier and next.kind() != TokenKind::Function and next.kind() != TokenKind::Nil) {
-         return false;
+      if (next.raw() IS '<') {
+         Token attribute_token = Tokens.peek(pos + 1);
+         GCstr *attribute = attribute_token.kind() IS TokenKind::Identifier ? attribute_token.identifier() : nullptr;
+         if (attribute) {
+            std::string_view name(strdata(attribute), attribute->len);
+            if ((name IS "const" or name IS "close" or name IS "view") and
+                  Tokens.peek(pos + 2).raw() IS '>') return true;
+         }
       }
-      pos++;
-      next = Tokens.peek(pos);
+
+      if (next.kind() != TokenKind::Comma or Tokens.peek(pos + 1).kind() != TokenKind::Identifier) return false;
+      pos += 2;
    }
-
-   // Next should be 'const' or 'close' (the buffered identifier from '<identifier' handling)
-   if (next.kind() != TokenKind::Identifier) return false;
-
-   GCstr* attr_name = next.identifier();
-   if (!attr_name) return false;
-
-   std::string_view attr_str(strdata(attr_name), attr_name->len);
-   if (attr_str != "const" and attr_str != "close") return false;
-
-   // After the attribute name, we should see '<' (which was returned by the lexer)
-   Token angle_open = Tokens.peek(pos + 1);
-   if (angle_open.raw() != '<') return false;
-
-   // After '<', we should see '>'
-   Token angle_close = Tokens.peek(pos + 2);
-   return angle_close.raw() IS '>';
 }
 
 //********************************************************************************************************************
@@ -304,10 +846,32 @@ ParserResult<StmtNodePtr> AstBuilder::parse_statement()
 {
    Token current = this->ctx.tokens().current();
 
+   if (current.kind() IS TokenKind::Identifier and token_identifier_is(current, "context") and
+       this->ctx.tokens().peek(1).kind() IS TokenKind::Identifier) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::DeprecatedSyntax, current,
+         "temporary context blocks use 'using Reference do ... end'");
+   }
+
+   if (current.kind() IS TokenKind::Identifier and current.identifier() and
+         std::string_view(strdata(current.identifier()), current.identifier()->len) IS "struct" and
+         this->ctx.tokens().peek(1).kind() IS TokenKind::Identifier) {
+      return this->parse_struct_declaration();
+   }
+
+   if (current.kind() IS TokenKind::Identifier and current.identifier() and
+         std::string_view(strdata(current.identifier()), current.identifier()->len) IS "module") {
+      Token next = this->ctx.tokens().peek(1);
+      if (next.kind() IS TokenKind::Identifier or next.kind() IS TokenKind::String) {
+         return this->parse_module_decl();
+      }
+   }
+
    switch (current.kind()) {
       case TokenKind::Annotate:      return this->parse_annotated_statement();
-      case TokenKind::Local:         return this->parse_local();
+      case TokenKind::Local:         return this->parse_explicit_local_declaration();
       case TokenKind::Global:        return this->parse_global();
+      case TokenKind::ExternToken:   return this->parse_extern();
+      case TokenKind::Enum:          return this->parse_enum(current);
       case TokenKind::Function:      return this->parse_function_stmt();
       case TokenKind::ThunkToken:    return this->parse_function_stmt();
       case TokenKind::If:            return this->parse_if();
@@ -316,9 +880,11 @@ ParserResult<StmtNodePtr> AstBuilder::parse_statement()
       case TokenKind::For:           return this->parse_for();
       case TokenKind::DoToken:       return this->parse_do();
       case TokenKind::WithToken:     return this->parse_with();
+      case TokenKind::UsingToken:    return this->parse_using();
       case TokenKind::DeferToken:    return this->parse_defer();
       case TokenKind::ReturnToken:   return this->parse_return();
       case TokenKind::TryToken:      return this->parse_try();
+      case TokenKind::CheckallToken:  return this->parse_checkall();
       case TokenKind::RaiseToken:    return this->parse_raise();
       case TokenKind::CheckToken:    return this->parse_check();
       case TokenKind::ImportToken:   return this->parse_import();
@@ -336,9 +902,20 @@ ParserResult<StmtNodePtr> AstBuilder::parse_statement()
          return ParserResult<StmtNodePtr>::success(nullptr);
 
       case TokenKind::Identifier: {
-         // Check for implicit local declaration with <const> or <close> attribute
-         if (is_implicit_local_with_attribute(this->ctx.tokens())) {
-            return this->parse_local();
+         GCstr *identifier = current.identifier();
+         if (identifier and identifier->hash IS HASH_INCLUDE) {
+            Token next = this->ctx.tokens().peek(1);
+            if (next.kind() IS TokenKind::String) return this->parse_include_stmt();
+            if (next.kind() IS TokenKind::LeftParen) {
+               return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, next,
+                  "include uses statement syntax: include 'module', 'module2'");
+            }
+         }
+
+         // This is syntax routing only.  Assignment target resolution decides whether a bare typed assignment creates
+         // a local or writes existing storage.  Declaration attributes retain their legacy declaration AST path.
+         if (starts_bare_annotated_name_list(this->ctx.tokens())) {
+            return this->parse_bare_annotated_assignment();
          }
          return this->parse_expression_stmt();
       }
@@ -348,13 +925,13 @@ ParserResult<StmtNodePtr> AstBuilder::parse_statement()
    }
 }
 
-//********************************************************************************************************************
 // Parses a scoped block with a specified set of terminator tokens, automatically adding end-of-file as a terminator.
 
 ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_scoped_block(std::initializer_list<TokenKind> terminators)
 {
    std::vector<TokenKind> merged(terminators);
    merged.push_back(TokenKind::EndOfFile);
+   BlockDepthScope block_scope(*this);
    return this->parse_block(merged);
 }
 
@@ -372,35 +949,9 @@ bool AstBuilder::at_end_of_block(std::span<const TokenKind> terminators) const
 
 // Checks if a token kind can begin a statement.
 
-bool AstBuilder::is_statement_start(TokenKind kind) const
+bool AstBuilder::is_statement_start(TokenKind Kind) const
 {
-   switch (kind) {
-      case TokenKind::Local:
-      case TokenKind::Global:
-      case TokenKind::Function:
-      case TokenKind::ThunkToken:
-      case TokenKind::Annotate:
-      case TokenKind::If:
-      case TokenKind::WhileToken:
-      case TokenKind::Repeat:
-      case TokenKind::For:
-      case TokenKind::DoToken:
-      case TokenKind::WithToken:
-      case TokenKind::DeferToken:
-      case TokenKind::ReturnToken:
-      case TokenKind::BreakToken:
-      case TokenKind::ContinueToken:
-      case TokenKind::Choose:
-      case TokenKind::TryToken:
-      case TokenKind::RaiseToken:
-      case TokenKind::CheckToken:
-      case TokenKind::ImportToken:
-      case TokenKind::NamespaceToken:
-      case TokenKind::CompileIf:
-         return true;
-      default:
-         return false;
-   }
+   return token_kind_has_flag(Kind, TKF_STATEMENT_START);
 }
 
 //********************************************************************************************************************
@@ -445,6 +996,7 @@ Identifier AstBuilder::make_identifier(const Token &Token)
    Identifier id;
    id.symbol   = Token.identifier();
    id.span     = Token.span();
+   id.is_future_reserved = Token.is_future_reserved_keyword();
    // Check if the identifier is a blank placeholder (single underscore)
    id.is_blank = id.symbol and id.symbol->len IS 1 and strdata(id.symbol)[0] IS '_';
    return id;

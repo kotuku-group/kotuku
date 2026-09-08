@@ -1,0 +1,203 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>NetServer</name>
+    <type>class</type>
+    <module>Network</module>
+    <comment>Listens for inbound TCP or UDP communication.</comment>
+    <version>1</version>
+    <id>61231fb4</id>
+    <idstring>NETSERVER</idstring>
+    <category>Network</category>
+    <copyright>Paul Manias © 2005-2026</copyright>
+    <description>
+<p>The NetServer class extends NetSocket with local bind, listen and accepted-client management.  For TCP listeners, each accepted connection is represented by a ClientSocket and grouped by client IP address in NetClient records. For UDP listeners, incoming datagrams are received through the inherited <code>Incoming</code> callback and can be read with <code>RecvFrom()</code>.</p>
+<header>SSL Server Certificates</header>
+<p>For SSL NetServer listeners, custom certificates can be specified using the <fl>SSLCertificate</fl> field.  Both PEM and PKCS#12 formats are supported across all platforms.</p>
+<p>Example with PKCS#12 certificate:</p>
+<pre>netserver = obj.new('netserver', {
+   flags = 'SSL',
+   port = 8443,
+   sslCertificate = 'config:ssl/server.p12',
+   sslKeyPassword = 'password123'
+})
+</pre>
+<p>Example with PEM certificate and separate private key:</p>
+<pre>netserver = obj.new('netserver', {
+   flags = 'SSL',
+   port = 8443,
+   sslCertificate = 'config:ssl/server.crt',
+   sslPrivateKey = 'config:ssl/server.key'
+})
+</pre>
+<p>If no custom certificate is specified, the framework will automatically use a localhost self-signed certificate for development purposes.  For production use, always specify a proper certificate signed by a trusted CA.</p></description>
+    <source>
+      <file>class_netserver.cpp</file>
+    </source>
+  </info>
+
+  <actions>
+    <action>
+      <name>Read</name>
+      <comment>Reads raw data information from objects.</comment>
+      <prototype>ERR acRead(*Object, std::span&lt;int8_t&gt; Buffer, INT *Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acRead(Buffer:array&lt;any&gt;)</tiriPrototype>
+      <input>
+        <param type="std::span&lt;int8_t&gt;" name="Buffer">A mutable buffer that will receive the data.</param>
+        <param type="INT" name="Result">The Read action will write this parameter with the total number of bytes read into the Buffer.</param>
+      </input>
+    </action>
+
+    <action>
+      <name>Write</name>
+      <comment>Writes data to objects that provide storage or output services.</comment>
+      <prototype>ERR acWrite(*Object, std::span&lt;const int8_t&gt; Buffer, INT *Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acWrite(Buffer:str)</tiriPrototype>
+      <input>
+        <param type="std::span&lt;const int8_t&gt;" name="Buffer">A buffer containing the data that will be written to the object.</param>
+        <param type="INT" name="Result">This parameter with be updated with the total number of bytes written from the Buffer.</param>
+      </input>
+    </action>
+
+  </actions>
+
+  <methods>
+    <method>
+      <name>DisconnectClient</name>
+      <comment>Disconnects all sockets connected to a specific client IP.</comment>
+      <prototype>ERR ns::DisconnectClient(OBJECTPTR Object, objNetClient * Client)</prototype>
+      <tiriPrototype>err = DisconnectClient(Client:obj)</tiriPrototype>
+      <input>
+        <param type="objNetClient *" name="Client">The client to be disconnected.</param>
+      </input>
+      <description>
+<p>For NetServer listeners with client IP connections, this method will terminate all socket connections made to a specific client IP and free the resources allocated to it.  If #Feedback is defined, a <code>DISCONNECTED</code> state message will also be issued for each socket connection.</p>
+<p>If only one socket connection needs to be disconnected, please use <method>DisconnectSocket</method>.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="WrongClass">The Client object is not of type <code>NetClient</code>.</error>
+      </result>
+      <tags>mutates-object, closes-handle</tags>
+    </method>
+
+    <method>
+      <name>DisconnectSocket</name>
+      <comment>Disconnects a single socket that is connected to a client IP address.</comment>
+      <prototype>ERR ns::DisconnectSocket(OBJECTPTR Object, objClientSocket * Socket)</prototype>
+      <tiriPrototype>err = DisconnectSocket(Socket:obj)</tiriPrototype>
+      <input>
+        <param type="objClientSocket *" name="Socket">The client socket to be disconnected.</param>
+      </input>
+      <description>
+<p>This method will disconnect a socket connection for a given client.  If #Feedback is defined, a <code>DISCONNECTED</code> state message will also be issued.</p>
+<p>NOTE: To terminate the connection of a socket acting as the client, either free the object or return/raise <code>ERR::Terminate</code> during <code>Incoming</code> feedback.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="WrongClass">An object is not of the required class type</error>
+      </result>
+      <tags>mutates-object, closes-handle</tags>
+    </method>
+
+  </methods>
+
+  <fields>
+    <field>
+      <name>Backlog</name>
+      <comment>The maximum number of connections that can be queued against the socket.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT</type>
+      <description>
+<p>Incoming TCP connections to NetServer objects are queued until they are accepted by the object.  Setting the Backlog adjusts the maximum number of connections on the queue, which otherwise defaults to 10.</p>
+<p>If the backlog is exceeded, subsequent connections to the socket should expect a connection refused error.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>ClientLimit</name>
+      <comment>The maximum number of clients (unique IP addresses) that can be connected to a NetServer.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT</type>
+      <description>
+<p>The ClientLimit value limits the maximum number of IP addresses that can be connected to the socket at any one time. For socket limits per client, see the <fl>SocketLimit</fl> field.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Clients</name>
+      <comment>Lists all NetClient records connected to the NetServer.</comment>
+      <access read="R">Read</access>
+      <type>OBJECTPTR</type>
+    </field>
+
+    <field>
+      <name>SSLCertificate</name>
+      <comment>SSL certificate file to use for SSL NetServer listeners.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>STRING</type>
+      <description>
+<p>Set SSLCertificate to the path of an SSL certificate file to use when the NetServer is initialised with SSL enabled. The certificate file must be in a supported format such as PEM, CRT, or P12.  If no certificate is defined, the NetServer will either self-sign or use a localhost certificate, if available.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>SSLKeyPassword</name>
+      <comment>SSL private key password.</comment>
+      <access read="R" write="I">Read/Init</access>
+      <type>STRING</type>
+      <description>
+<p>If the SSL private key is encrypted, set this field to the password required to decrypt it.  If the private key is not encrypted, this field can be left empty.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>SocketLimit</name>
+      <comment>The maximum number of sockets that can be connected from a single client IP address.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT</type>
+      <description>
+<p>The SocketLimit value limits how many simultaneous ClientSocket connections may be opened by one NetClient record.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>TotalClients</name>
+      <comment>Indicates the total number of clients currently connected to the NetServer.</comment>
+      <access read="R">Read</access>
+      <type>INT</type>
+      <description>
+<p>NetServer maintains a count of the total number of currently connected TCP client sockets.  You can read the total number of connections from this field.</p>
+      </description>
+    </field>
+
+  </fields>
+  <types>
+    <constants lookup="NSF" comment="NetSocket options">
+      <const name="BROADCAST">Enable broadcast (UDP only).</const>
+      <const name="DISABLE_SERVER_VERIFY">Disable SSL server certificate verification for client sockets (testing only).</const>
+      <const name="KEEP_ALIVE">Enable TCP keep-alive probes using operating system defaults.</const>
+      <const name="LOG_ALL">Print extra log messages.</const>
+      <const name="MULTI_CONNECT">Allow multiple connections from the same IP (NetServer only).</const>
+      <const name="SSL">Use Secure Sockets Layer for all communication.</const>
+      <const name="SYNCHRONOUS">Use synchronous (blocking) network calls.</const>
+      <const name="UDP">Use UDP (connectionless datagram protocol) instead of TCP.</const>
+    </constants>
+
+    <constants lookup="NTC" comment="NetSocket states">
+      <const name="CONNECTED">There is an active connection at present.</const>
+      <const name="CONNECTING">A connection is being established.</const>
+      <const name="DISCONNECTED">There is no connection.</const>
+      <const name="HANDSHAKING">An SSL connection is being established.</const>
+      <const name="MULTISTATE">A NetServer reports MULTISTATE because accepted ClientSocket objects track their own states.</const>
+      <const name="RESOLVING">The host name is being resolved.</const>
+    </constants>
+
+  </types>
+  <structs>
+  </structs>
+</book>

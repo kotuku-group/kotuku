@@ -11,6 +11,11 @@ static const struct FieldDef clDisplayFlags[] = {
    { "AlphaBlend", 0x00000040 },
    { "Composite", 0x00000040 },
    { "GrabControllers", 0x00000080 },
+   { "Primary", 0x00000100 },
+   { "Active", 0x00000200 },
+   { "Mirrored", 0x00000400 },
+   { "Virtual", 0x00000800 },
+   { "Rotated", 0x00001000 },
    { "Maxsize", 0x00100000 },
    { "Refresh", 0x00200000 },
    { "Hosted", 0x02000000 },
@@ -44,7 +49,8 @@ FDEF maSetDisplay[] = { { "X", FD_INT }, { "Y", FD_INT }, { "Width", FD_INT }, {
 FDEF maSizeHints[] = { { "MinWidth", FD_INT }, { "MinHeight", FD_INT }, { "MaxWidth", FD_INT }, { "MaxHeight", FD_INT }, { "EnforceAspect", FD_INT }, { 0, 0 } };
 FDEF maSetGamma[] = { { "Red", FD_DOUBLE }, { "Green", FD_DOUBLE }, { "Blue", FD_DOUBLE }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF maSetGammaLinear[] = { { "Red", FD_DOUBLE }, { "Green", FD_DOUBLE }, { "Blue", FD_DOUBLE }, { "Flags", FD_INT }, { 0, 0 } };
-FDEF maSetMonitor[] = { { "Name", FD_STR }, { "MinH", FD_INT }, { "MaxH", FD_INT }, { "MinV", FD_INT }, { "MaxV", FD_INT }, { "Flags", FD_INT }, { 0, 0 } };
+FDEF maSetMonitor[] = { { "Name", FDF_CPPSTRING }, { "MinH", FD_INT }, { "MaxH", FD_INT }, { "MinV", FD_INT }, { "MaxV", FD_INT }, { "Flags", FD_INT }, { 0, 0 } };
+FDEF maGetFrame[] = { { "Left", FD_RESULT|FD_INT }, { "Top", FD_RESULT|FD_INT }, { "Right", FD_RESULT|FD_INT }, { "Bottom", FD_RESULT|FD_INT }, { 0, 0 } };
 
 static const struct MethodEntry clDisplayMethods[] = {
    { AC(-1), (APTR)DISPLAY_WaitVBL, "WaitVBL", 0, 0 },
@@ -56,8 +62,19 @@ static const struct MethodEntry clDisplayMethods[] = {
    { AC(-7), (APTR)DISPLAY_SetMonitor, "SetMonitor", maSetMonitor, sizeof(struct gfx::SetMonitor) },
    { AC(-8), (APTR)DISPLAY_Minimise, "Minimise", 0, 0 },
    { AC(-9), (APTR)DISPLAY_CheckXWindow, "CheckXWindow", 0, 0 },
+   { AC(-10), (APTR)DISPLAY_GetFrame, "GetFrame", maGetFrame, sizeof(struct gfx::GetFrame) },
    { AC::NIL, 0, 0, 0, 0 }
 };
+
+static ERR DISPLAY_New(extDisplay *Self) {
+   new (Self) extDisplay(Self->Class, Self->UID);
+   return ERR::Okay;
+}
+
+static ERR DISPLAY_Free(extDisplay *Self) {
+   Self->~extDisplay();
+   return ERR::Okay;
+}
 
 static const struct ActionArray clDisplayActions[] = {
    { AC::Activate, DISPLAY_Activate },
@@ -69,15 +86,13 @@ static const struct ActionArray clDisplayActions[] = {
    { AC::Flush, DISPLAY_Flush },
    { AC::Focus, DISPLAY_Focus },
    { AC::Free, DISPLAY_Free },
-   { AC::GetKey, DISPLAY_GetKey },
    { AC::Hide, DISPLAY_Hide },
    { AC::Init, DISPLAY_Init },
    { AC::Move, DISPLAY_Move },
    { AC::MoveToBack, DISPLAY_MoveToBack },
    { AC::MoveToFront, DISPLAY_MoveToFront },
    { AC::MoveToPoint, DISPLAY_MoveToPoint },
-   { AC::NewObject, DISPLAY_NewObject },
-   { AC::NewPlacement, DISPLAY_NewPlacement },
+   { AC::New, DISPLAY_New },
    { AC::Redimension, DISPLAY_Redimension },
    { AC::Resize, DISPLAY_Resize },
    { AC::SaveImage, DISPLAY_SaveImage },

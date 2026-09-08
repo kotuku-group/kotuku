@@ -65,10 +65,28 @@ static const struct FieldDef clPointerPTC[] = {
    { nullptr, 0 }
 };
 
-static const struct FieldDef clPointerPF[] = {
-   { "Unused", 0x00000001 },
-   { "Visible", 0x00000002 },
-   { "Anchor", 0x00000004 },
-   { nullptr, 0 }
+static ERR POINTER_New(extPointer *Self) {
+   new (Self) extPointer(Self->Class, Self->UID);
+   return ERR::Okay;
+}
+
+static ERR POINTER_Free(extPointer *Self) {
+   Self->~extPointer();
+   return ERR::Okay;
+}
+
+static const struct ActionArray clPointerActions[] = {
+   { AC::DataFeed, POINTER_DataFeed },
+   { AC::Free, POINTER_Free },
+   { AC::Hide, POINTER_Hide },
+   { AC::Init, POINTER_Init },
+   { AC::Move, POINTER_Move },
+   { AC::MoveToPoint, POINTER_MoveToPoint },
+   { AC::New, POINTER_New },
+   { AC::Refresh, POINTER_Refresh },
+   { AC::Reset, POINTER_Reset },
+   { AC::SaveToObject, POINTER_SaveToObject },
+   { AC::Show, POINTER_Show },
+   { AC::NIL, nullptr }
 };
 

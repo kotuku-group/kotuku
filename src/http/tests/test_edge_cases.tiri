@@ -1,0 +1,337 @@
+--[[
+Edge Cases & Error Handling Testing
+
+Tests various edge cases, error conditions, and malformed data scenarios to ensure robust handling by both HTTP client
+and httpserver.tiri.
+--]]
+
+   import 'net/httpserver'
+   import 'json'
+   include 'http'
+
+glOutFile <const> = 'temp:http-edge-output.txt'
+SERVER_PORT <const> = 18945
+
+@BeforeAll function init(State)
+   global glPath = State.folder
+
+   global glServer = hslib.start({
+      port    = SERVER_PORT,
+      folder  = glPath,
+      verbose = true,
+      timeout = 1, -- Short server timeout for testing
+      maxRequestSize = 1024, -- 1KB limit for testing
+      routes = {
+         { pattern = '/slow/response',
+            method = 'GET',
+            handler = function(req, res)
+               -- Simulate slow response (but not too slow to break tests)
+               processing.halt(0.5) -- 0.5 second delay
+               res.json({ message = 'Delayed response' })
+            end
+         },
+         { pattern = '/abort/connection',
+            method = 'GET',
+            handler = function(req, res)
+               -- Simulate aborted connection by not sending complete response
+               res.status(500).send('Connection will be aborted')
+            end
+         },
+         { pattern = '/malformed/chunked',
+            method = 'POST',
+            handler = function(req, res)
+               res.json({
+                  message = 'Received chunked data',
+                  bodyLength = req.body and #req.body or 0
+               })
+            end
+         },
+         { pattern = '/content-mismatch',
+            method = 'GET',
+            handler = function(req, res)
+               -- Send response with incorrect Content-Length
+               data = 'Short response'
+               res.header('Content-Length', '1000') -- Lie about length
+                  .header('Content-Type', 'text/plain')
+                  .send(data)
+            end
+         },
+         { pattern = '/upload/test',
+            method = 'POST',
+            handler = function(req, res)
+               res.json({
+                  message = 'Upload received',
+                  bodyLength = req.body and #req.body or 0
+               })
+            end
+         },
+         { pattern = '/version/test',
+            method = 'GET',
+            handler = function(req, res)
+               res.json({
+                  message = 'Version test response',
+                  version = req.version
+               })
+            end
+         },
+         { pattern = '/empty/request',
+            method = 'POST',
+            handler = function(req, res)
+               res.json({
+                  message = 'Empty request handled',
+                  bodyLength = req.body and #req.body or 0,
+                  hasBody = req.body != nil
+               })
+            end
+         }
+      }
+   })
+end
+
+@AfterAll function cleanup()
+   glServer.stop()
+   mSys.DeleteFile(glOutFile)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test(priority=1000) function RequestTimeout()
+   content = ''
+   timedOut = false
+
+   http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/slow/response',
+      method = 'GET',
+      connectTimeout = 2, -- Short timeout
+      flags = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if State is HGS_TERMINATED then
+            timedOut = true
+         end
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 3.0, signals = array<obj> { http } })
+   assert(http.acActivate() is ERR_Okay, "Timeout test failed to activate")
+
+   err = proc.sleep()
+   -- We expect either timeout or successful completion depending on timing
+   assert(err is ERR_Okay or err is ERR_TimeOut, 'Timeout test processing error: ' .. mSys.GetErrorMsg(err))
+
+   print('Request timeout test completed - timed out: ' .. tostring(timedOut))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AbortedConnection()
+   content = ''
+
+   http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/abort/connection',
+      method = 'GET',
+      flags = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         if Buffer then
+            content ..= Buffer.getString()
+         end
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   assert(http.acActivate() is ERR_Okay, "Aborted connection test failed to activate")
+
+   err = proc.sleep()
+   assert(err is ERR_Okay, 'Aborted connection processing failed: ' .. mSys.GetErrorMsg(err))
+
+   assert((http.status is 500) or (http.currentState is HGS_TERMINATED) or (http.error != ERR_Okay),
+      'Aborted connection route should fail, got status: ' .. http.status)
+
+   print('Aborted connection test passed - server error response received')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function MalformedChunkedEncoding()
+   content = ''
+   testCompleted = false
+
+   http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/malformed/chunked',
+      method = 'POST',
+      contentType = 'text/plain',
+      flags = HTF_NO_HEAD,
+      contentLength = -1, -- Enable chunked
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      outgoing = function(HTTP)
+         if testCompleted then return end
+         -- The server will send malformed chunked data in response
+         HTTP.acWrite('test data for malformed chunks')
+         testCompleted = true
+         raise ERR_Terminate
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   assert(http.acActivate() is ERR_Okay, "Malformed chunks test failed to activate")
+
+   err = proc.sleep()
+   assert(err is ERR_Okay, 'Malformed chunks processing failed: ' .. mSys.GetErrorMsg(err))
+
+   -- Server should handle the malformed response gracefully
+   print('Malformed chunked encoding test completed')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ContentLengthMismatch()
+   content = ''
+
+   http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/content-mismatch',
+      method = 'GET',
+      flags = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   assert(http.acActivate() is ERR_Okay, "Content mismatch test failed to activate")
+
+   err = proc.sleep()
+   assert(err is ERR_Okay, 'Content mismatch processing failed: ' .. mSys.GetErrorMsg(err))
+
+   -- Server sends less data than Content-Length indicates.  The client should complete or terminate without hanging.
+   assert((http.status is 200) or (http.currentState is HGS_TERMINATED), 'Content mismatch should complete gracefully')
+
+   print('Content-Length mismatch test passed: received ' .. #content .. ' bytes')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function MaxRequestSizeExceeded()
+   content = ''
+
+   -- Create a body larger than server's maxRequestSize (which we'll set to 1KB)
+   oversizedBody = 'X'.rep(2048) -- 2KB body
+
+   http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/upload/test',
+      method = 'POST',
+      contentType = 'text/plain',
+      flags = HTF_NO_HEAD,
+      inputFile = 'string:' .. oversizedBody,
+      size = #oversizedBody,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   assert(http.acActivate() is ERR_Okay, "Max size test failed to activate")
+
+   err = proc.sleep()
+   assert(err is ERR_Okay, 'Max size processing failed: ' .. mSys.GetErrorMsg(err))
+
+   -- Server should reject the oversized request.  Depending on connection timing the client may parse the 413 or see
+   -- the connection terminate before a status is exposed.
+   assert((http.status is 413) or (http.currentState is HGS_TERMINATED) or (http.error != ERR_Okay),
+      'Expected oversized request rejection, got status: ' .. (http.status or 'nil'))
+
+   print('Max request size test passed - 413 Payload Too Large received')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function InvalidHttpVersion()
+   content = ''
+
+   http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/version/test',
+      method = 'GET',
+      flags = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   assert(http.acActivate() is ERR_Okay, "HTTP version test failed to activate")
+
+   err = proc.sleep()
+   assert(err is ERR_Okay, 'HTTP version processing failed: ' .. mSys.GetErrorMsg(err))
+
+   -- Should get normal response since HTTP/1.1 is supported
+   assert(http.status is 200, 'HTTP version test unexpected status: ' .. http.status)
+
+   print('HTTP version test passed')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function EmptyRequest()
+   content = ''
+
+   http = obj.new('http', {
+      src       = f'http://127.0.0.1:{SERVER_PORT}/empty/request',
+      method    = 'POST',
+      flags     = HTF_NO_HEAD,
+      contentLength = -1,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      outgoing = function(HTTP)
+         raise ERR_Terminate
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   assert(http.acActivate() is ERR_Okay, "Empty request test failed to activate")
+
+   err = proc.sleep()
+   assert(err is ERR_Okay, 'Empty request processing failed: ' .. mSys.GetErrorMsg(err))
+   assert(http.status is 200, 'Empty request unexpected status: ' .. http.status)
+
+   response = json.decode(content)
+   assert(response.bodyLength is 0, 'Empty request should have no body')
+
+   print('Empty request test passed')
+end

@@ -24,6 +24,50 @@ static bool contains_safe_nav_target(const ExprNode& Expr)
    }
 }
 
+static bool emit_identifier_name_is(GCstr *Name, std::string_view Text)
+{
+   return Name and std::string_view(strdata(Name), Name->len) IS Text;
+}
+
+static GCstr * emit_literal_string_key(const ExprNode &Expr)
+{
+   if (Expr.kind != AstNodeKind::LiteralExpr) return nullptr;
+   const auto &literal = std::get<LiteralValue>(Expr.data);
+   if (literal.kind != LiteralKind::String) return nullptr;
+   return literal.string_value;
+}
+
+static bool is_global_environment_reference(LexState &State, const ExprNode &Expr)
+{
+   if (Expr.kind != AstNodeKind::IdentifierExpr) return false;
+
+   const auto *name_ref = std::get_if<NameRef>(&Expr.data);
+   if (not name_ref or not emit_identifier_name_is(name_ref->identifier.symbol, "_G")) return false;
+
+   ExpDesc resolved;
+   State.var_lookup_symbol(name_ref->identifier.symbol, &resolved);
+   return resolved.k IS ExpKind::Global or resolved.k IS ExpKind::Unscoped;
+}
+
+static GCstr * protected_global_store_key(LexState &State, const ExprNode &Expr)
+{
+   GCstr *key = nullptr;
+
+   if (Expr.kind IS AstNodeKind::MemberExpr) {
+      const auto &payload = std::get<MemberExprPayload>(Expr.data);
+      if (payload.table and is_global_environment_reference(State, *payload.table)) key = payload.member.symbol;
+   }
+   else if (Expr.kind IS AstNodeKind::IndexExpr) {
+      const auto &payload = std::get<IndexExprPayload>(Expr.data);
+      if (payload.table and payload.index and is_global_environment_reference(State, *payload.table)) {
+         key = emit_literal_string_key(*payload.index);
+      }
+   }
+
+   if (key and ((key->flags & STRFLAG_PROTECTED_GLOBAL) != 0)) return key;
+   return nullptr;
+}
+
 static void patch_safe_nav_skip_here(PreparedAssignment& Target, FuncState& State)
 {
    if (Target.safe_nav_skip.valid()) Target.safe_nav_skip.patch_to(BCPos(State.pc));
@@ -46,116 +90,179 @@ static ParserResult<IrEmitUnit> assignment_value_count_error(
    }
    SourceSpan span = raw ? raw->span : SourceSpan{};
    return ParserResult<IrEmitUnit>::failure(
-      ParserError(ParserErrorCode::InternalInvariant, Token::from_span(span, TokenKind::Unknown), Message));
+      Emitter->make_error(ParserErrorCode::InternalInvariant, Message, span));
+}
+
+static void collect_concat_operands(const ExprNode &Expr, std::vector<const ExprNode *> &Operands)
+{
+   if (not Expr.is_grouped and Expr.kind IS AstNodeKind::BinaryExpr) {
+      const auto &payload = std::get<BinaryExprPayload>(Expr.data);
+      if (payload.op IS AstBinaryOperator::Concat and payload.left and payload.right) {
+         collect_concat_operands(*payload.left, Operands);
+         collect_concat_operands(*payload.right, Operands);
+         return;
+      }
+   }
+
+   Operands.push_back(&Expr);
+}
+
+static SourceSpan concat_literal_run_span(const ExprNode &Start, const ExprNode &End)
+{
+   SourceSpan span = Start.span;
+   span.offset = End.span.offset;
+   span.line = End.span.line;
+   span.column = End.span.column;
+   return span;
+}
+
+static bool append_concat_literal_piece(LexState *State, const ExprNode &Expr, std::string &Text)
+{
+   if (not (Expr.kind IS AstNodeKind::LiteralExpr)) return false;
+
+   const auto &literal = std::get<LiteralValue>(Expr.data);
+   switch (literal.kind) {
+      case LiteralKind::String:
+         if (not literal.string_value) return false;
+         Text.append(strdata(literal.string_value), literal.string_value->len);
+         return true;
+
+      case LiteralKind::Number: {
+         TValue value;
+         setnumV(&value, literal.number_value);
+         GCstr *number_text = lj_strfmt_number(State->L, &value);
+         Text.append(strdata(number_text), number_text->len);
+         return true;
+      }
+
+      default:
+         return false;
+   }
+}
+
+static void flush_folded_concat_literal_run(LexState *State, std::vector<const ExprNode *> &FoldedOperands,
+   std::vector<ExprNodePtr> &FoldedNodes, std::vector<const ExprNode *> &Run, std::string &RunText)
+{
+   if (Run.empty()) return;
+
+   if (Run.size() IS 1) {
+      FoldedOperands.push_back(Run.front());
+   }
+   else {
+      SourceSpan span = concat_literal_run_span(*Run.front(), *Run.back());
+      GCstr *folded = State->keepstr(std::string_view(RunText.data(), RunText.size()));
+      FoldedNodes.push_back(make_literal_expr(span, LiteralValue::string(folded)));
+      FoldedOperands.push_back(FoldedNodes.back().get());
+   }
+
+   Run.clear();
+   RunText.clear();
+}
+
+static void fold_adjacent_concat_literals(LexState *State, const std::vector<const ExprNode *> &Operands,
+   std::vector<const ExprNode *> &FoldedOperands, std::vector<ExprNodePtr> &FoldedNodes)
+{
+   std::vector<const ExprNode *> run;
+   std::string run_text;
+
+   for (const ExprNode *operand : Operands) {
+      if (append_concat_literal_piece(State, *operand, run_text)) {
+         run.push_back(operand);
+         continue;
+      }
+
+      flush_folded_concat_literal_run(State, FoldedOperands, FoldedNodes, run, run_text);
+      FoldedOperands.push_back(operand);
+   }
+
+   flush_folded_concat_literal_run(State, FoldedOperands, FoldedNodes, run, run_text);
+}
+
+static const VarInfo * array_append_find_local(const FuncState &State, GCstr *Name)
+{
+   if (not Name) return nullptr;
+
+   for (int32_t slot = int32_t(State.varmap.size()) - 1; slot >= 0; --slot) {
+      const VarInfo &info = State.var_get(slot);
+      GCstr *name = strref(info.name);
+      if (name IS Name) return &info;
+   }
+
+   return nullptr;
+}
+
+static TiriType array_append_identifier_type(const FuncState &State, const NameRef &Reference)
+{
+   if (const VarInfo *info = array_append_find_local(State, Reference.identifier.symbol)) return info->fixed_type;
+   return Reference.identifier.type;
+}
+
+static TiriType array_append_call_result_type(const FuncState &State, const CallExprPayload &Call)
+{
+   if (Call.result_type != TiriType::Unknown) return Call.result_type;
+
+   const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
+   if (not direct or not direct->callable) return TiriType::Unknown;
+
+   if (direct->callable->kind IS AstNodeKind::IdentifierExpr) {
+      const auto *name_ref = std::get_if<NameRef>(&direct->callable->data);
+      if (name_ref and name_ref->identifier.symbol) {
+         if (const VarInfo *info = array_append_find_local(State, name_ref->identifier.symbol)) {
+            return info->result_types[0];
+         }
+         if (auto proto = get_func_prototype_by_hash(name_ref->identifier.symbol->hash)) return proto->first_result();
+      }
+   }
+   else if (direct->callable->kind IS AstNodeKind::MemberExpr) {
+      const auto *member = std::get_if<MemberExprPayload>(&direct->callable->data);
+      if (member and member->table and member->table->kind IS AstNodeKind::IdentifierExpr and member->member.symbol) {
+         const auto *iface = std::get_if<NameRef>(&member->table->data);
+         if (iface and iface->identifier.symbol) {
+            if (array_append_find_local(State, iface->identifier.symbol)) return TiriType::Unknown;
+            if (auto proto = get_prototype_by_hash(iface->identifier.symbol->hash, member->member.symbol->hash)) {
+               return proto->first_result();
+            }
+         }
+      }
+   }
+
+   return TiriType::Unknown;
+}
+
+static bool array_append_piece_can_skip_concat(const FuncState &State, const ExprNode &Expr)
+{
+   if (Expr.kind IS AstNodeKind::LiteralExpr) {
+      const auto &literal = std::get<LiteralValue>(Expr.data);
+      return literal.kind IS LiteralKind::String or literal.kind IS LiteralKind::Number;
+   }
+
+   TiriType type = TiriType::Unknown;
+   if (Expr.kind IS AstNodeKind::IdentifierExpr) {
+      type = array_append_identifier_type(State, std::get<NameRef>(Expr.data));
+   }
+   else if (Expr.kind IS AstNodeKind::CallExpr) {
+      type = array_append_call_result_type(State, std::get<CallExprPayload>(Expr.data));
+   }
+   else {
+      type = infer_expression_type(Expr);
+   }
+
+   return type IS TiriType::Str or type IS TiriType::Num or type IS TiriType::Array;
+}
+
+static bool array_append_pieces_can_skip_concat(const FuncState &State, const std::vector<const ExprNode *> &Pieces)
+{
+   for (const ExprNode *piece : Pieces) {
+      if (not piece or not array_append_piece_can_skip_concat(State, *piece)) return false;
+   }
+
+   return true;
 }
 
 //********************************************************************************************************************
 // Emit bytecode for a plain assignment, storing values into one or more target lvalues.  NB: This generic function
 // exists over the local/global specific implementations because of the need to handle complex scenarios
 // involving mixed scope variables on the LHS.
-
-ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment_safe_multi(const ExprNodeList& targets, const ExprNodeList& values)
-{
-   auto nvars = BCReg(BCREG(targets.size()));
-   if (not nvars) return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
-
-   // Multi-target safe-nav assignment cannot use the Phase 1 single-target shortcut where a failed
-   // safe-nav hop skips RHS evaluation entirely. Later targets still need their mapped values, so we
-   // evaluate the RHS list once using the normal assignment rules, then guard each individual store.
-
-   ExpDesc tail(ExpKind::Void);
-   auto nexps = BCReg(0);
-   if (not values.empty()) {
-      auto list = this->emit_expression_list(values, nexps);
-      if (not list.ok()) return ParserResult<IrEmitUnit>::failure(list.error_ref());
-      tail = list.value_ref();
-   }
-
-   RegisterAllocator allocator(&this->func_state);
-
-   if (tail.k IS ExpKind::Call) {
-      if (bc_op(*ir_bcptr(&this->func_state, &tail)) IS BC_VARG) {
-         setbc_b(ir_bcptr(&this->func_state, &tail), nvars.raw() + 1);
-         this->func_state.freereg--;
-         if (nvars > BCReg(1)) allocator.reserve(BCReg(nvars.raw() - 1));
-      }
-      else {
-         setbc_b(ir_bcptr(&this->func_state, &tail), nvars.raw() + 1);
-         if (nvars > BCReg(1)) allocator.reserve(BCReg(nvars.raw() - 1));
-      }
-   }
-   else {
-      this->lex_state.assign_adjust(nvars.raw(), nexps.raw(), &tail);
-   }
-
-   BCReg value_base = (tail.k IS ExpKind::Call) ? BCReg(tail.u.s.aux)
-                                                : BCReg(this->func_state.freereg - nvars.raw());
-
-   for (size_t i = 0; i < targets.size(); ++i) {
-      const ExprNodePtr& node = targets[i];
-      if (not node) {
-         return ParserResult<IrEmitUnit>::failure(this->make_error(
-            ParserErrorCode::InternalInvariant, "assignment target missing"));
-      }
-
-      PreparedAssignment prepared;
-      auto lvalue = this->emit_lvalue_expr(*node, true, contains_safe_nav_target(*node) ? &prepared.safe_nav_skip : nullptr);
-      if (not lvalue.ok()) return ParserResult<IrEmitUnit>::failure(lvalue.error_ref());
-
-      ExpDesc slot = lvalue.value_ref();
-      if (slot.k IS ExpKind::Unscoped) {
-         prepared.needs_var_add  = true;
-         prepared.newly_created  = true;
-         prepared.pending_symbol = slot.u.sval;
-         prepared.pending_line   = node->span.line;
-         prepared.pending_column = node->span.column;
-      }
-
-      TableOperandCopies copies = allocator.duplicate_table_operands(slot);
-      prepared.storage = copies.duplicated;
-      prepared.reserved = std::move(copies.reserved);
-      prepared.target = LValue::from_expdesc(&prepared.storage);
-
-      // `value_base` is computed before we rebuild each target. That keeps multi-return and assign_adjust
-      // behaviour identical to normal assignment while allowing each target to independently skip its store.
-      BCReg value_slot = value_base + BCReg(i);
-
-      if (is_blank_target(prepared.storage)) {
-         release_prepared_assignment(allocator, this->func_state, prepared);
-         continue;
-      }
-
-      if (prepared.needs_var_add and prepared.pending_symbol) {
-         this->lex_state.var_new(BCReg(0), prepared.pending_symbol, prepared.pending_line, prepared.pending_column);
-         this->lex_state.var_add(BCReg(1));
-         BCReg local_slot = BCReg(this->func_state.varmap.size() - 1);
-
-         if (i < values.size()) {
-            auto inferred = infer_expression_type_ext(*values[i]);
-            if (inferred.type != TiriType::Unknown and inferred.type != TiriType::Any and inferred.type != TiriType::Nil) {
-               VarInfo* info = &this->func_state.var_get(local_slot.raw());
-               info->fixed_type = inferred.type;
-               info->object_class_id = inferred.object_class_id;
-            }
-         }
-
-         if (value_slot.raw() != local_slot.raw()) {
-            bcemit_AD(&this->func_state, BC_MOV, local_slot, value_slot);
-         }
-         this->update_local_binding(prepared.pending_symbol, local_slot);
-      }
-      else {
-         ExpDesc value_expr;
-         value_expr.init(ExpKind::NonReloc, value_slot);
-         bcemit_store(&this->func_state, &prepared.storage, &value_expr);
-      }
-
-      release_prepared_assignment(allocator, this->func_state, prepared);
-   }
-
-   this->func_state.reset_freereg();
-   return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
-}
 
 ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAssignment> targets, const ExprNodeList& values)
 {
@@ -212,7 +319,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
    }
 
    // If ALL targets are new locals (undeclared), use a simpler approach similar to local declarations
-   if (pending_locals IS nvars) {
+   bool has_explicit_type = std::ranges::any_of(targets, [](const PreparedAssignment &Target) {
+      return Target.pending_type != TiriType::Unknown;
+   });
+   if (pending_locals IS nvars and not has_explicit_type) {
       // Register all new variable names with var_new
       BCReg idx = BCReg(0);
       for (PreparedAssignment& target : targets) {
@@ -240,16 +350,12 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
       for (BCReg i = BCReg(0); i < nvars; ++i) {
          PreparedAssignment& target = targets[i.raw()];
          if (target.pending_symbol) {
+            VarInfo *info = &this->func_state.var_get((base + i).raw());
+            info->binding_id = target.binding_id;
             this->update_local_binding(target.pending_symbol, base + i);
 
-            // Infer type from initialiser expression (same logic as emit_local_decl_stmt)
-            if (i.raw() < values.size()) {
-               auto inferred = infer_expression_type_ext(*values[i.raw()]);
-               if (inferred.type != TiriType::Unknown and inferred.type != TiriType::Any and inferred.type != TiriType::Nil) {
-                  VarInfo* info = &this->func_state.var_get(base.raw() + i.raw());
-                  info->fixed_type = inferred.type;
-                  info->object_class_id = inferred.object_class_id;
-               }
+            if (not this->apply_analysed_local_type(base + i, target.binding_id) and i.raw() < values.size()) {
+               this->apply_inferred_local_type(base + i, *values[i.raw()]);
             }
          }
       }
@@ -275,13 +381,13 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
       // Handle call results - adjust for multi-return
       if (tail.k IS ExpKind::Call) {
          if (bc_op(*ir_bcptr(&this->func_state, &tail)) IS BC_VARG) {
-            setbc_b(ir_bcptr(&this->func_state, &tail), nvars.raw() + 1);
+            set_call_result_count(&this->func_state, tail, nvars.raw() + 1);
             this->func_state.freereg--;
             allocator.reserve(BCReg(nvars.raw() - 1));
          }
          else {
             // Fixup call result count
-            setbc_b(ir_bcptr(&this->func_state, &tail), nvars.raw() + 1);
+            set_call_result_count(&this->func_state, tail, nvars.raw() + 1);
             if (nvars > BCReg(1)) {
                allocator.reserve(BCReg(nvars.raw() - 1));
             }
@@ -310,25 +416,17 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
 
          if (target.needs_var_add and target.pending_symbol) {
             // Create new local for this undeclared variable
-            this->lex_state.var_new(BCReg(0), target.pending_symbol, target.pending_line, target.pending_column);
-            this->lex_state.var_add(BCReg(1));
-            BCReg local_slot = BCReg(this->func_state.varmap.size() - 1);
+            BCReg local_slot = this->finalise_pending_local_assignment(target);
 
-            // Infer type from initialiser expression
-            if (i < values.size()) {
-               auto inferred = infer_expression_type_ext(*values[i]);
-               if (inferred.type != TiriType::Unknown and inferred.type != TiriType::Any and inferred.type != TiriType::Nil) {
-                  VarInfo* info = &this->func_state.var_get(local_slot.raw());
-                  info->fixed_type = inferred.type;
-                  info->object_class_id = inferred.object_class_id;
-               }
+            // Retain expression inference only when semantic analysis did not publish a binding result.
+            if (this->func_state.var_get(local_slot.raw()).fixed_type IS TiriType::Unknown and
+                i < values.size()) {
+               this->apply_inferred_local_type(local_slot, *values[i]);
             }
 
-            // If the value isn't already at the local slot, move it
-            if (value_slot.raw() != local_slot.raw()) {
-               bcemit_AD(&this->func_state, BC_MOV, local_slot, value_slot);
-            }
-            this->update_local_binding(target.pending_symbol, local_slot);
+            ExpDesc value_expr;
+            value_expr.init(ExpKind::NonReloc, value_slot);
+            bcemit_store(&this->func_state, &target.storage, &value_expr);
          }
          else {
             // Existing target - copy value to it
@@ -414,8 +512,66 @@ ParserResult<IrEmitUnit> IrEmitter::emit_compound_assignment(AssignmentOperator 
    TableOperandCopies copies = allocator.duplicate_table_operands(target.storage);
    ExpDesc working = copies.duplicated;
 
+   auto finish_compound_assignment = [&]() {
+      register_guard.release_to(register_guard.saved());
+      allocator.release(copies.reserved);
+      release_prepared_assignment(allocator, this->func_state, target);
+      this->func_state.reset_freereg();
+      register_guard.adopt_saved(BCReg(this->func_state.freereg));
+      return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
+   };
+
    ExpDesc rhs;
-      if (mapped.value() IS BinOpr::Concat) {
+   const bool direct_known_non_array = (target.storage.k IS ExpKind::Local or target.storage.k IS ExpKind::Upval) and
+      not (target.storage.result_type IS TiriType::Array or target.storage.result_type IS TiriType::Unknown or
+         target.storage.result_type IS TiriType::Any);
+   const bool use_append_helper = mapped.value() IS BinOpr::Concat and not direct_known_non_array;
+
+   if (use_append_helper) {
+      if (values.size() != 1) {
+         return assignment_value_count_error(this, values,
+            "compound assignment expects exactly one RHS value");
+      }
+
+      auto call_base = BCReg(this->func_state.free_reg());
+      bcemit_builtin_call_frame(
+         &this->func_state, builtin_callable_id(FastFunc::array_append), call_base);
+
+      this->materialise_to_next_reg(working, "array append compound receiver");
+
+      static constexpr size_t max_flattened_append_pieces = 16;
+      std::vector<const ExprNode *> append_pieces;
+      collect_concat_operands(*values.front(), append_pieces);
+      std::vector<ExprNodePtr> folded_append_nodes;
+      std::vector<const ExprNode *> folded_append_pieces;
+      fold_adjacent_concat_literals(this->func_state.ls, append_pieces, folded_append_pieces, folded_append_nodes);
+
+      if (folded_append_pieces.size() > max_flattened_append_pieces or
+         not array_append_pieces_can_skip_concat(this->func_state, folded_append_pieces)) {
+         auto list = this->emit_expression_list(values, count);
+         if (not list.ok()) return ParserResult<IrEmitUnit>::failure(list.error_ref());
+
+         rhs = list.value_ref();
+         this->materialise_to_next_reg(rhs, "array compound append argument");
+      }
+      else {
+         for (const ExprNode *piece : folded_append_pieces) {
+            auto piece_result = this->emit_expression(*piece);
+            if (not piece_result.ok()) return ParserResult<IrEmitUnit>::failure(piece_result.error_ref());
+            ExpDesc piece_expr = piece_result.value_ref();
+            this->materialise_to_next_reg(piece_expr, "array compound append piece");
+         }
+      }
+
+      ExpDesc result;
+      result.init(ExpKind::Call, bcemit_ABC(&this->func_state, BC_CALL, call_base, 2,
+         this->func_state.freereg - call_base - 1));
+      result.u.s.aux = call_base;
+      if (target.storage.result_type IS TiriType::Array) result.result_type = TiriType::Array;
+
+      bcemit_store(&this->func_state, &target.storage, &result);
+   }
+   else if (mapped.value() IS BinOpr::Concat) {
       ExpDesc infix = working;
       // CONCAT compound assignment: use OperatorEmitter for BC_CAT chaining
       this->operator_emitter.prepare_concat(ExprValue(&infix));
@@ -444,26 +600,34 @@ ParserResult<IrEmitUnit> IrEmitter::emit_compound_assignment(AssignmentOperator 
       rhs = list.value_ref();
       ExpDesc infix = working;
 
+      StaticValueDescriptor operation_descriptor;
+      if (working.static_value and rhs.static_value) {
+         operation_descriptor = describe_arithmetic_result(
+            this->ctx.descriptors().value(working.static_value),
+            this->ctx.descriptors().value(rhs.static_value));
+      }
+
       // Use OperatorEmitter for arithmetic compound assignments (+=, -=, *=, /=, %=)
       this->operator_emitter.emit_binary_arith(mapped.value(), ExprValue(&infix), rhs);
+
+      infix.static_value = this->ctx.descriptors().add_value(operation_descriptor);
+      infix.static_results = {};
+      infix.object_class_id = CLASSID::NIL;
+      infix.struct_def = nullptr;
 
       bcemit_store(&this->func_state, &target.storage, &infix);
    }
 
-   register_guard.release_to(register_guard.saved());
-   allocator.release(copies.reserved);
-   release_prepared_assignment(allocator, this->func_state, target);
-   this->func_state.reset_freereg();
-   register_guard.adopt_saved(BCReg(this->func_state.freereg));
-   return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
+   return finish_compound_assignment();
 }
 
 //********************************************************************************************************************
-// Emit bytecode for an if-empty assignment (??=), assigning only if the target is nil, false, 0, or empty string.
+// Emit bytecode for an if-empty assignment (??=), assigning only if the target is nil, false, 0, empty string, or
+// an empty collection.
 
 ParserResult<IrEmitUnit> IrEmitter::emit_if_empty_assignment(PreparedAssignment target, const ExprNodeList& values)
 {
-   if (values.empty() or not vkisvar(target.storage.k)) {
+   if (values.empty() or not expkind_is_variable_like(target.storage.k)) {
       return this->unsupported_stmt(AstNodeKind::AssignmentStmt, SourceSpan{});
    }
 
@@ -481,16 +645,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_if_empty_assignment(PreparedAssignment 
          return this->unsupported_stmt(AstNodeKind::AssignmentStmt, span);
       }
 
-      // Finalize deferred local variable now that expression is evaluated
+      // Finalise deferred local variable now that expression is evaluated
 
       if (target.needs_var_add and target.pending_symbol) {
-         this->lex_state.var_new(BCReg(0), target.pending_symbol, target.pending_line, target.pending_column);
-         this->lex_state.var_add(BCReg(1));
-         BCReg slot = BCReg(this->func_state.varmap.size() - 1);
-         // Update target.storage to point to the new local
-         target.storage.init(ExpKind::Local, slot);
-         target.storage.u.s.aux = this->func_state.varmap[slot.raw()];
-         this->update_local_binding(target.pending_symbol, slot);
+         this->finalise_pending_local_assignment(target);
       }
 
       ExpDesc rhs = list.value_ref();
@@ -511,22 +669,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_if_empty_assignment(PreparedAssignment 
    ExpressionValue lhs_value(&this->func_state, working);
    auto lhs_reg = lhs_value.discharge_to_any_reg(allocator);
 
-   ExpDesc nilv(ExpKind::Nil);
-   ExpDesc falsev(ExpKind::False);
-   ExpDesc zerov(0.0);
-   ExpDesc emptyv(this->lex_state.intern_empty_string());
-
-   bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQP, lhs_reg, const_pri(&nilv)));
-   ControlFlowEdge check_nil = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
-
-   bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQP, lhs_reg, const_pri(&falsev)));
-   ControlFlowEdge check_false = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
-
-   bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQN, lhs_reg, const_num(&this->func_state, &zerov)));
-   ControlFlowEdge check_zero = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
-
-   bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQS, lhs_reg, const_str(&this->func_state, &emptyv)));
-   ControlFlowEdge check_empty = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
+   FalseyJumpOptions options;
+   options.include_empty_array = true;
+   ControlFlowEdge falsey_edge = emit_falsey_jumps(
+      this->func_state, this->control_flow, lhs_reg, options);
 
    // Safe-nav targets may already carry a skip edge from target preparation. Those jumps bypass this
    // whole conditional-assignment block. The checks below are only for the terminal lvalue once the
@@ -539,16 +685,13 @@ ParserResult<IrEmitUnit> IrEmitter::emit_if_empty_assignment(PreparedAssignment 
 
    if (count != 1) {
       return assignment_value_count_error(this, values,
-         "??= assignment expects exactly one RHS value");
+         "?" "?= assignment expects exactly one RHS value");
    }
 
    ExpDesc rhs = list.value_ref();
    bcemit_store(&this->func_state, &target.storage, &rhs);
 
-   check_nil.patch_to(BCPos(assign_pos));
-   check_false.patch_to(BCPos(assign_pos));
-   check_zero.patch_to(BCPos(assign_pos));
-   check_empty.patch_to(BCPos(assign_pos));
+   falsey_edge.patch_to(BCPos(assign_pos));
    skip_assign.patch_to(BCPos(this->func_state.pc));
 
    register_guard.release_to(register_guard.saved());
@@ -565,7 +708,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_if_empty_assignment(PreparedAssignment 
 
 ParserResult<IrEmitUnit> IrEmitter::emit_if_nil_assignment(PreparedAssignment target, const ExprNodeList& values)
 {
-   if (values.empty() or not vkisvar(target.storage.k)) {
+   if (values.empty() or not expkind_is_variable_like(target.storage.k)) {
       return this->unsupported_stmt(AstNodeKind::AssignmentStmt, SourceSpan{});
    }
 
@@ -583,16 +726,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_if_nil_assignment(PreparedAssignment ta
          return this->unsupported_stmt(AstNodeKind::AssignmentStmt, span);
       }
 
-      // Finalize deferred local variable now that expression is evaluated
+      // Finalise deferred local variable now that expression is evaluated
 
       if (target.needs_var_add and target.pending_symbol) {
-         this->lex_state.var_new(BCReg(0), target.pending_symbol, target.pending_line, target.pending_column);
-         this->lex_state.var_add(BCReg(1));
-         BCReg slot = BCReg(this->func_state.varmap.size() - 1);
-         // Update target.storage to point to the new local
-         target.storage.init(ExpKind::Local, slot);
-         target.storage.u.s.aux = this->func_state.varmap[slot.raw()];
-         this->update_local_binding(target.pending_symbol, slot);
+         this->finalise_pending_local_assignment(target);
       }
 
       ExpDesc rhs = list.value_ref();
@@ -613,11 +750,14 @@ ParserResult<IrEmitUnit> IrEmitter::emit_if_nil_assignment(PreparedAssignment ta
    ExpressionValue lhs_value(&this->func_state, working);
    auto lhs_reg = lhs_value.discharge_to_any_reg(allocator);
 
-   // Only check for nil (simpler and faster than ??= which checks nil, false, 0, and empty string)
-   ExpDesc nilv(ExpKind::Nil);
-
-   bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQP, lhs_reg, const_pri(&nilv)));
-   ControlFlowEdge check_nil = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
+   // Only check for nil (simpler and faster than ??= which checks nil, false, 0, empty strings, and empty
+   // collections).
+   FalseyJumpOptions nil_only;
+   nil_only.include_false = false;
+   nil_only.include_zero = false;
+   nil_only.include_empty_string = false;
+   ControlFlowEdge check_nil = emit_falsey_jumps(
+      this->func_state, this->control_flow, lhs_reg, nil_only);
 
    // As with ??= above, any safe-nav skip edge lands after this emitter's store path. The nil check here
    // runs only when target preparation proved that the guarded chain itself was non-nil.
@@ -659,13 +799,24 @@ ParserResult<std::vector<PreparedAssignment>> IrEmitter::prepare_assignment_targ
    lhs.reserve(Targets.size());
    RegisterAllocator allocator(&this->func_state);
 
-   auto prv = (prvTiri *)this->func_state.ls->L->script->ChildPrivate;
-   bool trace_assignments = (prv->JitOptions & JOF::TRACE_ASSIGNMENTS) != JOF::NIL;
+   auto script = this->func_state.ls->L->script;
+   bool trace_assignments = (script->JitOptions & JOF::TRACE_ASSIGNMENTS) != JOF::NIL;
 
    for (const ExprNodePtr &node : Targets) {
       if (not node) {
          return ParserResult<std::vector<PreparedAssignment>>::failure(this->make_error(
             ParserErrorCode::InternalInvariant, "assignment target missing"));
+      }
+
+      // Computed '_G[key]' assignment is permitted: the runtime environment mutation boundary enforces sticky
+      // contracts and protected built-ins for every environment store.
+
+      if (GCstr *protected_name = protected_global_store_key(this->lex_state, *node)) {
+         return ParserResult<std::vector<PreparedAssignment>>::failure(this->make_error(
+            ParserErrorCode::OverrideProtectedGlobal,
+            std::format("cannot override built-in '{}'",
+               std::string_view(strdata(protected_name), protected_name->len)),
+            node->span));
       }
 
       PreparedAssignment prepared;
@@ -681,6 +832,12 @@ ParserResult<std::vector<PreparedAssignment>> IrEmitter::prepare_assignment_targ
          prepared.needs_var_add  = true;
          prepared.newly_created  = true;
          prepared.pending_symbol = slot.u.sval;
+         if (const auto *name_ref = std::get_if<NameRef>(&node->data)) {
+            prepared.binding_id = name_ref->binding_id;
+            prepared.pending_type = name_ref->identifier.type;
+            prepared.pending_struct_def = name_ref->identifier.struct_def;
+            prepared.pending_array_element = name_ref->identifier.array_element;
+         }
          prepared.pending_line   = node->span.line;
          prepared.pending_column = node->span.column;
          // Don't convert to Local yet - keep as Unscoped for now
@@ -694,7 +851,7 @@ ParserResult<std::vector<PreparedAssignment>> IrEmitter::prepare_assignment_targ
 
       if (trace_assignments and prepared.reserved.count().raw() > 0) {
          auto target_kind = prepared.target.is_indexed() ? "indexed" : "member";
-         pf::Log("Parser").msg("[%d] assignment: prepared %s target, duplicated %d registers (R%d..R%d)",
+         kt::Log("Parser").msg("[%d] assignment: prepared %s target, duplicated %d registers (R%d..R%d)",
             this->func_state.ls->linenumber.lineNumber(), target_kind,
             unsigned(prepared.reserved.count().raw()), unsigned(prepared.reserved.start().raw()),
             unsigned(prepared.reserved.start().raw() + prepared.reserved.count().raw() - 1));
@@ -705,7 +862,7 @@ ParserResult<std::vector<PreparedAssignment>> IrEmitter::prepare_assignment_targ
             bool refresh_table = existing.target.is_indexed()
                and existing.target.get_table_reg() IS prepared.target.get_local_reg();
 
-            bool refresh_key = existing.target.is_indexed() and is_register_key(existing.storage.u.s.aux)
+            bool refresh_key = existing.target.is_indexed() and IndexOperand(existing.storage.u.s.aux).is_register()
                and existing.target.get_key_reg() IS prepared.target.get_local_reg();
 
             bool refresh_member = existing.target.is_member()

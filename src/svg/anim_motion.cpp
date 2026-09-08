@@ -3,7 +3,7 @@
 
 void anim_motion::precalc_angles()
 {
-   if (points.empty()) return;
+   if (points.size() < 2) return;
 
    // Start by calculating all angles from point to point.
 
@@ -31,7 +31,7 @@ void anim_motion::precalc_angles()
 
 static ERR motion_callback(objVector *Vector, int Index, int Cmd, double X, double Y, anim_motion &Motion)
 {
-   Motion.points.push_back(pf::POINT<float> { float(X), float(Y) });
+   Motion.points.push_back(kt::POINT<float> { float(X), float(Y) });
    return ERR::Okay;
 };
 
@@ -45,14 +45,15 @@ void anim_motion::perform()
 
    if ((end_time) and (!freeze)) return;
 
-   pf::ScopedObjectLock<objVector> vector(target_vector, 1000);
+   kt::ScopedObjectLock<objVector> vector(target_vector, 1000);
    if (!vector.granted()) return;
 
    // Note that the order of processing here is important, and matches the priorities documented for SVG's
    // animateMotion property.
 
    if ((mpath) or (not path.empty())) {
-      auto new_timestamp = vector->get<int>(FID_PathTimestamp);
+      int new_timestamp;
+      vector->getPathTimestamp(new_timestamp);
 
       if ((points.empty()) or (path_timestamp != new_timestamp)) {
          // Trace the path and store its points.  Transforms are completely ignored when pulling the path from
@@ -62,11 +63,15 @@ void anim_motion::perform()
 
          points.clear();
          if (mpath) {
-            if ((mpath->trace(call, vector->get<double>(FID_DisplayScale), false) != ERR::Okay) or (points.empty())) return;
+            double display_scale;
+            vector->getDisplayScale(display_scale);
+            if ((mpath->trace(call, display_scale, false) != ERR::Okay) or (points.size() < 2)) return;
          }
-         else if ((path->trace(call, 1.0, false) != ERR::Okay) or (points.empty())) return;
+         else if ((path->trace(call, 1.0, false) != ERR::Okay) or (points.size() < 2)) return;
 
-         path_timestamp = vector->get<int>(FID_PathTimestamp);
+         vector->getPathTimestamp(path_timestamp);
+         total_dist = 0;
+         distances.clear();
 
          if ((auto_rotate IS ART::AUTO) or (auto_rotate IS ART::AUTO_REVERSE)) {
             precalc_angles();
@@ -85,7 +90,7 @@ void anim_motion::perform()
          a = points[i];
          b = points[i+1];
 
-         seek_to = (dist_pos - distances[i]) / (distances[i+1] - distances[i]);
+         seek_to = interval_seek(dist_pos, distances[i], distances[i+1]);
 
          if ((auto_rotate IS ART::AUTO) or (auto_rotate IS ART::AUTO_REVERSE)) {
             angle = (angles[i] * (1.0 - seek_to)) + (angles[i+1] * seek_to);
@@ -99,8 +104,7 @@ void anim_motion::perform()
          a = points[i];
          b = points[i+1];
 
-         const double mod = 1.0 / double(points.size() - 1);
-         seek_to = (seek >= 1.0) ? 1.0 : fmod(seek, mod) / mod;
+         seek_to = mod_seek(seek, points.size());
 
          if ((auto_rotate IS ART::AUTO) or (auto_rotate IS ART::AUTO_REVERSE)) {
             angle = (angles[i] * (1.0 - seek_to)) + (angles[i+1] * seek_to);
@@ -115,9 +119,11 @@ void anim_motion::perform()
       if (calc_mode IS CMODE::PACED) {
          const auto dist_pos = seek * get_total_dist();
          for (i=0; (i < std::ssize(distances)-1) and (distances[i+1] < dist_pos); i++);
-         seek_to = (dist_pos - distances[i]) / (distances[i+1] - distances[i]);
+         seek_to = interval_seek(dist_pos, distances[i], distances[i+1]);
       }
       else if (calc_mode IS CMODE::SPLINE) {
+         if (spline_paths.empty()) return;
+
          i = 0;
          if (timing.size() IS spline_paths.size()) {
             for (i=0; (i < std::ssize(timing)-1) and (timing[i+1] < seek); i++);
@@ -138,18 +144,12 @@ void anim_motion::perform()
 
          const double x = (seek >= 1.0) ? 1.0 : fmod(seek, 1.0 / double(std::ssize(spline_paths))) * std::ssize(spline_paths);
 
-         int si;
-         for (si=0; (si < std::ssize(sp.points)-1) and (sp.points[si+1].point.x < x); si++);
-
-         const double mod_x = x - sp.points[si].point.x;
-         const double c = mod_x / sp.points[si].cos_angle;
-         seek_to = std::clamp(sp.points[si].point.y + std::sqrt((c * c) - (mod_x * mod_x)), 0.0, 1.0);
+         seek_to = spline_seek(sp, x);
       }
       else { // CMODE::LINEAR: Interpolate between the two values
          i = int((std::ssize(values)-1) * seek);
          if (i >= std::ssize(values)-1) i = values.size() - 2;
-         const double mod = 1.0 / double(values.size() - 1);
-         seek_to = (seek >= 1.0) ? 1.0 : fmod(seek, mod) / mod;
+         seek_to = mod_seek(seek, values.size());
       }
 
       read_numseq(values[i], { &a.x, &a.y });
@@ -188,7 +188,7 @@ void anim_motion::perform()
       else vec::Translate(matrix, b.x, b.y);
    }
    else { // CMODE::LINEAR
-      pf::POINT<double> final { a.x + ((b.x - a.x) * seek_to), a.y + ((b.y - a.y) * seek_to) };
+      kt::POINT<double> final { a.x + ((b.x - a.x) * seek_to), a.y + ((b.y - a.y) * seek_to) };
       vec::Translate(matrix, final.x, final.y);
    }
 }

@@ -5,11 +5,16 @@ module({ name='XQuery', src='xquery.cpp', copyright='Paul Manias © 2025-2026', 
   cpp_include('<functional>', '<optional>', '<sstream>', '<kotuku/strings.hpp>', '<string_view>', '<vector>')
 
   restrict(function()
-    loadFile('sdk:src/xml/constants.tdl')
+    loadFile('../xml/constants.tdl')
   end)
 
+  privateNames({ 'XPathValue' })
+
   -- Shared enumerations for parser and evaluator state, including map/array node kinds.
-  loadFile('sdk:src/xquery/constants.tdl')
+  loadFile('./constants.tdl')
+
+  flags("XEF", { comment="Options for XQuery evaluation flags." },
+    "LIMIT_SCOPE: For tag specific queries, limit the scope to the specified element.")
 
   methods('xquery', 'XQ', {
     { id=1, name='Evaluate' },
@@ -18,17 +23,24 @@ module({ name='XQuery', src='xquery.cpp', copyright='Paul Manias © 2025-2026', 
     { id=4, name='InspectFunctions' }
   })
 
-  class('XQuery', {
+  klass('XQuery', {
+    extended   = true,
     src        = 'xquery_class.cpp',
     output     = 'xquery_class_def.cpp',
-    references = { 'XQF', 'XPVT' },
+    references = { 'XQF', 'XPVT', 'XEF' },
     comment    = 'Provides an interface for XQuery evaluation and execution.' }, [[
+    string ErrorMsg    # A readable description of the last parse or execution error.
+    string Path        # Base path for resolving relative references.
+    string Statement   # XQuery statements are specified here.
+    large  MemoryUsage # The total amount of memory allocated by the last compilation or evaluation.
+    ~struct(*XPathValue) Result
   ]])
 
   c_insert([[
 namespace xq {
 
 using XQueryFunction = ERR (*)(objXQuery *Query, std::string_view FunctionName, const std::vector<XPathValue> &Input, XPathValue &Result, APTR Meta);
+using XQueryResolveVariable = ERR (*)(objXQuery *Query, std::string_view Name, XPathValue *Result, APTR Meta);
 
 } // namespace xq
   ]])

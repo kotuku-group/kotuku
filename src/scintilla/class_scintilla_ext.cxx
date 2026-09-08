@@ -1,6 +1,8 @@
 
 // Style codes for each lexer are defined in SciLexer.h
 
+#include <format>
+
 #define COL_BLACK          0x000000
 #define COL_DARKSLATEGREY  0x2F4F4F
 #define COL_LIGHTSLATEGREY 0x576889
@@ -57,7 +59,7 @@ static const struct styledef c_styles[] = {
 
 void ScintillaKTK::SetStyles(const struct styledef *Def, int Total)
 {
-   pf::Log log("SetStyles");
+   kt::Log log("SetStyles");
    int i, index;
 
    log.branch("%d", Total);
@@ -120,9 +122,7 @@ ScintillaKTK::~ScintillaKTK()
 
 void ScintillaKTK::Finalise()
 {
-   pf::Log log(__FUNCTION__);
-
-   log.trace("");
+   kt::Log(__FUNCTION__).trace("");
 
    SetTicking(true);
    ScintillaBase::Finalise();
@@ -132,25 +132,21 @@ void ScintillaKTK::Finalise()
 
 void ScintillaKTK::CreateCallTipWindow(Scintilla::PRectangle rc)
 {
-   pf::Log log(__FUNCTION__);
-   log.trace("");
+   kt::Log(__FUNCTION__).trace("");
 }
 
 //********************************************************************************************************************
 
 void ScintillaKTK::AddToPopUp(const char *label, int cmD, bool enabled)
 {
-   pf::Log log(__FUNCTION__);
-   log.trace("%s", label);
+   kt::Log(__FUNCTION__).trace("%s", label);
 
    // The one and only Menu object is a member of ScintillaBase: Menu popup;
 
-   auto menu = reinterpret_cast<OBJECTPTR>(popup.GetID());
-
-   if (menu) {
-      char buffer[200];
-      snprintf(buffer, sizeof(buffer), "<item text=\"%s\"></item>", label);
-      acDataXML(menu, buffer);
+   if (auto menu = OBJECTPTR(popup.GetID()); menu) {
+      auto buffer = std::format("<item text=\"{}\"></item>", label);
+      acDataFeed(menu, nullptr, DATA::XML,
+         std::span<const int8_t>((const int8_t *)buffer.data(), buffer.size()));
    }
 }
 
@@ -158,7 +154,7 @@ void ScintillaKTK::AddToPopUp(const char *label, int cmD, bool enabled)
 
 void ScintillaKTK::SetVerticalScrollPos()
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    log.traceBranch("%d", topLine);
 
@@ -179,7 +175,7 @@ void ScintillaKTK::SetVerticalScrollPos()
 
 void ScintillaKTK::SetHorizontalScrollPos()
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    log.traceBranch("%d", xOffset);
 
@@ -201,7 +197,7 @@ void ScintillaKTK::SetHorizontalScrollPos()
 
 bool ScintillaKTK::ModifyScrollBars(int nMax, int nPage)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (scintilla->ScrollLocked) return FALSE;
 #if 0
@@ -254,7 +250,7 @@ bool ScintillaKTK::ModifyScrollBars(int nMax, int nPage)
 
 void ScintillaKTK::ReconfigureScrollBars()
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.traceBranch();
 
 /*
@@ -272,12 +268,12 @@ void ScintillaKTK::ReconfigureScrollBars()
 
 void ScintillaKTK::CopyToClipboard(const Scintilla::SelectionText &selectedText)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.traceBranch();
 
    auto clipboard = objClipboard::create { };
-   if (clipboard.ok()) {
-      if (clipboard->addText(selectedText.s) IS ERR::Okay) {
+   if ((clipboard.ok()) and (selectedText.s) and (selectedText.len > 0)) {
+      if (!clipboard->addText(std::string_view(selectedText.s, size_t(selectedText.len - 1)))) {
 
       }
    }
@@ -289,7 +285,7 @@ void ScintillaKTK::CopyToClipboard(const Scintilla::SelectionText &selectedText)
 
 void ScintillaKTK::Cut()
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.traceBranch();
 
    if (SendScintilla(SCI_GETSELECTIONSTART) != SendScintilla(SCI_GETSELECTIONEND)) {
@@ -306,7 +302,7 @@ void ScintillaKTK::Cut()
 
 void ScintillaKTK::Copy()
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.traceBranch();
 
    if (SendScintilla(SCI_GETSELECTIONSTART) != SendScintilla(SCI_GETSELECTIONEND)) {
@@ -320,46 +316,37 @@ void ScintillaKTK::Copy()
 
 void ScintillaKTK::Paste()
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    log.traceBranch();
 
    objClipboard::create clipboard = { };
    if (clipboard.ok()) {
-      CSTRING *files;
-      if (clipboard->getFiles(CLIPTYPE::TEXT, 0, nullptr, &files, nullptr) IS ERR::Okay) {
+      kt::vector<std::string> files;
+      if (!clipboard->getFiles(CLIPTYPE::TEXT, 0, nullptr, files, nullptr)) {
          objFile::create file = { fl::Path(files[0]), fl::Flags(FL::READ) };
          if (file.ok()) {
-            int len, size;
-            if ((file->get(FID_Size, size) IS ERR::Okay) and (size > 0)) {
-               STRING buffer;
-               if (AllocMemory(size, MEM::STRING, &buffer) IS ERR::Okay) {
-                  if (file->read(buffer, size, &len) IS ERR::Okay) {
-                     pdoc->BeginUndoAction();
+            int64_t len, size;
+            if ((!file->getSize(size)) and (size > 0)) {
+               std::vector<char> buffer(size);
+               if (!file->read(buffer.data(), size, &len)) {
+                  pdoc->BeginUndoAction();
 
-                        ClearSelection();
-                        pdoc->InsertString(CurrentPosition(), (char *)buffer, len);
-                        SetEmptySelection(CurrentPosition() + len);
+                     ClearSelection();
+                     pdoc->InsertString(CurrentPosition(), (char *)buffer.data(), len);
+                     SetEmptySelection(CurrentPosition() + len);
 
-                     pdoc->EndUndoAction();
+                  pdoc->EndUndoAction();
 
-                     NotifyChange();
-                     Redraw();
+                  NotifyChange();
+                  Redraw();
 
-                     calc_longest_line(scintilla);
-                  }
-                  else error_dialog("Paste Error", "Failed to read data from the clipboard file.", ERR::Okay);
-
-                  FreeResource(buffer);
+                  calc_longest_line(scintilla);
                }
-               else error_dialog("Paste Error", nullptr, ERR::AllocMemory);
+               else error_dialog("Paste Error", "Failed to read data from the clipboard file.", ERR::Okay);
             }
          }
-         else {
-            char msg[200];
-            snprintf(msg, sizeof(msg), "Failed to load clipboard file \"%s\"", files[0]);
-            error_dialog("Paste Error", msg, ERR::Okay);
-         }
+         else error_dialog("Paste Error", std::format("Failed to load clipboard file \"{}\"", files[0]), ERR::Okay);
       }
    }
 }
@@ -369,7 +356,7 @@ void ScintillaKTK::Paste()
 
 void ScintillaKTK::ClaimSelection()
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.traceBranch();
    if (!SelectionEmpty()) primarySelection = true;
    else primarySelection = false;
@@ -388,7 +375,7 @@ void ScintillaKTK::NotifyChange()
 
 void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
 {
-   pf::Log log("SciMsg");
+   kt::Log log("SciMsg");
    int code;
 
    if (!(code = scn.nmhdr.code)) return;
@@ -488,7 +475,7 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
       log.trace("[SAVEPOINTLEFT]");
 
       if (!scintilla->HoldModify) {
-         scintilla->set(FID_Modified, TRUE);
+         scintilla->setModified(TRUE);
       }
       else {
          // 'Hold Modifications' means that we have to tell Scintilla that the document is unmodified.
@@ -648,7 +635,7 @@ void ScintillaKTK::ScrollText(int linesToMove)
    ActionMsg(drw::MoveContent, surfaceid, &movecontent);
 */
    Scintilla::PRectangle rect = GetClientRectangle();
-   pf::ScopedObjectLock surface(surfaceid);
+   kt::ScopedObjectLock surface(surfaceid);
    if (surface.granted()) acDrawArea(*surface, rect.left, rect.top, rect.Width(), rect.Height());
 }
 
@@ -656,7 +643,7 @@ void ScintillaKTK::ScrollText(int linesToMove)
 
 void ScintillaKTK::SetTicking(bool On)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.traceBranch("State: %d", On);
 
    if (!On) ticking_on = false;
@@ -672,7 +659,7 @@ void ScintillaKTK::SetTicking(bool On)
 
 void ScintillaKTK::SetMouseCapture(bool On)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.traceBranch("State: %d", On);
    captured_mouse = On;
 }
@@ -727,7 +714,7 @@ sptr_t ScintillaKTK::DefWndProc(unsigned int iMessage, uptr_t wParam, sptr_t lPa
 
 void ScintillaKTK::panDraw(objSurface *TargetSurface, objBitmap *Bitmap)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    Scintilla::PRectangle rcClient;
    Scintilla::Surface *surface;
 
@@ -768,7 +755,7 @@ void ScintillaKTK::panDraw(objSurface *TargetSurface, objBitmap *Bitmap)
 
 void ScintillaKTK::panFontChanged(void *Font, void *BoldFont, void *ItalicFont, void *BIFont)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.traceBranch();
 
    glFont       = (OBJECTPTR)Font;
@@ -784,7 +771,7 @@ void ScintillaKTK::panFontChanged(void *Font, void *BoldFont, void *ItalicFont, 
 
 void ScintillaKTK::panWordwrap(int Value)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.traceBranch("%d", Value);
 
 //   int bytepos = SendScintilla(SCI_POSITIONFROMLINE, topLine);
@@ -858,7 +845,7 @@ int ScintillaKTK::KeyDefault(int key, int modifiers)
 
 void ScintillaKTK::panMousePress(JET Button, double x, double y)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    log.traceBranch("%.0fx%.0f", x, y);
 
@@ -889,7 +876,7 @@ void ScintillaKTK::panMouseMove(double x, double y)
 
 void ScintillaKTK::panMouseRelease(JET Button, double x, double y)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    Scintilla::Point point((int)x, (int)y);
 
    log.trace("%.0fx%.0f", x, y);
@@ -903,7 +890,7 @@ void ScintillaKTK::panMouseRelease(JET Button, double x, double y)
 
 void ScintillaKTK::panResized()
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.traceBranch();
    ChangeSize();
 }
@@ -912,7 +899,7 @@ void ScintillaKTK::panResized()
 
 void ScintillaKTK::panScrollToX(double x)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.traceBranch("%.2f", x);
    HorizontalScrollTo((int)(x));
 }
@@ -921,7 +908,7 @@ void ScintillaKTK::panScrollToX(double x)
 
 void ScintillaKTK::panScrollToY(double y)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.traceBranch("%.2f", y);
    ScrollTo((int)(y / vs.lineHeight));
 }
@@ -930,7 +917,7 @@ void ScintillaKTK::panScrollToY(double y)
 #if 0
 void ScintillaKTK::SetSelectedTextStyle(int style)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.traceBranch("Style: %d", style);
 
    WndProc(SCI_STARTSTYLING, SelectionStart(), 0x1f);//mask - only overwrite the 5 style bits
@@ -973,7 +960,7 @@ void ScintillaKTK::panGetCursorPosition(int *line, int *index)
 
 void ScintillaKTK::panSetCursorPosition(int line, int index)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    int pos, eol;
 
    log.trace("Line: %d, Index: %d", line, index);
@@ -1001,7 +988,7 @@ void ScintillaKTK::panEnsureLineVisible(int line)
 
 void ScintillaKTK::SetLexer(uptr_t LexID)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.branch("Using lexer %d", (int)LexID);
 
 //   SendScintilla(SCI_STYLERESETDEFAULT);

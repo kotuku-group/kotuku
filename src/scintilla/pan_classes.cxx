@@ -63,7 +63,7 @@ Scintilla::Font::~Font()
 
 void Scintilla::Font::Create(const char *faceName, int characterSet, int size, bool bold_, bool italic_, int)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    bold = bold_;
    italic = italic_;
@@ -126,7 +126,7 @@ protected:
 
 public:
    DynamicLibraryImpl(const char *modulePath) {
-      pf::Log log(__FUNCTION__);
+      kt::Log log(__FUNCTION__);
       log.msg("Path: %s", modulePath);
    }
 
@@ -134,7 +134,7 @@ public:
 
    // Use g_module_symbol to get a pointer to the relevant function.
    virtual void * FindFunction(const char *name) {
-      pf::Log log(__FUNCTION__);
+      kt::Log log(__FUNCTION__);
       log.msg("Name: %s", name);
       return nullptr;
    }
@@ -146,7 +146,7 @@ public:
 
 Scintilla::DynamicLibrary * Scintilla::DynamicLibrary::Load(const char *modulePath)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.msg("Path: %s", modulePath);
    return static_cast<DynamicLibrary *>(new DynamicLibraryImpl(modulePath));
 }
@@ -210,13 +210,13 @@ bool Scintilla::Platform::MouseButtonBounce()
 
 void Scintilla::Platform::DebugDisplay(const char *string)
 {
-   pf::Log log("Scintilla");
+   kt::Log log("Scintilla");
    log.msg("%s", string);
 }
 
 bool Scintilla::Platform::IsKeyDown(int)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.msg("UNSUPPORTED");
 
    // TODO: discover state of keys in GTK+/X
@@ -225,14 +225,14 @@ bool Scintilla::Platform::IsKeyDown(int)
 
 long Scintilla::Platform::SendScintilla(Scintilla::WindowID w, unsigned int msg, unsigned long wParam, long lParam)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.msg("UNSUPPORTED");
    return 0;
 }
 
 long Scintilla::Platform::SendScintillaPointer(Scintilla::WindowID w, unsigned int msg, unsigned long wParam, void *lParam)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.msg("UNSUPPORTED");
 
    //return scintilla_send_message(SCINTILLA(w), msg, wParam,
@@ -308,7 +308,7 @@ bool Scintilla::Platform::ShowAssertionPopUps(bool assertionPopUps_) {
 
 void Scintilla::Platform::Assert(const char *c, const char *file, int line)
 {
-   pf::Log log("Assert");
+   kt::Log log("Assert");
    log.warning("%s, File %s, Line %d", c, file, line);
    exit(0);
 }

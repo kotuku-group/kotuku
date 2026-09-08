@@ -4,8 +4,7 @@ set (MOD vector)
 set (INC_MOD_VECTOR TRUE PARENT_SCOPE)
 
 idl_gen ("${MOD}.tdl" NAME ${MOD}_defs OUTPUT "${INCLUDE_OUTPUT}/modules/vector.h"
-   FILES "vector_functions.cpp" "vector_readpainter.cpp"
-   ARGS "output-defs=module_def.c")
+   ARGS "output-defs=module_def.c" DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/vector_functions.cpp")
 
 idl_compile ("${MOD}.tdl" NAME ${MOD}_idl OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/idl.h")
 
@@ -14,7 +13,7 @@ add_library (${MOD})
 set_module_defaults (${MOD} "Vec")
 
 if (MSVC)
-   target_compile_options (${MOD} PRIVATE /GS-)
+   target_compile_options (${MOD} PRIVATE /GS- /MP)
 else ()
 target_compile_options (${MOD} PRIVATE
   "$<${GCC_COMPAT}:$<BUILD_INTERFACE:-Wno-narrowing;-Wno-uninitialized>>")
@@ -30,28 +29,19 @@ target_sources (${MOD} PRIVATE
    "${CMAKE_CURRENT_SOURCE_DIR}/painters/painters.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/transformers/transformers.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/colourmaps.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_arc.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_arrowhead.cpp"
+   #"${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_arrowhead.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_bezier_arc.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_bspline.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_curves.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_vcgen_contour.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_vcgen_dash.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_vcgen_markers_term.cpp"
+   #"${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_vcgen_markers_term.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_vcgen_smooth_poly1.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_vcgen_stroke.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_vcgen_bspline.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_image_filters.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_line_aa_basics.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_line_profile_aa.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_sqrt_tables.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_trans_affine.cpp"
-   #${CMAKE_CURRENT_SOURCE_DIR}/agg/src/gpc/gpc.c
-   #${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_trans_double_path.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_trans_single_path.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_vpgen_clip_polygon.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_vpgen_clip_polyline.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_vpgen_segmentator.cpp")
+   "${CMAKE_CURRENT_SOURCE_DIR}/agg/src/agg_trans_single_path.cpp")
 
 target_include_directories (${MOD} PRIVATE
    "${CMAKE_CURRENT_SOURCE_DIR}/agg/include")
@@ -75,3 +65,21 @@ if (NOT DISABLE_FONT)
 endif()
 
 flute_test(vector_readpainter "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_readpainter.tiri")
+flute_test(vector_parse_transform "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_parse_transform.tiri")
+flute_test(vector_convolve_validation "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_convolve_validation.tiri")
+flute_test(vector_apply_path "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_apply_path.tiri")
+flute_test(vector_clip_mask_cache "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_clip_mask_cache.tiri")
+flute_test(vector_gouraud_gradient "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gouraud_gradient.tiri")
+flute_test(vector_mesh_gradient "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_mesh_gradient.tiri")
+flute_test(vector_diffusion_gradient "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_diffusion_gradient.tiri")
+flute_test(vector_conic_gradient "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_conic_gradient.tiri")
+flute_test(vector_contour_gradient "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_contour_gradient.tiri")
+flute_test(vector_gradient_easing_gamma "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gradient_easing_gamma.tiri")
+flute_test(vector_gradient_transform "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gradient_transform.tiri")
+flute_test(vector_distal_gradient "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_distal_gradient.tiri")
+flute_test(vector_voronoi_gradient "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_voronoi_gradient.tiri")
+flute_test(vector_isolated_bitmap_pool "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_isolated_bitmap_pool.tiri")
+flute_test(vector_shared_invalidation "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_shared_invalidation.tiri")
+flute_test(vector_callback_lifetimes "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_callback_lifetimes.tiri")
+flute_test(vector_path_command_spans "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_path_command_spans.tiri")
+flute_test(vector_dash_array "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_dash_array.tiri")

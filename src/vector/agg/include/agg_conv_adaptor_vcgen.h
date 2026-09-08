@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,10 +5,14 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Drives a vertex-conversion generator from an upstream vertex source, accumulating each contour and re-emitting the
+// vertices the generator produces. Hooks into vcgen_stroke, vcgen_dash, vcgen_contour, and vcgen_smooth_poly1 via the
+// conv_stroke, conv_dash, conv_contour, and conv_smooth_poly1 wrappers, with optional marker collection. In the vector
+// renderer it is the shared engine that turns a streamed path into stroked, dashed, contoured, or smoothed geometry
+// before rasterisation.
 
-
-#ifndef AGG_CONV_ADAPTOR_VCGEN_INCLUDED
-#define AGG_CONV_ADAPTOR_VCGEN_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 
@@ -122,5 +125,3 @@ namespace agg
       return cmd;
    }
 }
-
-#endif

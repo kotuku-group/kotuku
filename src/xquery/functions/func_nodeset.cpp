@@ -16,7 +16,7 @@ XPathVal XPathFunctionLibrary::function_count(const std::vector<XPathVal> &Args,
 }
 
 XPathVal XPathFunctionLibrary::function_id(const std::vector<XPathVal> &Args, const XPathContext &Context) {
-   pf::vector<XTag *> results;
+   kt::vector<XTag *> results;
 
    if (Args.empty()) return XPathVal(results);
 
@@ -82,7 +82,7 @@ XPathVal XPathFunctionLibrary::function_id(const std::vector<XPathVal> &Args, co
       if (Tag.isTag()) {
          for (size_t index = 1; index < Tag.Attribs.size(); ++index) {
             const auto &attrib = Tag.Attribs[index];
-            if (not (pf::iequals(attrib.Name, "id") or pf::iequals(attrib.Name, "xml:id"))) continue;
+            if (not (kt::iequals(attrib.Name, "id") or kt::iequals(attrib.Name, "xml:id"))) continue;
 
             size_t start = attrib.Value.find_first_not_of(" \t\r\n");
             while (start != std::string::npos) {
@@ -154,8 +154,8 @@ XPathVal XPathFunctionLibrary::function_namespace_uri(const std::vector<XPathVal
       if (colon IS std::string::npos) return XPathVal(std::string());
 
       std::string prefix(name.substr(0, colon));
-      if (pf::iequals(prefix, "xml")) return XPathVal("http://www.w3.org/XML/1998/namespace");
-      if (pf::iequals(prefix, "xmlns")) return XPathVal("http://www.w3.org/2000/xmlns/");
+      if (kt::iequals(prefix, "xml")) return XPathVal("http://www.w3.org/XML/1998/namespace");
+      if (kt::iequals(prefix, "xmlns")) return XPathVal("http://www.w3.org/2000/xmlns/");
 
       XTag *scope_node = target_node ? target_node : Context.context_node;
       if (not scope_node) return XPathVal(std::string());
@@ -178,8 +178,8 @@ XPathVal XPathFunctionLibrary::function_namespace_uri(const std::vector<XPathVal
    }
 
    if (not prefix.empty()) {
-      if (pf::iequals(prefix, "xml")) return XPathVal("http://www.w3.org/XML/1998/namespace");
-      if (pf::iequals(prefix, "xmlns")) return XPathVal("http://www.w3.org/2000/xmlns/");
+      if (kt::iequals(prefix, "xml")) return XPathVal("http://www.w3.org/XML/1998/namespace");
+      if (kt::iequals(prefix, "xmlns")) return XPathVal("http://www.w3.org/2000/xmlns/");
    }
 
    if ((target_node->NamespaceID != 0) and Context.xml) {

@@ -22,10 +22,8 @@
 //********************************************************************************************************************
 // Helper: Check if operator tracing is enabled
 
-static inline bool should_trace_operators(FuncState* fs)
-{
-   auto prv = (prvTiri *)fs->L->script->ChildPrivate;
-   return (prv->JitOptions & JOF::TRACE_OPERATORS) != JOF::NIL;
+inline bool should_trace_operators(FuncState* fs) {
+   return (fs->L->script->JitOptions & JOF::TRACE_OPERATORS) != JOF::NIL;
 }
 
 //********************************************************************************************************************
@@ -47,6 +45,8 @@ static CSTRING get_binop_name(BinOpr opr)
       case BinOpr::LessEqual: return "<=";
       case BinOpr::GreaterThan: return ">";
       case BinOpr::GreaterEqual: return ">=";
+      case BinOpr::Approx: return "≈";
+      case BinOpr::Contains: return "in";
       case BinOpr::LogicalAnd: return "and";
       case BinOpr::LogicalOr: return "or";
       default: return "?";
@@ -69,6 +69,7 @@ static CSTRING get_expkind_name(ExpKind k)
 {
    switch (k) {
       case ExpKind::Void: return "void";
+      case ExpKind::Unreachable: return "unreachable";
       case ExpKind::Nil: return "nil";
       case ExpKind::True: return "true";
       case ExpKind::False: return "false";
@@ -88,82 +89,6 @@ static CSTRING get_expkind_name(ExpKind k)
 }
 
 //********************************************************************************************************************
-// Bytecode emitter for operators - constant folding
-
-// Try constant-folding of arithmetic operators.
-
-[[nodiscard]] static int foldarith(BinOpr opr, ExpDesc* e1, ExpDesc* e2)
-{
-   TValue o;
-   lua_Number n;
-   if (!e1->is_num_constant_nojump() or !e2->is_num_constant_nojump()) [[likely]] return 0;
-   n = lj_vm_foldarith(e1->number_value(), e2->number_value(), to_arith_offset(opr));
-   setnumV(&o, n);
-   if (tvisnan(&o) or tvismzero(&o)) [[unlikely]] return 0;  // Avoid NaN and -0 as consts.
-   if (LJ_DUALNUM) {
-      int32_t k = lj_num2int(n);
-      if (lua_Number(k) IS n) {
-         setintV(&e1->u.nval, k);
-         return 1;
-      }
-   }
-   setnumV(&e1->u.nval, n);
-   return 1;
-}
-
-//********************************************************************************************************************
-// Try constant-folding of bitwise operators.
-// Bitwise operations in Lua/LuaJIT operate on 32-bit integers.
-
-[[nodiscard]] static int foldbitwise(BinOpr opr, ExpDesc* e1, ExpDesc* e2)
-{
-   if (!e1->is_num_constant_nojump() or !e2->is_num_constant_nojump()) [[likely]] return 0;
-
-   // Convert to 32-bit integers using lj_num2bit() to match bit library semantics
-   auto k1 = lj_num2bit(e1->number_value());
-   auto k2 = lj_num2bit(e2->number_value());
-   int32_t result;
-
-   switch (opr) {
-      case BinOpr::BitAnd: result = k1 & k2; break;
-      case BinOpr::BitOr:  result = k1 | k2; break;
-      case BinOpr::BitXor: result = k1 ^ k2; break;
-      case BinOpr::ShiftLeft:  result = k1 << (k2 & 31); break;  // Mask shift count to 0-31
-      case BinOpr::ShiftRight:  result = int32_t(uint32_t(k1) >> (k2 & 31)); break;  // Unsigned right shift
-      default: return 0;
-   }
-
-   // Store result as integer if possible, otherwise as number
-
-   if (LJ_DUALNUM) setintV(&e1->u.nval, result);
-   else setnumV(&e1->u.nval, lua_Number(result));
-
-   e1->k = ExpKind::Num;
-   return 1;
-}
-
-//********************************************************************************************************************
-// Try constant-folding of unary bitwise NOT.
-
-[[nodiscard]] static int foldbitnot(ExpDesc* e)
-{
-   if (!e->is_num_constant_nojump()) [[likely]] return 0;
-
-   // Convert to 32-bit integer using lj_num2bit() and apply bitwise NOT
-
-   auto k = lj_num2bit(e->number_value());
-   int32_t result = ~k;
-
-   // Store result as integer if possible, otherwise as number
-
-   if (LJ_DUALNUM) setintV(&e->u.nval, result);
-   else setnumV(&e->u.nval, lua_Number(result));
-
-   e->k = ExpKind::Num;
-   return 1;
-}
-
-//********************************************************************************************************************
 // Emit arithmetic operator.
 
 static void bcemit_arith(FuncState* fs, BinOpr opr, ExpDesc* e1, ExpDesc* e2)
@@ -171,8 +96,6 @@ static void bcemit_arith(FuncState* fs, BinOpr opr, ExpDesc* e1, ExpDesc* e2)
    RegisterAllocator allocator(fs);
    BCREG rb, rc, t;
    uint32_t op;
-
-   if (foldarith(opr, e1, e2)) return;
 
    if (opr IS BinOpr::Pow) {
       op = BC_POW;
@@ -226,6 +149,52 @@ static void bcemit_arith(FuncState* fs, BinOpr opr, ExpDesc* e1, ExpDesc* e2)
 //********************************************************************************************************************
 // Emit comparison operator.
 
+//********************************************************************************************************************
+// Emit approximate equality: `(lhs - rhs) <= tolerance and (lhs - rhs) >= -tolerance`.
+
+static void bcemit_approx(FuncState* fs, ExpDesc* e1, ExpDesc* e2)
+{
+   RegisterAllocator allocator(fs);
+
+   bcemit_arith(fs, BinOpr::Sub, e1, e2);
+
+   ExpressionValue delta_value(fs, *e1);
+   BCReg delta_reg = delta_value.discharge_to_any_reg(allocator);
+   *e1 = delta_value.legacy();
+
+   ExpDesc upper(TIRI_APPROX_TOLERANCE);
+   ExpressionValue upper_value(fs, upper);
+   BCReg upper_reg = upper_value.discharge_to_any_reg(allocator);
+   upper = upper_value.legacy();
+
+   bcemit_INS(fs, BCINS_AD(BC_ISLE, delta_reg, upper_reg));
+   BCPOS upper_false = bcemit_jmp(fs);
+   ExpDesc upper_check(ExpKind::Jmp, upper_false);
+   invertcond(fs, &upper_check);
+
+   ExpDesc lower(-TIRI_APPROX_TOLERANCE);
+   ExpressionValue lower_value(fs, lower);
+   BCReg lower_reg = lower_value.discharge_to_any_reg(allocator);
+   lower = lower_value.legacy();
+
+   bcemit_INS(fs, BCINS_AD(BC_ISGE, delta_reg, lower_reg));
+   BCPOS lower_false = bcemit_jmp(fs);
+
+   allocator.release_register(lower_reg);
+   allocator.release_register(upper_reg);
+   allocator.release_register(delta_reg);
+
+   e1->u.s.info = lower_false;
+   e1->u.s.aux = 0;
+   e1->k = ExpKind::Jmp;
+   e1->t = NO_JMP;
+   e1->f = upper_false;
+   e1->result_type = TiriType::Bool;
+}
+
+//********************************************************************************************************************
+// Emit comparison operator.
+
 static void bcemit_comp(FuncState* fs, BinOpr opr, ExpDesc* e1, ExpDesc* e2)
 {
    RegisterAllocator allocator(fs);
@@ -236,7 +205,18 @@ static void bcemit_comp(FuncState* fs, BinOpr opr, ExpDesc* e1, ExpDesc* e2)
 
    e1_toval_pre.to_val();
    *e1 = e1_toval_pre.legacy();
-   if (opr IS BinOpr::Equal or opr IS BinOpr::NotEqual) {
+   if (opr IS BinOpr::Contains) {
+      ExpressionValue target_value(fs, *e2);
+      BCReg target_reg = target_value.discharge_to_any_reg(allocator);
+      *e2 = target_value.legacy();
+      ExpressionValue candidate_value(fs, *e1);
+      BCReg candidate_reg = candidate_value.discharge_to_any_reg(allocator);
+      *e1 = candidate_value.legacy();
+      cmp_reg_a = candidate_reg;
+      cmp_reg_b = target_reg;
+      ins = BCINS_AD(BC_ISIN, candidate_reg, target_reg);
+   }
+   else if (opr IS BinOpr::Equal or opr IS BinOpr::NotEqual) {
       BCOp op = opr IS BinOpr::Equal ? BC_ISEQV : BC_ISNEV;
       BCReg ra;
 
@@ -360,7 +340,6 @@ static void bcemit_comp(FuncState* fs, BinOpr opr, ExpDesc* e1, ExpDesc* e2)
 static void bcemit_shift_call_at_base(FuncState* fs, std::string_view fname, ExpDesc* lhs, ExpDesc* rhs, BCREG base)
 {
    RegisterAllocator allocator(fs);
-   ExpDesc callee, key;
    auto arg1 = BCReg(base + 1  + 1);  // First argument register (after frame link if present)
    auto arg2 = arg1 + 1;            // Second argument register
 
@@ -413,20 +392,7 @@ static void bcemit_shift_call_at_base(FuncState* fs, std::string_view fname, Exp
    if (fs->freereg <= arg2) fs->freereg = arg2 + 1;
 
    // Now load bit.fname to base (safe since any operand at base has been moved)
-   callee.init(ExpKind::Global, 0);
-   callee.u.sval = fs->ls->keepstr("bit");
-   ExpressionValue callee_value(fs, callee);
-   callee_value.discharge_to_any_reg(allocator);
-   callee = callee_value.legacy();
-   key.init(ExpKind::Str, 0);
-   key.u.sval = fs->ls->keepstr(fname);
-   expr_index(fs, &callee, &key);
-   ExpressionValue callee_toval(fs, callee);
-   callee_toval.to_val();
-   callee = callee_toval.legacy();
-   ExpressionValue callee_to_base(fs, callee);
-   callee_to_base.to_reg(allocator, BCReg(base));
-   callee = callee_to_base.legacy();
+   emit_bit_function_lookup(*fs, allocator, fname, BCReg(base));
 
    // Now move any remaining operands that weren't at base
    if (not lhs_was_base) {
@@ -510,7 +476,6 @@ static void bcemit_bit_call(FuncState* fs, std::string_view fname, ExpDesc* lhs,
 static void bcemit_unary_bit_call(FuncState* fs, std::string_view fname, ExpDesc* arg)
 {
    RegisterAllocator allocator(fs);
-   ExpDesc callee, key;
    auto base = fs->free_reg();
    BCReg arg_reg = BCReg(int(base) + 1  + 1);
 
@@ -532,20 +497,7 @@ static void bcemit_unary_bit_call(FuncState* fs, std::string_view fname, ExpDesc
 
    // Load bit.fname into base register.
 
-   callee.init(ExpKind::Global, 0);
-   callee.u.sval = fs->ls->keepstr("bit");
-   ExpressionValue callee_value(fs, callee);
-   callee_value.discharge_to_any_reg(allocator);
-   callee = callee_value.legacy();
-   key.init(ExpKind::Str, 0);
-   key.u.sval = fs->ls->keepstr(fname);
-   expr_index(fs, &callee, &key);
-   ExpressionValue callee_toval2(fs, callee);
-   callee_toval2.to_val();
-   callee = callee_toval2.legacy();
-   ExpressionValue callee_value2(fs, callee);
-   callee_value2.to_reg(allocator, base);
-   callee = callee_value2.legacy();
+   emit_bit_function_lookup(*fs, allocator, fname, base);
 
    // Emit CALL instruction.
    fs->freereg = arg_reg + 1;
@@ -626,7 +578,7 @@ static void bcemit_unop(FuncState* fs, BCOp op, ExpDesc* e)
    expr_free(fs, e);
    e->u.s.info = bcemit_AD(fs, op, 0, e->u.s.info);
    e->k = ExpKind::Relocable;
-   // BC_UNM (negate) and BC_LEN (length) always return number
+   // BC_UNM and successful BC_LEN operations always return a number.  Ordinary associative tables may produce nil.
    e->result_type = TiriType::Num;
 }
 
@@ -644,7 +596,7 @@ OperatorEmitter::OperatorEmitter(FuncState* State, RegisterAllocator* Allocator,
 void OperatorEmitter::emit_unary(int op, ExprValue operand)
 {
    if (should_trace_operators(this->func_state)) {
-      pf::Log("Parser").msg("[%d] operator %s: operand kind=%s", this->func_state->ls->linenumber.lineNumber(),
+      kt::Log("Parser").msg("[%d] operator %s: operand kind=%s", this->func_state->ls->linenumber.lineNumber(),
          get_unop_name(BCOp(op)), get_expkind_name(operand.kind()));
    }
 
@@ -652,24 +604,14 @@ void OperatorEmitter::emit_unary(int op, ExprValue operand)
 }
 
 //********************************************************************************************************************
-// Emit bitwise NOT operator (~)
-// Performs constant folding when possible, otherwise calls bit.bnot library function
+// Emit bitwise NOT operator (~).
 
 void OperatorEmitter::emit_bitnot(ExprValue operand)
 {
    ExpDesc* e = operand.raw();
 
-   // Try constant folding first
-   if (foldbitnot(e)) {
-      if (should_trace_operators(this->func_state)) {
-         pf::Log("Parser").msg("[%d] operator ~: constant-folded to %d", this->func_state->ls->linenumber.lineNumber(),
-            int32_t(e->number_value()));
-      }
-      return;
-   }
-
    if (should_trace_operators(this->func_state)) {
-      pf::Log("Parser").msg("[%d] operator ~: calling bit.bnot, operand kind=%s", this->func_state->ls->linenumber.lineNumber(),
+      kt::Log("Parser").msg("[%d] operator ~: calling bit.bnot, operand kind=%s", this->func_state->ls->linenumber.lineNumber(),
          get_expkind_name(operand.kind()));
    }
 
@@ -687,7 +629,7 @@ void OperatorEmitter::emit_binop_left(BinOpr opr, ExprValue left)
    RegisterAllocator local_alloc(this->func_state);
    ExpDesc *e = left.raw();
 
-   if (opr IS BinOpr::Equal or opr IS BinOpr::NotEqual) {
+   if (opr IS BinOpr::Equal or opr IS BinOpr::NotEqual or opr IS BinOpr::Contains) {
       // Comparison operators (EQ, NE): discharge to register unless it's a constant/jump
       if (not e->is_constant_nojump()) {
          ExpressionValue e_value(this->func_state, *e);
@@ -713,7 +655,7 @@ void OperatorEmitter::emit_binop_left(BinOpr opr, ExprValue left)
 void OperatorEmitter::emit_binary_arith(BinOpr opr, ExprValue left, ExpDesc right)
 {
    if (should_trace_operators(this->func_state)) {
-      pf::Log("Parser").msg("[%d] operator %s: left kind=%s, right kind=%s", this->func_state->ls->linenumber.lineNumber(),
+      kt::Log("Parser").msg("[%d] operator %s: left kind=%s, right kind=%s", this->func_state->ls->linenumber.lineNumber(),
          get_binop_name(opr), get_expkind_name(left.kind()), get_expkind_name(right.k));
    }
 
@@ -726,35 +668,26 @@ void OperatorEmitter::emit_binary_arith(BinOpr opr, ExprValue left, ExpDesc righ
 void OperatorEmitter::emit_comparison(BinOpr opr, ExprValue left, ExpDesc right)
 {
    if (should_trace_operators(this->func_state)) {
-      pf::Log("Parser").msg("[%d] operator %s: left kind=%s, right kind=%s", this->func_state->ls->linenumber.lineNumber(),
+      kt::Log("Parser").msg("[%d] operator %s: left kind=%s, right kind=%s", this->func_state->ls->linenumber.lineNumber(),
          get_binop_name(opr), get_expkind_name(left.kind()), get_expkind_name(right.k));
    }
 
-   bcemit_comp(this->func_state, opr, left.raw(), &right);
+   if (opr IS BinOpr::Approx) bcemit_approx(this->func_state, left.raw(), &right);
+   else bcemit_comp(this->func_state, opr, left.raw(), &right);
 }
 
 //********************************************************************************************************************
-// Emit bitwise binary operator
-// Performs constant folding when possible, otherwise emits function calls to bit.* library
+// Emit bitwise binary operator via the bit library.
 
 void OperatorEmitter::emit_binary_bitwise(BinOpr opr, ExprValue left, ExpDesc right)
 {
    ExpDesc* lhs = left.raw();
 
-   // Try constant folding first
-   if (foldbitwise(opr, lhs, &right)) {
-      if (should_trace_operators(this->func_state)) {
-         pf::Log("Parser").msg("[%d] operator %s: constant-folded to %d", this->func_state->ls->linenumber.lineNumber(),
-            get_binop_name(opr), int32_t(lhs->number_value()));
-      }
-      return;
-   }
-
    CSTRING op_name = priority[int(opr)].name;
    size_t op_name_len = priority[int(opr)].name_len;
 
    if (should_trace_operators(this->func_state)) {
-      pf::Log("Parser").msg("[%d] operator %s: calling bit.%.*s, left kind=%s, right kind=%s",
+      kt::Log("Parser").msg("[%d] operator %s: calling bit.%.*s, left kind=%s, right kind=%s",
          this->func_state->ls->linenumber.lineNumber(), get_binop_name(opr), int(op_name_len), op_name, get_expkind_name(left.kind()),
          get_expkind_name(right.k));
    }
@@ -810,7 +743,7 @@ void OperatorEmitter::prepare_bitwise(ExprValue left)
    left_desc->u.s.aux = frame_base;
 
    if (should_trace_operators(fs)) {
-      pf::Log("Parser").msg("[%d] prepare_bitwise: frame_base=%d, arg1=%d, freereg=%d (arg2 slot)",
+      kt::Log("Parser").msg("[%d] prepare_bitwise: frame_base=%d, arg1=%d, freereg=%d (arg2 slot)",
          fs->ls->linenumber.lineNumber(), frame_base, arg1, fs->freereg);
    }
 }
@@ -823,15 +756,6 @@ void OperatorEmitter::complete_bitwise(BinOpr opr, ExprValue left, ExpDesc right
 {
    ExpDesc* lhs = left.raw();
    FuncState* fs = this->func_state;
-
-   // Try constant folding first - if both operands are constants, we can fold
-   if (foldbitwise(opr, lhs, &right)) {
-      if (should_trace_operators(fs)) {
-         pf::Log("Parser").msg("[%d] complete_bitwise %s: constant-folded to %d",
-            fs->ls->linenumber.lineNumber(), get_binop_name(opr), int32_t(lhs->number_value()));
-      }
-      return;
-   }
 
    // Get the base register from aux field (set by prepare_bitwise)
 
@@ -862,25 +786,7 @@ void OperatorEmitter::complete_bitwise(BinOpr opr, ExprValue left, ExpDesc right
    CSTRING op_name = priority[int(opr)].name;
    size_t op_name_len = priority[int(opr)].name_len;
 
-   ExpDesc callee, key;
-   callee.init(ExpKind::Global, 0);
-   callee.u.sval = fs->ls->keepstr("bit");
-
-   ExpressionValue callee_val(fs, callee);
-   callee_val.discharge_to_any_reg(local_alloc);
-   callee = callee_val.legacy();
-
-   key.init(ExpKind::Str, 0);
-   key.u.sval = fs->ls->keepstr(std::string_view(op_name, op_name_len));
-   expr_index(fs, &callee, &key);
-
-   ExpressionValue callee_toval(fs, callee);
-   callee_toval.to_val();
-   callee = callee_toval.legacy();
-
-   ExpressionValue callee_to_base(fs, callee);
-   callee_to_base.to_reg(local_alloc, BCReg(base));
-   callee = callee_to_base.legacy();
+   emit_bit_function_lookup(*fs, local_alloc, std::string_view(op_name, op_name_len), BCReg(base));
 
    // Emit CALL instruction
    fs->freereg = arg2 + 1;  // Ensure freereg covers all arguments
@@ -895,7 +801,7 @@ void OperatorEmitter::complete_bitwise(BinOpr opr, ExprValue left, ExpDesc right
    *lhs = lhs_discharge.legacy();
 
    if (should_trace_operators(fs)) {
-      pf::Log("Parser").msg("[%d] complete_bitwise %s: emitted call at base=%d", fs->ls->linenumber.lineNumber(), get_binop_name(opr), base);
+      kt::Log("Parser").msg("[%d] complete_bitwise %s: emitted call at base=%d", fs->ls->linenumber.lineNumber(), get_binop_name(opr), base);
    }
 }
 
@@ -938,7 +844,7 @@ void OperatorEmitter::prepare_logical_and(ExprValue left)
    }
 
    if (should_trace_operators(this->func_state)) {
-      pf::Log("Parser").msg("[%d] operator and: prepare left kind=%s, %s", this->func_state->ls->linenumber.lineNumber(), get_expkind_name(left_desc->k),
+      kt::Log("Parser").msg("[%d] operator and: prepare left kind=%s, %s", this->func_state->ls->linenumber.lineNumber(), get_expkind_name(left_desc->k),
          will_skip_rhs ? "will skip RHS (constant false)" : "will evaluate RHS");
    }
 
@@ -979,7 +885,7 @@ void OperatorEmitter::complete_logical_and(ExprValue left, ExpDesc right)
    *right_desc = right_val.legacy();
 
    if (should_trace_operators(this->func_state)) {
-      pf::Log("Parser").msg("[%d] operator and: complete right kind=%s, merging false paths", this->func_state->ls->linenumber.lineNumber(),
+      kt::Log("Parser").msg("[%d] operator and: complete right kind=%s, merging false paths", this->func_state->ls->linenumber.lineNumber(),
          get_expkind_name(right_desc->k));
    }
 
@@ -1034,7 +940,7 @@ void OperatorEmitter::prepare_logical_or(ExprValue left)
    }
 
    if (should_trace_operators(this->func_state)) {
-      pf::Log("Parser").msg("[%d] operator or: prepare left kind=%s, %s", this->func_state->ls->linenumber.lineNumber(),
+      kt::Log("Parser").msg("[%d] operator or: prepare left kind=%s, %s", this->func_state->ls->linenumber.lineNumber(),
          get_expkind_name(left_desc->k), will_skip_rhs ? "will skip RHS (constant true)" : "will evaluate RHS");
    }
 
@@ -1094,7 +1000,7 @@ void OperatorEmitter::prepare_if_empty(ExprValue left)
    ExpDesc* left_desc = left.raw();
 
    // IF_EMPTY short-circuit: if left is truthy, skip RHS and return left
-   // Extended falsey: nil, false, 0, "" (all trigger RHS evaluation)
+   // Extended falsey: nil, false, 0, "", empty collections (all trigger RHS evaluation)
 
    // Discharge left operand
    ExpressionValue left_val(this->func_state, *left_desc);
@@ -1124,46 +1030,15 @@ void OperatorEmitter::prepare_if_empty(ExprValue left)
          BCReg reg = left_inner.discharge_to_any_reg(local_alloc);
          *left_desc = left_inner.legacy();
 
-         // Create test expressions for extended falsey values
-         ExpDesc nilv(ExpKind::Nil);
-         ExpDesc falsev(ExpKind::False);
-         ExpDesc zerov(ExpKind::Num);
-         setnumV(&zerov.u.nval, 0.0);
-         ExpDesc emptyv(ExpKind::Str);
-         emptyv.u.sval = this->func_state->ls->intern_empty_string();
+         // A selected falsey value executes the following JMP; a truthy value skips it.
 
-         // Extended falsey check sequence
-         // ISEQ* skips the JMP when values ARE equal (falsey), executes JMP when NOT equal (truthy)
-         // Strategy: When value is truthy, NO checks match → all JMPs execute → skip RHS
-         //          When value is falsey, ONE check matches → that JMP skipped → fall through to RHS
-
-         bcemit_INS(this->func_state, BCINS_AD(BC_ISEQP, reg, const_pri(&nilv)));
-         BCPos check_nil = BCPos(bcemit_jmp(this->func_state));
-
-         bcemit_INS(this->func_state, BCINS_AD(BC_ISEQP, reg, const_pri(&falsev)));
-         BCPos check_false = BCPos(bcemit_jmp(this->func_state));
-
-         bcemit_INS(this->func_state, BCINS_AD(BC_ISEQN, reg, const_num(this->func_state, &zerov)));
-         BCPos check_zero = BCPos(bcemit_jmp(this->func_state));
-
-         bcemit_INS(this->func_state, BCINS_AD(BC_ISEQS, reg, const_str(this->func_state, &emptyv)));
-         BCPos check_empty = BCPos(bcemit_jmp(this->func_state));
-
-         // Empty array check (array with len == 0)
-         bcemit_INS(this->func_state, BCINS_AD(BC_ISEMPTYARR, reg, 0));
-         BCPos check_empty_array = BCPos(bcemit_jmp(this->func_state));
+         FalseyJumpOptions options;
+         options.include_empty_array = true;
+         ControlFlowEdge skip_rhs = emit_falsey_jumps(
+            *this->func_state, *this->cfg, reg, options, left_desc->result_type);
 
          // RHS will be emitted after this prepare phase
-         // The jumps above will skip RHS when value is truthy (all JMPs execute)
-         // Fall through to RHS when value is falsey (one JMP is skipped)
-
-         // Collect all these jumps - they should skip RHS when value is truthy
-         pc = check_nil.raw();
-         ControlFlowEdge skip_rhs = this->cfg->make_true_edge(check_nil);
-         skip_rhs.append(check_false);
-         skip_rhs.append(check_zero);
-         skip_rhs.append(check_empty);
-         skip_rhs.append(check_empty_array);
+         // Collect the falsey edge so the finish phase can patch it to the RHS.
          pc = skip_rhs.head().raw();
 
          // Mark that we need to preserve LHS value and reserve register for RHS
@@ -1322,7 +1197,7 @@ void OperatorEmitter::complete_concat(ExprValue left, ExpDesc right)
 
 //********************************************************************************************************************
 // Presence check operator (x?)
-// Returns boolean: true if value is truthy, false if falsey (nil, false, 0, "")
+// Returns boolean: true if value is truthy, false if falsey (nil, false, 0, "", empty collections)
 
 void OperatorEmitter::emit_presence_check(ExprValue operand)
 {
@@ -1347,28 +1222,9 @@ void OperatorEmitter::emit_presence_check(ExprValue operand)
    BCReg reg = e_runtime.discharge_to_any_reg(local_alloc);
    *e = e_runtime.legacy();
 
-   // Create test expressions
-   ExpDesc nilv(ExpKind::Nil);
-   ExpDesc falsev(ExpKind::False);
-   ExpDesc zerov(0.0);
-   ExpDesc emptyv(fs->ls->intern_empty_string());
-
-   // Emit equality checks for extended falsey values
-   bcemit_INS(fs, BCINS_AD(BC_ISEQP, reg, const_pri(&nilv)));
-   auto check_nil = BCPos(bcemit_jmp(fs));
-
-   bcemit_INS(fs, BCINS_AD(BC_ISEQP, reg, const_pri(&falsev)));
-   auto check_false = BCPos(bcemit_jmp(fs));
-
-   bcemit_INS(fs, BCINS_AD(BC_ISEQN, reg, const_num(fs, &zerov)));
-   auto check_zero = BCPos(bcemit_jmp(fs));
-
-   bcemit_INS(fs, BCINS_AD(BC_ISEQS, reg, const_str(fs, &emptyv)));
-   auto check_empty = BCPos(bcemit_jmp(fs));
-
-   // Empty array check (array with len == 0)
-   bcemit_INS(fs, BCINS_AD(BC_ISEMPTYARR, reg, 0));
-   auto check_empty_array = BCPos(bcemit_jmp(fs));
+   FalseyJumpOptions options;
+   options.include_empty_array = true;
+   ControlFlowEdge falsey_edge = emit_falsey_jumps(*fs, *this->cfg, reg, options, e->result_type);
 
    expr_free(fs, e);  // Free the expression register
 
@@ -1382,16 +1238,7 @@ void OperatorEmitter::emit_presence_check(ExprValue operand)
 
    // False branch: patch all falsey jumps here and load false
    auto false_pos = fs->current_pc();
-   ControlFlowEdge nil_edge = this->cfg->make_unconditional(check_nil);
-   nil_edge.patch_to(false_pos);
-   ControlFlowEdge false_edge_check = this->cfg->make_unconditional(check_false);
-   false_edge_check.patch_to(false_pos);
-   ControlFlowEdge zero_edge = this->cfg->make_unconditional(check_zero);
-   zero_edge.patch_to(false_pos);
-   ControlFlowEdge empty_edge = this->cfg->make_unconditional(check_empty);
-   empty_edge.patch_to(false_pos);
-   ControlFlowEdge empty_array_edge = this->cfg->make_unconditional(check_empty_array);
-   empty_array_edge.patch_to(false_pos);
+   falsey_edge.patch_to(false_pos);
 
    bcemit_AD(fs, BC_KPRI, dest, BCREG(ExpKind::False));
 

@@ -247,13 +247,13 @@ extern struct CoreBase *CoreBase;
    OBJECTPTR file = NULL;
 
    {
-      pf::SwitchContext ctx(modFont);
+      kt::SwitchContext ctx(modFont);
       file = objFile::create::integral(fl::Name("FreetypeTTFile"), fl::Path(filepathname), fl::Flags(FL::READ));
    }
 
    if (file) {
       LONG size;
-      file->get(FID_Size, &size);
+      file->get(kt::strhash("size"), &size);
       stream->size = size;
       stream->descriptor.pointer = file;
       stream->pathname.pointer   = (char *)filepathname;

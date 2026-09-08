@@ -11,10 +11,11 @@
 #include <vector>
 
 #include "../ast/nodes.h"
+#include "../constant_evaluator.h"
+#include "../parse_regalloc.h"
 #include "operator_emitter.h"
 #include "../parser_context.h"
 #include "../parse_control_flow.h"
-#include "../parse_regalloc.h"
 #include "../parse_types.h"
 
 //********************************************************************************************************************
@@ -23,6 +24,7 @@ struct LocalBindingEntry {
    GCstr *symbol = nullptr;
    BCReg slot = BCReg(0);
    uint32_t depth = 0;
+   std::optional<CompileTimeValue> compile_time_value;
 };
 
 //********************************************************************************************************************
@@ -30,6 +32,20 @@ struct LocalBindingEntry {
 struct BlockBinding {
    GCstr *symbol = nullptr;
    BCReg slot = BCReg(0);
+};
+
+//********************************************************************************************************************
+
+enum class ContextSourceKind : uint8_t {
+   Inherited,
+   UsingReference,
+   MethodArgument,
+   ContextualArgument
+};
+
+struct ContextSource {
+   BCReg slot = BCReg(0);
+   ContextSourceKind kind = ContextSourceKind::Inherited;
 };
 
 //********************************************************************************************************************
@@ -44,14 +60,14 @@ public:
    }
 
    void pop_scope();
-   void add(GCstr *, BCReg);
+   void add(GCstr *, BCReg, std::optional<CompileTimeValue> = std::nullopt);
 
-   [[nodiscard]] inline std::optional<BCReg> resolve(GCstr *symbol) const {
-      if (not symbol) return std::nullopt;
+   [[nodiscard]] inline const LocalBindingEntry * resolve(GCstr *Symbol) const {
+      if (not Symbol) return nullptr;
       for (auto it = this->bindings.rbegin(); it != this->bindings.rend(); ++it) {
-         if (it->symbol IS symbol) return it->slot;
+         if (it->symbol IS Symbol) return &*it;
       }
-      return std::nullopt;
+      return nullptr;
    }
 
 private:
@@ -117,6 +133,10 @@ struct PreparedAssignment {
    bool newly_created = false;   // True if a new local was created for an undeclared variable
    bool needs_var_add = false;   // True if var_add() must be called after expression evaluation
    GCstr* pending_symbol = nullptr;  // Symbol name for deferred var_add
+   StaticBindingID binding_id{};
+   TiriType pending_type = TiriType::Unknown;
+   struct_record *pending_struct_def = nullptr;
+   ArrayElementDescriptor pending_array_element{};
    BCLine pending_line = 0;      // Line number for deferred variable declaration
    BCLine pending_column = 0;    // Column number for deferred variable declaration
    ControlFlowEdge safe_nav_skip;
@@ -132,9 +152,36 @@ public:
 
    ParserResult<IrEmitUnit> emit_chunk(const BlockStmt& chunk);
 
+   // Create a parser error with the specified error code and message, capturing the current token context
+   // and the file index of the file being emitted (kept correct across imports by emit_import_stmt swaps).
+
+   inline ParserError make_error(ParserErrorCode Code, std::string_view Message) const {
+      return ParserError(Code, Token::from_current(this->lex_state), Message, this->lex_state.current_file_index);
+   }
+
+   inline ParserError make_error(ParserErrorCode Code, std::string_view Message, const SourceSpan &Span) const {
+      return ParserError(Code, Token::from_span(Span, TokenKind::Unknown), Message, this->lex_state.current_file_index);
+   }
+
 private:
    friend struct LoopStackGuard;
    friend class NilShortCircuitGuard;
+
+   struct ContextSourceScope {
+      ContextSourceScope() = default;
+      ContextSourceScope(const ContextSourceScope &) = delete;
+      ContextSourceScope& operator=(const ContextSourceScope &) = delete;
+      ContextSourceScope(ContextSourceScope &&Other) noexcept;
+      ContextSourceScope& operator=(ContextSourceScope &&Other) noexcept;
+      ~ContextSourceScope();
+
+      void activate(IrEmitter *Owner, ContextSource Source);
+      void release();
+
+   private:
+      IrEmitter *emitter = nullptr;
+      bool active = false;
+   };
 
    ParserContext &ctx;
    FuncState &func_state;
@@ -143,6 +190,11 @@ private:
    ControlFlowGraph  control_flow;
    OperatorEmitter   operator_emitter;
    LocalBindingTable binding_table;
+   std::vector<BCReg> handler_exceptions; // Hidden registers in this lexical function
+   ConstantEvaluator constant_evaluator;
+   StaticCallableHandle current_callable{};
+   bool is_root_chunk = true;
+   std::vector<ContextSource> context_sources;
 
    ParserResult<IrEmitUnit> emit_block(const BlockStmt& block, FuncScopeFlag flags = FuncScopeFlag::None);
    ParserResult<IrEmitUnit> emit_block_with_bindings(const BlockStmt& block, FuncScopeFlag flags, std::span<const BlockBinding> bindings);
@@ -151,36 +203,48 @@ private:
    ParserResult<IrEmitUnit> emit_return_stmt(const ReturnStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_local_decl_stmt(const LocalDeclStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_global_decl_stmt(const GlobalDeclStmtPayload& payload);
+   ParserResult<IrEmitUnit> emit_extern_decl_stmt(const ExternDeclStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_local_function_stmt(const LocalFunctionStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_function_stmt(const FunctionStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_if_stmt(const IfStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_while_stmt(const LoopStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_repeat_stmt(const LoopStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_numeric_for_stmt(const NumericForStmtPayload& payload);
+   ParserResult<IrEmitUnit> emit_range_for_stmt(const RangeForStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_generic_for_stmt(const GenericForStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_defer_stmt(const DeferStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_break_stmt(const BreakStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_continue_stmt(const ContinueStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_conditional_shorthand_stmt(const ConditionalShorthandStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_try_except_stmt(const TryExceptPayload& payload);
-   ParserResult<IrEmitUnit> emit_raise_stmt(const RaiseStmtPayload& payload, const SourceSpan& span);
+   ParserResult<IrEmitUnit> emit_checkall_stmt(const CheckallStmtPayload& payload);
+   ParserResult<IrEmitUnit> emit_raise_payload(const RaisePayload &Payload, const SourceSpan &Span);
    ParserResult<IrEmitUnit> emit_check_stmt(const CheckStmtPayload& payload, const SourceSpan& span);
+   ParserResult<IrEmitUnit> emit_import_entry(const ImportEntryPayload& entry);
    ParserResult<IrEmitUnit> emit_import_stmt(const ImportStmtPayload& payload);
+   ParserResult<IrEmitUnit> emit_namespace_stmt(const NamespaceStmtPayload& payload);
+   void emit_namespace_registry_load(std::string_view name, BCReg destination);
+   void emit_namespace_missing_guard(std::string_view name, BCReg value);
+   void publish_namespace_local(const Identifier& name, BCReg slot);
    ParserResult<IrEmitUnit> emit_with_stmt(const WithStmtPayload& payload);
+   ParserResult<IrEmitUnit> emit_context_stmt(const ContextStmtPayload& Payload);
    ParserResult<IrEmitUnit> emit_assignment_stmt(const AssignmentStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_plain_assignment(std::vector<PreparedAssignment> targets, const ExprNodeList& values);
-   ParserResult<IrEmitUnit> emit_plain_assignment_safe_multi(const ExprNodeList& targets, const ExprNodeList& values);
    ParserResult<IrEmitUnit> emit_compound_assignment(AssignmentOperator op, PreparedAssignment target, const ExprNodeList& values);
    ParserResult<IrEmitUnit> emit_if_empty_assignment(PreparedAssignment target, const ExprNodeList& values);
    ParserResult<IrEmitUnit> emit_if_nil_assignment(PreparedAssignment target, const ExprNodeList& values);
 
    ParserResult<ExpDesc> emit_expression(const ExprNode& expr);
    ParserResult<ExpDesc> emit_literal_expr(const LiteralValue& literal);
-   ParserResult<ExpDesc> emit_identifier_expr(const NameRef& reference);
+   ParserResult<ExpDesc> emit_identifier_expr(const NameRef& reference, bool AllowUnscoped = false);
+   ParserResult<ExpDesc> emit_current_context_expr();
    ParserResult<ExpDesc> emit_vararg_expr();
    ParserResult<ExpDesc> emit_unary_expr(const UnaryExprPayload& payload);
    ParserResult<ExpDesc> emit_update_expr(const UpdateExprPayload& payload);
+   ParserResult<BCReg> emit_type_test_descriptor(const TypeTestDescriptor& Descriptor, bool Negated, BCReg Destination);
+   ParserResult<ExpDesc> emit_type_test_expr(const TypeTestExprPayload& payload);
    ParserResult<ExpDesc> emit_binary_expr(const BinaryExprPayload& payload);
+   ParserResult<ExpDesc> emit_comparison_chain_expr(const ComparisonChainExprPayload& payload);
    ParserResult<ExpDesc> emit_ternary_expr(const TernaryExprPayload& payload);
    ParserResult<ExpDesc> emit_if_empty_expr(ExpDesc lhs, const ExprNode& rhs_ast);
    ParserResult<ExpDesc> emit_bitwise_expr(BinOpr opr, ExpDesc lhs, const ExprNode& rhs_ast);
@@ -188,12 +252,16 @@ private:
    ParserResult<ExpDesc> emit_presence_expr(const PresenceExprPayload& payload);
    ParserResult<ExpDesc> emit_pipe_expr(const PipeExprPayload& payload);
    ParserResult<ExpDesc> emit_member_expr(const MemberExprPayload& payload);
+   ParserResult<ExpDesc> emit_module_function_expr(const ModuleFunctionExprPayload& payload);
    ParserResult<ExpDesc> emit_index_expr(const IndexExprPayload& payload);
    ParserResult<ExpDesc> emit_table_slice_call(const IndexExprPayload& payload);
    ParserResult<ExpDesc> emit_safe_member_expr(const SafeMemberExprPayload& payload);
    ParserResult<ExpDesc> emit_safe_index_expr(const SafeIndexExprPayload& payload);
-   ParserResult<ExpDesc> emit_safe_call_expr(const CallExprPayload& payload);
    ParserResult<ExpDesc> emit_call_expr(const CallExprPayload& payload);
+   ParserResult<ExpDesc> emit_builtin_method_call(const CallExprPayload& payload);
+   ParserResult<ExpDesc> emit_runtime_builtin_method_call(const CallExprPayload& payload);
+   ParserResult<ExpDesc> emit_runtime_builtin_method_pipe(
+      const PipeExprPayload& payload, const CallExprPayload& call);
    ParserResult<ExpDesc> emit_result_filter_expr(const ResultFilterPayload& payload);
    ParserResult<ExpDesc> emit_table_expr(const TableExprPayload& payload);
    ParserResult<ExpDesc> emit_range_expr(const RangeExprPayload& payload);
@@ -202,7 +270,9 @@ private:
    ParserResult<IrEmitUnit> emit_annotation_registration(BCReg func_reg, const std::vector<AnnotationEntry>& annotations, GCstr* funcname);
    ParserResult<ExpDesc> emit_expression_list(const ExprNodeList& expressions, BCReg& count);
    ParserResult<ExpDesc> emit_lvalue_expr(
-      const ExprNode& expr, bool allow_new_local = true, ControlFlowEdge* safe_nav_skip = nullptr);
+      const ExprNode& expr, bool allow_new_local = true, ControlFlowEdge* safe_nav_skip = nullptr,
+      bool UseAssignmentResolution = true);
+   ParserResult<ExpDesc> emit_assignment_identifier(const NameRef &, bool AllocNewLocal);
    ParserResult<ControlFlowEdge> emit_condition_jump(const ExprNode& expr);
    ParserResult<ExpDesc> emit_function_lvalue(const FunctionNamePath& path);
    ParserResult<std::vector<PreparedAssignment>> prepare_assignment_targets(
@@ -212,30 +282,39 @@ private:
    void ensure_register_floor(std::string_view usage);
    void ensure_register_balance(std::string_view usage);
    void optimise_assert(ExprNodeList &Args);
+   void apply_inferred_local_type(BCReg Slot, const ExprNode& Value);
+   bool apply_analysed_local_type(BCReg Slot, StaticBindingID Binding);
+   void assert_analysed_local_type(BCReg Slot, StaticBindingID Binding) const;
+   BCReg finalise_pending_local_assignment(PreparedAssignment& Target);
+   [[nodiscard]] bool can_elide_expression(const ExprNode &Expression) const;
+   [[nodiscard]] bool can_elide_statement(const StmtNode &Statement, bool InLoop) const;
+   [[nodiscard]] bool can_elide_block(const BlockStmt &Block, bool InLoop = false) const;
 
    ParserResult<IrEmitUnit> unsupported_stmt(AstNodeKind kind, const SourceSpan& span);
    ParserResult<ExpDesc> unsupported_expr(AstNodeKind kind, const SourceSpan& span);
 
-   // Create a parser error with the specified error code and message, capturing the current token context.
-
-   inline ParserError make_error(ParserErrorCode Code, std::string_view Message) const {
-      return ParserError(Code, Token::from_current(this->lex_state), Message);
+   [[nodiscard]] std::optional<CompileTimeValue> resolve_compile_time_value(const NameRef &Reference) const;
+   [[nodiscard]] bool context_region_uses_context(const BlockStmt &Block) const;
+   [[nodiscard]] bool expression_uses_context(const ExprNode &Expression) const;
+   [[nodiscard]] std::optional<BCReg> allocate_inherited_context_cache(const BlockStmt &Block);
+   void push_context_source(ContextSource Source);
+   void pop_context_source();
+   inline std::optional<BCReg> resolve_local(GCstr *Symbol) const {
+      const LocalBindingEntry *entry = this->binding_table.resolve(Symbol);
+      return entry ? std::optional<BCReg>(entry->slot) : std::nullopt;
    }
-
-   inline ParserError make_error(ParserErrorCode Code, std::string_view Message, const SourceSpan &Span) const {
-      return ParserError(Code, Token::from_span(Span, TokenKind::Unknown), Message);
+   inline void update_local_binding(
+      GCstr *Symbol, BCReg Slot, std::optional<CompileTimeValue> Value = std::nullopt) {
+      this->binding_table.add(Symbol, Slot, std::move(Value));
    }
-
-   inline std::optional<BCReg> resolve_local(GCstr *symbol) const { return this->binding_table.resolve(symbol); }
-   inline void update_local_binding(GCstr *symbol, BCReg slot) { this->binding_table.add(symbol, slot); }
-   inline void release_expression(ExpDesc &expression, std::string_view usage) { expr_free(&this->func_state, &expression); this->ensure_register_floor(usage); }
+   void release_expression(ExpDesc &Expression, std::string_view Usage);
 
    struct LoopContext {
       ControlFlowEdge break_edge;
       ControlFlowEdge continue_edge;
       BCReg defer_base;
       BCPos continue_target;
-      uint8_t try_depth_at_entry;  // try_depth when loop was entered
+      size_t runtime_scope_depth_at_entry;
    };
 
    struct LoopStackGuard {

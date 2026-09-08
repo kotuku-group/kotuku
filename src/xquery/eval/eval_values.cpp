@@ -179,7 +179,7 @@ struct ConstructorLookupResult
    if (Prefix.empty()) return std::nullopt;
 
    if (auto prolog = Context.prolog) {
-      auto iter = prolog->declared_namespace_uris.find(std::string(Prefix));
+      auto iter = prolog->declared_namespace_uris.find(Prefix);
       if (iter != prolog->declared_namespace_uris.end()) return iter->second;
    }
 
@@ -311,6 +311,27 @@ static std::optional<std::string> resolve_default_element_namespace(const XPathC
    return std::nullopt;
 }
 
+[[nodiscard]] static bool is_expanded_qname(std::string_view QName)
+{
+   if ((QName.size() <= 3) or (not (QName[0] IS 'Q')) or (not (QName[1] IS '{'))) return false;
+
+   size_t closing = QName.find('}');
+   if (closing IS std::string_view::npos) return false;
+   return (closing + 1) < QName.size();
+}
+
+[[nodiscard]] static std::string canonicalise_registered_function_qname(std::string_view FunctionName,
+   const XPathContext &Context)
+{
+   if (is_expanded_qname(FunctionName)) return std::string(FunctionName);
+
+   if (auto prolog = Context.prolog) {
+      return prolog->normalise_function_qname(FunctionName, nullptr);
+   }
+
+   return std::string(FunctionName);
+}
+
 } // namespace
 
 //********************************************************************************************************************
@@ -396,7 +417,7 @@ std::optional<XPathVal> XPathEvaluator::resolve_user_defined_function(std::strin
 
    if (has_expanded_name) {
       if (!namespace_uri.empty()) {
-         namespace_hash = pf::strhash(namespace_uri);
+         namespace_hash = kt::strhash(namespace_uri);
          module_uri = namespace_uri;
       }
    }
@@ -422,7 +443,7 @@ std::optional<XPathVal> XPathEvaluator::resolve_user_defined_function(std::strin
    const XQueryModuleImport *matched_import = nullptr;
    if (namespace_hash != 0) {
       for (const auto &import : prolog->module_imports) {
-         if (pf::strhash(import.target_namespace) IS namespace_hash) {
+         if (kt::strhash(import.target_namespace) IS namespace_hash) {
             matched_import = &import;
             if (module_uri.empty()) module_uri = import.target_namespace;
             break;
@@ -488,6 +509,70 @@ std::optional<XPathVal> XPathEvaluator::resolve_user_defined_function(std::strin
    context.module_cache = previous_cache;
 
    return resolved_value;
+}
+
+//********************************************************************************************************************
+// Invokes a function registered directly on the XQuery object instance.
+
+static std::optional<XPathVal> resolve_registered_function(XPathEvaluator &Evaluator,
+   std::string_view FunctionName, const std::vector<XPathVal> &Args, const XPathNode *FuncNode)
+{
+   if ((not Evaluator.query) or (Evaluator.query->RegisteredFunctions.empty())) return std::nullopt;
+
+   auto canonical_name = canonicalise_registered_function_qname(FunctionName, Evaluator.context);
+
+   auto callback = Evaluator.query->RegisteredFunctions.find(canonical_name);
+   if (callback IS Evaluator.query->RegisteredFunctions.end()) {
+      std::string_view canonical_view(canonical_name);
+
+      for (auto iter = Evaluator.query->RegisteredFunctions.begin(); iter != Evaluator.query->RegisteredFunctions.end(); ++iter) {
+         auto registered_name = canonicalise_registered_function_qname(iter->first, Evaluator.context);
+         if (std::string_view(registered_name) IS canonical_view) {
+            callback = iter;
+            break;
+         }
+      }
+   }
+
+   if (callback IS Evaluator.query->RegisteredFunctions.end()) return std::nullopt;
+   if (callback->second.stale()) {
+      callback->second.unpin();
+      Evaluator.query->RegisteredFunctions.erase(callback);
+      return std::nullopt;
+   }
+
+   std::vector<XPathValue> public_args;
+   public_args.reserve(Args.size());
+   for (const auto &arg : Args) public_args.push_back((const XPathValue &)arg);
+
+   XPathValue public_result(XPVT::Boolean);
+   public_result.reset();
+
+   if (callback->second.isC()) {
+      kt::SwitchContext ctx(callback->second.Context);
+      auto routine = (ERR (*)(objXQuery *, std::string_view, const std::vector<XPathValue> &, XPathValue &, APTR))
+         callback->second.Routine;
+      auto error = routine(Evaluator.query, FunctionName, public_args, public_result, callback->second.Meta);
+      if (error != ERR::Okay) {
+         auto message = std::format("Registered function '{}' failed: {}.", FunctionName, GetErrorMsg(error));
+         Evaluator.record_error(message, FuncNode, true);
+         return XPathVal();
+      }
+   }
+
+   XPathVal result;
+   result.Type                      = public_result.Type;
+   result.NumberValue               = public_result.NumberValue;
+   result.StringValue               = public_result.StringValue;
+   result.node_set                  = public_result.node_set;
+   result.node_set_string_override  = public_result.node_set_string_override;
+   result.node_set_string_values    = public_result.node_set_string_values;
+   result.node_set_attributes       = public_result.node_set_attributes;
+   result.node_set_composite_values = public_result.node_set_composite_values;
+   result.preserve_node_order       = public_result.preserve_node_order;
+   result.map_storage               = public_result.map_storage;
+   result.array_storage             = public_result.array_storage;
+   return result;
 }
 
 //********************************************************************************************************************
@@ -1376,7 +1461,7 @@ bool XPathEvaluator::append_constructor_sequence(XTag &Parent, const XPathVal &V
    text = std::move(*prepared);
    if (text.empty()) return true;
 
-   pf::vector<XMLAttrib> text_attribs;
+   kt::vector<XMLAttrib> text_attribs;
    text_attribs.emplace_back("", text);
 
    XTag text_node(next_constructed_node_id--, 0, text_attribs);
@@ -1392,7 +1477,7 @@ bool XPathEvaluator::append_constructor_sequence(XTag &Parent, const XPathVal &V
 std::optional<std::string> XPathEvaluator::evaluate_attribute_value_template(const XPathConstructorAttribute &Attribute,
    uint32_t CurrentPrefix)
 {
-   pf::Log log("XPath");
+   kt::Log log("XPath");
    std::string result;
 
    for (int index = 0; index < std::ssize(Attribute.value_parts); ++index) {
@@ -1491,7 +1576,7 @@ std::optional<std::string> XPathEvaluator::evaluate_constructor_content_string(c
    if (expression_unsupported) {
       if (is_trace_enabled()) {
          std::string signature = build_ast_signature(expr);
-         pf::Log("XPath").msg(VLF::TRACE, "Constructor content expression failed: %s", signature.c_str());
+         kt::Log("XPath").msg(VLF::TRACE, "Constructor content expression failed: %s", signature.c_str());
       }
       record_error("Constructor content expression could not be evaluated.", expr);
       if (xml and xml->ErrorMsg.empty()) xml->ErrorMsg.assign("Constructor content expression could not be evaluated.");
@@ -1544,7 +1629,7 @@ std::optional<std::string> XPathEvaluator::evaluate_constructor_content_string(c
 
 std::optional<std::string> XPathEvaluator::evaluate_constructor_name_string(const XPathNode *Node, uint32_t CurrentPrefix)
 {
-   pf::Log log("XPath");
+   kt::Log log("XPath");
 
    if (not Node) return std::string();
 
@@ -1577,7 +1662,7 @@ std::optional<std::string> XPathEvaluator::evaluate_constructor_name_string(cons
 std::optional<XTag> XPathEvaluator::build_direct_element_node(const XPathNode *Node, uint32_t CurrentPrefix,
    ConstructorNamespaceScope *ParentScope, int ParentID)
 {
-   pf::Log log("XPath");
+   kt::Log log("XPath");
 
    if ((not Node) or (Node->type != XQueryNodeType::DIRECT_ELEMENT_CONSTRUCTOR)) {
       record_error("Invalid direct constructor node encountered.", Node, true);
@@ -1614,7 +1699,7 @@ std::optional<XTag> XPathEvaluator::build_direct_element_node(const XPathNode *N
       evaluated_attributes.push_back(std::move(evaluated));
    }
 
-   pf::vector<XMLAttrib> element_attributes;
+   kt::vector<XMLAttrib> element_attributes;
 
    std::string element_name;
    if (info->prefix.empty()) element_name = info->name;
@@ -1727,7 +1812,7 @@ std::optional<XTag> XPathEvaluator::build_direct_element_node(const XPathNode *N
             auto text_value = prepare_constructor_text(child->value, true);
             if (not text_value.has_value()) continue;
 
-            pf::vector<XMLAttrib> text_attribs;
+            kt::vector<XMLAttrib> text_attribs;
             text_attribs.emplace_back("", *text_value);
             XTag text_node(next_constructed_node_id--, 0, text_attribs);
             text_node.ParentID = element.ID;
@@ -1832,7 +1917,7 @@ XPathVal XPathEvaluator::evaluate_computed_element_constructor(const XPathNode *
       if (not context.context_node) [[unlikely]] return std::nullopt;
 
       uint32_t resolved_hash = 0;
-      if (xml->resolvePrefix(Prefix, context.context_node->ID, resolved_hash) IS ERR::Okay) return resolved_hash;
+      if (!xml->resolvePrefix(Prefix, context.context_node->ID, resolved_hash)) return resolved_hash;
       return std::nullopt;
    };
 
@@ -1855,7 +1940,7 @@ XPathVal XPathEvaluator::evaluate_computed_element_constructor(const XPathNode *
       element_name += name_info.local;
    }
 
-   pf::vector<XMLAttrib> element_attributes;
+   kt::vector<XMLAttrib> element_attributes;
    element_attributes.emplace_back(element_name, "");
 
    XTag element(next_constructed_node_id--, 0, element_attributes);
@@ -1871,7 +1956,7 @@ XPathVal XPathEvaluator::evaluate_computed_element_constructor(const XPathNode *
       if (not content_node->value.empty()) {
          auto text_value = prepare_constructor_text(content_node->value, true);
          if (text_value.has_value()) {
-            pf::vector<XMLAttrib> text_attribs;
+            kt::vector<XMLAttrib> text_attribs;
             text_attribs.emplace_back("", *text_value);
             XTag text_node(next_constructed_node_id--, 0, text_attribs);
             text_node.ParentID = element.ID;
@@ -1957,7 +2042,7 @@ XPathVal XPathEvaluator::evaluate_computed_attribute_constructor(const XPathNode
       if (not context.context_node) [[unlikely]] return std::nullopt;
 
       uint32_t resolved_hash = 0;
-      if (xml->resolvePrefix(Prefix, context.context_node->ID, resolved_hash) IS ERR::Okay) return resolved_hash;
+      if (!xml->resolvePrefix(Prefix, context.context_node->ID, resolved_hash)) return resolved_hash;
       return std::nullopt;
    };
 
@@ -1984,7 +2069,7 @@ XPathVal XPathEvaluator::evaluate_computed_attribute_constructor(const XPathNode
    auto value_string = evaluate_constructor_content_string(content_node, CurrentPrefix, false, false);
    if (not value_string) return XPathVal();
 
-   pf::vector<XMLAttrib> attribute_attribs;
+   kt::vector<XMLAttrib> attribute_attribs;
    attribute_attribs.emplace_back("$attribute", "");
    attribute_attribs.emplace_back(attribute_name, *value_string);
 
@@ -2023,7 +2108,7 @@ XPathVal XPathEvaluator::evaluate_text_constructor(const XPathNode *Node, uint32
    auto content = evaluate_constructor_content_string(content_node, CurrentPrefix, true, preserve_construction);
    if (not content) return XPathVal();
 
-   pf::vector<XMLAttrib> text_attribs;
+   kt::vector<XMLAttrib> text_attribs;
    text_attribs.emplace_back("", *content);
 
    XTag text_node(next_constructed_node_id--, 0, text_attribs);
@@ -2070,7 +2155,7 @@ XPathVal XPathEvaluator::evaluate_comment_constructor(const XPathNode *Node, uin
       return XPathVal();
    }
 
-   pf::vector<XMLAttrib> comment_attribs;
+   kt::vector<XMLAttrib> comment_attribs;
    comment_attribs.emplace_back("", *content);
 
    XTag comment_node(next_constructed_node_id--, 0, comment_attribs);
@@ -2135,7 +2220,7 @@ XPathVal XPathEvaluator::evaluate_pi_constructor(const XPathNode *Node, uint32_t
 
    std::string attribute_name = "?" + target;
 
-   pf::vector<XMLAttrib> instruction_attribs;
+   kt::vector<XMLAttrib> instruction_attribs;
    instruction_attribs.emplace_back(attribute_name, *content);
 
    XTag instruction(next_constructed_node_id--, 0, instruction_attribs);
@@ -2167,7 +2252,7 @@ XPathVal XPathEvaluator::evaluate_document_constructor(const XPathNode *Node, ui
       return XPathVal();
    }
 
-   pf::vector<XMLAttrib> document_attribs;
+   kt::vector<XMLAttrib> document_attribs;
    document_attribs.emplace_back("#document", "");
 
    XTag document_node(next_constructed_node_id--, 0, document_attribs);
@@ -2183,7 +2268,7 @@ XPathVal XPathEvaluator::evaluate_document_constructor(const XPathNode *Node, ui
       if (not content_node->value.empty()) {
          auto text_value = prepare_constructor_text(content_node->value, true);
          if (text_value.has_value()) {
-            pf::vector<XMLAttrib> text_attribs;
+            kt::vector<XMLAttrib> text_attribs;
             text_attribs.emplace_back("", *text_value);
             XTag text_node(next_constructed_node_id--, 0, text_attribs);
             text_node.ParentID = document_node.ID;
@@ -2223,12 +2308,12 @@ ERR XPathEvaluator::process_expression_node_set(const XPathVal &Value)
    bool tracing_xpath = is_trace_enabled();
    auto trace_nodes_detail = [&](const char *Format, auto ...Args) {
       if (not tracing_xpath) return;
-      pf::Log("XPath").msg(VLF::TRACE, Format, Args...);
+      kt::Log("XPath").msg(VLF::TRACE, Format, Args...);
    };
 
    auto trace_nodes_verbose = [&](const char *Format, auto ...Args) {
       if (not tracing_xpath) return;
-      pf::Log("XPath").msg(VLF::TRACE, Format, Args...);
+      kt::Log("XPath").msg(VLF::TRACE, Format, Args...);
    };
 
    struct NodeEntry {
@@ -2372,7 +2457,7 @@ ERR XPathEvaluator::process_expression_node_set(const XPathVal &Value)
 
 ERR XPathEvaluator::evaluate_top_level_expression(const XPathNode *Node, uint32_t CurrentPrefix)
 {
-   if (not Node) return ERR::Failed;
+   if (not Node) return ERR::NullArgs;
 
    const XPathNode *expression = Node;
 
@@ -2385,7 +2470,7 @@ ERR XPathEvaluator::evaluate_top_level_expression(const XPathNode *Node, uint32_
    auto value = evaluate_expression(expression, CurrentPrefix);
    if (expression_unsupported) {
       if (xml and xml->ErrorMsg.empty()) xml->ErrorMsg = "Unsupported XPath expression.";
-      return ERR::Failed;
+      return ERR::NoSupport;
    }
 
    switch (value.Type) {
@@ -2403,7 +2488,7 @@ ERR XPathEvaluator::evaluate_top_level_expression(const XPathNode *Node, uint32_
          return ERR::Okay;
    }
 
-   return ERR::Failed;
+   return ERR::InvalidType;
 }
 
 //********************************************************************************************************************
@@ -2484,6 +2569,10 @@ XPathVal XPathEvaluator::evaluate_function_call(const XPathNode *FuncNode, uint3
 
    if (auto user_result = resolve_user_defined_function(function_name, args, CurrentPrefix, FuncNode)) {
       return *user_result;
+   }
+
+   if (auto registered_result = resolve_registered_function(*this, function_name, args, FuncNode)) {
+      return *registered_result;
    }
 
    auto &library = XPathFunctionLibrary::instance();

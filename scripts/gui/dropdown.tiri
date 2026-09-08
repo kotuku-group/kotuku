@@ -5,9 +5,9 @@ Internal script for combobox drop-down menus.
    import 'gui'
    include 'display'
 
-   namespace 'gui'
+   namespace gui
 
-   mGfx <const> ?= mod.load('display')
+   module display as mGfx
 
 FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(gui.fonts.menu)
 ITEM_HEIGHT  <const> = math.floor(FONT_MAX_HEIGHT * 1.5)
@@ -17,7 +17,7 @@ ICON_SIZE    <const> = math.floor(ITEM_HEIGHT * 0.8)
 ITEM_SPACING <const> = 1.2
 
 gui.dropdown = function(Options)
-   local theme = Options.theme ? Options.theme :> gui.getTheme()
+   local theme = Options.theme ?? gui.getTheme()
 
    self = { -- Public variables
       surface  = nil,
@@ -33,7 +33,7 @@ gui.dropdown = function(Options)
    }
 
    function initVectorScene()
-      showIcons = Options.showIcons is false ? nil :> true
+      showIcons = Options.showIcons is false ? nil : true
       TEXT_X = HMARGIN
 
       if showIcons then
@@ -46,20 +46,12 @@ gui.dropdown = function(Options)
          end
       end
 
-      -- To use the clip, set the 'mask' field of any drawable vector.
-      self.clip = self.scene.new('VectorClip', { units='BoundingBox' })
-      clipRect = self.clip.viewport.new('VectorRectangle', {
-         x = 1.5, y = 1.5, roundX = 3, roundY = 3, width = 1, height = 1
-      })
-
       self.viewport.new('VectorRectangle', { -- Background
          fill = theme.dropdown.bkgd,
          x = 1.5, y = 1.5, roundX = 3, roundY = 3, width = 1, height = 1,
-         resizeEvent = function(Viewport:obj, Vector:obj, X:num, Y:num, Width:num, Height:num)
+         resizeEvent = function(Viewport:obj!, Vector:obj!, X:num!, Y:num!, Width:num!, Height:num!)
             Vector.width  = Width - (Vector.x * 2)
             Vector.height = Height - (Vector.y * 2)
-            clipRect.width  = Width - (Vector.x * 2)
-            clipRect.height = Height - (Vector.y * 2)
          end
       })
 
@@ -67,7 +59,7 @@ gui.dropdown = function(Options)
          x = 2, y = 0, xOffset = 2, height = ITEM_HEIGHT, fill = theme.menu.highlight, visibility = 'hidden'
       })
 
-      self.viewport.new('VectorRectangle', { -- Border
+      self.viewport.new('VectorRectangle', { -- Menu border
          stroke = theme.dropdown.stroke,
          strokeWidth = 1.5, x = 1.5, y = 1.5, roundX = 3, roundY = 3, width = 1, height = 1,
          resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
@@ -93,10 +85,10 @@ gui.dropdown = function(Options)
                string   = item['item']
             })
 
-            err, bx, by, bw, bh = vText.mtGetBoundary(0)
+            bw = [___*_]vText.mtGetBoundary(0)
 
             mi.text = vText
-            mi.textY = y + ((vText.lineSpacing + vText.displayHeight) * 0.5)
+            mi.textY = math.floor(y + ((vText.lineSpacing + vText.displayHeight) * 0.5))
 
             if bw > widestItem then widestItem = bw end
 
@@ -113,16 +105,16 @@ gui.dropdown = function(Options)
                   end
 
                   mi.iconView = self.viewport.new('VectorRectangle', {
-                     x = HMARGIN, y = y + math.floor((ITEM_HEIGHT - ICON_SIZE) * 0.5), width = ICON_SIZE, height = ICON_SIZE, fill = info.fill
+                     x = HMARGIN, y = math.ceil(y + (ITEM_HEIGHT - ICON_SIZE) * 0.5), width = ICON_SIZE, height = ICON_SIZE, fill = info.fill
                   })
                end
             end
 
             vText.y = mi.textY
             mi.height = vText.lineSpacing * ITEM_SPACING
-            y += mi.height
+            y = math.floor(y + mi.height)
 
-            table.insert(self.items, mi)
+            self.items.insert(mi)
          end
       end
 
@@ -135,7 +127,7 @@ gui.dropdown = function(Options)
 
    lastTime = 0
    self.toggle = function(TimeLapse:num)
-      timelapse = TimeLapse and TimeLapse >= 0 ? TimeLapse * 1000 :> 5000
+      timelapse = TimeLapse and TimeLapse >= 0 ? TimeLapse * 1000 : 5000
 
       currentTime = mSys.PreciseTime()
       if self.timeShow > self.timeHide then -- Hide the menu
@@ -191,7 +183,7 @@ gui.dropdown = function(Options)
             x = rel.absX + self.x - target.absX
             y = rel.absY + self.y - target.absY
 
-            if lReverseY then
+            if self.reverseY then
                y = rel.absY + (Options.y ?? 0) - target.absY - surface.height
             end
 
@@ -256,7 +248,7 @@ gui.dropdown = function(Options)
    self.surface.y          = -10000
    self.surface.windowType = 'NONE'
    self.surface.height     = 400
-   check self.surface.init()
+   self.surface.init()
 
    self.scene = obj.new('VectorScene', { flags=VPF_RESIZE, surface=self.surface })
    self.viewport = self.scene.new('VectorViewport', { })
@@ -267,12 +259,12 @@ gui.dropdown = function(Options)
 
    self.surface.subscribe('hide', function(Surface, Args)
       self.visible = false
-      self.timeHide = mSys.preciseTime()
+      self.timeHide = mSys.PreciseTime()
    end)
 
    self.surface.subscribe('show', function(Surface, Args)
       self.visible = true
-      self.timeShow = mSys.preciseTime()
+      self.timeShow = mSys.PreciseTime()
 
       -- Keyboard support requires a client reference to grab input from.
 
@@ -289,7 +281,7 @@ gui.dropdown = function(Options)
 
             elseif Value is KEY_DOWN then
 
-            elseif Value is KEY_RETURN then
+            elseif Value is KEY_ENTER then
 
             end
          end) is ERR_Okay then

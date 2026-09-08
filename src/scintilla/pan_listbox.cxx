@@ -51,7 +51,7 @@ private:
 
 ListBoxImp::ListBoxImp()
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.branch();
 
    menu = nullptr;
@@ -59,7 +59,7 @@ ListBoxImp::ListBoxImp()
 
 ListBoxImp::~ListBoxImp()
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.branch();
 
    if (menu) { FreeResource(menu); menu = nullptr; }
@@ -73,7 +73,7 @@ Scintilla::ListBox * Scintilla::ListBox::Allocate()
 
 void ListBoxImp::Create(Scintilla::Window &Window, int, Scintilla::Point, int, bool)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    OBJECTID surface_id = getSurfaceID(&Window);
 

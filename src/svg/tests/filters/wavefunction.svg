@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="ISO-8859-1" standalone="no"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewbox="0 0 960 960" preserveAspectRatio="xMidYMid meet">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 960" preserveAspectRatio="xMidYMid meet">
   <defs>
     <pattern id="checkerPattern" patternUnits="userSpaceOnUse" x="0" y="0" width="20" height="20" viewBox="0 0 10 10" >
       <rect fill="white" width="100%" height="100%"/>

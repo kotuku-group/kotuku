@@ -10,6 +10,7 @@ A Language Server Protocol (LSP) implementation for Tiri scripting, providing ID
    - [Semantic Highlighting](#semantic-highlighting)
    - [Hover Information](#hover-information)
    - [Document Symbols](#document-symbols)
+   - [Annotation Markers](#annotation-markers)
    - [Code Folding](#code-folding)
    - [Code Hints](#code-hints)
 3. [Getting Started](#getting-started)
@@ -30,7 +31,8 @@ A Language Server Protocol (LSP) implementation for Tiri scripting, providing ID
 
 ## Overview
 
-The Tiri LSP server provides language intelligence for Tiri files in any LSP-compatible editor. It communicates over TCP and offers real-time feedback as you write Tiri code.
+The Tiri LSP server provides language intelligence for Tiri files in any LSP-compatible editor. It communicates over
+TCP or stdio and offers real-time feedback as you write Tiri code.
 
 ## Features
 
@@ -38,6 +40,9 @@ The Tiri LSP server provides language intelligence for Tiri files in any LSP-com
 
 Real-time syntax error detection with precise location information. Errors, warnings, and informational messages are
 reported as you type.
+
+The removed global `error()` built-in is treated as an undeclared variable. Use `raise` to create exceptions and bare
+`raise` in an `except` handler to preserve and rethrow the current exception.
 
 ### Semantic Highlighting
 
@@ -58,12 +63,54 @@ Context-aware documentation on hover:
 - Module functions (e.g., `mSys.Sleep`, `mNet.AddressToStr`)
 - Links to online documentation
 
+### Signature Help
+
+Parameter hints while typing function calls:
+- Current-document Tiri functions, including signatures and parameter documentation from `@Doc`
+- Built-in function prototypes
+- Kōtuku module functions, object methods, and actions from the XML documentation cache
+
 ### Document Symbols
 
 Outline view showing:
 - Global and local functions
 - Function scope (global/local/thunk)
 - Nested function support
+
+### Annotation Markers
+
+Document symbols include annotation markers that appear directly before a function or thunk declaration.  The marker
+name is shown in the symbol detail, and `@Deprecated` is also reported with the LSP deprecated tag so supporting editors
+can render it as deprecated.
+
+Annotations can be written on their own line, inline with a declaration, or chained with semicolons:
+
+```lua
+@Deprecated(message='Use newApi() instead', since='2.0')
+function oldApi()
+end
+
+@Test(priority=1); @Requires(network=true) function NetworkRoundTrip()
+end
+```
+
+The LSP recognises any marker in the form `@Name` or `@Name(...)` for document-symbol display.  The standard markers
+used by Tiri tooling are:
+
+|Marker|Arguments|Purpose|
+|-|-|-|
+|`@Deprecated`|`message:str`, `since:str`|Marks a function as deprecated.|
+|`@Override`|(none)|Documents that a function overrides another implementation.|
+|`@SuppressWarnings`|warning flags|Suppresses selected tooling warnings.|
+|`@Test`|`name:str`, `timeout:num`, `priority:num`, `labels:array`, `hotpath:num/bool`|Marks a Flute test function.|
+|`@BeforeAll`|(none)|Runs once before all Flute tests in a file.|
+|`@AfterAll`|(none)|Runs once after all Flute tests in a file.|
+|`@BeforeEach`|optional defaults such as `hotpath`|Runs before each Flute test.|
+|`@AfterEach`|(none)|Runs after each Flute test.|
+|`@Disabled`|`reason:str`|Skips a Flute test.|
+|`@Requires`|capability flags|Skips a Flute test unless requirements match.|
+
+`@Requires` capability flags are `audio`, `display`, `font`, `network`, and `ssl`.
 
 ### Code Folding
 
@@ -95,18 +142,24 @@ Parser-generated tips for code improvement (LSP severity 4), including:
 origo tools/tiri_lsp/server.tiri port=5007
 ```
 
+Use `port=0` for stdio clients:
+
+```bash
+origo tools/tiri_lsp/server.tiri port=0
+```
+
 ### Configuration Options
 
 | Parameter     | Default                            | Description                          |
 |---------------|------------------------------------|------------------------------------- |
-| `port`        | 5007                               | TCP port to listen on                |
+| `port`        | 5007                               | TCP port to listen on, or `0` for stdio |
 | `verbose`     | false                              | Enable debug logging                 |
-| `config`      | `user:config/lsp_server_cfg.tiri` | Path to configuration file           |
+| `config`      | `user:config/lsp_server_cfg.json`  | Path to JSON configuration file      |
 | `request-log` | (none)                             | Path for request/response logging    |
 
 Example with options:
 ```bash
-origo server.tiri port=5007 verbose=true request-log=debug.log
+origo server.tiri port=5007 verbose request-log=debug.log
 ```
 
 ## VSCode Extension
@@ -133,7 +186,7 @@ Configure in VSCode settings:
 |-|-|-|
 |`tiri.lsp.enable`|true|Enable LSP server connection|
 |`tiri.lsp.host`|"127.0.0.1"|LSP server host address|
-|`tiri.lsp.port`|5007|LSP server TCP port|
+|`tiri.lsp.port`|5007|LSP server port. `0` runs the server over stdio; non-zero values use TCP.|
 
 ## Architecture
 
@@ -154,7 +207,7 @@ tools/tiri_lsp/
 
 ### LSP Message Flow
 
-1. Client connects via TCP
+1. Client connects via TCP, or launches the server with `port=0` for stdio
 2. `initialize` handshake establishes capabilities
 3. `textDocument/didOpen` begins document tracking
 4. `textDocument/didChange` triggers re-parsing and diagnostics
@@ -179,6 +232,7 @@ The cache is automatically rebuilt when source XML files change.
 |`textDocument/didChange`|Document modified|
 |`textDocument/didClose`|Document closed|
 |`textDocument/hover`|Hover information|
+|`textDocument/signatureHelp`|Function and method parameter hints|
 |`textDocument/documentSymbol`|Document outline|
 |`textDocument/foldingRange`|Folding ranges|
 |`textDocument/semanticTokens/full`|Full semantic tokens|
@@ -237,5 +291,5 @@ Content-Length: 110
 - Ensure `docs/xml/` contains the API documentation files
 
 **Verbose debugging**
-- Start server with `verbose=true` for detailed logging
+- Start server with `verbose` for detailed logging
 - Use `request-log=path.log` to capture all LSP messages

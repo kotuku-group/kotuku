@@ -1,0 +1,56 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>GradientGouraud</name>
+    <type>class</type>
+    <module>Vector</module>
+    <comment>Gouraud mesh colour gradient paint server.</comment>
+    <version>1</version>
+    <id>1f0f86d9</id>
+    <idstring>GRADIENTGOURAUD</idstring>
+    <category>Graphics</category>
+    <copyright>Paul Manias © 2010-2026</copyright>
+    <description>
+<p>GradientGouraud interpolates colour barycentrically across a caller-supplied mesh of coloured triangles.  The mesh is defined by <fl>Vertices</fl> and optional <fl>Indices</fl>.</p>
+<p>The inherited colour-ramp fields <code>Stops</code>, <code>ColourMap</code>, <code>SpreadMethod</code> and <code>Colour</code> are not supported by this class. Per-vertex colour values are supplied directly through <fl>Vertices</fl>.</p></description>
+    <source>
+      <file path="painters/">gradient_gouraud.cpp</file>
+    </source>
+  </info>
+
+  <fields>
+    <field>
+      <name>Indices</name>
+      <comment>Defines triangle connectivity for a Gouraud gradient.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>kt::vector&lt;int&gt;</type>
+      <description>
+<p>The Indices array provides triangle connectivity for a Gouraud gradient's <fl>Vertices</fl>, with three indices per triangle referencing vertices in counter-clockwise order.  Supplying indices allows vertices to be shared between adjacent triangles.</p>
+<p>If left empty, the <fl>Vertices</fl> array is treated as a flat triangle list, where every three consecutive vertices form one triangle.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Vertices</name>
+      <comment>Defines the coloured vertices for a Gouraud gradient.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>kt::vector&lt;GouraudVertex&gt;</type>
+      <description>
+<p>The Vertices array defines the mesh of coloured points across which colour is interpolated barycentrically.  Each <st>GouraudVertex</st> carries an <code>(X, Y)</code> position and an <code>FRGB</code> colour.</p>
+<p>By default the vertices are treated as a flat triangle list, where every three consecutive vertices form one triangle.  Supplying an <fl>Indices</fl> array instead expresses triangle connectivity explicitly.</p>
+<p>The coordinate system for vertex positions is determined by <class name="Gradient" field="Units">Gradient.Units</class>.  Under <code>BOUNDING_BOX</code>, a normalised mesh in the range <code>0 - 1.0</code> is scaled into the target path's bounds.  Under <code>USERSPACE</code>, the positions are taken directly in the viewport's coordinate space.</p>
+      </description>
+    </field>
+
+  </fields>
+  <structs>
+    <struct name="GouraudVertex" comment="Describes a coloured vertex for the GradientGouraud Vertices field.">
+      <field name="X" type="DOUBLE">The X coordinate of the vertex.</field>
+      <field name="Y" type="DOUBLE">The Y coordinate of the vertex.</field>
+      <field name="Colour" type="struct FRGB">The floating point RGB colour assigned to this vertex.</field>
+    </struct>
+
+  </structs>
+</book>

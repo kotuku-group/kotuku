@@ -1,9 +1,13 @@
 -- Universal utility functions
 
-local rx_root_extract   = <{ regex.new('^<ROOT>(.*)</ROOT>$', regex.DOT_ALL) }>
-local rx_angle_brackets = <{ regex.new('[<>]') }>
-local rx_first_char     = <{ regex.new('^(.)(.+)$') }>
-local rx_cmake_path     = <{ regex.new('^(.+)CMakeLists\\.txt') }>
+   include 'xml'
+
+   import './types'
+
+rx_root_extract   = <{ regex.new('^<ROOT>(.*)</ROOT>$', regex.DOT_ALL) }>
+rx_angle_brackets = <{ regex.new('[<>]') }>
+rx_first_char     = <{ regex.new('^(.)(.+)$') }>
+rx_cmake_path     = <{ regex.new('^(.+)CMakeLists\\.txt') }>
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Print a message to stdout if verbose mode is enabled
@@ -15,17 +19,60 @@ global function verbose(String:str)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Save text output via a temporary file, replacing the target only when the content hash has changed.
+
+global function readTextFile(Path:str, Description:str):str
+   local fl
+   try
+      fl = io.open(Path, 'r')
+      content = fl.read('*a') ?? ''
+      fl.close()
+      return content
+   except ex
+      fl?.close()
+      raise f'Failed to read "{Path}" for {Description}: {ex.message}'
+   end
+end
+
+global function saveIfModified(Path:str, Content:str, Description:str):bool
+   assert(Path??, 'Path not provided')
+
+   Content ?= ''
+   Description ?= 'generated output'
+
+   if mSys.AnalysePath(Path) is ERR_Okay then
+      target_content = readTextFile(Path, Description)
+      if target_content.hash(true) is Content.hash(true) then
+         verbose(f'No changes detected for "{Path}"')
+         return false
+      end
+   end
+
+   local fl
+   try
+      fl = io.open(Path, 'w')
+      fl.write(Content)
+      fl.close()
+   except ex
+      fl?.close()
+      raise f'Failed to write "{Path}" for {Description}: {ex.message}'
+   end
+
+   return true
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Add a line to the output. If the string ends with a newline character, preserve it, otherwise trim trailing spaces.
 
 global function output(String:str)
    if String?? then
-      if String:sub(-1) is '\n' then
-         glOutput:push(String)
+      if String.sub(-1) is '\n' then
+         glOutput.push(String)
       else
-         glOutput:push(String:rtrim())
+         glOutput.push(String.rtrim())
       end
    else
-      glOutput:push('')
+      glOutput.push('')
    end
 end
 
@@ -36,16 +83,16 @@ end
 global function priority(Input:any)
    if type(Input) is 'function' then
       saveOutput = glOutput
-      glOutput = array<string>
+      glOutput = array<str>
       Input()
       for v in values(glOutput) do
-         glHeader:push(v)
+         glHeader.push(v)
       end
       glOutput = saveOutput
    elseif (type(Input) is 'string') and Input?? then
-      glHeader:push(Input:rtrim())
+      glHeader.push(Input.rtrim())
    else
-      glHeader:push('')
+      glHeader.push('')
    end
 end
 
@@ -54,7 +101,7 @@ end
 
 global function shortName(Name:str):str
    local result = ""
-   for n in values(Name:split("_")) do
+   for n in values(Name.split("_")) do
       if (n is "XY") or (n is "SSL") or (n is "HTML") or (n is "CDATA") or (n is "2D") or (n  is "3D") or (n is "DGA") or
          (n is "DPMS") or (n is "GTF") or (n is "SRGB") or (n is "RGB") or (n is "HSV") or (n is "CX") or (n is "CY") or
          (n is "FX") or (n is "FY") then
@@ -62,9 +109,9 @@ global function shortName(Name:str):str
       else
          local first, rest = rx_first_char.extract(n)
          if not first then
-            result ..= n:upper()
+            result ..= n.upper()
          else
-            result ..= first:upper() .. rest:lower()
+            result ..= first.upper() .. rest.lower()
          end
       end
    end
@@ -92,8 +139,8 @@ end
 
 local cxml
 
-global function cleanXMLString(String:str, Caller:str):str
-   String ?? return ''
+global function cleanXMLString(String:str):str
+   String ?! return ''
 
    if rx_angle_brackets.test(String) then
       String = f'<ROOT>{String}</ROOT>'
@@ -107,9 +154,9 @@ global function cleanXMLString(String:str, Caller:str):str
 
          _, clean_str = cxml.mtSerialise(0, XMF_INCLUDE_SIBLINGS)
          local extracted = rx_root_extract.extract(clean_str)
-         if extracted then String = extracted:trim() end
+         if extracted then String = extracted.trim() end
       except ex
-         error(f'Failed to parse XML for {Caller ?? "undefined"}: {ex.message}')
+         raise f'Failed to parse XML: {ex.message}\n' .. debug.traceback()
       end
    end
 
@@ -122,39 +169,42 @@ end
 global function registerClass(Name:str):table
    assert(Name??, 'No Name provided to registerClass()')
    global glClasses ?= { }
-   glClasses[Name:lower()] ?= { name=Name:cap() }
-   return glClasses[Name:lower()]
+   glClasses[Name.lower()] ?= { name=Name.cap() }
+   return glClasses[Name.lower()]
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Extract information from a compiled class' field definition.
+-- Extract information from a compiled class' field definition (the blueprint as provided by the client).
 
-global function getMetaFieldDefinition(Field)
+global function getMetaFieldDefinition(Field:table):table
    fl = {
       name  = Field.name,
-      flags = Field.flags
+      flags = Field.flags,
+      arg   = Field.arg,
+      index = Field.index,
+      offset = Field.offset
    }
 
    getFieldType(fl, Field.flags, Field.name, Field.arg)
    fl.docType = fl.doc_type
 
-   if (Field.flags & FD_SYNONYM)?? then
+   if Field.flags has FD_SYNONYM then
       fl.synonym = true
    end
 
    if Field.getField?? then
       fl.read = 'Get'
       fl.get = Field.getField
-   elseif (Field.flags & FD_READ)?? then
+   elseif Field.flags has FD_READ then
       fl.read = 'Read'
    end
 
    if Field.setField?? then
       fl.write = 'Set'
       fl.set = Field.setField
-   elseif (Field.flags & FD_WRITE)?? then
+   elseif Field.flags has FD_WRITE then
       fl.write = 'Write'
-   elseif (Field.flags & FD_INIT)?? then
+   elseif Field.flags has FD_INIT then
       fl.write = 'Init'
    end
 
@@ -168,7 +218,7 @@ global function getMetaFieldDefinition(Field)
       fl.access = 'Private'
    end
 
-   if (Field.flags & FD_SYSTEM)?? then
+   if Field.flags has FD_SYSTEM then
       fl.access = 'Private'
       fl.private = true
    end
@@ -184,7 +234,7 @@ global function loadActions()
    verbose("Loading core actions...")
    global glActions = { }
    list = mSys.ActionList()
-   for id=1, #list-1 do
+   for id in {1 to #list} do
       if list[id].name?? then
          glActions[list[id].name] = { name=list[id].name, input=list[id].args, hash=list[id].hash, id=id }
       end
@@ -197,30 +247,30 @@ end
 global function resolveSDKPath(Path:str)
    local sdk_path
    err = ERR_Failed
-   search_list = array<string>
+   search_list = array<str>
    if not Path then
       search_path = 'CMakeLists.txt'
       limit = 5
       while (err != ERR_Okay) and (limit > 0) do
-         search_list:push(search_path)
+         search_list.push(search_path)
          err, sdk_path = mSys.ResolvePath(search_path)
          search_path = f'../{search_path}'
          limit -= 1
       end
    else
-      search_list:push(f'{Path}/CMakeLists.txt')
+      search_list.push(f'{Path}/CMakeLists.txt')
       err, sdk_path = mSys.ResolvePath(f'{Path}/CMakeLists.txt')
    end
 
    if err is ERR_Okay then
       sdk_path = rx_cmake_path.extract(sdk_path) ?? sdk_path
    else
-      msg = ''
+      local msg = ''
       for path in values(search_list) do
          msg ..= path .. '\n'
       end
       print('Unable to find CMakeLists.txt after searching the following paths:\n' .. msg)
-      error('A path to the Kotuku SDK could not be determined.')
+      raise 'A path to the Kotuku SDK could not be determined.'
    end
 
    mSys.SetVolume('sdk', sdk_path)
@@ -241,13 +291,13 @@ global function parseIDL(ModuleName:str):table
    matcher = regex.new("c\\.([A-Z]+):(.+)")
    match_list = matcher.search(defs)
 
-   for i=0, #match_list-1 do
+   for i in {0 to #match_list} do
       prefix = match_list[i][1]
       extract = match_list[i][2]
       constants[prefix] = { }
-      split_values = extract:split(',')
+      split_values = extract.split(',')
       for v in values(split_values) do
-         pair = v:split('=')
+         pair = v.split('=')
          constants[prefix][pair[0]] = tonumber(pair[1])
       end
    end

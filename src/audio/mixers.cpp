@@ -16,7 +16,6 @@ template<>
 struct SampleTraits<uint8_t> {
    static constexpr double SCALE = 256.0;
    static constexpr double OFFSET = 128.0;
-   static constexpr double MAX_VALUE = 255.0;
 
    static inline double normalize(uint8_t value) {
       return SCALE * (value - OFFSET);

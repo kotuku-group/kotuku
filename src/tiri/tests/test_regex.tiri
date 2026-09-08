@@ -1,5 +1,8 @@
 -- Flute tests for the regex functionality
 
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
 @Test function Construction()
    -- Test valid regex construction
 
@@ -20,6 +23,47 @@
       invalid_regex = regex.new('[unclosed')
    end
    assert(invalid_regex is nil, 'Invalid regex should have failed')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function RegexStringShorthand()
+   single_quote = r'\d+'
+   assert(single_quote.pattern is [[\d+]], 'Single-quoted regex shorthand should preserve backslashes')
+   assert(single_quote.test('abc123'), 'Single-quoted regex shorthand should compile a usable regex')
+
+   double_quote = r"\w+"
+   assert(double_quote.pattern is [[\w+]], 'Double-quoted regex shorthand should preserve backslashes')
+   word_match = double_quote.match('word')
+   assert(word_match[0] is 'word', 'Double-quoted regex shorthand should match word characters')
+
+   long_bracket = r[[\s+]]
+   assert(long_bracket.pattern is [[\s+]], 'Long-bracket regex shorthand should preserve content')
+   start_pos, stop_pos = long_bracket.findFirst('ab  cd', 0)
+   assert(start_pos is 2 and stop_pos is 4, 'Long-bracket regex shorthand should find whitespace')
+
+   level_bracket = r[=[\d{2}]=]
+   assert(level_bracket.pattern is [[\d{2}]], 'Levelled long-bracket regex shorthand should preserve content')
+   assert(level_bracket.test('ab12cd'), 'Levelled long-bracket regex shorthand should compile')
+
+   chained_call = r'\d+'.test('abc123')
+   assert(chained_call is true, 'Regex shorthand should support suffix calls')
+
+   local invalid_regex
+   try
+      invalid_regex = r'[unclosed'
+   end
+   assert(invalid_regex is nil, 'Invalid regex shorthand should raise during regex.new()')
+
+   do
+      local r = { 'zero' }
+      assert(r[0] is 'zero', 'Identifier r followed by index syntax should remain unchanged')
+   end
+
+   do
+      local r = function(Value:str) return Value end
+      assert(r 'text' is 'text', 'Whitespace-separated r string call syntax should remain unchanged')
+   end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -86,6 +130,7 @@ end
    pos, stop = sample_regex.findFirst('abc123def', 0)
    assert(pos is 3, f'Expected position 3, got {pos}')
    assert(stop is 6, f'Expected stop 6, got {stop}')
+   assert('abc123def'.sub(pos, stop) is '123', 'findFirst positions should compose with sub')
 
    pos2, stop = sample_regex.findFirst('no digits here', 0)
    assert(pos2 is nil and stop is nil, 'Expected no match, got position ' .. tostring(pos2))
@@ -151,6 +196,11 @@ end
    assert(all_matches[0][1] is '123', "First capture group should be '123'")
    assert(all_matches[1][0] is '456', "Second match should be '456'")
    assert(all_matches[1][1] is '456', "Second capture group should be '456'")
+
+   captured_char = regex.new('(b)').search(' ab')
+   assert(#captured_char is 1, 'Should find captured character preceded by alphabetic text')
+   assert(captured_char[0][0] is 'b', "Full match should be 'b'")
+   assert(captured_char[0][1] is 'b', "Capture group should be 'b'")
 
    -- Test with no matches
    no_matches = digit_regex.search('hello world')
@@ -265,7 +315,7 @@ end
 @Test function MemoryManagement()
    -- Create many regex objects to test memory handling
    regex_list = {}
-   for i = 0, 99 do
+   for i in {0 to 100} do
       regex_list[i] = regex.new("pattern" .. i)
    end
 
@@ -324,6 +374,8 @@ end
    assert(matches[0].pos is 3 and matches[0].stop is 6, 'First match at pos 3, stop 6')
    assert(matches[1].pos is 9 and matches[1].stop is 12, 'Second match at pos 9, stop 12')
    assert(matches[2].pos is 15 and matches[2].stop is 18, 'Third match at pos 15, stop 18')
+   assert('abc123def456ghi789'.sub(matches[1].pos, matches[1].stop) is '456',
+      'findAll positions should compose with sub')
 
    -- Test with starting position (pos 6 skips past '123' entirely)
    matches2 = {}

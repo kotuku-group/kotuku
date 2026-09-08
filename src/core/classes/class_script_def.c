@@ -2,15 +2,16 @@
 
 static const struct FieldDef clScriptFlags[] = {
    { "ExitOnError", 0x00000001 },
-   { "LogAll", 0x00000002 },
+   { "ProcessDoc", 0x00000002 },
+   { "LogAll", 0x00000004 },
    { nullptr, 0 }
 };
 
-FDEF maExec[] = { { "Procedure", FD_STR }, { "ScriptArg:Args", FD_PTR|FD_STRUCT }, { "TotalArgs", FD_INT }, { 0, 0 } };
-FDEF maDerefProcedure[] = { { "Procedure", FD_FUNCTIONPTR }, { 0, 0 } };
-FDEF maCallback[] = { { "ProcedureID", FD_INT64 }, { "ScriptArg:Args", FD_PTR|FD_STRUCT }, { "TotalArgs", FD_INT }, { "Error", FD_INT|FD_ERROR|FD_RESULT }, { 0, 0 } };
-FDEF maGetProcedureID[] = { { "Procedure", FD_STR }, { "ProcedureID", FD_INT64|FD_RESULT }, { 0, 0 } };
-FDEF maDebugLog[] = { { "Options", FD_STR }, { "Result", FD_STR|FD_ALLOC|FD_RESULT }, { 0, 0 } };
+FDEF maExec[] = { { "Procedure", FDF_CPPSTRING }, { "ScriptArg:Args", FD_PTR|FD_STRUCT }, { "TotalArgs", FD_INT }, { 0, 0 } };
+FDEF maDerefProcedure[] = { { "Procedure", FD_FUNCTION }, { 0, 0 } };
+FDEF maCallback[] = { { "ProcedureID", FD_INT64 }, { "ScriptArg:Args", FD_PTR|FD_STRUCT }, { "TotalArgs", FD_INT }, { "Error", FD_RESULT|FD_INT|FD_ERROR }, { 0, 0 } };
+FDEF maGetProcedureID[] = { { "Procedure", FDF_CPPSTRING }, { "ProcedureID", FD_RESULT|FD_INT64 }, { 0, 0 } };
+FDEF maDebugLog[] = { { "Options", FDF_CPPSTRING }, { "Result", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };
 
 static const struct MethodEntry clScriptMethods[] = {
    { AC(-1), (APTR)SCRIPT_Exec, "Exec", maExec, sizeof(struct sc::Exec) },
@@ -21,13 +22,23 @@ static const struct MethodEntry clScriptMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR SCRIPT_New(objScript *Self) {
+   new (Self) objScript(Self->Class, Self->UID);
+   return ERR::Okay;
+}
+
+static ERR SCRIPT_Free(objScript *Self) {
+   Self->~objScript();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clScriptActions[] = {
    { AC::Activate, SCRIPT_Activate },
    { AC::DataFeed, SCRIPT_DataFeed },
    { AC::Free, SCRIPT_Free },
    { AC::GetKey, SCRIPT_GetKey },
    { AC::Init, SCRIPT_Init },
-   { AC::NewPlacement, SCRIPT_NewPlacement },
+   { AC::New, SCRIPT_New },
    { AC::Reset, SCRIPT_Reset },
    { AC::SetKey, SCRIPT_SetKey },
    { AC::NIL, nullptr }

@@ -1,19 +1,29 @@
+/*********************************************************************************************************************
+
+-CLASS-
+Tiri: Extends the Script class with support for the Tiri language.
+
+The Tiri class provides functionality for running scripts written in the Tiri programming language.
+
+-END-
+
+*********************************************************************************************************************/
 
 #define PRV_SCRIPT
 #define PRV_TIRI
 #define PRV_TIRI_MODULE
 #include <kotuku/main.h>
 #include <kotuku/modules/xml.h>
-#include <kotuku/modules/display.h>
 #include <kotuku/modules/tiri.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include <algorithm>
 #include <array>
 #include <cctype>
 #include <format>
-#include <iomanip>
+#include <limits>
+#include <optional>
 #include <ranges>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -21,17 +31,16 @@
 #include "lua.hpp"
 
 #include "lj_obj.h"
-#include "lj_bc.h"
+#include "lj_state.h"
 #include "parser/parser_diagnostics.h"
 #include "jit/src/debug/dump_bytecode.h"
 #include "lj_proto_registry.h"
 
-#include "hashes.h"
 #include "defs.h"
 
-static ERR run_script(objScript *);
+static ERR run_script(extTiri *);
 static ERR stack_args(lua_State *, OBJECTID, const FunctionField *, int8_t *);
-static ERR save_binary(objScript *, OBJECTPTR);
+static ERR save_binary(extTiri *, OBJECTPTR);
 
 [[maybe_unused]] constexpr std::string_view check_bom(std::string_view Value)
 {
@@ -44,15 +53,60 @@ static ERR save_binary(objScript *, OBJECTPTR);
    return Value;
 }
 
-[[maybe_unused]] static ERR register_interfaces(objScript *);
+static std::string make_chunk_name(const extTiri *Self)
+{
+   if (Self->Path.empty()) return "=script";
+
+   std::string chunk_name;
+   chunk_name.reserve(Self->Path.size() + 1);
+   chunk_name.push_back('@');
+   chunk_name.append(Self->Path);
+   return chunk_name;
+}
+
+static ERR read_file_to_string(const std::string_view &Path, int64_t Size, std::string &Buffer, int *BytesRead)
+{
+   if ((Size < 0) or (Size > int64_t(std::numeric_limits<int>::max()))) return ERR::OutOfRange;
+
+   if (Size IS 0) {
+      Buffer.clear();
+      if (BytesRead) *BytesRead = 0;
+      return ERR::Okay;
+   }
+
+   int read_size = int(Size);
+   int bytes_read = 0;
+   Buffer.resize(read_size);
+
+   auto error = ReadFileToBuffer(Path, std::span((int8_t *)Buffer.data(), size_t(read_size)), &bytes_read);
+   if (!error) {
+      Buffer.resize(bytes_read);
+      if (BytesRead) *BytesRead = bytes_read;
+   }
+   else Buffer.clear();
+
+   return error;
+}
+
+static ERR compiled_payload(std::string_view Source, std::string_view &Payload)
+{
+   auto header_len = std::string_view(LUA_COMPILED).size();
+   auto payload_offset = Source.find('\0', header_len);
+   if (payload_offset IS std::string_view::npos) return ERR::InvalidData;
+
+   Payload = Source.substr(payload_offset + 1);
+   return ERR::Okay;
+}
+
+[[maybe_unused]] static ERR register_interfaces(extTiri *);
 
 //********************************************************************************************************************
 // Dump the variables of any global table
 
-[[maybe_unused]] static void dump_global_table(objScript *Self, STRING Global)
+[[maybe_unused]] static void dump_global_table(extTiri *Self, STRING Global)
 {
-   pf::Log log("print_env");
-   lua_State *lua = ((prvTiri *)Self->ChildPrivate)->Lua;
+   kt::Log log("print_env");
+   lua_State *lua = Self->Lua;
    lua_getglobal(lua, Global);
    if (lua_istable(lua, -1) ) {
       lua_pushnil(lua);
@@ -66,86 +120,43 @@ static ERR save_binary(objScript *, OBJECTPTR);
 
 //********************************************************************************************************************
 
-static const FieldDef clJitOptions[] = {
-   { "Diagnose",           JOF::DIAGNOSE },
-   { "DisableJit",         JOF::DISABLE_JIT },
-   { "DumpBytecode",       JOF::DUMP_BYTECODE },
-   { "Profile",            JOF::PROFILE },
-   { "TopTips",            JOF::TOP_TIPS },
-   { "Tips",               JOF::TIPS },
-   { "AllTips",            JOF::ALL_TIPS },
-   { "Trace",              JOF::TRACE },
-   { "TraceTypes",         JOF::TRACE_TYPES },
-   { "TraceTokens",        JOF::TRACE_TOKENS },
-   { "TraceBoundary",      JOF::TRACE_BOUNDARY },
-   { "TraceExpect",        JOF::TRACE_EXPECT },
-   { "TraceCfg",           JOF::TRACE_CFG },
-   { "TraceOperators",     JOF::TRACE_OPERATORS },
-   { "TraceRegisters",     JOF::TRACE_REGISTERS },
-   { "TraceAssignments",   JOF::TRACE_ASSIGNMENTS },
-   { "TraceValueCategory", JOF::TRACE_VALUE_CATEGORY },
-   { nullptr, 0 }
-};
-
-static ERR GET_JitOptions(objScript *, JOF *);
-static ERR SET_JitOptions(objScript *, JOF);
-static ERR GET_Procedures(objScript *, pf::vector<std::string> **, int *);
-
-static const FieldArray clFields[] = {
-   { "JitOptions", FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW, GET_JitOptions, SET_JitOptions, &clJitOptions },
-   { "Procedures", FDF_VIRTUAL|FDF_CPP|FDF_ARRAY|FDF_STRING|FDF_R, GET_Procedures },
-   END_FIELD
-};
-
-//********************************************************************************************************************
-
-static ERR TIRI_Activate(objScript *);
-static ERR TIRI_DataFeed(objScript *, struct acDataFeed *);
-static ERR TIRI_Free(objScript *);
-static ERR TIRI_Init(objScript *);
-static ERR TIRI_NewChild(objScript *, struct acNewChild &);
-static ERR TIRI_NewObject(objScript *);
-static ERR TIRI_Query(objScript *);
-static ERR TIRI_SaveToObject(objScript *, struct acSaveToObject *);
-
-static const ActionArray clActions[] = {
-   { AC::Activate,     TIRI_Activate },
-   { AC::DataFeed,     TIRI_DataFeed },
-   { AC::Free,         TIRI_Free },
-   { AC::Init,         TIRI_Init },
-   { AC::NewChild,     TIRI_NewChild },
-   { AC::NewObject,    TIRI_NewObject },
-   { AC::Query,        TIRI_Query },
-   { AC::SaveToObject, TIRI_SaveToObject },
-   { AC::NIL, nullptr }
-};
+static ERR TIRI_Activate(extTiri *);
+static ERR TIRI_DataFeed(extTiri *, struct acDataFeed *);
+static ERR TIRI_Init(extTiri *);
+static ERR TIRI_NewChild(extTiri *, struct acNewChild &);
+static ERR TIRI_Query(extTiri *);
+static ERR TIRI_SaveToObject(extTiri *, struct acSaveToObject *);
 
 //********************************************************************************************************************
 // Only to be used immediately after a failed lua_pcall().  Lua stores a description of the error that occurred on the
 // stack, this will be popped and copied to the ErrorMessage field.
 
-void process_error(objScript *Self, CSTRING Procedure)
+void process_error(extTiri *Self, CSTRING Procedure)
 {
-   auto prv = (prvTiri *)Self->ChildPrivate;
-
    auto flags = VLF::WARNING;
-   if (prv->Lua->CaughtError != ERR::Okay) {
-      Self->Error = prv->Lua->CaughtError;
+   if (Self->Lua->CaughtError != ERR::Okay) {
+      Self->Error = Self->Lua->CaughtError;
       if (Self->Error <= ERR::Terminate) flags = VLF::DETAIL; // Non-critical errors are muted to prevent log noise.
    }
    else Self->Error = ERR::Exception; // Unspecified exception, e.g. an error() or assert().  The result string will indicate detail.
 
-   pf::Log log;
-   auto str = lua_tostring(prv->Lua, -1);
-   lua_pop(prv->Lua, 1);  // pop returned value
+   kt::Log log;
+   auto str = lua_tostringview(Self->Lua, -1);
    Self->setErrorMessage(str);
 
-   if (auto file = Self->Path) {
-      int i;
-      for (i=strlen(file); (i > 0) and (file[i-1] != '/') and (file[i-1] != '\\'); i--);
-      log.msg(flags, "%s: %s", file+i, str);
+   auto error_msg = str.empty() ? "" : str.data();
+   if (Self->Lua->pending_exception_valid and Self->Lua->pending_exception_source) {
+      log.msg(flags, "%.*s", int(str.size()), error_msg);
    }
-   else log.msg(flags, "%s: Error: %s", Procedure, str);
+   else if (not Self->Path.empty()) {
+      auto file = std::string_view(Self->Path);
+      auto i = file.find_last_of("/\\");
+      if (i != std::string_view::npos) file.remove_prefix(i + 1);
+      log.msg(flags, "%.*s: %.*s", int(file.size()), file.data(), int(str.size()), error_msg);
+   }
+   else log.msg(flags, "%s: Error: %.*s", Procedure, int(str.size()), error_msg);
+
+   lua_pop(Self->Lua, 1);  // pop returned value
 
    // NB: CurrentLine is set by hook_debug(), so if debugging isn't active, you don't know what line we're on.
 
@@ -162,12 +173,13 @@ void process_error(objScript *Self, CSTRING Procedure)
 
 static ERR stack_args(lua_State *Lua, OBJECTID ObjectID, const FunctionField *args, int8_t *Buffer)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (not args) return ERR::Okay;
 
    log.traceBranch("Args: %p, Buffer: %p", args, Buffer);
 
+   int of = 0;
    for (int i=0; args[i].Name; i++) {
       std::string name(args[i].Name);
       std::ranges::transform(name, name.begin(), [](unsigned char c) { return std::tolower(c); });
@@ -179,30 +191,34 @@ static ERR stack_args(lua_State *Lua, OBJECTID ObjectID, const FunctionField *ar
       // action notifications.
 
       if (args[i].Type & FD_STR) {
-         if (ObjectID > 0) lua_pushstring(Lua, ((STRING *)Buffer)[0]);
+         if (sizeof(APTR) IS 8) of = ALIGN64(of);
+         if (ObjectID > 0) lua_pushstring(Lua, ((STRING *)(Buffer + of))[0]);
          else lua_pushnil(Lua);
-         Buffer += sizeof(STRING);
+         of += sizeof(STRING);
       }
       else if (args[i].Type & FD_PTR) {
-         if (ObjectID > 0) lua_pushlightuserdata(Lua, ((APTR *)Buffer)[0]);
+         if (sizeof(APTR) IS 8) of = ALIGN64(of);
+         if (ObjectID > 0) lua_pushlightuserdata(Lua, ((APTR *)(Buffer + of))[0]);
          else lua_pushnil(Lua);
-         Buffer += sizeof(APTR);
+         of += sizeof(APTR);
       }
       else if (args[i].Type & FD_INT) {
-         lua_pushinteger(Lua, ((int *)Buffer)[0]);
-         Buffer += sizeof(int);
+         lua_pushinteger(Lua, ((int *)(Buffer + of))[0]);
+         of += sizeof(int);
       }
       else if (args[i].Type & FD_DOUBLE) {
-         lua_pushnumber(Lua, ((double *)Buffer)[0]);
-         Buffer += sizeof(double);
+         if (sizeof(APTR) IS 8) of = ALIGN64(of);
+         lua_pushnumber(Lua, ((double *)(Buffer + of))[0]);
+         of += sizeof(double);
       }
       else if (args[i].Type & FD_INT64) {
-         lua_pushnumber(Lua, ((int64_t *)Buffer)[0]);
-         Buffer += sizeof(int64_t);
+         if (sizeof(APTR) IS 8) of = ALIGN64(of);
+         lua_pushnumber(Lua, ((int64_t *)(Buffer + of))[0]);
+         of += sizeof(int64_t);
       }
       else {
          log.warning("Unsupported arg %s, flags $%.8x, aborting now.", args[i].Name, args[i].Type);
-         return ERR::Failed;
+         return ERR::UnrecognisedFieldType;
       }
       lua_settable(Lua, -3);
    }
@@ -217,48 +233,68 @@ static ERR stack_args(lua_State *Lua, OBJECTID ObjectID, const FunctionField *ar
 
 void notify_action(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
-   auto Self = (objScript *)CurrentContext();
+   auto Self = (extTiri *)CurrentContext();
 
    if (Result != ERR::Okay) return;
 
-   auto prv = (prvTiri *)Self->ChildPrivate;
-   if (not prv) return;
-
-   for (auto &scan : prv->ActionList) {
+   for (auto &scan : Self->ActionList) {
       if ((Object->UID IS scan.ObjectID) and (ActionID IS scan.ActionID)) {
+         LuaContextRootGuard context_guard(Self->Lua);
          int depth = GetResource(RES::LOG_DEPTH); // Required because thrown errors cause the debugger to lose its branch
 
          {
-            pf::Log log;
+            kt::Log log;
 
-            log.msg(VLF::BRANCH|VLF::DETAIL, "Action notification for object #%d, action %d.  Top: %d", Object->UID, int(ActionID), lua_gettop(prv->Lua));
+            log.msg(VLF::BRANCH|VLF::DETAIL, "Action notification for object #%d, action %d.  Top: %d", Object->UID, int(ActionID), lua_gettop(Self->Lua));
 
-            lua_rawgeti(prv->Lua, LUA_REGISTRYINDEX, scan.Function); // +1 stack: Get the function reference
-            push_object_id(prv->Lua, Object->UID);  // +1: Pass the object ID
-            lua_newtable(prv->Lua);  // +1: Table to store the parameters
+            LuaCallbackContextGuard callback_context(Self->Lua);
+            if (push_tiri_function(Self->Lua, scan.Function, callback_context) != ERR::Okay) {
+               log.warning("Action subscription callback is no longer valid.");
+               return;
+            }
+            push_object_id(Self->Lua, Object->UID);  // +1: Pass the object ID
+            lua_newtable(Self->Lua);  // +1: Table to store the parameters
 
             if ((scan.Args) and (Args)) {
-               stack_args(prv->Lua, Object->UID, scan.Args, (int8_t *)Args);
+               stack_args(Self->Lua, Object->UID, scan.Args, (int8_t *)Args);
             }
 
             int total_args = 2;
 
             if (scan.Reference) { // +1: Custom reference (optional)
-               lua_rawgeti(prv->Lua, LUA_REGISTRYINDEX, scan.Reference);
+               lua_rawgeti(Self->Lua, LUA_REGISTRYINDEX, scan.Reference);
                total_args++; // ObjectID, ArgTable, Reference
             }
 
-            if (lua_pcall(prv->Lua, total_args, 0, 0)) { // Make the call, function & args are removed from stack.
+            if (lua_pcall(Self->Lua, total_args, 0, 0)) { // Make the call, function & args are removed from stack.
                process_error(Self, "Action Subscription");
             }
 
-            if (lua_gc(prv->Lua, LUA_GCISRUNNING, 0)) {
-               log.traceBranch("Collecting garbage.");
-               lua_gc(prv->Lua, LUA_GCCOLLECT, 0);
-            }
          }
 
          SetResource(RES::LOG_DEPTH, depth);
+
+         if (ActionID IS AC::Free) {
+            std::erase_if(Self->ActionList, [&](auto &item) {
+               if (item.ObjectID IS Object->UID) {
+                  if (item.Function.defined()) {
+                     release_tiri_function(Self->Lua, &item.Function);
+                  }
+                  if (item.Reference) {
+                     luaL_unref(Self->Lua, LUA_REGISTRYINDEX, item.Reference);
+                     item.Reference = 0;
+                  }
+
+                  // The object is already being destroyed, so suppress destructor-time unsubscribe attempts.
+                  item.ObjectID = 0;
+                  return true;
+               }
+               else return false;
+            });
+         }
+
+         collect_garbage(Self->Lua);
+
          return;
       }
    }
@@ -266,57 +302,52 @@ void notify_action(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 
 //********************************************************************************************************************
 
-static ERR TIRI_Activate(objScript *Self)
+static ERR TIRI_Activate(extTiri *Self)
 {
-   pf::Log log;
+   kt::Log log;
 
-   if ((not Self->String) or (not Self->String[0])) return log.warning(ERR::FieldNotSet);
+   if (Self->Statement.empty()) return log.warning(ERR::FieldNotSet);
 
-   log.trace("Target: %d, Procedure: %s / ID #%" PRId64, Self->TargetID, Self->Procedure ? Self->Procedure : (STRING)".", (long long)Self->ProcedureID);
+   log.trace("Target: %d, Procedure: %s / ID #%u", Self->TargetID,
+      Self->Procedure.empty() ? "." : Self->Procedure.c_str(), FUNCTION::unpackProcedureID(Self->ProcedureID));
 
-   auto prv = (prvTiri *)Self->ChildPrivate;
-   if (not prv) return log.warning(ERR::ObjectCorrupt);
-
-   if ((prv->Recurse) and (not Self->Procedure) and (not Self->ProcedureID)) {
+   if ((Self->Recurse) and (Self->Procedure.empty()) and (not Self->ProcedureID)) {
       return ERR::Okay; // Do nothing, script is running.
    }
 
    Self->CurrentLine = -1;
    Self->Error       = ERR::Okay;
    if (auto error = acQuery(Self); error <= ERR::ExceptionThreshold) {
-      prv->Recurse++;
+      Self->Recurse++;
 
-      if ((prv->JitOptions & JOF::DISABLE_JIT) != JOF::NIL) {
-         luaJIT_setmode(prv->Lua, 0, LUAJIT_MODE_ENGINE | LUAJIT_MODE_OFF);
+      if ((Self->JitOptions & JOF::DISABLE_JIT) != JOF::NIL) {
+         luaJIT_setmode(Self->Lua, 0, LUAJIT_MODE_ENGINE | LUAJIT_MODE_OFF);
       }
 
-      if ((Self->Procedure) or (Self->ProcedureID)) {
+      if ((not Self->Procedure.empty()) or (Self->ProcedureID)) {
          // The Lua script needs to have been executed at least once in order for the procedures to be initialised and recognised.
 
          if (Self->ActivationCount IS 0) {
-            pf::Log log;
+            kt::Log log;
             log.traceBranch("Collecting functions prior to procedure call...");
 
-            if (lua_pcall(prv->Lua, 0, 0, 0)) {
+            if (lua_pcall(Self->Lua, 0, 0, 0)) {
                process_error(Self, "Activation");
-               if ((error = Self->Error) IS ERR::Okay) error = ERR::Failed;
+               if (!(error = Self->Error)) error = ERR::Exception;
             }
          }
       }
 
       Self->ActivationCount++;
 
-      if (Self->Error IS ERR::Okay) run_script(Self); // Will set Self->Error if there's an issue
+      if (!Self->Error) run_script(Self); // Will set Self->Error if there's an issue
 
-      prv->Recurse--;
+      Self->Recurse--;
 
-      if (prv->Lua) {
-         if (lua_gc(prv->Lua, LUA_GCISRUNNING, 0)) {
-            pf::Log log;
-            log.traceBranch("Collecting garbage.");
-            lua_gc(prv->Lua, LUA_GCCOLLECT, 0); // Run the garbage collector
-         }
-      }
+      // Automated garbage collection runs for initial activations only, in order to ensure that any temporary
+      // objects don't persist in memory.  After that, the script is expected to manage its own memory usage.
+
+      collect_garbage(Self->Lua, Self->ActivationCount <= 2);
 
       return ERR::Okay; // The error reflects on the initial processing of the script only - the developer must check the Error field for information on script execution
    }
@@ -328,33 +359,37 @@ static ERR TIRI_Activate(objScript *Self)
 
 //********************************************************************************************************************
 
-static ERR TIRI_DataFeed(objScript *Self, struct acDataFeed *Args)
+static ERR TIRI_DataFeed(extTiri *Self, struct acDataFeed *Args)
 {
-   pf::Log log;
+   kt::Log log;
 
    if (not Args) return ERR::NullArgs;
 
-   if (Args->Datatype IS DATA::TEXT) {
-      Self->setStatement((CSTRING)Args->Buffer);
-   }
-   else if (Args->Datatype IS DATA::XML) {
-      Self->setStatement((CSTRING)Args->Buffer);
+   if ((Args->Datatype IS DATA::TEXT) or (Args->Datatype IS DATA::XML)) {
+      Self->setStatement(std::string_view((const char *)Args->Buffer.data(), Args->Buffer.size()));
    }
    else if (Args->Datatype IS DATA::RECEIPT) {
-      auto prv = (prvTiri *)Self->ChildPrivate;
-
       log.branch("Incoming data receipt from #%d", Args->Object ? Args->Object->UID : 0);
 
-      for (auto it = prv->Requests.begin(); it != prv->Requests.end(); ) {
+      for (auto it = Self->Requests.begin(); it != Self->Requests.end(); ) {
          if ((Args->Object) and (it->SourceID IS Args->Object->UID)) {
+            LuaContextRootGuard context_guard(Self->Lua);
             // Execute the callback associated with this input subscription: function({Items...})
 
             int step = GetResource(RES::LOG_DEPTH); // Required as thrown errors cause the debugger to lose its step position
 
-               lua_rawgeti(prv->Lua, LUA_REGISTRYINDEX, it->Callback); // +1 Reference to callback
-               lua_newtable(prv->Lua); // +1 Item table
+            {
+               LuaCallbackContextGuard callback_context(Self->Lua);
+               if (push_tiri_function(Self->Lua, it->Callback, callback_context) != ERR::Okay) {
+                  SetResource(RES::LOG_DEPTH, step);
+                  release_tiri_function(Self->Lua, &it->Callback);
+                  it = Self->Requests.erase(it);
+                  continue;
+               }
+               lua_newtable(Self->Lua); // +1 Item table
 
-               if (auto xml = objXML::create::local(fl::Statement((CSTRING)Args->Buffer))) {
+               if (auto xml = objXML::create::local(fl::Statement(
+                     std::string_view((const char *)Args->Buffer.data(), Args->Buffer.size())))) {
                   // <file path="blah.exe"/> becomes { item='file', path='blah.exe' }
 
                   if (not xml->Tags.empty()) {
@@ -362,44 +397,43 @@ static ERR TIRI_DataFeed(objScript *Self, struct acDataFeed *Args)
                      int i = 0;
                      if (iequals("receipt", tag.name())) {
                         for (auto &scan : tag.Children) {
-                           lua_pushinteger(prv->Lua, i++);
-                           lua_newtable(prv->Lua);
+                           lua_pushinteger(Self->Lua, i++);
+                           lua_newtable(Self->Lua);
 
-                           lua_pushstring(prv->Lua, "item");
-                           lua_pushstring(prv->Lua, scan.name());
-                           lua_settable(prv->Lua, -3);
+                           lua_pushstring(Self->Lua, "item");
+                           lua_pushstring(Self->Lua, scan.name());
+                           lua_settable(Self->Lua, -3);
 
                            for (unsigned a=1; a < scan.Attribs.size(); a++) {
-                              lua_pushstring(prv->Lua, scan.Attribs[a].Name.c_str());
-                              lua_pushstring(prv->Lua, scan.Attribs[a].Value.c_str());
-                              lua_settable(prv->Lua, -3);
+                              lua_pushstring(Self->Lua, scan.Attribs[a].Name.c_str());
+                              lua_pushstring(Self->Lua, scan.Attribs[a].Value.c_str());
+                              lua_settable(Self->Lua, -3);
                            }
 
-                           lua_settable(prv->Lua, -3);
+                           lua_settable(Self->Lua, -3);
                         }
                      }
                   }
 
                   FreeResource(xml);
 
-                  if (lua_pcall(prv->Lua, 1, 0, 0)) { // function(Items)
+                  if (lua_pcall(Self->Lua, 1, 0, 0)) { // function(Items)
                      process_error(Self, "Data Receipt Callback");
                   }
                }
+               else lua_pop(Self->Lua, 2);
+            }
 
             SetResource(RES::LOG_DEPTH, step);
 
-            it = prv->Requests.erase(it);
+            release_tiri_function(Self->Lua, &it->Callback);
+            it = Self->Requests.erase(it);
             continue;
          }
          it++;
       }
 
-      if (lua_gc(prv->Lua, LUA_GCISRUNNING, 0)) {
-         pf::Log log;
-         log.traceBranch("Collecting garbage.");
-         lua_gc(prv->Lua, LUA_GCCOLLECT, 0); // Run the garbage collector
-      }
+      collect_garbage(Self->Lua);
    }
 
    return ERR::Okay;
@@ -407,126 +441,99 @@ static ERR TIRI_DataFeed(objScript *Self, struct acDataFeed *Args)
 
 //********************************************************************************************************************
 
-static ERR TIRI_Free(objScript *Self)
+extTiri::~extTiri()
 {
-   if (auto prv = (prvTiri *)Self->ChildPrivate) {
-      if (prv->FocusEventHandle) { UnsubscribeEvent(prv->FocusEventHandle); prv->FocusEventHandle = nullptr; }
+   if (FocusEventHandle) { UnsubscribeEvent(FocusEventHandle); FocusEventHandle = nullptr; }
 
-      auto lua = prv->Lua;
-      prv->~prvTiri();
-
-      if (lua) lua_close(lua);
-   }
-
-   return ERR::Okay;
+   auto lua = Lua;
+   Lua = nullptr; // Release the Lua state now because the Free action manager can reference it on return
+   if (lua) lua_close(lua);
 }
 
 //********************************************************************************************************************
 
-static ERR TIRI_Init(objScript *Self)
+static ERR TIRI_Init(extTiri *Self)
 {
-   pf::Log log;
+   kt::Log log;
 
-   if (Self->Path) {
-      if (not wildcmp("*.tiri|*.tbc", Self->Path)) {
-         log.warning("No support for path '%s'", Self->Path);
+   if (not Self->Path.empty()) {
+      if (Self->Path.starts_with("string:") or Self->Path.starts_with("STRING:")); // Assume Tiri for string paths
+      else if (not wildcmp("*.tiri|*.tbc", Self->Path)) {
+         log.warning("Path extension not recognised for '%s'", Self->Path.c_str());
          return ERR::NoSupport;
       }
    }
 
-   if ((Self->defined(NF::RECLASSED)) and (not Self->String)) {
+   if ((Self->defined(NF::RECLASSED)) and (Self->Statement.empty())) {
       log.trace("No support for reclassed Script with no String field value.");
       return ERR::NoSupport;
    }
 
    ERR error;
    bool compile = false;
-   int loaded_size = 0;
+   bool loaded = false;
    objFile *src_file = nullptr;
-   if ((not Self->String) and (Self->Path)) {
+   if ((Self->Statement.empty()) and (not Self->Path.empty())) {
       int64_t src_ts = 0, src_size = 0;
 
       if ((src_file = objFile::create::local(fl::Path(Self->Path)))) {
-         error = src_file->get(FID_TimeStamp, src_ts);
-         if (error IS ERR::Okay) error = src_file->get(FID_Size, src_size);
+         error = src_file->getTimestamp(src_ts);
+         if ((!error) or (error IS ERR::NoSupport)) error = src_file->getSize(src_size);
       }
       else error = ERR::File;
 
-      if (Self->CacheFile) {
+      if (not Self->CacheFile.empty()) {
          // Compare the cache file date to the original source.  If they match, or if there was a problem
          // analysing the original location (i.e. the original location does not exist) then the cache file is loaded
          // instead of the original source code.
 
-         int64_t cache_ts = -1, cache_size;
+         int64_t cache_ts = -1, cache_size = 0;
 
          {
             objFile::create cache_file = { fl::Path(Self->CacheFile) };
             if (cache_file.ok()) {
-               cache_file->get(FID_TimeStamp, cache_ts);
-               cache_file->get(FID_Size, cache_size);
+               auto cache_error = cache_file->getTimestamp(cache_ts);
+               if (!cache_error) cache_error = cache_file->getSize(cache_size);
+               if (cache_error != ERR::Okay) cache_ts = -1;
             }
          }
 
          if (cache_ts != -1) {
             if ((cache_ts IS src_ts) or (error != ERR::Okay)) {
-               log.msg("Using cache '%s'", Self->CacheFile);
-               if (AllocMemory(cache_size, MEM::STRING|MEM::NO_CLEAR, &Self->String) IS ERR::Okay) {
-                  int len;
-                  error = ReadFileToBuffer(Self->CacheFile, Self->String, cache_size, &len);
-                  loaded_size = cache_size;
-               }
-               else error = ERR::AllocMemory;
+               log.msg("Using cache '%s'", Self->CacheFile.c_str());
+               int len = 0;
+               error = read_file_to_string(Self->CacheFile, cache_size, Self->Statement, &len);
+               if (!error) loaded = len > 0;
             }
          }
       }
 
-      if ((error IS ERR::Okay) and (not loaded_size)) {
-         if (AllocMemory(src_size+1, MEM::STRING|MEM::NO_CLEAR, &Self->String) IS ERR::Okay) {
-            int len;
-            if (ReadFileToBuffer(Self->Path, Self->String, src_size, &len) IS ERR::Okay) {
-               Self->String[len] = 0;
+      if ((!error) and (not loaded)) {
+         int len = 0;
+         error = read_file_to_string(Self->Path, src_size, Self->Statement, &len);
+         if (!error) {
+            // Unicode BOM handler - in case the file starts with a BOM header.
+            auto content = check_bom(Self->Statement);
+            if (content.data() != Self->Statement.data()) Self->Statement.assign(content);
 
-               // Unicode BOM handler - in case the file starts with a BOM header.
-               auto content = check_bom(std::string_view(Self->String, len));
-               if (content.data() != Self->String) {
-                  // Use memmove for overlapping memory regions (content.data() points into Self->String)
-                  std::memmove(Self->String, content.data(), content.size());
-                  Self->String[content.size()] = '\0';
-                  len = content.size();
-               }
-
-               loaded_size = len;
-
-               if (Self->CacheFile) compile = true; // Saving a compilation of the source is desired
-            }
-            else {
-               log.trace("Failed to read %" PRId64 " bytes from '%s'", (long long)src_size, Self->Path);
-               FreeResource(Self->String);
-               Self->String = nullptr;
-               error = ERR::ReadFileToBuffer;
-            }
+            if (not Self->CacheFile.empty()) compile = true; // Saving a compilation of the source is desired
          }
-         else error = ERR::AllocMemory;
+         else {
+            log.trace("Failed to read %" PRId64 " bytes from '%s'", (int64_t)src_size, Self->Path.c_str());
+            Self->Statement.clear();
+            if (error != ERR::OutOfRange) error = ERR::ReadFileToBuffer;
+         }
       }
    }
    else error = ERR::Okay;
 
-   // Allocate private structure if not done by NewObject().
-
-   auto prv = (prvTiri *)Self->ChildPrivate;
-   if ((error IS ERR::Okay) and (not prv)) {
-      if (AllocMemory(sizeof(prvTiri), MEM::DATA, &Self->ChildPrivate) IS ERR::Okay) {
-         prv = (prvTiri *)Self->ChildPrivate;
-         new (prv) prvTiri;
-      }
-      else error = ERR::AllocMemory;
-   }
-
-   if ((error IS ERR::Okay) and (prv->SaveCompiled = compile)) {
+   if ((!error) and (Self->SaveCompiled = compile)) {
       DateTime *dt;
-      if (src_file->get(FID_Date, dt) IS ERR::Okay) prv->CacheDate = *dt;
-      src_file->get(FID_Permissions, (int &)prv->CachePermissions);
-      prv->LoadedSize = loaded_size;
+      if (!src_file->getDate(dt)) Self->CacheDate = *dt;
+      Self->CachePermissions = PERMIT::NIL;
+      if (auto permissions_error = src_file->getPermissions(Self->CachePermissions); permissions_error != ERR::Okay) {
+         log.warning("Failed to read source permissions for cache file: %s", GetErrorMsg(permissions_error));
+      }
    }
 
    if (error != ERR::Okay) {
@@ -534,14 +541,12 @@ static ERR TIRI_Init(objScript *Self)
       return log.warning(error);
    }
 
-   prv->JitOptions |= glJitOptions;
+   Self->JitOptions |= glJitOptions;
 
-   if (not (prv->Lua = luaL_newstate(Self))) {
+   if (not (Self->Lua = luaL_newstate(Self))) {
       log.warning("Failed to open a Lua instance.");
-      FreeResource(Self->ChildPrivate);
-      Self->ChildPrivate = nullptr;
       if (src_file) FreeResource(src_file);
-      return ERR::Failed;
+      return ERR::CreateResource;
    }
 
    if (src_file) FreeResource(src_file);
@@ -552,30 +557,13 @@ static ERR TIRI_Init(objScript *Self)
 // If the script is being executed, retarget the new resource to refer to the current task (because we don't want
 // client resources allocated by the script to be automatically destroyed when the script is terminated by the client).
 
-static ERR TIRI_NewChild(objScript *Self, struct acNewChild &Args)
+static ERR TIRI_NewChild(extTiri *Self, struct acNewChild &Args)
 {
-   auto prv = (prvTiri*)Self->ChildPrivate;
-   if (not prv) return ERR::Okay;
-
-   if (prv->Recurse) {
+   if (Self->Recurse) {
       SetOwner(Args.Object, CurrentTask());
       return ERR::OwnerPassThrough;
    }
    else return ERR::Okay;
-}
-
-//********************************************************************************************************************
-// The client has specifically asked for a Tiri script to be created - this allows us to configure ChildPrivate
-// early.  Otherwise, it is created during Init().
-
-static ERR TIRI_NewObject(objScript *Self)
-{
-   if (AllocMemory(sizeof(prvTiri), MEM::DATA, &Self->ChildPrivate) IS ERR::Okay) {
-      auto prv = (prvTiri *)Self->ChildPrivate;
-      new (prv) prvTiri;
-      return ERR::Okay;
-   }
-   else return ERR::AllocMemory;
 }
 
 /*********************************************************************************************************************
@@ -591,33 +579,25 @@ Introspection of available procedures will be limited until the script is activa
 
 *********************************************************************************************************************/
 
-static ERR TIRI_Query(objScript *Self)
+static ERR TIRI_Query(extTiri *Self)
 {
-   pf::Log log;
+   kt::Log log;
 
-   if ((not Self->String) or (not Self->String[0])) return log.warning(ERR::FieldNotSet);
+   if (Self->Statement.empty()) return log.warning(ERR::FieldNotSet);
 
-   auto prv = (prvTiri *)Self->ChildPrivate;
-   if (not prv) return log.warning(ERR::ObjectCorrupt);
-   if (prv->Recurse) return ERR::NothingDone; // Do nothing, script is running.
+   if (Self->Recurse) return ERR::NothingDone; // Do nothing, script is running.
 
-   if (not prv->MainChunkRef) {
-      log.branch("Target: %d, Procedure: %s / ID #%" PRId64, Self->TargetID, Self->Procedure ? Self->Procedure : (STRING)".", Self->ProcedureID);
+   if (not Self->MainChunkRef) {
+      log.branch("Target: %d, Procedure: %s / ID #%u", Self->TargetID,
+         Self->Procedure.empty() ? "." : Self->Procedure.c_str(), FUNCTION::unpackProcedureID(Self->ProcedureID));
 
-      auto cleanup = pf::Defer([&]() {
-         if (prv->Lua) {
-            pf::Log().traceBranch("Collecting garbage.");
-            lua_gc(prv->Lua, LUA_GCCOLLECT, 0); // Run the garbage collector
-         }
-      });
-
-      lua_gc(prv->Lua, LUA_GCSTOP, 0);  // Stop collector during initialization
-         luaL_openlibs(prv->Lua);  // Open Lua libraries
-      lua_gc(prv->Lua, LUA_GCRESTART, 0);
+      lua_gc(Self->Lua, LUA_GCSTOP, 0);  // Stop collector during initialization
+         luaL_openlibs(Self->Lua);  // Open Lua libraries
+      lua_gc(Self->Lua, LUA_GCRESTART, 0);
 
       // Register private variables in the registry, which is tamper proof from the user's Lua code
 
-      if (register_interfaces(Self) != ERR::Okay) return ERR::Failed;
+      if (auto error = register_interfaces(Self); error != ERR::Okay) return error;
 
       // Line hook, executes on the execution of a new line (doesn't execute during Query() compilation)
 
@@ -627,79 +607,73 @@ static ERR TIRI_Query(objScript *Self)
          // LUA_MASKRET:   Interpreter returns from a function.
          // LUA_MASKCOUNT: The hook will be called every X number of instructions executed (could be set to 1 for exactness).
 
-         lua_sethook(prv->Lua, hook_debug, LUA_MASKCALL|LUA_MASKRET|LUA_MASKLINE, 0);
+         lua_sethook(Self->Lua, hook_debug, LUA_MASKCALL|LUA_MASKRET|LUA_MASKLINE, 0);
       }
 
-      // Pre-load the Core module: mSys = mod.load('core')
+      // 'mSys' is a compiler-managed namespace for Core rather than a global value, so no module object is created
+      // here.  The compiler materialises Core's callables as hidden locals in any compilation unit that uses them.
 
-      if (auto core = objModule::create::global(fl::Name("core"))) {
-         SetName(core, "mSys");
-         new_module(prv->Lua, core);
-         lua_setglobal(prv->Lua, "mSys");
-      }
-      else {
-         log.warning("Failed to create module object.");
-         return ERR::LoadModule;
-      }
+      lua_protect_globals(Self->Lua);
 
       // Determine chunk name for better debug output.
       // Prefix with '@' to indicate file-based chunk (Lua convention), otherwise use '=' for special sources.
       // This ensures debug output shows the actual filename instead of "[string]".
 
-      std::string chunk_name;
-      if (Self->Path) chunk_name = std::string("@") + Self->Path;
-      else chunk_name = "=script";
+      auto chunk_name = make_chunk_name(Self);
 
       int result;
-      if (startswith(LUA_COMPILED, Self->String)) { // The source is compiled
+      std::string_view source(Self->Statement);
+      if (source.starts_with(LUA_COMPILED)) { // The source is compiled
          log.trace("Loading pre-compiled Lua script.");
-         int headerlen = strlen(Self->String) + 1;
-         result = lua_load(prv->Lua, std::string_view(Self->String + headerlen, prv->LoadedSize - headerlen), chunk_name.c_str());
+         if (auto payload_error = compiled_payload(source, source); payload_error != ERR::Okay) {
+            return log.warning(payload_error);
+         }
+         result = lua_load(Self->Lua, source, chunk_name.c_str());
       }
       else {
          log.trace("Compiling Lua script.");
-         result = lua_load(prv->Lua, std::string_view(Self->String), chunk_name.c_str());
+         result = lua_load(Self->Lua, source, chunk_name.c_str());
       }
 
       if (result) { // Error reported from parser
-         if (auto errorstr = lua_tostring(prv->Lua, -1)) {
-            if (prv->Lua->parser_diagnostics and prv->Lua->parser_diagnostics->has_errors()) {
+         if (auto errorstr = lua_tostring(Self->Lua, -1)) {
+            if (Self->Lua->parser_diagnostics and Self->Lua->parser_diagnostics->has_errors()) {
                std::string error_msg;
-               for (const auto &entry : prv->Lua->parser_diagnostics->entries()) {
+               for (const auto &entry : Self->Lua->parser_diagnostics->entries()) {
                   if (not error_msg.empty()) error_msg += "\n";
-                  error_msg += entry.to_string(Self->LineOffset);
+                  error_msg += entry.to_string(Self->LineOffset, Self->Lua);
                }
                Self->setErrorMessage(error_msg);
             }
             else Self->setErrorMessage(errorstr);
 
-            log.warning("%s", Self->ErrorMessage);
+            log.warning("%s", Self->ErrorMessage.c_str());
          }
 
-         lua_pop(prv->Lua, 1);  // Pop error string
+         lua_pop(Self->Lua, 1);  // Pop error string
          return ERR::Syntax;
       }
       else {
          log.trace("Script successfully compiled.");
 
          // Store a reference to the compiled main chunk for post-execution analysis (e.g., bytecode disassembly)
-         if (prv->MainChunkRef) luaL_unref(prv->Lua, LUA_REGISTRYINDEX, prv->MainChunkRef);
-         lua_pushvalue(prv->Lua, -1); // Duplicate the function on top of the stack
-         prv->MainChunkRef = luaL_ref(prv->Lua, LUA_REGISTRYINDEX); // Store reference, pops the duplicate
+         if (Self->MainChunkRef) luaL_unref(Self->Lua, LUA_REGISTRYINDEX, Self->MainChunkRef);
+         lua_pushvalue(Self->Lua, -1); // Duplicate the function on top of the stack
+         Self->MainChunkRef = luaL_ref(Self->Lua, LUA_REGISTRYINDEX); // Store reference, pops the duplicate
       }
 
-      if (prv->SaveCompiled) { // Compile the script and save the result to the cache file
+      if (Self->SaveCompiled) { // Compile the script and save the result to the cache file
          log.msg("Compiling the source into the cache file.");
 
-         prv->SaveCompiled = false;
+         Self->SaveCompiled = false;
 
          objFile::create cachefile = {
-            fl::Path(Self->CacheFile), fl::Flags(FL::NEW|FL::WRITE), fl::Permissions(prv->CachePermissions)
+            fl::Path(Self->CacheFile), fl::Flags(FL::NEW|FL::WRITE), fl::Permissions(Self->CachePermissions)
          };
 
          if (cachefile.ok()) {
             save_binary(Self, *cachefile);
-            cachefile->setDate(&prv->CacheDate);
+            cachefile->setDate(Self->CacheDate);
          }
       }
 
@@ -719,31 +693,27 @@ usage.
 
 *********************************************************************************************************************/
 
-static ERR TIRI_SaveToObject(objScript *Self, struct acSaveToObject *Args)
+static ERR TIRI_SaveToObject(extTiri *Self, struct acSaveToObject *Args)
 {
-   pf::Log log;
+   kt::Log log;
 
    if ((not Args) or (not Args->Dest)) return log.warning(ERR::NullArgs);
 
-   if (not Self->String) return log.warning(ERR::FieldNotSet);
+   if (Self->Statement.empty()) return log.warning(ERR::FieldNotSet);
 
    log.branch("Compiling the statement...");
 
-   auto prv = (prvTiri *)Self->ChildPrivate;
-   if (not prv) return log.warning(ERR::ObjectCorrupt);
+   auto chunk_name = make_chunk_name(Self);
 
-   std::string chunk_name;
-   if (Self->Path) chunk_name = std::string("@") + Self->Path;
-   else chunk_name = "=script";
-
-   if (not lua_load(prv->Lua, std::string_view(Self->String, strlen(Self->String)), chunk_name.c_str())) {
+   if (not lua_load(Self->Lua, std::string_view(Self->Statement), chunk_name.c_str())) {
       ERR error = save_binary(Self, Args->Dest);
       return error;
    }
    else {
-      auto str = lua_tostring(prv->Lua,-1);
-      lua_pop(prv->Lua, 1);
-      log.warning("Compile Failure: %s", str);
+      auto str = lua_tostringview(Self->Lua,-1);
+      auto error_msg = str.empty() ? "" : str.data();
+      log.warning("Compile Failure: %.*s", int(str.size()), error_msg);
+      lua_pop(Self->Lua, 1);
       return ERR::InvalidData;
    }
 }
@@ -759,26 +729,20 @@ This field allows the client to configure debugging options related to the Just-
 
 *********************************************************************************************************************/
 
-static ERR GET_JitOptions(objScript *Self, JOF *Value)
+static ERR GET_JitOptions(extTiri *Self, JOF *Value)
 {
-   if (auto prv = (prvTiri *)Self->ChildPrivate) {
-      *Value = prv->JitOptions;
-      return ERR::Okay;
-   }
-   else return ERR::InvalidState; // Either requires initialisation or to be created as a Tiri script from NewObject()
+   *Value = Self->JitOptions;
+   return ERR::Okay;
 }
 
-static ERR SET_JitOptions(objScript *Self, JOF Value)
+static ERR SET_JitOptions(extTiri *Self, JOF Value)
 {
-   if (auto prv = (prvTiri *)Self->ChildPrivate) {
-      if (prv->Recurse) {
-         pf::Log().warning("Changing JIT options after parsing is ineffective.");
-         return ERR::InvalidState;
-      }
-      prv->JitOptions = Value;
-      return ERR::Okay;
+   if (Self->Recurse) {
+      kt::Log().warning("Changing JIT options after parsing is ineffective.");
+      return ERR::InvalidState;
    }
-   else return ERR::InvalidState; // Either requires initialisation or to be created as a Tiri script from NewObject()
+   Self->JitOptions = Value;
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -792,20 +756,21 @@ It will otherwise return an empty array.
 
 *********************************************************************************************************************/
 
-static ERR GET_Procedures(objScript *Self, pf::vector<std::string> **Value, int *Elements)
+static ERR GET_Procedures(extTiri *Self, std::span<std::string> &Value)
 {
-   if (auto prv = (prvTiri *)Self->ChildPrivate) {
-      prv->Procedures.clear();
-      lua_pushnil(prv->Lua);
-      while (lua_next(prv->Lua, LUA_GLOBALSINDEX)) {
-         if (lua_type(prv->Lua, -1) IS LUA_TFUNCTION) {
-            prv->Procedures.push_back(lua_tostring(prv->Lua, -2));
+   if (Self->Lua) {
+      Self->Procedures.clear();
+      lua_pushnil(Self->Lua);
+      while (lua_next(Self->Lua, LUA_GLOBALSINDEX)) {
+         if (lua_type(Self->Lua, -1) IS LUA_TFUNCTION) {
+            if (auto name = lua_tostringview(Self->Lua, -2); not name.empty()) {
+               Self->Procedures.emplace_back(name);
+            }
          }
-         lua_pop(prv->Lua, 1);
+         lua_pop(Self->Lua, 1);
       }
 
-      *Value = &prv->Procedures;
-      *Elements = prv->Procedures.size();
+      Value = std::span<std::string>(Self->Procedures.data(), Self->Procedures.size());
       return ERR::Okay;
    }
    else return ERR::NotInitialised;
@@ -814,7 +779,7 @@ static ERR GET_Procedures(objScript *Self, pf::vector<std::string> **Value, int 
 //********************************************************************************************************************
 // LuaJIT does support saving multi-platform compiled bytecode and we just need to implement it here.
 
-static ERR save_binary(objScript *Self, OBJECTPTR Target)
+static ERR save_binary(extTiri *Self, OBJECTPTR Target)
 {
    // TODO No support for save_binary() yet.
 
@@ -823,27 +788,48 @@ static ERR save_binary(objScript *Self, OBJECTPTR Target)
 
 //********************************************************************************************************************
 
-static ERR run_script(objScript *Self)
+static ERR run_script(extTiri *Self)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
+   auto procedure_id = FUNCTION::unpackProcedureID(Self->ProcedureID);
+   auto context_id = FUNCTION::unpackContextID(Self->ProcedureID);
+   bool native_callback = Self->Procedure.empty() and bool(Self->ProcedureID);
+   std::optional<LuaCallbackContextGuard> callback_context;
 
-   auto prv = (prvTiri *)Self->ChildPrivate;
+   if (native_callback) {
+      callback_context.emplace(Self->Lua);
+      if (context_id != 0) {
+         lua_rawgeti(Self->Lua, LUA_REGISTRYINDEX, context_id);
+         if (lua_type(Self->Lua, -1) != LUA_TTABLE) {
+            lua_pop(Self->Lua, 1);
+            auto message = std::format("Callback context #{} does not exist or is not a table.", context_id);
+            Self->setErrorMessage(message.c_str());
+            Self->Error = ERR::InvalidData;
+            return Self->Error;
+         }
 
-   log.traceBranch("Procedure: %s, Top: %d", Self->Procedure, lua_gettop(prv->Lua));
+         callback_context->activate(tabV(Self->Lua->top - 1));
+         lua_pop(Self->Lua, 1);
+      }
+   }
 
-   prv->Lua->CaughtError = ERR::Okay;
+   log.traceBranch("Procedure: %s, Top: %d", Self->Procedure.c_str(), lua_gettop(Self->Lua));
+
+   Self->Lua->CaughtError = ERR::Okay;
    std::array<GCobject*, 8> release_list;
    size_t r = 0;
    int top;
    bool pcall_failed = false;
-   if ((Self->Procedure) or (Self->ProcedureID)) {
-      if (Self->Procedure) lua_getglobal(prv->Lua, Self->Procedure);
-      else lua_rawgeti(prv->Lua, LUA_REGISTRYINDEX, Self->ProcedureID);
+   if ((not Self->Procedure.empty()) or (Self->ProcedureID)) {
+      if (not Self->Procedure.empty()) lua_getglobal(Self->Lua, Self->Procedure);
+      else lua_rawgeti(Self->Lua, LUA_REGISTRYINDEX, int(procedure_id));
 
-      if (lua_isfunction(prv->Lua, -1)) {
-         if ((Self->Flags & SCF::LOG_ALL) != SCF::NIL) log.branch("Executing procedure: %s, Args: %d", Self->Procedure, Self->TotalArgs);
+      if (lua_isfunction(Self->Lua, -1)) {
+         if ((Self->Flags & SCF::LOG_ALL) != SCF::NIL) {
+            log.branch("Executing procedure: %s, Args: %d", Self->Procedure.c_str(), Self->TotalArgs);
+         }
 
-         top = lua_gettop(prv->Lua);
+         top = lua_gettop(Self->Lua);
 
          int count = 0;
          const ScriptArg *args;
@@ -851,86 +837,76 @@ static ERR run_script(objScript *Self)
             for (int i=0; i < Self->TotalArgs; i++, args++) {
                int type = args->Type;
 
-               if (type & FD_ARRAY) {
+               if ((type & FDF_SPAN) IS FDF_SPAN) {
+                  auto span = (std::span<std::byte> *)args->Address;
+                  if (span) lua_createarray(Self->Lua, span->size(), AET::BYTE, span->data(), ARRAY_EXTERNAL);
+                  else lua_pushnil(Self->Lua);
+               }
+               else if (type & (FD_ARRAY|FD_VECTOR)) {
                   log.trace("Setting arg '%s', Array: %p", args->Name, args->Address);
 
                   APTR values = args->Address;
-                  int total_elements = -1;
                   std::string_view arg_name(args->Name);
-                  if (args[1].Type & FD_ARRAYSIZE) {
-                     if (args[1].Type & FD_INT) total_elements = args[1].Int;
-                     else if (args[1].Type & FD_INT64) total_elements = args[1].Int64;
-                     else values = nullptr;
-                     i++; args++; // Because we took the array-size parameter into account
-                  }
-                  else log.trace("The size of the array is not defined.");
 
                   if (values) {
-                     make_any_array(prv->Lua, type, arg_name, total_elements, values);
+                     make_any_array(Self->Lua, type, arg_name, -1, values);
 
                      if (type & FD_ALLOC) FreeResource(values);
                   }
-                  else lua_pushnil(prv->Lua);
+                  else lua_pushnil(Self->Lua);
                }
                else if (type & FD_STR) {
                   log.trace("Setting arg '%s', Value: %.20s", args->Name, (CSTRING)args->Address);
-                  lua_pushstring(prv->Lua, (CSTRING)args->Address);
+                  lua_pushstring(Self->Lua, (CSTRING)args->Address);
                }
                else if (type & FD_STRUCT) {
                   // Pointer to a struct, which can be referenced with a name of "StructName" or "StructName:ArgName"
                   if (args->Address) {
-                     if (named_struct_to_table(prv->Lua, args->Name, args->Address) != ERR::Okay) lua_pushnil(prv->Lua);
+                     if (named_struct_to_table(Self->Lua, args->Name, args->Address) != ERR::Okay) lua_pushnil(Self->Lua);
                      if (type & FD_ALLOC) FreeResource(args->Address);
                   }
-                  else lua_pushnil(prv->Lua);
+                  else lua_pushnil(Self->Lua);
                }
-               else if (type & (FD_PTR|FD_BUFFER)) {
+               else if (type & FD_PTR) {
                   // Try and make the pointer safer/more usable by translating it into a buffer, object ID or whatever.
                   // (In a secure environment, pointers may be passed around but may be useless if their use is
                   // disallowed within Lua).
 
                   log.trace("Setting arg '%s', Value: %p", args->Name, args->Address);
-                  if ((type & FD_BUFFER) and (i+1 < Self->TotalArgs) and (args[1].Type & FD_BUFSIZE)) {
-                     // Buffers are considered to be directly writable regions of memory, so the array interface is
-                     // used to represent them.
-                     if (args[1].Type & FD_INT) lua_createarray(prv->Lua, args[1].Int, AET::BYTE, (APTR *)args->Address, ARRAY_EXTERNAL);
-                     else if (args[1].Type & FD_INT64) lua_createarray(prv->Lua, args[1].Int64, AET::BYTE, (APTR *)args->Address, ARRAY_EXTERNAL);
-                     else lua_pushnil(prv->Lua);
-                     i++; args++; // Because we took the buffer-size parameter into account
-                  }
-                  else if (type & FD_OBJECT) {
+                  if (type & FD_OBJECT) {
                      // Pushing direct object pointers is considered safe because they are treated as detached, then
                      // a lock is gained for the duration of the call that is then released on return.  This is a
                      // solid optimisation that also protects the object from unwarranted termination during the call.
 
                      if (args->Address) {
-                        GCobject *obj = push_object(prv->Lua, (OBJECTPTR)args->Address);
-                        if ((r < release_list.size()) and (access_object(obj))) {
+                        GCobject *obj = push_object(Self->Lua, (OBJECTPTR)args->Address);
+                        OBJECTPTR ptr_obj;
+                        if ((r < release_list.size()) and (access_object(obj, ptr_obj) IS ERR::Okay)) {
                            release_list[r++] = obj;
                         }
                      }
-                     else lua_pushnil(prv->Lua);
+                     else lua_pushnil(Self->Lua);
                   }
-                  else lua_pushlightuserdata(prv->Lua, args->Address);
+                  else lua_pushlightuserdata(Self->Lua, args->Address);
                }
                else if (type & FD_INT)   {
                   log.trace("Setting arg '%s', Value: %d", args->Name, args->Int);
                   if (type & FD_OBJECT) {
-                     if (args->Int) push_object_id(prv->Lua, args->Int);
-                     else lua_pushnil(prv->Lua);
+                     if (args->Int) push_object_id(Self->Lua, args->Int);
+                     else lua_pushnil(Self->Lua);
                   }
-                  else lua_pushinteger(prv->Lua, args->Int);
+                  else lua_pushinteger(Self->Lua, args->Int);
                }
-               else if (type & FD_INT64)  { log.trace("Setting arg '%s', Value: %" PRId64, args->Name, (long long)args->Int64); lua_pushnumber(prv->Lua, args->Int64); }
-               else if (type & FD_DOUBLE) { log.trace("Setting arg '%s', Value: %.2f", args->Name, args->Double); lua_pushnumber(prv->Lua, args->Double); }
-               else { lua_pushnil(prv->Lua); log.warning("Arg '%s' uses unrecognised type $%.8x", args->Name, type); }
+               else if (type & FD_INT64)  { log.trace("Setting arg '%s', Value: %" PRId64, args->Name, (long long)args->Int64); lua_pushnumber(Self->Lua, args->Int64); }
+               else if (type & FD_DOUBLE) { log.trace("Setting arg '%s', Value: %.2f", args->Name, args->Double); lua_pushnumber(Self->Lua, args->Double); }
+               else { lua_pushnil(Self->Lua); log.warning("Arg '%s' uses unrecognised type $%.8x", args->Name, type); }
                count++;
             }
          }
 
          int step = GetResource(RES::LOG_DEPTH);
 
-         if (lua_pcall(prv->Lua, count, LUA_MULTRET, 0)) {
+         if (lua_pcall(Self->Lua, count, LUA_MULTRET, 0)) {
             pcall_failed = true;
          }
 
@@ -940,15 +916,14 @@ static ERR run_script(objScript *Self)
       }
       else {
          auto str = std::format("Procedure '{}' / #{} does not exist in the script.",
-            Self->Procedure ? Self->Procedure : "NULL", Self->ProcedureID);
+            Self->Procedure.empty() ? "NULL" : Self->Procedure.c_str(), procedure_id);
          Self->setErrorMessage(str.c_str());
          log.warning("%s", str.c_str());
 
          #ifndef NDEBUG
-            pf::vector<std::string> *list;
-            int total_procedures;
-            if (GET_Procedures(Self, &list, &total_procedures) IS ERR::Okay) {
-               for (int i=0; i < total_procedures; i++) log.trace("%s", list[0][i]);
+            std::span<std::string> list;
+            if (!GET_Procedures(Self, list)) {
+               for (unsigned i=0; i < list.size(); i++) log.trace("%s", list[i].c_str());
             }
          #endif
 
@@ -960,45 +935,42 @@ static ERR run_script(objScript *Self)
       if (Self->ActivationCount > 1) {
          // Re-execution: restore the compiled main chunk from the registry reference since the previous
          // lua_pcall() consumed the function from the stack.
-         lua_rawgeti(prv->Lua, LUA_REGISTRYINDEX, prv->MainChunkRef);
+         lua_rawgeti(Self->Lua, LUA_REGISTRYINDEX, Self->MainChunkRef);
       }
 
       int depth = GetResource(RES::LOG_DEPTH);
 
-         top = lua_gettop(prv->Lua);
-         if (lua_pcall(prv->Lua, 0, LUA_MULTRET, 0)) pcall_failed = true;
+         top = lua_gettop(Self->Lua);
+         if (lua_pcall(Self->Lua, 0, LUA_MULTRET, 0)) pcall_failed = true;
 
       SetResource(RES::LOG_DEPTH, depth);
    }
 
    if (not pcall_failed) { // If the procedure returned results, copy them to the Results field of the Script.
-      int results = lua_gettop(prv->Lua) - top + 1;
+      int results = lua_gettop(Self->Lua) - top + 1;
 
+      ERR error = ERR::Okay;
       if (results > 0) {
-         std::vector<CSTRING> array;
-         array.resize(results+1);
-
-         // NB: The Results field will take a clone of the Lua strings, so this sub-routine is safe to pass
-         // on Lua's temporary string results.
-
-         int i;
-         for (i=0; i < results; i++) {
-            array[i] = lua_tostring(prv->Lua, -results+i);
-            log.trace("Result: %d/%d: %s", i, results, array[i]);
+         kt::vector<std::string> array;
+         array.resize(results);
+         for (int i=0; i < results; i++) {
+            size_t size;
+            auto str = lua_tolstring(Self->Lua, -results+i, &size);
+            if (str) array[i] = std::string_view(str, size);
+            else Self->Error = error = ERR::LimitedSuccess;
          }
-         array[i] = nullptr;
-         Self->set(FID_Results, array.data(), i);
-         lua_pop(prv->Lua, results);  // pop returned values
+         Self->setResults(array);
+         lua_pop(Self->Lua, results);  // pop returned values
       }
 
       // Flush pending messages before returning (critical - some message handlers may assume that
       // pointers to the script object are valid, so flushing ensures safety).
 
-      if ((prv->Recurse IS 1) and GetResource(RES::MAIN_THREAD)) {
+      if ((Self->Recurse IS 1) and GetResource(RES::MAIN_THREAD)) {
          ProcessMessages(PMF::NIL, 0);
       }
 
-      return ERR::Okay;
+      return error;
    }
    else {
       // LuaJIT catches C++ exceptions, but we would prefer that crashes occur normally so that they can be traced in
@@ -1007,60 +979,71 @@ static ERR run_script(objScript *Self)
 
       if (CurrentContext() != Self) abort(); // A C++ exception was caught by Lua - the software stack is unstable so we must abort.
 
-      if ((prv->Recurse IS 1) and GetResource(RES::MAIN_THREAD)) {
+      if ((Self->Recurse IS 1) and GetResource(RES::MAIN_THREAD)) {
          ProcessMessages(PMF::NIL, 0);
       }
 
-      process_error(Self, Self->Procedure ? Self->Procedure : "run_script");
+      process_error(Self, Self->Procedure.empty() ? "run_script" : Self->Procedure.c_str());
       return Self->Error;
    }
 }
 
 //********************************************************************************************************************
 
-static ERR register_interfaces(objScript *Self)
+static ERR register_interfaces(extTiri *Self)
 {
-   pf::Log log;
+   kt::Log log;
 
    log.traceBranch("Registering Kotuku and Tiri interfaces with Lua.");
 
-   auto prv = (prvTiri *)Self->ChildPrivate;
+#ifndef NDEBUG
+   int stack_top = lua_gettop(Self->Lua);
+#endif
 
-   register_io_class(prv->Lua);
-   register_module_class(prv->Lua);
-   register_regex_class(prv->Lua);
-   register_struct_class(prv->Lua);
-   register_async_class(prv->Lua);
-   #ifndef DISABLE_DISPLAY
-      register_input_class(prv->Lua);
-   #endif
-   register_number_class(prv->Lua);
-   register_processing_class(prv->Lua);
+   register_io_class(Self->Lua);
+   register_module_class(Self->Lua);
+   register_regex_class(Self->Lua);
+   register_async_class(Self->Lua);
+#ifndef DISABLE_DISPLAY
+   register_input_class(Self->Lua);
+#endif
+   register_processing_class(Self->Lua);
 
-   lua_register(prv->Lua, "arg", fcmd_arg);
-   lua_register(prv->Lua, "loadFile", fcmd_loadfile);
-   lua_register(prv->Lua, "exec", fcmd_exec);
-   lua_register(prv->Lua, "print", fcmd_print);
-   lua_register(prv->Lua, "include", fcmd_include);
-   lua_register(prv->Lua, "msg", fcmd_msg);
-   lua_register(prv->Lua, "subscribeEvent", fcmd_subscribe_event);
-   lua_register(prv->Lua, "unsubscribeEvent", fcmd_unsubscribe_event);
-   lua_register(prv->Lua, "MAKESTRUCT", MAKESTRUCT);
+   lua_register(Self->Lua, "arg", fcmd_arg);
+   lua_register(Self->Lua, "loadFile", fcmd_loadfile);
+   lua_register(Self->Lua, "exec", fcmd_exec);
+   lua_register(Self->Lua, "print", fcmd_print);
+   lua_register(Self->Lua, "msg", fcmd_msg);
+   lua_register(Self->Lua, "subscribeEvent", fcmd_subscribe_event);
+   lua_register(Self->Lua, "unsubscribeEvent", fcmd_unsubscribe_event);
+   lua_register(Self->Lua, "MAKESTRUCT", MAKESTRUCT);
 
    // Register global function prototypes for compile-time type inference
-   reg_func_prototype("arg", { TiriType::Any }, { TiriType::Str, TiriType::Any });
+   reg_func_prototype("arg", { TiriType::Str }, { TiriType::Str, TiriType::Str }, FProtoFlags::None,
+      FProtoArity::required(1));
    reg_func_prototype("loadFile", {}, { TiriType::Str }, FProtoFlags::Variadic);
    reg_func_prototype("exec", {}, { TiriType::Str }, FProtoFlags::Variadic);
-   reg_func_prototype("getExecutionState", { TiriType::Table }, {});
    reg_func_prototype("print", {}, {}, FProtoFlags::Variadic);
-   reg_func_prototype("include", {}, { TiriType::Str }, FProtoFlags::Variadic);
-   reg_func_prototype("require", { TiriType::Table }, { TiriType::Str });
    reg_func_prototype("msg", {}, { TiriType::Str }, FProtoFlags::Variadic);
-   reg_func_prototype("subscribeEvent", { TiriType::Any, TiriType::Num }, { TiriType::Str, TiriType::Func });
-   reg_func_prototype("unsubscribeEvent", {}, { TiriType::Any });
-   reg_func_prototype("MAKESTRUCT", { TiriType::Any }, { TiriType::Str });
+   reg_func_prototype("subscribeEvent", { TiriType::Num, TiriType::Userdata }, { TiriType::Str, TiriType::Func });
+   reg_func_prototype("unsubscribeEvent", {}, { TiriType::Userdata });
+   reg_func_prototype("MAKESTRUCT", { TiriType::Any }, { TiriType::Str }, FProtoFlags::Variadic);
 
-   load_include(Self, "core");
+   if (auto error = load_module_defs("core"); error != ERR::Okay) {
+      log.error("Failed to process the core includes.");
+      return error;
+   }
+
+   // Every built-in prototype has now been published, so the registry contents are final and it can be sealed for
+   // lock-free lookups.  This is the last registration point: luaL_openlibs() publishes the core libraries and the
+   // calls above add the remaining interfaces.  Later states repeat the same registrations, which validate against
+   // the new state and return ERR::Exists without mutating the maps.
+   seal_proto_registry();
+
+#ifndef NDEBUG
+   int stack_delta = lua_gettop(Self->Lua) - stack_top;
+   if (stack_delta) log.warning("Lua initialisation left %d value(s) on the Lua stack.", stack_delta);
+#endif
 
    return ERR::Okay;
 }
@@ -1068,6 +1051,20 @@ static ERR register_interfaces(objScript *Self)
 //********************************************************************************************************************
 
 #include "tiri_class_methods.cpp"
+
+#include "tiri_class_def.cpp"
+
+static ERR GET_JitOptions(extTiri *, JOF *);
+static ERR SET_JitOptions(extTiri *, JOF);
+static ERR GET_Procedures(extTiri *, std::span<std::string> &);
+
+static const FieldArray clFields[] = {
+   { "JitOptions", FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE, GET_JitOptions, SET_JitOptions, &clTiriJOF },
+   { "Procedures", FDF_VIRTUAL|FDF_VECTOR|FDF_CPPSTRING|FDF_R, GET_Procedures },
+   END_FIELD
+};
+
+//********************************************************************************************************************
 
 ERR create_tiri(void)
 {
@@ -1077,11 +1074,12 @@ ERR create_tiri(void)
       fl::ClassVersion(1.0),
       fl::Name("Tiri"),
       fl::Category(CCF::DATA),
-      fl::FileExtension("*.tiri|*.tbc"),
+      fl::FileExtension("tiri|tbc"),
       fl::FileDescription("Tiri"),
-      fl::Actions(clActions),
+      fl::Actions(clTiriActions),
       fl::Methods(clMethods),
       fl::Fields(clFields),
+      fl::Size(sizeof(extTiri)),
       fl::Path(MOD_PATH));
 
    return clTiri ? ERR::Okay : ERR::AddClass;

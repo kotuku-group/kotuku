@@ -7,24 +7,25 @@ Documentation is available in the Kotuku Wiki.
    import 'gui'
    import 'gui/dropdown'
 
-   namespace 'gui'
+   namespace gui
 
 FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(gui.fonts.widget)
 BOX_HEIGHT <const> = math.floor(FONT_MAX_HEIGHT * 1.35) + 1
 MARGIN     <const> = math.floor(FONT_HEIGHT * 0.5) + 1
 
-function iconTheme(Widget:table):str
-   if gui.strToRGB(Widget.theme.page.text):brightness() > 0.5 then
+function iconTheme(Widget:table!):str
+   local colour = gui.strToRGB(Widget.theme.page.text)
+   if colour.brightness() > 0.5 then
       return 'pearl'
    else
       return 'default' -- The default theme is dark
    end
 end
 
-function reportFeedback(self:table)
-   self.events.activate ?? return
+function reportFeedback(self:table!)
+   self.events.activate ?! return
    text = self.text.string
-   hash = string.hash(text)
+   hash = text ? string.hash(text) : 0
    if hash != self.hash then
       self.hash = hash
       self.events.activate(self, text)
@@ -44,7 +45,7 @@ function toggleMenu(self:table)
 end
 
 gui.combobox = function(Options)
-   self = { -- Public variables
+   self = entity { -- Public interface
       events         = Options.events ?? { },
       label          = Options.label,
       parentViewport = Options.target,
@@ -55,22 +56,22 @@ gui.combobox = function(Options)
 
    -- Change the active state of the combobox box to disabled or enabled
 
-   self.disable = function(self)
-      self.disabled = true
-      self.viewport.acDisable()
-      self.text.opacity = 0.5
-      self.bkgd.fill = self.theme.page.bkgd
-      self.events?.disable(self)
-      self.viewport.acDraw()
+   self.disable = function()
+      &disabled = true
+      &viewport.acDisable()
+      &text.opacity = 0.5
+      &bkgd.fill = &theme.page.bkgd
+      &events?.disable(&&)
+      &viewport.acDraw()
    end
 
-   self.enable = function(self)
-      self.disabled = false
-      self.viewport.acDisable()
-      self.text.opacity = 1.0
-      self.bkgd.fill = self.theme.page.bkgd
-      self.events?.enable(self)
-      self.viewport.acDraw()
+   self.enable = function()
+      &disabled = false
+      &viewport.acEnable()
+      &text.opacity = 1.0
+      &bkgd.fill = &theme.page.bkgd
+      &events?.enable(&&)
+      &viewport.acDraw()
    end
 
    -- Main entry point --
@@ -167,7 +168,7 @@ gui.combobox = function(Options)
 
    defaultText = Options.text
    if not Options.allowCustom and not defaultText then
-      defaultText = Options.items[1].item
+      defaultText = Options.items[0].item
    end
 
    self.text = self._textClip.new('VectorText', {

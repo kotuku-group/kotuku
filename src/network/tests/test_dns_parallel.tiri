@@ -3,19 +3,16 @@ Tests for resolving server names in parallel.
 --]]
 
    include 'network'
+   module network as mNet
 
-glDomains = array<string> { 'google.com', 'kotuku.dev', 'amazon.co.uk', 'stackoverflow.com', 'theguardian.com', 'www.bbc.co.uk' }
+glDomains = array<str> { 'google.com', 'kotuku.dev', 'amazon.co.uk', 'stackoverflow.com', 'theguardian.com', 'www.bbc.co.uk' }
 glTotalResolved = 0
-local proc
-
-@BeforeAll function init()
-   global mNet ?= mod.load('network')
-   proc = processing.new({ timeout = 5.0 })
-end
+local proc, signal
 
 @AfterAll function cleanup()
    glDomains = nil
    glTotalResolved = nil
+   signal = nil
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -36,14 +33,14 @@ function name_resolved(NetLookup, Error)
 
    total_ips = 0
 
-   print('Resolved host name "' .. host .. '" (' .. (glTotalResolved+1) .. '/' .. #glDomains .. ')')
+   logOutput('Resolved host name "' .. host .. '" (' .. (glTotalResolved+1) .. '/' .. #glDomains .. ')')
 
    ip_list = nil
    addresses = NetLookup.addresses -- array type
    if addresses then
       total_ips = #addresses
       for ip in values(addresses) do
-          assert((ip.type is IPADDR_V4) or (ip.type is IPADDR_V6), 'Unrecognised TCP/IP address type ' .. ip.type)
+         assert((ip.type is IPADDR_V4) or (ip.type is IPADDR_V6), 'Unrecognised TCP/IP address type ' .. ip.type)
          if not ip_list then
             ip_list = netAddressToString(ip)
          else
@@ -52,14 +49,14 @@ function name_resolved(NetLookup, Error)
       end
    end
 
-   msg = 'Resolved ' .. host .. ' with ' .. total_ips .. ' IP addresses.'
+   local msg = 'Resolved ' .. host .. ' with ' .. total_ips .. ' IP addresses.'
    if ip_list then msg ..= '  IPs: ' .. ip_list end
-   print(msg)
+   logOutput(msg)
 
    glTotalResolved++
 
    if glTotalResolved is #glDomains then
-      proc.signal() -- Breaks the proc.sleep() loop
+      NetLookup.acSignal()
    end
 end
 
@@ -68,69 +65,68 @@ end
 -- for the same host.  In the log output you may see a thread being created for the first resolve, then the second call
 -- will hit the local DNS cache and return immediately.
 
-@Test(requires='network') function Duplication()
+@Test; @Requires(network=true) function Duplication()
    resolved = 0
 
-   domains = { 'google.com', 'reddit.com' }
+   domains = array<str> { 'google.com', 'reddit.com' }
    function duplicate_resolved(NetLookup, Error)
       assert(Error is ERR_Okay, 'Failed to resolve ' .. NetLookup.hostName .. ', error ' ..mSys.GetErrorMsg(Error))
-      print('Resolved: ' .. NetLookup.hostName)
+      logOutput('Resolved: ' .. NetLookup.hostName)
       resolved++
-      if resolved is #domains * 2 then print('All domains resolved.') end
-      proc.signal()
+      if resolved is #domains * 2 then logOutput('All domains resolved.') end
+      NetLookup.acSignal()
    end
 
-   for k,v in pairs(domains) do
+   for domain in values(domains) do
       nlA = obj.new('NetLookup', { callback = duplicate_resolved, flags=NLF_NO_CACHE })
       nlB = obj.new('NetLookup', { callback = duplicate_resolved })
 
-      err = nlA.mtResolveName(v)
-      err = proc.sleep()
-      assert(err is ERR_Okay, 'Name resolution failed: ' .. mSys.GetErrorMsg(err))
-      print('First lookup processed successfully.')
+      proc = processing.new({ timeout = 5.0, signals = array<obj> { nlA } })
+      check nlA.mtResolveName(domain)
+      check proc.sleep()
 
+      proc = processing.new({ timeout = 5.0, signals = array<obj> { nlB } })
       save = resolved
-      err = nlB.mtResolveName(v)
+      check nlB.mtResolveName(domain)
       if save is resolved then
-         err = proc.sleep()
-         assert(err is ERR_Okay, 'Name resolution failed: ' .. mSys.GetErrorMsg(err))
+         check proc.sleep()
       end
-      print('Second lookup processed successfully.')
    end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Non-blocking name resolution (default)
 
-@Test(requires='network') function NameResolutionAsync()
+@Test; @Requires(network=true) function NameResolutionAsync()
    nl = obj.new('NetLookup', { callback=name_resolved, flags=NLF_NO_CACHE })
 
+   proc = processing.new({ timeout = 2.0, signals = array<obj> { nl } })
+
    glTotalResolved = 0
-   for i=0,#glDomains-1 do
-      nl.mtResolveName(glDomains[i])
+   for domain in values(glDomains) do
+      nl.mtResolveName(domain)
    end
 
-   err = proc.sleep(5.0)
-   if (err is ERR_TimeOut) then error('Name resolution timed-out.') end
+   check proc.sleep()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Blocking name resolution
 
-@Test(requires='network') function BlockingNameResolution()
+@Test; @Requires(network=true) function BlockingNameResolution()
    nl = obj.new('NetLookup', { callback = name_resolved, flags=NLF_NO_CACHE })
 
    glTotalResolved = 0
-   for i=0,#glDomains-1 do
+   for domain in values(glDomains) do
       expected_total = glTotalResolved + 1
-      nl.mtBlockingResolveName(glDomains[i])
+      nl.mtBlockingResolveName(domain)
       assert(expected_total is glTotalResolved, 'Name was not resolved when ResolveName() had returned, got ' .. glTotalResolved .. '/' .. expected_total)
    end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-@Test(requires='network') function BlockingAddressResolution()
+@Test; @Requires(network=true) function BlockingAddressResolution()
    address_resolved = false
    nl = obj.new('NetLookup', {
       callback = function(NetLookup, Error)

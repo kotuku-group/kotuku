@@ -9,35 +9,46 @@ This test verifies that UDP and TCP sockets can coexist and operate independentl
 --]]
 
    include 'network'
-   mNet ?= mod.load('network')
+   module network as mNet
 
    glBasePort = 19840  -- Base port for coexistence tests
    glTestTimeout = 4.0
 
+function freeNetworkObject(Object)
+   if Object then Object.free() end
+end
+
+function freeNetworkObjectTable(Objects)
+   if Objects then
+      for _, object in pairs(Objects) do
+         freeNetworkObject(object)
+      end
+   end
+end
+
 ------------------------------------------------------------------------------------------------------------------------
 -- Test UDP and TCP servers running simultaneously
 
-@Test(requires='network') function UDPTCPCoexistence()
+@Test; @Requires(network=true) function UDPTCPCoexistence()
    udpPort = glBasePort + 1
    tcpPort = glBasePort + 2
-   proc = processing.new({ timeout = glTestTimeout })
    udpReceived = false
    tcpConnected = false
    tcpReceived = false
 
    -- Create UDP server
-   udpServer = obj.new('netsocket', {
+   udpServer = obj.new('netserver', {
       port = udpPort,
       address = '127.0.0.1',
-      flags = 'SERVER|UDP',
+      flags = 'UDP',
       incoming = function(Socket)
-         buffer = string.alloc(1024)
+         buffer = array<byte, 1024>
          source = struct.new('IPAddress')
          err, bytesRead = Socket.mtRecvFrom(source, buffer)
          if (err is ERR_Okay) and (bytesRead > 0) then
-            msg = buffer:sub(0, bytesRead)
-            print('[UDP Server] Received: "' .. msg .. '"')
-            if (msg:startsWith('UDP Test')) then
+            local msg = buffer.getString(0, bytesRead)
+            logOutput('[UDP Server] Received: "' .. msg .. '"')
+            if (msg.startsWith('UDP Test')) then
                udpReceived = true
                -- Send UDP response
                Socket.mtSendTo(source, 'UDP Response')
@@ -47,46 +58,46 @@ This test verifies that UDP and TCP sockets can coexist and operate independentl
    })
 
    -- Create TCP server
-   tcpServer = obj.new('netsocket', {
+   tcpServer = obj.new('netserver', {
       port = tcpPort,
       address = '127.0.0.1',
-      flags = 'SERVER',  -- TCP only
       feedback = function(Socket, Client, State)
          if (State is NTC_CONNECTED) then
-            print('[TCP Server] Client connected')
+            logOutput('[TCP Server] Client connected')
             tcpConnected = true
             err, len = Client.acWrite('TCP Hello')
             assert(err is ERR_Okay, 'TCP server failed to send greeting')
          end
       end,
       incoming = function(Socket, Client)
-         buffer = string.alloc(1024)
+         buffer = array<byte, 1024>
          err, readLen = Client.acRead(buffer)
          if (err is ERR_Okay and readLen > 0) then
-            msg = buffer:sub(0, readLen)
-            print('[TCP Server] Received: "' .. msg .. '"')
-            if (msg:startsWith('TCP Test')) then
+            local msg = buffer.getString(0, readLen)
+            logOutput('[TCP Server] Received: "' .. msg .. '"')
+            if (msg.startsWith('TCP Test')) then
                tcpReceived = true
                if (udpReceived and tcpReceived) then
-                  proc.signal()
+                  Socket.acSignal()
                end
             end
          end
       end
    })
 
-   proc.sleep(0.2)  -- Let servers initialize
+   proc = processing.new({ timeout = glTestTimeout, signals = array<obj> { tcpServer } })
+   processing.halt(0.2)  -- Let servers initialize
 
    -- Create UDP client
    udpClient = obj.new('netsocket', {
       flags = 'UDP',
       incoming = function(Socket)
-         buffer = string.alloc(1024)
+         buffer = array<byte, 1024>
          source = struct.new('IPAddress')
          err, bytesRead = Socket.mtRecvFrom(source, buffer)
          if (err is ERR_Okay) and (bytesRead > 0) then
-            msg = buffer:sub(0, bytesRead)
-            print('[UDP Client] Received response: "' .. msg .. '"')
+            local msg = buffer.getString(0, bytesRead)
+            logOutput('[UDP Client] Received response: "' .. msg .. '"')
          end
       end
    })
@@ -97,21 +108,28 @@ This test verifies that UDP and TCP sockets can coexist and operate independentl
       port = tcpPort,
       feedback = function(Socket, State)
          if (State is NTC_CONNECTED) then
-            print('[TCP Client] Connected to server')
+            logOutput('[TCP Client] Connected to server')
             message = 'TCP Test Message'
             err, len = Socket.acWrite(message)
             assert(err is ERR_Okay, 'TCP client failed to send message')
          end
       end,
       incoming = function(Socket)
-         buffer = string.alloc(1024)
+         buffer = array<byte, 1024>
          err, readLen = Socket.acRead(buffer)
          if (err is ERR_Okay and readLen > 0) then
-            msg = buffer:sub(0, readLen)
-            print('[TCP Client] Received: "' .. msg .. '"')
+            local msg = buffer.getString(0, readLen)
+            logOutput('[TCP Client] Received: "' .. msg .. '"')
          end
       end
    })
+
+   defer
+      freeNetworkObject(tcpClient)
+      freeNetworkObject(udpClient)
+      freeNetworkObject(tcpServer)
+      freeNetworkObject(udpServer)
+   end
 
    -- Send UDP message
 
@@ -120,11 +138,11 @@ This test verifies that UDP and TCP sockets can coexist and operate independentl
    dest.port = udpServer.port
 
    udpMessage = 'UDP Test Message'
-   print('[UDP Client] Sending: "' .. udpMessage .. '"')
+   logOutput('[UDP Client] Sending: "' .. udpMessage .. '"')
    err, bytesSent = udpClient.mtSendTo(dest, udpMessage)
    assert(err is ERR_Okay, 'UDP client failed to send message')
 
-   proc.sleep()
+   check proc.sleep()
 
    assert(udpReceived, 'UDP message was not received')
    assert(tcpConnected, 'TCP connection was not established')
@@ -134,58 +152,60 @@ end
 ------------------------------------------------------------------------------------------------------------------------
 -- Test mixed protocol communication patterns
 
-@Test(requires='network') function MixedProtocolPatterns()
+@Test; @Requires(network=true) function MixedProtocolPatterns()
    basePort = glBasePort + 10
-   proc = processing.new({ timeout = glTestTimeout })
    results = {}
 
    -- Create multiple servers of different types
    servers = {
-      udp1 = obj.new('netsocket', {
+      udp1 = obj.new('netserver', {
          port = basePort + 1,
          address = '127.0.0.1',
-         flags = 'SERVER|UDP',
+         flags = 'UDP',
          incoming = function(Socket)
-            buffer = string.alloc(256)
+            buffer = array<byte, 256>
             source = struct.new('IPAddress')
             err, bytesRead = Socket.mtRecvFrom(source, buffer)
             if (err is ERR_Okay and bytesRead > 0) then
                results.udp1 = true
-               print('UDP Server 1 received message')
+               logOutput('UDP Server 1 received message')
+               Socket.acSignal()
             end
          end
       }),
 
-      tcp1 = obj.new('netsocket', {
+      tcp1 = obj.new('netserver', {
          port = basePort + 2,
          address = '127.0.0.1',
-         flags = 'SERVER',
          feedback = function(Socket, Client, State)
             if (State is NTC_CONNECTED) then
                results.tcp1 = true
-               print('TCP Server 1 got connection')
+               logOutput('TCP Server 1 got connection')
+               Socket.acSignal()
             end
          end
       }),
 
-      udp2 = obj.new('netsocket', {
+      udp2 = obj.new('netserver', {
          port = basePort + 3,
          address = '127.0.0.1',
-         flags = 'SERVER|UDP|BROADCAST',
+         flags = 'UDP|BROADCAST',
          multicastTTL = 2,
          incoming = function(Socket)
-            buffer = string.alloc(256)
+            buffer = array<byte, 256>
             source = struct.new('IPAddress')
             err, bytesRead = Socket.mtRecvFrom(source, buffer)
             if (err is ERR_Okay and bytesRead > 0) then
                results.udp2 = true
-               print('UDP Server 2 (with broadcast) received message')
+               logOutput('UDP Server 2 (with broadcast) received message')
+               Socket.acSignal()
             end
          end
       })
    }
 
-   proc.sleep(0.2)  -- Let servers initialize
+   proc = processing.new({ timeout = glTestTimeout, signals = array<obj> { servers.udp1, servers.tcp1, servers.udp2 } })
+   processing.halt(0.2)  -- Let servers initialize
 
    -- Create clients and send messages
    clients = {
@@ -193,6 +213,11 @@ end
       tcp1 = obj.new('netsocket', { address = '127.0.0.1', port = basePort + 2 }),
       udp2 = obj.new('netsocket', { flags = 'UDP' })
    }
+
+   defer
+      freeNetworkObjectTable(clients)
+      freeNetworkObjectTable(servers)
+   end
 
    dest = struct.new('IPAddress')
    check(mNet.StrToAddress('127.0.0.1', dest))
@@ -205,7 +230,7 @@ end
    dest.port = servers.udp2.port
    clients.udp2.mtSendTo(dest, 'test2')
 
-   proc.sleep(1.0)  -- Allow time for all operations
+   check proc.sleep()
 
    -- Check results
    assert(results.udp1, 'UDP Server 1 did not receive message')
@@ -216,16 +241,16 @@ end
 ------------------------------------------------------------------------------------------------------------------------
 -- Test resource cleanup and port reuse
 
-@Test(requires='network') function ResourceCleanup()
+@Test; @Requires(network=true) function ResourceCleanup()
    testPort = glBasePort + 20
 
    -- Create and destroy UDP socket
    do
-      udpSocket = obj.new('netsocket', { port = testPort, address = '127.0.0.1', flags = 'SERVER|UDP' })
-      print('UDP socket created and bound to port ' .. testPort)
+      udpSocket = obj.new('netserver', { port = testPort, address = '127.0.0.1', flags = 'UDP' })
+      logOutput('UDP socket created and bound to port ' .. testPort)
    end  -- Socket goes out of scope and should be cleaned up
 
    -- Create TCP socket on same port (should work after UDP cleanup)
-   tcpSocket = obj.new('netsocket', { port = testPort, address = '127.0.0.1', flags = 'SERVER' })
-   print('TCP socket successfully bound to same port after UDP cleanup')
+   tcpSocket = obj.new('netserver', { port = testPort, address = '127.0.0.1' })
+   logOutput('TCP socket successfully bound to same port after UDP cleanup')
 end

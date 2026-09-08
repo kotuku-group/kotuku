@@ -14,7 +14,7 @@ inline OBJECTID getSurfaceID(Scintilla::Window* win)
 
 Scintilla::Window::~Window()
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.branch();
    Destroy();
 }
@@ -23,7 +23,7 @@ Scintilla::Window::~Window()
 
 void Scintilla::Window::Destroy()
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.branch();
 
    wid = 0; // this object doesn't actually own the Scintilla drawable
@@ -33,12 +33,12 @@ void Scintilla::Window::Destroy()
 
 bool Scintilla::Window::HasFocus()
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    SURFACEINFO *info;
 
    log.branch();
 
-   if (gfx::GetSurfaceInfo(getSurfaceID(this), &info) IS ERR::Okay) {
+   if (!gfx::GetSurfaceInfo(getSurfaceID(this), &info)) {
       if (info->hasFocus()) return 1;
    }
 
@@ -50,13 +50,13 @@ bool Scintilla::Window::HasFocus()
 
 Scintilla::PRectangle Scintilla::Window::GetPosition()
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    SURFACEINFO *info;
 
    // Before any size allocated pretend its 1000 wide so not scrolled
    Scintilla::PRectangle rc(0, 0, 1000, 1000);
 
-   if (gfx::GetSurfaceInfo(getSurfaceID(this), &info) IS ERR::Okay) {
+   if (!gfx::GetSurfaceInfo(getSurfaceID(this), &info)) {
       rc.left   = info->AbsX;
       rc.top    = info->AbsY;
       rc.right  = info->AbsX + info->Width;
@@ -72,10 +72,10 @@ Scintilla::PRectangle Scintilla::Window::GetPosition()
 
 void Scintilla::Window::SetPosition(Scintilla::PRectangle rc)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.branch();
 
-   pf::ScopedObjectLock surface(getSurfaceID(this));
+   kt::ScopedObjectLock surface(getSurfaceID(this));
    if (surface.granted()) acRedimension(*surface, rc.left, rc.top, 0, rc.Width(), rc.Height(), 0);
 }
 
@@ -83,7 +83,7 @@ void Scintilla::Window::SetPosition(Scintilla::PRectangle rc)
 
 void Scintilla::Window::SetPositionRelative(Scintilla::PRectangle rc, Scintilla::Window relativeTo)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    SURFACEINFO *info;
 
    log.branch();
@@ -93,7 +93,7 @@ void Scintilla::Window::SetPositionRelative(Scintilla::PRectangle rc, Scintilla:
 
    // Get the position of the other window
 
-   if (gfx::GetSurfaceInfo(getSurfaceID(&relativeTo), &info) IS ERR::Okay) {
+   if (!gfx::GetSurfaceInfo(getSurfaceID(&relativeTo), &info)) {
       rc.left -= info->X;
       rc.top  -= info->Y;
    }
@@ -105,7 +105,7 @@ void Scintilla::Window::SetPositionRelative(Scintilla::PRectangle rc, Scintilla:
 
 Scintilla::PRectangle Scintilla::Window::GetClientPosition()
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    extScintilla *scintilla = (extScintilla *)this->GetID();
 
    //log.trace("%dx%d", scintilla->Surface.Width, scintilla->Surface.Height);
@@ -116,8 +116,8 @@ Scintilla::PRectangle Scintilla::Window::GetClientPosition()
 
 Scintilla::PRectangle Scintilla::Window::GetMonitorRect(Scintilla::Point)
 {
-   DISPLAYINFO *info;
-   if (gfx::GetDisplayInfo(0, &info) IS ERR::Okay) {
+   DisplayInfo *info;
+   if (!gfx::GetDisplayInfo(0, &info)) {
       return Scintilla::PRectangle(0, 0, info->Width, info->Height);
    }
    else return 0;
@@ -127,10 +127,10 @@ Scintilla::PRectangle Scintilla::Window::GetMonitorRect(Scintilla::Point)
 
 void Scintilla::Window::Show(bool show)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.branch();
 
-   pf::ScopedObjectLock surface(getSurfaceID(this));
+   kt::ScopedObjectLock surface(getSurfaceID(this));
    if (surface.granted()) {
       if (show) acShow(*surface);
       else acHide(*surface);
@@ -141,7 +141,7 @@ void Scintilla::Window::Show(bool show)
 
 void Scintilla::Window::InvalidateAll()
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    auto scintilla = (extScintilla *)this->GetID();
 
@@ -157,7 +157,7 @@ void Scintilla::Window::InvalidateAll()
 
 void Scintilla::Window::InvalidateRectangle(Scintilla::PRectangle rc)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    auto scintilla = (extScintilla *)this->GetID();
 
@@ -175,7 +175,7 @@ void Scintilla::Window::InvalidateRectangle(Scintilla::PRectangle rc)
 
 void Scintilla::Window::SetFont(Scintilla::Font &)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.branch("[UNSUPPORTED]");
    // Can not be done generically but only needed for ListBox
 }
@@ -201,7 +201,7 @@ void Scintilla::Window::SetCursor(Cursor curs)
    }
 
    if (wid) {
-      if (pf::ScopedObjectLock<objSurface> surface(getSurfaceID(this), 500); surface.granted()) {
+      if (kt::ScopedObjectLock<objSurface> surface(getSurfaceID(this), 500); surface.granted()) {
          surface->setCursor(cursorid);
          cursorLast = curs;
       }
@@ -214,5 +214,5 @@ void Scintilla::Window::SetCursor(Cursor curs)
 void Scintilla::Window::SetTitle(const char *s)
 {
    extScintilla *scintilla = (extScintilla *)this->GetID();
-   scintilla->set(FID_Title, (STRING)s);
+   scintilla->setTitle(s);
 }

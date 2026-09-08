@@ -8,13 +8,6 @@
 
 #define MODVERSION_DISPLAY (1)
 
-#ifdef __xwindows__
-
-#include <X11/Xlib.h>
-#include <X11/extensions/XShm.h>
-
-#endif
-
 class objBitmap;
 class objDisplay;
 class objClipboard;
@@ -46,6 +39,15 @@ enum class CS : int {
    CIE_LCH = 4,
 };
 
+// Bitmap memory type.
+
+enum class BMT : int {
+   NIL = 0,
+   DATA = 0,
+   VIDEO = 1,
+   TEXTURE = 2,
+};
+
 // Optional flags for the ExposeSurface() function.
 
 enum class EXF : uint32_t {
@@ -55,7 +57,6 @@ enum class EXF : uint32_t {
    REDRAW_VOLATILE_OVERLAP = 0x00000004,
    ABSOLUTE_COORDS = 0x00000008,
    ABSOLUTE = 0x00000008,
-   CURSOR_SPLIT = 0x00000010,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(EXF)
@@ -265,12 +266,35 @@ enum class BMF : uint32_t {
    ACCELERATED_3D = 0x00000400,
    ALPHA_CHANNEL = 0x00000800,
    NEVER_SHRINK = 0x00001000,
-   X11_DGA = 0x00002000,
-   FIXED_DEPTH = 0x00004000,
-   PREMUL = 0x00008000,
+   FIXED_DEPTH = 0x00002000,
+   PREMUL = 0x00004000,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(BMF)
+
+// Gamepad controller buttons.
+
+enum class CON : uint32_t {
+   NIL = 0,
+   GAMEPAD_S = 0x00000001,
+   GAMEPAD_E = 0x00000002,
+   GAMEPAD_W = 0x00000004,
+   GAMEPAD_N = 0x00000008,
+   DPAD_UP = 0x00000010,
+   DPAD_DOWN = 0x00000020,
+   DPAD_LEFT = 0x00000040,
+   DPAD_RIGHT = 0x00000080,
+   START = 0x00000100,
+   SELECT = 0x00000200,
+   LEFT_BUMPER_1 = 0x00000400,
+   LEFT_BUMPER_2 = 0x00000800,
+   RIGHT_BUMPER_1 = 0x00001000,
+   RIGHT_BUMPER_2 = 0x00002000,
+   LEFT_THUMB = 0x00004000,
+   RIGHT_THUMB = 0x00008000,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(CON)
 
 // Display flags.
 
@@ -286,6 +310,11 @@ enum class SCR : uint32_t {
    COMPOSITE = 0x00000040,
    ALPHA_BLEND = 0x00000040,
    GRAB_CONTROLLERS = 0x00000080,
+   PRIMARY = 0x00000100,
+   ACTIVE = 0x00000200,
+   MIRRORED = 0x00000400,
+   VIRTUAL = 0x00000800,
+   ROTATED = 0x00001000,
    MAXSIZE = 0x00100000,
    REFRESH = 0x00200000,
    HOSTED = 0x02000000,
@@ -318,7 +347,7 @@ enum class GMF : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(GMF)
 
-// Flags for GetDisplayType().
+// Display backend identities returned by GetDisplayType().
 
 enum class DT : int {
    NIL = 0,
@@ -382,9 +411,7 @@ enum class CEF : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(CEF)
 
-#define VER_SURFACEINFO 2.000000
-
-typedef struct SurfaceInfoV2 {
+typedef struct SurfaceInfo {
    APTR     Data;           // Bitmap data memory ID
    OBJECTID ParentID;       // Object that contains the surface area
    OBJECTID BitmapID;       // Surface bitmap buffer
@@ -427,39 +454,50 @@ struct xrMode {
 };
 
 typedef struct PixelFormat {
-   uint8_t RedShift;    // Right shift value
-   uint8_t GreenShift;  // Green shift value
-   uint8_t BlueShift;   // Blue shift value
-   uint8_t AlphaShift;  // Alpha shift value
-   uint8_t RedMask;     // The unshifted red mask value (ranges from 0x00 to 0xff)
-   uint8_t GreenMask;   // The unshifted green mask value (ranges from 0x00 to 0xff)
-   uint8_t BlueMask;    // The unshifted blue mask value (ranges from 0x00 to 0xff)
-   uint8_t AlphaMask;   // The unshifted alpha mask value (ranges from 0x00 to 0xff)
-   uint8_t RedPos;      // Left shift/positional value for red
-   uint8_t GreenPos;    // Left shift/positional value for green
-   uint8_t BluePos;     // Left shift/positional value for blue
-   uint8_t AlphaPos;    // Left shift/positional value for alpha
+   uint8_t  RedShift;   // Right shift value
+   uint8_t  GreenShift; // Green shift value
+   uint8_t  BlueShift;  // Blue shift value
+   uint8_t  AlphaShift; // Alpha shift value
+   uint8_t  RedMask;    // The unshifted red mask value (ranges from 0x00 to 0xff)
+   uint8_t  GreenMask;  // The unshifted green mask value (ranges from 0x00 to 0xff)
+   uint8_t  BlueMask;   // The unshifted blue mask value (ranges from 0x00 to 0xff)
+   uint8_t  AlphaMask;  // The unshifted alpha mask value (ranges from 0x00 to 0xff)
+   uint8_t  RedPos;     // Left shift/positional value for red
+   uint8_t  GreenPos;   // Left shift/positional value for green
+   uint8_t  BluePos;    // Left shift/positional value for blue
+   uint8_t  AlphaPos;   // Left shift/positional value for alpha
+   uint32_t Pad;        // Padding
 } PIXELFORMAT;
 
-#define VER_DISPLAYINFO 3.000000
-
-typedef struct DisplayInfoV3 {
-   OBJECTID DisplayID;                // Object ID related to the display
-   SCR      Flags;                    // Display flags
-   int16_t  Width;                    // Pixel width of the display
-   int16_t  Height;                   // Pixel height of the display
-   int16_t  BitsPerPixel;             // Bits per pixel
-   int16_t  BytesPerPixel;            // Bytes per pixel
-   ACF      AccelFlags;               // Flags describing supported hardware features.
-   int      AmtColours;               // Total number of supported colours.
+struct DisplayInfo {
    struct PixelFormat PixelFormat;    // The colour format to use for each pixel.
    float    MinRefresh;               // Minimum refresh rate
    float    MaxRefresh;               // Maximum refresh rate
    float    RefreshRate;              // Recommended refresh rate
+   OBJECTID DisplayID;                // Object ID related to the display
+   ACF      AccelFlags;               // Flags describing supported hardware features.
+   SCR      Flags;                    // Display flags
+   int      AmtColours;               // Total number of supported colours.
    int      Index;                    // Display mode ID (internal)
    int      HDensity;                 // Horizontal pixel density per inch.
    int      VDensity;                 // Vertical pixel density per inch.
-} DISPLAYINFO;
+   int      HostedX;                  // Horizontal display position in virtual desktop coordinates
+   int      HostedY;                  // Vertical display position in virtual desktop coordinates
+   int      MonitorX;                 // Horizontal position of the monitor, relative to the primary monitor
+   int      MonitorY;                 // Vertical position of the monitor, relative to the primary monitor
+   int      MonitorWidth;             // Pixel width of the monitor
+   int      MonitorHeight;            // Pixel height of the monitor
+   int      VirtualX;                 // Horizontal position of the complete desktop spanning all monitors
+   int      VirtualY;                 // Vertical position of the complete desktop spanning all monitors
+   int      VirtualWidth;             // Width of the complete desktop spanning all monitors
+   int      VirtualHeight;            // Height of the complete desktop spanning all monitors
+   int      PhysicalWidth;            // Width in millimeters, 0 if unknown
+   int      PhysicalHeight;           // Height in millimeters, 0 if unknown
+   int16_t  Width;                    // Pixel width of the display bitmap
+   int16_t  Height;                   // Pixel height of the display bitmap
+   int16_t  BitsPerPixel;             // Bits per pixel
+   int16_t  BytesPerPixel;            // Bytes per pixel
+};
 
 struct CursorInfo {
    int     Width;           // Maximum cursor width for custom cursors
@@ -468,9 +506,7 @@ struct CursorInfo {
    int16_t BitsPerPixel;    // Preferred bits-per-pixel setting for custom cursors
 };
 
-#define VER_BITMAPSURFACE 2.000000
-
-typedef struct BitmapSurfaceV2 {
+typedef struct BitmapSurface {
    APTR    Data;                 // Pointer to the bitmap graphics data.
    int16_t Width;                // Pixel width of the bitmap.
    int16_t Height;               // Pixel height of the bitmap.
@@ -488,21 +524,19 @@ typedef struct BitmapSurfaceV2 {
 
 // Bitmap class definition
 
-#define VER_BITMAP (2.000000)
+#define VER_BITMAP (1.000000)
 
 // Bitmap methods
 
 namespace bmp {
-struct CopyArea { objBitmap * DestBitmap; BAF Flags; int X; int Y; int Width; int Height; int XDest; int YDest; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Compress { int Level; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Decompress { int RetainData; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DrawRectangle { int X; int Y; int Width; int Height; uint32_t Colour; BAF Flags; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SetClipRegion { int Number; int Left; int Top; int Right; int Bottom; int Terminate; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct GetColour { int Red; int Green; int Blue; int Alpha; uint32_t Colour; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Premultiply { static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Demultiply { static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct ConvertToLinear { static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct ConvertToRGB { static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct CopyArea { objBitmap *DestBitmap; BAF Flags; int X; int Y; int Width; int Height; int XDest; int YDest; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DrawRectangle { int X; int Y; int Width; int Height; uint32_t Colour; BAF Flags; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SetClipRegion { int Left; int Top; int Right; int Bottom; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetColour { int Red; int Green; int Blue; int Alpha; uint32_t Colour; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Premultiply { static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Demultiply { static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ConvertToLinear { static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ConvertToRGB { static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -511,7 +545,8 @@ class objBitmap : public Object {
    static constexpr CLASSID CLASS_ID = CLASSID::BITMAP;
    static constexpr CSTRING CLASS_NAME = "Bitmap";
 
-   using create = pf::Create<objBitmap>;
+   using create = kt::Create<objBitmap>;
+   objBitmap(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    struct RGBPalette * Palette;                                    // Points to a bitmap's colour palette.
    struct ColourFormat * ColourFormat;                             // Describes the colour format used to construct each bitmap pixel.
@@ -521,7 +556,7 @@ class objBitmap : public Object {
    void (*ReadUCRPixel)(objBitmap *, int, int, struct RGB8 *);     // Points to a C function that reads pixels from the bitmap in RGB format.
    void (*ReadUCRIndex)(objBitmap *, uint8_t *, struct RGB8 *);    // Points to a C function that reads pixels from the bitmap in RGB format.
    void (*DrawUCRIndex)(objBitmap *, uint8_t *, struct RGB8 *);    // Points to a C function that draws pixels to the bitmap in RGB format.
-   uint8_t * Data;                                                 // Pointer to a bitmap's data area.
+   uint8_t * Data;                                                 // Provides direct access to the bitmap's data area.
    int       Width;                                                // The width of the bitmap, in pixels.
    int       ByteWidth;                                            // The width of the bitmap, in bytes.
    int       Height;                                               // The height of the bitmap, in pixels.
@@ -530,25 +565,25 @@ class objBitmap : public Object {
    int       PlaneMod;                                             // The differential between each bitmap plane.
    struct ClipRectangle Clip;                                      // Defines the bitmap's clipping region.
    int       Size;                                                 // The total size of the bitmap, in bytes.
-   MEM       DataFlags;                                            // Defines the memory flags to use in allocating a bitmap's data area.
-   int       AmtColours;                                           // The maximum number of displayable colours.
+   BMT       MemType;                                              // Defines the memory type used to host a bitmap's data area.
+   int       AmtColours;                                           // The maximum number of colours represented by the bitmap format.
    BMF       Flags;                                                // Optional flags.
    int       TransIndex;                                           // The transparent colour of the bitmap, represented as an index.
    int       BytesPerPixel;                                        // The number of bytes per pixel.
-   int       BitsPerPixel;                                         // The number of bits per pixel
+   int       BitsPerPixel;                                         // The number of bits used to represent each pixel.
    int       Position;                                             // The current read/write data position.
    int       Opacity;                                              // Determines the translucency setting to use in drawing operations.
    BLM       BlendMode;                                            // Defines the blending algorithm to use when rendering transparent pixels.
    struct RGB8 TransColour;                                        // The transparent colour of the bitmap, in RGB format.
-   struct RGB8 Bkgd;                                               // The bitmap's background colour is defined here in RGB format.
-   int       BkgdIndex;                                            // The bitmap's background colour is defined here as a colour index.
+   struct RGB8 Bkgd;                                               // Background colour in RGB format.
+   int       BkgdIndex;                                            // Background colour as a packed pixel value or palette index.
    CS        ColourSpace;                                          // Defines the colour space for RGB values.
    public:
    inline uint32_t getColour(struct RGB8 &RGB) {
       if (BitsPerPixel > 8) return packPixel(RGB);
       else {
          uint32_t result;
-         if (getColour(RGB.Red, RGB.Green, RGB.Blue, RGB.Alpha, &result) IS ERR::Okay) {
+         if (!getColour(RGB.Red, RGB.Green, RGB.Blue, RGB.Alpha, &result)) {
             return result;
          }
          else return 0;
@@ -632,21 +667,17 @@ class objBitmap : public Object {
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR lock() noexcept { return Action(AC::Lock, this, nullptr); }
    inline ERR query() noexcept { return Action(AC::Query, this, nullptr); }
-   template <class T, class U> ERR read(APTR Buffer, T Size, U *Result) noexcept {
-      static_assert(std::is_integral<U>::value, "Result value must be an integer type");
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
+   template <class T> ERR read(std::span<int8_t> Buffer, T *Result) noexcept {
+      static_assert(std::is_integral<T>::value, "Result value must be an integer type");
+      struct acRead read = { Buffer };
       if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
-         *Result = static_cast<U>(read.Result);
+         *Result = T(read.Result);
          return ERR::Okay;
       }
       else { *Result = 0; return error; }
    }
-   template <class T> ERR read(APTR Buffer, T Size) noexcept {
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
+   inline ERR read(std::span<int8_t> Buffer) noexcept {
+      struct acRead read = { Buffer };
       return Action(AC::Read, this, &read);
    }
    inline ERR resize(double Width, double Height, double Depth = 0) noexcept {
@@ -665,8 +696,8 @@ class objBitmap : public Object {
    inline ERR seekEnd(double Offset) noexcept { return seek(Offset, SEEK::END); }
    inline ERR seekCurrent(double Offset) noexcept { return seek(Offset, SEEK::CURRENT); }
    inline ERR unlock() noexcept { return Action(AC::Unlock, this, nullptr); }
-   inline ERR write(CPTR Buffer, int Size, int *Result = nullptr) noexcept {
-      struct acWrite write = { (int8_t *)Buffer, Size };
+   inline ERR write(std::span<const int8_t> Buffer, int *Result = nullptr) noexcept {
+      struct acWrite write = { Buffer };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -677,7 +708,7 @@ class objBitmap : public Object {
       }
    }
    inline ERR write(std::string Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { (int8_t *)Buffer.c_str(), int(Buffer.size()) };
+      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()) };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -687,120 +718,255 @@ class objBitmap : public Object {
          return error;
       }
    }
-   inline int writeResult(CPTR Buffer, int Size) noexcept {
-      struct acWrite write = { (int8_t *)Buffer, Size };
-      if (Action(AC::Write, this, &write) IS ERR::Okay) return write.Result;
-      else return 0;
-   }
    inline ERR copyArea(objBitmap * DestBitmap, BAF Flags, int X, int Y, int Width, int Height, int XDest, int YDest) noexcept {
       struct bmp::CopyArea args = { DestBitmap, Flags, X, Y, Width, Height, XDest, YDest };
-      return(Action(AC(-1), this, &args));
-   }
-   inline ERR compress(int Level) noexcept {
-      struct bmp::Compress args = { Level };
-      return(Action(AC(-2), this, &args));
-   }
-   inline ERR decompress(int RetainData) noexcept {
-      struct bmp::Decompress args = { RetainData };
-      return(Action(AC(-3), this, &args));
+      return Action(AC(-1), this, &args);
    }
    inline ERR drawRectangle(int X, int Y, int Width, int Height, uint32_t Colour, BAF Flags) noexcept {
       struct bmp::DrawRectangle args = { X, Y, Width, Height, Colour, Flags };
-      return(Action(AC(-4), this, &args));
+      return Action(AC(-2), this, &args);
    }
-   inline ERR setClipRegion(int Number, int Left, int Top, int Right, int Bottom, int Terminate) noexcept {
-      struct bmp::SetClipRegion args = { Number, Left, Top, Right, Bottom, Terminate };
-      return(Action(AC(-5), this, &args));
+   inline ERR setClipRegion(int Left, int Top, int Right, int Bottom) noexcept {
+      struct bmp::SetClipRegion args = { Left, Top, Right, Bottom };
+      return Action(AC(-3), this, &args);
    }
    inline ERR getColour(int Red, int Green, int Blue, int Alpha, uint32_t * Colour) noexcept {
       struct bmp::GetColour args = { Red, Green, Blue, Alpha, (uint32_t)0 };
-      ERR error = Action(AC(-6), this, &args);
+      ERR error = Action(AC(-4), this, &args);
       if (Colour) *Colour = args.Colour;
-      return(error);
+      return error;
    }
    inline ERR premultiply() noexcept {
-      return(Action(AC(-7), this, nullptr));
+      return Action(AC(-5), this, nullptr);
    }
    inline ERR demultiply() noexcept {
-      return(Action(AC(-8), this, nullptr));
+      return Action(AC(-6), this, nullptr);
    }
    inline ERR convertToLinear() noexcept {
-      return(Action(AC(-9), this, nullptr));
+      return Action(AC(-7), this, nullptr);
    }
    inline ERR convertToRGB() noexcept {
-      return(Action(AC(-10), this, nullptr));
+      return Action(AC(-8), this, nullptr);
    }
+
+   // Customised field getting
+
+   inline ERR getPalette(struct RGBPalette * &Value) noexcept {
+      Value = this->Palette;
+      return ERR::Okay;
+   }
+
+   inline ERR getColourFormat(struct ColourFormat * &Value) noexcept {
+      Value = this->ColourFormat;
+      return ERR::Okay;
+   }
+
+   inline ERR getData(std::span<uint8_t> &Value) noexcept {
+      auto field = &this->Class->Dictionary[27];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::span<uint8_t> &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getWidth(int &Value) noexcept {
+      Value = this->Width;
+      return ERR::Okay;
+   }
+
+   inline ERR getByteWidth(int &Value) noexcept {
+      Value = this->ByteWidth;
+      return ERR::Okay;
+   }
+
+   inline ERR getHeight(int &Value) noexcept {
+      Value = this->Height;
+      return ERR::Okay;
+   }
+
+   inline ERR getType(BMP &Value) noexcept {
+      Value = this->Type;
+      return ERR::Okay;
+   }
+
+   inline ERR getLineWidth(int &Value) noexcept {
+      Value = this->LineWidth;
+      return ERR::Okay;
+   }
+
+   inline ERR getPlaneMod(int &Value) noexcept {
+      Value = this->PlaneMod;
+      return ERR::Okay;
+   }
+
+   inline ERR getClip(struct ClipRectangle * &Value) noexcept {
+      auto field = &this->Class->Dictionary[25];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getSize(int &Value) noexcept {
+      Value = this->Size;
+      return ERR::Okay;
+   }
+
+   inline ERR getMemType(BMT &Value) noexcept {
+      Value = this->MemType;
+      return ERR::Okay;
+   }
+
+   inline ERR getAmtColours(int &Value) noexcept {
+      Value = this->AmtColours;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(BMF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getTransIndex(int &Value) noexcept {
+      Value = this->TransIndex;
+      return ERR::Okay;
+   }
+
+   inline ERR getBytesPerPixel(int &Value) noexcept {
+      Value = this->BytesPerPixel;
+      return ERR::Okay;
+   }
+
+   inline ERR getBitsPerPixel(int &Value) noexcept {
+      Value = this->BitsPerPixel;
+      return ERR::Okay;
+   }
+
+   inline ERR getPosition(int &Value) noexcept {
+      Value = this->Position;
+      return ERR::Okay;
+   }
+
+   inline ERR getOpacity(int &Value) noexcept {
+      Value = this->Opacity;
+      return ERR::Okay;
+   }
+
+   inline ERR getBlendMode(BLM &Value) noexcept {
+      Value = this->BlendMode;
+      return ERR::Okay;
+   }
+
+   inline ERR getTransColour(struct RGB8 * &Value) noexcept {
+      Value = &this->TransColour;
+      return ERR::Okay;
+   }
+
+   inline ERR getBkgd(struct RGB8 * &Value) noexcept {
+      Value = &this->Bkgd;
+      return ERR::Okay;
+   }
+
+   inline ERR getBkgdIndex(int &Value) noexcept {
+      Value = this->BkgdIndex;
+      return ERR::Okay;
+   }
+
+   inline ERR getColourSpace(CS &Value) noexcept {
+      Value = this->ColourSpace;
+      return ERR::Okay;
+   }
+
+   inline ERR getClipLeft(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET + 96));
+      return ERR::Okay;
+   }
+
+   inline ERR getClipRight(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET + 100));
+      return ERR::Okay;
+   }
+
+   inline ERR getClipBottom(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET + 104));
+      return ERR::Okay;
+   }
+
+   inline ERR getClipTop(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET + 108));
+      return ERR::Okay;
+   }
+
+   inline ERR getHandle(APTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[11];
+      return field->GetValue(this, &Value);
+   }
+
 
    // Customised field setting
 
    inline ERR setPalette(struct RGBPalette * Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[32];
-      return field->WriteValue(target, field, 0x08000300, Value, 1);
+      auto field = &this->Class->Dictionary[34];
+      return field->WriteValue(this, field, 0x08000300, Value);
    }
 
-   inline ERR setData(uint8_t * Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[24];
-      return field->WriteValue(target, field, 0x08000500, Value, 1);
+   inline ERR setData(std::span<const uint8_t> Value) noexcept {
+      auto field = &this->Class->Dictionary[27];
+      return field->WriteValue(this, field, 0x01001500, &Value);
    }
 
    inline ERR setWidth(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Width = Value;
       return ERR::Okay;
    }
 
    inline ERR setHeight(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Height = Value;
       return ERR::Okay;
    }
 
    inline ERR setType(const BMP Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Type = Value;
       return ERR::Okay;
    }
 
    inline ERR setClip(struct ClipRectangle * Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[23];
-      return field->WriteValue(target, field, 0x08000310, Value, 1);
+      auto field = &this->Class->Dictionary[25];
+      return field->WriteValue(this, field, 0x08100310, Value);
    }
 
-   inline ERR setDataFlags(const MEM Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
-      this->DataFlags = Value;
+   inline ERR setMemType(const BMT Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
+      this->MemType = Value;
       return ERR::Okay;
    }
 
    inline ERR setAmtColours(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->AmtColours = Value;
       return ERR::Okay;
    }
 
    inline ERR setFlags(const BMF Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Flags = Value;
       return ERR::Okay;
    }
 
    inline ERR setTransIndex(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[30];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[19];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setBytesPerPixel(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->BytesPerPixel = Value;
       return ERR::Okay;
    }
 
    inline ERR setBitsPerPixel(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->BitsPerPixel = Value;
       return ERR::Okay;
    }
@@ -815,22 +981,19 @@ class objBitmap : public Object {
       return ERR::Okay;
    }
 
-   inline ERR setTransColour(const struct RGB8 * Value, int Elements) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[4];
-      return field->WriteValue(target, field, 0x01081300, Value, Elements);
+   inline ERR setTransColour(const struct RGB8 & Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      return field->WriteValue(this, field, FD_STRUCT, &Value);
    }
 
-   inline ERR setBkgd(const struct RGB8 * Value, int Elements) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[22];
-      return field->WriteValue(target, field, 0x01081300, Value, Elements);
+   inline ERR setBkgd(const struct RGB8 & Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      return field->WriteValue(this, field, FD_STRUCT, &Value);
    }
 
    inline ERR setBkgdIndex(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[14];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[23];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setColourSpace(const CS Value) noexcept {
@@ -839,33 +1002,28 @@ class objBitmap : public Object {
    }
 
    inline ERR setClipLeft(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[4];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setClipRight(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[18];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[24];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setClipBottom(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[11];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[0];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setClipTop(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[36];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[15];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setHandle(APTR Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(target, field, 0x08010300, Value, 1);
+      auto field = &this->Class->Dictionary[11];
+      return field->WriteValue(this, field, 0x08100300, Value);
    }
 
 };
@@ -878,14 +1036,15 @@ class objBitmap : public Object {
 
 namespace gfx {
 struct WaitVBL { static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct UpdatePalette { struct RGBPalette * NewPalette; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct UpdatePalette { struct RGBPalette *NewPalette; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetDisplay { int X; int Y; int Width; int Height; int InsideWidth; int InsideHeight; int BitsPerPixel; double RefreshRate; int Flags; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SizeHints { int MinWidth; int MinHeight; int MaxWidth; int MaxHeight; int EnforceAspect; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetGamma { double Red; double Green; double Blue; GMF Flags; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetGammaLinear { double Red; double Green; double Blue; GMF Flags; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SetMonitor { CSTRING Name; int MinH; int MaxH; int MinV; int MaxV; MON Flags; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SetMonitor { std::string_view Name; int MinH; int MaxH; int MinV; int MaxV; MON Flags; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Minimise { static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct CheckXWindow { static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetFrame { int Left; int Top; int Right; int Bottom; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -894,9 +1053,10 @@ class objDisplay : public Object {
    static constexpr CLASSID CLASS_ID = CLASSID::DISPLAY;
    static constexpr CSTRING CLASS_NAME = "Display";
 
-   using create = pf::Create<objDisplay>;
+   using create = kt::Create<objDisplay>;
+   objDisplay(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
-   double   RefreshRate;  // This field manages the display refresh rate.
+   double   RefreshRate;  // Active display refresh rate.
    objBitmap * Bitmap;    // Reference to the display's bitmap information.
    SCR      Flags;        // Optional flag settings.
    int      Width;        // Defines the width of the display.
@@ -911,7 +1071,7 @@ class objDisplay : public Object {
    int      MaxHScan;     // The maximum horizontal scan rate of the display output device.
    int      MinVScan;     // The minimum vertical scan rate of the display output device.
    int      MaxVScan;     // The maximum vertical scan rate of the display output device.
-   DT       DisplayType;  // In hosted mode, indicates the bottom margin of the client window.
+   DT       DisplayType;  // Identifies the active display backend.
    DPMS     PowerMode;    // The display's power management method.
    OBJECTID PopOverID;    // Enables pop-over support for hosted display windows.
    int      LeftMargin;   // In hosted mode, indicates the left-hand margin of the client window.
@@ -923,8 +1083,8 @@ class objDisplay : public Object {
 
    inline ERR activate() noexcept { return Action(AC::Activate, this, nullptr); }
    inline ERR clear() noexcept { return Action(AC::Clear, this, nullptr); }
-   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, const void *Buffer, int Size) noexcept {
-      struct acDataFeed args = { Object, Datatype, Buffer, Size };
+   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, std::span<const int8_t> Buffer) noexcept {
+      struct acDataFeed args = { Object, Datatype, Buffer };
       return Action(AC::DataFeed, this, &args);
    }
    inline ERR disable() noexcept { return Action(AC::Disable, this, nullptr); }
@@ -936,12 +1096,6 @@ class objDisplay : public Object {
    inline ERR enable() noexcept { return Action(AC::Enable, this, nullptr); }
    inline ERR flush() noexcept { return Action(AC::Flush, this, nullptr); }
    inline ERR focus() noexcept { return Action(AC::Focus, this, nullptr); }
-   inline ERR getKey(CSTRING Key, STRING Value, int Size) noexcept {
-      struct acGetKey args = { Key, Value, Size };
-      auto error = Action(AC::GetKey, this, &args);
-      if ((error != ERR::Okay) and (Value)) Value[0] = 0;
-      return error;
-   }
    inline ERR hide() noexcept { return Action(AC::Hide, this, nullptr); }
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR move(double X, double Y, double Z) noexcept {
@@ -973,75 +1127,254 @@ class objDisplay : public Object {
    inline ERR saveSettings() noexcept { return Action(AC::SaveSettings, this, nullptr); }
    inline ERR show() noexcept { return Action(AC::Show, this, nullptr); }
    inline ERR waitVBL() noexcept {
-      return(Action(AC(-1), this, nullptr));
+      return Action(AC(-1), this, nullptr);
    }
    inline ERR updatePalette(struct RGBPalette * NewPalette) noexcept {
       struct gfx::UpdatePalette args = { NewPalette };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
    inline ERR setDisplay(int X, int Y, int Width, int Height, int InsideWidth, int InsideHeight, int BitsPerPixel, double RefreshRate, int Flags) noexcept {
       struct gfx::SetDisplay args = { X, Y, Width, Height, InsideWidth, InsideHeight, BitsPerPixel, RefreshRate, Flags };
-      return(Action(AC(-3), this, &args));
+      return Action(AC(-3), this, &args);
    }
    inline ERR sizeHints(int MinWidth, int MinHeight, int MaxWidth, int MaxHeight, int EnforceAspect) noexcept {
       struct gfx::SizeHints args = { MinWidth, MinHeight, MaxWidth, MaxHeight, EnforceAspect };
-      return(Action(AC(-4), this, &args));
+      return Action(AC(-4), this, &args);
    }
    inline ERR setGamma(double Red, double Green, double Blue, GMF Flags) noexcept {
       struct gfx::SetGamma args = { Red, Green, Blue, Flags };
-      return(Action(AC(-5), this, &args));
+      return Action(AC(-5), this, &args);
    }
    inline ERR setGammaLinear(double Red, double Green, double Blue, GMF Flags) noexcept {
       struct gfx::SetGammaLinear args = { Red, Green, Blue, Flags };
-      return(Action(AC(-6), this, &args));
+      return Action(AC(-6), this, &args);
    }
-   inline ERR setMonitor(CSTRING Name, int MinH, int MaxH, int MinV, int MaxV, MON Flags) noexcept {
+   inline ERR setMonitor(const std::string_view &Name, int MinH, int MaxH, int MinV, int MaxV, MON Flags) noexcept {
       struct gfx::SetMonitor args = { Name, MinH, MaxH, MinV, MaxV, Flags };
-      return(Action(AC(-7), this, &args));
+      return Action(AC(-7), this, &args);
    }
    inline ERR minimise() noexcept {
-      return(Action(AC(-8), this, nullptr));
+      return Action(AC(-8), this, nullptr);
    }
    inline ERR checkXWindow() noexcept {
-      return(Action(AC(-9), this, nullptr));
+      return Action(AC(-9), this, nullptr);
    }
+   inline ERR getFrame(int * Left, int * Top, int * Right, int * Bottom) noexcept {
+      struct gfx::GetFrame args = { (int)0, (int)0, (int)0, (int)0 };
+      ERR error = Action(AC(-10), this, &args);
+      if (Left) *Left = args.Left;
+      if (Top) *Top = args.Top;
+      if (Right) *Right = args.Right;
+      if (Bottom) *Bottom = args.Bottom;
+      return error;
+   }
+
+   // Customised field getting
+
+   inline ERR getRefreshRate(double &Value) noexcept {
+      Value = this->RefreshRate;
+      return ERR::Okay;
+   }
+
+   inline ERR getBitmap(objBitmap * &Value) noexcept {
+      Value = this->Bitmap;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(SCR &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getWidth(int &Value) noexcept {
+      Value = this->Width;
+      return ERR::Okay;
+   }
+
+   inline ERR getHeight(int &Value) noexcept {
+      Value = this->Height;
+      return ERR::Okay;
+   }
+
+   inline ERR getX(int &Value) noexcept {
+      Value = this->X;
+      return ERR::Okay;
+   }
+
+   inline ERR getY(int &Value) noexcept {
+      Value = this->Y;
+      return ERR::Okay;
+   }
+
+   inline ERR getBmpX(int &Value) noexcept {
+      Value = this->BmpX;
+      return ERR::Okay;
+   }
+
+   inline ERR getBmpY(int &Value) noexcept {
+      Value = this->BmpY;
+      return ERR::Okay;
+   }
+
+   inline ERR getTotalMemory(int &Value) noexcept {
+      Value = this->TotalMemory;
+      return ERR::Okay;
+   }
+
+   inline ERR getMinHScan(int &Value) noexcept {
+      Value = this->MinHScan;
+      return ERR::Okay;
+   }
+
+   inline ERR getMaxHScan(int &Value) noexcept {
+      Value = this->MaxHScan;
+      return ERR::Okay;
+   }
+
+   inline ERR getMinVScan(int &Value) noexcept {
+      Value = this->MinVScan;
+      return ERR::Okay;
+   }
+
+   inline ERR getMaxVScan(int &Value) noexcept {
+      Value = this->MaxVScan;
+      return ERR::Okay;
+   }
+
+   inline ERR getDisplayType(DT &Value) noexcept {
+      Value = this->DisplayType;
+      return ERR::Okay;
+   }
+
+   inline ERR getPowerMode(DPMS &Value) noexcept {
+      Value = this->PowerMode;
+      return ERR::Okay;
+   }
+
+   inline ERR getLeftMargin(int &Value) noexcept {
+      Value = this->LeftMargin;
+      return ERR::Okay;
+   }
+
+   inline ERR getRightMargin(int &Value) noexcept {
+      Value = this->RightMargin;
+      return ERR::Okay;
+   }
+
+   inline ERR getTopMargin(int &Value) noexcept {
+      Value = this->TopMargin;
+      return ERR::Okay;
+   }
+
+   inline ERR getBottomMargin(int &Value) noexcept {
+      Value = this->BottomMargin;
+      return ERR::Okay;
+   }
+
+   inline ERR getManufacturer(std::string_view &Value) noexcept {
+      Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET + 96));
+      return ERR::Okay;
+   }
+
+   inline ERR getChipset(std::string_view &Value) noexcept {
+      Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET + 128));
+      return ERR::Okay;
+   }
+
+   inline ERR getDisplay(std::string_view &Value) noexcept {
+      Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET + 160));
+      return ERR::Okay;
+   }
+
+   inline ERR getDisplayMfr(std::string_view &Value) noexcept {
+      Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET + 192));
+      return ERR::Okay;
+   }
+
+   inline ERR getOpacity(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET + 224));
+      return ERR::Okay;
+   }
+
+   inline ERR getGamma(std::span<double> &Value) noexcept {
+      auto field = &this->Class->Dictionary[22];
+      auto get_field = (ERR (*)(APTR, std::span<double> &))field->GetValue;
+      return get_field(this, Value);
+   }
+
+   inline ERR getHDensity(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getVDensity(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getInsideWidth(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getInsideHeight(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[33];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getResizeFeedback(FUNCTION * &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
+      return get_field(this, Value);
+   }
+
+   inline ERR getWindowHandle(APTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[34];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getTitle(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[23];
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      return get_field(this, Value);
+   }
+
+   inline ERR getTotalResolutions(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
+      return field->GetValue(this, &Value);
+   }
+
 
    // Customised field setting
 
    inline ERR setRefreshRate(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[40];
-      return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
+      auto field = &this->Class->Dictionary[2];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setFlags(const SCR Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[4];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setWidth(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[28];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setHeight(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[35];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setX(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[0];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[24];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setY(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[15];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setBmpX(const int Value) noexcept {
@@ -1060,51 +1393,43 @@ class objDisplay : public Object {
    }
 
    inline ERR setPopOver(OBJECTID Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[30];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
-   }
-
-   inline ERR setGamma(const double * Value, int Elements) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(target, field, 0x80001508, Value, Elements);
-   }
-
-   inline ERR setHDensity(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[35];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
-   }
-
-   inline ERR setVDensity(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[33];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[7];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setOpacity(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[17];
-      return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
+      auto field = &this->Class->Dictionary[25];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setGamma(std::span<const double> Value) noexcept {
+      auto field = &this->Class->Dictionary[22];
+      return field->WriteValue(this, field, 0x80101508, &Value);
+   }
+
+   inline ERR setHDensity(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setVDensity(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setResizeFeedback(const FUNCTION Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[12];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+      auto field = &this->Class->Dictionary[8];
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
    inline ERR setWindowHandle(APTR Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[37];
-      return field->WriteValue(target, field, 0x08000308, Value, 1);
+      auto field = &this->Class->Dictionary[34];
+      return field->WriteValue(this, field, 0x08100308, Value);
    }
 
-   template <class T> inline ERR setTitle(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(target, field, 0x08800308, to_cstring(Value), 1);
+   inline ERR setTitle(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[23];
+      return field->WriteValue(this, field, 0x00904308, &Value);
    }
 
 };
@@ -1116,10 +1441,10 @@ class objDisplay : public Object {
 // Clipboard methods
 
 namespace clip {
-struct AddFile { CLIPTYPE Datatype; CSTRING Path; CEF Flags; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct AddObjects { CLIPTYPE Datatype; OBJECTID * Objects; CEF Flags; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct GetFiles { CLIPTYPE Filter; int Index; CLIPTYPE Datatype; CSTRING * Files; CEF Flags; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct AddText { CSTRING String; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddFile { CLIPTYPE Datatype; std::string_view Path; CEF Flags; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddObjects { CLIPTYPE Datatype; OBJECTID *Objects; CEF Flags; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetFiles { CLIPTYPE Filter; int Index; CLIPTYPE Datatype; kt::vector<std::string> *Files; CEF Flags; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddText { std::string_view String; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Remove { CLIPTYPE Datatype; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
@@ -1129,59 +1454,73 @@ class objClipboard : public Object {
    static constexpr CLASSID CLASS_ID = CLASSID::CLIPBOARD;
    static constexpr CSTRING CLASS_NAME = "Clipboard";
 
-   using create = pf::Create<objClipboard>;
+   using create = kt::Create<objClipboard>;
+   objClipboard(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
-   CPF Flags;    // Optional flags.
+   CPF Flags;    // Optional clipboard behaviour flags.
 
 #ifdef PRV_CLIPBOARD
    FUNCTION RequestHandler;
+   ~objClipboard();
 #endif
 
    // Action stubs
 
    inline ERR clear() noexcept { return Action(AC::Clear, this, nullptr); }
-   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, const void *Buffer, int Size) noexcept {
-      struct acDataFeed args = { Object, Datatype, Buffer, Size };
+   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, std::span<const int8_t> Buffer) noexcept {
+      struct acDataFeed args = { Object, Datatype, Buffer };
       return Action(AC::DataFeed, this, &args);
    }
    inline ERR init() noexcept { return InitObject(this); }
-   inline ERR addFile(CLIPTYPE Datatype, CSTRING Path, CEF Flags) noexcept {
+   inline ERR addFile(CLIPTYPE Datatype, const std::string_view &Path, CEF Flags) noexcept {
       struct clip::AddFile args = { Datatype, Path, Flags };
-      return(Action(AC(-1), this, &args));
+      return Action(AC(-1), this, &args);
    }
    inline ERR addObjects(CLIPTYPE Datatype, OBJECTID * Objects, CEF Flags) noexcept {
       struct clip::AddObjects args = { Datatype, Objects, Flags };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
-   inline ERR getFiles(CLIPTYPE Filter, int Index, CLIPTYPE * Datatype, CSTRING ** Files, CEF * Flags) noexcept {
-      struct clip::GetFiles args = { Filter, Index, (CLIPTYPE)0, (CSTRING *)0, (CEF)0 };
+   inline ERR getFiles(CLIPTYPE Filter, int Index, CLIPTYPE * Datatype, kt::vector<std::string> &Files, CEF * Flags) noexcept {
+      struct clip::GetFiles args = { Filter, Index, (CLIPTYPE)0, &Files, (CEF)0 };
       ERR error = Action(AC(-3), this, &args);
       if (Datatype) *Datatype = args.Datatype;
-      if (Files) *Files = args.Files;
       if (Flags) *Flags = args.Flags;
-      return(error);
+      return error;
    }
-   inline ERR addText(CSTRING String) noexcept {
+   inline ERR addText(const std::string_view &String) noexcept {
       struct clip::AddText args = { String };
-      return(Action(AC(-4), this, &args));
+      return Action(AC(-4), this, &args);
    }
    inline ERR remove(CLIPTYPE Datatype) noexcept {
       struct clip::Remove args = { Datatype };
-      return(Action(AC(-5), this, &args));
+      return Action(AC(-5), this, &args);
    }
+
+   // Customised field getting
+
+   inline ERR getFlags(CPF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getRequestHandler(FUNCTION * &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
+      return get_field(this, Value);
+   }
+
 
    // Customised field setting
 
    inline ERR setFlags(const CPF Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Flags = Value;
       return ERR::Okay;
    }
 
-   inline ERR setRequestHandler(FUNCTION Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+   inline ERR setRequestHandler(const FUNCTION Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
 };
@@ -1195,7 +1534,7 @@ class objController : public Object {
    static constexpr CLASSID CLASS_ID = CLASSID::CONTROLLER;
    static constexpr CSTRING CLASS_NAME = "Controller";
 
-   using create = pf::Create<objController>;
+   using create = kt::Create<objController>;
 
    double LeftTrigger;    // Left trigger value between 0.0 and 1.0.
    double RightTrigger;   // Right trigger value between 0.0 and 1.0.
@@ -1203,18 +1542,70 @@ class objController : public Object {
    double LeftStickY;     // Left analog stick value for Y axis, between -1.0 and 1.0.
    double RightStickX;    // Right analog stick value for X axis, between -1.0 and 1.0.
    double RightStickY;    // Right analog stick value for Y axis, between -1.0 and 1.0.
-   CON    Buttons;        // JET button values expressed as bit-fields.
+   CON    Buttons;        // Button values expressed as bit-fields.
    int    Port;           // The port number assigned to the controller.
+   public:
+   objController(objMetaClass *pClass, OBJECTID pUID) noexcept :  Object(pClass, pUID), Port(-1) { }
 
    // Action stubs
 
    inline ERR query() noexcept { return Action(AC::Query, this, nullptr); }
    inline ERR init() noexcept { return InitObject(this); }
 
+   // Customised field getting
+
+   inline ERR getLeftTrigger(double &Value) noexcept {
+      Value = this->LeftTrigger;
+      return ERR::Okay;
+   }
+
+   inline ERR getRightTrigger(double &Value) noexcept {
+      Value = this->RightTrigger;
+      return ERR::Okay;
+   }
+
+   inline ERR getLeftStickX(double &Value) noexcept {
+      Value = this->LeftStickX;
+      return ERR::Okay;
+   }
+
+   inline ERR getLeftStickY(double &Value) noexcept {
+      Value = this->LeftStickY;
+      return ERR::Okay;
+   }
+
+   inline ERR getRightStickX(double &Value) noexcept {
+      Value = this->RightStickX;
+      return ERR::Okay;
+   }
+
+   inline ERR getRightStickY(double &Value) noexcept {
+      Value = this->RightStickY;
+      return ERR::Okay;
+   }
+
+   inline ERR getButtons(CON &Value) noexcept {
+      Value = this->Buttons;
+      return ERR::Okay;
+   }
+
+   inline ERR getPort(int &Value) noexcept {
+      Value = this->Port;
+      return ERR::Okay;
+   }
+
+   inline ERR getTotalPorts(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+
    // Customised field setting
 
    inline ERR setPort(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
       this->Port = Value;
       return ERR::Okay;
    }
@@ -1230,23 +1621,24 @@ class objPointer : public Object {
    static constexpr CLASSID CLASS_ID = CLASSID::POINTER;
    static constexpr CSTRING CLASS_NAME = "Pointer";
 
-   using create = pf::Create<objPointer>;
+   using create = kt::Create<objPointer>;
+   objPointer(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    double   Speed;         // Speed multiplier for pointer movement.
    double   Acceleration;  // The rate of acceleration for relative pointer movement.
    double   DoubleClick;   // The maximum interval between two clicks for a double click to be recognised.
    double   WheelSpeed;    // Defines a multiplier to be applied to the mouse wheel.
-   double   X;             // The horizontal position of the pointer within its parent display.
-   double   Y;             // The vertical position of the pointer within its parent display.
-   double   OverX;         // The horizontal position of the pointer with respect to the object underneath the hot-spot.
-   double   OverY;         // The vertical position of the pointer with respect to the object underneath the hot-spot.
+   double   X;             // The horizontal position of the pointer within its display.
+   double   Y;             // The vertical position of the pointer within its display.
+   double   OverX;         // The horizontal position of the pointer with respect to the object underneath the hot spot.
+   double   OverY;         // The vertical position of the pointer with respect to the object underneath the hot spot.
    double   OverZ;         // The position of the Pointer within an object.
    int      MaxSpeed;      // Restricts the maximum speed of a pointer's movement.
    OBJECTID InputID;       // Declares the I/O object to read movement from.
    OBJECTID SurfaceID;     // The top-most surface that is under the pointer's hot spot.
    OBJECTID AnchorID;      // Can refer to a surface that the pointer has been anchored to.
-   PTC      CursorID;      // Sets the user's cursor image, selected from the pre-defined graphics bank.
-   OBJECTID CursorOwnerID; // The current owner of the cursor, as defined by ~Display.SetCursor().
+   PTC      CursorID;      // Identifies the active cursor image.
+   OBJECTID CursorOwnerID; // The object that currently owns the cursor state.
    PF       Flags;         // Optional flags.
    OBJECTID RestrictID;    // Refers to a surface when the pointer is restricted.
    int      HostX;         // Indicates the current position of the host cursor on Windows or X11
@@ -1259,7 +1651,151 @@ class objPointer : public Object {
 
    // Action stubs
 
+   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, std::span<const int8_t> Buffer) noexcept {
+      struct acDataFeed args = { Object, Datatype, Buffer };
+      return Action(AC::DataFeed, this, &args);
+   }
+   inline ERR hide() noexcept { return Action(AC::Hide, this, nullptr); }
    inline ERR init() noexcept { return InitObject(this); }
+   inline ERR move(double X, double Y, double Z) noexcept {
+      struct acMove args = { X, Y, Z };
+      return Action(AC::Move, this, &args);
+   }
+   inline ERR moveToPoint(double X, double Y, double Z, MTF Flags) noexcept {
+      struct acMoveToPoint moveto = { X, Y, Z, Flags };
+      return Action(AC::MoveToPoint, this, &moveto);
+   }
+   inline ERR refresh() noexcept { return Action(AC::Refresh, this, nullptr); }
+   inline ERR reset() noexcept { return Action(AC::Reset, this, nullptr); }
+   inline ERR saveToObject(OBJECTPTR Dest, CLASSID ClassID = CLASSID::NIL) noexcept {
+      struct acSaveToObject args = { Dest, { ClassID } };
+      return Action(AC::SaveToObject, this, &args);
+   }
+   inline ERR show() noexcept { return Action(AC::Show, this, nullptr); }
+
+   // Customised field getting
+
+   inline ERR getSpeed(double &Value) noexcept {
+      Value = this->Speed;
+      return ERR::Okay;
+   }
+
+   inline ERR getAcceleration(double &Value) noexcept {
+      Value = this->Acceleration;
+      return ERR::Okay;
+   }
+
+   inline ERR getDoubleClick(double &Value) noexcept {
+      Value = this->DoubleClick;
+      return ERR::Okay;
+   }
+
+   inline ERR getWheelSpeed(double &Value) noexcept {
+      Value = this->WheelSpeed;
+      return ERR::Okay;
+   }
+
+   inline ERR getX(double &Value) noexcept {
+      Value = this->X;
+      return ERR::Okay;
+   }
+
+   inline ERR getY(double &Value) noexcept {
+      Value = this->Y;
+      return ERR::Okay;
+   }
+
+   inline ERR getOverX(double &Value) noexcept {
+      Value = this->OverX;
+      return ERR::Okay;
+   }
+
+   inline ERR getOverY(double &Value) noexcept {
+      Value = this->OverY;
+      return ERR::Okay;
+   }
+
+   inline ERR getOverZ(double &Value) noexcept {
+      Value = this->OverZ;
+      return ERR::Okay;
+   }
+
+   inline ERR getMaxSpeed(int &Value) noexcept {
+      Value = this->MaxSpeed;
+      return ERR::Okay;
+   }
+
+   inline ERR getInput(OBJECTID &Value) noexcept {
+      Value = this->InputID;
+      return ERR::Okay;
+   }
+
+   inline ERR getSurface(OBJECTID &Value) noexcept {
+      Value = this->SurfaceID;
+      return ERR::Okay;
+   }
+
+   inline ERR getAnchor(OBJECTID &Value) noexcept {
+      Value = this->AnchorID;
+      return ERR::Okay;
+   }
+
+   inline ERR getCursor(PTC &Value) noexcept {
+      Value = this->CursorID;
+      return ERR::Okay;
+   }
+
+   inline ERR getCursorOwner(OBJECTID &Value) noexcept {
+      Value = this->CursorOwnerID;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(PF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getRestrict(OBJECTID &Value) noexcept {
+      Value = this->RestrictID;
+      return ERR::Okay;
+   }
+
+   inline ERR getBitmap(objBitmap * &Value) noexcept {
+      Value = this->Bitmap;
+      return ERR::Okay;
+   }
+
+   inline ERR getDragSource(OBJECTID &Value) noexcept {
+      Value = this->DragSourceID;
+      return ERR::Okay;
+   }
+
+   inline ERR getDragItem(int &Value) noexcept {
+      Value = this->DragItem;
+      return ERR::Okay;
+   }
+
+   inline ERR getOverObject(OBJECTID &Value) noexcept {
+      Value = this->OverObjectID;
+      return ERR::Okay;
+   }
+
+   inline ERR getClickSlop(int &Value) noexcept {
+      Value = this->ClickSlop;
+      return ERR::Okay;
+   }
+
+   inline ERR getButtonState(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[14];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getButtonOrder(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[7];
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      return get_field(this, Value);
+   }
+
 
    // Customised field setting
 
@@ -1284,21 +1820,18 @@ class objPointer : public Object {
    }
 
    inline ERR setX(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[0];
-      return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
+      auto field = &this->Class->Dictionary[18];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setY(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
+      auto field = &this->Class->Dictionary[10];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setMaxSpeed(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[19];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[21];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setInput(OBJECTID Value) noexcept {
@@ -1312,7 +1845,7 @@ class objPointer : public Object {
    }
 
    inline ERR setCursor(const PTC Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->CursorID = Value;
       return ERR::Okay;
    }
@@ -1323,7 +1856,7 @@ class objPointer : public Object {
    }
 
    inline ERR setFlags(const PF Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Flags = Value;
       return ERR::Okay;
    }
@@ -1333,10 +1866,9 @@ class objPointer : public Object {
       return ERR::Okay;
    }
 
-   template <class T> inline ERR setButtonOrder(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+   inline ERR setButtonOrder(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[7];
+      return field->WriteValue(this, field, 0x00904300, &Value);
    }
 
 };
@@ -1353,11 +1885,10 @@ struct ExposeToDisplay { int X; int Y; int Width; int Height; EXF Flags; static 
 struct InvalidateRegion { int X; int Y; int Width; int Height; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetDisplay { int X; int Y; int Width; int Height; int InsideWidth; int InsideHeight; int BitsPerPixel; double RefreshRate; int Flags; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetOpacity { double Value; double Adjustment; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct AddCallback { FUNCTION * Callback; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddCallback { FUNCTION Callback; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Minimise { static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct ResetDimensions { double X; double Y; double XOffset; double YOffset; double Width; double Height; DMF Dimensions; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct RemoveCallback { FUNCTION * Callback; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct ScheduleRedraw { static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct RemoveCallback { FUNCTION Callback; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ScheduleRedraw { int RefreshRate; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -1366,43 +1897,31 @@ class objSurface : public Object {
    static constexpr CLASSID CLASS_ID = CLASSID::SURFACE;
    static constexpr CSTRING CLASS_NAME = "Surface";
 
-   using create = pf::Create<objSurface>;
+   using create = kt::Create<objSurface>;
+   objSurface(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
-   OBJECTID DragID;     // This object-based field is used to control the dragging of objects around the display.
-   OBJECTID BufferID;   // The ID of the bitmap that manages the surface's graphics.
-   OBJECTID ParentID;   // The parent for a surface is defined here.
+   Unit     X;          // Determines the horizontal position of a surface object.
+   Unit     Y;          // Determines the vertical position of a surface object.
+   Unit     Width;      // Defines the width of a surface object.
+   Unit     Height;     // Defines the height of a surface object.
+   Unit     XOffset;    // Determines the horizontal offset of a surface object.
+   Unit     YOffset;    // Determines the vertical offset of a surface object.
+   OBJECTID DragID;     // Defines the Surface that moves when this surface is dragged.
+   OBJECTID BufferID;   // Refers to the Bitmap that stores the surface's graphics.
+   OBJECTID ParentID;   // Identifies the parent Surface.
    OBJECTID PopOverID;  // Keeps a surface in front of another surface in the Z order.
    int      MinWidth;   // Prevents the width of a surface object from shrinking beyond a certain value.
    int      MinHeight;  // Prevents the height of a surface object from shrinking beyond a certain value.
    int      MaxWidth;   // Prevents the width of a surface object from exceeding a certain value.
    int      MaxHeight;  // Prevents the height of a surface object from exceeding a certain value.
-   int      LeftLimit;  // Prevents a surface object from moving beyond a given point on the left-hand side.
-   int      RightLimit; // Prevents a surface object from moving beyond a given point on the right-hand side.
-   int      TopLimit;   // Prevents a surface object from moving beyond a given point at the top of its container.
-   int      BottomLimit; // Prevents a surface object from moving beyond a given point at the bottom of its container.
-   OBJECTID DisplayID;  // Refers to the Display object that is managing the surface's graphics.
-   RNF      Flags;      // Optional flags.
-   int      X;          // Determines the horizontal position of a surface object.
-   int      Y;          // Determines the vertical position of a surface object.
-   int      Width;      // Defines the width of a surface object.
-   int      Height;     // Defines the height of a surface object.
+   OBJECTID DisplayID;  // Refers to the Display object that manages the surface's graphics.
+   RNF      Flags;      // Controls optional surface behaviour.
    OBJECTID RootID;     // Surface that is acting as a root for many surface children (useful when applying translucency)
-   ALIGN    Align;      // This field allows you to align a surface area within its owner.
-   DMF      Dimensions; // Indicates currently active dimension settings.
-   DRAG     DragStatus; // Indicates the draggable state when dragging is enabled.
-   PTC      Cursor;     // A default cursor image can be set here for changing the mouse pointer.
-   struct RGB8 Colour;  // String-based field for setting the background colour.
+   DRAG     DragStatus; // Reports the current drag state when dragging is enabled.
+   PTC      Cursor;     // Sets the pointer image used while the mouse is over the surface.
+   struct RGB8 Colour;  // Defines the background colour used when clearing the surface.
    RT       Type;       // Internal surface type flags
    int      Modal;      // Sets the surface as modal (prevents user interaction with other surfaces).
-
-#ifdef PRV_SURFACE
-   // These coordinate fields are considered private but may be accessed by some internal classes, like Document
-   int     XOffset, YOffset;     // Fixed horizontal and vertical offset
-   double  XOffsetPercent;       // Scaled horizontal offset
-   double  YOffsetPercent;       // Scaled vertical offset
-   double  WidthPercent, HeightPercent; // Scaled width and height
-   double  XPercent, YPercent;   // Scaled coordinate
-#endif
    public:
    inline bool visible() const { return (Flags & RNF::VISIBLE) != RNF::NIL; }
    inline bool invisible() const { return (Flags & RNF::VISIBLE) IS RNF::NIL; }
@@ -1454,160 +1973,268 @@ class objSurface : public Object {
    inline ERR show() noexcept { return Action(AC::Show, this, nullptr); }
    inline ERR inheritedFocus(OBJECTID FocusID, RNF Flags) noexcept {
       struct drw::InheritedFocus args = { FocusID, Flags };
-      return(Action(AC(-1), this, &args));
+      return Action(AC(-1), this, &args);
    }
    inline ERR exposeToDisplay(int X, int Y, int Width, int Height, EXF Flags) noexcept {
       struct drw::ExposeToDisplay args = { X, Y, Width, Height, Flags };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
    inline ERR invalidateRegion(int X, int Y, int Width, int Height) noexcept {
       struct drw::InvalidateRegion args = { X, Y, Width, Height };
-      return(Action(AC(-3), this, &args));
+      return Action(AC(-3), this, &args);
    }
    inline ERR setDisplay(int X, int Y, int Width, int Height, int InsideWidth, int InsideHeight, int BitsPerPixel, double RefreshRate, int Flags) noexcept {
       struct drw::SetDisplay args = { X, Y, Width, Height, InsideWidth, InsideHeight, BitsPerPixel, RefreshRate, Flags };
-      return(Action(AC(-4), this, &args));
+      return Action(AC(-4), this, &args);
    }
    inline ERR setOpacity(double Value, double Adjustment) noexcept {
       struct drw::SetOpacity args = { Value, Adjustment };
-      return(Action(AC(-5), this, &args));
+      return Action(AC(-5), this, &args);
    }
    inline ERR addCallback(FUNCTION Callback) noexcept {
-      struct drw::AddCallback args = { &Callback };
-      return(Action(AC(-6), this, &args));
+      struct drw::AddCallback args = { Callback };
+      return Action(AC(-6), this, &args);
    }
    inline ERR minimise() noexcept {
-      return(Action(AC(-7), this, nullptr));
-   }
-   inline ERR resetDimensions(double X, double Y, double XOffset, double YOffset, double Width, double Height, DMF Dimensions) noexcept {
-      struct drw::ResetDimensions args = { X, Y, XOffset, YOffset, Width, Height, Dimensions };
-      return(Action(AC(-8), this, &args));
+      return Action(AC(-7), this, nullptr);
    }
    inline ERR removeCallback(FUNCTION Callback) noexcept {
-      struct drw::RemoveCallback args = { &Callback };
-      return(Action(AC(-9), this, &args));
+      struct drw::RemoveCallback args = { Callback };
+      return Action(AC(-8), this, &args);
    }
-   inline ERR scheduleRedraw() noexcept {
-      return(Action(AC(-10), this, nullptr));
-   }
-
-   // Customised field setting
-
-   inline ERR setDrag(OBJECTID Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[27];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+   inline ERR scheduleRedraw(int RefreshRate) noexcept {
+      struct drw::ScheduleRedraw args = { RefreshRate };
+      return Action(AC(-9), this, &args);
    }
 
-   inline ERR setParent(OBJECTID Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[16];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
-   }
+   // Customised field getting
 
-   inline ERR setPopOver(OBJECTID Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[35];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
-   }
-
-   inline ERR setMinWidth(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[33];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
-   }
-
-   inline ERR setMinHeight(const int Value) noexcept {
-      auto target = this;
+   inline ERR getX(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[21];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->GetValue(this, &Value);
    }
 
-   inline ERR setMaxWidth(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[22];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
-   }
-
-   inline ERR setMaxHeight(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[38];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
-   }
-
-   inline ERR setLeftLimit(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
-   }
-
-   inline ERR setRightLimit(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[19];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
-   }
-
-   inline ERR setTopLimit(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[44];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
-   }
-
-   inline ERR setBottomLimit(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[42];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
-   }
-
-   inline ERR setFlags(const RNF Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
-   }
-
-   inline ERR setX(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[0];
-      Unit var(Value);
-      return field->WriteValue(target, field, FD_UNIT, &var, 1);
-   }
-
-   inline ERR setY(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
-      Unit var(Value);
-      return field->WriteValue(target, field, FD_UNIT, &var, 1);
-   }
-
-   inline ERR setWidth(const int Value) noexcept {
-      auto target = this;
+   inline ERR getY(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[14];
-      Unit var(Value);
-      return field->WriteValue(target, field, FD_UNIT, &var, 1);
+      return field->GetValue(this, &Value);
    }
 
-   inline ERR setHeight(const int Value) noexcept {
-      auto target = this;
+   inline ERR getWidth(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[26];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getHeight(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[33];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getXOffset(Unit &Value) noexcept {
       auto field = &this->Class->Dictionary[3];
-      Unit var(Value);
-      return field->WriteValue(target, field, FD_UNIT, &var, 1);
+      return field->GetValue(this, &Value);
    }
 
-   inline ERR setAlign(const ALIGN Value) noexcept {
-      this->Align = Value;
+   inline ERR getYOffset(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[17];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getDrag(OBJECTID &Value) noexcept {
+      Value = this->DragID;
       return ERR::Okay;
    }
 
-   inline ERR setDimensions(const DMF Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[32];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+   inline ERR getBuffer(OBJECTID &Value) noexcept {
+      Value = this->BufferID;
+      return ERR::Okay;
+   }
+
+   inline ERR getParent(OBJECTID &Value) noexcept {
+      Value = this->ParentID;
+      return ERR::Okay;
+   }
+
+   inline ERR getPopOver(OBJECTID &Value) noexcept {
+      Value = this->PopOverID;
+      return ERR::Okay;
+   }
+
+   inline ERR getMinWidth(int &Value) noexcept {
+      Value = this->MinWidth;
+      return ERR::Okay;
+   }
+
+   inline ERR getMinHeight(int &Value) noexcept {
+      Value = this->MinHeight;
+      return ERR::Okay;
+   }
+
+   inline ERR getMaxWidth(int &Value) noexcept {
+      Value = this->MaxWidth;
+      return ERR::Okay;
+   }
+
+   inline ERR getMaxHeight(int &Value) noexcept {
+      Value = this->MaxHeight;
+      return ERR::Okay;
+   }
+
+   inline ERR getDisplay(OBJECTID &Value) noexcept {
+      Value = this->DisplayID;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(RNF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getDragStatus(DRAG &Value) noexcept {
+      Value = this->DragStatus;
+      return ERR::Okay;
+   }
+
+   inline ERR getCursor(PTC &Value) noexcept {
+      Value = this->Cursor;
+      return ERR::Okay;
+   }
+
+   inline ERR getColour(struct RGB8 * &Value) noexcept {
+      Value = &this->Colour;
+      return ERR::Okay;
+   }
+
+   inline ERR getModal(int &Value) noexcept {
+      Value = this->Modal;
+      return ERR::Okay;
+   }
+
+   inline ERR getWindowType(SWIN &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getAbsX(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[29];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getAbsY(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getBitsPerPixel(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[27];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getBottom(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[31];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getOpacity(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[22];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getRight(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getUserFocus(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[36];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getVisible(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[28];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getWindowHandle(APTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[30];
+      return field->GetValue(this, &Value);
+   }
+
+
+   // Customised field setting
+
+   inline ERR setX(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setY(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[14];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setWidth(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[26];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setHeight(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[33];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setXOffset(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setYOffset(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[17];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setDrag(OBJECTID Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setParent(OBJECTID Value) noexcept {
+      auto field = &this->Class->Dictionary[37];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setPopOver(OBJECTID Value) noexcept {
+      auto field = &this->Class->Dictionary[4];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setMinWidth(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[24];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setMinHeight(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setMaxWidth(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[11];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setMaxHeight(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[34];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setFlags(const RNF Value) noexcept {
+      auto field = &this->Class->Dictionary[1];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setCursor(const PTC Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[47];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[35];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setColour(const struct RGB8 Value) noexcept {
@@ -1615,90 +2242,44 @@ class objSurface : public Object {
       return ERR::Okay;
    }
 
-   inline ERR setType(const RT Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
-      this->Type = Value;
-      return ERR::Okay;
-   }
-
    inline ERR setModal(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[32];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setRootLayer(OBJECTID Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[34];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+   inline ERR setWindowType(const SWIN Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setAbsX(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[25];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[29];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setAbsY(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[26];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[5];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setBitsPerPixel(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
-   }
-
-   inline ERR setMovement(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[31];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[27];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setOpacity(const double Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[23];
-      return field->WriteValue(target, field, FD_DOUBLE, &Value, 1);
-   }
-
-   inline ERR setRevertFocus(OBJECTID Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[18];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[22];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setVisible(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[24];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
-   }
-
-   inline ERR setWindowType(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[30];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[28];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setWindowHandle(APTR Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[41];
-      return field->WriteValue(target, field, 0x08000308, Value, 1);
-   }
-
-   inline ERR setXOffset(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[39];
-      Unit var(Value);
-      return field->WriteValue(target, field, FD_UNIT, &var, 1);
-   }
-
-   inline ERR setYOffset(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[17];
-      Unit var(Value);
-      return field->WriteValue(target, field, FD_UNIT, &var, 1);
+      auto field = &this->Class->Dictionary[30];
+      return field->WriteValue(this, field, 0x08100308, Value);
    }
 
 };
@@ -1714,23 +2295,23 @@ struct DisplayBase {
    objPointer * (*_AccessPointer)(void);
    ERR (*_CheckIfChild)(OBJECTID Parent, OBJECTID Child);
    ERR (*_CopyArea)(objBitmap *Bitmap, objBitmap *Dest, BAF Flags, int X, int Y, int Width, int Height, int XDest, int YDest);
-   ERR (*_CopyRawBitmap)(struct BitmapSurfaceV2 *Surface, objBitmap *Dest, CSRF Flags, int X, int Y, int Width, int Height, int XDest, int YDest);
+   ERR (*_CopyRawBitmap)(struct BitmapSurface *Surface, objBitmap *Dest, CSRF Flags, int X, int Y, int Width, int Height, int XDest, int YDest);
    ERR (*_CopySurface)(OBJECTID Surface, objBitmap *Bitmap, BDF Flags, int X, int Y, int Width, int Height, int XDest, int YDest);
    void (*_DrawPixel)(objBitmap *Bitmap, int X, int Y, uint32_t Colour);
    void (*_DrawRGBPixel)(objBitmap *Bitmap, int X, int Y, struct RGB8 *RGB);
    void (*_DrawRectangle)(objBitmap *Bitmap, int X, int Y, int Width, int Height, uint32_t Colour, BAF Flags);
    ERR (*_ExposeSurface)(OBJECTID Surface, int X, int Y, int Width, int Height, EXF Flags);
    void (*_GetColourFormat)(struct ColourFormat *Format, int BitsPerPixel, int RedMask, int GreenMask, int BlueMask, int AlphaMask);
-   ERR (*_GetCursorInfo)(struct CursorInfo *Info, int Size);
+   ERR (*_GetCursorInfo)(struct CursorInfo *Info);
    ERR (*_GetCursorPos)(double *X, double *Y);
-   ERR (*_GetDisplayInfo)(OBJECTID Display, struct DisplayInfoV3 **Info);
+   ERR (*_GetDisplayInfo)(OBJECTID Display, struct DisplayInfo **Info);
    DT (*_GetDisplayType)(void);
    CSTRING (*_GetInputTypeName)(JET Type);
    OBJECTID (*_GetModalSurface)(void);
    ERR (*_GetRelativeCursorPos)(OBJECTID Surface, double *X, double *Y);
    ERR (*_GetSurfaceCoords)(OBJECTID Surface, int *X, int *Y, int *AbsX, int *AbsY, int *Width, int *Height);
    ERR (*_GetSurfaceFlags)(OBJECTID Surface, RNF *Flags);
-   ERR (*_GetSurfaceInfo)(OBJECTID Surface, struct SurfaceInfoV2 **Info);
+   ERR (*_GetSurfaceInfo)(OBJECTID Surface, struct SurfaceInfo **Info);
    OBJECTID (*_GetUserFocus)(void);
    ERR (*_GetVisibleArea)(OBJECTID Surface, int *X, int *Y, int *AbsX, int *AbsY, int *Width, int *Height);
    ERR (*_LockCursor)(OBJECTID Surface);
@@ -1739,14 +2320,14 @@ struct DisplayBase {
    ERR (*_Resample)(objBitmap *Bitmap, struct ColourFormat *ColourFormat);
    ERR (*_RestoreCursor)(PTC Cursor, OBJECTID Owner);
    double (*_ScaleToDPI)(double Value);
-   ERR (*_ScanDisplayModes)(CSTRING Filter, struct DisplayInfoV3 *Info, int Size);
-   void (*_SetClipRegion)(objBitmap *Bitmap, int Number, int Left, int Top, int Right, int Bottom, int Terminate);
-   ERR (*_SetCursor)(OBJECTID Surface, CRF Flags, PTC Cursor, CSTRING Name, OBJECTID Owner);
+   ERR (*_ScanDisplayModes)(const std::string_view &Filter, struct DisplayInfo *Info);
+   void (*_SetClipRegion)(objBitmap *Bitmap, int Left, int Top, int Right, int Bottom);
+   ERR (*_SetCursor)(OBJECTID Surface, CRF Flags, PTC Cursor, const std::string_view &Name, OBJECTID Owner);
    ERR (*_SetCursorPos)(double X, double Y);
    ERR (*_SetCustomCursor)(OBJECTID Surface, CRF Flags, objBitmap *Bitmap, int HotX, int HotY, OBJECTID Owner);
    ERR (*_SetHostOption)(HOST Option, int64_t Value);
    OBJECTID (*_SetModalSurface)(OBJECTID Surface);
-   ERR (*_StartCursorDrag)(OBJECTID Source, int Item, CSTRING Datatypes, OBJECTID Surface);
+   ERR (*_StartCursorDrag)(OBJECTID Source, int Item, const std::string_view &Datatypes, OBJECTID Surface);
    ERR (*_SubscribeInput)(FUNCTION *Callback, OBJECTID SurfaceFilter, JTYPE Mask, OBJECTID DeviceFilter, int *Handle);
    void (*_Sync)(objBitmap *Bitmap);
    ERR (*_UnlockCursor)(OBJECTID Surface);
@@ -1761,23 +2342,23 @@ namespace gfx {
 inline objPointer * AccessPointer(void) { return DisplayBase->_AccessPointer(); }
 inline ERR CheckIfChild(OBJECTID Parent, OBJECTID Child) { return DisplayBase->_CheckIfChild(Parent,Child); }
 inline ERR CopyArea(objBitmap *Bitmap, objBitmap *Dest, BAF Flags, int X, int Y, int Width, int Height, int XDest, int YDest) { return DisplayBase->_CopyArea(Bitmap,Dest,Flags,X,Y,Width,Height,XDest,YDest); }
-inline ERR CopyRawBitmap(struct BitmapSurfaceV2 *Surface, objBitmap *Dest, CSRF Flags, int X, int Y, int Width, int Height, int XDest, int YDest) { return DisplayBase->_CopyRawBitmap(Surface,Dest,Flags,X,Y,Width,Height,XDest,YDest); }
+inline ERR CopyRawBitmap(struct BitmapSurface *Surface, objBitmap *Dest, CSRF Flags, int X, int Y, int Width, int Height, int XDest, int YDest) { return DisplayBase->_CopyRawBitmap(Surface,Dest,Flags,X,Y,Width,Height,XDest,YDest); }
 inline ERR CopySurface(OBJECTID Surface, objBitmap *Bitmap, BDF Flags, int X, int Y, int Width, int Height, int XDest, int YDest) { return DisplayBase->_CopySurface(Surface,Bitmap,Flags,X,Y,Width,Height,XDest,YDest); }
 inline void DrawPixel(objBitmap *Bitmap, int X, int Y, uint32_t Colour) { return DisplayBase->_DrawPixel(Bitmap,X,Y,Colour); }
 inline void DrawRGBPixel(objBitmap *Bitmap, int X, int Y, struct RGB8 *RGB) { return DisplayBase->_DrawRGBPixel(Bitmap,X,Y,RGB); }
 inline void DrawRectangle(objBitmap *Bitmap, int X, int Y, int Width, int Height, uint32_t Colour, BAF Flags) { return DisplayBase->_DrawRectangle(Bitmap,X,Y,Width,Height,Colour,Flags); }
 inline ERR ExposeSurface(OBJECTID Surface, int X, int Y, int Width, int Height, EXF Flags) { return DisplayBase->_ExposeSurface(Surface,X,Y,Width,Height,Flags); }
 inline void GetColourFormat(struct ColourFormat *Format, int BitsPerPixel, int RedMask, int GreenMask, int BlueMask, int AlphaMask) { return DisplayBase->_GetColourFormat(Format,BitsPerPixel,RedMask,GreenMask,BlueMask,AlphaMask); }
-inline ERR GetCursorInfo(struct CursorInfo *Info, int Size) { return DisplayBase->_GetCursorInfo(Info,Size); }
+inline ERR GetCursorInfo(struct CursorInfo *Info) { return DisplayBase->_GetCursorInfo(Info); }
 inline ERR GetCursorPos(double *X, double *Y) { return DisplayBase->_GetCursorPos(X,Y); }
-inline ERR GetDisplayInfo(OBJECTID Display, struct DisplayInfoV3 **Info) { return DisplayBase->_GetDisplayInfo(Display,Info); }
+inline ERR GetDisplayInfo(OBJECTID Display, struct DisplayInfo **Info) { return DisplayBase->_GetDisplayInfo(Display,Info); }
 inline DT GetDisplayType(void) { return DisplayBase->_GetDisplayType(); }
 inline CSTRING GetInputTypeName(JET Type) { return DisplayBase->_GetInputTypeName(Type); }
 inline OBJECTID GetModalSurface(void) { return DisplayBase->_GetModalSurface(); }
 inline ERR GetRelativeCursorPos(OBJECTID Surface, double *X, double *Y) { return DisplayBase->_GetRelativeCursorPos(Surface,X,Y); }
 inline ERR GetSurfaceCoords(OBJECTID Surface, int *X, int *Y, int *AbsX, int *AbsY, int *Width, int *Height) { return DisplayBase->_GetSurfaceCoords(Surface,X,Y,AbsX,AbsY,Width,Height); }
 inline ERR GetSurfaceFlags(OBJECTID Surface, RNF *Flags) { return DisplayBase->_GetSurfaceFlags(Surface,Flags); }
-inline ERR GetSurfaceInfo(OBJECTID Surface, struct SurfaceInfoV2 **Info) { return DisplayBase->_GetSurfaceInfo(Surface,Info); }
+inline ERR GetSurfaceInfo(OBJECTID Surface, struct SurfaceInfo **Info) { return DisplayBase->_GetSurfaceInfo(Surface,Info); }
 inline OBJECTID GetUserFocus(void) { return DisplayBase->_GetUserFocus(); }
 inline ERR GetVisibleArea(OBJECTID Surface, int *X, int *Y, int *AbsX, int *AbsY, int *Width, int *Height) { return DisplayBase->_GetVisibleArea(Surface,X,Y,AbsX,AbsY,Width,Height); }
 inline ERR LockCursor(OBJECTID Surface) { return DisplayBase->_LockCursor(Surface); }
@@ -1786,14 +2367,14 @@ inline void ReadRGBPixel(objBitmap *Bitmap, int X, int Y, struct RGB8 **RGB) { r
 inline ERR Resample(objBitmap *Bitmap, struct ColourFormat *ColourFormat) { return DisplayBase->_Resample(Bitmap,ColourFormat); }
 inline ERR RestoreCursor(PTC Cursor, OBJECTID Owner) { return DisplayBase->_RestoreCursor(Cursor,Owner); }
 inline double ScaleToDPI(double Value) { return DisplayBase->_ScaleToDPI(Value); }
-inline ERR ScanDisplayModes(CSTRING Filter, struct DisplayInfoV3 *Info, int Size) { return DisplayBase->_ScanDisplayModes(Filter,Info,Size); }
-inline void SetClipRegion(objBitmap *Bitmap, int Number, int Left, int Top, int Right, int Bottom, int Terminate) { return DisplayBase->_SetClipRegion(Bitmap,Number,Left,Top,Right,Bottom,Terminate); }
-inline ERR SetCursor(OBJECTID Surface, CRF Flags, PTC Cursor, CSTRING Name, OBJECTID Owner) { return DisplayBase->_SetCursor(Surface,Flags,Cursor,Name,Owner); }
+inline ERR ScanDisplayModes(const std::string_view &Filter, struct DisplayInfo *Info) { return DisplayBase->_ScanDisplayModes(Filter,Info); }
+inline void SetClipRegion(objBitmap *Bitmap, int Left, int Top, int Right, int Bottom) { return DisplayBase->_SetClipRegion(Bitmap,Left,Top,Right,Bottom); }
+inline ERR SetCursor(OBJECTID Surface, CRF Flags, PTC Cursor, const std::string_view &Name, OBJECTID Owner) { return DisplayBase->_SetCursor(Surface,Flags,Cursor,Name,Owner); }
 inline ERR SetCursorPos(double X, double Y) { return DisplayBase->_SetCursorPos(X,Y); }
 inline ERR SetCustomCursor(OBJECTID Surface, CRF Flags, objBitmap *Bitmap, int HotX, int HotY, OBJECTID Owner) { return DisplayBase->_SetCustomCursor(Surface,Flags,Bitmap,HotX,HotY,Owner); }
 inline ERR SetHostOption(HOST Option, int64_t Value) { return DisplayBase->_SetHostOption(Option,Value); }
 inline OBJECTID SetModalSurface(OBJECTID Surface) { return DisplayBase->_SetModalSurface(Surface); }
-inline ERR StartCursorDrag(OBJECTID Source, int Item, CSTRING Datatypes, OBJECTID Surface) { return DisplayBase->_StartCursorDrag(Source,Item,Datatypes,Surface); }
+inline ERR StartCursorDrag(OBJECTID Source, int Item, const std::string_view &Datatypes, OBJECTID Surface) { return DisplayBase->_StartCursorDrag(Source,Item,Datatypes,Surface); }
 inline ERR SubscribeInput(FUNCTION *Callback, OBJECTID SurfaceFilter, JTYPE Mask, OBJECTID DeviceFilter, int *Handle) { return DisplayBase->_SubscribeInput(Callback,SurfaceFilter,Mask,DeviceFilter,Handle); }
 inline void Sync(objBitmap *Bitmap) { return DisplayBase->_Sync(Bitmap); }
 inline ERR UnlockCursor(OBJECTID Surface) { return DisplayBase->_UnlockCursor(Surface); }
@@ -1805,23 +2386,23 @@ namespace gfx {
 extern objPointer * AccessPointer(void);
 extern ERR CheckIfChild(OBJECTID Parent, OBJECTID Child);
 extern ERR CopyArea(objBitmap *Bitmap, objBitmap *Dest, BAF Flags, int X, int Y, int Width, int Height, int XDest, int YDest);
-extern ERR CopyRawBitmap(struct BitmapSurfaceV2 *Surface, objBitmap *Dest, CSRF Flags, int X, int Y, int Width, int Height, int XDest, int YDest);
+extern ERR CopyRawBitmap(struct BitmapSurface *Surface, objBitmap *Dest, CSRF Flags, int X, int Y, int Width, int Height, int XDest, int YDest);
 extern ERR CopySurface(OBJECTID Surface, objBitmap *Bitmap, BDF Flags, int X, int Y, int Width, int Height, int XDest, int YDest);
 extern void DrawPixel(objBitmap *Bitmap, int X, int Y, uint32_t Colour);
 extern void DrawRGBPixel(objBitmap *Bitmap, int X, int Y, struct RGB8 *RGB);
 extern void DrawRectangle(objBitmap *Bitmap, int X, int Y, int Width, int Height, uint32_t Colour, BAF Flags);
 extern ERR ExposeSurface(OBJECTID Surface, int X, int Y, int Width, int Height, EXF Flags);
 extern void GetColourFormat(struct ColourFormat *Format, int BitsPerPixel, int RedMask, int GreenMask, int BlueMask, int AlphaMask);
-extern ERR GetCursorInfo(struct CursorInfo *Info, int Size);
+extern ERR GetCursorInfo(struct CursorInfo *Info);
 extern ERR GetCursorPos(double *X, double *Y);
-extern ERR GetDisplayInfo(OBJECTID Display, struct DisplayInfoV3 **Info);
+extern ERR GetDisplayInfo(OBJECTID Display, struct DisplayInfo **Info);
 extern DT GetDisplayType(void);
 extern CSTRING GetInputTypeName(JET Type);
 extern OBJECTID GetModalSurface(void);
 extern ERR GetRelativeCursorPos(OBJECTID Surface, double *X, double *Y);
 extern ERR GetSurfaceCoords(OBJECTID Surface, int *X, int *Y, int *AbsX, int *AbsY, int *Width, int *Height);
 extern ERR GetSurfaceFlags(OBJECTID Surface, RNF *Flags);
-extern ERR GetSurfaceInfo(OBJECTID Surface, struct SurfaceInfoV2 **Info);
+extern ERR GetSurfaceInfo(OBJECTID Surface, struct SurfaceInfo **Info);
 extern OBJECTID GetUserFocus(void);
 extern ERR GetVisibleArea(OBJECTID Surface, int *X, int *Y, int *AbsX, int *AbsY, int *Width, int *Height);
 extern ERR LockCursor(OBJECTID Surface);
@@ -1830,14 +2411,14 @@ extern void ReadRGBPixel(objBitmap *Bitmap, int X, int Y, struct RGB8 **RGB);
 extern ERR Resample(objBitmap *Bitmap, struct ColourFormat *ColourFormat);
 extern ERR RestoreCursor(PTC Cursor, OBJECTID Owner);
 extern double ScaleToDPI(double Value);
-extern ERR ScanDisplayModes(CSTRING Filter, struct DisplayInfoV3 *Info, int Size);
-extern void SetClipRegion(objBitmap *Bitmap, int Number, int Left, int Top, int Right, int Bottom, int Terminate);
-extern ERR SetCursor(OBJECTID Surface, CRF Flags, PTC Cursor, CSTRING Name, OBJECTID Owner);
+extern ERR ScanDisplayModes(const std::string_view &Filter, struct DisplayInfo *Info);
+extern void SetClipRegion(objBitmap *Bitmap, int Left, int Top, int Right, int Bottom);
+extern ERR SetCursor(OBJECTID Surface, CRF Flags, PTC Cursor, const std::string_view &Name, OBJECTID Owner);
 extern ERR SetCursorPos(double X, double Y);
 extern ERR SetCustomCursor(OBJECTID Surface, CRF Flags, objBitmap *Bitmap, int HotX, int HotY, OBJECTID Owner);
 extern ERR SetHostOption(HOST Option, int64_t Value);
 extern OBJECTID SetModalSurface(OBJECTID Surface);
-extern ERR StartCursorDrag(OBJECTID Source, int Item, CSTRING Datatypes, OBJECTID Surface);
+extern ERR StartCursorDrag(OBJECTID Source, int Item, const std::string_view &Datatypes, OBJECTID Surface);
 extern ERR SubscribeInput(FUNCTION *Callback, OBJECTID SurfaceFilter, JTYPE Mask, OBJECTID DeviceFilter, int *Handle);
 extern void Sync(objBitmap *Bitmap);
 extern ERR UnlockCursor(OBJECTID Surface);
@@ -1859,8 +2440,9 @@ extern ERR WindowHook(OBJECTID SurfaceID, WH Event, FUNCTION *Callback);
 #define CFUnpackAlpha(a,b)        ((((b) >> (a)->AlphaPos) & (a)->AlphaMask))
 
 namespace fl {
-   using namespace pf;
+   using namespace kt;
 
-constexpr FieldValue WindowType(SWIN Value) { return FieldValue(FID_WindowType, int(Value)); }
+[[nodiscard]] constexpr FieldValue WindowType(SWIN Value) { return FieldValue(strhash("windowType"), int(Value)); }
+[[nodiscard]] constexpr FieldValue MemType(BMT Value) { return FieldValue(strhash("memType"), int(Value)); }
 
 } // namespace

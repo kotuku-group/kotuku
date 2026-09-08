@@ -1,6 +1,6 @@
 --$TIRI:Include
 
-module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timestamp=20240611, src="audio.cpp" }, function()
+module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timestamp=20240611, src={ "audio.cpp", "commands.cpp" } }, function()
   flags("ADF", { comment="Optional flags for the Audio object." },
     "OVER_SAMPLING: Enables oversampling for higher quality audio at the cost of slower mixing.",
     "FILTER_LOW: Enable a low level of output filtering to minimise distortion.",
@@ -49,33 +49,33 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     F_BIG_ENDIAN   = "0x80000000: Combine this flag with any audio format to declare it as big endian."
   })
 
-  enum("LOOP", { type='short', start=1, comment="Loop modes for the AudioLoop structure." },
+  enums("LOOP", { type='short', start=1, comment="Loop modes for the AudioLoop structure." },
     "SINGLE: Single loop: Releasing will end the note.",
     "SINGLE_RELEASE: Single loop: Sample data after the loop will be played when the note is released.",
     "DOUBLE: Double loop: When the note is released, playing shifts to the second loop.",
     "AMIGA_NONE: Amiga loop: Do nothing.",
     "AMIGA: Single loop: Amiga style.")
 
-  enum("LTYPE", { type='char', start=1, comment="Loop types for the AudioLoop structure." },
+  enums("LTYPE", { type='char', start=1, comment="Loop types for the AudioLoop structure." },
     "UNIDIRECTIONAL: The sample playback position returns to the byte position specified in the Loop1Start field.",
     "BIDIRECTIONAL: The sample will play in reverse whenever it hits the end marker, then forwards when it hits the start marker.")
 
-  enum("STREAM", { type='int', start=1, comment="Streaming options" },
+  enums("STREAM", { type='int', start=1, comment="Streaming options" },
     "NEVER: No streaming - load all data into memory.",
     "SMART: Smart streaming is the default.  If the sample appears to be relatively small with respect to available system RAM, it will be loaded into memory.  Otherwise it will be streamed.",
     "ALWAYS: Stream if the sample length exceeds 64k.")
 
-  enum("NOTE", { start=0, comment="Definitions for the Note field.  An 'S' indicates a sharp note." },
+  enums("NOTE", { start=0, comment="Definitions for the Note field.  An 'S' indicates a sharp note." },
     "C", "CS", "D", "DS", "E", "F", "FS", "G", "GS", "A", "AS", "B", "OCTAVE")
 
-  enum("CHS", { type='char', start=0, comment="Channel status types for the AudioChannel structure." },
+  enums("CHS", { type='char', start=0, comment="Channel status types for the AudioChannel structure." },
    "STOPPED: Playing was stopped by the client.",
    "FINISHED: Playback concluded by reaching the sample end.",
    "PLAYING: Sample playing and not released.",
    "RELEASED: Sample playing and note has been released.",
    "FADE_OUT: Playback is fading out.")
 
-  struct("AudioLoop", { comment="Loop settings for the AddSample() method." }, [[
+  structdef("AudioLoop", { comment="Loop settings for the AddSample() method." }, [[
     short(LOOP) LoopMode    # Loop mode (single, double)
     char(LTYPE) Loop1Type   # First loop type (unidirectional, bidirectional)
     char(LTYPE) Loop2Type   # Second loop type (unidirectional, bidirectional)
@@ -96,7 +96,7 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     { id=8, name="SetVolume" }
   })
 
-  class("Audio", { src="class_audio.cpp", output="audio_def.c" }, [[
+  klass("Audio", { src="class_audio.cpp", output="class_audio_def.c", extended=true }, [[
     int OutputRate
     int InputRate
     int Quality
@@ -106,7 +106,8 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     int PeriodSize     # Period size for ALSA audio buffering
   ]])
 
-  class("Sound", { src="class_sound.cpp" }, [[
+  klass("Sound", { src="class_sound.cpp", output="class_sound_def.c", extended=true }, [[
+    string Path
     double Volume      # Volume of sample (0 - 100%)
     double Pan         # Horizontal positioning for playback on stereo speakers (`-100` to `+100`)
     large Position     # Byte position to start playing from

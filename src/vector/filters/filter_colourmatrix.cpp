@@ -38,17 +38,22 @@ SVG requires that the calculations are performed on non-premultiplied colour val
 of premultiplied colour values, those values are automatically converted into non-premultiplied colour values for
 this operation.
 
+The matrix is applied in the colour space defined by the parent @VectorFilter's ColourSpace field.  If set to
+`LINEAR_RGB` (the SVG default) then pixel values are converted to linear RGB prior to transformation and back to
+sRGB on output, otherwise the transformation is performed directly on the sRGB values.
+
 *********************************************************************************************************************/
 
 #include <array>
+#include <iterator>
 
-#define CM_SIZE 20
+constexpr int CM_SIZE = 20;
 
-static const double LUMA_R = 0.2125; // These values are as documented in W3C SVG
-static const double LUMA_G = 0.7154;
-static const double LUMA_B = 0.0721;
+constexpr double LUMA_R = 0.2125; // These values are as documented in W3C SVG
+constexpr double LUMA_G = 0.7154;
+constexpr double LUMA_B = 0.0721;
 
-static const double ONETHIRD = 1.0 / 3.0;
+constexpr double ONETHIRD = 1.0 / 3.0;
 
 typedef std::array<double, CM_SIZE> MATRIX;
 
@@ -172,7 +177,7 @@ public:
    }
 
    void rotateHue(double degrees) {
-      if (initHue() IS ERR::Okay) {
+      if (!initHue()) {
          apply(preHue->matrix);
          rotateBlue(degrees);
          apply(postHue->matrix);
@@ -321,12 +326,25 @@ class extColourFX : public extFilterEffect {
    public:
    static constexpr CLASSID CLASS_ID = CLASSID::COLOURFX;
    static constexpr CSTRING CLASS_NAME = "ColourFX";
-   using create = pf::Create<extColourFX>;
+   using create = kt::Create<extColourFX>;
 
-   double Values[CM_SIZE];
-   ColourMatrix *Matrix;
+   CM Mode = CM::NONE;
+   std::array<double,CM_SIZE> Values = {};
+   ColourMatrix *Matrix = nullptr;
    int TotalValues;
-   CM Mode;
+
+   extColourFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) {
+      // Configure identity matrix
+      Values[0]   = 1;
+      Values[6]   = 1;
+      Values[12]  = 1;
+      Values[18]  = 1;
+      TotalValues = CM_SIZE;
+   }
+
+   ~extColourFX() {
+      if (Matrix) delete Matrix;
+   }
 };
 
 /*********************************************************************************************************************
@@ -347,21 +365,87 @@ static ERR COLOURFX_Draw(extColourFX *Self, struct acDraw *Args)
 
    ColourMatrix &matrix = *Self->Matrix;
 
+   // The matrix is applied in the colour space defined by the parent filter; LINEAR_RGB is the SVG default and
+   // requires sRGB values to be converted to linear before transformation, then inverted on output.
+
+   const bool linear_rgb = Self->Filter->ColourSpace IS VCS::LINEAR_RGB;
+
    objBitmap *inBmp;
    if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) != ERR::Okay) return ERR::NoData;
 
    auto out_line = Self->Target->Data + (Self->Target->Clip.Left<<2) + (Self->Target->Clip.Top * Self->Target->LineWidth);
    auto in_line  = inBmp->Data + (inBmp->Clip.Left<<2) + (inBmp->Clip.Top * inBmp->LineWidth);
 
-   for (int y=0; y < inBmp->Clip.Bottom - inBmp->Clip.Top; y++) {
+   const int width  = inBmp->Clip.Right - inBmp->Clip.Left;
+   const int height = inBmp->Clip.Bottom - inBmp->Clip.Top;
+
+#ifdef FILTER_SSE2
+   // The 4x5 matrix is repacked into column-major register pairs so that the four row dot products are computed
+   // in parallel; lane pairs are (red,green) and (blue,alpha) rows.  The accumulation order matches the scalar
+   // path below, keeping the output bit-identical across both implementations.
+
+   __m128d col_rg[5], col_ba[5];
+   for (int c=0; c < 5; c++) {
+      col_rg[c] = _mm_set_pd(matrix[5+c], matrix[c]);
+      col_ba[c] = _mm_set_pd(matrix[15+c], matrix[10+c]);
+   }
+   const __m128d half = _mm_set1_pd(0.5);
+
+   for (int y=0; y < height; y++) {
       uint8_t *pixel = in_line;
       uint8_t *out = out_line;
-      for (int x=0; x < inBmp->Clip.Right - inBmp->Clip.Left; x++, pixel += 4, out += 4) {
+      for (int x=0; x < width; x++, pixel += 4, out += 4) {
+         if (auto a = pixel[A]) {
+            const __m128d r  = _mm_set1_pd(double(linear_rgb ? glLinearRGB.convert(pixel[R]) : pixel[R]));
+            const __m128d g  = _mm_set1_pd(double(linear_rgb ? glLinearRGB.convert(pixel[G]) : pixel[G]));
+            const __m128d b  = _mm_set1_pd(double(linear_rgb ? glLinearRGB.convert(pixel[B]) : pixel[B]));
+            const __m128d av = _mm_set1_pd(double(a));
+
+            __m128d rg = _mm_add_pd(half, _mm_mul_pd(r, col_rg[0]));
+            rg = _mm_add_pd(rg, _mm_mul_pd(g, col_rg[1]));
+            rg = _mm_add_pd(rg, _mm_mul_pd(b, col_rg[2]));
+            rg = _mm_add_pd(rg, _mm_mul_pd(av, col_rg[3]));
+            rg = _mm_add_pd(rg, col_rg[4]);
+
+            __m128d ba = _mm_add_pd(half, _mm_mul_pd(r, col_ba[0]));
+            ba = _mm_add_pd(ba, _mm_mul_pd(g, col_ba[1]));
+            ba = _mm_add_pd(ba, _mm_mul_pd(b, col_ba[2]));
+            ba = _mm_add_pd(ba, _mm_mul_pd(av, col_ba[3]));
+            ba = _mm_add_pd(ba, col_ba[4]);
+
+            // Truncation towards zero matches the scalar double-to-int conversion.
+
+            const int r2 = _mm_cvttsd_si32(rg);
+            const int g2 = _mm_cvttsd_si32(_mm_unpackhi_pd(rg, rg));
+            const int b2 = _mm_cvttsd_si32(ba);
+            const int a2 = _mm_cvttsd_si32(_mm_unpackhi_pd(ba, ba));
+
+            out[A] = uint8_t(std::clamp(a2, 0, 255));
+            if (linear_rgb) {
+               out[R] = glLinearRGB.invert(uint8_t(std::clamp(r2, 0, 255)));
+               out[G] = glLinearRGB.invert(uint8_t(std::clamp(g2, 0, 255)));
+               out[B] = glLinearRGB.invert(uint8_t(std::clamp(b2, 0, 255)));
+            }
+            else {
+               out[R] = uint8_t(std::clamp(r2, 0, 255));
+               out[G] = uint8_t(std::clamp(g2, 0, 255));
+               out[B] = uint8_t(std::clamp(b2, 0, 255));
+            }
+         }
+      }
+      out_line += Self->Target->LineWidth;
+      in_line += inBmp->LineWidth;
+   }
+#else
+   for (int y=0; y < height; y++) {
+      uint8_t *pixel = in_line;
+      uint8_t *out = out_line;
+      for (int x=0; x < width; x++, pixel += 4, out += 4) {
          double a = pixel[A];
          if (a) {
-            double r = glLinearRGB.convert(pixel[R]);
-            double g = glLinearRGB.convert(pixel[G]);
-            double b = glLinearRGB.convert(pixel[B]);
+            double r = linear_rgb ? glLinearRGB.convert(pixel[R]) : pixel[R];
+            double g = linear_rgb ? glLinearRGB.convert(pixel[G]) : pixel[G];
+            double b = linear_rgb ? glLinearRGB.convert(pixel[B]) : pixel[B];
 
             int r2 = 0.5 + (r * matrix[0]) + (g * matrix[1]) + (b * matrix[2]) + (a * matrix[3]) + matrix[4];
             int g2 = 0.5 + (r * matrix[5]) + (g * matrix[6]) + (b * matrix[7]) + (a * matrix[8]) + matrix[9];
@@ -372,31 +456,31 @@ static ERR COLOURFX_Draw(extColourFX *Self, struct acDraw *Args)
             else if (a2 > 255) out[A] = 255;
             else out[A] = a2;
 
-            if (r2 < 0)   out[R] = 0;
-            else if (r2 > 255) out[R] = glLinearRGB.invert(255);
-            else out[R] = glLinearRGB.invert(r2);
+            if (linear_rgb) {
+               if (r2 < 0)   out[R] = 0;
+               else if (r2 > 255) out[R] = glLinearRGB.invert(255);
+               else out[R] = glLinearRGB.invert(r2);
 
-            if (g2 < 0) out[G] = 0;
-            else if (g2 > 255) out[G] = glLinearRGB.invert(255);
-            else out[G] = glLinearRGB.invert(g2);
+               if (g2 < 0) out[G] = 0;
+               else if (g2 > 255) out[G] = glLinearRGB.invert(255);
+               else out[G] = glLinearRGB.invert(g2);
 
-            if (b2 < 0) out[B] = 0;
-            else if (b2 > 255) out[B] = glLinearRGB.invert(255);
-            else out[B] = glLinearRGB.invert(b2);
+               if (b2 < 0) out[B] = 0;
+               else if (b2 > 255) out[B] = glLinearRGB.invert(255);
+               else out[B] = glLinearRGB.invert(b2);
+            }
+            else {
+               out[R] = uint8_t(std::clamp(r2, 0, 255));
+               out[G] = uint8_t(std::clamp(g2, 0, 255));
+               out[B] = uint8_t(std::clamp(b2, 0, 255));
+            }
          }
       }
       out_line += Self->Target->LineWidth;
       in_line += inBmp->LineWidth;
    }
+#endif
 
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR COLOURFX_Free(extColourFX *Self)
-{
-   if (Self->Matrix) { delete Self->Matrix; Self->Matrix = nullptr; }
    return ERR::Okay;
 }
 
@@ -404,7 +488,7 @@ static ERR COLOURFX_Free(extColourFX *Self)
 
 static ERR COLOURFX_Init(extColourFX *Self)
 {
-   pf::Log log;
+   kt::Log log;
 
    if (Self->SourceType IS VSF::NIL) return log.warning(ERR::UndefinedField);
 
@@ -468,39 +552,11 @@ static ERR COLOURFX_Init(extColourFX *Self)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR COLOURFX_NewObject(extColourFX *Self)
-{
-   // Configure identity matrix
-   Self->Values[0] = 1;
-   Self->Values[6] = 1;
-   Self->Values[12] = 1;
-   Self->Values[18] = 1;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -FIELD-
 Mode: Defines the algorithm that will process the input source.
 Lookup: CM
-
-*********************************************************************************************************************/
-
-static ERR COLOURFX_GET_Mode(extColourFX *Self, CM *Value)
-{
-   *Value = Self->Mode;
-   return ERR::Okay;
-}
-
-static ERR COLOURFX_SET_Mode(extColourFX *Self, CM Value)
-{
-   Self->Mode = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 Values: A list of input values for the algorithm defined by #Mode.
@@ -512,18 +568,20 @@ When values are not defined, they default to 0.
 
 *********************************************************************************************************************/
 
-static ERR COLOURFX_GET_Values(extColourFX *Self, double **Array, int *Elements)
+static ERR COLOURFX_GET_Values(extColourFX *Self, std::span<double> &Array)
 {
-   *Array = Self->Values;
-   *Elements = Self->TotalValues;
+   Array = std::span<double>(Self->Values.data(), Self->TotalValues);
    return ERR::Okay;
 }
 
-static ERR COLOURFX_SET_Values(extColourFX *Self, double *Array, int Elements)
+static ERR COLOURFX_SET_Values(extColourFX *Self, std::span<const double> &Array)
 {
-   if (Elements > std::ssize(Self->Values)) return ERR::InvalidValue;
-   if (Array) copymem(Array, Self->Values, Elements * sizeof(double));
-   clearmem(Self->Values + Elements, (std::ssize(Self->Values) - Elements) * sizeof(double));
+   const auto max_values = std::size(Self->Values);
+
+   if (Array.size() > max_values) return ERR::BufferOverflow;
+   if (Array.data()) copymem(Array.data(), Self->Values.data(), Array.size() * sizeof(double));
+   clearmem(Self->Values.data() + Array.size(), (max_values - Array.size()) * sizeof(double));
+   Self->TotalValues = Array.size();
    return ERR::Okay;
 }
 
@@ -535,13 +593,13 @@ XMLDef: Returns an SVG compliant XML string that describes the effect.
 
 *********************************************************************************************************************/
 
-static ERR COLOURFX_GET_XMLDef(extColourFX *Self, STRING *Value)
+static ERR COLOURFX_GET_XMLDef(extColourFX *Self, std::string &Value)
 {
    std::stringstream stream;
 
    stream << "feColorMatrix";
 
-   *Value = strclone(stream.str());
+   Value = stream.str();
    return ERR::Okay;
 }
 
@@ -549,23 +607,10 @@ static ERR COLOURFX_GET_XMLDef(extColourFX *Self, STRING *Value)
 
 #include "filter_colourmatrix_def.c"
 
-static const FieldDef clMode[] = {
-   { "None",           CM::NONE },
-   { "Saturate",       CM::SATURATE },
-   { "HueRotate",      CM::HUE_ROTATE },
-   { "LuminanceAlpha", CM::LUMINANCE_ALPHA },
-   { "Contrast",       CM::CONTRAST },
-   { "Brightness",     CM::BRIGHTNESS },
-   { "Hue",            CM::HUE },
-   { "Desaturate",     CM::DESATURATE },
-   { "Colourise",      CM::COLOURISE },
-   { nullptr, 0 }
-};
-
 static const FieldArray clColourFXFields[] = {
-   { "Mode",   FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RI,  COLOURFX_GET_Mode, COLOURFX_SET_Mode, &clMode },
-   { "Values", FDF_VIRTUAL|FDF_DOUBLE|FDF_ARRAY|FDF_RI, COLOURFX_GET_Values, COLOURFX_SET_Values },
-   { "XMLDef", FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R,  COLOURFX_GET_XMLDef },
+   { "Mode",   FDF_INT|FDF_LOOKUP|FDF_RI,  nullptr, nullptr, &clColourFXCM },
+   { "Values", FDF_VIRTUAL|FDF_DOUBLE|FDF_ARRAY|FDF_RI|FDF_PURE, COLOURFX_GET_Values, COLOURFX_SET_Values },
+   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE,  COLOURFX_GET_XMLDef },
    END_FIELD
 };
 

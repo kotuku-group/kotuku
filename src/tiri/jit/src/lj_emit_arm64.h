@@ -311,8 +311,9 @@ static void emit_loadk64(ASMState* as, Reg r, IRIns* ir)
 #define emit_setgl(as, r, field) \
   emit_lsptr(as, A64I_STRx, (r), (void *)&J2G(as->J)->field)
 
-// Trace number is determined from pc of exit instruction.
-#define emit_setvmstate(as, i)   UNUSED(i)
+// Trace exits determine the trace number from the exit instruction, but helpers need the active trace while on-trace.
+#define emit_setvmstate(as, i) \
+  (emit_lsptr(as, A64I_STRw, RID_TMP, (void *)&J2G(as->J)->vmstate), emit_loadi(as, RID_TMP, (i)))
 
 // -- Emit control-flow instructions --------------------------------------
 
@@ -432,4 +433,3 @@ static void emit_addptr(ASMState* as, Reg r, int32_t ofs)
 }
 
 #define emit_spsub(as, ofs)   emit_addptr(as, RID_SP, -(ofs))
-

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Code Cleanup Auditor"
+  short_description: "Audit C++ modules for cleanup opportunities"
+  default_prompt: "Use $code-cleanup-auditor to audit a Kotuku module for dead code, consolidation opportunities, and maintainability cleanup."

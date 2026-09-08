@@ -17,6 +17,8 @@ with the @XML class to provide a standards-compliant query engine with extensive
 *********************************************************************************************************************/
 
 #include <kotuku/modules/regex.h>
+#include <kotuku/modules/script.h>
+#include <kotuku/modules/module.h>
 #include "../link/unicode.h"
 #include "../xml/uri_utils.h"
 #include "functions/accessor_support.h"
@@ -39,7 +41,7 @@ extern "C" ERR load_regex(void)
 {
 #ifndef KOTUKU_STATIC
    if (not modRegex) {
-      pf::SwitchContext ctx(glContext);
+      kt::SwitchContext ctx(glContext);
       if (objModule::load("regex", &modRegex, &RegexBase) != ERR::Okay) return ERR::InitModule;
    }
 #endif
@@ -48,7 +50,7 @@ extern "C" ERR load_regex(void)
 
 //********************************************************************************************************************
 
-#ifdef ENABLE_UNIT_TESTS
+#ifdef UNIT_TESTS
 #include "unit_tests.cpp"
 #endif
 
@@ -73,12 +75,12 @@ static ERR MODExpunge(void)
    return ERR::Okay;
 }
 
-static void MODTest(CSTRING Options, int *Passed, int *Total)
+static void MODTest(std::string_view Options, int *Passed, int *Total)
 {
-#ifdef ENABLE_UNIT_TESTS
-   run_unit_tests(*Passed, *Total);
+#ifdef UNIT_TESTS
+   run_unit_tests(Options, *Passed, *Total);
 #else
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.warning("Unit tests are disabled in this build.");
 #endif
 }
@@ -87,7 +89,7 @@ static void MODTest(CSTRING Options, int *Passed, int *Total)
 
 #include "xquery_class.cpp"
 
-static STRUCTS glStructures = {
+static ModHeader::STRUCTS glStructures = {
 };
 
 KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, MODTest, MOD_IDL, &glStructures)

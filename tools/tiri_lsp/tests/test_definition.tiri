@@ -1,0 +1,285 @@
+global glDefinitionTestUri
+extern lspInitDocs, lspPathToUri, resolveDefinition, registerCoreHandlers, lspUriToPath
+
+@BeforeAll function SetupDefinitionTests(State)
+   local err, sdk_path = mSys.ResolvePath(State.folder .. '../../../')
+   assert(err is ERR_Okay, 'Failed to resolve SDK path for LSP definition tests.')
+   mSys.SetVolume('sdk', sdk_path)
+
+   loadFile('sdk:tools/tiri_lsp/include/lsp_lib.tiri')
+   assert(lspInitDocs('sdk:docs/xml/'), 'Failed to initialise LSP documentation cache.')
+   glDefinitionTestUri = lspPathToUri('sdk:tools/tiri_lsp/tests/test_definition.tiri')
+   assert(glDefinitionTestUri, 'Failed to create test document URI.')
+end
+
+function makeDoc(Content:str):table
+   return {
+      uri = glDefinitionTestUri,
+      languageId = 'tiri',
+      version = 1,
+      content = Content,
+      lineIndex = nil
+   }
+end
+
+function assertLocationLine(Locations:array<table>, Line:num, Message:str)
+   assert(Locations and #Locations > 0, Message .. ': expected at least one location.')
+   assert(Locations[0].range.start.line is Line,
+      f'{Message}: expected line {Line}, got {Locations[0].range.start.line}')
+end
+
+function assertUriContains(Locations:array<table>, Needle:str, Message:str)
+   assert(Locations and #Locations > 0, Message .. ': expected at least one location.')
+   uri = Locations[0].uri.replace('\\', '/').lower()
+   assert(uri.find(Needle.lower(), 0, true), f'{Message}: expected URI to contain {Needle}, got {Locations[0].uri}')
+end
+
+@Test function CurrentDocumentFunction()
+   doc = makeDoc('local function alpha(Value)\n   return Value\nend\n\nresult = alpha(5)\n')
+   locations = resolveDefinition(doc, { line = 4, character = 10 })
+   assertLocationLine(locations, 0, 'Function call should resolve to local function definition')
+end
+
+@Test function CurrentDocumentVariable()
+   doc = makeDoc('local answer = 42\nprint(answer)\n')
+   locations = resolveDefinition(doc, { line = 1, character = 7 })
+   assertLocationLine(locations, 0, 'Variable use should resolve to local declaration')
+end
+
+@Test function CurrentDocumentLibraryNamespace()
+   doc = makeDoc('namespace toolkit { version = "1.0" }\nprint(toolkit.version)\n')
+   locations = resolveDefinition(doc, { line = 1, character = 8 })
+   assertLocationLine(locations, 0, 'Library namespace use should resolve to its declaration')
+end
+
+@Test function CurrentDocumentImplicitVariable()
+   doc = makeDoc('win = gui.window({ title = "Test" })\nprint(win)\n')
+   locations = resolveDefinition(doc, { line = 1, character = 7 })
+   assertLocationLine(locations, 0, 'Implicit variable use should resolve to assignment declaration')
+end
+
+@Test function TableKeyNotTreatedAsDeclaration()
+   doc = makeDoc('y = 10\ntbl = {\n   y = y,\n}\nprint(y)\n')
+   locations = resolveDefinition(doc, { line = 4, character = 7 })
+   assertLocationLine(locations, 0, 'Variable use should resolve to the top-level assignment, not the table key')
+end
+
+@Test function LastTableKeyNotTreatedAsDeclaration()
+   doc = makeDoc('y = 10\ntbl = {\n   x = 1,\n   y = y\n}\nprint(y)\n')
+   locations = resolveDefinition(doc, { line = 5, character = 7 })
+   assertLocationLine(locations, 0, 'Variable use should ignore the final table key without a trailing comma')
+end
+
+@Test function CurrentDocumentParameter()
+   doc = makeDoc('function sample(Input)\n   print(Input)\nend\n')
+   locations = resolveDefinition(doc, { line = 1, character = 10 })
+   assertLocationLine(locations, 0, 'Parameter use should resolve to function parameter')
+end
+
+@Test function UnknownIdentifier()
+   doc = makeDoc('print(missing_symbol)\n')
+   locations = resolveDefinition(doc, { line = 0, character = 8 })
+   assert(not locations, 'Unknown identifiers should not resolve.')
+end
+
+@Test function ImportScriptResolution()
+   doc = makeDoc("import 'json'\n")
+   locations = resolveDefinition(doc, { line = 0, character = 9 })
+   assertUriContains(locations, '/scripts/json.tiri', 'Import should resolve to SDK script')
+end
+
+@Test function ImportNestedScriptResolution()
+   doc = makeDoc("import 'gui/window'\n")
+   locations = resolveDefinition(doc, { line = 0, character = 12 })
+   assertUriContains(locations, '/scripts/gui/window.tiri', 'Nested import should resolve to SDK script')
+end
+
+@Test function ImportListScriptResolution()
+   doc = makeDoc("import 'json', 'options'\n")
+   locations = resolveDefinition(doc, { line = 0, character = 17 })
+   assertUriContains(locations, '/scripts/options.tiri', 'Second import list item should resolve to SDK script')
+end
+
+@Test function WrappedImportListScriptResolution()
+   doc = makeDoc("import 'json',\n   'options'\n")
+   locations = resolveDefinition(doc, { line = 1, character = 6 })
+   assertUriContains(locations, '/scripts/options.tiri', 'Wrapped import list item should resolve to SDK script')
+end
+
+@Test function ImportParentRelativeScriptResolution()
+   doc = makeDoc("import '../server'\n")
+   locations = resolveDefinition(doc, { line = 0, character = 11 })
+   assertUriContains(locations, '/tools/tiri_lsp/server.tiri', 'Parent-relative import should resolve from document path')
+end
+
+@Test function ImportAliasScriptResolution()
+   doc = makeDoc("import 'json' as jsonLib\n")
+   locations = resolveDefinition(doc, { line = 0, character = 9 })
+   assertUriContains(locations, '/scripts/json.tiri', 'Aliased import should still resolve its script target')
+end
+
+@Test function ExplicitLocalImportDoesNotFallbackToSdk()
+   doc = makeDoc("import './json'\n")
+   locations = resolveDefinition(doc, { line = 0, character = 10 })
+   assert(not locations, 'Explicit local import should not fall back to SDK script resolution')
+end
+
+@Test function IncludeModuleResolution()
+   doc = makeDoc("include 'network'\n")
+   locations = resolveDefinition(doc, { line = 0, character = 10 })
+   assertUriContains(locations, '/docs/xml/modules/network.xml', 'Include should resolve to module documentation')
+end
+
+@Test function ObjectClassResolution()
+   doc = makeDoc("xml = obj.new('xml')\n")
+   locations = resolveDefinition(doc, { line = 0, character = 16 })
+   assertUriContains(locations, '/docs/xml/modules/classes/xml.xml', 'obj.new class literal should resolve to class docs')
+end
+
+@Test function ObjectConstructorClassResolution()
+   doc = makeDoc('clock = obj<Time> {}\n')
+   locations = resolveDefinition(doc, { line = 0, character = 13 })
+   assertUriContains(locations, '/docs/xml/modules/classes/time.xml',
+      'obj<Class> names should resolve to class documentation')
+end
+
+@Test function ObjectConstructorMemberResolution()
+   doc = makeDoc('clock = obj<Time> {}\nclock.year\n')
+   locations = resolveDefinition(doc, { line = 1, character = 7 })
+   assertUriContains(locations, '/docs/xml/modules/classes/time.xml',
+      'Members after obj<Class> construction should resolve through the constructed class')
+end
+
+@Test function LatestObjectConstructorAssignmentControlsMemberResolution()
+   doc = makeDoc("value = obj<Time> {}\nvalue = obj.new('File', {})\nvalue.Path\n")
+   locations = resolveDefinition(doc, { line = 2, character = 7 })
+   assertUriContains(locations, '/docs/xml/modules/classes/file.xml',
+      'The later obj.new() assignment should replace the earlier obj<Class> type for member definitions')
+end
+
+@Test function FutureObjectConstructorAssignmentDoesNotControlMemberResolution()
+   doc = makeDoc('value = obj<Time> {}\nvalue.Year\nvalue = obj<File> {}\n')
+   locations = resolveDefinition(doc, { line = 1, character = 7 })
+   assertUriContains(locations, '/docs/xml/modules/classes/time.xml',
+      'An assignment after the cursor must not change the inferred type for member definitions')
+end
+
+@Test function TrailingCommentConstructorDoesNotOverrideMemberResolution()
+   doc = makeDoc("value = obj.new('File', {}) -- value = obj.new('Time')\nvalue.Path\n")
+   locations = resolveDefinition(doc, { line = 1, character = 7 })
+   assertUriContains(locations, '/docs/xml/modules/classes/file.xml',
+      'A constructor inside a trailing comment must not override the real assignment')
+end
+
+@Test function QuotedConstructorDoesNotOverrideMemberResolution()
+   doc = makeDoc("value = obj.new('File', {})\nnote = \"value = obj.new('Time')\"\nvalue.Path\n")
+   locations = resolveDefinition(doc, { line = 2, character = 7 })
+   assertUriContains(locations, '/docs/xml/modules/classes/file.xml',
+      'A constructor inside a string literal must not override the real assignment')
+end
+
+@Test function BlockCommentConstructorDoesNotOverrideMemberResolution()
+   doc = makeDoc("value = obj.new('File', {})\n--[[\nvalue = obj.new('Time')\n]]\nvalue.Path\n")
+   locations = resolveDefinition(doc, { line = 4, character = 7 })
+   assertUriContains(locations, '/docs/xml/modules/classes/file.xml',
+      'A constructor inside a block comment must not override the real assignment')
+end
+
+@Test function MultiLineObjectConstructorResolvesMember()
+   doc = makeDoc("value = obj.new(\n   'File', {})\nvalue.Path\n")
+   locations = resolveDefinition(doc, { line = 2, character = 7 })
+   assertUriContains(locations, '/docs/xml/modules/classes/file.xml',
+      'A constructor whose class name is on the following line should still infer a type')
+end
+
+@Test function CommentedMultiLineObjectConstructorIsIgnored()
+   doc = makeDoc("value = obj<Time> {}\n-- value = obj.new(\n--    'File', {})\nvalue.Year\n")
+   locations = resolveDefinition(doc, { line = 3, character = 7 })
+   assertUriContains(locations, '/docs/xml/modules/classes/time.xml',
+      'A commented-out multi-line constructor must not override the real assignment')
+end
+
+@Test function ObjectActionResolution()
+   doc = makeDoc("xml = obj.new('xml')\nxml.acClear()\n")
+   locations = resolveDefinition(doc, { line = 1, character = 6 })
+   assertUriContains(locations, '/docs/xml/modules/classes/xml.xml', 'Object action should resolve to class docs')
+   assert(locations[0].range.start.line > 25, f'Object action should resolve below the XML class info section, got {locations[0].range.start.line}.')
+end
+
+@Test function ModuleFunctionResolution()
+   doc = makeDoc('mSys.WaitTime(0.1)\n')
+   locations = resolveDefinition(doc, { line = 0, character = 7 })
+   assertUriContains(locations, '/docs/xml/modules/core.xml', 'Module function should resolve to module docs')
+end
+
+@Test function DeclaredModuleFunctionResolution()
+   doc = makeDoc('module core as runtimeCore\nruntimeCore.WaitTime(0.1)\n')
+   locations = resolveDefinition(doc, { line = 1, character = 14 })
+   assertUriContains(locations, '/docs/xml/modules/core.xml',
+      'Declared module function should resolve to module docs')
+end
+
+@Test function HandlerAdvertisesAndResolvesDefinition()
+   server = {
+      _handlers = {},
+      verbose = false,
+      logMessage = function(Message) end
+   }
+   registerCoreHandlers(server)
+
+   init = server._handlers['initialize']({ jsonrpc = '2.0', id = 1, params = {} }, {})
+   assert(init.result.capabilities.definitionProvider is true, 'Server must advertise definitionProvider.')
+
+   doc = makeDoc('local function beta()\nend\n\nbeta()\n')
+   glDocuments[doc.uri] = doc
+
+   response = server._handlers['textDocument/definition']({
+      jsonrpc = '2.0',
+      id = 2,
+      params = {
+         textDocument = { uri = doc.uri },
+         position = { line = 3, character = 1 }
+      }
+   }, {})
+
+   glDocuments[doc.uri] = nil
+
+   assert(response.result and #response.result > 0, 'Definition handler should return a location array.')
+   assert(response.result[0].range.start.line is 0, 'Definition handler should resolve through resolver.')
+end
+
+@Test function StructAnnotationResolvesToDeclaration()
+   doc = makeDoc('struct User\n   Name: str\nend\n\nfunction describe(Person: struct<User>)\nend\n')
+   locations = resolveDefinition(doc, { line = 4, character = 34 })
+   assertLocationLine(locations, 0, 'struct<User> annotation should resolve to the struct declaration')
+end
+
+@Test function StructFieldAccessResolvesToFieldLine()
+   doc = makeDoc('struct User\n   Name: str\n   Age: int\nend\n\nu = struct.new(\'User\')\nprint(u.Age)\n')
+   locations = resolveDefinition(doc, { line = 6, character = 9 })
+   assertLocationLine(locations, 2, 'Field access should resolve to the field declaration line')
+end
+
+@Test function StructLibraryCallDoesNotResolveAsStruct()
+   doc = makeDoc('u = struct.new(\'Missing\')\nprint(u)\n')
+   locations = resolveDefinition(doc, { line = 1, character = 7 })
+   assertLocationLine(locations, 0, 'struct.new() assignment should still resolve as a variable')
+end
+
+@Test function StructFieldDefinitionUsesInstanceType()
+   doc = makeDoc('struct A Value: int end\nstruct B Value: float end\na = struct.new(\'A\')\nprint(a.Value)\n')
+   locations = resolveDefinition(doc, { line = 3, character = 10 })
+   assertLocationLine(locations, 0, 'Field access should resolve through the instance struct type')
+end
+
+@Test function EndTerminatedStructDeclarationResolves()
+   doc = makeDoc('struct User\n   Name: str\nend\n\nfunction describe(Person: struct<User>)\nend\n')
+   locations = resolveDefinition(doc, { line = 4, character = 34 })
+   assertLocationLine(locations, 0, 'An end-terminated struct declaration should resolve')
+end
+
+@Test function LaterStructAssignmentDoesNotAffectEarlierDefinition()
+   doc = makeDoc('struct A Value: int end\nstruct B Value: float end\na = struct<A> { }\nprint(a.Value)\na = struct<B> { }\n')
+   locations = resolveDefinition(doc, { line = 3, character = 10 })
+   assertLocationLine(locations, 0, 'A later assignment must not change the type at an earlier field access')
+end

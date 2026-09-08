@@ -8,17 +8,12 @@
 
 #define MODVERSION_NETWORK (1)
 
-#ifdef __cplusplus
-#include <unordered_set>
-#include <map>
-#include <mutex>
-#endif
-
 class objNetClient;
 class objClientSocket;
 class objProxy;
 class objNetLookup;
 class objNetSocket;
+class objNetServer;
 
 // Address types for the IPAddress structure.
 
@@ -28,16 +23,18 @@ enum class IPADDR : int {
    V6 = 1,
 };
 
+// NetSocket options
+
 enum class NSF : uint32_t {
    NIL = 0,
-   SERVER = 0x00000001,
-   SSL = 0x00000002,
-   DISABLE_SERVER_VERIFY = 0x00000004,
-   MULTI_CONNECT = 0x00000008,
-   SYNCHRONOUS = 0x00000010,
-   LOG_ALL = 0x00000020,
-   BROADCAST = 0x00000040,
-   UDP = 0x00000080,
+   SSL = 0x00000001,
+   SYNCHRONOUS = 0x00000002,
+   LOG_ALL = 0x00000004,
+   BROADCAST = 0x00000008,
+   UDP = 0x00000010,
+   DISABLE_SERVER_VERIFY = 0x00000020,
+   MULTI_CONNECT = 0x00000040,
+   KEEP_ALIVE = 0x00000080,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(NSF)
@@ -100,14 +97,10 @@ enum class NTC : int {
 #define SCV_APPLICATION_VERIFICATION 50
 
 
-#if defined(ENABLE_SSL) && !defined(_WIN32)
- #include "openssl/ssl.h"
-#endif
-
 #ifdef __linux__
 typedef int SOCKET_HANDLE;
 #elif _WIN32
-typedef uint32_t SOCKET_HANDLE; // NOTE: declared as uint32 instead of SOCKET for now to avoid including winsock.h
+typedef uintptr_t SOCKET_HANDLE; // Pointer-sized storage for Winsock SOCKET handles without including winsock.h
 #elif __APPLE__
 typedef int SOCKET_HANDLE;
 #else
@@ -128,18 +121,55 @@ class objNetClient : public Object {
    static constexpr CLASSID CLASS_ID = CLASSID::NETCLIENT;
    static constexpr CSTRING CLASS_NAME = "NetClient";
 
-   using create = pf::Create<objNetClient>;
+   using create = kt::Create<objNetClient>;
+   objNetClient(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
-   char IP[8];                       // The IP address of the client.
-   objNetClient * Next;              // The next client IP with connections to the server socket.
-   objNetClient * Prev;              // The previous client IP with connections to the server socket.
+   objNetClient * Next;              // The next client IP with connections to the NetServer.
+   objNetClient * Prev;              // The previous client IP with connections to the NetServer.
    objClientSocket * Connections;    // Pointer to the first established socket connection for the client IP.
    APTR ClientData;                  // A custom pointer available for userspace.
    int  TotalConnections;            // The total number of current socket connections for the IP address.
 
+#ifdef PRV_NETCLIENT
+    struct IPAddress IP; // IP address of the client.
+#endif
+
    // Action stubs
 
    inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+   inline ERR getNext(objNetClient * &Value) noexcept {
+      Value = this->Next;
+      return ERR::Okay;
+   }
+
+   inline ERR getPrev(objNetClient * &Value) noexcept {
+      Value = this->Prev;
+      return ERR::Okay;
+   }
+
+   inline ERR getConnections(objClientSocket * &Value) noexcept {
+      Value = this->Connections;
+      return ERR::Okay;
+   }
+
+   inline ERR getClientData(APTR &Value) noexcept {
+      Value = this->ClientData;
+      return ERR::Okay;
+   }
+
+   inline ERR getTotalConnections(int &Value) noexcept {
+      Value = this->TotalConnections;
+      return ERR::Okay;
+   }
+
+   inline ERR getIP(struct IPAddress * &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      return field->GetValue(this, &Value);
+   }
+
 
    // Customised field setting
 
@@ -159,7 +189,8 @@ class objClientSocket : public Object {
    static constexpr CLASSID CLASS_ID = CLASSID::CLIENTSOCKET;
    static constexpr CSTRING CLASS_NAME = "ClientSocket";
 
-   using create = pf::Create<objClientSocket>;
+   using create = kt::Create<objClientSocket>;
+   objClientSocket(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    int64_t ConnectTime;       // System time for the creation of this socket.
    objClientSocket * Prev;    // Previous socket in the chain.
@@ -172,25 +203,21 @@ class objClientSocket : public Object {
 
    inline ERR deactivate() noexcept { return Action(AC::Deactivate, this, nullptr); }
    inline ERR init() noexcept { return InitObject(this); }
-   template <class T, class U> ERR read(APTR Buffer, T Size, U *Result) noexcept {
-      static_assert(std::is_integral<U>::value, "Result value must be an integer type");
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
+   template <class T> ERR read(std::span<int8_t> Buffer, T *Result) noexcept {
+      static_assert(std::is_integral<T>::value, "Result value must be an integer type");
+      struct acRead read = { Buffer };
       if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
-         *Result = static_cast<U>(read.Result);
+         *Result = T(read.Result);
          return ERR::Okay;
       }
       else { *Result = 0; return error; }
    }
-   template <class T> ERR read(APTR Buffer, T Size) noexcept {
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
+   inline ERR read(std::span<int8_t> Buffer) noexcept {
+      struct acRead read = { Buffer };
       return Action(AC::Read, this, &read);
    }
-   inline ERR write(CPTR Buffer, int Size, int *Result = nullptr) noexcept {
-      struct acWrite write = { (int8_t *)Buffer, Size };
+   inline ERR write(std::span<const int8_t> Buffer, int *Result = nullptr) noexcept {
+      struct acWrite write = { Buffer };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -201,7 +228,7 @@ class objClientSocket : public Object {
       }
    }
    inline ERR write(std::string Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { (int8_t *)Buffer.c_str(), int(Buffer.size()) };
+      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()) };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -211,18 +238,45 @@ class objClientSocket : public Object {
          return error;
       }
    }
-   inline int writeResult(CPTR Buffer, int Size) noexcept {
-      struct acWrite write = { (int8_t *)Buffer, Size };
-      if (Action(AC::Write, this, &write) IS ERR::Okay) return write.Result;
-      else return 0;
+
+   // Customised field getting
+
+   inline ERR getConnectTime(int64_t &Value) noexcept {
+      Value = this->ConnectTime;
+      return ERR::Okay;
    }
+
+   inline ERR getPrev(objClientSocket * &Value) noexcept {
+      Value = this->Prev;
+      return ERR::Okay;
+   }
+
+   inline ERR getNext(objClientSocket * &Value) noexcept {
+      Value = this->Next;
+      return ERR::Okay;
+   }
+
+   inline ERR getClient(objNetClient * &Value) noexcept {
+      Value = this->Client;
+      return ERR::Okay;
+   }
+
+   inline ERR getClientData(APTR &Value) noexcept {
+      Value = this->ClientData;
+      return ERR::Okay;
+   }
+
+   inline ERR getState(NTC &Value) noexcept {
+      Value = this->State;
+      return ERR::Okay;
+   }
+
 
    // Customised field setting
 
    inline ERR setState(const NTC Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
 };
@@ -245,97 +299,141 @@ class objProxy : public Object {
    static constexpr CLASSID CLASS_ID = CLASSID::PROXY;
    static constexpr CSTRING CLASS_NAME = "Proxy";
 
-   using create = pf::Create<objProxy>;
+   using create = kt::Create<objProxy>;
+   objProxy(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
-   STRING NetworkFilter;    // The name of the network that the proxy is limited to.
-   STRING GatewayFilter;    // The IP address of the gateway that the proxy is limited to.
-   STRING Username;         // The username to use when authenticating against the proxy server.
-   STRING Password;         // The password to use when authenticating against the proxy server.
-   STRING ProxyName;        // A human readable name for the proxy server entry.
-   STRING Server;           // The destination address of the proxy server - may be an IP address or resolvable domain name.
-   int    Port;             // Defines the ports supported by this proxy.
-   int    ServerPort;       // The port that is used for proxy server communication.
-   int    Enabled;          // All proxies are enabled by default until this field is set to false.
-   int    Record;           // The unique ID of the current proxy record.
-   int    Host;             // If true, the proxy settings are derived from the host operating system's default settings.
+   std::string NetworkFilter;    // The name of the network that the proxy is limited to.
+   std::string GatewayFilter;    // The IP address of the gateway that the proxy is limited to.
+   std::string Username;         // The username to use when authenticating against the proxy server.
+   std::string Password;         // The password to use when authenticating against the proxy server.
+   std::string ProxyName;        // A human readable name for the proxy server entry.
+   std::string Server;           // The destination address of the proxy server - may be an IP address or resolvable domain name.
+   int Port;                     // Defines the ports supported by this proxy.
+   int ServerPort;               // The port that is used for proxy server communication.
+   int Enabled;                  // All proxies are enabled by default until this field is set to false.
+   int Record;                   // The unique ID of the current proxy record.
+   int Host;                     // If true, the proxy settings are derived from the host operating system's default settings.
 
    // Action stubs
 
    inline ERR disable() noexcept { return Action(AC::Disable, this, nullptr); }
    inline ERR enable() noexcept { return Action(AC::Enable, this, nullptr); }
-   inline ERR init() noexcept { return InitObject(this); }
    inline ERR saveSettings() noexcept { return Action(AC::SaveSettings, this, nullptr); }
+   inline ERR init() noexcept { return InitObject(this); }
    inline ERR deleteRecord() noexcept {
-      return(Action(AC(-1), this, nullptr));
+      return Action(AC(-1), this, nullptr);
    }
    inline ERR find(int Port, int Enabled) noexcept {
       struct prx::Find args = { Port, Enabled };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
    inline ERR findNext() noexcept {
-      return(Action(AC(-3), this, nullptr));
+      return Action(AC(-3), this, nullptr);
    }
+
+   // Customised field getting
+
+   inline ERR getNetworkFilter(std::string_view &Value) noexcept {
+      Value = this->NetworkFilter;
+      return ERR::Okay;
+   }
+
+   inline ERR getGatewayFilter(std::string_view &Value) noexcept {
+      Value = this->GatewayFilter;
+      return ERR::Okay;
+   }
+
+   inline ERR getUsername(std::string_view &Value) noexcept {
+      Value = this->Username;
+      return ERR::Okay;
+   }
+
+   inline ERR getPassword(std::string_view &Value) noexcept {
+      Value = this->Password;
+      return ERR::Okay;
+   }
+
+   inline ERR getProxyName(std::string_view &Value) noexcept {
+      Value = this->ProxyName;
+      return ERR::Okay;
+   }
+
+   inline ERR getServer(std::string_view &Value) noexcept {
+      Value = this->Server;
+      return ERR::Okay;
+   }
+
+   inline ERR getPort(int &Value) noexcept {
+      Value = this->Port;
+      return ERR::Okay;
+   }
+
+   inline ERR getServerPort(int &Value) noexcept {
+      Value = this->ServerPort;
+      return ERR::Okay;
+   }
+
+   inline ERR getEnabled(int &Value) noexcept {
+      Value = this->Enabled;
+      return ERR::Okay;
+   }
+
+   inline ERR getRecord(int &Value) noexcept {
+      Value = this->Record;
+      return ERR::Okay;
+   }
+
 
    // Customised field setting
 
-   template <class T> inline ERR setNetworkFilter(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[12];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+   inline ERR setNetworkFilter(const std::string_view &Value) noexcept {
+      this->NetworkFilter = Value;
+      return ERR::Okay;
    }
 
-   template <class T> inline ERR setGatewayFilter(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[11];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+   inline ERR setGatewayFilter(const std::string_view &Value) noexcept {
+      this->GatewayFilter = Value;
+      return ERR::Okay;
    }
 
-   template <class T> inline ERR setUsername(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[14];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+   inline ERR setUsername(const std::string_view &Value) noexcept {
+      this->Username = Value;
+      return ERR::Okay;
    }
 
-   template <class T> inline ERR setPassword(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[3];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+   inline ERR setPassword(const std::string_view &Value) noexcept {
+      this->Password = Value;
+      return ERR::Okay;
    }
 
-   template <class T> inline ERR setProxyName(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+   inline ERR setProxyName(const std::string_view &Value) noexcept {
+      this->ProxyName = Value;
+      return ERR::Okay;
    }
 
-   template <class T> inline ERR setServer(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[5];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+   inline ERR setServer(const std::string_view &Value) noexcept {
+      this->Server = Value;
+      return ERR::Okay;
    }
 
    inline ERR setPort(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[7];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setServerPort(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[11];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setEnabled(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[9];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setRecord(const int Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[4];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
 };
@@ -347,10 +445,10 @@ class objProxy : public Object {
 // NetLookup methods
 
 namespace nl {
-struct ResolveName { CSTRING HostName; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct ResolveAddress { CSTRING Address; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct BlockingResolveName { CSTRING HostName; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct BlockingResolveAddress { CSTRING Address; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ResolveName { std::string_view HostName; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ResolveAddress { std::string_view Address; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct BlockingResolveName { std::string_view HostName; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct BlockingResolveAddress { std::string_view Address; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -359,7 +457,8 @@ class objNetLookup : public Object {
    static constexpr CLASSID CLASS_ID = CLASSID::NETLOOKUP;
    static constexpr CSTRING CLASS_NAME = "NetLookup";
 
-   using create = pf::Create<objNetLookup>;
+   using create = kt::Create<objNetLookup>;
+   objNetLookup(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    int64_t ClientData;    // Optional user data storage
    NLF     Flags;         // Optional flags
@@ -367,22 +466,53 @@ class objNetLookup : public Object {
    // Action stubs
 
    inline ERR init() noexcept { return InitObject(this); }
-   inline ERR resolveName(CSTRING HostName) noexcept {
+   inline ERR resolveName(const std::string_view &HostName) noexcept {
       struct nl::ResolveName args = { HostName };
-      return(Action(AC(-1), this, &args));
+      return Action(AC(-1), this, &args);
    }
-   inline ERR resolveAddress(CSTRING Address) noexcept {
+   inline ERR resolveAddress(const std::string_view &Address) noexcept {
       struct nl::ResolveAddress args = { Address };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
-   inline ERR blockingResolveName(CSTRING HostName) noexcept {
+   inline ERR blockingResolveName(const std::string_view &HostName) noexcept {
       struct nl::BlockingResolveName args = { HostName };
-      return(Action(AC(-3), this, &args));
+      return Action(AC(-3), this, &args);
    }
-   inline ERR blockingResolveAddress(CSTRING Address) noexcept {
+   inline ERR blockingResolveAddress(const std::string_view &Address) noexcept {
       struct nl::BlockingResolveAddress args = { Address };
-      return(Action(AC(-4), this, &args));
+      return Action(AC(-4), this, &args);
    }
+
+   // Customised field getting
+
+   inline ERR getClientData(int64_t &Value) noexcept {
+      Value = this->ClientData;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(NLF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getAddresses(std::span<struct IPAddress> &Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
+      auto get_field = (ERR (*)(APTR, std::span<struct IPAddress> &))field->GetValue;
+      return get_field(this, Value);
+   }
+
+   inline ERR getHostName(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[9];
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      return get_field(this, Value);
+   }
+
+   inline ERR getCallback(FUNCTION * &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
+      return get_field(this, Value);
+   }
+
 
    // Customised field setting
 
@@ -396,10 +526,9 @@ class objNetLookup : public Object {
       return ERR::Okay;
    }
 
-   inline ERR setCallback(FUNCTION Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+   inline ERR setCallback(const FUNCTION Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
 };
@@ -411,14 +540,12 @@ class objNetLookup : public Object {
 // NetSocket methods
 
 namespace ns {
-struct Connect { CSTRING Address; int Port; double Timeout; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct GetLocalIPAddress { struct IPAddress * Address; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DisconnectClient { objNetClient * Client; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DisconnectSocket { objClientSocket * Socket; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SendTo { struct IPAddress * Dest; APTR Data; int Length; int BytesSent; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct RecvFrom { struct IPAddress * Source; APTR Buffer; int BufferSize; int BytesRead; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct JoinMulticastGroup { CSTRING Group; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct LeaveMulticastGroup { CSTRING Group; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Connect { std::string_view Address; int Port; double Timeout; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetLocalIPAddress { struct IPAddress *Address; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SendTo { struct IPAddress *Dest; std::span<const int8_t> Data; int BytesSent; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct RecvFrom { struct IPAddress *Source; std::span<int8_t> Buffer; int BytesRead; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct JoinMulticastGroup { std::string_view Group; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct LeaveMulticastGroup { std::string_view Group; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -427,53 +554,42 @@ class objNetSocket : public Object {
    static constexpr CLASSID CLASS_ID = CLASSID::NETSOCKET;
    static constexpr CSTRING CLASS_NAME = "NetSocket";
 
-   using create = pf::Create<objNetSocket>;
+   using create = kt::Create<objNetSocket>;
+   objNetSocket(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
-   objNetClient * Clients;    // For server sockets, lists all clients connected to the server.
-   APTR   ClientData;         // A client-defined value that can be useful in action notify events.
-   STRING Address;            // An IP address or domain name to connect to.
-   STRING SSLCertificate;     // SSL certificate file to use if in server mode.
-   STRING SSLPrivateKey;      // Private key file to use if in server mode.
-   STRING SSLKeyPassword;     // SSL private key password.
-   NTC    State;              // The current connection state of the NetSocket object.
-   ERR    Error;              // Information about the last error that occurred during a NetSocket operation
-   int    Port;               // The port number to use for connections.
-   NSF    Flags;              // Optional flags.
-   int    TotalClients;       // Indicates the total number of clients currently connected to the socket (if in server mode).
-   int    Backlog;            // The maximum number of connections that can be queued against the socket.
-   int    ClientLimit;        // The maximum number of clients (unique IP addresses) that can be connected to a server socket.
-   int    SocketLimit;        // Limits the number of connected sockets per client IP address.
-   int    MsgLimit;           // Limits the size of incoming and outgoing data packets.
-   int    MaxPacketSize;      // Maximum UDP packet size for sending and receiving data.
-   int    MulticastTTL;       // Time-to-live (hop limit) for multicast packets.
+   APTR ClientData;        // A client-defined value that can be useful in action notify events.
+   std::string Address;    // An IP address or domain name to connect to.
+   NTC  State;             // The current connection state of the NetSocket object.
+   ERR  Error;             // Information about the last error that occurred during a NetSocket operation
+   int  Port;              // The port number to use for connections.
+   NSF  Flags;             // Optional flags.
+   int  MsgLimit;          // Limits the size of incoming and outgoing data packets.
+   int  MaxPacketSize;     // Maximum UDP packet size for sending and receiving data.
+   int  MulticastTTL;      // Time-to-live (hop limit) for multicast packets.
 
    // Action stubs
 
-   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, const void *Buffer, int Size) noexcept {
-      struct acDataFeed args = { Object, Datatype, Buffer, Size };
+   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, std::span<const int8_t> Buffer) noexcept {
+      struct acDataFeed args = { Object, Datatype, Buffer };
       return Action(AC::DataFeed, this, &args);
    }
    inline ERR disable() noexcept { return Action(AC::Disable, this, nullptr); }
    inline ERR init() noexcept { return InitObject(this); }
-   template <class T, class U> ERR read(APTR Buffer, T Size, U *Result) noexcept {
-      static_assert(std::is_integral<U>::value, "Result value must be an integer type");
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
+   template <class T> ERR read(std::span<int8_t> Buffer, T *Result) noexcept {
+      static_assert(std::is_integral<T>::value, "Result value must be an integer type");
+      struct acRead read = { Buffer };
       if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
-         *Result = static_cast<U>(read.Result);
+         *Result = T(read.Result);
          return ERR::Okay;
       }
       else { *Result = 0; return error; }
    }
-   template <class T> ERR read(APTR Buffer, T Size) noexcept {
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
+   inline ERR read(std::span<int8_t> Buffer) noexcept {
+      struct acRead read = { Buffer };
       return Action(AC::Read, this, &read);
    }
-   inline ERR write(CPTR Buffer, int Size, int *Result = nullptr) noexcept {
-      struct acWrite write = { (int8_t *)Buffer, Size };
+   inline ERR write(std::span<const int8_t> Buffer, int *Result = nullptr) noexcept {
+      struct acWrite write = { Buffer };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -484,7 +600,7 @@ class objNetSocket : public Object {
       }
    }
    inline ERR write(std::string Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { (int8_t *)Buffer.c_str(), int(Buffer.size()) };
+      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()) };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -494,47 +610,128 @@ class objNetSocket : public Object {
          return error;
       }
    }
-   inline int writeResult(CPTR Buffer, int Size) noexcept {
-      struct acWrite write = { (int8_t *)Buffer, Size };
-      if (Action(AC::Write, this, &write) IS ERR::Okay) return write.Result;
-      else return 0;
-   }
-   inline ERR connect(CSTRING Address, int Port, double Timeout) noexcept {
+   inline ERR connect(const std::string_view &Address, int Port, double Timeout) noexcept {
       struct ns::Connect args = { Address, Port, Timeout };
-      return(Action(AC(-1), this, &args));
+      return Action(AC(-1), this, &args);
    }
    inline ERR getLocalIPAddress(struct IPAddress * Address) noexcept {
       struct ns::GetLocalIPAddress args = { Address };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
-   inline ERR disconnectClient(objNetClient * Client) noexcept {
-      struct ns::DisconnectClient args = { Client };
-      return(Action(AC(-3), this, &args));
-   }
-   inline ERR disconnectSocket(objClientSocket * Socket) noexcept {
-      struct ns::DisconnectSocket args = { Socket };
-      return(Action(AC(-4), this, &args));
-   }
-   inline ERR sendTo(struct IPAddress * Dest, APTR Data, int Length, int * BytesSent) noexcept {
-      struct ns::SendTo args = { Dest, Data, Length, (int)0 };
-      ERR error = Action(AC(-5), this, &args);
+   inline ERR sendTo(struct IPAddress * Dest, std::span<const int8_t> Data, int * BytesSent) noexcept {
+      struct ns::SendTo args = { Dest, Data, (int)0 };
+      ERR error = Action(AC(-3), this, &args);
       if (BytesSent) *BytesSent = args.BytesSent;
-      return(error);
+      return error;
    }
-   inline ERR recvFrom(struct IPAddress * Source, APTR Buffer, int BufferSize, int * BytesRead) noexcept {
-      struct ns::RecvFrom args = { Source, Buffer, BufferSize, (int)0 };
-      ERR error = Action(AC(-6), this, &args);
+   inline ERR recvFrom(struct IPAddress * Source, std::span<int8_t> Buffer, int * BytesRead) noexcept {
+      struct ns::RecvFrom args = { Source, Buffer, (int)0 };
+      ERR error = Action(AC(-4), this, &args);
       if (BytesRead) *BytesRead = args.BytesRead;
-      return(error);
+      return error;
    }
-   inline ERR joinMulticastGroup(CSTRING Group) noexcept {
+   inline ERR joinMulticastGroup(const std::string_view &Group) noexcept {
       struct ns::JoinMulticastGroup args = { Group };
-      return(Action(AC(-7), this, &args));
+      return Action(AC(-5), this, &args);
    }
-   inline ERR leaveMulticastGroup(CSTRING Group) noexcept {
+   inline ERR leaveMulticastGroup(const std::string_view &Group) noexcept {
       struct ns::LeaveMulticastGroup args = { Group };
-      return(Action(AC(-8), this, &args));
+      return Action(AC(-6), this, &args);
    }
+
+   // Customised field getting
+
+   inline ERR getClientData(APTR &Value) noexcept {
+      Value = this->ClientData;
+      return ERR::Okay;
+   }
+
+   inline ERR getAddress(std::string_view &Value) noexcept {
+      Value = this->Address;
+      return ERR::Okay;
+   }
+
+   inline ERR getState(NTC &Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getError(ERR &Value) noexcept {
+      Value = this->Error;
+      return ERR::Okay;
+   }
+
+   inline ERR getPort(int &Value) noexcept {
+      Value = this->Port;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(NSF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getMsgLimit(int &Value) noexcept {
+      Value = this->MsgLimit;
+      return ERR::Okay;
+   }
+
+   inline ERR getMaxPacketSize(int &Value) noexcept {
+      Value = this->MaxPacketSize;
+      return ERR::Okay;
+   }
+
+   inline ERR getMulticastTTL(int &Value) noexcept {
+      Value = this->MulticastTTL;
+      return ERR::Okay;
+   }
+
+   inline ERR getHandle(APTR &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getFeedback(FUNCTION * &Value) noexcept {
+      auto field = &this->Class->Dictionary[13];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getIncoming(FUNCTION * &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getOutgoing(FUNCTION * &Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getOutQueueSize(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[15];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
@@ -543,38 +740,19 @@ class objNetSocket : public Object {
       return ERR::Okay;
    }
 
-   template <class T> inline ERR setAddress(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
-   }
-
-   template <class T> inline ERR setSSLCertificate(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[25];
-      return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
-   }
-
-   template <class T> inline ERR setSSLPrivateKey(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
-   }
-
-   template <class T> inline ERR setSSLKeyPassword(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[21];
-      return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
+   inline ERR setAddress(const std::string_view &Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
+      this->Address = Value;
+      return ERR::Okay;
    }
 
    inline ERR setState(const NTC Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setPort(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Port = Value;
       return ERR::Okay;
    }
@@ -584,62 +762,177 @@ class objNetSocket : public Object {
       return ERR::Okay;
    }
 
-   inline ERR setBacklog(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
-      this->Backlog = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setClientLimit(const int Value) noexcept {
-      this->ClientLimit = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setSocketLimit(const int Value) noexcept {
-      this->SocketLimit = Value;
-      return ERR::Okay;
-   }
-
    inline ERR setMsgLimit(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->MsgLimit = Value;
       return ERR::Okay;
    }
 
    inline ERR setMaxPacketSize(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->MaxPacketSize = Value;
       return ERR::Okay;
    }
 
    inline ERR setMulticastTTL(const int Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->MulticastTTL = Value;
       return ERR::Okay;
    }
 
    inline ERR setHandle(APTR Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(target, field, 0x08000500, Value, 1);
+      auto field = &this->Class->Dictionary[5];
+      return field->WriteValue(this, field, 0x08000508, Value);
    }
 
-   inline ERR setFeedback(FUNCTION Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[26];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+   inline ERR setFeedback(const FUNCTION Value) noexcept {
+      auto field = &this->Class->Dictionary[13];
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
-   inline ERR setIncoming(FUNCTION Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[15];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+   inline ERR setIncoming(const FUNCTION Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
-   inline ERR setOutgoing(FUNCTION Value) noexcept {
-      auto target = this;
+   inline ERR setOutgoing(const FUNCTION Value) noexcept {
       auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
+   }
+
+};
+
+// NetServer class definition
+
+#define VER_NETSERVER (1.000000)
+
+// NetServer methods
+
+namespace ns {
+struct DisconnectClient { objNetClient *Client; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DisconnectSocket { objClientSocket *Socket; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+
+} // namespace
+
+class objNetServer : public objNetSocket {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::NETSERVER;
+   static constexpr CSTRING CLASS_NAME = "NetServer";
+
+   using create = kt::Create<objNetServer>;
+   objNetServer(objMetaClass *pClass, OBJECTID pUID) noexcept : objNetSocket(pClass, pUID) {}
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+   template <class T> ERR read(std::span<int8_t> Buffer, T *Result) noexcept {
+      static_assert(std::is_integral<T>::value, "Result value must be an integer type");
+      struct acRead read = { Buffer };
+      if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
+         *Result = T(read.Result);
+         return ERR::Okay;
+      }
+      else { *Result = 0; return error; }
+   }
+   inline ERR read(std::span<int8_t> Buffer) noexcept {
+      struct acRead read = { Buffer };
+      return Action(AC::Read, this, &read);
+   }
+   inline ERR write(std::span<const int8_t> Buffer, int *Result = nullptr) noexcept {
+      struct acWrite write = { Buffer };
+      if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
+         if (Result) *Result = write.Result;
+         return ERR::Okay;
+      }
+      else {
+         if (Result) *Result = 0;
+         return error;
+      }
+   }
+   inline ERR write(std::string Buffer, int *Result = nullptr) noexcept {
+      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()) };
+      if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
+         if (Result) *Result = write.Result;
+         return ERR::Okay;
+      }
+      else {
+         if (Result) *Result = 0;
+         return error;
+      }
+   }
+   inline ERR disconnectClient(objNetClient * Client) noexcept {
+      struct ns::DisconnectClient args = { Client };
+      return Action(AC(-7), this, &args);
+   }
+   inline ERR disconnectSocket(objClientSocket * Socket) noexcept {
+      struct ns::DisconnectSocket args = { Socket };
+      return Action(AC(-8), this, &args);
+   }
+
+   // Customised field getting
+
+   inline ERR getClients(OBJECTPTR &Value) noexcept {
+      Value = *((OBJECTPTR *)(((int8_t *)this) + CLASS_OFFSET_NETSOCKET + 0));
+      return ERR::Okay;
+   }
+
+   inline ERR getSSLCertificate(std::string_view &Value) noexcept {
+      Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET_NETSOCKET + 8));
+      return ERR::Okay;
+   }
+
+   inline ERR getSSLKeyPassword(std::string_view &Value) noexcept {
+      Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET_NETSOCKET + 72));
+      return ERR::Okay;
+   }
+
+   inline ERR getBacklog(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_NETSOCKET + 104));
+      return ERR::Okay;
+   }
+
+   inline ERR getClientLimit(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_NETSOCKET + 108));
+      return ERR::Okay;
+   }
+
+   inline ERR getSocketLimit(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_NETSOCKET + 112));
+      return ERR::Okay;
+   }
+
+   inline ERR getTotalClients(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_NETSOCKET + 116));
+      return ERR::Okay;
+   }
+
+
+   // Customised field setting
+
+   inline ERR setSSLCertificate(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      return field->WriteValue(this, field, 0x00804500, &Value);
+   }
+
+   inline ERR setSSLKeyPassword(const std::string_view &Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
+      auto field = &this->Class->Dictionary[20];
+      return field->WriteValue(this, field, 0x00804500, &Value);
+   }
+
+   inline ERR setBacklog(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[23];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setClientLimit(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[25];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setSocketLimit(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[24];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
 };
@@ -656,36 +949,35 @@ inline ERR nsCreate(objNetSocket **NewNetSocketOut, OBJECTID ListenerID, APTR Cl
 
 struct NetworkBase {
 #ifndef KOTUKU_STATIC
-   ERR (*_StrToAddress)(CSTRING String, struct IPAddress *Address);
-   CSTRING (*_AddressToStr)(struct IPAddress *IPAddress);
+   ERR (*_StrToAddress)(const std::string_view &String, struct IPAddress *Address);
+   ERR (*_AddressToStr)(struct IPAddress *IPAddress, std::string *Result);
    uint32_t (*_HostToShort)(uint32_t Value);
    uint32_t (*_HostToLong)(uint32_t Value);
    uint32_t (*_ShortToHost)(uint32_t Value);
    uint32_t (*_LongToHost)(uint32_t Value);
-   ERR (*_SetSSL)(objNetSocket *NetSocket, CSTRING Command, CSTRING Value);
+   ERR (*_SetSSL)(objNetSocket *NetSocket, const std::string_view &Command, const std::string_view &Value);
 #endif // KOTUKU_STATIC
 };
 
 #if !defined(KOTUKU_STATIC) and !defined(PRV_NETWORK_MODULE)
 extern struct NetworkBase *NetworkBase;
 namespace net {
-inline ERR StrToAddress(CSTRING String, struct IPAddress *Address) { return NetworkBase->_StrToAddress(String,Address); }
-inline CSTRING AddressToStr(struct IPAddress *IPAddress) { return NetworkBase->_AddressToStr(IPAddress); }
+inline ERR StrToAddress(const std::string_view &String, struct IPAddress *Address) { return NetworkBase->_StrToAddress(String,Address); }
+inline ERR AddressToStr(struct IPAddress *IPAddress, std::string *Result) { return NetworkBase->_AddressToStr(IPAddress,Result); }
 inline uint32_t HostToShort(uint32_t Value) { return NetworkBase->_HostToShort(Value); }
 inline uint32_t HostToLong(uint32_t Value) { return NetworkBase->_HostToLong(Value); }
 inline uint32_t ShortToHost(uint32_t Value) { return NetworkBase->_ShortToHost(Value); }
 inline uint32_t LongToHost(uint32_t Value) { return NetworkBase->_LongToHost(Value); }
-inline ERR SetSSL(objNetSocket *NetSocket, CSTRING Command, CSTRING Value) { return NetworkBase->_SetSSL(NetSocket,Command,Value); }
+inline ERR SetSSL(objNetSocket *NetSocket, const std::string_view &Command, const std::string_view &Value) { return NetworkBase->_SetSSL(NetSocket,Command,Value); }
 } // namespace
 #else
 namespace net {
-extern ERR StrToAddress(CSTRING String, struct IPAddress *Address);
-extern CSTRING AddressToStr(struct IPAddress *IPAddress);
+extern ERR StrToAddress(const std::string_view &String, struct IPAddress *Address);
+extern ERR AddressToStr(struct IPAddress *IPAddress, std::string *Result);
 extern uint32_t HostToShort(uint32_t Value);
 extern uint32_t HostToLong(uint32_t Value);
 extern uint32_t ShortToHost(uint32_t Value);
 extern uint32_t LongToHost(uint32_t Value);
-extern ERR SetSSL(objNetSocket *NetSocket, CSTRING Command, CSTRING Value);
+extern ERR SetSSL(objNetSocket *NetSocket, const std::string_view &Command, const std::string_view &Value);
 } // namespace
 #endif // KOTUKU_STATIC
-

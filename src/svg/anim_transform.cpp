@@ -5,7 +5,7 @@ void anim_transform::perform()
 
    if ((end_time) and (!freeze)) return;
 
-   pf::ScopedObjectLock<objVector> vector(target_vector, 1000);
+   kt::ScopedObjectLock<objVector> vector(target_vector, 1000);
    if (vector.granted()) {
       vec::ResetMatrix(&matrix);
       switch(type) {
@@ -17,13 +17,12 @@ void anim_transform::perform()
                if (calc_mode IS CMODE::PACED) {
                   const auto dist_pos = seek * get_paired_dist();
                   for (i=0; (i < std::ssize(distances)-2) and (distances[i+1] < dist_pos); i++);
-                  seek_to = std::clamp((dist_pos - distances[i]) / (distances[i+1] - distances[i]), 0.0, 1.0);
+                  seek_to = interval_seek(dist_pos, distances[i], distances[i+1]);
                }
                else {
                   i = int((values.size()-1) * seek);
 
-                  const double mod = 1.0 / double(values.size() - 1);
-                  seek_to = (seek >= 1.0) ? 1.0 : fmod(seek, mod) / mod;
+                  seek_to = mod_seek(seek, values.size());
                }
 
                if (i >= std::ssize(values)-1) i = std::ssize(values) - 2;
@@ -73,14 +72,13 @@ void anim_transform::perform()
                if (calc_mode IS CMODE::PACED) {
                   const auto dist_pos = seek * get_paired_dist();
                   for (i=0; (i < std::ssize(distances)-1) and (distances[i+1] < dist_pos); i++);
-                  seek_to = (dist_pos - distances[i]) / (distances[i+1] - distances[i]);
+                  seek_to = interval_seek(dist_pos, distances[i], distances[i+1]);
                }
                else {
                   i = int((values.size()-1) * seek);
                   if (i >= std::ssize(values)-1) i = std::ssize(values) - 2;
 
-                  const double mod = 1.0 / double(values.size() - 1);
-                  seek_to = (seek >= 1.0) ? 1.0 : fmod(seek, mod) / mod;
+                  seek_to = mod_seek(seek, values.size());
                }
 
                read_numseq(values[i], { &t_from.x, &t_from.y });
@@ -140,15 +138,14 @@ void anim_transform::perform()
                   // value of paired coordinates.
                   const auto dist_pos = seek * get_total_dist();
                   for (i=0; (i < std::ssize(distances)-1) and (distances[i+1] < dist_pos); i++);
-                  seek_to = (dist_pos - distances[i]) / (distances[i+1] - distances[i]);
+                  seek_to = interval_seek(dist_pos, distances[i], distances[i+1]);
                   // keyTiming is not permitted in PACED mode.
                }
                else {
                   i = int((values.size()-1) * seek);
                   if (i >= std::ssize(values)-1) i = std::ssize(values) - 2;
 
-                  const double mod = 1.0 / double(values.size() - 1);
-                  seek_to = (seek >= 1.0) ? 1.0 : fmod(seek, mod) / mod;
+                  seek_to = mod_seek(seek, values.size());
                }
 
                read_numseq(values[i], { &r_from.angle, &r_from.cx, &r_from.cy });
@@ -201,8 +198,7 @@ void anim_transform::perform()
                read_numseq(values[vi], { &t_from });
                read_numseq(values[vi+1], { &t_to } );
 
-               const double mod = 1.0 / double(values.size() - 1);
-               seek_to = (seek >= 1.0) ? 1.0 : fmod(seek, mod) / mod;
+               seek_to = mod_seek(seek, values.size());
             }
             else if (not from.empty()) {
                read_numseq(from, { &t_from });
@@ -246,8 +242,7 @@ void anim_transform::perform()
                read_numseq(values[vi], { &t_from });
                read_numseq(values[vi+1], { &t_to } );
 
-               const double mod = 1.0 / double(values.size() - 1);
-               seek_to = (seek >= 1.0) ? 1.0 : fmod(seek, mod) / mod;
+               seek_to = mod_seek(seek, values.size());
             }
             else if (not from.empty()) {
                read_numseq(from, { &t_from });
@@ -287,4 +282,3 @@ void anim_transform::perform()
       svg->Animatrix[target_vector].transforms.push_back(this);
    }
 }
-

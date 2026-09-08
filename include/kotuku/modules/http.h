@@ -65,6 +65,7 @@ enum class HTM : int {
    SUBSCRIBE = 21,
    UNLOCK = 22,
    UNSUBSCRIBE = 23,
+   PATCH = 24,
 };
 
 // HTTP status codes
@@ -128,6 +129,7 @@ enum class HTF : uint32_t {
    RECV_BUFFER = 0x00000100,
    SSL = 0x00000200,
    DISABLE_SERVER_VERIFY = 0x00000400,
+   NO_AUTO_REDIRECT = 0x00000800,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(HTF)
@@ -141,18 +143,19 @@ class objHTTP : public Object {
    static constexpr CLASSID CLASS_ID = CLASSID::HTTP;
    static constexpr CSTRING CLASS_NAME = "HTTP";
 
-   using create = pf::Create<objHTTP>;
+   using create = kt::Create<objHTTP>;
+   objHTTP(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    double   DataTimeout;     // The data timeout value, relevant when receiving or sending data.
    double   ConnectTimeout;  // The initial connection timeout value, measured in seconds.
    int64_t  Index;           // Indicates the total bytes received during content transfer.
    int64_t  ContentLength;   // The byte length of incoming or outgoing content.
    int64_t  Size;            // Set this field to define the length of a data transfer when issuing a POST command.
-   STRING   Host;            // The targeted HTTP server is specified here, either by name or IP address.
-   STRING   Path;            // The HTTP path targeted at the host server.
-   STRING   OutputFile;      // To download HTTP content to a file, set a file path here.
-   STRING   InputFile;       // To upload HTTP content from a file, set a file path here.
-   STRING   UserAgent;       // Specifies the name of the user-agent string that is sent in HTTP requests.
+   std::string Host;         // The targeted HTTP server is specified here, either by name or IP address.
+   std::string Path;         // The HTTP path targeted at the host server.
+   std::string OutputFile;   // To download HTTP content to a file, set a file path here.
+   std::string InputFile;    // To upload HTTP content from a file, set a file path here.
+   std::string UserAgent;    // Specifies the name of the user-agent string that is sent in HTTP requests.
    OBJECTID InputObjectID;   // Allows data to be sent from an object on execution of a POST command.
    OBJECTID OutputObjectID;  // Incoming data can be sent to the object referenced in this field.
    HTM      Method;          // The HTTP instruction to execute (defaults to GET).
@@ -163,7 +166,7 @@ class objHTTP : public Object {
    ERR      Error;           // The error code received for the most recently executed HTTP command.
    DATA     Datatype;        // The default datatype format to use when passing data to a target object.
    HGS      CurrentState;    // Indicates the current state of an HTTP object during its interaction with an HTTP server.
-   STRING   ProxyServer;     // Route the HTTP request through the proxy server defined here.
+   std::string ProxyServer;  // Route the HTTP request through the proxy server defined here.
    int      ProxyPort;       // The port to use when communicating with a proxy server.
    int      BufferSize;      // Indicates the preferred buffer size for data operations.
 
@@ -171,19 +174,19 @@ class objHTTP : public Object {
 
    inline ERR activate() noexcept { return Action(AC::Activate, this, nullptr); }
    inline ERR deactivate() noexcept { return Action(AC::Deactivate, this, nullptr); }
-   inline ERR getKey(CSTRING Key, STRING Value, int Size) noexcept {
-      struct acGetKey args = { Key, Value, Size };
+   inline ERR getKey(std::string_view Key, std::string &Value) noexcept {
+      struct acGetKey args = { Key, &Value };
       auto error = Action(AC::GetKey, this, &args);
-      if ((error != ERR::Okay) and (Value)) Value[0] = 0;
+      if (error != ERR::Okay) Value.clear();
       return error;
    }
    inline ERR init() noexcept { return InitObject(this); }
-   inline ERR acSetKey(CSTRING FieldName, CSTRING Value) noexcept {
+   inline ERR acSetKey(std::string_view FieldName, std::string_view Value) noexcept {
       struct acSetKey args = { FieldName, Value };
       return Action(AC::SetKey, this, &args);
    }
-   inline ERR write(CPTR Buffer, int Size, int *Result = nullptr) noexcept {
-      struct acWrite write = { (int8_t *)Buffer, Size };
+   inline ERR write(std::span<const int8_t> Buffer, int *Result = nullptr) noexcept {
+      struct acWrite write = { Buffer };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -194,7 +197,7 @@ class objHTTP : public Object {
       }
    }
    inline ERR write(std::string Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { (int8_t *)Buffer.c_str(), int(Buffer.size()) };
+      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()) };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -204,11 +207,200 @@ class objHTTP : public Object {
          return error;
       }
    }
-   inline int writeResult(CPTR Buffer, int Size) noexcept {
-      struct acWrite write = { (int8_t *)Buffer, Size };
-      if (Action(AC::Write, this, &write) IS ERR::Okay) return write.Result;
-      else return 0;
+
+   // Customised field getting
+
+   inline ERR getDataTimeout(double &Value) noexcept {
+      Value = this->DataTimeout;
+      return ERR::Okay;
    }
+
+   inline ERR getConnectTimeout(double &Value) noexcept {
+      Value = this->ConnectTimeout;
+      return ERR::Okay;
+   }
+
+   inline ERR getIndex(int64_t &Value) noexcept {
+      Value = this->Index;
+      return ERR::Okay;
+   }
+
+   inline ERR getContentLength(int64_t &Value) noexcept {
+      Value = this->ContentLength;
+      return ERR::Okay;
+   }
+
+   inline ERR getSize(int64_t &Value) noexcept {
+      Value = this->Size;
+      return ERR::Okay;
+   }
+
+   inline ERR getHost(std::string_view &Value) noexcept {
+      Value = this->Host;
+      return ERR::Okay;
+   }
+
+   inline ERR getPath(std::string_view &Value) noexcept {
+      Value = this->Path;
+      return ERR::Okay;
+   }
+
+   inline ERR getOutputFile(std::string_view &Value) noexcept {
+      Value = this->OutputFile;
+      return ERR::Okay;
+   }
+
+   inline ERR getInputFile(std::string_view &Value) noexcept {
+      Value = this->InputFile;
+      return ERR::Okay;
+   }
+
+   inline ERR getUserAgent(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getInputObject(OBJECTID &Value) noexcept {
+      Value = this->InputObjectID;
+      return ERR::Okay;
+   }
+
+   inline ERR getOutputObject(OBJECTID &Value) noexcept {
+      Value = this->OutputObjectID;
+      return ERR::Okay;
+   }
+
+   inline ERR getMethod(HTM &Value) noexcept {
+      Value = this->Method;
+      return ERR::Okay;
+   }
+
+   inline ERR getPort(int &Value) noexcept {
+      Value = this->Port;
+      return ERR::Okay;
+   }
+
+   inline ERR getObjectMode(HOM &Value) noexcept {
+      Value = this->ObjectMode;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(HTF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getStatus(HTS &Value) noexcept {
+      Value = this->Status;
+      return ERR::Okay;
+   }
+
+   inline ERR getError(ERR &Value) noexcept {
+      Value = this->Error;
+      return ERR::Okay;
+   }
+
+   inline ERR getDatatype(DATA &Value) noexcept {
+      Value = this->Datatype;
+      return ERR::Okay;
+   }
+
+   inline ERR getCurrentState(HGS &Value) noexcept {
+      Value = this->CurrentState;
+      return ERR::Okay;
+   }
+
+   inline ERR getProxyServer(std::string_view &Value) noexcept {
+      Value = this->ProxyServer;
+      return ERR::Okay;
+   }
+
+   inline ERR getProxyPort(int &Value) noexcept {
+      Value = this->ProxyPort;
+      return ERR::Okay;
+   }
+
+   inline ERR getBufferSize(int &Value) noexcept {
+      Value = this->BufferSize;
+      return ERR::Okay;
+   }
+
+   inline ERR getContentType(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getIncoming(FUNCTION * &Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getLocation(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[34];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getOutgoing(FUNCTION * &Value) noexcept {
+      auto field = &this->Class->Dictionary[29];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getRealm(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[7];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getRecvBuffer(std::span<int8_t> &Value) noexcept {
+      auto field = &this->Class->Dictionary[0];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::span<int8_t> &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getResponseKeys(std::span<std::string> &Value) noexcept {
+      auto field = &this->Class->Dictionary[28];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::span<std::string> &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getStateChanged(FUNCTION * &Value) noexcept {
+      auto field = &this->Class->Dictionary[31];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
@@ -237,34 +429,29 @@ class objHTTP : public Object {
       return ERR::Okay;
    }
 
-   template <class T> inline ERR setHost(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[23];
-      return field->WriteValue(target, field, 0x08800500, to_cstring(Value), 1);
-   }
-
-   template <class T> inline ERR setPath(T && Value) noexcept {
-      auto target = this;
+   inline ERR setHost(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[25];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(this, field, 0x00804500, &Value);
    }
 
-   template <class T> inline ERR setOutputFile(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[4];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+   inline ERR setPath(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
-   template <class T> inline ERR setInputFile(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[2];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+   inline ERR setOutputFile(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[15];
+      return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
-   template <class T> inline ERR setUserAgent(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[33];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+   inline ERR setInputFile(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[16];
+      return field->WriteValue(this, field, 0x00804300, &Value);
+   }
+
+   inline ERR setUserAgent(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[6];
+      return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
    inline ERR setInputObject(OBJECTID Value) noexcept {
@@ -278,9 +465,8 @@ class objHTTP : public Object {
    }
 
    inline ERR setMethod(const HTM Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[7];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[3];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setPort(const int Value) noexcept {
@@ -314,15 +500,13 @@ class objHTTP : public Object {
    }
 
    inline ERR setCurrentState(const HGS Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[18];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[4];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   template <class T> inline ERR setProxyServer(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[28];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+   inline ERR setProxyServer(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
    inline ERR setProxyPort(const int Value) noexcept {
@@ -331,64 +515,48 @@ class objHTTP : public Object {
    }
 
    inline ERR setBufferSize(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[34];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
-   }
-
-   inline ERR setAuthCallback(FUNCTION Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[1];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
-   }
-
-   template <class T> inline ERR setContentType(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[35];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
-   }
-
-   inline ERR setIncoming(FUNCTION Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[19];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
-   }
-
-   template <class T> inline ERR setLocation(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[22];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
-   }
-
-   inline ERR setOutgoing(FUNCTION Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[17];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
-   }
-
-   template <class T> inline ERR setRealm(T && Value) noexcept {
-      auto target = this;
       auto field = &this->Class->Dictionary[13];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setStateChanged(FUNCTION Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+   inline ERR setContentType(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
+      return field->WriteValue(this, field, 0x00804308, &Value);
    }
 
-   template <class T> inline ERR setUsername(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[39];
-      return field->WriteValue(target, field, 0x08800200, to_cstring(Value), 1);
+   inline ERR setIncoming(const FUNCTION Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
-   template <class T> inline ERR setPassword(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[15];
-      return field->WriteValue(target, field, 0x08800200, to_cstring(Value), 1);
+   inline ERR setLocation(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[34];
+      return field->WriteValue(this, field, 0x00804308, &Value);
+   }
+
+   inline ERR setOutgoing(const FUNCTION Value) noexcept {
+      auto field = &this->Class->Dictionary[29];
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
+   }
+
+   inline ERR setRealm(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[7];
+      return field->WriteValue(this, field, 0x00804308, &Value);
+   }
+
+   inline ERR setStateChanged(const FUNCTION Value) noexcept {
+      auto field = &this->Class->Dictionary[31];
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
+   }
+
+   inline ERR setUsername(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[37];
+      return field->WriteValue(this, field, 0x00804208, &Value);
+   }
+
+   inline ERR setPassword(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[17];
+      return field->WriteValue(this, field, 0x00804208, &Value);
    }
 
 };
-

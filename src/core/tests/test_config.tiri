@@ -1,0 +1,411 @@
+-- Tests relating to the Config class
+
+glLegalData = [[
+# Useless comment
+[Clean]ignored
+Name = Clean
+Fixed:Regular = fonts:fixed/clean.fon
+Fixed:Bold Italic = fonts:fixed/clean.fon
+# Useless comment
+  Points = 8
+Styles = Bold,Bold Italic,Italic,Regular
+Sort = 3
+
+  [Courier Sans]
+Name = Courier Sans
+Scalable=Yes
+Scale:Bold    = fonts:truetype/Courier Prime Sans Bold.ttf
+Scale:Bold Italic = fonts:truetype/Courier Prime Sans Bold Italic.ttf
+Styles = Bold,Bold Italic,Italic,Regular
+Sort = 2
+
+[Alpha]
+Name = Beta
+Sort = 1
+]]
+
+glMerge = 'Ignore this\r\n[MergedGroup]\r\nHello=World\r\n'
+
+----------------------------------------------------------------------------------------------------------------------
+
+@AfterAll function cleanup()
+   mSys.DeleteFile('temp:test-write.cfg')
+   mSys.DeleteFile('temp:test-source.cfg')
+   mSys.DeleteFile('temp:test-merge-file.cfg')
+   mSys.DeleteFile('temp:test-save-settings.cfg')
+end
+
+function new_config()
+   cfg = obj.new('config', { })
+   err = cfg.acDataFeed(nil, DATA_TEXT, glLegalData)
+   assert(err is ERR_Okay, 'DataFeed() returned ' .. mSys.GetErrorMsg(err))
+   return cfg
+end
+
+function write_temp_file(Path, Content)
+   file = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
+   err, written = file.acWrite(Content)
+   assert(err is ERR_Okay, 'Write() returned ' .. mSys.GetErrorMsg(err))
+   assert(written is #Content, 'Wrote ' .. tostring(written) .. ' bytes, expected ' .. tostring(#Content))
+   file = nil
+   processing.collect()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function KeyFilter()
+   cfg = new_config()
+
+   cfg.keyFilter = 'Name=Clean' -- Keep the clean font and filter out Courier Sans
+
+   -- Expect success
+   err, value = cfg.mtReadValue('Clean', 'Points')
+   assert(err is ERR_Okay, 'ReadInt() returned ' .. mSys.GetErrorMsg(err))
+   assert(value is '8', 'Did not read the expected [Clean].Points key-value, got ' .. tostring(value))
+
+   try -- Expect failure
+      checkall
+         err, value = cfg.mtReadValue('Courier Sans', 'Scalable')
+      end
+   success
+      assert(false, 'ReadValue() returned successfully with: ' .. mSys.GetErrorMsg(err) .. ', ' .. tostring(value))
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function GroupFilter()
+   cfg = new_config()
+
+   cfg.groupFilter = 'Courier Sans' -- Keep Courier Sans
+
+   -- Expect success
+   err, value = cfg.mtReadValue('Courier Sans', 'Scalable')
+   assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+   assert(value is 'Yes', 'Did not read the expected [Courier Sans].Scalable key-value, got ' .. tostring(value))
+
+   try -- Expect failure
+      checkall
+         err, value = cfg.mtReadValue('Clean', 'Points')
+      end
+   success
+      assert(false, 'ReadValue() returned successfully with: ' .. mSys.GetErrorMsg(err) .. ', ' .. tostring(value))
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ClearAndTotals()
+   cfg = new_config()
+
+   assert(cfg.totalGroups is 3, 'Expected 3 groups, got ' .. tostring(cfg.totalGroups))
+   assert(cfg.totalKeys is 14, 'Expected 14 keys, got ' .. tostring(cfg.totalKeys))
+
+   err = cfg.acClear()
+   assert(err is ERR_Okay, 'Clear() returned ' .. mSys.GetErrorMsg(err))
+   assert(cfg.totalGroups is 0, 'Expected Clear() to remove all groups')
+   assert(cfg.totalKeys is 0, 'Expected Clear() to remove all keys')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function DeleteKeyAndGroup()
+   cfg = new_config()
+
+   err, value = cfg.mtReadValue('Clean', 'Styles')
+   assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+
+   err, value = cfg.mtDeleteKey('Clean', 'Styles')
+   assert(err is ERR_Okay, 'DeleteKey() returned ' .. mSys.GetErrorMsg(err))
+
+   err, value = cfg.mtReadValue('Clean', 'Styles')
+   assert(err != ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+
+   err, value = cfg.mtDeleteGroup('Clean')
+   assert(err is ERR_Okay, 'DeleteKey() returned ' .. mSys.GetErrorMsg(err))
+
+   err, value = cfg.mtReadValue('Clean', 'Name')
+   assert(err != ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function Merge()
+   cfg = new_config()
+
+   cfgMerge = obj.new('config', { })
+   err = cfgMerge.acDataFeed(nil, DATA_TEXT, glMerge)
+   assert(err is ERR_Okay, 'DataFeed() returned ' .. mSys.GetErrorMsg(err))
+
+   err = cfg.mtMerge(cfgMerge);
+   assert(err is ERR_Okay, 'Merge() returned ' .. mSys.GetErrorMsg(err))
+
+   err, value = cfg.mtReadValue('', 'Styles')
+   assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+
+   err, value = cfg.mtReadValue('MergedGroup', 'Hello')
+   assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+   assert(value is 'World', 'Expected the World, received ' .. tostring(value))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function MergeFile()
+   cfg = new_config()
+
+   write_temp_file('temp:test-merge-file.cfg', glMerge)
+
+   err = cfg.mtMergeFile('temp:test-merge-file.cfg')
+   assert(err is ERR_Okay, 'MergeFile() returned ' .. mSys.GetErrorMsg(err))
+
+   err, value = cfg.mtReadValue('MergedGroup', 'Hello')
+   assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+   assert(value is 'World', 'Expected World, received ' .. tostring(value))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function WriteValues()
+   cfg = new_config()
+
+   err = cfg.mtWriteValue('Clean', 'New', 'Value')
+   assert(err is ERR_Okay, 'WriteValue() returned ' .. mSys.GetErrorMsg(err))
+
+   err = cfg.mtWriteValue('NewGroup', 'fruit', 'orange')
+   assert(err is ERR_Okay, 'WriteValue() returned ' .. mSys.GetErrorMsg(err))
+
+   err, value = cfg.mtReadValue('Clean', 'New')
+   assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+   assert(value is 'Value', 'Expected a Value, received ' .. tostring(value))
+
+   err, value = cfg.mtReadValue('NewGroup', 'fruit')
+   assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+   assert(value is 'orange', 'Expected an orange, received ' .. tostring(value))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function SetExactGroup()
+   cfg = new_config()
+   before_count = cfg.totalGroups
+
+   err = cfg.mtSet('Clean', 'Name', 'Clean Updated')
+   assert(err is ERR_Okay, 'Set() returned ' .. mSys.GetErrorMsg(err))
+
+   err, value = cfg.mtReadValue('Clean', 'Name')
+   assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+   assert(value is 'Clean Updated', 'Expected Set() to update Clean.Name, received ' .. tostring(value))
+
+   err = cfg.mtSet('Missing', 'Name', 'Nope')
+   assert(err is ERR_Search, 'Expected Set() to return ERR_Search for a missing group')
+   assert(cfg.totalGroups is before_count, 'Set() created a missing group')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function SetWildcardUpdatesMatchedGroup()
+   cfg = new_config()
+   before_count = cfg.totalGroups
+
+   err = cfg.mtSet('Courier*', 'New', 'Value')
+   assert(err is ERR_Okay, 'Set() returned ' .. mSys.GetErrorMsg(err))
+   assert(cfg.totalGroups is before_count, 'Set() created a literal wildcard group')
+
+   err, value = cfg.mtReadValue('Courier Sans', 'New')
+   assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+   assert(value is 'Value', 'Expected wildcard Set() to update Courier Sans, received ' .. tostring(value))
+
+   err = cfg.mtSet('Missing*', 'New', 'Value')
+   assert(err is ERR_Search, 'Expected Set() to return ERR_Search for a missing wildcard group')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function FileLoadFlags()
+   write_temp_file('temp:test-source.cfg', [[
+[Quoted]
+Name = "Visible"
+Plain = Value
+]])
+
+   cfg = obj.new('config', { path='temp:test-source.cfg', flags=CNF_STRIP_QUOTES })
+   assert(cfg.path is 'temp:test-source.cfg', 'Config path field did not return the original string value')
+
+   err, value = cfg.mtReadValue('Quoted', 'Name')
+   assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+   assert(value is 'Visible', 'Expected STRIP_QUOTES to remove quotes, received ' .. tostring(value))
+
+   cfg = obj.new('config', { path='temp:test-source.cfg', flags=CNF_NEW })
+   assert(cfg.totalGroups is 0, 'Expected CNF_NEW to skip loading file data')
+
+   cfg = obj.new('config', { path='temp:missing-config-file.cfg', flags=CNF_OPTIONAL_FILES })
+   assert(cfg.totalGroups is 0, 'Expected optional missing file to produce an empty config')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function FlushSavesSettings()
+   cfg = obj.new('config', { path='temp:test-save-settings.cfg', flags=CNF_NEW })
+
+   err = cfg.mtWriteValue('Saved', 'Name', 'Persisted')
+   assert(err is ERR_Okay, 'WriteValue() returned ' .. mSys.GetErrorMsg(err))
+
+   err = cfg.acFlush()
+   assert(err is ERR_Okay, 'Flush() returned ' .. mSys.GetErrorMsg(err))
+
+   cfg = nil
+   processing.collect()
+
+   cfg = obj.new('config', { path='temp:test-save-settings.cfg' })
+   err, value = cfg.mtReadValue('Saved', 'Name')
+   assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+   assert(value is 'Persisted', 'Expected saved value, received ' .. tostring(value))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+-- Test case sensitivity
+
+@Test function ReadValues()
+   cfg = new_config()
+
+   err, value = cfg.mtReadValue('CLEAN', 'Styles')
+   assert(err != ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+
+   err, value = cfg.mtReadValue('Clean', 'STYLES')
+   assert(err != ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ReadValueEmptySelectors()
+   cfg = new_config()
+
+   err, value = cfg.mtReadValue('', 'Styles')
+   assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+   assert(value is 'Bold,Bold Italic,Italic,Regular', 'Empty group selector returned ' .. tostring(value))
+
+   err, value = cfg.mtReadValue('Clean', '')
+   assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+   assert(value is 'fonts:fixed/clean.fon', 'Empty key selector returned ' .. tostring(value))
+
+   err, value = cfg.mtReadValue('', '')
+   assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+   assert(value is 'fonts:fixed/clean.fon', 'Empty selectors returned ' .. tostring(value))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function EmptyRequiredStringArguments()
+   cfg = new_config()
+
+   err = cfg.mtWriteValue('', 'Name', 'Value')
+   assert(err is ERR_NullArgs, 'Expected WriteValue() to reject an empty group, got ' .. mSys.GetErrorMsg(err))
+
+   err = cfg.mtWriteValue('Clean', '', 'Value')
+   assert(err is ERR_NullArgs, 'Expected WriteValue() to reject an empty key, got ' .. mSys.GetErrorMsg(err))
+
+   err = cfg.mtSet('', 'Name', 'Value')
+   assert(err is ERR_NullArgs, 'Expected Set() to reject an empty group, got ' .. mSys.GetErrorMsg(err))
+
+   err = cfg.mtSet('Clean', '', 'Value')
+   assert(err is ERR_NullArgs, 'Expected Set() to reject an empty key, got ' .. mSys.GetErrorMsg(err))
+
+   err = cfg.mtDeleteKey('', 'Name')
+   assert(err is ERR_NullArgs, 'Expected DeleteKey() to reject an empty group, got ' .. mSys.GetErrorMsg(err))
+
+   err = cfg.mtDeleteKey('Clean', '')
+   assert(err is ERR_NullArgs, 'Expected DeleteKey() to reject an empty key, got ' .. mSys.GetErrorMsg(err))
+
+   err = cfg.mtDeleteGroup('')
+   assert(err is ERR_NullArgs, 'Expected DeleteGroup() to reject an empty group, got ' .. mSys.GetErrorMsg(err))
+
+   err = cfg.mtMergeFile('')
+   assert(err is ERR_NullArgs, 'Expected MergeFile() to reject an empty path, got ' .. mSys.GetErrorMsg(err))
+
+   err = cfg.mtWriteValue('EmptyValue', 'Name', '')
+   assert(err is ERR_Okay, 'WriteValue() should allow an empty data value, got ' .. mSys.GetErrorMsg(err))
+
+   err, value = cfg.mtReadValue('EmptyValue', 'Name')
+   assert(err is ERR_Okay, 'ReadValue() returned ' .. mSys.GetErrorMsg(err))
+   assert(value is '', 'Expected an empty value, received ' .. tostring(value))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function Sorting()
+   cfg = new_config()
+
+   err = cfg.mtSortByKey('Sort', true)
+   assert(err is ERR_Okay, 'SortByKey() returned ' .. mSys.GetErrorMsg(err))
+
+   err, groupName = cfg.mtGetGroupFromIndex(0)
+   assert(groupName is 'Clean', 'First group is incorrect, returned ' .. groupName)
+   err, groupName = cfg.mtGetGroupFromIndex(1)
+   assert(groupName is 'Courier Sans', 'Second group is incorrect, returned ' .. groupName)
+   err, groupName = cfg.mtGetGroupFromIndex(2)
+   assert(groupName is 'Alpha', 'Third group is incorrect, returned ' .. groupName)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function SortingByEmptyKeyUsesGroupName()
+   cfg = new_config()
+
+   err = cfg.mtSortByKey('', false)
+   assert(err is ERR_Okay, 'SortByKey() returned ' .. mSys.GetErrorMsg(err))
+
+   err, groupName = cfg.mtGetGroupFromIndex(0)
+   assert(groupName is 'Alpha', 'First group is incorrect, returned ' .. groupName)
+   err, groupName = cfg.mtGetGroupFromIndex(1)
+   assert(groupName is 'Clean', 'Second group is incorrect, returned ' .. groupName)
+   err, groupName = cfg.mtGetGroupFromIndex(2)
+   assert(groupName is 'Courier Sans', 'Third group is incorrect, returned ' .. groupName)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function SortingMissingKeyDoesNotAddKeys()
+   cfg = new_config()
+
+   before_count = cfg.totalKeys
+   err = cfg.mtSortByKey('Missing', false)
+   assert(err is ERR_Okay, 'SortByKey() returned ' .. mSys.GetErrorMsg(err))
+   assert(cfg.totalKeys is before_count, 'SortByKey() inserted missing key entries')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function Save()
+   cfg = new_config()
+   err, value = cfg.mtDeleteGroup('Courier Sans')
+   err, value = cfg.mtDeleteGroup('Alpha')
+   file = obj.new('file', { path='temp:test-write.cfg', flags=FL_NEW|FL_WRITE })
+   assert(cfg.acSaveToObject(file) is ERR_Okay, 'Failed to save config file.')
+   file = nil
+   processing.collect()
+
+   file = obj.new('file', { path='temp:test-write.cfg', flags=FL_READ })
+   buf = string.alloc(file.size)
+   err, result = file.acRead(buf)
+   check(err)
+
+   expected_output = [[
+
+[Clean]
+Fixed:Bold Italic = fonts:fixed/clean.fon
+Fixed:Regular = fonts:fixed/clean.fon
+Name = Clean
+Points = 8
+Sort = 3
+Styles = Bold,Bold Italic,Italic,Regular
+]]
+
+   assert(#buf is #expected_output, 'Wrote ' .. file.size .. ' bytes, expected ' .. #expected_output)
+
+   for i in {0 to #buf} do
+      if buf.byte(i) != expected_output.byte(i) then
+         raise 'Written output is invalid:\n---\n' .. buf .. '---\n' .. expected_output .. '---\n'
+      end
+   end
+end

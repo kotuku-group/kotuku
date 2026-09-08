@@ -1,6 +1,6 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: kotuku
-Source: https://github.com/parasol-framework/kotuku
+Source: https://github.com/kotuku-group/kotuku
 
 Files: *
 Copyright: Copyright holders of Kotuku Framework

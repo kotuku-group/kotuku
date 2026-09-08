@@ -4,6 +4,7 @@
 #include "defs.h"
 #include <kotuku/main.h>
 #include <kotuku/modules/core.h>
+#include <kotuku/modules/compression.h>
 
 #ifdef __unix__
 // In Unix/Linux builds it is assumed that the install location is static.  Dynamic loading is enabled
@@ -59,50 +60,121 @@ int8_t fs_initialised  = FALSE;
 APTR glPageFault     = nullptr;
 bool glScanClasses   = false;
 bool glJanitorActive = false;
+CONTYPE glConsoleType  = CONTYPE::NONE;
 bool glDebugMemory   = false;
 bool glEnableCrashHandler = true;
 struct CoreBase *LocalCoreBase = nullptr;
-// NB: During shutdown, elements in glPrivateMemory are not erased but will have their fields cleared.
-// Can't use ankerl here because removal of elements is too slow.
-std::unordered_map<MEMORYID, PrivateAddress> glPrivateMemory;
+
+// NB: During shutdown, elements in glMemory are not erased but will have their fields cleared.
+// Can't use ankerl here because it's unsuitable for high-churn collections.
+
+#ifdef RESOURCE_POOL
+// Node pools must be constructed before the maps that reference them (guaranteed here by declaration order within
+// this translation unit) and destroyed after them (reverse declaration order).
+NodePool glResourcesNodePool, glObjectsNodePool;
+PooledMap<RESOURCEID, ResourceRecord> glResources{0, PoolAllocator<std::pair<const RESOURCEID, ResourceRecord>>(glResourcesNodePool)}; // Pointer stable collection
+PooledMap<OBJECTID, ObjectRecord> glObjects{0, PoolAllocator<std::pair<const OBJECTID, ObjectRecord>>(glObjectsNodePool)}; // Pointer stable collection
+#else
+PooledMap<RESOURCEID, ResourceRecord> glResources; // Pointer stable collection
+PooledMap<OBJECTID, ObjectRecord> glObjects; // Pointer stable collection
+#endif
+
 
 std::set<std::shared_ptr<std::jthread>> glAsyncThreads;
 
 std::mutex glmActionQueue;
 std::unordered_map<OBJECTID, std::deque<QueuedAction>> glActionQueues;
 std::unordered_set<OBJECTID> glActiveAsyncObjects;
+std::unordered_set<OBJECTID> glCancelledAsyncObjects;
 std::unordered_map<OBJECTID, int> glAsyncObjectThreads;
 
+// Registers a built-in struct as { name-hash, { sizeof, alignof } }.  The alignment is required so that the
+// metaclass can position FD_STRUCT fields at the offsets the compiler actually uses (alignment cannot be
+// derived from size alone).
+
+#define REG_STRUCT(name) \
+   { kt::strhash(#name), { uint16_t(sizeof(name)), uint16_t(alignof(name)), #name } }
+
+ankerl::unordered_dense::map<uint32_t, StructInfo> glStructSizes = {
+   REG_STRUCT(ActionArray),
+   REG_STRUCT(ActionEntry),
+   REG_STRUCT(CacheFile),
+   REG_STRUCT(ChildEntry),
+   REG_STRUCT(ClipRectangle),
+   REG_STRUCT(ColourFormat),
+   REG_STRUCT(CompressedItem),
+   REG_STRUCT(CompressionFeedback),
+   REG_STRUCT(DateTime),
+   REG_STRUCT(DirInfo),
+   REG_STRUCT(Edges),
+   REG_STRUCT(FRGB),
+   REG_STRUCT(Field),
+   REG_STRUCT(FieldArray),
+   REG_STRUCT(FieldDef),
+   REG_STRUCT(FileFeedback),
+   REG_STRUCT(FileInfo),
+   REG_STRUCT(Function),
+   REG_STRUCT(FunctionField),
+   REG_STRUCT(HSV),
+   REG_STRUCT(InputEvent),
+   REG_STRUCT(Message),
+   REG_STRUCT(MethodEntry),
+   { kt::strhash("ModHeader"),
+      { uint16_t(sizeof(struct ModHeader)), uint16_t(alignof(struct ModHeader)), "ModHeader" } },
+   REG_STRUCT(MsgHandler),
+   REG_STRUCT(ObjectSignal),
+   REG_STRUCT(RGB16),
+   REG_STRUCT(RGB32),
+   REG_STRUCT(RGB8),
+   REG_STRUCT(RGBPalette),
+   REG_STRUCT(ResourceManager),
+   REG_STRUCT(SystemState),
+   REG_STRUCT(ThreadActionMessage),
+   REG_STRUCT(ThreadMessage),
+   REG_STRUCT(Unit),
+   REG_STRUCT(dcAudio),
+   REG_STRUCT(dcDeviceInput),
+   REG_STRUCT(dcKeyEntry),
+   REG_STRUCT(dcRequest)
+};
+
+#undef REG_STRUCT
+
 std::condition_variable_any cvObjects;
-std::condition_variable_any cvResources;
 
 std::mutex glmThreadRegistry;
-std::unordered_map<int, std::shared_ptr<ThreadRecord>> glThreadRegistry;
+std::unordered_map<int, std::shared_ptr<ThreadRecord>> glThreadRegistry; // IDs are obtained from GetThreadID()
 
 std::list<CoreTimer> glTimers; // Locked with glmTimer.  std::list maintains stable pointers to elements.
 std::list<FDRecord> glFDTable;
+#ifdef __linux__
+std::mutex glmInotifyLookup;
+std::unordered_map<int, OBJECTID> glInotifyLookup;
+#endif
+#ifdef __unix__
+int glChildSignalFD[2] = { -1, -1 };
+#endif
 
 std::map<std::string, ConfigKeys, CaseInsensitiveMap> glVolumes;
-std::unordered_map<std::string, std::vector<Object *>, CaseInsensitiveHash, CaseInsensitiveEqual> glObjectLookup; // Name lookups
+OBJECTLOOKUP glObjectLookup; // Name lookups
 
 std::mutex glmPrint;
-std::recursive_mutex glmMemory;
+std::recursive_mutex glmResources; // For glResources; acquire before glmObjects when both are required
+std::recursive_mutex glmObjects; // For glObjects; never acquire glmResources whilst this mutex is held
 std::recursive_mutex glmMsgHandler;
 std::recursive_mutex glmAsyncActions;
-std::recursive_timed_mutex glmObjectLookup;
+std::shared_timed_mutex glmObjectLookup; // For glObjectLookup
 std::recursive_timed_mutex glmTimer;
 std::timed_mutex glmClassDB;
-std::timed_mutex glmFieldKeys;
+std::shared_timed_mutex glmFieldKeys;
 std::timed_mutex glmGeneric;
 std::timed_mutex glmObjectLocking;
-std::timed_mutex glmVolumes;
+std::shared_timed_mutex glmVolumes;
 
 ankerl::unordered_dense::map<std::string, struct ModHeader *> glStaticModules;
-ankerl::unordered_dense::map<CLASSID, ClassRecord> glClassDB;
+ankerl::unordered_dense::map<CLASSID, extClassRecord> glClassDB;
 ankerl::unordered_dense::map<CLASSID, extMetaClass *> glClassMap;
 std::unordered_map<OBJECTID, ObjectSignal> glWFOList;
-std::unordered_map<OBJECTID, ankerl::unordered_dense::set<MEMORYID>> glObjectMemory;
-std::unordered_map<OBJECTID, ankerl::unordered_dense::set<OBJECTID>> glObjectChildren;
 ankerl::unordered_dense::map<uint32_t, std::string> glFields;
 
 std::unordered_multimap<uint32_t, CLASSID> glWildClassMap;
@@ -110,8 +182,8 @@ std::unordered_multimap<uint32_t, CLASSID> glWildClassMap;
 std::vector<FDRecord> glRegisterFD;
 std::vector<TaskRecord> glTasks;
 
-class RootModule  *glModuleList  = nullptr;
-struct OpenInfo   *glOpenInfo    = nullptr;
+class objRootModule  *glModuleList  = nullptr;
+struct OpenInfo   glOpenInfo;
 struct MsgHandler *glMsgHandlers = nullptr, *glLastMsgHandler = 0;
 
 objFile *glClassFile   = nullptr;
@@ -121,12 +193,12 @@ APTR glJNIEnv = 0;
 std::atomic_ushort glFunctionID = 3333; // IDTYPE_FUNCTION
 int glStdErrFlags = 0;
 TIMER glCacheTimer = 0;
-int glMemoryFD = -1;
 int glValidateProcessID = 0;
 int glProcessID = 0;
 int glEUID = -1, glEGID = -1, glGID = -1, glUID = -1;
 int glWildClassMapTotal = 0;
-std::atomic_int glPrivateIDCounter = 500;
+uint16_t glWindowsIcon = 500;
+std::atomic_int glResourceID = 500;
 std::atomic_int glMessageIDCount = 10000;
 std::atomic_int glGlobalIDCount = 1;
 int glEventMask = 0;
@@ -144,26 +216,31 @@ size_t glPageSize = 4096; // Overwritten on opening the Core
 #endif
 
 HOSTHANDLE glConsoleFD = (HOSTHANDLE)-1; // Managed by GetResource()
+FILE *glLogFile = nullptr;
 
-int64_t glTimeLog    = 0;
+int64_t glTimeLog       = 0;
 int16_t glCrashStatus   = 0;
 int16_t glCodeIndex     = CP_FINISHED;
 int16_t glLastCodeIndex = 0;
 int16_t glSystemState   = -1; // Initialisation state is -1
+std::array<LogCallbackSlot, LC_LIMIT> glLogCallbacks;
+std::atomic_uint8_t glLogCallbackCount = 0;
 #ifndef NDEBUG
    int16_t glLogLevel = 2; // Thread global.  Default to warning level for debug builds.
 #else
    int16_t glLogLevel = 0;
 #endif
-int16_t glMaxDepth     = 20; // Thread global
+int16_t glMaxDepth  = 20; // Thread global
 bool glShowIO       = false;
 bool glShowPrivate  = false;
 bool glPrivileged   = false;
 bool glSync         = false;
 bool glLogThreads   = false;
 int8_t glProgramStage = STAGE_STARTUP;
-TSTATE glTaskState  = TSTATE::RUNNING;
+TSTATE glTaskState    = TSTATE::RUNNING;
+#ifdef __linux__
 int glInotify = -1;
+#endif
 
 const struct virtual_drive glFSDefault = {
    0, 0, ":",
@@ -190,6 +267,7 @@ const struct virtual_drive glFSDefault = {
    fs_createlink
 };
 
+std::mutex glmVirtual;
 ankerl::unordered_dense::map<uint32_t, virtual_drive> glVirtual;
 
 #ifdef __unix__
@@ -202,24 +280,23 @@ thread_local PERMIT glDefaultPermissions = PERMIT::NIL;
 thread_local int16_t tlDepth     = 0;
 thread_local int16_t tlLogStatus = 1;
 thread_local bool tlMainThread = false; // Will be set to TRUE on open, any other threads will remain FALSE.
-thread_local int16_t tlPreventSleep = 0;
-thread_local int16_t tlPublicLockCount = 0; // This variable is controlled by GLOBAL_LOCK() and can be used to check if locks are being held prior to sleeping.
-thread_local int16_t tlPrivateLockCount = 0; // Count of private *memory* locks held per-thread
+THREADID glMainThreadID = THREADID(0);
 
-Object glDummyObject;
+Object glDummyObject(nullptr, 0);
+ActionMessage *glCurrentActionMsg = nullptr;
 
 #if defined(__MINGW32__) || defined(__MINGW64__)
-thread_local pf::vector<ObjectContext> *tlContextPtr = nullptr; // Lazy init via tls_get_context()
+thread_local kt::vector<ObjectContext> *tlContextPtr = nullptr; // Lazy init via tls_get_context()
 #else
-static pf::vector<ObjectContext> make_initial_context()
+static kt::vector<ObjectContext> make_initial_context()
 {
-   pf::vector<ObjectContext> v;
+   kt::vector<ObjectContext> v;
    v.reserve(16);
    v.emplace_back(ObjectContext { &glDummyObject, nullptr, AC::NIL });
    return v;
 }
 
-thread_local pf::vector<ObjectContext> tlContext = make_initial_context();
+thread_local kt::vector<ObjectContext> tlContext = make_initial_context();
 #endif
 
 objTime *glTime = nullptr;
@@ -227,16 +304,12 @@ objTime *glTime = nullptr;
 thread_local int16_t tlMsgRecursion = 0;
 thread_local TaskMessage *tlCurrentMsg = nullptr;
 
-ERR (*glMessageHandler)(struct Message *) = nullptr;
 void (*glVideoRecovery)(void) = nullptr;
 void (*glKeyboardRecovery)(void) = nullptr;
-void (*glNetProcessMessages)(int, APTR) = nullptr;
 
 #ifdef __ANDROID__
 static struct AndroidBase *AndroidBase = nullptr;
 #endif
-
-//********************************************************************************************************************
 
 #include "data_functions.c"
 #include "data_errors.cpp"

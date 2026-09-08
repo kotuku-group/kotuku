@@ -5,14 +5,21 @@
   <info>
     <name>Network</name>
     <type>module</type>
+    <comment>Provides miscellaneous network functions and hosts the NetSocket, NetServer and ClientSocket classes.</comment>
     <version>1</version>
     <status>stable</status>
     <prefix>net</prefix>
     <copyright>Paul Manias © 2005-2026</copyright>
+    <description>
+<p>The Network module exports a few miscellaneous networking functions.  For core network functionality surrounding sockets and HTTP, please refer to the <class name="NetSocket">NetSocket</class>, <class name="NetServer">NetServer</class> and <class name="HTTP">HTTP</class> classes.</p></description>
+    <source>
+      <file path="src/network/">network.cpp</file>
+    </source>
     <classes>
       <class>ClientSocket</class>
       <class>NetClient</class>
       <class>NetLookup</class>
+      <class>NetServer</class>
       <class>NetSocket</class>
       <class>Proxy</class>
     </classes>
@@ -21,20 +28,27 @@
   <function>
     <name>AddressToStr</name>
     <comment>Converts an IPAddress structure to an IPAddress in dotted string form.</comment>
-    <prototype>CSTRING net::AddressToStr(struct IPAddress * IPAddress)</prototype>
+    <prototype>ERR net::AddressToStr(struct IPAddress * IPAddress, STRING * Result)</prototype>
+    <tiriPrototype>err, Result:str = AddressToStr(IPAddress:any)</tiriPrototype>
+    <tags>mutates-input</tags>
     <input>
       <param type="struct IPAddress *" name="IPAddress">A pointer to the IPAddress structure.</param>
+      <param type="STRING *" name="Result">Must point to a <code>std::string</code> variable so that the resolved address can be stored.</param>
     </input>
     <description>
-<p>Converts an IPAddress structure to a string containing the IPAddress in dotted format.  Please free the resulting string with <function>FreeResource</function> once it is no longer required.</p>
+<p>Converts an IPAddress structure to a string containing the IPAddress in dotted format.</p>
     </description>
-    <result type="CSTRING">The IP address is returned as an allocated string.</result>
+    <result type="ERR">
+      <error code="Okay">The IPAddress was converted successfully.</error>
+    </result>
   </function>
 
   <function>
     <name>HostToLong</name>
     <comment>Converts a 32 bit (unsigned) long from host to network byte order.</comment>
     <prototype>UINT net::HostToLong(UINT Value)</prototype>
+    <tiriPrototype>num = HostToLong(Value:num)</tiriPrototype>
+    <tags>pure-query</tags>
     <input>
       <param type="UINT" name="Value">Data in host byte order to be converted to network byte order</param>
     </input>
@@ -48,6 +62,8 @@
     <name>HostToShort</name>
     <comment>Converts a 16 bit (unsigned) word from host to network byte order.</comment>
     <prototype>UINT net::HostToShort(UINT Value)</prototype>
+    <tiriPrototype>num = HostToShort(Value:num)</tiriPrototype>
+    <tags>pure-query</tags>
     <input>
       <param type="UINT" name="Value">Data in host byte order to be converted to network byte order</param>
     </input>
@@ -61,6 +77,8 @@
     <name>LongToHost</name>
     <comment>Converts a 32 bit (unsigned) long from network to host byte order.</comment>
     <prototype>UINT net::LongToHost(UINT Value)</prototype>
+    <tiriPrototype>num = LongToHost(Value:num)</tiriPrototype>
+    <tags>pure-query</tags>
     <input>
       <param type="UINT" name="Value">Data in network byte order to be converted to host byte order</param>
     </input>
@@ -72,28 +90,37 @@
 
   <function>
     <name>SetSSL</name>
-    <comment>Alters SSL settings on an initialised NetSocket object.</comment>
-    <prototype>ERR net::SetSSL(objNetSocket * NetSocket, CSTRING Command, CSTRING Value)</prototype>
+    <comment>Alters SSL settings on an initialised NetSocket client object.</comment>
+    <prototype>ERR net::SetSSL(objNetSocket * NetSocket, STRVIEW Command, STRVIEW Value)</prototype>
+    <tiriPrototype>err = SetSSL(NetSocket:obj, Command:str, Value:str)</tiriPrototype>
+    <tags>mutates-object, blocking, case-sensitive</tags>
     <input>
       <param type="objNetSocket *" name="NetSocket">The target NetSocket object.</param>
-      <param type="CSTRING" name="Command">Name of a command or option to set (case-sensitive, camel-case).</param>
-      <param type="CSTRING" name="Value">Value to set for the command or option.</param>
+      <param type="STRVIEW" name="Command">Name of a command or option to set (case-sensitive, camel-case).</param>
+      <param type="STRVIEW" name="Value">Value to set for the command or option.</param>
     </input>
     <description>
-<p>Use the SetSSL() function to adjust the SSL capabilities of a NetSocket object.  The following commands are currently available:</p>
+<p>Use the SetSSL() function to adjust the SSL capabilities of a NetSocket client object.  Server-side SSL is configured on <class name="NetServer">NetServer</class> before initialisation with the <code>SSL</code> flag and certificate fields.  The following commands are currently available:</p>
 <list type="bullet">
-<li>
-<b>EnableSSL</b>: Starts an SSL handshaking process with the remote server.  Does nothing if the socket is already in SSL mode.</li>
-<li>
-<b>DisableSSL</b>: Disconnects the SSL connection and reverts to unencrypted mode.</li>
+<li><b>EnableSSL</b>: Starts an SSL handshaking process with the remote server.  Does nothing if the socket is already
+in SSL mode.</li>
+<li><b>DisableSSL</b>: Disconnects the SSL connection and reverts to unencrypted mode.</li>
 </list>
 <p>If a failure occurs when executing a command, the execution of all further commands is aborted and the error code is returned immediately.</p>
-<p>SetSSL() can also be used to check if SSL is supported in the current build, in which case <code>ERR::NoSupport</code> will be the return value if all other arguments are <code>NULL</code>.</p>
+<p>SetSSL() can also be used to check if SSL is supported in the current build, in which case <code>ERR::NoSecureSockets</code> will be the return value if all other arguments are <code>NULL</code>.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="NoSupport">SSL support is disabled in this build.</error>
+      <error code="Retry">SSL handshaking needs to be retried.</error>
+      <error code="Failed">SSL setup or connection setup failed.</error>
+      <error code="FieldNotSet">SSL state was not initialised for the socket.</error>
+      <error code="SystemCall">The SSL library or platform SSL backend reported a system-level failure.</error>
+      <error code="Disconnected">SSL reported that the peer disconnected during handshaking.</error>
       <error code="NullArgs">The NetSocket argument was not specified.</error>
+      <error code="WrongClass">The object is not a NetSocket.</error>
+      <error code="WouldBlock">SSL handshaking would block.</error>
+      <error code="InputOutput">SSL handshaking failed due to an I/O error.</error>
+      <error code="NoSecureSockets">SSL support is disabled in this build.</error>
     </result>
   </function>
 
@@ -101,6 +128,8 @@
     <name>ShortToHost</name>
     <comment>Converts a 16 bit (unsigned) word from network to host byte order.</comment>
     <prototype>UINT net::ShortToHost(UINT Value)</prototype>
+    <tiriPrototype>num = ShortToHost(Value:num)</tiriPrototype>
+    <tags>pure-query</tags>
     <input>
       <param type="UINT" name="Value">Data in network byte order to be converted to host byte order</param>
     </input>
@@ -113,9 +142,11 @@
   <function>
     <name>StrToAddress</name>
     <comment>Converts an IP Address in string form to an <st>IPAddress</st> structure.</comment>
-    <prototype>ERR net::StrToAddress(CSTRING String, struct IPAddress * Address)</prototype>
+    <prototype>ERR net::StrToAddress(STRVIEW String, struct IPAddress * Address)</prototype>
+    <tiriPrototype>err = StrToAddress(String:str, Address:any)</tiriPrototype>
+    <tags>mutates-input</tags>
     <input>
-      <param type="CSTRING" name="String">A null-terminated string containing the IP Address in dotted format.</param>
+      <param type="STRVIEW" name="String">A null-terminated string containing the IP Address in dotted format.</param>
       <param type="struct IPAddress *" name="Address">Must point to an <st>IPAddress</st> structure that will be filled in.</param>
     </input>
     <description>
@@ -128,7 +159,7 @@ if (!StrToAddress(&quot;127.0.0.1&quot;, &amp;addr)) {
     </description>
     <result type="ERR">
       <error code="Okay">The <code>Address</code> was converted successfully.</error>
-      <error code="Failed">The <code>String</code> was not a valid IP Address.</error>
+      <error code="Syntax">The <code>String</code> was not a valid IP Address.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -139,64 +170,42 @@ if (!StrToAddress(&quot;127.0.0.1&quot;, &amp;addr)) {
       <const name="V6"/>
     </constants>
 
-    <constants lookup="NLF" comment="Options for NetLookup">
-      <const name="NO_CACHE">Contact the name service and do not use the local DNS cache.</const>
+    <constants lookup="JET" comment="JET constants are documented in GetInputEvent()">
+      <const name="ABS_XY">The X, Y values are defined as absolute coordinates, relative to the top-left of the display</const>
+      <const name="BUTTON_1">Left mouse button; XBox A button, PS square button.  Value is pressure sensitive, ranging between 0 - 1.0 (0 is released, 1.0 is fully depressed)</const>
+      <const name="BUTTON_10">Non-specific button assignment</const>
+      <const name="BUTTON_2">Right mouse button; XBox X button, PS cross button</const>
+      <const name="BUTTON_3">Middle mouse button; XBox Y button, PS triangle</const>
+      <const name="BUTTON_4">Alt. mouse button 1; XBox B button, PS circle</const>
+      <const name="BUTTON_5">Alt. mouse button 2</const>
+      <const name="BUTTON_6">Non-specific button assignment</const>
+      <const name="BUTTON_7">Non-specific button assignment</const>
+      <const name="BUTTON_8">Non-specific button assignment</const>
+      <const name="BUTTON_9">Non-specific button assignment</const>
+      <const name="CROSSED_IN">This message is sent by the input system when the mouse pointer enters an area for the first time.  The message value refers to the object ID of the container being monitored for movement</const>
+      <const name="CROSSED_OUT">This message is sent by the input system when the mouse pointer leaves an area.  The message value refers to the object ID of the container being monitored for movement</const>
+      <const name="DEVICE_TILT_XY">Controller tilted on the X/Y axis.  Value indicates angle, -ve = left, +ve = right</const>
+      <const name="DEVICE_TILT_Z">Controller is rising or falling.  Value expressed as 'speed',</const>
+      <const name="DISPLAY_EDGE">Recently supplied input occurred at the edge of the display</const>
+      <const name="PEN_TILT_XY">Pen tilt angle.  0 is pointing down directly with nib at bottom, 0.5 is 90 degrees, 1.0 is inversed (eraser at bottom)</const>
+      <const name="PRESSURE">Amount of pressure applied, ranges from 0 (none) to 1.0 (normal) and possibly higher if user presses hard enough</const>
+      <const name="WHEEL">Mouse wheel rotation - the value generally reflects the number of 'clicks' rotated on the wheel</const>
+      <const name="WHEEL_TILT">Some mouse wheels can be tilted to the left or right.  Ranges from -1.0 to +1.0</const>
     </constants>
 
-    <constants lookup="NSF">
-      <const name="BROADCAST">Enable broadcast (UDP only).</const>
-      <const name="DISABLE_SERVER_VERIFY">Disable SSL certificate verification (for testing only).</const>
-      <const name="LOG_ALL">Print extra log messages.</const>
-      <const name="MULTI_CONNECT">Allow multiple connections from the same IP when in server mode.</const>
-      <const name="SERVER">Puts the socket into server mode.  In this state the netsocket object will wait for incoming connections from clients.</const>
-      <const name="SSL">Use Secure Sockets Layer for all communication.</const>
-      <const name="SYNCHRONOUS">Use synchronous (blocking) network calls.</const>
-      <const name="UDP">Use UDP (connectionless datagram protocol) instead of TCP.</const>
-    </constants>
-
-    <constants lookup="NTC" comment="NetSocket states">
-      <const name="CONNECTED">There is an active connection at present.</const>
-      <const name="CONNECTING">A connection is being established.</const>
-      <const name="DISCONNECTED">There is no connection.</const>
-      <const name="HANDSHAKING">An SSL connection is being established.</const>
-      <const name="MULTISTATE">In server mode the NetSocket will be set to MULTISTATE to indicate one or more client connections.</const>
-      <const name="RESOLVING">The host name is being resolved.</const>
-    </constants>
-
-    <constants lookup="SCV" comment="These error codes for certificate validation match the OpenSSL error codes (X509 definitions)">
-      <const name="AKID_ISSUER_SERIAL_MISMATCH"/>
-      <const name="AKID_SKID_MISMATCH"/>
-      <const name="APPLICATION_VERIFICATION"/>
-      <const name="CERT_CHAIN_TOO_LONG"/>
-      <const name="CERT_HAS_EXPIRED"/>
-      <const name="CERT_NOT_YET_VALID"/>
-      <const name="CERT_REJECTED"/>
-      <const name="CERT_REVOKED"/>
-      <const name="CERT_SIGNATURE_FAILURE"/>
-      <const name="CERT_UNTRUSTED"/>
-      <const name="CRL_HAS_EXPIRED"/>
-      <const name="CRL_NOT_YET_VALID"/>
-      <const name="CRL_SIGNATURE_FAILURE"/>
-      <const name="DEPTH_ZERO_SELF_SIGNED_CERT"/>
-      <const name="ERROR_IN_CERT_NOT_AFTER_FIELD"/>
-      <const name="ERROR_IN_CERT_NOT_BEFORE_FIELD"/>
-      <const name="ERROR_IN_CRL_LAST_UPDATE_FIELD"/>
-      <const name="ERROR_IN_CRL_NEXT_UPDATE_FIELD"/>
-      <const name="INVALID_CA"/>
-      <const name="INVALID_PURPOSE"/>
-      <const name="KEYUSAGE_NO_CERTSIGN"/>
-      <const name="OK"/>
-      <const name="OUT_OF_MEM"/>
-      <const name="PATH_LENGTH_EXCEEDED"/>
-      <const name="SELF_SIGNED_CERT_IN_CHAIN"/>
-      <const name="SUBJECT_ISSUER_MISMATCH"/>
-      <const name="UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY"/>
-      <const name="UNABLE_TO_DECRYPT_CERT_SIGNATURE"/>
-      <const name="UNABLE_TO_DECRYPT_CRL_SIGNATURE"/>
-      <const name="UNABLE_TO_GET_CRL"/>
-      <const name="UNABLE_TO_GET_ISSUER_CERT"/>
-      <const name="UNABLE_TO_GET_ISSUER_CERT_LOCALLY"/>
-      <const name="UNABLE_TO_VERIFY_LEAF_SIGNATURE"/>
+    <constants lookup="JTYPE" comment="JTYPE flags are used to categorise input types">
+      <const name="ANALOG">Analog movement (ranging from -1.0 to 1.0)</const>
+      <const name="ANCHORED">Cursor has been anchored with LockCursor()</const>
+      <const name="BUTTON">Input is a physical button or switch</const>
+      <const name="CROSSING">Crossing events manage the entering and leaving of an area</const>
+      <const name="DBL_CLICK">Set by the input system if the <code>Type</code> is a button and the button has been clicked in quick succession so as to be classed as a double-click</const>
+      <const name="DIGITAL">D-Pad or digital joystick source (restricted to +/- 1)</const>
+      <const name="DRAGGED">Set if sufficient movement occurred between the original click and its point of release (usually requires a 3 or more pixel difference)</const>
+      <const name="DRAG_ITEM">This special flag is set by the input system if the pointer is click-dragging an object at the time of the event</const>
+      <const name="EXT_MOVEMENT">Extended or indirect movement information.  This covers all types of movement that are unconnected to coordinate positioning -  mouse wheel movement and pen tilt are two such examples</const>
+      <const name="MOVEMENT">X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system</const>
+      <const name="REPEATED">Input is a repeated entry (i.e. user is holding down a button and a repetition timer is being triggered)</const>
+      <const name="SECONDARY">Indicates to the receiver of this message that it is not the primary/original recipient</const>
     </constants>
 
   </types>

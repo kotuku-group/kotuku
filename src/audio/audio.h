@@ -1,5 +1,5 @@
 
-using namespace pf;
+using namespace kt;
 
 #include <variant>
 #include "mixer_dispatch.h"
@@ -17,6 +17,15 @@ inline BYTELEN operator + (BYTELEN a, BYTELEN b) { return BYTELEN(((int)a) + ((i
 inline BYTELEN &operator += (BYTELEN &a, BYTELEN b) { return (BYTELEN &)(((int &)a) += ((int)b)); }
 
 inline SAMPLE &operator -= (SAMPLE &a, SAMPLE b) { return (SAMPLE &)(((int &)a) -= ((int)b)); }
+
+inline void release_audio_callback(FUNCTION &Function)
+{
+   if (Function.defined()) {
+      if (Function.isScript() and (not Function.stale())) ((objScript *)Function.Context)->derefProcedure(Function);
+      Function.unpin();
+      Function.disable();
+   }
+}
 
 // Audio channel commands
 
@@ -58,27 +67,14 @@ typedef struct _GUID {
 } GUID;
 
 typedef struct WAVEFormat {
-   int16_t Format;               // Type of WAVE data in the chunk: RAW or ADPCM
-   int16_t Channels;             // Number of channels, 1=mono, 2=stereo
-   int Frequency;            // Playback frequency
-   int AvgBytesPerSecond;    // Channels * SamplesPerSecond * (BitsPerSample / 8)
-   int16_t BlockAlign;           // Channels * (BitsPerSample / 8)
-   int16_t BitsPerSample;        // Bits per sample
+   int16_t Format;            // Type of WAVE data in the chunk: RAW or ADPCM
+   int16_t Channels;          // Number of channels, 1=mono, 2=stereo
+   int Frequency;             // Playback frequency
+   int AvgBytesPerSecond;     // Channels * SamplesPerSecond * (BitsPerSample / 8)
+   int16_t BlockAlign;        // Channels * (BitsPerSample / 8)
+   int16_t BitsPerSample;     // Bits per sample
    int16_t ExtraLength;
 } WAVEFORMATEX;
-
-typedef struct {
-  WAVEFORMATEX Format;
-  union {
-    int16_t wValidBitsPerSample;
-    int16_t wSamplesPerBlock;
-    int16_t wReserved;
-  } Samples;
-  int dwChannelMask;         // Set to 0x3 for the left and right speakers
-  GUID SubFormat;
-} WAVEFORMATEXTENSIBLE;
-
-typedef int (*MixRoutine)(APTR, int, int, int, float, float, float **);
 
 // Function to set mixing step for thread-safe operation
 void set_mix_step(int step);
@@ -87,8 +83,6 @@ static const int16_t WAVE_RAW   = 0x0001;  // Uncompressed waveform data.
 static const int16_t WAVE_ADPCM = 0x0002;  // ADPCM compressed waveform data.
 static const int16_t WAVE_FLOAT = 0x0003;  // Uncompressed floating point waveform
 
-static const int16_t WAVE_FORMAT_EXTENSIBLE = int16_t(0xfffe);
-
 const int DEFAULT_BUFFER_SIZE = 8096; // Measured in samples, not bytes
 
 struct PlatformData { void *Void; };
@@ -96,7 +90,7 @@ struct PlatformData { void *Void; };
 struct AudioSample {
    FUNCTION Callback;     // For feeding audio streams.
    FUNCTION OnStop;       // Called when playback stops.
-   uint8_t *  Data;         // Pointer to the sample data.
+   std::vector<uint8_t> Data; // Sample data.
    SAMPLE   Loop1Start;   // Start of the first loop
    SAMPLE   Loop1End;     // End of the first loop
    SAMPLE   Loop2Start;   // Start of the second loop
@@ -104,6 +98,7 @@ struct AudioSample {
    SAMPLE   SampleLength; // Length of the Data sample/buffer.  Measured in samples
    BYTELEN  StreamLength; // Streams only.  Total byte-length of the sample data that is being streamed.
    BYTELEN  PlayPos;      // Current read position relative to StreamLength/SampleLength, measured in bytes
+   BYTELEN  BufferedLength; // Streams only.  Valid source bytes in the current rolling buffer.
    LOOP     LoopMode;     // Loop mode (single, double)
    SFM      SampleType;   // Type of sample (bit format)
    LTYPE    Loop1Type;    // First loop type (unidirectional, bidirectional)
@@ -111,7 +106,6 @@ struct AudioSample {
    bool     Stream;       // True if this is a stream
 
    AudioSample() {
-      Data     = nullptr;
       Stream   = false;
       clear();
    }
@@ -121,15 +115,16 @@ struct AudioSample {
    }
 
    void clear() {
-      if (Data) FreeResource(Data);
-
-      Data         = nullptr;
+      Callback.clear();
+      OnStop.clear();
+      std::vector<uint8_t>().swap(Data);
       SampleLength = SAMPLE(0);
       Loop1Start   = SAMPLE(0);
       Loop1End     = SAMPLE(0);
       Loop2Start   = SAMPLE(0);
       Loop2End     = SAMPLE(0);
       StreamLength = BYTELEN(0);
+      BufferedLength = BYTELEN(0);
       SampleType   = SFM::NIL;
       LoopMode     = LOOP::NIL;
       Loop1Type    = LTYPE::NIL;
@@ -142,7 +137,16 @@ struct AudioCommand {
    int Handle;       // Channel handle
    std::variant<double,int,bool> Data; // Special data related to the command ID
 
-   AudioCommand(CMD pCommandID, int pHandle, double pData = 0) :
+   AudioCommand(CMD pCommandID, int pHandle) :
+      CommandID(pCommandID), Handle(pHandle), Data(double(0)) { }
+
+   AudioCommand(CMD pCommandID, int pHandle, double pData) :
+      CommandID(pCommandID), Handle(pHandle), Data(pData) { }
+
+   AudioCommand(CMD pCommandID, int pHandle, int pData) :
+      CommandID(pCommandID), Handle(pHandle), Data(pData) { }
+
+   AudioCommand(CMD pCommandID, int pHandle, bool pData) :
       CommandID(pCommandID), Handle(pHandle), Data(pData) { }
 
    AudioCommand() = default;
@@ -155,15 +159,15 @@ struct AudioChannel {
    double   RVolumeTarget;  // Volume target when fading or ramping
    double   Volume;         // Playing volume (0 - 1.0)
    double   Pan;            // Pan value (-1.0 - 1.0)
-   int64_t    EndTime;        // Anticipated end-time of playing the current sample, if OnStop is defined in the sample.
-   int     SampleHandle;   // Sample index, direct lookup into extAudio->Samples
+   int64_t  EndTime;        // Anticipated end-time of playing the current sample, if OnStop is defined in the sample.
+   int      SampleHandle;   // Sample index, direct lookup into extAudio->Samples
    CHF      Flags;          // Special flags
-   int     Position;       // Current playing/mixing byte position within Sample.
-   int     Frequency;      // Playback frequency
-   int     PositionLow;    // Playing position, lower bits
-   int8_t     Priority;       // Priority of the sound that has been assigned to this channel
+   int      Position;       // Current playing/mixing byte position within Sample.
+   int      Frequency;      // Playback frequency
+   int      PositionLow;    // Playing position, lower bits
+   int8_t   Priority;       // Priority of the sound that has been assigned to this channel
    CHS      State;          // Channel state
-   int8_t     LoopIndex;      // The current active loop (either 0, 1 or 2)
+   int8_t   LoopIndex;      // The current active loop (either 0, 1 or 2)
    bool     Buffering;
 
    bool active() {
@@ -228,29 +232,27 @@ class extAudio : public objAudio {
    std::vector<VolumeCtl> Volumes;
    std::vector<MixTimer> MixTimers;
    AudioConfig MixConfig;
-   APTR  MixBuffer;
+   std::vector<float> MixBuffer;
    APTR  TaskRemovedHandle;
    APTR  UserLoginHandle;
    #ifdef _WIN32
       uint8_t  PlatformData[128];  // Data area for holding platform/hardware specific information
    #endif
    #ifdef ALSA_ENABLED
-      uint8_t *AudioBuffer;
+      std::vector<uint8_t> AudioBuffer;
       snd_pcm_t    *Handle;
       snd_mixer_t  *MixHandle;
       snd_output_t *sndlog;
-      BYTELEN AudioBufferSize;    // Buffer size measured in bytes
    #endif
    double  MasterVolume;
    TIMER   Timer;
-   BYTELEN MixBufferSize;
    SAMPLE  MixElements;
-   int    MaxChannels;    // Recommended maximum mixing channels for Sound class
+   int     MaxChannels;    // Recommended maximum mixing channels for Sound class
    std::string Device;
    int8_t  DriverBitSize;  // Target sample bit size; accounts for stereo channel
-   bool  Stereo;
-   bool  Mute;
-   bool  Initialising;
+   bool    Stereo;
+   bool    Mute;
+   bool    Initialising;
 
    inline struct AudioChannel * GetChannel(int Handle) {
       return &this->Sets[Handle>>16].Channel[Handle & 0xffff];
@@ -269,7 +271,8 @@ class extAudio : public objAudio {
 
    inline void finish(AudioChannel &Channel, bool Notify);
 
-   extAudio() = default;
+   extAudio(objMetaClass *ClassPtr, OBJECTID ObjectID);
+   ~extAudio();
 
    private:
       double mixerLag;
@@ -278,23 +281,29 @@ class extAudio : public objAudio {
 class extSound : public objSound {
    public:
    FUNCTION OnStop;
-   uint8_t  Header[32];
+   std::array<uint8_t,32> Header;
    #ifdef _WIN32
    uint8_t  PlatformData[64];   // Data area for holding platform/hardware specific information
    #endif
    ankerl::unordered_dense::map<std::string, std::string> Tags;
-   objFile *File;
-   STRING Path;
-   TIMER  StreamTimer;        // Timer to regularly trigger for provisioning streaming data.
-   TIMER  PlaybackTimer;      // Timer to trigger when playback ends.
+   std::unique_ptr<objFile, DeleteObject<objFile>> File;
+   std::string Path;
+   TIMER StreamTimer;        // Timer to regularly trigger for provisioning streaming data.
+   TIMER PlaybackTimer;      // Timer to trigger when playback ends.
    int   Format;             // The format of the sound data
    int   DataOffset;         // Start of raw audio data within the source file
    int   Note;               // Note to play back (e.g. C, C#, G...)
-   char   NoteString[4];
-   bool   Active;             // True once the sound is registered with the audio driver or mixer.
-};
+   std::string NoteString;
+   bool  Active;             // True once the sound is registered with the audio driver or mixer.
 
-struct BufferCommand {
-   CMD CommandID;
-   ERR (*Routine)(extAudio *Self, APTR);
+   extSound(objMetaClass *ClassPtr, OBJECTID ObjectID) : objSound(ClassPtr, ObjectID) {
+      Compression = 50;     // 50% compression by default
+      Volume      = 1.0;    // Playback at 100% volume level
+      Pan         = 0;
+      Playback    = 0;
+      Note        = NOTE_C; // Standard pitch
+      Stream      = STREAM::SMART;
+   }
+
+   ~extSound();
 };

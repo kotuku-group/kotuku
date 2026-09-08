@@ -1,0 +1,516 @@
+--[[
+Response Features Testing
+
+Tests HTTP response features including redirects, compression, caching headers, status codes, and response processing.
+--]]
+
+   import 'net/httpserver'
+   import 'json'
+   include 'http'
+
+glOutFile <const> = 'temp:http-response-output.txt'
+SERVER_PORT <const> = 18942
+
+rxStatusLine = <{ regex.new([[HTTP\/1\.[01]\s+(\d+)]]) }>
+
+function rawHttpRequestWithHeaders(Method:str, Path:str, Headers:table):<num, str>
+   response = ''
+   request = Method .. ' ' .. Path .. " HTTP/1.1\r\n" ..
+      "Host: 127.0.0.1\r\n" ..
+      "Connection: close\r\n"
+
+   if Headers then
+      for name, value in pairs(Headers) do
+         request ..= name .. ": " .. tostring(value) .. "\r\n"
+      end
+   end
+
+   request ..= "\r\n"
+
+   socket = obj.new('netsocket', {
+      feedback = function(Socket, State)
+         if State is NTC_CONNECTED then
+            check Socket.acWrite(request)
+         elseif State is NTC_DISCONNECTED then
+            Socket.acSignal()
+         end
+      end,
+      incoming = function(Socket)
+         buffer = string.alloc(4096)
+         err, read_len = Socket.acRead(buffer)
+         if err is ERR_Okay then
+            response ..= buffer.sub(0, read_len)
+         elseif err is ERR_Disconnected then
+            Socket.acSignal()
+         else
+            raise 'Raw HTTP read failed: ' .. mSys.GetErrorMsg(err)
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { socket } })
+   check socket.mtConnect('127.0.0.1', SERVER_PORT, 3.0)
+   err = proc.sleep()
+   assert(err is ERR_Okay, 'Raw HTTP request failed: ' .. mSys.GetErrorMsg(err))
+
+   status = rxStatusLine.extract(response)
+   return tonumber(status ?? 0), response
+end
+
+function rawHttpRequest(Method:str, Path:str):<num, str>
+   return rawHttpRequestWithHeaders(Method, Path, nil)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function rawHttpBody(Response:str):str
+   header_end = Response.find("\r\n\r\n")
+   header_end ?! return ''
+   return Response.sub(header_end + 4)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@BeforeAll function init(State)
+   global glPath = State.folder
+
+   global glServer = hslib.start({
+      port    = SERVER_PORT,
+      folder  = glPath,
+      verbose = true,
+      routes = {
+         { pattern = '/redirect/test',
+            method = 'GET',
+            handler = function(req, res)
+               res.redirect('/redirect/target', 301)
+            end
+         },
+         { pattern = '/redirect/target',
+            method = 'GET',
+            handler = function(req, res)
+               res.json({
+                  message = 'Redirect target reached',
+                  redirected = true
+               })
+            end
+         },
+         { pattern = '/permanent-redirect',
+            method = 'GET',
+            handler = function(req, res)
+               res.status(301).redirect('/redirect/target')
+            end
+         },
+         { pattern = '/status/:code',
+            method = 'GET',
+            handler = function(req, res)
+               statusCode = tonumber(req.params.code) or 500
+               res.status(statusCode).json({
+                  message = 'Status code test',
+                  requestedStatus = statusCode
+               })
+            end
+         },
+         { pattern = '/headers/response',
+            method = 'GET',
+            handler = function(req, res)
+               res.header('X-Custom-Response', 'CustomValue')
+                  .header('X-Server-Version', '1.0')
+                  .header('X-Request-ID', 'test-123')
+                  .json({
+                     message = 'Response headers test',
+                     customHeaders = true
+                  })
+            end
+         },
+         { pattern = '/cache/test',
+            method = 'GET',
+            handler = function(req, res)
+               res.header('Cache-Control', 'max-age=3600, public')
+                  .header('ETag', '"test-etag-123"')
+                  .header('Last-Modified', 'Wed, 21 Oct 2015 07:28:00 GMT')
+                  .json({
+                     message = 'Cache headers test',
+                     cacheControl = true
+                  })
+            end
+         },
+         { pattern = '/compress/test',
+            method = 'GET',
+            handler = function(req, res)
+               -- Large response that would benefit from compression
+               largeMessage = 'This is a test message for compression. '.rep(100)
+               res.json({
+                  message = 'Compression test response',
+                  data = largeMessage,
+                  size = #largeMessage
+               })
+            end
+         },
+         { pattern = '/error/test',
+            method = 'GET',
+            handler = function(req, res)
+               res.status(500).json({
+                  error = 'Internal server error occurred',
+                  code = 'INTERNAL_ERROR',
+                  timestamp = mSys.PreciseTime()
+               })
+            end
+         },
+         { pattern = '/error/large',
+            method = 'GET',
+            handler = function(req, res)
+               res.status(500).json({
+                  error = 'Large internal server error',
+                  details = 'x'.rep(8192)
+               })
+            end
+         },
+         { pattern = '/large/response',
+            method = 'GET',
+            handler = function(req, res)
+               -- Generate large response
+               largeData = {}
+               for i in {1 to 101} do
+                  largeData.insert({
+                     id = i,
+                     name = 'Item ' .. i,
+                     description = 'This is a description for item number ' .. i .. ' with some additional text to make it longer.',
+                     data = 'x'.rep(50)
+                  })
+               end
+
+               res.json({
+                  message = 'Large response test',
+                  items = largeData,
+                  totalItems = #largeData
+               })
+            end
+         }
+      }
+   })
+end
+
+@AfterAll function cleanup()
+   glServer.stop()
+   mSys.DeleteFile(glOutFile)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function RedirectHandling()
+   status, redirect_response = rawHttpRequest('GET', '/redirect/test')
+   assert(status is 301, 'Redirect should return 301, got: ' .. status)
+   assert(redirect_response.find('location: /redirect/target'), 'Redirect Location header missing')
+
+   status, target_response = rawHttpRequest('GET', '/redirect/target')
+   assert(status is 200, 'Redirect target status should be 200, got: ' .. status)
+
+   response = json.decode(rawHttpBody(target_response))
+   assert(response.redirected is true, 'Should indicate request was redirected')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function PermanentRedirect()
+   status, response = rawHttpRequest('GET', '/permanent-redirect')
+   assert(status is 301, 'Permanent redirect should return 301, got: ' .. status)
+   assert(response.find('location: /redirect/target'), 'Permanent redirect Location header missing')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CustomStatusCodes()
+   status_codes = { 201, 202, 204, 400, 401, 403, 500, 503 }
+   results      = {}
+   requests     = {}
+   completed    = 0
+   wait_http    = nil
+
+   for i, statusCode in ipairs(status_codes) do
+      http = obj.new('http', {
+         src = 'http://127.0.0.1:' .. SERVER_PORT .. '/status/' .. statusCode,
+         method = 'GET',
+         flags = HTF_NO_HEAD,
+         incoming = function(HTTP, Buffer)
+            if not results[i] then results[i] = {content = ''} end
+            if Buffer then results[i].content ..= Buffer.getString() end
+         end,
+         stateChanged = function(HTTP, State)
+            if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+               if not results[i] then results[i] = {} end
+               results[i].status = HTTP.status
+               results[i].error = HTTP.error
+               completed++
+               if completed >= #status_codes then
+                  wait_http.acSignal()
+               end
+            end
+         end
+      })
+      requests[i] = http
+      if not wait_http then wait_http = http end
+   end
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { wait_http } })
+
+   for i, http in ipairs(requests) do
+      assert(http.acActivate() is ERR_Okay, "Status code test " .. status_codes[i] .. " failed to activate")
+   end
+
+   check proc.sleep()
+
+   -- Verify each status code was returned correctly
+   for i, expectedStatus in ipairs(status_codes) do
+      assert(results[i].status is expectedStatus, 'Status code mismatch: expected ' .. expectedStatus .. ', got ' .. (results[i].status or 'nil'))
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ResponseHeaders()
+   status, raw_response = rawHttpRequest('GET', '/headers/response')
+   assert(status is 200, 'Response headers unexpected status: ' .. status)
+
+   response = json.decode(rawHttpBody(raw_response))
+   assert(response.customHeaders, 'Custom response headers should be set')
+   assert(raw_response.find('content-type: application/json'), 'Content-Type header not set correctly')
+   assert(raw_response.find('x-custom-response: CustomValue'), 'Custom response header missing')
+
+   content = ''
+   http = obj.new('http', {
+      src      = 'http://127.0.0.1:' .. SERVER_PORT .. '/headers/response',
+      method   = 'GET',
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.error is ERR_Okay, 'Response keys HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Response keys unexpected status: ' .. http.status)
+
+   response_keys = http.responseKeys
+   assert(response_keys, 'ResponseKeys field should return received header names')
+   assert(#response_keys >= 3, 'ResponseKeys should include custom response headers')
+
+   found_content_type = false
+   found_custom_response = false
+   found_server_version = false
+   found_request_id = false
+   for key in values(response_keys) do
+      if key is 'content-type' then found_content_type = true
+      elseif key is 'x-custom-response' then found_custom_response = true
+      elseif key is 'x-server-version' then found_server_version = true
+      elseif key is 'x-request-id' then found_request_id = true
+      end
+   end
+
+   assert(found_content_type, 'ResponseKeys should include content-type')
+   assert(found_custom_response, 'ResponseKeys should include x-custom-response')
+   assert(found_server_version, 'ResponseKeys should include x-server-version')
+   assert(found_request_id, 'ResponseKeys should include x-request-id')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function UnsatisfiableStaticFileRange()
+   local file = obj.new('file', { path = glPath .. '/test_response_features.tiri', flags = 'READ' })
+   local file_size = file.size
+   file = nil
+
+   local status, response = rawHttpRequestWithHeaders('GET', '/test_response_features.tiri', {
+      Range = 'bytes=999999-1000000'
+   })
+
+   local lower_response = response.lower()
+   local expected_range = f"content-range: bytes */{file_size}"
+
+   assert(status is 416, 'Unsatisfiable range should return 416, got: ' .. status)
+   assert(lower_response.find(expected_range, 0, true), '416 response missing Content-Range "' .. expected_range .. '"')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CacheHeaders()
+   content = ''
+
+   http = obj.new('http', {
+      src      = 'http://127.0.0.1:' .. SERVER_PORT .. '/cache/test',
+      method   = 'GET',
+      flags    = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.error is ERR_Okay, 'Cache headers HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Cache headers unexpected status: ' .. http.status)
+
+   response = json.decode(content)
+   assert(response.cacheControl, 'Cache-Control header should be reported')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function CompressionSupport()
+   content = ''
+
+   http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/compress/test',
+      method = 'GET',
+      flags = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   check http.acSetKey('Accept-Encoding', 'gzip, deflate')
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.error is ERR_Okay, 'Compression HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Compression unexpected status: ' .. http.status)
+
+   -- Content should be properly decompressed by HTTP client
+   response = json.decode(content)
+   assert(response.message, 'Compressed response should be decompressed correctly')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ErrorResponse()
+   content = ''
+
+   http = obj.new('http', {
+      src      = 'http://127.0.0.1:' .. SERVER_PORT .. '/error/test',
+      method   = 'GET',
+      flags    = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.status is 500, 'Error response should return 500, got: ' .. http.status)
+
+   response = json.decode(content)
+   assert(response.error, 'Error response should contain error message')
+   assert(response.code is 'INTERNAL_ERROR', 'Error response should contain error code')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ErrorStatusWithoutContent()
+   http = obj.new('http', {
+      src      = 'http://127.0.0.1:' .. SERVER_PORT .. '/error/test',
+      method   = 'GET',
+      flags    = HTF_NO_HEAD,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.status is 500, 'Error response should return 500, got: ' .. http.status)
+   assert(http.error is ERR_HTTPStatus, 'Non-streamed error response should return HTTPStatus, got: ' ..
+      mSys.GetErrorMsg(http.error))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ErrorStatusAfterContent()
+   content = ''
+
+   http = obj.new('http', {
+      src      = 'http://127.0.0.1:' .. SERVER_PORT .. '/error/large',
+      method   = 'GET',
+      flags    = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.status is 500, 'Large error response should return 500, got: ' .. http.status)
+   assert(http.error is ERR_HTTPStatus, 'Large error response should return HTTPStatus, got: ' ..
+      mSys.GetErrorMsg(http.error))
+   assert(#content > 512, 'Large error response body was not received')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function LargeResponse()
+   content = ''
+   total_bytes = 0
+
+   http = obj.new('http', {
+      src      = 'http://127.0.0.1:' .. SERVER_PORT .. '/large/response',
+      method   = 'GET',
+      flags    = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         if Buffer then
+            content ..= Buffer.getString()
+            total_bytes += #Buffer
+         end
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 10.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.error is ERR_Okay, 'Large response HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Large response unexpected status: ' .. http.status)
+
+   -- Should receive substantial amount of data
+   assert(total_bytes > 1024, 'Large response should be over 1KB, got: ' .. total_bytes .. ' bytes')
+end

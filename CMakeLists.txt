@@ -4,13 +4,11 @@
 # Debug Config:    cmake -S . -B build/debug -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=local -DRUN_ANYWHERE=TRUE
 # Fast Config:     cmake -S . -B build/fast -DCMAKE_BUILD_TYPE=FastBuild -DCMAKE_INSTALL_PREFIX=local -DRUN_ANYWHERE=TRUE
 #                  (FastBuild optimises for compilation speed rather than runtime performance - uses -O0, faster linkers, minimal debug info)
-# Git Release:     cmake -S . -B build/release-git -DCMAKE_BUILD_TYPE=Release -DINSTALL_EXAMPLES=TRUE -DCMAKE_INSTALL_PREFIX=kotuku-linux64-$(date +'%Y%m%d') -DRUN_ANYWHERE=TRUE -DBUILD_TESTS=OFF -DBUILD_DEFS=OFF
-#
-# For GCC based Windows builds, -G"MinGW Makefiles" must be added to the above commands.
+# Git Release:     cmake -S . -B build/release-git -DCMAKE_BUILD_TYPE=Release -DINSTALL_EXAMPLES=TRUE -DCMAKE_INSTALL_PREFIX=kotuku-linux64-$(date +'%Y%m%d') -DRUN_ANYWHERE=TRUE -DBUILD_TESTS=OFF
 #
 # A build can target a local folder by adding -DCMAKE_INSTALL_PREFIX=local -DRUN_ANYWHERE=TRUE
 #
-# Build:   cmake --build build/release -j 8 -- -O
+# Build:   cmake --build build/release --parallel -- -O
 # Install: sudo cmake --install build/release
 # Test:    ctest --testdir build/release -C Release --output-on-failure
 #
@@ -21,7 +19,7 @@
 #
 # Windows release packages can be created using CPack integration:
 #
-#   cmake -S . -B release -DCMAKE_BUILD_TYPE=Release -DKOTUKU_STATIC=ON -DINSTALL_EXAMPLES=ON
+#   cmake -S . -B release -DCMAKE_BUILD_TYPE=Release -DKOTUKU_STATIC=ON -DINSTALL_EXAMPLES=ON -DENABLE_CPACK=ON
 #   cmake --build release --config Release
 #   cmake --install release
 #   cd release && cpack -G ZIP
@@ -45,6 +43,7 @@ include (CheckTypeSize)
 include (CheckFunctionExists)
 include (CheckSymbolExists)
 include (CheckCSourceCompiles)
+include (CheckIncludeFileCXX)
 include (CheckStructHasMember)
 include (CheckLibraryExists)
 include (TestBigEndian)
@@ -66,16 +65,18 @@ endif()
 
 # To switch on a custom option use -D, e.g. -DKOTUKU_VLOG=ON
 
-option (KOTUKU_STATIC   "Build as a set of static libraries instead of the default modular build." OFF)
-option (KOTUKU_INSTALL  "Create installation targets" ON)
-option (KOTUKU_VLOG     "Enable verbose log messages in the generated binaries" OFF)
+option (KOTUKU_STATIC            "Build as a set of static libraries instead of the default modular build." OFF)
+option (KOTUKU_INSTALL           "Create installation targets" ON)
+option (KOTUKU_VLOG              "Enable verbose log messages in the generated binaries" OFF)
+option (KOTUKU_ICON_DEPENDENCIES "Track icon source files as dependencies for rebuilding the icon package." ON)
+option (ORIGO_CONSOLE            "Build Origo as a Windows console application rather than a GUI application (Windows only)" OFF)
 if (UNIX)
    option (RUN_ANYWHERE  "Create a build that can run directly from the main folder.  Typically used if redefining CMAKE_INSTALL_PREFIX" OFF)
 else ()
    set (RUN_ANYWHERE ON)
 endif ()
-option (BUILD_TESTS       "Build/enable tests" ON)
-option (BUILD_DEFS        "Auto-generate C/C++ headers and documentation" OFF)
+option (BUILD_TESTS       "Enable Flute tests" ON)
+option (BUILD_DEFS        "Build generated C/C++ headers and documentation as part of the default build" OFF)
 option (DISABLE_SSL       "Disable built-in SSL support even if available on this system" OFF)
 option (DISABLE_X11       "Disable X11 even if available on this system" OFF)
 option (DISABLE_AUDIO     "Disable Audio API" OFF)
@@ -84,9 +85,10 @@ option (DISABLE_DISPLAY   "Disable Display API" OFF)
 option (DISABLE_DOCUMENT  "Disable Document API" OFF)
 option (DISABLE_FONT      "Disable Font API" OFF)
 option (DISABLE_HTTP      "Disable HTTP API" OFF)
+option (DISABLE_LZMA      "Disable LZMA decompression support" OFF)
 option (DISABLE_MP3       "Disable MP3 support" OFF)
 option (DISABLE_NETWORK   "Disable Network API" OFF)
-option (DISABLE_PICTURE   "Disable Picture API" OFF)
+option (DISABLE_IMAGE     "Disable Image API" OFF)
 option (DISABLE_JPEG      "Disable JPEG support" OFF)
 option (DISABLE_SCINTILLA "Disable Scintilla API" ON)
 option (DISABLE_SVG       "Disable SVG support" OFF)
@@ -97,8 +99,29 @@ option (INSTALL_INCLUDES  "Install the header files.  Turn this off for client r
 option (INSTALL_TESTS     "Install the test programs." OFF)
 option (ENABLE_ANALYSIS   "Enable run-time program analysis (with performance penalties) if available.  May negatively affect gdb." OFF)
 option (GENERATE_DEBIAN_PKG "Generate Debian packaging files" OFF)
-option (DISABLE_CPACK     "Disable CPack Windows packaging support" OFF)
+option (ENABLE_CPACK      "Enable CPack Windows packaging support" OFF)
 option (FULL_OPTIMISATION "Use the highest levels of optimisation available" OFF)
+option (ENABLE_SSL_BUNDLE_UPDATE "Enable the manual update_ssl_bundle target for downloading the SSL certificate bundle." OFF)
+
+set (KOTUKU_NETWORK_SUPPORTED FALSE)
+if (WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
+   set (KOTUKU_NETWORK_SUPPORTED TRUE)
+endif ()
+
+if (NOT DISABLE_NETWORK AND NOT KOTUKU_NETWORK_SUPPORTED)
+   message (STATUS "Network API disabled: unsupported platform '${CMAKE_SYSTEM_NAME}'.")
+   set (DISABLE_NETWORK ON CACHE BOOL "Disable Network API" FORCE)
+endif ()
+
+get_property (KOTUKU_MULTI_CONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+
+if (KOTUKU_MULTI_CONFIG AND CMAKE_BUILD_TYPE STREQUAL "FastBuild")
+   list (FIND CMAKE_CONFIGURATION_TYPES FastBuild KOTUKU_FASTBUILD_INDEX)
+   if (KOTUKU_FASTBUILD_INDEX EQUAL -1)
+      list (APPEND CMAKE_CONFIGURATION_TYPES FastBuild)
+      set (CMAKE_CONFIGURATION_TYPES "${CMAKE_CONFIGURATION_TYPES}" CACHE STRING "Available build configurations" FORCE)
+   endif ()
+endif ()
 
 set (CMAKE_CXX_STANDARD 20)
 set (CMAKE_CXX_STANDARD_REQUIRED True)
@@ -109,6 +132,12 @@ set (BUILD_RPATH_USE_ORIGIN TRUE)
 
 set (INCLUDE_OUTPUT "${PROJECT_SOURCE_DIR}/include/kotuku")
 set (DOCS "${PROJECT_SOURCE_DIR}/docs/xml")
+
+# Ensure the top-level include directory is visible to all builds and tools that
+# run during the build (some generated-header steps and tools may compile
+# helper sources outside target-specific include directories). This helps
+# avoid C1083 errors when headers under include/kotuku are referenced.
+include_directories("${PROJECT_SOURCE_DIR}/include")
 
 set(REQUIRED_MODS core tiri xml xquery regex json)
 
@@ -121,11 +150,13 @@ endif ()
 if (RUN_ANYWHERE)
    set (KOTUKU_ROOT "${CMAKE_INSTALL_PREFIX}")
    set (SHARE_TARGET .)
+   set (CONFIG_TARGET "config")
    set (LIB_TARGET "lib")
    set (ORIGO_CMD_PATH "${CMAKE_INSTALL_PREFIX}")
 else ()
    set (KOTUKU_ROOT "${CMAKE_INSTALL_PREFIX}/share/kotuku")
    set (SHARE_TARGET "share/kotuku")
+   set (CONFIG_TARGET "${SHARE_TARGET}/config")
    set (LIB_TARGET "lib/kotuku")
    set (ORIGO_CMD_PATH "${CMAKE_INSTALL_PREFIX}/bin")
 endif ()
@@ -138,14 +169,24 @@ if (SYSTEM_ENDIAN_STYLE EQUAL 0) # Little endian (Intel)
    set (LITTLE_ENDIAN TRUE)
 endif ()
 
+set (KOTUKU_OPENSSL_MINIMUM_VERSION 1.1.1)
+
 if (NOT DISABLE_SSL)
    if (WIN32)
       # Win32 SSL support is supported natively
    else ()
       set (OPENSSL_USE_STATIC_LIBS TRUE)
-      include (FindOpenSSL)
+      find_package (OpenSSL ${KOTUKU_OPENSSL_MINIMUM_VERSION} QUIET)
       if (NOT OpenSSL_FOUND)
          set (DISABLE_SSL TRUE)
+      else ()
+         set (CMAKE_REQUIRED_INCLUDES "${OPENSSL_INCLUDE_DIR}")
+         check_include_file_cxx ("openssl/ssl.h" HAVE_OPENSSL_SSL_H)
+         unset (CMAKE_REQUIRED_INCLUDES)
+         if (NOT HAVE_OPENSSL_SSL_H)
+            message (STATUS "OpenSSL libraries were found but openssl/ssl.h is missing. SSL support will be disabled.")
+            set (DISABLE_SSL TRUE)
+         endif ()
       endif ()
    endif ()
 endif ()
@@ -205,6 +246,33 @@ int main() {
 	PRINTF64_PRID
    FAIL_REGEX "warning")
 
+check_cxx_source_compiles ("
+#include <cstddef>
+#include <cstdint>
+
+struct Base {
+   void *Pointer;
+   uint16_t Count;
+   ~Base() {}
+};
+
+struct Derived : public Base {
+   int Value;
+};
+
+static_assert(offsetof(Derived, Value) < sizeof(Base));
+
+int main() {
+   return 0;
+}"
+   KOTUKU_CXX_REUSES_BASE_TAIL_PADDING)
+
+if (KOTUKU_CXX_REUSES_BASE_TAIL_PADDING)
+   message (STATUS "C++ compiler reuses base-class tail padding for derived fields.")
+else ()
+   message (STATUS "C++ compiler keeps derived fields after the full base-class size.")
+endif ()
+
 find_program (XXD_CMD "xxd")
 find_program (OD_CMD "od")
 find_program (ORIGO_CMD "origo" NO_DEFAULT_PATH PATHS "${ORIGO_CMD_PATH}")
@@ -212,12 +280,17 @@ find_file (IDL_C_SCRIPT "idl-c.tiri" PATHS "${PROJECT_SOURCE_DIR}/tools/idl")
 find_file (IDL_COMPILE_SCRIPT "idl-compile.tiri" PATHS "${PROJECT_SOURCE_DIR}/tools/idl")
 find_file (FLUTE_SCRIPT "flute.tiri" PATHS "${PROJECT_SOURCE_DIR}/tools")
 
+set (KOTUKU_DEFS_AVAILABLE TRUE)
+
 if (ORIGO_CMD STREQUAL "ORIGO_CMD-NOTFOUND")
-   message (STATUS "Definitions will not be built and tests are disabled.")
+   message (STATUS "Definition generation targets are unavailable because no installed Origo executable was found.")
+   set (KOTUKU_DEFS_AVAILABLE FALSE)
    set (BUILD_DEFS OFF)
 else ()
    if (BUILD_DEFS)
       message (STATUS "Definitions will be built with the Origo exe installed @ ${ORIGO_CMD}.")
+   else ()
+      message (STATUS "Definition generation is available with: cmake --build <build-dir> --target build_headers")
    endif ()
 endif ()
 
@@ -250,7 +323,9 @@ if (WIN32)
       endif ()
       set (INIT_LINK "init-win" kotuku_static)
    else ()
-      set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+      if (MINGW)
+         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+      endif ()
       set (INIT_LINK "init-win")
    endif ()
 else ()
@@ -262,7 +337,57 @@ else ()
    endif ()
 endif ()
 
-add_custom_target(build_headers ALL COMMENT "Generate headers and definition files on the fly")
+if (BUILD_DEFS)
+   add_custom_target (build_headers ALL COMMENT "Generate headers and definition files on the fly")
+elseif (KOTUKU_DEFS_AVAILABLE)
+   add_custom_target (build_headers COMMENT "Generate headers and definition files on demand")
+else ()
+   add_custom_target (build_headers
+      COMMAND ${CMAKE_COMMAND} -E echo "Cannot generate definitions: install or build Origo, then reconfigure this build tree."
+      COMMAND ${CMAKE_COMMAND} -E false
+      COMMENT "Definition generation is unavailable")
+endif ()
+
+# --------------------------------------------------------------------------------------------------------------------
+# Register generated header targets with the aggregate target while also making them discoverable for
+# module-local dependency wiring in set_module_defaults().
+
+function (register_generated_header_target ARG_TARGET)
+   add_dependencies (build_headers ${ARG_TARGET})
+   set_property (DIRECTORY APPEND PROPERTY KOTUKU_GENERATED_HEADER_TARGETS ${ARG_TARGET})
+endfunction ()
+
+# --------------------------------------------------------------------------------------------------------------------
+# Add generated header dependencies immediately when possible, otherwise queue them until all subdirectories have
+# declared their targets.  This keeps normal builds parallel while avoiding missing generated headers in BUILD_DEFS
+# configurations.
+
+function (add_generated_header_dependencies ARG_TARGET)
+   if (BUILD_DEFS)
+      foreach (ARG_DEPENDENCY IN LISTS ARGN)
+         if (TARGET ${ARG_TARGET} AND TARGET ${ARG_DEPENDENCY})
+            add_dependencies (${ARG_TARGET} ${ARG_DEPENDENCY})
+         else ()
+            set_property (GLOBAL APPEND PROPERTY KOTUKU_PENDING_GENERATED_HEADER_DEPENDENCIES
+               "${ARG_TARGET}|${ARG_DEPENDENCY}")
+         endif ()
+      endforeach ()
+   endif ()
+endfunction ()
+
+function (resolve_generated_header_dependencies)
+   if (BUILD_DEFS)
+      get_property (KOTUKU_PENDING_HEADER_TARGETS GLOBAL PROPERTY KOTUKU_PENDING_GENERATED_HEADER_DEPENDENCIES)
+      foreach (ARG_DEPENDENCY_PAIR IN LISTS KOTUKU_PENDING_HEADER_TARGETS)
+         string (REPLACE "|" ";" ARG_DEPENDENCY_PARTS "${ARG_DEPENDENCY_PAIR}")
+         list (GET ARG_DEPENDENCY_PARTS 0 ARG_TARGET)
+         list (GET ARG_DEPENDENCY_PARTS 1 ARG_DEPENDENCY)
+         if (TARGET ${ARG_TARGET} AND TARGET ${ARG_DEPENDENCY})
+            add_dependencies (${ARG_TARGET} ${ARG_DEPENDENCY})
+         endif ()
+      endforeach ()
+   endif ()
+endfunction ()
 
 # --------------------------------------------------------------------------------------------------------------------
 # Use Flute to write tests against your code.  All Flute tests are integration tests, i.e. run them post-install
@@ -289,9 +414,9 @@ endfunction ()
 # idl_gen() is used to generate both C/C++ headers and IDL strings from TDL files.
 
 function (idl_gen)
-   cmake_parse_arguments (PARSE_ARGV 0 IDLC "" "OUTPUT;APPEND_IDL;NAME" "ARGS;FILES")
+   cmake_parse_arguments (PARSE_ARGV 0 IDLC "" "OUTPUT;APPEND_IDL;NAME" "ARGS;FILES;DEPENDS;BYPRODUCTS")
 
-   if (BUILD_DEFS)
+   if (KOTUKU_DEFS_AVAILABLE)
       if (DEFINED IDLC_NAME)
          set (OUTPUT_NAME ${IDLC_NAME})
       else ()
@@ -302,24 +427,55 @@ function (idl_gen)
          list (APPEND IDLC_ARGS "files={" ${IDLC_FILES} "}")
       endif ()
 
+      set (IDLC_STAMP "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${OUTPUT_NAME}.stamp")
+      set (IDLC_BYPRODUCTS "${IDLC_OUTPUT}" ${IDLC_BYPRODUCTS})
+
+      foreach (ARG IN LISTS IDLC_ARGS)
+         if (ARG MATCHES "^output-(defs|proto)=(.+)$")
+            if (IS_ABSOLUTE "${CMAKE_MATCH_2}")
+               list (APPEND IDLC_BYPRODUCTS "${CMAKE_MATCH_2}")
+            else ()
+               get_filename_component (IDLC_ARG_OUTPUT "${CMAKE_MATCH_2}" ABSOLUTE
+                  BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+               list (APPEND IDLC_BYPRODUCTS "${IDLC_ARG_OUTPUT}")
+            endif ()
+         endif ()
+      endforeach ()
+
+      list (APPEND COMMAND_LIST COMMAND ${CMAKE_COMMAND} -E echo
+         "[idl_gen] ${ORIGO_CMD} ${IDL_C_SCRIPT} --log-warning src=${ARGV0} output=${IDLC_OUTPUT} sdk=${PROJECT_SOURCE_DIR} ${IDLC_ARGS}")
       list (APPEND COMMAND_LIST COMMAND ${ORIGO_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=${ARGV0}"
          "output=${IDLC_OUTPUT}" "sdk=${PROJECT_SOURCE_DIR}" ${IDLC_ARGS})
 
       if (DEFINED IDLC_APPEND_IDL)
+         if (IS_ABSOLUTE "${IDLC_APPEND_IDL}")
+            list (APPEND IDLC_BYPRODUCTS "${IDLC_APPEND_IDL}")
+         else ()
+            get_filename_component (IDLC_APPEND_IDL_OUTPUT "${IDLC_APPEND_IDL}" ABSOLUTE
+               BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+            list (APPEND IDLC_BYPRODUCTS "${IDLC_APPEND_IDL_OUTPUT}")
+         endif ()
+
+         list (APPEND COMMAND_LIST COMMAND ${CMAKE_COMMAND} -E echo
+            "[idl_gen] ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} --log-warning src=${ARGV0} output=${IDLC_APPEND_IDL} sdk=${PROJECT_SOURCE_DIR} format=c append")
          list (APPEND COMMAND_LIST COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=${ARGV0}"
             "output=${IDLC_APPEND_IDL}" "sdk=${PROJECT_SOURCE_DIR}" "format=c" "append")
       endif ()
 
-      add_custom_command (OUTPUT ${IDLC_OUTPUT}
-         ${COMMAND_LIST} || echo ""
+      list (REMOVE_DUPLICATES IDLC_BYPRODUCTS)
+
+      add_custom_command (OUTPUT "${IDLC_STAMP}"
+         BYPRODUCTS ${IDLC_BYPRODUCTS}
+         ${COMMAND_LIST}
+         COMMAND ${CMAKE_COMMAND} -E touch "${IDLC_STAMP}"
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-         DEPENDS ${ARGV0}
+         DEPENDS ${ARGV0} ${IDLC_DEPENDS}
          COMMENT "Generating C header file ${IDLC_OUTPUT} from ${ARGV0}"
          VERBATIM)
 
-      add_custom_target (${OUTPUT_NAME} DEPENDS ${IDLC_OUTPUT})
+      add_custom_target (${OUTPUT_NAME} DEPENDS "${IDLC_STAMP}")
 
-      add_dependencies (build_headers ${OUTPUT_NAME})
+      register_generated_header_target (${OUTPUT_NAME})
    else ()
       message (STATUS "The generation of ${IDLC_OUTPUT} will be skipped.")
    endif ()
@@ -330,25 +486,31 @@ endfunction ()
 # Always provide a full path for OUTPUT
 
 function (idl_compile)
-   cmake_parse_arguments (PARSE_ARGV 0 IDLC "" "OUTPUT;NAME" "ARGS;FILES")
+   cmake_parse_arguments (PARSE_ARGV 0 IDLC "" "OUTPUT;NAME" "ARGS")
 
-   if (BUILD_DEFS)
+   if (KOTUKU_DEFS_AVAILABLE)
       if (DEFINED IDLC_NAME)
          set (OUTPUT_NAME ${IDLC_NAME})
       else ()
          string (REGEX REPLACE "[/:\.]" "_" OUTPUT_NAME ${IDLC_OUTPUT})
       endif ()
 
-      add_custom_command (OUTPUT ${IDLC_OUTPUT}
+      set (IDLC_STAMP "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${OUTPUT_NAME}.stamp")
+
+      add_custom_command (OUTPUT "${IDLC_STAMP}"
+         BYPRODUCTS ${IDLC_OUTPUT}
+         COMMAND ${CMAKE_COMMAND} -E echo
+            "[idl_compile] ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} --log-warning src=${ARGV0} output=${IDLC_OUTPUT} sdk=${PROJECT_SOURCE_DIR} format=c ${IDLC_ARGS}"
          COMMAND "${ORIGO_CMD}" "${IDL_COMPILE_SCRIPT}" "--log-warning" "src=${ARGV0}" "output=${IDLC_OUTPUT}" "sdk=${PROJECT_SOURCE_DIR}" "format=c" ${IDLC_ARGS}
+         COMMAND ${CMAKE_COMMAND} -E touch "${IDLC_STAMP}"
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
          DEPENDS ${ARGV0}
          COMMENT "Producing definition file ${IDLC_OUTPUT} from ${ARGV0}"
          VERBATIM)
 
-      add_custom_target (${OUTPUT_NAME} DEPENDS ${IDLC_OUTPUT})
+      add_custom_target (${OUTPUT_NAME} DEPENDS "${IDLC_STAMP}")
 
-      add_dependencies (build_headers ${OUTPUT_NAME})
+      register_generated_header_target (${OUTPUT_NAME})
    else ()
       message (STATUS "The generation of ${IDLC_OUTPUT} will be skipped.")
    endif ()
@@ -374,8 +536,8 @@ function (set_module_defaults ARG_TARGET ARG_NAMESPACE)
          PROPERTIES
          CXX_STANDARD 20)
    else ()
-      if (CMAKE_BUILD_TYPE MATCHES "Release")
-         set_target_properties (${ARG_TARGET} PROPERTIES LINK_FLAGS_RELEASE -s)
+      if (NOT MSVC)
+         target_link_options (${ARG_TARGET} PRIVATE $<$<CONFIG:Release>:-s>)
       endif ()
 
       set_target_properties (${ARG_TARGET}
@@ -398,9 +560,10 @@ function (set_module_defaults ARG_TARGET ARG_NAMESPACE)
       endif ()
    endif ()
 
-   # Ensure all modules depend on build_headers to prevent race conditions
-   # where C++ compilation starts before TDL processing completes
-   add_dependencies (${ARG_TARGET} build_headers)
+   get_property (KOTUKU_LOCAL_HEADER_TARGETS DIRECTORY PROPERTY KOTUKU_GENERATED_HEADER_TARGETS)
+   if (BUILD_DEFS AND KOTUKU_LOCAL_HEADER_TARGETS)
+      add_dependencies (${ARG_TARGET} ${KOTUKU_LOCAL_HEADER_TARGETS})
+   endif ()
 
    # Ensure all modules have a minimum level of dependencies, this ensures a minimally
    # functioning environment is created when building individual targets with --target
@@ -425,6 +588,24 @@ if (CMAKE_SIZEOF_VOID_P EQUAL 8)
 else ()
    message (STATUS "This will be a 32-bit build for processor arch ${CMAKE_HOST_SYSTEM_PROCESSOR}")
 #   set (KOTUKU_ARCH "-m32")
+endif ()
+
+# --------------------------------------------------------------------------------------------------------------------
+# SIMD baseline.  SSE4.2 is the mandatory floor for all x86/x86-64 builds (guaranteed on any 64-bit CPU from ~2008
+# onwards).  This unlocks SSE4.2 intrinsics for scalar codegen and lets the compiler auto-vectorise with the full
+# SSE1-4.2 instruction set.  AVX2 remains an opt-in, per-function path gated by simd_has_avx2() at run time -- see
+# src/link/simd.h.  Non-x86 targets (ARM/AArch64, Apple Silicon) are unaffected.
+
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|amd64|AMD64|i[3-6]86|x86)")
+   if (MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+      # MSVC has no /arch:SSE4.2 flag (its /arch jumps SSE2 -> AVX) and SSE4.2 intrinsics are always available
+      # without a flag, so no compile option is required to guarantee the baseline for the MSVC toolchain.
+      message (STATUS "SIMD baseline: SSE4.2 (MSVC intrinsics available unconditionally)")
+   else ()
+      # GCC/Clang (including clang-cl) require an explicit flag to raise the baseline above SSE2.
+      message (STATUS "SIMD baseline: SSE4.2 (-msse4.2)")
+      add_compile_options ("-msse4.2")
+   endif ()
 endif ()
 
 if (KOTUKU_VLOG)
@@ -456,14 +637,13 @@ if (MSVC)
       set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /fsanitize=address")
    endif ()
 
-   # We don't use exceptions, so get the compiler to disable this functionality.  This results in noticeably smaller binaries and more optimised code.
-   if (CMAKE_BUILD_TYPE STREQUAL "Release")
-      add_compile_definitions ("_HAS_EXCEPTIONS=0")
-      string(REPLACE "/EHsc" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-      string(REPLACE "/EHsc" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
-      set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /EHs-c- /GR")
-      set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHs-c- /GR")
-   endif ()
+   # We don't use exceptions in optimised configurations, so disable exception support there.
+   string(REPLACE "/EHsc" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+   add_compile_definitions ("$<$<OR:$<CONFIG:Release>,$<CONFIG:FastBuild>>:_HAS_EXCEPTIONS=0>")
+   add_compile_options (
+      "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<OR:$<CONFIG:Release>,$<CONFIG:FastBuild>>>:/EHs-c->"
+      "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<OR:$<CONFIG:Release>,$<CONFIG:FastBuild>>>:/GR>"
+      "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<NOT:$<OR:$<CONFIG:Release>,$<CONFIG:FastBuild>>>>:/EHsc>")
 
    # Specifying the fast FP option shows no descernible improvement in benchmarked release builds.
    #set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /fp:fast")
@@ -489,9 +669,7 @@ else ()
       # TODO
    endif ()
 
-   if (CMAKE_BUILD_TYPE STREQUAL "Release")
-      set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions")
-   endif ()
+   set (CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -fno-exceptions")
 
    if (ENABLE_ANALYSIS)
       # NB: The use of dlclose() is not permitted when analysis is enabled because it upsets the log output.
@@ -518,27 +696,34 @@ endif ()
 # --------------------------------------------------------------------------------------------------------------------
 # FastBuild configuration - optimised for compilation speed rather than runtime performance
 
+set (KOTUKU_FASTBUILD_ENABLED FALSE)
 if (CMAKE_BUILD_TYPE STREQUAL "FastBuild")
+   set (KOTUKU_FASTBUILD_ENABLED TRUE)
+elseif (KOTUKU_MULTI_CONFIG)
+   list (FIND CMAKE_CONFIGURATION_TYPES FastBuild KOTUKU_FASTBUILD_INDEX)
+   if (NOT KOTUKU_FASTBUILD_INDEX EQUAL -1)
+      set (KOTUKU_FASTBUILD_ENABLED TRUE)
+   endif ()
+endif ()
+
+if (KOTUKU_FASTBUILD_ENABLED)
    message (STATUS "FastBuild configuration enabled - optimising for compilation speed")
 
    if (MSVC)
       # MSVC: Use /Od for no optimisation, /MP for parallel compilation, /Z7 for minimal debug info
-      set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Od /MP /Z7")
-      set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Od /MP /Z7")
+      set (CMAKE_C_FLAGS_FASTBUILD "${CMAKE_C_FLAGS_FASTBUILD} /Od /MP /Z7")
+      set (CMAKE_CXX_FLAGS_FASTBUILD "${CMAKE_CXX_FLAGS_FASTBUILD} /Od /MP /Z7")
 
       # Disable exception handling for faster compilation (matches Release build behaviour)
-      add_compile_definitions ("_HAS_EXCEPTIONS=0")
-      string(REPLACE "/EHsc" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-      set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /EHs-c- /GR")
-      set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHs-c- /GR")
+      add_compile_definitions ("$<$<CONFIG:FastBuild>:_HAS_EXCEPTIONS=0>")
    else ()
       # GCC/Clang: Use -O0 for no optimisation, -g1 for minimal debug info
-      set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0 -g1")
-      set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -g1")
+      set (CMAKE_C_FLAGS_FASTBUILD "${CMAKE_C_FLAGS_FASTBUILD} -O0 -g1")
+      set (CMAKE_CXX_FLAGS_FASTBUILD "${CMAKE_CXX_FLAGS_FASTBUILD} -O0 -g1")
 
       # Disable variable tracking for faster compilation
-      set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-var-tracking -fno-var-tracking-assignments")
-      set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-var-tracking -fno-var-tracking-assignments")
+      set (CMAKE_C_FLAGS_FASTBUILD "${CMAKE_C_FLAGS_FASTBUILD} -fno-var-tracking -fno-var-tracking-assignments")
+      set (CMAKE_CXX_FLAGS_FASTBUILD "${CMAKE_CXX_FLAGS_FASTBUILD} -fno-var-tracking -fno-var-tracking-assignments")
 
       # Try to use faster linkers if available
       include(CheckLinkerFlag)
@@ -557,7 +742,7 @@ if (CMAKE_BUILD_TYPE STREQUAL "FastBuild")
       endif ()
 
       # Disable exceptions for faster compilation (matches Release build behaviour)
-      set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions")
+      set (CMAKE_CXX_FLAGS_FASTBUILD "${CMAKE_CXX_FLAGS_FASTBUILD} -fno-exceptions")
    endif ()
 endif ()
 
@@ -582,20 +767,238 @@ set(CMAKE_INSTALL_RPATH "$ORIGIN/lib")
 
 include(ExternalProject)
 
-add_subdirectory (3rdparty/zlib-1.2.11) # Note that when upgrading, the CMakeLists.txt is customised
+# Build zlib as an external project so the source archive is downloaded only when required.
+if (KOTUKU_STATIC)
+   set (ZLIB_TARGET_TYPE STATIC)
+   set (ZLIB_BUILD_SHARED OFF)
+   set (ZLIB_BUILD_STATIC ON)
+
+   if (WIN32)
+      if (MSVC)
+         set (ZLIB_LIB_PATH_RELEASE "${CMAKE_CURRENT_BINARY_DIR}/zlib/lib/zs.lib")
+         set (ZLIB_LIB_PATH_DEBUG "${CMAKE_CURRENT_BINARY_DIR}/zlib/lib/zsd.lib")
+      else ()
+         set (ZLIB_LIB_PATH_RELEASE "${CMAKE_CURRENT_BINARY_DIR}/zlib/lib/libzs.a")
+         set (ZLIB_LIB_PATH_DEBUG "${CMAKE_CURRENT_BINARY_DIR}/zlib/lib/libzsd.a")
+      endif ()
+      if (NOT KOTUKU_MULTI_CONFIG AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+         set (ZLIB_LIB_PATH "${ZLIB_LIB_PATH_DEBUG}")
+      else ()
+         set (ZLIB_LIB_PATH "${ZLIB_LIB_PATH_RELEASE}")
+      endif ()
+   else ()
+      set (ZLIB_LIB_PATH "${CMAKE_CURRENT_BINARY_DIR}/zlib/lib/libz.a")
+   endif ()
+
+   set (ZLIB_BUILD_BYPRODUCTS ${ZLIB_LIB_PATH})
+   if (WIN32)
+      list (APPEND ZLIB_BUILD_BYPRODUCTS ${ZLIB_LIB_PATH_DEBUG})
+   endif ()
+else ()
+   set (ZLIB_TARGET_TYPE SHARED)
+   set (ZLIB_BUILD_SHARED ON)
+   set (ZLIB_BUILD_STATIC OFF)
+
+   if (WIN32)
+      if (MSVC)
+         set (ZLIB_IMPLIB_PATH_RELEASE "${CMAKE_CURRENT_BINARY_DIR}/zlib/lib/z.lib")
+         set (ZLIB_IMPLIB_PATH_DEBUG "${CMAKE_CURRENT_BINARY_DIR}/zlib/lib/zd.lib")
+      else ()
+         set (ZLIB_IMPLIB_PATH_RELEASE "${CMAKE_CURRENT_BINARY_DIR}/zlib/lib/libz.dll.a")
+         set (ZLIB_IMPLIB_PATH_DEBUG "${CMAKE_CURRENT_BINARY_DIR}/zlib/lib/libzd.dll.a")
+      endif ()
+      set (ZLIB_RUNTIME_PATH_RELEASE "${CMAKE_CURRENT_BINARY_DIR}/zlib/bin/z.dll")
+      set (ZLIB_RUNTIME_PATH_DEBUG "${CMAKE_CURRENT_BINARY_DIR}/zlib/bin/zd.dll")
+      if (NOT KOTUKU_MULTI_CONFIG AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+         set (ZLIB_IMPLIB_PATH "${ZLIB_IMPLIB_PATH_DEBUG}")
+         set (ZLIB_RUNTIME_PATH "${ZLIB_RUNTIME_PATH_DEBUG}")
+      else ()
+         set (ZLIB_IMPLIB_PATH "${ZLIB_IMPLIB_PATH_RELEASE}")
+         set (ZLIB_RUNTIME_PATH "${ZLIB_RUNTIME_PATH_RELEASE}")
+      endif ()
+   elseif (APPLE)
+      set (ZLIB_RUNTIME_PATH "${CMAKE_CURRENT_BINARY_DIR}/zlib/lib/libz.dylib")
+   else ()
+      set (ZLIB_RUNTIME_PATH "${CMAKE_CURRENT_BINARY_DIR}/zlib/lib/libz.so")
+   endif ()
+
+   set (ZLIB_BUILD_BYPRODUCTS ${ZLIB_RUNTIME_PATH})
+   if (WIN32)
+      list (APPEND ZLIB_BUILD_BYPRODUCTS
+         ${ZLIB_IMPLIB_PATH}
+         ${ZLIB_RUNTIME_PATH_DEBUG}
+         ${ZLIB_IMPLIB_PATH_DEBUG})
+   endif ()
+endif ()
+
+list (REMOVE_DUPLICATES ZLIB_BUILD_BYPRODUCTS)
+
+set (ZLIB_CMAKE_ARGS
+   -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+   -DCMAKE_INSTALL_BINDIR=bin
+   -DCMAKE_INSTALL_LIBDIR=lib
+   -DCMAKE_INSTALL_INCLUDEDIR=include
+   -DCMAKE_INSTALL_MANDIR=share/man
+   -DCMAKE_INSTALL_DOCDIR=share/doc
+   -DCMAKE_POSITION_INDEPENDENT_CODE=ON)
+list (APPEND ZLIB_CMAKE_ARGS
+   -DZLIB_BUILD_SHARED=${ZLIB_BUILD_SHARED}
+   -DZLIB_BUILD_STATIC=${ZLIB_BUILD_STATIC}
+   -DZLIB_BUILD_TESTING=OFF
+   -DZLIB_INSTALL=ON)
+
+if (NOT KOTUKU_MULTI_CONFIG)
+   list (APPEND ZLIB_CMAKE_ARGS -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE})
+endif ()
+
+string (CONCAT ZLIB_URL_HASH
+   "SHA512=16fea4df307a68cf0035858abe2fd550250618a97590e202037acd18a666f57afc10f8836cbbd"
+   "472d54a0e76539d0e558cb26f059d53de52ff90634bbf4f47d4")
+
+ExternalProject_Add(zlib-project
+   URL https://github.com/madler/zlib/archive/refs/tags/v1.3.2.tar.gz
+   URL_HASH ${ZLIB_URL_HASH}
+   DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+   PREFIX "${CMAKE_CURRENT_BINARY_DIR}/zlib"
+   INSTALL_DIR "${CMAKE_CURRENT_BINARY_DIR}/zlib"
+   BUILD_BYPRODUCTS
+      ${ZLIB_BUILD_BYPRODUCTS}
+   CMAKE_ARGS
+      ${ZLIB_CMAKE_ARGS}
+   BUILD_ALWAYS FALSE
+)
+
+ExternalProject_Get_Property(zlib-project install_dir)
+set (ZLIB_HEADERS "${install_dir}/include")
+
+file (MAKE_DIRECTORY ${ZLIB_HEADERS})
+
+add_library(zlib ${ZLIB_TARGET_TYPE} IMPORTED)
+
+if (KOTUKU_STATIC AND WIN32 AND KOTUKU_MULTI_CONFIG)
+   set_target_properties(zlib PROPERTIES
+      IMPORTED_CONFIGURATIONS "DEBUG;RELEASE;RELWITHDEBINFO;MINSIZEREL"
+      IMPORTED_LOCATION_DEBUG ${ZLIB_LIB_PATH_DEBUG}
+      IMPORTED_LOCATION_RELEASE ${ZLIB_LIB_PATH_RELEASE}
+      IMPORTED_LOCATION_RELWITHDEBINFO ${ZLIB_LIB_PATH_RELEASE}
+      IMPORTED_LOCATION_MINSIZEREL ${ZLIB_LIB_PATH_RELEASE}
+      INTERFACE_INCLUDE_DIRECTORIES ${ZLIB_HEADERS})
+elseif (KOTUKU_STATIC)
+   set_target_properties(zlib PROPERTIES
+      IMPORTED_LOCATION ${ZLIB_LIB_PATH}
+      INTERFACE_INCLUDE_DIRECTORIES ${ZLIB_HEADERS})
+elseif (WIN32 AND KOTUKU_MULTI_CONFIG)
+   set_target_properties(zlib PROPERTIES
+      IMPORTED_CONFIGURATIONS "DEBUG;RELEASE;RELWITHDEBINFO;MINSIZEREL"
+      IMPORTED_IMPLIB_DEBUG ${ZLIB_IMPLIB_PATH_DEBUG}
+      IMPORTED_IMPLIB_RELEASE ${ZLIB_IMPLIB_PATH_RELEASE}
+      IMPORTED_IMPLIB_RELWITHDEBINFO ${ZLIB_IMPLIB_PATH_RELEASE}
+      IMPORTED_IMPLIB_MINSIZEREL ${ZLIB_IMPLIB_PATH_RELEASE}
+      IMPORTED_LOCATION_DEBUG ${ZLIB_RUNTIME_PATH_DEBUG}
+      IMPORTED_LOCATION_RELEASE ${ZLIB_RUNTIME_PATH_RELEASE}
+      IMPORTED_LOCATION_RELWITHDEBINFO ${ZLIB_RUNTIME_PATH_RELEASE}
+      IMPORTED_LOCATION_MINSIZEREL ${ZLIB_RUNTIME_PATH_RELEASE}
+      INTERFACE_INCLUDE_DIRECTORIES ${ZLIB_HEADERS})
+elseif (WIN32)
+   set_target_properties(zlib PROPERTIES
+      IMPORTED_IMPLIB ${ZLIB_IMPLIB_PATH}
+      IMPORTED_LOCATION ${ZLIB_RUNTIME_PATH}
+      INTERFACE_INCLUDE_DIRECTORIES ${ZLIB_HEADERS})
+else ()
+   set_target_properties(zlib PROPERTIES
+      IMPORTED_LOCATION ${ZLIB_RUNTIME_PATH}
+      INTERFACE_INCLUDE_DIRECTORIES ${ZLIB_HEADERS})
+endif ()
+
+add_dependencies(zlib zlib-project)
+
+if (KOTUKU_INSTALL AND NOT KOTUKU_STATIC)
+   if (WIN32)
+      install(CODE
+         "file(REMOVE
+            \"\${CMAKE_INSTALL_PREFIX}/${LIB_TARGET}/lib/zlib1.dll\"
+            \"\${CMAKE_INSTALL_PREFIX}/${LIB_TARGET}/lib/zlibd1.dll\"
+            \"\${CMAKE_INSTALL_PREFIX}/${LIB_TARGET}/lib/zlib.lib\"
+            \"\${CMAKE_INSTALL_PREFIX}/${LIB_TARGET}/lib/zlibd.lib\")")
+      install(FILES ${ZLIB_RUNTIME_PATH_DEBUG} CONFIGURATIONS Debug DESTINATION "${LIB_TARGET}/lib")
+      install(FILES ${ZLIB_IMPLIB_PATH_DEBUG} CONFIGURATIONS Debug DESTINATION "${LIB_TARGET}/lib")
+      install(FILES ${ZLIB_RUNTIME_PATH_RELEASE}
+         CONFIGURATIONS Release RelWithDebInfo MinSizeRel
+         DESTINATION "${LIB_TARGET}/lib")
+      install(FILES ${ZLIB_IMPLIB_PATH_RELEASE}
+         CONFIGURATIONS Release RelWithDebInfo MinSizeRel
+         DESTINATION "${LIB_TARGET}/lib")
+   else ()
+      install(DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/zlib/lib/"
+         DESTINATION "${LIB_TARGET}/lib"
+         FILES_MATCHING
+            PATTERN "libz.so*"
+            PATTERN "libz*.dylib"
+            PATTERN "cmake" EXCLUDE
+            PATTERN "pkgconfig" EXCLUDE)
+   endif ()
+elseif (KOTUKU_INSTALL AND KOTUKU_STATIC AND WIN32)
+   install(CODE
+      "file(REMOVE
+         \"\${CMAKE_INSTALL_PREFIX}/${LIB_TARGET}/lib/z.dll\"
+         \"\${CMAKE_INSTALL_PREFIX}/${LIB_TARGET}/lib/zd.dll\"
+         \"\${CMAKE_INSTALL_PREFIX}/${LIB_TARGET}/lib/z.lib\"
+         \"\${CMAKE_INSTALL_PREFIX}/${LIB_TARGET}/lib/zd.lib\")")
+endif ()
 
 if (NOT DISABLE_FONT)
    add_subdirectory (3rdparty/freetype-2.13.2)
 endif()
 
 # --------------------------------------------------------------------------------------------------------------------
-# Build libjpeg-turbo as an external project (only if JPEG and Picture support is enabled)
+# Build libjpeg-turbo as an external project (only if JPEG and Image support is enabled)
 
-if (NOT DISABLE_JPEG AND NOT DISABLE_PICTURE)
+if (NOT DISABLE_JPEG AND NOT DISABLE_IMAGE)
    if (MSVC)
       set(LIBJPEG_TURBO_LIB_PATH "${CMAKE_CURRENT_BINARY_DIR}/libjpeg-turbo/lib/jpeg-static.lib")
    else ()
       set(LIBJPEG_TURBO_LIB_PATH "${CMAKE_CURRENT_BINARY_DIR}/libjpeg-turbo/lib/libjpeg.a")
+   endif ()
+
+   set(LIBJPEG_TURBO_CMAKE_ARGS
+      -DENABLE_SHARED=OFF
+      -DENABLE_STATIC=ON
+      -DWITH_TURBOJPEG=ON
+      -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+      -DCMAKE_INSTALL_LIBDIR=<INSTALL_DIR>/lib
+      -DCMAKE_POSITION_INDEPENDENT_CODE=ON)
+
+   if (NOT KOTUKU_MULTI_CONFIG)
+      list(APPEND LIBJPEG_TURBO_CMAKE_ARGS -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE})
+   endif ()
+
+   if (WIN32)
+      unset(LIBJPEG_TURBO_NASM_COMPILER)
+      unset(LIBJPEG_TURBO_NASM_COMPILER CACHE)
+
+      if (DEFINED CMAKE_ASM_NASM_COMPILER AND EXISTS "${CMAKE_ASM_NASM_COMPILER}")
+         set(LIBJPEG_TURBO_NASM_COMPILER "${CMAKE_ASM_NASM_COMPILER}")
+      elseif (DEFINED ENV{ASM_NASM} AND EXISTS "$ENV{ASM_NASM}")
+         set(LIBJPEG_TURBO_NASM_COMPILER "$ENV{ASM_NASM}")
+      else ()
+         find_program(LIBJPEG_TURBO_NASM_COMPILER
+            NAMES nasm yasm
+            HINTS
+               "$ENV{ProgramFiles}/NASM"
+               "$ENV{ProgramW6432}/NASM"
+               "C:/Program Files/NASM"
+               "C:/Program Files (x86)/NASM"
+            PATH_SUFFIXES
+               ""
+               bin)
+      endif ()
+
+      if (LIBJPEG_TURBO_NASM_COMPILER)
+         file(TO_CMAKE_PATH "${LIBJPEG_TURBO_NASM_COMPILER}" LIBJPEG_TURBO_NASM_COMPILER)
+         list(APPEND LIBJPEG_TURBO_CMAKE_ARGS
+            -DCMAKE_ASM_NASM_COMPILER:FILEPATH=${LIBJPEG_TURBO_NASM_COMPILER})
+         message(STATUS "libjpeg-turbo NASM compiler: ${LIBJPEG_TURBO_NASM_COMPILER}")
+      endif ()
    endif ()
 
    ExternalProject_Add(libjpeg-turbo-project
@@ -606,13 +1009,7 @@ if (NOT DISABLE_JPEG AND NOT DISABLE_PICTURE)
       INSTALL_DIR "${CMAKE_CURRENT_BINARY_DIR}/libjpeg-turbo"
       BUILD_BYPRODUCTS ${LIBJPEG_TURBO_LIB_PATH}
       CMAKE_ARGS
-         -DENABLE_SHARED=OFF
-         -DENABLE_STATIC=ON
-         -DWITH_TURBOJPEG=ON
-         -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-         -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
-         -DCMAKE_INSTALL_LIBDIR=<INSTALL_DIR>/lib
-         -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+         ${LIBJPEG_TURBO_CMAKE_ARGS}
       BUILD_ALWAYS FALSE
    )
 
@@ -638,10 +1035,10 @@ if (NOT DISABLE_AUDIO)
    list (APPEND LIB_LIST audio)
 endif ()
 
-#if (NOT DISABLE_BACKSTAGE AND NOT DISABLE_NETWORK)
-#   add_subdirectory (src/backstage)
-#   list (APPEND LIB_LIST backstage)
-#endif()
+if (NOT DISABLE_BACKSTAGE AND NOT DISABLE_NETWORK)
+   add_subdirectory (src/backstage)
+   list (APPEND LIB_LIST backstage)
+endif()
 
 if (NOT DISABLE_DISPLAY)
    add_subdirectory (src/display)
@@ -663,6 +1060,11 @@ if (NOT DISABLE_HTTP AND NOT DISABLE_NETWORK)
    list (APPEND LIB_LIST http)
 endif ()
 
+if (NOT DISABLE_LZMA)
+   add_subdirectory (src/lzma)
+   list (APPEND LIB_LIST lzma)
+endif ()
+
 if (NOT DISABLE_MP3 AND NOT DISABLE_AUDIO)
    add_subdirectory (src/mp3)
    list (APPEND LIB_LIST mp3)
@@ -673,13 +1075,13 @@ if (NOT DISABLE_NETWORK)
    list (APPEND LIB_LIST network)
 endif ()
 
-if (NOT DISABLE_PICTURE AND NOT DISABLE_DISPLAY)
-   add_subdirectory (src/picture)
-   list (APPEND LIB_LIST picture)
+if (NOT DISABLE_IMAGE AND NOT DISABLE_DISPLAY)
+   add_subdirectory (src/image)
+   list (APPEND LIB_LIST image)
 endif ()
 
-if (NOT DISABLE_JPEG AND NOT DISABLE_PICTURE AND NOT DISABLE_DISPLAY)
-   add_subdirectory (src/picture_jpeg)
+if (NOT DISABLE_JPEG AND NOT DISABLE_IMAGE AND NOT DISABLE_DISPLAY)
+   add_subdirectory (src/image_jpeg)
    list (APPEND LIB_LIST jpeg)
 endif ()
 
@@ -713,7 +1115,37 @@ add_subdirectory (src/xquery)
 add_subdirectory (src/json)
 add_subdirectory (src/regex)
 
-add_subdirectory (src/launcher)
+add_subdirectory (src/origo)
+
+if (EXISTS "${PROJECT_SOURCE_DIR}/docs/tiri/CMakeLists.txt")
+   add_subdirectory (docs/tiri)
+endif ()
+
+add_subdirectory (apps)
+add_subdirectory (tools/tiri_lsp)
+
+add_generated_header_dependencies (display xml_defs regex_defs image_defs)
+add_generated_header_dependencies (document display_defs font_defs svg_defs xml_defs xquery_defs)
+add_generated_header_dependencies (font display_defs xml_defs)
+add_generated_header_dependencies (http network_defs)
+add_generated_header_dependencies (init-unix core_defs)
+add_generated_header_dependencies (init-win core_defs)
+add_generated_header_dependencies (jpeg display_defs image_defs)
+add_generated_header_dependencies (json xml_defs)
+add_generated_header_dependencies (base64 core_defs)
+add_generated_header_dependencies (linear_rgb core_defs)
+add_generated_header_dependencies (lzma core_defs)
+add_generated_header_dependencies (mp3 audio_defs)
+add_generated_header_dependencies (origo_cmd core_defs display_defs)
+add_generated_header_dependencies (image display_defs)
+add_generated_header_dependencies (scintilla display_defs font_defs vector_defs xml_defs)
+add_generated_header_dependencies (svg display_defs image_defs vector_defs xml_defs)
+add_generated_header_dependencies (tiri core_defs display_defs regex_defs xml_defs)
+add_generated_header_dependencies (unicode core_defs)
+add_generated_header_dependencies (vector display_defs font_defs image_defs xml_defs)
+add_generated_header_dependencies (xml xquery_defs)
+add_generated_header_dependencies (xquery regex_defs xml_defs)
+resolve_generated_header_dependencies ()
 
 # --------------------------------------------------------------------------------------------------------------------
 # Create a combined static library that links all modules together
@@ -736,7 +1168,9 @@ configure_file ("src/config.h.in" "kotuku/config.h" NEWLINE_STYLE UNIX)
 # --------------------------------------------------------------------------------------------------------------------
 # Icons are installed as a zip file
 
-file(GLOB_RECURSE icon_files "data/icons/*.svg")
+if (KOTUKU_ICON_DEPENDENCIES)
+   file(GLOB_RECURSE icon_files CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/data/icons/Default/*.svg")
+endif ()
 
 add_custom_command (
    OUTPUT  "${CMAKE_CURRENT_BINARY_DIR}/icons/Default.zip"
@@ -749,60 +1183,103 @@ add_custom_command (
 add_custom_target (icon_package ALL DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/icons/Default.zip")
 
 # --------------------------------------------------------------------------------------------------------------------
-# SSL Certificate Bundle Auto-Update (if older than 30 days)
+# SSL Certificate Bundle Update
 
-if (NOT DISABLE_SSL)
+if (NOT DISABLE_SSL AND ENABLE_SSL_BUNDLE_UPDATE)
    set(SSL_BUNDLE_PATH "${PROJECT_SOURCE_DIR}/data/ssl/ca-bundle.crt")
+   set(SSL_BUNDLE_UPDATE_SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/UpdateSslBundle.cmake")
 
-   if (EXISTS ${SSL_BUNDLE_PATH})
-      string(TIMESTAMP CURRENT_TIME "%s")
-      file(TIMESTAMP ${SSL_BUNDLE_PATH} BUNDLE_TIME "%s")
-      math(EXPR BUNDLE_AGE "${CURRENT_TIME} - ${BUNDLE_TIME}")
+   file(WRITE "${SSL_BUNDLE_UPDATE_SCRIPT}" [=[
+if (NOT DEFINED SSL_BUNDLE_PATH)
+   message(FATAL_ERROR "SSL_BUNDLE_PATH is not defined")
+endif ()
 
-      if (BUNDLE_AGE GREATER 2592000) # 30 days in seconds
-         file(DOWNLOAD "https://curl.se/ca/cacert.pem" ${SSL_BUNDLE_PATH} TIMEOUT 30 TLS_VERIFY ON)
-         message(STATUS "Updated SSL certificate bundle")
-      endif()
-   else()
-      file(DOWNLOAD "https://curl.se/ca/cacert.pem" ${SSL_BUNDLE_PATH} TIMEOUT 30 TLS_VERIFY ON)
-   endif()
+get_filename_component(SSL_BUNDLE_DIR "${SSL_BUNDLE_PATH}" DIRECTORY)
+file(MAKE_DIRECTORY "${SSL_BUNDLE_DIR}")
+
+set(SSL_BUNDLE_URL "https://curl.se/ca/cacert.pem")
+
+file(DOWNLOAD
+   "${SSL_BUNDLE_URL}"
+   "${SSL_BUNDLE_PATH}"
+   TIMEOUT 30
+   TLS_VERIFY ON
+   STATUS SSL_BUNDLE_DOWNLOAD_STATUS)
+
+list(GET SSL_BUNDLE_DOWNLOAD_STATUS 0 SSL_BUNDLE_DOWNLOAD_CODE)
+list(GET SSL_BUNDLE_DOWNLOAD_STATUS 1 SSL_BUNDLE_DOWNLOAD_MESSAGE)
+
+if (NOT SSL_BUNDLE_DOWNLOAD_CODE EQUAL 0)
+   message(FATAL_ERROR "Failed to download ${SSL_BUNDLE_URL}: ${SSL_BUNDLE_DOWNLOAD_MESSAGE}")
+endif ()
+
+message(STATUS "Updated SSL certificate bundle: ${SSL_BUNDLE_PATH}")
+]=])
+
+   add_custom_target(update_ssl_bundle
+      COMMAND ${CMAKE_COMMAND}
+         "-DSSL_BUNDLE_PATH=${SSL_BUNDLE_PATH}"
+         -P "${SSL_BUNDLE_UPDATE_SCRIPT}"
+      COMMENT "Updating SSL certificate bundle"
+      VERBATIM)
 endif()
 
 # --------------------------------------------------------------------------------------------------------------------
 # Installation steps
 
 if (KOTUKU_INSTALL)
+   if (UNIX AND NOT APPLE)
+      install (FILES "${PROJECT_SOURCE_DIR}/data/org.kotuku.Origo.desktop"
+         DESTINATION "share/applications")
+      #install (FILES "${PROJECT_SOURCE_DIR}/data/logos/kotuku-badge-ext.svg"
+      #   DESTINATION "share/icons/hicolor/scalable/apps"
+      #   RENAME "origo.svg")
+      install (FILES "${PROJECT_SOURCE_DIR}/data/logos/kotuku-badge-16.png"
+         DESTINATION "share/icons/hicolor/16x16/apps"
+         RENAME "origo.png")
+      install (FILES "${PROJECT_SOURCE_DIR}/data/logos/kotuku-badge-32.png"
+         DESTINATION "share/icons/hicolor/32x32/apps"
+         RENAME "origo.png")
+      install (FILES "${PROJECT_SOURCE_DIR}/data/logos/kotuku-badge-256.png"
+         DESTINATION "share/icons/hicolor/256x256/apps"
+         RENAME "origo.png")
+   endif ()
+
    if (INSTALL_INCLUDES)
       install (DIRECTORY "${INCLUDE_OUTPUT}" DESTINATION "include")
       install (FILES "${CMAKE_BINARY_DIR}/kotuku/config.h" DESTINATION "include/kotuku/")
    endif ()
 
-   if (WIN32)
-      if (NOT DISABLE_SSL)
-         install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/ssl/" DESTINATION "config/ssl")
-      endif ()
-      if (NOT DISABLE_FONT)
-         install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/fonts/" DESTINATION "config/fonts")
-      endif ()
-      install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/styles/" DESTINATION "config/styles")
-      install (FILES "${CMAKE_BINARY_DIR}/icons/Default.zip" DESTINATION "config/styles/icons")
-      install (DIRECTORY "${PROJECT_SOURCE_DIR}/scripts/" DESTINATION "scripts")
-      if (INSTALL_EXAMPLES)
-         install (DIRECTORY "${PROJECT_SOURCE_DIR}/examples/" DESTINATION "examples")
-      endif ()
-   else ()
-      if (NOT DISABLE_SSL)
-         install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/ssl" DESTINATION "${SHARE_TARGET}/config")
-      endif ()
-      if (NOT DISABLE_FONT)
-         install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/fonts" DESTINATION "${SHARE_TARGET}/config")
-      endif ()
-      install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/styles" DESTINATION "${SHARE_TARGET}/config")
-      install (FILES "${CMAKE_BINARY_DIR}/icons/Default.zip" DESTINATION "${SHARE_TARGET}/config/styles/icons")
-      install (DIRECTORY "${PROJECT_SOURCE_DIR}/scripts" DESTINATION "${SHARE_TARGET}")
-      if (INSTALL_EXAMPLES)
-         install (DIRECTORY "${PROJECT_SOURCE_DIR}/examples" DESTINATION "${SHARE_TARGET}")
-      endif ()
+   if (NOT DISABLE_SSL)
+      install (FILES "${PROJECT_SOURCE_DIR}/data/ssl/ca-bundle.crt" DESTINATION "${CONFIG_TARGET}/ssl")
+   endif ()
+   if (NOT DISABLE_FONT)
+      install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/fonts/" DESTINATION "${CONFIG_TARGET}/fonts")
+   endif ()
+
+   install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/styles/" DESTINATION "${CONFIG_TARGET}/styles")
+   install (FILES "${CMAKE_BINARY_DIR}/icons/Default.zip" DESTINATION "${CONFIG_TARGET}/styles/icons")
+
+   install (DIRECTORY "${PROJECT_SOURCE_DIR}/apps/data" DESTINATION "${SHARE_TARGET}/apps")
+   install (FILES
+      "${PROJECT_SOURCE_DIR}/apps/find.tiri"
+      "${PROJECT_SOURCE_DIR}/apps/paintbox.tiri"
+      "${PROJECT_SOURCE_DIR}/apps/tuku.tiri"
+      "${PROJECT_SOURCE_DIR}/apps/tuku_server.tiri"
+      "${PROJECT_SOURCE_DIR}/apps/tuku_server_cfg.json"
+      "${PROJECT_SOURCE_DIR}/apps/vuepoint.tiri"
+      DESTINATION "${SHARE_TARGET}/apps")
+
+   install (DIRECTORY "${PROJECT_SOURCE_DIR}/tools/tiri_lsp/include" DESTINATION "${SHARE_TARGET}/tools/tiri_lsp")
+   install (FILES
+      "${PROJECT_SOURCE_DIR}/tools/tiri_lsp/server.tiri"
+      "${PROJECT_SOURCE_DIR}/tools/tiri_lsp/README.md"
+      DESTINATION "${SHARE_TARGET}/tools/tiri_lsp")
+
+   install (DIRECTORY "${PROJECT_SOURCE_DIR}/scripts/" DESTINATION "${SHARE_TARGET}/scripts")
+
+   if (INSTALL_EXAMPLES)
+      install (DIRECTORY "${PROJECT_SOURCE_DIR}/examples/" DESTINATION "${SHARE_TARGET}/examples")
    endif ()
 
    if (NOT KOTUKU_STATIC)
@@ -927,7 +1404,7 @@ endif()
 # --------------------------------------------------------------------------------------------------------------------
 # Windows Package Generation using CPack
 
-if(WIN32 AND NOT DISABLE_CPACK)
+if(WIN32 AND ENABLE_CPACK)
    # Detect Windows architecture for package naming
    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
       set(WIN_ARCH "win64")
@@ -976,8 +1453,8 @@ if(WIN32 AND NOT DISABLE_CPACK)
       set(CPACK_NSIS_INSTALLED_ICON_NAME "origo.exe")
       set(CPACK_NSIS_MUI_ICON "${PROJECT_SOURCE_DIR}/src/link/kotuku.ico")
       set(CPACK_NSIS_MUI_UNIICON "${PROJECT_SOURCE_DIR}/src/link/kotuku.ico")
-      set(CPACK_NSIS_HELP_LINK "https://github.com/parasol-framework/kotuku")
-      set(CPACK_NSIS_URL_INFO_ABOUT "https://github.com/parasol-framework/kotuku")
+      set(CPACK_NSIS_HELP_LINK "https://github.com/kotuku-group/kotuku")
+      set(CPACK_NSIS_URL_INFO_ABOUT "https://github.com/kotuku-group/kotuku")
       set(CPACK_NSIS_CONTACT "support@kotuku.dev")
 
       # Create shortcuts for installer
@@ -1032,6 +1509,9 @@ if(WIN32 AND NOT DISABLE_CPACK)
 
    # Add custom SFX generation target if 7-Zip is available
    if(SEVENZIP_EXECUTABLE)
+      set(SFX_STAGING_DIR "${CMAKE_BINARY_DIR}/sfx_temp")
+      set(SFX_PACKAGE_DIR "Kotuku-${PROJECT_VERSION}")
+
       # Create SFX configuration file
       set(SFX_CONFIG_FILE "${CMAKE_BINARY_DIR}/sfx_config.txt")
       file(WRITE ${SFX_CONFIG_FILE}
@@ -1042,20 +1522,23 @@ ExtractTitle=\"Extracting Kotuku...\"
 ExtractDialogText=\"Please wait while Kotuku is extracted.\"
 InstallPath=\"%ProgramFiles%\\\\Kotuku\"
 OverwriteMode=2
-ExecuteFile=\"origo.exe\"
+ExecuteFile=\"${SFX_PACKAGE_DIR}\\\\origo.exe\"
 ExecuteParameters=\"\"
 ;!@InstallEnd@!
 ")
 
       add_custom_target(package_sfx
          COMMAND ${CMAKE_COMMAND} -E echo "Creating Self-Extracting Archive..."
-         COMMAND ${CMAKE_COMMAND} -E remove_directory "${CMAKE_BINARY_DIR}/sfx_temp"
-         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/sfx_temp"
-         COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_INSTALL_PREFIX}" "${CMAKE_BINARY_DIR}/sfx_temp"
-         COMMAND ${SEVENZIP_EXECUTABLE} a -t7z -mx9 "${CMAKE_BINARY_DIR}/${CPACK_PACKAGE_FILE_NAME}-sfx.exe" "${CMAKE_BINARY_DIR}/sfx_temp/*" -sfx
-         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+         COMMAND ${CMAKE_COMMAND} -E remove_directory "${SFX_STAGING_DIR}"
+         COMMAND ${CMAKE_COMMAND} -E make_directory "${SFX_STAGING_DIR}/${SFX_PACKAGE_DIR}"
+         COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_INSTALL_PREFIX}" "${SFX_STAGING_DIR}/${SFX_PACKAGE_DIR}"
+         COMMAND ${CMAKE_COMMAND} -E chdir "${SFX_STAGING_DIR}"
+            ${SEVENZIP_EXECUTABLE} a -t7z -mx9 "${CMAKE_BINARY_DIR}/${CPACK_PACKAGE_FILE_NAME}-sfx.exe"
+            "${SFX_PACKAGE_DIR}" -sfx
+         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
          COMMENT "Creating Self-Extracting Archive: ${CPACK_PACKAGE_FILE_NAME}-sfx.exe"
          DEPENDS install
+         VERBATIM
       )
 
       message(STATUS "SFX target 'package_sfx' created - use 'cmake --build . --target package_sfx' to generate SFX")

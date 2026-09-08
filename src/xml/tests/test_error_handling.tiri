@@ -37,11 +37,11 @@ end
 @Test function LargeDocument()
    -- Generate a large XML document
    parts = {'<root>'}
-   for i = 1, 1000 do
-      table.insert(parts, '<item id="' .. i .. '">Content ' .. i .. '</item>')
+   for i in {1 into 1000} do
+      parts.insert('<item id="' .. i .. '">Content ' .. i .. '</item>')
    end
-   table.insert(parts, '</root>')
-   largeXML = table.concat(parts)
+   parts.insert('</root>')
+   largeXML = parts.concat()
 
    xml = obj.new("xml", { statement = largeXML })
    assert(xml.tags, "Large document should parse successfully")
@@ -75,7 +75,7 @@ end
 @Test function ReadOnlyMode()
    xml = obj.new("xml", {
       statement = '<root><child/></root>',
-      readOnly = true
+      flags = XMF_READ_ONLY
    })
 
    rootId = xml.tags[1].id
@@ -131,7 +131,7 @@ end
 @Test function ConcurrentAccess()
    xml = obj.new("xml", {
       statement = '<root><item>1</item><item>2</item><item>3</item></root>',
-      readOnly = true  -- Readonly for safe concurrent access
+      flags = XMF_READ_ONLY  -- Read-only for safe concurrent access
    })
 
    -- Multiple FindTag operations should work safely
@@ -153,9 +153,9 @@ end
 
 @Test function MemoryHandling()
    -- Test creating and destroying many XML objects
-   for i = 1, 100 do
+   for i in {1 into 100} do
       xml = obj.new("xml", {
-         statement = '<root><data>' .. string.rep("x", 1000) .. '</data></root>'
+         statement = '<root><data>' .. "x".rep(1000) .. '</data></root>'
       })
    end
 end
@@ -173,7 +173,7 @@ end
    -- This may or may not work depending on XPath implementation
 
    -- Test very long XPath expressions
-   longPath = '/root' .. string.rep('/item', 50)
+   longPath = '/root' .. '/item'.rep(50)
    err, result = xml.mtSearch(longPath)
    assert(err is ERR_Search, "Should fail gracefully for invalid long paths")
 end
@@ -189,7 +189,7 @@ end
    -- Test serialization of various node types
    err, serialized = xml.mtSerialise(0, XMF_INCLUDE_SIBLINGS)
    assert(err is ERR_Okay, "Serialization should succeed")
-   assert(string.len(serialized) > 0, "Serialized string should not be empty")
+   assert(#serialized > 0, "Serialized string should not be empty")
 
    -- Test partial serialization
    childId = xml.tags[1].children[1].id
@@ -205,22 +205,22 @@ end
    parts = {}
    depth = 100
 
-   for i = 1, depth do
-      table.insert(parts, '<level' .. i .. '>')
+   for i in {1 into depth} do
+      parts.insert('<level' .. i .. '>')
    end
-   table.insert(parts, 'Deep content')
-   for i = depth, 1, -1 do
-      table.insert(parts, '</level' .. i .. '>')
+   parts.insert('Deep content')
+   for i in {depth into 1 by -1} do
+      parts.insert('</level' .. i .. '>')
    end
 
-   deepXML = table.concat(parts)
+   deepXML = parts.concat()
    xml = obj.new("xml", { statement = deepXML })
 
    assert(xml.tags, "Deep nesting should parse successfully")
 
    -- Test deep XPath navigation
    deepPath = '/level1'
-   for i = 2, depth do
+   for i in {2 into depth} do
       deepPath = deepPath .. '/level' .. i
    end
 
@@ -234,12 +234,12 @@ end
 @Test function AttributeLimits()
    -- Create element with many attributes
    parts = {'<root'}
-   for i = 1, 100 do
-      table.insert(parts, ' attr' .. i .. '="value' .. i .. '"')
+   for i in {1 into 100} do
+      parts.insert(' attr' .. i .. '="value' .. i .. '"')
    end
-   table.insert(parts, '/>')
+   parts.insert('/>')
 
-   manyAttrsXML = table.concat(parts)
+   manyAttrsXML = parts.concat()
    xml = obj.new("xml", { statement = manyAttrsXML })
 
    assert(xml.tags, "Many attributes should parse successfully")

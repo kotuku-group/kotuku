@@ -8,118 +8,6 @@ Name: Cursor
 
 #include "defs.h"
 
-#ifdef _WIN32
-using namespace display;
-#endif
-
-#ifdef __xwindows__
-
-#undef True // X11 name clash
-#undef False // X11 name clash
-
-struct XCursor {
-   Cursor XCursor;
-   PTC CursorID;
-   int XCursorID;
-};
-
-static XCursor XCursors[] = {
-   { 0, PTC::DEFAULT,           XC_left_ptr },
-   { 0, PTC::SIZE_BOTTOM_LEFT,  XC_bottom_left_corner },
-   { 0, PTC::SIZE_BOTTOM_RIGHT, XC_bottom_right_corner },
-   { 0, PTC::SIZE_TOP_LEFT,     XC_top_left_corner },
-   { 0, PTC::SIZE_TOP_RIGHT,    XC_top_right_corner },
-   { 0, PTC::SIZE_LEFT,         XC_left_side },
-   { 0, PTC::SIZE_RIGHT,        XC_right_side },
-   { 0, PTC::SIZE_TOP,          XC_top_side },
-   { 0, PTC::SIZE_BOTTOM,       XC_bottom_side },
-   { 0, PTC::CROSSHAIR,         XC_crosshair },
-   { 0, PTC::SLEEP,             XC_clock },
-   { 0, PTC::SIZING,            XC_sizing },
-   { 0, PTC::SPLIT_VERTICAL,    XC_sb_v_double_arrow },
-   { 0, PTC::SPLIT_HORIZONTAL,  XC_sb_h_double_arrow },
-   { 0, PTC::MAGNIFIER,         XC_hand2 },
-   { 0, PTC::HAND,              XC_hand2 },
-   { 0, PTC::HAND_LEFT,         XC_hand1 },
-   { 0, PTC::HAND_RIGHT,        XC_hand1 },
-   { 0, PTC::TEXT,              XC_xterm },
-   { 0, PTC::PAINTBRUSH,        XC_pencil },
-   { 0, PTC::STOP,              XC_left_ptr },
-   { 0, PTC::INVISIBLE,         XC_dot },
-   { 0, PTC::DRAGGABLE,         XC_sizing }
-};
-
-static Cursor create_blank_cursor(void)
-{
-   pf::Log log(__FUNCTION__);
-   Pixmap data_pixmap, mask_pixmap;
-   XColor black = { 0, 0, 0, 0 };
-   Window rootwindow;
-   Cursor cursor;
-
-   log.function("Creating blank cursor for X11.");
-
-   rootwindow = DefaultRootWindow(XDisplay);
-
-   data_pixmap = XCreatePixmap(XDisplay, rootwindow, 1, 1, 1);
-   mask_pixmap = XCreatePixmap(XDisplay, rootwindow, 1, 1, 1);
-
-   //XSetWindowBackground(XDisplay, data_pixmap, 0);
-   //XSetWindowBackground(XDisplay, mask_pixmap, 0);
-   //XClearArea(XDisplay, data_pixmap, 0, 0, 1, 1, False);
-   //XClearArea(XDisplay, mask_pixmap, 0, 0, 1, 1, False);
-
-   cursor = XCreatePixmapCursor(XDisplay, data_pixmap, mask_pixmap, &black, &black, 0, 0);
-
-   XFreePixmap(XDisplay, data_pixmap); // According to XFree documentation, it is OK to free the pixmaps
-   XFreePixmap(XDisplay, mask_pixmap);
-
-   XSync(XDisplay, 0);
-   return cursor;
-}
-
-static Cursor get_x11_cursor(PTC CursorID)
-{
-   pf::Log log(__FUNCTION__);
-
-   for (int16_t i=0; i < std::ssize(XCursors); i++) {
-      if (XCursors[i].CursorID IS CursorID) return XCursors[i].XCursor;
-   }
-
-   log.warning("Cursor #%d is not a recognised cursor ID.", int(CursorID));
-   return XCursors[0].XCursor;
-}
-
-void init_xcursors(void)
-{
-   for (int16_t i=0; i < std::ssize(XCursors); i++) {
-      if (XCursors[i].CursorID IS PTC::INVISIBLE) XCursors[i].XCursor = create_blank_cursor();
-      else XCursors[i].XCursor = XCreateFontCursor(XDisplay, XCursors[i].XCursorID);
-   }
-}
-
-void free_xcursors(void)
-{
-   for (int16_t i=0; i < std::ssize(XCursors); i++) {
-      if (XCursors[i].XCursor) XFreeCursor(XDisplay, XCursors[i].XCursor);
-   }
-}
-#endif
-
-//********************************************************************************************************************
-
-#ifdef _WIN32
-HCURSOR GetWinCursor(PTC CursorID)
-{
-   for (int16_t i=0; i < std::ssize(winCursors); i++) {
-      if (winCursors[i].CursorID IS CursorID) return winCursors[i].WinCursor;
-   }
-
-   pf::Log log;
-   log.warning("Cursor #%d is not a recognised cursor ID.", int(CursorID));
-   return winCursors[0].WinCursor;
-}
-#endif
 
 namespace gfx {
 
@@ -136,6 +24,9 @@ Call ~Core.ReleaseObject() to free the lock once it is no longer required.
 -RESULT-
 obj(Pointer): Returns the address of the default pointer object.
 
+-TAGS-
+api-owns-result, nullable-result, blocking
+
 *********************************************************************************************************************/
 
 objPointer * AccessPointer(void)
@@ -143,14 +34,14 @@ objPointer * AccessPointer(void)
    objPointer *pointer = nullptr;
 
    if (!glPointerID) {
-      if (FindObject("SystemPointer", CLASSID::POINTER, FOF::NIL, &glPointerID) IS ERR::Okay) {
+      if (!FindObject("SystemPointer", CLASSID::POINTER, &glPointerID)) {
          AccessObject(glPointerID, 2000, (OBJECTPTR *)&pointer);
       }
       return pointer;
    }
 
    if (AccessObject(glPointerID, 2000, (OBJECTPTR *)&pointer) IS ERR::NoMatchingObject) {
-      if (FindObject("SystemPointer", CLASSID::POINTER, FOF::NIL, &glPointerID) IS ERR::Okay) {
+      if (!FindObject("SystemPointer", CLASSID::POINTER, &glPointerID)) {
          AccessObject(glPointerID, 2000, (OBJECTPTR *)&pointer);
       }
    }
@@ -176,30 +67,31 @@ wanted.  The mask colour for the bitmap must refer to colour index 0.
 
 -INPUT-
 struct(*CursorInfo) Info: Pointer to a !CursorInfo structure.
-structsize Size: The byte-size of the `Info` structure.
 
 -ERRORS-
 Okay:
 NullArgs:
 NoSupport: The device does not support a cursor (common for touch screen displays).
 
+-TAGS-
+mutates-input, pure-query
+
 *********************************************************************************************************************/
 
-ERR GetCursorInfo(CursorInfo *Info, int Size)
+ERR GetCursorInfo(CursorInfo *Info)
 {
    if (!Info) return ERR::NullArgs;
 
-#ifdef __ANDROID__
-   // TODO: Some Android devices probably do support a mouse or similar input device.
+   if ((not glDriver) or ((glDriver->capabilities() & DCAP::CUSTOM_CURSORS) IS DCAP::NIL)) {
    clearmem(Info, sizeof(CursorInfo));
    return ERR::NoSupport;
-#else
+   }
+
    Info->Width  = 32;
    Info->Height = 32;
    Info->BitsPerPixel = 1;
    Info->Flags = 0;
    return ERR::Okay;
-#endif
 }
 
 /*********************************************************************************************************************
@@ -218,6 +110,9 @@ coordinates will reflect the last position that a touch event occurred.
 Okay
 AccessObject: Failed to access the SystemPointer object.
 
+-TAGS-
+blocking, pure-query
+
 *********************************************************************************************************************/
 
 ERR GetCursorPos(double *X, double *Y)
@@ -229,7 +124,7 @@ ERR GetCursorPos(double *X, double *Y)
       return ERR::Okay;
    }
    else {
-      pf::Log log(__FUNCTION__);
+      kt::Log log(__FUNCTION__);
       return log.warning(ERR::AccessObject);
    }
 }
@@ -252,12 +147,16 @@ oid Surface: Unique ID of the surface that the coordinates need to be relative t
 -ERRORS-
 Okay:
 AccessObject: Failed to access the SystemPointer object.
+Search:
+
+-TAGS-
+blocking, pure-query
 
 *********************************************************************************************************************/
 
 ERR GetRelativeCursorPos(OBJECTID SurfaceID, double *X, double *Y)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    int absx, absy;
 
    if (get_surface_abs(SurfaceID, &absx, &absy, 0, 0) != ERR::Okay) {
@@ -291,10 +190,7 @@ The anchor can be released at any time by calling the ~UnlockCursor() function.
 oid Surface: Refers to the surface object that the pointer should send movement signals to.
 
 -ERRORS-
-Okay
-NullArgs
 NoSupport: The pointer cannot be locked due to system limitations.
-AccessObject: Failed to access the pointer object.
 
 *********************************************************************************************************************/
 
@@ -320,14 +216,16 @@ oid Owner: The ownership ID that was given in the initial call to SetCursor().
 
 -ERRORS-
 Okay
-Args
+
+-TAGS-
+mutates-object, blocking
 -END-
 
 *********************************************************************************************************************/
 
 ERR RestoreCursor(PTC Cursor, OBJECTID OwnerID)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (auto pointer = (extPointer *)gfx::AccessPointer()) {
 /*
@@ -337,8 +235,8 @@ ERR RestoreCursor(PTC Cursor, OBJECTID OwnerID)
 */
       if ((!OwnerID) or (OwnerID IS pointer->CursorOwnerID)) {
          // Restore the pointer to the given cursor image
-         if (!OwnerID) gfx::SetCursor(0, CRF::RESTRICT, Cursor, nullptr, pointer->CursorOwnerID);
-         else gfx::SetCursor(0, CRF::RESTRICT, Cursor, nullptr, OwnerID);
+         if (!OwnerID) gfx::SetCursor(0, CRF::RESTRICT, Cursor, "", pointer->CursorOwnerID);
+         else gfx::SetCursor(0, CRF::RESTRICT, Cursor, "", OwnerID);
 
          pointer->CursorOwnerID   = 0;
          pointer->CursorRelease   = 0;
@@ -349,7 +247,7 @@ ERR RestoreCursor(PTC Cursor, OBJECTID OwnerID)
 
       if (pointer->BufferOwner) {
          if (OwnerID != pointer->BufferOwner) {
-            gfx::SetCursor(pointer->BufferObject, pointer->BufferFlags, pointer->BufferCursor, nullptr, pointer->BufferOwner);
+            gfx::SetCursor(pointer->BufferObject, pointer->BufferFlags, pointer->BufferCursor, "", pointer->BufferOwner);
          }
          else pointer->BufferOwner = 0; // Owner and Buffer are identical, so clear due to restored pointer
       }
@@ -367,11 +265,10 @@ SetCursor: Sets the cursor image and can anchor the pointer to any surface.
 
 Use the SetCursor() function to change the pointer image and/or restrict the movement of the pointer to a surface area.
 
-To change the cursor image, set the `Cursor` or `Name` parameters to define the new image.  Valid cursor ID's and
-their equivalent names are listed in the documentation for the @Pointer.Cursor field.  If the `Surface` field is set
-to a valid surface, the cursor image will switch back to its default once the pointer moves outside of the surface's
-area.  If both the `Cursor` and `Name` parameters are `NULL`, the cursor image will remain unchanged from its
-current image.
+To change the cursor image, set the `Cursor` or `Name` parameters to define the new image.  Valid cursor IDs and their
+equivalent names are listed in the documentation for the @Pointer.CursorID field.  If the `Surface` field is set to a
+valid surface, the cursor image will switch back to its default once the pointer moves outside of the surface's area.
+If both the `Cursor` and `Name` parameters are `NULL`, the cursor image will remain unchanged from its current image.
 
 The SetCursor() function accepts the following flags in the `Flags` parameter:
 
@@ -385,24 +282,27 @@ program's control until ~RestoreCursor() is called.
 oid Surface: Refers to the surface object that the pointer should anchor itself to, if the `RESTRICT` flag is used.  Otherwise, this parameter can be set to a surface that the new cursor image should be limited to.  The object referred to here must be publicly accessible to all tasks.
 int(CRF) Flags:  Optional flags that affect the cursor.
 int(PTC) Cursor: The ID of the cursor image that is to be set.
-cstr Name: The name of the cursor image that is to be set (if `Cursor` is zero).
+strview Name: The name of the cursor image that is to be set (if `Cursor` is zero).
 oid Owner: The object nominated as the owner of the anchor, and/or owner of the cursor image setting.
 
 -ERRORS-
 Okay
-Args
-NoSupport: The pointer cannot be set due to system limitations.
 OutOfRange: The cursor ID is outside of acceptable range.
 AccessObject: Failed to access the mouse pointer.
 LockFailed
 NothingDone
+Args
+True
+
+-TAGS-
+mutates-object, blocking, case-insensitive
 -END-
 
 *********************************************************************************************************************/
 
-ERR SetCursor(OBJECTID ObjectID, CRF Flags, PTC CursorID, CSTRING Name, OBJECTID OwnerID)
+ERR SetCursor(OBJECTID ObjectID, CRF Flags, PTC CursorID, const std::string_view &Name, OBJECTID OwnerID)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    extPointer *pointer;
    CRF flags;
 
@@ -421,27 +321,20 @@ ERR SetCursor(OBJECTID ObjectID, CRF Flags, PTC CursorID, CSTRING Name, OBJECTID
       return ERR::AccessObject;
    }
 
-   if (Name) log.traceBranch("Object: %d, Flags: $%.8x, Owner: %d (Current %d), Cursor: %s", ObjectID, int(Flags), OwnerID, pointer->CursorOwnerID, Name);
-   else log.traceBranch("Object: %d, Flags: $%.8x, Owner: %d (Current %d), Cursor: %s", ObjectID, int(Flags), OwnerID, pointer->CursorOwnerID, CursorLookup[int(CursorID)].Name);
+   if (not Name.empty()) log.traceBranch("Object: %d, Flags: $%.8x, Owner: %d (Current %d), Cursor: %.*s", ObjectID, int(Flags), OwnerID, pointer->CursorOwnerID, int(Name.size()), Name.data());
+   else log.traceBranch("Object: %d, Flags: $%.8x, Owner: %d (Current %d), Cursor: %d", ObjectID, int(Flags), OwnerID, pointer->CursorOwnerID, int(CursorID));
 
    // Extract the cursor ID from the cursor name if no ID was given
 
    if (CursorID IS PTC::NIL) {
-      if (Name) {
-         for (int i=0; CursorLookup[i].Name; i++) {
-            if (iequals(CursorLookup[i].Name, Name)) {
-               CursorID = PTC(CursorLookup[i].Value);
-               break;
-            }
-         }
-      }
+      if (not Name.empty()) CursorID = get_cursor_id(Name);
       else CursorID = pointer->CursorID;
    }
 
    // Return if the cursor is currently pwn3d by someone
 
    if ((pointer->CursorOwnerID) and (pointer->CursorOwnerID != OwnerID)) {
-      if ((pointer->CursorOwnerID < 0) and (CheckObjectExists(pointer->CursorOwnerID) != ERR::True)) pointer->CursorOwnerID = 0;
+      if ((pointer->CursorOwnerID < 0) and (CheckResourceExists(pointer->CursorOwnerID) != ERR::True)) pointer->CursorOwnerID = 0;
       else if ((Flags & CRF::BUFFER) != CRF::NIL) {
          // If the BUFFER option is used, then we can buffer the change so that it
          // will be activated as soon as the current holder releases the cursor.
@@ -466,7 +359,7 @@ ERR SetCursor(OBJECTID ObjectID, CRF Flags, PTC CursorID, CSTRING Name, OBJECTID
    // If CRF::NOBUTTONS is used, the cursor can only be set if no mouse buttons are held down at the current time.
 
    if ((Flags & CRF::NO_BUTTONS) != CRF::NIL) {
-      if ((pointer->Buttons[0].LastClicked) or (pointer->Buttons[1].LastClicked) or (pointer->Buttons[2].LastClicked)) {
+      if ((pointer->ButtonClicks[0].LastClicked) or (pointer->ButtonClicks[1].LastClicked) or (pointer->ButtonClicks[2].LastClicked)) {
          ReleaseObject(pointer);
          return ERR::NothingDone;
       }
@@ -491,35 +384,15 @@ ERR SetCursor(OBJECTID ObjectID, CRF Flags, PTC CursorID, CSTRING Name, OBJECTID
 
          log.trace("Adjusting hardware/hosted cursor image.");
 
-         #ifdef __xwindows__
+         if (glDriver) {
+            // A window that cannot be resolved is still forwarded to the driver, which applies the cursor to every
+            // window that it manages.  Hosts with a process-wide cursor depend on this because the pointer has no
+            // surface until the first movement event arrives.
 
-            APTR xwin;
-            Cursor xcursor;
-
-            if (pointer->SurfaceID) {
-               if (ScopedObjectLock<objSurface> surface(pointer->SurfaceID, 1000); surface.granted()) {
-                  if (surface->DisplayID) {
-                     if (ScopedObjectLock<objDisplay> display(surface->DisplayID, 1000); display.granted()) {
-                        if ((display->get(FID_WindowHandle, xwin) IS ERR::Okay) and (xwin)) {
-                           xcursor = get_x11_cursor(CursorID);
-                           XDefineCursor(XDisplay, (Window)xwin, xcursor);
-                           XFlush(XDisplay);
-                           pointer->CursorID = CursorID;
-                        }
-                        else log.warning("Failed to acquire window handle for surface #%d.", pointer->SurfaceID);
-                     }
-                     else log.warning("Display of surface #%d undefined or inaccessible.", pointer->SurfaceID);
-                  }
-               }
-            }
-            else log.warning("Pointer surface undefined or inaccessible.");
-
-         #elif _WIN32
-
-            winSetCursor(GetWinCursor(CursorID));
-            pointer->CursorID = CursorID;
-
-         #endif
+            HOSTWINDOW window;
+            pointer_window(pointer->SurfaceID, window);
+            if (glDriver->setCursor(window, CursorID) IS ERR::Okay) pointer->CursorID = CursorID;
+         }
       }
 
       if ((ObjectID < 0) and (GetClassID(ObjectID) IS CLASSID::SURFACE) and ((Flags & CRF::RESTRICT) IS CRF::NIL)) {
@@ -534,15 +407,15 @@ ERR SetCursor(OBJECTID ObjectID, CRF Flags, PTC CursorID, CSTRING Name, OBJECTID
    flags = Flags;
    if ((flags & (CRF::LMB|CRF::MMB|CRF::RMB)) != CRF::NIL) {
       if ((flags & CRF::LMB) != CRF::NIL) {
-         if (pointer->Buttons[0].LastClicked) pointer->CursorRelease |= 0x01;
+         if (pointer->ButtonClicks[0].LastClicked) pointer->CursorRelease |= 0x01;
          else flags &= ~(CRF::RESTRICT); // The LMB has already been released by the user, so do not allow restrict/anchoring
       }
       else if ((flags & CRF::RMB) != CRF::NIL) {
-         if (pointer->Buttons[1].LastClicked) pointer->CursorRelease |= 0x02;
+         if (pointer->ButtonClicks[1].LastClicked) pointer->CursorRelease |= 0x02;
          else flags &= ~(CRF::RESTRICT); // The MMB has already been released by the user, so do not allow restrict/anchoring
       }
       else if ((flags & CRF::MMB) != CRF::NIL) {
-         if (pointer->Buttons[2].LastClicked) pointer->CursorRelease |= 0x04;
+         if (pointer->ButtonClicks[2].LastClicked) pointer->CursorRelease |= 0x04;
          else flags &= ~(CRF::RESTRICT); // The MMB has already been released by the user, so do not allow restrict/anchoring
       }
    }
@@ -552,14 +425,6 @@ ERR SetCursor(OBJECTID ObjectID, CRF Flags, PTC CursorID, CSTRING Name, OBJECTID
          // Restrict the pointer to the specified surface
          pointer->RestrictID = ObjectID;
 
-         #ifdef __xwindows__
-            // Pointer grabbing has been turned off for X11 because LBreakout2 was not receiving
-            // movement events when run from the desktop.  The reason for this
-            // is that only the desktop (which does the X11 input handling) is allowed
-            // to grab the pointer.
-
-            //QueueAction(MT_GrabX11Pointer, pointer->Head.UID);
-         #endif
       }
       else log.warning("The pointer may only be restricted to public surfaces.");
    }
@@ -614,9 +479,13 @@ oid Owner: The object nominated as the owner of the anchor.
 
 -ERRORS-
 Okay:
-Args:
-NoSupport:
 AccessObject: Failed to access the internally maintained image object.
+LockFailed:
+NothingDone:
+OutOfRange:
+
+-TAGS-
+mutates-object, blocking
 -END-
 
 *********************************************************************************************************************/
@@ -624,7 +493,7 @@ AccessObject: Failed to access the internally maintained image object.
 ERR SetCustomCursor(OBJECTID ObjectID, CRF Flags, objBitmap *Bitmap, int HotX, int HotY, OBJECTID OwnerID)
 {
    // If the driver doesn't support custom cursors then divert to gfx::SetCursor()
-   return gfx::SetCursor(ObjectID, Flags, PTC::DEFAULT, nullptr, OwnerID);
+   return gfx::SetCursor(ObjectID, Flags, PTC::DEFAULT, "", OwnerID);
 }
 
 /*********************************************************************************************************************
@@ -640,7 +509,9 @@ double Y: The new vertical coordinate for the pointer.
 
 -ERRORS-
 Okay:
-AccessObject: Failed to access the SystemPointer object.
+
+-TAGS-
+mutates-object, blocking, callback-inlines
 
 *********************************************************************************************************************/
 
@@ -669,7 +540,7 @@ data on completion of the drag and drop operation. An `Item` number, which is op
 from the `Source` object.
 
 The type of data represented by the source item and all other supportable data types are specified in the `Datatypes`
-parameter as a null terminated array.  The array is arranged in order of preference, starting with the item's native
+parameter as a character array.  The array is arranged in order of preference, starting with the item's native
 data type.  Acceptable data type values are listed in the documentation for the DataFeed action.
 
 The `Surface` parameter allows for a composite surface to be dragged by the mouse cursor as a graphical representation of
@@ -684,30 +555,33 @@ the DragDrop action on that surface can then contact the Source object with a Da
 resulting data is then passed to the requesting object with a DragDropResult on the DataFeed.
 
 -INPUT-
-oid Source:     Refers to an object that is managing the source data.
-int Item:       A custom number that represents the item being dragged from the source.
-cstr Datatypes: A null terminated byte array that lists the datatypes supported by the source item, in order of conversion preference.
-oid Surface:    A 32-bit composite surface that represents the item being dragged.
+oid Source:  Refers to an object that is managing the source data.
+int Item:    A custom number that represents the item being dragged from the source.
+strview Datatypes: A character array that lists the datatypes supported by the source item, in order of conversion preference.
+oid Surface: A 32-bit composite surface that represents the item being dragged.
 
 -ERRORS-
 Okay:
 NullArgs:
 AccessObject:
-Failed: The left mouse button is not held by the user.
+InvalidState: The left mouse button is not held by the user.
 InUse: A drag and drop operation has already been started.
+
+-TAGS-
+copies-input, mutates-object, blocking, callback-inlines
 
 *********************************************************************************************************************/
 
-ERR StartCursorDrag(OBJECTID Source, int Item, CSTRING Datatypes, OBJECTID Surface)
+ERR StartCursorDrag(OBJECTID Source, int Item, const std::string_view &Datatypes, OBJECTID Surface)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    log.branch("Source: %d, Item: %d, Surface: %d", Source, Item, Surface);
 
    if (!Source) return log.warning(ERR::NullArgs);
 
    if (auto pointer = (extPointer *)gfx::AccessPointer()) {
-      if (!pointer->Buttons[0].LastClicked) {
+      if (!pointer->ButtonClicks[0].LastClicked) {
          ReleaseObject(pointer);
          return log.warning(ERR::InvalidState);
       }
@@ -717,20 +591,20 @@ ERR StartCursorDrag(OBJECTID Source, int Item, CSTRING Datatypes, OBJECTID Surfa
          return ERR::InUse;
       }
 
-      pointer->DragSurface = Surface;
-      pointer->DragItem    = Item;
+      pointer->DragSurface  = Surface;
+      pointer->DragItem     = Item;
       pointer->DragSourceID = Source;
-      strcopy(Datatypes, pointer->DragData, sizeof(pointer->DragData));
+      copymem(Datatypes.data(), pointer->DragData, std::min(sizeof(pointer->DragData), Datatypes.size()));
 
       SURFACEINFO *info;
-      if (gfx::GetSurfaceInfo(Surface, &info) IS ERR::Okay) {
+      if (!gfx::GetSurfaceInfo(Surface, &info)) {
          pointer->DragParent = info->ParentID;
       }
 
       if (Surface) {
          log.trace("Moving draggable surface %d to %dx%d", Surface, pointer->X, pointer->Y);
 
-         pf::ScopedObjectLock surface(Surface);
+         kt::ScopedObjectLock surface(Surface);
          if (surface.granted()) {
             acMoveToPoint(*surface, pointer->X+DRAG_XOFFSET, pointer->Y+DRAG_YOFFSET, 0, MTF::X|MTF::Y);
             acShow(*surface);
@@ -759,13 +633,16 @@ Okay:
 NullArgs:
 AccessObject:
 ResourceNotLocked: The pointer is not anchored to the given Surface.
+
+-TAGS-
+mutates-object, blocking
 -END-
 
 *********************************************************************************************************************/
 
 ERR UnlockCursor(OBJECTID SurfaceID)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (!SurfaceID) return log.warning(ERR::NullArgs);
 

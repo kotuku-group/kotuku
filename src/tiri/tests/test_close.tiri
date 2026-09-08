@@ -8,7 +8,7 @@ function enforce_hotpath() end
 @Test function BasicClose()
    closed = false
    mt = {
-      __close = function(self, err)
+      __close = function(Error)
          closed = true
       end
    }
@@ -18,14 +18,144 @@ function enforce_hotpath() end
    assert(closed, 'Basic close: __close should be called when scope ends')
 end
 
--- __close receives self as first argument
+-- Native objects are explicitly terminated when their owning <close> scope exits.
+
+@Test function CloseNativeObjectOnScopeExit()
+   id = 0
+   alias = nil
+   defer
+      if alias != nil and alias.exists() then alias.free() end
+   end
+
+   do
+      local resource <close>:obj = obj.new('time')
+      id = resource.id
+      alias = obj.find(id)
+   end
+
+   assert(obj.find(id) is nil, 'Expected object <close> to terminate the native object')
+   assert(not alias.exists(), 'Expected detached alias to become stale after object <close>')
+end
+
+-- Closing an object must also run while exceptions unwind its scope.
+
+@Test function CloseNativeObjectOnException()
+   id = 0
+   alias = nil
+   defer
+      if alias != nil and alias.exists() then alias.free() end
+   end
+
+   function fail_with_resource()
+      do
+         local resource <close>:obj = obj.new('time')
+         id = resource.id
+         alias = obj.find(id)
+         raise 'Intentional native object close test error'
+      end
+   end
+
+   caught = false
+   try
+      fail_with_resource()
+   except e
+      caught = true
+   end
+
+   assert(caught, 'Expected the test exception to be caught')
+   assert(obj.find(id) is nil, 'Expected object <close> to terminate during exception unwinding')
+   assert(not alias.exists(), 'Expected alias to become stale during exception unwinding')
+end
+
+-- A manual free before lexical close is a harmless, idempotent cleanup path.
+
+@Test function ManualFreeBeforeObjectClose()
+   id = 0
+   alias = nil
+   defer
+      if alias != nil and alias.exists() then alias.free() end
+   end
+
+   do
+      local resource <close>:obj = obj.new('time')
+      id = resource.id
+      alias = obj.find(id)
+      resource.free()
+      assert(not resource.exists(), 'Expected manual free to terminate the object immediately')
+   end
+
+   assert(obj.find(id) is nil, 'Expected manual free to keep the object absent after scope close')
+   assert(not alias.exists(), 'Expected alias to remain stale after repeated cleanup')
+end
+
+-- Explicit close matches free() even for detached wrappers returned by obj.find().
+
+@Test function CloseDetachedNativeObject()
+   owner = obj.new('time')
+   id = owner.id
+   defer
+      if owner.exists() then owner.free() end
+   end
+
+   do
+      local alias <close>:obj = obj.find(id)
+      assert(alias.exists(), 'Expected detached alias to resolve before close')
+   end
+
+   assert(obj.find(id) is nil, 'Expected detached wrapper <close> to terminate the object')
+   assert(not owner.exists(), 'Expected original wrapper to become stale after detached close')
+end
+
+-- The with lock guard must not close the object before the outer owning scope ends.
+
+@Test function CloseNativeObjectAroundWith()
+   id = 0
+   alias = nil
+   defer
+      if alias != nil and alias.exists() then alias.free() end
+   end
+
+   do
+      local resource <close>:obj = obj.new('time')
+      id = resource.id
+      alias = obj.find(id)
+      with resource do
+         resource.hour = 9
+      end
+      assert(resource.exists(), 'Expected with scope to release only its lock')
+      assert(resource.hour is 9, 'Expected object to remain usable after with scope')
+   end
+
+   assert(obj.find(id) is nil, 'Expected outer object <close> to terminate after with scope')
+   assert(not alias.exists(), 'Expected alias to become stale after outer object close')
+end
+
+-- Arrays are reference containers: closing their storage must not close native object elements.
+
+@Test function CloseObjectArrayDoesNotCloseElements()
+   target = obj.new('time')
+   id = target.id
+   defer
+      if target.exists() then target.free() end
+   end
+
+   do
+      local resources <close>:array<obj> = array<obj> { target }
+      assert(#resources is 1, 'Expected object array to retain its element')
+   end
+
+   assert(target.exists(), 'Expected closing array<obj> not to terminate its element')
+   assert(obj.find(id) != nil, 'Expected object to remain findable after array close')
+end
+
+-- __close exposes the closed table as dispatch context
 
 @Test function CloseSelfArg()
    received_self = nil
    obj_value = { data = 'test_value' }
    mt = {
-      __close = function(self, err)
-         received_self = self
+      __close = function(Error)
+         received_self = &&
       end
    }
    do
@@ -40,8 +170,8 @@ end
 @Test function CloseNilErrArg()
    received_err = 'not_nil'
    mt = {
-      __close = function(self, err)
-         received_err = err
+      __close = function(Error)
+         received_err = Error
       end
    }
    do
@@ -72,8 +202,8 @@ end
    order = {}
    function makeMt(n)
       return {
-         __close = function(self, err)
-            table.insert(order, n)
+         __close = function(Error)
+            order.insert(n)
          end
       }
    end
@@ -96,14 +226,14 @@ end
    order = {}
    do
       outer <close> = setmetatable({}, {
-         __close = function() table.insert(order, 'outer') end
+         __close = function() order.insert('outer') end
       })
       do
          inner <close> = setmetatable({}, {
-            __close = function() table.insert(order, 'inner') end
+            __close = function() order.insert('inner') end
          })
       end
-      table.insert(order, 'between')
+      order.insert('between')
    end
    assert(#order is 3, 'Should have 3 events')
    assert(order[0] is 'inner', 'Inner scope closes first: ' .. tostring(order[0]))
@@ -117,10 +247,10 @@ end
    order = {}
    do
       defer
-         table.insert(order, 'defer')
+         order.insert('defer')
       end
       local obj <close> = setmetatable({}, {
-         __close = function() table.insert(order, 'close') end
+         __close = function() order.insert('close') end
       })
    end
    assert(#order is 2, 'Both close and defer should run')
@@ -133,7 +263,7 @@ end
 @Test function CloseOnReturn()
    closed = false
    mt = {
-      __close = function(self, err)
+      __close = function(Error)
          closed = true
       end
    }
@@ -154,7 +284,7 @@ end
    close_count = 0
    mt = { __close = function() close_count++ end }
 
-   for i = 1, 3 do
+   for i in {0 to 3} do
       local obj <close> = setmetatable({}, mt)
    end
 
@@ -167,7 +297,7 @@ end
    closed = false
    mt = { __close = function() closed = true end }
 
-   for i = 1, 10 do
+   for i in {0 to 10} do
       local obj <close> = setmetatable({}, mt)
       if i is 3 then
          break
@@ -183,7 +313,7 @@ end
    close_count = 0
    mt = { __close = function() close_count++ end }
 
-   for i = 1, 3 do
+   for i in {0 to 3} do
       local obj <close> = setmetatable({}, mt)
       if i is 2 then
          continue
@@ -216,11 +346,11 @@ end
    order = {}
    do
       a <close> = setmetatable({}, {
-         __close = function() table.insert(order, 'a') end
+         __close = function() order.insert('a') end
       })
       b <close> = nil
       c <close> = setmetatable({}, {
-         __close = function() table.insert(order, 'c') end
+         __close = function() order.insert('c') end
       })
    end
 
@@ -237,27 +367,108 @@ end
    closed = false
    received_err = nil
    mt = {
-      __close = function(self, err)
+      __close = function(Error)
          closed = true
-         received_err = err
+         received_err = Error
       end
    }
 
    function inner()
       local obj <close> = setmetatable({}, mt)
-      error('test error message')
+      raise 'test error message'
    end
 
    try
       inner()
    success
-      error('try should catch error')
+      assert(false, 'try should catch error')
    end
 
    assert(closed, 'Close should be called when error is caught by try')
    -- The error must be passed to __close during error unwinding
    assert(received_err != nil, 'Error should be passed to __close handler')
-   assert(tostring(received_err):find('test error message'), 'Error message should contain "test error message": got ' .. tostring(received_err))
+   assert(tostring(received_err).find('test error message'), 'Error message should contain "test error message": got ' .. tostring(received_err))
+end
+
+-- Error unwinding must never publish its private control state through the global environment.
+
+@Test function CloseErrorStateIsPrivate()
+   _G.__close_err = nil
+   received_message = nil
+   global_during_close = 'not_checked'
+
+   function inner()
+      local obj <close> = setmetatable({}, {
+         __close = function(Error)
+            processing.collect('full')
+            received_message = tostring(Error)
+            global_during_close = _G.__close_err
+         end
+      })
+      raise 'private close error'
+   end
+
+   try
+      inner()
+   except err
+   end
+
+   assert(received_message.find('private close error'), 'The close handler must receive the active error')
+   assert(global_during_close is nil, 'The active close error must not be exposed through _G')
+   assert(_G.__close_err is nil, 'Error unwinding must not leave close state in _G')
+end
+
+-- Nested unwinding from a close handler must restore the enclosing error before the next outer handler runs.
+
+@Test function NestedCloseErrorIsolation()
+   inner_message = nil
+   outer_messages = {}
+
+   inner_mt = {
+      __close = function(Error)
+         processing.collect('full')
+         inner_message = tostring(Error)
+      end
+   }
+
+   nesting_mt = {
+      __close = function(Error)
+         outer_messages.insert(tostring(Error))
+
+         function nested_failure()
+            local nested <close> = setmetatable({}, inner_mt)
+            raise 'nested close error'
+         end
+
+         try
+            nested_failure()
+         except nested_err
+         end
+      end
+   }
+
+   trailing_mt = {
+      __close = function(Error)
+         outer_messages.insert(tostring(Error))
+      end
+   }
+
+   function outer_failure()
+      local trailing <close> = setmetatable({}, trailing_mt)
+      local nesting <close> = setmetatable({}, nesting_mt)
+      raise 'outer close error'
+   end
+
+   try
+      outer_failure()
+   except outer_err
+   end
+
+   assert(inner_message.find('nested close error'), 'Nested cleanup must receive the nested error')
+   assert(#outer_messages is 2, 'Both outer close handlers must run')
+   assert(outer_messages[0].find('outer close error'), 'The nesting handler must receive the outer error')
+   assert(outer_messages[1].find('outer close error'), 'Nested unwinding must restore the outer error')
+   assert(_G.__close_err is nil, 'Nested unwinding must not expose close state through _G')
 end
 
 -- Close with string value - should not crash
@@ -283,9 +494,9 @@ end
    errors_received = {}
    function makeMt(n)
       return {
-         __close = function(self, err)
-            table.insert(order, n)
-            errors_received[n] = err
+         __close = function(Error)
+            order.insert(n)
+            errors_received[n] = Error
          end
       }
    end
@@ -294,13 +505,13 @@ end
       a <close> = setmetatable({}, makeMt(0))
       b <close> = setmetatable({}, makeMt(1))
       c <close> = setmetatable({}, makeMt(2))
-      error('multi close error')
+      raise 'multi close error'
    end
 
    try
       inner()
    success
-      error('try should catch error')
+      assert(false, 'try should catch error')
    end
 
    assert(#order is 3, 'All three close handlers should be called: ' .. #order)
@@ -308,9 +519,9 @@ end
    assert(order[1] is 1, 'LIFO: 2 second, got ' .. tostring(order[1]))
    assert(order[2] is 0, 'LIFO: 1 third, got ' .. tostring(order[2]))
    -- All handlers should receive the same error
-   for i = 0, 2 do
+   for i in {0 to 3} do
       assert(errors_received[i] != nil, 'Handler ' .. i .. ' should receive error')
-      assert(tostring(errors_received[i]):find('multi close error'), 'Handler ' .. i .. ' should get correct error')
+      assert(tostring(errors_received[i]).find('multi close error'), 'Handler ' .. i .. ' should get correct error')
    end
 end
 
@@ -335,8 +546,8 @@ end
 
 @Test function NestedFunctionsClose()
    order = {}
-   mt_outer = { __close = function() table.insert(order, 'outer') end }
-   mt_inner = { __close = function() table.insert(order, 'inner') end }
+   mt_outer = { __close = function() order.insert('outer') end }
+   mt_inner = { __close = function() order.insert('inner') end }
 
    function inner()
       local obj <close> = setmetatable({}, mt_inner)
@@ -362,6 +573,67 @@ end
    assert(has_outer, 'Outer close should be called')
 end
 
+@Test function TailCallResultsBeforeClose()
+   order = {}
+
+   function source()
+      order.insert('call')
+      return { marker='first' }, 'second'
+   end
+
+   function subject()
+      local resource <close> = setmetatable({}, {
+         __close=function()
+            processing.collect('full')
+            order.insert('close')
+         end
+      })
+      return source()
+   end
+
+   local first, second = subject()
+   assert(first.marker is 'first' and second is 'second',
+      'Close cleanup and collection must preserve all returned call values')
+   assert(order[0] is 'call' and order[1] is 'close', 'The returned call must execute before close cleanup')
+end
+
+@Test function ManyTailCallResultsSurviveCloseCollection()
+   function many_results()
+      return
+         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+         16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+         32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
+         48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
+         64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
+         80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95,
+         96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111,
+         112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127,
+         128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143,
+         144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159,
+         160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175,
+         176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191,
+         192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207,
+         208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223,
+         224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239
+   end
+
+   function subject()
+      local resource <close> = setmetatable({}, {
+         __close=function()
+            processing.collect('full')
+         end
+      })
+      return many_results()
+   end
+
+   for iteration in {0 to 20} do
+      local results = { subject() }
+      assert(#results is 240, 'Close cleanup must restore every returned value after stack shrinking')
+      assert(results[0] is 0 and results[239] is 239,
+         'Close cleanup must preserve the first and last values after stack shrinking')
+   end
+end
+
 -- Close with early return in loop
 
 @Test function CloseEarlyReturnInLoop()
@@ -369,9 +641,9 @@ end
    mt = { __close = function() close_count++ end }
 
    function inner()
-      for i = 1, 10 do
+      for i in {0 to 10} do
          local obj <close> = setmetatable({}, mt)
-         if i is 3 then
+         if i is 2 then
             return i
          end
       end
@@ -379,8 +651,8 @@ end
    end
 
    result = inner()
-   assert(result is 3, 'Should return 3')
-   assert(close_count is 3, 'Close should be called 3 times (iterations 1, 2, 3): ' .. close_count)
+   assert(result is 2, 'Should return 2')
+   assert(close_count is 3, 'Close should be called 3 times (iterations 0, 1, 2): ' .. close_count)
 end
 
 -- Error in __close handler replaces original error (Lua 5.4 semantics)
@@ -388,14 +660,14 @@ end
 @Test function CloseHandlerError()
    order = {}
    mt1 = {
-      __close = function(self, err)
-         table.insert(order, 'close1')
-         error('close1 error')
+      __close = function(Error)
+         order.insert('close1')
+         raise 'close1 error'
       end
    }
    mt2 = {
-      __close = function(self, err)
-         table.insert(order, 'close2')
+      __close = function(Error)
+         order.insert('close2')
          -- This handler should receive the error from close1 (or original)
       end
    }
@@ -403,7 +675,7 @@ end
    function inner()
       obj2 <close> = setmetatable({}, mt2)  -- Called second (LIFO)
       obj1 <close> = setmetatable({}, mt1)  -- Called first (LIFO), throws
-      error('original error')
+      raise 'original error'
    end
 
    caught_ex = nil
@@ -419,7 +691,7 @@ end
    assert(order[1] is 'close2', 'close2 second (LIFO)')
    -- The error should be from close1, not the original (per Lua 5.4)
    assert(caught_ex != nil, 'Exception should be caught')
-   assert(tostring(caught_ex.message):find('close1 error'), 'Error from __close should replace original: ' .. tostring(caught_ex.message))
+   assert(tostring(caught_ex.message).find('close1 error'), 'Error from __close should replace original: ' .. tostring(caught_ex.message))
 end
 
 -- Multiple __close errors - last one wins
@@ -427,24 +699,24 @@ end
 @Test function MultipleCloseErrors()
    order = {}
    mt1 = {
-      __close = function(self, err)
+      __close = function(Error)
          msg('mt1 __close called')
-         table.insert(order, 'close1')
-         error('close1 error')
+         order.insert('close1')
+         raise 'close1 error'
       end
    }
    mt2 = {
-      __close = function(self, err)
+      __close = function(Error)
          msg('mt2 __close called')
-         table.insert(order, 'close2')
-         error('close2 error')
+         order.insert('close2')
+         raise 'close2 error'
       end
    }
 
    function inner()
       local obj2 <close> = setmetatable({}, mt2)  -- Called second, also throws
       local obj1 <close> = setmetatable({}, mt1)  -- Called first, throws
-      error('Intentional error')
+      raise 'Intentional error'
    end
 
    caught_ex = nil
@@ -454,11 +726,45 @@ end
       print('Caught error: ' .. ex.message)
       caught_ex = ex
    success
-      error('Expected failure from inner()')
+      assert(false, 'Expected failure from inner()')
    end
 
    assert(#order is 2, 'Both close handlers should be called, got ' .. #order)
    -- The last error (from close2) should be the final error
    assert(caught_ex, 'Exception should be caught')
-   assert(caught_ex.message:find('close2 error'), 'Last __close error should win: ' .. caught_ex.message)
+   assert(caught_ex.message.find('close2 error'), 'Last __close error should win: ' .. caught_ex.message)
+end
+
+-- An error from __gc must remain contained by the collector's protected call, even when collection is requested from
+-- inside a Tiri try block.
+
+@Test function FinaliserErrorInsideTryIsContained()
+   finalised = false
+   continued_after_collection = false
+   caught_message = nil
+
+   try
+      value = setmetatable({}, {
+         __gc = function()
+            try
+               raise 'finaliser-local handled error'
+            except ex
+               finalised = true
+            end
+            raise 'intentional finaliser error'
+         end
+      })
+      value = nil
+      processing.collect('full')
+      continued_after_collection = true
+      raise 'caller error after collection'
+   except ex
+      caught_message = ex.message
+   end
+
+   assert(finalised, 'The unreachable table should have been finalised')
+   assert(continued_after_collection, 'Collection should return after containing the finaliser error')
+   assert(caught_message != nil, "The caller's restored try handler should catch the post-collection error")
+   assert(caught_message.find('caller error after collection'),
+      "The caller's restored try handler should catch only the post-collection error: " .. caught_message)
 end

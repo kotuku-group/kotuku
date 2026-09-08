@@ -1,0 +1,459 @@
+--[[
+Content Types Testing
+
+Tests handling of different content types including JSON, XML, binary data,
+form data, and content negotiation between HTTP client and server.
+--]]
+
+   import 'net/httpserver'
+   import 'json'
+   include 'http'
+
+SERVER_PORT <const> = 18944
+
+rxPercentEncoded <const> = <{ regex.new('%([0-9A-Fa-f]{2})') }>
+rxSplitPair <const> = <{ regex.new('([^=]+)=([^=]*)') }>
+
+----------------------------------------------------------------------------------------------------------------------
+
+function decodeFormComponent(Value:str):str
+   Value ?! return ''
+
+   Value = Value.replace('+', ' ')
+   result = ''
+   last_stop = 0
+
+   for start, stop, cap in rxPercentEncoded.findAll(Value) do
+      if start > last_stop then result ..= Value.sub(last_stop, start) end
+      result ..= string.char(tonumber(cap[0], 16))
+      last_stop = stop
+   end
+
+   return result .. Value.sub(last_stop)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@BeforeAll function Init(State)
+   global glPath = State.folder
+
+   global glServer = hslib.start({
+      port    = SERVER_PORT,
+      folder  = glPath,
+      verbose = true,
+      routes = {
+         { pattern = '/json/test',
+           method = 'POST',
+           handler = function(req, res)
+              parsedData = req.parsedBody or {}
+              res.json({
+                 message = 'JSON test response',
+                 contentType = req.headers['content-type'],
+                 parsedData = parsedData,
+                 bodyLength = req.body and #req.body or 0
+              })
+           end
+         },
+         { pattern = '/xml/test',
+           method = 'POST',
+           handler = function(req, res)
+              res.json({
+                 message = 'XML test response',
+                 contentType = req.headers['content-type'],
+                 bodyLength = req.body and #req.body or 0,
+                 bodyPreview = req.body and req.body.sub(0, 100) or ''
+              })
+           end
+         },
+         { pattern = '/binary/upload',
+           method = 'POST',
+           handler = function(req, res)
+              isBinary = false
+              if req.body then
+                 -- Check for binary data (non-printable characters)
+                 for i in {0 to math.min(#req.body, 100)} do
+                    byte = req.body.byte(i)
+                    if byte < 32 and byte != 9 and byte != 10 and byte != 13 then
+                       isBinary = true
+                       break
+                    end
+                 end
+              end
+
+              res.json({
+                 message = 'Binary upload received',
+                 contentType = req.headers['content-type'],
+                 bodyLength = req.body and #req.body or 0,
+                 isBinary = isBinary
+              })
+           end
+         },
+         { pattern = '/form/test',
+           method = 'POST',
+           handler = function(req, res)
+              -- Parse form data manually for testing
+             parsedForm = {}
+             if req.body then
+                 for pair in values(req.body.split('&')) do
+                    local key, value = rxSplitPair.extract(pair)
+                    if key and value then
+                       parsedForm[decodeFormComponent(key)] = decodeFormComponent(value)
+                    end
+                 end
+              end
+
+              res.json({
+                 message = 'Form test response',
+                 contentType = req.headers['content-type'],
+                 parsedForm = parsedForm,
+                 bodyLength = req.body and #req.body or 0
+              })
+           end
+         },
+         { pattern = '/text/test',
+           method = 'POST',
+           handler = function(req, res)
+              contentType = req.headers['content-type'] or ''
+              charset = regex.new('charset=([\\w\\-]+)').extract(contentType)
+
+              res.json({
+                 message = 'Text test response',
+                 contentType = contentType,
+                 charset = charset or 'unknown',
+                 bodyLength = req.body and #req.body or 0
+              })
+           end
+         },
+         { pattern = '/negotiate/content',
+           method = 'GET',
+           handler = function(req, res)
+              accept = req.headers['accept'] or ''
+              negotiatedType = 'application/json' -- Default to JSON
+
+              -- Simple content negotiation based on Accept header
+              if accept.find('application/json') then
+                 negotiatedType = 'application/json'
+              elseif accept.find('application/xml') then
+                 negotiatedType = 'application/xml'
+              elseif accept.find('text/plain') then
+                 negotiatedType = 'text/plain'
+              end
+
+              res.header('Content-Type', negotiatedType)
+                 .json({
+                    message = 'Content negotiation response',
+                    negotiatedType = negotiatedType,
+                    acceptHeader = accept
+                 })
+           end
+         },
+         { pattern = '/restricted/content-type',
+           method = 'POST',
+           handler = function(req, res)
+              contentType = req.headers['content-type'] or ''
+
+              -- Only accept specific content types
+              if not (contentType.find('application/json') or
+                     contentType.find('application/xml') or
+                     contentType.find('text/plain')) then
+                 res.status(415).json({
+                    error = 'Unsupported Media Type',
+                    received = contentType,
+                    supported = {'application/json', 'application/xml', 'text/plain'}
+                 })
+                 return
+              end
+
+              res.json({ message = 'Content type accepted' })
+           end
+         }
+      }
+   })
+end
+
+@AfterAll function Cleanup()
+   glServer.stop()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function JSONContentType()
+   content = ''
+
+   testData = {
+      name     = 'Test User',
+      age      = 30,
+      active   = true,
+      scores   = { 85, 92, 78 },
+      metadata = {
+         created = '2024-01-01',
+         version = '1.0'
+      }
+   }
+   jsonData = json.encode(testData)
+
+   http = obj.new('http', {
+      src         = 'http://127.0.0.1:' .. SERVER_PORT .. '/json/test',
+      method      = 'POST',
+      contentType = 'application/json',
+      flags       = HTF_NO_HEAD,
+      inputFile   = 'string:' .. jsonData,
+      size        = #jsonData,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.error is ERR_Okay, 'JSON HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'JSON unexpected status: ' .. http.status)
+
+   response = json.decode(content)
+   assert(response.contentType is 'application/json', 'JSON content type not detected')
+   assert(response.parsedData.name is testData.name, 'JSON data not parsed correctly')
+   assert(response.parsedData.age is testData.age, 'JSON numeric data not parsed correctly')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function XMLContentType()
+   content = ''
+
+   xmlData = [[<?xml version="1.0" encoding="UTF-8"?>
+<user>
+   <name>Test User</name>
+   <age>30</age>
+   <active>true</active>
+   <scores>
+      <score>85</score>
+      <score>92</score>
+      <score>78</score>
+   </scores>
+</user>]]
+
+   http = obj.new('http', {
+      src         = 'http://127.0.0.1:' .. SERVER_PORT .. '/xml/test',
+      method      = 'POST',
+      contentType = 'application/xml',
+      flags       = HTF_NO_HEAD,
+      inputFile   = 'string:' .. xmlData,
+      size        = #xmlData,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.error is ERR_Okay, 'XML HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'XML unexpected status: ' .. http.status)
+
+   response = json.decode(content)
+   assert(response.contentType is 'application/xml', 'XML content type not detected')
+   assert(response.bodyLength is #xmlData, 'XML body length mismatch')
+   assert(response.bodyPreview.find('<user>'), 'XML content not preserved')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function BinaryContentType()
+   content = ''
+
+   -- Create binary data (simulate image data)
+   binaryData = string.char(0x89, 0x50, 0x4E, 0x47) .. -- PNG signature
+      string.char(0x0D, 0x0A, 0x1A, 0x0A) ..
+      string.rep(string.char(0x00, 0xFF, 0x80, 0x40), 64) -- Pattern data
+   binarySent = false
+
+   http = obj.new('http', {
+      src           = 'http://127.0.0.1:' .. SERVER_PORT .. '/binary/upload',
+      method        = 'POST',
+      contentType   = 'image/png',
+      flags         = HTF_NO_HEAD,
+      contentLength = -1,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      outgoing = function(HTTP)
+         assert(binarySent != true, 'Binary upload body requested more than once.')
+         HTTP.acWrite(binaryData)
+         binarySent = true
+         raise ERR_Terminate
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.error is ERR_Okay, 'Binary HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Binary unexpected status: ' .. http.status)
+
+   response = json.decode(content)
+   assert(response.contentType is 'image/png', 'Binary content type not detected')
+   assert(response.bodyLength is #binaryData, 'Binary data length mismatch')
+   assert(response.isBinary is true, 'Binary data not detected as binary')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function FormDataContentType()
+   content = ''
+
+   formData = 'name=Test+User&age=30&email=test%40example.com&active=true&tags=tag1%2Ctag2'
+
+   http = obj.new('http', {
+      src         = 'http://127.0.0.1:' .. SERVER_PORT .. '/form/test',
+      method      = 'POST',
+      contentType = 'application/x-www-form-urlencoded',
+      flags       = HTF_NO_HEAD,
+      inputFile   = 'string:' .. formData,
+      size        = #formData,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.error is ERR_Okay, 'Form data HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Form data unexpected status: ' .. http.status)
+
+   response = json.decode(content)
+   assert(response.contentType is 'application/x-www-form-urlencoded', 'Form content type not detected')
+   assert(response.parsedForm.name is 'Test User', 'Form name not decoded correctly')
+   assert(response.parsedForm.email is 'test@example.com', 'Form email not URL decoded correctly')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function TextContentType()
+   content = ''
+
+   textData = 'This is plain text content.\nIt contains multiple lines.\nWith various punctuation: !@#$%^&*()_+{}[]|\\:";\'<>?,./'
+   textSent = false
+
+   http = obj.new('http', {
+      src           = 'http://127.0.0.1:' .. SERVER_PORT .. '/text/test',
+      method        = 'POST',
+      contentType   = 'text/plain; charset=utf-8',
+      flags         = HTF_NO_HEAD,
+      contentLength = -1,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      outgoing = function(HTTP)
+         assert(textSent != true, 'Text upload body requested more than once.')
+         HTTP.acWrite(textData)
+         textSent = true
+         raise ERR_Terminate
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.error is ERR_Okay, 'Text HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Text unexpected status: ' .. http.status)
+
+   response = json.decode(content)
+   assert(response.contentType.find('text/plain'), 'Text content type not detected')
+   assert(response.charset is 'utf-8', 'Charset not parsed correctly')
+   assert(response.bodyLength is #textData, 'Text data length mismatch')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ContentNegotiation()
+   content = ''
+
+   http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/negotiate/content',
+      method = 'GET',
+      flags = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   check http.acSetKey('Accept', 'application/json, application/xml;q=0.9, text/plain;q=0.8, */*;q=0.1')
+   check http.acSetKey('Accept-Encoding', 'gzip, deflate')
+   check http.acSetKey('Accept-Language', 'en-US,en;q=0.9')
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.error is ERR_Okay, 'Content negotiation HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Content negotiation unexpected status: ' .. http.status)
+
+   response = json.decode(content)
+   assert(response.negotiatedType is 'application/json', 'Content negotiation should prefer JSON')
+   assert(response.acceptHeader, 'Accept header should be received')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function UnsupportedContentType()
+   content = ''
+
+   http = obj.new('http', {
+      src         = 'http://127.0.0.1:' .. SERVER_PORT .. '/restricted/content-type',
+      method      = 'POST',
+      contentType = 'application/vnd.custom-format',
+      flags       = HTF_NO_HEAD,
+      inputFile   = 'string:custom binary data',
+      size        = 18,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.status is 415, 'Expected 415 Unsupported Media Type, got: ' .. http.status)
+end

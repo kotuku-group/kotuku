@@ -7,12 +7,17 @@
 #include "parser_diagnostics.h"
 #include "ast/nodes.h"
 
+class ParserContext;
+
 struct InferredType {
    TiriType primary = TiriType::Any;
    bool is_constant = false;
    bool is_nullable = false;
    bool is_fixed = false;  // Type is locked, cannot change
+   bool requires_destination_type = false; // Dynamic ingress cannot be replaced by a concrete type without annotation
    CLASSID object_class_id = CLASSID::NIL;  // CLASSID for Object types
+   struct_record *struct_def = nullptr; // Resolved layout for Struct types and definition callables
+   ArrayElementDescriptor array_element{};
 
    InferredType() = default;
    explicit InferredType(TiriType Primary, bool IsConstant = false, bool IsNullable = false, bool IsFixed = false,
@@ -25,6 +30,9 @@ struct InferredType {
       if (Expected IS TiriType::Any) return true;
       if (this->primary IS TiriType::Any) return true;
       if (this->primary IS TiriType::Nil) return true;  // nil matches any type (represents "no value")
+      if (Expected IS TiriType::Func and this->primary IS TiriType::Table) {
+         return true;  // Runtime func contracts accept tables whose metatable provides __call.
+      }
       return this->primary IS Expected;
    }
 };
@@ -35,6 +43,7 @@ struct TypeDiagnostic {
    TiriType expected = TiriType::Any;
    TiriType actual = TiriType::Any;
    ParserErrorCode code = ParserErrorCode::TypeMismatchArgument;
+   uint8_t file_index = 0;  // FileSource index of the file the diagnostic belongs to
 
    TypeDiagnostic() = default;
    TypeDiagnostic(SourceSpan Location, std::string Message, TiriType Expected, TiriType Actual,
@@ -43,10 +52,28 @@ struct TypeDiagnostic {
 };
 
 // Context for tracking function return type validation during type analysis
+enum class ReturnInferenceState : uint8_t {
+   Unobserved,
+   NilOnly,
+   Concrete,
+   ExplicitAny,
+   Dynamic
+};
+
+struct InferredReturnPosition {
+   ReturnInferenceState state = ReturnInferenceState::Unobserved;
+   InferredType concrete{};
+   SourceSpan location{};
+   SourceSpan dynamic_location{};
+   TiriType dynamic_type = TiriType::Unknown;
+};
+
 struct FunctionContext {
    const FunctionExprPayload* function = nullptr;  // The function being analysed
    FunctionReturnTypes expected_returns{};         // Declared or inferred return types
-   bool return_type_inferred = false;              // True once first return statement sets types
+   std::array<InferredReturnPosition, MAX_RETURN_TYPES> inferred_returns{};
+   uint8_t observed_return_count = 0;
+   bool inference_failed = false;
    GCstr *function_name = nullptr;                 // Function name (for recursive detection)
 
    FunctionContext() = default;
@@ -68,15 +95,19 @@ struct UnusedVariableInfo {
 
 class TypeCheckScope {
 public:
-   void declare_parameter(GCstr *, TiriType Type, SourceSpan Location = {});
+   void declare_parameter(
+      GCstr *, TiriType Type, struct_record *StructDef, bool Required, SourceSpan Location = {});
    void declare_local(GCstr *, const InferredType &, SourceSpan Location = {}, bool IsConst = false);
    void declare_function(GCstr *, const FunctionExprPayload *, SourceSpan Location = {});
-   void fix_local_type(GCstr *, TiriType Type, CLASSID ObjectClassId = CLASSID::NIL);
+   void update_local_type(GCstr *, const InferredType &);
+   void fix_local_type(GCstr *, TiriType Type, CLASSID ObjectClassId = CLASSID::NIL,
+      struct_record *StructDef = nullptr, ArrayElementDescriptor ArrayElement = {});
+   void mark_dynamic_ingress(GCstr *, bool RequiresDestination);
 
    // Mark a variable as used (called when variable is referenced)
    void mark_used(GCstr *);
 
-   [[nodiscard]] std::optional<TiriType> lookup_parameter_type(GCstr *) const;
+   [[nodiscard]] std::optional<InferredType> lookup_parameter_type(GCstr *) const;
    [[nodiscard]] std::optional<InferredType> lookup_local_type(GCstr *) const;
    [[nodiscard]] const FunctionExprPayload * lookup_function(GCstr *) const;
 
@@ -99,3 +130,5 @@ private:
 
    std::vector<VariableInfo> variables_{};
 };
+
+void run_type_analysis(ParserContext &Context, BlockStmt &Module);

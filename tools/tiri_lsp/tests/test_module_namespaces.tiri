@@ -1,0 +1,198 @@
+global glModuleNamespaceLspUri = nil
+extern lspInitDocs, lspPathToUri, markLineIndex, moduleDeclarationsForDocument, modulePrefixesForDocument,
+   resolveModuleCompletion, resolveModuleRename, registerCoreHandlers, resolveBuiltinCompletion
+
+@BeforeAll function SetupModuleNamespaceLspTests(State)
+   local err, sdk_path = mSys.ResolvePath(State.folder .. '../../../')
+   assert(err is ERR_Okay, 'Failed to resolve SDK path for module namespace LSP tests.')
+   mSys.SetVolume('sdk', sdk_path)
+
+   loadFile('sdk:tools/tiri_lsp/include/lsp_lib.tiri')
+   assert(lspInitDocs('sdk:docs/xml/'), 'Failed to initialise LSP documentation cache.')
+   glModuleNamespaceLspUri = lspPathToUri('sdk:tools/tiri_lsp/tests/test_module_namespaces.tiri')
+end
+
+function makeDoc(Content:str):table
+   return {
+      uri = glModuleNamespaceLspUri,
+      languageId = 'tiri',
+      version = 1,
+      content = Content,
+      lineIndex = nil
+   }
+end
+
+function findCompletion(Items:array<table>, Name:str):table
+   for item in values(Items) do
+      if item.label is Name then return item end
+   end
+end
+
+@Test function CompletesDeclaredModuleMembers()
+   local doc = makeDoc("module core as runtimeCore\nruntimeCore.Res")
+   local items = resolveModuleCompletion(doc, { line=1, character=15 })
+   local resolve_path = findCompletion(items, 'ResolvePath')
+
+   assert(resolve_path, 'Declared module completion should include matching generated functions.')
+   assert(resolve_path.kind is 3, 'Module functions should use the LSP function completion kind.')
+end
+
+@Test function DoesNotCompleteUnknownNamespaces()
+   local doc = makeDoc('ordinary.Res')
+   assert(#resolveModuleCompletion(doc, { line=0, character=12 }) is 0,
+      'Ordinary values should not receive module completions.')
+end
+
+@Test function RenamesOnlyCompilationUnitNamespaceReferences()
+   local doc = makeDoc([[
+module core as runtimeCore
+runtimeCore.PreciseTime()
+local text = 'runtimeCore'
+-- runtimeCore
+]])
+   local edit = resolveModuleRename(doc, { line=0, character=17 }, 'mClock')
+   local edits = edit?.changes?[doc.uri]
+
+   assert(edits and #edits is 2, 'Rename should edit only the declaration and code reference.')
+   assert(edits[0].newText is 'mClock' and edits[1].newText is 'mClock',
+      'Every namespace edit should use the requested name.')
+end
+
+@Test function RenamesLibraryNamespaceReferences()
+   local doc = makeDoc([[
+namespace toolkit { version = '1.0' }
+print(toolkit.version)
+function inspect_shadow()
+   local toolkit = { version = 'shadow' }
+   print(toolkit.version)
+end
+print(toolkit.version)
+print('é', toolkit.version)
+local other = { toolkit = toolkit }
+print(other.toolkit.version)
+local text = 'toolkit'
+-- toolkit
+]])
+   local edit = resolveModuleRename(doc, { line=0, character=12 }, 'renamedToolkit')
+   local edits = edit?.changes?[doc.uri]
+
+   assert(edits and #edits is 5,
+      'Library namespace rename should exclude shadowed bindings, member names, strings and comments.')
+   assert(edits[0].range.start.line is 0 and edits[1].range.start.line is 1 and
+         edits[2].range.start.line is 6 and edits[3].range.start.line is 7 and
+         edits[4].range.start.line is 8,
+      'Library namespace rename should retain only references to the declared lexical binding.')
+   local unicode_edit = resolveModuleRename(doc, { line=7, character=12 }, 'renamedToolkit')
+   assert(#unicode_edit?.changes?[doc.uri] is 5,
+      'Starting a rename after multibyte text should preserve UTF-16 token coordinates.')
+   assert(not resolveModuleRename(doc, { line=3, character=10 }, 'renamedShadow'),
+      'Starting a rename on a shadowing local should not rename the library namespace.')
+end
+
+@Test function RenamesAcrossBlockScopeBoundaries()
+   local doc = makeDoc([==[
+namespace toolkit { version = '1.0' }
+do
+   local toolkit = { version = 'block' }
+   print(toolkit.version)
+end
+for i in {0 to 3} do
+   local toolkit = { version = 'loop' }
+   print(toolkit.version)
+end
+function scan()
+   do
+      local depth = 0
+   end
+   local toolkit = { version = 'inner' }
+   print(toolkit.version)
+end
+print(toolkit.version)
+]==])
+   local edit = resolveModuleRename(doc, { line=0, character=12 }, 'renamedToolkit')
+   local edits = edit?.changes?[doc.uri]
+
+   assert(edits and #edits is 2,
+      'Bindings local to a do or loop block should shadow the namespace only inside that block.')
+   assert(edits[0].range.start.line is 0 and edits[1].range.start.line is 16,
+      'A reference following a closed block should still resolve to the library namespace.')
+end
+
+@Test function RenamesSiblingBranchesIndependently()
+   local doc = makeDoc([==[
+namespace toolkit { version = '1.0' }
+if condition then
+   local toolkit = { version = 'branch' }
+   print(toolkit.version)
+else
+   print(toolkit.version)
+end
+try
+   local toolkit = { version = 'guarded' }
+   print(toolkit.version)
+except e
+   print(toolkit.version)
+end
+print(toolkit.version)
+]==])
+   local edit = resolveModuleRename(doc, { line=0, character=12 }, 'renamedToolkit')
+   local edits = edit?.changes?[doc.uri]
+
+   assert(edits and #edits is 4, 'Sibling branches should not inherit each other\'s local bindings.')
+   assert(edits[0].range.start.line is 0 and edits[1].range.start.line is 5 and
+         edits[2].range.start.line is 11 and edits[3].range.start.line is 13,
+      'Only the else, except and trailing references should resolve to the library namespace.')
+end
+
+@Test function RenameRejectsLegacyAndInvalidNames()
+   local legacy_doc = makeDoc('mSys.PreciseTime()')
+   assert(not resolveModuleRename(legacy_doc, { line=0, character=1 }, 'mClock'),
+      'Legacy fixed prefixes should not be renamed as declarations.')
+
+   local declared_doc = makeDoc("module core as runtimeCore\nruntimeCore.PreciseTime()")
+   assert(not resolveModuleRename(declared_doc, { line=0, character=17 }, 'not-valid'),
+      'Rename should reject invalid identifier names.')
+end
+
+@Test function ModuleNamespaceMetadataCacheInvalidatesWithDocument()
+   local doc = makeDoc("module core as mFirst\nmFirst.PreciseTime()")
+   assert(moduleDeclarationsForDocument(doc).mFirst is 'core', 'Initial namespace declaration should be cached.')
+   assert(modulePrefixesForDocument(doc).mFirst is 'core', 'Initial namespace prefix should be cached.')
+
+   doc.content = "module core as mSecond\nmSecond.PreciseTime()"
+   markLineIndex(doc, 0)
+
+   assert(not moduleDeclarationsForDocument(doc).mFirst, 'Invalidation should discard stale namespace declarations.')
+   assert(modulePrefixesForDocument(doc).mSecond is 'core', 'Invalidation should expose the replacement namespace.')
+end
+
+@Test function HandlerAdvertisesCompletionAndRename()
+   local server = { _handlers={}, verbose=false, logMessage=function(Message) end }
+   registerCoreHandlers(server)
+   local init = server._handlers['initialize']({ jsonrpc='2.0', id=1, params={} }, {})
+
+   assert(init.result.capabilities.completionProvider, 'Server should advertise module completion.')
+   assert(init.result.capabilities.renameProvider is true, 'Server should advertise namespace rename.')
+end
+
+@Test function DoesNotCompleteRemovedErrorBuiltin()
+   local items:array<table> = resolveBuiltinCompletion(makeDoc('err'), { line=0, character=3 })
+   assert(not findCompletion(items, 'error'), 'The removed error built-in must not be offered for completion.')
+
+   items = resolveBuiltinCompletion(makeDoc('local error = function() end\nerr'), { line=1, character=3 })
+   assert(not findCompletion(items, 'error'), 'A local error function must not receive built-in completion.')
+   items = resolveBuiltinCompletion(makeDoc('local api = {}\napi.err'), { line=1, character=7 })
+   assert(not findCompletion(items, 'error'), 'Members must not receive built-in completion.')
+end
+
+@Test function CompletesBuiltinsOnlyInExecutableCode()
+   local items:array<table> = resolveBuiltinCompletion(makeDoc('pri'), { line=0, character=3 })
+   assert(findCompletion(items, 'print'), 'Executable identifiers should receive built-in completion.')
+
+   items = resolveBuiltinCompletion(makeDoc('-- pri'), { line=0, character=6 })
+   assert(not findCompletion(items, 'print'), 'Line comments must not receive built-in completion.')
+   items = resolveBuiltinCompletion(makeDoc("'pri"), { line=0, character=4 })
+   assert(not findCompletion(items, 'print'), 'Strings must not receive built-in completion.')
+   items = resolveBuiltinCompletion(makeDoc('--[[\npri'), { line=1, character=3 })
+   assert(not findCompletion(items, 'print'), 'Block comments must not receive built-in completion.')
+end

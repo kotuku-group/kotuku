@@ -10,6 +10,7 @@
 #include "lua.h"
 #include "lj_def.h"
 #include "lj_arch.h"
+#include "lj_ffid.h"
 #include <array>
 #include <format>
 #include <vector>
@@ -48,6 +49,8 @@ struct StrInternState;
 // Parser objects
 
 class TipEmitter;
+struct ParserSymbolCollection;
+struct ContextDebugCounters;
 
 // Debug objects
 
@@ -64,19 +67,28 @@ struct SBuf;
 // External classes
 
 class ParserDiagnostics;
-class objScript;
+class extTiri;
 
 // Memory and GC object sizes.
 
 using MSize = uint32_t;  // NB: Can't be changed - would affect offsets in GC objects
 using GCSize = uint64_t; // NB: Can't be changed - would affect offsets in GC objects
 
+// BC_BMETH helper results.  Non-negative values are canonical built-in callable indices; negative values select the
+// receiver-injecting or ordinary member-lookup call frame.
+
+#define LJ_BMETH_FIELD_CALL (-1)
+#define LJ_BMETH_COMPATIBLE_CALL (-2)
+
 enum class AstNodeKind : uint16_t {
    LiteralExpr,
    IdentifierExpr,
+   CurrentContextExpr,
    VarArgExpr,
    UnaryExpr,
+   TypeTestExpr,
    BinaryExpr,
+   ComparisonChainExpr,
    UpdateExpr,
    TernaryExpr,
    PresenceExpr,
@@ -91,8 +103,10 @@ enum class AstNodeKind : uint16_t {
    TableExpr,
    FunctionExpr,
    DeferredExpr,  // Deferred expression <{ expr }>
-   RangeExpr,     // Range literal {start..stop} or {start...stop}
+   RangeExpr,     // Range literal {start to stop} or {start into stop}
    ChooseExpr,    // Choose expression: choose value from pattern -> result ... end
+   RaiseExpr,
+   ModuleFunctionExpr, // Compiler-managed module function selection, e.g. mCore.PreciseTime
    BlockStmt,
    AssignmentStmt,
    LocalDeclStmt,
@@ -103,17 +117,22 @@ enum class AstNodeKind : uint16_t {
    WhileStmt,
    RepeatStmt,
    NumericForStmt,
+   RangeForStmt,
    GenericForStmt,
    BreakStmt,
    ContinueStmt,
    ReturnStmt,
    DeferStmt,
    DoStmt,
+   ContextStmt,
    ConditionalShorthandStmt,
    TryExceptStmt,  // try...except...end exception handling
-   RaiseStmt,      // raise expression [, message]
+   CheckallStmt,    // checkall...end automatic native error promotion
+   RaiseStmt,      // raise error_code [, message] or raise message
    CheckStmt,      // check expression
    ImportStmt,     // import 'module' statement
+   NamespaceStmt,  // namespace name [literal] statement
+   ExternStmt,     // extern symbol declarations for cross-file references
    WithStmt,       // with obj1, obj2 do ... end
    ExpressionStmt
 };
@@ -128,9 +147,10 @@ enum class TiriType : uint8_t {
    Table,
    Array,
    Func,
-   Thread,
+   Struct,       // Kotuku struct (LJ_TSTRUCT)
    Object,       // Kotuku object (LT_TOBJECT)
    Range,        // Range expression (runtime: LJ_TUDATA)
+   Userdata,     // Ordinary full or light userdata
    Unknown
 };
 
@@ -270,7 +290,7 @@ public:
 
    // Sentinel values for special cases
    static constexpr int32_t NO_LINE = -1;       // No line information available
-   static constexpr int32_t BUILTIN = ~0;       // Builtin function (no source)
+   static constexpr int32_t BUILTIN = -2;       // Builtin function (no source)
 
    // Constructors
    constexpr BCLine() noexcept : m_value(0) {}
@@ -287,6 +307,7 @@ public:
 
    // Semantic queries
    [[nodiscard]] constexpr bool isValid() const noexcept { return m_value != NO_LINE and m_value != BUILTIN; }
+   [[nodiscard]] constexpr bool isNoLine() const noexcept { return m_value IS NO_LINE; }
    [[nodiscard]] constexpr bool isBuiltin() const noexcept { return m_value IS BUILTIN; }
 
    // Implicit conversion for backward compatibility with existing code that uses BCLine as int32_t.
@@ -303,6 +324,8 @@ public:
 private:
    int32_t m_value;
 };
+
+static_assert(BCLine::NO_LINE != BCLine::BUILTIN);
 
 // std::format support for BCLine (formats as its integer value)
 template<>
@@ -394,7 +417,7 @@ inline constexpr uint32_t LJ_TTRUE     = ~2u;  // True
 inline constexpr uint32_t LJ_TLIGHTUD  = ~3u;  // Lightuserdata
 inline constexpr uint32_t LJ_TSTR      = ~4u;  // String
 inline constexpr uint32_t LJ_TUPVAL    = ~5u;  // Unused in TValue(?) could be shared?
-inline constexpr uint32_t LJ_TTHREAD   = ~6u;  // Unused?
+inline constexpr uint32_t LJ_TSTRUCT   = ~6u;  // Struct (Kotuku); gct also shared with the single main-thread lua_State
 inline constexpr uint32_t LJ_TPROTO    = ~7u;  // Function prototype
 inline constexpr uint32_t LJ_TFUNC     = ~8u;  // Function
 inline constexpr uint32_t LJ_TTRACE    = ~9u;  // Unused in TValue(?) could be shared?
@@ -413,6 +436,19 @@ inline constexpr uint32_t LJ_TISTRUECOND = LJ_TFALSE;
 inline constexpr uint32_t LJ_TISPRI      = LJ_TTRUE;
 inline constexpr uint32_t LJ_TISGCV      = LJ_TSTR + 1;
 inline constexpr uint32_t LJ_TISTABUD    = LJ_TTAB;
+
+// C operands for ISTYPE/ISNUM.  The bytecode stores one more than the type-map index; the values beyond the ordinary
+// type range are coercion requests rather than names in lj_obj_itypename.
+enum class ISTypeOperand : uint8_t {
+   String = uint8_t(~LJ_TSTR + 1),
+   Integer = uint8_t(~LJ_TNUMX + 1),
+   Number = uint8_t(~LJ_TNUMX + 2)
+};
+
+[[nodiscard]] constexpr inline uint32_t istype_operand_for_tag(uint32_t Tag) noexcept { return ~Tag + 1; }
+[[nodiscard]] constexpr inline uint32_t istype_operand_value(ISTypeOperand Operand) noexcept {
+   return uint32_t(Operand);
+}
 
 // Type marker for slot holding a traversal index. Must be lightuserdata.
 inline constexpr uint32_t LJ_KEYINDEX = 0xfffe7fffu;
@@ -434,11 +470,14 @@ typedef uint32_t StrID;      //  String ID.
 typedef struct GCstr {
    GCHeader;           // 16-bit aligned
    uint8_t reserved;   // Used by lexer for fast lookup of reserved words.
-   uint8_t flags;      // Currently unused, but available for marking strings in relation to the thing they represent
+   uint8_t flags;      // STRFLAG_* bits that mark parser/runtime properties of interned names.
    StrID sid;          // Interned string ID.
    LuaStrHash hash;    // Hash of string.
    MSize len;          // Size of string.
 } GCstr;
+
+// GCstr::flags bits.  Bit 0x01 is STRF_MUTABLE_BUFFER in lj_str.h.
+inline constexpr uint8_t STRFLAG_PROTECTED_GLOBAL = 0x02;  // Name of a host pre-registered global
 
 inline GCstr* strref(GCRef r) noexcept;  // Defined after GCobj
 
@@ -478,7 +517,7 @@ typedef struct ThunkPayload {
    GCRef deferred_func;    // The deferred closure (GCfunc)
    TValue cached_value;    // Cached resolved value
    uint8_t resolved;       // Resolution flag (0 = not resolved, 1 = resolved)
-   uint8_t expected_type;  // LJ type tag for type() (LUA_TSTRING, LUA_TNUMBER, etc.)
+   uint8_t expected_type;  // Logical TiriType declared for the deferred result
    uint16_t padding;       // Padding for alignment
 } ThunkPayload;
 
@@ -531,9 +570,10 @@ inline constexpr size_t PROTO_MAX_RETURN_TYPES = 8;
 // Prototype flags for function metadata
 
 enum class FProtoFlags : uint8_t {
-   None     = 0x00,
-   Variadic = 0x01,  // Function accepts variable arguments beyond listed params
-   NoNil    = 0x02   // All declared parameters are required (no nil values permitted)
+   None               = 0x00,
+   Variadic           = 0x01,  // Function accepts variable arguments beyond listed params
+   NoNil              = 0x02,  // All declared parameters are required (no nil values permitted)
+   ContextIndependent = 0x04   // Native callable cannot observe or re-enter dynamically scoped table context
 };
 
 inline constexpr FProtoFlags operator|(FProtoFlags a, FProtoFlags b) {
@@ -546,13 +586,31 @@ inline constexpr FProtoFlags operator&(FProtoFlags a, FProtoFlags b) {
 
 constexpr size_t FPROTO_MAX_PARAMS = 16; // Maximum parameter count for prototypes
 
+// Arity metadata is deliberately independent of parameter nil acceptance.  An exact prototype requires every
+// declared parameter; optional prototypes specify the number of leading parameters that are required.  Variadic
+// prototypes continue to use FProtoFlags::Variadic to remove the declared upper bound.
+
+struct FProtoArity {
+   static constexpr uint8_t EXACT = UINT8_MAX - 1;
+   static constexpr uint8_t UNSPECIFIED = UINT8_MAX;
+
+   uint8_t minimum;
+
+   [[nodiscard]] static constexpr FProtoArity unspecified() noexcept { return { UNSPECIFIED }; }
+   [[nodiscard]] static constexpr FProtoArity exact() noexcept { return { EXACT }; }
+   [[nodiscard]] static constexpr FProtoArity required(uint8_t Minimum) noexcept { return { Minimum }; }
+};
+
 // Function prototype storing type signature
 
 struct fprototype {
    uint8_t result_count;     // Number of return values (0 to PROTO_MAX_RETURN_TYPES)
    uint8_t param_count;      // Number of parameters (0 to FPROTO_MAX_PARAMS)
    FProtoFlags flags;        // Optional flags
-   uint8_t _pad;             // Alignment padding
+   TiriType receiver_type;   // Concrete receiver for instance methods; Unknown for namespace functions
+   BuiltinCallableID builtin_callable_id; // Canonical callable identity for instance methods
+   uint8_t min_param_count;  // Required leading parameters, or FProtoArity::UNSPECIFIED when unaudited
+   uint8_t reserved;         // Reserved for future prototype metadata
    std::array<TiriType, PROTO_MAX_RETURN_TYPES> result_types;
 
    // Parameter types follow (accessed via param_types())
@@ -564,7 +622,15 @@ struct fprototype {
    inline TiriType first_result() const noexcept {
       return result_count > 0 ? result_types[0] : TiriType::Unknown;
    }
+
+   [[nodiscard]] inline bool is_method() const noexcept {
+      return receiver_type != TiriType::Unknown and builtin_callable_assigned(builtin_callable_id);
+   }
 };
+
+static_assert(FPROTO_MAX_PARAMS <= (std::numeric_limits<uint8_t>::max)());
+static_assert(PROTO_MAX_RETURN_TYPES <= (std::numeric_limits<uint8_t>::max)());
+static_assert(sizeof(fprototype) IS 16);
 
 // Lookup key for prototype registry (interface_hash=0 for globals)
 
@@ -604,6 +670,12 @@ struct TryBlockDesc {
    uint8_t  flags;           // Bit 0 = TRY_FLAG_TRACE (capture stack trace on exception)
 };
 
+struct ProtoContextBlockDesc {
+   BCPOS begin_pc = 0;
+   BCPOS end_pc = 0;
+   BCREG entry_slots = 0;
+};
+
 // Flags for TryBlockDesc.flags
 
 inline constexpr uint8_t TRY_FLAG_TRACE = 0x01;  // Capture stack trace on exception
@@ -611,6 +683,147 @@ inline constexpr uint8_t TRY_FLAG_TRACE = 0x01;  // Capture stack trace on excep
 // Maximum nesting depth for try blocks
 
 inline constexpr int LJ_MAX_TRY_DEPTH = 32;
+inline constexpr int LJ_MAX_CHECKALL_DEPTH = 32;
+
+// Function signature metadata.  Entries contain only state-portable identifiers: struct constraints use struct_key()
+// and object constraints use CLASSID.  Parameter entries are stored first, followed by result entries.
+
+inline constexpr uint8_t PROTO_SIGNATURE_VERSION = 2;
+
+enum class ProtoTypeOrigin : uint8_t {
+   Unspecified = 0,
+   Declared,
+   Inferred
+};
+
+enum class ProtoTypeStrength : uint8_t {
+   Advisory = 0,
+   Checked,
+   Trusted
+};
+
+enum class ProtoSignatureFlag : uint8_t {
+   None = 0,
+   ParameterVariadic = 1 << 0,
+   ResultVariadic = 1 << 1,
+   ExplicitResults = 1 << 2,
+   DynamicResults = 1 << 3
+};
+
+inline constexpr uint8_t PROTO_TYPE_NULLABLE = 1 << 0;
+inline constexpr uint8_t PROTO_TYPE_REQUIRED = 1 << 1;
+inline constexpr uint8_t PROTO_TYPE_ORIGIN_SHIFT = 2;
+inline constexpr uint8_t PROTO_TYPE_ORIGIN_MASK = 3 << PROTO_TYPE_ORIGIN_SHIFT;
+inline constexpr uint8_t PROTO_TYPE_STRENGTH_SHIFT = 4;
+inline constexpr uint8_t PROTO_TYPE_STRENGTH_MASK = 3 << PROTO_TYPE_STRENGTH_SHIFT;
+
+struct ProtoTypeEntry {
+   uint32_t constraint = 0;
+   TiriType type = TiriType::Unknown;
+   uint8_t flags = 0;
+   uint16_t array_member_type = 0;  // Optional AET encoded as value + 1; zero means no array member type.
+};
+
+struct ProtoSignature {
+   uint8_t version = PROTO_SIGNATURE_VERSION;
+   uint8_t flags = 0;
+   uint8_t parameter_count = 0;
+   uint8_t result_count = 0;
+   uint8_t result_entry_count = 0;
+   uint8_t reserved[3] = {};
+};
+
+static_assert(sizeof(ProtoTypeEntry) IS 8, "ProtoTypeEntry must remain compact");
+static_assert(sizeof(ProtoSignature) IS 8, "ProtoSignature header must remain compact");
+
+[[nodiscard]] constexpr inline uint8_t proto_signature_flag(ProtoSignatureFlag Flag) noexcept
+{
+   return uint8_t(Flag);
+}
+
+[[nodiscard]] constexpr inline uint8_t proto_type_flags(bool Nullable, bool Required, ProtoTypeOrigin Origin,
+   ProtoTypeStrength Strength) noexcept
+{
+   return uint8_t((Nullable ? PROTO_TYPE_NULLABLE : 0) | (Required ? PROTO_TYPE_REQUIRED : 0) |
+      (uint8_t(Origin) << PROTO_TYPE_ORIGIN_SHIFT) | (uint8_t(Strength) << PROTO_TYPE_STRENGTH_SHIFT));
+}
+
+[[nodiscard]] constexpr inline ProtoTypeOrigin proto_type_origin(const ProtoTypeEntry &Entry) noexcept
+{
+   return ProtoTypeOrigin((Entry.flags & PROTO_TYPE_ORIGIN_MASK) >> PROTO_TYPE_ORIGIN_SHIFT);
+}
+
+[[nodiscard]] constexpr inline ProtoTypeStrength proto_type_strength(const ProtoTypeEntry &Entry) noexcept
+{
+   return ProtoTypeStrength((Entry.flags & PROTO_TYPE_STRENGTH_MASK) >> PROTO_TYPE_STRENGTH_SHIFT);
+}
+
+[[nodiscard]] constexpr inline bool proto_type_nullable(const ProtoTypeEntry &Entry) noexcept
+{
+   return (Entry.flags & PROTO_TYPE_NULLABLE) != 0;
+}
+
+[[nodiscard]] constexpr inline bool proto_type_required(const ProtoTypeEntry &Entry) noexcept
+{
+   return (Entry.flags & PROTO_TYPE_REQUIRED) != 0;
+}
+
+[[nodiscard]] constexpr inline size_t proto_signature_size(size_t ParameterCount, size_t ResultEntryCount) noexcept
+{
+   return sizeof(ProtoSignature) + (ParameterCount + ResultEntryCount) * sizeof(ProtoTypeEntry);
+}
+
+// Portable module dependency metadata.
+//
+// A compilation unit that declares `module x as mX` records the canonical module name and the canonical names of the
+// functions it references.  Only names are persisted: a native address or a function index would be a process
+// identity and could not survive serialisation, whereas a name resolves against the module's current export list in
+// any process.  Resolution happens through the global module registry, which owns the resulting records.
+//
+// The descriptors are colocated with the prototype and reference strings that are also anchored in the prototype's
+// GC constant table, so the GC keeps them alive without any additional marking.
+
+inline constexpr uint8_t PROTO_DEPENDENCY_VERSION = 1;
+
+// Bounds are deliberately small.  They are far above any plausible compilation unit and keep a corrupt or hostile
+// dump from requesting an unbounded allocation before the names have been validated.
+
+inline constexpr uint32_t PROTO_MAX_DEPENDENCIES = 255;
+inline constexpr uint32_t PROTO_MAX_DEPENDENCY_FUNCTIONS = 1023;
+
+// One referenced module function.  'module' indexes the dependency that owns it.
+
+struct ProtoDependencyFunction {
+   GCRef name;             // Canonical function name as exported by the module
+   uint16_t module = 0;    // Owning ProtoDependency index
+   uint16_t reserved = 0;
+};
+
+// One declared module dependency.  A declaration that references no function still needs a descriptor, because the
+// module must be resolved and retained even when nothing is called through it.
+
+struct ProtoDependency {
+   GCRef name;                  // Canonical module name
+   uint16_t first_function = 0; // Index of this dependency's first entry in the function array
+   uint16_t function_count = 0;
+};
+
+// Header of the colocated descriptor block, followed by ProtoDependency[] then ProtoDependencyFunction[].
+
+struct ProtoDependencyTable {
+   uint8_t version = PROTO_DEPENDENCY_VERSION;
+   uint8_t reserved = 0;
+   uint16_t dependency_count = 0;
+   uint32_t function_count = 0;
+};
+
+static_assert(sizeof(ProtoDependencyTable) IS 8, "ProtoDependencyTable header must remain compact");
+
+[[nodiscard]] constexpr inline size_t proto_dependency_size(size_t DependencyCount, size_t FunctionCount) noexcept
+{
+   return sizeof(ProtoDependencyTable) + DependencyCount * sizeof(ProtoDependency) +
+      FunctionCount * sizeof(ProtoDependencyFunction);
+}
 
 // Exception frame for try-except blocks (runtime state)
 // Note: frame_base and saved_top are offsets from L->stack (not absolute pointers) because the Lua stack can be
@@ -623,6 +836,11 @@ struct TryFrame {
    uint16_t  try_block_index;  // Index into GCproto::try_blocks
    uint8_t   flags;            // Copy of TryBlockDesc.flags (e.g. TRY_FLAG_TRACE)
    BCREG     saved_nactvar;    // Active slot count at try entry (first free register)
+   size_t    context_depth;     // Absolute context-stack depth at try entry
+   size_t    context_floor;     // Active asynchronous root floor at try entry
+   uint64_t  array_view_scopes; // Armed <view> scopes at try entry
+   uint8_t   array_view_depth;  // Active <view> scope depth at try entry
+   uint8_t   checkall_depth;     // Active checkall depth at try entry
 };
 
 // Stack of try frames for exception unwinding
@@ -632,12 +850,22 @@ struct TryFrameStack {
    int depth = 0;
 };
 
+struct CheckallFrame {
+   GCfunc *func;
+   ptrdiff_t frame_base;
+};
+
+struct CheckallFrameStack {
+   CheckallFrame frames[LJ_MAX_CHECKALL_DEPTH];
+   int depth = 0;
+};
+
 typedef struct GCproto {
    GCHeader;
    uint8_t  numparams; //  Number of parameters.
    uint8_t  framesize; //  Fixed frame size.
    MSize    sizebc;    //  Number of bytecode instructions.
-   uint32_t unused_gc64; // Padding for 64-bit alignment
+   MRef     contract_cache; // Optional immutable decoded runtime-contract cache.
    GCRef    gclist;
    MRef     k;        //  Split constant array (points to the middle).
    MRef     uv;       //  Upvalue list. local slot|0x8000 or parent uv idx.
@@ -656,13 +884,23 @@ typedef struct GCproto {
    MRef   uvinfo;     //  Upvalue names.
    MRef   varinfo;    //  Names and compressed extents of local variables.
    uint64_t closeslots;  //  Bitmap of locals with <close> attribute (max 64 slots)
-   // Return type information for runtime type checking
-   std::array<TiriType, PROTO_MAX_RETURN_TYPES> result_types{};  // Return types, set by fs_finish()
+   MRef signature;       // Co-located ProtoSignature and positional ProtoTypeEntry records.
+   uint16_t signature_size; // Total byte size of signature, or zero when absent.
    // Try-except exception handling metadata
    TryBlockDesc   *try_blocks;        // Array of try block descriptors (nullptr if none)
    TryHandlerDesc *try_handlers;      // Array of handler descriptors (nullptr if none)
    uint16_t        try_block_count;   // Number of try blocks
    uint16_t        try_handler_count; // Number of handlers
+   ProtoContextBlockDesc *context_blocks; // Temporary context block descriptors
+   uint16_t        context_block_count;
+   // Module dependency metadata.  'dependencies' is a colocated portable descriptor block containing canonical names
+   // only; 'resolved_dependencies' is a separately allocated sidecar of non-owning pointers to the global registry's
+   // callable records, built on first activation and freed with the prototype.
+   MRef            dependencies;      // Colocated ProtoDependencyTable, or null when the unit declares no module.
+   void          **resolved_dependencies; // ModuleCallable *[] sidecar, or nullptr until resolved.
+   uint32_t        resolved_count;    // Number of sidecar slots.
+   uint8_t        *resolved_dependency_states; // One activation flag per dependency descriptor.
+   uint32_t        resolved_dependency_count;
 } GCproto;
 
 // Flags for prototype.
@@ -674,7 +912,6 @@ inline constexpr uint8_t PROTO_ILOOP        = 0x10;   //  Patched bytecode with 
 // Only used during parsing.
 inline constexpr uint8_t PROTO_HAS_RETURN   = 0x20;   //  Already emitted a return.
 inline constexpr uint8_t PROTO_FIXUP_RETURN = 0x40;   //  Need to fixup emitted returns.
-inline constexpr uint8_t PROTO_TYPEFIX      = 0x80;   //  Runtime type inference enabled (no explicit return types).
 // Top bits used for counting created closures.
 inline constexpr uint8_t PROTO_CLCOUNT      = 0x20;   //  Base of saturating 3 bit counter.
 inline constexpr int PROTO_CLC_BITS         = 3;
@@ -702,6 +939,116 @@ inline constexpr uint16_t PROTO_UV_IMMUTABLE = 0x4000;   //  Immutable upvalue.
 
 [[nodiscard]] inline uint16_t* proto_uv(const GCproto* pt) noexcept {
    return pt->uv.get<uint16_t>();
+}
+
+[[nodiscard]] inline ProtoSignature * proto_signature(GCproto *Proto) noexcept
+{
+   return Proto->signature.get<ProtoSignature>();
+}
+
+[[nodiscard]] inline const ProtoSignature * proto_signature(const GCproto *Proto) noexcept
+{
+   return Proto->signature.get<const ProtoSignature>();
+}
+
+[[nodiscard]] inline ProtoTypeEntry * proto_parameter_types(GCproto *Proto) noexcept
+{
+   auto signature = proto_signature(Proto);
+   return signature ? (ProtoTypeEntry *)(signature + 1) : nullptr;
+}
+
+[[nodiscard]] inline const ProtoTypeEntry * proto_parameter_types(const GCproto *Proto) noexcept
+{
+   auto signature = proto_signature(Proto);
+   return signature ? (const ProtoTypeEntry *)(signature + 1) : nullptr;
+}
+
+[[nodiscard]] inline ProtoTypeEntry * proto_result_types(GCproto *Proto) noexcept
+{
+   auto signature = proto_signature(Proto);
+   return signature ? proto_parameter_types(Proto) + signature->parameter_count : nullptr;
+}
+
+[[nodiscard]] inline const ProtoTypeEntry * proto_result_types(const GCproto *Proto) noexcept
+{
+   auto signature = proto_signature(Proto);
+   return signature ? proto_parameter_types(Proto) + signature->parameter_count : nullptr;
+}
+
+[[nodiscard]] inline ProtoTypeEntry proto_result_type(const GCproto *Proto, size_t Position) noexcept
+{
+   const auto signature = proto_signature(Proto);
+   if (not signature) return {};
+   const auto results = proto_result_types(Proto);
+   if (Position < signature->result_entry_count) return results[Position];
+   if ((signature->flags & proto_signature_flag(ProtoSignatureFlag::ResultVariadic)) and
+       signature->result_entry_count > 0) {
+      return results[signature->result_entry_count - 1];
+   }
+   if (Position < signature->result_count) {
+      return ProtoTypeEntry{
+         .constraint = 0,
+         .type = TiriType::Any,
+         .flags = proto_type_flags(true, false, ProtoTypeOrigin::Declared, ProtoTypeStrength::Advisory)
+      };
+   }
+   return {};
+}
+
+inline void proto_metadata_init(GCproto *Proto) noexcept
+{
+   setmref(Proto->contract_cache, nullptr);
+   Proto->file_source_idx = 0;
+   setmref(Proto->lineinfo, nullptr);
+   setmref(Proto->uvinfo, nullptr);
+   setmref(Proto->varinfo, nullptr);
+   Proto->closeslots = 0;
+   setmref(Proto->signature, nullptr);
+   Proto->signature_size = 0;
+   Proto->try_blocks = nullptr;
+   Proto->try_handlers = nullptr;
+   Proto->try_block_count = 0;
+   Proto->try_handler_count = 0;
+   Proto->context_blocks = nullptr;
+   Proto->context_block_count = 0;
+   setmref(Proto->dependencies, nullptr);
+   Proto->resolved_dependencies = nullptr;
+   Proto->resolved_count = 0;
+   Proto->resolved_dependency_states = nullptr;
+   Proto->resolved_dependency_count = 0;
+}
+
+[[nodiscard]] inline const ProtoDependencyTable * proto_dependencies(const GCproto *Proto) noexcept
+{
+   return Proto->dependencies.get<const ProtoDependencyTable>();
+}
+
+[[nodiscard]] inline ProtoDependencyTable * proto_dependencies(GCproto *Proto) noexcept
+{
+   return Proto->dependencies.get<ProtoDependencyTable>();
+}
+
+[[nodiscard]] inline const ProtoDependency * proto_dependency_list(const ProtoDependencyTable *Table) noexcept
+{
+   return Table ? (const ProtoDependency *)(Table + 1) : nullptr;
+}
+
+[[nodiscard]] inline ProtoDependency * proto_dependency_list(ProtoDependencyTable *Table) noexcept
+{
+   return Table ? (ProtoDependency *)(Table + 1) : nullptr;
+}
+
+[[nodiscard]] inline const ProtoDependencyFunction * proto_dependency_functions(
+   const ProtoDependencyTable *Table) noexcept
+{
+   if (not Table) return nullptr;
+   return (const ProtoDependencyFunction *)(proto_dependency_list(Table) + Table->dependency_count);
+}
+
+[[nodiscard]] inline ProtoDependencyFunction * proto_dependency_functions(ProtoDependencyTable *Table) noexcept
+{
+   if (not Table) return nullptr;
+   return (ProtoDependencyFunction *)(proto_dependency_list(Table) + Table->dependency_count);
 }
 
 // Forward declarations - defined after GCobj is complete
@@ -771,9 +1118,6 @@ typedef union GCfunc {
    GCfuncL l;
 } GCfunc;
 
-inline constexpr uint8_t FF_LUA = 0;
-inline constexpr uint8_t FF_C   = 1;
-
 [[nodiscard]] inline bool isluafunc(const GCfunc* fn) noexcept { return fn->c.ffid IS FF_LUA; }
 [[nodiscard]] inline bool iscfunc(const GCfunc* fn) noexcept { return fn->c.ffid IS FF_C; }
 [[nodiscard]] inline bool isffunc(const GCfunc* fn) noexcept { return fn->c.ffid > FF_C; }
@@ -802,10 +1146,39 @@ typedef struct Node {
 
 static_assert(offsetof(Node, val) == 0);
 
+// GCtab::flags bits.  These record permanent table metadata and are never cleared.
+//
+// The classification bits describe usage history rather than the table's current live shape.  Removing keys or calling
+// table.clear() does not restore the 'sequence' classification.  The monotonic, one-way nature of these bits is what
+// allows the JIT to guard the observed state cheaply: the first offending store side-exits the trace.
+
+inline constexpr uint32_t TAB_ASSOCIATIVE_BIT = 0;  // Bit index, for backends that test single bits.
+inline constexpr uint8_t  TAB_ASSOCIATIVE = (uint8_t)(1u << TAB_ASSOCIATIVE_BIT); // Ever addressed by a non-numeric key
+inline constexpr uint32_t TAB_SPARSE_BIT = 1;       // Bit index, for backends that test single bits.
+inline constexpr uint8_t  TAB_SPARSE = (uint8_t)(1u << TAB_SPARSE_BIT); // Ever used with non-sequence numerical keys
+inline constexpr uint32_t TAB_METHOD_COMPATIBLE_BIT = 2; // Bit index for explicit-receiver userdata metatables.
+inline constexpr uint8_t  TAB_METHOD_COMPATIBLE = (uint8_t)(1u << TAB_METHOD_COMPATIBLE_BIT);
+inline constexpr uint32_t TAB_CONTEXTUAL_BIT = 3; // Bit index for permanently designated contextual tables.
+inline constexpr uint8_t  TAB_CONTEXTUAL = (uint8_t)(1u << TAB_CONTEXTUAL_BIT);
+
+// Either flag makes the sequence length meaningless, so '#' reports nil and sequence library functions refuse to
+// infer a boundary.  Backends test this composite mask in one operation.
+
+inline constexpr uint8_t TAB_NOT_SEQUENCE = (uint8_t)(TAB_ASSOCIATIVE | TAB_SPARSE);
+
+// Public classification names, matching the strings reported by table.kind().
+
+inline constexpr const char* TAB_KIND_SEQUENCE    = "sequence";
+inline constexpr const char* TAB_KIND_SPARSE      = "sparse";
+inline constexpr const char* TAB_KIND_ASSOCIATIVE = "associative";
+inline constexpr const char* TAB_KIND_MIXED       = "mixed";
+
 typedef struct GCtab {
    GCHeader;
    uint8_t  nomm;      // Negative cache for fast metamethods.
    int8_t   colo;      // Array colocation.
+   uint8_t  flags;     // [12] Permanent table metadata bits (TAB_*).  Never cleared once set.
+   uint8_t  _pad0[3];  // [13] Padding to align the array field.
    MRef     array;     // [16] Array part.
    GCRef    gclist;    // [24] GC list for marking (must match GCudata.gclist)
    GCRef    metatable; // [32] Must be at same offset in GCudata.
@@ -813,7 +1186,118 @@ typedef struct GCtab {
    uint32_t asize;     // Size of array part (keys [0, asize-1]).
    uint32_t hmask;     // Hash part mask (size of hash part - 1).
    MRef     freetop;   // Top of free elements.
+   GCRef    global_type_contracts; // Runtime contracts for globals stored in this environment table.
+   MRef     global_contract_cache; // Environment-owned decoded derivative of global_type_contracts.
 } GCtab;
+
+// `colo` is an ABI-stable byte: zero means never colocated, a positive value is the current colocated capacity, and a
+// negative value retains that capacity after the array has moved to a separate allocation.
+[[nodiscard]] constexpr inline bool table_array_is_colocated(const GCtab *Table) noexcept { return Table->colo > 0; }
+[[nodiscard]] constexpr inline bool table_had_colocated_array(const GCtab *Table) noexcept { return Table->colo < 0; }
+[[nodiscard]] constexpr inline bool table_array_is_separately_allocated(const GCtab *Table) noexcept {
+   return Table->colo <= 0;
+}
+[[nodiscard]] constexpr inline uint32_t table_colocated_capacity(const GCtab *Table) noexcept {
+   return uint32_t(uint8_t(Table->colo) & 0x7f);
+}
+inline constexpr void table_set_colocated_capacity(GCtab *Table, uint32_t Capacity) noexcept {
+   Table->colo = int8_t(Capacity);
+}
+inline constexpr void table_mark_array_separated(GCtab *Table) noexcept {
+   Table->colo = int8_t(uint8_t(Table->colo) | 0x80);
+}
+inline constexpr void table_set_never_colocated(GCtab *Table) noexcept { Table->colo = 0; }
+
+// The generated VM and the JIT backends encode these offsets directly, so any layout drift must fail the build
+// rather than silently corrupt table access.
+
+static_assert(offsetof(GCtab, nomm) == 10);
+static_assert(offsetof(GCtab, colo) == 11);
+static_assert(offsetof(GCtab, flags) == 12);
+static_assert(offsetof(GCtab, array) == 16);
+static_assert(offsetof(GCtab, gclist) == 24);
+static_assert(offsetof(GCtab, metatable) == 32);
+static_assert(offsetof(GCtab, node) == 40);
+static_assert(offsetof(GCtab, asize) == 48);
+static_assert(offsetof(GCtab, hmask) == 52);
+static_assert(offsetof(GCtab, freetop) IS 56);
+static_assert(offsetof(GCtab, global_type_contracts) IS 64);
+static_assert(offsetof(GCtab, global_contract_cache) IS 72);
+static_assert(sizeof(GCtab) == 80);
+static_assert((sizeof(GCtab) & 7) == 0);
+
+// The metadata bits share the single 'flags' byte, so they must remain addressable as one 8-bit field by the x64,
+// ARM64 and PPC backends.  Classification consumers mask TAB_NOT_SEQUENCE and therefore ignore ABI metadata.
+
+static_assert(sizeof(GCtab::flags) IS 1);
+static_assert(TAB_NOT_SEQUENCE IS (TAB_ASSOCIATIVE | TAB_SPARSE));
+static_assert((1u << TAB_ASSOCIATIVE_BIT) IS TAB_ASSOCIATIVE);
+static_assert((1u << TAB_SPARSE_BIT) IS TAB_SPARSE);
+static_assert((1u << TAB_METHOD_COMPATIBLE_BIT) IS TAB_METHOD_COMPATIBLE);
+static_assert((TAB_METHOD_COMPATIBLE & TAB_NOT_SEQUENCE) IS 0);
+static_assert((1u << TAB_CONTEXTUAL_BIT) IS TAB_CONTEXTUAL);
+static_assert((TAB_CONTEXTUAL & (TAB_NOT_SEQUENCE | TAB_METHOD_COMPATIBLE)) IS 0);
+
+// Table classification helpers.  Every interpreter, library and C API path publishes classification through these so
+// that the semantics stay aligned; the JIT recorder mirrors them with equivalent IR.
+
+[[nodiscard]] inline bool lj_tab_is_associative(const GCtab *Table) noexcept
+{
+   return (Table->flags & TAB_ASSOCIATIVE) != 0;
+}
+
+[[nodiscard]] inline bool lj_tab_is_sparse(const GCtab *Table) noexcept
+{
+   return (Table->flags & TAB_SPARSE) != 0;
+}
+
+// Every table is ordinary by default; contextuality is a positive, opt-in capability of the table identity.  A
+// designated table establishes itself as the current context when one of its members is called.
+//
+// The flag is permanent for the lifetime of the table: table.clear(), metatable replacement, field removal and every
+// other ordinary mutation must leave it set.  That monotonicity is what lets the interpreter and JIT guard the bit
+// cheaply, and prevents behaviour from changing halfway through a call sequence.
+
+[[nodiscard]] inline bool lj_tab_is_contextual(const GCtab *Table) noexcept
+{
+   return (Table->flags & TAB_CONTEXTUAL) != 0;
+}
+
+// One-way designation.  Internal native creation paths and tests use this; there is no public API counterpart.
+
+inline void lj_tab_mark_contextual(GCtab *Table) noexcept { Table->flags |= TAB_CONTEXTUAL; }
+
+// Propagate contextuality from a declared structural source to a newly derived table, per the derived-table contract.
+// Multiple-source operations call this once per declared source, making inheritance an any-source rule.  Allocation
+// alone has no source, so this must never be folded into lj_tab_new() or lua_createtable().
+
+inline void lj_tab_inherit_contextual(GCtab *Destination, const GCtab *Source) noexcept
+{
+   if (Source and lj_tab_is_contextual(Source)) lj_tab_mark_contextual(Destination);
+}
+
+// True when the table's usage history remains inside the non-negative integral sequence domain.  This does not prove
+// that every index below the numerical boundary is currently populated: positive holes deliberately remain legal.
+// This is the single predicate behind the '#' operator's nil result and the sequence library guards.
+
+[[nodiscard]] inline bool lj_tab_is_sequence(const GCtab *Table) noexcept
+{
+   return (Table->flags & TAB_NOT_SEQUENCE) IS 0;
+}
+
+inline void lj_tab_mark_associative(GCtab *Table) noexcept { Table->flags |= TAB_ASSOCIATIVE; }
+inline void lj_tab_mark_sparse(GCtab *Table) noexcept { Table->flags |= TAB_SPARSE; }
+
+// Report the permanent classification as one of the four public names.
+
+[[nodiscard]] inline const char * lj_tab_kind(const GCtab *Table) noexcept
+{
+   const uint8_t flags = Table->flags & TAB_NOT_SEQUENCE;
+   if (flags IS 0) return TAB_KIND_SEQUENCE;
+   if (flags IS TAB_SPARSE) return TAB_KIND_SPARSE;
+   if (flags IS TAB_ASSOCIATIVE) return TAB_KIND_ASSOCIATIVE;
+   return TAB_KIND_MIXED;
+}
 
 [[nodiscard]] constexpr inline size_t sizetabcolo(MSize n) noexcept { return n * sizeof(TValue) + sizeof(GCtab); }
 
@@ -846,9 +1330,45 @@ enum class AET : uint8_t {
    ANY,        // TValue (mixed type storage)
    STRUCT,     // Structured data (uses structdef)
    OBJECT,     // OBJECTPTR for external object references originating from the Kotuku API; otherwise GCobject
+   // Appended to preserve the serialised ordinals above.
+   UINT8,      // uint8_t numeric storage (not a byte buffer)
+   UINT16,     // uint16_t
+   UINT32,     // uint32_t
+   UINT64,     // uint64_t
+   INT8,       // int8_t numeric storage
    MAX,
    VULNERABLE = PTR
 };
+
+[[nodiscard]] constexpr inline bool array_element_load_allocates(AET Type) noexcept
+{
+   return Type IS AET::CSTR or Type IS AET::STR_CPP or Type IS AET::STRUCT;
+}
+
+[[nodiscard]] constexpr inline uint16_t proto_array_member_encoded(AET Type) noexcept
+{
+   return uint16_t(Type) + 1;
+}
+
+[[nodiscard]] constexpr inline AET proto_array_member(const ProtoTypeEntry &Entry) noexcept
+{
+   return Entry.array_member_type ? AET(Entry.array_member_type - 1) : AET::MAX;
+}
+
+[[nodiscard]] constexpr inline uint16_t proto_array_member_encoded(const ProtoTypeEntry &Entry) noexcept
+{
+   return Entry.array_member_type;
+}
+
+constexpr inline void set_proto_array_member(ProtoTypeEntry &Entry, AET Type) noexcept
+{
+   Entry.array_member_type = Type IS AET::MAX ? 0 : proto_array_member_encoded(Type);
+}
+
+constexpr inline void set_proto_array_member_encoded(ProtoTypeEntry &Entry, uint16_t EncodedType) noexcept
+{
+   Entry.array_member_type = EncodedType;
+}
 
 // Array flags
 inline constexpr uint8_t ARRAY_READONLY  = 0x01;  // Cannot modify elements
@@ -879,8 +1399,14 @@ struct GCarray {
    MSize   len;         // Number of elements currently in use
    MSize   capacity;    // Number of elements that can be stored (allocated capacity)
    MSize   elemsize;    // Size of each element in bytes
-   struct struct_record *structdef;  // Optional: struct definition for struct arrays
+   // Structure definitions and specialised nested-array identities are mutually exclusive and share the historic
+   // structure-definition offset.  Access this storage only through the tagged helpers below.
+   union {
+      struct struct_record *structure_definition;
+      GCRef nested_array_identity;
+   } type_metadata;
    std::vector<char> *strcache; // Optional: cached string content for CSTRING/STRING_CPP arrays
+   RESOURCEID resource_id; // Optional Core resource pin owned by an external view
 
 public:
    // Initialise the array structure. Storage must be pre-allocated by the caller using lj_mem_new()
@@ -888,7 +1414,7 @@ public:
    // them! We avoid member initialiser lists to prevent GCC from zero-initializing the GCHeader
    // fields (nextgc, marked) that were set by lj_mem_newgco().
    void init(void *Data, AET Type, MSize ElemSize, MSize Length, MSize Capacity, uint8_t Flags,
-             struct struct_record *StructDef = nullptr) noexcept
+             struct struct_record *StructDef = nullptr, GCstr *TypeIdentity = nullptr) noexcept
    {
       gct       = ~LJ_TARRAY;
       luatype   = glArrayConversion[size_t(Type)].type;
@@ -902,8 +1428,21 @@ public:
       len       = Length;
       capacity  = Capacity;
       elemsize  = ElemSize;
-      structdef = StructDef;
+      type_metadata.nested_array_identity.gcptr64 = 0;
+      if (Type IS AET::STRUCT) type_metadata.structure_definition = StructDef;
+      else if (Type IS AET::ARRAY) type_metadata.nested_array_identity.gcptr64 = uint64_t(TypeIdentity);
       strcache  = nullptr;
+      resource_id = 0;
+   }
+
+   [[nodiscard]] inline struct struct_record * struct_definition() const noexcept
+   {
+      return elemtype IS AET::STRUCT ? type_metadata.structure_definition : nullptr;
+   }
+
+   [[nodiscard]] inline GCstr * nested_identity() const noexcept
+   {
+      return elemtype IS AET::ARRAY ? (GCstr *)(void *)type_metadata.nested_array_identity.gcptr64 : nullptr;
    }
 
    // Destructor only handles strcache. Storage is freed by lj_array_free() for proper GC tracking.
@@ -942,6 +1481,8 @@ public:
 // Ensure metatable field is at the same offset in GCtab, GCarray, GCudata
 static_assert(offsetof(GCarray, metatable) IS offsetof(GCtab, metatable));
 static_assert(offsetof(GCarray, gclist) IS offsetof(GCtab, gclist));
+static_assert(offsetof(GCarray, type_metadata) IS 56);
+static_assert(sizeof(GCarray) IS 80);
 
 // Forward declaration - defined after GCobj is complete
 inline GCarray* arrayref(GCRef r) noexcept;
@@ -952,11 +1493,12 @@ inline GCarray* arrayref(GCRef r) noexcept;
 // Flags for GCobject.flags
 inline constexpr uint8_t GCOBJ_DETACHED = 0x01;  // Object is external reference, not owned
 inline constexpr uint8_t GCOBJ_LOCKED   = 0x02;  // Lock acquired via AccessObject()
+inline constexpr uint8_t GCOBJ_PINNED   = 0x04;  // Wrapper holds one weak pin on ptr
 
 struct GCobject {
    GCHeader;                    // [0]  nextgc, marked, gct (10 bytes)
    uint8_t udtype;              // [10] Reserved for sub-types (future use)
-   uint8_t flags;               // [11] Object flags (GCOBJ_DETACHED, GCOBJ_LOCKED)
+   uint8_t flags;               // [11] Object flags (GCOBJ_DETACHED, GCOBJ_LOCKED, GCOBJ_PINNED)
    int32_t uid;                 // [12] Kotuku object unique ID (OBJECTID)
    uint32_t accesscount;        // [16] Access count for lock management
    uint32_t reserved;           // [20] Reserved for alignment
@@ -967,8 +1509,10 @@ struct GCobject {
 
    inline bool is_detached() { return (flags & GCOBJ_DETACHED) != 0; }
    inline bool is_locked() { return (flags & GCOBJ_LOCKED) != 0; }
+   inline bool is_pinned() { return (flags & GCOBJ_PINNED) != 0; }
    inline void set_detached(bool v) { if (v) flags |= GCOBJ_DETACHED; else flags &= ~GCOBJ_DETACHED; }
    inline void set_locked(bool v) { if (v) flags |= GCOBJ_LOCKED; else flags &= ~GCOBJ_LOCKED; }
+   inline void set_pinned(bool v) { if (v) flags |= GCOBJ_PINNED; else flags &= ~GCOBJ_PINNED; }
 };
 
 // Ensure metatable and gclist fields are at same offset as other GC types
@@ -977,6 +1521,47 @@ static_assert(offsetof(GCobject, gclist) == offsetof(GCtab, gclist));
 
 // Forward declaration - defined after GCobj is complete
 inline GCobject* objectref(GCRef r) noexcept;
+
+//********************************************************************************************************************
+// Native struct object.  Wraps a C structure described by a struct_record definition.  The payload either follows
+// the header inline (owned mode) or lives in externally managed memory (STRUCT_EXTERNAL).
+//
+// NB: The TValue tag LJ_TSTRUCT (~6u) is shared with the single main-thread lua_State; GC sites that dispatch on
+// gct must discriminate via pointer-compare with mainthread(g).
+
+// Flags for GCstruct.flags
+inline constexpr uint8_t STRUCT_EXTERNAL   = 0x01;  // Payload is externally managed (data does not follow header)
+inline constexpr uint8_t STRUCT_DEALLOCATE = 0x02;  // FreeResource(data) when the struct is collected
+inline constexpr uint8_t STRUCT_LIFECYCLE  = 0x04;  // Payload validity depends on a weak-pinned Kotuku object
+
+struct GCstruct {
+   GCHeader;                    // [0]  nextgc, marked, gct (10 bytes)
+   uint8_t flags;               // [10] Struct flags (STRUCT_EXTERNAL, STRUCT_DEALLOCATE, STRUCT_LIFECYCLE)
+   uint8_t unused1;             // [11] Reserved for alignment
+   uint32_t structsize;         // [12] Byte size of the structure payload (def->Size at creation time)
+   void *data;                  // [16] Pointer to the structure data (this+1 for inline payloads)
+   GCRef gclist;                // [24] GC list for marking (must match GCtab.gclist)
+   GCRef metatable;             // [32] Optional metatable (must match GCtab.metatable)
+   struct struct_record *def;   // [40] Structure definition owned by a state-local or global registry
+   struct Object *lifecycle;    // [48] Weak-pinned object that owns the payload (STRUCT_LIFECYCLE only)
+   GCRef parent;                // [56] Owning inline GCstruct for an interior payload view
+
+   [[nodiscard]] inline bool is_external() const noexcept { return (flags & STRUCT_EXTERNAL) != 0; }
+   [[nodiscard]] inline bool is_deallocate() const noexcept { return (flags & STRUCT_DEALLOCATE) != 0; }
+   [[nodiscard]] inline bool is_lifecycle_bound() const noexcept { return (flags & STRUCT_LIFECYCLE) != 0; }
+
+   // Allocation size must match lj_struct_new()/lj_struct_new_external() exactly or g->gc.total drifts.
+   [[nodiscard]] inline size_t alloc_size() const noexcept {
+      return sizeof(GCstruct) + (is_external() ? 0 : ((size_t(structsize) + 7) & ~size_t(7)));
+   }
+};
+
+// Ensure metatable and gclist fields are at same offset as other GC types
+static_assert(offsetof(GCstruct, metatable) == offsetof(GCtab, metatable));
+static_assert(offsetof(GCstruct, gclist) == offsetof(GCtab, gclist));
+
+// Forward declaration - defined after GCobj is complete
+inline GCstruct* structref(GCRef r) noexcept;
 
 //********************************************************************************************************************
 // VM states.
@@ -1010,7 +1595,7 @@ enum {
   _(add) _(sub) _(mul) _(div) _(mod) _(pow) _(unm) \
   /* The following are used in the standard libraries. */ \
   _(metatable) _(tostring) \
-  _(close) MMDEF_FFI(_) MMDEF_PAIRS(_)
+  _(close) MMDEF_FFI(_) MMDEF_PAIRS(_) _(clear) _(contains) _(iter) _(name)
 
 // Metamethod IDs - uses typedef enum because MMDEF generates conditional members
 // and the X-macro pattern is required for string generation in lj_meta.cpp
@@ -1065,11 +1650,13 @@ typedef struct GCState {
    uint8_t lightudnum;   //  Number of lightuserdata segments - 1 (64-bit only).
    MSize   sweepstr;     // Sweep position in string table.
    GCRef   root;         // List of all collectable objects.
+   GCRef   finobj;       // Objects registered for metamethod finalisation.
    MRef    sweep;        // Sweep position in root list.
+   MRef    sweepfin;     // Sweep position in registered-finaliser list.
    GCRef   gray;         // List of gray objects.
    GCRef   grayagain;    // List of objects for atomic traversal.
    GCRef   weak;         // List of weak tables (to be cleared).
-   GCRef   mmudata;      // List of userdata (to be finalized).
+   GCRef   mmudata;      // Circular queue of pending finalisers.
    GCSize  debt;         // Debt (how much GC is behind schedule).
    GCSize  estimate;     // Estimate of memory actually in use.
    MSize   stepmul;      // Incremental GC step granularity.
@@ -1088,6 +1675,7 @@ typedef struct StrInternState {
 
 // Global state, shared by all threads of a Lua universe.
 typedef struct global_State {
+   GCtab *exception_metatable = nullptr; // Protected runtime exception identity
    lua_Alloc allocf;         // Memory allocator.
    void      *allocd;        // Memory allocator data.
    GCState   gc;             // Garbage collector.
@@ -1150,6 +1738,13 @@ inline void hook_restore(global_State *g, uint8_t h) noexcept { g->hookmask = (g
 
 // Per-thread state object.  See lua_newstate() in lj_state.cpp for initialisation.
 
+struct DeferRegistration {
+   ptrdiff_t owner_base = 0;
+   uint8_t callable_slot = 0;
+   uint8_t argument_count = 0;
+   uint8_t scope_base = 0;
+};
+
 struct lua_State {
    GCHeader;            // NB: C++ placement new can trash any preset values here.
    uint8_t dummy_ffid;  //  Fake FF_C for curr_funcisL() on dummy frames.
@@ -1164,21 +1759,76 @@ struct lua_State {
    GCRef   env;         //  Thread environment (table of globals).
    void    *cframe;     //  End of C stack frame chain.
    MSize   stacksize;   //  True stack size (incl. LJ_STACK_EXTRA).
-   class objScript *script;  // Back-reference to the script that owns this lua_State
+   class extTiri *script;  // Back-reference to the script that owns this lua_State
    bool    sent_traceback;   // True if traceback has been sent for the current error
    uint8_t resolving_thunk;  // Flag to prevent recursive thunk resolution
+   uint64_t array_view_scopes = 0; // One armed bit per active <view> declaration initialiser
+   uint8_t array_view_depth = 0;   // Number of active <view> initialiser scopes
    ParserDiagnostics *parser_diagnostics; // Stores ParserDiagnostics* during parsing errors
    TipEmitter *parser_tips;               // Stores TipEmitter* during parsing for code hints
-   TValue close_err;  // Current error for __close handlers (nil if no error)
+   ParserSymbolCollection *parser_symbols; // Stores parser symbol metadata for LSP/documentation tooling
+   // Protected error value for the __close handler currently being invoked. Nested unwinding saves and restores this
+   // field, and the collector treats it as a thread-local root. It is never mirrored through the public environment.
+   TValue pending_close_error;
    // Try-except exception handling runtime state (lazily allocated)
    TryFrameStack try_stack;      // Exception frame stack (nullptr until first BC_TRYENTER)
+   CheckallFrameStack *checkall_stack = nullptr; // Preallocated lexical automatic native error promotion scopes
    const BCIns   *try_handler_pc; // Handler PC for error re-entry (set during unwind)
    CapturedStackTrace *pending_trace; // Trace captured during exception handling (for try<trace>)
+   GCtab  *pending_exception = nullptr; // Original exception during rethrow
+   std::vector<GCtab *> exception_unwind_roots; // Preserve outer rethrows during nested cleanup
+   GCstr  *pending_exception_message = nullptr; // Raw exception message for try/except tables
+   GCstr  *pending_exception_source = nullptr;  // Display source filename for try/except tables
+   int    pending_exception_line = 0;           // Source line for try/except tables
+   bool   pending_exception_valid = false;      // True if pending exception metadata is current
+   bool   pending_collection = false;           // A garbage collection cycle is pending
    ERR    CaughtError = ERR::Okay; // Catches ERR results from module functions.
+
+   struct ContextFrame {
+      enum class OwnerKind : uint8_t { Call, Block, Callback };
+      GCRef table;                 // GC-visible context override owned by this state.
+      ptrdiff_t owner_base = 0;    // Stack-relative activation base; survives stack relocation.
+      OwnerKind owner_kind = OwnerKind::Call;
+      uint16_t block_index = UINT16_MAX;
+      BCREG entry_slots = 0;
+      bool tail_transfer = false;  // Recorded terminal returns must restore transferred frame ownership.
+   };
+
+   // An empty stack is the permanent root sentinel and resolves dynamically through env.  Contextual calls append
+   // table-only overrides; direct and non-table calls do not need an entry.
+   std::vector<ContextFrame> context_stack;
+   uint8_t context_active = 0; // Fast VM return gate; indicates a visible override above the active root floor.
+   uint8_t metamethod_argument_count = 0; // Visible arguments prepared by the latest interpreter metamethod lookup.
+   ContextDebugCounters *context_debug_counters = nullptr; // Lazily allocated in Debug builds only.
+
+   // An asynchronous root boundary hides, but does not remove, suspended overrides. Keeping them in context_stack
+   // ensures that the collector continues to trace their tables while a callback runs and performs collection.
+   std::vector<size_t> context_root_floors;
+
+   struct CloseFrameState {
+      ptrdiff_t owner_base = 0;
+      uint64_t armed_slots = 0;
+   };
+   std::vector<CloseFrameState> close_frames;
+   std::vector<DeferRegistration> defer_stack;
+
+   struct SavedMultresFrame {
+      ptrdiff_t frame_base = 0;
+      std::vector<uint64_t> values;
+   };
+
+   // Return values preserved while user-visible <close> and defer handlers execute. Entries are stacked because a
+   // cleanup handler may itself return through another cleanup boundary. The owning base lets error unwinding discard
+   // saves belonging to abandoned return paths.
+   std::vector<SavedMultresFrame> saved_multres;
 
    // FileSource tracking for accurate error reporting in imported files
    std::vector<FileSource> file_sources;  // Index 0 = main file, 255 = overflow
    ankerl::unordered_dense::map<uint32_t, uint8_t> file_index_map;  // path_hash -> index
+
+   // Parser-declared structures are scoped to this interpreter.  Registry nodes remain stable while GC objects
+   // reference their struct_record values and are released after those objects during state shutdown.
+   std::unordered_map<uint32_t, struct_record> struct_declarations;
 
    // Stack of pending import lexers for cleanup if SEH throws during import parsing.
    // Note: Windows SEH doesn't call C++ destructors, so we track these for manual cleanup.
@@ -1187,7 +1837,7 @@ struct lua_State {
 
    // Constructor/destructor not actually used as yet.
 /*
-   lua_State(class objScript* pScript) : Script(pScript) {
+   lua_State(class extTiri* pScript) : Script(pScript) {
 
    }
 
@@ -1250,6 +1900,7 @@ typedef union GCobj {
    GCarray   arr;
    GCudata   ud;
    GCobject  obj;  // Native Kotuku object
+   GCstruct  sct;  // Native struct (tag shared with the main-thread lua_State)
    ~GCobj() = delete;
 } GCobj;
 
@@ -1257,13 +1908,16 @@ typedef union GCobj {
 
 [[nodiscard]] inline GCstr *     gco_to_string(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TSTR, &o->str); }
 [[nodiscard]] inline GCupval *   gco_to_upval(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TUPVAL, &o->uv); }
-[[nodiscard]] inline lua_State * gco_to_thread(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TTHREAD, &o->th); }
+// The main-thread lua_State shares the ~LJ_TSTRUCT gct; discriminate via pointer-compare with mainthread(g).
+[[nodiscard]] inline lua_State * gco_to_thread(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TSTRUCT, &o->th); }
 [[nodiscard]] inline GCproto *   gco_to_proto(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TPROTO, &o->pt); }
 [[nodiscard]] inline GCfunc *    gco_to_function(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TFUNC, &o->fn); }
 [[nodiscard]] inline GCtab *     gco_to_table(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TTAB, &o->tab); }
 [[nodiscard]] inline GCudata *   gco_to_userdata(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TUDATA, &o->ud); }
 [[nodiscard]] inline GCarray *   gco_to_array(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TARRAY, &o->arr); }
 [[nodiscard]] inline GCobject *  gco_to_object(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TOBJECT, &o->obj); }
+// The main-thread lua_State shares the ~LJ_TSTRUCT gct; callers must have excluded it (compare with mainthread(g)).
+[[nodiscard]] inline GCstruct *  gco_to_struct(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TSTRUCT, &o->sct); }
 
 // Convert any collectable object into a GCobj pointer.
 template<typename T> [[nodiscard]] inline GCobj * obj2gco(T *v) noexcept { return (GCobj*)v; }
@@ -1291,6 +1945,9 @@ template<typename T> [[nodiscard]] inline GCobj * obj2gco(T *v) noexcept { retur
 
 // Kotuku object accessors
 [[nodiscard]] inline GCobject * objectref(GCRef r) noexcept { return &gcref(r)->obj; }
+
+// Struct accessors
+[[nodiscard]] inline GCstruct * structref(GCRef r) noexcept { return &gcref(r)->sct; }
 
 // Thread/state accessors
 
@@ -1330,7 +1987,7 @@ template<typename T> [[nodiscard]] inline GCobj * obj2gco(T *v) noexcept { retur
 [[nodiscard]] constexpr inline bool tvislightud(cTValue *o) noexcept { return itype(o) IS LJ_TLIGHTUD; }
 [[nodiscard]] constexpr inline bool tvisstr(cTValue *o) noexcept { return itype(o) IS LJ_TSTR; }
 [[nodiscard]] constexpr inline bool tvisfunc(cTValue *o) noexcept { return itype(o) IS LJ_TFUNC; }
-[[nodiscard]] constexpr inline bool tvisthread(cTValue *o) noexcept { return itype(o) IS LJ_TTHREAD; }
+[[nodiscard]] constexpr inline bool tvisstruct(cTValue *o) noexcept { return itype(o) IS LJ_TSTRUCT; }
 [[nodiscard]] constexpr inline bool tvisproto(cTValue *o) noexcept { return itype(o) IS LJ_TPROTO; }
 [[nodiscard]] constexpr inline bool tvistab(cTValue *o) noexcept { return itype(o) IS LJ_TTAB; }
 [[nodiscard]] constexpr inline bool tvisudata(cTValue *o) noexcept { return itype(o) IS LJ_TUDATA; }
@@ -1382,7 +2039,6 @@ template<typename T> [[nodiscard]] inline GCobj * obj2gco(T *v) noexcept { retur
 [[nodiscard]] inline GCobj * gcV(cTValue *o) noexcept { return check_exp(tvisgcv(o), gcval(o)); }
 [[nodiscard]] inline GCstr * strV(cTValue *o) noexcept { return check_exp(tvisstr(o), &gcval(o)->str); }
 [[nodiscard]] inline GCfunc* funcV(cTValue *o) noexcept { return check_exp(tvisfunc(o), &gcval(o)->fn); }
-[[nodiscard]] inline lua_State * threadV(cTValue *o) noexcept { return check_exp(tvisthread(o), &gcval(o)->th); }
 [[nodiscard]] inline GCproto * protoV(cTValue *o) noexcept { return check_exp(tvisproto(o), &gcval(o)->pt); }
 [[nodiscard]] inline GCtab * tabV(cTValue *o) noexcept { return check_exp(tvistab(o), &gcval(o)->tab); }
 [[nodiscard]] inline GCudata * udataV(cTValue *o) noexcept { return check_exp(tvisudata(o), &gcval(o)->ud); }
@@ -1390,6 +2046,10 @@ template<typename T> [[nodiscard]] inline GCobj * obj2gco(T *v) noexcept { retur
 [[nodiscard]] inline GCarray * arrayV(lua_State *L, int Arg) noexcept { return arrayV(L->base + Arg - 1); }
 [[nodiscard]] inline GCobject * objectV(cTValue *o) noexcept { return check_exp(tvisobject(o), &gcval(o)->obj); }
 [[nodiscard]] inline GCobject * objectV(lua_State *L, int Arg) noexcept { return objectV(L->base + Arg - 1); }
+// NB: The main-thread lua_State only carries the LJ_TSTRUCT tag in internal frame slots, never in script-visible
+// TValues, so no mainthread discrimination is required here.
+[[nodiscard]] inline GCstruct * structV(cTValue *o) noexcept { return check_exp(tvisstruct(o), &gcval(o)->sct); }
+[[nodiscard]] inline GCstruct * structV(lua_State *L, int Arg) noexcept { return structV(L->base + Arg - 1); }
 [[nodiscard]] inline lua_Number numV(cTValue *o) noexcept { return check_exp(tvisnum(o), o->n); }
 [[nodiscard]] inline int32_t intV(cTValue *o) noexcept { return check_exp(tvisint(o), int32_t(o->i)); }
 
@@ -1447,9 +2107,10 @@ inline void setstrV(lua_State* L, TValue* o, const GCstr* v) noexcept
    setgcV(L, o, obj2gco(v), LJ_TSTR);
 }
 
+// Used only for the stack-bottom sentinel and dummy frame objects of the main thread.
 inline void setthreadV(lua_State* L, TValue* o, const lua_State* v) noexcept
 {
-   setgcV(L, o, obj2gco(v), LJ_TTHREAD);
+   setgcV(L, o, obj2gco(v), LJ_TSTRUCT);
 }
 
 inline void setprotoV(lua_State* L, TValue* o, const GCproto* v) noexcept
@@ -1466,6 +2127,7 @@ inline void settabV(lua_State* L, TValue* o, const GCtab* v) noexcept { setgcV(L
 inline void setudataV(lua_State* L, TValue* o, const GCudata* v) noexcept { setgcV(L, o, obj2gco(v), LJ_TUDATA); }
 inline void setarrayV(lua_State* L, TValue* o, const GCarray* v) noexcept { setgcV(L, o, obj2gco(v), LJ_TARRAY); }
 inline void setobjectV(lua_State* L, TValue* o, const GCobject* v) noexcept { setgcV(L, o, obj2gco(v), LJ_TOBJECT); }
+inline void setstructV(lua_State* L, TValue* o, const GCstruct* v) noexcept { setgcV(L, o, obj2gco(v), LJ_TSTRUCT); }
 constexpr inline void setnumV(TValue* o, lua_Number x) noexcept { o->n = x; }
 inline void setnanV(TValue* o) noexcept { o->u64 = U64x(fff80000, 00000000); }
 inline void setpinfV(TValue* o) noexcept { o->u64 = U64x(7ff00000, 00000000); }

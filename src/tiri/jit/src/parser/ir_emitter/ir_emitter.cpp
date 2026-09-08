@@ -3,17 +3,23 @@
 #include "ir_emitter.h"
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include <kotuku/main.h>
 
+#include "lj_ff.h"
 #include "lj_debug.h"
 #include "lj_tab.h"
 #include "lj_proto_registry.h"
+#include "lj_strfmt.h"
+#include "../../lib/lib_range.h"
 #include "../parse_internal.h"
 #include "../parse_value.h"
 #include "../token_types.h"
@@ -24,10 +30,449 @@
 
 inline const TiriConstant * lookup_constant(const GCstr *Name)
 {
+   if (not Name) return nullptr;
+
    std::shared_lock lock(glConstantMutex);
    auto it = glConstantRegistry.find(Name->hash);
    if (it != glConstantRegistry.end()) return &it->second;
    return nullptr;
+}
+
+static bool is_named_external_global(GCstr *Name);
+
+// Canonical object methods are callable syntax, not object fields.  A bare lookup must therefore retain ordinary
+// table indexing, which lets the runtime return a real field when present or nil when it is absent.
+
+static bool is_intrinsic_object_method(const GCstr *Name)
+{
+   return Name and get_method_prototype_by_hash(TiriType::Object, Name->hash);
+}
+
+static GCstr * string_literal_symbol(const ExprNode &Expression)
+{
+   if (Expression.kind != AstNodeKind::LiteralExpr) return nullptr;
+   const auto &literal = std::get<LiteralValue>(Expression.data);
+   return literal.kind IS LiteralKind::String ? literal.string_value : nullptr;
+}
+
+//********************************************************************************************************************
+// Contextual member calls select a dynamic context only for contextual tables or unresolved receivers.  A current
+// context expression is already the active receiver, so entering it again would add a redundant runtime frame.
+
+static bool receiver_uses_contextual_call(const ParserContext &Context, const ExprNode &Receiver)
+{
+   if (Receiver.kind IS AstNodeKind::CurrentContextExpr) return false;
+   if (not Receiver.static_value) return true;
+
+   const StaticValueDescriptor &descriptor = Context.descriptors().value(Receiver.static_value);
+   if (descriptor.contextuality IS StaticContextuality::Ordinary) return false;
+   if (descriptor.contextuality IS StaticContextuality::Contextual) return true;
+   return not (descriptor.proved() and descriptor.primary != TiriType::Unknown and
+      descriptor.primary != TiriType::Any and descriptor.primary != TiriType::Table);
+}
+
+static bool receiver_is_proven_contextual(const ParserContext &Context, const ExprNode &Receiver)
+{
+   if (not Receiver.static_value) return false;
+   return Context.descriptors().value(Receiver.static_value).contextuality IS StaticContextuality::Contextual;
+}
+
+static const ExprNode *call_receiver(const CallExprPayload &Payload)
+{
+   const auto *direct = std::get_if<DirectCallTarget>(&Payload.target);
+   if (not direct or not direct->callable) return nullptr;
+
+   switch (direct->callable->kind) {
+      case AstNodeKind::MemberExpr:
+         return std::get<MemberExprPayload>(direct->callable->data).table.get();
+      case AstNodeKind::SafeMemberExpr:
+         return std::get<SafeMemberExprPayload>(direct->callable->data).table.get();
+      case AstNodeKind::IndexExpr:
+         return std::get<IndexExprPayload>(direct->callable->data).table.get();
+      case AstNodeKind::SafeIndexExpr:
+         return std::get<SafeIndexExprPayload>(direct->callable->data).table.get();
+      default:
+         return nullptr;
+   }
+}
+
+//********************************************************************************************************************
+// Walk the AST for context reads that execute in the current emitter region.  Function bodies and using bodies are
+// separate regions: their child emitter or retained reference supplies their own context source.  Contextual call
+// arguments are likewise excluded when the runtime call will install a receiver before evaluating them.  Runtime
+// built-in dispatch is the exception because its ordinary built-in branch evaluates the same arguments without a
+// contextual activation.
+
+class ContextUseWalker {
+public:
+   explicit ContextUseWalker(const ParserContext &Context) : context(Context) { }
+
+   [[nodiscard]] bool block_uses_context(const BlockStmt &Block)
+   {
+      for (const StmtNode &statement : Block.view()) {
+         if (this->statement_uses_context(statement)) return true;
+      }
+      return false;
+   }
+
+   [[nodiscard]] bool expression_uses_context(const ExprNode &Expression)
+   {
+      return this->expression_uses_context_impl(Expression);
+   }
+
+private:
+   const ParserContext &context;
+
+   [[nodiscard]] bool expressions_use_context(const ExprNodeList &Expressions)
+   {
+      for (const ExprNodePtr &expression : Expressions) {
+         if (expression and this->expression_uses_context_impl(*expression)) return true;
+      }
+      return false;
+   }
+
+   [[nodiscard]] bool block_uses_context(const std::unique_ptr<BlockStmt> &Block)
+   {
+      return Block and this->block_uses_context(*Block);
+   }
+
+   [[nodiscard]] bool statement_uses_context(const StmtNode &Statement)
+   {
+      switch (Statement.kind) {
+         case AstNodeKind::AssignmentStmt: {
+            const auto &payload = std::get<AssignmentStmtPayload>(Statement.data);
+            return this->expressions_use_context(payload.targets) or this->expressions_use_context(payload.values);
+         }
+         case AstNodeKind::LocalDeclStmt: {
+            const auto &payload = std::get<LocalDeclStmtPayload>(Statement.data);
+            return this->expressions_use_context(payload.values);
+         }
+         case AstNodeKind::GlobalDeclStmt: {
+            const auto &payload = std::get<GlobalDeclStmtPayload>(Statement.data);
+            return this->expressions_use_context(payload.values);
+         }
+         case AstNodeKind::LocalFunctionStmt:
+         case AstNodeKind::FunctionStmt:
+            return false;
+         case AstNodeKind::IfStmt: {
+            const auto &payload = std::get<IfStmtPayload>(Statement.data);
+            for (const IfClause &clause : payload.clauses) {
+               if ((clause.condition and this->expression_uses_context_impl(*clause.condition)) or
+                   this->block_uses_context(clause.block)) return true;
+            }
+            return false;
+         }
+         case AstNodeKind::WhileStmt:
+         case AstNodeKind::RepeatStmt: {
+            const auto &payload = std::get<LoopStmtPayload>(Statement.data);
+            return (payload.condition and this->expression_uses_context_impl(*payload.condition)) or
+               this->block_uses_context(payload.body);
+         }
+         case AstNodeKind::NumericForStmt: {
+            const auto &payload = std::get<NumericForStmtPayload>(Statement.data);
+            return (payload.start and this->expression_uses_context_impl(*payload.start)) or
+               (payload.stop and this->expression_uses_context_impl(*payload.stop)) or
+               (payload.step and this->expression_uses_context_impl(*payload.step)) or
+               this->block_uses_context(payload.body);
+         }
+         case AstNodeKind::RangeForStmt: {
+            const auto &payload = std::get<RangeForStmtPayload>(Statement.data);
+            return (payload.start and this->expression_uses_context_impl(*payload.start)) or
+               (payload.stop and this->expression_uses_context_impl(*payload.stop)) or
+               (payload.step and this->expression_uses_context_impl(*payload.step)) or
+               this->block_uses_context(payload.body);
+         }
+         case AstNodeKind::GenericForStmt: {
+            const auto &payload = std::get<GenericForStmtPayload>(Statement.data);
+            return this->expressions_use_context(payload.iterators) or this->block_uses_context(payload.body);
+         }
+         case AstNodeKind::ReturnStmt:
+            return this->expressions_use_context(std::get<ReturnStmtPayload>(Statement.data).values);
+         case AstNodeKind::DeferStmt: {
+            const auto &payload = std::get<DeferStmtPayload>(Statement.data);
+            return this->expressions_use_context(payload.arguments);
+         }
+         case AstNodeKind::DoStmt:
+            return this->block_uses_context(std::get<DoStmtPayload>(Statement.data).block);
+         case AstNodeKind::ContextStmt: {
+            const auto &payload = std::get<ContextStmtPayload>(Statement.data);
+            // The reference is evaluated before the new context becomes visible.  The body is a separate source.
+            return payload.reference and this->expression_uses_context_impl(*payload.reference);
+         }
+         case AstNodeKind::ConditionalShorthandStmt: {
+            const auto &payload = std::get<ConditionalShorthandStmtPayload>(Statement.data);
+            return (payload.condition and this->expression_uses_context_impl(*payload.condition)) or
+               (payload.body and this->statement_uses_context(*payload.body));
+         }
+         case AstNodeKind::TryExceptStmt: {
+            const auto &payload = std::get<TryExceptPayload>(Statement.data);
+            if (this->block_uses_context(payload.try_block) or this->block_uses_context(payload.success_block)) {
+               return true;
+            }
+            for (const ExceptClause &clause : payload.except_clauses) {
+               if (this->expressions_use_context(clause.filter_codes) or this->block_uses_context(clause.block)) {
+                  return true;
+               }
+            }
+            return false;
+         }
+         case AstNodeKind::CheckallStmt:
+            return this->block_uses_context(std::get<CheckallStmtPayload>(Statement.data).block);
+         case AstNodeKind::RaiseStmt: {
+            const auto &payload = std::get<RaiseStmtPayload>(Statement.data);
+            return (payload.error_code and this->expression_uses_context_impl(*payload.error_code)) or
+               (payload.message and this->expression_uses_context_impl(*payload.message));
+         }
+         case AstNodeKind::CheckStmt: {
+            const auto &payload = std::get<CheckStmtPayload>(Statement.data);
+            return payload.error_code and this->expression_uses_context_impl(*payload.error_code);
+         }
+         case AstNodeKind::ImportStmt: {
+            const auto &payload = std::get<ImportStmtPayload>(Statement.data);
+            for (const ImportEntryPayload &entry : payload.entries) {
+               if (this->block_uses_context(entry.inlined_body)) return true;
+            }
+            return false;
+         }
+         case AstNodeKind::NamespaceStmt: {
+            const auto &payload = std::get<NamespaceStmtPayload>(Statement.data);
+            return payload.initialiser and this->expression_uses_context_impl(*payload.initialiser);
+         }
+         case AstNodeKind::WithStmt: {
+            const auto &payload = std::get<WithStmtPayload>(Statement.data);
+            return this->expressions_use_context(payload.objects) or this->block_uses_context(payload.block);
+         }
+         case AstNodeKind::ExpressionStmt:
+            return std::get<ExpressionStmtPayload>(Statement.data).expression and
+               this->expression_uses_context_impl(*std::get<ExpressionStmtPayload>(Statement.data).expression);
+         case AstNodeKind::BreakStmt:
+         case AstNodeKind::ContinueStmt:
+         case AstNodeKind::ExternStmt:
+            return false;
+         default:
+            return false;
+      }
+   }
+
+   [[nodiscard]] bool expression_uses_context_impl(const ExprNode &Expression)
+   {
+      switch (Expression.kind) {
+         case AstNodeKind::CurrentContextExpr:
+            return true;
+         case AstNodeKind::UnaryExpr:
+            return this->expression_uses_context_ptr(std::get<UnaryExprPayload>(Expression.data).operand);
+         case AstNodeKind::UpdateExpr:
+            return this->expression_uses_context_ptr(std::get<UpdateExprPayload>(Expression.data).target);
+         case AstNodeKind::TypeTestExpr:
+            return this->expression_uses_context_ptr(std::get<TypeTestExprPayload>(Expression.data).value);
+         case AstNodeKind::BinaryExpr: {
+            const auto &payload = std::get<BinaryExprPayload>(Expression.data);
+            return this->expression_uses_context_ptr(payload.left) or this->expression_uses_context_ptr(payload.right);
+         }
+         case AstNodeKind::ComparisonChainExpr:
+            return this->expressions_use_context(std::get<ComparisonChainExprPayload>(Expression.data).operands);
+         case AstNodeKind::TernaryExpr: {
+            const auto &payload = std::get<TernaryExprPayload>(Expression.data);
+            return this->expression_uses_context_ptr(payload.condition) or
+               this->expression_uses_context_ptr(payload.if_true) or
+               this->expression_uses_context_ptr(payload.if_false);
+         }
+         case AstNodeKind::PresenceExpr:
+            return this->expression_uses_context_ptr(std::get<PresenceExprPayload>(Expression.data).value);
+         case AstNodeKind::PipeExpr: {
+            const auto &payload = std::get<PipeExprPayload>(Expression.data);
+            if (payload.rhs_call and
+                (payload.rhs_call->kind IS AstNodeKind::CallExpr or
+                 payload.rhs_call->kind IS AstNodeKind::SafeCallExpr)) {
+               const auto &call = std::get<CallExprPayload>(payload.rhs_call->data);
+               const ExprNode *receiver = call_receiver(call);
+               bool callable_uses_context = false;
+               if (const auto *direct = std::get_if<DirectCallTarget>(&call.target)) {
+                  callable_uses_context = direct->callable and this->expression_uses_context_impl(*direct->callable);
+               }
+               if (call.runtime_builtin_method) {
+                  return callable_uses_context or this->expression_uses_context_ptr(payload.lhs) or
+                     this->expressions_use_context(call.arguments);
+               }
+               if (receiver and receiver_uses_contextual_call(this->context, *receiver)) {
+                  // The contextual pipe path evaluates its piped value and written arguments after CTXENTER.  Only
+                  // the receiver, its key and the callable itself execute under the enclosing source.
+                  return callable_uses_context;
+               }
+            }
+            return this->expression_uses_context_ptr(payload.lhs) or
+               this->expression_uses_context_ptr(payload.rhs_call);
+         }
+         case AstNodeKind::CallExpr:
+         case AstNodeKind::SafeCallExpr: {
+            const auto &payload = std::get<CallExprPayload>(Expression.data);
+            bool result = false;
+            if (const auto *direct = std::get_if<DirectCallTarget>(&payload.target)) {
+               result = direct->callable and this->expression_uses_context_impl(*direct->callable);
+            }
+
+            // Runtime built-in dispatch emits an ordinary built-in branch and a contextual fallback branch.  Its
+            // arguments therefore need the enclosing source even when the receiver is unresolved.
+            if (payload.runtime_builtin_method or not call_receiver(payload)) {
+               return result or this->expressions_use_context(payload.arguments);
+            }
+
+            const ExprNode *receiver = call_receiver(payload);
+            if (receiver_uses_contextual_call(this->context, *receiver)) return result;
+            return result or this->expressions_use_context(payload.arguments);
+         }
+         case AstNodeKind::MemberExpr:
+            return this->expression_uses_context_ptr(std::get<MemberExprPayload>(Expression.data).table);
+         case AstNodeKind::IndexExpr: {
+            const auto &payload = std::get<IndexExprPayload>(Expression.data);
+            return this->expression_uses_context_ptr(payload.table) or
+               this->expression_uses_context_ptr(payload.index);
+         }
+         case AstNodeKind::SafeMemberExpr:
+            return this->expression_uses_context_ptr(std::get<SafeMemberExprPayload>(Expression.data).table);
+         case AstNodeKind::SafeIndexExpr: {
+            const auto &payload = std::get<SafeIndexExprPayload>(Expression.data);
+            return this->expression_uses_context_ptr(payload.table) or
+               this->expression_uses_context_ptr(payload.index);
+         }
+         case AstNodeKind::ResultFilterExpr:
+            return this->expression_uses_context_ptr(std::get<ResultFilterPayload>(Expression.data).expression);
+         case AstNodeKind::TableExpr: {
+            const auto &payload = std::get<TableExprPayload>(Expression.data);
+            for (const TableField &field : payload.fields) {
+               if (this->expression_uses_context_ptr(field.key) or this->expression_uses_context_ptr(field.value)) {
+                  return true;
+               }
+            }
+            return false;
+         }
+         case AstNodeKind::FunctionExpr:
+            return false;
+         case AstNodeKind::DeferredExpr:
+            return this->expression_uses_context_ptr(std::get<DeferredExprPayload>(Expression.data).inner);
+         case AstNodeKind::RangeExpr: {
+            const auto &payload = std::get<RangeExprPayload>(Expression.data);
+            return this->expression_uses_context_ptr(payload.start) or
+               this->expression_uses_context_ptr(payload.stop) or
+               this->expression_uses_context_ptr(payload.step);
+         }
+         case AstNodeKind::ChooseExpr: {
+            const auto &payload = std::get<ChooseExprPayload>(Expression.data);
+            if (this->expression_uses_context_ptr(payload.scrutinee) or
+                this->expressions_use_context(payload.scrutinee_tuple)) return true;
+            for (const ChooseCase &choice : payload.cases) {
+               if (this->expression_uses_context_ptr(choice.pattern) or
+                   this->expressions_use_context(choice.tuple_patterns) or
+                   this->expression_uses_context_ptr(choice.guard) or
+                   this->expression_uses_context_ptr(choice.result) or
+                   (choice.result_stmt and this->statement_uses_context(*choice.result_stmt))) return true;
+            }
+            return false;
+         }
+         case AstNodeKind::LiteralExpr:
+         case AstNodeKind::IdentifierExpr:
+         case AstNodeKind::VarArgExpr:
+         case AstNodeKind::ModuleFunctionExpr:
+            return false;
+         default:
+            return false;
+      }
+   }
+
+   [[nodiscard]] bool expression_uses_context_ptr(const ExprNodePtr &Expression)
+   {
+      return Expression and this->expression_uses_context_impl(*Expression);
+   }
+};
+
+//********************************************************************************************************************
+// Determine whether a constant integer range can use its visible value as the numeric loop induction variable.
+
+static bool range_direct_integer(
+   const std::optional<CompileTimeValue> &Start, const std::optional<CompileTimeValue> &Stop,
+   const std::optional<CompileTimeValue> &Step, bool HasStep, bool Inclusive)
+{
+   if (not Start or not Stop or Start->kind != LiteralKind::Number or Stop->kind != LiteralKind::Number) return false;
+
+   lua_Number start = Start->number_value;
+   lua_Number stop = Stop->number_value;
+   lua_Number step;
+   if (HasStep) {
+      if (not Step or Step->kind != LiteralKind::Number) return false;
+      step = Step->number_value;
+   }
+   else step = start <= stop ? 1.0 : -1.0;
+
+   constexpr lua_Number minimum = lua_Number(std::numeric_limits<int32_t>::min());
+   constexpr lua_Number maximum = lua_Number(std::numeric_limits<int32_t>::max());
+   if (not std::isfinite(start) or not std::isfinite(stop) or not std::isfinite(step) or step IS 0.0 or
+       std::trunc(start) != start or std::trunc(stop) != stop or std::trunc(step) != step or
+       start < minimum or start > maximum or stop < minimum or stop > maximum or
+       step < minimum or step > maximum) {
+      return false;
+   }
+
+   lua_Number final_stop = stop;
+   if (not Inclusive) final_stop += step > 0.0 ? -1.0 : 1.0;
+   return final_stop >= minimum and final_stop <= maximum;
+}
+
+static bool block_contains_try(const BlockStmt *Block);
+
+//********************************************************************************************************************
+// Numeric loop snapshots remain unsafe when a protected region is nested in the loop body. Identify those bodies so
+// constant integer loops can retain range preparation only where it is required.
+
+static bool statement_contains_try(const StmtNode &Statement)
+{
+   auto contains = [](const std::unique_ptr<BlockStmt> &Block) { return block_contains_try(Block.get()); };
+
+   switch (Statement.kind) {
+      case AstNodeKind::TryExceptStmt:
+         return true;
+      case AstNodeKind::CheckallStmt:
+         return contains(std::get<CheckallStmtPayload>(Statement.data).block);
+      case AstNodeKind::IfStmt:
+         for (const auto &clause : std::get<IfStmtPayload>(Statement.data).clauses) {
+            if (contains(clause.block)) return true;
+         }
+         return false;
+      case AstNodeKind::WhileStmt:
+      case AstNodeKind::RepeatStmt:
+         return contains(std::get<LoopStmtPayload>(Statement.data).body);
+      case AstNodeKind::NumericForStmt:
+         return contains(std::get<NumericForStmtPayload>(Statement.data).body);
+      case AstNodeKind::RangeForStmt:
+         return contains(std::get<RangeForStmtPayload>(Statement.data).body);
+      case AstNodeKind::GenericForStmt:
+         return contains(std::get<GenericForStmtPayload>(Statement.data).body);
+      case AstNodeKind::DoStmt:
+         return contains(std::get<DoStmtPayload>(Statement.data).block);
+      case AstNodeKind::ContextStmt:
+         return contains(std::get<ContextStmtPayload>(Statement.data).block);
+      case AstNodeKind::ConditionalShorthandStmt: {
+         const auto &body = std::get<ConditionalShorthandStmtPayload>(Statement.data).body;
+         return body and statement_contains_try(*body);
+      }
+      case AstNodeKind::ImportStmt:
+         for (const auto &entry : std::get<ImportStmtPayload>(Statement.data).entries) {
+            if (contains(entry.inlined_body)) return true;
+         }
+         return false;
+      case AstNodeKind::WithStmt:
+         return contains(std::get<WithStmtPayload>(Statement.data).block);
+      default:
+         return false;
+   }
+}
+
+static bool block_contains_try(const BlockStmt *Block)
+{
+   if (not Block) return false;
+   for (const auto &statement : Block->statements) {
+      if (statement and statement_contains_try(*statement)) return true;
+   }
+   return false;
 }
 
 //********************************************************************************************************************
@@ -42,9 +487,9 @@ inline const TiriConstant * lookup_constant(const GCstr *Name)
 // Usage:
 //   NilShortCircuitGuard guard(emitter, base_expression);
 //   if (not guard.ok()) return guard.error<ExpDesc>();
-//   // ... perform operation using guard.base_register() ...
-//   materialise_to_reg(result, guard.base_register(), "...");
-//   return guard.complete();
+//   // ... perform operation using guard.base_expression() ...
+//   BCReg result_reg = materialise_result(...);
+//   return guard.complete(result_reg);
 
 class NilShortCircuitGuard {
 public:
@@ -52,11 +497,11 @@ public:
       : emitter(Emitter), register_guard(&Emitter->func_state), allocator(&Emitter->func_state)
    {
       ExpressionValue base_value(&this->emitter->func_state, BaseExpr);
-      this->result_reg = base_value.discharge_to_any_reg(this->allocator);
+      this->base_reg = base_value.discharge_to_any_reg(this->allocator);
       this->base_expr = base_value.legacy();
 
       ExpDesc nilv(ExpKind::Nil);
-      bcemit_INS(&this->emitter->func_state, BCINS_AD(BC_ISEQP, this->result_reg, const_pri(&nilv)));
+      bcemit_INS(&this->emitter->func_state, BCINS_AD(BC_ISEQP, this->base_reg, const_pri(&nilv)));
       this->nil_jump = this->emitter->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->emitter->func_state)));
       this->setup_ok = true;
    }
@@ -67,42 +512,50 @@ public:
    ParserResult<T> error() const {
       ParserError err;
       err.code = ParserErrorCode::InternalInvariant;
-      err.message = "nil guard setup failed";
+      err.message = "Nil guard setup failed";
       return ParserResult<T>::failure(err);
    }
 
-   [[nodiscard]] inline BCREG base_register() const { return this->result_reg; }
    [[nodiscard]] inline ExpDesc base_expression() const { return this->base_expr; }
    [[nodiscard]] inline RegisterAllocator& reg_allocator() { return this->allocator; }
-   [[nodiscard]] inline ControlFlowEdge& nil_jump_edge() { return this->nil_jump; }
 
    // Complete the nil short-circuit: emit nil path, patch jumps, return result.
-   // The result is stored in base_register() as a NonReloc expression.
+   // The result is stored in ResultReg as a NonReloc expression.
 
-   ParserResult<ExpDesc> complete()
+   ParserResult<ExpDesc> complete(BCReg ResultReg)
    {
-      this->allocator.collapse_freereg(BCReg(this->result_reg));
+      this->allocator.collapse_freereg(ResultReg);
 
       ControlFlowEdge skip_nil = this->emitter->control_flow.make_unconditional(
          BCPos(bcemit_jmp(&this->emitter->func_state)));
 
       BCPos nil_path = BCPos(this->emitter->func_state.pc);
       this->nil_jump.patch_to(nil_path);
-      bcemit_nil(&this->emitter->func_state, this->result_reg, 1);
+      bcemit_nil(&this->emitter->func_state, ResultReg.raw(), 1);
 
       skip_nil.patch_to(BCPos(this->emitter->func_state.pc));
 
       this->register_guard.disarm();
 
       ExpDesc result;
-      result.init(ExpKind::NonReloc, this->result_reg);
+      result.init(ExpKind::NonReloc, ResultReg);
       return ParserResult<ExpDesc>::success(result);
    }
 
-   // Complete with a custom result register (for call expressions where result may differ).
-   // Note: Unlike complete(), we don't call collapse_freereg(result_reg) here because CallBase
-   // may differ from result_reg after method dispatch setup, and we explicitly set freereg to
-   // CallBase + 1 at the end, which is the correct final state for call expressions.
+   // The non-nil path terminated.  Only the receiver's nil edge produces a value.
+   ParserResult<ExpDesc> complete_unreachable(BCReg ResultReg)
+   {
+      FuncState *fs = &this->emitter->func_state;
+      if (fs->freereg <= ResultReg.raw()) this->allocator.reserve(BCReg(ResultReg.raw() + 1 - fs->freereg));
+      this->nil_jump.patch_here();
+      bcemit_nil(fs, ResultReg.raw(), 1);
+      fs->freereg = ResultReg.raw() + 1;
+      this->register_guard.disarm();
+      return ParserResult<ExpDesc>::success(ExpDesc(ExpKind::NonReloc, ResultReg.raw()));
+   }
+
+   // Complete a call expression, whose method-dispatch frame may move CallBase beyond base_reg.
+   // The final free-register boundary must retain the whole call result frame.
 
    ParserResult<ExpDesc> complete_call(BCReg CallBase, BCPos CallPc)
    {
@@ -121,6 +574,7 @@ public:
       ExpDesc result;
       result.init(ExpKind::Call, CallPc);
       result.u.s.aux = CallBase;
+      result.safe_nil_init = nil_path.raw();
       this->emitter->func_state.freereg = CallBase + 1;
       return ParserResult<ExpDesc>::success(result);
    }
@@ -131,7 +585,7 @@ private:
    RegisterAllocator allocator;
    ControlFlowEdge nil_jump;
    ExpDesc base_expr;
-   BCReg result_reg = BCReg(0);
+   BCReg base_reg = BCReg(0);
    bool setup_ok = false;
 };
 
@@ -153,6 +607,26 @@ static bool has_close_variables(FuncState* fs)
    return false;
 }
 
+static constexpr BCREG CLOSE_HANDLER_TEMP_REGS = 5 + LJ_FR2;
+
+static BCREG return_cleanup_temp_regs(FuncState *fs)
+{
+   BCREG required = has_close_variables(fs) ? CLOSE_HANDLER_TEMP_REGS : 0;
+   BCREG defer_args = 0;
+   for (BCREG i = fs->varmap.size(); i > 0;) {
+      VarInfo *variable = &fs->var_get(--i);
+      if (has_flag(variable->info, VarInfoFlag::DeferArg)) {
+         defer_args++;
+      }
+      else if (has_flag(variable->info, VarInfoFlag::Defer)) {
+         // Keep one slot beyond the call frame: CALL may initialise the callee base even when no results are requested.
+         required = std::max(required, BCREG(defer_args + 2 + LJ_FR2));
+         defer_args = 0;
+      }
+   }
+   return required;
+}
+
 //********************************************************************************************************************
 // Snapshot return register state.
 // Used by ir_emitter for return statement handling.
@@ -161,8 +635,6 @@ static bool has_close_variables(FuncState* fs)
 // Close handlers (bcemit_close) use temporary registers starting at freereg (which is set to varmap.size()).
 // They reserve 5+LJ_FR2 registers for: getmetatable function, metatable result, __close function, args.
 // If return values overlap with these temporary registers, they must be moved to safe slots.
-
-static constexpr BCREG CLOSE_HANDLER_TEMP_REGS = 5 + LJ_FR2;
 
 static void snapshot_return_regs(FuncState* fs, BCIns* ins)
 {
@@ -237,15 +709,32 @@ static void snapshot_return_regs(FuncState* fs, BCIns* ins)
 // Exclusively used by ir_emitter for assignment statements, local declarations, and for loops.
 // TODO: May as well be a regular function instead of a LexState method.
 
+// The CALL B operand uses zero for MULTRES and otherwise stores the fixed result count plus one.
+
+enum class CallResultMode : BCREG {
+   AllResults = 0,
+   NoResults = 1,
+   OneResult = 2
+};
+
+static void set_call_result_count(FuncState *State, const ExpDesc &Expression, BCREG EncodedCount);
+static void set_call_result_count(FuncState *State, const ExpDesc &Expression, CallResultMode Mode);
+
 void LexState::assign_adjust(BCREG nvars, BCREG nexps, ExpDesc *Expr)
 {
    FuncState* fs = this->fs;
    RegisterAllocator allocator(fs);
+   if (Expr->is_unreachable()) {
+      // Keep lexical slots for subsequent dead statements, without manufacturing initialiser values.
+      fs->reset_freereg();
+      allocator.reserve(BCReg(nvars));
+      return;
+   }
    int32_t extra = int32_t(nvars) - int32_t(nexps);
    if (Expr->k IS ExpKind::Call) {
       extra++;  // Compensate for the ExpKind::Call itself.
       if (extra < 0) extra = 0;
-      setbc_b(bcptr(fs, Expr), extra + 1);  // Fixup call results.
+      set_call_result_count(fs, *Expr, BCREG(extra + 1));
       if (extra > 1) allocator.reserve(BCReg(BCREG(extra) - 1));
    }
    else {
@@ -288,13 +777,14 @@ void LocalBindingTable::pop_scope()
 
 // Add a new local variable binding to the table, associating a symbol with its register slot.
 
-void LocalBindingTable::add(GCstr* symbol, BCReg slot)
+void LocalBindingTable::add(GCstr* Symbol, BCReg Slot, std::optional<CompileTimeValue> Value)
 {
-   if (not symbol) return;
+   if (not Symbol) return;
    LocalBindingEntry entry;
-   entry.symbol = symbol;
-   entry.slot = slot;
+   entry.symbol = Symbol;
+   entry.slot = Slot;
    entry.depth = this->depth;
+   entry.compile_time_value = std::move(Value);
    this->bindings.push_back(entry);
 }
 
@@ -310,7 +800,7 @@ public:
       if (index >= this->counts.size()) return;
       uint32_t total = ++this->counts[index];
       if ((total <= 8) or (total % 32 IS 0)) {
-         pf::Log log("Parser");
+         kt::Log log("Parser");
          log.msg("Unsupported %s node kind=%u hits=%u line=%d column=%d offset=%lld",
             stage, unsigned(kind), unsigned(total), int(span.line), int(span.column),
             (long long)(span.offset));
@@ -359,6 +849,7 @@ static UnsupportedNodeRecorder glUnsupportedNodes;
       case AstBinaryOperator::GreaterEqual: return BinOpr::GreaterEqual;
       case AstBinaryOperator::LessEqual:    return BinOpr::LessEqual;
       case AstBinaryOperator::GreaterThan:  return BinOpr::GreaterThan;
+      case AstBinaryOperator::Approx:       return BinOpr::Approx;
       case AstBinaryOperator::BitAnd:       return BinOpr::BitAnd;
       case AstBinaryOperator::BitOr:        return BinOpr::BitOr;
       case AstBinaryOperator::BitXor:       return BinOpr::BitXor;
@@ -368,6 +859,7 @@ static UnsupportedNodeRecorder glUnsupportedNodes;
       case AstBinaryOperator::LogicalOr:    return BinOpr::LogicalOr;
       case AstBinaryOperator::IfEmpty:      return BinOpr::IfEmpty;
       case AstBinaryOperator::HasFlag:     return BinOpr::HasFlag;
+      case AstBinaryOperator::Contains:    return BinOpr::Contains;
       default: return std::nullopt;
    }
 }
@@ -389,13 +881,6 @@ static UnsupportedNodeRecorder glUnsupportedNodes;
 }
 
 //********************************************************************************************************************
-// Check if an auxiliary value represents a valid register key (used for indexed expressions).
-
-[[nodiscard]] static bool is_register_key(uint32_t aux)
-{
-   return (int32_t(aux) >= 0) and (aux <= BCMAX_C);
-}
-
 //********************************************************************************************************************
 // Convert an AST node kind enumeration to its human-readable string representation for debugging and logging.
 
@@ -406,12 +891,15 @@ static UnsupportedNodeRecorder glUnsupportedNodes;
       case AstNodeKind::IdentifierExpr: return "IdentifierExpr";
       case AstNodeKind::VarArgExpr:     return "VarArgExpr";
       case AstNodeKind::UnaryExpr:      return "UnaryExpr";
+      case AstNodeKind::TypeTestExpr:   return "TypeTestExpr";
       case AstNodeKind::BinaryExpr:     return "BinaryExpr";
+      case AstNodeKind::ComparisonChainExpr: return "ComparisonChainExpr";
       case AstNodeKind::UpdateExpr:     return "UpdateExpr";
       case AstNodeKind::TernaryExpr:    return "TernaryExpr";
       case AstNodeKind::PresenceExpr:   return "PresenceExpr";
       case AstNodeKind::CallExpr:       return "CallExpr";
       case AstNodeKind::MemberExpr:     return "MemberExpr";
+      case AstNodeKind::ModuleFunctionExpr: return "ModuleFunctionExpr";
       case AstNodeKind::IndexExpr:      return "IndexExpr";
       case AstNodeKind::ResultFilterExpr: return "ResultFilterExpr";
       case AstNodeKind::TableExpr:      return "TableExpr";
@@ -427,16 +915,22 @@ static UnsupportedNodeRecorder glUnsupportedNodes;
       case AstNodeKind::WhileStmt:      return "WhileStmt";
       case AstNodeKind::RepeatStmt:     return "RepeatStmt";
       case AstNodeKind::NumericForStmt: return "NumericForStmt";
+      case AstNodeKind::RangeForStmt:   return "RangeForStmt";
       case AstNodeKind::GenericForStmt: return "GenericForStmt";
       case AstNodeKind::BreakStmt:      return "BreakStmt";
       case AstNodeKind::ContinueStmt:   return "ContinueStmt";
       case AstNodeKind::ReturnStmt:     return "ReturnStmt";
       case AstNodeKind::DeferStmt:      return "DeferStmt";
       case AstNodeKind::DoStmt:         return "DoStmt";
+      case AstNodeKind::ContextStmt:    return "ContextStmt";
       case AstNodeKind::ConditionalShorthandStmt: return "ConditionalShorthandStmt";
       case AstNodeKind::TryExceptStmt: return "TryExceptStmt";
+      case AstNodeKind::CheckallStmt:   return "CheckallStmt";
       case AstNodeKind::RaiseStmt:     return "RaiseStmt";
       case AstNodeKind::CheckStmt:     return "CheckStmt";
+      case AstNodeKind::ExternStmt:    return "ExternStmt";
+      case AstNodeKind::ImportStmt:    return "ImportStmt";
+      case AstNodeKind::NamespaceStmt: return "NamespaceStmt";
       case AstNodeKind::WithStmt:      return "WithStmt";
       case AstNodeKind::ExpressionStmt: return "ExpressionStmt";
       default: return "Unknown";
@@ -498,29 +992,14 @@ static UnsupportedNodeRecorder glUnsupportedNodes;
 }
 
 //********************************************************************************************************************
-// Detect if a generic for iterator expression is a direct variable access suitable for array specialisation.
-
-[[nodiscard]] static int predict_array_iter(FuncState &func_state, BCPos pc)
-{
-   BCIns ins = func_state.bcbase[pc].ins;
-   BCOp op = bc_op(ins);
-
-   // The array type check is performed at runtime by BC_ISARR; this pass only verifies that the iterator
-   // expression is sourced from a direct variable load. BC_MOV, BC_UGET and BC_GGET load variables from locals,
-   // upvalues and globals respectively.
-
-   return ((op IS BC_MOV) or (op IS BC_UGET) or (op IS BC_GGET)) ? 1 : 0;
-}
-
-//********************************************************************************************************************
 // Release registers held by an indexed expression's base and key after they are no longer needed.
 
 static void release_indexed_original(FuncState &func_state, const ExpDesc &original)
 {
    if (original.k IS ExpKind::Indexed) {
       RegisterAllocator allocator(&func_state);
-      uint32_t orig_aux = original.u.s.aux;
-      if (is_register_key(orig_aux)) allocator.release_register(BCReg(orig_aux));
+      IndexOperand original_key(original.u.s.aux);
+      if (original_key.is_register()) allocator.release_register(BCReg(original_key.register_index()));
       allocator.release_register(BCReg(original.u.s.info));
    }
 }
@@ -532,14 +1011,289 @@ static void release_indexed_original(FuncState &func_state, const ExpDesc &origi
    return &func_state->bcbase[expression->u.s.info].ins;
 }
 
+static void set_call_result_count(FuncState *State, const ExpDesc &Expression, BCREG EncodedCount)
+{
+   setbc_b(ir_bcptr(State, &Expression), EncodedCount);
+   if (Expression.alternate_call != NO_JMP) {
+      setbc_b(&State->bcbase[Expression.alternate_call].ins, EncodedCount);
+   }
+   auto widen_nil_init = [&](BCPOS Position) {
+      if (Position IS NO_JMP or EncodedCount <= BCREG(CallResultMode::NoResults)) return;
+      BCIns *nil_init = &State->bcbase[Position].ins;
+      BCREG first = bc_a(*nil_init);
+      lj_assertX(bc_op(*nil_init) IS BC_KPRI or bc_op(*nil_init) IS BC_KNIL,
+         "safe-call nil path does not start with a nil initialiser");
+      BCREG result_count = EncodedCount - BCREG(CallResultMode::NoResults);
+      BCREG required_top = first + result_count;
+      if (State->freereg < required_top) {
+         RegisterAllocator allocator(State);
+         allocator.bump(BCReg(required_top - State->freereg));
+      }
+      *nil_init = EncodedCount IS BCREG(CallResultMode::OneResult) ? BCINS_AD(BC_KPRI, first, ExpKind::Nil) :
+         BCINS_AD(BC_KNIL, first, first + result_count - 1);
+   };
+   widen_nil_init(Expression.safe_nil_init);
+   widen_nil_init(Expression.alternate_safe_nil_init);
+}
+
+static void set_call_result_count(FuncState *State, const ExpDesc &Expression, CallResultMode Mode)
+{
+   set_call_result_count(State, Expression, BCREG(Mode));
+}
+
+struct FalseyJumpOptions {
+   bool include_false = true;
+   bool include_zero = true;
+   bool include_empty_string = true;
+   bool include_empty_array = false;
+};
+
+static ControlFlowEdge emit_falsey_jumps(
+   FuncState &State, ControlFlowGraph &Graph, BCREG Register, FalseyJumpOptions Options,
+   TiriType ResultType = TiriType::Unknown)
+{
+   ControlFlowEdge edge = Graph.make_unconditional();
+
+   uint16_t mask = 0;
+   if (Options.include_false) mask |= ISFALSEY_FALSE;
+   if (Options.include_zero) mask |= ISFALSEY_ZERO;
+   if (Options.include_empty_string) mask |= ISFALSEY_EMPTY_STR;
+   if (Options.include_empty_array) mask |= ISFALSEY_EMPTY_COLL;
+
+   switch (ResultType) {
+      case TiriType::Num:    mask &= ISFALSEY_ZERO; break;
+      case TiriType::Str:    mask &= ISFALSEY_EMPTY_STR; break;
+      case TiriType::Bool:   mask &= ISFALSEY_FALSE; break;
+      case TiriType::Array:
+      case TiriType::Table:  mask &= ISFALSEY_EMPTY_COLL; break;
+      case TiriType::Object:
+      case TiriType::Func:
+      case TiriType::Struct: mask = 0; break;
+      default: break;
+   }
+
+   if (mask) {
+      bcemit_INS(&State, BCINS_AD(BC_ISFALSEY, Register, mask));
+   }
+   else {
+      ExpDesc nilv(ExpKind::Nil);
+      bcemit_INS(&State, BCINS_AD(BC_ISEQP, Register, const_pri(&nilv)));
+   }
+   edge.append(BCPos(bcemit_jmp(&State)));
+
+   return edge;
+}
+
+static void emit_bit_function_lookup(FuncState &State, RegisterAllocator &Allocator, std::string_view Name, BCReg Base)
+{
+   (void)Allocator;
+   BuiltinCallableID callable = BuiltinCallableID::Invalid;
+   switch (kt::strhash(Name)) {
+      case kt::strhash("band"): callable = builtin_callable_id(FastFunc::bit_band); break;
+      case kt::strhash("bor"): callable = builtin_callable_id(FastFunc::bit_bor); break;
+      case kt::strhash("bxor"): callable = builtin_callable_id(FastFunc::bit_bxor); break;
+      case kt::strhash("bnot"): callable = builtin_callable_id(FastFunc::bit_bnot); break;
+      case kt::strhash("lshift"): callable = builtin_callable_id(FastFunc::bit_lshift); break;
+      case kt::strhash("rshift"): callable = builtin_callable_id(FastFunc::bit_rshift); break;
+      default: fs_check_assert(&State, false, "unknown compiler-generated bit operation"); break;
+   }
+   bcemit_builtin_callable(&State, callable, Base.raw());
+}
+
 IrEmitter::IrEmitter(ParserContext& context)
    : ctx(context),
      func_state(context.func()),
      lex_state(context.lex()),
      register_allocator(&this->func_state),
      control_flow(&this->func_state),
-     operator_emitter(&this->func_state, &this->register_allocator, &this->control_flow)
+     operator_emitter(&this->func_state, &this->register_allocator, &this->control_flow),
+     constant_evaluator(this->lex_state, [this](const NameRef &Reference) {
+        return this->resolve_compile_time_value(Reference);
+     })
 {
+}
+
+IrEmitter::ContextSourceScope::ContextSourceScope(ContextSourceScope &&Other) noexcept
+   : emitter(Other.emitter), active(Other.active)
+{
+   Other.emitter = nullptr;
+   Other.active = false;
+}
+
+IrEmitter::ContextSourceScope& IrEmitter::ContextSourceScope::operator=(ContextSourceScope &&Other) noexcept
+{
+   if (this IS &Other) return *this;
+   this->release();
+   this->emitter = Other.emitter;
+   this->active = Other.active;
+   Other.emitter = nullptr;
+   Other.active = false;
+   return *this;
+}
+
+IrEmitter::ContextSourceScope::~ContextSourceScope()
+{
+   this->release();
+}
+
+void IrEmitter::ContextSourceScope::activate(IrEmitter *Owner, ContextSource Source)
+{
+   this->release();
+   if (not Owner) return;
+   Owner->push_context_source(Source);
+   this->emitter = Owner;
+   this->active = true;
+}
+
+void IrEmitter::ContextSourceScope::release()
+{
+   if (this->active and this->emitter) this->emitter->pop_context_source();
+   this->emitter = nullptr;
+   this->active = false;
+}
+
+bool IrEmitter::context_region_uses_context(const BlockStmt &Block) const
+{
+   ContextUseWalker walker(this->ctx);
+   return walker.block_uses_context(Block);
+}
+
+bool IrEmitter::expression_uses_context(const ExprNode &Expression) const
+{
+   ContextUseWalker walker(this->ctx);
+   return walker.expression_uses_context(Expression);
+}
+
+std::optional<BCReg> IrEmitter::allocate_inherited_context_cache(const BlockStmt &Block)
+{
+   if (not this->context_region_uses_context(Block)) return std::nullopt;
+
+   // The cache is an internal local, so it participates in frame sizing and GC stack marking but cannot be resolved by
+   // a source identifier, captured as an upvalue or modified through debug.setLocal().  It is allocated after
+   // parameter contracts and before body code.
+   this->func_state.reset_freereg();
+   this->lex_state.var_new_fixed(BCReg(0), VARNAME_CONTEXT_CACHE);
+   this->lex_state.var_add(BCReg(1));
+   this->func_state.reset_freereg();
+   BCReg slot = BCReg(this->func_state.varmap.size() - 1);
+   bcemit_AD(&this->func_state, BC_CTXGET, slot.raw(), 0);
+   return slot;
+}
+
+void IrEmitter::push_context_source(ContextSource Source)
+{
+   this->context_sources.push_back(Source);
+}
+
+void IrEmitter::pop_context_source()
+{
+   lj_assertX(not this->context_sources.empty(), "context source stack underflow");
+   this->context_sources.pop_back();
+}
+
+std::optional<CompileTimeValue> IrEmitter::resolve_compile_time_value(const NameRef &Reference) const
+{
+   const LocalBindingEntry *entry = this->binding_table.resolve(Reference.identifier.symbol);
+   if (not entry or not entry->compile_time_value) return std::nullopt;
+
+   ExpDesc resolved;
+   this->lex_state.var_lookup_symbol(Reference.identifier.symbol, &resolved);
+   if (resolved.k != ExpKind::Local or resolved.u.s.info != entry->slot.raw()) return std::nullopt;
+
+   return entry->compile_time_value;
+}
+
+void IrEmitter::apply_inferred_local_type(BCReg Slot, const ExprNode& Value)
+{
+   InferredTypeInfo inferred = infer_expression_type_ext(Value);
+   const StaticValueDescriptor *descriptor = Value.static_value ?
+      &this->ctx.descriptors().value(Value.static_value) : nullptr;
+   bool descriptor_is_complete = descriptor and
+      (descriptor->primary != TiriType::Array or descriptor->array_element.known);
+   if (descriptor and (inferred.type IS TiriType::Unknown or inferred.type IS TiriType::Any) and
+       descriptor->primary != TiriType::Unknown and descriptor->primary != TiriType::Any and
+       descriptor_is_complete) {
+      inferred.type = descriptor->primary;
+      inferred.object_class_id = descriptor->object_class_id;
+      inferred.struct_def = descriptor->struct_def;
+   }
+   if (inferred.type IS TiriType::Unknown or inferred.type IS TiriType::Any or inferred.type IS TiriType::Nil) return;
+   if (inferred.type IS TiriType::Array and not descriptor_is_complete) return;
+
+   VarInfo *info = &this->func_state.var_get(Slot.raw());
+   info->fixed_type = inferred.type;
+   info->object_class_id = (inferred.type IS TiriType::Object) ? inferred.object_class_id : CLASSID::NIL;
+   info->struct_def = inferred.struct_def;
+   if (descriptor) info->array_element = descriptor->array_element;
+   info->static_value = Value.static_value;
+   info->static_results = Value.static_results;
+}
+
+bool IrEmitter::apply_analysed_local_type(BCReg Slot, StaticBindingID Binding)
+{
+   if (not Binding) return false;
+
+   const auto &binding = this->ctx.descriptors().binding(Binding);
+   if (not binding.analysed_value) return false;
+
+   const auto &value = this->ctx.descriptors().value(binding.analysed_value);
+   if (value.primary IS TiriType::Unknown or value.primary IS TiriType::Any or
+       value.primary IS TiriType::Nil or
+       (value.primary IS TiriType::Array and not value.array_element.known)) return false;
+
+   VarInfo *info = &this->func_state.var_get(Slot.raw());
+   info->fixed_type = value.primary;
+   info->object_class_id = value.object_class_id;
+   info->struct_def = value.struct_def;
+   info->array_element = value.array_element;
+   this->assert_analysed_local_type(Slot, Binding);
+   return true;
+}
+
+void IrEmitter::assert_analysed_local_type(BCReg Slot, StaticBindingID Binding) const
+{
+#ifdef LUA_USE_ASSERT
+   if (not Binding) return;
+
+   const auto &binding = this->ctx.descriptors().binding(Binding);
+   if (not binding.analysed_value) return;
+
+   const auto &value = this->ctx.descriptors().value(binding.analysed_value);
+   if (value.primary IS TiriType::Array and not value.array_element.known) return;
+   const VarInfo &info = this->func_state.var_get(Slot.raw());
+   lj_assertX(info.fixed_type IS value.primary, "analysed and emitted binding types diverged");
+   lj_assertX(info.object_class_id IS value.object_class_id, "analysed and emitted binding object classes diverged");
+   lj_assertX(info.struct_def IS value.struct_def, "analysed and emitted binding structures diverged");
+   if (value.array_element.known) {
+      lj_assertX(info.array_element IS value.array_element,
+         "analysed and emitted binding array member types diverged");
+   }
+#endif
+}
+
+BCReg IrEmitter::finalise_pending_local_assignment(PreparedAssignment& Target)
+{
+   if (not Target.needs_var_add or not Target.pending_symbol) return BCReg(NO_REG);
+
+   this->lex_state.var_new(BCReg(0), Target.pending_symbol, Target.pending_line, Target.pending_column);
+   this->lex_state.var_add(BCReg(1));
+
+   BCReg slot = BCReg(this->func_state.varmap.size() - 1);
+   Target.storage.init(ExpKind::Local, slot);
+   Target.storage.u.s.aux = this->func_state.varmap[slot.raw()];
+   Target.needs_var_add = false;
+   Target.newly_created = false;
+
+   VarInfo *info = &this->func_state.var_get(slot.raw());
+   info->binding_id = Target.binding_id;
+   if (Target.pending_type != TiriType::Unknown) {
+      info->fixed_type = Target.pending_type;
+      info->struct_def = Target.pending_struct_def;
+      info->array_element = Target.pending_array_element;
+   }
+   this->apply_analysed_local_type(slot, Target.binding_id);
+   this->update_local_binding(Target.pending_symbol, slot);
+   return slot;
 }
 
 IrEmitter::LoopStackGuard IrEmitter::push_loop_context(BCPos continue_target)
@@ -549,7 +1303,7 @@ IrEmitter::LoopStackGuard IrEmitter::push_loop_context(BCPos continue_target)
    loop_context.continue_edge = this->control_flow.make_continue_edge();
    loop_context.defer_base = this->func_state.active_var_count();
    loop_context.continue_target = continue_target;
-   loop_context.try_depth_at_entry = this->func_state.try_depth;  // Track try depth at loop entry
+   loop_context.runtime_scope_depth_at_entry = this->func_state.runtime_scopes.size();
    this->loop_stack.push_back(loop_context);
    return LoopStackGuard(this);
 }
@@ -562,6 +1316,12 @@ ParserResult<IrEmitUnit> IrEmitter::emit_chunk(const BlockStmt& chunk)
    this->control_flow.reset(&this->func_state);
    FuncScope chunk_scope;
    ScopeGuard guard(&this->func_state, &chunk_scope, FuncScopeFlag::None);
+   auto inherited_cache = this->allocate_inherited_context_cache(chunk);
+   ContextSourceScope context_scope;
+   if (inherited_cache) {
+      context_scope.activate(this, ContextSource{ .slot = inherited_cache.value(),
+         .kind = ContextSourceKind::Inherited });
+   }
    auto result = this->emit_block(chunk, FuncScopeFlag::None);
    if (not result.ok()) return result;
    this->control_flow.finalize();
@@ -627,6 +1387,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_statement(const StmtNode& stmt)
       const auto &payload = std::get<GlobalDeclStmtPayload>(stmt.data);
       return this->emit_global_decl_stmt(payload);
    }
+   case AstNodeKind::ExternStmt: {
+      const auto &payload = std::get<ExternDeclStmtPayload>(stmt.data);
+      return this->emit_extern_decl_stmt(payload);
+   }
    case AstNodeKind::LocalFunctionStmt: {
       const auto &payload = std::get<LocalFunctionStmtPayload>(stmt.data);
       return this->emit_local_function_stmt(payload);
@@ -655,6 +1419,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_statement(const StmtNode& stmt)
       const auto &payload = std::get<NumericForStmtPayload>(stmt.data);
       return this->emit_numeric_for_stmt(payload);
    }
+   case AstNodeKind::RangeForStmt: {
+      const auto &payload = std::get<RangeForStmtPayload>(stmt.data);
+      return this->emit_range_for_stmt(payload);
+   }
    case AstNodeKind::GenericForStmt: {
       const auto &payload = std::get<GenericForStmtPayload>(stmt.data);
       return this->emit_generic_for_stmt(payload);
@@ -676,6 +1444,9 @@ ParserResult<IrEmitUnit> IrEmitter::emit_statement(const StmtNode& stmt)
       if (payload.block) return this->emit_block(*payload.block, FuncScopeFlag::None);
       return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
    }
+   case AstNodeKind::ContextStmt: {
+      return this->emit_context_stmt(std::get<ContextStmtPayload>(stmt.data));
+   }
    case AstNodeKind::ConditionalShorthandStmt: {
       const auto &payload = std::get<ConditionalShorthandStmtPayload>(stmt.data);
       return this->emit_conditional_shorthand_stmt(payload);
@@ -684,9 +1455,12 @@ ParserResult<IrEmitUnit> IrEmitter::emit_statement(const StmtNode& stmt)
       const auto &payload = std::get<TryExceptPayload>(stmt.data);
       return this->emit_try_except_stmt(payload);
    }
+   case AstNodeKind::CheckallStmt: {
+      return this->emit_checkall_stmt(std::get<CheckallStmtPayload>(stmt.data));
+   }
    case AstNodeKind::RaiseStmt: {
       const auto &payload = std::get<RaiseStmtPayload>(stmt.data);
-      return this->emit_raise_stmt(payload, stmt.span);
+      return this->emit_raise_payload(payload, stmt.span);
    }
    case AstNodeKind::CheckStmt: {
       const auto &payload = std::get<CheckStmtPayload>(stmt.data);
@@ -696,6 +1470,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_statement(const StmtNode& stmt)
       const auto &payload = std::get<ImportStmtPayload>(stmt.data);
       return this->emit_import_stmt(payload);
    }
+   case AstNodeKind::NamespaceStmt: {
+      const auto &payload = std::get<NamespaceStmtPayload>(stmt.data);
+      return this->emit_namespace_stmt(payload);
+   }
    case AstNodeKind::WithStmt: {
       const auto &payload = std::get<WithStmtPayload>(stmt.data);
       return this->emit_with_stmt(payload);
@@ -703,6 +1481,60 @@ ParserResult<IrEmitUnit> IrEmitter::emit_statement(const StmtNode& stmt)
    default:
       return this->unsupported_stmt(stmt.kind, stmt.span);
    }
+}
+
+//********************************************************************************************************************
+// Enter a materialised temporary context for one lexical block.  The hidden local roots the reference and ensures
+// that member/index paths are evaluated only once.
+
+ParserResult<IrEmitUnit> IrEmitter::emit_context_stmt(const ContextStmtPayload &Payload)
+{
+   if (not Payload.reference or not Payload.block) {
+      return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::InternalInvariant,
+         "incomplete context block"));
+   }
+
+   FuncState *fs = &this->func_state;
+   FuncScope scope;
+   ScopeGuard guard(fs, &scope, FuncScopeFlag::None);
+   LocalBindingScope binding_scope(this->binding_table);
+
+   this->lex_state.var_new(0, NAME_BLANK);
+   auto reference = this->emit_expression(*Payload.reference);
+   if (not reference.ok()) return ParserResult<IrEmitUnit>::failure(reference.error_ref());
+
+   // Pending locals do not contribute to varmap.size(), and evaluating a complex reference may leave temporaries
+   // above the local floor.  The retained context must use the slot that var_add() will actually publish.
+   BCReg slot = BCReg(fs->varmap.size());
+   ExpDesc value = reference.value_ref();
+   this->materialise_to_reg(value, slot, "context block reference");
+   RegisterAllocator allocator(fs);
+   allocator.reserve(BCReg(1));
+   this->lex_state.var_add(1);
+   fs->reset_freereg();
+
+   uint16_t block_index = uint16_t(fs->context_blocks.size());
+   if (block_index IS UINT16_MAX) {
+      return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::InternalInvariant,
+         "too many temporary context blocks"));
+   }
+   fs->context_blocks.push_back(ProtoContextBlockDesc{
+      .begin_pc = fs->pc,
+      .end_pc = 0,
+      .entry_slots = BCREG(slot.raw() + 1)
+   });
+   scope.context_block = block_index;
+   bcemit_AD(fs, BC_CTXBEGIN, slot.raw(), block_index);
+   ContextSourceScope context_scope;
+   context_scope.activate(this, ContextSource{ .slot = slot, .kind = ContextSourceKind::UsingReference });
+
+   for (const StmtNode &stmt : Payload.block->view()) {
+      auto status = this->emit_statement(stmt);
+      if (not status.ok()) return status;
+      this->ensure_register_balance(describe_node_kind(stmt.kind));
+   }
+
+   return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
 }
 
 //********************************************************************************************************************
@@ -717,12 +1549,22 @@ ParserResult<IrEmitUnit> IrEmitter::emit_expression_stmt(const ExpressionStmtPay
 
    ExpDesc value = expression.value_ref();
 
+   if (payload.expression->kind IS AstNodeKind::IdentifierExpr) {
+      auto *name_ref = std::get_if<NameRef>(&payload.expression->data);
+      GCstr *name = (name_ref and name_ref->identifier.symbol) ? name_ref->identifier.symbol : nullptr;
+      std::string msg = "Bare identifier '";
+      if (name) msg += std::string_view(strdata(name), name->len);
+      msg += "' is not a statement";
+      return ParserResult<IrEmitUnit>::failure(
+         this->make_error(ParserErrorCode::UnexpectedToken, msg, payload.expression->span));
+   }
+
    // We have a bare Unscoped identifier as an expression statement, this is an error - the user must explicitly
    // declare locals with 'local'.
 
    if (value.k IS ExpKind::Unscoped) {
       GCstr* name = value.u.sval;
-      std::string msg = "undeclared variable '";
+      std::string msg = "Undeclared variable '";
       msg += std::string_view(strdata(name), name->len);
       msg += "' - use 'local' to declare new variables";
       return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::UndefinedVariable, msg, payload.expression->span));
@@ -743,7 +1585,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_expression_stmt(const ExpressionStmtPay
 }
 
 //********************************************************************************************************************
-// Emit bytecode for a conditional shorthand statement (executes body only for falsey values like nil, false, 0, or empty string).
+// Emit bytecode for a conditional shorthand statement (executes body only for falsey values like nil, false, 0,
+// empty strings, or empty collections).
 
 ParserResult<IrEmitUnit> IrEmitter::emit_conditional_shorthand_stmt(const ConditionalShorthandStmtPayload &Payload)
 {
@@ -763,30 +1606,15 @@ ParserResult<IrEmitUnit> IrEmitter::emit_conditional_shorthand_stmt(const Condit
    ExpressionValue condition_value(&this->func_state, condition);
    auto cond_reg = condition_value.discharge_to_any_reg(allocator);
 
-   ExpDesc nilv(ExpKind::Nil);
-   ExpDesc falsev(ExpKind::False);
-   ExpDesc zerov(0.0);
-   ExpDesc emptyv(this->lex_state.intern_empty_string());
-
-   bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQP, cond_reg, const_pri(&nilv)));
-   ControlFlowEdge check_nil = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
-   bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQP, cond_reg, const_pri(&falsev)));
-   ControlFlowEdge check_false = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
-   bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQN, cond_reg, const_num(&this->func_state, &zerov)));
-   ControlFlowEdge check_zero = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
-   bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQS, cond_reg, const_str(&this->func_state, &emptyv)));
-   ControlFlowEdge check_empty = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
-   bcemit_INS(&this->func_state, BCINS_AD(BC_ISEMPTYARR, cond_reg, 0));
-   ControlFlowEdge check_empty_array = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
+   FalseyJumpOptions options;
+   options.include_empty_array = true;
+   ControlFlowEdge falsey_edge = emit_falsey_jumps(
+      this->func_state, this->control_flow, cond_reg, options, condition.result_type);
 
    ControlFlowEdge skip_body = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
 
    BCPos body_start = BCPos(this->func_state.pc);
-   check_nil.patch_to(body_start);
-   check_false.patch_to(body_start);
-   check_zero.patch_to(body_start);
-   check_empty.patch_to(body_start);
-   check_empty_array.patch_to(body_start);
+   falsey_edge.patch_to(body_start);
 
    auto body_result = this->emit_statement(*Payload.body);
    if (not body_result.ok()) return body_result;
@@ -803,19 +1631,127 @@ ParserResult<IrEmitUnit> IrEmitter::emit_conditional_shorthand_stmt(const Condit
 //********************************************************************************************************************
 // Emit bytecode for a return statement, handling zero, single, or multiple return values.
 
+static StaticValueDescriptor return_value_descriptor(
+   const ParserContext &Context, const ReturnStmtPayload &Payload, size_t Position, bool &Dynamic)
+{
+   StaticValueDescriptor result;
+   if (Payload.values.empty()) {
+      result.primary = TiriType::Nil;
+      result.proof = StaticProof::Closed;
+      result.nullable = true;
+      return result;
+   }
+
+   size_t tail_position = Payload.values.size() - 1;
+   if (Position < tail_position) {
+      const ExprNode &value = *Payload.values[Position];
+      return Context.descriptors().value(value.static_value);
+   }
+
+   const ExprNode &tail = *Payload.values.back();
+   if (tail.static_results) {
+      const StaticResultSet &results = Context.descriptors().results(tail.static_results);
+      if (results.dynamic or results.variadic) Dynamic = true;
+      return results.value_at(Position - tail_position);
+   }
+   if (Position IS tail_position) return Context.descriptors().value(tail.static_value);
+
+   result.primary = TiriType::Nil;
+   result.proof = StaticProof::Closed;
+   result.nullable = true;
+   return result;
+}
+
+static bool fixed_return_contract_is_proved(
+   const ParserContext &Context, const FuncState &State, const ReturnStmtPayload &Payload)
+{
+   if (not State.return_contract_explicit or State.return_contract_variadic) return false;
+
+   bool dynamic = false;
+   for (uint8_t i = 0; i < State.return_contract_count; ++i) {
+      RuntimeContract contract{
+         .type = State.return_types[i],
+         .struct_def = State.return_struct_defs[i],
+         .array_element = State.return_array_elements[i],
+         .boundary = ContractBoundary::Result,
+         .position = uint8_t(i + 1),
+         .nullable = not State.return_required[i],
+         .required = State.return_required[i]
+      };
+      if ((contract.type IS TiriType::Unknown or contract.type IS TiriType::Any) and not contract.required) continue;
+      StaticValueDescriptor value = return_value_descriptor(Context, Payload, i, dynamic);
+      if (dynamic or not static_value_satisfies_contract(value, contract)) return false;
+   }
+   return true;
+}
+
+// A direct call to the same immutable function can forward its result contract to the terminal activation.  The
+// terminal return performs the identical type validation and fixed-arity adjustment once, so intermediate recursive
+// activations do not need to regain control solely to repeat those operations.
+
+static bool tail_call_forwards_current_contract(
+   const ParserContext &Context, StaticCallableHandle CurrentCallable, const ExprNode &Expression)
+{
+   if (not CurrentCallable or Expression.kind != AstNodeKind::CallExpr) return false;
+   const auto &call = std::get<CallExprPayload>(Expression.data);
+   if (call.callable != CurrentCallable) return false;
+   return Context.descriptors().callable(CurrentCallable).immutable;
+}
+
+// A native tail call erases the Tiri activation that owns its source call. That would make an enclosing checkall frame
+// appear to be the native call's immediate owner, so retain an ordinary call/return boundary for native prototypes.
+
+static bool tail_call_preserves_checkall_boundary(const ParserContext &Context, const ExprNode &Expression)
+{
+   if (Expression.kind != AstNodeKind::CallExpr and Expression.kind != AstNodeKind::SafeCallExpr) return true;
+   const auto &call = std::get<CallExprPayload>(Expression.data);
+   if (const auto *direct = std::get_if<DirectCallTarget>(&call.target); direct and direct->callable) {
+      if (direct->callable->kind IS AstNodeKind::ModuleFunctionExpr) return false;
+      if (direct->callable->kind IS AstNodeKind::MemberExpr) {
+         const auto &member = std::get<MemberExprPayload>(direct->callable->data);
+         if (member.class_id != CLASSID::NIL) return false;
+      }
+   }
+   if (not call.callable) return true;
+   return Context.descriptors().callable(call.callable).source != StaticCallableSource::NativePrototype;
+}
+
+static bool is_safe_call_expression(const ExprNode &Expression)
+{
+   // Parsed safe calls currently retain CallExpr and identify the nil short-circuit through their dispatch mode.
+   if (Expression.kind IS AstNodeKind::SafeCallExpr) return true;
+   if (Expression.kind != AstNodeKind::CallExpr) return false;
+   const auto &call = std::get<CallExprPayload>(Expression.data);
+   return call.dispatch IS CallDispatch::SafeMemberNamed or call.dispatch IS CallDispatch::SafeMemberComputed;
+}
+
 ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Payload)
 {
    BCIns ins;
-   this->func_state.flags |= PROTO_HAS_RETURN;
+   RegisterAllocator return_allocator(&this->func_state);
 
-   // Check if function needs runtime type inference (no explicit return types declared)
-   bool needs_typefix = true;
-   for (size_t i = 0; i < this->func_state.return_types.size(); ++i) {
-      if (this->func_state.return_types[i] != TiriType::Unknown) {
-         needs_typefix = false;
-         break;
+   this->func_state.flags |= PROTO_HAS_RETURN;
+   bool has_return_contract = false;
+   if (this->func_state.return_contract_explicit) {
+      for (uint8_t i = 0; i < this->func_state.return_contract_count; ++i) {
+         TiriType type = this->func_state.return_types[i];
+         if ((type != TiriType::Unknown and type != TiriType::Any) or
+             this->func_state.return_required[i]) {
+            has_return_contract = true;
+            break;
+         }
       }
    }
+
+   bool truncate_return_results =
+      this->func_state.return_contract_explicit and not this->func_state.return_contract_variadic;
+   bool return_contract_elided = has_return_contract and
+      fixed_return_contract_is_proved(this->ctx, this->func_state, Payload);
+   bool return_contract_forwarded = false;
+   BCREG cleanup_temp_regs = return_cleanup_temp_regs(&this->func_state);
+   BCREG multres_slot = BCREG(this->func_state.varmap.size() + cleanup_temp_regs);
+   if (cleanup_temp_regs > 0) return_allocator.reserve(BCReg(cleanup_temp_regs + 1));
+   BCREG return_base = this->func_state.freereg;
 
    if (Payload.values.empty()) {
       ins = BCINS_AD(BC_RET0, 0, 1);
@@ -824,54 +1760,103 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
       auto count = BCReg(0);
       auto list = this->emit_expression_list(Payload.values, count);
       if (not list.ok()) return ParserResult<IrEmitUnit>::failure(list.error_ref());
+      if (list.value_ref().is_unreachable()) return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
 
       ExpDesc last = list.value_ref();
 
       // Handle tail-call case: return f() or return f(...)
       if (count IS 1 and last.k IS ExpKind::Call) {
          BCIns* ip = ir_bcptr(&this->func_state, &last);
-         if (this->func_state.try_depth > 0) {
+         BCOp call_op = bc_op(*ip);
+         bool has_context_leave = (call_op IS BC_CTXCALL or call_op IS BC_CTXCALLM) and
+            bc_op(this->func_state.bcbase[last.u.s.info + 1].ins) IS BC_CTXLEAVE;
+         auto expected_end = last.u.s.info + (has_context_leave ? 2 : 1);
+         bool has_post_call_control_flow = expected_end != this->func_state.pc;
+         bool has_user_cleanup = cleanup_temp_regs > 0;
+         bool safe_call = is_safe_call_expression(*Payload.values.back());
+         bool forwards_current_contract = tail_call_forwards_current_contract(
+            this->ctx, this->current_callable, *Payload.values.back());
+         bool direct_tail_call = call_op IS BC_CALL or call_op IS BC_CALLM;
+         bool contextual_tail_call = not this->is_root_chunk and has_context_leave and call_op IS BC_CTXCALL;
+         bool tail_call_eligible = this->func_state.runtime_scopes.empty() and not has_post_call_control_flow and
+            not has_user_cleanup and (direct_tail_call or contextual_tail_call) and
+            tail_call_preserves_checkall_boundary(this->ctx, *Payload.values.back()) and
+            (forwards_current_contract or (not truncate_return_results and not has_return_contract));
+         if (tail_call_eligible) {
+            return_contract_forwarded = forwards_current_contract;
+            lj_assertX(last.u.s.info + (contextual_tail_call ? 2 : 1) IS this->func_state.pc,
+               "tail call is not the final expression instruction");
+            this->func_state.pc -= contextual_tail_call ? 2 : 1;
+            if (contextual_tail_call) {
+               if (last.alternate_call != NO_JMP) {
+                  BCIns *alternate = &this->func_state.bcbase[last.alternate_call].ins;
+                  lj_assertX(bc_op(*alternate) IS BC_CALL,
+                     "contextual runtime method tail branch is not a fixed ordinary call");
+                  *alternate = BCINS_AD(BC_CALLT, bc_a(*alternate), bc_c(*alternate));
+               }
+               ins = BCINS_AD(BC_CTXCALLT, bc_a(*ip), bc_c(*ip));
+            }
+            else {
+               if (last.alternate_call != NO_JMP) {
+                  BCIns *alternate = &this->func_state.bcbase[last.alternate_call].ins;
+                  *alternate = BCINS_AD(
+                     bc_op(*alternate) - BC_CALL + BC_CALLT, bc_a(*alternate), bc_c(*alternate));
+               }
+               ins = BCINS_AD(bc_op(*ip) - BC_CALL + BC_CALLT, bc_a(*ip), bc_c(*ip));
+            }
+         }
+         else if (truncate_return_results) {
+            BCREG result_count = this->func_state.return_declared_count;
+            set_call_result_count(&this->func_state, last, result_count + 1);
+            ins = result_count > 0 ?
+               BCINS_AD(BC_RET, last.u.s.aux, result_count + 1) :
+               BCINS_AD(BC_RET0, 0, 1);
+         }
+         else if (safe_call) {
+            // An unconstrained nil short-circuit has no dynamic MULTRES value, so consolidate it to one result.
+            // Fixed return declarations are handled above and widen the nil path to the declared result count.
+            set_call_result_count(&this->func_state, last, CallResultMode::OneResult);
+            ins = BCINS_AD(BC_RET1, last.u.s.aux, 2);
+         }
+         else if (not this->func_state.runtime_scopes.empty()) {
             // DISABLE TAIL-CALL inside try blocks: use CALL + RET instead of CALLT.
             // CALLT doesn't return to the caller, so if the called function throws an exception, it happens after
             // TRYLEAVE has popped the try frame - the exception escapes.  By using CALL + RET, the exception occurs
             // while still inside the try block. This must be checked before any tail-call optimisation paths.
 
-            setbc_b(ip, 0);  // Request all results (MULTRES)
-            if (needs_typefix) bcemit_AD(&this->func_state, BC_TYPEFIX, last.u.s.aux, 1);
-            ins = BCINS_AD(BC_RETM, this->func_state.varmap.size(), last.u.s.aux - this->func_state.varmap.size());
+            set_call_result_count(&this->func_state, last, CallResultMode::AllResults);
+            ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
-         else if (bc_op(*ip) IS BC_VARG) {
+         else if (has_return_contract) {
+            // A return contract must observe dynamic results inside this function, so tail-call conversion is unsafe.
+            set_call_result_count(&this->func_state, last, CallResultMode::AllResults);
+            ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
+         }
+         else if (has_post_call_control_flow and Payload.values.back()->is_checked) {
+            // A checked call retains its complete result set after promoting a failing first result. The inserted
+            // check instructions prevent tail-call conversion, but do not consolidate the successful results.
+            set_call_result_count(&this->func_state, last, CallResultMode::AllResults);
+            ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
+         }
+         else if (has_post_call_control_flow) {
+            // Calls with post-call control flow cannot be converted to CALLT: the conversion removes the final emitted
+            // instruction rather than the earlier CALL. Such expressions represent one consolidated value.
+            set_call_result_count(&this->func_state, last, CallResultMode::OneResult);
+            ins = BCINS_AD(BC_RET1, last.u.s.aux, 2);
+         }
+         else if (call_op IS BC_VARG) {
             // Variadic return: return ...
-            setbc_b(ir_bcptr(&this->func_state, &last), 0);
-            // For VARG returns, we can't know count at compile time - skip typefix
-            ins = BCINS_AD(BC_RETM, this->func_state.varmap.size(), last.u.s.aux - this->func_state.varmap.size());
+            set_call_result_count(&this->func_state, last, CallResultMode::AllResults);
+            ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
-         else if (needs_typefix and bc_op(*ip) IS BC_CALL) {
-            // DISABLE TAIL-CALL: emit BC_CALL + BC_TYPEFIX + BC_RET instead of BC_CALLT
-            // This ensures BC_TYPEFIX runs for the return value.
-            // Only apply to simple BC_CALL - not BC_CALLM (used by result filters) or other call types.
-            bool has_closes = has_close_variables(&this->func_state);
-            if (has_closes) {
-               // With close handlers: Use fixed 1 result (B=2) because MULTRES can be corrupted
-               // by close handlers that run between the call and return.
-               setbc_b(ip, 2);
-               bcemit_AD(&this->func_state, BC_TYPEFIX, last.u.s.aux, 1);
-               ins = BCINS_AD(BC_RET1, last.u.s.aux, 2);
-            }
-            else {
-               // No close handlers: Safe to use RETM with all results
-               setbc_b(ip, 0);  // Request all results (MULTRES)
-               bcemit_AD(&this->func_state, BC_TYPEFIX, last.u.s.aux, 1);
-               ins = BCINS_AD(BC_RETM, this->func_state.varmap.size(), last.u.s.aux - this->func_state.varmap.size());
-            }
+         else if (has_user_cleanup) {
+            // The callee must execute before user-visible cleanup.  Preserve all results and MULTRES across handlers.
+            set_call_result_count(&this->func_state, last, CallResultMode::AllResults);
+            ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
          else {
-            // Normal tail-call for:
-            // - Explicitly typed functions (needs_typefix=false)
-            // - Special call types like BC_CALLM (result filters) where we can't safely modify
-            // - Not inside a try block (handled by the try_depth check above)
-            this->func_state.pc--;
-            ins = BCINS_AD(bc_op(*ip) - BC_CALL + BC_CALLT, bc_a(*ip), bc_c(*ip));
+            set_call_result_count(&this->func_state, last, CallResultMode::AllResults);
+            ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
       }
       else if (count IS 1) {
@@ -879,47 +1864,91 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
          RegisterAllocator allocator(&this->func_state);
          ExpressionValue value(&this->func_state, last);
          auto reg = value.discharge_to_any_reg(allocator);
-         if (needs_typefix) bcemit_AD(&this->func_state, BC_TYPEFIX, reg, 1);
          ins = BCINS_AD(BC_RET1, reg, 2);
       }
       else {
          // Multiple return values
          if (last.k IS ExpKind::Call) {
-            setbc_b(ir_bcptr(&this->func_state, &last), 0);
-            // Variadic tail - count unknown, skip typefix for safety
-            ins = BCINS_AD(BC_RETM, this->func_state.varmap.size(), last.u.s.aux - this->func_state.varmap.size());
+            if (truncate_return_results) {
+               BCREG result_count = this->func_state.return_declared_count;
+               BCREG fixed_count = last.u.s.aux - return_base;
+               BCREG call_count = result_count > fixed_count ? result_count - fixed_count : 0;
+               set_call_result_count(&this->func_state, last, call_count + 1);
+               ins = result_count > 0 ?
+                  BCINS_AD(BC_RET, return_base, result_count + 1) :
+                  BCINS_AD(BC_RET0, 0, 1);
+            }
+            else if (is_safe_call_expression(*Payload.values.back())) {
+               set_call_result_count(&this->func_state, last, CallResultMode::OneResult);
+               ins = BCINS_AD(BC_RET, return_base, count + 1);
+            }
+            else {
+               set_call_result_count(&this->func_state, last, CallResultMode::AllResults);
+               ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
+            }
          }
          else {
             this->materialise_to_next_reg(last, "return tail value");
-            if (needs_typefix) {
-               auto typefix_count = std::min(count.raw(), BCREG(PROTO_MAX_RETURN_TYPES));
-               bcemit_AD(&this->func_state, BC_TYPEFIX, this->func_state.varmap.size(), typefix_count);
-            }
-            ins = BCINS_AD(BC_RET, this->func_state.varmap.size(), count + 1);
+            ins = BCINS_AD(BC_RET, return_base, count + 1);
          }
       }
    }
 
+   if (truncate_return_results and this->func_state.return_declared_count IS 0 and
+       not return_contract_forwarded) {
+      ins = BCINS_AD(BC_RET0, 0, 1);
+   }
+   else if (truncate_return_results and bc_op(ins) IS BC_RET) {
+      BCREG result_count = this->func_state.return_declared_count;
+      if (bc_d(ins) - 1 > result_count) setbc_d(&ins, result_count + 1);
+   }
+
    snapshot_return_regs(&this->func_state, &ins);
+   bool preserve_multres = bc_op(ins) IS BC_RETM and
+      (cleanup_temp_regs > 0 or not this->func_state.runtime_scopes.empty());
+   if (preserve_multres) bcemit_AD(&this->func_state, BC_MRSAVE, multres_slot, 0);
+   if (preserve_multres) this->func_state.freereg = BCREG(this->func_state.varmap.size());
    // Both __close and defer handlers must run before returning from function.
    // Order: closes before defers (LIFO - most recently declared runs first).
-   execute_closes(&this->func_state, 0);
-   execute_defers(&this->func_state, 0);
+   execute_scope_cleanups(&this->func_state, 0);
 
-   // Emit BC_TRYLEAVE for each try scope we're exiting with this return.
-   // A return from inside a try block must pop all pending try frames to prevent
-   // stale frames accumulating on L->try_stack across multiple function calls.
-   // Use varmap.size() (active local variable count) as the base register, not freereg,
-   // because freereg may still point past temporary registers used by the return expression.
-
-   if (this->func_state.try_depth > 0) {
-      BCReg base_reg = BCReg(this->func_state.varmap.size());
-      for (uint8_t i = 0; i < this->func_state.try_depth; ++i) {
-         bcemit_AD(&this->func_state, BC_TRYLEAVE, base_reg, BCReg(0));
-      }
+   for (auto scope = this->func_state.runtime_scopes.rbegin();
+        scope != this->func_state.runtime_scopes.rend(); ++scope) {
+      BCOp leave = scope->kind IS RuntimeScopeKind::Try ? BC_TRYLEAVE : BC_CHECKALLLEAVE;
+      bcemit_AD(&this->func_state, leave, scope->base, BCReg(0));
    }
 
    if (this->func_state.flags & PROTO_CHILD) bcemit_AJ(&this->func_state, BC_UCLO, 0, 0);
+   if (preserve_multres) bcemit_AD(&this->func_state, BC_MRRESTORE, multres_slot, 0);
+
+   if (has_return_contract and not return_contract_elided and not return_contract_forwarded) {
+      std::array<RuntimeContract, MAX_RETURN_TYPES> contracts;
+      for (uint8_t i = 0; i < this->func_state.return_contract_count; ++i) {
+         contracts[i] = RuntimeContract{
+            .type = this->func_state.return_types[i],
+            .struct_def = this->func_state.return_struct_defs[i],
+            .array_element = this->func_state.return_array_elements[i],
+            .label = nullptr,
+            .boundary = ContractBoundary::Result,
+            .position = uint8_t(i + 1),
+            .nullable = not this->func_state.return_required[i],
+            .required = this->func_state.return_required[i]
+         };
+      }
+
+      BCOp return_op = bc_op(ins);
+      BCREG return_base = bc_a(ins);
+      bool dynamic_count = return_op IS BC_RETM;
+      BCREG static_count = 0;
+      if (return_op IS BC_RET1) static_count = 1;
+      else if (return_op IS BC_RET) static_count = bc_d(ins) - 1;
+      else if (return_op IS BC_RETM) static_count = bc_d(ins);
+
+      bcemit_contract(&this->func_state, return_base,
+         std::span(contracts.data(), this->func_state.return_contract_count), static_count, dynamic_count,
+         this->func_state.return_contract_variadic);
+   }
+
    bcemit_INS(&this->func_state, ins);
    this->func_state.reset_freereg();
    return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
@@ -931,6 +1960,35 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
 ParserResult<IrEmitUnit> IrEmitter::emit_local_decl_stmt(const LocalDeclStmtPayload &Payload)
 {
    auto nvars = BCReg(BCREG(Payload.names.size()));
+   if (Payload.module_dependency != UINT32_MAX) {
+      if (Payload.module_dependency >= PROTO_MAX_DEPENDENCIES) {
+         return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::InternalInvariant,
+            "Module dependency descriptor ordinal exceeds the bytecode operand limit"));
+      }
+
+      for (auto i = BCReg(0); i < nvars; ++i) {
+         const Identifier &identifier = Payload.names[i.raw()];
+         this->lex_state.var_new(i, identifier.symbol, identifier.span.line, identifier.span.column);
+      }
+
+      auto base = this->func_state.free_reg();
+      RegisterAllocator allocator(&this->func_state);
+      allocator.reserve(nvars);
+      bcemit_AD(&this->func_state, BC_MODACT, base, BCREG(Payload.module_dependency));
+      this->lex_state.var_add(nvars);
+
+      for (auto i = BCReg(0); i < nvars; ++i) {
+         const Identifier &identifier = Payload.names[i.raw()];
+         VarInfo *info = &this->func_state.var_get(base.raw() + i.raw());
+         info->binding_id = identifier.binding_id;
+         info->fixed_type = TiriType::Func;
+         this->update_local_binding(identifier.symbol, base + i, std::nullopt);
+      }
+
+      this->func_state.reset_freereg();
+      return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
+   }
+
    if (nvars IS 0) return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
 
    // For local declarations with ??= or ?=, since the variables are newly declared (undefined),
@@ -940,7 +1998,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_decl_stmt(const LocalDeclStmtPayl
 
    if ((Payload.op IS AssignmentOperator::IfEmpty or Payload.op IS AssignmentOperator::IfNil) and nvars != 1) {
       return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::InternalInvariant,
-         "conditional assignment (?=/?\?=) only supports a single target variable"));
+         "Conditional assignment (?=/?\?=) only supports a single target variable"));
    }
 
    for (auto i = BCReg(0); i < nvars; ++i) {
@@ -952,31 +2010,88 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_decl_stmt(const LocalDeclStmtPayl
 
    ExpDesc tail;
    auto nexps = BCReg(0);
+   bool is_view = Payload.names.size() IS 1 and Payload.names[0].has_view;
+   std::vector<std::optional<CompileTimeValue>> compile_time_values(Payload.names.size());
    if (Payload.values.empty()) tail = ExpDesc(ExpKind::Void);
    else {
+      if (is_view) bcemit_AD(&this->func_state, BC_VIEW, 0, 1);
       auto list = this->emit_expression_list(Payload.values, nexps);
       if (not list.ok()) return ParserResult<IrEmitUnit>::failure(list.error_ref());
       tail = list.value_ref();
+
+      // This re-evaluates initialisers that emit_expression_list already folded; the duplication is accepted
+      // because evaluation is side-effect free and bails at the first non-constant operand.
+      for (size_t i = 0; i < Payload.names.size() and i < Payload.values.size(); ++i) {
+         const Identifier &identifier = Payload.names[i];
+         if (identifier.has_const and not identifier.has_close) {
+            compile_time_values[i] = this->constant_evaluator.evaluate(*Payload.values[i]);
+         }
+      }
    }
 
    this->lex_state.assign_adjust(nvars.raw(), nexps.raw(), &tail);
+   if (is_view) bcemit_AD(&this->func_state, BC_VIEW, 0, 0);
    this->lex_state.var_add(nvars);
    auto base = BCReg(this->func_state.varmap.size() - nvars.raw());
 
+   // The initialiser values are now resident in their local slots.  Arm close locals before runtime contract checks so
+   // a rejected annotation still unwinds an already-created resource.
    for (auto i = BCReg(0); i < nvars; ++i) {
       const Identifier& identifier = Payload.names[i.raw()];
       if (not identifier.has_close) continue;
 
-      // Check slot limit for closeslots bitmap (max 64 slots supported)
       uint8_t slot = uint8_t(base.raw() + i.raw());
       if (slot >= 64) {
          return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::InternalInvariant,
-            "too many local variables with <close> attribute (max 64 slots)"));
+            "Too many local variables with <close> attribute (max 64 slots)"));
       }
 
       VarInfo* info = &this->func_state.var_get(base.raw() + i.raw());
       info->info |= VarInfoFlag::Close;
+      bcemit_AD(&this->func_state, BC_CLOSEARM, base.raw() + i.raw(), 0);
    }
+
+   // Declaration initialisers are placed directly into their local slots, so they do not pass through
+   // bcemit_store().  Validate every concrete annotation after result-count adjustment and before publishing the
+   // binding's checked metadata.  This also covers values supplied by calls, varargs and result filters.
+   std::vector<RuntimeContractSlot> local_contracts;
+   local_contracts.reserve(nvars.raw());
+   for (auto i = BCReg(0); i < nvars; ++i) {
+      const Identifier &identifier = Payload.names[i.raw()];
+      if (identifier.type IS TiriType::Unknown or identifier.type IS TiriType::Any) continue;
+
+      StaticValueDescriptor initialiser;
+      if (Payload.values.empty()) {
+         initialiser.primary = TiriType::Nil;
+         initialiser.proof = StaticProof::Closed;
+         initialiser.nullable = true;
+      }
+      else {
+         size_t source = std::min(size_t(i.raw()), Payload.values.size() - 1);
+         const ExprNode &value = *Payload.values[source];
+         if (source IS Payload.values.size() - 1 and i.raw() >= Payload.values.size() and value.static_results) {
+            initialiser = this->ctx.descriptors().results(value.static_results).value_at(i.raw() - source);
+         }
+         else if (value.static_value) initialiser = this->ctx.descriptors().value(value.static_value);
+      }
+
+      const VarInfo &variable = this->func_state.var_get(base.raw() + i.raw());
+      RuntimeContract contract{
+         .type = identifier.type,
+         .object_class_id = variable.object_class_id,
+         .struct_def = variable.struct_def ? variable.struct_def : identifier.struct_def,
+         .array_element = identifier.array_element.known ? identifier.array_element : variable.array_element,
+         .label = is_blank_symbol(identifier) ? nullptr : identifier.symbol,
+         .boundary = ContractBoundary::Local,
+         .position = uint8_t(base.raw() + i.raw() + 1)
+      };
+      if (static_value_satisfies_contract(initialiser, contract)) continue;
+      local_contracts.push_back(RuntimeContractSlot{
+         .register_index = BCREG(base.raw() + i.raw()),
+         .contract = contract
+      });
+   }
+   bcemit_contracts(&this->func_state, local_contracts);
 
    // Handle <const> attribute - mark local variables that cannot be reassigned
    for (auto i = BCReg(0); i < nvars; ++i) {
@@ -986,7 +2101,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_decl_stmt(const LocalDeclStmtPayl
       // Validate: const requires initialiser
       if (i.raw() >= Payload.values.size()) {
          return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::ConstRequiresInitialiser,
-            std::format("const local '{}' requires an initialiser",
+            std::format("Const local '{}' requires an initialiser",
                identifier.symbol ? std::string_view(strdata(identifier.symbol), identifier.symbol->len) : "_")));
       }
 
@@ -998,34 +2113,222 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_decl_stmt(const LocalDeclStmtPayl
    for (auto i = BCReg(0); i < nvars; ++i) {
       const Identifier& identifier = Payload.names[i.raw()];
       VarInfo* info = &this->func_state.var_get(base.raw() + i.raw());
+      info->binding_id = identifier.binding_id;
+      info->static_value = identifier.static_value;
+      if (identifier.binding_id) {
+         const auto &binding = this->ctx.descriptors().binding(identifier.binding_id);
+         info->static_callable = binding.callable;
+         if (binding.callable) {
+            info->static_results = this->ctx.descriptors().callable(binding.callable).results;
+         }
+      }
 
       if (identifier.type != TiriType::Unknown) {
          // Explicit type annotation takes precedence
          info->fixed_type = identifier.type;
+         info->struct_def = identifier.struct_def;
+         info->array_element = identifier.array_element;
+      }
+      else if (this->apply_analysed_local_type(base + i, identifier.binding_id)) {
+         // The analyser owns sticky fixation.  Its per-binding result covers deferred and secondary values.
       }
       else if (i.raw() < Payload.values.size()) {
          // No explicit annotation - infer type from initialiser expression
          // Note: Nil is excluded because it represents absence of value, not a type constraint
-         // Use extended type inference to also get object_class_id for Object types
-         InferredTypeInfo inferred = infer_expression_type_ext(*Payload.values[i.raw()]);
-         if (inferred.type != TiriType::Unknown and inferred.type != TiriType::Any and inferred.type != TiriType::Nil) {
-            info->fixed_type = inferred.type;
-            // Propagate object class ID for Object types
-            if (inferred.type IS TiriType::Object and inferred.object_class_id != CLASSID::NIL) {
-               info->object_class_id = inferred.object_class_id;
-            }
-         }
+         this->apply_inferred_local_type(base + i, *Payload.values[i.raw()]);
       }
+      this->assert_analysed_local_type(base + i, identifier.binding_id);
       // If no initialiser and no annotation, fixed_type remains Unknown (set in var_add)
    }
 
    for (auto i = BCReg(0); i < nvars; ++i) {
       const Identifier& identifier = Payload.names[i.raw()];
       if (is_blank_symbol(identifier)) continue;
-      this->update_local_binding(identifier.symbol, BCReg(base.raw() + i.raw()));
+      this->update_local_binding(
+         identifier.symbol, BCReg(base.raw() + i.raw()), std::move(compile_time_values[i.raw()]));
    }
    this->func_state.reset_freereg();
    return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
+}
+
+//********************************************************************************************************************
+// Register external symbols for this parse.  The declaration emits no bytecode; it only authorises unresolved names
+// that are expected to be supplied by another file or by the embedding host.
+
+ParserResult<IrEmitUnit> IrEmitter::emit_extern_decl_stmt(const ExternDeclStmtPayload &Payload)
+{
+   for (const Identifier &identifier : Payload.names) {
+      if (is_blank_symbol(identifier)) continue;
+      if (identifier.symbol) this->func_state.external_symbols.insert(identifier.symbol);
+   }
+
+   return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
+}
+
+//********************************************************************************************************************
+// Return true when an expression can be skipped without suppressing emitter diagnostics.
+
+bool IrEmitter::can_elide_expression(const ExprNode &Expression) const
+{
+   switch (Expression.kind) {
+      case AstNodeKind::LiteralExpr:
+         return true;
+
+      case AstNodeKind::IdentifierExpr: {
+         const NameRef &reference = std::get<NameRef>(Expression.data);
+         if (reference.identifier.is_blank or not reference.identifier.symbol) return false;
+
+         ExpDesc resolved;
+         this->lex_state.var_lookup_symbol(reference.identifier.symbol, &resolved);
+         if (resolved.k != ExpKind::Unscoped) return true;
+         if (lookup_constant(reference.identifier.symbol)) return true;
+         if (this->func_state.declared_globals.contains(reference.identifier.symbol)) return true;
+         if (this->func_state.external_symbols.contains(reference.identifier.symbol)) return true;
+
+         cTValue *global = lj_tab_getstr(tabref(this->lex_state.L->env), reference.identifier.symbol);
+         return (global and not tvisnil(global)) or is_named_external_global(reference.identifier.symbol);
+      }
+
+      case AstNodeKind::UnaryExpr: {
+         const auto &payload = std::get<UnaryExprPayload>(Expression.data);
+         return payload.operand and this->can_elide_expression(*payload.operand);
+      }
+
+      case AstNodeKind::TypeTestExpr: {
+         const auto &payload = std::get<TypeTestExprPayload>(Expression.data);
+         return payload.value and this->can_elide_expression(*payload.value);
+      }
+
+      case AstNodeKind::BinaryExpr: {
+         const auto &payload = std::get<BinaryExprPayload>(Expression.data);
+         return payload.left and payload.right and
+            this->can_elide_expression(*payload.left) and this->can_elide_expression(*payload.right);
+      }
+
+      case AstNodeKind::ComparisonChainExpr: {
+         const auto &payload = std::get<ComparisonChainExprPayload>(Expression.data);
+         for (const ExprNodePtr &operand : payload.operands) {
+            if (not operand or not this->can_elide_expression(*operand)) return false;
+         }
+         return true;
+      }
+
+      case AstNodeKind::TernaryExpr: {
+         const auto &payload = std::get<TernaryExprPayload>(Expression.data);
+         return payload.condition and payload.if_true and payload.if_false and
+            this->can_elide_expression(*payload.condition) and
+            this->can_elide_expression(*payload.if_true) and
+            this->can_elide_expression(*payload.if_false);
+      }
+
+      case AstNodeKind::PresenceExpr: {
+         const auto &payload = std::get<PresenceExprPayload>(Expression.data);
+         return payload.value and this->can_elide_expression(*payload.value);
+      }
+
+      case AstNodeKind::MemberExpr: {
+         const auto &payload = std::get<MemberExprPayload>(Expression.data);
+         return payload.table and this->can_elide_expression(*payload.table);
+      }
+
+      // A module function selection is a hidden local read with no side effects of its own.
+      case AstNodeKind::ModuleFunctionExpr:
+         return true;
+
+      case AstNodeKind::SafeMemberExpr: {
+         const auto &payload = std::get<SafeMemberExprPayload>(Expression.data);
+         return payload.table and this->can_elide_expression(*payload.table);
+      }
+
+      case AstNodeKind::IndexExpr: {
+         const auto &payload = std::get<IndexExprPayload>(Expression.data);
+         return payload.table and payload.index and
+            this->can_elide_expression(*payload.table) and this->can_elide_expression(*payload.index);
+      }
+
+      case AstNodeKind::SafeIndexExpr: {
+         const auto &payload = std::get<SafeIndexExprPayload>(Expression.data);
+         return payload.table and payload.index and
+            this->can_elide_expression(*payload.table) and this->can_elide_expression(*payload.index);
+      }
+
+      case AstNodeKind::CallExpr:
+      case AstNodeKind::SafeCallExpr: {
+         const auto &payload = std::get<CallExprPayload>(Expression.data);
+         bool target_valid = false;
+         if (const auto *direct = std::get_if<DirectCallTarget>(&payload.target)) {
+            target_valid = direct->callable and this->can_elide_expression(*direct->callable);
+         }
+         if (not target_valid) return false;
+
+         for (const ExprNodePtr &argument : payload.arguments) {
+            if (not argument or not this->can_elide_expression(*argument)) return false;
+         }
+         return true;
+      }
+
+      default:
+         return false;
+   }
+}
+
+//********************************************************************************************************************
+// Return true when a statement can be skipped without suppressing emitter diagnostics.
+
+bool IrEmitter::can_elide_statement(const StmtNode &Statement, bool InLoop) const
+{
+   switch (Statement.kind) {
+      case AstNodeKind::ExpressionStmt: {
+         const auto &payload = std::get<ExpressionStmtPayload>(Statement.data);
+         return payload.expression and this->can_elide_expression(*payload.expression);
+      }
+
+      case AstNodeKind::ReturnStmt: {
+         const auto &payload = std::get<ReturnStmtPayload>(Statement.data);
+         for (const ExprNodePtr &value : payload.values) {
+            if (not value or not this->can_elide_expression(*value)) return false;
+         }
+         return true;
+      }
+
+      case AstNodeKind::DoStmt: {
+         const auto &payload = std::get<DoStmtPayload>(Statement.data);
+         return payload.block and this->can_elide_block(*payload.block, InLoop);
+      }
+
+      case AstNodeKind::IfStmt: {
+         const auto &payload = std::get<IfStmtPayload>(Statement.data);
+         for (const IfClause &clause : payload.clauses) {
+            if (clause.condition and not this->can_elide_expression(*clause.condition)) return false;
+            if (clause.block and not this->can_elide_block(*clause.block, InLoop)) return false;
+         }
+         return true;
+      }
+
+      case AstNodeKind::WhileStmt:
+      case AstNodeKind::RepeatStmt: {
+         const auto &payload = std::get<LoopStmtPayload>(Statement.data);
+         return payload.condition and payload.body and
+            this->can_elide_expression(*payload.condition) and this->can_elide_block(*payload.body, true);
+      }
+
+      case AstNodeKind::BreakStmt:
+      case AstNodeKind::ContinueStmt:
+         return InLoop;
+
+      default:
+         return false;
+   }
+}
+
+//********************************************************************************************************************
+
+bool IrEmitter::can_elide_block(const BlockStmt &Block, bool InLoop) const
+{
+   for (const StmtNode &statement : Block.view()) {
+      if (not this->can_elide_statement(statement, InLoop)) return false;
+   }
+   return true;
 }
 
 //********************************************************************************************************************
@@ -1035,11 +2338,70 @@ ParserResult<IrEmitUnit> IrEmitter::emit_if_stmt(const IfStmtPayload &Payload)
 {
    if (Payload.clauses.empty()) return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
 
+   struct PlannedClause {
+      const IfClause *clause = nullptr;
+      bool unconditional = false;
+   };
+
+   std::vector<PlannedClause> plan;
+   std::vector<const IfClause *> omitted;
+   bool terminated = false;
+
+   for (const IfClause &clause : Payload.clauses) {
+      if (terminated) {
+         omitted.push_back(&clause);
+         continue;
+      }
+
+      if (not clause.condition) {
+         plan.push_back(PlannedClause{ &clause, true });
+         terminated = true;
+         continue;
+      }
+
+      auto condition = this->constant_evaluator.evaluate(*clause.condition);
+      if (not condition) {
+         plan.push_back(PlannedClause{ &clause, false });
+         continue;
+      }
+
+      if (condition->is_truthy()) {
+         plan.push_back(PlannedClause{ &clause, true });
+         terminated = true;
+      }
+      else omitted.push_back(&clause);
+   }
+
+   bool can_use_plan = true;
+   for (const PlannedClause &planned : plan) {
+      if (planned.unconditional and planned.clause->condition and
+          not this->can_elide_expression(*planned.clause->condition)) {
+         can_use_plan = false;
+         break;
+      }
+   }
+
+   for (const IfClause *clause : omitted) {
+      if ((clause->condition and not this->can_elide_expression(*clause->condition)) or
+          (clause->block and not this->can_elide_block(*clause->block))) {
+         can_use_plan = false;
+         break;
+      }
+   }
+
+   if (not can_use_plan) {
+      plan.clear();
+      for (const IfClause &clause : Payload.clauses) {
+         plan.push_back(PlannedClause{ &clause, not clause.condition });
+      }
+   }
+
    ControlFlowEdge escapelist = this->control_flow.make_unconditional();
-   for (size_t i = 0; i < Payload.clauses.size(); ++i) {
-      const IfClause& clause = Payload.clauses[i];
-      bool has_next = (i + 1) < Payload.clauses.size();
-      if (clause.condition) {
+   for (size_t i = 0; i < plan.size(); ++i) {
+      const PlannedClause &planned = plan[i];
+      const IfClause &clause = *planned.clause;
+      bool has_next = (i + 1) < plan.size();
+      if (clause.condition and not planned.unconditional) {
          auto condexit_result = this->emit_condition_jump(*clause.condition);
          if (not condexit_result.ok()) return ParserResult<IrEmitUnit>::failure(condexit_result.error_ref());
 
@@ -1073,6 +2435,12 @@ ParserResult<IrEmitUnit> IrEmitter::emit_while_stmt(const LoopStmtPayload &Paylo
 {
    if (Payload.style != LoopStyle::WhileLoop or not Payload.condition or not Payload.body) {
       return this->unsupported_stmt(AstNodeKind::WhileStmt, SourceSpan{});
+   }
+
+   if (auto condition = this->constant_evaluator.evaluate(*Payload.condition);
+       condition and not condition->is_truthy() and this->can_elide_expression(*Payload.condition) and
+       this->can_elide_block(*Payload.body, true)) {
+      return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
    }
 
    FuncState* fs = &this->func_state;
@@ -1120,6 +2488,27 @@ ParserResult<IrEmitUnit> IrEmitter::emit_repeat_stmt(const LoopStmtPayload &Payl
    }
 
    FuncState* fs = &this->func_state;
+   auto constant_condition = this->constant_evaluator.evaluate(*Payload.condition);
+   if (constant_condition and constant_condition->is_truthy() and
+       this->can_elide_expression(*Payload.condition)) {
+      auto loop_stack_guard = this->push_loop_context(fs->current_pc());
+
+      FuncScope outer_scope;
+      ScopeGuard loop_guard(fs, &outer_scope, FuncScopeFlag::Loop);
+      {
+         FuncScope inner_scope;
+         ScopeGuard inner_guard(fs, &inner_scope, FuncScopeFlag::None);
+         auto block_result = this->emit_block(*Payload.body, FuncScopeFlag::None);
+         if (not block_result.ok()) return block_result;
+      }
+
+      BCPos iter = fs->current_pc();
+      this->loop_stack.back().continue_target = iter;
+      this->loop_stack.back().continue_edge.patch_to(iter);
+      this->loop_stack.back().break_edge.patch_here();
+      return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
+   }
+
    BCPos loop = BCPos(fs->lasttarget = fs->pc);
    BCPos iter = BCPos(NO_JMP);
    ControlFlowEdge condexit;
@@ -1223,6 +2612,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_numeric_for_stmt(const NumericForStmtPa
       FuncScope visible_scope;
       ScopeGuard guard(fs, &visible_scope, FuncScopeFlag::None);
       this->lex_state.var_add(1);
+      VarInfo &control = fs->var_get(base.raw() + FORL_EXT);
+      control.fixed_type = TiriType::Num;
+      control.binding_id = Payload.control.binding_id;
+      control.static_value = Payload.control.static_value;
       RegisterAllocator allocator(fs);
       allocator.reserve(BCReg(1));
       std::array<BlockBinding, 1> loop_bindings{};
@@ -1238,6 +2631,134 @@ ParserResult<IrEmitUnit> IrEmitter::emit_numeric_for_stmt(const NumericForStmtPa
 
    ControlFlowEdge loopend = this->control_flow.make_unconditional(BCPos(bcemit_AJ(fs, BC_FORL, base, NO_JMP)));
    fs->bcbase[loopend.head().raw()].line = BCLine::encode(this->lex_state.current_file_index, Payload.body->span.line.lineNumber());
+   loopend.patch_head(BCPos(loop.head().raw() + 1));
+   loop.patch_head(fs->current_pc());
+   this->loop_stack.back().continue_target = loopend.head();
+   this->loop_stack.back().continue_edge.patch_to(loopend.head());
+   this->loop_stack.back().break_edge.patch_here();
+   return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
+}
+
+//********************************************************************************************************************
+// Emit a direct range loop. The existing numeric loop advances an ordinal; RANGEVAL derives each visible value from
+// the prepared start and step so floating-point error never accumulates between iterations.
+
+ParserResult<IrEmitUnit> IrEmitter::emit_range_for_stmt(const RangeForStmtPayload &Payload)
+{
+   if (not Payload.start or not Payload.stop or not Payload.body) {
+      return this->unsupported_stmt(AstNodeKind::RangeForStmt, SourceSpan{});
+   }
+
+   auto start_constant = this->constant_evaluator.evaluate(*Payload.start);
+   auto stop_constant = this->constant_evaluator.evaluate(*Payload.stop);
+   std::optional<CompileTimeValue> step_constant;
+   if (Payload.step) step_constant = this->constant_evaluator.evaluate(*Payload.step);
+   bool direct_integer =
+      range_direct_integer(start_constant, stop_constant, step_constant, Payload.step != nullptr, Payload.inclusive);
+   bool prepared_integer =
+      direct_integer and (this->func_state.try_depth > 0 or block_contains_try(Payload.body.get()));
+
+   FuncState *fs = &this->func_state;
+   auto base = fs->free_reg();
+   GCstr *control_symbol = Payload.control.symbol ? Payload.control.symbol : NAME_BLANK;
+
+   FuncScope outer_scope;
+   ScopeGuard loop_guard(fs, &outer_scope, FuncScopeFlag::Loop);
+
+   this->lex_state.var_new_fixed(FORL_IDX, VARNAME_FOR_IDX);
+   this->lex_state.var_new_fixed(FORL_STOP, VARNAME_FOR_STOP);
+   this->lex_state.var_new_fixed(FORL_STEP, VARNAME_FOR_STEP);
+   if (direct_integer) {
+      this->lex_state.var_new(
+         FORL_EXT, control_symbol, Payload.control.span.line, Payload.control.span.column);
+   }
+   else {
+      this->lex_state.var_new_fixed(RANGE_FOR_ORDINAL, VARNAME_RANGE_ORDINAL);
+      this->lex_state.var_new_fixed(RANGE_FOR_START, VARNAME_RANGE_START);
+      this->lex_state.var_new_fixed(RANGE_FOR_VALUE_STEP, VARNAME_RANGE_STEP);
+      this->lex_state.var_new_fixed(RANGE_FOR_FLAGS, VARNAME_RANGE_FLAGS);
+      this->lex_state.var_new(
+         RANGE_FOR_VALUE, control_symbol, Payload.control.span.line, Payload.control.span.column);
+   }
+
+   uint32_t flags = Payload.inclusive ? RANGE_PREP_INCLUSIVE : 0;
+   if (direct_integer) flags |= RANGE_PREP_DIRECT_INTEGER;
+   if (direct_integer and not prepared_integer) {
+      lua_Number start_number = start_constant->number_value;
+      lua_Number stop_number = stop_constant->number_value;
+      lua_Number step_number = Payload.step ? step_constant->number_value :
+         (start_number <= stop_number ? 1.0 : -1.0);
+      if (not Payload.inclusive) stop_number += step_number > 0.0 ? -1.0 : 1.0;
+
+      ExpDesc start_value(start_number);
+      this->materialise_to_next_reg(start_value, "range for start");
+      ExpDesc stop_value(stop_number);
+      this->materialise_to_next_reg(stop_value, "range for stop");
+      ExpDesc step_value(step_number);
+      this->materialise_to_next_reg(step_value, "range for step");
+   }
+   else {
+      auto start_expr = this->emit_expression(*Payload.start);
+      if (not start_expr.ok()) return ParserResult<IrEmitUnit>::failure(start_expr.error_ref());
+      ExpDesc start_value = start_expr.value_ref();
+      this->materialise_to_next_reg(start_value, "range for start");
+
+      auto stop_expr = this->emit_expression(*Payload.stop);
+      if (not stop_expr.ok()) return ParserResult<IrEmitUnit>::failure(stop_expr.error_ref());
+      ExpDesc stop_value = stop_expr.value_ref();
+      this->materialise_to_next_reg(stop_value, "range for stop");
+
+      if (Payload.step) {
+         auto step_expr = this->emit_expression(*Payload.step);
+         if (not step_expr.ok()) return ParserResult<IrEmitUnit>::failure(step_expr.error_ref());
+         ExpDesc step_value = step_expr.value_ref();
+         this->materialise_to_next_reg(step_value, "range for step");
+         flags |= RANGE_PREP_HAS_STEP;
+      }
+      else {
+         RegisterAllocator allocator(fs);
+         bcemit_AD(fs, BC_KPRI, fs->freereg, BCREG(ExpKind::Nil));
+         allocator.reserve(BCReg(1));
+      }
+   }
+
+   if (not direct_integer) {
+      RegisterAllocator allocator(fs);
+      allocator.reserve(BCReg(RANGE_FOR_VALUE - 3));
+   }
+   if (prepared_integer or not direct_integer) bcemit_AD(fs, BC_RANGEPREP, base, BCREG(flags));
+   this->lex_state.var_add(BCREG(direct_integer ? int(FORL_EXT) : int(RANGE_FOR_VALUE)));
+
+   auto loop_stack_guard = this->push_loop_context(BCPos(NO_JMP));
+   ControlFlowEdge loop = this->control_flow.make_unconditional(BCPos(bcemit_AJ(fs, BC_FORI, base, NO_JMP)));
+
+   {
+      FuncScope visible_scope;
+      ScopeGuard guard(fs, &visible_scope, FuncScopeFlag::None);
+      this->lex_state.var_add(1);
+      BCReg value_slot(base.raw() + BCREG(direct_integer ? int(FORL_EXT) : int(RANGE_FOR_VALUE)));
+      VarInfo &control = fs->var_get(value_slot.raw());
+      control.fixed_type = TiriType::Num;
+      control.binding_id = Payload.control.binding_id;
+      control.static_value = Payload.control.static_value;
+      RegisterAllocator allocator(fs);
+      allocator.reserve(BCReg(1));
+      if (not direct_integer) bcemit_AD(fs, BC_RANGEVAL, base, 0);
+
+      std::array<BlockBinding, 1> loop_bindings{};
+      std::span<const BlockBinding> binding_span;
+      if (Payload.control.symbol and not Payload.control.is_blank) {
+         loop_bindings[0].symbol = Payload.control.symbol;
+         loop_bindings[0].slot = value_slot;
+         binding_span = std::span<const BlockBinding>(loop_bindings.data(), 1);
+      }
+      auto block_result = this->emit_block_with_bindings(*Payload.body, FuncScopeFlag::None, binding_span);
+      if (not block_result.ok()) return block_result;
+   }
+
+   ControlFlowEdge loopend = this->control_flow.make_unconditional(BCPos(bcemit_AJ(fs, BC_FORL, base, NO_JMP)));
+   fs->bcbase[loopend.head().raw()].line =
+      BCLine::encode(this->lex_state.current_file_index, Payload.body->span.line.lineNumber());
    loopend.patch_head(BCPos(loop.head().raw() + 1));
    loop.patch_head(fs->current_pc());
    this->loop_stack.back().continue_target = loopend.head();
@@ -1272,29 +2793,43 @@ ParserResult<IrEmitUnit> IrEmitter::emit_generic_for_stmt(const GenericForStmtPa
    }
 
    BCPos exprpc = fs->current_pc();
-   auto iterator_count = BCReg(0);
-   auto iter_values = this->emit_expression_list(Payload.iterators, iterator_count);
-   if (not iter_values.ok()) return ParserResult<IrEmitUnit>::failure(iter_values.error_ref());
+   int isnext = 0;
 
-   ExpDesc tail = iter_values.value_ref();
-   this->lex_state.assign_adjust(3, iterator_count.raw(), &tail);
+   if (Payload.target IS GenericForTarget::IteratorProtocol) {
+      auto iterator_count = BCReg(0);
+      auto iter_values = this->emit_expression_list(Payload.iterators, iterator_count);
+      if (not iter_values.ok()) return ParserResult<IrEmitUnit>::failure(iter_values.error_ref());
+
+      ExpDesc tail = iter_values.value_ref();
+      this->lex_state.assign_adjust(3, iterator_count.raw(), &tail);
+      isnext = (nvars <= 5) ? predict_next(this->lex_state, *fs, exprpc) : 0;
+   }
+   else {
+      bcemit_builtin_call_frame(fs, builtin_callable_id(FastFunc::__tiri_iter_prepare), fs->free_reg());
+
+      auto collection = this->emit_expression(*Payload.iterators.front());
+      if (not collection.ok()) return ParserResult<IrEmitUnit>::failure(collection.error_ref());
+      ExpDesc value = collection.value_ref();
+      if (value.k IS ExpKind::Call) {
+         set_call_result_count(fs, value, CallResultMode::AllResults);
+         bcemit_INS(fs, BCINS_ABC(BC_CALLM, base - BCREG(3), 4,
+            value.u.s.aux - (base - BCREG(3)) - BCREG(2)));
+      }
+      else {
+         this->materialise_to_next_reg(value, "generic for runtime target");
+         bcemit_INS(fs, BCINS_ABC(BC_CALL, base - BCREG(3), 4, 2));
+      }
+      fs->freereg = (base - BCREG(3) + BCREG(3)).raw();
+      if (Payload.target IS GenericForTarget::BareTable and nvars <= 5) isnext = 1;
+   }
 
    bcreg_bump(fs, 3  + 1);
-   int isnext = (nvars <= 5) ? predict_next(this->lex_state, *fs, exprpc) : 0;
-   int isarr = 0;
    this->lex_state.var_add(3);
-
-   // Array iteration prediction is mutually exclusive with the 'next' optimisation.
-   // Only attempt array prediction when the 'next' optimisation is not selected.
-
-   if ((isnext IS 0) and iterator_count IS BCREG(1) and nvars <= 5) {
-      isarr = predict_array_iter(*fs, exprpc);
-   }
 
    auto loop_stack_guard = this->push_loop_context(BCPos(NO_JMP));
 
    ControlFlowEdge loop = this->control_flow.make_unconditional(
-      BCPos(bcemit_AJ(fs, isnext ? BC_ISNEXT : (isarr ? BC_ISARR : BC_JMP), base, NO_JMP)));
+      BCPos(bcemit_AJ(fs, isnext ? BC_ISNEXT : BC_JMP, base, NO_JMP)));
 
    {
       FuncScope visible_scope;
@@ -1307,6 +2842,16 @@ ParserResult<IrEmitUnit> IrEmitter::emit_generic_for_stmt(const GenericForStmtPa
       loop_bindings.reserve(visible.raw());
       for (auto i = BCReg(0); i < visible; ++i) {
          const Identifier& identifier = Payload.names[i.raw()];
+         auto &variable = fs->var_get(base.raw() + i.raw());
+         variable.binding_id = identifier.binding_id;
+         variable.static_value = identifier.static_value;
+         if (identifier.static_value) {
+            const auto &descriptor = this->ctx.descriptors().value(identifier.static_value);
+            variable.fixed_type = descriptor.primary;
+            variable.object_class_id = descriptor.object_class_id;
+            variable.struct_def = descriptor.struct_def;
+            variable.array_element = descriptor.array_element;
+         }
          if (identifier.symbol and not identifier.is_blank) {
             BlockBinding binding;
             binding.symbol = identifier.symbol;
@@ -1322,7 +2867,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_generic_for_stmt(const GenericForStmtPa
    }
 
    loop.patch_head(fs->current_pc());
-   BCPos iter = BCPos(bcemit_ABC(fs, isnext ? BC_ITERN : isarr ? BC_ITERA : BC_ITERC, base, nvars - BCREG(3) + BCREG(1), 3));
+   BCPos iter = BCPos(bcemit_ABC(fs, isnext ? BC_ITERN : BC_ITERC, base, nvars - BCREG(3) + BCREG(1), 3));
    ControlFlowEdge loopend = this->control_flow.make_unconditional(BCPos(bcemit_AJ(fs, BC_ITERL, base, NO_JMP)));
    BCLine encoded_body_line = BCLine::encode(this->lex_state.current_file_index, Payload.body->span.line.lineNumber());
    fs->bcbase[loopend.head().raw() - 1].line = encoded_body_line;
@@ -1342,6 +2887,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_defer_stmt(const DeferStmtPayload &Payl
    if (not Payload.callable) return this->unsupported_stmt(AstNodeKind::DeferStmt, SourceSpan{});
 
    FuncState* fs = &this->func_state;
+   BCREG scope_base = fs->bl->nactvar;
    auto reg = fs->free_reg();
    this->lex_state.var_new(0, NAME_BLANK);
    RegisterAllocator allocator(fs);
@@ -1381,6 +2927,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_defer_stmt(const DeferStmtPayload &Payl
       }
    }
 
+   bcemit_ABC(fs, BC_DEFERARM, reg.raw(), scope_base, nargs);
    fs->reset_freereg();
    return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
 }
@@ -1390,9 +2937,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_defer_stmt(const DeferStmtPayload &Payl
 //
 // For each object expression:
 //   1. Evaluate to a register
-//   2. Store in a hidden local slot flagged with VarInfoFlag::Close
-//   3. Emit bytecode to call obj.__lock(obj) to acquire the lock
-// The scope exit then automatically calls __close (= release_object) via the <close> machinery.
+//   2. Store in a hidden local slot
+//   3. Call obj.__lock(obj), replacing the hidden object with its private lock guard
+//   4. Flag that guard as closeable
+// The scope exit then closes the guard, which releases exactly its matching object lock.
 
 ParserResult<IrEmitUnit> IrEmitter::emit_with_stmt(const WithStmtPayload &Payload)
 {
@@ -1417,7 +2965,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_with_stmt(const WithStmtPayload &Payloa
       return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
    }
 
-   // Evaluate each object expression and store in <close> locals
+   // Evaluate each object expression and store its returned lock guard in a hidden <close> local.
 
    for (auto i = BCReg(0); i < obj_count; ++i) {
       const ExprNodePtr &obj_expr = Payload.objects[i.raw()];
@@ -1440,17 +2988,17 @@ ParserResult<IrEmitUnit> IrEmitter::emit_with_stmt(const WithStmtPayload &Payloa
       allocator.reserve(BCReg(1));  // Reserve the local slot
       ls->var_add(1);
 
-      // Mark the local as <close> so scope exit calls __close
+      // Mark the local as closeable.  It is armed only after __lock replaces the object with its lock guard.
       uint8_t slot = uint8_t(obj_reg.raw());
       if (slot >= 64) {
          return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::InternalInvariant,
-            "too many local variables with <close> attribute (max 64 slots)"));
+            "Too many local variables with <close> attribute (max 64 slots)"));
       }
 
       VarInfo *info = &fs->var_get(fs->varmap.size() - 1);
       info->info |= VarInfoFlag::Close;
 
-      // Emit bytecode to call __lock(obj) to acquire the lock
+      // Emit bytecode to call __lock(obj) to acquire the lock and return its closeable guard.
       // Pattern: getmetatable(obj) -> get __lock field -> call __lock(obj)
 
       BCREG base = fs->freereg;
@@ -1480,7 +3028,9 @@ ParserResult<IrEmitUnit> IrEmitter::emit_with_stmt(const WithStmtPayload &Payloa
       BCREG call_base = base;
       bcemit_AD(fs, BC_MOV, call_base, lock_fn_reg);
       bcemit_AD(fs, BC_MOV, call_base + 1 + LJ_FR2, obj_reg);
-      bcemit_ABC(fs, BC_CALL, call_base, 1, 2);  // 0 results, 1 arg
+      bcemit_ABC(fs, BC_CALL, call_base, 2, 2);  // 1 result, 1 arg
+      bcemit_AD(fs, BC_MOV, obj_reg, call_base); // Replace the operand with the returned lock guard.
+      bcemit_AD(fs, BC_CLOSEARM, obj_reg.raw(), 0);
 
       fs->reset_freereg(); // Release the temporary registers
    }
@@ -1513,19 +3063,12 @@ ParserResult<IrEmitUnit> IrEmitter::emit_break_stmt(const BreakStmtPayload&)
    // Both __close and defer handlers must run when jumping out of scope via break.
    // Order: closes before defers (LIFO - most recently declared runs first).
 
-   execute_closes(&this->func_state, loop.defer_base);
-   execute_defers(&this->func_state, loop.defer_base);
+   execute_scope_cleanups(&this->func_state, loop.defer_base);
 
-   // Emit BC_TRYLEAVE for each try scope we're exiting with this break.
-   // The try_depth tracks how deep we are in try blocks; when breaking out of
-   // a loop that's inside a try, we need to pop the try frame(s).
-
-   if (this->func_state.try_depth > loop.try_depth_at_entry) {
-      uint8_t leave_count = this->func_state.try_depth - loop.try_depth_at_entry;
-      BCReg base_reg = BCReg(this->func_state.freereg);
-      for (uint8_t i = 0; i < leave_count; ++i) {
-         bcemit_AD(&this->func_state, BC_TRYLEAVE, base_reg, BCReg(0));
-      }
+   for (size_t i = this->func_state.runtime_scopes.size(); i > loop.runtime_scope_depth_at_entry; --i) {
+      const RuntimeScope &scope = this->func_state.runtime_scopes[i - 1];
+      BCOp leave = scope.kind IS RuntimeScopeKind::Try ? BC_TRYLEAVE : BC_CHECKALLLEAVE;
+      bcemit_AD(&this->func_state, leave, scope.base, BCReg(0));
    }
 
    loop.break_edge.append(BCPos(bcemit_jmp(&this->func_state)));
@@ -1546,19 +3089,12 @@ ParserResult<IrEmitUnit> IrEmitter::emit_continue_stmt(const ContinueStmtPayload
    // Both __close and defer handlers must run when jumping out of scope via continue.
    // Order: closes before defers (LIFO - most recently declared runs first).
 
-   execute_closes(&this->func_state, loop.defer_base);
-   execute_defers(&this->func_state, loop.defer_base);
+   execute_scope_cleanups(&this->func_state, loop.defer_base);
 
-   // Emit BC_TRYLEAVE for each try scope we're exiting with this continue.
-   // The try_depth tracks how deep we are in try blocks; when continuing
-   // inside a loop that's inside a try, we need to pop the try frame(s).
-
-   if (this->func_state.try_depth > loop.try_depth_at_entry) {
-      uint8_t leave_count = this->func_state.try_depth - loop.try_depth_at_entry;
-      BCReg base_reg = BCReg(this->func_state.freereg);
-      for (uint8_t i = 0; i < leave_count; ++i) {
-         bcemit_AD(&this->func_state, BC_TRYLEAVE, base_reg, BCReg(0));
-      }
+   for (size_t i = this->func_state.runtime_scopes.size(); i > loop.runtime_scope_depth_at_entry; --i) {
+      const RuntimeScope &scope = this->func_state.runtime_scopes[i - 1];
+      BCOp leave = scope.kind IS RuntimeScopeKind::Try ? BC_TRYLEAVE : BC_CHECKALLLEAVE;
+      bcemit_AD(&this->func_state, leave, scope.base, BCReg(0));
    }
 
    loop.continue_edge.append(BCPos(bcemit_jmp(&this->func_state)));
@@ -1587,8 +3123,17 @@ ParserResult<IrEmitUnit> IrEmitter::emit_assignment_stmt(const AssignmentStmtPay
 
    bool AllocNewLocal = (Payload.op IS AssignmentOperator::Plain or Payload.op IS AssignmentOperator::IfEmpty or Payload.op IS AssignmentOperator::IfNil);
 
-   if (Payload.op IS AssignmentOperator::Plain and has_safe_nav_target and Payload.targets.size() > 1) {
-      return this->emit_plain_assignment_safe_multi(Payload.targets, Payload.values);
+   if (has_safe_nav_target and Payload.targets.size() > 1) {
+      SourceSpan span = SourceSpan{};
+      for (const ExprNodePtr& node : Payload.targets) {
+         if (node and contains_safe_nav_target(*node)) {
+            span = node->span;
+            break;
+         }
+      }
+
+      return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::InvalidAssignment,
+         "Safe-navigation assignment targets cannot be used in multi-assignment", span));
    }
 
    auto targets_result = this->prepare_assignment_targets(Payload.targets, AllocNewLocal, has_safe_nav_target);
@@ -1629,29 +3174,139 @@ ParserResult<ExpDesc> IrEmitter::emit_expression(const ExprNode& expr)
 
    this->lex_state.lastline = expr.span.line;
 
-   switch (expr.kind) {
-      case AstNodeKind::LiteralExpr:      return this->emit_literal_expr(std::get<LiteralValue>(expr.data));
-      case AstNodeKind::IdentifierExpr:   return this->emit_identifier_expr(std::get<NameRef>(expr.data));
-      case AstNodeKind::VarArgExpr:       return this->emit_vararg_expr();
-      case AstNodeKind::UnaryExpr:        return this->emit_unary_expr(std::get<UnaryExprPayload>(expr.data));
-      case AstNodeKind::UpdateExpr:       return this->emit_update_expr(std::get<UpdateExprPayload>(expr.data));
-      case AstNodeKind::BinaryExpr:       return this->emit_binary_expr(std::get<BinaryExprPayload>(expr.data));
-      case AstNodeKind::TernaryExpr:      return this->emit_ternary_expr(std::get<TernaryExprPayload>(expr.data));
-      case AstNodeKind::PresenceExpr:     return this->emit_presence_expr(std::get<PresenceExprPayload>(expr.data));
-      case AstNodeKind::PipeExpr:         return this->emit_pipe_expr(std::get<PipeExprPayload>(expr.data));
-      case AstNodeKind::MemberExpr:       return this->emit_member_expr(std::get<MemberExprPayload>(expr.data));
-      case AstNodeKind::IndexExpr:        return this->emit_index_expr(std::get<IndexExprPayload>(expr.data));
-      case AstNodeKind::SafeMemberExpr:   return this->emit_safe_member_expr(std::get<SafeMemberExprPayload>(expr.data));
-      case AstNodeKind::SafeIndexExpr:    return this->emit_safe_index_expr(std::get<SafeIndexExprPayload>(expr.data));
-      case AstNodeKind::SafeCallExpr:     return this->emit_safe_call_expr(std::get<CallExprPayload>(expr.data));
-      case AstNodeKind::CallExpr:         return this->emit_call_expr(std::get<CallExprPayload>(expr.data));
-      case AstNodeKind::ResultFilterExpr: return this->emit_result_filter_expr(std::get<ResultFilterPayload>(expr.data));
-      case AstNodeKind::TableExpr:        return this->emit_table_expr(std::get<TableExprPayload>(expr.data));
-      case AstNodeKind::RangeExpr:        return this->emit_range_expr(std::get<RangeExprPayload>(expr.data));
-      case AstNodeKind::ChooseExpr:       return this->emit_choose_expr(std::get<ChooseExprPayload>(expr.data));
-      case AstNodeKind::FunctionExpr:     return this->emit_function_expr(std::get<FunctionExprPayload>(expr.data));
-      default: return this->unsupported_expr(expr.kind, expr.span);
+   BCREG expression_base = this->func_state.freereg;
+   BCReg checkall_base = BCReg(0);
+   if (expr.is_checked) {
+      checkall_base = BCReg(this->func_state.freereg);
+      bcemit_AD(&this->func_state, BC_CHECKALLENTER, checkall_base, BCReg(0));
+      this->func_state.runtime_scopes.push_back(RuntimeScope{ RuntimeScopeKind::Checkall, checkall_base });
    }
+
+   // Attempting the fold at every node means a non-constant subtree can be re-walked once per ancestor,
+   // giving O(depth^2) behaviour on deep chains; evaluation bails at the first non-constant operand, which
+   // keeps the cost negligible for hand-written code.  Memoise per-node if generated code makes this hot.
+   ParserResult<ExpDesc> result;
+   if (auto constant = this->constant_evaluator.evaluate(expr)) {
+      result = this->emit_literal_expr(constant->to_literal());
+   }
+   else switch (expr.kind) {
+      case AstNodeKind::RaiseExpr: {
+         auto raised = this->emit_raise_payload(std::get<RaisePayload>(expr.data), expr.span);
+         if (not raised.ok()) result = ParserResult<ExpDesc>::failure(raised.error_ref());
+         else result = ParserResult<ExpDesc>::success(ExpDesc(ExpKind::Unreachable));
+         break;
+      }
+      case AstNodeKind::LiteralExpr:
+         result = this->emit_literal_expr(std::get<LiteralValue>(expr.data));
+         break;
+      case AstNodeKind::IdentifierExpr:
+         result = this->emit_identifier_expr(std::get<NameRef>(expr.data));
+         break;
+      case AstNodeKind::CurrentContextExpr:
+         result = this->emit_current_context_expr();
+         break;
+      case AstNodeKind::VarArgExpr:
+         result = this->emit_vararg_expr();
+         break;
+      case AstNodeKind::UnaryExpr:
+         result = this->emit_unary_expr(std::get<UnaryExprPayload>(expr.data));
+         break;
+      case AstNodeKind::UpdateExpr:
+         result = this->emit_update_expr(std::get<UpdateExprPayload>(expr.data));
+         break;
+      case AstNodeKind::TypeTestExpr:
+         result = this->emit_type_test_expr(std::get<TypeTestExprPayload>(expr.data));
+         break;
+      case AstNodeKind::BinaryExpr:
+         result = this->emit_binary_expr(std::get<BinaryExprPayload>(expr.data));
+         break;
+      case AstNodeKind::ComparisonChainExpr:
+         result = this->emit_comparison_chain_expr(std::get<ComparisonChainExprPayload>(expr.data));
+         break;
+      case AstNodeKind::TernaryExpr:
+         result = this->emit_ternary_expr(std::get<TernaryExprPayload>(expr.data));
+         break;
+      case AstNodeKind::PresenceExpr:
+         result = this->emit_presence_expr(std::get<PresenceExprPayload>(expr.data));
+         break;
+      case AstNodeKind::PipeExpr:
+         result = this->emit_pipe_expr(std::get<PipeExprPayload>(expr.data));
+         break;
+      case AstNodeKind::MemberExpr:
+         result = this->emit_member_expr(std::get<MemberExprPayload>(expr.data));
+         break;
+      case AstNodeKind::ModuleFunctionExpr:
+         result = this->emit_module_function_expr(std::get<ModuleFunctionExprPayload>(expr.data));
+         break;
+      case AstNodeKind::IndexExpr:
+         result = this->emit_index_expr(std::get<IndexExprPayload>(expr.data));
+         break;
+      case AstNodeKind::SafeMemberExpr:
+         result = this->emit_safe_member_expr(std::get<SafeMemberExprPayload>(expr.data));
+         break;
+      case AstNodeKind::SafeIndexExpr:
+         result = this->emit_safe_index_expr(std::get<SafeIndexExprPayload>(expr.data));
+         break;
+      case AstNodeKind::SafeCallExpr:
+         result = this->emit_call_expr(std::get<CallExprPayload>(expr.data));
+         break;
+      case AstNodeKind::CallExpr:
+         result = this->emit_call_expr(std::get<CallExprPayload>(expr.data));
+         break;
+      case AstNodeKind::ResultFilterExpr:
+         result = this->emit_result_filter_expr(std::get<ResultFilterPayload>(expr.data));
+         break;
+      case AstNodeKind::TableExpr:
+         result = this->emit_table_expr(std::get<TableExprPayload>(expr.data));
+         break;
+      case AstNodeKind::RangeExpr:
+         result = this->emit_range_expr(std::get<RangeExprPayload>(expr.data));
+         break;
+      case AstNodeKind::ChooseExpr:
+         result = this->emit_choose_expr(std::get<ChooseExprPayload>(expr.data));
+         break;
+      case AstNodeKind::FunctionExpr:
+         result = this->emit_function_expr(std::get<FunctionExprPayload>(expr.data));
+         break;
+      default:
+         result = this->unsupported_expr(expr.kind, expr.span);
+         break;
+   }
+
+   if (result.ok()) {
+      ExpDesc &emitted = result.value_ref();
+      if (emitted.is_unreachable()) this->func_state.freereg = expression_base;
+      if (expr.is_checked and emitted.is_unreachable()) this->func_state.runtime_scopes.pop_back();
+      else if (expr.is_checked) {
+         BCReg error_reg;
+         if (emitted.k IS ExpKind::Call) error_reg = BCReg(emitted.u.s.aux);
+         else {
+            expr_toanyreg(&this->func_state, &emitted);
+            error_reg = BCReg(emitted.u.s.info);
+         }
+
+         bcemit_AD(&this->func_state, BC_CHECKALLLEAVE, checkall_base, BCReg(0));
+         this->func_state.runtime_scopes.pop_back();
+
+         int32_t raw_column = expr.span.column.lineNumber();
+         BCReg source_column = BCReg(raw_column > int32_t(BCMAX_D) ? BCMAX_D : raw_column);
+         bcemit_AD(&this->func_state, BC_CHECK, error_reg, source_column);
+      }
+
+      if (expr.static_value) {
+         emitted.static_value = expr.static_value;
+         const auto &descriptor = this->ctx.descriptors().value(expr.static_value);
+         emitted.result_type = descriptor.primary;
+         emitted.object_class_id = descriptor.object_class_id;
+         emitted.struct_def = descriptor.struct_def;
+      }
+      // Identifier lookup can recover a descriptor from VarInfo or an upvalue even when binding analysis has no
+      // handle.  For compound expressions, an unclaimed handle describes an operand and must not leak to the result.
+      else if (expr.kind != AstNodeKind::IdentifierExpr) emitted.static_value = {};
+      if (expr.static_results) emitted.static_results = expr.static_results;
+      else if (expr.kind != AstNodeKind::IdentifierExpr) emitted.static_results = {};
+   }
+   return result;
 }
 
 //********************************************************************************************************************
@@ -1689,30 +3344,110 @@ ParserResult<ExpDesc> IrEmitter::emit_literal_expr(const LiteralValue& literal)
 }
 
 //********************************************************************************************************************
+// Resolve the active table context.  Stable regions use their retained register; regions without a known source
+// materialise through BC_CTXGET, whose runtime resolution still follows the dynamic context stack and L->env root.
+
+ParserResult<ExpDesc> IrEmitter::emit_current_context_expr()
+{
+   if (not this->context_sources.empty()) {
+      const ContextSource &source = this->context_sources.back();
+      ExpDesc expr(ExpKind::NonReloc, source.slot.raw());
+      expr.result_type = TiriType::Table;
+      return ParserResult<ExpDesc>::success(expr);
+   }
+
+   ExpDesc expr;
+   expr.init(ExpKind::Relocable, bcemit_AD(&this->func_state, BC_CTXGET, 0, 0));
+   expr.result_type = TiriType::Table;
+   return ParserResult<ExpDesc>::success(expr);
+}
+
+//********************************************************************************************************************
 // Emit bytecode for an identifier expression, resolving the name to a local, upvalue, or global variable.
 
-ParserResult<ExpDesc> IrEmitter::emit_identifier_expr(const NameRef& reference)
+static bool is_named_external_global(GCstr *Name)
+{
+   if (not Name) return false;
+
+   std::string_view name(strdata(Name), Name->len);
+   if (name.size() >= 3 and name[0] IS 'g' and name[1] IS 'l' and name[2] >= 'A' and name[2] <= 'Z') {
+      return true;
+   }
+
+   if (name.size() >= 2 and name[0] IS 'm' and name[1] >= 'A' and name[1] <= 'Z') {
+      return true;
+   }
+
+   return false;
+}
+
+//********************************************************************************************************************
+
+ParserResult<ExpDesc> IrEmitter::emit_identifier_expr(const NameRef& reference, bool AllowUnscoped)
 {
    // Blank identifiers cannot be read - they are only valid as assignment targets
    if (reference.identifier.is_blank) {
       return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::UnexpectedToken,
-         "cannot read blank identifier '_'"));
+         "Cannot read blank identifier '_'"));
    }
 
-   // Check if this is a registered constant - substitute with literal value
-   if (auto constant = lookup_constant(reference.identifier.symbol)) {
-      ExpDesc expr(constant->to_number());
-      return ParserResult<ExpDesc>::success(expr);
+   if (reference.resolution IS NameResolution::BuiltinCallable) {
+      auto id = BuiltinCallableID(reference.slot);
+      auto result = bcemit_builtin_callable(&this->func_state, id, this->func_state.free_reg());
+      return ParserResult<ExpDesc>::success(result);
    }
 
-   // Normal variable lookup
    ExpDesc resolved;
    this->lex_state.var_lookup_symbol(reference.identifier.symbol, &resolved);
+
+   // Explicit local/upvalue shadows take precedence over registered constant substitution.
+   if (resolved.k != ExpKind::Local and resolved.k != ExpKind::Upval) {
+      if (auto constant = lookup_constant(reference.identifier.symbol)) {
+         ExpDesc expr(constant->to_number());
+         return ParserResult<ExpDesc>::success(expr);
+      }
+   }
 
    // If unscoped, check if this was explicitly declared as global
    if (resolved.k IS ExpKind::Unscoped) {
       if (this->func_state.declared_globals.count(reference.identifier.symbol) > 0) {
          resolved.k = ExpKind::Global;
+      }
+      else if (this->func_state.external_symbols.count(reference.identifier.symbol) > 0) {
+         resolved.k = ExpKind::Global;
+      }
+      else if (reference.identifier.symbol) {
+         cTValue *global = lj_tab_getstr(tabref(this->lex_state.L->env), reference.identifier.symbol);
+         if (global and not tvisnil(global)) {
+            resolved.k = ExpKind::Global;
+         }
+         else if (not AllowUnscoped and is_named_external_global(reference.identifier.symbol)) {
+            // Naming conventions can hint that an unresolved read refers to an external global, but assignment
+            // targets must remain unscoped so the local-by-default path can create a local variable.
+            resolved.k = ExpKind::Global;
+         }
+      }
+   }
+
+   if (resolved.k IS ExpKind::Unscoped and not AllowUnscoped) {
+      GCstr *name = resolved.u.sval;
+      std::string msg = "Undeclared variable '";
+      if (name) msg += std::string_view(strdata(name), name->len);
+      msg += "'";
+      return ParserResult<ExpDesc>::failure(
+         this->make_error(ParserErrorCode::UndefinedVariable, msg, reference.identifier.span));
+   }
+
+   // Attach type metadata published by the type analyser to global reads.  This mirrors the VarInfo type
+   // propagation performed for locals in var_lookup_() and lets member access on typed globals select
+   // specialised bytecode (STGETF/STSETF, OBGETF/OBSETF, AGETV/AGETB) instead of generic table access.
+
+   if (resolved.k IS ExpKind::Global) {
+      auto it = this->lex_state.global_type_hints.find(reference.identifier.symbol);
+      if (it != this->lex_state.global_type_hints.end()) {
+         resolved.result_type = it->second.primary;
+         resolved.object_class_id = it->second.object_class_id;
+         resolved.struct_def = it->second.struct_def;
       }
    }
 
@@ -1741,7 +3476,7 @@ ParserResult<ExpDesc> IrEmitter::emit_unary_expr(const UnaryExprPayload &Payload
 {
    if (not Payload.operand) return this->unsupported_expr(AstNodeKind::UnaryExpr, SourceSpan{});
    auto operand_result = this->emit_expression(*Payload.operand);
-   if (not operand_result.ok()) return operand_result;
+   if (not operand_result.ok() or operand_result.value_ref().is_unreachable()) return operand_result;
    ExpDesc operand = operand_result.value_ref();
 
    // Use OperatorEmitter facade for unary operators
@@ -1811,12 +3546,109 @@ ParserResult<ExpDesc> IrEmitter::emit_update_expr(const UpdateExprPayload &Paylo
 }
 
 //********************************************************************************************************************
+// Emits TYPETEST using the portable runtime-contract descriptor representation.  The VM replaces the tested register
+// with a canonical boolean.
+
+ParserResult<BCReg> IrEmitter::emit_type_test_descriptor(
+   const TypeTestDescriptor &Descriptor, bool Negated, BCReg Destination)
+{
+   auto append_uleb32 = [](std::string &Output, uint32_t Value) {
+      do {
+         uint8_t byte = uint8_t(Value & 0x7f);
+         Value >>= 7;
+         if (Value) byte |= 0x80;
+         Output.push_back(char(byte));
+      } while (Value);
+   };
+   auto append_text = [](std::string &Output, std::string_view Text) {
+      Output.push_back(char(uint8_t(Text.size())));
+      Output.append(Text);
+   };
+
+   std::string descriptor;
+   descriptor.reserve(24);
+   descriptor.push_back(char(uint8_t(ContractBoundary::Local)));
+   descriptor.push_back(char(0));
+   descriptor.push_back(char(1));
+   descriptor.push_back(char(1));
+   descriptor.push_back(char(uint8_t(Descriptor.type)));
+
+   uint8_t entry_flags = 0;
+   if (Descriptor.type IS TiriType::Any or Descriptor.type IS TiriType::Nil) {
+      entry_flags |= contract_flag(ContractEntryFlag::Nullable);
+   }
+   if (Negated) entry_flags |= contract_flag(ContractEntryFlag::Negated);
+   descriptor.push_back(char(entry_flags));
+   descriptor.push_back(char(1));
+
+   CLASSID class_id = Descriptor.type IS TiriType::Object ? Descriptor.object_class_id : CLASSID::NIL;
+   append_uleb32(descriptor, uint32_t(class_id));
+
+   std::string_view struct_name;
+   if (Descriptor.type IS TiriType::Struct and Descriptor.struct_def) struct_name = Descriptor.struct_def->Name;
+   if (struct_name.size() > UINT8_MAX) {
+      return ParserResult<BCReg>::failure(this->make_error(
+         ParserErrorCode::UnexpectedToken, "Type-test structure name is too long"));
+   }
+   append_text(descriptor, struct_name);
+
+   if (Descriptor.type IS TiriType::Array) {
+      AET element_type = Descriptor.constrained ? Descriptor.array_element.storage : AET::ANY;
+      descriptor.push_back(char(uint8_t(element_type)));
+      std::string_view element_constraint_name;
+      if (element_type IS AET::STRUCT and Descriptor.array_element.struct_def) {
+         element_constraint_name = Descriptor.array_element.struct_def->Name;
+      }
+      else if (element_type IS AET::ARRAY and Descriptor.array_element.nested_array_identity) {
+         GCstr *identity = Descriptor.array_element.nested_array_identity;
+         element_constraint_name = std::string_view(strdata(identity), identity->len);
+      }
+      if (element_constraint_name.size() > UINT8_MAX) {
+         return ParserResult<BCReg>::failure(this->make_error(
+            ParserErrorCode::UnexpectedToken, "Type-test array constraint is too long"));
+      }
+      append_text(descriptor, element_constraint_name);
+   }
+   append_text(descriptor, {});
+
+   GCstr *encoded = this->lex_state.keepstr(std::string_view(descriptor.data(), descriptor.size()));
+   ExpDesc constant(encoded);
+   bcemit_AD(&this->func_state, BC_TYPETEST, Destination.raw(), const_str(&this->func_state, &constant));
+   return ParserResult<BCReg>::success(Destination);
+}
+
+//********************************************************************************************************************
+// Emits a boolean type test using the portable runtime-contract descriptor representation.  The VM replaces the
+// tested register with a canonical boolean, so the left operand is evaluated exactly once.
+
+ParserResult<ExpDesc> IrEmitter::emit_type_test_expr(const TypeTestExprPayload &Payload)
+{
+   if (not Payload.value) return this->unsupported_expr(AstNodeKind::TypeTestExpr, SourceSpan{});
+   auto value_result = this->emit_expression(*Payload.value);
+   if (not value_result.ok() or value_result.value_ref().is_unreachable()) return value_result;
+
+   ExpDesc value = value_result.value_ref();
+   RegisterAllocator allocator(&this->func_state);
+   allocator.discharge_to_next_register(value);
+   BCReg value_reg(value.u.s.info);
+
+   auto type_test = this->emit_type_test_descriptor(Payload.descriptor, Payload.negated, value_reg);
+   if (not type_test.ok()) return ParserResult<ExpDesc>::failure(type_test.error_ref());
+
+   value.init(ExpKind::NonReloc, value_reg.raw());
+   value.result_type = TiriType::Bool;
+   value.object_class_id = CLASSID::NIL;
+   value.struct_def = nullptr;
+   return ParserResult<ExpDesc>::success(value);
+}
+
+//********************************************************************************************************************
 // Emit bytecode for a binary expression (arithmetic, comparison, logical, bitwise, or concatenation operators).
 
 ParserResult<ExpDesc> IrEmitter::emit_binary_expr(const BinaryExprPayload &Payload)
 {
    auto lhs_result = this->emit_expression(*Payload.left);
-   if (not lhs_result.ok()) return lhs_result;
+   if (not lhs_result.ok() or lhs_result.value_ref().is_unreachable()) return lhs_result;
 
    auto mapped = map_binary_operator(Payload.op);
    if (not mapped.has_value()) {
@@ -1864,6 +3696,7 @@ ParserResult<ExpDesc> IrEmitter::emit_binary_expr(const BinaryExprPayload &Paylo
    auto rhs_result = this->emit_expression(*Payload.right);
    if (not rhs_result.ok()) return rhs_result;
    ExpDesc rhs = rhs_result.value_ref();
+   if (rhs.is_unreachable() and opr != BinOpr::LogicalAnd and opr != BinOpr::LogicalOr) return rhs_result;
 
    // Emit the actual operation based on operator type
    if (opr IS BinOpr::LogicalAnd) { // Logical AND: CFG-based short-circuit implementation
@@ -1872,7 +3705,7 @@ ParserResult<ExpDesc> IrEmitter::emit_binary_expr(const BinaryExprPayload &Paylo
    else if (opr IS BinOpr::LogicalOr) { // Logical OR: CFG-based short-circuit implementation
       this->operator_emitter.complete_logical_or(ExprValue(&lhs), rhs);
    }
-   else if (opr >= BinOpr::NotEqual and opr <= BinOpr::GreaterThan) { // Comparison operators (NE, EQ, LT, GE, LE, GT)
+   else if (is_comparison_op(opr)) { // Comparison operators (NE, EQ, LT, GE, LE, GT, APPROX)
       this->operator_emitter.emit_comparison(opr, ExprValue(&lhs), rhs);
    }
    else if (opr IS BinOpr::Concat) { // CONCAT: CFG-based implementation with BC_CAT chaining
@@ -1890,8 +3723,84 @@ ParserResult<ExpDesc> IrEmitter::emit_binary_expr(const BinaryExprPayload &Paylo
 }
 
 //********************************************************************************************************************
+// Emit bytecode for ordering comparison chains such as `0 <= x < 10`.
+
+ParserResult<ExpDesc> IrEmitter::emit_comparison_chain_expr(const ComparisonChainExprPayload &Payload)
+{
+   if (Payload.operands.size() < 2 or Payload.operators.size() + 1 != Payload.operands.size()) {
+      SourceSpan span = Payload.operands.empty() ? SourceSpan{} : Payload.operands.front()->span;
+      return this->unsupported_expr(AstNodeKind::ComparisonChainExpr, span);
+   }
+
+   auto lhs_result = this->emit_expression(*Payload.operands[0]);
+   if (not lhs_result.ok() or lhs_result.value_ref().is_unreachable()) return lhs_result;
+
+   ExpDesc lhs = lhs_result.value_ref();
+   ExpDesc result;
+   std::vector<BCReg> preserved_regs;
+   bool has_result = false;
+
+   for (size_t index = 0; index < Payload.operators.size(); ++index) {
+      if (has_result) this->operator_emitter.prepare_logical_and(ExprValue(&result));
+
+      auto mapped = map_binary_operator(Payload.operators[index]);
+      if (not mapped.has_value()) {
+         SourceSpan span = Payload.operands[index] ? Payload.operands[index]->span : SourceSpan{};
+         return this->unsupported_expr(AstNodeKind::ComparisonChainExpr, span);
+      }
+
+      BinOpr opr = mapped.value();
+      this->operator_emitter.emit_binop_left(opr, ExprValue(&lhs));
+
+      auto rhs_result = this->emit_expression(*Payload.operands[index + 1]);
+      if (not rhs_result.ok()) return rhs_result;
+
+      ExpDesc rhs = rhs_result.value_ref();
+      if (rhs.is_unreachable()) {
+         if (has_result) this->operator_emitter.complete_logical_and(ExprValue(&result), rhs);
+         else result = rhs;
+         return ParserResult<ExpDesc>::success(result);
+      }
+      bool preserve_rhs = index + 1 < Payload.operators.size();
+      BCReg next_lhs_reg = BCReg(NO_REG);
+      TiriType preserved_type = rhs.result_type;
+
+      if (preserve_rhs) {
+         this->register_allocator.discharge_to_next_register(rhs);
+         BCReg comparison_rhs_reg = BCReg(rhs.u.s.info);
+         preserved_regs.push_back(comparison_rhs_reg);
+
+         next_lhs_reg = this->func_state.free_reg();
+         this->register_allocator.reserve(BCReg(1));
+         bcemit_AD(&this->func_state, BC_MOV, next_lhs_reg, comparison_rhs_reg);
+         preserved_regs.push_back(next_lhs_reg);
+      }
+
+      ExpDesc comparison = lhs;
+      this->operator_emitter.emit_comparison(opr, ExprValue(&comparison), rhs);
+
+      if (has_result) this->operator_emitter.complete_logical_and(ExprValue(&result), comparison);
+      else {
+         result = comparison;
+         has_result = true;
+      }
+
+      if (preserve_rhs) {
+         lhs.init(ExpKind::NonReloc, next_lhs_reg.raw());
+         lhs.result_type = preserved_type;
+      }
+   }
+
+   for (auto reg = preserved_regs.rbegin(); reg != preserved_regs.rend(); ++reg) {
+      this->register_allocator.release_register(*reg);
+   }
+
+   result.result_type = TiriType::Bool;
+   return ParserResult<ExpDesc>::success(result);
+}
+//********************************************************************************************************************
 // IF_EMPTY (lhs ?? rhs) with conditional RHS emission for proper short-circuit semantics
-// Similar to ternary but with extended falsey checks (nil, false, 0, "")
+// Similar to ternary but with extended falsey checks (nil, false, 0, "", empty collections)
 
 ParserResult<ExpDesc> IrEmitter::emit_if_empty_expr(ExpDesc lhs, const ExprNode& rhs_ast)
 {
@@ -1902,24 +3811,10 @@ ParserResult<ExpDesc> IrEmitter::emit_if_empty_expr(ExpDesc lhs, const ExprNode&
    ExpressionValue lhs_value(&this->func_state, lhs);
    auto lhs_reg = lhs_value.discharge_to_any_reg(allocator);
 
-   ExpDesc nilv(ExpKind::Nil);
-   ExpDesc falsev(ExpKind::False);
-   ExpDesc zerov(0.0);
-   ExpDesc emptyv(this->lex_state.intern_empty_string());
-
-   // Extended falsey checks - jumps skip to RHS when value is falsey
-   bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQP, lhs_reg, const_pri(&nilv)));
-   ControlFlowEdge check_nil = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
-   bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQP, lhs_reg, const_pri(&falsev)));
-   ControlFlowEdge check_false = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
-   bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQN, lhs_reg, const_num(&this->func_state, &zerov)));
-   ControlFlowEdge check_zero = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
-   bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQS, lhs_reg, const_str(&this->func_state, &emptyv)));
-   ControlFlowEdge check_empty = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
-
-   // Empty array check (array with len IS 0)
-   bcemit_INS(&this->func_state, BCINS_AD(BC_ISEMPTYARR, lhs_reg, 0));
-   ControlFlowEdge check_empty_array = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
+   FalseyJumpOptions options;
+   options.include_empty_array = true;
+   ControlFlowEdge falsey_edge = emit_falsey_jumps(
+      this->func_state, this->control_flow, lhs_reg, options, lhs.result_type);
 
    // LHS is truthy - it's already in lhs_reg, just skip RHS
    ControlFlowEdge skip_rhs = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
@@ -1927,11 +3822,7 @@ ParserResult<ExpDesc> IrEmitter::emit_if_empty_expr(ExpDesc lhs, const ExprNode&
    // Patch falsey checks to jump here (RHS evaluation)
 
    BCPos rhs_start = BCPos(this->func_state.pc);
-   check_nil.patch_to(rhs_start);
-   check_false.patch_to(BCPos(rhs_start));
-   check_zero.patch_to(BCPos(rhs_start));
-   check_empty.patch_to(BCPos(rhs_start));
-   check_empty_array.patch_to(BCPos(rhs_start));
+   falsey_edge.patch_to(rhs_start);
 
    // Emit RHS - only executed when LHS is falsey
 
@@ -2030,24 +3921,7 @@ ParserResult<ExpDesc> IrEmitter::emit_bitwise_expr(BinOpr opr, ExpDesc lhs, cons
    // 3. Move any remaining operands as needed.
    // Critical for JIT compatibility - JIT expects callee loaded before arguments.
 
-   ExpDesc callee, key;
-   callee.init(ExpKind::Global, 0);
-   callee.u.sval = this->lex_state.keepstr("bit");
-
-   // Discharge Global directly to call_base register (GGET call_base, "bit")
-   ExpressionValue callee_val(fs, callee);
-   callee_val.to_reg(allocator, BCReg(call_base));
-   callee = callee_val.legacy();
-
-   // Now index into the table at call_base (TGETS call_base, call_base, "fname")
-   key.init(ExpKind::Str, 0);
-   key.u.sval = this->lex_state.keepstr(std::string_view(op_name, op_name_len));
-   expr_index(fs, &callee, &key);
-
-   // Discharge the indexed result to call_base (in-place, like explicit bit.band)
-   ExpressionValue callee_indexed(fs, callee);
-   callee_indexed.to_reg(allocator, BCReg(call_base));
-   callee = callee_indexed.legacy();
+   emit_bit_function_lookup(*fs, allocator, std::string_view(op_name, op_name_len), BCReg(call_base));
 
    // Now move LHS to arg1 if it wasn't at call_base
    if (not lhs_was_base) {
@@ -2058,7 +3932,7 @@ ParserResult<ExpDesc> IrEmitter::emit_bitwise_expr(BinOpr opr, ExpDesc lhs, cons
 
    // NOW evaluate RHS - it will go to freereg (past the call frame)
    auto rhs_result = this->emit_expression(rhs_ast);
-   if (not rhs_result.ok()) return rhs_result;
+   if (not rhs_result.ok() or rhs_result.value_ref().is_unreachable()) return rhs_result;
    ExpDesc rhs = rhs_result.value_ref();
 
    // Move RHS to arg2 if not already there
@@ -2098,20 +3972,6 @@ ParserResult<ExpDesc> IrEmitter::emit_bitwise_expr(BinOpr opr, ExpDesc lhs, cons
 ParserResult<ExpDesc> IrEmitter::emit_has_flag_expr(ExpDesc lhs, const ExprNode& rhs_ast)
 {
    FuncState* fs = &this->func_state;
-
-   // Constant folding: if both operands are numeric constants, compute at compile time.
-   // Read RHS directly from AST so we do not emit/evaluate RHS before resolving bit.band.
-   if (lhs.is_num_constant_nojump() and rhs_ast.kind IS AstNodeKind::LiteralExpr) {
-      auto *rhs_literal = std::get_if<LiteralValue>(&rhs_ast.data);
-      if (rhs_literal and rhs_literal->kind IS LiteralKind::Number) {
-         auto k1 = lj_num2bit(lhs.number_value());
-         auto k2 = lj_num2bit(rhs_literal->number_value);
-         bool result = (k1 & k2) != 0;
-         lhs.k = result ? ExpKind::True : ExpKind::False;
-         lhs.result_type = TiriType::Bool;
-         return ParserResult<ExpDesc>::success(lhs);
-      }
-   }
 
    // Runtime path: emit bit.band(lhs, rhs) call, then compare result against 0.
    // Keep LHS stable before RHS emission so RHS side effects cannot alter which LHS value we test.
@@ -2160,21 +4020,7 @@ ParserResult<ExpDesc> IrEmitter::emit_has_flag_expr(ExpDesc lhs, const ExprNode&
 
    // Load bit.band callee to call_base before RHS emission.
    // LHS is already captured above; delaying RHS avoids violating left-to-right operand semantics.
-   ExpDesc callee, key;
-   callee.init(ExpKind::Global, 0);
-   callee.u.sval = this->lex_state.keepstr("bit");
-
-   ExpressionValue callee_val(fs, callee);
-   callee_val.to_reg(allocator, BCReg(call_base));
-   callee = callee_val.legacy();
-
-   key.init(ExpKind::Str, 0);
-   key.u.sval = this->lex_state.keepstr("band");
-   expr_index(fs, &callee, &key);
-
-   ExpressionValue callee_indexed(fs, callee);
-   callee_indexed.to_reg(allocator, BCReg(call_base));
-   callee = callee_indexed.legacy();
+   emit_bit_function_lookup(*fs, allocator, "band", BCReg(call_base));
 
    // Move LHS to arg1 if it wasn't at call_base
    if (not lhs_was_base) {
@@ -2186,7 +4032,7 @@ ParserResult<ExpDesc> IrEmitter::emit_has_flag_expr(ExpDesc lhs, const ExprNode&
    // Evaluate RHS only after LHS is fixed and call frame is prepared.
    // This ordering prevents `x has f()` from reading a mutated `x` when `f()` has side effects.
    auto rhs_result = this->emit_expression(rhs_ast);
-   if (not rhs_result.ok()) return rhs_result;
+   if (not rhs_result.ok() or rhs_result.value_ref().is_unreachable()) return rhs_result;
    ExpDesc rhs = rhs_result.value_ref();
 
    if (rhs.k IS ExpKind::Call) {
@@ -2235,7 +4081,7 @@ ParserResult<ExpDesc> IrEmitter::emit_has_flag_expr(ExpDesc lhs, const ExprNode&
 }
 
 //********************************************************************************************************************
-// Emit bytecode for a ternary expression (condition ? true_value : false_value), with falsey checks.
+// Emit bytecode for a ternary expression (condition ? true_value : false_value).
 
 ParserResult<ExpDesc> IrEmitter::emit_ternary_expr(const TernaryExprPayload &Payload)
 {
@@ -2243,43 +4089,57 @@ ParserResult<ExpDesc> IrEmitter::emit_ternary_expr(const TernaryExprPayload &Pay
       return this->unsupported_expr(AstNodeKind::TernaryExpr, SourceSpan{});
    }
 
+   if (auto condition = this->constant_evaluator.evaluate(*Payload.condition)) {
+      bool selected = Payload.condition_mode IS TernaryConditionMode::Extended ?
+         not condition->is_extended_falsey() : condition->is_truthy();
+      auto result = this->emit_expression(selected ? *Payload.if_true : *Payload.if_false);
+      if (result.ok() and result.value_ref().k IS ExpKind::Call) {
+         // A ternary always consolidates a call to one result, even when its condition was folded.
+         this->register_allocator.discharge_to_value(result.value_ref());
+      }
+      return result;
+   }
+
    auto condition_result = this->emit_expression(*Payload.condition);
-   if (not condition_result.ok()) return condition_result;
+   if (not condition_result.ok() or condition_result.value_ref().is_unreachable()) return condition_result;
 
    // Use RegisterGuard for automatic register cleanup on all exit paths (RAII)
 
    RegisterGuard register_guard(&this->func_state);
    RegisterAllocator allocator(&this->func_state);
-   ExpressionValue condition_value(&this->func_state, condition_result.value_ref());
-   auto cond_reg = condition_value.discharge_to_any_reg(allocator);
+   ControlFlowEdge false_edge = this->control_flow.make_false_edge();
+   BCReg condition_reg = BCReg(NO_REG);
 
-   ExpDesc nilv(ExpKind::Nil);
-   ExpDesc falsev(ExpKind::False);
-   ExpDesc zerov(0.0);
-   ExpDesc emptyv(this->lex_state.intern_empty_string());
+   if (Payload.condition_mode IS TernaryConditionMode::Extended) {
+      ExpressionValue condition_value(&this->func_state, condition_result.value_ref());
+      condition_reg = condition_value.discharge_to_any_reg(allocator);
 
-   bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQP, cond_reg, const_pri(&nilv)));
-   ControlFlowEdge check_nil = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
-   bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQP, cond_reg, const_pri(&falsev)));
-   ControlFlowEdge check_false = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
-   bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQN, cond_reg, const_num(&this->func_state, &zerov)));
-   ControlFlowEdge check_zero = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
-   bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQS, cond_reg, const_str(&this->func_state, &emptyv)));
-   ControlFlowEdge check_empty = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
-
-   // Empty array check (array with len IS 0)
-   bcemit_INS(&this->func_state, BCINS_AD(BC_ISEMPTYARR, cond_reg, 0));
-   ControlFlowEdge check_empty_array = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
+      FalseyJumpOptions options;
+      options.include_empty_array = true;
+      false_edge.append(emit_falsey_jumps(
+         this->func_state, this->control_flow, condition_reg, options,
+         condition_result.value_ref().result_type));
+   }
+   else {
+      ExpDesc condition = condition_result.value_ref();
+      if (condition.k IS ExpKind::Nil) condition.k = ExpKind::False;
+      bcemit_branch_t(&this->func_state, &condition);
+      false_edge.append(BCPos(condition.f));
+   }
 
    // Determine the result register. If cond_reg is a local variable, we must allocate a fresh register
    // to avoid corrupting it. Otherwise, we can reuse cond_reg (which is a temporary).
+   bool needs_result = not expression_never_returns(*Payload.if_true) or
+      not expression_never_returns(*Payload.if_false);
    BCReg result_reg;
-   if (this->func_state.is_local_register(cond_reg)) {
+   if (condition_reg.raw() != NO_REG and not this->func_state.is_local_register(condition_reg)) {
+      result_reg = condition_reg; // condition_reg is a temporary - safe to reuse
+   }
+   else {
       // cond_reg holds a local variable that may be referenced later - allocate fresh register
       result_reg = BCReg(this->func_state.freereg);
-      bcreg_reserve(&this->func_state, 1);
+      if (needs_result) bcreg_reserve(&this->func_state, 1);
    }
-   else result_reg = cond_reg; // cond_reg is a temporary - safe to reuse
 
    auto true_result = this->emit_expression(*Payload.if_true);
    if (not true_result.ok()) return true_result;
@@ -2287,25 +4147,25 @@ ParserResult<ExpDesc> IrEmitter::emit_ternary_expr(const TernaryExprPayload &Pay
    ExpressionValue true_value(&this->func_state, true_result.value_ref());
    true_value.discharge();
    this->materialise_to_reg(true_value.legacy(), result_reg, "ternary true branch");
-   allocator.collapse_freereg(result_reg);
+   if (needs_result) allocator.collapse_freereg(result_reg);
 
-   ControlFlowEdge skip_false = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
+   ControlFlowEdge skip_false = this->control_flow.make_unconditional();
+   if (not true_result.value_ref().is_unreachable()) skip_false.append(BCPos(bcemit_jmp(&this->func_state)));
 
    BCPos false_start = BCPos(this->func_state.pc);
-   check_nil.patch_to(false_start);
-   check_false.patch_to(BCPos(false_start));
-   check_zero.patch_to(BCPos(false_start));
-   check_empty.patch_to(BCPos(false_start));
-   check_empty_array.patch_to(BCPos(false_start));
+   false_edge.patch_to(false_start);
 
    auto false_result = this->emit_expression(*Payload.if_false);
    if (not false_result.ok()) return false_result;
    ExpressionValue false_value(&this->func_state, false_result.value_ref());
    false_value.discharge();
    this->materialise_to_reg(false_value.legacy(), result_reg, "ternary false branch");
-   allocator.collapse_freereg(result_reg);
+   if (needs_result) allocator.collapse_freereg(result_reg);
 
    skip_false.patch_to(BCPos(this->func_state.pc));
+   if (true_result.value_ref().is_unreachable() and false_result.value_ref().is_unreachable()) {
+      return ParserResult<ExpDesc>::success(ExpDesc(ExpKind::Unreachable));
+   }
 
    // Preserve result register by adjusting what RegisterGuard will restore to
    // Only restore to saved_freereg if it's beyond the result register
@@ -2326,7 +4186,7 @@ ParserResult<ExpDesc> IrEmitter::emit_presence_expr(const PresenceExprPayload &P
    SourceSpan span = Payload.value ? Payload.value->span : SourceSpan{};
    if (not Payload.value) return this->unsupported_expr(AstNodeKind::PresenceExpr, span);
    auto value_result = this->emit_expression(*Payload.value);
-   if (not value_result.ok()) return value_result;
+   if (not value_result.ok() or value_result.value_ref().is_unreachable()) return value_result;
    ExpDesc value = value_result.value_ref();
    this->operator_emitter.emit_presence_check(ExprValue(&value));
    return ParserResult<ExpDesc>::success(value);
@@ -2334,7 +4194,39 @@ ParserResult<ExpDesc> IrEmitter::emit_presence_expr(const PresenceExprPayload &P
 
 //********************************************************************************************************************
 // Emit bytecode for a member access expression (table.field), indexing a table with a string key.
-// base_type and class_id are tracked for potential future optimizations (Object-specific bytecode paths).
+// Receiver specialisation uses its static descriptor; object class metadata supports field-type resolution.
+
+static void apply_struct_field_metadata(ExpDesc &Expression, struct_record *StructDef, GCstr *FieldName)
+{
+   if (not StructDef or not FieldName) return;
+
+   for (uint32_t i = 0; i < StructDef->Fields.size(); i++) {
+      auto &field = StructDef->Fields[i];
+      if (field.nameHash() != kt::strihash(strdata(FieldName))) continue;
+
+      Expression.struct_field_index = i;
+      Expression.result_type = TiriType::Any;
+      Expression.struct_def = nullptr;
+      Expression.object_class_id = CLASSID::NIL;
+
+      if (field.Type & (FD_ARRAY|FD_VECTOR)) Expression.result_type = TiriType::Array;
+      else if ((field.Type & FD_STRUCT) and not (field.Type & FD_POINTER)) {
+         Expression.result_type = TiriType::Struct;
+         Expression.struct_def = field.StructDefinition;
+      }
+      else if (field.Type & FD_OBJECT) {
+         Expression.result_type = TiriType::Object;
+         Expression.object_class_id = field.ObjectClassID;
+      }
+      else if (field.Type & FD_STRING) Expression.result_type = TiriType::Str;
+      else if (field.NativeType IS NativeStructType::Bool) Expression.result_type = TiriType::Bool;
+      else if (field.Type & (FD_FLOAT|FD_DOUBLE|FD_INT64|FD_INT|FD_WORD|FD_BYTE)) {
+         Expression.result_type = TiriType::Num;
+      }
+      else if (field.Type & FD_FUNCTION) Expression.result_type = TiriType::Func;
+      return;
+   }
+}
 
 ParserResult<ExpDesc> IrEmitter::emit_member_expr(const MemberExprPayload &Payload)
 {
@@ -2343,15 +4235,15 @@ ParserResult<ExpDesc> IrEmitter::emit_member_expr(const MemberExprPayload &Paylo
    }
 
    auto table_result = this->emit_expression(*Payload.table);
-   if (not table_result.ok()) return table_result;
+   if (not table_result.ok() or table_result.value_ref().is_unreachable()) return table_result;
 
    ExpDesc table = table_result.value_ref();
 
    // Save the emitted expression's result_type and object_class_id before discharge operations may modify it.
    // This captures type information propagated from VarInfo during variable lookup.
 
-   TiriType emitted_base_type = table.result_type;
    CLASSID emitted_class_id = table.object_class_id;
+   struct_record *emitted_struct_def = table.struct_def;
 
    RegisterAllocator allocator(&this->func_state);
    ExpressionValue table_value(&this->func_state, table);
@@ -2360,16 +4252,23 @@ ParserResult<ExpDesc> IrEmitter::emit_member_expr(const MemberExprPayload &Paylo
    ExpDesc key(Payload.member.symbol);
    expr_index(&this->func_state, &table, &key);
 
-   // Propagate known base type information for downstream optimizations.
-   // When base_type is Object, emit specialised BC_OBGETF/BC_OBSETF bytecodes by changing the expression kind
-   // to IndexedObject.  Check both AST-level base_type AND emitted expression's result_type (the latter captures
-   // type info from variable declarations like `fl = obj.new(...)`).
+   // A dominating static descriptor proof selects specialised object or structure bytecodes.  The descriptor includes
+   // type information propagated from declarations and other statically known expressions.
 
-   if (Payload.base_type IS TiriType::Object or emitted_base_type IS TiriType::Object) {
+   bool proved_object = can_use_static_receiver(
+      this->ctx.descriptors(), table.static_value, TiriType::Object, true);
+   bool proved_struct = can_use_static_receiver(
+      this->ctx.descriptors(), table.static_value, TiriType::Struct, true);
+
+   if (proved_object) {
       table.result_type = TiriType::Object;
       // Only use IndexedObject for string keys (member access always uses string keys)
 
-      if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) table.k = ExpKind::IndexedObject;
+      bool is_intrinsic_method = is_intrinsic_object_method(Payload.member.symbol);
+      if (not is_intrinsic_method and table.k IS ExpKind::Indexed and
+          IndexOperand(table.u.s.aux).is_string_constant()) {
+         table.k = ExpKind::IndexedObject;
+      }
 
       // Look up the field type from the class dictionary for compile-time type checking.
       // Use either the AST-level class_id or the emitted expression's class_id.
@@ -2382,17 +4281,23 @@ ParserResult<ExpDesc> IrEmitter::emit_member_expr(const MemberExprPayload &Paylo
          if (is_field) {
             table.result_type = field_info->type;
             table.object_class_id = field_info->object_class_id;
-            table.type_confirmed = true;  // Type is confirmed from class dictionary lookup
          }
-         else if (not Payload.is_call_target) {
+         else if (not Payload.is_call_target and not is_intrinsic_method) {
             // Field not found in dictionary and not being called as a function - raise parse error
             auto *meta_class = FindClass(class_id);
-            CSTRING class_name = meta_class ? meta_class->ClassName : "Unknown";
+            CSTRING class_name = meta_class ? meta_class->ClassName.c_str() : "Unknown";
             lj_lex_error(this->func_state.ls, 0, ErrMsg::BADFIELD, strdata(Payload.member.symbol), class_name);
             return this->unsupported_expr(AstNodeKind::MemberExpr, Payload.member.span);
          }
          // If is_call_target is true, skip type checking and let runtime handle the method/action call
       }
+   }
+   else if (proved_struct) {
+      table.result_type = TiriType::Struct;
+      if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
+         table.k = ExpKind::IndexedStruct;
+      }
+      apply_struct_field_metadata(table, emitted_struct_def, Payload.member.symbol);
    }
    else {
       // Reset result_type so the base type does not leak into downstream chained expressions.
@@ -2404,9 +4309,41 @@ ParserResult<ExpDesc> IrEmitter::emit_member_expr(const MemberExprPayload &Paylo
 }
 
 //********************************************************************************************************************
+// Emit a module function selection, e.g. mCore.PreciseTime.
+//
+// Dependency activation has already declared one hidden local per referenced function, so this reduces to an
+// ordinary local or upvalue read.  No table member lookup is involved, and the same binding backs both a direct call
+// and an extracted callable.
+
+ParserResult<ExpDesc> IrEmitter::emit_module_function_expr(const ModuleFunctionExprPayload &Payload)
+{
+   if (not Payload.binding.symbol) {
+      return this->unsupported_expr(AstNodeKind::ModuleFunctionExpr, Payload.function.span);
+   }
+
+   ExpDesc resolved;
+   this->lex_state.var_lookup_symbol(Payload.binding.symbol, &resolved);
+
+   if (resolved.k != ExpKind::Local and resolved.k != ExpKind::Upval) {
+      // The binding is generated by the compiler alongside its declaration, so an unresolved read means the
+      // dependency activation was lost between parsing and emission.
+      std::string message = "Module namespace '";
+      if (Payload.namespace_name) {
+         message += std::string_view(strdata(Payload.namespace_name), Payload.namespace_name->len);
+      }
+      message += "' has no active dependency binding";
+      return ParserResult<ExpDesc>::failure(
+         this->make_error(ParserErrorCode::UndefinedVariable, std::move(message), Payload.function.span));
+   }
+
+   resolved.result_type = TiriType::Func;
+   return ParserResult<ExpDesc>::success(resolved);
+}
+
+//********************************************************************************************************************
 // Emit bytecode for an index expression (table[key]), indexing a table or array with an arbitrary key.
 // Special case: if key is a range expression, emit a call to table.slice() instead.
-// If base_type is TiriType::Array, emits array-specific bytecodes (BC_AGETV/BC_AGETB).
+// A proved array receiver uses array-specific bytecodes (BC_AGETV/BC_AGETB).
 
 ParserResult<ExpDesc> IrEmitter::emit_index_expr(const IndexExprPayload &Payload)
 {
@@ -2418,13 +4355,11 @@ ParserResult<ExpDesc> IrEmitter::emit_index_expr(const IndexExprPayload &Payload
    }
 
    auto table_result = this->emit_expression(*Payload.table);
-   if (not table_result.ok()) return table_result;
+   if (not table_result.ok() or table_result.value_ref().is_unreachable()) return table_result;
    ExpDesc table = table_result.value_ref();
 
    // Save the emitted expression's result_type before discharge operations may modify it.
    // This captures type information propagated from VarInfo during variable lookup.
-   TiriType emitted_base_type = table.result_type;
-
    // Materialize table BEFORE evaluating key, so nested index expressions emit bytecode in
    // the correct order (table first, then key)
    RegisterAllocator allocator(&this->func_state);
@@ -2432,29 +4367,39 @@ ParserResult<ExpDesc> IrEmitter::emit_index_expr(const IndexExprPayload &Payload
    table_value.discharge_to_any_reg(allocator);
    table = table_value.legacy();
    auto key_result = this->emit_expression(*Payload.index);
-   if (not key_result.ok()) return key_result;
+   if (not key_result.ok() or key_result.value_ref().is_unreachable()) return key_result;
    ExpDesc key = key_result.value_ref();
    ExpressionValue key_toval(&this->func_state, key);
    key_toval.to_val();
    key = key_toval.legacy();
    expr_index(&this->func_state, &table, &key);
 
-   // If base type is known to be an array, use array-specific bytecodes
-   // Check both AST-level base_type AND emitted expression's result_type.
-   if (Payload.base_type IS TiriType::Array or emitted_base_type IS TiriType::Array) {
-      // Arrays don't support string keys, so only change kind for numeric indexing
-      // (aux >= 0 means numeric index, aux < 0 means string const key)
-      if (int32_t(table.u.s.aux) >= 0) {
+   // Select specialised bytecodes only when the receiver's static descriptor proves its category.
+   bool proved_array = can_use_static_receiver(
+      this->ctx.descriptors(), table.static_value, TiriType::Array, true);
+   bool proved_object = can_use_static_receiver(
+      this->ctx.descriptors(), table.static_value, TiriType::Object, true);
+   bool proved_struct = can_use_static_receiver(
+      this->ctx.descriptors(), table.static_value, TiriType::Struct, true);
+
+   if (proved_array) {
+      // Arrays support register and byte-constant keys, but not string constants.
+      if (IndexOperand(table.u.s.aux).is_numeric()) {
          table.k = ExpKind::IndexedArray;
       }
    }
-   // If base type is known to be an object with a string key, use object-specific bytecodes
-   // Check both AST-level base_type AND emitted expression's result_type.
-   else if (Payload.base_type IS TiriType::Object or emitted_base_type IS TiriType::Object) {
-      // Objects use string field access - only change kind for string const keys
-      // (aux < 0 means string const key)
-      if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+   // A proved object receiver with a string key uses object-specific bytecodes.
+   else if (proved_object) {
+      // Objects use string field access only for string constant keys.
+      GCstr *index_name = string_literal_symbol(*Payload.index);
+      if (not is_intrinsic_object_method(index_name) and table.k IS ExpKind::Indexed and
+          IndexOperand(table.u.s.aux).is_string_constant()) {
          table.k = ExpKind::IndexedObject;
+      }
+   }
+   else if (proved_struct) {
+      if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
+         table.k = ExpKind::IndexedStruct;
       }
    }
 
@@ -2473,40 +4418,21 @@ ParserResult<ExpDesc> IrEmitter::emit_index_expr(const IndexExprPayload &Payload
 ParserResult<ExpDesc> IrEmitter::emit_table_slice_call(const IndexExprPayload &Payload)
 {
    FuncState *fs = &this->func_state;
-   RegisterAllocator allocator(fs);
 
    // Capture the call base register before emitting anything
    BCReg call_base = fs->free_reg();
 
-   // Load range.slice function (range global, then access .slice field)
-   ExpDesc range_lib;
-   range_lib.init(ExpKind::Global, 0);
-   range_lib.u.sval = fs->ls->keepstr("range");
-
-   // Discharge range global to a register
-   ExpressionValue range_value(fs, range_lib);
-   range_value.discharge_to_any_reg(allocator);
-   range_lib = range_value.legacy();
-
-   // Access the .slice field
-   ExpDesc slice_key(fs->ls->keepstr("slice"));
-   expr_index(fs, &range_lib, &slice_key);
-
-   // Materialise the function to call base register
-   this->materialise_to_next_reg(range_lib, "range.slice function");
-
-   // Reserve register for frame link (LJ_FR2)
-   allocator.reserve(BCReg(1));
+   bcemit_builtin_call_frame(fs, builtin_callable_id(FastFunc::range_slice), call_base);
 
    // Emit base expression (table or string) as arg1
    auto base_result = this->emit_expression(*Payload.table);
-   if (not base_result.ok()) return base_result;
+   if (not base_result.ok() or base_result.value_ref().is_unreachable()) return base_result;
    ExpDesc base_arg = base_result.value_ref();
    this->materialise_to_next_reg(base_arg, "slice base arg");
 
    // Emit range expression as arg2 (this will call range() constructor)
    auto range_result = this->emit_expression(*Payload.index);
-   if (not range_result.ok()) return range_result;
+   if (not range_result.ok() or range_result.value_ref().is_unreachable()) return range_result;
    ExpDesc range_arg = range_result.value_ref();
    this->materialise_to_next_reg(range_arg, "slice range arg");
 
@@ -2524,7 +4450,7 @@ ParserResult<ExpDesc> IrEmitter::emit_table_slice_call(const IndexExprPayload &P
 
 //********************************************************************************************************************
 // Emit bytecode for a safe member access expression (table?.field), returning nil if the table is nil.
-// base_type and class_id are tracked for potential future optimizations (Object-specific bytecode paths).
+// Receiver specialisation uses the static descriptor captured before nil short-circuit lowering.
 
 ParserResult<ExpDesc> IrEmitter::emit_safe_member_expr(const SafeMemberExprPayload &Payload)
 {
@@ -2533,68 +4459,78 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_member_expr(const SafeMemberExprPaylo
    }
 
    auto table_result = this->emit_expression(*Payload.table);
-   if (not table_result.ok()) return table_result;
+   if (not table_result.ok() or table_result.value_ref().is_unreachable()) return table_result;
+   StaticValueHandle receiver_descriptor = table_result.value_ref().static_value;
 
    NilShortCircuitGuard guard(this, table_result.value_ref());
    if (not guard.ok()) return guard.error<ExpDesc>();
 
    ExpDesc table = guard.base_expression();
+   struct_record *emitted_struct_def = table.struct_def;
    ExpDesc key(Payload.member.symbol);
    expr_index(&this->func_state, &table, &key);
 
-   // Propagate known base type information for downstream optimizations.
-   // When base_type is Object and class_id is set, field-level type resolution may be possible.
-   if (Payload.base_type IS TiriType::Object) {
+   // A dominating static descriptor proof selects specialised object or structure handling and supplies exact object
+   // class metadata for field-type resolution when available.
+   bool proved_object = can_use_static_receiver(
+      this->ctx.descriptors(), receiver_descriptor, TiriType::Object, true);
+   bool proved_struct = can_use_static_receiver(
+      this->ctx.descriptors(), receiver_descriptor, TiriType::Struct, true);
+
+   if (proved_object) {
       table.result_type = TiriType::Object;
       table.object_class_id = CLASSID::NIL;
+      bool is_intrinsic_method = is_intrinsic_object_method(Payload.member.symbol);
+
+      // Call targets must retain generic lookup so the object metatable can resolve actions, methods and helpers.
+      // Unlike ordinary member expressions, safe member expressions materialise the lookup before emit_call_expr()
+      // can downgrade specialised expression kinds.
+
+      if (not Payload.is_call_target and not is_intrinsic_method and table.k IS ExpKind::Indexed and
+          IndexOperand(table.u.s.aux).is_string_constant()) {
+         table.k = ExpKind::IndexedObject;
+      }
 
       // Look up the field type from the class dictionary for compile-time type checking.
 
-      if (Payload.class_id != CLASSID::NIL and Payload.member.symbol) {
-         auto field_info = lookup_field_type(Payload.class_id, Payload.member.symbol->hash);
+      CLASSID class_id = this->ctx.descriptors().value(receiver_descriptor).object_class_id;
+      if (class_id != CLASSID::NIL and Payload.member.symbol) {
+         auto field_info = lookup_field_type(class_id, Payload.member.symbol->hash);
          bool is_field = field_info.has_value() and (field_info->type != TiriType::Unknown);
 
          if (is_field) {
             table.result_type     = field_info->type;
             table.object_class_id = field_info->object_class_id;
-            table.type_confirmed  = true;  // Type is confirmed from class dictionary lookup
          }
-         else if (not Payload.is_call_target) {
-            auto *meta_class = FindClass(Payload.class_id);
-            const char *class_name = meta_class ? meta_class->ClassName : "Unknown";
+         else if (not Payload.is_call_target and not is_intrinsic_method) {
+            auto *meta_class = FindClass(class_id);
+            const char *class_name = meta_class ? meta_class->ClassName.c_str() : "Unknown";
             lj_lex_error(this->func_state.ls, 0, ErrMsg::BADFIELD, strdata(Payload.member.symbol), class_name);
             return this->unsupported_expr(AstNodeKind::SafeMemberExpr, Payload.member.span);
          }
          // If is_call_target is true, skip type checking and let runtime handle the method/action call
       }
    }
+   else if (proved_struct) {
+      table.result_type = TiriType::Struct;
+      if (not Payload.is_call_target and table.k IS ExpKind::Indexed and
+          IndexOperand(table.u.s.aux).is_string_constant()) {
+         table.k = ExpKind::IndexedStruct;
+      }
+      apply_struct_field_metadata(table, emitted_struct_def, Payload.member.symbol);
+   }
 
-   // Materialize the indexed result to a new register.
-   // Do NOT reuse base_register() as that would clobber the table variable
+   // Materialise to a separate register so the receiver remains available for the lookup.
 
    ExpressionValue indexed_value(&this->func_state, table);
    BCReg result_reg = indexed_value.discharge_to_any_reg(guard.reg_allocator());
 
-   // Collapse freereg to include the result register
-   guard.reg_allocator().collapse_freereg(result_reg);
-
-   // Emit the nil path
-   ControlFlowEdge skip_nil = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
-
-   BCPos nil_path = BCPos(this->func_state.pc);
-   guard.nil_jump_edge().patch_to(nil_path);
-   bcemit_nil(&this->func_state, result_reg.raw(), 1);
-
-   skip_nil.patch_to(BCPos(this->func_state.pc));
-
-   ExpDesc result;
-   result.init(ExpKind::NonReloc, result_reg);
-   return ParserResult<ExpDesc>::success(result);
+   return guard.complete(result_reg);
 }
 
 //********************************************************************************************************************
 // Emit bytecode for a safe index expression (table?[key]), returning nil if the table is nil.
-// If base_type is TiriType::Array, emits array-specific bytecodes (BC_AGETV/BC_AGETB).
+// Emits safe array bytecodes when the receiver may be a native array and the key may be numeric.
 
 ParserResult<ExpDesc> IrEmitter::emit_safe_index_expr(const SafeIndexExprPayload &Payload)
 {
@@ -2603,7 +4539,8 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_index_expr(const SafeIndexExprPayload
    }
 
    auto table_result = this->emit_expression(*Payload.table);
-   if (not table_result.ok()) return table_result;
+   if (not table_result.ok() or table_result.value_ref().is_unreachable()) return table_result;
+   StaticValueHandle receiver_descriptor = table_result.value_ref().static_value;
 
    NilShortCircuitGuard guard(this, table_result.value_ref());
    if (not guard.ok()) return guard.error<ExpDesc>();
@@ -2611,6 +4548,8 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_index_expr(const SafeIndexExprPayload
    // Index expression is evaluated only on non-nil path (short-circuit)
    auto key_result = this->emit_expression(*Payload.index);
    if (not key_result.ok()) return key_result;
+   if (key_result.value_ref().is_unreachable()) return guard.complete_unreachable(this->func_state.free_reg());
+   StaticValueHandle key_descriptor = key_result.value_ref().static_value;
 
    ExpDesc key = key_result.value_ref();
    ExpressionValue key_toval(&this->func_state, key);
@@ -2620,70 +4559,52 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_index_expr(const SafeIndexExprPayload
    ExpDesc table = guard.base_expression();
    expr_index(&this->func_state, &table, &key);
 
-   // For safe index expressions (?[]), always use SafeIndexedArray for numeric keys.
-   // This emits BC_ASGETV/BC_ASGETB which:
-   // - For arrays: return nil for out-of-bounds instead of throwing
-   // - For non-arrays: fall back to regular table indexing
-   // We only do this for numeric keys (aux >= 0); string keys use regular table indexing.
+   bool proved_table = can_use_static_receiver(
+      this->ctx.descriptors(), receiver_descriptor, TiriType::Table, true);
+   bool proved_string_key = can_use_static_receiver(
+      this->ctx.descriptors(), key_descriptor, TiriType::Str, true);
 
-   if (int32_t(table.u.s.aux) >= 0) table.k = ExpKind::SafeIndexedArray;
+   // String constants are encoded with a negative aux value. Non-negative aux values also include register-held
+   // keys, so the encoding alone does not prove that a key is numeric. Proved tables and proved string keys can use
+   // ordinary table bytecodes. Native arrays and unresolved receivers retain ASGETV/ASGETB so out-of-bounds access
+   // returns nil while non-array runtime values fall back to generic indexing.
 
-   // Materialize the indexed result to a new register.
-   // Do NOT reuse base_register() as that would clobber the table variable,
-   // causing issues if the table is referenced again.
+   bool key_may_be_numeric = IndexOperand(table.u.s.aux).is_numeric() and not proved_string_key;
+   if (key_may_be_numeric and not proved_table) table.k = ExpKind::SafeIndexedArray;
+
+   // Materialise to a separate register so the receiver remains available for the lookup.
    ExpressionValue indexed_value(&this->func_state, table);
    BCReg result_reg = indexed_value.discharge_to_any_reg(guard.reg_allocator());
 
-   // Collapse freereg to include the result register
-   guard.reg_allocator().collapse_freereg(result_reg);
-
-   // Emit the nil path
-   ControlFlowEdge skip_nil = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
-
-   BCPos nil_path = BCPos(this->func_state.pc);
-   guard.nil_jump_edge().patch_to(nil_path);
-   bcemit_nil(&this->func_state, result_reg.raw(), 1);
-
-   skip_nil.patch_to(BCPos(this->func_state.pc));
-
-   ExpDesc result;
-   result.init(ExpKind::NonReloc, result_reg);
-   return ParserResult<ExpDesc>::success(result);
+   return guard.complete(result_reg);
 }
 
 //********************************************************************************************************************
-// Emit bytecode for a range literal expression ({start..stop} or {start...stop}).
-// Emits a call to the global `range` function: range(start, stop, inclusive)
+// Emit bytecode for a range literal expression ({start to stop} or {start into stop}).
+// Emits a call to the global `range` function: range(start, stop, inclusive [, step])
 
 ParserResult<ExpDesc> IrEmitter::emit_range_expr(const RangeExprPayload &Payload)
 {
    FuncState* fs = &this->func_state;
-   RegisterAllocator allocator(fs);
 
    // Emit the start and stop expressions first
    if (not Payload.start or not Payload.stop) {
       return this->unsupported_expr(AstNodeKind::RangeExpr, SourceSpan{});
    }
 
-   // Load the 'range' global function first
+   // Load the canonical range constructor first.
    BCReg base = fs->free_reg();
-   ExpDesc callee;
-   callee.init(ExpKind::Global, 0);
-   callee.u.sval = fs->ls->keepstr("range");
-   this->materialise_to_next_reg(callee, "range function");
-
-   // Reserve register for frame link (LJ_FR2)
-   allocator.reserve(BCReg(1));
+   bcemit_builtin_call_frame(fs, builtin_callable_id(FastFunc::range_new), base);
 
    // Emit start expression as arg1
    auto start_result = this->emit_expression(*Payload.start);
-   if (not start_result.ok()) return start_result;
+   if (not start_result.ok() or start_result.value_ref().is_unreachable()) return start_result;
    ExpDesc start_expr = start_result.value_ref();
    this->materialise_to_next_reg(start_expr, "range start");
 
    // Emit stop expression as arg2
    auto stop_result = this->emit_expression(*Payload.stop);
-   if (not stop_result.ok()) return stop_result;
+   if (not stop_result.ok() or stop_result.value_ref().is_unreachable()) return stop_result;
    ExpDesc stop_expr = stop_result.value_ref();
    this->materialise_to_next_reg(stop_expr, "range stop");
 
@@ -2691,9 +4612,18 @@ ParserResult<ExpDesc> IrEmitter::emit_range_expr(const RangeExprPayload &Payload
    ExpDesc inclusive_expr(Payload.inclusive);
    this->materialise_to_next_reg(inclusive_expr, "range inclusive");
 
-   // Emit CALL instruction: range(start, stop, inclusive)
-   // BC_CALL A=base, B=2 (expect 1 result), C=4 (3 args + 1)
-   BCIns ins = BCINS_ABC(BC_CALL, base, 2, 4);
+   uint8_t argument_count = 3;
+   if (Payload.step) {
+      auto step_result = this->emit_expression(*Payload.step);
+      if (not step_result.ok() or step_result.value_ref().is_unreachable()) return step_result;
+      ExpDesc step_expr = step_result.value_ref();
+      this->materialise_to_next_reg(step_expr, "range step");
+      argument_count = 4;
+   }
+
+   // Emit CALL instruction: range(start, stop, inclusive [, step])
+   // BC_CALL A=base, B=2 (expect 1 result), C=args + 1
+   BCIns ins = BCINS_ABC(BC_CALL, base, 2, argument_count + 1);
 
    ExpDesc result;
    result.init(ExpKind::Call, bcemit_INS(fs, ins));
@@ -2701,6 +4631,15 @@ ParserResult<ExpDesc> IrEmitter::emit_range_expr(const RangeExprPayload &Payload
    fs->freereg = base + 1;
 
    return ParserResult<ExpDesc>::success(result);
+}
+
+//********************************************************************************************************************
+// Release an emitted expression and restore the register floor.
+
+void IrEmitter::release_expression(ExpDesc &Expression, std::string_view Usage)
+{
+   expr_free(&this->func_state, &Expression);
+   this->ensure_register_floor(Usage);
 }
 
 //********************************************************************************************************************
@@ -2731,7 +4670,7 @@ void IrEmitter::materialise_to_reg(ExpDesc& expression, BCReg slot, std::string_
 void IrEmitter::ensure_register_floor(std::string_view usage)
 {
    if (this->func_state.freereg < this->func_state.varmap.size()) {
-      pf::Log log("Parser");
+      kt::Log log("Parser");
       log.warning("Register underrun during %.*s (free=%u active=%u)",
          int(usage.size()), usage.data(), unsigned(this->func_state.freereg), unsigned(this->func_state.varmap.size()));
       this->func_state.reset_freereg();
@@ -2744,7 +4683,7 @@ void IrEmitter::ensure_register_balance(std::string_view usage)
 {
    this->ensure_register_floor(usage);
    if (this->func_state.freereg > this->func_state.varmap.size()) {
-      pf::Log log("Parser");
+      kt::Log log("Parser");
       int line = this->lex_state.lastline;
       log.warning("Leaked %u registers after %.*s at line %d (free=%u active=%u)",
          unsigned(this->func_state.freereg - this->func_state.varmap.size()), int(usage.size()), usage.data(),
@@ -2781,3 +4720,4 @@ ParserResult<ExpDesc> IrEmitter::unsupported_expr(AstNodeKind kind, const Source
 #include "ir_emitter/emit_table.cpp"
 #include "ir_emitter/emit_call.cpp"
 #include "ir_emitter/emit_try.cpp"
+#include "ir_emitter/emit_checkall.cpp"

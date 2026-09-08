@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,10 +5,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Adapts a marker generator so marker vertices can be read as a normal vertex source. Hooks into marker-aware
+// converters and renderer_markers. In the vector renderer it exposes collected marker geometry through the same
+// rewind()/vertex() contract as paths.
 
-
-#ifndef AGG_CONV_MARKER_ADAPTOR_INCLUDED
-#define AGG_CONV_MARKER_ADAPTOR_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_conv_adaptor_vcgen.h"
@@ -17,8 +18,6 @@
 
 namespace agg
 {
-
-    //=====================================================conv_marker_adaptor
     template<class VertexSource, class Markers=null_markers>
     struct conv_marker_adaptor :
     public conv_adaptor_vcgen<VertexSource, vcgen_vertex_sequence, Markers>
@@ -42,5 +41,3 @@ namespace agg
 
 
 }
-
-#endif

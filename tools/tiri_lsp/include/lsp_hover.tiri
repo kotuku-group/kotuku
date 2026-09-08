@@ -1,0 +1,586 @@
+
+rx_obj_new = <{ regex.new("([\\w]+)\\s*=\\s*obj\\.new\\s*\\(\\s*['\"]([\\w]+)['\"]") }>
+rx_obj_ctor = <{ regex.new([[([A-Za-z_]\w*)\s*=\s*obj<\s*([A-Za-z_]\w*)\s*>]]) }>
+rx_obj_new_open = <{ regex.new([[([A-Za-z_][A-Za-z0-9_]*)\s*=\s*obj\.new\s*\(\s*$]]) }>
+rx_class_string = <{ regex.new([=[^\s*['"]([\w]+)['"]]=]) }>
+rx_starts_capital = <{ regex.new("^[A-Z]") }>
+rx_action_prefix = <{ regex.new("^ac[A-Z]") }>
+rx_method_prefix = <{ regex.new("^mt[A-Z]") }>
+rx_struct_new  = <{ regex.new("([\\w]+)\\s*=\\s*struct\\.new\\s*\\(\\s*['\"]([\\w]+)['\"]", regex.DOT_ALL) }>
+rx_struct_anno = <{ regex.new([[([A-Za-z_]\w*)\s*:\s*struct<\s*([A-Za-z_]\w*)\s*>]]) }>
+rx_struct_ctor = <{ regex.new([[([A-Za-z_]\w*)\s*=\s*struct<\s*([A-Za-z_]\w*)\s*>]]) }>
+
+extern lspUriToPath, maskNonCode
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text="Hover Support - Token Extraction")
+global function getTokenAtPosition(Doc:table, Line:num, Character:num):table
+   -- Extract the token/symbol at a given position in the document
+   -- Returns: { text, object, startCol, endCol, context }
+   -- context: 'identifier', 'method_call', 'field_access', 'module_call'
+
+   lineText = getLine(Doc, Line)
+   if not lineText then return nil end
+
+   byte_character = utf16ColToByteCol(lineText, Character)
+   if byte_character >= #lineText then return nil end
+
+   -- Helper to check if character is identifier-like
+   function isIdent(C)
+      return (C >= 'a' and C <= 'z') or (C >= 'A' and C <= 'Z') or (C >= '0' and C <= '9') or C is '_'
+   end
+
+   -- Find token boundaries
+   startCol = byte_character
+   endCol = byte_character
+
+   -- Scan backwards to find token start
+   while startCol > 0 do
+      c = lineText.sub(startCol - 1, startCol)
+      if not isIdent(c) then break end
+      startCol -= 1
+   end
+
+   -- Scan forward to find token end
+   while endCol < #lineText do
+      c = lineText.sub(endCol, endCol + 1)
+      if not isIdent(c) then break end
+      endCol++
+   end
+
+   if startCol is endCol then return nil end
+
+   token = lineText.sub(startCol, endCol)
+   context = 'identifier'
+   precedingIdent = nil
+
+   -- Check for preceding dot (field access or method call)
+   if startCol > 0 then
+      beforeStart = startCol - 1
+
+      -- Skip whitespace
+      while beforeStart > 0 and (lineText.sub(beforeStart, beforeStart + 1) is ' ' or lineText.sub(beforeStart, beforeStart + 1) is '\t') do
+         beforeStart -= 1
+      end
+
+      if lineText.sub(beforeStart, beforeStart + 1) is '.' then
+         -- Find the preceding identifier (the object/module name)
+         objEnd = beforeStart
+         objStart = beforeStart - 1
+
+         while objStart > 0 and isIdent(lineText.sub(objStart - 1, objStart)) do
+            objStart -= 1
+         end
+
+         if objStart < objEnd then
+            precedingIdent = lineText.sub(objStart, objEnd)
+
+            -- Check if followed by parenthesis (method call)
+            afterEnd = endCol
+            while afterEnd < #lineText and (lineText.sub(afterEnd, afterEnd + 1) is ' ' or lineText.sub(afterEnd, afterEnd + 1) is '\t') do
+               afterEnd++
+            end
+
+            if lineText.sub(afterEnd, afterEnd + 1) is '(' then
+               context = 'method_call'
+            else
+               context = 'field_access'
+            end
+         end
+      end
+   end
+
+   return {
+      text     = token,
+      object   = precedingIdent,
+      line     = Line,
+      startCol = byteColToUtf16Col(lineText, startCol),
+      endCol   = byteColToUtf16Col(lineText, endCol),
+      context  = context
+   }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text="Hover Support - Type Inference")
+function buildTypeMap(Doc:table, Position:table):table
+   -- Build a mapping of variable names to class types based on object construction assignments.
+   type_map = {}
+   in_block_comment = false
+   local pending_var:str
+   total_lines = getTotalLines(Doc)
+   if Position and Position.line + 1 < total_lines then total_lines = Position.line + 1 end
+
+   for line_num in {0 to total_lines} do
+      line_text = getLine(Doc, line_num)
+      if Position and line_num is Position.line then
+         line_text = line_text.sub(0, utf16ColToByteCol(line_text, Position.character))
+      end
+      was_in_block_comment = in_block_comment
+      line_code, in_block_comment = maskNonCode(line_text, in_block_comment)
+
+      -- A constructor can open on one line and name its class on the next.  PendingVar carries the assignment
+      -- target forward so that the multi-line form still infers a type.  Block comment continuations are skipped
+      -- because a quoted word inside one is not a class name.
+      if pending_var and not was_in_block_comment then
+         class_name = rx_class_string.extract(line_text, 0)
+         if class_name then type_map[pending_var] = class_name.sub(0, 1).upper() .. class_name.sub(1) end
+      end
+
+      for start, stop, cap in rx_obj_ctor.findAll(line_code) do
+         normalised_class = cap[1].sub(0, 1).upper() .. cap[1].sub(1)
+         type_map[cap[0]] = normalised_class
+      end
+
+      -- The class name passed to obj.new() is a string and is therefore absent from LineCode.  Match the raw
+      -- line, then require the assignment itself to remain visible in the masked code to reject comments.
+      for start, stop, cap in rx_obj_new.findAll(line_text) do
+         if line_code.sub(start, start + #cap[0]) is cap[0] then
+            normalised_class = cap[1].sub(0, 1).upper() .. cap[1].sub(1)
+            type_map[cap[0]] = normalised_class
+         end
+      end
+
+      -- Match against LineCode so that a commented-out or quoted open parenthesis cannot start a continuation.
+      pending_var = rx_obj_new_open.extract(line_code, 0)
+   end
+
+   return type_map
+end
+
+-- Build a mapping of variable names to declared-struct names.  Sources, in increasing precedence: explicit
+-- construction (user = struct<User> {...}), struct.new('Name') assignments, and struct<Name> type annotations.
+-- Constructor matches are speculative; lookups only succeed when the mapped name resolves to a struct symbol.
+
+function buildStructTypeMap(Doc:table, Position:table):table
+   struct_map = {}
+   in_block_comment = false
+   total_lines = getTotalLines(Doc)
+   if Position and Position.line + 1 < total_lines then total_lines = Position.line + 1 end
+
+   for line_num in {0 to total_lines} do
+      line_text = getLine(Doc, line_num)
+      if Position and line_num is Position.line then
+         line_text = line_text.sub(0, utf16ColToByteCol(line_text, Position.character))
+      end
+      line_code, in_block_comment = maskNonCode(line_text, in_block_comment)
+
+      for start, stop, cap in rx_struct_ctor.findAll(line_code) do
+         struct_map[cap[0]] = cap[1]
+      end
+
+      -- The struct name is masked as a string, so match against the raw line and require the assignment prefix to
+      -- remain visible in LineCode.  This excludes examples in comments and strings.
+      for start, stop, cap in rx_struct_new.findAll(line_text) do
+         if line_code.sub(start, start + #cap[0]) is cap[0] then
+            struct_map[cap[0]] = cap[1]
+         end
+      end
+
+      for start, stop, cap in rx_struct_anno.findAll(line_code) do
+         struct_map[cap[0]] = cap[1]
+      end
+   end
+
+   return struct_map
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text="Hover Support - Content Resolution and Formatting")
+function formatClassHover(ClassName, ClassDoc):str
+   md = '**class ' .. ClassName .. '**\n\n'
+   md ..= ClassDoc.comment
+   if ClassDoc.module and #ClassDoc.module > 0 then
+      md ..= '\n\n_Module: ' .. ClassDoc.module .. '_'
+   end
+   return md
+end
+
+function formatMethodHover(ClassName, MethodName, MethodDoc)
+   doc = MethodDoc
+   md = f'**{ClassName}.{MethodName}**\n\n'
+   if doc.prototype?? then
+      md ..= '```lua\n' .. doc.prototype .. '\n```\n\n'
+   end
+   md ..= doc.comment or ''
+   return md
+end
+
+function formatActionHover(ClassName, ActionName, ActionDoc)
+   doc = ActionDoc
+   md = f'**{ClassName}.ac{ActionName}** _(Action)_\n\n'
+   if doc.prototype?? then
+      md ..= '```lua\n' .. doc.prototype .. '\n```\n\n'
+   end
+   md ..= doc.comment or ''
+   return md
+end
+
+function formatFieldHover(ClassName, FieldName, FieldDoc)
+   doc = decodeField(FieldDoc)  -- Decode compact string if needed
+   md = f'**{ClassName}.{FieldName}**\n\n'
+   md ..= f"Type: `{doc.type or 'unknown'}`"
+   if doc.access then
+      md ..= f" | Access: {doc.access}"
+   end
+   md ..= '\n\n' .. (doc.comment or '')
+   return md
+end
+
+function formatModuleFunctionHover(ModuleName, FuncName, FuncDoc)
+   doc = FuncDoc
+   md = f'**{ModuleName}.{FuncName}**\n\n'
+   if doc.prototype?? then
+      md ..= '```lua\n' .. doc.prototype .. '\n```\n\n'
+   end
+   md ..= doc.comment or ''
+   md ..= f'\n\n[Documentation]({HTML_URI}{ModuleName.lower()}.html?page={FuncName})'
+   return md
+end
+
+function formatBuiltinHover(FuncName, BuiltinDoc):str
+   md = f'**{FuncName}** _(Built-in)_\n\n'
+   if BuiltinDoc.prototype?? then
+      md ..= '```lua\n' .. BuiltinDoc.prototype .. '\n```\n\n'
+   end
+   if BuiltinDoc.deprecated then md ..= '**Deprecated**\n\n' end
+   md ..= BuiltinDoc.comment
+   return md
+end
+
+function formatKeywordHover(Keyword, KeywordDoc):str
+   md = f'**{Keyword}** _(Keyword)_\n\n' .. KeywordDoc.comment
+   return md
+end
+
+function formatParserAnnotationHover(AnnotationName, AnnotationDoc):str
+   md = f'**@{AnnotationName}** _(Parser annotation)_\n\n'
+   if AnnotationDoc.prototype?? then
+      md ..= '```lua\n' .. AnnotationDoc.prototype .. '\n```\n\n'
+   end
+   md ..= AnnotationDoc.comment
+   return md
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text="Hover Support - Current Document Symbols")
+function hoverGetDocumentSymbols(Doc:table):table
+   if Doc.hoverSymbolsContent is Doc.content and Doc.hoverSymbols then return Doc.hoverSymbols end
+
+   local result
+   try
+      result = debug.validate(Doc.content, { symbols = true, path = lspUriToPath(Doc.uri) })
+   except ex
+      result = nil
+   end
+
+   if result and result.symbols then
+      Doc.hoverSymbols = result.symbols
+      Doc.hoverSymbolsContent = Doc.content
+      return result.symbols
+   end
+
+   return Doc.hoverSymbols
+end
+
+function hoverTextHasContent(Text:str):bool
+   return Text != nil and Text != ''
+end
+
+function hoverSymbolMatches(Symbol:table, TokenInfo:table):bool
+   if not Symbol or not TokenInfo then return false end
+
+   token = TokenInfo.text
+   if Symbol.name is token then return true end
+
+   if TokenInfo.object then
+      if Symbol.name is TokenInfo.object .. '.' .. token then return true end
+      if Symbol.name is TokenInfo.object .. ':' .. token then return true end
+   end
+
+   return false
+end
+
+function hoverAppendParamSection(Markdown:str, Params:any):str
+   lines = array<str>
+
+   for param in values(Params or array<table>) do
+      if hoverTextHasContent(param.doc) then
+         label = param.name or ''
+         if hoverTextHasContent(param.type) then
+            label ..= ': ' .. param.type
+         end
+         if label is '' then label = 'parameter' end
+         lines.push(f'- `{label}` - {param.doc}')
+      end
+   end
+
+   if #lines > 0 then
+      Markdown ..= '\n\n**Parameters**\n\n' .. lines.concat('\n')
+   end
+
+   return Markdown
+end
+
+function hoverAppendResultSection(Markdown:str, Results:any):str
+   lines = array<str>
+
+   for result in values(Results or array<table>) do
+      if hoverTextHasContent(result.type) or hoverTextHasContent(result.doc) then
+         label = result.type or 'result'
+         line = f'- `{label}`'
+         if hoverTextHasContent(result.doc) then line ..= ' - ' .. result.doc end
+         lines.push(line)
+      end
+   end
+
+   if #lines > 0 then
+      Markdown ..= '\n\n**Results**\n\n' .. lines.concat('\n')
+   end
+
+   return Markdown
+end
+
+function hoverAppendErrorSection(Markdown:str, Errors:any):str
+   lines = array<str>
+
+   for err in values(Errors or array<table>) do
+      if hoverTextHasContent(err.code) or hoverTextHasContent(err.doc) then
+         label = err.code or 'error'
+         line = f'- `{label}`'
+         if hoverTextHasContent(err.doc) then line ..= ' - ' .. err.doc end
+         lines.push(line)
+      end
+   end
+
+   if #lines > 0 then
+      Markdown ..= '\n\n**Errors**\n\n' .. lines.concat('\n')
+   end
+
+   return Markdown
+end
+
+function hoverAppendFieldSection(Markdown:str, Fields:any):str
+   lines = array<str>
+
+   for field in values(Fields or array<table>) do
+      label = field.name or ''
+      if hoverTextHasContent(field.type) then
+         label ..= ': ' .. field.type
+      end
+      line = f'- `{label}`'
+      if hoverTextHasContent(field.doc) then line ..= ' - ' .. field.doc end
+      lines.push(line)
+   end
+
+   if #lines > 0 then
+      Markdown ..= '\n\n**Fields**\n\n' .. lines.concat('\n')
+   end
+
+   return Markdown
+end
+
+function formatDocumentSymbolHover(Symbol:table):str
+   signature = Symbol.signature or Symbol.name
+   doc_text = Symbol.doc?.body
+   if not hoverTextHasContent(doc_text) then doc_text = Symbol.doc?.summary end
+
+   if not hoverTextHasContent(signature) and not hoverTextHasContent(doc_text) then return nil end
+
+   md = f'**{signature}**'
+   if hoverTextHasContent(doc_text) then
+      md ..= '\n\n' .. doc_text
+   end
+
+   md = hoverAppendParamSection(md, Symbol.params)
+   md = hoverAppendResultSection(md, Symbol.results)
+   md = hoverAppendErrorSection(md, Symbol.errors)
+   md = hoverAppendFieldSection(md, Symbol.fields)
+
+   return md
+end
+
+function resolveDocumentSymbolHover(TokenInfo:table, Doc:table):str
+   symbols = hoverGetDocumentSymbols(Doc)
+   symbols ?! return nil
+
+   for symbol in values(symbols) do
+      if hoverSymbolMatches(symbol, TokenInfo) then
+         return formatDocumentSymbolHover(symbol)
+      end
+   end
+
+   return nil
+end
+
+function hoverFindStructSymbol(Doc:table, Name:str):table
+   Name ?! return nil
+   symbols = hoverGetDocumentSymbols(Doc)
+   symbols ?! return nil
+
+   for symbol in values(symbols) do
+      if symbol.kind is 'struct' and symbol.name is Name then return symbol end
+   end
+
+   return nil
+end
+
+function formatStructFieldHover(StructName:str, Field:table):str
+   md = f'**{StructName}.{Field.name}**\n\n'
+   md ..= f"Type: `{Field.type or 'unknown'}`"
+   if hoverTextHasContent(Field.doc) then
+      md ..= '\n\n' .. Field.doc
+   end
+   return md
+end
+
+-- Resolve hover for field access on a declared-struct instance (user.Name) or on the struct name itself
+-- (User.Name).  Field names are unique case-insensitively, so an exact match is preferred with a
+-- case-insensitive fallback.
+
+function resolveStructFieldHover(TokenInfo:table, Doc:table, Position:table):str
+   struct_symbol = hoverFindStructSymbol(Doc, TokenInfo.object)
+   if not struct_symbol then
+      struct_map = buildStructTypeMap(Doc, Position)
+      struct_symbol = hoverFindStructSymbol(Doc, struct_map[TokenInfo.object])
+   end
+   struct_symbol ?! return nil
+
+   token = TokenInfo.text
+   for field in values(struct_symbol.fields or array<table>) do
+      if field.name is token then return formatStructFieldHover(struct_symbol.name, field) end
+   end
+
+   lower_token = token.lower()
+   for field in values(struct_symbol.fields or array<table>) do
+      if field.name.lower() is lower_token then return formatStructFieldHover(struct_symbol.name, field) end
+   end
+
+   return nil
+end
+
+@Doc(text="Resolve hover content for a token")
+global function resolveHoverContent(TokenInfo, Doc, Position):str
+   -- Priority: keywords, builtins, class names, module functions, object methods/fields
+
+   if not TokenInfo then return nil end
+   if not Position and TokenInfo.line != nil then
+      Position = { line = TokenInfo.line, character = TokenInfo.startCol }
+   end
+
+   token = TokenInfo.text
+   context = TokenInfo.context
+
+   -- Check for keywords
+   if glDefs?.keywords?[token] then
+      return formatKeywordHover(token, glDefs.keywords[token])
+   end
+
+   -- Check parser intrinsic annotations
+   if glDefs?.parserAnnotations?[token] then
+      return formatParserAnnotationHover(token, glDefs.parserAnnotations[token])
+   end
+
+   -- Check for built-in functions
+   if glDefs?.builtins?[token] and (not glDefs.builtins[token].deprecated or
+         deprecatedReferenceAt(Doc, TokenInfo.line, TokenInfo.startCol)) then
+      return formatBuiltinHover(token, glDefs.builtins[token])
+   end
+
+   -- Check current-document functions parsed by debug.validate(..., { symbols = true })
+   document_hover = resolveDocumentSymbolHover(TokenInfo, Doc)
+   if document_hover then return document_hover end
+
+   -- Handle obj.new specially
+   if context is 'method_call' and TokenInfo.object is 'obj' and token is 'new' then
+      if glDefs and glDefs.builtins and glDefs.builtins['obj.new'] then
+         return formatBuiltinHover('obj.new', glDefs.builtins['obj.new'])
+      end
+   end
+
+   -- Check for class names (standalone identifier starting with capital)
+   if context is 'identifier' and rx_starts_capital.test(token) then
+      if glDocCache and glDocCache.classes and glDocCache.classes[token] then
+         return formatClassHover(token, glDocCache.classes[token])
+      end
+   end
+
+   -- Handle method or field access on an object
+   if (context is 'method_call' or context is 'field_access') and TokenInfo.object then
+      objName = TokenInfo.object
+
+      -- Declared-struct field access, e.g. user.Name where user is a struct instance
+      if context is 'field_access' then
+         struct_hover = resolveStructFieldHover(TokenInfo, Doc, Position)
+         if struct_hover then return struct_hover end
+      end
+
+      -- Try to infer class type from obj.new() assignments
+      typeMap = buildTypeMap(Doc, Position)
+      className = typeMap[objName]
+
+      -- Also try the object name directly as a class (for cases like NetSocket.Connect)
+      if not className and rx_starts_capital.test(objName) then
+         className = objName
+      end
+
+      if className and glDocCache and glDocCache.classes then
+         classDoc = glDocCache.classes[className]
+         if classDoc then
+            if context is 'method_call' then
+               -- Check for action pattern (acXxx)
+               if rx_action_prefix.test(token) then
+                  actionName = token.sub(3)
+                  if classDoc.actions and classDoc.actions[actionName] then
+                     return formatActionHover(className, actionName, classDoc.actions[actionName])
+                  end
+               end
+
+               -- Check for method pattern (mtXxx)
+               if rx_method_prefix.test(token) then
+                  methodName = token.sub(3)
+                  if classDoc.methods and classDoc.methods[methodName] then
+                     return formatMethodHover(className, methodName, classDoc.methods[methodName])
+                  end
+               end
+
+               -- Try direct method lookup
+               if classDoc.methods and classDoc.methods[token] then
+                  return formatMethodHover(className, token, classDoc.methods[token])
+               end
+
+               -- Also check actions without ac prefix
+               if classDoc.actions and classDoc.actions[token] then
+                  return formatActionHover(className, token, classDoc.actions[token])
+               end
+            else
+               -- Field access - try various case combinations
+               if classDoc.fields then
+                  -- Try exact match
+                  if classDoc.fields[token] then
+                     return formatFieldHover(className, token, classDoc.fields[token])
+                  end
+                  -- Try capitalized (Tiri uses lowercase, XML uses TitleCase)
+                  capitalizedToken = token.sub(1,1).upper() .. token.sub(2)
+                  if classDoc.fields[capitalizedToken] then
+                     return formatFieldHover(className, capitalizedToken, classDoc.fields[capitalizedToken])
+                  end
+               end
+            end
+         end
+      end
+
+      -- Try module function lookup (mSys.Sleep, mNet.AddressToStr, etc.)
+      moduleDoc, modName = moduleDocumentForNamespace(Doc, objName)
+      if moduleDoc then
+         if moduleDoc?.functions?[token] then
+            return formatModuleFunctionHover(modName, token, moduleDoc.functions[token])
+         end
+      end
+   end
+
+   return nil
+end

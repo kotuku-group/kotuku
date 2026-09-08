@@ -7,6 +7,7 @@
 #include <charconv>
 #include <concepts>
 #include <string_view>
+#include <kotuku/modules/tiri.h>
 
 constexpr int CHUNK_BUFFER_SIZE = 32 * 1024;
 constexpr int MAX_CHUNK_HEADER_SIZE = 128;
@@ -68,6 +69,20 @@ constexpr std::pair<std::string_view, std::string_view> parse_header_field(T && 
 }
 
 //********************************************************************************************************************
+// Comma-separated header token matching
+
+static bool header_contains_token(std::string_view Value, std::string_view Token)
+{
+   for (auto token_range : Value | std::views::split(',')) {
+      std::string token(token_range.begin(), token_range.end());
+      kt::trim(token);
+      if (kt::iequals(token, Token)) return true;
+   }
+
+   return false;
+}
+
+//********************************************************************************************************************
 // Chunk header parsing
 
 static inline std::optional<std::pair<int64_t, size_t>> parse_chunk_header(std::span<const uint8_t> Buffer, size_t Start)
@@ -92,6 +107,9 @@ static inline std::optional<std::pair<int64_t, size_t>> parse_chunk_header(std::
    auto [ptr, ec] = std::from_chars(hex_str.data(), hex_str.data() + hex_str.size(), chunk_length, 16);
 
    if (ec != std::errc{}) return std::nullopt; // Parse error
+   while ((ptr != hex_str.data() + hex_str.size()) and ((*ptr IS ' ') or (*ptr IS '\t'))) ptr++;
+   if ((ptr != hex_str.data() + hex_str.size()) and (*ptr != ';')) return std::nullopt;
+
    size_t header_end = Start + std::distance(chunk_str.begin(), crlf_result.end());
    return std::make_pair(chunk_length, header_end);
 }
@@ -139,7 +157,7 @@ constexpr std::vector<std::pair<std::string_view, std::string_view>> parse_auth_
 
 static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (not ((Self->CurrentState IS HGS::READING_HEADER) or (Self->CurrentState IS HGS::AUTHENTICATING))) {
       return log.warning(ERR::SanityCheckFailed);
@@ -158,7 +176,8 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
       }
 
       int len;
-      Self->Error = acRead(Socket, Self->Response.data() + Self->ResponseIndex, Self->Response.size() - Self->ResponseIndex, &len);
+      Self->Error = acRead(Socket, std::span<int8_t>((int8_t *)Self->Response.data() + Self->ResponseIndex,
+         Self->Response.size() - Self->ResponseIndex), &len);
 
       if (Self->Error != ERR::Okay) {
          log.warning(Self->Error);
@@ -168,7 +187,7 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
       if (!len) break; // No more incoming data
 
       #ifdef DEBUG_SOCKET
-         if (glDebugFile) glDebugFile->write(Self->Response.data() + Self->ResponseIndex, len);
+         write_debug_socket_data(Self->Response.data() + Self->ResponseIndex, len);
       #endif
 
       Self->ResponseIndex += len;
@@ -194,7 +213,7 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
                   Socket->Flags |= NSF::DISABLE_SERVER_VERIFY;
                }
 
-               if (net::SetSSL(Socket, "EnableSSL", nullptr) IS ERR::Okay) {
+               if (!net::SetSSL(Socket, "EnableSSL", "")) {
                   Self->setCurrentState(HGS::COMPLETED);
                   return acActivate(Self);
                }
@@ -219,23 +238,42 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
             return ERR::Okay;
          }
 
-         if (Self->Status IS HTS::MOVED_PERMANENTLY) {
+         if ((Self->Status IS HTS::MOVED_PERMANENTLY) and ((Self->Flags & HTF::NO_AUTO_REDIRECT) IS HTF::NIL)) {
             if ((Self->Flags & HTF::MOVED) != HTF::NIL) {
                // Chaining of MovedPermanently messages is disallowed (could cause circular referencing).
 
                log.warning("Sequential MovedPermanently messages are not supported.");
             }
             else {
-               if (auto it = Self->ResponseKeys.find("location"); it != Self->ResponseKeys.end()) {
+               if (auto it = Self->ResponseHeaders.find("location"); it != Self->ResponseHeaders.end()) {
                   auto &location = it->second;
+                  ERR redirect_error;
+
                   log.msg("MovedPermanently to %s", location.c_str());
-                  if (location.starts_with("http:")) Self->setLocation(location);
-                  else if (location.starts_with("https:")) Self->setLocation(location);
-                  else Self->setPath(location);
-                  Self->setCurrentState(HGS::COMPLETED);
-                  acActivate(Self); // Try again
+
+                  if (auto active_socket = Self->Socket) {
+                     Self->Socket->setFeedback(FUNCTION{});
+                     Self->Socket = nullptr;
+                     FreeResource(active_socket);
+                  }
+
+                  if (location.starts_with("http:")) redirect_error = Self->setLocation(location);
+                  else if (location.starts_with("https:")) redirect_error = Self->setLocation(location);
+                  else redirect_error = Self->setPath(location);
+
+                  if (redirect_error != ERR::Okay) {
+                     Self->Error = redirect_error;
+                     Self->setCurrentState(HGS::TERMINATED);
+                     return ERR::Terminate;
+                  }
+
+                  if (auto activate_error = acActivate(Self); activate_error != ERR::Okay) {
+                     Self->Error = activate_error;
+                     Self->setCurrentState(HGS::TERMINATED);
+                  }
+
                   Self->Flags |= HTF::MOVED;
-                  return ERR::Okay;
+                  return ERR::Terminate;
                }
                else {
                   Self->Flags |= HTF::MOVED;
@@ -254,6 +292,7 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
 
          if ((Self->ContentLength IS 0) and (!Self->Chunked)) {
             log.msg("Response header received, no content imminent.");
+            set_http_status_error(Self);
             Self->setCurrentState(HGS::COMPLETED);
             return ERR::Terminate;
          }
@@ -277,9 +316,9 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
                }
             }
 
-            std::string &authenticate = Self->ResponseKeys["WWW-Authenticate"];
-            if (not authenticate.empty()) {
-               if (pf::startswith("Digest", authenticate)) {
+            if (auto auth_it = Self->ResponseHeaders.find("www-authenticate"); auth_it != Self->ResponseHeaders.end()) {
+               auto &authenticate = auth_it->second;
+               if (kt::startswith("Digest", authenticate)) {
                   log.trace("Digest authentication mode.");
 
                   Self->Realm.clear();
@@ -309,9 +348,9 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
                Self->setCurrentState(HGS::AUTHENTICATING);
 
                // TODO: Needs a rewrite using the dialog script
-               std::string scriptfile((const char *)glAuthScript, 0, glAuthScriptLength);
+               std::string scriptfile((const char *)glAuthScript, glAuthScriptLength);
 
-               objScript::create script = { fl::String(scriptfile) };
+               objTiri::create script = { fl::String(scriptfile) };
                if (script.ok()) {
                   AdjustLogLevel(1);
                   auto error = script->activate();
@@ -329,7 +368,7 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
                }
             }
             else if (not Self->Password.empty()) {
-               pf::Log log(__FUNCTION__);
+               kt::Log log(__FUNCTION__);
                log.branch("Reattempting request with preset password.");
                Self->setCurrentState(HGS::AUTHENTICATING);
                // NB: This cancels the reading of any content that followed the header.
@@ -361,7 +400,7 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
             Self->Chunk.resize(len > CHUNK_BUFFER_SIZE ? len : CHUNK_BUFFER_SIZE);
             if (len > 0) {
                if (header_end + len <= std::ssize(Self->Response)) {
-                  pf::copymem(Self->Response.data() + header_end, Self->Chunk.data(), len);
+                  kt::copymem(Self->Response.data() + header_end, Self->Chunk.data(), len);
                }
                else return log.warning(ERR::BufferOverflow);
             }
@@ -372,7 +411,10 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
 
             if (len > 0) {
                if (header_end + len <= std::ssize(Self->Response)) {
-                  output_incoming_data(Self, Self->Response.data() + header_end, len);
+                  if (auto output_error = output_incoming_data(Self, Self->Response.data() + header_end, len);
+                        output_error != ERR::Okay) {
+                     return ERR::Terminate;
+                  }
                }
                else return log.warning(ERR::BufferOverflow);
             }
@@ -382,18 +424,13 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
 
          Self->Response.clear(); // Buffer no longer required, response key-values are in the Args table.
 
-         // Note that status check comes after processing of content, as it is legal for content to be attached
-         // with bad status codes (e.g. SOAP does this).
+         if (Self->CurrentState != HGS::READING_CONTENT) return ERR::Terminate;
+
+         // A status failure is recorded when the response body completes, as it is legal for content to be attached
+         // to a bad status code (for example, SOAP responses).
 
          if ((int(Self->Status) < 200) or (int(Self->Status) >= 300)) {
-            if (Self->CurrentState != HGS::READING_CONTENT) {
-               if (Self->Status IS HTS::UNAUTHORISED) log.warning("Exhausted maximum number of retries.");
-               else log.warning("Status code %d != 2xx", int(Self->Status));
-
-               Self->Error = ERR::Failed;
-               return ERR::Terminate;
-            }
-            else log.warning("Status code %d != 2xx.  Receiving content...", int(Self->Status));
+            log.warning("Status code %d != 2xx.  Receiving content...", int(Self->Status));
          }
 
          return ERR::Okay; // Response header has been read, process any remaining data
@@ -432,7 +469,7 @@ static ERR read_incoming_chunks(extHTTP *Self, objNetSocket *Socket)
    }
 
    for (int count = max_passes; count > 0; count--) { // Make multiple passes in case there's more data than fits in the buffer
-      pf::Log log("http_incoming");
+      kt::Log log("http_incoming");
       log.traceBranch("Receiving content (chunk mode) Index: %d/%d/%d, Remaining: %d", Self->ChunkIndex, Self->ChunkBuffered, int(Self->Chunk.size()), Self->ChunkRemaining);
 
       // Compress or clear the buffer
@@ -440,7 +477,7 @@ static ERR read_incoming_chunks(extHTTP *Self, objNetSocket *Socket)
       if (Self->ChunkIndex > 0) {
          if (Self->ChunkBuffered > Self->ChunkIndex) {
             log.trace("Compressing the chunk buffer.");
-            pf::copymem(Self->Chunk.data() + Self->ChunkIndex, Self->Chunk.data(), Self->ChunkBuffered - Self->ChunkIndex);
+            kt::copymem(Self->Chunk.data() + Self->ChunkIndex, Self->Chunk.data(), Self->ChunkBuffered - Self->ChunkIndex);
             Self->ChunkBuffered -= Self->ChunkIndex;
          }
          else Self->ChunkBuffered = 0;
@@ -451,16 +488,18 @@ static ERR read_incoming_chunks(extHTTP *Self, objNetSocket *Socket)
 
       if (Self->ChunkBuffered < int(Self->Chunk.size())) {
          int read_bytes;
-         Self->Error = acRead(Socket, Self->Chunk.data() + Self->ChunkBuffered, Self->Chunk.size() - Self->ChunkBuffered, &read_bytes);
+         Self->Error = acRead(Socket, std::span<int8_t>((int8_t *)Self->Chunk.data() + Self->ChunkBuffered,
+            Self->Chunk.size() - Self->ChunkBuffered), &read_bytes);
 
          #ifdef DEBUG_SOCKET
-            if ((glDebugFile) and (read_bytes)) glDebugFile->write(Self->Chunk.data() + Self->ChunkBuffered, read_bytes);
+            write_debug_socket_data(Self->Chunk.data() + Self->ChunkBuffered, read_bytes);
          #endif
 
          log.trace("Filling the chunk buffer: Read %d bytes.", read_bytes);
 
          if (Self->Error IS ERR::Disconnected) {
             log.detail("Received all chunked content (disconnected by peer).");
+            set_http_status_error(Self);
             Self->setCurrentState(HGS::COMPLETED);
             return ERR::Terminate;
          }
@@ -509,12 +548,14 @@ static ERR read_incoming_chunks(extHTTP *Self, objNetSocket *Socket)
                      // interpretation.
 
                      log.detail("End of chunks reached, optional data follows.");
+                     set_http_status_error(Self);
                      Self->setCurrentState(HGS::COMPLETED);
                      return ERR::Terminate;
                   }
                   else {
                      // We have reached the terminating line (CRLF on an empty line)
                      log.trace("Received all chunked content.");
+                     set_http_status_error(Self);
                      Self->setCurrentState(HGS::COMPLETED);
                      return ERR::Terminate;
                   }
@@ -545,7 +586,10 @@ static ERR read_incoming_chunks(extHTTP *Self, objNetSocket *Socket)
             log.trace("%d bytes yet to process, outputting %d bytes", Self->ChunkRemaining, len);
 
             Self->ChunkRemaining -= len;
-            output_incoming_data(Self, Self->Chunk.data() + Self->ChunkIndex, len);
+            if (auto output_error = output_incoming_data(Self, Self->Chunk.data() + Self->ChunkIndex, len);
+                  output_error != ERR::Okay) {
+               return ERR::Terminate;
+            }
 
             Self->ChunkIndex += len;
 
@@ -559,6 +603,13 @@ static ERR read_incoming_chunks(extHTTP *Self, objNetSocket *Socket)
             log.trace("Skipping %d bytes.", -Self->ChunkRemaining);
 
             while ((Self->ChunkRemaining < 0) and (Self->ChunkIndex < Self->ChunkBuffered)) {
+               auto expected = (Self->ChunkRemaining IS -2) ? '\r' : '\n';
+               if (Self->Chunk[Self->ChunkIndex] != expected) {
+                  log.warning("Invalid chunk delimiter.");
+                  Self->setCurrentState(HGS::TERMINATED);
+                  return ERR::Terminate;
+               }
+
                Self->ChunkIndex++;
                Self->ChunkRemaining++;
             }
@@ -575,7 +626,7 @@ static ERR read_incoming_chunks(extHTTP *Self, objNetSocket *Socket)
 
 static ERR read_incoming_content(extHTTP *Self, objNetSocket *Socket)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    std::vector<char> buffer(BUFFER_READ_SIZE);
 
@@ -605,13 +656,14 @@ static ERR read_incoming_content(extHTTP *Self, objNetSocket *Socket)
          if (len > Self->ContentLength - Self->Index) len = Self->ContentLength - Self->Index;
       }
 
-      if ((Self->Error = acRead(Socket, buffer.data(), len, &len)) != ERR::Okay) {
+      if ((Self->Error = acRead(Socket, std::span<int8_t>((int8_t *)buffer.data(), len), &len)) != ERR::Okay) {
          #ifdef DEBUG_SOCKET
-            if (glDebugFile) glDebugFile->write(buffer.data(), len);
+            write_debug_socket_data(buffer.data(), len);
          #endif
 
          if ((Self->Error IS ERR::Disconnected) and (Self->ContentLength IS -1)) {
             log.trace("Received all streamed content (disconnected by peer).");
+            set_http_status_error(Self);
             Self->setCurrentState(HGS::COMPLETED);
             return ERR::Terminate;
          }
@@ -623,7 +675,9 @@ static ERR read_incoming_content(extHTTP *Self, objNetSocket *Socket)
 
       if (!len) break; // No more incoming data right now
 
-      output_incoming_data(Self, buffer.data(), len);
+      if (auto output_error = output_incoming_data(Self, buffer.data(), len); output_error != ERR::Okay) {
+         return ERR::Terminate;
+      }
       if (check_incoming_end(Self) IS ERR::True) {
          return ERR::Terminate;
       }
@@ -645,9 +699,9 @@ static ERR read_incoming_content(extHTTP *Self, objNetSocket *Socket)
 
 static ERR parse_response(extHTTP *Self, std::string_view Response)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
-   Self->ResponseKeys.clear();
+   Self->ResponseHeaders.clear();
 
    log.detail("HTTP RESPONSE HEADER\n%.*s", int(Response.size()), Response.data());
 
@@ -675,7 +729,7 @@ static ERR parse_response(extHTTP *Self, std::string_view Response)
    if (error IS std::errc()) Self->Status = HTS(code);
    else Self->Status = HTS::NIL;
 
-   if (Self->ProxyServer) Self->ContentLength = -1; // Some proxy servers (Squid) strip out information like 'transfer-encoding' yet pass all the requested content anyway :-/
+   if (not Self->ProxyServer.empty()) Self->ContentLength = -1; // Some proxy servers (Squid) strip out information like 'transfer-encoding' yet pass all the requested content anyway :-/
    else Self->ContentLength = 0;
    Self->Chunked = false;
 
@@ -697,15 +751,17 @@ static ERR parse_response(extHTTP *Self, std::string_view Response)
       field_key.reserve(field_name.size());
       ranges::transform(field_name, std::back_inserter(field_key), [](char c) { return char(std::tolower(c)); });
 
-      Self->ResponseKeys[field_key] = std::string(field_value);
+      Self->ResponseHeaders[field_key] = std::string(field_value);
    }
 
-   if (auto it = Self->ResponseKeys.find("content-length"); it != Self->ResponseKeys.end()) {
+   if (auto it = Self->ResponseHeaders.find("content-length"); it != Self->ResponseHeaders.end()) {
       auto &value = it->second;
       Self->ContentLength = 0;
       int64_t temp_length = 0;
       auto [ ptr, error ] = std::from_chars(value.data(), value.data() + value.size(), temp_length);
-      if (error IS std::errc() and temp_length >= 0 and temp_length <= MAX_CONTENT_LENGTH) {
+      while ((ptr != value.data() + value.size()) and (uint8_t(*ptr) <= 0x20)) ptr++;
+      if ((error IS std::errc()) and (ptr IS value.data() + value.size()) and
+            (temp_length >= 0) and (temp_length <= MAX_CONTENT_LENGTH)) {
          Self->ContentLength = temp_length;
       }
       else {
@@ -714,9 +770,9 @@ static ERR parse_response(extHTTP *Self, std::string_view Response)
       }
    }
 
-   if (auto it = Self->ResponseKeys.find("transfer-encoding"); it != Self->ResponseKeys.end()) {
+   if (auto it = Self->ResponseHeaders.find("transfer-encoding"); it != Self->ResponseHeaders.end()) {
       auto &value = it->second;
-      if (pf::iequals(value, "chunked")) {
+      if (header_contains_token(value, "chunked")) {
          if ((Self->Flags & HTF::RAW) IS HTF::NIL) Self->Chunked = true;
          Self->ContentLength = -1;
       }
@@ -727,7 +783,7 @@ static ERR parse_response(extHTTP *Self, std::string_view Response)
    if (Self->ResponseVersion >= 0x11) Self->KeepAlive = true;
    else Self->KeepAlive = false;
 
-   if (auto it = Self->ResponseKeys.find("connection"); it != Self->ResponseKeys.end()) {
+   if (auto it = Self->ResponseHeaders.find("connection"); it != Self->ResponseHeaders.end()) {
       // HTTP/1.0 if keep-alive is not specified then the connection is closed by default.
       // HTTP/1.1 if keep-alive is not specified then the connection is persistent
       //
@@ -735,10 +791,10 @@ static ERR parse_response(extHTTP *Self, std::string_view Response)
       // being pro-active and disconnecting our side early will keep things predictable.
 
       auto &value = it->second;
-      if (pf::iequals(value, "close")) {
+      if (kt::iequals(value, "close")) {
          Self->KeepAlive = false;
       }
-      else if (pf::iequals(value, "keep-alive")) {
+      else if (kt::iequals(value, "keep-alive")) {
          Self->KeepAlive = true;
       }
    }
@@ -751,7 +807,7 @@ static ERR parse_response(extHTTP *Self, std::string_view Response)
 
 static ERR output_incoming_data(extHTTP *Self, APTR Buffer, int Length)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    log.trace("Buffer: %p, Length: %d", Buffer, Length);
 
@@ -759,12 +815,12 @@ static ERR output_incoming_data(extHTTP *Self, APTR Buffer, int Length)
 
    Self->setIndex(Self->Index + Length); // Use Set() so that field subscribers can track progress with field monitoring
 
-   if ((!Self->flOutput) and (Self->OutputFile)) {
+   if ((!Self->flOutput) and (not Self->OutputFile.empty())) {
       FL flags;
       LOC type;
 
       if ((Self->Flags & HTF::RESUME) != HTF::NIL) {
-         if ((AnalysePath(Self->OutputFile, &type) IS ERR::Okay) and (type IS LOC::FILE)) {
+         if ((!AnalysePath(Self->OutputFile, &type)) and (type IS LOC::FILE)) {
             flags = FL::NIL;
          }
          else flags = FL::NEW;
@@ -777,14 +833,30 @@ static ERR output_incoming_data(extHTTP *Self, APTR Buffer, int Length)
             Self->setIndex(0);
          }
       }
-      else Self->Error = ERR::CreateFile;
+      else {
+         Self->Error = ERR::CreateFile;
+         return Self->Error;
+      }
    }
 
-   if (Self->flOutput) Self->flOutput->write(Buffer, Length, nullptr);
+   if (Self->flOutput) {
+      int result = 0;
+      if (auto error = Self->flOutput->write(std::span<const int8_t>((const int8_t *)Buffer, Length), &result);
+          error != ERR::Okay) {
+         Self->Error = error;
+         return Self->Error;
+      }
+      else if (result != Length) {
+         Self->Error = ERR::Write;
+         return Self->Error;
+      }
+   }
 
    if ((Self->Flags & HTF::RECV_BUFFER) != HTF::NIL) {
       Self->RecvBuffer.append(std::string_view((char *)Buffer, Length));
    }
+
+   if (Self->Incoming.stale()) clear_callback_function(Self->Incoming);
 
    if (Self->Incoming.defined()) {
       log.trace("Incoming callback is set.");
@@ -797,20 +869,20 @@ static ERR output_incoming_data(extHTTP *Self, APTR Buffer, int Length)
       else if (Self->Incoming.isScript()) {
          // For speed, the client will receive a direct pointer to the buffer memory via the 'mem' interface.
 
-         log.trace("Calling script procedure %" PRId64, Self->Incoming.ProcedureID);
+         log.trace("Calling script procedure %u", Self->Incoming.procedureID());
 
+         std::span<std::byte> span((std::byte *)(Buffer), Length);
          if (sc::Call(Self->Incoming, std::to_array<ScriptArg>({
-               { "HTTP",       Self,   FD_OBJECTPTR },
-               { "Buffer",     Buffer, FD_PTRBUFFER },
-               { "BufferSize", Length, FD_INT|FD_BUFSIZE }
+               { "HTTP",   Self, FD_OBJECTPTR },
+               { "Buffer", &span, FDF_SPAN|FD_BYTE }
             }), error) != ERR::Okay) error = ERR::Terminate;
       }
       else error = ERR::InvalidValue;
 
-      if (error > ERR::ExceptionThreshold) Self->Error = error;
+      if (error > ERR::ExceptionThreshold) Self->Error = error; // ERR::Terminate excluded
 
       if (error IS ERR::Terminate) {
-         pf::Log log(__FUNCTION__);
+         kt::Log log(__FUNCTION__);
          log.branch("Client changing state to HGS::TERMINATED.");
          Self->setCurrentState(HGS::TERMINATED);
       }
@@ -818,12 +890,37 @@ static ERR output_incoming_data(extHTTP *Self, APTR Buffer, int Length)
 
    if (Self->OutputObjectID) {
       if (Self->ObjectMode IS HOM::DATA_FEED) {
-         pf::ScopedObjectLock output(Self->OutputObjectID);
-         if (output.granted()) acDataFeed(*output, Self, Self->Datatype, Buffer, Length);
+         kt::ScopedObjectLock output(Self->OutputObjectID);
+         if (output.granted()) {
+            if (auto error = acDataFeed(*output, Self, Self->Datatype,
+                  std::span<const int8_t>((const int8_t *)Buffer, size_t(Length))); error != ERR::Okay) {
+               Self->Error = error;
+               return Self->Error;
+            }
+         }
+         else {
+            Self->Error = ERR::Lock;
+            return Self->Error;
+         }
       }
       else if (Self->ObjectMode IS HOM::READ_WRITE) {
-         pf::ScopedObjectLock output(Self->OutputObjectID);
-         if (output.granted()) acWrite(*output, Buffer, Length);
+         kt::ScopedObjectLock output(Self->OutputObjectID);
+         if (output.granted()) {
+            int result = 0;
+            if (auto error = acWrite(*output, std::span<const int8_t>((const int8_t *)Buffer, Length), &result);
+                error != ERR::Okay) {
+               Self->Error = error;
+               return Self->Error;
+            }
+            else if (result != Length) {
+               Self->Error = ERR::Write;
+               return Self->Error;
+            }
+         }
+         else {
+            Self->Error = ERR::Lock;
+            return Self->Error;
+         }
       }
    }
 
@@ -835,15 +932,11 @@ static ERR output_incoming_data(extHTTP *Self, APTR Buffer, int Length)
 
 static ERR socket_incoming(objNetSocket *Socket)
 {
-   pf::Log log("http_incoming");
+   kt::Log log("http_incoming");
 
    auto Self = (extHTTP *)Socket->ClientData;
 
    if (Self->classID() != CLASSID::HTTP) return log.warning(ERR::SystemCorrupt);
-
-   #ifdef DEBUG_SOCKET
-      if (!glDebugFile) glDebugFile = objFile::create::untracked({ fl::Path("temp:http-incoming-log.raw"), fl::Flags(FL::NEW|FL::WRITE) });
-   #endif
 
 restart:
 
@@ -873,7 +966,7 @@ restart:
 
    if ((Self->CurrentState IS HGS::READING_HEADER) or (Self->CurrentState IS HGS::AUTHENTICATING)) {
       auto error = read_incoming_header(Self, Socket);
-      if (error IS ERR::Okay) goto restart; // Header read, process any remaining data
+      if (!error) goto restart; // Header read, process any remaining data
       else return error;
    }
    else if (Self->CurrentState IS HGS::READING_CONTENT) {
@@ -884,7 +977,7 @@ restart:
       std::string buffer;
       buffer.resize(512);
       int len;
-      if ((acRead(Socket, buffer.data(), buffer.size(), &len) IS ERR::Okay) and (len > 0)) {
+      if ((!acRead(Socket, std::span<int8_t>((int8_t *)buffer.data(), buffer.size()), &len)) and (len > 0)) {
          log.warning("WARNING: Received data whilst in state %d.", int(Self->CurrentState));
          log.warning("Content (%d bytes) Follows:\n%.80s", len, buffer.c_str());
       }

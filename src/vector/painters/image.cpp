@@ -18,26 +18,16 @@ NOTE: For the rendering of vectors as flattened images, use @VectorPattern.
 
 *********************************************************************************************************************/
 
-static ERR IMAGE_Init(extVectorImage *Self)
+static ERR VECTORIMAGE_Init(extVectorImage *Self)
 {
-   pf::Log log;
+   kt::Log log;
 
-   if (!Self->Bitmap) return log.warning(ERR::FieldNotSet);
+   if (not Self->Bitmap) return log.warning(ERR::FieldNotSet);
 
    if ((Self->Bitmap->BitsPerPixel != 24) and (Self->Bitmap->BitsPerPixel != 32)) {
       return log.warning(ERR::NoSupport);
    }
 
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR IMAGE_NewObject(extVectorImage *Self)
-{
-   Self->Units        = VUNIT::BOUNDING_BOX;
-   Self->SpreadMethod = VSPREAD::CLIP;
-   Self->AspectRatio  = ARF::X_MID|ARF::Y_MID|ARF::MEET; // SVG defaults
    return ERR::Okay;
 }
 
@@ -53,7 +43,7 @@ vector.
 
 *********************************************************************************************************************/
 
-static ERR IMAGE_SET_AspectRatio(extVectorImage *Self, ARF Value)
+static ERR VECTORIMAGE_SET_AspectRatio(extVectorImage *Self, ARF Value)
 {
    Self->AspectRatio = Value;
    Self->modified();
@@ -70,45 +60,46 @@ algorithm.  The source bitmap must be in a 32-bit graphics format.
 
 *********************************************************************************************************************/
 
-static ERR IMAGE_SET_Bitmap(extVectorImage *Self, objBitmap *Value)
+static ERR VECTORIMAGE_SET_Bitmap(extVectorImage *Self, objBitmap *Value)
 {
    if (Value->BitsPerPixel < 32) {
-      pf::Log log;
-      log.warning("The source image must be 32 bit, not %d bit.", Value->BitsPerPixel);
+      kt::Log().warning("The source image must be 32 bit, not %d bit.", Value->BitsPerPixel);
       return ERR::InvalidData;
    }
 
    Self->Bitmap = Value;
-   Self->Picture = nullptr;
+   Self->Image = nullptr;
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 
 -FIELD-
-Dimensions: Dimension flags define whether individual dimension fields contain fixed or scaled values.
+Image: Refers to a @Image from which the source #Bitmap is acquired.
 
-Of the Dimension flags that are available, only `FIXED_X`, `FIXED_Y`, `SCALED_X` and `SCALED_Y` are applicable.
-
--FIELD-
-Picture: Refers to a @Picture from which the source #Bitmap is acquired.
-
-If an image bitmap is sourced from a @Picture then this field may be used to refer to the @Picture object.  The picture
+If an image bitmap is sourced from a @Image then this field may be used to refer to the @Image object.  The image
 will not be used directly by the VectorImage, as only the bitmap is of interest.
 
-The picture bitmap must be in a 32-bit graphics format.
+The image bitmap must be in a 32-bit graphics format.
 
 *********************************************************************************************************************/
 
-static ERR IMAGE_SET_Picture(extVectorImage *Self, objPicture *Value)
+static ERR VECTORIMAGE_SET_Image(extVectorImage *Self, objImage *Value)
 {
+   if (not Value) {
+      Self->Image = nullptr;
+      Self->Bitmap = nullptr;
+      return ERR::Okay;
+   }
+
+   if (not Value->Bitmap) return ERR::InvalidData;
+
    if (Value->Bitmap->BitsPerPixel < 32) {
-      pf::Log log;
-      log.warning("The source image must be 32 bit, not %d bit.", Value->Bitmap->BitsPerPixel);
+      kt::Log().warning("The source image must be 32 bit, not %d bit.", Value->Bitmap->BitsPerPixel);
       return ERR::InvalidData;
    }
 
-   Self->Picture = Value;
+   Self->Image = Value;
    if (Value) Self->Bitmap = Value->Bitmap;
    return ERR::Okay;
 }
@@ -124,7 +115,7 @@ the image from being tiled.
 
 *********************************************************************************************************************/
 
-static ERR IMAGE_SET_SpreadMethod(extVectorImage* Self, VSPREAD Value)
+static ERR VECTORIMAGE_SET_SpreadMethod(extVectorImage *Self, VSPREAD Value)
 {
    Self->SpreadMethod = Value;
    Self->modified();
@@ -143,7 +134,7 @@ X: Apply a horizontal offset to the image, the origin of which is determined by 
 
 *********************************************************************************************************************/
 
-static ERR IMAGE_SET_X(extVectorImage *Self, double Value)
+static ERR VECTORIMAGE_SET_X(extVectorImage *Self, Unit &Value)
 {
    Self->X = Value;
    Self->modified();
@@ -158,53 +149,25 @@ Y: Apply a vertical offset to the image, the origin of which is determined by th
 
 *********************************************************************************************************************/
 
-static ERR IMAGE_SET_Y(extVectorImage *Self, double Value)
+static ERR VECTORIMAGE_SET_Y(extVectorImage *Self, Unit &Value)
 {
-   Self->X = Value;
+   Self->Y = Value;
    Self->modified();
    return ERR::Okay;
 }
 
 //********************************************************************************************************************
 
-static const ActionArray clImageActions[] = {
-   { AC::Init,      IMAGE_Init },
-   { AC::NewObject, IMAGE_NewObject },
-   { AC::NIL, nullptr }
-};
-
-static const FieldDef clImageSpread[] = {
-   { "Pad",      VSPREAD::PAD },
-   { "Repeat",   VSPREAD::REPEAT },
-   { "ReflectX", VSPREAD::REFLECT_X },
-   { "ReflectY", VSPREAD::REFLECT_Y },
-   { "Clip",     VSPREAD::CLIP },
-   { nullptr, 0 }
-};
-
-static const FieldDef clImageUnits[] = {
-   { "BoundingBox", VUNIT::BOUNDING_BOX }, // Coordinates are relative to the object's bounding box
-   { "UserSpace",   VUNIT::USERSPACE },    // Coordinates are relative to the current viewport
-   { nullptr, 0 }
-};
-
-static const FieldDef clImageDimensions[] = {
-   { "FixedX",  DMF::FIXED_X },
-   { "FixedY",  DMF::FIXED_Y },
-   { "ScaledX", DMF::SCALED_X },
-   { "ScaledY", DMF::SCALED_Y },
-   { nullptr, 0 }
-};
+#include "image_def.cpp"
 
 static const FieldArray clImageFields[] = {
-   { "X",            FDF_DOUBLE|FDF_RW, nullptr, IMAGE_SET_X },
-   { "Y",            FDF_DOUBLE|FDF_RW, nullptr, IMAGE_SET_Y },
-   { "Picture",      FDF_OBJECT|FDF_RW, nullptr, IMAGE_SET_Picture, CLASSID::PICTURE },
-   { "Bitmap",       FDF_OBJECT|FDF_RW, nullptr, IMAGE_SET_Bitmap, CLASSID::BITMAP },
-   { "Units",        FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clImageUnits },
-   { "Dimensions",   FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clImageDimensions },
-   { "SpreadMethod", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, IMAGE_SET_SpreadMethod, &clImageSpread },
-   { "AspectRatio",  FDF_INTFLAGS|FDF_RW, nullptr, IMAGE_SET_AspectRatio, &clAspectRatio },
+   { "X",            FDF_UNIT|FDF_RW, nullptr, VECTORIMAGE_SET_X },
+   { "Y",            FDF_UNIT|FDF_RW, nullptr, VECTORIMAGE_SET_Y },
+   { "Image",        FDF_OBJECT|FDF_RW, nullptr, VECTORIMAGE_SET_Image, CLASSID::IMAGE },
+   { "Bitmap",       FDF_OBJECT|FDF_RW, nullptr, VECTORIMAGE_SET_Bitmap, CLASSID::BITMAP },
+   { "Units",        FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorImageUnits },
+   { "SpreadMethod", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTORIMAGE_SET_SpreadMethod, &clVectorImageSpreadMethod },
+   { "AspectRatio",  FDF_INTFLAGS|FDF_RW, nullptr, VECTORIMAGE_SET_AspectRatio, &clVectorImageAspectRatio },
    END_FIELD
 };
 
@@ -216,11 +179,10 @@ ERR init_image(void) // The gradient is a definition type for creating gradients
       fl::BaseClassID(CLASSID::VECTORIMAGE),
       fl::Name("VectorImage"),
       fl::Category(CCF::GRAPHICS),
-      fl::Actions(clImageActions),
+      fl::Actions(clVectorImageActions),
       fl::Fields(clImageFields),
       fl::Size(sizeof(extVectorImage)),
       fl::Path(MOD_PATH));
 
    return clVectorImage ? ERR::Okay : ERR::AddClass;
 }
-

@@ -42,15 +42,15 @@ static const struct FieldDef clScintillaLexer[] = {
    { nullptr, 0 }
 };
 
-FDEF maSetFont[] = { { "Face", FD_STR }, { 0, 0 } };
-FDEF maReplaceText[] = { { "Find", FD_STR }, { "Replace", FD_STR }, { "Flags", FD_INT }, { "Start", FD_INT }, { "End", FD_INT }, { 0, 0 } };
+FDEF maSetFont[] = { { "Face", FDF_CPPSTRING }, { 0, 0 } };
+FDEF maReplaceText[] = { { "Find", FDF_CPPSTRING }, { "Replace", FDF_CPPSTRING }, { "Flags", FD_INT }, { "Start", FD_INT }, { "End", FD_INT }, { 0, 0 } };
 FDEF maDeleteLine[] = { { "Line", FD_INT }, { 0, 0 } };
 FDEF maSelectRange[] = { { "Start", FD_INT }, { "End", FD_INT }, { 0, 0 } };
-FDEF maInsertText[] = { { "String", FD_STR }, { "Pos", FD_INT }, { 0, 0 } };
-FDEF maGetLine[] = { { "Line", FD_INT }, { "Buffer", FD_BUFFER|FD_STR }, { "Length", FD_INT|FD_BUFSIZE }, { 0, 0 } };
-FDEF maReplaceLine[] = { { "Line", FD_INT }, { "String", FD_STR }, { "Length", FD_INT }, { 0, 0 } };
+FDEF maInsertText[] = { { "String", FDF_CPPSTRING }, { "Pos", FD_INT }, { 0, 0 } };
+FDEF maGetLine[] = { { "Line", FD_INT }, { "Buffer", FDF_SPAN|FD_MUTABLE|FD_BYTE }, { 0, 0 } };
+FDEF maReplaceLine[] = { { "Line", FD_INT }, { "String", FDF_CPPSTRING }, { "Length", FD_INT }, { 0, 0 } };
 FDEF maGotoLine[] = { { "Line", FD_INT }, { 0, 0 } };
-FDEF maGetPos[] = { { "Line", FD_INT }, { "Column", FD_INT }, { "Pos", FD_INT|FD_RESULT }, { 0, 0 } };
+FDEF maGetPos[] = { { "Line", FD_INT }, { "Column", FD_INT }, { "Pos", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF maScrollToPoint[] = { { "X", FD_INT }, { "Y", FD_INT }, { 0, 0 } };
 
 static const struct MethodEntry clScintillaMethods[] = {
@@ -69,6 +69,16 @@ static const struct MethodEntry clScintillaMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR SCINTILLA_New(extScintilla *Self) {
+   new (Self) extScintilla(Self->Class, Self->UID);
+   return ERR::Okay;
+}
+
+static ERR SCINTILLA_Free(extScintilla *Self) {
+   Self->~extScintilla();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clScintillaActions[] = {
    { AC::Clear, SCINTILLA_Clear },
    { AC::Clipboard, SCINTILLA_Clipboard },
@@ -80,12 +90,10 @@ static const struct ActionArray clScintillaActions[] = {
    { AC::Free, SCINTILLA_Free },
    { AC::Hide, SCINTILLA_Hide },
    { AC::Init, SCINTILLA_Init },
-   { AC::NewObject, SCINTILLA_NewObject },
-   { AC::NewOwner, SCINTILLA_NewOwner },
+   { AC::New, SCINTILLA_New },
    { AC::Redo, SCINTILLA_Redo },
    { AC::SaveToObject, SCINTILLA_SaveToObject },
    { AC::Show, SCINTILLA_Show },
    { AC::Undo, SCINTILLA_Undo },
    { AC::NIL, nullptr }
 };
-

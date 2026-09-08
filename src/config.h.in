@@ -10,6 +10,7 @@
 #cmakedefine _LP64 1
 #cmakedefine CMAKE_RC_COMPILER_INIT
 #cmakedefine REVERSE_BYTEORDER
+#cmakedefine KOTUKU_CXX_REUSES_BASE_TAIL_PADDING 1
 
 #ifdef KOTUKU_STATIC
 // Note: Dependencies also exist in src/core/static_modules.cpp
@@ -21,9 +22,10 @@
 #cmakedefine INC_MOD_HTTP
 #cmakedefine INC_MOD_JPEG
 #cmakedefine INC_MOD_JSON
+#cmakedefine INC_MOD_LZMA
 #cmakedefine INC_MOD_MP3
 #cmakedefine INC_MOD_NETWORK
-#cmakedefine INC_MOD_PICTURE
+#cmakedefine INC_MOD_IMAGE
 #cmakedefine INC_MOD_REGEX
 #cmakedefine INC_MOD_SCINTILLA
 #cmakedefine INC_MOD_SVG
@@ -67,6 +69,7 @@ using ERROR = int32_t;     // Standard error code
  using OBJECTID = int32_t;  // 32-bit object ID
 #endif
 using MEMORYID = int32_t;  // 32-bit memory ID
+using RESOURCEID = int32_t; // 32-bit resource ID (memory, object, etc)
 using FIELD = int64_t;    // 64-bit field ID - used for flag combos
 
 // Pointer types.
@@ -78,7 +81,6 @@ using TIMER = void *;
 using CPTR = const void *;     // Pointer with read-only content
 using APTR = void *;           // 32 or 64 bit untyped pointer
 using STRING = char *;         // string pointer (NULL terminated)
-using SSTRING = char *;        // signed string pointer (NULL terminated)
 using CSTRING = const char *;
 using OBJECT = void *;             // Object pointer
 using OBJECTPTR = struct Object *; // Object pointer

@@ -4,12 +4,12 @@ Documentation is available in the Kotuku Wiki.
 
    import 'gui'
 
-   namespace 'gui'
+   namespace gui
 
-function reportActivate(self:table, State:str, Force:bool)
-   self.events.activate ?? return
+function reportActivate(self:table!, State:str!, Force:bool!)
+   self.events.activate ?! return
    text = self.text.string
-   hash = string.hash(text)
+   hash = text ? string.hash(text) : 0
    if Force or hash != self.hash then
       self.hash = hash
       self.events.activate(self, { text=text, state=State })
@@ -19,7 +19,7 @@ end
 function validateInput(self)
    if self.inputMask then
       userInput = self.text.string ?? ''
-      if string.len(userInput) > 0 then
+      if #userInput > 0 then
          if not self.inputMask.test(userInput) then
             self.text.string = self._lastGoodInput
             self.viewport.acDraw()
@@ -38,7 +38,7 @@ gui.input = function(Options)
       events         = Options.events ?? { },
       label          = Options.label,
       parentViewport = Options.target,
-      inputMask      = Options.inputMask ? regex.new(Options.inputMask) :> nil,
+      inputMask      = Options.inputMask ?? regex.new(Options.inputMask) : nil,
       text           = nil, -- A VectorText that represents the string
       viewport       = nil, -- The input box's primary viewport
       _lastGoodInput = ''
@@ -46,7 +46,7 @@ gui.input = function(Options)
 
    -- Change the active state of the input box to disabled or enabled
 
-   self.disable = function(self)
+   self.disable = function()
       self.disabled = true
       self.viewport.acDisable()
       self.text.opacity = 0.5
@@ -55,7 +55,7 @@ gui.input = function(Options)
       self.viewport.acDraw()
    end
 
-   self.enable = function(self)
+   self.enable = function()
       self.disabled = false
       self.viewport.acDisable()
       self.text.opacity = 1.0
@@ -74,7 +74,7 @@ gui.input = function(Options)
       end
    end
 
-   self.setText = function(self, Text:str)
+   self.setText = function(Text:str!)
       if self.text then self.text.string = Text end
       checkShadowLabel(self)
       self.viewport.acDraw()
@@ -164,7 +164,7 @@ gui.input = function(Options)
 
    textFill = Options.textFill
    if not textFill?? then
-      textFill = Options.bkgd is 'none' ? theme.window.text :> theme.page.text
+      textFill = Options.bkgd is 'none' ? theme.window.text : theme.page.text
    end
 
    if Options.shadowLabel then
@@ -205,7 +205,7 @@ gui.input = function(Options)
 
    if Options.selected then self.text.mtSelectArea(0, 20000) end
 
-   self.viewport.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Viewport:obj, Event)
+   self.viewport.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Viewport:obj!, Event)
       if Event is FM_LOST_FOCUS then
          if not Options.flushEdges then
             self.bkgd.stroke = theme.input.stroke
@@ -231,7 +231,7 @@ gui.input = function(Options)
       Viewport.acDraw()
    end)
 
-   self._textClip.mtSubscribeKeyboard(function(Viewport:obj, Qualifiers, Value, Unicode)
+   self._textClip.mtSubscribeKeyboard(function(Viewport:obj!, Qualifiers, Value, Unicode)
       if not (Qualifiers has KQ_PRESSED) then return end
 
       if (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) then
@@ -245,7 +245,7 @@ gui.input = function(Options)
    end)
 
    if self.events.cursorEntry or self.events.cursorExit then
-      self.inputViewport.mtSubscribeInput(JTYPE_CROSSING, function(Viewport:obj, Msg)
+      self.inputViewport.mtSubscribeInput(JTYPE_CROSSING, function(Viewport:obj!, Msg)
          repeat
             choose Msg.type from
                JET_CROSSED_IN -> self.events?.cursorEntry(self)

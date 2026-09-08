@@ -1,5 +1,5 @@
 
-enum('XQueryNodeType', { type='int', start=0 },
+enums('XQueryNodeType', { type='int', start=0 },
   -- Location path components
   'LOCATION_PATH',
   'STEP',

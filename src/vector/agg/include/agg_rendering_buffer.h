@@ -6,14 +6,16 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
-
+// ---
+// Defines the rendering_buffer and row accessors used by AGG pixel formats. Hooks into pixfmt_* classes, image
+// accessors, and renderer_base. In the vector renderer it is the raw memory view that turns scene output into
+// addressable pixel rows.
 //
 // class rendering_buffer
 //
 //----------------------------------------------------------------------------
 
-#ifndef AGG_RENDERING_BUFFER_INCLUDED
-#define AGG_RENDERING_BUFFER_INCLUDED
+#pragma once
 
 #include "agg_array.h"
 
@@ -291,6 +293,3 @@ namespace agg
 #endif
 
 }
-
-
-#endif

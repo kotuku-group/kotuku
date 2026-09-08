@@ -8,7 +8,7 @@
     <module>Vector</module>
     <comment>A filter effect that offsets the position of an input source.</comment>
     <version>1</version>
-    <id>8e3b5bea</id>
+    <id>188adbf9</id>
     <idstring>OFFSETFX</idstring>
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
@@ -24,6 +24,7 @@
       <name>Draw</name>
       <comment>Draws object graphics to drawable areas.</comment>
       <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
+      <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">The X position of the region to be drawn.</param>
         <param type="INT" name="Y">The Y position of the region to be drawn.</param>
@@ -40,12 +41,13 @@
       <comment>Returns an SVG compliant XML string that describes the effect.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
+      <tags>caller-owns-result</tags>
     </field>
 
     <field>
       <name>XOffset</name>
       <comment>The delta X coordinate for the input graphic.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>INT</type>
       <description>
 <p>The <code>(XOffset, YOffset)</code> field values define the offset of the input source within the target clipping area.</p>
@@ -55,7 +57,7 @@
     <field>
       <name>YOffset</name>
       <comment>The delta Y coordinate for the input graphic.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>INT</type>
       <description>
 <p>The <code>(XOffset, YOffset)</code> field values define the offset of the input source within the target clipping area.</p>

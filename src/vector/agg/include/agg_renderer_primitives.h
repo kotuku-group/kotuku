@@ -6,14 +6,16 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
-
+// ---
+// Renders low-level integer primitives such as lines, rectangles, and ellipses. Hooks into renderer_base and outline
+// rasterisers. In the vector renderer it provides utility drawing operations used below the full path scanline
+// pipeline.
 //
 // class renderer_primitives
 //
 //----------------------------------------------------------------------------
 
-#ifndef AGG_RENDERER_PRIMITIVES_INCLUDED
-#define AGG_RENDERER_PRIMITIVES_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_renderer_base.h"
@@ -200,5 +202,3 @@ namespace agg
     };
 
 }
-
-#endif

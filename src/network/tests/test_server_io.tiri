@@ -5,17 +5,19 @@ This test checks connectivity and I/O with a server by sending a simple HTTP req
    include 'network'
 
 function printableState(State)
-   if State is NTC_CONNECTED then return 'CONNECTED'
-   elseif State is NTC_CONNECTING then return 'CONNECTING'
-   elseif State is NTC_DISCONNECTED then return 'DISCONNECTED'
-   elseif State is NTC_HANDSHAKING then return 'HANDSHAKING'
-   else return tostring(State) end
+   return choose State from
+      NTC_CONNECTED -> 'CONNECTED'
+      NTC_CONNECTING -> 'CONNECTING'
+      NTC_DISCONNECTED -> 'DISCONNECTED'
+      NTC_HANDSHAKING -> 'HANDSHAKING'
+      NTC_RESOLVING -> 'RESOLVING'
+      else -> tostring(State)
+   end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-@Test(requires='network') function RawHTTP()
-   proc = processing.new({ timeout = 5.0 })
+@Test; @Requires(network=true) function RawHTTP()
    netsocket = obj.new('netsocket', {
       feedback = function(Socket, State)
          state = printableState(State)
@@ -26,27 +28,26 @@ end
             Socket.acWrite('GET /index.html HTTP/1.1\r\nHost: kotuku.dev\r\nConnection: close\r\nUser-Agent: Kotuku Client\r\n\r\n')
          elseif state is 'DISCONNECTED' then
             print('Disconnected from server.')
-            proc.signal()
+            Socket.acSignal()
          else
             print('Unknown netsocket state: ' .. state)
          end
       end,
       incoming = function(Socket)
          print('Incoming data...')
-         buffer = string.alloc(1024)
+         buffer = array<byte, 1024>
          err, read_len = Socket.acRead(buffer)
          if err is ERR_Okay then
-            print(buffer:sub(0,80))
+            print(buffer.getString(0, 80))
          elseif err is ERR_Disconnected then
-            proc.signal()
+            Socket.acSignal()
          else
-            error('Read() failed on NetSocket.')
+            raise 'Read() failed on NetSocket.'
          end
       end
    } )
 
-   netsocket.mtConnect('kotuku.dev', 80)
-
-   err = proc.sleep()
-   assert(err is ERR_Okay, 'Failed to complete the test: ' .. mSys.GetErrorMsg(err))
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { netsocket } })
+   check netsocket.mtConnect('kotuku.dev', 80)
+   check proc.sleep()
 end

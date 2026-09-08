@@ -31,15 +31,54 @@ that is distributed with this package.  Please refer to it for further informati
 #define PRV_SURFACE
 
 #include "defs/hashes.h"
+#include "../link/simd.h"
 #include "../link/unicode.h"
+#include <kotuku/modules/filesystem.h>
+#include <kotuku/modules/processes.h>
+#include <kotuku/modules/script.h>
+#include <kotuku/modules/xquery.h>
+#include <kotuku/modules/time.h>
+#include <kotuku/modules/module.h>
+#include <atomic>
+#include <vector>
 
 using BYTECODE = uint32_t;
 using CELL_ID = uint32_t;
 
-static BYTECODE glByteCodeID = 1;
-static uint32_t glUID = 1000; // Use for generating unique/incrementing ID's, e.g. cell ID
+static void deref_document_callback(FUNCTION &Function)
+{
+   if (Function.defined()) {
+      if (Function.isScript() and (not Function.stale())) ((objScript *)Function.Context)->derefProcedure(Function);
+      Function.unpin();
+      Function.disable();
+   }
+}
 
-using namespace pf;
+static void deref_document_callbacks(std::vector<FUNCTION> &Callbacks)
+{
+   for (auto &callback : Callbacks) deref_document_callback(callback);
+}
+
+static std::atomic<BYTECODE> glByteCodeID = 1;
+static thread_local BYTECODE glReservedByteCodeID = 0;
+static std::atomic<uint32_t> glUID = 1000; // Use for generating unique/incrementing ID's, e.g. cell ID
+
+static BYTECODE alloc_bytecode_id()
+{
+   if (glReservedByteCodeID) {
+      auto id = glReservedByteCodeID;
+      glReservedByteCodeID = 0;
+      return id;
+   }
+   else return glByteCodeID.fetch_add(1, std::memory_order_relaxed);
+}
+
+inline uint32_t alloc_uid()
+{
+   return glUID.fetch_add(1, std::memory_order_relaxed);
+}
+
+using namespace kt;
 
 JUMPTABLE_CORE
 JUMPTABLE_FONT
@@ -109,46 +148,7 @@ std::vector<sorted_segment> & extDocument::get_sorted_segments()
 
 struct layout; // Pre-def
 
-static ERR  activate_cell_edit(extDocument *, int, stream_char);
-static ERR  add_document_class(void);
-static int add_tabfocus(extDocument *, TT, BYTECODE);
-static void advance_tabfocus(extDocument *, int8_t);
-static void deactivate_edit(extDocument *, bool);
-static ERR  extract_script(extDocument *, const std::string &, objScript **, std::string &, std::string &);
-static void error_dialog(const std::string, const std::string);
-static void error_dialog(const std::string, ERR);
-static const Field * find_field(OBJECTPTR, std::string_view, OBJECTPTR *);
-static SEGINDEX find_segment(std::vector<doc_segment> &, stream_char, bool);
-static int  find_tabfocus(extDocument *, TT, BYTECODE);
-static ERR  flash_cursor(extDocument *, int64_t, int64_t);
-static int getutf8(CSTRING, int *);
-static ERR  insert_text(extDocument *, RSTREAM *, stream_char &, const std::string_view, bool);
-static ERR  insert_xml(extDocument *, RSTREAM *, objXML *, objXML::TAGS &, int, STYLE = STYLE::NIL, IPF = IPF::NIL);
-static ERR  key_event(objVectorViewport *, KQ, KEY, int);
-static void layout_doc(extDocument *);
-static ERR  load_doc(extDocument *, std::string, bool, ULD = ULD::NIL);
-static void notify_disable_viewport(OBJECTPTR, ACTIONID, ERR, APTR);
-static void notify_enable_viewport(OBJECTPTR, ACTIONID, ERR, APTR);
-static void notify_focus_viewport(OBJECTPTR, ACTIONID, ERR, APTR);
-static void notify_free_event(OBJECTPTR, ACTIONID, ERR, APTR);
-static void notify_lostfocus_viewport(OBJECTPTR, ACTIONID, ERR, APTR);
-static ERR  feedback_view(objVectorViewport *, FM);
-static void process_parameters(extDocument *, const std::string_view);
-static CSTRING read_unit(CSTRING, double &, bool &);
-static void redraw(extDocument *, bool);
-static ERR  report_event(extDocument *, DEF, entity *, KEYVALUE *);
-static void reset_cursor(extDocument *);
-static ERR  resolve_fontx_by_index(extDocument *, stream_char, double &);
-static int  safe_file_path(extDocument *, const std::string &);
-static void set_focus(extDocument *, int, CSTRING);
-static void show_bookmark(extDocument *, const std::string &);
-static std::string stream_to_string(RSTREAM &, stream_char, stream_char);
-static ERR  unload_doc(extDocument *, ULD = ULD::NIL);
-static bool valid_objectid(extDocument *, OBJECTID);
-static bool view_area(extDocument *, double, double, double, double);
-static std::string write_calc(double, int16_t);
-
-static ERR GET_WorkingPath(extDocument *, CSTRING *);
+static ERR GET_WorkingPath(extDocument *, std::string_view &);
 
 #ifdef DBG_STREAM
 static void print_stream(RSTREAM &);
@@ -172,36 +172,84 @@ template <class T> inline const std::string_view & BC_NAME(RSTREAM &Stream, T In
 
 //********************************************************************************************************************
 
+inline bool valid_trigger(int Trigger)
+{
+   return (Trigger >= 0) and (Trigger < int(DRT::END));
+}
+
+inline bool valid_trigger(DRT Trigger)
+{
+   return valid_trigger(int(Trigger));
+}
+
+inline std::vector<FUNCTION> copy_triggers(extDocument *Self, DRT Trigger)
+{
+   return Self->Triggers[int(Trigger)];
+}
+
+// Return true if Object is associated with a trigger
+
+static bool has_script_listener(extDocument *Self, OBJECTPTR Object)
+{
+   for (auto &triggers : Self->Triggers) {
+      for (auto &trigger : triggers) {
+         if ((trigger.isScript()) and (trigger.Context IS Object)) return true;
+      }
+   }
+   return false;
+}
+
+// Returns true if Object is associated with the client's EventCallback
+
+inline bool has_script_event_callback(extDocument *Self, OBJECTPTR Object)
+{
+   return (Self->EventCallback.isScript()) and (Self->EventCallback.Context IS Object);
+}
+
+// Returns true if Object is associated with the client's EventCallback OR a trigger
+
+inline bool has_script_free_callback(extDocument *Self, OBJECTPTR Object)
+{
+   return has_script_event_callback(Self, Object) or has_script_listener(Self, Object);
+}
+
+inline void unsubscribe_script_context(extDocument *Self, OBJECTPTR Context)
+{
+   if ((Context) and (not has_script_free_callback(Self, Context))) UnsubscribeAction(Context, AC::Free);
+}
+
+//********************************************************************************************************************
+
 static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 {
    CoreBase = argCoreBase;
 
-   argModule->get(FID_Root, modDocument);
+   modDocument = (OBJECTPTR)((objModule *)argModule)->Root;
 
    if (objModule::load("display", &modDisplay, &DisplayBase) != ERR::Okay) return ERR::InitModule;
    if (objModule::load("font", &modFont, &FontBase) != ERR::Okay) return ERR::InitModule;
    if (objModule::load("vector", &modVector, &VectorBase) != ERR::Okay) return ERR::InitModule;
 
    OBJECTID style_id;
-   if (FindObject("glStyle", CLASSID::XML, FOF::NIL, &style_id) IS ERR::Okay) {
-      char buffer[32];
-      if (acGetKey(GetObjectPtr(style_id), "/colours/@DocumentHighlight", buffer, sizeof(buffer)) IS ERR::Okay) {
+   if (!FindObject("glStyle", CLASSID::XML, &style_id)) {
+      std::string buffer;
+      if (!acGetKey(GetObjectPtr(style_id), "/colours/@DocumentHighlight", buffer)) {
          glHighlight.assign(buffer);
       }
    }
 
    // Set the first entry of glFonts with the default font face.
 
-   CSTRING resolved_face;
-   if (fnt::ResolveFamilyName(DEFAULT_FONTFACE.c_str(), &resolved_face) IS ERR::Okay) {
+   std::string_view resolved_face;
+   if (auto error = fnt::ResolveFamilyName(DEFAULT_FONTFACE, &resolved_face); !error) {
       APTR new_handle = nullptr;
-      if (vec::GetFontHandle(resolved_face, DEFAULT_FONTSTYLE.c_str(), 400, DEFAULT_FONTSIZE, &new_handle) IS ERR::Okay) {
+      if ((error = vec::GetFontHandle(resolved_face, DEFAULT_FONTSTYLE, 400, DEFAULT_FONTSIZE, &new_handle)) IS ERR::Okay) {
          glFonts.emplace_back(new_handle, resolved_face, DEFAULT_FONTSTYLE, DEFAULT_FONTSIZE);
-         glFontIndexCache.try_emplace(font_cache_key { resolved_face, DEFAULT_FONTSTYLE, DEFAULT_FONTSIZE }, 0);
+         glFontIndexCache.try_emplace(font_cache_key { std::string(resolved_face), DEFAULT_FONTSTYLE, DEFAULT_FONTSIZE }, 0);
       }
-      else return ERR::Failed;
+      else return error;
    }
-   else return ERR::Failed;
+   else return error;
 
    return add_document_class();
 }
@@ -260,7 +308,7 @@ inline doc_edit * find_editdef(extDocument *Self, std::string_view Name)
 inline void layout_doc_fast(extDocument *Self)
 {
 #ifndef RETAIN_LOG_LEVEL
-   pf::LogLevel level(2);
+   kt::LogLevel level(2);
 #endif
 
    layout_doc(Self);
@@ -297,7 +345,7 @@ static ERR add_document_class(void)
       fl::Fields(clFields),
       fl::Size(sizeof(extDocument)),
       fl::Path(MOD_PATH),
-      fl::FileExtension("*.rpl|*.ripple|*.ripl"),
+      fl::FileExtension("rpl|ripple|ripl"),
       fl::Icon("filetypes/text"));
 
    return clDocument ? ERR::Okay : ERR::AddClass;

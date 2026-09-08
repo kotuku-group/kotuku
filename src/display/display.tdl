@@ -1,36 +1,40 @@
 --$TIRI:Include
 
-module({ name="Display", copyright="Paul Manias © 2003-2026", version=1.0, status="stable", prefix="gfx", timestamp=20240611 }, function()
+module({
+    name="Display", copyright="Paul Manias © 2003-2026", version=1.0, status="stable", prefix="gfx", timestamp=20240611,
+    src={ "display.cpp", "lib_bitmap.cpp", "lib_display.cpp", "lib_cursor.cpp", "lib_input.cpp", "lib_surfaces.cpp" }
+  }, function()
 
   restrict(function()
     loadFile(glPath .. 'common.tdl')
     loadFile(glPath .. 'common-graphics.tdl')
   end)
 
-  platform("X11", function()
-    c_include("<X11/Xlib.h>", "<X11/extensions/XShm.h>")
-  end)
-
-  enum("DRAG", { type="int", start=0, flags="Flags for the DragStatus field." },
+  enums("DRAG", { type="int", start=0, flags="Flags for the DragStatus field." },
     "NONE: The surface is not being dragged.",
     "ANCHOR: The surface is being dragged and the mouse pointer is anchored to the surface.",
     "NORMAL: The surface is being dragged.")
 
-  enum("WH", { type="int", start=1, comment="Events for WindowHook()" },
+  enums("WH", { type="int", start=1, comment="Events for WindowHook()" },
     "CLOSE")
 
-  enum("CS", { type="int", start=1, comment="Colour space options." },
+  enums("CS", { type="int", start=1, comment="Colour space options." },
     "SRGB: The default colour-space is sRGB.",
     "LINEAR_RGB: Linear RGB is used to improve colour balance in blending operations.",
     "CIE_LAB: Cartesian L*a*b* colour space defined by CIE 15.",
     "CIE_LCH: Polar L*CHab colour space defined by CIE 15.")
 
+  enums("BMT", { type="int", start=0, comment="Bitmap memory type." },
+    "DATA:    The default type, indicates a standard memory allocation from system RAM.",
+    "VIDEO:   Identifies video memory, such as the frame buffer.",
+    "TEXTURE: Identifies non-displayable video memory, e.g. texture graphics."
+  )
+
   flags("EXF", { comment="Optional flags for the ExposeSurface() function." },
     "CHILDREN: If set, all child surfaces that intersect with exposed region will be included in the expose operation.",
     "REDRAW_VOLATILE: Redraw every volatile object that intersects with the expose region, including internal volatile children.",
     "REDRAW_VOLATILE_OVERLAP: Only redraw volatile objects that obscure the expose region from a position outside of the target surface and its children.  Useful if no redrawing has occurred in the surface, but the surface has moved to a new position and the parents need to be redrawn.",
-    "ABSOLUTE_COORDS|ABSOLUTE: The supplied coordinates for exposure are absolute (relative to the display).",
-    "CURSOR_SPLIT: Internal flag used to reduce screen flickering when a software cursor is in use.")
+    "ABSOLUTE_COORDS|ABSOLUTE: The supplied coordinates for exposure are absolute (relative to the display).")
 
   flags("RT", { },
      "ROOT: Can be used by window surfaces to identify themselves as a root layer.")
@@ -54,7 +58,7 @@ module({ name="Display", copyright="Paul Manias © 2003-2026", version=1.0, stat
     "NO_DRAW: Drawing and exposures are disabled",
     "NO_EXPOSE: Drawing is enabled, exposures are disabled")
 
-  enum("SWIN", { type="int", start=0, comment="Options for the Surface WindowType field." },
+  enums("SWIN", { type="int", start=0, comment="Options for the Surface WindowType field." },
     "HOST: Default to the standard hosted window mode with full titlebar, borders and taskbar representation.",
     "TASKBAR: Create a borderless (custom) window with taskbar representation.",
     "ICON_TRAY: Create a borderless (custom) window with icon tray representation.",
@@ -90,7 +94,7 @@ module({ name="Display", copyright="Paul Manias © 2003-2026", version=1.0, stat
     { READ_ONLY = "HAS_FOCUS|CURSOR|AFTER_COPY" },
     { INIT_ONLY = "HOST|TRANSPARENT|DISABLED|PRECOPY|VIDEO|FIXED_BUFFER|PERVASIVE_COPY|FIXED_DEPTH|FULL_SCREEN|IGNORE_FOCUS" })
 
-  enum("HOST", { type="int", start=1 },
+  enums("HOST", { type="int", start=1 },
     "TRAY_ICON: All new displays are represented in the system tray when this option is active.",
     "TASKBAR: The hosted display is given a taskbar button.",
     "STICK_TO_FRONT: The hosted display sticks to the front.",
@@ -132,11 +136,11 @@ module({ name="Display", copyright="Paul Manias © 2003-2026", version=1.0, stat
     "CLIP: Enable clipping of the source coordinates.",
     "OFFSET: Adjust X and Y coordinates by the offset values defined in the @Surface.XOffset and @Surface.YOffset fields.")
 
-  enum("BMP", { type="int", start=2, comment="Bitmap types" },
+  enums("BMP", { type="int", start=2, comment="Bitmap types" },
      "PLANAR: Planar pixel mode separates pixel bits across multiple planes.  Commonly used for single bit bitmap masks.",
      "CHUNKY: Chunky pixel mode (default).")
 
-  enum("BLM", { type="int", start=0, comment="Defines the blending algorithm to use when transparent pixels are rendered to the bitmap." },
+  enums("BLM", { type="int", start=0, comment="Defines the blending algorithm to use when transparent pixels are rendered to the bitmap." },
     "AUTO: Use the most suitable of the available algorithms.",
     "NONE: Never blend transparent pixels, just copy as-is.",
     "SRGB: Use sRGB linear blending.  This algorithm is extremely efficient but produces poor quality results.",
@@ -158,9 +162,27 @@ module({ name="Display", copyright="Paul Manias © 2003-2026", version=1.0, stat
     "ACCELERATED_3D: 3D video acceleration is available.",
     "ALPHA_CHANNEL: For 32-bit images, indicates that an alpha channel is present.",
     "NEVER_SHRINK: Ignore resize requests that would shrink the size of the bitmap.",
-    "X11_DGA: Private DGA indicator.",
     "FIXED_DEPTH: Prevent changing of bitmap depth after initialisation (e.g. via `Resize()`).",
     "PREMUL: The RGB values are premultiplied (32-bit only)."
+  )
+
+  flags("CON", { comment="Gamepad controller buttons." },
+    "GAMEPAD_S:  South button (A)",
+    "GAMEPAD_E:  East button (B)",
+    "GAMEPAD_W:  West button (X)",
+    "GAMEPAD_N:  North button (Y)",
+    "DPAD_UP:    Directional pad up.",
+    "DPAD_DOWN:  Directional pad down.",
+    "DPAD_LEFT:  Directional pad left.",
+    "DPAD_RIGHT: Directional pad right.",
+    "START:      Gamepad start button.",
+    "SELECT:     Gamepad select or back button.",
+    "LEFT_BUMPER_1:  Gamepad left-hand bumper 1 (top, primary).",
+    "LEFT_BUMPER_2:  Gamepad left-hand bumper 2 (lower).",
+    "RIGHT_BUMPER_1: Gamepad right-hand bumper 1 (top, primary).",
+    "RIGHT_BUMPER_2: Gamepad right-hand bumper 2 (lower).",
+    "LEFT_THUMB:  Left thumb stick depressed.",
+    "RIGHT_THUMB: Right thumb stick depressed."
   )
 
   flags("SCR", { comment="Display flags." },
@@ -172,6 +194,11 @@ module({ name="Display", copyright="Paul Manias © 2003-2026", version=1.0, stat
     "BORDERLESS: If display is hosted, create it as a popup / borderless window.",
     "ALPHA_BLEND|COMPOSITE: Enables alpha channel blending (if display is hosted and 32-bit).",
     "GRAB_CONTROLLERS: Grab controllers for receiving input when the display has the focus.",
+    "PRIMARY: The display is flagged as being the primary.",
+    "ACTIVE: The display is participating in the desktop view - this does not guarantee it is visible.",
+    "MIRRORED: The display is a mirrored copy.",
+    "VIRTUAL: The display is virtual or not visible (device not switched on).",
+    "ROTATED: True if the display is rotated.",
     { MAXIMISE        = "0x80000000: Special win32 flag." },
     { CUSTOM_WINDOW   = "0x40000000: The display has been created with a custom window reference." },
     { FLIPPABLE       = "0x20000000: If `SCR::BUFFER` is used, this flag may be set by the display manager if it is possible to flip the buffer." },
@@ -191,26 +218,26 @@ module({ name="Display", copyright="Paul Manias © 2003-2026", version=1.0, stat
   flags("GMF", { comment="Flags for gamma operations." },
      "SAVE: Save the provided settings permanently.")
 
-  enum("DT", { type="int", start=1, comment="Flags for GetDisplayType()." },
-    "NATIVE: The display is native (supported by internal drivers).",
+  enums("DT", { type="int", start=1, comment="Display backend identities returned by GetDisplayType()." },
+    "NATIVE: The selected display driver uses no platform-specific hosted backend.",
     "X11: The display is driven by the X Window System (X11, X.Org, XFree86)",
     "WINGDI: The display is driven by Microsoft Windows drivers.",
-    "GLES: The display is driven by OpenGLES.")
+    "GLES: The selected display driver uses OpenGL ES.")
 
-  enum("DPMS", { type="int", start=0, comment="Possible modes for the Display class' PowerMode field." },
+  enums("DPMS", { type="int", start=0, comment="Possible modes for the Display class' PowerMode field." },
     "DEFAULT: Use the default DPMS mode as defined by the display driver.",
     "OFF: Stop sending power to the display in order to turn it off (it may not be possible to restart the display without the user's intervention).",
     "SUSPEND: Puts the display into suspend mode (blanks the display output while maintaining normal power levels).",
     "STANDBY: Puts the display into standby (reduced power) mode.")
 
-  enum('CT', { type="int", start=0 }, 'DATA', 'AUDIO', 'IMAGE', 'FILE', 'OBJECT', 'TEXT', 'END')
+  enums('CT', { type="int", start=0 }, 'DATA', 'AUDIO', 'IMAGE', 'FILE', 'OBJECT', 'TEXT', 'END')
 
   -- Note: It is intentional that the CLIP types are expressed as flags and not constants.
 
   flags('CLIPTYPE', { comment='Clipboard types' },
     'DATA: Raw information that is uncategorised can be defined as a data clip.',
     'AUDIO: An audio clip that is recognised by the Sound class (such as wav\'s and mp3\'s).',
-    'IMAGE: Images that are recognised by the Picture class may be stored as this type (such as jpeg\'s and png files).',
+    'IMAGE: Images that are recognised by the Image class may be stored as this type (such as jpeg\'s and png files).',
     'FILE: Pure file references are stored as file clips.  This type is typically used by file managers for moving and copying files.',
     'OBJECT: An object that has been deserialised into binary form.',
     'TEXT: Plain text files such as ASCII and UTF-8 must be identified through this clip type.')
@@ -224,7 +251,7 @@ module({ name="Display", copyright="Paul Manias © 2003-2026", version=1.0, stat
     'DELETE: Requests that the original file source is deleted if a successful paste operation takes place.',
     'EXTEND: Instead of replacing existing clipboard data, add the new data to the group.')
 
-  struct("SurfaceInfo", { version=2, type="surfaceinfo" }, [[
+  structdef("SurfaceInfo", { type="surfaceinfo" }, [[
     ptr Data            # Bitmap data memory ID
     oid ParentID        # Object that contains the surface area
     oid BitmapID        # Surface bitmap buffer
@@ -248,12 +275,12 @@ module({ name="Display", copyright="Paul Manias © 2003-2026", version=1.0, stat
    inline bool transparent() const { return (Flags & RNF::TRANSPARENT) != RNF::NIL; }
   ]])
 
-  struct("SurfaceCallback", { restrict="c", comment="Private structure for managing surface callbacks." }, [[
+  structdef("SurfaceCallback", { restrict="c", comment="Private structure for managing surface callbacks." }, [[
     obj Object    # Context to use for the function.
     func Function # void (*Routine)(OBJECTPTR, struct Surface *, objBitmap *);
   ]])
 
-  struct("SurfaceCoords", { }, [[
+  structdef("SurfaceCoords", { }, [[
     int X      # Horizontal coordinate
     int Y      # Vertical coordinate
     int Width  # Width
@@ -262,7 +289,7 @@ module({ name="Display", copyright="Paul Manias © 2003-2026", version=1.0, stat
     int AbsY   # Absolute Y
   ]])
 
-  struct("xrMode", { comment="Display mode." }, [[
+  structdef("xrMode", { comment="Display mode." }, [[
     int Width    # Horizontal
     int Height   # Vertical
     int Depth    # bit depth
@@ -270,7 +297,7 @@ module({ name="Display", copyright="Paul Manias © 2003-2026", version=1.0, stat
 
   -- PixelFormat duplicates the Core module's ColourFormat structure.
 
-  struct("PixelFormat", { type="pixelformat", comment="Carries instructions to pack or unpack RGBA colours." }, [[
+  structdef("PixelFormat", { type="pixelformat", comment="Carries instructions to pack or unpack RGBA colours." }, [[
     uchar  RedShift    # Right shift value
     uchar  GreenShift  # Green shift value
     uchar  BlueShift   # Blue shift value
@@ -283,34 +310,47 @@ module({ name="Display", copyright="Paul Manias © 2003-2026", version=1.0, stat
     uchar  GreenPos    # Left shift/positional value for green
     uchar  BluePos     # Left shift/positional value for blue
     uchar  AlphaPos    # Left shift/positional value for alpha
+    uint   Pad         # Padding
   ]])
 
-  struct("DisplayInfo", { type="displayinfo", version=3 }, [[
-    oid   Display         # Object ID related to the display
-    int(SCR) Flags        # Display flags
-    short Width           # Pixel width of the display
-    short Height          # Pixel height of the display
-    short BitsPerPixel    # Bits per pixel
-    short BytesPerPixel   # Bytes per pixel
-    large(ACF) AccelFlags # Flags describing supported hardware features.
-    int   AmtColours      # Total number of supported colours.
+  structdef("DisplayInfo", { }, [[
     struct(PixelFormat) PixelFormat # The colour format to use for each pixel.
     float MinRefresh     # Minimum refresh rate
     float MaxRefresh     # Maximum refresh rate
     float RefreshRate    # Recommended refresh rate
+    oid   Display        # Object ID related to the display
+    int(ACF) AccelFlags  # Flags describing supported hardware features.
+    int(SCR) Flags       # Display flags
+    int   AmtColours     # Total number of supported colours.
     int   Index          # Display mode ID (internal)
     int   HDensity       # Horizontal pixel density per inch.
     int   VDensity       # Vertical pixel density per inch.
+    int   HostedX        # Horizontal display position in virtual desktop coordinates
+    int   HostedY        # Vertical display position in virtual desktop coordinates
+    int   MonitorX       # Horizontal position of the monitor, relative to the primary monitor
+    int   MonitorY       # Vertical position of the monitor, relative to the primary monitor
+    int   MonitorWidth   # Pixel width of the monitor
+    int   MonitorHeight  # Pixel height of the monitor
+    int   VirtualX       # Horizontal position of the complete desktop spanning all monitors
+    int   VirtualY       # Vertical position of the complete desktop spanning all monitors
+    int   VirtualWidth   # Width of the complete desktop spanning all monitors
+    int   VirtualHeight  # Height of the complete desktop spanning all monitors
+    int   PhysicalWidth  # Width in millimeters, 0 if unknown
+    int   PhysicalHeight # Height in millimeters, 0 if unknown
+    short Width          # Pixel width of the display bitmap
+    short Height         # Pixel height of the display bitmap
+    short BitsPerPixel   # Bits per pixel
+    short BytesPerPixel  # Bytes per pixel
   ]])
 
-  struct("CursorInfo", { }, [[
+  structdef("CursorInfo", { }, [[
     int Width           # Maximum cursor width for custom cursors
     int Height          # Maximum cursor height for custom cursors
     int Flags           # Currently unused
     short BitsPerPixel  # Preferred bits-per-pixel setting for custom cursors
   ]])
 
-  struct("BitmapSurface", { type="bitmapsurface", version=2 }, [[
+  structdef("BitmapSurface", { type="bitmapsurface" }, [[
     ptr   Data           # Pointer to the bitmap graphics data.
     short Width          # Pixel width of the bitmap.
     short Height         # Pixel height of the bitmap.
@@ -328,18 +368,16 @@ module({ name="Display", copyright="Paul Manias © 2003-2026", version=1.0, stat
 
   methods("Bitmap", "Bmp", {
     { id=1, name="CopyArea" },
-    { id=2, name="Compress" },
-    { id=3, name="Decompress" },
-    { id=4, name="DrawRectangle" },
-    { id=5, name="SetClipRegion" },
-    { id=6, name="GetColour" },
-    { id=7, name="Premultiply" },
-    { id=8, name="Demultiply" },
-    { id=9, name="ConvertToLinear" },
-    { id=10, name="ConvertToRGB" }
+    { id=2, name="DrawRectangle" },
+    { id=3, name="SetClipRegion" },
+    { id=4, name="GetColour" },
+    { id=5, name="Premultiply" },
+    { id=6, name="Demultiply" },
+    { id=7, name="ConvertToLinear" },
+    { id=8, name="ConvertToRGB" }
   })
 
-  class("Bitmap", { version=2.0, src="class_bitmap.cpp", output="class_bitmap_def.c", references={ "ColourFormat" } }, [[
+  klass("Bitmap", { src="class_bitmap.cpp", output="class_bitmap_def.c", references={ "ColourFormat" }, extended=true }, [[
     struct(*RGBPalette) Palette          # Pointer to the Bitmap's palette
     struct(*ColourFormat) ColourFormat   # Pointer to colour information
     fptr(void obj(Bitmap) int int uint) DrawUCPixel
@@ -348,7 +386,7 @@ module({ name="Display", copyright="Paul Manias © 2003-2026", version=1.0, stat
     fptr(void obj(Bitmap) int int struct(*RGB8)) ReadUCRPixel
     fptr(void obj(Bitmap) ptr(uchar) struct(*RGB8)) ReadUCRIndex
     fptr(void obj(Bitmap) ptr(uchar) struct(*RGB8)) DrawUCRIndex
-    ptr(uchar) Data             # Pointer to bitmap data area
+    array(uchar) Data           # Bitmap data area
     int   Width                 # Width
     int   ByteWidth             # Byte width (not including padding - see `LineWidth`)
     int   Height                # Height
@@ -357,7 +395,7 @@ module({ name="Display", copyright="Paul Manias © 2003-2026", version=1.0, stat
     int   PlaneMod              # Plane differential in bytes
     struct(ClipRectangle) Clip  # Clipping rectangle
     int   Size                  # Total size of the bitmap in bytes
-    int(MEM) DataFlags          # Memory flags to use in allocation
+    int(BMT) MemType            # Memory type used to host the bitmap data
     int   AmtColours            # Maximum amount of colours available
     int(BMF) Flags              # Optional flags
     int   TransIndex            # Colour index or packed colour value that acts as the background/transparency
@@ -377,7 +415,7 @@ module({ name="Display", copyright="Paul Manias © 2003-2026", version=1.0, stat
       if (BitsPerPixel > 8) return packPixel(RGB);
       else {
          uint32_t result;
-         if (getColour(RGB.Red, RGB.Green, RGB.Blue, RGB.Alpha, &result) IS ERR::Okay) {
+         if (!getColour(RGB.Red, RGB.Green, RGB.Blue, RGB.Alpha, &result)) {
             return result;
          }
          else return 0;
@@ -446,19 +484,20 @@ module({ name="Display", copyright="Paul Manias © 2003-2026", version=1.0, stat
    template <class T> inline uint8_t unpackAlpha(T Packed) { return (((Packed >> ColourFormat->AlphaPos) & ColourFormat->AlphaMask)); }
   ]])
 
-  methods("Display", "Gfx", {
-    { id=1, name="WaitVBL" },
-    { id=2, name="UpdatePalette" },
-    { id=3, name="SetDisplay" },
-    { id=4, name="SizeHints" },
-    { id=5, name="SetGamma" },
-    { id=6, name="SetGammaLinear" },
-    { id=7, name="SetMonitor" },
-    { id=8, name="Minimise" },
-    { id=9, name="CheckXWindow" }
+  methods('Display', 'Gfx', {
+    { id=1, name='WaitVBL' },
+    { id=2, name='UpdatePalette' },
+    { id=3, name='SetDisplay' },
+    { id=4, name='SizeHints' },
+    { id=5, name='SetGamma' },
+    { id=6, name='SetGammaLinear' },
+    { id=7, name='SetMonitor' },
+    { id=8, name='Minimise' },
+    { id=9, name='CheckXWindow' },
+    { id=10, name='GetFrame' }
   })
 
-  class("Display", { version=1.0, src="class_display.cpp", output="class_display_def.c" }, [[
+  klass('Display', { src='class_display.cpp', output='class_display_def.c', extended=true }, [[
     double RefreshRate   # The active refresh rate
     obj(Bitmap) Bitmap   # Reference to the display's bitmap information.
     int(SCR) Flags       # Optional flags
@@ -491,14 +530,15 @@ module({ name="Display", copyright="Paul Manias © 2003-2026", version=1.0, stat
     { id=5, name='Remove' }
   })
 
-  class('Clipboard', { src='class_clipboard.cpp', output='class_clipboard_def.c' }, [[
+  klass('Clipboard', { src='class_clipboard.cpp', output='class_clipboard_def.c', extended=false }, [[
     int(CPF) Flags      # Optional flags
   ]],
   [[
    FUNCTION RequestHandler;
+   ~objClipboard();
   ]])
 
-  class('Controller', { src='class_controller.cpp', output='class_controller_def.c' }, [[
+  klass('Controller', { src='class_controller.cpp', output='class_controller_def.c', extended=false }, [[
     double LeftTrigger  # Left trigger value between 0.0 and 1.0
     double RightTrigger # Right trigger value between 0.0 and 1.0
     double LeftStickX   # Left analog stick value for X axis, between -1.0 and 1.0
@@ -507,9 +547,13 @@ module({ name="Display", copyright="Paul Manias © 2003-2026", version=1.0, stat
     double RightStickY  # Right analog stick value for Y axis, between -1.0 and 1.0
     int(CON) Buttons    # The state of available controller buttons.
     int    Port         # The port number assigned to the controller.
+  ]],
+  nil,
+  [[
+   objController(objMetaClass *pClass, OBJECTID pUID) noexcept :  Object(pClass, pUID), Port(-1) { }
   ]])
 
-  class("Pointer", { version=1.0, src="class_pointer.cpp", output="class_pointer_def.c", references={ 'PTC', 'PF' } }, [[
+  klass('Pointer', { src='class_pointer.cpp', output='class_pointer_def.c', references={ 'PTC' }, extended=true }, [[
     double Speed           # Speed multiplier (%)
     double Acceleration    # Acceleration level - keep between 0.0 and 3.0
     double DoubleClick     # Double click speed
@@ -536,26 +580,31 @@ module({ name="Display", copyright="Paul Manias © 2003-2026", version=1.0, stat
     int    ClickSlop       # Leniency value for determining whether the user intended to make a click or drag.
   ]])
 
-  methods("surface", "Drw", {
-    { id=1, name="InheritedFocus" },
-    { id=2, name="ExposeToDisplay" },
-    { id=3, name="InvalidateRegion" },
-    { id=4, name="SetDisplay" },
-    { id=5, name="SetOpacity" },
-    { id=6, name="AddCallback" },
-    { id=7, name="Minimise" },
-    { id=8, name="ResetDimensions" },
-    { id=9, name="RemoveCallback" },
-    { id=10, name="ScheduleRedraw" }
+  methods('surface', 'Drw', {
+    { id=1, name='InheritedFocus' },
+    { id=2, name='ExposeToDisplay' },
+    { id=3, name='InvalidateRegion' },
+    { id=4, name='SetDisplay' },
+    { id=5, name='SetOpacity' },
+    { id=6, name='AddCallback' },
+    { id=7, name='Minimise' },
+    { id=8, name='RemoveCallback' },
+    { id=9, name='ScheduleRedraw' }
   })
 
-  class("Surface", { references={ 'DMF', 'ALIGN', 'JTYPE', 'JET', 'InputEvent' }, src={
-      "class_surface/class_surface.cpp",
-      "class_surface/surface_dimensions.cpp",
-      "class_surface/surface_drawing.cpp",
-      "class_surface/surface_fields.cpp",
-      "class_surface/surface_resize.cpp"
-    }, output="class_surface/surface_def.c" }, [[
+  klass('Surface', { references={ 'JTYPE', 'JET', 'SWIN', 'InputEvent' }, extended=true, src={
+      'class_surface/class_surface.cpp',
+      'class_surface/surface_dimensions.cpp',
+      'class_surface/surface_drawing.cpp',
+      'class_surface/surface_fields.cpp',
+      'class_surface/surface_resize.cpp'
+    }, output='class_surface/surface_def.c' }, [[
+    unit X                # Horizontal coordinate
+    unit Y                # Vertical coordinate
+    unit Width            # Width
+    unit Height           # Height
+    unit XOffset
+    unit YOffset
     oid Drag              # Drag the object that this field points to
     oid Buffer            # Buffer bitmap (backing store)
     oid Parent            # Graphical container of the Surface object, if any
@@ -564,33 +613,17 @@ module({ name="Display", copyright="Paul Manias © 2003-2026", version=1.0, stat
     int MinHeight         # Minimum height setting
     int MaxWidth          # Maximum width setting
     int MaxHeight         # Maximum height setting
-    int LeftLimit         # Limits the surface area from moving too far left
-    int RightLimit        # Limits the surface area from moving too far right
-    int TopLimit          # Limits the surface area from moving too far up
-    int BottomLimit       # Limits the surface area from moving too far down
     oid Display           # Refers to the Display object that is managing the surface's graphics.
     int(RNF) Flags        # Special flags
-    int X                 # Fixed horizontal coordinate
-    int Y                 # Fixed vertical coordinate
-    int Width             # Fixed width
-    int Height            # Fixed height
     oid Root              # Surface that is acting as a root for many surface children (useful when applying translucency)
-    int(ALIGN) Align      # Alignment flags
-    int(DMF) Dimensions   # Dimension flags
     int(DRAG) DragStatus  # Indicates the draggable state when dragging is enabled.
     int(PTC) Cursor       # The preferred cursor image to use when the pointer is over the surface
     struct(RGB8) Colour   # Background colour specification
     int(RT) Type          # Internal surface type flags
     int Modal             # Set to 1 to enable modal mode
+    ~int(SWIN) WindowType
   ]],
-  [[
-   // These coordinate fields are considered private but may be accessed by some internal classes, like Document
-   int     XOffset, YOffset;     // Fixed horizontal and vertical offset
-   double  XOffsetPercent;       // Scaled horizontal offset
-   double  YOffsetPercent;       // Scaled vertical offset
-   double  WidthPercent, HeightPercent; // Scaled width and height
-   double  XPercent, YPercent;   // Scaled coordinate
-  ]],
+  nil,
   [[
    inline bool visible() const { return (Flags & RNF::VISIBLE) != RNF::NIL; }
    inline bool invisible() const { return (Flags & RNF::VISIBLE) IS RNF::NIL; }
@@ -600,50 +633,50 @@ module({ name="Display", copyright="Paul Manias © 2003-2026", version=1.0, stat
    inline bool isCursor() const { return (Flags & RNF::CURSOR) != RNF::NIL; }
   ]])
 
-  functionNames("gfx",
-    "AccessPointer",
-    "CheckIfChild",
-    "CopyArea",
-    "CopyRawBitmap",
-    "CopySurface",
-    "DrawPixel",
-    "DrawRGBPixel",
-    "DrawRectangle",
-    "ExposeSurface",
-    "GetColourFormat",
-    "GetCursorInfo",
-    "GetCursorPos",
-    "GetDisplayInfo",
-    "GetDisplayType",
-    "GetInputTypeName",
-    "GetModalSurface",
-    "GetRelativeCursorPos",
-    "GetSurfaceCoords",
-    "GetSurfaceFlags",
-    "GetSurfaceInfo",
-    "GetUserFocus",
-    "GetVisibleArea",
-    "LockCursor",
-    "ReadPixel",
-    "ReadRGBPixel",
-    "Resample",
-    "RestoreCursor",
-    "ScaleToDPI",
-    "ScanDisplayModes",
-    "SetClipRegion",
-    "SetCursor",
-    "SetCursorPos",
-    "SetCustomCursor",
-    "SetHostOption",
-    "SetModalSurface",
-    "StartCursorDrag",
-    "SubscribeInput",
-    "Sync",
-    "UnlockCursor",
-    "UnsubscribeInput",
-    "WindowHook")
+  functionNames('gfx',
+    'AccessPointer',
+    'CheckIfChild',
+    'CopyArea',
+    'CopyRawBitmap',
+    'CopySurface',
+    'DrawPixel',
+    'DrawRGBPixel',
+    'DrawRectangle',
+    'ExposeSurface',
+    'GetColourFormat',
+    'GetCursorInfo',
+    'GetCursorPos',
+    'GetDisplayInfo',
+    'GetDisplayType',
+    'GetInputTypeName',
+    'GetModalSurface',
+    'GetRelativeCursorPos',
+    'GetSurfaceCoords',
+    'GetSurfaceFlags',
+    'GetSurfaceInfo',
+    'GetUserFocus',
+    'GetVisibleArea',
+    'LockCursor',
+    'ReadPixel',
+    'ReadRGBPixel',
+    'Resample',
+    'RestoreCursor',
+    'ScaleToDPI',
+    'ScanDisplayModes',
+    'SetClipRegion',
+    'SetCursor',
+    'SetCursorPos',
+    'SetCustomCursor',
+    'SetHostOption',
+    'SetModalSurface',
+    'StartCursorDrag',
+    'SubscribeInput',
+    'Sync',
+    'UnlockCursor',
+    'UnsubscribeInput',
+    'WindowHook')
 
-  c_insert([[
+  c_insert([==[
 // Direct ColourFormat versions
 
 #define CFPackPixel(a,b,c,d)      ((((b)>>(a)->RedShift) & (a)->RedMask) << (a)->RedPos) | ((((c)>>(a)->GreenShift) & (a)->GreenMask) << (a)->GreenPos) | ((((d)>>(a)->BlueShift) & (a)->BlueMask) << (a)->BluePos)
@@ -657,11 +690,12 @@ module({ name="Display", copyright="Paul Manias © 2003-2026", version=1.0, stat
 #define CFUnpackAlpha(a,b)        ((((b) >> (a)->AlphaPos) & (a)->AlphaMask))
 
 namespace fl {
-   using namespace pf;
+   using namespace kt;
 
-constexpr FieldValue WindowType(SWIN Value) { return FieldValue(FID_WindowType, int(Value)); }
+[[nodiscard]] constexpr FieldValue WindowType(SWIN Value) { return FieldValue(strhash("windowType"), int(Value)); }
+[[nodiscard]] constexpr FieldValue MemType(BMT Value) { return FieldValue(strhash("memType"), int(Value)); }
 
 } // namespace
 
-  ]])
+  ]==])
 end)

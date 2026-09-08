@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,54 +5,37 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Defines bilinear coordinate transforms from quadrilateral control points. Hooks into span interpolators and
+// transformed image sampling. In the vector renderer it maps images or gradients onto four-point warped regions.
 
-//
-// Bilinear 2D transformations
-//
-//----------------------------------------------------------------------------
-#ifndef AGG_TRANS_BILINEAR_INCLUDED
-#define AGG_TRANS_BILINEAR_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_simul_eq.h"
 
 namespace agg
 {
-
-    //==========================================================trans_bilinear
     class trans_bilinear
     {
     public:
-        //--------------------------------------------------------------------
         trans_bilinear() : m_valid(false) {}
 
-        //--------------------------------------------------------------------
         // Arbitrary quadrangle transformations
-        trans_bilinear(const double* src, const double* dst)
-        {
+        trans_bilinear(const double* src, const double* dst) {
             quad_to_quad(src, dst);
         }
 
-
-        //--------------------------------------------------------------------
         // Direct transformations
-        trans_bilinear(double x1, double y1, double x2, double y2,
-                       const double* quad)
-        {
+        trans_bilinear(double x1, double y1, double x2, double y2, const double* quad) {
             rect_to_quad(x1, y1, x2, y2, quad);
         }
 
-
-        //--------------------------------------------------------------------
         // Reverse transformations
-        trans_bilinear(const double* quad,
-                       double x1, double y1, double x2, double y2)
-        {
+        trans_bilinear(const double* quad, double x1, double y1, double x2, double y2) {
             quad_to_rect(quad, x1, y1, x2, y2);
         }
 
-
-        //--------------------------------------------------------------------
         // Set the transformations using two arbitrary quadrangles.
         void quad_to_quad(const double* src, const double* dst)
         {
@@ -157,5 +139,3 @@ namespace agg
     };
 
 }
-
-#endif

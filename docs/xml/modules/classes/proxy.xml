@@ -8,7 +8,7 @@
     <module>Network</module>
     <comment>Manages user settings for proxy servers.</comment>
     <version>1</version>
-    <id>102a23e7</id>
+    <id>8dcea850</id>
     <idstring>PROXY</idstring>
     <category>Network</category>
     <copyright>Paul Manias © 2005-2026</copyright>
@@ -26,6 +26,7 @@
       <name>Disable</name>
       <comment>Marks a proxy as disabled.</comment>
       <prototype>ERR acDisable(*Object)</prototype>
+      <tiriPrototype>err = Object.acDisable()</tiriPrototype>
       <description>
 <p>Calling the Disable() action will mark the proxy as disabled.  Disabled proxies remain in the system but are ignored by programs that scan the database for active proxies.</p>
 <p>The change will not come into effect until the proxy record is saved.</p>
@@ -36,6 +37,7 @@
       <name>Enable</name>
       <comment>Enables a proxy.</comment>
       <prototype>ERR acEnable(*Object)</prototype>
+      <tiriPrototype>err = Object.acEnable()</tiriPrototype>
       <description>
 <p>Calling the Enable() action will mark the proxy as enabled.  The change will not come into effect until the proxy record is saved.</p>
       </description>
@@ -45,6 +47,7 @@
       <name>SaveSettings</name>
       <comment>Permanently saves user configurable settings for a proxy.</comment>
       <prototype>ERR acSaveSettings(*Object)</prototype>
+      <tiriPrototype>err = Object.acSaveSettings()</tiriPrototype>
       <description>
 <p>This action saves a user's settings for a proxy. Saving the proxy settings will make them available to the user on subsequent logins.</p>
 <p>Settings are saved to the user's local account under <code>user:config/network/proxies.cfg</code>.  It is possible for the administrator to define proxy settings as the default for all users by copying the <code>proxies.cfg</code> file to the <code>system:users/default/config/network/</code> folder.</p>
@@ -58,18 +61,23 @@
       <name>DeleteRecord</name>
       <comment>Removes a proxy from the database.</comment>
       <prototype>ERR prx::DeleteRecord(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = DeleteRecord()</tiriPrototype>
       <description>
 <p>Call the DeleteRecord() method to remove a proxy from the system.  The proxy will be permanently removed from the proxy database on the success of this function.</p>
       </description>
       <result>
         <error code="Okay">Proxy deleted.</error>
+        <error code="FieldNotSet">The proxy has no group name or record reference.</error>
+        <error code="CreateObject">A call to CreateObject() failed</error>
       </result>
+      <tags>blocking, mutates-object</tags>
     </method>
 
     <method>
       <name>Find</name>
       <comment>Search for a proxy that matches a set of filters.</comment>
       <prototype>ERR prx::Find(OBJECTPTR Object, INT Port, INT Enabled)</prototype>
+      <tiriPrototype>err = Find(Port:num, Enabled:num)</tiriPrototype>
       <input>
         <param type="INT" name="Port">The port number  to access.  If zero, all proxies will be returned if you perform a looped search.</param>
         <param type="INT" name="Enabled">Set to <code>true</code> to return only enabled proxies, <code>false</code> for disabled proxies or <code>-1</code> for all proxies.</param>
@@ -78,10 +86,10 @@
 <p>The following example searches for all proxies available for use on port 80 (HTTP).</p>
 <pre>objProxy::create proxy;
 if (proxy.ok()) {
-   if (prxFind(*proxy, 80) IS ERR::Okay) {
+   if (!prxFind(*proxy, 80)) {
       do {
          ...
-      } while (prxFindNext(*proxy) IS ERR::Okay);
+      } while (!prxFindNext(*proxy));
    }
 }
 </pre>
@@ -89,13 +97,16 @@ if (proxy.ok()) {
       <result>
         <error code="Okay">A proxy was discovered.</error>
         <error code="NoSearchResult">No matching proxy was discovered.</error>
+        <error code="CreateObject">A call to CreateObject() failed</error>
       </result>
+      <tags>blocking, mutates-object</tags>
     </method>
 
     <method>
       <name>FindNext</name>
       <comment>Continues an initiated search.</comment>
       <prototype>ERR prx::FindNext(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = FindNext()</tiriPrototype>
       <description>
 <p>This method continues searches that have been initiated by the <method>Find</method> method. If a proxy is found that matches the filter, <code>ERR::Okay</code> is returned and the details of the proxy object will reflect the data of the discovered record. <code>ERR::NoSearchResult</code> is returned if there are no more matching proxies.</p>
       </description>
@@ -103,6 +114,7 @@ if (proxy.ok()) {
         <error code="Okay">A proxy was discovered.</error>
         <error code="NoSearchResult">No matching proxy was discovered.</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
   </methods>
@@ -121,10 +133,11 @@ if (proxy.ok()) {
     <field>
       <name>GatewayFilter</name>
       <comment>The IP address of the gateway that the proxy is limited to.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
 <p>The GatewayFilter defines the IP address of the gateway that this proxy is limited to. It is intended to limit the results of searches performed by the <method>Find</method> method.</p>
+<p>Gateway matching is not currently implemented.  Records that define this field are skipped by <method>Find</method>.</p>
       </description>
     </field>
 
@@ -141,18 +154,19 @@ if (proxy.ok()) {
     <field>
       <name>NetworkFilter</name>
       <comment>The name of the network that the proxy is limited to.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
 <p>The NetworkFilter defines the name of the network that this proxy is limited to. It is intended to limit the results of searches performed by the <method>Find</method> method.</p>
 <p>This filter must not be set if the proxy needs to work on an unnamed network.</p>
+<p>Network matching is not currently implemented.  Records that define this field are skipped by <method>Find</method>.</p>
       </description>
     </field>
 
     <field>
       <name>Password</name>
       <comment>The password to use when authenticating against the proxy server.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
 <p>If the proxy requires authentication, the user password may be set here to enable an automated authentication process. If the password is not set, a dialog will need to be used to prompt the user for the password before communicating with the proxy.</p>
@@ -172,7 +186,7 @@ if (proxy.ok()) {
     <field>
       <name>ProxyName</name>
       <comment>A human readable name for the proxy server entry.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
 <p>A proxy can be given a human readable name by setting this field.</p>
@@ -193,7 +207,7 @@ if (proxy.ok()) {
     <field>
       <name>Server</name>
       <comment>The destination address of the proxy server - may be an IP address or resolvable domain name.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
 <p>The domain name or IP address of the proxy server must be defined here.</p>
@@ -213,7 +227,7 @@ if (proxy.ok()) {
     <field>
       <name>Username</name>
       <comment>The username to use when authenticating against the proxy server.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
 <p>If the proxy requires authentication, the user name may be set here to enable an automated authentication process. If the username is not set, a dialog will be required to prompt the user for the user name before communicating with the proxy server.</p>

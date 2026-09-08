@@ -28,18 +28,17 @@ the clipping path is sized to match the target vector.  A viewbox size of `0 0 1
 
 *********************************************************************************************************************/
 
-static ERR CLIP_Free(extVectorClip *Self)
+extVectorClip::~extVectorClip()
 {
-   if (Self->ViewportID) { FreeResource(Self->ViewportID); Self->ViewportID = 0; Self->Viewport = nullptr; }
-   Self->~extVectorClip();
-   return ERR::Okay;
+   if (Viewport) ((extVectorViewport *)Viewport)->vpClipOwner = nullptr;
+   if (ViewportID) FreeResource(ViewportID);
 }
 
 //********************************************************************************************************************
 
-static ERR CLIP_Init(extVectorClip *Self)
+static ERR VECTORCLIP_Init(extVectorClip *Self)
 {
-   pf::Log log;
+   kt::Log log;
 
    if ((int(Self->Units) <= 0) or (int(Self->Units) >= int(VUNIT::END))) {
       log.traceWarning("Invalid Units value of %d", Self->Units);
@@ -57,10 +56,12 @@ static ERR CLIP_Init(extVectorClip *Self)
          ))) {
 
          Self->ViewportID = Self->Viewport->UID;
+         ((extVectorViewport *)Self->Viewport)->vpClipOwner = Self;
 
          if (Self->Units IS VUNIT::BOUNDING_BOX) {
             // In BOUNDING_BOX mode the clip paths will be sized within a viewbox of (0 0 1 1) as required by SVG
-            Self->Viewport->setFields(fl::ViewWidth(1.0), fl::ViewHeight(1.0));
+            Self->Viewport->setViewWidth(1.0);
+            Self->Viewport->setViewHeight(1.0);
          }
 
          return ERR::Okay;
@@ -72,24 +73,13 @@ static ERR CLIP_Init(extVectorClip *Self)
 
 //********************************************************************************************************************
 
-static ERR CLIP_NewChild(extVectorClip *Self, struct acNewChild *Args)
+static ERR VECTORCLIP_NewChild(extVectorClip *Self, struct acNewChild *Args)
 {
    if (Self->initialised()) {
-      pf::Log log;
-      log.warning("Child objects not supported - assign this %s to Viewport instead.", Args->Object->className());
+      kt::Log().warning("Child objects not supported - assign this %s to Viewport instead.", Args->Object->className());
       return ERR::NoSupport;
    }
    else return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR CLIP_NewPlacement(extVectorClip *Self)
-{
-   new (Self) extVectorClip;
-
-   Self->Units  = VUNIT::USERSPACE; // SVG default is userSpaceOnUse
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -100,19 +90,23 @@ Lookup: VCLF
 -END-
 *********************************************************************************************************************/
 
-static ERR CLIP_GET_Flags(extVectorClip *Self, VCLF *Value)
+static ERR VECTORCLIP_SET_Flags(extVectorClip *Self, VCLF Value)
 {
-   *Value = Self->Flags;
-   return ERR::Okay;
-}
-
-static ERR CLIP_SET_Flags(extVectorClip *Self, VCLF Value)
-{
-   Self->Flags = Value;
+   if (Self->Flags != Value) {
+      Self->Flags = Value;
+      Self->ContentVersion++;
+      Self->modified();
+   }
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
+-FIELD-
+SID: String identifier for a vector.
+
+The SID field is provided for SVG support.  Use the existing object name and UID for identification in all other
+circumstances.
+
 -FIELD-
 Units: Defines the coordinate system for fields X, Y, Width and Height.
 
@@ -122,15 +116,13 @@ viewport.
 -END-
 *********************************************************************************************************************/
 
-static ERR CLIP_GET_Units(extVectorClip *Self, VUNIT *Value)
+static ERR VECTORCLIP_SET_Units(extVectorClip *Self, VUNIT Value)
 {
-   *Value = Self->Units;
-   return ERR::Okay;
-}
-
-static ERR CLIP_SET_Units(extVectorClip *Self, VUNIT Value)
-{
-   Self->Units = Value;
+   if (Self->Units != Value) {
+      Self->Units = Value;
+      Self->ContentVersion++;
+      Self->modified();
+   }
    return ERR::Okay;
 }
 
@@ -143,28 +135,15 @@ declared here.
 -END-
 *********************************************************************************************************************/
 
-static ERR CLIP_GET_Viewport(extVectorClip *Self, objVectorViewport **Value)
-{
-   *Value = Self->Viewport;
-   return ERR::Okay;
-}
-
 //********************************************************************************************************************
 
 #include "clip_def.cpp"
 
-static const ActionArray clClipActions[] = {
-   { AC::Free,      CLIP_Free },
-   { AC::Init,      CLIP_Init },
-   { AC::NewChild,  CLIP_NewChild },
-   { AC::NewPlacement, CLIP_NewPlacement },
-   { AC::NIL, nullptr }
-};
-
 static const FieldArray clClipFields[] = {
-   { "Viewport", FDF_OBJECT|FDF_R, CLIP_GET_Viewport },
-   { "Units",    FDF_INT|FDF_LOOKUP|FDF_RW, CLIP_GET_Units, CLIP_SET_Units, &clVectorClipUnits },
-   { "Flags",    FDF_INTFLAGS|FDF_RW, CLIP_GET_Flags, CLIP_SET_Flags, &clVectorClipFlags },
+   { "Viewport", FDF_OBJECT|FDF_R, nullptr },
+   { "SID",      FDF_CPPSTRING|FDF_RW },
+   { "Units",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTORCLIP_SET_Units, &clVectorClipUnits },
+   { "Flags",    FDF_INTFLAGS|FDF_RW, nullptr, VECTORCLIP_SET_Flags, &clVectorClipFlags },
    END_FIELD
 };
 
@@ -173,7 +152,7 @@ static ERR init_clip(void)
    clVectorClip = objMetaClass::create::global(
       fl::BaseClassID(CLASSID::VECTORCLIP),
       fl::Name("VectorClip"),
-      fl::Actions(clClipActions),
+      fl::Actions(clVectorClipActions),
       fl::Fields(clClipFields),
       fl::Category(CCF::GRAPHICS),
       fl::Size(sizeof(extVectorClip)),
@@ -181,4 +160,3 @@ static ERR init_clip(void)
 
    return clVectorClip ? ERR::Okay : ERR::AddClass;
 }
-

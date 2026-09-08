@@ -4,8 +4,7 @@ set (MOD svg)
 set (INC_MOD_SVG TRUE PARENT_SCOPE)
 
 idl_gen ("${MOD}.tdl" NAME ${MOD}_defs
-   OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h"
-   FILES "class_rsvg.cpp" "class_svg.cpp")
+   OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h")
 
 idl_compile ("${MOD}.tdl" NAME ${MOD}_idl OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/${MOD}_def.c")
 
@@ -35,4 +34,7 @@ target_link_libraries (${MOD} PUBLIC base64)
 
 target_link_libraries (${MOD} PRIVATE ${MATH_LINK})
 
-flute_test (svg_output "tests/test-svg.tiri")
+flute_test (svg_output "tests/test_svg.tiri")
+flute_test (svg_meshgradient_roundtrip "tests/test_meshgradient_roundtrip.tiri")
+flute_test (svg_diffusiongradient_roundtrip "tests/test_diffusiongradient_roundtrip.tiri")
+flute_test (svg_defs_export "tests/test_defs_export.tiri")

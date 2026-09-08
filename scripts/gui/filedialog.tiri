@@ -10,7 +10,7 @@ Documentation is available in the Kotuku Wiki.
    import 'gui/input'
    import 'gui/window'
 
-   namespace 'gui'
+   namespace gui
 
    gui.dialog ?= { }
 
@@ -32,15 +32,17 @@ gui.dialog.file = function(Options)
 
    function processFeedback()
       list = self.fileview.view.selectedItems()
-      if not list?? and self.filebox then
+
+      if (#list <= 1) and self.filebox then
+         -- The filebox has priority over single list selections
          local file = self.filebox.text.string
          if file?? then
-            list:push({ filename = file })
+            list = array<table> { { filename = file } }
          end
       end
 
       if (self.warnExists is true) and (#list > 0) then
-         _, type = mSys.AnalysePath((self.fileview.path ?? '') .. list[0].filename)
+         local _, type = mSys.AnalysePath((self.fileview.path ?? '') .. list[0].filename)
          if type is LOC_FILE then
             local msg
 
@@ -58,7 +60,7 @@ gui.dialog.file = function(Options)
                title   = 'Confirmation Required',
                type    = 'warning',
                message = msg,
-               popOver = windowID,
+               popOver = self.windowID,
                feedback = function(Dialog, Response, State)
                   if Response?.id is 1 then
                      self?.feedback(self, self.fileview.path, list)
@@ -67,13 +69,15 @@ gui.dialog.file = function(Options)
                end
             })
 
+            processing.collect('defer')
             return true
          end
       end
 
-      self?.feedback(self, self.fileview.path, #list > 0 ? list :> nil)
+      self?.feedback(self, self.fileview.path, #list > 0 ? list : nil)
 
-      table.clear(self)
+      self.clear()
+      processing.collect('defer')
       return true
    end
 
@@ -83,7 +87,6 @@ gui.dialog.file = function(Options)
       minWidth     = 250,
       minHeight    = 150,
       quit         = false,
-      center       = true,
       popOver      = Options.popOver,
       parent       = Options.target,
       icon         = Options.icon ?? 'icons:folders/folder',
@@ -92,8 +95,8 @@ gui.dialog.file = function(Options)
       events = {
          close = function(Window)
             Options?.feedback(self, nil)
-            table.clear(self)
-            processing.collect()
+            self.clear()
+            processing.collect('defer')
          end
       }
    })
@@ -102,7 +105,7 @@ gui.dialog.file = function(Options)
 
    self.scene = self.window.scene
 
-   self.viewport = self.window:clientViewport({ })
+   self.viewport = self.window.clientViewport({ })
 
    self.pathbox = gui.input({
       target     = self.viewport,
@@ -136,7 +139,7 @@ gui.dialog.file = function(Options)
       events = {
          activate = function(Button)
             Options?.feedback(self, nil)
-            table.clear(self)
+            self.clear()
             processing.collect()
          end
       }
@@ -166,7 +169,7 @@ gui.dialog.file = function(Options)
          flushEdges  = true,
          text        = target_file,
          events = {
-            activate = function(Widget:table, Event:table)
+            activate = function(Widget:table!, Event:table!)
                if Event.state is 'activated' then
                   processFeedback()
                end
@@ -183,20 +186,22 @@ gui.dialog.file = function(Options)
 
    fv_filters = array<table>
    if Options.filterList and (#Options.filterList > 0) then
-      -- Pick the first item as being selected if none other is chosen.
+      if Options.strictFilter then
+         -- Pick the first item as being selected if none other is chosen.
 
-      selection = false
-      for item in values(Options.filterList) do
-         if item.selected then
-            selection = true
-            break
+         selection = false
+         for item in values(Options.filterList) do
+            if item.selected then
+               selection = true
+               break
+            end
          end
+
+         if not selection then Options.filterList[0].selected = true end
       end
 
-      if not selection then Options.filterList[0].selected = true end
-
       for filter in values(Options.filterList) do
-         fv_filters:push(filter)
+         fv_filters.push(filter)
       end
    end
 
@@ -214,12 +219,13 @@ gui.dialog.file = function(Options)
       target        = viewRegion,
       path          = self.currentPath,
       filterList    = fv_filters,
+      strictFilter  = Options.strictFilter,
       sysKeys       = true,
       fileSelected  = processFeedback,
       style         = 'column', -- column, list, tree
       toolBar       = { clipboard=true, settings=true },
       viewOptions   = { },
-      pathChanged = function(FileView:table, Path:str)
+      pathChanged = function(FileView:table!, Path:str)
          self.currentPath = Path
          self.pathbox.text.string = self.currentPath
       end
@@ -229,8 +235,8 @@ gui.dialog.file = function(Options)
 
    gui.separator(self.window.viewport, 'H', -footer)
 
-   self.window:moveToFront()
-   self.window:show()
+   self.window.moveToFront()
+   self.window.show(true)
 
    return self
 end
@@ -250,7 +256,8 @@ end
       selectFolder = arg('selectFolder'),
       multiSelect  = arg('multiSelect'),
       userInput    = arg('userInput'),
-      allowNew     = arg('allowNew')
+      allowNew     = arg('allowNew'),
+      strictFilter = arg('strictFilter')
    })
 
    return dlg.windowID

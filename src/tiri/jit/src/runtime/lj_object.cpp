@@ -13,6 +13,32 @@
 #include "../../defs.h"
 
 //********************************************************************************************************************
+
+const std::string field_typename(const Field &Field)
+{
+   std::string result;
+
+   if (Field.Flags & FD_STRING)        result = "string";
+   else if (Field.Flags & FD_DOUBLE)   result = "double";
+   else if (Field.Flags & FD_FLOAT)    result = "float";
+   else if (Field.Flags & FD_INT64)    result = "int64";
+   else if (Field.Flags & FD_INT)      result = "int";
+   else if (Field.Flags & FD_WORD)     result = "int16";
+   else if (Field.Flags & FD_BYTE)     result = "byte";
+   else if (Field.Flags & FD_STRUCT)   result = "struct";
+   else if (Field.Flags & FD_OBJECT)   result = "object";
+   else if (Field.Flags & FD_UNIT)     result = "unit";
+   else if (Field.Flags & FD_FUNCTION) result = "function";
+   else if (Field.Flags & FD_POINTER)  result = "pointer";
+   else return "unknown";
+
+   if (Field.Flags & FD_UNSIGNED) result = "u" + result;
+   if (Field.Flags & (FD_ARRAY|FD_VECTOR)) result = "array<" + result + ">";
+   if (Field.Flags & FD_POINTER)  result += "*";
+   return result;
+}
+
+//********************************************************************************************************************
 // Create a new GCobject for a Kotuku object reference.  The object is allocated via the GC.
 
 GCobject * lj_object_new(lua_State *L, OBJECTID UID, OBJECTPTR Ptr, objMetaClass *ClassPtr, uint8_t Flags)
@@ -40,17 +66,20 @@ void lj_object_finalize(lua_State *L, GCobject *obj)
 {
    while (obj->accesscount > 0) release_object(obj); // Critical for recovering from exceptions
 
-   if (not obj->is_detached()) {
-      // Only free the Kotuku object if it's owned by this script.
-      // Exception: Recordset objects are always freed as they must be owned by a Database object.
-      if (auto ptr = GetObjectPtr(obj->uid)) {
-         if ((ptr->Class->BaseClassID IS CLASSID::RECORDSET) or
-             (ptr->Owner IS L->script) or
-             (ptr->ownerID() IS L->script->TargetID)) {
-            pf::Log log("obj.destruct");
-            log.traceBranch("Freeing Tiri-owned object #%d.", obj->uid);
-            FreeResource(ptr);
+   if ((not obj->is_detached()) and obj->uid) {
+      // Non-detached GCobjects are owned by Tiri.  Do not call GetObjectPtr() here; object teardown drops the registry
+      // lock while class cleanup runs, so a separate lookup would not keep the object stable through forced collection.
+      kt::Log log("obj.destruct");
+      log.traceBranch("Freeing Tiri-owned object #%d.", obj->uid);
+
+      auto error = FreeObject(obj->uid);
+      if ((!error) or (error IS ERR::DoesNotExist)) {
+         if (obj->is_pinned()) {
+            obj->ptr->unpinWeak();
+            obj->set_pinned(false);
          }
+         obj->uid = 0;
+         obj->ptr = nullptr;
       }
    }
 }
@@ -68,9 +97,14 @@ void lj_object_free(global_State *g, GCobject *obj)
       if (obj->flags & GCOBJ_LOCKED) {
          ReleaseObject((OBJECTPTR)obj->ptr);
          obj->flags &= ~GCOBJ_LOCKED;
-         obj->ptr = nullptr;
+         if (not obj->is_pinned()) obj->ptr = nullptr;
       }
       obj->accesscount--;
+   }
+
+   if (obj->is_pinned()) {
+      obj->ptr->unpinWeak();
+      obj->set_pinned(false);
    }
 
    // Free the GCobject structure (Kotuku object should have been freed by __gc finalizer)
@@ -101,12 +135,11 @@ int lj_object_pairs(lua_State *L)
 {
    auto def = objectV(L->base);
 
-   Field *fields;
-   int total;
-   if (def->classptr->get(FID_Dictionary, fields, total) IS ERR::Okay) {
+   std::span<Field> fields;
+   if (!def->classptr->getDictionary(fields)) {
       // Create the iterator closure with upvalues
-      lua_pushlightuserdata(L, fields);
-      lua_pushinteger(L, total);
+      lua_pushlightuserdata(L, fields.data());
+      lua_pushinteger(L, fields.size());
       lua_pushinteger(L, 0);
       lua_pushcclosure(L, object_next_pair, 3);
 
@@ -121,7 +154,7 @@ int lj_object_pairs(lua_State *L)
       L->top--;        // Pop the closure from top (now at FFH return position)
       return 3;
    }
-   else luaL_error(L, ERR::FieldSearch, "Object class defines no fields.");
+   else luaL_error(L, ERR::FieldNotFound, "Object class defines no fields.");
    return 0;
 }
 
@@ -146,12 +179,11 @@ int lj_object_ipairs(lua_State *L)
 {
    auto def = objectV(L->base);
 
-   Field *fields;
-   int total;
-   if (def->classptr->get(FID_Dictionary, fields, total) IS ERR::Okay) {
+   std::span<Field> fields;
+   if (!def->classptr->getDictionary(fields)) {
       // Create the iterator closure with upvalues
-      lua_pushlightuserdata(L, fields);
-      lua_pushinteger(L, total);
+      lua_pushlightuserdata(L, fields.data());
+      lua_pushinteger(L, fields.size());
       lua_pushcclosure(L, object_next_ipair, 2);
 
       // FFH return values are placed at specific stack positions:
@@ -165,7 +197,7 @@ int lj_object_ipairs(lua_State *L)
       L->top--;        // Pop the closure from top (now at FFH return position)
       return 3;
    }
-   else luaL_error(L, ERR::FieldSearch, "Object class defines no fields.");
+   else luaL_error(L, ERR::FieldNotFound, "Object class defines no fields.");
    return 0;
 }
 
@@ -188,8 +220,11 @@ extern "C" void bc_object_getfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
    //
    // For JIT traces (Ins == nullptr), L->base is also stale; sync from jit_base first.
 
-   const auto saved_base = L->base;
-   const auto saved_top = L->top;
+   const auto saved_base = savestack(L, L->base);
+   const auto saved_top = savestack(L, L->top);
+   // Interpreter destinations are stack slots and must follow relocation.  JIT recorders pass global_State::tmptv
+   // with no instruction pointer, so that external destination must remain a raw pointer.
+   const auto dest_offset = Ins ? savestack(L, Dest) : ptrdiff_t(0);
 
    if (not Ins) {
       auto jb = tvref(G(L)->jit_base);
@@ -198,7 +233,9 @@ extern "C" void bc_object_getfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
 
    if (curr_funcisL(L)) L->top = curr_topL(L);
 
-   if (not Obj->uid) luaL_error(L, ERR::DoesNotExist, "Object dereferenced, unable to read field.");
+   // Deliberately redundant with the access_object() failure inside the field handler: testing here yields a precise
+   // DoesNotExist message instead of a generic read failure.  Do not remove as an optimisation.
+   if (object_is_dead(Obj)) luaL_error(L, ERR::DoesNotExist, "Object dereferenced, unable to read field.");
 
    // Use raw pointers for std::lower_bound to avoid MSVC debug iterator tracking.
    // luaL_error() uses longjmp which skips C++ destructors, leaking debug iterator
@@ -219,7 +256,7 @@ extern "C" void bc_object_getfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
       else { // Cache miss - binary search and cache
          auto found = std::lower_bound(rt_data, rt_data + rt_size, obj_read(Key->hash), read_hash);
          if ((found IS rt_data + rt_size) or (found->Hash != Key->hash)) {
-            luaL_error(L, ERR::NoFieldAccess, "Field does not exist or is init-only: %s.%s", cl->ClassName, strdata(Key));
+            luaL_error(L, ERR::NoFieldAccess, "Field does not exist or is init-only: %s.%s", cl->ClassName.c_str(), strdata(Key));
          }
          setbc_p32(Ins, uint32_t(found - rt_data));
          func = found;
@@ -228,22 +265,25 @@ extern "C" void bc_object_getfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
    else { // JIT path - no caching
       auto found = std::lower_bound(rt_data, rt_data + rt_size, obj_read(Key->hash), read_hash);
       if ((found IS rt_data + rt_size) or (found->Hash != Key->hash)) {
-         luaL_error(L, ERR::NoFieldAccess, "Field does not exist or is init-only: %s.%s", cl->ClassName, strdata(Key));
+         luaL_error(L, ERR::NoFieldAccess, "Field does not exist or is init-only: %s.%s", cl->ClassName.c_str(), strdata(Key));
       }
       func = found;
    }
 
    // Call the field handler - it pushes result onto the Lua stack
-   if (func->Call(L, *func, Obj) > 0) copyTV(L, Dest, L->top - 1);
+   const auto result_count = func->Call(L, *func, Obj);
+   const auto result_dest = Ins ? restorestack(L, dest_offset) : Dest;
+   if (result_count > 0) copyTV(L, result_dest, L->top - 1);
    else { // An error occurred and is stored in L->CaughtError
       if (L->CaughtError > ERR::ExceptionThreshold) {
-         luaL_error(L, L->CaughtError, "Read failure: %s.%s: %s", cl->ClassName, luaL_checkstring(L, 2), GetErrorMsg(L->CaughtError));
+         luaL_error(L, L->CaughtError, "Read failure: %s.%s: %s", cl->ClassName.c_str(), strdata(Key),
+            GetErrorMsg(L->CaughtError));
       }
 
-      setnilV(Dest);
+      setnilV(result_dest);
    }
-   L->base = saved_base;
-   L->top = saved_top;
+   L->base = restorestack(L, saved_base);
+   L->top = restorestack(L, saved_top);
 }
 
 //********************************************************************************************************************
@@ -260,8 +300,8 @@ extern "C" void bc_object_setfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
    // L->top is not maintained by the VM assembly between bytecodes (see bc_object_getfield).
    // For JIT traces (Ins == nullptr), L->base is also stale; sync from jit_base first.
 
-   const auto saved_base = L->base;
-   const auto saved_top  = L->top;
+   const auto saved_base = savestack(L, L->base);
+   const auto saved_top = savestack(L, L->top);
    if (not Ins) {
       auto jb = tvref(G(L)->jit_base);
       if (jb) L->base = jb;
@@ -280,7 +320,9 @@ extern "C" void bc_object_setfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
    }
    else if (L->top <= Val) L->top = Val + 1;
 
-   if (not Obj->uid) luaL_error(L, ERR::DoesNotExist, "Object dereferenced, unable to write field.");
+   // Deliberately redundant with the access_object() failure below: testing here yields a precise DoesNotExist
+   // message instead of a generic ERR::AccessObject.  Do not remove as an optimisation.
+   if (object_is_dead(Obj)) luaL_error(L, ERR::DoesNotExist, "Object dereferenced, unable to write field.");
 
    auto write_table = get_write_table(Obj->classptr);
    auto wt_data = write_table->data();
@@ -296,7 +338,7 @@ extern "C" void bc_object_setfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
          auto found = std::lower_bound(wt_data, wt_data + wt_size, obj_write(Key->hash), write_hash);
          if ((found IS wt_data + wt_size) or (found->Hash != Key->hash)) {
             luaL_error(L, ERR::UndefinedField, "Field does not exist or is read-only: %s.%s",
-               Obj->classptr ? Obj->classptr->ClassName : "?", strdata(Key));
+               Obj->classptr ? Obj->classptr->ClassName.c_str() : "?", strdata(Key));
          }
          setbc_p32(Ins, uint32_t(found - wt_data));
          func = found;
@@ -306,21 +348,22 @@ extern "C" void bc_object_setfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
       auto found = std::lower_bound(wt_data, wt_data + wt_size, obj_write(Key->hash), write_hash);
       if ((found IS wt_data + wt_size) or (found->Hash != Key->hash)) {
          luaL_error(L, ERR::UndefinedField, "Field does not exist or is read-only: %s.%s",
-            Obj->classptr ? Obj->classptr->ClassName : "?", strdata(Key));
+            Obj->classptr ? Obj->classptr->ClassName.c_str() : "?", strdata(Key));
       }
       func = found;
    }
 
-   if (auto pobj = access_object(Obj)) {
+   OBJECTPTR pobj;
+   if (auto error = access_object(Obj, pobj); !error) {
       auto stack_idx = int(val_ptr - L->base) + 1;
-      ERR error = func->Call(L, pobj, func->Field, stack_idx);
-      L->base = saved_base;
-      L->top = saved_top;
+      error = func->Call(L, pobj, func->Field, stack_idx);
+      L->base = restorestack(L, saved_base);
+      L->top = restorestack(L, saved_top);
       release_object(Obj);
 
       if (error >= ERR::ExceptionThreshold) luaL_error(L, error);
    }
-   else luaL_error(L, ERR::AccessObject);
+   else luaL_error(L, error);
 }
 
 //********************************************************************************************************************
@@ -333,7 +376,7 @@ extern "C" int ir_object_field_type(GCobject *Obj, GCstr *Key, int &Offset, uint
 
    objMetaClass *src_class;
    Field *field;
-   if (Obj->classptr->findField(Key->hash, &field, &src_class) IS ERR::Okay) {
+   if (!Obj->classptr->findField(Key->hash, &field, &src_class)) {
       auto flags = field->Flags;
       if (not (flags & FDF_R)) return -1;  // Not readable
 
@@ -343,7 +386,7 @@ extern "C" int ir_object_field_type(GCobject *Obj, GCstr *Key, int &Offset, uint
       FieldFlags = flags;
 
       // NB: Order is important
-      if (flags & FD_ARRAY) return IRT_ARRAY;
+      if (flags & (FD_ARRAY|FD_VECTOR)) return IRT_ARRAY;
       else if (flags & FD_STRING) { FieldFlags &= ~FD_POINTER; return IRT_STR; }
       else if (flags & (FD_DOUBLE|FD_INT64)) return IRT_NUM;
       else if (flags & (FD_OBJECT|FD_LOCAL)) return IRT_OBJECT;
@@ -352,10 +395,7 @@ extern "C" int ir_object_field_type(GCobject *Obj, GCstr *Key, int &Offset, uint
          if (flags & FD_UNSIGNED) return IRT_NUM;
          else return LJ_DUALNUM ? IRT_INT : IRT_NUM;
       }
-      else if (flags & FD_STRUCT) {
-         if (flags & FD_RESOURCE) return IRT_LIGHTUD;
-         else return IRT_TAB;
-      }
+      else if (flags & FD_STRUCT) return IRT_STRUCT;
       else if (flags & FD_POINTER) return IRT_LIGHTUD;
       else return -1;  // Unknown type
    }
@@ -374,7 +414,7 @@ extern "C" int ir_object_field_type_write(GCobject *Obj, GCstr *Key, int &Offset
 
    objMetaClass *src_class;
    Field *field;
-   if (Obj->classptr->findField(Key->hash, &field, &src_class) IS ERR::Okay) {
+   if (!Obj->classptr->findField(Key->hash, &field, &src_class)) {
       auto flags = field->Flags;
       if (not (flags & FD_WRITE)) return -1;           // Not writable (FD_INIT excluded)
       if (flags & (FD_FLAGS|FD_LOOKUP)) return -1;     // Special write handlers, not simple stores
@@ -391,7 +431,7 @@ extern "C" int ir_object_field_type_write(GCobject *Obj, GCstr *Key, int &Offset
 }
 
 //********************************************************************************************************************
-// JIT fast-path lock: guards in the trace ensure the object is alive, non-detached, and has a valid ptr.
+// JIT fast-path lock: guards in the trace ensure the object is alive, weak-pinned, and has a valid ptr.
 // Mirrors access_object() semantics: skips ptr->lock() if already held (accesscount > 0).
 // Returns the Object* pointer for use by XLOAD.
 
@@ -403,7 +443,7 @@ extern "C" OBJECTPTR jit_object_lock(GCobject *Obj)
 }
 
 //********************************************************************************************************************
-// JIT fast-path unlock: mirrors release_object() semantics for non-detached objects.
+// JIT fast-path unlock: mirrors release_object() semantics for weak-pinned objects.
 
 extern "C" void jit_object_unlock(GCobject *Obj)
 {
@@ -413,7 +453,7 @@ extern "C" void jit_object_unlock(GCobject *Obj)
 //********************************************************************************************************************
 // JIT fast-path string field read: locks the object, reads the CSTRING pointer at the given offset,
 // unlocks, and writes the result to Out.  Null CSTRING values produce nil (matching lua_pushstring).
-// Guards in the trace ensure the object is alive, non-detached, and has a valid ptr.
+// Guards in the trace ensure the object is alive, weak-pinned, and has a valid ptr.
 
 extern "C" void jit_object_getstr(lua_State *L, GCobject *Obj, uint32_t Offset, TValue *Out)
 {
@@ -429,7 +469,9 @@ extern "C" void jit_object_getstr(lua_State *L, GCobject *Obj, uint32_t Offset, 
 // JIT fast-path object field read: locks the parent, reads the OBJECTPTR at the given offset, unlocks, and creates
 // a detached GCobject wrapper written to Out.  Null pointers produce nil.  load_include_for_class() is not called
 // because the interpreter will have already loaded the class definitions during prior execution cycles.
-// Guards in the trace ensure the parent object is alive, non-detached, and has a valid ptr.
+// Guards in the trace ensure the parent object is alive, weak-pinned, and has a valid ptr.
+// The child pointer is read from the parent's field while the parent lock is held, so the child is guaranteed
+// alive at this instant and pinning the wrapper is race-free.
 
 extern "C" void jit_object_getobj(lua_State *L, GCobject *Obj, uint32_t Offset, TValue *Out)
 {
@@ -438,6 +480,7 @@ extern "C" void jit_object_getobj(lua_State *L, GCobject *Obj, uint32_t Offset, 
    OBJECTPTR child = *(OBJECTPTR *)(((int8_t *)Obj->ptr) + Offset);
    if (child) {
       auto gcobj = lj_object_new(L, child->UID, nullptr, child->Class, GCOBJ_DETACHED);
+      lj_object_pin(gcobj, child);
       setobjectV(L, Out, gcobj);
    }
    else setnilV(Out);

@@ -4,30 +4,44 @@
 constexpr int SIZE_READ = 1024;
 
 #include <list>
+#include <unordered_map>
 #include <unordered_set>
 #include <set>
 #include <array>
+#include <mutex>
 #include <shared_mutex>
 #include <kotuku/strings.hpp>
 #include <kotuku/modules/regex.h>
 #include <kotuku/modules/tiri.h>
+#include <kotuku/modules/filesystem.h>
+#include <kotuku/modules/processes.h>
 #include <thread>
 #include <string_view>
 #include <span>
 #include <concepts>
+#include <format>
+#include <memory>
 
 #include "lj_obj.h"
 #include "lj_frame.h"
 #include "lj_state.h"
 #include "lauxlib.h"
+#include "struct_def.h"
 
-using namespace pf;
+using namespace kt;
+
+class extTiri; // Internal extended Tiri class (full definition below); derives from objTiri
+struct static_module_signature;
+using StaticModuleHandle = const static_module_signature *;
 
 template <class T> T ALIGN64(T a) { return (((a) + 7) & (~7)); }
 template <class T> T ALIGN32(T a) { return (((a) + 3) & (~3)); }
 
+namespace tiri {
 extern CSTRING const glBytecodeNames[];
 extern bool glPrintMsg;
+extern MSGID glDelayedCallMsgID;
+}
 
 //********************************************************************************************************************
 
@@ -41,42 +55,24 @@ extern bool glPrintMsg;
    }
    else if (Type & FD_FLOAT)   return AET::FLOAT;
    else if (Type & FD_DOUBLE)  return AET::DOUBLE;
-   else if (Type & FD_INT64)   return AET::INT64;
-   else if (Type & FD_INT)     return AET::INT32;
-   else if (Type & FD_WORD)    return AET::INT16;
-   else if (Type & FD_BYTE)    return AET::BYTE;
+   else if (Type & FD_INT64)   return (Type & FD_UNSIGNED) ? AET::UINT64 : AET::INT64;
+   else if (Type & FD_INT)     return (Type & FD_UNSIGNED) ? AET::UINT32 : AET::INT32;
+   else if (Type & FD_WORD)    return (Type & FD_UNSIGNED) ? AET::UINT16 : AET::INT16;
+   else if (Type & FD_BYTE)    return AET::BYTE; // Bare byte storage is unsigned (uint8_t); no signed variant exists
    else return AET::MAX;
+}
+
+[[maybe_unused]] static AET ff_to_aet(int Type, NativeStructType NativeType)
+{
+   if ((Type & FD_BYTE) and NativeType IS NativeStructType::Int8) return AET::INT8;
+   return ff_to_aet(Type);
 }
 
 //********************************************************************************************************************
 
-struct CaseInsensitiveMap {
-   bool operator() (const std::string &lhs, const std::string &rhs) const {
-      return ::strcasecmp(lhs.c_str(), rhs.c_str()) < 0;
-   }
-};
-
-struct CaseInsensitiveHash {
-   std::size_t operator()(const std::string& s) const noexcept {
-      std::string lower = s;
-      std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-      return std::hash<std::string>{}(lower);
-   }
-};
-
-struct CaseInsensitiveEqual {
-   bool operator()(const std::string& lhs, const std::string& rhs) const noexcept {
-      return ::strcasecmp(lhs.c_str(), rhs.c_str()) == 0;
-   }
-};
-
 struct CaseInsensitiveHashView {
-   std::size_t operator()(std::string_view s) const noexcept {
-      std::size_t hash = 5381;
-      for (char c : s) {
-         hash = ((hash << 5) + hash) + std::tolower(static_cast<unsigned char>(c));
-      }
-      return hash;
+   std::size_t operator()(std::string_view String) const noexcept {
+      return kt::strihash(String);
    }
 };
 
@@ -86,6 +82,7 @@ struct CaseInsensitiveEqualView {
    }
 };
 
+namespace tiri {
 extern ankerl::unordered_dense::map<std::string_view, ACTIONID, CaseInsensitiveHashView, CaseInsensitiveEqualView> glActionLookup;
 extern struct ActionTable *glActions;
 extern OBJECTPTR modDisplay; // Required by tiri_input.c
@@ -94,8 +91,32 @@ extern OBJECTPTR modRegex;
 extern OBJECTPTR glTiriContext;
 extern OBJECTPTR clTiri;
 extern JOF glJitOptions;
-extern ankerl::unordered_dense::map<std::string_view, uint32_t> glStructSizes;
-extern ankerl::unordered_dense::map<struct_name, struct_record, struct_hash> glStructs;
+extern ankerl::unordered_dense::map<uint32_t, StructInfo> *glStructSizes; // Originates from the Core
+extern std::unordered_map<uint32_t, struct_record> glStructs; // struct_record pointers must remain stable
+extern std::recursive_mutex glStructMutex;
+extern uint64_t glActionsWithResults;
+}
+
+using namespace tiri;
+
+//********************************************************************************************************************
+// Run a requested collection after control returns from a Tiri callback.  A pending request is retained while the
+// collector is stopped so that it can be fulfilled at a later callback boundary.
+
+inline void collect_garbage(lua_State *Lua, bool Force = false)
+{
+   if ((not Lua) or ((not Force) and (not Lua->pending_collection))) return;
+   if (not lua_gc(Lua, LUA_GCISRUNNING, 0)) return;
+
+   Lua->pending_collection = false;
+
+   #ifndef NDEBUG
+   kt::Log log;
+   log.traceBranch("Collecting garbage.");
+   #endif
+   
+   lua_gc(Lua, LUA_GCCOLLECT, 0);
+}
 
 //********************************************************************************************************************
 // Compile-time constant value (64-bit integer or double)
@@ -114,15 +135,26 @@ struct TiriConstant {
    [[nodiscard]] constexpr lua_Number to_number() const {
       return (type IS Type::Int64) ? lua_Number(value.i64) : value.f64;
    }
+
+   // Compares the active union member so that a repeated definition of the same constant can be distinguished from a
+   // conflicting one.  Two constants of differing type never compare equal, even when their numeric values agree.
+
+   [[nodiscard]] constexpr bool operator==(const TiriConstant &Other) const {
+      if (type != Other.type) return false;
+      return (type IS Type::Int64) ? (value.i64 IS Other.value.i64) : (value.f64 IS Other.value.f64);
+   }
 };
 
-// Global constant registry - case-sensitive, owns string keys
+// Global constant registry - case-sensitive, owns string keys.
 // Protected by glConstantMutex for thread-safe access
+
+namespace tiri {
 extern ankerl::unordered_dense::map<uint32_t, TiriConstant> glConstantRegistry;
 extern std::shared_mutex glConstantMutex;
+}
 
 // Thread-safe shared pool for async.pool — see tiri_async.cpp
-// Owned by the main script's prvTiri and shared with child scripts via std::shared_ptr.
+// Owned by the main script's extTiri and shared with child scripts via std::shared_ptr.
 
 enum class PoolTag : uint8_t { Number, String, Boolean, ObjectID };
 
@@ -158,33 +190,6 @@ static inline std::string_view lua_checkstringview(lua_State *L, int idx)
    else return std::string_view{};
 }
 
-// This version doesn't raise an error if the argument is not a string.
-
-static inline std::string_view lua_tostringview(lua_State *L, int idx)
-{
-   size_t len = 0;
-   if (auto s = lua_tolstring(L, idx, &len)) return std::string_view{s, len};
-   else return std::string_view{};
-}
-
-//********************************************************************************************************************
-// Standard hash computation, but stops when it encounters a character outside of A-Za-z0-9 range
-// Note that struct name hashes are case sensitive.
-
-inline uint32_t STRUCTHASH(CSTRING String)
-{
-   uint32_t hash = 5381;
-   uint8_t c;
-   while ((c = *String++)) {
-      if ((c >= 'A') and (c <= 'Z'));
-      else if ((c >= 'a') and (c <= 'z'));
-      else if ((c >= '0') and (c <= '9'));
-      else break;
-      hash = ((hash<<5) + hash) + c;
-   }
-   return hash;
-}
-
 //********************************************************************************************************************
 
 struct code_reader_handle {
@@ -195,7 +200,7 @@ struct code_reader_handle {
 struct actionmonitor {
    GCobject *Object;           // Native GCobject for the subscription.
    const FunctionField *Args;  // The args of the action/method are stored here so that we can build the arg value table later.
-   int     Function;          // Index of function to call back.
+   FUNCTION Function;         // Function and context to call back.
    int     Reference;         // A custom reference to pass to the callback (optional)
    ACTIONID ActionID;          // Action being monitored.
    OBJECTID ObjectID;          // Object being monitored
@@ -204,10 +209,10 @@ struct actionmonitor {
 
    ~actionmonitor() {
       if (ObjectID) {
-         pf::Log log(__FUNCTION__);
+         kt::Log log(__FUNCTION__);
          log.trace("Unsubscribe action %s from object #%d", glActions[int(ActionID)].Name, ObjectID);
          OBJECTPTR obj;
-         if (AccessObject(ObjectID, 3000, &obj) IS ERR::Okay) {
+         if (!AccessObject(ObjectID, 3000, &obj)) {
             UnsubscribeAction(obj, ActionID);
             ReleaseObject(obj);
          }
@@ -219,44 +224,66 @@ struct actionmonitor {
       move.ObjectID = 0;
    }
 
-   actionmonitor& operator=(actionmonitor &&move) = default;
+   actionmonitor& operator=(actionmonitor &&move) noexcept
+   {
+      if (this != &move) {
+         Object = move.Object;
+         Args = move.Args;
+         Function = move.Function;
+         Reference = move.Reference;
+         ActionID = move.ActionID;
+         ObjectID = move.ObjectID;
+         move.ObjectID = 0;
+      }
+      return *this;
+   }
 };
 
 //********************************************************************************************************************
 
 struct eventsub {
-   int    Function;     // Lua function index
+   std::unique_ptr<FUNCTION> Function; // Stable callback storage used as the native subscription metadata.
    EVENTID EventID;      // Event message ID
    APTR    EventHandle;
 
-   eventsub(int pFunction, EVENTID pEventID, APTR pEventHandle) :
-      Function(pFunction), EventID(pEventID), EventHandle(pEventHandle) { }
+   eventsub(std::unique_ptr<FUNCTION> pFunction, EVENTID pEventID, APTR pEventHandle) :
+      Function(std::move(pFunction)), EventID(pEventID), EventHandle(pEventHandle) { }
 
    ~eventsub() {
       if (EventHandle) UnsubscribeEvent(EventHandle);
    }
 
+   eventsub(const eventsub &) = delete;
+   eventsub& operator=(const eventsub &) = delete;
+
    eventsub(eventsub &&move) noexcept :
-      Function(move.Function), EventID(move.EventID), EventHandle(move.EventHandle) {
+      Function(std::move(move.Function)), EventID(move.EventID), EventHandle(move.EventHandle) {
       move.EventHandle = nullptr;
    }
 
-   eventsub& operator=(eventsub &&move) = default;
+   eventsub& operator=(eventsub &&move) noexcept {
+      if (this != &move) {
+         if (EventHandle) UnsubscribeEvent(EventHandle);
+         Function = std::move(move.Function);
+         EventID = move.EventID;
+         EventHandle = move.EventHandle;
+         move.EventHandle = nullptr;
+      }
+      return *this;
+   }
 };
 
 //********************************************************************************************************************
 
 struct datarequest {
    OBJECTID SourceID;
-   int Callback;
+   FUNCTION Callback;
    int64_t TimeCreated;
 
-   datarequest(OBJECTID pSourceID, int pCallback) : SourceID(pSourceID), Callback(pCallback) {
+   datarequest(OBJECTID pSourceID, FUNCTION pCallback) : SourceID(pSourceID), Callback(pCallback) {
       TimeCreated = PreciseTime();
    }
 };
-
-#include "struct_def.h"
 
 //********************************************************************************************************************
 // Variable information captured during parsing when JOF::DIAGNOSE is enabled.
@@ -272,41 +299,11 @@ struct VariableInfo {
 
 //********************************************************************************************************************
 
-struct prvTiri {
-   lua_State *Lua;                        // Lua instance
-   std::vector<actionmonitor> ActionList; // Action subscriptions managed by subscribe()
-   std::vector<eventsub> EventList;       // Event subscriptions managed by subscribeEvent()
-   std::vector<datarequest> Requests;     // For drag and drop requests
-   ankerl::unordered_dense::map<OBJECTID, int> StateMap;
-   pf::vector<std::string> Procedures;
-   std::vector<std::unique_ptr<std::jthread>> Threads; // Simple mechanism for auto-joining all the threads on object destruction
-   std::shared_ptr<SharedPool> Pool;     // Thread-safe shared pool for async.pool (created on first use, shared with child scripts)
-   APTR     FocusEventHandle;
-   struct finput *InputList;           // Managed by the input interface
-   DateTime CacheDate;
-   PERMIT   CachePermissions;
-   JOF      JitOptions;
-   int      LoadedSize;
-   int      MainChunkRef;              // Registry reference to the main chunk for post-execution analysis
-   uint8_t  Recurse;
-   uint8_t  SaveCompiled;
-   uint16_t RequireCounter;
-   std::vector<VariableInfo> CapturedVariables; // Variable declarations captured during parsing (JOF::DIAGNOSE)
-};
-
-// This structure is created & managed through the 'struct' interface
-
-struct fstruct {
-   APTR Data;          // Pointer to the structure data
-   int StructSize;     // Size of the structure
-   int AlignedSize;    // 64-bit alignment size of the structure.
-   struct struct_record *Def; // The structure definition
-   bool Deallocate;    // Deallocate the struct when Lua collects this resource.
-};
-
 struct fprocessing {
    double Timeout;
    std::list<ObjectSignal> *Signals;
+   std::list<int> *SignalRefs;
+   bool AnySignal;
 };
 
 class fregex {
@@ -328,49 +325,21 @@ constexpr int FIM_KEYBOARD = 1;
 constexpr int FIM_DEVICE   = 2;
 
 struct finput {
-   objScript *Script;
+   extTiri *Script;
    struct finput *Next;
    APTR   KeyEvent;
    OBJECTID SurfaceID;
    int    InputHandle;
-   int    Callback;
+   FUNCTION Callback;
    int    InputValue;
    JTYPE  Mask;
    int8_t Mode;
 };
 
-enum { NUM_DOUBLE=1, NUM_FLOAT, NUM_INT64, NUM_INT, NUM_INT16, NUM_BYTE };
-
-struct fnumber { // TODO: Use std::variant
-   int Type;     // Expressed as an FD_ flag.
-   union {
-      double  f64;
-      float   f32;
-      int64_t i64;
-      int     i32;
-      int16_t i16;
-      int8_t  i8;
-   };
-};
-
-struct module {
-   struct Function *Functions = nullptr;
-   OBJECTPTR Module = nullptr;
-   ankerl::unordered_dense::map<uint32_t, int> FunctionMap; // Hash map for O(1) function lookup
-
-   ~module() {
-      if (Module) FreeResource(Module);
-   }
-};
-
-constexpr uint32_t simple_hash(CSTRING String, uint32_t Hash = 5381) {
-   while (auto c = *String++) Hash = ((Hash<<5) + Hash) + c;
-   return Hash;
-}
-
-constexpr uint32_t char_hash(char Char, uint32_t Hash = 5381) {
-   Hash = ((Hash<<5) + Hash) + Char;
-   return Hash;
+constexpr uint32_t simple_hash(CSTRING String, uint32_t Hash = 0) {
+   auto crc = kt::detail::crc32c_finalise(Hash);
+   while (auto c = *String++) crc = kt::detail::crc32c_byte(crc, uint8_t(c));
+   return kt::detail::crc32c_finalise(crc);
 }
 
 //********************************************************************************************************************
@@ -387,6 +356,18 @@ constexpr uint32_t char_hash(char Char, uint32_t Hash = 5381) {
    else return nullptr;
 }
 
+[[maybe_unused]] [[nodiscard]] constexpr std::string_view next_line(std::string_view String) noexcept
+{
+   size_t pos = 0;
+
+   while ((pos < String.size()) and (String[pos] != '\n') and (String[pos] != '\r')) pos++;
+   while ((pos < String.size()) and (String[pos] IS '\r')) pos++;
+   if ((pos < String.size()) and (String[pos] IS '\n')) pos++;
+   while ((pos < String.size()) and (String[pos] IS '\r')) pos++;
+   if (pos < String.size()) return String.substr(pos);
+   else return {};
+}
+
 //********************************************************************************************************************
 // Retrieve cached read/write tables for a class (creates if not present)
 
@@ -397,54 +378,139 @@ WRITE_TABLE * get_write_table(objMetaClass *);
 
 struct lua_ref {
    CPTR Address;
+   const struct_record *Def;
    int Ref;
 };
 
-OBJECTPTR access_object(GCobject *);
-std::vector<lua_ref> * alloc_references(void);
+ERR access_object(GCobject *, OBJECTPTR &);
+inline bool object_is_dead(GCobject *Object)
+{
+   return (not Object->uid) or (Object->is_pinned() and Object->ptr->collecting());
+}
+
+// Returns the cached object pointer only if the reference is still alive.  Pinned wrappers retain a zombie header
+// pointer after termination, so a bare Object->ptr test is not a liveness check.
+//
+// Safety contract: the returned pointer is deliberately unlocked and unpinned (strong).  This is sound because:
+//
+// 1. Callees provide their own locking - Action() acquires the object lock internally via ScopedObjectAccess, and
+//    field access funnels through access_object().  Adding a lock here would be redundant.
+// 2. Same-thread frees are caught deterministically: nothing on this thread can terminate the object between the
+//    object_is_dead() test and the dispatch.
+// 3. A cross-thread free that is *in progress* at dispatch time fails cleanly - teardown holds the object lock, and
+//    LockObject() refuses collecting objects with ERR::MarkedForDeletion.  The wrapper's weak pin guarantees the
+//    header memory itself remains valid throughout, so the check never reads freed memory.
+// 4. The only residual is a cross-thread free that fully *completes* between the check and the callee's lock
+//    acquisition.  That window pre-dates weak pinning (and was strictly worse - a dangling pointer rather than a
+//    pinned zombie header), and freeing an object while another thread is actively using it is outside the Core's
+//    threading contract (see the LockObject() quick-lock notes).  The systematic close, if ever needed, is a
+//    collecting() recheck inside Object::lock() - not per-call-site locking or strong pins here.  A strong pin must
+//    never be taken on dispatch paths: it defers termination and self-deadlocks when the context is an ancestor of
+//    the object being freed.
+
+[[nodiscard]] inline OBJECTPTR direct_object_ptr(GCobject *Object)
+{
+   return object_is_dead(Object) ? nullptr : Object->ptr;
+}
 void load_include_for_class(lua_State *, objMetaClass *);
-ERR build_args(lua_State *, const struct FunctionField *, int, int8_t *, int *);
+ERR build_args(lua_State *, CSTRING, const struct FunctionField *, int, int8_t *, int *, int &,
+   CSTRING &);
+void cleanup_argbuffer(lua_State *, const struct FunctionField *, int, int8_t *, bool);
+[[nodiscard]] ERR capture_tiri_function(lua_State *, int, FUNCTION &);
+[[nodiscard]] ERR push_tiri_function(lua_State *, const FUNCTION &, LuaCallbackContextGuard &);
+void release_tiri_function(lua_State *, FUNCTION *);
+void release_consumed_tiri_function(lua_State *, FUNCTION *);
 const char * code_reader(lua_State *, void *, size_t *);
 [[maybe_unused]] int code_writer_id(lua_State *, CPTR, size_t, void *);
 [[maybe_unused]] int code_writer(lua_State *, CPTR, size_t, void *);
 ERR create_tiri(void);
-void get_line(objScript *, int, STRING, int);
+void get_line(extTiri *, int, STRING, int);
 APTR get_meta(lua_State *Lua, int Arg, CSTRING);
-void hook_debug(lua_State *, lua_Debug *) __attribute__ ((unused));
-ERR load_include(objScript *, CSTRING);
+[[maybe_unused]] void hook_debug(lua_State *, lua_Debug *);
+// Resolves a module and publishes its process-wide constant and structure definitions.  Deliberately takes no state:
+// the definitions are global, so the state that happens to request them first must not influence their layout.
+ERR load_module_defs(std::string_view);
+[[nodiscard]] StaticModuleHandle static_module_by_name(std::string_view) noexcept;
+[[nodiscard]] const FunctionField * static_module_function(StaticModuleHandle, std::string_view) noexcept;
+[[nodiscard]] std::string_view static_module_name(StaticModuleHandle) noexcept;
+[[nodiscard]] std::string_view static_module_function_name(StaticModuleHandle, std::string_view) noexcept;
+[[nodiscard]] APTR proto_dependency_callable(struct GCproto *, uint32_t);
+#ifdef UNIT_TESTS
+[[nodiscard]] std::string test_module_zero_call(lua_State *, APTR, uint32_t Type, bool ForceBridge, CSTRING Source);
+[[nodiscard]] std::string test_module_zero_eligibility();
+[[nodiscard]] std::string test_module_simple_call(lua_State *, APTR, uint32_t Type,
+   std::span<const uint32_t> Inputs, bool ForceBridge, bool Eligible, CSTRING Source, bool Probe = true);
+[[nodiscard]] int test_module_live_temporaries();
+[[nodiscard]] std::string test_module_string_view_call(lua_State *, APTR,
+   std::span<const std::string> Inputs);
+
+// What the registry resolved for one module function, from both the compiler's and the runtime's entry point.  The
+// two now share one ordinal mapping and one metadata owner, so a test can assert that agreement directly.
+
+struct test_module_resolution {
+   bool Found = false;              // The name resolved through the compiler's signature index
+   bool CallableFound = false;      // The name resolved through the runtime callable lookup
+   uint32_t Ordinal = 0;            // Compiler ordinal for the canonical function
+   uint32_t CallableOrdinal = 0;    // Position of the resolved callable within the binding's callable list
+   CSTRING SignatureName = nullptr; // Canonical name owned by the immutable signature
+   CSTRING CallableName = nullptr;  // Canonical name held by the runtime callable
+   const FunctionField *SignatureFields = nullptr;
+   const FunctionField *CallableFields = nullptr;
+};
+
+[[nodiscard]] test_module_resolution test_module_resolve(std::string_view Module, std::string_view Function);
+#endif
 int MAKESTRUCT(lua_State *);
-[[maybe_unused]] void make_any_array(lua_State *, int, std::string_view, int, CPTR);
+[[maybe_unused]] void make_any_array(lua_State *, int, std::string_view, int, CPTR, struct_record * = nullptr);
 [[maybe_unused]] void make_array(lua_State *, AET, int = 0, CPTR = nullptr, std::string_view = {});
-[[maybe_unused]] ERR make_struct(objScript *, std::string_view, CSTRING);
+[[maybe_unused]] ERR make_struct(lua_State *, std::string_view, CSTRING);
+void remove_struct(std::string_view);
+[[nodiscard]] struct_record * find_struct(lua_State *Lua, uint32_t Key);
+[[nodiscard]] struct_record * find_struct(lua_State *Lua, std::string_view Name);
+[[nodiscard]] struct_record * find_struct_reference(lua_State *Lua, const struct_record &Owner, uint32_t Key);
+[[nodiscard]] struct_record * find_struct_reference(lua_State *Lua, const struct_record &Owner,
+   std::string_view Name);
+[[nodiscard]] ERR register_declared_struct(lua_State *Lua, struct_record &&Record, bool *Inserted,
+   const struct_record **Existing = nullptr, std::string *Detail = nullptr);
+void construct_trivial_struct_vector(APTR Address);
+void destroy_trivial_struct_vector(APTR Address);
+void assign_trivial_struct_vector(APTR Address, CPTR Source, size_t Elements, size_t Stride);
+void copy_trivial_struct_vector(APTR Dest, CPTR Source, size_t Stride);
+[[nodiscard]] size_t trivial_struct_vector_size(CPTR Address);
+[[nodiscard]] APTR trivial_struct_vector_data(APTR Address);
+[[nodiscard]] CPTR trivial_struct_vector_data(CPTR Address);
 ERR named_struct_to_table(lua_State *, std::string_view, CPTR);
-void make_struct_ptr_array(lua_State *, std::string_view, int, CPTR *);
-void make_struct_serial_array(lua_State *, std::string_view, int, CPTR);
+void construct_struct_cpp_strings(lua_State *, const struct struct_record &, APTR);
+void destroy_struct_cpp_strings(lua_State *, const struct struct_record &, APTR);
+void make_struct_array(lua_State *, std::string_view, int, CPTR, int = 0, struct_record * = nullptr);
+ERR make_struct_ptr_array(lua_State *, std::string_view, int, CPTR *, struct_record * = nullptr);
+void make_struct_serial_array(lua_State *, std::string_view, int, CPTR, struct_record * = nullptr);
 void notify_action(OBJECTPTR, ACTIONID, ERR, APTR);
-void process_error(objScript *, CSTRING);
+void process_error(extTiri *, CSTRING);
 ERR push_object_id(lua_State *, OBJECTID ObjectID);
+extern ERR delayed_msg_handler(APTR Meta, int MsgID, MSGID MsgType, std::span<std::byte> Message);
 extern int object_index(lua_State *);
 extern int object_newindex(lua_State *);
-struct fstruct * push_struct(objScript *, APTR, std::string_view, bool, bool);
-struct fstruct * push_struct_def(lua_State *, APTR, struct struct_record &, bool);
+GCstruct * push_struct(extTiri *, APTR, std::string_view, bool, bool, OBJECTPTR Lifecycle = nullptr);
+GCstruct * push_struct(extTiri *, APTR, uint32_t, bool, bool, OBJECTPTR Lifecycle = nullptr);
 extern void register_io_class(lua_State *);
 extern void register_input_class(lua_State *);
 extern void register_module_class(lua_State *);
-extern void register_number_class(lua_State *);
 extern void register_processing_class(lua_State *);
 extern void register_regex_class(lua_State *);
-extern void register_struct_class(lua_State *);
+extern int luaopen_regex_intrinsic(lua_State *);
 extern void register_async_class(lua_State *);
 //static void register_widget_class(lua_State *);
 void release_object(GCobject *);
-void new_module(lua_State *, objModule *);
+void expunge_modules();
 ERR struct_to_table(lua_State *, std::vector<lua_ref> &, struct struct_record &, CPTR);
-ERR table_to_struct(lua_State *, std::string_view, APTR *);
-ERR keyvalue_to_table(lua_State *, const KEYVALUE *);
+void unref_struct_references(lua_State *, std::vector<lua_ref> &);
+ERR table_to_struct(lua_State *, std::string_view, std::unique_ptr<uint8_t[]> &);
+void keyvalue_to_table(lua_State *, const KEYVALUE *);
 
 int fcmd_arg(lua_State *);
 int fcmd_msg(lua_State *);
 int fcmd_print(lua_State *);
-int fcmd_include(lua_State *);
 int fcmd_loadfile(lua_State *);
 int fcmd_exec(lua_State *);
 int fcmd_subscribe_event(lua_State *);
@@ -456,25 +522,26 @@ extern void armExecFunction(APTR, APTR, int);
 extern void x64ExecFunction(APTR, int, int64_t *, int);
 #endif
 
-// Throws exceptions.  Used for returning objects to the user.
+// Throws exceptions.  Used for returning objects to the user.  Passing the resolved pointer allows lua_pushobject()
+// to take the wrapper's weak pin at creation, saving the first access from an AccessObject() resolution.
 
 inline GCobject * push_object(lua_State *Lua, OBJECTPTR Object, bool Detached = true)
 {
    load_include_for_class(Lua, Object->Class);
-   return lua_pushobject(Lua, Object->UID, nullptr, Object->Class, Detached ? GCOBJ_DETACHED : 0);
+   return lua_pushobject(Lua, Object->UID, Object, Object->Class, Detached ? GCOBJ_DETACHED : 0);
 }
 
 //********************************************************************************************************************
-// Check if we're in the immediate scope of the current try block.  This is true if the calling Lua function (one
-// frame back) is the same function that contains the try block AND is at the same stack frame position.  The frame
+// Check if we're in the immediate scope of the current checkall block.  This is true if the calling Lua function (one
+// frame back) is the same function that contains the checkall block AND is at the same stack frame position.  The frame
 // base check is essential for recursive functions where the same GCfunc can appear at multiple stack depths.
 
-[[maybe_unused]] static bool in_try_immediate_scope(lua_State *L)
+[[maybe_unused]] static bool in_checkall_immediate_scope(lua_State *L)
 {
-   if (L->try_stack.depth IS 0) return false;
+   if (L->checkall_stack->depth IS 0) return false;
 
-   const TryFrame *try_frame = &L->try_stack.frames[L->try_stack.depth - 1];
-   if (not try_frame->func) return false;
+   const CheckallFrame *checkall_frame = &L->checkall_stack->frames[L->checkall_stack->depth - 1];
+   if (not checkall_frame->func) return false;
 
    TValue *current_frame = L->base - 1;
    TValue *prev_frame = frame_prev(current_frame); // Go to previous frame (the Lua caller)
@@ -483,16 +550,53 @@ inline GCobject * push_object(lua_State *Lua, OBJECTPTR Object, bool Detached = 
    if (not caller_func) return false;
 
    // Check both function identity AND frame position to handle recursive calls correctly
-   if (caller_func != try_frame->func) return false;
+   if (caller_func != checkall_frame->func) return false;
 
    // The caller's base is one slot after its frame link (in LJ_FR2 mode)
    ptrdiff_t caller_base_offset = savestack(L, prev_frame + 1);
-   return caller_base_offset IS try_frame->frame_base;
+   return caller_base_offset IS checkall_frame->frame_base;
+}
+
+[[maybe_unused]] inline void raise_checked_call_error(lua_State *Lua, ERR Error, CSTRING CallName)
+{
+   if ((Error >= ERR::ExceptionThreshold) and in_checkall_immediate_scope(Lua)) {
+      luaL_error(Lua, Error, "%s() failed: %s", CallName ? CallName : "Function", GetErrorMsg(Error));
+   }
 }
 
 [[maybe_unused]] inline void report_action_error(lua_State *Lua, GCobject *Object, CSTRING Action, ERR Error)
 {
-   if ((Error >= ERR::ExceptionThreshold) and in_try_immediate_scope(Lua)) {
-      luaL_error(Lua, Error, "%s.%s() failed: %s", Object->classptr->ClassName, Action, GetErrorMsg(Error));
+   if ((Error >= ERR::ExceptionThreshold) and in_checkall_immediate_scope(Lua)) {
+      if ((Object) and (Object->classptr)) {
+         luaL_error(Lua, Error, std::format("{}.{}() failed: {}", Object->classptr->ClassName,
+            Action ? Action : "Action", GetErrorMsg(Error)));
+      }
+      else raise_checked_call_error(Lua, Error, Action ? Action : "Action");
    }
 }
+
+class extTiri : public objTiri {
+   public:
+   lua_State *Lua;                        // Lua instance
+   std::vector<actionmonitor> ActionList; // Action subscriptions managed by subscribe()
+   std::vector<eventsub> EventList;       // Event subscriptions managed by subscribeEvent()
+   std::vector<datarequest> Requests;     // For drag and drop requests
+   std::vector<VariableInfo> CapturedVariables; // Variable declarations captured during parsing (JOF::DIAGNOSE)
+   std::vector<std::unique_ptr<std::jthread>> Threads; // Simple mechanism for auto-joining all the threads on object destruction
+   kt::vector<std::string> Procedures;
+   ankerl::unordered_dense::map<OBJECTID, int> StateMap;
+   std::shared_ptr<SharedPool> Pool;     // Thread-safe shared pool for async.pool (created on first use, shared with child scripts)
+   APTR     FocusEventHandle;
+   struct finput *InputList;           // Managed by the input interface
+   DateTime CacheDate;
+   PERMIT   CachePermissions;
+   JOF      JitOptions;
+   int      MainChunkRef;              // Registry reference to the main chunk for post-execution analysis
+   uint8_t  Recurse;
+   uint8_t  SaveCompiled;
+   uint16_t RequireCounter;
+
+   extTiri(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objTiri(ClassPtr, ObjectID) { }
+
+   ~extTiri();
+};

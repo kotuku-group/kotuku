@@ -5,31 +5,32 @@
 
 @Test function FunctionLocalCalls()
    -- Define local functions with varying argument counts
-   local function noArgs()
+   local function noArgs():num
       return 42
    end
 
-   local function oneArg(a)
+   local function oneArg(a):num
       return a * 2
    end
 
-   local function twoArgs(a, b)
+   local function twoArgs(a, b):num
       return a + b
    end
 
-   local function threeArgs(a, b, c)
+   local function threeArgs(a, b, c):num
       return a + b + c
    end
 
-   local function fiveArgs(a, b, c, d, e)
+   local function fiveArgs(a, b, c, d, e):num
       return a + b + c + d + e
    end
 
-   local function returnsMultiple(x)
+   local function returnsMultiple(x):<num, num, num>
       return x, x * 2, x * 3
    end
 
-   for i in {0..1000000} do
+   local checksum = 0
+   for i in {0 to 1000000} do
       -- Call with no arguments
       local r0 = noArgs()
 
@@ -50,7 +51,9 @@
 
       -- Chain function calls
       local chained = oneArg(oneArg(oneArg(i)))
+      checksum += r0 + r1 + r2 + r3 + r5 + a + b + c + chained
    end
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -78,7 +81,8 @@ end
       return sumAll(...)
    end
 
-   for i in {0..1000} do
+   local checksum = 0
+   for i in {0 to 4000} do
       -- Call with varying argument counts
       local s1 = sumAll(1)
       local s2 = sumAll(1, 2)
@@ -92,14 +96,17 @@ end
 
       -- Forward variadic arguments
       local fwd = forwardArgs(i, i + 1, i + 2)
+      checksum += s1 + s2 + s3 + s5 + s10 + #f1 + #f2 + fwd
    end
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Create and call closures that capture upvalues
 
 @Test function FunctionClosures()
-   for i in {0..1000} do
+   local checksum = 0
+   for i in {0 to 4000} do
       -- Simple closure capturing one variable
       local x = i
       local getX = function()
@@ -120,7 +127,7 @@ end
          counter++
          return counter
       end
-      for j = 0, 9 do
+      for j in {0 to 10} do
          increment()
       end
 
@@ -153,14 +160,17 @@ end
       inc()
       inc()
       local v6 = get()
+      checksum += v1 + v2 + counter + v3 + v4 + v5 + v6
    end
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Use anonymous function expressions with arrow syntax
 
 @Test function FunctionAnonymous()
-   for i in {0..1000} do
+   local checksum = 0
+   for i in {0 to 3000} do
       -- Simple arrow function
       local double = (x => x * 2)
       local v1 = double(i)
@@ -173,25 +183,26 @@ end
       local numbers = { 1, 2, 3, 4, 5 }
       local mapped = {}
       for idx, n in ipairs(numbers) do
-         mapped[idx] = (x => x * 2)(n)
+         mapped[idx] = (x => num: x * 2)(n)
+         checksum += mapped[idx]
       end
 
       -- Immediately invoked arrow function
-      local result = (x => x * x)(i)
+      local result = (x => num: x * x)(i)
 
       -- Arrow functions as callbacks (simulated)
-      local apply = function(fn, val)
+      local apply = function(fn, val):num
          return fn(val)
       end
-      local v3 = apply((x => x + 10), i)
-      local v4 = apply((x => x * 3), i)
+      local v3 = apply((x => num: x + 10), i)
+      local v4 = apply((x => num: x * 3), i)
 
       -- Nested arrow functions
       local compose = function(f, g)
-         return (x => f(g(x)))
+         return (x => num: f(g(x)))
       end
-      local addOne = (x => x + 1)
-      local timesTwo = (x => x * 2)
+      local addOne = (x => num: x + 1)
+      local timesTwo = (x => num: x * 2)
       local composed = compose(addOne, timesTwo)
       local v5 = composed(i)
 
@@ -199,7 +210,9 @@ end
       local multiplier = i % 10 + 1
       local multiply = (x => x * multiplier)
       local v6 = multiply(5)
+      checksum += v1 + v2 + #mapped + result + v3 + v4 + v5 + v6
    end
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -243,7 +256,8 @@ end
       return isEven(n - 1)
    end
 
-   for i in {0..500} do
+   local checksum = 0
+   for i in {0 to 500} do
       -- Call recursive functions with safe depths
       local f1 = factorial(10)
       local f2 = factorial(12)
@@ -263,79 +277,84 @@ end
       -- Mutual recursion
       local e1 = isEven(20)
       local o1 = isOdd(21)
+      checksum += f1 + f2 + fib1 + fib2 + s1 + s2 + c1 + c2 +
+         (e1 ? 1 : 0) + (o1 ? 1 : 0)
    end
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Goal: Call methods on tables using colon syntax
+-- Goal: Call contextual methods on tables
 
 @Test function FunctionMethodCalls()
    -- Create object-like tables with methods
-   local Counter = {
+   local Counter = entity {
       value = 0,
-      increment = function(self)
-         self.value++
-         return self.value
+      increment = function():num
+         &value++
+         return &value
       end,
-      decrement = function(self)
-         self.value--
-         return self.value
+      decrement = function():num
+         &value -= 1
+         return &value
       end,
-      add = function(self, n)
-         self.value += n
-         return self.value
+      add = function(Value:num):num
+         &value += Value
+         return &value
       end,
-      getValue = function(self)
-         return self.value
+      getValue = function():num
+         return &value
       end,
-      reset = function(self)
-         self.value = 0
+      reset = function()
+         &value = 0
       end
    }
 
-   local Point = {
+   local Point = entity {
       x = 0,
       y = 0,
-      set = function(self, x, y)
-         self.x = x
-         self.y = y
+      set = function(X:num, Y:num)
+         &x = X
+         &y = Y
       end,
-      translate = function(self, dx, dy)
-         self.x += dx
-         self.y += dy
+      translate = function(Dx:num, Dy:num)
+         &x += Dx
+         &y += Dy
       end,
-      distance = function(self)
-         return math.sqrt(self.x * self.x + self.y * self.y)
+      distance = function()
+         return math.sqrt(&x * &x + &y * &y)
       end
    }
 
-   for i in {0..10000} do
-      -- Method calls with colon syntax
-      Counter:reset()
-      Counter:increment()
-      Counter:increment()
-      Counter:add(5)
-      local v1 = Counter:getValue()
-      Counter:decrement()
+   local checksum = 0.0
+   for i in {0 to 10000} do
+      Counter.reset()
+      Counter.increment()
+      Counter.increment()
+      Counter.add(5)
+      local v1 = Counter.getValue()
+      Counter.decrement()
 
       -- Multiple method calls in sequence
-      Point:set(i % 100, i % 50)
-      Point:translate(1, 2)
-      Point:translate(-1, 1)
-      local d = Point:distance()
+      Point.set(i % 100, i % 50)
+      Point.translate(1, 2)
+      Point.translate(-1, 1)
+      local d = Point.distance()
 
       -- Create new instances
-      local obj = { value = 0 }
-      setmetatable(obj, { __index = Counter })
-      obj:increment()
-      obj:add(10)
-      local v2 = obj:getValue()
+      local instance = entity { value = 0 }
+      setmetatable(instance, { __index = Counter })
+      instance.increment()
+      instance.add(10)
+      local v2 = instance.getValue()
 
       -- Chain-like method usage
-      Counter:reset()
-      for j = 0, 9 do
-         Counter:increment()
+      Counter.reset()
+      for j in {0 to 10} do
+         Counter.increment()
       end
-      local final = Counter:getValue()
+      local final = Counter.getValue()
+      checksum += v1 + d + v2 + final
    end
+   return checksum
 end

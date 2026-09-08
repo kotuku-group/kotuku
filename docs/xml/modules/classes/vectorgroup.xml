@@ -8,7 +8,7 @@
     <module>Vector</module>
     <comment>Extends the Vector class with support for organising vectors into groups.</comment>
     <version>1</version>
-    <id>88397565</id>
+    <id>ca4e4b39</id>
     <idstring>VECTORGROUP</idstring>
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>

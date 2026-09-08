@@ -73,7 +73,7 @@ Primary class for XML document handling with comprehensive parsing and manipulat
 - `Tags` (TAGS) - Hierarchical array of XTag structures
 
 **Critical Implementation Notes:**
-- C++ developers get direct access to `Tags` field as `pf::vector<XTag>`
+- C++ developers get direct access to `Tags` field as `kt::vector<XTag>`
 - Tiri developers should cache `Tags` reads as they create full copies
 - Thread-safe due to object locking principles.
 
@@ -90,8 +90,8 @@ struct XTag {
    int LineNo;                         // Source line number
    XTF Flags;                          // Tag flags (CDATA, INSTRUCTION, etc.)
    uint NamespaceID;                   // Namespace URI hash
-   pf::vector<XMLAttrib> Attribs;      // Attributes array
-   pf::vector<XTag> Children;        // Child elements array
+   kt::vector<XMLAttrib> Attribs;      // Attributes array
+   kt::vector<XTag> Children;        // Child elements array
 }
 ```
 

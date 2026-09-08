@@ -352,7 +352,7 @@ cat > "$RUNTIME_STAGING/usr/share/doc/kotuku/copyright" << 'EOF'
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: Kotuku
 Upstream-Contact: Kotuku Open Group <team@kotuku.dev>
-Source: https://github.com/parasol-framework/kotuku
+Source: https://github.com/kotuku-group/kotuku
 
 Files: *
 Copyright: Paul Manias
@@ -409,7 +409,7 @@ if [ "$INSTALL_INCLUDES" = "ON" ]; then
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: Kotuku
 Upstream-Contact: Kotuku Open Group <team@kotuku.dev>
-Source: https://github.com/parasol-framework/kotuku
+Source: https://github.com/kotuku-group/kotuku
 
 Files: *
 Copyright: Paul Manias

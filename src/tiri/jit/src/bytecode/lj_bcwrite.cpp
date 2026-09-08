@@ -95,8 +95,9 @@ static void bcwrite_ktab(BCWriteCtx* ctx, char* p, const GCtab* t)
          nhash += !tvisnil(&node[i].val);
    }
 
-   // Write number of array slots and hash slots.
+   // Write classification flags, number of array slots and number of hash slots.
 
+   p = lj_strfmt_wuleb128(p, t->flags & TAB_NOT_SEQUENCE);
    p = lj_strfmt_wuleb128(p, narray);
    p = lj_strfmt_wuleb128(p, nhash);
    ctx->sb.w = p;
@@ -142,7 +143,7 @@ static void bcwrite_kgc(BCWriteCtx *ctx, GCproto *pt)
       else {
          lj_assertBCW(o->gch.gct IS ~LJ_TTAB, "bad constant GC type %d", o->gch.gct);
          tp = BCDUMP_KGC_TAB;
-         need = 1 + 2 * 5;
+         need = 1 + 3 * 5;
       }
 
       // Write constant type.
@@ -230,11 +231,122 @@ static char * bcwrite_bytecode(BCWriteCtx *ctx, char *p, GCproto *pt)
 }
 
 //********************************************************************************************************************
+// Calculate and write the portable prototype signature.
+
+static MSize bcwrite_uleb128_size(uint32_t Value)
+{
+   MSize size = 1;
+   while (Value >= 0x80) {
+      Value >>= 7;
+      size++;
+   }
+   return size;
+}
+
+static MSize bcwrite_signature_size(const GCproto *Proto)
+{
+   const auto signature = proto_signature(Proto);
+   if (not signature) return 0;
+
+   MSize size = 2 + bcwrite_uleb128_size(signature->parameter_count) +
+      bcwrite_uleb128_size(signature->result_count) + bcwrite_uleb128_size(signature->result_entry_count);
+   auto entries = proto_parameter_types(Proto);
+   MSize entry_count = MSize(signature->parameter_count) + signature->result_entry_count;
+   for (MSize i = 0; i < entry_count; ++i) {
+      size += 2 + bcwrite_uleb128_size(entries[i].constraint) +
+         bcwrite_uleb128_size(proto_array_member_encoded(entries[i]));
+   }
+   return size;
+}
+
+static char * bcwrite_signature(char *Buffer, const GCproto *Proto)
+{
+   const auto signature = proto_signature(Proto);
+   if (not signature) return Buffer;
+
+   *Buffer++ = signature->version;
+   *Buffer++ = signature->flags;
+   Buffer = lj_strfmt_wuleb128(Buffer, signature->parameter_count);
+   Buffer = lj_strfmt_wuleb128(Buffer, signature->result_count);
+   Buffer = lj_strfmt_wuleb128(Buffer, signature->result_entry_count);
+
+   auto entries = proto_parameter_types(Proto);
+   MSize entry_count = MSize(signature->parameter_count) + signature->result_entry_count;
+   for (MSize i = 0; i < entry_count; ++i) {
+      *Buffer++ = uint8_t(entries[i].type);
+      *Buffer++ = entries[i].flags;
+      Buffer = lj_strfmt_wuleb128(Buffer, entries[i].constraint);
+      Buffer = lj_strfmt_wuleb128(Buffer, proto_array_member_encoded(entries[i]));
+   }
+   return Buffer;
+}
+
+//********************************************************************************************************************
+// Calculate and write the portable module dependency descriptors.
+//
+// Only canonical names are written.  The reader resolves them through the global module registry, so a chunk written
+// by one process resolves correctly in another even if the module's export list has been reordered.
+
+static MSize bcwrite_dependency_size(const GCproto *Proto)
+{
+   const auto table = proto_dependencies(Proto);
+   if (not table) return 0;
+
+   MSize size = 1 + bcwrite_uleb128_size(table->dependency_count) + bcwrite_uleb128_size(table->function_count);
+
+   auto dependencies = proto_dependency_list(table);
+   for (MSize i = 0; i < table->dependency_count; ++i) {
+      GCstr *name = gco_to_string(gcref(dependencies[i].name));
+      size += bcwrite_uleb128_size(name->len) + name->len +
+         bcwrite_uleb128_size(dependencies[i].first_function) + bcwrite_uleb128_size(dependencies[i].function_count);
+   }
+
+   auto functions = proto_dependency_functions(table);
+   for (MSize i = 0; i < table->function_count; ++i) {
+      GCstr *name = gco_to_string(gcref(functions[i].name));
+      size += bcwrite_uleb128_size(name->len) + name->len + bcwrite_uleb128_size(functions[i].module);
+   }
+
+   return size;
+}
+
+static char * bcwrite_dependencies(char *Buffer, const GCproto *Proto)
+{
+   const auto table = proto_dependencies(Proto);
+   if (not table) return Buffer;
+
+   *Buffer++ = table->version;
+   Buffer = lj_strfmt_wuleb128(Buffer, table->dependency_count);
+   Buffer = lj_strfmt_wuleb128(Buffer, table->function_count);
+
+   auto dependencies = proto_dependency_list(table);
+   for (MSize i = 0; i < table->dependency_count; ++i) {
+      GCstr *name = gco_to_string(gcref(dependencies[i].name));
+      Buffer = lj_strfmt_wuleb128(Buffer, name->len);
+      Buffer = lj_buf_wmem(Buffer, strdata(name), name->len);
+      Buffer = lj_strfmt_wuleb128(Buffer, dependencies[i].first_function);
+      Buffer = lj_strfmt_wuleb128(Buffer, dependencies[i].function_count);
+   }
+
+   auto functions = proto_dependency_functions(table);
+   for (MSize i = 0; i < table->function_count; ++i) {
+      GCstr *name = gco_to_string(gcref(functions[i].name));
+      Buffer = lj_strfmt_wuleb128(Buffer, name->len);
+      Buffer = lj_buf_wmem(Buffer, strdata(name), name->len);
+      Buffer = lj_strfmt_wuleb128(Buffer, functions[i].module);
+   }
+
+   return Buffer;
+}
+
+//********************************************************************************************************************
 // Write prototype.
 
 static void bcwrite_proto(BCWriteCtx *ctx, GCproto *pt)
 {
    MSize sizedbg = 0;
+   MSize sizesig = bcwrite_signature_size(pt);
+   MSize sizedep = bcwrite_dependency_size(pt);
    char *p;
 
    // Recursively write children of prototype.
@@ -248,7 +360,8 @@ static void bcwrite_proto(BCWriteCtx *ctx, GCproto *pt)
    }
 
    // Start writing the prototype info to a buffer.
-   p = lj_buf_need(&ctx->sb, 5 + 4 + 6 * 5 + (pt->sizebc - 1) * (MSize)sizeof(BCIns) + pt->sizeuv * 2);
+   p = lj_buf_need(&ctx->sb, 5 + 4 + 8 * 5 + sizesig + sizedep +
+      (pt->sizebc - 1) * (MSize)sizeof(BCIns) + pt->sizeuv * 2);
    p += 5;  //  Leave room for final size.
 
    // Write prototype header.
@@ -259,6 +372,8 @@ static void bcwrite_proto(BCWriteCtx *ctx, GCproto *pt)
    p = lj_strfmt_wuleb128(p, pt->sizekgc);
    p = lj_strfmt_wuleb128(p, pt->sizekn);
    p = lj_strfmt_wuleb128(p, pt->sizebc - 1);
+   p = lj_strfmt_wuleb128(p, sizesig);
+   p = lj_strfmt_wuleb128(p, sizedep);
    if (!ctx->strip) {
       if (proto_lineinfo(pt)) sizedbg = pt->sizept - (MSize)((char*)proto_lineinfo(pt) - (char*)pt);
       p = lj_strfmt_wuleb128(p, sizedbg);
@@ -267,6 +382,9 @@ static void bcwrite_proto(BCWriteCtx *ctx, GCproto *pt)
          p = lj_strfmt_wuleb128(p, pt->numline);
       }
    }
+
+   p = bcwrite_signature(p, pt);
+   p = bcwrite_dependencies(p, pt);
 
    // Write bytecode instructions and upvalue refs.
    p = bcwrite_bytecode(ctx, p, pt);
@@ -286,6 +404,26 @@ static void bcwrite_proto(BCWriteCtx *ctx, GCproto *pt)
       p = lj_buf_wmem(p, proto_lineinfo(pt), sizedbg);
       ctx->sb.w = p;
    }
+
+   // Exception descriptors are semantic metadata and survive stripped dumps.
+   p = lj_buf_more(&ctx->sb, 10 + MSize(pt->try_block_count) * 25 + MSize(pt->try_handler_count) * 30);
+   p = lj_strfmt_wuleb128(p, pt->try_block_count);
+   p = lj_strfmt_wuleb128(p, pt->try_handler_count);
+   for (uint16_t i = 0; i < pt->try_block_count; ++i) {
+      const TryBlockDesc &block = pt->try_blocks[i];
+      p = lj_strfmt_wuleb128(p, block.first_handler);
+      p = lj_strfmt_wuleb128(p, block.handler_count);
+      p = lj_strfmt_wuleb128(p, block.entry_slots);
+      p = lj_strfmt_wuleb128(p, block.flags);
+   }
+   for (uint16_t i = 0; i < pt->try_handler_count; ++i) {
+      const TryHandlerDesc &handler = pt->try_handlers[i];
+      p = lj_strfmt_wuleb128(p, uint32_t(handler.filter_packed));
+      p = lj_strfmt_wuleb128(p, uint32_t(handler.filter_packed >> 32));
+      p = lj_strfmt_wuleb128(p, handler.handler_pc);
+      p = lj_strfmt_wuleb128(p, handler.exception_reg);
+   }
+   ctx->sb.w = p;
 
    // Pass buffer to writer function.
    if (ctx->status IS 0) {

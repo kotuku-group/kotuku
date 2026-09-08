@@ -4,13 +4,16 @@ Gamepad demonstration
 --]]
 
    import 'gui'
+   import 'gui/slider'
    import 'gui/window'
+
+   module vector as mVec
 
    glSelf = obj.find('self')
    glPath = glSelf.workingPath
 
    win = gui.window({ title='Gamepad Demo', insideWidth=600, insideHeight=400, enableControllers=true })
-   viewport = win:clientViewport({ aspectRatio = ARF_MEET })
+   viewport = win.clientViewport({ aspectRatio = ARF_MEET })
 
    text = viewport.new('vectortext', {
       x=win.margins.left, y=20, string='Use a gamepad to control the football.', face='Noto Sans', fontSize=20, fill='rgb(0,0,0)'
@@ -28,34 +31,227 @@ Gamepad demonstration
       x=win.margins.left, y=110, string='Buttons:', face='Noto Sans', fontSize=20, fill='rgb(0,0,0)'
    })
 
-   ballVP = viewport.new('VectorViewport', {
-      x = 260, y = 260, width = 60, height = 60
+   --txtStatus = viewport.new('vectortext', {
+   --   x=win.margins.left, y=140, string='Controller:', face='Noto Sans', fontSize=16, fill='rgb(0,0,0)'
+   --})
+
+   hardness = 0.75
+   if hardness < 0 then
+      hardness = 0
+   elseif hardness > 1 then
+      hardness = 1
+   end
+
+   slHardness = gui.slider({
+      target = viewport,
+      label  = 'Hardness:',
+      value  = hardness,
+      min    = 0,
+      max    = 1,
+      x      = win.margins.left,
+      y      = 120,
+      events = {
+         activate = function(Widget, Value)
+            hardness = Value
+         end
+      }
    })
 
-   svg = obj.new('svg', { target=ballVP, path=glPath .. 'data/football.svg' })
+   ballVP = viewport.new('VectorViewport', {
+      x = 260, y = 260, width = 60, height = 60, overflow = 'visible'
+   })
 
-   MAX_SPEED = 3
-   ctrl = obj.new('controller', { port=0 })
+   ballInnerVP = ballVP.new('VectorViewport', {
+      x = 0, y = 0, width = 60, height = 60, overflow = 'visible'
+   })
+
+   svg = obj.new('svg', { target=ballInnerVP, path=glPath .. 'data/football.svg' })
+
+   GRAVITY = 900
+   MIN_BOUNCE = 0.38
+   MAX_BOUNCE = 0.92
+   INPUT_ACCELERATION = 1720
+   MAX_HORIZONTAL_SPEED = 460
+   MIN_BALL_SIZE = 32
+   MAX_BALL_SIZE = 120
+   ROTATION_SPEED_SCALE = 0.75
+   EDGE_FRICTION = 1.6
+   MIN_HORIZONTAL_SPEED = 1
+   IMPACT_SPEED_FOR_MAX_DEFORM = 900
+   MAX_DEFORM = 0.36
+   MIN_DEFORM_SPEED = 60
+   DEFORM_RECOVERY = 11
+
+   ball_vx = 220
+   ball_vy = -260
+   ball_spin = ball_vx * ROTATION_SPEED_SCALE
+   ball_angle = 0
+   ball_scale_x = 1
+   ball_scale_y = 1
+   squash_pivot_x = 0.5
+   squash_pivot_y = 0.5
+   last_time = nil
+   err, ball_squash_matrix = ballVP.mtNewMatrix(false)
+   err, ball_spin_matrix = ballInnerVP.mtNewMatrix(false)
+
+function clamp(Value, MinValue, MaxValue):num
+   if Value < MinValue then
+      return MinValue
+   elseif Value > MaxValue then
+      return MaxValue
+   else
+      return Value
+   end
+end
+
+function hitBall(NormalX, NormalY, ImpactSpeed)
+   if ImpactSpeed < MIN_DEFORM_SPEED then
+      return
+   end
+
+   softness = 1.0 - hardness
+   impact = clamp(ImpactSpeed / IMPACT_SPEED_FOR_MAX_DEFORM, 0, 1)
+   deform = softness * MAX_DEFORM * impact
+   if deform <= 0 then
+      return
+   end
+
+   compression = 1.0 - deform
+   stretch = 1.0 + (deform * 0.7)
+
+   if math.abs(NormalX) > 0 then
+      ball_scale_x = math.min(ball_scale_x, compression)
+      ball_scale_y = math.max(ball_scale_y, stretch)
+      squash_pivot_x = NormalX < 0 ? 0 : 1
+      squash_pivot_y = 0.5
+   else
+      ball_scale_x = math.max(ball_scale_x, stretch)
+      ball_scale_y = math.min(ball_scale_y, compression)
+      squash_pivot_x = 0.5
+      squash_pivot_y = NormalY < 0 ? 0 : 1
+   end
+end
+
+   controller_port = tonumber(arg('port', '-1'))
+   ctrl = obj.new('controller', { port=controller_port })
    err, controllerTimer = mSys.SubscribeTimer(1/60, function(Subscriber, Elapsed, CurrentTime)
-      ctrl.acQuery()
+      query_error = ctrl.acQuery()
 
       txtLeftStick.string  = 'Left Stick: ' .. string.format('%.2f %.2f', ctrl.leftStickX, ctrl.leftStickY)
       txtRightStick.string = 'Right Stick: ' .. string.format('%.2f %.2f', ctrl.rightStickX, ctrl.rightStickY)
       txtButtons.string    = 'Buttons: ' .. string.format('%.8x', ctrl.buttons)
+      port_label = ctrl.port is -1 ? '-1 (primary)' : tostring(ctrl.port)
+      --txtStatus.string = f"Controller: port {port_label}, total ports {ctrl.totalPorts}, {mSys.GetErrorMsg(query_error)}"
 
-      speed = MAX_SPEED
+      dt = 1 / 60
+      if last_time then
+         dt = (CurrentTime - last_time) / 1000000
+         if dt <= 0 or dt > 0.1 then
+            dt = 1 / 60
+         end
+      end
+      last_time = CurrentTime
+
+      input_acceleration = INPUT_ACCELERATION
       if (ctrl.buttons & CON_GAMEPAD_S)?? then
-         speed = speed * 2
+         input_acceleration = input_acceleration * 2
       end
 
-      ballVP.x = ballVP.x + (ctrl.leftStickX * speed)
-      ballVP.y = ballVP.y - (ctrl.leftStickY * speed)
+      ball_vx = ball_vx + (ctrl.leftStickX * input_acceleration * dt)
+      ball_vy = ball_vy - (ctrl.leftStickY * input_acceleration * dt) + (GRAVITY * dt)
 
-      ballVP.width = ballVP.width + ctrl.rightStickY
-      ballVP.height = ballVP.height + ctrl.rightStickY
+      if ball_vx > MAX_HORIZONTAL_SPEED then
+         ball_vx = MAX_HORIZONTAL_SPEED
+      elseif ball_vx < -MAX_HORIZONTAL_SPEED then
+         ball_vx = -MAX_HORIZONTAL_SPEED
+      end
+
+      ballVP.x = ballVP.x + (ball_vx * dt)
+      ballVP.y = ballVP.y + (ball_vy * dt)
+
+      ball_size = ballVP.width + ctrl.rightStickY
+      if ball_size < MIN_BALL_SIZE then
+         ball_size = MIN_BALL_SIZE
+      elseif ball_size > MAX_BALL_SIZE then
+         ball_size = MAX_BALL_SIZE
+      end
+
+      ballVP.width = ball_size
+      ballVP.height = ball_size
+      ballInnerVP.width = ball_size
+      ballInnerVP.height = ball_size
+
+      min_x = 0
+      max_x = viewport.width - ballVP.width
+      min_y = 0
+      max_y = viewport.height - ballVP.height
+
+      if max_x < min_x then max_x = min_x end
+      if max_y < min_y then max_y = min_y end
+
+      recovery = clamp(DEFORM_RECOVERY * (0.7 + (hardness * 0.6)) * dt, 0, 1)
+      ball_scale_x += (1.0 - ball_scale_x) * recovery
+      ball_scale_y += (1.0 - ball_scale_y) * recovery
+      if math.abs(ball_scale_x - 1.0) < 0.001 then ball_scale_x = 1.0 end
+      if math.abs(ball_scale_y - 1.0) < 0.001 then ball_scale_y = 1.0 end
+      if ball_scale_x is 1.0 and ball_scale_y is 1.0 then
+         squash_pivot_x = 0.5
+         squash_pivot_y = 0.5
+      end
+
+      bounce = MIN_BOUNCE + ((MAX_BOUNCE - MIN_BOUNCE) * hardness)
+
+      edge_contact = false
+      if ballVP.x < min_x then
+         ballVP.x = min_x
+         hitBall(-1, 0, math.abs(ball_vx))
+         ball_vx = -ball_vx * bounce
+      elseif ballVP.x > max_x then
+         ballVP.x = max_x
+         hitBall(1, 0, math.abs(ball_vx))
+         ball_vx = -ball_vx * bounce
+      end
+
+      if ballVP.y < min_y then
+         ballVP.y = min_y
+         hitBall(0, -1, math.abs(ball_vy))
+         ball_vy = -ball_vy * bounce
+         edge_contact = true
+      elseif ballVP.y > max_y then
+         ballVP.y = max_y
+         hitBall(0, 1, math.abs(ball_vy))
+         ball_vy = -ball_vy * bounce
+         edge_contact = true
+      end
+
+      if edge_contact then
+         friction = 1 - (EDGE_FRICTION * dt)
+         if friction < 0 then friction = 0 end
+
+         ball_vx *= friction
+         if math.abs(ball_vx) < MIN_HORIZONTAL_SPEED then
+            ball_vx = 0
+         end
+      end
+
+      ball_spin = ball_vx * ROTATION_SPEED_SCALE
+      ball_angle = (ball_angle + (ball_spin * dt)) % 360
+
+      pivot_x = ballVP.width * squash_pivot_x
+      pivot_y = ballVP.height * squash_pivot_y
+
+      mVec.ResetMatrix(ball_squash_matrix)
+      mVec.Translate(ball_squash_matrix, -pivot_x, -pivot_y)
+      mVec.Scale(ball_squash_matrix, ball_scale_x, ball_scale_y)
+      mVec.Translate(ball_squash_matrix, pivot_x, pivot_y)
+
+      mVec.ResetMatrix(ball_spin_matrix)
+      mVec.Rotate(ball_spin_matrix, ball_angle, ballInnerVP.width * 0.5, ballInnerVP.height * 0.5)
+      ballInnerVP.acDraw()
+      ballVP.acDraw()
 
       viewport.scene.surface.mtScheduleRedraw()
    end)
 
-   win:show(true)
+   win.show(true)
    processing.sleep()

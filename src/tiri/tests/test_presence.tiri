@@ -1,5 +1,5 @@
 -- Flute tests for the postfix ?? operator (presence check)
--- Returns boolean: true if value is truthy, false if falsey (nil, false, 0, "")
+-- Returns boolean: true if value is truthy, false if falsey (nil, false, 0, "", empty collections)
 
 @BeforeEach(hotpath=true)
 function enforce_hotpath() end
@@ -45,26 +45,26 @@ end
    if comment?? then
       -- Expected path
    else
-      error("Should enter if block when comment is truthy")
+      assert(false, "Should enter if block when comment is truthy")
    end
 
    empty = ""
    if empty?? then
-      error("Should not enter if block when empty string")
+      assert(false, "Should not enter if block when empty string")
    else
       -- Expected path
    end
 
    zero = 0
    if zero?? then
-      error("Should not enter if block when zero")
+      assert(false, "Should not enter if block when zero")
    end
 end
 
 -- Test in expressions
 @Test function InExpression()
    name = "Alice"
-   msg = name?? and "Hello, " .. name or "Hello, Guest"
+   local msg = name?? and "Hello, " .. name or "Hello, Guest"
    assert(msg is "Hello, Alice", "Failed expression test with truthy name")
 
    empty_name = ""
@@ -79,18 +79,18 @@ end
    if comment?? and author?? then
       -- Expected path
    else
-      error("Should enter if block when both are truthy")
+      assert(false, "Should enter if block when both are truthy")
    end
 
    empty_comment = ""
    if empty_comment?? and author?? then
-      error("Should not enter if block when comment is empty")
+      assert(false, "Should not enter if block when comment is empty")
    end
 
    if empty_comment?? or author?? then
       -- Expected path (author is truthy)
    else
-      error("Should enter if block when author is truthy")
+      assert(false, "Should enter if block when author is truthy")
    end
 end
 
@@ -175,7 +175,7 @@ end
 
 -- Test chained field access
 @Test function ChainedAccess()
-   obj = { user = { name = "Alice" } }
+   local obj = { user = { name = "Alice" } }
    assert((obj.user.name??) is true, "Failed chained access test")
 
    obj2 = { user = { name = "" } }
@@ -191,36 +191,70 @@ end
    assert((v2??) is false, "Failed negative zero test: expected false for -0.0")
 end
 
--- Tests to verify bytecode semantics claimed in PR comment
--- PR comment claims: BC_ISEQP/BC_ISEQN/BC_ISEQS skip next instruction when comparison succeeds
--- These tests verify the actual runtime behavior
+@Test(hotpath=50) function JitFalseySideExits()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   function countNumericPresence(Count:num):num
+      local total = 0
+      for index in {0 to Count} do
+         local value:num = index % 2
+         if value?? then total++ end
+      end
+      return total
+   end
+
+   function countMixedPresence(Count:num):num
+      local total = 0
+      local value:any
+      for index in {0 to Count} do
+         local selector = index % 3
+         if selector is 0 then value = 0
+         elseif selector is 1 then value = ''
+         else value = 'present' end
+         if value?? then total++ end
+      end
+      return total
+   end
+
+   assert(countNumericPresence(300) is 150,
+      'Numeric falsey guards should side-exit correctly when zero and non-zero values alternate')
+   assert(countMixedPresence(300) is 100,
+      'Type-specialised falsey traces should side-exit correctly when the runtime type changes')
+
+   jit.flush()
+   jit.opt.start()
+end
+
+-- Runtime checks for the falsey bytecode's branch polarity and type dispatch.
 
 -- Test: Verify truthy string returns true (proves jumps don't fire incorrectly)
 @Test function BytecodeSemanticsTruthyString()
    s = "test"
    result = s??
-   assert(result is true, "Truthy string must return true - if false, BC_ISEQS may be skipping when equal (wrong)")
+   assert(result is true, "Truthy string must return true")
 end
 
 -- Test: Verify truthy number returns true
 @Test function BytecodeSemanticsTruthyNumber()
    n = 42
    result = n??
-   assert(result is true, "Truthy number must return true - if false, BC_ISEQN may be skipping when equal (wrong)")
+   assert(result is true, "Truthy number must return true")
 end
 
 -- Test: Verify falsey string returns false (proves jumps fire correctly)
 @Test function BytecodeSemanticsFalseyString()
    s = ""
    result = s??
-   assert(result is false, "Falsey string must return false - if true, BC_ISEQS may not be jumping when equal")
+   assert(result is false, "Falsey string must return false")
 end
 
 -- Test: Verify falsey number returns false
 @Test function BytecodeSemanticsFalseyNumber()
    n = 0
    result = n??
-   assert(result is false, "Falsey number must return false - if true, BC_ISEQN may not be jumping when equal")
+   assert(result is false, "Falsey number must return false")
 end
 
 -- Test: Verify type mismatch doesn't cause false positives (string vs number comparison)
@@ -243,14 +277,14 @@ end
 @Test function BytecodeSemanticsNil()
    v = nil
    result = v??
-   assert(result is false, "Nil must return false - verifies BC_ISEQP behavior")
+   assert(result is false, "Nil must return false")
 end
 
 -- Test: Verify false returns false correctly
 @Test function BytecodeSemanticsFalse()
    v = false
    result = v??
-   assert(result is false, "False must return false - verifies BC_ISEQP behavior")
+   assert(result is false, "False must return false")
 end
 
 -- Test: Comprehensive runtime truthy values
@@ -261,7 +295,6 @@ end
       {val = -1, name = "negative number"},
       {val = 0.5, name = "fractional number"},
       {val = true, name = "boolean true"},
-      {val = {}, name = "empty table"},
       {val = {x=1}, name = "non-empty table"}
    }
    for _, tc in ipairs(test_cases) do
@@ -276,7 +309,8 @@ end
       {val = nil, name = "nil"},
       {val = false, name = "false"},
       {val = 0, name = "zero"},
-      {val = "", name = "empty string"}
+      {val = "", name = "empty string"},
+      {val = {}, name = "empty table"}
    }
    for _, tc in ipairs(test_cases) do
       result = (tc.val)??
@@ -296,21 +330,21 @@ end
 
 @Test function ShortCircuit()
    function sideEffect()
-      error("This function should not be called due to short-circuiting")
+      assert(false, "This function should not be called due to short-circuiting")
    end
    a = false
    b = true
 
    -- Short-circuit AND
    if (a?? and sideEffect()??) then
-      error("Should not enter this block due to short-circuiting")
+      assert(false, "Should not enter this block due to short-circuiting")
    end
 
    -- Short-circuit OR
    if (b?? or sideEffect()??) then
       -- Expected path, sideEffect should not be called
    else
-      error("Should enter this block since b is truthy")
+      assert(false, "Should enter this block since b is truthy")
    end
 end
 
@@ -330,7 +364,7 @@ end
 @Test function ArrayInConditional()
    local empty = array<int>
    if empty?? then
-      error("Should not enter if block for empty array")
+      assert(false, "Should not enter if block for empty array")
    end
 
    local filled = array<int, 3>
@@ -354,6 +388,22 @@ end
    assert((int_filled??) is true, "Non-empty int array should return true")
 end
 
+@Test function EmptyTablePresence()
+   local empty = { }
+   assert((empty??) is false, "Empty table should return false for ??")
+end
+
+@Test function NonEmptyTablePresence()
+   local named = { name = "table" }
+   assert((named??) is true, "Non-empty table should return true for ??")
+end
+
+@Test function TableClearedToEmptyPresence()
+   local value = { name = "table" }
+   value.name = nil
+   assert((value??) is false, "Table with all entries cleared should return false for ??")
+end
+
 @Test function ArrayInComprehensiveFalseyList()
    -- Verify arrays are now included in the falsey value set
    test_cases = {
@@ -362,10 +412,12 @@ end
       {val = 0, name = "zero", expected = false},
       {val = "", name = "empty string", expected = false},
       {val = array<int>, name = "empty array", expected = false},
+      {val = {}, name = "empty table", expected = false},
       {val = true, name = "true", expected = true},
       {val = 1, name = "one", expected = true},
       {val = "test", name = "non-empty string", expected = true},
-      {val = array<int, 3>, name = "non-empty array", expected = true}
+      {val = array<int, 3>, name = "non-empty array", expected = true},
+      {val = { name = "table" }, name = "non-empty table", expected = true}
    }
    for _, tc in ipairs(test_cases) do
       result = (tc.val)??

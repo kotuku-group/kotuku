@@ -30,6 +30,16 @@
 #include "lj_prng.h"
 #include "jit/frame_manager.h"
 #include "runtime/lj_object.h"
+#include "runtime/lj_struct.h"
+#include "runtime/lj_state.h"
+#include "runtime/lj_contract.h"
+#include "runtime/lj_thunk.h"
+#include "runtime/lj_proto_registry.h"
+#include "lib/lib_range.h"
+#include "../../defs.h"
+
+#include <cfloat>
+#include <cmath>
 
 // Some local macros to save typing. Undef'd at the end.
 #define IR(ref)         (&J->cur.ir[(ref)])
@@ -47,6 +57,143 @@ static TRef rec_tmpref(jit_State *J, TRef tr, int mode)
 {
    if (!LJ_DUALNUM and tref_isinteger(tr)) tr = emitir(IRTN(IR_CONV), tr, IRCONV_NUM_INT);
    return emitir(IRT(IR_TMPREF, IRT_PGC), tr, mode);
+}
+
+static TRef sload(jit_State *J, int32_t Slot);
+
+#define getslot(J, s)   (J->base[(s)] ? J->base[(s)] : sload(J, (int32_t)(s)))
+
+//********************************************************************************************************************
+// Materialise live trace slots back to the Lua stack before a throwable helper runs inside a recorded try block.
+
+static TRef rec_stack_slot_addr(jit_State *J, IRBuilder& Ir, int32_t AbsoluteSlot)
+{
+   lj_assertJ(AbsoluteSlot >= 0 and AbsoluteSlot < LJ_MAX_JSLOTS + LJ_STACK_EXTRA,
+      "stack materialisation slot out of range");
+   int32_t byte_offset = 8 * (AbsoluteSlot - 1 - LJ_FR2);
+   return Ir.emit(IRT(IR_ADD, IRT_PGC), REF_BASE, Ir.kint(byte_offset));
+}
+
+static void rec_emit_tvalue_store(jit_State *J, TRef SlotAddr, TRef ValueRef)
+{
+   if (tref_isnum(ValueRef)) {
+      emitir(IRT(IR_XSTORE, IRT_NUM), SlotAddr, ValueRef);
+   }
+   else if (tref_isint(ValueRef)) {
+#if LJ_DUALNUM
+      // With LJ_DUALNUM, IRT_INT is stored as a tagged integer TValue.
+      TRef store_ref = emitir(IRT(IR_CONV, IRT_I64), ValueRef,
+         (IRT_I64 << IRCONV_DSH) | IRT_INT);
+      store_ref = emitir_raw(IRT(IR_BOR, IRT_I64), store_ref,
+         lj_ir_kint64(J, uint64_t(LJ_TISNUM) << 47));
+      emitir(IRT(IR_XSTORE, IRT_I64), SlotAddr, store_ref);
+#else
+      // Without LJ_DUALNUM, IRT_INT must be converted and stored as an IRT_NUM TValue.
+      TRef store_ref = emitir(IRT(IR_CONV, IRT_NUM), ValueRef, IRCONV_NUM_INT);
+      emitir(IRT(IR_XSTORE, IRT_NUM), SlotAddr, store_ref);
+#endif
+   }
+   else if (tref_isgcv(ValueRef)) {
+      uint32_t itype = irt_toitype_(tref_type(ValueRef));
+      TRef store_ref = emitir_raw(IRT(IR_BOR, IRT_I64), ValueRef,
+         lj_ir_kint64(J, uint64_t(itype) << 47));
+      emitir(IRT(IR_XSTORE, IRT_I64), SlotAddr, store_ref);
+   }
+   else if (tref_ispri(ValueRef)) {
+      TValue tv;
+      setpriV(&tv, irt_toitype_(tref_type(ValueRef)));
+      emitir(IRT(IR_XSTORE, IRT_I64), SlotAddr, lj_ir_kint64(J, tv.u64));
+   }
+   else if (tref_islightud(ValueRef)) {
+      TRef store_ref = emitir_raw(IRT(IR_BOR, IRT_I64), ValueRef,
+         lj_ir_kint64(J, uint64_t(LJ_TLIGHTUD) << 47));
+      emitir(IRT(IR_XSTORE, IRT_I64), SlotAddr, store_ref);
+   }
+   else {
+      setintV(&J->errinfo, int32_t(tref_type(ValueRef)));
+      lj_trace_err_info(J, LJ_TRERR_NYIIR);
+   }
+}
+
+static void rec_materialise_slot_range(
+   jit_State *J, BCREG FirstSlot, BCREG SlotLimit, bool ForceLoad, bool TrackTryStores)
+{
+   BCREG slot_limit = SlotLimit;
+   if (slot_limit > J->maxslot) slot_limit = J->maxslot;
+   if (FirstSlot >= slot_limit) return;
+
+   IRBuilder ir(J);
+   bool stored = false;
+
+   for (BCREG slot = FirstSlot; slot < slot_limit; slot++) {
+      TRef value_ref = ForceLoad ? getslot(J, slot) : J->base[slot];
+      if (not value_ref or (value_ref & (TREF_FRAME | TREF_CONT))) continue;
+
+      int32_t absolute_slot = int32_t(J->baseslot) + int32_t(slot);
+      lj_assertJ(absolute_slot >= 0 and absolute_slot < LJ_MAX_JSLOTS + LJ_STACK_EXTRA,
+         "stack materialisation slot out of range");
+      if (TrackTryStores and not ForceLoad and J->trymat[absolute_slot] IS value_ref) {
+         J->try_skipped_stores++;
+         continue;
+      }
+
+      TRef slot_addr = rec_stack_slot_addr(J, ir, absolute_slot);
+      rec_emit_tvalue_store(J, slot_addr, value_ref);
+      if (TrackTryStores) {
+         J->trymat[absolute_slot] = value_ref;
+         J->try_stores++;
+         if (ForceLoad) J->try_enter_stores++;
+      }
+      stored = true;
+   }
+
+   if (stored) emitir_raw(IRT(IR_XBAR, IRT_NIL), 0, 0);
+}
+
+static void rec_try_materialise_slots(jit_State *J, bool ForceLoad, BCREG SlotLimit)
+{
+   rec_materialise_slot_range(J, 0, SlotLimit, ForceLoad, true);
+}
+
+static void rec_defer_materialise_slots(jit_State *J, BCREG CallableSlot, BCREG ArgumentCount)
+{
+   rec_materialise_slot_range(J, CallableSlot, BCREG(CallableSlot + ArgumentCount + 1), true, false);
+}
+
+void lj_record_try_materialise(jit_State *J)
+{
+   rec_try_materialise_slots(J, false, J->maxslot);
+}
+
+//********************************************************************************************************************
+// Return the active try depth for the frame where recording starts.
+
+static uint8_t rec_try_active_depth(jit_State *J)
+{
+   lua_State *L = J->L;
+   if (L->try_stack.depth IS 0) return 0;
+
+   ptrdiff_t frame_base = savestack(L, L->base);
+   uint8_t depth = 0;
+
+   for (int i = 0; i < L->try_stack.depth; i++) {
+      const TryFrame *try_frame = &L->try_stack.frames[i];
+      if (try_frame->func IS J->fn and try_frame->frame_base IS frame_base) depth++;
+   }
+
+   return depth;
+}
+
+static uint8_t rec_checkall_active_depth(jit_State *J)
+{
+   lua_State *L = J->L;
+   ptrdiff_t frame_base = savestack(L, L->base);
+   uint8_t depth = 0;
+   for (int i = 0; i < L->checkall_stack->depth; ++i) {
+      const CheckallFrame *frame = &L->checkall_stack->frames[i];
+      if (frame->func IS J->fn and frame->frame_base IS frame_base) depth++;
+   }
+   return depth;
 }
 
 //********************************************************************************************************************
@@ -71,6 +218,19 @@ struct RecordOps {
    TValue *rav() { return &ix.valv; }
    TValue *rbv() { return &ix.tabv; }
    TValue *rcv() { return &ix.keyv; }
+};
+
+//********************************************************************************************************************
+// Classify a runtime contract while recording.  Exact TValue tag checks use trace slot specialisation, while refined
+// range, callable, structure, object, userdata and array predicates emit dedicated guards.  Contracts whose dynamic or
+// identity requirements cannot be represented safely are classified as complex and remain interpreter-only.
+
+enum class RecordedContract : uint8_t {
+   Basic,
+   SideEffect,
+   Complex,
+   Mismatch,
+   Invalid
 };
 
 //********************************************************************************************************************
@@ -127,6 +287,20 @@ static void rec_check_ir(jit_State *J)
 //********************************************************************************************************************
 // Compare stack slots and frames of the recorder and the VM.
 
+static bool rec_is_live_frame_slot(cTValue *StackBase, cTValue *CurrentBase, cTValue *Candidate)
+{
+   cTValue *frame = CurrentBase - 1;
+   cTValue *root_frame = StackBase + FRC::MIN_BASESLOT - 1;
+   while (frame >= root_frame) {
+      if (frame IS Candidate) return true;
+      if (frame IS root_frame) break;
+      cTValue *previous_frame = frame_prev(frame);
+      lj_assertX(previous_frame < frame, "frame chain does not descend");
+      frame = previous_frame;
+   }
+   return false;
+}
+
 static void rec_check_slots(jit_State *J)
 {
    BCREG s, nslots = J->baseslot + J->maxslot;
@@ -150,16 +324,15 @@ static void rec_check_slots(jit_State *J)
          if (s IS 0) lj_assertJ(tref_isfunc(tr), "frame slot 0 is not a function");
          else if (s IS 1) lj_assertJ((tr & ~TREF_FRAME) IS 0, "bad frame slot 1");
          else if ((tr & TREF_FRAME)) {
-            // Check if this is a valid frame slot or a stale marker from a returned call.
-            // Stale TREF_FRAME can remain in slots after an inlined call returns and the slot
-            // is reused by subsequent code. Only validate frame slots that are actually part
-            // of the current frame chain (reachable from baseslot-1 via frame_delta).
-            GCobj* frame_obj = frame_gc(tv);
-            if (frame_obj and frame_obj->gch.gct IS ~LJ_TFUNC) {
-               // Valid frame - perform full validation
-               GCfunc* fn = gco_to_function(frame_obj);
+            // Stale frame markers can remain after an inlined call returns.  A reused VM stack cell may contain a
+            // function and resemble a frame, so validate only markers reachable through the live VM frame chain.
+            if (rec_is_live_frame_slot(base, J->L->base, tv)) {
+               GCfunc* fn = frame_func(tv);
                BCREG delta = (BCREG)(tv - frame_prev(tv));
-               lj_assertJ(not ref or ir_knum(ir)->u64 IS tv->u64, "frame slot %d PC mismatch", s);
+               lj_assertJ(not ref or ir_knum(ir)->u64 IS tv->u64,
+                  "frame slot %d PC mismatch: recorded=%p live=%p baseslot=%d maxslot=%d parent=%d exit=%d",
+                  s, (void*)(uintptr_t)ir_knum(ir)->u64, (void*)(uintptr_t)tv->u64, J->baseslot, J->maxslot,
+                  J->parent, J->exitno);
                tr = J->slot[s - 1];
                ir = IR(tref_ref(tr));
                lj_assertJ(tref_isfunc(tr), "frame slot %d is not a function", s - 1);
@@ -169,7 +342,6 @@ static void rec_check_slots(jit_State *J)
                depth++;
             }
             else {
-               // Stale TREF_FRAME from a returned inlined call. Clear it to avoid confusion.
                J->slot[s] = 0;
             }
          }
@@ -231,9 +403,314 @@ static TRef sload(jit_State *J, int32_t slot)
 //********************************************************************************************************************
 // Get TRef from slot. Load slot and specialise if not done already.
 
-#define getslot(J, s)   (J->base[(s)] ? J->base[(s)] : sload(J, (int32_t)(s)))
 // Note: getslot macro retained for compatibility; SlotView can be used for new code:
 //   SlotView slots(J); TRef tr = slots.is_loaded(s) ? slots[s] : sload(J, s);
+
+//********************************************************************************************************************
+// Record exact runtime contracts.  Stack specialisation handles simple TValue tags.  Predicates that refine a tag
+// emit their own guards so a failed guard resumes at BC_CONTRACT and preserves the interpreter's diagnostic.
+
+TRef lj_record_range_metatable(jit_State *J)
+{
+   IRBuilder ir(J);
+   GCtab *registry_table = tabV(registry(J->L));
+   GCstr *range_name = lj_str_newz(J->L, RANGE_METATABLE);
+
+   RecordIndex lookup{};
+   settabV(J->L, &lookup.tabv, registry_table);
+   setstrV(J->L, &lookup.keyv, range_name);
+   lookup.tab = ir.ktab(registry_table);
+   lookup.key = ir.kstr(range_name);
+   return lj_record_idx(J, &lookup);
+}
+
+static bool rec_contract_is_range(jit_State *J, cTValue *Value)
+{
+   if (not tvisudata(Value)) return false;
+   GCtab *metatable = tabref(udataV(Value)->metatable);
+   if (not metatable) return false;
+
+   cTValue *registered = lj_tab_getstr(tabV(registry(J->L)), lj_str_newz(J->L, RANGE_METATABLE));
+   return registered and tvistab(registered) and tabV(registered) IS metatable;
+}
+
+static RecordedContract rec_contract_guard_range(jit_State *J, TRef ValueRef, cTValue *Value, bool Expected)
+{
+   bool is_range = rec_contract_is_range(J, Value);
+   if (is_range != Expected) return RecordedContract::Mismatch;
+
+   TRef registered_ref = lj_record_range_metatable(J);
+   if (not tref_istab(registered_ref)) return RecordedContract::Mismatch;
+
+   IRBuilder ir(J);
+   TRef metatable_ref = ir.fload_tab(ValueRef, IRFL_UDATA_META);
+   if (Expected) ir.guard_eq(metatable_ref, registered_ref, IRT_TAB);
+   else ir.guard_ne(metatable_ref, registered_ref, IRT_TAB);
+   return RecordedContract::Basic;
+}
+
+static RecordedContract rec_contract_guard_callable(jit_State *J, TRef ValueRef, cTValue *Value)
+{
+   if (tvisfunc(Value)) return RecordedContract::Basic;
+
+   RecordIndex lookup{};
+   lookup.tab = ValueRef;
+   copyTV(J->L, &lookup.tabv, Value);
+   if (not lj_record_mm_lookup(J, &lookup, MM_call) or not tref_isfunc(lookup.mobj)) {
+      return RecordedContract::Mismatch;
+   }
+   return RecordedContract::Basic;
+}
+
+static RecordedContract rec_contract_guard_struct(
+   jit_State *J, TRef ValueRef, cTValue *Value, std::string_view Name)
+{
+   if (not tvisstruct(Value)) return RecordedContract::Mismatch;
+   if (Name.empty()) return RecordedContract::Basic;
+
+   struct_record *definition = find_struct(J->L, Name);
+   if (not definition or structV(Value)->def != definition) return RecordedContract::Mismatch;
+
+   IRBuilder ir(J);
+   TRef definition_ref = ir.fload(ValueRef, IRFL_STRUCT_DEF, IRT_PTR);
+   ir.guard_eq(definition_ref, ir.kkptr(definition), IRT_PTR);
+   return RecordedContract::Basic;
+}
+
+static RecordedContract rec_contract_guard_object(
+   jit_State *J, TRef ValueRef, cTValue *Value, CLASSID ExpectedClassId)
+{
+   if (not tvisobject(Value)) return RecordedContract::Mismatch;
+   if (ExpectedClassId IS CLASSID::NIL) return RecordedContract::Basic;
+
+   GCobject *object = objectV(Value);
+   if (not lj_meta_object_class_matches(object, ExpectedClassId)) {
+      return RecordedContract::Mismatch;
+   }
+
+   IRBuilder ir(J);
+   TRef class_ref = ir.fload(ValueRef, IRFL_OBJ_CLASSPTR, IRT_PTR);
+   ir.guard_eq(class_ref, ir.kkptr(object->classptr), IRT_PTR);
+   return RecordedContract::Basic;
+}
+
+static RecordedContract rec_contract_guard_userdata(jit_State *J, TRef ValueRef, cTValue *Value)
+{
+   if (tvislightud(Value)) return RecordedContract::Basic;
+   if (not tvisudata(Value) or lj_is_thunk(Value)) return RecordedContract::Mismatch;
+
+   IRBuilder ir(J);
+   TRef userdata_type = ir.fload(ValueRef, IRFL_UDATA_UDTYPE, IRT_U8);
+   ir.guard_ne_int(userdata_type, ir.kint(UDTYPE_THUNK));
+   return rec_contract_guard_range(J, ValueRef, Value, false);
+}
+
+static RecordedContract rec_contract_guard_array(
+   jit_State *J, TRef ValueRef, cTValue *Value, const RuntimeContractEntry &Entry)
+{
+   if (not tvisarray(Value)) return RecordedContract::Mismatch;
+   if (Entry.array_element_type IS AET::ANY) return RecordedContract::Basic;
+
+   GCarray *array = arrayV(Value);
+   AET observed_element_type = array->elemtype;
+   if (Entry.array_element_type IS AET::STR_GC) {
+      if (observed_element_type != AET::STR_GC and observed_element_type != AET::CSTR and
+          observed_element_type != AET::STR_CPP) return RecordedContract::Mismatch;
+   }
+   else if (observed_element_type != Entry.array_element_type) return RecordedContract::Mismatch;
+
+   IRBuilder ir(J);
+   TRef element_type_ref = ir.fload(ValueRef, IRFL_ARRAY_ELEMTYPE, IRT_U8);
+   ir.guard_eq_int(element_type_ref, ir.kint(int32_t(observed_element_type)));
+
+   if (Entry.array_element_type IS AET::STRUCT) {
+      struct_record *definition = find_struct(J->L, Entry.constraint_name);
+      if (not definition or array->struct_definition() != definition) return RecordedContract::Mismatch;
+      TRef definition_ref = ir.fload(ValueRef, IRFL_ARRAY_STRUCTDEF, IRT_PTR);
+      ir.guard_eq(definition_ref, ir.kkptr(definition), IRT_PTR);
+   }
+   else if (Entry.array_element_type IS AET::ARRAY and not Entry.constraint_name.empty()) {
+      if (not lj_array_member_identity_matches(array, Entry.constraint_name)) return RecordedContract::Mismatch;
+      std::string expected_identity = std::format("array<{}>", Entry.constraint_name);
+      if (not lj_array_identity_matches(array, expected_identity)) return RecordedContract::Complex;
+      if (GCstr *identity = array->nested_identity()) {
+         TRef identity_ref = ir.fload(ValueRef, IRFL_ARRAY_IDENTITY, IRT_STR);
+         ir.guard_eq(identity_ref, ir.kstr(identity), IRT_STR);
+      }
+   }
+
+   return RecordedContract::Basic;
+}
+
+static RecordedContract rec_contract_record(jit_State *J, BCREG Base, GCstr *Encoded)
+{
+   RuntimeContractDescriptor descriptor;
+   if (not decode_runtime_contract(Encoded, descriptor)) return RecordedContract::Invalid;
+   if (descriptor.dynamic_count()) return RecordedContract::Complex;
+
+   // A declaration finaliser can validate or publish environment policy, reject a conflicting redeclaration and
+   // enforce const lifecycle rules.  These effects are not pure value predicates and must remain interpreter-owned,
+   // even when an equivalent policy currently exists.  Other boundaries cannot match, declaration pre-contracts
+   // carry Initialising, and ordinary assignment hints carry GlobalHint.
+   if (descriptor.boundary IS ContractBoundary::Global and descriptor.contract_count IS 1 and
+       not contract_entry_is_initialising(descriptor.entries[0]) and
+       not contract_entry_is_global_hint(descriptor.entries[0])) return RecordedContract::SideEffect;
+
+   if (descriptor.boundary IS ContractBoundary::Global and descriptor.contract_count IS 1 and
+       contract_entry_is_global_hint(descriptor.entries[0])) {
+      const RuntimeContractEntry &entry = descriptor.entries[0];
+      if (entry.label.empty()) return RecordedContract::Invalid;
+      GCtab *environment = tabref(curr_func(J->L)->c.env);
+      GCstr *global_name = lj_str_new(J->L, entry.label.data(), entry.label.size());
+      if (lj_tab_get_global_contract(environment, global_name)) return RecordedContract::Basic;
+      return RecordedContract::SideEffect;
+   }
+
+   for (uint8_t i = 0; i < descriptor.static_value_count; ++i) {
+      const RuntimeContractEntry *entry = descriptor.entry_for(i);
+      if (not entry) continue;
+
+      cTValue *value = J->L->base + Base + i;
+      bool nullable = (entry->flags & contract_flag(ContractEntryFlag::Nullable)) != 0;
+      bool required = (entry->flags & contract_flag(ContractEntryFlag::Required)) != 0;
+      if (tvisnil(value)) {
+         if (not nullable or required) return RecordedContract::Mismatch;
+         (void)getslot(J, Base + i);
+         continue;
+      }
+
+      if (lj_is_thunk(value)) return RecordedContract::Complex;
+
+      TRef value_ref = getslot(J, Base + i);
+      RecordedContract result = RecordedContract::Basic;
+      switch (entry->type) {
+         case TiriType::Any:
+         case TiriType::Unknown: break;
+         case TiriType::Nil:     result = RecordedContract::Mismatch; break;
+         case TiriType::Bool:
+            if (not tvisbool(value)) result = RecordedContract::Mismatch;
+            break;
+         case TiriType::Num:
+            if (not tvisnumber(value)) result = RecordedContract::Mismatch;
+            break;
+         case TiriType::Str:
+            if (not tvisstr(value)) result = RecordedContract::Mismatch;
+            break;
+         case TiriType::Table:
+            if (not tvistab(value)) result = RecordedContract::Mismatch;
+            break;
+         case TiriType::Array:
+            result = rec_contract_guard_array(J, value_ref, value, *entry);
+            break;
+         case TiriType::Object:
+            result = rec_contract_guard_object(J, value_ref, value, entry->object_class_id);
+            break;
+         case TiriType::Func:
+            result = rec_contract_guard_callable(J, value_ref, value);
+            break;
+         case TiriType::Struct:
+            result = rec_contract_guard_struct(J, value_ref, value, entry->constraint_name);
+            break;
+         case TiriType::Range:
+            if (not tvisudata(value)) result = RecordedContract::Mismatch;
+            else result = rec_contract_guard_range(J, value_ref, value, true);
+            break;
+         case TiriType::Userdata:
+            result = rec_contract_guard_userdata(J, value_ref, value);
+            break;
+      }
+      if (result != RecordedContract::Basic) return result;
+   }
+   return RecordedContract::Basic;
+}
+
+static TRef rec_type_test(jit_State *J, BCREG Slot, GCstr *Encoded)
+{
+   RuntimeContractDescriptor descriptor;
+   if (not decode_runtime_contract(Encoded, descriptor) or descriptor.contract_count != 1) return 0;
+
+   const RuntimeContractEntry &entry = descriptor.entries[0];
+   cTValue *value = J->L->base + Slot;
+   if (lj_is_thunk(value)) return 0;
+
+   TRef value_ref = getslot(J, Slot);
+   bool matched = false;
+   RecordedContract guard = RecordedContract::Basic;
+   if (tvisnil(value)) matched = entry.type IS TiriType::Any or entry.type IS TiriType::Nil;
+   else {
+      switch (entry.type) {
+         case TiriType::Any: matched = true; break;
+         case TiriType::Unknown: matched = true; break;
+         case TiriType::Nil: matched = false; break;
+         case TiriType::Bool: matched = tvisbool(value); break;
+         case TiriType::Num: matched = tvisnumber(value); break;
+         case TiriType::Str: matched = tvisstr(value); break;
+         case TiriType::Table: matched = tvistab(value); break;
+         case TiriType::Array:
+            guard = rec_contract_guard_array(J, value_ref, value, entry);
+            matched = guard IS RecordedContract::Basic;
+            break;
+         case TiriType::Func:
+            guard = rec_contract_guard_callable(J, value_ref, value);
+            matched = guard IS RecordedContract::Basic;
+            break;
+         case TiriType::Struct:
+            guard = rec_contract_guard_struct(J, value_ref, value, entry.constraint_name);
+            matched = guard IS RecordedContract::Basic;
+            break;
+         case TiriType::Object:
+            guard = rec_contract_guard_object(J, value_ref, value, entry.object_class_id);
+            matched = guard IS RecordedContract::Basic;
+            break;
+         case TiriType::Range:
+            guard = rec_contract_guard_range(J, value_ref, value, true);
+            matched = guard IS RecordedContract::Basic;
+            break;
+         case TiriType::Userdata:
+            guard = rec_contract_guard_userdata(J, value_ref, value);
+            matched = guard IS RecordedContract::Basic;
+            break;
+      }
+   }
+
+   // A failed constrained check needs a guard for the observed aggregate metadata, not merely its outer TValue tag.
+   if (not matched) {
+      if (tvisarray(value)) {
+         RuntimeContractEntry observed;
+         observed.type = TiriType::Array;
+         observed.array_element_type = arrayV(value)->elemtype;
+         if (struct_record *definition = arrayV(value)->struct_definition()) {
+            observed.constraint_name = definition->Name;
+         }
+         else if (GCstr *identity = arrayV(value)->nested_identity()) {
+            std::string_view outer(strdata(identity), identity->len);
+            if (outer.starts_with("array<") and outer.ends_with('>')) {
+               observed.constraint_name = outer.substr(6, outer.size() - 7);
+            }
+         }
+         if (rec_contract_guard_array(J, value_ref, value, observed) != RecordedContract::Basic) return 0;
+      }
+      else if (tvisobject(value)) {
+         GCobject *object = objectV(value);
+         if (not object->classptr or
+             rec_contract_guard_object(J, value_ref, value, object->classptr->ClassID) != RecordedContract::Basic) {
+            return 0;
+         }
+      }
+      else if (tvisstruct(value)) {
+         struct_record *definition = structV(value)->def;
+         if (not definition or
+             rec_contract_guard_struct(J, value_ref, value, definition->Name) != RecordedContract::Basic) return 0;
+      }
+      else if (tvisudata(value)) {
+         bool observed_range = rec_contract_is_range(J, value);
+         if (rec_contract_guard_range(J, value_ref, value, observed_range) != RecordedContract::Basic) return 0;
+      }
+   }
+
+   if ((entry.flags & contract_flag(ContractEntryFlag::Negated)) != 0) matched = not matched;
+   return matched ? TREF_TRUE : TREF_FALSE;
+}
 
 //********************************************************************************************************************
 // Get TRef for current function.
@@ -415,6 +892,23 @@ static TRef fori_arg(jit_State *J, const BCIns *fori, BCREG slot, IRType t, int 
 }
 
 //********************************************************************************************************************
+// Load a range-loop number, retaining hidden loop state across a root trace boundary when requested.
+
+static TRef rec_range_number(jit_State *J, BCREG Slot, int LoadMode = 0)
+{
+   if (not tvisnumber(&J->L->base[Slot])) lj_trace_err(J, LJ_TRERR_BADTYPE);
+   TRef current = J->base[Slot];
+   // Preserve a RANGEPREP alias to another slot; only replace a load of the hidden slot itself.
+   if (LoadMode and (not current or
+       (not tref_isk(current) and IR(tref_ref(current))->o IS IR_SLOAD and
+        IR(tref_ref(current))->op1 IS J->baseslot + Slot and
+        not (IR(tref_ref(current))->op2 & IRSLOAD_INHERIT)))) {
+      return fori_load(J, Slot, IRT_NUM, LoadMode);
+   }
+   return lj_ir_tonum(J, getslot(J, Slot));
+}
+
+//********************************************************************************************************************
 // Return the direction of the FOR loop iterator.
 // It's important to exactly reproduce the semantics of the interpreter.
 
@@ -426,8 +920,16 @@ static int rec_for_direction(cTValue *o)
 //********************************************************************************************************************
 // Simulate the runtime behavior of the FOR loop iterator.
 
-static LoopEvent rec_for_iter(IROp* op, cTValue *o, int isforl)
+static LoopEvent rec_for_iter(jit_State *J, IROp* op, cTValue *o, int isforl)
 {
+#if LJ_DUALNUM
+   if (not tvisnumber(&o[FORL_STOP]) or not tvisnumber(&o[FORL_IDX]) or not tvisnumber(&o[FORL_STEP]))
+      lj_trace_err(J, LJ_TRERR_BADTYPE);
+#else
+   if (not tvisnum(&o[FORL_STOP]) or not tvisnum(&o[FORL_IDX]) or not tvisnum(&o[FORL_STEP]))
+      lj_trace_err(J, LJ_TRERR_BADTYPE);
+#endif
+
    lua_Number stopv = numberVnum(&o[FORL_STOP]);
    lua_Number idxv = numberVnum(&o[FORL_IDX]);
    lua_Number stepv = numberVnum(&o[FORL_STEP]);
@@ -531,6 +1033,8 @@ static LoopEvent rec_for(jit_State *J, const BCIns *fori, int isforl)
 {
    IRBuilder ir(J);
    BCREG ra = bc_a(*fori);
+   bool range_loop = bc_op(fori[1]) IS BC_RANGEVAL and bc_a(fori[1]) IS ra;
+   BCREG loop_slots = range_loop ? BCREG(RANGE_FOR_SLOTS) : BCREG(FORL_EXT + 1);
    TValue* tv = &J->L->base[ra];
    TRef* tr = &J->base[ra];
    IROp op;
@@ -570,9 +1074,16 @@ static LoopEvent rec_for(jit_State *J, const BCIns *fori, int isforl)
       rec_for_check(J, t, rec_for_direction(&tv[FORL_STEP]), stop, tr[FORL_STEP], 1);
    }
 
-   ev = rec_for_iter(&op, tv, isforl);
+   if (range_loop) {
+      int inherited_constant = IRSLOAD_INHERIT | IRSLOAD_READONLY;
+      rec_range_number(J, ra + RANGE_FOR_START, inherited_constant);
+      rec_range_number(J, ra + RANGE_FOR_VALUE_STEP, inherited_constant);
+      rec_range_number(J, ra + RANGE_FOR_FLAGS, inherited_constant);
+   }
+
+   ev = rec_for_iter(J, &op, tv, isforl);
    if (ev IS LOOPEV_LEAVE) {
-      J->maxslot = ra + FORL_EXT + 1;
+      J->maxslot = ra + loop_slots;
       J->pc = fori + 1;
    }
    else {
@@ -589,7 +1100,7 @@ static LoopEvent rec_for(jit_State *J, const BCIns *fori, int isforl)
       J->pc = fori + bc_j(*fori) + 1;
    }
    else {
-      J->maxslot = ra + FORL_EXT + 1;
+      J->maxslot = ra + loop_slots;
       J->pc = fori + 1;
    }
 
@@ -737,8 +1248,6 @@ static LoopEvent rec_itern(jit_State *J, BCREG ra, BCREG rb)
 #endif
 }
 
-static TRef rec_array_xload(jit_State *J, TRef ArrayRef, TRef IdxRef, GCarray *Arr, int32_t IdxInt);
-
 //********************************************************************************************************************
 // Record ITERA.
 
@@ -790,7 +1299,7 @@ static LoopEvent rec_itera(jit_State *J, BCREG ra, BCREG rb)
    ir.guard_int(IR_ULT, idx_ref, len_ref);
    if (nres IS 2) {
       // Try inline path for numeric types
-      value_ref = rec_array_xload(J, arr_ref, idx_ref, arr, idx_int);
+      value_ref = lj_record_array_xload(J, arr_ref, idx_ref, arr, idx_int);
       if (not value_ref) {
          // Fallback: C call for non-inline types
          TValue result_tv;
@@ -855,92 +1364,508 @@ static void rec_isarr(jit_State *J, BCREG ra)
 //********************************************************************************************************************
 // Record calls and returns
 
+// Dynamic and trusted inferred results specialise calls by prototype because their metadata describes the prototype.
+// Contextual calls also require prototype guards because their virtual snapshots cannot grow direct side traces.
+
+static bool rec_proto_specialise_by_prototype(const GCproto *Proto)
+{
+   if (Proto->flags >= PROTO_CLC_POLY) return true;
+   const auto signature = proto_signature(Proto);
+   if (not signature) return false;
+   if (signature->flags & proto_signature_flag(ProtoSignatureFlag::DynamicResults)) return true;
+
+   // Deterministically inferred result signatures describe the prototype rather than a particular closure.  Retain
+   // prototype specialisation for these functions; closure specialisation produces substantially slower traces for
+   // multi-result forwarding and filtering.
+
+   const auto results = proto_result_types(Proto);
+   for (uint8_t i = 0; i < signature->result_entry_count; ++i) {
+      if (proto_type_origin(results[i]) IS ProtoTypeOrigin::Inferred) return true;
+   }
+   return false;
+}
+
+// Identify closures whose identity necessarily changes on each allocation.
+
+static bool rec_is_fresh_function(jit_State *J, TRef Ref)
+{
+   if (tref_isk(Ref)) return false;
+   const IRIns *allocation = IR(tref_ref(Ref));
+   return allocation->o IS IR_CALLA and
+      (allocation->op2 IS IRCALL_lj_func_newL_zero or allocation->op2 IS IRCALL_lj_func_newL_inherited or
+       allocation->op2 IS IRCALL_lj_func_newL_local);
+}
+
 // Specialise to the runtime value of the called function or its prototype.
 
-static TRef rec_call_specialise(jit_State *J, GCfunc* fn, TRef tr)
+static TRef rec_call_specialise(jit_State *J, GCfunc *Function, TRef Ref, bool PrototypeSpecialisation)
 {
    IRBuilder ir(J);
    TRef kfunc;
-   if (isluafunc(fn)) {
-      GCproto* pt = funcproto(fn);
+   if (isluafunc(Function)) {
+      GCproto* pt = funcproto(Function);
+      // Fresh allocations cannot specialise on the recording-time closure identity, even before CLC_POLY.
+      if (rec_is_fresh_function(J, Ref)) PrototypeSpecialisation = true;
       // Too many closures created? Probably not a monomorphic function.
-      if (pt->flags >= PROTO_CLC_POLY) {  // Specialise to prototype instead.
-         TRef trpt = ir.fload_ptr(tr, IRFL_FUNC_PC);
+      if (PrototypeSpecialisation or rec_proto_specialise_by_prototype(pt)) {  // Specialise to prototype instead.
+         TRef trpt = ir.fload_ptr(Ref, IRFL_FUNC_PC);
          ir.guard_eq(trpt, ir.kptr(proto_bc(pt)), IRT_PGC);
          (void)lj_ir_kgc(J, obj2gco(pt), IRT_PROTO);  //  Prevent GC of proto.
-         return tr;
+         return Ref;
       }
    }
    // Otherwise specialise to the function (closure) value itself.
-   kfunc = ir.kfunc(fn);
-   ir.guard_eq(tr, kfunc, IRT_FUNC);
+   kfunc = ir.kfunc(Function);
+   ir.guard_eq(Ref, kfunc, IRT_FUNC);
    return kfunc;
 }
 
 //********************************************************************************************************************
 // Record call setup.
 
-static void rec_call_setup(jit_State *J, BCREG func, ptrdiff_t nargs)
+static GCfunc *rec_call_setup(
+   jit_State *J, BCREG Func, ptrdiff_t ArgumentCount, TRef *MetamethodReceiver = nullptr)
 {
    RecordIndex ix;
-   TValue* functv = &J->L->base[func];
-   TRef kfunc, * fbase = &J->base[func];
+   TValue* functv = &J->L->base[Func];
+   TRef kfunc, * fbase = &J->base[Func];
    ptrdiff_t i;
+   TRef metamethod_receiver = 0;
 
-   (void)getslot(J, func); //  Ensure func has a reference.
-   for (i = 1; i <= nargs; i++) (void)getslot(J, func + FRC::HEADER_SIZE + i - 1);  //  Ensure all args have a reference (args start at func+2).
+   (void)getslot(J, Func); //  Ensure func has a reference.
+   for (i = 1; i <= ArgumentCount; i++) {
+      (void)getslot(J, Func + FRC::HEADER_SIZE + i - 1);  //  Args start after the frame header.
+   }
 
    if (not tref_isfunc(fbase[0])) {  // Resolve __call metamethod.
+      TRef receiver = fbase[0];
       ix.tab = fbase[0];
       copyTV(J->L, &ix.tabv, functv);
       if (not lj_record_mm_lookup(J, &ix, MM_call) or !tref_isfunc(ix.mobj)) lj_trace_err(J, LJ_TRERR_NOMM);
-      for (i = ++nargs; i > 1; i--) fbase[i + 1] = fbase[i];
-      fbase[2] = fbase[0];
+      if (tref_istab(receiver)) metamethod_receiver = receiver;
+      else {
+         for (i = ++ArgumentCount; i > 1; i--) fbase[i + 1] = fbase[i];
+         fbase[FRC::HEADER_SIZE] = receiver;
+      }
       fbase[0] = ix.mobj;  //  Replace function.
       functv = &ix.mobjv;
    }
 
-   kfunc = rec_call_specialise(J, funcV(functv), fbase[0]);
+   BCOp call_op = bc_op(*J->pc);
+   bool contextual_call = call_op IS BC_CTXCALL or call_op IS BC_CTXCALLM or call_op IS BC_CTXCALLT;
+   // Virtual contextual activations cannot link side traces directly because their runtime state is materialised only
+   // when an exit resumes in the interpreter.  Guard Lua callees by prototype so fresh equivalent closures reuse the
+   // parent trace instead of repeatedly taking an exit whose snapshot cannot grow a side trace.
+   kfunc = rec_call_specialise(J, funcV(functv), fbase[0], contextual_call);
    fbase[0] = kfunc;
-   fbase[1] = TREF_FRAME;
-   J->maxslot = (BCREG)nargs;
+   fbase[1] = 0;
+   J->maxslot = (BCREG)ArgumentCount;
+   if (MetamethodReceiver) *MetamethodReceiver = metamethod_receiver;
+   return funcV(functv);
+}
+
+// Record an ordinary contextual activation. The table reference remains live in IR and the owner address is derived
+// from REF_BASE, so stack relocation cannot invalidate context ownership. Guards at CTXENTER resume before entry;
+// guards in the call or callee resume with the activation already installed; guards after CTXLEAVE see it restored.
+
+static bool rec_context_is_tail_call(jit_State *J, BCREG CallBase)
+{
+   GCproto *current_proto = curr_proto(J->L);
+   const BCIns *limit = proto_bc(current_proto) + current_proto->sizebc;
+   for (const BCIns *pc = J->pc + 1; pc < limit; pc++) {
+      BCOp op = bc_op(*pc);
+      if ((op IS BC_CTXCALL or op IS BC_CTXCALLM or op IS BC_CTXCALLT) and bc_a(*pc) IS CallBase) {
+         return op IS BC_CTXCALLT;
+      }
+   }
+   return false;
+}
+
+static bool rec_context_state_is_virtual(uint8_t State)
+{
+   return State IS CONTEXT_CALL_VIRTUAL or State IS CONTEXT_CALL_METAMETHOD_VIRTUAL;
+}
+
+static bool rec_context_state_is_metamethod(uint8_t State)
+{
+   return State IS CONTEXT_CALL_METAMETHOD_VIRTUAL or State IS CONTEXT_CALL_METAMETHOD_MATERIALISED;
+}
+
+static TRef rec_context_current(jit_State *J)
+{
+   for (int32_t slot = int32_t(J->baseslot) - 1; slot >= 0; slot--) {
+      if (rec_context_state_is_virtual(J->context_call_state[slot])) return J->context_call_receiver[slot];
+   }
+   return lj_ir_call(J, IRCALL_lj_context_current_jit);
+}
+
+static uint32_t rec_context_virtual_count(const jit_State *J)
+{
+   uint32_t count = 0;
+   for (size_t slot = 0; slot < std::size(J->context_call_state); slot++) {
+      if (rec_context_state_is_virtual(J->context_call_state[slot])) count++;
+   }
+   return count;
+}
+
+static void rec_context_materialise(
+   jit_State *J, ContextMaterialisationReason Reason, const GCfunc *Callable = nullptr)
+{
+   if (J->context_virtual_slot < 0) return;
+
+   lj_context_debug_materialise(J->L, Reason, Callable);
+   IRBuilder ir(J);
+   for (size_t function_slot = 0; function_slot < std::size(J->context_call_state); function_slot++) {
+      uint8_t context_state = J->context_call_state[function_slot];
+      if (not rec_context_state_is_virtual(context_state)) continue;
+      TRef receiver = J->context_call_receiver[function_slot];
+      lj_assertJ(tref_istab(receiver), "virtual context receiver is not a table");
+      int32_t owner_slot = int32_t(function_slot) + 1 + LJ_FR2;
+      TRef owner_base = rec_stack_slot_addr(J, ir, owner_slot);
+      lj_ir_call(J, IRCALL_lj_context_enter_jit, receiver, owner_base);
+      lj_context_debug_virtual_leave(J->L);
+      J->context_call_state[function_slot] = context_state IS CONTEXT_CALL_METAMETHOD_VIRTUAL ?
+         CONTEXT_CALL_METAMETHOD_MATERIALISED : CONTEXT_CALL_MATERIALISED;
+   }
+   J->context_virtual_slot = -1;
+   // Guards emitted later in the same bytecode must not reuse a snapshot that still describes virtual state.
+   lj_snap_add(J);
+}
+
+static void rec_context_enter_metamethod(jit_State *J, BCREG CallBase, TRef Receiver)
+{
+   if (not tref_istab(Receiver)) return;
+
+   int32_t function_slot = int32_t(J->baseslot) + int32_t(CallBase);
+   J->context_call_func[function_slot] = getslot(J, CallBase);
+   J->context_call_receiver[function_slot] = Receiver;
+   uint32_t virtual_count = rec_context_virtual_count(J);
+   if (virtual_count >= LJ_MAX_VIRTUAL_CONTEXTS) {
+      cTValue *callable = &J->L->base[CallBase];
+      rec_context_materialise(
+         J, ContextMaterialisationReason::UnsupportedBoundary, tvisfunc(callable) ? funcV(callable) : nullptr);
+      virtual_count = 0;
+   }
+   J->context_call_state[function_slot] = CONTEXT_CALL_METAMETHOD_VIRTUAL;
+   J->context_call_activation_count++;
+   J->context_virtual_slot = function_slot;
+   lj_context_debug_virtual_enter(J->L, virtual_count + 1);
+   J->needsnap = 1;
+}
+
+static void rec_context_leave_metamethod(jit_State *J)
+{
+   int32_t function_slot = int32_t(J->baseslot) + FRC::FUNC_SLOT_OFFSET;
+   TValue *frame = J->L->base - 1;
+   if (frame_isvarg(frame)) function_slot -= int32_t(frame_delta(frame));
+   uint8_t context_state = J->context_call_state[function_slot];
+   if (not rec_context_state_is_metamethod(context_state)) return;
+
+   if (context_state IS CONTEXT_CALL_METAMETHOD_VIRTUAL) {
+      lj_assertJ(J->context_virtual_slot IS function_slot, "virtual metamethod context leave has inconsistent owner");
+      J->context_virtual_slot = -1;
+      for (int32_t slot = function_slot - 1; slot >= 0; slot--) {
+         if (rec_context_state_is_virtual(J->context_call_state[slot])) {
+            J->context_virtual_slot = slot;
+            break;
+         }
+      }
+      lj_context_debug_virtual_leave(J->L);
+   }
+   else {
+      IRBuilder ir(J);
+      TRef owner_base = rec_stack_slot_addr(J, ir, function_slot + 1 + LJ_FR2);
+      lj_ir_call(J, IRCALL_lj_context_leave_jit, owner_base);
+   }
+
+   lj_assertJ(J->context_call_activation_count > 0, "metamethod context activation count underflow");
+   J->context_call_activation_count--;
+   J->context_call_func[function_slot] = 0;
+   J->context_call_receiver[function_slot] = 0;
+   J->context_call_result[function_slot] = 0;
+   J->context_call_state[function_slot] = CONTEXT_CALL_NONE;
+   J->needsnap = 1;
+}
+
+static void rec_context_enter(jit_State *J, BCREG CallBase)
+{
+   cTValue *callable = &J->L->base[CallBase];
+   bool tail_call = rec_context_is_tail_call(J, CallBase);
+   bool native_target = (not tvisfunc(callable) or not isluafunc(funcV(callable))) and not tail_call;
+
+   TRef receiver = getslot(J, int32_t(CallBase) - 1);
+   if (not tref_istab(receiver)) {
+      return;
+   }
+
+   // An ordinary table inherits the caller's context.  Record that before the callable overwrites its receiver slot so
+   // CTXLEAVE can still perform result compaction without attempting to restore an activation.
+   //
+   // Contextuality is a monotonic bit in the shared flags byte, so guarding the observed state is sufficient: a table
+   // designated later side-exits the trace and the recompilation specialises to the contextual path.
+   {
+      IRBuilder ir(J);
+      TRef flags = ir.fload(receiver, IRFL_TAB_FLAGS, IRT_U8);
+      TRef designated = ir.emit_int(IR_BAND, flags, ir.kint(TAB_CONTEXTUAL));
+      if (not lj_tab_is_contextual(tabV(&J->L->base[CallBase - 1]))) {
+         ir.guard_eq_int(designated, ir.kint(0));
+         J->context_call_state[int32_t(J->baseslot) + int32_t(CallBase)] = CONTEXT_CALL_EXEMPT;
+         return;
+      }
+      ir.guard_ne_int(designated, ir.kint(0));
+   }
+
+   if (tail_call) {
+      rec_context_materialise(
+         J, ContextMaterialisationReason::TailCall, tvisfunc(callable) ? funcV(callable) : nullptr);
+   }
+   else if (native_target) {
+      rec_context_materialise(
+         J, ContextMaterialisationReason::NativeCall, tvisfunc(callable) ? funcV(callable) : nullptr);
+   }
+
+   int32_t function_slot = int32_t(J->baseslot) + int32_t(CallBase);
+   J->context_call_func[function_slot] = getslot(J, CallBase);
+   if (native_target) return;
+
+   if (not tail_call) {
+      J->context_call_receiver[function_slot] = receiver;
+      uint32_t virtual_count = rec_context_virtual_count(J);
+      if (virtual_count >= LJ_MAX_VIRTUAL_CONTEXTS) {
+         rec_context_materialise(J, ContextMaterialisationReason::UnsupportedBoundary, funcV(callable));
+         virtual_count = 0;
+      }
+      J->context_call_state[function_slot] = CONTEXT_CALL_VIRTUAL;
+      J->context_call_activation_count++;
+      J->context_virtual_slot = function_slot;
+      lj_context_debug_virtual_enter(J->L, virtual_count + 1);
+      J->needsnap = 1;
+      return;
+   }
+   IRBuilder ir(J);
+   int32_t owner_slot = int32_t(J->baseslot) + int32_t(CallBase) + 1 + LJ_FR2;
+   TRef owner_base = rec_stack_slot_addr(J, ir, owner_slot);
+   lj_ir_call(J, IRCALL_lj_context_enter_jit, receiver, owner_base);
+   J->needsnap = 1;
+}
+
+// Restore an ordinary contextual activation and model the interpreter's removal of receiver/lookup temporaries from
+// the result layout. CTXLEAVE always follows CTXCALL/CTXCALLM, so the preceding call instruction defines result arity.
+
+static void rec_context_leave(jit_State *J, BCREG CallBase, const BCIns *LeavePc)
+{
+   int32_t function_slot = int32_t(J->baseslot) + int32_t(CallBase);
+   bool exempt_call = J->context_call_state[function_slot] IS CONTEXT_CALL_EXEMPT;
+   if (not exempt_call) {
+      if (not J->context_call_func[function_slot]) {
+         lj_record_stop(J, TraceLink::INTERP, 0);
+         return;
+      }
+      uint8_t context_state = J->context_call_state[function_slot];
+      if (context_state IS CONTEXT_CALL_VIRTUAL) {
+         lj_assertJ(J->context_virtual_slot IS function_slot, "virtual context leave has inconsistent owner");
+         J->context_virtual_slot = -1;
+         for (int32_t slot = function_slot - 1; slot >= 0; slot--) {
+            if (rec_context_state_is_virtual(J->context_call_state[slot])) {
+               J->context_virtual_slot = slot;
+               break;
+            }
+         }
+         lj_context_debug_virtual_leave(J->L);
+      }
+      else {
+         IRBuilder ir(J);
+         int32_t owner_slot = int32_t(J->baseslot) + int32_t(CallBase) + 1 + LJ_FR2;
+         TRef owner_base = rec_stack_slot_addr(J, ir, owner_slot);
+         lj_ir_call(J, IRCALL_lj_context_leave_jit, owner_base);
+      }
+      // Native calls retain CONTEXT_CALL_NONE on this branch because their explicit receiver handling does not create
+      // a recorder-managed activation.  CTXLEAVE still performs its existing restoration and result compaction.
+      if (context_state != CONTEXT_CALL_NONE) {
+         lj_assertJ(J->context_call_activation_count > 0, "context activation count underflow");
+         J->context_call_activation_count--;
+      }
+   }
+   J->context_call_state[function_slot] = CONTEXT_CALL_NONE;
+
+   BCIns call_ins = LeavePc[-1];
+   lj_assertJ(bc_op(call_ins) IS BC_CTXCALL or bc_op(call_ins) IS BC_CTXCALLM,
+      "CTXLEAVE does not follow an ordinary contextual call");
+   ptrdiff_t result_count = bc_b(call_ins) ? ptrdiff_t(bc_b(call_ins)) - 1 :
+      ptrdiff_t(J->maxslot) - ptrdiff_t(CallBase);
+   int32_t result_shift = int32_t(bc_d(*LeavePc));
+   if (result_shift IS 0) result_shift = 1;
+   SlotView slots(J);
+   BCREG old_maxslot = slots.maxslot();
+   for (ptrdiff_t i = 0; i < result_count; i++) {
+      int32_t result_slot = int32_t(CallBase) + int32_t(i);
+      J->context_call_result[int32_t(J->baseslot) + result_slot] = getslot(J, result_slot);
+   }
+   if (result_count > 0) {
+      slots.copy(int32_t(CallBase) - result_shift, CallBase, result_count);
+   }
+   BCREG new_maxslot = BCREG(int32_t(CallBase) - result_shift + result_count);
+   if (old_maxslot > new_maxslot) slots.clear_range(new_maxslot, old_maxslot - new_maxslot);
+   slots.set_maxslot(new_maxslot);
+   J->needsnap = 1;
 }
 
 //********************************************************************************************************************
 // Record call.
 
+static void rec_record_call(jit_State *J, BCREG Func, ptrdiff_t ArgumentCount, TRef MetamethodReceiver)
+{
+   cTValue *callable_value = &J->L->base[Func];
+   GCfunc *direct_callable = tvisfunc(callable_value) ? funcV(callable_value) : nullptr;
+   bool direct_context_independent = direct_callable and lj_builtin_context_independent(J->L, direct_callable);
+   bool direct_native_target = direct_callable and not isluafunc(direct_callable) and not direct_context_independent;
+   bool materialised_direct_target = direct_native_target and not MetamethodReceiver;
+   uint32_t virtual_count = rec_context_virtual_count(J);
+   if (materialised_direct_target) {
+      rec_context_materialise(J, ContextMaterialisationReason::NativeCall, direct_callable);
+      if (virtual_count > 1) {
+         J->needsnap = 1;
+         lj_trace_err(J, LJ_TRERR_NYICALL);
+         return;
+      }
+   }
+
+   TRef resolved_receiver = 0;
+   GCfunc *callable = rec_call_setup(J, Func, ArgumentCount, &resolved_receiver);
+   if (not MetamethodReceiver) MetamethodReceiver = resolved_receiver;
+   bool context_independent = lj_builtin_context_independent(J->L, callable);
+   bool native_target = not isluafunc(callable) and not context_independent;
+   if (MetamethodReceiver and iscfunc(callable)) {
+      lj_trace_err(J, LJ_TRERR_NYICALL);
+      return;
+   }
+   if (MetamethodReceiver) {
+      bool has_table_argument = false;
+      for (ptrdiff_t i = 0; i < ArgumentCount; i++) {
+         int32_t argument_slot = int32_t(Func) + int32_t(FRC::HEADER_SIZE) + int32_t(i);
+         if (tref_istab(J->base[argument_slot])) has_table_argument = true;
+         else {
+            // Loop folding can revisit receiver-elided scalar arguments after their temporary frame has returned.
+            J->context_call_result[int32_t(J->baseslot) + argument_slot] = J->base[argument_slot];
+         }
+      }
+      rec_context_enter_metamethod(J, Func, MetamethodReceiver);
+      if (has_table_argument) {
+         // Table-valued arguments may alias fresh results while loop snapshots are substituted.  Keep the receiver
+         // physical across that boundary until alias-safe virtual substitution is available.
+         rec_context_materialise(J, ContextMaterialisationReason::UnsupportedBoundary, callable);
+         virtual_count = 0;
+      }
+      else virtual_count++;
+   }
+   if (native_target and not materialised_direct_target) {
+      rec_context_materialise(J, ContextMaterialisationReason::NativeCall, callable);
+      // A context-observing native boundary can resume through a native frame whose stack top is not represented by
+      // a multi-context snapshot. Hand the call back to the interpreter after materialising the complete prefix.
+      if (virtual_count > 1) {
+         lj_record_stop(J, TraceLink::INTERP, 0);
+         return;
+      }
+   }
+   J->base[Func + 1] = TREF_FRAME;
+   FrameManager fm(J);
+   FRC::inc_depth(J);
+   fm.push_call_frame(Func);
+   if (fm.would_overflow(J->maxslot)) lj_trace_err(J, LJ_TRERR_STACKOV);
+}
+
 void lj_record_call(jit_State *J, BCREG func, ptrdiff_t nargs)
 {
-   rec_call_setup(J, func, nargs);
-   FrameManager fm(J);
-   // Bump frame.
-   FRC::inc_depth(J);
-   fm.push_call_frame(func);
-   if (fm.would_overflow(J->maxslot)) lj_trace_err(J, LJ_TRERR_STACKOV);
+   rec_record_call(J, func, nargs, 0);
+}
+
+static void rec_record_metamethod_call(jit_State *J, BCREG Func, ptrdiff_t ArgumentCount, TRef Receiver)
+{
+   rec_record_call(J, Func, ArgumentCount, Receiver);
 }
 
 //********************************************************************************************************************
 // Record tail call.
 
-void lj_record_tailcall(jit_State *J, BCREG func, ptrdiff_t nargs)
+static void rec_tailcall_compact(jit_State *J, BCREG Func)
 {
-   rec_call_setup(J, func, nargs);
    FrameManager fm(J);
    if (frame_isvarg(J->L->base - 1)) {
       BCREG cbase = (BCREG)frame_delta(J->L->base - 1);
       if (FRC::dec_depth(J) < 0) lj_trace_err(J, LJ_TRERR_NYIRETL);
       fm.pop_delta_frame(cbase);
-      func += cbase;
+      Func += cbase;
    }
 
    // Move func + args down.
 
-   if (fm.at_root_baseslot()) J->base[func + 1] = TREF_FRAME;
-   fm.compact_tailcall(func, J->maxslot);
+   if (fm.at_root_baseslot()) J->base[Func + 1] = TREF_FRAME;
+   fm.compact_tailcall(Func, J->maxslot);
 
    // Note: the new TREF_FRAME is now at J->base[-1] (even for slot #0).
    // Tailcalls can form a loop, so count towards the loop unroll limit.
    if (++J->tailcalled > J->loopunroll) lj_trace_err(J, LJ_TRERR_LUNROLL);
+}
+
+void lj_record_tailcall(jit_State *J, BCREG func, ptrdiff_t nargs)
+{
+   rec_context_materialise(J, ContextMaterialisationReason::TailCall);
+   rec_call_setup(J, func, nargs);
+   J->base[func + 1] = TREF_FRAME;
+   rec_tailcall_compact(J, func);
+}
+
+void lj_record_metamethod_tailcall(jit_State *J, BCREG Func, ptrdiff_t ArgumentCount, TRef Receiver)
+{
+   rec_context_materialise(J, ContextMaterialisationReason::TailCall);
+   rec_call_setup(J, Func, ArgumentCount);
+   if (tref_istab(Receiver)) {
+      IRBuilder ir(J);
+      TRef owner_base = rec_stack_slot_addr(J, ir, int32_t(J->baseslot));
+      lj_ir_call(J, IRCALL_lj_context_prepare_metamethod_tail_jit, Receiver, owner_base);
+      J->needsnap = 1;
+   }
+   J->base[Func + 1] = TREF_FRAME;
+   rec_tailcall_compact(J, Func);
+   if (tref_istab(Receiver)) J->context_tail_call[J->baseslot] = true;
+}
+
+static void rec_context_tailcall(jit_State *J, BCREG CallBase, ptrdiff_t ArgumentCount)
+{
+   rec_context_materialise(J, ContextMaterialisationReason::TailCall);
+   cTValue *callable = &J->L->base[CallBase];
+   if (not tvisfunc(callable)) {
+      lj_trace_err(J, LJ_TRERR_NYIBC);
+   }
+
+   TRef receiver = getslot(J, int32_t(CallBase) - 1);
+   bool contextual_receiver = tvistab(&J->L->base[CallBase - 1]) and
+      lj_tab_is_contextual(tabV(&J->L->base[CallBase - 1]));
+
+   // Guard the monotonic designation bit before the callable overwrites the receiver slot, so that a trace
+   // specialised to one receiver class cannot be reused for the other.
+   if (tref_istab(receiver)) {
+      IRBuilder ir(J);
+      TRef flags = ir.fload(receiver, IRFL_TAB_FLAGS, IRT_U8);
+      TRef designated = ir.emit_int(IR_BAND, flags, ir.kint(TAB_CONTEXTUAL));
+      if (contextual_receiver) ir.guard_ne_int(designated, ir.kint(0));
+      else ir.guard_eq_int(designated, ir.kint(0));
+   }
+
+   rec_call_setup(J, CallBase, ArgumentCount);
+
+   if (tref_istab(receiver) and contextual_receiver) {
+      IRBuilder ir(J);
+      int32_t prepared_slot = int32_t(J->baseslot) + int32_t(CallBase) + 1 + LJ_FR2;
+      TRef prepared_owner = rec_stack_slot_addr(J, ir, prepared_slot);
+      TRef outgoing_owner = rec_stack_slot_addr(J, ir, int32_t(J->baseslot));
+      lj_ir_call(J, IRCALL_lj_context_tail_jit, receiver, prepared_owner, outgoing_owner);
+      J->needsnap = 1;
+   }
+
+   J->base[CallBase + 1] = TREF_FRAME;
+   rec_tailcall_compact(J, CallBase);
+   if (tref_istab(receiver) and contextual_receiver) J->context_tail_call[J->baseslot] = true;
 }
 
 //********************************************************************************************************************
@@ -976,6 +1901,27 @@ void lj_record_ret(jit_State *J, BCREG rbase, ptrdiff_t gotresults)
    ptrdiff_t i;
    FrameManager fm(J);
    SlotView slots(J);
+
+   rec_context_leave_metamethod(J);
+
+   // Tail transfers may be created by a helper earlier in this very recording step (notably fast calls), or by
+   // another entry to the same prototype.  Test the executing activation rather than the recording-time stack.
+   int32_t context_baseslot = int32_t(J->baseslot);
+   TValue *context_base = J->L->base;
+   if (frame_isvarg(frame)) {
+      context_baseslot -= int32_t(frame_delta(frame));
+      context_base -= frame_delta(frame);
+   }
+   // An owner below the trace root is left to the interpreter's return path.
+   if (context_baseslot >= int32_t(FRC::MIN_BASESLOT) and (J->context_tail_call[context_baseslot] or
+       (not J->L->context_stack.empty() and J->L->context_stack.back().tail_transfer and
+        J->L->context_stack.back().owner_base IS savestack(J->L, context_base)))) {
+      IRBuilder ir(J);
+      TRef owner_base = rec_stack_slot_addr(J, ir, int32_t(context_baseslot));
+      lj_ir_call(J, IRCALL_lj_context_leave_tail_jit, owner_base);
+      J->context_tail_call[context_baseslot] = false;
+   }
+
    for (i = 0; i < gotresults; i++) (void)getslot(J, rbase + i);  //  Ensure all results have a reference.
 
    while (frame_ispcall(frame)) {  // Immediately resolve pcall() returns.
@@ -990,9 +1936,19 @@ void lj_record_ret(jit_State *J, BCREG rbase, ptrdiff_t gotresults)
       J->needsnap = 1;  //  Stop catching on-trace errors.
    }
 
-   // Return to lower frame via interpreter for unhandled cases.
+   J->multres = uint16_t(gotresults + 1);
+
+   bool contextual_caller = false;
+   if (frame_islua(frame)) {
+      BCOp caller_op = bc_op(*(frame_pc(frame) - 1));
+      contextual_caller = caller_op IS BC_CTXCALL or caller_op IS BC_CTXCALLM;
+   }
+
+   // A return-root trace has no entry metadata for a contextual activation below its root. Let the interpreter
+   // perform that return, including physical metamethod contexts entered through an ordinary CALL instruction.
    if (FRC::at_root_depth(J) and J->pt and bc_isret(bc_op(*J->pc)) and
-      (not frame_islua(frame) or (J->parent IS 0 and J->exitno IS 0 and !bc_isret(bc_op(J->cur.startins))))) {
+      (not frame_islua(frame) or contextual_caller or lj_context_has_call_jit(J->L, J->L->base) or
+       (J->parent IS 0 and J->exitno IS 0 and !bc_isret(bc_op(J->cur.startins))))) {
       // NYI: specialise to frame type and return directly, not via RET*.
       slots.clear_range(0, rbase);  //  Purge dead slots.
       slots.set_maxslot(rbase + (BCREG)gotresults);
@@ -1014,7 +1970,11 @@ void lj_record_ret(jit_State *J, BCREG rbase, ptrdiff_t gotresults)
       BCIns callins = *(frame_pc(frame) - 1);
       ptrdiff_t nresults = bc_b(callins) ? (ptrdiff_t)bc_b(callins) - 1 : gotresults;
       BCREG cbase = bc_a(callins);
-      GCproto* pt = funcproto(frame_func(frame - (cbase + FRC::HEADER_SIZE)));
+      GCfunc *caller = frame_func(frame - (cbase + FRC::HEADER_SIZE));
+      lj_assertJ(isluafunc(caller),
+         "Lua return resolved a native caller: op=%d cbase=%d baseslot=%d framedepth=%d retdepth=%d",
+         bc_op(callins), cbase, J->baseslot, J->framedepth, J->retdepth);
+      GCproto* pt = funcproto(caller);
       if (pt->flags & PROTO_NOJIT) lj_trace_err(J, LJ_TRERR_CJITOFF);
       if (FRC::at_root_depth(J) and J->pt and frame IS J->L->base - 1) {
          if (check_downrec_unroll(J, pt)) {
@@ -1046,6 +2006,10 @@ void lj_record_ret(jit_State *J, BCREG rbase, ptrdiff_t gotresults)
          IRBuilder ir(J);
          TRef trpt = lj_ir_kgc(J, obj2gco(pt), IRT_PROTO);
          TRef trpc = ir.kptr((void*)frame_pc(frame));
+         // The same return site can be reached by an ordinary function or by a table's __call handler. Guard
+         // traces recorded without a physical activation so reuse cannot bypass the interpreter's context leave.
+         TRef has_context = lj_ir_call(J, IRCALL_lj_context_has_call_jit, REF_BASE);
+         ir.guard_eq_int(has_context, ir.kint(0));
          ir.guard(IR_RETF, IRT_PGC, trpt, trpc);
          J->retdepth++;
          J->needsnap = 1;
@@ -1060,11 +2024,13 @@ void lj_record_ret(jit_State *J, BCREG rbase, ptrdiff_t gotresults)
       BCREG cbase = (BCREG)frame_delta(frame);
       if (FRC::dec_depth_by(J, 2) < 0) lj_trace_err(J, LJ_TRERR_NYIRETL);
       fm.pop_delta_frame(cbase);
+      TRef result = gotresults ? slots[cbase + rbase] : TREF_NIL;
       slots.set_maxslot(cbase - FRC::CONT_FRAME_SIZE);
-      if (cont IS lj_cont_ra) {
+      if (cont IS lj_cont_ra or cont IS lj_cont_len) {
          // Copy result to destination slot.
          BCREG dst = bc_a(*(frame_contpc(frame) - 1));
-         slots[dst] = gotresults ? slots[cbase + rbase] : TREF_NIL;
+         if (cont IS lj_cont_len and not tref_isnumber(result)) lj_trace_err(J, LJ_TRERR_BADTYPE);
+         slots[dst] = result;
          slots.ensure_slot(dst);
       }
       else if (cont IS lj_cont_nop) {
@@ -1072,7 +2038,7 @@ void lj_record_ret(jit_State *J, BCREG rbase, ptrdiff_t gotresults)
       }
       else if (cont IS lj_cont_cat) {
          BCREG bslot = bc_b(*(frame_contpc(frame) - 1));
-         TRef tr = gotresults ? slots[cbase + rbase] : TREF_NIL;
+         TRef tr = result;
          if (bslot != slots.maxslot()) {  // Concatenate the remainder.
             TValue* b = J->L->base, save;  //  Simulate lower frame and result.
             // Can't handle MM_concat + CALLT + fast func side-effects.
@@ -1132,6 +2098,10 @@ int lj_record_mm_lookup(jit_State *J, RecordIndex* ix, MMS mm)
       mt = tabref(tabV(&ix->tabv)->metatable);
       mix.tab = ir.fload_tab(ix->tab, IRFL_TAB_META);
    }
+   else if (tref_isarray(ix->tab)) {
+      mt = tabref(arrayV(&ix->tabv)->metatable);
+      mix.tab = ir.fload_tab(ix->tab, IRFL_ARRAY_META);
+   }
    else if (tref_isudata(ix->tab)) {
       udtype = udataV(&ix->tabv)->udtype;
       mt = tabref(udataV(&ix->tabv)->metatable);
@@ -1185,23 +2155,43 @@ nocheck:
 }
 
 //********************************************************************************************************************
-// Record call to arithmetic metamethod.
+// Record call to arithmetic or concatenation metamethod.
 
-static TRef rec_mm_arith(jit_State *J, RecordIndex* ix, MMS mm)
+static TRef rec_mm_binop(jit_State *J, RecordIndex* ix, MMS mm)
 {
-   // Set up metamethod call first to save ix->tab and ix->tabv.
+   // Preserve the source operand pair before metatable lookup repurposes RecordIndex scratch fields.
+   TRef left = ix->tab;
+   TRef right = ix->key;
+   TValue leftv, rightv;
+   copyTV(J->L, &leftv, &ix->tabv);
+   copyTV(J->L, &rightv, &ix->keyv);
+
+   bool receiver_first = (mm >= MM_add and mm <= MM_pow) or mm IS MM_concat;
    BCREG func = rec_mm_prep(J, mm IS MM_concat ? lj_cont_cat : lj_cont_ra);
    TRef* base = J->base + func;
    TValue* basev = J->L->base + func;
-   base[FRC::HEADER_SIZE] = ix->tab; base[FRC::HEADER_SIZE + 1] = ix->key;  // Args at base[2], base[3]
-   copyTV(J->L, basev + FRC::HEADER_SIZE, &ix->tabv);
-   copyTV(J->L, basev + FRC::HEADER_SIZE + 1, &ix->keyv);
+
+   TRef receiver = left;
+   TRef other = right;
+   TValue receiverv, otherv;
+   copyTV(J->L, &receiverv, &leftv);
+   copyTV(J->L, &otherv, &rightv);
+   bool lhs_dispatch = true;
+
    if (not lj_record_mm_lookup(J, ix, mm)) {  // Lookup mm on 1st operand.
       if (mm != MM_unm) {
-         ix->tab = ix->key;
-         copyTV(J->L, &ix->tabv, &ix->keyv);
-         if (lj_record_mm_lookup(J, ix, mm))  //  Lookup mm on 2nd operand.
+         ix->tab = right;
+         copyTV(J->L, &ix->tabv, &rightv);
+         if (lj_record_mm_lookup(J, ix, mm)) {  //  Lookup mm on 2nd operand.
+            if (receiver_first) {
+               receiver = right;
+               other = left;
+               copyTV(J->L, &receiverv, &rightv);
+               copyTV(J->L, &otherv, &leftv);
+               lhs_dispatch = false;
+            }
             goto ok;
+         }
       }
       lj_trace_err(J, LJ_TRERR_NOMM);
    }
@@ -1209,7 +2199,27 @@ ok:
    base[0] = ix->mobj;
    base[1] = 0;
    copyTV(J->L, basev + 0, &ix->mobjv);
-   lj_record_call(J, func, 2);
+   if (tref_istab(receiver)) {
+      if (receiver_first) {
+         base[FRC::HEADER_SIZE] = other;
+         base[FRC::HEADER_SIZE + 1] = lhs_dispatch ? TREF_TRUE : TREF_FALSE;
+         copyTV(J->L, basev + FRC::HEADER_SIZE, &otherv);
+         setboolV(basev + FRC::HEADER_SIZE + 1, lhs_dispatch);
+      }
+      rec_record_metamethod_call(J, func, receiver_first ? 2 : 0, receiver);
+   }
+   else {
+      base[FRC::HEADER_SIZE] = receiver;
+      base[FRC::HEADER_SIZE + 1] = other;
+      copyTV(J->L, basev + FRC::HEADER_SIZE, &receiverv);
+      copyTV(J->L, basev + FRC::HEADER_SIZE + 1, &otherv);
+      if (receiver_first) {
+         base[FRC::HEADER_SIZE + 2] = lhs_dispatch ? TREF_TRUE : TREF_FALSE;
+         setboolV(basev + FRC::HEADER_SIZE + 2, lhs_dispatch);
+         lj_record_call(J, func, 3);
+      }
+      else lj_record_call(J, func, 2);
+   }
    return 0;  //  No result yet.
 }
 
@@ -1222,18 +2232,33 @@ static TRef rec_mm_len(jit_State *J, TRef tr, TValue* tv)
    ix.tab = tr;
    copyTV(J->L, &ix.tabv, tv);
    if (lj_record_mm_lookup(J, &ix, MM_len)) {
-      BCREG func = rec_mm_prep(J, lj_cont_ra);
+      BCREG func = rec_mm_prep(J, lj_cont_len);
       TRef* base = J->base + func;
       TValue* basev = J->L->base + func;
       base[0] = ix.mobj; copyTV(J->L, basev + 0, &ix.mobjv);
-      // Args start at base[2] (after func slot and frame marker)
-      base[FRC::HEADER_SIZE] = tr; copyTV(J->L, basev + FRC::HEADER_SIZE, tv);
-      base[FRC::HEADER_SIZE + 1] = tr; copyTV(J->L, basev + FRC::HEADER_SIZE + 1, tv);
-      lj_record_call(J, func, 2);
+      if (tref_istab(tr)) {
+         rec_record_metamethod_call(J, func, 0, tr);
+      }
+      else {
+         // Args start at base[2] (after func slot and frame marker).
+         base[FRC::HEADER_SIZE] = tr; copyTV(J->L, basev + FRC::HEADER_SIZE, tv);
+         base[FRC::HEADER_SIZE + 1] = tr; copyTV(J->L, basev + FRC::HEADER_SIZE + 1, tv);
+         lj_record_call(J, func, 2);
+      }
    }
    else {
       if (tref_istab(tr)) {
          IRBuilder ir(J);
+         // A table whose usage history is outside the non-negative integral sequence domain has no sequence length. The
+         // classification is one-way, so guarding the observed state is sufficient: the first offending store
+         // side-exits the trace and the recompilation specialises to nil.
+         TRef flags = ir.fload(tr, IRFL_TAB_FLAGS, IRT_U8);
+         TRef classified = ir.emit_int(IR_BAND, flags, ir.kint(TAB_NOT_SEQUENCE));
+         if (tabV(tv)->flags & TAB_NOT_SEQUENCE) {
+            ir.guard_ne_int(classified, ir.kint(0));
+            return TREF_NIL;
+         }
+         ir.guard_eq_int(classified, ir.kint(0));
          return ir.emit_int(IR_ALEN, tr, TREF_NIL); //equiv to: rc = emitir(IRTI(IR_ALEN), rc, TREF_NIL);
       }
       else if (tref_isarray(tr)) {
@@ -1252,18 +2277,56 @@ static TRef rec_mm_len(jit_State *J, TRef tr, TValue* tv)
 static void rec_mm_callcomp(jit_State *J, RecordIndex* ix, int op)
 {
    BCREG func = rec_mm_prep(J, (op & 1) ? lj_cont_condf : lj_cont_condt);
-   // base points to first arg slot (after frame header)
-   TRef* base = J->base + func + 1;
-   TValue* tv = J->L->base + func + 1;
-   base[-1] = ix->mobj; base[1] = ix->val; base[2] = ix->key;
-   copyTV(J->L, tv - 1, &ix->mobjv);
-   copyTV(J->L, tv + 1, &ix->valv);
-   copyTV(J->L, tv + 2, &ix->keyv);
-   lj_record_call(J, func, 2);
+   TRef* base = J->base + func;
+   TValue* tv = J->L->base + func;
+   base[0] = ix->mobj;
+   copyTV(J->L, tv, &ix->mobjv);
+   if (tref_istab(ix->val)) {
+      base[FRC::HEADER_SIZE] = ix->key;
+      copyTV(J->L, tv + FRC::HEADER_SIZE, &ix->keyv);
+      rec_record_metamethod_call(J, func, 1, ix->val);
+   }
+   else {
+      base[FRC::HEADER_SIZE] = ix->val;
+      base[FRC::HEADER_SIZE + 1] = ix->key;
+      copyTV(J->L, tv + FRC::HEADER_SIZE, &ix->valv);
+      copyTV(J->L, tv + FRC::HEADER_SIZE + 1, &ix->keyv);
+      lj_record_call(J, func, 2);
+   }
 }
 
 //********************************************************************************************************************
-// Record call to equality comparison metamethod (for tab and udata only).
+// Call a receiver-first ordered comparison metamethod.
+
+static void rec_mm_callcomp3(jit_State *J, RecordIndex* ix, int op, TRef receiver, TValue *ReceiverValue,
+   TRef other, TValue *OtherValue, bool lhs_dispatch)
+{
+   BCREG func = rec_mm_prep(J, (op & 1) ? lj_cont_condf : lj_cont_condt);
+   TRef* base = J->base + func;
+   TValue* tv = J->L->base + func;
+   base[0] = ix->mobj;
+   base[1] = 0;
+   copyTV(J->L, tv, &ix->mobjv);
+   if (tref_istab(receiver)) {
+      base[FRC::HEADER_SIZE] = other;
+      base[FRC::HEADER_SIZE + 1] = lhs_dispatch ? TREF_TRUE : TREF_FALSE;
+      copyTV(J->L, tv + FRC::HEADER_SIZE, OtherValue);
+      setboolV(tv + FRC::HEADER_SIZE + 1, lhs_dispatch);
+      rec_record_metamethod_call(J, func, 2, receiver);
+   }
+   else {
+      base[FRC::HEADER_SIZE] = receiver;
+      base[FRC::HEADER_SIZE + 1] = other;
+      base[FRC::HEADER_SIZE + 2] = lhs_dispatch ? TREF_TRUE : TREF_FALSE;
+      copyTV(J->L, tv + FRC::HEADER_SIZE, ReceiverValue);
+      copyTV(J->L, tv + FRC::HEADER_SIZE + 1, OtherValue);
+      setboolV(tv + FRC::HEADER_SIZE + 2, lhs_dispatch);
+      lj_record_call(J, func, 3);
+   }
+}
+
+//********************************************************************************************************************
+// Record call to equality comparison metamethod.
 
 static void rec_mm_equal(jit_State *J, RecordIndex* ix, int op)
 {
@@ -1279,6 +2342,10 @@ static void rec_mm_equal(jit_State *J, RecordIndex* ix, int op)
       bv = &ix->keyv;
       if (tvistab(bv) and tabref(tabV(bv)->metatable) IS ix->mtv) {
          TRef mt2 = ir.fload_tab(ix->key, IRFL_TAB_META);
+         ir.guard_eq(mt2, ix->mt, IRT_TAB);
+      }
+      else if (tvisarray(bv) and tabref(arrayV(bv)->metatable) IS ix->mtv) {
+         TRef mt2 = ir.fload_tab(ix->key, IRFL_ARRAY_META);
          ir.guard_eq(mt2, ix->mt, IRT_TAB);
       }
       else if (tvisudata(bv) and tabref(udataV(bv)->metatable) IS ix->mtv) {
@@ -1304,13 +2371,24 @@ static void rec_mm_comp(jit_State *J, RecordIndex* ix, int op)
    copyTV(J->L, &ix->tabv, &ix->valv);
    while (true) {
       MMS mm = (op & 2) ? MM_le : MM_lt;  //  Try __le + __lt or only __lt.
+      TRef receiver = ix->val;
+      TRef other = ix->key;
+      TValue receiverv, otherv;
+      copyTV(J->L, &receiverv, &ix->valv);
+      copyTV(J->L, &otherv, &ix->keyv);
+      bool lhs_dispatch = true;
       if (not lj_record_mm_lookup(J, ix, mm)) {  // Lookup mm on 1st operand.
          ix->tab = ix->key;
          copyTV(J->L, &ix->tabv, &ix->keyv);
          if (not lj_record_mm_lookup(J, ix, mm))  //  Lookup mm on 2nd operand.
             goto nomatch;
+         receiver = ix->key;
+         other = ix->val;
+         copyTV(J->L, &receiverv, &ix->keyv);
+         copyTV(J->L, &otherv, &ix->valv);
+         lhs_dispatch = false;
       }
-      rec_mm_callcomp(J, ix, op);
+      rec_mm_callcomp3(J, ix, op, receiver, &receiverv, other, &otherv, lhs_dispatch);
       return;
 
    nomatch:
@@ -1529,6 +2607,50 @@ static int nommstr(jit_State *J, TRef key)
 }
 
 //********************************************************************************************************************
+// Record array method lookup for method-form calls.
+
+static TRef rec_array_method_lookup(jit_State *J, RecordIndex* ix)
+{
+   if (ix->val or not tref_isarray(ix->tab) or not tref_isstr(ix->key) or not tref_isk(ix->key)) return 0;
+
+   IRBuilder ir(J);
+   GCarray *arr = arrayV(&ix->tabv);
+   GCtab *mt = tabref(arr->metatable);
+   bool using_base_mt = false;
+   if (not mt) {
+      mt = tabref(basemt_it(J2G(J), LJ_TARRAY));
+      using_base_mt = true;
+   }
+   if (not mt) return 0;
+
+   GCstr *key = ir_kstr(IR(tref_ref(ix->key)));
+   cTValue *method = lj_tab_getstr(mt, key);
+   if (not method or not tvisfunc(method)) return 0;
+
+   RecordIndex mix;
+   TRef mtref = ir.fload_tab(ix->tab, IRFL_ARRAY_META);
+   if (using_base_mt) {
+      int basemt_offset = GG_OFS(g.gcroot) + int((GCROOT_BASEMT + ~LJ_TARRAY) * sizeof(GCRef));
+      ir.guard_eq(mtref, ir.knull(IRT_TAB), IRT_TAB);
+      mix.tab = lj_ir_ggfload(J, IRT_TAB, basemt_offset);
+      ir.guard_eq(mix.tab, lj_ir_ktab(J, mt), IRT_TAB);
+   }
+   else {
+      mix.tab = mtref;
+      ir.guard_eq(mix.tab, lj_ir_ktab(J, mt), IRT_TAB);
+   }
+
+   settabV(J->L, &mix.tabv, mt);
+   setstrV(J->L, &mix.keyv, key);
+   mix.key = ix->key;
+   mix.val = 0;
+   mix.idxchain = 0;
+   TRef method_ref = lj_record_idx(J, &mix);
+   ir.guard_eq(method_ref, lj_ir_kfunc(J, funcV(method)), IRT_FUNC);
+   return method_ref;
+}
+
+//********************************************************************************************************************
 // Record indexed load/store.
 
 TRef lj_record_idx(jit_State *J, RecordIndex* ix)
@@ -1541,6 +2663,7 @@ TRef lj_record_idx(jit_State *J, RecordIndex* ix)
    while (not tref_istab(ix->tab)) {  // Handle non-table lookup.
       // Never call raw lj_record_idx() on non-table.
       lj_assertJ(ix->idxchain != 0, "bad usage");
+      if (TRef method = rec_array_method_lookup(J, ix)) return method;
       if (not lj_record_mm_lookup(J, ix, ix->val ? MM_newindex : MM_index)) lj_trace_err(J, LJ_TRERR_NOMM);
 
 handlemm:
@@ -1550,21 +2673,29 @@ handlemm:
          TValue* tv = J->L->base + func + 1;
          // Setup call frame: slots[func] = mobj, slots[func+2..] = args
          slots[func] = ix->mobj;
-         slots[func + FRC::HEADER_SIZE] = ix->tab;
-         slots[func + FRC::HEADER_SIZE + 1] = ix->key;
          setfuncV(J->L, tv - 1, funcV(&ix->mobjv));
-         copyTV(J->L, tv + 1, &ix->tabv);
-         copyTV(J->L, tv + 2, &ix->keyv);
-         if (ix->val) {
-            slots[func + FRC::HEADER_SIZE + 2] = ix->val;
-            copyTV(J->L, tv + 3, &ix->valv);
-            lj_record_call(J, func, 3);  //  mobj(tab, key, val)
-            return 0;
+         if (tref_istab(ix->tab)) {
+            slots[func + FRC::HEADER_SIZE] = ix->key;
+            copyTV(J->L, tv + 1, &ix->keyv);
+            if (ix->val) {
+               slots[func + FRC::HEADER_SIZE + 1] = ix->val;
+               copyTV(J->L, tv + 2, &ix->valv);
+            }
+            rec_record_metamethod_call(J, func, ix->val ? 2 : 1, ix->tab);
          }
          else {
-            lj_record_call(J, func, 2);  //  res = mobj(tab, key)
-            return 0;  //  No result yet.
+            slots[func + FRC::HEADER_SIZE] = ix->tab;
+            slots[func + FRC::HEADER_SIZE + 1] = ix->key;
+            copyTV(J->L, tv + 1, &ix->tabv);
+            copyTV(J->L, tv + 2, &ix->keyv);
+            if (ix->val) {
+               slots[func + FRC::HEADER_SIZE + 2] = ix->val;
+               copyTV(J->L, tv + 3, &ix->valv);
+               lj_record_call(J, func, 3);
+            }
+            else lj_record_call(J, func, 2);
          }
+         return 0;  //  No result yet.
       }
 
       // Otherwise retry lookup with metaobject.
@@ -1581,6 +2712,27 @@ handlemm:
          if (ix->idxchain and lj_record_mm_lookup(J, ix, MM_index)) goto handlemm;
          return TREF_NIL;
       }
+   }
+
+   // Environment mutation boundary: string-keyed stores must honour the destination's runtime policy, so the
+   // environment marker is guarded on every recorded path.  Ordinary tables prove the marker is clear before the
+   // direct store; marked environments validate the policy before continuing through the ordinary store and
+   // __newindex machinery.
+   if (ix->val and tvisstr(&ix->keyv) and tvistab(&ix->tabv)) {
+      IRBuilder irb(J);
+      TRef marker = irb.fload_tab(ix->tab, IRFL_TAB_GCONTRACTS);
+      if (lj_tab_is_environment(tabV(&ix->tabv))) {
+         irb.guard_ne(marker, irb.knull(IRT_TAB), IRT_TAB);
+         if (not tref_isk(ix->key)) lj_trace_err(J, LJ_TRERR_NYIENVKEY);
+         if (ix->val_slot < 0) lj_trace_err(J, LJ_TRERR_NYIBC);
+         TRef value_slot = rec_stack_slot_addr(J, irb, int32_t(J->baseslot) + ix->val_slot);
+         rec_emit_tvalue_store(J, value_slot, ix->val);
+         emitir_raw(IRT(IR_XBAR, IRT_NIL), 0, 0);
+         TRef key = lj_ir_kstr(J, strV(&ix->keyv));
+         lj_ir_call(J, IRCALL_lj_env_check, ix->tab, key, value_slot);
+         J->needsnap = 1;
+      }
+      else irb.guard_eq(marker, irb.knull(IRT_TAB), IRT_TAB);
    }
 
    // Record the key lookup.
@@ -1670,6 +2822,45 @@ handlemm:
          TRef fref = ir.emit(IRT(IR_FREF, IRT_PGC), ix->tab, IRFL_TAB_NOMM);
          ir.emit(IRT(IR_FSTORE, IRT_U8), fref, ir.kint(0));
       }
+
+      // Publish permanent table classification.  Non-numeric keys are type-specialised.  Numeric traces additionally
+      // guard the observed key domain so a trace recorded with a non-negative integer cannot later accept a negative
+      // or fractional key without side-exiting to the interpreter, which applies the sparse classification.
+
+      if (tref_istab(ix->tab)) {
+         uint8_t classification = 0;
+         if (not tref_isnumber(ix->key)) classification = TAB_ASSOCIATIVE;
+         else {
+            int32_t observed_key = numberVint(&ix->keyv);
+            const bool exact_integer = tvisint(&ix->keyv) or numV(&ix->keyv) IS (lua_Number)observed_key;
+
+            if (not exact_integer) {
+               // A variable floating key could later become integral without changing its IR type.  Leave that case
+               // to the interpreter rather than permanently classifying a valid key on the recorded path.
+               if (not tref_isk(ix->key)) lj_trace_err(J, LJ_TRERR_NYITMIX);
+               classification = TAB_SPARSE;
+            }
+            else if (observed_key < 0) {
+               if (not tref_isk(ix->key)) {
+                  TRef integer_key = lj_opt_narrow_index(J, ix->key);
+                  ir.guard_int(IR_LT, integer_key, ir.kint(0));
+               }
+               classification = TAB_SPARSE;
+            }
+            else if (not tref_isk(ix->key)) {
+               TRef integer_key = lj_opt_narrow_index(J, ix->key);
+               ir.guard_int(IR_GE, integer_key, ir.kint(0));
+            }
+         }
+
+         if (classification) {
+            TRef fref = ir.emit(IRT(IR_FREF, IRT_PGC), ix->tab, IRFL_TAB_FLAGS);
+            TRef flags = ir.fload(ix->tab, IRFL_TAB_FLAGS, IRT_U8);
+            ir.emit(IRT(IR_FSTORE, IRT_U8), fref,
+               ir.emit_int(IR_BOR, flags, ir.kint(classification)));
+         }
+      }
+
       J->needsnap = 1;
       return 0;
    }
@@ -1758,7 +2949,7 @@ static int rec_upvalue_constify(jit_State *J, GCupval* uvp)
    if (uvp->immutable) {
       cTValue *o = uvval(uvp);
       // Don't constify objects that may retain large amounts of memory.
-      if (not (tvistab(o) or tvisudata(o) or tvisthread(o))) return 1;
+      if (not (tvistab(o) or tvisudata(o) or tvisstruct(o))) return 1;
    }
    return 0;
 }
@@ -1778,7 +2969,7 @@ static TRef rec_upvalue(jit_State *J, uint32_t uv, TRef val)
       TRef tr, kfunc;
       lj_assertJ(val IS 0, "bad usage");
       if (not tref_isk(fn)) {  // Late specialisation of current function.
-         if (J->pt->flags >= PROTO_CLC_POLY) goto noconstify;
+         if (rec_is_fresh_function(J, fn) or rec_proto_specialise_by_prototype(J->pt)) goto noconstify;
          kfunc = ir.kfunc(J->fn);
          ir.guard_eq(fn, kfunc, IRT_FUNC);
          J->base[-2] = kfunc;
@@ -1830,6 +3021,69 @@ noconstify:
       J->needsnap = 1;
       return 0;
    }
+}
+
+// Record a close with a guarded list shape.  Cell identities may differ on each trace entry.
+static void rec_close_upvalues(jit_State *J, BCREG Level)
+{
+   IRBuilder ir(J);
+   TRef values[LJ_MAX_JSLOTS];
+   TRef addresses[LJ_MAX_JSLOTS];
+   unsigned count = 0;
+   // Extend snapshot coverage before adding the pre-effect snapshot.  snap_usedef() and snap_useuv()
+   // already preserve captured SSA slots, even when ordinary bytecode liveness would discard them.
+   for (GCobj* cell = gcref(J->L->openupval); cell; cell = gcref(cell->gch.nextgc)) {
+      ptrdiff_t slot = uvval(gco_to_upval(cell)) - J->L->base;
+      if (slot < Level) break;
+      if (slot >= J->pt->framesize or int32_t(J->baseslot) + slot >= LJ_MAX_JSLOTS) {
+         setintV(&J->errinfo, int32_t(BC_UCLO));
+         lj_trace_err_info(J, LJ_TRERR_NYIBC);
+      }
+      if (J->maxslot <= slot) J->maxslot = BCREG(slot + 1);
+   }
+   lj_snap_add(J);
+   TRef state_ref = ir.emit(IRT(IR_LREF, IRT_PTR), 0, 0);
+   TRef list_addr = ir.emit(IRT(IR_ADD, IRT_PTR), state_ref, lj_ir_kintp(J, offsetof(lua_State, openupval)));
+   TRef head = ir.emit(IRT(IR_XLOAD, IRT_PTR), list_addr, IRXLOAD_VOLATILE);
+   TRef trace_base = ir.emit(IRT(IR_XLOAD, IRT_PTR), ir.kptr(&J2G(J)->jit_base), IRXLOAD_VOLATILE);
+   int32_t frame_offset = int32_t(J->baseslot) - int32_t(FRC::MIN_BASESLOT);
+   TRef close_level = ir.emit(IRT(IR_ADD, IRT_PTR), trace_base,
+      lj_ir_kintp(J, (frame_offset + int32_t(Level)) * sizeof(TValue)));
+   GCobj* cell = gcref(J->L->openupval);
+   while (cell and uvval(gco_to_upval(cell)) >= J->L->base + Level) {
+      GCupval* uv = gco_to_upval(cell);
+      ptrdiff_t slot = uvval(uv) - J->L->base;
+      if (slot < 0 or slot >= J->pt->framesize or count >= LJ_MAX_JSLOTS) {
+         setintV(&J->errinfo, int32_t(BC_UCLO));
+         lj_trace_err_info(J, LJ_TRERR_NYIBC);
+      }
+      ir.guard_ne(head, ir.knull(IRT_PTR), IRT_PTR);
+      TRef value_addr = ir.emit(IRT(IR_ADD, IRT_PTR), head, lj_ir_kintp(J, offsetof(GCupval, v)));
+      TRef value_slot = ir.emit(IRT(IR_XLOAD, IRT_PTR), value_addr, IRXLOAD_VOLATILE);
+      addresses[count] = ir.emit(IRT(IR_ADD, IRT_PTR), trace_base,
+         lj_ir_kintp(J, (frame_offset + int32_t(slot)) * sizeof(TValue)));
+      ir.guard_eq(value_slot, addresses[count], IRT_PTR);
+      values[count++] = getslot(J, BCREG(slot));
+      TRef next_addr = ir.emit(IRT(IR_ADD, IRT_PTR), head, lj_ir_kintp(J, offsetof(GCupval, nextgc)));
+      head = ir.emit(IRT(IR_XLOAD, IRT_PTR), next_addr, IRXLOAD_VOLATILE);
+      cell = gcref(uv->nextgc);
+   }
+   if (cell) {
+      ir.guard_ne(head, ir.knull(IRT_PTR), IRT_PTR);
+      TRef value_addr = ir.emit(IRT(IR_ADD, IRT_PTR), head, lj_ir_kintp(J, offsetof(GCupval, v)));
+      TRef value_slot = ir.emit(IRT(IR_XLOAD, IRT_PTR), value_addr, IRXLOAD_VOLATILE);
+      ir.guard(IR_ULT, IRT_PTR, value_slot, close_level);
+   }
+   else ir.guard_eq(head, ir.knull(IRT_PTR), IRT_PTR);
+   // All guards precede publication.  The helper cannot allocate, throw or run script.
+   for (unsigned index = 0; index < count; ++index) {
+      rec_emit_tvalue_store(J, addresses[index], values[index]);
+   }
+   emitir_raw(IRT(IR_XBAR, IRT_NIL), 0, 0);
+   lj_ir_call(J, IRCALL_lj_func_closeuv, close_level);
+   // Lifetime boundary for UREF CSE, ULOAD forwarding and USTORE elimination, including loop replay.
+   emitir_raw(IRT(IR_XBAR, IRT_NIL), 0, 0);
+   J->needsnap = 1;
 }
 
 //********************************************************************************************************************
@@ -1935,6 +3189,8 @@ static void rec_func_jit(jit_State *J, TraceNo lnk)
       return;
    }
    J->instunroll = 0;  //  Cannot continue across a compiled function.
+   // The target trace reads the physical context stack; it cannot inherit this trace's virtual activations.
+   rec_context_materialise(J, ContextMaterialisationReason::UnsupportedBoundary);
    if (J->pc IS J->startpc and FRC::at_trace_root(J)) {
       lj_record_stop(J, TraceLink::TAILREC, J->cur.traceno);  //  Extra tail-rec.
    }
@@ -1962,6 +3218,11 @@ static void rec_varg(jit_State *J, BCREG dst, ptrdiff_t nresults)
       }
       else if (dst + nresults > slots.maxslot()) slots.set_maxslot(dst + (BCREG)nresults);
 
+      // Abort the trace before writing any slots if the expanded result set would exceed the slot
+      // limit.  The writes below index slots[dst + i] directly, so the overflow must be detected
+      // here rather than after the loop, otherwise the recorder runs past the slot region.
+      if (J->baseslot + dst + (BCREG)nresults >= LJ_MAX_JSLOTS) lj_trace_err(J, LJ_TRERR_STACKOV);
+
       for (i = 0; i < nresults; i++) slots[dst + i] = i < nvararg ? getslot(J, i - nvararg + FRC::FUNC_SLOT_OFFSET) : TREF_NIL;
    }
    else {  // Unknown number of varargs passed to trace.
@@ -1969,6 +3230,8 @@ static void rec_varg(jit_State *J, BCREG dst, ptrdiff_t nresults)
       int32_t frofs = 8 * (FRC::HEADER_SIZE + numparams) + FRAME_VARG;
       if (nresults >= 0) {  // Known fixed number of results.
          ptrdiff_t i;
+         // Abort the trace before writing any slots if the result set would exceed the slot limit.
+         if (J->baseslot + dst + (BCREG)nresults >= LJ_MAX_JSLOTS) lj_trace_err(J, LJ_TRERR_STACKOV);
          if (nvararg > 0) {
             ptrdiff_t nload = nvararg >= nresults ? nresults : nvararg;
             TRef vbase;
@@ -2055,7 +3318,7 @@ static TRef rec_cat(jit_State *J, BCREG baseslot, BCREG topslot)
    ix.tab = top[-1];
    ix.key = top[0];
    memcpy(savetv, &J->L->base[topslot - 1], sizeof(savetv));  //  Save slots.
-   rec_mm_arith(J, &ix, MM_concat);  //  Call __concat metamethod.
+   rec_mm_binop(J, &ix, MM_concat);  //  Call __concat metamethod.
    memcpy(&J->L->base[topslot - 1], savetv, sizeof(savetv));  //  Restore slots.
    return 0;  //  No result yet.
 }
@@ -2103,10 +3366,10 @@ static void rec_comp_fixup(jit_State *J, const BCIns *pc, int cond)
    const BCIns *npc = pc + 2 + (cond ? bc_j(jmpins) : 0);
    SnapShot *snap = &J->cur.snap[J->cur.nsnap - 1];
 
-   // Skip PC modification inside try blocks to prevent snapshot restoration issues.
+   // Skip PC modification inside runtime scopes with explicit leave bytecodes to prevent snapshot restoration issues.
    // See function header comment for detailed explanation.
 
-   if (J->L->try_stack.depth > 0) {
+   if (J->trydepth > 0 or J->checkalldepth > 0) {
       J->needsnap = 1;
       return;
    }
@@ -2199,10 +3462,12 @@ static void rec_decode_operands(jit_State *J, cTValue *lbase, RecordOps *ops)
    // Decode 'A' operand
    ops->ra = bc_a(ins);
    ops->ix.val = 0;
+   ops->ix.val_slot = -1;
 
    switch (bcmode_a(op)) {
       case BCMvar:
          copyTV(J->L, ops->rav(), &lbase[ops->ra]);
+         ops->ix.val_slot = int32_t(ops->ra);
          ops->ix.val = ops->ra = getslot(J, ops->ra);
          break;
       default: break;  // Handled later by opcode-specific code.
@@ -2318,19 +3583,102 @@ static void rec_comp_equality(jit_State *J, RecordOps *ops)
    RecordIndex *ix = &ops->ix;
    TValue *rav = ops->rav(), *rcv = ops->rcv();
 
-   // Emit nothing for two non-table, non-udata consts.
+   // Emit nothing for two non-table, non-array, non-udata consts.
 
-   if (tref_isk2(ra, rc) and !(tref_istab(ra) or tref_isudata(ra))) return;
+   if (tref_isk2(ra, rc) and !(tref_istab(ra) or tref_isarray(ra) or tref_isudata(ra))) return;
 
    rec_comp_prep(J);
    int diff = lj_record_objcmp(J, ra, rc, rav, rcv);
 
-   if (diff IS 2 or !(tref_istab(ra) or tref_isudata(ra))) {
+   if (diff IS 2 or !(tref_istab(ra) or tref_isarray(ra) or tref_isudata(ra))) {
       rec_comp_fixup(J, J->pc, ((int)op & 1) IS !diff);
    }
    else if (diff IS 1) { // Only check __eq if different, but same type.
       rec_mm_equal(J, ix, (int)op);
    }
+}
+
+//********************************************************************************************************************
+// Record membership metamethod dispatch.  The target is the receiver and the candidate is its single visible
+// argument for table handlers; native handlers retain their explicit receiver-first ABI.
+
+static IRCallID rec_contains_numeric_call(AET ElementType) noexcept
+{
+   switch (ElementType) {
+      case AET::INT8:   return IRCALL_lj_arr_contains_i8;
+      case AET::BYTE:
+      case AET::UINT8:  return IRCALL_lj_arr_contains_u8;
+      case AET::INT16:  return IRCALL_lj_arr_contains_i16;
+      case AET::UINT16: return IRCALL_lj_arr_contains_u16;
+      case AET::INT32:  return IRCALL_lj_arr_contains_i32;
+      case AET::UINT32: return IRCALL_lj_arr_contains_u32;
+      case AET::INT64:  return IRCALL_lj_arr_contains_i64;
+      case AET::UINT64: return IRCALL_lj_arr_contains_u64;
+      case AET::FLOAT:  return IRCALL_lj_arr_contains_f32;
+      case AET::DOUBLE: return IRCALL_lj_arr_contains_f64;
+      default:          return IRCALL__MAX;
+   }
+}
+
+static void rec_contains(jit_State *J, RecordOps *ops)
+{
+   RecordIndex *ix = &ops->ix;
+   TRef candidate = ix->val;
+   TValue candidate_value;
+   copyTV(J->L, &candidate_value, &ix->valv);
+
+   ix->val = ix->key;
+   copyTV(J->L, &ix->valv, &ix->keyv);
+   ix->key = candidate;
+   copyTV(J->L, &ix->keyv, &candidate_value);
+   ix->tab = ix->val;
+   copyTV(J->L, &ix->tabv, &ix->valv);
+
+   rec_comp_prep(J);
+   if (lj_record_mm_lookup(J, ix, MM_contains)) {
+      if (tref_isarray(ix->val) and lj_arr_is_contains_handler(&ix->mobjv)) {
+         GCarray *array = arrayV(&ix->valv);
+         // Keep the element-type guard on its own snapshot.  A mismatch must re-execute membership instead of taking
+         // the branch recorded for the specialised helper.
+         rec_comp_prep(J);
+         IRBuilder ir(J);
+         TRef element_type_ref = ir.fload(ix->val, IRFL_ARRAY_ELEMTYPE, IRT_U8);
+         ir.guard_eq_int(element_type_ref, ir.kint(int32_t(array->elemtype)));
+
+         // The helper result guard needs the comparison snapshot that rec_comp_fixup adjusts.
+         rec_comp_prep(J);
+         TRef result_ref;
+         IRCallID numeric_call = rec_contains_numeric_call(array->elemtype);
+         if (array->elemtype IS AET::STR_GC and tref_isstr(ix->key)) {
+            result_ref = lj_ir_call(J, IRCALL_lj_arr_contains_str, ix->val, ix->key);
+         }
+         else if (numeric_call != IRCALL__MAX and tref_isnumber(ix->key)) {
+            TRef candidate_ref = ix->key;
+            if (tref_isinteger(candidate_ref)) {
+               candidate_ref = emitir(IRTN(IR_CONV), candidate_ref, IRCONV_NUM_INT);
+            }
+            result_ref = lj_ir_call(J, numeric_call, ix->val, candidate_ref);
+         }
+         else if (array->elemtype IS AET::STR_GC or array->elemtype IS AET::OBJECT or
+             glArrayConversion[size_t(array->elemtype)].primitive) {
+            TRef candidate_ref = rec_tmpref(J, ix->key, IRTMPREF_IN1);
+            result_ref = lj_ir_call(J, IRCALL_lj_arr_contains, ix->val, candidate_ref);
+         }
+         else {
+            // Variant and reference equality may invoke __eq, which cannot re-enter the VM from a native trace call.
+            lj_trace_err(J, LJ_TRERR_NYICALL);
+         }
+         emitir(IRTG(IR_NE, IRT_INT), result_ref, lj_ir_kint(J, 0));
+         rec_comp_fixup(J, J->pc, int(ops->op) & 1);
+         return;
+      }
+      rec_mm_callcomp(J, ix, int(ops->op));
+      return;
+   }
+
+   // Raw table lookup is deliberately separate from ordinary indexed access: __index must not participate in
+   // membership.  Keep the interpreter path until the recorder gains a raw table-presence IR operation.
+   lj_trace_err(J, LJ_TRERR_NOMM);
 }
 
 //********************************************************************************************************************
@@ -2345,10 +3693,12 @@ static TRef rec_arith_op(jit_State *J, RecordOps *ops)
 
    switch (op) {
       case BC_UNM:
-         if (tref_isnumber_str(rc)) return lj_opt_narrow_unm(J, rc, rcv);
+         // Arithmetic does not coerce strings; string operands route to the metamethod path
+         // (mirroring lj_meta_arith), where they raise an arithmetic type error.
+         if (tref_isnumber(rc)) return lj_opt_narrow_unm(J, rc, rcv);
          ix->tab = rc;
          copyTV(J->L, &ix->tabv, rcv);
-         return rec_mm_arith(J, ix, MM_unm);
+         return rec_mm_binop(J, ix, MM_unm);
 
       case BC_ADDNV: case BC_SUBNV: case BC_MULNV: case BC_DIVNV: case BC_MODNV:
          // Swap rb/rc and rbv/rcv. rav is temp.
@@ -2357,29 +3707,29 @@ static TRef rec_arith_op(jit_State *J, RecordOps *ops)
          copyTV(J->L, rbv, rcv);
          copyTV(J->L, rcv, rav);
          if (op IS BC_MODNV) {
-            if (tref_isnumber_str(rb) and tref_isnumber_str(rc))
+            if (tref_isnumber(rb) and tref_isnumber(rc))
                return lj_opt_narrow_mod(J, rb, rc, rbv, rcv);
-            return rec_mm_arith(J, ix, MM_mod);
+            return rec_mm_binop(J, ix, MM_mod);
          }
          [[fallthrough]];
 
       case BC_ADDVN: case BC_SUBVN: case BC_MULVN: case BC_DIVVN:
       case BC_ADDVV: case BC_SUBVV: case BC_MULVV: case BC_DIVVV: {
          MMS mm = bcmode_mm(op);
-         if (tref_isnumber_str(rb) and tref_isnumber_str(rc))
+         if (tref_isnumber(rb) and tref_isnumber(rc))
             return lj_opt_narrow_arith(J, rb, rc, rbv, rcv, (IROp)((int)mm - (int)MM_add + (int)IR_ADD));
-         return rec_mm_arith(J, ix, mm);
+         return rec_mm_binop(J, ix, mm);
       }
 
       case BC_MODVN: case BC_MODVV:
-         if (tref_isnumber_str(rb) and tref_isnumber_str(rc))
+         if (tref_isnumber(rb) and tref_isnumber(rc))
             return lj_opt_narrow_mod(J, rb, rc, rbv, rcv);
-         return rec_mm_arith(J, ix, MM_mod);
+         return rec_mm_binop(J, ix, MM_mod);
 
       case BC_POW:
-         if (tref_isnumber_str(rb) and tref_isnumber_str(rc))
+         if (tref_isnumber(rb) and tref_isnumber(rc))
             return lj_opt_narrow_pow(J, rb, rc, rbv, rcv);
-         return rec_mm_arith(J, ix, MM_pow);
+         return rec_mm_binop(J, ix, MM_pow);
 
       default:
          return 0;
@@ -2400,7 +3750,7 @@ static TRef rec_arith_op(jit_State *J, RecordOps *ops)
 // For non-nil elements, we emit an XLOAD with a non-null guard; if the element becomes nil at runtime,
 // the guard exits to the interpreter.
 
-static TRef rec_array_xload(jit_State *J, TRef ArrayRef, TRef IdxRef, GCarray *Arr, int32_t IdxInt)
+TRef lj_record_array_xload(jit_State *J, TRef ArrayRef, TRef IdxRef, GCarray *Arr, int32_t IdxInt)
 {
    IRBuilder ir(J);
    AET et = Arr->elemtype;
@@ -2408,10 +3758,15 @@ static TRef rec_array_xload(jit_State *J, TRef ArrayRef, TRef IdxRef, GCarray *A
 
    switch (et) {
       case AET::BYTE:   shift = 0; break;
+      case AET::INT8:   shift = 0; break;
       case AET::INT16:  shift = 1; break;
       case AET::INT32:  shift = 2; break;
+      case AET::UINT8:  shift = 0; break;
+      case AET::UINT16: shift = 1; break;
+      case AET::UINT32: shift = 2; break;
       case AET::FLOAT:  shift = 2; break;
       case AET::INT64:  shift = 3; break;
+      case AET::UINT64: shift = 3; break;
       case AET::DOUBLE: shift = 3; break;
       case AET::STR_GC: shift = 3; break;  // GCRef is 8 bytes
       case AET::TABLE:  shift = 3; break;  // GCRef is 8 bytes
@@ -2447,6 +3802,10 @@ static TRef rec_array_xload(jit_State *J, TRef ArrayRef, TRef IdxRef, GCarray *A
          if (not LJ_DUALNUM)
             val = emitir(IRTN(IR_CONV), val, IRCONV_NUM_INT);
          break;
+      case AET::INT8:
+         val = emitir(IRT(IR_XLOAD, IRT_I8), addr, 0);
+         if (not LJ_DUALNUM) val = emitir(IRTN(IR_CONV), val, IRCONV_NUM_INT);
+         break;
       case AET::INT16:
          val = emitir(IRT(IR_XLOAD, IRT_I16), addr, 0);
          if (not LJ_DUALNUM)
@@ -2460,6 +3819,22 @@ static TRef rec_array_xload(jit_State *J, TRef ArrayRef, TRef IdxRef, GCarray *A
       case AET::INT64:
          val = emitir(IRT(IR_XLOAD, IRT_I64), addr, 0);
          val = emitir(IRTN(IR_CONV), val, (IRT_NUM << IRCONV_DSH) | IRT_I64);
+         break;
+      case AET::UINT8:
+         val = emitir(IRT(IR_XLOAD, IRT_U8), addr, 0);
+         if (not LJ_DUALNUM) val = emitir(IRTN(IR_CONV), val, IRCONV_NUM_INT);
+         break;
+      case AET::UINT16:
+         val = emitir(IRT(IR_XLOAD, IRT_U16), addr, 0);
+         if (not LJ_DUALNUM) val = emitir(IRTN(IR_CONV), val, IRCONV_NUM_INT);
+         break;
+      case AET::UINT32:
+         val = emitir(IRT(IR_XLOAD, IRT_U32), addr, 0);
+         val = emitir(IRTN(IR_CONV), val, (IRT_NUM << IRCONV_DSH) | IRT_U32);
+         break;
+      case AET::UINT64:
+         val = emitir(IRT(IR_XLOAD, IRT_U64), addr, 0);
+         val = emitir(IRTN(IR_CONV), val, (IRT_NUM << IRCONV_DSH) | IRT_U64);
          break;
       case AET::FLOAT:
          val = emitir(IRT(IR_XLOAD, IRT_FLOAT), addr, 0);
@@ -2485,6 +3860,36 @@ static TRef rec_array_xload(jit_State *J, TRef ArrayRef, TRef IdxRef, GCarray *A
 }
 
 //********************************************************************************************************************
+// Lower a guarded native-array iterator load through the cheapest safe representation-specific path.
+
+TRef lj_record_array_iter_load(jit_State *J, TRef ArrayRef, TRef IdxRef, GCarray *Arr, int32_t IdxInt)
+{
+   TRef result_ref = lj_record_array_xload(J, ArrayRef, IdxRef, Arr, IdxInt);
+   if (result_ref) return result_ref;
+
+   IRBuilder ir(J);
+   TRef element_type_ref = ir.fload(ArrayRef, IRFL_ARRAY_ELEMTYPE, IRT_U8);
+   ir.guard_eq_int(element_type_ref, ir.kint(int32_t(Arr->elemtype)));
+
+   TValue result_tv;
+   IRCallID call_id;
+   if (array_element_load_allocates(Arr->elemtype)) {
+      lj_arr_getidx(J->L, Arr, IdxInt, &result_tv);
+      call_id = IRCALL_lj_arr_getidx;
+   }
+   else {
+      lj_arr_getidx_noalloc(J->L, Arr, IdxInt, &result_tv);
+      call_id = IRCALL_lj_arr_getidx_noalloc;
+   }
+
+   IRType result_type = itype2irt(&result_tv);
+   if (!LJ_DUALNUM and result_type IS IRT_INT) result_type = IRT_NUM;
+   TRef tmp_ref = rec_tmpref(J, TREF_NIL, IRTMPREF_OUT1);
+   lj_ir_call(J, call_id, ArrayRef, IdxRef, tmp_ref);
+   return lj_record_vload(J, tmp_ref, 0, result_type);
+}
+
+//********************************************************************************************************************
 // Inline XSTORE for array element access.
 //
 // Emits IR_XSTORE directly for numeric types (BYTE, INT16, INT32, INT64, FLOAT, DOUBLE) and GC-reference
@@ -2506,10 +3911,15 @@ static bool rec_array_xstore(jit_State *J, TRef ArrayRef, TRef IdxRef, TRef ValR
 
    switch (et) {
       case AET::BYTE:   shift = 0; break;
+      case AET::INT8:   shift = 0; break;
       case AET::INT16:  shift = 1; break;
       case AET::INT32:  shift = 2; break;
+      case AET::UINT8:  shift = 0; break;
+      case AET::UINT16: shift = 1; break;
+      case AET::UINT32: shift = 2; break;
       case AET::FLOAT:  shift = 2; break;
       case AET::INT64:  shift = 3; break;
+      case AET::UINT64: shift = 3; break;
       case AET::DOUBLE: shift = 3; break;
       case AET::STR_GC: shift = 3; is_gc_type = true; break;
       case AET::TABLE:  shift = 3; is_gc_type = true; break;
@@ -2517,7 +3927,25 @@ static bool rec_array_xstore(jit_State *J, TRef ArrayRef, TRef IdxRef, TRef ValR
    }
 
    // For numeric types, the value must be a number
-   if (not is_gc_type and not tref_isnumber(ValRef)) return false;
+   if (not is_gc_type and not (tref_isnumber(ValRef) or tref_isnil(ValRef))) return false;
+
+   // Floating-point to unsigned conversions do not consistently implement the interpreter's modulo semantics across
+   // widths and backends.  Keep integer values on the inline path, but use the checked runtime store for numeric
+   // values.
+   if (tref_isnum(ValRef) and
+       (et IS AET::UINT8 or et IS AET::UINT16 or et IS AET::UINT32 or et IS AET::UINT64)) return false;
+
+   if (tref_isnum(ValRef)) {
+      if (et IS AET::BYTE or et IS AET::INT8 or et IS AET::INT16 or et IS AET::INT32 or et IS AET::INT64 or
+          et IS AET::UINT8 or et IS AET::UINT16 or et IS AET::UINT32 or et IS AET::UINT64) {
+         emitir(IRTG(IR_GE, IRT_NUM), ValRef, lj_ir_knum(J, -DBL_MAX));
+         emitir(IRTG(IR_LE, IRT_NUM), ValRef, lj_ir_knum(J, DBL_MAX));
+      }
+      else if (et IS AET::FLOAT) {
+         emitir(IRTG(IR_GE, IRT_NUM), ValRef, lj_ir_knum(J, -double(FLT_MAX)));
+         emitir(IRTG(IR_LE, IRT_NUM), ValRef, lj_ir_knum(J, double(FLT_MAX)));
+      }
+   }
 
    // For GC types, validate the value type at recording time
    if (is_gc_type and not tref_isnil(ValRef)) {
@@ -2542,25 +3970,32 @@ static bool rec_array_xstore(jit_State *J, TRef ArrayRef, TRef IdxRef, TRef ValR
    TRef store_val;
    switch (et) {
       case AET::BYTE:
-         store_val = tref_isnum(ValRef)
+         store_val = tref_isnil(ValRef) ? ir.kint(0) : tref_isnum(ValRef)
             ? emitir(IRTI(IR_CONV), ValRef, IRCONV_INT_NUM | IRCONV_ANY)
             : ValRef;
          emitir(IRT(IR_XSTORE, IRT_U8), addr, store_val);
          break;
+      case AET::INT8:
+         store_val = tref_isnil(ValRef) ? ir.kint(0) : tref_isnum(ValRef)
+            ? emitir(IRTI(IR_CONV), ValRef, IRCONV_INT_NUM | IRCONV_ANY)
+            : ValRef;
+         emitir(IRT(IR_XSTORE, IRT_I8), addr, store_val);
+         break;
       case AET::INT16:
-         store_val = tref_isnum(ValRef)
+         store_val = tref_isnil(ValRef) ? ir.kint(0) : tref_isnum(ValRef)
             ? emitir(IRTI(IR_CONV), ValRef, IRCONV_INT_NUM | IRCONV_ANY)
             : ValRef;
          emitir(IRT(IR_XSTORE, IRT_I16), addr, store_val);
          break;
       case AET::INT32:
-         store_val = tref_isnum(ValRef)
+         store_val = tref_isnil(ValRef) ? ir.kint(0) : tref_isnum(ValRef)
             ? emitir(IRTI(IR_CONV), ValRef, IRCONV_INT_NUM | IRCONV_ANY)
             : ValRef;
          emitir(IRT(IR_XSTORE, IRT_INT), addr, store_val);
          break;
       case AET::INT64:
-         if (tref_isint(ValRef))
+         if (tref_isnil(ValRef)) store_val = lj_ir_kint64(J, 0);
+         else if (tref_isint(ValRef))
             store_val = emitir(IRT(IR_CONV, IRT_I64), ValRef,
                (IRT_I64 << IRCONV_DSH) | IRT_INT | IRCONV_SEXT);
          else
@@ -2568,15 +4003,43 @@ static bool rec_array_xstore(jit_State *J, TRef ArrayRef, TRef IdxRef, TRef ValR
                (IRT_I64 << IRCONV_DSH) | IRT_NUM | IRCONV_ANY);
          emitir(IRT(IR_XSTORE, IRT_I64), addr, store_val);
          break;
+      case AET::UINT8:
+         store_val = tref_isnil(ValRef) ? ir.kint(0) : tref_isnum(ValRef)
+            ? emitir(IRTI(IR_CONV), ValRef, IRCONV_INT_NUM | IRCONV_ANY) : ValRef;
+         emitir(IRT(IR_XSTORE, IRT_U8), addr, store_val);
+         break;
+      case AET::UINT16:
+         store_val = tref_isnil(ValRef) ? ir.kint(0) : tref_isnum(ValRef)
+            ? emitir(IRTI(IR_CONV), ValRef, IRCONV_INT_NUM | IRCONV_ANY) : ValRef;
+         emitir(IRT(IR_XSTORE, IRT_U16), addr, store_val);
+         break;
+      case AET::UINT32:
+         if (tref_isnil(ValRef)) store_val = ir.kint(0);
+         else if (tref_isint(ValRef)) {
+            store_val = emitir(IRT(IR_CONV, IRT_U32), ValRef,
+               (IRT_U32 << IRCONV_DSH) | IRT_INT | IRCONV_SEXT);
+         }
+         else store_val = emitir(IRT(IR_CONV, IRT_U32), ValRef, (IRT_U32 << IRCONV_DSH) | IRT_NUM | IRCONV_ANY);
+         emitir(IRT(IR_XSTORE, IRT_U32), addr, store_val);
+         break;
+      case AET::UINT64:
+         if (tref_isnil(ValRef)) store_val = lj_ir_kint64(J, 0);
+         else if (tref_isint(ValRef)) {
+            store_val = emitir(IRT(IR_CONV, IRT_U64), ValRef,
+               (IRT_U64 << IRCONV_DSH) | IRT_INT | IRCONV_SEXT);
+         }
+         else store_val = emitir(IRT(IR_CONV, IRT_U64), ValRef, (IRT_U64 << IRCONV_DSH) | IRT_NUM | IRCONV_ANY);
+         emitir(IRT(IR_XSTORE, IRT_U64), addr, store_val);
+         break;
       case AET::FLOAT:
-         store_val = tref_isint(ValRef)
+         store_val = tref_isnil(ValRef) ? lj_ir_knum(J, 0) : tref_isint(ValRef)
             ? emitir(IRTN(IR_CONV), ValRef, IRCONV_NUM_INT) : ValRef;
          store_val = emitir(IRT(IR_CONV, IRT_FLOAT), store_val,
             (IRT_FLOAT << IRCONV_DSH) | IRT_NUM);
          emitir(IRT(IR_XSTORE, IRT_FLOAT), addr, store_val);
          break;
       case AET::DOUBLE:
-         store_val = tref_isint(ValRef)
+         store_val = tref_isnil(ValRef) ? lj_ir_knum(J, 0) : tref_isint(ValRef)
             ? emitir(IRTN(IR_CONV), ValRef, IRCONV_NUM_INT) : ValRef;
          emitir(IRT(IR_XSTORE, IRT_NUM), addr, store_val);
          break;
@@ -2603,7 +4066,7 @@ static bool rec_array_xstore(jit_State *J, TRef ArrayRef, TRef IdxRef, TRef ValR
 // Handle native array ops: BC_AGETV, BC_AGETB, BC_ASETV, BC_ASETB
 //
 // Native arrays (GCarray) are different from tables - they have typed elements and 0-based indexing internally.
-// We emit calls to helper functions that handle the element type conversion.
+// Record guarded typed loads and stores directly where supported, with helper calls for the remaining element types.
 
 static TRef rec_array_op(jit_State *J, RecordOps *ops)
 {
@@ -2635,14 +4098,14 @@ static TRef rec_array_op(jit_State *J, RecordOps *ops)
    }
 
    TRef len_ref = ir.fload_int(array_ref, IRFL_ARRAY_LEN);
-   ir.guard_int(IR_ULT, idx_ref, len_ref);
+   rec_idx_abc(J, len_ref, idx_ref, arrayV(ops->rbv())->len);
 
    if (is_get) {
       GCarray *arr = arrayV(ops->rbv());
       if (idx_int < 0 or MSize(idx_int) >= arr->len) lj_trace_err(J, LJ_TRERR_BADTYPE);
 
       // Try inline path for numeric and GC types
-      TRef result = rec_array_xload(J, array_ref, idx_ref, arr, idx_int);
+      TRef result = lj_record_array_xload(J, array_ref, idx_ref, arr, idx_int);
       if (result) return result;
 
       // Fallback: C call for non-inline types
@@ -2666,10 +4129,119 @@ static TRef rec_array_op(jit_State *J, RecordOps *ops)
 }
 
 //********************************************************************************************************************
+// Handle safe native array gets: BC_ASGETV, BC_ASGETB
+//
+// These bytecodes select safe native-array indexing only when the observed receiver is an array and the key is an
+// integer.  All other observations retain ordinary indexed lookup and metamethod behaviour.
+
+static TRef rec_safe_array_get(jit_State *J, RecordOps *Ops)
+{
+   IRBuilder ir(J);
+   RecordIndex *ix = &Ops->ix;
+   bool is_lit = Ops->op IS BC_ASGETB;
+
+   if (is_lit) {
+      setintV(&ix->keyv, int32_t(Ops->rc));
+      ix->key = ir.kint(int32_t(Ops->rc));
+   }
+
+   if (not tref_isarray(Ops->rb)) {
+      ix->idxchain = LJ_MAX_IDXCHAIN;
+      return lj_record_idx(J, ix);
+   }
+
+   int32_t idx_int;
+
+   if (is_lit) idx_int = int32_t(Ops->rc);
+   else {
+      cTValue *key_tv = Ops->rcv();
+      if (tvisint(key_tv)) idx_int = intV(key_tv);
+#if !LJ_DUALNUM
+      else if (tvisnum(key_tv)) {
+         lua_Number key_num = numV(key_tv);
+         idx_int = int32_t(lj_num2int(key_num));
+         if (not (lua_Number(idx_int) IS key_num)) {
+            ix->idxchain = LJ_MAX_IDXCHAIN;
+            return lj_record_idx(J, ix);
+         }
+      }
+#endif
+      else {
+         ix->idxchain = LJ_MAX_IDXCHAIN;
+         return lj_record_idx(J, ix);
+      }
+
+      if (not tref_isnumber(Ops->rc)) {
+         ix->idxchain = LJ_MAX_IDXCHAIN;
+         return lj_record_idx(J, ix);
+      }
+   }
+
+   if (is_lit) {
+      // A safe-navigation join after a literal native-array get can restore a stale destination slot.  Do not install
+      // a partial trace for this prototype until that snapshot interaction can be represented safely.
+      J->pt->flags |= PROTO_NOJIT;
+      lj_trace_err(J, LJ_TRERR_CJITOFF);
+   }
+
+   GCarray *arr = arrayV(Ops->rbv());
+   if (idx_int < 0 or MSize(idx_int) >= arr->len) {
+      // Continuing an out-of-bounds trace across the safe-navigation join leaves the destination slot stale when a
+      // later entry observes an in-bounds index.  End the trace before this bytecode so the VM produces nil directly.
+      lj_snap_add(J);
+      lj_record_stop(J, TraceLink::INTERP, 0);
+      return 0;
+   }
+
+   TRef idx_ref = lj_opt_narrow_index(J, Ops->rc);
+   TRef len_ref = ir.fload_int(Ops->rb, IRFL_ARRAY_LEN);
+   rec_idx_abc(J, len_ref, idx_ref, arr->len);
+   TRef result_ref = lj_record_array_xload(J, Ops->rb, idx_ref, arr, idx_int);
+   if (not result_ref) {
+      TValue result_tv;
+      lj_arr_getidx(J->L, arr, idx_int, &result_tv);
+      IRType result_type = itype2irt(&result_tv);
+      if (!LJ_DUALNUM and result_type IS IRT_INT) result_type = IRT_NUM;
+      TRef tmp_ref = rec_tmpref(J, TREF_NIL, IRTMPREF_OUT1);
+      lj_ir_call(J, IRCALL_lj_arr_getidx, Ops->rb, idx_ref, tmp_ref);
+      result_ref = lj_record_vload(J, tmp_ref, 0, result_type);
+   }
+   J->needsnap = 1;
+   return result_ref;
+}
+
+//********************************************************************************************************************
 // Handle native object ops: BC_OBGETF, BC_OBSETF
 //
 // Native objects (GCobject) use field handler lookup tables.  We emit calls to helper functions that handle the field
 // access.  Type inference uses MetaClass field definitions - no probing/side effects.
+
+static_assert(offsetof(Object, Flags) IS 48);
+inline constexpr int OBJECT_FLAGS_OFFSET = offsetof(Object, Flags);
+
+static void rec_object_liveness_guard(jit_State *J, TRef ObjRef, TRef &PtrRef)
+{
+   // A cleared UID means that the wrapper has already observed object termination.
+   TRef uid_ref = emitir(IRTI(IR_FLOAD), ObjRef, IRFL_OBJ_UID);
+   emitir(IRTGI(IR_NE), uid_ref, lj_ir_kint(J, 0));
+
+   // The weak pin keeps the Object header readable even after teardown begins.  GCOBJ_DETACHED is intentionally not
+   // tested here: it controls wrapper ownership and has no bearing on the validity of pinned field access.
+   TRef flags_ref = emitir(IRT(IR_FLOAD, IRT_U8), ObjRef, IRFL_OBJ_FLAGS);
+   TRef pinned = emitir(IRTI(IR_BAND), flags_ref, lj_ir_kint(J, GCOBJ_PINNED));
+   emitir(IRTGI(IR_NE), pinned, lj_ir_kint(J, 0));
+
+   // A pinned wrapper normally retains its cached pointer, but guard it independently in case the wrapper was cleared.
+   PtrRef = emitir(IRT(IR_FLOAD, IRT_PTR), ObjRef, IRFL_OBJ_PTR);
+   emitir(IRTG(IR_NE, IRT_PTR), PtrRef, lj_ir_knull(J, IRT_PTR));
+
+   // A weak pin preserves the allocation, not object liveness.  Reject zombie headers before the fast-path lock.
+   TRef flags_addr = emitir(IRT(IR_ADD, IRT_PTR), PtrRef, lj_ir_kintp(J, OBJECT_FLAGS_OFFSET));
+   TRef object_flags = emitir(IRT(IR_XLOAD, IRT_U32), flags_addr, 0);
+   // Match the interpreter's object_is_dead() semantics (Object::collecting() tests both flags).
+   TRef collecting = emitir(IRTI(IR_BAND), object_flags, lj_ir_kint(J, uint32_t(NF::FREE|NF::FREE_ON_UNLOCK)));
+   emitir(IRTGI(IR_EQ), collecting, lj_ir_kint(J, 0));
+}
 
 static TRef rec_object_get(jit_State *J, RecordOps *ops)
 {
@@ -2687,21 +4259,11 @@ static TRef rec_object_get(jit_State *J, RecordOps *ops)
    int field_type = ir_object_field_type(obj, key, field_offset, field_flags); // Returns an IRT or -1
    if (field_type < 0) lj_trace_err(J, LJ_TRERR_BADTYPE);  // Unknown field type (could be a action/method) - abort recording
 
-   if (field_offset) {
-      constexpr uint32_t unsupported = FD_ARRAY|FD_STRUCT|FD_UNSIGNED|FD_CPP;
+   if (field_offset and obj->is_pinned()) {
+      constexpr uint32_t unsupported = FD_ARRAY|FD_VECTOR|FD_STRUCT|FD_UNSIGNED|FD_CPP;
       if (not (field_flags & unsupported)) {
-         // Guard: object is alive (uid != 0)
-         TRef uid_ref = emitir(IRTI(IR_FLOAD), obj_ref, IRFL_OBJ_UID);
-         emitir(IRTGI(IR_NE), uid_ref, lj_ir_kint(J, 0));
-
-         // Guard: object is not detached (flags & GCOBJ_DETACHED == 0)
-         TRef flags_ref = emitir(IRT(IR_FLOAD, IRT_U8), obj_ref, IRFL_OBJ_FLAGS);
-         TRef detached = emitir(IRTI(IR_BAND), flags_ref, lj_ir_kint(J, GCOBJ_DETACHED));
-         emitir(IRTGI(IR_EQ), detached, lj_ir_kint(J, 0));
-
-         // Guard: object has a valid ptr (ptr != nullptr)
-         TRef ptr_ref = emitir(IRT(IR_FLOAD, IRT_PTR), obj_ref, IRFL_OBJ_PTR);
-         emitir(IRTG(IR_NE, IRT_PTR), ptr_ref, lj_ir_knull(J, IRT_PTR));
+         TRef ptr_ref;
+         rec_object_liveness_guard(J, obj_ref, ptr_ref);
 
          if (field_flags & FD_STRING) {
             // String fields: lock, read CSTRING pointer, unlock, intern via jit_object_getstr.
@@ -2774,23 +4336,13 @@ static TRef rec_object_set(jit_State *J, RecordOps *ops)
    uint32_t field_flags = 0;
    int field_type = ir_object_field_type_write(obj, key, field_offset, field_flags);
 
-   if (field_type >= 0 and field_offset) {
-      constexpr uint32_t unsupported = FD_ARRAY|FD_STRUCT|FD_UNSIGNED|FD_CPP;
+   if (field_type >= 0 and field_offset and obj->is_pinned()) {
+      constexpr uint32_t unsupported = FD_ARRAY|FD_VECTOR|FD_STRUCT|FD_UNSIGNED|FD_CPP;
       if (not (field_flags & unsupported)) {
          constexpr uint32_t supported_numeric = FD_DOUBLE|FD_INT64|FD_INT;
          if ((field_flags & supported_numeric) and not (field_flags & FD_POINTER) and tref_isnumber(val_ref)) {
-            // Guard: object is alive (uid != 0)
-            TRef uid_ref = emitir(IRTI(IR_FLOAD), obj_ref, IRFL_OBJ_UID);
-            emitir(IRTGI(IR_NE), uid_ref, lj_ir_kint(J, 0));
-
-            // Guard: object is not detached (flags & GCOBJ_DETACHED == 0)
-            TRef flags_ref = emitir(IRT(IR_FLOAD, IRT_U8), obj_ref, IRFL_OBJ_FLAGS);
-            TRef detached = emitir(IRTI(IR_BAND), flags_ref, lj_ir_kint(J, GCOBJ_DETACHED));
-            emitir(IRTGI(IR_EQ), detached, lj_ir_kint(J, 0));
-
-            // Guard: object has a valid ptr (ptr != nullptr)
-            TRef ptr_ref = emitir(IRT(IR_FLOAD, IRT_PTR), obj_ref, IRFL_OBJ_PTR);
-            emitir(IRTG(IR_NE, IRT_PTR), ptr_ref, lj_ir_knull(J, IRT_PTR));
+            TRef ptr_ref;
+            rec_object_liveness_guard(J, obj_ref, ptr_ref);
 
             // Lock the object and get C++ pointer
             TRef objptr = lj_ir_call(J, IRCALL_jit_object_lock, obj_ref);
@@ -2833,6 +4385,306 @@ static TRef rec_object_set(jit_State *J, RecordOps *ops)
    TRef null_ref = lj_ir_kkptr(J, nullptr);  // No inline caching for JIT traces
    lj_ir_call(J, IRCALL_bc_object_setfield, obj_ref, key_ref, tmp_ref, null_ref);
    return 0;
+}
+
+//********************************************************************************************************************
+// Handle native struct ops: BC_STGETF, BC_STSETF
+//
+// Non-lifecycle scalar fields are loaded and stored directly after guarding the immutable definition and payload.
+// Lifecycle-bound structs and complex field types retain the helper path and its full access semantics.
+
+static TRef rec_struct_payload_guard(jit_State *J, TRef StructRef, GCstruct *Value)
+{
+   TRef flags_ref = emitir(IRT(IR_FLOAD, IRT_U8), StructRef, IRFL_STRUCT_FLAGS);
+   TRef lifecycle_ref = emitir(IRTI(IR_BAND), flags_ref, lj_ir_kint(J, STRUCT_LIFECYCLE));
+   emitir(IRTGI(IR_EQ), lifecycle_ref, lj_ir_kint(J, 0));
+
+   TRef def_ref = emitir(IRT(IR_FLOAD, IRT_PTR), StructRef, IRFL_STRUCT_DEF);
+   emitir(IRTG(IR_EQ, IRT_PTR), def_ref, lj_ir_kkptr(J, Value->def));
+
+   TRef data_ref = emitir(IRT(IR_FLOAD, IRT_PTR), StructRef, IRFL_STRUCT_DATA);
+   emitir(IRTG(IR_NE, IRT_PTR), data_ref, lj_ir_knull(J, IRT_PTR));
+   return data_ref;
+}
+
+static bool rec_struct_scalar_field(uint32_t FieldFlags, NativeStructType NativeType)
+{
+   constexpr uint32_t unsupported = FD_ARRAY|FD_VECTOR|FD_STRUCT|FD_POINTER|FD_STRING|FD_OBJECT|FD_FUNCTION|FD_CPP;
+   if (FieldFlags & unsupported) return false;
+
+   switch (effective_scalar_type(FieldFlags, NativeType)) {
+      case NativeStructType::Bool:
+      case NativeStructType::Char:
+      case NativeStructType::Int8:
+      case NativeStructType::UInt8:
+      case NativeStructType::Int16:
+      case NativeStructType::UInt16:
+      case NativeStructType::Int32:
+      case NativeStructType::UInt32:
+      case NativeStructType::Int64:
+      case NativeStructType::UInt64:
+      case NativeStructType::Float:
+      case NativeStructType::Double:
+         return true;
+      default:
+         return false;
+   }
+}
+
+static double rec_struct_recorded_number(const TValue *Value)
+{
+   return tvisint(Value) ? double(intV(Value)) : double(numV(Value));
+}
+
+static TRef rec_struct_number_ref(jit_State *J, TRef ValueRef)
+{
+   if (tref_isint(ValueRef)) return emitir(IRTN(IR_CONV), ValueRef, IRCONV_NUM_INT);
+   return ValueRef;
+}
+
+static bool rec_struct_integer_signed(NativeStructType Type)
+{
+   switch (Type) {
+      case NativeStructType::Int8:
+      case NativeStructType::Int16:
+      case NativeStructType::Int32:
+      case NativeStructType::Int64:
+         return true;
+      default:
+         return false;
+   }
+}
+
+static bool rec_struct_integer_fits_int32(double Value, NativeStructType Type, int Bits)
+{
+   const bool signed_type = rec_struct_integer_signed(Type);
+   const double lower_bound = signed_type ? -std::ldexp(1.0, Bits - 1) : 0.0;
+   const double upper_bound = std::ldexp(1.0, signed_type ? Bits - 1 : Bits);
+   const double truncated_value = std::trunc(Value);
+   return truncated_value >= lower_bound and truncated_value < upper_bound and truncated_value >= double(INT32_MIN) and
+      truncated_value <= double(INT32_MAX);
+}
+
+static TRef rec_struct_checked_integer(jit_State *J, TRef ValueRef, NativeStructType Type, int Bits)
+{
+   TRef truncated_ref = emitir(IRTN(IR_FPMATH), rec_struct_number_ref(J, ValueRef), IRFPM_TRUNC);
+   const bool signed_type = rec_struct_integer_signed(Type);
+   const double lower_bound = signed_type ? -std::ldexp(1.0, Bits - 1) : 0.0;
+   const double upper_bound = std::ldexp(1.0, signed_type ? Bits - 1 : Bits);
+   emitir(IRTG(IR_GE, IRT_NUM), truncated_ref, lj_ir_knum(J, lower_bound));
+   emitir(IRTG(IR_LT, IRT_NUM), truncated_ref, lj_ir_knum(J, upper_bound));
+   return emitir(IRTGI(IR_CONV), truncated_ref, IRCONV_INT_NUM | IRCONV_CHECK);
+}
+
+static int rec_struct_integer_width(NativeStructType Type)
+{
+   switch (Type) {
+      case NativeStructType::Char:
+      case NativeStructType::Int8:
+      case NativeStructType::UInt8:
+         return 8;
+      case NativeStructType::Int16:
+      case NativeStructType::UInt16:
+         return 16;
+      case NativeStructType::Int32:
+      case NativeStructType::UInt32:
+         return 32;
+      case NativeStructType::Int64:
+      case NativeStructType::UInt64:
+         return 64;
+      default:
+         return 0;
+   }
+}
+
+static IRType rec_struct_integer_store_type(int Bits)
+{
+   if (Bits IS 8) return IRT_U8;
+   if (Bits IS 16) return IRT_U16;
+   if (Bits IS 32) return IRT_U32;
+   return IRT_I64;
+}
+
+static TRef rec_struct_get(jit_State *J, RecordOps *ops)
+{
+   TRef struct_ref = ops->rb;
+   if (not tref_isstruct(struct_ref)) lj_trace_err(J, LJ_TRERR_BADTYPE);
+
+   GCstruct *value = structV(ops->rbv());
+   GCstr *key = strV(ops->rcv());
+   int field_offset;
+   uint32_t field_flags = 0;
+   NativeStructType native_type = NativeStructType::Legacy;
+   bool accepted_index = false;
+   int field_type = ir_struct_field_type(value, key, bc_p32(ops->ins), field_offset, field_flags, native_type,
+      accepted_index);
+   (void)accepted_index;
+   if (field_type < 0) lj_trace_err(J, LJ_TRERR_BADTYPE);
+
+   const auto scalar_type = effective_scalar_type(field_flags, native_type);
+
+   if (not value->is_lifecycle_bound() and rec_struct_scalar_field(field_flags, native_type)) {
+      TRef data_ref = rec_struct_payload_guard(J, struct_ref, value);
+      TRef addr_ref = emitir(IRT(IR_ADD, IRT_PTR), data_ref, lj_ir_kintp(J, field_offset));
+
+      if (scalar_type IS NativeStructType::Bool) {
+         TRef result_ref = emitir(IRT(IR_XLOAD, IRT_U8), addr_ref, 0);
+         const bool recorded_value = ((const bool *)((const uint8_t *)value->data + field_offset))[0];
+         if (recorded_value) {
+            emitir(IRTGI(IR_NE), result_ref, lj_ir_kint(J, 0));
+            return TREF_TRUE;
+         }
+         emitir(IRTGI(IR_EQ), result_ref, lj_ir_kint(J, 0));
+         return TREF_FALSE;
+      }
+      else if (scalar_type IS NativeStructType::Float) {
+         TRef result_ref = emitir(IRT(IR_XLOAD, IRT_FLOAT), addr_ref, 0);
+         return emitir(IRTN(IR_CONV), result_ref, (IRT_NUM << IRCONV_DSH) | IRT_FLOAT);
+      }
+      else if (scalar_type IS NativeStructType::Double) return emitir(IRT(IR_XLOAD, IRT_NUM), addr_ref, 0);
+      else if (scalar_type IS NativeStructType::Int64) {
+         TRef result_ref = emitir(IRT(IR_XLOAD, IRT_I64), addr_ref, 0);
+         return emitir(IRTN(IR_CONV), result_ref, (IRT_NUM << IRCONV_DSH) | IRT_I64);
+      }
+      else if (scalar_type IS NativeStructType::UInt64) {
+         TRef result_ref = emitir(IRT(IR_XLOAD, IRT_U64), addr_ref, 0);
+         return emitir(IRTN(IR_CONV), result_ref, (IRT_NUM << IRCONV_DSH) | IRT_U64);
+      }
+      else if (scalar_type IS NativeStructType::Int16 or scalar_type IS NativeStructType::UInt16) {
+         IRType load_type = (scalar_type IS NativeStructType::UInt16) ? IRT_U16 : IRT_I16;
+         TRef result_ref = emitir(IRT(IR_XLOAD, load_type), addr_ref, 0);
+         if (not LJ_DUALNUM) result_ref = emitir(IRTN(IR_CONV), result_ref, IRCONV_NUM_INT);
+         return result_ref;
+      }
+      else if (scalar_type IS NativeStructType::Char or scalar_type IS NativeStructType::Int8 or
+            scalar_type IS NativeStructType::UInt8) {
+         IRType load_type = scalar_type IS NativeStructType::Int8 ? IRT_I8 : IRT_U8;
+         TRef result_ref = emitir(IRT(IR_XLOAD, load_type), addr_ref, 0);
+         if (not LJ_DUALNUM) result_ref = emitir(IRTN(IR_CONV), result_ref, IRCONV_NUM_INT);
+         return result_ref;
+      }
+      else if (scalar_type IS NativeStructType::Int32) {
+         TRef result_ref = emitir(IRT(IR_XLOAD, IRT_INT), addr_ref, 0);
+         if (not LJ_DUALNUM) result_ref = emitir(IRTN(IR_CONV), result_ref, IRCONV_NUM_INT);
+         return result_ref;
+      }
+      else if (scalar_type IS NativeStructType::UInt32) {
+         TRef result_ref = emitir(IRT(IR_XLOAD, IRT_U32), addr_ref, 0);
+         return emitir(IRTN(IR_CONV), result_ref, (IRT_NUM << IRCONV_DSH) | IRT_U32);
+      }
+   }
+
+   TRef tmp_ref = rec_tmpref(J, TREF_NIL, IRTMPREF_OUT1);
+   TRef null_ref = lj_ir_kkptr(J, nullptr);
+   lj_ir_call(J, IRCALL_bc_struct_getfield, struct_ref, ops->rc, tmp_ref, null_ref);
+   IRType result_type = (IRType)field_type;
+   if (field_flags & FD_OBJECT) {
+      auto field_address = (const uint8_t *)value->data + field_offset;
+      const bool cleared = (field_flags & FD_INT) ? (((const OBJECTID *)field_address)[0] IS OBJECTID(0)) :
+         (((const OBJECTPTR *)field_address)[0] IS nullptr);
+      if (cleared) result_type = IRT_NIL;
+   }
+   return lj_record_vload(J, tmp_ref, 0, result_type);
+}
+
+static void rec_struct_set(jit_State *J, RecordOps *ops)
+{
+   TRef struct_ref = ops->rb;
+   if (not tref_isstruct(struct_ref)) lj_trace_err(J, LJ_TRERR_BADTYPE);
+
+   GCstruct *value = structV(ops->rbv());
+   GCstr *key = strV(ops->rcv());
+   int field_offset;
+   uint32_t field_flags = 0;
+   NativeStructType native_type = NativeStructType::Legacy;
+   bool accepted_index = false;
+   int field_type = ir_struct_field_type(value, key, bc_p32(ops->ins), field_offset, field_flags, native_type,
+      accepted_index);
+   (void)accepted_index;
+   if (field_type < 0) {
+      lj_trace_err(J, LJ_TRERR_BADTYPE);
+   }
+
+   TRef val_ref = ops->ra;
+   const auto scalar_type = effective_scalar_type(field_flags, native_type);
+   if (not value->is_lifecycle_bound() and rec_struct_scalar_field(field_flags, native_type)) {
+      TRef data_ref = rec_struct_payload_guard(J, struct_ref, value);
+      TRef addr_ref = emitir(IRT(IR_ADD, IRT_PTR), data_ref, lj_ir_kintp(J, field_offset));
+
+      if (scalar_type IS NativeStructType::Bool and (val_ref IS TREF_TRUE or val_ref IS TREF_FALSE)) {
+         emitir(IRT(IR_XSTORE, IRT_U8), addr_ref, lj_ir_kint(J, val_ref IS TREF_TRUE));
+         return;
+      }
+
+      const int integer_width = rec_struct_integer_width(scalar_type);
+      if (integer_width and tref_isnil(val_ref)) {
+         TRef zero_ref = integer_width <= 32 ? lj_ir_kint(J, 0) : lj_ir_kint64(J, 0);
+         emitir(IRT(IR_XSTORE, rec_struct_integer_store_type(integer_width)), addr_ref, zero_ref);
+         return;
+      }
+      if (integer_width and tref_isint(val_ref)) {
+         TRef store_ref = val_ref;
+         const double recorded_value = rec_struct_recorded_number(ops->rav());
+         if (not rec_struct_integer_fits_int32(recorded_value, scalar_type, integer_width)) {
+            lj_trace_err(J, LJ_TRERR_BADTYPE);
+         }
+         const bool signed_type = rec_struct_integer_signed(scalar_type);
+         const double lower_bound = signed_type ? -std::ldexp(1.0, integer_width - 1) : 0.0;
+         const double upper_bound = std::ldexp(1.0, signed_type ? integer_width - 1 : integer_width);
+         if (lower_bound > double(INT32_MIN)) emitir(IRTGI(IR_GE), store_ref, lj_ir_kint(J, int(lower_bound)));
+         if (upper_bound <= double(INT32_MAX)) emitir(IRTGI(IR_LT), store_ref, lj_ir_kint(J, int(upper_bound)));
+         if (integer_width IS 64) {
+            store_ref = emitir(IRT(IR_CONV, IRT_I64), val_ref,
+               (IRT_I64 << IRCONV_DSH) | IRT_INT | IRCONV_SEXT);
+         }
+         emitir(IRT(IR_XSTORE, rec_struct_integer_store_type(integer_width)), addr_ref, store_ref);
+         return;
+      }
+      if (integer_width and tref_isnumber(val_ref) and
+            rec_struct_integer_fits_int32(rec_struct_recorded_number(ops->rav()), scalar_type, integer_width)) {
+         TRef store_ref = rec_struct_checked_integer(J, val_ref, scalar_type, integer_width);
+         if (integer_width IS 64) {
+            store_ref = emitir(IRT(IR_CONV, IRT_I64), store_ref,
+               (IRT_I64 << IRCONV_DSH) | IRT_INT | IRCONV_SEXT);
+         }
+         emitir(IRT(IR_XSTORE, rec_struct_integer_store_type(integer_width)), addr_ref, store_ref);
+         return;
+      }
+
+      if ((scalar_type IS NativeStructType::Float or scalar_type IS NativeStructType::Double) and
+            tref_isnil(val_ref)) {
+         IRType store_type = scalar_type IS NativeStructType::Float ? IRT_FLOAT : IRT_NUM;
+         TRef zero_ref = lj_ir_knum_zero(J);
+         if (scalar_type IS NativeStructType::Float) {
+            zero_ref = emitir(IRT(IR_CONV, IRT_FLOAT), zero_ref, (IRT_FLOAT << IRCONV_DSH) | IRT_NUM);
+         }
+         emitir(IRT(IR_XSTORE, store_type), addr_ref, zero_ref);
+         return;
+      }
+
+      if (scalar_type IS NativeStructType::Double and tref_isnumber(val_ref)) {
+         emitir(IRT(IR_XSTORE, IRT_NUM), addr_ref, rec_struct_number_ref(J, val_ref));
+         return;
+      }
+
+      if (scalar_type IS NativeStructType::Float and tref_isnumber(val_ref)) {
+         const double recorded_value = rec_struct_recorded_number(ops->rav());
+         if (std::isfinite(recorded_value) and std::abs(recorded_value) <= FLT_MAX) {
+            TRef number_ref = rec_struct_number_ref(J, val_ref);
+            emitir(IRTG(IR_GE, IRT_NUM), number_ref, lj_ir_knum(J, -double(FLT_MAX)));
+            emitir(IRTG(IR_LE, IRT_NUM), number_ref, lj_ir_knum(J, double(FLT_MAX)));
+            TRef store_ref = emitir(IRT(IR_CONV, IRT_FLOAT), number_ref,
+               (IRT_FLOAT << IRCONV_DSH) | IRT_NUM);
+            emitir(IRT(IR_XSTORE, IRT_FLOAT), addr_ref, store_ref);
+            return;
+         }
+      }
+   }
+
+   TRef tmp_ref = rec_tmpref(J, ops->ra, IRTMPREF_IN1);
+   TRef null_ref = lj_ir_kkptr(J, nullptr);
+   lj_ir_call(J, IRCALL_bc_struct_setfield, struct_ref, ops->rc, tmp_ref, null_ref);
+   emitir_raw(IRT(IR_XBAR, IRT_NIL), 0, 0);
 }
 
 //********************************************************************************************************************
@@ -2949,6 +4801,147 @@ static void rec_loop_op(jit_State *J, RecordOps *ops, const BCIns *pc)
 }
 
 //********************************************************************************************************************
+// Record direct range-loop preparation and exact ordinal-based value generation.
+
+static void rec_range_prepare(jit_State *J, BCREG Base, uint32_t Flags)
+{
+   IRBuilder ir(J);
+   TRef start = rec_range_number(J, Base);
+   TRef stop = rec_range_number(J, Base + 1);
+   TRef explicit_step = (Flags & RANGE_PREP_HAS_STEP) ?
+      rec_range_number(J, Base + 2) : lj_ir_knum_zero(J);
+   lua_Number runtime_start = numberVnum(&J->L->base[Base]);
+   lua_Number runtime_stop = numberVnum(&J->L->base[Base + 1]);
+   lua_Number runtime_step = (Flags & RANGE_PREP_HAS_STEP) ?
+      numberVnum(&J->L->base[Base + 2]) : (runtime_start <= runtime_stop ? 1.0 : -1.0);
+   bool integer_range = lj_range_integer_values(runtime_start, runtime_stop, runtime_step);
+
+   TRef step;
+   TRef count;
+   TRef integer_values;
+   if (Flags & RANGE_PREP_DIRECT_INTEGER) {
+      TRef start_int = ir.conv_int_num(start);
+      TRef stop_int = ir.conv_int_num(stop);
+      TRef step_int;
+      if (Flags & RANGE_PREP_HAS_STEP) step_int = ir.conv_int_num(explicit_step);
+      else step_int = ir.kint(runtime_step > 0.0 ? 1 : -1);
+
+      bool positive = runtime_step > 0.0;
+      ir.guard_int(positive ? IR_GT : IR_LT, step_int, ir.kint(0));
+      if (not (Flags & RANGE_PREP_INCLUSIVE)) {
+         stop_int = ir.emit_int(IR_ADD, stop_int, ir.kint(positive ? -1 : 1));
+      }
+
+      J->base[Base + RANGE_FOR_IDX] = start_int;
+      J->base[Base + RANGE_FOR_STOP] = stop_int;
+      J->base[Base + RANGE_FOR_STEP] = step_int;
+      J->base[Base + FORL_EXT] = TREF_NIL;
+      BCREG range_top = BCREG(Base + FORL_EXT + 1);
+      if (J->maxslot < range_top) J->maxslot = range_top;
+      return;
+   }
+   else if (integer_range) {
+      TRef start_int = ir.conv_int_num(start);
+      TRef stop_int = ir.conv_int_num(stop);
+      TRef step_int;
+      if (Flags & RANGE_PREP_HAS_STEP) {
+         step = explicit_step;
+         step_int = ir.conv_int_num(step);
+      }
+      else {
+         step_int = ir.kint(runtime_step > 0.0 ? 1 : -1);
+         step = lj_ir_knum(J, runtime_step);
+      }
+
+      bool positive = runtime_step > 0.0;
+      ir.guard_int(positive ? IR_GT : IR_LT, step_int, ir.kint(0));
+      bool inclusive = Flags & RANGE_PREP_INCLUSIVE;
+      bool in_bounds = positive ?
+         (inclusive ? runtime_start <= runtime_stop : runtime_start < runtime_stop) :
+         (inclusive ? runtime_start >= runtime_stop : runtime_start > runtime_stop);
+      IROp relation = positive ? (inclusive ? IR_LE : IR_LT) : (inclusive ? IR_GE : IR_GT);
+      if (not in_bounds) {
+         relation = positive ? (inclusive ? IR_GT : IR_GE) : (inclusive ? IR_LT : IR_LE);
+      }
+      ir.guard_int(relation, start_int, stop_int);
+
+      if (in_bounds) {
+         TRef distance = ir.emit_num(IR_DIV, ir.emit_num(IR_SUB, stop, start), step);
+         count = ir.emit_num(IR_FPMATH, distance, inclusive ? IRFPM_FLOOR : IRFPM_CEIL);
+         if (inclusive) count = ir.emit_num(IR_ADD, count, lj_ir_knum(J, 1.0));
+      }
+      else {
+         count = lj_ir_knum_zero(J);
+      }
+      integer_values = lj_ir_knum(J, 1.0);
+   }
+   else {
+      TRef flags = ir.kint(int32_t(Flags));
+      step = lj_ir_call(J, IRCALL_lj_range_prepare_step, start, stop, explicit_step, flags);
+      TRef inclusive = ir.kint((Flags & RANGE_PREP_INCLUSIVE) ? 1 : 0);
+      count = lj_ir_call(J, IRCALL_lj_range_prepare_count, start, stop, step, inclusive);
+      TRef integer_result = lj_ir_call(J, IRCALL_lj_range_integer_values, start, stop, step);
+      integer_values = ir.conv_num_int(integer_result);
+   }
+
+   J->base[Base + RANGE_FOR_IDX] = lj_ir_knum_zero(J);
+   J->base[Base + RANGE_FOR_STOP] = ir.emit_num(IR_SUB, count, lj_ir_knum(J, 1.0));
+   J->base[Base + RANGE_FOR_STEP] = lj_ir_knum(J, 1.0);
+   J->base[Base + RANGE_FOR_ORDINAL] = TREF_NIL;
+   J->base[Base + RANGE_FOR_START] = start;
+   J->base[Base + RANGE_FOR_VALUE_STEP] = step;
+   J->base[Base + RANGE_FOR_FLAGS] = integer_values;
+   J->base[Base + RANGE_FOR_VALUE] = TREF_NIL;
+   BCREG range_top = BCREG(Base + RANGE_FOR_SLOTS);
+   if (J->maxslot < range_top) J->maxslot = range_top;
+}
+
+static void rec_range_value(jit_State *J, BCREG Base)
+{
+   IRBuilder ir(J);
+   TRef ordinal = rec_range_number(J, Base + RANGE_FOR_ORDINAL, IRSLOAD_INHERIT);
+   int inherited_constant = IRSLOAD_INHERIT | IRSLOAD_READONLY;
+   TRef start = rec_range_number(J, Base + RANGE_FOR_START, inherited_constant);
+   TRef step = rec_range_number(J, Base + RANGE_FOR_VALUE_STEP, inherited_constant);
+   TRef integer_values = rec_range_number(J, Base + RANGE_FOR_FLAGS, inherited_constant);
+   cTValue *runtime_flag = &J->L->base[Base + RANGE_FOR_FLAGS];
+   if (not tvisnumber(runtime_flag) or not tref_isnum(integer_values)) lj_trace_err(J, LJ_TRERR_BADTYPE);
+
+   int32_t integer_result = numberVnum(runtime_flag) != 0.0;
+   ir.guard(IR_EQ, IRT_NUM, integer_values, lj_ir_knum(J, lua_Number(integer_result)));
+
+   lua_Number runtime_start = numberVnum(&J->L->base[Base + RANGE_FOR_START]);
+   lua_Number runtime_step = numberVnum(&J->L->base[Base + RANGE_FOR_VALUE_STEP]);
+   lua_Number runtime_ordinal_stop = numberVnum(&J->L->base[Base + FORL_STOP]);
+   int step_exponent;
+   bool exact_scaled_integer = runtime_start IS 0.0 and not std::signbit(runtime_start) and
+      std::isnormal(runtime_step) and std::frexp(std::abs(runtime_step), &step_exponent) IS 0.5 and
+      runtime_ordinal_stop >= 0.0 and runtime_ordinal_stop <= 0x1p53 and
+      runtime_ordinal_stop <= DBL_MAX / std::abs(runtime_step);
+   if (exact_scaled_integer) {
+      TRef ordinal_stop = rec_range_number(J, Base + FORL_STOP, inherited_constant);
+      ir.guard(IR_EQ, IRT_NUM, start, lj_ir_knum(J, runtime_start));
+      ir.guard(IR_EQ, IRT_NUM, step, lj_ir_knum(J, runtime_step));
+      ir.guard(IR_EQ, IRT_NUM, ordinal_stop, lj_ir_knum(J, runtime_ordinal_stop));
+   }
+
+   TRef value;
+   if (integer_result or exact_scaled_integer) {
+      // Integer-valued ranges stay within signed 32-bit bounds. Zero-based ranges whose step is a normal power of two
+      // also produce exact scaled integers while their ordinal remains exactly representable. Both cases can avoid the
+      // per-element fma() helper without changing the generated value.
+      value = ir.emit_num(IR_ADD, start, ir.emit_num(IR_MUL, ordinal, step));
+      if (integer_result) value = ir.conv_int_num(value);
+   }
+   else {
+      value = lj_ir_call(J, IRCALL_lj_range_value, ordinal, start, step);
+   }
+   J->base[Base + RANGE_FOR_VALUE] = value;
+   BCREG range_top = BCREG(Base + RANGE_FOR_SLOTS);
+   if (J->maxslot < range_top) J->maxslot = range_top;
+}
+
+//********************************************************************************************************************
 // Record the next bytecode instruction (_before_ it's executed).
 
 void lj_record_ins(jit_State *J)
@@ -3009,6 +5002,10 @@ void lj_record_ins(jit_State *J)
       rec_comp_ordered(J, &ops);
       break;
 
+   case BC_ISIN: case BC_ISNIN:
+      rec_contains(J, &ops);
+      break;
+
    case BC_ISEQV: case BC_ISNEV:
    case BC_ISEQS: case BC_ISNES:
    case BC_ISEQN: case BC_ISNEN:
@@ -3027,33 +5024,52 @@ void lj_record_ins(jit_State *J)
 
    case BC_ISTYPE: case BC_ISNUM:
       // These coercions need to correspond with lj_meta_istype().
-      if (LJ_DUALNUM and rc IS ~LJ_TNUMX + 1) ra = lj_opt_narrow_toint(J, ra);
-      else if (rc IS ~LJ_TNUMX + 2) ra = lj_ir_tonum(J, ra);
-      else if (rc IS ~LJ_TSTR + 1) ra = lj_ir_tostr(J, ra);
+      if (LJ_DUALNUM and rc IS istype_operand_value(ISTypeOperand::Integer)) ra = lj_opt_narrow_toint(J, ra);
+      else if (rc IS istype_operand_value(ISTypeOperand::Number)) ra = lj_ir_tonum(J, ra);
+      else if (rc IS istype_operand_value(ISTypeOperand::String)) ra = lj_ir_tostr(J, ra);
       // else: type specialisation suffices.
       J->base[bc_a(ins)] = ra;
       break;
 
-   case BC_ISEMPTYARR: {
-      // Empty array check for ?? operator.
-      // If value is an array, we must guard on its length being 0 or non-zero.
-      // For non-array types, type specialisation suffices (they are always truthy for this check).
-      if (bc_a(pc[1]) < J->maxslot) J->maxslot = bc_a(pc[1]);  // Shrink used slots.
-      if (tref_isarray(ra)) {
-         // Load array length and compare to 0
-         TRef arrlen = emitir(IRTI(IR_FLOAD), ra, IRFL_ARRAY_LEN);
-         TRef zero = lj_ir_kint(J, 0);
-         // Determine if array is empty at recording time
-         GCarray *arr = arrayV(rav);
-         int is_empty = (arr->len IS 0);
+   case BC_ISFALSEY: {
+      // Type specialisation reduces this instruction to at most one value guard.
+      if (bc_a(pc[1]) < J->maxslot) J->maxslot = bc_a(pc[1]);
+
+      // Thunk resolution enters a protected call and cannot be recorded.  Abort this trace so the interpreter can
+      // resolve the deferred value before applying the falsey mask.
+      if (tref_isudata(ra) and lj_is_thunk(rav)) lj_trace_err_info(J, LJ_TRERR_NYIBC);
+
+      int is_falsey = tref_isnil(ra) or (tref_isfalse(ra) and (rc & ISFALSEY_FALSE));
+
+      if (tref_isnumber(ra) and (rc & ISFALSEY_ZERO)) {
+         IRType number_type = tref_isinteger(ra) ? IRT_INT : IRT_NUM;
+         TRef zero = number_type IS IRT_INT ? lj_ir_kint(J, 0) : lj_ir_knum_zero(J);
+         is_falsey = numberVnum(rav) IS 0.0;
          rec_comp_prep(J);
-         // Emit EQ comparison (arrlen == 0)
-         // If array was empty when recorded, guard that it stays empty
-         // If array was non-empty when recorded, guard that it stays non-empty
-         emitir(IRTG(is_empty ? IR_EQ : IR_NE, IRT_INT), arrlen, zero);
-         rec_comp_fixup(J, J->pc, is_empty);
+         emitir(IRTG(is_falsey ? IR_EQ : IR_NE, number_type), ra, zero);
+         rec_comp_fixup(J, J->pc, not is_falsey);
       }
-      // For non-arrays, no additional guard needed - type specialisation handles it
+      else if (tref_isstr(ra) and (rc & ISFALSEY_EMPTY_STR)) {
+         TRef length = emitir(IRTI(IR_FLOAD), ra, IRFL_STR_LEN);
+         is_falsey = strV(rav)->len IS 0;
+         rec_comp_prep(J);
+         emitir(IRTG(is_falsey ? IR_EQ : IR_NE, IRT_INT), length, lj_ir_kint(J, 0));
+         rec_comp_fixup(J, J->pc, not is_falsey);
+      }
+      else if (tref_isarray(ra) and (rc & ISFALSEY_EMPTY_COLL)) {
+         TRef length = emitir(IRTI(IR_FLOAD), ra, IRFL_ARRAY_LEN);
+         is_falsey = arrayV(rav)->len IS 0;
+         rec_comp_prep(J);
+         emitir(IRTG(is_falsey ? IR_EQ : IR_NE, IRT_INT), length, lj_ir_kint(J, 0));
+         rec_comp_fixup(J, J->pc, not is_falsey);
+      }
+      else if (tref_istab(ra) and (rc & ISFALSEY_EMPTY_COLL)) {
+         lj_trace_err_info(J, LJ_TRERR_NYIBC);
+      }
+      else {
+         rec_comp_prep(J);
+         rec_comp_fixup(J, J->pc, not is_falsey);
+      }
       break;
    }
 
@@ -3099,6 +5115,65 @@ void lj_record_ins(jit_State *J)
    case BC_KSTR: case BC_KNUM: case BC_KPRI:
       break;
 
+   case BC_BFUNC: {
+      BuiltinCallableID id = BuiltinCallableID(rc);
+      GCfunc *callable = lj_builtin_callable(J->L, id);
+      if (not callable) {
+         setintV(&J->errinfo, int32_t(op));
+         lj_trace_err_info(J, LJ_TRERR_NYIBC);
+      }
+      rc = lj_ir_kfunc(J, callable);
+      break;
+   }
+
+   case BC_BMETH: {
+      BCREG receiver_slot = bc_a(ins) + 1 + LJ_FR2;
+      cTValue *receiver_value = &J->L->base[receiver_slot];
+      TRef receiver_ref = getslot(J, receiver_slot);
+      uint32_t member_constant = bc_p32(ins);
+      GCstr *member = gco_to_string(proto_kgc(J->pt, ~(ptrdiff_t)member_constant));
+      TiriType receiver_type = runtime_receiver_type(J->L, receiver_value);
+
+      if (tvisudata(receiver_value)) {
+         bool range = receiver_type IS TiriType::Range;
+         if (range or get_method_prototype_by_hash(TiriType::Range, member->hash)) {
+            if (rec_contract_guard_range(J, receiver_ref, receiver_value, range) != RecordedContract::Basic) {
+               lj_trace_err(J, LJ_TRERR_BADTYPE);
+            }
+         }
+      }
+
+      const fprototype *prototype = get_method_prototype_by_hash(receiver_type, member->hash);
+      if (prototype and builtin_callable_valid(prototype->builtin_callable_id)) {
+         GCfunc *callable = lj_builtin_callable(J->L, prototype->builtin_callable_id);
+         if (not callable) lj_trace_err(J, LJ_TRERR_BADTYPE);
+         rc = lj_ir_kfunc(J, callable);
+         break;
+      }
+
+      if (tvisudata(receiver_value)) {
+         GCtab *metatable = tabref(udataV(receiver_value)->metatable);
+         IRBuilder ir(J);
+         TRef metatable_ref = ir.fload_tab(receiver_ref, IRFL_UDATA_META);
+         ir.guard(metatable ? IR_NE : IR_EQ, IRT_TAB, metatable_ref, ir.knull(IRT_TAB));
+         if (metatable) {
+            bool compatible = lj_bmeth_is_method_compatible(receiver_value);
+            TRef flags = ir.fload(metatable_ref, IRFL_TAB_FLAGS, IRT_U8);
+            TRef marker = ir.emit_int(IR_BAND, flags, ir.kint(TAB_METHOD_COMPATIBLE));
+            ir.guard_eq_int(marker, ir.kint(compatible ? TAB_METHOD_COMPATIBLE : 0));
+         }
+      }
+
+      RecordIndex lookup{};
+      lookup.tab = receiver_ref;
+      copyTV(J->L, &lookup.tabv, receiver_value);
+      setstrV(J->L, &lookup.keyv, member);
+      lookup.key = lj_ir_kstr(J, member);
+      lookup.idxchain = LJ_MAX_IDXCHAIN;
+      rc = lj_record_idx(J, &lookup);
+      break;
+   }
+
    case BC_KSHORT:
       rc = lj_ir_kint(J, (int32_t)(int16_t)rc);
       break;
@@ -3142,6 +5217,10 @@ void lj_record_ins(jit_State *J)
       rc = rec_array_op(J, &ops);
       break;
 
+   case BC_ASGETV: case BC_ASGETB:
+      rc = rec_safe_array_get(J, &ops);
+      break;
+
    case BC_ASETV: case BC_ASETB:
       rec_array_op(J, &ops);
       break;
@@ -3154,6 +5233,16 @@ void lj_record_ins(jit_State *J)
 
    case BC_OBSETF:
       rec_object_set(J, &ops);
+      break;
+
+   // Struct ops - native struct field access
+
+   case BC_STGETF:
+      rc = rec_struct_get(J, &ops);
+      break;
+
+   case BC_STSETF:
+      rec_struct_set(J, &ops);
       break;
 
    // Calls and vararg handling
@@ -3182,12 +5271,74 @@ void lj_record_ins(jit_State *J)
       lj_record_call(J, ra, (ptrdiff_t)rc - 1);
       break;
 
+   case BC_CTXCALLM:
+      rc = (BCREG)(J->L->top - J->L->base) - ra - 1;
+      [[fallthrough]];
+
+   case BC_CTXCALL: {
+      lj_record_call(J, ra, (ptrdiff_t)rc - 1);
+      break;
+   }
+
    case BC_CALLMT:
       rc = (BCREG)(J->L->top - J->L->base) - ra - 1;
       [[fallthrough]];
 
    case BC_CALLT:
       lj_record_tailcall(J, ra, (ptrdiff_t)rc - 1);
+      break;
+
+   case BC_CTXCALLT:
+      rec_context_tailcall(J, ra, (ptrdiff_t)rc - 1);
+      break;
+
+   case BC_CTXGET:
+      rc = rec_context_current(J);
+      break;
+
+   case BC_CTXENTER:
+      rec_context_enter(J, ra);
+      break;
+
+   case BC_TCTX:
+      // Designation is a runtime side effect on the constructor result, not speculative IR: a side exit taken after
+      // this point must observe the already-marked table.  Snapshotting after the call gives the exit that state.
+      lj_ir_call(J, IRCALL_lj_tab_mark_contextual_jit, ra);
+      J->needsnap = 1;
+      break;
+
+   case BC_CTXBEGIN:
+      if (not tref_istab(ra)) lj_trace_err_info(J, LJ_TRERR_NYIBC);
+      // Block activations are installed physically. Materialise any virtual call receivers first so current-context
+      // lookup observes the block before the enclosing receiver, matching interpreter stack order.
+      rec_context_materialise(J, ContextMaterialisationReason::UnsupportedBoundary);
+      {
+         IRBuilder ir(J);
+         TRef owner_base = rec_stack_slot_addr(J, ir, int32_t(J->baseslot));
+         lj_ir_call(J, IRCALL_lj_context_begin_block_jit, ra, owner_base, lj_ir_kint(J, int32_t(bc_d(*pc))),
+            lj_ir_kint(J, int32_t(bc_a(*pc)) + 1));
+      }
+      J->needsnap = 1;
+      break;
+
+   case BC_CTXEND:
+      {
+         IRBuilder ir(J);
+         TRef owner_base = rec_stack_slot_addr(J, ir, int32_t(J->baseslot));
+         lj_ir_call(J, IRCALL_lj_context_end_block_jit, owner_base,
+            lj_ir_kint(J, int32_t(bc_d(*pc))));
+      }
+      J->needsnap = 1;
+      break;
+
+   case BC_CLOSEARM:
+   case BC_CLOSE:
+   case BC_VIEW:
+      lj_trace_err_info(J, LJ_TRERR_NYIBC);
+      break;
+
+   case BC_CTXLEAVE:
+      rec_context_leave(J, ra, pc);
       break;
 
    case BC_VARG:
@@ -3205,24 +5356,13 @@ void lj_record_ins(jit_State *J)
       lj_record_ret(J, ra, (ptrdiff_t)rc - 1);
       break;
 
-      // Type fixing
+   case BC_RANGEPREP:
+      rec_range_prepare(J, ra, rc);
+      break;
 
-   case BC_TYPEFIX: {
-      // BC_TYPEFIX is a one-time operation that mutates the prototype.
-      // After first execution, it becomes a no-op. For JIT recording:
-      // - If types are already fixed (common case), treat as no-op
-      // - If types not fixed, skip during recording (mutation is safe for interpreter)
-
-      GCproto *pt = funcproto(curr_func(J->L));
-      if (pt->result_types[0] IS TiriType::Unknown) {
-         // Types not yet fixed.  We can leave it for the interpreter and keep recording
-         // TODO: Need to consider if it is viable to mutate the function prototype (set the result types) here during recording.
-         // It could also be considered a red-flag if the interpreter hasn't mutated the function by this point, even if only
-         // setting the result type to TiriType::Any.
-         break;
-      }
-      else break; // Types already fixed - no-op, continue recording
-   }
+   case BC_RANGEVAL:
+      rec_range_value(J, ra);
+      break;
 
       // Loops and branches
 
@@ -3243,6 +5383,37 @@ void lj_record_ins(jit_State *J)
    case BC_IFUNCV:
       rec_loop_op(J, &ops, pc);
       break;
+
+   case BC_UCLO: {
+      GCobj* head = gcref(J->L->openupval);
+      if (head and uvval(gco_to_upval(head)) >= J->L->base + ra) {
+         rec_close_upvalues(J, ra);
+         break;
+      }
+      // Exit before UCLO so the interpreter closes and follows its jump exactly once.
+      lj_snap_add(J);
+      TRef state_ref = emitir(IRT(IR_LREF, IRT_PTR), 0, 0);
+      TRef list_addr = emitir(IRT(IR_ADD, IRT_PTR), state_ref, lj_ir_kintp(J, offsetof(lua_State, openupval)));
+      // Never fold, forward or hoist this load: FNEW, helpers and GC may change the list.
+      TRef open_list = emitir(IRT(IR_XLOAD, IRT_PTR), list_addr, IRXLOAD_VOLATILE);
+      if (head) {
+         // func_finduv() orders open cells by descending stack address.  If the head is below
+         // the closing level, every cell is below it.  Guard before dereferencing a nullable head.
+         emitir(IRTG(IR_NE, IRT_PTR), open_list, lj_ir_knull(J, IRT_PTR));
+         TRef value_addr = emitir(IRT(IR_ADD, IRT_PTR), open_list, lj_ir_kintp(J, offsetof(GCupval, v)));
+         TRef value_slot = emitir(IRT(IR_XLOAD, IRT_PTR), value_addr, IRXLOAD_VOLATILE);
+         // Reload the live trace base too: relocation updates jit_base and every open cell's v.
+         // The global state belongs to the trace; only its address, never its contents, is constant.
+         TRef trace_base = emitir(IRT(IR_XLOAD, IRT_PTR), lj_ir_kptr(J, &J2G(J)->jit_base), IRXLOAD_VOLATILE);
+         int32_t slot_offset = int32_t(J->baseslot) - int32_t(FRC::MIN_BASESLOT) + int32_t(ra);
+         TRef close_level = emitir(IRT(IR_ADD, IRT_PTR), trace_base, lj_ir_kintp(J, slot_offset * sizeof(TValue)));
+         emitir(IRTG(IR_ULT, IRT_PTR), value_slot, close_level);
+      }
+      else emitir(IRTG(IR_EQ, IRT_PTR), open_list, lj_ir_knull(J, IRT_PTR));
+      // As with JMP, dispatch supplies the jump destination on the next recorder entry.
+      // UCLO's A is a closing level, not JMP's live-slot limit; preserve the SSA slots.
+      break;
+   }
 
    case BC_JMP:
       if (ra < J->maxslot) J->maxslot = ra;  //  Shrink used slots.
@@ -3281,34 +5452,22 @@ void lj_record_ins(jit_State *J)
       break;
 
    case BC_TRYENTER: {
-      // Inlined frames use a virtual base pointer. Compute the correct base below so
-      // try-enter can still record properly inside inlined calls.
-
-      // Add snapshot before try block to enable on-trace error catching.
-      // This allows the JIT to exit at this point when an exception occurs,
-      // letting the interpreter handle the try-except recovery.
-
       uint16_t try_index = (uint16_t)bc_d(ins);
+      // Operand A is the first free register at try entry; handlers cannot see stack slots above it.
+      rec_try_materialise_slots(J, true, bc_a(ins));
       lj_snap_add(J);
-
-      // Emit call to lj_try_enter(L, Func, Base, TryBlockIndex)
-      // L is implicit (CCI_L flag)
-      // Func is the current function for this frame (may differ from J->fn)
-      // Base must point at the current frame. For inlined frames, REF_BASE is the root base,
-      // so add the baseslot offset to reach the virtual frame base.
-
       TRef tr_func = getcurrf(J);
       TRef tr_base = REF_BASE;
       if (J->baseslot > FRC::MIN_BASESLOT) {
          IRBuilder ir(J);
-         int32_t slot_delta = (int32_t)J->baseslot - (int32_t)FRC::MIN_BASESLOT;
+         int32_t slot_delta = int32_t(J->baseslot) - int32_t(FRC::MIN_BASESLOT);
          int32_t byte_delta = slot_delta * 8;
          tr_base = ir.emit(IRT(IR_ADD, IRT_PGC), REF_BASE, ir.kint(byte_delta));
       }
-      TRef tr_index = lj_ir_kint(J, (int32_t)try_index);
+      TRef tr_index = lj_ir_kint(J, int32_t(try_index));
       lj_ir_call(J, IRCALL_lj_try_enter, tr_func, tr_base, tr_index);
-
-      J->needsnap = 1; // Snapshot after try_enter to create a restore point for trace exits
+      J->trydepth++;
+      J->needsnap = 1;
       break;
    }
 
@@ -3317,27 +5476,161 @@ void lj_record_ins(jit_State *J)
       // Note: vm_exit_interp in vm_x64.dasc must correctly dispatch BC_TRYLEAVE to its handler,
       // not to the C function path. See the bytecode dispatch logic after trace exit.
       lj_ir_call(J, IRCALL_lj_try_leave); // L is implicit (CCI_L flag), no explicit args needed
+      if (J->trydepth > 0) J->trydepth--;
       J->needsnap = 1; // Snapshot after try_leave to mark the end of the try block scope
+      break;
+   }
+
+   case BC_CHECKALLENTER: {
+      TRef tr_func = getcurrf(J);
+      TRef tr_base = REF_BASE;
+      if (J->baseslot > FRC::MIN_BASESLOT) {
+         IRBuilder ir(J);
+         int32_t slot_delta = int32_t(J->baseslot) - int32_t(FRC::MIN_BASESLOT);
+         tr_base = ir.emit(IRT(IR_ADD, IRT_PGC), REF_BASE, ir.kint(slot_delta * 8));
+      }
+      lj_ir_call(J, IRCALL_lj_checkall_enter, tr_func, tr_base);
+      J->checkalldepth++;
+      J->needsnap = 1;
+      break;
+   }
+
+   case BC_CHECKALLLEAVE:
+      lj_ir_call(J, IRCALL_lj_checkall_leave);
+      if (J->checkalldepth > 0) J->checkalldepth--;
+      J->needsnap = 1;
+      break;
+
+   case BC_DEFERARM: {
+      BCREG callable_slot = bc_a(ins);
+      BCREG argument_count = bc_c(ins);
+      BCREG scope_base = bc_b(ins);
+      uint32_t slot_limit = uint32_t(callable_slot) + uint32_t(argument_count) + 1;
+      uint32_t absolute_limit = uint32_t(J->baseslot) + slot_limit;
+      if (scope_base > callable_slot or slot_limit > J->maxslot or
+          absolute_limit > LJ_MAX_JSLOTS + LJ_STACK_EXTRA) {
+         setintV(&J->errinfo, int32_t(op));
+         lj_trace_err_info(J, LJ_TRERR_NYIBC);
+      }
+
+      rec_defer_materialise_slots(J, callable_slot, argument_count);
+      IRBuilder ir(J);
+      TRef owner_base = rec_stack_slot_addr(J, ir, int32_t(J->baseslot));
+      lj_ir_call(J, IRCALL_lj_defer_arm, owner_base, ir.kint(callable_slot), ir.kint(argument_count),
+         ir.kint(scope_base));
+      J->needsnap = 1;
+      break;
+   }
+
+   case BC_DEFERCONSUME: {
+      BCREG callable_slot = bc_a(ins);
+      if (callable_slot >= J->maxslot or uint32_t(J->baseslot) + uint32_t(callable_slot) >=
+          LJ_MAX_JSLOTS + LJ_STACK_EXTRA) {
+         setintV(&J->errinfo, int32_t(op));
+         lj_trace_err_info(J, LJ_TRERR_NYIBC);
+      }
+
+      IRBuilder ir(J);
+      TRef owner_base = rec_stack_slot_addr(J, ir, int32_t(J->baseslot));
+      lj_ir_call(J, IRCALL_lj_defer_consume_jit, owner_base, ir.kint(callable_slot));
+      J->needsnap = 1;
       break;
    }
 
    case BC_CHECK:
    case BC_RAISE:
-      // These bytecodes throw exceptions and cannot be compiled into traces.
-      // Exit to interpreter to handle them. This avoids trace abort and ensures
-      // clean handoff without corrupting interpreter state.
+   case BC_RETHROW:
+   case BC_MODACT:
+      // These bytecodes throw, materialise GC closures or access VM state not yet represented by the recorder.
+      // Exit to the interpreter so the handoff cannot corrupt interpreter state.
       lj_snap_add(J);
       lj_record_stop(J, TraceLink::INTERP, 0);
       break;
+
+   case BC_CONTRACT:
+   {
+      RecordedContract contract = rec_contract_record(J, bc_a(ins), strV(rcv));
+      if (contract IS RecordedContract::Basic) {
+         J->needsnap = 1;
+         break;
+      }
+      if (contract IS RecordedContract::SideEffect) {
+         setintV(&J->errinfo, int32_t(op));
+         lj_trace_err_info(J, LJ_TRERR_NYIBC);
+      }
+      if (contract IS RecordedContract::Complex) {
+         J->pt->flags |= PROTO_NOJIT;
+         lj_trace_err(J, LJ_TRERR_CJITOFF);
+      }
+      setintV(&J->errinfo, int32_t(op));
+      lj_trace_err_info(J, LJ_TRERR_NYIBC);
+      break;
+   }
+
+   case BC_TYPETEST:
+   {
+      TRef result = rec_type_test(J, bc_a(ins), strV(rcv));
+      if (not result) {
+         // Deferred tests may enter a protected call and resume in the interpreter without disabling the prototype.
+         lj_snap_add(J);
+         lj_record_stop(J, TraceLink::INTERP, 0);
+      }
+      J->base[bc_a(ins)] = result;
+      break;
+   }
+
+   case BC_MRSAVE:
+   case BC_MRRESTORE:
+      J->pt->flags |= PROTO_NOJIT;
+      lj_trace_err(J, LJ_TRERR_CJITOFF);
+      break;
+
+   case BC_FNEW: {
+      IRBuilder ir(J);
+      GCproto *prototype = gco_to_proto(proto_kgc(J->pt, ~(ptrdiff_t)rc));
+      bool local_captures = false;
+      for (MSize index = 0; index < prototype->sizeuv; ++index) {
+         if (proto_uv(prototype)[index] & PROTO_UV_LOCAL) {
+            local_captures = true;
+            BCREG slot = proto_uv(prototype)[index] & 0xff;
+            getslot(J, slot);
+            if (J->maxslot <= slot) J->maxslot = slot + 1;
+         }
+      }
+      // Root the prototype in the trace and inherit the logical current frame's environment, including inlining.
+      TRef proto_ref = lj_ir_kgc(J, obj2gco(prototype), IRT_PROTO);
+      TRef parent = getcurrf(J);
+      TRef environment = prototype->sizeuv ? 0 : emitir(IRT(IR_FLOAD, IRT_TAB), parent, IRFL_FUNC_ENV);
+      lj_snap_add(J);
+      if (local_captures) {
+         // Publish all captured values after type guards, before exposing their addresses to the open-cell list.
+         for (MSize index = 0; index < prototype->sizeuv; ++index) {
+            uint32_t capture = proto_uv(prototype)[index];
+            if (capture & PROTO_UV_LOCAL) {
+               BCREG slot = capture & 0xff;
+               rec_emit_tvalue_store(J, rec_stack_slot_addr(J, ir, J->baseslot + slot), J->base[slot]);
+            }
+         }
+         emitir_raw(IRT(IR_XBAR, IRT_NIL), 0, 0);
+         TRef frame = rec_stack_slot_addr(J, ir, J->baseslot);
+         rc = lj_ir_call(J, IRCALL_lj_func_newL_local, proto_ref, parent, frame);
+         emitir_raw(IRT(IR_XBAR, IRT_NIL), 0, 0);
+      }
+      else rc = prototype->sizeuv ? lj_ir_call(J, IRCALL_lj_func_newL_inherited, proto_ref, parent) :
+         lj_ir_call(J, IRCALL_lj_func_newL_zero, proto_ref, environment);
+      // CALLA has a weak allocation guard.  Keep even unused closures for allocation-counter and failure semantics.
+      emitir(IRT(IR_USE, IRT_FUNC), rc, 0);
+      // Publish through the normal destination-slot path below before taking the next bytecode's snapshot.
+      J->needsnap = 1;
+      J->mergesnap = 0;
+      break;
+   }
 
    default:
       if (op >= BC__MAX) {
          lj_ffrecord_func(J);
          break;
       }
-      [[fallthrough]];
-   case BC_UCLO:
-   case BC_FNEW:
       setintV(&J->errinfo, (int32_t)op);
       lj_trace_err_info(J, LJ_TRERR_NYIBC);
       break;
@@ -3348,7 +5641,8 @@ void lj_record_ins(jit_State *J)
       SlotView slots(J);
       slots[ra] = rc;
       if (ra >= slots.maxslot()) {
-         if (ra > slots.maxslot()) slots.clear(ra - 1);
+         // A call may leave stale scratch references above maxslot.  A later high destination must not revive them.
+         if (ra > slots.maxslot()) slots.clear_range(slots.maxslot(), ra - slots.maxslot());
          slots.set_maxslot(ra + 1);
       }
    }
@@ -3435,6 +5729,11 @@ static const BCIns *rec_setup_root(jit_State *J)
          // No bytecode range check for stitched traces.
          pc++;
          break;
+      case BC_CTXCALLM:
+      case BC_CTXCALL: {
+         pc++;
+         break;
+      }
       default:
          lj_assertJ(0, "bad root trace start bytecode %d", bc_op(ins));
          break;
@@ -3451,7 +5750,19 @@ void lj_record_setup(jit_State *J)
 
    // Initialise state related to current trace.
    memset(J->slot, 0, sizeof(J->slot));
+   memset(J->context_call_func, 0, sizeof(J->context_call_func));
+   memset(J->context_call_receiver, 0, sizeof(J->context_call_receiver));
+   memset(J->context_call_result, 0, sizeof(J->context_call_result));
+   memset(J->context_call_state, 0, sizeof(J->context_call_state));
+   memset(J->context_tail_call, 0, sizeof(J->context_tail_call));
+   J->context_call_activation_count = 0;
+   J->context_virtual_slot = -1;
+   memset(J->trymat, 0, sizeof(J->trymat));
    memset(J->chain, 0, sizeof(J->chain));
+   J->try_stores = 0;
+   J->try_skipped_stores = 0;
+   J->try_enter_stores = 0;
+   J->try_enter_snap_removed = 0;
 #ifdef LUAJIT_ENABLE_TABLE_BUMP
    memset(J->rbchash, 0, sizeof(J->rbchash));
 #endif
@@ -3464,6 +5775,9 @@ void lj_record_setup(jit_State *J)
    J->maxslot    = 0;
    J->framedepth = 0;
    J->retdepth   = 0;
+   J->trydepth   = rec_try_active_depth(J);
+   J->checkalldepth = rec_checkall_active_depth(J);
+   J->multres    = 0;
    J->instunroll = J->param[JIT_P_instunroll];
    J->loopunroll = J->param[JIT_P_loopunroll];
    J->tailcalled = 0;
@@ -3486,6 +5800,7 @@ void lj_record_setup(jit_State *J)
    setmref(J->cur.startpc, J->pc);
    if (J->parent) {  // Side trace.
       GCtrace *T = traceref(J, J->parent);
+      J->multres = T->snap[J->exitno].multres;
       TraceNo root = T->root ? T->root : J->parent;
       J->cur.root = (uint16_t)root;
       J->cur.startins = BCINS_AD(BC_JMP, 0, 0);

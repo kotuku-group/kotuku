@@ -11,37 +11,43 @@ static const struct FieldDef clNetSocketState[] = {
 };
 
 static const struct FieldDef clNetSocketFlags[] = {
-   { "Server", 0x00000001 },
-   { "SSL", 0x00000002 },
-   { "DisableServerVerify", 0x00000004 },
-   { "MultiConnect", 0x00000008 },
-   { "Synchronous", 0x00000010 },
-   { "LogAll", 0x00000020 },
-   { "Broadcast", 0x00000040 },
-   { "Udp", 0x00000080 },
+   { "SSL", 0x00000001 },
+   { "Synchronous", 0x00000002 },
+   { "LogAll", 0x00000004 },
+   { "Broadcast", 0x00000008 },
+   { "Udp", 0x00000010 },
+   { "DisableServerVerify", 0x00000020 },
+   { "MultiConnect", 0x00000040 },
+   { "KeepAlive", 0x00000080 },
    { nullptr, 0 }
 };
 
-FDEF maConnect[] = { { "Address", FD_STR }, { "Port", FD_INT }, { "Timeout", FD_DOUBLE }, { 0, 0 } };
+FDEF maConnect[] = { { "Address", FDF_CPPSTRING }, { "Port", FD_INT }, { "Timeout", FD_DOUBLE }, { 0, 0 } };
 FDEF maGetLocalIPAddress[] = { { "IPAddress:Address", FD_PTR|FD_STRUCT }, { 0, 0 } };
-FDEF maDisconnectClient[] = { { "Client", FD_OBJECTPTR }, { 0, 0 } };
-FDEF maDisconnectSocket[] = { { "Socket", FD_OBJECTPTR }, { 0, 0 } };
-FDEF maSendTo[] = { { "Dest", FD_PTR }, { "Data", FD_BUFFER|FD_PTR }, { "Length", FD_INT|FD_BUFSIZE }, { "BytesSent", FD_INT|FD_RESULT }, { 0, 0 } };
-FDEF maRecvFrom[] = { { "Source", FD_PTR }, { "Buffer", FD_BUFFER|FD_PTR }, { "BufferSize", FD_INT|FD_BUFSIZE }, { "BytesRead", FD_INT|FD_RESULT }, { 0, 0 } };
-FDEF maJoinMulticastGroup[] = { { "Group", FD_STR }, { 0, 0 } };
-FDEF maLeaveMulticastGroup[] = { { "Group", FD_STR }, { 0, 0 } };
+FDEF maSendTo[] = { { "Dest", FD_PTR }, { "Data", FDF_SPAN|FD_BYTE }, { "BytesSent", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF maRecvFrom[] = { { "Source", FD_PTR }, { "Buffer", FDF_SPAN|FD_MUTABLE|FD_BYTE }, { "BytesRead", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF maJoinMulticastGroup[] = { { "Group", FDF_CPPSTRING }, { 0, 0 } };
+FDEF maLeaveMulticastGroup[] = { { "Group", FDF_CPPSTRING }, { 0, 0 } };
 
 static const struct MethodEntry clNetSocketMethods[] = {
    { AC(-1), (APTR)NETSOCKET_Connect, "Connect", maConnect, sizeof(struct ns::Connect) },
    { AC(-2), (APTR)NETSOCKET_GetLocalIPAddress, "GetLocalIPAddress", maGetLocalIPAddress, sizeof(struct ns::GetLocalIPAddress) },
-   { AC(-3), (APTR)NETSOCKET_DisconnectClient, "DisconnectClient", maDisconnectClient, sizeof(struct ns::DisconnectClient) },
-   { AC(-4), (APTR)NETSOCKET_DisconnectSocket, "DisconnectSocket", maDisconnectSocket, sizeof(struct ns::DisconnectSocket) },
-   { AC(-5), (APTR)NETSOCKET_SendTo, "SendTo", maSendTo, sizeof(struct ns::SendTo) },
-   { AC(-6), (APTR)NETSOCKET_RecvFrom, "RecvFrom", maRecvFrom, sizeof(struct ns::RecvFrom) },
-   { AC(-7), (APTR)NETSOCKET_JoinMulticastGroup, "JoinMulticastGroup", maJoinMulticastGroup, sizeof(struct ns::JoinMulticastGroup) },
-   { AC(-8), (APTR)NETSOCKET_LeaveMulticastGroup, "LeaveMulticastGroup", maLeaveMulticastGroup, sizeof(struct ns::LeaveMulticastGroup) },
+   { AC(-3), (APTR)NETSOCKET_SendTo, "SendTo", maSendTo, sizeof(struct ns::SendTo) },
+   { AC(-4), (APTR)NETSOCKET_RecvFrom, "RecvFrom", maRecvFrom, sizeof(struct ns::RecvFrom) },
+   { AC(-5), (APTR)NETSOCKET_JoinMulticastGroup, "JoinMulticastGroup", maJoinMulticastGroup, sizeof(struct ns::JoinMulticastGroup) },
+   { AC(-6), (APTR)NETSOCKET_LeaveMulticastGroup, "LeaveMulticastGroup", maLeaveMulticastGroup, sizeof(struct ns::LeaveMulticastGroup) },
    { AC::NIL, 0, 0, 0, 0 }
 };
+
+static ERR NETSOCKET_New(extNetSocket *Self) {
+   new (Self) extNetSocket(Self->Class, Self->UID);
+   return ERR::Okay;
+}
+
+static ERR NETSOCKET_Free(extNetSocket *Self) {
+   Self->~extNetSocket();
+   return ERR::Okay;
+}
 
 static const struct ActionArray clNetSocketActions[] = {
    { AC::DataFeed, NETSOCKET_DataFeed },
@@ -49,7 +55,7 @@ static const struct ActionArray clNetSocketActions[] = {
    { AC::Free, NETSOCKET_Free },
    { AC::FreeWarning, NETSOCKET_FreeWarning },
    { AC::Init, NETSOCKET_Init },
-   { AC::NewPlacement, NETSOCKET_NewPlacement },
+   { AC::New, NETSOCKET_New },
    { AC::Read, NETSOCKET_Read },
    { AC::Write, NETSOCKET_Write },
    { AC::NIL, nullptr }

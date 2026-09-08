@@ -15,12 +15,14 @@ static char modname[80];
 static size_t modnamelen;
 static char funcname[80];
 static int modstate, regfunc;
+static bool glLastFuncIntrinsic;
 static int ffid, recffid, ffasmfunc;
 
 enum {
    REGFUNC_OK,
    REGFUNC_NOREG,
-   REGFUNC_NOREGUV
+   REGFUNC_NOREGUV,
+   REGFUNC_INTRINSIC
 };
 
 static void libdef_name(const char* p, int kind)
@@ -83,6 +85,7 @@ static void libdef_module(BuildCtx* ctx, char* p, int arg)
       fprintf(ctx->fp, "#undef %sMODULE_%s\n", LIBDEF_PREFIX, p);
       fprintf(ctx->fp, "static const lua_CFunction %s%s[] = {\n", LABEL_PREFIX_LIBCF, p);
    }
+   glLastFuncIntrinsic = false;
    modnamelen = strlen(p);
    if (modnamelen > sizeof(modname) - 1) {
       fprintf(stderr, "Error: module name too long: '%s'\n", p);
@@ -107,6 +110,7 @@ static int find_ffofs(BuildCtx* ctx, const char* name)
 
 static void libdef_func(BuildCtx* ctx, char* p, int arg)
 {
+   bool intrinsic = regfunc IS REGFUNC_INTRINSIC;
    if (arg != LIBINIT_CF)
       ffasmfunc++;
    if (ctx->mode == BUILD_libdef) {
@@ -127,12 +131,17 @@ static void libdef_func(BuildCtx* ctx, char* p, int arg)
             modstate = 2;
             fprintf(ctx->fp, "  %s%s", arg ? LABEL_PREFIX_FFH : LABEL_PREFIX_CF, p);
          }
-         if (regfunc != REGFUNC_NOREGUV) obuf[2]++;  /* Bump hash table size. */
-         libdef_name(regfunc == REGFUNC_NOREGUV ? "" : p, arg);
+         if (regfunc != REGFUNC_NOREGUV and regfunc != REGFUNC_INTRINSIC) obuf[2]++;  /* Bump hash table size. */
+         libdef_name((regfunc IS REGFUNC_NOREGUV or regfunc IS REGFUNC_INTRINSIC) ? "" : p, arg);
       }
    }
    else if (ctx->mode == BUILD_ffdef) {
-      fprintf(ctx->fp, "FFDEF(%s)\n", p);
+      char canonical[256];
+      int i;
+      strcpy(canonical, p);
+      for (i = 1; canonical[i] and modname[i - 1]; i++)
+         if (canonical[i] IS '_') canonical[i] = '.';
+      fprintf(ctx->fp, "FFDEF(%s, \"%s\")\n", p, canonical);
    }
    else if (ctx->mode == BUILD_recdef) {
       if (strlen(p) > sizeof(funcname) - 1) {
@@ -152,6 +161,7 @@ static void libdef_func(BuildCtx* ctx, char* p, int arg)
          fprintf(ctx->fp, ",\n%d", find_ffofs(ctx, p));
    }
    ffid++;
+   glLastFuncIntrinsic = intrinsic;
    regfunc = REGFUNC_OK;
 }
 
@@ -239,6 +249,10 @@ static void libdef_push(BuildCtx* ctx, char* p, int arg)
          }
       }
       else if (!strcmp(p, "lastcl")) {
+         if (glLastFuncIntrinsic) {
+            fprintf(stderr, "Error: intrinsic function cannot be published with %sPUSH(lastcl)\n", LIBDEF_PREFIX);
+            exit(1);
+         }
          if (optr + 1 > obuf + sizeof(obuf)) {
             fprintf(stderr, "Error: output buffer overflow\n");
             exit(1);
@@ -272,6 +286,10 @@ static void libdef_set(BuildCtx* ctx, char* p, int arg)
 
 static void libdef_regfunc(BuildCtx* ctx, char* p, int arg)
 {
+   if (regfunc != REGFUNC_OK) {
+      fprintf(stderr, "Error: incompatible generated-library function registration markers\n");
+      exit(1);
+   }
    regfunc = arg;
 }
 
@@ -295,6 +313,7 @@ static const LibDefHandler libdef_handlers[] = {
   { "SET(",	")",		libdef_set,		0 },
   { "NOREGUV",	NULL,		libdef_regfunc,		REGFUNC_NOREGUV },
   { "NOREG",	NULL,		libdef_regfunc,		REGFUNC_NOREG },
+  { "INTRINSIC",	NULL,		libdef_regfunc,		REGFUNC_INTRINSIC },
   { NULL,	NULL,		(LibDefFunc)0,		0 }
 };
 
@@ -310,6 +329,8 @@ void emit_lib(BuildCtx* ctx)
       fprintf(ctx->fp, "ffnames = {\n[0]=\"Lua\",\n\"C\",\n");
    if (ctx->mode == BUILD_recdef)
       fprintf(ctx->fp, "static const uint16_t recff_idmap[] = {\n0,\n0x0100");
+   regfunc = REGFUNC_OK;
+   glLastFuncIntrinsic = false;
    recffid = ffid = FF_C + 1;
    ffasmfunc = 0;
 
@@ -387,6 +408,9 @@ void emit_lib(BuildCtx* ctx)
    if (ctx->mode == BUILD_ffdef) {
       fprintf(ctx->fp, "\n#undef FFDEF\n\n");
       fprintf(ctx->fp,
+         "/* Fast-function order is part of the private bytecode ABI for BC_BFUNC. */\n"
+         "/* Insertions or reordering require a BCDUMP_VERSION bump and fingerprint update. */\n\n"
+         "#define FFDEF_BFUNC_ABI 1\n\n"
          "#ifndef FF_NUM_ASMFUNC\n#define FF_NUM_ASMFUNC %d\n#endif\n\n",
          ffasmfunc);
    }
@@ -415,4 +439,3 @@ void emit_lib(BuildCtx* ctx)
       fprintf(ctx->fp, "\n};\n\n");
    }
 }
-

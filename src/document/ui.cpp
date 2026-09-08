@@ -5,13 +5,14 @@
 static void notify_input_onchange(objVectorText *Vector)
 {
    auto Self = (extDocument *)CurrentContext();
-   auto str = Vector->get<CSTRING>(FID_String);
+   std::string_view str;
+   Vector->getString(str);
 
    Self->Vars[Vector->Name].assign(str);
 
    if ((Self->EventMask & DEF::WIDGET_STATE) != DEF::NIL) {
       if (auto vp = (Object *)Vector->CreatorMeta) {
-         KEYVALUE keys = { { "name", Vector->Name }, { "value", str } };
+         KEYVALUE keys = { { "name", Vector->Name }, { "value", std::string(str) } };
          auto ent = std::get<bc_input *>(Self->VPToEntity[vp->UID].widget);
          report_event(Self, DEF::WIDGET_STATE, ent, &keys);
       }
@@ -21,13 +22,14 @@ static void notify_input_onchange(objVectorText *Vector)
 static void notify_combo_onchange(objVectorText *Vector)
 {
    auto Self = (extDocument *)CurrentContext();
-   auto str = Vector->get<CSTRING>(FID_String);
+   std::string_view str;
+   Vector->getString(str);
 
    Self->Vars[Vector->Name].assign(str);
 
    if ((Self->EventMask & DEF::WIDGET_STATE) != DEF::NIL) {
       if (auto vp = (Object *)Vector->CreatorMeta) {
-         KEYVALUE keys = { { "name", Vector->Name }, { "value", str } };
+         KEYVALUE keys = { { "name", Vector->Name }, { "value", std::string(str) } };
          auto ent = std::get<bc_combobox *>(Self->VPToEntity[vp->UID].widget);
          report_event(Self, DEF::WIDGET_STATE, ent, &keys);
       }
@@ -53,7 +55,9 @@ static ERR combo_feedback(objVectorViewport *Viewport, FM Event, OBJECTPTR Event
       }
    }
    else if ((Event IS FM::HAS_FOCUS) or (Event IS FM::CHILD_HAS_FOCUS)) {
-      combo->last_good_input = combo->input->get<CSTRING>(FID_String);
+      std::string_view input_string;
+      combo->input->getString(input_string);
+      combo->last_good_input = input_string;
       if (!combo->name.empty()) {
          Self->Vars[combo->name] = combo->last_good_input;
          if ((Self->EventMask & DEF::WIDGET_STATE) != DEF::NIL) {
@@ -81,7 +85,7 @@ void bc_combobox::callback(struct doc_menu &Menu, struct dropdown_item &Item)
       }
       else value = Item.content.c_str();
 
-      combo->input->setFields(fl::String(value));
+      combo->input->setString(value);
       if (!combo->name.empty()) Self->Vars[combo->name] = value;
       combo->viewport->draw();
 
@@ -113,7 +117,7 @@ static bool delete_selected(extDocument *Self)
       }
 
       if (start.index < end.index) {
-         Self->Stream.data.erase(Self->Stream.data.begin() + start.index, Self->Stream.data.begin() + (end.index - start.index));
+         Self->Stream.data.erase(Self->Stream.data.begin() + start.index, Self->Stream.data.begin() + end.index);
          end.index -= (end.index - start.index);
 
          if ((end.offset > 0) and (Self->Stream[end.index].code IS SCODE::TEXT)) {
@@ -135,7 +139,7 @@ static bool delete_selected(extDocument *Self)
 
 static ERR key_event(objVectorViewport *Viewport, KQ Flags, KEY Value, int Unicode)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if ((Flags & KQ::PRESSED) IS KQ::NIL) return ERR::Okay;
 
@@ -156,9 +160,9 @@ static ERR key_event(objVectorViewport *Viewport, KQ Flags, KEY Value, int Unico
          // Output the character
 
          char string[12];
-         UTF8WriteValue(Unicode, string, sizeof(string));
+         UTF8WriteValue(Unicode, std::span<int8_t>((int8_t *)string, sizeof(string)));
          Self->insertText(string, Self->CursorIndex.index, Self->CursorIndex.offset, true); // Will set UpdatingLayout to true
-         Self->CursorIndex += strlen(string); // Reposition the cursor
+         Self->CursorIndex += std::string_view(string).size(); // Reposition the cursor
 
          layout_doc_fast(Self);
 
@@ -172,7 +176,7 @@ static ERR key_event(objVectorViewport *Viewport, KQ Flags, KEY Value, int Unico
          case KEY::TAB: {
             log.branch("Key: Tab");
             if (Self->TabFocusID) {
-               pf::ScopedObjectLock tab(Self->TabFocusID);
+               kt::ScopedObjectLock tab(Self->TabFocusID);
                if (tab.granted()) acFocus(*tab);
             }
             else if ((Flags & KQ::SHIFT) != KQ::NIL) advance_tabfocus(Self, -1);
@@ -211,7 +215,7 @@ static ERR key_event(objVectorViewport *Viewport, KQ Flags, KEY Value, int Unico
                   else if (code IS SCODE::IMAGE); // Inline images count as a character
                   else if (code != SCODE::TEXT) continue;
 
-                  if (resolve_fontx_by_index(Self, index, Self->CursorCharX) IS ERR::Okay) {
+                  if (!resolve_fontx_by_index(Self, index, Self->CursorCharX)) {
                      Self->CursorIndex = index;
                      Self->Viewport->draw();
                      log.warning("LeftCursor: %d, X: %g", Self->CursorIndex.index, Self->CursorCharX);
@@ -237,7 +241,7 @@ static ERR key_event(objVectorViewport *Viewport, KQ Flags, KEY Value, int Unico
                // The current index references a content character or object.  Advance the cursor to the next index.
 
                index.next_char(Self->Stream);
-               if (resolve_fontx_by_index(Self, index, Self->CursorCharX) IS ERR::Okay) {
+               if (!resolve_fontx_by_index(Self, index, Self->CursorCharX)) {
                   Self->CursorIndex = index;
                   Self->Viewport->draw();
                   log.warning("RightCursor: %d, X: %g", Self->CursorIndex.index, Self->CursorCharX);
@@ -307,7 +311,7 @@ static ERR key_event(objVectorViewport *Viewport, KQ Flags, KEY Value, int Unico
       case KEY::TAB:
          log.branch("Key: Tab");
          if (Self->TabFocusID) {
-            pf::ScopedObjectLock tab(Self->TabFocusID);
+            kt::ScopedObjectLock tab(Self->TabFocusID);
             if (tab.granted()) acFocus(*tab);
          }
          else if ((Flags & KQ::SHIFT) != KQ::NIL) advance_tabfocus(Self, -1);
@@ -393,43 +397,54 @@ static ERR key_event(objVectorViewport *Viewport, KQ Flags, KEY Value, int Unico
 
 //********************************************************************************************************************
 
-static void error_dialog(const std::string Title, const std::string Message)
+static void error_dialog(const std::string_view Title, const std::string_view Message)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
-   log.warning("%s", Message.c_str());
+   log.warning("%.*s", int(Message.size()), Message.data());
 
 #if !(defined(DBG_LAYOUT) || defined(DBG_STREAM) || defined(DBG_SEGMENTS))
    static bool detect_recursive_dialog = false;
    static OBJECTID dialog_id = 0;
-   if ((dialog_id) and (CheckObjectExists(dialog_id) IS ERR::True)) return;
-   if (detect_recursive_dialog) return;
-   detect_recursive_dialog = true;
+   static std::mutex dialog_mutex;
 
-   OBJECTPTR dialog;
-   if (NewObject(CLASSID::SCRIPT, &dialog) IS ERR::Okay) {
-      dialog->setFields(fl::Name("scDialog"), fl::Owner(CurrentTaskID()), fl::Path("scripts:gui/dialog.tiri"));
+   {
+      std::lock_guard lk(dialog_mutex);
+      if ((dialog_id) and (CheckResourceExists(dialog_id) IS ERR::True)) return;
+      if (detect_recursive_dialog) return;
+      detect_recursive_dialog = true;
+   }
+
+   objScript *dialog;
+   OBJECTID new_dialog_id = 0;
+   if (!NewObject(CLASSID::TIRI, &dialog)) {
+      dialog->setName("scDialog");
+      dialog->setOwner(CurrentTaskID());
+      dialog->setPath("scripts:gui/dialog.tiri");
 
       acSetKey(dialog, "modal", "1");
-      acSetKey(dialog, "title", Title.c_str());
+      acSetKey(dialog, "title", Title);
       acSetKey(dialog, "options", "okay");
       acSetKey(dialog, "type", "error");
-      acSetKey(dialog, "message", Message.c_str());
+      acSetKey(dialog, "message", Message);
 
-      if ((InitObject(dialog) IS ERR::Okay) and (acActivate(dialog) IS ERR::Okay)) {
-         CSTRING *results;
-         int size;
-         if ((dialog->get(FID_Results, results, size) IS ERR::Okay) and (size > 0)) {
-            dialog_id = strtol(results[0], nullptr, 0);
+      if ((!InitObject(dialog)) and (!acActivate(dialog))) {
+         std::span<std::string> results;
+         if ((!dialog->getResults(results)) and (not results.empty())) {
+            new_dialog_id = strtol(results[0].c_str(), nullptr, 0);
          }
       }
    }
 
-   detect_recursive_dialog = false;
+   {
+      std::lock_guard lk(dialog_mutex);
+      if (new_dialog_id) dialog_id = new_dialog_id;
+      detect_recursive_dialog = false;
+   }
 #endif
 }
 
-static void error_dialog(const std::string Title, ERR Error)
+static void error_dialog(std::string_view Title, ERR Error)
 {
    if (auto errstr = GetErrorMsg(Error)) {
       std::string buffer("Error: ");
@@ -442,29 +457,31 @@ static void error_dialog(const std::string Title, ERR Error)
 
 static ERR activate_cell_edit(extDocument *Self, INDEX CellIndex, stream_char CursorIndex)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if ((CellIndex < 0) or (CellIndex >= INDEX(Self->Stream.size()))) return log.warning(ERR::OutOfRange);
 
    log.branch("Cell Index: %d, Cursor Index: %d", CellIndex, CursorIndex.index);
 
    if (Self->Stream[CellIndex].code != SCODE::CELL) { // Sanity check
-      return log.warning(ERR::Failed);
+      return log.warning(ERR::SanityCheckFailed);
    }
 
    auto &cell = Self->Stream.lookup<bc_cell>(CellIndex);
-   if (CursorIndex.index <= CellIndex) { // Go to the start of the cell content
+   auto &stream = Self->Stream;
+
+   if ((not CursorIndex.valid()) or (CursorIndex.index <= CellIndex)) { // Go to the start of the cell content
       CursorIndex.set(CellIndex + 1);
    }
 
-   auto &stream = *cell.stream;
+   if (CursorIndex.index >= INDEX(stream.size())) return log.warning(ERR::OutOfRange);
 
    if (stream.data[CursorIndex.index].code != SCODE::TEXT) {
       // Skip ahead to the first relevant control code - it's always best to place the cursor ahead of things like
       // font styles, paragraph formatting etc.
 
       CursorIndex.offset = 0;
-      while (CursorIndex.index < INDEX(Self->Stream.size())) {
+      while (CursorIndex.index < INDEX(stream.size())) {
          std::array<SCODE, 5> content = {
             SCODE::TABLE_START, SCODE::LINK_END, SCODE::IMAGE, SCODE::PARAGRAPH_END, SCODE::TEXT
          };
@@ -510,7 +527,7 @@ static ERR activate_cell_edit(extDocument *Self, INDEX CellIndex, stream_char Cu
 
       log.msg("Calling on-enter callback function.");
 
-      if (extract_script(Self, edit.on_enter, &script, function_name, argstring) IS ERR::Okay) {
+      if (!extract_script(Self, edit.on_enter, &script, function_name, argstring)) {
          ScriptArg args[] = { { "ID", edit.name } };
          script->exec(function_name.c_str(), args, std::ssize(args));
       }
@@ -524,7 +541,7 @@ static ERR activate_cell_edit(extDocument *Self, INDEX CellIndex, stream_char Cu
 
 static void deactivate_edit(extDocument *Self, bool Redraw)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (!Self->ActiveEditDef) return;
 
@@ -556,7 +573,7 @@ static void deactivate_edit(extDocument *Self, bool Redraw)
 
             objScript *script;
             std::string function_name, argstring;
-            if (extract_script(Self, edit->on_change, &script, function_name, argstring) IS ERR::Okay) {
+            if (!extract_script(Self, edit->on_change, &script, function_name, argstring)) {
                auto cell_content = cell_index;
                cell_content++;
 
@@ -587,7 +604,7 @@ static void deactivate_edit(extDocument *Self, bool Redraw)
 #if 0
 static void check_mouse_click(extDocument *Self, double X, double Y)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    Self->ClickX = X;
    Self->ClickY = Y;
@@ -798,7 +815,7 @@ static int find_tabfocus(extDocument *Self, TT Type, BYTECODE Reference)
 
 static int add_tabfocus(extDocument *Self, TT Type, BYTECODE Reference)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    //log.branch("Type: %d, Ref: %d", LONG(Type), Reference);
 
@@ -820,7 +837,7 @@ static int add_tabfocus(extDocument *Self, TT Type, BYTECODE Reference)
 
 static ERR link_callback(objVector *Vector, InputEvent *Event)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    auto Self = (extDocument *)CurrentContext();
 
@@ -842,7 +859,7 @@ static ERR link_callback(objVector *Vector, InputEvent *Event)
 
    if ((Event->Flags & JTYPE::MOVEMENT) != JTYPE::NIL) {
       if (!link->origin.hooks.on_motion.empty()) {
-         if (extract_script(Self, link->origin.hooks.on_motion, &script, func_name, argstring) IS ERR::Okay) {
+         if (!extract_script(Self, link->origin.hooks.on_motion, &script, func_name, argstring)) {
             const ScriptArg args[] = {
                { "Element", link->origin.uid },
                { "X", Event->X },
@@ -856,7 +873,7 @@ static ERR link_callback(objVector *Vector, InputEvent *Event)
    else if (Event->Type IS JET::CROSSED_IN) {
       link->hover = true;
       if (!link->origin.hooks.on_crossing.empty()) {
-         if (extract_script(Self, link->origin.hooks.on_crossing, &script, func_name, argstring) IS ERR::Okay) {
+         if (!extract_script(Self, link->origin.hooks.on_crossing, &script, func_name, argstring)) {
             const ScriptArg args[] = {
                { "Element", link->origin.uid },
                { "X", Event->X },
@@ -882,7 +899,7 @@ static ERR link_callback(objVector *Vector, InputEvent *Event)
    else if (Event->Type IS JET::CROSSED_OUT) {
       link->hover = false;
       if (!link->origin.hooks.on_crossing.empty()) {
-         if (extract_script(Self, link->origin.hooks.on_crossing, &script, func_name, argstring) IS ERR::Okay) {
+         if (!extract_script(Self, link->origin.hooks.on_crossing, &script, func_name, argstring)) {
             const ScriptArg args[] = {
                { "Element", link->origin.uid },
                { "Args", argstring } };
@@ -916,7 +933,7 @@ static ERR link_callback(objVector *Vector, InputEvent *Event)
 
 static void set_focus(extDocument *Self, INDEX Index, CSTRING Caller)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (Self->Tabs.empty()) return;
 
@@ -958,10 +975,10 @@ static void set_focus(extDocument *Self, INDEX Index, CSTRING Caller)
       if (Self->HasFocus) {
          CLASSID class_id = GetClassID(std::get<OBJECTID>(Self->Tabs[Index].ref));
          if (class_id IS CLASSID::VECTORTEXT) {
-            pf::ScopedObjectLock focus(std::get<OBJECTID>(Self->Tabs[Index].ref));
+            kt::ScopedObjectLock focus(std::get<OBJECTID>(Self->Tabs[Index].ref));
             if (focus.granted()) {
                acFocus(*focus);
-               //if ((input->get(FID_UserInput, text) IS ERR::Okay) and (text)) {
+               //if ((!input->get(strhash("userInput"), text)) and (text)) {
                //   txtSelectArea(text, 0,0, 200000, 200000);
                //}
             }
@@ -1000,7 +1017,7 @@ static void set_focus(extDocument *Self, INDEX Index, CSTRING Caller)
 
 static bool view_area(extDocument *Self, double Left, double Top, double Right, double Bottom)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    double hgap = Self->VPWidth * 0.1, vgap = Self->VPHeight * 0.1;
    double view_x = -Self->XPosition, view_y = -Self->YPosition;
@@ -1053,7 +1070,7 @@ static bool view_area(extDocument *Self, double Left, double Top, double Right, 
 
 static void advance_tabfocus(extDocument *Self, int8_t Direction)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (Self->Tabs.empty()) return;
 
@@ -1121,7 +1138,7 @@ static ERR flash_cursor(extDocument *Self, int64_t TimeElapsed, int64_t CurrentT
 
 static void reset_cursor(extDocument *Self)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    log.function();
 
@@ -1167,7 +1184,7 @@ static ERR inputevent_cell(objVectorViewport *Viewport, const InputEvent *Event)
          }
 
          if (!cell->hooks.on_click.empty()) {
-            if (extract_script(Self, cell->hooks.on_click, &script, func_name, s_args) IS ERR::Okay) {
+            if (!extract_script(Self, cell->hooks.on_click, &script, func_name, s_args)) {
                const ScriptArg args[] = {
                   { "Entity", cell->uid },
                   { "Button", int(Event->Type) }, // JET::LMB etc
@@ -1185,7 +1202,7 @@ static ERR inputevent_cell(objVectorViewport *Viewport, const InputEvent *Event)
             if (report_event(Self, DEF::ON_MOTION, cell, &cell->args) IS ERR::Skip) continue;
 
             if (!cell->hooks.on_motion.empty()) {
-               if (extract_script(Self, cell->hooks.on_motion, &script, func_name, s_args) IS ERR::Okay) {
+               if (!extract_script(Self, cell->hooks.on_motion, &script, func_name, s_args)) {
                   const ScriptArg args[] = {
                      { "Entity", cell->uid },
                      { "X", Event->X },
@@ -1202,7 +1219,7 @@ static ERR inputevent_cell(objVectorViewport *Viewport, const InputEvent *Event)
             if (report_event(Self, DEF::ON_CROSSING_IN, cell, &cell->args) IS ERR::Skip) continue;
 
             if (!cell->hooks.on_crossing.empty()) {
-               if (extract_script(Self, cell->hooks.on_crossing, &script, func_name, s_args) IS ERR::Okay) {
+               if (!extract_script(Self, cell->hooks.on_crossing, &script, func_name, s_args)) {
                   const ScriptArg args[] = {
                      { "Entity", cell->uid },
                      { "X", Event->X },
@@ -1219,7 +1236,7 @@ static ERR inputevent_cell(objVectorViewport *Viewport, const InputEvent *Event)
             if (report_event(Self, DEF::ON_CROSSING_OUT, cell, &cell->args) IS ERR::Skip) continue;
 
             if (!cell->hooks.on_crossing.empty()) {
-               if (extract_script(Self, cell->hooks.on_crossing, &script, func_name, s_args) IS ERR::Okay) {
+               if (!extract_script(Self, cell->hooks.on_crossing, &script, func_name, s_args)) {
                   const ScriptArg args[] = {
                      { "Entity", cell->uid },
                      { "X", Event->X },
@@ -1262,29 +1279,30 @@ static ERR inputevent_button(objVectorViewport *Viewport, const InputEvent *Even
 
             // Scale the button viewport down a little bit to indicate that it's been clicked.
 
-            if (!button->viewport->Matrices) {
-               VectorMatrix *matrix;
-               button->viewport->newMatrix(&matrix, false);
-            }
+            VectorMatrix *matrix = nullptr;
+            button->viewport->getMatrices(matrix);
+            if (not matrix) button->viewport->newMatrix(&matrix, false);
 
-            const auto width  = button->viewport->get<double>(FID_Width);
-            const auto height = button->viewport->get<double>(FID_Height);
+            Unit width, height;
+            button->viewport->getWidth(width);
+            button->viewport->getHeight(height);
 
-            if (auto m = button->viewport->Matrices) {
+            if (matrix) {
                const auto SCALE = 0.95;
-               m->TranslateX -= width * 0.5;
-               m->TranslateY -= height * 0.5;
-               vec::Scale(m, SCALE, SCALE);
-               m->TranslateX += width * 0.5;
-               m->TranslateY += height * 0.5;
-               vec::FlushMatrix(button->viewport->Matrices);
+               matrix->TranslateX -= double(width) * 0.5;
+               matrix->TranslateY -= double(height) * 0.5;
+               vec::Scale(matrix, SCALE, SCALE);
+               matrix->TranslateX += double(width) * 0.5;
+               matrix->TranslateY += double(height) * 0.5;
+               vec::FlushMatrix(matrix);
             }
          }
          else {
-            if (!button->alt_fill.empty()) button->viewport->setFill(button->fill);
+            if (not button->alt_fill.empty()) button->viewport->setFill(button->fill);
 
-            if (button->viewport->Matrices) {
-               vec::ResetMatrix(button->viewport->Matrices);
+            VectorMatrix *m = nullptr;
+            if ((button->viewport->getMatrices(m) IS ERR::Okay) and m) {
+               vec::ResetMatrix(m);
             }
          }
 
@@ -1367,7 +1385,7 @@ static ERR inputevent_checkbox(objVectorViewport *Viewport, const InputEvent *Ev
 
 static ERR resolve_fontx_by_index(extDocument *Self, stream_char Char, double &CharX)
 {
-   pf::Log log("resolve_fontx");
+   kt::Log log("resolve_fontx");
 
    log.branch("Index: %d", Char.index);
 
@@ -1382,7 +1400,7 @@ static ERR resolve_fontx_by_index(extDocument *Self, stream_char Char, double &C
       auto i = Self->Segments[segment].start;
       while ((i <= Self->Segments[segment].stop) and (i < Char)) {
          if (Self->Stream[i.index].code IS SCODE::TEXT) {
-            CharX = vec::StringWidth(font->handle, Self->Stream.lookup<bc_text>(i).text.c_str(), -1);
+            CharX = vec::StringWidth(font->handle, Self->Stream.lookup<bc_text>(i).text, -1);
             return ERR::Okay;
          }
          i.next_code();

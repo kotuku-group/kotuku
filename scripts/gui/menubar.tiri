@@ -4,10 +4,9 @@ Documentation is available in the Kotuku Wiki.
 
    import 'gui'
    import 'gui/menu'
-   import 'translate'
    include 'vector'
 
-   namespace 'gui'
+   namespace gui
 
 VMARGIN   = gui.sizing.widget.margin
 GAP       <const> = 26
@@ -21,7 +20,7 @@ function counter()
 end
 
 function activateItem(self) -- Activate the current menu item.
-   self._currentItem ?? return
+   self._currentItem ?! return
 
    self._currentItem?.callback(self._currentItem.id, self._currentItem.name)
 
@@ -54,20 +53,20 @@ function activateItem(self) -- Activate the current menu item.
    end
 end
 
-function firstItem(self) -- Return the first item
+function firstItem(self):table -- Return the first item
    return self._first
 end
 
-function lastItem(self) -- Return the last item
+function lastItem(self):table -- Return the last item
    return self._last
 end
 
 function newItem(self, Name, ID) -- Append an item to the menu bar
-   if ID and self._lookup[ID] then error(f'An item with identifier {ID} already exists.') end
+   if ID and self._lookup[ID] then raise f'An item with identifier {ID} already exists.' end
 
    item = { id=ID, name=Name }
    if Name?? then
-      item.displayName = string.translate(Name)
+      item.displayName = Name
    end
 
    if self._last then self._last.next = item end
@@ -80,7 +79,7 @@ function newItem(self, Name, ID) -- Append an item to the menu bar
    return item
 end
 
-function getCursorItem(self, X, Y)
+function getCursorItem(self, X, Y):table
    item = self._first
    while item do
       if (X >= item.x) and (X <  item.x + item.width) and (Y >= item.y) and (Y <  item.y + item.height) then
@@ -235,7 +234,7 @@ gui.menubar = function(Options)
       self.viewport.height = 1
       self.viewport.xOffset = Options.xOffset ?? 0
 
-      check self.viewport.init()
+      self.viewport.init()
 
       self.viewport.subscribe('free', function(Viewport, Args)
          self = { }

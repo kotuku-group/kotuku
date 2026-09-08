@@ -6,7 +6,7 @@ Documentation is available in the Kotuku Wiki.
 
    import 'gui'
 
-   namespace 'gui'
+   namespace gui
 
 FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(gui.fonts.widget)
 HEIGHT    <const> = math.floor(FONT_MAX_HEIGHT * 1.25) + 1
@@ -36,7 +36,7 @@ gui.checkbox = function(Options)
 
    -- Change the active state of the checkbox to disabled or enabled
 
-   self.disable = function(self)
+   self.disable = function()
       self.disabled = true
       self.viewport.acDisable()
       self.text.opacity = 0.5
@@ -45,7 +45,7 @@ gui.checkbox = function(Options)
       self.viewport.acDraw()
    end
 
-   self.enable = function(self)
+   self.enable = function()
       self.disabled = false
       self.viewport.acDisable()
       self.text.opacity = 1.0
@@ -103,7 +103,7 @@ gui.checkbox = function(Options)
       height = ICON_SIZE,
       fill   = chk_icon.fill,
       opacity = (function()
-         return self.state is 1 ? 1.0 :> 0.25
+         return self.state is 1 ? 1.0 : 0.25
       end)()
    })
 

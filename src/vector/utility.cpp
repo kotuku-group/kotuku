@@ -4,7 +4,8 @@ double glDisplayHDPI = 96, glDisplayVDPI = 96, glDisplayDPI = 96;
 
 [[maybe_unused]] static HSV rgb_to_hsl(FRGB Colour);
 [[maybe_unused]] static FRGB hsl_to_rgb(HSV Colour);
-static void read_numseq_zero(CSTRING &, std::initializer_list<double *>);
+static void read_numseq_zero(std::string_view &, std::initializer_list<double *>);
+static bool read_transform_number(std::string_view &Value, double &Result);
 
 //********************************************************************************************************************
 
@@ -93,12 +94,13 @@ CSTRING get_name(OBJECTPTR Vector)
    switch(Vector->baseClassID()) {
       case CLASSID::VECTORCOLOUR:    return "Colour";
       case CLASSID::VECTORFILTER:    return "Filter";
-      case CLASSID::VECTORGRADIENT:  return "Gradient";
       case CLASSID::VECTORPATTERN:   return "Pattern";
       case CLASSID::VECTOR:          return "Vector";
       case CLASSID::VECTORSCENE:     return "Scene";
       default: break;
    }
+
+   if (Vector->baseClassID() IS CLASSID::GRADIENT) return "Gradient";
 
    return "Unknown";
 }
@@ -111,8 +113,8 @@ static void update_dpi(void)
    int64_t current_time = PreciseTime();
 
    if (current_time - last_update > 3000000LL) {
-      DISPLAYINFO *display;
-      if (gfx::GetDisplayInfo(0, &display) IS ERR::Okay) {
+      DisplayInfo *display;
+      if (!gfx::GetDisplayInfo(0, &display)) {
          last_update = PreciseTime();
          if ((display->VDensity >= 72) and (display->HDensity >= 72)) {
             glDisplayVDPI = display->VDensity;
@@ -132,19 +134,27 @@ static void update_dpi(void)
 // data specification. This will provide a visual clue to the user or developer about where the error might be in the
 // path data specification.
 
-ERR read_path(std::vector<PathCommand> &Path, CSTRING Value)
+ERR read_path(std::vector<PathCommand> &Path, std::string_view Value)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    PathCommand path;
 
    int max_cmds = 8192; // Maximum commands per path - this acts as a safety net in case the parser gets stuck.
    uint8_t cmd = 0;
-   while (*Value) {
-      if (std::isalpha(*Value)) cmd = *Value++;
-      else if (std::isdigit(*Value) or (*Value IS '-') or (*Value IS '+') or (*Value IS '.')); // Use the previous command
-      else if ((*Value <= 0x20) or (*Value IS ',')) { Value++; continue; }
-      else break;
+   while (not Value.empty()) {
+      const auto current = Value.front();
+      const bool use_previous_cmd = std::isdigit((uint8_t)current) or (current IS '-') or (current IS '+') or
+         (current IS '.');
+      if (std::isalpha((uint8_t)current)) {
+         cmd = current;
+         Value.remove_prefix(1);
+      }
+      else if ((current <= 0x20) or (current IS ',')) {
+         Value.remove_prefix(1);
+         continue;
+      }
+      else if (not use_previous_cmd) break;
 
       switch (cmd) {
          case 'M': case 'm': // MoveTo
@@ -229,7 +239,7 @@ ERR read_path(std::vector<PathCommand> &Path, CSTRING Value)
          }
 
          default: {
-            log.warning("Invalid path command '%c'", *Value);
+            log.warning("Invalid path command '%c'", cmd ? cmd : current);
             return ERR::InvalidValue;
          }
       }
@@ -253,7 +263,7 @@ ERR read_path(std::vector<PathCommand> &Path, CSTRING Value)
 void calc_aspectratio(CSTRING Caller, ARF AspectRatio, double TargetWidth, double TargetHeight,
    double SourceWidth, double SourceHeight, double &X, double &Y, double &XScale, double &YScale)
 {
-   pf::Log log(Caller);
+   kt::Log log(Caller);
 
    // Prevent division by zero errors.  Note that the client can legitimately set these values to zero, so we cannot
    // treat such situations as an error on the client's part.
@@ -391,8 +401,8 @@ double read_unit(CSTRING &Value, bool &Percent)
       else if ((str[0] IS 'e') and (str[1] IS 'm')) { str += 2; multiplier = (12.0 / 72.0) * dpi; } // Multiply the current font's pixel height by the provided em value
       else if ((str[0] IS 'e') and (str[1] IS 'x')) { str += 2; multiplier = (6.0 / 72.0) * dpi; } // As for em, but multiple by the pixel height of the 'x' character.  If no x character, revert to 0.5em
       else if ((str[0] IS 'i') and (str[1] IS 'n')) { str += 2; multiplier = dpi; } // Inches
-      else if ((str[0] IS 'c') and (str[1] IS 'm')) { str += 2; multiplier = (1.0 / 2.56) * dpi; } // Centimetres
-      else if ((str[0] IS 'm') and (str[1] IS 'm')) { str += 2; multiplier = (1.0 / 20.56) * dpi; } // Millimetres
+      else if ((str[0] IS 'c') and (str[1] IS 'm')) { str += 2; multiplier = (1.0 / 2.54) * dpi; } // Centimetres
+      else if ((str[0] IS 'm') and (str[1] IS 'm')) { str += 2; multiplier = (1.0 / 25.4) * dpi; } // Millimetres
       else if ((str[0] IS 'p') and (str[1] IS 't')) { str += 2; multiplier = (1.0 / 72.0) * dpi; } // Points.  A point is 1/72 of an inch
       else if ((str[0] IS 'p') and (str[1] IS 'c')) { str += 2; multiplier = (12.0 / 72.0) * dpi; } // Pica.  1 Pica is equal to 12 Points
 
@@ -406,7 +416,7 @@ double read_unit(CSTRING &Value, bool &Percent)
 
 //********************************************************************************************************************
 
-std::string weight_to_style(CSTRING Style, int Weight)
+std::string weight_to_style(std::string_view Style, int Weight)
 {
    std::string weight_name;
 
@@ -425,18 +435,19 @@ std::string weight_to_style(CSTRING Style, int Weight)
 
 //********************************************************************************************************************
 
-ERR get_font(pf::Log &Log, CSTRING Family, CSTRING Style, int Weight, int Size, common_font **Handle)
+ERR get_font(kt::Log &Log, std::string_view Family, std::string_view Style, int Weight, int Size, common_font **Handle)
 {
-   Log.branch("Family: %s, Style: %s, Weight: %d, Size: %d", Family, Style, Weight, Size);
+   Log.branch("Family: %.*s, Style: %.*s, Weight: %d, Size: %d", int(Family.size()), Family.data(),
+      int(Style.size()), Style.data(), Weight, Size);
 
-   if (!Style) return Log.warning(ERR::NullArgs);
+   if (Style.empty()) return Log.warning(ERR::NullArgs);
 
    const std::lock_guard lock{glFontMutex};
 
-   std::string family(Family ? Family : "*");
-   if (!family.ends_with("*")) family.append(",*");
-   CSTRING final_name;
-   if (fnt::ResolveFamilyName(family.c_str(), &final_name) IS ERR::Okay) family.assign(final_name);
+   std::string family(Family.empty() ? "*" : Family);
+   if (not family.ends_with("*")) family.append(",*");
+   std::string_view final_name;
+   if (!fnt::ResolveFamilyName(family, &final_name)) family.assign(final_name);
 
    std::string style(Style);
    if ((Weight) and (Weight != 400)) {
@@ -446,11 +457,9 @@ ERR get_font(pf::Log &Log, CSTRING Family, CSTRING Style, int Weight, int Size, 
    }
 
    const int point_size = std::round(Size * (72.0 / DISPLAY_DPI));
-   CSTRING location = nullptr;
+   std::string location;
    FMETA meta = FMETA::NIL;
-   if (auto error = fnt::SelectFont(family.c_str(), style.c_str(), &location, &meta); error IS ERR::Okay) {
-      LocalResource loc(location);
-
+   if (auto error = fnt::SelectFont(family, style, &location, &meta); !error) {
       if ((meta & FMETA::SCALED) IS FMETA::NIL) { // Bitmap font
          auto key = strihash(style + ":" + std::to_string(point_size) + ":" + location);
 
@@ -480,7 +489,7 @@ ERR get_font(pf::Log &Log, CSTRING Family, CSTRING Style, int Weight, int Size, 
 
          if (!glFreetypeFonts.contains(key)) {
             std::string resolved;
-            if (ResolvePath(location, RSF::NIL, &resolved) IS ERR::Okay) {
+            if (!ResolvePath(location, RSF::NIL, &resolved)) {
                FT_Face ftface;
                FT_Open_Args openargs = { .flags = FT_OPEN_PATHNAME, .pathname = resolved.data() };
                if (FT_Open_Face(glFTLibrary, &openargs, 0, &ftface)) {
@@ -514,7 +523,8 @@ ERR get_font(pf::Log &Log, CSTRING Family, CSTRING Style, int Weight, int Size, 
                                              buffer[out++] = ' ';
                                           }
                                        }
-                                       out += UTF8WriteValue(unicode, buffer+out, std::ssize(buffer)-out);
+                                       out += UTF8WriteValue(unicode,
+                                          std::span<int8_t>((int8_t *)(buffer + out), std::size(buffer) - size_t(out)));
                                        prev_unicode = unicode;
                                     }
                                     buffer[out] = 0;
@@ -548,14 +558,14 @@ ERR get_font(pf::Log &Log, CSTRING Family, CSTRING Style, int Weight, int Size, 
 
                if (font.metrics.contains(style)) {
                   auto new_size = sz.try_emplace(Size, font, font.metrics[style], Size);
-                  if (!new_size.first->second.ft_size) return ERR::Failed; // Verify success
+                  if (!new_size.first->second.ft_size) return ERR::CreateResource; // Verify success
                   *Handle = &new_size.first->second;
                   return ERR::Okay;
                }
                else {
                   if (!font.metrics.empty()) Log.warning("Font metrics do not support style '%s'", style.c_str());
                   auto new_size = sz.try_emplace(Size, font, Size);
-                  if (!new_size.first->second.ft_size) return ERR::Failed; // Verify success
+                  if (!new_size.first->second.ft_size) return ERR::CreateResource; // Verify success
                   *Handle = &new_size.first->second;
                   return ERR::Okay;
                }
@@ -596,12 +606,94 @@ ERR read_numseq(CSTRING &String, std::initializer_list<double *> Value)
    return ERR::Okay;
 }
 
-void read_numseq_zero(CSTRING &String, std::initializer_list<double *> Value)
+ERR read_numseq(std::string_view &String, std::initializer_list<double *> Value)
 {
    for (double *v : Value) {
-      auto next = (STRING)String;
-      next_value(String);
-      *v = strtod(String, &next);
-      String = next;
+      if (not read_transform_number(String, *v)) return ERR::Syntax;
    }
+
+   return ERR::Okay;
+}
+
+void read_numseq_zero(std::string_view &String, std::initializer_list<double *> Value)
+{
+   for (double *v : Value) {
+      double result = 0;
+      if (read_transform_number(String, result)) *v = result;
+      else *v = 0;
+   }
+}
+
+//********************************************************************************************************************
+
+void next_value(std::string_view &Value)
+{
+   while ((not Value.empty()) and ((Value.front() <= 0x20) or (Value.front() IS ',') or (Value.front() IS '(') or
+      (Value.front() IS ')'))) {
+      Value.remove_prefix(1);
+   }
+}
+
+//********************************************************************************************************************
+
+static bool read_transform_number(std::string_view &Value, double &Result)
+{
+   next_value(Value);
+   if (Value.empty()) return false;
+
+   const char *start = Value.data();
+   const char *parse_start = start;
+
+   if (Value.front() IS '+') parse_start++;
+
+   auto [ next, error ] = std::from_chars(parse_start, Value.data() + Value.size(), Result);
+   if (error != std::errc()) return false;
+
+   Value.remove_prefix(next - start);
+   return true;
+}
+
+//********************************************************************************************************************
+
+bool read_transform_unit(std::string_view &Value, double &Result)
+{
+   if (not read_transform_number(Value, Result)) return false;
+
+   double multiplier = 1.0;
+   if (Value.starts_with('%')) {
+      multiplier = 0.01;
+      Value.remove_prefix(1);
+   }
+   else if (Value.starts_with("px")) Value.remove_prefix(2);
+   else if (Value.starts_with("em")) {
+      multiplier = (12.0 / 72.0) * DISPLAY_DPI;
+      Value.remove_prefix(2);
+   }
+   else if (Value.starts_with("ex")) {
+      multiplier = (6.0 / 72.0) * DISPLAY_DPI;
+      Value.remove_prefix(2);
+   }
+   else if (Value.starts_with("in")) {
+      multiplier = DISPLAY_DPI;
+      Value.remove_prefix(2);
+   }
+   else if (Value.starts_with("cm")) {
+      multiplier = (1.0 / 2.54) * DISPLAY_DPI;
+      Value.remove_prefix(2);
+   }
+   else if (Value.starts_with("mm")) {
+      multiplier = (1.0 / 25.4) * DISPLAY_DPI;
+      Value.remove_prefix(2);
+   }
+   else if (Value.starts_with("pt")) {
+      multiplier = (1.0 / 72.0) * DISPLAY_DPI;
+      Value.remove_prefix(2);
+   }
+   else if (Value.starts_with("pc")) {
+      multiplier = (12.0 / 72.0) * DISPLAY_DPI;
+      Value.remove_prefix(2);
+   }
+
+   Result *= multiplier;
+   return true;
 }

@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE rpl PUBLIC "-//ROCKLYTE//DTD RPL 1.0//EN">
 
-<body face="[@font:courier]" font-size="14pt"/>
+<body face="{($params?font, 'courier')[1]}" font-size="14pt"/>
 
 <page>
 <p>Pound: £ Yen: ¥ Copyright: ©</p>

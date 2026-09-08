@@ -1,37 +1,1030 @@
 
------------------------------------------------------------------------------------------------------------------------
--- Retrieve a known struct from a function and then list its field values.  GetList() is chosen in particular because
--- it features a null-terminated array in the Points field.
+struct DeclaredChild
+   Value: int
+end
 
-@Test(hotpath=true); @Requires(font=true)
-function FontList()
-   err, list = mFont.GetList()
-   if not list then
-      logOutput('Skipping struct tests, no fonts installed.')
-      return
+struct DeclaredUser
+   -- User-facing name retained as parser tooling metadata.
+   Name: str -- Owned string storage.
+   Borrowed: cstr
+   Age: int
+   Enabled: bool
+   Initial: char
+   Buffer: char[16]
+   Child: struct<DeclaredChild>
+   ChildPointer: ptr<DeclaredChild>
+   Object: obj
+   Clock: obj<Time>
+   Markup: obj<XML>
+end
+
+struct DeclaredLayout
+   Bool: bool, Char: char, Byte: byte, Int8: int8, UInt8: uint8,
+   Int16: int16, UInt16: uint16, Int: int, UInt: uint,
+   Int32: int, UInt32: uint, Int64: int64, UInt64: uint64,
+   Float: float, Double: double, String: str, CStr: cstr,
+   Pointer: ptr, IntPointer: ptr<int>, IntList: ptr<int[]>, Object: obj, Callback: func, Buffer: char[7],
+   Fixed: int[3], Child: struct<DeclaredChild>, ChildPointer: ptr<DeclaredChild>
+end
+
+struct DeclaredVectorElement
+   Red: byte
+   Green: byte
+   Blue: byte
+end
+
+struct DeclaredVectorFields
+   Bool: array<bool>, Char: array<char>, Byte: array<byte>, Int8: array<int8>, UInt8: array<uint8>,
+   Int16: array<int16>, UInt16: array<uint16>, Int: array<int>, UInt: array<uint>,
+   Int32: array<int>, UInt32: array<uint>, Int64: array<int64>, UInt64: array<uint64>,
+   Float: array<float>, Double: array<double>, String: array<str>,
+   Points: array<struct<DeclaredVectorElement>>
+end
+
+struct DeclaredNonTrivialVectorElement
+   Name: str
+end
+
+struct DeclaredVectorOwner
+   Values: array<int>
+end
+
+function declared_user_age(Value: struct<DeclaredUser>):num
+   return Value.Age
+end
+
+function create_declared_user():struct<DeclaredUser>
+   return struct<DeclaredUser>
+end
+
+function expect_struct_error(Action:func, ExpectedCode:num, Description:str)
+   local caught = false
+   try
+      Action()
+   except error_value
+      assert(error_value.code is ExpectedCode,
+         f"{Description}: expected error {ExpectedCode}, got {error_value.code}: {error_value.message}")
+      caught = true
+   end
+   assert(caught is true, Description .. ': assignment should have failed')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Retrieve a known struct from a function and test the field values.
+
+@Test function NativeStructDeclarationConstruction()
+   local user = struct<DeclaredUser> { Name='Paul', Age=37, Enabled=true, Initial=65, Buffer='hello' }
+   assert(type(user) is 'struct', 'A declared definition should construct a native struct')
+   assert(user.Name is 'Paul' and user.Age is 37, 'Definition calls should apply initialiser fields verbatim')
+   assert(user.Enabled is true, 'Boolean fields should be exposed as Tiri booleans')
+   assert(user.Initial is 65 and user.Buffer is 'hello', 'Character fields and buffers should round-trip')
+   assert(declared_user_age(user) is 37, 'struct<Name> annotations should resolve declared layouts')
+   assert(create_declared_user().Age is 0,
+      'struct<Name> without an initialiser should parse in returns and retain the layout')
+   local typed_user:struct<DeclaredUser> = user
+   assert(typed_user.Name is 'Paul', 'struct<Name> local annotations should resolve declared layouts')
+   local constructed_user:struct<DeclaredUser> = struct<DeclaredUser> { Age=42 }
+   assert(constructed_user.Age is 42, 'Explicit construction should retain its type in annotated assignments')
+   assert(declared_user_age(struct<DeclaredUser> { Age=31 }) is 31,
+      'Explicit construction should retain its type when passed to annotated parameters')
+
+   user.Child.Value = 91
+   assert(user.Child.Value is 91, 'Embedded declared structs should expose their fields')
+   assert(user.ChildPointer is nil, 'Typed struct pointers should initialise to nil')
+   assert(user.Object is nil, 'Object fields should initialise to nil')
+
+   local empty_user = struct<DeclaredUser> { }
+   assert(empty_user.Age is 0 and empty_user.Name is '', 'Empty initialisers should zero-initialise fields')
+   assert(struct.new('DeclaredUser').Age is 0, 'struct.new() should interoperate with declarations')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function NativeStructMembershipUsesDefinition()
+   local declared = struct<DeclaredUser> { }
+   assert(declared.Age is 0 and declared.Name is '' and declared.ChildPointer is nil and declared.Object is nil,
+      'The membership fixture should retain zero, empty and nil field values')
+   assert('Age' in declared and 'Name' in declared and 'Child' in declared and 'ChildPointer' in declared and
+      'Object' in declared,
+      'Declared scalar, embedded and pointer fields should be present regardless of their stored values')
+   assert(declared.name is '' and 'name' in declared,
+      'Membership should use the same case-insensitive field-name matching as ordinary struct access')
+   assert(not ('Missing' in declared) and not (not ('Name' in declared)),
+      'Negated membership should invert presence for declared struct fields')
+
+   MAKESTRUCT('MembershipLegacyLayout', 'lZero,zsEmpty,pPointer')
+   local legacy = struct.new('MembershipLegacyLayout')
+   assert(legacy.zero is 0 and legacy.empty is '' and legacy.pointer is nil,
+      'Legacy membership fixtures should retain zero, empty and nil field values')
+   assert('Zero' in legacy and 'empty' in legacy and 'Pointer' in legacy,
+      'MAKESTRUCT definitions and struct.new() values should report fields from their layout')
+
+   local nil_candidate:any = nil
+   local number_candidate:any = 1
+   local bool_candidate:any = true
+   local table_candidate:any = { }
+   assert(not (nil_candidate in declared) and not (number_candidate in declared) and
+      not (bool_candidate in declared) and not (table_candidate in declared),
+      'Non-string struct membership candidates should return false without raising')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Primitive fields validate exact Tiri categories and native numeric domains before changing storage.
+
+@Test function NativeStructPrimitiveValidation()
+   local value = struct<DeclaredLayout> {
+      Bool=true, Char=255, Byte=255, Int8=127, UInt8=0, Int16=-32768, UInt16=65535,
+      Int=-2147483648, UInt=4294967295, Int32=2147483647, UInt32=0,
+      Int64=-9223372036854775808, UInt64=9007199254740992, Float=1.25, Double=math.huge,
+      String='valid', Buffer='buffer'
+   }
+
+   assert(value.Bool is true and value.Char is 255 and value.Byte is 255,
+      'Constructor assignment should preserve valid bool and byte-sized values')
+   assert(value.Int16 is -32768 and value.UInt16 is 65535 and value.Int is -2147483648,
+      'Constructor assignment should preserve valid signed and unsigned integer boundaries')
+   assert(value.UInt is 4294967295 and value.Int32 is 2147483647 and value.UInt64 is 9007199254740992,
+      'Constructor assignment should preserve valid wide integer values')
+   assert(value.Float is 1.25 and value.Double is math.huge and value.String is 'valid' and value.Buffer is 'buffer',
+      'Constructor assignment should preserve floating, string and character-buffer values')
+
+   value.Bool = false
+   value.Char = 255
+   value.Byte = 0
+   value.Int8 = -128
+   value.UInt8 = 255
+   value.Int16 = 32767
+   value.UInt16 = 0
+   value.Int = 2147483647
+   value.UInt = 0
+   value.Int32 = -2147483648
+   value.UInt32 = 4294967295
+   value.Int64 = 9007199254740992
+   value.UInt64 = 18446744073709549568
+   value.Float = math.huge
+   assert(value.Float is math.huge, 'Float fields should accept positive infinity')
+   value.Float = 0 / 0
+   value.Double = -math.huge
+   value.String = 'updated'
+   assert(value.Bool is false and value.Char is 255 and value.UInt8 is 255 and value.Int16 is 32767,
+      'Later assignment should accept valid scalar boundaries')
+   assert(value.UInt32 is 4294967295 and value.UInt64 is 18446744073709549568,
+      'Later assignment should accept representable unsigned wide values below their exclusive upper bounds')
+   assert(value.Float != value.Float and value.Double is -math.huge and value.String is 'updated',
+      'Floating special values and exact strings should remain valid')
+
+   value.Bool = true
+   expect_struct_error(() => do value.Bool = 1 end, ERR_InvalidType, 'bool should reject numbers')
+   expect_struct_error(() => do value.Bool = nil end, ERR_InvalidType, 'bool should reject nil')
+   assert(value.Bool is true, 'Rejected bool assignment should preserve the prior value')
+
+   value.Int8 = 12
+   value.Int8 = 12.5
+   assert(value.Int8 is 12, 'Integer fields should truncate finite fractional values toward zero')
+   expect_struct_error(() => do value.Int8 = 0 / 0 end, ERR_OutOfRange, 'int8 should reject NaN')
+   expect_struct_error(() => do value.Int8 = math.huge end, ERR_OutOfRange, 'int8 should reject infinity')
+   expect_struct_error(() => do value.Int8 = 128 end, ERR_OutOfRange, 'int8 should reject overflow')
+   expect_struct_error(() => do value.Int8 = -129 end, ERR_OutOfRange, 'int8 should reject underflow')
+   expect_struct_error(() => do value.Int8 = 1e100 end, ERR_OutOfRange, 'int8 should reject huge finite values')
+   expect_struct_error(() => do value.Int8 = '12' end, ERR_InvalidType, 'int8 should reject numeric strings')
+   value.Int8 = nil
+   assert(value.Int8 is 0, 'Nil should store zero in integer fields')
+   value.Int8 = 127
+   assert(value.Int8 is 127, 'A valid assignment should recover after nil zeroing')
+
+   expect_struct_error(() => do value.UInt8 = -1 end, ERR_OutOfRange, 'uint8 should reject underflow')
+   expect_struct_error(() => do value.UInt8 = 256 end, ERR_OutOfRange, 'uint8 should reject overflow')
+   value.UInt8 = 300 & 0xff
+   assert(value.UInt8 is 44, 'Clients should be able to apply explicit wrapping before assignment')
+
+   expect_struct_error(() => do value.Char = -1 end, ERR_OutOfRange, 'char should reject underflow')
+   expect_struct_error(() => do value.Char = 256 end, ERR_OutOfRange, 'char should reject overflow')
+   value.Char = 300 & 0xff
+   assert(value.Char is 44, 'char should match byte after explicit wrapping')
+
+   expect_struct_error(() => do value.Int16 = -32769 end, ERR_OutOfRange, 'int16 should reject underflow')
+   expect_struct_error(() => do value.Int16 = 32768 end, ERR_OutOfRange, 'int16 should reject overflow')
+   expect_struct_error(() => do value.UInt16 = -1 end, ERR_OutOfRange, 'uint16 should reject underflow')
+   expect_struct_error(() => do value.UInt16 = 65536 end, ERR_OutOfRange, 'uint16 should reject overflow')
+   expect_struct_error(() => do value.Int32 = -2147483649 end, ERR_OutOfRange, 'int should reject underflow')
+   expect_struct_error(() => do value.Int32 = 2147483648 end, ERR_OutOfRange, 'int should reject overflow')
+   expect_struct_error(() => do value.UInt32 = -1 end, ERR_OutOfRange, 'uint should reject underflow')
+   expect_struct_error(() => do value.UInt32 = 4294967296 end, ERR_OutOfRange, 'uint should reject overflow')
+   expect_struct_error(() => do value.Int64 = 9223372036854775808 end, ERR_OutOfRange, 'int64 should reject overflow')
+   expect_struct_error(() => do value.UInt64 = -2048 end, ERR_OutOfRange, 'uint64 should reject underflow')
+   expect_struct_error(() => do value.UInt64 = 18446744073709551616 end, ERR_OutOfRange,
+      'uint64 should reject overflow')
+
+   value.Float = 2.5
+   expect_struct_error(() => do value.Float = '2.5' end, ERR_InvalidType, 'float should reject numeric strings')
+   value.Float = nil
+   assert(value.Float is 0, 'Nil should store positive zero in float fields')
+   value.Float = 2.5
+   expect_struct_error(() => do value.Float = 3.5e38 end, ERR_OutOfRange, 'float should reject finite overflow')
+   assert(value.Float is 2.5, 'Rejected float assignments should preserve the prior value')
+   expect_struct_error(() => do value.Double = '2.5' end, ERR_InvalidType, 'double should reject numeric strings')
+
+   value.Char = nil
+   value.Byte = nil
+   value.UInt8 = nil
+   value.Int16 = nil
+   value.UInt16 = nil
+   value.Int = nil
+   value.UInt = nil
+   value.Int32 = nil
+   value.UInt32 = nil
+   value.Int64 = nil
+   value.UInt64 = nil
+   value.Double = nil
+   assert(value.Char is 0 and value.Byte is 0 and value.UInt8 is 0 and value.Int16 is 0 and value.UInt16 is 0,
+      'Nil should zero declared narrow numeric fields')
+   assert(value.Int is 0 and value.UInt is 0 and value.Int32 is 0 and value.UInt32 is 0 and value.Int64 is 0 and
+      value.UInt64 is 0 and value.Double is 0, 'Nil should zero declared wide numeric and double fields')
+
+   value.String = 'sentinel'
+   expect_struct_error(() => do value.String = 42 end, ERR_InvalidType, 'owned strings should reject numbers')
+   expect_struct_error(() => do value.String = nil end, ERR_InvalidType, 'owned strings should reject nil')
+   assert(value.String is 'sentinel', 'Rejected string assignment should preserve the prior value')
+   expect_struct_error(() => do value.Buffer = 42 end, ERR_InvalidType, 'character buffers should reject numbers')
+   expect_struct_error(() => do value.Char = 'A' end, ERR_InvalidType, 'scalar char should reject strings')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function NativeStructConstructorAndLegacyValidation()
+   local wrong_bool:any = 2
+   expect_struct_error(() => do struct<DeclaredLayout> { Bool=wrong_bool } end, ERR_InvalidType,
+      'Declared constructor expressions should validate primitive fields')
+   expect_struct_error(() => do struct.new('DeclaredLayout', { String=42 }) end, ERR_InvalidType,
+      'struct.new() should use the same exact string validation')
+   local narrowed = struct.new('DeclaredLayout', { String='temporary', Int=1.5 })
+   assert(narrowed.Int is 1 and narrowed.String is 'temporary',
+      'constructors should apply the same finite numeric narrowing as later assignment')
+
+   MAKESTRUCT('LegacyScalarValidation',
+      'bByte,wWord,uwUnsignedWord,lInteger,ulUnsigned,xWide,uxUnsignedWide,fFloat,dDouble')
+   local legacy = struct.new('LegacyScalarValidation', {
+      byte=255, word=-32768, unsignedWord=65535, integer=-2147483648, unsigned=4294967295,
+      wide=-9007199254740992, unsignedWide=9223372036854777856, float=1.5, double=2.5
+   })
+   assert(legacy.unsigned is 4294967295,
+      'Legacy unsigned int fields should preserve values with the high bit set')
+   assert(legacy.unsignedWide is 9223372036854777856,
+      'Legacy unsigned int64 fields should preserve values above the signed range')
+   expect_struct_error(() => do legacy.byte = 256 end, ERR_OutOfRange,
+      'legacy byte fields should reject overflow')
+   legacy.word = 1.5
+   expect_struct_error(() => do legacy.unsignedWord = -1 end, ERR_OutOfRange,
+      'legacy unsigned word fields should reject underflow')
+   expect_struct_error(() => do legacy.integer = {} end, ERR_InvalidType,
+      'legacy integer fields should reject non-number categories')
+   assert(legacy.byte is 255 and legacy.word is 1 and legacy.unsignedWord is 65535,
+      'Legacy fields should use the same truncation and range-validation contract')
+   legacy.byte = nil
+   legacy.word = nil
+   legacy.unsignedWord = nil
+   legacy.integer = nil
+   legacy.unsigned = nil
+   legacy.wide = nil
+   legacy.unsignedWide = nil
+   legacy.float = nil
+   legacy.double = nil
+   assert(legacy.byte is 0 and legacy.word is 0 and legacy.unsignedWord is 0 and legacy.integer is 0 and
+      legacy.unsigned is 0 and legacy.wide is 0 and legacy.unsignedWide is 0 and legacy.float is 0 and
+      legacy.double is 0, 'Nil should zero every legacy scalar numeric category')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Declarations no longer bind a constructor variable; construction must use the explicit struct<Name> form.
+
+@Test function ExplicitConstructionRequired()
+   try
+      exec([[
+struct RetiredTableSyntax Value: int end
+local value = RetiredTableSyntax { Value=1 }
+]])
+   success
+      assert(false, 'The retired Name { fields } construction syntax should fail to compile')
    end
 
-   logOutput(f'Retrieved {#list} fonts.')
+   try
+      exec([[
+struct RetiredCallSyntax Value: int end
+local value = RetiredCallSyntax()
+]])
+   success
+      assert(false, 'The retired Name() construction syntax should fail to compile')
+   end
 
-   font = list
-   while font do
-      if not font.hidden then
-         if font.scalable is 1 then
-            logOutput("Scalable: " .. font.name)
-         else
-            logOutput("Bitmap: " .. font.name)
-         end
-         logOutput("Styles: " .. font.styles)
+   try
+      exec([[local value = struct<NotARegisteredStruct> { }]])
+   success
+      assert(false, 'Constructing an unknown struct name should fail to compile')
+   end
 
-         points = ""
-         for p in values(font.points) do
-            if points?? then points ..= ", " end
-            points ..= p
-         end
-         not points ?? logOutput("Available in fixed sizes: " .. points)
-         logOutput("")
+   exec([[
+struct OmittedInitialiser Value: int end
+local value = struct<OmittedInitialiser>
+assert(value.Value is 0, 'struct<Name> without an initialiser table should be zero-initialised')
+]])
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ConstrainedObjectField()
+   local holder = struct<DeclaredUser> { }
+   local clock = obj.new('time', { })
+   holder.Object = clock
+   holder.Object = nil
+   assert(holder.Object is nil, 'Unconstrained object fields should allow nil clearing')
+   holder.Clock = clock
+   assert(holder.Clock.year is clock.year, 'obj<Class> fields should retain typed object references')
+   holder.Clock = nil
+   assert(holder.Clock is nil, 'Constrained object fields should allow nil clearing')
+
+   try
+      holder.Clock = obj.new('tiri', { statement='return 1' })
+   success
+      assert(false, 'obj<Class> fields should reject objects of another class')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- A sub-class satisfies a base class constraint: 'json' declares XML as its base class, so an obj<XML> field must
+-- accept it.  An exact ClassID comparison would incorrectly reject this.
+
+@Test function ConstrainedObjectFieldAcceptsSubClass()
+   local holder = struct<DeclaredUser> { }
+   local markup = obj.new('xml', { statement='<a/>' })
+   holder.Markup = markup
+   assert(holder.Markup is not nil, 'obj<Class> fields should accept an exact class match')
+
+   local derived = obj.new('json', { statement='{ "a": 1 }' })
+   holder.Markup = derived
+   assert(holder.Markup is not nil, 'obj<Class> fields should accept a sub-class of the constrained base class')
+
+   try
+      holder.Markup = obj.new('time', { })
+   success
+      assert(false, 'obj<Class> fields should still reject unrelated classes')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function NativeStructDeclarationLayoutParity()
+   MAKESTRUCT('LegacyDeclaredChild', 'lValue')
+   MAKESTRUCT('LegacyDeclaredLayout',
+      'bBool,cChar,ubByte,bInt8,ubUInt8,wInt16,uwUInt16,lInt,ulUInt,lInt32,ulUInt32,' ..
+      'xInt64,uxUInt64,fFloat,dDouble,zsString,sCStr,pPointer,pIntPointer,pIntList[0],oObject,rCallback,' ..
+      'cBuffer[7],lFixed[3],' ..
+      'eChild:LegacyDeclaredChild,pChildPointer:LegacyDeclaredChild')
+   assert(struct.size('DeclaredLayout') is struct.size('LegacyDeclaredLayout'),
+      'Declarative and MAKESTRUCT layouts should have identical byte sizes')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function NativeStructVectorLayoutParity()
+   MAKESTRUCT('LegacyDeclaredVectorElement', 'ubRed,ubGreen,ubBlue')
+   MAKESTRUCT('LegacyDeclaredVectorFields',
+      'zbBool[1],zcChar[1],zubByte[1],zbInt8[1],zubUInt8[1],zwInt16[1],zuwUInt16[1],zlInt[1],zulUInt[1],' ..
+      'zlInt32[1],zulUInt32[1],zxInt64[1],zuxUInt64[1],zfFloat[1],zdDouble[1],zsString[1],' ..
+      'zePoints:LegacyDeclaredVectorElement[1]')
+   assert(struct.size('DeclaredVectorFields') is struct.size('LegacyDeclaredVectorFields'),
+      'Declarative vector fields should match the MAKESTRUCT vector layout')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function NativeStructVectorRoundTrips()
+   local value = struct<DeclaredVectorFields> {
+      Int=array<int> { 1, 2, 3 },
+      String=array<str> { 'alpha', 'beta' }
+   }
+
+   value.Bool = array<byte> { 0, 1 }
+   value.Char = array<byte> { 65, 66 }
+   value.Byte = array<byte> { 250, 251 }
+   value.Int8 = array<int8> { -128, 127 }
+   value.UInt8 = array<byte> { 3, 4 }
+   value.Int16 = array<int16> { -12, 34 }
+   value.UInt16 = array<uint16> { 123, 456 }
+   value.UInt = array<uint> { 4000000000 }
+   value.Int32 = array<int> { -123456, 654321 }
+   value.UInt32 = array<uint> { 123456, 654321 }
+   value.Int64 = array<int64> { -9007199, 9007199 }
+   value.UInt64 = array<uint64> { 9007199, 18014398 }
+   value.Float = array<float> { 1.25, 2.5 }
+   value.Double = array<double> { 3.5, 7.25 }
+
+   assert(value.Int is array<int> { 1, 2, 3 }, 'Initialiser assignment should populate an int vector')
+   local initial_strings = value.String
+   assert(#initial_strings is 2 and initial_strings[0] is 'alpha' and initial_strings[1] is 'beta',
+      'Initialiser assignment should populate a string vector')
+   assert(value.Bool is array<byte> { 0, 1 } and value.Char is array<byte> { 65, 66 },
+      'Byte-sized vector categories should round-trip')
+   assert(value.Int8 is array<int8> { -128, 127 } and value.Int8.type() is 'int8',
+      'Int8 vectors should preserve signed values and their distinct element identity')
+   assert(value.Int16 is array<int16> { -12, 34 } and value.UInt16 is array<uint16> { 123, 456 },
+      'Word-sized vector categories should round-trip')
+   assert(value.Int64 is array<int64> { -9007199, 9007199 }, 'Int64 vectors should round-trip')
+
+   -- Unsigned vector fields must retain their unsigned element type through materialisation, not decay to signed.
+   assert(value.UInt16.type() is 'uint16', "UInt16 vector field should report 'uint16', got '" .. value.UInt16.type() .. "'")
+   assert(value.UInt.type() is 'uint', "UInt vector field should report 'uint', got '" .. value.UInt.type() .. "'")
+   assert(value.UInt32.type() is 'uint', "UInt32 vector field should report 'uint', got '" .. value.UInt32.type() .. "'")
+   assert(value.UInt64.type() is 'uint64', "UInt64 vector field should report 'uint64', got '" .. value.UInt64.type() .. "'")
+   assert(value.Int16.type() is 'int16', "Int16 vector field should retain signed 'int16', got '" .. value.Int16.type() .. "'")
+   assert(value.Float is array<float> { 1.25, 2.5 } and value.Double is array<double> { 3.5, 7.25 },
+      'Floating-point vectors should round-trip')
+
+   value.Int = array<int> { 8, 9, 10, 11, 12 }
+   assert(#value.Int is 5, 'Whole-field assignment should resize dynamic vector fields')
+
+   local clone = struct.clone(value)
+   local copy = struct<DeclaredVectorFields> { }
+   struct.copy(copy, value)
+   value.Int = array<int> { 99 }
+   value.String = array<str> { 'changed' }
+   assert(clone.Int is array<int> { 8, 9, 10, 11, 12 } and copy.Int is array<int> { 8, 9, 10, 11, 12 },
+      'copy() and clone() should deep-copy scalar vectors')
+   local clone_strings = clone.String
+   local copy_strings = copy.String
+   assert(#clone_strings is 2 and clone_strings[0] is 'alpha' and clone_strings[1] is 'beta' and
+      #copy_strings is 2 and copy_strings[0] is 'alpha' and copy_strings[1] is 'beta',
+      'copy() and clone() should deep-copy string vectors')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function NativeStructElementVectorRoundTrips()
+   local value = struct<DeclaredVectorFields> { }
+   value.Points = array<table> {
+      { red=1, green=2, blue=3 },
+      { red=4, green=5, blue=6 },
+      { red=7, green=8, blue=9 }
+   }
+
+   local points = value.Points
+   assert(#points is 3 and points[0].Red is 1 and points[1].Green is 5 and points[2].Blue is 9,
+      'Struct vectors should use the exact three-byte C++ element stride')
+
+   local clone = struct.clone(value)
+   local copy = struct<DeclaredVectorFields> { }
+   struct.copy(copy, value)
+   value.Points = array<table> { { red=20, green=21, blue=22 } }
+   assert(#clone.Points is 3 and clone.Points[2].Blue is 9,
+      'clone() should deep-copy trivially owned struct vectors')
+   assert(#copy.Points is 3 and copy.Points[1].Green is 5,
+      'copy() should deep-copy trivially owned struct vectors')
+
+   points[0].Red = 99
+   assert(value.Points[0].Red is 20,
+      'A previously read vector snapshot should remain independent after whole-field reassignment')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function NativeStructVectorDeclarationErrors()
+   for statement in values(array<str> {
+      'struct BadCStrVector Values: array<cstr> end',
+      'struct BadObjectVector Values: array<obj> end',
+      'struct BadPointerVector Values: array<ptr> end',
+      'struct BadFunctionVector Values: array<func> end',
+      'struct BadNestedVector Values: array<array<int>> end',
+      'struct BadGenericSizedVector Values: array<int, 4> end',
+      'struct BadSizedVector Values: array<int>[4] end',
+      'struct BadUnknownVector Values: array<mystery> end',
+      'struct BadOwnedElementVector Values: array<struct<DeclaredNonTrivialVectorElement>> end'
+   }) do
+      try
+         exec(statement)
+      success
+         assert(false, 'Invalid vector field declaration should fail: ' .. statement)
       end
-
-      font = font.next
    end
+
+   MAKESTRUCT('LegacyNonTrivialVectorElement', 'zsName')
+   MAKESTRUCT('LegacyBadOwnedElementVector', 'zeValues:LegacyNonTrivialVectorElement[1]')
+   try
+      struct.new('LegacyBadOwnedElementVector').values = array<table> { { name='unsafe' } }
+   success
+      assert(false, 'Legacy non-trivial struct vectors should reject type-erased assignment')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function NativeStructArrayRejectsVectorFields()
+   try
+      local values = array<struct<DeclaredVectorOwner>, 1>
+   success
+      assert(false, 'Owned struct arrays should reject element layouts containing vectors')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function NativeStructDeclarationErrors()
+   try
+      exec([[struct RetiredBraceDeclaration { Value: int }]])
+   success
+      assert(false, "Brace-delimited struct declarations should fail to compile")
+   end
+
+   try
+      MAKESTRUCT('Bad_Name', 'lValue')
+   success
+      assert(false, 'MAKESTRUCT should reject names containing non-alphanumeric characters')
+   end
+
+   try
+      exec([[struct Bad_Name Value: int end]])
+   success
+      assert(false, 'Struct declarations should reject names containing non-alphanumeric characters')
+   end
+
+   exec([[
+struct IdenticalLayout Value: int end
+struct IdenticalLayout Value: int end
+local value = struct<IdenticalLayout> { Value=12 }
+assert(value.Value is 12)
+]])
+
+   try
+      exec([[struct BadUnknownType Value: mystery end]])
+   success
+      assert(false, 'Unknown declaration field types should fail')
+   end
+
+   try
+      exec([[struct RetiredInt32 Value: int32 end]])
+   success
+      assert(false, 'Struct declarations should reject the retired int32 alias')
+   end
+
+   try
+      exec([[struct RetiredUInt32 Value: uint32 end]])
+   success
+      assert(false, 'Struct declarations should reject the retired uint32 alias')
+   end
+
+   try
+      exec([[struct RetiredInt32Array Values: array<int32> end]])
+   success
+      assert(false, 'Struct array fields should reject the retired int32 alias')
+   end
+
+   try
+      exec([[struct RetiredUInt32Array Values: array<uint32> end]])
+   success
+      assert(false, 'Struct array fields should reject the retired uint32 alias')
+   end
+
+   try
+      exec([[struct RetiredInt32Pointer Value: ptr<int32> end]])
+   success
+      assert(false, 'Struct pointer fields should reject the retired int32 alias')
+   end
+
+   try
+      exec([[struct RetiredUInt32Pointer Value: ptr<uint32> end]])
+   success
+      assert(false, 'Struct pointer fields should reject the retired uint32 alias')
+   end
+
+   try
+      exec([[struct BadForwardReference Value: struct<NotDeclaredYet> end]])
+   success
+      assert(false, 'Forward struct references should fail')
+   end
+
+   try
+      exec([[struct BadCaseCollision Value: int, value: int end]])
+   success
+      assert(false, 'Case-insensitive field-name collisions should fail')
+   end
+
+   try
+      exec([[struct BadArrayDimensionRange Values: int[4294967296] end]])
+   success
+      assert(false, 'Array dimensions that exceed the parser integer range should fail')
+   end
+
+   try
+      exec([[struct BadArrayStorageRange Values: int[20000] end]])
+   success
+      assert(false, 'Array layouts that exceed the native struct offset range should fail')
+   end
+
+   try
+      exec([[
+struct ConflictingLayout Value: int end
+struct ConflictingLayout Value: double end
+]])
+   success
+      assert(false, 'Conflicting declarations should fail')
+   end
+   exec([[
+struct ConflictingLayout Value: double end
+local value = struct<ConflictingLayout> { Value=2.5 }
+assert(value.Value is 2.5)
+]])
+
+   exec([[
+local struct = { marker=42 }
+assert(struct.marker is 42)
+]])
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function NativeStructConcurrentRegistration()
+   local total = 16
+   local completed = 0
+   local succeeded = 0
+   local failed = 0
+   local signal = obj.new('time', { })
+   local proc = processing.new({ timeout=5.0, signals=array<obj> { signal } })
+   local scripts = array<obj>
+
+   for i in {0 to total} do
+      local statement
+      if (i & 1) is 0 then
+         statement = [[
+struct ConcurrentDeclaredStruct Value: int end
+local value = struct<ConcurrentDeclaredStruct> { Value=42 }
+assert(value.Value is 42)
+]]
+      else
+         statement = [[
+struct ConcurrentDeclaredStruct Value: double end
+local value = struct<ConcurrentDeclaredStruct> { Value=42.5 }
+assert(value.Value is 42.5)
+]]
+      end
+      if (i & 2) is 0 then
+         statement ..= [[
+struct ConcurrentInvalidStruct Value: mystery end]]
+      end
+      scripts.push(obj.new('tiri', { statement=statement }))
+   end
+
+   for script in values(scripts) do
+      async.script(script, function(Object)
+         if Object.error is ERR_Okay then succeeded++
+         else failed++ end
+         completed++
+         if completed >= total then signal.acSignal() end
+      end)
+   end
+
+   check proc.sleep()
+   assert(succeeded is total / 2 and failed is total / 2,
+      f'Expected equal successful and failed concurrent declarations, got {succeeded}/{failed}')
+   exec([[struct ConcurrentDeclaredStruct Value: int end
+assert(struct<ConcurrentDeclaredStruct> { Value=17 }.Value is 17)]])
+end
+
+@Test(hotpath=true)
+function ProbeStruct()
+   local meta = mSys.FindClass('task'.hash(), 0)
+   local err, field = meta.mtFindField('args'.hash())
+   assert(type(field) is 'table', 'Failed to find args field in task class')
+   assert(field.name is 'Args', 'Expected string type for field name')
+   assert(field.fieldID > 0, 'Expected fieldID to be greater than zero')
+   assert(field.index > 0, 'Expected field index to be greater than zero')
+   assert(type(field.writeValue) is 'userdata', 'Expected writeValue to be a function pointer')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function EmbeddedStructArrayStride()
+   MAKESTRUCT('TinyStrideColour', 'bRed,bGreen,bBlue,bAlpha')
+   MAKESTRUCT('TinyStridePalette', 'eCol:TinyStrideColour[2],lMarker')
+
+   palette = struct.new('TinyStridePalette', { marker=77 })
+   assert(type(palette) is 'struct', 'Expected struct.new() to return the native struct type')
+   assert(#palette is 2, 'Expected the structure to report its field count')
+   assert(struct.size(palette) > 0, 'Expected the structure to report its byte size')
+   colours = palette.Col
+
+   assert(#colours is 2, 'Expected the embedded struct array to expose two elements, got ' .. #colours)
+   assert(colours[1].red is 0,
+      'Embedded struct array access used the padded serial stride instead of the in-memory stride.')
+end
+
+@Test function OffsetZeroEmbeddedStructUsesOwnTable()
+   MAKESTRUCT('OffsetZeroChild', 'lValue')
+   MAKESTRUCT('OffsetZeroRecord', 'eChild:OffsetZeroChild,lMarker')
+   MAKESTRUCT('OffsetZeroWrapper', 'eRecord:OffsetZeroRecord[1]')
+
+   local wrapper = struct.new('OffsetZeroWrapper')
+   local patch_record = wrapper.record[0]
+
+   assert(patch_record.child != patch_record, 'Offset-zero embedded struct should not alias its parent table')
+   assert(patch_record.child.value is 0, 'Offset-zero embedded struct fields should be readable')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ObjectFieldAssignments()
+   MAKESTRUCT('ObjectFieldAssignments', 'oValue')
+
+   local value = mSys.FindClass('task'.hash(), 0)
+   local container = struct.new('ObjectFieldAssignments', { value=value })
+   local initial_value = container.value
+   assert(type(initial_value) is 'object', 'struct.new() should return a native object from an object field')
+   assert(initial_value.id is value.id, 'struct.new() should preserve the assigned native object ID')
+
+   container.value = nil
+   assert(container.value is nil, 'Assigning nil should clear an object field')
+
+   container.value = value
+   local updated_value = container.value
+   assert(updated_value.id is value.id, 'Direct assignment should preserve the assigned native object ID')
+
+   local dead_value = obj.new('time')
+   dead_value.free()
+   try
+      container.value = dead_value
+   success
+      assert(false, 'Assigning a detached object wrapper should fail')
+   end
+   container.value = nil
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function StringFieldAssignments()
+   MAKESTRUCT('StringFieldAssignments', 'zsName,sBorrowed')
+
+   local container = struct.new('StringFieldAssignments', { name='initial' })
+   assert(container.name is 'initial', 'struct.new() should initialise an owned C++ string field')
+
+   container.name = 'updated'
+   assert(container.name is 'updated', 'Direct assignment should update an owned C++ string field')
+
+   try
+      container.borrowed = 'unsupported'
+   success
+      assert(false, 'Assigning a raw C string field should fail')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function UnsupportedFieldAssignmentRaises()
+   MAKESTRUCT('UnsupportedFieldAssignment', 'rCallback')
+   local container = struct.new('UnsupportedFieldAssignment')
+
+   try
+      container.callback = nil
+   success
+      assert(false, 'Assigning an unsupported field type should fail')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function InteriorStructViewAnchorsParent()
+   MAKESTRUCT('AnchoredLeaf', 'lValue,zsName')
+   MAKESTRUCT('AnchoredBranch', 'eLeaf:AnchoredLeaf')
+   MAKESTRUCT('AnchoredRoot', 'eBranch:AnchoredBranch')
+
+   function create_view():any
+      local root = struct.new('AnchoredRoot')
+      root.branch.leaf.value = 417
+      root.branch.leaf.name = 'parent payload remains alive'
+      return root.branch.leaf
+   end
+
+   local leaf = create_view()
+   processing.collect('full')
+   processing.collect('full')
+
+   assert(leaf.value is 417, 'An interior struct view should keep its parent payload alive')
+   assert(leaf.name is 'parent payload remains alive', 'Anchored C++ string storage should remain valid after GC')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function StructPairsAndToString()
+   MAKESTRUCT('IterableRecord', 'lCount,zsName,bEnabled')
+   local value = struct.new('IterableRecord', { count=7, name='sample', enabled=1 })
+   local fields = array<str>
+   local values = array<any>
+
+   for name, field_value in pairs(value) do
+      fields.push(name)
+      values.push(field_value)
+   end
+
+   assert(fields is array<str> { 'count', 'name', 'enabled' }, 'pairs() should preserve declaration order')
+   assert(values[0] is 7 and values[1] is 'sample' and values[2] is 1, 'pairs() should return live field values')
+   assert(tostring(value) is 'IterableRecord', 'tostring() should return the struct definition name')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayFieldAssignments()
+   MAKESTRUCT('ArrayAssignmentRecord', 'lFixed[3],zlDynamic[1],zsNames[1]')
+   local value = struct.new('ArrayAssignmentRecord')
+
+   value.fixed = array<int> { 4, 5, 6 }
+   assert(value.fixed is array<int> { 4, 5, 6 }, 'Fixed array assignment should copy all elements')
+
+   value.fixed = array<int> { 9 }
+   assert(value.fixed is array<int> { 9, 0, 0 }, 'Short fixed array assignment should clear unused elements')
+
+   value.fixed = array<int>
+   assert(value.fixed is array<int> { 0, 0, 0 }, 'Empty fixed array assignment should clear all elements')
+
+   value.dynamic = array<int> { 8, 9, 10, 11 }
+   assert(value.dynamic is array<int> { 8, 9, 10, 11 }, 'C++ vector assignment should resize and copy elements')
+
+   value.names = array<str> { 'alpha', 'beta' }
+   local names = value.names
+   assert(#names is 2 and names[0] is 'alpha' and names[1] is 'beta',
+      'C++ string vector assignment should copy strings')
+
+   local clone = struct.clone(value)
+   value.dynamic = array<int> { 99 }
+   value.names = array<str> { 'changed' }
+   assert(clone.dynamic is array<int> { 8, 9, 10, 11 }, 'clone() should deep-copy C++ primitive vectors')
+   local clone_names = clone.names
+   assert(#clone_names is 2 and clone_names[0] is 'alpha' and clone_names[1] is 'beta',
+      'clone() should deep-copy C++ string vectors')
+
+   try
+      value.fixed = array<int> { 1, 2, 3, 4 }
+   success
+      assert(false, 'Fixed array overflow should fail')
+   end
+
+   try
+      value.fixed = array<double> { 1, 2 }
+   success
+      assert(false, 'Array element type mismatch should fail')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function StructCopyAndClone()
+   MAKESTRUCT('CopyChild', 'lValue,zsLabel')
+   MAKESTRUCT('CopyRecord', 'lCount,zsName,eChild:CopyChild')
+   MAKESTRUCT('CopyMismatch', 'lCount')
+
+   local source = struct.new('CopyRecord', { count=12, name='source' })
+   source.child.value = 44
+   source.child.label = 'nested'
+
+   local clone = struct.clone(source)
+   assert(clone.count is 12 and clone.name is 'source', 'clone() should copy primitive and C++ string fields')
+   assert(clone.child.value is 44 and clone.child.label is 'nested', 'clone() should copy nested struct fields')
+
+   source.name = 'changed'
+   source.child.label = 'changed nested'
+   assert(clone.name is 'source' and clone.child.label is 'nested', 'clone strings should own independent storage')
+
+   local dest = struct.new('CopyRecord')
+   assert(struct.copy(dest, clone) is dest, 'copy() should return its destination')
+   assert(dest.count is 12 and dest.child.label is 'nested', 'copy() should replace the destination payload')
+
+   try
+      struct.copy(struct.new('CopyMismatch'), source)
+   success
+      assert(false, 'Copying mismatched struct definitions should fail')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Exercise scalar FD_* reads and writes through a value inferred as the native struct type.
+
+@Test function FastScalarFieldCategories()
+   MAKESTRUCT('FastScalarFields',
+      'fFloat,dDouble,xWide,lInteger,wWord,uwUWord,bByte,cText[8],pPointer,rCallback')
+   local value = struct.new('FastScalarFields')
+
+   value.float    = 1.25
+   value.double   = 2.5
+   value.wide     = 9007199
+   value.integer  = 12345
+   value.word     = 2345
+   value.uword    = 32767
+   value.byte     = 231
+   value.text     = string.toArray('fast')
+   value.pointer  = nil
+
+   assert(value.float is 1.25, 'FD_FLOAT should round-trip through STSETF/STGETF')
+   assert(value.double is 2.5, 'FD_DOUBLE should round-trip through STSETF/STGETF')
+   assert(value.wide is 9007199, 'FD_INT64 should round-trip through STSETF/STGETF')
+   assert(value.integer is 12345, 'FD_INT should round-trip through STSETF/STGETF')
+   assert(value.word is 2345, 'FD_WORD should round-trip through STSETF/STGETF')
+   assert(value.uword is 32767, 'Unsigned FD_WORD should retain 0x7fff through STSETF/STGETF')
+   value.uword = 32768
+   assert(value.uword is 32768, 'Unsigned FD_WORD should retain 0x8000 through STSETF/STGETF')
+   value.uword = 65535
+   assert(value.uword is 65535, 'Unsigned FD_WORD should retain 0xffff through STSETF/STGETF')
+   assert(value.byte is 231, 'FD_BYTE should round-trip through STSETF/STGETF')
+   assert(value.text is 'fast', 'FD_CUSTOM byte arrays should continue to read as strings')
+   assert(value.pointer is nil, 'A null FD_POINTER should read as nil')
+   assert(value.callback is nil, 'FD_FUNCTION fields should continue to read as nil')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Repeated and polymorphic annotated access exercises the P32 field-index cache, including self-healing when the
+-- field occupies a different index in each definition.
+
+function set_annotated_struct_field(Value:struct, NewValue:num):num
+   Value.value = NewValue
+   return Value.value
+end
+
+@Test function FastAnnotatedAndPolymorphicAccess()
+   MAKESTRUCT('FastCacheFirst', 'lValue,lOther')
+   MAKESTRUCT('FastCacheSecond', 'lPrefix,lValue')
+
+   local first = struct.new('FastCacheFirst')
+   local second = struct.new('FastCacheSecond')
+
+   for i in {1 to 5} do
+      assert(set_annotated_struct_field(first, i) is i, 'Repeated annotated access should retain the first layout')
+      assert(set_annotated_struct_field(second, i * 10) is i * 10,
+         'A polymorphic cache site should resolve the second layout')
+   end
+
+   assert(first.value is 4, 'The first polymorphic struct should retain its final value')
+   assert(second.value is 40, 'The second polymorphic struct should retain its final value')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function FastFieldErrorsAndHelpers()
+   MAKESTRUCT('FastFieldErrors', 'lValue')
+   local value = struct.new('FastFieldErrors')
+
+   local expected_read_line = @SourceLine + 3
+
+   try
+      local missing = value.unknown
+      assert(missing is nil, 'Unknown struct field access should not return normally')
+   except error_value when ERR_FieldNotFound
+      assert(error_value.source.find('test_struct.tiri'),
+         'Fast struct reads should retain the access source, got ' .. tostring(error_value.source))
+      assert(error_value.line is expected_read_line,
+         f'Fast struct reads should retain access line {expected_read_line}, got {error_value.line}')
+   success
+      assert(false, 'Unknown struct field access should raise through STGETF')
+   end
+
+   local expected_write_line = @SourceLine + 3
+
+   try
+      value.unknown = 1
+   except error_value
+      assert(error_value.source.find('test_struct.tiri'),
+         'Fast struct writes should retain the assignment source, got ' .. tostring(error_value.source))
+      assert(error_value.line is expected_write_line,
+         f'Fast struct writes should retain assignment line {expected_write_line}, got {error_value.line}')
+   success
+      assert(false, 'Unknown struct field assignment should raise through STSETF')
+   end
+
+   local expected_line = @SourceLine + 3
+
+   try
+      value.value = 'invalid'
+   except error_value when ERR_InvalidType
+      assert(error_value.source.find('test_struct.tiri'),
+         'Fast struct field errors should retain the assignment source, got ' .. tostring(error_value.source))
+      assert(error_value.line is expected_line,
+         f'Fast struct field errors should retain assignment line {expected_line}, got {error_value.line}')
+   success
+      assert(false, 'Invalid struct field assignment should raise through STSETF')
+   end
+
+   assert(#value is 1, 'Struct length should remain the number of declared fields')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function FastFieldBytecodeDisassembly()
+   MAKESTRUCT('FastFieldDisassembly', 'lValue')
+
+   function capture_struct_disassembly():<num, str>
+      local value = struct.new('FastFieldDisassembly')
+      value.value = 19
+      local result = value.value
+      local err, disassembly = obj.find('self').mtDebugLog('disasm')
+      assert(result is 19, 'Disassembly probe should keep the fast field read live')
+      return err, disassembly
+   end
+
+   local err, disassembly = capture_struct_disassembly()
+   assert(err is ERR_Okay, 'Struct disassembly probe should succeed')
+   assert(disassembly.find('STGETF'), 'Known struct reads should emit STGETF')
+   assert(disassembly.find('STSETF'), 'Known struct writes should emit STSETF')
 end

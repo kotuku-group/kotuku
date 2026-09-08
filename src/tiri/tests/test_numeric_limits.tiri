@@ -1,0 +1,764 @@
+-- Flute tests for numeric type edge cases and limitations.
+-- Covers IEEE 754 double precision behaviour, special values, precision boundaries,
+-- integer/float coercion, bitwise overflow, and the num.* explicit type system.
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+function dynamic_remainder(Dividend:num, Divisor:num):num
+   return Dividend % Divisor
+end
+
+function dynamic_compound_remainder(Dividend:num, Divisor:num):num
+   Dividend %= Divisor
+   return Dividend
+end
+
+function remainder_workload(Iterations:num, SwitchDomain:bool):num
+   local result = 0
+   for i in {1 into Iterations} do
+      local dividend = i * 12.0
+      local divisor = (i % 7) + 1.0
+      if SwitchDomain and i > Iterations - 8 then dividend += 0.5 end
+      result += dividend % divisor
+   end
+   return result
+end
+
+function constant_remainders(Dividend:num):<num, num, num>
+   local compound = Dividend
+   compound %= -3
+   return Dividend % 100, compound, Dividend % 1
+end
+
+function integer_power_two_remainders(Dividend:num):<num, num, num, num>
+   local integer = Dividend | 0
+   return integer % 8, integer % -8, integer % -2147483648, integer % -1
+end
+
+function integer_constant_remainders(Dividend:num):<num, num, num>
+   local integer = Dividend | 0
+   local remainder = integer % 100
+   return remainder, remainder % 2, integer % -3
+end
+
+function assert_same_remainder(Actual:num, Expected:num)
+   if Expected != Expected then
+      assert(Actual != Actual, 'Remainder should preserve NaN')
+   else
+      assert(Actual is Expected, 'Compiled remainder should match the interpreter exactly')
+      if Expected is 0 then
+         assert(1 / Actual is 1 / Expected, 'Floating-point remainder should preserve the sign of zero')
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- IEEE 754 special values: NaN
+
+@Test function NanNotEqualToItself()
+   nan = 0 / 0
+   assert(not (nan is nan), 'NaN should not equal itself')
+end
+
+@Test function NanArithmeticPropagation()
+   nan = 0 / 0
+   assert(not (nan + 1 is nan + 1), 'NaN + 1 should still be NaN (not equal to itself)')
+   assert(not (nan * 0 is 0), 'NaN * 0 should be NaN, not 0')
+   assert(not (nan - nan is 0), 'NaN - NaN should be NaN, not 0')
+end
+
+@Test function NanComparisonAlwaysFalse()
+   nan = 0 / 0
+   assert(not (nan > 0), 'NaN > 0 should be false')
+   assert(not (nan < 0), 'NaN < 0 should be false')
+   assert(not (nan >= 0), 'NaN >= 0 should be false')
+   assert(not (nan <= 0), 'NaN <= 0 should be false')
+end
+
+@Test function NanTypeIsNumber()
+   nan = 0 / 0
+   assert(type(nan) is 'number', 'type(NaN) should be number')
+end
+
+@Test function NanDetection()
+   nan = 0 / 0
+   -- Standard NaN detection: a value that is not equal to itself
+   is_nan = not (nan is nan)
+   assert(is_nan, 'NaN detection via self-inequality should work')
+
+   -- Non-NaN values should not trigger this
+   assert(42 is 42, 'Normal number should equal itself')
+   assert(0 is 0, 'Zero should equal itself')
+   assert(math.huge is math.huge, 'Infinity should equal itself')
+end
+
+@Test function NanFromInvalidMathOps()
+   assert(not (math.sqrt(-1) is math.sqrt(-1)), 'sqrt(-1) should produce NaN')
+   assert(not (math.log(-1) is math.log(-1)), 'log(-1) should produce NaN')
+   assert(not (math.asin(2) is math.asin(2)), 'asin(2) should produce NaN')
+   assert(not (math.acos(2) is math.acos(2)), 'acos(2) should produce NaN')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- IEEE 754 special values: Infinity
+
+@Test function InfinityFromDivisionByZero()
+   assert(1 / 0 is math.huge, '1/0 should produce positive infinity')
+   assert(-1 / 0 is -math.huge, '-1/0 should produce negative infinity')
+end
+
+@Test function InfinityArithmetic()
+   inf = math.huge
+   assert(inf + 1 is inf, 'Infinity + 1 should be infinity')
+   assert(inf + inf is inf, 'Infinity + infinity should be infinity')
+   assert(inf * 2 is inf, 'Infinity * 2 should be infinity')
+   assert(-inf * 2 is -inf, '-Infinity * 2 should be -infinity')
+   assert(1 / inf is 0, '1 / infinity should be 0')
+end
+
+@Test function InfinityComparisonOrdering()
+   inf = math.huge
+   assert(inf > 1e308, 'Infinity should be greater than 1e308')
+   assert(-inf < -1e308, '-Infinity should be less than -1e308')
+   assert(inf > -inf, 'Positive infinity should be greater than negative infinity')
+end
+
+@Test function InfinityProducesNan()
+   inf = math.huge
+   -- Indeterminate forms should produce NaN
+   result = inf - inf
+   assert(not (result is result), 'Infinity - infinity should be NaN')
+   result = inf / inf
+   assert(not (result is result), 'Infinity / infinity should be NaN')
+   result = 0 * inf
+   assert(not (result is result), '0 * infinity should be NaN')
+end
+
+@Test function InfinityNegation()
+   assert(-math.huge is -(math.huge), 'Negating infinity should produce negative infinity')
+   assert(-(-math.huge) is math.huge, 'Double negation of infinity should produce positive infinity')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- IEEE 754 special values: Signed zero
+
+@Test function PositiveAndNegativeZero()
+   pos_zero = 0.0
+   neg_zero = -0.0
+   -- IEEE 754: positive and negative zero compare as equal
+   assert(pos_zero is neg_zero, 'Positive and negative zero should be equal')
+   -- But they can be distinguished via division
+   assert(1 / pos_zero is math.huge, '1 / +0.0 should be +infinity')
+   assert(1 / neg_zero is -math.huge, '1 / -0.0 should be -infinity')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Floating-point precision
+
+@Test function DecimalRepresentationPrecision()
+   -- Classic IEEE 754 precision issue
+   sum = 0.1 + 0.2
+   assert(not (sum is 0.3), '0.1 + 0.2 should not exactly equal 0.3 due to IEEE 754')
+   assert(math.abs(sum - 0.3) < 1e-15, '0.1 + 0.2 should be very close to 0.3')
+end
+
+@Test function PrecisionLossWithLargeNumbers()
+   -- Doubles have ~15-17 significant digits
+   large = 1e16
+   assert(large + 1 is large, '1e16 + 1 should lose the +1 due to precision limits')
+   smaller = 1e15
+   assert(smaller + 1 != smaller, '1e15 + 1 should still differ (within precision)')
+end
+
+@Test function PrecisionNearMaxSafeInteger()
+   -- 2^53 is the boundary where consecutive integers can no longer be represented
+   safe_max = 2 ** 53  -- 9007199254740992
+   assert(safe_max + 1 is safe_max, '2^53 + 1 should equal 2^53 (precision lost)')
+   below_max = 2 ** 53 - 1  -- 9007199254740991
+   assert(below_max + 1 != below_max, '(2^53 - 1) + 1 should differ')
+end
+
+@Test function SubnormalNumbers()
+   -- Smallest normal double is ~2.2e-308; subnormals go below that
+   tiny = 5e-324  -- Smallest representable positive double (subnormal)
+   assert(tiny > 0, 'Smallest subnormal should be greater than zero')
+   assert(tiny / 2 is 0, 'Halving smallest subnormal should underflow to zero')
+end
+
+@Test function PrecisionOfRoundTrip()
+   -- Values that should round-trip exactly
+   exact_values = { 0.5, 0.25, 0.125, 0.0625 }  -- Powers of 2 fractions
+   for i in {0 to #exact_values} do
+      v = exact_values[i]
+      assert(v * 2 / 2 is v, f'Power-of-2 fraction {v} should round-trip exactly')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Large and extreme values
+
+@Test function LargeDoubleValues()
+   large = 1.7976931348623157e+308  -- Near max double
+   assert(large > 0, 'Near-max double should be positive')
+   assert(large * 2 is math.huge, 'Doubling near-max should overflow to infinity')
+end
+
+@Test function SmallDoubleValues()
+   small = 2.2250738585072014e-308  -- Near min normal double
+   assert(small > 0, 'Near-min normal double should be positive')
+   assert(small != 0, 'Near-min normal double should not equal zero')
+end
+
+@Test function ExponentialOverflow()
+   assert(math.exp(710) is math.huge, 'exp(710) should overflow to infinity')
+end
+
+@Test function ExponentialUnderflow()
+   result = math.exp(-744)
+   assert(result > 0, 'exp(-744) should produce a tiny positive subnormal')
+   assert(result < 1e-300, 'exp(-744) should be extremely small')
+   -- True underflow to zero requires a more extreme exponent
+   result2 = math.exp(-750)
+   assert(result2 is 0, 'exp(-750) should underflow to 0')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Integer and float interaction
+
+@Test function IntegerDivisionBehaviour()
+   -- Division always produces a float in Lua/Tiri
+   result = 10 / 3
+   assert(math.abs(result - 3.3333333333333335) < 1e-14, '10/3 should be approximately 3.333...')
+end
+
+@Test function IntegerPreservationInArithmetic()
+   -- Operations that should stay as exact integers
+   assert(7 * 8 is 56, '7 * 8 should be exactly 56')
+   assert(100 - 37 is 63, '100 - 37 should be exactly 63')
+   assert(2 ** 10 is 1024, '2^10 should be exactly 1024')
+end
+
+@Test function BinaryIntegerZeroLiterals()
+   assert(0b0 is 0, 'A single binary zero digit should produce zero')
+   assert(0b00 is 0, 'Multiple binary zero digits should produce zero')
+   assert(0B000 is 0, 'An uppercase binary prefix should support an all-zero value')
+   assert(0b0001 is 1, 'Leading binary zero digits should preserve a non-zero value')
+end
+
+@Test function FloorAndCeilWithIntegers()
+   assert(math.floor(3.9) is 3, 'floor(3.9) should be 3')
+   assert(math.floor(-3.1) is -4, 'floor(-3.1) should be -4')
+   assert(math.ceil(3.1) is 4, 'ceil(3.1) should be 4')
+   assert(math.ceil(-3.9) is -3, 'ceil(-3.9) should be -3')
+end
+
+@Test function ModfSplitsParts()
+   int_part, frac_part = math.modf(3.75)
+   assert(int_part is 3, 'Integer part of 3.75 should be 3')
+   assert(math.abs(frac_part - 0.75) < 1e-15, 'Fractional part of 3.75 should be 0.75')
+
+   int_part, frac_part = math.modf(-2.25)
+   assert(int_part is -2, 'Integer part of -2.25 should be -2')
+   assert(math.abs(frac_part - (-0.25)) < 1e-15, 'Fractional part of -2.25 should be -0.25')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Modulo and remainder edge cases
+
+@Test function ModuloWithNegativeOperands()
+   -- Tiri % is a truncating remainder, so a non-zero result follows the sign of the dividend.
+   assert(7 % 3 is 1, '7 % 3 should be 1')
+   assert(-7 % 3 is -1, '-7 % 3 should be -1 (sign of dividend)')
+   assert(7 % -3 is 1, '7 % -3 should be 1 (sign of dividend)')
+   assert(-7 % -3 is -1, '-7 % -3 should be -1 (sign of dividend)')
+   assert(dynamic_remainder(-17, 5) is -2, 'Runtime integer remainder should retain the dividend sign')
+   assert(dynamic_remainder(17, -5) is 2, 'Runtime integer remainder should ignore the divisor sign')
+   assert(dynamic_remainder(-19, 8) is -3,
+      'Runtime remainder by a power of two must not mask a negative dividend')
+   assert(dynamic_remainder(19, -8) is 3,
+      'Runtime remainder by a negative power of two must retain the dividend sign')
+   assert(dynamic_remainder(-2147483648, -1) is 0, 'Minimum int remainder by -1 should avoid overflow')
+   assert(dynamic_remainder(-2147483648, 3) is -2, 'Minimum int remainder should retain the dividend sign')
+end
+
+@Test function ModuloWithFloats()
+   assert(math.abs((5.5 % 2.0) - 1.5) < 1e-15, '5.5 % 2.0 should be 1.5')
+   assert(math.abs((-5.5 % 2.0) - -1.5) < 1e-15, '-5.5 % 2.0 should be -1.5')
+   assert(math.abs((5.5 % -2.0) - 1.5) < 1e-15, '5.5 % -2.0 should be 1.5')
+   assert(math.abs(dynamic_remainder(-5.5, 2.0) - -1.5) < 1e-15,
+      'Runtime floating-point remainder should retain the dividend sign')
+
+   negative_zero = dynamic_remainder(-4.5, 1.5)
+   assert(negative_zero is 0 and 1 / negative_zero is -math.huge,
+      'An exact negative floating-point remainder should preserve negative zero')
+end
+
+@Test function CompoundRemainderUsesTruncation()
+   value = -17
+   value %= 5
+   assert(value is -2, 'value %= 5 should retain the dividend sign')
+   assert(dynamic_compound_remainder(-17.5, 5) is -2.5,
+      'Runtime floating-point %= should retain the dividend sign')
+end
+
+@Test function RemainderSpecialisationKeepsFallbacks()
+   defer
+      jit.on()
+      jit.flush()
+      jit.opt.start()
+   end
+
+   jit.off()
+   jit.flush()
+   local expected_integral = remainder_workload(80, false)
+   local expected_mixed = remainder_workload(80, true)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   local actual_integral = remainder_workload(80, false)
+   local actual_mixed = remainder_workload(80, true)
+
+   assert(actual_integral is expected_integral,
+      'Positive integral remainder specialisation must match interpreted results')
+   assert(actual_mixed is expected_mixed,
+      'Fractional values after trace recording must use a correct fallback')
+end
+
+@Test function FmodIsRemoved()
+   assert(math.fmod is nil, 'math.fmod() should not remain available after % adopts truncating remainder semantics')
+end
+
+@Test function ConstantRemainderAcrossDomains()
+   defer
+      jit.on()
+      jit.flush()
+      jit.opt.start()
+   end
+
+   -- Fractions and integers share a trace, followed by quotient boundaries and values requiring the helper.
+   local values = array<double> {
+      100.25, 101.0, 102.5, 103.0, 104.75, 105.0, 106.25, 107.0,
+      99.99999999999999, 100.0, 100.00000000000001, 299.99999999999994, 300.00000000000006,
+      2147483647.9999998, 2147483648.0, 2147483648.0000005,
+      4503599627370495.5, 4503599627370496.0, 4503599627370497.0,
+      -4503599627370495.5, -4503599627370496.0, -4503599627370497.0,
+      0.0, -0.0, 5e-324, -5e-324, -100.0, -100.25, 1e100, -1e100, math.huge, -math.huge, 0 / 0
+   }
+   local expected = {}
+   jit.off()
+   jit.flush()
+   for i in {0 to #values} do
+      local a, b, c = constant_remainders(values[i])
+      expected[i] = { a, b, c }
+   end
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   for _ in {0 to 20} do
+      for i in {0 to #values} do
+         local a, b, c = constant_remainders(values[i])
+         assert_same_remainder(a, expected[i][0])
+         assert_same_remainder(b, expected[i][1])
+         assert_same_remainder(c, expected[i][2])
+      end
+   end
+end
+
+@Test function IntegerPowerOfTwoRemainderAcrossSigns()
+   defer
+      jit.on()
+      jit.flush()
+      jit.opt.start()
+   end
+
+   local values = array<double> { 19, -19, 24, -24, 0, -2147483648, -2147483647, 2147483647 }
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   for _ in {0 to 20} do
+      for i in {0 to #values} do
+         local value = values[i]
+         local magnitude = math.abs(value)
+         local expected = magnitude - math.floor(magnitude / 8) * 8
+         if value < 0 then expected = -expected end
+         local a, b, c, d = integer_power_two_remainders(value)
+         assert(a is expected and b is expected, 'Integer power-of-two remainder should retain the dividend sign')
+         assert(c is (value is -2147483648 ? 0 :> value), 'Minimum integer divisor should avoid signed overflow')
+         assert(d is 0, 'Remainder by -1 should be zero, including for the minimum integer')
+      end
+   end
+end
+
+@Test function IntegerConstantRemainderChains()
+   defer
+      jit.on()
+      jit.flush()
+      jit.opt.start()
+   end
+   local values = array<double> { 0, 1, -1, 99, -99, 100, -100, 101, -101, 2147483647, -2147483648 }
+   local expected = {}
+   jit.off()
+   jit.flush()
+   for i in {0 to #values} do
+      local a, b, c = integer_constant_remainders(values[i])
+      expected[i] = { a, b, c }
+   end
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   for _ in {0 to 40} do
+      for i in {0 to #values} do
+         local a, b, c = integer_constant_remainders(values[i])
+         assert(a is expected[i][0] and b is expected[i][1] and c is expected[i][2],
+            'Constant integer remainder chains must handle both signs, zero and int32 boundaries')
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Bitwise operations: 32-bit overflow and coercion
+
+@Test function BitwiseCoercionRoundsFloat()
+   -- Bitwise ops convert to 32-bit signed int via tobit (rounds to nearest)
+   assert((3.7 | 0) is 4, '3.7 should round to 4 in bitwise context')
+   assert((3.2 | 0) is 3, '3.2 should round to 3 in bitwise context')
+   assert((-1.9 | 0) is -2, '-1.9 should round to -2 in bitwise context')
+   assert((-1.2 | 0) is -1, '-1.2 should round to -1 in bitwise context')
+end
+
+@Test function BitwiseOverflowWraps()
+   -- 32-bit signed max is 2147483647 (0x7FFFFFFF)
+   max_int32 = 0x7fffffff
+   assert((max_int32 + 1 & 0xffffffff) is bit.tobit(0x80000000),
+      'Incrementing max int32 in bitwise context should wrap to min int32')
+end
+
+@Test function BitwiseNegativeRepresentation()
+   assert((-1 & 0xff) is 0xff, '-1 masked to 8 bits should be 0xFF (255)')
+   assert((-1 & 0xffff) is 0xffff, '-1 masked to 16 bits should be 0xFFFF')
+end
+
+@Test function BitShiftBoundaries()
+   -- Shift counts are masked to 0-31
+   assert((1 << 0) is 1, 'Shift by 0 should be identity')
+   assert((1 << 31) is bit.tobit(0x80000000), 'Shift by 31 should set sign bit')
+   -- Shift by 32 should be equivalent to shift by 0 (masked)
+   assert((1 << 32) is 1, 'Shift by 32 should wrap to shift by 0')
+end
+
+@Test function BitwiseWithLargeDoubles()
+   -- Large doubles outside 32-bit range get truncated via tobit
+   large = 2 ** 33  -- 8589934592
+   result = large & 0xffffffff
+   assert(result is 0, '2^33 should truncate to 0 in 32-bit context')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Typed array numeric coercion
+
+@Test function IntArrayTruncatesFloats()
+   arr = array<int> { 1.9, -2.7, 3.5 }
+   assert(arr[0] is 1, '1.9 stored in int array should truncate to 1')
+   assert(arr[1] is -2, '-2.7 stored in int array should truncate to -2')
+   assert(arr[2] is 3, '3.5 stored in int array should truncate to 3')
+end
+
+@Test function FloatArrayPrecision()
+   arr = array<float> { 1.23456789012345 }
+   -- Float array stores 32-bit floats, so precision is reduced
+   assert(math.abs(arr[0] - 1.23456789012345) > 1e-10,
+      'Float array should show precision loss for high-precision values')
+   assert(math.abs(arr[0] - 1.23456789012345) < 1e-5,
+      'Float array should still be approximately correct')
+end
+
+@Test function DoubleArrayPreservesPrecision()
+   precise = 1.23456789012345
+   arr = array<double> { precise }
+   assert(arr[0] is precise, 'Double array should preserve full precision')
+end
+
+@Test function Int64ArrayLargeValues()
+   arr = array<int64, 2>
+   arr[0] = 2 ** 40  -- 1099511627776, beyond 32-bit range
+   arr[1] = -(2 ** 40)
+   assert(arr[0] is 2 ** 40, 'Int64 array should handle values beyond 32-bit range')
+   assert(arr[1] is -(2 ** 40), 'Int64 array should handle large negative values')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Tonumber and type conversion edge cases
+
+@Test function TonumberFromString()
+   assert(tonumber('42') is 42, 'tonumber("42") should produce 42')
+   assert(tonumber('3.14') is 3.14, 'tonumber("3.14") should produce 3.14')
+   assert(tonumber('-1e5') is -100000, 'tonumber("-1e5") should produce -100000')
+   assert(tonumber('0xff') is 255, 'tonumber("0xff") should produce 255')
+end
+
+@Test function TonumberInvalidInput()
+   assert(tonumber('hello') is nil, 'tonumber of non-numeric string should be nil')
+   assert(tonumber('') is nil, 'tonumber of empty string should be nil')
+   assert(tonumber(nil) is nil, 'tonumber of nil should be nil')
+end
+
+@Test function TonumberWithBase()
+   assert(tonumber('ff', 16) is 255, 'tonumber("ff", 16) should produce 255')
+   assert(tonumber('77', 8) is 63, 'tonumber("77", 8) should produce 63')
+   assert(tonumber('1010', 2) is 10, 'tonumber("1010", 2) should produce 10')
+end
+
+@Test function TostringOfSpecialValues()
+   assert(tostring(math.huge) is 'inf', 'tostring(inf) should be "inf"')
+   assert(tostring(-math.huge) is '-inf', 'tostring(-inf) should be "-inf"')
+   nan = 0 / 0
+   assert(tostring(nan) is 'nan' or tostring(nan) is '-nan', 'tostring(NaN) should be "nan" or "-nan"')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Comparison edge cases
+
+@Test function ComparisonWithMixedTypes()
+   -- Number-to-string comparison should not coerce
+   assert(not (42 is '42'), 'Number 42 should not equal string "42"')
+   assert(not (0 is '0'), 'Number 0 should not equal string "0"')
+end
+
+@Test function ComparisonOrdering()
+   assert(-math.huge < -1e308, '-Infinity should be less than -1e308')
+   assert(1e308 < math.huge, '1e308 should be less than infinity')
+   assert(-1 < 0, '-1 should be less than 0')
+   assert(0 < 1, '0 should be less than 1')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Rounding edge cases
+
+@Test function RoundingHalfAwayFromZero()
+   assert(math.round(0.5) is 1, 'math.round(0.5) should round up to 1')
+   assert(math.round(1.5) is 2, 'math.round(1.5) should round up to 2')
+   assert(math.round(2.5) is 3, 'math.round(2.5) should round up to 3')
+   assert(math.round(-0.5) is -1, 'math.round(-0.5) should round away from zero to -1')
+   assert(math.round(-1.5) is -2, 'math.round(-1.5) should round away from zero to -2')
+   assert(math.round(-2.5) is -3, 'math.round(-2.5) should round away from zero to -3')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Power operator edge cases
+
+@Test function PowerEdgeCases()
+   assert(0 ** 0 is 1, '0^0 should be 1 (mathematical convention)')
+   assert(1 ** math.huge is 1, '1^infinity should be 1')
+   assert(2 ** -1 is 0.5, '2^(-1) should be 0.5')
+   assert((-1) ** 0 is 1, '(-1)^0 should be 1')
+end
+
+@Test function PowerBindingAndAssociativity()
+   assert(-2 ** 2 is -4, '** should bind more tightly than unary negation')
+   assert((-2) ** 2 is 4, 'parentheses should apply negation before exponentiation')
+   assert(2 ** -2 is 0.25, '** should accept a unary expression as its right operand')
+   assert(2 ** 3 ** 2 is 512, '** should associate from right to left')
+   assert(~2 ** 2 is ~4, '** should bind more tightly than unary bitwise NOT')
+   assert((not 2 ** 2) is false, '** should bind more tightly than logical NOT')
+end
+
+@Test function PowerOverflow()
+   result = 2 ** 1024
+   assert(result is math.huge, '2^1024 should overflow to infinity')
+end
+
+@Test function PowerUnderflow()
+   result = 2 ** -1075
+   assert(result is 0, '2^(-1075) should underflow to 0')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- String-to-number arithmetic coercion
+
+function expect_string_arithmetic_error(Operation:func, Description:str)
+   local raised = false
+   try
+      Operation()
+   except
+      raised = true
+   end
+   assert(raised, Description .. ' must raise an arithmetic type error')
+end
+
+function string_arithmetic_metamethod_workload(Iterations:num):num
+   local text = '4'
+   local other_text = '5'
+   local total = 0
+
+   for _ in {0 to Iterations} do
+      total += 3 + text
+      total += text + 3
+      total += text + other_text
+      total += text % 3
+      total += 3 % text
+      total += 2 ** text
+      total += -text
+   end
+   return total
+end
+
+@Test function StringToNumberCoercionInArithmetic()
+   local text = '4'
+   local other_text = '5'
+
+   -- Arithmetic does not coerce strings; the operand must be converted explicitly with tonumber().
+   expect_string_arithmetic_error(function() return -text end, 'Unary minus on a string')
+   expect_string_arithmetic_error(function() return 3 + text end, 'Number plus string')
+   expect_string_arithmetic_error(function() return text + 3 end, 'String plus number')
+   expect_string_arithmetic_error(function() return text + other_text end, 'String plus string')
+   expect_string_arithmetic_error(function() return text % 3 end, 'String remainder number')
+   expect_string_arithmetic_error(function() return 3 % text end, 'Number remainder string')
+   expect_string_arithmetic_error(function() return 2 ** text end, 'Number to a string power')
+   assert(3 + tonumber('4') is 7, '3 + tonumber("4") should be 7')
+
+   -- A string arithmetic metamethod must run instead of implicit conversion in both the interpreter and JIT.
+   local original_metatable = debug.getMetatable('')
+   defer
+      debug.setMetatable('', original_metatable)
+      jit.on()
+      jit.flush()
+      jit.opt.start()
+   end
+
+   debug.setMetatable('', {
+      __unm = function(Value):num return 400 - tonumber(Value) end,
+      __add = function(Receiver, Other, LhsDispatch:bool):num
+         return 100 + tonumber(Receiver) + tonumber(Other)
+      end,
+      __mod = function(Receiver, Other, LhsDispatch:bool):num
+         if LhsDispatch then return 200 + (tonumber(Receiver) % tonumber(Other)) end
+         return 200 + (tonumber(Other) % tonumber(Receiver))
+      end,
+      __pow = function(Receiver, Other, LhsDispatch:bool):num
+         if LhsDispatch then return 300 + (tonumber(Receiver) ** tonumber(Other)) end
+         return 300 + (tonumber(Other) ** tonumber(Receiver))
+      end
+   })
+
+   jit.off()
+   jit.flush()
+   local expected = string_arithmetic_metamethod_workload(10)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   local actual = 0
+   for _ in {0 into 50} do actual = string_arithmetic_metamethod_workload(10) end
+
+   assert(actual is expected, 'JIT string arithmetic must match the interpreter metamethod result')
+
+   jit.off()
+   local trace_count = 0
+   for trace_no in {1 into 30} do
+      if jit.util.traceInfo(trace_no) != nil then trace_count++ end
+   end
+   jit.on()
+   assert(trace_count > 0, 'String arithmetic metamethod workload must produce a JIT trace')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- String-to-number bitwise coercion
+
+function expect_string_bitwise_error(Operation:func, Description:str)
+   local raised = false
+   try
+      Operation()
+   except
+      raised = true
+   end
+   assert(raised, Description .. ' must raise a bitwise type error')
+end
+
+@Test function StringToNumberCoercionInBitwise()
+   local text = '12'
+   local other_text = '5'
+
+   -- Bitwise operations do not coerce strings; the operand must be converted with tonumber().
+   expect_string_bitwise_error(function() return bit.band(text, 5) end, 'bit.band with string first argument')
+   expect_string_bitwise_error(function() return bit.band(12, other_text) end, 'bit.band with string second argument')
+   expect_string_bitwise_error(function() return bit.bor(text, 1) end, 'bit.bor with a string')
+   expect_string_bitwise_error(function() return bit.bxor(text, other_text) end, 'bit.bxor with two strings')
+   expect_string_bitwise_error(function() return bit.bnot(text) end, 'bit.bnot with a string')
+   expect_string_bitwise_error(function() return bit.lshift(text, 4) end, 'bit.lshift with a string value')
+   expect_string_bitwise_error(function() return bit.lshift(1, other_text) end, 'bit.lshift with a string count')
+   expect_string_bitwise_error(function() return bit.rshift(text, 4) end, 'bit.rshift with a string')
+   expect_string_bitwise_error(function() return bit.tobit(text) end, 'bit.tobit with a string')
+
+   -- The native C-style operators route to the same bit library and must not coerce either.
+   expect_string_bitwise_error(function() return text & 5 end, 'Native & with a string')
+   expect_string_bitwise_error(function() return text | 1 end, 'Native | with a string')
+   expect_string_bitwise_error(function() return ~text end, 'Native ~ with a string')
+   expect_string_bitwise_error(function() return text << 4 end, 'Native << with a string')
+
+   -- Explicit conversion with tonumber() restores the numeric result.
+   assert(bit.band(tonumber('12'), 5) is 4, 'bit.band(tonumber("12"), 5) should be 4')
+   assert((tonumber('12') & 5) is 4, 'tonumber("12") & 5 should be 4')
+   assert(bit.lshift(tonumber('1'), tonumber('4')) is 16, 'bit.lshift(tonumber("1"), tonumber("4")) should be 16')
+end
+
+function string_bitwise_workload(Iterations:num)
+   local text = '12'
+   for _ in {0 to Iterations} do
+      local ignore = bit.band(text, 5)
+   end
+end
+
+@Test function StringToNumberBitwiseUnderJIT()
+   -- A hot loop compiles a trace; a string operand must abort back to the interpreter and raise the
+   -- type error rather than silently coercing on the compiled path.
+   defer
+      jit.on()
+      jit.flush()
+      jit.opt.start()
+   end
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local raised = false
+   try
+      string_bitwise_workload(200)
+   except
+      raised = true
+   end
+   assert(raised, 'JIT bitwise on a string must raise a type error, not coerce')
+end
+
+@Test function ConstantRemainderNegativeTraceZeros()
+   defer
+      jit.on()
+      jit.flush()
+      jit.opt.start()
+   end
+
+   -- Record the negative trace first, then exercise both zero signs and sign-changing side traces.
+   local values = array<double> { -100.25, -200.0, -0.0, 0.0, 100.25, 200.0, -5e-324, 5e-324 }
+   local expected = {}
+   jit.off()
+   jit.flush()
+   for i in {0 to #values} do
+      local a, b, c = constant_remainders(values[i])
+      expected[i] = { a, b, c }
+   end
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   for i in {0 to #values} do
+      for _ in {0 to 80} do
+         local a, b, c = constant_remainders(values[i])
+         assert_same_remainder(a, expected[i][0])
+         assert_same_remainder(b, expected[i][1])
+         assert_same_remainder(c, expected[i][2])
+      end
+   end
+end

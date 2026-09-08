@@ -350,7 +350,7 @@ xml::schema::SchemaType XPathVal::get_schema_type() const
    return xml::schema::schema_type_for_xpath(Type);
 }
 
-XPathVal xpath_nodeset_from_components(pf::vector<XTag *> Nodes,
+XPathVal xpath_nodeset_from_components(kt::vector<XTag *> Nodes,
    std::vector<const XMLAttrib *> Attributes,
    std::vector<std::string> Strings,
    std::optional<std::string> Override)
@@ -367,7 +367,7 @@ XPathVal xpath_nodeset_from_components(pf::vector<XTag *> Nodes,
 XPathVal xpath_nodeset_singleton(XTag *Node, const XMLAttrib *Attribute,
    std::string StringValue)
 {
-   pf::vector<XTag *> nodes;
+   kt::vector<XTag *> nodes;
    nodes.push_back(Node);
 
    std::vector<const XMLAttrib *> attributes;

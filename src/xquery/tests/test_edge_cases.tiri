@@ -8,12 +8,12 @@
 @Test function MediumAdditionChain()
    count = 40
    terms = {}
-   for index = 0, count do
+   for index in {0 into count} do
       terms[index] = tostring(index)
    end
 
    expected = (count * (count + 1)) / 2
-   xq = obj.new('xquery', { statement = table.concat(terms, ' + ') })
+   xq = obj.new('xquery', { statement = terms.concat(' + ') })
    err = xq.acActivate()
    assert(err is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
    result = tonumber(xq.resultString)
@@ -26,12 +26,12 @@ end
 @Test function LongAdditionChain()
    count = 400
    terms = {}
-   for index = 0, count-1 do
+   for index in {0 to count} do
       terms[index] = tostring(index + 1)
    end
 
    expected = (count * (count + 1)) / 2
-   xq = obj.new('xquery', { statement = table.concat(terms, ' + ') })
+   xq = obj.new('xquery', { statement = terms.concat(' + ') })
    err = xq.acActivate()
    assert(err is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
    result = tonumber(xq.resultString)
@@ -43,13 +43,13 @@ end
 
 @Test function MultiplicationChain()
    factors = {}
-   for index = 2, 10 do
+   for index in {2 into 10} do
       factors[#factors] = tostring(index)
    end
-   chain = table.concat(factors, ' * ')
+   chain = factors.concat(' * ')
 
    expected = 1
-   for index = 2, 10 do
+   for index in {2 into 10} do
       expected *= index
    end
 
@@ -89,7 +89,7 @@ end
       xq = obj.new('xquery', { statement = 'return 2 * 3' })
       xq.acActivate()
    success
-      error('Expected query to fail but it succeeded')
+      assert(false, 'Expected query to fail but it succeeded')
    end
 
    -- Pure number sequence is valid without the 'return' keyword

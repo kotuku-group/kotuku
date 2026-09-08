@@ -9,6 +9,14 @@
     <status>stable</status>
     <prefix>gfx</prefix>
     <copyright>Paul Manias © 2003-2026</copyright>
+    <source>
+      <file path="src/display/">display.cpp</file>
+      <file path="src/display/">lib_bitmap.cpp</file>
+      <file path="src/display/">lib_display.cpp</file>
+      <file path="src/display/">lib_cursor.cpp</file>
+      <file path="src/display/">lib_input.cpp</file>
+      <file path="src/display/">lib_surfaces.cpp</file>
+    </source>
     <classes>
       <class>Bitmap</class>
       <class>Clipboard</class>
@@ -31,6 +39,8 @@
     <category>Cursor</category>
     <comment>Returns a lock on the default pointer object.</comment>
     <prototype>objPointer * gfx::AccessPointer()</prototype>
+    <tiriPrototype>obj = AccessPointer()</tiriPrototype>
+    <tags>api-owns-result, nullable-result, blocking</tags>
     <description>
 <p>Use AccessPointer() to grab a lock on the default pointer object that is active in the system.  This is typically the first object created from the Pointer class with a name of <code>SystemPointer</code>.</p>
 <p>Call <function module="Core">ReleaseObject</function> to free the lock once it is no longer required.</p>
@@ -43,6 +53,8 @@
     <category>Surfaces</category>
     <comment>Check if a surface is the child of another surface.</comment>
     <prototype>ERR gfx::CheckIfChild(OBJECTID Parent, OBJECTID Child)</prototype>
+    <tiriPrototype>err = CheckIfChild(Parent:obj, Child:obj)</tiriPrototype>
+    <tags>blocking, pure-query</tags>
     <input>
       <param type="OBJECTID" name="Parent">The surface that is assumed to be the parent.</param>
       <param type="OBJECTID" name="Child">The child surface to check.</param>
@@ -62,6 +74,8 @@
     <category>Bitmap</category>
     <comment>Copies a rectangular area from one bitmap to another.</comment>
     <prototype>ERR gfx::CopyArea(objBitmap * Bitmap, objBitmap * Dest, BAF Flags, INT X, INT Y, INT Width, INT Height, INT XDest, INT YDest)</prototype>
+    <tiriPrototype>err = CopyArea(Bitmap:obj, Dest:obj, Flags:num, X:num, Y:num, Width:num, Height:num, XDest:num, YDest:num)</tiriPrototype>
+    <tags>mutates-object, blocking</tags>
     <input>
       <param type="objBitmap *" name="Bitmap">The source bitmap.</param>
       <param type="objBitmap *" name="Dest">Pointer to the destination bitmap.</param>
@@ -81,9 +95,10 @@
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Mismatch">The destination bitmap is not a close enough match to the source bitmap in order to perform the operation.</error>
+      <error code="NotInitialised">The source Bitmap has not been initialised.</error>
       <error code="InvalidState">The <code>LINEAR</code> flag was used when at least one bitmap is using a linear colourspace.</error>
       <error code="NullArgs">The <code>Dest</code> parameter was not specified.</error>
+      <error code="InvalidObject">The <code>Dest</code> parameter does not refer to a Bitmap object.</error>
     </result>
   </function>
 
@@ -91,9 +106,11 @@
     <name>CopyRawBitmap</name>
     <category>Bitmap</category>
     <comment>Copies graphics data from an arbitrary surface to a bitmap.</comment>
-    <prototype>ERR gfx::CopyRawBitmap(struct BitmapSurfaceV2 * Surface, objBitmap * Dest, CSRF Flags, INT X, INT Y, INT Width, INT Height, INT XDest, INT YDest)</prototype>
+    <prototype>ERR gfx::CopyRawBitmap(struct BitmapSurface * Surface, objBitmap * Dest, CSRF Flags, INT X, INT Y, INT Width, INT Height, INT XDest, INT YDest)</prototype>
+    <tiriPrototype>err = CopyRawBitmap(Surface:any, Dest:obj, Flags:num, X:num, Y:num, Width:num, Height:num, XDest:num, YDest:num)</tiriPrototype>
+    <tags>mutates-object, blocking</tags>
     <input>
-      <param type="struct BitmapSurfaceV2 *" name="Surface">Description of the surface source.</param>
+      <param type="struct BitmapSurface *" name="Surface">Description of the surface source.</param>
       <param type="objBitmap *" name="Dest">Destination bitmap.</param>
       <param type="CSRF" name="Flags" lookup="CSRF">Optional flags.</param>
       <param type="INT" name="X">Horizontal source coordinate.</param>
@@ -109,7 +126,7 @@
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Args">Invalid arguments passed to function.</error>
+      <error code="Args">Invalid arguments passed to function</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -119,6 +136,8 @@
     <category>Surfaces</category>
     <comment>Copies surface graphics data into any bitmap object</comment>
     <prototype>ERR gfx::CopySurface(OBJECTID Surface, objBitmap * Bitmap, BDF Flags, INT X, INT Y, INT Width, INT Height, INT XDest, INT YDest)</prototype>
+    <tiriPrototype>err = CopySurface(Surface:obj, Bitmap:obj, Flags:num, X:num, Y:num, Width:num, Height:num, XDest:num, YDest:num)</tiriPrototype>
+    <tags>mutates-object, blocking</tags>
     <input>
       <param type="OBJECTID" name="Surface">The ID of the surface object to copy from.</param>
       <param type="objBitmap *" name="Bitmap">Must reference a target <class name="Bitmap">Bitmap</class> object.</param>
@@ -136,7 +155,7 @@
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Search">The supplied <code>Surface</code> ID did not refer to a recognised surface object</error>
-      <error code="AccessObject">Attempting to lock an object failed.</error>
+      <error code="AccessObject">Attempting to lock an object failed</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -146,6 +165,8 @@
     <category>Bitmap</category>
     <comment>Draws a single pixel to a bitmap.</comment>
     <prototype>void gfx::DrawPixel(objBitmap * Bitmap, INT X, INT Y, UINT Colour)</prototype>
+    <tiriPrototype>DrawPixel(Bitmap:obj, X:num, Y:num, Colour:num)</tiriPrototype>
+    <tags>mutates-object</tags>
     <input>
       <param type="objBitmap *" name="Bitmap">The target bitmap object.</param>
       <param type="INT" name="X">The horizontal coordinate of the pixel.</param>
@@ -162,6 +183,8 @@
     <category>Bitmap</category>
     <comment>Draws a 24 bit pixel to a <class name="Bitmap">Bitmap</class>.</comment>
     <prototype>void gfx::DrawRGBPixel(objBitmap * Bitmap, INT X, INT Y, struct RGB8 * RGB)</prototype>
+    <tiriPrototype>DrawRGBPixel(Bitmap:obj, X:num, Y:num, RGB:any)</tiriPrototype>
+    <tags>mutates-object</tags>
     <input>
       <param type="objBitmap *" name="Bitmap">The target bitmap object.</param>
       <param type="INT" name="X">Horizontal coordinate of the pixel.</param>
@@ -178,6 +201,8 @@
     <category>Bitmap</category>
     <comment>Draws rectangles, both filled and unfilled.</comment>
     <prototype>void gfx::DrawRectangle(objBitmap * Bitmap, INT X, INT Y, INT Width, INT Height, UINT Colour, BAF Flags)</prototype>
+    <tiriPrototype>DrawRectangle(Bitmap:obj, X:num, Y:num, Width:num, Height:num, Colour:num, Flags:num)</tiriPrototype>
+    <tags>mutates-object, blocking</tags>
     <input>
       <param type="objBitmap *" name="Bitmap">Pointer to the target <class name="Bitmap">Bitmap</class>.</param>
       <param type="INT" name="X">The left-most coordinate of the rectangle.</param>
@@ -197,6 +222,8 @@
     <category>Surfaces</category>
     <comment>Exposes the content of a surface to the display.</comment>
     <prototype>ERR gfx::ExposeSurface(OBJECTID Surface, INT X, INT Y, INT Width, INT Height, EXF Flags)</prototype>
+    <tiriPrototype>err = ExposeSurface(Surface:obj, X:num, Y:num, Width:num, Height:num, Flags:num)</tiriPrototype>
+    <tags>mutates-object, blocking</tags>
     <input>
       <param type="OBJECTID" name="Surface">The ID of the surface object that will be exposed.</param>
       <param type="INT" name="X">The horizontal coordinate of the area to expose.</param>
@@ -220,6 +247,8 @@
     <category>Bitmap</category>
     <comment>Generates the values for a <st>ColourFormat</st> structure for a given bit depth.</comment>
     <prototype>void gfx::GetColourFormat(struct ColourFormat * Format, INT BitsPerPixel, INT RedMask, INT GreenMask, INT BlueMask, INT AlphaMask)</prototype>
+    <tiriPrototype>GetColourFormat(Format:any, BitsPerPixel:num, RedMask:num, GreenMask:num, BlueMask:num, AlphaMask:num)</tiriPrototype>
+    <tags>mutates-input, pure-query</tags>
     <input>
       <param type="struct ColourFormat *" name="Format">Pointer to an empty <st>ColourFormat</st> structure.</param>
       <param type="INT" name="BitsPerPixel">The depth that you would like to generate colour values for.  Ignored if mask values are set.</param>
@@ -246,10 +275,11 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <name>GetCursorInfo</name>
     <category>Cursor</category>
     <comment>Retrieves graphics information from the active mouse cursor.</comment>
-    <prototype>ERR gfx::GetCursorInfo(struct CursorInfo * Info, INT Size)</prototype>
+    <prototype>ERR gfx::GetCursorInfo(struct CursorInfo * Info)</prototype>
+    <tiriPrototype>err = GetCursorInfo(Info:any)</tiriPrototype>
+    <tags>mutates-input, pure-query</tags>
     <input>
       <param type="struct CursorInfo *" name="Info">Pointer to a <st>CursorInfo</st> structure.</param>
-      <param type="INT" name="Size">The byte-size of the <code>Info</code> structure.</param>
     </input>
     <description>
 <p>The GetCursorInfo() function is used to retrieve useful information on the graphics structure of the mouse cursor.  It will return the maximum possible dimensions for custom cursor graphics and indicates the optimal bits-per-pixel setting for the hardware cursor.</p>
@@ -268,6 +298,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Cursor</category>
     <comment>Returns the coordinates of the UI pointer.</comment>
     <prototype>ERR gfx::GetCursorPos(DOUBLE * X, DOUBLE * Y)</prototype>
+    <tiriPrototype>err, X:num, Y:num = GetCursorPos()</tiriPrototype>
+    <tags>blocking, pure-query</tags>
     <input>
       <param type="DOUBLE *" name="X">Variable that will store the pointer's horizontal coordinate.</param>
       <param type="DOUBLE *" name="Y">Variable that will store the pointer's vertical coordinate.</param>
@@ -285,18 +317,23 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <name>GetDisplayInfo</name>
     <category>Display</category>
     <comment>Retrieves display information.</comment>
-    <prototype>ERR gfx::GetDisplayInfo(OBJECTID Display, struct DisplayInfoV3 ** Info)</prototype>
+    <prototype>ERR gfx::GetDisplayInfo(OBJECTID Display, struct DisplayInfo ** Info)</prototype>
+    <tiriPrototype>err, Info:any = GetDisplayInfo(Display:obj)</tiriPrototype>
+    <tags>api-owns-result, volatile-result, blocking</tags>
     <input>
       <param type="OBJECTID" name="Display">Object ID of the display to be analysed.</param>
-      <param type="struct DisplayInfoV3 **" name="Info">This reference will receive a pointer to a DISPLAYINFO structure.</param>
+      <param type="struct DisplayInfo **" name="Info">This reference will receive a pointer to a <st>DisplayInfo</st> structure.</param>
     </input>
     <description>
 <p>The GetDisplayInfo() function returns information about a display, which includes information such as its size and bit depth.  If the system is running on a hosted display (e.g. Windows or X11) then GetDisplayInfo() can also be used to retrieve information about the default monitor by using a Display of zero.</p>
-<p>The resulting <code>DISPLAYINFO</code> structure values remain good until the next call to this function, at which point they will be overwritten.</p>
+<p>The resulting <st>DisplayInfo</st> structure values remain good until the next call to this function, at which point they will be overwritten.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block.</error>
+      <error code="TimeOut">Function timed-out before successful completion</error>
+      <error code="AccessObject">Attempting to lock an object failed</error>
+      <error code="AllocMemory">Failed to create a new memory block</error>
+      <error code="SystemCall">A call to the host system has failed</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -304,10 +341,12 @@ Alpha  = CFUnpackAlpha(Format,Colour)
   <function>
     <name>GetDisplayType</name>
     <category>Display</category>
-    <comment>Returns the type of display supported.</comment>
+    <comment>Returns the selected display driver's backend type.</comment>
     <prototype>DT gfx::GetDisplayType()</prototype>
+    <tiriPrototype>num = GetDisplayType()</tiriPrototype>
+    <tags>pure-query</tags>
     <description>
-<p>This function returns the type of display supported by the loaded Display module.  Current return values are:</p>
+<p>This function reports the backend identity of the driver selected during Display module initialisation.  Explicit and automatic driver selection therefore return the same type when they resolve to the same backend.  Current values are:</p>
 <types lookup="DT"/>
     </description>
     <result type="DT" lookup="DT">Returns an integer indicating the display type.</result>
@@ -318,6 +357,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Input</category>
     <comment>Returns the string name for an input type.</comment>
     <prototype>CSTRING gfx::GetInputTypeName(JET Type)</prototype>
+    <tiriPrototype>str = GetInputTypeName(Type:num)</tiriPrototype>
+    <tags>static-result, null-terminated-result, nullable-result, pure-query</tags>
     <input>
       <param type="JET" name="Type" lookup="JET">JET type integer.</param>
     </input>
@@ -332,6 +373,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Surfaces</category>
     <comment>Returns the current modal surface (if defined).</comment>
     <prototype>OBJECTID gfx::GetModalSurface()</prototype>
+    <tiriPrototype>obj = GetModalSurface()</tiriPrototype>
+    <tags>blocking</tags>
     <description>
 <p>This function returns the modal surface for the running process.  Returns zero if no modal surface is active.</p>
     </description>
@@ -343,6 +386,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Cursor</category>
     <comment>Returns the coordinates of the pointer cursor, relative to a surface object.</comment>
     <prototype>ERR gfx::GetRelativeCursorPos(OBJECTID Surface, DOUBLE * X, DOUBLE * Y)</prototype>
+    <tiriPrototype>err, X:num, Y:num = GetRelativeCursorPos(Surface:obj)</tiriPrototype>
+    <tags>blocking, pure-query</tags>
     <input>
       <param type="OBJECTID" name="Surface">Unique ID of the surface that the coordinates need to be relative to.</param>
       <param type="DOUBLE *" name="X">Variable that will store the pointer's horizontal coordinate.</param>
@@ -354,6 +399,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="Search">A search routine in this function failed</error>
       <error code="AccessObject">Failed to access the SystemPointer object.</error>
     </result>
   </function>
@@ -363,6 +409,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Surfaces</category>
     <comment>Returns the dimensions of a surface.</comment>
     <prototype>ERR gfx::GetSurfaceCoords(OBJECTID Surface, INT * X, INT * Y, INT * AbsX, INT * AbsY, INT * Width, INT * Height)</prototype>
+    <tiriPrototype>err, X:num, Y:num, AbsX:num, AbsY:num, Width:num, Height:num = GetSurfaceCoords(Surface:obj)</tiriPrototype>
+    <tags>blocking, pure-query</tags>
     <input>
       <param type="OBJECTID" name="Surface">The surface to query.  If zero, the top-level display is queried.</param>
       <param type="INT *" name="X">The X coordinate of the surface is returned here.</param>
@@ -378,6 +426,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Search">The supplied <code>Surface</code> ID did not refer to a recognised surface object.</error>
+      <error code="SystemCall">A call to the host system has failed</error>
     </result>
   </function>
 
@@ -386,6 +435,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Surfaces</category>
     <comment>Retrieves the <code>Flags</code> field from a <class name="Surface">Surface</class>.</comment>
     <prototype>ERR gfx::GetSurfaceFlags(OBJECTID Surface, RNF * Flags)</prototype>
+    <tiriPrototype>err, Flags:num = GetSurfaceFlags(Surface:obj)</tiriPrototype>
+    <tags>blocking, pure-query</tags>
     <input>
       <param type="OBJECTID" name="Surface">The surface to query.  If zero, the top-level surface is queried.</param>
       <param type="RNF *" name="Flags" lookup="RNF">The flags value is returned here.</param>
@@ -396,7 +447,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="AccessMemory">Access to a memory block was denied.</error>
+      <error code="Search">A search routine in this function failed</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -404,11 +455,13 @@ Alpha  = CFUnpackAlpha(Format,Colour)
   <function>
     <name>GetSurfaceInfo</name>
     <category>Surfaces</category>
-    <comment>Retrieves display information for any surface object without having to access it directly.</comment>
-    <prototype>ERR gfx::GetSurfaceInfo(OBJECTID Surface, struct SurfaceInfoV2 ** Info)</prototype>
+    <comment>Retrieves display information for any surface object, whilst avoiding direct access.</comment>
+    <prototype>ERR gfx::GetSurfaceInfo(OBJECTID Surface, struct SurfaceInfo ** Info)</prototype>
+    <tiriPrototype>err, Info:any = GetSurfaceInfo(Surface:obj)</tiriPrototype>
+    <tags>api-owns-result, volatile-result, blocking</tags>
     <input>
       <param type="OBJECTID" name="Surface">The unique ID of a <class name="Surface">Surface</class> to query.  If zero, the root surface is returned.</param>
-      <param type="struct SurfaceInfoV2 **" name="Info">This parameter will receive a <st>SurfaceInfo</st> pointer that describes the surface object.</param>
+      <param type="struct SurfaceInfo **" name="Info">This parameter will receive a <st>SurfaceInfo</st> pointer that describes the surface object.</param>
     </input>
     <description>
 <p>GetSurfaceInfo() is used for quickly retrieving basic information from surfaces, allowing the client to bypass the <function module="Core">AccessObject</function> function.  The resulting structure values are good only up until the next call to this function, at which point those values will be overwritten.</p>
@@ -425,6 +478,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Surfaces</category>
     <comment>Returns the ID of the surface that currently has the user's focus.</comment>
     <prototype>OBJECTID gfx::GetUserFocus()</prototype>
+    <tiriPrototype>obj = GetUserFocus()</tiriPrototype>
+    <tags>blocking, pure-query</tags>
     <description>
 <p>This function returns the unique ID of the surface that has the user's focus.</p>
     </description>
@@ -436,6 +491,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Surfaces</category>
     <comment>Returns the visible region of a <class name="Surface">Surface</class>.</comment>
     <prototype>ERR gfx::GetVisibleArea(OBJECTID Surface, INT * X, INT * Y, INT * AbsX, INT * AbsY, INT * Width, INT * Height)</prototype>
+    <tiriPrototype>err, X:num, Y:num, AbsX:num, AbsY:num, Width:num, Height:num = GetVisibleArea(Surface:obj)</tiriPrototype>
+    <tags>blocking, pure-query</tags>
     <input>
       <param type="OBJECTID" name="Surface">The surface to query.  If zero, the top-level display will be queried.</param>
       <param type="INT *" name="X">The X coordinate of the visible area.</param>
@@ -450,8 +507,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Failed">General failure.</error>
       <error code="Search">The supplied <code>Surface</code> ID did not refer to a recognised surface object.</error>
+      <error code="SystemCall">A call to the host system has failed</error>
     </result>
   </function>
 
@@ -460,6 +517,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Cursor</category>
     <comment>Anchors the cursor so that it cannot move without explicit movement signals.</comment>
     <prototype>ERR gfx::LockCursor(OBJECTID Surface)</prototype>
+    <tiriPrototype>err = LockCursor(Surface:obj)</tiriPrototype>
     <input>
       <param type="OBJECTID" name="Surface">Refers to the surface object that the pointer should send movement signals to.</param>
     </input>
@@ -468,10 +526,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
 <p>The anchor can be released at any time by calling the <function>UnlockCursor</function> function.</p>
     </description>
     <result type="ERR">
-      <error code="Okay">Operation successful.</error>
       <error code="NoSupport">The pointer cannot be locked due to system limitations.</error>
-      <error code="AccessObject">Failed to access the pointer object.</error>
-      <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
 
@@ -480,6 +535,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Bitmap</category>
     <comment>Reads a pixel's colour from the target bitmap.</comment>
     <prototype>UINT gfx::ReadPixel(objBitmap * Bitmap, INT X, INT Y)</prototype>
+    <tiriPrototype>num = ReadPixel(Bitmap:obj, X:num, Y:num)</tiriPrototype>
+    <tags>pure-query</tags>
     <input>
       <param type="objBitmap *" name="Bitmap">Pointer to a bitmap object.</param>
       <param type="INT" name="X">The horizontal coordinate of the pixel.</param>
@@ -496,6 +553,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Bitmap</category>
     <comment>Reads a pixel's colour from the target bitmap.</comment>
     <prototype>void gfx::ReadRGBPixel(objBitmap * Bitmap, INT X, INT Y, struct RGB8 ** RGB)</prototype>
+    <tiriPrototype>RGB:any = ReadRGBPixel(Bitmap:obj, X:num, Y:num)</tiriPrototype>
+    <tags>api-owns-result, volatile-result, non-null-result</tags>
     <input>
       <param type="objBitmap *" name="Bitmap">Pointer to a bitmap object.</param>
       <param type="INT" name="X">The horizontal coordinate of the pixel.</param>
@@ -513,6 +572,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Bitmap</category>
     <comment>Resamples a bitmap by dithering it to a new set of colour masks.</comment>
     <prototype>ERR gfx::Resample(objBitmap * Bitmap, struct ColourFormat * ColourFormat)</prototype>
+    <tiriPrototype>err = Resample(Bitmap:obj, ColourFormat:any)</tiriPrototype>
+    <tags>mutates-object</tags>
     <input>
       <param type="objBitmap *" name="Bitmap">The bitmap object to be resampled.</param>
       <param type="struct ColourFormat *" name="ColourFormat">The new colour format to be applied to the bitmap.</param>
@@ -532,6 +593,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Cursor</category>
     <comment>Returns the pointer image to its original state.</comment>
     <prototype>ERR gfx::RestoreCursor(PTC Cursor, OBJECTID Owner)</prototype>
+    <tiriPrototype>err = RestoreCursor(Cursor:num, Owner:obj)</tiriPrototype>
+    <tags>mutates-object, blocking</tags>
     <input>
       <param type="PTC" name="Cursor" lookup="PTC">The cursor image that the pointer will be restored to (0 for the default).</param>
       <param type="OBJECTID" name="Owner">The ownership ID that was given in the initial call to SetCursor().</param>
@@ -542,7 +605,6 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Args">Invalid arguments passed to function.</error>
     </result>
   </function>
 
@@ -551,6 +613,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Display</category>
     <comment>Scales a value to the active display's DPI.</comment>
     <prototype>DOUBLE gfx::ScaleToDPI(DOUBLE Value)</prototype>
+    <tiriPrototype>num = ScaleToDPI(Value:num)</tiriPrototype>
+    <tags>pure-query</tags>
     <input>
       <param type="DOUBLE" name="Value">The number to be scaled.</param>
     </input>
@@ -565,20 +629,18 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <name>SetClipRegion</name>
     <category>Bitmap</category>
     <comment>Sets a clipping region for a bitmap object.</comment>
-    <prototype>void gfx::SetClipRegion(objBitmap * Bitmap, INT Number, INT Left, INT Top, INT Right, INT Bottom, INT Terminate)</prototype>
+    <prototype>void gfx::SetClipRegion(objBitmap * Bitmap, INT Left, INT Top, INT Right, INT Bottom)</prototype>
+    <tiriPrototype>SetClipRegion(Bitmap:obj, Left:num, Top:num, Right:num, Bottom:num)</tiriPrototype>
+    <tags>mutates-object</tags>
     <input>
       <param type="objBitmap *" name="Bitmap">The target bitmap.</param>
-      <param type="INT" name="Number">The number of the clip region to set.</param>
       <param type="INT" name="Left">The horizontal start of the clip region.</param>
       <param type="INT" name="Top">The vertical start of the clip region.</param>
       <param type="INT" name="Right">The right-most edge of the clip region.</param>
       <param type="INT" name="Bottom">The bottom-most edge of the clip region.</param>
-      <param type="INT" name="Terminate">Set to <code>true</code> if this is the last clip region in the list, otherwise <code>false</code>.</param>
     </input>
     <description>
-<p>The SetClipRegion() method is used to manage the clipping regions assigned to a bitmap object.  Each new bitmap that is created has at least one clip region assigned to it, but by using SetClipRegion() you can also define multiple clipping areas, which is useful for complex graphics management.</p>
-<p>Each clipping region that you set is assigned a Number, starting from zero which is the default.  Each time that you set a new clip region you must specify the number of the region that you wish to set.  If you attempt to 'skip' regions - for instance, if you set regions 0, 1, 2 and 3, then skip 4 and set 5, the routine will set region 4 instead. If you have specified multiple clip regions and want to lower the count or reset the list, set the number of the last region that you want in your list and set the <code>Terminate</code> parameter to <code>true</code> to kill the regions specified beyond it.</p>
-<p>The <code>ClipLeft</code>, <code>ClipTop</code>, <code>ClipRight</code> and <code>ClipBottom</code> fields in the target <code>Bitmap</code> will be updated to reflect the overall area that is covered by the clipping regions that have been set.</p>
+<p>The SetClipRegion() method is used to manage the clipping region assigned to a bitmap object.  The <code>ClipLeft</code>, <code>ClipTop</code>, <code>ClipRight</code> and <code>ClipBottom</code> fields in the target <code>Bitmap</code> will be updated to reflect the area covered by the provided parameter values.</p>
     </description>
   </function>
 
@@ -586,27 +648,29 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <name>SetCursor</name>
     <category>Cursor</category>
     <comment>Sets the cursor image and can anchor the pointer to any surface.</comment>
-    <prototype>ERR gfx::SetCursor(OBJECTID Surface, CRF Flags, PTC Cursor, CSTRING Name, OBJECTID Owner)</prototype>
+    <prototype>ERR gfx::SetCursor(OBJECTID Surface, CRF Flags, PTC Cursor, STRVIEW Name, OBJECTID Owner)</prototype>
+    <tiriPrototype>err = SetCursor(Surface:obj, Flags:num, Cursor:num, Name:str, Owner:obj)</tiriPrototype>
+    <tags>mutates-object, blocking, case-insensitive</tags>
     <input>
       <param type="OBJECTID" name="Surface">Refers to the surface object that the pointer should anchor itself to, if the <code>RESTRICT</code> flag is used.  Otherwise, this parameter can be set to a surface that the new cursor image should be limited to.  The object referred to here must be publicly accessible to all tasks.</param>
       <param type="CRF" name="Flags" lookup="CRF">Optional flags that affect the cursor.</param>
       <param type="PTC" name="Cursor" lookup="PTC">The ID of the cursor image that is to be set.</param>
-      <param type="CSTRING" name="Name">The name of the cursor image that is to be set (if <code>Cursor</code> is zero).</param>
+      <param type="STRVIEW" name="Name">The name of the cursor image that is to be set (if <code>Cursor</code> is zero).</param>
       <param type="OBJECTID" name="Owner">The object nominated as the owner of the anchor, and/or owner of the cursor image setting.</param>
     </input>
     <description>
 <p>Use the SetCursor() function to change the pointer image and/or restrict the movement of the pointer to a surface area.</p>
-<p>To change the cursor image, set the <code>Cursor</code> or <code>Name</code> parameters to define the new image.  Valid cursor ID's and their equivalent names are listed in the documentation for the <class name="Pointer" field="Cursor">_Pointer.Cursor_</class> field.  If the <code>Surface</code> field is set to a valid surface, the cursor image will switch back to its default once the pointer moves outside of the surface's area.  If both the <code>Cursor</code> and <code>Name</code> parameters are <code>NULL</code>, the cursor image will remain unchanged from its current image.</p>
+<p>To change the cursor image, set the <code>Cursor</code> or <code>Name</code> parameters to define the new image.  Valid cursor IDs and their equivalent names are listed in the documentation for the <class name="Pointer" field="CursorID">Pointer.CursorID</class> field.  If the <code>Surface</code> field is set to a valid surface, the cursor image will switch back to its default once the pointer moves outside of the surface's area. If both the <code>Cursor</code> and <code>Name</code> parameters are <code>NULL</code>, the cursor image will remain unchanged from its current image.</p>
 <p>The SetCursor() function accepts the following flags in the <code>Flags</code> parameter:</p>
 <types lookup="CRF"/>
 <p>The <code>Owner</code> parameter is used as a locking mechanism to prevent the cursor from being changed whilst it is locked.  We recommend that it is set to an object ID such as the program's task ID.  As the owner, the cursor remains under your program's control until <function>RestoreCursor</function> is called.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="NothingDone">There is nothing to process.</error>
-      <error code="Args">Invalid arguments passed to function.</error>
-      <error code="LockFailed">Failed to lock a required resource.</error>
-      <error code="NoSupport">The pointer cannot be set due to system limitations.</error>
+      <error code="True">Operation successful.</error>
+      <error code="NothingDone">Nothing to do for the requested operation</error>
+      <error code="Args">Invalid arguments passed to function</error>
+      <error code="LockFailed">Failed to lock a required resource</error>
       <error code="OutOfRange">The cursor ID is outside of acceptable range.</error>
       <error code="AccessObject">Failed to access the mouse pointer.</error>
     </result>
@@ -617,6 +681,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Cursor</category>
     <comment>Changes the position of the pointer cursor.</comment>
     <prototype>ERR gfx::SetCursorPos(DOUBLE X, DOUBLE Y)</prototype>
+    <tiriPrototype>err = SetCursorPos(X:num, Y:num)</tiriPrototype>
+    <tags>mutates-object, blocking, callback-inlines</tags>
     <input>
       <param type="DOUBLE" name="X">The new horizontal coordinate for the pointer.</param>
       <param type="DOUBLE" name="Y">The new vertical coordinate for the pointer.</param>
@@ -626,7 +692,6 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="AccessObject">Failed to access the SystemPointer object.</error>
     </result>
   </function>
 
@@ -635,6 +700,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Cursor</category>
     <comment>Sets the cursor to a customised bitmap image.</comment>
     <prototype>ERR gfx::SetCustomCursor(OBJECTID Surface, CRF Flags, objBitmap * Bitmap, INT HotX, INT HotY, OBJECTID Owner)</prototype>
+    <tiriPrototype>err = SetCustomCursor(Surface:obj, Flags:num, Bitmap:obj, HotX:num, HotY:num, Owner:obj)</tiriPrototype>
+    <tags>mutates-object, blocking</tags>
     <input>
       <param type="OBJECTID" name="Surface">Refers to the <class name="Surface">Surface</class> object that the pointer should restrict itself to, if the <code>RESTRICT</code> flag is used.  Otherwise, this parameter can be set to a surface that the new cursor image should be limited to.  The object referred to here must be publicly accessible to all tasks.</param>
       <param type="CRF" name="Flags" lookup="CRF">Optional flags affecting the cursor are set here.</param>
@@ -666,8 +733,9 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Args">Invalid arguments passed to function.</error>
-      <error code="NoSupport">Operation not supported.</error>
+      <error code="NothingDone">Nothing to do for the requested operation</error>
+      <error code="LockFailed">Failed to lock a required resource</error>
+      <error code="OutOfRange">A value is outside of the valid range</error>
       <error code="AccessObject">Failed to access the internally maintained image object.</error>
     </result>
   </function>
@@ -677,6 +745,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Display</category>
     <comment>Alter options associated with the host display system.</comment>
     <prototype>ERR gfx::SetHostOption(HOST Option, INT64 Value)</prototype>
+    <tiriPrototype>err = SetHostOption(Option:num, Value:num)</tiriPrototype>
     <input>
       <param type="HOST" name="Option" lookup="HOST">One of TRAY_ICON, TASKBAR or STICK_TO_FRONT.</param>
       <param type="INT64" name="Value">The value to be applied to the option.</param>
@@ -694,6 +763,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Surfaces</category>
     <comment>Enables a modal surface for the current task.</comment>
     <prototype>OBJECTID gfx::SetModalSurface(OBJECTID Surface)</prototype>
+    <tiriPrototype>obj = SetModalSurface(Surface:obj)</tiriPrototype>
+    <tags>mutates-object, blocking, callback-inlines</tags>
     <input>
       <param type="OBJECTID" name="Surface">The surface to enable as modal.</param>
     </input>
@@ -709,25 +780,27 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <name>StartCursorDrag</name>
     <category>Cursor</category>
     <comment>Attaches an item to the cursor for the purpose of drag and drop.</comment>
-    <prototype>ERR gfx::StartCursorDrag(OBJECTID Source, INT Item, CSTRING Datatypes, OBJECTID Surface)</prototype>
+    <prototype>ERR gfx::StartCursorDrag(OBJECTID Source, INT Item, STRVIEW Datatypes, OBJECTID Surface)</prototype>
+    <tiriPrototype>err = StartCursorDrag(Source:obj, Item:num, Datatypes:str, Surface:obj)</tiriPrototype>
+    <tags>copies-input, mutates-object, blocking, callback-inlines</tags>
     <input>
       <param type="OBJECTID" name="Source">Refers to an object that is managing the source data.</param>
       <param type="INT" name="Item">A custom number that represents the item being dragged from the source.</param>
-      <param type="CSTRING" name="Datatypes">A null terminated byte array that lists the datatypes supported by the source item, in order of conversion preference.</param>
+      <param type="STRVIEW" name="Datatypes">A character array that lists the datatypes supported by the source item, in order of conversion preference.</param>
       <param type="OBJECTID" name="Surface">A 32-bit composite surface that represents the item being dragged.</param>
     </input>
     <description>
 <p>This function starts a drag and drop operation with the mouse cursor.  The user must be holding the primary mouse button to initiate the drag and drop operation.</p>
 <p>A <code>Source</code> object ID is required that indicates the origin of the item being dragged and will be used to retrieve the data on completion of the drag and drop operation. An <code>Item</code> number, which is optional, identifies the item being dragged from the <code>Source</code> object.</p>
-<p>The type of data represented by the source item and all other supportable data types are specified in the <code>Datatypes</code> parameter as a null terminated array.  The array is arranged in order of preference, starting with the item's native data type.  Acceptable data type values are listed in the documentation for the DataFeed action.</p>
+<p>The type of data represented by the source item and all other supportable data types are specified in the <code>Datatypes</code> parameter as a character array.  The array is arranged in order of preference, starting with the item's native data type.  Acceptable data type values are listed in the documentation for the DataFeed action.</p>
 <p>The <code>Surface</code> parameter allows for a composite surface to be dragged by the mouse cursor as a graphical representation of the source <code>Item</code>.  It is recommended that the graphic be 32x32 pixels in size and no bigger than 64x64 pixels.  The <code>Surface</code> will be hidden on completion of the drag and drop operation.</p>
 <p>If the call to StartCursorDrag() is successful, the mouse cursor will operate in drag and drop mode.  The UserMovement and UserClickRelease actions normally reported from the SystemPointer will now include the <code>JD_DRAGITEM</code> flag in the <code>ButtonFlags</code> parameter.  When the user releases the primary mouse button, the drag and drop operation will stop and the DragDrop action will be passed to the surface immediately underneath the mouse cursor.  Objects that are monitoring for the DragDrop action on that surface can then contact the Source object with a DataFeed DragDropRequest.  The resulting data is then passed to the requesting object with a DragDropResult on the DataFeed.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="InUse">A drag and drop operation has already been started.</error>
-      <error code="Failed">The left mouse button is not held by the user.</error>
-      <error code="AccessObject">Attempting to lock an object failed.</error>
+      <error code="AccessObject">Attempting to lock an object failed</error>
+      <error code="InvalidState">The left mouse button is not held by the user.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -737,6 +810,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Input</category>
     <comment>Subscribe to incoming input messages for any active surface object.</comment>
     <prototype>ERR gfx::SubscribeInput(FUNCTION * Callback, OBJECTID SurfaceFilter, JTYPE Mask, OBJECTID DeviceFilter, INT * Handle)</prototype>
+    <tiriPrototype>err, Handle:num = SubscribeInput(Callback:func, SurfaceFilter:obj, Mask:num, DeviceFilter:obj)</tiriPrototype>
+    <tags>callback-held, does-not-take-ownership, blocking</tags>
     <input>
       <param type="FUNCTION *" name="Callback">Reference to a callback function that will receive input messages.</param>
       <param type="OBJECTID" name="SurfaceFilter">Optional.  Only the input messages that match the given <class name="Surface">Surface</class> ID will be received.</param>
@@ -761,8 +836,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
 }
 </pre>
 <p>All processable events are referenced in the <st>InputEvent</st> structure in the <code>Events</code> parameter.</p>
-<p>
-<code>JET</code> constants are as follows and take note of <code>CROSSED_IN</code> and <code>CROSSED_OUT</code> which are software generated and not a device event:</p>
+<p><code>JET</code> constants are as follows and take note of <code>CROSSED_IN</code> and <code>CROSSED_OUT</code> which are software generated and not a device event:</p>
 <types lookup="JET"/>
 <p>The <code>JTYPE</code> values for the <code>Flags</code> field are as follows.  Note that these flags also serve as input masks for the SubscribeInput() function, so to receive a message of the given type the appropriate <code>JTYPE</code> flag must have been set in the original subscription call.</p>
 <types lookup="JTYPE"/>
@@ -778,6 +852,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Bitmap</category>
     <comment>Waits for the completion of all active bitmap operations.</comment>
     <prototype>void gfx::Sync(objBitmap * Bitmap)</prototype>
+    <tiriPrototype>Sync(Bitmap:obj)</tiriPrototype>
+    <tags>blocking</tags>
     <input>
       <param type="objBitmap *" name="Bitmap">Pointer to the bitmap that you want to synchronise or <code>NULL</code> to sleep on the graphics accelerator.</param>
     </input>
@@ -791,6 +867,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Cursor</category>
     <comment>Undoes an earlier call to LockCursor()</comment>
     <prototype>ERR gfx::UnlockCursor(OBJECTID Surface)</prototype>
+    <tiriPrototype>err = UnlockCursor(Surface:obj)</tiriPrototype>
+    <tags>mutates-object, blocking</tags>
     <input>
       <param type="OBJECTID" name="Surface">Refers to the surface object used for calling LockCursor().</param>
     </input>
@@ -800,7 +878,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="ResourceNotLocked">The pointer is not anchored to the given Surface.</error>
-      <error code="AccessObject">Attempting to lock an object failed.</error>
+      <error code="AccessObject">Attempting to lock an object failed</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -810,6 +888,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Input</category>
     <comment>Removes an input subscription.</comment>
     <prototype>ERR gfx::UnsubscribeInput(INT Handle)</prototype>
+    <tiriPrototype>err = UnsubscribeInput(Handle:num)</tiriPrototype>
+    <tags>closes-handle, blocking</tags>
     <input>
       <param type="INT" name="Handle">Reference to a handle returned by <function>SubscribeInput</function>.</param>
     </input>
@@ -818,7 +898,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="NotFound">A search routine in this function failed.</error>
+      <error code="NotFound">A search routine in this function failed</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -828,6 +908,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <category>Surfaces</category>
     <comment>Adds a function hook for receiving window messages from a host desktop.</comment>
     <prototype>ERR gfx::WindowHook(OBJECTID SurfaceID, WH Event, FUNCTION * Callback)</prototype>
+    <tiriPrototype>err = WindowHook(SurfaceID:obj, Event:num, Callback:func)</tiriPrototype>
+    <tags>callback-held, does-not-take-ownership, blocking</tags>
     <input>
       <param type="OBJECTID" name="SurfaceID">A hosted surface to be monitored.</param>
       <param type="WH" name="Event" lookup="WH">A window hook event.</param>
@@ -848,17 +930,6 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <const name="VIDEO_BLIT">Video blitting is supported for this display.</const>
     </constants>
 
-    <constants lookup="ALIGN" comment="Universal values for alignment of graphics and text">
-      <const name="BOTTOM">Align to bottom</const>
-      <const name="CENTER">Synonym for <code>HORIZONTAL | VERTICAL</code></const>
-      <const name="HORIZONTAL">Align to horizontal center</const>
-      <const name="LEFT">Align to left</const>
-      <const name="MIDDLE">Synonym for <code>HORIZONTAL | VERTICAL</code></const>
-      <const name="RIGHT">Align to right</const>
-      <const name="TOP">Align to top</const>
-      <const name="VERTICAL">Align to vertical center</const>
-    </constants>
-
     <constants lookup="BAF" comment="Instructions for basic graphics operations.">
       <const name="BLEND">Enable alpha blending to the destination if the source supports an alpha channel.</const>
       <const name="COPY">Special <function module="Display">CopyArea</function> option that avoids blending when the destination pixel is empty.</const>
@@ -872,57 +943,6 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <const name="REDRAW">Redraw the surface before performing the copy operation.</const>
     </constants>
 
-    <constants lookup="BLM" comment="Defines the blending algorithm to use when transparent pixels are rendered to the bitmap.">
-      <const name="AUTO">Use the most suitable of the available algorithms.</const>
-      <const name="GAMMA">Use gamma correct blending.  This algorithm is slow but produces a high quality result.</const>
-      <const name="LINEAR">Use linear blending.  Applicable if the bitmap is in linear colour space.</const>
-      <const name="NONE">Never blend transparent pixels, just copy as-is.</const>
-      <const name="SRGB">Use sRGB linear blending.  This algorithm is extremely efficient but produces poor quality results.</const>
-    </constants>
-
-    <constants lookup="BMF" comment="Bitmap flags">
-      <const name="ACCELERATED_2D">2D video acceleration is available.</const>
-      <const name="ACCELERATED_3D">3D video acceleration is available.</const>
-      <const name="ALPHA_CHANNEL">For 32-bit images, indicates that an alpha channel is present.</const>
-      <const name="BLANK_PALETTE">Forces a blank/black palette on initialisation.</const>
-      <const name="CLEAR">Clear graphics on initialisation and when resizing.</const>
-      <const name="COMPRESSED">The bitmap data is compressed.</const>
-      <const name="FIXED_DEPTH">Prevent changing of bitmap depth after initialisation (e.g. via <code>Resize()</code>).</const>
-      <const name="INVERSE_ALPHA">Indicates reverse alpha blending, higher values are transparent.</const>
-      <const name="MASK">Declare the <class name="Bitmap">Bitmap</class> as a 1 or 8 bit mask.  Must be set in conjunction with the <class name="Bitmap" field="BitsPerPixel">Bitmap.BitsPerPixel</class> field on initialisation.</const>
-      <const name="NEVER_SHRINK">Ignore resize requests that would shrink the size of the bitmap.</const>
-      <const name="NO_DATA">Do not allocate memory in the Data field on initialisation.</const>
-      <const name="PREMUL">The RGB values are premultiplied (32-bit only).</const>
-      <const name="QUERIED">Automatically set after a <code>Query()</code> on the bitmap.</const>
-      <const name="TRANSPARENT">Indicates that the bitmap utilises a transparent colour.  This is automatically set if the <class name="Bitmap" field="TransIndex">Bitmap.TransIndex</class> or <class name="Bitmap" field="TransColour">Bitmap.TransColour</class> is defined, and support exists in functions such as <function module="Display">CopyArea</function>.</const>
-      <const name="USER">This user flag can be used to tag bitmaps with special meaning.  Not used internally.</const>
-    </constants>
-
-    <constants lookup="BMP" comment="Bitmap types">
-      <const name="CHUNKY">Chunky pixel mode (default).</const>
-      <const name="PLANAR">Planar pixel mode separates pixel bits across multiple planes.  Commonly used for single bit bitmap masks.</const>
-    </constants>
-
-    <constants lookup="CEF">
-      <const name="DELETE">Requests that the original file source is deleted if a successful paste operation takes place.</const>
-      <const name="EXTEND">Instead of replacing existing clipboard data, add the new data to the group.</const>
-    </constants>
-
-    <constants lookup="CLIPTYPE" comment="Clipboard types">
-      <const name="AUDIO">An audio clip that is recognised by the Sound class (such as wav's and mp3's).</const>
-      <const name="DATA">Raw information that is uncategorised can be defined as a data clip.</const>
-      <const name="FILE">Pure file references are stored as file clips.  This type is typically used by file managers for moving and copying files.</const>
-      <const name="IMAGE">Images that are recognised by the Picture class may be stored as this type (such as jpeg's and png files).</const>
-      <const name="OBJECT">An object that has been deserialised into binary form.</const>
-      <const name="TEXT">Plain text files such as ASCII and UTF-8 must be identified through this clip type.</const>
-    </constants>
-
-    <constants lookup="CPF" comment="Clipboard flags">
-      <const name="DRAG_DROP">Enables drag and drop mode.  The clipboard content will be private and not share data with the host system in this mode.</const>
-      <const name="HISTORY_BUFFER">Enables the history buffer.  Note that this results in active clipboard monitoring and the program will make copies of all potential clipboard content - whether it is used or not.</const>
-      <const name="HOST">This indicator is automatically set when a clipboard was created due to incoming content from the host system.</const>
-    </constants>
-
     <constants lookup="CRF" comment="Flags for the SetCursor() function.">
       <const name="BUFFER">Use of the <code>BUFFER</code> option allows the cursor request to be buffered in the event that the cursor is locked at the time of calling the <function module="Display">SetCursor</function> function.  Use of this flag is highly recommended in most circumstances, but may not be used in conjunction with the <code>ANCHOR</code> option.</const>
       <const name="LMB">Release the cursor after the left mouse button is held and released.</const>
@@ -930,13 +950,6 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <const name="NO_BUTTONS">Set the cursor only on the condition that the user is not holding down any buttons.  <code>ERR::NothingDone</code> is returned if the user has a button held down.</const>
       <const name="RESTRICT">Similar to the anchor option, but allows the pointer to move within the surface referred to by ObjectID.</const>
       <const name="RMB">Release the cursor after the right mouse button is held and released.</const>
-    </constants>
-
-    <constants lookup="CS" comment="Colour space options.">
-      <const name="CIE_LAB">Cartesian L*a*b* colour space defined by CIE 15.</const>
-      <const name="CIE_LCH">Polar L*CHab colour space defined by CIE 15.</const>
-      <const name="LINEAR_RGB">Linear RGB is used to improve colour balance in blending operations.</const>
-      <const name="SRGB">The default colour-space is sRGB.</const>
     </constants>
 
     <constants lookup="CSRF" comment="Flags for CopySurface().">
@@ -948,80 +961,12 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <const name="TRANSPARENT">Enable transparent copying, whereby colours matching the source's <code>Colour</code> field will be ignored.</const>
     </constants>
 
-    <constants lookup="CT">
-      <const name="AUDIO"/>
-      <const name="DATA"/>
-      <const name="END"/>
-      <const name="FILE"/>
-      <const name="IMAGE"/>
-      <const name="OBJECT"/>
-      <const name="TEXT"/>
-    </constants>
-
-    <constants lookup="DMF">
-      <const name="FIXED_CENTER_X">The CenterX field is a fixed size.</const>
-      <const name="FIXED_CENTER_Y">The CenterY field is a fixed size.</const>
-      <const name="FIXED_DEPTH">The Depth field is a fixed size.</const>
-      <const name="FIXED_HEIGHT">The Height field is a fixed size.</const>
-      <const name="FIXED_RADIUS_X">The RadiusX field is a fixed size.</const>
-      <const name="FIXED_RADIUS_Y">The RadiusY field is a fixed size.</const>
-      <const name="FIXED_WIDTH">The Width field is a fixed suze.</const>
-      <const name="FIXED_X">The X field is a fixed coordinate.</const>
-      <const name="FIXED_X_OFFSET">The XOffset field is a fixed coordinate.</const>
-      <const name="FIXED_Y">The Y field is a fixed coordinate.</const>
-      <const name="FIXED_Y_OFFSET">The YOffset field is a fixed coordinate.</const>
-      <const name="FIXED_Z">The Z field is a fixed coordinate.</const>
-      <const name="SCALED_CENTER_X">The CenterX field is scaled to this object's parent.</const>
-      <const name="SCALED_CENTER_Y">The CenterY field is scaled to this object's parent.</const>
-      <const name="SCALED_DEPTH">The Depth field is scaled to this object's parent.</const>
-      <const name="SCALED_HEIGHT">The Height field is scaled to this object's parent.</const>
-      <const name="SCALED_RADIUS_X">The RadiusX field is scaled to this object's parent.</const>
-      <const name="SCALED_RADIUS_Y">The RadiusY field is a scaled size to this object's parent.</const>
-      <const name="SCALED_WIDTH">The Width field is scaled to this object's parent.</const>
-      <const name="SCALED_X">The X field is scaled to this object's parent.</const>
-      <const name="SCALED_X_OFFSET">The XOffset field is scaled to this object's parent.</const>
-      <const name="SCALED_Y">The Y field is scaled to this object's parent.</const>
-      <const name="SCALED_Y_OFFSET">The YOffset field is scaled to this object's parent.</const>
-      <const name="SCALED_Z">The Z field is a scaled coordinate to this object's parent.</const>
-      <const name="STATUS_CHANGE_H"/>
-      <const name="STATUS_CHANGE_V"/>
-    </constants>
-
-    <constants lookup="DPMS" comment="Possible modes for the Display class' PowerMode field.">
-      <const name="DEFAULT">Use the default DPMS mode as defined by the display driver.</const>
-      <const name="OFF">Stop sending power to the display in order to turn it off (it may not be possible to restart the display without the user's intervention).</const>
-      <const name="STANDBY">Puts the display into standby (reduced power) mode.</const>
-      <const name="SUSPEND">Puts the display into suspend mode (blanks the display output while maintaining normal power levels).</const>
-    </constants>
-
-    <constants lookup="DRAG">
-      <const name="ANCHOR">The surface is being dragged and the mouse pointer is anchored to the surface.</const>
-      <const name="NONE">The surface is not being dragged.</const>
-      <const name="NORMAL">The surface is being dragged.</const>
-    </constants>
-
-    <constants lookup="DSF">
-      <const name="NO_DRAW">Drawing and exposures are disabled</const>
-      <const name="NO_EXPOSE">Drawing is enabled, exposures are disabled</const>
-    </constants>
-
-    <constants lookup="DT" comment="Flags for GetDisplayType().">
-      <const name="GLES">The display is driven by OpenGLES.</const>
-      <const name="NATIVE">The display is native (supported by internal drivers).</const>
-      <const name="WINGDI">The display is driven by Microsoft Windows drivers.</const>
-      <const name="X11">The display is driven by the X Window System (X11, X.Org, XFree86)</const>
-    </constants>
-
     <constants lookup="EXF" comment="Optional flags for the ExposeSurface() function.">
       <const name="ABSOLUTE">The supplied coordinates for exposure are absolute (relative to the display).</const>
       <const name="ABSOLUTE_COORDS">The supplied coordinates for exposure are absolute (relative to the display).</const>
       <const name="CHILDREN">If set, all child surfaces that intersect with exposed region will be included in the expose operation.</const>
       <const name="REDRAW_VOLATILE">Redraw every volatile object that intersects with the expose region, including internal volatile children.</const>
       <const name="REDRAW_VOLATILE_OVERLAP">Only redraw volatile objects that obscure the expose region from a position outside of the target surface and its children.  Useful if no redrawing has occurred in the surface, but the surface has moved to a new position and the parents need to be redrawn.</const>
-    </constants>
-
-    <constants lookup="GMF" comment="Flags for gamma operations.">
-      <const name="SAVE">Save the provided settings permanently.</const>
     </constants>
 
     <constants lookup="HOST">
@@ -1032,65 +977,42 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <const name="TRAY_ICON">All new displays are represented in the system tray when this option is active.</const>
     </constants>
 
-    <constants lookup="IRF" comment="Flags for RedrawSurface().">
-      <const name="FORCE_DRAW">Forces redrawing to the surface buffer (overrides visibility checks).</const>
-      <const name="IGNORE_CHILDREN">Do not draw child surfaces (this includes volatile children).</const>
-      <const name="IGNORE_NV_CHILDREN">Do not draw child surfaces unless they are volatile.</const>
-      <const name="RELATIVE">Coordinate parameters are expressed in relative format.  Right and Bottom reflect Width and Height respectively.</const>
-      <const name="SINGLE_BITMAP">Only draw children and/or siblings when they share our bitmap space.</const>
-    </constants>
-
     <constants lookup="JET" comment="JET constants are documented in GetInputEvent()">
-      <const name="ABS_XY">The X, Y values are defined as absolute coordinates, relative to the top-left of the display.</const>
-      <const name="BUTTON_1">Left mouse button; XBox A button, PS square button.  Value is pressure sensitive, ranging between 0 - 1.0 (0 is released, 1.0 is fully depressed).</const>
-      <const name="BUTTON_10">Non-specific button assignment.</const>
-      <const name="BUTTON_2">Right mouse button; XBox X button, PS cross button.</const>
-      <const name="BUTTON_3">Middle mouse button; XBox Y button, PS triangle.</const>
-      <const name="BUTTON_4">Alt. mouse button 1; XBox B button, PS circle.</const>
-      <const name="BUTTON_5">Alt. mouse button 2.</const>
-      <const name="BUTTON_6">Non-specific button assignment.</const>
-      <const name="BUTTON_7">Non-specific button assignment.</const>
-      <const name="BUTTON_8">Non-specific button assignment.</const>
-      <const name="BUTTON_9">Non-specific button assignment.</const>
-      <const name="CROSSED_IN">This message is sent by the input system when the mouse pointer enters an area for the first time.  The message value refers to the object ID of the container being monitored for movement.</const>
-      <const name="CROSSED_OUT">This message is sent by the input system when the mouse pointer leaves an area.  The message value refers to the object ID of the container being monitored for movement.</const>
+      <const name="ABS_XY">The X, Y values are defined as absolute coordinates, relative to the top-left of the display</const>
+      <const name="BUTTON_1">Left mouse button; XBox A button, PS square button.  Value is pressure sensitive, ranging between 0 - 1.0 (0 is released, 1.0 is fully depressed)</const>
+      <const name="BUTTON_10">Non-specific button assignment</const>
+      <const name="BUTTON_2">Right mouse button; XBox X button, PS cross button</const>
+      <const name="BUTTON_3">Middle mouse button; XBox Y button, PS triangle</const>
+      <const name="BUTTON_4">Alt. mouse button 1; XBox B button, PS circle</const>
+      <const name="BUTTON_5">Alt. mouse button 2</const>
+      <const name="BUTTON_6">Non-specific button assignment</const>
+      <const name="BUTTON_7">Non-specific button assignment</const>
+      <const name="BUTTON_8">Non-specific button assignment</const>
+      <const name="BUTTON_9">Non-specific button assignment</const>
+      <const name="CROSSED_IN">This message is sent by the input system when the mouse pointer enters an area for the first time.  The message value refers to the object ID of the container being monitored for movement</const>
+      <const name="CROSSED_OUT">This message is sent by the input system when the mouse pointer leaves an area.  The message value refers to the object ID of the container being monitored for movement</const>
       <const name="DEVICE_TILT_XY">Controller tilted on the X/Y axis.  Value indicates angle, -ve = left, +ve = right</const>
       <const name="DEVICE_TILT_Z">Controller is rising or falling.  Value expressed as 'speed',</const>
-      <const name="DISPLAY_EDGE">Recently supplied input occurred at the edge of the display.</const>
+      <const name="DISPLAY_EDGE">Recently supplied input occurred at the edge of the display</const>
       <const name="PEN_TILT_XY">Pen tilt angle.  0 is pointing down directly with nib at bottom, 0.5 is 90 degrees, 1.0 is inversed (eraser at bottom)</const>
       <const name="PRESSURE">Amount of pressure applied, ranges from 0 (none) to 1.0 (normal) and possibly higher if user presses hard enough</const>
-      <const name="WHEEL">Mouse wheel rotation - the value generally reflects the number of 'clicks' rotated on the wheel.</const>
+      <const name="WHEEL">Mouse wheel rotation - the value generally reflects the number of 'clicks' rotated on the wheel</const>
       <const name="WHEEL_TILT">Some mouse wheels can be tilted to the left or right.  Ranges from -1.0 to +1.0</const>
     </constants>
 
-    <constants lookup="JTYPE" comment="JTYPE flags are used to categorise input types.">
+    <constants lookup="JTYPE" comment="JTYPE flags are used to categorise input types">
       <const name="ANALOG">Analog movement (ranging from -1.0 to 1.0)</const>
       <const name="ANCHORED">Cursor has been anchored with LockCursor()</const>
       <const name="BUTTON">Input is a physical button or switch</const>
-      <const name="CROSSING">Crossing events manage the entering and leaving of an area.</const>
-      <const name="DBL_CLICK">Set by the input system if the <code>Type</code> is a button and the button has been clicked in quick succession so as to be classed as a double-click.</const>
+      <const name="CROSSING">Crossing events manage the entering and leaving of an area</const>
+      <const name="DBL_CLICK">Set by the input system if the <code>Type</code> is a button and the button has been clicked in quick succession so as to be classed as a double-click</const>
       <const name="DIGITAL">D-Pad or digital joystick source (restricted to +/- 1)</const>
-      <const name="DRAGGED">Set if sufficient movement occurred between the original click and its point of release (usually requires a 3 or more pixel difference).</const>
-      <const name="DRAG_ITEM">This special flag is set by the input system if the pointer is click-dragging an object at the time of the event.</const>
-      <const name="EXT_MOVEMENT">Extended or indirect movement information.  This covers all types of movement that are unconnected to coordinate positioning -  mouse wheel movement and pen tilt are two such examples.</const>
-      <const name="MOVEMENT">X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system.</const>
+      <const name="DRAGGED">Set if sufficient movement occurred between the original click and its point of release (usually requires a 3 or more pixel difference)</const>
+      <const name="DRAG_ITEM">This special flag is set by the input system if the pointer is click-dragging an object at the time of the event</const>
+      <const name="EXT_MOVEMENT">Extended or indirect movement information.  This covers all types of movement that are unconnected to coordinate positioning -  mouse wheel movement and pen tilt are two such examples</const>
+      <const name="MOVEMENT">X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system</const>
       <const name="REPEATED">Input is a repeated entry (i.e. user is holding down a button and a repetition timer is being triggered)</const>
       <const name="SECONDARY">Indicates to the receiver of this message that it is not the primary/original recipient</const>
-    </constants>
-
-    <constants lookup="LVF" comment="drwLockBitmap() result flags">
-      <const name="EXPOSE_CHANGES"/>
-    </constants>
-
-    <constants lookup="MON" comment="Flags for the Display class SetMonitor() method.">
-      <const name="AUTO_DETECT">Monitor settings to be auto-detected on startup.</const>
-      <const name="BIT_6">The device is limited to 6-bit colour production in real terms.</const>
-    </constants>
-
-    <constants lookup="PF" comment="Flags for the Pointer class.">
-      <const name="ANCHOR">Allow the pointer to be anchored.</const>
-      <const name="UNUSED"/>
-      <const name="VISIBLE">Indicates that the pointer is currently visible.  Read-only.</const>
     </constants>
 
     <constants lookup="PTC" comment="Predefined cursor styles">
@@ -1155,11 +1077,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <const name="WRITE_ONLY">Set this flag if you would like the surface object's data to be managed in video memory only.  While this can give some speed advantages, be warned that video based surfaces are limited to write-only operations.</const>
     </constants>
 
-    <constants lookup="RT">
-      <const name="ROOT">Can be used by window surfaces to identify themselves as a root layer.</const>
-    </constants>
-
     <constants lookup="SCR" comment="Display flags.">
+      <const name="ACTIVE">The display is participating in the desktop view - this does not guarantee it is visible.</const>
       <const name="ALPHA_BLEND">Enables alpha channel blending (if display is hosted and 32-bit).</const>
       <const name="AUTO_SAVE">Saves settings to the global display state when the object is freed.</const>
       <const name="BIT_6">Display is limited to 6-bit output per colour gun.</const>
@@ -1174,18 +1093,15 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <const name="HOSTED">The display is a desktop hosted window.</const>
       <const name="MAXIMISE">Special win32 flag.</const>
       <const name="MAXSIZE">For <function module="Display">GetDisplayInfo</function> only, indicates that the width and height values indicate the display's maximum size.</const>
+      <const name="MIRRORED">The display is a mirrored copy.</const>
       <const name="NO_ACCELERATION">2D graphics card acceleration is not available.</const>
       <const name="POWERSAVE">Power saving is active (read-only).</const>
+      <const name="PRIMARY">The display is flagged as being the primary.</const>
       <const name="READ_ONLY">Synonym for <code>MAXIMISE | CUSTOM_WINDOW | FLIPPABLE | GTF_ENABLED | DPMS_ENABLED | POWERSAVE | HOSTED | MAXSIZE | REFRESH | BIT_6 | VISIBLE | NO_ACCELERATION</code></const>
       <const name="REFRESH">For <function module="Display">GetDisplayInfo</function> only, used to indicate that a display change has recently occurred and cache refresh is required.</const>
+      <const name="ROTATED">True if the display is rotated.</const>
+      <const name="VIRTUAL">The display is virtual or not visible (device not switched on).</const>
       <const name="VISIBLE">Set if the screen is on display.</const>
-    </constants>
-
-    <constants lookup="SWIN" comment="Options for the Surface WindowType field.">
-      <const name="HOST">Default to the standard hosted window mode with full titlebar, borders and taskbar representation.</const>
-      <const name="ICON_TRAY">Create a borderless (custom) window with icon tray representation.</const>
-      <const name="NONE">Create a borderless (custom) window with no UI representation.</const>
-      <const name="TASKBAR">Create a borderless (custom) window with taskbar representation.</const>
     </constants>
 
     <constants lookup="WH" comment="Events for WindowHook()">
@@ -1233,22 +1149,34 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <field name="BitsPerPixel" type="INT16">Preferred bits-per-pixel setting for custom cursors</field>
     </struct>
 
-    <struct name="DisplayInfo" typeName="DISPLAYINFO">
-      <field name="Display" type="OBJECTID">Object ID related to the display</field>
-      <field name="Flags" type="SCR" lookup="SCR">Display flags</field>
-      <field name="Width" type="INT16">Pixel width of the display</field>
-      <field name="Height" type="INT16">Pixel height of the display</field>
-      <field name="BitsPerPixel" type="INT16">Bits per pixel</field>
-      <field name="BytesPerPixel" type="INT16">Bytes per pixel</field>
-      <field name="AccelFlags" type="ACF" lookup="ACF">Flags describing supported hardware features.</field>
-      <field name="AmtColours" type="INT">Total number of supported colours.</field>
+    <struct name="DisplayInfo">
       <field name="PixelFormat" type="struct PixelFormat">The colour format to use for each pixel.</field>
       <field name="MinRefresh" type="FLOAT">Minimum refresh rate</field>
       <field name="MaxRefresh" type="FLOAT">Maximum refresh rate</field>
       <field name="RefreshRate" type="FLOAT">Recommended refresh rate</field>
+      <field name="Display" type="OBJECTID">Object ID related to the display</field>
+      <field name="AccelFlags" type="ACF" lookup="ACF">Flags describing supported hardware features.</field>
+      <field name="Flags" type="SCR" lookup="SCR">Display flags</field>
+      <field name="AmtColours" type="INT">Total number of supported colours.</field>
       <field name="Index" type="INT">Display mode ID (internal)</field>
       <field name="HDensity" type="INT">Horizontal pixel density per inch.</field>
       <field name="VDensity" type="INT">Vertical pixel density per inch.</field>
+      <field name="HostedX" type="INT">Horizontal display position in virtual desktop coordinates</field>
+      <field name="HostedY" type="INT">Vertical display position in virtual desktop coordinates</field>
+      <field name="MonitorX" type="INT">Horizontal position of the monitor, relative to the primary monitor</field>
+      <field name="MonitorY" type="INT">Vertical position of the monitor, relative to the primary monitor</field>
+      <field name="MonitorWidth" type="INT">Pixel width of the monitor</field>
+      <field name="MonitorHeight" type="INT">Pixel height of the monitor</field>
+      <field name="VirtualX" type="INT">Horizontal position of the complete desktop spanning all monitors</field>
+      <field name="VirtualY" type="INT">Vertical position of the complete desktop spanning all monitors</field>
+      <field name="VirtualWidth" type="INT">Width of the complete desktop spanning all monitors</field>
+      <field name="VirtualHeight" type="INT">Height of the complete desktop spanning all monitors</field>
+      <field name="PhysicalWidth" type="INT">Width in millimeters, 0 if unknown</field>
+      <field name="PhysicalHeight" type="INT">Height in millimeters, 0 if unknown</field>
+      <field name="Width" type="INT16">Pixel width of the display bitmap</field>
+      <field name="Height" type="INT16">Pixel height of the display bitmap</field>
+      <field name="BitsPerPixel" type="INT16">Bits per pixel</field>
+      <field name="BytesPerPixel" type="INT16">Bytes per pixel</field>
     </struct>
 
     <struct name="InputEvent">
@@ -1280,6 +1208,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <field name="GreenPos" type="UINT8">Left shift/positional value for green</field>
       <field name="BluePos" type="UINT8">Left shift/positional value for blue</field>
       <field name="AlphaPos" type="UINT8">Left shift/positional value for alpha</field>
+      <field name="Pad" type="UINT">Padding</field>
     </struct>
 
     <struct name="SurfaceCoords">

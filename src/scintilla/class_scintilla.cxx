@@ -100,6 +100,7 @@ capabilities.
 #include <kotuku/modules/font.h>
 #include <kotuku/modules/display.h>
 #include <kotuku/modules/font.h>
+#include <kotuku/modules/tiri.h>
 #include <kotuku/modules/vector.h>
 #include <kotuku/strings.hpp>
 
@@ -167,14 +168,13 @@ static const struct {
 
 static ERR GET_AllowTabs(extScintilla *, int *);
 static ERR GET_AutoIndent(extScintilla *, int *);
-static ERR GET_FileDrop(extScintilla *, FUNCTION **);
+static ERR GET_FileDrop(extScintilla *, FUNCTION * &);
 static ERR GET_FoldingMarkers(extScintilla *, int *);
 static ERR GET_LineCount(extScintilla *, int *);
 static ERR GET_LineNumbers(extScintilla *, int *);
-static ERR GET_Path(extScintilla *, CSTRING *);
 static ERR GET_ShowWhitespace(extScintilla *, int *);
-static ERR GET_EventCallback(extScintilla *, FUNCTION **);
-static ERR GET_String(extScintilla *, STRING *);
+static ERR GET_EventCallback(extScintilla *, FUNCTION * &);
+static ERR GET_String(extScintilla *, std::string_view &);
 static ERR GET_Symbols(extScintilla *, int *);
 static ERR GET_TabWidth(extScintilla *, int *);
 static ERR GET_Wordwrap(extScintilla *, int *);
@@ -189,15 +189,15 @@ static ERR SET_LeftMargin(extScintilla *, int);
 static ERR SET_Lexer(extScintilla *, SCLEX);
 static ERR SET_LineHighlight(extScintilla *, RGB8 *);
 static ERR SET_LineNumbers(extScintilla *, int);
-static ERR SET_Path(extScintilla *, CSTRING);
+static ERR SET_Path(extScintilla *, const std::string_view &);
 static ERR SET_Modified(extScintilla *, int);
-static ERR SET_Origin(extScintilla *, CSTRING);
+static ERR SET_Origin(extScintilla *, const std::string_view &);
 static ERR SET_RightMargin(extScintilla *, int);
 static ERR SET_ShowWhitespace(extScintilla *, int);
 static ERR SET_EventCallback(extScintilla *, FUNCTION *);
 static ERR SET_SelectBkgd(extScintilla *, RGB8 *);
 static ERR SET_SelectFore(extScintilla *, RGB8 *);
-static ERR SET_String(extScintilla *, CSTRING);
+static ERR SET_String(extScintilla *, const std::string_view &);
 static ERR SET_Symbols(extScintilla *, int);
 static ERR SET_TabWidth(extScintilla *, int);
 static ERR SET_TextColour(extScintilla *, RGB8 *);
@@ -209,7 +209,7 @@ static ERR consume_input_events(const InputEvent *, int);
 static void create_styled_fonts(extScintilla *);
 static ERR create_scintilla(void);
 static void draw_scintilla(extScintilla *, objSurface *, objBitmap *);
-static ERR load_file(extScintilla *, CSTRING);
+static ERR load_file(extScintilla *, std::string_view);
 static void calc_longest_line(extScintilla *);
 static void key_event(evKey *, int, extScintilla *);
 static void report_event(extScintilla *, SEF Event);
@@ -218,10 +218,10 @@ extern ERR init_search(void);
 
 //********************************************************************************************************************
 
-static bool read_rgb8(CSTRING Value, RGB8 *RGB)
+static bool read_rgb8(std::string_view Value, RGB8 *RGB)
 {
    VectorPainter painter;
-   if (vec::ReadPainter(nullptr, Value, &painter, nullptr) IS ERR::Okay) {
+   if (!vec::ReadPainter(nullptr, Value, &painter, nullptr)) {
       RGB->Red   = int(painter.Colour.Red   * 255.0);
       RGB->Green = int(painter.Colour.Green * 255.0);
       RGB->Blue  = int(painter.Colour.Blue  * 255.0);
@@ -242,14 +242,14 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    if (objModule::load("vector", &modVector, &VectorBase) != ERR::Okay) return ERR::InitModule;
 
    OBJECTID id;
-   if (FindObject("glStyle", CLASSID::XML, FOF::NIL, &id) IS ERR::Okay) {
-      char buffer[40];
-      if (acGetKey(GetObjectPtr(id), "/colours/@texthighlight", buffer, sizeof(buffer)) IS ERR::Okay) {
+   if (!FindObject("glStyle", CLASSID::XML, &id)) {
+      std::string buffer;
+      if (!acGetKey(GetObjectPtr(id), "/colours/@texthighlight", buffer)) {
          read_rgb8(buffer, &glHighlight);
       }
    }
 
-   if (init_search() IS ERR::Okay) {
+   if (!init_search()) {
       return create_scintilla();
    }
    else return ERR::AddClass;
@@ -287,12 +287,8 @@ static void notify_dragdrop(OBJECTPTR Object, ACTIONID ActionID, ERR Result, str
    request.Preference[1] = int8_t(DATA::TEXT);
    request.Preference[2] = 0;
 
-   struct acDataFeed dc;
-   dc.Object   = Self;
-   dc.Datatype = DATA::REQUEST;
-   dc.Buffer   = &request;
-   dc.Size     = sizeof(request);
-   if (Action(AC::DataFeed, Args->Source, &dc) IS ERR::Okay) {
+   if (!acDataFeed(Args->Source, Self, DATA::REQUEST,
+         std::span<const int8_t>((const int8_t *)&request, sizeof(request)))) {
       // The source will return a DATA::RECEIPT for the items that we've asked for (see the DataFeed action).
    }
 }
@@ -301,7 +297,7 @@ static void notify_dragdrop(OBJECTPTR Object, ACTIONID ActionID, ERR Result, str
 
 static void notify_focus(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    auto Self = (extScintilla *)CurrentContext();
 
    if (Result != ERR::Okay) return;
@@ -318,13 +314,6 @@ static void notify_focus(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR A
 
 //********************************************************************************************************************
 
-static void notify_free_event(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   ((extScintilla *)CurrentContext())->EventCallback.clear();
-}
-
-//********************************************************************************************************************
-
 static void notify_hide(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
    // Parent surface has been hidden
@@ -335,7 +324,7 @@ static void notify_hide(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Ar
 
 static void notify_lostfocus(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.branch();
 
    auto Self = (extScintilla *)CurrentContext();
@@ -375,7 +364,7 @@ static void notify_redimension(OBJECTPTR Object, ACTIONID ActionID, ERR Result, 
 
 static void notify_write(OBJECTPTR Object, ACTIONID ActionID, ERR Result, struct acWrite *Args)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    auto Self = (extScintilla *)CurrentContext();
 
    if (!Args) return;
@@ -392,7 +381,8 @@ static void notify_write(OBJECTPTR Object, ACTIONID ActionID, ERR Result, struct
    SCICALL(SCI_SETUNDOCOLLECTION, 0UL); // Turn off undo
 
    if (Args->Buffer) {
-      acDataFeed(Self, Self, DATA::TEXT, Args->Buffer, Args->Result);
+      acDataFeed(Self, Self, DATA::TEXT,
+         std::span<const int8_t>((const int8_t *)Args->Buffer, size_t(Args->Result)));
    }
    else { // We have to read the data from the file stream
    }
@@ -410,7 +400,7 @@ Clear: Clears all content from the editor.
 
 static ERR SCINTILLA_Clear(extScintilla *Self)
 {
-   pf::Log log;
+   kt::Log log;
 
    log.branch();
 
@@ -428,7 +418,7 @@ Clipboard: Full support for clipboard activity is provided through this action.
 
 static ERR SCINTILLA_Clipboard(extScintilla *Self, struct acClipboard *Args)
 {
-   pf::Log log;
+   kt::Log log;
 
    if ((!Args) or (Args->Mode IS CLIPMODE::NIL)) return log.warning(ERR::NullArgs);
 
@@ -451,24 +441,19 @@ static ERR SCINTILLA_Clipboard(extScintilla *Self, struct acClipboard *Args)
 
 static ERR SCINTILLA_DataFeed(extScintilla *Self, struct acDataFeed *Args)
 {
-   pf::Log log;
+   kt::Log log;
 
    if (!Args) return log.warning(ERR::NullArgs);
 
    if (Args->Datatype IS DATA::TEXT) {
-      CSTRING str;
-
       // Incoming text is appended to the end of the document
-
-      if (!Args->Buffer) str = "";
-      else str = (CSTRING)Args->Buffer;
-
-      SCICALL(SCI_APPENDTEXT, strlen(str), str);
+      SCICALL(SCI_APPENDTEXT, Args->Buffer.size(), (const char *)Args->Buffer.data());
    }
    else if (Args->Datatype IS DATA::RECEIPT) {
       log.msg("Received item receipt from object %d.", Args->Object ? Args->Object->UID : 0);
 
-      objXML::create xml = { fl::Statement((CSTRING)Args->Buffer) };
+      objXML::create xml = { fl::Statement(
+         std::string_view((const char *)Args->Buffer.data(), Args->Buffer.size())) };
       if (xml.ok()) {
          for (auto &tag : xml->Tags) {
             if (iequals("file", tag.name())) {
@@ -477,7 +462,7 @@ static ERR SCINTILLA_DataFeed(extScintilla *Self, struct acDataFeed *Args)
                for (auto &a : tag.Attribs) {
                   if (iequals("path", a.Name)) {
                      if (Self->FileDrop.isC()) {
-                        pf::SwitchContext ctx(Self->FileDrop.Context);
+                        kt::SwitchContext ctx(Self->FileDrop.Context);
                         auto routine = (void (*)(extScintilla *, CSTRING, APTR))Self->FileDrop.Routine;
                         routine(Self, a.Value.c_str(), Self->FileDrop.Meta);
                      }
@@ -528,7 +513,7 @@ Okay
 
 static ERR SCINTILLA_DeleteLine(extScintilla *Self, struct sci::DeleteLine *Args)
 {
-   pf::Log log;
+   kt::Log log;
    int line, pos, start, end, linecount;
 
    linecount = SCICALL(SCI_GETLINECOUNT);
@@ -585,7 +570,7 @@ Draw: Draws the Scintilla object's graphics.
 
 static ERR SCINTILLA_Draw(extScintilla *Self, struct acDraw *Args)
 {
-   pf::ScopedObjectLock surface(Self->SurfaceID);
+   kt::ScopedObjectLock surface(Self->SurfaceID);
    if (surface.granted()) Action(AC::Draw, *surface, Args);
    return ERR::Okay;
 }
@@ -611,53 +596,9 @@ Focus: Focus on the Scintilla surface.
 
 static ERR SCINTILLA_Focus(extScintilla *Self)
 {
-   pf::ScopedObjectLock surface(Self->SurfaceID);
+   kt::ScopedObjectLock surface(Self->SurfaceID);
    if (surface.granted()) return acFocus(*surface);
    else return ERR::AccessObject;
-}
-
-//********************************************************************************************************************
-
-static ERR SCINTILLA_Free(extScintilla *Self, APTR)
-{
-   pf::Log log;
-
-   delete Self->API;
-   Self->API = nullptr;
-
-   if (Self->TimerID) { UpdateTimer(Self->TimerID, 0); Self->TimerID = 0; }
-
-   if ((Self->FocusID) and (Self->FocusID != Self->SurfaceID)) {
-
-      if (pf::ScopedObjectLock object(Self->FocusID, 500); object.granted()) {
-         UnsubscribeAction(*object, AC::NIL);
-      }
-   }
-
-   if (Self->SurfaceID) {
-      if (pf::ScopedObjectLock<objSurface> object(Self->SurfaceID, 500); object.granted()) {
-         object->removeCallback(C_FUNCTION(&draw_scintilla));
-         UnsubscribeAction(*object, AC::NIL);
-      }
-   }
-
-   /*if (Self->PointerLocked) {
-      RestoreCursor(PTR_DEFAULT, Self->UID);
-      Self->PointerLocked = FALSE;
-   }*/
-
-   if (Self->prvKeyEvent)  { UnsubscribeEvent(Self->prvKeyEvent); Self->prvKeyEvent = nullptr; }
-   if (Self->FileStream)   { FreeResource(Self->FileStream); Self->FileStream = nullptr; }
-   if (Self->Path)         { FreeResource(Self->Path);  Self->Path = nullptr; }
-   if (Self->StringBuffer) { FreeResource(Self->StringBuffer); Self->StringBuffer = nullptr; }
-   if (Self->Font)         { FreeResource(Self->Font);       Self->Font = nullptr; }
-   if (Self->BoldFont)     { FreeResource(Self->BoldFont);   Self->BoldFont = nullptr; }
-   if (Self->ItalicFont)   { FreeResource(Self->ItalicFont); Self->ItalicFont = nullptr; }
-   if (Self->BIFont)       { FreeResource(Self->BIFont);     Self->BIFont = nullptr; }
-
-   gfx::UnsubscribeInput(Self->InputHandle);
-
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -665,13 +606,12 @@ static ERR SCINTILLA_Free(extScintilla *Self, APTR)
 -METHOD-
 GetLine: Copies the text content of any line to a user-supplied buffer.
 
-This method will retrieve the string for a `Line` at a given index.  The string is copied to a user supplied
-`Buffer` of the indicated `Length` (in bytes).
+This method retrieves the string for a `Line` at a given index.  The string is copied to the supplied `Buffer`, which
+must have enough space for the line content and a terminating null byte.
 
 -INPUT-
 int Line: The index of the line to retrieve.
-buf(str) Buffer: The destination buffer.
-bufsize Length: The byte size of the `Buffer`.
+^array(char) Buffer: The destination buffer.
 
 -RESULT-
 Okay:
@@ -683,14 +623,15 @@ BufferOverflow: The supplied `Buffer` is not large enough to contain the result.
 
 static ERR SCINTILLA_GetLine(extScintilla *Self, struct sci::GetLine *Args)
 {
-   pf::Log log;
+   kt::Log log;
 
-   if ((!Args) or (!Args->Buffer)) return log.warning(ERR::NullArgs);
-   if ((Args->Line < 0) or (Args->Length < 1)) return log.warning(ERR::OutOfRange);
+   if ((!Args) or (not Args->Buffer.data())) return log.warning(ERR::NullArgs);
+   if ((Args->Line < 0) or Args->Buffer.empty()) return log.warning(ERR::OutOfRange);
 
-   int len = SCICALL(SCI_LINELENGTH, Args->Line); // Returns the length of the line (in bytes) including line-end characters (NB: there could be more than one line-end character!)
-   if (Args->Length > len) {
-      SCICALL(SCI_GETLINE, Args->Line, Args->Buffer);
+   // Includes line-end characters, of which there may be more than one.
+   int len = SCICALL(SCI_LINELENGTH, Args->Line);
+   if (std::ssize(Args->Buffer) > len) {
+      SCICALL(SCI_GETLINE, Args->Line, (const char *)Args->Buffer.data());
       Args->Buffer[len] = 0;
       return ERR::Okay;
    }
@@ -743,7 +684,7 @@ OutOfRange: The Line is less than zero.
 
 static ERR SCINTILLA_GotoLine(extScintilla *Self, struct sci::GotoLine *Args)
 {
-   pf::Log log;
+   kt::Log log;
 
    if (!Args) return log.warning(ERR::NullArgs);
    if (Args->Line < 0) return ERR::OutOfRange;
@@ -758,7 +699,7 @@ static ERR SCINTILLA_GotoLine(extScintilla *Self, struct sci::GotoLine *Args)
 static ERR SCINTILLA_Hide(extScintilla *Self)
 {
    if (Self->Visible) {
-      pf::Log log;
+      kt::Log log;
 
       log.branch();
 
@@ -773,7 +714,7 @@ static ERR SCINTILLA_Hide(extScintilla *Self)
 
 static ERR SCINTILLA_Init(extScintilla *Self, APTR)
 {
-   pf::Log log;
+   kt::Log log;
 
    if (!Self->SurfaceID) return log.warning(ERR::UnsupportedOwner);
 
@@ -781,7 +722,7 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
 
    // Subscribe to the object responsible for the user focus
 
-   if (pf::ScopedObjectLock object(Self->FocusID, 5000); object.granted()) {
+   if (kt::ScopedObjectLock object(Self->FocusID, 5000); object.granted()) {
       SubscribeAction(*object, AC::Focus, C_FUNCTION(notify_focus));
       SubscribeAction(*object, AC::LostFocus, C_FUNCTION(notify_lostfocus));
    }
@@ -790,7 +731,7 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
 
    log.trace("Configure target surface #%d", Self->SurfaceID);
 
-   if (pf::ScopedObjectLock<objSurface> surface(Self->SurfaceID, 3000); surface.granted()) {
+   if (kt::ScopedObjectLock<objSurface> surface(Self->SurfaceID, 3000); surface.granted()) {
       surface->setFlags(surface->Flags|RNF::GRAB_FOCUS);
 
       Self->Surface.X = surface->X;
@@ -835,7 +776,7 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
 
    // Load a text file if required
 
-   if (Self->Path) {
+   if (not Self->Path.empty()) {
       if (load_file(Self, Self->Path) != ERR::Okay) {
          return ERR::File;
       }
@@ -944,7 +885,7 @@ positions are also supported as an alternative - a value of -1 inserts the text 
 value of -2 replaces currently selected text.
 
 -INPUT-
-cstr String: A text string to add.
+strview String: A text string to add.
 int Pos: -1 inserts at the current cursor position, -2 replaces currently selected text, zero or above inserts at the character index indicated.
 
 -RESULT-
@@ -956,12 +897,12 @@ OutOfRange
 
 static ERR SCINTILLA_InsertText(extScintilla *Self, struct sci::InsertText *Args)
 {
-   pf::Log log;
+   kt::Log log;
    int pos;
 
-   if ((!Args) or (!Args->String)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (Args->String.empty())) return log.warning(ERR::NullArgs);
 
-   log.branch("Pos: %d, Text: %.10s", Args->Pos, Args->String);
+   log.branch("Pos: %d, Text: %.*s", Args->Pos, std::min<int>(Args->String.size(), 10), Args->String.data());
 
    pos = Args->Pos;
    if (pos IS -1) {
@@ -972,7 +913,7 @@ static ERR SCINTILLA_InsertText(extScintilla *Self, struct sci::InsertText *Args
       // Replace currently selected text
 
       SCICALL(SCI_BEGINUNDOACTION);
-      SCICALL(SCI_REPLACESEL, 0UL, Args->String);
+      SCICALL(SCI_REPLACESEL, 0UL, Args->String.data());
       SCICALL(SCI_ENDUNDOACTION);
       return ERR::Okay;
    }
@@ -981,65 +922,8 @@ static ERR SCINTILLA_InsertText(extScintilla *Self, struct sci::InsertText *Args
    }
 
    SCICALL(SCI_BEGINUNDOACTION);
-   SCICALL(SCI_INSERTTEXT, pos, Args->String);
+   SCICALL(SCI_INSERTTEXT, pos, Args->String.data());
    SCICALL(SCI_ENDUNDOACTION);
-   return ERR::Okay;
-}
-
-//*****************************************************************************
-
-static ERR SCINTILLA_NewObject(extScintilla *Self, APTR)
-{
-   if (NewLocalObject(CLASSID::FONT, (OBJECTPTR *)&Self->Font) IS ERR::Okay) {
-      Self->Font->setFace("courier:10");
-      Self->LeftMargin  = 4;
-      Self->RightMargin = 30;
-      Self->AutoIndent  = TRUE;
-      Self->TabWidth    = 8;
-      Self->AllowTabs   = FALSE;
-
-      Self->BkgdColour.Red   = 255;
-      Self->BkgdColour.Green = 255;
-      Self->BkgdColour.Blue  = 255;
-      Self->BkgdColour.Alpha = 255;
-
-      Self->LineHighlight.Red   = 240;
-      Self->LineHighlight.Green = 240;
-      Self->LineHighlight.Blue  = 255;
-      Self->LineHighlight.Alpha = 255;
-
-      Self->CursorColour.Red   = 0;
-      Self->CursorColour.Green = 0;
-      Self->CursorColour.Blue  = 0;
-      Self->CursorColour.Alpha = 255;
-
-      Self->SelectFore.Red   = 255;
-      Self->SelectFore.Green = 255;
-      Self->SelectFore.Blue  = 255;
-      Self->SelectFore.Alpha = 255;
-
-      Self->SelectBkgd.Red   = 0;
-      Self->SelectBkgd.Green = 0;
-      Self->SelectBkgd.Blue  = 180;
-      Self->SelectBkgd.Alpha = 255;
-   }
-   else return ERR::NewObject;
-
-   return ERR::Okay;
-}
-
-//*****************************************************************************
-
-static ERR SCINTILLA_NewOwner(extScintilla *Self, struct acNewOwner *Args)
-{
-   if (!Self->initialised()) {
-      auto obj = Args->NewOwner;
-      while ((obj) and (obj->classID() != CLASSID::SURFACE)) {
-         obj = obj->Owner;
-      }
-      if (obj) Self->SurfaceID = obj->UID;
-   }
-
    return ERR::Okay;
 }
 
@@ -1051,7 +935,7 @@ Redo: Redo the most recently undone activity.
 
 static ERR SCINTILLA_Redo(extScintilla *Self, struct acRedo *Args)
 {
-   pf::Log log;
+   kt::Log log;
 
    log.branch();
 
@@ -1070,7 +954,7 @@ source string by setting the Length parameter.  To insert all characters from th
 
 -INPUT-
 int Line: Index of the line being targeted.
-cstr String: The new string that will replace the line.
+strview String: The new string that will replace the line.
 int Length: The number of characters to replace the target with, or -1 for the entire source string.
 
 -RESULT-
@@ -1082,7 +966,7 @@ OutOfRange: The line index is less than zero or greater than the available numbe
 
 static ERR SCINTILLA_ReplaceLine(extScintilla *Self, struct sci::ReplaceLine *Args)
 {
-   pf::Log log;
+   kt::Log log;
 
    if (!Args) return ERR::NullArgs;
    if (Args->Line < 0) return log.warning(ERR::OutOfRange);
@@ -1097,7 +981,7 @@ static ERR SCINTILLA_ReplaceLine(extScintilla *Self, struct sci::ReplaceLine *Ar
 
    // Replace the targeted text
 
-   SCICALL(SCI_REPLACETARGET, Args->Length, Args->String);
+   SCICALL(SCI_REPLACETARGET, Args->Length, Args->String.data());
 
    return ERR::Okay;
 }
@@ -1112,8 +996,8 @@ given Start and End point.  The `STF::CASE`, `STF::SCAN_SELECTION` and `STF::EXP
 this method (see FindText for details).
 
 -INPUT-
-cstr Find: The keyword string to find.
-cstr Replace: The string that will replace the keyword.
+strview Find: The keyword string to find.
+strview Replace: The string that will replace the keyword.
 int(STF) Flags: Optional flags.
 int Start: The start of the search - set to zero if covering the entire document.  If -1, starts from the current cursor position.
 int End: The end of the search - set to -1 if covering the entire document.
@@ -1127,10 +1011,10 @@ Search: The keyword could not be found.
 
 static ERR SCINTILLA_ReplaceText(extScintilla *Self, struct sci::ReplaceText *Args)
 {
-   pf::Log log;
+   kt::Log log;
    int start, end;
 
-   if ((!Args) or (!Args->Find) or (!*Args->Find)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (Args->Find.empty())) return log.warning(ERR::NullArgs);
 
    log.branch("Text: '%.10s'... Between: %d - %d, Flags: $%.8x", Args->Find, Args->Start, Args->End, int(Args->Flags));
 
@@ -1150,15 +1034,13 @@ static ERR SCINTILLA_ReplaceText(extScintilla *Self, struct sci::ReplaceText *Ar
       if (start IS end) return ERR::Search;
    }
 
-   CSTRING replace;
-   if (!Args->Replace) replace = "";
-   else replace = Args->Replace;
+   std::string_view replace = Args->Replace;
 
    SCICALL(SCI_SETTARGETSTART, start);
    SCICALL(SCI_SETTARGETEND, end);
 
-   int findlen = strlen(Args->Find);
-   int replacelen = strlen(replace);
+   int findlen = Args->Find.size();
+   int replacelen = Args->Replace.size();
 
    int flags = (((Args->Flags & STF::CASE) != STF::NIL) ? SCFIND_MATCHCASE : 0) |
                 (((Args->Flags & STF::EXPRESSION) != STF::NIL) ? SCFIND_REGEXP : 0);
@@ -1174,7 +1056,7 @@ static ERR SCINTILLA_ReplaceText(extScintilla *Self, struct sci::ReplaceText *Ar
       SCICALL(SCI_SETTARGETSTART, start);
       SCICALL(SCI_SETTARGETEND, end);
 
-      pos = SCICALL(SCI_SEARCHINTARGET, findlen, (char *)Args->Find);
+      pos = SCICALL(SCI_SEARCHINTARGET, findlen, (char *)Args->Find.data());
 
       if (pos != -1) {
          log.trace("Found keyword at %d", pos);
@@ -1184,11 +1066,11 @@ static ERR SCINTILLA_ReplaceText(extScintilla *Self, struct sci::ReplaceText *Ar
          // Do the replace
 
          if ((Args->Flags & STF::EXPRESSION) != STF::NIL) {
-            int len = SCICALL(SCI_REPLACETARGETRE, (long unsigned int)-1, replace);
+            int len = SCICALL(SCI_REPLACETARGETRE, (long unsigned int)-1, replace.data());
             end = end + (len - findlen);
          }
          else {
-            SCICALL(SCI_REPLACETARGET, (uint32_t)-1, replace);
+            SCICALL(SCI_REPLACETARGET, (uint32_t)-1, replace.data());
             end = end + (replacelen - findlen);
          }
       }
@@ -1225,7 +1107,7 @@ SaveToObject: Save content as a text stream to another object.
 
 static ERR SCINTILLA_SaveToObject(extScintilla *Self, struct acSaveToObject *Args)
 {
-   pf::Log log;
+   kt::Log log;
 
    if ((!Args) or (!Args->Dest)) return log.warning(ERR::NullArgs);
 
@@ -1233,16 +1115,9 @@ static ERR SCINTILLA_SaveToObject(extScintilla *Self, struct acSaveToObject *Arg
 
    log.branch("To: %d, Size: %d", Args->Dest->UID, len);
 
-   ERR error;
-   APTR buffer;
-   if (AllocMemory(len+1, MEM::STRING|MEM::NO_CLEAR, &buffer) IS ERR::Okay) {
-      SCICALL(SCI_GETTEXT, len+1, (const char *)buffer);
-      error = acWrite(Args->Dest, buffer, len, nullptr);
-      FreeResource(buffer);
-   }
-   else error = ERR::AllocMemory;
-
-   return error;
+   std::vector<char> buffer(len+1);
+   SCICALL(SCI_GETTEXT, buffer.size(), (const char *)buffer.data());
+   return acWrite(Args->Dest, buffer.data(), len, nullptr);
 }
 
 /*********************************************************************************************************************
@@ -1257,7 +1132,7 @@ details.
 If the new face is invalid or fails to load, the current font will remain unchanged.
 
 -INPUT-
-cstr Face: The name of the new font face.
+strview Face: The name of the new font face.
 
 -RESULT-
 Okay:
@@ -1269,11 +1144,11 @@ CreateObject: Failed to create a Font object.
 
 static ERR SCINTILLA_SetFont(extScintilla *Self, struct sci::SetFont *Args)
 {
-   pf::Log log;
+   kt::Log log;
 
-   if ((!Args) or (!Args->Face)) return log.warning(ERR::NullArgs);
+   if ((not Args) or Args->Face.empty()) return log.warning(ERR::NullArgs);
 
-   log.branch("%s", Args->Face);
+   log.branch("%.*s", int(Args->Face.size()), Args->Face.data());
 
    if ((Self->Font = objFont::create::local(fl::Face(Args->Face)))) {
       create_styled_fonts(Self);
@@ -1302,7 +1177,7 @@ Okay:
 
 static ERR SCINTILLA_ScrollToPoint(extScintilla *Self, struct sci::ScrollToPoint *Args)
 {
-   pf::Log log;
+   kt::Log log;
 
    log.traceBranch("Sending Scroll requests to Scintilla: %dx%d.", Args->X, Args->Y);
 
@@ -1334,7 +1209,7 @@ Okay:
 
 static ERR SCINTILLA_SelectRange(extScintilla *Self, struct sci::SelectRange *Args)
 {
-   pf::Log log;
+   kt::Log log;
 
    if ((!Args) or ((!Args->Start) and (!Args->End))) { // Deselect all text
       int pos = SCICALL(SCI_GETCURRENTPOS);
@@ -1363,7 +1238,7 @@ static ERR SCINTILLA_SelectRange(extScintilla *Self, struct sci::SelectRange *Ar
 static ERR SCINTILLA_Show(extScintilla *Self)
 {
    if (!Self->Visible) {
-      pf::Log log;
+      kt::Log log;
 
       log.branch();
 
@@ -1390,7 +1265,7 @@ The position of the cursor is reset to the left margin as a result of calling th
 
 static ERR SCINTILLA_TrimWhitespace(extScintilla *Self)
 {
-   pf::Log log;
+   kt::Log log;
 
    log.traceBranch();
 
@@ -1430,7 +1305,7 @@ Undo: Undo the last user action.
 
 static ERR SCINTILLA_Undo(extScintilla *Self, struct acUndo *Args)
 {
-   pf::Log log;
+   kt::Log log;
 
    log.branch();
 
@@ -1546,10 +1421,10 @@ If multiple files are dropped, the callback will be repeatedly called until all 
 
 *********************************************************************************************************************/
 
-static ERR GET_FileDrop(extScintilla *Self, FUNCTION **Value)
+static ERR GET_FileDrop(extScintilla *Self, FUNCTION * &Value)
 {
    if (Self->FileDrop.defined()) {
-      *Value = &Self->FileDrop;
+      Value = &Self->FileDrop;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -1639,7 +1514,7 @@ static ERR SET_Lexer(extScintilla *Self, SCLEX Value)
 {
    Self->Lexer = Value;
    if (Self->initialised()) {
-      pf::Log log;
+      kt::Log log;
       log.branch("Changing lexer to %d", int(Value));
       Self->API->SetLexer(int(Self->Lexer));
    }
@@ -1714,6 +1589,22 @@ static ERR SET_LineNumbers(extScintilla *Self, int Value)
 /*********************************************************************************************************************
 
 -FIELD-
+Origin: Sets the #Path field without loading the document.
+
+Setting the Origin will update #Path without updating the content of the Scintilla object.  Use for situations such as
+changing the document location or name.
+
+*********************************************************************************************************************/
+
+static ERR SET_Origin(extScintilla *Self, const std::string_view &Value)
+{
+   Self->Path = Value;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 Path: Identifies the location of a text file to load.
 
 To load data from a text file into a scintilla object, set the Path field.
@@ -1724,51 +1615,17 @@ that you specify.  To change the path without automatically loading from the sou
 
 *********************************************************************************************************************/
 
-static ERR GET_Path(extScintilla *Self, CSTRING *Value)
+static ERR SET_Path(extScintilla *Self, const std::string_view &Value)
 {
-   *Value = Self->Path;
-   return ERR::Okay;
-}
+   kt::Log log;
 
-static ERR SET_Path(extScintilla *Self, CSTRING Value)
-{
-   pf::Log log;
+   log.branch("%.*s", int(Value.size()), Value.data());
 
-   log.branch("%s", Value);
-
-   if (Self->Path) { FreeResource(Self->Path); Self->Path = nullptr; }
-
-   if ((Value) and (*Value)) {
-      if ((Self->Path = strclone(Value))) {
-         if (Self->initialised()) {
-            if (load_file(Self, Self->Path) != ERR::Okay) {
-               return ERR::File;
-            }
-         }
+   Self->Path = Value;
+   if (Self->initialised()) {
+      if (load_file(Self, Self->Path) != ERR::Okay) {
+         return ERR::File;
       }
-      else return ERR::AllocMemory;
-   }
-
-   return ERR::Okay;
-}
-
-/****************************************************************************
-
--FIELD-
-Origin: Similar to the Path field, but does not automatically load content if set.
-
-This field is identical to the #Path field, with the exception that it does not update the content of a
-scintilla object if it is set after initialisation.  This may be useful if the origin of the currently loaded content
-needs to be changed without causing a load operation.
-
-****************************************************************************/
-
-static ERR SET_Origin(extScintilla *Self, CSTRING Value)
-{
-   if (Self->Path) { FreeResource(Self->Path); Self->Path = nullptr; }
-
-   if ((Value) and (*Value)) {
-      if (!(Self->Path = strclone(Value))) return ERR::AllocMemory;
    }
 
    return ERR::Okay;
@@ -1865,10 +1722,10 @@ supported events and additional details.
 
 *********************************************************************************************************************/
 
-static ERR GET_EventCallback(extScintilla *Self, FUNCTION **Value)
+static ERR GET_EventCallback(extScintilla *Self, FUNCTION * &Value)
 {
    if (Self->EventCallback.defined()) {
-      *Value = &Self->EventCallback;
+      Value = &Self->EventCallback;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -1876,12 +1733,10 @@ static ERR GET_EventCallback(extScintilla *Self, FUNCTION **Value)
 
 static ERR SET_EventCallback(extScintilla *Self, FUNCTION *Value)
 {
+   if (Self->EventCallback.defined()) Self->EventCallback.unpin();
    if (Value) {
-      if (Self->EventCallback.isScript()) UnsubscribeAction(Self->EventCallback.Context, AC::Free);
       Self->EventCallback = *Value;
-      if (Self->EventCallback.isScript()) {
-         SubscribeAction(Self->EventCallback.Context, AC::Free, C_FUNCTION(notify_free_event));
-      }
+      if (Self->EventCallback.defined()) Self->EventCallback.pin();
    }
    else Self->EventCallback.clear();
    return ERR::Okay;
@@ -1924,7 +1779,7 @@ SelectFore: Defines the colour of selected text.  Supports alpha blending.
 
 static ERR SET_SelectFore(extScintilla *Self, RGB8 *Value)
 {
-   pf::Log log;
+   kt::Log log;
 
    log.msg("New SelectFore colour: %d,%d,%d,%d", Value->Red, Value->Green, Value->Blue, Value->Alpha);
    if ((Value) and (Value->Alpha)) {
@@ -1950,24 +1805,21 @@ method as the preferred alternative, as it is much more efficient with memory us
 
 *********************************************************************************************************************/
 
-static ERR GET_String(extScintilla *Self, STRING *Value)
+static ERR GET_String(extScintilla *Self, std::string_view &Value)
 {
-   int len = SCICALL(SCI_GETLENGTH);
+   auto len = SCICALL(SCI_GETLENGTH);
 
-   if (Self->StringBuffer) { FreeResource(Self->StringBuffer); Self->StringBuffer = nullptr; }
-
-   if (AllocMemory(len+1, MEM::STRING|MEM::NO_CLEAR, &Self->StringBuffer) IS ERR::Okay) {
-      SCICALL(SCI_GETTEXT, len+1, (const char *)Self->StringBuffer);
-      *Value = Self->StringBuffer;
-      return ERR::Okay;
-   }
-   else return ERR::AllocMemory;
+   Self->StringBuffer.clear();
+   Self->StringBuffer.resize(len);
+   SCICALL(SCI_GETTEXT, len+1, Self->StringBuffer.c_str());
+   Value = std::string_view(Self->StringBuffer);
+   return ERR::Okay;
 }
 
-static ERR SET_String(extScintilla *Self, CSTRING Value)
+static ERR SET_String(extScintilla *Self, const std::string_view &Value)
 {
    if (Self->initialised()) {
-      if ((Value) and (*Value)) SCICALL(SCI_SETTEXT, 0UL, (const char *)Value);
+      if (not Value.empty()) SCICALL(SCI_SETTEXT, 0UL, (const char *)Value.data());
       else acClear(Self);
    }
    else return ERR::NotInitialised;
@@ -2086,7 +1938,7 @@ static ERR SET_Wordwrap(extScintilla *Self, int Value)
 
 static void create_styled_fonts(extScintilla *Self)
 {
-   pf::Log log;
+   kt::Log log;
 
    log.msg("create_styled_fonts(%s,%.2f,$%.8x)", Self->Font->Face, Self->Font->Point, int(Self->Font->Flags));
 
@@ -2125,7 +1977,7 @@ static thread_local objBitmap *glBitmap = nullptr;
 
 static void draw_scintilla(extScintilla *Self, objSurface *Surface, objBitmap *Bitmap)
 {
-   pf::Log log;
+   kt::Log log;
 
    if (!Self->Visible) return;
    if (!Self->initialised()) return;
@@ -2150,20 +2002,22 @@ static void draw_scintilla(extScintilla *Self, objSurface *Surface, objBitmap *B
 
 //********************************************************************************************************************
 
-static void error_dialog(CSTRING Title, CSTRING Message, ERR Error)
+static void error_dialog(std::string_view Title, std::string_view Message, ERR Error)
 {
-   pf::Log log;
+   kt::Log log;
    static OBJECTID dialog_id = 0;
 
    log.warning("%s", Message);
 
    if (dialog_id) {
-      if (CheckObjectExists(dialog_id) IS ERR::True) return;
+      if (CheckResourceExists(dialog_id) IS ERR::True) return;
    }
 
-   OBJECTPTR dialog;
-   if (NewObject(CLASSID::SCRIPT, &dialog) IS ERR::Okay) {
-      dialog->setFields(fl::Name("scDialog"), fl::Owner(CurrentTaskID()), fl::Path("system:scripts/gui/dialog.tiri"));
+   objTiri *dialog;
+   if (!NewObject(CLASSID::TIRI, &dialog)) {
+      dialog->setName("scDialog");
+      dialog->setOwner(CurrentTaskID());
+      dialog->setPath("system:scripts/gui/dialog.tiri");
 
       acSetKey(dialog, "modal", "1");
       acSetKey(dialog, "title", Title);
@@ -2173,18 +2027,17 @@ static void error_dialog(CSTRING Title, CSTRING Message, ERR Error)
       CSTRING errstr;
       if ((Error != ERR::Okay) and (errstr = GetErrorMsg(Error))) {
          std::ostringstream buffer;
-         if (Message) buffer << Message << "\n\nDetails: " << errstr;
+         if (not Message.empty()) buffer << Message << "\n\nDetails: " << errstr;
          else buffer << "Error: " << errstr;
 
          acSetKey(dialog, "message", buffer.str().c_str());
       }
       else acSetKey(dialog, "message", Message);
 
-      if ((InitObject(dialog) IS ERR::Okay) and (acActivate(dialog) IS ERR::Okay)) {
-         CSTRING *results;
-         int size;
-         if ((dialog->get(FID_Results, results, size) IS ERR::Okay) and (size > 0)) {
-            dialog_id = strtol(results[0], nullptr, 0);
+      if ((!InitObject(dialog)) and (!acActivate(dialog))) {
+         std::span<std::string> results;
+         if ((!dialog->getResults(results)) and (not results.empty())) {
+            dialog_id = svtonum<int>(results[0]);
          }
       }
    }
@@ -2192,16 +2045,16 @@ static void error_dialog(CSTRING Title, CSTRING Message, ERR Error)
 
 //********************************************************************************************************************
 
-static ERR load_file(extScintilla *Self, CSTRING Path)
+static ERR load_file(extScintilla *Self, std::string_view Path)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    STRING str;
-   int size, len;
+   int64_t size, len;
    ERR error = ERR::Okay;
 
    if (auto file = objFile::create::local(fl::Flags(FL::READ), fl::Path(Path))) {
       if ((file->Flags & FL::STREAM) != FL::NIL) {
-         if (file->startStream(Self->UID, FL::READ, 0) IS ERR::Okay) {
+         if (!file->startStream(Self->UID, FL::READ, 0)) {
             acClear(Self);
 
             SubscribeAction(file, AC::Write, C_FUNCTION(notify_write));
@@ -2210,23 +2063,19 @@ static ERR load_file(extScintilla *Self, CSTRING Path)
          }
          else error = ERR::Failed;
       }
-      else if (file->get(FID_Size, size) IS ERR::Okay) {
+      else if (!file->getSize(size)) {
          if (size > 0) {
             if (size < 1024 * 1024 * 10) {
-               if (AllocMemory(size+1, MEM::STRING|MEM::NO_CLEAR, &str) IS ERR::Okay) {
-                  if (acRead(file, str, size, &len) IS ERR::Okay) {
-                     str[len] = 0;
-                     SCICALL(SCI_SETTEXT, str);
-                     SCICALL(SCI_EMPTYUNDOBUFFER);
-                     error = ERR::Okay;
+               std::vector<char> str(size);
+               if (!file->read(str.data(), size, &len)) {
+                  str[len] = 0;
+                  SCICALL(SCI_SETTEXT, str);
+                  SCICALL(SCI_EMPTYUNDOBUFFER);
+                  error = ERR::Okay;
 
-                     calc_longest_line(Self);
-                  }
-                  else error = ERR::Read;
-
-                  FreeResource(str);
+                  calc_longest_line(Self);
                }
-               else error = ERR::AllocMemory;
+               else error = ERR::Read;
             }
             else error = ERR::BufferOverflow;
          }
@@ -2238,21 +2087,20 @@ static ERR load_file(extScintilla *Self, CSTRING Path)
    }
    else error = ERR::File;
 
-   if ((error IS ERR::Okay) and ((Self->Flags & SCIF::DETECT_LEXER) != SCIF::NIL)) {
-      int i = strlen(Path);
-      while ((i > 0) and (Path[i-1] != '/') and (Path[i-1] != '\\') and (Path[i-1] != ':')) i--;
-      Path = Path + i;
+   if ((!error) and ((Self->Flags & SCIF::DETECT_LEXER) != SCIF::NIL)) {
+      auto i = Path.find_last_of("/\\:");
+      if (i != std::string::npos) Path.remove_prefix(i+1);
 
       for (i=0; i < std::ssize(glLexers); i++) {
          if (wildcmp(glLexers[i].File, Path)) {
-            pf::Log log;
+            kt::Log log;
             Self->Lexer = glLexers[i].Lexer;
             log.branch("Lexer for the loaded file is %d.", int(Self->Lexer));
             Self->API->SetLexer(int(Self->Lexer));
             break;
          }
       }
-      if (i >= std::ssize(glLexers)) log.msg("Failed to choose a lexer for %s", Path);
+      if (i >= std::ssize(glLexers)) log.msg("Failed to choose a lexer for %.*s", int(Path.size()), Path.data());
    }
 
    return error;
@@ -2262,7 +2110,7 @@ static ERR load_file(extScintilla *Self, CSTRING Path)
 
 static void key_event(evKey *Event, int Size, extScintilla *Self)
 {
-   pf::Log log;
+   kt::Log log;
 
    if ((Self->Flags & SCIF::DISABLED) != SCIF::NIL) return;
    if ((Self->Flags & SCIF::EDIT) IS SCIF::NIL) return;
@@ -2276,7 +2124,8 @@ static void key_event(evKey *Event, int Size, extScintilla *Self)
       string[0] = 0;
 
       if ((Event->Qualifiers & KQ::NOT_PRINTABLE) IS KQ::NIL) {
-         int16_t out = UTF8WriteValue(Event->Unicode, string, sizeof(string)-1);
+         int16_t out = UTF8WriteValue(Event->Unicode,
+            std::span<int8_t>((int8_t *)string, sizeof(string) - 1));
          if (out >= 0) string[out] = 0;
       }
 
@@ -2359,8 +2208,13 @@ static ERR consume_input_events(const InputEvent *Events, int TotalEvents)
 static void report_event(extScintilla *Self, SEF Event)
 {
    if ((Event & Self->EventFlags) != SEF::NIL) {
-       if (Self->EventCallback.isC()) {
-         pf::SwitchContext ctx(Self->EventCallback.Context);
+      if (Self->EventCallback.stale()) {
+         Self->EventCallback.unpin();
+         Self->EventCallback.clear();
+      }
+
+      if (Self->EventCallback.isC()) {
+         kt::SwitchContext ctx(Self->EventCallback.Context);
          auto routine = (void (*)(extScintilla *, SEF, APTR)) Self->EventCallback.Routine;
          routine(Self, Event, Self->EventCallback.Meta);
       }
@@ -2379,7 +2233,7 @@ static void calc_longest_line(extScintilla *Self)
 
    if (!Self->Font) return;
 
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.traceBranch("Wrap: %d", Self->Wordwrap);
 
    int lines = SCICALL(SCI_GETLINECOUNT);
@@ -2447,11 +2301,51 @@ static ERR idle_timer(extScintilla *Self, int64_t Elapsed, int64_t CurrentTime)
 
 //********************************************************************************************************************
 
+extScintilla::~extScintilla() {
+   delete API;
+
+   if (EventCallback.defined()) {
+      EventCallback.unpin();
+      EventCallback.clear();
+   }
+
+   if (TimerID) UpdateTimer(TimerID, 0);
+
+   if ((FocusID) and (FocusID != SurfaceID)) {
+      if (kt::ScopedObjectLock object(FocusID, 500); object.granted()) {
+         UnsubscribeAction(*object, AC::NIL);
+      }
+   }
+
+   if (SurfaceID) {
+      if (kt::ScopedObjectLock<objSurface> object(SurfaceID, 500); object.granted()) {
+         object->removeCallback(C_FUNCTION(&draw_scintilla));
+         UnsubscribeAction(*object, AC::NIL);
+      }
+   }
+
+   /*if (PointerLocked) {
+      RestoreCursor(PTR_DEFAULT, UID);
+      PointerLocked = FALSE;
+   }*/
+
+   if (prvKeyEvent) UnsubscribeEvent(prvKeyEvent);
+   if (FileStream)  FreeResource(FileStream);
+   if (Font)        FreeResource(Font);
+   if (BoldFont)    FreeResource(BoldFont);
+   if (ItalicFont)  FreeResource(ItalicFont);
+   if (BIFont)      FreeResource(BIFont);
+
+   gfx::UnsubscribeInput(InputHandle);
+}
+
+//********************************************************************************************************************
+
 #include "class_scintilla_def.cxx"
 
 static const FieldArray clFields[] = {
    { "Font",           FDF_LOCAL|FDF_R, nullptr, nullptr, CLASSID::FONT },
-   { "Path",           FDF_STRING|FDF_RW, nullptr, SET_Path },
+   { "Path",           FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
    { "EventFlags",     FDF_INT|FDF_FLAGS|FDF_RW, nullptr, nullptr, &clScintillaEventFlags },
    { "Surface",        FDF_OBJECTID|FDF_RI, nullptr, nullptr, CLASSID::SURFACE },
    { "Flags",          FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clScintillaFlags },
@@ -2459,31 +2353,31 @@ static const FieldArray clFields[] = {
    { "Visible",        FDF_INT|FDF_RI },
    { "LeftMargin",     FDF_INT|FDF_RW, nullptr, SET_LeftMargin },
    { "RightMargin",    FDF_INT|FDF_RW, nullptr, SET_RightMargin },
-   { "LineHighlight",  FDF_RGB|FDF_RW, nullptr, SET_LineHighlight },
-   { "SelectFore",     FDF_RGB|FDF_RI, nullptr, SET_SelectFore },
-   { "SelectBkgd",     FDF_RGB|FDF_RI, nullptr, SET_SelectBkgd },
-   { "BkgdColour",     FDF_RGB|FDF_RW, nullptr, SET_BkgdColour },
-   { "CursorColour",   FDF_RGB|FDF_RW, nullptr, SET_CursorColour },
-   { "TextColour",     FDF_RGB|FDF_RW, nullptr, SET_TextColour },
+   { "LineHighlight",  FDF_STRUCT|FDF_RW, nullptr, SET_LineHighlight, "RGB8" },
+   { "SelectFore",     FDF_STRUCT|FDF_RI, nullptr, SET_SelectFore, "RGB8" },
+   { "SelectBkgd",     FDF_STRUCT|FDF_RI, nullptr, SET_SelectBkgd, "RGB8" },
+   { "BkgdColour",     FDF_STRUCT|FDF_RW, nullptr, SET_BkgdColour, "RGB8" },
+   { "CursorColour",   FDF_STRUCT|FDF_RW, nullptr, SET_CursorColour, "RGB8" },
+   { "TextColour",     FDF_STRUCT|FDF_RW, nullptr, SET_TextColour, "RGB8" },
    { "CursorRow",      FDF_INT|FDF_RW },
    { "CursorCol",      FDF_INT|FDF_RW },
    { "Lexer",          FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, SET_Lexer, &clScintillaLexer },
    { "Modified",       FDF_INT|FDF_RW, nullptr, SET_Modified },
 
    // Virtual fields
-   { "AllowTabs",      FDF_INT|FDF_RW,   GET_AllowTabs, SET_AllowTabs },
-   { "AutoIndent",     FDF_INT|FDF_RW,   GET_AutoIndent, SET_AutoIndent },
-   { "FileDrop",       FDF_FUNCTIONPTR|FDF_RW, GET_FileDrop, SET_FileDrop },
-   { "FoldingMarkers", FDF_INT|FDF_RW,   GET_FoldingMarkers, SET_FoldingMarkers },
+   { "AllowTabs",      FDF_INT|FDF_RW|FDF_PURE,   GET_AllowTabs, SET_AllowTabs },
+   { "AutoIndent",     FDF_INT|FDF_RW|FDF_PURE,   GET_AutoIndent, SET_AutoIndent },
+   { "FileDrop",       FDF_FUNCTION|FDF_RW|FDF_PURE, GET_FileDrop, SET_FileDrop },
+   { "FoldingMarkers", FDF_INT|FDF_RW|FDF_PURE,   GET_FoldingMarkers, SET_FoldingMarkers },
    { "LineCount",      FDF_INT|FDF_R,    GET_LineCount },
-   { "LineNumbers",    FDF_INT|FDF_RW,   GET_LineNumbers, SET_LineNumbers },
-   { "Origin",         FDF_STRING|FDF_RW, GET_Path, SET_Origin },
-   { "ShowWhitespace", FDF_INT|FDF_RW,   GET_ShowWhitespace, SET_ShowWhitespace },
-   { "EventCallback",  FDF_FUNCTIONPTR|FDF_RW, GET_EventCallback, SET_EventCallback },
-   { "String",         FDF_STRING|FDF_RW, GET_String, SET_String },
-   { "Symbols",        FDF_INT|FDF_RW,   GET_Symbols, SET_Symbols },
-   { "TabWidth",       FDF_INT|FDF_RW,   GET_TabWidth, SET_TabWidth },
-   { "Wordwrap",       FDF_INT|FDF_RW,   GET_Wordwrap, SET_Wordwrap },
+   { "LineNumbers",    FDF_INT|FDF_RW|FDF_PURE,   GET_LineNumbers, SET_LineNumbers },
+   { "Origin",         FDF_CPPSTRING|FDF_W, nullptr, SET_Origin },
+   { "ShowWhitespace", FDF_INT|FDF_RW|FDF_PURE,   GET_ShowWhitespace, SET_ShowWhitespace },
+   { "EventCallback",  FDF_FUNCTION|FDF_RW|FDF_PURE, GET_EventCallback, SET_EventCallback },
+   { "String",         FDF_CPPSTRING|FDF_RW, GET_String, SET_String },
+   { "Symbols",        FDF_INT|FDF_RW|FDF_PURE,   GET_Symbols, SET_Symbols },
+   { "TabWidth",       FDF_INT|FDF_RW|FDF_PURE,   GET_TabWidth, SET_TabWidth },
+   { "Wordwrap",       FDF_INT|FDF_RW|FDF_PURE,   GET_Wordwrap, SET_Wordwrap },
    END_FIELD
 };
 
@@ -2500,7 +2394,7 @@ static ERR create_scintilla(void)
       fl::Methods(clScintillaMethods),
       fl::Fields(clFields),
       fl::Size(sizeof(extScintilla)),
-      fl::FileExtension("*.txt|*.text"),
+      fl::FileExtension("txt|text"),
       fl::Icon("filetypes/text"),
       fl::Path("modules:scintilla"));
 

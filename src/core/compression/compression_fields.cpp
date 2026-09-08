@@ -9,9 +9,9 @@ This is achieved through use of the `archive:` volume, which is a virtual filesy
 
 *********************************************************************************************************************/
 
-static ERR SET_ArchiveName(extCompression *Self, CSTRING Value)
+static ERR SET_ArchiveName(extCompression *Self, std::string_view &Value)
 {
-   if ((Value) and (*Value)) Self->ArchiveHash = strihash(Value);
+   if (not Value.empty()) Self->ArchiveHash = strihash(Value);
    else Self->ArchiveHash = 0;
 
    if (Self->ArchiveHash) add_archive(Self);
@@ -59,10 +59,10 @@ The !CompressionFeedback structure consists of the following fields:
 
 *********************************************************************************************************************/
 
-static ERR GET_Feedback(extCompression *Self, FUNCTION **Value)
+static ERR GET_Feedback(extCompression *Self, FUNCTION * &Value)
 {
    if (Self->Feedback.defined()) {
-      *Value = &Self->Feedback;
+      Value = &Self->Feedback;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -70,12 +70,10 @@ static ERR GET_Feedback(extCompression *Self, FUNCTION **Value)
 
 static ERR SET_Feedback(extCompression *Self, FUNCTION *Value)
 {
+   if (Self->Feedback.defined()) Self->Feedback.unpin();
    if (Value) {
-      if (Self->Feedback.isScript()) UnsubscribeAction(Self->Feedback.Context, AC::Free);
       Self->Feedback = *Value;
-      if (Self->Feedback.isScript()) {
-         SubscribeAction(Self->Feedback.Context, AC::Free, C_FUNCTION(notify_free_feedback));
-      }
+      if (Self->Feedback.defined()) Self->Feedback.pin();
    }
    else Self->Feedback.clear();
    return ERR::Okay;
@@ -89,7 +87,7 @@ Flags: Optional flags.
 -FIELD-
 Header: Private.  The first 32 bytes of a compression object's file header.
 
-This field is only of use to sub-classes that need to examine the first 32 bytes of a compressed file's header.
+This field is only of use to derived classes that need to examine the first 32 bytes of a compressed file's header.
 
 *********************************************************************************************************************/
 
@@ -105,28 +103,6 @@ static ERR GET_Header(extCompression *Self, uint8_t **Header)
 Path: Set if the compressed data originates from, or is to be saved to a file source.
 
 To load or create a new file archive, set the Path field to the path of that file.
-
-*********************************************************************************************************************/
-
-static ERR GET_Path(extCompression *Self, CSTRING *Value)
-{
-   if (Self->Path) { *Value = Self->Path; return ERR::Okay; }
-   else return ERR::FieldNotSet;
-}
-
-static ERR SET_Path(extCompression *Self, CSTRING Value)
-{
-   pf::Log log;
-
-   if (Self->Path) { FreeResource(Self->Path); Self->Path = nullptr; }
-
-   if ((Value) and (*Value)) {
-      if (!(Self->Path = strclone(Value))) return log.warning(ERR::AllocMemory);
-   }
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 
 -FIELD-
 MinOutputSize: Indicates the minimum output buffer size that will be needed during de/compression.
@@ -155,19 +131,13 @@ across to it.
 
 *********************************************************************************************************************/
 
-static ERR GET_Password(extCompression *Self, CSTRING *Value)
+static ERR SET_Password(extCompression *Self, std::string_view &Value)
 {
-   *Value = Self->Password;
-   return ERR::Okay;
-}
-
-static ERR SET_Password(extCompression *Self, CSTRING Value)
-{
-   if ((Value) and (*Value)) {
-      strcopy(Value, Self->Password, sizeof(Self->Password));
+   if (not Value.empty()) {
+      Self->Password.assign(Value.substr(0, 127));
       Self->Flags |= CMF::PASSWORD;
    }
-   else Self->Password[0] = 0;
+   else Self->Password.clear();
 
    return ERR::Okay;
 }
@@ -188,7 +158,7 @@ Size: Indicates the size of the source archive, in bytes.
 static ERR GET_Size(extCompression *Self, int64_t *Value)
 {
    *Value = 0;
-   if (Self->FileIO) return Self->FileIO->get(FID_Size, *Value);
+   if (Self->FileIO) return Self->FileIO->getSize(*Value);
    else return ERR::Okay;
 }
 
@@ -212,9 +182,7 @@ information that may identify the compressed data is not included in the total.
 static ERR GET_UncompressedSize(extCompression *Self, int64_t *Value)
 {
    int64_t size = 0;
-   for (auto &f : Self->Files) {
-      size += f.OriginalSize;
-   }
+   for (auto &f : Self->Files) size += f.OriginalSize;
    *Value = size;
    return ERR::Okay;
 }
@@ -237,12 +205,10 @@ To support GZIP decompression, please set the WindowBits value to 47.
 
 static ERR SET_WindowBits(extCompression *Self, int Value)
 {
-   pf::Log log;
-
    if (((Value >= 8) and (Value <= 15)) or ((Value >= -15) and (Value <= -8)) or
        (Value IS 15 + 32) or (Value IS 16 + 32)) {
       Self->WindowBits = Value;
       return ERR::Okay;
    }
-   else return log.warning(ERR::OutOfRange);
+   else return kt::Log().warning(ERR::OutOfRange);
 }

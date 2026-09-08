@@ -349,10 +349,11 @@ static void strscan_double(uint64_t x, TValue* o, int32_t ex2, int32_t neg)
 
    if (ex2 or dig > 64) return STRSCAN_ERROR;
 
-   // Use std::from_chars for binary parsing
-   auto [ptr, ec] = std::from_chars(CSTRING(p), CSTRING(p + dig), x, 2);
-
-   if (ec != std::errc{} or ptr != CSTRING(p + dig)) return STRSCAN_ERROR;
+   // Leading zeroes are removed by the common scanner.  An all-zero literal therefore has no significant digits.
+   if (dig) {
+      auto [ptr, ec] = std::from_chars(CSTRING(p), CSTRING(p + dig), x, 2);
+      if (ec != std::errc{} or ptr != CSTRING(p + dig)) return STRSCAN_ERROR;
+   }
 
    // Format-specific handling.
    switch (fmt) {

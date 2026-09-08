@@ -12,6 +12,7 @@
 #include <kotuku/modules/xml.h>
 #include <kotuku/modules/font.h>
 #include <kotuku/modules/vector.h>
+#include <kotuku/modules/script.h>
 
 class objDocument;
 
@@ -94,19 +95,19 @@ DEFINE_ENUM_FLAG_OPERATORS(FSO)
 // Document methods
 
 namespace doc {
-struct FeedParser { CSTRING String; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SelectLink { int Index; CSTRING Name; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct FindIndex { CSTRING Name; int Start; int End; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct InsertXML { CSTRING XML; int Index; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct FeedParser { std::string_view String; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SelectLink { int Index; std::string_view Name; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct FindIndex { std::string_view Name; int Start; int End; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct InsertXML { std::string_view XML; int Index; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct RemoveContent { int Start; int End; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct InsertText { CSTRING Text; int Index; int Char; int Preformat; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct CallFunction { CSTRING Function; struct ScriptArg * Args; int TotalArgs; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct AddListener { DRT Trigger; FUNCTION * Function; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct RemoveListener { int Trigger; FUNCTION * Function; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct ShowIndex { CSTRING Name; static const AC id = AC(-11); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct HideIndex { CSTRING Name; static const AC id = AC(-12); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Edit { CSTRING Name; int Flags; static const AC id = AC(-13); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct ReadContent { DATA Format; int Start; int End; STRING Result; static const AC id = AC(-14); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct InsertText { std::string_view Text; int Index; int Char; int Preformat; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct CallFunction { std::string_view Function; struct ScriptArg *Args; int TotalArgs; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddListener { DRT Trigger; FUNCTION Function; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct RemoveListener { int Trigger; FUNCTION Function; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ShowIndex { std::string_view Name; static const AC id = AC(-11); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct HideIndex { std::string_view Name; static const AC id = AC(-12); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Edit { std::string_view Name; int Flags; static const AC id = AC(-13); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ReadContent { DATA Format; int Start; int End; std::string *Result; static const AC id = AC(-14); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -115,17 +116,20 @@ class objDocument : public Object {
    static constexpr CLASSID CLASS_ID = CLASSID::DOCUMENT;
    static constexpr CSTRING CLASS_NAME = "Document";
 
-   using create = pf::Create<objDocument>;
+   using create = kt::Create<objDocument>;
+   objDocument(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
-   STRING   Description;            // A description of the document, provided by its author.
-   STRING   Title;                  // The title of the document.
-   STRING   Author;                 // The author(s) of the document.
-   STRING   Copyright;              // Copyright information for the document.
-   STRING   Keywords;               // Includes keywords declared by the source document.
+   std::string Description;         // A description of the document, provided by its author.
+   std::string Title;               // The title of the document.
+   std::string Author;              // The author(s) of the document.
+   std::string Copyright;           // Copyright information for the document.
+   std::string Keywords;            // Includes keywords declared by the source document.
+   std::string Path;                // Identifies the location of a document file to load.
    objVectorViewport * Viewport;    // A client-specific viewport that will host the document graphics.
    objVectorViewport * Focus;       // Refers to the object that will be monitored for user focusing.
    objVectorViewport * View;        // The viewing area of the document.
    objVectorViewport * Page;        // The Page contains the document content and is hosted by the View
+   objScript * ClientScript;        // Allows an external script object to be used by a document file.
    OBJECTID TabFocusID;             // Allows the user to hit the tab key to focus on other GUI objects.
    DEF      EventMask;              // Specifies events that need to be reported from the Document object.
    DCF      Flags;                  // Optional flags that affect object behaviour.
@@ -140,8 +144,8 @@ class objDocument : public Object {
       struct acClipboard args = { Mode };
       return Action(AC::Clipboard, this, &args);
    }
-   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, const void *Buffer, int Size) noexcept {
-      struct acDataFeed args = { Object, Datatype, Buffer, Size };
+   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, std::span<const int8_t> Buffer) noexcept {
+      struct acDataFeed args = { Object, Datatype, Buffer };
       return Action(AC::DataFeed, this, &args);
    }
    inline ERR disable() noexcept { return Action(AC::Disable, this, nullptr); }
@@ -152,10 +156,10 @@ class objDocument : public Object {
    }
    inline ERR enable() noexcept { return Action(AC::Enable, this, nullptr); }
    inline ERR focus() noexcept { return Action(AC::Focus, this, nullptr); }
-   inline ERR getKey(CSTRING Key, STRING Value, int Size) noexcept {
-      struct acGetKey args = { Key, Value, Size };
+   inline ERR getKey(std::string_view Key, std::string &Value) noexcept {
+      struct acGetKey args = { Key, &Value };
       auto error = Action(AC::GetKey, this, &args);
-      if ((error != ERR::Okay) and (Value)) Value[0] = 0;
+      if (error != ERR::Okay) Value.clear();
       return error;
    }
    inline ERR init() noexcept { return InitObject(this); }
@@ -164,79 +168,201 @@ class objDocument : public Object {
       struct acSaveToObject args = { Dest, { ClassID } };
       return Action(AC::SaveToObject, this, &args);
    }
-   inline ERR acSetKey(CSTRING FieldName, CSTRING Value) noexcept {
+   inline ERR acSetKey(std::string_view FieldName, std::string_view Value) noexcept {
       struct acSetKey args = { FieldName, Value };
       return Action(AC::SetKey, this, &args);
    }
-   inline ERR feedParser(CSTRING String) noexcept {
+   inline ERR feedParser(const std::string_view &String) noexcept {
       struct doc::FeedParser args = { String };
-      return(Action(AC(-1), this, &args));
+      return Action(AC(-1), this, &args);
    }
-   inline ERR selectLink(int Index, CSTRING Name) noexcept {
+   inline ERR selectLink(int Index, const std::string_view &Name) noexcept {
       struct doc::SelectLink args = { Index, Name };
-      return(Action(AC(-2), this, &args));
+      return Action(AC(-2), this, &args);
    }
-   inline ERR findIndex(CSTRING Name, int * Start, int * End) noexcept {
+   inline ERR findIndex(const std::string_view &Name, int * Start, int * End) noexcept {
       struct doc::FindIndex args = { Name, (int)0, (int)0 };
       ERR error = Action(AC(-4), this, &args);
       if (Start) *Start = args.Start;
       if (End) *End = args.End;
-      return(error);
+      return error;
    }
-   inline ERR insertXML(CSTRING XML, int Index) noexcept {
+   inline ERR insertXML(const std::string_view &XML, int Index) noexcept {
       struct doc::InsertXML args = { XML, Index };
-      return(Action(AC(-5), this, &args));
+      return Action(AC(-5), this, &args);
    }
    inline ERR removeContent(int Start, int End) noexcept {
       struct doc::RemoveContent args = { Start, End };
-      return(Action(AC(-6), this, &args));
+      return Action(AC(-6), this, &args);
    }
-   inline ERR insertText(CSTRING Text, int Index, int Char, int Preformat) noexcept {
+   inline ERR insertText(const std::string_view &Text, int Index, int Char, int Preformat) noexcept {
       struct doc::InsertText args = { Text, Index, Char, Preformat };
-      return(Action(AC(-7), this, &args));
+      return Action(AC(-7), this, &args);
    }
-   inline ERR callFunction(CSTRING Function, struct ScriptArg * Args, int TotalArgs) noexcept {
+   inline ERR callFunction(const std::string_view &Function, struct ScriptArg * Args, int TotalArgs) noexcept {
       struct doc::CallFunction args = { Function, Args, TotalArgs };
-      return(Action(AC(-8), this, &args));
+      return Action(AC(-8), this, &args);
    }
    inline ERR addListener(DRT Trigger, FUNCTION Function) noexcept {
-      struct doc::AddListener args = { Trigger, &Function };
-      return(Action(AC(-9), this, &args));
+      struct doc::AddListener args = { Trigger, Function };
+      return Action(AC(-9), this, &args);
    }
    inline ERR removeListener(int Trigger, FUNCTION Function) noexcept {
-      struct doc::RemoveListener args = { Trigger, &Function };
-      return(Action(AC(-10), this, &args));
+      struct doc::RemoveListener args = { Trigger, Function };
+      return Action(AC(-10), this, &args);
    }
-   inline ERR showIndex(CSTRING Name) noexcept {
+   inline ERR showIndex(const std::string_view &Name) noexcept {
       struct doc::ShowIndex args = { Name };
-      return(Action(AC(-11), this, &args));
+      return Action(AC(-11), this, &args);
    }
-   inline ERR hideIndex(CSTRING Name) noexcept {
+   inline ERR hideIndex(const std::string_view &Name) noexcept {
       struct doc::HideIndex args = { Name };
-      return(Action(AC(-12), this, &args));
+      return Action(AC(-12), this, &args);
    }
-   inline ERR edit(CSTRING Name, int Flags) noexcept {
+   inline ERR edit(const std::string_view &Name, int Flags) noexcept {
       struct doc::Edit args = { Name, Flags };
-      return(Action(AC(-13), this, &args));
+      return Action(AC(-13), this, &args);
    }
-   inline ERR readContent(DATA Format, int Start, int End, STRING * Result) noexcept {
-      struct doc::ReadContent args = { Format, Start, End, (STRING)0 };
+   inline ERR readContent(DATA Format, int Start, int End, std::string &Result) noexcept {
+      struct doc::ReadContent args = { Format, Start, End, &Result };
       ERR error = Action(AC(-14), this, &args);
-      if (Result) *Result = args.Result;
-      return(error);
+      return error;
    }
+
+   // Customised field getting
+
+   inline ERR getDescription(std::string_view &Value) noexcept {
+      Value = this->Description;
+      return ERR::Okay;
+   }
+
+   inline ERR getTitle(std::string_view &Value) noexcept {
+      Value = this->Title;
+      return ERR::Okay;
+   }
+
+   inline ERR getAuthor(std::string_view &Value) noexcept {
+      Value = this->Author;
+      return ERR::Okay;
+   }
+
+   inline ERR getCopyright(std::string_view &Value) noexcept {
+      Value = this->Copyright;
+      return ERR::Okay;
+   }
+
+   inline ERR getKeywords(std::string_view &Value) noexcept {
+      Value = this->Keywords;
+      return ERR::Okay;
+   }
+
+   inline ERR getPath(std::string_view &Value) noexcept {
+      Value = this->Path;
+      return ERR::Okay;
+   }
+
+   inline ERR getViewport(objVectorViewport * &Value) noexcept {
+      Value = this->Viewport;
+      return ERR::Okay;
+   }
+
+   inline ERR getFocus(objVectorViewport * &Value) noexcept {
+      Value = this->Focus;
+      return ERR::Okay;
+   }
+
+   inline ERR getView(objVectorViewport * &Value) noexcept {
+      Value = this->View;
+      return ERR::Okay;
+   }
+
+   inline ERR getPage(objVectorViewport * &Value) noexcept {
+      Value = this->Page;
+      return ERR::Okay;
+   }
+
+   inline ERR getTabFocus(OBJECTID &Value) noexcept {
+      Value = this->TabFocusID;
+      return ERR::Okay;
+   }
+
+   inline ERR getEventMask(DEF &Value) noexcept {
+      Value = this->EventMask;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(DCF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getPageHeight(int &Value) noexcept {
+      Value = this->PageHeight;
+      return ERR::Okay;
+   }
+
+   inline ERR getError(ERR &Value) noexcept {
+      Value = this->Error;
+      return ERR::Okay;
+   }
+
+   inline ERR getEventCallback(FUNCTION * &Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getOrigin(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getPageWidth(Unit &Value) noexcept {
+      auto field = &this->Class->Dictionary[22];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getWorkingPath(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[13];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
+   inline ERR setPath(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      return field->WriteValue(this, field, 0x00804300, &Value);
+   }
+
    inline ERR setViewport(objVectorViewport * Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[25];
-      return field->WriteValue(target, field, 0x08000301, Value, 1);
+      auto field = &this->Class->Dictionary[21];
+      return field->WriteValue(this, field, 0x08000301, Value);
    }
 
    inline ERR setFocus(objVectorViewport * Value) noexcept {
-      if (this->initialised()) return ERR::NoFieldAccess;
+      if (this->initialised()) return ERR::ImmutableField;
       this->Focus = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setClientScript(objScript * Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
+      this->ClientScript = Value;
       return ERR::Okay;
    }
 
@@ -251,57 +377,38 @@ class objDocument : public Object {
    }
 
    inline ERR setFlags(const DCF Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[4];
-      return field->WriteValue(target, field, FD_INT, &Value, 1);
+      auto field = &this->Class->Dictionary[1];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setClientScript(OBJECTPTR Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[12];
-      return field->WriteValue(target, field, 0x08000401, Value, 1);
+   inline ERR setEventCallback(const FUNCTION Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
-   inline ERR setEventCallback(FUNCTION Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[14];
-      return field->WriteValue(target, field, FD_FUNCTION, &Value, 1);
+   inline ERR setOrigin(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
-   template <class T> inline ERR setPath(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[17];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
-   }
-
-   template <class T> inline ERR setOrigin(T && Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[8];
-      return field->WriteValue(target, field, 0x08800300, to_cstring(Value), 1);
-   }
-
-   inline ERR setPageWidth(const int Value) noexcept {
-      auto target = this;
-      auto field = &this->Class->Dictionary[13];
-      Unit var(Value);
-      return field->WriteValue(target, field, FD_UNIT, &var, 1);
-   }
-
-   template <class T> inline ERR setPretext(T && Value) noexcept {
-      auto target = this;
+   inline ERR setPageWidth(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[22];
-      return field->WriteValue(target, field, 0x08800200, to_cstring(Value), 1);
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setPretext(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[15];
+      return field->WriteValue(this, field, 0x00804200, &Value);
    }
 
 };
 
 namespace fl {
-   using namespace pf;
+   using namespace kt;
 
-constexpr FieldValue EventCallback(const FUNCTION &Value) { return FieldValue(FID_EventCallback, &Value); }
-constexpr FieldValue EventCallback(APTR Value) { return FieldValue(FID_EventCallback, Value); }
-constexpr FieldValue EventMask(DEF Value) { return FieldValue(FID_EventMask, int(Value)); }
-constexpr FieldValue Flags(DCF Value) { return FieldValue(FID_Flags, int(Value)); }
+constexpr FieldValue EventCallback(const FUNCTION &Value) { return FieldValue(strhash("eventCallback"), &Value); }
+constexpr FieldValue EventCallback(APTR Value) { return FieldValue(strhash("eventCallback"), Value); }
+constexpr FieldValue EventMask(DEF Value) { return FieldValue(strhash("eventMask"), int(Value)); }
+constexpr FieldValue Flags(DCF Value) { return FieldValue(strhash("flags"), int(Value)); }
 
 }
-

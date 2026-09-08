@@ -112,12 +112,13 @@ class freetype_font {
                   // comes with a tool, font_metrics.tiri, for helping with these modifiers.
 
                   if (glFontConfig) {
-                     pf::ScopedObjectLock<objConfig> config(glFontConfig, 500);
+                     kt::ScopedObjectLock<objConfig> config(glFontConfig, 500);
                      if (config.granted()) {
-                        ConfigGroups *groups;
-                        if (glFontConfig->get(FID_Data, groups) IS ERR::Okay) {
+                        APTR group_ptr;
+                        if (!glFontConfig->getData(group_ptr)) {
+                           auto groups = (ConfigGroups *)group_ptr;
                            for (auto & [group, keys] : groups[0]) {
-                              if (pf::iequals(group, font->face->family_name)) {
+                              if (kt::iequals(group, font->face->family_name)) {
                                  if (auto it = keys.find("LineSpacing"); it != keys.end()) {
                                     line_spacing *= std::stod(it->second);
                                  }
@@ -130,7 +131,7 @@ class freetype_font {
                                  break;
                               }
                               else if (auto it = keys.find("Name"); it != keys.end()) {
-                                 if (pf::iequals(it->second, font->face->family_name)) {
+                                 if (kt::iequals(it->second, font->face->family_name)) {
                                     if (auto it = keys.find("LineSpacing"); it != keys.end()) {
                                        line_spacing *= std::stod(it->second);
                                     }
@@ -181,7 +182,7 @@ class freetype_font {
       ~freetype_font();
 };
 
-extern ERR get_font(pf::Log &Log, CSTRING, CSTRING, int, int, common_font **);
+extern ERR get_font(kt::Log &Log, std::string_view, std::string_view, int, int, common_font **);
 
 // Caching note: Although it is policy for cached fonts to be permanently retained, it is not necessary for the
 // glyphs themselves to be permanently cached.  Future resource management should therefore actively remove

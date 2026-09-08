@@ -7,7 +7,7 @@
   </defs>
 </svg>
 
-<body face="[@font:Noto Sans]" font-size="[@font-size:10pt]"/>
+<body face="{($params?font, 'Noto Sans')[1]}" font-size="{($params?font-size, '10pt')[1]}"/>
 
 <page name="Index">
 <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Ut nibh tortor, egestas sit amet metus at, fermentum gravida purus. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Suspendisse egestas nibh turpis, et faucibus risus varius quis. Mauris quis cursus sapien. Etiam eget dui id turpis molestie condimentum. Duis mollis erat vitae ante bibendum, ac pellentesque justo volutpat.</p>

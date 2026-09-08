@@ -572,6 +572,13 @@ static void asm_setupresult(ASMState* as, IRIns* ir, const CCallInfo* ci)
    int hiop = ((ir + 1)->o == IR_HIOP and !irt_isnil((ir + 1)->t));
    if ((ci->flags & CCI_NOFPRCLOBBER))
       drop &= ~RSET_FPR;
+#if LJ_TARGET_X64
+   else if (ci IS &lj_ir_callinfo[IRCALL_lj_vm_fmod]) {
+      // The internal helper preserves all FPRs except its xmm0/xmm1 argument and result registers.
+      drop &= ~RSET_FPR;
+      drop |= RID2RSET(RID_XMM0) | RID2RSET(RID_XMM1);
+   }
+#endif
    if (ra_hasreg(ir->r))
       rset_clear(drop, ir->r);  /* Dest reg handled below. */
    if (hiop and ra_hasreg((ir + 1)->r))
@@ -691,6 +698,13 @@ static void asm_conv(ASMState* as, IRIns* ir)
    int stfp = (st == IRT_NUM or st == IRT_FLOAT);
    IRRef lref = ir->op1;
    lj_assertA(irt_type(ir->t) != st, "inconsistent types for CONV");
+   if (ir->op2 & IRCONV_BITCAST) {
+      lj_assertA(LJ_TARGET_X64 and st IS IRT_NUM and irt_isu64(ir->t), "bad bitcast types");
+      Reg dest = ra_dest(as, ir, RSET_GPR);
+      Reg source = ra_alloc1(as, lref, RSET_FPR);
+      emit_rr(as, XO_MOVDto, source | REX_64, dest);
+      return;
+   }
    if (irt_isfp(ir->t)) {
       Reg dest = ra_dest(as, ir, RSET_FPR);
       if (stfp) {  // FP to FP conversion.
@@ -808,6 +822,29 @@ static void asm_strto(ASMState* as, IRIns* ir)
 
 // -- Memory references ---------------------------------------------------
 
+// Store a GC64 pointer with its tag. Allocate only after address fusion and exclude both address registers.
+// A free scratch avoids an overlapping memory read-modify-write without introducing a spill for the tag.
+static void asm_storetagged(ASMState* As, IRType1 Type, Reg Source)
+{
+   RegSet available = As->freeset & RSET_GPR;
+   rset_clear(available, Source);
+   if (As->mrm.base < RID_MAX_GPR) rset_clear(available, As->mrm.base);
+   if (As->mrm.idx < RID_MAX_GPR) rset_clear(available, As->mrm.idx);
+   if (available) {
+      Reg scratch = ra_scratch(As, available);
+      emit_mrm(As, XO_MOVto, scratch | REX_64, RID_MRM);
+      emit_rr(As, XO_OR, scratch | REX_64, Source);
+      emit_loadu64(As, scratch, uint64_t(irt_toitype(Type)) << 47);
+   }
+   else {
+      As->mrm.ofs += 4;
+      emit_u32(As, irt_toitype(Type) << 15);
+      emit_mrm(As, XO_ARITHi, XOg_OR, RID_MRM);
+      As->mrm.ofs -= 4;
+      emit_mrm(As, XO_MOVto, Source | REX_64, RID_MRM);
+   }
+}
+
 // Get pointer to TValue.
 static void asm_tvptr(ASMState* as, Reg dest, IRRef ref, MSize mode)
 {
@@ -829,15 +866,17 @@ static void asm_tvptr(ASMState* as, Reg dest, IRRef ref, MSize mode)
             emit_movmroi(as, dest, 0, k.u32.lo);
          }
          else {
-            // TODO: 64 bit store + 32 bit load-modify-store is suboptimal.
             Reg src = ra_alloc1(as, ref, rset_exclude(RSET_GPR, dest));
             if (irt_is64(ir->t)) {
-               emit_u32(as, irt_toitype(ir->t) << 15);
-               emit_rmro(as, XO_ARITHi, XOg_OR, dest, 4);
+               as->mrm.base = uint8_t(dest);
+               as->mrm.idx = RID_NONE;
+               as->mrm.ofs = 0;
+               asm_storetagged(as, ir->t, src);
             }
-            else emit_movmroi(as, dest, 4, (irt_toitype(ir->t) << 15));
-
-            emit_movtomro(as, REX_64IR(ir, src), dest, 0);
+            else {
+               emit_movmroi(as, dest, 4, (irt_toitype(ir->t) << 15));
+               emit_movtomro(as, src, dest, 0);
+            }
          }
       }
    }
@@ -850,6 +889,25 @@ static void asm_aref(ASMState* as, IRIns* ir)
    asm_fusearef(as, ir, RSET_GPR);
    if (!(as->mrm.idx == RID_NONE and as->mrm.ofs == 0)) emit_mrm(as, XO_LEA, dest | REX_GC64, RID_MRM);
    else if (as->mrm.base != dest) emit_rr(as, XO_MOV, dest | REX_GC64, as->mrm.base);
+}
+
+static void asm_href_mix64(ASMState* as, Reg Hash, Reg Scratch)
+{
+   emit_rr(as, XO_ARITH(XOg_XOR), Hash | REX_64, Scratch);
+   emit_shifti(as, XOg_SHR | REX_64, Scratch, 31);
+   emit_rr(as, XO_MOV, Scratch | REX_64, Hash | REX_64);
+   emit_mrm(as, XO_IMUL, Hash | REX_64, Scratch);
+   emit_loadu64(as, Scratch, HASH_MIX64_MUL2);
+   checkmclim(as);
+   emit_rr(as, XO_ARITH(XOg_XOR), Hash | REX_64, Scratch);
+   emit_shifti(as, XOg_SHR | REX_64, Scratch, 27);
+   emit_rr(as, XO_MOV, Scratch | REX_64, Hash | REX_64);
+   emit_mrm(as, XO_IMUL, Hash | REX_64, Scratch);
+   emit_loadu64(as, Scratch, HASH_MIX64_MUL1);
+   checkmclim(as);
+   emit_rr(as, XO_ARITH(XOg_XOR), Hash | REX_64, Scratch);
+   emit_shifti(as, XOg_SHR | REX_64, Scratch, 30);
+   emit_rr(as, XO_MOV, Scratch | REX_64, Hash | REX_64);
 }
 
 /* Inlined hash lookup. Specialized for key type and for const keys.
@@ -879,6 +937,11 @@ static void asm_href(ASMState* as, IRIns* ir, IROp merge)
       key = ra_alloc1(as, ir->op2, irt_isnum(kt) ? RSET_FPR : allow);
       if (LJ_GC64 or !irt_isstr(kt)) tmp = ra_scratch(as, rset_exclude(allow, key));
    }
+   else if (irt_isnum(kt) or irt_isaddr(kt)) {
+      // Keep the complete constant key outside the collision loop without spilling another live value.
+      RegSet available = as->freeset & rset_exclude(allow, tab);
+      if (available) tmp = ra_scratch(as, available);
+   }
 
    // Key not found in chain: jump to exit (if merged) or load niltv.
    l_end = emit_label(as);
@@ -896,7 +959,10 @@ static void asm_href(ASMState* as, IRIns* ir, IROp merge)
    if (merge == IR_EQ) asm_guardcc(as, CC_E);
    else emit_sjcc(as, CC_E, l_end);
 
-   if (irt_isnum(kt)) {
+   if (isk and ra_hasreg(tmp)) {
+      emit_rmro(as, XO_CMP, tmp | REX_64, dest, offsetof(Node, key.u64));
+   }
+   else if (irt_isnum(kt)) {
       if (isk) {
          // Assumes -0.0 is already canonicalized to +0.0.
          emit_gmroi(as, XG_ARITHi(XOg_CMP), dest, offsetof(Node, key.u32.lo), (int32_t)ir_knum(irkey)->u32.lo);
@@ -930,7 +996,13 @@ static void asm_href(ASMState* as, IRIns* ir, IROp merge)
 
    emit_sfixup(as, l_loop);
    checkmclim(as);
-   if (!isk and irt_isaddr(kt)) {
+   if (isk and ra_hasreg(tmp)) {
+      // Emission runs backwards: initialise once before the first comparison, outside the backedge.
+      uint64_t key_bits = irt_isnum(kt) ? ir_knum(irkey)->u64 :
+         (uint64_t(irt_toitype(kt)) << 47) | irkey[1].tv.u64;
+      emit_loadu64(as, tmp, key_bits);
+   }
+   else if (!isk and irt_isaddr(kt)) {
       emit_rr(as, XO_OR, tmp | REX_64, key);
       emit_loadu64(as, tmp, (uint64_t)irt_toitype(kt) << 47);
    }
@@ -952,34 +1024,25 @@ static void asm_href(ASMState* as, IRIns* ir, IROp merge)
          emit_rmro(as, XO_ARITH(XOg_AND), dest, key, offsetof(GCstr, sid));
          emit_rmro(as, XO_MOV, dest, tab, offsetof(GCtab, hmask));
       }
-      else {  // Must match with hashrot() in lj_tab.c.
+      else {  // Must match with hashlohi_bits() in lj_tab.h.
          emit_rmro(as, XO_ARITH(XOg_AND), dest, tab, offsetof(GCtab, hmask));
-         emit_rr(as, XO_ARITH(XOg_SUB), dest, tmp);
-         emit_shifti(as, XOg_ROL, tmp, HASH_ROT3);
-         emit_rr(as, XO_ARITH(XOg_XOR), dest, tmp);
-         emit_shifti(as, XOg_ROL, dest, HASH_ROT2);
-         emit_rr(as, XO_ARITH(XOg_SUB), tmp, dest);
-         emit_shifti(as, XOg_ROL, dest, HASH_ROT1);
-         emit_rr(as, XO_ARITH(XOg_XOR), tmp, dest);
+         asm_href_mix64(as, dest, tmp);
+         checkmclim(as);
          if (irt_isnum(kt)) {
-            emit_rr(as, XO_ARITH(XOg_ADD), dest, dest);
-            emit_shifti(as, XOg_SHR | REX_64, dest, 32);
-            emit_rr(as, XO_MOV, tmp, dest);
+            // Adding the isolated high word doubles it modulo 32 bits and leaves the low word unchanged.
+            emit_rr(as, XO_ARITH(XOg_ADD), dest | REX_64, tmp);
+            emit_shifti(as, XOg_SHL | REX_64, tmp, 32);
+            emit_shifti(as, XOg_SHR | REX_64, tmp, 32);
+            emit_rr(as, XO_MOV, tmp | REX_64, dest | REX_64);
             emit_rr(as, XO_MOVDto, key | REX_64, dest);
          }
          else {
-            emit_rr(as, XO_MOV, tmp, key);
             checkmclim(as);
-            emit_gri(as, XG_ARITHi(XOg_XOR), dest, irt_toitype(kt) << 15);
-            if ((as->flags & JIT_F_BMI2)) {
-               emit_i8(as, 32);
-               emit_mrm(as, (x86Op)(XV_RORX | VEX_64), dest, key);
-            }
-            else {
-               emit_shifti(as, XOg_SHR | REX_64, dest, 32);
-               emit_rr(as, XO_MOV, dest | REX_64, key | REX_64);
-            }
+            emit_rr(as, XO_ARITH(XOg_OR), dest | REX_64, tmp);
+            emit_loadu64(as, tmp, uint64_t(irt_toitype(kt)) << 47);
+            emit_rr(as, XO_MOV, dest | REX_64, key | REX_64);
          }
+         checkmclim(as);
       }
    }
 }
@@ -1245,12 +1308,7 @@ static void asm_ahustore(ASMState* as, IRIns* ir)
 
       if (ra_hasreg(src)) {
          if (!(LJ_DUALNUM and irt_isinteger(ir->t))) {
-            // TODO: 64 bit store + 32 bit load-modify-store is suboptimal.
-            as->mrm.ofs += 4;
-            emit_u32(as, irt_toitype(ir->t) << 15);
-            emit_mrm(as, XO_ARITHi, XOg_OR, RID_MRM);
-            as->mrm.ofs -= 4;
-            emit_mrm(as, XO_MOVto, src | REX_64, RID_MRM);
+            asm_storetagged(as, ir->t, src);
             return;
          }
          emit_mrm(as, XO_MOVto, src, RID_MRM);
@@ -1552,7 +1610,8 @@ static void asm_intarith(ASMState *as, IRIns *ir, x86Arith xa)
    RegSet allow = RSET_GPR;
    Reg dest, right;
    int32_t k = 0;
-   if (as->flagmcp == as->mcp) {  // Drop test r,r instruction.
+   bool needs_flags = as->flagmcp IS as->mcp;
+   if (needs_flags) {  // Drop test r,r instruction.
       MCode *p = as->mcp + ((*as->mcp < XI_TESTb) ? 3 : 2);
       MCode *q = p[0] == 0x0f ? p + 1 : p;
       if ((*q & 15) < 14) {
@@ -1590,8 +1649,14 @@ static void asm_intarith(ASMState *as, IRIns *ir, x86Arith xa)
       emit_mrm(as, XO_IMUL, REX_64IR(ir, dest), right);
    }
    else {  // IMUL r, r, k.
-      // NYI: use lea/shl/add/sub (FOLD only does 2^k) depending on CPU.
       Reg left = asm_fuseloadm(as, lref, RSET_GPR, irt_is64(ir->t));
+      // One scaled LEA handles these multipliers without changing wrapping semantics. Keep IMUL for fused
+      // memory operands and whenever flags are consumed, including an overflow guard or a removed TEST.
+      if (!needs_flags and !irt_isguard(ir->t) and left != RID_MRM and (k IS 3 or k IS 5 or k IS 9)) {
+         x86Mode scale = k IS 3 ? XM_SCALE2 : k IS 5 ? XM_SCALE4 : XM_SCALE8;
+         emit_rmrxo(as, XO_LEA, REX_64IR(ir, dest), left, left, scale, 0);
+         return;
+      }
       x86Op xo;
       if (checki8(k)) {
          emit_i8(as, k);
@@ -1624,72 +1689,74 @@ static void asm_intarith(ASMState *as, IRIns *ir, x86Arith xa)
 // array indexing is not decomposed and already makes use of all fields
 // of the ModRM operand.
 
-static int asm_lea(ASMState* as, IRIns* ir)
+static int asm_lea(ASMState* As, IRIns* Ir)
 {
-   IRIns* irl = IR(ir->op1);
-   IRIns* irr = IR(ir->op2);
+   IRIns* irl = As->ir + Ir->op1;
+   IRIns* irr = As->ir + Ir->op2;
+   // A 64-bit LEA must not absorb a wrapping 32-bit ADD. All displacements must fit signed 32 bits.
    RegSet allow = RSET_GPR;
    Reg dest;
-   as->mrm.base = as->mrm.idx = RID_NONE;
-   as->mrm.scale = XM_SCALE1;
-   as->mrm.ofs = 0;
+   As->mrm.base = As->mrm.idx = RID_NONE;
+   As->mrm.scale = XM_SCALE1;
+   As->mrm.ofs = 0;
    if (ra_hasreg(irl->r)) {
       rset_clear(allow, irl->r);
-      ra_noweak(as, irl->r);
-      as->mrm.base = irl->r;
-      if (irref_isk(ir->op2) or ra_hasreg(irr->r)) {
+      ra_noweak(As, irl->r);
+      As->mrm.base = irl->r;
+      if (irref_isk(Ir->op2) or ra_hasreg(irr->r)) {
          // The PHI renaming logic does a better job in some cases.
-         if (ra_hasreg(ir->r) and
-            ((irt_isphi(irl->t) and as->phireg[ir->r] == ir->op1) or
-               (irt_isphi(irr->t) and as->phireg[ir->r] == ir->op2)))
+         if (ra_hasreg(Ir->r) and
+            ((irt_isphi(irl->t) and As->phireg[Ir->r] IS Ir->op1) or
+               (irt_isphi(irr->t) and As->phireg[Ir->r] IS Ir->op2)))
             return 0;
-         if (irref_isk(ir->op2)) {
-            as->mrm.ofs = irr->i;
+         if (irref_isk(Ir->op2)) {
+            if (!asm_isk32(As, Ir->op2, &As->mrm.ofs)) return 0;
          }
          else {
             rset_clear(allow, irr->r);
-            ra_noweak(as, irr->r);
-            as->mrm.idx = irr->r;
+            ra_noweak(As, irr->r);
+            As->mrm.idx = irr->r;
          }
       }
-      else if (irr->o == IR_ADD and mayfuse(as, ir->op2) and
-         irref_isk(irr->op2)) {
-         Reg idx = ra_alloc1(as, irr->op1, allow);
+      else if (irr->o IS IR_ADD and mayfuse(As, Ir->op2) and
+         irref_isk(irr->op2) and (!irt_is64(Ir->t) or irt_is64(irr->t))) {
+         if (!asm_isk32(As, irr->op2, &As->mrm.ofs)) return 0;
+         Reg idx = ra_alloc1(As, irr->op1, allow);
          rset_clear(allow, idx);
-         as->mrm.idx = (uint8_t)idx;
-         as->mrm.ofs = IR(irr->op2)->i;
+         As->mrm.idx = uint8_t(idx);
       }
       else return 0;
    }
-   else if (ir->op1 != ir->op2 and irl->o == IR_ADD and mayfuse(as, ir->op1) and
-      (irref_isk(ir->op2) or irref_isk(irl->op2))) {
-      Reg idx, base = ra_alloc1(as, irl->op1, allow);
+   else if (Ir->op1 != Ir->op2 and irl->o IS IR_ADD and mayfuse(As, Ir->op1) and
+      (!irt_is64(Ir->t) or irt_is64(irl->t)) and
+      (irref_isk(Ir->op2) or irref_isk(irl->op2))) {
+      IRRef offset = irref_isk(Ir->op2) ? Ir->op2 : irl->op2;
+      if (!asm_isk32(As, offset, &As->mrm.ofs)) return 0;
+      Reg idx, base = ra_alloc1(As, irl->op1, allow);
       rset_clear(allow, base);
-      as->mrm.base = (uint8_t)base;
-      if (irref_isk(ir->op2)) {
-         as->mrm.ofs = irr->i;
-         idx = ra_alloc1(as, irl->op2, allow);
+      As->mrm.base = uint8_t(base);
+      if (irref_isk(Ir->op2)) {
+         idx = ra_alloc1(As, irl->op2, allow);
       }
       else {
-         as->mrm.ofs = IR(irl->op2)->i;
-         idx = ra_alloc1(as, ir->op2, allow);
+         idx = ra_alloc1(As, Ir->op2, allow);
       }
       rset_clear(allow, idx);
-      as->mrm.idx = (uint8_t)idx;
+      As->mrm.idx = uint8_t(idx);
    }
    else {
       return 0;
    }
-   dest = ra_dest(as, ir, allow);
-   emit_mrm(as, XO_LEA, dest, RID_MRM);
+   dest = ra_dest(As, Ir, allow);
+   emit_mrm(As, XO_LEA, REX_64IR(Ir, dest), RID_MRM);
    return 1;  /* Success. */
 }
 
-static void asm_add(ASMState* as, IRIns* ir)
+static void asm_add(ASMState* As, IRIns* Ir)
 {
-   if (irt_isnum(ir->t)) asm_fparith(as, ir, XO_ADDSD);
-   else if (as->flagmcp == as->mcp or irt_is64(ir->t) or !asm_lea(as, ir))
-      asm_intarith(as, ir, XOg_ADD);
+   if (irt_isnum(Ir->t)) asm_fparith(As, Ir, XO_ADDSD);
+   else if (As->flagmcp IS As->mcp or !asm_lea(As, Ir))
+      asm_intarith(As, Ir, XOg_ADD);
 }
 
 static void asm_sub(ASMState* as, IRIns* ir)
@@ -1733,15 +1800,77 @@ static void asm_intmin_max(ASMState* as, IRIns* ir, int cc)
    ra_left(as, dest, lref);
 }
 
+// ABS cannot produce negative zero.  SSE selects its right operand on equal inputs, so put ABS on the right
+// for MAX and on the left for MIN.  NaN guards are emitted by the recorder as for the general extrema path.
+static bool asm_minmax_abs(ASMState* As, IRIns* Ir, x86Op Op)
+{
+   IRRef left_ref = Ir->op1, right_ref = Ir->op2;
+   // A pre-loop PHI reference may receive another value on the backedge.  An ABS inside the loop is freshly
+   // evaluated, even when marked as the PHI's incoming value, and retains the required sign property.
+   bool left_abs = As->ir[left_ref].o IS IR_ABS and
+      (!irt_isphi(As->ir[left_ref].t) or (As->loopref and left_ref > As->loopref));
+   bool right_abs = As->ir[right_ref].o IS IR_ABS and
+      (!irt_isphi(As->ir[right_ref].t) or (As->loopref and right_ref > As->loopref));
+   if (!left_abs and !right_abs) return false;
+   if ((Op IS XO_MINSD and !left_abs) or (Op IS XO_MAXSD and !right_abs)) {
+      IRRef saved = left_ref;
+      left_ref = right_ref;
+      right_ref = saved;
+   }
+   RegSet allow = RSET_FPR;
+   Reg right = As->ir[right_ref].r;
+   if (ra_hasreg(right)) {
+      rset_clear(allow, right);
+      ra_noweak(As, right);
+   }
+   Reg dest = ra_dest(As, Ir, allow);
+   right = ra_alloc1(As, right_ref, rset_exclude(RSET_FPR, dest));
+   emit_rr(As, Op, dest, right);
+   ra_left(As, dest, left_ref);
+   return true;
+}
+
 static void asm_min(ASMState* as, IRIns* ir)
 {
-   if (irt_isnum(ir->t)) asm_fparith(as, ir, XO_MINSD);
+   if (irt_isnum(ir->t)) {
+      if (asm_minmax_abs(as, ir, XO_MINSD)) return;
+      RegSet allow = RSET_FPR;
+      Reg right = IR(ir->op2)->r;
+      if (ra_hasreg(right)) {
+         rset_clear(allow, right);
+         ra_noweak(as, right);
+      }
+      Reg dest = ra_dest(as, ir, allow);
+      right = ra_alloc1(as, ir->op2, rset_exclude(RSET_FPR, dest));
+      Reg scratch = ra_scratch(as, rset_exclude(rset_exclude(RSET_FPR, dest), right));
+      emit_rr(as, XO_ORPS, dest, scratch);
+      emit_rr(as, XO_MINSD, dest, right);
+      emit_rr(as, XO_MINSD, scratch, dest);
+      emit_rr(as, XO_MOVAPS, scratch, right);
+      ra_left(as, dest, ir->op1);
+   }
    else asm_intmin_max(as, ir, CC_G);
 }
 
 static void asm_max(ASMState* as, IRIns* ir)
 {
-   if (irt_isnum(ir->t)) asm_fparith(as, ir, XO_MAXSD);
+   if (irt_isnum(ir->t)) {
+      if (asm_minmax_abs(as, ir, XO_MAXSD)) return;
+      RegSet allow = RSET_FPR;
+      Reg right = IR(ir->op2)->r;
+      if (ra_hasreg(right)) {
+         rset_clear(allow, right);
+         ra_noweak(as, right);
+      }
+      Reg dest = ra_dest(as, ir, allow);
+      right = ra_alloc1(as, ir->op2, rset_exclude(RSET_FPR, dest));
+      Reg scratch = ra_scratch(as, rset_exclude(rset_exclude(RSET_FPR, dest), right));
+      emit_rr(as, XO_ANDPS, dest, scratch);
+      emit_rr(as, XO_MAXSD, dest, right);
+      emit_rr(as, XO_MAXSD, scratch, dest);
+      emit_rr(as, XO_MOVAPS, scratch, right);
+      ra_left(as, dest, ir->op1);
+   }
    else asm_intmin_max(as, ir, CC_L);
 }
 
@@ -1877,7 +2006,10 @@ static void asm_comp(ASMState* as, IRIns* ir)
 
       left = ra_alloc1(as, lref, RSET_FPR);
       l_around = emit_label(as);
-      asm_guardcc(as, cc >> 4);
+      // A self-comparison only detects NaN.  UCOMISD leaves ZF set for equal and for unordered operands alike, so the
+      // equality branch can never be taken and the parity branch alone implements the guard.
+      bool nan_check = ir->o IS IR_EQ and lref IS rref;
+      if (!nan_check) asm_guardcc(as, cc >> 4);
       if (cc & VCC_P) {  // Extra CC_P branch required?
          if (!(cc & VCC_U)) {
             asm_guardcc(as, CC_P);  /* Branch to exit for ordered comparisons. */
@@ -2106,16 +2238,18 @@ static void asm_stack_restore(ASMState* as, SnapShot* snap)
          if (!irref_isk(ref)) {
             Reg src = ra_alloc1(as, ref, rset_exclude(RSET_GPR, RID_BASE));
             if (irt_is64(ir->t)) {
-               // TODO: 64 bit store + 32 bit load-modify-store is suboptimal.
-               emit_u32(as, irt_toitype(ir->t) << 15);
-               emit_rmro(as, XO_ARITHi, XOg_OR, RID_BASE, ofs + 4);
+               as->mrm.base = RID_BASE;
+               as->mrm.idx = RID_NONE;
+               as->mrm.ofs = ofs;
+               asm_storetagged(as, ir->t, src);
             }
-            else if (LJ_DUALNUM and irt_isinteger(ir->t)) {
-               emit_movmroi(as, RID_BASE, ofs + 4, LJ_TISNUM << 15);
+            else {
+               if (LJ_DUALNUM and irt_isinteger(ir->t)) {
+                  emit_movmroi(as, RID_BASE, ofs + 4, LJ_TISNUM << 15);
+               }
+               else emit_movmroi(as, RID_BASE, ofs + 4, (irt_toitype(ir->t) << 15) | 0x7fff);
+               emit_movtomro(as, src, RID_BASE, ofs);
             }
-            else emit_movmroi(as, RID_BASE, ofs + 4, (irt_toitype(ir->t) << 15) | 0x7fff);
-
-            emit_movtomro(as, REX_64IR(ir, src), RID_BASE, ofs);
          }
          else {
             TValue k;

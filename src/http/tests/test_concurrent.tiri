@@ -1,67 +1,137 @@
 --[[ Concurrent Requests Testing --]]
 
-   local hslib = import 'net/httpserver'
+   import 'net/httpserver'
    import 'json'
    include 'http'
 
-   local SERVER_PORT = 18948
+SERVER_PORT <const> = 18948
 
-----------------------------------------------------------------------------------------------------------------------
+@BeforeAll function init(State)
+   global glPath = State.folder
 
-function ParallelRequests()
-   local proc = processing.new({ timeout = 5.0 })
-   local results = {}
-   local completed = 0
-   local total_req = 5
-
-   for i = 0, total_req-1 do
-      results[i] = {}
-      results[i].http = obj.new('http', {
-         src    = 'http://127.0.0.1:' .. SERVER_PORT .. '/api/parallel/' .. i,
-         method = 'GET',
-         flags  = HTF_NO_HEAD,
-         incoming = function(HTTP, Buffer)
-            if not results[i].data then results[i].data = '' end
-            results[i].data = results[i].data .. tostring(Buffer)
-            print('Received: ' .. results[i].data)
-         end,
-         stateChanged = function(HTTP, State)
-            if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
-               completed++
-               print('Completed ' .. completed .. ' of ' .. total_req)
-               if completed >= total_req then
-                  proc.signal()
-               end
+   global glServer = hslib.start({
+      port    = SERVER_PORT,
+      folder  = glPath,
+      verbose = true,
+      routes  = {
+         { pattern = '/api/parallel/:id',
+            method = 'GET',
+            handler = function(req, res)
+               -- Small delay to simulate processing
+               print('/api/parallel/:id');
+               processing.sleep(math.random(50, 200)/1000)
+               res.json({
+                  message = 'Parallel request processed',
+                  requestId = req.params.id,
+                  timestamp = mSys.PreciseTime()
+               })
             end
-         end
-      })
-      assert(results[i].http.acActivate() is ERR_Okay, "Parallel request " .. i .. " failed to activate")
-   end
+         },
+         { pattern = '/api/concurrent-post',
+            method = 'POST',
+            handler = function(req, res)
+               local data = req.parsedBody or {}
+               processing.sleep(math.random(10, 100)/1000) -- Simulate processing time
+               res.json({
+                  message = 'Concurrent POST processed',
+                  receivedId = data.id,
+                  receivedData = data.data,
+                  timestamp = mSys.PreciseTime()
+               })
+            end
+         },
+         { pattern = '/api/load-test/:id',
+            method = 'GET',
+            handler = function(req, res)
+               res.json({
+                  message = 'Load test response',
+                  requestId = req.params.id,
+                  timestamp = mSys.PreciseTime()
+               })
+            end
+         },
+         { pattern = '/api/slow-response',
+            method = 'GET',
+            handler = function(req, res)
+               -- Slow response for timeout testing
+               processing.sleep(1) -- Delay
+               res.json({
+                  message = 'Slow response delivered',
+                  timestamp = mSys.PreciseTime()
+               })
+            end
+         }
+      }
+   })
+end
 
-   local err = proc.sleep()
-   assert(err is ERR_Okay, 'Parallel requests processing failed: ' .. mSys.GetErrorMsg(err))
-   assert(completed is total_req, 'Not all parallel requests completed: ' .. completed .. '/' .. total_req)
-
-   -- Verify all responses
-   for i = 1, total_req do
-      assert(results[i].data, 'No response for request ' .. i)
-      local response = json.decode(results[i].data)
-      assert(response.requestId is tostring(i), 'Request ID mismatch for request ' .. i)
-   end
-
-   print('Parallel requests test passed: ' .. total_req .. ' concurrent requests')
+@AfterAll function cleanup()
+   glServer.stop()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function ConcurrentPOST()
-   local proc = processing.new({ timeout = 10.0 })
-   local results = {}
-   local completed = 0
-   local total_posts = 3
+@Test function ParallelRequests()
+   results = {}
+   completed = 0
+   TOTAL_REQ <const> = 10
+   wait_http = nil
 
-   for i = 0, total_posts-1 do
-      local test_data = '{"id":' .. i .. ',"data":"test_data_' .. i .. '"}'
+   for i in {0 to TOTAL_REQ} do
+      results[i] = {}
+      results[i].http = obj.new('http', {
+         src    = f'http://127.0.0.1:{SERVER_PORT}/api/parallel/{i}',
+         method = 'GET',
+         flags  = HTF_NO_HEAD,
+         incoming = function(HTTP, Buffer)
+            if not results[i].data then results[i].data = '' end
+            results[i].data ..= Buffer.getString()
+            print(f'Received: {#results[i].data} bytes')
+         end,
+         stateChanged = function(HTTP, State)
+            if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+               completed++
+               print(f'Completed {completed} of {TOTAL_REQ}')
+               if completed >= TOTAL_REQ then
+                  wait_http.acSignal()
+               end
+            end
+         end
+      })
+      if not wait_http then wait_http = results[i].http end
+   end
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { wait_http } })
+
+   for i in {0 to TOTAL_REQ} do
+      assert(results[i].http.acActivate() is ERR_Okay, "Parallel request " .. i .. " failed to activate")
+   end
+
+   print('Sleeping...')
+   check proc.sleep()
+
+   assert(completed is TOTAL_REQ, 'Not all parallel requests completed: ' .. completed .. '/' .. TOTAL_REQ)
+
+   -- Verify all responses
+   for i in {0 to TOTAL_REQ} do
+      assert(results[i].data, 'No response for request ' .. i)
+      response = json.decode(results[i].data)
+      assert(response.requestId is tostring(i), 'Request ID mismatch for request ' .. i)
+   end
+
+   print('Parallel requests test passed: ' .. TOTAL_REQ .. ' concurrent requests')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ConcurrentPOST()
+   results = {}
+   completed = 0
+   total_posts = 3
+   wait_http = nil
+
+   for i in {0 to total_posts} do
+      test_data = f'{{"id":{i},"data":"test_data_{i}"}}'
       results[i] = {}
       results[i].http = obj.new('http', {
          src         = 'http://127.0.0.1:' .. SERVER_PORT .. '/api/concurrent-post',
@@ -69,30 +139,36 @@ function ConcurrentPOST()
          contentType = 'application/json',
          flags       = HTF_NO_HEAD,
          inputFile   = 'string:' .. test_data,
-         size        = test_data:len(),
+         size        = #test_data,
          incoming = function(HTTP, Buffer)
             if not results[i].data then results[i].data = '' end
-            results[i].data = results[i].data .. tostring(Buffer)
+            results[i].data ..= Buffer.getString()
          end,
          stateChanged = function(HTTP, State)
             if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
                completed++
                if completed >= total_posts then
-                  proc.signal()
+                  wait_http.acSignal()
                end
             end
          end
       })
+      if not wait_http then wait_http = results[i].http end
+   end
+
+   proc = processing.new({ timeout = 10.0, signals = array<obj> { wait_http } })
+
+   for i in {0 to total_posts} do
       assert(results[i].http.acActivate() is ERR_Okay, "Concurrent POST " .. i .. " failed to activate")
    end
 
-   local err = proc.sleep()
-   assert(err is ERR_Okay, 'Concurrent POST processing failed: ' .. mSys.GetErrorMsg(err))
+   check proc.sleep()
+
    assert(completed is total_posts, 'Not all concurrent POSTs completed: ' .. completed .. '/' .. total_posts)
 
    -- Verify all POST responses
-   for i = 1, total_posts do
-      local response = json.decode(results[i].data)
+   for i in {0 to total_posts} do
+      response = json.decode(results[i].data)
       assert(response.receivedId is i, 'POST ID mismatch for request ' .. i)
    end
 
@@ -101,15 +177,15 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function HighLoadRequests()
-   local proc = processing.new({ timeout = 5.0 })
-   local results = {}
-   local completed = 0
-   local total_req = 10
+@Test function HighLoadRequests()
+   results = {}
+   completed = 0
+   TOTAL_REQ <const> = 80
+   wait_http = nil
 
-   print('Starting high load test with ' .. total_req .. ' requests...')
+   print('Starting high load test with ' .. TOTAL_REQ .. ' requests...')
 
-   for i = 0, total_req-1 do
+   for i in {0 to TOTAL_REQ} do
       results[i] = {}
       results[i].http = obj.new('http', {
          src            = 'http://127.0.0.1:' .. SERVER_PORT .. '/api/load-test/' .. i,
@@ -118,100 +194,34 @@ function HighLoadRequests()
          connectTimeout = 5,
          incoming = function(HTTP, Buffer)
             if not results[i].data then results[i].data = '' end
-            if Buffer then results[i].data = results[i].data .. tostring(Buffer) end
+            if Buffer then results[i].data ..= Buffer.getString() end
          end,
          stateChanged = function(HTTP, State)
             if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
                completed++
-               if completed >= total_req then
-                  proc.signal()
+               if completed >= TOTAL_REQ then
+                  wait_http.acSignal()
                end
             end
          end
       })
---      assert(results[i].http.acActivate() is ERR_Okay, "High load request " .. i .. " failed to activate")
-      -- Use threads to simulate multiple clients
-      async.action(results[i].http, 'Activate')
+      if not wait_http then wait_http = results[i].http end
+   end
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { wait_http } })
+
+   for i in {0 to TOTAL_REQ} do
+      assert(results[i].http.acActivate() is ERR_Okay, "High load request " .. i .. " failed to activate")
 
       -- Small delay to stagger requests slightly
       if (i % 3 is 0) then mSys.WaitTime(0.1) end
    end
 
-   local err = proc.sleep()
-   assert(err is ERR_Okay, 'High load processing failed: ' .. mSys.GetErrorMsg(err))
+   check proc.sleep()
 
    -- Allow for some failures under high load
-   local success_rate = completed / total_req
+   success_rate = completed / TOTAL_REQ
    assert(success_rate >= 0.8, 'Success rate too low under high load: ' .. (success_rate * 100) .. '%')
 
-   print('High load test passed: ' .. completed .. '/' .. total_req .. ' requests succeeded')
+   print('High load test passed: ' .. completed .. '/' .. TOTAL_REQ .. ' requests succeeded')
 end
-
-----------------------------------------------------------------------------------------------------------------------
-
-   return {
-      tests = {
-         testParallelRequests,
-         testConcurrentPOST,
-         testHighLoadRequests
-      },
-      init = function(Path)
-         glServer = hslib.start({
-            port    = SERVER_PORT,
-            folder  = Path,
-            verbose = true,
-            routes  = {
-               { pattern = '/api/parallel/:id',
-                 method = 'GET',
-                 handler = function(req, res)
-                    -- Small delay to simulate processing
-                    print('/api/parallel/:id');
-                    processing.sleep(math.random(50, 200)/1000)
-                    res.json({
-                       message = 'Parallel request processed',
-                       requestId = req.params.id,
-                       timestamp = mSys.PreciseTime()
-                    })
-                 end
-               },
-               { pattern = '/api/concurrent-post',
-                 method = 'POST',
-                 handler = function(req, res)
-                    local data = req.parsedBody or {}
-                    processing.sleep(math.random(10, 100)/1000) -- Simulate processing time
-                    res.json({
-                       message = 'Concurrent POST processed',
-                       receivedId = data.id,
-                       receivedData = data.data,
-                       timestamp = mSys.PreciseTime()
-                    })
-                 end
-               },
-               { pattern = '/api/load-test/:id',
-                 method = 'GET',
-                 handler = function(req, res)
-                    res.json({
-                       message = 'Load test response',
-                       requestId = req.params.id,
-                       timestamp = mSys.PreciseTime()
-                    })
-                 end
-               },
-               { pattern = '/api/slow-response',
-                 method = 'GET',
-                 handler = function(req, res)
-                    -- Slow response for timeout testing
-                    processing.sleep(1) -- Delay
-                    res.json({
-                       message = 'Slow response delivered',
-                       timestamp = mSys.PreciseTime()
-                    })
-                 end
-               }
-            }
-         })
-      end,
-      cleanup = function()
-         glServer.stop()
-      end
-   }

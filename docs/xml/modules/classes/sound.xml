@@ -7,10 +7,10 @@
     <type>class</type>
     <module>Audio</module>
     <comment>High-level audio sample playback interface with intelligent resource management and format detection.</comment>
-    <fileExtension>*.wav|*.wave|*.snd</fileExtension>
+    <fileExtension>wav|wave|snd</fileExtension>
     <fileDescription>Sound Sample</fileDescription>
     <version>1</version>
-    <id>105ee06e</id>
+    <id>825a6b79</id>
     <idstring>SOUND</idstring>
     <category>Audio</category>
     <copyright>Paul Manias © 2002-2026</copyright>
@@ -18,28 +18,24 @@
 <p>The Sound class provides a comprehensive, user-friendly interface for audio sample playback that abstracts the complexities of audio hardware management whilst delivering professional-quality results.  Designed as the primary interface for general-purpose audio operations, the Sound class automatically handles resource allocation, format detection, hardware abstraction, and intelligent streaming decisions to provide optimal performance across diverse system configurations.</p>
 <p>The Sound class implements robust file format support with automatic detection and validation:</p>
 <list type="bullet">
-<li>
-<b>Native WAVE Support:</b> Complete support for WAVE format files including all standard PCM encodings, multiple bit depths (8/16-bit), and both mono and stereo configurations</li>
-<li>
-<b>Automatic Format Detection:</b> File format identification occurs automatically during initialisation based on file headers and content analysis</li>
-<li>
-<b>Extensible Architecture:</b> Additional audio formats (MP3, OGG, FLAC, AAC) can be supported through Sound class extensions and codec plugins</li>
-<li>
-<b>Validation and Error Handling:</b> Comprehensive file validation prevents playback of corrupted or unsupported audio data</li>
+<li><b>Native WAVE Support:</b> Complete support for WAVE format files including all standard PCM encodings, multiple bit depths (8/16-bit), and both mono and stereo configurations</li>
+<li><b>Automatic Format Detection:</b> File format identification occurs automatically during initialisation based on file headers and content analysis</li>
+<li><b>Extensible Architecture:</b> Additional audio formats (MP3, OGG, FLAC, AAC) can be supported through Sound class extensions and codec plugins</li>
+<li><b>Validation and Error Handling:</b> Comprehensive file validation prevents playback of corrupted or unsupported audio data</li>
 </list>
 <p>The following demonstrates advanced Sound class usage including pitch control and event handling:</p>
-<pre>local snd = obj.new('sound', {
+<pre>snd = obj.new('sound', {
    path = 'audio:samples/piano_c4.wav',
    note = 'C6',    -- Play two octaves higher
    volume = 0.8,   -- Reduce volume to 80%
    onStop = function(Sound)
       print('Playback completed')
-      proc.signal()
+      processing.signal()
    end
 })
 
 snd.acActivate()
-proc.sleep()  -- Wait for completion
+processing.sleep()  -- Wait for completion
 </pre></description>
     <source>
       <file>class_sound.cpp</file>
@@ -51,34 +47,46 @@ proc.sleep()  -- Wait for completion
       <name>Activate</name>
       <comment>Plays the audio sample.</comment>
       <prototype>ERR acActivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acActivate()</tiriPrototype>
+      <description>
+<p>Calling Activate will play the sample data from the current seek position defined by the <fl>Position</fl> field.  Playback continues asynchronously and the client can monitor its progress through the <fl>Position</fl> field, or receive an event notification through an <fl>OnStop</fl> callback once playback has stopped.</p>
+<p>The <fl>Length</fl> field must be set prior to activation, otherwise <code>ERR::FieldNotSet</code> is returned.</p>
+<p>On first activation the sample data is either loaded into an audio buffer in its entirety, or configured for streaming according to the <fl>Stream</fl> field.  Streaming is enabled automatically when <code>STREAM::ALWAYS</code> is set and the sample exceeds 16KB, or when <code>STREAM::SMART</code> is set and the sample exceeds 256KB.  Subsequent calls reuse the prepared buffer.</p>
+<p>If the <code>LOOP</code> flag is defined then the sample will loop continuously between <fl>LoopStart</fl> and <fl>LoopEnd</fl> (or the full sample length if <fl>LoopEnd</fl> is zero) until deactivated.</p>
+<p>The sound is assigned to the first available mixer channel.  If every channel is in use, a channel belonging to a sound of lower <fl>Priority</fl> may be reallocated for playback.  When no suitable channel can be obtained, <code>ERR::ArrayFull</code> is returned.  Samples flagged with <code>RESTRICT_PLAY</code> or configured for streaming are limited to a single active channel, so re-activating them will restart playback on that channel rather than mixing a second copy.</p>
+<p>The current <fl>Volume</fl>, <fl>Pan</fl> and <fl>Playback</fl> (frequency) values are applied to the channel when playback begins.  If the seek position is at or beyond the end of the sample, it is automatically reset to the start before playing.</p>
+      </description>
     </action>
 
     <action>
       <name>Deactivate</name>
       <comment>Stops the audio sample and resets the playback position.</comment>
       <prototype>ERR acDeactivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acDeactivate()</tiriPrototype>
     </action>
 
     <action>
       <name>Disable</name>
       <comment>Disable playback of an active audio sample, equivalent to pausing.</comment>
       <prototype>ERR acDisable(*Object)</prototype>
+      <tiriPrototype>err = Object.acDisable()</tiriPrototype>
     </action>
 
     <action>
       <name>Enable</name>
       <comment>Continues playing a sound if it has been disabled.</comment>
       <prototype>ERR acEnable(*Object)</prototype>
+      <tiriPrototype>err = Object.acEnable()</tiriPrototype>
     </action>
 
     <action>
       <name>GetKey</name>
       <comment>Retrieve custom key values.</comment>
-      <prototype>ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)</prototype>
+      <prototype>ERR acGetKey(*Object, std::string_view Key, std::string &amp;Value)</prototype>
+      <tiriPrototype>err, str = Object.acGetKey(Key:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Key">The name of a key value.</param>
+        <param type="STRVIEW" name="Key">The name of a key value.</param>
         <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
-        <param type="INT" name="Size">Indicates the byte size of the Buffer.</param>
       </input>
       <description>
 <p>The following custom key values are formally recognised and may be defined automatically when loading sample files:</p>
@@ -97,10 +105,10 @@ proc.sleep()  -- Wait for completion
     <action>
       <name>Read</name>
       <comment>Read decoded audio from the sound sample.</comment>
-      <prototype>ERR acRead(*Object, APTR Buffer, INT Length, INT *Result)</prototype>
+      <prototype>ERR acRead(*Object, std::span&lt;int8_t&gt; Buffer, INT *Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acRead(Buffer:array&lt;any&gt;)</tiriPrototype>
       <input>
-        <param type="APTR" name="Buffer">Points a buffer that will receive the data.</param>
-        <param type="INT" name="Length">The total number of bytes to read from the object.  This value cannot exceed the size of the Buffer.</param>
+        <param type="std::span&lt;int8_t&gt;" name="Buffer">A mutable buffer that will receive the data.</param>
         <param type="INT" name="Result">The Read action will write this parameter with the total number of bytes read into the Buffer.</param>
       </input>
       <description>
@@ -112,9 +120,10 @@ proc.sleep()  -- Wait for completion
       <name>SaveToObject</name>
       <comment>Saves audio sample data to an object.</comment>
       <prototype>ERR acSaveToObject(*Object, OBJECTID Dest, CLASSID ClassID)</prototype>
+      <tiriPrototype>err = Object.acSaveToObject(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded data.</param>
-        <param type="CLASSID" name="ClassID">Can refer to a sub-class that should be used when encoding the data.</param>
+        <param type="CLASSID" name="ClassID">Can refer to a derived class that should be used when encoding the data.</param>
       </input>
     </action>
 
@@ -122,6 +131,7 @@ proc.sleep()  -- Wait for completion
       <name>Seek</name>
       <comment>Moves the cursor position for reading data.</comment>
       <prototype>ERR acSeek(*Object, DOUBLE Offset, INT Position)</prototype>
+      <tiriPrototype>err = Object.acSeek(Offset:num, Position:SEEK)</tiriPrototype>
       <input>
         <param type="DOUBLE" name="Offset">The desired offset to seek to, relative to the Position parameter.</param>
         <param type="POS" name="Position">The position that defines the starting point for Offset.</param>
@@ -134,10 +144,11 @@ proc.sleep()  -- Wait for completion
     <action>
       <name>SetKey</name>
       <comment>Define custom tags that will be saved with the sample data.</comment>
-      <prototype>ERR acSetKey(*Object, CSTRING Key, CSTRING Value)</prototype>
+      <prototype>ERR acSetKey(*Object, std::string_view Key, std::string_view Value)</prototype>
+      <tiriPrototype>err = Object.acSetKey(Key:str, Value:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Key">The name of the target key.</param>
-        <param type="CSTRING" name="Value">The string value to associate with Key.</param>
+        <param type="STRVIEW" name="Key">The name of the target key.</param>
+        <param type="STRVIEW" name="Value">The string value to associate with Key.</param>
       </input>
     </action>
 
@@ -203,6 +214,16 @@ proc.sleep()  -- Wait for completion
       <comment>Returns the duration of the sample, measured in seconds.</comment>
       <access read="G">Get</access>
       <type>DOUBLE</type>
+    </field>
+
+    <field>
+      <name>Elapsed</name>
+      <comment>Returns the elapsed playback time, measured in seconds.</comment>
+      <access read="G">Get</access>
+      <type>DOUBLE</type>
+      <description>
+<p>This field reports the current playback position in seconds.  It is derived from the live playback channel when the sample is active, or from the stored <fl>Position</fl> field when playback is stopped.</p>
+      </description>
     </field>
 
     <field>
@@ -317,10 +338,20 @@ proc.sleep()  -- Wait for completion
     <field>
       <name>Path</name>
       <comment>Location of the audio sample data.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>STRING</type>
       <description>
 <p>This field must refer to a file that contains the audio data that will be loaded.  If creating a new sample with the <code>SDF::NEW</code> flag, it is not necessary to define a file source.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>PlayPosition</name>
+      <comment>Returns the current playback position, measured in bytes.</comment>
+      <access read="G">Get</access>
+      <type>INT64</type>
+      <description>
+<p>This field differs from <fl>Position</fl> because it reflects the live playback cursor while the sound is active.  For streamed playback this is a best-effort source offset derived from the rolling stream buffer.</p>
       </description>
     </field>
 
@@ -353,6 +384,23 @@ proc.sleep()  -- Wait for completion
 <p>The playback priority of the sample is defined here. This helps to determine if the sample should be played when all available mixing channels are busy. Naturally, higher priorities are played over samples with low priorities.</p>
 <p>The minimum priority value allowed is -100, the maximum is 100.</p>
       </description>
+    </field>
+
+    <field>
+      <name>Progress</name>
+      <comment>Returns the current playback progress as a normalised value.</comment>
+      <access read="G">Get</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The returned value ranges from <code>0.0</code> at the beginning of the sample to <code>1.0</code> at the end of the sample.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Remaining</name>
+      <comment>Returns the remaining playback time, measured in seconds.</comment>
+      <access read="G">Get</access>
+      <type>DOUBLE</type>
     </field>
 
     <field>

@@ -1,7 +1,7 @@
 
 #include "base64.h"
 
-namespace pf {
+namespace kt {
 
 typedef enum { step_a=0, step_b, step_c, step_d } base64_decodestep;
 typedef enum { step_A=0, step_B, step_C } base64_encodestep;
@@ -9,13 +9,15 @@ typedef enum { step_A=0, step_B, step_C } base64_encodestep;
 static const char * encoding = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 static const char decoding[] = {62,-1,-1,-1,63,52,53,54,55,56,57,58,59,60,61,-1,-1,-1,-2,-1,-1,-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,-1,-1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51};
 
-static int base64_decode_block(CSTRING, int, char *, BASE64DECODE *);
-static int base64_encode_block(CSTRING, int, char *, BASE64ENCODE *);
+static size_t base64_decode_block(std::string_view, char *, BASE64DECODE *);
+static size_t base64_encode_block(std::span<const char>, std::span<char>, BASE64ENCODE *);
+static size_t base64_encoded_size(const BASE64ENCODE *, size_t);
+static bool base64_valid_input(std::string_view);
 
 inline int base64_decode_value(int value_in)
 {
    value_in -= 43;
-   if ((value_in < 0) or (value_in > (int)sizeof(decoding))) return -1;
+   if ((value_in < 0) or (value_in >= (int)sizeof(decoding))) return -1;
    return decoding[(int)value_in];
 }
 
@@ -33,33 +35,35 @@ Base64Encode: Encodes a binary source into a base 64 string.
 This is a state-based function that will encode raw data and output it as base-64 encoded text.  To use, the `State`
 structure must initially be set to zero (automatic if using C++).  Call this function repeatedly with new Input data
 and it will be written to the supplied `Output` pointer.  Once all incoming data has been consumed, call this function
-a final time with an `Input` of `NULL` and InputSize of zero.
+a final time with an empty `Input`.
 
-It is required that the `Output` is sized to at least `(4 / 3) + 1` of `InputSize` when encoding.  For the final output,
-the size must be at least 6 bytes.
+It is required that the `Output` is sized to at least `(Input.size() * 4 / 3) + 1` when encoding.  For the final
+output, the size must be at least 6 bytes.
 
 -INPUT-
 resource(BASE64ENCODE) State: Pointer to an BASE64ENCODE structure, initialised to zero.
-buf(cptr) Input:    The binary data to encode.
-bufsize InputSize:  The amount of data to encode.  Set to zero to finalise the output.
-buf(str) Output:    Destination buffer for the encoded output.
-bufsize OutputSize: Size of the destination buffer.  Must be at least `(InputSize * 4 / 3) + 1`.
+span(char) Input:    The binary data to encode.
+span(char) Output: Destination buffer for the encoded output.  Size must be at least `(Input.size() * 4 / 3) + 1`.
 
 -RESULT-
-int: The total number of bytes output is returned.
+large: The total number of bytes output is returned.
+
+-TAGS-
+mutates-input
 
 **********************************************************************************************************************/
 
-int Base64Encode(BASE64ENCODE *State, const void *Input, int InputSize, STRING Output, int OutputSize)
+int64_t Base64Encode(BASE64ENCODE *State, std::span<const char> Input, std::span<char> Output)
 {
-   if ((!State) or (!Input) or (!Output) or (OutputSize < 1)) return 0;
+   if ((!State) or (Output.empty())) return 0;
 
-   if (InputSize > 0) {
-		return base64_encode_block((CSTRING)Input, InputSize, Output, State);
-	}
+   if (!Input.empty()) {
+      if (Output.size() < base64_encoded_size(State, Input.size())) return 0;
+      return base64_encode_block(Input, Output, State);
+   }
    else { // Final output once all input consumed.
-      if (OutputSize >= 6) {
-         auto codechar = Output;
+      if (Output.size() >= 6) {
+         auto codechar = Output.data();
 
          switch (State->Step) {
             case step_B: // 3 bytes out
@@ -77,17 +81,48 @@ int Base64Encode(BASE64ENCODE *State, const void *Input, int InputSize, STRING O
          *codechar++ = '\n';
          *codechar++ = 0;
 
-         return codechar - Output;
+         return codechar - Output.data();
       }
       else return 0;
    }
 }
 
-static int base64_encode_block(CSTRING plaintext_in, int length_in, char *code_out, BASE64ENCODE *State)
+static size_t base64_encoded_size(const BASE64ENCODE *State, size_t length_in)
 {
-   const char *plainchar = plaintext_in;
-   const char *const plaintextend = plaintext_in + length_in;
-   char *codechar = code_out;
+   int    step       = State->Step;
+   int    step_count = State->StepCount;
+   size_t total      = 0;
+
+   while (length_in-- > 0) {
+      switch (step) {
+         case step_A:
+            total++;
+            step = step_B;
+            break;
+         case step_B:
+            total++;
+            step = step_C;
+            break;
+         case step_C:
+            total += 2;
+            step = step_A;
+            if (++step_count IS CHARS_PER_LINE/4) {
+               total++;
+               step_count = 0;
+            }
+            break;
+      }
+   }
+
+   return total;
+}
+
+static size_t base64_encode_block(std::span<const char> plaintext_in, std::span<char> code_out, BASE64ENCODE *State)
+{
+   const char *plainchar = plaintext_in.data();
+   const char *const plaintextend = plaintext_in.data() + plaintext_in.size();
+   char *const code_begin = code_out.data();
+   char *codechar = code_begin;
    char fragment;
 
    char result = State->Result;
@@ -95,10 +130,10 @@ static int base64_encode_block(CSTRING plaintext_in, int length_in, char *code_o
    switch (State->Step) {
       while (true) {
          case step_A:
-            if (plainchar == plaintextend) {
+            if (plainchar IS plaintextend) {
                State->Result = result;
                State->Step = step_A;
-               return codechar - code_out;
+               return codechar - code_begin;
             }
             fragment = *plainchar++;
             result = (fragment & 0x0fc) >> 2;
@@ -106,10 +141,10 @@ static int base64_encode_block(CSTRING plaintext_in, int length_in, char *code_o
             result = (fragment & 0x003) << 4;
 
          case step_B:
-            if (plainchar == plaintextend) {
+            if (plainchar IS plaintextend) {
                State->Result = result;
                State->Step = step_B;
-               return codechar - code_out;
+               return codechar - code_begin;
             }
             fragment = *plainchar++;
             result |= (fragment & 0x0f0) >> 4;
@@ -117,10 +152,10 @@ static int base64_encode_block(CSTRING plaintext_in, int length_in, char *code_o
             result = (fragment & 0x00f) << 2;
 
          case step_C:
-            if (plainchar == plaintextend) {
+            if (plainchar IS plaintextend) {
                State->Result = result;
                State->Step = step_C;
-               return codechar - code_out;
+               return codechar - code_begin;
             }
             fragment = *plainchar++;
             result |= (fragment & 0x0c0) >> 6;
@@ -129,14 +164,14 @@ static int base64_encode_block(CSTRING plaintext_in, int length_in, char *code_o
             *codechar++ = base64_encode_value(result);
 
             ++(State->StepCount);
-            if (State->StepCount == CHARS_PER_LINE/4) {
+            if (State->StepCount IS CHARS_PER_LINE/4) {
                *codechar++ = '\n';
                State->StepCount = 0;
             }
       }
    }
    // control should not reach here
-   return codechar - code_out;
+   return codechar - code_begin;
 }
 
 /*********************************************************************************************************************
@@ -151,19 +186,27 @@ To use this function effectively, call it repeatedly in a loop until all of the 
 
 -INPUT-
 resource(BASE64DECODE) State: Pointer to a BASE64DECODE structure, initialised to zero.
-cstr Input: A base 64 input string.  The pointer will be updated when the function returns.
-bufsize InputSize: The size of the `Input` string.
-buf(ptr) Output:  The output buffer.  The size of the buffer must be greater or equal to the size of Input.
-&int Written: The total number of bytes written to `Output` is returned here.
+strview Input: A base 64 input string.
+^array(char) Output: The output buffer.  Its size must be greater than or equal to the size of Input.
+&large Written: The total number of bytes written to `Output` is returned here.
+
+-ERRORS-
+Okay
+NullArgs
+Args
+
+-TAGS-
+mutates-input
 
 -END-
 
 **********************************************************************************************************************/
 
-ERR Base64Decode(BASE64DECODE *State, CSTRING Input, int InputSize, APTR Output, int *Written)
+ERR Base64Decode(BASE64DECODE *State, std::string_view Input, std::span<int8_t> Output, int64_t *Written)
 {
-   if ((!State) or (!Input) or (!Output) or (!Written)) return ERR::NullArgs;
-   if (InputSize < 4) return ERR::Args;
+   if ((!State) or (Input.empty()) or Output.empty() or (!Written)) return ERR::NullArgs;
+   if ((Input.size() < 4) or (Output.size() < Input.size())) return ERR::Args;
+   if (!base64_valid_input(Input)) return ERR::Args;
 
    if (!State->Initialised) {
       State->Initialised = true;
@@ -171,13 +214,48 @@ ERR Base64Decode(BASE64DECODE *State, CSTRING Input, int InputSize, APTR Output,
       State->PlainChar   = 0;
    }
 
-   *Written = base64_decode_block(Input, InputSize, (char *)Output, State);
+   *Written = base64_decode_block(Input, (char *)Output.data(), State);
    return ERR::Okay;
 }
 
-static int base64_decode_block(CSTRING code_in, int length_in, char * plaintext_out, BASE64DECODE *State)
+static bool base64_valid_input(std::string_view Input)
 {
-   const char* codechar = code_in;
+   bool pad_found = false;
+   int pad_count  = 0;
+
+   for (const auto c : Input) {
+
+      if (((c >= 'A') and (c <= 'Z')) or ((c >= 'a') and (c <= 'z')) or ((c >= '0') and (c <= '9'))) {
+         if (pad_found) return false;
+         continue;
+      }
+
+      switch (c) {
+         case '+':
+         case '/':
+            if (pad_found) return false;
+            continue;
+         case '=':
+            pad_found = true;
+            if (++pad_count > 2) return false;
+            continue;
+         case '\r':
+         case '\n':
+         case '\t':
+         case ' ':
+            continue;
+         default:
+            return false;
+      }
+   }
+
+   return true;
+}
+
+static size_t base64_decode_block(std::string_view code_in, char * plaintext_out, BASE64DECODE *State)
+{
+   const char* codechar = code_in.data();
+   const char* const codeend = code_in.data() + code_in.size();
    char* plainchar = plaintext_out;
    char fragment;
 
@@ -187,7 +265,7 @@ static int base64_decode_block(CSTRING code_in, int length_in, char * plaintext_
       while (1) {
          case step_a:
             do {
-               if (codechar == code_in+length_in) {
+               if (codechar IS codeend) {
                   State->Step = step_a;
                   State->PlainChar = *plainchar;
                   return plainchar - plaintext_out;
@@ -198,7 +276,7 @@ static int base64_decode_block(CSTRING code_in, int length_in, char * plaintext_
 
          case step_b:
             do {
-               if (codechar == code_in+length_in) {
+               if (codechar IS codeend) {
                   State->Step = step_b;
                   State->PlainChar = *plainchar;
                   return plainchar - plaintext_out;
@@ -210,7 +288,7 @@ static int base64_decode_block(CSTRING code_in, int length_in, char * plaintext_
 
          case step_c:
             do {
-               if (codechar == code_in+length_in) {
+               if (codechar IS codeend) {
                   State->Step = step_c;
                   State->PlainChar = *plainchar;
                   return plainchar - plaintext_out;
@@ -222,7 +300,7 @@ static int base64_decode_block(CSTRING code_in, int length_in, char * plaintext_
 
          case step_d:
             do {
-               if (codechar == code_in+length_in) {
+               if (codechar IS codeend) {
                   State->Step = step_d;
                   State->PlainChar = *plainchar;
                   return plainchar - plaintext_out;
@@ -236,4 +314,4 @@ static int base64_decode_block(CSTRING code_in, int length_in, char * plaintext_
    return plainchar - plaintext_out;
 }
 
-} // namespace pf
+} // namespace kt

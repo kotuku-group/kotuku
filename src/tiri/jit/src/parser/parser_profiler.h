@@ -21,7 +21,7 @@ struct ParserProfilingResult {
    const std::vector<ParserProfilingStage> & stages() const;
    std::vector<ParserProfilingStage> & stages();
    bool empty() const;
-   void log_results(pf::Log& log) const;
+   void log_results(kt::Log& log) const;
 
 private:
    std::vector<ParserProfilingStage> entries;
@@ -53,7 +53,7 @@ public:
 
    StageTimer stage(std::string_view);
    void record_stage(std::string_view, std::chrono::steady_clock::duration);
-   void log_results(pf::Log &) const;
+   void log_results(kt::Log &) const;
    bool enabled() const;
 
 private:
@@ -91,7 +91,7 @@ inline bool ParserProfilingResult::empty() const
    return this->entries.empty();
 }
 
-inline void ParserProfilingResult::log_results(pf::Log &log) const
+inline void ParserProfilingResult::log_results(kt::Log &log) const
 {
    if (this->entries.empty()) return;
 
@@ -173,7 +173,7 @@ inline void ParserProfiler::record_stage(std::string_view name, std::chrono::ste
    this->store(name, millis.count());
 }
 
-inline void ParserProfiler::log_results(pf::Log& log) const
+inline void ParserProfiler::log_results(kt::Log& log) const
 {
    if ((not this->is_enabled) or (not this->payload)) return;
    this->payload->log_results(log);

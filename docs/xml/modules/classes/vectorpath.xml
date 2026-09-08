@@ -8,7 +8,7 @@
     <module>Vector</module>
     <comment>Extends the Vector class with support for generating custom paths.</comment>
     <version>1</version>
-    <id>51b8d205</id>
+    <id>ecf78098</id>
     <idstring>VECTORPATH</idstring>
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
@@ -24,12 +24,42 @@
       <name>Clear</name>
       <comment>Clears an object's data.</comment>
       <prototype>ERR acClear(*Object)</prototype>
+      <tiriPrototype>err = Object.acClear()</tiriPrototype>
     </action>
 
     <action>
       <name>Flush</name>
       <comment>Flush buffered data from an object.</comment>
       <prototype>ERR acFlush(*Object)</prototype>
+      <tiriPrototype>err = Object.acFlush()</tiriPrototype>
+    </action>
+
+    <action>
+      <name>Move</name>
+      <comment>Moves the path to a new position.</comment>
+      <prototype>ERR acMove(*Object, DOUBLE DeltaX, DOUBLE DeltaY, DOUBLE DeltaZ)</prototype>
+      <tiriPrototype>err = Object.acMove(DeltaX:num, DeltaY:num, DeltaZ:num)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="DeltaX">The number of units to move along the X axis.</param>
+        <param type="DOUBLE" name="DeltaY">The number of units to move along the Y axis.</param>
+        <param type="DOUBLE" name="DeltaZ">The number of units to move along the Z axis.</param>
+      </input>
+    </action>
+
+    <action>
+      <name>MoveToPoint</name>
+      <comment>Moves the path to a new fixed position.</comment>
+      <prototype>ERR acMoveToPoint(*Object, DOUBLE X, DOUBLE Y, DOUBLE Z, MTF Flags)</prototype>
+      <tiriPrototype>err = Object.acMoveToPoint(X:num, Y:num, Z:num, Flags:MTF)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="X">The new X position to move the object to.</param>
+        <param type="DOUBLE" name="Y">The new Y position to move the object to.</param>
+        <param type="DOUBLE" name="Z">The new Z position to move the object to.</param>
+        <param type="MTF" name="Flags" lookup="MTF">Set the relevant MTF flag for each provided parameter.</param>
+      </input>
+      <description>
+<p>This action updates the <fl>X</fl> and <fl>Y</fl> placement fields.  The path commands remain unchanged.</p>
+      </description>
     </action>
 
   </actions>
@@ -38,21 +68,23 @@
     <method>
       <name>AddCommand</name>
       <comment>Add one or more commands to the end of the path sequence.</comment>
-      <prototype>ERR vp::AddCommand(OBJECTPTR Object, struct PathCommand * Commands, INT Size)</prototype>
+      <prototype>ERR vp::AddCommand(OBJECTPTR Object, std::span&lt;const struct PathCommand&gt; Commands)</prototype>
+      <tiriPrototype>err = AddCommand(Commands:array)</tiriPrototype>
       <input>
-        <param type="struct PathCommand *" name="Commands">Array of commands to add to the path.</param>
-        <param type="INT" name="Size">The size of the <code>Commands</code> buffer, in bytes.</param>
+        <param type="std::span&lt;const struct PathCommand&gt;" name="Commands">Array of commands to add to the path.</param>
       </input>
       <description>
 <p>This method will add a series of commands to the end of a Vector's existing path sequence.  The commands must be provided as a sequential array.  No checks will be performed to confirm the validity of the sequence.</p>
 <p>Calling this method will also result in the path being recomputed for the next redraw.</p>
       </description>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
     <method>
       <name>GetCommand</name>
       <comment>Retrieve a specific command from the path sequence.</comment>
       <prototype>ERR vp::GetCommand(OBJECTPTR Object, INT Index, struct PathCommand ** Command)</prototype>
+      <tiriPrototype>err, Command:any = GetCommand(Index:num)</tiriPrototype>
       <input>
         <param type="INT" name="Index">The index of the command to retrieve.</param>
         <param type="struct PathCommand **" name="Command">The requested command will be returned in this parameter.</param>
@@ -60,12 +92,14 @@
       <description>
 <p>Calling GetCommand() will return a direct pointer to the command identified at <code>Index</code>.  The pointer will remain valid for as long as the <class name="VectorPath">VectorPath</class> is not modified.</p>
       </description>
+      <tags>pure-query, object-owns-result</tags>
     </method>
 
     <method>
       <name>RemoveCommand</name>
       <comment>Remove at least one command from the path sequence.</comment>
       <prototype>ERR vp::RemoveCommand(OBJECTPTR Object, INT Index, INT Total)</prototype>
+      <tiriPrototype>err = RemoveCommand(Index:num, Total:num)</tiriPrototype>
       <input>
         <param type="INT" name="Index">The index of the command to remove.</param>
         <param type="INT" name="Total">The total number of commands to remove, starting from the given Index.</param>
@@ -73,34 +107,36 @@
       <description>
 <p>This method will remove a series of commands from the current path, starting at the given <code>Index</code>.  The total number of commands to remove is indicated by the <code>Total</code> parameter.</p>
       </description>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
       <name>SetCommand</name>
       <comment>Copies one or more commands into an existing path.</comment>
-      <prototype>ERR vp::SetCommand(OBJECTPTR Object, INT Index, struct PathCommand * Command, INT Size)</prototype>
+      <prototype>ERR vp::SetCommand(OBJECTPTR Object, INT Index, std::span&lt;const struct PathCommand&gt; Command)</prototype>
+      <tiriPrototype>err = SetCommand(Index:num, Command:array)</tiriPrototype>
       <input>
         <param type="INT" name="Index">The index of the command that is to be set.</param>
-        <param type="struct PathCommand *" name="Command">An array of commands to set in the path.</param>
-        <param type="INT" name="Size">The size of the <code>Command</code> buffer, in bytes.</param>
+        <param type="std::span&lt;const struct PathCommand&gt;" name="Command">An array of commands to set in the path.</param>
       </input>
       <description>
 <p>Use SetCommand() to copy one or more commands into an existing path.</p>
       </description>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
     <method>
       <name>SetCommandList</name>
       <comment>The fastest available mechanism for setting a series of path instructions.</comment>
-      <prototype>ERR vp::SetCommandList(OBJECTPTR Object, APTR Commands, INT Size)</prototype>
+      <prototype>ERR vp::SetCommandList(OBJECTPTR Object, std::span&lt;const struct PathCommand&gt; Commands)</prototype>
+      <tiriPrototype>err = SetCommandList(Commands:array)</tiriPrototype>
       <input>
-        <param type="APTR" name="Commands">An array of <st>PathCommand</st> structures.</param>
-        <param type="INT" name="Size">The byte size of the <code>Commands</code> buffer.</param>
+        <param type="std::span&lt;const struct PathCommand&gt;" name="Commands">An array of <st>PathCommand</st> structures.</param>
       </input>
       <description>
 <p>Use SetCommandList() to copy a series of path commands to a <class name="VectorPath">VectorPath</class> object.  All existing commands will be cleared as a result of this process.</p>
-<p>NOTE: This method is not compatible with Tiri calls.</p>
       </description>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
   </methods>
@@ -110,7 +146,7 @@
       <name>Commands</name>
       <comment>Direct pointer to the PathCommand array.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>STRUCT []</type>
+      <type>PathCommand[]</type>
       <description>
 <p>Read the Commands field to obtain a direct pointer to the <st>PathCommand</st> array.  This will allow the control points of the path to be modified directly, but it is not possible to resize the path.  After making changes to the path, call <action>Flush</action> to register the changes for the next redraw.</p>
 <p>This field can also be written at any time with a new array of <st>PathCommand</st> structures.  Doing so will clear the existing path, if any.</p>
@@ -149,6 +185,7 @@ Z: Close Path
 <p>The use of lower case characters will indicate that the provided coordinates are relative (based on the coordinate of the previous command).</p>
 <p>To terminate a path without joining it to the first coordinate, omit the <code>Z</code> from the end of the sequence.</p>
       </description>
+      <tags>caller-owns-result</tags>
     </field>
 
     <field>
@@ -161,7 +198,51 @@ Z: Close Path
       </description>
     </field>
 
+    <field>
+      <name>X</name>
+      <comment>The left-side of the path.  Can be expressed as a fixed or scaled coordinate.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>Setting X moves the computed path so that its left-most boundary aligns with the supplied coordinate.  The path commands remain unchanged.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Y</name>
+      <comment>The top of the path.  Can be expressed as a fixed or scaled coordinate.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>Setting Y moves the computed path so that its top-most boundary aligns with the supplied coordinate.  The path commands remain unchanged.</p>
+      </description>
+    </field>
+
   </fields>
+  <types>
+    <constants lookup="PE">
+      <const name="Arc"/>
+      <const name="ArcRel"/>
+      <const name="ClosePath"/>
+      <const name="Curve"/>
+      <const name="CurveRel"/>
+      <const name="HLine"/>
+      <const name="HLineRel"/>
+      <const name="Line"/>
+      <const name="LineRel"/>
+      <const name="Move"/>
+      <const name="MoveRel"/>
+      <const name="QuadCurve"/>
+      <const name="QuadCurveRel"/>
+      <const name="QuadSmooth"/>
+      <const name="QuadSmoothRel"/>
+      <const name="Smooth"/>
+      <const name="SmoothRel"/>
+      <const name="VLine"/>
+      <const name="VLineRel"/>
+    </constants>
+
+  </types>
   <structs>
     <struct name="PathCommand" comment="Base structure for path commands.">
       <field name="Type" type="PE" lookup="PE">The command type</field>

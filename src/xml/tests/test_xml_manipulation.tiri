@@ -75,12 +75,19 @@ end
    local err = xml.mtSetAttrib(rootId, XMS_NEW, 'newattr', 'newvalue')
    assert(err is ERR_Okay, "Failed to add new attribute: " .. mSys.GetErrorMsg(err))
 
+   -- Empty values are stored, not interpreted as removal
+   local err = xml.mtSetAttrib(rootId, XMS_NEW, 'emptyattr', '')
+   assert(err is ERR_Okay, "Failed to add empty attribute: " .. mSys.GetErrorMsg(err))
+
    -- Verify updates
    local err, value = xml.mtGetAttrib(rootId, 'existing')
    assert(err is ERR_Okay and value is 'newvalue', "Existing attribute not updated")
 
    local err, value = xml.mtGetAttrib(rootId, 'newattr')
    assert(err is ERR_Okay and value is 'newvalue', "New attribute not added")
+
+   local err, value = xml.mtGetAttrib(rootId, 'emptyattr')
+   assert(err is ERR_Okay and value is '', "Empty attribute value was not preserved")
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -93,8 +100,8 @@ end
 
    local rootId = xml.tags[0].id
 
-   -- Remove attribute by setting value to nil
-   local err = xml.mtSetAttrib(rootId, XMS_UPDATE, 'attr2', nil)
+   -- Remove attribute explicitly
+   local err = xml.mtSetAttrib(rootId, XMS_REMOVE, 'attr2', '')
    assert(err is ERR_Okay, "Failed to remove attribute: " .. mSys.GetErrorMsg(err))
 
    -- Verify removal
@@ -123,6 +130,21 @@ end
    -- Verify content insertion
    local child = xml.tags[0].children[0]
    assert(#child.children is 2, "Expected 2 content nodes after insertion")
+end
+
+@Test function SetAttribRemoveContent()
+   local xml = obj.new("xml", {
+      statement = '<root>Text content</root>'
+   })
+
+   local rootId = xml.tags[0].id
+
+   local err = xml.mtSetAttrib(rootId, XMS_REMOVE, '', '')
+   assert(err is ERR_Okay, "Failed to clear content with XMS_REMOVE: " .. mSys.GetErrorMsg(err))
+
+   local err, content = xml.mtGetContent(rootId)
+   assert(err is ERR_Okay, "GetContent failed after clearing content: " .. mSys.GetErrorMsg(err))
+   assert(content is '', "XMS_REMOVE with empty name should clear content")
 end
 
 -----------------------------------------------------------------------------------------------------------------------

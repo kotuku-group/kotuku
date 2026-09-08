@@ -4,9 +4,8 @@ Documentation is available in the Kotuku Wiki.
 
    import 'gui'
 
-   namespace 'gui'
-
-   lVec = mVec -- Localise the gui mVec
+   namespace gui
+   module vector as mVec
 
 FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(gui.fonts.icon)
 MARGIN = math.floor(FONT_HEIGHT * 0.5) + 1
@@ -16,8 +15,8 @@ rx_volume_prefix = <{ regex.new([[^[^:\/\\]+:]]) }>
 
 -- NB: If a custom SVG file is desired then the client must specify a volume in the path.
 
-function imageLocation(Path)
-   if Path:startsWith('icons:') then
+function imageLocation(Path:str!):str
+   if Path.startsWith('icons:') then
       return Path
    elseif rx_volume_prefix.test(Path) then
       return Path
@@ -36,7 +35,7 @@ gui.icon = function(Options)
    local lText, lTextGroup, lThemeColour
    lClick      = { held=false, x=0, y=0 }
    lWords      = array<table>
-   lLines      = array<string>
+   lLines      = array<str>
    lIconSize   = Options.size ?? 66
    lIconWidth  = lIconSize
    lFontSize   = FONT_HEIGHT
@@ -73,8 +72,8 @@ gui.icon = function(Options)
 
    function calcWords()
       lWords = array<table>
-      lLines = array<string>
-      lText ?? return
+      lLines = array<str>
+      lText ?! return
 
       lFontSize = choose lIconSize from
          < 26 -> 6
@@ -82,18 +81,18 @@ gui.icon = function(Options)
          else -> 10
       end
 
-      err, font = lVec.getFontHandle(gui.fonts.icon.face, "Regular", 0, lFontSize)
+      err, font = mVec.GetFontHandle(gui.fonts.icon.face, "Regular", 0, lFontSize)
       metrics = struct.new('FontMetrics')
-      err = lVec.getFontMetrics(font, metrics)
+      err = mVec.GetFontMetrics(font, metrics)
       lLineHeight = metrics.lineSpacing
 
       -- Extract each word's pixel width
 
       widest_word = 0
       for word in values(lText) do
-         width = lVec.stringWidth(font, word, -1)
+         width = mVec.StringWidth(font, word, -1)
          if width > widest_word then widest_word = width end
-         lWords:push({ word=word, width=width })
+         lWords.push({ word=word, width=width })
       end
 
       -- If necessary, expand the width of the icon to fit the longest word.
@@ -103,24 +102,24 @@ gui.icon = function(Options)
          lIconWidth = widest_word + (MARGIN * 2)
       end
 
-      local current_line
+      local current_line:str
       for word in values(lWords) do
          if not current_line then
             current_line = word.word
          else
             new_line = current_line .. ' ' .. word.word
-            width = lVec.stringWidth(font, new_line, -1)
+            width = mVec.StringWidth(font, new_line, -1)
             if width + (MARGIN * 2) < lIconWidth then
                current_line = new_line
             else
-               lLines:push(current_line)
+               lLines.push(current_line)
                current_line = word.word -- Push the word to the next line
             end
          end
       end
 
       if current_line then
-         lLines:push(current_line)
+         lLines.push(current_line)
       end
    end
 
@@ -128,7 +127,7 @@ gui.icon = function(Options)
       -- Create a dark rounded box in the background of the text, this will make it easier to distinguish the text
       -- against a busy background or one of a similar colour.
 
-      lLines ?? return
+      lLines ?! return
 
       box_height = self.viewport.height - (lIconSize + MARGIN)
       y = lIconSize + MARGIN
@@ -164,7 +163,7 @@ gui.icon = function(Options)
    -- Main entry point
 
    if Options.text?? then
-      lText = rx_whitespace.replace(Options.text:trim(), ' '):split(' ')
+      lText = rx_whitespace.replace(Options.text.trim(), ' ').split(' ')
    else
       lText = nil
    end

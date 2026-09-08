@@ -18,6 +18,7 @@
 #define LUA_CORE
 
 #include <windows.h>
+#include <cstdio>
 
 #include "lj_err.h"
 #include "lj_frame.h"
@@ -60,13 +61,81 @@ extern "C" void setup_try_handler(lua_State *);
 // Sentinel value returned by err_unwind when a try-except handler is found.
 #define ERR_TRYHANDLER ((void*)(intptr_t)-2)
 
+static const char *win_exception_message(const EXCEPTION_RECORD *Record, char *Buffer, size_t BufferSize)
+{
+   if (not Record) return err2msg(ErrMsg::ERRCPP);
+
+   switch (Record->ExceptionCode) {
+      case LJ_MSVC_EXCODE:
+      case LJ_GCC_EXCODE:
+         return err2msg(ErrMsg::ERRCPP);
+
+      case EXCEPTION_ACCESS_VIOLATION: {
+         const char *operation = "access";
+         if (Record->NumberParameters >= 1) {
+            if (Record->ExceptionInformation[0] IS 0) operation = "read";
+            else if (Record->ExceptionInformation[0] IS 1) operation = "write";
+            else if (Record->ExceptionInformation[0] IS 8) operation = "execute";
+         }
+
+         if ((Record->NumberParameters >= 2) and Buffer and BufferSize > 0) {
+            std::snprintf(Buffer, BufferSize, "Access violation: failed to %s address %p",
+               operation, (void *)Record->ExceptionInformation[1]);
+            return Buffer;
+         }
+
+         return "Access violation";
+      }
+
+      case EXCEPTION_ARRAY_BOUNDS_EXCEEDED:
+         return "Array bounds exceeded";
+
+      case EXCEPTION_DATATYPE_MISALIGNMENT:
+         return "Datatype misalignment";
+
+      case EXCEPTION_FLT_DIVIDE_BY_ZERO:
+      case EXCEPTION_INT_DIVIDE_BY_ZERO:
+         return "Division by zero";
+
+      case EXCEPTION_ILLEGAL_INSTRUCTION:
+         return "Illegal instruction";
+
+      case EXCEPTION_IN_PAGE_ERROR:
+         if ((Record->NumberParameters >= 3) and Buffer and BufferSize > 0) {
+            std::snprintf(Buffer, BufferSize, "In-page error at address %p, status 0x%08lX",
+               (void *)Record->ExceptionInformation[1], (unsigned long)Record->ExceptionInformation[2]);
+            return Buffer;
+         }
+         return "In-page error";
+
+      case EXCEPTION_NONCONTINUABLE_EXCEPTION:
+         return "Non-continuable exception";
+
+      case EXCEPTION_PRIV_INSTRUCTION:
+         return "Privileged instruction";
+
+      case EXCEPTION_STACK_OVERFLOW:
+         return "Stack overflow";
+
+      default:
+         if (Buffer and BufferSize > 0) {
+            std::snprintf(Buffer, BufferSize, "Native exception 0x%08lX",
+               (unsigned long)Record->ExceptionCode);
+            return Buffer;
+         }
+         return err2msg(ErrMsg::ERRCPP);
+   }
+}
+
 // Windows exception handler for interpreter frame.  Called from buildvm_peobj.cpp
 
 extern "C" int lj_err_unwind_win(EXCEPTION_RECORD *rec, void* f, CONTEXT* ctx, UndocumentedDispatcherContext* dispatch)
 {
    void* cf = f;
    lua_State* L = cframe_L(cf);
-   int errcode = LJ_EXCODE_CHECK(rec->ExceptionCode) ? LJ_EXCODE_ERRCODE(rec->ExceptionCode) : LUA_ERRRUN;
+   const bool is_lua_exception = LJ_EXCODE_CHECK(rec->ExceptionCode);
+   const bool is_cpp_exception = (rec->ExceptionCode IS LJ_MSVC_EXCODE) or (rec->ExceptionCode IS LJ_GCC_EXCODE);
+   int errcode = is_lua_exception ? LJ_EXCODE_ERRCODE(rec->ExceptionCode) : LUA_ERRRUN;
 
    if ((rec->ExceptionFlags & 6)) {  // EH_UNWINDING|EH_EXIT_UNWIND
       // If we're resuming at a try-except handler, skip the normal unwind processing.
@@ -81,6 +150,11 @@ extern "C" int lj_err_unwind_win(EXCEPTION_RECORD *rec, void* f, CONTEXT* ctx, U
       if (cf2 IS ERR_TRYHANDLER) {
          // A try-except handler was found. check_try_handler() only recorded
          // the handler PC. Now we need to set up the actual state.
+
+         if (not is_lua_exception) {
+            char message[128];
+            lj_err_prepare_foreign_exception(L, win_exception_message(rec, message, sizeof(message)));
+         }
          setup_try_handler(L);
          //
          // Resume execution at the handler PC using the VM entry point.
@@ -90,8 +164,7 @@ extern "C" int lj_err_unwind_win(EXCEPTION_RECORD *rec, void* f, CONTEXT* ctx, U
          // RtlUnwindEx should never return.
       }
       else if (cf2) {  // We catch it, so start unwinding the upper frames.
-         if (rec->ExceptionCode == LJ_MSVC_EXCODE ||
-            rec->ExceptionCode == LJ_GCC_EXCODE) {
+         if (is_cpp_exception) {
             setstrV(L, L->top++, lj_err_str(L, ErrMsg::ERRCPP));
          }
          else if (!LJ_EXCODE_CHECK(rec->ExceptionCode)) {

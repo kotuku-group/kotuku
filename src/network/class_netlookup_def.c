@@ -5,10 +5,10 @@ static const struct FieldDef clNetLookupFlags[] = {
    { nullptr, 0 }
 };
 
-FDEF maResolveName[] = { { "HostName", FD_STR }, { 0, 0 } };
-FDEF maResolveAddress[] = { { "Address", FD_STR }, { 0, 0 } };
-FDEF maBlockingResolveName[] = { { "HostName", FD_STR }, { 0, 0 } };
-FDEF maBlockingResolveAddress[] = { { "Address", FD_STR }, { 0, 0 } };
+FDEF maResolveName[] = { { "HostName", FDF_CPPSTRING }, { 0, 0 } };
+FDEF maResolveAddress[] = { { "Address", FDF_CPPSTRING }, { 0, 0 } };
+FDEF maBlockingResolveName[] = { { "HostName", FDF_CPPSTRING }, { 0, 0 } };
+FDEF maBlockingResolveAddress[] = { { "Address", FDF_CPPSTRING }, { 0, 0 } };
 
 static const struct MethodEntry clNetLookupMethods[] = {
    { AC(-1), (APTR)NETLOOKUP_ResolveName, "ResolveName", maResolveName, sizeof(struct nl::ResolveName) },
@@ -18,10 +18,20 @@ static const struct MethodEntry clNetLookupMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR NETLOOKUP_New(extNetLookup *Self) {
+   new (Self) extNetLookup(Self->Class, Self->UID);
+   return ERR::Okay;
+}
+
+static ERR NETLOOKUP_Free(extNetLookup *Self) {
+   Self->~extNetLookup();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clNetLookupActions[] = {
    { AC::Free, NETLOOKUP_Free },
    { AC::FreeWarning, NETLOOKUP_FreeWarning },
-   { AC::NewPlacement, NETLOOKUP_NewPlacement },
+   { AC::New, NETLOOKUP_New },
    { AC::NIL, nullptr }
 };
 

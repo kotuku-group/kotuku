@@ -1,0 +1,8 @@
+-- Helper library for test_import_type_analysis.tiri.  Forms one side of a diamond import of
+-- import_type_diamond_inner.tiri.
+
+import './import_type_diamond_inner'
+
+global function diamond_a_fn(Value:num):num
+   return diamond_add(Value, 1)
+end

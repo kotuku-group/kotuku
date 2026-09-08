@@ -1,7 +1,103 @@
 
 #include "agg_span_gradient_contour.h"
+#include "agg_span_gradient_sdf.h"
+#include "agg_span_gradient_worley.h"
 
 class VectorState;
+
+//********************************************************************************************************************
+
+static bool render_matrix_matches(const VectorMatrix &Matrix, const agg::trans_affine &Transform)
+{
+   return (Matrix.ScaleX IS Transform.sx) and
+      (Matrix.ScaleY IS Transform.sy) and
+      (Matrix.ShearX IS Transform.shx) and
+      (Matrix.ShearY IS Transform.shy) and
+      (Matrix.TranslateX IS Transform.tx) and
+      (Matrix.TranslateY IS Transform.ty);
+}
+
+static void set_render_matrix(VectorMatrix &Matrix, const agg::trans_affine &Transform)
+{
+   Matrix.ScaleX     = Transform.sx;
+   Matrix.ScaleY     = Transform.sy;
+   Matrix.ShearX     = Transform.shx;
+   Matrix.ShearY     = Transform.shy;
+   Matrix.TranslateX = Transform.tx;
+   Matrix.TranslateY = Transform.ty;
+}
+
+static bool set_render_transform(objVectorViewport *Viewport, const agg::trans_affine &Transform)
+{
+   auto vp = (extVectorViewport *)Viewport;
+
+   if (not vp->matrices()) {
+      if (Viewport->newMatrix(nullptr, false) != ERR::Okay) return false;
+   }
+
+   if (not render_matrix_matches(*vp->matrices(), Transform)) {
+      set_render_matrix(*vp->matrices(), Transform);
+      mark_dirty(Viewport, RC::TRANSFORM);
+   }
+
+   return true;
+}
+
+static bool viewport_has_fixed_size(const objVectorViewport *Viewport, double Width, double Height)
+{
+   auto viewport = (const extVectorViewport *)Viewport;
+
+   return viewport->vpTargetWidth.defined() and
+      viewport->vpTargetHeight.defined() and
+      (not viewport->vpTargetWidth.scaled()) and
+      (not viewport->vpTargetHeight.scaled()) and
+      (viewport->vpTargetWidth IS Width) and
+      (viewport->vpTargetHeight IS Height);
+}
+
+static void set_viewport_fixed_size(objVectorViewport *Viewport, double Width, double Height)
+{
+   if (not viewport_has_fixed_size(Viewport, Width, Height)) {
+      Viewport->setWidth(Width);
+      Viewport->setHeight(Height);
+   }
+}
+
+static bool viewport_has_fixed_bounds(const objVectorViewport *Viewport, double X, double Y, double Width,
+   double Height)
+{
+   auto viewport = (const extVectorViewport *)Viewport;
+
+   if (Width < 1) Width = 1;
+   if (Height < 1) Height = 1;
+
+   return viewport->vpTargetX.defined() and
+      viewport->vpTargetY.defined() and
+      viewport_has_fixed_size(Viewport, Width, Height) and
+      (not viewport->vpTargetX.scaled()) and
+      (not viewport->vpTargetY.scaled()) and
+      (viewport->vpTargetX IS X) and
+      (viewport->vpTargetY IS Y);
+}
+
+static void set_viewport_fixed_bounds(objVectorViewport *Viewport, double X, double Y, double Width, double Height)
+{
+   if (not viewport_has_fixed_bounds(Viewport, X, Y, Width, Height)) {
+      acRedimension(Viewport, X, Y, 0, Width, Height, 0);
+   }
+}
+
+static agg::trans_affine build_matrix_transform(const VectorMatrix *Matrices)
+{
+   agg::trans_affine transform;
+
+   for (auto matrix=Matrices; matrix; matrix=matrix->Next) {
+      transform.multiply(matrix->ScaleX, matrix->ShearY, matrix->ShearX, matrix->ScaleY,
+         matrix->TranslateX, matrix->TranslateY);
+   }
+
+   return transform;
+}
 
 //********************************************************************************************************************
 
@@ -9,10 +105,11 @@ class SceneRenderer
 {
 private:
    agg::renderer_base<agg::pixfmt_psl> mRenderBase;
-   agg::pixfmt_psl   mFormat;
-   agg::scanline_u8  mScanLine; // Use scanline_p for large solid polygons/rectangles and scanline_u for complex shapes like text
-   extVectorViewport *mView;    // The current view
-   objBitmap         *mBitmap;
+   agg::pixfmt_psl    mFormat;
+   agg::scanline32_p8 mScanLine; // Use scanline32_p8 for large solid polygons/rectangles and scanline_u for complex shapes like text
+   extVectorViewport  *mView;    // The current view
+   objBitmap          *mBitmap;
+   int mBitmapOriginX, mBitmapOriginY;
    std::vector<class InputBoundary> mInputBounds; // Records boundaries for input events and cursor changes.
 
 public:
@@ -30,10 +127,10 @@ public:
 
       public:
 
-      ClipBuffer() : m_shape(nullptr), m_clip(nullptr) { }
+      ClipBuffer() : m_state(nullptr), m_width(0), m_height(0), m_shape(nullptr), m_clip(nullptr) { }
 
       ClipBuffer(VectorState &pState, extVectorClip *pClip, extVector *pShape) :
-         m_state(&pState), m_shape(pShape), m_clip(pClip) { }
+         m_state(&pState), m_width(0), m_height(0), m_shape(pShape), m_clip(pClip) { }
 
       void draw(SceneRenderer &);
       void draw_viewport(SceneRenderer &);
@@ -41,24 +138,28 @@ public:
          agg::renderer_base<agg::pixfmt_gray8> &, const agg::trans_affine &);
       void draw_bounding_box(SceneRenderer &);
       void draw_userspace(SceneRenderer &);
-      void resize_bitmap(int, int, int, int);
+      bool use_cached_mask(const agg::trans_affine &, double, double);
+      void store_cached_mask(const agg::trans_affine &, double, double);
+      void resize_bitmap(int, int);
    };
 
 private:
-   constexpr double view_width() {
+   std::stack<ClipBuffer> mClipStack;
+
+   double view_width() {
       if (mView->vpViewWidth > 0) return mView->vpViewWidth;
-      else if (dmf::hasAnyWidth(mView->vpDimensions)) return mView->vpFixedWidth;
-      else return mView->Scene->PageWidth;
+      else return viewport_coordinate_width(mView);
    }
 
-   constexpr double view_height() {
+   double view_height() {
       if (mView->vpViewHeight > 0) return mView->vpViewHeight;
-      else if (dmf::hasAnyHeight(mView->vpDimensions)) return mView->vpFixedHeight;
-      else return mView->Scene->PageHeight;
+      else return viewport_coordinate_height(mView);
    }
 
    void render_fill(VectorState &, extVector &, agg::rasterizer_scanline_aa<> &, extPainter &);
    void render_stroke(VectorState &, extVector &);
+   void copy_filter_bitmap(objBitmap *, extVectorFilter *);
+   bool shape_intersects_clip(extVector *);
    void draw_vectors(extVector *, VectorState &);
    static const agg::trans_affine build_fill_transform(extVector &, bool,  VectorState &);
 
@@ -66,12 +167,18 @@ public:
    extVectorScene *Scene; // The top-level VectorScene performing the draw.
    int mObjectCount;     // The number of objects drawn
 
-   SceneRenderer(extVectorScene *pScene) : Scene(pScene) { }
-   void draw(objBitmap *, objVectorViewport *);
+   bool clip_stack_empty() const { return mClipStack.empty(); }
+   ClipBuffer &clip_stack_top() { return mClipStack.top(); }
 
-   ~SceneRenderer() {
-      Scene->ShareModified = false;
-   }
+   // When rendering into a buffered viewport the target bitmap is offset so that render-space coordinates map onto a
+   // buffer whose top-left is (mBitmapOriginX, mBitmapOriginY).  Auxiliary buffers (e.g. the Gouraud path mask) must
+   // account for the same offset to stay aligned with the render base.
+
+   int bitmap_origin_x() const { return mBitmapOriginX; }
+   int bitmap_origin_y() const { return mBitmapOriginY; }
+
+   SceneRenderer(extVectorScene *pScene) : mBitmapOriginX(0), mBitmapOriginY(0), Scene(pScene) { }
+   void draw(objBitmap *, objVectorViewport *);
 };
 
 //********************************************************************************************************************
@@ -85,10 +192,9 @@ public:
 class VectorState {
 public:
    TClipRectangle<double> mClip; // Current clip region as defined by the viewports
-   agg::line_join_e  mLineJoin;
-   agg::line_cap_e   mLineCap;
-   agg::inner_join_e mInnerJoin;
-   std::shared_ptr<std::stack<SceneRenderer::ClipBuffer>> mClipStack;
+   VLJ mLineJoin;
+   VLC mLineCap;
+   VIJ mInnerJoin;
    double mOpacity;
    VIS    mVisible;
    VOF    mOverflowX, mOverflowY;
@@ -98,10 +204,9 @@ public:
 
    VectorState() :
       mClip(0, 0, DBL_MAX, DBL_MAX),
-      mLineJoin(agg::miter_join),
-      mLineCap(agg::butt_cap),
-      mInnerJoin(agg::inner_miter),
-      mClipStack(std::make_shared<std::stack<SceneRenderer::ClipBuffer>>()),
+      mLineJoin(VLJ::MITER),
+      mLineCap(VLC::BUTT),
+      mInnerJoin(VIJ::MITER),
       mOpacity(1.0),
       mVisible(VIS::VISIBLE),
       mOverflowX(VOF::VISIBLE), mOverflowY(VOF::VISIBLE),
@@ -122,7 +227,7 @@ public:
    typedef typename agg::rgba8::value_type value_type;
    typedef agg::rgba8 color_type;
 
-   span_reflect_y(agg::pixfmt_psl & pixf, unsigned offset_x, unsigned offset_y) :
+   span_reflect_y(agg::pixfmt_psl & pixf, int offset_x, int offset_y) :
        m_src(&pixf),
        m_wrap_x(pixf.mWidth),
        m_wrap_y(pixf.mHeight),
@@ -170,8 +275,8 @@ private:
    wrap_mode_repeat_auto_pow2 m_wrap_x;
    wrap_mode_reflect_auto_pow2 m_wrap_y;
    uint8_t *m_row_ptr;
-   unsigned m_offset_x;
-   unsigned m_offset_y;
+   int m_offset_x;
+   int m_offset_y;
    uint8_t m_bk_buf[4];
    int m_x;
 };
@@ -186,7 +291,7 @@ public:
    typedef typename agg::rgba8::value_type value_type;
    typedef agg::rgba8 color_type;
 
-   span_reflect_x(agg::pixfmt_psl & pixf, unsigned offset_x, unsigned offset_y) :
+   span_reflect_x(agg::pixfmt_psl & pixf, int offset_x, int offset_y) :
        m_src(&pixf), m_wrap_x(pixf.mWidth), m_wrap_y(pixf.mHeight),
        m_offset_x(offset_x), m_offset_y(offset_y)
    {
@@ -231,8 +336,8 @@ private:
    wrap_mode_reflect_auto_pow2 m_wrap_x;
    wrap_mode_repeat_auto_pow2 m_wrap_y;
    uint8_t *m_row_ptr;
-   unsigned m_offset_x;
-   unsigned m_offset_y;
+   int m_offset_x;
+   int m_offset_y;
    uint8_t m_bk_buf[4];
    int m_x;
 };
@@ -247,7 +352,7 @@ public:
    typedef typename agg::rgba8::value_type value_type;
    typedef agg::rgba8 color_type;
 
-   span_repeat_pf(agg::pixfmt_psl & pixf, unsigned offset_x, unsigned offset_y) :
+   span_repeat_pf(agg::pixfmt_psl & pixf, int offset_x, int offset_y) :
        m_src(&pixf), m_wrap_x(pixf.mWidth), m_wrap_y(pixf.mHeight),
        m_offset_x(offset_x), m_offset_y(offset_y) {
       m_bk_buf[0] = m_bk_buf[1] = m_bk_buf[2] = m_bk_buf[3] = 0;
@@ -290,29 +395,12 @@ public:
 private:
    wrap_mode_repeat_auto_pow2 m_wrap_x, m_wrap_y;
    uint8_t *m_row_ptr;
-   unsigned m_offset_x, m_offset_y;
+   int m_offset_x, m_offset_y;
    uint8_t m_bk_buf[4];
    int m_x;
 };
 } // namespace
 
-//********************************************************************************************************************
-// Check a Shape, its siblings and children for dirty markers.
-
-static bool check_dirty(extVector *Shape) {
-   while (Shape) {
-      if (Shape->Class->BaseClassID != CLASSID::VECTOR) return true;
-      if (Shape->dirty()) return true;
-
-      if (Shape->Child) {
-         if (check_dirty((extVector *)Shape->Child)) return true;
-      }
-      Shape = (extVector *)Shape->Next;
-   }
-   return false;
-}
-
-//********************************************************************************************************************
 // Return the correct transformation matrix for a fill operation.  Requires that the vector's path has been generated.
 
 const agg::trans_affine SceneRenderer::build_fill_transform(extVector &Vector, bool Userspace,  VectorState &State)
@@ -332,33 +420,43 @@ const agg::trans_affine SceneRenderer::build_fill_transform(extVector &Vector, b
 
 //********************************************************************************************************************
 
-void set_filter(agg::image_filter_lut &Filter, VSM Method, agg::trans_affine &Transform, double Kernel)
+const agg::image_filter_lut & get_filter(VSM Method, agg::trans_affine &Transform, double Kernel)
 {
-   auto compute_kernel = [&Transform, &Kernel]() {
+   double kernel = 0;
+   if ((Method IS VSM::SINC) or (Method IS VSM::LANCZOS) or (Method IS VSM::BLACKMAN)) {
       // For auto kernel calculation, use larger kernel sizes when shrinking.  A base-level of 3.0 is used so that
       // the use of advanced filter algorithms is justified for the client.
       double k;
       if (Kernel > 0.0) k = Kernel;
       else k = 3.0 + (1.0 / svg_diag(Transform.sx, Transform.sy));
-      return std::clamp(k, 2.0, 8.0);
-   };
+      // Quantised to 0.25 steps; visually indistinguishable and it bounds the cache size.
+      kernel = std::round(std::clamp(k, 2.0, 8.0) * 4.0) * 0.25;
+   }
 
+   // LUT construction is deterministic for a given method and kernel, so tables are computed once and
+   // cached.  Thread-local storage keeps the cache lock-free
+
+   thread_local std::unordered_map<int, agg::image_filter_lut> cache;
+   const int key = (int(Method) << 8) | int(kernel * 4.0);
+   if (auto it = cache.find(key); it != cache.end()) return it->second;
+
+   auto &filter = cache[key];
    switch(Method) {
       case VSM::AUTO:
-      case VSM::NEIGHBOUR: // There is a 'span_image_filter_rgb_nn' class but no equivalent image_filter_neighbour() routine?
-      case VSM::BILINEAR:  Filter.calculate(agg::image_filter_bilinear(), true); break;
-      case VSM::BICUBIC:   Filter.calculate(agg::image_filter_bicubic(), true); break;
-      case VSM::SPLINE16:  Filter.calculate(agg::image_filter_spline16(), true); break;
-      case VSM::KAISER:    Filter.calculate(agg::image_filter_kaiser(), true); break;
-      case VSM::QUADRIC:   Filter.calculate(agg::image_filter_quadric(), true); break;
-      case VSM::GAUSSIAN:  Filter.calculate(agg::image_filter_gaussian(), true); break;
-      case VSM::BESSEL:    Filter.calculate(agg::image_filter_bessel(), true); break;
-      case VSM::MITCHELL:  Filter.calculate(agg::image_filter_mitchell(), true); break;
-      case VSM::SINC:      Filter.calculate(agg::image_filter_sinc(compute_kernel()), true); break;
-      case VSM::LANCZOS:   Filter.calculate(agg::image_filter_lanczos(compute_kernel()), true); break;
-      case VSM::BLACKMAN:  Filter.calculate(agg::image_filter_blackman(compute_kernel()), true); break;
-      default:             Filter.calculate(agg::image_filter_bicubic(), true); break;
+      case VSM::BILINEAR:  filter.calculate(agg::image_filter_bilinear(), true); break;
+      case VSM::BICUBIC:   filter.calculate(agg::image_filter_bicubic(), true); break;
+      case VSM::SPLINE16:  filter.calculate(agg::image_filter_spline16(), true); break;
+      case VSM::KAISER:    filter.calculate(agg::image_filter_kaiser(), true); break;
+      case VSM::QUADRIC:   filter.calculate(agg::image_filter_quadric(), true); break;
+      case VSM::GAUSSIAN:  filter.calculate(agg::image_filter_gaussian(), true); break;
+      case VSM::BESSEL:    filter.calculate(agg::image_filter_bessel(), true); break;
+      case VSM::MITCHELL:  filter.calculate(agg::image_filter_mitchell(), true); break;
+      case VSM::SINC:      filter.calculate(agg::image_filter_sinc(kernel), true); break;
+      case VSM::LANCZOS:   filter.calculate(agg::image_filter_lanczos(kernel), true); break;
+      case VSM::BLACKMAN:  filter.calculate(agg::image_filter_blackman(kernel), true); break;
+      default:             filter.calculate(agg::image_filter_bicubic(), true); break;
    }
+   return filter;
 }
 
 //********************************************************************************************************************
@@ -369,31 +467,41 @@ template <class T> void drawBitmap(T &Scanline, VSM SampleMethod, agg::renderer_
    objBitmap *SrcBitmap, VSPREAD SpreadMethod, double Opacity, agg::trans_affine *Transform = nullptr, double XOffset = 0, double YOffset = 0)
 {
    agg::pixfmt_psl pixels(*SrcBitmap);
+   const bool requires_interpolation = (std::floor(XOffset) != XOffset) or (std::floor(YOffset) != YOffset) or
+      ((Transform) and ((Transform->is_complex()) or (std::floor(Transform->tx) != Transform->tx) or
+         (std::floor(Transform->ty) != Transform->ty)));
 
-   if ((Transform) and (Transform->is_complex())) {
+   if (requires_interpolation) {
       agg::span_interpolator_linear interpolator(*Transform);
-      agg::image_filter_lut filter;
-      set_filter(filter, SampleMethod, *Transform);  // Set the interpolation filter to use.
+
+      auto render_source = [&](auto &source) {
+         using source_t = std::remove_reference_t<decltype(source)>;
+         if (SampleMethod IS VSM::NEIGHBOUR) {
+            agg::span_image_filter_rgba_nn<source_t, agg::span_interpolator_linear<>> spangen(source, interpolator);
+            drawBitmapRender(Scanline, RenderBase, Raster, spangen, Opacity);
+         }
+         else {
+            const agg::image_filter_lut &filter = get_filter(SampleMethod, *Transform);
+            agg::span_image_filter_rgba<source_t, agg::span_interpolator_linear<>> spangen(source, interpolator, filter, true);
+            drawBitmapRender(Scanline, RenderBase, Raster, spangen, Opacity);
+         }
+      };
 
       if (SpreadMethod IS VSPREAD::REFLECT_X) {
          agg::span_reflect_x source(pixels, XOffset, YOffset);
-         agg::span_image_filter_rgba<agg::span_reflect_x, agg::span_interpolator_linear<>> spangen(source, interpolator, filter, true);
-         drawBitmapRender(Scanline, RenderBase, Raster, spangen, Opacity);
+         render_source(source);
       }
       else if (SpreadMethod IS VSPREAD::REFLECT_Y) {
          agg::span_reflect_y source(pixels, XOffset, YOffset);
-         agg::span_image_filter_rgba<agg::span_reflect_y, agg::span_interpolator_linear<>> spangen(source, interpolator, filter, true);
-         drawBitmapRender(Scanline, RenderBase, Raster, spangen, Opacity);
+         render_source(source);
       }
       else if (SpreadMethod IS VSPREAD::REPEAT) {
          agg::span_repeat_pf source(pixels, XOffset, YOffset);
-         agg::span_image_filter_rgba<agg::span_repeat_pf, agg::span_interpolator_linear<>> spangen(source, interpolator, filter, true);
-         drawBitmapRender(Scanline, RenderBase, Raster, spangen, Opacity);
+         render_source(source);
       }
       else { // VSPREAD::PAD and VSPREAD::CLIP modes.
          agg::span_once<agg::pixfmt_psl> source(pixels, XOffset, YOffset);
-         agg::span_image_filter_rgba<agg::span_once<agg::pixfmt_psl>, agg::span_interpolator_linear<>> spangen(source, interpolator, filter, true);
-         drawBitmapRender(Scanline, RenderBase, Raster, spangen, Opacity);
+         render_source(source);
       }
    }
    else {
@@ -404,20 +512,23 @@ template <class T> void drawBitmap(T &Scanline, VSM SampleMethod, agg::renderer_
          YOffset += Transform->ty;
       }
 
+      const int x_offset = int(XOffset);
+      const int y_offset = int(YOffset);
+
       if (SpreadMethod IS VSPREAD::REFLECT_X) {
-         agg::span_reflect_x source(pixels, XOffset, YOffset);
+         agg::span_reflect_x source(pixels, x_offset, y_offset);
          drawBitmapRender(Scanline, RenderBase, Raster, source, Opacity);
       }
       else if (SpreadMethod IS VSPREAD::REFLECT_Y) {
-         agg::span_reflect_y source(pixels, XOffset, YOffset);
+         agg::span_reflect_y source(pixels, x_offset, y_offset);
          drawBitmapRender(Scanline, RenderBase, Raster, source, Opacity);
       }
       else if (SpreadMethod IS VSPREAD::REPEAT) {
-         agg::span_repeat_pf source(pixels, XOffset, YOffset);
+         agg::span_repeat_pf source(pixels, x_offset, y_offset);
          drawBitmapRender(Scanline, RenderBase, Raster, source, Opacity);
       }
       else { // VSPREAD::PAD and VSPREAD::CLIP modes.
-         agg::span_once<agg::pixfmt_psl> source(pixels, XOffset, YOffset);
+         agg::span_once<agg::pixfmt_psl> source(pixels, x_offset, y_offset);
          drawBitmapRender(Scanline, RenderBase, Raster, source, Opacity);
       }
    }
@@ -447,10 +558,7 @@ class pattern_rgb {
             if (Bitmap.ColourFormat->BluePos IS 0) pixel = &pixel24BGR;
             else pixel = &pixel24RGB;
          }
-         else {
-            pf::Log log;
-            log.warning("pattern_rgb: Unsupported bitmap format %dbpp", Bitmap.BitsPerPixel);
-         }
+         else kt::Log().warning("pattern_rgb: Unsupported bitmap format %dbpp", Bitmap.BitsPerPixel);
 
          if (Height != (double)mBitmap->Height) {
             ipixel = pixel;
@@ -553,9 +661,10 @@ static void stroke_brush(VectorState &State, const extVectorImage &Image, agg::r
 
 void SceneRenderer::draw(objBitmap *Bitmap, objVectorViewport *Viewport)
 {
-   pf::Log log;
+   kt::Log log;
 
    mObjectCount = 0;
+   while (not mClipStack.empty()) mClipStack.pop();
 
    log.traceBranch("Bitmap: %dx%d,%dx%d, Viewport: %d", Bitmap->Clip.Left, Bitmap->Clip.Top, Bitmap->Clip.Right, Bitmap->Clip.Bottom, Scene->Viewport->UID);
 
@@ -580,7 +689,17 @@ void SceneRenderer::draw(objBitmap *Bitmap, objVectorViewport *Viewport)
       draw_vectors((extVector *)Viewport, state);
 
       Scene->InputBoundaries = std::move(mInputBounds);
+      Scene->SubtreeDirty = false;
    }
+}
+
+//********************************************************************************************************************
+// Points StrokeRaster at the scene's shared gamma table (the scene rebuilds the table only when its
+// Gamma value changes).
+
+static void apply_stroke_gamma(extVector &Vector)
+{
+   Vector.StrokeRaster->gamma(((extVectorScene *)Vector.Scene)->gamma_table());
 }
 
 //********************************************************************************************************************
@@ -590,10 +709,11 @@ void SceneRenderer::render_stroke(VectorState &State, extVector &Vector)
 {
    auto &raster = *Vector.StrokeRaster;
 
-   if (Vector.Scene->Gamma != 1.0) raster.gamma(agg::gamma_power(Vector.Scene->Gamma));
+   apply_stroke_gamma(Vector);
 
-   if (Vector.FillRule IS VFR::NON_ZERO) raster.filling_rule(agg::fill_non_zero);
-   else if (Vector.FillRule IS VFR::EVEN_ODD) raster.filling_rule(agg::fill_even_odd);
+   // SVG requires stroke outlines to be rasterised with the non-zero rule regardless of the vector's FillRule;
+   // stroke geometry legitimately self-overlaps (joins, dashes, crossings) and even-odd would punch holes in it.
+   raster.filling_rule(agg::fill_non_zero);
 
    // Regarding this validation check, SVG requires that stroked vectors have a size > 0 when a paint server is used
    // as a stroker.  If the size is zero, the paint server is ignored and the solid colour can be used as a stroker
@@ -601,16 +721,34 @@ void SceneRenderer::render_stroke(VectorState &State, extVector &Vector)
 
    if (Vector.Bounds.valid()) {
       if (Vector.Stroke.Gradient) {
-         if (auto table = get_stroke_gradient_table(Vector)) {
-            fill_gradient(State, Vector.Bounds, &Vector.BasePath, build_fill_transform(Vector, ((extVectorGradient *)Vector.Stroke.Gradient)->Units IS VUNIT::USERSPACE, State),
-               view_width(), view_height(), *((extVectorGradient *)Vector.Stroke.Gradient), table, mRenderBase, raster);
+         auto gradient = (extGradient *)Vector.Stroke.Gradient;
+         if (gradient->classID() IS CLASSID::GRADIENTGOURAUD) {
+            fill_gouraud(State, Vector.Bounds, view_width(), view_height(), *(extGradientGouraud *)gradient,
+               State.mOpacity * Vector.StrokeOpacity, mRenderBase, raster,
+               build_fill_transform(Vector, gradient->Units IS VUNIT::USERSPACE, State), this);
+         }
+         else if (gradient->classID() IS CLASSID::GRADIENTMESH) {
+            fill_mesh(State, Vector.Bounds, view_width(), view_height(), *(extGradientMesh *)gradient,
+               State.mOpacity * Vector.StrokeOpacity, mRenderBase, raster,
+               build_fill_transform(Vector, gradient->Units IS VUNIT::USERSPACE, State), this);
+         }
+         else if (gradient->classID() IS CLASSID::GRADIENTDIFFUSION) {
+            fill_diffusion(State, Vector.Bounds, view_width(), view_height(), *(extGradientDiffusion *)gradient,
+               State.mOpacity * Vector.StrokeOpacity, mRenderBase, raster,
+               build_fill_transform(Vector, gradient->Units IS VUNIT::USERSPACE, State), this);
+         }
+         else if (auto table = get_stroke_gradient_table(Vector)) {
+            fill_gradient(State, Vector.Bounds, &Vector.BasePath,
+               build_fill_transform(Vector, gradient->Units IS VUNIT::USERSPACE, State),
+               view_width(), view_height(), *gradient, table, mRenderBase, raster, this);
          }
          return;
       }
 
       if (Vector.Stroke.Pattern) {
-         fill_pattern(State, Vector.Bounds, &Vector.BasePath, Vector.Scene->SampleMethod, build_fill_transform(Vector, Vector.Stroke.Pattern->Units IS VUNIT::USERSPACE, State),
-            view_width(), view_height(), *((extVectorPattern *)Vector.Stroke.Pattern), mRenderBase, raster);
+         fill_pattern(State, Vector.Bounds, &Vector.BasePath, Vector.Scene->SampleMethod,
+            build_fill_transform(Vector, Vector.Stroke.Pattern->Units IS VUNIT::USERSPACE, State),
+            view_width(), view_height(), *((extVectorPattern *)Vector.Stroke.Pattern), mRenderBase, raster, this);
          return;
       }
 
@@ -633,8 +771,8 @@ void SceneRenderer::render_stroke(VectorState &State, extVector &Vector)
       agg::renderer_scanline_bin_solid renderer(mRenderBase);
       renderer.color(agg::rgba(Vector.Stroke.Colour, Vector.Stroke.Colour.Alpha * Vector.StrokeOpacity * State.mOpacity));
 
-      if (!State.mClipStack->empty()) {
-         agg::alpha_mask_gray8 alpha_mask(State.mClipStack->top().m_renderer);
+      if (not mClipStack.empty()) {
+         agg::alpha_mask_gray8 alpha_mask(mClipStack.top().m_renderer);
          agg::scanline_u8_am<agg::alpha_mask_gray8> mScanLineMasked(alpha_mask);
          agg::render_scanlines(raster, mScanLineMasked, renderer);
       }
@@ -644,8 +782,8 @@ void SceneRenderer::render_stroke(VectorState &State, extVector &Vector)
       agg::renderer_scanline_aa_solid renderer(mRenderBase);
       renderer.color(agg::rgba(Vector.Stroke.Colour, Vector.Stroke.Colour.Alpha * Vector.StrokeOpacity * State.mOpacity));
 
-      if (!State.mClipStack->empty()) {
-         agg::alpha_mask_gray8 alpha_mask(State.mClipStack->top().m_renderer);
+      if (not mClipStack.empty()) {
+         agg::alpha_mask_gray8 alpha_mask(mClipStack.top().m_renderer);
          agg::scanline_u8_am<agg::alpha_mask_gray8> mScanLineMasked(alpha_mask);
          agg::render_scanlines(raster, mScanLineMasked, renderer);
       }
@@ -653,21 +791,117 @@ void SceneRenderer::render_stroke(VectorState &State, extVector &Vector)
    }
 }
 
+static double distal_fill_inflation(extVector *Shape, double ViewWidth, double ViewHeight)
+{
+   double inflation = 0;
+
+   for (auto &fill : Shape->Fill) {
+      if (not fill.Gradient) continue;
+
+      auto gradient = (extGradient *)fill.Gradient;
+      if ((gradient->classID() IS CLASSID::GRADIENTDISTAL) and (gradient->SpreadMethod != VSPREAD::CLIP)) {
+         auto distal = (extGradientDistal *)gradient;
+         const double max_bound = (Shape->Bounds.width() > Shape->Bounds.height()) ? Shape->Bounds.width() :
+            Shape->Bounds.height();
+         const double radius = distal->Radius.scaled() ? distal->Radius * max_bound : double(distal->Radius);
+
+         // For REPEAT/REFLECT the exterior tiles outward to fill the parent area, so fill_gradient() expands the SDF
+         // buffer to a fill extent that reaches the view edges from the path bounds.
+
+         double extent = radius;
+         if ((gradient->SpreadMethod IS VSPREAD::REPEAT) or (gradient->SpreadMethod IS VSPREAD::REFLECT)) {
+            const double reach_x = std::max(Shape->Bounds.left, ViewWidth - Shape->Bounds.right);
+            const double reach_y = std::max(Shape->Bounds.top, ViewHeight - Shape->Bounds.bottom);
+            extent = std::max({ radius, reach_x, reach_y });
+         }
+
+         if (extent > inflation) inflation = extent;
+      }
+   }
+
+   return inflation * Shape->Transform.scale();
+}
+
+//********************************************************************************************************************
+// Test the transformed vector bounds against the current render clip.  The returned value only controls rasterisation
+// of this vector's own path; child traversal and input-boundary registration are handled separately by draw_vectors().
+
+bool SceneRenderer::shape_intersects_clip(extVector *Shape)
+{
+   if (Shape->BasePath.empty()) return false;
+
+   TClipRectangle<double> bounds;
+
+   if (Shape->Transform.is_normal()) bounds = Shape;
+   else {
+      auto path = Shape->Bounds.as_path(Shape->Transform);
+      bounds = get_bounds(path);
+   }
+
+   double inflation = 1.0; // Preserve antialiasing on sub-pixel edges close to the clip boundary.
+
+   if (Shape->StrokeRaster) {
+      double stroke_inflation = Shape->fixed_stroke_width() * Shape->Transform.scale();
+      if (Shape->MiterLimit > 1.0) stroke_inflation *= Shape->MiterLimit;
+      if (stroke_inflation > inflation) inflation = stroke_inflation;
+   }
+
+   auto fill_inflation = distal_fill_inflation(Shape, mView->vpFixedWidth, mView->vpFixedHeight);
+   if (fill_inflation > inflation) inflation = fill_inflation;
+
+   bounds.left   -= inflation;
+   bounds.top    -= inflation;
+   bounds.right  += inflation;
+   bounds.bottom += inflation;
+
+   auto &clip = mRenderBase.clip_box();
+
+   return (bounds.right >= double(clip.x1)) and (bounds.bottom >= double(clip.y1)) and
+      (bounds.left <= double(clip.x2)) and (bounds.top <= double(clip.y2));
+}
+
+//********************************************************************************************************************
+// Filter bitmaps use absolute clip coordinates.  Buffered viewport targets are local bitmaps with their Data pointer
+// shifted so vector rasterisation can still address absolute scene coordinates.  CopyArea() clips against bitmap
+// dimensions, so translate the final filter copy back to viewport-local coordinates when a buffered target is active.
+
+void SceneRenderer::copy_filter_bitmap(objBitmap *Bitmap, extVectorFilter *Filter)
+{
+   Bitmap->Opacity = (Filter->Opacity < 1.0) ? (255.0 * Filter->Opacity) : 255;
+
+   if (mBitmapOriginX or mBitmapOriginY) {
+      const int src_x = Bitmap->Clip.Left;
+      const int src_y = Bitmap->Clip.Top;
+      const int width = Bitmap->Clip.Right - Bitmap->Clip.Left;
+      const int height = Bitmap->Clip.Bottom - Bitmap->Clip.Top;
+
+      if ((width > 0) and (height > 0)) {
+         auto save_data = mBitmap->offset(mBitmapOriginX, mBitmapOriginY);
+
+         gfx::CopyArea(Bitmap, mBitmap, BAF::BLEND|BAF::COPY, src_x, src_y, width, height,
+            src_x - mBitmapOriginX, src_y - mBitmapOriginY);
+
+         mBitmap->Data = save_data;
+      }
+   }
+   else gfx::CopyArea(Bitmap, mBitmap, BAF::BLEND|BAF::COPY, 0, 0, Bitmap->Width, Bitmap->Height, 0, 0);
+}
+
 // This is the main routine for parsing the vector tree for drawing.
 
 void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentState) {
    for (auto shape=CurrentVector; shape; shape=(extVector *)shape->Next) {
-      pf::Log log(__FUNCTION__);
+      kt::Log log(__FUNCTION__);
       VectorState state = VectorState(ParentState);
 
       if (shape->baseClassID() != CLASSID::VECTOR) {
          log.trace("Non-Vector discovered in the vector tree.");
          continue;
       }
-      else if (!shape->Scene) continue;
+      else if (not shape->Scene) continue;
 
       if (shape->dirty()) gen_vector_path(shape);
-      else log.trace("%s: #%d, Dirty: NO, ParentView: #%d", shape->Class->ClassName, shape->UID, shape->ParentView ? shape->ParentView->UID : 0);
+      else log.trace("%s: #%d, Dirty: NO, ParentView: #%d", shape->Class->ClassName.c_str(), shape->UID, shape->ParentView ? shape->ParentView->UID : 0);
 
       if (shape->RequiresRedraw) {
          state.mDirty = true; // Carry-forward dirty marker for children
@@ -684,7 +918,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
          }
          else if (shape->Visibility != VIS::VISIBLE) visible = false;
 
-         if (((!visible) or (!shape->ValidState)) and (shape->classID() != CLASSID::VECTORGROUP)) {
+         if (((not visible) or (not shape->ValidState)) and (shape->classID() != CLASSID::VECTORGROUP)) {
             log.trace("%s: #%d, Not Visible", get_name(shape), shape->UID);
             continue;
          }
@@ -693,30 +927,29 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
       mObjectCount++;
 
       auto filter = (extVectorFilter *)shape->Filter;
-      if ((filter) and (!filter->Disabled)) {
+      if ((filter) and (not filter->Disabled)) {
          #ifdef DBG_DRAW
             log.traceBranch("Rendering filter for %s.", get_name(shape));
          #endif
 
          objBitmap *bmp;
-         if (render_filter(filter, mView, shape, mBitmap, &bmp) IS ERR::Okay) {
-            bmp->Opacity = (filter->Opacity < 1.0) ? (255.0 * filter->Opacity) : 255;
-            gfx::CopyArea(bmp, mBitmap, BAF::BLEND|BAF::COPY, 0, 0, bmp->Width, bmp->Height, 0, 0);
+         if (not render_filter(filter, mView, shape, mBitmap, &bmp)) {
+            copy_filter_bitmap(bmp, filter);
          }
          continue;
       }
 
       #ifdef DBG_DRAW
-         log.traceBranch("%s: #%d, Matrices: %p", get_name(shape), shape->UID, shape->Matrices);
+         log.traceBranch("%s: #%d, Matrices: %p", get_name(shape), shape->UID, shape->matrices());
       #endif
 
       if (mBitmap->ColourSpace IS CS::LINEAR_RGB) state.mLinearRGB = true; // The target bitmap's colour space has priority if linear.
       else if (shape->ColourSpace IS VCS::LINEAR_RGB) state.mLinearRGB = true; // Use the parent value unless a specific CS is required by the client
       else if (shape->ColourSpace IS VCS::SRGB) state.mLinearRGB = false;
 
-      if (shape->LineJoin  != agg::inherit_join)  state.mLineJoin  = shape->LineJoin;
-      if (shape->InnerJoin != agg::inner_inherit) state.mInnerJoin = shape->InnerJoin;
-      if (shape->LineCap   != agg::inherit_cap)   state.mLineCap   = shape->LineCap;
+      if (shape->LineJoin  != VLJ::INHERIT) state.mLineJoin  = shape->LineJoin;
+      if (shape->InnerJoin != VIJ::INHERIT) state.mInnerJoin = shape->InnerJoin;
+      if (shape->LineCap   != VLC::INHERIT) state.mLineCap   = shape->LineCap;
       state.mOpacity = shape->Opacity * state.mOpacity;
 
       // Support for isolated vectors.  A vector will be isolated if it has children using a filter that uses BackgroundImage
@@ -725,24 +958,32 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
       // a placeholder over the existing target bitmap, and the new content will be rendered to the target
       // after processing the current branch.  The background is then discarded.
 
-      // TODO: The allocation of this bitmap during rendering isn't optimal.  Perhaps we could allocate it as a permanent
-      // dummy bitmap to be retained with the Vector, and the Data would be allocated dynamically during rendering.
-      //
-      // TODO: The clipping area of the bitmap should be declared so that unnecessary pixel interaction is avoided.
-
       objBitmap *bmpBkgd = nullptr;
       objBitmap *bmpSave = nullptr;
+      int save_origin_x = 0;
+      int save_origin_y = 0;
       if ((shape->Flags & VF::ISOLATED) != VF::NIL) {
-         if ((bmpBkgd = objBitmap::create::local(fl::Name("scene_temp_bkgd"),
-               fl::Width(mBitmap->Width),
-               fl::Height(mBitmap->Height),
-               fl::BitsPerPixel(32),
-               fl::Flags(BMF::ALPHA_CHANNEL),
-               fl::ColourSpace(mBitmap->ColourSpace)))) {
+         if (not shape->IsolatedBuffer) shape->IsolatedBuffer.reset(new (std::nothrow) filter_bitmap);
+         if (shape->IsolatedBuffer) {
+            auto &clip_box = mRenderBase.clip_box();
+            TClipRectangle<int> isolated_clip(clip_box.x1, clip_box.y1, clip_box.x2 + 1, clip_box.y2 + 1);
+
+            bmpBkgd = shape->IsolatedBuffer->get_bitmap(mBitmap->Width, mBitmap->Height, isolated_clip, false,
+               shape->UID, "isolated_bkgd");
+         }
+
+         if (bmpBkgd) {
+            bmpBkgd->ColourSpace = mBitmap->ColourSpace;
+            bmpBkgd->BlendMode   = mBitmap->BlendMode;
+            bmpBkgd->Flags       = (bmpBkgd->Flags & ~BMF::PREMUL) | BMF::ALPHA_CHANNEL | BMF::NO_DATA;
             bmpSave = mBitmap;
             mBitmap = bmpBkgd;
+            save_origin_x = mBitmapOriginX;
+            save_origin_y = mBitmapOriginY;
+            mBitmapOriginX = 0;
+            mBitmapOriginY = 0;
             mFormat.setBitmap(*bmpBkgd);
-            clearmem(bmpBkgd->Data, bmpBkgd->LineWidth * bmpBkgd->Height);
+            clearmem(bmpBkgd->CreatorMeta, bmpBkgd->LineWidth * (bmpBkgd->Clip.Bottom - bmpBkgd->Clip.Top));
             state.mIsolated = true;
          }
       }
@@ -773,13 +1014,14 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
 
             if ((state.mClip.right > state.mClip.left) and (state.mClip.bottom > state.mClip.top)) { // Continue only if the clipping region is visible
                if (view->vpClip) {
-                  state.mClipStack->emplace(state, (extVectorClip *)nullptr, view);
-                  state.mClipStack->top().draw_viewport(*this);
+                  mClipStack.emplace(state, (extVectorClip *)nullptr, view);
+                  mClipStack.top().draw_viewport(*this);
                }
 
+               validate_clip_mask(view); // Drop the mask link lazily if its target has been terminated.
                if (view->ClipMask) {
-                  state.mClipStack->emplace(state, view->ClipMask, view);
-                  state.mClipStack->top().draw(*this);
+                  mClipStack.emplace(state, view->ClipMask, view);
+                  mClipStack.top().draw(*this);
                }
 
                auto save_rb_clip = mRenderBase.clip_box();
@@ -822,71 +1064,34 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
                   // the current viewport.  NB: There is a performance penalty in that transforms will be
                   // applied in realtime.
 
-                  if (!view->Fill[0].Pattern->Scene->Viewport->Matrices) {
-                     view->Fill[0].Pattern->Scene->Viewport->newMatrix(nullptr, false);
-                  }
-
                   // Use transforms for the purpose of placing the pattern correctly
 
-                  auto &matrix = view->Fill[0].Pattern->Scene->Viewport->Matrices;
                   auto &t = view->Transform;
+                  if (set_render_transform(view->Fill[0].Pattern->Scene->Viewport, t)) {
 
-                  matrix->ScaleX = t.sx;
-                  matrix->ScaleY = t.sy;
-                  matrix->ShearX = t.shx;
-                  matrix->ShearY = t.shy;
-                  matrix->TranslateX = t.tx;
-                  matrix->TranslateY = t.ty;
+                     if (view->Fill[0].Pattern->Units IS VUNIT::BOUNDING_BOX) {
+                        view->Fill[0].Pattern->Scene->setPageWidth(view->Scene->PageWidth);
+                        view->Fill[0].Pattern->Scene->setPageHeight(view->Scene->PageHeight);
+                        set_viewport_fixed_size(view->Fill[0].Pattern->Scene->Viewport, view->vpFixedWidth,
+                           view->vpFixedHeight);
+                     }
 
-                  mark_dirty(view->Fill[0].Pattern->Scene->Viewport, RC::TRANSFORM);
-
-                  if (view->Fill[0].Pattern->Units IS VUNIT::BOUNDING_BOX) {
-                     view->Fill[0].Pattern->Scene->setPageWidth(view->Scene->PageWidth);
-                     view->Fill[0].Pattern->Scene->setPageHeight(view->Scene->PageHeight);
-                     view->Fill[0].Pattern->Scene->Viewport->setFields(fl::Width(view->vpFixedWidth), fl::Height(view->vpFixedHeight));
+                     draw_vectors((extVectorViewport *)((extVectorPattern *)view->Fill[0].Pattern)->Viewport, state);
                   }
-
-                  draw_vectors((extVectorViewport *)((extVectorPattern *)view->Fill[0].Pattern)->Viewport, state);
-
-                  matrix->ScaleX = 1.0;
-                  matrix->ScaleY = 1.0;
-                  matrix->ShearX = 0;
-                  matrix->ShearY = 0;
-                  matrix->TranslateX = 0;
-                  matrix->TranslateY = 0;
-                  mark_dirty(view->Fill[0].Pattern->Scene->Viewport, RC::TRANSFORM);
 
                   if ((view->FGFill) and (view->Fill[1].Pattern)) {
                      // Support for foreground fill patterns
-                     if (!view->Fill[1].Pattern->Scene->Viewport->Matrices) {
-                        view->Fill[1].Pattern->Scene->Viewport->newMatrix(nullptr, false);
+                     if (set_render_transform(view->Fill[1].Pattern->Scene->Viewport, t)) {
+
+                        if (view->Fill[1].Pattern->Units IS VUNIT::BOUNDING_BOX) {
+                           view->Fill[1].Pattern->Scene->setPageWidth(view->Scene->PageWidth);
+                           view->Fill[1].Pattern->Scene->setPageHeight(view->Scene->PageHeight);
+                           set_viewport_fixed_size(view->Fill[1].Pattern->Scene->Viewport, view->vpFixedWidth,
+                              view->vpFixedHeight);
+                        }
+
+                        draw_vectors((extVectorViewport *)((extVectorPattern *)view->Fill[1].Pattern)->Viewport, state);
                      }
-
-                     auto &matrix = view->Fill[1].Pattern->Scene->Viewport->Matrices;
-                     matrix->ScaleX = t.sx;
-                     matrix->ScaleY = t.sy;
-                     matrix->ShearX = t.shx;
-                     matrix->ShearY = t.shy;
-                     matrix->TranslateX = t.tx;
-                     matrix->TranslateY = t.ty;
-
-                     mark_dirty(view->Fill[1].Pattern->Scene->Viewport, RC::TRANSFORM);
-
-                     if (view->Fill[1].Pattern->Units IS VUNIT::BOUNDING_BOX) {
-                        view->Fill[1].Pattern->Scene->setPageWidth(view->Scene->PageWidth);
-                        view->Fill[1].Pattern->Scene->setPageHeight(view->Scene->PageHeight);
-                        view->Fill[1].Pattern->Scene->Viewport->setFields(fl::Width(view->vpFixedWidth), fl::Height(view->vpFixedHeight));
-                     }
-
-                     draw_vectors((extVectorViewport *)((extVectorPattern *)view->Fill[1].Pattern)->Viewport, state);
-
-                     matrix->ScaleX = 1.0;
-                     matrix->ScaleY = 1.0;
-                     matrix->ShearX = 0;
-                     matrix->ShearY = 0;
-                     matrix->TranslateX = 0;
-                     matrix->TranslateY = 0;
-                     mark_dirty(view->Fill[1].Pattern->Scene->Viewport, RC::TRANSFORM);
                   }
                }
 
@@ -900,7 +1105,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
                      bool redraw = view->vpRefreshBuffer or state.mDirty;
                      view->vpRefreshBuffer = false;
 
-                     if ((not redraw) and (Scene->ShareModified)) redraw = true;
+                     if ((not redraw) and (view->vpSeenShareVersion != Scene->ShareVersion)) redraw = true;
 
                      if (view->vpBuffer) {
                         if ((view->vpBuffer->Width != view->vpFixedWidth) or (view->vpBuffer->Height != view->vpFixedHeight)) {
@@ -933,17 +1138,26 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
                         auto save_bmp    = mBitmap;
                         auto save_format = mFormat;
                         auto save_rb     = mRenderBase;
+                        auto save_origin_x = mBitmapOriginX;
+                        auto save_origin_y = mBitmapOriginY;
 
                         // The vector paths will target the coordinate space of their parents, so we
                         // make adjustments to the bitmap to orient to (0,0).
 
                         mBitmap = view->vpBuffer;
-                        auto save_data = mBitmap->offset(-view->vpBounds.left, -view->vpBounds.top);
+                        mBitmapOriginX = int(view->vpBounds.left);
+                        mBitmapOriginY = int(view->vpBounds.top);
+                        auto save_data = mBitmap->offset(-mBitmapOriginX, -mBitmapOriginY);
                         mFormat.setBitmap(*view->vpBuffer);
 
                         auto ib_size = mInputBounds.size();
 
+                        std::stack<ClipBuffer> save_clip_stack;
+                        save_clip_stack.swap(mClipStack);
+
                         draw_vectors((extVector *)view->Child, child_state);
+
+                        mClipStack.swap(save_clip_stack);
 
                         // Cache the freshly-generated boundaries on the viewport so that they can be re-used on
                         // subsequent frames that skip re-rendering this buffered viewport.
@@ -959,6 +1173,10 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
                         mRenderBase = save_rb;
                         mBitmap     = save_bmp;
                         mFormat     = save_format;
+                        mBitmapOriginX = save_origin_x;
+                        mBitmapOriginY = save_origin_y;
+
+                        view->vpSeenShareVersion = Scene->ShareVersion;
 
                         //save_bitmap(view->vpBuffer, std::string("viewport"));
                      }
@@ -978,8 +1196,8 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
                      agg::rasterizer_scanline_aa<> raster;
                      raster.add_path(view->BasePath);
 
-                     if (!state.mClipStack->empty()) {
-                        agg::alpha_mask_gray8 alpha_mask(state.mClipStack->top().m_renderer);
+                     if (not mClipStack.empty()) {
+                        agg::alpha_mask_gray8 alpha_mask(mClipStack.top().m_renderer);
                         agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
                         drawBitmap(masked_scanline, VSM::AUTO, mRenderBase, raster, view->vpBuffer, VSPREAD::REPEAT, view->Opacity, &transform);
                      }
@@ -991,9 +1209,9 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
                   else draw_vectors((extVector *)view->Child, state);
                }
 
-               if (view->ClipMask) state.mClipStack->pop();
+               if (view->ClipMask) mClipStack.pop();
 
-               if (view->vpClip) state.mClipStack->pop();
+               if (view->vpClip) mClipStack.pop();
 
                mView = saved_viewport;
 
@@ -1005,9 +1223,10 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
          }
       }
       else {
+         validate_clip_mask(shape); // Drop the mask link lazily if its target has been terminated.
          if (shape->ClipMask) {
-            state.mClipStack->emplace(state, shape->ClipMask, shape);
-            state.mClipStack->top().draw(*this);
+            mClipStack.emplace(state, shape->ClipMask, shape);
+            mClipStack.top().draw(*this);
          }
 
          if (shape->GeneratePath) { // A vector that generates a path is one that can be drawn
@@ -1015,19 +1234,23 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
                log.traceBranch("%s: #%d, Mask: %p", get_name(shape), shape->UID, shape->ClipMask);
             #endif
 
-            if (!mView) {
+            if (not mView) {
                // Vector shapes not inside a viewport cannot be drawn (they may exist as definitions for other objects,
-               // e.g. as morph paths).
+               // e.g. as guide paths).
                return;
             }
 
-            if (shape->FillRaster) {
-               render_fill(state, *shape, *shape->FillRaster, shape->Fill[0]);
-               if (shape->FGFill) render_fill(state, *shape, *shape->FillRaster, shape->Fill[1]);
-            }
+            const bool render_path = shape_intersects_clip(shape);
 
-            if (shape->StrokeRaster) {
-               render_stroke(state, *shape);
+            if (render_path) {
+               if (shape->FillRaster) {
+                  render_fill(state, *shape, *shape->FillRaster, shape->Fill[0]);
+                  if (shape->FGFill) render_fill(state, *shape, *shape->FillRaster, shape->Fill[1]);
+               }
+
+               if (shape->StrokeRaster) {
+                  render_stroke(state, *shape);
+               }
             }
 
             if (has_input_boundary(shape)) {
@@ -1035,7 +1258,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
 
                TClipRectangle b;
 
-               if (!shape->BasePath.empty()) {
+               if (not shape->BasePath.empty()) {
                   if (shape->Transform.is_normal()) b = shape;
                   else {
                      auto path = shape->Bounds.as_path(shape->Transform);
@@ -1044,8 +1267,8 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
 
                   // Clipping masks can reduce the boundary further.
 
-                  if (!state.mClipStack->empty()) {
-                     auto &top = state.mClipStack->top();
+                  if (not mClipStack.empty()) {
+                     auto &top = mClipStack.top();
                      if ((top.m_clip) and (top.m_clip->Bounds.valid())) {
                         // NB: This hasn't had much testing and doesn't consider nested clips.
                         // The Clip bounds should be post-transform
@@ -1067,18 +1290,20 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
 
          if (shape->Child) draw_vectors((extVector *)shape->Child, state);
 
-         if (shape->ClipMask) state.mClipStack->pop();
+         if (shape->ClipMask) mClipStack.pop();
       }
 
       if (bmpBkgd) {
          agg::rasterizer_scanline_aa raster;
 
-         basic_path(raster, 0, 0, bmpBkgd->Width, bmpBkgd->Height);
+         basic_path(raster, bmpBkgd->Clip.Left, bmpBkgd->Clip.Top, bmpBkgd->Clip.Right, bmpBkgd->Clip.Bottom);
 
          mBitmap = bmpSave;
+         mBitmapOriginX = save_origin_x;
+         mBitmapOriginY = save_origin_y;
          mFormat.setBitmap(*mBitmap);
-         if (!state.mClipStack->empty()) {
-            agg::alpha_mask_gray8 alpha_mask(state.mClipStack->top().m_renderer);
+         if (not mClipStack.empty()) {
+            agg::alpha_mask_gray8 alpha_mask(mClipStack.top().m_renderer);
             agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
             drawBitmap(masked_scanline, shape->Scene->SampleMethod, mRenderBase, raster, bmpBkgd, VSPREAD::CLIP, 1.0);
          }
@@ -1086,7 +1311,6 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
             agg::scanline_u8 scanline;
             drawBitmap(scanline, shape->Scene->SampleMethod, mRenderBase, raster, bmpBkgd, VSPREAD::CLIP, 1.0);
          }
-         FreeResource(bmpBkgd);
       }
    } // for loop
 }
@@ -1096,7 +1320,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
 
 void SimpleVector::DrawPath(objBitmap *Bitmap, double StrokeWidth, OBJECTPTR StrokeStyle, OBJECTPTR FillStyle)
 {
-   pf::Log log("draw_path");
+   kt::Log log("draw_path");
 
    agg::scanline_u8  scanline;
    agg::pixfmt_psl   format;
@@ -1125,9 +1349,21 @@ void SimpleVector::DrawPath(objBitmap *Bitmap, double StrokeWidth, OBJECTPTR Str
          extVectorImage &image = (extVectorImage &)*FillStyle;
          fill_image(state, bounds, mPath, VSM::AUTO, transform, Bitmap->Width, Bitmap->Height, image, mRenderer, mRaster);
       }
-      else if (FillStyle->classID() IS CLASSID::VECTORGRADIENT) {
-         extVectorGradient &gradient = (extVectorGradient &)*FillStyle;
-         fill_gradient(state, bounds, &mPath, transform, Bitmap->Width, Bitmap->Height, gradient, &gradient.Colours->table, mRenderer, mRaster);
+      else if (FillStyle->baseClassID() IS CLASSID::GRADIENT) {
+         extGradient &gradient = (extGradient &)*FillStyle;
+         if (gradient.classID() IS CLASSID::GRADIENTGOURAUD) {
+            fill_gouraud(state, bounds, Bitmap->Width, Bitmap->Height, (extGradientGouraud &)gradient, 1.0, mRenderer, mRaster, transform);
+         }
+         else if (gradient.classID() IS CLASSID::GRADIENTMESH) {
+            fill_mesh(state, bounds, Bitmap->Width, Bitmap->Height, (extGradientMesh &)gradient, 1.0, mRenderer, mRaster, transform);
+         }
+         else if (gradient.classID() IS CLASSID::GRADIENTDIFFUSION) {
+            fill_diffusion(state, bounds, Bitmap->Width, Bitmap->Height, (extGradientDiffusion &)gradient, 1.0, mRenderer, mRaster, transform);
+         }
+         else if (gradient.Colours) {
+            fill_gradient(state, bounds, &mPath, transform, Bitmap->Width, Bitmap->Height, gradient,
+               &gradient.Colours->table, mRenderer, mRaster);
+         }
       }
       else if (FillStyle->classID() IS CLASSID::VECTORPATTERN) {
          fill_pattern(state, bounds, &mPath, VSM::AUTO, transform, Bitmap->Width, Bitmap->Height, (extVectorPattern &)*FillStyle, mRenderer, mRaster);
@@ -1136,13 +1372,25 @@ void SimpleVector::DrawPath(objBitmap *Bitmap, double StrokeWidth, OBJECTPTR Str
    }
 
    if ((StrokeWidth > 0) and (StrokeStyle)) {
-      if (StrokeStyle->classID() IS CLASSID::VECTORGRADIENT) {
+      if (StrokeStyle->baseClassID() IS CLASSID::GRADIENT) {
          agg::conv_stroke<agg::path_storage> stroke_path(mPath);
          mRaster.reset();
          mRaster.add_path(stroke_path);
 
-         extVectorGradient &gradient = (extVectorGradient &)*StrokeStyle;
-         fill_gradient(state, bounds, &mPath, transform, Bitmap->Width, Bitmap->Height, gradient, &gradient.Colours->table, mRenderer, mRaster);
+         extGradient &gradient = (extGradient &)*StrokeStyle;
+         if (gradient.classID() IS CLASSID::GRADIENTGOURAUD) {
+            fill_gouraud(state, bounds, Bitmap->Width, Bitmap->Height, (extGradientGouraud &)gradient, 1.0, mRenderer, mRaster, transform);
+         }
+         else if (gradient.classID() IS CLASSID::GRADIENTMESH) {
+            fill_mesh(state, bounds, Bitmap->Width, Bitmap->Height, (extGradientMesh &)gradient, 1.0, mRenderer, mRaster, transform);
+         }
+         else if (gradient.classID() IS CLASSID::GRADIENTDIFFUSION) {
+            fill_diffusion(state, bounds, Bitmap->Width, Bitmap->Height, (extGradientDiffusion &)gradient, 1.0, mRenderer, mRaster, transform);
+         }
+         else if (gradient.Colours) {
+            fill_gradient(state, bounds, &mPath, transform, Bitmap->Width, Bitmap->Height, gradient,
+               &gradient.Colours->table, mRenderer, mRaster);
+         }
       }
       else if (StrokeStyle->classID() IS CLASSID::VECTORPATTERN) {
          agg::conv_stroke<agg::path_storage> stroke_path(mPath);
@@ -1189,103 +1437,43 @@ void agg::pixfmt_psl::rawBitmap(uint8_t *Data, int Width, int Height, int Stride
    mBytesPerPixel = BitsPerPixel/8;
 
    if (BitsPerPixel IS 32) {
-      fBlendHLine      = &blendHLine32;
-      fBlendSolidHSpan = &blendSolidHSpan32;
-      fBlendColorHSpan = &blendColorHSpan32;
-      fCopyColorHSpan  = &copyColorHSpan32;
+      // Each branch binds the per-pixel and span operations for a <pixel order, blend mode> pair.
+      // The span operations are template instantiations with the per-pixel work inlined, so the
+      // function pointer indirection is paid once per span rather than once per pixel.
 
       if (BlendMode IS BLM::LINEAR) {
          if (ColourFormat.AlphaPos IS 24) {
-            if (ColourFormat.BluePos IS 0) {
-               pixel_order(pxBGRA);
-               fBlendPix = &linear32BGRA;
-               fCopyPix  = &linearCopy32BGRA;
-               fCoverPix = &linearCover32BGRA;
-            }
-            else {
-               pixel_order(pxRGBA);
-               fBlendPix = &linear32RGBA;
-               fCopyPix  = &linearCopy32RGBA;
-               fCoverPix = &linearCover32RGBA;
-            }
+            if (ColourFormat.BluePos IS 0) set_ops32<2,1,0,3, &linear32BGRA, &linearCopy32BGRA, &linearCover32BGRA>(pxBGRA);
+            else set_ops32<0,1,2,3, &linear32RGBA, &linearCopy32RGBA, &linearCover32RGBA>(pxRGBA);
          }
-         else if (ColourFormat.RedPos IS 24) {
-            pixel_order(pxAGBR);
-            fBlendPix = &linear32AGBR;
-            fCopyPix  = &linearCopy32AGBR;
-            fCoverPix = &linearCover32AGBR;
-         }
-         else {
-            pixel_order(pxARGB);
-            fBlendPix = &linear32ARGB;
-            fCopyPix  = &linearCopy32ARGB;
-            fCoverPix = &linearCover32ARGB;
-         }
+         else if (ColourFormat.RedPos IS 24) set_ops32<3,1,2,0, &linear32AGBR, &linearCopy32AGBR, &linearCover32AGBR>(pxAGBR);
+         else set_ops32<1,2,3,0, &linear32ARGB, &linearCopy32ARGB, &linearCover32ARGB>(pxARGB);
       }
       else if (BlendMode IS BLM::SRGB) {
+         // The trailing 'true' selects the SSE2 solid-span kernels where available.
          if (ColourFormat.AlphaPos IS 24) {
-            if (ColourFormat.BluePos IS 0) {
-               pixel_order(pxBGRA);
-               fBlendPix = &srgb32BGRA;
-               fCopyPix  = &srgbCopy32BGRA;
-               fCoverPix = &srgbCover32BGRA;
-            }
-            else {
-               pixel_order(pxRGBA);
-               fBlendPix = &srgb32RGBA;
-               fCopyPix  = &srgbCopy32RGBA;
-               fCoverPix = &srgbCover32RGBA;
-            }
+            if (ColourFormat.BluePos IS 0) set_ops32<2,1,0,3, &srgb32BGRA, &srgbCopy32BGRA, &srgbCover32BGRA, true>(pxBGRA);
+            else set_ops32<0,1,2,3, &srgb32RGBA, &srgbCopy32RGBA, &srgbCover32RGBA, true>(pxRGBA);
          }
-         else if (ColourFormat.RedPos IS 24) {
-            pixel_order(pxAGBR);
-            fBlendPix = &srgb32AGBR;
-            fCopyPix  = &srgbCopy32AGBR;
-            fCoverPix = &srgbCover32AGBR;
-         }
-         else {
-            pixel_order(pxARGB);
-            fBlendPix = &srgb32ARGB;
-            fCopyPix  = &srgbCopy32ARGB;
-            fCoverPix = &srgbCover32ARGB;
-         }
+         else if (ColourFormat.RedPos IS 24) set_ops32<3,1,2,0, &srgb32AGBR, &srgbCopy32AGBR, &srgbCover32AGBR, true>(pxAGBR);
+         else set_ops32<1,2,3,0, &srgb32ARGB, &srgbCopy32ARGB, &srgbCover32ARGB, true>(pxARGB);
       }
       else { // BLM::GAMMA
          if (ColourFormat.AlphaPos IS 24) {
-            if (ColourFormat.BluePos IS 0) {
-               pixel_order(pxBGRA);
-               fBlendPix = &gamma32BGRA;
-               fCopyPix  = &gammaCopy32BGRA;
-               fCoverPix = &gammaCover32BGRA;
-            }
-            else {
-               pixel_order(pxRGBA);
-               fBlendPix = &gamma32RGBA;
-               fCopyPix  = &gammaCopy32RGBA;
-               fCoverPix = &gammaCover32RGBA;
-            }
+            if (ColourFormat.BluePos IS 0) set_ops32<2,1,0,3, &gamma32BGRA, &gammaCopy32BGRA, &gammaCover32BGRA>(pxBGRA);
+            else set_ops32<0,1,2,3, &gamma32RGBA, &gammaCopy32RGBA, &gammaCover32RGBA>(pxRGBA);
          }
-         else if (ColourFormat.RedPos IS 24) {
-            pixel_order(pxAGBR);
-            fBlendPix = &gamma32AGBR;
-            fCopyPix  = &gammaCopy32AGBR;
-            fCoverPix = &gammaCover32AGBR;
-         }
-         else {
-            pixel_order(pxARGB);
-            fBlendPix = &gamma32ARGB;
-            fCopyPix  = &gammaCopy32ARGB;
-            fCoverPix = &gammaCover32ARGB;
-         }
+         else if (ColourFormat.RedPos IS 24) set_ops32<3,1,2,0, &gamma32AGBR, &gammaCopy32AGBR, &gammaCover32AGBR>(pxAGBR);
+         else set_ops32<1,2,3,0, &gamma32ARGB, &gammaCopy32ARGB, &gammaCover32ARGB>(pxARGB);
       }
    }
    else if (BitsPerPixel IS 24) {
-      pf::Log log;
+      kt::Log log;
       log.warning("Support for 24-bit bitmaps is deprecated.");
    }
    else if (BitsPerPixel IS 16) {
       // Deprecated.  16-bit client code should use 32-bit and downscale instead.
-      pf::Log log;
+      kt::Log log;
       log.warning("Support for 16-bit bitmaps is deprecated.");
    }
    else if (BitsPerPixel IS 8) {

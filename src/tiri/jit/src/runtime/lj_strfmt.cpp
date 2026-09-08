@@ -13,6 +13,7 @@
 #include "lj_str.h"
 #include "lj_meta.h"
 #include "lj_state.h"
+#include "lj_vm.h"
 #include "lj_char.h"
 #include "lj_strfmt.h"
 #include "lib.h"
@@ -389,8 +390,7 @@ int lj_strfmt_putarg(lua_State* L, SBuf* sb, int arg, int retry)
          lj_buf_putmem(sb, fs.str, fs.len);
       }
       else if (sf == STRFMT_ERR) {
-         lj_err_callerv(L, ErrMsg::STRFMT,
-            strdata(lj_str_new(L, fs.str, fs.len)));
+         luaL_error(L, ErrMsg::STRFMT, strdata(lj_str_new(L, fs.str, fs.len)));
       }
       else {
          // Handle dynamic width from argument
@@ -450,8 +450,19 @@ int lj_strfmt_putarg(lua_State* L, SBuf* sb, int arg, int retry)
             if (!tvisstr(o) and retry >= 0 and !tvisnil(mo = lj_meta_lookup(L, o, MM_tostring))) [[unlikely]] {
                // Call __tostring metamethod once.
                copyTV(L, L->top++, mo);
-               copyTV(L, L->top++, o);
-               lua_call(L, 1, 1);
+               if (tvistab(o)) {
+                  TValue receiver;
+                  copyTV(L, &receiver, o);
+                  setnilV(L->top++);
+                  TValue *base = L->top;
+                  [[maybe_unused]] uint32_t argument_count = lj_context_prepare_metamethod_call(L, &receiver, base, 0, 1);
+                  lj_assertL(argument_count IS 0, "formatted table metamethod retained its receiver argument");
+                  lj_vm_call(L, base, 2);
+               }
+               else {
+                  copyTV(L, L->top++, o);
+                  lua_call(L, 1, 1);
+               }
                o = &L->base[arg - 1];  //  Stack may have been reallocated.
                copyTV(L, o, --L->top);  //  Replace inline for retry.
                if (retry < 2) {  // Global buffer may have been overwritten.
@@ -518,6 +529,7 @@ GCstr* lj_strfmt_char(lua_State* L, int c)
 GCstr * lj_strfmt_obj(lua_State *L, cTValue *o)
 {
    if (tvisstr(o)) return strV(o);
+   else if (GCstr *display_name = lj_meta_type_name(L, o)) return display_name;
    else if (tvisnumber(o)) return lj_strfmt_number(L, o);
    else if (tvisnil(o)) return lj_str_newlit(L, "nil");
    else if (tvisfalse(o)) return lj_str_newlit(L, "false");
@@ -547,19 +559,9 @@ GCstr * lj_strfmt_obj(lua_State *L, cTValue *o)
          }
       }
 
-      // Anonymous function or C function - use address
-      char buf[32], *p = buf;
-      p = lj_buf_wmem(p, "function: ", 10);
-      p = lj_strfmt_wptr(p, lj_obj_ptr(G(L), o));
-      return lj_str_new(L, buf, (size_t)(p - buf));
+      return lj_str_newlit(L, "function");
    }
-   else {
-      char buf[8 + 2 + 2 + 16], * p = buf;
-      p = lj_buf_wmem(p, lj_typename(o), (MSize)strlen(lj_typename(o)));
-      *p++ = ':'; *p++ = ' ';
-      p = lj_strfmt_wptr(p, lj_obj_ptr(G(L), o));
-      return lj_str_new(L, buf, (size_t)(p - buf));
-   }
+   else return lj_str_newz(L, lj_typename(o));
 }
 
 /*
@@ -650,4 +652,3 @@ const char* lj_strfmt_pushf(lua_State* L, const char* fmt, ...)
    va_end(argp);
    return msg;
 }
-

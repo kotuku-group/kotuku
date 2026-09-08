@@ -1,0 +1,842 @@
+
+   glNextResultId = 1
+
+   -- Token cache for delta semantic tokens.  URI indexed
+   -- Structure: { [uri] = { resultId = number, data = { ... } } }
+
+   glTokenCache = { }
+
+----------------------------------------------------------------------------------------------------------------------
+-- Text Edit Helper
+
+@Doc(text="Apply a text edit to document content")
+function applyTextEdit(Content, Range, NewText)
+   start_offset = lspPositionToOffset(Content, Range.start.line, Range.start.character)
+   end_offset = lspPositionToOffset(Content, Range['end'].line, Range['end'].character)
+
+   -- Build new content: before + new text + after
+   before = Content.sub(0, start_offset)
+   after = Content.sub(end_offset)
+
+   return before .. NewText .. after
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text="Replace strings and comments with spaces while preserving byte offsets for range calculations.")
+global function maskNonCode(LineText:str, InBlockComment:bool):<str, bool>
+   result = ''
+   pos = 0
+   len = #LineText
+
+   if InBlockComment then
+      close_pos = LineText.find(']]')
+      if close_pos then
+         result ..= ' '.rep(close_pos + 2)
+         pos = close_pos + 2
+         InBlockComment = false
+      else
+         return ' '.rep(len), true
+      end
+   end
+
+   while pos < len do
+      c = LineText.sub(pos, pos + 1)
+      next_two = LineText.sub(pos, pos + 2)
+
+      if c is '"' or c is "'" then
+         quote = c
+         result ..= ' '
+         pos++
+
+         while pos < len do
+            sc = LineText.sub(pos, pos + 1)
+            if sc is '\\' and pos + 1 < len then
+               result ..= '  '
+               pos += 2
+            elseif sc is quote then
+               result ..= ' '
+               pos++
+               break
+            else
+               result ..= ' '
+               pos++
+            end
+         end
+      elseif next_two is '--' then
+         if LineText.sub(pos, pos + 4) is '--[[' then
+            close_pos = LineText.find(']]', pos + 4)
+            if close_pos then
+               result ..= ' '.rep(close_pos + 2 - pos)
+               pos = close_pos + 2
+            else
+               result ..= ' '.rep(len - pos)
+               return result, true
+            end
+         else
+            result ..= ' '.rep(len - pos)
+            return result, false
+         end
+      elseif next_two is '[[' then
+         close_pos = LineText.find(']]', pos + 2)
+         if close_pos then
+            result ..= ' '.rep(close_pos + 2 - pos)
+            pos = close_pos + 2
+         else
+            result ..= ' '.rep(len - pos)
+            return result, true
+         end
+      else
+         result ..= c
+         pos++
+      end
+   end
+
+   return result, InBlockComment
+end
+
+-- Complete unqualified built-ins.  Deprecated candidates are resolved in a parser probe at the cursor.
+global function resolveBuiltinCompletion(Doc:table, Position:table):array<table>
+   local line_text = getLine(Doc, Position.line)
+   local byte_col = utf16ColToByteCol(line_text, Position.character)
+   local start = byte_col
+   while start > 0 do
+      local char = line_text.sub(start - 1, start)
+      if not ((char >= 'a' and char <= 'z') or (char >= 'A' and char <= 'Z') or
+            (char >= '0' and char <= '9') or char is '_') then break end
+      start -= 1
+   end
+   local prefix = line_text.sub(start, byte_col)
+   local items = array<table>
+   if prefix is '' or line_text.sub(0, start).rtrim().endsWith('.') then return items end
+
+   local line_code
+   local in_block_comment = false
+   for line_no in {0 into Position.line} do
+      line_code, in_block_comment = maskNonCode(getLine(Doc, line_no), in_block_comment)
+   end
+   if line_code.sub(start, byte_col) != prefix then return items end
+
+   for name, builtin in pairs(glDefs?.builtins or {}) do
+      if not name.startsWith(prefix) or name.find('.') then continue end
+      if builtin.deprecated then
+         local offset = lspPositionToOffset(Doc.content, Position.line, byteColToUtf16Col(line_text, start))
+         local stop = lspPositionToOffset(Doc.content, Position.line, Position.character)
+         while stop < #Doc.content do
+            local char = Doc.content.sub(stop, stop + 1)
+            if not ((char >= 'a' and char <= 'z') or (char >= 'A' and char <= 'Z') or
+                  (char >= '0' and char <= '9') or char is '_') then break end
+            stop++
+         end
+         local suffix = Doc.content.sub(stop)
+         local candidate = name .. (suffix.trim().startsWith('(') and '' or '()')
+         local probe = { uri=Doc.uri, content=Doc.content.sub(0, offset) .. candidate .. suffix }
+         if not deprecatedReferenceAt(probe, Position.line, byteColToUtf16Col(line_text, start)) then continue end
+      end
+      items.push({
+         label = name,
+         kind = 3,
+         detail = builtin.prototype,
+         documentation = { kind='markdown', value=builtin.comment },
+         tags = builtin.deprecated and array<int> { 1 } or nil,
+         deprecated = builtin.deprecated or false,
+         insertText = name
+      })
+   end
+   return items
+end
+
+-- Module namespace handlers
+
+global function resolveModuleCompletion(Doc:table, Position:table):array<table>
+   local line_text = getLine(Doc, Position.line)
+   local byte_col = utf16ColToByteCol(line_text, Position.character)
+   local before = line_text.sub(0, byte_col)
+   local dot_pos
+   for i in {#before - 1 into 0 by -1} do
+      if before.sub(i, i + 1) is '.' then dot_pos = i; break end
+   end
+   if not dot_pos then return array<table> end
+
+   local object_stop = dot_pos
+   local object_start = object_stop
+   while object_start > 0 do
+      local char = before.sub(object_start - 1, object_start)
+      if not ((char >= 'a' and char <= 'z') or (char >= 'A' and char <= 'Z') or
+            (char >= '0' and char <= '9') or char is '_') then break end
+      object_start -= 1
+   end
+   local object_name = before.sub(object_start, object_stop)
+   local member_prefix = before.sub(dot_pos + 1).lower()
+   local module_doc = moduleDocumentForNamespace(Doc, object_name)
+   if not module_doc?.functions then return array<table> end
+
+   local items = array<table>
+   for function_name, function_doc in pairs(module_doc.functions) do
+      if member_prefix is '' or function_name.lower().startsWith(member_prefix) then
+         items.push({
+            label = function_name,
+            kind = 3,
+            detail = function_doc.prototype,
+            documentation = function_doc.comment and { kind='markdown', value=function_doc.comment } or nil,
+            insertText = function_name
+         })
+      end
+   end
+   return items
+end
+
+function renamePositionInRange(Line:num, Character:num, Range:table):bool
+   if Line < Range.start.line or Line > Range['end'].line then return false end
+   if Line is Range.start.line and Character < Range.start.character then return false end
+   if Line is Range['end'].line and Character > Range['end'].character then return false end
+   return true
+end
+
+-- Return the chain of lexical scopes enclosing a position, outermost first.  Scopes nest without overlapping, so
+-- the first candidate that contains the position is the only one worth descending into.
+
+function renameLexicalScopePath(Scopes:array<table>, Line:num, Character:num):array<table>
+   local path = array<table>
+
+   function visit(Candidates:array<table>):bool
+      for scope in values(Candidates or array<table>) do
+         if not renamePositionInRange(Line, Character, scope.range) then continue end
+         path.push(scope)
+         visit(scope.children)
+         return true
+      end
+      return false
+   end
+
+   visit(Scopes)
+   return path
+end
+
+-- A definition is visible from a reference when the definition's scope chain is a prefix of the reference's, i.e.
+-- the reference sits in the declaring block or one nested inside it.  Block scopes matter as much as function
+-- scopes here: a `local` inside `do ... end` dies at the `end`, so it must not shadow anything after it.
+
+function renameScopeIsVisible(DefinitionScope:array<table>, ReferenceScope:array<table>):bool
+   if #DefinitionScope > #ReferenceScope then return false end
+   for i in {0 to #DefinitionScope} do
+      local definition = DefinitionScope[i].range.start
+      local reference = ReferenceScope[i].range.start
+      if definition.line != reference.line or definition.character != reference.character then return false end
+   end
+   return true
+end
+
+function renameTokenIsMemberOrKey(Doc:table, Token:table):bool
+   local line_text = getLine(Doc, Token.line)
+   local before = utf16ColToByteCol(line_text, Token.char)
+   while before > 0 and (line_text.sub(before - 1, before) is ' ' or
+         line_text.sub(before - 1, before) is '\t') do
+      before -= 1
+   end
+   if before > 0 then
+      local prefix = line_text.sub(before - 1, before)
+      if prefix is '.' or prefix is ':' then return true end
+   end
+
+   local after = utf16ColToByteCol(line_text, Token.char + Token.length)
+   while after < #line_text and (line_text.sub(after, after + 1) is ' ' or
+         line_text.sub(after, after + 1) is '\t') do
+      after++
+   end
+   return after < #line_text and line_text.sub(after, after + 1) is '='
+end
+
+function renameDefinitionIsBefore(Definition:table, Position:table):bool
+   if Definition.line < Position.line then return true end
+   return Definition.line is Position.line and Definition.startChar <= Position.character
+end
+
+function renameTokenResolvesToNamespace(Doc:table, Token:table, Definitions:array<table>,
+      DocumentScopes:array<table>):bool
+   if renameTokenIsMemberOrKey(Doc, Token) then return false end
+
+   local line_text = getLine(Doc, Token.line)
+   local token_start = utf16ColToByteCol(line_text, Token.char)
+   local token_end = utf16ColToByteCol(line_text, Token.char + Token.length)
+   local token_text = line_text.sub(token_start, token_end)
+   local reference_position = { line=Token.line, character=token_start }
+   local reference_scope = renameLexicalScopePath(DocumentScopes, Token.line, token_start)
+   local best
+   local best_depth = -1
+
+   for definition in values(Definitions) do
+      if definition.name != token_text or
+            not renameDefinitionIsBefore(definition, reference_position) then continue end
+
+      local definition_scope = renameLexicalScopePath(
+         DocumentScopes, definition.line, definition.startChar)
+      if not renameScopeIsVisible(definition_scope, reference_scope) then continue end
+
+      local depth = #definition_scope
+      if not best or depth > best_depth or (depth is best_depth and
+            (definition.line > best.line or
+            (definition.line is best.line and definition.startChar > best.startChar))) then
+         best = definition
+         best_depth = depth
+      end
+   end
+
+   return best?.kind is 'namespace'
+end
+
+global function resolveModuleRename(Doc:table, Position:table, NewName:str):table
+   if not NewName or #NewName is 0 then return nil end
+   local first = NewName.sub(0, 1)
+   if not ((first >= 'a' and first <= 'z') or (first >= 'A' and first <= 'Z') or first is '_') then return nil end
+   for i in {1 to #NewName} do
+      local char = NewName.sub(i, i + 1)
+      if not ((char >= 'a' and char <= 'z') or (char >= 'A' and char <= 'Z') or
+            (char >= '0' and char <= '9') or char is '_') then return nil end
+   end
+
+   local token_info = getTokenAtPosition(Doc, Position.line, Position.character)
+   local old_name = token_info?.text
+   local is_module_namespace = old_name and moduleDeclarationsForDocument(Doc)[old_name]
+   local is_library_namespace = old_name and libraryNamespaceDeclarationsForDocument(Doc)[old_name]
+   if not is_module_namespace and not is_library_namespace then return nil end
+
+   local definitions = is_library_namespace and extractDefinitionSymbols(Doc) or nil
+   local document_scopes = is_library_namespace and extractLexicalScopes(Doc) or nil
+   local tokens = tokenizeTiri(Doc.content, modulePrefixesForDocument(Doc))
+
+   if is_library_namespace then
+      local target_is_namespace = false
+      for token in values(tokens) do
+         if token.line != Position.line then continue end
+         local line_text = getLine(Doc, token.line)
+         local token_start = token.char
+         local token_end = token.char + token.length
+         if Position.character < token_start or Position.character > token_end then continue end
+
+         local token_start_byte = utf16ColToByteCol(line_text, token.char)
+         local token_end_byte = utf16ColToByteCol(line_text, token.char + token.length)
+         local text = line_text.sub(token_start_byte, token_end_byte)
+         if text is old_name then
+            target_is_namespace = renameTokenResolvesToNamespace(Doc, token, definitions, document_scopes)
+            break
+         end
+      end
+      if not target_is_namespace then return nil end
+   end
+
+   local edits = array<table>
+   for token in values(tokens) do
+      local line_text = getLine(Doc, token.line)
+      local token_start_byte = utf16ColToByteCol(line_text, token.char)
+      local token_end_byte = utf16ColToByteCol(line_text, token.char + token.length)
+      local text = line_text.sub(token_start_byte, token_end_byte)
+      if token.type is 10 and text is old_name and (token.modifiers & 8) is 0 and
+            (is_module_namespace or renameTokenResolvesToNamespace(Doc, token, definitions, document_scopes)) then
+         edits.push({
+            range = {
+               start = { line=token.line, character=token.char },
+               ['end'] = { line=token.line, character=token.char + token.length }
+            },
+            newText = NewName
+         })
+      end
+   end
+   return #edits > 0 and { changes = { [Doc.uri] = edits } } or nil
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Core LSP Handlers
+
+global function registerCoreHandlers(Self)
+   -- initialize: Client initiates handshake
+   Self._handlers['initialize'] = function(Msg, State)
+      State.initialized = true
+      logMessage(Self, 'LSP initialize request received')
+
+      return {
+         jsonrpc = '2.0',
+         id = Msg.id,
+         result = {
+            capabilities = {
+               -- Incremental sync: client sends only changed portions
+               textDocumentSync = {
+                  openClose = true,
+                  change = 2  -- Incremental sync
+               },
+               -- Semantic tokens for syntax highlighting
+               semanticTokensProvider = {
+                  legend = {
+                     tokenTypes = TOKEN_TYPES,
+                     tokenModifiers = TOKEN_MODIFIERS
+                  },
+                  full = {
+                     delta = true  -- Support delta updates for efficiency
+                  },
+                  range = false
+               },
+               -- Document symbols for outline view
+               documentSymbolProvider = true,
+               -- Folding ranges for code folding
+               foldingRangeProvider = true,
+               -- Hover information
+               hoverProvider = true,
+               -- Go to Definition
+               definitionProvider = true,
+               completionProvider = { triggerCharacters = array<str> { '.' } },
+               renameProvider = true,
+               -- Signature Help
+               signatureHelpProvider = {
+                  triggerCharacters = array<str> { '(', ',' },
+                  retriggerCharacters = array<str> { ',' }
+               }
+            },
+            serverInfo = {
+               name = 'Tiri LSP Server',
+               version = '0.1.0'
+            }
+         }
+      }
+   end
+
+   -- textDocument/completion: Complete functions from a declared module namespace.
+   Self._handlers['textDocument/completion'] = function(Msg, State)
+      uri = Msg.params.textDocument.uri
+      doc = glDocuments[uri]
+      items = doc and resolveModuleCompletion(doc, Msg.params.position) or array<table>
+      if doc and #items is 0 then items = resolveBuiltinCompletion(doc, Msg.params.position) end
+      return { jsonrpc='2.0', id=Msg.id, result={ isIncomplete=false, items=items } }
+   end
+
+   -- textDocument/rename: Rename a declared namespace and its references within this compilation unit.
+   Self._handlers['textDocument/rename'] = function(Msg, State)
+      uri = Msg.params.textDocument.uri
+      doc = glDocuments[uri]
+      edit = doc and resolveModuleRename(doc, Msg.params.position, Msg.params.newName) or nil
+      return { jsonrpc='2.0', id=Msg.id, result=edit or json.null }
+   end
+
+   -- initialized: Client confirms handshake complete (notification, no response)
+   Self._handlers['initialized'] = function(Msg, State)
+      logMessage(Self, 'LSP initialized notification received - handshake complete')
+   end
+
+   -- shutdown: Client requests shutdown preparation
+   Self._handlers['shutdown'] = function(Msg, State)
+      State.shutdown_requested = true
+      logMessage(Self, 'LSP shutdown request received')
+
+      return {
+         jsonrpc = '2.0',
+         id = Msg.id,
+         result = json.null
+      }
+   end
+
+   -- exit: Client requests termination (notification)
+   Self._handlers['exit'] = function(Msg, State)
+      if State.shutdown_requested then
+         logMessage(Self, 'LSP exit notification - clean shutdown')
+      else
+         logMessage(Self, 'LSP exit notification - unexpected (no prior shutdown)')
+      end
+      State.should_disconnect = true
+   end
+
+   -- $/cancelRequest: Client wants to cancel a pending request (notification)
+   -- Since we process requests synchronously, we just acknowledge and ignore
+   Self._handlers['$/cancelRequest'] = function(Msg, State)
+      logVerbose(Self, 'Cancel request received for id: ' .. tostring(Msg.params.id))
+   end
+
+   -------------------------------------------------------------------------------------------------------------------
+   -- Document Synchronization
+
+   -- textDocument/didOpen: Client opened a document
+   Self._handlers['textDocument/didOpen'] = function(Msg, State)
+      doc = Msg.params.textDocument
+      glDocuments[doc.uri] = {
+         uri = doc.uri,
+         languageId = doc.languageId,
+         version = doc.version,
+         content = doc.text,
+         lineIndex = nil  -- Lazily computed line index
+      }
+      logMessage(Self, 'Document opened: ' .. doc.uri)
+
+      -- Compute and publish diagnostics
+      params = computeDiagnostics(glDocuments[doc.uri])
+      sendNotification(Self, State.clientSocket, 'textDocument/publishDiagnostics', params)
+   end
+
+   -- textDocument/didChange: Document content changed
+   Self._handlers['textDocument/didChange'] = function(Msg, State)
+      uri = Msg.params.textDocument.uri
+      version = Msg.params.textDocument.version
+
+      if glDocuments[uri] then
+         edit_line = nil  -- Track earliest edited line for incremental index update
+         for change in values(Msg.params.contentChanges) do
+            if change.range then
+               -- Track the earliest line affected by edits
+               if not edit_line or change.range.start.line < edit_line then
+                  edit_line = change.range.start.line
+               end
+               -- Incremental sync: apply text edit at range
+               glDocuments[uri].content = applyTextEdit(
+                  glDocuments[uri].content,
+                  change.range,
+                  change.text
+               )
+            else
+               -- Full sync fallback: replace entire content
+               glDocuments[uri].content = change.text
+               edit_line = 0  -- Force full rebuild
+            end
+         end
+         glDocuments[uri].version = version
+
+         -- Incrementally rebuild line index from the edited line
+         markLineIndex(glDocuments[uri], edit_line)
+
+         logVerbose(Self, 'Document updated: ' .. uri .. ' (version ' .. version .. ')')
+
+         -- Compute and publish diagnostics
+         params = computeDiagnostics(glDocuments[uri])
+         sendNotification(Self, State.clientSocket, 'textDocument/publishDiagnostics', params)
+      end
+   end
+
+   -- textDocument/didClose: Client closed a document
+   Self._handlers['textDocument/didClose'] = function(Msg, State)
+      uri = Msg.params.textDocument.uri
+      glDocuments[uri] = nil
+      glTokenCache[uri] = nil  -- Clear token cache to free memory
+      glSignatureSymbolCache[uri] = nil
+      logMessage(Self, 'Document closed: ' .. uri)
+
+      -- Clear diagnostics for closed document
+      sendNotification(Self, State.clientSocket, 'textDocument/publishDiagnostics', {
+         uri = uri,
+         diagnostics = array<table>
+      })
+   end
+
+   -------------------------------------------------------------------------------------------------------------------
+   -- Semantic Tokens
+
+   -- textDocument/semanticTokens/full: Return all semantic tokens for a document
+
+   Self._handlers['textDocument/semanticTokens/full'] = function(Msg, State)
+      uri = Msg.params.textDocument.uri
+      doc = glDocuments[uri]
+
+      if not doc then
+         logMessage(Self, 'Semantic tokens requested for unknown document: ' .. uri)
+         return {
+            jsonrpc = '2.0',
+            id = Msg.id,
+            result = { data = array<int> }
+         }
+      end
+
+      logVerbose(Self, 'Computing semantic tokens for: ' .. uri)
+
+      tokens = tokenizeTiri(doc.content)
+      encoded = encodeSemanticTokens(tokens)
+
+      -- Generate resultId and cache for delta requests
+      result_id = tostring(glNextResultId)
+      glNextResultId++
+
+      glTokenCache[uri] = {
+         resultId = result_id,
+         data = encoded
+      }
+
+      logVerbose(Self, 'Returning ' .. #tokens .. ' tokens (' .. #encoded .. ' integers), resultId=' .. result_id)
+
+      return {
+         jsonrpc = '2.0',
+         id = Msg.id,
+         result = {
+            resultId = result_id,
+            data = encoded
+         }
+      }
+   end
+
+   -- textDocument/semanticTokens/full/delta: Return only changed semantic tokens
+   Self._handlers['textDocument/semanticTokens/full/delta'] = function(Msg, State)
+      uri = Msg.params.textDocument.uri
+      previous_result_id = Msg.params.previousResultId
+      doc = glDocuments[uri]
+
+      if not doc then
+         logMessage(Self, 'Semantic tokens delta requested for unknown document: ' .. uri)
+         return {
+            jsonrpc = '2.0',
+            id = Msg.id,
+            result = { data = array<int> }
+         }
+      end
+
+      -- Check if we have the previous result cached
+      cached = glTokenCache[uri]
+      if not cached or cached.resultId != previous_result_id then
+         -- Can't compute delta, return full tokens
+         logWarning(Self, 'Cannot compute delta (no cache or resultId mismatch), returning full tokens')
+
+         tokens = tokenizeTiri(doc.content)
+         encoded = encodeSemanticTokens(tokens)
+
+         result_id = tostring(glNextResultId)
+         glNextResultId++
+
+         glTokenCache[uri] = {
+            resultId = result_id,
+            data = encoded
+         }
+
+         return {
+            jsonrpc = '2.0',
+            id = Msg.id,
+            result = {
+               resultId = result_id,
+               data = encoded
+            }
+         }
+      end
+
+      logVerbose(Self, 'Computing semantic tokens delta for: ' .. uri)
+
+      -- Compute new tokens
+      tokens = tokenizeTiri(doc.content)
+      new_encoded = encodeSemanticTokens(tokens)
+
+      -- Compute delta between old and new
+      edits = computeTokenEdits(cached.data, new_encoded)
+
+      -- Generate new resultId and update cache
+      result_id = tostring(glNextResultId)
+      glNextResultId++
+
+      glTokenCache[uri] = {
+         resultId = result_id,
+         data = new_encoded
+      }
+
+      -- Calculate edit size for logging
+      edit_size = 0
+      for edit in values(edits) do
+         edit_size += (edit.data and #edit.data or 0)
+      end
+
+      logVerbose(Self, 'Returning ' .. #edits .. ' edits (' .. edit_size .. ' integers vs ' .. #new_encoded ..
+         ' full), resultId=' .. result_id)
+
+      return {
+         jsonrpc = '2.0',
+         id = Msg.id,
+         result = {
+            resultId = result_id,
+            edits = edits
+         }
+      }
+   end
+
+   -------------------------------------------------------------------------------------------------------------------
+   -- Document Symbols (Outline View)
+
+   -- textDocument/documentSymbol: Return symbols for outline view
+   Self._handlers['textDocument/documentSymbol'] = function(Msg, State)
+      uri = Msg.params.textDocument.uri
+      doc = glDocuments[uri]
+
+      if not doc then
+         logMessage(Self, 'Document symbols requested for unknown document: ' .. uri)
+         return {
+            jsonrpc = '2.0',
+            id = Msg.id,
+            result = array<table>
+         }
+      end
+
+      logVerbose(Self, 'Computing document symbols for: ' .. uri)
+
+      symbols = extractDocumentSymbols(doc)
+
+      logVerbose(Self, 'Returning ' .. #symbols .. ' symbols')
+
+      return {
+         jsonrpc = '2.0',
+         id = Msg.id,
+         result = symbols
+      }
+   end
+
+   -------------------------------------------------------------------------------------------------------------------
+   -- Folding Ranges (Code Folding)
+
+   -- textDocument/foldingRange: Return folding ranges for code folding
+   Self._handlers['textDocument/foldingRange'] = function(Msg, State)
+      uri = Msg.params.textDocument.uri
+      doc = glDocuments[uri]
+
+      if not doc then
+         logMessage(Self, 'Folding ranges requested for unknown document: ' .. uri)
+         return {
+            jsonrpc = '2.0',
+            id = Msg.id,
+            result = array<table>
+         }
+      end
+
+      logVerbose(Self, 'Computing folding ranges for: ' .. uri)
+
+      ranges = extractFoldingRanges(doc)
+
+      logVerbose(Self, 'Returning ' .. #ranges .. ' folding ranges')
+
+      return {
+         jsonrpc = '2.0',
+         id = Msg.id,
+         result = ranges
+      }
+   end
+
+   -------------------------------------------------------------------------------------------------------------------
+   -- Signature Help
+
+   -- textDocument/signatureHelp: Return the active call signature at the cursor
+
+   Self._handlers['textDocument/signatureHelp'] = function(Msg, State)
+      uri = Msg.params.textDocument.uri
+      position = Msg.params.position
+      doc = glDocuments[uri]
+
+      if not doc then
+         logMessage(Self, 'Signature help requested for unknown document: ' .. uri)
+         return {
+            jsonrpc = '2.0',
+            id = Msg.id,
+            result = json.null
+         }
+      end
+
+      signature_help = resolveSignatureHelp(doc, position)
+      if not signature_help then
+         return {
+            jsonrpc = '2.0',
+            id = Msg.id,
+            result = json.null
+         }
+      end
+
+      logVerbose(Self, 'Returning signature help with ' .. #signature_help.signatures .. ' signature(s)')
+
+      return {
+         jsonrpc = '2.0',
+         id = Msg.id,
+         result = signature_help
+      }
+   end
+
+   -------------------------------------------------------------------------------------------------------------------
+   -- Hover Information
+
+   -- textDocument/hover: Return documentation for symbol at cursor
+
+   Self._handlers['textDocument/hover'] = function(Msg, State)
+      uri = Msg.params.textDocument.uri
+      position = Msg.params.position
+      doc = glDocuments[uri]
+
+      if not doc then
+         logMessage(Self, 'Hover requested for unknown document: ' .. uri)
+         return {
+            jsonrpc = '2.0',
+            id = Msg.id,
+            result = json.null
+         }
+      end
+
+      -- Get the token at the hover position
+      tokenInfo = getTokenAtPosition(doc, position.line, position.character)
+
+      if not tokenInfo then
+         return {
+            jsonrpc = '2.0',
+            id = Msg.id,
+            result = json.null
+         }
+      end
+
+      logVerbose(Self, 'Hover: token="' .. tokenInfo.text .. '" context=' .. tokenInfo.context ..
+         (tokenInfo.object and (' object=' .. tokenInfo.object) or ''))
+
+      -- Attempt to resolve documentation
+      hoverContent = resolveHoverContent(tokenInfo, doc, position)
+
+      if not hoverContent then
+         return {
+            jsonrpc = '2.0',
+            id = Msg.id,
+            result = json.null
+         }
+      end
+
+      return {
+         jsonrpc = '2.0',
+         id = Msg.id,
+         result = {
+            contents = {
+               kind = 'markdown',
+               value = hoverContent
+            },
+            range = {
+               start = { line = position.line, character = tokenInfo.startCol },
+               ['end'] = { line = position.line, character = tokenInfo.endCol }
+            }
+         }
+      }
+   end
+
+   -------------------------------------------------------------------------------------------------------------------
+   -- Go to Definition
+
+   -- textDocument/definition: Return definition locations for the symbol at cursor
+
+   Self._handlers['textDocument/definition'] = function(Msg, State)
+      uri = Msg.params.textDocument.uri
+      position = Msg.params.position
+      doc = glDocuments[uri]
+
+      if not doc then
+         logMessage(Self, 'Definition requested for unknown document: ' .. uri)
+         return {
+            jsonrpc = '2.0',
+            id = Msg.id,
+            result = json.null
+         }
+      end
+
+      locations = resolveDefinition(doc, position)
+
+      if not locations or #locations is 0 then
+         return {
+            jsonrpc = '2.0',
+            id = Msg.id,
+            result = json.null
+         }
+      end
+
+      logVerbose(Self, 'Returning ' .. #locations .. ' definition location(s)')
+
+      return {
+         jsonrpc = '2.0',
+         id = Msg.id,
+         result = locations
+      }
+   end
+end

@@ -1,0 +1,255 @@
+
+rx_split_header_lines = <{ regex.new([[([^\r\n]+)]]) }>
+rx_header_value = <{ regex.new([[([^:]+):\s*(.+)]]) }>
+
+function makeErrorResponse(Id:num, Code:num, Message:str):table
+   return {
+      jsonrpc = '2.0',
+      id = Id,
+      error = {
+         code = Code,
+         message = Message
+      }
+   }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- LSP Wire Protocol Parsing
+--
+-- Parse the Content-Length header from the buffer
+-- Returns: content_length, body_start_offset, error_message
+-- If incomplete (need more data): nil, nil, nil
+-- If error: nil, nil, error_string
+-- If success: content_length, body_start_offset, nil
+
+function parseHeader(Buffer:str):<num,num,str>
+   header_end = Buffer.find('\r\n\r\n')
+   separator_len = 4
+   if not header_end then
+      header_end = Buffer.find('\n\n')
+      separator_len = 2
+   end
+   header_end ?! return nil, nil, nil  -- Need more data
+   header_section = Buffer.sub(0, header_end)
+   content_length = nil
+
+   for start, stop, cap in rx_split_header_lines.findAll(header_section) do
+      local line = cap[0]
+      name, value = rx_header_value.extract(line)
+      if name and name.lower() is 'content-length' then
+         content_length = tonumber(value)
+         break
+      end
+   end
+
+   content_length ?! return nil, nil, 'Missing Content-Length header'
+   return content_length, header_end + separator_len, nil
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Parse a JSON-RPC 2.0 message
+
+function parseMessage(JsonBody):<any, str>
+   local msg
+   try
+      msg = json.decode(JsonBody)
+   except ex
+      return nil, 'JSON parse error: ' .. tostring(ex.message)
+   end
+
+   if msg.jsonrpc != '2.0' then
+      return nil, 'Invalid JSON-RPC version: ' .. tostring(msg.jsonrpc)
+   end
+
+   return msg, nil
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Response Formatting: LSP framing is not platform-specific.  The spec requires headers terminated with \r\n, with
+-- the header/body separator effectively \r\n\r\n, regardless of Windows/Linux/macOS. Source: Microsoft LSP 3.17
+-- base protocol, https://github.com/Microsoft/language-server-protocol/blob/gh-pages/_specifications/lsp/3.17/specification.md
+
+function formatResponse(ResponseTable:table, TextOutput:bool):str
+   local body = json.encode(ResponseTable)
+   return 'Content-Length: ' .. #body .. '\r\n\r\n' .. body
+end
+
+global function sendResponse(Self:table, ClientSocket, ResponseTable, RequestLog)
+   ResponseTable ?! return -- Notifications don't get responses
+
+   formatted = formatResponse(ResponseTable, Self.stdioTextOutput)
+   err = ClientSocket.acWrite(formatted)
+   if err != ERR_Okay then
+      logMessage(Self, 'Failed to send response: ' .. mSys.GetErrorMsg(err))
+   else
+      logVerbose(Self, 'Sent response: ' .. formatted.sub(0, 200))
+
+      -- Log outgoing response if logging enabled
+      if RequestLog then
+         RequestLog('RESPONSE', formatted)
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Send an LSP notification (no response expected)
+
+global function sendNotification(Self:table, ClientSocket:any, Method, Params)
+   notification = {
+      jsonrpc = '2.0',
+      method = Method,
+      params = Params
+   }
+   formatted = formatResponse(notification, Self.stdioTextOutput)
+   err = ClientSocket.acWrite(formatted)
+   if err != ERR_Okay then
+      logMessage(Self, 'Failed to send notification: ' .. mSys.GetErrorMsg(err))
+   else
+      logVerbose(Self, 'Sent notification: ' .. Method)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Method Dispatch
+
+function dispatchMethod(Self:table, Message:table, State:table)
+   request_method = Message.method
+
+   if not request_method then
+      -- This is a response, not a request - ignore for now
+      logVerbose(Self, 'Received response message (ignored)')
+      return nil
+   end
+
+   handler = Self._handlers[request_method]
+
+   if handler then
+      logVerbose(Self, 'Dispatching method: ' .. request_method)
+
+      local result
+      try
+         return handler(Message, State)
+      except ex
+         logMessage(Self, f'Handler error for {request_method}: {ex.message}')
+         if Message.id then
+            return makeErrorResponse(Message.id, LSP_ERROR.INTERNAL_ERROR, ex.message)
+         end
+         return nil
+      end
+   else
+      logWarning(Self, 'Unknown method: ' .. request_method)
+      -- Unknown method: return error for requests, ignore notifications
+      if Message.id then
+         return makeErrorResponse(Message.id, LSP_ERROR.METHOD_NOT_FOUND, f'Method not found: {request_method}')
+      end
+      return nil
+   end
+
+   processing.collect()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Incoming Data Handling
+
+function initClientState(Self:table, ClientSocket:any):table
+   state = ClientSocket.state()
+
+   if not state.initialised then
+      state.buffer             = ''
+      state.phase              = 'READING_HEADER'
+      state.content_length     = nil
+      state.initialized        = false
+      state.shutdown_requested = false
+      state.should_disconnect  = false
+      state.clientSocket       = ClientSocket  -- Store for sending notifications
+      state.initialised        = true
+      logVerbose(Self, 'New client connection initialized')
+   end
+
+   return state
+end
+
+global function processIncomingData(Self:table, ClientSocket:any, Data:str)
+   state = initClientState(Self, ClientSocket)
+
+   if not Data or #Data is 0 then return end
+
+   -- Accumulate data
+   state.buffer ..= Data
+   logVerbose(Self, 'Received ' .. #Data .. ' bytes, buffer now ' .. #state.buffer .. ' bytes')
+
+   -- Process messages in a loop (may have multiple messages in buffer)
+   while #state.buffer > 0 do
+      if state.phase is 'READING_HEADER' then
+         content_length, body_start, parse_err = parseHeader(state.buffer)
+
+         if not content_length then
+            if parse_err then
+               logMessage(Self, 'Header parse error: ' .. parse_err)
+               state.buffer = ''
+            end
+            break  -- Need more data or error occurred
+         end
+
+         state.content_length = content_length
+         state.buffer = state.buffer.sub(body_start)
+         state.phase = 'READING_BODY'
+         logVerbose(Self, 'Header parsed, expecting ' .. content_length .. ' bytes')
+      end
+
+      if state.phase is 'READING_BODY' then
+         if #state.buffer < state.content_length then
+            break  -- Need more data
+         end
+
+         -- Extract the JSON body
+         json_body = state.buffer.sub(0, state.content_length)
+         state.buffer = state.buffer.sub(state.content_length)
+         state.phase = 'READING_HEADER'
+
+         logVerbose(Self, 'Received message: ' .. json_body.sub(0, 200))
+
+         -- Log incoming request if logging enabled
+         if Self.requestLog then
+            Self.requestLog('REQUEST', json_body)
+         end
+
+         -- Parse and dispatch
+         message, parse_err = parseMessage(json_body)
+         if message then
+            response = dispatchMethod(Self, message, state)
+            sendResponse(Self, ClientSocket, response, Self.requestLog)
+
+            -- Check if we should disconnect after exit
+            if state.should_disconnect then
+               logVerbose(Self, 'Disconnecting client per exit request')
+               ClientSocket.acDeactivate()
+               return
+            end
+         else
+            logMessage(Self, 'Parse error: ' .. tostring(parse_err))
+            -- Send parse error response if we can determine an ID
+            sendResponse(Self, ClientSocket, makeErrorResponse(json.null, LSP_ERROR.PARSE_ERROR, parse_err), Self.requestLog)
+         end
+      end
+   end
+end
+
+global function processIncoming(Self:table, ClientSocket:any)
+   state = initClientState(Self, ClientSocket)
+
+   -- Read available data
+   buffer = string.alloc(8192)
+   err, bytes_read = ClientSocket.acRead(buffer)
+
+   if err != ERR_Okay then
+      if err != ERR_Disconnected then
+         logMessage(Self, 'Read error: ' .. mSys.GetErrorMsg(err))
+      end
+      return
+   end
+
+   if bytes_read is 0 then return end
+
+   processIncomingData(Self, ClientSocket, buffer.sub(0, bytes_read))
+end

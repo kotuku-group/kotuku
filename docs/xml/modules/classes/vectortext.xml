@@ -8,12 +8,12 @@
     <module>Vector</module>
     <comment>Extends the Vector class with support for generating text.</comment>
     <version>1</version>
-    <id>51bb151d</id>
+    <id>8788bfaa</id>
     <idstring>VECTORTEXT</idstring>
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p>To create text along a path, set the <class name="Vector" field="Morph">Vector.Morph</class> field with a reference to any <class name="Vector">Vector</class> object that generates a path.  The following extract illustrates the SVG equivalent of this feature:</p>
+<p>To create text along a path, set the <class name="Vector" field="GuidePath">Vector.GuidePath</class> field with a reference to any <class name="Vector">Vector</class> object that generates a path.  The following extract illustrates the SVG equivalent of this feature:</p>
 <pre>&lt;defs&gt;
   &lt;path id=&quot;myTextPath2&quot; d=&quot;M75,20 l100,0 l100,30 q0,100 150,100&quot;/&gt;
 &lt;/defs&gt;
@@ -28,14 +28,12 @@
     </source>
   </info>
 
-  <actions>
-  </actions>
-
   <methods>
     <method>
       <name>DeleteLine</name>
       <comment>Deletes any line number.</comment>
       <prototype>ERR vt::DeleteLine(OBJECTPTR Object, INT Line)</prototype>
+      <tiriPrototype>err = DeleteLine(Line:num)</tiriPrototype>
       <input>
         <param type="INT" name="Line">The line number that you want to delete.  If negative, the last line will be deleted.</param>
       </input>
@@ -46,6 +44,7 @@
         <error code="Okay">The line was deleted.</error>
         <error code="Args">The Line value was out of the valid range.</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
   </methods>
@@ -55,10 +54,11 @@
       <name>Align</name>
       <comment>Defines the alignment of the text string.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
+      <type lookup="ALIGN">ALIGN</type>
       <description>
 <p>This field specifies the horizontal alignment of the text string.  The standard alignment flags are supported in the form of <code>ALIGN::LEFT</code>, <code>ALIGN::HORIZONTAL</code> and <code>ALIGN::RIGHT</code>.</p>
 <p>In addition, the SVG equivalent values of <code>start</code>, <code>middle</code> and <code>end</code> are supported and map directly to the formerly mentioned align flags.</p>
+<types lookup="ALIGN"/>
       </description>
     </field>
 
@@ -202,7 +202,7 @@
       <access read="G" write="S">Get/Set</access>
       <type>STRING</type>
       <description>
-<p>Unique styles for a font can be selected through the FontStyle field.  Conventional font styles are <code>Bold</code>, <code>Bold Italic</code>, <code>Italic</code> and <code>Regular</code> (the default).  Because TrueType fonts can use any style name that the designer chooses such as <code>Thin</code>, <code>Narrow</code> or <code>Wide</code>, use <function module="Font">GetList</function> for a definitive list of available style names.</p>
+<p>Unique styles for a font can be selected through the FontStyle field.  Conventional font styles are <code>Bold</code>, <code>Bold Italic</code>, <code>Italic</code> and <code>Regular</code> (the default).  Because TrueType fonts can use any style name that the designer chooses such as <code>Thin</code>, <code>Narrow</code> or <code>Wide</code>, read <code>fonts:fonts.cfg</code> for a definitive list of available style names.</p>
 <p>Errors are not returned if the style name is invalid or unavailable.</p>
       </description>
     </field>
@@ -280,7 +280,7 @@
       <type>INT</type>
       <description>
 <p>If the user has selected an area of text, the starting column of that area will be indicated by this field.  If an area has not been selected, the value of the SelectColumn field is undefined.</p>
-<p>To check whether or not an area has been selected, test the <code>AREA_SELECTED</code> bit in the #Flags field.</p>
+<p>To check whether or not an area has been selected, test the <code>AREA_SELECTED</code> bit in the <class name="Vector" field="Flags">Vector.Flags</class> field.</p>
       </description>
     </field>
 
@@ -291,7 +291,7 @@
       <type>INT</type>
       <description>
 <p>If the user has selected an area of text, the starting row of that area will be indicated by this field.  If an area has not been selected, the value of the SelectRow field is undefined.</p>
-<p>To check whether or not an area has been selected, test the <code>AREA_SELECTED</code> bit in the #Flags field.</p>
+<p>To check whether or not an area has been selected, test the <code>AREA_SELECTED</code> bit in the <class name="Vector" field="Flags">Vector.Flags</class> field.</p>
       </description>
     </field>
 
@@ -328,12 +328,22 @@
     </field>
 
     <field>
+      <name>TextFlags</name>
+      <comment>Optional flags.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type lookup="VTXF">VTXF</type>
+      <description>
+<types lookup="VTXF"/>
+      </description>
+    </field>
+
+    <field>
       <name>TextLength</name>
       <comment>The expected length of the text after all computations have been taken into account.</comment>
       <access read="G" write="S">Get/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>The purpose of this attribute is to allow exact alignment of the text graphic in the computed result.  If the #Width that is initially computed does not match this value, then the text will be scaled to match the TextLength.</p>
+<p>The purpose of this attribute is to allow exact alignment of the text graphic in the computed result.  If the computed text width does not match this value, then the text will be scaled to match the TextLength.</p>
       </description>
     </field>
 
@@ -369,7 +379,7 @@
       <name>X</name>
       <comment>The x coordinate of the text.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The x-axis coordinate of the text is specified here as a fixed value.  Scaled coordinates are not supported.</p>
       </description>
@@ -379,7 +389,7 @@
       <name>Y</name>
       <comment>The base-line y coordinate of the text.</comment>
       <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <type>UNIT</type>
       <description>
 <p>The Y-axis coordinate of the text is specified here as a fixed value.  Scaled coordinates are not supported.</p>
 <p>Unlike other vector shapes, the Y coordinate positions the text from its base line rather than the top of the shape.</p>
@@ -387,6 +397,33 @@
     </field>
 
   </fields>
+  <types>
+    <constants lookup="ALIGN" comment="Universal values for alignment of graphics and text">
+      <const name="BOTTOM">Align to bottom</const>
+      <const name="CENTER">Synonym for <code>HORIZONTAL | VERTICAL</code></const>
+      <const name="HORIZONTAL">Align to horizontal center</const>
+      <const name="LEFT">Align to left</const>
+      <const name="MIDDLE">Synonym for <code>HORIZONTAL | VERTICAL</code></const>
+      <const name="RIGHT">Align to right</const>
+      <const name="TOP">Align to top</const>
+      <const name="VERTICAL">Align to vertical center</const>
+    </constants>
+
+    <constants lookup="VTXF" comment="VectorText flags.">
+      <const name="AREA_SELECTED">Automatically set if a region of text has been selected.</const>
+      <const name="BLINK">Enable animated blinking (not supported - exists as SVG dummy option).</const>
+      <const name="EDIT">Allow user editing of the text if the nearest viewport has the focus.</const>
+      <const name="EDITABLE">Allow user editing of the text if the nearest viewport has the focus.</const>
+      <const name="LINE_THROUGH">Enable a strike-through line in the text.</const>
+      <const name="NO_SYS_KEYS">Disables support for system-keys that enable common key combinations such as Ctrl-C, Ctrl-X etc.</const>
+      <const name="OVERLINE">Enable overlining of the text.</const>
+      <const name="OVERWRITE">Turns on overwrite mode (if off, insert mode is enabled).</const>
+      <const name="RASTER">Rasterise glyphs to a texture cache for very fast rendering.  This feature is not compatible with scalable graphics conventions.</const>
+      <const name="SECRET">Hide all characters from the UI by using generic symbols in place of glyphs.</const>
+      <const name="UNDERLINE">Enable underlining of the text.</const>
+    </constants>
+
+  </types>
   <structs>
   </structs>
 </book>

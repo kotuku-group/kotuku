@@ -18,7 +18,7 @@ bool ALSADeviceEnumerator::populate_device_info(int card_number, ALSADeviceInfo&
          info.card_id = snd_ctl_card_info_get_id(card_info);
          info.card_name = snd_ctl_card_info_get_name(card_info);
          info.device_name = device_name;
-         info.is_modem = pf::iequals("modem", info.card_id);
+         info.is_modem = kt::iequals("modem", info.card_id);
 
          // Get mixer control count
          info.mixer_controls = 0;
@@ -72,14 +72,14 @@ ALSADeviceInfo ALSADeviceEnumerator::find_device_by_id(const std::string& device
    ALSADeviceInfo result;
 
    // Handle special case for "default"
-   if (pf::iequals("default", device_id)) {
+   if (kt::iequals("default", device_id)) {
       return select_best_device();
    }
 
    // Search for device by card ID
    auto devices = enumerate_devices();
    for (const auto& device : devices) {
-      if (pf::iequals(device.card_id, device_id)) {
+      if (kt::iequals(device.card_id, device_id)) {
          return device;
       }
    }
@@ -137,7 +137,7 @@ bool ALSADeviceEnumerator::has_genuine_devices()
 // Wait for audio devices to become available (with timeout)
 ERR ALSADeviceEnumerator::wait_for_devices(int timeout_ms)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.branch("Waiting for audio drivers to start...");
 
    int64_t start_time = PreciseTime();
@@ -153,7 +153,7 @@ ERR ALSADeviceEnumerator::wait_for_devices(int timeout_ms)
    }
 
    log.msg("No sound drivers were started in the allotted time period.");
-   return ERR::Failed;
+   return ERR::Timeout;
 }
 
 #endif // ALSA_ENABLED

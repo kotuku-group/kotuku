@@ -23,6 +23,16 @@ struct LexState;
 struct FuncScope;
 struct BCInsLine;
 
+enum class RuntimeScopeKind : uint8_t {
+   Try,
+   Checkall
+};
+
+struct RuntimeScope {
+   RuntimeScopeKind kind;
+   BCReg base;
+};
+
 struct FuncState {
    GCtab *kt = nullptr;      // Hash table for constants.
    LexState *ls = nullptr;   // Lexer state.
@@ -54,6 +64,9 @@ struct FuncState {
    // Track global names declared with <const> attribute for compile-time reassignment checks.
    ankerl::unordered_dense::set<GCstr*> const_globals;
 
+   // Track externally supplied symbols for this parse so strict identifier reads can allow cross-file references.
+   ankerl::unordered_dense::set<GCstr*> external_symbols;
+
    // Function name for named function declarations (used for tostring() output).
    // Set before fs_finish() is called. nullptr for anonymous functions.
    GCstr* funcname = nullptr;
@@ -65,13 +78,40 @@ struct FuncState {
       for (auto& t : arr) t = TiriType::Unknown;
       return arr;
    }();
+   std::array<struct_record *, MAX_RETURN_TYPES> return_struct_defs{};
+   std::array<ArrayElementDescriptor, MAX_RETURN_TYPES> return_array_elements{};
+   std::array<bool, MAX_RETURN_TYPES> return_required{};
+   uint8_t return_declared_count = 0;
+   uint8_t return_contract_count = 0;
+   bool return_contract_variadic = false;
+   bool return_contract_explicit = false;
+   bool return_inference_validated = false;
+
+   // Canonical prototype signature under construction.  Result entries come only from explicit declarations or
+   // validated static inference; unresolved results use the DynamicResults flag without stored entries.
+   std::vector<ProtoTypeEntry> signature_parameters;
+   std::array<ProtoTypeEntry, MAX_RETURN_TYPES> signature_results{};
+   uint8_t signature_result_count = 0;
+   uint8_t signature_result_entry_count = 0;
+   uint8_t signature_flags = 0;
 
    // Try-except metadata for bytecode-level exception handling.
    // These are populated during emit_try_except_stmt and copied to GCproto during fs_finish.
    std::vector<TryBlockDesc>   try_blocks;    // Try block descriptors
    std::vector<TryHandlerDesc> try_handlers;  // Handler descriptors
+   std::vector<ProtoContextBlockDesc> context_blocks;
    uint8_t try_depth = 0;  // Current try nesting depth for break/continue cleanup
+   std::vector<RuntimeScope> runtime_scopes; // Ordered lexical scopes requiring runtime leave bytecodes
    bool is_root = false;   // True if this is the top-level (root) function
+
+   // Portable module dependency descriptors, appended by the root and imported AST builders and copied to the
+   // prototype during fs_finish. Names are canonical and interned, so they are also anchored as GC constants.
+   struct DependencyDescriptor {
+      GCstr *name = nullptr;                 // Canonical module name
+      std::vector<GCstr *> functions;        // Canonical names of the functions this unit references
+   };
+
+   std::vector<DependencyDescriptor> module_descriptors;
 
    // Default constructor - initialises all fields to safe defaults.
    FuncState() = default;

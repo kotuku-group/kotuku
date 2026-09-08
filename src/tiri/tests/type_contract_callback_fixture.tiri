@@ -1,0 +1,5 @@
+global function imported_callback_contract_failure()
+   local target = obj.new('config')
+   target.subscribe('refresh', function(Window:table!, Args:table!) end)
+   target.acRefresh()
+end

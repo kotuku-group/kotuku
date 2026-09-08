@@ -1,0 +1,622 @@
+----------------------------------------------------------------------------------------------------------------------
+-- EXCEPTION HANDLING
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Measure overhead of try-except exception handling
+
+@Test function ExceptionTryExcept()
+   -- Function that may throw an error
+   local function mayFail(ShouldFail:bool):num
+      if ShouldFail then
+         raise "Intentional error"
+      end
+      return 42
+   end
+
+   -- Function that always succeeds
+   local function alwaysSucceeds(Value:num):num
+      return Value * 2
+   end
+
+   local acc = 0
+   for i in {0 to 10000} do
+      -- Try-except with no exception thrown
+      try
+         acc += alwaysSucceeds(i)
+      except ex
+         acc += #ex.message
+      end
+
+      -- Try-except with exception thrown occasionally
+      try
+         acc += mayFail(i % 100 is 0)
+      except ex
+         acc += #ex.message
+      end
+
+      -- Nested try-except blocks
+      try
+         try
+            acc += alwaysSucceeds(i)
+         except inner
+            acc += #inner.message
+         end
+      except outer
+         acc += #outer.message
+      end
+
+      -- Try-except with multiple operations
+      try
+         local a = alwaysSucceeds(i)
+         local b = alwaysSucceeds(i + 1)
+         local c = alwaysSucceeds(i + 2)
+         acc += a + b + c
+      except ex
+         acc += #ex.message
+      end
+
+      -- Try-except with conditional exception
+      try
+         if i % 50 is 0 then
+            raise "Periodic error"
+         end
+         acc += i * 2
+      except ex
+         acc += 1
+      end
+   end
+
+   return acc
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Use try-success pattern for handling successful completion
+
+@Test function ExceptionTrySuccess()
+   local function compute(Value:num):num
+      if Value < 0 then
+         raise "Negative value not allowed"
+      end
+      return Value * Value
+   end
+
+   local function fetchData(Id:num):table
+      if Id is 0 then
+         raise "Invalid ID"
+      end
+      return { id = Id, value = Id * 10 }
+   end
+
+   local acc = 0
+   for i in {0 to 30000} do
+      local result = 0
+
+      -- Basic try-success pattern
+      try
+         result = compute(i)
+      except ex
+         result = -1
+      success
+         result = result + 1
+      end
+
+      -- Try-success with data fetching pattern
+      local data = nil
+      try
+         data = fetchData(i % 100)
+      except ex
+         data = { id = 0, value = 0 }
+      success
+         data.value = data.value * 2
+      end
+      acc += data.value
+
+      -- Chained operations in success block
+      local a, b
+      try
+         a = compute(i)
+         b = compute(i + 1)
+      except ex
+         result = 0
+      success
+         result = a + b
+         result = result * 2
+      end
+
+      -- Success block with cleanup-like operations
+      local resource_acquired = false
+      try
+         resource_acquired = true
+         result = compute(i)
+      except ex
+         result = -1
+      success
+         -- Simulated successful completion handling
+         result = result + 100
+      end
+
+      -- Nested try with success blocks
+      try
+         try
+            result = compute(i)
+         except inner
+            result = 0
+         success
+            result = result + 10
+         end
+      except outer
+         result = -1
+      success
+         result = result + 20
+      end
+
+      acc += result
+   end
+
+   return acc
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Measure overhead of defer statement for cleanup
+
+@Test function ExceptionDefer()
+   local acc = 0
+   for i in {0 to 5000} do
+      local cleanup_count = 0
+
+      -- Simple defer
+      do
+         defer()
+            cleanup_count++
+         end
+         local x = i * 2
+      end
+
+      -- Multiple defers (LIFO order)
+      do
+         defer()
+            cleanup_count++
+         end
+         defer()
+            cleanup_count++
+         end
+         defer()
+            cleanup_count++
+         end
+         local x = i
+      end
+
+      -- Defer with captured variables
+      local value = i
+      do
+         local captured = value
+         defer()
+            local _ = captured
+         end
+         value = value * 2
+      end
+
+      -- Defer in nested scopes
+      do
+         defer()
+            cleanup_count++
+         end
+         do
+            defer()
+               cleanup_count++
+            end
+            local inner = i
+         end
+         local outer = i * 2
+      end
+
+      -- Defer with computation
+      local result = 0
+      do
+         defer()
+            result = result + 1
+         end
+         result = i * 2
+      end
+
+      -- Defer simulating resource cleanup pattern
+      local data = 0
+      do
+         local resource = { open = true }
+         defer()
+            resource.open = false
+         end
+         data = resource.open and i or 0
+      end
+
+      -- Consume the results so that the loop body cannot be eliminated by the JIT
+      acc += cleanup_count + value + result + data
+   end
+
+   return acc
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- VARIABLE SCOPE
+----------------------------------------------------------------------------------------------------------------------
+-- These benchmarks perform identical operations to enable direct performance comparison
+-- between different variable scoping mechanisms.  They must all share the same iteration count, and each returns
+-- an accumulator so that the JIT cannot discard the loop body.  Verify a change here by checking that ScopeLocal,
+-- ScopeGlobal and ScopeUpvalueAccess still return an identical value.
+--
+-- NB: The iteration count is capped at 20k because global access is roughly two orders of magnitude slower than
+-- local access.  At higher counts ScopeGlobal takes long enough per call that it cannot complete the benchmark
+-- harness warmup phase within a typical duration limit, and the benchmark is reported as an error.
+
+@Test function ScopeLocal()
+   local acc = 0
+   for i in {0 to 800000} do
+      -- Declare local variables
+      local a = 10
+      local b = 20
+      local c = 30
+      local d = 40
+      local e = 50
+
+      -- Read operations
+      local r1 = a
+      local r2 = b
+      local r3 = c
+      local r4 = d
+      local r5 = e
+
+      -- Arithmetic using locals
+      local sum = a + b + c + d + e
+      local product = a * b
+      local diff = e - a
+      local quotient = d / a
+
+      -- Write operations
+      a = i
+      b = i + 1
+      c = i + 2
+      d = i + 3
+      e = i + 4
+
+      -- Mixed read/write
+      a = b + c
+      b = a * 2
+      c = b - d
+      d = c + e
+      e = a + d
+
+      -- Compound operations
+      a += 1
+      b -= 1
+      c *= 2
+      d /= 2
+      e %= 100
+
+      -- Consume the results so that the loop body cannot be eliminated by the JIT
+      acc += r1 + r2 + r3 + r4 + r5 + sum + product + diff + quotient + a + b + c + d + e
+   end
+
+   return acc
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Measure performance of global variable access
+
+-- Declare globals for ScopeGlobal benchmark
+global glScopeA = 10
+global glScopeB = 20
+global glScopeC = 30
+global glScopeD = 40
+global glScopeE = 50
+
+@Test function ScopeGlobal()
+   local acc = 0
+   for i in {0 to 20000} do
+      -- Reset global variables
+      glScopeA = 10
+      glScopeB = 20
+      glScopeC = 30
+      glScopeD = 40
+      glScopeE = 50
+
+      -- Read operations
+      local r1 = glScopeA
+      local r2 = glScopeB
+      local r3 = glScopeC
+      local r4 = glScopeD
+      local r5 = glScopeE
+
+      -- Arithmetic using globals
+      local sum = glScopeA + glScopeB + glScopeC + glScopeD + glScopeE
+      local product = glScopeA * glScopeB
+      local diff = glScopeE - glScopeA
+      local quotient = glScopeD / glScopeA
+
+      -- Write operations
+      glScopeA = i
+      glScopeB = i + 1
+      glScopeC = i + 2
+      glScopeD = i + 3
+      glScopeE = i + 4
+
+      -- Mixed read/write
+      glScopeA = glScopeB + glScopeC
+      glScopeB = glScopeA * 2
+      glScopeC = glScopeB - glScopeD
+      glScopeD = glScopeC + glScopeE
+      glScopeE = glScopeA + glScopeD
+
+      -- Compound operations
+      glScopeA += 1
+      glScopeB -= 1
+      glScopeC *= 2
+      glScopeD /= 2
+      glScopeE %= 100
+
+      -- Consume the results so that the loop body cannot be eliminated by the JIT
+      acc += r1 + r2 + r3 + r4 + r5 + sum + product + diff + quotient +
+             glScopeA + glScopeB + glScopeC + glScopeD + glScopeE
+   end
+
+   return acc
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Measure performance of const-annotated local variable access
+
+@Test function ScopeConstantAccess()
+   local a <const> = 10
+   local b <const> = 20
+   local c <const> = 30
+   local d <const> = 40
+   local e <const> = 50
+   local acc = 0
+   for i in {0 to 3000000} do
+      -- Read operations (const can only be read, not written)
+      local r1 = a
+      local r2 = b
+      local r3 = c
+      local r4 = d
+      local r5 = e
+
+      -- Arithmetic using consts
+      local sum = a + b + c + d + e
+      local product = a * b
+      local diff = e - a
+      local quotient = d / a
+
+      -- Write to mutable locals derived from consts
+      local ma = i
+      local mb = i + 1
+      local mc = i + 2
+      local md = i + 3
+      local me = i + 4
+
+      -- Mixed read (const) / write (mutable)
+      ma = b + c
+      mb = a * 2
+      mc = b - d
+      md = c + e
+      me = a + d
+
+      -- Compound operations on mutable copies
+      ma += 1
+      mb -= 1
+      mc *= 2
+      md /= 2
+      me %= 100
+
+      -- Consume the results so that the loop body cannot be eliminated by the JIT
+      acc += r1 + r2 + r3 + r4 + r5 + sum + product + diff + quotient + ma + mb + mc + md + me
+   end
+
+   return acc
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Measure performance of upvalue access in closures
+
+@Test function ScopeUpvalueAccess()
+   -- Declare upvalues outside the loop
+   local a = 10
+   local b = 20
+   local c = 30
+   local d = 40
+   local e = 50
+
+   -- Create closure that captures upvalues
+   local function accessUpvalues(Iter:num):num
+      -- Read operations
+      local r1 = a
+      local r2 = b
+      local r3 = c
+      local r4 = d
+      local r5 = e
+
+      -- Arithmetic using upvalues
+      local sum = a + b + c + d + e
+      local product = a * b
+      local diff = e - a
+      local quotient = d / a
+
+      -- Write operations
+      a = Iter
+      b = Iter + 1
+      c = Iter + 2
+      d = Iter + 3
+      e = Iter + 4
+
+      -- Mixed read/write
+      a = b + c
+      b = a * 2
+      c = b - d
+      d = c + e
+      e = a + d
+
+      -- Compound operations
+      a += 1
+      b -= 1
+      c *= 2
+      d /= 2
+      e %= 100
+
+      -- Returning the results prevents the JIT from eliminating the upvalue accesses
+      return r1 + r2 + r3 + r4 + r5 + sum + product + diff + quotient + a + b + c + d + e
+   end
+
+   local acc = 0
+   for i in {0 to 800000} do
+      -- Reset upvalues
+      a = 10
+      b = 20
+      c = 30
+      d = 40
+      e = 50
+
+      -- Call function that accesses upvalues
+      acc += accessUpvalues(i)
+   end
+
+   return acc
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- TYPE OPERATIONS
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Compare native type tests with type() string comparisons
+
+@Test function TypeCheckNativeCMP()
+   -- Create values of different types
+   local num_int = 42
+   local str = "hello"
+   local tbl = { a = 1, b = 2 }
+   local func = function() return 1 end
+   local bool_true = true
+
+   local acc = 0
+   for i in {0 to 200000} do
+      -- Type comparisons
+      local is_num = num_int is <num>
+      local is_str = str is <str>
+      local is_tbl = tbl is <table>
+      local is_func = func is <func>
+      local is_bool = bool_true is <bool>
+
+      -- Conditional based on type
+      local val = (i % 3 is 0) and str or (i % 3 is 1 and num_int or tbl)
+      if val is <str> then
+         acc += #val
+      elseif val is <num> then
+         acc += val * 2
+      elseif val is <table> then
+         acc += val.a
+      end
+
+      -- Consume the type results so that the loop body cannot be eliminated by the JIT
+      acc += (is_num and 1 or 0) + (is_str and 1 or 0) + (is_tbl and 1 or 0) +
+             (is_func and 1 or 0) + (is_bool and 1 or 0)
+   end
+
+   return acc
+end
+
+@Test function TypeCheckTypeCMP()
+   -- Create values of different types
+   local num_int = 42
+   local str = "hello"
+   local tbl = { a = 1, b = 2 }
+   local func = function() return 1 end
+   local bool_true = true
+
+   local acc = 0
+   for i in {0 to 200000} do
+      -- Type comparisons
+      local is_num = type(num_int) is "number"
+      local is_str = type(str) is "string"
+      local is_tbl = type(tbl) is "table"
+      local is_func = type(func) is "function"
+      local is_bool = type(bool_true) is "bool"
+
+      -- Conditional based on type
+      local val = (i % 3 is 0) and str or (i % 3 is 1 and num_int or tbl)
+      if type(val) is "string" then
+         acc += #val
+      elseif type(val) is "number" then
+         acc += val * 2
+      elseif type(val) is "table" then
+         acc += val.a
+      end
+
+      -- Consume the type results so that the loop body cannot be eliminated by the JIT
+      acc += (is_num and 1 or 0) + (is_str and 1 or 0) + (is_tbl and 1 or 0) +
+             (is_func and 1 or 0) + (is_bool and 1 or 0)
+   end
+
+   return acc
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Measure overhead of tonumber() conversions
+
+@Test function NumberConversion()
+   local str_int = "12345"
+   local str_neg = "-9876"
+   local str_float = "3.14159"
+   local str_neg_float = "-2.71828"
+   local str_zero = "0"
+   local str_sci = "1.23e5"
+   local str_hex = "0xFF"
+   local str_invalid = "not_a_number"
+   local str_mixed = "123abc"
+
+   local acc = 0
+   for i in {0 to 4000} do
+      -- Convert integer strings
+      local n1 = tonumber(str_int)
+      local n2 = tonumber(str_neg)
+      local n3 = tonumber(str_zero)
+
+      -- Convert float strings
+      local n4 = tonumber(str_float)
+      local n5 = tonumber(str_neg_float)
+
+      -- Convert scientific notation
+      local n6 = tonumber(str_sci)
+
+      -- Convert hex strings
+      local n7 = tonumber(str_hex)
+      local n8 = tonumber("0x1A2B")
+
+      -- Convert with explicit base
+      local n9 = tonumber("1010", 2)    -- Binary
+      local n10 = tonumber("777", 8)     -- Octal
+      local n11 = tonumber("FF", 16)     -- Hex without prefix
+
+      -- Convert dynamically created strings
+      local n12 = tonumber(tostring(i))
+      local n13 = tonumber(tostring(i * 2))
+
+      -- Invalid conversions (return nil)
+      local n14 = tonumber(str_invalid)
+      local n15 = tonumber(str_mixed)
+      local n16 = tonumber("")
+
+      -- Numbers passed through (already numbers)
+      local n17 = tonumber(42)
+      local n18 = tonumber(3.14)
+      local n19 = tonumber(i)
+
+      -- Conditional conversion with fallback
+      local val = tonumber(str_int) ?? 0
+      local val2 = tonumber(str_invalid) ?? -1
+
+      -- Consume the results so that the loop body cannot be eliminated by the JIT.
+      -- n14..n16 are intentionally nil (invalid conversions), so they are counted rather than summed.
+      acc += n1 + n2 + n3 + n4 + n5 + n6 + n7 + n8 + n9 + n10 + n11 + n12 + n13
+      acc += (n14 ?? 0) + (n15 ?? 0) + (n16 ?? 0)
+      acc += n17 + n18 + n19 + val + val2
+   end
+
+   return acc
+end
+
+----------------------------------------------------------------------------------------------------------------------

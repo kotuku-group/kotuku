@@ -95,6 +95,11 @@ For optimal results, choose the appropriate interface based on application requi
 
 #include <kotuku/main.h>
 #include <kotuku/modules/audio.h>
+#include <kotuku/modules/filesystem.h>
+#include <kotuku/modules/processes.h>
+#include <kotuku/modules/config.h>
+#include <kotuku/modules/script.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include <sstream>
 #include <algorithm>
@@ -106,9 +111,9 @@ static ERR MODOpen(OBJECTPTR);
 #include "module_def.c"
 
 JUMPTABLE_CORE
-static OBJECTPTR glAudioModule = nullptr;
 static OBJECTPTR clAudio = 0;
 static ankerl::unordered_dense::map<OBJECTID, int> glSoundChannels;
+static std::string glAudioDevice;
 class extAudio;
 
 ERR add_audio_class(void);
@@ -120,7 +125,6 @@ extern "C" void end_of_stream(OBJECTPTR, int);
 
 static void audio_stopped_event(extAudio &, int);
 static ERR set_channel_volume(extAudio *, struct AudioChannel *);
-static void load_config(extAudio *);
 static ERR init_audio(extAudio *);
 static ERR audio_timer(extAudio *, int64_t, int64_t);
 
@@ -153,24 +157,32 @@ static const int16_t glAlsaConvert[6] = {
 
 static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 {
-   pf::Log log;
+   kt::Log log;
 
    CoreBase = argCoreBase;
-   glAudioModule = argModule;
 
 #ifdef _WIN32
-   {
-      CSTRING errstr;
-      if ((errstr = dsInitDevice(44100))) {
-         log.warning("DirectSound Failed: %s", errstr);
-         return ERR::NoSupport;
-      }
+   if (auto errstr = dsInitDevice(44100)) {
+      log.warning("DirectSound Failed: %s", errstr);
+      return ERR::NoSupport;
    }
 #elif ALSA_ENABLED
-   // Nothing required for ALSA
+   std::span<std::string> args;
+   auto task = CurrentTask();
+   if (!task->getParameters(args)) {
+      for (int i=0; i < std::ssize(args); i++) {
+         if (kt::iequals(args[i], "--audio-device")) {
+            if (i + 1 < std::ssize(args)) {
+               glAudioDevice = args[i + 1];
+               log.msg("Audio output device set to \"%s\".", glAudioDevice.c_str());
+               i++;
+            }
+         }
+      }
+   }
 #else
    log.warning("No audio support available.");
-   return ERR::Failed;
+   return ERR::NoSupport;
 #endif
 
    if (add_audio_class() != ERR::Okay) return ERR::AddClass;
@@ -180,16 +192,16 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
 static ERR MODOpen(OBJECTPTR Module)
 {
-   Module->set(FID_FunctionList, glFunctions);
+   ((objModule *)Module)->setFunctionList(glFunctions);
    return ERR::Okay;
 }
 
 static ERR MODExpunge(void)
 {
-   for (auto& [id, handle] : glSoundChannels) {
+   for (auto & [id, handle] : glSoundChannels) {
       // NB: Most Audio objects will be disposed of prior to this module being expunged.
       if (handle) {
-         pf::ScopedObjectLock<extAudio> audio(id, 3000);
+         kt::ScopedObjectLock<extAudio> audio(id, 3000);
          if (audio.granted()) audio->closeChannels(handle);
       }
    }
@@ -212,8 +224,8 @@ static ERR MODExpunge(void)
 
 //********************************************************************************************************************
 
-static STRUCTS glStructures = {
-   { "AudioLoop", sizeof(AudioLoop) }
+static ModHeader::STRUCTS glStructures = {
+   { "AudioLoop", { sizeof(AudioLoop), alignof(AudioLoop) } }
 };
 
 KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, &glStructures)

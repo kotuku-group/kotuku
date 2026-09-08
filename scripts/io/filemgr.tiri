@@ -7,11 +7,11 @@ io.ui ?= { }
 
 rxCopy = <{ regex.new('^[A-Z].+') }>
 
-local progress_status, progress_dialog, progress_time
+local progress_status, progress_dialog:table, progress_time
 
 -- copyFeedback() is called for every file that is copied, or multiple times for large files.
 
-function copyFeedback(Size:num, Position:num, Path:str, Dest:str, User, FeedbackID)
+function copyFeedback(Size:num!, Position:num!, Path:str!, Dest:str!, User, FeedbackID)
    msg(f'Copy feedback: {Path} TO {Dest}')
 
    if progress_status is 'cancel' then
@@ -42,7 +42,7 @@ function copyFeedback(Size:num, Position:num, Path:str, Dest:str, User, Feedback
    if progress_dialog and (Position is 0 or Size > 32768) then
       local folder, file = io.splitPath(Path)
 
-      if string.len(file) >= 80 then file = '...' .. string.substr(file, -80) end
+      if #file >= 80 then file = '...' .. file.sub(-80) end
 
       local msg
       if Position is 0 then
@@ -69,36 +69,40 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-io.ui.paste = function(Dest:str)
+io.ui.paste = function(Dest:str!)
    local clipboard = obj.new('clipboard')
+   defer clipboard.free() end
+
    local err, datatype, files, flags = clipboard.mtGetFiles(CLIPTYPE_FILE, 0)
    if (err != ERR_Okay) or (#files is 0) then
       msg('No files on the clipboard.')
       return
    end
 
-   if move then
-      -- Clears the clipboard.  We do this prior to the copy operation to prevent clashes
-      clip.mtRemove(CLIPTYPE_FILE)
-   end
-
    local move
    if flags has CEF_DELETE then move = true end
+
+   if move then
+      -- Clears the clipboard.  We do this prior to the copy operation to prevent clashes
+      clipboard.mtRemove(CLIPTYPE_FILE)
+   end
+
    local err = io.ui.copy(files, Dest, move)
+   processing.collect('defer')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- NB: This call can block if it needs a response from the user.  It does not return until the copy is complete.
 
-io.ui.copy = function(Source:any, Dest:str, Move:bool)
-   if type(Source) is 'string' then Source = { Source } end
-   if type(Source) != 'table' then error('Provided Source is not a table') end
+io.ui.copy = function(Source:any!, Dest:str!, Move:bool!)
+   if Source is <str> then Source = { Source } end
+   if Source != <table> then raise 'Provided Source is not a table' end
 
    -- Scan the file list and move or copy each file to the Dest folder
 
    progress_time = mSys.PreciseTime()
    local response = 'yes'
-   local err = ERR_Okay
+   local err:num = ERR_Okay
    for src_path in values(Source) do
       if response != 'yes-all' and response != 'no-all' then response = 'yes' end -- Reset to the default
 
@@ -205,8 +209,8 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 io.ui.delete = function(Paths)
-   if type(Paths) is 'string' then Paths = { Paths } end
-   if type(Paths) != 'table' then error('Path must be a string or string list.') end
+   if Paths is <str> then Paths = { Paths } end
+   if Paths != <table> then raise 'Path must be a string or string list.' end
 
    for path in values(Paths) do
       mSys.DeleteFile(path, function(Feedback)

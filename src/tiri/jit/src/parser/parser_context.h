@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -9,6 +10,7 @@
 #include "parser/parser_diagnostics.h"
 #include "parser/token_stream.h"
 #include "parser/parser_profiler.h"
+#include "parser/static_type_descriptor.h"
 
 #ifdef INCLUDE_TIPS
 class TipEmitter;
@@ -42,6 +44,8 @@ struct ParserConfig {
    bool enable_type_analysis = true;       // Enable static type checking
    bool type_errors_are_fatal = true;      // Treat type mismatches as errors
    bool infer_local_types = true;          // Track types of local variables
+   bool warn_unresolved_methods = false;   // Report dot-method receivers requiring runtime classification
+   bool reject_legacy_member_syntax = false; // Compatibility control retained for parser test harnesses
    ParserProfilingResult profiling_result;
 };
 
@@ -49,6 +53,7 @@ struct ParserConfig {
 
 struct ParserError {
    ParserErrorCode code = ParserErrorCode::None;
+   uint8_t file_index = 0;  // FileSource index of the file the error was raised in (token spans store raw lines)
    std::string message;
    Token token;
 
@@ -56,8 +61,8 @@ struct ParserError {
    ParserError() = default;
 
    // Constructor to simplify error creation (accepts std::string, std::string_view, or const char*)
-   ParserError(ParserErrorCode Code, const Token& ErrorToken, std::string_view Message)
-      : code(Code), message(Message), token(ErrorToken) {}
+   ParserError(ParserErrorCode Code, const Token& ErrorToken, std::string_view Message, uint8_t FileIndex = 0)
+      : code(Code), file_index(FileIndex), message(Message), token(ErrorToken) {}
 };
 
 //********************************************************************************************************************
@@ -92,6 +97,8 @@ private:
 
 class ParserContext {
 public:
+   using ErrorRollbackCallback = void (*)(void *);
+
    static ParserContext from(LexState &lex_state, FuncState &func_state, ParserAllocator allocator,
       ParserConfig config = ParserConfig{}) {
       return ParserContext(lex_state, func_state, *lex_state.L, allocator, config);
@@ -101,6 +108,7 @@ public:
       ParserAllocator allocator, ParserConfig config)
       : lex_state(&lex_state), func_state(&func_state), lua_state(&lua_state), allocator(allocator)
       , current_config(config), token_stream(lex_state)
+      , descriptors_(std::make_shared<StaticDescriptorCatalogue>())
    {
       this->diag.set_limit(config.max_diagnostics);
       this->attach_to_lex();
@@ -117,12 +125,17 @@ public:
       , lua_state(other.lua_state), allocator(other.allocator)
       , current_config(other.current_config), diag(std::move(other.diag))
       , token_stream(other.token_stream), previous_context(other.previous_context)
+      , error_rollback_callback(other.error_rollback_callback)
+      , error_rollback_user_data(other.error_rollback_user_data)
+      , descriptors_(std::move(other.descriptors_))
    {
       if (this->lex_state) this->lex_state->active_context = this;
       other.lex_state = nullptr;
       other.func_state = nullptr;
       other.lua_state = nullptr;
       other.previous_context = nullptr;
+      other.error_rollback_callback = nullptr;
+      other.error_rollback_user_data = nullptr;
    }
 
    inline LexState & lex() const { return *this->lex_state; }
@@ -143,6 +156,9 @@ public:
    inline TokenStreamAdapter & tokens() { return this->token_stream; }
    inline const TokenStreamAdapter & tokens() const { return this->token_stream; }
    inline const ParserConfig & config() const { return this->current_config; }
+   inline StaticDescriptorCatalogue & descriptors() { return *this->descriptors_; }
+   inline const StaticDescriptorCatalogue & descriptors() const { return *this->descriptors_; }
+   inline void share_descriptors(const ParserContext &Parent) { this->descriptors_ = Parent.descriptors_; }
    inline ParserProfilingResult & profiling_result() { return this->current_config.profiling_result; }
    inline const ParserProfilingResult & profiling_result() const { return this->current_config.profiling_result; }
    inline void override_config(const ParserConfig& config) { this->current_config = config; this->diag.set_limit(config.max_diagnostics); }
@@ -168,7 +184,12 @@ public:
    void report_limit_error(FuncState &, uint32_t limit, const char *);
 
    void emit_error(ParserErrorCode code, const Token &, std::string_view);
-   void emit_warning(ParserErrorCode code, const Token &, std::string_view);
+   void emit_error(const ParserError &);   // Preserves the error's own file_index (e.g. errors from imported files)
+   void emit_warning(ParserErrorCode Code, const Token &, std::string_view, size_t Length = 0);
+   ParserError make_error(ParserErrorCode, const Token &, std::string_view);  // Stamps the lexer's current file_index
+   void set_error_rollback_callback(ErrorRollbackCallback, void *);
+   void clear_error_rollback_callback(void *);
+   void rollback_before_error();
 
    // Import stack tracking for compile-time import statement
    [[nodiscard]] bool is_importing(const std::string &) const;
@@ -183,9 +204,9 @@ private:
    void detach_from_lex();
    std::string format_lex_error(LexToken) const;
    std::string format_expected_message(TokenKind) const;
-   ParserError make_error(ParserErrorCode, const Token &, std::string_view);
    std::string describe_token(const Token &) const;
-   void log_trace(ParserChannel, const Token &, std::string_view) const;
+   void log_trace(ParserChannel, const Token &, std::string_view,
+      std::optional<uint8_t> FileIndex = std::nullopt) const;
 
    LexState *lex_state;
    FuncState *func_state;
@@ -195,7 +216,10 @@ private:
    ParserDiagnostics diag;
    TokenStreamAdapter token_stream;
    ParserContext *previous_context = nullptr;
+   ErrorRollbackCallback error_rollback_callback = nullptr;
+   void *error_rollback_user_data = nullptr;
    std::vector<std::string> import_stack_;  // Stack of imported file paths for circular dependency detection
+   std::shared_ptr<StaticDescriptorCatalogue> descriptors_;
 };
 
 //********************************************************************************************************************

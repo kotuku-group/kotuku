@@ -26,10 +26,10 @@ Parameters:
    import 'benchmark'
    import 'git'
 
-   global glSelf = obj.find('self')
-   global glPath = glSelf.workingPath
-   global glLogFile = io.open(glPath .. 'svg_mark_results.log', 'a')
-   global glGitInfo = { }
+   glSelf = obj.find('self')
+   glPath = glSelf.workingPath
+   glLogFile = io.open(glPath .. 'svg_mark_results.log', 'a')
+   glGitInfo = { }
 
 -----------------------------------------------------------------------------------------------------------------------
 
@@ -47,7 +47,7 @@ function createPreviewWindow(SvgPath)
       }
    })
 
-   viewport = previewWindow:clientViewport({ aspectRatio = ARF_MEET })
+   viewport = previewWindow.clientViewport({ aspectRatio = ARF_MEET })
 
    -- Create main container
    mainArea = viewport.new('VectorViewport', {
@@ -79,7 +79,7 @@ function createPreviewWindow(SvgPath)
       fontSize = 10
    })
 
-   previewWindow:show()
+   previewWindow.show()
 
    resultsListView.addItems({ { text = 'Initializing benchmark...' } })
 
@@ -103,11 +103,11 @@ end
 function saveMessage(message:any)
    if type(message) is 'string' then
       logMessage(message)
-      glLogFile:write(message .. '\n')
+      glLogFile.write(message .. '\n')
    elseif type(message) is 'array' then
       for s in values(message) do
          logMessage(s)
-         glLogFile:write(s .. '\n')
+         glLogFile.write(s .. '\n')
       end
    end
 end
@@ -164,21 +164,23 @@ end
    -- Check for file parameter, show dialog if not provided
    svgFile = arg('file')
 
-   global glGitInfo = git.query(glPath)
+   glGitInfo = git.query(glPath)
 
    if not svgFile then
       print('No file parameter provided. Opening file dialog...')
 
       selectedFile = nil
 
+      processing.flush()
+
       gui.dialog.file({
          title      = 'Select SVG File for Benchmark',
          okText     = 'Select',
          cancelText = 'Cancel',
          modal      = true,
+         strictFilter = true,
          filterList = {
-            { name = 'SVG Files', ext = '.svg' },
-            { name = 'All Files', ext = '*' }
+            { name = 'SVG Files', ext = { 'svg', 'svgz' }, selected = true }
          },
          feedback = function(Dialog, Path, Files)
             if Files and #Files > 0 then
@@ -188,9 +190,9 @@ end
          end
       })
 
-      processing.sleep(nil, true)
+      processing.sleep(-1)
 
-      selectedFile ?? return
+      selectedFile ?! return
       svgFile = selectedFile
    end
 
@@ -201,10 +203,10 @@ end
    end
 
    -- Get benchmark parameters
-   width       = tonumber(arg('width',1024))
-   height      = tonumber(arg('height',768))
-   duration    = tonumber(arg('duration',10))
-   warmup      = tonumber(arg('warmup',10))
+   width       = tonumber(arg('width','1024'))
+   height      = tonumber(arg('height','768'))
+   duration    = tonumber(arg('duration','10'))
+   warmup      = tonumber(arg('warmup','10'))
    showPreview = arg('preview') != 'false'
 
    -- Validate parameters

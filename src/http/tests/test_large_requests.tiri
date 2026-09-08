@@ -1,0 +1,306 @@
+--[[
+Large Request/Response Testing
+
+Tests handling of large HTTP request bodies and responses, including
+chunked encoding, large Content-Length bodies, and file streaming.
+--]]
+
+   import 'net/httpserver'
+   import 'json'
+   include 'http'
+
+glOutFile <const> = 'temp:http-large-output.txt'
+SERVER_PORT <const> = 18944
+
+----------------------------------------------------------------------------------------------------------------------
+
+@BeforeAll function init(State)
+   global glPath = State.folder
+
+   global glServer = hslib.start({
+      port    = SERVER_PORT,
+      folder  = glPath,
+      verbose = true,
+      maxRequestSize = 65536, -- 64KB limit for testing
+      routes = {
+         { pattern = '/upload/chunked',
+            method = 'POST',
+            handler = function(req, res)
+               size = req.body and #req.body or 0
+               isChunked = req.headers['transfer-encoding'] and
+                           req.headers['transfer-encoding'].find('chunked') != nil
+               res.json({
+                  message = 'Large chunked upload received',
+                  receivedSize = size,
+                  isChunked = isChunked
+               })
+            end
+         },
+         { pattern = '/upload/content-length',
+            method = 'POST',
+            handler = function(req, res)
+               size = req.body and #req.body or 0
+               isChunked = req.headers['transfer-encoding'] != nil and
+                           req.headers['transfer-encoding'].find('chunked') != nil
+               res.json({
+                  message = 'Large Content-Length upload received',
+                  receivedSize = size,
+                  isChunked = isChunked
+               })
+            end
+         },
+         { pattern = '/upload/very-large',
+            method = 'POST',
+            handler = function(req, res)
+               size = req.body and #req.body or 0
+               res.json({
+                  message = 'Very large upload received',
+                  receivedSize = size
+               })
+            end
+         },
+         { pattern = '/download/large-file',
+            method = 'GET',
+            handler = function(req, res)
+               -- Generate a large file response (~20KB)
+               data = string.rep('This is line ' .. string.rep('data', 10) .. ' of the large file.\n', 400)
+               data = data .. 'END_OF_FILE'
+               res.header('Content-Type', 'text/plain')
+                  .send(data)
+            end
+         },
+         { pattern = '/stream/data',
+            method = 'GET',
+            handler = function(req, res)
+               -- Simulate streaming by sending data in chunks
+               streamData = ''
+               for i in {1 to 11} do
+                  streamData = streamData .. 'Chunk ' .. i .. ': ' .. 'streaming data '.rep(20) .. '\n'
+               end
+               res.header('Content-Type', 'text/plain')
+                  .send(streamData)
+            end
+         }
+      }
+   })
+end
+
+@AfterAll function cleanup()
+   glServer.stop()
+   mSys.DeleteFile(glOutFile)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function LargePostChunked()
+   content = ''
+   testPostCompleted = false
+
+   -- Create a large test body (10KB)
+   largeBody = 'ABCDEFGHIJ'.rep(1024) -- 10KB of data
+
+   http = obj.new('http', {
+      src         = 'http://127.0.0.1:' .. SERVER_PORT .. '/upload/chunked',
+      method      = 'POST',
+      contentType = 'text/plain',
+      flags       = HTF_NO_HEAD,
+      contentLength = -1, -- Enable chunked encoding
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      outgoing = function(HTTP)
+         if testPostCompleted then raise 'Outgoing called multiple times' end
+         print('Sending large chunked body (' .. #largeBody .. ' bytes)')
+         HTTP.acWrite(largeBody)
+         testPostCompleted = true
+         raise ERR_Terminate
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 10.0, signals = array<obj> { http } })
+   assert(http.acActivate() is ERR_Okay, "Large chunked POST failed to activate")
+
+   err = proc.sleep()
+   assert(err is ERR_Okay, 'Large chunked processing failed: ' .. mSys.GetErrorMsg(err))
+   assert(http.error is ERR_Okay, 'Large chunked HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Large chunked unexpected status: ' .. http.status)
+
+   response = json.decode(content)
+   assert(response.receivedSize is #largeBody, 'Large chunked size mismatch: expected ' .. #largeBody .. ', got ' .. response.receivedSize)
+   assert(response.isChunked is true, 'Large chunked encoding not detected')
+
+   print('Large chunked POST test passed: ' .. response.receivedSize .. ' bytes')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function LargePostContentLength()
+   content = ''
+
+   -- Create a large test body (5KB)
+   largeBody = 'Hello World! This is test data. '.rep(160) -- ~5KB
+
+   http = obj.new('http', {
+      src         = 'http://127.0.0.1:' .. SERVER_PORT .. '/upload/content-length',
+      method      = 'POST',
+      contentType = 'text/plain',
+      flags       = HTF_NO_HEAD,
+      inputFile   = 'string:' .. largeBody,
+      size        = #largeBody,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 10.0, signals = array<obj> { http } })
+   assert(http.acActivate() is ERR_Okay, "Large Content-Length POST failed to activate")
+
+   err = proc.sleep()
+   assert(err is ERR_Okay, 'Large Content-Length processing failed: ' .. mSys.GetErrorMsg(err))
+   assert(http.error is ERR_Okay, 'Large Content-Length HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Large Content-Length unexpected status: ' .. http.status)
+
+   response = json.decode(content)
+   assert(response.receivedSize is #largeBody, 'Large Content-Length size mismatch: expected ' .. #largeBody .. ', got ' .. response.receivedSize)
+   assert(response.isChunked is false, 'Content-Length should not be chunked')
+
+   print('Large Content-Length POST test passed: ' .. response.receivedSize .. ' bytes')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function LargeFileDownload()
+   content = ''
+   totalReceived = 0
+
+   http = obj.new('http', {
+      src = 'http://127.0.0.1:' .. SERVER_PORT .. '/download/large-file',
+      method = 'GET',
+      flags = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         if Buffer then
+            buffer_text = Buffer.getString()
+            totalReceived += #Buffer
+            -- Only keep last 1KB for verification
+            if #content > 1024 then
+               content = content.sub(-512) .. buffer_text
+            else
+               content ..= buffer_text
+            end
+         end
+      end,
+      stateChanged = function(HTTP, State)
+         if State is HGS_COMPLETED or State is HGS_TERMINATED then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 15.0, signals = array<obj> { http } })
+   assert(http.acActivate() is ERR_Okay, "Large file download failed to activate")
+
+   err = proc.sleep()
+   assert(err is ERR_Okay, 'Large download processing failed: ' .. mSys.GetErrorMsg(err))
+   assert(http.error is ERR_Okay, 'Large download HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Large download unexpected status: ' .. http.status)
+
+   -- Verify we received a large amount of data (should be ~20KB)
+   assert(totalReceived > 15000, 'Large download too small: ' .. totalReceived .. ' bytes')
+   assert(content.find('END_OF_FILE'), 'Large download missing end marker')
+
+   print('Large file download test passed: ' .. totalReceived .. ' bytes received')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function VeryLargeRequest()
+   content = ''
+   testPostCompleted = false
+
+   -- Create a very large body (50KB) to test buffer management
+   veryLargeBody = 'X'.rep(51200) -- 50KB
+
+   http = obj.new('http', {
+      src         = 'http://127.0.0.1:' .. SERVER_PORT .. '/upload/very-large',
+      method      = 'POST',
+      contentType = 'application/octet-stream',
+      flags       = HTF_NO_HEAD,
+      contentLength = -1, -- Chunked
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      outgoing = function(HTTP)
+         if testPostCompleted then raise 'Outgoing called multiple times' end
+         print('Sending very large body (' .. #veryLargeBody .. ' bytes)')
+         HTTP.acWrite(veryLargeBody)
+         testPostCompleted = true
+         raise ERR_Terminate
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 15.0, signals = array<obj> { http } })
+   assert(http.acActivate() is ERR_Okay, "Very large request failed to activate")
+
+   err = proc.sleep()
+   assert(err is ERR_Okay, 'Very large processing failed: ' .. mSys.GetErrorMsg(err))
+   assert(http.error is ERR_Okay, 'Very large HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Very large unexpected status: ' .. http.status)
+
+   response = json.decode(content)
+   assert(response.receivedSize is #veryLargeBody, 'Very large size mismatch')
+
+   print('Very large request test passed: ' .. response.receivedSize .. ' bytes')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function StreamingResponse()
+   chunks = {}
+   totalReceived = 0
+
+   http = obj.new('http', {
+      src      = f'http://127.0.0.1:{SERVER_PORT}/stream/data',
+      method   = 'GET',
+      flags    = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         if Buffer then
+            chunks.insert(Buffer.getString())
+            totalReceived += #Buffer
+         end
+      end,
+      stateChanged = function(HTTP:obj, State:num)
+         if State is HGS_COMPLETED or State is HGS_TERMINATED then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 10.0, signals = array<obj> { http } })
+   assert(http.acActivate() is ERR_Okay, "Streaming response failed to activate")
+
+   err = proc.sleep()
+   assert(err is ERR_Okay, 'Streaming processing failed: ' .. mSys.GetErrorMsg(err))
+   assert(http.error is ERR_Okay, 'Streaming HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.status is 200, 'Streaming unexpected status: ' .. http.status)
+
+   -- The server sends a generated response body; network buffering may coalesce it into a small number of callbacks.
+   assert(#chunks >= 1, f'Should receive streaming response data, got: {#chunks} chunks')
+   assert(totalReceived > 1000, f'Streaming response too small: {totalReceived}')
+
+   print(f'Streaming response test passed: {#chunks} chunks, {totalReceived} bytes')
+end

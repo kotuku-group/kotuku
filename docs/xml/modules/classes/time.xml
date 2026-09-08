@@ -8,10 +8,10 @@
     <module>Core</module>
     <comment>Simplifies the management of date/time information.</comment>
     <version>1</version>
-    <id>7c9e7894</id>
+    <id>0904cf78</id>
     <idstring>TIME</idstring>
     <category>System</category>
-    <copyright>Paul Manias 1996-2026</copyright>
+    <copyright>Paul Manias © 1996-2026</copyright>
     <description>
 <p>The Time class is available for programs that require time and date management in a multi-platform manner.</p>
 <p>To get the current system time, use the <action>Query</action> action.</p></description>
@@ -25,18 +25,56 @@
       <name>Query</name>
       <comment>Updates the values in a time object with the current system date and time.</comment>
       <prototype>ERR acQuery(*Object)</prototype>
+      <tiriPrototype>err = Object.acQuery()</tiriPrototype>
+    </action>
+
+    <action>
+      <name>Refresh</name>
+      <comment>Refreshes the state of an object.</comment>
+      <prototype>ERR acRefresh(*Object)</prototype>
+      <tiriPrototype>err = Object.acRefresh()</tiriPrototype>
     </action>
 
   </actions>
 
   <methods>
     <method>
+      <name>GetTimeZoneInfo</name>
+      <comment>Returns time-zone metadata and transition records.</comment>
+      <prototype>ERR pt::GetTimeZoneInfo(OBJECTPTR Object, STRVIEW ZoneID, INT StartYear, INT EndYear, struct TimeZoneInfo ** Info)</prototype>
+      <tiriPrototype>err, Info:any = GetTimeZoneInfo(ZoneID:str, StartYear:num, EndYear:num)</tiriPrototype>
+      <input>
+        <param type="STRVIEW" name="ZoneID">Zone identifier, or an empty string to request the local system zone.</param>
+        <param type="INT" name="StartYear">Inclusive first year.  Must be in the supported 1601-9999 range.</param>
+        <param type="INT" name="EndYear">Inclusive final year.  Must be &gt;= StartYear, no later than 9999 and within 400 years of <code>StartYear</code>.</param>
+        <param type="struct TimeZoneInfo **" name="Info">Receives the allocated metadata and transition resource.  Release with <function module="Core">FreeResource</function> when no longer required.</param>
+      </input>
+      <description>
+<p>Returns normalised time-zone information for a named zone or for the host system's local zone.  The returned <st>TimeZoneInfo</st> resource includes the preferred public zone identifier, the host-native identifier, the data source, standard UTC offset and any transition records found within the requested inclusive year range.</p>
+<p>The <code>ZoneID</code> value may be empty to request the local system zone.  Explicit zone IDs support <code>UTC</code> aliases on all platforms.  Linux builds also accept IANA zone names that resolve under <code>/usr/share/zoneinfo</code>.  Windows builds accept Windows native time-zone IDs and the IANA IDs that are mapped by the Core Windows time-zone wrapper.</p>
+<p>For explicit zone requests, an unknown or unsupported ID returns <code>ERR::Search</code>.  For local-zone requests, host lookup failure is not fatal; the method returns a UTC result with <code>Source</code> set to <code>utc</code> and <code>IsFallback</code> set to <code>1</code>.</p>
+<p>Transition <code>Instant</code> values are UTC Unix epoch timestamps in microseconds.  <code>OffsetBefore</code>, <code>OffsetAfter</code> and <code>BaseOffset</code> are expressed in seconds east of UTC.  <code>DaylightSaving</code> is <code>1</code> when the transition enters a daylight-saving period.</p>
+      </description>
+      <result>
+        <error code="Okay">Time-zone information was returned.  Local-zone failures may return a UTC fallback result.</error>
+        <error code="Search">An explicit zone ID could not be resolved.</error>
+        <error code="OutOfRange">A value is outside of the valid range</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
+        <error code="SystemCall">A required host time-zone API call failed.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>blocking, caller-owns-result</tags>
+    </method>
+
+    <method>
       <name>SetTime</name>
       <comment>Apply the time to the system clock.</comment>
       <prototype>ERR pt::SetTime(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = SetTime()</tiriPrototype>
       <description>
 <p>This method will apply the time object's values to the BIOS.  Depending on the host platform, this method may only work if the user is logged in as the administrator.</p>
       </description>
+      <tags>blocking</tags>
     </method>
 
   </methods>
@@ -109,13 +147,13 @@
     </field>
 
     <field>
-      <name>TimeStamp</name>
+      <name>Timestamp</name>
       <comment>Read this field to get representation of the time as a single integer.</comment>
       <access read="G">Get</access>
       <type>INT64</type>
       <description>
-<p>The TimeStamp field is a 64-bit integer that represents the time object as an approximation of the number of milliseconds represented in the time object (approximately the total amount of time passed since Zero-AD).  This is convenient for summarising a time value for comparison with other time stamps, or for storing time in a 64-bit space.</p>
-<p>The TimeStamp value is dynamically calculated when reading this field.</p>
+<p>The Timestamp field is a 64-bit integer that represents the time object as an approximation of the number of milliseconds represented in the time object (approximately the total amount of time passed since Zero-AD).  This is convenient for summarising a time value for comparison with other time stamps, or for storing time in a 64-bit space.</p>
+<p>The Timestamp value is dynamically calculated when reading this field.</p>
       </description>
     </field>
 
@@ -128,5 +166,19 @@
 
   </fields>
   <structs>
+    <struct name="TimeZoneInfo" comment="Time zone information returned from GetTimeZoneInfo()">
+      <field name="ZoneID" type="STRING">Preferred public ID, e.g. Europe/London or UTC.</field>
+      <field name="NativeID" type="STRING">Host-native ID, e.g. GMT Standard Time on Windows.</field>
+      <field name="Source" type="STRING">&quot;tzif&quot;, &quot;win32&quot;, or &quot;utc&quot;.</field>
+      <field name="DataPath" type="STRING">TZif path on Linux, otherwise empty.</field>
+      <field name="Version" type="STRING">TZDB/source version if available, otherwise empty.</field>
+      <field name="Transitions" type="kt::vector&lt;TimeZoneTransition&gt;">Transitions available for the requested range.</field>
+      <field name="BaseOffset" type="INT">Standard UTC offset in seconds.</field>
+      <field name="StartYear" type="INT16">Inclusive requested start year.</field>
+      <field name="EndYear" type="INT16">Inclusive requested end year.</field>
+      <field name="IsLocal" type="INT8">1 if ZoneID requested the local system zone.</field>
+      <field name="IsFallback" type="INT8">1 if UTC fallback was used.</field>
+    </struct>
+
   </structs>
 </book>

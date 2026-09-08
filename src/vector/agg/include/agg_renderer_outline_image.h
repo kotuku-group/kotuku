@@ -6,9 +6,11 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Draws outlines textured with image patterns. Hooks into rasterizer_outline_aa, image accessors, pattern filters, and
+// renderer_base. In the vector renderer it maps image samples along line outlines before blending them to the target.
 
-#ifndef AGG_RENDERER_OUTLINE_IMAGE_INCLUDED
-#define AGG_RENDERER_OUTLINE_IMAGE_INCLUDED
+#pragma once
 
 #include "agg_array.h"
 #include "agg_math.h"
@@ -930,7 +932,3 @@ namespace agg
 
 
 }
-
-
-
-#endif

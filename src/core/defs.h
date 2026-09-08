@@ -8,6 +8,7 @@
 #include <deque>
 #include <functional>
 #include <mutex>
+#include <shared_mutex>
 #include <sstream>
 #include <condition_variable>
 #include <chrono>
@@ -15,8 +16,14 @@
 #include <atomic>
 #include <thread>
 #include <algorithm>
+#include <optional>
+#include <memory>
+#include <new>
+#include <limits>
+#include <string_view>
 #include <ankerl/unordered_dense.h>
 #include <unordered_set>
+#include "node_pool.h"
 
 using namespace std::chrono_literals;
 
@@ -26,11 +33,17 @@ using namespace std::chrono_literals;
 #define __system__
 #endif
 
+#include <stdlib.h> // Contains free(), malloc(), posix_memalign() etc
+
 #ifdef __unix__
+ #include <fcntl.h>
  #include <sys/un.h>
  #include <sys/socket.h>
  #include <pthread.h>
  #include <semaphore.h>
+#elif defined(_WIN32)
+ #include <fcntl.h>
+ #include <malloc.h> // For _aligned_malloc, _aligned_free
 #endif
 
 #include "microsoft/windefs.h"
@@ -38,6 +51,11 @@ using namespace std::chrono_literals;
 // See the makefile for optional defines
 
 constexpr int MAX_THREADS   = 20;  // Maximum number of threads per process.
+
+[[nodiscard]] constexpr bool span_size_fits_int(size_t Size)
+{
+   return Size <= size_t(std::numeric_limits<int>::max());
+}
 
 #define CLASSDB_HEADER 0x7f887f89
 
@@ -63,8 +81,6 @@ constexpr int DRIVETYPE_USB       = 5;
 
 #define DEFAULT_VIRTUALID 0xffffffff
 
-#define CODE_MEMH 0x4D454D48L
-#define CODE_MEMT 0x4D454D54L
 
 #ifdef _WIN32
    typedef void * MODHANDLE;
@@ -83,6 +99,7 @@ constexpr int DRIVETYPE_USB       = 5;
 #include <kotuku/system/registry.h>
 
 #include <stdarg.h>
+#include <stdio.h>
 
 struct ChildEntry;
 struct ObjectInfo;
@@ -130,9 +147,30 @@ enum class PERMIT : uint32_t;
 enum class CCF    : uint32_t;
 enum class MEM    : uint32_t;
 enum class ALF    : uint16_t;
+enum class CONTYPE : int;
 enum class EVG    : int;
 enum class AC     : int;
 enum class MSGID  : int;
+
+constexpr int LC_LIMIT = 3;
+
+struct LogCallback {
+   void (*Callback)(CSTRING, CSTRING, int, int, int);
+   int DepthLimit;
+   int LogLimit;
+   LogCallback() : Callback(nullptr), DepthLimit(-1), LogLimit(-1) {}
+};
+
+enum {
+   LCS_EMPTY,
+   LCS_WRITING,
+   LCS_ACTIVE
+};
+
+struct LogCallbackSlot {
+   LogCallback Callback;
+   std::atomic_uint8_t State = LCS_EMPTY;
+};
 
 struct THREADID : strong_typedef<THREADID, int> { // Internal thread ID, unrelated to the host platform.
    // Make constructors available
@@ -141,24 +179,31 @@ struct THREADID : strong_typedef<THREADID, int> { // Internal thread ID, unrelat
 };
 
 struct rkWatchPath {
-   int64_t    Custom;    // User's custom data pointer or value
-   HOSTHANDLE Handle;    // The handle for the file being monitored, can be a special reference for virtual paths
+   HOSTHANDLE Handle = { }; // The handle for the file being monitored, can be a special reference for virtual paths
    FUNCTION   Routine;   // Routine to call on event trigger
-   MFF        Flags;     // Event mask (original flags supplied to Watch)
-   uint32_t   VirtualID; // If monitored path is virtual, this refers to an ID in the glVirtual table
+   MFF        Flags = MFF(); // Event mask (original flags supplied to Watch)
+   uint32_t   VirtualID = 0; // If monitored path is virtual, this refers to an ID in the glVirtual table
 
 #ifdef _WIN32
-   int WinFlags;
+   int WinFlags = 0;
+   std::unique_ptr<uint8_t[]> Buffer;
 #endif
 };
 
 #include <kotuku/vector.hpp>
-#include "prototypes.h"
 
 #include <kotuku/main.h>
 #include <kotuku/strings.hpp>
+#include <kotuku/system/internals.h>
+#include "prototypes.h"
+#include <kotuku/modules/config.h>
+#include <kotuku/modules/script.h>
+#include <kotuku/modules/filesystem.h>
+#include <kotuku/modules/processes.h>
+#include <kotuku/modules/time.h>
+#include <kotuku/modules/module.h>
 
-using namespace pf;
+using namespace kt;
 
 struct ThreadMessage {
    OBJECTID ThreadID;    // Internal
@@ -170,6 +215,8 @@ struct ThreadActionMessage {
    OBJECTID  ObjectID;  // ID of the target object (for queue dispatch).
    ERR       Error;     // The error code resulting from the action's execution.
    FUNCTION  Callback;  // Callback function to execute on action completion.
+   bool      DispatchNext = true; // False for callbacks emitted while draining a queue.
+   FUNCTION  DeferredFunction; // Consumed argument callback released by the message thread.
 };
 
 // Queued async action, waiting for the same-object action to complete.
@@ -178,9 +225,23 @@ struct QueuedAction {
    OBJECTID  ObjectID;
    AC        ActionID;
    int       ArgsSize;
+   const FunctionField *Fields;
    std::vector<int8_t> Parameters;
    FUNCTION  Callback;
 };
+
+//********************************************************************************************************************
+// Registry maps recycle their nodes through a per-map NodePool to absorb high insert/erase churn.  std::unordered_map
+// is retained because it guarantees stable references to values across insert/erase, a contract the core relies upon.
+// The pool never relocates a node, so that guarantee is preserved.  Each pool is mutated only under its map's mutex.
+// Code that requires both registries must acquire glmResources before glmObjects.
+
+#ifdef RESOURCE_POOL
+template <class K, class V> using PooledMap =
+   std::unordered_map<K, V, std::hash<K>, std::equal_to<K>, PoolAllocator<std::pair<const K, V>>>;
+#else
+template <class K, class V> using PooledMap = std::unordered_map<K, V>;
+#endif
 
 //********************************************************************************************************************
 
@@ -188,26 +249,28 @@ extern std::mutex glmPrint;               // For message logging only.
 
 extern std::timed_mutex glmGeneric;       // A misc. internal mutex, strictly not recursive.
 extern std::timed_mutex glmObjectLocking; // For LockObject() and ReleaseObject()
-extern std::timed_mutex glmVolumes;       // For glVolumes
 extern std::timed_mutex glmClassDB;       // For glClassDB
-extern std::timed_mutex glmFieldKeys;     // For glFields
+extern std::shared_timed_mutex glmFieldKeys; // For glFields
+extern std::shared_timed_mutex glmVolumes;   // For glVolumes
 
 extern std::recursive_timed_mutex glmTimer;        // For timer subscriptions.
-extern std::recursive_timed_mutex glmObjectLookup; // For glObjectLookup
+extern std::shared_timed_mutex glmObjectLookup;    // For glObjectLookup
 
-extern std::recursive_mutex glmMemory;
+extern std::recursive_mutex glmResources; // Must be acquired before glmObjects when both are required
+extern std::recursive_mutex glmObjects;
 extern std::recursive_mutex glmMsgHandler;
 extern std::recursive_mutex glmAsyncActions;
 
 extern std::mutex glmActionQueue;
 extern std::unordered_map<OBJECTID, std::deque<QueuedAction>> glActionQueues;
 extern std::unordered_set<OBJECTID> glActiveAsyncObjects;
+extern std::unordered_set<OBJECTID> glCancelledAsyncObjects;
 extern std::unordered_map<OBJECTID, int> glAsyncObjectThreads;
+extern ankerl::unordered_dense::map<uint32_t, StructInfo> glStructSizes;
 
-extern std::condition_variable_any cvResources;
 extern std::condition_variable_any cvObjects;
 
-// Per-thread record for the global thread registry.  Threads are registered on first use of get_thread_id() and
+// Per-thread record for the global thread registry.  Threads are registered on first use of GetThreadID() and
 // deregistered on thread destruction.  The condition variable allows other threads to interrupt a sleeping thread
 // via WakeThread().
 
@@ -220,72 +283,111 @@ struct ThreadRecord {
 
 extern std::mutex glmThreadRegistry;
 extern std::unordered_map<int, std::shared_ptr<ThreadRecord>> glThreadRegistry;
+extern thread_local std::shared_ptr<ThreadRecord> tlThreadRecord;
+
+extern ActionMessage *glCurrentActionMsg;
+
+//********************************************************************************************************************
+
+inline std::string_view get_volume(std::string_view Path)
+{
+   if (auto pos = Path.find(':'); pos != std::string::npos) {
+      return std::string_view(Path.data(), pos);
+   }
+   else return std::string_view();
+}
 
 //********************************************************************************************************************
 
 struct CaseInsensitiveMap {
-   bool operator() (const std::string &lhs, const std::string &rhs) const {
-      return ::strcasecmp(lhs.c_str(), rhs.c_str()) < 0;
+   using is_transparent = void;
+
+   bool operator() (std::string_view Lhs, std::string_view Rhs) const noexcept {
+      auto length = std::min(Lhs.size(), Rhs.size());
+      for (size_t i=0; i < length; i++) {
+         auto lhs = std::tolower((unsigned char)Lhs[i]);
+         auto rhs = std::tolower((unsigned char)Rhs[i]);
+         if (lhs < rhs) return true;
+         if (rhs < lhs) return false;
+      }
+
+      return Lhs.size() < Rhs.size();
    }
 };
 
 struct CaseInsensitiveHash {
-   std::size_t operator()(const std::string& s) const noexcept {
-      std::string lower = s;
-      std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-      return std::hash<std::string>{}(lower);
+   using is_transparent = void;
+
+   std::size_t operator()(std::string_view Value) const noexcept {
+      std::size_t hash = 5381;
+      for (auto ch : Value) {
+         hash = ((hash << 5) + hash) + std::tolower(uint8_t(ch));
+      }
+      return hash;
    }
 };
 
 struct CaseInsensitiveEqual {
-   bool operator()(const std::string& lhs, const std::string& rhs) const noexcept {
-      return ::strcasecmp(lhs.c_str(), rhs.c_str()) == 0;
+   using is_transparent = void;
+
+   bool operator()(std::string_view Lhs, std::string_view Rhs) const noexcept {
+      if (Lhs.size() != Rhs.size()) return false;
+
+      for (size_t i=0; i < Lhs.size(); i++) {
+         auto lhs = std::tolower(uint8_t(Lhs[i]));
+         auto rhs = std::tolower(uint8_t(Rhs[i]));
+         if (lhs != rhs) return false;
+      }
+
+      return true;
    }
 };
 
-//********************************************************************************************************************
-// Private memory management structures.
-
-class PrivateAddress {
-public:
-   union {
-      APTR      Address;
-      OBJECTPTR Object;
-   };
-   MEMORYID MemoryID;   // Unique identifier
-   OBJECTID OwnerID;    // The object that allocated this block.
-   uint32_t Size;       // 4GB max (user-requested size)
-   THREADID ThreadLockID = THREADID(0);
-   MEM      Flags;
-   int16_t  AccessCount = 0; // Total number of locks
-
-   PrivateAddress(APTR aAddress, MEMORYID aMemoryID, OBJECTID aOwnerID, uint32_t aSize, MEM aFlags) :
-      Address(aAddress), MemoryID(aMemoryID), OwnerID(aOwnerID), Size(aSize), Flags(aFlags) { };
-
-   void clear() {
-      Address  = 0;
-      MemoryID = 0;
-      OwnerID  = 0;
-      Flags    = MEM::NIL;
-      ThreadLockID = THREADID(0);
-   }
-};
+using OBJECTLOOKUP = ankerl::unordered_dense::map<uint32_t, std::vector<Object *>>;
 
 //********************************************************************************************************************
+
+using ACTION_CALLBACK = void (*)(OBJECTPTR, ACTIONID, ERR, APTR, APTR);
 
 struct ActionSubscription {
-   OBJECTPTR Subscriber; // The object that initiated the subscription
+   OBJECTPTR Subscriber;  // The object that initiated the subscription; weakly pinned for the record's lifetime
    OBJECTID SubscriberID; // Required for sanity checks on subscriber still existing.
-   void (*Callback)(OBJECTPTR, ACTIONID, ERR, APTR, APTR);
-   APTR Meta;
+   FUNCTION Callback;
+   bool Stale;            // Marked at dispatch time if the subscriber has been freed; swept lazily afterwards
 
-   ActionSubscription() : Subscriber(nullptr), SubscriberID(0), Callback(nullptr), Meta(nullptr) { }
+   // Each record owns a weak pin on its subscriber so that the header remains readable after termination
+   // (zombie mode), allowing dispatch to test NF::FREE lazily instead of dereferencing freed memory.  Records
+   // are move-only because they live by value in vectors; a moved-from record surrenders pin ownership so
+   // that reallocation and erasure cannot double-unpin.
 
-   ActionSubscription(OBJECTPTR pContext, void (*pCallback)(OBJECTPTR, ACTIONID, ERR, APTR, APTR), APTR pMeta) :
-      Subscriber(pContext), SubscriberID(pContext->UID), Callback(pCallback), Meta(pMeta) { }
+   ActionSubscription() : Subscriber(nullptr), SubscriberID(0), Callback(), Stale(false) { }
 
-   ActionSubscription(OBJECTPTR pContext, APTR pCallback, APTR pMeta) :
-      Subscriber(pContext), SubscriberID(pContext->UID), Callback((void (*)(OBJECTPTR, ACTIONID, ERR, APTR, APTR))pCallback), Meta(pMeta) { }
+   ActionSubscription(OBJECTPTR pContext, FUNCTION pCallback) :
+      Subscriber(pContext), SubscriberID(pContext->UID), Callback(pCallback), Stale(false) {
+      Subscriber->pinWeak();
+   }
+
+   ~ActionSubscription() { if (Subscriber) Subscriber->unpinWeak(); }
+
+   ActionSubscription(ActionSubscription &&Other) noexcept :
+      Subscriber(Other.Subscriber), SubscriberID(Other.SubscriberID), Callback(Other.Callback), Stale(Other.Stale) {
+      Other.Subscriber = nullptr;
+   }
+
+   ActionSubscription & operator=(ActionSubscription &&Other) noexcept {
+      if (this != &Other) {
+         if (Subscriber) Subscriber->unpinWeak();
+         Subscriber   = Other.Subscriber;
+         SubscriberID = Other.SubscriberID;
+         Callback     = Other.Callback;
+         Stale        = Other.Stale;
+         Other.Subscriber = nullptr;
+      }
+      return *this;
+   }
+
+   ActionSubscription(const ActionSubscription &) = delete;
+   ActionSubscription & operator=(const ActionSubscription &) = delete;
 };
 
 struct virtual_drive {
@@ -298,189 +400,152 @@ struct virtual_drive {
    ERR (*Delete)(std::string_view, FUNCTION *);
    ERR (*OpenDir)(DirInfo *);
    ERR (*CloseDir)(DirInfo *);
-   ERR (*Obsolete)(std::string_view, DirInfo **, int);
+   ERR (*Obsolete)(void);
    ERR (*TestPath)(std::string &, RSF, LOC *);
    ERR (*WatchPath)(class extFile *);
-   void  (*IgnoreFile)(class extFile *);
-   ERR (*GetInfo)(std::string_view, FileInfo *, int);
+   void (*IgnoreFile)(class extFile *);
+   ERR (*GetInfo)(std::string_view, FileInfo &);
    ERR (*GetDeviceInfo)(std::string_view, objStorageDevice *);
    ERR (*IdentifyFile)(std::string_view, CLASSID *, CLASSID *);
    ERR (*CreateFolder)(std::string_view, PERMIT);
    ERR (*SameFile)(std::string_view, std::string_view);
-   ERR (*ReadLink)(std::string_view, STRING *);
+   ERR (*ReadLink)(std::string_view, std::string &);
    ERR (*CreateLink)(std::string_view, std::string_view);
    inline bool is_default() const { return VirtualID IS 0; }
    inline bool is_virtual() const { return VirtualID != 0; }
 };
 
 extern const virtual_drive glFSDefault;
+extern std::mutex glmVirtual;
 extern ankerl::unordered_dense::map<uint32_t, virtual_drive> glVirtual;
 
 //********************************************************************************************************************
 // Resource definitions.
 
-#define MEMHEADER 12    // 8 bytes at start for MEMH and MemoryID, 4 at end for MEMT
+constexpr int MEMHEADER = 32;  // Private prefix before public memory pointers; keeps AllocMemory() 32-byte aligned.
 
-// Turning off USE_SHM means that the shared memory pool is available to all processes by default.
+// Align general memory blocks to 64-byte cache line boundaries for better performance on modern CPUs.  Objects only
+// require 8-byte alignment.
 
-#ifdef __ANDROID__
-  #undef USE_SHM // Should be using ashmem
-  #define SHMKEY 0x0009f830 // Keep the key value low as we will be incrementing it
+constexpr size_t CACHE_LINE_SIZE = 64;
+constexpr size_t OBJECT_ALIGNMENT = 32;
 
-  #ifdef USE_SHM
-  #else
-    extern int glMemoryFD;
-  #endif
-#elif __unix__
-  #define USE_SHM TRUE
-  #define SHMKEY 0x0009f830 // Keep the key value low as we will be incrementing it
+// Aligned heap allocation/free helpers shared by the memory and object subsystems.
 
-  #ifdef USE_SHM
-    #define MEMORYFILE           "/tmp/kotuku.mem"
-  #else
-    // To mount a 32MB RAMFS filesystem for this method:
-    //
-    //    mkdir -p /RAM1
-    //    mount -t ramfs none /tmp/ramfs -o maxsize=32000
+[[maybe_unused]] static inline APTR aligned_block_alloc(size_t Size, size_t Alignment = CACHE_LINE_SIZE)
+{
+   size_t aligned_size = ((Size + Alignment - 1) / Alignment) * Alignment;
+   #ifdef _WIN32
+      return _aligned_malloc(aligned_size, Alignment);
+   #else
+      APTR result = nullptr;
+      if (posix_memalign(&result, Alignment, aligned_size) != 0) return nullptr;
+      return result;
+   #endif
+}
 
-    #define MEMORYFILE           "/tmp/ramfs/kotuku.mem"
-
-    extern int glMemoryFD;
-  #endif
-#endif
+[[maybe_unused]] static inline void aligned_block_free(APTR Address)
+{
+   #ifdef _WIN32
+      _aligned_free(Address);
+   #else
+      free(Address);
+   #endif
+}
 
 enum {
    RT_OBJECT,
    RT_SLEEP // Thread is sleeping in ProcessMessages / sleep_task
 };
 
-//********************************************************************************************************************
-// This structure is used for internally timed broadcasting.
-
-class CoreTimer {
-public:
-   int64_t     NextCall;       // Cycle when PreciseTime() reaches this value (us)
-   int64_t     LastCall;       // PreciseTime() recorded at the last call (us)
-   int64_t     Interval;       // The amount of microseconds to wait at each interval
-   OBJECTPTR Subscriber;     // The object that is subscribed (pointer, if private)
-   OBJECTID  SubscriberID;   // The object that is subscribed
-   FUNCTION  Routine;        // Routine to call if not using AC::Timer - ERR Routine(OBJECTID, int, int);
-   uint8_t     Cycle;
-   bool      Locked;
-};
-
-//********************************************************************************************************************
-// Crash index numbers.  Please note that the order of this index must match the order in which resources are freed in
-// the shutdown process.
-
-enum {
-   CP_START=1,
-   CP_PRINT_CONTEXT,
-   CP_PRINT_ACTION,
-   CP_REMOVE_PRIVATE_LOCKS,
-   CP_BROADCAST,
-   CP_REMOVE_TASK,
-   CP_REMOVE_TABLES,
-   CP_FREE_ACTION_MANAGEMENT,
-   CP_FREE_COREBASE,
-   CP_FREE_PRIVATE_MEMORY,
-   CP_FINISHED
-};
-
 class extMetaClass : public objMetaClass {
    public:
-   using create = pf::Create<extMetaClass>;
-   class extMetaClass *Base;            // Reference to the base class if this is a sub-class
+   using create = kt::Create<extMetaClass>;
+   class extMetaClass *Base;            // Reference to the base class if this is a derived class
    std::vector<Field> FieldLookup;      // Field dictionary for base-class fields
    std::vector<MethodEntry> Methods;    // Original method array supplied by the module.
-   std::vector<extMetaClass *> SubClasses;
-   const struct FieldArray *SubFields;  // Extra fields defined by the sub-class
-   class RootModule *Root;              // Root module that owns this class, if any.
-   uint8_t Local[8];                      // Local object references (by field indexes), in order
-   STRING Location;                     // Location of the class binary, this field exists purely for caching the location string if the client reads it
+   std::vector<extMetaClass *> SubClasses; // List of all associated derived classes
+   const struct FieldArray *SubFields;  // Extra fields defined by the derived class
+   class objRootModule *Root;           // Root module that owns this class, if any.
+   uint8_t Local[8];                    // Local object references (by field indexes), in order
+   std::string Location;                // Location of the class binary, this field exists purely for caching the location string if the client reads it
    ActionEntry ActionTable[int(AC::END)];
    int16_t OriginalFieldTotal;
    uint16_t BaseCeiling;                   // FieldLookup ceiling value for the base-class fields
+
+   extMetaClass(objMetaClass *ClassPtr, OBJECTID ObjectID) : objMetaClass(ClassPtr, ObjectID) {
+      Local[0] = 0xff;
+   }
 };
 
 class extFile : public objFile {
    public:
-   using create = pf::Create<extFile>;
+   using create = kt::Create<extFile>;
+
    struct DateTime prvModified;
    struct DateTime prvCreated;
-   std::string Path;
    std::string prvIcon;
    std::string prvLine;
    std::string prvResolvedPath;
+
    #ifdef __unix__
       std::string prvLink;
    #endif
-   int64_t Size;
-   int64_t ProgressTime;
+
    #ifdef _WIN32
       int  Stream;
    #else
       APTR  Stream;
    #endif
-   struct rkWatchPath *prvWatch;
-   OBJECTPTR ProgressDialog;
+
+   std::unique_ptr<rkWatchPath> prvWatch;
    struct DirInfo *prvList;
-   PERMIT Permissions;
    bool   isFolder;
-   int   Handle;         // Native system file handle
-};
+   int    Handle;         // Native system file handle
 
-class extConfig : public objConfig {
-   public:
-   using create = pf::Create<extConfig>;
-   uint32_t CRC;   // CRC32, for determining if config data has been altered
-};
+   extFile(objMetaClass *pClass, OBJECTID pUID) : objFile(pClass, pUID) {
+      Handle = -1;
+      Permissions = PERMIT::READ|PERMIT::WRITE|PERMIT::GROUP_READ|PERMIT::GROUP_WRITE;
+   }
 
-class extStorageDevice : public objStorageDevice {
-   public:
-   using create = pf::Create<extStorageDevice>;
-   STRING DeviceID;   // Unique ID for the filesystem, if available
-   STRING Volume;
+   ~extFile();
 };
 
 class extThread : public objThread {
    public:
-   using create = pf::Create<extThread>;
+   using create = kt::Create<extThread>;
 
    std::jthread::native_handle_type Handle;
    std::jthread::id ThreadID;
    std::jthread *CPPThread;
-   FUNCTION Routine;
-   FUNCTION Callback;
+   std::atomic_int InterruptThreadID = 0; // Internal thread ID used by WakeThread() for cooperative shutdown
    std::atomic_bool Active;
+
+   extThread(objMetaClass *pClass, OBJECTID pUID) : objThread(pClass, pUID) { }
+   ~extThread();
 };
 
 class extTask : public objTask {
    public:
-   using create = pf::Create<extTask>;
+   using create = kt::Create<extTask>;
    ankerl::unordered_dense::map<std::string, std::string, CaseInsensitiveHash, CaseInsensitiveEqual> Fields; // Variable field storage
-   pf::vector<std::string> Parameters; // Arguments (string array)
+   kt::vector<std::string> Keys; // List of keys in Fields
    uint64_t AffinityMask;  // CPU affinity mask for process/thread binding
    MEMORYID MessageMID;
-   std::string LaunchPath;
-   std::string Path;
-   std::string ProcessPath;
-   std::string Location;      // Where to load the task from (string)
-   char     Name[32];         // Name of the task, if specified (string)
    bool     ReturnCodeSet;    // TRUE if the ReturnCode has been set
    bool     QuitCalled;       // TRUE if TASK_Quit has been called before
    FUNCTION ErrorCallback;
    FUNCTION OutputCallback;
    FUNCTION ExitCallback;
    FUNCTION InputCallback;
-   MsgHandler *MsgAction;
-   MsgHandler *MsgFree;
-   MsgHandler *MsgDebug;
-   MsgHandler *MsgWaitForObjects;
-   MsgHandler *MsgQuit;
-   MsgHandler *MsgEvent;
-   MsgHandler *MsgThreadCallback;
-   MsgHandler *MsgThreadAction;
+   LocalResource MsgAction;
+   LocalResource MsgFree;
+   LocalResource MsgDebug;
+   LocalResource MsgWaitForObjects;
+   LocalResource MsgQuit;
+   LocalResource MsgEvent;
+   LocalResource MsgThreadCallback;
+   LocalResource MsgThreadAction;
 
    #ifdef __unix__
       int InFD = -1;       // stdin FD for receiving output from launched task
@@ -490,11 +555,13 @@ class extTask : public objTask {
       std::string Env;
       APTR Platform;
    #endif
-   struct ActionEntry Actions[int(AC::END)]; // Action routines to be intercepted by the program
+   std::array<ActionEntry, int(AC::END)> Actions; // Action routines to be intercepted by the program
 
-   extTask() {
-      TimeOut = 60 * 60 * 24;
+   extTask(objMetaClass *pClass, OBJECTID pUID) : objTask(pClass, pUID) {
+      Timeout = 60 * 60 * 24;
    }
+
+   ~extTask();
 };
 
 //********************************************************************************************************************
@@ -522,29 +589,22 @@ struct TaskRecord {
 
 class extModule : public objModule {
    public:
-   using create = pf::Create<extModule>;
-   std::string Name;     // Name of the module
+   using create = kt::Create<extModule>;
    APTR   prvMBMemory;   // Module base memory
+
+   extModule(objMetaClass *pClass, OBJECTID pUID) : objModule(pClass, pUID) { }
+   ~extModule();
 };
 
 //********************************************************************************************************************
 // Class database.
 
-struct ClassRecord {
-   CLASSID ClassID;
-   CLASSID ParentID;
-   CCF Category;
-   std::string Name;
-   std::string Path;
-   std::string Match;
-   std::string Header;
-   std::string Icon;
+struct extClassRecord : public ClassRecord {
+   static constexpr int MIN_SIZE = sizeof(CLASSID) + sizeof(CLASSID) + sizeof(int) + (sizeof(int) * 5);
 
-   static constexpr int MIN_SIZE = sizeof(CLASSID) + sizeof(CLASSID) + sizeof(int) + (sizeof(int) * 4);
+   extClassRecord() { }
 
-   ClassRecord() { }
-
-   inline ClassRecord(extMetaClass *pClass, std::optional<std::string> pPath = std::nullopt) {
+   inline extClassRecord(extMetaClass *pClass, std::optional<std::string> pPath = std::nullopt) {
       ClassID  = pClass->ClassID;
       ParentID = (pClass->BaseClassID IS pClass->ClassID) ? CLASSID::NIL : pClass->BaseClassID;
       Category = pClass->Category;
@@ -552,116 +612,120 @@ struct ClassRecord {
       Name.assign(pClass->ClassName);
 
       if (pPath.has_value()) Path.assign(pPath.value());
-      else if (pClass->Path) Path.assign(pClass->Path);
+      else if (not pClass->Path.empty()) Path.assign(pClass->Path);
 
-      if (pClass->FileExtension) Match.assign(pClass->FileExtension);
-      if (pClass->FileHeader) Header.assign(pClass->FileHeader);
-      if (pClass->Icon) Icon.assign(pClass->Icon);
+      if (not pClass->FileExtension.empty()) Extension.assign(pClass->FileExtension);
+      if (not pClass->FileHeader.empty()) Header.assign(pClass->FileHeader);
+      if (not pClass->Icon.empty()) Icon.assign(pClass->Icon);
+      if (not pClass->FileDescription.empty()) Description.assign(pClass->FileDescription);
    }
 
-   inline ClassRecord(CLASSID pClassID, std::string pName, CSTRING pMatch = nullptr, CSTRING pHeader = nullptr, CSTRING pIcon = nullptr) {
+   inline extClassRecord(CLASSID pClassID, std::string pName, CSTRING pExtension = nullptr, CSTRING pHeader = nullptr, CSTRING pIcon = nullptr, CSTRING pDescription = nullptr) {
       ClassID  = pClassID;
       ParentID = CLASSID::NIL;
       Category = CCF::SYSTEM;
       Name     = pName;
       Path     = "modules:core";
-      if (pMatch)  Match  = pMatch;
-      if (pHeader) Header = pHeader;
-      if (pIcon)   Icon   = pIcon;
+      if (pExtension)   Extension   = pExtension;
+      if (pHeader)      Header      = pHeader;
+      if (pIcon)        Icon        = pIcon;
+      if (pDescription) Description = pDescription;
    }
 
    inline ERR write(objFile *File) {
-      if (File->write(&ClassID, sizeof(ClassID), nullptr) != ERR::Okay) return ERR::Write;
-      if (File->write(&ParentID, sizeof(ParentID), nullptr) != ERR::Okay) return ERR::Write;
-      if (File->write(&Category, sizeof(Category), nullptr) != ERR::Okay) return ERR::Write;
+      if (File->write(std::span((const int8_t *)&ClassID, sizeof(ClassID))) != ERR::Okay) return ERR::Write;
+      if (File->write(std::span((const int8_t *)&ParentID, sizeof(ParentID))) != ERR::Okay) return ERR::Write;
+      if (File->write(std::span((const int8_t *)&Category, sizeof(Category))) != ERR::Okay) return ERR::Write;
 
       auto size = int(Name.size());
-      File->write(&size, sizeof(size));
-      File->write(Name.c_str(), size);
+      File->write(std::span((const int8_t *)&size, sizeof(size)));
+      File->write(std::span((const int8_t *)Name.data(), Name.size()));
 
       size = Path.size();
-      File->write(&size, sizeof(size));
-      if (size) File->write(Path.c_str(), size);
+      File->write(std::span((const int8_t *)&size, sizeof(size)));
+      if (size) File->write(std::span((const int8_t *)Path.data(), Path.size()));
 
-      size = Match.size();
-      File->write(&size, sizeof(size));
-      if (size) File->write(Match.c_str(), size);
+      size = Extension.size();
+      File->write(std::span((const int8_t *)&size, sizeof(size)));
+      if (size) File->write(std::span((const int8_t *)Extension.data(), Extension.size()));
 
       size = Header.size();
-      File->write(&size, sizeof(size));
-      if (size) File->write(Header.c_str(), size);
+      File->write(std::span((const int8_t *)&size, sizeof(size)));
+      if (size) File->write(std::span((const int8_t *)Header.data(), Header.size()));
 
       size = Icon.size();
-      File->write(&size, sizeof(size));
-      if (size) File->write(Icon.c_str(), size);
+      File->write(std::span((const int8_t *)&size, sizeof(size)));
+      if (size) File->write(std::span((const int8_t *)Icon.data(), Icon.size()));
 
+      size = Description.size();
+      File->write(std::span((const int8_t *)&size, sizeof(size)));
+      if (size) File->write(std::span((const int8_t *)Description.data(), Description.size()));
       return ERR::Okay;
    }
 
    inline ERR read(objFile *File) {
-      if (File->read(&ClassID, sizeof(ClassID)) != ERR::Okay) return ERR::Read;
-      if (File->read(&ParentID, sizeof(ParentID)) != ERR::Okay) return ERR::Read;
-      if (File->read(&Category, sizeof(Category)) != ERR::Okay) return ERR::Read;
+      if (File->read(std::span((int8_t *)&ClassID, sizeof(ClassID))) != ERR::Okay) return ERR::Read;
+      if (File->read(std::span((int8_t *)&ParentID, sizeof(ParentID))) != ERR::Okay) return ERR::Read;
+      if (File->read(std::span((int8_t *)&Category, sizeof(Category))) != ERR::Okay) return ERR::Read;
 
       char buffer[256];
       int size = 0;
-      File->read(&size, sizeof(size));
+      File->read(std::span((int8_t *)&size, sizeof(size)));
       if (size < std::ssize(buffer)) {
          if (size > 0) {
-            File->read(buffer, size);
+            File->read(std::span((int8_t *)buffer, size));
             Name.assign(buffer, size);
          }
       }
       else return ERR::BufferOverflow;
 
-      File->read(&size, sizeof(size));
+      File->read(std::span((int8_t *)&size, sizeof(size)));
       if (size < std::ssize(buffer)) {
          if (size > 0) {
-            File->read(buffer, size);
+            File->read(std::span((int8_t *)buffer, size));
             Path.assign(buffer, size);
          }
       }
       else return ERR::BufferOverflow;
 
-      File->read(&size, sizeof(size));
+      File->read(std::span((int8_t *)&size, sizeof(size)));
       if (size < std::ssize(buffer)) {
          if (size > 0) {
-            File->read(buffer, size);
-            Match.assign(buffer, size);
+            File->read(std::span((int8_t *)buffer, size));
+            Extension.assign(buffer, size);
          }
       }
       else return ERR::BufferOverflow;
 
-      File->read(&size, sizeof(size));
+      File->read(std::span((int8_t *)&size, sizeof(size)));
       if (size < std::ssize(buffer)) {
          if (size > 0) {
-            File->read(buffer, size);
+            File->read(std::span((int8_t *)buffer, size));
             Header.assign(buffer, size);
          }
       }
       else return ERR::BufferOverflow;
 
-      File->read(&size, sizeof(size));
+      File->read(std::span((int8_t *)&size, sizeof(size)));
       if (size < std::ssize(buffer)) {
          if (size > 0) {
-            File->read(buffer, size);
+            File->read(std::span((int8_t *)buffer, size));
             Icon.assign(buffer, size);
+         }
+      }
+      else return ERR::BufferOverflow;
+
+      File->read(std::span((int8_t *)&size, sizeof(size)));
+      if (size < std::ssize(buffer)) {
+         if (size > 0) {
+            File->read(std::span((int8_t *)buffer, size));
+            Description.assign(buffer, size);
          }
       }
       else return ERR::BufferOverflow;
 
       return ERR::Okay;
    }
-};
-
-//********************************************************************************************************************
-// These values are set against glProgramStage to indicate the current state of the program (either starting up, active
-// or shutting down).
-
-enum {
-   STAGE_STARTUP=1,
-   STAGE_ACTIVE,
-   STAGE_SHUTDOWN
 };
 
 //********************************************************************************************************************
@@ -671,7 +735,7 @@ struct ModuleHeader {
 };
 
 struct ModuleItem {
-   uint32_t Hash;       // Hash of the module file name
+   uint32_t Hash;   // Hash of the module file name
    int  Size;       // Size of the item structure, all accompanying strings and byte alignment
    // Followed by path
 };
@@ -703,25 +767,30 @@ extern std::string glRootPath;
 extern std::string glDisplayDriver;
 extern bool glShowIO, glShowPrivate, glEnableCrashHandler;
 extern bool glJanitorActive;
+extern CONTYPE glConsoleType;
+extern std::array<LogCallbackSlot, LC_LIMIT> glLogCallbacks;
+extern std::atomic_uint8_t glLogCallbackCount;
 extern bool glLogThreads;
 extern int16_t glLogLevel, glMaxDepth;
 extern TSTATE glTaskState;
 extern int64_t glTimeLog;
-extern RootModule *glModuleList;    // Locked with glmGeneric.  Maintained as a linked-list; hashmap unsuitable.
-extern OpenInfo *glOpenInfo;      // Read-only.  The OpenInfo structure initially passed to OpenCore()
+extern uint16_t glWindowsIcon;
+extern objRootModule *glModuleList;    // Locked with glmGeneric.  Maintained as a linked-list; hashmap unsuitable.
+extern OpenInfo glOpenInfo;         // Read-only.  The OpenInfo structure initially passed to OpenCore()
 extern extTask *glCurrentTask;
 extern "C" const ActionTable ActionTable[];
 extern const Function    glFunctions[];
 extern std::list<CoreTimer> glTimers;           // Locked with glmTimer
 extern ankerl::unordered_dense::map<std::string, struct ModHeader *> glStaticModules;
-extern ankerl::unordered_dense::map<CLASSID, ClassRecord> glClassDB; // Class DB populated either by static_modules.cpp or by pre-generated file if modular.
+extern ankerl::unordered_dense::map<CLASSID, extClassRecord> glClassDB; // Class DB populated either by static_modules.cpp or by pre-generated file if modular.
 extern ankerl::unordered_dense::map<CLASSID, extMetaClass *> glClassMap;
 extern ankerl::unordered_dense::map<uint32_t, std::string> glFields; // Reverse lookup for converting field hashes back to their respective names.
 extern std::set<std::shared_ptr<std::jthread>> glAsyncThreads;
-extern std::unordered_map<std::string, std::vector<Object *>, CaseInsensitiveHash, CaseInsensitiveEqual> glObjectLookup;  // Locked with glmObjectlookup
-extern std::unordered_map<MEMORYID, PrivateAddress> glPrivateMemory;  // Locked with glmMemory: Using ankerl::unordered_dense for superior performance
-extern std::unordered_map<OBJECTID, ankerl::unordered_dense::set<MEMORYID>> glObjectMemory; // Locked with glmMemory.
-extern std::unordered_map<OBJECTID, ankerl::unordered_dense::set<OBJECTID>> glObjectChildren; // Locked with glmMemory.
+extern OBJECTLOOKUP glObjectLookup;  // Locked with glmObjectlookup
+
+extern PooledMap<RESOURCEID, ResourceRecord> glResources; // Locked with glmResources.
+extern PooledMap<OBJECTID, ObjectRecord> glObjects; // Locked with glmObjects.
+
 extern std::unordered_map<OBJECTID, ObjectSignal> glWFOList;
 extern std::map<std::string, ConfigKeys, CaseInsensitiveMap> glVolumes; // VolumeName = { Key, Value }
 extern std::unordered_multimap<uint32_t, CLASSID> glWildClassMap; // Fast lookup for identifying classes by file extension
@@ -731,12 +800,13 @@ extern const CSTRING glMessages[int(ERR::END)+1];       // Read-only table of er
 extern const int glTotalMessages;
 extern "C" int glProcessID;   // Read only
 extern HOSTHANDLE glConsoleFD;
+extern FILE *glLogFile;
 extern int glStdErrFlags; // Read only
 extern int glValidateProcessID; // Used by core thread only.
 extern size_t glPageSize;
 extern std::atomic_int glMessageIDCount;
 extern std::atomic_int glGlobalIDCount;
-extern std::atomic_int glPrivateIDCounter;
+extern std::atomic_int glResourceID;
 extern int16_t glCrashStatus, glCodeIndex, glLastCodeIndex, glSystemState;
 extern std::atomic_ushort glFunctionID;
 extern "C" int8_t glProgramStage;
@@ -782,12 +852,12 @@ extern std::atomic_int glUniqueMsgID;
 
 #if defined(__MINGW32__) || defined(__MINGW64__)
 // MinGW TLS destructor bug workaround: use a thread-local pointer and lazy init to avoid non-trivial TLS dtors
-extern thread_local pf::vector<ObjectContext> *tlContextPtr;
+extern thread_local kt::vector<ObjectContext> *tlContextPtr;
 
-static inline pf::vector<ObjectContext> & tls_get_context() noexcept
+static inline kt::vector<ObjectContext> & tls_get_context() noexcept
 {
    if (!tlContextPtr) {
-      auto p = new pf::vector<ObjectContext>();
+      auto p = new kt::vector<ObjectContext>();
       p->reserve(16);
       p->emplace_back(ObjectContext { &glDummyObject, nullptr, AC::NIL });
       tlContextPtr = p;
@@ -798,25 +868,21 @@ static inline pf::vector<ObjectContext> & tls_get_context() noexcept
 #define tlContext (tls_get_context())
 
 #else
-extern thread_local pf::vector<ObjectContext> tlContext;
+extern thread_local kt::vector<ObjectContext> tlContext;
 #endif
 extern thread_local class TaskMessage *tlCurrentMsg;
 extern thread_local bool tlMainThread;
 extern thread_local int16_t tlMsgRecursion;
 extern thread_local int16_t tlDepth;
 extern thread_local int16_t tlLogStatus;
-extern thread_local int16_t tlPreventSleep;
-extern thread_local int16_t tlPublicLockCount;
-extern thread_local int16_t tlPrivateLockCount;
 extern thread_local int glForceUID, glForceGID;
 extern thread_local PERMIT glDefaultPermissions;
+extern THREADID glMainThreadID;
 
 //********************************************************************************************************************
 
-extern ERR (*glMessageHandler)(struct Message *);
 extern void (*glVideoRecovery)(void);
 extern void (*glKeyboardRecovery)(void);
-extern void (*glNetProcessMessages)(int, APTR);
 
 #ifdef _WIN32
 extern "C" WINHANDLE glProcessHandle;
@@ -826,6 +892,7 @@ extern WINHANDLE glTaskLock;
 
 #ifdef __unix__
 extern thread_local int glSocket;
+extern int glChildSignalFD[2];
 extern struct FileMonitor *glFileMonitor;
 #endif
 
@@ -849,15 +916,15 @@ class TaskMessage {
    // Constructors
 
    public:
-   TaskMessage() : Size(0), ExtBuffer(nullptr) { }
+   TaskMessage() : Time(0), UID(0), Type(MSGID::NIL), Size(0), ExtBuffer(nullptr) { }
 
-   TaskMessage(MSGID pType, APTR pData = nullptr, int pSize = 0) {
+   TaskMessage(MSGID MsgType, APTR Data = nullptr, int DataSize = 0) {
       Time = PreciseTime();
       UID  = ++glUniqueMsgID;
-      Type = pType;
+      Type = MsgType;
       Size = 0;
       ExtBuffer = nullptr;
-      if ((pData) and (pSize)) setBuffer(pData, pSize);
+      if ((Data) and (DataSize)) setBuffer(Data, DataSize);
    }
 
    ~TaskMessage() {
@@ -865,32 +932,42 @@ class TaskMessage {
    }
 
    // Move constructor
-   TaskMessage(TaskMessage &&other) noexcept {
-      ExtBuffer = nullptr;
-      copy_from(other);
-      other.Size = 0;
-      other.ExtBuffer = nullptr; // Source loses its buffer
+   TaskMessage(TaskMessage &&Other) noexcept :
+      Time(Other.Time), UID(Other.UID), Type(Other.Type), Size(Other.Size), ExtBuffer(Other.ExtBuffer) {
+      if ((not ExtBuffer) and (Size)) copymem(Other.Buffer.data(), Buffer.data(), Size);
+      Other.Size = 0;
+      Other.ExtBuffer = nullptr;
    }
 
    // Copy constructor
-   TaskMessage(const TaskMessage &other) {
+   TaskMessage(const TaskMessage &Other) {
       ExtBuffer = nullptr;
-      copy_from(other);
+      copy_from(Other);
    }
 
    // Move assignment
-   TaskMessage& operator=(TaskMessage &&other) noexcept {
-      if (this == &other) return *this;
-      copy_from(other);
-      other.Size = 0;
-      other.ExtBuffer = nullptr; // Source loses its buffer
+   TaskMessage& operator=(TaskMessage &&Other) noexcept {
+      if (this IS &Other) return *this;
+
+      if (ExtBuffer) { delete[] ExtBuffer; ExtBuffer = nullptr; }
+
+      Time = Other.Time;
+      UID  = Other.UID;
+      Type = Other.Type;
+      Size = Other.Size;
+      ExtBuffer = Other.ExtBuffer;
+
+      if ((not ExtBuffer) and (Size)) copymem(Other.Buffer.data(), Buffer.data(), Size);
+
+      Other.Size = 0;
+      Other.ExtBuffer = nullptr;
       return *this;
    }
 
    // Copy assignment
-   TaskMessage& operator=(const TaskMessage& other) {
-      if (this == &other) return *this;
-      copy_from(other);
+   TaskMessage& operator=(const TaskMessage& Other) {
+      if (this IS &Other) return *this;
+      copy_from(Other);
       return *this;
    }
 
@@ -898,26 +975,29 @@ class TaskMessage {
 
    char * getBuffer() { return ExtBuffer ? ExtBuffer : Buffer.data(); }
 
-   void setBuffer(APTR pData, size_t pSize) {
+   void setBuffer(APTR Data, size_t Size) {
       if (ExtBuffer) { delete[] ExtBuffer; ExtBuffer = nullptr; }
 
-      if (pSize <= Buffer.size()) copymem(pData, Buffer.data(), pSize);
+      if (Size <= Buffer.size()) copymem(Data, Buffer.data(), Size);
       else {
-         ExtBuffer = new (std::nothrow) char[pSize];
-         if (ExtBuffer) copymem(pData, ExtBuffer, pSize);
+         ExtBuffer = new (std::nothrow) char[Size];
+         if (ExtBuffer) copymem(Data, ExtBuffer, Size);
       }
 
-      Size = pSize;
+      this->Size = Size;
    }
 
    private:
-   inline void copy_from(const TaskMessage &Source, bool Constructor = false) {
+   inline void copy_from(const TaskMessage &Source) {
       Time = Source.Time;
       UID  = Source.UID;
       Type = Source.Type;
       Size = Source.Size;
       if (Source.ExtBuffer) setBuffer(Source.ExtBuffer, Size);
-      else if (Size) copymem(Source.Buffer.data(), Buffer.data(), Size);
+      else {
+         if (ExtBuffer) { delete[] ExtBuffer; ExtBuffer = nullptr; }
+         if (Size) copymem(Source.Buffer.data(), Buffer.data(), Size);
+      }
    }
 };
 
@@ -942,7 +1022,7 @@ class extObjectContext : public ObjectContext {
       action = pAction;
    }
 
-   inline extObjectContext(OBJECTPTR pObject, struct Field *pField = nullptr) noexcept {
+   inline extObjectContext(OBJECTPTR pObject, const struct Field *pField = nullptr) noexcept {
       tlContext.emplace_back(pObject, pField, AC::NIL);
 
       obj    = pObject;
@@ -950,7 +1030,7 @@ class extObjectContext : public ObjectContext {
       action = AC::NIL;
    }
 
-   inline extObjectContext(OBJECTPTR pObject, struct Field *pField, AC pAction) noexcept {
+   inline extObjectContext(OBJECTPTR pObject, const struct Field *pField, AC pAction) noexcept {
       tlContext.emplace_back(pObject, pField, pAction);
 
       obj    = pObject;
@@ -1002,7 +1082,13 @@ struct FDRecord {
 };
 
 extern std::list<FDRecord> glFDTable;
+
+#ifdef __linux__
 extern int glInotify;
+extern std::mutex glmInotifyLookup;
+extern std::unordered_map<int, OBJECTID> glInotifyLookup;
+#endif
+
 extern int8_t glFDProtected;
 extern std::vector<FDRecord> glRegisterFD;
 
@@ -1012,10 +1098,10 @@ extern std::vector<FDRecord> glRegisterFD;
 // The RootModule class is used to represent the first instantation of a loaded module library.  It is managed
 // internally.  Clients interface with modules via the Module class.
 
-class RootModule : public Object {
+class objRootModule : public Object {
    public:
-   class RootModule *Next;     // Next module in list
-   class RootModule *Prev;     // Previous module in list
+   class objRootModule *Next;     // Next module in list
+   class objRootModule *Prev;     // Previous module in list
    struct ModHeader *Header;   // Pointer to module header - for memory resident modules only.
    struct CoreBase *CoreBase;  // Module's personal Core reference
    #ifdef __unix__
@@ -1025,24 +1111,25 @@ class RootModule : public Object {
    #endif
    std::string Name;       // Name of the module (as declared by the header)
    struct ModHeader *Table;
-   int16_t Version;
-   int16_t OpenCount;          // Amount of programs with this module open
-   float  ModVersion;          // Version of this module
-   MHF    Flags;
-   bool   NoUnload;
-   bool   DLL;                 // TRUE if the module is a Windows DLL
-   ModInit Init;
-   ModClose Close;
-   ModOpen Open;
+   int16_t    Version;
+   int16_t    OpenCount;          // Amount of programs with this module open
+   float      ModVersion;          // Version of this module
+   MHF        Flags;
+   bool       NoUnload;
+   bool       DLL;                 // TRUE if the module is a Windows DLL
+   ModInit    Init;
+   ModClose   Close;
+   ModOpen    Open;
    ModExpunge Expunge;
-   ModTest Test;
+   ModTest    Test;
    struct ActionEntry prvActions[int(AC::END)]; // Action routines to be intercepted by the program
    std::string LibraryName; // Name of the library loaded from disk
 
-   RootModule() = default;
+   objRootModule() noexcept : Object(nullptr, 0) { }
+   objRootModule(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : Object(ClassPtr, ObjectID) { }
+   ~objRootModule();
 };
 
-THREADID get_thread_id(void);
 void deregister_thread(void);
 [[nodiscard]] std::shared_ptr<ThreadRecord> get_thread_record(void);
 ERR WakeThread(int Thread, int Stop = false);
@@ -1052,19 +1139,19 @@ ERR WakeThread(int Thread, int Stop = false);
 ERR fs_closedir(DirInfo *);
 ERR fs_createlink(std::string_view, std::string_view);
 ERR fs_delete(std::string_view, FUNCTION *);
-ERR fs_getinfo(std::string_view, FileInfo *, int);
+ERR fs_getinfo(std::string_view, FileInfo &);
 ERR fs_getdeviceinfo(std::string_view, objStorageDevice *);
-void  fs_ignore_file(class extFile *);
+void fs_ignore_file(class extFile *);
 ERR fs_makedir(std::string_view, PERMIT);
 ERR fs_opendir(DirInfo *);
-ERR fs_readlink(std::string_view, STRING *);
+ERR fs_readlink(std::string_view, std::string &);
 ERR fs_rename(std::string_view, std::string_view);
 ERR fs_samefile(std::string_view, std::string_view);
 ERR fs_scandir(DirInfo *);
 ERR fs_testpath(std::string &, RSF, LOC *);
 ERR fs_watch_path(class extFile *);
 
-const virtual_drive * get_fs(std::string_view Path);
+virtual_drive get_fs(std::string_view Path);
 void  free_storage_class(void);
 
 ERR    convert_zip_error(struct z_stream_s *, int);
@@ -1072,11 +1159,10 @@ ERR    check_cache(OBJECTPTR, int64_t, int64_t);
 ERR    fs_copy(std::string_view, std::string_view, FUNCTION *, bool);
 ERR    fs_copydir(std::string &, std::string &, FileFeedback *, FUNCTION *, int8_t);
 PERMIT get_parent_permissions(std::string_view, int *, int *);
-ERR    RenameVolume(CSTRING, CSTRING);
+ERR    RenameVolume(const std::string_view &, const std::string_view &);
 ERR    findfile(std::string &);
 PERMIT convert_fs_permissions(int);
 int   convert_permissions(PERMIT);
-ERR    get_file_info(std::string_view, FileInfo *, int);
 extern "C" ERR convert_errno(int Error, ERR Default);
 void free_file_cache(void);
 
@@ -1092,36 +1178,43 @@ APTR   build_jump_table(const Function *);
 #endif
 void   stop_async_actions(void);
 ERR    copy_args(const FunctionField *, int, int8_t *, std::vector<int8_t> &);
+void   release_copied_args(const FunctionField *, int, int8_t *, bool, FUNCTION * = nullptr);
+ERR    make_args_relative(const FunctionField *, int, int8_t *, size_t);
+ERR    make_args_absolute(const FunctionField *, int, int8_t *, size_t);
 ERR    create_archive_volume(void);
 void   dispatch_queued_action(OBJECTID);
 ERR    delete_tree(std::string &, FUNCTION *, FileFeedback *);
 struct ClassItem * find_class(CLASSID);
 ERR    find_private_object_entry(OBJECTID, int *);
 void   free_events(void);
-void   free_module_entry(RootModule *);
+void   free_module_entry(objRootModule *);
 void   free_wakelocks(void);
 void   init_metaclass(void);
 ERR    init_sleep(THREADID, int, int);
 Field * lookup_id(OBJECTPTR, uint32_t, OBJECTPTR *);
-ERR    msg_event(APTR, int, int, APTR, int);
-ERR    msg_threadcallback(APTR, int, int, APTR, int);
-ERR    msg_threadaction(APTR, int, int, APTR, int);
-ERR    msg_free(APTR, int, int, APTR, int);
+ERR    msg_event(APTR, int, MSGID, std::span<std::byte>);
+ERR    msg_threadcallback(APTR, int, MSGID, std::span<std::byte>);
+ERR    msg_threadaction(APTR, int, MSGID, std::span<std::byte>);
+ERR    msg_waitforobjects(APTR, int, MSGID, std::span<std::byte>);
+ERR    msg_free(APTR, int, MSGID, std::span<std::byte>);
 void   optimise_write_field(Field &);
 void   PrepareSleep(void);
+void   process_child_signals(HOSTHANDLE, APTR);
 ERR    process_janitor(OBJECTID, int, int);
 void   register_sleep(int);
 void   deregister_sleep(void);
 void   remove_process_waitlocks(void);
+void   UntrackResource(RESOURCEID);
+ERR    FreeObject(OBJECTID);
 CLASSID lookup_class_by_ext(CLASSID, std::string_view);
+ERR get_file_info(const std::string_view &Path, FileInfo &Info);
 
 #ifndef KOTUKU_STATIC
 void   scan_classes(void);
 #endif
 
-ERR  writeval_default(OBJECTPTR, Field *, int, const void *, int);
-ERR  check_paths(CSTRING, PERMIT);
-void merge_groups(ConfigGroups &, ConfigGroups &);
+ERR  writeval_default(OBJECTPTR, const Field *, int, const void *);
+ERR  check_paths(std::string_view, PERMIT);
 extern "C" ERR validate_process(int);
 
 #ifdef _WIN32
@@ -1142,7 +1235,7 @@ extern "C" ERR validate_process(int);
 #endif
 
 #ifdef _WIN32
-extern "C" void activate_console(int8_t);
+extern "C" CONTYPE activate_console(int8_t);
 extern "C" void free_threadlock(void);
 extern "C" int winCheckProcessExists(int);
 extern "C" int winCloseHandle(WINHANDLE);
@@ -1152,7 +1245,6 @@ extern "C" WINHANDLE winCreateThread(APTR Function, APTR Arg, int StackSize, int
 extern "C" APTR winAllocProtectedMemory(size_t Size, int ProtectionFlags);
 extern "C" int winFreeProtectedMemory(APTR Address, size_t Size);
 extern "C" size_t winGetPageSize(void);
-extern "C" int winProtectMemory(APTR Address, size_t Size, bool, bool, bool);
 extern "C" int winGetCurrentThreadId(void);
 extern "C" void winDeathBringer(int Value);
 extern "C" int winDuplicateHandle(int, int, int, int *);
@@ -1168,7 +1260,7 @@ extern "C" int winGetCurrentProcessId(void);
 extern "C" int winGetExitCodeProcess(WINHANDLE, int *Code);
 extern "C" size_t winGetFileSize(STRING);
 extern "C" size_t winGetProcessMemoryUsage(int ProcessID);
-extern "C" APTR winGetProcAddress(WINHANDLE, CSTRING);
+extern "C" APTR winGetProcAddress(WINHANDLE, std::string_view);
 extern "C" WINHANDLE winGetStdInput(void);
 extern "C" void winInitialise(int *, void *);
 extern "C" void winInitializeCriticalSection(APTR Lock);
@@ -1203,6 +1295,7 @@ extern "C" int winWriteStd(APTR, CPTR Buffer, int Size);
 extern "C" int winDeleteFile(char *Path);
 extern "C" int winCheckDirectoryExists(CSTRING);
 extern "C" ERR winCreateDir(CSTRING);
+extern "C" ERR winCreateLink(CSTRING Target, CSTRING Link);
 extern "C" int winCurrentDirectory(STRING, int);
 extern "C" int winFileInfo(CSTRING, size_t *, struct DateTime *, int8_t *);
 extern "C" void winFindClose(WINHANDLE);
@@ -1223,7 +1316,7 @@ extern "C" ERR winReadChanges(WINHANDLE, APTR, int NotifyFlags, char *, int, int
 extern "C" int winReadKey(CSTRING, CSTRING, STRING, int);
 extern "C" int winReadRootKey(CSTRING, STRING, STRING, int);
 extern "C" int winReadStdInput(WINHANDLE FD, APTR Buffer, int BufferSize, int *Size);
-extern "C" int winScan(APTR *, STRING, STRING, int64_t *, struct DateTime *, struct DateTime *, int8_t *, int8_t *, int8_t *, int8_t *);
+extern "C" int winScan(APTR *, STRING, std::string &, int64_t *, struct DateTime *, struct DateTime *, int8_t *, int8_t *, int8_t *, int8_t *);
 extern "C" int winSetAttrib(CSTRING, int);
 extern "C" int winSetEOF(CSTRING, int64_t);
 extern "C" int winTestLocation(CSTRING, int8_t);
@@ -1236,8 +1329,11 @@ extern "C" int winResetDate(STRING);
 extern "C" void winSetDllDirectory(CSTRING);
 extern "C" void winEnumSpecialFolders(void (*callback)(CSTRING, CSTRING, CSTRING, CSTRING, int8_t));
 extern "C" int winSetSystemTime(int16_t Year, int16_t Month, int16_t Day, int16_t Hour, int16_t Minute, int16_t Second);
+extern ERR winGetTimeZoneInfo(std::string_view ZoneID, int StartYear, int EndYear, struct rkTimeZoneInfo &Info);
 
 #endif
+
+void release_zombie_blocks(void);
 
 //********************************************************************************************************************
 
@@ -1249,6 +1345,13 @@ inline int64_t calc_timestamp(struct DateTime *Date) {
           ((int64_t)Date->Month * 60LL * 60LL * 24LL * 31LL) +
           ((int64_t)Date->Year * 60LL * 60LL * 24LL * 31LL * 12LL));
 }
+
+// Convert a wall-clock timestamp (microseconds since the Unix epoch, e.g. as produced by std::chrono::system_clock
+// or the Time class's SystemTime field) into a broken-down DateTime expressed in the host's local time zone.  Returns
+// ERR::Okay on success, or ERR::SystemCall if the local zone or calendar conversion fails.  NB: This is NOT compatible
+// with PreciseTime(), which returns a monotonic steady_clock value that has no relationship to the calendar.
+
+extern ERR datetime_from_unix_us(int64_t MicroEpoch, struct DateTime &Date);
 
 inline uint16_t reverse_word(uint16_t Value) {
     return (((Value & 0x00FF) << 8) | ((Value & 0xFF00) >> 8));
@@ -1268,12 +1371,17 @@ inline size_t align_page_size(size_t Size) {
 }
 
 //********************************************************************************************************************
-// NOTE: To be called with glmObjectLookup only.
+// NOTE: To be called with glmObjectLookup only.  A given name/hash can be associated with multiple objects.
 
 inline void remove_object_hash(OBJECTPTR Object)
 {
-   std::erase(glObjectLookup[Object->Name], Object);
-   if (glObjectLookup[Object->Name].empty()) glObjectLookup.erase(Object->Name);
+   auto name_hash = kt::strihash(Object->Name);
+   auto list = glObjectLookup.find(name_hash);
+   if (list IS glObjectLookup.end()) return;
+
+   auto &objects = list->second;
+   std::erase(objects, Object);
+   if (objects.empty()) glObjectLookup.erase(list);
 }
 
 //********************************************************************************************************************
@@ -1290,4 +1398,15 @@ typename Container::const_iterator binary_search(const Container& container, con
         else return container.begin() + i;
     }
     return container.end();
+}
+
+//********************************************************************************************************************
+
+[[maybe_unused]] static void clear_callback(FUNCTION &Function)
+{
+   if (Function.defined()) {
+      if (Function.isScript() and (not Function.stale())) ((objScript *)Function.Context)->derefProcedure(Function);
+      Function.unpin();
+      Function.disable();
+   }
 }

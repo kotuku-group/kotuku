@@ -103,16 +103,16 @@ XPathVal XPathFunctionLibrary::function_map_put(const std::vector<XPathVal> &Arg
 
 XPathVal XPathFunctionLibrary::function_map_get(const std::vector<XPathVal> &Args, const XPathContext &Context)
 {
-   if (Args.size() < 2) return XPathVal(pf::vector<XTag *>{});
+   if (Args.size() < 2) return XPathVal(kt::vector<XTag *>{});
 
    std::string canonical_key;
    MapKeyStatus key_status = extract_map_key(Args[1], canonical_key, Context);
-   if (key_status IS MapKeyStatus::Invalid) return XPathVal(pf::vector<XTag *>{});
-   if (key_status IS MapKeyStatus::Empty) return XPathVal(pf::vector<XTag *>{});
+   if (key_status IS MapKeyStatus::Invalid) return XPathVal(kt::vector<XTag *>{});
+   if (key_status IS MapKeyStatus::Empty) return XPathVal(kt::vector<XTag *>{});
 
    const XPathMapStorage *storage = (Args[0].Type IS XPVT::Map) ? Args[0].map_storage.get() : nullptr;
    const XPathMapEntry *entry = find_entry(storage, canonical_key);
-   if (!entry) return XPathVal(pf::vector<XTag *>{});
+   if (!entry) return XPathVal(kt::vector<XTag *>{});
 
    return materialise_sequence_with_context(entry->value, Context);
 }
@@ -140,8 +140,8 @@ XPathVal XPathFunctionLibrary::function_map_size(const std::vector<XPathVal> &Ar
 
 XPathVal XPathFunctionLibrary::function_map_keys(const std::vector<XPathVal> &Args, const XPathContext &Context)
 {
-   if (Args.empty()) return XPathVal(pf::vector<XTag *>{});
-   if ((Args[0].Type != XPVT::Map) or (!Args[0].map_storage)) return XPathVal(pf::vector<XTag *>{});
+   if (Args.empty()) return XPathVal(kt::vector<XTag *>{});
+   if ((Args[0].Type != XPVT::Map) or (!Args[0].map_storage)) return XPathVal(kt::vector<XTag *>{});
 
    SequenceBuilder builder;
    for (const auto &entry : Args[0].map_storage->entries) {

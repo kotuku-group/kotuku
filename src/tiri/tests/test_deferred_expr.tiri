@@ -23,12 +23,12 @@ end
 @Test function InferredBooleanType()
    x = <{ true }>
    result = resolve(x)
-   assert(type(result) is 'boolean', 'Expected boolean type, got ' .. type(result))
+   assert(type(result) is 'bool', 'Expected bool type, got ' .. type(result))
    assert(result is true, 'Expected true')
 
    y = <{ false }>
    result2 = resolve(y)
-   assert(type(result2) is 'boolean', 'Expected boolean type')
+   assert(type(result2) is 'bool', 'Expected bool type')
    assert(result2 is false, 'Expected false')
 end
 
@@ -69,7 +69,7 @@ end
    b = 10
    x = <{ a < b }>
    result = resolve(x)
-   assert(type(result) is 'boolean', 'Expected boolean type from comparison')
+   assert(type(result) is 'bool', 'Expected bool type from comparison')
    assert(result is true, 'Expected true')
 end
 
@@ -80,7 +80,7 @@ end
    function getValue()
       return 'computed'
    end
-   x = <string{ getValue() }>
+   x = <str{ getValue() }>
    result = resolve(x)
    assert(type(result) is 'string', 'Expected string type')
    assert(result is 'computed', 'Expected "computed"')
@@ -90,7 +90,7 @@ end
    function compute()
       return 42
    end
-   x = <number{ compute() }>
+   x = <num{ compute() }>
    result = resolve(x)
    assert(type(result) is 'number', 'Expected number type')
    assert(result is 42, 'Expected 42')
@@ -124,7 +124,7 @@ end
    end
    x = <bool{ checkCondition() }>
    result = resolve(x)
-   assert(type(result) is 'boolean', 'Expected boolean type')
+   assert(type(result) is 'bool', 'Expected bool type')
    assert(result is true, 'Expected true')
 end
 
@@ -164,7 +164,7 @@ end
    assert(type(num) is 'number', 'Expected type(num) to be "number", got "' .. type(num) .. '"')
 
    bool = <{ true }>
-   assert(type(bool) is 'boolean', 'Expected type(bool) to be "boolean", got "' .. type(bool) .. '"')
+   assert(type(bool) is 'bool', 'Expected type(bool) to be "bool", got "' .. type(bool) .. '"')
 
    tbl = <{ {} }>
    assert(type(tbl) is 'table', 'Expected type(tbl) to be "table", got "' .. type(tbl) .. '"')
@@ -178,10 +178,10 @@ end
       return 'computed'
    end
 
-   x = <string{ getValue() }>
+   x = <str{ getValue() }>
    assert(type(x) is 'string', 'Expected type(x) to be "string" for explicitly typed deferred')
 
-   y = <number{ 42 }>
+   y = <num{ 42 }>
    assert(type(y) is 'number', 'Expected type(y) to be "number" for explicitly typed deferred')
 end
 
@@ -190,7 +190,7 @@ end
 
 @Test function DeferredNested()
    inner = <{ 'inner' }>
-   outer = <string{ inner }>
+   outer = <str{ inner }>
    -- Resolving outer returns the inner deferred, which then needs resolving
    result = resolve(resolve(outer))
    assert(result is 'inner', 'Expected nested deferred to resolve to "inner"')
@@ -206,18 +206,18 @@ end
 
 @Test function DeferredTernary()
    flag = true
-   x = <{ flag ? 'yes' :> 'no' }>
+   x = <{ flag ? 'yes' : 'no' }>
    result = resolve(x)
    assert(result is 'yes', 'Expected ternary deferred to resolve to "yes"')
 
    flag = false
-   y = <{ flag ? 'yes' :> 'no' }>
+   y = <{ flag ? 'yes' : 'no' }>
    result2 = resolve(y)
    assert(result2 is 'no', 'Expected ternary deferred to resolve to "no"')
 end
 
 @Test function DeferredAsArgument()
-   function identity(val)
+   function identity(val:str):str
       return resolve(val)
    end
    x = <{ 'test' }>
@@ -237,7 +237,7 @@ end
 
    -- Test that deferred message is NOT evaluated when assert succeeds
    evaluated = false
-   assert(true, <string{ makeMessage() }>)
+   assert(true, <str{ makeMessage() }>)
    assert(evaluated is false, 'Deferred message should NOT be evaluated when assert succeeds')
 end
 
@@ -246,12 +246,12 @@ end
    value = 42
 
    try
-      assert(false, <string{ 'Error in ' .. context .. ': value = ' .. tostring(value) }>)
+      assert(false, <str{ 'Error in ' .. context .. ': value = ' .. tostring(value) }>)
    except e
       assert(e.message != nil, 'Error message should not be nil')
       -- Verify the error message contains expected content
-      assert(string.find(e.message, 'Error in test context'), 'Error should contain context')
+      assert(e.message.find('Error in test context'), 'Error should contain context')
    success
-      error('assert(false) should fail')
+      assert(false, 'assert(false) should fail')
    end
 end

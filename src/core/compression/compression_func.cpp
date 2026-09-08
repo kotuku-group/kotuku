@@ -1,9 +1,9 @@
 
 template<class T> void wrb(T Value, APTR Target) {
-   if constexpr (std::endian::native == std::endian::little) {
+   if constexpr (std::endian::native IS std::endian::little) {
       ((T *)Target)[0] = Value;
    }
-   else if constexpr (sizeof(T) == 2) {
+   else if constexpr (sizeof(T) IS 2) {
       ((T *)Target)[0] = __builtin_bswap16(Value);
    }
    else ((T *)Target)[0] = __builtin_bswap32(Value);
@@ -13,22 +13,24 @@ template<class T> void wrb(T Value, APTR Target) {
 
 static void print(extCompression *Self, CSTRING Buffer)
 {
-   pf::Log log;
+   kt::Log log;
 
    if (Self->OutputID) {
-      pf::ScopedObjectLock output(Self->OutputID);
-      if (output.granted()) acDataFeed(*output, Self, DATA::TEXT, Buffer, strlen(Buffer) + 1);
+      kt::ScopedObjectLock output(Self->OutputID);
+      if (output.granted()) acDataFeed(*output, Self, DATA::TEXT,
+         std::span<const int8_t>((const int8_t *)Buffer, strlen(Buffer)));
    }
    else log.msg("%s", Buffer);
 }
 
 static void print(extCompression *Self, std::string Buffer)
 {
-   pf::Log log;
+   kt::Log log;
 
    if (Self->OutputID) {
-      pf::ScopedObjectLock output(Self->OutputID);
-      if (output.granted()) acDataFeed(*output, Self, DATA::TEXT, Buffer.c_str(), Buffer.length() + 1);
+      kt::ScopedObjectLock output(Self->OutputID);
+      if (output.granted()) acDataFeed(*output, Self, DATA::TEXT,
+         std::span<const int8_t>((const int8_t *)Buffer.data(), Buffer.size()));
    }
    else log.msg("%s", Buffer.c_str());
 }
@@ -37,7 +39,7 @@ static void print(extCompression *Self, std::string Buffer)
 
 static ERR compress_folder(extCompression *Self, std::string Location, std::string Path)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    log.branch("Compressing folder \"%s\" to \"%s\"", Location.c_str(), Path.c_str());
 
@@ -100,9 +102,9 @@ static ERR compress_folder(extCompression *Self, std::string Location, std::stri
       // Convert the file date stamp into a DOS time stamp for zip
 
       DateTime *tm;
-      if (file->get(FID_Date, tm) IS ERR::Okay) {
-         if (tm->Year < 1980) entry.TimeStamp = 0x00210000;
-         else entry.TimeStamp = ((tm->Year-1980)<<25) | (tm->Month<<21) | (tm->Day<<16) | (tm->Hour<<11) | (tm->Minute<<5) | (tm->Second>>1);
+      if (!file->getDate(tm)) {
+         if (tm->Year < 1980) entry.Timestamp = 0x00210000;
+         else entry.Timestamp = ((tm->Year-1980)<<25) | (tm->Month<<21) | (tm->Day<<16) | (tm->Hour<<11) | (tm->Minute<<5) | (tm->Second>>1);
       }
 
       // Write the compression file entry
@@ -113,13 +115,18 @@ static ERR compress_folder(extCompression *Self, std::string Location, std::stri
       copymem(glHeader, header, sizeof(glHeader));
 
       wrb<uint16_t>(entry.DeflateMethod, header + HEAD_DEFLATEMETHOD);
-      wrb<uint32_t>(entry.TimeStamp, header + HEAD_TIMESTAMP);
+      wrb<uint32_t>(entry.Timestamp, header + HEAD_TIMESTAMP);
       wrb<uint32_t>(entry.CRC, header + HEAD_CRC);
       wrb<uint32_t>(entry.CompressedSize, header + HEAD_COMPRESSEDSIZE);
       wrb<uint32_t>(entry.OriginalSize, header + HEAD_FILESIZE);
       wrb<uint16_t>(entry.Name.size(), header + HEAD_NAMELEN);
-      if (acWriteResult(Self->FileIO, header, HEAD_LENGTH) != HEAD_LENGTH) return ERR::Okay;
-      if (acWriteResult(Self->FileIO, entry.Name.c_str(), entry.Name.size()) != (int)entry.Name.size()) return ERR::Okay;
+      if (acWriteResult(Self->FileIO, std::span<const int8_t>((int8_t *)header, HEAD_LENGTH)) != HEAD_LENGTH) {
+         return ERR::Okay;
+      }
+      if (acWriteResult(Self->FileIO,
+          std::span<const int8_t>((const int8_t *)entry.Name.data(), entry.Name.size())) != int(entry.Name.size())) {
+         return ERR::Okay;
+      }
 
       Self->Files.push_back(entry);
 
@@ -133,8 +140,8 @@ static ERR compress_folder(extCompression *Self, std::string Location, std::stri
    // Enter the directory and compress its contents
 
    DirInfo *dir;
-   if (OpenDir(Location.c_str(), RDF::FILE|RDF::FOLDER|RDF::QUALIFY, &dir) IS ERR::Okay) {
-      while (ScanDir(dir) IS ERR::Okay) { // Recurse for each directory in the list
+   if (!OpenDir(Location, RDF::FILE|RDF::FOLDER|RDF::QUALIFY, &dir)) {
+      while (!ScanDir(dir)) { // Recurse for each directory in the list
          FileInfo *scan = dir->Info;
          if (((scan->Flags & RDF::FOLDER) != RDF::NIL) and ((scan->Flags & RDF::LINK) IS RDF::NIL)) {
             std::string location = Location + scan->Name;
@@ -157,22 +164,21 @@ static ERR compress_folder(extCompression *Self, std::string Location, std::stri
 
 static ERR compress_file(extCompression *Self, std::string Location, std::string Path, bool Link)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    log.branch("Compressing file \"%s\" to \"%s\"", Location.c_str(), Path.c_str());
 
-   CSTRING symlink = nullptr;
    bool deflateend = false;
    uint32_t dataoffset = 0;
    std::string filename;
    std::list<ZipFile>::iterator file_index;
-   int i, len;
+   int i;
 
    int16_t level = Self->CompressionLevel / 10;
    if (level < 0) level = 0;
    else if (level > 9) level = 9;
 
-   auto defer = pf::Defer([Self, deflateend] {
+   auto defer = kt::Defer([Self, deflateend] {
       if (deflateend) deflateEnd(&Self->Zip);
       Self->FileIndex++;
    });
@@ -213,7 +219,7 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
    // Send feedback
 
    CompressionFeedback fb(FDB::COMPRESS_FILE, Self->FileIndex, Location.c_str(), filename.c_str());
-   file->get(FID_Size, fb.OriginalSize);
+   file->getSize(fb.OriginalSize);
 
    switch (send_feedback(Self, &fb)) {
       case ERR::Terminate:
@@ -261,7 +267,7 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
 
    if (deflateInit2(&Self->Zip, level, Z_DEFLATED, -MAX_WBITS, ZLIB_MEM_LEVEL, Z_DEFAULT_STRATEGY) IS Z_OK) {
       deflateend = true;
-      Self->Zip.next_out  = Self->Output;
+      Self->Zip.next_out  = Self->Output.data();
       Self->Zip.avail_out = SIZE_COMPRESSION_BUFFER;
    }
    else return ERR::InvalidData;
@@ -279,9 +285,10 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
 
    entry.Offset = dataoffset;
 
+   std::string_view symlink;
    if (((Self->Flags & CMF::NO_LINKS) IS CMF::NIL) and ((file->Flags & FL::LINK) != FL::NIL)) {
-      if (file->get(FID_Link, symlink) IS ERR::Okay) {
-         log.msg("Note: File \"%s\" is a symbolic link to \"%s\"", filename.c_str(), symlink);
+      if (!file->getLink(symlink)) {
+         log.msg("Note: File \"%s\" is a symbolic link to \"%.*s\"", filename.c_str(), int(symlink.size()), symlink.data());
          entry.Flags |= ZIP_LINK;
       }
    }
@@ -289,13 +296,13 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
    // Convert the file date stamp into a DOS time stamp for zip
 
    DateTime *time;
-   if (file->get(FID_Date, time) IS ERR::Okay) {
-      if (time->Year < 1980) entry.TimeStamp = 0x00210000;
-      else entry.TimeStamp = ((time->Year-1980)<<25) | (time->Month<<21) | (time->Day<<16) | (time->Hour<<11) | (time->Minute<<5) | (time->Second>>1);
+   if (!file->getDate(time)) {
+      if (time->Year < 1980) entry.Timestamp = 0x00210000;
+      else entry.Timestamp = ((time->Year-1980)<<25) | (time->Month<<21) | (time->Day<<16) | (time->Hour<<11) | (time->Minute<<5) | (time->Second>>1);
    }
 
    PERMIT permissions;
-   if (file->get(FID_Permissions, (int &)permissions) IS ERR::Okay) {
+   if (!file->getPermissions(permissions)) {
       if ((permissions & PERMIT::USER_READ) != PERMIT::NIL)   entry.Flags |= ZIP_UREAD;
       if ((permissions & PERMIT::GROUP_READ) != PERMIT::NIL)  entry.Flags |= ZIP_GREAD;
       if ((permissions & PERMIT::OTHERS_READ) != PERMIT::NIL) entry.Flags |= ZIP_OREAD;
@@ -313,38 +320,42 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
 
    // Skip over the PKZIP header that will be written for this file (we will be updating the header later).
 
-   if (acWriteResult(Self->FileIO, nullptr, HEAD_LENGTH + entry.Name.size() + entry.Comment.size()) != int(HEAD_LENGTH + entry.Name.size() + entry.Comment.size())) return ERR::Write;
+   std::vector<int8_t> header_space(HEAD_LENGTH + entry.Name.size() + entry.Comment.size());
+   if (acWriteResult(Self->FileIO, header_space) != int(header_space.size())) return ERR::Write;
 
    // Specify the limitations of our buffer so that the compression routine doesn't overwrite its boundaries.  Then
    // start the compression of the input file.
 
    if (entry.Flags & ZIP_LINK) {
       // Compress the symbolic link to the zip file, rather than the data
-      len = strlen(symlink);
-      Self->Zip.next_in   = (Bytef *)symlink;
-      Self->Zip.avail_in  = len;
-      Self->Zip.next_out  = Self->Output;
+      Self->Zip.next_in   = (Bytef *)symlink.data();
+      Self->Zip.avail_in  = symlink.size();
+      Self->Zip.next_out  = Self->Output.data();
       Self->Zip.avail_out = SIZE_COMPRESSION_BUFFER;
       if (deflate(&Self->Zip, Z_NO_FLUSH) != Z_OK) {
          log.warning("Failure during data compression.");
          return ERR::Compression;
       }
-      entry.CRC = GenCRC32(entry.CRC, (APTR)symlink, len);
+      entry.CRC = GenCRC32(entry.CRC, (APTR)symlink.data(), symlink.size());
    }
    else {
-      struct acRead read = { .Buffer = Self->Input, .Length = SIZE_COMPRESSION_BUFFER };
-      while ((Action(AC::Read, *file, &read) IS ERR::Okay) and (read.Result > 0)) {
-         Self->Zip.next_in  = Self->Input;
+      struct acRead read = {
+         .Buffer = std::span<int8_t>((int8_t *)Self->Input.data(), SIZE_COMPRESSION_BUFFER)
+      };
+      while ((!Action(AC::Read, *file, &read)) and (read.Result > 0)) {
+         Self->Zip.next_in  = Self->Input.data();
          Self->Zip.avail_in = read.Result;
 
          while (Self->Zip.avail_in) {
             if (!Self->Zip.avail_out) {
                // Write out the compression buffer because it is at capacity
-               struct acWrite write = { .Buffer = Self->Output, .Length = SIZE_COMPRESSION_BUFFER };
+               struct acWrite write = {
+                  .Buffer = std::span<const int8_t>((int8_t *)Self->Output.data(), SIZE_COMPRESSION_BUFFER)
+               };
                Action(AC::Write, Self->FileIO, &write);
 
                // Reset the compression buffer
-               Self->Zip.next_out  = Self->Output;
+               Self->Zip.next_out  = Self->Output.data();
                Self->Zip.avail_out = SIZE_COMPRESSION_BUFFER;
 
                fb.CompressedSize = Self->Zip.total_out;
@@ -358,7 +369,7 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
             }
          }
 
-         entry.CRC = GenCRC32(entry.CRC, Self->Input, read.Result);
+         entry.CRC = GenCRC32(entry.CRC, Self->Input.data(), read.Result);
       }
    }
 
@@ -387,13 +398,18 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
    uint8_t header[sizeof(glHeader)];
    copymem(glHeader, header, sizeof(glHeader));
    wrb<uint16_t>(entry.DeflateMethod, header + HEAD_DEFLATEMETHOD);
-   wrb<uint32_t>(entry.TimeStamp, header + HEAD_TIMESTAMP);
+   wrb<uint32_t>(entry.Timestamp, header + HEAD_TIMESTAMP);
    wrb<uint32_t>(entry.CRC, header + HEAD_CRC);
    wrb<uint32_t>(entry.CompressedSize, header + HEAD_COMPRESSEDSIZE);
    wrb<uint32_t>(entry.OriginalSize, header + HEAD_FILESIZE);
    wrb<uint16_t>(entry.Name.size(), header + HEAD_NAMELEN);
-   if (acWriteResult(Self->FileIO, header, HEAD_LENGTH) != HEAD_LENGTH) return ERR::Write;
-   if (acWriteResult(Self->FileIO, entry.Name.c_str(), entry.Name.size()) != (int)entry.Name.size()) return ERR::Write;
+   if (acWriteResult(Self->FileIO, std::span<const int8_t>((int8_t *)header, HEAD_LENGTH)) != HEAD_LENGTH) {
+      return ERR::Write;
+   }
+   if (acWriteResult(Self->FileIO,
+       std::span<const int8_t>((const int8_t *)entry.Name.data(), entry.Name.size())) != int(entry.Name.size())) {
+      return ERR::Write;
+   }
 
    // Send updated feedback if necessary
 
@@ -414,7 +430,7 @@ static ERR compress_file(extCompression *Self, std::string Location, std::string
 
 static ERR remove_file(extCompression *Self, std::list<ZipFile>::iterator &File)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    log.branch("Deleting \"%s\"", File->Name.c_str());
 
@@ -427,23 +443,23 @@ static ERR remove_file(extCompression *Self, std::list<ZipFile>::iterator &File)
    if (fl::ReadLE(Self->FileIO, &namelen) != ERR::Okay) return ERR::Read;
    if (fl::ReadLE(Self->FileIO, &extralen) != ERR::Okay) return ERR::Read;
    int chunksize  = HEAD_LENGTH + namelen + extralen + File->CompressedSize;
-   double currentpos = File->Offset + chunksize;
-   if (acSeekStart(Self->FileIO, currentpos) != ERR::Okay) return log.warning(ERR::Seek);
+   double read_cursor = File->Offset + chunksize;
+   if (acSeekStart(Self->FileIO, read_cursor) != ERR::Okay) return log.warning(ERR::Seek);
 
-   double writepos = File->Offset;
+   double write_cursor = File->Offset;
 
-   struct acRead read = { Self->Input, SIZE_COMPRESSION_BUFFER };
-   while ((Action(AC::Read, Self->FileIO, &read) IS ERR::Okay) and (read.Result > 0)) {
-      if (acSeekStart(Self->FileIO, writepos) != ERR::Okay) return log.warning(ERR::Seek);
-      struct acWrite write = { Self->Input, read.Result };
-      if (Action(AC::Write, Self->FileIO, &write) != ERR::Okay) return log.warning(ERR::Write);
-      writepos += write.Result;
-
-      currentpos += read.Result;
-      if (acSeekStart(Self->FileIO, currentpos) != ERR::Okay) return log.warning(ERR::Seek);
+   int read_result, write_result;
+   while ((!acRead(Self->FileIO,
+      std::span<int8_t>((int8_t *)Self->Input.data(), SIZE_COMPRESSION_BUFFER), &read_result)) and (read_result > 0)) {
+      if (acSeekStart(Self->FileIO, write_cursor) != ERR::Okay) return log.warning(ERR::Seek);
+      if (acWrite(Self->FileIO, std::span<const int8_t>((int8_t *)Self->Input.data(), read_result), &write_result) !=
+          ERR::Okay) return log.warning(ERR::Write);
+      write_cursor += write_result;
+      read_cursor += read_result;
+      if (acSeekStart(Self->FileIO, read_cursor) != ERR::Okay) return log.warning(ERR::Seek);
    }
 
-   Self->FileIO->set(FID_Size, writepos);
+   Self->FileIO->setSize(write_cursor);
 
    // Adjust the offset of files that are ahead of this one
 
@@ -461,15 +477,19 @@ static ERR remove_file(extCompression *Self, std::list<ZipFile>::iterator &File)
 // if the zip file is damaged or partially downloaded, it will fail.  In the event that the directory is unavailable,
 // the function will fallback to scan_zip().
 
+static const uint32_t MAX_FAST_SCAN_LIST_SIZE = 64 * 1024 * 1024;
+
 static ERR fast_scan_zip(extCompression *Self)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    ziptail tail;
 
    log.traceBranch();
 
    if (acSeek(Self->FileIO, TAIL_LENGTH, SEEK::END) != ERR::Okay) return ERR::Seek; // Surface error, fail
-   if (acRead(Self->FileIO, &tail, TAIL_LENGTH, nullptr) != ERR::Okay) return ERR::Read; // Surface error, fail
+   if (acRead(Self->FileIO, std::span<int8_t>((int8_t *)&tail, TAIL_LENGTH)) != ERR::Okay) {
+      return ERR::Read; // Surface error, fail
+   }
 
    if (0x06054b50 != ((uint32_t *)&tail)[0]) {
       // Tail not available, use the slow scanner instead
@@ -482,82 +502,106 @@ static ERR fast_scan_zip(extCompression *Self)
    tail.listoffset = le32_cpu(tail.listoffset);
 #endif
 
+   int64_t file_size;
+   if (Self->FileIO->getSize(file_size) != ERR::Okay) return scan_zip(Self);
+   if ((file_size < 0) or (uint64_t(tail.listoffset) > uint64_t(file_size))) return scan_zip(Self);
+   if (uint64_t(tail.listsize) > uint64_t(file_size) - uint64_t(tail.listoffset)) return scan_zip(Self);
+   if (tail.listsize > MAX_FAST_SCAN_LIST_SIZE) return scan_zip(Self);
+
    if (acSeek(Self->FileIO, tail.listoffset, SEEK::START) != ERR::Okay) return ERR::Seek;
 
-   zipentry *list, *scan;
    int total_files = 0;
-   if (AllocMemory(tail.listsize, MEM::DATA|MEM::NO_CLEAR, (APTR *)&list, nullptr) IS ERR::Okay) {
-      log.trace("Reading end-of-central directory from index %d, %d bytes.", tail.listoffset, tail.listsize);
-      if (acRead(Self->FileIO, list, tail.listsize, nullptr) != ERR::Okay) {
-         FreeResource(list);
+   if (tail.filecount IS 0) return ERR::Okay;
+   if ((tail.filecount > 0) and (tail.listsize < uint32_t(tail.filecount) * LIST_LENGTH)) return scan_zip(Self);
+
+   std::vector<uint8_t> list(tail.listsize);
+
+   log.trace("Reading end-of-central directory from index %d, %d bytes.", tail.listoffset, tail.listsize);
+   int read_result;
+   if ((acRead(Self->FileIO, std::span<int8_t>((int8_t *)list.data(), list.size()), &read_result) != ERR::Okay) or
+      (read_result != int(tail.listsize))) {
+      return scan_zip(Self);
+   }
+
+   auto list_pos = list.data();
+   auto list_end = list.data() + list.size();
+
+   for (int i=0; i < tail.filecount; i++) {
+      if (uint64_t(list_end - list_pos) < LIST_LENGTH) {
+         log.warning("Zip file has corrupt end-of-file signature.");
+         Self->Files.clear();
          return scan_zip(Self);
       }
 
       #pragma GCC diagnostic ignored "-Waddress-of-packed-member"
-      auto head = (uint32_t *)list;
+      auto head = (uint32_t *)list_pos;
       #pragma GCC diagnostic warning "-Waddress-of-packed-member"
 
-      for (int i=0; i < tail.filecount; i++) {
-         if (0x02014b50 != head[0]) {
-            log.warning("Zip file has corrupt end-of-file signature.");
-            Self->Files.clear();
-            FreeResource(list);
-            return scan_zip(Self);
-         }
+      if (0x02014b50 != head[0]) {
+         log.warning("Zip file has corrupt end-of-file signature.");
+         Self->Files.clear();
+         return scan_zip(Self);
+      }
 
-         scan = (zipentry *)(head + 1);
+      auto scan = (zipentry *)(head + 1);
 
 #ifndef REVERSE_BYTEORDER
-         scan->deflatemethod  = le16_cpu(scan->deflatemethod);
-         scan->timestamp      = le32_cpu(scan->timestamp);
-         scan->crc32          = le32_cpu(scan->crc32);
-         scan->compressedsize = le32_cpu(scan->compressedsize);
-         scan->originalsize   = le32_cpu(scan->originalsize);
-         scan->namelen        = le16_cpu(scan->namelen);
-         scan->extralen       = le16_cpu(scan->extralen);
-         scan->commentlen     = le16_cpu(scan->commentlen);
-         scan->diskno         = le16_cpu(scan->diskno);
-         scan->ifile          = le16_cpu(scan->ifile);
-         scan->attrib         = le32_cpu(scan->attrib);
-         scan->offset         = le32_cpu(scan->offset);
+      scan->deflatemethod  = le16_cpu(scan->deflatemethod);
+      scan->timestamp      = le32_cpu(scan->timestamp);
+      scan->crc32          = le32_cpu(scan->crc32);
+      scan->compressedsize = le32_cpu(scan->compressedsize);
+      scan->originalsize   = le32_cpu(scan->originalsize);
+      scan->namelen        = le16_cpu(scan->namelen);
+      scan->extralen       = le16_cpu(scan->extralen);
+      scan->commentlen     = le16_cpu(scan->commentlen);
+      scan->diskno         = le16_cpu(scan->diskno);
+      scan->ifile          = le16_cpu(scan->ifile);
+      scan->attrib         = le32_cpu(scan->attrib);
+      scan->offset         = le32_cpu(scan->offset);
 #endif
 
-         total_files++;
-
-         ZipFile zf;
-
-         zf.NameLen        = scan->namelen;
-         zf.CommentLen     = scan->commentlen;
-         zf.CompressedSize = scan->compressedsize;
-         zf.OriginalSize   = scan->originalsize;
-         zf.DeflateMethod  = scan->deflatemethod;
-         zf.TimeStamp      = scan->timestamp;
-         zf.CRC            = scan->crc32;
-         zf.Offset         = scan->offset;
-
-         if (scan->ostype IS ZIP_KOTUKU) zf.Flags = scan->attrib;
-         else zf.Flags = 0;
-
-         // Read string information
-
-         STRING str = STRING(head) + LIST_LENGTH;
-         if ((str[0] IS '.') and (str[1] IS '/')) { // Get rid of any useless './' prefix that sometimes make their way into zip files
-            zf.Name.assign(str+2, scan->namelen-2);
-         }
-         else zf.Name.assign(str, scan->namelen);
-
-         zf.Comment.assign(str + scan->namelen + scan->extralen, scan->commentlen);
-
-         if (zf.Flags & ZIP_LINK);
-         else if ((!zf.OriginalSize) and (zf.Name.back() IS '/')) zf.IsFolder = true;
-
-         Self->Files.push_back(zf);
-
-         head = (uint32_t *)(((uint8_t *)head) + LIST_LENGTH + scan->commentlen + scan->namelen + scan->extralen);
+      auto entry_size = uint64_t(LIST_LENGTH) + scan->commentlen + scan->namelen + scan->extralen;
+      if (entry_size > uint64_t(list_end - list_pos)) {
+         log.warning("Zip file has corrupt end-of-file signature.");
+         Self->Files.clear();
+         return scan_zip(Self);
       }
+
+      total_files++;
+
+      ZipFile zf;
+
+      zf.NameLen        = scan->namelen;
+      zf.CommentLen     = scan->commentlen;
+      zf.CompressedSize = scan->compressedsize;
+      zf.OriginalSize   = scan->originalsize;
+      zf.DeflateMethod  = scan->deflatemethod;
+      zf.Timestamp      = scan->timestamp;
+      zf.CRC            = scan->crc32;
+      zf.Offset         = scan->offset;
+
+      if (scan->ostype IS ZIP_KOTUKU) zf.Flags = scan->attrib;
+      else zf.Flags = 0;
+
+      // Read string information
+
+      STRING str = STRING(list_pos) + LIST_LENGTH;
+      // Get rid of any useless './' prefix that sometimes make their way into zip files.
+      if ((scan->namelen >= 2) and (str[0] IS '.') and (str[1] IS '/')) {
+         zf.Name.assign(str+2, scan->namelen-2);
+      }
+      else zf.Name.assign(str, scan->namelen);
+
+      zf.Comment.assign(str + scan->namelen + scan->extralen, scan->commentlen);
+
+      if (zf.Flags & ZIP_LINK);
+      else if ((!zf.OriginalSize) and (not zf.Name.empty()) and (zf.Name.back() IS '/')) zf.IsFolder = true;
+
+      Self->Files.push_back(zf);
+
+      list_pos += entry_size;
    }
 
-   FreeResource(list);
    return ERR::Okay;
 }
 
@@ -566,7 +610,7 @@ static ERR fast_scan_zip(extCompression *Self)
 
 static ERR scan_zip(extCompression *Self)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    log.traceBranch();
 
@@ -574,7 +618,7 @@ static ERR scan_zip(extCompression *Self)
 
    int type, result;
    int total_files = 0;
-   while (fl::ReadLE(Self->FileIO, &type) IS ERR::Okay) {
+   while (!fl::ReadLE(Self->FileIO, &type)) {
       if (type IS 0x04034b50) {
          // PKZIP file header entry detected
 
@@ -587,7 +631,9 @@ static ERR scan_zip(extCompression *Self)
             uint16_t extralen;
          } header;
 
-         if (acRead(Self->FileIO, &header, sizeof(header), &result) != ERR::Okay) return log.warning(ERR::Read);
+         if (acRead(Self->FileIO, std::span<int8_t>((int8_t *)&header, sizeof(header)), &result) != ERR::Okay) {
+            return log.warning(ERR::Read);
+         }
 
 #ifndef REVERSE_BYTEORDER
          header.compressedsize = le32_cpu(header.compressedsize);
@@ -604,7 +650,9 @@ static ERR scan_zip(extCompression *Self)
          total_files++;
 
          zipentry zipentry;
-         if (acRead(Self->FileIO, &zipentry, sizeof(zipentry), &result) != ERR::Okay) return log.warning(ERR::Read);
+         if (acRead(Self->FileIO, std::span<int8_t>((int8_t *)&zipentry, sizeof(zipentry)), &result) != ERR::Okay) {
+            return log.warning(ERR::Read);
+         }
 
 #ifndef REVERSE_BYTEORDER
          zipentry.deflatemethod  = le16_cpu(zipentry.deflatemethod);
@@ -624,17 +672,19 @@ static ERR scan_zip(extCompression *Self)
          ZipFile entry;
 
          entry.Name.resize(zipentry.namelen);
-         if (acRead(Self->FileIO, (APTR)entry.Name.c_str(), zipentry.namelen, &result) != ERR::Okay) return log.warning(ERR::Read);
+         if (acRead(Self->FileIO, std::span<int8_t>((int8_t *)entry.Name.data(), entry.Name.size()), &result) !=
+             ERR::Okay) return log.warning(ERR::Read);
 
          if (zipentry.extralen > 0) { // Not currently used
             std::string extra(zipentry.extralen, '\0');
-            struct acRead read = { (APTR)extra.c_str(), zipentry.extralen };
+            struct acRead read = { std::span<int8_t>((int8_t *)extra.data(), extra.size()) };
             if (Action(AC::Read, Self->FileIO, &read) != ERR::Okay) return log.warning(ERR::Read);
          }
 
          if (zipentry.commentlen > 0) {
             entry.Comment.resize(zipentry.commentlen);
-            if (acRead(Self->FileIO, (APTR)entry.Comment.c_str(), zipentry.commentlen, &result) != ERR::Okay) return log.warning(ERR::Read);
+            if (acRead(Self->FileIO, std::span<int8_t>((int8_t *)entry.Comment.data(), entry.Comment.size()),
+                &result) != ERR::Okay) return log.warning(ERR::Read);
          }
 
          entry.NameLen        = zipentry.namelen;
@@ -642,7 +692,7 @@ static ERR scan_zip(extCompression *Self)
          entry.CompressedSize = zipentry.compressedsize;
          entry.OriginalSize   = zipentry.originalsize;
          entry.DeflateMethod  = zipentry.deflatemethod;
-         entry.TimeStamp      = zipentry.timestamp;
+         entry.Timestamp      = zipentry.timestamp;
          entry.CRC            = zipentry.crc32;
          entry.Offset         = zipentry.offset;
 
@@ -680,14 +730,20 @@ static ERR scan_zip(extCompression *Self)
 
 static ERR send_feedback(extCompression *Self, CompressionFeedback *Feedback)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    ERR error;
 
    if (!Self->Feedback.defined()) return ERR::Okay;
 
+   if (Self->Feedback.stale()) { // The callback context has been terminated; drop the subscription lazily.
+      Self->Feedback.unpin();
+      Self->Feedback.clear();
+      return ERR::Okay;
+   }
+
    if (Self->Feedback.isC()) {
       auto routine = (ERR (*)(extCompression *, CompressionFeedback *, APTR Meta))Self->Feedback.Routine;
-      pf::SwitchContext context(Self->Feedback.Context);
+      kt::SwitchContext context(Self->Feedback.Context);
       error = routine(Self, Feedback, Self->Feedback.Meta);
    }
    else if (Self->Feedback.isScript()) {
@@ -708,7 +764,7 @@ static ERR send_feedback(extCompression *Self, CompressionFeedback *Feedback)
 
 static void write_eof(extCompression *Self)
 {
-   if ((Self->FileIO) and (!Self->isSubClass()) and (Self->CompressionCount > 0)) {
+   if ((Self->FileIO) and (!Self->isDerived()) and (Self->CompressionCount > 0)) {
       if (!Self->Files.empty()) {
          // Calculate the start of the list offset
 
@@ -730,7 +786,7 @@ static void write_eof(extCompression *Self)
             copymem(glList, elist, sizeof(glList));
 
             wrb<uint16_t>(chain.DeflateMethod, elist+LIST_METHOD);
-            wrb<uint32_t>(chain.TimeStamp, elist+LIST_TIMESTAMP);
+            wrb<uint32_t>(chain.Timestamp, elist+LIST_TIMESTAMP);
             wrb<uint32_t>(chain.CRC, elist+LIST_CRC);
             wrb<uint32_t>(chain.CompressedSize, elist+LIST_COMPRESSEDSIZE);
             wrb<uint32_t>(chain.OriginalSize, elist+LIST_FILESIZE);
@@ -742,10 +798,14 @@ static void write_eof(extCompression *Self)
             wrb<uint32_t>(chain.Flags, elist+LIST_ATTRIB);
             wrb<uint32_t>(chain.Offset, elist+LIST_OFFSET);
 
-            acWriteResult(Self->FileIO, elist, LIST_LENGTH);
+            acWriteResult(Self->FileIO, std::span<const int8_t>((int8_t *)elist, LIST_LENGTH));
 
-            acWriteResult(Self->FileIO, chain.Name.c_str(), chain.Name.size());
-            if (!chain.Comment.empty()) acWriteResult(Self->FileIO, chain.Comment.c_str(), chain.Comment.size());
+            acWriteResult(Self->FileIO,
+               std::span<const int8_t>((const int8_t *)chain.Name.data(), chain.Name.size()));
+            if (!chain.Comment.empty()) {
+               acWriteResult(Self->FileIO,
+                  std::span<const int8_t>((const int8_t *)chain.Comment.data(), chain.Comment.size()));
+            }
 
             listsize += LIST_LENGTH + chain.Name.size() + chain.Comment.size();
             filecount++;
@@ -758,9 +818,9 @@ static void write_eof(extCompression *Self)
          wrb<uint16_t>(filecount,  tail + TAIL_TOTALFILECOUNT); // File count for all zip files when spanning multiple archives
          wrb<uint32_t>(listsize,   tail + TAIL_FILELISTSIZE);
          wrb<uint32_t>(listoffset, tail + TAIL_FILELISTOFFSET);
-         acWriteResult(Self->FileIO, tail, TAIL_LENGTH);
+         acWriteResult(Self->FileIO, std::span<const int8_t>((int8_t *)tail, TAIL_LENGTH));
       }
-      else Self->FileIO->set(FID_Size, 0);
+      else Self->FileIO->setSize(0);
 
       Self->CompressionCount = 0;
    }
@@ -772,12 +832,12 @@ void zipfile_to_item(ZipFile &ZF, CompressedItem &Item)
 {
    clearmem(&Item, sizeof(Item));
 
-   Item.Modified.Year   = 1980 + ((ZF.TimeStamp>>25) & 0x3f);
-   Item.Modified.Month  = (ZF.TimeStamp>>21) & 0x0f;
-   Item.Modified.Day    = (ZF.TimeStamp>>16) & 0x1f;
-   Item.Modified.Hour   = (ZF.TimeStamp>>11) & 0x1f;
-   Item.Modified.Minute = (ZF.TimeStamp>>5)  & 0x3f;
-   Item.Modified.Second = (ZF.TimeStamp>>1)  & 0x0f;
+   Item.Modified.Year   = 1980 + ((ZF.Timestamp>>25) & 0x3f);
+   Item.Modified.Month  = (ZF.Timestamp>>21) & 0x0f;
+   Item.Modified.Day    = (ZF.Timestamp>>16) & 0x1f;
+   Item.Modified.Hour   = (ZF.Timestamp>>11) & 0x1f;
+   Item.Modified.Minute = (ZF.Timestamp>>5)  & 0x3f;
+   Item.Modified.Second = (ZF.Timestamp>>1)  & 0x0f;
    Item.Path            = ZF.Name.c_str();
    Item.OriginalSize    = ZF.OriginalSize;
    Item.CompressedSize  = ZF.CompressedSize;
@@ -808,4 +868,3 @@ void zipfile_to_item(ZipFile &ZF, CompressedItem &Item)
       Item.Permissions = permissions;
    }
 }
-

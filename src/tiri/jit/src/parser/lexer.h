@@ -10,6 +10,7 @@
 #include <deque>
 #include <optional>
 #include <span>
+#include <string>
 #include <stdarg.h>
 #include <string_view>
 #include <cstdint>
@@ -46,10 +47,70 @@ struct LocalDeclResult {
    BCREG initialised = 0;
 };
 
+enum class GlobalContractPolicy : uint8_t {
+   Advisory,
+   Enforced,
+   Variant
+};
+
+enum class ArraySizeKind : uint8_t {
+   Absent,
+   Literal,
+   Expression
+};
+
+struct ArrayTypedSize {
+   ArraySizeKind kind = ArraySizeKind::Absent;
+   int64_t literal = 0;
+
+   [[nodiscard]] static constexpr ArrayTypedSize absent() { return {}; }
+   [[nodiscard]] static constexpr ArrayTypedSize literal_size(int64_t Value) {
+      return { ArraySizeKind::Literal, Value };
+   }
+   [[nodiscard]] static constexpr ArrayTypedSize expression() { return { ArraySizeKind::Expression, 0 }; }
+   [[nodiscard]] constexpr bool is_absent() const { return kind IS ArraySizeKind::Absent; }
+   [[nodiscard]] constexpr bool is_literal() const { return kind IS ArraySizeKind::Literal; }
+   [[nodiscard]] constexpr bool is_expression() const { return kind IS ArraySizeKind::Expression; }
+};
+
 // Lua lexer state.
 
 class LexState {
 public:
+   struct StructFieldDocumentation {
+      std::string struct_name;
+      std::string field_name;
+      std::string text;
+      SourceSpan span{};
+   };
+
+   // Tooling metadata describing a single declared struct field: the display type preserves the spelling used in
+   // the source (e.g. 'uint8' vs 'byte', 'obj<NetSocket>', 'ptr<User[]>', 'int[4]').
+   struct StructFieldMetadata {
+      std::string name;
+      std::string type;
+      std::string doc;
+      SourceSpan span{};   // Span of the field name token.
+   };
+
+   // Tooling metadata for a whole struct declaration, captured only when SCF::PROCESS_DOC is active (debug.validate
+   // with symbols=true).  Consumed by collect_parser_symbols() for exposure to the LSP.
+   struct StructDeclarationMetadata {
+      std::string name;
+      SourceSpan keyword_span{};  // The 'struct' soft keyword.
+      SourceSpan name_span{};     // The struct name token.
+      SourceSpan end_span{};      // The closing '}'.
+      std::vector<StructFieldMetadata> fields;
+   };
+
+   // A '--' comment recorded verbatim by the lexer as it is skipped.  Capturing here rather than re-scanning the
+   // source text keeps string literals from being mistaken for comment markers, and costs one entry per comment.
+   struct CommentRecord {
+      BCLine line = 0;   // Line the comment body started on.
+      bool trailing = false;  // True if code preceded the '--' on this line.
+      std::string text;
+   };
+
    struct BufferedToken {
       LexToken token = 0;
       TValue value;
@@ -91,10 +152,11 @@ public:
    BCInsLine* bc_stack;       // Stack for bytecode instructions/line numbers.
    MSize      size_bc_stack;  // Size of bytecode stack.
    uint32_t   level;          // Syntactical nesting level.
+   uint8_t    bytecode_version = 0; // Private bytecode format version while reading a binary chunk.
    uint32_t   ternary_depth;  // Number of pending ternary operators.
    uint8_t    pending_if_empty_colon; // Tracks ?: misuse after ??.
    int        is_bytecode;    // Set to 1 if input is bytecode, 0 if source text.
-   int64_t    array_typed_size = -1;  // Size parameter for array<type, size> (-1 = no size specified)
+   ArrayTypedSize array_typed_size{};  // Optional size parameter for array<type, size>.
 
    size_t   current_offset = 0;
    size_t   line_start_offset = 0;
@@ -115,6 +177,29 @@ public:
    std::deque<BufferedToken> buffered_tokens;
    bool diagnose_mode = false;  // When true, lexer errors are collected instead of thrown
    bool had_lex_error = false;  // Set when a recoverable lexer error occurred
+
+   // Global type hints published by the type analyser after analysis completes and consumed by the IR emitter.
+   // Fixed declared globals carry enforced sticky contracts, while explicitly variant globals suppress stale
+   // environment contracts.  Advisory entries only guide safe specialised access for host-provided globals.
+   struct GlobalTypeHint {
+      TiriType primary = TiriType::Unknown;
+      CLASSID  object_class_id = CLASSID::NIL;
+      struct_record *struct_def = nullptr;
+      ArrayElementDescriptor array_element{};
+      GlobalContractPolicy contract_policy = GlobalContractPolicy::Advisory;
+   };
+   ankerl::unordered_dense::map<GCstr*, GlobalTypeHint> global_type_hints;
+   std::vector<StructFieldDocumentation> struct_field_documentation;
+   std::vector<StructDeclarationMetadata> struct_declaration_metadata;  // Tooling only; see SCF::PROCESS_DOC
+
+   // Comments seen so far, in source order.  Only retained while a struct declaration is being parsed; see
+   // capture_comments().  Cleared once each declaration has harvested what it needs.
+   std::vector<CommentRecord> comments;
+   bool capture_comments = false;
+
+   // Returns the documentation attached to a field declared on FieldLine: the trailing comment on that line,
+   // preceded by any run of full-line comments immediately above it.
+   [[nodiscard]] std::string documentation_for_line(BCLine FieldLine) const;
 
 #ifdef INCLUDE_TIPS
    // Tip system: 0 = off, 1 = best (critical), 2 = most (medium), 3 = all
@@ -169,6 +254,7 @@ public:
 
    // Public parser helpers
    GCstr * keepstr(std::string_view Value);
+   GCstr * anchorstr(GCstr *Value);
    [[nodiscard]] GCstr* intern_empty_string();
    void ensure_lookahead(size_t count);
    [[nodiscard]] size_t available_lookahead() const;
@@ -203,10 +289,6 @@ public:
 };
 
 void lj_lex_error(LexState *, LexToken, ErrMsg, ...);
-
-// Error checking functions.
-
-inline void checkcond(LexState *ls, bool c, ErrMsg em) { if (not (c)) { ls->err_syntax(em); } }
 
 //********************************************************************************************************************
 // RAII guard for import LexState instances.

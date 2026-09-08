@@ -1,0 +1,178 @@
+// Parse-time value, result and callable descriptors for type-guided bytecode emission.
+//
+// These records never survive parsing.  Persistent prototype signatures continue to use ProtoTypeEntry.
+
+#pragma once
+
+#include <array>
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "../runtime/lj_obj.h"
+#include "strong_index.h"
+
+struct ExprNode;
+struct FunctionField;
+struct FunctionExprPayload;
+class LexState;
+struct struct_field;
+struct struct_record;
+struct RuntimeContract;
+
+using StaticValueHandle = StrongIndex<struct StaticValueHandleTag, uint32_t>;
+using StaticResultSetHandle = StrongIndex<struct StaticResultSetHandleTag, uint32_t>;
+using StaticCallableHandle = StrongIndex<struct StaticCallableHandleTag, uint32_t>;
+using StaticBindingID = StrongIndex<struct StaticBindingIDTag, uint32_t>;
+struct static_module_signature;
+using StaticModuleHandle = const static_module_signature *;
+
+enum class StaticProof : uint8_t {
+   Advisory,
+   Closed,
+   Checked,
+   Trusted
+};
+
+struct ArrayElementDescriptor {
+   AET storage = AET::ANY;
+   TiriType logical_type = TiriType::Any;
+   CLASSID object_class_id = CLASSID::NIL;
+   struct_record *struct_def = nullptr;
+   bool known = false;
+   GCstr *nested_array_identity = nullptr;
+
+   [[nodiscard]] bool operator==(const ArrayElementDescriptor &) const = default;
+};
+
+[[nodiscard]] bool array_element_matches(
+   const ArrayElementDescriptor &Expected, const ArrayElementDescriptor &Actual);
+[[nodiscard]] bool array_element_matches(const ArrayElementDescriptor &Expected, const GCarray *Actual);
+[[nodiscard]] ArrayElementDescriptor describe_array_element(const GCarray *);
+[[nodiscard]] std::string array_element_name(const ArrayElementDescriptor &);
+[[nodiscard]] std::optional<ArrayElementDescriptor> parse_array_element_type(
+   std::string_view, lua_State *State = nullptr, LexState *Lexer = nullptr);
+[[nodiscard]] std::optional<std::string> canonical_array_type_name(
+   std::string_view, lua_State *State = nullptr);
+
+// Whether a table value is known to establish context when one of its members is called.  `Unknown` is the sound
+// classification wherever the analysed function cannot see every designation of the table, because a designation
+// performed elsewhere must not invalidate an assumption already baked into emitted code.
+
+enum class StaticContextuality : uint8_t {
+   Unknown,
+   Ordinary,
+   Contextual
+};
+
+struct StaticValueDescriptor {
+   TiriType primary = TiriType::Unknown;
+   CLASSID object_class_id = CLASSID::NIL;
+   struct_record *struct_def = nullptr;
+   StaticModuleHandle module = nullptr;
+   ArrayElementDescriptor array_element{};
+   StaticProof proof = StaticProof::Advisory;
+   StaticContextuality contextuality = StaticContextuality::Unknown;
+   bool nullable = false;
+
+   [[nodiscard]] bool operator==(const StaticValueDescriptor &) const = default;
+   [[nodiscard]] bool constrained() const noexcept;
+   [[nodiscard]] bool proved() const noexcept;
+};
+
+struct StaticResultSet {
+   std::array<StaticValueDescriptor, MAX_RETURN_TYPES> values{};
+   uint16_t declared_count = 0;
+   uint8_t stored_count = 0;
+   bool variadic = false;
+   bool dynamic = false;
+
+   [[nodiscard]] StaticValueDescriptor value_at(size_t Position) const;
+};
+
+enum class StaticCallableSource : uint8_t {
+   TiriFunction,
+   NativePrototype,
+   Intrinsic
+};
+
+struct StaticCallableDescriptor {
+   const FunctionExprPayload *function = nullptr;
+   StaticResultSetHandle results{};
+   StaticBindingID binding_id{};
+   StaticCallableSource source = StaticCallableSource::TiriFunction;
+   bool immutable = false;
+};
+
+struct StaticBindingDescriptor {
+   GCstr *name = nullptr;
+   const ExprNode *initialiser = nullptr;
+   const FunctionExprPayload *function = nullptr;
+   StaticValueHandle value{};
+   StaticValueHandle analysed_value{};
+   StaticCallableHandle callable{};
+   StaticBindingID alias_of{};
+   uint8_t result_position = 0;
+   uint16_t function_depth = 0;
+   bool immutable = true;
+   bool is_const = false;
+   bool is_parameter = false;
+   bool is_variant = false;
+   bool captured = false;
+   bool resolving = false;
+};
+
+class StaticDescriptorCatalogue {
+public:
+   StaticDescriptorCatalogue();
+
+   [[nodiscard]] StaticValueHandle add_value(const StaticValueDescriptor &);
+   [[nodiscard]] StaticResultSetHandle add_results(const StaticResultSet &);
+   [[nodiscard]] StaticCallableHandle add_callable(const StaticCallableDescriptor &);
+   [[nodiscard]] StaticBindingID add_binding(const StaticBindingDescriptor &);
+
+   [[nodiscard]] const StaticValueDescriptor & value(StaticValueHandle) const;
+   [[nodiscard]] const StaticResultSet & results(StaticResultSetHandle) const;
+   [[nodiscard]] const StaticCallableDescriptor & callable(StaticCallableHandle) const;
+   [[nodiscard]] StaticCallableDescriptor & callable(StaticCallableHandle);
+   [[nodiscard]] const StaticBindingDescriptor & binding(StaticBindingID) const;
+   [[nodiscard]] StaticBindingDescriptor & binding(StaticBindingID);
+   [[nodiscard]] size_t binding_count() const noexcept { return this->bindings_.size(); }
+
+   void clear_analysis();
+
+private:
+   std::vector<StaticValueDescriptor> values_;
+   std::vector<StaticResultSet> result_sets_;
+   std::vector<StaticCallableDescriptor> callables_;
+   std::vector<StaticBindingDescriptor> bindings_;
+};
+
+[[nodiscard]] StaticValueDescriptor join_static_descriptors(
+   const StaticValueDescriptor &, const StaticValueDescriptor &);
+[[nodiscard]] StaticValueDescriptor describe_arithmetic_result(
+   const StaticValueDescriptor &, const StaticValueDescriptor &);
+[[nodiscard]] StaticValueDescriptor describe_unary_numeric_result(const StaticValueDescriptor &);
+[[nodiscard]] StaticValueDescriptor describe_length_result(const StaticValueDescriptor &);
+[[nodiscard]] bool static_value_satisfies_contract(
+   const StaticValueDescriptor &, const RuntimeContract &);
+[[nodiscard]] StaticResultSet map_static_result_filter(
+   const StaticResultSet &, uint64_t KeepMask, uint8_t ExplicitCount, bool TrailingKeep);
+enum class ObjectCallMemberKind : uint8_t {
+   None,
+   Action,
+   Method
+};
+[[nodiscard]] ObjectCallMemberKind classify_object_call_member(std::string_view);
+[[nodiscard]] StaticResultSet describe_native_prototype_results(const fprototype *);
+[[nodiscard]] StaticResultSet describe_object_call_results(const FunctionField *);
+[[nodiscard]] StaticResultSet describe_module_call_results(
+   const FunctionField *, lua_State *State = nullptr);
+[[nodiscard]] StaticValueDescriptor describe_struct_field(const struct_record *, GCstr *);
+[[nodiscard]] std::optional<ArrayElementDescriptor> describe_array_element(
+   std::string_view Name, lua_State *State = nullptr);
+[[nodiscard]] std::optional<ArrayElementDescriptor> describe_array_element(const struct_field &);
+[[nodiscard]] bool can_use_static_receiver(
+   const StaticDescriptorCatalogue &, StaticValueHandle, TiriType, bool AllowNullable = false);

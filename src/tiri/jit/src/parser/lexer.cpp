@@ -4,12 +4,15 @@
 
 #define LUA_CORE
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <cmath>
 #include <concepts>
+#include <format>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "lj_obj.h"
 #include "lj_gc.h"
@@ -67,6 +70,34 @@ namespace {
    constexpr bool is_sync_char(LexChar c) noexcept {
       return c IS ',' or c IS ';' or c IS '}' or c IS ')' or c IS ']';
    }
+
+   constexpr bool is_comment_blank(LexChar c) noexcept {
+      return c IS ' ' or c IS '\t' or c IS '\v' or c IS '\f';
+   }
+
+   [[nodiscard]] bool is_empty_short_comment(const LexState *State) noexcept {
+      if (State->c IS LEX_EOF) return true;
+
+      size_t offset = State->current_offset;
+      while (offset < State->source.size()) {
+         LexChar c = LexChar(uint8_t(State->source[offset]));
+         if (lex_iseol(c)) return true;
+         if (not is_comment_blank(c)) return false;
+         ++offset;
+      }
+
+      return true;
+   }
+
+   [[nodiscard]] bool is_empty_comment_appended_to_name(const LexState *State) noexcept {
+      if (State->tok != TK_name) return false;
+
+      size_t token_offset = State->pending_token_offset;
+      if (token_offset IS 0 or token_offset > State->source.size()) return false;
+
+      LexChar previous = LexChar(uint8_t(State->source[token_offset - 1]));
+      return lj_char_isident(previous) and is_empty_short_comment(State);
+   }
 } // anonymous namespace
 
 //********************************************************************************************************************
@@ -84,6 +115,53 @@ namespace {
 [[nodiscard]] LexChar LexState::peek_next() const noexcept
 {
    return this->peek(0);
+}
+
+//********************************************************************************************************************
+// Assembles the documentation for a struct field declared on FieldLine, from the comments the lexer captured while
+// capture_comments was active.  A trailing comment on the field's own line is combined with any unbroken run of
+// full-line comments directly above it, outermost first.
+
+static std::string_view trim_comment_body(std::string_view Text) noexcept
+{
+   while (not Text.empty() and ((Text.front() IS ' ') or (Text.front() IS '\t'))) Text.remove_prefix(1);
+   while (not Text.empty() and ((Text.back() IS ' ') or (Text.back() IS '\t') or (Text.back() IS '\r'))) {
+      Text.remove_suffix(1);
+   }
+   return Text;
+}
+
+[[nodiscard]] std::string LexState::documentation_for_line(BCLine FieldLine) const
+{
+   std::vector<std::string_view> parts;
+
+   // BCLine packs a file index into its high bits, so only lineNumber() may be compared or decremented.
+
+   const int32_t field_line = FieldLine.lineNumber();
+
+   // Walk upwards from the line above the field, gathering full-line comments until the run is broken by a blank
+   // line or by code.  A trailing comment above the field belongs to that earlier field, so it terminates the run.
+
+   for (int32_t line = field_line - 1; line > 0; line--) {
+      auto found = std::find_if(this->comments.begin(), this->comments.end(),
+         [line](const CommentRecord &Record) { return Record.line.lineNumber() IS line; });
+      if ((found IS this->comments.end()) or found->trailing) break;
+      parts.insert(parts.begin(), trim_comment_body(found->text));
+   }
+
+   for (const auto &record : this->comments) {
+      if ((record.line.lineNumber() IS field_line) and record.trailing) {
+         parts.push_back(trim_comment_body(record.text));
+      }
+   }
+
+   std::string result;
+   for (auto part : parts) {
+      if (part.empty()) continue;
+      if (not result.empty()) result += '\n';
+      result += part;
+   }
+   return result;
 }
 
 static LJ_AINLINE LexChar lex_next(LexState *State) noexcept
@@ -146,6 +224,7 @@ namespace {
 
 // Forward declarations for Unicode operator detection (defined later in this file)
 static LexToken match_unicode_operator(LexState *State, int &ByteLength) noexcept;
+inline bool is_unicode_ellipsis(LexState *State) noexcept;
 inline bool is_unicode_operator_start(LexState *State) noexcept;
 
 //********************************************************************************************************************
@@ -161,12 +240,13 @@ static void lex_number(LexState *State, TValue* tv)
    if (c IS '0' and (lex_savenext(State) | 0x20) IS 'x') exponent = 'p';
 
    // Scan all number characters.
-   // Special case: Stop before '..' to allow range literals like {1..5}
+   // Special case: Stop before '..' so concatenation after numeric literals remains tokenised correctly.
    // Special case: Stop before Unicode operators (e.g. ↑ for exponentiation)
    while (is_number_char(State->c, c)) {
       // If we see '.', check if next character is also '.' (range operator)
       if (State->c IS '.' and State->peek_next() IS '.') break;  // Don't consume '.', let parser handle '..'
       if (is_unicode_operator_start(State)) break;  // Don't consume Unicode operators like ↑
+      if (is_unicode_ellipsis(State)) break;
       c = State->c;
       lex_savenext(State);
    }
@@ -424,6 +504,58 @@ err_xesc:
 }
 
 //********************************************************************************************************************
+// Raw string literal parsing for regex shorthand.
+
+static void lex_raw_string(LexState *State, TValue *TV)
+{
+   LexChar delim = State->c;  // Delimiter is '\'' or '"'.
+   lex_next(State);
+
+   while (State->c != delim) {
+      switch (State->c) {
+      case LEX_EOF:
+         lj_lex_error(State, TK_eof, ErrMsg::XSTR);
+         if (State->diagnose_mode) {
+            setstrV(State->L, TV, State->intern_empty_string());
+            return;
+         }
+         continue;
+
+      case '\n':
+      case '\r':
+         lj_lex_error(State, TK_string, ErrMsg::XSTR);
+         if (State->diagnose_mode) {
+            setstrV(State->L, TV, State->intern_empty_string());
+            return;
+         }
+         continue;
+
+      default:
+         lex_savenext(State);
+         break;
+      }
+   }
+
+   lex_next(State);  // Skip trailing delimiter.
+   if (sbuflen(&State->sb) IS 0) setstrV(State->L, TV, State->intern_empty_string());
+   else setstrV(State->L, TV, State->keepstr(std::string_view(State->sb.b, sbuflen(&State->sb))));
+}
+
+static int lex_peek_longstring_sep_from(LexState *State, size_t StartOffset)
+{
+   if (State->peek(StartOffset) != '[') return -1;
+
+   int count = 0;
+   size_t offset = StartOffset + 1;
+   while (State->peek(offset) IS '=') {
+      count++;
+      offset++;
+   }
+
+   return (State->peek(offset) IS '[') ? count : -1;
+}
+
+//********************************************************************************************************************
 // F-string interpolation support
 
 static LexToken lex_scan(LexState *, TValue *);
@@ -441,7 +573,9 @@ static LexToken lex_scan(LexState *, TValue *);
       case TK_name:
       case TK_number:
       case TK_string:
+      case TK_regex_string:
       case TK_array_typed:
+      case TK_struct_typed:
       case TK_defer_typed:
       case TK_pipe:
          return true;
@@ -544,8 +678,36 @@ bool fstring_scan_expression(LexState *State, size_t Offset, bool &NeedConcat) {
    // Scan tokens using the main lexer until we hit the closing }
 
    int brace_depth = 1;  // We've already consumed the opening {
+   int defer_depth = 0;
 
    while (brace_depth > 0) {
+      bool skipped_ws;
+      do {
+         skipped_ws = false;
+         while (State->c IS ' ' or State->c IS '\t' or State->c IS '\v' or State->c IS '\f') {
+            lex_next(State);
+            skipped_ws = true;
+         }
+         if (lex_iseol(State->c)) {
+            lex_newline(State);
+            skipped_ws = true;
+         }
+      } while (skipped_ws);
+
+      if (State->c IS '}' and not (defer_depth > 0 and State->peek_next() IS '>')) {
+         BCLine close_line = State->linenumber;
+         BCLine close_col = BCLine(State->current_offset - State->line_start_offset + 1);
+         size_t close_offset = State->current_offset;
+
+         lex_next(State);
+         lj_buf_reset(&State->sb);
+         brace_depth--;
+         if (brace_depth IS 0) break;  // End of expression, leave the next character for f-string literal scanning.
+
+         State->buffered_tokens.push_back(make_buffered_token(State, '}', close_line, close_col, close_offset));
+         continue;
+      }
+
       TValue expr_tv;
       LexToken tok = lex_scan(State, &expr_tv);
 
@@ -561,6 +723,12 @@ bool fstring_scan_expression(LexState *State, size_t Offset, bool &NeedConcat) {
       if (tok IS '{') { // Track brace depth
          brace_depth++;
       }
+      else if (tok IS TK_defer_open or tok IS TK_defer_typed) {
+         defer_depth++;
+      }
+      else if (tok IS TK_defer_close and defer_depth > 0) {
+         defer_depth--;
+      }
       else if (tok IS '}') {
          brace_depth--;
          if (brace_depth IS 0) break;  // End of expression, don't add the }
@@ -571,9 +739,9 @@ bool fstring_scan_expression(LexState *State, size_t Offset, bool &NeedConcat) {
       LexState::BufferedToken bt;
       bt.token = tok;
       copyTV(State->L, &bt.value, &expr_tv);
-      bt.line = State->current_token_line;
-      bt.column = State->current_token_column;
-      bt.offset = State->current_token_offset;
+      bt.line = State->pending_token_line;
+      bt.column = State->pending_token_column;
+      bt.offset = State->pending_token_offset;
       State->buffered_tokens.push_back(bt);
    }
 
@@ -807,10 +975,6 @@ static LexToken match_unicode_operator(LexState *State, int &ByteLength) noexcep
             ByteLength = 3;
             return TK_concat;     // ‥
          }
-         else if (third IS 0xA6) {
-            ByteLength = 3;
-            return TK_dots;       // …
-         }
       }
 
       if (second IS 0x81 and third IS 0x87) {
@@ -822,6 +986,10 @@ static LexToken match_unicode_operator(LexState *State, int &ByteLength) noexcep
          if (third IS 0xA0) {
             ByteLength = 3;
             return TK_ne;       // ≠
+         }
+         else if (third IS 0x88) {
+            ByteLength = 3;
+            return TK_approx;   // ≈
          }
          else if (third IS 0xA4) {
             ByteLength = 3;
@@ -842,13 +1010,14 @@ static LexToken match_unicode_operator(LexState *State, int &ByteLength) noexcep
          ByteLength = 3;
          return TK_ternary_sep;  // ▷
       }
-      else if (second IS 0xA7 and third IS 0xBA) {
-         ByteLength = 3;
-         return TK_plusplus;     // ⧺
-      }
    }
 
    return 0;
+}
+
+inline bool is_unicode_ellipsis(LexState *State) noexcept
+{
+   return State->c IS 0xE2 and State->peek(0) IS 0x80 and State->peek(1) IS 0xA6;
 }
 
 inline bool is_unicode_operator_start(LexState *State) noexcept
@@ -883,16 +1052,9 @@ static void lex_skip_inline_ws(LexState *State) noexcept
    while (State->c IS ' ' or State->c IS '\t') lex_next(State);
 }
 
-//********************************************************************************************************************
-// Skip all whitespace including newlines (for multi-line constructs)
-
-[[maybe_unused]] static void lex_skip_ws(LexState *State) noexcept
+static LexToken lex_current_char_token(const LexState *State) noexcept
 {
-   while (true) {
-      if (State->c IS ' ' or State->c IS '\t') lex_next(State);
-      else if (lex_iseol(State->c)) lex_newline(State);
-      else break;
-   }
+   return (State->c IS LEX_EOF) ? TK_eof : State->c;
 }
 
 //********************************************************************************************************************
@@ -906,7 +1068,9 @@ static LexToken lex_array_typed(LexState *State, TValue *tv)
    lex_skip_inline_ws(State);
 
    // Scan type name
-   if (not (isalpha(State->c) or State->c IS '_')) lj_lex_error(State, '<', ErrMsg::XTOKEN);
+   if (not (isalpha(State->c) or State->c IS '_')) {
+      lj_lex_error(State, lex_current_char_token(State), ErrMsg::XTOKEN, State->token2str(TK_name));
+   }
 
    lj_buf_reset(&State->sb);
    do {
@@ -914,30 +1078,53 @@ static LexToken lex_array_typed(LexState *State, TValue *tv)
    } while (lj_char_isident(State->c));
 
    auto type_str = std::string_view(State->sb.b, sbuflen(&State->sb));
-   GCstr *type_name = State->keepstr(type_str);
+   std::string nested_type;
 
    lex_skip_inline_ws(State);
 
-   // Handle nested array type: array< array<inner_type> >
-   // When the inner type is itself array<...>, skip the inner type specification.
-   // The type name "array" maps to AET::ARRAY at runtime; inner element types are
-   // determined when individual inner arrays are created.
+   // Preserve the complete nested array spelling for central validation and canonicalisation.
 
-   if (type_str == "array" and State->c IS '<') {
+   if (type_str IS "array" and State->c IS '<') {
       int depth = 1;
       lex_next(State);  // Consume inner '<'
+      std::string inner;
       while (depth > 0) {
          if (State->c IS '<') depth++;
          else if (State->c IS '>') depth--;
-         if (State->c IS LEX_EOF) lj_lex_error(State, '>', ErrMsg::XTOKEN);
-         if (depth > 0) lex_next(State);
+         if (State->c IS LEX_EOF) {
+            lj_lex_error(State, TK_eof, ErrMsg::XTOKEN, State->token2str('>'));
+            break;
+         }
+         if (depth > 0) {
+            inner.push_back(char(State->c));
+            lex_next(State);
+         }
       }
-      lex_next(State);  // Move past the inner closing '>'
+      if (State->c IS '>') lex_next(State);  // Move past the inner closing '>'
+      nested_type = std::format("array<{}>", inner);
+      lex_skip_inline_ws(State);
+   }
+   else if (type_str IS "struct" and State->c IS '<') {
+      lex_next(State);
+      lex_skip_inline_ws(State);
+      if (not (isalpha(State->c) or State->c IS '_')) {
+         lj_lex_error(State, lex_current_char_token(State), ErrMsg::XTOKEN, State->token2str(TK_name));
+      }
+      lj_buf_reset(&State->sb);
+      do {
+         lex_savenext(State);
+      } while (lj_char_isident(State->c));
+      nested_type = std::format("struct<{}>", std::string_view(State->sb.b, sbuflen(&State->sb)));
+      lex_skip_inline_ws(State);
+      if (State->c != '>') {
+         lj_lex_error(State, lex_current_char_token(State), ErrMsg::XTOKEN, State->token2str('>'));
+      }
+      lex_next(State);
       lex_skip_inline_ws(State);
    }
 
    // Check for optional size: array<type, size> or array<type, expr>
-   State->array_typed_size = -1;  // Reset to "no size specified"
+   State->array_typed_size = ArrayTypedSize::absent();
    if (State->c IS ',') {
       lex_next(State);  // Consume ','
       lex_skip_inline_ws(State);
@@ -950,27 +1137,61 @@ static LexToken lex_array_typed(LexState *State, TValue *tv)
             if (size > INT32_MAX) lj_lex_error(State, TK_number, ErrMsg::XNUMBER);
             lex_next(State);
          }
-         State->array_typed_size = size;
+         State->array_typed_size = ArrayTypedSize::literal_size(size);
          lex_skip_inline_ws(State);
 
-         if (State->c != '>') lj_lex_error(State, '>', ErrMsg::XTOKEN);
+         if (State->c != '>') {
+            lj_lex_error(State, lex_current_char_token(State), ErrMsg::XTOKEN, State->token2str('>'));
+         }
          lex_next(State);  // Consume '>'
       }
       else {
-         // Non-literal size - set marker for parser to handle expression
-         // Parser will parse the expression and expect '>'
-         State->array_typed_size = -2;
+         // The parser will consume the expression and its closing '>'.
+         State->array_typed_size = ArrayTypedSize::expression();
          // Don't consume anything else - parser will handle
       }
    }
    else {
-      if (State->c != '>') lj_lex_error(State, '>', ErrMsg::XTOKEN);
+      if (State->c != '>') {
+         lj_lex_error(State, lex_current_char_token(State), ErrMsg::XTOKEN, State->token2str('>'));
+      }
       lex_next(State);  // Consume '>'
    }
 
    // Store type name in token value
-   setstrV(State->L, tv, type_name);
+   setstrV(State->L, tv, State->keepstr(nested_type.empty() ? type_str : std::string_view(nested_type)));
    return TK_array_typed;
+}
+
+//********************************************************************************************************************
+// Scan a struct type reference: struct<Name>
+// Caller has already scanned "struct" and confirmed c is '<'
+// Returns TK_struct_typed with the referenced struct name in tv
+
+static LexToken lex_struct_typed(LexState *State, TValue *tv)
+{
+   lex_next(State);  // Consume '<'
+   lex_skip_inline_ws(State);
+
+   if (not (isalpha(State->c) or State->c IS '_')) {
+      lj_lex_error(State, lex_current_char_token(State), ErrMsg::XTOKEN, State->token2str(TK_name));
+   }
+
+   lj_buf_reset(&State->sb);
+   do {
+      lex_savenext(State);
+   } while (lj_char_isident(State->c));
+
+   auto name_str = std::string_view(State->sb.b, sbuflen(&State->sb));
+
+   lex_skip_inline_ws(State);
+   if (State->c != '>') {
+      lj_lex_error(State, lex_current_char_token(State), ErrMsg::XTOKEN, State->token2str('>'));
+   }
+   lex_next(State);  // Consume '>'
+
+   setstrV(State->L, tv, State->keepstr(name_str));
+   return TK_struct_typed;
 }
 
 //********************************************************************************************************************
@@ -991,9 +1212,40 @@ static LexToken lex_scan(LexState *State, TValue *tv)
          continue;
       }
 
+      // U+2026 used to alias ASCII varargs.  Reject it explicitly so it cannot be silently parsed as an identifier.
+      if (is_unicode_ellipsis(State)) {
+         State->mark_token_start();
+         lj_lex_error(State, 0, ErrMsg::XSYMBOL);
+         if (State->had_lex_error) continue;
+         return TK_eof;
+      }
+
       // Check for Unicode operators before identifier scanning
       if (LexToken unicode_tok = lex_unicode_operator(State)) {
          return unicode_tok;
+      }
+
+      // Regex string prefix: r"...", r'...', r[[...]] or r[=[...]=].
+      if (State->c IS 'r') {
+         LexChar next = State->peek_next();
+         if (next IS '"' or next IS '\'') {
+            State->mark_token_start();
+            lex_next(State);  // Skip prefix.
+            lj_buf_reset(&State->sb);
+            lex_raw_string(State, tv);
+            if (State->had_lex_error) continue;  // Rescan after error recovery
+            return TK_regex_string;
+         }
+
+         if (next IS '[' and lex_peek_longstring_sep_from(State, 0) >= 0) {
+            State->mark_token_start();
+            lex_next(State);  // Skip prefix.
+            lj_buf_reset(&State->sb);
+            int sep = lex_skipeq(State);
+            lex_longstring(State, tv, sep);
+            if (State->had_lex_error) continue;  // Rescan after error recovery
+            return TK_regex_string;
+         }
       }
 
       // Identifier or numeric literal
@@ -1006,16 +1258,22 @@ static LexToken lex_scan(LexState *State, TValue *tv)
             return TK_number;
          }
 
-         // Scan identifier (stop before Unicode operators like ⧺)
+         // Scan identifier, stopping before Unicode operator characters that require separate handling.
          do {
             lex_savenext(State);
-         } while (lj_char_isident(State->c) and not is_unicode_operator_start(State));
+         } while (lj_char_isident(State->c) and not is_unicode_operator_start(State) and
+            not is_unicode_ellipsis(State));
 
          auto str_view = std::string_view(State->sb.b, sbuflen(&State->sb));
 
          // Check for array<type> syntax before interning the string
          if (str_view IS "array" and State->c IS '<') {
             return lex_array_typed(State, tv);
+         }
+
+         // Check for struct<Name> syntax (type references and explicit construction)
+         if (str_view IS "struct" and State->c IS '<') {
+            return lex_struct_typed(State, tv);
          }
 
          // Check for f-string prefix: f"..." or f'...'
@@ -1063,9 +1321,51 @@ static LexToken lex_scan(LexState *State, TValue *tv)
                }
             }
 
+            if (is_empty_comment_appended_to_name(State)) {
+               lj_lex_error(State, 0, ErrMsg::XEMPTYCOMMENT);
+               if (State->had_lex_error) continue;
+            }
+
             // Short comment "--.*\n"
-            while (not lex_iseol(State->c) and State->c != LEX_EOF) lex_next(State);
-            continue;
+            if (not State->capture_comments) {  // Only the struct declaration parser needs the text.
+               while (not lex_iseol(State->c) and State->c != LEX_EOF) lex_next(State);
+               continue;
+            }
+            else {
+               // current_offset is the offset of the character held in State->c, i.e. the first character of the
+               // comment body.  The body is empty when the comment ends the line immediately.
+
+               size_t body_start = State->current_offset;
+               size_t line_start = State->line_start_offset;
+               BCLine comment_line = State->linenumber;
+               bool empty_body = lex_iseol(State->c) or (State->c IS LEX_EOF);
+
+               while (not lex_iseol(State->c) and State->c != LEX_EOF) lex_next(State);
+
+               // The loop stops with State->c holding the EOL character, whose offset is current_offset, so that
+               // offset is the exclusive end of the body.  At EOF the stream is exhausted and pos is the end.
+               // An empty body yields a zero-length range.
+
+               size_t body_end = body_start;
+               if (not empty_body) {
+                  body_end = (State->c IS LEX_EOF) ? State->pos : State->current_offset;
+               }
+               if (body_end > State->source.size()) body_end = State->source.size();
+               if (body_start > body_end) body_start = body_end;
+
+               // Code before the '--' marks this as a trailing comment on a field line; otherwise it is a full-line
+               // comment describing the field below.  line_start_offset is only updated at newlines, so it still
+               // points at the start of this line.
+
+               auto prefix = State->source.substr(line_start,
+                  (body_start >= line_start) ? body_start - line_start : 0);
+               if (auto marker = prefix.rfind("--"); marker != std::string_view::npos) prefix = prefix.substr(0, marker);
+               bool trailing = prefix.find_first_not_of(" \t\r") != std::string_view::npos;
+
+               State->comments.push_back({ comment_line, trailing,
+                  std::string(State->source.substr(body_start, body_end - body_start)) });
+               continue;
+            }
 
          case '[': {
             State->mark_token_start();
@@ -1103,10 +1403,6 @@ static LexToken lex_scan(LexState *State, TValue *tv)
             State->mark_token_start();
             lex_next(State);
             if (auto tok = check_compound(State, TK_cdiv)) return tok;
-            if (State->c IS '/') {  // Single-line comment "//"
-               while (State->c != '\n' and State->c != LEX_EOF) lex_next(State);
-               continue;
-            }
             return '/';
 
          case '%':
@@ -1114,6 +1410,12 @@ static LexToken lex_scan(LexState *State, TValue *tv)
             lex_next(State);
             if (auto tok = check_compound(State, TK_cmod)) return tok;
             return '%';
+
+         case '&':
+            State->mark_token_start();
+            lex_next(State);
+            if (State->c IS '&') { lex_next(State); return TK_current_context; }
+            return '&';
 
          case '!':
             State->mark_token_start();
@@ -1125,12 +1427,6 @@ static LexToken lex_scan(LexState *State, TValue *tv)
             State->mark_token_start();
             lex_next(State);
             if (State->c IS '>') { lex_next(State); return TK_arrow; }
-            if (State->c IS '=') {
-               lex_next(State);
-               pf::Log("Tiri").warning("%s:%d: Deprecated '==' operator, use 'is' instead",
-                  strdata(State->chunk_name), State->effective_line().lineNumber());
-               return TK_eq;
-            }
             return '=';
 
          case '<':
@@ -1184,15 +1480,9 @@ static LexToken lex_scan(LexState *State, TValue *tv)
             if (State->c IS '>') { lex_next(State); return TK_shr; }
             return '>';
 
-         case '~':  // Deprecated: ~=
+         case '~':
             State->mark_token_start();
             lex_next(State);
-            if (State->c IS '=') {
-               lex_next(State);
-               pf::Log("Tiri").warning("%s:%d: Deprecated '~=' operator, use '!=' instead",
-                  strdata(State->chunk_name), State->effective_line().lineNumber());
-               return TK_ne;
-            }
             return '~';
 
          case ':':
@@ -1208,6 +1498,7 @@ static LexToken lex_scan(LexState *State, TValue *tv)
             else if (State->c IS '[') { lex_next(State); return TK_safe_index; }
             else if (State->c IS ':') { lex_next(State); return TK_safe_method; }
             else if (State->c IS '=') { lex_next(State); return TK_cif_nil; }  // ?=
+            else if (State->c IS '!') { lex_next(State); return TK_guard; }    // ?!
             else if (State->c IS '?') {
                lex_next(State);
                if (State->c IS '=') { lex_next(State); return TK_cif_empty; }  // ??=
@@ -1374,9 +1665,12 @@ LexState::LexState(lua_State* L, std::string_view Source, std::string_view Chunk
 
 #ifdef INCLUDE_TIPS
    // Initialise tip system from JIT options
-   this->tip_level = compute_tip_level(glJitOptions);
+   JOF tip_options = glJitOptions;
+   if (L) tip_options |= L->script->JitOptions;
+   this->tip_level = compute_tip_level(tip_options);
    if (this->tip_level > 0) {
-      this->tip_emitter = std::make_unique<TipEmitter>(this->tip_level);
+      bool print_tips = (tip_options & JOF::DIAGNOSE) IS JOF::NIL;
+      this->tip_emitter = std::make_unique<TipEmitter>(this->tip_level, print_tips);
    }
 #endif
 
@@ -1414,8 +1708,8 @@ LexState::LexState(lua_State* L, std::string_view Source, std::string_view Chunk
          lj_err_throw(L, LUA_ERRSYNTAX);
       }
       this->is_bytecode = 1;
-      // Set up p/pe for bytecode reader compatibility (lj_bcread uses these)
-      this->p = this->source.data();
+      // The signature byte is already held in c, matching the streaming lexer contract expected by lj_bcread.
+      this->p = this->source.data() + 1;
       this->pe = this->source.data() + this->source.size();
    }
 }
@@ -1461,6 +1755,7 @@ LexState::LexState(lua_State* L, const char* BytecodePtr, GCstr* ChunkName)
    , pending_token_offset(0)
    , active_context(nullptr)
 {
+   this->bytecode_version = BCDUMP_VERSION;
    lj_buf_init(L, &this->sb);
    setnilV(&this->tokval);
    setnilV(&this->lookaheadval);
@@ -1662,7 +1957,19 @@ LexState::BufferedToken LexState::scan_buffered_token()
 void LexState::ensure_lookahead(size_t count)
 {
    while (this->available_lookahead() < count) {
-      this->buffered_tokens.push_back(this->scan_buffered_token());
+      size_t buffered_count = this->buffered_tokens.size();
+      BufferedToken buffered = this->scan_buffered_token();
+
+      // Scanning '<identifier' temporarily pushes the identifier to the front so direct token consumption can return
+      // '<' first.  Preserve tokens already gathered by lookahead and normalise this expansion to '<', identifier.
+
+      if (buffered.token IS '<' and this->buffered_tokens.size() IS buffered_count + 1) {
+         BufferedToken identifier = std::move(this->buffered_tokens.front());
+         this->buffered_tokens.pop_front();
+         this->buffered_tokens.push_back(std::move(buffered));
+         this->buffered_tokens.push_back(std::move(identifier));
+      }
+      else this->buffered_tokens.push_back(std::move(buffered));
    }
 }
 
@@ -1785,6 +2092,7 @@ static void lj_lex_error_no_skip(LexState *State, LexToken tok, ErrMsg em)
       ParserDiagnostic diag;
       diag.severity = ParserDiagnosticSeverity::Error;
       diag.code = ParserErrorCode::UnexpectedToken;
+      diag.file_index = State->current_file_index;
       if (tokstr) diag.message = std::string(err2msg(em)) + " near '" + tokstr + "'";
       else diag.message = err2msg(em);
 
@@ -1800,6 +2108,7 @@ static void lj_lex_error_no_skip(LexState *State, LexToken tok, ErrMsg em)
       return;  // Don't skip, don't set had_lex_error - caller returns synthetic token
    }
 
+   if (State->active_context) State->active_context->rollback_before_error();
    lj_err_lex(State->L, State->chunk_name, tokstr, State->linenumber, em, nullptr);
 }
 
@@ -1834,6 +2143,7 @@ void lj_lex_error(LexState *State, LexToken tok, ErrMsg em, ...)
       ParserDiagnostic diag;
       diag.severity = ParserDiagnosticSeverity::Error;
       diag.code = ParserErrorCode::UnexpectedToken;
+      diag.file_index = State->current_file_index;
       if (tokstr) diag.message = std::string(msg_buffer) + " near '" + tokstr + "'";
       else diag.message = msg_buffer;
 
@@ -1882,6 +2192,7 @@ void lj_lex_error(LexState *State, LexToken tok, ErrMsg em, ...)
       return;  // Return without throwing - caller will handle recovery
    }
 
+   if (State->active_context) State->active_context->rollback_before_error();
    lj_err_lex(State->L, State->chunk_name, tokstr, State->lastline, em, argp);
    va_end(argp);
 }

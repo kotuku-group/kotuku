@@ -1,18 +1,18 @@
--- Flute tests for the ?? operator (if-empty: nil, false, 0, "")
+-- Flute tests for the ?? operator (if-empty: nil, false, 0, "", empty collections)
 
 @BeforeEach(hotpath=true)
 function enforce_hotpath() end
 
 @Test function Nil()
-   v = nil ?? "A"
+   local v = nil ?? "A"
    assert(v is "A", "Failed nil case: expected 'A', got '" .. tostring(v) .. "'")
 
    Options = { quit = nil }
-   v = (Options.quit ?? nil)
+   local v = (Options.quit ?? nil)
    assert(v is nil, "Expected nil, got " .. tostring(v))
 
    Options.quit = true
-   v = (Options.quit ?? nil)
+   local v = (Options.quit ?? nil)
    assert(v is true, "Expected true, got " .. tostring(v))
 end
 
@@ -94,6 +94,10 @@ end
    v = t ?? 'Nothing'
    assert(v['a'] is 1, "Failed table case: expected table, got '" .. tostring(v) .. "'")
 
+   empty = { }
+   v = empty ?? 'Nothing'
+   assert(v is 'Nothing', "Failed empty table case: expected fallback, got '" .. tostring(v) .. "'")
+
    v = 'x' ?? { 'Nothing' }
    assert(v is 'x', "Failed table case: expected table, got '" .. tostring(v) .. "'")
 
@@ -105,10 +109,10 @@ end
 
 @Test function TableAccessLHS()
    t = { }
-   table.insert(t, 10)
-   table.insert(t, 20)
-   table.insert(t, 30)
-   table.insert(t, 40)
+   t.insert(10)
+   t.insert(20)
+   t.insert(30)
+   t.insert(40)
 
    one = (t[0] ?? 0)
    two = (t[1] ?? 0)
@@ -120,7 +124,7 @@ end
    assert(str is -1, "Array access LHS test failed for zero value: expected -1, got '" .. tostring(str) .. "'")
 
    -- Ternary version - establishes a benchmark
-   status = t.missing ? 'exists' :> 'missing'
+   status = t.missing ? 'exists' : 'missing'
    assert(status is 'missing', "Failed table key test: expected 'ok', got '" .. tostring(status) .. "'")
 
    status = t.missing ?? 'missing'
@@ -132,7 +136,7 @@ end
 
 @Test function ShortCircuitTruth()
    function rhs()
-      error("RHS should not be evaluated when LHS is truthy")
+      assert(false, "RHS should not be evaluated when LHS is truthy")
    end
    v = "X" ?? rhs()
    assert(v is "X", "Failed short-circuit truth: expected 'X', got '" .. tostring(v) .. "'")
@@ -166,7 +170,7 @@ end
 @Test function RHSOnce()
    count = 0
    function rhs()
-      count += 1
+      count++
       return "Y"
    end
    v = 0 ?? rhs()
@@ -207,41 +211,74 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Deferred values must be resolved before the consolidated falsey bytecode tests their logical value.
+
+@Test function ThunkFalseyChecks()
+   evaluation_count = 0
+   available = thunk():bool
+      evaluation_count++
+      return true
+   end
+
+   function accept(Value):bool
+      Value ?! return false
+      return true
+   end
+
+   assert(accept(available), "A truthy thunk must not activate a falsey guard")
+   assert(evaluation_count is 1, "The falsey guard must resolve its thunk exactly once")
+
+   missing = thunk():bool
+      return false
+   end
+   result = missing ?? "fallback"
+   assert(result is "fallback", "A thunk returning false must select the fallback")
+
+   zero = thunk():num
+      return 0
+   end
+   assert((zero??) is false, "A thunk returning zero must fail a postfix presence check")
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Test the use of if-empty within a function
 
 @Test function IfEmptyArgumentLeakCapture()
-   Function = { status = 'Hello' }
-   record = { count = 0, first = nil, second = nil }
+   local function_value = { status = 'Hello' }
+   capture_record = { count = 0, first = nil, second = nil }
 
    function capture(...)
       local args = { ... }
-      record.count = #args
-      record.first = args[0]
-      record.second = args[1]
+      capture_record.count = #args
+      capture_record.first = args[0]
+      capture_record.second = args[1]
    end
 
-   capture(Function.status ?? 'then')
+   capture(function_value.status ?? 'then')
 
-   assert(record.count is 1, "Expected a single argument after fixing the leak, got '" .. tostring(record.count) .. "'")
-   assert(record.first is 'Hello', "Expected first argument to remain 'Hello', got '" .. tostring(record.first) .. "'")
-   assert(record.second is nil, "Expected leaked slot to be cleared, got '" .. tostring(record.second) .. "'")
+   assert(capture_record.count is 1,
+      "Expected a single argument after fixing the leak, got '" .. tostring(capture_record.count) .. "'")
+   assert(capture_record.first is 'Hello',
+      "Expected first argument to remain 'Hello', got '" .. tostring(capture_record.first) .. "'")
+   assert(capture_record.second is nil,
+      "Expected leaked slot to be cleared, got '" .. tostring(capture_record.second) .. "'")
 end
 
 @Test function IfEmptyStringFindError()
-   Function = { status = 'Hello' }
+   local function_value = { status = 'Hello' }
 
-   start_index, end_index = string.find((Function.status ?? 'then'), 'e')
+   start_index, stop_index = (function_value.status ?? 'then').find('e')
    assert(start_index is 1, "Expected search to start at index 1, got '" .. tostring(start_index) .. "'")
-   assert(end_index is 1, "Expected search to end at index 1, got '" .. tostring(end_index) .. "'")
+   assert(stop_index is 2, "Expected search to stop at index 2, got '" .. tostring(stop_index) .. "'")
 end
 
 @Test function MethodCallInOptionalForm()
-   obj = {
-      getValue = function(self)
+   local obj = {
+      getValue = function()
          return "method_result"
       end
    }
-   v = obj:getValue() ?? "default"
+   v = obj.getValue() ?? "default"
    assert(v is "method_result", "Failed method call in optional form: expected 'method_result', got " .. tostring(v))
 end
 
@@ -285,7 +322,7 @@ end
       called = true
       return "default"
    end
-   msg = "Hello" ?? expensive()
+   local msg = "Hello" ?? expensive()
    assert(msg is "Hello", "Failed optional short-circuit: expected 'Hello', got " .. tostring(msg))
    assert(not called, "Expensive function should not be called")
 end
@@ -305,7 +342,7 @@ end
 
 -- Optional - truthy condition
 @Test function OptionalTruthyString()
-   msg = "Hello" ?? "No message"
+   local msg = "Hello" ?? "No message"
    assert(msg is "Hello", "Failed optional truthy string: expected 'Hello', got " .. tostring(msg))
 end
 
@@ -321,13 +358,13 @@ end
 
 -- Optional - falsey condition (nil)
 @Test function OptionalNil()
-   msg = nil ?? "No message given"
+   local msg = nil ?? "No message given"
    assert(msg is "No message given", "Failed optional nil: expected 'No message given', got " .. tostring(msg))
 end
 
 -- Optional - falsey condition (false)
 @Test function OptionalFalse()
-   msg = false ?? "No message given"
+   local msg = false ?? "No message given"
    assert(msg is "No message given", "Failed optional false: expected 'No message given', got " .. tostring(msg))
 end
 
@@ -338,95 +375,11 @@ end
 end
 
 @Test function InFunction()
-   Function = { status = 'Hello' }
+   local function_value = { status = 'Hello' }
 
    -- If-empty operator within a function
-   result = string.find((Function.status ?? 'then'), 'e')
+   result = (function_value.status ?? 'then').find('e')
    assert(result is 1, "Failed test: expected 1, got " .. tostring(result))
-end
-
-@Test function ShortHand()
-   not_true = false
-   returned_early = true
-   function test()
-      not_true ?? return
-      returned_early = false
-   end
-
-   test()
-   assert(returned_early is true, "Failed shorthand optional early return test")
-
-   true ?? "My message " .. test() .. " here"
-   assert(returned_early is true, "Failed shorthand optional early return test")
-end
-
--- Test return with value
-@Test function ShortHandReturnValue()
-   function getValue(input)
-      input ?? return "default"
-      return input
-   end
-
-   assert(getValue(nil) is "default", "nil should return default")
-   assert(getValue(false) is "default", "false should return default")
-   assert(getValue(0) is "default", "0 should return default")
-   assert(getValue("") is "default", "empty string should return default")
-   assert(getValue("hello") is "hello", "truthy should return input")
-   assert(getValue(42) is 42, "truthy number should return input")
-end
-
--- Test break in loop
-@Test function ShortHandBreak()
-   iterations = 0
-   values = { 1, 2, 0, 4, 5 }  -- 0 at index 2 should break
-
-   for i = 0, #values - 1 do
-      values[i] ?? break
-      iterations += 1
-   end
-
-   assert(iterations is 2, "Should break after 2 iterations, got " .. tostring(iterations))
-end
-
--- Test continue in loop
-@Test function ShortHandContinue()
-   sum = 0
-   values = { 1, 0, 2, "", 3 }  -- Skip falsey values
-
-   for i = 0, #values - 1 do
-      values[i] ?? continue
-      sum += values[i]
-   end
-
-   assert(sum is 6, "Sum should be 6 (1+2+3), got " .. tostring(sum))
-end
-
--- Test with runtime values (not compile-time constants)
-@Test function ShortHandRuntimeCondition()
-   function getCondition()
-      return nil
-   end
-
-   executed_body = false
-   function test()
-      getCondition() ?? return
-      executed_body = true
-   end
-
-   test()
-   assert(executed_body is false, "Body should not execute when condition is falsey")
-end
-
--- Test truthy condition does not execute body
-@Test function ShortHandTruthySkipsBody()
-   body_executed = false
-   function test()
-      "truthy" ?? return
-      body_executed = true
-   end
-
-   test()
-   assert(body_executed is true, "Body should execute when condition is truthy")
 end
 
 @Test function MultiValues()
@@ -456,7 +409,7 @@ end
 @Test function ArrayShortCircuit()
    call_count = 0
    function rhs()
-      call_count += 1
+      call_count++
       return "RHS"
    end
    filled = array<int, 3>
@@ -490,16 +443,44 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Ternary operator with arrays: empty arrays (len == 0) are considered falsey
+-- Table falsey tests: empty tables are considered falsey
+
+@Test function EmptyTable()
+   empty = { }
+   v = empty ?? 'default'
+   assert(v is 'default', "Empty table should be falsey: expected 'default', got '" .. tostring(v) .. "'")
+end
+
+@Test function NonEmptyTable()
+   filled = { value = 1 }
+   v = filled ?? 'default'
+   assert(v is filled, "Non-empty table should be truthy: expected table, got '" .. tostring(v) .. "'")
+end
+
+@Test function ClearedTable()
+   cleared = { value = 1 }
+   cleared.value = nil
+   v = cleared ?? 'default'
+   assert(v is 'default', "Cleared table should be falsey: expected 'default', got '" .. tostring(v) .. "'")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Standard ternary operator with arrays: empty arrays are truthy, matching if statements
 
 @Test function TernaryEmptyArray()
    empty = array<int>
-   v = empty ? 'truthy' :> 'falsey'
-   assert(v is 'falsey', "Empty array in ternary should be falsey: expected 'falsey', got '" .. tostring(v) .. "'")
+   v = empty ? 'truthy' : 'falsey'
+   assert(v is 'truthy', "Empty array in ternary should be truthy: expected 'truthy', got '" .. tostring(v) .. "'")
 end
 
 @Test function TernaryNonEmptyArray()
    filled = array<int, 5>
-   v = filled ? 'truthy' :> 'falsey'
+   v = filled ? 'truthy' : 'falsey'
    assert(v is 'truthy', "Non-empty array in ternary should be truthy: expected 'truthy', got '" .. tostring(v) .. "'")
+end
+
+@Test function ExtendedTernaryEmptyArray()
+   empty = array<int>
+   v = empty ?? 'truthy' : 'falsey'
+   assert(v is 'falsey', "Empty array in extended ternary should be falsey: expected 'falsey', got '" .. tostring(v) .. "'")
 end

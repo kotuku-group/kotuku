@@ -9,9 +9,14 @@
 #include <string_view>
 #include <cstdint>
 
+#include <kotuku/strings.hpp>
+
+#include "lj_ff.h"
 #include "parse_concepts.h"  // Must be early for concept-constrained templates
 
 enum class TokenKind : uint16_t;
+
+inline constexpr auto HASH_INCLUDE = kt::strhash("include");
 
 // Constants (lj_parse_constants.cpp)
 
@@ -94,6 +99,9 @@ static void bcreg_bump(FuncState *, BCREG n);
 static void bcreg_reserve(FuncState *, BCREG n);
 static void bcreg_free(FuncState *, BCREG reg);
 static void expr_free(FuncState *, ExpDesc* e);
+static void bcemit_contract(FuncState *, BCREG, std::span<const RuntimeContract>, BCREG, bool = false,
+   bool = false);
+static void bcemit_contracts(FuncState *, std::span<const RuntimeContractSlot>);
 
 // Bytecode emission (lj_parse_regalloc.cpp)
 
@@ -120,20 +128,106 @@ static inline BCPOS bcemit_AJ(FuncState *fs, Op o, BCREG a, BCPOS j) {
    return bcemit_INS(fs, BCINS_AJ(o, a, j));
 }
 
+// Emit a validated canonical native callable directly into a requested register.  The dependent dot-method lowering
+// uses the returned function-typed expression without publishing compiler-private global names.
+
+[[nodiscard]] static inline ExpDesc bcemit_builtin_callable(
+   FuncState *State, BuiltinCallableID Id, BCREG Destination)
+{
+   fs_check_assert(State, builtin_callable_valid(Id), "invalid built-in callable ID");
+   bcemit_AD(State, BC_BFUNC, Destination, BCREG(builtin_callable_index(Id)));
+   ExpDesc result(ExpKind::NonReloc, Destination);
+   result.result_type = TiriType::Func;
+   return result;
+}
+
+// Prepare a canonical native call frame.  An optional receiver is written into argument zero before the callable is
+// loaded, preserving the established method-call bytecode order while sharing LJ_FR2-aware register arithmetic.
+
+[[nodiscard]] static inline BCReg bcemit_builtin_call_frame(
+   FuncState *State, BuiltinCallableID Id, BCReg CallBase, BCReg Receiver = BCReg(NO_REG))
+{
+   BCREG argument_count = Receiver.raw() IS NO_REG ? 0 : 1;
+   BCREG required_top = CallBase.raw() + 1 + LJ_FR2 + argument_count;
+   if (State->freereg < required_top) bcreg_reserve(State, required_top - State->freereg);
+   if (Receiver.raw() != NO_REG) bcemit_AD(State, BC_MOV, CallBase.raw() + 1 + LJ_FR2, Receiver.raw());
+   bcemit_builtin_callable(State, Id, CallBase.raw());
+   return CallBase;
+}
+
 // Emit BC_TGETS with overflow protection. When the string constant index exceeds 255 (the 8-bit C field limit),
 // falls back to BC_KSTR + BC_TGETV to avoid bytecode corruption.
 
-static inline void bcemit_tgets(FuncState *fs, BCREG Dest, BCREG Table, BCREG StrConstIdx)
+static inline BCPOS bcemit_tgets(FuncState *fs, BCREG Dest, BCREG Table, BCREG StrConstIdx)
 {
    if (StrConstIdx <= BCMAX_C) {
-      bcemit_ABC(fs, BC_TGETS, Dest, Table, StrConstIdx);
+      return bcemit_ABC(fs, BC_TGETS, Dest, Table, StrConstIdx);
    }
    else {
-      BCREG key_reg = fs->freereg;
-      bcreg_reserve(fs, 1);
+      if (StrConstIdx > BCMAX_D) {
+         err_limit(fs, BCMAX_D + 1, "constants");
+         return NO_JMP;
+      }
+
+      BCREG saved_freereg = fs->freereg;
+      BCREG key_reg = saved_freereg;
+
+      if (key_reg <= Dest) key_reg = Dest + 1;
+      if (key_reg <= Table) key_reg = Table + 1;
+
+      if (not(key_reg IS saved_freereg)) {
+         kt::Log("Parser").warning("BC_TGETS constant overflow temp register adjusted from R%u to R%u "
+            "to avoid aliasing R%u/R%u at line %d",
+            unsigned(saved_freereg), unsigned(key_reg), unsigned(Dest), unsigned(Table),
+            fs->ls->effective_line().lineNumber());
+      }
+
+      fs_check_assert(fs, not(key_reg IS Dest) and not(key_reg IS Table),
+         "BC_TGETS overflow temp aliases destination/table register");
+
+      bcreg_reserve(fs, key_reg - saved_freereg + 1);
       bcemit_AD(fs, BC_KSTR, key_reg, StrConstIdx);
-      bcemit_ABC(fs, BC_TGETV, Dest, Table, key_reg);
-      fs->freereg--;
+      BCPOS pc = bcemit_ABC(fs, BC_TGETV, Dest, Table, key_reg);
+      fs->freereg = saved_freereg;
+      return pc;
+   }
+}
+
+// Emit BC_TSETS with overflow protection. When the string constant index exceeds 255 (the 8-bit C field limit),
+// falls back to BC_KSTR + BC_TSETV to avoid bytecode corruption.
+
+static inline BCPOS bcemit_tsets(FuncState *fs, BCREG Value, BCREG Table, BCREG StrConstIdx)
+{
+   if (StrConstIdx <= BCMAX_C) {
+      return bcemit_ABC(fs, BC_TSETS, Value, Table, StrConstIdx);
+   }
+   else {
+      if (StrConstIdx > BCMAX_D) {
+         err_limit(fs, BCMAX_D + 1, "constants");
+         return NO_JMP;
+      }
+
+      BCREG saved_freereg = fs->freereg;
+      BCREG key_reg = saved_freereg;
+
+      if (key_reg <= Value) key_reg = Value + 1;
+      if (key_reg <= Table) key_reg = Table + 1;
+
+      if (not(key_reg IS saved_freereg)) {
+         kt::Log("Parser").warning("BC_TSETS constant overflow temp register adjusted from R%u to R%u "
+            "to avoid aliasing R%u/R%u at line %d",
+            unsigned(saved_freereg), unsigned(key_reg), unsigned(Value), unsigned(Table),
+            fs->ls->effective_line().lineNumber());
+      }
+
+      fs_check_assert(fs, not(key_reg IS Value) and not(key_reg IS Table),
+         "BC_TSETS overflow temp aliases value/table register");
+
+      bcreg_reserve(fs, key_reg - saved_freereg + 1);
+      bcemit_AD(fs, BC_KSTR, key_reg, StrConstIdx);
+      BCPOS pc = bcemit_ABC(fs, BC_TSETV, Value, Table, key_reg);
+      fs->freereg = saved_freereg;
+      return pc;
    }
 }
 
@@ -144,23 +238,11 @@ static void expr_toreg(FuncState *, ExpDesc* e, BCREG reg);
 static void expr_tonextreg(FuncState *, ExpDesc* e);
 static BCREG expr_toanyreg(FuncState *, ExpDesc* e);
 static void expr_toval(FuncState *, ExpDesc* e);
-static void bcemit_store(FuncState *, ExpDesc* var, ExpDesc* e);
-static void bcemit_method(FuncState *, ExpDesc* e, ExpDesc* key);
+static void bcemit_store(FuncState *, ExpDesc* var, ExpDesc* e, const RuntimeContract * = nullptr, bool = false);
 // These are now exported (non-static) for use by OperatorEmitter facade
 extern BCPOS bcemit_jmp(FuncState *);
 extern void invertcond(FuncState *, ExpDesc* e);
 extern BCPOS bcemit_branch(FuncState *, ExpDesc* e, int cond);
-
-// Extended 64-bit BCIns pointer helpers for ABCP/ADP and AP formats.
-// For ABCP/ADP format (32-bit upper field)
-static inline void bcemit_set_p32(FuncState *fs, BCPOS pc, uint32_t val) {
-   setbc_p32(&fs->bcbase[pc].ins, val);
-}
-
-// For AP format (48-bit pointer)
-static inline void bcemit_set_ptr(FuncState *fs, BCPOS pc, void *ptr) {
-   setbc_ptr(&fs->bcbase[pc].ins, ptr);
-}
 
 // These remain static (legacy parser only)
 static void bcemit_branch_t(FuncState *, ExpDesc* e);
@@ -178,6 +260,7 @@ static void bcemit_branch_t(FuncState *, ExpDesc* e);
 static void fscope_begin(FuncState *, FuncScope* bl, FuncScopeFlag flags);
 static void execute_defers(FuncState *, BCREG limit);
 static void execute_closes(FuncState *, BCREG limit);
+static void execute_scope_cleanups(FuncState *, BCREG Limit);
 static void fscope_end(FuncState *);
 static void fscope_uvmark(FuncState *, BCREG level);
 

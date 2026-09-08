@@ -19,6 +19,7 @@
 #include "lj_ir.h"
 #include "lj_jit.h"
 #include "lj_ircall.h"
+#include "lj_ff.h"
 #include "lj_iropt.h"
 #include "lj_target.h"
 #include "lj_trace.h"
@@ -52,7 +53,7 @@ static int setjitmode(lua_State* L, int mode)
    }
 
    if (luaJIT_setmode(L, idx, mode) != 1) {
-      if ((mode & LUAJIT_MODE_MASK) IS LUAJIT_MODE_ENGINE) lj_err_caller(L, ErrMsg::NOJIT);
+      if ((mode & LUAJIT_MODE_MASK) IS LUAJIT_MODE_ENGINE) luaL_error(L, ErrMsg::NOJIT);
    err:
       lj_err_argt(L, 1, LUA_TFUNCTION);
    }
@@ -176,6 +177,13 @@ static void setintfield(lua_State* L, GCtab* t, CSTRING name, int32_t val)
 {
    setintV(lj_tab_setstr(L, t, lj_str_newz(L, name)), val);
 }
+
+#ifdef LUA_USE_ASSERT
+static void setcounterfield(lua_State *L, GCtab *Table, CSTRING Name, uint64_t Value)
+{
+   setnumV(lj_tab_setstr(L, Table, lj_str_newz(L, Name)), lua_Number(Value));
+}
+#endif
 
 //********************************************************************************************************************
 // local info = jit.util.funcInfo(func [,pc])
@@ -304,12 +312,16 @@ LJLIB_CF(jit_util_traceInfo)
    GCtrace *T = jit_checktrace(L);
    if (T) {
       GCtab *t;
-      lua_createtable(L, 0, 8);  //  Increment hash size if fields are added.
+      lua_createtable(L, 0, 12);  //  Increment hash size if fields are added.
       t = tabV(L->top - 1);
       setintfield(L, t, "nins", (int32_t)T->nins - REF_BIAS - 1);
       setintfield(L, t, "nk", REF_BIAS - (int32_t)T->nk);
       setintfield(L, t, "link", T->link);
       setintfield(L, t, "nexit", T->nsnap);
+      setintfield(L, t, "tryStores", int32_t(T->try_stores));
+      setintfield(L, t, "trySkippedStores", int32_t(T->try_skipped_stores));
+      setintfield(L, t, "tryEnterStores", int32_t(T->try_enter_stores));
+      setintfield(L, t, "tryEnterSnapRemoved", int32_t(T->try_enter_snap_removed));
       setstrV(L, L->top++, lj_str_newz(L, jit_trlinkname[uint32_t(T->linktype)]));
       lua_setfield(L, -2, "linktype");
       // There are many more fields. Add them only when needed.
@@ -445,6 +457,66 @@ LJLIB_CF(jit_util_irCallAddr)
 }
 
 //********************************************************************************************************************
+// local counters = jit.util.contextStats([reset])
+// Return state-local context materialisation counters in Debug builds. Passing true resets them before querying.
+
+static int jit_util_contextStats(lua_State *L)
+{
+#ifdef LUA_USE_ASSERT
+   if (L->base < L->top and tvistrue(L->base)) lj_context_debug_reset(L);
+   ContextDebugCounters *counters = lj_context_debug_get(L, true);
+   lua_createtable(L, 0, 18);
+   GCtab *result = tabV(L->top - 1);
+   setboolV(lj_tab_setstr(L, result, lj_str_newlit(L, "enabled")), 1);
+   setcounterfield(L, result, "virtualActivationsCreated", counters->virtual_activations_created);
+   setcounterfield(L, result, "virtualActivationsRetired", counters->virtual_activations_retired);
+   setcounterfield(L, result, "physicalContextEntries", counters->physical_context_entries);
+   setcounterfield(L, result, "physicalContextLeaves", counters->physical_context_leaves);
+   setcounterfield(L, result, "jitEnterCalls", counters->jit_enter_calls);
+   setcounterfield(L, result, "jitLeaveCalls", counters->jit_leave_calls);
+   setcounterfield(L, result, "jitCurrentCalls", counters->jit_current_calls);
+   setcounterfield(L, result, "maximumVirtualDepth", counters->maximum_virtual_depth);
+   setcounterfield(L, result, "maximumPhysicalDepth", counters->maximum_physical_depth);
+   setcounterfield(L, result, "traceStarts", counters->trace_starts);
+   setcounterfield(L, result, "traceCompilations", counters->trace_compilations);
+   setcounterfield(L, result, "traceAborts", counters->trace_aborts);
+   setcounterfield(L, result, "sideExits", counters->side_exits);
+
+   lua_createtable(L, 0, size_t(ContextMaterialisationReason::Count));
+   GCtab *reasons = tabV(L->top - 1);
+   static constexpr std::array<CSTRING, size_t(ContextMaterialisationReason::Count)> reason_names = {
+      "nestedLuaCall", "nativeCall", "tailCall", "snapshot", "sideExit", "unsupportedBoundary"
+   };
+   for (size_t i = 0; i < reason_names.size(); i++) {
+      setcounterfield(L, reasons, reason_names[i], counters->materialisations[i]);
+   }
+   lua_setfield(L, -2, "materialisations");
+
+   lua_createtable(L, 0, FF__MAX);
+   GCtab *fast_functions = tabV(L->top - 1);
+   for (size_t i = FF_C_ + 1; i < FF__MAX; i++) {
+      if (not counters->native_fast_functions[i]) continue;
+      CSTRING name = glBuiltinCallableNames[i];
+      if (name) setcounterfield(L, fast_functions, name, counters->native_fast_functions[i]);
+   }
+   lua_setfield(L, -2, "nativeFastFunctions");
+
+   lua_createtable(L, 0, counters->native_c_functions.size());
+   GCtab *c_functions = tabV(L->top - 1);
+   for (const auto &[address, count] : counters->native_c_functions) {
+      char name[2 + sizeof(uintptr_t) * 2 + 1];
+      snprintf(name, sizeof(name), "%p", (void *)address);
+      setcounterfield(L, c_functions, name, count);
+   }
+   lua_setfield(L, -2, "nativeCFunctions");
+   return 1;
+#else
+   setnilV(L->top++);
+   return 1;
+#endif
+}
+
+//********************************************************************************************************************
 
 #include "lj_libdef.h" // Includes the LJLIB_MODULE_jit_util table: lj_lib_cf_jit and lj_lib_init_jit_util
 
@@ -549,7 +621,7 @@ LJLIB_CF(jit_opt_start)
       for (int i = 1; i <= nargs; i++) {
          auto str = strdata(lj_lib_checkstr(L, i));
          if (!jitopt_level(J, str) and !jitopt_flag(J, str) and !jitopt_param(J, str)) {
-            lj_err_callerv(L, ErrMsg::JITOPT, str);
+            luaL_error(L, ErrMsg::JITOPT, str);
          }
       }
    }
@@ -653,6 +725,8 @@ extern int luaopen_jit(lua_State* L)
    // Register jit.util as a subtable of jit (avoid lib_create_table's dotted name handling)
    lua_getglobal(L, "jit");  // Get the jit table we just created
    LJ_LIB_REG(L, nullptr, jit_util);  // Create util table without setting in globals
+   lua_pushcfunction(L, jit_util_contextStats);
+   lua_setfield(L, -2, "contextStats");
    lua_setfield(L, -2, "util");
    lua_pop(L, 1);
 
@@ -664,14 +738,19 @@ extern int luaopen_jit(lua_State* L)
    lua_pop(L, 1);
 
    // Register jit interface prototypes for compile-time type inference
-   reg_iface_prototype("jit", "on", {}, { TiriType::Any, TiriType::Bool });
-   reg_iface_prototype("jit", "off", {}, { TiriType::Any, TiriType::Bool });
-   reg_iface_prototype("jit", "flush", {}, { TiriType::Any });
+   reg_iface_prototype("jit", "on", {}, { TiriType::Any, TiriType::Bool }, FProtoFlags::None,
+      FProtoArity::required(0));
+   reg_iface_prototype("jit", "off", {}, { TiriType::Any, TiriType::Bool }, FProtoFlags::None,
+      FProtoArity::required(0));
+   reg_iface_prototype("jit", "flush", {}, { TiriType::Any, TiriType::Bool }, FProtoFlags::None,
+      FProtoArity::required(0));
    reg_iface_prototype("jit", "status", { TiriType::Bool, TiriType::Table }, {});
-   reg_iface_prototype("jit", "attach", {}, { TiriType::Func, TiriType::Str });
+   reg_iface_prototype("jit", "attach", {}, { TiriType::Func, TiriType::Str }, FProtoFlags::None,
+      FProtoArity::required(1));
 
    // Register jit.util interface prototypes
-   reg_iface_prototype("jit.util", "funcInfo", { TiriType::Table }, { TiriType::Func, TiriType::Num });
+   reg_iface_prototype("jit.util", "funcInfo", { TiriType::Table }, { TiriType::Func, TiriType::Num },
+      FProtoFlags::None, FProtoArity::required(1));
    reg_iface_prototype("jit.util", "funcBC", { TiriType::Num, TiriType::Num }, { TiriType::Func, TiriType::Num });
    reg_iface_prototype("jit.util", "funcK", { TiriType::Any }, { TiriType::Func, TiriType::Num });
    reg_iface_prototype("jit.util", "funcUName", { TiriType::Str }, { TiriType::Func, TiriType::Num });
@@ -680,11 +759,15 @@ extern int luaopen_jit(lua_State* L)
    reg_iface_prototype("jit.util", "traceK", { TiriType::Any, TiriType::Num, TiriType::Num }, { TiriType::Num, TiriType::Num });
    reg_iface_prototype("jit.util", "traceSnap", { TiriType::Table }, { TiriType::Num, TiriType::Num });
    reg_iface_prototype("jit.util", "traceMC", { TiriType::Str, TiriType::Num, TiriType::Num }, { TiriType::Num });
-   reg_iface_prototype("jit.util", "traceExitStub", { TiriType::Num }, { TiriType::Num, TiriType::Num });
+   reg_iface_prototype("jit.util", "traceExitStub", { TiriType::Num }, { TiriType::Num, TiriType::Num },
+      FProtoFlags::None, FProtoArity::required(1));
    reg_iface_prototype("jit.util", "irCallAddr", { TiriType::Num }, { TiriType::Num });
+   reg_iface_prototype("jit.util", "contextStats", { TiriType::Table }, { TiriType::Bool }, FProtoFlags::None,
+      FProtoArity::required(0));
 
    // Register jit.opt interface prototypes
-   reg_iface_prototype("jit.opt", "start", {}, { TiriType::Str }, FProtoFlags::Variadic);
+   reg_iface_prototype("jit.opt", "start", {}, { TiriType::Str }, FProtoFlags::Variadic,
+      FProtoArity::required(0));
 
    return 1;
 }

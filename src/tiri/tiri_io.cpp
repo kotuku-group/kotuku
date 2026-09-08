@@ -5,14 +5,12 @@
 #define PRV_TIRI
 #define PRV_TIRI_MODULE
 #include <kotuku/main.h>
-#include <kotuku/modules/tiri.h>
 #include <kotuku/strings.hpp>
+#include <kotuku/modules/filesystem.h>
 #include <inttypes.h>
 
 #include "lauxlib.h"
 #include "lj_obj.h"
-#include "hashes.h"
-#include "defs.h"
 #include "lj_proto_registry.h"
 
 enum {
@@ -100,8 +98,9 @@ static int io_open(lua_State *Lua)
          case 'r': flags |= FL::READ; break;
          case 'w': flags |= FL::WRITE | FL::NEW; break;
          case 'a':
-            if (AnalysePath(path, nullptr) IS ERR::Okay) flags |= FL::WRITE;
-            else flags |= FL::WRITE | FL::NEW;
+            if (auto error = AnalysePath(path, nullptr); error IS ERR::Okay) flags |= FL::WRITE;
+            else if (error IS ERR::FileNotFound) flags |= FL::WRITE | FL::NEW;
+            else luaL_error(Lua, error, "Failed to analyse path: %s", path);
             seek_end = true;
             break;  // Append mode - will seek to end after open
          case '+': flags |= FL::READ | FL::WRITE; break;
@@ -109,15 +108,18 @@ static int io_open(lua_State *Lua)
    }
 
    if (auto file = objFile::create::local({ fl::Path(path), fl::Flags(flags) })) {
-      if (seek_end) file->seekEnd(0);
+      if (seek_end) {
+         if (auto error = file->seekEnd(0); error != ERR::Okay) {
+            FreeResource(file);
+            luaL_error(Lua, error, "Failed to seek to end of file: %s", path);
+         }
+      }
 
       push_file_handle(Lua, file);
-      return 1;
    }
-   else {
-      luaL_error(Lua, ERR::OpenFile);
-      return 0;
-   }
+   else luaL_error(Lua, ERR::OpenFile);
+
+   return 1;
 }
 
 //********************************************************************************************************************
@@ -126,8 +128,26 @@ static int io_open(lua_State *Lua)
 static int io_close(lua_State *Lua)
 {
    if (lua_gettop(Lua) IS 0) {
-      // TODO: Close default output file with FreeResource() and remove it from the registry
-      return 0;
+      lua_pushstring(Lua, "io.defaultOutput");
+      lua_gettable(Lua, LUA_REGISTRYINDEX);
+
+      if (lua_isnil(Lua, -1)) {
+         lua_pop(Lua, 1);
+         lua_pushcfunction(Lua, io_output);
+         lua_call(Lua, 0, 1);
+      }
+
+      if (lua_isnil(Lua, -1)) luaL_error(Lua, ERR::ExpectedFile);
+
+      auto handle = check_file_handle(Lua, -1);
+      handle->close();
+
+      lua_pushstring(Lua, "io.defaultOutput");
+      lua_pushnil(Lua);
+      lua_settable(Lua, LUA_REGISTRYINDEX);
+
+      lua_pushboolean(Lua, 1);
+      return 1;
    }
 
    if (auto handle = check_file_handle(Lua, 1)) {
@@ -135,8 +155,7 @@ static int io_close(lua_State *Lua)
       lua_pushboolean(Lua, 1);
       return 1;
    }
-
-   return 0;
+   else return 0;
 }
 
 //********************************************************************************************************************
@@ -349,9 +368,9 @@ static int lines_iterator(lua_State *Lua)
 
    if (not file) return 0; // End iteration
 
-   struct fl::ReadLine args;
-   if (Action(fl::ReadLine::id, file, &args) IS ERR::Okay) {
-      lua_pushstring(Lua, args.Result);
+   std::string line;
+   if (!file->readLine(line)) {
+      lua_pushstring(Lua, line);
       return 1;
    }
    else { // End of file or error - close if we own it
@@ -377,6 +396,7 @@ static int io_lines(lua_State *Lua)
 {
    FileHandle *file_handle = nullptr;
    bool close_on_finish = false;
+   int handle_index = 0;
 
    if (lua_gettop(Lua) IS 0) {
       // No arguments - use default input
@@ -390,12 +410,10 @@ static int io_lines(lua_State *Lua)
          lua_call(Lua, 0, 1);
       }
 
-      if (lua_isnil(Lua, -1)) {
-         luaL_error(Lua, ERR::InvalidState, "No default input file available");
-         return 0;
-      }
+      if (lua_isnil(Lua, -1)) luaL_error(Lua, ERR::InvalidState, "No default input file available");
 
       file_handle = check_file_handle(Lua, -1);
+      handle_index = lua_gettop(Lua);
       close_on_finish = false; // Don't close default input
    }
    else if (lua_type(Lua, 1) IS LUA_TSTRING) { // Filename provided - open file
@@ -404,6 +422,7 @@ static int io_lines(lua_State *Lua)
       if (auto file = objFile::create::local({ fl::Path(path), fl::Flags(FL::READ) })) {
          push_file_handle(Lua, file);
          file_handle = check_file_handle(Lua, -1);
+         handle_index = lua_gettop(Lua);
          close_on_finish = true; // Close when iteration ends
       }
       else luaL_error(Lua, ERR::File, "Cannot open file: %s", path);
@@ -411,6 +430,7 @@ static int io_lines(lua_State *Lua)
    else {
       // File handle provided
       file_handle = check_file_handle(Lua, 1);
+      handle_index = 1;
       close_on_finish = false; // Don't close provided handle - we don't own it
    }
 
@@ -425,21 +445,12 @@ static int io_lines(lua_State *Lua)
       lua_setfield(Lua, -2, "__gc");
       lua_setmetatable(Lua, -2);
 
-      // Return the iterator function with the state as upvalue
-      lua_pushcclosure(Lua, lines_iterator, 1);
+      // Return the iterator function with the state and file handle as upvalues.
+      lua_pushvalue(Lua, handle_index);
+      lua_pushcclosure(Lua, lines_iterator, 2);
       return 1;
    }
    else luaL_error(Lua, ERR::File);
-}
-
-//********************************************************************************************************************
-// TODO: Open pipe to running process - requires Task integration and using callbacks to receive data from stdout.
-// This is equivalent to Lua's io.popen()
-
-static int io_openPipe(lua_State *Lua)
-{
-   luaL_error(Lua, ERR::NoSupport, "io.openPipe not yet implemented");
-   return 0;
 }
 
 //********************************************************************************************************************
@@ -487,9 +498,9 @@ static int file_read(lua_State *Lua)
 
       // Default to reading a line if no arguments
       if (nargs IS 1) {
-         struct fl::ReadLine args;
-         if (Action(fl::ReadLine::id, file, &args) IS ERR::Okay) {
-            lua_pushstring(Lua, args.Result);
+         std::string line;
+         if (!file->readLine(line)) {
+            lua_pushstring(Lua, line);
             return 1;
          }
          else {
@@ -501,14 +512,14 @@ static int file_read(lua_State *Lua)
       // Process read format arguments
       for (int i = 2; i <= nargs; i++) {
          if (lua_type(Lua, i) IS LUA_TSTRING) {
-            auto format = lua_tostring(Lua, i);
+            auto format = lua_tostringview(Lua, i);
 
-            if (format[0] IS '*') {
+            if ((format.starts_with('*')) and (format.size() > 1)) {
                switch (format[1]) {
                   case 'n': { // Read a number
-                     struct fl::ReadLine args;
-                     if (Action(fl::ReadLine::id, file, &args) IS ERR::Okay) {
-                        lua_pushnumber(Lua, std::strtod(args.Result, nullptr));
+                     std::string line;
+                     if (!file->readLine(line)) {
+                        lua_pushnumber(Lua, std::strtod(line.c_str(), nullptr));
                      }
                      else lua_pushnil(Lua);
                      break;
@@ -516,15 +527,20 @@ static int file_read(lua_State *Lua)
 
                   case 'a': { // Read entire file
                      auto current_pos = file->Position;
-                     file->seekEnd(0);
+                     if (auto error = file->seekEnd(0); error != ERR::Okay) {
+                        luaL_error(Lua, error, "Failed to seek to end of file");
+                     }
+
                      auto file_size = file->Position;
-                     file->seek(current_pos, SEEK::START);
+                     if (auto error = file->seek(current_pos, SEEK::START); error != ERR::Okay) {
+                        luaL_error(Lua, error, "Failed to restore file position");
+                     }
 
                      auto remaining = file_size - current_pos;
                      if (remaining > 0) {
                         std::string buffer(remaining, '\0');
                         int bytes_read;
-                        if (acRead(file, buffer.data(), remaining, &bytes_read) IS ERR::Okay) {
+                        if (!acRead(file, std::span<int8_t>((int8_t *)buffer.data(), size_t(remaining)), &bytes_read)) {
                            buffer.resize(bytes_read);
                            lua_pushlstring(Lua, buffer.data(), bytes_read);
                         }
@@ -535,10 +551,8 @@ static int file_read(lua_State *Lua)
                   }
 
                   case 'l': { // Read a line (default behavior)
-                     struct fl::ReadLine args;
-                     if (Action(fl::ReadLine::id, file, &args) IS ERR::Okay) {
-                        lua_pushstring(Lua, args.Result);
-                     }
+                     std::string line;
+                     if (!file->readLine(line)) lua_pushstring(Lua, line);
                      else lua_pushnil(Lua);
                      break;
                   }
@@ -556,7 +570,8 @@ static int file_read(lua_State *Lua)
             if (bytes_to_read > 0) {
                std::string buffer(bytes_to_read, '\0');
                int bytes_read;
-               if (acRead(file, buffer.data(), bytes_to_read, &bytes_read) IS ERR::Okay and bytes_read > 0) {
+               if ((!acRead(file, std::span<int8_t>((int8_t *)buffer.data(), size_t(bytes_to_read)), &bytes_read)) and
+                   bytes_read > 0) {
                   buffer.resize(bytes_read);
                   lua_pushlstring(Lua, buffer.data(), bytes_read);
                }
@@ -587,7 +602,14 @@ static int file_write(lua_State *Lua)
          auto str = luaL_checklstring(Lua, i, &len);
 
          int result;
-         if (acWrite(file, str, len, &result) != ERR::Okay) luaL_error(Lua, ERR::Write);
+         if (auto error = acWrite(file, std::span<const int8_t>((const int8_t *)str, len), &result);
+             error != ERR::Okay) {
+            luaL_error(Lua, error, "Failed to write to file.");
+         }
+
+         // Failing to write all the bytes is an exception because the serialisation will otherwise be invalid.
+
+         if (result != int(len)) luaL_error(Lua, ERR::Write, "Wrote %d of %d bytes.", result, int(len));
       }
 
       lua_pushvalue(Lua, 1); // Return file handle
@@ -608,7 +630,9 @@ static int file_close(lua_State *Lua)
 static int file_flush(lua_State *Lua)
 {
    if (auto handle = check_file_handle(Lua, 1)) {
-      acFlush(GetObjectPtr(handle->file_id));
+      auto file = GetObjectPtr(handle->file_id);
+      if (not file) luaL_error(Lua, ERR::InvalidState);
+      if (auto error = acFlush(file); error != ERR::Okay) luaL_error(Lua, error);
       lua_pushboolean(Lua, 1);
       return 1;
    }
@@ -627,11 +651,11 @@ static int file_seek(lua_State *Lua)
       auto offset = luaL_optnumber(Lua, 3, 0);
 
       auto whence = SEEK::CURRENT;
-      if (iequals("set", whence_str)) whence = SEEK::START;
-      else if (iequals("cur", whence_str)) whence = SEEK::CURRENT;
-      else if (iequals("end", whence_str)) whence = SEEK::END;
+      if (kt::iequals("set", whence_str)) whence = SEEK::START;
+      else if (kt::iequals("cur", whence_str)) whence = SEEK::CURRENT;
+      else if (kt::iequals("end", whence_str)) whence = SEEK::END;
 
-      if (acSeek(file, offset, whence) IS ERR::Okay) {
+      if (!acSeek(file, offset, whence)) {
          lua_pushnumber(Lua, file->Position);
          return 1;
       }
@@ -657,8 +681,9 @@ static int file_lines(lua_State *Lua)
       lua_setfield(Lua, -2, "__gc");
       lua_setmetatable(Lua, -2);
 
-      // Return the iterator function with the state as upvalue
-      lua_pushcclosure(Lua, lines_iterator, 1);
+      // Return the iterator function with the state and file handle as upvalues.
+      lua_pushvalue(Lua, 1);
+      lua_pushcclosure(Lua, lines_iterator, 2);
       return 1;
    }
    else luaL_error(Lua, ERR::File);
@@ -672,8 +697,11 @@ static int io_readAll(lua_State *Lua)
 {
    auto path = luaL_checkstring(Lua, 1);
 
-   auto file = objFile::create::local({ fl::Path(path), fl::Flags(FL::READ) });
-   if (not file) luaL_error(Lua, ERR::OpenFile, "Failed to open file: %s", path);
+   auto file = objFile::create({ fl::Path(path), fl::Flags(FL::READ) });
+   if (not file.ok()) {
+      file.~Create();
+      luaL_error(Lua, ERR::OpenFile, "Failed to open file: %s", path);
+   }
 
    file->seekEnd(0);
    auto file_size = file->Position;
@@ -682,10 +710,12 @@ static int io_readAll(lua_State *Lua)
    if (file_size > 0) {
       std::string buffer(file_size, '\0');
       int bytes_read;
-      if (acRead(file, buffer.data(), file_size, &bytes_read) IS ERR::Okay and bytes_read IS file_size) {
+      if ((!file->read(std::span<int8_t>((int8_t *)buffer.data(), size_t(file_size)), &bytes_read)) and
+          bytes_read IS file_size) {
          lua_pushlstring(Lua, buffer.data(), bytes_read);
          return 1;
       }
+      file.~Create();
       luaL_error(Lua, ERR::Read, "Failed to read %" PRId64 " bytes from \"%s\"", file_size, path);
    }
 
@@ -703,11 +733,15 @@ static int io_writeAll(lua_State *Lua)
    size_t len;
    auto content = luaL_checklstring(Lua, 2, &len);
 
-   auto file = objFile::create::local({ fl::Path(path), fl::Flags(FL::WRITE|FL::NEW) });
-   if (not file) luaL_error(Lua, ERR::CreateFile, "Failed to create file: %s", path);
+   auto file = objFile::create({ fl::Path(path), fl::Flags(FL::WRITE|FL::NEW) });
+   if (not file.ok()) {
+      file.~Create();
+      luaL_error(Lua, ERR::CreateFile, "Failed to create file: %s", path);
+   }
 
    int result;
-   if (acWrite(file, content, len, &result) != ERR::Okay) {
+   if (file->write(std::span<const int8_t>((const int8_t *)content, len), &result) != ERR::Okay) {
+      file.~Create();
       luaL_error(Lua, ERR::Write, "Failed to write to file: %s", path);
    }
 
@@ -805,7 +839,6 @@ void register_io_class(lua_State *Lua)
       { "lines",        io_lines },
       { "open",         io_open },
       { "output",       io_output },
-      { "openPipe",     io_openPipe }, //
       { "read",         io_read },
       { "readAll",      io_readAll },
       { "sanitisePath", io_sanitisePath },
@@ -824,15 +857,17 @@ void register_io_class(lua_State *Lua)
       { "flush",       file_flush },
       { "seek",        file_seek },
       { "lines",       file_lines },
+      { "__close",     file_gc },
       { "__gc",        file_gc },
       { nullptr, nullptr }
    };
 
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
    log.trace("Registering io interface.");
 
    // Create file handle metatable
    luaL_newmetatable(Lua, "Tiri.file");
+   lj_bmeth_mark_method_compatible(tabV(Lua->top - 1));
    lua_pushstring(Lua, "__index");
    lua_pushvalue(Lua, -2);  // pushes the metatable
    lua_settable(Lua, -3);   // metatable.__index = metatable
@@ -856,17 +891,22 @@ void register_io_class(lua_State *Lua)
    lua_pushnumber(Lua, CONST_STDERR);
    lua_setfield(Lua, -2, "stderr");
 
+   lua_pop(Lua, 3); // Drop the Tiri.file metatable, Tiri.io metatable, and io library table
+
    // Register io interface prototypes for compile-time type inference
-   reg_iface_prototype("io", "open", { TiriType::Any }, { TiriType::Str, TiriType::Str });
+   reg_iface_prototype("io", "open", { TiriType::Userdata }, { TiriType::Str, TiriType::Str }, FProtoFlags::None,
+      FProtoArity::required(1));
    reg_iface_prototype("io", "close", { TiriType::Bool }, { TiriType::Any });
    reg_iface_prototype("io", "read", { TiriType::Any }, { TiriType::Any });
    reg_iface_prototype("io", "write", {}, { TiriType::Any });
    reg_iface_prototype("io", "flush", { TiriType::Bool }, {});
-   reg_iface_prototype("io", "input", { TiriType::Any }, { TiriType::Any });
-   reg_iface_prototype("io", "output", { TiriType::Any }, { TiriType::Any });
-   reg_iface_prototype("io", "lines", { TiriType::Func }, { TiriType::Any });
-   reg_iface_prototype("io", "openPipe", {}, { TiriType::Str });
-   reg_iface_prototype("io", "tempFile", { TiriType::Any }, {});
+   reg_iface_prototype("io", "input", { TiriType::Any }, { TiriType::Any }, FProtoFlags::None,
+      FProtoArity::required(0));
+   reg_iface_prototype("io", "output", { TiriType::Any }, { TiriType::Any }, FProtoFlags::None,
+      FProtoArity::required(0));
+   reg_iface_prototype("io", "lines", { TiriType::Func }, { TiriType::Any }, FProtoFlags::None,
+      FProtoArity::required(0));
+   reg_iface_prototype("io", "tempFile", { TiriType::Userdata }, {});
    reg_iface_prototype("io", "type", { TiriType::Str }, { TiriType::Any });
    reg_iface_prototype("io", "readAll", { TiriType::Str }, { TiriType::Str });
    reg_iface_prototype("io", "writeAll", {}, { TiriType::Str, TiriType::Str });

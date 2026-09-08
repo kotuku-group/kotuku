@@ -9,31 +9,31 @@ function enforce_hotpath() end
 @Test function ArrayTypedBasicInt()
    arr = array<int>
    assert(#arr is 0, "Empty array<int> should have length 0, got " .. #arr)
-   assert(arr:type() is 'int', "Type should be 'int', got '" .. arr:type() .. "'")
+   assert(arr.type() is 'int', "Type should be 'int', got '" .. arr.type() .. "'")
 end
 
 @Test function ArrayTypedBasicDouble()
    arr = array<double>
    assert(#arr is 0, "Empty array<double> should have length 0")
-   assert(arr:type() is 'double', "Type should be 'double'")
+   assert(arr.type() is 'double', "Type should be 'double'")
 end
 
 @Test function ArrayTypedBasicString()
-   arr = array<string>
-   assert(#arr is 0, "Empty array<string> should have length 0")
-   assert(arr:type() is 'string', "Type should be 'string'")
+   arr = array<str>
+   assert(#arr is 0, "Empty array<str> should have length 0")
+   assert(arr.type() is 'str', "Type should be 'str'")
 end
 
 @Test function ArrayTypedBasicTable()
    arr = array<table>
    assert(#arr is 0, "Empty array<table> should have length 0")
-   assert(arr:type() is 'table', "Type should be 'table'")
+   assert(arr.type() is 'table', "Type should be 'table'")
 end
 
 @Test function ArrayTypedBasicObject()
-   arr = array<object>
-   assert(#arr is 0, "Empty array<object> should have length 0")
-   assert(arr:type() is 'object', "Type should be 'object'")
+   arr = array<obj>
+   assert(#arr is 0, "Empty array<obj> should have length 0")
+   assert(arr.type() is 'obj', "Type should be 'obj'")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -42,9 +42,9 @@ end
 @Test function ArrayTypedWithSize()
    arr = array<int, 5>
    assert(#arr is 5, "Pre-allocated array should have length 5, got " .. #arr)
-   assert(arr:type() is 'int', "Type should be 'int'")
+   assert(arr.type() is 'int', "Type should be 'int'")
    -- Can write to all slots (use ... for inclusive range)
-   for i in {0...4} do
+   for i in {0 into 4} do
       arr[i] = i * 10
    end
    assert(arr[0] is 0, "First slot should be 0")
@@ -54,17 +54,17 @@ end
 @Test function ArrayTypedWithSizeTable()
    arr = array<table, 3>
    assert(#arr is 3, "Pre-allocated table array should have length 3")
-   assert(arr:type() is 'table', "Type should be 'table'")
+   assert(arr.type() is 'table', "Type should be 'table'")
    -- All slots should be nil
-   for i in {0..2} do
+   for i in {0 to 2} do
       assert(arr[i] is nil, "Slot " .. i .. " should be nil")
    end
 end
 
 @Test function ArrayTypedWithSizeString()
-   arr = array<string, 10>
+   arr = array<str, 10>
    assert(#arr is 10, "Pre-allocated string array should have length 10")
-   assert(arr:type() is 'string', "Type should be 'string'")
+   assert(arr.type() is 'str', "Type should be 'str'")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -73,7 +73,7 @@ end
 @Test function ArrayTypedWithValues()
    arr = array<int> { 10, 20, 30 }
    assert(#arr is 3, "Initialised array should have length 3, got " .. #arr)
-   assert(arr:type() is 'int', "Type should be 'int'")
+   assert(arr.type() is 'int', "Type should be 'int'")
    assert(arr[0] is 10, "First element should be 10, got " .. arr[0])
    assert(arr[1] is 20, "Second element should be 20, got " .. arr[1])
    assert(arr[2] is 30, "Third element should be 30, got " .. arr[2])
@@ -87,7 +87,7 @@ end
 end
 
 @Test function ArrayTypedWithStringValues()
-   arr = array<string> { 'hello', 'world', 'test' }
+   arr = array<str> { 'hello', 'world', 'test' }
    assert(#arr is 3, "String array should have 3 elements")
    assert(arr[0] is 'hello', "First element should be 'hello'")
    assert(arr[1] is 'world', "Second element should be 'world'")
@@ -107,31 +107,112 @@ end
 @Test function ArrayTypedAllTypes()
    -- byte and char are aliases that map to 'char'
    byte_arr = array<byte>
-   assert(byte_arr:type() is 'char', "byte should map to 'char', got '" .. byte_arr:type() .. "'")
+   assert(byte_arr.type() is 'byte', "byte should be 'byte', got '" .. byte_arr.type() .. "'")
 
    char_arr = array<char>
-   assert(char_arr:type() is 'char', "char should be 'char'")
+   assert(char_arr.type() is 'byte', "char should map to 'byte'")
 
    int16_arr = array<int16>
-   assert(int16_arr:type() is 'int16', "int16 should be 'int16'")
+   assert(int16_arr.type() is 'int16', "int16 should be 'int16'")
 
    int_arr = array<int>
-   assert(int_arr:type() is 'int', "int should be 'int'")
+   assert(int_arr.type() is 'int', "int should be 'int'")
 
    int64_arr = array<int64>
-   assert(int64_arr:type() is 'int64', "int64 should be 'int64'")
+   assert(int64_arr.type() is 'int64', "int64 should be 'int64'")
 
    float_arr = array<float>
-   assert(float_arr:type() is 'float', "float should be 'float'")
+   assert(float_arr.type() is 'float', "float should be 'float'")
 
    double_arr = array<double>
-   assert(double_arr:type() is 'double', "double should be 'double'")
+   assert(double_arr.type() is 'double', "double should be 'double'")
 
-   string_arr = array<string>
-   assert(string_arr:type() is 'string', "string should be 'string'")
+   string_arr = array<str>
+   assert(string_arr.type() is 'str', "string should be 'string'")
 
    table_arr = array<table>
-   assert(table_arr:type() is 'table', "table should be 'table'")
+   assert(table_arr.type() is 'table', "table should be 'table'")
+end
+
+@Test function ArrayTypedUnsignedTypes()
+   local uint8_arr = array<uint8>
+   local uint16_arr = array<uint16, 2>
+   local uint_arr = array<uint> { 0, 4294967295 }
+   local uint64_arr = array<uint64, 2> { 1, 9007199254740991 }
+   local legacy_new = array.new('uint16', 1)
+   local legacy_of = array.of('uint8', 255)
+
+   assert(uint8_arr.type() is 'uint8' and tostring(uint8_arr) is 'array<uint8, 0>', 'uint8 identity was not preserved')
+   assert(uint16_arr.type() is 'uint16' and #uint16_arr is 2, 'uint16 fixed-size syntax failed')
+   assert(uint_arr.type() is 'uint' and uint_arr[1] is 4294967295, 'uint literal lost its range')
+   assert(uint64_arr.type() is 'uint64' and uint64_arr[1] is 9007199254740991, 'uint64 literal lost exact data')
+   assert(legacy_new.type() is 'uint16' and legacy_of.type() is 'uint8' and legacy_of[0] is 255,
+      'legacy unsigned constructors did not retain their element types')
+
+   local retired_name_failed = false
+   try
+      array.new('uint32', 1)
+   except error_value
+      retired_name_failed = true
+   end
+   assert(retired_name_failed, 'array.new() accepted the retired uint32 element name')
+
+   retired_name_failed = false
+   try
+      exec([[local values = array<uint32> { 0 }]])
+   except error_value
+      retired_name_failed = true
+   end
+   assert(retired_name_failed, 'typed array syntax accepted the retired uint32 element name')
+
+   local failed = false
+   try
+      uint8_arr.push('A')
+   except error_value
+      failed = true
+   end
+   assert(failed, 'array<uint8> accepted byte-buffer string input')
+end
+
+@Test function ArrayTypedInt8IsSignedAndDistinctFromByte()
+   local signed_values = array<int8> { -128, -1, 0, 127, 128, 255 }
+   local bytes = array<byte> { -1, 255 }
+   local legacy = array.of('int8', -128, 127)
+
+   assert(signed_values.type() is 'int8' and tostring(signed_values) is 'array<int8, 6>',
+      'int8 identity was not preserved')
+   assert(signed_values[0] is -128 and signed_values[1] is -1 and signed_values[3] is 127,
+      'int8 did not preserve signed values')
+   assert(signed_values[4] is -128 and signed_values[5] is -1, 'int8 values did not wrap as signed 8-bit integers')
+   assert(bytes.type() is 'byte' and bytes[0] is 255 and bytes[1] is 255,
+      'byte did not remain an unsigned byte buffer')
+   assert(legacy.type() is 'int8' and legacy[0] is -128 and legacy[1] is 127,
+      'legacy int8 construction did not retain signed storage')
+
+   signed_values[0] = 255
+   signed_values.push(-129)
+   assert(signed_values[0] is -1 and signed_values.last() is 127, 'int8 mutation did not retain signed semantics')
+
+   local failed = false
+   try
+      signed_values.push('A')
+   except error_value
+      failed = true
+   end
+   assert(failed, 'array<int8> incorrectly exposed byte-buffer string operations')
+
+   local function accept_int8(Values:array<int8>):num
+      return Values[0]
+   end
+
+   assert(accept_int8(signed_values) is -1, 'array<int8> did not satisfy its own binding contract')
+   failed = false
+   try
+      accept_int8(bytes)
+   except error_value
+      failed = true
+   end
+   assert(failed, 'array<byte> incorrectly satisfied an array<int8> binding contract')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -141,12 +222,12 @@ end
    -- Whitespace inside < > should be ignored
    arr = array< int , 3 >
    assert(#arr is 3, "Whitespace should be ignored - got length " .. #arr)
-   assert(arr:type() is 'int', "Type should still be 'int'")
+   assert(arr.type() is 'int', "Type should still be 'int'")
 end
 
 @Test function ArrayTypedWhitespaceWithValues()
    -- Whitespace with initialiser
-   arr = array< string > { 'a', 'b', 'c' }
+   arr = array< str > { 'a', 'b', 'c' }
    assert(#arr is 3, "Whitespace with values should work")
    assert(arr[0] is 'a', "First element should be 'a'")
 end
@@ -156,15 +237,15 @@ end
 
 @Test function ArrayTypedInExpression()
    -- Ensure it works in expression contexts
-   result = array<int> { 1, 2, 3 }:concat('%d', ', ')
+   result = array<int> { 1, 2, 3 }.concat(', ', '%d')
    assert(result is '1, 2, 3', "Method chain on typed array failed, got '" .. result .. "'")
 end
 
 @Test function ArrayTypedAsArgument()
    -- Pass typed array as function argument
-   function sum_array(a)
+   function sum_array(a):num
       total = 0
-      for i = 0, #a - 1 do
+      for i in {0 to #a} do
          total += a[i]
       end
       return total
@@ -193,7 +274,7 @@ end
 @Test function ArrayTypedEmptyBraces()
    arr = array<int> {}
    assert(#arr is 0, "Empty braces should create empty array")
-   assert(arr:type() is 'int', "Type should still be 'int'")
+   assert(arr.type() is 'int', "Type should still be 'int'")
 end
 
 @Test function ArrayTypedZeroSize()
@@ -213,10 +294,10 @@ end
    buffer_size = 400
    arr = array<byte, buffer_size>
    assert(#arr is 400, "Variable size should work, got " .. #arr)
-   assert(arr:type() is 'char', "Type should be 'char' (byte maps to char)")
+   assert(arr.type() is 'byte', "Type should be 'byte'")
 
    -- Size can also be a more complex unary expression
-   obj = { size = 100 }
+   local obj = { size = 100 }
    arr2 = array<int, obj.size>
    assert(#arr2 is 100, "Member access size should work")
 end
@@ -230,8 +311,8 @@ end
    old_arr = array.of('int', 1, 2, 3)
 
    assert(#new_arr is #old_arr, "Lengths should match")
-   assert(new_arr:type() is old_arr:type(), "Types should match")
-   for i in {0..2} do
+   assert(new_arr.type() is old_arr.type(), "Types should match")
+   for i in {0 to 2} do
       assert(new_arr[i] is old_arr[i], "Values at index " .. i .. " should match")
    end
 end
@@ -239,10 +320,10 @@ end
 @Test function ArrayTypedVsTraditionalNew()
    -- New syntax with size should match array.new()
    new_arr = array<double, 5>
-   old_arr = array.new(5, 'double')
+   old_arr = array.new('double', 5)
 
    assert(#new_arr is #old_arr, "Lengths should match")
-   assert(new_arr:type() is old_arr:type(), "Types should match")
+   assert(new_arr.type() is old_arr.type(), "Types should match")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -323,29 +404,29 @@ end
 @Test function ArrayTypedFindMethod()
    -- Find method should locate values
    arr = array<int> { 10, 20, 30, 40, 50 }
-   idx = arr:find(30)
+   idx = arr.indexOf(30)
    assert(idx is 2, "Find should return index 2 for value 30, got " .. tostring(idx))
 end
 
 @Test function ArrayTypedMethodClear()
    -- Clear method should reset array
    arr = array<int> { 1, 2, 3, 4, 5 }
-   arr:clear()
+   arr.clear()
    assert(#arr is 0, "Cleared array should have length 0")
-   assert(arr:type() is 'int', "Type should be preserved after clear")
+   assert(arr.type() is 'int', "Type should be preserved after clear")
 end
 
 @Test function ArrayTypedConcat()
    -- Concat method for string representation
    arr = array<int> { 1, 2, 3, 4, 5 }
-   result = arr:concat('%d', '-')
+   result = arr.concat('-', '%d')
    assert(result is '1-2-3-4-5', "Concat should join with separator, got '" .. result .. "'")
 end
 
 @Test function ArrayTypedMethodSort()
    -- Sort method should work
    arr = array<int> { 5, 2, 8, 1, 9 }
-   arr:sort()
+   arr.sort()
    assert(arr[0] is 1, "First element after sort should be 1")
    assert(arr[4] is 9, "Last element after sort should be 9")
 end
@@ -357,7 +438,7 @@ end
    -- Local array in function scope
    function createArray()
       local arr = array<int, 5>
-      for i in {0...4} do
+      for i in {0 into 4} do
          arr[i] = i * 2
       end
       return arr
@@ -369,19 +450,19 @@ end
 
 @Test function ArrayTypedReassignment()
    -- Reassigning array variable
-   arr = array<int> { 1, 2, 3 }
+   local arr:array<any> = array<int> { 1, 2, 3 }
    assert(#arr is 3, "Initial array should have 3 elements")
 
    arr = array<double> { 1.5, 2.5 }
    assert(#arr is 2, "Reassigned array should have 2 elements")
-   assert(arr:type() is 'double', "Reassigned array should be double type")
+   assert(arr.type() is 'double', "Reassigned array should be double type")
 end
 
 @Test function ArrayTypedAsReturnValue()
    -- Function returning typed array
-   function makeNumbers(n)
+   function makeNumbers(n):array<any>
       result = array<int, n>
-      for i = 0, n - 1 do
+      for i in {0 to n} do
          result[i] = i + 1
       end
       return result
@@ -400,7 +481,7 @@ end
    -- Array as table field
    data = {
       numbers = array<int> { 1, 2, 3 },
-      names = array<string> { 'a', 'b', 'c' }
+      names = array<str> { 'a', 'b', 'c' }
    }
    assert(#data.numbers is 3, "Nested int array should have 3 elements")
    assert(#data.names is 3, "Nested string array should have 3 elements")
@@ -416,7 +497,7 @@ end
    arr[2] = { x = 5, y = 6 }
 
    total = 0
-   for i = 0, 2 do
+   for i in {0 to 3} do
       total += arr[i].x + arr[i].y
    end
    assert(total is 21, "Sum of all x and y should be 21, got " .. total)
@@ -426,10 +507,10 @@ end
 -- Iteration patterns
 
 @Test function ArrayTypedNumericFor()
-   -- Numeric for loop iteration
+   -- Range loop iteration
    arr = array<int> { 10, 20, 30, 40, 50 }
    sum = 0
-   for i = 0, #arr - 1 do
+   for i in {0 to #arr} do
       sum += arr[i]
    end
    assert(sum is 150, "Sum should be 150, got " .. sum)
@@ -439,7 +520,7 @@ end
    -- Range-based iteration with inclusive range
    arr = array<int> { 100, 200, 300 }
    sum = 0
-   for i in {0...2} do
+   for i in {0 into 2} do
       sum += arr[i]
    end
    assert(sum is 600, "Sum should be 600, got " .. sum)
@@ -460,7 +541,7 @@ end
    -- Multiple array declarations (separate statements)
    a = array<int, 3>
    b = array<double, 2>
-   c = array<string> { 'x' }
+   c = array<str> { 'x' }
 
    assert(#a is 3, "First array should have 3 elements")
    assert(#b is 2, "Second array should have 2 elements")
@@ -477,9 +558,9 @@ end
    assert(#empty2 is 0, "array<int, 0> should be empty")
    assert(#empty3 is 0, "array<int> {} should be empty")
 
-   assert(empty1:type() is 'int', "All should be int type")
-   assert(empty2:type() is 'int', "All should be int type")
-   assert(empty3:type() is 'int', "All should be int type")
+   assert(empty1.type() is 'int', "All should be int type")
+   assert(empty2.type() is 'int', "All should be int type")
+   assert(empty3.type() is 'int', "All should be int type")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -489,7 +570,7 @@ end
    -- Size is larger than number of initial values - should pad with zeros
    arr = array<int, 10> { 1, 2, 3 }
    assert(#arr is 10, "Array should have length 10, got " .. #arr)
-   assert(arr:type() is 'int', "Type should be 'int'")
+   assert(arr.type() is 'int', "Type should be 'int'")
    assert(arr[0] is 1, "First element should be 1, got " .. arr[0])
    assert(arr[1] is 2, "Second element should be 2, got " .. arr[1])
    assert(arr[2] is 3, "Third element should be 3, got " .. arr[2])
@@ -510,7 +591,7 @@ end
 
 @Test function ArrayTypedSizeLargerThanValuesString()
    -- Test with string type - padded elements should be nil
-   arr = array<string, 5> { 'hello', 'world' }
+   arr = array<str, 5> { 'hello', 'world' }
    assert(#arr is 5, "Array should have length 5, got " .. #arr)
    assert(arr[0] is 'hello', "First element should be 'hello'")
    assert(arr[1] is 'world', "Second element should be 'world'")
@@ -604,7 +685,7 @@ end
 
 @Test function ArrayResizeStringArray()
    -- Test array.resize() with string array
-   arr = array<string> { 'a', 'b' }
+   arr = array<str> { 'a', 'b' }
    array.resize(arr, 5)
    assert(#arr is 5, "Length should be 5")
    assert(arr[0] is 'a', "First element preserved")
@@ -615,7 +696,7 @@ end
 @Test function ArrayResizeObjectArray()
    obj_one = obj.new('time')
    obj_two = obj.new('file')
-   arr = array<object> { obj_one, obj_two }
+   arr = array<obj> { obj_one, obj_two }
    array.resize(arr, 4)
    assert(#arr is 4, "Length should be 4")
    assert(arr[0].id is obj_one.id, "First object preserved")
@@ -626,4 +707,107 @@ end
    assert(arr[0].id is obj_one.id, "First object should remain after shrink")
    obj_one.free()
    obj_two.free()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Initialiser grammar: separators, adjacency, nesting and diagnostics.  These cases pin the accepted syntax of the
+-- dedicated typed-array initialiser parser so that it cannot silently diverge from table-literal field parsing.
+
+function array_init_no_results() end
+
+function array_init_two_results():<num, num>
+   return 7, 8
+end
+
+@Test function ArrayInitialiserEmptyBraces()
+   -- An empty braced initialiser must still produce a correctly typed empty array.
+   arr = array<int> {}
+   assert(#arr is 0, "Empty initialiser should have length 0, got " .. #arr)
+   assert(arr.type() is 'int', "Empty initialiser should retain its element type")
+end
+
+@Test function ArrayInitialiserSemicolonSeparators()
+   arr = array<int> { 1; 2; 3 }
+   assert(#arr is 3, "Semicolon separators should yield 3 elements, got " .. #arr)
+   assert(arr[0] is 1, "First element should be 1")
+   assert(arr[2] is 3, "Third element should be 3")
+end
+
+@Test function ArrayInitialiserTrailingSeparators()
+   local trailing_comma = array<int> { 1, 2, }
+   assert(#trailing_comma is 2, "A trailing comma should not add an element, got " .. #trailing_comma)
+   assert(trailing_comma[1] is 2, "Trailing comma should preserve the last value")
+
+   local trailing_semicolon = array<int> { 4; 5; }
+   assert(#trailing_semicolon is 2, "A trailing semicolon should not add an element, got " .. #trailing_semicolon)
+   assert(trailing_semicolon[1] is 5, "Trailing semicolon should preserve the last value")
+end
+
+@Test function ArrayInitialiserAdjacentExpressions()
+   -- Values without an intervening separator are accepted, matching the historic table-field loop.
+   arr = array<int> { 1 2 3 }
+   assert(#arr is 3, "Adjacent values should yield 3 elements, got " .. #arr)
+   assert(arr[0] is 1, "First adjacent value should be 1")
+   assert(arr[2] is 3, "Third adjacent value should be 3")
+end
+
+@Test function ArrayInitialiserNestedLiterals()
+   local tables = array<table> { { 10, 20 }, { x = 1 } }
+   assert(#tables is 2, "Nested table values should yield 2 elements, got " .. #tables)
+   assert(tables[0][1] is 20, "Nested table array part should be preserved")
+   assert(tables[1].x is 1, "Nested table record part should be preserved")
+
+   local arrays = array<array> { array<int> { 1, 2 }, array<int> { 3 } }
+   assert(#arrays is 2, "Nested typed arrays should yield 2 elements, got " .. #arrays)
+   assert(#arrays[0] is 2, "First nested array should retain 2 elements")
+   assert(arrays[1][0] is 3, "Second nested array should retain its value")
+end
+
+@Test function ArrayInitialiserConsecutiveFormattedStrings()
+   -- Separator handling must not peek into the buffered tokens produced by an interpolated string.
+   local port = 18952
+   local args = array<str> { f'url=http://127.0.0.1:{port}/echo', f'proxy=127.0.0.1:{port}', 'timeout=5' }
+   assert(#args is 3, "Formatted string values should yield 3 elements, got " .. #args)
+   assert(args[0] is 'url=http://127.0.0.1:18952/echo', "First formatted string should parse intact")
+   assert(args[1] is 'proxy=127.0.0.1:18952', "Second formatted string should parse intact")
+   assert(args[2] is 'timeout=5', "Trailing plain string should parse intact")
+end
+
+@Test function ArrayInitialiserTailCallContributesOneValue()
+   -- Unlike a table constructor, a final call contributes exactly one value and must not expand.
+   local expanded = array<int> { 1, array_init_two_results() }
+   assert(#expanded is 2, "A multi-result tail call should contribute one value, got " .. #expanded)
+   assert(expanded[1] is 7, "The tail call should contribute its first result only")
+
+   local empty_tail = array<int> { 1, array_init_no_results() }
+   assert(#empty_tail is 2, "A zero-result tail call should still occupy one slot, got " .. #empty_tail)
+   assert(empty_tail[1] is 0, "A zero-result tail call should default its slot")
+end
+
+@Test function ArrayInitialiserNestedRangeExpressionsRemainValid()
+   -- Range syntax is disabled for the outer braces, but nested range expressions are ordinary values.
+   arr = array<any> { 2 in {0 to 5}, 9 in {0 to 5} }
+   assert(#arr is 2, "Nested range membership tests should yield 2 elements, got " .. #arr)
+   assert(arr[0] is true, "2 should be within {0 to 5}")
+   assert(arr[1] is false, "9 should be outside {0 to 5}")
+end
+
+@Test function ArrayInitialiserRangeSyntaxRemainsDisabled()
+   -- 'to' is not a range keyword inside typed-array braces; it resolves as an ordinary identifier.
+   local result = debug.validate("x = array<int> { 0 to 3 }")
+   assert(result.success is false, "Range syntax should not be accepted in a typed-array initialiser")
+end
+
+function assert_array_key_rejected(Source:str, Context:str)
+   local result = debug.validate(Source)
+   assert(result.success is false, Context .. ': source should fail validation')
+   assert(result.diagnostics[0].message.find('Array initialiser', 0, true) != nil,
+      Context .. ': expected an array-initialiser diagnostic, got: ' .. tostring(result.diagnostics[0].message))
+end
+
+@Test function ArrayInitialiserRejectsKeyedFields()
+   assert_array_key_rejected("x = array<int> { value = 1 }", 'named key')
+   assert_array_key_rejected("x = array<int> { [0] = 1 }", 'computed key')
+   assert_array_key_rejected("x = array<int> { 1, 2, value = 3 }", 'named key after positional values')
+   assert_array_key_rejected("x = array<int> { 1, [2] = 3 }", 'computed key after positional values')
 end

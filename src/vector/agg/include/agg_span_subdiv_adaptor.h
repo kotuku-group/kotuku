@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,16 +5,17 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Subdivides long span-interpolator runs into smaller segments. Hooks into span interpolators used by image and
+// gradient span generators. In the vector renderer it improves transform accuracy over long scanlines without changing
+// generator code.
 
-#ifndef AGG_SPAN_SUBDIV_ADAPTOR_INCLUDED
-#define AGG_SPAN_SUBDIV_ADAPTOR_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 
 namespace agg
 {
-
-    //=================================================span_subdiv_adaptor
     template<class Interpolator, unsigned SubpixelShift = 8>
     class span_subdiv_adaptor
     {
@@ -23,14 +23,11 @@ namespace agg
         typedef Interpolator interpolator_type;
         typedef typename interpolator_type::trans_type trans_type;
 
-        enum sublixel_scale_e
-        {
+        enum sublixel_scale_e {
             subpixel_shift = SubpixelShift,
             subpixel_scale = 1 << subpixel_shift
         };
 
-
-        //----------------------------------------------------------------
         span_subdiv_adaptor() :
             m_subdiv_shift(4),
             m_subdiv_size(1 << m_subdiv_shift),
@@ -132,5 +129,3 @@ namespace agg
     };
 
 }
-
-#endif

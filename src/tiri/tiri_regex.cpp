@@ -12,20 +12,22 @@ Examples:
 #define PRV_TIRI
 #define PRV_TIRI_MODULE
 #include <kotuku/main.h>
-#include <kotuku/modules/tiri.h>
 #include <kotuku/modules/regex.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <cctype>
+#include <mutex>
 
 #include "lauxlib.h"
 #include "lj_obj.h"
 #include "lj_array.h"
 #include "lj_str.h"
 #include "lj_gc.h"
+#include "lj_ff.h"
 #include "lj_proto_registry.h"
-#include "hashes.h"
 #include "defs.h"
 
 struct regex_callback {
@@ -42,13 +44,39 @@ struct regex_callback {
 };
 
 //*********************************************************************************************************************
+
+static GCarray *build_capture_array(lua_State *Lua, const std::vector<std::string_view> &Captures, uint32_t StartIndex)
+{
+   auto count = uint32_t(Captures.size());
+   if (StartIndex > count) StartIndex = count;
+
+   GCarray *arr = lj_array_new(Lua, count - StartIndex, AET::STR_GC);
+   GCRef *refs = arr->get<GCRef>();
+
+   // Captures are normalised: unmatched optional groups appear as empty entries to preserve indices.
+   for (uint32_t j = StartIndex; j < count; ++j) {
+      GCstr *s;
+      if (Captures[j].data()) s = lj_str_new(Lua, Captures[j].data(), Captures[j].length());
+      else s = lj_str_new(Lua, "", 0);
+
+      setgcref(refs[j - StartIndex], obj2gco(s));
+      lj_gc_objbarrier(Lua, arr, s);
+   }
+
+   return arr;
+}
+
+//*********************************************************************************************************************
 // Dynamic loader for the Regex functionality.  We only load it as needed due to the size of the module.
 
 static ERR load_regex(void)
 {
 #ifndef KOTUKU_STATIC
+   static std::mutex regex_load_lock;
+   const std::lock_guard<std::mutex> lock(regex_load_lock);
+
    if (not modRegex) {
-      pf::SwitchContext ctx(glTiriContext);
+      kt::SwitchContext ctx(glTiriContext);
       if (objModule::load("regex", &modRegex, &RegexBase) != ERR::Okay) return ERR::InitModule;
    }
 #endif
@@ -66,7 +94,7 @@ static ERR match_many(int Index, std::vector<std::string_view> &Captures, size_t
       const std::string_view &full_match = Captures[0];
       const std::string_view &first_group = Captures[1];
 
-      if ((full_match.size() == first_group.size()) and (full_match.size() > 0) and (MatchStart <= Meta.subject.size())) {
+      if ((full_match.size() > 1) and (full_match.size() IS first_group.size()) and (MatchStart <= Meta.subject.size())) {
          auto preceding_char = (uint8_t)Meta.subject[MatchStart - 1];
          auto match_char = (uint8_t)full_match.front();
 
@@ -90,20 +118,7 @@ static ERR match_many(int Index, std::vector<std::string_view> &Captures, size_t
       lj_array_grow(lua, Meta.results, slot + 8);
    }
 
-   // Create string array for captures
-   auto count = uint32_t(Captures.size());
-   GCarray *capture_arr = lj_array_new(lua, count, AET::STR_GC);
-   GCRef *refs = capture_arr->get<GCRef>();
-
-   // Captures are normalised: unmatched optional groups appear as empty entries to preserve indices.
-   for (uint32_t j = 0; j < count; ++j) {
-      GCstr *s;
-      if (Captures[j].data()) s = lj_str_new(lua, Captures[j].data(), Captures[j].length());
-      else s = lj_str_new(lua, "", 0);
-
-      setgcref(refs[j], obj2gco(s));
-      lj_gc_objbarrier(lua, capture_arr, s);
-   }
+   GCarray *capture_arr = build_capture_array(lua, Captures, 0);
 
    // Store capture array in results array
    setgcref(Meta.results->get<GCRef>()[slot], obj2gco(capture_arr));
@@ -122,22 +137,7 @@ static ERR match_one(int Index, std::vector<std::string_view> &Captures, size_t 
 {
    auto L = Meta.lua_state;
 
-   // Create array with exact size for captures
-   auto count = uint32_t(Captures.size());
-   GCarray *arr = lj_array_new(L, count, AET::STR_GC);
-   GCRef *refs = arr->get<GCRef>();
-
-   // Captures are normalised: unmatched optional groups appear as empty entries to preserve indices.
-
-   for (uint32_t j = 0; j < count; ++j) {
-      GCstr *s;
-      if (Captures[j].data()) s = lj_str_new(L, Captures[j].data(), Captures[j].length());
-      else s = lj_str_new(L, "", 0);
-
-      setgcref(refs[j], obj2gco(s));
-      lj_gc_objbarrier(L, arr, s);
-   }
-
+   GCarray *arr = build_capture_array(L, Captures, 0);
    setarrayV(L, L->top++, arr);
    return ERR::Terminate; // Don't match more than once
 }
@@ -153,19 +153,7 @@ static ERR match_first(int Index, std::vector<std::string_view> &Captures, size_
    // Build capture array if the client used at least 1 bracketed capture
    if (auto count = uint32_t(Captures.size()); count > 1) {
       auto L = Meta.lua_state;
-      GCarray *arr = lj_array_new(L, count-1, AET::STR_GC);
-      GCRef *refs = arr->get<GCRef>();
-
-      for (uint32_t j = 1; j < count; ++j) { // Skip the first capture (already reflected in the index & length)
-         GCstr *s;
-         if (Captures[j].data()) s = lj_str_new(L, Captures[j].data(), Captures[j].length());
-         else s = lj_str_new(L, "", 0);
-
-         setgcref(refs[j-1], obj2gco(s));
-         lj_gc_objbarrier(L, arr, s);
-      }
-
-      Meta.captures = arr;
+      Meta.captures = build_capture_array(L, Captures, 1);
    }
    return ERR::Terminate;
 }
@@ -200,9 +188,9 @@ static ERR match_none(int Index, std::vector<std::string_view> &Captures, size_t
 // Constructor: regex.new(pattern [, flags])
 // Will throw if compilation of the pattern fails.
 
-static int regex_new(lua_State *Lua)
+int tiri_regex_new(lua_State *Lua)
 {
-   pf::Log log(__FUNCTION__);
+   kt::Log log(__FUNCTION__);
 
    if (auto error = load_regex(); error != ERR::Okay) {
       luaL_error(Lua, error, "Failed to load regex module");
@@ -223,7 +211,8 @@ static int regex_new(lua_State *Lua)
 
       std::string error_msg;
       if (rx::Compile(pattern, flags, &error_msg, &r->regex_obj) != ERR::Okay) {
-         luaL_error(Lua, ERR::Syntax, "Regex compilation failed: %s", error_msg.c_str());
+         error_msg.insert(0, "Regex compilation failed: ");
+         luaL_error(Lua, ERR::Syntax, std::move(error_msg));
       }
 
       return 1; // userdata is already on stack
@@ -282,16 +271,16 @@ static int regex_extract(lua_State *Lua)
    auto flags = RMATCH(luaL_optint(Lua, 3, int(RMATCH::NIL)));
    auto meta  = regex_callback { Lua };
    auto cb    = C_FUNCTION(match_extract, &meta);
-   if (rx::Search(r->regex_obj, std::string_view(text + start, text_len - start), flags, &cb) IS ERR::Okay) {
+   if (!rx::Search(r->regex_obj, std::string_view(text + start, text_len - start), flags, &cb)) {
       return meta.total_captures;
    }
    else return 0;
 }
 
 //********************************************************************************************************************
-// Method: regex.findFirst(text, [pos], [flags]) -> start, end, [captures]
+// Method: regex.findFirst(text, [pos], [flags]) -> start, stop, [captures]
 // This is the fastest available means for searching for the position of a match.
-// Returns nil on failure, or the start and end of the first match/capture.
+// Returns nil on failure, or the half-open start and stop of the first match/capture.
 
 static int regex_findFirst(lua_State *Lua)
 {
@@ -306,7 +295,7 @@ static int regex_findFirst(lua_State *Lua)
    auto flags = RMATCH(luaL_optint(Lua, 3, int(RMATCH::NIL)));
    auto meta = regex_callback { Lua };
    auto cb = C_FUNCTION(match_first, &meta);
-   if (rx::Search(r->regex_obj, std::string_view(text + start, text_len - start), flags, &cb) IS ERR::Okay) {
+   if (!rx::Search(r->regex_obj, std::string_view(text + start, text_len - start), flags, &cb)) {
       // Adjust the returned position to account for the starting offset
       lua_pushinteger(Lua, int(start) + meta.result_index);
       lua_pushinteger(Lua, int(start) + meta.result_index + meta.result_len);
@@ -326,9 +315,11 @@ static int regex_findAll_iter(lua_State *Lua)
 
    size_t text_len = 0;
    CSTRING text = lua_tolstring(Lua, lua_upvalueindex(2), &text_len);
-   auto current_pos = size_t(lua_tointeger(Lua, lua_upvalueindex(3)));
+   auto requested_pos = lua_tointeger(Lua, lua_upvalueindex(3));
    auto flags = RMATCH(lua_tointeger(Lua, lua_upvalueindex(4)));
 
+   if (requested_pos < 0) requested_pos = 0;
+   auto current_pos = size_t(requested_pos);
    if (current_pos >= text_len) {
       lua_pushnil(Lua);
       return 1;
@@ -336,17 +327,18 @@ static int regex_findAll_iter(lua_State *Lua)
 
    auto meta = regex_callback { Lua };
    auto cb = C_FUNCTION(match_first, &meta);
-   if (rx::Search(r->regex_obj, std::string_view(text + current_pos, text_len - current_pos), flags, &cb) IS ERR::Okay) {
-      auto match_pos = current_pos + meta.result_index;
-      auto match_len = meta.result_len;
+   if (!rx::Search(r->regex_obj, std::string_view(text + current_pos, text_len - current_pos), flags, &cb)) {
+      auto match_index = meta.result_index < 0 ? 0 : meta.result_index;
+      auto match_len = meta.result_len < 0 ? 0 : meta.result_len;
+      auto match_pos = current_pos + size_t(match_index);
 
       // Update position for next iteration. Advance by at least 1 to avoid infinite loops on zero-width matches.
-      auto next_pos = match_pos + (match_len > 0 ? match_len : 1);
-      lua_pushinteger(Lua, int(next_pos));
+      auto next_pos = match_pos + size_t(match_len > 0 ? match_len : 1);
+      lua_pushinteger(Lua, lua_Integer(next_pos));
       lua_replace(Lua, lua_upvalueindex(3));
 
-      lua_pushinteger(Lua, int(match_pos));
-      lua_pushinteger(Lua, int(match_pos) + meta.result_len);
+      lua_pushinteger(Lua, lua_Integer(match_pos));
+      lua_pushinteger(Lua, lua_Integer(match_pos + size_t(match_len)));
       if (meta.captures) setarrayV(Lua, Lua->top++, meta.captures);
       else lua_pushnil(Lua);
       return 3;
@@ -359,7 +351,7 @@ static int regex_findAll_iter(lua_State *Lua)
 //********************************************************************************************************************
 // Method: regex.findAll(text, [pos], [flags]) -> iterator
 // Returns an iterator function for use in for loops:
-//    for start, end, cap in rx.findAll(text) do ... end
+//    for start, stop, cap in rx.findAll(text) do ... end
 
 static int regex_findAll(lua_State *Lua)
 {
@@ -392,7 +384,7 @@ static int regex_match(lua_State *Lua)
 
    auto meta = regex_callback { Lua };
    auto cb = C_FUNCTION(match_one, &meta);
-   if (rx::Match(r->regex_obj, std::string_view(text, text_len), flags, &cb) IS ERR::Okay) {
+   if (!rx::Match(r->regex_obj, std::string_view(text, text_len), flags, &cb)) {
       return 1;
    }
    else {
@@ -414,7 +406,11 @@ static int regex_search(lua_State *Lua)
    auto text = luaL_checklstring(Lua, 1, &text_len);
    auto flags = RMATCH(luaL_optint(Lua, 2, int(RMATCH::NIL)));
 
-   GCarray *results = lj_array_new(Lua, 0, AET::ARRAY);
+   ArrayAllocationDescriptor descriptor {
+      .storage = AET::ARRAY,
+      .nested_identity = lj_str_new(Lua, "array<array<str>>", sizeof("array<array<str>>") - 1)
+   };
+   GCarray *results = lj_array_new(Lua, 0, descriptor);
    setarrayV(Lua, Lua->top++, results); // Root results to prevent GC during callbacks
 
    // Use match_many() to populate the array with the matches.
@@ -423,7 +419,7 @@ static int regex_search(lua_State *Lua)
    meta.results = results;
    auto cb = C_FUNCTION(match_many, &meta);
 
-   if (rx::Search(r->regex_obj, std::string_view(text, text_len), flags, &cb) IS ERR::Okay) {
+   if (!rx::Search(r->regex_obj, std::string_view(text, text_len), flags, &cb)) {
       // Adjust array length to actual match count
       results->len = MSize(meta.result_index);
       return 1;
@@ -466,7 +462,7 @@ static int regex_split(lua_State *Lua)
    auto text = luaL_checklstring(Lua, 1, &text_len);
    auto flags = RMATCH(luaL_optint(Lua, 2, int(RMATCH::NIL)));
 
-   pf::vector<std::string> parts;
+   kt::vector<std::string> parts;
    rx::Split(r->regex_obj, std::string_view(text, text_len), &parts, flags);
 
    // Create array with exact size
@@ -497,7 +493,7 @@ static int regex_test(lua_State *Lua)
 
    auto meta = regex_callback { Lua };
    auto cb = C_FUNCTION(match_none, &meta);
-   if (rx::Search(r->regex_obj, std::string_view(text, text_len), flags, &cb) IS ERR::Okay) {
+   if (!rx::Search(r->regex_obj, std::string_view(text, text_len), flags, &cb)) {
       lua_pushboolean(Lua, true);
       return 1;
    }
@@ -510,23 +506,23 @@ static int regex_test(lua_State *Lua)
 //********************************************************************************************************************
 // Property and method access: __index
 
-constexpr auto HASH_pattern   = pf::strhash("pattern");
-constexpr auto HASH_flags     = pf::strhash("flags");
-constexpr auto HASH_error     = pf::strhash("error");
-constexpr auto HASH_test      = pf::strhash("test");
-constexpr auto HASH_match     = pf::strhash("match");
-constexpr auto HASH_search    = pf::strhash("search");
-constexpr auto HASH_replace   = pf::strhash("replace");
-constexpr auto HASH_split     = pf::strhash("split");
-constexpr auto HASH_extract   = pf::strhash("extract");
-constexpr auto HASH_findFirst = pf::strhash("findFirst");
-constexpr auto HASH_findAll   = pf::strhash("findAll");
+constexpr auto HASH_pattern   = kt::strhash("pattern");
+constexpr auto HASH_flags     = kt::strhash("flags");
+constexpr auto HASH_error     = kt::strhash("error");
+constexpr auto HASH_test      = kt::strhash("test");
+constexpr auto HASH_match     = kt::strhash("match");
+constexpr auto HASH_search    = kt::strhash("search");
+constexpr auto HASH_replace   = kt::strhash("replace");
+constexpr auto HASH_split     = kt::strhash("split");
+constexpr auto HASH_extract   = kt::strhash("extract");
+constexpr auto HASH_findFirst = kt::strhash("findFirst");
+constexpr auto HASH_findAll   = kt::strhash("findAll");
 
 static int regex_get(lua_State *Lua)
 {
    if (auto r = (struct fregex *)luaL_checkudata(Lua, 1, "Tiri.regex")) {
       if (auto field = luaL_checkstring(Lua, 2)) {
-         const auto hash = pf::strhash(field);
+         const auto hash = kt::strhash(field);
 
          switch(hash) {
             case HASH_pattern: lua_pushstring(Lua, r->pattern.c_str()); return 1;
@@ -616,7 +612,6 @@ static int regex_tostring(lua_State *Lua)
 void register_regex_class(lua_State *Lua)
 {
    static const struct luaL_Reg functions[] = {
-      { "new", regex_new },
       { "escape", regex_escape },
       { nullptr, nullptr }
    };
@@ -628,7 +623,10 @@ void register_regex_class(lua_State *Lua)
       { nullptr, nullptr }
    };
 
-   pf::Log(__FUNCTION__).trace("Registering regex interface");
+   kt::Log(__FUNCTION__).trace("Registering regex interface");
+
+   luaopen_regex_intrinsic(Lua);
+   lua_pop(Lua, 1);
 
    // Create metatable
    luaL_newmetatable(Lua, "Tiri.regex");
@@ -641,6 +639,14 @@ void register_regex_class(lua_State *Lua)
 
    // Create regex module
    luaL_openlib(Lua, "regex", functions, 0);
+
+   GCfunc *constructor = lj_builtin_callable(Lua, builtin_callable_id(FastFunc::regex_new));
+   if (not constructor) {
+      luaL_error(Lua, ERR::Init, "Canonical regex.new constructor is unavailable");
+      return;
+   }
+   setfuncV(Lua, Lua->top++, constructor);
+   lua_setfield(Lua, -2, "new");
 
    // Add flag constants to regex module.  These match the REGEX_* flags but making them available
    // in this way means that scripts don't need to include the regex module.
@@ -684,17 +690,28 @@ void register_regex_class(lua_State *Lua)
       lua_setfield(Lua, -2, "REPLACE_FIRST_ONLY");
    }
 
-   lua_pop(Lua, 1); // Remove regex table from stack
+   lua_pop(Lua, 1); // Remove regex table fetched via lua_getglobal
+
+   lua_pop(Lua, 2); // Drop the Tiri.regex metatable and the regex library table
 
    // Register regex interface prototypes for compile-time type inference
-   reg_iface_prototype("regex", "new", { TiriType::Any }, { TiriType::Str, TiriType::Num });
+   reg_iface_prototype("regex", "new", { TiriType::Userdata }, { TiriType::Str, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(1));
    reg_iface_prototype("regex", "escape", { TiriType::Str }, { TiriType::Str });
-   reg_iface_prototype("regex", "test", { TiriType::Bool }, { TiriType::Str, TiriType::Num });
-   reg_iface_prototype("regex", "match", { TiriType::Array }, { TiriType::Str, TiriType::Num });
-   reg_iface_prototype("regex", "search", { TiriType::Array }, { TiriType::Str, TiriType::Num });
-   reg_iface_prototype("regex", "replace", { TiriType::Str }, { TiriType::Str, TiriType::Str, TiriType::Num });
-   reg_iface_prototype("regex", "split", { TiriType::Array }, { TiriType::Str, TiriType::Num });
-   reg_iface_prototype("regex", "findFirst", { TiriType::Num, TiriType::Num, TiriType::Array }, { TiriType::Str, TiriType::Num, TiriType::Num });
-   reg_iface_prototype("regex", "extract", { TiriType::Str }, { TiriType::Str, TiriType::Num, TiriType::Num });
-   reg_iface_prototype("regex", "findAll", { TiriType::Func }, { TiriType::Str, TiriType::Num, TiriType::Num });
+   reg_iface_prototype("regex", "test", { TiriType::Bool }, { TiriType::Str, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(1));
+   reg_iface_prototype("regex", "match", { TiriType::Array }, { TiriType::Str, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(1));
+   reg_iface_prototype("regex", "search", { TiriType::Array }, { TiriType::Str, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(1));
+   reg_iface_prototype("regex", "replace", { TiriType::Str }, { TiriType::Str, TiriType::Str, TiriType::Num },
+      FProtoFlags::None, FProtoArity::required(2));
+   reg_iface_prototype("regex", "split", { TiriType::Array }, { TiriType::Str, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(1));
+   reg_iface_prototype("regex", "findFirst", { TiriType::Num, TiriType::Num, TiriType::Array },
+      { TiriType::Str, TiriType::Num, TiriType::Num }, FProtoFlags::None, FProtoArity::required(1));
+   reg_iface_prototype("regex", "extract", { TiriType::Str }, { TiriType::Str, TiriType::Num, TiriType::Num },
+      FProtoFlags::None, FProtoArity::required(2));
+   reg_iface_prototype("regex", "findAll", { TiriType::Func }, { TiriType::Str, TiriType::Num, TiriType::Num },
+      FProtoFlags::None, FProtoArity::required(1));
 }

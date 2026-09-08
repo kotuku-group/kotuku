@@ -5,10 +5,10 @@ AuthCallback: Private.  This field is reserved for future use.
 
 *********************************************************************************************************************/
 
-static ERR GET_AuthCallback(extHTTP *Self, FUNCTION **Value)
+static ERR GET_AuthCallback(extHTTP *Self, FUNCTION * &Value)
 {
    if (Self->AuthCallback.defined()) {
-      *Value = &Self->AuthCallback;
+      Value = &Self->AuthCallback;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -16,14 +16,11 @@ static ERR GET_AuthCallback(extHTTP *Self, FUNCTION **Value)
 
 static ERR SET_AuthCallback(extHTTP *Self, FUNCTION *Value)
 {
+   clear_callback_function(Self->AuthCallback);
    if (Value) {
-      if (Self->AuthCallback.isScript()) UnsubscribeAction(Self->AuthCallback.Context, AC::Free);
       Self->AuthCallback = *Value;
-      if (Self->AuthCallback.isScript()) {
-         SubscribeAction(Self->AuthCallback.Context, AC::Free, C_FUNCTION(notify_free_auth_callback));
-      }
+      Self->AuthCallback.pin();
    }
-   else Self->AuthCallback.clear();
    return ERR::Okay;
 }
 
@@ -76,16 +73,15 @@ The ContentType should be set prior to sending a `PUT` or `POST` request.  If `N
 
 *********************************************************************************************************************/
 
-static ERR GET_ContentType(extHTTP *Self, STRING *Value)
+static ERR GET_ContentType(extHTTP *Self, std::string_view &Value)
 {
-   *Value = Self->ContentType.data();
+   Value = Self->ContentType;
    return ERR::Okay;
 }
 
-static ERR SET_ContentType(extHTTP *Self, CSTRING Value)
+static ERR SET_ContentType(extHTTP *Self, const std::string_view &Value)
 {
-   if (Value) Self->ContentType.assign(Value);
-   else Self->ContentType.clear();
+   Self->ContentType.assign(Value);
    return ERR::Okay;
 }
 
@@ -103,7 +99,7 @@ On completion of an HTTP request, the state will be changed to either `COMPLETED
 
 static ERR SET_CurrentState(extHTTP *Self, HGS Value)
 {
-   pf::Log log;
+   kt::Log log;
 
    if ((int(Value) < 0) or (int(Value) >= int(HGS::END))) return log.warning(ERR::OutOfRange);
 
@@ -114,6 +110,8 @@ static ERR SET_CurrentState(extHTTP *Self, HGS Value)
       if (Self->Socket) QueueAction(AC::Deactivate, Self->UID);
    }
    else Self->CurrentState = Value;
+
+   if (Self->StateChanged.stale()) clear_callback_function(Self->StateChanged);
 
    if (Self->StateChanged.defined()) {
       ERR error;
@@ -129,7 +127,7 @@ static ERR SET_CurrentState(extHTTP *Self, HGS Value)
       }
       else error = ERR::Okay;
 
-      if (error > ERR::ExceptionThreshold) Self->Error = error;
+      if (error > ERR::ExceptionThreshold) Self->Error = error; // ERR:Terminate excluded
 
       if (error IS ERR::Terminate) {
          if (Self->CurrentState IS HGS::SENDING_CONTENT) {
@@ -192,10 +190,9 @@ The HTTP server to target for HTTP requests is defined here.  To change the host
 
 *********************************************************************************************************************/
 
-static ERR SET_Host(extHTTP *Self, CSTRING Value)
+static ERR SET_Host(extHTTP *Self, const std::string_view &Value)
 {
-   if (Self->Host) { FreeResource(Self->Host); Self->Host = nullptr; }
-   Self->Host = pf::strclone(Value);
+   Self->Host.assign(Value);
    return ERR::Okay;
 }
 
@@ -212,10 +209,10 @@ request will be cancelled.
 
 *********************************************************************************************************************/
 
-static ERR GET_Incoming(extHTTP *Self, FUNCTION **Value)
+static ERR GET_Incoming(extHTTP *Self, FUNCTION * &Value)
 {
    if (Self->Incoming.defined()) {
-      *Value = &Self->Incoming;
+      Value = &Self->Incoming;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -223,14 +220,11 @@ static ERR GET_Incoming(extHTTP *Self, FUNCTION **Value)
 
 static ERR SET_Incoming(extHTTP *Self, FUNCTION *Value)
 {
+   clear_callback_function(Self->Incoming);
    if (Value) {
-      if (Self->Incoming.isScript()) UnsubscribeAction(Self->Incoming.Context, AC::Free);
       Self->Incoming = *Value;
-      if (Self->Incoming.isScript()) {
-         SubscribeAction(Self->Incoming.Context, AC::Free, C_FUNCTION(notify_free_incoming));
-      }
+      Self->Incoming.pin();
    }
-   else Self->Incoming.clear();
    return ERR::Okay;
 }
 
@@ -259,18 +253,17 @@ Multiple files can be specified in the InputFile field by separating each file p
 
 *********************************************************************************************************************/
 
-static ERR SET_InputFile(extHTTP *Self, CSTRING Value)
+static ERR SET_InputFile(extHTTP *Self, const std::string_view &Value)
 {
-   pf::Log log;
+   kt::Log log;
 
-   log.trace("InputFile: %.80s", Value);
+   log.trace("InputFile: %.*s", int(std::min<size_t>(Value.size(), 80)), Value.data());
 
-   if (Self->InputFile) { FreeResource(Self->InputFile);  Self->InputFile = nullptr; }
-
+   Self->InputFile.clear();
    Self->MultipleInput = false;
    Self->InputPos = 0;
-   if ((Value) and (*Value)) {
-      Self->InputFile = pf::strclone(Value);
+   if (not Value.empty()) {
+      Self->InputFile.assign(Value);
 
       // Check if the path contains multiple inputs, separated by the pipe symbol.
 
@@ -312,7 +305,7 @@ An alternative to setting the Location is to set the #Host, #Path and #Port sepa
 
 *********************************************************************************************************************/
 
-static ERR GET_Location(extHTTP *Self, STRING *Value)
+static ERR GET_Location(extHTTP *Self, std::string_view &Value)
 {
    Self->AuthRetries = 0; // Reset the retry counter
 
@@ -327,13 +320,54 @@ static ERR GET_Location(extHTTP *Self, STRING *Value)
    else str << "http://" << Self->Host << ':' << Self->Port << '/' << Self->Path;
 
    Self->URI = str.str();
-   *Value = Self->URI.data();
+   Value = Self->URI;
    return ERR::Okay;
 }
 
-static ERR SET_Location(extHTTP *Self, CSTRING Value)
+static ERR SET_Location(extHTTP *Self, const std::string_view &Value)
 {
-   pf::Log log;
+   kt::Log log;
+
+   if (Value.empty()) return ERR::InvalidValue;
+
+   auto uri = Value;
+   int new_port = 80;
+   bool new_ssl = false;
+
+   if (uri.starts_with("http://")) uri.remove_prefix(7);
+   else if (uri.starts_with("https://")) {
+      uri.remove_prefix(8);
+      new_port = 443;
+      new_ssl = true;
+   }
+   else return ERR::InvalidValue;
+
+   auto host_len = uri.find_first_of(":/");
+   if (host_len IS std::string_view::npos) host_len = uri.size();
+   if (!host_len) return ERR::InvalidValue;
+
+   auto host = uri.substr(0, host_len);
+   auto path = uri.substr(host_len);
+
+   if ((!path.empty()) and (path.front() IS ':')) {
+      path.remove_prefix(1);
+
+      auto port_end = path.find('/');
+      auto port_text = path.substr(0, port_end);
+      if (port_text.empty()) return ERR::InvalidValue;
+
+      int port_value = 0;
+      auto [ ptr, error ] = std::from_chars(port_text.data(), port_text.data() + port_text.size(), port_value);
+      if ((error != std::errc()) or (ptr != port_text.data() + port_text.size()) or
+            (port_value <= 0) or (port_value > MAX_PORT_NUMBER)) {
+         return ERR::InvalidValue;
+      }
+
+      new_port = port_value;
+      if (new_port IS 443) new_ssl = true;
+
+      path = (port_end IS std::string_view::npos) ? std::string_view() : path.substr(port_end);
+   }
 
    if (Self->initialised()) {
       if (Self->TimeoutManager) { UpdateTimer(Self->TimeoutManager, 0); Self->TimeoutManager = 0; }
@@ -341,63 +375,24 @@ static ERR SET_Location(extHTTP *Self, CSTRING Value)
       // Free the current socket if the entire URI changes
 
       if (Self->Socket) {
-         Self->Socket->set(FID_Feedback, (APTR)nullptr);
+         Self->Socket->setFeedback(FUNCTION{});
          FreeResource(Self->Socket);
          Self->Socket = nullptr;
       }
 
-      log.msg("%s", Value);
+      log.msg("%.*s", int(Value.size()), Value.data());
    }
 
-   CSTRING str = Value;
+   Self->Port = new_port;
+   if (new_ssl) Self->Flags |= HTF::SSL;
+   else Self->Flags &= ~HTF::SSL;
 
-   Self->Port = 80;
+   Self->Host.assign(host);
+   Self->Path.clear();
 
-   if (pf::startswith("http://", str)) str += 7;
-   else if (pf::startswith("https://", str)) {
-      str += 8;
-      Self->Port = 443;
-      Self->Flags |= HTF::SSL;
-   }
-
-   if (Self->Host) { FreeResource(Self->Host); Self->Host = nullptr; }
-   if (Self->Path) { FreeResource(Self->Path); Self->Path = nullptr; }
-
-   // Parse host name
-
-   int len;
-   for (len=0; (str[len]) and (str[len] != ':') and (str[len] != '/'); len++);
-
-   if (AllocMemory(len+1, MEM::STRING|MEM::NO_CLEAR, &Self->Host) != ERR::Okay) {
-      return ERR::AllocMemory;
-   }
-
-   pf::copymem(str, Self->Host, len);
-   Self->Host[len] = 0;
-
-   str += len;
-
-   // Parse port number
-
-   if (*str IS ':') {
-      str++;
-      long port_long = strtol(str, nullptr, 0);
-      if (port_long > 0 and port_long <= MAX_PORT_NUMBER) {
-         Self->Port = int(port_long);
-         if (Self->Port IS 443) Self->Flags |= HTF::SSL;
-      }
-      else {
-         pf::Log log;
-         log.warning("Invalid port number %ld, using default 80", port_long);
-         Self->Port = 80;
-      }
-   }
-
-   while ((*str) and (*str != '/')) str++;
-
-   if (*str) { // Parse absolute path
-      SET_Path(Self, str+1);
-      return ERR::Okay;
+   if (not path.empty()) { // Parse absolute path
+      path.remove_prefix(1);
+      return SET_Path(Self, path);
    }
 
    return ERR::Okay;
@@ -421,7 +416,7 @@ static ERR SET_Method(extHTTP *Self, HTM Value)
 -FIELD-
 ObjectMode: The transfer mode used when passing data to a targeted object.
 
-ObjectMode defines the data transfer mode when #OutputObject field has been set for receiving incoming data.
+ObjectMode defines the data transfer mode when the #OutputObject field has been set for receiving incoming data.
 The default setting is `DATA::FEED`, which passes data through the data feed system (see also the #Datatype to define
 the type of data being sent to the object).  The alternative method is `READ_WRITE`, which uses the Write action to
 send data to the targeted object.
@@ -444,10 +439,10 @@ a reasonable time frame.  All other error codes apart from `ERR::Okay` indicate 
 
 *********************************************************************************************************************/
 
-static ERR GET_Outgoing(extHTTP *Self, FUNCTION **Value)
+static ERR GET_Outgoing(extHTTP *Self, FUNCTION * &Value)
 {
    if (Self->Outgoing.defined()) {
-      *Value = &Self->Outgoing;
+      Value = &Self->Outgoing;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -455,14 +450,11 @@ static ERR GET_Outgoing(extHTTP *Self, FUNCTION **Value)
 
 static ERR SET_Outgoing(extHTTP *Self, FUNCTION *Value)
 {
+   clear_callback_function(Self->Outgoing);
    if (Value) {
-      if (Self->Outgoing.isScript()) UnsubscribeAction(Self->Outgoing.Context, AC::Free);
       Self->Outgoing = *Value;
-      if (Self->Outgoing.isScript()) {
-         SubscribeAction(Self->Outgoing.Context, AC::Free, C_FUNCTION(notify_free_outgoing));
-      }
+      Self->Outgoing.pin();
    }
-   else Self->Outgoing.clear();
    return ERR::Okay;
 }
 
@@ -477,10 +469,9 @@ been set in the #Flags field.
 
 *********************************************************************************************************************/
 
-static ERR SET_OutputFile(extHTTP *Self, CSTRING Value)
+static ERR SET_OutputFile(extHTTP *Self, const std::string_view &Value)
 {
-   if (Self->OutputFile) { FreeResource(Self->OutputFile); Self->OutputFile = nullptr; }
-   Self->OutputFile = pf::strclone(Value);
+   Self->OutputFile.assign(Value);
    return ERR::Okay;
 }
 
@@ -506,7 +497,7 @@ A `401` status code is returned in the event of an authorisation failure.
 
 *********************************************************************************************************************/
 
-static ERR SET_Password(extHTTP *Self, CSTRING Value)
+static ERR SET_Password(extHTTP *Self, const std::string_view &Value)
 {
    Self->Password.assign(Value);
    Self->PasswordPreset = true;
@@ -526,42 +517,40 @@ automatic conversions are operated when setting the Path field.
 
 *********************************************************************************************************************/
 
-static ERR SET_Path(extHTTP *Self, CSTRING Value)
+static ERR SET_Path(extHTTP *Self, const std::string_view &Value)
 {
    Self->AuthRetries = 0; // Reset the retry counter
 
-   if (Self->Path) { FreeResource(Self->Path); Self->Path = nullptr; }
+   Self->Path.clear();
 
-   if (!Value) return ERR::Okay;
+   if (Value.empty()) return ERR::Okay;
 
-   while (*Value IS '/') Value++; // Skip '/' prefix
+   auto path = Value;
+   while ((not path.empty()) and (path.front() IS '/')) path.remove_prefix(1); // Skip '/' prefix
 
-   std::string encoded_path = encode_url_path(Value);
+   std::string encoded_path = encode_url_path(path);
 
-   if (AllocMemory(encoded_path.length() + 1, MEM::STRING|MEM::NO_CLEAR, &Self->Path) IS ERR::Okay) {
-      pf::strcopy(encoded_path, Self->Path, encoded_path.length() + 1);
+   Self->Path.assign(encoded_path);
 
-      // Check if this path has been authenticated against the server yet by comparing it to AuthPath.  We need to
-      // do this if a PUT instruction is executed against the path and we're not authenticated yet.
+   // Check if this path has been authenticated against the server yet by comparing it to AuthPath.  We need to
+   // do this if a PUT instruction is executed against the path and we're not authenticated yet.
 
-      auto pview = std::string_view(Self->Path, encoded_path.length());
-      auto folder_len = pview.find_last_of('/');
-      if (folder_len IS std::string::npos) folder_len = 0;
+   auto pview = std::string_view(Self->Path.data(), Self->Path.size());
+   auto folder_len = pview.find_last_of('/');
+   if (folder_len IS std::string::npos) folder_len = 0;
 
-      Self->SecurePath = true;
-      if (!Self->AuthPath.empty()) {
-         if (Self->AuthPath.size() IS folder_len) {
-            pview.remove_suffix(pview.size() - folder_len);
-            if (pview IS Self->AuthPath) { // No change to the current path
-               Self->SecurePath = false;
-            }
+   Self->SecurePath = true;
+   if (!Self->AuthPath.empty()) {
+      if (Self->AuthPath.size() IS folder_len) {
+         pview.remove_suffix(pview.size() - folder_len);
+         if (pview IS Self->AuthPath) { // No change to the current path
+            Self->SecurePath = false;
          }
       }
-
-      Self->AuthPath.assign(Self->Path, folder_len);
-      return ERR::Okay;
    }
-   else return ERR::AllocMemory;
+
+   Self->AuthPath.assign(Self->Path, 0, folder_len);
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -585,10 +574,9 @@ that the proxy server uses to receive requests, see the #ProxyPort field.
 
 *********************************************************************************************************************/
 
-static ERR SET_ProxyServer(extHTTP *Self, CSTRING Value)
+static ERR SET_ProxyServer(extHTTP *Self, const std::string_view &Value)
 {
-   if (Self->ProxyServer) { FreeResource(Self->ProxyServer); Self->ProxyServer = nullptr; }
-   if ((Value) and (Value[0])) Self->ProxyServer = pf::strclone(Value);
+   Self->ProxyServer.assign(Value);
    Self->ProxyDefined = true;
    return ERR::Okay;
 }
@@ -603,17 +591,15 @@ here.
 
 *********************************************************************************************************************/
 
-static ERR GET_Realm(extHTTP *Self, CSTRING *Value)
+static ERR GET_Realm(extHTTP *Self, std::string_view &Value)
 {
-   if (Self->Realm.empty()) *Value = nullptr;
-   else *Value = Self->Realm.c_str();
+   Value = Self->Realm;
    return ERR::Okay;
 }
 
-static ERR SET_Realm(extHTTP *Self, CSTRING Value)
+static ERR SET_Realm(extHTTP *Self,  const std::string_view &Value)
 {
-   if (Value) Self->Realm.assign(Value);
-   else Self->Realm.clear();
+   Self->Realm.assign(Value);
    return ERR::Okay;
 }
 
@@ -628,10 +614,32 @@ HTTP object is activated.
 
 *********************************************************************************************************************/
 
-static ERR GET_RecvBuffer(extHTTP *Self, uint8_t **Value, int *Elements)
+static ERR GET_RecvBuffer(extHTTP *Self, std::span<int8_t> &Value)
 {
-   *Value = (uint8_t *)Self->RecvBuffer.data();
-   *Elements = Self->RecvBuffer.size();
+   Value = std::span<int8_t>((int8_t *)Self->RecvBuffer.data(), Self->RecvBuffer.size());
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+ResponseKeys: Returns a string list of received response keys.
+
+This field returns a string list of all the keys found in the HTTP response header.  An empty list will be returned
+if no keys are found.
+
+*********************************************************************************************************************/
+
+static ERR GET_ResponseKeys(extHTTP *Self, std::span<std::string> &Value)
+{
+   Self->ResponseKeys.clear();
+   Self->ResponseKeys.reserve(Self->ResponseHeaders.size());
+
+   for (const auto &response_header : Self->ResponseHeaders) {
+      Self->ResponseKeys.emplace_back(response_header.first);
+   }
+
+   Value = std::span<std::string>(Self->ResponseKeys.data(), Self->ResponseKeys.size());
    return ERR::Okay;
 }
 
@@ -655,10 +663,10 @@ cancelled.
 
 *********************************************************************************************************************/
 
-static ERR GET_StateChanged(extHTTP *Self, FUNCTION **Value)
+static ERR GET_StateChanged(extHTTP *Self, FUNCTION * &Value)
 {
    if (Self->StateChanged.defined()) {
-      *Value = &Self->StateChanged;
+      Value = &Self->StateChanged;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -666,14 +674,11 @@ static ERR GET_StateChanged(extHTTP *Self, FUNCTION **Value)
 
 static ERR SET_StateChanged(extHTTP *Self, FUNCTION *Value)
 {
+   clear_callback_function(Self->StateChanged);
    if (Value) {
-      if (Self->StateChanged.isScript()) UnsubscribeAction(Self->StateChanged.Context, AC::Free);
       Self->StateChanged = *Value;
-      if (Self->StateChanged.isScript()) {
-         SubscribeAction(Self->StateChanged.Context, AC::Free, C_FUNCTION(notify_free_state_changed));
-      }
+      Self->StateChanged.pin();
    }
-   else Self->StateChanged.clear();
    return ERR::Okay;
 }
 
@@ -696,10 +701,16 @@ This field describes the `user-agent` value that will be sent in HTTP requests. 
 
 *********************************************************************************************************************/
 
-static ERR SET_UserAgent(extHTTP *Self, CSTRING Value)
+static ERR GET_UserAgent(extHTTP *Self, std::string_view &Value)
 {
-   if (Self->UserAgent) { FreeResource(Self->UserAgent); Self->UserAgent = nullptr; }
-   Self->UserAgent = pf::strclone(Value);
+   if (Self->UserAgent.empty()) Value = "Kotuku Client";
+   else Value = std::string_view(Self->UserAgent.data(), Self->UserAgent.size());
+   return ERR::Okay;
+}
+
+static ERR SET_UserAgent(extHTTP *Self,  const std::string_view &Value)
+{
+   Self->UserAgent.assign(Value);
    return ERR::Okay;
 }
 
@@ -718,7 +729,7 @@ presented with a dialog box and asked to enter the correct username and password
 
 *********************************************************************************************************************/
 
-static ERR SET_Username(extHTTP *Self, CSTRING Value)
+static ERR SET_Username(extHTTP *Self, const std::string_view &Value)
 {
    Self->Username.assign(Value);
    return ERR::Okay;
