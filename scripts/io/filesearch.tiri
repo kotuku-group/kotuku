@@ -11,6 +11,8 @@ io.search = function(Path:any!, Options:table!)
    is_exclude_regex = false
    has_min_date     = l_options.minDate != nil
    has_max_date     = l_options.maxDate != nil
+   name_filter:any  = l_options.nameFilter
+   exclude_filter:any = l_options.excludeFilter
 
    function normaliseFolderPath(Path:str!):str
       if Path.endsWith('/') or Path.endsWith('\\') or Path.endsWith(':') then return Path end
@@ -112,15 +114,17 @@ io.search = function(Path:any!, Options:table!)
       return false -- Dates are exactly equal
    end
 
+   -- Filter can be a table or string
    function filterMatches(Filter:any!, RegexFilter:bool, FileName:str!):bool
+      if RegexFilter then return Filter.test(FileName) end
+
       local cmp_name = FileName
       local cmp_filter:any = Filter
       if not l_options.caseSensitive then
-         cmp_name = string.lower(cmp_name)
-         if not RegexFilter then cmp_filter = string.lower(cmp_filter) end
+         cmp_name = cmp_name.lower()
+         cmp_filter = string.lower(cmp_filter)
       end
 
-      if RegexFilter then return Filter.test(cmp_name) end
       return cmp_name is cmp_filter
    end
 
@@ -128,9 +132,9 @@ io.search = function(Path:any!, Options:table!)
       local match = true
 
       if l_options.minDepth and (Depth < l_options.minDepth) then match = false end
-      if match and l_options.nameFilter then match = filterMatches(l_options.nameFilter, is_regex_filter, FileName) end
-      if match and l_options.excludeFilter then
-         match = not filterMatches(l_options.excludeFilter, is_exclude_regex, FileName)
+      if match and name_filter then match = filterMatches(name_filter, is_regex_filter, FileName) end
+      if match and exclude_filter then
+         match = not filterMatches(exclude_filter, is_exclude_regex, FileName)
       end
 
       if l_options.minSize?? and (l_options.minSize > 0) and (File.size < l_options.minSize) then match = false end
@@ -286,13 +290,23 @@ io.search = function(Path:any!, Options:table!)
 
    -- Entry point for the search
 
-   if l_options.nameFilter and l_options.nameFilter != <str> then
+   if name_filter and name_filter != <str> then
       -- Check if it's a regex object by testing for regex methods
-      if l_options.nameFilter.test and l_options.nameFilter.match then is_regex_filter = true end
+      if name_filter.test and name_filter.match then
+         is_regex_filter = true
+         if not l_options.caseSensitive then
+            name_filter = regex.new(name_filter.pattern, name_filter.flags | regex.ICASE)
+         end
+      end
    end
 
-   if l_options.excludeFilter and l_options.excludeFilter != <str> then
-      if l_options.excludeFilter.test and l_options.excludeFilter.match then is_exclude_regex = true end
+   if exclude_filter and exclude_filter != <str> then
+      if exclude_filter.test and exclude_filter.match then
+         is_exclude_regex = true
+         if not l_options.caseSensitive then
+            exclude_filter = regex.new(exclude_filter.pattern, exclude_filter.flags | regex.ICASE)
+         end
+      end
    end
 
    if l_options.maxResults and (l_options.maxResults <= 0) then l_stop = true end

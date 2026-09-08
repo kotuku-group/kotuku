@@ -223,6 +223,30 @@ end
    assert(ignored is 1, 'Excluded entries should invoke ignoreFeedback')
 end
 
+@Test function RegexFiltersAreCaseInsensitiveByDefault()
+   local exclude_regex = regex.new('^BOUNDARY\\.TXT$')
+   local matches = array<str>
+
+   io.search(glSearchFolder, {
+      maxDepth = 0,
+      excludeFilter = exclude_regex,
+      matchFeedback = function(Path, FileName)
+         matches.push(FileName)
+      end
+   })
+
+   assert(#matches is 1 and matches[0] is 'small.txt',
+      'An uppercase exclusion regex should match a mixed-case filename by default')
+   assert(exclude_regex.flags is 0, 'Case-insensitive searching must not mutate the caller regex')
+
+   local included = 0
+   io.search(glSmallFile, {
+      nameFilter = regex.new('^SMALL\\.TXT$'),
+      matchFeedback = function() included++ end
+   })
+   assert(included is 1, 'Inclusion regexes should use the same default case-insensitive behaviour')
+end
+
 @Test function ShouldDescendPrunesFolderTrees()
    local matches = array<str>
    local folders_checked = 0
