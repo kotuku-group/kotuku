@@ -620,9 +620,17 @@ static int file_write(lua_State *Lua)
 
 //********************************************************************************************************************
 
+// Unlike io.close(), a receiver is mandatory.  Deferring to io_close() would silently close the default output
+// file if the handle were omitted, e.g. when the method is retrieved with file['close'] and called unbound.
+
 static int file_close(lua_State *Lua)
 {
-   return io_close(Lua);
+   if (auto handle = check_file_handle(Lua, 1)) {
+      handle->close();
+      lua_pushboolean(Lua, 1);
+      return 1;
+   }
+   else luaL_error(Lua, ERR::File);
 }
 
 //********************************************************************************************************************
@@ -739,8 +747,10 @@ static int io_writeAll(lua_State *Lua)
       luaL_error(Lua, ERR::CreateFile, "Failed to create file: %s", path);
    }
 
+   // Empty content is a valid request; FL::NEW has already truncated the file, so no write is necessary.
+
    int result;
-   if (file->write(std::span<const int8_t>((const int8_t *)content, len), &result) != ERR::Okay) {
+   if ((len > 0) and (file->write(std::span<const int8_t>((const int8_t *)content, len), &result) != ERR::Okay)) {
       file.~Create();
       luaL_error(Lua, ERR::Write, "Failed to write to file: %s", path);
    }
