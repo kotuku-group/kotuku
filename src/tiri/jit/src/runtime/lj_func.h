@@ -20,3 +20,15 @@ LJ_FUNC [[nodiscard]] GCfunc *lj_func_newL_inherited(lua_State *L, GCproto *Prot
 LJ_FUNC [[nodiscard]] GCfunc *lj_func_newL_local(lua_State *L, GCproto *Proto, GCfuncL *Parent, TValue *Base);
 LJ_FUNCA [[nodiscard]] GCfunc *lj_func_newL_gc(lua_State *L, GCproto *pt, GCfuncL *parent);
 LJ_FUNC void lj_func_free(global_State *g, GCfunc *c);
+
+#ifdef UNIT_TESTS
+// State-confined observation only; the allocator owns injection and the protected caller resets this after unwind.
+struct ClosureAllocationProbe {
+   lua_State *state = nullptr;
+   GCproto *prototype = nullptr;
+   int helper = 0; // 1: zero, 2: inherited, 3: local, 4: interpreter.
+   int site = -1; // -1: function, otherwise the capture descriptor index.
+   bool active = false;
+};
+LJ_FUNC ClosureAllocationProbe &lj_func_allocation_probe();
+#endif

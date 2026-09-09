@@ -2240,6 +2240,13 @@ LJFOLDF(fload_func_ffid_kgc)
    return NEXTFOLD;
 }
 
+LJFOLD(FLOAD CALLA IRFL_FUNC_ENV)
+LJFOLDF(fload_zero_closure_environment)
+{
+   if (fleft->op2 IS IRCALL_lj_func_newL_zero) return IR(fleft->op1)->op2;
+   return NEXTFOLD;
+}
+
 LJFOLD(FLOAD any IRFL_STR_LEN)
 LJFOLD(FLOAD any IRFL_FUNC_ENV)
 LJFOLD(FLOAD any IRFL_THREAD_ENV)

@@ -474,10 +474,13 @@ static bool check_try_handler(lua_State *L, int errcode)
             }
          }
 
-         // If we've reached the try block's function, stop searching
+         // Match the activation, not merely the closure: recursive calls can share one function object.
+         if (pf + 1 IS try_base) break;
 
-         GCfunc *func = frame_func(pf);
-         if (func IS try_frame->func) break;  // Reached the try frame's function
+         // A language handler below a native re-entry must resume in its own VM C frame.  Let the platform
+         // unwinder discard the intervening C frame first; resuming in this frame leaves abandoned native calls
+         // on the machine stack and eventually returns through stale frame links.
+         if (pf_type IS FRAME_C or (pf_type IS FRAME_CONT and frame_iscont_fficb(pf))) return false;
 
          // Move to previous frame based on frame type
 
@@ -504,7 +507,7 @@ static bool check_try_handler(lua_State *L, int errcode)
       int ftype = frame_typep(frame);
       log.trace("  Frame %d: frame=%p, func=%p, pc=%p, type=%d", frame_count++, frame, func, pc, ftype);
 
-      if (func IS try_frame->func) {
+      if (func IS try_frame->func and frame + 1 IS restorestack(L, try_frame->frame_base)) {
          log.trace("  Found try_frame->func at frame %d", frame_count - 1);
          found_try_func = true;
          break;
@@ -721,14 +724,18 @@ void * err_unwind(lua_State *L, void *StopCatchFrame, int errcode)
             if (errcode) {
                const ptrdiff_t frame_offset = savestack(L, frame);
                const ptrdiff_t top_offset = savestack(L, top);
-               lj_checkall_cleanup_to_base(L, top);
-               unwind_cleanup_all(L, L->base - 1, top);
-               frame = restorestack(L, frame_offset);
-               top = restorestack(L, top_offset);
-               lj_meta_multres_unwind(L, top);
+               // Snapshot restoration uses an out-of-stack sentinel to catch allocation errors without
+               // discarding the partly restored VM stack. It is not a lexical cleanup boundary.
+               if (top <= tvref(L->maxstack)) {
+                  lj_checkall_cleanup_to_base(L, top);
+                  unwind_cleanup_all(L, L->base - 1, top);
+                  frame = restorestack(L, frame_offset);
+                  top = restorestack(L, top_offset);
+                  lj_meta_multres_unwind(L, top);
+               }
                L->base = frame + 1;
                L->cframe = cframe_prev(cf);
-               unwindstack(L, top);
+               if (top <= tvref(L->maxstack)) unwindstack(L, top);
             }
             J->abort_in_progress = false;
             return cf;

@@ -1405,7 +1405,11 @@ static TRef rec_call_specialise(jit_State *J, GCfunc *Function, TRef Ref, bool P
    if (isluafunc(Function)) {
       GCproto* pt = funcproto(Function);
       // Fresh allocations cannot specialise on the recording-time closure identity, even before CLC_POLY.
-      if (rec_is_fresh_function(J, Ref)) PrototypeSpecialisation = true;
+      if (rec_is_fresh_function(J, Ref)) {
+         // The allocator's constant prototype already proves the PC; a load would force virtual closures to escape.
+         if (IR(tref_ref(Ref))->op2 IS IRCALL_lj_func_newL_zero) return Ref;
+         PrototypeSpecialisation = true;
+      }
       // Too many closures created? Probably not a monomorphic function.
       if (PrototypeSpecialisation or rec_proto_specialise_by_prototype(pt)) {  // Specialise to prototype instead.
          TRef trpt = ir.fload_ptr(Ref, IRFL_FUNC_PC);
@@ -5618,7 +5622,7 @@ void lj_record_ins(jit_State *J)
       }
       else rc = prototype->sizeuv ? lj_ir_call(J, IRCALL_lj_func_newL_inherited, proto_ref, parent) :
          lj_ir_call(J, IRCALL_lj_func_newL_zero, proto_ref, environment);
-      // CALLA has a weak allocation guard.  Keep even unused closures for allocation-counter and failure semantics.
+      // Pin allocations through DCE. SINK may elide only proven non-escaping zero-upvalue allocations.
       emitir(IRT(IR_USE, IRT_FUNC), rc, 0);
       // Publish through the normal destination-slot path below before taking the next bytecode's snapshot.
       J->needsnap = 1;

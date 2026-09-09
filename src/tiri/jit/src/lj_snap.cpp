@@ -43,6 +43,8 @@
 #include "lj_frame.h"
 #include "lj_bc.h"
 #include "lj_ir.h"
+#include "lj_ircall.h"
+#include "lj_func.h"
 #include "lj_jit.h"
 #include "lj_iropt.h"
 #include "lib/lib_range.h"
@@ -687,6 +689,12 @@ void lj_snap_replay(jit_State* J, GCtrace* T)
          if (regsp_reg(ir->r) IS RID_SUNK) {
             if (J->slot[snap_slot(sn)] != snap_slot(sn)) continue;
             pass23 = 1;
+            if (ir->o IS IR_CALLA and ir->op2 IS IRCALL_lj_func_newL_zero) {
+               IRIns *args = &T->ir[ir->op1];
+               snap_pref(J, T, map, nent, seen, args->op1);
+               snap_pref(J, T, map, nent, seen, args->op2);
+               continue;
+            }
             lj_assertJ(ir->o IS IR_TNEW or ir->o IS IR_TDUP or
                ir->o IS IR_CNEW or ir->o IS IR_CNEWI,
                "sunk parent IR %04d has bad op %d", refp - REF_BIAS, ir->o);
@@ -717,6 +725,13 @@ void lj_snap_replay(jit_State* J, GCtrace* T)
             TRef op1, op2;
             if (J->slot[snap_slot(sn)] != snap_slot(sn)) {  // De-dup allocs.
                J->slot[snap_slot(sn)] = J->slot[J->slot[snap_slot(sn)]];
+               continue;
+            }
+            if (ir->o IS IR_CALLA and ir->op2 IS IRCALL_lj_func_newL_zero) {
+               IRIns *args = &T->ir[ir->op1];
+               TRef prototype = snap_pref(J, T, map, nent, seen, args->op1);
+               TRef environment = snap_pref(J, T, map, nent, seen, args->op2);
+               J->slot[snap_slot(sn)] = lj_ir_call(J, IRCALL_lj_func_newL_zero, prototype, environment);
                continue;
             }
             op1 = ir->op1;
@@ -819,6 +834,15 @@ static void snap_restoreval(jit_State* J, GCtrace* T, ExitState* ex, SnapNo snap
 static void snap_unsink(jit_State *J, GCtrace *T, ExitState *ex, SnapNo snapno, BloomFilter rfilt,
    IRIns* ir, TValue* o)
 {
+   if (ir->o IS IR_CALLA and ir->op2 IS IRCALL_lj_func_newL_zero) {
+      IRIns *args = &T->ir[ir->op1];
+      auto *prototype = gco_to_proto(ir_kgc(&T->ir[args->op1]));
+      TValue environment;
+      snap_restoreval(J, T, ex, snapno, rfilt, args->op2, &environment);
+      // The helper does not collect; the trace roots the prototype and the exit state retains the environment.
+      setfuncV(J->L, o, lj_func_newL_zero(J->L, prototype, tabV(&environment)));
+      return;
+   }
    lj_assertJ(ir->o IS IR_TNEW or ir->o IS IR_TDUP or ir->o IS IR_CNEW or ir->o IS IR_CNEWI,
       "sunk allocation with bad op %d", ir->o);
 

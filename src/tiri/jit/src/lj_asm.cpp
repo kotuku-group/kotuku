@@ -910,6 +910,12 @@ static void asm_snap_alloc1(ASMState* as, IRRef ref)
       if (ra_used(ir)) return;
       if (ir->r == RID_SINK) {
          ir->r = RID_SUNK;
+         if (ir->o IS IR_CALLA and ir->op2 IS IRCALL_lj_func_newL_zero) {
+            IRIns *args = IR(ir->op1);
+            asm_snap_alloc1(as, args->op1);
+            asm_snap_alloc1(as, args->op2);
+            return;
+         }
 #if LJ_HASFFI
          if (ir->o == IR_CNEWI) {  // Allocate CNEWI value.
             asm_snap_alloc1(as, ir->op2);
@@ -1698,8 +1704,13 @@ static void asm_ir(ASMState* as, IRIns* ir)
       lj_assertA(!ra_used(ir),
          "IR %04d not unused", (int)(ir - as->ir) - REF_BIAS);
       break;
-   case IR_USE:
-      ra_alloc1(as, ir->op1, irt_isfp(ir->t) ? RSET_FPR : RSET_GPR); break;
+   case IR_USE: {
+      IRIns *allocation = IR(ir->op1);
+      if (allocation->o IS IR_CALLA and allocation->op2 IS IRCALL_lj_func_newL_zero and
+          (allocation->r IS RID_SINK or allocation->r IS RID_SUNK)) break;
+      ra_alloc1(as, ir->op1, irt_isfp(ir->t) ? RSET_FPR : RSET_GPR);
+      break;
+   }
    case IR_PHI: asm_phi(as, ir); break;
    case IR_HIOP: asm_hiop(as, ir); break;
    case IR_GCSTEP: asm_gcstep(as, ir); break;
