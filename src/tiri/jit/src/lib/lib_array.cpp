@@ -2216,6 +2216,7 @@ LJLIB_CF(array_each)
 }
 
 //********************************************************************************************************************
+
 static int array_map_same(lua_State *L)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
@@ -2274,10 +2275,57 @@ LJLIB_CF(array_map)
 // Usage: array.mapSame(arr, transform)
 //
 // Maps values into a new array with the source array's exact storage descriptor.
+//
+// Zero denotes an uninitialised worker; a function is the cached worker.
 
+LJLIB_PUSH(0)
 LJLIB_CF(array_mapSame)
 {
-   return array_map_same(L);
+   GCarray *source = lj_lib_checkarray(L, 1);
+   luaL_checktype(L, 2, LUA_TFUNCTION);
+   if (not source->len) return array_map_same(L);
+
+   GCfunc *method = curr_func(L);
+   TValue *worker = &method->c.upvalue[0];
+   if (tvisnumber(worker)) {
+      // Diagnostic parsing owns script-level variable metadata; internal compilation must not replace it.
+      if ((L->script->JitOptions & JOF::DIAGNOSE) != JOF::NIL) return array_map_same(L);
+
+      // Compile only on first use, retaining canonical BFUNC identity.  Publish after successful compilation so
+      // an allocation failure leaves the worker retryable.  The active native frame roots the method and arguments.
+
+      constexpr auto worker_source = R"tiri(
+return function(Source:array<any>, Callback:func, Result:array<any>, Count:num)
+   local index = 0
+   while index < Count do
+      if index >= #Source then break end
+      Result[index] = Callback(Source[index], index)
+      index++
+   end
+end
+)tiri";
+      if (lua_load(L, worker_source, "=array.mapSame") != 0) lua_error(L);
+      lua_call(L, 0, 1);
+      copyTV(L, worker, L->top - 1);
+      lj_gc_barrier(L, method, L->top - 1);
+      lua_pop(L, 1);
+   }
+
+   if (not tvisfunc(worker)) return array_map_same(L);
+
+   MSize count = source->len;
+   GCarray *result = lj_array_new_like(L, source, count);
+   setarrayV(L, L->top++, result);
+
+   // All values remain rooted in this native frame and the bytecode call frame.  Only one C boundary per pipeline.
+   
+   copyTV(L, L->top++, worker);
+   lua_pushvalue(L, 1);
+   lua_pushvalue(L, 2);
+   setarrayV(L, L->top++, result);
+   lua_pushinteger(L, count);
+   lua_call(L, 4, 0);
+   return 1;
 }
 
 //********************************************************************************************************************

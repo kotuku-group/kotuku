@@ -14,6 +14,31 @@
 #include "lj_trace.h"
 #include "lj_vm.h"
 
+#ifdef UNIT_TESTS
+ClosureAllocationProbe &lj_func_allocation_probe()
+{
+   static thread_local ClosureAllocationProbe probe;
+   return probe;
+}
+
+static void func_probe_begin(lua_State *L, GCproto *Proto, int Helper)
+{
+   auto &probe = lj_func_allocation_probe();
+   probe.state = L;
+   probe.prototype = Proto;
+   probe.helper = Helper;
+   probe.site = -1;
+   probe.active = true;
+}
+#define FUNC_PROBE_BEGIN(L, Proto, Helper) func_probe_begin(L, Proto, Helper)
+#define FUNC_PROBE_SITE(Site) lj_func_allocation_probe().site = Site
+#define FUNC_PROBE_END() lj_func_allocation_probe().active = false
+#else
+#define FUNC_PROBE_BEGIN(L, Proto, Helper) ((void)0)
+#define FUNC_PROBE_SITE(Site) ((void)0)
+#define FUNC_PROBE_END() ((void)0)
+#endif
+
 // Prototypes
 
 void lj_func_freeproto(global_State *g, GCproto *pt)
@@ -157,13 +182,17 @@ static GCfunc* func_newL(lua_State *L, GCproto *pt, GCtab *env)
 GCfunc *lj_func_newL_zero(lua_State *L, GCproto *Proto, GCtab *Environment)
 {
    lj_assertL(Proto->sizeuv IS 0, "trace closure allocation with captures");
-   return func_newL(L, Proto, Environment);
+   FUNC_PROBE_BEGIN(L, Proto, 1);
+   GCfunc *function = func_newL(L, Proto, Environment);
+   FUNC_PROBE_END();
+   return function;
 }
 
 // Share existing cells without collecting, creating open cells or inspecting the interpreter frame.
 
 GCfunc *lj_func_newL_inherited(lua_State *L, GCproto *Proto, GCfuncL *Parent)
 {
+   FUNC_PROBE_BEGIN(L, Proto, 2);
    GCfunc *function = func_newL(L, Proto, tabref(Parent->env));
    for (MSize index = 0; index < Proto->sizeuv; ++index) {
       uint32_t capture = proto_uv(Proto)[index];
@@ -173,18 +202,20 @@ GCfunc *lj_func_newL_inherited(lua_State *L, GCproto *Proto, GCfuncL *Parent)
       setgcrefr(function->l.uvptr[index], Parent->uvptr[capture]);
    }
    function->l.nupvalues = uint8_t(Proto->sizeuv);
+   FUNC_PROBE_END();
    return function;
 }
 
 // Trace-local captures use the logical frame supplied by the recorder.  Neither allocation path collects or
 // resizes the stack.  Create cells first so allocation failure never leaves a partially sized function in the GC list.
 
-GCfunc *lj_func_newL_local(lua_State *L, GCproto *Proto, GCfuncL *Parent, TValue *Base)
+static GCfunc *func_newL_local(lua_State *L, GCproto *Proto, GCfuncL *Parent, TValue *Base)
 {
    GCupval *captures[LJ_MAX_UPVAL];
    for (MSize index = 0; index < Proto->sizeuv; ++index) {
       uint32_t capture = proto_uv(Proto)[index];
       if (capture & PROTO_UV_LOCAL) {
+         FUNC_PROBE_SITE(int(index));
          GCupval *cell = func_finduv(L, Base + (capture & 0xff));
          cell->immutable = ((capture / PROTO_UV_IMMUTABLE) & 1);
          cell->dhash = uint32_t(uintptr_t(mref<char>(Parent->pc))) ^ (capture << 24);
@@ -192,6 +223,7 @@ GCfunc *lj_func_newL_local(lua_State *L, GCproto *Proto, GCfuncL *Parent, TValue
       }
       else captures[index] = gco_to_upval(gcref(Parent->uvptr[capture]));
    }
+   FUNC_PROBE_SITE(-1);
    GCfunc *function = func_newL(L, Proto, tabref(Parent->env));
    for (MSize index = 0; index < Proto->sizeuv; ++index) {
       // NOBARRIER: The function is white, and no allocation or collection intervenes before publication.
@@ -201,20 +233,31 @@ GCfunc *lj_func_newL_local(lua_State *L, GCproto *Proto, GCfuncL *Parent, TValue
    return function;
 }
 
+GCfunc *lj_func_newL_local(lua_State *L, GCproto *Proto, GCfuncL *Parent, TValue *Base)
+{
+   FUNC_PROBE_BEGIN(L, Proto, 3);
+   GCfunc *function = func_newL_local(L, Proto, Parent, Base);
+   FUNC_PROBE_END();
+   return function;
+}
+
 // Create a new Lua function with empty upvalues.
 
 GCfunc * lj_func_newL_empty(lua_State *L, GCproto *pt, GCtab *env)
 {
-   GCfunc *fn = func_newL(L, pt, env);
+   GCupval *captures[LJ_MAX_UPVAL];
    MSize i, nuv = pt->sizeuv;
-   // NOBARRIER: The GCfunc is new (marked white).
+   // These allocations do not collect. Build every cell before publishing the full-sized function.
    for (i = 0; i < nuv; i++) {
       GCupval *uv = func_emptyuv(L);
       int32_t v = proto_uv(pt)[i];
       uv->immutable = ((v / PROTO_UV_IMMUTABLE) & 1);
       uv->dhash = (uint32_t)(uintptr_t)pt ^ (v << 24);
-      setgcref(fn->l.uvptr[i], obj2gco(uv));
+      captures[i] = uv;
    }
+   GCfunc *fn = func_newL(L, pt, env);
+   // NOBARRIER: The GCfunc is new (marked white).
+   for (i = 0; i < nuv; i++) setgcref(fn->l.uvptr[i], obj2gco(captures[i]));
    fn->l.nupvalues = (uint8_t)nuv;
    return fn;
 }
@@ -223,30 +266,13 @@ GCfunc * lj_func_newL_empty(lua_State *L, GCproto *pt, GCtab *env)
 
 GCfunc * lj_func_newL_gc(lua_State *L, GCproto *pt, GCfuncL *parent)
 {
-   GCfunc *fn;
-   GCRef *puv;
-   MSize i, nuv;
-   TValue *base;
    lj_gc_check_fixtop(L);
-   fn = func_newL(L, pt, tabref(parent->env));
-   // NOBARRIER: The GCfunc is new (marked white).
-   puv = parent->uvptr;
-   nuv = pt->sizeuv;
-   base = L->base;
-   for (i = 0; i < nuv; i++) {
-      uint32_t v = proto_uv(pt)[i];
-      GCupval* uv;
-      if ((v & PROTO_UV_LOCAL)) {
-         uv = func_finduv(L, base + (v & 0xff));
-         uv->immutable = ((v / PROTO_UV_IMMUTABLE) & 1);
-         uv->dhash = (uint32_t)(uintptr_t)mref<char>(parent->pc) ^ (v << 24);
-      }
-      else uv = &gcref(puv[v])->uv;
-
-      setgcref(fn->l.uvptr[i], obj2gco(uv));
-   }
-   fn->l.nupvalues = (uint8_t)nuv;
-   return fn;
+   // Resolve cells before publishing the function, as on trace.  A failed cell allocation must not leave a
+   // full-sized function with zero nupvalues in the GC list (its destructor would free/account the wrong size).
+   FUNC_PROBE_BEGIN(L, pt, 4);
+   GCfunc *function = func_newL_local(L, pt, parent, L->base);
+   FUNC_PROBE_END();
+   return function;
 }
 
 void lj_func_free(global_State* g, GCfunc* fn)
