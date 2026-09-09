@@ -1184,10 +1184,12 @@ static ERR FILE_ReadLine(extFile *Self, struct fl::ReadLine *Args)
       int result;
       constexpr int chunk = 256;
       std::size_t line_offset = 0;
+      bool line_feed_found = false;
       while ((result = read(Self->Handle, output.data() + line_offset, chunk)) > 0) {
          auto block = std::string_view(output.data() + line_offset, result);
          if (auto line_feed = block.find('\n'); line_feed != std::string_view::npos) {
             line_offset += line_feed;
+            line_feed_found = true;
             break;
          }
 
@@ -1200,13 +1202,13 @@ static ERR FILE_ReadLine(extFile *Self, struct fl::ReadLine *Args)
          }
       }
 
-      if (not line_offset) {
+      if ((not line_offset) and (not line_feed_found)) {
          output.clear();
          return ERR::NoData;
       }
 
       Self->Position += line_offset;
-      if (output[line_offset] IS '\n') {
+      if (line_feed_found) {
          Self->Position++; // Skip the line feed
          lseek64(Self->Handle, Self->Position, SEEK_SET); // Reset position to the start of the next line
       }
