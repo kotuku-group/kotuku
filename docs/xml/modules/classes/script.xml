@@ -326,7 +326,7 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
     <constants lookup="SCF" comment="Script flags">
       <const name="EXIT_ON_ERROR">The script will automatically terminate its execution process if an error is detected.</const>
       <const name="LOG_ALL">Enables execution debugging.  More information will be printed to the console in this mode.</const>
-      <const name="PROCESS_DOC">Process any embedded documentation in the script.</const>
+      <const name="PROCESS_DOC">Parse embedded documentation (annotations) in the script.  Ignore otherwise.</const>
     </constants>
 
   </types>

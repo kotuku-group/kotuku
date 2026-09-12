@@ -41,7 +41,7 @@ struct ScriptArg { // For use with sc::Exec
 
   flags("SCF", { comment="Script flags" },
      "EXIT_ON_ERROR: The script will automatically terminate its execution process if an error is detected.",
-     "PROCESS_DOC: Process any embedded documentation in the script.",
+     "PROCESS_DOC: Parse embedded documentation (annotations) in the script.  Ignore otherwise.",
      "LOG_ALL: Enables execution debugging.  More information will be printed to the console in this mode.")
 
   methods("Script", "Sc", {
