@@ -49,6 +49,11 @@ static LJ_NOINLINE void bcread_fill(LexState *State, MSize len, int need)
 {
    State->assert_condition(len != 0, "empty refill");
    if (len > LJ_MAX_BUF or State->c < 0) bcread_error(State, ErrMsg::BCBAD);
+   if (not State->rfunc) { // A string-view load already supplied the entire file.
+      if (need) bcread_error(State, ErrMsg::BCBAD);
+      State->c = -1;
+      return;
+   }
 
    do {
       const char* buf;
@@ -113,6 +118,7 @@ static LJ_AINLINE void bcread_want(LexState *State, MSize len)
 
 static LJ_AINLINE uint8_t* bcread_mem(LexState *State, MSize len)
 {
+   bcread_need(State, len);
    uint8_t* p = (uint8_t*)State->p;
    State->p += len;
    State->assert_condition(State->p <= State->pe, "buffer read overflow");
@@ -132,8 +138,8 @@ static void bcread_block(LexState *State, void* q, MSize len)
 
 static LJ_AINLINE uint32_t bcread_byte(LexState *State)
 {
-   State->assert_condition(State->p < State->pe, "buffer read overflow");
-   return (uint32_t)(uint8_t)*State->p++;
+   bcread_need(State, 1);
+   return uint32_t(uint8_t(*State->p++));
 }
 
 //********************************************************************************************************************
@@ -141,9 +147,15 @@ static LJ_AINLINE uint32_t bcread_byte(LexState *State)
 
 static LJ_AINLINE uint32_t bcread_uleb128(LexState *State)
 {
-   uint32_t v = lj_buf_ruleb128(&State->p);
-   State->assert_condition(State->p <= State->pe, "buffer read overflow");
-   return v;
+   uint32_t value = 0;
+   for (unsigned shift = 0; shift <= 28; shift += 7) {
+      const uint32_t byte = bcread_byte(State);
+      if ((shift IS 28) and (byte > 0x0f)) bcread_error(State, ErrMsg::BCBAD);
+      value |= (byte & 0x7f) << shift;
+      if (not (byte & 0x80)) return value;
+   }
+   bcread_error(State, ErrMsg::BCBAD);
+   return 0;
 }
 
 //********************************************************************************************************************
@@ -151,18 +163,17 @@ static LJ_AINLINE uint32_t bcread_uleb128(LexState *State)
 
 static uint32_t bcread_uleb128_33(LexState *State)
 {
-   const uint8_t* p = (const uint8_t*)State->p;
-   uint32_t v = (*p++ >> 1);
-   if (LJ_UNLIKELY(v >= 0x40)) {
-      int sh = -1;
-      v &= 0x3f;
-      do {
-         v |= ((*p & 0x7f) << (sh += 7));
-      } while (*p++ >= 0x80);
+   const uint32_t first = bcread_byte(State);
+   uint32_t value = (first >> 1) & 0x3f;
+   if (not (first & 0x80)) return value;
+   for (unsigned shift = 6; shift <= 27; shift += 7) {
+      const uint32_t byte = bcread_byte(State);
+      if ((shift IS 27) and (byte > 0x1f)) bcread_error(State, ErrMsg::BCBAD);
+      value |= (byte & 0x7f) << shift;
+      if (not (byte & 0x80)) return value;
    }
-   State->p = (char*)p;
-   State->assert_condition(State->p <= State->pe, "buffer read overflow");
-   return v;
+   bcread_error(State, ErrMsg::BCBAD);
+   return 0;
 }
 
 //********************************************************************************************************************
@@ -281,6 +292,7 @@ static void bcread_knum(LexState *State, GCproto *pt, MSize sizekn)
    MSize i;
    TValue* o = mref<TValue>(pt->k);
    for (i = 0; i < sizekn; i++, o++) {
+      bcread_need(State, 1);
       int isnum = (State->p[0] & 1);
       uint32_t lo = bcread_uleb128_33(State);
       if (isnum) {

@@ -364,11 +364,13 @@ extern void bulk_unit_tests(int &, int &);
 extern void gc_unit_tests(int &, int &);
 extern void module_marshalling_unit_tests(int &, int &);
 extern void set_variable_unit_tests(int &, int &);
+extern void bytecode_file_unit_tests(int &, int &);
 #endif
 
 static void MODTest(std::string_view Options, int *Passed, int *Total)
 {
 #ifdef UNIT_TESTS
+   bytecode_file_unit_tests(*Passed, *Total);
    {
       kt::Log log("TiriTests");
       log.branch("Running SetVariable unit tests...");

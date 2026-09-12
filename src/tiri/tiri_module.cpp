@@ -874,6 +874,7 @@ static ERR resolve_module(std::string_view Name, ModuleBinding *&Result)
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
 // Destroy every registered module.  All Tiri states must be unable to execute before this runs, because published
 // ModuleCallable addresses are retained by closures and compiler symbols for the lifetime of the registry.
 //
@@ -944,6 +945,7 @@ template <class T> static ERR make_cpp_array_result(cpp_array_result *Result)
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
 // Create an empty kt::vector<T> suitable for passing to a module API function.
 
 static ERR make_cpp_array_result(int Type, cpp_array_result *Result)
@@ -1212,7 +1214,6 @@ static ERR ensure_module_defs(ModuleBinding *Module)
 
 //********************************************************************************************************************
 // Format: s.Name:typeField,...
-// TODO: This parses the struct definitions in advance - ideally we'd record the definition string and parse on first-use.
 
 [[nodiscard]] static ERR load_include_struct(CSTRING Line, std::string_view Source, CSTRING *NextLine,
    definition_batch &Batch)
@@ -1508,6 +1509,7 @@ static int module_call(lua_State *Lua)
    return results;
 }
 
+//********************************************************************************************************************
 // Both dispatch paths use the same scalar conversion and immediate-scope error promotion.
 
 static ERR push_module_scalar(lua_State *Lua, const ModuleCallable &Callable, const module_scalar_result &Result,
@@ -1547,6 +1549,7 @@ static ERR call_zero_arg(lua_State *Lua, const ModuleCallable &Callable, std::st
    return push_module_scalar(Lua, Callable, result, ErrorMsg);
 }
 
+//********************************************************************************************************************
 // Resolve and convert one number at a time, in signature order.  A deferred value may relocate the Lua stack;
 // only copied native scalars survive the next resolution.  The bridge and direct path share errors and defaults.
 
@@ -1571,6 +1574,8 @@ static ERR read_module_number(lua_State *Lua, int Index, const FunctionField &Fi
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
+
 static ERR call_simple_module(lua_State *Lua, const ModuleCallable &Callable, std::string &ErrorMsg, int &Results)
 {
    module_scalar_input inputs[4];
@@ -1583,6 +1588,8 @@ static ERR call_simple_module(lua_State *Lua, const ModuleCallable &Callable, st
    Results = (Callable.Cif.rtype IS &ffi_type_void) ? 0 : 1;
    return push_module_scalar(Lua, Callable, result, ErrorMsg);
 }
+
+//********************************************************************************************************************
 
 static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results, int &RuntimeError)
 {

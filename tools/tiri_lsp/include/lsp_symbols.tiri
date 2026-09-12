@@ -371,7 +371,7 @@ end
 -- otherwise symbolCloseBlockFrames() will pop an enclosing function frame and truncate its range.
 -- `struct` is deliberately absent because extractDocumentSymbols() pushes that frame itself.
 
-symbol_block_openers = array<str> { 'do', 'defer', 'try', 'choose', 'checkall', 'checkup' }
+symbol_block_openers = array<str> { 'do', 'defer', 'try', 'choose', 'checkall' }
 
 function symbolPushBlockFrames(Stack:array<table>, LineCode:str, FunctionFrame:table)
    function_count = symbolCountBlockKeyword(LineCode, 'function') + symbolCountBlockKeyword(LineCode, 'thunk')
@@ -556,7 +556,7 @@ end
 
 scope_openers = {
    ['function'] = true, ['thunk'] = true, ['do'] = true, ['then'] = true, ['repeat'] = true,
-   ['defer'] = true, ['try'] = true, ['choose'] = true, ['checkall'] = true, ['checkup'] = true
+   ['defer'] = true, ['try'] = true, ['choose'] = true, ['checkall'] = true
 }
 
 -- Keywords that terminate the enclosing block and immediately open a sibling.

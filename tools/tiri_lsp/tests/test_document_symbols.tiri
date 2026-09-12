@@ -354,7 +354,7 @@ function alpha()
       risky()
    except e
    end
-   checkup
+   checkall
       guarded()
    end
    local result = choose scratch from
@@ -373,7 +373,7 @@ end
 
    assert(alpha, 'Function containing anonymous blocks should be listed.')
    assert(alpha.range['end'].line is 16,
-      'A do, try, checkup or choose block must not close the enclosing function frame.')
+      'A do, try, checkall or choose block must not close the enclosing function frame.')
    assert(beta and beta.range.start.line is 18 and beta.range['end'].line is 19,
       'Later declarations should keep their own ranges once block frames balance.')
    assert(not findSymbol(symbols, 'scratch') and not findSymbol(symbols, 'result'),

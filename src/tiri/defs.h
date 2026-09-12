@@ -594,6 +594,9 @@ class extTiri : public objTiri {
    int      MainChunkRef;              // Registry reference to the main chunk for post-execution analysis
    uint8_t  Recurse;
    uint8_t  SaveCompiled;
+   bool     LoadedFromCache = false;
+   bool     CacheFallbackAttempted = false;
+   bool     CompilationPrepared = false; // Libraries and interfaces have been registered and globals protected
    uint16_t RequireCounter;
 
    extTiri(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objTiri(ClassPtr, ObjectID) { }
