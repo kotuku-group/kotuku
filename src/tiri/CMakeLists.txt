@@ -868,6 +868,28 @@ if (NOT DISABLE_DISPLAY)
    list (APPEND TIRI_SOURCES "tiri_input.cpp")
 endif ()
 
+# Generate the same current-commit build marker used by `origo --version`.  Refreshing at build time prevents an
+# existing build tree from retaining the commit that was current when CMake was last configured.
+
+set (TIRI_BUILD_IDENTITY_H "${JIT_BUILD_DIR}/tiri_build_identity.h")
+set (TIRI_BUILD_IDENTITY_ARGS
+   "-DSRC_DIR=${PROJECT_SOURCE_DIR}"
+   "-DVERSION_IN=${CMAKE_CURRENT_SOURCE_DIR}/tiri_build_identity.h.in"
+   "-DVERSION_OUT=${TIRI_BUILD_IDENTITY_H}")
+
+execute_process (
+   COMMAND ${CMAKE_COMMAND} ${TIRI_BUILD_IDENTITY_ARGS}
+      -P "${PROJECT_SOURCE_DIR}/src/origo/generate_version.cmake")
+
+add_custom_target (tiri_build_identity ALL
+   COMMAND ${CMAKE_COMMAND} ${TIRI_BUILD_IDENTITY_ARGS}
+      -P "${PROJECT_SOURCE_DIR}/src/origo/generate_version.cmake"
+   BYPRODUCTS "${TIRI_BUILD_IDENTITY_H}"
+   COMMENT "Refreshing Tiri bytecode build identity"
+   VERBATIM)
+
+add_dependencies (${MOD} tiri_build_identity)
+
 target_sources (${MOD} PRIVATE ${TIRI_SOURCES})
 
 target_include_directories (${MOD} PRIVATE

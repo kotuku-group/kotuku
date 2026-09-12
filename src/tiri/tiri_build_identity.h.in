@@ -1,0 +1,5 @@
+// Auto-generated build identity for the Tiri bytecode producer.  Do not edit.
+
+#pragma once
+
+#define TIRI_BUILD_COMMIT "@GIT_COMMIT_HASH@"

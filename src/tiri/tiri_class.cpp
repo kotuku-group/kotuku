@@ -47,12 +47,12 @@ until import invalidation is available.
 
 #include "lua.hpp"
 
-#include "lj_bcdump.h"
 #include "lj_obj.h"
 #include "lj_state.h"
 #include "parser/parser_diagnostics.h"
 #include "jit/src/debug/dump_bytecode.h"
 #include "lj_proto_registry.h"
+#include "tiri_build_identity.h"
 
 #include "defs.h"
 
@@ -173,45 +173,12 @@ static ERR compiled_payload(std::string_view Source, std::string_view &Payload, 
 }
 
 //********************************************************************************************************************
-// Identity of the Tiri implementation that produces byte code.  Automatic caches promise same-build compatibility, so
-// the identity combines the private byte code version, this module's compilation stamp and the installed module
-// file's timestamp and size.  The file check is what detects an incremental rebuild of the module; a static build has
-// no module file and relies on the compilation stamp, which only changes when this source file is recompiled.
-//
-// Thread safety is provided by the guaranteed one-time initialisation of the function-local static.
-
-static uint32_t tiri_build_identity()
-{
-   static const uint32_t identity = [] {
-      auto material = std::format("{}|{}", int(BCDUMP_VERSION), __DATE__ " " __TIME__);
-
-      #ifdef _WIN32
-         constexpr std::string_view module_path = "modules:tiri.dll";
-      #else
-         constexpr std::string_view module_path = "modules:tiri.so";
-      #endif
-
-      objFile::create module = { fl::Path(module_path) };
-      if (module.ok()) {
-         int64_t timestamp = 0, size = 0;
-         if ((module->getTimestamp(timestamp) IS ERR::Okay) and (module->getSize(size) IS ERR::Okay)) {
-            material += std::format("|{}|{}", timestamp, size);
-         }
-      }
-
-      return kt::strhash(material);
-   }();
-
-   return identity;
-}
-
-//********************************************************************************************************************
 // The build identity field always leads an identity token so that a consumer can verify the build without knowing
 // whether the source content was recorded.
 
 static std::string identity_build_field()
 {
-   return std::format("b:{:08x}", tiri_build_identity());
+   return std::format("b:g:{}", TIRI_BUILD_COMMIT);
 }
 
 //********************************************************************************************************************

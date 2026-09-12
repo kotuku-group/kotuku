@@ -203,7 +203,7 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
       <type>STRING</type>
       <description>
 <p>Scripts that support compilation of the source code can be compiled to a target file when the script is initialised. This file is then used as a cache, so that if the cache file exists on the next initialisation then the cache file is used instead of the original source code.</p>
-<p>If the cache file exists, a determination on whether the source code has been edited is usually made by comparing date stamps on the original and cache files.</p>
+<p>If the cache file exists, the script processor decides whether it is still usable.  Comparing date stamps on the original and cache files is the common minimum, but a processor may also compare the source content and the build that produced the cache.  A cache that fails validation is regenerated from the source.</p>
       </description>
     </field>
 

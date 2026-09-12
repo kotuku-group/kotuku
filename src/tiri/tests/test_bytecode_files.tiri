@@ -684,6 +684,10 @@ end
    local token = identity_token(original)
    assert(token.startsWith('b:'), 'A cache must record its producing build: ' .. token)
    assert(token.find(' s:') != nil, 'A cache must record its source identity: ' .. token)
+   local build_end = token.find(' ')
+   assert(build_end != nil)
+   local build = token.sub(0, build_end)
+   assert(build.startsWith('b:g:') and #build > 4, 'The build identity must contain a Git commit: ' .. build)
 
    -- A foreign build identity is rejected and replaced while the source remains readable.
    local foreign = 'b:deadbeef s:1,00000000'
@@ -706,9 +710,6 @@ end
    end
 
    -- A build-field prefix is not a build match.  With no source, malformed metadata must not reach the VM payload.
-   local build_end = token.find(' ')
-   assert(build_end != nil)
-   local build = token.sub(0, build_end)
    for malformed in values({ build .. '-invalid', build .. ' source', build .. ' s:,00000000',
       build .. ' s:1,0000000g' }) do
       write_file(cache, retoken(original, malformed))
