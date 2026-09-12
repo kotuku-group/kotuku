@@ -27,6 +27,18 @@ local glProgram = [[
    print('BYTECODE_ACCEPTANCE_OK')
 ]]
 
+local glResaveProgram = [[
+   global glB06Runs = (glB06Runs or 0) + 1
+   local captured = 40
+   local closure = function(Delta:num):num
+      captured += Delta
+      return captured
+   end
+   assert(glB06Runs is 1, 'A re-saved consumer must start with fresh globals')
+   assert(closure(2) is 42, 'A re-saved consumer must create a fresh closure')
+   print('B06_RESAVE_OK:1:42')
+]]
+
 local glCloseProgram = [[
    local root_count = 0
    local child_count = 0
@@ -105,6 +117,19 @@ function activate(Script:obj)
    assert(Script.error is ERR_Okay, Script.errorMessage)
 end
 
+function save_lifecycle(Script:obj):array<str>
+   local outputs = array<str> {}
+   outputs.push(path('_b06_before_query.tbc'))
+   save(Script, outputs.last())
+   check Script.acQuery()
+   outputs.push(path('_b06_after_query.tbc'))
+   save(Script, outputs.last())
+   activate(Script)
+   outputs.push(path('_b06_after_activate.tbc'))
+   save(Script, outputs.last())
+   return outputs
+end
+
 function child(Parameters:array<str>, Shell:bool):<num, str>
    local output = ''
    local executable = processing.task().processPath .. 'origo'
@@ -120,6 +145,19 @@ function child(Parameters:array<str>, Shell:bool):<num, str>
    end
    check task.acActivate()
    return task.returnCode, output
+end
+
+function append_outputs(Destination:array<str>, Source:array<str>)
+   for output_path in values(Source) do Destination.push(output_path) end
+end
+
+function verify_resaved_outputs(Outputs:array<str>)
+   for output_path in values(Outputs) do
+      local code, output = child(array<str> { output_path, '--log-warning', '--gfx-driver=headless' })
+      assert(code is 0, output)
+      assert(output.count('B06_RESAVE_OK:1:42') is 1,
+         'A re-saved consumer must execute once with fresh activation state: ' .. output)
+   end
 end
 
 function date_file(Path:str, Day:num)
@@ -153,6 +191,99 @@ end
    assert(replacement.error != ERR_Okay and
       replacement.errorMessage.find('BYTECODE_REPLACEMENT_SAVED') != nil,
       'The saved replacement must not replace the pending queried chunk')
+end
+
+@Test function ResaveWrappedRawAndSelectedCache()
+   local wrapped = path('_b06_seed.tbc')
+   do
+      local producer <close> = obj.new('tiri', { statement=glResaveProgram })
+      save(producer, wrapped)
+   end
+   local wrapped_bytes = read_file(wrapped)
+   local raw = path('_b06_raw.tbc')
+   write_file(raw, wrapped_bytes.sub(#glWrapper))
+
+   local outputs = array<str> {}
+   do
+      local script <close> = obj.new('tiri', { path=wrapped })
+      append_outputs(outputs, save_lifecycle(script))
+   end
+   do
+      local script <close> = obj.new('tiri', { path=raw })
+      append_outputs(outputs, save_lifecycle(script))
+   end
+
+   local source = path('_b06_cache_source.tiri')
+   local cache = path('_b06_cache.tbc')
+   write_file(source, glResaveProgram)
+   date_file(source, 6)
+   do
+      local cache_producer <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      check cache_producer.acQuery()
+   end
+   assert(read_file(cache).startsWith(glWrapper .. '\x1bLJ'))
+   write_file(source, 'local =')
+   date_file(source, 6)
+   do
+      local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      append_outputs(outputs, save_lifecycle(script))
+   end
+
+   check mSys.DeleteFile(wrapped)
+   check mSys.DeleteFile(raw)
+   check mSys.DeleteFile(source)
+   check mSys.DeleteFile(cache)
+   verify_resaved_outputs(outputs)
+end
+
+@Test function ResaveCacheFallbackAndDirectAuthority()
+   local source = path('_b06_fallback_source.tiri')
+   local cache = path('_b06_fallback_cache.tbc')
+   local resaved = path('_b06_fallback_result.tbc')
+   write_file(source, glResaveProgram)
+   write_file(cache, 'not bytecode')
+   date_file(source, 7)
+   date_file(cache, 7)
+
+   do
+      local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      save(script, resaved)
+      assert(read_file(cache) is 'not bytecode', 'Saving must not replace or consume selected cache provenance')
+      check script.acQuery()
+      activate(script)
+   end
+   assert(read_file(cache).startsWith(glWrapper .. '\x1bLJ'), 'Query must retain and use its own source fallback')
+   check mSys.DeleteFile(source)
+   local code, output = child(array<str> { resaved, '--log-warning', '--gfx-driver=headless' })
+   assert(code is 0 and output.count('B06_RESAVE_OK:1:42') is 1, output)
+
+   local missing_cache = path('_b06_missing_cache.tbc')
+   write_file(missing_cache, 'not bytecode')
+   local missing <close> = obj.new('tiri', { path=path('_b06_missing_source.tiri'), cacheFile=missing_cache })
+   local destination <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
+   assert(missing.acSaveToObject(destination) is ERR_InvalidData)
+   assert(destination.size is 0 and missing.errorMessage.find('Expected a compiled Tiri wrapper') != nil,
+      missing.errorMessage)
+
+   local invalid_source = path('_b06_invalid_source.tiri')
+   local invalid_cache = path('_b06_invalid_cache.tbc')
+   write_file(invalid_source, 'local =')
+   write_file(invalid_cache, 'not bytecode')
+   date_file(invalid_source, 8)
+   date_file(invalid_cache, 8)
+   local invalid <close> = obj.new('tiri', { path=invalid_source, cacheFile=invalid_cache })
+   local invalid_output <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
+   assert(invalid.acSaveToObject(invalid_output) is ERR_InvalidData)
+   assert(invalid_output.size is 0 and invalid.errorMessage != nil and #invalid.errorMessage > 0)
+   assert(read_file(invalid_cache) is 'not bytecode', 'A failed save fallback must not alter the selected cache')
+
+   local direct_path = path('_b06_direct_invalid.tbc')
+   write_file(direct_path, 'not bytecode')
+   local direct <close> = obj.new('tiri', { path=direct_path, cacheFile=resaved })
+   local direct_output <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
+   assert(direct.acSaveToObject(direct_output) is ERR_InvalidData)
+   assert(direct_output.size is 0 and direct.errorMessage.find('Expected a compiled Tiri wrapper') != nil,
+      'A direct .tbc must fail without consulting a valid alternative cache')
 end
 
 @Test function SaveCompilationIsIsolated()

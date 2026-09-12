@@ -482,7 +482,12 @@ static void bcwrite_proto(BCWriteCtx *ctx, GCproto *pt)
    *p++ = pt->framesize;
    *p++ = pt->sizeuv;
    uint8_t prototype_source = 0;
-   lj_assertBCW(bcwrite_source_id(ctx, pt->file_source_idx, prototype_source), "unmapped prototype source");
+   const bool prototype_source_mapped = bcwrite_source_id(ctx, pt->file_source_idx, prototype_source);
+   lj_assertBCW(prototype_source_mapped, "unmapped prototype source");
+   if (not prototype_source_mapped) {
+      ctx->status = 1;
+      return;
+   }
    *p++ = prototype_source;
    p = lj_strfmt_wuleb128(p, pt->sizekgc);
    p = lj_strfmt_wuleb128(p, pt->sizekn);
@@ -520,7 +525,12 @@ static void bcwrite_proto(BCWriteCtx *ctx, GCproto *pt)
       const BCLine *lines = (const BCLine *)proto_lineinfo(pt);
       for (MSize i = 0; i + 1 < pt->sizebc; ++i) {
          uint8_t source = 0;
-         lj_assertBCW(bcwrite_source_id(ctx, lines[i].fileIndex(), source), "unmapped line source");
+         const bool line_source_mapped = bcwrite_source_id(ctx, lines[i].fileIndex(), source);
+         lj_assertBCW(line_source_mapped, "unmapped line source");
+         if (not line_source_mapped) {
+            ctx->status = 1;
+            return;
+         }
          BCLine remapped = BCLine::encode(source, lines[i].lineNumber());
          p = lj_buf_wmem(p, &remapped, sizeof(remapped));
       }

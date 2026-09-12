@@ -65,13 +65,14 @@ static bool bytecode_save_contract(kt::Log &Log)
    WriteObservation state;
    sink->CreatorMeta = &state;
 
-   auto save_and_check = [&](ERR Expected) {
-      const int depth = lua_gettop(lua);
-      const int reference = script->MainChunkRef;
-      const void *pending = depth ? lua_topointer(lua, -1) : nullptr;
-      ERR error = acSaveToObject(script, sink);
-      if (error != Expected or lua_gettop(lua) != depth or script->MainChunkRef != reference or
-          (depth and lua_topointer(lua, -1) != pending)) {
+   auto save_and_check = [&](extTiri *Target, ERR Expected) {
+      lua_State *target_lua = Target->Lua;
+      const int depth = lua_gettop(target_lua);
+      const int reference = Target->MainChunkRef;
+      const void *pending = depth ? lua_topointer(target_lua, -1) : nullptr;
+      ERR error = acSaveToObject(Target, sink);
+      if (error != Expected or lua_gettop(target_lua) != depth or Target->MainChunkRef != reference or
+          (depth and lua_topointer(target_lua, -1) != pending)) {
          Log.error("Save changed stack/reference or returned %s instead of %s",
             GetErrorMsg(error), GetErrorMsg(Expected));
          return false;
@@ -81,9 +82,11 @@ static bool bytecode_save_contract(kt::Log &Log)
 
    for (int i = 0; i < 3; ++i) {
       state = {};
-      if (not save_and_check(ERR::Okay)) return false;
+      if (not save_and_check(script, ERR::Okay)) return false;
       if (not state.Bytes.starts_with(std::string_view(LUA_COMPILED, sizeof(LUA_COMPILED)))) return false;
    }
+   const std::string wrapped = state.Bytes;
+   const std::string raw = wrapped.substr(sizeof(LUA_COMPILED));
    lua_getglobal(lua, "bytecode_runs");
    bool dormant = lua_isnil(lua, -1);
    lua_pop(lua, 1);
@@ -97,35 +100,98 @@ static bool bytecode_save_contract(kt::Log &Log)
          state.Short = true;
          state.Result = result;
          ERR expected = result IS ERR::ReadOnly ? result : ERR::Write;
-         if (not save_and_check(expected) or state.Calls != fail_at) return false;
+         if (not save_and_check(script, expected) or state.Calls != fail_at) return false;
       }
    }
    state = {};
-   if (not save_and_check(ERR::Okay) or acActivate(script) != ERR::Okay or script->Error != ERR::Okay) return false;
-   if (not save_and_check(ERR::Okay) or acActivate(script) != ERR::Okay or script->Error != ERR::Okay) return false;
+   if (not save_and_check(script, ERR::Okay) or acActivate(script) != ERR::Okay or script->Error != ERR::Okay) {
+      return false;
+   }
+   if (not save_and_check(script, ERR::Okay) or acActivate(script) != ERR::Okay or script->Error != ERR::Okay) {
+      return false;
+   }
 
    lua_getglobal(lua, "bytecode_runs");
    bool ran_twice = lua_tointeger(lua, -1) IS 2;
    lua_pop(lua, 1);
    if (not ran_twice) return false;
 
+   auto check_loaded_lifecycle = [&](const std::string &Input) {
+      objTiri::create loaded_holder = { fl::Statement("assert(true)") };
+      if (not loaded_holder.ok()) return false;
+      auto loaded = (extTiri *)*loaded_holder;
+      if (loaded->setStatement(Input) != ERR::Okay) return false;
+
+      lua_pushinteger(loaded->Lua, 123); // A caller-owned stack value must survive every save point.
+      state = {};
+      if (not save_and_check(loaded, ERR::Okay) or
+          not state.Bytes.starts_with(std::string_view(LUA_COMPILED, sizeof(LUA_COMPILED)))) return false;
+
+      lua_getglobal(loaded->Lua, "bytecode_runs");
+      bool not_executed = lua_isnil(loaded->Lua, -1);
+      lua_pop(loaded->Lua, 1);
+      if (not not_executed or acQuery(loaded) != ERR::Okay) return false;
+
+      state = {};
+      if (not save_and_check(loaded, ERR::Okay)) return false;
+      lua_getglobal(loaded->Lua, "bytecode_runs");
+      not_executed = lua_isnil(loaded->Lua, -1);
+      lua_pop(loaded->Lua, 1);
+      if (not not_executed or acActivate(loaded) != ERR::Okay or loaded->Error != ERR::Okay) return false;
+
+      lua_getglobal(loaded->Lua, "bytecode_runs");
+      bool ran_once = lua_tointeger(loaded->Lua, -1) IS 1;
+      lua_pop(loaded->Lua, 1);
+      state = {};
+      if (not ran_once or not save_and_check(loaded, ERR::Okay)) return false;
+      lua_getglobal(loaded->Lua, "bytecode_runs");
+      bool still_once = lua_tointeger(loaded->Lua, -1) IS 1;
+      lua_pop(loaded->Lua, 1);
+      if (not still_once or (lua_tointeger(loaded->Lua, 1) != 123) or acActivate(loaded) != ERR::Okay or
+          loaded->Error != ERR::Okay) return false;
+      lua_getglobal(loaded->Lua, "bytecode_runs");
+      bool ran_twice_after_save = lua_tointeger(loaded->Lua, -1) IS 2;
+      lua_pop(loaded->Lua, 1);
+      return ran_twice_after_save and (lua_tointeger(loaded->Lua, 1) IS 123);
+   };
+
+   if (not check_loaded_lifecycle(wrapped) or not check_loaded_lifecycle(raw)) return false;
+
    objTiri::create invalid = { fl::Statement("local =") };
    if (not invalid.ok()) return false;
    auto invalid_script = (extTiri *)*invalid;
    const int depth = lua_gettop(invalid_script->Lua);
    for (int i = 0; i < 2; ++i) {
-      if (acSaveToObject(invalid_script, sink) != ERR::InvalidData or
+      state = {};
+      if (not save_and_check(invalid_script, ERR::InvalidData) or state.Calls or
           lua_gettop(invalid_script->Lua) != depth or invalid_script->MainChunkRef) return false;
    }
-   std::string malformed(LUA_COMPILED, sizeof(LUA_COMPILED));
-   malformed += "\x1bLJ\x01";
-   invalid_script->setStatement(malformed);
+   std::vector<std::string> malformed_inputs;
+   malformed_inputs.emplace_back(LUA_COMPILED, sizeof(LUA_COMPILED));
+   malformed_inputs.emplace_back(LUA_COMPILED, sizeof(LUA_COMPILED) - 1);
+   malformed_inputs.back() += "\x1bLJ";
+   malformed_inputs.push_back(std::string("\x1bLJ\x01", 4));
+   auto wrong_version = wrapped;
+   wrong_version[sizeof(LUA_COMPILED) + 3] ^= 0x7f;
+   malformed_inputs.push_back(std::move(wrong_version));
+
+   for (const auto &malformed : malformed_inputs) {
+      if (invalid_script->setStatement(malformed) != ERR::Okay) return false;
+      state = {};
+      if (not save_and_check(invalid_script, ERR::InvalidData) or state.Calls or
+          invalid_script->ErrorMessage.empty()) return false;
+   }
+
+   invalid_script->setStatement(std::string("\x1bLJ\x01", 4));
    lua_pushinteger(invalid_script->Lua, 123); // Preserve caller-owned values on failed loads too.
    for (int i = 0; i < 2; ++i) {
       if (acQuery(invalid_script) != ERR::InvalidData or lua_gettop(invalid_script->Lua) != depth + 1 or
           lua_tointeger(invalid_script->Lua, -1) != 123 or invalid_script->MainChunkRef) return false;
    }
    lua_pop(invalid_script->Lua, 1);
+   if (invalid_script->setStatement("assert(6 * 7 is 42)") != ERR::Okay or
+       acQuery(invalid_script) != ERR::Okay or acActivate(invalid_script) != ERR::Okay or
+       invalid_script->Error != ERR::Okay) return false;
    return true;
 }
 

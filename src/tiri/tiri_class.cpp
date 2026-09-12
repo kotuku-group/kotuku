@@ -39,13 +39,32 @@ The Tiri class provides functionality for running scripts written in the Tiri pr
 
 #include "defs.h"
 
+enum class CompilationInputOrigin : uint8_t {
+   SOURCE,
+   DIRECT_BYTECODE,
+   SELECTED_CACHE
+};
+
+struct CompilationInput {
+   std::string_view Payload;
+   bool Binary;
+};
+
 static ERR run_script(extTiri *);
 static ERR stack_args(lua_State *, OBJECTID, const FunctionField *, int8_t *);
 static ERR save_binary(lua_State *, OBJECTPTR);
+static ERR register_interfaces(lua_State *);
+
+static ERR TIRI_Activate(extTiri *);
+static ERR TIRI_DataFeed(extTiri *, struct acDataFeed *);
+static ERR TIRI_Init(extTiri *);
+static ERR TIRI_NewChild(extTiri *, struct acNewChild &);
+static ERR TIRI_Query(extTiri *);
+static ERR TIRI_SaveToObject(extTiri *, struct acSaveToObject *);
 
 //********************************************************************************************************************
 
-[[maybe_unused]] constexpr std::string_view check_bom(std::string_view Value)
+constexpr std::string_view check_bom(std::string_view Value)
 {
    if ((Value.size() >= 3) and (Value[0] IS '\xef') and (Value[1] IS '\xbb') and (Value[2] IS '\xbf'))
       return Value.substr(3); // UTF-8 BOM
@@ -118,7 +137,82 @@ static ERR compiled_payload(std::string_view Source, std::string_view &Payload)
    return ERR::Okay;
 }
 
-[[maybe_unused]] static ERR register_interfaces(lua_State *);
+//********************************************************************************************************************
+// Classify source, direct bytecode and selected cache input without changing Script provenance.
+
+static ERR classify_compilation_input(std::string_view Source, CompilationInputOrigin Origin, CompilationInput &Input,
+   std::string &Diagnostic)
+{
+   const bool binary = (Origin != CompilationInputOrigin::SOURCE) or Source.starts_with(LUA_COMPILED) or
+      Source.starts_with("\x1b");
+   std::string_view payload = Source;
+   if (Source.starts_with(LUA_COMPILED)) {
+      if (auto error = compiled_payload(Source, payload); error != ERR::Okay) {
+         Diagnostic = "Invalid compiled Tiri wrapper or missing VM payload.";
+         return error;
+      }
+   }
+   else if (binary and not Source.starts_with("\x1b")) {
+      Diagnostic = "Expected a compiled Tiri wrapper and VM payload.";
+      return ERR::InvalidData;
+   }
+
+   Input = { payload, binary };
+   Diagnostic.clear();
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Load one compilation unit.  Failure restores the stack; success leaves exactly one executable function.
+
+static ERR load_compilation_input(lua_State *Lua, extTiri *Self, std::string_view Source,
+   CompilationInputOrigin Origin, std::string &Diagnostic)
+{
+   const int stack_top = lua_gettop(Lua);
+   CompilationInput input;
+   if (auto error = classify_compilation_input(Source, Origin, input, Diagnostic); error != ERR::Okay) return error;
+
+   auto chunk_name = make_chunk_name(Self);
+   const int result = lua_load(Lua, input.Payload, chunk_name.c_str());
+   if (result) {
+      if (not input.Binary and Lua->parser_diagnostics and Lua->parser_diagnostics->has_errors()) {
+         Diagnostic.clear();
+         for (const auto &entry : Lua->parser_diagnostics->entries()) {
+            if (not Diagnostic.empty()) Diagnostic += "\n";
+            Diagnostic += entry.to_string(Self->LineOffset, Lua);
+         }
+      }
+      else if (auto errorstr = lua_tostringview(Lua, -1); not errorstr.empty()) {
+         Diagnostic.assign(errorstr.data(), errorstr.size());
+      }
+      else Diagnostic = input.Binary ? "Invalid compiled Tiri bytecode." : "Failed to compile Tiri source.";
+
+      lua_settop(Lua, stack_top);
+      return input.Binary ? ERR::InvalidData : ERR::Syntax;
+   }
+
+   if ((Origin IS CompilationInputOrigin::SELECTED_CACHE) and lua_isfunction(Lua, -1) and
+       not lua_iscfunction(Lua, -1)) {
+      GCproto *prototype = funcproto(funcV(Lua->top - 1));
+      const CompilationSourceMap *sources = proto_compilation_sources(prototype);
+      if (sources and sources->count > 1) {
+         lua_settop(Lua, stack_top);
+         Diagnostic = "Automatic caches with imported dependencies are disabled until dependency validation is "
+            "available.";
+         return ERR::InvalidData;
+      }
+   }
+
+   Diagnostic.clear();
+   return ERR::Okay;
+}
+
+static CompilationInputOrigin compilation_input_origin(const extTiri *Self)
+{
+   if (Self->LoadedFromCache) return CompilationInputOrigin::SELECTED_CACHE;
+   if (has_script_extension(Self->Path, ".tbc")) return CompilationInputOrigin::DIRECT_BYTECODE;
+   return CompilationInputOrigin::SOURCE;
+}
 
 //********************************************************************************************************************
 // Dump the variables of any global table
@@ -137,15 +231,6 @@ static ERR compiled_payload(std::string_view Source, std::string_view &Payload)
       }
    }
 }
-
-//********************************************************************************************************************
-
-static ERR TIRI_Activate(extTiri *);
-static ERR TIRI_DataFeed(extTiri *, struct acDataFeed *);
-static ERR TIRI_Init(extTiri *);
-static ERR TIRI_NewChild(extTiri *, struct acNewChild &);
-static ERR TIRI_Query(extTiri *);
-static ERR TIRI_SaveToObject(extTiri *, struct acSaveToObject *);
 
 //********************************************************************************************************************
 // Only to be used immediately after a failed lua_pcall().  Lua stores a description of the error that occurred on the
@@ -473,6 +558,27 @@ extTiri::~extTiri()
 }
 
 //********************************************************************************************************************
+// Read source bytes without changing cache provenance or other Script state.
+
+static ERR read_source_file(objFile *File, const std::string &Path, std::string &Source)
+{
+   if (not File) return ERR::NullArgs;
+
+   int64_t size = 0;
+   if (auto error = File->getSize(size); error != ERR::Okay) return error;
+   if (auto error = read_file_to_string(Path, size, Source, nullptr); error != ERR::Okay) return error;
+
+   // Bytecode paths are never treated as text, including malformed wrappers with a leading BOM.
+
+   if (not has_script_extension(Path, ".tbc")) {
+      auto content = check_bom(Source);
+      if (content.data() != Source.data()) Source.assign(content);
+   }
+
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
 // Read the original path independently of cache selection, including its metadata for a replacement cache.
 
 static ERR load_source(extTiri *Self)
@@ -484,17 +590,8 @@ static ERR load_source(extTiri *Self)
    objFile::create file = { fl::Path(Self->Path) };
    if (not file.ok()) return file.error;
 
-   int64_t size = 0;
-   if (auto error = file->getSize(size); error != ERR::Okay) return error;
    std::string source;
-   if (auto error = read_file_to_string(Self->Path, size, source, nullptr); error != ERR::Okay) return error;
-
-   // Bytecode paths are never treated as text, including malformed wrappers with a leading BOM.
-
-   if (not has_script_extension(Self->Path, ".tbc")) {
-      auto content = check_bom(source);
-      if (content.data() != source.data()) source.assign(content);
-   }
+   if (auto error = read_source_file(*file, Self->Path, source); error != ERR::Okay) return error;
 
    Self->Statement = std::move(source);
    Self->LoadedFromCache = false;
@@ -642,50 +739,10 @@ static ERR prepare_compilation(extTiri *Self)
 
 static ERR load_statement(extTiri *Self)
 {
-   const int stack_top = lua_gettop(Self->Lua);
-   std::string_view source(Self->Statement);
-   const bool binary = Self->LoadedFromCache or has_script_extension(Self->Path, ".tbc") or
-      source.starts_with(LUA_COMPILED) or source.starts_with("\x1b");
-   if (source.starts_with(LUA_COMPILED)) {
-      if (auto error = compiled_payload(source, source); error != ERR::Okay) {
-         Self->setErrorMessage("Invalid compiled Tiri wrapper or missing VM payload.");
-         return error;
-      }
-   }
-   else if (binary and not source.starts_with("\x1b")) {
-      Self->setErrorMessage("Expected a compiled Tiri wrapper and VM payload.");
-      return ERR::InvalidData;
-   }
-
-   auto chunk_name = make_chunk_name(Self);
-   const int result = lua_load(Self->Lua, source, chunk_name.c_str());
-   if (result) {
-      if (auto errorstr = lua_tostring(Self->Lua, -1)) {
-         if (not binary and Self->Lua->parser_diagnostics and Self->Lua->parser_diagnostics->has_errors()) {
-            std::string error_msg;
-            for (const auto &entry : Self->Lua->parser_diagnostics->entries()) {
-               if (not error_msg.empty()) error_msg += "\n";
-               error_msg += entry.to_string(Self->LineOffset, Self->Lua);
-            }
-            Self->setErrorMessage(error_msg);
-         }
-         else Self->setErrorMessage(errorstr);
-      }
-      lua_settop(Self->Lua, stack_top);
-      return binary ? ERR::InvalidData : ERR::Syntax;
-   }
-   if (Self->LoadedFromCache and lua_isfunction(Self->Lua, -1) and not lua_iscfunction(Self->Lua, -1)) {
-      GCproto *prototype = funcproto(funcV(Self->Lua->top - 1));
-      const CompilationSourceMap *sources = proto_compilation_sources(prototype);
-      if (sources and sources->count > 1) {
-         lua_settop(Self->Lua, stack_top);
-         Self->setErrorMessage(
-            "Automatic caches with imported dependencies are disabled until dependency validation is available.");
-         return ERR::InvalidData;
-      }
-   }
-   Self->setErrorMessage("");
-   return ERR::Okay;
+   std::string diagnostic;
+   auto error = load_compilation_input(Self->Lua, Self, Self->Statement, compilation_input_origin(Self), diagnostic);
+   Self->setErrorMessage(diagnostic);
+   return error;
 }
 
 /*********************************************************************************************************************
@@ -786,14 +843,18 @@ Use the SaveToObject action to compile @Script.Statement and save the resulting 
 executing the program.  Each save compiles the statement afresh, including after #Query() or #Activate(), and
 preserves any pending executable chunk.  Saving during active execution returns `ERR::InvalidState`.
 
+Source statements, wrapped byte code and raw VM byte code can be saved.  A rejected selected cache receives one local
+source fallback during each save, without consuming the later Query fallback or changing cache provenance.  A direct
+`.tbc` file is authoritative and never falls back to another file.
+
 The output contains the Tiri compiled marker, a NUL separator and VM byte code with debug information.  Compatibility
-is limited to the same Kōtuku build and platform.  Live objects, struct instances, globals and execution state are not
-saved.  Required state-local named struct layouts, imported declarations, source identities and diagnostic line
-mappings are embedded in the output; unused struct declarations and source text are not embedded.  Loading publishes
-embedded layouts in the consumer state for its lifetime.  An identical existing declaration is reused, while a
-conflicting declaration rejects the complete load without changing the prior registry.  Save compilation is isolated
-from the execution state, so rejected and repeated saves do not change imports, declarations, diagnostics, captures or
-a pending executable chunk.  To-be-closed locals are preserved in saved byte code.
+is limited to the same Kōtuku build and platform.  Live objects, activated closures, struct instances, globals and
+execution state are not saved.  Required state-local named struct layouts, imported declarations, source identities
+and diagnostic line mappings are embedded in the output; unused struct declarations and source text are not embedded.
+Loading publishes embedded layouts in the consumer state for its lifetime.  An identical existing declaration is
+reused, while a conflicting declaration rejects the complete load without changing the prior registry.  Save
+compilation is isolated from the execution state, so rejected and repeated saves do not change imports, declarations,
+diagnostics, captures or a pending executable chunk.  To-be-closed locals are preserved in saved byte code.
 
 A failed save can leave partial output.
 
@@ -805,7 +866,9 @@ static ERR TIRI_SaveToObject(extTiri *Self, struct acSaveToObject *Args)
 
    if ((not Args) or (not Args->Dest)) return log.warning(ERR::NullArgs);
 
-   if (Self->Statement.empty()) return log.warning(ERR::FieldNotSet);
+   if (Self->Statement.empty() and not Self->LoadedFromCache and not has_script_extension(Self->Path, ".tbc")) {
+      return log.warning(ERR::FieldNotSet);
+   }
 
    if (not Self->Lua) return ERR::NotInitialised;
    if (Self->Recurse) return ERR::InvalidState;
@@ -826,26 +889,32 @@ static ERR TIRI_SaveToObject(extTiri *Self, struct acSaveToObject *Args)
       ~CaptureRestore() { Script->CapturedVariables = std::move(Saved); }
    } capture_restore { Self, std::move(Self->CapturedVariables) };
 
-   log.branch("Compiling the statement...");
+   log.branch("Loading the statement for saving...");
 
-   auto chunk_name = make_chunk_name(Self);
-   std::string_view save_source(Self->Statement);
-   if (save_source.starts_with(LUA_COMPILED)) {
-      if (compiled_payload(save_source, save_source) != ERR::Okay) return ERR::InvalidData;
+   const auto origin = compilation_input_origin(Self);
+   std::string diagnostic;
+   ERR error = load_compilation_input(compilation.get(), Self, Self->Statement, origin, diagnostic);
+
+   // A selected cache is replaceable.  Keep this fallback local so saving cannot consume or alter Query's state.
+
+   std::string source;
+   if ((error != ERR::Okay) and (origin IS CompilationInputOrigin::SELECTED_CACHE)) {
+      objFile::create source_file = { fl::Path(Self->Path) };
+      if (source_file.ok() and (read_source_file(*source_file, Self->Path, source) IS ERR::Okay)) {
+         error = load_compilation_input(compilation.get(), Self, source, CompilationInputOrigin::SOURCE, diagnostic);
+      }
    }
 
-   if (not lua_load(compilation.get(), save_source, chunk_name.c_str())) {
-      ERR error = save_binary(compilation.get(), Args->Dest);
-      if ((lua_gettop(Self->Lua) != stack_top) or (Self->MainChunkRef != main_chunk_ref)) return ERR::InvalidState;
-      return error;
-   }
+   if (error IS ERR::Okay) error = save_binary(compilation.get(), Args->Dest);
    else {
-      auto str = lua_tostringview(compilation.get(), -1);
-      auto error_msg = str.empty() ? "" : str.data();
-      log.warning("Compile Failure: %.*s", int(str.size()), error_msg);
-      if ((lua_gettop(Self->Lua) != stack_top) or (Self->MainChunkRef != main_chunk_ref)) return ERR::InvalidState;
-      return ERR::InvalidData;
+      Self->setErrorMessage(diagnostic);
+      log.warning("Save load failure: %s", diagnostic.c_str());
+      if (error IS ERR::Syntax) error = ERR::InvalidData;
    }
+
+   if (error IS ERR::Okay) Self->setErrorMessage("");
+   if ((lua_gettop(Self->Lua) != stack_top) or (Self->MainChunkRef != main_chunk_ref)) return ERR::InvalidState;
+   return error;
 }
 
 /*********************************************************************************************************************
