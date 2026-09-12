@@ -1967,15 +1967,15 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
 
    const uint32_t libhash = kt::strihash(Path);
 
-   // Check if this file is already registered in FileSource.  FileSource entries persist for the lifetime of the
-   // lua_State, so this hit can come from an earlier, unrelated compilation.  In diagnose mode the type analyser
-   // needs the real body regardless - validation never emits or executes code, so re-parsing cannot double-execute
-   // library code, and skipping here would silently drop imported-file diagnostics on every validation after the
-   // first.  The existing FileSource index is reused below instead of registering a duplicate.
+   // Runtime loadFile() compilations share imports with the existing state.  Re-emitting an imported body would
+   // execute its initialisation again and replace namespace tables, losing extensions installed by other libraries.
+   // SaveToObject compiles in a fresh state, so this reuse does not omit dependencies from public bytecode exports.
+   // Diagnose mode still needs the real body on each validation; only deduplicate within that compilation and reuse
+   // the existing FileSource index.  Validation never emits or executes the imported initialisation.
    auto existing_index = find_file_source(L, Path);
    bool seen_this_chunk = this->import_seen_this_chunk(libhash);
    if (existing_index.has_value()) {
-      if (seen_this_chunk) {
+      if (seen_this_chunk or not this->ctx.lex().diagnose_mode) {
          log.detail("Library %.*s already imported (file index %d)", int(Library.size()), Library.data(), existing_index.value());
          return ParserResult<std::unique_ptr<BlockStmt>>::success(make_block(ImportToken.span(), {}));
       }

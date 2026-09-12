@@ -423,6 +423,50 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Runtime loads must share imports with their caller, including when the caller was restored from bytecode.
+
+@Test function RuntimeLoadsReuseImports()
+   local helper = glRoot .. 'runtime_reuse_helper.tiri'
+   local loader = glRoot .. 'runtime_reuse_loader.tiri'
+   local main = path('_runtime_reuse.tiri')
+   local binary = path('_runtime_reuse.tbc')
+   write_file(loader, [[
+      import './runtime_reuse_helper' as reused
+      assert(reused.extension() is 42, 'Runtime imports must preserve namespace extensions')
+      assert(glRuntimeImportRuns is 1, 'Runtime imports must initialise only once')
+      return reused
+   ]])
+   write_file(main, [[
+      global glRuntimeImportRuns = 0
+      import './runtime_reuse_helper'
+      runtimeReuse.extension = function():num return 42 end
+      local first = loadFile(arg('loader'))
+      assert(first is runtimeReuse, 'Runtime imports must retain the original namespace table')
+      check mSys.DeleteFile(arg('helper'))
+      local second = loadFile(arg('loader'))
+      assert(second is runtimeReuse, 'An existing import must not require another source read')
+      print('RUNTIME_IMPORT_REUSE_OK')
+   ]])
+
+   for compiled in values({ false, true }) do
+      write_file(helper, [[
+         namespace runtimeReuse {}
+         glRuntimeImportRuns++
+      ]])
+      local input = main
+      if compiled then
+         local script <close> = obj.new('tiri', { path=main })
+         check script.acQuery()
+         save(script, binary)
+         input = binary
+      end
+      local code, output = child(array<str> { input, 'loader=' .. loader, 'helper=' .. helper, '--log-warning' })
+      assert(code is 0, output)
+      assert(output.count('RUNTIME_IMPORT_REUSE_OK') is 1, output)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Saving and re-saving an imported compilation unit must preserve import order, declarations and source diagnostics so
 -- the unit remains executable after every contributing source file is removed.
 
