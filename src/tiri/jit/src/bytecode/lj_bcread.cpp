@@ -313,6 +313,8 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
    BCIns* bc = proto_bc(pt);
    BCREG context_entries[BCMAX_A + 1];
    MSize context_entry_depth = 0;
+   uint64_t close_arm_slots = 0;
+   uint64_t close_consume_slots = 0;
    std::vector<ProtoContextBlockDesc> context_blocks;
    bc[0] = BCINS_AD((pt->flags & PROTO_VARARG) ? BC_FUNCV : BC_FUNCF,
       pt->framesize, 0);
@@ -353,6 +355,8 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
       else if (op IS BC_CLOSEARM or op IS BC_CLOSE) {
          BCREG slot = bc_a(bc[i]);
          if (slot >= pt->framesize or slot >= 64) bcread_error(State, ErrMsg::BCBAD);
+         if (op IS BC_CLOSEARM) close_arm_slots |= uint64_t(1) << slot;
+         else close_consume_slots |= uint64_t(1) << slot;
       }
       else if (op IS BC_DEFERARM) {
          BCREG callable_slot = bc_a(bc[i]);
@@ -499,6 +503,9 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
          bcread_error(State, ErrMsg::BCBAD);
       }
    }
+
+   if (close_consume_slots & ~close_arm_slots) bcread_error(State, ErrMsg::BCBAD);
+   pt->closeslots = close_arm_slots;
 
    if (not context_blocks.empty()) {
       size_t byte_size = context_blocks.size() * sizeof(ProtoContextBlockDesc);

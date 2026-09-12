@@ -4,6 +4,7 @@ include 'core'
 local glRoot
 local glSerial = 0
 local glWrapper = '-- $TIRI:compiled\0'
+
 local glProgram = [[
    local nothing = nil
    assert(nothing is nil and true and not false)
@@ -24,6 +25,43 @@ local glProgram = [[
    local closure = factory(10)
    assert(closure(2) is 12 and closure(3) is 15 and add(2, 3) is 5)
    print('BYTECODE_ACCEPTANCE_OK')
+]]
+
+local glCloseProgram = [[
+   local root_count = 0
+   local child_count = 0
+   local native_id = 0
+   local alias = nil
+   local root <close> = setmetatable({}, {
+      __close=function()
+         root_count++
+         assert(root_count is 1, 'Root close must run exactly once')
+         print('BYTECODE_ROOT_CLOSE_OK')
+      end
+   })
+   function child()
+      local child_value <close> = setmetatable({}, {
+         __close=function(Error)
+            child_count++
+            assert(Error.message.find('BYTECODE_CHILD_ERROR') != nil)
+         end
+      })
+      local owner <close>:obj = obj.new('time')
+      native_id = owner.id
+      alias = obj.find(native_id)
+      raise 'BYTECODE_CHILD_ERROR'
+   end
+   local child_caught = false
+   try
+      child()
+   except child_error
+      child_caught = true
+   end
+   assert(child_caught, 'Child exception must reach the root handler')
+   assert(child_count is 1, 'Child close must run exactly once')
+   assert(obj.find(native_id) is nil, 'Owning native object must become unfindable')
+   assert(not alias.exists(), 'Detached native alias must become stale')
+   print('BYTECODE_CLOSE_ACCEPTANCE_OK')
 ]]
 
 @BeforeAll function setup()
@@ -127,6 +165,51 @@ end
    check mSys.DeleteFile(producer)
    for mode in values({ 'off', '' }) do
       local args = array<str> { binary, '--log-warning', '--gfx-driver=headless' }
+      if mode != '' then args.push('--jit-options') args.push(mode) end
+      local result, observed = child(args)
+      assert(result is 0 and observed is expected, observed)
+   end
+end
+
+@Test function FreshProcessesCloseMetadataWithoutSource()
+   local source = path('.tiri')
+   local binary = path('.tbc')
+   local producer = path('.tiri')
+   write_file(source, glCloseProgram)
+   write_file(producer, [[
+      local script <close> = obj.new('tiri', { path=arg('source') })
+      local output <close> = obj.new('file', { path=arg('binary'), flags=FL_NEW|FL_WRITE })
+      check script.acSaveToObject(output)
+   ]])
+   local source_code, expected = child(array<str> { source, '--log-warning' })
+   assert(source_code is 0 and expected.find('BYTECODE_CLOSE_ACCEPTANCE_OK') != nil and
+      expected.find('BYTECODE_ROOT_CLOSE_OK') != nil, expected)
+   local code, output = child(array<str> { producer, 'source=' .. source, 'binary=' .. binary, '--log-warning' })
+   assert(code is 0, output)
+   check mSys.DeleteFile(source)
+   check mSys.DeleteFile(producer)
+   for mode in values({ 'off', '' }) do
+      local args = array<str> { binary, '--log-warning' }
+      if mode != '' then args.push('--jit-options') args.push(mode) end
+      local result, observed = child(args)
+      assert(result is 0 and observed is expected, observed)
+   end
+end
+
+@Test function CloseMetadataCacheRunsWithoutSource()
+   local source = path('.tiri')
+   local cache = path('.tbc')
+   write_file(source, glCloseProgram)
+   local source_code, expected = child(array<str> { source, '--log-warning' })
+   assert(source_code is 0 and expected.find('BYTECODE_CLOSE_ACCEPTANCE_OK') != nil, expected)
+   do
+      local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      check script.acQuery()
+   end
+   assert(read_file(cache).startsWith(glWrapper .. '\x1bLJ'))
+   check mSys.DeleteFile(source)
+   for mode in values({ 'off', '' }) do
+      local args = array<str> { cache, '--log-warning' }
       if mode != '' then args.push('--jit-options') args.push(mode) end
       local result, observed = child(args)
       assert(result is 0 and observed is expected, observed)
@@ -247,8 +330,8 @@ end
 @Test function FailedCacheIsRemovedAndSourceStillRuns()
    local source = path('.tiri')
    local cache = path('.tbc')
-   -- This metadata cannot be saved: the cache is opened, rejected, then removed.
-   write_file(source, 'local value <close> = nil\nassert(true)')
+   -- Struct metadata cannot be saved: the cache is opened, rejected, then removed.
+   write_file(source, 'struct FailedCacheRecord\nValue: int\nend\nassert(true)')
    local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
    check script.acQuery()
    assert(not exists(cache), 'Failed cache must not remain on disk')
@@ -315,11 +398,8 @@ end
 end
 
 @Test function UnsupportedMetadataLeavesDestinationEmpty()
-   for source in values({ 'local value <close> = nil',
-      'function child() local value <close> = nil end', 'struct BytecodeRecord\nValue: int\nend' }) do
-      local script <close> = obj.new('tiri', { statement=source })
-      local output <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
-      assert(script.acSaveToObject(output) is ERR_NoSupport)
-      assert(output.size is 0, 'Unsupported metadata must be rejected before writing')
-   end
+   local script <close> = obj.new('tiri', { statement='struct BytecodeRecord\nValue: int\nend' })
+   local output <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
+   assert(script.acSaveToObject(output) is ERR_NoSupport)
+   assert(output.size is 0, 'Unsupported metadata must be rejected before writing')
 end

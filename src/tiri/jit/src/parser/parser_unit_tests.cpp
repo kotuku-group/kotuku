@@ -10892,6 +10892,162 @@ static bool test_rethrow_dump_validation(kt::Log &Log)
    return true;
 }
 
+static bool verify_close_metadata_tree(const GCproto *Proto, bool RequireConsumers, size_t &ClosePrototypes,
+   kt::Log &Log, std::string_view Stage)
+{
+   uint64_t arm_slots = 0;
+   uint64_t consume_slots = 0;
+   for (MSize pc = 1; pc < Proto->sizebc; ++pc) {
+      BCIns instruction = proto_bc(Proto)[pc];
+      BCOp op = bc_op(instruction);
+      if (op != BC_CLOSEARM and op != BC_CLOSE) continue;
+      BCREG slot = bc_a(instruction);
+      if (slot >= 64) {
+         Log.error("%.*s close bytecode contains slot %u", int(Stage.size()), Stage.data(), unsigned(slot));
+         return false;
+      }
+      if (op IS BC_CLOSEARM) arm_slots |= uint64_t(1) << slot;
+      else consume_slots |= uint64_t(1) << slot;
+   }
+
+   if (Proto->closeslots != arm_slots or (consume_slots & ~arm_slots) or
+       (RequireConsumers and (arm_slots & ~consume_slots))) {
+      Log.error("%.*s close metadata mismatch: prototype=%" PRIx64 " arm=%" PRIx64 " consume=%" PRIx64,
+         int(Stage.size()), Stage.data(), Proto->closeslots, arm_slots, consume_slots);
+      return false;
+   }
+   if (arm_slots) ++ClosePrototypes;
+
+   for (ptrdiff_t i = -ptrdiff_t(Proto->sizekgc); i < 0; ++i) {
+      GCobj *object = proto_kgc(Proto, i);
+      if (object->gch.gct IS uint8_t(~LJ_TPROTO) and
+          not verify_close_metadata_tree(gco_to_proto(object), RequireConsumers, ClosePrototypes, Log, Stage)) {
+         return false;
+      }
+   }
+   return true;
+}
+
+static bool test_close_slot_metadata_roundtrip(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) {
+      Log.error("failed to create a state for close-slot bytecode testing");
+      return false;
+   }
+   luaL_openlibs(lua);
+
+   constexpr std::string_view source =
+      "local root <close> = setmetatable({}, { __close=function() end })\n"
+      "local function child()\n"
+      "   local nested <close> = setmetatable({}, { __close=function() end })\n"
+      "   raise 'close child'\n"
+      "end\n"
+      "return child\n";
+   if (lua_load(lua, source, "close-slot-metadata")) {
+      Log.error("failed to compile close-slot fixture: %s", lua_tostring(lua, -1));
+      return false;
+   }
+
+   GCproto *prototype = funcproto(funcV(lua->top - 1));
+   size_t close_prototypes = 0;
+   if (not verify_close_metadata_tree(prototype, true, close_prototypes, Log, "source") or
+       close_prototypes != 2) {
+      if (close_prototypes != 2) Log.error("close-slot fixture contained %zu close prototypes instead of two",
+         close_prototypes);
+      return false;
+   }
+
+   for (int strip : { 0, 1 }) {
+      std::string dump;
+      int status = strip ? lj_bcwrite(lua, prototype, bytecode_writer, &dump, 1) :
+         lua_dump(lua, bytecode_writer, &dump);
+      if (status != 0 or lua_load(lua, std::string_view(dump), "close-slot-roundtrip")) {
+         Log.error("failed to %s close-slot bytecode: %s", strip ? "round-trip stripped" : "raw-dump and load",
+            lua_tostring(lua, -1));
+         return false;
+      }
+
+      GCproto *loaded = funcproto(funcV(lua->top - 1));
+      close_prototypes = 0;
+      bool valid = verify_close_metadata_tree(loaded, true, close_prototypes, Log,
+         strip ? "stripped round-trip" : "unstripped round-trip");
+      lua_pop(lua, 1);
+      if (not valid or close_prototypes != 2) {
+         if (valid) Log.error("loaded close-slot fixture contained %zu close prototypes instead of two",
+            close_prototypes);
+         return false;
+      }
+   }
+
+   BCIns *bytecode = proto_bc(prototype);
+   MSize arm_position = 0;
+   MSize consume_position = 0;
+   uint64_t arm_slots = 0;
+   for (MSize pc = 1; pc < prototype->sizebc; ++pc) {
+      BCOp op = bc_op(bytecode[pc]);
+      if (op IS BC_CLOSEARM) {
+         if (not arm_position) arm_position = pc;
+         arm_slots |= uint64_t(1) << bc_a(bytecode[pc]);
+      }
+      else if (op IS BC_CLOSE and not consume_position) consume_position = pc;
+   }
+   BCREG unmatched_slot = 0xff;
+   for (BCREG slot = 0; slot < prototype->framesize and slot < 64; ++slot) {
+      if (not (arm_slots & (uint64_t(1) << slot))) {
+         unmatched_slot = slot;
+         break;
+      }
+   }
+   if (not arm_position or not consume_position or unmatched_slot IS 0xff or prototype->framesize >= 64) {
+      Log.error("close-slot malformed fixture lacks the required arm, consumer or spare frame slot");
+      return false;
+   }
+
+   auto malformed_rejected = [&](MSize Position, BCIns Invalid, std::string_view Label) {
+      BCIns saved = bytecode[Position];
+      bytecode[Position] = Invalid;
+      std::string dump;
+      bool wrote = lj_bcwrite(lua, prototype, bytecode_writer, &dump, 1) IS 0;
+      bytecode[Position] = saved;
+      if (not wrote) {
+         Log.error("failed to write malformed %.*s fixture", int(Label.size()), Label.data());
+         return false;
+      }
+
+      int status = lua_load(lua, std::string_view(dump), "malformed-close-bytecode");
+      if (status != LUA_ERRSYNTAX) {
+         lua_pop(lua, 1);
+         Log.error("bytecode reader returned %d for malformed %.*s operands", status,
+            int(Label.size()), Label.data());
+         return false;
+      }
+      lua_pop(lua, 1);
+
+      if (lua_load(lua, "return 42", "close-reader-recovery") or lua_pcall(lua, 0, 1, 0) or
+          lua_tointeger(lua, -1) != 42) {
+         Log.error("state was not reusable after rejecting malformed %.*s bytecode", int(Label.size()), Label.data());
+         return false;
+      }
+      lua_pop(lua, 1);
+      return true;
+   };
+
+   BCIns arm = bytecode[arm_position];
+   BCIns consume = bytecode[consume_position];
+   if (not malformed_rejected(arm_position,
+         BCINS_AD(BC_CLOSEARM, prototype->framesize, bc_d(arm)), "out-of-frame CLOSEARM") or
+       not malformed_rejected(arm_position, BCINS_AD(BC_CLOSEARM, 64, bc_d(arm)), "slot-64 CLOSEARM") or
+       not malformed_rejected(consume_position,
+         BCINS_AD(BC_CLOSE, unmatched_slot, bc_d(consume)), "unmatched CLOSE")) {
+      return false;
+   }
+
+   lua_pop(lua, 1);
+   return true;
+}
+
 static bool test_defer_unwind_registration_bytecode(kt::Log &Log)
 {
    auto find_opcode = [](std::string_view Name) -> std::optional<BCOp> {
@@ -11131,12 +11287,13 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 104> tests = { {
+   constexpr std::array<TestCase, 105> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "error_removal", test_error_removal },
       { "expression_raise_bytecode", test_expression_raise_bytecode },
       { "rethrow_dump_validation", test_rethrow_dump_validation },
+      { "close_slot_metadata_roundtrip", test_close_slot_metadata_roundtrip },
       { "raise_payload_and_context", test_raise_payload_and_context },
       { "assignment_target_resolution_ast", test_assignment_target_resolution_ast },
       { "assignment_target_semantic_resolution", test_assignment_target_semantic_resolution },

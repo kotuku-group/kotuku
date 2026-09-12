@@ -50,7 +50,9 @@
         <param type="CLASSID" name="ClassID">Can refer to a derived class that should be used when encoding the data.</param>
       </input>
       <description>
-<p>Use the SaveToObject action to compile the statement in the Script's String field and save the resulting byte code to a target object.  The byte code can be loaded into any script object for execution or referenced in the Tiri code for usage.</p>
+<p>Use the SaveToObject action to compile <class name="Script" field="Statement">Script.Statement</class> and save the resulting byte code to a target object without executing the program.  Each save compiles the statement afresh, including after <action>Query</action> or <action>Activate</action>, and preserves any pending executable chunk.  Saving during active execution returns <code>ERR::InvalidState</code>.</p>
+<p>The output contains the Tiri compiled marker, a NUL separator and VM byte code with debug information.  Compatibility is initially limited to the same Kōtuku build and platform.  Live objects, globals and execution state are not saved. Scripts containing declared structs or multi-file source maps currently return <code>ERR::NoSupport</code>, because those records cannot be preserved.  A state containing declared structs is also rejected, even when the current statement does not use them.  To-be-closed locals are preserved in saved byte code.</p>
+<p>A failed save can leave partial output.</p>
       </description>
     </action>
 

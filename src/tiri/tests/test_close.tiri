@@ -735,6 +735,115 @@ end
    assert(caught_ex.message.find('close2 error'), 'Last __close error should win: ' .. caught_ex.message)
 end
 
+function close_roundtrip_subject():str
+   local order = {}
+   local counts = {}
+
+   function record_event(Label:str)
+      order.insert(Label)
+      counts[Label] = (counts[Label] ?? 0) + 1
+   end
+
+   function close_value(Label:str):table
+      return setmetatable({}, {
+         __close=function(Error)
+            record_event(Label)
+         end
+      })
+   end
+
+   do
+      local outer <close> = close_value('normal_outer')
+      local inner <close> = close_value('normal_inner')
+   end
+   assert(order[0] is 'normal_inner' and order[1] is 'normal_outer', 'Normal close order changed')
+
+   function return_subject():num
+      local returned <close> = close_value('return')
+      return 17
+   end
+   assert(return_subject() is 17 and order[2] is 'return', 'Return close changed its value or order')
+
+   for i in {0 to 4} do
+      local loop_value <close> = close_value('loop')
+      if i is 0 then continue end
+      if i is 2 then break end
+   end
+   assert(counts.loop is 3, 'Break and continue must each consume one armed close')
+
+   try
+      local caught_value <close> = close_value('caught')
+      raise 'caught source error'
+   except caught_error
+      assert(caught_error.message.find('caught source error'), 'Same-function handler received the wrong error')
+   end
+   assert(counts.caught is 1, 'Same-function unwinding must close exactly once')
+
+   function propagating_child()
+      local child_value <close> = close_value('propagating_child')
+      raise 'propagated source error'
+   end
+   function propagating_caller()
+      local caller_value <close> = close_value('propagating_caller')
+      propagating_child()
+   end
+   try
+      propagating_caller()
+   except propagated_error
+      assert(propagated_error.message.find('propagated source error'), 'Caller received the wrong propagated error')
+   end
+   assert(order[#order - 2] is 'propagating_child' and order[#order - 1] is 'propagating_caller',
+      'Propagation must close child before caller')
+
+   local received_replacement = false
+   local observer_mt = {
+      __close=function(Error)
+         record_event('replacement_observer')
+         received_replacement = Error != nil
+      end
+   }
+   local throwing_mt = {
+      __close=function(Error)
+         record_event('replacement_thrower')
+         raise 'replacement error'
+      end
+   }
+   function replacement_subject()
+      local earlier <close> = setmetatable({}, observer_mt)
+      local throwing <close> = setmetatable({}, throwing_mt)
+      raise 'original error'
+   end
+   try
+      replacement_subject()
+   except replacement_error
+      assert(replacement_error.message.find('replacement error'),
+         'Close error must replace the active error: ' .. replacement_error.message)
+   end
+   assert(received_replacement, 'Earlier handlers must receive the replacement error')
+   assert(counts.replacement_thrower is 1 and counts.replacement_observer is 1,
+      'Replacement-error handlers must each run exactly once')
+
+   do
+      local nil_value <close> = nil
+      local false_value <close> = false
+   end
+
+   return f'{#order}:{counts.loop}:{counts.caught}:{counts.replacement_thrower}:{counts.replacement_observer}'
+end
+
+@Test function CloseBytecodeRoundTrips()
+   for enabled in values({ false, true }) do
+      if enabled then jit.on() else jit.off() end
+      local expected = close_roundtrip_subject()
+      for stripped in values({ false, true }) do
+         local observed = exec(string.dump(close_roundtrip_subject, stripped))
+         assert(observed is expected,
+            f'Close bytecode changed behaviour (jit={enabled}, stripped={stripped}): {observed}')
+      end
+   end
+   jit.on()
+end
+
 -- An error from __gc must remain contained by the collector's protected call, even when collection is requested from
 -- inside a Tiri try block.
 

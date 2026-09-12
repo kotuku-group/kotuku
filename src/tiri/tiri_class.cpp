@@ -759,9 +759,9 @@ preserves any pending executable chunk.  Saving during active execution returns 
 
 The output contains the Tiri compiled marker, a NUL separator and VM byte code with debug information.  Compatibility
 is initially limited to the same Kōtuku build and platform.  Live objects, globals and execution state are not saved.
-Scripts requiring close-slot metadata, declared structs or multi-file source maps currently return `ERR::NoSupport`,
-because those records cannot be preserved.  A state containing declared structs is also rejected, even when the
-current statement does not use them.
+Scripts containing declared structs or multi-file source maps currently return `ERR::NoSupport`, because those records
+cannot be preserved.  A state containing declared structs is also rejected, even when the current statement does not
+use them.  To-be-closed locals are preserved in saved byte code.
 
 A failed save can leave partial output.
 
@@ -887,20 +887,6 @@ static int write_bytecode(lua_State *, const void *Data, size_t Size, void *Cont
 }
 
 //********************************************************************************************************************
-// These prototype sidecars have no representation in the current dump format.
-
-static bool has_unsaved_metadata(const GCproto *Proto)
-{
-   if (Proto->closeslots) return true;
-   for (ptrdiff_t i = 1; i <= ptrdiff_t(Proto->sizekgc); ++i) {
-      auto constant = proto_kgc(Proto, -i);
-      if ((constant->gch.gct IS uint8_t(~LJ_TPROTO)) and has_unsaved_metadata(gco_to_proto(constant))) return true;
-   }
-   return false;
-}
-
-//********************************************************************************************************************
-
 static ERR save_binary(extTiri *Self, OBJECTPTR Target)
 {
    if ((not Self) or (not Target)) return ERR::NullArgs;
@@ -910,11 +896,8 @@ static ERR save_binary(extTiri *Self, OBJECTPTR Target)
    if ((not lua_gettop(Self->Lua)) or (not lua_isfunction(Self->Lua, -1)) or
        lua_iscfunction(Self->Lua, -1)) return ERR::InvalidData;
 
-   auto proto = funcproto(funcV(Self->Lua->top - 1));
-   if (has_unsaved_metadata(proto) or not Self->Lua->struct_declarations.empty() or
-       (Self->Lua->file_sources.size() > 1)) {
-      kt::Log().warning(
-         "Bytecode files cannot preserve close-slot metadata, declared structs or multi-file source maps.");
+   if (not Self->Lua->struct_declarations.empty() or (Self->Lua->file_sources.size() > 1)) {
+      kt::Log().warning("Bytecode files cannot preserve declared structs or multi-file source maps.");
       return ERR::NoSupport;
    }
 
