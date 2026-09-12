@@ -22,6 +22,7 @@ The Tiri class provides functionality for running scripts written in the Tiri pr
 #include <cctype>
 #include <format>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <ranges>
 #include <string>
@@ -40,7 +41,7 @@ The Tiri class provides functionality for running scripts written in the Tiri pr
 
 static ERR run_script(extTiri *);
 static ERR stack_args(lua_State *, OBJECTID, const FunctionField *, int8_t *);
-static ERR save_binary(extTiri *, OBJECTPTR);
+static ERR save_binary(lua_State *, OBJECTPTR, bool);
 
 //********************************************************************************************************************
 
@@ -117,7 +118,7 @@ static ERR compiled_payload(std::string_view Source, std::string_view &Payload)
    return ERR::Okay;
 }
 
-[[maybe_unused]] static ERR register_interfaces(extTiri *);
+[[maybe_unused]] static ERR register_interfaces(lua_State *);
 
 //********************************************************************************************************************
 // Dump the variables of any global table
@@ -592,20 +593,34 @@ static ERR TIRI_NewChild(extTiri *Self, struct acNewChild &Args)
 }
 
 //********************************************************************************************************************
-// Prepare once, including when SaveToObject precedes Query or compilation is retried.
+// Initialise the standard compilation environment in a Lua state without copying any values from another state.
+
+static ERR initialise_compilation_state(lua_State *Lua)
+{
+   lua_gc(Lua, LUA_GCSTOP, 0);  // Stop collector during initialisation
+      luaL_openlibs(Lua);  // Open Lua libraries
+   lua_gc(Lua, LUA_GCRESTART, 0);
+
+   // Register private variables in the registry, which is tamper proof from the user's Lua code.
+
+   if (auto error = register_interfaces(Lua); error != ERR::Okay) return error;
+
+   // 'mSys' is a compiler-managed namespace for Core rather than a global value, so no module object is created
+   // here.  The compiler materialises Core's callables as hidden locals in any compilation unit that uses them.
+
+   lua_protect_globals(Lua);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Prepare the script's execution state once, including when compilation is retried.
 
 static ERR prepare_compilation(extTiri *Self)
 {
    if (not Self->Lua) return ERR::NotInitialised;
    if (Self->CompilationPrepared) return ERR::Okay;
 
-   lua_gc(Self->Lua, LUA_GCSTOP, 0);  // Stop collector during initialisation
-      luaL_openlibs(Self->Lua);  // Open Lua libraries
-   lua_gc(Self->Lua, LUA_GCRESTART, 0);
-
-   // Register private variables in the registry, which is tamper proof from the user's Lua code
-
-   if (auto error = register_interfaces(Self); error != ERR::Okay) return error;
+   if (auto error = initialise_compilation_state(Self->Lua); error != ERR::Okay) return error;
 
    // Line hook, executes on the execution of a new line (doesn't execute during Query() compilation)
 
@@ -617,11 +632,6 @@ static ERR prepare_compilation(extTiri *Self)
 
       lua_sethook(Self->Lua, hook_debug, LUA_MASKCALL|LUA_MASKRET|LUA_MASKLINE, 0);
    }
-
-   // 'mSys' is a compiler-managed namespace for Core rather than a global value, so no module object is created
-   // here.  The compiler materialises Core's callables as hidden locals in any compilation unit that uses them.
-
-   lua_protect_globals(Self->Lua);
 
    Self->CompilationPrepared = true;
    return ERR::Okay;
@@ -728,7 +738,7 @@ static ERR TIRI_Query(extTiri *Self)
             cache_error = cachefile.error;
             if (cachefile.ok()) {
                cache_created = true;
-               cache_error = save_binary(Self, *cachefile);
+               cache_error = save_binary(Self->Lua, *cachefile, true);
                if (cache_error IS ERR::Okay) cache_error = cachefile->setDate(Self->CacheDate);
             }
          } // Close our cache before removing a failed write, including on Windows.
@@ -759,9 +769,10 @@ preserves any pending executable chunk.  Saving during active execution returns 
 
 The output contains the Tiri compiled marker, a NUL separator and VM byte code with debug information.  Compatibility
 is initially limited to the same Kōtuku build and platform.  Live objects, globals and execution state are not saved.
-Scripts containing declared structs or multi-file source maps currently return `ERR::NoSupport`, because those records
-cannot be preserved.  A state containing declared structs is also rejected, even when the current statement does not
-use them.  To-be-closed locals are preserved in saved byte code.
+Statements containing declared structs or multi-file source maps currently return `ERR::NoSupport`, because those
+records cannot be preserved.  Save compilation is isolated from the execution state, so rejected and repeated saves
+do not change imports, declarations, diagnostics, captures or a pending executable chunk.  To-be-closed locals are
+preserved in saved byte code.
 
 A failed save can leave partial output.
 
@@ -779,25 +790,35 @@ static ERR TIRI_SaveToObject(extTiri *Self, struct acSaveToObject *Args)
    if (Self->Recurse) return ERR::InvalidState;
 
    const int stack_top = lua_gettop(Self->Lua);
-   if (auto error = prepare_compilation(Self); error != ERR::Okay) {
-      lua_settop(Self->Lua, stack_top);
-      return error;
-   }
+   const int main_chunk_ref = Self->MainChunkRef;
+
+   // The parser intentionally keeps imports, source maps and declarations in a state for runtime loadFile() calls.
+   // Saving is speculative, so compile in a fresh state rather than trying to roll back every Lua-owned registration.
+
+   std::unique_ptr<lua_State, decltype(&lua_close)> compilation(luaL_newstate(Self), lua_close);
+   if (not compilation) return ERR::CreateResource;
+   if (auto error = initialise_compilation_state(compilation.get()); error != ERR::Okay) return error;
+
+   struct CaptureRestore {
+      extTiri *Script;
+      std::vector<VariableInfo> Saved;
+      ~CaptureRestore() { Script->CapturedVariables = std::move(Saved); }
+   } capture_restore { Self, std::move(Self->CapturedVariables) };
 
    log.branch("Compiling the statement...");
 
    auto chunk_name = make_chunk_name(Self);
 
-   if (not lua_load(Self->Lua, std::string_view(Self->Statement), chunk_name.c_str())) {
-      ERR error = save_binary(Self, Args->Dest);
-      lua_settop(Self->Lua, stack_top);
+   if (not lua_load(compilation.get(), std::string_view(Self->Statement), chunk_name.c_str())) {
+      ERR error = save_binary(compilation.get(), Args->Dest, not Self->Path.empty());
+      if ((lua_gettop(Self->Lua) != stack_top) or (Self->MainChunkRef != main_chunk_ref)) return ERR::InvalidState;
       return error;
    }
    else {
-      auto str = lua_tostringview(Self->Lua,-1);
+      auto str = lua_tostringview(compilation.get(), -1);
       auto error_msg = str.empty() ? "" : str.data();
       log.warning("Compile Failure: %.*s", int(str.size()), error_msg);
-      lua_settop(Self->Lua, stack_top);
+      if ((lua_gettop(Self->Lua) != stack_top) or (Self->MainChunkRef != main_chunk_ref)) return ERR::InvalidState;
       return ERR::InvalidData;
    }
 }
@@ -887,25 +908,23 @@ static int write_bytecode(lua_State *, const void *Data, size_t Size, void *Cont
 }
 
 //********************************************************************************************************************
-static ERR save_binary(extTiri *Self, OBJECTPTR Target)
+static ERR save_binary(lua_State *Lua, OBJECTPTR Target, bool MainSourceRegistered)
 {
-   if ((not Self) or (not Target)) return ERR::NullArgs;
+   if ((not Lua) or (not Target)) return ERR::NullArgs;
 
-   if (not Self->Lua) return ERR::NotInitialised;
+   if ((not lua_gettop(Lua)) or (not lua_isfunction(Lua, -1)) or lua_iscfunction(Lua, -1)) return ERR::InvalidData;
 
-   if ((not lua_gettop(Self->Lua)) or (not lua_isfunction(Self->Lua, -1)) or
-       lua_iscfunction(Self->Lua, -1)) return ERR::InvalidData;
-
-   if (not Self->Lua->struct_declarations.empty() or (Self->Lua->file_sources.size() > 1)) {
+   const size_t allowed_sources = MainSourceRegistered ? 1 : 0;
+   if (not Lua->struct_declarations.empty() or (Lua->file_sources.size() > allowed_sources)) {
       kt::Log().warning("Bytecode files cannot preserve declared structs or multi-file source maps.");
       return ERR::NoSupport;
    }
 
-   const int stack_top = lua_gettop(Self->Lua);
+   const int stack_top = lua_gettop(Lua);
    BytecodeWriter writer { Target };
-   if (write_bytecode(Self->Lua, LUA_COMPILED, sizeof(LUA_COMPILED), &writer)) return writer.Error;
-   const int result = lua_dump(Self->Lua, write_bytecode, &writer);
-   lua_settop(Self->Lua, stack_top);
+   if (write_bytecode(Lua, LUA_COMPILED, sizeof(LUA_COMPILED), &writer)) return writer.Error;
+   const int result = lua_dump(Lua, write_bytecode, &writer);
+   lua_settop(Lua, stack_top);
    if (writer.Error != ERR::Okay) return writer.Error;
    return result ? ERR::InvalidData : ERR::Okay;
 }
@@ -1114,33 +1133,33 @@ static ERR run_script(extTiri *Self)
 
 //********************************************************************************************************************
 
-static ERR register_interfaces(extTiri *Self)
+static ERR register_interfaces(lua_State *Lua)
 {
    kt::Log log;
 
    log.traceBranch("Registering Kotuku and Tiri interfaces with Lua.");
 
 #ifndef NDEBUG
-   int stack_top = lua_gettop(Self->Lua);
+   int stack_top = lua_gettop(Lua);
 #endif
 
-   register_io_class(Self->Lua);
-   register_module_class(Self->Lua);
-   register_regex_class(Self->Lua);
-   register_async_class(Self->Lua);
+   register_io_class(Lua);
+   register_module_class(Lua);
+   register_regex_class(Lua);
+   register_async_class(Lua);
 #ifndef DISABLE_DISPLAY
-   register_input_class(Self->Lua);
+   register_input_class(Lua);
 #endif
-   register_processing_class(Self->Lua);
+   register_processing_class(Lua);
 
-   lua_register(Self->Lua, "arg", fcmd_arg);
-   lua_register(Self->Lua, "loadFile", fcmd_loadfile);
-   lua_register(Self->Lua, "exec", fcmd_exec);
-   lua_register(Self->Lua, "print", fcmd_print);
-   lua_register(Self->Lua, "msg", fcmd_msg);
-   lua_register(Self->Lua, "subscribeEvent", fcmd_subscribe_event);
-   lua_register(Self->Lua, "unsubscribeEvent", fcmd_unsubscribe_event);
-   lua_register(Self->Lua, "MAKESTRUCT", MAKESTRUCT);
+   lua_register(Lua, "arg", fcmd_arg);
+   lua_register(Lua, "loadFile", fcmd_loadfile);
+   lua_register(Lua, "exec", fcmd_exec);
+   lua_register(Lua, "print", fcmd_print);
+   lua_register(Lua, "msg", fcmd_msg);
+   lua_register(Lua, "subscribeEvent", fcmd_subscribe_event);
+   lua_register(Lua, "unsubscribeEvent", fcmd_unsubscribe_event);
+   lua_register(Lua, "MAKESTRUCT", MAKESTRUCT);
 
    // Register global function prototypes for compile-time type inference
    reg_func_prototype("arg", { TiriType::Str }, { TiriType::Str, TiriType::Str }, FProtoFlags::None,
@@ -1165,7 +1184,7 @@ static ERR register_interfaces(extTiri *Self)
    seal_proto_registry();
 
 #ifndef NDEBUG
-   int stack_delta = lua_gettop(Self->Lua) - stack_top;
+   int stack_delta = lua_gettop(Lua) - stack_top;
    if (stack_delta) log.warning("Lua initialisation left %d value(s) on the Lua stack.", stack_delta);
 #endif
 

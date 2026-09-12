@@ -144,6 +144,64 @@ end
    check restored.acQuery()
    activate(restored)
    activate(restored)
+
+   script.statement = "assert(false, 'BYTECODE_REPLACEMENT_SAVED')"
+   save(script, output)
+   activate(script)
+   local replacement <close> = obj.new('tiri', { path=output })
+   replacement.acActivate()
+   assert(replacement.error != ERR_Okay and
+      replacement.errorMessage.find('BYTECODE_REPLACEMENT_SAVED') != nil,
+      'The saved replacement must not replace the pending queried chunk')
+end
+
+@Test function SaveCompilationIsIsolated()
+   local helper = glRoot .. 'save_isolation_helper.tiri'
+   local source = glRoot .. 'save_isolation_main.tiri'
+   local import_path = './save_isolation_helper'
+   write_file(helper, 'global function save_isolation_helper():num return 42 end')
+   write_file(source, "import '" .. import_path .. "'\nassert(save_isolation_helper() is 42)")
+
+   local script <close> = obj.new('tiri', { path=source })
+   for i in {0 to 3} do
+      local output <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
+      assert(script.acSaveToObject(output) is ERR_NoSupport,
+         'Every import-containing save must reach the unsupported metadata check')
+      assert(output.size is 0, 'A rejected save must not write output')
+   end
+   check script.acQuery()
+   activate(script)
+
+   for i in {0 to 2} do
+      local output <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
+      assert(script.acSaveToObject(output) is ERR_NoSupport,
+         'Saving after Query/Activate must compile the complete import again')
+      activate(script)
+   end
+
+   local synthetic <close> = obj.new('tiri', {
+      statement="import 'json'\nassert(json.encode(42) is '42')"
+   })
+   for i in {0 to 2} do
+      local output <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
+      assert(synthetic.acSaveToObject(output) is ERR_NoSupport,
+         'A synthetic chunk must not mistake its sole imported source for a serialisable main source')
+   end
+   check synthetic.acQuery()
+   activate(synthetic)
+
+   local malformed_source = glRoot .. 'save_isolation_malformed.tiri'
+   write_file(malformed_source, "import '" .. import_path .. "'\nlocal =")
+   local malformed <close> = obj.new('tiri', { path=malformed_source })
+   for i in {0 to 2} do
+      local output <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
+      assert(malformed.acSaveToObject(output) is ERR_InvalidData)
+      assert(output.size is 0)
+   end
+   malformed.statement = 'global save_isolation_replacement = 7'
+   save(malformed, path('.tbc'))
+   check malformed.acQuery()
+   activate(malformed)
 end
 
 @Test function FreshProcessesWithoutSource()
@@ -402,4 +460,8 @@ end
    local output <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
    assert(script.acSaveToObject(output) is ERR_NoSupport)
    assert(output.size is 0, 'Unsupported metadata must be rejected before writing')
+   script.statement = 'assert(6 * 7 is 42)'
+   save(script, path('.tbc'))
+   check script.acQuery()
+   activate(script)
 end
