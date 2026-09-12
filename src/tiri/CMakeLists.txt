@@ -812,7 +812,8 @@ if (BUILD_DEFS)
    add_dependencies (jit_lib core_defs)
 endif ()
 
-set (TIRI_SOURCES "${MOD}.cpp" "tiri_module.cpp" "tiri_async.cpp" "tiri_struct.cpp" "tiri_processing.cpp"
+set (TIRI_SOURCES "${MOD}.cpp" "cache_manifest.cpp" "tiri_module.cpp" "tiri_async.cpp" "tiri_struct.cpp"
+   "tiri_processing.cpp"
    "tiri_functions.cpp" "tiri_regex.cpp"
    "tiri_io.cpp" "tiri_class.cpp"
    "${JIT_SRC}/lib/lib.cpp"
@@ -846,6 +847,7 @@ if (INCLUDE_TIPS)
 endif ()
 
 if (UNIT_TESTS)
+   list (APPEND TIRI_SOURCES "tests/unit_cache_manifest.cpp")
    list (APPEND TIRI_SOURCES "tests/unit_module_marshalling.cpp")
    list (APPEND TIRI_SOURCES "tests/unit_set_variable.cpp")
    list (APPEND TIRI_SOURCES "tests/unit_bytecode_files.cpp")
