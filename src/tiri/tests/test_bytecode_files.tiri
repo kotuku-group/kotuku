@@ -1,11 +1,12 @@
 -- Public bytecode file lifecycle.  Serializer details are covered by type_signature_dumps and compiled tests.
+
 include 'core'
 
 local glRoot
-local glSerial = 0
-local glMarker = '-- $TIRI:compiled'
+glSerial = 0
+glMarker = '-- $TIRI:compiled'
 
-local glProgram = [[
+glProgram = [[
    local nothing = nil
    assert(nothing is nil and true and not false)
    local total = 0
@@ -24,13 +25,25 @@ local glProgram = [[
    end
    local closure = factory(10)
    assert(closure(2) is 12 and closure(3) is 15 and add(2, 3) is 5)
+   function const_policy(Arm:bool):num
+      if Arm then global glBytecodeFileConst <const> = 1 end
+      local sum = 0
+      for value in {0 to 20} do sum += value end
+      return sum
+   end
+   function dynamic_policy(...):<num, ...>
+      return 23, ...
+   end
+   local number, first, second = dynamic_policy(13, 29)
+   assert(const_policy(false) is 190)
+   assert(number is 23 and first is 13 and second is 29)
    print('BYTECODE_ACCEPTANCE_OK')
 ]]
 
-local glResaveProgram = [[
+glResaveProgram = [[
    global glB06Runs = (glB06Runs or 0) + 1
-   local captured = 40
-   local closure = function(Delta:num):num
+   captured = 40
+   closure = function(Delta:num):num
       captured += Delta
       return captured
    end
@@ -39,12 +52,12 @@ local glResaveProgram = [[
    print('B06_RESAVE_OK:1:42')
 ]]
 
-local glCloseProgram = [[
-   local root_count = 0
-   local child_count = 0
-   local native_id = 0
-   local alias = nil
-   local root <close> = setmetatable({}, {
+glCloseProgram = [[
+   root_count = 0
+   child_count = 0
+   native_id = 0
+   alias = nil
+   root <close> = setmetatable({}, {
       __close=function()
          root_count++
          assert(root_count is 1, 'Root close must run exactly once')
@@ -52,7 +65,7 @@ local glCloseProgram = [[
       end
    })
    function child()
-      local child_value <close> = setmetatable({}, {
+      child_value <close> = setmetatable({}, {
          __close=function(Error)
             child_count++
             assert(Error.message.find('BYTECODE_CHILD_ERROR') != nil)
@@ -196,6 +209,10 @@ function date_file(Path:str, Day:num)
    check file.mtSetDate(2025, 1, Day, 12, 0, 0, FDT_MODIFIED)
 end
 
+----------------------------------------------------------------------------------------------------------------------
+-- Saving and querying must remain non-executing and repeatable, while activation uses the chunk selected by Query
+-- even if a later save replaces the script's source statement.
+
 @Test function SaveQueryAndRepeatedActivation()
    local script <close> = obj.new('tiri', { statement="global bytecode_runs = (bytecode_runs or 0) + 1" })
    local output = path('.tbc')
@@ -223,6 +240,10 @@ end
       replacement.errorMessage.find('BYTECODE_REPLACEMENT_SAVED') != nil,
       'The saved replacement must not replace the pending queried chunk')
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Wrapped bytecode, raw VM payloads and a selected source cache must all support repeated re-saving before and after
+-- Query/Activate, with every result executing in a fresh process state.
 
 @Test function ResaveWrappedRawAndSelectedCache()
    local wrapped = path('_b06_seed.tbc')
@@ -265,6 +286,10 @@ end
    check mSys.DeleteFile(cache)
    verify_resaved_outputs(outputs)
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Re-saving must honour the selected input's provenance: source fallback may repair an automatic cache, while a
+-- direct invalid .tbc remains authoritative and must not silently fall back to another cache.
 
 @Test function ResaveCacheFallbackAndDirectAuthority()
    local source = path('_b06_fallback_source.tiri')
@@ -316,6 +341,10 @@ end
       'A direct .tbc must fail without consulting a valid alternative cache')
 end
 
+----------------------------------------------------------------------------------------------------------------------
+-- Each save must compile an isolated, complete unit including imports; repeated failures must not poison later saves,
+-- queries or activations after replacing malformed source.
+
 @Test function SaveCompilationIsIsolated()
    local helper = glRoot .. 'save_isolation_helper.tiri'
    local source = glRoot .. 'save_isolation_main.tiri'
@@ -364,6 +393,10 @@ end
    activate(malformed)
 end
 
+----------------------------------------------------------------------------------------------------------------------
+-- A bytecode file produced without executing its source must run identically in fresh processes after all source files
+-- are removed, with both interpreter-only and normal JIT modes.
+
 @Test function FreshProcessesWithoutSource()
    local source = path('.tiri')
    local binary = path('.tbc')
@@ -388,6 +421,10 @@ end
       assert(result is 0 and observed is expected, observed)
    end
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Saving and re-saving an imported compilation unit must preserve import order, declarations and source diagnostics so
+-- the unit remains executable after every contributing source file is removed.
 
 @Test function ImportedCompilationUnitWithoutSources()
    local main = path('_b04_main.tiri')
@@ -460,6 +497,10 @@ print('B04_IMPORT_ACCEPTANCE_OK:' .. glB04Events)]])
    assert(code is 0 and output.find('B04_IMPORT_ACCEPTANCE_OK:MCLRE') != nil, output)
 end
 
+----------------------------------------------------------------------------------------------------------------------
+-- Serialized close metadata must preserve script and native-object cleanup during exception unwinding in a fresh
+-- process without source files, regardless of JIT mode.
+
 @Test function FreshProcessesCloseMetadataWithoutSource()
    local source = path('.tiri')
    local binary = path('.tbc')
@@ -485,6 +526,10 @@ end
    end
 end
 
+----------------------------------------------------------------------------------------------------------------------
+-- An automatically generated cache must retain close-handler metadata and execute the same cleanup behaviour after its
+-- source is removed, in both interpreter-only and normal JIT modes.
+
 @Test function CloseMetadataCacheRunsWithoutSource()
    local source = path('.tiri')
    local cache = path('.tbc')
@@ -504,6 +549,10 @@ end
       assert(result is 0 and observed is expected, observed)
    end
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Compiled-file loading must reject malformed, oversized, version-invalid and truncated wrappers without corrupting
+-- reusable script state, while still accepting a valid raw VM payload.
 
 @Test function BinaryBoundariesAndRecovery()
    local script <close> = obj.new('tiri', { statement=glProgram })
@@ -542,6 +591,10 @@ end
    activate(loaded)
 end
 
+----------------------------------------------------------------------------------------------------------------------
+-- Save failures must be atomic for null, read-only, malformed and actively executing inputs, leaving destinations
+-- untouched and reporting the appropriate state or argument error.
+
 @Test function SaveFailuresAndActiveExecution()
    local script <close> = obj.new('tiri', { statement='assert(true)' })
    assert(script.acSaveToObject(nil) is ERR_NullArgs)
@@ -564,6 +617,10 @@ end
    check active.acSetKey('self', name)
    activate(active)
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Automatic caches must be reused only for the same source identity, regenerated from changed or corrupt inputs, and
+-- apply a single controlled fallback without overriding direct-bytecode authority.
 
 @Test function CacheLifecycle()
    local source = path('.tiri')
@@ -640,6 +697,10 @@ end
    assert(direct.acQuery() is ERR_InvalidData)
 end
 
+----------------------------------------------------------------------------------------------------------------------
+-- Sources containing imports must not publish or consume automatic caches until imported dependency identity is
+-- supported, although explicitly produced bytecode remains valid as a direct input.
+
 @Test function ImportedAutomaticCacheEmbargo()
    local source = path('_b04_cache_main.tiri')
    local helper = glRoot .. 'b04_cache_helper.tiri'
@@ -670,6 +731,10 @@ end
    local direct <close> = obj.new('tiri', { path=cache })
    activate(direct)
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Cache identity metadata must bind bytecode to both its producing build and source, replacing foreign caches when
+-- the source exists and rejecting foreign or malformed identities when regeneration is impossible.
 
 @Test function CacheIdentityGuardsBuildAndSource()
    local source = path('.tiri')
@@ -728,6 +793,10 @@ end
    activate(cached)
 end
 
+----------------------------------------------------------------------------------------------------------------------
+-- Document-processing mode must always parse source because parser symbols are not serialised, so it must neither
+-- publish an automatic cache nor consume an existing one.
+
 @Test function DocumentProcessingBypassesCache()
    local source = path('.tiri')
    local cache = path('.tbc')
@@ -754,6 +823,10 @@ end
    end
 end
 
+----------------------------------------------------------------------------------------------------------------------
+-- A used named-struct declaration must be recorded in an automatic cache that remains executable after source
+-- removal.
+
 @Test function StructSourceProducesReusableCache()
    local source = path('.tiri')
    local cache = path('.tbc')
@@ -766,6 +839,9 @@ end
    local cached <close> = obj.new('tiri', { path=cache })
    activate(cached)
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Runtime failures raised by loaded bytecode must retain their original diagnostic message across saving and loading.
 
 @Test function RuntimeDiagnosticSurvivesSaving()
    local filename = path('.tbc')
@@ -781,6 +857,10 @@ end
 function shell_quote(Value:str):str
    return "'" .. Value.replace("'", "'\\''") .. "'"
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- If an operating-system file limit interrupts cache publication, the partial cache must be removed while compilation
+-- and activation continue successfully from source.
 
 @Test function PartialCacheWriteInChild()
    if mSys.GetSystemState().platform != 'Linux' then return 'Requires POSIX file-size limits' end
@@ -806,6 +886,10 @@ end
    assert(not exists(cache), 'Partial cache must be removed')
 end
 
+----------------------------------------------------------------------------------------------------------------------
+-- Parameter and result type contracts embedded in saved bytecode must still reject incompatible dynamic values after
+-- loading.
+
 @Test function SavedTypeContractsRejectWrongValues()
    for source in values({
       [[function dynamic(Value):any return Value end
@@ -826,6 +910,10 @@ end
    end
 end
 
+----------------------------------------------------------------------------------------------------------------------
+-- An unused named-struct declaration must produce a valid empty manifest and must not poison later use of the script
+-- object with replacement source.
+
 @Test function UnusedStructDeclarationDoesNotBlockSaving()
    local script <close> = obj.new('tiri', { statement='struct BytecodeRecord\nValue: int\nend' })
    local output <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
@@ -836,6 +924,10 @@ end
    check script.acQuery()
    activate(script)
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Named-struct layouts and contracts must be reconstructed entirely from bytecode in a fresh process, including
+-- nested fields, arrays, object and pointer fields, and parameter and result validation.
 
 @Test function NamedStructsRunWithoutSourceInFreshProcess()
    local source = path('.tiri')

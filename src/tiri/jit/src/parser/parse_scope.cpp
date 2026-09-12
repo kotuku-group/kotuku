@@ -1099,6 +1099,22 @@ GCproto * LexState::fs_finish(BCLine Line)
    fs_fixup_uv1(fs, pt, (uint16_t*)((char*)pt + ofsuv));
    fs_fixup_line(fs, pt, (void*)((char*)pt + ofsli), numline);
    this->fs_fixup_var(pt, (uint8_t*)((char*)pt + ofsdbg), ofsvar);
+
+   bool interpreter_required = false;
+   for (MSize pc = 1; pc < pt->sizebc; ++pc) {
+      BCIns instruction = proto_bc(pt)[pc];
+      BCOp op = bc_op(instruction);
+      if (op IS BC_MRSAVE or op IS BC_MRRESTORE) interpreter_required = true;
+      if (op != BC_CONTRACT) continue;
+
+      GCobj *constant = proto_kgc(pt, ~(ptrdiff_t)bc_d(instruction));
+      RuntimeContractDescriptor descriptor;
+      bool decoded = constant->gch.gct IS uint8_t(~LJ_TSTR) and
+         decode_runtime_contract(gco_to_string(constant), descriptor);
+      lj_assertX(decoded, "compiler emitted an invalid runtime contract descriptor");
+      if (contract_requires_interpreter(descriptor)) interpreter_required = true;
+   }
+   proto_set_interpreter_required(pt, interpreter_required);
    lj_contract_build_cache(L, pt);
 
    lj_vmevent_send(L, BC,

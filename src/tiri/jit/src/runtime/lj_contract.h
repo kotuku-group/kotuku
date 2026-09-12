@@ -194,6 +194,16 @@ static_assert(sizeof(GlobalContractCache) IS 16, "global contract cache header m
    return (Entry.flags & contract_flag(ContractEntryFlag::Const)) != 0;
 }
 
+[[nodiscard]] inline bool contract_requires_interpreter(
+   const RuntimeContractDescriptor &Descriptor) noexcept
+{
+   if (Descriptor.dynamic_count()) return true;
+   for (uint8_t i = 0; i < Descriptor.contract_count; ++i) {
+      if (contract_entry_is_const(Descriptor.entries[i])) return true;
+   }
+   return false;
+}
+
 [[nodiscard]] constexpr inline bool contract_entry_is_initialising(const RuntimeContractEntry &Entry) noexcept
 {
    return (Entry.flags & contract_flag(ContractEntryFlag::Initialising)) != 0;

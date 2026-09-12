@@ -17,6 +17,7 @@
 #include "lj_state.h"
 #include "lj_strfmt.h"
 #include "lj_meta.h"
+#include "lj_contract.h"
 #include "../debug/lj_debug.h"
 #include "../../../defs.h"
 
@@ -439,10 +440,7 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
          ptrdiff_t target = ptrdiff_t(i) + 1 + bc_j(bc[i]);
          if (target <= 0 or target >= ptrdiff_t(sizebc)) bcread_error(State, ErrMsg::BCBAD);
       }
-      if (op IS BC_MRSAVE or op IS BC_MRRESTORE) {
-         pt->flags |= PROTO_NOJIT;
-      }
-      else if (op IS BC_TCTX) {
+      if (op IS BC_TCTX) {
          // Contextual designation only ever applies to a table the compiler has just materialised in A.  Requiring the
          // preceding instruction to be the matching constructor rejects a marker retargeted at a foreign table and
          // makes a duplicated marker impossible, because the second copy no longer follows a constructor.
@@ -642,6 +640,7 @@ static void bcread_builtin_methods(LexState *State, GCproto *Prototype)
 
 static void bcread_validate_bytecode(LexState *State, GCproto *Prototype)
 {
+   bool interpreter_required = false;
    auto validate_constant = [&](BCMode Mode, uint32_t Value) {
       if (Mode IS BCMnum) {
          if (Value >= Prototype->sizekn) bcread_error(State, ErrMsg::BCBAD);
@@ -720,7 +719,27 @@ static void bcread_validate_bytecode(LexState *State, GCproto *Prototype)
       if (bc_is_for_loop(op) and uint32_t(bc_a(instruction)) + FORL_EXT >= Prototype->framesize) {
          bcread_error(State, ErrMsg::BCBAD);
       }
+
+      if (op IS BC_MRSAVE or op IS BC_MRRESTORE) interpreter_required = true;
+      if (op IS BC_CONTRACT or op IS BC_TYPETEST) {
+         GCobj *constant = proto_kgc(Prototype, ~(ptrdiff_t)bc_d(instruction));
+         RuntimeContractDescriptor descriptor;
+         if (not decode_runtime_contract(gco_to_string(constant), descriptor) or
+             descriptor.contract_count IS 0 or
+             uint32_t(bc_a(instruction)) + descriptor.static_value_count > Prototype->framesize) {
+            bcread_error(State, ErrMsg::BCBAD);
+         }
+         if (op IS BC_TYPETEST) {
+            if (descriptor.boundary != ContractBoundary::Local or descriptor.flags != 0 or
+                descriptor.static_value_count != 1 or descriptor.contract_count != 1 or
+                descriptor.entries[0].position != 1 or not descriptor.entries[0].label.empty()) {
+               bcread_error(State, ErrMsg::BCBAD);
+            }
+         }
+         else if (contract_requires_interpreter(descriptor)) interpreter_required = true;
+      }
    }
+   proto_set_interpreter_required(Prototype, interpreter_required);
 }
 
 static void bcread_validate_child_upvalues(LexState *State, GCproto *Prototype)

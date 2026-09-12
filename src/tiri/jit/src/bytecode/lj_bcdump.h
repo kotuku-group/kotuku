@@ -63,7 +63,8 @@ constexpr uint8_t BCDUMP_HEAD3 = 0x4a;
 // Version 0xa2 removes string.len and shifts the generated fast-function ordering.
 // Version 0xa3 removes collectgarbage and newproxy from the generated fast-function ordering.
 // Version 0xa4 adds a portable compilation-unit source manifest and remapped prototype/line source identities.
-constexpr uint8_t BCDUMP_VERSION = 0xa5;
+// Version 0xa6 reconstructs deterministic interpreter-only policy from validated contract descriptors and bytecode.
+constexpr uint8_t BCDUMP_VERSION = 0xa6;
 
 // Compatibility flags.
 

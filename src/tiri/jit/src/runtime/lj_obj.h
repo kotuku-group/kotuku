@@ -919,6 +919,7 @@ typedef struct GCproto {
    BCLine firstline;  //  First line of the function definition.
    BCLine numline;    //  Number of lines for the function definition.
    uint8_t file_source_idx;  //  Index into lua_State::file_sources (fallback for edge cases).
+   uint8_t interpreter_required; // Deterministic policy reconstructed from this prototype's bytecode.
    GCRef source_root;        // Root prototype which owns the compilation-unit source descriptor.
    MRef compilation_sources; // CompilationSourceMap owned by the root prototype only.
    MRef struct_manifest; // Portable named-structure semantics owned by the root prototype only.
@@ -962,6 +963,19 @@ inline constexpr int PROTO_CLC_POLY         = 3 * PROTO_CLCOUNT;  //  Polymorphi
 
 inline constexpr uint16_t PROTO_UV_LOCAL     = 0x8000;   //  Upvalue for local slot.
 inline constexpr uint16_t PROTO_UV_IMMUTABLE = 0x4000;   //  Immutable upvalue.
+
+inline void proto_set_interpreter_required(GCproto *Proto, bool Required) noexcept
+{
+   Proto->interpreter_required = Required ? 1 : 0;
+   if (Required) Proto->flags |= PROTO_NOJIT;
+   else Proto->flags &= ~PROTO_NOJIT;
+}
+
+inline void proto_restore_jit_policy(GCproto *Proto) noexcept
+{
+   Proto->flags &= ~PROTO_NOJIT;
+   if (Proto->interpreter_required) Proto->flags |= PROTO_NOJIT;
+}
 
 [[nodiscard]] inline GCobj* proto_kgc(const GCproto* pt, ptrdiff_t idx) noexcept {
    return check_exp(uintptr_t(intptr_t(idx)) >= uintptr_t(-intptr_t(pt->sizekgc)),
@@ -1040,6 +1054,7 @@ inline constexpr uint16_t PROTO_UV_IMMUTABLE = 0x4000;   //  Immutable upvalue.
 
 inline void proto_metadata_init(GCproto *Proto) noexcept
 {
+   Proto->interpreter_required = 0;
    setmref(Proto->contract_cache, nullptr);
    Proto->file_source_idx = 0;
    setgcrefnull(Proto->source_root);

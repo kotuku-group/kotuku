@@ -7,6 +7,7 @@
 #include "lua.h"
 #include "lauxlib.h"
 #include "lualib.h"
+#include "luajit.h"
 
 #include "lj_bc.h"
 #include "lj_ff.h"
@@ -3450,7 +3451,8 @@ static bool test_old_bytecode_versions_rejected(kt::Log &Log)
    // replaced it with BC_MODACT.  Gate E selected format rejection over a compatibility shim.
 
    for (uint8_t version : { uint8_t(0x81), uint8_t(0x83), uint8_t(0x85), uint8_t(0x86), uint8_t(0x8e),
-      uint8_t(0x90), uint8_t(0x91), uint8_t(0x97), uint8_t(0x99), uint8_t(0x9c), uint8_t(0x9f), uint8_t(0xa0) }) {
+      uint8_t(0x90), uint8_t(0x91), uint8_t(0x97), uint8_t(0x99), uint8_t(0x9c), uint8_t(0x9f), uint8_t(0xa0),
+      uint8_t(0xa5) }) {
       std::string old_dump = dump;
       old_dump[3] = char(version);
       if (lua_load(L, std::string_view(old_dump.data(), old_dump.size()), "old-version") IS 0) {
@@ -4632,51 +4634,90 @@ static bool test_complex_contract_jit_eligibility(kt::Log &Log)
 {
    LuaStateHolder state;
    lua_State *lua = state.get();
-   auto compile_proto = [lua, &Log](std::string_view Source, const char *Label, bool Child) -> GCproto * {
+   auto check_policy = [&Log](const GCproto *Prototype, bool Required, const char *Label) {
+      if (not Prototype or bool(Prototype->interpreter_required) != Required or
+          bool(Prototype->flags & PROTO_NOJIT) != Required) {
+         Log.error("%s had unexpected required or effective JIT policy", Label);
+         return false;
+      }
+      return true;
+   };
+   auto verify_roundtrip = [lua, &Log, &check_policy](
+      std::string_view Source, const char *Label, uint8_t ChildDepth, bool Required) {
       if (lua_load(lua, Source, Label)) {
          Log.error("%s failed to compile: %s", Label, lua_tostring(lua, -1));
          lua_pop(lua, 1);
-         return nullptr;
+         return false;
       }
 
       GCproto *root = funcproto(funcV(lua->top - 1));
-      GCproto *result = Child ? first_child_proto(root) : root;
-      lua->top--;
-      return result;
+      GCproto *prototype = root;
+      for (uint8_t depth = 0; depth < ChildDepth and prototype; ++depth) prototype = first_child_proto(prototype);
+      if (not check_policy(prototype, Required, Label)) {
+         lua_pop(lua, 1);
+         return false;
+      }
+
+      for (int strip : { 0, 1 }) {
+         std::string dump;
+         if (lj_bcwrite(lua, root, bytecode_writer, &dump, strip) != 0 or
+             lua_load(lua, std::string_view(dump.data(), dump.size()), Label)) {
+            Log.error("%s failed its %s round-trip: %s", Label, strip ? "stripped" : "unstripped",
+               lua_tostring(lua, -1));
+            lua_pop(lua, 1);
+            return false;
+         }
+         GCproto *loaded = funcproto(funcV(lua->top - 1));
+         for (uint8_t depth = 0; depth < ChildDepth and loaded; ++depth) loaded = first_child_proto(loaded);
+         bool valid = check_policy(loaded, Required, Label);
+         lua_pop(lua, 1);
+         if (not valid) {
+            lua_pop(lua, 1);
+            return false;
+         }
+      }
+      lua_pop(lua, 1);
+      return true;
    };
 
-   GCproto *fixed = compile_proto(
+   if (not verify_roundtrip(
       "return function(Value:func):func\n"
       "   return Value\n"
       "end\n",
-      "fixed-complex-contract", true);
-   if (not fixed or (fixed->flags & PROTO_NOJIT)) {
-      Log.error("a fixed complex contract remained interpreter-only");
-      return false;
-   }
+      "fixed-complex-contract", 1, false)) return false;
 
-   GCproto *fixed_object_class = compile_proto(
+   if (not verify_roundtrip(
       "extern obj\n"
       "return function(Value:any)\n"
       "   local stored = obj.new('time')\n"
       "   stored = Value\n"
       "   return stored\n"
       "end\n",
-      "fixed-object-class-contract", true);
-   if (not fixed_object_class or (fixed_object_class->flags & PROTO_NOJIT)) {
-      Log.error("a fixed object-class contract became interpreter-only");
-      return false;
-   }
+      "fixed-object-class-contract", 1, false)) return false;
 
-   GCproto *dynamic = compile_proto(
+   if (not verify_roundtrip(
       "return function(...):<num, ...>\n"
       "   return ...\n"
       "end\n",
-      "dynamic-result-contract", true);
-   if (not dynamic or not (dynamic->flags & PROTO_NOJIT)) {
-      Log.error("a dynamic-result contract became JIT-eligible without exact multi-result recorder support");
-      return false;
-   }
+      "dynamic-result-contract", 1, true)) return false;
+
+   if (not verify_roundtrip(
+      "local function values() return 7, 'kept' end\n"
+      "return function()\n"
+      "   defer local ignored = 1 end\n"
+      "   return values()\n"
+      "end\n",
+      "multi-result-cleanup", 1, true)) return false;
+
+   constexpr std::string_view nested_source =
+      "return function()\n"
+      "   return function()\n"
+      "      global glNestedPolicy <const> = 1\n"
+      "   end\n"
+      "end\n";
+   if (not verify_roundtrip(nested_source, "nested const root", 0, false) or
+       not verify_roundtrip(nested_source, "nested const parent", 1, false) or
+       not verify_roundtrip(nested_source, "nested const grandchild", 2, true)) return false;
 
    struct EligibilityCase {
       const char *label;
@@ -4697,20 +4738,137 @@ static bool test_complex_contract_jit_eligibility(kt::Log &Log)
    for (const EligibilityCase &test : cases) {
       std::string child_source = std::format("return function()\n   {}\nend\n", test.statement);
       std::string child_label = std::format("{}-child", test.label);
-      GCproto *child = compile_proto(child_source, child_label.c_str(), true);
-      if (not child or bool(child->flags & PROTO_NOJIT) != test.no_jit) {
-         Log.error("%s had unexpected child prototype JIT eligibility", test.label);
+      if (not verify_roundtrip(child_source, child_label.c_str(), 1, test.no_jit)) return false;
+
+      std::string main_label = std::format("{}-main", test.label);
+      if (not verify_roundtrip(test.statement, main_label.c_str(), 0, test.no_jit)) return false;
+   }
+
+   if (lua_load(lua, "local descriptor = '\\5\\0\\1\\1\\3\\4\\1\\0\\0\\0'\nreturn descriptor\n",
+       "unused-descriptor-string")) return false;
+   GCproto *supported = funcproto(funcV(lua->top - 1));
+   if (not check_policy(supported, false, "unused descriptor-like string")) {
+      lua_pop(lua, 1);
+      return false;
+   }
+   luaJIT_setmode(lua, -1, LUAJIT_MODE_FUNC | LUAJIT_MODE_OFF);
+   if (not (supported->flags & PROTO_NOJIT) or supported->interpreter_required) {
+      Log.error("explicit runtime disabling was confused with required interpreter policy");
+      lua_pop(lua, 1);
+      return false;
+   }
+   std::string disabled_dump;
+   if (lua_dump(lua, bytecode_writer, &disabled_dump) != 0 or
+       lua_load(lua, std::string_view(disabled_dump.data(), disabled_dump.size()), "transient-disable-load")) {
+      Log.error("failed to round-trip a transiently disabled prototype");
+      lua_pop(lua, 1);
+      return false;
+   }
+   bool transient_valid = check_policy(funcproto(funcV(lua->top - 1)), false, "transient disable load");
+   lua_pop(lua, 2);
+   if (not transient_valid) return false;
+
+   if (lua_load(lua, "global glRequiredEnable <const> = 1", "required-enable")) return false;
+   GCproto *required = funcproto(funcV(lua->top - 1));
+   luaJIT_setmode(lua, -1, LUAJIT_MODE_FUNC | LUAJIT_MODE_ON);
+   bool enable_valid = check_policy(required, true, "required policy after explicit enable");
+   lua_pop(lua, 1);
+   if (not enable_valid) return false;
+   return true;
+}
+
+static bool test_contract_bytecode_policy_validation(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *lua = state.get();
+
+   auto exercise = [lua, &Log](std::string_view Source, BCOp Opcode, const char *Label) {
+      if (lua_load(lua, Source, Label)) {
+         Log.error("%s failed to compile: %s", Label, lua_tostring(lua, -1));
+         lua_pop(lua, 1);
+         return false;
+      }
+      GCproto *root = funcproto(funcV(lua->top - 1));
+      MSize descriptor_pc = 0;
+      GCstr *encoded = nullptr;
+      for (MSize pc = 1; pc < root->sizebc; ++pc) {
+         BCIns instruction = proto_bc(root)[pc];
+         if (bc_op(instruction) != Opcode) continue;
+         GCstr *candidate = gco_to_string(proto_kgc(root, ~(ptrdiff_t)bc_d(instruction)));
+         RuntimeContractDescriptor descriptor;
+         if (not decode_runtime_contract(candidate, descriptor)) continue;
+         if (Opcode != BC_CONTRACT or contract_requires_interpreter(descriptor)) {
+            descriptor_pc = pc;
+            encoded = candidate;
+            break;
+         }
+      }
+      if (not descriptor_pc or not encoded or encoded->len < 4) {
+         Log.error("%s did not emit the expected descriptor", Label);
+         lua_pop(lua, 1);
          return false;
       }
 
-      std::string main_label = std::format("{}-main", test.label);
-      GCproto *main = compile_proto(test.statement, main_label.c_str(), false);
-      if (not main or bool(main->flags & PROTO_NOJIT) != test.no_jit) {
-         Log.error("%s had unexpected main prototype JIT eligibility", test.label);
-         return false;
+      auto expect_rejected = [&](int Strip, const char *Mutation) {
+         std::string malformed;
+         if (lj_bcwrite(lua, root, bytecode_writer, &malformed, Strip) != 0) return false;
+         int status = lua_load(lua, std::string_view(malformed.data(), malformed.size()), Mutation);
+         if (status != LUA_ERRSYNTAX) {
+            lua_pop(lua, 1);
+            Log.error("the reader accepted %s in a %s dump", Mutation, Strip ? "stripped" : "unstripped");
+            return false;
+         }
+         lua_pop(lua, 1);
+         return true;
+      };
+
+      for (int strip : { 0, 1 }) {
+         char *bytes = (char *)strdata(encoded);
+         uint8_t saved_flags = uint8_t(bytes[1]);
+         bytes[1] = char(0x80);
+         bool valid = expect_rejected(strip, "unknown contract descriptor flags");
+         bytes[1] = char(saved_flags);
+         if (not valid) {
+            lua_pop(lua, 1);
+            return false;
+         }
+
+         uint8_t saved_count = uint8_t(bytes[3]);
+         bytes[3] = char(saved_count + 1);
+         valid = expect_rejected(strip, "truncated contract descriptor entries");
+         bytes[3] = char(saved_count);
+         if (not valid) {
+            lua_pop(lua, 1);
+            return false;
+         }
+
+         BCIns saved_instruction = proto_bc(root)[descriptor_pc];
+         setbc_a(&proto_bc(root)[descriptor_pc], root->framesize);
+         valid = expect_rejected(strip, "contract operand span");
+         proto_bc(root)[descriptor_pc] = saved_instruction;
+         if (not valid) {
+            lua_pop(lua, 1);
+            return false;
+         }
+
+         std::string recovery;
+         if (lj_bcwrite(lua, root, bytecode_writer, &recovery, strip) != 0 or
+             lua_load(lua, std::string_view(recovery.data(), recovery.size()), "contract-validation-recovery")) {
+            Log.error("the reader did not recover after rejecting malformed %s bytecode", Label);
+            lua_pop(lua, 1);
+            return false;
+         }
+         lua_pop(lua, 1);
       }
+      lua_pop(lua, 1);
+      return true;
+   };
+
+   if (not exercise("global glMalformedConst <const> = 1", BC_CONTRACT, "const-contract-validation")) {
+      return false;
    }
-   return true;
+   return exercise(
+      "local value:any = 1\nreturn value is <num>\n", BC_TYPETEST, "type-test-contract-validation");
 }
 
 static bool test_parser_diagnostics_reset_per_load(kt::Log &Log)
@@ -11824,7 +11982,7 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 108> tests = { {
+   constexpr std::array<TestCase, 109> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "error_removal", test_error_removal },
@@ -11890,6 +12048,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "runtime_contract_decoder", test_runtime_contract_decoder },
       { "runtime_contract_batching", test_runtime_contract_batching },
       { "complex_contract_jit_eligibility", test_complex_contract_jit_eligibility },
+      { "contract_bytecode_policy_validation", test_contract_bytecode_policy_validation },
       { "parser_diagnostics_reset_per_load", test_parser_diagnostics_reset_per_load },
       { "userdata_type_annotations", test_userdata_type_annotations },
       { "state_local_struct_declarations", test_state_local_struct_declarations },
