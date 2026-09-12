@@ -3800,11 +3800,16 @@ static bool test_malformed_signature_rejected(kt::Log &Log)
 
    size_t position = 5;
    uint32_t value = 0;
-   if (not read_uleb(position, value) or position + 4 > dump.size()) {
+   if (not read_uleb(position, value) or value > dump.size() - position) {
+      Log.error("could not skip the source manifest in the malformed-signature fixture");
+      return false;
+   }
+   position += value;
+   if (not read_uleb(position, value) or position + 5 > dump.size()) {
       Log.error("could not locate the prototype header in the malformed-signature fixture");
       return false;
    }
-   position += 4;
+   position += 5;
 
    // Header ULEB fields, in order: sizekgc, sizekn, sizebc, siglen, deplen.  The dump is stripped, so no debug
    // length follows and the signature payload begins immediately after deplen.
@@ -3880,6 +3885,78 @@ static bool test_malformed_signature_rejected(kt::Log &Log)
    bad_type[entry_offset] = char(0xff);
    if (lua_load(L, std::string_view(bad_type.data(), bad_type.size()), "signature-bad-type") IS 0) {
       Log.error("the bytecode reader accepted an invalid signature type");
+      return false;
+   }
+   lua_pop(L, 1);
+   return true;
+}
+
+static bool test_source_manifest_validation(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   if (lua_load(L, "return function() return 42 end", "source-manifest")) {
+      Log.error("failed to compile the source-manifest fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+   std::string dump;
+   if (lj_bcwrite(L, funcproto(funcV(L->top - 1)), bytecode_writer, &dump, 1) != 0) {
+      Log.error("failed to dump the source-manifest fixture");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   auto read_uleb = [&dump](size_t &Position, uint32_t &Value) {
+      Value = 0;
+      for (uint32_t shift = 0; shift <= 28 and Position < dump.size(); shift += 7) {
+         const uint8_t byte = uint8_t(dump[Position++]);
+         Value |= uint32_t(byte & 0x7f) << shift;
+         if (not (byte & 0x80)) return true;
+      }
+      return false;
+   };
+   size_t source_offset = 5;
+   uint32_t source_size = 0;
+   if (not read_uleb(source_offset, source_size) or source_size > dump.size() - source_offset) {
+      Log.error("could not locate the source manifest");
+      return false;
+   }
+   size_t prototype_offset = source_offset + source_size;
+   uint32_t prototype_size = 0;
+   if (not read_uleb(prototype_offset, prototype_size) or prototype_offset + 5 > dump.size()) {
+      Log.error("could not locate the prototype source identity");
+      return false;
+   }
+
+   std::array<std::string, 3> invalid = { dump, dump, dump };
+   invalid[0][source_offset] = char(0xff);
+   invalid[1][source_offset + 2] = char(1);
+   invalid[2][prototype_offset + 4] = char(1);
+   constexpr std::array<const char *, 3> descriptions = {
+      "unsupported source version", "out-of-range source root", "out-of-range prototype source"
+   };
+   for (size_t invalid_index = 0; invalid_index < invalid.size(); ++invalid_index) {
+      const auto &bytes = invalid[invalid_index];
+      const size_t source_count = L->file_sources.size();
+      if (lua_load(L, std::string_view(bytes.data(), bytes.size()), "invalid-source-manifest") IS 0) {
+         Log.error("the bytecode reader accepted %s", descriptions[invalid_index]);
+         lua_pop(L, 1);
+         return false;
+      }
+      lua_pop(L, 1);
+      if (L->file_sources.size() != source_count) {
+         Log.error("a rejected source manifest published runtime source records");
+         return false;
+      }
+   }
+   if (lua_load(L, std::string_view(dump.data(), dump.size()), "valid-source-manifest")) {
+      Log.error("the state was not reusable after source-manifest rejection: %s", lua_tostring(L, -1));
+      return false;
+   }
+   GCproto *root = funcproto(funcV(L->top - 1));
+   const CompilationSourceMap *sources = proto_compilation_sources(root);
+   if (not sources or sources->count != 1 or sources->root != 0) {
+      Log.error("the valid source manifest was not attached to its root prototype");
       return false;
    }
    lua_pop(L, 1);
@@ -5386,11 +5463,16 @@ static bool test_module_dependency_corruption_rejected(kt::Log &Log)
 
    size_t position = 5;
    uint32_t value = 0;
-   if (not read_uleb(position, value) or position + 4 > dump.size()) {
+   if (not read_uleb(position, value) or value > dump.size() - position) {
+      Log.error("could not skip the source manifest in the corruption fixture");
+      return false;
+   }
+   position += value;
+   if (not read_uleb(position, value) or position + 5 > dump.size()) {
       Log.error("could not locate the prototype header in the corruption fixture");
       return false;
    }
-   position += 4;
+   position += 5;
 
    uint32_t signature_length = 0, dependency_length = 0;
    for (int field = 0; field < 3; ++field) {
@@ -11492,7 +11574,7 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 106> tests = { {
+   constexpr std::array<TestCase, 107> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "error_removal", test_error_removal },
@@ -11553,6 +11635,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "signature_static_inference", test_signature_static_inference },
       { "signature_void_and_bare_return", test_signature_void_and_bare_return },
       { "malformed_signature_rejected", test_malformed_signature_rejected },
+      { "source_manifest_validation", test_source_manifest_validation },
       { "contract_bytecode_roundtrip", test_contract_bytecode_roundtrip },
       { "runtime_contract_decoder", test_runtime_contract_decoder },
       { "runtime_contract_batching", test_runtime_contract_batching },

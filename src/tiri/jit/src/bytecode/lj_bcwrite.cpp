@@ -13,6 +13,7 @@
 #include "lj_strfmt.h"
 #include "lj_bcdump.h"
 #include "lj_vm.h"
+#include "../debug/filesource.h"
 
 // Context for bytecode writer.
 typedef struct BCWriteCtx {
@@ -22,10 +23,94 @@ typedef struct BCWriteCtx {
    void* wdata;        // Writer callback data.
    int strip;          // Strip debug info.
    int status;         // Status from writer callback.
+   uint8_t source_wire[256];
+   uint8_t source_mapped[256];
+   const CompilationSourceMap *sources;
 #ifdef LUA_USE_ASSERT
    global_State* g;
 #endif
 } BCWriteCtx;
+
+static MSize bcwrite_uleb128_size(uint32_t);
+
+static bool bcwrite_source_id(BCWriteCtx *Ctx, uint8_t Runtime, uint8_t &Wire)
+{
+   if (Ctx->source_mapped[Runtime]) {
+      Wire = Ctx->source_wire[Runtime];
+      return true;
+   }
+   if (Runtime IS FILESOURCE_OVERFLOW_INDEX) {
+      Wire = FILESOURCE_OVERFLOW_INDEX;
+      return true;
+   }
+   return false;
+}
+
+static bool bcwrite_validate_proto(BCWriteCtx *Ctx, GCproto *Proto)
+{
+   uint8_t wire;
+   if (not bcwrite_source_id(Ctx, Proto->file_source_idx, wire)) return false;
+   if (proto_lineinfo(Proto)) {
+      const BCLine *lines = (const BCLine *)proto_lineinfo(Proto);
+      for (MSize i = 0; i + 1 < Proto->sizebc; ++i) {
+         if (not bcwrite_source_id(Ctx, lines[i].fileIndex(), wire)) return false;
+      }
+   }
+   if (Proto->flags & PROTO_CHILD) {
+      GCRef *constant = mref<GCRef>(Proto->k) - 1;
+      for (MSize i = 0; i < Proto->sizekgc; ++i, --constant) {
+         GCobj *object = gcref(*constant);
+         if (object->gch.gct IS ~LJ_TPROTO and not bcwrite_validate_proto(Ctx, gco_to_proto(object))) return false;
+      }
+   }
+   return true;
+}
+
+static MSize bcwrite_source_string_size(GCstr *String)
+{
+   return bcwrite_uleb128_size(String->len) + String->len;
+}
+
+static char * bcwrite_source_string(char *Buffer, GCstr *String)
+{
+   Buffer = lj_strfmt_wuleb128(Buffer, String->len);
+   return lj_buf_wmem(Buffer, strdata(String), String->len);
+}
+
+static void bcwrite_sources(BCWriteCtx *Ctx)
+{
+   lj_buf_reset(&Ctx->sb);
+   auto entries = compilation_source_entries(Ctx->sources);
+   MSize block_size = 3;
+   for (uint32_t i = 0; i < Ctx->sources->count; ++i) {
+      block_size += 4 + bcwrite_uleb128_size(entries[i].first_line.lineNumber()) +
+         bcwrite_uleb128_size(entries[i].total_lines.lineNumber()) +
+         bcwrite_uleb128_size(entries[i].import_line.lineNumber()) +
+         bcwrite_source_string_size(gco_to_string(gcref(entries[i].canonical_path))) +
+         bcwrite_source_string_size(gco_to_string(gcref(entries[i].display_filename))) +
+         bcwrite_source_string_size(gco_to_string(gcref(entries[i].declared_namespace)));
+   }
+   char *p = lj_buf_need(&Ctx->sb, 5 + block_size);
+   p = lj_strfmt_wuleb128(p, block_size);
+   *p++ = Ctx->sources->version;
+   *p++ = Ctx->sources->count;
+   *p++ = Ctx->sources->root;
+   for (uint32_t i = 0; i < Ctx->sources->count; ++i) {
+      *p++ = uint8_t(entries[i].role);
+      *p++ = entries[i].parent;
+      *p++ = 0;
+      *p++ = 0;
+      p = lj_strfmt_wuleb128(p, entries[i].first_line.lineNumber());
+      p = lj_strfmt_wuleb128(p, entries[i].total_lines.lineNumber());
+      p = lj_strfmt_wuleb128(p, entries[i].import_line.lineNumber());
+      p = bcwrite_source_string(p, gco_to_string(gcref(entries[i].canonical_path)));
+      p = bcwrite_source_string(p, gco_to_string(gcref(entries[i].display_filename)));
+      p = bcwrite_source_string(p, gco_to_string(gcref(entries[i].declared_namespace)));
+   }
+   Ctx->sb.w = p;
+   Ctx->status = Ctx->wfunc(sbufL(&Ctx->sb), Ctx->sb.b, MSize(p - Ctx->sb.b), Ctx->wdata);
+   lj_buf_reset(&Ctx->sb);
+}
 
 #ifdef LUA_USE_ASSERT
 #define lj_assertBCW(c, ...)   lj_assertG_(ctx->g, (c), __VA_ARGS__)
@@ -360,7 +445,7 @@ static void bcwrite_proto(BCWriteCtx *ctx, GCproto *pt)
    }
 
    // Start writing the prototype info to a buffer.
-   p = lj_buf_need(&ctx->sb, 5 + 4 + 8 * 5 + sizesig + sizedep +
+   p = lj_buf_need(&ctx->sb, 5 + 5 + 8 * 5 + sizesig + sizedep +
       (pt->sizebc - 1) * (MSize)sizeof(BCIns) + pt->sizeuv * 2);
    p += 5;  //  Leave room for final size.
 
@@ -369,6 +454,9 @@ static void bcwrite_proto(BCWriteCtx *ctx, GCproto *pt)
    *p++ = pt->numparams;
    *p++ = pt->framesize;
    *p++ = pt->sizeuv;
+   uint8_t prototype_source = 0;
+   lj_assertBCW(bcwrite_source_id(ctx, pt->file_source_idx, prototype_source), "unmapped prototype source");
+   *p++ = prototype_source;
    p = lj_strfmt_wuleb128(p, pt->sizekgc);
    p = lj_strfmt_wuleb128(p, pt->sizekn);
    p = lj_strfmt_wuleb128(p, pt->sizebc - 1);
@@ -401,7 +489,15 @@ static void bcwrite_proto(BCWriteCtx *ctx, GCproto *pt)
 
    if (sizedbg) {
       p = lj_buf_more(&ctx->sb, sizedbg);
-      p = lj_buf_wmem(p, proto_lineinfo(pt), sizedbg);
+      const MSize line_size = (pt->sizebc - 1) * MSize(sizeof(BCLine));
+      const BCLine *lines = (const BCLine *)proto_lineinfo(pt);
+      for (MSize i = 0; i + 1 < pt->sizebc; ++i) {
+         uint8_t source = 0;
+         lj_assertBCW(bcwrite_source_id(ctx, lines[i].fileIndex(), source), "unmapped line source");
+         BCLine remapped = BCLine::encode(source, lines[i].lineNumber());
+         p = lj_buf_wmem(p, &remapped, sizeof(remapped));
+      }
+      p = lj_buf_wmem(p, (char *)proto_lineinfo(pt) + line_size, sizedbg - line_size);
       ctx->sb.w = p;
    }
 
@@ -460,6 +556,7 @@ static void bcwrite_header(BCWriteCtx* ctx)
    }
    ctx->status = ctx->wfunc(sbufL(&ctx->sb), ctx->sb.b,
       (MSize)(p - ctx->sb.b), ctx->wdata);
+   if (ctx->status IS 0) bcwrite_sources(ctx);
 }
 
 //********************************************************************************************************************
@@ -499,6 +596,38 @@ int lj_bcwrite(lua_State *L, GCproto *pt, lua_Writer writer, void *data, int str
    ctx.wdata = data;
    ctx.strip = strip;
    ctx.status = 0;
+   memset(ctx.source_wire, 0, sizeof(ctx.source_wire));
+   memset(ctx.source_mapped, 0, sizeof(ctx.source_mapped));
+   ctx.sources = proto_compilation_sources(pt);
+   if (not ctx.sources or ctx.sources->version != COMPILATION_SOURCE_VERSION or ctx.sources->count IS 0 or
+       ctx.sources->count > FILESOURCE_MAX_COUNT or ctx.sources->root >= ctx.sources->count) return 1;
+   auto entries = compilation_source_entries(ctx.sources);
+   for (uint32_t i = 0; i < ctx.sources->count; ++i) {
+      GCstr *path = gco_to_string(gcref(entries[i].canonical_path));
+      GCstr *filename = gco_to_string(gcref(entries[i].display_filename));
+      if (filename->len IS 0 or entries[i].first_line.lineNumber() IS 0 or
+          entries[i].total_lines.lineNumber() IS 0) return 1;
+      if (i IS ctx.sources->root) {
+         if ((entries[i].role != CompilationSourceRole::Main and
+              entries[i].role != CompilationSourceRole::Synthetic) or
+             entries[i].parent != FILESOURCE_OVERFLOW_INDEX or entries[i].import_line.lineNumber() != 0 or
+             ((entries[i].role IS CompilationSourceRole::Synthetic) != (path->len IS 0))) return 1;
+      }
+      else if (entries[i].role != CompilationSourceRole::Import or entries[i].parent >= i or path->len IS 0 or
+               entries[i].import_line.lineNumber() IS 0 or entries[i].import_line.lineNumber() >
+               entries[entries[i].parent].total_lines.lineNumber()) return 1;
+      for (uint32_t prior = 0; prior < i; ++prior) {
+         GCstr *prior_path = gco_to_string(gcref(entries[prior].canonical_path));
+         if (path->len and path->len IS prior_path->len and
+             memcmp(strdata(path), strdata(prior_path), path->len) IS 0) return 1;
+      }
+      const uint8_t runtime = entries[i].runtime_index;
+      if (runtime IS FILESOURCE_OVERFLOW_INDEX) continue;
+      if (ctx.source_mapped[runtime]) return 1;
+      ctx.source_mapped[runtime] = 1;
+      ctx.source_wire[runtime] = uint8_t(i);
+   }
+   if (not bcwrite_validate_proto(&ctx, pt)) return 1;
 #ifdef LUA_USE_ASSERT
    ctx.g = G(L);
 #endif

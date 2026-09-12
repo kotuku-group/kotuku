@@ -41,7 +41,7 @@ The Tiri class provides functionality for running scripts written in the Tiri pr
 
 static ERR run_script(extTiri *);
 static ERR stack_args(lua_State *, OBJECTID, const FunctionField *, int8_t *);
-static ERR save_binary(lua_State *, OBJECTPTR, bool);
+static ERR save_binary(lua_State *, OBJECTPTR);
 
 //********************************************************************************************************************
 
@@ -674,6 +674,16 @@ static ERR load_statement(extTiri *Self)
       lua_settop(Self->Lua, stack_top);
       return binary ? ERR::InvalidData : ERR::Syntax;
    }
+   if (Self->LoadedFromCache and lua_isfunction(Self->Lua, -1) and not lua_iscfunction(Self->Lua, -1)) {
+      GCproto *prototype = funcproto(funcV(Self->Lua->top - 1));
+      const CompilationSourceMap *sources = proto_compilation_sources(prototype);
+      if (sources and sources->count > 1) {
+         lua_settop(Self->Lua, stack_top);
+         Self->setErrorMessage(
+            "Automatic caches with imported dependencies are disabled until dependency validation is available.");
+         return ERR::InvalidData;
+      }
+   }
    Self->setErrorMessage("");
    return ERR::Okay;
 }
@@ -721,6 +731,15 @@ static ERR TIRI_Query(extTiri *Self)
          return error;
       }
 
+      if (Self->SaveCompiled and lua_isfunction(Self->Lua, -1) and not lua_iscfunction(Self->Lua, -1)) {
+         GCproto *prototype = funcproto(funcV(Self->Lua->top - 1));
+         const CompilationSourceMap *sources = proto_compilation_sources(prototype);
+         if (sources and sources->count > 1) {
+            log.msg("Skipping automatic cache for a compilation unit with imported dependencies.");
+            Self->SaveCompiled = false;
+         }
+      }
+
       lua_pushvalue(Self->Lua, -1);
       Self->MainChunkRef = luaL_ref(Self->Lua, LUA_REGISTRYINDEX);
 
@@ -738,7 +757,7 @@ static ERR TIRI_Query(extTiri *Self)
             cache_error = cachefile.error;
             if (cachefile.ok()) {
                cache_created = true;
-               cache_error = save_binary(Self->Lua, *cachefile, true);
+               cache_error = save_binary(Self->Lua, *cachefile);
                if (cache_error IS ERR::Okay) cache_error = cachefile->setDate(Self->CacheDate);
             }
          } // Close our cache before removing a failed write, including on Windows.
@@ -769,10 +788,10 @@ preserves any pending executable chunk.  Saving during active execution returns 
 
 The output contains the Tiri compiled marker, a NUL separator and VM byte code with debug information.  Compatibility
 is initially limited to the same Kōtuku build and platform.  Live objects, globals and execution state are not saved.
-Statements containing declared structs or multi-file source maps currently return `ERR::NoSupport`, because those
-records cannot be preserved.  Save compilation is isolated from the execution state, so rejected and repeated saves
-do not change imports, declarations, diagnostics, captures or a pending executable chunk.  To-be-closed locals are
-preserved in saved byte code.
+Imported declarations, source identities and diagnostic line mappings are embedded in the output.  Source text is
+not embedded.  Statements containing declared structs currently return `ERR::NoSupport`.  Save compilation is
+isolated from the execution state, so rejected and repeated saves do not change imports, declarations, diagnostics,
+captures or a pending executable chunk.  To-be-closed locals are preserved in saved byte code.
 
 A failed save can leave partial output.
 
@@ -808,9 +827,13 @@ static ERR TIRI_SaveToObject(extTiri *Self, struct acSaveToObject *Args)
    log.branch("Compiling the statement...");
 
    auto chunk_name = make_chunk_name(Self);
+   std::string_view save_source(Self->Statement);
+   if (save_source.starts_with(LUA_COMPILED)) {
+      if (compiled_payload(save_source, save_source) != ERR::Okay) return ERR::InvalidData;
+   }
 
-   if (not lua_load(compilation.get(), std::string_view(Self->Statement), chunk_name.c_str())) {
-      ERR error = save_binary(compilation.get(), Args->Dest, not Self->Path.empty());
+   if (not lua_load(compilation.get(), save_source, chunk_name.c_str())) {
+      ERR error = save_binary(compilation.get(), Args->Dest);
       if ((lua_gettop(Self->Lua) != stack_top) or (Self->MainChunkRef != main_chunk_ref)) return ERR::InvalidState;
       return error;
    }
@@ -908,15 +931,15 @@ static int write_bytecode(lua_State *, const void *Data, size_t Size, void *Cont
 }
 
 //********************************************************************************************************************
-static ERR save_binary(lua_State *Lua, OBJECTPTR Target, bool MainSourceRegistered)
+
+static ERR save_binary(lua_State *Lua, OBJECTPTR Target)
 {
    if ((not Lua) or (not Target)) return ERR::NullArgs;
 
    if ((not lua_gettop(Lua)) or (not lua_isfunction(Lua, -1)) or lua_iscfunction(Lua, -1)) return ERR::InvalidData;
 
-   const size_t allowed_sources = MainSourceRegistered ? 1 : 0;
-   if (not Lua->struct_declarations.empty() or (Lua->file_sources.size() > allowed_sources)) {
-      kt::Log().warning("Bytecode files cannot preserve declared structs or multi-file source maps.");
+   if (not Lua->struct_declarations.empty()) {
+      kt::Log().warning("Bytecode files cannot preserve declared structs.");
       return ERR::NoSupport;
    }
 

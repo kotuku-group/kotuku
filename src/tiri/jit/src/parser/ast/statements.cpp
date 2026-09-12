@@ -1772,7 +1772,7 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
    // Look up the FileSource index and namespace for this import (registered during parse_imported_file)
 
    lua_State *L = &this->ctx.lua();
-   auto file_idx = find_file_source(L, kt::strihash(path));
+   auto file_idx = find_file_source(L, path);
    std::string default_ns;
 
    if (file_idx.has_value()) {
@@ -1900,8 +1900,9 @@ ParserResult<StmtNodePtr> AstBuilder::parse_namespace()
       log.detail("Note: namespace '%.*s' already defined by another library", int(ns_name.size()), ns_name.data());
    }
 
-   // Record the namespace in the current file's FileSource entry
+   // Record the namespace in both the runtime diagnostic record and the compilation-unit manifest.
    set_file_source_namespace(L, current_file_index, std::string(ns_name));
+   this->record_source_namespace(ns_name);
 
    NamespaceStmtPayload payload;
    payload.name = make_identifier(name_token);
@@ -1963,17 +1964,17 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
       Path = resolved_path;
    }
 
-   auto libhash = kt::strihash(Path);
+   const uint32_t libhash = kt::strihash(Path);
 
    // Check if this file is already registered in FileSource.  FileSource entries persist for the lifetime of the
    // lua_State, so this hit can come from an earlier, unrelated compilation.  In diagnose mode the type analyser
    // needs the real body regardless - validation never emits or executes code, so re-parsing cannot double-execute
    // library code, and skipping here would silently drop imported-file diagnostics on every validation after the
    // first.  The existing FileSource index is reused below instead of registering a duplicate.
-   auto existing_index = find_file_source(L, libhash);
+   auto existing_index = find_file_source(L, Path);
    bool seen_this_chunk = this->import_seen_this_chunk(libhash);
    if (existing_index.has_value()) {
-      if (seen_this_chunk or not this->ctx.lex().diagnose_mode) {
+      if (seen_this_chunk) {
          log.detail("Library %.*s already imported (file index %d)", int(Library.size()), Library.data(), existing_index.value());
          return ParserResult<std::unique_ptr<BlockStmt>>::success(make_block(ImportToken.span(), {}));
       }
@@ -1994,18 +1995,19 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
 
    // Get file size and read contents
    int64_t file_size = 0;
-   if (file->getSize(file_size) != ERR::Okay or file_size <= 0) {
+   if (file->getSize(file_size) != ERR::Okay) {
       this->ctx.pop_import();
-      // Empty file - return an empty block
-      return ParserResult<std::unique_ptr<BlockStmt>>::success(make_block(ImportToken.span(), {}));
+      return this->fail<std::unique_ptr<BlockStmt>>(ParserErrorCode::UnexpectedToken, ImportToken,
+         "Cannot inspect imported file: " + Path);
    }
 
    std::string source;
    source.resize(size_t(file_size));
    int bytes_read = 0;
-   ERR err = file->read(std::span<int8_t>((int8_t *)source.data(), size_t(file_size)), &bytes_read);
+   ERR err = file_size ? file->read(std::span<int8_t>((int8_t *)source.data(), size_t(file_size)), &bytes_read)
+      : ERR::Okay;
 
-   if (err != ERR::Okay or bytes_read <= 0) {
+   if (err != ERR::Okay or bytes_read < 0) {
       this->ctx.pop_import();
       return this->fail<std::unique_ptr<BlockStmt>>(ParserErrorCode::UnexpectedToken, ImportToken, "Cannot read imported file: " + Path);
    }
@@ -2033,12 +2035,20 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
 
    uint8_t new_file_index = existing_index.has_value() ? existing_index.value()
       : register_file_source(L, Path, filename, 1, source_lines, parent_index, import_line);
+   const uint8_t source_descriptor = this->record_import_source(
+      Path, filename, source_lines, this->ctx.lex().current_source_descriptor, import_line, new_file_index);
+
+   if (file_size IS 0) {
+      this->ctx.pop_import();
+      return ParserResult<std::unique_ptr<BlockStmt>>::success(make_block(ImportToken.span(), {}));
+   }
 
    // RAII guard handles cleanup on normal path; lua_load handles SEH error path
    ImportLexerGuard import_guard(L, source, std::string("@") + Path);
    LexState *import_lex = import_guard.get();
 
    import_lex->current_file_index = new_file_index; // Set the file index for this imported file
+   import_lex->current_source_descriptor = source_descriptor;
    import_lex->diagnose_mode = this->ctx.lex().diagnose_mode;  // Propagate diagnose mode from parent
 
    // Set chunk_name for error reporting (normally done in lj_parse for the main file)
@@ -2107,6 +2117,33 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
    this->adopt_registered_structs(import_builder);
 
    return result;
+}
+
+uint8_t AstBuilder::record_import_source(const std::string &Path, const std::string &Filename, BCLine SourceLines,
+   uint8_t Parent, BCLine ImportLine, uint8_t RuntimeIndex)
+{
+   AstBuilder *root = this->root_builder();
+   auto &sources = root->ctx.lex().compilation_sources;
+   if (sources.size() >= FILESOURCE_MAX_COUNT) return FILESOURCE_OVERFLOW_INDEX;
+   sources.push_back(CompilationSourceRecord{
+      .role = CompilationSourceRole::Import,
+      .canonical_path = Path,
+      .display_filename = Filename,
+      .first_line = 1,
+      .total_lines = SourceLines,
+      .import_line = ImportLine,
+      .runtime_index = RuntimeIndex,
+      .parent = Parent
+   });
+   return uint8_t(sources.size() - 1);
+}
+
+void AstBuilder::record_source_namespace(std::string_view Namespace)
+{
+   AstBuilder *root = this->root_builder();
+   auto &sources = root->ctx.lex().compilation_sources;
+   const uint8_t descriptor = this->ctx.lex().current_source_descriptor;
+   if (descriptor < sources.size()) sources[descriptor].declared_namespace.assign(Namespace);
 }
 
 //********************************************************************************************************************

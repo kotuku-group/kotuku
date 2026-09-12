@@ -1181,6 +1181,11 @@ GCproto *lj_bcread_proto(LexState *State)
    numparams = bcread_byte(State);
    framesize = bcread_byte(State);
    sizeuv    = bcread_byte(State);
+   const uint8_t source_wire = bcread_byte(State);
+   if ((source_wire >= State->compilation_sources.size()) and
+       source_wire != FILESOURCE_SYNTHETIC_INDEX and source_wire != FILESOURCE_OVERFLOW_INDEX) {
+      bcread_error(State, ErrMsg::BCBAD);
+   }
    sizekgc   = bcread_uleb128(State);
    sizekn    = bcread_uleb128(State);
    sizebc    = bcread_checked_add(State, bcread_uleb128(State), 1);
@@ -1193,6 +1198,10 @@ GCproto *lj_bcread_proto(LexState *State)
          uint32_t raw_numline = bcread_uleb128(State);
          if (raw_firstline > uint32_t(BCLine::LINE_MASK) or
              raw_numline > uint32_t(BCLine::LINE_MASK) - raw_firstline) bcread_error(State, ErrMsg::BCBAD);
+         if (source_wire < State->compilation_sources.size() and raw_firstline >
+             uint32_t(State->compilation_sources[source_wire].total_lines.lineNumber())) {
+            bcread_error(State, ErrMsg::BCBAD);
+         }
          firstline = BCLine(int32_t(raw_firstline));
          numline = BCLine(int32_t(raw_numline));
       }
@@ -1257,6 +1266,7 @@ GCproto *lj_bcread_proto(LexState *State)
    pt->sizeuv = (uint8_t)sizeuv;
    pt->flags = (uint8_t)flags;
    pt->trace = 0;
+   pt->file_source_idx = source_wire;
    setgcref(pt->chunk_name, obj2gco(State->chunk_name));
    bcread_install_signature(pt, (char *)pt + ofssig, signature);
 
@@ -1293,6 +1303,14 @@ GCproto *lj_bcread_proto(LexState *State)
       if (sizedbg < sizeli + 1) bcread_error(State, ErrMsg::BCBAD);
       setmref(pt->lineinfo, (char*)pt + ofsdbg);
       bcread_dbg(State, pt, sizedbg);
+      BCLine *lines = (BCLine *)proto_lineinfo(pt);
+      for (MSize i = 0; i + 1 < sizebc; ++i) {
+         const uint8_t wire = lines[i].fileIndex();
+         if ((wire >= State->compilation_sources.size()) and wire != FILESOURCE_SYNTHETIC_INDEX and
+             wire != FILESOURCE_OVERFLOW_INDEX) bcread_error(State, ErrMsg::BCBAD);
+         if (wire < State->compilation_sources.size() and lines[i].lineNumber() >
+             State->compilation_sources[wire].total_lines.lineNumber()) bcread_error(State, ErrMsg::BCBAD);
+      }
    }
    else {
       setmref(pt->lineinfo, nullptr);
@@ -1329,6 +1347,85 @@ static int bcread_header(LexState *State)
       bcread_need(State, len);
       State->chunk_name = lj_str_new(State->L, (const char*)bcread_mem(State, len), len);
    }
+   const MSize source_block_size = bcread_uleb128(State);
+   if (source_block_size < 3 or source_block_size > BCREAD_MAX_VALIDATION_WORK) return 0;
+   bcread_need(State, source_block_size);
+   const uint8_t *cursor = (const uint8_t *)State->p;
+   const uint8_t *end = cursor + source_block_size;
+   auto byte = [&]() -> uint8_t {
+      if (cursor >= end) bcread_error(State, ErrMsg::BCBAD);
+      return *cursor++;
+   };
+   auto uleb = [&]() -> uint32_t {
+      uint32_t value = 0;
+      for (unsigned shift = 0; shift <= 28; shift += 7) {
+         uint32_t current = byte();
+         if (shift IS 28 and current > 0x0f) bcread_error(State, ErrMsg::BCBAD);
+         value |= (current & 0x7f) << shift;
+         if (not (current & 0x80)) return value;
+      }
+      bcread_error(State, ErrMsg::BCBAD);
+      return 0;
+   };
+   auto string = [&]() -> std::string {
+      uint32_t length = uleb();
+      if (length > uint32_t(end - cursor)) bcread_error(State, ErrMsg::BCBAD);
+      std::string result((const char *)cursor, length);
+      cursor += length;
+      return result;
+   };
+   const uint8_t source_version = byte();
+   const uint8_t source_count = byte();
+   const uint8_t source_root = byte();
+   if (source_version != COMPILATION_SOURCE_VERSION or source_count IS 0 or
+       source_count > FILESOURCE_MAX_COUNT or source_root != 0) return 0;
+   State->compilation_sources.clear();
+   State->compilation_sources.reserve(source_count);
+   bcread_account(State, source_count);
+   bcread_reserve_allocation(State, source_block_size + source_count * sizeof(CompilationSourceRecord));
+   for (uint32_t i = 0; i < source_count; ++i) {
+      const auto role = CompilationSourceRole(byte());
+      const uint8_t parent = byte();
+      if (byte() or byte()) bcread_error(State, ErrMsg::BCBAD);
+      const uint32_t first_line = uleb();
+      const uint32_t total_lines = uleb();
+      const uint32_t import_line = uleb();
+      std::string path = string();
+      std::string filename = string();
+      std::string declared_namespace = string();
+      if (role != CompilationSourceRole::Main and role != CompilationSourceRole::Import and
+          role != CompilationSourceRole::Synthetic) bcread_error(State, ErrMsg::BCBAD);
+      if (first_line IS 0 or total_lines IS 0 or first_line > uint32_t(BCLine::LINE_MASK) or
+          total_lines > uint32_t(BCLine::LINE_MASK) - first_line + 1) bcread_error(State, ErrMsg::BCBAD);
+      if (i IS source_root) {
+         if ((role != CompilationSourceRole::Main and role != CompilationSourceRole::Synthetic) or
+             parent != FILESOURCE_OVERFLOW_INDEX or import_line != 0) bcread_error(State, ErrMsg::BCBAD);
+      }
+      else if (role != CompilationSourceRole::Import or parent >= i or import_line IS 0 or
+               import_line > uint32_t(State->compilation_sources[parent].total_lines.lineNumber())) {
+         bcread_error(State, ErrMsg::BCBAD);
+      }
+      if ((role IS CompilationSourceRole::Synthetic) != path.empty() or filename.empty() or
+          path.find('\0') != std::string::npos or filename.find('\0') != std::string::npos or
+          declared_namespace.find('\0') != std::string::npos) {
+         bcread_error(State, ErrMsg::BCBAD);
+      }
+      for (const auto &existing : State->compilation_sources) {
+         if (not path.empty() and existing.canonical_path IS path) bcread_error(State, ErrMsg::BCBAD);
+      }
+      State->compilation_sources.push_back(CompilationSourceRecord{
+         .role = role,
+         .canonical_path = std::move(path),
+         .display_filename = std::move(filename),
+         .declared_namespace = std::move(declared_namespace),
+         .first_line = BCLine(int32_t(first_line)),
+         .total_lines = BCLine(int32_t(total_lines)),
+         .import_line = BCLine(int32_t(import_line)),
+         .parent = parent
+      });
+   }
+   if (cursor != end) bcread_error(State, ErrMsg::BCBAD);
+   State->p = (const char *)end;
    return 1;  //  Ok.
 }
 
@@ -1345,6 +1442,7 @@ GCproto *lj_bcread(LexState *State)
    State->bytecode_allocation = 0;
    State->bytecode_validation_work = 0;
    State->bytecode_prototype_depths.clear();
+   State->compilation_sources.clear();
 
    // Check for a valid bytecode dump header.
    if (!bcread_header(State)) bcread_error(State, ErrMsg::BCFMT);
@@ -1380,7 +1478,10 @@ GCproto *lj_bcread(LexState *State)
        State->bytecode_prototype_depths.size() != 1)
       bcread_error(State, ErrMsg::BCBAD);
 
-   // Pop off last prototype.
+   // Publish source records only after all bytecode validation has succeeded.  Keep the root on the stack while
+   // installing interned strings and state records can allocate.
+   GCproto *root = protoV(L->top - 1);
+   attach_loaded_compilation_sources(L, root, State->compilation_sources);
    L->top--;
-   return protoV(L->top);
+   return root;
 }

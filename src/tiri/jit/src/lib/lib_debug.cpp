@@ -456,7 +456,7 @@ LJLIB_CF(debug_getRegistry)
 // debug.fileSources(): Returns a table of all registered file sources.
 //
 // Each entry in the returned array contains:
-//   index       - File index (0 = main file, 255 = overflow)
+//   index       - Runtime file index (0-253)
 //   path        - Full resolved path
 //   filename    - Short name for error display
 //   namespace   - Declared namespace (empty string if none)
@@ -464,7 +464,7 @@ LJLIB_CF(debug_getRegistry)
 //   sourceLines - Total lines in source file
 //   parentIndex - Which file imported this one (0 for main)
 //   importLine  - Line in parent where import occurred (0 for main)
-//   isOverflow  - True if this is the overflow fallback (index 255)
+//   isOverflow  - Reserved for compatibility; real records are never overflow sentinels
 //
 // Example:
 //   local sources = debug.fileSources()

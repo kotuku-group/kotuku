@@ -141,6 +141,8 @@ public:
    BCLine     linenumber;   // Input line counter.
    BCLine     lastline;     // Line of last token.
    uint8_t    current_file_index = 0;  // File index for FileSource tracking (0 = main file)
+   uint8_t    current_source_descriptor = 0; // Dense identity in this compilation unit.
+   std::vector<CompilationSourceRecord> compilation_sources;
 
    GCstr *    chunk_name;     // Current chunk name (interned string).
    const char *chunk_arg;     // Chunk name argument.

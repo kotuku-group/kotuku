@@ -165,17 +165,16 @@ end
    local script <close> = obj.new('tiri', { path=source })
    for i in {0 to 3} do
       local output <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
-      assert(script.acSaveToObject(output) is ERR_NoSupport,
-         'Every import-containing save must reach the unsupported metadata check')
-      assert(output.size is 0, 'A rejected save must not write output')
+      check script.acSaveToObject(output)
+      assert(output.size > #glWrapper, 'Every import-containing save must preserve the complete unit')
    end
    check script.acQuery()
    activate(script)
 
    for i in {0 to 2} do
       local output <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
-      assert(script.acSaveToObject(output) is ERR_NoSupport,
-         'Saving after Query/Activate must compile the complete import again')
+      check script.acSaveToObject(output)
+      assert(output.size > #glWrapper, 'Saving after Query/Activate must compile the complete import again')
       activate(script)
    end
 
@@ -184,8 +183,8 @@ end
    })
    for i in {0 to 2} do
       local output <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
-      assert(synthetic.acSaveToObject(output) is ERR_NoSupport,
-         'A synthetic chunk must not mistake its sole imported source for a serialisable main source')
+      check synthetic.acSaveToObject(output)
+      assert(output.size > #glWrapper, 'A synthetic chunk must preserve its anonymous origin and imported source')
    end
    check synthetic.acQuery()
    activate(synthetic)
@@ -227,6 +226,71 @@ end
       local result, observed = child(args)
       assert(result is 0 and observed is expected, observed)
    end
+end
+
+@Test function ImportedCompilationUnitWithoutSources()
+   local main = path('_b04_main.tiri')
+   local left = glRoot .. 'b04_left.tiri'
+   local right = glRoot .. 'b04_right.tiri'
+   local common = glRoot .. 'b04_common.tiri'
+   local empty = glRoot .. 'b04_empty.tiri'
+   local binary = path('_b04.tbc')
+   local second_binary = path('_b04_second.tbc')
+   local producer = path('_b04_producer.tiri')
+   local consumer = path('_b04_consumer.tiri')
+   write_file(common, "glB04Events ..= 'C'\nglobal function b04_value():num return 42 end")
+   write_file(left, [[import './b04_common'
+glB04Events ..= 'L'
+global function b04_failure()
+   raise 'B04_IMPORTED_FAILURE'
+end]])
+   write_file(right, "import './b04_common'\nglB04Events ..= 'R'")
+   write_file(empty, '')
+   write_file(main, [[global glB04Events = 'M'
+import './b04_left'
+import './b04_right'
+import './b04_empty'
+glB04Events ..= 'E'
+assert(glB04Events is 'MCLRE' and b04_value() is 42, glB04Events)
+try
+   b04_failure()
+except e
+   assert(e.source.endsWith('b04_left.tiri'), e.source)
+   assert(e.line is 4, tostring(e.line))
+end
+print('B04_IMPORT_ACCEPTANCE_OK:' .. glB04Events)]])
+   write_file(producer, [[
+      local script <close> = obj.new('tiri', { path=arg('source') })
+      local output <close> = obj.new('file', { path=arg('binary'), flags=FL_NEW|FL_WRITE })
+      check script.acSaveToObject(output)
+      check script.acQuery()
+      local repeated <close> = obj.new('file', { path=arg('binary2'), flags=FL_NEW|FL_WRITE })
+      check script.acSaveToObject(repeated)
+   ]])
+   write_file(consumer, [[
+      local script <close> = obj.new('tiri', { path=arg('binary') })
+      check script.acQuery()
+      local output <close> = obj.new('file', { path=arg('resaved'), flags=FL_NEW|FL_WRITE })
+      check script.acSaveToObject(output)
+      check script.acActivate()
+      assert(script.error is ERR_Okay, script.errorMessage)
+   ]])
+   local code, output = child(array<str> { producer, 'source=' .. main, 'binary=' .. binary,
+      'binary2=' .. second_binary, '--log-warning' })
+   assert(code is 0, output)
+   check mSys.DeleteFile(main)
+   check mSys.DeleteFile(left)
+   check mSys.DeleteFile(right)
+   check mSys.DeleteFile(common)
+   check mSys.DeleteFile(empty)
+   check mSys.DeleteFile(producer)
+   local resaved = path('_b04_resaved.tbc')
+   code, output = child(array<str> { consumer, 'binary=' .. second_binary, 'resaved=' .. resaved,
+      '--log-warning' })
+   assert(code is 0 and output.find('B04_IMPORT_ACCEPTANCE_OK:MCLRE') != nil, output)
+   check mSys.DeleteFile(consumer)
+   code, output = child(array<str> { resaved, '--log-warning' })
+   assert(code is 0 and output.find('B04_IMPORT_ACCEPTANCE_OK:MCLRE') != nil, output)
 end
 
 @Test function FreshProcessesCloseMetadataWithoutSource()
@@ -383,6 +447,37 @@ end
    date_file(cache, 1)
    local direct <close> = obj.new('tiri', { path=cache, cacheFile=alternative })
    assert(direct.acQuery() is ERR_InvalidData)
+end
+
+@Test function ImportedAutomaticCacheEmbargo()
+   local source = path('_b04_cache_main.tiri')
+   local helper = glRoot .. 'b04_cache_helper.tiri'
+   local cache = path('_b04_cache.tbc')
+   write_file(helper, 'global glB04CacheValue = 42')
+   write_file(source, "import './b04_cache_helper'\nassert(glB04CacheValue is 42)")
+   date_file(source, 3)
+   do
+      local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      check script.acQuery()
+      assert(not exists(cache), 'Imported source must not create an automatic cache before B07c')
+      activate(script)
+   end
+   do
+      local producer <close> = obj.new('tiri', { path=source })
+      save(producer, cache)
+   end
+   date_file(cache, 3)
+   do
+      local fallback <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      activate(fallback)
+      assert(exists(cache), 'The embargo must not remove an explicitly produced bytecode fixture')
+   end
+   check mSys.DeleteFile(source)
+   local missing <close> = obj.new('tiri', { path=source, cacheFile=cache })
+   assert(missing.acQuery() is ERR_InvalidData,
+      'An imported automatic cache must fail when its source fallback is unavailable')
+   local direct <close> = obj.new('tiri', { path=cache })
+   activate(direct)
 end
 
 @Test function FailedCacheIsRemovedAndSourceStillRuns()

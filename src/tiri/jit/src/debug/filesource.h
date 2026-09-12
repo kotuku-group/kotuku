@@ -9,8 +9,7 @@
 #include "lj_obj.h"
 
 // FileSource tracks source file metadata for accurate error reporting when code is imported.
-// Each file gets assigned a unique index (0-254), with index 0 reserved for the main file.
-// Index 255 is reserved as an overflow fallback when the file limit is exceeded.
+// Real files use indices 0-253.  Anonymous source and overflow have distinct sentinel identities.
 
 struct FileSource {
    std::string path;               // Full resolved path
@@ -23,9 +22,22 @@ struct FileSource {
    BCLine import_line;             // Line in parent where import occurred (0 for main)
 };
 
-// Maximum file index (255 is reserved for overflow)
-constexpr uint8_t FILESOURCE_MAX_INDEX = 254;
+constexpr uint8_t FILESOURCE_MAX_COUNT = 254;
+constexpr uint8_t FILESOURCE_MAX_INDEX = 253;
+constexpr uint8_t FILESOURCE_SYNTHETIC_INDEX = 254;
 constexpr uint8_t FILESOURCE_OVERFLOW_INDEX = 255;
+
+struct CompilationSourceRecord {
+   CompilationSourceRole role = CompilationSourceRole::Main;
+   std::string canonical_path;
+   std::string display_filename;
+   std::string declared_namespace;
+   BCLine first_line = 1;
+   BCLine total_lines = 1;
+   BCLine import_line = 0;
+   uint8_t runtime_index = FILESOURCE_SYNTHETIC_INDEX;
+   uint8_t parent = FILESOURCE_OVERFLOW_INDEX;
+};
 
 // Register a new file source in the lua_State.
 // Returns the file index, or FILESOURCE_OVERFLOW_INDEX (255) if the limit is exceeded.
@@ -37,6 +49,7 @@ uint8_t register_file_source(lua_State *L, std::string &Path, const std::string 
 // Find a file source by path hash.
 // Returns the file index if found, or std::nullopt if not found.
 std::optional<uint8_t> find_file_source(lua_State *L, uint32_t PathHash);
+std::optional<uint8_t> find_file_source(lua_State *, const std::string &);
 
 // Get a file source by index.
 // Returns nullptr if the index is out of range.
@@ -47,6 +60,14 @@ const FileSource* get_file_source(lua_State *L, uint8_t Index);
 {
    return Index IS FILESOURCE_OVERFLOW_INDEX;
 }
+
+[[nodiscard]] inline bool is_file_source_synthetic(uint8_t Index) noexcept
+{
+   return Index IS FILESOURCE_SYNTHETIC_INDEX;
+}
+
+void attach_compilation_sources(lua_State *, GCproto *, const std::vector<CompilationSourceRecord> &);
+void attach_loaded_compilation_sources(lua_State *, GCproto *, const std::vector<CompilationSourceRecord> &);
 
 // Register a file being parsed as a "main" file source (from lj_parse or loadFile).
 // Returns the file index (may be > 0 if this file was already registered or other files exist).

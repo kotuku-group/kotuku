@@ -284,6 +284,11 @@ extern GCproto * lj_parse(LexState *State)
    // should fall back to their chunk name in diagnostics rather than being added to the persistent file source map.
    // Note: We don't clear existing file_sources to preserve import deduplication across loadFile() calls.
 
+   BCLine source_lines = 1;
+   for (char c : State->source) {
+      if (c IS '\n') source_lines++;
+   }
+
    if (State->chunk_arg and State->chunk_arg[0] IS '@') {
       std::string path = State->chunk_arg;
       path = path.substr(1);
@@ -292,16 +297,31 @@ extern GCproto * lj_parse(LexState *State)
       auto pos = path.find_last_of("/\\");
       std::string filename = (pos != std::string::npos) ? path.substr(pos + 1) : path;
 
-      // Estimate source lines from the source view (count newlines + 1)
-      BCLine source_lines = 1;
-      for (char c : State->source) {
-         if (c IS '\n') source_lines++;
-      }
       State->current_file_index = register_main_file_source(L, path, filename, source_lines);
+      State->compilation_sources.push_back(CompilationSourceRecord{
+         .role = CompilationSourceRole::Main,
+         .canonical_path = path,
+         .display_filename = filename,
+         .first_line = 1,
+         .total_lines = source_lines,
+         .runtime_index = State->current_file_index
+      });
    }
-   else State->current_file_index = FILESOURCE_OVERFLOW_INDEX;
+   else {
+      State->current_file_index = FILESOURCE_SYNTHETIC_INDEX;
+      std::string display = State->chunk_arg ? State->chunk_arg : "=(anonymous)";
+      State->compilation_sources.push_back(CompilationSourceRecord{
+         .role = CompilationSourceRole::Synthetic,
+         .display_filename = std::move(display),
+         .first_line = 1,
+         .total_lines = source_lines,
+         .runtime_index = FILESOURCE_SYNTHETIC_INDEX
+      });
+   }
+   State->current_source_descriptor = 0;
 
-   log.branch("Chunk: %.*s, Registered: %c", State->chunk_name->len, strdata(State->chunk_name), State->current_file_index IS FILESOURCE_OVERFLOW_INDEX ? 'N' : 'Y');
+   log.branch("Chunk: %.*s, Registered: %c", State->chunk_name->len, strdata(State->chunk_name),
+      State->current_file_index < FILESOURCE_SYNTHETIC_INDEX ? 'Y' : 'N');
 
    setstrV(L, L->top, State->chunk_name);  // Anchor chunk_name string.
    incr_top(L);
@@ -339,6 +359,10 @@ extern GCproto * lj_parse(LexState *State)
 
    if (State->tok != TK_eof) State->err_token(TK_eof);
    pt = State->fs_finish(State->effective_line());
+   setprotoV(L, L->top, pt);
+   incr_top(L);
+   attach_compilation_sources(L, pt, State->compilation_sources);
+   L->top--;
    L->top--;  // Drop chunk_name.
 
    // Transfer tips to lua_State for debug.validate() access

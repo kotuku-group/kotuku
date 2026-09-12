@@ -860,6 +860,45 @@ struct CheckallFrameStack {
    int depth = 0;
 };
 
+enum class CompilationSourceRole : uint8_t {
+   Main = 0,
+   Import = 1,
+   Synthetic = 2
+};
+
+inline constexpr uint8_t COMPILATION_SOURCE_VERSION = 1;
+
+struct CompilationSourceEntry {
+   GCRef canonical_path;
+   GCRef display_filename;
+   GCRef declared_namespace;
+   BCLine first_line;
+   BCLine total_lines;
+   BCLine import_line;
+   uint8_t runtime_index;
+   uint8_t parent;
+   CompilationSourceRole role;
+   uint8_t reserved;
+};
+
+struct CompilationSourceMap {
+   uint8_t version;
+   uint8_t count;
+   uint8_t root;
+   uint8_t reserved;
+};
+
+[[nodiscard]] inline CompilationSourceEntry * compilation_source_entries(CompilationSourceMap *Map) noexcept
+{
+   return Map ? (CompilationSourceEntry *)(Map + 1) : nullptr;
+}
+
+[[nodiscard]] inline const CompilationSourceEntry * compilation_source_entries(
+   const CompilationSourceMap *Map) noexcept
+{
+   return Map ? (const CompilationSourceEntry *)(Map + 1) : nullptr;
+}
+
 typedef struct GCproto {
    GCHeader;
    uint8_t  numparams; //  Number of parameters.
@@ -880,6 +919,8 @@ typedef struct GCproto {
    BCLine firstline;  //  First line of the function definition.
    BCLine numline;    //  Number of lines for the function definition.
    uint8_t file_source_idx;  //  Index into lua_State::file_sources (fallback for edge cases).
+   GCRef source_root;        // Root prototype which owns the compilation-unit source descriptor.
+   MRef compilation_sources; // CompilationSourceMap owned by the root prototype only.
    MRef   lineinfo;   //  BCLine[sizebc-1] array - file index in upper 8 bits, line in lower 24.
    MRef   uvinfo;     //  Upvalue names.
    MRef   varinfo;    //  Names and compressed extents of local variables.
@@ -999,6 +1040,8 @@ inline void proto_metadata_init(GCproto *Proto) noexcept
 {
    setmref(Proto->contract_cache, nullptr);
    Proto->file_source_idx = 0;
+   setgcrefnull(Proto->source_root);
+   setmref(Proto->compilation_sources, nullptr);
    setmref(Proto->lineinfo, nullptr);
    setmref(Proto->uvinfo, nullptr);
    setmref(Proto->varinfo, nullptr);
@@ -1016,6 +1059,18 @@ inline void proto_metadata_init(GCproto *Proto) noexcept
    Proto->resolved_count = 0;
    Proto->resolved_dependency_states = nullptr;
    Proto->resolved_dependency_count = 0;
+}
+
+[[nodiscard]] inline CompilationSourceMap * proto_compilation_sources(GCproto *Proto) noexcept
+{
+   if (not Proto) return nullptr;
+   GCproto *root = gcref(Proto->source_root) ? (GCproto *)gcref(Proto->source_root) : Proto;
+   return root->compilation_sources.get<CompilationSourceMap>();
+}
+
+[[nodiscard]] inline const CompilationSourceMap * proto_compilation_sources(const GCproto *Proto) noexcept
+{
+   return proto_compilation_sources((GCproto *)Proto);
 }
 
 [[nodiscard]] inline const ProtoDependencyTable * proto_dependencies(const GCproto *Proto) noexcept

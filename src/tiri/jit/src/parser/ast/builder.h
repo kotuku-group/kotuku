@@ -96,6 +96,15 @@ private:
       return false;
    }
 
+   [[nodiscard]] AstBuilder * root_builder() {
+      AstBuilder *root = this;
+      while (root->parent_builder) root = root->parent_builder;
+      return root;
+   }
+
+   uint8_t record_import_source(const std::string &, const std::string &, BCLine, uint8_t, BCLine, uint8_t);
+   void record_source_namespace(std::string_view);
+
    class FunctionNameScope {
    public:
       FunctionNameScope(AstBuilder &Builder, GCstr *FunctionName);
