@@ -26,6 +26,8 @@ typedef struct BCWriteCtx {
    uint8_t source_wire[256];
    uint8_t source_mapped[256];
    const CompilationSourceMap *sources;
+   const uint8_t *struct_manifest;
+   uint32_t struct_manifest_size;
 #ifdef LUA_USE_ASSERT
    global_State* g;
 #endif
@@ -108,6 +110,17 @@ static void bcwrite_sources(BCWriteCtx *Ctx)
       p = bcwrite_source_string(p, gco_to_string(gcref(entries[i].declared_namespace)));
    }
    Ctx->sb.w = p;
+   Ctx->status = Ctx->wfunc(sbufL(&Ctx->sb), Ctx->sb.b, MSize(p - Ctx->sb.b), Ctx->wdata);
+   lj_buf_reset(&Ctx->sb);
+}
+
+static void bcwrite_structs(BCWriteCtx *Ctx)
+{
+   if (Ctx->status != 0) return;
+   lj_buf_reset(&Ctx->sb);
+   char *p = lj_buf_need(&Ctx->sb, 5 + Ctx->struct_manifest_size);
+   p = lj_strfmt_wuleb128(p, Ctx->struct_manifest_size);
+   p = lj_buf_wmem(p, Ctx->struct_manifest, Ctx->struct_manifest_size);
    Ctx->status = Ctx->wfunc(sbufL(&Ctx->sb), Ctx->sb.b, MSize(p - Ctx->sb.b), Ctx->wdata);
    lj_buf_reset(&Ctx->sb);
 }
@@ -288,6 +301,7 @@ static char * bcwrite_bytecode(BCWriteCtx *ctx, char *p, GCproto *pt)
 {
    MSize nbc = pt->sizebc - 1;  //  Omit the [JI]FUNC* header.
    char *q = p;  // Buffer position may not be 64-bit aligned
+   char *bytecode = q;
    p = lj_buf_wmem(p, proto_bc(pt) + 1, nbc * (MSize)sizeof(BCIns));
 
    // Unpatch modified bytecode containing ILOOP/JLOOP etc.
@@ -309,6 +323,19 @@ static char * bcwrite_bytecode(BCWriteCtx *ctx, char *p, GCproto *pt)
             ins = traceref(J, rd)->startins;  // Copy full 64-bit instruction
             memcpy(q, &ins, sizeof(BCIns));
          }
+      }
+   }
+
+   // Struct field indices are layout-derived runtime hints.  Keep only the canonical unresolved sentinel on wire;
+   // the consumer resolves and caches the field against its reconstructed declaration on first access.  Do this after
+   // restoring trace-patched instructions because a trace's original instruction still carries the producer's hint.
+   for (MSize i = 0; i < nbc; ++i) {
+      BCIns instruction;
+      memcpy(&instruction, bytecode + i * sizeof(BCIns), sizeof(instruction));
+      BCOp op = bc_op(instruction);
+      if (op IS BC_STGETF or op IS BC_STSETF) {
+         setbc_p32(&instruction, 0xffffffffu);
+         memcpy(bytecode + i * sizeof(BCIns), &instruction, sizeof(instruction));
       }
    }
 
@@ -557,6 +584,7 @@ static void bcwrite_header(BCWriteCtx* ctx)
    ctx->status = ctx->wfunc(sbufL(&ctx->sb), ctx->sb.b,
       (MSize)(p - ctx->sb.b), ctx->wdata);
    if (ctx->status IS 0) bcwrite_sources(ctx);
+   if (ctx->status IS 0) bcwrite_structs(ctx);
 }
 
 //********************************************************************************************************************
@@ -599,8 +627,11 @@ int lj_bcwrite(lua_State *L, GCproto *pt, lua_Writer writer, void *data, int str
    memset(ctx.source_wire, 0, sizeof(ctx.source_wire));
    memset(ctx.source_mapped, 0, sizeof(ctx.source_mapped));
    ctx.sources = proto_compilation_sources(pt);
+   ctx.struct_manifest = proto_struct_manifest(pt, &ctx.struct_manifest_size);
    if (not ctx.sources or ctx.sources->version != COMPILATION_SOURCE_VERSION or ctx.sources->count IS 0 or
        ctx.sources->count > FILESOURCE_MAX_COUNT or ctx.sources->root >= ctx.sources->count) return 1;
+   if (not ctx.struct_manifest or ctx.struct_manifest_size < 2 or
+       ctx.struct_manifest[0] != STRUCT_MANIFEST_VERSION) return 1;
    auto entries = compilation_source_entries(ctx.sources);
    for (uint32_t i = 0; i < ctx.sources->count; ++i) {
       GCstr *path = gco_to_string(gcref(entries[i].canonical_path));

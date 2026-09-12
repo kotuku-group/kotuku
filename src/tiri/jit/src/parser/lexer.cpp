@@ -1836,6 +1836,10 @@ LexState::~LexState()
 {
    if (not this->L) return;  // Not properly initialised
 
+   if (not this->loaded_structs_committed) {
+      for (uint32_t key : this->loaded_structs) this->L->struct_declarations.erase(key);
+   }
+
    global_State* g = G(this->L);
    if (this->bc_stack) lj_mem_freevec(g, this->bc_stack, this->size_bc_stack, BCInsLine);
    if (this->vstack) lj_mem_freevec(g, this->vstack, this->size_vstack, VarInfo);

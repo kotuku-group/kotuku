@@ -143,6 +143,12 @@ public:
    uint8_t    current_file_index = 0;  // File index for FileSource tracking (0 = main file)
    uint8_t    current_source_descriptor = 0; // Dense identity in this compilation unit.
    std::vector<CompilationSourceRecord> compilation_sources;
+   std::vector<std::string> compilation_struct_roots;
+   std::vector<std::string> compilation_structs;
+   std::vector<uint32_t> loaded_structs;
+   std::vector<uint8_t> bytecode_struct_manifest;
+   bool dynamic_struct_reference = false;
+   bool loaded_structs_committed = false;
 
    GCstr *    chunk_name;     // Current chunk name (interned string).
    const char *chunk_arg;     // Chunk name argument.

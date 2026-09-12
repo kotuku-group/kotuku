@@ -362,6 +362,16 @@ extern GCproto * lj_parse(LexState *State)
    setprotoV(L, L->top, pt);
    incr_top(L);
    attach_compilation_sources(L, pt, State->compilation_sources);
+   std::vector<uint8_t> struct_manifest;
+   std::string manifest_detail;
+   ERR manifest_error = build_declared_struct_manifest(L, State->compilation_struct_roots,
+      State->compilation_structs, State->dynamic_struct_reference, struct_manifest, &manifest_detail);
+   if (manifest_error IS ERR::Okay) {
+      auto manifest = (uint8_t *)lj_mem_new(L, MSize(struct_manifest.size()));
+      memcpy(manifest, struct_manifest.data(), struct_manifest.size());
+      setmref(pt->struct_manifest, manifest);
+      pt->struct_manifest_size = uint32_t(struct_manifest.size());
+   }
    L->top--;
    L->top--;  // Drop chunk_name.
 

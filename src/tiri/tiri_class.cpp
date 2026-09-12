@@ -787,11 +787,13 @@ executing the program.  Each save compiles the statement afresh, including after
 preserves any pending executable chunk.  Saving during active execution returns `ERR::InvalidState`.
 
 The output contains the Tiri compiled marker, a NUL separator and VM byte code with debug information.  Compatibility
-is initially limited to the same Kōtuku build and platform.  Live objects, globals and execution state are not saved.
-Imported declarations, source identities and diagnostic line mappings are embedded in the output.  Source text is
-not embedded.  Statements containing declared structs currently return `ERR::NoSupport`.  Save compilation is
-isolated from the execution state, so rejected and repeated saves do not change imports, declarations, diagnostics,
-captures or a pending executable chunk.  To-be-closed locals are preserved in saved byte code.
+is limited to the same Kōtuku build and platform.  Live objects, struct instances, globals and execution state are not
+saved.  Required state-local named struct layouts, imported declarations, source identities and diagnostic line
+mappings are embedded in the output; unused struct declarations and source text are not embedded.  Loading publishes
+embedded layouts in the consumer state for its lifetime.  An identical existing declaration is reused, while a
+conflicting declaration rejects the complete load without changing the prior registry.  Save compilation is isolated
+from the execution state, so rejected and repeated saves do not change imports, declarations, diagnostics, captures or
+a pending executable chunk.  To-be-closed locals are preserved in saved byte code.
 
 A failed save can leave partial output.
 
@@ -937,11 +939,6 @@ static ERR save_binary(lua_State *Lua, OBJECTPTR Target)
    if ((not Lua) or (not Target)) return ERR::NullArgs;
 
    if ((not lua_gettop(Lua)) or (not lua_isfunction(Lua, -1)) or lua_iscfunction(Lua, -1)) return ERR::InvalidData;
-
-   if (not Lua->struct_declarations.empty()) {
-      kt::Log().warning("Bytecode files cannot preserve declared structs.");
-      return ERR::NoSupport;
-   }
 
    const int stack_top = lua_gettop(Lua);
    BytecodeWriter writer { Target };

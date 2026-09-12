@@ -238,8 +238,11 @@ end
    local second_binary = path('_b04_second.tbc')
    local producer = path('_b04_producer.tiri')
    local consumer = path('_b04_consumer.tiri')
-   write_file(common, "glB04Events ..= 'C'\nglobal function b04_value():num return 42 end")
+   write_file(common, [[struct B04Leaf Value: int end
+glB04Events ..= 'C'
+global function b04_value():num return 42 end]])
    write_file(left, [[import './b04_common'
+struct B04Middle Leaf: struct<B04Leaf> end
 glB04Events ..= 'L'
 global function b04_failure()
    raise 'B04_IMPORTED_FAILURE'
@@ -250,13 +253,16 @@ end]])
 import './b04_left'
 import './b04_right'
 import './b04_empty'
+struct B04Root Middle: struct<B04Middle> end
+local b04_record = struct<B04Root> { }
+b04_record.Middle.Leaf.Value = 42
 glB04Events ..= 'E'
-assert(glB04Events is 'MCLRE' and b04_value() is 42, glB04Events)
+assert(glB04Events is 'MCLRE' and b04_value() is 42 and b04_record.Middle.Leaf.Value is 42, glB04Events)
 try
    b04_failure()
 except e
    assert(e.source.endsWith('b04_left.tiri'), e.source)
-   assert(e.line is 4, tostring(e.line))
+   assert(e.line is 5, tostring(e.line))
 end
 print('B04_IMPORT_ACCEPTANCE_OK:' .. glB04Events)]])
    write_file(producer, [[
@@ -480,15 +486,17 @@ end
    activate(direct)
 end
 
-@Test function FailedCacheIsRemovedAndSourceStillRuns()
+@Test function StructSourceProducesReusableCache()
    local source = path('.tiri')
    local cache = path('.tbc')
-   -- Struct metadata cannot be saved: the cache is opened, rejected, then removed.
-   write_file(source, 'struct FailedCacheRecord\nValue: int\nend\nassert(true)')
+   write_file(source, 'struct CachedRecord\nValue: int\nend\nassert(struct<CachedRecord> { Value=9 }.Value is 9)')
    local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
    check script.acQuery()
-   assert(not exists(cache), 'Failed cache must not remain on disk')
+   assert(exists(cache), 'A source file with a used declaration should produce a cache')
    activate(script)
+   check mSys.DeleteFile(source)
+   local cached <close> = obj.new('tiri', { path=cache })
+   activate(cached)
 end
 
 @Test function RuntimeDiagnosticSurvivesSaving()
@@ -550,13 +558,65 @@ end
    end
 end
 
-@Test function UnsupportedMetadataLeavesDestinationEmpty()
+@Test function UnusedStructDeclarationDoesNotBlockSaving()
    local script <close> = obj.new('tiri', { statement='struct BytecodeRecord\nValue: int\nend' })
    local output <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
-   assert(script.acSaveToObject(output) is ERR_NoSupport)
-   assert(output.size is 0, 'Unsupported metadata must be rejected before writing')
+   check script.acSaveToObject(output)
+   assert(output.size > 0, 'An unused declaration should produce a valid dump with an empty struct manifest')
    script.statement = 'assert(6 * 7 is 42)'
    save(script, path('.tbc'))
    check script.acQuery()
    activate(script)
+end
+
+@Test function NamedStructsRunWithoutSourceInFreshProcess()
+   local source = path('.tiri')
+   local binary = path('.tbc')
+   local producer = path('.tiri')
+   write_file(source, [[
+struct ProcessLeaf Value: int end
+struct ProcessMiddle Leaf: struct<ProcessLeaf> end
+struct ProcessRoot Middle: struct<ProcessMiddle>, Label: str, Values: int[3],
+   Leaves: array<struct<ProcessLeaf>>, Clock: obj<Time>, Link: ptr<ProcessLeaf> end
+struct ProcessUnused Value: double end
+function accept(Value:struct<ProcessRoot>):struct<ProcessRoot>
+   return Value
+end
+function dynamic(Value):any return Value end
+local value = struct<ProcessRoot> { Label='portable' }
+value.Middle.Leaf.Value = 42
+assert(accept(value).Middle.Leaf.Value is 42 and value.Label is 'portable')
+assert(value.Link is nil and value.Clock is nil)
+local parameter_failed = false
+try
+   accept(dynamic(42))
+except e
+   parameter_failed = e.message.find('ProcessRoot') != nil
+end
+assert(parameter_failed, 'The reconstructed parameter contract must reject another type')
+local function invalid_result():struct<ProcessRoot> return dynamic(42) end
+local result_failed = false
+try
+   invalid_result()
+except e
+   result_failed = e.message.find('ProcessRoot') != nil
+end
+assert(result_failed, 'The reconstructed result contract must reject another type')
+print('BYTECODE_STRUCT_MANIFEST_OK')
+]])
+   write_file(producer, [[
+      local script <close> = obj.new('tiri', { path=arg('source') })
+      local output <close> = obj.new('file', { path=arg('binary'), flags=FL_NEW|FL_WRITE })
+      check script.acSaveToObject(output)
+   ]])
+   local code, output = child(array<str> { producer, 'source=' .. source, 'binary=' .. binary, '--log-warning' })
+   assert(code is 0, output)
+   check mSys.DeleteFile(source)
+   check mSys.DeleteFile(producer)
+   for mode in values({ 'off', '' }) do
+      local args = array<str> { binary, '--log-warning' }
+      if mode != '' then args.push('--jit-options') args.push(mode) end
+      code, output = child(args)
+      assert(code is 0 and output.find('BYTECODE_STRUCT_MANIFEST_OK') != nil, output)
+   end
 end

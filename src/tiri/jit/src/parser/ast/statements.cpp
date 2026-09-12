@@ -570,6 +570,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
             GCstr *class_symbol = class_name.value_ref().identifier();
             std::string_view class_view(strdata(class_symbol), class_symbol->len);
             field.ObjectClassID = CLASSID(kt::strihash(class_view));
+            field.ObjectClassName.assign(class_view);
             type_display = std::format("obj<{}>", class_view);
             auto close = this->ctx.consume(TokenKind::Greater, ParserErrorCode::ExpectedToken);
             if (not close.ok()) return ParserResult<StmtNodePtr>::failure(close.error_ref());

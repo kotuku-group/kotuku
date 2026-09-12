@@ -18,6 +18,7 @@
 #include "lj_strfmt.h"
 #include "lj_meta.h"
 #include "../debug/lj_debug.h"
+#include "../../../defs.h"
 
 #include <limits>
 #include <vector>
@@ -676,7 +677,12 @@ static void bcread_validate_bytecode(LexState *State, GCproto *Prototype)
           op IS BC_JFORL or op IS BC_IITERL or op IS BC_JITERL or op IS BC_ILOOP or op IS BC_JLOOP) {
          bcread_error(State, ErrMsg::BCBAD);
       }
-      if (op != BC_BMETH and bc_p32(instruction) != 0) bcread_error(State, ErrMsg::BCBAD);
+      if (op != BC_BMETH and op != BC_STGETF and op != BC_STSETF and bc_p32(instruction) != 0) {
+         bcread_error(State, ErrMsg::BCBAD);
+      }
+      if ((op IS BC_STGETF or op IS BC_STSETF) and bc_p32(instruction) != 0xffffffffu) {
+         bcread_error(State, ErrMsg::BCBAD);
+      }
 
       validate_mode(bcmode_a(op), bc_a(instruction));
       if (bcmode_hasd(op)) {
@@ -1426,6 +1432,21 @@ static int bcread_header(LexState *State)
    }
    if (cursor != end) bcread_error(State, ErrMsg::BCBAD);
    State->p = (const char *)end;
+
+   const MSize struct_block_size = bcread_uleb128(State);
+   if (struct_block_size < 2 or struct_block_size > BCREAD_MAX_VALIDATION_WORK) return 0;
+   bcread_need(State, struct_block_size);
+   bcread_account(State, struct_block_size);
+   bcread_reserve_allocation(State, struct_block_size);
+   State->bytecode_struct_manifest.assign((const uint8_t *)State->p,
+      (const uint8_t *)State->p + struct_block_size);
+   std::string detail;
+   ERR struct_error = load_declared_struct_manifest(State->L,
+      std::string_view(State->p, struct_block_size), State->loaded_structs, &detail);
+   if (struct_error != ERR::Okay) {
+      bcread_error(State, ErrMsg::BCBAD);
+   }
+   State->p += struct_block_size;
    return 1;  //  Ok.
 }
 
@@ -1443,6 +1464,9 @@ GCproto *lj_bcread(LexState *State)
    State->bytecode_validation_work = 0;
    State->bytecode_prototype_depths.clear();
    State->compilation_sources.clear();
+   State->bytecode_struct_manifest.clear();
+   State->loaded_structs.clear();
+   State->loaded_structs_committed = false;
 
    // Check for a valid bytecode dump header.
    if (!bcread_header(State)) bcread_error(State, ErrMsg::BCFMT);
@@ -1482,6 +1506,11 @@ GCproto *lj_bcread(LexState *State)
    // installing interned strings and state records can allocate.
    GCproto *root = protoV(L->top - 1);
    attach_loaded_compilation_sources(L, root, State->compilation_sources);
+   auto manifest = (uint8_t *)lj_mem_new(L, MSize(State->bytecode_struct_manifest.size()));
+   memcpy(manifest, State->bytecode_struct_manifest.data(), State->bytecode_struct_manifest.size());
+   setmref(root->struct_manifest, manifest);
+   root->struct_manifest_size = uint32_t(State->bytecode_struct_manifest.size());
+   State->loaded_structs_committed = true;
    L->top--;
    return root;
 }

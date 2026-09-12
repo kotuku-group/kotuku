@@ -472,6 +472,11 @@ void remove_struct(std::string_view);
    std::string_view Name);
 [[nodiscard]] ERR register_declared_struct(lua_State *Lua, struct_record &&Record, bool *Inserted,
    const struct_record **Existing = nullptr, std::string *Detail = nullptr);
+[[nodiscard]] ERR build_declared_struct_manifest(lua_State *Lua, const std::vector<std::string> &Roots,
+   const std::vector<std::string> &Owned, bool DynamicReference, std::vector<uint8_t> &Manifest,
+   std::string *Detail = nullptr);
+[[nodiscard]] ERR load_declared_struct_manifest(lua_State *Lua, std::string_view Manifest,
+   std::vector<uint32_t> &Inserted, std::string *Detail = nullptr);
 void construct_trivial_struct_vector(APTR Address);
 void destroy_trivial_struct_vector(APTR Address);
 void assign_trivial_struct_vector(APTR Address, CPTR Source, size_t Elements, size_t Stride);

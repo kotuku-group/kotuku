@@ -48,6 +48,9 @@ void lj_func_freeproto(global_State *g, GCproto *pt)
       const MSize bytes = MSize(sizeof(CompilationSourceMap) + map->count * sizeof(CompilationSourceEntry));
       lj_mem_free(g, map, bytes);
    }
+   if (auto manifest = pt->struct_manifest.get<uint8_t>()) {
+      lj_mem_free(g, manifest, pt->struct_manifest_size);
+   }
 
    // Free try-except metadata if present
    if (pt->try_blocks) lj_mem_free(g, pt->try_blocks, pt->try_block_count * sizeof(TryBlockDesc));

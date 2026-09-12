@@ -921,6 +921,8 @@ typedef struct GCproto {
    uint8_t file_source_idx;  //  Index into lua_State::file_sources (fallback for edge cases).
    GCRef source_root;        // Root prototype which owns the compilation-unit source descriptor.
    MRef compilation_sources; // CompilationSourceMap owned by the root prototype only.
+   MRef struct_manifest; // Portable named-structure semantics owned by the root prototype only.
+   uint32_t struct_manifest_size;
    MRef   lineinfo;   //  BCLine[sizebc-1] array - file index in upper 8 bits, line in lower 24.
    MRef   uvinfo;     //  Upvalue names.
    MRef   varinfo;    //  Names and compressed extents of local variables.
@@ -1042,6 +1044,8 @@ inline void proto_metadata_init(GCproto *Proto) noexcept
    Proto->file_source_idx = 0;
    setgcrefnull(Proto->source_root);
    setmref(Proto->compilation_sources, nullptr);
+   setmref(Proto->struct_manifest, nullptr);
+   Proto->struct_manifest_size = 0;
    setmref(Proto->lineinfo, nullptr);
    setmref(Proto->uvinfo, nullptr);
    setmref(Proto->varinfo, nullptr);
@@ -1059,6 +1063,14 @@ inline void proto_metadata_init(GCproto *Proto) noexcept
    Proto->resolved_count = 0;
    Proto->resolved_dependency_states = nullptr;
    Proto->resolved_dependency_count = 0;
+}
+
+[[nodiscard]] inline const uint8_t * proto_struct_manifest(const GCproto *Proto, uint32_t *Size = nullptr) noexcept
+{
+   if (not Proto) return nullptr;
+   const GCproto *root = gcref(Proto->source_root) ? (const GCproto *)gcref(Proto->source_root) : Proto;
+   if (Size) *Size = root->struct_manifest_size;
+   return root->struct_manifest.get<const uint8_t>();
 }
 
 [[nodiscard]] inline CompilationSourceMap * proto_compilation_sources(GCproto *Proto) noexcept

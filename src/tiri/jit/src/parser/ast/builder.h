@@ -36,6 +36,8 @@ public:
    void rollback_registered_enum_hierarchy();
    void commit_registered_structs();
    void rollback_registered_structs();
+   void track_struct_reference(struct_record *Definition);
+   void track_dynamic_struct_reference();
 
    [[nodiscard]] bool at_top_level() const { return function_depth IS 0 and block_depth IS 0; }
 
