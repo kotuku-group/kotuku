@@ -17,7 +17,9 @@
 #include "lj_state.h"
 #include "lj_strfmt.h"
 #include "lj_meta.h"
+#include "../debug/lj_debug.h"
 
+#include <limits>
 #include <vector>
 
 // Reuse some lexer fields for our own purposes.
@@ -26,6 +28,50 @@
 #define bcread_swap(State)     ((bcread_flags(State) & BCDUMP_F_BE) != LJ_BE*BCDUMP_F_BE)
 #define bcread_oldtop(L, ls)   restorestack(L, State->lastline)
 #define bcread_savetop(L, ls, top) State->lastline = (BCLine)savestack(L, (top))
+
+// Reader limits are intentionally lower than the allocator's architectural limits. A bytecode file is a transport
+// format, not a way to request multi-gigabyte single objects or unbounded validation work.
+static constexpr MSize BCREAD_MAX_PROTO_SIZE = 64u * 1024u * 1024u;
+static constexpr uint64_t BCREAD_MAX_TOTAL_ALLOCATION = 256u * 1024u * 1024u;
+static constexpr uint64_t BCREAD_MAX_VALIDATION_WORK = 16u * 1024u * 1024u;
+static constexpr uint32_t BCREAD_MAX_PROTOTYPES = 65535;
+static constexpr uint16_t BCREAD_MAX_DEPTH = LJ_MAX_XLEVEL;
+
+static LJ_NOINLINE void bcread_error(LexState *State, ErrMsg em);
+
+static MSize bcread_checked_add(LexState *State, MSize Left, MSize Right)
+{
+   if (Right > (std::numeric_limits<MSize>::max)() - Left) bcread_error(State, ErrMsg::BCBAD);
+   return Left + Right;
+}
+
+static MSize bcread_checked_multiply(LexState *State, MSize Left, MSize Right)
+{
+   if (Left and Right > (std::numeric_limits<MSize>::max)() / Left) bcread_error(State, ErrMsg::BCBAD);
+   return Left * Right;
+}
+
+static MSize bcread_checked_align(LexState *State, MSize Value, MSize Alignment)
+{
+   MSize mask = Alignment - 1;
+   return bcread_checked_add(State, Value, mask) & ~mask;
+}
+
+static void bcread_account(LexState *State, uint64_t Amount)
+{
+   if (Amount > BCREAD_MAX_VALIDATION_WORK - State->bytecode_validation_work) {
+      bcread_error(State, ErrMsg::BCBAD);
+   }
+   State->bytecode_validation_work += Amount;
+}
+
+static void bcread_reserve_allocation(LexState *State, uint64_t Amount)
+{
+   if (Amount > BCREAD_MAX_TOTAL_ALLOCATION - State->bytecode_allocation) {
+      bcread_error(State, ErrMsg::BCBAD);
+   }
+   State->bytecode_allocation += Amount;
+}
 
 // Input buffer handling
 
@@ -182,7 +228,7 @@ static uint32_t bcread_uleb128_33(LexState *State)
 
 static void bcread_dbg(LexState *State, GCproto *pt, MSize sizedbg)
 {
-   void* lineinfo = (void*)proto_lineinfo(pt);
+   uint8_t* lineinfo = (uint8_t*)proto_lineinfo(pt);
    bcread_block(State, lineinfo, sizedbg);
    // Swap BCLine values if the endianness differs (always 32-bit)
    if (bcread_swap(State)) {
@@ -190,17 +236,55 @@ static void bcread_dbg(LexState *State, GCproto *pt, MSize sizedbg)
       BCLine* p = (BCLine*)lineinfo;
       for (i = 0; i < n; i++) p[i] = BCLine(lj_bswap(p[i].raw()));
    }
-}
 
-//********************************************************************************************************************
-// Find pointer to varinfo.
+   MSize line_size = bcread_checked_multiply(State, pt->sizebc - 1, MSize(sizeof(BCLine)));
+   if (line_size > sizedbg) bcread_error(State, ErrMsg::BCBAD);
+   const uint8_t *cursor = lineinfo + line_size;
+   const uint8_t *end = lineinfo + sizedbg;
+   setmref(pt->uvinfo, cursor);
 
-static const void* bcread_varinfo(GCproto *pt)
-{
-   const uint8_t* p = proto_uvinfo(pt);
-   MSize n = pt->sizeuv;
-   if (n) while (*p++ or --n);
-   return p;
+   // Upvalue names are a sequence of sizeuv terminated strings. Every scan remains inside the debug record.
+   for (MSize i = 0; i < pt->sizeuv; ++i) {
+      const void *terminator = memchr(cursor, 0, size_t(end - cursor));
+      if (not terminator) bcread_error(State, ErrMsg::BCBAD);
+      cursor = (const uint8_t *)terminator + 1;
+   }
+   setmref(pt->varinfo, cursor);
+
+   auto read_uleb = [&]() -> uint32_t {
+      uint32_t value = 0;
+      for (uint32_t shift = 0; shift <= 28; shift += 7) {
+         if (cursor >= end) bcread_error(State, ErrMsg::BCBAD);
+         uint32_t byte = *cursor++;
+         if ((shift IS 28) and byte > 0x0f) bcread_error(State, ErrMsg::BCBAD);
+         value |= (byte & 0x7f) << shift;
+         if (not (byte & 0x80)) return value;
+      }
+      bcread_error(State, ErrMsg::BCBAD);
+      return 0;
+   };
+
+   uint32_t last_pc = 0;
+   uint32_t variable_count = 0;
+   while (cursor < end) {
+      uint8_t name = *cursor++;
+      if (name IS VARNAME_END) {
+         if (cursor != end) bcread_error(State, ErrMsg::BCBAD);
+         return;
+      }
+      if (name >= VARNAME__MAX) {
+         const void *terminator = memchr(cursor, 0, size_t(end - cursor));
+         if (not terminator) bcread_error(State, ErrMsg::BCBAD);
+         cursor = (const uint8_t *)terminator + 1;
+      }
+      uint32_t start_delta = read_uleb();
+      uint32_t extent = read_uleb();
+      if (start_delta > pt->sizebc - last_pc) bcread_error(State, ErrMsg::BCBAD);
+      last_pc += start_delta;
+      if (extent > pt->sizebc - last_pc) bcread_error(State, ErrMsg::BCBAD);
+      if (++variable_count > LJ_MAX_LOCVAR) bcread_error(State, ErrMsg::BCBAD);
+   }
+   bcread_error(State, ErrMsg::BCBAD); // Missing varinfo terminator.
 }
 
 //********************************************************************************************************************
@@ -212,6 +296,7 @@ static void bcread_ktabk(LexState *State, TValue* o)
    if (tp >= BCDUMP_KTAB_STR) {
       MSize len = tp - BCDUMP_KTAB_STR;
       const char* p = (const char*)bcread_mem(State, len);
+      bcread_reserve_allocation(State, uint64_t(len) + sizeof(GCstr));
       setstrV(State->L, o, lj_str_new(State->L, p, len));
    }
    else if (tp == BCDUMP_KTAB_INT) {
@@ -222,7 +307,7 @@ static void bcread_ktabk(LexState *State, TValue* o)
       o->u32.hi = bcread_uleb128(State);
    }
    else {
-      State->assert_condition(tp <= BCDUMP_KTAB_TRUE, "bad constant type %d", tp);
+      if (tp > BCDUMP_KTAB_TRUE) bcread_error(State, ErrMsg::BCBAD);
       setpriV(o, ~uint64_t(tp));
    }
 }
@@ -233,9 +318,13 @@ static void bcread_ktabk(LexState *State, TValue* o)
 static GCtab* bcread_ktab(LexState *State)
 {
    MSize flags = bcread_uleb128(State);
-   State->assert_condition((flags & ~MSize(TAB_NOT_SEQUENCE)) IS 0, "bad table flags %d", flags);
+   if (flags & ~MSize(TAB_NOT_SEQUENCE)) bcread_error(State, ErrMsg::BCBAD);
    MSize narray = bcread_uleb128(State);
    MSize nhash = bcread_uleb128(State);
+   if (narray > LJ_MAX_ASIZE or nhash > (uint32_t(1) << LJ_MAX_HBITS)) bcread_error(State, ErrMsg::BCBAD);
+   bcread_account(State, uint64_t(narray) + uint64_t(nhash) * 2);
+   bcread_reserve_allocation(State, sizeof(GCtab) + uint64_t(narray) * sizeof(TValue) +
+      uint64_t(nhash) * 2 * sizeof(Node));
    GCtab* t = lj_tab_new(State->L, narray, hsize2hbits(nhash));
    t->flags |= uint8_t(flags);
    if (narray) {  // Read array entries.
@@ -249,7 +338,7 @@ static GCtab* bcread_ktab(LexState *State)
       for (i = 0; i < nhash; i++) {
          TValue key;
          bcread_ktabk(State, &key);
-         State->assert_condition(!tvisnil(&key), "nil key");
+         if (tvisnil(&key)) bcread_error(State, ErrMsg::BCBAD);
          bcread_ktabk(State, lj_tab_set(State->L, t, &key));
       }
    }
@@ -259,15 +348,18 @@ static GCtab* bcread_ktab(LexState *State)
 //********************************************************************************************************************
 // Read GC constants of a prototype.
 
-static void bcread_kgc(LexState *State, GCproto *pt, MSize sizekgc)
+static uint16_t bcread_kgc(LexState *State, GCproto *pt, MSize sizekgc)
 {
    MSize i;
+   uint16_t depth = 1;
+   MSize child_count = 0;
    GCRef* kr = mref<GCRef>(pt->k) - (ptrdiff_t)sizekgc;
    for (i = 0; i < sizekgc; i++, kr++) {
       MSize tp = bcread_uleb128(State);
       if (tp >= BCDUMP_KGC_STR) {
          MSize len = tp - BCDUMP_KGC_STR;
          const char* p = (const char*)bcread_mem(State, len);
+         bcread_reserve_allocation(State, uint64_t(len) + sizeof(GCstr));
          setgcref(*kr, obj2gco(lj_str_new(State->L, p, len)));
       }
       else if (tp == BCDUMP_KGC_TAB) {
@@ -275,13 +367,22 @@ static void bcread_kgc(LexState *State, GCproto *pt, MSize sizekgc)
       }
       else {
          lua_State* L = State->L;
-         State->assert_condition(tp == BCDUMP_KGC_CHILD, "bad constant type %d", tp);
+         if (tp != BCDUMP_KGC_CHILD or State->bytecode_prototype_depths.empty()) {
+            bcread_error(State, ErrMsg::BCBAD);
+         }
          if (L->top <= bcread_oldtop(L, ls))  //  Stack underflow?
             bcread_error(State, ErrMsg::BCBAD);
+         uint16_t child_depth = State->bytecode_prototype_depths.back();
+         State->bytecode_prototype_depths.pop_back();
+         if (child_depth >= BCREAD_MAX_DEPTH) bcread_error(State, ErrMsg::BCBAD);
+         depth = std::max<uint16_t>(depth, uint16_t(child_depth + 1));
+         child_count++;
          L->top--;
          setgcref(*kr, obj2gco(protoV(L->top)));
       }
    }
+   if ((child_count != 0) != bool(pt->flags & PROTO_CHILD)) bcread_error(State, ErrMsg::BCBAD);
+   return depth;
 }
 
 //********************************************************************************************************************
@@ -406,7 +507,9 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
       else if (op IS BC_CTXBEGIN) {
          uint16_t descriptor = uint16_t(bc_d(bc[i]));
          BCREG slot = bc_a(bc[i]);
-         if (slot >= pt->framesize or descriptor != context_blocks.size()) bcread_error(State, ErrMsg::BCBAD);
+         if (slot >= pt->framesize or context_blocks.size() >= UINT16_MAX or descriptor != context_blocks.size()) {
+            bcread_error(State, ErrMsg::BCBAD);
+         }
          context_blocks.push_back(ProtoContextBlockDesc{
             .begin_pc = i,
             .end_pc = 0,
@@ -508,7 +611,10 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
    pt->closeslots = close_arm_slots;
 
    if (not context_blocks.empty()) {
-      size_t byte_size = context_blocks.size() * sizeof(ProtoContextBlockDesc);
+      MSize byte_size = bcread_checked_multiply(State, MSize(context_blocks.size()),
+         MSize(sizeof(ProtoContextBlockDesc)));
+      bcread_account(State, context_blocks.size());
+      bcread_reserve_allocation(State, byte_size);
       pt->context_blocks = (ProtoContextBlockDesc *)lj_mem_new(State->L, byte_size);
       memcpy(pt->context_blocks, context_blocks.data(), byte_size);
       pt->context_block_count = uint16_t(context_blocks.size());
@@ -526,6 +632,104 @@ static void bcread_builtin_methods(LexState *State, GCproto *Prototype)
       if (constant >= Prototype->sizekgc or
           proto_kgc(Prototype, ~(ptrdiff_t)constant)->gch.gct != ~LJ_TSTR) {
          bcread_error(State, ErrMsg::BCBAD);
+      }
+   }
+}
+
+//********************************************************************************************************************
+// Validate operands whose bounds or kinds depend on the completed constant arrays.
+
+static void bcread_validate_bytecode(LexState *State, GCproto *Prototype)
+{
+   auto validate_constant = [&](BCMode Mode, uint32_t Value) {
+      if (Mode IS BCMnum) {
+         if (Value >= Prototype->sizekn) bcread_error(State, ErrMsg::BCBAD);
+         return;
+      }
+      if (Mode IS BCMstr or Mode IS BCMtab or Mode IS BCMfunc or Mode IS BCMcdata) {
+         if (Mode IS BCMcdata) bcread_error(State, ErrMsg::BCBAD);
+         if (Value >= Prototype->sizekgc) bcread_error(State, ErrMsg::BCBAD);
+         GCobj *constant = proto_kgc(Prototype, ~(ptrdiff_t)Value);
+         uint8_t expected = Mode IS BCMstr ? uint8_t(~LJ_TSTR) :
+            Mode IS BCMtab ? uint8_t(~LJ_TTAB) : uint8_t(~LJ_TPROTO);
+         if (constant->gch.gct != expected) bcread_error(State, ErrMsg::BCBAD);
+      }
+      else if (Mode IS BCMuv) {
+         if (Value >= Prototype->sizeuv) bcread_error(State, ErrMsg::BCBAD);
+      }
+      else if (Mode IS BCMpri and Value > uint32_t(~LJ_TTRUE)) bcread_error(State, ErrMsg::BCBAD);
+   };
+   auto validate_mode = [&](BCMode Mode, uint32_t Value) {
+      if (Mode IS BCMrbase) {
+         if (Value > Prototype->framesize) bcread_error(State, ErrMsg::BCBAD);
+      }
+      else if (Mode IS BCMdst or Mode IS BCMbase or Mode IS BCMvar) {
+         if (Value >= Prototype->framesize) bcread_error(State, ErrMsg::BCBAD);
+      }
+      else validate_constant(Mode, Value);
+   };
+
+   for (MSize pc = 1; pc < Prototype->sizebc; ++pc) {
+      BCIns instruction = proto_bc(Prototype)[pc];
+      BCOp op = bc_op(instruction);
+      if (bc_is_func_header(op) or op IS BC_KCDATA or op IS BC_OCALL or op IS BC_JFORI or op IS BC_IFORL or
+          op IS BC_JFORL or op IS BC_IITERL or op IS BC_JITERL or op IS BC_ILOOP or op IS BC_JLOOP) {
+         bcread_error(State, ErrMsg::BCBAD);
+      }
+      if (op != BC_BMETH and bc_p32(instruction) != 0) bcread_error(State, ErrMsg::BCBAD);
+
+      validate_mode(bcmode_a(op), bc_a(instruction));
+      if (bcmode_hasd(op)) {
+         BCMode mode = bcmode_d(op);
+         validate_mode(mode, bc_d(instruction));
+         if (mode IS BCMjump) {
+            ptrdiff_t target = ptrdiff_t(pc) + 1 + bc_j(instruction);
+            if (target <= 0 or target >= ptrdiff_t(Prototype->sizebc)) bcread_error(State, ErrMsg::BCBAD);
+         }
+      }
+      else {
+         validate_mode(bcmode_b(op), bc_b(instruction));
+         validate_mode(bcmode_c(op), bc_c(instruction));
+      }
+
+      if ((op IS BC_CAT and bc_b(instruction) > bc_c(instruction)) or
+          (op IS BC_KNIL and bc_a(instruction) > bc_d(instruction))) {
+         bcread_error(State, ErrMsg::BCBAD);
+      }
+      if (op IS BC_CAT and (bc_b(instruction) >= Prototype->framesize or
+          bc_c(instruction) >= Prototype->framesize)) bcread_error(State, ErrMsg::BCBAD);
+      if ((op IS BC_CALL or op IS BC_CALLM or op IS BC_ITERC or op IS BC_ITERN or op IS BC_ITERA or
+           op IS BC_CTXCALL or op IS BC_CTXCALLM) and bc_c(instruction) and
+          uint32_t(bc_a(instruction)) + bc_c(instruction) > Prototype->framesize) {
+         bcread_error(State, ErrMsg::BCBAD);
+      }
+      if ((op IS BC_CALLT or op IS BC_CALLMT or op IS BC_CTXCALLT) and bc_d(instruction) and
+          uint32_t(bc_a(instruction)) + bc_d(instruction) > Prototype->framesize) {
+         bcread_error(State, ErrMsg::BCBAD);
+      }
+      if ((op IS BC_RET or op IS BC_RET1) and bc_d(instruction) > 1 and
+          uint32_t(bc_a(instruction)) + bc_d(instruction) - 1 > Prototype->framesize) {
+         bcread_error(State, ErrMsg::BCBAD);
+      }
+      if (bc_is_for_loop(op) and uint32_t(bc_a(instruction)) + FORL_EXT >= Prototype->framesize) {
+         bcread_error(State, ErrMsg::BCBAD);
+      }
+   }
+}
+
+static void bcread_validate_child_upvalues(LexState *State, GCproto *Prototype)
+{
+   for (ptrdiff_t i = -ptrdiff_t(Prototype->sizekgc); i < 0; ++i) {
+      GCobj *constant = proto_kgc(Prototype, i);
+      if (constant->gch.gct != uint8_t(~LJ_TPROTO)) continue;
+      GCproto *child = gco_to_proto(constant);
+      for (MSize uv_index = 0; uv_index < child->sizeuv; ++uv_index) {
+         uint16_t capture = proto_uv(child)[uv_index];
+         if (capture & 0x3f00) bcread_error(State, ErrMsg::BCBAD);
+         uint32_t index = capture & 0xff;
+         if ((capture & PROTO_UV_LOCAL) ? index >= Prototype->framesize : index >= Prototype->sizeuv) {
+            bcread_error(State, ErrMsg::BCBAD);
+         }
       }
    }
 }
@@ -917,12 +1121,17 @@ static void bcread_exceptions(LexState *State, GCproto *Proto)
    uint32_t blocks = read();
    uint32_t handlers = read();
    if (blocks > 0xffff or handlers > 0xffff) bcread_error(State, ErrMsg::BCBAD);
+   bcread_account(State, uint64_t(blocks) + handlers);
    if (blocks) {
-      Proto->try_blocks = (TryBlockDesc *)lj_mem_new(State->L, blocks * sizeof(TryBlockDesc));
+      MSize bytes = bcread_checked_multiply(State, blocks, MSize(sizeof(TryBlockDesc)));
+      bcread_reserve_allocation(State, bytes);
+      Proto->try_blocks = (TryBlockDesc *)lj_mem_new(State->L, bytes);
       Proto->try_block_count = uint16_t(blocks);
    }
    if (handlers) {
-      Proto->try_handlers = (TryHandlerDesc *)lj_mem_new(State->L, handlers * sizeof(TryHandlerDesc));
+      MSize bytes = bcread_checked_multiply(State, handlers, MSize(sizeof(TryHandlerDesc)));
+      bcread_reserve_allocation(State, bytes);
+      Proto->try_handlers = (TryHandlerDesc *)lj_mem_new(State->L, bytes);
       Proto->try_handler_count = uint16_t(handlers);
    }
    for (uint32_t i = 0; i < blocks; ++i) {
@@ -974,16 +1183,27 @@ GCproto *lj_bcread_proto(LexState *State)
    sizeuv    = bcread_byte(State);
    sizekgc   = bcread_uleb128(State);
    sizekn    = bcread_uleb128(State);
-   sizebc    = bcread_uleb128(State) + 1;
+   sizebc    = bcread_checked_add(State, bcread_uleb128(State), 1);
    sizesig = bcread_uleb128(State);
    sizedep = bcread_uleb128(State);
    if (!(bcread_flags(State) & BCDUMP_F_STRIP)) {
       sizedbg = bcread_uleb128(State);
       if (sizedbg) {
-         firstline = bcread_uleb128(State);
-         numline = bcread_uleb128(State);
+         uint32_t raw_firstline = bcread_uleb128(State);
+         uint32_t raw_numline = bcread_uleb128(State);
+         if (raw_firstline > uint32_t(BCLine::LINE_MASK) or
+             raw_numline > uint32_t(BCLine::LINE_MASK) - raw_firstline) bcread_error(State, ErrMsg::BCBAD);
+         firstline = BCLine(int32_t(raw_firstline));
+         numline = BCLine(int32_t(raw_numline));
       }
    }
+   constexpr MSize known_flags = PROTO_CHILD | PROTO_VARARG;
+   if ((flags & ~known_flags) or framesize IS 0 or framesize > LJ_MAX_SLOTS or numparams > framesize or
+       sizeuv > LJ_MAX_UPVAL or sizekgc > BCMAX_D + 1u or sizekn > BCMAX_D + 1u or
+       sizebc > LJ_MAX_BCINS or ++State->bytecode_prototype_count > BCREAD_MAX_PROTOTYPES) {
+      bcread_error(State, ErrMsg::BCBAD);
+   }
+   bcread_account(State, uint64_t(sizebc) + sizekgc + sizekn + sizeuv);
    bcread_signature(State, sizesig, numparams, signature);
 
    // The validated dependency names are referenced in place within the read buffer, which the next refill may move.
@@ -997,15 +1217,26 @@ GCproto *lj_bcread_proto(LexState *State)
       MSize(proto_signature_size(signature.parameter_count, signature.result_entry_count)) : 0;
    MSize dependency_memory_size = dependencies.present ?
       MSize(proto_dependency_size(dependencies.dependencies.size(), dependencies.functions.size())) : 0;
-   sizept = (MSize)sizeof(GCproto) + sizebc * (MSize)sizeof(BCIns) + sizekgc * (MSize)sizeof(GCRef);
-   sizept = (sizept + (MSize)sizeof(TValue) - 1) & ~((MSize)sizeof(TValue) - 1);
-   ofsk   = sizept; sizept += sizekn * (MSize)sizeof(TValue);
-   ofsuv  = sizept; sizept += ((sizeuv + 1) & ~1) * 2;
-   ofssig = sizept; sizept += signature_memory_size;
+   sizept = bcread_checked_add(State, MSize(sizeof(GCproto)),
+      bcread_checked_multiply(State, sizebc, MSize(sizeof(BCIns))));
+   sizept = bcread_checked_add(State, sizept,
+      bcread_checked_multiply(State, sizekgc, MSize(sizeof(GCRef))));
+   sizept = bcread_checked_align(State, sizept, MSize(alignof(TValue)));
+   ofsk = sizept;
+   sizept = bcread_checked_add(State, sizept,
+      bcread_checked_multiply(State, sizekn, MSize(sizeof(TValue))));
+   ofsuv = sizept;
+   sizept = bcread_checked_add(State, sizept, bcread_checked_multiply(State, (sizeuv + 1) & ~1u, 2));
+   ofssig = sizept;
+   sizept = bcread_checked_add(State, sizept, signature_memory_size);
    // The descriptors hold GCRef fields and must be naturally aligned; the upvalue array is only 2-byte granular.
-   sizept = (sizept + (MSize)alignof(ProtoDependency) - 1) & ~((MSize)alignof(ProtoDependency) - 1);
-   ofsdep = sizept; sizept += dependency_memory_size;
-   ofsdbg = sizept; sizept += sizedbg;
+   sizept = bcread_checked_align(State, sizept, MSize(alignof(ProtoDependency)));
+   ofsdep = sizept;
+   sizept = bcread_checked_add(State, sizept, dependency_memory_size);
+   ofsdbg = sizept;
+   sizept = bcread_checked_add(State, sizept, sizedbg);
+   if (sizept > BCREAD_MAX_PROTO_SIZE) bcread_error(State, ErrMsg::BCBAD);
+   bcread_reserve_allocation(State, sizept);
 
    // Allocate prototype object and initialize its fields.
 
@@ -1017,7 +1248,10 @@ GCproto *lj_bcread_proto(LexState *State)
    pt->sizebc = sizebc;
    setmref(pt->k, (char*)pt + ofsk);
    setmref(pt->uv, (char*)pt + ofsuv);
-   pt->sizekgc = 0;  //  Set to zero until fully initialized.
+   // Publish only valid GC references before any subsequent read can allocate or trigger collection.
+   GCRef *constants = mref<GCRef>(pt->k) - ptrdiff_t(sizekgc);
+   for (MSize i = 0; i < sizekgc; ++i) setgcref(constants[i], obj2gco(&G(State->L)->strempty));
+   pt->sizekgc = sizekgc;
    pt->sizekn = sizekn;
    pt->sizept = sizept;
    pt->sizeuv = (uint8_t)sizeuv;
@@ -1037,10 +1271,11 @@ GCproto *lj_bcread_proto(LexState *State)
 
    // Read constants.
 
-   bcread_kgc(State, pt, sizekgc);
-   pt->sizekgc = sizekgc;
+   uint16_t prototype_depth = bcread_kgc(State, pt, sizekgc);
    bcread_knum(State, pt, sizekn);
    bcread_builtin_methods(State, pt);
+   bcread_validate_bytecode(State, pt);
+   bcread_validate_child_upvalues(State, pt);
 
    // Deferred until the constant array is complete, because interning the names can step the collector and the
    // prototype must be safe to traverse by then.
@@ -1054,11 +1289,10 @@ GCproto *lj_bcread_proto(LexState *State)
    pt->numline = numline;
    if (sizedbg) {
       // lineinfo is now a fixed-size BCLine[sizebc-1] array (32-bit per instruction)
-      MSize sizeli = (sizebc - 1) * sizeof(BCLine);
+      MSize sizeli = bcread_checked_multiply(State, sizebc - 1, MSize(sizeof(BCLine)));
+      if (sizedbg < sizeli + 1) bcread_error(State, ErrMsg::BCBAD);
       setmref(pt->lineinfo, (char*)pt + ofsdbg);
-      setmref(pt->uvinfo, (char*)pt + ofsdbg + sizeli);
       bcread_dbg(State, pt, sizedbg);
-      setmref(pt->varinfo, bcread_varinfo(pt));
    }
    else {
       setmref(pt->lineinfo, nullptr);
@@ -1067,6 +1301,7 @@ GCproto *lj_bcread_proto(LexState *State)
    }
    bcread_exceptions(State, pt);
    lj_contract_build_cache(State->L, pt);
+   State->bytecode_prototype_depths.push_back(prototype_depth);
    return pt;
 }
 
@@ -1106,6 +1341,10 @@ GCproto *lj_bcread(LexState *State)
    State->assert_condition(State->c == BCDUMP_HEAD1, "bad bytecode header");
    bcread_savetop(L, ls, L->top);
    lj_buf_reset(&State->sb);
+   State->bytecode_prototype_count = 0;
+   State->bytecode_allocation = 0;
+   State->bytecode_validation_work = 0;
+   State->bytecode_prototype_depths.clear();
 
    // Check for a valid bytecode dump header.
    if (!bcread_header(State)) bcread_error(State, ErrMsg::BCFMT);
@@ -1122,16 +1361,23 @@ GCproto *lj_bcread(LexState *State)
       bcread_want(State, 5);
       len = bcread_uleb128(State);
       if (!len) break;  //  EOF
+      if (len > BCREAD_MAX_PROTO_SIZE) bcread_error(State, ErrMsg::BCBAD);
       bcread_need(State, len);
       startp = State->p;
+      const char *saved_end = State->pe;
+      lua_Reader saved_reader = State->rfunc;
+      State->pe = startp + len;
+      State->rfunc = nullptr;
       pt = lj_bcread_proto(State);
-      if (State->p != startp + len)
-         bcread_error(State, ErrMsg::BCBAD);
+      if (State->p != startp + len) bcread_error(State, ErrMsg::BCBAD);
+      State->pe = saved_end;
+      State->rfunc = saved_reader;
       setprotoV(L, L->top, pt);
       incr_top(L);
    }
 
-   if ((State->pe != State->p and !State->endmark) or L->top - 1 != bcread_oldtop(L, ls))
+   if ((State->pe != State->p and !State->endmark) or L->top - 1 != bcread_oldtop(L, ls) or
+       State->bytecode_prototype_depths.size() != 1)
       bcread_error(State, ErrMsg::BCBAD);
 
    // Pop off last prototype.

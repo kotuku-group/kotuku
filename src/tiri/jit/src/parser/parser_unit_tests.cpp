@@ -2953,6 +2953,211 @@ static int bytecode_writer(lua_State *, const void *Data, size_t Size, void *Con
    return 0;
 }
 
+static GCproto * first_child_proto(GCproto *Proto);
+
+static bool test_structural_bytecode_reader_validation(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   constexpr std::string_view source =
+      "local captured = 4\n"
+      "local function child(Value)\n"
+      "   local copy = Value\n"
+      "   if copy then return captured + 1 end\n"
+      "   return 0\n"
+      "end\n"
+      "return child\n";
+   if (lua_load(lua, source, "structural-reader")) {
+      Log.error("failed to compile structural-reader fixture: %s", lua_tostring(lua, -1));
+      return false;
+   }
+   GCproto *root = funcproto(funcV(lua->top - 1));
+   GCproto *child = first_child_proto(root);
+   if (not child or not child->sizeuv or not proto_lineinfo(child)) {
+      Log.error("structural-reader fixture lacks a child capture or debug metadata");
+      return false;
+   }
+
+   auto rejected = [&](std::string_view Dump, std::string_view Label) {
+      int status = lua_load(lua, Dump, "malformed-structural-bytecode");
+      if (status != LUA_ERRSYNTAX) {
+         if (status) lua_pop(lua, 1);
+         Log.error("bytecode reader returned %d for malformed %.*s", status, int(Label.size()), Label.data());
+         return false;
+      }
+      lua_pop(lua, 1);
+      if (lua_load(lua, "return 42", "structural-reader-recovery") or lua_pcall(lua, 0, 1, 0) or
+          lua_tointeger(lua, -1) != 42) {
+         Log.error("state was not reusable after malformed %.*s", int(Label.size()), Label.data());
+         return false;
+      }
+      lua_pop(lua, 1);
+      return true;
+   };
+   auto dump_rejected = [&](std::string_view Label) {
+      std::string dump;
+      if (lua_dump(lua, bytecode_writer, &dump) != 0) return false;
+      return rejected(dump, Label);
+   };
+   auto append_uleb = [](std::string &Output, uint32_t Value) {
+      do {
+         uint8_t byte = uint8_t(Value & 0x7f);
+         Value >>= 7;
+         Output.push_back(char(byte | (Value ? 0x80 : 0)));
+      } while (Value);
+   };
+   auto read_uleb = [](std::string_view Input, size_t &Cursor, uint32_t &Value) {
+      Value = 0;
+      for (uint32_t shift = 0; shift <= 28 and Cursor < Input.size(); shift += 7) {
+         uint32_t byte = uint8_t(Input[Cursor++]);
+         if ((shift IS 28) and byte > 0x0f) return false;
+         Value |= (byte & 0x7f) << shift;
+         if (not (byte & 0x80)) return true;
+      }
+      return false;
+   };
+
+   BCIns *root_bc = proto_bc(root);
+   MSize register_pc = 0;
+   MSize constant_pc = 0;
+   for (MSize pc = 1; pc < root->sizebc; ++pc) {
+      BCOp op = bc_op(root_bc[pc]);
+      if (not register_pc and bcmode_a(op) != BCMnone) register_pc = pc;
+      if (not constant_pc and bcmode_hasd(op) and
+          (bcmode_d(op) IS BCMstr or bcmode_d(op) IS BCMfunc or bcmode_d(op) IS BCMtab)) constant_pc = pc;
+   }
+   MSize jump_pc = 0;
+   for (MSize pc = 1; pc < child->sizebc; ++pc) {
+      if (bcmode_hasd(bc_op(proto_bc(child)[pc])) and bcmode_d(bc_op(proto_bc(child)[pc])) IS BCMjump) {
+         jump_pc = pc;
+         break;
+      }
+   }
+   if (not register_pc or not constant_pc or not jump_pc) {
+      Log.error("structural-reader fixture lacks register, constant or branch operands");
+      return false;
+   }
+
+   BCIns saved = root_bc[register_pc];
+   setbc_a(&root_bc[register_pc], root->framesize);
+   bool valid = dump_rejected("register operand");
+   root_bc[register_pc] = saved;
+   if (not valid) return false;
+
+   saved = root_bc[constant_pc];
+   setbc_d(&root_bc[constant_pc], root->sizekgc);
+   valid = dump_rejected("constant operand");
+   root_bc[constant_pc] = saved;
+   if (not valid) return false;
+
+   saved = root_bc[constant_pc];
+   setbc_op(&root_bc[constant_pc], bcmode_d(bc_op(saved)) IS BCMfunc ? BC_KSTR : BC_FNEW);
+   valid = dump_rejected("constant kind");
+   root_bc[constant_pc] = saved;
+   if (not valid) return false;
+
+   saved = proto_bc(child)[jump_pc];
+   setbc_d(&proto_bc(child)[jump_pc], 0);
+   valid = dump_rejected("branch target");
+   proto_bc(child)[jump_pc] = saved;
+   if (not valid) return false;
+
+   saved = root_bc[register_pc];
+   setbc_op(&root_bc[register_pc], BC_FUNCF);
+   valid = dump_rejected("function-header opcode");
+   root_bc[register_pc] = saved;
+   if (not valid) return false;
+
+   uint16_t saved_capture = proto_uv(child)[0];
+   proto_uv(child)[0] = PROTO_UV_LOCAL | root->framesize;
+   valid = dump_rejected("upvalue capture");
+   proto_uv(child)[0] = saved_capture;
+   if (not valid) return false;
+
+   uint8_t *debug_end = (uint8_t *)child + child->sizept;
+   uint8_t saved_terminator = debug_end[-1];
+   debug_end[-1] = 1;
+   valid = dump_rejected("missing debug terminator");
+   debug_end[-1] = saved_terminator;
+   if (not valid) return false;
+
+   std::string stripped;
+   if (lj_bcwrite(lua, root, bytecode_writer, &stripped, 1) != 0) return false;
+   size_t cursor = 4;
+   uint32_t header_flags = 0;
+   if (not read_uleb(stripped, cursor, header_flags) or not (header_flags & BCDUMP_F_STRIP)) return false;
+   size_t length_offset = cursor;
+   uint32_t prototype_length = 0;
+   if (not read_uleb(stripped, cursor, prototype_length) or prototype_length < 2 or
+       prototype_length > stripped.size() - cursor) return false;
+   size_t body_offset = cursor;
+
+   std::string short_record = stripped.substr(0, length_offset);
+   append_uleb(short_record, prototype_length - 1);
+   short_record.append(stripped, body_offset, std::string::npos);
+   if (not rejected(short_record, "truncated prototype record")) return false;
+
+   // Replace the first prototype's sizekgc field with 65,537 without relying on host-sized arithmetic. The reader
+   // must reject the count before allocating or walking the shortened constant section.
+   size_t constant_cursor = body_offset + 4;
+   uint32_t old_constant_count = 0;
+   if (not read_uleb(stripped, constant_cursor, old_constant_count)) return false;
+   std::string changed_body = stripped.substr(body_offset, 4);
+   append_uleb(changed_body, BCMAX_D + 2u);
+   changed_body.append(stripped, constant_cursor, prototype_length - (constant_cursor - body_offset));
+   std::string excessive_count = stripped.substr(0, length_offset);
+   append_uleb(excessive_count, uint32_t(changed_body.size()));
+   excessive_count += changed_body;
+   excessive_count.append(stripped, body_offset + prototype_length, std::string::npos);
+   if (not rejected(excessive_count, "overflowing constant count")) return false;
+
+   // Bounded deterministic mutation pass: every payload byte is independently cleared and inverted. Mutations may
+   // remain structurally valid, but every outcome must be either a clean load or a syntax rejection.
+   size_t mutation_stop = std::min<size_t>(stripped.size(), 1024);
+   for (size_t offset = 5; offset < mutation_stop; ++offset) {
+      for (uint8_t replacement : { uint8_t(0), uint8_t(uint8_t(stripped[offset]) ^ 0xff) }) {
+         std::string mutation = stripped;
+         mutation[offset] = char(replacement);
+         int status = lua_load(lua, mutation, "bounded-bytecode-mutation");
+         if (status != 0 and status != LUA_ERRSYNTAX) {
+            if (status) lua_pop(lua, 1);
+            Log.error("payload mutation at byte %zu returned unexpected status %d", offset, status);
+            return false;
+         }
+         lua_pop(lua, 1);
+      }
+   }
+
+   // A depth-201 synthetic tree exceeds the same nesting ceiling used by the source parser. Each prototype contains
+   // one RET0 instruction and each parent owns exactly one child constant.
+   std::string nested;
+   nested.append("\x1bLJ", 3);
+   nested.push_back(char(BCDUMP_VERSION));
+   append_uleb(nested, BCDUMP_F_STRIP | (LJ_FR2 ? BCDUMP_F_FR2 : 0));
+   for (uint32_t depth = 0; depth <= uint32_t(LJ_MAX_XLEVEL); ++depth) {
+      bool parent = depth != 0;
+      std::string body;
+      body.push_back(char(parent ? PROTO_CHILD : 0));
+      body.append("\0\1\0", 3); // Parameters, frame size, upvalues.
+      append_uleb(body, parent ? 1 : 0);
+      append_uleb(body, 0);
+      append_uleb(body, 1);
+      append_uleb(body, 0);
+      append_uleb(body, 0);
+      BCIns instruction = BCINS_AD(BC_RET0, 0, 1);
+      body.append((const char *)&instruction, sizeof(instruction));
+      if (parent) body.push_back(char(BCDUMP_KGC_CHILD));
+      body.append("\0\0", 2); // No exception blocks or handlers.
+      append_uleb(nested, uint32_t(body.size()));
+      nested += body;
+   }
+   nested.push_back(0);
+   if (not rejected(nested, "prototype nesting")) return false;
+
+   lua_pop(lua, 1);
+   return true;
+}
+
 static GCproto * first_child_proto(GCproto *Proto)
 {
    for (ptrdiff_t i = -ptrdiff_t(Proto->sizekgc); i < 0; ++i) {
@@ -11287,7 +11492,7 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 105> tests = { {
+   constexpr std::array<TestCase, 106> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "error_removal", test_error_removal },
@@ -11340,6 +11545,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "current_context_materialisation_bytecode", test_current_context_materialisation_bytecode },
       { "ast_call_lowering", test_ast_call_lowering },
       { "bytecode_equivalence", test_bytecode_equivalence },
+      { "structural_bytecode_reader_validation", test_structural_bytecode_reader_validation },
       { "signature_metadata_roundtrip", test_signature_metadata_roundtrip },
       { "forward_declaration_signature_validation", test_forward_declaration_signature_validation },
       { "old_bytecode_versions_rejected", test_old_bytecode_versions_rejected },

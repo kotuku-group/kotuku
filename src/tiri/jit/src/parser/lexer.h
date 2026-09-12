@@ -153,6 +153,10 @@ public:
    MSize      size_bc_stack;  // Size of bytecode stack.
    uint32_t   level;          // Syntactical nesting level.
    uint8_t    bytecode_version = 0; // Private bytecode format version while reading a binary chunk.
+   uint32_t   bytecode_prototype_count = 0; // Structural reader resource accounting.
+   uint64_t   bytecode_allocation = 0;
+   uint64_t   bytecode_validation_work = 0;
+   std::vector<uint16_t> bytecode_prototype_depths;
    uint32_t   ternary_depth;  // Number of pending ternary operators.
    uint8_t    pending_if_empty_colon; // Tracks ?: misuse after ??.
    int        is_bytecode;    // Set to 1 if input is bytecode, 0 if source text.
