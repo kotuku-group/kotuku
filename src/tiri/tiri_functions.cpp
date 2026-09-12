@@ -371,8 +371,8 @@ int fcmd_loadfile(lua_State *Lua)
          if (!file->read(std::span<int8_t>((int8_t *)header, sizeof(header)), &len)) {
             if (kt::startswith(LUA_COMPILED, std::string_view(header, sizeof(header)))) {
                recompile = false; // Do not recompile that which is already compiled
-               for (i=sizeof(LUA_COMPILED)-1; (i < len) and (header[i]); i++);
-               if (not header[i]) i++;
+               for (i=sizeof(LUA_COMPILED)-1; (i < len) and (header[i]); i++); // Skip any identity token
+               if ((i < len) and (not header[i])) i++;
                else i = 0;
             }
             else i = 0;
@@ -463,9 +463,11 @@ int fcmd_exec(lua_State *Lua)
 
       if (kt::startswith(LUA_COMPILED, std::string_view(statement, len))) {
          size_t i;
-         for (i=sizeof(LUA_COMPILED)-1; statement[i]; i++);
-         statement += i + 1;
-         len -= (i + 1);
+         for (i=sizeof(LUA_COMPILED)-1; (i < len) and (statement[i]); i++); // Skip any identity token
+         if (i < len) {
+            statement += i + 1;
+            len -= i + 1;
+         }
       }
 
       if (not lua_load(Lua, std::string_view(statement, len), "exec")) {

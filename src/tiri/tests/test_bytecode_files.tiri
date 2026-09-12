@@ -3,7 +3,7 @@ include 'core'
 
 local glRoot
 local glSerial = 0
-local glWrapper = '-- $TIRI:compiled\0'
+local glMarker = '-- $TIRI:compiled'
 
 local glProgram = [[
    local nothing = nil
@@ -92,6 +92,37 @@ function path(Extension:str):str
    return glRoot .. tostring(glSerial) .. Extension
 end
 
+-- Compiled output is the marker, an optional identity token and a NUL separator.  Tests locate the separator rather
+-- than assume a fixed wrapper length, because the token records the producing build and the source content.
+
+function wrapper_size(Bytes:str):num
+   assert(Bytes.startsWith(glMarker), 'Compiled output must start with the Tiri marker')
+   local separator = Bytes.find('\0', #glMarker)
+   assert(separator != nil, 'Compiled output must carry a NUL separator')
+   return separator + 1
+end
+
+function payload(Bytes:str):str
+   return Bytes.sub(wrapper_size(Bytes))
+end
+
+function identity_token(Bytes:str):str
+   local separator = Bytes.find('\0', #glMarker)
+   assert(separator != nil, 'Compiled output must carry a NUL separator')
+   return Bytes.sub(#glMarker, separator).trim()
+end
+
+function retoken(Bytes:str, Token:str):str
+   return glMarker .. ' ' .. Token .. '\0' .. payload(Bytes)
+end
+
+function is_compiled(Bytes:str):bool
+   if not Bytes.startsWith(glMarker) then return false end
+   local separator = Bytes.find('\0', #glMarker)
+   if separator is nil then return false end
+   return Bytes.sub(separator + 1).startsWith('\x1bLJ')
+end
+
 function write_file(Path:str, Content:str)
    local file <close> = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
    if #Content > 0 then check file.acWrite(Content) end
@@ -109,7 +140,7 @@ end
 function save(Script:obj, Path:str)
    local file <close> = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
    check Script.acSaveToObject(file)
-   assert(file.size > #glWrapper, 'Save must produce a non-empty VM payload')
+   assert(file.size > #glMarker, 'Save must produce a non-empty VM payload')
 end
 
 function activate(Script:obj)
@@ -201,7 +232,7 @@ end
    end
    local wrapped_bytes = read_file(wrapped)
    local raw = path('_b06_raw.tbc')
-   write_file(raw, wrapped_bytes.sub(#glWrapper))
+   write_file(raw, payload(wrapped_bytes))
 
    local outputs = array<str> {}
    do
@@ -221,9 +252,9 @@ end
       local cache_producer <close> = obj.new('tiri', { path=source, cacheFile=cache })
       check cache_producer.acQuery()
    end
-   assert(read_file(cache).startsWith(glWrapper .. '\x1bLJ'))
-   write_file(source, 'local =')
-   date_file(source, 6)
+   assert(is_compiled(read_file(cache)))
+   -- Removing the source leaves the cache as the only usable input, so the saves below re-save a selected cache.
+   check mSys.DeleteFile(source)
    do
       local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
       append_outputs(outputs, save_lifecycle(script))
@@ -231,7 +262,6 @@ end
 
    check mSys.DeleteFile(wrapped)
    check mSys.DeleteFile(raw)
-   check mSys.DeleteFile(source)
    check mSys.DeleteFile(cache)
    verify_resaved_outputs(outputs)
 end
@@ -252,7 +282,7 @@ end
       check script.acQuery()
       activate(script)
    end
-   assert(read_file(cache).startsWith(glWrapper .. '\x1bLJ'), 'Query must retain and use its own source fallback')
+   assert(is_compiled(read_file(cache)), 'Query must retain and use its own source fallback')
    check mSys.DeleteFile(source)
    local code, output = child(array<str> { resaved, '--log-warning', '--gfx-driver=headless' })
    assert(code is 0 and output.count('B06_RESAVE_OK:1:42') is 1, output)
@@ -297,7 +327,7 @@ end
    for i in {0 to 3} do
       local output <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
       check script.acSaveToObject(output)
-      assert(output.size > #glWrapper, 'Every import-containing save must preserve the complete unit')
+      assert(output.size > #glMarker, 'Every import-containing save must preserve the complete unit')
    end
    check script.acQuery()
    activate(script)
@@ -305,7 +335,7 @@ end
    for i in {0 to 2} do
       local output <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
       check script.acSaveToObject(output)
-      assert(output.size > #glWrapper, 'Saving after Query/Activate must compile the complete import again')
+      assert(output.size > #glMarker, 'Saving after Query/Activate must compile the complete import again')
       activate(script)
    end
 
@@ -315,7 +345,7 @@ end
    for i in {0 to 2} do
       local output <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
       check synthetic.acSaveToObject(output)
-      assert(output.size > #glWrapper, 'A synthetic chunk must preserve its anonymous origin and imported source')
+      assert(output.size > #glMarker, 'A synthetic chunk must preserve its anonymous origin and imported source')
    end
    check synthetic.acQuery()
    activate(synthetic)
@@ -465,7 +495,7 @@ end
       local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
       check script.acQuery()
    end
-   assert(read_file(cache).startsWith(glWrapper .. '\x1bLJ'))
+   assert(is_compiled(read_file(cache)))
    check mSys.DeleteFile(source)
    for mode in values({ 'off', '' }) do
       local args = array<str> { cache, '--log-warning' }
@@ -480,18 +510,19 @@ end
    local binary = path('.version.TBC')
    save(script, binary)
    local bytes = read_file(binary)
-   assert(bytes.startsWith(glWrapper .. '\x1bLJ'), 'Exact wrapper and VM magic required')
+   assert(is_compiled(bytes), 'Exact wrapper and VM magic required')
+   local wrapper = wrapper_size(bytes)
    -- The serializer's current version comes from a dump rather than duplicating its private ABI constant.
    local vm = string.dump(function() return 1 end)
-   assert(bytes.sub(#glWrapper + 3, #glWrapper + 4) is vm.sub(3, 4))
+   assert(bytes.sub(wrapper + 3, wrapper + 4) is vm.sub(3, 4))
    local variants = {
-      '', '-- $TIRI:compiled', glWrapper, glWrapper .. 'print("BAD")',
-      '-- $TIRI:compiledX\0' .. bytes.sub(#glWrapper),
-      '-- $TIRI:compiled' .. bytes.sub(#glWrapper),
-      bytes.sub(0, #glWrapper + 3) .. '\x01' .. bytes.sub(#glWrapper + 4),
-      bytes.sub(0, #glWrapper + 4) .. '\x80\x01' .. bytes.sub(#glWrapper + 5)
+      '', glMarker, glMarker .. '\0', glMarker .. '\0print("BAD")',
+      glMarker .. ' ' .. string.rep('x', 200) .. '\0' .. payload(bytes), -- Identity token exceeds its bound
+      glMarker .. payload(bytes), -- Marker without a separator
+      bytes.sub(0, wrapper + 3) .. '\x01' .. bytes.sub(wrapper + 4),
+      bytes.sub(0, wrapper + 4) .. '\x80\x01' .. bytes.sub(wrapper + 5)
    }
-   for size in values({ #glWrapper + 1, #glWrapper + 4, #glWrapper + 8, math.floor(#bytes / 2), #bytes - 1 }) do
+   for size in values({ wrapper + 1, wrapper + 4, wrapper + 8, math.floor(#bytes / 2), #bytes - 1 }) do
       variants[#variants] = bytes.sub(0, size)
    end
    for content in values(variants) do
@@ -506,7 +537,7 @@ end
       activate(loaded)
    end
    local raw = path('.tbc')
-   write_file(raw, bytes.sub(#glWrapper))
+   write_file(raw, payload(bytes))
    local loaded <close> = obj.new('tiri', { path=raw })
    activate(loaded)
 end
@@ -544,13 +575,36 @@ end
       check script.acQuery()
    end
    local original = read_file(cache)
-   assert(original.startsWith(glWrapper))
-   -- Identical timestamp, but deliberately invalid source: only cache reuse can succeed.
-   write_file(source, 'local =')
+   assert(is_compiled(original))
+   local wrapper = wrapper_size(original)
+   -- An unchanged source reuses the cache, which the deliberately broken replacement below then invalidates.
+   do
+      local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      activate(script)
+   end
+   assert(read_file(cache) is original, 'An unchanged source must reuse its cache')
+   -- Identical timestamp and size, but different content: the recorded source identity must force a recompile.
+   write_file(source, 'assert(1 is 1)')
    date_file(source, 1)
    do
       local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
       activate(script)
+   end
+   assert(read_file(cache) != original, 'A same-timestamp content change must regenerate the cache')
+   -- A same-timestamp change to an invalid source must be reported rather than masked by the cache.
+   local broken = path('.tiri')
+   local broken_cache = path('.tbc')
+   write_file(broken, 'assert(true)')
+   date_file(broken, 1)
+   do
+      local script <close> = obj.new('tiri', { path=broken, cacheFile=broken_cache })
+      check script.acQuery()
+   end
+   write_file(broken, 'local =')
+   date_file(broken, 1)
+   do
+      local script <close> = obj.new('tiri', { path=broken, cacheFile=broken_cache })
+      assert(script.acQuery() is ERR_Syntax, 'A stale cache must not mask a broken source')
    end
    write_file(source, 'local value = 42 assert(value is 42)')
    date_file(source, 2)
@@ -559,21 +613,21 @@ end
       activate(script)
    end
    assert(read_file(cache) != original, 'Stale cache must be regenerated')
-   for corrupt in values({ '', glWrapper, 'not bytecode', original.sub(0, #glWrapper + 4),
-      original.sub(0, #glWrapper + 3) .. '\x01' .. original.sub(#glWrapper + 4) }) do
+   for corrupt in values({ '', glMarker .. '\0', 'not bytecode', original.sub(0, wrapper + 4),
+      original.sub(0, wrapper + 3) .. '\x01' .. original.sub(wrapper + 4) }) do
       write_file(cache, corrupt)
       date_file(cache, 2)
       local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
       check script.acQuery()
       activate(script)
-      assert(read_file(cache).startsWith(glWrapper .. '\x1bLJ'))
+      assert(is_compiled(read_file(cache)))
    end
    check mSys.DeleteFile(source)
    do
       local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
       activate(script)
    end
-   write_file(cache, glWrapper)
+   write_file(cache, glMarker .. '\0')
    local missing <close> = obj.new('tiri', { path=source, cacheFile=cache })
    assert(missing.acQuery() is ERR_InvalidData)
    write_file(source, 'assert(true)')
@@ -615,6 +669,88 @@ end
       'An imported automatic cache must fail when its source fallback is unavailable')
    local direct <close> = obj.new('tiri', { path=cache })
    activate(direct)
+end
+
+@Test function CacheIdentityGuardsBuildAndSource()
+   local source = path('.tiri')
+   local cache = path('.tbc')
+   write_file(source, "print('B07A_IDENTITY_OK')")
+   date_file(source, 4)
+   do
+      local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      check script.acQuery()
+   end
+   local original = read_file(cache)
+   local token = identity_token(original)
+   assert(token.startsWith('b:'), 'A cache must record its producing build: ' .. token)
+   assert(token.find(' s:') != nil, 'A cache must record its source identity: ' .. token)
+
+   -- A foreign build identity is rejected and replaced while the source remains readable.
+   local foreign = 'b:deadbeef s:1,00000000'
+   write_file(cache, retoken(original, foreign))
+   date_file(cache, 4)
+   do
+      local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      activate(script)
+   end
+   assert(identity_token(read_file(cache)) is token, 'A foreign build must be replaced by a local cache')
+
+   -- Byte code that cannot be regenerated must be refused rather than executed under a foreign identity.
+   write_file(cache, retoken(original, foreign))
+   date_file(cache, 4)
+   check mSys.DeleteFile(source)
+   try
+      local rejected <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      assert(false, 'A foreign build with no readable source must not initialise')
+   except e when ERR_FileNotFound
+   end
+
+   -- A build-field prefix is not a build match.  With no source, malformed metadata must not reach the VM payload.
+   local build_end = token.find(' ')
+   assert(build_end != nil)
+   local build = token.sub(0, build_end)
+   for malformed in values({ build .. '-invalid', build .. ' source', build .. ' s:,00000000',
+      build .. ' s:1,0000000g' }) do
+      write_file(cache, retoken(original, malformed))
+      date_file(cache, 4)
+      try
+         local rejected <close> = obj.new('tiri', { path=source, cacheFile=cache })
+         assert(false, 'Malformed identity metadata with no readable source must not initialise')
+      except e when ERR_FileNotFound
+      end
+   end
+
+   -- A matching build identity stays reusable without its source.
+   write_file(cache, original)
+   date_file(cache, 4)
+   local cached <close> = obj.new('tiri', { path=source, cacheFile=cache })
+   activate(cached)
+end
+
+@Test function DocumentProcessingBypassesCache()
+   local source = path('.tiri')
+   local cache = path('.tbc')
+   write_file(source, "print('B07A_DOC_OK')")
+   date_file(source, 5)
+
+   -- Parser symbols are never serialised, so document processing must neither write nor read a cache.
+   do
+      local script <close> = obj.new('tiri', { path=source, cacheFile=cache, flags=SCF_PROCESS_DOC })
+      activate(script)
+   end
+   assert(not exists(cache), 'Document processing must not publish a cache')
+
+   do
+      local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      check script.acQuery()
+   end
+   assert(exists(cache), 'Ordinary compilation must publish a cache')
+   check mSys.DeleteFile(source)
+   try
+      local rejected <close> = obj.new('tiri', { path=source, cacheFile=cache, flags=SCF_PROCESS_DOC })
+      assert(false, 'Document processing must not consume an existing cache')
+   except e when ERR_FileNotFound
+   end
 end
 
 @Test function StructSourceProducesReusableCache()

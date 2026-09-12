@@ -18,6 +18,18 @@ struct WriteObservation {
    std::string Bytes;
 };
 
+// Compiled output is the marker, an optional identity token and a NUL separator.  Locate the separator rather than
+// assuming a fixed wrapper length.  Returns zero when the input is not a well-formed wrapper.
+
+static size_t wrapper_size(std::string_view Bytes)
+{
+   constexpr size_t marker_len = sizeof(LUA_COMPILED) - 1;
+   if (not Bytes.starts_with(LUA_COMPILED)) return 0;
+   auto separator = Bytes.find('\0', marker_len);
+   if (separator IS std::string_view::npos) return 0;
+   return separator + 1;
+}
+
 static ERR sink_new(OBJECTPTR Self, APTR)
 {
    new (Self) Object(Self->Class, Self->UID);
@@ -83,10 +95,10 @@ static bool bytecode_save_contract(kt::Log &Log)
    for (int i = 0; i < 3; ++i) {
       state = {};
       if (not save_and_check(script, ERR::Okay)) return false;
-      if (not state.Bytes.starts_with(std::string_view(LUA_COMPILED, sizeof(LUA_COMPILED)))) return false;
+      if (not wrapper_size(state.Bytes)) return false;
    }
    const std::string wrapped = state.Bytes;
-   const std::string raw = wrapped.substr(sizeof(LUA_COMPILED));
+   const std::string raw = wrapped.substr(wrapper_size(wrapped));
    lua_getglobal(lua, "bytecode_runs");
    bool dormant = lua_isnil(lua, -1);
    lua_pop(lua, 1);
@@ -124,8 +136,7 @@ static bool bytecode_save_contract(kt::Log &Log)
 
       lua_pushinteger(loaded->Lua, 123); // A caller-owned stack value must survive every save point.
       state = {};
-      if (not save_and_check(loaded, ERR::Okay) or
-          not state.Bytes.starts_with(std::string_view(LUA_COMPILED, sizeof(LUA_COMPILED)))) return false;
+      if (not save_and_check(loaded, ERR::Okay) or not wrapper_size(state.Bytes)) return false;
 
       lua_getglobal(loaded->Lua, "bytecode_runs");
       bool not_executed = lua_isnil(loaded->Lua, -1);
@@ -172,7 +183,7 @@ static bool bytecode_save_contract(kt::Log &Log)
    malformed_inputs.back() += "\x1bLJ";
    malformed_inputs.push_back(std::string("\x1bLJ\x01", 4));
    auto wrong_version = wrapped;
-   wrong_version[sizeof(LUA_COMPILED) + 3] ^= 0x7f;
+   wrong_version[wrapper_size(wrapped) + 3] ^= 0x7f;
    malformed_inputs.push_back(std::move(wrong_version));
 
    for (const auto &malformed : malformed_inputs) {

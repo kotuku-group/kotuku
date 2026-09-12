@@ -395,8 +395,9 @@ Scripts that support compilation of the source code can be compiled to a target 
 This file is then used as a cache, so that if the cache file exists on the next initialisation then the cache
 file is used instead of the original source code.
 
-If the cache file exists, a determination on whether the source code has been edited is usually made by comparing
-date stamps on the original and cache files.
+If the cache file exists, the script processor decides whether it is still usable.  Comparing date stamps on the
+original and cache files is the common minimum, but a processor may also compare the source content and the build
+that produced the cache.  A cache that fails validation is regenerated from the source.
 
 -FIELD-
 CurrentLine: Indicates the current line being executed when in debug mode.

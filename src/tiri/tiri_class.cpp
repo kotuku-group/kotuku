@@ -5,6 +5,22 @@ Tiri: Extends the Script class with support for the Tiri language.
 
 The Tiri class provides functionality for running scripts written in the Tiri programming language.
 
+<header>Automatic Caching</>
+
+Setting @Script.CacheFile to a path other than @Script.Path compiles the source to byte code and publishes it there.
+Compiled output records an identity token that names the build which produced it, together with the size and a
+checksum of the source it was compiled from.  A cache is reused only when that token matches the running build and
+the current source content, so a source edit is detected even when it leaves the modification date and file size
+unchanged.  Any mismatch recompiles from the source and republishes the cache.
+
+If the source is unavailable, a cache that names the running build is reused so that byte code can be deployed
+without it.  A cache naming a different build is refused, because it cannot be regenerated and its byte code may not
+match this build's interfaces.
+
+Caches are disabled for a script that sets `SCF::PROCESS_DOC`, because the parser metadata collected for
+documentation tools is not stored in byte code.  Compilation units with imported dependencies are also excluded
+until import invalidation is available.
+
 -END-
 
 *********************************************************************************************************************/
@@ -31,6 +47,7 @@ The Tiri class provides functionality for running scripts written in the Tiri pr
 
 #include "lua.hpp"
 
+#include "lj_bcdump.h"
 #include "lj_obj.h"
 #include "lj_state.h"
 #include "parser/parser_diagnostics.h"
@@ -52,7 +69,7 @@ struct CompilationInput {
 
 static ERR run_script(extTiri *);
 static ERR stack_args(lua_State *, OBJECTID, const FunctionField *, int8_t *);
-static ERR save_binary(lua_State *, OBJECTPTR);
+static ERR save_binary(lua_State *, OBJECTPTR, std::string_view);
 static ERR register_interfaces(lua_State *);
 
 static ERR TIRI_Activate(extTiri *);
@@ -125,16 +142,114 @@ static ERR read_file_to_string(const std::string_view &Path, int64_t Size, std::
 }
 
 //********************************************************************************************************************
+// Most bytes accepted between the compiled marker and the NUL separator, including the separating space.  Bounding
+// the search keeps a malformed file from being scanned in full for a separator that does not exist.
 
-static ERR compiled_payload(std::string_view Source, std::string_view &Payload)
+constexpr size_t MAX_IDENTITY_TOKEN = 128;
+
+//********************************************************************************************************************
+// Split a compiled Tiri file into its optional identity token and the VM payload.  Files produced before identity
+// tokens existed carry no token, which Token reports as an empty view.
+
+static ERR compiled_payload(std::string_view Source, std::string_view &Payload, std::string_view *Token = nullptr)
 {
-   constexpr size_t header_len = sizeof(LUA_COMPILED) - 1;
-   if ((not Source.starts_with(LUA_COMPILED)) or (Source.size() <= header_len + 1) or
-       (Source[header_len] != '\0')) return ERR::InvalidData;
+   constexpr size_t marker_len = sizeof(LUA_COMPILED) - 1;
+   if (not Source.starts_with(LUA_COMPILED)) return ERR::InvalidData;
 
-   Payload = Source.substr(header_len + 1);
+   auto window = Source.substr(0, std::min(Source.size(), marker_len + MAX_IDENTITY_TOKEN + 1));
+   auto separator = window.find('\0', marker_len);
+   if (separator IS std::string_view::npos) return ERR::InvalidData;
+
+   Payload = Source.substr(separator + 1);
    if (not Payload.starts_with("\x1bLJ")) return ERR::InvalidData;
+
+   if (Token) {
+      auto token = Source.substr(marker_len, separator - marker_len);
+      while ((not token.empty()) and (token.front() IS ' ')) token.remove_prefix(1);
+      *Token = token;
+   }
+
    return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Identity of the Tiri implementation that produces byte code.  Automatic caches promise same-build compatibility, so
+// the identity combines the private byte code version, this module's compilation stamp and the installed module
+// file's timestamp and size.  The file check is what detects an incremental rebuild of the module; a static build has
+// no module file and relies on the compilation stamp, which only changes when this source file is recompiled.
+//
+// Thread safety is provided by the guaranteed one-time initialisation of the function-local static.
+
+static uint32_t tiri_build_identity()
+{
+   static const uint32_t identity = [] {
+      auto material = std::format("{}|{}", int(BCDUMP_VERSION), __DATE__ " " __TIME__);
+
+      #ifdef _WIN32
+         constexpr std::string_view module_path = "modules:tiri.dll";
+      #else
+         constexpr std::string_view module_path = "modules:tiri.so";
+      #endif
+
+      objFile::create module = { fl::Path(module_path) };
+      if (module.ok()) {
+         int64_t timestamp = 0, size = 0;
+         if ((module->getTimestamp(timestamp) IS ERR::Okay) and (module->getSize(size) IS ERR::Okay)) {
+            material += std::format("|{}|{}", timestamp, size);
+         }
+      }
+
+      return kt::strhash(material);
+   }();
+
+   return identity;
+}
+
+//********************************************************************************************************************
+// The build identity field always leads an identity token so that a consumer can verify the build without knowing
+// whether the source content was recorded.
+
+static std::string identity_build_field()
+{
+   return std::format("b:{:08x}", tiri_build_identity());
+}
+
+//********************************************************************************************************************
+// Compose the identity token embedded in compiled output.  Source is omitted when the compilation unit did not
+// originate from readable source text, in which case only the build identity can be verified on reload.
+
+static std::string make_identity_token(const std::string *Source)
+{
+   if (Source) return std::format("{} s:{:x},{:08x}", identity_build_field(), Source->size(), kt::strhash(*Source));
+   else return identity_build_field();
+}
+
+//********************************************************************************************************************
+// Validate the complete token grammar as well as the build field.  Source-free cache loading cannot compare the
+// optional source identity, but it must not allow an arbitrary suffix to turn a build-field prefix into a match.
+
+static bool identity_token_matches_build(std::string_view Token, std::string_view BuildField)
+{
+   if (Token IS BuildField) return true;
+   if ((not Token.starts_with(BuildField)) or (Token.size() <= BuildField.size()) or
+       (Token[BuildField.size()] != ' ')) return false;
+
+   auto source_field = Token.substr(BuildField.size() + 1);
+   if (not source_field.starts_with("s:")) return false;
+   source_field.remove_prefix(2);
+
+   auto comma = source_field.find(',');
+   if ((comma IS 0) or (comma IS std::string_view::npos)) return false;
+
+   auto source_size = source_field.substr(0, comma);
+   auto checksum = source_field.substr(comma + 1);
+   if (checksum.size() != 8) return false;
+
+   auto is_hex = [](char Value) {
+      constexpr std::string_view hex_digits = "0123456789abcdef";
+      return hex_digits.find(Value) != std::string_view::npos;
+   };
+   return std::ranges::all_of(source_size, is_hex) and std::ranges::all_of(checksum, is_hex);
 }
 
 //********************************************************************************************************************
@@ -579,6 +694,64 @@ static ERR read_source_file(objFile *File, const std::string &Path, std::string 
 }
 
 //********************************************************************************************************************
+// Confirm that a candidate cache was produced by this build from the current source content.  Source that cannot be
+// read leaves only the build identity verifiable, which is the documented source-free deployment contract.  A cache
+// written before identity tokens existed carries no build field and is therefore rejected.
+//
+// Only identity is judged here.  Structurally unusable byte code is passed through to Query, which owns the
+// established one-shot source fallback for a cache that fails to load.
+
+static bool cache_identity_matches(const extTiri *Self, const std::string &Cache)
+{
+   kt::Log log(__FUNCTION__);
+
+   std::string_view payload, token;
+   if (compiled_payload(Cache, payload, &token) != ERR::Okay) {
+      log.trace("Deferring cache '%s' to Query, it is not a well-formed compiled file.", Self->CacheFile.c_str());
+      return true;
+   }
+
+   // Read the source so that a rejection can report whether recompilation is still possible.
+
+   std::string source;
+   bool source_available;
+   {
+      objFile::create file = { fl::Path(Self->Path) };
+      source_available = file.ok() and (read_source_file(*file, Self->Path, source) IS ERR::Okay);
+   }
+
+   auto reject = [&](CSTRING Reason) {
+      if (source_available) log.msg("Rejecting cache '%s', %s.", Self->CacheFile.c_str(), Reason);
+      else log.warning("Rejecting cache '%s' and its source is unreadable, %s.", Self->CacheFile.c_str(), Reason);
+      return false;
+   };
+
+   auto build_field = identity_build_field();
+   if (not identity_token_matches_build(token, build_field)) {
+      return reject("its identity token is invalid or it was produced by a different build");
+   }
+
+   if (not source_available) {
+      log.msg("Accepting cache '%s' on its build identity, the source is unavailable.", Self->CacheFile.c_str());
+      return true;
+   }
+
+   if (token != make_identity_token(&source)) return reject("the source content has changed");
+
+   return true;
+}
+
+//********************************************************************************************************************
+// Automatic caching applies to a source file that has a separate cache destination.  Document processing is excluded
+// because the parser symbols it collects are never serialised, so a cache hit would silently produce none.
+
+static bool cache_permitted(const extTiri *Self)
+{
+   return (not Self->CacheFile.empty()) and (Self->CacheFile != Self->Path) and
+      (not has_script_extension(Self->Path, ".tbc")) and ((Self->Flags & SCF::PROCESS_DOC) IS SCF::NIL);
+}
+
+//********************************************************************************************************************
 // Read the original path independently of cache selection, including its metadata for a replacement cache.
 
 static ERR load_source(extTiri *Self)
@@ -595,8 +768,7 @@ static ERR load_source(extTiri *Self)
 
    Self->Statement = std::move(source);
    Self->LoadedFromCache = false;
-   Self->SaveCompiled = not Self->CacheFile.empty() and (Self->CacheFile != Self->Path) and
-      not has_script_extension(Self->Path, ".tbc");
+   Self->SaveCompiled = cache_permitted(Self);
 
    if (Self->SaveCompiled) {
       DateTime *date;
@@ -644,16 +816,24 @@ static ERR TIRI_Init(extTiri *Self)
 
       // A directly opened .tbc file is authoritative and must never fall back to another path.
 
-      if ((not Self->CacheFile.empty()) and (Self->CacheFile != Self->Path) and
-          (not has_script_extension(Self->Path, ".tbc"))) {
+      if (cache_permitted(Self)) {
          objFile::create cache = { fl::Path(Self->CacheFile) };
          int64_t timestamp = -1, size = 0;
          if (cache.ok() and (cache->getTimestamp(timestamp) IS ERR::Okay) and
              ((source_error != ERR::Okay) or (timestamp IS source_timestamp)) and
              (cache->getSize(size) IS ERR::Okay)) {
-            log.msg("Using cache '%s'", Self->CacheFile.c_str());
-            auto error = read_file_to_string(Self->CacheFile, size, Self->Statement, nullptr);
-            if (error IS ERR::Okay) Self->LoadedFromCache = true; // Even an empty cache needs validation in Query.
+            // The timestamp is only a cheap pre-filter.  Reuse depends on the embedded identity token, which is
+            // compared against this build and the current source content.
+
+            std::string content;
+            auto error = read_file_to_string(Self->CacheFile, size, content, nullptr);
+            if (error IS ERR::Okay) {
+               if (cache_identity_matches(Self, content)) {
+                  log.msg("Using cache '%s'", Self->CacheFile.c_str());
+                  Self->Statement = std::move(content); // Even an empty cache needs validation in Query.
+                  Self->LoadedFromCache = true;
+               }
+            }
             else {
                log.warning("Failed to read cache '%s': %s", Self->CacheFile.c_str(), GetErrorMsg(error));
                if (auto fallback_error = load_source(Self); fallback_error != ERR::Okay) return error;
@@ -814,7 +994,7 @@ static ERR TIRI_Query(extTiri *Self)
             cache_error = cachefile.error;
             if (cachefile.ok()) {
                cache_created = true;
-               cache_error = save_binary(Self->Lua, *cachefile);
+               cache_error = save_binary(Self->Lua, *cachefile, make_identity_token(&Self->Statement));
                if (cache_error IS ERR::Okay) cache_error = cachefile->setDate(Self->CacheDate);
             }
          } // Close our cache before removing a failed write, including on Windows.
@@ -847,10 +1027,13 @@ Source statements, wrapped byte code and raw VM byte code can be saved.  A rejec
 source fallback during each save, without consuming the later Query fallback or changing cache provenance.  A direct
 `.tbc` file is authoritative and never falls back to another file.
 
-The output contains the Tiri compiled marker, a NUL separator and VM byte code with debug information.  Compatibility
-is limited to the same Kōtuku build and platform.  Live objects, activated closures, struct instances, globals and
-execution state are not saved.  Required state-local named struct layouts, imported declarations, source identities
-and diagnostic line mappings are embedded in the output; unused struct declarations and source text are not embedded.
+The output contains the Tiri compiled marker, an identity token, a NUL separator and VM byte code with debug
+information.  The token records the build that produced the output, and is informational here because a caller-owned
+destination is authoritative when it is loaded.  Automatic caches record a source identity alongside it and are
+validated on reload.  Compatibility is limited to the same Kōtuku build and platform.  Live objects, activated
+closures, struct instances, globals and execution state are not saved.  Required state-local named struct layouts,
+imported declarations, source identities and diagnostic line mappings are embedded in the output; unused struct
+declarations and source text are not embedded.
 Loading publishes embedded layouts in the consumer state for its lifetime.  An identical existing declaration is
 reused, while a conflicting declaration rejects the complete load without changing the prior registry.  Save
 compilation is isolated from the execution state, so rejected and repeated saves do not change imports, declarations,
@@ -905,7 +1088,10 @@ static ERR TIRI_SaveToObject(extTiri *Self, struct acSaveToObject *Args)
       }
    }
 
-   if (error IS ERR::Okay) error = save_binary(compilation.get(), Args->Dest);
+   // Saved output records the build identity only.  A caller-owned destination is authoritative on load, so a source
+   // identity would imply a content comparison that is never performed for it.
+
+   if (error IS ERR::Okay) error = save_binary(compilation.get(), Args->Dest, make_identity_token(nullptr));
    else {
       Self->setErrorMessage(diagnostic);
       log.warning("Save load failure: %s", diagnostic.c_str());
@@ -1003,15 +1189,23 @@ static int write_bytecode(lua_State *, const void *Data, size_t Size, void *Cont
 
 //********************************************************************************************************************
 
-static ERR save_binary(lua_State *Lua, OBJECTPTR Target)
+static ERR save_binary(lua_State *Lua, OBJECTPTR Target, std::string_view Token)
 {
    if ((not Lua) or (not Target)) return ERR::NullArgs;
 
    if ((not lua_gettop(Lua)) or (not lua_isfunction(Lua, -1)) or lua_iscfunction(Lua, -1)) return ERR::InvalidData;
+   if ((not Token.empty()) and (Token.size() + 1 > MAX_IDENTITY_TOKEN)) return ERR::BufferOverflow;
+
+   std::string header(LUA_COMPILED);
+   if (not Token.empty()) {
+      header.push_back(' ');
+      header.append(Token);
+   }
+   header.push_back('\0');
 
    const int stack_top = lua_gettop(Lua);
    BytecodeWriter writer { Target };
-   if (write_bytecode(Lua, LUA_COMPILED, sizeof(LUA_COMPILED), &writer)) return writer.Error;
+   if (write_bytecode(Lua, header.data(), header.size(), &writer)) return writer.Error;
    const int result = lua_dump(Lua, write_bytecode, &writer);
    lua_settop(Lua, stack_top);
    if (writer.Error != ERR::Okay) return writer.Error;
