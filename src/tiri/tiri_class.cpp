@@ -32,9 +32,11 @@ until import invalidation is available.
 #include <kotuku/modules/xml.h>
 #include <kotuku/modules/tiri.h>
 #include <kotuku/modules/module.h>
+#include <kotuku/modules/processes.h>
 #include <kotuku/strings.hpp>
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cctype>
 #include <format>
 #include <limits>
@@ -71,6 +73,7 @@ static ERR run_script(extTiri *);
 static ERR stack_args(lua_State *, OBJECTID, const FunctionField *, int8_t *);
 static ERR save_binary(lua_State *, OBJECTPTR, std::string_view);
 static ERR register_interfaces(lua_State *);
+static ERR publish_cache(extTiri *);
 
 static ERR TIRI_Activate(extTiri *);
 static ERR TIRI_DataFeed(extTiri *, struct acDataFeed *);
@@ -78,6 +81,10 @@ static ERR TIRI_Init(extTiri *);
 static ERR TIRI_NewChild(extTiri *, struct acNewChild &);
 static ERR TIRI_Query(extTiri *);
 static ERR TIRI_SaveToObject(extTiri *, struct acSaveToObject *);
+
+static std::atomic_uint64_t glCacheTemporarySequence = 0;
+
+static bool fail_cache_publication(CachePublishFailure) { return false; }
 
 //********************************************************************************************************************
 
@@ -139,6 +146,38 @@ static ERR read_file_to_string(const std::string_view &Path, int64_t Size, std::
    else Buffer.clear();
 
    return error;
+}
+
+//********************************************************************************************************************
+
+static ERR read_open_file_to_string(objFile *File, int64_t Size, std::string &Buffer)
+{
+   if (not File) return ERR::NullArgs;
+   if ((Size < 0) or (Size > int64_t(std::numeric_limits<int>::max()))) return ERR::OutOfRange;
+
+   Buffer.resize(size_t(Size));
+   int total = 0;
+   while (total < Size) {
+      int result = 0;
+      auto output = std::span((int8_t *)Buffer.data() + total, size_t(Size - total));
+      if (auto error = File->read(output, &result); error != ERR::Okay) {
+         Buffer.clear();
+         return error;
+      }
+      if (not result) {
+         Buffer.clear();
+         return ERR::Read;
+      }
+      total += result;
+   }
+
+   int64_t final_size = 0;
+   if ((File->getSize(final_size) != ERR::Okay) or (final_size != Size)) {
+      Buffer.clear();
+      return ERR::Read;
+   }
+
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -719,6 +758,93 @@ static bool cache_permitted(const extTiri *Self)
 }
 
 //********************************************************************************************************************
+// Create, complete and close a uniquely owned sibling before asking the File move implementation to publish it.  The
+// move normally resolves to a native atomic rename, while retaining the framework's copy/delete fallback.
+
+static std::string temporary_cache_path(std::string_view CachePath)
+{
+   std::string path;
+   auto separator = CachePath.find_last_of(":/\\");
+   if (separator IS std::string_view::npos) path.push_back('.');
+   else {
+      path.assign(CachePath, 0, separator + 1);
+      path.push_back('.');
+      CachePath.remove_prefix(separator + 1);
+   }
+   path.append(CachePath);
+
+   int process_id = 0;
+   if (auto task = CurrentTask()) process_id = task->ProcessID;
+   auto sequence = glCacheTemporarySequence.fetch_add(1, std::memory_order_relaxed) + 1;
+   path.append(std::format(".tmp.{}.{}.{}", process_id, GetThreadID(), sequence));
+   return path;
+}
+
+//********************************************************************************************************************
+// Cache output is written to an exclusively owned temporary file beside the destination, dated, flushed and closed
+// before publication.  The normal same-filesystem rename exposes either the previous complete cache or the new one.
+// Concurrent producers use last-completed-move wins.  Temporary files receive the source-derived `PERMIT` bits;
+// platform ownership, ACL and extended-attribute handling follows the File move implementation.  That implementation
+// retains its copy/delete fallback for unusual filesystems; the fallback is not atomically visible, and a reader can
+// fall back to source while publication is in progress.  Publication failures never prevent the already compiled source
+// from running.  Cache flushing does not make publication crash-durable, and a process or machine crash can leave its
+// temporary file behind.
+
+static ERR publish_cache(extTiri *Self)
+{
+   kt::Log log(__FUNCTION__);
+   constexpr int MAX_TEMP_ATTEMPTS = 16;
+
+   for (int attempt = 0; attempt < MAX_TEMP_ATTEMPTS; ++attempt) {
+      auto temporary_path = temporary_cache_path(Self->CacheFile);
+      bool owns_temporary = false;
+      auto cleanup = deferred_call([&] {
+         if (owns_temporary and (AnalysePath(temporary_path, nullptr) IS ERR::Okay)) {
+            if (auto error = DeleteFile(temporary_path, nullptr); error != ERR::Okay) {
+               log.warning("Failed to remove temporary cache '%s': %s", temporary_path.c_str(), GetErrorMsg(error));
+            }
+         }
+      });
+
+      if (fail_cache_publication(CachePublishFailure::CREATE)) return ERR::TestFailed;
+
+      ERR error;
+      {
+         objFile::create cache = {
+            fl::Path(temporary_path), fl::Flags(FL::NEW|FL::WRITE|FL::EXCLUSIVE),
+            fl::Permissions(Self->CachePermissions)
+         };
+         error = cache.error;
+         if (error IS ERR::FileExists) continue;
+         if (not cache.ok()) return error;
+         owns_temporary = true;
+
+         if (fail_cache_publication(CachePublishFailure::WRITE)) error = ERR::TestFailed;
+         else error = save_binary(Self->Lua, *cache, make_identity_token(&Self->Statement));
+
+         if (error IS ERR::Okay) {
+            if (fail_cache_publication(CachePublishFailure::DATE)) error = ERR::TestFailed;
+            else error = cache->setDate(Self->CacheDate);
+         }
+
+         if (error IS ERR::Okay) {
+            if (fail_cache_publication(CachePublishFailure::FLUSH)) error = ERR::TestFailed;
+            else error = cache->flush();
+         }
+      }
+
+      if (error != ERR::Okay) return error;
+      if (fail_cache_publication(CachePublishFailure::MOVE)) return ERR::TestFailed;
+
+      error = MoveFile(temporary_path, Self->CacheFile, nullptr);
+      if (error IS ERR::Okay) owns_temporary = false;
+      return error;
+   }
+
+   return ERR::FileExists;
+}
+
+//********************************************************************************************************************
 // Read the original path independently of cache selection, including its metadata for a replacement cache.
 
 static ERR load_source(extTiri *Self)
@@ -784,7 +910,7 @@ static ERR TIRI_Init(extTiri *Self)
       // A directly opened .tbc file is authoritative and must never fall back to another path.
 
       if (cache_permitted(Self)) {
-         objFile::create cache = { fl::Path(Self->CacheFile) };
+         objFile::create cache = { fl::Path(Self->CacheFile), fl::Flags(FL::READ) };
          int64_t timestamp = -1, size = 0;
          if (cache.ok() and (cache->getTimestamp(timestamp) IS ERR::Okay) and
              ((source_error != ERR::Okay) or (timestamp IS source_timestamp)) and
@@ -793,7 +919,7 @@ static ERR TIRI_Init(extTiri *Self)
             // compared against this build and the current source content.
 
             std::string content;
-            auto error = read_file_to_string(Self->CacheFile, size, content, nullptr);
+            auto error = read_open_file_to_string(*cache, size, content);
             if (error IS ERR::Okay) {
                if (cache_identity_matches(Self, content)) {
                   log.msg("Using cache '%s'", Self->CacheFile.c_str());
@@ -951,28 +1077,8 @@ static ERR TIRI_Query(extTiri *Self)
          log.msg("Compiling the source into the cache file.");
 
          Self->SaveCompiled = false;
-
-         ERR cache_error;
-         bool cache_created = false;
-         {
-            objFile::create cachefile = {
-               fl::Path(Self->CacheFile), fl::Flags(FL::NEW|FL::WRITE), fl::Permissions(Self->CachePermissions)
-            };
-            cache_error = cachefile.error;
-            if (cachefile.ok()) {
-               cache_created = true;
-               cache_error = save_binary(Self->Lua, *cachefile, make_identity_token(&Self->Statement));
-               if (cache_error IS ERR::Okay) cache_error = cachefile->setDate(Self->CacheDate);
-            }
-         } // Close our cache before removing a failed write, including on Windows.
-
-         if (cache_error != ERR::Okay) {
-            log.warning("Failed to save cache '%s': %s", Self->CacheFile.c_str(), GetErrorMsg(cache_error));
-            if (cache_created) {
-               if (auto error = DeleteFile(Self->CacheFile, nullptr); error != ERR::Okay) {
-                  log.warning("Failed to remove incomplete cache: %s", GetErrorMsg(error));
-               }
-            }
+         if (auto error = publish_cache(Self); error != ERR::Okay) {
+            log.warning("Failed to save cache '%s': %s", Self->CacheFile.c_str(), GetErrorMsg(error));
          }
       }
 
@@ -1001,6 +1107,7 @@ validated on reload.  Compatibility is limited to the same Kōtuku build and pla
 closures, struct instances, globals and execution state are not saved.  Required state-local named struct layouts,
 imported declarations, source identities and diagnostic line mappings are embedded in the output; unused struct
 declarations and source text are not embedded.
+
 Loading publishes embedded layouts in the consumer state for its lifetime.  An identical existing declaration is
 reused, while a conflicting declaration rejects the complete load without changing the prior registry.  Save
 compilation is isolated from the execution state, so rejected and repeated saves do not change imports, declarations,

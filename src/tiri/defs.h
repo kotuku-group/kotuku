@@ -608,3 +608,12 @@ class extTiri : public objTiri {
 
    ~extTiri();
 };
+
+enum class CachePublishFailure : uint8_t {
+   NIL,
+   CREATE,
+   WRITE,
+   DATE,
+   FLUSH,
+   MOVE
+};
