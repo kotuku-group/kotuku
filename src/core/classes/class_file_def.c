@@ -17,6 +17,7 @@ static const struct FieldDef clFileFlags[] = {
    { "ExcludeFiles", 0x00001000 },
    { "ExcludeFolders", 0x00002000 },
    { "Virtual", 0x00004000 },
+   { "Exclusive", 0x00008000 },
    { nullptr, 0 }
 };
 
