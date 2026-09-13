@@ -1665,8 +1665,7 @@ LexState::LexState(lua_State* L, std::string_view Source, std::string_view Chunk
 
 #ifdef INCLUDE_TIPS
    // Initialise tip system from JIT options
-   JOF tip_options = glJitOptions;
-   if (L) tip_options |= L->script->JitOptions;
+   JOF tip_options = L ? L->script->JitOptions : JOF::NIL;
    this->tip_level = compute_tip_level(tip_options);
    if (this->tip_level > 0) {
       bool print_tips = (tip_options & JOF::DIAGNOSE) IS JOF::NIL;
@@ -1835,6 +1834,10 @@ LexState::LexState(lua_State* L, lua_Reader Rfunc, void* Rdata, std::string_view
 LexState::~LexState()
 {
    if (not this->L) return;  // Not properly initialised
+
+   if (not this->loaded_structs_committed) {
+      for (uint32_t key : this->loaded_structs) this->L->struct_declarations.erase(key);
+   }
 
    global_State* g = G(this->L);
    if (this->bc_stack) lj_mem_freevec(g, this->bc_stack, this->size_bc_stack, BCInsLine);

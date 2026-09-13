@@ -1,0 +1,1049 @@
+-- Public bytecode file lifecycle.  Serializer details are covered by type_signature_dumps and compiled tests.
+
+include 'core'
+
+local glRoot
+glSerial = 0
+glMarker = '-- $TIRI:compiled'
+
+glProgram = [[
+   local nothing = nil
+   assert(nothing is nil and true and not false)
+   local total = 0
+   for i in {0 to 200} do
+      if i % 2 is 0 then total += i else total += 1 end
+   end
+   assert(total is 10000)
+   local text = 'left\0right'
+   assert(#text is 10 and text.sub(4, 5) is '\0')
+   local data = { [0]='zero', value=3.25 * 2, text=text }
+   assert(data[0] is 'zero' and data.value is 6.5 and data.text is text)
+   function add(A:num, B:num):num return A + B end
+   function factory(Start:num):func
+      local value = Start
+      return function(Delta:num):num value += Delta return value end
+   end
+   local closure = factory(10)
+   assert(closure(2) is 12 and closure(3) is 15 and add(2, 3) is 5)
+   function const_policy(Arm:bool):num
+      if Arm then global glBytecodeFileConst <const> = 1 end
+      local sum = 0
+      for value in {0 to 20} do sum += value end
+      return sum
+   end
+   function dynamic_policy(...):<num, ...>
+      return 23, ...
+   end
+   local number, first, second = dynamic_policy(13, 29)
+   assert(const_policy(false) is 190)
+   assert(number is 23 and first is 13 and second is 29)
+   print('BYTECODE_ACCEPTANCE_OK')
+]]
+
+glResaveProgram = [[
+   global glB06Runs = (glB06Runs or 0) + 1
+   captured = 40
+   closure = function(Delta:num):num
+      captured += Delta
+      return captured
+   end
+   assert(glB06Runs is 1, 'A re-saved consumer must start with fresh globals')
+   assert(closure(2) is 42, 'A re-saved consumer must create a fresh closure')
+   print('B06_RESAVE_OK:1:42')
+]]
+
+glCloseProgram = [[
+   root_count = 0
+   child_count = 0
+   native_id = 0
+   alias = nil
+   root <close> = setmetatable({}, {
+      __close=function()
+         root_count++
+         assert(root_count is 1, 'Root close must run exactly once')
+         print('BYTECODE_ROOT_CLOSE_OK')
+      end
+   })
+   function child()
+      child_value <close> = setmetatable({}, {
+         __close=function(Error)
+            child_count++
+            assert(Error.message.find('BYTECODE_CHILD_ERROR') != nil)
+         end
+      })
+      local owner <close>:obj = obj.new('time')
+      native_id = owner.id
+      alias = obj.find(native_id)
+      raise 'BYTECODE_CHILD_ERROR'
+   end
+   local child_caught = false
+   try
+      child()
+   except child_error
+      child_caught = true
+   end
+   assert(child_caught, 'Child exception must reach the root handler')
+   assert(child_count is 1, 'Child close must run exactly once')
+   assert(obj.find(native_id) is nil, 'Owning native object must become unfindable')
+   assert(not alias.exists(), 'Detached native alias must become stale')
+   print('BYTECODE_CLOSE_ACCEPTANCE_OK')
+]]
+
+@BeforeAll function setup()
+   local err, temp = mSys.ResolvePath('temp:', 0)
+   check err
+   glRoot = temp .. f'/bytecode.tests_{processing.task().id}_{mSys.PreciseTime()}/'
+   local folder <close> = obj.new('file', { path=glRoot, flags=FL_NEW|FL_FOLDER })
+end
+
+@AfterAll function cleanup()
+   if glRoot then check mSys.DeleteFile(glRoot) end
+end
+
+function path(Extension:str):str
+   glSerial++
+   return glRoot .. tostring(glSerial) .. Extension
+end
+
+-- Compiled output is the marker, an optional identity token and a NUL separator.  Tests locate the separator rather
+-- than assume a fixed wrapper length, because the token records the producing build and the source content.
+
+function wrapper_size(Bytes:str):num
+   assert(Bytes.startsWith(glMarker), 'Compiled output must start with the Tiri marker')
+   local separator = Bytes.find('\0', #glMarker)
+   assert(separator != nil, 'Compiled output must carry a NUL separator')
+   return separator + 1
+end
+
+function payload(Bytes:str):str
+   return Bytes.sub(wrapper_size(Bytes))
+end
+
+function identity_token(Bytes:str):str
+   local separator = Bytes.find('\0', #glMarker)
+   assert(separator != nil, 'Compiled output must carry a NUL separator')
+   return Bytes.sub(#glMarker, separator).trim()
+end
+
+function retoken(Bytes:str, Token:str):str
+   return glMarker .. ' ' .. Token .. '\0' .. payload(Bytes)
+end
+
+function is_compiled(Bytes:str):bool
+   if not Bytes.startsWith(glMarker) then return false end
+   local separator = Bytes.find('\0', #glMarker)
+   if separator is nil then return false end
+   return Bytes.sub(separator + 1).startsWith('\x1bLJ')
+end
+
+function is_cache(Bytes:str):bool
+   return Bytes.startsWith('TIRICACH') and #Bytes > 56
+end
+
+function write_file(Path:str, Content:str)
+   local file <close> = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
+   if #Content > 0 then check file.acWrite(Content) end
+end
+
+function read_file(Path:str):str
+   local file <close> = io.open(Path, 'r')
+   return file.read('*a')
+end
+
+function exists(Path:str):bool
+   return mSys.AnalysePath(Path) is ERR_Okay
+end
+
+function save(Script:obj, Path:str)
+   local file <close> = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
+   check Script.acSaveToObject(file)
+   assert(file.size > #glMarker, 'Save must produce a non-empty VM payload')
+end
+
+function activate(Script:obj)
+   check Script.acActivate()
+   assert(Script.error is ERR_Okay, Script.errorMessage)
+end
+
+function save_lifecycle(Script:obj):array<str>
+   local outputs = array<str> {}
+   outputs.push(path('_b06_before_query.tbc'))
+   save(Script, outputs.last())
+   check Script.acQuery()
+   outputs.push(path('_b06_after_query.tbc'))
+   save(Script, outputs.last())
+   activate(Script)
+   outputs.push(path('_b06_after_activate.tbc'))
+   save(Script, outputs.last())
+   return outputs
+end
+
+function child(Parameters:array<str>, Shell:bool):<num, str>
+   local output = ''
+   local executable = processing.task().processPath .. 'origo'
+   if mSys.GetSystemState().platform is 'Windows' then executable ..= '.exe' end
+   if Shell then executable = Parameters[0] end
+   local task <close> = obj.new('task', {
+      location=executable, flags=Shell ? TSF_WAIT|TSF_SHELL : TSF_WAIT, timeout=20,
+      outputCallback=function(Task, Buffer) output ..= Buffer.getString() end,
+      errorCallback=function(Task, Buffer) output ..= Buffer.getString() end
+   })
+   if not Shell then
+      for parameter in values(Parameters) do check task.mtAddArgument(parameter) end
+   end
+   check task.acActivate()
+   return task.returnCode, output
+end
+
+function append_outputs(Destination:array<str>, Source:array<str>)
+   for output_path in values(Source) do Destination.push(output_path) end
+end
+
+function verify_resaved_outputs(Outputs:array<str>)
+   for output_path in values(Outputs) do
+      local code, output = child(array<str> { output_path, '--log-warning', '--gfx-driver=headless' })
+      assert(code is 0, output)
+      assert(output.count('B06_RESAVE_OK:1:42') is 1,
+         'A re-saved consumer must execute once with fresh activation state: ' .. output)
+   end
+end
+
+function date_file(Path:str, Day:num)
+   local file <close> = obj.new('file', { path=Path, flags=FL_READ|FL_WRITE })
+   check file.mtSetDate(2025, 1, Day, 12, 0, 0, FDT_MODIFIED)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Saving and querying must remain non-executing and repeatable, while activation uses the chunk selected by Query
+-- even if a later save replaces the script's source statement.
+
+@Test function SaveQueryAndRepeatedActivation()
+   local script <close> = obj.new('tiri', { statement="global bytecode_runs = (bytecode_runs or 0) + 1" })
+   local output = path('.tbc')
+   for i in {0 to 3} do save(script, output) end
+   -- An unconditional failure would be observed if either save or Query executed the program.
+   local dormant <close> = obj.new('tiri', { statement="assert(false, 'EXECUTED_DURING_SAVE')" })
+   save(dormant, path('.tbc'))
+   check dormant.acQuery()
+   check script.acQuery()
+   save(script, output)
+   activate(script)
+   save(script, output)
+   activate(script)
+   local restored <close> = obj.new('tiri', { path=output })
+   check restored.acQuery()
+   activate(restored)
+   activate(restored)
+
+   script.statement = "assert(false, 'BYTECODE_REPLACEMENT_SAVED')"
+   save(script, output)
+   activate(script)
+   local replacement <close> = obj.new('tiri', { path=output })
+   replacement.acActivate()
+   assert(replacement.error != ERR_Okay and
+      replacement.errorMessage.find('BYTECODE_REPLACEMENT_SAVED') != nil,
+      'The saved replacement must not replace the pending queried chunk')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Wrapped bytecode, raw VM payloads and a selected source cache must all support repeated re-saving before and after
+-- Query/Activate, with every result executing in a fresh process state.
+
+@Test function ResaveWrappedRawAndSelectedCache()
+   local wrapped = path('_b06_seed.tbc')
+   do
+      local producer <close> = obj.new('tiri', { statement=glResaveProgram })
+      save(producer, wrapped)
+   end
+   local wrapped_bytes = read_file(wrapped)
+   local raw = path('_b06_raw.tbc')
+   write_file(raw, payload(wrapped_bytes))
+
+   local outputs = array<str> {}
+   do
+      local script <close> = obj.new('tiri', { path=wrapped })
+      append_outputs(outputs, save_lifecycle(script))
+   end
+   do
+      local script <close> = obj.new('tiri', { path=raw })
+      append_outputs(outputs, save_lifecycle(script))
+   end
+
+   local source = path('_b06_cache_source.tiri')
+   local cache = path('_b06_cache.tbc')
+   write_file(source, glResaveProgram)
+   date_file(source, 6)
+   do
+      local cache_producer <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      check cache_producer.acQuery()
+   end
+   assert(is_cache(read_file(cache)))
+   -- A cache envelope is also accepted as an authoritative direct input and can be re-saved as ordinary bytecode.
+   check mSys.DeleteFile(source)
+   do
+      local script <close> = obj.new('tiri', { path=cache })
+      append_outputs(outputs, save_lifecycle(script))
+   end
+
+   check mSys.DeleteFile(wrapped)
+   check mSys.DeleteFile(raw)
+   check mSys.DeleteFile(cache)
+   verify_resaved_outputs(outputs)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Re-saving must honour the selected input's provenance: source fallback may repair an automatic cache, while a
+-- direct invalid .tbc remains authoritative and must not silently fall back to another cache.
+
+@Test function ResaveCacheFallbackAndDirectAuthority()
+   local source = path('_b06_fallback_source.tiri')
+   local cache = path('_b06_fallback_cache.tbc')
+   local resaved = path('_b06_fallback_result.tbc')
+   write_file(source, glResaveProgram)
+   write_file(cache, 'not bytecode')
+   date_file(source, 7)
+   date_file(cache, 7)
+
+   do
+      local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      save(script, resaved)
+      assert(read_file(cache) is 'not bytecode', 'Saving must not replace or consume selected cache provenance')
+      check script.acQuery()
+      activate(script)
+   end
+   assert(is_cache(read_file(cache)), 'Query must retain and use its own source fallback')
+   check mSys.DeleteFile(source)
+   local code, output = child(array<str> { resaved, '--log-warning', '--gfx-driver=headless' })
+   assert(code is 0 and output.count('B06_RESAVE_OK:1:42') is 1, output)
+
+   local missing_cache = path('_b06_missing_cache.tbc')
+   write_file(missing_cache, 'not bytecode')
+   try
+      local missing <close> = obj.new('tiri', {
+         path=path('_b06_missing_source.tiri'), cacheFile=missing_cache
+      })
+      assert(false, 'Malformed cache and missing source must fail initialisation')
+   except e when ERR_FileNotFound
+   end
+
+   local invalid_source = path('_b06_invalid_source.tiri')
+   local invalid_cache = path('_b06_invalid_cache.tbc')
+   write_file(invalid_source, 'local =')
+   write_file(invalid_cache, 'not bytecode')
+   date_file(invalid_source, 8)
+   date_file(invalid_cache, 8)
+   local invalid <close> = obj.new('tiri', { path=invalid_source, cacheFile=invalid_cache })
+   local invalid_output <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
+   assert(invalid.acSaveToObject(invalid_output) is ERR_InvalidData)
+   assert(invalid_output.size is 0 and invalid.errorMessage != nil and #invalid.errorMessage > 0)
+   assert(read_file(invalid_cache) is 'not bytecode', 'A failed save fallback must not alter the selected cache')
+
+   local direct_path = path('_b06_direct_invalid.tbc')
+   write_file(direct_path, 'not bytecode')
+   local direct <close> = obj.new('tiri', { path=direct_path, cacheFile=resaved })
+   local direct_output <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
+   assert(direct.acSaveToObject(direct_output) is ERR_InvalidData)
+   assert(direct_output.size is 0 and direct.errorMessage.find('Expected a compiled Tiri wrapper') != nil,
+      'A direct .tbc must fail without consulting a valid alternative cache')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Each save must compile an isolated, complete unit including imports; repeated failures must not poison later saves,
+-- queries or activations after replacing malformed source.
+
+@Test function SaveCompilationIsIsolated()
+   local helper = glRoot .. 'save_isolation_helper.tiri'
+   local source = glRoot .. 'save_isolation_main.tiri'
+   local import_path = './save_isolation_helper'
+   write_file(helper, 'global function save_isolation_helper():num return 42 end')
+   write_file(source, "import '" .. import_path .. "'\nassert(save_isolation_helper() is 42)")
+
+   local script <close> = obj.new('tiri', { path=source })
+   for i in {0 to 3} do
+      local output <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
+      check script.acSaveToObject(output)
+      assert(output.size > #glMarker, 'Every import-containing save must preserve the complete unit')
+   end
+   check script.acQuery()
+   activate(script)
+
+   for i in {0 to 2} do
+      local output <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
+      check script.acSaveToObject(output)
+      assert(output.size > #glMarker, 'Saving after Query/Activate must compile the complete import again')
+      activate(script)
+   end
+
+   local synthetic <close> = obj.new('tiri', {
+      statement="import 'json'\nassert(json.encode(42) is '42')"
+   })
+   for i in {0 to 2} do
+      local output <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
+      check synthetic.acSaveToObject(output)
+      assert(output.size > #glMarker, 'A synthetic chunk must preserve its anonymous origin and imported source')
+   end
+   check synthetic.acQuery()
+   activate(synthetic)
+
+   local malformed_source = glRoot .. 'save_isolation_malformed.tiri'
+   write_file(malformed_source, "import '" .. import_path .. "'\nlocal =")
+   local malformed <close> = obj.new('tiri', { path=malformed_source })
+   for i in {0 to 2} do
+      local output <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
+      assert(malformed.acSaveToObject(output) is ERR_InvalidData)
+      assert(output.size is 0)
+   end
+   malformed.statement = 'global save_isolation_replacement = 7'
+   save(malformed, path('.tbc'))
+   check malformed.acQuery()
+   activate(malformed)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- A bytecode file produced without executing its source must run identically in fresh processes after all source files
+-- are removed, with both interpreter-only and normal JIT modes.
+
+@Test function FreshProcessesWithoutSource()
+   local source = path('.tiri')
+   local binary = path('.tbc')
+   local producer = path('.tiri')
+   write_file(source, glProgram)
+   write_file(producer, [[
+      local script <close> = obj.new('tiri', { path=arg('source') })
+      local output <close> = obj.new('file', { path=arg('binary'), flags=FL_NEW|FL_WRITE })
+      check script.acSaveToObject(output)
+   ]])
+   local source_code, expected = child(array<str> { source, '--log-warning', '--gfx-driver=headless' })
+   assert(source_code is 0 and expected.find('BYTECODE_ACCEPTANCE_OK') != nil, expected)
+   local code, output = child(array<str> { producer, 'source=' .. source, 'binary=' .. binary, '--log-warning' })
+   assert(code is 0, output)
+   assert(output.find('BYTECODE_ACCEPTANCE_OK') is nil, 'Producer must not execute source')
+   check mSys.DeleteFile(source)
+   check mSys.DeleteFile(producer)
+   for mode in values({ 'off', '' }) do
+      local args = array<str> { binary, '--log-warning', '--gfx-driver=headless' }
+      if mode != '' then args.push('--jit-options') args.push(mode) end
+      local result, observed = child(args)
+      assert(result is 0 and observed is expected, observed)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Runtime loads must share imports with their caller, including when the caller was restored from bytecode.
+
+@Test function RuntimeLoadsReuseImports()
+   local helper = glRoot .. 'runtime_reuse_helper.tiri'
+   local loader = glRoot .. 'runtime_reuse_loader.tiri'
+   local main = path('_runtime_reuse.tiri')
+   local binary = path('_runtime_reuse.tbc')
+   write_file(loader, [[
+      import './runtime_reuse_helper' as reused
+      assert(reused.extension() is 42, 'Runtime imports must preserve namespace extensions')
+      assert(glRuntimeImportRuns is 1, 'Runtime imports must initialise only once')
+      return reused
+   ]])
+   write_file(main, [[
+      global glRuntimeImportRuns = 0
+      import './runtime_reuse_helper'
+      runtimeReuse.extension = function():num return 42 end
+      local first = loadFile(arg('loader'))
+      assert(first is runtimeReuse, 'Runtime imports must retain the original namespace table')
+      check mSys.DeleteFile(arg('helper'))
+      local second = loadFile(arg('loader'))
+      assert(second is runtimeReuse, 'An existing import must not require another source read')
+      print('RUNTIME_IMPORT_REUSE_OK')
+   ]])
+
+   for compiled in values({ false, true }) do
+      write_file(helper, [[
+         namespace runtimeReuse {}
+         glRuntimeImportRuns++
+      ]])
+      local input = main
+      if compiled then
+         local script <close> = obj.new('tiri', { path=main })
+         check script.acQuery()
+         save(script, binary)
+         input = binary
+      end
+      local code, output = child(array<str> { input, 'loader=' .. loader, 'helper=' .. helper, '--log-warning' })
+      assert(code is 0, output)
+      assert(output.count('RUNTIME_IMPORT_REUSE_OK') is 1, output)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Saving and re-saving an imported compilation unit must preserve import order, declarations and source diagnostics so
+-- the unit remains executable after every contributing source file is removed.
+
+@Test function ImportedCompilationUnitWithoutSources()
+   local main = path('_b04_main.tiri')
+   local left = glRoot .. 'b04_left.tiri'
+   local right = glRoot .. 'b04_right.tiri'
+   local common = glRoot .. 'b04_common.tiri'
+   local empty = glRoot .. 'b04_empty.tiri'
+   local binary = path('_b04.tbc')
+   local second_binary = path('_b04_second.tbc')
+   local producer = path('_b04_producer.tiri')
+   local consumer = path('_b04_consumer.tiri')
+   write_file(common, [[struct B04Leaf Value: int end
+glB04Events ..= 'C'
+global function b04_value():num return 42 end]])
+   write_file(left, [[import './b04_common'
+struct B04Middle Leaf: struct<B04Leaf> end
+glB04Events ..= 'L'
+global function b04_failure()
+   raise 'B04_IMPORTED_FAILURE'
+end]])
+   write_file(right, "import './b04_common'\nglB04Events ..= 'R'")
+   write_file(empty, '')
+   write_file(main, [[global glB04Events = 'M'
+import './b04_left'
+import './b04_right'
+import './b04_empty'
+struct B04Root Middle: struct<B04Middle> end
+local b04_record = struct<B04Root> { }
+b04_record.Middle.Leaf.Value = 42
+glB04Events ..= 'E'
+assert(glB04Events is 'MCLRE' and b04_value() is 42 and b04_record.Middle.Leaf.Value is 42, glB04Events)
+try
+   b04_failure()
+except e
+   assert(e.source.endsWith('b04_left.tiri'), e.source)
+   assert(e.line is 5, tostring(e.line))
+end
+print('B04_IMPORT_ACCEPTANCE_OK:' .. glB04Events)]])
+   write_file(producer, [[
+      local script <close> = obj.new('tiri', { path=arg('source') })
+      local output <close> = obj.new('file', { path=arg('binary'), flags=FL_NEW|FL_WRITE })
+      check script.acSaveToObject(output)
+      check script.acQuery()
+      local repeated <close> = obj.new('file', { path=arg('binary2'), flags=FL_NEW|FL_WRITE })
+      check script.acSaveToObject(repeated)
+   ]])
+   write_file(consumer, [[
+      local script <close> = obj.new('tiri', { path=arg('binary') })
+      check script.acQuery()
+      local output <close> = obj.new('file', { path=arg('resaved'), flags=FL_NEW|FL_WRITE })
+      check script.acSaveToObject(output)
+      check script.acActivate()
+      assert(script.error is ERR_Okay, script.errorMessage)
+   ]])
+   local code, output = child(array<str> { producer, 'source=' .. main, 'binary=' .. binary,
+      'binary2=' .. second_binary, '--log-warning' })
+   assert(code is 0, output)
+   check mSys.DeleteFile(main)
+   check mSys.DeleteFile(left)
+   check mSys.DeleteFile(right)
+   check mSys.DeleteFile(common)
+   check mSys.DeleteFile(empty)
+   check mSys.DeleteFile(producer)
+   local resaved = path('_b04_resaved.tbc')
+   code, output = child(array<str> { consumer, 'binary=' .. second_binary, 'resaved=' .. resaved,
+      '--log-warning' })
+   assert(code is 0 and output.find('B04_IMPORT_ACCEPTANCE_OK:MCLRE') != nil, output)
+   check mSys.DeleteFile(consumer)
+   code, output = child(array<str> { resaved, '--log-warning' })
+   assert(code is 0 and output.find('B04_IMPORT_ACCEPTANCE_OK:MCLRE') != nil, output)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Serialized close metadata must preserve script and native-object cleanup during exception unwinding in a fresh
+-- process without source files, regardless of JIT mode.
+
+@Test function FreshProcessesCloseMetadataWithoutSource()
+   local source = path('.tiri')
+   local binary = path('.tbc')
+   local producer = path('.tiri')
+   write_file(source, glCloseProgram)
+   write_file(producer, [[
+      local script <close> = obj.new('tiri', { path=arg('source') })
+      local output <close> = obj.new('file', { path=arg('binary'), flags=FL_NEW|FL_WRITE })
+      check script.acSaveToObject(output)
+   ]])
+   local source_code, expected = child(array<str> { source, '--log-warning' })
+   assert(source_code is 0 and expected.find('BYTECODE_CLOSE_ACCEPTANCE_OK') != nil and
+      expected.find('BYTECODE_ROOT_CLOSE_OK') != nil, expected)
+   local code, output = child(array<str> { producer, 'source=' .. source, 'binary=' .. binary, '--log-warning' })
+   assert(code is 0, output)
+   check mSys.DeleteFile(source)
+   check mSys.DeleteFile(producer)
+   for mode in values({ 'off', '' }) do
+      local args = array<str> { binary, '--log-warning' }
+      if mode != '' then args.push('--jit-options') args.push(mode) end
+      local result, observed = child(args)
+      assert(result is 0 and observed is expected, observed)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- An automatically generated cache must retain close-handler metadata and execute the same cleanup behaviour after its
+-- source is removed, in both interpreter-only and normal JIT modes.
+
+@Test function CloseMetadataCacheRunsWithoutSource()
+   local source = path('.tiri')
+   local cache = path('.tbc')
+   write_file(source, glCloseProgram)
+   local source_code, expected = child(array<str> { source, '--log-warning' })
+   assert(source_code is 0 and expected.find('BYTECODE_CLOSE_ACCEPTANCE_OK') != nil, expected)
+   do
+      local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      check script.acQuery()
+   end
+   assert(is_cache(read_file(cache)))
+   check mSys.DeleteFile(source)
+   for mode in values({ 'off', '' }) do
+      local args = array<str> { cache, '--log-warning' }
+      if mode != '' then args.push('--jit-options') args.push(mode) end
+      local result, observed = child(args)
+      assert(result is 0 and observed is expected, observed)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Compiled-file loading must reject malformed, oversized, version-invalid and truncated wrappers without corrupting
+-- reusable script state, while still accepting a valid raw VM payload.
+
+@Test function BinaryBoundariesAndRecovery()
+   local script <close> = obj.new('tiri', { statement=glProgram })
+   local binary = path('.version.TBC')
+   save(script, binary)
+   local bytes = read_file(binary)
+   assert(is_compiled(bytes), 'Exact wrapper and VM magic required')
+   local wrapper = wrapper_size(bytes)
+   -- The serializer's current version comes from a dump rather than duplicating its private ABI constant.
+   local vm = string.dump(function() return 1 end)
+   assert(bytes.sub(wrapper + 3, wrapper + 4) is vm.sub(3, 4))
+   local variants = {
+      '', glMarker, glMarker .. '\0', glMarker .. '\0print("BAD")',
+      glMarker .. ' ' .. string.rep('x', 200) .. '\0' .. payload(bytes), -- Identity token exceeds its bound
+      glMarker .. payload(bytes), -- Marker without a separator
+      bytes.sub(0, wrapper + 3) .. '\x01' .. bytes.sub(wrapper + 4),
+      bytes.sub(0, wrapper + 4) .. '\x80\x01' .. bytes.sub(wrapper + 5)
+   }
+   for size in values({ wrapper + 1, wrapper + 4, wrapper + 8, math.floor(#bytes / 2), #bytes - 1 }) do
+      variants[#variants] = bytes.sub(0, size)
+   end
+   for content in values(variants) do
+      local bad = path('.tbc')
+      write_file(bad, content)
+      local loaded <close> = obj.new('tiri', { path=bad })
+      assert(loaded.acQuery() is ERR_InvalidData)
+      assert(loaded.errorMessage != nil and #loaded.errorMessage > 0)
+      assert(loaded.acQuery() is ERR_InvalidData, 'Retry must fail without corrupting the state')
+      loaded.statement = 'assert(6 * 7 is 42)'
+      check loaded.acQuery()
+      activate(loaded)
+   end
+   local raw = path('.tbc')
+   write_file(raw, payload(bytes))
+   local loaded <close> = obj.new('tiri', { path=raw })
+   activate(loaded)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Save failures must be atomic for null, read-only, malformed and actively executing inputs, leaving destinations
+-- untouched and reporting the appropriate state or argument error.
+
+@Test function SaveFailuresAndActiveExecution()
+   local script <close> = obj.new('tiri', { statement='assert(true)' })
+   assert(script.acSaveToObject(nil) is ERR_NullArgs)
+   local filename = path('.tbc')
+   write_file(filename, 'unchanged')
+   local readonly <close> = obj.new('file', { path=filename, flags=FL_READ })
+   assert(script.acSaveToObject(readonly) is ERR_FileWriteFlag)
+   assert(read_file(filename) is 'unchanged')
+   local destination <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
+   local invalid <close> = obj.new('tiri', { statement='local =' })
+   for i in {0 to 2} do assert(invalid.acSaveToObject(destination) is ERR_InvalidData) end
+   assert(destination.size is 0)
+   local name = f'bytecode_active_{glSerial}'
+   local active <close> = obj.new('tiri', { name=name, statement=[[
+      local myself = obj.find(arg('self'))
+      local file <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
+      assert(myself.acSaveToObject(file) is ERR_InvalidState)
+      assert(file.size is 0)
+   ]] })
+   check active.acSetKey('self', name)
+   activate(active)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Automatic caches must be reused only for the same source identity, regenerated from changed or corrupt inputs, and
+-- apply a single controlled fallback without overriding direct-bytecode authority.
+
+@Test function CacheLifecycle()
+   local source = path('.tiri')
+   local cache = path('.tbc')
+   write_file(source, 'assert(true)')
+   date_file(source, 1)
+   do
+      local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      check script.acQuery()
+   end
+   local original = read_file(cache)
+   assert(is_cache(original))
+   -- An unchanged source reuses the cache, which the deliberately broken replacement below then invalidates.
+   do
+      local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      activate(script)
+   end
+   assert(read_file(cache) is original, 'An unchanged source must reuse its cache')
+   -- Identical timestamp and size, but different content: the recorded source identity must force a recompile.
+   write_file(source, 'assert(1 is 1)')
+   date_file(source, 1)
+   do
+      local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      activate(script)
+   end
+   assert(read_file(cache) != original, 'A same-timestamp content change must regenerate the cache')
+   -- A same-timestamp change to an invalid source must be reported rather than masked by the cache.
+   local broken = path('.tiri')
+   local broken_cache = path('.tbc')
+   write_file(broken, 'assert(true)')
+   date_file(broken, 1)
+   do
+      local script <close> = obj.new('tiri', { path=broken, cacheFile=broken_cache })
+      check script.acQuery()
+   end
+   write_file(broken, 'local =')
+   date_file(broken, 1)
+   do
+      local script <close> = obj.new('tiri', { path=broken, cacheFile=broken_cache })
+      assert(script.acQuery() is ERR_Syntax, 'A stale cache must not mask a broken source')
+   end
+   write_file(source, 'local value = 42 assert(value is 42)')
+   date_file(source, 2)
+   do
+      local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      activate(script)
+   end
+   assert(read_file(cache) != original, 'Stale cache must be regenerated')
+   local current = read_file(cache)
+   write_file(cache, current.sub(0, #current - 1) .. '\x01')
+   do
+      local recovered <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      check recovered.acQuery()
+      activate(recovered)
+   end
+   assert(read_file(cache) is current, 'Structurally invalid payload must fall back without contaminating the state')
+
+   local legacy = path('.tbc')
+   do
+      local producer <close> = obj.new('tiri', { path=source })
+      save(producer, legacy)
+   end
+   for corrupt in values({ '', glMarker .. '\0', 'not bytecode', original.sub(0, 20),
+      original.sub(0, #original - 1) }) do
+      write_file(cache, corrupt)
+      date_file(cache, 2)
+      local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      check script.acQuery()
+      activate(script)
+      assert(is_cache(read_file(cache)))
+   end
+   check mSys.DeleteFile(source)
+   try
+      local unavailable <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      assert(false, 'A schema-1 cache must not resurrect a missing source')
+   except e when ERR_FileNotFound
+   end
+   do
+      local legacy_fallback <close> = obj.new('tiri', { path=source, cacheFile=legacy })
+      activate(legacy_fallback)
+   end
+   local direct_cache <close> = obj.new('tiri', { path=cache })
+   activate(direct_cache)
+
+   local alternative = path('.tbc')
+   write_file(alternative, original)
+   write_file(cache, glMarker .. '\0')
+   local direct <close> = obj.new('tiri', { path=cache, cacheFile=alternative })
+   assert(direct.acQuery() is ERR_InvalidData)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Imported caches are reusable only while every dependency resolves to the same path and has the same content.
+
+@Test function ImportedCacheReuseAndInvalidation()
+   local source = path('_b04_cache_main.tiri')
+   local helper = glRoot .. 'b04_cache_helper.tiri'
+   local cache = path('_b04_cache.tbc')
+   write_file(helper, 'global glB04CacheValue = 42')
+   write_file(source, "import './b04_cache_helper'\nassert(glB04CacheValue > 0)")
+   date_file(source, 3)
+   date_file(helper, 3)
+   do
+      local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      check script.acQuery()
+      activate(script)
+   end
+   local original = read_file(cache)
+   assert(is_cache(original), 'Imported source must publish a manifest cache')
+   do
+      local cached <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      activate(cached)
+   end
+   assert(read_file(cache) is original, 'Unchanged imports must reuse the cache')
+
+   -- Same-size, same-timestamp edits are detected by dependency content digest.
+   write_file(helper, 'global glB04CacheValue = 43')
+   date_file(helper, 3)
+   do
+      local rebuilt <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      activate(rebuilt)
+   end
+   assert(read_file(cache) != original, 'An edited import must rebuild the cache')
+
+   local legacy = path('_b04_legacy.tbc')
+   do
+      local producer <close> = obj.new('tiri', { path=source })
+      save(producer, legacy)
+   end
+
+   check mSys.DeleteFile(helper)
+   local missing <close> = obj.new('tiri', { path=source, cacheFile=cache })
+   assert(missing.acQuery() is ERR_Syntax, 'A removed import must fall back and report the source error')
+   check mSys.DeleteFile(source)
+   try
+      local legacy_missing <close> = obj.new('tiri', { path=source, cacheFile=legacy })
+      assert(false, 'A legacy imported cache must remain unavailable without source validation metadata')
+   except e when ERR_FileNotFound
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Runtime-only Script flags must neither invalidate nor change a cache entry.
+
+@Test function RuntimeFlagsDoNotChangeCacheIdentity()
+   local source = path('.tiri')
+   local cache = path('.tbc')
+   write_file(source, 'assert(true)')
+   date_file(source, 4)
+   do
+      local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      check script.acQuery()
+   end
+   local original = read_file(cache)
+   do
+      local script <close> = obj.new('tiri', {
+         path=source, cacheFile=cache, flags=SCF_EXIT_ON_ERROR|SCF_LOG_ALL
+      })
+      activate(script)
+   end
+   assert(read_file(cache) is original, 'EXIT_ON_ERROR and LOG_ALL must not invalidate or republish bytecode')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- A changed conditional observation invalidates a cache even when the source itself is unchanged.
+
+@Test function ConditionalObservationInvalidatesCache()
+   local source = path('_conditional_main.tiri')
+   local gate = glRoot .. 'conditional_gate'
+   local cache = path('_conditional_cache.tbc')
+   write_file(source, [[
+      @if(exists='./conditional_gate')
+      local enabled = true
+      @end
+      assert(true)
+   ]])
+   do
+      local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      check script.acQuery()
+   end
+   local original = read_file(cache)
+   write_file(gate, '')
+   do
+      local rebuilt <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      check rebuilt.acQuery()
+   end
+   assert(read_file(cache) != original, 'A changed exists observation must rebuild the cache')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Document-processing mode must always parse source because parser symbols are not serialised, so it must neither
+-- publish an automatic cache nor consume an existing one.
+
+@Test function DocumentProcessingBypassesCache()
+   local source = path('.tiri')
+   local cache = path('.tbc')
+   write_file(source, "print('B07A_DOC_OK')")
+   date_file(source, 5)
+
+   -- Parser symbols are never serialised, so document processing must neither write nor read a cache.
+   do
+      local script <close> = obj.new('tiri', { path=source, cacheFile=cache, flags=SCF_PROCESS_DOC })
+      activate(script)
+   end
+   assert(not exists(cache), 'Document processing must not publish a cache')
+
+   do
+      local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      check script.acQuery()
+   end
+   assert(exists(cache), 'Ordinary compilation must publish a cache')
+   check mSys.DeleteFile(source)
+   try
+      local rejected <close> = obj.new('tiri', { path=source, cacheFile=cache, flags=SCF_PROCESS_DOC })
+      assert(false, 'Document processing must not consume an existing cache')
+   except e when ERR_FileNotFound
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- A used named-struct declaration must be recorded in an automatic cache that remains executable after source
+-- removal.
+
+@Test function StructSourceProducesReusableCache()
+   local source = path('.tiri')
+   local cache = path('.tbc')
+   write_file(source, 'struct CachedRecord\nValue: int\nend\nassert(struct<CachedRecord> { Value=9 }.Value is 9)')
+   local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
+   check script.acQuery()
+   assert(exists(cache), 'A source file with a used declaration should produce a cache')
+   activate(script)
+   check mSys.DeleteFile(source)
+   local cached <close> = obj.new('tiri', { path=cache })
+   activate(cached)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Runtime failures raised by loaded bytecode must retain their original diagnostic message across saving and loading.
+
+@Test function RuntimeDiagnosticSurvivesSaving()
+   local filename = path('.tbc')
+   local script <close> = obj.new('tiri', { statement="assert(false, 'BYTECODE_DIAGNOSTIC')" })
+   save(script, filename)
+   local loaded <close> = obj.new('tiri', { path=filename })
+   check loaded.acQuery()
+   loaded.acActivate()
+   assert(loaded.error != ERR_Okay)
+   assert(loaded.errorMessage.find('BYTECODE_DIAGNOSTIC') != nil)
+end
+
+function shell_quote(Value:str):str
+   return "'" .. Value.replace("'", "'\\''") .. "'"
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- If an operating-system file limit interrupts cache publication, the partial cache must be removed while compilation
+-- and activation continue successfully from source.
+
+@Test function PartialCacheWriteInChild()
+   if mSys.GetSystemState().platform != 'Linux' then return 'Requires POSIX file-size limits' end
+   local source = path('.tiri')
+   local cache = path('.tbc')
+   local runner = path('.tiri')
+   write_file(source, 'local text = "' .. string.rep('x', 4096) ..
+      '" assert(#text is 4096) print("PARTIAL_CACHE_SOURCE_OK")')
+   write_file(runner, [[
+      local script <close> = obj.new('tiri', { path=arg('source'), cacheFile=arg('cache') })
+      check script.acQuery()
+      assert(mSys.AnalysePath(arg('cache')) != ERR_Okay)
+      check script.acActivate()
+      assert(script.error is ERR_Okay, script.errorMessage)
+   ]])
+   local command = "trap '' XFSZ; ulimit -f 1; exec " .. shell_quote(processing.task().processPath .. 'origo') ..
+      ' ' .. shell_quote(runner) .. ' ' .. shell_quote('source=' .. source) ..
+      ' ' .. shell_quote('cache=' .. cache) .. ' --log-warning'
+   local code, output = child(array<str> { command }, true)
+   assert(code is 0, output)
+   assert(output.find('Failed to save cache') != nil, output)
+   assert(output.find('PARTIAL_CACHE_SOURCE_OK') != nil, output)
+   assert(not exists(cache), 'Partial cache must be removed')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Parameter and result type contracts embedded in saved bytecode must still reject incompatible dynamic values after
+-- loading.
+
+@Test function SavedTypeContractsRejectWrongValues()
+   for source in values({
+      [[function dynamic(Value):any return Value end
+        function identity(Value:num):num return Value end
+        identity(dynamic('wrong'))]],
+      [[function dynamic(Value):any return Value end
+        function invalid_result():num return dynamic('wrong') end
+        invalid_result()]]
+   }) do
+      local filename = path('.tbc')
+      local script <close> = obj.new('tiri', { statement=source })
+      save(script, filename)
+      local loaded <close> = obj.new('tiri', { path=filename })
+      check loaded.acQuery()
+      loaded.acActivate()
+      assert(loaded.error != ERR_Okay, 'Loaded numeric contracts must reject strings')
+      assert(loaded.errorMessage != nil and loaded.errorMessage.find('num') != nil, loaded.errorMessage)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- An unused named-struct declaration must produce a valid empty manifest and must not poison later use of the script
+-- object with replacement source.
+
+@Test function UnusedStructDeclarationDoesNotBlockSaving()
+   local script <close> = obj.new('tiri', { statement='struct BytecodeRecord\nValue: int\nend' })
+   local output <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
+   check script.acSaveToObject(output)
+   assert(output.size > 0, 'An unused declaration should produce a valid dump with an empty struct manifest')
+   script.statement = 'assert(6 * 7 is 42)'
+   save(script, path('.tbc'))
+   check script.acQuery()
+   activate(script)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Named-struct layouts and contracts must be reconstructed entirely from bytecode in a fresh process, including
+-- nested fields, arrays, object and pointer fields, and parameter and result validation.
+
+@Test function NamedStructsRunWithoutSourceInFreshProcess()
+   local source = path('.tiri')
+   local binary = path('.tbc')
+   local producer = path('.tiri')
+   write_file(source, [[
+struct ProcessLeaf Value: int end
+struct ProcessMiddle Leaf: struct<ProcessLeaf> end
+struct ProcessRoot Middle: struct<ProcessMiddle>, Label: str, Values: int[3],
+   Leaves: array<struct<ProcessLeaf>>, Clock: obj<Time>, Link: ptr<ProcessLeaf> end
+struct ProcessUnused Value: double end
+function accept(Value:struct<ProcessRoot>):struct<ProcessRoot>
+   return Value
+end
+function dynamic(Value):any return Value end
+local value = struct<ProcessRoot> { Label='portable' }
+value.Middle.Leaf.Value = 42
+assert(accept(value).Middle.Leaf.Value is 42 and value.Label is 'portable')
+assert(value.Link is nil and value.Clock is nil)
+local parameter_failed = false
+try
+   accept(dynamic(42))
+except e
+   parameter_failed = e.message.find('ProcessRoot') != nil
+end
+assert(parameter_failed, 'The reconstructed parameter contract must reject another type')
+local function invalid_result():struct<ProcessRoot> return dynamic(42) end
+local result_failed = false
+try
+   invalid_result()
+except e
+   result_failed = e.message.find('ProcessRoot') != nil
+end
+assert(result_failed, 'The reconstructed result contract must reject another type')
+print('BYTECODE_STRUCT_MANIFEST_OK')
+]])
+   write_file(producer, [[
+      local script <close> = obj.new('tiri', { path=arg('source') })
+      local output <close> = obj.new('file', { path=arg('binary'), flags=FL_NEW|FL_WRITE })
+      check script.acSaveToObject(output)
+   ]])
+   local code, output = child(array<str> { producer, 'source=' .. source, 'binary=' .. binary, '--log-warning' })
+   assert(code is 0, output)
+   check mSys.DeleteFile(source)
+   check mSys.DeleteFile(producer)
+   for mode in values({ 'off', '' }) do
+      local args = array<str> { binary, '--log-warning' }
+      if mode != '' then args.push('--jit-options') args.push(mode) end
+      code, output = child(args)
+      assert(code is 0 and output.find('BYTECODE_STRUCT_MANIFEST_OK') != nil, output)
+   end
+end

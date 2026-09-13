@@ -196,6 +196,7 @@ ParserResult<Token> AstBuilder::parse_type_annotation(
       }
       Type = TiriType::Array;
       ArrayElement = *element;
+      this->track_struct_reference(element->struct_def);
       return finish_annotation();
    }
 
@@ -211,6 +212,7 @@ ParserResult<Token> AstBuilder::parse_type_annotation(
       }
       Type = TiriType::Struct;
       StructDef = found;
+      this->track_struct_reference(found);
       return finish_annotation();
    }
 
@@ -278,6 +280,7 @@ ParserResult<Token> AstBuilder::parse_type_annotation(
                std::format("Unknown array element type '{}'", element_storage));
          }
          ArrayElement = *element;
+         this->track_struct_reference(element->struct_def);
          return finish_annotation();
       }
       return this->fail<Token>(ParserErrorCode::ExpectedTypeName, type_token,
@@ -296,6 +299,7 @@ ParserResult<Token> AstBuilder::parse_type_annotation(
             std::format("Unknown struct name '{}'; declarations must precede use", name));
       }
       StructDef = found;
+      this->track_struct_reference(found);
       auto close = this->ctx.consume(TokenKind::Greater, ParserErrorCode::ExpectedToken);
       if (not close.ok()) return ParserResult<Token>::failure(close.error_ref());
    }
@@ -372,7 +376,10 @@ ParserResult<TypeTestDescriptor> AstBuilder::parse_type_test_descriptor()
       if (descriptor.type IS TiriType::Array) {
          auto element = parse_array_element_type(constraint_name, &this->ctx.lua(), &this->ctx.lex());
          if (element and element->storage != AET::PTR and
-             (element->storage != AET::STRUCT or element->struct_def)) descriptor.array_element = *element;
+             (element->storage != AET::STRUCT or element->struct_def)) {
+            descriptor.array_element = *element;
+            this->track_struct_reference(element->struct_def);
+         }
          else if (struct_record *definition = find_struct(&this->ctx.lua(), constraint_name)) {
             return this->fail<TypeTestDescriptor>(ParserErrorCode::UnknownTypeName, constraint_token,
                std::format("Structure array type tests require 'struct<{}>'; use '<array struct<{}>>'",
@@ -396,6 +403,7 @@ ParserResult<TypeTestDescriptor> AstBuilder::parse_type_test_descriptor()
             return this->fail<TypeTestDescriptor>(ParserErrorCode::UnknownTypeName, constraint_token,
                std::format("Unknown structure '{}'; declarations must precede use", constraint_name));
          }
+         this->track_struct_reference(descriptor.struct_def);
       }
 
       if (not this->ctx.check(TokenKind::Greater)) {

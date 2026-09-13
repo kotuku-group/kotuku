@@ -1000,10 +1000,12 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          Token start = this->ctx.tokens().current();
          GCstr *name_str = start.payload().as_string();
          std::string_view struct_name(strdata(name_str), name_str->len);
-         if (not find_struct(&this->ctx.lua(), struct_name)) {
+         auto definition = find_struct(&this->ctx.lua(), struct_name);
+         if (not definition) {
             return this->fail<ExprNodePtr>(ParserErrorCode::UnknownTypeName, start,
                std::format("Unknown struct name '{}'; declarations must precede use", struct_name));
          }
+         this->track_struct_reference(definition);
          this->ctx.tokens().advance();
 
          SourceSpan span = start.span();
@@ -1282,6 +1284,18 @@ ParserResult<ExprNodePtr> AstBuilder::parse_suffixed(ExprNodePtr base)
          }
 
          bool forwards = false;
+         bool struct_registry_call = false;
+         if (base->kind IS AstNodeKind::MemberExpr) {
+            const auto &member = std::get<MemberExprPayload>(base->data);
+            if (member.table and member.table->kind IS AstNodeKind::IdentifierExpr) {
+               const auto &name = std::get<NameRef>(member.table->data);
+               if (name.identifier.symbol and member.member.symbol and
+                   std::string_view(strdata(name.identifier.symbol), name.identifier.symbol->len) IS "struct") {
+                  std::string_view operation(strdata(member.member.symbol), member.member.symbol->len);
+                  struct_registry_call = operation IS "new" or operation IS "def" or operation IS "size";
+               }
+            }
+         }
          CallArgumentSyntax argument_syntax = token.kind() IS TokenKind::LeftParen ?
             CallArgumentSyntax::Parenthesised : token.kind() IS TokenKind::LeftBrace ?
             CallArgumentSyntax::TableConstructor : CallArgumentSyntax::StringLiteral;
@@ -1289,6 +1303,17 @@ ParserResult<ExprNodePtr> AstBuilder::parse_suffixed(ExprNodePtr base)
          if (not args.ok()) return ParserResult<ExprNodePtr>::failure(args.error_ref());
          SourceSpan span = combine_spans(base->span, token.span());
          base = make_call_expr(span, std::move(base), std::move(args.value_ref()), forwards, argument_syntax);
+         if (auto call = std::get_if<CallExprPayload>(&base->data); call and struct_registry_call) {
+            if (not call->arguments.empty()) {
+               auto literal = std::get_if<LiteralValue>(&call->arguments[0]->data);
+               if (literal and literal->kind IS LiteralKind::String and literal->string_value) {
+                  std::string_view name(strdata(literal->string_value), literal->string_value->len);
+                  this->track_struct_reference(find_struct(&this->ctx.lua(), name));
+               }
+               else this->track_dynamic_struct_reference();
+            }
+            else this->track_dynamic_struct_reference();
+         }
          continue;
       }
 

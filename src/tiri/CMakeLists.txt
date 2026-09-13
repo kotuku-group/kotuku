@@ -129,6 +129,7 @@ set (JIT_KOTUKU_HEADER_DEPENDENCIES
 )
 
 set (JIT_TIRI_HEADER_DEPENDENCIES
+   "${CMAKE_CURRENT_SOURCE_DIR}/cache_manifest.h"
    "${CMAKE_CURRENT_SOURCE_DIR}/defs.h"
    "${CMAKE_CURRENT_SOURCE_DIR}/struct_def.h"
    "${JIT_SRC}/runtime/lj_contract.h"
@@ -812,7 +813,8 @@ if (BUILD_DEFS)
    add_dependencies (jit_lib core_defs)
 endif ()
 
-set (TIRI_SOURCES "${MOD}.cpp" "tiri_module.cpp" "tiri_async.cpp" "tiri_struct.cpp" "tiri_processing.cpp"
+set (TIRI_SOURCES "${MOD}.cpp" "cache_manifest.cpp" "tiri_module.cpp" "tiri_async.cpp" "tiri_struct.cpp"
+   "tiri_processing.cpp"
    "tiri_functions.cpp" "tiri_regex.cpp"
    "tiri_io.cpp" "tiri_class.cpp"
    "${JIT_SRC}/lib/lib.cpp"
@@ -846,8 +848,10 @@ if (INCLUDE_TIPS)
 endif ()
 
 if (UNIT_TESTS)
+   list (APPEND TIRI_SOURCES "tests/unit_cache_manifest.cpp")
    list (APPEND TIRI_SOURCES "tests/unit_module_marshalling.cpp")
    list (APPEND TIRI_SOURCES "tests/unit_set_variable.cpp")
+   list (APPEND TIRI_SOURCES "tests/unit_bytecode_files.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_test_indexing.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_test_vm_asm.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_tests_arrays.cpp")
@@ -866,6 +870,28 @@ endif ()
 if (NOT DISABLE_DISPLAY)
    list (APPEND TIRI_SOURCES "tiri_input.cpp")
 endif ()
+
+# Generate the same current-commit build marker used by `origo --version`.  Refreshing at build time prevents an
+# existing build tree from retaining the commit that was current when CMake was last configured.
+
+set (TIRI_BUILD_IDENTITY_H "${JIT_BUILD_DIR}/tiri_build_identity.h")
+set (TIRI_BUILD_IDENTITY_ARGS
+   "-DSRC_DIR=${PROJECT_SOURCE_DIR}"
+   "-DVERSION_IN=${CMAKE_CURRENT_SOURCE_DIR}/tiri_build_identity.h.in"
+   "-DVERSION_OUT=${TIRI_BUILD_IDENTITY_H}")
+
+execute_process (
+   COMMAND ${CMAKE_COMMAND} ${TIRI_BUILD_IDENTITY_ARGS}
+      -P "${PROJECT_SOURCE_DIR}/src/origo/generate_version.cmake")
+
+add_custom_target (tiri_build_identity ALL
+   COMMAND ${CMAKE_COMMAND} ${TIRI_BUILD_IDENTITY_ARGS}
+      -P "${PROJECT_SOURCE_DIR}/src/origo/generate_version.cmake"
+   BYPRODUCTS "${TIRI_BUILD_IDENTITY_H}"
+   COMMENT "Refreshing Tiri bytecode build identity"
+   VERBATIM)
+
+add_dependencies (${MOD} tiri_build_identity)
 
 target_sources (${MOD} PRIVATE ${TIRI_SOURCES})
 
@@ -917,7 +943,7 @@ set (TIRI_TESTS
    defer debuglog io filesearch object regex struct async async_actions async_wait xml strings math array array_any array_manip
    array_element_validation array_view
    array_functional array_typed_syntax recursive_array_types bitshift bitwise has_operator approx if_empty if_empty_guard
-   presence blank ternary table stress unit_tests
+   presence blank ternary table stress unit_tests bytecode_files bytecode_jit_eligibility automatic_cache
    jitoptions fstring const const_optimisation import_scope unicode ellipsis safe_nav close type_annotations type_fixing
    type_inference jit jit_uclo jit_fnew jit_arrays jit_objects jit_try_regex pipe for_each arrow_functions
    result_filter thunks deferred_expr

@@ -32,7 +32,7 @@
 #include "ankerl/unordered_dense.h"
 #endif
 
-#define CORE_BUILD_DATE 20260905
+#define CORE_BUILD_DATE 20260913
 class objMetaClass;
 
 // Predefined cursor styles
@@ -965,6 +965,7 @@ enum class FL : uint32_t {
    EXCLUDE_FILES = 0x00001000,
    EXCLUDE_FOLDERS = 0x00002000,
    VIRTUAL = 0x00004000,
+   EXCLUSIVE = 0x00008000,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(FL)

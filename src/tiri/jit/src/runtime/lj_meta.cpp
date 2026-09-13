@@ -1281,6 +1281,7 @@ void lj_contract_build_cache(lua_State *L, GCproto *Prototype)
       BCIns instruction = proto_bc(Prototype)[i];
       if (bc_op(instruction) != BC_CONTRACT and bc_op(instruction) != BC_TYPETEST) continue;
 
+      if (bc_d(instruction) >= Prototype->sizekgc) continue;
       GCobj *constant = proto_kgc(Prototype, ~(ptrdiff_t)bc_d(instruction));
       if (constant->gch.gct != uint8_t(~LJ_TSTR)) continue;
       RuntimeContractDescriptor descriptor;
@@ -1312,6 +1313,7 @@ void lj_contract_build_cache(lua_State *L, GCproto *Prototype)
       BCIns instruction = proto_bc(Prototype)[i];
       if (bc_op(instruction) != BC_CONTRACT and bc_op(instruction) != BC_TYPETEST) continue;
 
+      if (bc_d(instruction) >= Prototype->sizekgc) continue;
       GCobj *constant = proto_kgc(Prototype, ~(ptrdiff_t)bc_d(instruction));
       if (constant->gch.gct != uint8_t(~LJ_TSTR)) continue;
       GCstr *encoded = gco_to_string(constant);

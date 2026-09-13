@@ -18,7 +18,8 @@
     "STREAM: File data is streamed (e.g. PIPE, FIFO, socket) and may be accessed locally or via a network.",
     "EXCLUDE_FILES: Exclude files when scanning this folder.",
     "EXCLUDE_FOLDERS: Exclude folders when scanning this folder.",
-    "VIRTUAL: Path is to a virtual device.")
+    "VIRTUAL: Path is to a virtual device.",
+    "EXCLUSIVE: Create a new file only if its path does not already exist.  Requires `NEW`.")
 
   structdef("FunctionField", { comment="Used by ActionTable and Function structures to declare lists of parameters." }, [[
     cstr Name                       # Name of the field

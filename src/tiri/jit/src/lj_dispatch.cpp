@@ -208,7 +208,7 @@ void lj_dispatch_update(global_State* g)
 static void setptmode(global_State* g, GCproto* pt, int mode)
 {
    if ((mode & LUAJIT_MODE_ON)) {  // (Re-)enable JIT compilation.
-      pt->flags &= ~PROTO_NOJIT;
+      proto_restore_jit_policy(pt);
       lj_trace_reenableproto(pt);  //  Unpatch all ILOOP etc. bytecodes.
    }
    else {  // Flush and/or disable JIT compilation.

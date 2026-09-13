@@ -42,6 +42,8 @@ null terminated arrays, use [0].
 #include <limits>
 #include <optional>
 #include <ranges>
+#include <unordered_set>
+#include <climits>
 
 #include "lua.h"
 #include "lualib.h"
@@ -1072,6 +1074,8 @@ static bool identical_struct_layout(const struct_record &Left, const struct_reco
       if ((left.Name != right.Name) or (left.StructRef != right.StructRef) or
          (left.ObjectClassID != right.ObjectClassID) or (left.Offset != right.Offset) or
             (left.Type != right.Type)) return false;
+      if (not left.ObjectClassName.empty() and not right.ObjectClassName.empty() and
+          left.ObjectClassName != right.ObjectClassName) return false;
       if ((left.Type & FD_ARRAY) and (left.ArraySize != right.ArraySize)) return false;
       if (left.ElementStride != right.ElementStride) return false;
       if (left.TrivialElements != right.TrivialElements) return false;
@@ -1079,6 +1083,330 @@ static bool identical_struct_layout(const struct_record &Left, const struct_reco
             (left.NativeType != right.NativeType)) return false;
    }
    return true;
+}
+
+namespace {
+
+constexpr uint32_t portable_struct_flags = FD_OBJECT|FD_STRUCT|FD_ARRAY|FD_CPP|FD_CUSTOM|FD_UNSIGNED|FD_VECTOR|
+   FD_WORD|FD_STRING|FD_BYTE|FD_FUNCTION|FD_INT64|FD_POINTER|FD_FLOAT|FD_INT|FD_DOUBLE;
+
+bool valid_portable_semantics(const struct_field &Field)
+{
+   uint32_t flags = uint32_t(Field.Type);
+   if ((flags & ~portable_struct_flags) or ((flags & FD_ARRAY) and (flags & FD_VECTOR))) return false;
+   const uint32_t modifiers = flags & (FD_ARRAY|FD_VECTOR);
+   const uint32_t base = flags & ~(FD_ARRAY|FD_VECTOR);
+   switch (Field.NativeType) {
+      case NativeStructType::Bool: return base IS FD_BYTE;
+      case NativeStructType::Char: return base IS (FD_BYTE|FD_CUSTOM);
+      case NativeStructType::Int8:
+      case NativeStructType::UInt8: return base IS FD_BYTE;
+      case NativeStructType::Int16: return base IS FD_WORD;
+      case NativeStructType::UInt16: return base IS (FD_WORD|FD_UNSIGNED);
+      case NativeStructType::Int32: return base IS FD_INT;
+      case NativeStructType::UInt32: return base IS (FD_INT|FD_UNSIGNED);
+      case NativeStructType::Int64: return base IS FD_INT64;
+      case NativeStructType::UInt64: return base IS (FD_INT64|FD_UNSIGNED);
+      case NativeStructType::Float: return base IS FD_FLOAT;
+      case NativeStructType::Double: return base IS FD_DOUBLE;
+      case NativeStructType::String: return base IS (FD_STRING|FD_CPP);
+      case NativeStructType::CStr: return base IS FD_STRING and not modifiers;
+      case NativeStructType::Struct: return base IS FD_STRUCT;
+      case NativeStructType::Object: return base IS FD_OBJECT and not modifiers;
+      case NativeStructType::Function: return base IS FD_FUNCTION and not modifiers;
+      case NativeStructType::Pointer: {
+         if (not (base & FD_POINTER) or (base & (FD_CPP|FD_CUSTOM|FD_OBJECT|FD_FUNCTION|FD_STRING))) return false;
+         uint32_t referent = base & ~uint32_t(FD_POINTER|FD_UNSIGNED);
+         return referent IS 0 or referent IS FD_STRUCT or referent IS FD_BYTE or referent IS FD_WORD or
+            referent IS FD_INT or referent IS FD_INT64 or referent IS FD_FLOAT or referent IS FD_DOUBLE;
+      }
+      case NativeStructType::Legacy: return false;
+   }
+   return false;
+}
+
+void manifest_uleb(std::vector<uint8_t> &Output, uint32_t Value)
+{
+   do {
+      uint8_t byte = uint8_t(Value & 0x7f);
+      Value >>= 7;
+      if (Value) byte |= 0x80;
+      Output.push_back(byte);
+   } while (Value);
+}
+
+void manifest_string(std::vector<uint8_t> &Output, std::string_view Value)
+{
+   manifest_uleb(Output, uint32_t(Value.size()));
+   Output.insert(Output.end(), Value.begin(), Value.end());
+}
+
+bool portable_field(const struct_field &Field)
+{
+   if (not valid_portable_semantics(Field)) return false;
+   if ((Field.Type & FD_ARRAY) and Field.ArraySize <= 0 and
+       not ((Field.Type & FD_POINTER) and Field.ArraySize IS -1)) return false;
+   if ((Field.Type & FD_VECTOR) and Field.ArraySize != 1) return false;
+   if ((Field.Type & FD_STRUCT) and Field.StructRef IS 0) return false;
+   return true;
+}
+
+bool valid_field_name(std::string_view Name)
+{
+   if (Name.empty() or Name.find('\0') != std::string_view::npos) return false;
+   uint8_t first = uint8_t(Name.front());
+   if (not ((first >= 'A' and first <= 'Z') or (first >= 'a' and first <= 'z') or first IS '_')) return false;
+   for (uint8_t value : Name.substr(1)) {
+      if (not ((value >= 'A' and value <= 'Z') or (value >= 'a' and value <= 'z') or
+          (value >= '0' and value <= '9') or value IS '_')) return false;
+   }
+   return true;
+}
+
+struct ManifestReader {
+   const uint8_t *cursor;
+   const uint8_t *end;
+
+   bool byte(uint8_t &Value) {
+      if (cursor >= end) return false;
+      Value = *cursor++;
+      return true;
+   }
+
+   bool uleb(uint32_t &Value) {
+      Value = 0;
+      for (unsigned shift = 0; shift <= 28; shift += 7) {
+         uint8_t current;
+         if (not byte(current) or (shift IS 28 and current > 0x0f)) return false;
+         Value |= uint32_t(current & 0x7f) << shift;
+         if (not (current & 0x80)) return true;
+      }
+      return false;
+   }
+
+   bool string(std::string &Value) {
+      uint32_t size;
+      if (not uleb(size) or size > uint32_t(end - cursor)) return false;
+      Value.assign((const char *)cursor, size);
+      cursor += size;
+      return Value.find('\0') IS std::string::npos;
+   }
+};
+
+}
+
+//********************************************************************************************************************
+// Build a dependency-first portable manifest for the state-local declarations used by one compilation unit.
+
+ERR build_declared_struct_manifest(lua_State *Lua, const std::vector<std::string> &Roots,
+   const std::vector<std::string> &Owned, bool DynamicReference, std::vector<uint8_t> &Manifest, std::string *Detail)
+{
+   Manifest.clear();
+   if (not Lua) return ERR::NullArgs;
+
+   std::vector<const struct_record *> ordered;
+   std::unordered_map<std::string, uint8_t> visits;
+   auto visit = [&](auto &Self, const struct_record &record) -> ERR {
+      uint8_t &state = visits[record.Name];
+      if (state IS 2) return ERR::Okay;
+      if (state IS 1) {
+         if (Detail) *Detail = std::format("Cyclic struct dependency involving '{}'", record.Name);
+         return ERR::InvalidData;
+      }
+      state = 1;
+      for (const auto &field : record.Fields) {
+         if (not portable_field(field)) return ERR::NoSupport;
+         if ((field.Type & FD_STRUCT) and field.StructRef) {
+            auto dependency = field.StructDefinition ? field.StructDefinition :
+               find_struct_reference(Lua, record, field.StructRef);
+            if (not dependency) return ERR::NotFound;
+            auto local = Lua->struct_declarations.find(struct_key(dependency->Name));
+            if (local != Lua->struct_declarations.end() and &local->second IS dependency) {
+               if (auto error = Self(Self, *dependency); error != ERR::Okay) return error;
+            }
+         }
+      }
+      state = 2;
+      ordered.push_back(&record);
+      return ERR::Okay;
+   };
+
+   std::vector<std::string> roots = Roots;
+   if (DynamicReference) roots.insert(roots.end(), Owned.begin(), Owned.end());
+   for (const auto &name : roots) {
+      auto found = Lua->struct_declarations.find(struct_key(name));
+      if (found IS Lua->struct_declarations.end() or found->second.Name != name) return ERR::NotFound;
+      if (auto error = visit(visit, found->second); error != ERR::Okay) return error;
+   }
+   if (ordered.size() > STRUCT_MANIFEST_MAX_DEFINITIONS) return ERR::BufferOverflow;
+
+   Manifest.push_back(STRUCT_MANIFEST_VERSION);
+   manifest_uleb(Manifest, uint32_t(ordered.size()));
+   uint32_t fields = 0;
+   for (const auto *record : ordered) {
+      if (record->Name.find('\0') != std::string::npos or not valid_struct_name(record->Name)) return ERR::InvalidData;
+      fields += uint32_t(record->Fields.size());
+      if (fields > STRUCT_MANIFEST_MAX_FIELDS) return ERR::BufferOverflow;
+      manifest_string(Manifest, record->Name);
+      manifest_uleb(Manifest, uint32_t(record->Fields.size()));
+      for (const auto &field : record->Fields) {
+         if (not valid_field_name(field.Name)) return ERR::InvalidData;
+         manifest_string(Manifest, field.Name);
+         Manifest.push_back(uint8_t(field.NativeType));
+         manifest_uleb(Manifest, uint32_t(field.Type));
+         manifest_uleb(Manifest, (field.Type & FD_ARRAY) ? uint32_t(field.ArraySize) : 0);
+         std::string_view reference;
+         if ((field.Type & FD_STRUCT) and field.StructRef) {
+            auto definition = field.StructDefinition ? field.StructDefinition :
+               find_struct_reference(Lua, *record, field.StructRef);
+            if (not definition) return ERR::NotFound;
+            reference = definition->Name;
+         }
+         manifest_string(Manifest, reference);
+         std::string_view class_name = field.ObjectClassName;
+         if (class_name.empty() and field.ObjectClassID != CLASSID::NIL) {
+            CSTRING resolved = ResolveClassID(field.ObjectClassID);
+            if (not resolved) return ERR::NoSupport;
+            class_name = resolved;
+         }
+         manifest_string(Manifest, class_name);
+      }
+   }
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Validate and publish a portable manifest.  Insertions are reported to the caller for whole-load rollback.
+
+ERR load_declared_struct_manifest(lua_State *Lua, std::string_view Manifest, std::vector<uint32_t> &Inserted,
+   std::string *Detail)
+{
+   if (not Lua or Manifest.empty()) return ERR::NullArgs;
+   ManifestReader reader { (const uint8_t *)Manifest.data(), (const uint8_t *)Manifest.data() + Manifest.size() };
+   uint8_t version;
+   uint32_t count;
+   if (not reader.byte(version) or version != STRUCT_MANIFEST_VERSION or not reader.uleb(count) or
+       count > STRUCT_MANIFEST_MAX_DEFINITIONS) return ERR::InvalidData;
+
+   struct PendingRecord {
+      struct_record record;
+      std::vector<std::string> references;
+   };
+   std::vector<PendingRecord> records;
+   records.reserve(count);
+   uint32_t total_fields = 0;
+   std::unordered_set<std::string> names;
+   std::unordered_map<uint32_t, std::string> keys;
+   for (uint32_t i = 0; i < count; ++i) {
+      std::string name;
+      uint32_t field_count;
+      if (not reader.string(name) or not valid_struct_name(name) or not names.insert(name).second or
+          not reader.uleb(field_count) or field_count IS 0 or
+          field_count > STRUCT_MANIFEST_MAX_FIELDS - total_fields) {
+         if (Detail) *Detail = std::format("Invalid definition {} ('{}')", i, name);
+         return ERR::InvalidData;
+      }
+      auto [key, unique_key] = keys.emplace(struct_key(name), name);
+      if (not unique_key and key->second != name) {
+         if (Detail) *Detail = std::format("Struct names '{}' and '{}' have an ambiguous key", key->second, name);
+         return ERR::InvalidData;
+      }
+      total_fields += field_count;
+      PendingRecord pending;
+      pending.record.Name = name;
+      pending.references.reserve(field_count);
+      std::unordered_set<uint32_t> field_names;
+      for (uint32_t f = 0; f < field_count; ++f) {
+         struct_field field;
+         uint8_t native;
+         uint32_t flags;
+         uint32_t dimension;
+         std::string reference;
+         if (not reader.string(field.Name) or not valid_field_name(field.Name) or
+             not field_names.insert(kt::strihash(field.Name)).second or not reader.byte(native) or
+             native <= uint8_t(NativeStructType::Legacy) or native > uint8_t(NativeStructType::Function) or
+             not reader.uleb(flags) or (flags & ~portable_struct_flags) or not reader.uleb(dimension) or
+             not reader.string(reference) or not reader.string(field.ObjectClassName)) {
+            if (Detail) *Detail = std::format("Invalid field {} in definition {}", f, i);
+            return ERR::InvalidData;
+         }
+         field.NativeType = NativeStructType(native);
+         field.Type = int(flags);
+         bool pointer_array = (flags & FD_POINTER) and dimension IS 0xffffffffu;
+         field.ArraySize = (flags & FD_ARRAY) ? (pointer_array ? -1 : int(dimension)) :
+            (flags & FD_VECTOR) ? 1 : 0;
+         if (((flags & FD_ARRAY) and (dimension IS 0 or
+              (dimension > uint32_t(INT_MAX) and not pointer_array))) or
+             (not (flags & FD_ARRAY) and dimension != 0)) {
+            if (Detail) *Detail = std::format("Invalid flags or dimension for '{}.{}'", name, field.Name);
+            return ERR::InvalidData;
+         }
+         if (flags & FD_STRUCT) {
+            if (not valid_struct_name(reference)) {
+               if (Detail) *Detail = std::format("Invalid reference for '{}.{}'", name, field.Name);
+               return ERR::InvalidData;
+            }
+            field.StructRef = struct_key(reference);
+         }
+         else if (not reference.empty()) return ERR::InvalidData;
+         if (not portable_field(field)) {
+            if (Detail) *Detail = std::format("Unsupported semantics for '{}.{}'", name, field.Name);
+            return ERR::InvalidData;
+         }
+         if (flags & FD_OBJECT) {
+            if (not field.ObjectClassName.empty()) {
+               if (not valid_struct_name(field.ObjectClassName)) return ERR::InvalidData;
+               field.ObjectClassID = CLASSID(kt::strihash(field.ObjectClassName));
+            }
+         }
+         else if (not field.ObjectClassName.empty()) return ERR::InvalidData;
+         field.precomputeNameHash();
+         pending.record.Fields.push_back(std::move(field));
+         pending.references.push_back(std::move(reference));
+      }
+      records.push_back(std::move(pending));
+   }
+   if (reader.cursor != reader.end) {
+      if (Detail) *Detail = "Trailing struct manifest bytes";
+      return ERR::InvalidData;
+   }
+
+   std::unordered_set<std::string> available;
+   for (auto &pending : records) {
+      for (size_t i = 0; i < pending.record.Fields.size(); ++i) {
+         auto &reference = pending.references[i];
+         if (reference.empty()) continue;
+         if (not available.contains(reference)) {
+            if (names.contains(reference)) {
+               if (Detail) *Detail = std::format("Out-of-order dependency '{}'", reference);
+               return ERR::InvalidData;
+            }
+            auto external = find_struct(Lua, reference);
+            if (not external or external->Name != reference) {
+               if (Detail) *Detail = std::format("Missing or out-of-order dependency '{}'", reference);
+               return ERR::NotFound;
+            }
+         }
+      }
+      available.insert(pending.record.Name);
+   }
+
+   for (auto &pending : records) {
+      std::string name = pending.record.Name;
+      for (size_t i = 0; i < pending.record.Fields.size(); ++i) {
+         auto &field = pending.record.Fields[i];
+         if (pending.references[i].empty()) continue;
+         auto dependency = find_struct(Lua, pending.references[i]);
+         if (not dependency or dependency->Name != pending.references[i]) return ERR::NotFound;
+         field.StructDefinition = dependency;
+      }
+      bool inserted = false;
+      const struct_record *existing = nullptr;
+      ERR error = register_declared_struct(Lua, std::move(pending.record), &inserted, &existing, Detail);
+      if (error != ERR::Okay) return error;
+      if (inserted) Inserted.push_back(struct_key(name));
+   }
+   return ERR::Okay;
 }
 
 // Register a parser-built declaration.  Keeping layout calculation here ensures declarative definitions use the
@@ -1149,6 +1477,7 @@ static bool struct_is_trivial(lua_State *Lua, const struct_record &Record, std::
    if (auto found = Lua->struct_declarations.find(key);
          found != Lua->struct_declarations.end()) {
       if (Existing) *Existing = &found->second;
+      if (found->second.Name != Record.Name) return ERR::Exists;
       if (not identical_struct_layout(found->second, Record)) return ERR::Exists;
       return ERR::Okay;
    }

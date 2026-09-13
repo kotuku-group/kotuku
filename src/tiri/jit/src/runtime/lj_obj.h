@@ -68,6 +68,7 @@ struct SBuf;
 
 class ParserDiagnostics;
 class extTiri;
+namespace tiri::cache { struct Manifest; }
 
 // Memory and GC object sizes.
 
@@ -860,6 +861,45 @@ struct CheckallFrameStack {
    int depth = 0;
 };
 
+enum class CompilationSourceRole : uint8_t {
+   Main = 0,
+   Import = 1,
+   Synthetic = 2
+};
+
+inline constexpr uint8_t COMPILATION_SOURCE_VERSION = 1;
+
+struct CompilationSourceEntry {
+   GCRef canonical_path;
+   GCRef display_filename;
+   GCRef declared_namespace;
+   BCLine first_line;
+   BCLine total_lines;
+   BCLine import_line;
+   uint8_t runtime_index;
+   uint8_t parent;
+   CompilationSourceRole role;
+   uint8_t reserved;
+};
+
+struct CompilationSourceMap {
+   uint8_t version;
+   uint8_t count;
+   uint8_t root;
+   uint8_t reserved;
+};
+
+[[nodiscard]] inline CompilationSourceEntry * compilation_source_entries(CompilationSourceMap *Map) noexcept
+{
+   return Map ? (CompilationSourceEntry *)(Map + 1) : nullptr;
+}
+
+[[nodiscard]] inline const CompilationSourceEntry * compilation_source_entries(
+   const CompilationSourceMap *Map) noexcept
+{
+   return Map ? (const CompilationSourceEntry *)(Map + 1) : nullptr;
+}
+
 typedef struct GCproto {
    GCHeader;
    uint8_t  numparams; //  Number of parameters.
@@ -880,6 +920,11 @@ typedef struct GCproto {
    BCLine firstline;  //  First line of the function definition.
    BCLine numline;    //  Number of lines for the function definition.
    uint8_t file_source_idx;  //  Index into lua_State::file_sources (fallback for edge cases).
+   uint8_t interpreter_required; // Deterministic policy reconstructed from this prototype's bytecode.
+   GCRef source_root;        // Root prototype which owns the compilation-unit source descriptor.
+   MRef compilation_sources; // CompilationSourceMap owned by the root prototype only.
+   MRef struct_manifest; // Portable named-structure semantics owned by the root prototype only.
+   uint32_t struct_manifest_size;
    MRef   lineinfo;   //  BCLine[sizebc-1] array - file index in upper 8 bits, line in lower 24.
    MRef   uvinfo;     //  Upvalue names.
    MRef   varinfo;    //  Names and compressed extents of local variables.
@@ -919,6 +964,19 @@ inline constexpr int PROTO_CLC_POLY         = 3 * PROTO_CLCOUNT;  //  Polymorphi
 
 inline constexpr uint16_t PROTO_UV_LOCAL     = 0x8000;   //  Upvalue for local slot.
 inline constexpr uint16_t PROTO_UV_IMMUTABLE = 0x4000;   //  Immutable upvalue.
+
+inline void proto_set_interpreter_required(GCproto *Proto, bool Required) noexcept
+{
+   Proto->interpreter_required = Required ? 1 : 0;
+   if (Required) Proto->flags |= PROTO_NOJIT;
+   else Proto->flags &= ~PROTO_NOJIT;
+}
+
+inline void proto_restore_jit_policy(GCproto *Proto) noexcept
+{
+   Proto->flags &= ~PROTO_NOJIT;
+   if (Proto->interpreter_required) Proto->flags |= PROTO_NOJIT;
+}
 
 [[nodiscard]] inline GCobj* proto_kgc(const GCproto* pt, ptrdiff_t idx) noexcept {
    return check_exp(uintptr_t(intptr_t(idx)) >= uintptr_t(-intptr_t(pt->sizekgc)),
@@ -997,8 +1055,13 @@ inline constexpr uint16_t PROTO_UV_IMMUTABLE = 0x4000;   //  Immutable upvalue.
 
 inline void proto_metadata_init(GCproto *Proto) noexcept
 {
+   Proto->interpreter_required = 0;
    setmref(Proto->contract_cache, nullptr);
    Proto->file_source_idx = 0;
+   setgcrefnull(Proto->source_root);
+   setmref(Proto->compilation_sources, nullptr);
+   setmref(Proto->struct_manifest, nullptr);
+   Proto->struct_manifest_size = 0;
    setmref(Proto->lineinfo, nullptr);
    setmref(Proto->uvinfo, nullptr);
    setmref(Proto->varinfo, nullptr);
@@ -1016,6 +1079,26 @@ inline void proto_metadata_init(GCproto *Proto) noexcept
    Proto->resolved_count = 0;
    Proto->resolved_dependency_states = nullptr;
    Proto->resolved_dependency_count = 0;
+}
+
+[[nodiscard]] inline const uint8_t * proto_struct_manifest(const GCproto *Proto, uint32_t *Size = nullptr) noexcept
+{
+   if (not Proto) return nullptr;
+   const GCproto *root = gcref(Proto->source_root) ? (const GCproto *)gcref(Proto->source_root) : Proto;
+   if (Size) *Size = root->struct_manifest_size;
+   return root->struct_manifest.get<const uint8_t>();
+}
+
+[[nodiscard]] inline CompilationSourceMap * proto_compilation_sources(GCproto *Proto) noexcept
+{
+   if (not Proto) return nullptr;
+   GCproto *root = gcref(Proto->source_root) ? (GCproto *)gcref(Proto->source_root) : Proto;
+   return root->compilation_sources.get<CompilationSourceMap>();
+}
+
+[[nodiscard]] inline const CompilationSourceMap * proto_compilation_sources(const GCproto *Proto) noexcept
+{
+   return proto_compilation_sources((GCproto *)Proto);
 }
 
 [[nodiscard]] inline const ProtoDependencyTable * proto_dependencies(const GCproto *Proto) noexcept
@@ -1760,6 +1843,7 @@ struct lua_State {
    void    *cframe;     //  End of C stack frame chain.
    MSize   stacksize;   //  True stack size (incl. LJ_STACK_EXTRA).
    class extTiri *script;  // Back-reference to the script that owns this lua_State
+   tiri::cache::Manifest *cache_manifest_capture = nullptr; // Non-owning source compilation-local input capture
    bool    sent_traceback;   // True if traceback has been sent for the current error
    uint8_t resolving_thunk;  // Flag to prevent recursive thunk resolution
    uint64_t array_view_scopes = 0; // One armed bit per active <view> declaration initialiser

@@ -7,6 +7,7 @@
 #include "lua.h"
 #include "lauxlib.h"
 #include "lualib.h"
+#include "luajit.h"
 
 #include "lj_bc.h"
 #include "lj_ff.h"
@@ -2953,6 +2954,216 @@ static int bytecode_writer(lua_State *, const void *Data, size_t Size, void *Con
    return 0;
 }
 
+static GCproto * first_child_proto(GCproto *Proto);
+
+static bool test_structural_bytecode_reader_validation(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   constexpr std::string_view source =
+      "local captured = 4\n"
+      "local function child(Value)\n"
+      "   local copy = Value\n"
+      "   if copy then return captured + 1 end\n"
+      "   return 0\n"
+      "end\n"
+      "return child\n";
+   if (lua_load(lua, source, "structural-reader")) {
+      Log.error("failed to compile structural-reader fixture: %s", lua_tostring(lua, -1));
+      return false;
+   }
+   GCproto *root = funcproto(funcV(lua->top - 1));
+   GCproto *child = first_child_proto(root);
+   if (not child or not child->sizeuv or not proto_lineinfo(child)) {
+      Log.error("structural-reader fixture lacks a child capture or debug metadata");
+      return false;
+   }
+
+   auto rejected = [&](std::string_view Dump, std::string_view Label) {
+      int status = lua_load(lua, Dump, "malformed-structural-bytecode");
+      if (status != LUA_ERRSYNTAX) {
+         if (status) lua_pop(lua, 1);
+         Log.error("bytecode reader returned %d for malformed %.*s", status, int(Label.size()), Label.data());
+         return false;
+      }
+      lua_pop(lua, 1);
+      if (lua_load(lua, "return 42", "structural-reader-recovery") or lua_pcall(lua, 0, 1, 0) or
+          lua_tointeger(lua, -1) != 42) {
+         Log.error("state was not reusable after malformed %.*s", int(Label.size()), Label.data());
+         return false;
+      }
+      lua_pop(lua, 1);
+      return true;
+   };
+   auto dump_rejected = [&](std::string_view Label) {
+      std::string dump;
+      if (lua_dump(lua, bytecode_writer, &dump) != 0) return false;
+      return rejected(dump, Label);
+   };
+   auto append_uleb = [](std::string &Output, uint32_t Value) {
+      do {
+         uint8_t byte = uint8_t(Value & 0x7f);
+         Value >>= 7;
+         Output.push_back(char(byte | (Value ? 0x80 : 0)));
+      } while (Value);
+   };
+   auto read_uleb = [](std::string_view Input, size_t &Cursor, uint32_t &Value) {
+      Value = 0;
+      for (uint32_t shift = 0; shift <= 28 and Cursor < Input.size(); shift += 7) {
+         uint32_t byte = uint8_t(Input[Cursor++]);
+         if ((shift IS 28) and byte > 0x0f) return false;
+         Value |= (byte & 0x7f) << shift;
+         if (not (byte & 0x80)) return true;
+      }
+      return false;
+   };
+
+   BCIns *root_bc = proto_bc(root);
+   MSize register_pc = 0;
+   MSize constant_pc = 0;
+   for (MSize pc = 1; pc < root->sizebc; ++pc) {
+      BCOp op = bc_op(root_bc[pc]);
+      if (not register_pc and bcmode_a(op) != BCMnone) register_pc = pc;
+      if (not constant_pc and bcmode_hasd(op) and
+          (bcmode_d(op) IS BCMstr or bcmode_d(op) IS BCMfunc or bcmode_d(op) IS BCMtab)) constant_pc = pc;
+   }
+   MSize jump_pc = 0;
+   for (MSize pc = 1; pc < child->sizebc; ++pc) {
+      if (bcmode_hasd(bc_op(proto_bc(child)[pc])) and bcmode_d(bc_op(proto_bc(child)[pc])) IS BCMjump) {
+         jump_pc = pc;
+         break;
+      }
+   }
+   if (not register_pc or not constant_pc or not jump_pc) {
+      Log.error("structural-reader fixture lacks register, constant or branch operands");
+      return false;
+   }
+
+   BCIns saved = root_bc[register_pc];
+   setbc_a(&root_bc[register_pc], root->framesize);
+   bool valid = dump_rejected("register operand");
+   root_bc[register_pc] = saved;
+   if (not valid) return false;
+
+   saved = root_bc[constant_pc];
+   setbc_d(&root_bc[constant_pc], root->sizekgc);
+   valid = dump_rejected("constant operand");
+   root_bc[constant_pc] = saved;
+   if (not valid) return false;
+
+   saved = root_bc[constant_pc];
+   setbc_op(&root_bc[constant_pc], bcmode_d(bc_op(saved)) IS BCMfunc ? BC_KSTR : BC_FNEW);
+   valid = dump_rejected("constant kind");
+   root_bc[constant_pc] = saved;
+   if (not valid) return false;
+
+   saved = proto_bc(child)[jump_pc];
+   setbc_d(&proto_bc(child)[jump_pc], 0);
+   valid = dump_rejected("branch target");
+   proto_bc(child)[jump_pc] = saved;
+   if (not valid) return false;
+
+   saved = root_bc[register_pc];
+   setbc_op(&root_bc[register_pc], BC_FUNCF);
+   valid = dump_rejected("function-header opcode");
+   root_bc[register_pc] = saved;
+   if (not valid) return false;
+
+   uint16_t saved_capture = proto_uv(child)[0];
+   proto_uv(child)[0] = PROTO_UV_LOCAL | root->framesize;
+   valid = dump_rejected("upvalue capture");
+   proto_uv(child)[0] = saved_capture;
+   if (not valid) return false;
+
+   uint8_t *debug_end = (uint8_t *)child + child->sizept;
+   uint8_t saved_terminator = debug_end[-1];
+   debug_end[-1] = 1;
+   valid = dump_rejected("missing debug terminator");
+   debug_end[-1] = saved_terminator;
+   if (not valid) return false;
+
+   std::string stripped;
+   if (lj_bcwrite(lua, root, bytecode_writer, &stripped, 1) != 0) return false;
+   size_t cursor = 4;
+   uint32_t header_flags = 0;
+   if (not read_uleb(stripped, cursor, header_flags) or not (header_flags & BCDUMP_F_STRIP)) return false;
+   uint32_t metadata_length = 0;
+   for (int block = 0; block < 2; ++block) {
+      if (not read_uleb(stripped, cursor, metadata_length) or metadata_length > stripped.size() - cursor) return false;
+      cursor += metadata_length;
+   }
+   size_t length_offset = cursor;
+   uint32_t prototype_length = 0;
+   if (not read_uleb(stripped, cursor, prototype_length) or prototype_length < 2 or
+       prototype_length > stripped.size() - cursor) return false;
+   size_t body_offset = cursor;
+
+   std::string short_record = stripped.substr(0, length_offset);
+   append_uleb(short_record, prototype_length - 1);
+   short_record.append(stripped, body_offset, std::string::npos);
+   if (not rejected(short_record, "truncated prototype record")) return false;
+
+   // Replace the first prototype's sizekgc field with 65,537 without relying on host-sized arithmetic. The reader
+   // must reject the count before allocating or walking the shortened constant section.
+   size_t constant_cursor = body_offset + 4;
+   uint32_t old_constant_count = 0;
+   if (not read_uleb(stripped, constant_cursor, old_constant_count)) return false;
+   std::string changed_body = stripped.substr(body_offset, 4);
+   append_uleb(changed_body, BCMAX_D + 2u);
+   changed_body.append(stripped, constant_cursor, prototype_length - (constant_cursor - body_offset));
+   std::string excessive_count = stripped.substr(0, length_offset);
+   append_uleb(excessive_count, uint32_t(changed_body.size()));
+   excessive_count += changed_body;
+   excessive_count.append(stripped, body_offset + prototype_length, std::string::npos);
+   if (not rejected(excessive_count, "overflowing constant count")) return false;
+
+   // Bounded deterministic mutation pass: every payload byte is independently cleared and inverted. Mutations may
+   // remain structurally valid, but every outcome must be either a clean load or a syntax rejection.
+   size_t mutation_stop = std::min<size_t>(stripped.size(), 1024);
+   for (size_t offset = 5; offset < mutation_stop; ++offset) {
+      for (uint8_t replacement : { uint8_t(0), uint8_t(uint8_t(stripped[offset]) ^ 0xff) }) {
+         std::string mutation = stripped;
+         mutation[offset] = char(replacement);
+         int status = lua_load(lua, mutation, "bounded-bytecode-mutation");
+         if (status != 0 and status != LUA_ERRSYNTAX) {
+            if (status) lua_pop(lua, 1);
+            Log.error("payload mutation at byte %zu returned unexpected status %d", offset, status);
+            return false;
+         }
+         lua_pop(lua, 1);
+      }
+   }
+
+   // A depth-201 synthetic tree exceeds the same nesting ceiling used by the source parser. Each prototype contains
+   // one RET0 instruction and each parent owns exactly one child constant.
+   std::string nested;
+   nested.append("\x1bLJ", 3);
+   nested.push_back(char(BCDUMP_VERSION));
+   append_uleb(nested, BCDUMP_F_STRIP | (LJ_FR2 ? BCDUMP_F_FR2 : 0));
+   for (uint32_t depth = 0; depth <= uint32_t(LJ_MAX_XLEVEL); ++depth) {
+      bool parent = depth != 0;
+      std::string body;
+      body.push_back(char(parent ? PROTO_CHILD : 0));
+      body.append("\0\1\0", 3); // Parameters, frame size, upvalues.
+      append_uleb(body, parent ? 1 : 0);
+      append_uleb(body, 0);
+      append_uleb(body, 1);
+      append_uleb(body, 0);
+      append_uleb(body, 0);
+      BCIns instruction = BCINS_AD(BC_RET0, 0, 1);
+      body.append((const char *)&instruction, sizeof(instruction));
+      if (parent) body.push_back(char(BCDUMP_KGC_CHILD));
+      body.append("\0\0", 2); // No exception blocks or handlers.
+      append_uleb(nested, uint32_t(body.size()));
+      nested += body;
+   }
+   nested.push_back(0);
+   if (not rejected(nested, "prototype nesting")) return false;
+
+   lua_pop(lua, 1);
+   return true;
+}
+
 static GCproto * first_child_proto(GCproto *Proto)
 {
    for (ptrdiff_t i = -ptrdiff_t(Proto->sizekgc); i < 0; ++i) {
@@ -3240,7 +3451,8 @@ static bool test_old_bytecode_versions_rejected(kt::Log &Log)
    // replaced it with BC_MODACT.  Gate E selected format rejection over a compatibility shim.
 
    for (uint8_t version : { uint8_t(0x81), uint8_t(0x83), uint8_t(0x85), uint8_t(0x86), uint8_t(0x8e),
-      uint8_t(0x90), uint8_t(0x91), uint8_t(0x97), uint8_t(0x99), uint8_t(0x9c), uint8_t(0x9f), uint8_t(0xa0) }) {
+      uint8_t(0x90), uint8_t(0x91), uint8_t(0x97), uint8_t(0x99), uint8_t(0x9c), uint8_t(0x9f), uint8_t(0xa0),
+      uint8_t(0xa5) }) {
       std::string old_dump = dump;
       old_dump[3] = char(version);
       if (lua_load(L, std::string_view(old_dump.data(), old_dump.size()), "old-version") IS 0) {
@@ -3595,11 +3807,21 @@ static bool test_malformed_signature_rejected(kt::Log &Log)
 
    size_t position = 5;
    uint32_t value = 0;
-   if (not read_uleb(position, value) or position + 4 > dump.size()) {
+   if (not read_uleb(position, value) or value > dump.size() - position) {
+      Log.error("could not skip the source manifest in the malformed-signature fixture");
+      return false;
+   }
+   position += value;
+   if (not read_uleb(position, value) or value > dump.size() - position) {
+      Log.error("could not skip the struct manifest in the malformed-signature fixture");
+      return false;
+   }
+   position += value;
+   if (not read_uleb(position, value) or position + 5 > dump.size()) {
       Log.error("could not locate the prototype header in the malformed-signature fixture");
       return false;
    }
-   position += 4;
+   position += 5;
 
    // Header ULEB fields, in order: sizekgc, sizekn, sizebc, siglen, deplen.  The dump is stripped, so no debug
    // length follows and the signature payload begins immediately after deplen.
@@ -3681,6 +3903,84 @@ static bool test_malformed_signature_rejected(kt::Log &Log)
    return true;
 }
 
+static bool test_source_manifest_validation(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   if (lua_load(L, "return function() return 42 end", "source-manifest")) {
+      Log.error("failed to compile the source-manifest fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+   std::string dump;
+   if (lj_bcwrite(L, funcproto(funcV(L->top - 1)), bytecode_writer, &dump, 1) != 0) {
+      Log.error("failed to dump the source-manifest fixture");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   auto read_uleb = [&dump](size_t &Position, uint32_t &Value) {
+      Value = 0;
+      for (uint32_t shift = 0; shift <= 28 and Position < dump.size(); shift += 7) {
+         const uint8_t byte = uint8_t(dump[Position++]);
+         Value |= uint32_t(byte & 0x7f) << shift;
+         if (not (byte & 0x80)) return true;
+      }
+      return false;
+   };
+   size_t source_offset = 5;
+   uint32_t source_size = 0;
+   if (not read_uleb(source_offset, source_size) or source_size > dump.size() - source_offset) {
+      Log.error("could not locate the source manifest");
+      return false;
+   }
+   size_t struct_offset = source_offset + source_size;
+   uint32_t struct_size = 0;
+   if (not read_uleb(struct_offset, struct_size) or struct_size > dump.size() - struct_offset) {
+      Log.error("could not locate the struct manifest");
+      return false;
+   }
+   size_t prototype_offset = struct_offset + struct_size;
+   uint32_t prototype_size = 0;
+   if (not read_uleb(prototype_offset, prototype_size) or prototype_offset + 5 > dump.size()) {
+      Log.error("could not locate the prototype source identity");
+      return false;
+   }
+
+   std::array<std::string, 3> invalid = { dump, dump, dump };
+   invalid[0][source_offset] = char(0xff);
+   invalid[1][source_offset + 2] = char(1);
+   invalid[2][prototype_offset + 4] = char(1);
+   constexpr std::array<const char *, 3> descriptions = {
+      "unsupported source version", "out-of-range source root", "out-of-range prototype source"
+   };
+   for (size_t invalid_index = 0; invalid_index < invalid.size(); ++invalid_index) {
+      const auto &bytes = invalid[invalid_index];
+      const size_t source_count = L->file_sources.size();
+      if (lua_load(L, std::string_view(bytes.data(), bytes.size()), "invalid-source-manifest") IS 0) {
+         Log.error("the bytecode reader accepted %s", descriptions[invalid_index]);
+         lua_pop(L, 1);
+         return false;
+      }
+      lua_pop(L, 1);
+      if (L->file_sources.size() != source_count) {
+         Log.error("a rejected source manifest published runtime source records");
+         return false;
+      }
+   }
+   if (lua_load(L, std::string_view(dump.data(), dump.size()), "valid-source-manifest")) {
+      Log.error("the state was not reusable after source-manifest rejection: %s", lua_tostring(L, -1));
+      return false;
+   }
+   GCproto *root = funcproto(funcV(L->top - 1));
+   const CompilationSourceMap *sources = proto_compilation_sources(root);
+   if (not sources or sources->count != 1 or sources->root != 0) {
+      Log.error("the valid source manifest was not attached to its root prototype");
+      return false;
+   }
+   lua_pop(L, 1);
+   return true;
+}
+
 static bool snapshot_has_opcode(const BytecodeSnapshot &Snapshot, BCOp Opcode)
 {
    for (BCIns instruction : Snapshot.instructions) {
@@ -3688,6 +3988,17 @@ static bool snapshot_has_opcode(const BytecodeSnapshot &Snapshot, BCOp Opcode)
    }
    for (const BytecodeSnapshot &child : Snapshot.children) {
       if (snapshot_has_opcode(child, Opcode)) return true;
+   }
+   return false;
+}
+
+static bool snapshot_has_resolved_field_hint(const BytecodeSnapshot &Snapshot, BCOp Opcode)
+{
+   for (BCIns instruction : Snapshot.instructions) {
+      if (bc_op(instruction) IS Opcode and bc_p32(instruction) != 0xffffffffu) return true;
+   }
+   for (const BytecodeSnapshot &child : Snapshot.children) {
+      if (snapshot_has_resolved_field_hint(child, Opcode)) return true;
    }
    return false;
 }
@@ -4334,51 +4645,90 @@ static bool test_complex_contract_jit_eligibility(kt::Log &Log)
 {
    LuaStateHolder state;
    lua_State *lua = state.get();
-   auto compile_proto = [lua, &Log](std::string_view Source, const char *Label, bool Child) -> GCproto * {
+   auto check_policy = [&Log](const GCproto *Prototype, bool Required, const char *Label) {
+      if (not Prototype or bool(Prototype->interpreter_required) != Required or
+          bool(Prototype->flags & PROTO_NOJIT) != Required) {
+         Log.error("%s had unexpected required or effective JIT policy", Label);
+         return false;
+      }
+      return true;
+   };
+   auto verify_roundtrip = [lua, &Log, &check_policy](
+      std::string_view Source, const char *Label, uint8_t ChildDepth, bool Required) {
       if (lua_load(lua, Source, Label)) {
          Log.error("%s failed to compile: %s", Label, lua_tostring(lua, -1));
          lua_pop(lua, 1);
-         return nullptr;
+         return false;
       }
 
       GCproto *root = funcproto(funcV(lua->top - 1));
-      GCproto *result = Child ? first_child_proto(root) : root;
-      lua->top--;
-      return result;
+      GCproto *prototype = root;
+      for (uint8_t depth = 0; depth < ChildDepth and prototype; ++depth) prototype = first_child_proto(prototype);
+      if (not check_policy(prototype, Required, Label)) {
+         lua_pop(lua, 1);
+         return false;
+      }
+
+      for (int strip : { 0, 1 }) {
+         std::string dump;
+         if (lj_bcwrite(lua, root, bytecode_writer, &dump, strip) != 0 or
+             lua_load(lua, std::string_view(dump.data(), dump.size()), Label)) {
+            Log.error("%s failed its %s round-trip: %s", Label, strip ? "stripped" : "unstripped",
+               lua_tostring(lua, -1));
+            lua_pop(lua, 1);
+            return false;
+         }
+         GCproto *loaded = funcproto(funcV(lua->top - 1));
+         for (uint8_t depth = 0; depth < ChildDepth and loaded; ++depth) loaded = first_child_proto(loaded);
+         bool valid = check_policy(loaded, Required, Label);
+         lua_pop(lua, 1);
+         if (not valid) {
+            lua_pop(lua, 1);
+            return false;
+         }
+      }
+      lua_pop(lua, 1);
+      return true;
    };
 
-   GCproto *fixed = compile_proto(
+   if (not verify_roundtrip(
       "return function(Value:func):func\n"
       "   return Value\n"
       "end\n",
-      "fixed-complex-contract", true);
-   if (not fixed or (fixed->flags & PROTO_NOJIT)) {
-      Log.error("a fixed complex contract remained interpreter-only");
-      return false;
-   }
+      "fixed-complex-contract", 1, false)) return false;
 
-   GCproto *fixed_object_class = compile_proto(
+   if (not verify_roundtrip(
       "extern obj\n"
       "return function(Value:any)\n"
       "   local stored = obj.new('time')\n"
       "   stored = Value\n"
       "   return stored\n"
       "end\n",
-      "fixed-object-class-contract", true);
-   if (not fixed_object_class or (fixed_object_class->flags & PROTO_NOJIT)) {
-      Log.error("a fixed object-class contract became interpreter-only");
-      return false;
-   }
+      "fixed-object-class-contract", 1, false)) return false;
 
-   GCproto *dynamic = compile_proto(
+   if (not verify_roundtrip(
       "return function(...):<num, ...>\n"
       "   return ...\n"
       "end\n",
-      "dynamic-result-contract", true);
-   if (not dynamic or not (dynamic->flags & PROTO_NOJIT)) {
-      Log.error("a dynamic-result contract became JIT-eligible without exact multi-result recorder support");
-      return false;
-   }
+      "dynamic-result-contract", 1, true)) return false;
+
+   if (not verify_roundtrip(
+      "local function values() return 7, 'kept' end\n"
+      "return function()\n"
+      "   defer local ignored = 1 end\n"
+      "   return values()\n"
+      "end\n",
+      "multi-result-cleanup", 1, true)) return false;
+
+   constexpr std::string_view nested_source =
+      "return function()\n"
+      "   return function()\n"
+      "      global glNestedPolicy <const> = 1\n"
+      "   end\n"
+      "end\n";
+   if (not verify_roundtrip(nested_source, "nested const root", 0, false) or
+       not verify_roundtrip(nested_source, "nested const parent", 1, false) or
+       not verify_roundtrip(nested_source, "nested const grandchild", 2, true)) return false;
 
    struct EligibilityCase {
       const char *label;
@@ -4399,20 +4749,137 @@ static bool test_complex_contract_jit_eligibility(kt::Log &Log)
    for (const EligibilityCase &test : cases) {
       std::string child_source = std::format("return function()\n   {}\nend\n", test.statement);
       std::string child_label = std::format("{}-child", test.label);
-      GCproto *child = compile_proto(child_source, child_label.c_str(), true);
-      if (not child or bool(child->flags & PROTO_NOJIT) != test.no_jit) {
-         Log.error("%s had unexpected child prototype JIT eligibility", test.label);
+      if (not verify_roundtrip(child_source, child_label.c_str(), 1, test.no_jit)) return false;
+
+      std::string main_label = std::format("{}-main", test.label);
+      if (not verify_roundtrip(test.statement, main_label.c_str(), 0, test.no_jit)) return false;
+   }
+
+   if (lua_load(lua, "local descriptor = '\\5\\0\\1\\1\\3\\4\\1\\0\\0\\0'\nreturn descriptor\n",
+       "unused-descriptor-string")) return false;
+   GCproto *supported = funcproto(funcV(lua->top - 1));
+   if (not check_policy(supported, false, "unused descriptor-like string")) {
+      lua_pop(lua, 1);
+      return false;
+   }
+   luaJIT_setmode(lua, -1, LUAJIT_MODE_FUNC | LUAJIT_MODE_OFF);
+   if (not (supported->flags & PROTO_NOJIT) or supported->interpreter_required) {
+      Log.error("explicit runtime disabling was confused with required interpreter policy");
+      lua_pop(lua, 1);
+      return false;
+   }
+   std::string disabled_dump;
+   if (lua_dump(lua, bytecode_writer, &disabled_dump) != 0 or
+       lua_load(lua, std::string_view(disabled_dump.data(), disabled_dump.size()), "transient-disable-load")) {
+      Log.error("failed to round-trip a transiently disabled prototype");
+      lua_pop(lua, 1);
+      return false;
+   }
+   bool transient_valid = check_policy(funcproto(funcV(lua->top - 1)), false, "transient disable load");
+   lua_pop(lua, 2);
+   if (not transient_valid) return false;
+
+   if (lua_load(lua, "global glRequiredEnable <const> = 1", "required-enable")) return false;
+   GCproto *required = funcproto(funcV(lua->top - 1));
+   luaJIT_setmode(lua, -1, LUAJIT_MODE_FUNC | LUAJIT_MODE_ON);
+   bool enable_valid = check_policy(required, true, "required policy after explicit enable");
+   lua_pop(lua, 1);
+   if (not enable_valid) return false;
+   return true;
+}
+
+static bool test_contract_bytecode_policy_validation(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *lua = state.get();
+
+   auto exercise = [lua, &Log](std::string_view Source, BCOp Opcode, const char *Label) {
+      if (lua_load(lua, Source, Label)) {
+         Log.error("%s failed to compile: %s", Label, lua_tostring(lua, -1));
+         lua_pop(lua, 1);
+         return false;
+      }
+      GCproto *root = funcproto(funcV(lua->top - 1));
+      MSize descriptor_pc = 0;
+      GCstr *encoded = nullptr;
+      for (MSize pc = 1; pc < root->sizebc; ++pc) {
+         BCIns instruction = proto_bc(root)[pc];
+         if (bc_op(instruction) != Opcode) continue;
+         GCstr *candidate = gco_to_string(proto_kgc(root, ~(ptrdiff_t)bc_d(instruction)));
+         RuntimeContractDescriptor descriptor;
+         if (not decode_runtime_contract(candidate, descriptor)) continue;
+         if (Opcode != BC_CONTRACT or contract_requires_interpreter(descriptor)) {
+            descriptor_pc = pc;
+            encoded = candidate;
+            break;
+         }
+      }
+      if (not descriptor_pc or not encoded or encoded->len < 4) {
+         Log.error("%s did not emit the expected descriptor", Label);
+         lua_pop(lua, 1);
          return false;
       }
 
-      std::string main_label = std::format("{}-main", test.label);
-      GCproto *main = compile_proto(test.statement, main_label.c_str(), false);
-      if (not main or bool(main->flags & PROTO_NOJIT) != test.no_jit) {
-         Log.error("%s had unexpected main prototype JIT eligibility", test.label);
-         return false;
+      auto expect_rejected = [&](int Strip, const char *Mutation) {
+         std::string malformed;
+         if (lj_bcwrite(lua, root, bytecode_writer, &malformed, Strip) != 0) return false;
+         int status = lua_load(lua, std::string_view(malformed.data(), malformed.size()), Mutation);
+         if (status != LUA_ERRSYNTAX) {
+            lua_pop(lua, 1);
+            Log.error("the reader accepted %s in a %s dump", Mutation, Strip ? "stripped" : "unstripped");
+            return false;
+         }
+         lua_pop(lua, 1);
+         return true;
+      };
+
+      for (int strip : { 0, 1 }) {
+         char *bytes = (char *)strdata(encoded);
+         uint8_t saved_flags = uint8_t(bytes[1]);
+         bytes[1] = char(0x80);
+         bool valid = expect_rejected(strip, "unknown contract descriptor flags");
+         bytes[1] = char(saved_flags);
+         if (not valid) {
+            lua_pop(lua, 1);
+            return false;
+         }
+
+         uint8_t saved_count = uint8_t(bytes[3]);
+         bytes[3] = char(saved_count + 1);
+         valid = expect_rejected(strip, "truncated contract descriptor entries");
+         bytes[3] = char(saved_count);
+         if (not valid) {
+            lua_pop(lua, 1);
+            return false;
+         }
+
+         BCIns saved_instruction = proto_bc(root)[descriptor_pc];
+         setbc_a(&proto_bc(root)[descriptor_pc], root->framesize);
+         valid = expect_rejected(strip, "contract operand span");
+         proto_bc(root)[descriptor_pc] = saved_instruction;
+         if (not valid) {
+            lua_pop(lua, 1);
+            return false;
+         }
+
+         std::string recovery;
+         if (lj_bcwrite(lua, root, bytecode_writer, &recovery, strip) != 0 or
+             lua_load(lua, std::string_view(recovery.data(), recovery.size()), "contract-validation-recovery")) {
+            Log.error("the reader did not recover after rejecting malformed %s bytecode", Label);
+            lua_pop(lua, 1);
+            return false;
+         }
+         lua_pop(lua, 1);
       }
+      lua_pop(lua, 1);
+      return true;
+   };
+
+   if (not exercise("global glMalformedConst <const> = 1", BC_CONTRACT, "const-contract-validation")) {
+      return false;
    }
-   return true;
+   return exercise(
+      "local value:any = 1\nreturn value is <num>\n", BC_TYPETEST, "type-test-contract-validation");
 }
 
 static bool test_parser_diagnostics_reset_per_load(kt::Log &Log)
@@ -4883,6 +5350,235 @@ static bool test_state_local_struct_declarations(kt::Log &Log)
    return true;
 }
 
+static bool test_named_struct_bytecode_manifest(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      "struct BytecodeLeaf Value: int end\n"
+      "struct BytecodeMiddle Leaf: struct<BytecodeLeaf> end\n"
+      "struct BytecodeRoot Middle: struct<BytecodeMiddle>, Numbers: int[3], "
+         "Leaves: array<struct<BytecodeLeaf>>, Name: str, Clock: obj<Time>, Link: ptr<BytecodeLeaf> end\n"
+      "struct BytecodeUnused Value: double end\n"
+      "local function identity(Value:struct<BytecodeRoot>):struct<BytecodeRoot> return Value end\n"
+      "local item = struct<BytecodeRoot> { }\n"
+      "item.Middle.Leaf.Value = 42\n"
+      "item.Name = 'fresh'\n"
+      "return identity(item).Middle.Leaf.Value\n";
+
+   LuaStateHolder producer;
+   lua_State *source_state = producer.get();
+   luaL_openlibs(source_state);
+   if (lua_load(source_state, source, "struct-bytecode-producer")) {
+      Log.error("failed to compile struct bytecode fixture: %s", lua_tostring(source_state, -1));
+      return false;
+   }
+   GCproto *root = funcproto(funcV(source_state->top - 1));
+   uint32_t manifest_size = 0;
+   const uint8_t *manifest = proto_struct_manifest(root, &manifest_size);
+   std::string_view manifest_view((const char *)manifest, manifest_size);
+   if (not manifest or manifest_size < 2 or manifest_view.find("BytecodeRoot") IS std::string_view::npos or
+       manifest_view.find("BytecodeMiddle") IS std::string_view::npos or
+       manifest_view.find("BytecodeLeaf") IS std::string_view::npos or
+       manifest_view.find("BytecodeUnused") != std::string_view::npos) {
+      Log.error("struct manifest omitted a dependency or retained an unused declaration");
+      return false;
+   }
+   {
+      LuaStateHolder validation;
+      std::vector<uint32_t> inserted;
+      std::string detail;
+      ERR error = load_declared_struct_manifest(validation.get(), manifest_view, inserted, &detail);
+      if (error != ERR::Okay) {
+         Log.error("direct struct manifest validation failed (%s): %s", GetErrorMsg(error), detail.c_str());
+         return false;
+      }
+      std::vector<uint32_t> reused;
+      if (load_declared_struct_manifest(validation.get(), manifest_view, reused, &detail) != ERR::Okay or
+          not reused.empty()) {
+         Log.error("an identical pre-existing declaration was not reused");
+         return false;
+      }
+
+      std::array<std::vector<uint8_t>, 3> malformed = {
+         std::vector<uint8_t>(manifest, manifest + manifest_size),
+         std::vector<uint8_t>(manifest, manifest + manifest_size),
+         std::vector<uint8_t>(manifest, manifest + manifest_size)
+      };
+      malformed[0][0]++;
+      malformed[1].pop_back();
+      malformed[2].push_back(0);
+      for (size_t malformed_index = 0; malformed_index < malformed.size(); ++malformed_index) {
+         const auto &bytes = malformed[malformed_index];
+         LuaStateHolder rejected;
+         std::vector<uint32_t> rejected_insertions;
+         ERR rejected_error = load_declared_struct_manifest(rejected.get(),
+            std::string_view((const char *)bytes.data(), bytes.size()), rejected_insertions, &detail);
+         if (rejected_error IS ERR::Okay or find_struct(rejected.get(), "BytecodeLeaf") or
+               find_struct(rejected.get(), "BytecodeMiddle") or find_struct(rejected.get(), "BytecodeRoot")) {
+            Log.error("malformed semantic struct manifest %zu was accepted or published declarations (%s): %s",
+               malformed_index, GetErrorMsg(rejected_error), detail.c_str());
+            return false;
+         }
+      }
+   }
+
+   {
+      LuaStateHolder dynamic_producer;
+      lua_State *dynamic_state = dynamic_producer.get();
+      luaL_openlibs(dynamic_state);
+      constexpr std::string_view dynamic_source =
+         "struct BytecodeDynamicFirst Value: int end\n"
+         "struct BytecodeDynamicSecond Value: int end\n"
+         "local name = 'BytecodeDynamicFirst' return struct.size(name)\n";
+      if (lua_load(dynamic_state, dynamic_source, "struct-bytecode-dynamic")) {
+         Log.error("failed to compile the dynamic struct registry fixture");
+         return false;
+      }
+      uint32_t dynamic_size = 0;
+      const uint8_t *dynamic_manifest = proto_struct_manifest(funcproto(funcV(dynamic_state->top - 1)),
+         &dynamic_size);
+      std::string_view dynamic_view((const char *)dynamic_manifest, dynamic_size);
+      if (dynamic_view.find("BytecodeDynamicFirst") IS std::string_view::npos or
+          dynamic_view.find("BytecodeDynamicSecond") IS std::string_view::npos) {
+         Log.error("a dynamic struct registry call did not retain all declarations owned by its compilation unit");
+         return false;
+      }
+   }
+
+   for (int strip : { 0, 1 }) {
+      std::string dump;
+      int write_status = strip ? lj_bcwrite(source_state, root, bytecode_writer, &dump, 1) :
+         lua_dump(source_state, bytecode_writer, &dump);
+      if (write_status != 0) {
+         Log.error("failed to write %s struct dump", strip ? "stripped" : "unstripped");
+         return false;
+      }
+      if (strip IS 1) {
+         auto read_uleb = [&dump](size_t &Position, uint32_t &Value) {
+            Value = 0;
+            for (uint32_t shift = 0; shift <= 28 and Position < dump.size(); shift += 7) {
+               const uint8_t byte = uint8_t(dump[Position++]);
+               Value |= uint32_t(byte & 0x7f) << shift;
+               if (not (byte & 0x80)) return true;
+            }
+            return false;
+         };
+         size_t source_offset = 5;
+         uint32_t source_size = 0;
+         if (not read_uleb(source_offset, source_size) or source_size > dump.size() - source_offset) return false;
+         size_t manifest_offset = source_offset + source_size;
+         uint32_t wire_manifest_size = 0;
+         if (not read_uleb(manifest_offset, wire_manifest_size) or
+             wire_manifest_size > dump.size() - manifest_offset) return false;
+         size_t value_offset = dump.find("Value", manifest_offset);
+         if (value_offset IS std::string::npos or
+             value_offset + 6 >= manifest_offset + wire_manifest_size) return false;
+
+         std::array<std::string, 3> malformed = { dump, dump, dump };
+         malformed[0][manifest_offset]++;
+         malformed[1][value_offset + 5] = char(0xff);
+         malformed[2][value_offset + 6] = 0;
+         for (size_t malformed_index = 0; malformed_index < malformed.size(); ++malformed_index) {
+            const auto &bytes = malformed[malformed_index];
+            LuaStateHolder rejected;
+            lua_State *rejected_state = rejected.get();
+            luaL_openlibs(rejected_state);
+            int rejected_status = lua_load(rejected_state, bytes, "struct-bytecode-malformed-manifest");
+            if (rejected_status != LUA_ERRSYNTAX or
+                find_struct(rejected_state, "BytecodeLeaf") or find_struct(rejected_state, "BytecodeMiddle") or
+                find_struct(rejected_state, "BytecodeRoot")) {
+               Log.error("malformed struct block %zu was accepted or changed the declaration registry (status %d)",
+                  malformed_index, rejected_status);
+               return false;
+            }
+            lua_pop(rejected_state, 1);
+            if (lua_load(rejected_state, dump, "struct-bytecode-recovery")) {
+               Log.error("the state could not load valid bytecode after rejecting malformed struct block %zu: %s",
+                  malformed_index, lua_tostring(rejected_state, -1));
+               return false;
+            }
+         }
+      }
+      LuaStateHolder consumer;
+      lua_State *target = consumer.get();
+      luaL_openlibs(target);
+      if (find_struct(target, "BytecodeRoot") or
+          lua_load(target, std::string_view(dump.data(), dump.size()), "struct-bytecode-consumer")) {
+         Log.error("failed to load %s struct dump in an independent state: %s",
+            strip ? "stripped" : "unstripped", lua_tostring(target, -1));
+         return false;
+      }
+      GCproto *loaded_proto = funcproto(funcV(target->top - 1));
+      std::string redump;
+      int redump_status = strip ? lj_bcwrite(target, loaded_proto, bytecode_writer, &redump, 1) :
+         lua_dump(target, bytecode_writer, &redump);
+      if (redump_status != 0) {
+         Log.error("a loaded struct chunk could not be dumped again");
+         return false;
+      }
+      {
+         LuaStateHolder redump_consumer;
+         lua_State *redump_target = redump_consumer.get();
+         luaL_openlibs(redump_target);
+         if (lua_load(redump_target, redump, "struct-bytecode-redump") or
+             lua_pcall(redump_target, 0, 1, 0) or lua_tointeger(redump_target, -1) != 42) {
+            Log.error("a raw re-dump did not retain its portable struct manifest");
+            return false;
+         }
+      }
+      auto loaded_root = find_struct(target, "BytecodeRoot");
+      auto loaded_middle = find_struct(target, "BytecodeMiddle");
+      auto loaded_leaf = find_struct(target, "BytecodeLeaf");
+      if (not loaded_root or not loaded_middle or not loaded_leaf or find_struct(target, "BytecodeUnused") or
+          loaded_root->Fields.size() != 6 or loaded_root->Fields[0].StructDefinition != loaded_middle or
+          loaded_middle->Fields[0].StructDefinition != loaded_leaf or
+          loaded_root->Fields[4].ObjectClassName != "Time") {
+         Log.error("%s struct dump reconstructed the wrong dependency graph or field semantics",
+            strip ? "stripped" : "unstripped");
+         return false;
+      }
+      if (lua_pcall(target, 0, 1, 0) or lua_tointeger(target, -1) != 42) {
+         Log.error("%s struct dump did not execute with reconstructed layouts: %s",
+            strip ? "stripped" : "unstripped", lua_tostring(target, -1));
+         return false;
+      }
+      lua_pop(target, 1);
+      lua_gc(target, LUA_GCCOLLECT, 0);
+      if (lua_load(target, "local value = struct<BytecodeRoot> { } return value.Middle.Leaf.Value",
+          "struct-bytecode-lifetime") or lua_pcall(target, 0, 1, 0) or lua_tointeger(target, -1) != 0) {
+         Log.error("loaded struct declarations did not survive closure execution");
+         return false;
+      }
+
+      LuaStateHolder rollback;
+      lua_State *rollback_state = rollback.get();
+      std::string malformed = dump;
+      malformed.back() = 1;
+      int malformed_status = lua_load(rollback_state, malformed, "struct-bytecode-rollback");
+      lua_gc(rollback_state, LUA_GCCOLLECT, 0);
+      if (malformed_status != LUA_ERRSYNTAX or
+          find_struct(rollback_state, "BytecodeLeaf") or find_struct(rollback_state, "BytecodeMiddle") or
+          find_struct(rollback_state, "BytecodeRoot")) {
+         Log.error("a malformed prototype retained definitions published by its struct manifest");
+         return false;
+      }
+      lua_pop(rollback_state, 1);
+
+      LuaStateHolder conflict;
+      lua_State *conflict_state = conflict.get();
+      if (lua_load(conflict_state, "struct BytecodeRoot Other: int end", "struct-bytecode-conflict")) return false;
+      lua_pop(conflict_state, 1);
+      if (lua_load(conflict_state, dump, "struct-bytecode-conflict-load") != LUA_ERRSYNTAX or
+          find_struct(conflict_state, "BytecodeLeaf") or find_struct(conflict_state, "BytecodeMiddle") or
+          not find_struct(conflict_state, "BytecodeRoot") or
+          find_struct(conflict_state, "BytecodeRoot")->Fields[0].Name != "Other") {
+         Log.error("a conflicting declaration was replaced or partial dependencies were retained");
+         return false;
+      }
+      lua_pop(conflict_state, 1);
+   }
+   return true;
+}
+
 // Covers the process-wide module registry: indexed module lookup, case-sensitive function lookup, revalidation of the
 // canonical name after hashing, stable record addresses across registry growth, and single publication under concurrent
 // first resolution.
@@ -5181,11 +5877,21 @@ static bool test_module_dependency_corruption_rejected(kt::Log &Log)
 
    size_t position = 5;
    uint32_t value = 0;
-   if (not read_uleb(position, value) or position + 4 > dump.size()) {
+   if (not read_uleb(position, value) or value > dump.size() - position) {
+      Log.error("could not skip the source manifest in the corruption fixture");
+      return false;
+   }
+   position += value;
+   if (not read_uleb(position, value) or value > dump.size() - position) {
+      Log.error("could not skip the struct manifest in the corruption fixture");
+      return false;
+   }
+   position += value;
+   if (not read_uleb(position, value) or position + 5 > dump.size()) {
       Log.error("could not locate the prototype header in the corruption fixture");
       return false;
    }
-   position += 4;
+   position += 5;
 
    uint32_t signature_length = 0, dependency_length = 0;
    for (int field = 0; field < 3; ++field) {
@@ -7957,6 +8663,73 @@ static bool test_canonical_core_syntax_bytecode_emission(kt::Log &Log)
       return false;
    }
 
+   return true;
+}
+
+static bool test_cache_payload_bytecode_roundtrip(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   std::string source =
+      "local function sink(A:num, B:num, C:num, D:num, E:num):num return E end\n"
+      "local function invoke(X:num, Y:num):num return sink(X, Y, 0, 4, X | Y) end\n"
+      "local function inspect(Value:num):num\n"
+      "   if Value has 1 then return sink(0, 0, 0, 0, ~Value) end\n"
+      "   return 0\n"
+      "end\n"
+      "local function object_field():num\n"
+      "   local clock = obj<Time> { year=2026 }\n"
+      "   return clock.year\n"
+      "end\n"
+      "local context = {}\n"
+      "local function context_raise()\n"
+      "   using context do raise 'expected' end\n"
+      "end\n";
+   for (int i = 0; i < LJ_MAX_LOCVAR + 1; ++i) {
+      source.append("if true then local sequential = 1 end\n");
+   }
+   source.append("assert(object_field() is 2026)\nreturn inspect(invoke(1, 2))\n");
+
+   if (lua_load(L, source, "cache-payload-roundtrip")) {
+      Log.error("failed to compile cache payload fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+   BytecodeSnapshot snapshot = snapshot_proto(funcproto(funcV(L->top - 1)));
+   if (not snapshot_has_opcode(snapshot, BC_BFUNC) or not snapshot_has_opcode(snapshot, BC_OBGETF) or
+       not snapshot_has_opcode(snapshot, BC_CTXBEGIN) or not snapshot_has_opcode(snapshot, BC_RAISE)) {
+      Log.error("cache payload fixture omitted a required bytecode family");
+      return false;
+   }
+
+   lua_pushvalue(L, -1);
+   if (lua_pcall(L, 0, 1, 0) or lua_tointeger(L, -1) != -4) {
+      Log.error("cache payload fixture returned the wrong result before dumping: %s", lua_tostring(L, -1));
+      return false;
+   }
+   lua_pop(L, 1);
+   BytecodeSnapshot executed = snapshot_proto(funcproto(funcV(L->top - 1)));
+   if (not snapshot_has_resolved_field_hint(executed, BC_OBGETF)) {
+      Log.error("cache payload fixture did not resolve its object field hint before dumping");
+      return false;
+   }
+
+   std::string dump;
+   if (lua_dump(L, bytecode_writer, &dump) != 0) {
+      Log.error("failed to write cache payload bytecode");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   if (lua_load(L, std::string_view(dump.data(), dump.size()), "cache-payload-roundtrip")) {
+      Log.error("failed to reload cache payload bytecode: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (lua_pcall(L, 0, 1, 0) or lua_tointeger(L, -1) != -4) {
+      Log.error("reloaded cache payload returned the wrong result: %s", lua_tostring(L, -1));
+      return false;
+   }
+   lua_pop(L, 1);
    return true;
 }
 
@@ -10892,6 +11665,162 @@ static bool test_rethrow_dump_validation(kt::Log &Log)
    return true;
 }
 
+static bool verify_close_metadata_tree(const GCproto *Proto, bool RequireConsumers, size_t &ClosePrototypes,
+   kt::Log &Log, std::string_view Stage)
+{
+   uint64_t arm_slots = 0;
+   uint64_t consume_slots = 0;
+   for (MSize pc = 1; pc < Proto->sizebc; ++pc) {
+      BCIns instruction = proto_bc(Proto)[pc];
+      BCOp op = bc_op(instruction);
+      if (op != BC_CLOSEARM and op != BC_CLOSE) continue;
+      BCREG slot = bc_a(instruction);
+      if (slot >= 64) {
+         Log.error("%.*s close bytecode contains slot %u", int(Stage.size()), Stage.data(), unsigned(slot));
+         return false;
+      }
+      if (op IS BC_CLOSEARM) arm_slots |= uint64_t(1) << slot;
+      else consume_slots |= uint64_t(1) << slot;
+   }
+
+   if (Proto->closeslots != arm_slots or (consume_slots & ~arm_slots) or
+       (RequireConsumers and (arm_slots & ~consume_slots))) {
+      Log.error("%.*s close metadata mismatch: prototype=%" PRIx64 " arm=%" PRIx64 " consume=%" PRIx64,
+         int(Stage.size()), Stage.data(), Proto->closeslots, arm_slots, consume_slots);
+      return false;
+   }
+   if (arm_slots) ++ClosePrototypes;
+
+   for (ptrdiff_t i = -ptrdiff_t(Proto->sizekgc); i < 0; ++i) {
+      GCobj *object = proto_kgc(Proto, i);
+      if (object->gch.gct IS uint8_t(~LJ_TPROTO) and
+          not verify_close_metadata_tree(gco_to_proto(object), RequireConsumers, ClosePrototypes, Log, Stage)) {
+         return false;
+      }
+   }
+   return true;
+}
+
+static bool test_close_slot_metadata_roundtrip(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) {
+      Log.error("failed to create a state for close-slot bytecode testing");
+      return false;
+   }
+   luaL_openlibs(lua);
+
+   constexpr std::string_view source =
+      "local root <close> = setmetatable({}, { __close=function() end })\n"
+      "local function child()\n"
+      "   local nested <close> = setmetatable({}, { __close=function() end })\n"
+      "   raise 'close child'\n"
+      "end\n"
+      "return child\n";
+   if (lua_load(lua, source, "close-slot-metadata")) {
+      Log.error("failed to compile close-slot fixture: %s", lua_tostring(lua, -1));
+      return false;
+   }
+
+   GCproto *prototype = funcproto(funcV(lua->top - 1));
+   size_t close_prototypes = 0;
+   if (not verify_close_metadata_tree(prototype, true, close_prototypes, Log, "source") or
+       close_prototypes != 2) {
+      if (close_prototypes != 2) Log.error("close-slot fixture contained %zu close prototypes instead of two",
+         close_prototypes);
+      return false;
+   }
+
+   for (int strip : { 0, 1 }) {
+      std::string dump;
+      int status = strip ? lj_bcwrite(lua, prototype, bytecode_writer, &dump, 1) :
+         lua_dump(lua, bytecode_writer, &dump);
+      if (status != 0 or lua_load(lua, std::string_view(dump), "close-slot-roundtrip")) {
+         Log.error("failed to %s close-slot bytecode: %s", strip ? "round-trip stripped" : "raw-dump and load",
+            lua_tostring(lua, -1));
+         return false;
+      }
+
+      GCproto *loaded = funcproto(funcV(lua->top - 1));
+      close_prototypes = 0;
+      bool valid = verify_close_metadata_tree(loaded, true, close_prototypes, Log,
+         strip ? "stripped round-trip" : "unstripped round-trip");
+      lua_pop(lua, 1);
+      if (not valid or close_prototypes != 2) {
+         if (valid) Log.error("loaded close-slot fixture contained %zu close prototypes instead of two",
+            close_prototypes);
+         return false;
+      }
+   }
+
+   BCIns *bytecode = proto_bc(prototype);
+   MSize arm_position = 0;
+   MSize consume_position = 0;
+   uint64_t arm_slots = 0;
+   for (MSize pc = 1; pc < prototype->sizebc; ++pc) {
+      BCOp op = bc_op(bytecode[pc]);
+      if (op IS BC_CLOSEARM) {
+         if (not arm_position) arm_position = pc;
+         arm_slots |= uint64_t(1) << bc_a(bytecode[pc]);
+      }
+      else if (op IS BC_CLOSE and not consume_position) consume_position = pc;
+   }
+   BCREG unmatched_slot = 0xff;
+   for (BCREG slot = 0; slot < prototype->framesize and slot < 64; ++slot) {
+      if (not (arm_slots & (uint64_t(1) << slot))) {
+         unmatched_slot = slot;
+         break;
+      }
+   }
+   if (not arm_position or not consume_position or unmatched_slot IS 0xff or prototype->framesize >= 64) {
+      Log.error("close-slot malformed fixture lacks the required arm, consumer or spare frame slot");
+      return false;
+   }
+
+   auto malformed_rejected = [&](MSize Position, BCIns Invalid, std::string_view Label) {
+      BCIns saved = bytecode[Position];
+      bytecode[Position] = Invalid;
+      std::string dump;
+      bool wrote = lj_bcwrite(lua, prototype, bytecode_writer, &dump, 1) IS 0;
+      bytecode[Position] = saved;
+      if (not wrote) {
+         Log.error("failed to write malformed %.*s fixture", int(Label.size()), Label.data());
+         return false;
+      }
+
+      int status = lua_load(lua, std::string_view(dump), "malformed-close-bytecode");
+      if (status != LUA_ERRSYNTAX) {
+         lua_pop(lua, 1);
+         Log.error("bytecode reader returned %d for malformed %.*s operands", status,
+            int(Label.size()), Label.data());
+         return false;
+      }
+      lua_pop(lua, 1);
+
+      if (lua_load(lua, "return 42", "close-reader-recovery") or lua_pcall(lua, 0, 1, 0) or
+          lua_tointeger(lua, -1) != 42) {
+         Log.error("state was not reusable after rejecting malformed %.*s bytecode", int(Label.size()), Label.data());
+         return false;
+      }
+      lua_pop(lua, 1);
+      return true;
+   };
+
+   BCIns arm = bytecode[arm_position];
+   BCIns consume = bytecode[consume_position];
+   if (not malformed_rejected(arm_position,
+         BCINS_AD(BC_CLOSEARM, prototype->framesize, bc_d(arm)), "out-of-frame CLOSEARM") or
+       not malformed_rejected(arm_position, BCINS_AD(BC_CLOSEARM, 64, bc_d(arm)), "slot-64 CLOSEARM") or
+       not malformed_rejected(consume_position,
+         BCINS_AD(BC_CLOSE, unmatched_slot, bc_d(consume)), "unmatched CLOSE")) {
+      return false;
+   }
+
+   lua_pop(lua, 1);
+   return true;
+}
+
 static bool test_defer_unwind_registration_bytecode(kt::Log &Log)
 {
    auto find_opcode = [](std::string_view Name) -> std::optional<BCOp> {
@@ -11131,12 +12060,13 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 104> tests = { {
+   constexpr std::array<TestCase, 110> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "error_removal", test_error_removal },
       { "expression_raise_bytecode", test_expression_raise_bytecode },
       { "rethrow_dump_validation", test_rethrow_dump_validation },
+      { "close_slot_metadata_roundtrip", test_close_slot_metadata_roundtrip },
       { "raise_payload_and_context", test_raise_payload_and_context },
       { "assignment_target_resolution_ast", test_assignment_target_resolution_ast },
       { "assignment_target_semantic_resolution", test_assignment_target_semantic_resolution },
@@ -11183,6 +12113,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "current_context_materialisation_bytecode", test_current_context_materialisation_bytecode },
       { "ast_call_lowering", test_ast_call_lowering },
       { "bytecode_equivalence", test_bytecode_equivalence },
+      { "structural_bytecode_reader_validation", test_structural_bytecode_reader_validation },
       { "signature_metadata_roundtrip", test_signature_metadata_roundtrip },
       { "forward_declaration_signature_validation", test_forward_declaration_signature_validation },
       { "old_bytecode_versions_rejected", test_old_bytecode_versions_rejected },
@@ -11190,13 +12121,16 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "signature_static_inference", test_signature_static_inference },
       { "signature_void_and_bare_return", test_signature_void_and_bare_return },
       { "malformed_signature_rejected", test_malformed_signature_rejected },
+      { "source_manifest_validation", test_source_manifest_validation },
       { "contract_bytecode_roundtrip", test_contract_bytecode_roundtrip },
       { "runtime_contract_decoder", test_runtime_contract_decoder },
       { "runtime_contract_batching", test_runtime_contract_batching },
       { "complex_contract_jit_eligibility", test_complex_contract_jit_eligibility },
+      { "contract_bytecode_policy_validation", test_contract_bytecode_policy_validation },
       { "parser_diagnostics_reset_per_load", test_parser_diagnostics_reset_per_load },
       { "userdata_type_annotations", test_userdata_type_annotations },
       { "state_local_struct_declarations", test_state_local_struct_declarations },
+      { "named_struct_bytecode_manifest", test_named_struct_bytecode_manifest },
       { "module_registry", test_module_registry },
       { "struct_declaration_syntax", test_struct_declaration_syntax },
       { "struct_field_documentation", test_struct_field_documentation },
@@ -11217,6 +12151,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "builtin_method_bytecode_emission", test_builtin_method_bytecode_emission },
       { "compiler_intrinsic_bytecode_emission", test_compiler_intrinsic_bytecode_emission },
       { "canonical_core_syntax_bytecode_emission", test_canonical_core_syntax_bytecode_emission },
+      { "cache_payload_bytecode_roundtrip", test_cache_payload_bytecode_roundtrip },
       { "object_constructor_syntax", test_object_constructor_syntax },
       { "regex_literal_canonical_bytecode_emission", test_regex_literal_canonical_bytecode_emission },
       { "contextual_call_specialisation", test_contextual_call_specialisation },

@@ -141,6 +141,14 @@ public:
    BCLine     linenumber;   // Input line counter.
    BCLine     lastline;     // Line of last token.
    uint8_t    current_file_index = 0;  // File index for FileSource tracking (0 = main file)
+   uint8_t    current_source_descriptor = 0; // Dense identity in this compilation unit.
+   std::vector<CompilationSourceRecord> compilation_sources;
+   std::vector<std::string> compilation_struct_roots;
+   std::vector<std::string> compilation_structs;
+   std::vector<uint32_t> loaded_structs;
+   std::vector<uint8_t> bytecode_struct_manifest;
+   bool dynamic_struct_reference = false;
+   bool loaded_structs_committed = false;
 
    GCstr *    chunk_name;     // Current chunk name (interned string).
    const char *chunk_arg;     // Chunk name argument.
@@ -153,6 +161,10 @@ public:
    MSize      size_bc_stack;  // Size of bytecode stack.
    uint32_t   level;          // Syntactical nesting level.
    uint8_t    bytecode_version = 0; // Private bytecode format version while reading a binary chunk.
+   uint32_t   bytecode_prototype_count = 0; // Structural reader resource accounting.
+   uint64_t   bytecode_allocation = 0;
+   uint64_t   bytecode_validation_work = 0;
+   std::vector<uint16_t> bytecode_prototype_depths;
    uint32_t   ternary_depth;  // Number of pending ternary operators.
    uint8_t    pending_if_empty_colon; // Tracks ?: misuse after ??.
    int        is_bytecode;    // Set to 1 if input is bytecode, 0 if source text.

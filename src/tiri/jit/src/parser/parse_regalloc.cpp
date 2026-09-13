@@ -565,17 +565,6 @@ static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeCo
 {
    if (Contracts.empty()) return;
 
-   // Dynamic result counts still require interpreter-only MRSAVE/MRRESTORE handling.  Const contracts retain
-   // prototype-wide lifecycle semantics.  Ordinary global declaration finalisers are bytecode-local side-effect
-   // boundaries handled by the recorder; other fixed contracts have exact recorder predicates.
-   if (DynamicCount) fs->flags |= PROTO_NOJIT;
-   for (const RuntimeContract &contract : Contracts) {
-      if (contract.is_const) {
-         fs->flags |= PROTO_NOJIT;
-         break;
-      }
-   }
-
    std::string descriptor;
    descriptor.reserve(4 + Contracts.size() * 8);
    descriptor.push_back(char(uint8_t(Contracts.front().boundary)));

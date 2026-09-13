@@ -624,6 +624,15 @@ static void gc_traverse_proto(global_State *g, GCproto* pt)
 {
    ptrdiff_t i;
    gc_mark_str(proto_chunk_name(pt));
+   if (gcref(pt->source_root)) gc_markobj(g, gcref(pt->source_root));
+   if (auto map = pt->compilation_sources.get<CompilationSourceMap>()) {
+      auto entries = compilation_source_entries(map);
+      for (uint32_t i = 0; i < map->count; ++i) {
+         gc_mark_str(gco_to_string(gcref(entries[i].canonical_path)));
+         gc_mark_str(gco_to_string(gcref(entries[i].display_filename)));
+         gc_mark_str(gco_to_string(gcref(entries[i].declared_namespace)));
+      }
+   }
    for (i = -(ptrdiff_t)pt->sizekgc; i < 0; i++)  //  Mark collectable consts.
       gc_markobj(g, proto_kgc(pt, i));
    if (pt->trace) gc_marktrace(g, pt->trace);

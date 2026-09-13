@@ -3,6 +3,12 @@
    include 'core'
    import 'options'
 
+local glTestFiles = array<str>
+
+@AfterAll function cleanup_test_files()
+   for path in values(glTestFiles) do mSys.DeleteFile(path) end
+end
+
 function expect_error(Parser:table, Input:any, Code:num, MessagePart:str):table
    local args, err = Parser.tryProcess(Input)
    assert(args is nil, 'Expected parsing to fail')
@@ -63,6 +69,7 @@ function set_test_env(Name:str, Value:any)
 end
 
 function write_test_file(Path:str, Content:str)
+   glTestFiles.push(Path)
    local file = io.open(Path, 'w')
    file.write(Content)
    file.close()

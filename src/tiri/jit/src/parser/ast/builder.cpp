@@ -612,7 +612,31 @@ void AstBuilder::commit_registered_enum_constants()
 
 void AstBuilder::commit_registered_structs()
 {
+   AstBuilder *root = this->root_builder();
+   for (uint32_t key : this->registered_structs) {
+      if (auto found = this->ctx.lua().struct_declarations.find(key);
+          found != this->ctx.lua().struct_declarations.end()) {
+         root->ctx.lex().compilation_structs.push_back(found->second.Name);
+      }
+   }
    this->registered_structs.clear();
+}
+
+void AstBuilder::track_struct_reference(struct_record *Definition)
+{
+   if (not Definition) return;
+   AstBuilder *root = this->root_builder();
+   auto key = struct_key(Definition->Name);
+   auto found = this->ctx.lua().struct_declarations.find(key);
+   if (found != this->ctx.lua().struct_declarations.end() and &found->second IS Definition) {
+      auto &roots = root->ctx.lex().compilation_struct_roots;
+      if (std::find(roots.begin(), roots.end(), Definition->Name) IS roots.end()) roots.push_back(Definition->Name);
+   }
+}
+
+void AstBuilder::track_dynamic_struct_reference()
+{
+   this->root_builder()->ctx.lex().dynamic_struct_reference = true;
 }
 
 void AstBuilder::track_registered_struct(uint32_t Key)

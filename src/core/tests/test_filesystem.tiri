@@ -432,6 +432,40 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@Test function ExclusiveFileCreation()
+   local target = glTempRoot .. 'exclusive.tmp'
+   resetPath(target)
+   writeFile(target, 'original')
+
+   try
+      local collision <close> = obj.new('file', { path=target, flags=FL_NEW|FL_WRITE|FL_EXCLUSIVE })
+      assert(false, 'Exclusive creation must reject an existing path.')
+   except e when ERR_FileExists
+   end
+   assert(readFile(target) is 'original', 'Exclusive creation must not truncate an existing file.')
+
+   resetPath(target)
+   do
+      local created <close> = obj.new('file', { path=target, flags=FL_NEW|FL_WRITE|FL_EXCLUSIVE })
+      check created.acWrite('exclusive')
+   end
+   assert(readFile(target) is 'exclusive', 'Exclusive creation must create a missing host file.')
+
+   try
+      local invalid <close> = obj.new('file', { path=target, flags=FL_WRITE|FL_EXCLUSIVE })
+      assert(false, 'FL_EXCLUSIVE must require FL_NEW.')
+   except e when ERR_InvalidState
+   end
+
+   try
+      local virtual <close> = obj.new('file', { path='string:data', flags=FL_NEW|FL_WRITE|FL_EXCLUSIVE })
+      assert(false, 'Virtual files must reject unsupported exclusive creation.')
+   except e when ERR_NoSupport
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Test function CreateFolderAndDeleteTree()
    root_path = glTempRoot .. 'create_folder/'
    folder_path = root_path .. 'alpha/beta/'
