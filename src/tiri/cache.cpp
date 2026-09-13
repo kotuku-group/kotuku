@@ -614,14 +614,19 @@ static ERR refresh_cache_lifecycle(extTiri *Self)
    const bool parser_output = (Self->JitOptions & cache_parser_output_options()) != JOF::NIL;
    if ((not Self->Path.empty()) and ((Self->CacheFile != Self->CacheSelectionValue) or
        (parser_output != Self->CacheSelectionParserOutput))) {
+      ERR source_error = ERR::Okay;
       if (Self->LoadedFromCache) {
-         if (auto error = load_source(Self); error != ERR::Okay) return error;
+         source_error = load_source(Self);
          Self->LoadedFromCache = false;
          Self->CacheHit = false;
       }
-      select_cache_destination(Self, ERR::Okay);
-      Self->SaveCompiled = cache_destination_permitted(Self);
+      select_cache_destination(Self, source_error);
+      Self->SaveCompiled = (source_error IS ERR::Okay) and cache_destination_permitted(Self);
       if (Self->CacheOrigin IS CacheDestinationOrigin::AUTOMATIC) Self->CachePermissions = PERMIT::USER;
+      if (source_error != ERR::Okay) {
+         if (auto error = load_selected_cache(Self, source_error); error != ERR::Okay) return error;
+         if (not Self->LoadedFromCache) return source_error;
+      }
    }
 
    if (Self->Path.empty()) {

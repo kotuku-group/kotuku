@@ -213,6 +213,15 @@ bool read_file(std::string_view Path, std::string &Output)
    return true;
 }
 
+bool write_legacy_cache(std::string_view Path, std::string_view Source)
+{
+   DeleteFile(Path, nullptr);
+   objTiri::create script = { fl::Statement(Source) };
+   objFile::create cache = { fl::Path(Path), fl::Flags(FL::NEW|FL::WRITE) };
+   return script.ok() and cache.ok() and (acSaveToObject(*script, *cache) IS ERR::Okay) and
+      (cache->flush() IS ERR::Okay);
+}
+
 bool compilation_capture_contract(kt::Log &Log)
 {
    const std::string main_path = "temp:tiri-c02-main.tiri";
@@ -466,13 +475,46 @@ bool automatic_cache_lifecycle_contract(kt::Log &Log)
    return true;
 }
 
+bool source_free_cache_retarget_contract(kt::Log &Log)
+{
+   const std::string source_path = "temp:tiri-c05-missing.tiri";
+   const std::string initial_path = "temp:tiri-c05-initial.tbc";
+   const std::string replacement_path = "temp:tiri-c05-replacement.tbc";
+   const std::array paths = { source_path, initial_path, replacement_path };
+   struct Cleanup {
+      const std::array<std::string, 3> &Paths;
+      ~Cleanup() { for (const auto &path : Paths) DeleteFile(path, nullptr); }
+   } cleanup { paths };
+
+   DeleteFile(source_path, nullptr);
+   if (not write_legacy_cache(initial_path, "global c05_cache_value = 1") or
+       not write_legacy_cache(replacement_path, "global c05_cache_value = 2")) return false;
+
+   objTiri::create holder = { fl::Path(source_path), kt::FieldValue("CacheFile", initial_path) };
+   if (not holder.ok()) return false;
+   auto script = (extTiri *)*holder;
+   if (not script->LoadedFromCache or not script->CacheHit or
+       (script->setCacheFile(replacement_path) != ERR::Okay) or (acQuery(script) != ERR::Okay) or
+       not script->LoadedFromCache or not script->CacheHit or
+       (script->EffectiveCacheFile != replacement_path) or (acActivate(script) != ERR::Okay)) {
+      Log.error("A source-free explicit cache could not be retargeted before Query");
+      return false;
+   }
+
+   lua_getglobal(script->Lua, "c05_cache_value");
+   const bool replacement_executed = lua_tointeger(script->Lua, -1) IS 2;
+   lua_pop(script->Lua, 1);
+   if (not replacement_executed) Log.error("Cache retargeting executed the original explicit cache");
+   return replacement_executed;
+}
+
 } // namespace
 
 void cache_manifest_unit_tests(int &Passed, int &Total)
 {
    kt::Log log("CacheManifestTests");
    for (auto test : { round_trip_contract, malformed_and_bounds_contract, compilation_capture_contract,
-      automatic_cache_lifecycle_contract }) {
+      automatic_cache_lifecycle_contract, source_free_cache_retarget_contract }) {
       Total++;
       if (test(log)) Passed++;
    }
