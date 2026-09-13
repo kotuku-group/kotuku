@@ -1,6 +1,12 @@
+#define PRV_SCRIPT
+#define PRV_TIRI
+#define PRV_TIRI_MODULE
 #include <kotuku/main.h>
+#include <kotuku/modules/tiri.h>
 
 #include "../cache_manifest.h"
+#include "../defs.h"
+#include "../lua.hpp"
 
 #include <cstring>
 #include <ranges>
@@ -176,12 +182,139 @@ bool malformed_and_bounds_contract(kt::Log &Log)
    return true;
 }
 
+bool write_source(std::string_view Path, std::string_view Source)
+{
+   DeleteFile(Path, nullptr);
+   objFile::create file = { fl::Path(Path), fl::Flags(FL::NEW|FL::WRITE) };
+   if (not file.ok()) return false;
+   if (Source.empty()) return file->flush() IS ERR::Okay;
+
+   int written = 0;
+   auto bytes = std::span((const int8_t *)Source.data(), Source.size());
+   return (file->write(bytes, &written) IS ERR::Okay) and (written IS int(Source.size())) and
+      (file->flush() IS ERR::Okay);
+}
+
+bool compilation_capture_contract(kt::Log &Log)
+{
+   const std::string main_path = "temp:tiri-c02-main.tiri";
+   const std::string child_path = "temp:tiri-c02-child.tiri";
+   const std::string nested_path = "temp:tiri-c02-nested.tiri";
+   const std::string empty_path = "temp:tiri-c02-empty.tiri";
+   const std::array paths = { main_path, child_path, nested_path, empty_path };
+   struct Cleanup {
+      const std::array<std::string, 4> &Paths;
+      ~Cleanup() { for (const auto &path : Paths) DeleteFile(path, nullptr); }
+   } cleanup { paths };
+
+   const std::string main_source =
+      "include 'core'\n"
+      "import './tiri-c02-child'\n"
+      "import './tiri-c02-empty'\n"
+      "import './tiri-c02-child'\n"
+      "@if(exists='./tiri-c02-missing.tiri')\nlocal should_skip = true\n@end\n"
+      "@if(debug=false)\nlocal debug_observed = false\n@end\n"
+      "@if(platform='definitely-not-a-platform')\nlocal platform_skip = true\n@end\n";
+   const std::string child_source =
+      "import './tiri-c02-nested'\n"
+      "@if(imported=true)\nlocal child_loaded = true\n@end\n";
+   const std::string nested_source = "@if(imported=true)\nlocal nested_loaded = true\n@end\n";
+   const std::string main_file_source = std::string("\xef\xbb\xbf", 3) + main_source;
+   const std::string nested_file_source = std::string("\xef\xbb\xbf", 3) + nested_source;
+
+   if (not write_source(main_path, main_file_source) or not write_source(child_path, child_source) or
+       not write_source(nested_path, nested_file_source) or not write_source(empty_path, "")) {
+      Log.error("Failed to create compilation-capture fixtures");
+      return false;
+   }
+
+   objTiri::create holder = { fl::Path(main_path) };
+   if (not holder.ok()) return false;
+   auto script = (extTiri *)*holder;
+   script->JitOptions |= JOF::DISABLE_JIT;
+   if (acQuery(script) != ERR::Okay or not script->CompilationManifest) {
+      Log.error("A successful file compilation did not retain its manifest");
+      return false;
+   }
+
+   const Manifest snapshot = *script->CompilationManifest;
+   if (snapshot.MainSource.ContentDigest != content_digest(main_source) or snapshot.Imports.size() != 4 or
+       snapshot.Imports[0].OriginalRequest != "./tiri-c02-child" or
+       snapshot.Imports[1].OriginalRequest != "./tiri-c02-nested" or
+       snapshot.Imports[1].Source.ContentDigest != content_digest(nested_source) or
+       snapshot.Imports[2].OriginalRequest != "./tiri-c02-empty" or
+       snapshot.Imports[2].Source.Size or snapshot.Imports[3].OriginalRequest != "./tiri-c02-child" or
+       snapshot.Imports[0].Source.ContentDigest != snapshot.Imports[3].Source.ContentDigest) {
+      Log.error("Direct, nested, empty or duplicate import observations were incomplete");
+      return false;
+   }
+
+   auto negative_exists = std::ranges::find_if(snapshot.ConditionalInputs, [](const auto &Input) {
+      return (Input.Kind IS ConditionalKind::EXISTS) and
+         (Input.Name IS "./tiri-c02-missing.tiri") and (Input.Value IS "false");
+   });
+   auto module = std::ranges::find_if(snapshot.ConditionalInputs, [](const auto &Input) {
+      return (Input.Kind IS ConditionalKind::MODULE_AVAILABLE) and (Input.Name IS "core") and
+         (Input.Value IS "true");
+   });
+   auto has_kind = [&](ConditionalKind Kind) {
+      return std::ranges::find_if(snapshot.ConditionalInputs, [&](const auto &Input) {
+         return Input.Kind IS Kind;
+      }) != snapshot.ConditionalInputs.end();
+   };
+   if (negative_exists IS snapshot.ConditionalInputs.end() or module IS snapshot.ConditionalInputs.end() or
+       not has_kind(ConditionalKind::IMPORTED) or not has_kind(ConditionalKind::DEBUG_MODE) or
+       not has_kind(ConditionalKind::LOG_LEVEL) or not has_kind(ConditionalKind::PLATFORM) or
+       snapshot.Options.size() != 1 or snapshot.Options[0].Name != "script-flags" or
+       snapshot.ResolutionInputs.size() != 5) {
+      Log.error("Conditional, module, resolution or JIT-independent Script-option capture was incomplete");
+      return false;
+   }
+
+   if (lua_load(script->Lua, "@if(exists='temp:tiri-c02-main.tiri')\n@end", "=runtime-capture")) return false;
+   lua_pop(script->Lua, 1);
+   if (script->CompilationManifest->ConditionalInputs.size() != snapshot.ConditionalInputs.size() or
+       script->CompilationManifest->Imports.size() != snapshot.Imports.size()) {
+      Log.error("A later runtime compilation contaminated the retained manifest");
+      return false;
+   }
+
+   objFile::create bytecode_sink = {
+      fl::Size(1024 * 1024), fl::Flags(FL::BUFFER|FL::READ|FL::WRITE)
+   };
+   if (not bytecode_sink.ok() or acSaveToObject(script, *bytecode_sink) != ERR::Okay or
+       script->CompilationManifest->ConditionalInputs.size() != snapshot.ConditionalInputs.size() or
+       script->CompilationManifest->Imports.size() != snapshot.Imports.size()) {
+      Log.error("Isolated SaveToObject compilation altered the execution manifest");
+      return false;
+   }
+
+   if (not write_source(main_path, "local =")) return false;
+   objTiri::create failed_file = { fl::Path(main_path) };
+   if (not failed_file.ok()) return false;
+   auto failed_file_script = (extTiri *)*failed_file;
+   if (acQuery(failed_file_script) IS ERR::Okay or failed_file_script->CompilationManifest or
+       script->CompilationManifest->Imports.size() != snapshot.Imports.size()) {
+      Log.error("A failed replacement compilation retained or contaminated a manifest");
+      return false;
+   }
+
+   objTiri::create invalid = { fl::Statement("local =") };
+   if (not invalid.ok()) return false;
+   auto invalid_script = (extTiri *)*invalid;
+   if (acQuery(invalid_script) IS ERR::Okay or invalid_script->CompilationManifest) {
+      Log.error("A failed or synthetic compilation retained a cache manifest");
+      return false;
+   }
+   return true;
+}
+
 } // namespace
 
 void cache_manifest_unit_tests(int &Passed, int &Total)
 {
    kt::Log log("CacheManifestTests");
-   for (auto test : { round_trip_contract, malformed_and_bounds_contract }) {
+   for (auto test : { round_trip_contract, malformed_and_bounds_contract, compilation_capture_contract }) {
       Total++;
       if (test(log)) Passed++;
    }

@@ -19,6 +19,7 @@
 
 #include "nodes.h"
 #include "../parser_context.h"
+#include "../../../../cache_manifest.h"
 
 class AstBuilder {
 public:
@@ -106,6 +107,10 @@ private:
 
    uint8_t record_import_source(const std::string &, const std::string &, BCLine, uint8_t, BCLine, uint8_t);
    void record_source_namespace(std::string_view);
+   [[nodiscard]] tiri::cache::Manifest *cache_manifest();
+   [[nodiscard]] std::string cache_context_path();
+   void record_conditional_input(tiri::cache::ConditionalKind, std::string_view, std::string_view);
+   void record_module_observation(std::string_view, bool);
 
    class FunctionNameScope {
    public:
@@ -178,7 +183,8 @@ private:
    ParserResult<ImportEntryPayload> parse_import_entry(const Token&, bool, bool * = nullptr);
    ParserResult<StmtNodePtr> parse_import();
    ParserResult<StmtNodePtr> parse_namespace();
-   ParserResult<std::unique_ptr<BlockStmt>> parse_imported_file(std::string &, std::string_view, const Token& import_token);
+   ParserResult<std::unique_ptr<BlockStmt>> parse_imported_file(
+      std::string &, std::string_view, const Token &ImportToken);
    ParserResult<StmtNodePtr> parse_compile_if();
    void skip_to_compile_end();
    ParserResult<StmtNodePtr> parse_expression_stmt();

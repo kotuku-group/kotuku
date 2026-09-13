@@ -17,6 +17,8 @@ function()
     loadFile(glPath .. 'common.tdl')
   end)
 
+  -- NOTE: JIT options are intended to affect runtime behaviour only, they must not impact on produced bytecode
+  -- as they are not accounted for when saving bytecode to files.
   flags("JOF", { comment="JIT behaviour options" },
      "DIAGNOSE:        Cancels aborting on error so that the full script is parsed.  Enables deeper log tracing.",
      "DUMP_BYTECODE:   Print a disassembly of bytecode instructions after parsing.",

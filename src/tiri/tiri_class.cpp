@@ -55,6 +55,7 @@ until import invalidation is available.
 #include "jit/src/debug/dump_bytecode.h"
 #include "lj_proto_registry.h"
 #include "tiri_build_identity.h"
+#include "cache_manifest.h"
 
 #include "defs.h"
 
@@ -110,42 +111,15 @@ static bool has_script_extension(std::string_view Path, std::string_view Extensi
 
 static std::string make_chunk_name(const extTiri *Self)
 {
-   if (Self->Path.empty()) return "=script";
+   const std::string &path = (Self->Path.empty() or Self->CompilationSourcePath.empty()) ?
+      Self->Path : Self->CompilationSourcePath;
+   if (path.empty()) return "=script";
 
    std::string chunk_name;
-   chunk_name.reserve(Self->Path.size() + 1);
+   chunk_name.reserve(path.size() + 1);
    chunk_name.push_back('@');
-   chunk_name.append(Self->Path);
+   chunk_name.append(path);
    return chunk_name;
-}
-
-//********************************************************************************************************************
-
-static ERR read_file_to_string(const std::string_view &Path, int64_t Size, std::string &Buffer, int *BytesRead)
-{
-   if ((Size < 0) or (Size > int64_t(std::numeric_limits<int>::max()))) return ERR::OutOfRange;
-
-   if (Size IS 0) {
-      Buffer.clear();
-      if (BytesRead) *BytesRead = 0;
-      return ERR::Okay;
-   }
-
-   int read_size = int(Size);
-   int bytes_read = 0;
-   Buffer.resize(read_size);
-
-   auto error = ReadFileToBuffer(Path, std::span((int8_t *)Buffer.data(), size_t(read_size)), &bytes_read);
-
-   if ((error != ERR::Okay) or (bytes_read != read_size)) error = ERR::Read;
-
-   if (error IS ERR::Okay) {
-      Buffer.resize(bytes_read);
-      if (BytesRead) *BytesRead = bytes_read;
-   }
-   else Buffer.clear();
-
-   return error;
 }
 
 //********************************************************************************************************************
@@ -687,7 +661,7 @@ static ERR read_source_file(objFile *File, const std::string &Path, std::string 
 
    int64_t size = 0;
    if (auto error = File->getSize(size); error != ERR::Okay) return error;
-   if (auto error = read_file_to_string(Path, size, Source, nullptr); error != ERR::Okay) return error;
+   if (auto error = read_open_file_to_string(File, size, Source); error != ERR::Okay) return error;
 
    // Bytecode paths are never treated as text, including malformed wrappers with a leading BOM.
 
@@ -722,7 +696,7 @@ static bool cache_identity_matches(const extTiri *Self, const std::string &Cache
    std::string source;
    bool source_available;
    {
-      objFile::create file = { fl::Path(Self->Path) };
+      objFile::create file = { fl::Path(Self->Path), fl::Flags(FL::READ) };
       source_available = file.ok() and (read_source_file(*file, Self->Path, source) IS ERR::Okay);
    }
 
@@ -749,12 +723,23 @@ static bool cache_identity_matches(const extTiri *Self, const std::string &Cache
 
 //********************************************************************************************************************
 // Automatic caching applies to a source file that has a separate cache destination.  Document processing is excluded
-// because the parser symbols it collects are never serialised, so a cache hit would silently produce none.
+// because the parser symbols it collects are never serialised, so a cache hit would silently produce none.  JIT
+// options do not affect bytecode identity and therefore do not affect whether a compilation can be published.
 
-static bool cache_permitted(const extTiri *Self)
+static bool cache_destination_permitted(const extTiri *Self)
 {
    return (not Self->CacheFile.empty()) and (Self->CacheFile != Self->Path) and
       (not has_script_extension(Self->Path, ".tbc")) and ((Self->Flags & SCF::PROCESS_DOC) IS SCF::NIL);
+}
+
+// Parser-output options require a real source compilation so that their requested diagnostics are produced.  This is
+// a lookup bypass, not an identity difference: the resulting bytecode remains eligible for the same cache destination.
+
+static bool cache_lookup_permitted(const extTiri *Self)
+{
+   constexpr JOF parser_output = JOF::DIAGNOSE|JOF::DUMP_BYTECODE|JOF::PROFILE|JOF::TOP_TIPS|JOF::TIPS|
+      JOF::ALL_TIPS|JOF::TRACE;
+   return cache_destination_permitted(Self) and ((Self->JitOptions & parser_output) IS JOF::NIL);
 }
 
 //********************************************************************************************************************
@@ -853,15 +838,24 @@ static ERR load_source(extTiri *Self)
 
    log.branch("Loading script from %s", Self->Path.c_str());
 
-   objFile::create file = { fl::Path(Self->Path) };
+   objFile::create file = { fl::Path(Self->Path), fl::Flags(FL::READ) };
    if (not file.ok()) return file.error;
 
    std::string source;
    if (auto error = read_source_file(*file, Self->Path, source); error != ERR::Okay) return error;
 
+   std::string resolved_path;
+   if (ResolvePath(Self->Path, RSF::NO_FILE_CHECK, &resolved_path) IS ERR::Okay) {
+      Self->CompilationSourcePath = std::move(resolved_path);
+   }
+   else Self->CompilationSourcePath = Self->Path;
+
+   Self->SourceModifiedHint = 0;
+   file->getTimestamp(Self->SourceModifiedHint);
+
    Self->Statement = std::move(source);
    Self->LoadedFromCache = false;
-   Self->SaveCompiled = cache_permitted(Self);
+   Self->SaveCompiled = cache_destination_permitted(Self);
 
    if (Self->SaveCompiled) {
       DateTime *date;
@@ -881,6 +875,11 @@ static ERR load_source(extTiri *Self)
 static ERR TIRI_Init(extTiri *Self)
 {
    kt::Log log;
+
+   // Cache selection and source compilation must see the same process-wide and Script-local effective options.
+   Self->LocalJitOptions = Self->JitOptions;
+   Self->GlobalJitOptions = glJitOptions;
+   Self->JitOptions |= Self->GlobalJitOptions;
 
    if (not Self->Path.empty()) {
       if (Self->Path.starts_with("string:") or Self->Path.starts_with("STRING:")); // Assume Tiri for string paths
@@ -909,7 +908,7 @@ static ERR TIRI_Init(extTiri *Self)
 
       // A directly opened .tbc file is authoritative and must never fall back to another path.
 
-      if (cache_permitted(Self)) {
+      if (cache_lookup_permitted(Self)) {
          objFile::create cache = { fl::Path(Self->CacheFile), fl::Flags(FL::READ) };
          int64_t timestamp = -1, size = 0;
          if (cache.ok() and (cache->getTimestamp(timestamp) IS ERR::Okay) and
@@ -938,8 +937,6 @@ static ERR TIRI_Init(extTiri *Self)
          if (auto error = load_source(Self); error != ERR::Okay) return log.warning(error);
       }
    }
-
-   Self->JitOptions |= glJitOptions;
 
    if (not (Self->Lua = luaL_newstate(Self))) {
       log.warning("Failed to open a Lua instance.");
@@ -1012,8 +1009,29 @@ static ERR prepare_compilation(extTiri *Self)
 
 static ERR load_statement(extTiri *Self)
 {
+   Self->CompilationManifest.reset();
+
+   std::unique_ptr<tiri::cache::Manifest> capture;
+   const auto origin = compilation_input_origin(Self);
+   if ((origin IS CompilationInputOrigin::SOURCE) and not Self->CompilationSourcePath.empty()) {
+      capture = std::make_unique<tiri::cache::Manifest>();
+      capture->BuildIdentity = TIRI_BUILD_COMMIT;
+      capture->MainSource.ResolvedPath = Self->CompilationSourcePath;
+      capture->MainSource.Size = Self->Statement.size();
+      capture->MainSource.ModifiedHint = Self->SourceModifiedHint;
+      capture->MainSource.ContentDigest = tiri::cache::content_digest(Self->Statement);
+      capture->Options = { { "script-flags", std::to_string(uint32_t(Self->Flags)) } };
+   }
+
+   struct CaptureGuard {
+      lua_State *Lua;
+      ~CaptureGuard() { Lua->cache_manifest_capture = nullptr; }
+   } capture_guard { Self->Lua };
+   Self->Lua->cache_manifest_capture = capture.get();
+
    std::string diagnostic;
-   auto error = load_compilation_input(Self->Lua, Self, Self->Statement, compilation_input_origin(Self), diagnostic);
+   auto error = load_compilation_input(Self->Lua, Self, Self->Statement, origin, diagnostic);
+   if (error IS ERR::Okay) Self->CompilationManifest = std::move(capture);
    Self->setErrorMessage(diagnostic);
    return error;
 }
@@ -1040,6 +1058,8 @@ static ERR TIRI_Query(extTiri *Self)
    if (Self->Path.empty()) {
       Self->LoadedFromCache = false;
       Self->SaveCompiled = false;
+      Self->CompilationSourcePath.clear();
+      Self->SourceModifiedHint = 0;
    }
 
    if (Self->Statement.empty() and not Self->LoadedFromCache and not has_script_extension(Self->Path, ".tbc")) {
@@ -1156,7 +1176,7 @@ static ERR TIRI_SaveToObject(extTiri *Self, struct acSaveToObject *Args)
 
    std::string source;
    if ((error != ERR::Okay) and (origin IS CompilationInputOrigin::SELECTED_CACHE)) {
-      objFile::create source_file = { fl::Path(Self->Path) };
+      objFile::create source_file = { fl::Path(Self->Path), fl::Flags(FL::READ) };
       if (source_file.ok() and (read_source_file(*source_file, Self->Path, source) IS ERR::Okay)) {
          error = load_compilation_input(compilation.get(), Self, source, CompilationInputOrigin::SOURCE, diagnostic);
       }
@@ -1200,7 +1220,11 @@ static ERR SET_JitOptions(extTiri *Self, JOF Value)
       kt::Log().warning("Changing JIT options after parsing is ineffective.");
       return ERR::InvalidState;
    }
-   Self->JitOptions = Value;
+   if (Self->Lua) {
+      Self->LocalJitOptions = Value;
+      Self->JitOptions = Value|Self->GlobalJitOptions;
+   }
+   else Self->JitOptions = Value;
    return ERR::Okay;
 }
 

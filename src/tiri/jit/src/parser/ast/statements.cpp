@@ -1526,6 +1526,41 @@ ParserResult<StmtNodePtr> AstBuilder::parse_check()
 }
 
 //********************************************************************************************************************
+// Compilation-local cache observation helpers.
+
+tiri::cache::Manifest *AstBuilder::cache_manifest()
+{
+   return this->root_builder()->ctx.lua().cache_manifest_capture;
+}
+
+std::string AstBuilder::cache_context_path()
+{
+   AstBuilder *root = this->root_builder();
+   auto &lex = root->ctx.lex();
+   const uint8_t descriptor = this->ctx.lex().current_source_descriptor;
+   if (descriptor < lex.compilation_sources.size()) return lex.compilation_sources[descriptor].canonical_path;
+
+   std::string result = this->ctx.lex().chunk_arg ? this->ctx.lex().chunk_arg : "";
+   if (not result.empty() and (result[0] IS '@' or result[0] IS '=')) result.erase(0, 1);
+   return result;
+}
+
+void AstBuilder::record_conditional_input(
+   tiri::cache::ConditionalKind Kind, std::string_view Name, std::string_view Value)
+{
+   if (auto manifest = this->cache_manifest()) {
+      manifest->ConditionalInputs.push_back({ Kind, std::string(Name), this->cache_context_path(),
+         std::string(Value) });
+   }
+}
+
+void AstBuilder::record_module_observation(std::string_view Name, bool Available)
+{
+   this->record_conditional_input(tiri::cache::ConditionalKind::MODULE_AVAILABLE, Name,
+      Available ? "true" : "false");
+}
+
+//********************************************************************************************************************
 // Validates an include module name before load_module_defs() touches the module loader.
 
 static bool include_module_name_is_valid(std::string_view Module)
@@ -1611,10 +1646,12 @@ ParserResult<StmtNodePtr> AstBuilder::parse_module_decl()
    }
 
    if (auto error = load_module_defs(module_name); error != ERR::Okay) {
+      this->record_module_observation(module_name, false);
       return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token,
          std::format("Module '{}' is not available: {}. Guard optional dependencies with "
             "@if(exists='modules:{}').", module_name, GetErrorMsg(error), module_name));
    }
+   this->record_module_observation(module_name, true);
 
    StaticModuleHandle signature = static_module_by_name(module_name);
    std::string canonical_module = signature ? std::string(static_module_name(signature)) : module_name;
@@ -1682,12 +1719,14 @@ ParserResult<StmtNodePtr> AstBuilder::parse_include_stmt()
       }
 
       if (auto error = load_module_defs(module_name); error != ERR::Okay) {
+         this->record_module_observation(module_name, false);
          std::string message;
          if (error IS ERR::FileNotFound) message = std::format("Requested include file '{}' does not exist", module_name);
          else message = std::format("Failed to process include file '{}': {}", module_name, GetErrorMsg(error));
 
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token, std::move(message));
       }
+      this->record_module_observation(module_name, true);
 
       this->ctx.tokens().advance();  // consume module string
       first_item = false;
@@ -1729,7 +1768,8 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
       return this->fail<ImportEntryPayload>(ParserErrorCode::ExpectedToken, path_token, "Invalid import path");
    }
 
-   std::string_view mod_name(strdata(path_str), path_str->len);
+   std::string original_request(strdata(path_str), path_str->len);
+   std::string_view mod_name(original_request);
    this->ctx.tokens().advance();  // consume string
 
    log.traceBranch("Library: %.*s", int(mod_name.size()), mod_name.data());
@@ -1767,7 +1807,7 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
 
    // Parse the imported file
 
-   auto imported_body = this->parse_imported_file(path, mod_name, ImportToken);
+   auto imported_body = this->parse_imported_file(path, original_request, ImportToken);
    if (not imported_body.ok()) return ParserResult<ImportEntryPayload>::failure(imported_body.error_ref());
 
    // Look up the FileSource index and namespace for this import (registered during parse_imported_file)
@@ -1785,7 +1825,7 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
 
    if (alias and default_ns.empty()) {
       return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, as_token,
-         std::string("Cannot use 'as' alias: library '") + std::string(mod_name) + "' does not declare a namespace");
+         std::string("Cannot use 'as' alias: library '") + original_request + "' does not declare a namespace");
    }
 
    // Determine final namespace name (alias takes precedence)
@@ -1954,15 +1994,21 @@ ParserResult<StmtNodePtr> AstBuilder::parse_namespace()
 // Each imported file is registered with a unique FileSource index for accurate error reporting.
 // The file index is encoded in the upper 8 bits of BCLine values.
 
-ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::string &Path, std::string_view Library, const Token &ImportToken)
+ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(
+   std::string &Path, std::string_view Library, const Token &ImportToken)
 {
    kt::Log log(__FUNCTION__);
 
    lua_State *L = &this->ctx.lua();
 
+   const std::string parent_path = this->cache_context_path();
    std::string resolved_path;
    if (!ResolvePath(Path, RSF::NO_FILE_CHECK, &resolved_path)) {
       Path = resolved_path;
+   }
+
+   if (auto manifest = this->cache_manifest()) {
+      manifest->ResolutionInputs.push_back({ std::string(Library), parent_path, Path });
    }
 
    const uint32_t libhash = kt::strihash(Path);
@@ -1975,7 +2021,15 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
    auto existing_index = find_file_source(L, Path);
    bool seen_this_chunk = this->import_seen_this_chunk(libhash);
    if (existing_index.has_value()) {
-      if (seen_this_chunk or not this->ctx.lex().diagnose_mode) {
+      if (seen_this_chunk or (not this->ctx.lex().diagnose_mode and not this->cache_manifest())) {
+         if (auto manifest = this->cache_manifest()) {
+            auto previous = std::ranges::find_if(manifest->Imports, [&](const auto &Import) {
+               return Import.Source.ResolvedPath IS Path;
+            });
+            if (previous != manifest->Imports.end()) {
+               manifest->Imports.push_back({ parent_path, std::string(Library), previous->Source });
+            }
+         }
          log.detail("Library %.*s already imported (file index %d)", int(Library.size()), Library.data(), existing_index.value());
          return ParserResult<std::unique_ptr<BlockStmt>>::success(make_block(ImportToken.span(), {}));
       }
@@ -2001,18 +2055,51 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
       return this->fail<std::unique_ptr<BlockStmt>>(ParserErrorCode::UnexpectedToken, ImportToken,
          "Cannot inspect imported file: " + Path);
    }
-
-   std::string source;
-   source.resize(size_t(file_size));
-   int bytes_read = 0;
-   ERR err = file_size ? file->read(std::span<int8_t>((int8_t *)source.data(), size_t(file_size)), &bytes_read)
-      : ERR::Okay;
-
-   if (err != ERR::Okay or bytes_read < 0) {
+   if ((file_size < 0) or (file_size > int64_t(std::numeric_limits<int>::max()))) {
       this->ctx.pop_import();
-      return this->fail<std::unique_ptr<BlockStmt>>(ParserErrorCode::UnexpectedToken, ImportToken, "Cannot read imported file: " + Path);
+      return this->fail<std::unique_ptr<BlockStmt>>(ParserErrorCode::UnexpectedToken, ImportToken,
+         "Imported file is too large: " + Path);
    }
-   source.resize(size_t(bytes_read));
+
+   std::string source(size_t(file_size), '\0');
+   int64_t total = 0;
+   while (total < file_size) {
+      int bytes_read = 0;
+      auto output = std::span((int8_t *)source.data() + total, size_t(file_size - total));
+      ERR error = file->read(output, &bytes_read);
+      if (error != ERR::Okay or bytes_read <= 0) {
+         this->ctx.pop_import();
+         return this->fail<std::unique_ptr<BlockStmt>>(ParserErrorCode::UnexpectedToken, ImportToken,
+            "Cannot read imported file: " + Path);
+      }
+      total += bytes_read;
+   }
+
+   int64_t final_size = 0;
+   if (file->getSize(final_size) != ERR::Okay or final_size != file_size) {
+      this->ctx.pop_import();
+      return this->fail<std::unique_ptr<BlockStmt>>(ParserErrorCode::UnexpectedToken, ImportToken,
+         "Imported file changed while being read: " + Path);
+   }
+
+   int64_t modified_hint = 0;
+   file->getTimestamp(modified_hint);
+
+   std::string_view compiled_source = source;
+   if ((compiled_source.size() >= 3) and (compiled_source[0] IS '\xef') and
+       (compiled_source[1] IS '\xbb') and (compiled_source[2] IS '\xbf')) compiled_source.remove_prefix(3);
+   else if ((compiled_source.size() >= 2) and
+            ((compiled_source[0] IS '\xfe' and compiled_source[1] IS '\xff') or
+             (compiled_source[0] IS '\xff' and compiled_source[1] IS '\xfe'))) compiled_source.remove_prefix(2);
+   if (compiled_source.data() != source.data()) source.assign(compiled_source);
+
+   if (auto manifest = this->cache_manifest()) {
+      manifest->Imports.push_back({
+         parent_path,
+         std::string(Library),
+         { Path, uint64_t(source.size()), modified_hint, tiri::cache::content_digest(source) }
+      });
+   }
 
    // Count source lines for FileSource metadata
    BCLine source_lines = 1;
@@ -2261,16 +2348,25 @@ ParserResult<StmtNodePtr> AstBuilder::parse_compile_if()
       if (not is_bool_value) return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, value_token, "Condition 'imported' requires a boolean value");
       bool is_imported = this->ctx.is_being_imported();
       condition_result = is_imported IS bool_value;
+      this->record_conditional_input(tiri::cache::ConditionalKind::IMPORTED, condition_name,
+         is_imported ? "true" : "false");
    }
    else if (condition_name IS "debug") {
       if (not is_bool_value) return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, value_token, "Condition 'debug' requires a boolean value");
-      condition_result = (GetResource(RES::LOG_LEVEL) > 2) IS bool_value;
+      const int64_t log_level = GetResource(RES::LOG_LEVEL);
+      const bool debug_mode = log_level > 2;
+      condition_result = debug_mode IS bool_value;
+      this->record_conditional_input(tiri::cache::ConditionalKind::DEBUG_MODE, condition_name,
+         debug_mode ? "true" : "false");
+      this->record_conditional_input(tiri::cache::ConditionalKind::LOG_LEVEL, condition_name,
+         std::to_string(log_level));
    }
    else if (condition_name IS "platform") {
       if (is_bool_value) return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, value_token, "Condition 'platform' requires a string value");
       const SystemState *state = GetSystemState();
       std::string_view current_platform = state->Platform ? state->Platform : "";
       condition_result = kt::iequals(current_platform, string_value);
+      this->record_conditional_input(tiri::cache::ConditionalKind::PLATFORM, string_value, current_platform);
    }
    else if (condition_name IS "exists") {
       if (is_bool_value) return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, value_token, "Condition 'exists' requires a string path value");
@@ -2278,6 +2374,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_compile_if()
       if (string_value.starts_with("modules:")) {
          std::string_view module_name = string_value.substr(8);
          condition_result = include_module_name_is_valid(module_name) and this->module_is_available(module_name);
+         this->record_module_observation(module_name, condition_result);
       }
       else {
 
@@ -2307,6 +2404,11 @@ ParserResult<StmtNodePtr> AstBuilder::parse_compile_if()
          }
 
          condition_result = (!AnalysePath(check_path, nullptr));
+         if (auto manifest = this->cache_manifest()) {
+            manifest->ResolutionInputs.push_back({ std::string(string_value), this->cache_context_path(), check_path });
+         }
+         this->record_conditional_input(tiri::cache::ConditionalKind::EXISTS, string_value,
+            condition_result ? "true" : "false");
       }
    }
    else return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, ident_token, "Unknown @if condition: " + std::string(condition_name));

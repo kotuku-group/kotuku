@@ -22,6 +22,7 @@ constexpr int SIZE_READ = 1024;
 #include <format>
 #include <memory>
 
+#include "cache_manifest.h"
 #include "lj_obj.h"
 #include "lj_frame.h"
 #include "lj_state.h"
@@ -591,17 +592,22 @@ class extTiri : public objTiri {
    kt::vector<std::string> Procedures;
    ankerl::unordered_dense::map<OBJECTID, int> StateMap;
    std::shared_ptr<SharedPool> Pool;     // Thread-safe shared pool for async.pool (created on first use, shared with child scripts)
+   std::unique_ptr<tiri::cache::Manifest> CompilationManifest; // Inputs observed by the last successful source compile
+   std::string CompilationSourcePath;    // Resolver spelling used for the root chunk and cache identity
    APTR     FocusEventHandle;
    struct finput *InputList;           // Managed by the input interface
    DateTime CacheDate;
    PERMIT   CachePermissions;
    JOF      JitOptions;
+   JOF      LocalJitOptions = JOF::NIL;
+   JOF      GlobalJitOptions = JOF::NIL;
    int      MainChunkRef;              // Registry reference to the main chunk for post-execution analysis
    uint8_t  Recurse;
    uint8_t  SaveCompiled;
    bool     LoadedFromCache = false;
    bool     CacheFallbackAttempted = false;
    bool     CompilationPrepared = false; // Libraries and interfaces have been registered and globals protected
+   int64_t  SourceModifiedHint = 0;
    uint16_t RequireCounter;
 
    extTiri(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objTiri(ClassPtr, ObjectID) { }

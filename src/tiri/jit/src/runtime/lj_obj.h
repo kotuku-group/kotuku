@@ -68,6 +68,7 @@ struct SBuf;
 
 class ParserDiagnostics;
 class extTiri;
+namespace tiri::cache { struct Manifest; }
 
 // Memory and GC object sizes.
 
@@ -1842,6 +1843,7 @@ struct lua_State {
    void    *cframe;     //  End of C stack frame chain.
    MSize   stacksize;   //  True stack size (incl. LJ_STACK_EXTRA).
    class extTiri *script;  // Back-reference to the script that owns this lua_State
+   tiri::cache::Manifest *cache_manifest_capture = nullptr; // Non-owning source compilation-local input capture
    bool    sent_traceback;   // True if traceback has been sent for the current error
    uint8_t resolving_thunk;  // Flag to prevent recursive thunk resolution
    uint64_t array_view_scopes = 0; // One armed bit per active <view> declaration initialiser

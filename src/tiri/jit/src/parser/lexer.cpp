@@ -1665,8 +1665,7 @@ LexState::LexState(lua_State* L, std::string_view Source, std::string_view Chunk
 
 #ifdef INCLUDE_TIPS
    // Initialise tip system from JIT options
-   JOF tip_options = glJitOptions;
-   if (L) tip_options |= L->script->JitOptions;
+   JOF tip_options = L ? L->script->JitOptions : JOF::NIL;
    this->tip_level = compute_tip_level(tip_options);
    if (this->tip_level > 0) {
       bool print_tips = (tip_options & JOF::DIAGNOSE) IS JOF::NIL;

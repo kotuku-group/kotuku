@@ -129,6 +129,7 @@ set (JIT_KOTUKU_HEADER_DEPENDENCIES
 )
 
 set (JIT_TIRI_HEADER_DEPENDENCIES
+   "${CMAKE_CURRENT_SOURCE_DIR}/cache_manifest.h"
    "${CMAKE_CURRENT_SOURCE_DIR}/defs.h"
    "${CMAKE_CURRENT_SOURCE_DIR}/struct_def.h"
    "${JIT_SRC}/runtime/lj_contract.h"
