@@ -515,12 +515,12 @@ static bool check_try_handler(lua_State *L, int errcode)
 // This should be called right before jumping to the handler, NOT during search phase.
 // On Windows this is called from lj_err_unwind_win()
 
-extern "C" void setup_try_handler(lua_State *L)
+extern "C" bool setup_try_handler(lua_State *L)
 {
    kt::Log log(__FUNCTION__);
    log.trace("Activated try handler.");
 
-   if (L->try_stack.depth IS 0) return;
+   if (L->try_stack.depth IS 0) return false;
 
    lj_assertL(L->try_stack.depth <= LJ_MAX_TRY_DEPTH,
       "setup_try_handler: try_stack depth %u exceeds LJ_MAX_TRY_DEPTH", L->try_stack.depth);
@@ -539,7 +539,7 @@ extern "C" void setup_try_handler(lua_State *L)
    if (try_index < 0) {
       // This should not happen if check_try_handler returned true - assert in debug builds
       lj_assertL(false, "setup_try_handler: no handler found but check_try_handler returned true");
-      return;
+      return false;
    }
 
    TryFrame *try_frame = &L->try_stack.frames[try_index];
@@ -617,35 +617,49 @@ extern "C" void setup_try_handler(lua_State *L)
 
    TValue *current_err = has_final_err ? restorestack(L, final_err_offset) : errobj;
    if (L->CaughtError >= ERR::ExceptionThreshold) err_code = L->CaughtError;
+
+   // Cleanup can replace the error after the search phase selected this frame.  Reconcile the frame's filters with
+   // the final error before committing to its handler.  If it no longer matches, preserve the error while restoring
+   // this frame's entry state, then repeat the search among the enclosing frames.  Cleanup registrations and closed
+   // slots have already been consumed, so the next pass continues outwards without invoking them again.
+
+   handler_pc = nullptr;
+   exception_reg = 0xff;
+   const bool handler_matches_final_error =
+      lj_try_find_handler(L, try_frame, err_code, &handler_pc, &exception_reg);
+
    GCstr *error_msg = nullptr;
    GCstr *error_source = nullptr;
    int line = 0;
 
-   if (L->pending_exception_valid) {
-      error_msg    = L->pending_exception_message;
-      error_source = L->pending_exception_source;
-      line         = L->pending_exception_line;
-   }
-   else if (current_err and tvisstr(current_err)) {
-      error_msg = strV(current_err);
-      CSTRING formatted_msg = strVdata(current_err);
+   if (handler_matches_final_error) {
+      if (L->pending_exception_valid) {
+         error_msg    = L->pending_exception_message;
+         error_source = L->pending_exception_source;
+         line         = L->pending_exception_line;
+      }
+      else if (current_err and tvisstr(current_err)) {
+         error_msg = strV(current_err);
+         CSTRING formatted_msg = strVdata(current_err);
 
-      // Fallback for older or unusual paths: extract location metadata from "filename:line: message".
-      // On Windows, filenames may contain colons (e.g., "E:\path\file.tiri:10: msg"), so search for
-      // the first colon followed by a digit.
+         // Fallback for older or unusual paths: extract location metadata from "filename:line: message".
+         // On Windows, filenames may contain colons (e.g., "E:\path\file.tiri:10: msg"), so search for
+         // the first colon followed by a digit.
 
-      for (auto p = formatted_msg; *p; p++) {
-         if (*p IS ':' and p[1] >= '0' and p[1] <= '9') {
-            line = int(strtol(p + 1, nullptr, 10));
-            if (p > formatted_msg) {
-               error_source = lj_str_new(L, formatted_msg, size_t(p - formatted_msg));
-               L->pending_exception_source = error_source;  // Root until err_clear_pending_exception().
+         for (auto p = formatted_msg; *p; p++) {
+            if (*p IS ':' and p[1] >= '0' and p[1] <= '9') {
+               line = int(strtol(p + 1, nullptr, 10));
+               if (p > formatted_msg) {
+                  error_source = lj_str_new(L, formatted_msg, size_t(p - formatted_msg));
+                  L->pending_exception_source = error_source;  // Root until err_clear_pending_exception().
+               }
+               break;
             }
-            break;
          }
       }
    }
 
+   TValue *unmatched_top = L->top;
    saved_top = restorestack(L, try_frame->saved_top);
    // VM dispatch may save top at the frame base.  Only bindings created inside this try are abandoned;
    // enclosing captured locals must stay attached to their live slots across repeated catches.
@@ -653,11 +667,21 @@ extern "C" void setup_try_handler(lua_State *L)
    lj_func_closeuv(L, saved_base + try_frame->saved_nactvar);
 
    L->base = restorestack(L, try_frame->frame_base);
-   L->top = restorestack(L, try_frame->saved_top);
+   L->top = handler_matches_final_error ? restorestack(L, try_frame->saved_top) : unmatched_top;
    L->array_view_scopes = try_frame->array_view_scopes;
    L->array_view_depth = try_frame->array_view_depth;
    L->checkall_stack->depth = try_frame->checkall_depth;
    L->try_stack.depth = try_index; // Pop the selected frame and every unmatched frame nested within it
+
+   if (not handler_matches_final_error) {
+      L->try_handler_pc = nullptr;
+      if (L->pending_trace) {
+         lj_debug_free_trace(L, L->pending_trace);
+         L->pending_trace = nullptr;
+      }
+      if (check_try_handler(L, LUA_ERRRUN)) return setup_try_handler(L);
+      return false;
+   }
 
    // Build exception table and place in handler's register (pass pending_trace, which may be null)
 
@@ -666,6 +690,7 @@ extern "C" void setup_try_handler(lua_State *L)
    err_clear_pending_exception(L);
    L->CaughtError = ERR::Okay; // Reset CaughtError so it doesn't leak to subsequent exceptions
    L->try_handler_pc = handler_pc; // Stash handler PC for VM re-entry (already set, but confirm)
+   return true;
 }
 
 //********************************************************************************************************************
@@ -917,12 +942,14 @@ LJ_FUNCA int lj_err_unwind_dwarf(int version, int actions, uint64_t uexclass, _U
          // - Builds exception table and places it in the handler's register
          // - Sets L->try_handler_pc to point to the handler bytecode
          if (not LJ_UEXCLASS_CHECK(uexclass)) lj_err_prepare_foreign_exception(L, nullptr);
-         setup_try_handler(L);
-         _Unwind_SetGR(ctx, LJ_TARGET_EHRETREG, errcode);
-         _Unwind_SetIP(ctx, (uintptr_t)lj_vm_resume_try_eh);
-         return _URC_INSTALL_CONTEXT;
+         if (setup_try_handler(L)) {
+            _Unwind_SetGR(ctx, LJ_TARGET_EHRETREG, errcode);
+            _Unwind_SetIP(ctx, (uintptr_t)lj_vm_resume_try_eh);
+            return _URC_INSTALL_CONTEXT;
+         }
+         cf = err_unwind(L, cf, errcode);
       }
-      else if (cf) {
+      if (cf) {
          _Unwind_SetGR(ctx, LJ_TARGET_EHRETREG, errcode);
          _Unwind_SetIP(ctx, (uintptr_t)(cframe_unwind_ff(cf) ? lj_vm_unwind_ff_eh : lj_vm_unwind_c_eh));
          return _URC_INSTALL_CONTEXT;
@@ -1232,12 +1259,13 @@ LJ_NOINLINE void lj_err_throw(lua_State *L, int errcode)
          // - Close upvalues above the restored top
          // - Pop the try frame
          // - Build exception table and place in handler's register
-         setup_try_handler(L);
-
-         // Resume execution at the handler PC using the VM entry point.
-         lj_vm_resume_try(cframe_raw(L->cframe));
+         if (setup_try_handler(L)) {
+            // Resume execution at the handler PC using the VM entry point.
+            lj_vm_resume_try(cframe_raw(L->cframe));
+         }
+         cf = err_unwind(L, nullptr, errcode);
       }
-      else if (cframe_unwind_ff(cf)) lj_vm_unwind_ff(cframe_raw(cf));
+      if (cframe_unwind_ff(cf)) lj_vm_unwind_ff(cframe_raw(cf));
       else lj_vm_unwind_c(cframe_raw(cf), errcode);
    }
 #endif
