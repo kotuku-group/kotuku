@@ -324,6 +324,7 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
   </fields>
   <types>
     <constants lookup="SCF" comment="Script flags">
+      <const name="AUTO_CACHE">Automatically cache eligible file-backed scripts under <code>temp:tiri/cache/</code>.</const>
       <const name="EXIT_ON_ERROR">The script will automatically terminate its execution process if an error is detected.</const>
       <const name="LOG_ALL">Enables execution debugging.  More information will be printed to the console in this mode.</const>
       <const name="PROCESS_DOC">Parse embedded documentation (annotations) in the script.  Ignore otherwise.</const>

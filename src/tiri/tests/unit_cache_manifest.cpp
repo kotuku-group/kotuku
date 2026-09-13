@@ -330,23 +330,31 @@ bool compilation_capture_contract(kt::Log &Log)
 bool automatic_cache_lifecycle_contract(kt::Log &Log)
 {
    const std::string source_path = "temp:tiri-c04-automatic.tiri";
+   const std::string child_path = "temp:tiri-c04-cache-child.tiri";
    const std::string explicit_path = "temp:tiri-c04-explicit.tbc";
    const std::string replacement_path = "temp:tiri-c04-replacement.tbc";
    std::string automatic_path;
    struct Cleanup {
       const std::string &Source;
+      const std::string &Child;
       const std::string &Explicit;
       const std::string &Replacement;
       const std::string &Automatic;
       ~Cleanup() {
          DeleteFile(Source, nullptr);
+         DeleteFile(Child, nullptr);
          DeleteFile(Explicit, nullptr);
          DeleteFile(Replacement, nullptr);
          if (not Automatic.empty()) DeleteFile(Automatic, nullptr);
       }
-   } cleanup { source_path, explicit_path, replacement_path, automatic_path };
+   } cleanup { source_path, child_path, explicit_path, replacement_path, automatic_path };
 
-   if (not write_source(source_path, "assert(6 * 7 is 42)")) return false;
+   const std::string source_prefix =
+      "import './tiri-c04-cache-child'\n"
+      "assert(c04_cache_fixture.value is 42)\n";
+   if (not write_source(child_path,
+          "\n\n\n\n\n\n\n\nnamespace c04_cache_fixture { value=42 }\n") or
+       not write_source(source_path, source_prefix + "assert(6 * 7 is 42)\n")) return false;
 
    objTiri::create disabled_holder = { fl::Path(source_path) };
    if (not disabled_holder.ok()) return false;
@@ -383,7 +391,7 @@ bool automatic_cache_lifecycle_contract(kt::Log &Log)
 
    std::string valid_entry;
    if (not read_file(automatic_path, valid_entry) or valid_entry.empty() or
-       not write_source(source_path, "assert(7 * 6 is 42)")) return false;
+       not write_source(source_path, source_prefix + "assert(7 * 6 is 42)\n")) return false;
    objTiri::create failed_publish_holder = { fl::Path(source_path), fl::Flags(SCF::AUTO_CACHE) };
    if (not failed_publish_holder.ok()) return false;
    auto failed_publish = (extTiri *)*failed_publish_holder;

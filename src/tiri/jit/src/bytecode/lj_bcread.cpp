@@ -267,7 +267,6 @@ static void bcread_dbg(LexState *State, GCproto *pt, MSize sizedbg)
    };
 
    uint32_t last_pc = 0;
-   uint32_t variable_count = 0;
    while (cursor < end) {
       uint8_t name = *cursor++;
       if (name IS VARNAME_END) {
@@ -284,7 +283,6 @@ static void bcread_dbg(LexState *State, GCproto *pt, MSize sizedbg)
       if (start_delta > pt->sizebc - last_pc) bcread_error(State, ErrMsg::BCBAD);
       last_pc += start_delta;
       if (extent > pt->sizebc - last_pc) bcread_error(State, ErrMsg::BCBAD);
-      if (++variable_count > LJ_MAX_LOCVAR) bcread_error(State, ErrMsg::BCBAD);
    }
    bcread_error(State, ErrMsg::BCBAD); // Missing varinfo terminator.
 }
@@ -567,10 +565,11 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
          }
 
          if (op IS BC_RET or op IS BC_RET0 or op IS BC_RET1 or op IS BC_RETM or
-             op IS BC_CALLT or op IS BC_CALLMT or op IS BC_CTXCALLT or op IS BC_RAISE) {
+             op IS BC_CALLT or op IS BC_CALLMT or op IS BC_CTXCALLT) {
             if (not stack.empty()) bcread_error(State, ErrMsg::BCBAD);
             continue;
          }
+         if (op IS BC_RAISE or op IS BC_RETHROW) continue;
 
          if (op IS BC_JMP) {
             enqueue(ptrdiff_t(pc) + 1 + bc_j(bc[pc]), stack);
@@ -676,10 +675,11 @@ static void bcread_validate_bytecode(LexState *State, GCproto *Prototype)
           op IS BC_JFORL or op IS BC_IITERL or op IS BC_JITERL or op IS BC_ILOOP or op IS BC_JLOOP) {
          bcread_error(State, ErrMsg::BCBAD);
       }
-      if (op != BC_BMETH and op != BC_STGETF and op != BC_STSETF and bc_p32(instruction) != 0) {
+      const bool field_hint = op IS BC_OBGETF or op IS BC_OBSETF or op IS BC_STGETF or op IS BC_STSETF;
+      if (op != BC_BMETH and not field_hint and bc_p32(instruction) != 0) {
          bcread_error(State, ErrMsg::BCBAD);
       }
-      if ((op IS BC_STGETF or op IS BC_STSETF) and bc_p32(instruction) != 0xffffffffu) {
+      if (field_hint and bc_p32(instruction) != 0xffffffffu) {
          bcread_error(State, ErrMsg::BCBAD);
       }
 

@@ -3992,6 +3992,17 @@ static bool snapshot_has_opcode(const BytecodeSnapshot &Snapshot, BCOp Opcode)
    return false;
 }
 
+static bool snapshot_has_resolved_field_hint(const BytecodeSnapshot &Snapshot, BCOp Opcode)
+{
+   for (BCIns instruction : Snapshot.instructions) {
+      if (bc_op(instruction) IS Opcode and bc_p32(instruction) != 0xffffffffu) return true;
+   }
+   for (const BytecodeSnapshot &child : Snapshot.children) {
+      if (snapshot_has_resolved_field_hint(child, Opcode)) return true;
+   }
+   return false;
+}
+
 static bool test_contract_bytecode_roundtrip(kt::Log &Log)
 {
    LuaStateHolder state;
@@ -8655,6 +8666,73 @@ static bool test_canonical_core_syntax_bytecode_emission(kt::Log &Log)
    return true;
 }
 
+static bool test_cache_payload_bytecode_roundtrip(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   std::string source =
+      "local function sink(A:num, B:num, C:num, D:num, E:num):num return E end\n"
+      "local function invoke(X:num, Y:num):num return sink(X, Y, 0, 4, X | Y) end\n"
+      "local function inspect(Value:num):num\n"
+      "   if Value has 1 then return sink(0, 0, 0, 0, ~Value) end\n"
+      "   return 0\n"
+      "end\n"
+      "local function object_field():num\n"
+      "   local clock = obj<Time> { year=2026 }\n"
+      "   return clock.year\n"
+      "end\n"
+      "local context = {}\n"
+      "local function context_raise()\n"
+      "   using context do raise 'expected' end\n"
+      "end\n";
+   for (int i = 0; i < LJ_MAX_LOCVAR + 1; ++i) {
+      source.append("if true then local sequential = 1 end\n");
+   }
+   source.append("assert(object_field() is 2026)\nreturn inspect(invoke(1, 2))\n");
+
+   if (lua_load(L, source, "cache-payload-roundtrip")) {
+      Log.error("failed to compile cache payload fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+   BytecodeSnapshot snapshot = snapshot_proto(funcproto(funcV(L->top - 1)));
+   if (not snapshot_has_opcode(snapshot, BC_BFUNC) or not snapshot_has_opcode(snapshot, BC_OBGETF) or
+       not snapshot_has_opcode(snapshot, BC_CTXBEGIN) or not snapshot_has_opcode(snapshot, BC_RAISE)) {
+      Log.error("cache payload fixture omitted a required bytecode family");
+      return false;
+   }
+
+   lua_pushvalue(L, -1);
+   if (lua_pcall(L, 0, 1, 0) or lua_tointeger(L, -1) != -4) {
+      Log.error("cache payload fixture returned the wrong result before dumping: %s", lua_tostring(L, -1));
+      return false;
+   }
+   lua_pop(L, 1);
+   BytecodeSnapshot executed = snapshot_proto(funcproto(funcV(L->top - 1)));
+   if (not snapshot_has_resolved_field_hint(executed, BC_OBGETF)) {
+      Log.error("cache payload fixture did not resolve its object field hint before dumping");
+      return false;
+   }
+
+   std::string dump;
+   if (lua_dump(L, bytecode_writer, &dump) != 0) {
+      Log.error("failed to write cache payload bytecode");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   if (lua_load(L, std::string_view(dump.data(), dump.size()), "cache-payload-roundtrip")) {
+      Log.error("failed to reload cache payload bytecode: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (lua_pcall(L, 0, 1, 0) or lua_tointeger(L, -1) != -4) {
+      Log.error("reloaded cache payload returned the wrong result: %s", lua_tostring(L, -1));
+      return false;
+   }
+   lua_pop(L, 1);
+   return true;
+}
+
 static bool test_object_constructor_syntax(kt::Log &Log)
 {
    auto ast = build_ast_from_source("local clock = obj<Time> {}\n");
@@ -11982,7 +12060,7 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 109> tests = { {
+   constexpr std::array<TestCase, 110> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "error_removal", test_error_removal },
@@ -12073,6 +12151,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "builtin_method_bytecode_emission", test_builtin_method_bytecode_emission },
       { "compiler_intrinsic_bytecode_emission", test_compiler_intrinsic_bytecode_emission },
       { "canonical_core_syntax_bytecode_emission", test_canonical_core_syntax_bytecode_emission },
+      { "cache_payload_bytecode_roundtrip", test_cache_payload_bytecode_roundtrip },
       { "object_constructor_syntax", test_object_constructor_syntax },
       { "regex_literal_canonical_bytecode_emission", test_regex_literal_canonical_bytecode_emission },
       { "contextual_call_specialisation", test_contextual_call_specialisation },

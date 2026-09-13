@@ -3912,8 +3912,9 @@ ParserResult<ExpDesc> IrEmitter::emit_bitwise_expr(BinOpr opr, ExpDesc lhs, cons
       lhs = lhs_to_arg1.legacy();
    }
 
-   // Ensure freereg is past the call frame to prevent callee loading from clobbering
-   if (fs->freereg <= arg2) fs->freereg = arg2 + 1;
+   // Ensure freereg and the declared frame size cover the complete call frame before loading the callee.
+   BCREG required_top = arg2 + 1;
+   if (fs->freereg < required_top) allocator.reserve(BCReg(required_top - fs->freereg));
 
    // Sequence for JIT compatibility (matches explicit bit.band() bytecode pattern):
    // 1. Check and move any operands (e.g., LHS) that conflict with the call_base register.
@@ -4015,8 +4016,9 @@ ParserResult<ExpDesc> IrEmitter::emit_has_flag_expr(ExpDesc lhs, const ExprNode&
       lhs = lhs_to_arg1.legacy();
    }
 
-   // Ensure freereg is past the call frame
-   if (fs->freereg <= arg2) fs->freereg = arg2 + 1;
+   // Ensure freereg and the declared frame size cover the complete call frame.
+   BCREG required_top = arg2 + 1;
+   if (fs->freereg < required_top) allocator.reserve(BCReg(required_top - fs->freereg));
 
    // Load bit.band callee to call_base before RHS emission.
    // LHS is already captured above; delaying RHS avoids violating left-to-right operand semantics.

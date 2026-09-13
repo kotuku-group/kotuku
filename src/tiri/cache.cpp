@@ -1,4 +1,11 @@
 // Cache implementation is included directly by tiri_class.cpp so it can share its private compilation helpers.
+//
+// The automatic cache directory is created lazily with user-private permissions.  Entries are published from uniquely
+// owned sibling files through the Core filesystem's move operation after the file is flushed and closed.  Publication
+// is best-effort; unsupported destinations may decline it.  Failed publication does not prevent source execution.
+// Cache files for deleted sources, obsolete configurations and older builds may accumulate; users may clear
+// `temp:tiri/cache/` at any time.  Size limits and crash-orphan cleanup are not currently provided, and cache
+// publication is not crash-durable.
 
 static std::atomic_uint64_t glCacheTemporarySequence = 0;
 

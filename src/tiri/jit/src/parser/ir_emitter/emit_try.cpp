@@ -425,12 +425,14 @@ ParserResult<IrEmitUnit> IrEmitter::emit_import_entry(const ImportEntryPayload &
       // Temporarily switch to the imported file's FileSource index
       // so that prototypes created for functions in the import get the correct file_source_idx
       uint8_t saved_file_index = this->lex_state.current_file_index;
+      BCLine saved_lastline = this->lex_state.lastline;
       this->lex_state.current_file_index = Entry.file_source_idx;
 
       auto result = this->emit_block(*Entry.inlined_body, FuncScopeFlag::None);
 
-      // Restore the parent file's index
+      // Restore the parent source location before emitting the namespace binding generated for the import.
       this->lex_state.current_file_index = saved_file_index;
+      this->lex_state.lastline = saved_lastline;
 
       if (not result.ok()) return result;
    }

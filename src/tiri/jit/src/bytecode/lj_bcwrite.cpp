@@ -326,14 +326,15 @@ static char * bcwrite_bytecode(BCWriteCtx *ctx, char *p, GCproto *pt)
       }
    }
 
-   // Struct field indices are layout-derived runtime hints.  Keep only the canonical unresolved sentinel on wire;
-   // the consumer resolves and caches the field against its reconstructed declaration on first access.  Do this after
-   // restoring trace-patched instructions because a trace's original instruction still carries the producer's hint.
+   // Object and struct field indices are layout-derived runtime hints.  Keep only the canonical unresolved sentinel on
+   // wire; the consumer resolves and caches the field against its reconstructed declaration on first access.  Do this
+   // after restoring trace-patched instructions because a trace's original instruction still carries the producer's
+   // hint.
    for (MSize i = 0; i < nbc; ++i) {
       BCIns instruction;
       memcpy(&instruction, bytecode + i * sizeof(BCIns), sizeof(instruction));
       BCOp op = bc_op(instruction);
-      if (op IS BC_STGETF or op IS BC_STSETF) {
+      if (op IS BC_OBGETF or op IS BC_OBSETF or op IS BC_STGETF or op IS BC_STSETF) {
          setbc_p32(&instruction, 0xffffffffu);
          memcpy(bytecode + i * sizeof(BCIns), &instruction, sizeof(instruction));
       }

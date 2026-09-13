@@ -22,13 +22,6 @@ Caches are disabled for a script that sets `SCF::PROCESS_DOC`, because the parse
 documentation tools is not stored in byte code.  Runtime-only Script flags and JIT options do not change cache
 identity.
 
-The automatic cache directory is created lazily with user-private permissions.  Entries are published from uniquely
-owned sibling files through the Core filesystem's move operation after the file is flushed and closed.  Publication
-is best-effort; unsupported destinations may decline it.  Failed publication does not prevent source execution.
-Cache files for deleted sources, obsolete configurations and older builds may accumulate; users may clear
-`temp:tiri/cache/` at any time.  Size limits and crash-orphan cleanup are not currently provided, and cache
-publication is not crash-durable.
-
 -END-
 
 *********************************************************************************************************************/
@@ -846,10 +839,10 @@ source fallback during each save, without consuming the later Query fallback or 
 The output contains the Tiri compiled marker, an identity token, a NUL separator and VM byte code with debug
 information.  The token records the build that produced the output, and is informational here because a caller-owned
 destination is authoritative when it is loaded.  Automatic caches record a source identity alongside it and are
-validated on reload.  Compatibility is limited to the same Kōtuku build and platform.  Live objects, activated
-closures, struct instances, globals and execution state are not saved.  Required state-local named struct layouts,
-imported declarations, source identities and diagnostic line mappings are embedded in the output; unused struct
-declarations and source text are not embedded.
+validated on reload.  Byte code is platform-agnostic across supported 64-bit Kōtuku targets, but requires a
+compatible Tiri bytecode ABI and the referenced runtime interfaces.  Runtime state is not saved.  Required
+locally named struct definitions, imported declarations, source identities and diagnostic line mappings are embedded
+in the output; unused struct declarations and source text are not embedded.
 
 Loading publishes embedded layouts in the consumer state for its lifetime.  An identical existing declaration is
 reused, while a conflicting declaration rejects the complete load without changing the prior registry.  Save
