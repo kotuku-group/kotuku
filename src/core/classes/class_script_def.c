@@ -4,6 +4,7 @@ static const struct FieldDef clScriptFlags[] = {
    { "ExitOnError", 0x00000001 },
    { "ProcessDoc", 0x00000002 },
    { "LogAll", 0x00000004 },
+   { "AutoCache", 0x00000008 },
    { nullptr, 0 }
 };
 

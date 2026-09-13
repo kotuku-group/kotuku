@@ -8,6 +8,7 @@
 #include "../defs.h"
 #include "../lua.hpp"
 
+#include <climits>
 #include <cstring>
 #include <ranges>
 
@@ -195,6 +196,23 @@ bool write_source(std::string_view Path, std::string_view Source)
       (file->flush() IS ERR::Okay);
 }
 
+bool read_file(std::string_view Path, std::string &Output)
+{
+   objFile::create file = { fl::Path(Path), fl::Flags(FL::READ) };
+   if (not file.ok()) return false;
+   int64_t size = 0;
+   if ((file->getSize(size) != ERR::Okay) or (size < 0) or (size > INT_MAX)) return false;
+   Output.resize(size_t(size));
+   int total = 0;
+   while (total < size) {
+      int result = 0;
+      if ((file->read(std::span((int8_t *)Output.data() + total, size_t(size - total)), &result) != ERR::Okay) or
+          not result) return false;
+      total += result;
+   }
+   return true;
+}
+
 bool compilation_capture_contract(kt::Log &Log)
 {
    const std::string main_path = "temp:tiri-c02-main.tiri";
@@ -309,12 +327,144 @@ bool compilation_capture_contract(kt::Log &Log)
    return true;
 }
 
+bool automatic_cache_lifecycle_contract(kt::Log &Log)
+{
+   const std::string source_path = "temp:tiri-c04-automatic.tiri";
+   const std::string explicit_path = "temp:tiri-c04-explicit.tbc";
+   const std::string replacement_path = "temp:tiri-c04-replacement.tbc";
+   std::string automatic_path;
+   struct Cleanup {
+      const std::string &Source;
+      const std::string &Explicit;
+      const std::string &Replacement;
+      const std::string &Automatic;
+      ~Cleanup() {
+         DeleteFile(Source, nullptr);
+         DeleteFile(Explicit, nullptr);
+         DeleteFile(Replacement, nullptr);
+         if (not Automatic.empty()) DeleteFile(Automatic, nullptr);
+      }
+   } cleanup { source_path, explicit_path, replacement_path, automatic_path };
+
+   if (not write_source(source_path, "assert(6 * 7 is 42)")) return false;
+
+   objTiri::create disabled_holder = { fl::Path(source_path) };
+   if (not disabled_holder.ok()) return false;
+   auto disabled = (extTiri *)*disabled_holder;
+   if ((disabled->CacheOrigin != CacheDestinationOrigin::NONE) or not disabled->EffectiveCacheFile.empty() or
+       acQuery(disabled) != ERR::Okay or (disabled->SourceCompilationCount != 1)) {
+      Log.error("An ordinary source execution selected or consumed an automatic cache");
+      return false;
+   }
+
+   objTiri::create selector_holder = { fl::Path(source_path), fl::Flags(SCF::AUTO_CACHE) };
+   if (not selector_holder.ok()) return false;
+   automatic_path = ((extTiri *)*selector_holder)->EffectiveCacheFile;
+   DeleteFile(automatic_path, nullptr);
+
+   objTiri::create producer_holder = { fl::Path(source_path), fl::Flags(SCF::AUTO_CACHE) };
+   if (not producer_holder.ok()) return false;
+   auto producer = (extTiri *)*producer_holder;
+   if ((producer->CacheOrigin != CacheDestinationOrigin::AUTOMATIC) or automatic_path.empty() or
+       producer->CacheHit or (acQuery(producer) != ERR::Okay) or (producer->SourceCompilationCount != 1) or
+       (AnalysePath(automatic_path, nullptr) != ERR::Okay)) {
+      Log.error("AUTO_CACHE did not select and publish its derived destination");
+      return false;
+   }
+
+   objTiri::create consumer_holder = { fl::Path(source_path), fl::Flags(SCF::AUTO_CACHE) };
+   if (not consumer_holder.ok()) return false;
+   auto consumer = (extTiri *)*consumer_holder;
+   if (consumer->CacheHit or (consumer->EffectiveCacheFile != automatic_path) or
+       (acQuery(consumer) != ERR::Okay) or not consumer->CacheHit or consumer->SourceCompilationCount) {
+      Log.error("An automatic cache hit did not bypass source parsing");
+      return false;
+   }
+
+   std::string valid_entry;
+   if (not read_file(automatic_path, valid_entry) or valid_entry.empty() or
+       not write_source(source_path, "assert(7 * 6 is 42)")) return false;
+   objTiri::create failed_publish_holder = { fl::Path(source_path), fl::Flags(SCF::AUTO_CACHE) };
+   if (not failed_publish_holder.ok()) return false;
+   auto failed_publish = (extTiri *)*failed_publish_holder;
+   set_cache_publish_failure(CachePublishFailure::MOVE);
+   std::string preserved_entry;
+   if (acQuery(failed_publish) != ERR::Okay or failed_publish->CacheHit or
+       failed_publish->SourceCompilationCount != 1 or not read_file(automatic_path, preserved_entry) or
+       (preserved_entry != valid_entry)) {
+      set_cache_publish_failure(CachePublishFailure::NIL);
+      Log.error("Failed publication did not preserve the prior complete cache");
+      return false;
+   }
+   set_cache_publish_failure(CachePublishFailure::NIL);
+
+   DeleteFile(automatic_path, nullptr);
+   objTiri::create unavailable_holder = { fl::Path(source_path), fl::Flags(SCF::AUTO_CACHE) };
+   if (not unavailable_holder.ok()) return false;
+   auto unavailable = (extTiri *)*unavailable_holder;
+   set_cache_publish_failure(CachePublishFailure::CREATE);
+   if (acQuery(unavailable) != ERR::Okay or unavailable->CacheHit or
+       unavailable->SourceCompilationCount != 1 or (AnalysePath(automatic_path, nullptr) IS ERR::Okay)) {
+      set_cache_publish_failure(CachePublishFailure::NIL);
+      Log.error("Unavailable automatic storage prevented source compilation or exposed a cache");
+      return false;
+   }
+   set_cache_publish_failure(CachePublishFailure::NIL);
+
+   objTiri::create explicit_holder = {
+      fl::Path(source_path), kt::FieldValue("CacheFile", explicit_path), fl::Flags(SCF::AUTO_CACHE)
+   };
+   if (not explicit_holder.ok()) return false;
+   auto explicit_script = (extTiri *)*explicit_holder;
+   if ((explicit_script->CacheOrigin != CacheDestinationOrigin::EXPLICIT) or
+       (explicit_script->EffectiveCacheFile != explicit_path)) {
+      Log.error("An explicit CacheFile did not take precedence over AUTO_CACHE");
+      return false;
+   }
+
+   std::string resolved_source;
+   if ((ResolvePath(source_path, RSF::NIL, &resolved_source) != ERR::Okay)) return false;
+   objTiri::create alias_holder = { fl::Path(source_path), kt::FieldValue("CacheFile", resolved_source) };
+   if (not alias_holder.ok()) return false;
+   auto alias = (extTiri *)*alias_holder;
+   if ((alias->CacheOrigin != CacheDestinationOrigin::NONE) or not alias->EffectiveCacheFile.empty()) {
+      Log.error("A destination aliasing the source was accepted");
+      return false;
+   }
+
+   objTiri::create regenerated_holder = { fl::Path(source_path), fl::Flags(SCF::AUTO_CACHE) };
+   if (not regenerated_holder.ok() or acQuery(*regenerated_holder) != ERR::Okay) return false;
+   objTiri::create changed_holder = { fl::Path(source_path), fl::Flags(SCF::AUTO_CACHE) };
+   if (not changed_holder.ok()) return false;
+   auto changed = (extTiri *)*changed_holder;
+   if (changed->CacheHit or changed->setCacheFile(replacement_path) != ERR::Okay or
+       acQuery(changed) != ERR::Okay or changed->CacheHit or
+       (changed->CacheOrigin != CacheDestinationOrigin::EXPLICIT) or
+       (changed->EffectiveCacheFile != replacement_path) or (changed->SourceCompilationCount != 1) or
+       (AnalysePath(replacement_path, nullptr) != ERR::Okay)) {
+      Log.error("A CacheFile lifecycle change retained old provenance or identity");
+      return false;
+   }
+
+   objTiri::create diagnostic_holder = { fl::Path(source_path), fl::Flags(SCF::AUTO_CACHE) };
+   if (not diagnostic_holder.ok()) return false;
+   auto diagnostic = (extTiri *)*diagnostic_holder;
+   if (diagnostic->CacheHit or diagnostic->setJitOptions(JOF::DIAGNOSE) != ERR::Okay or
+       acQuery(diagnostic) != ERR::Okay or diagnostic->CacheHit or diagnostic->SourceCompilationCount != 1) {
+      Log.error("A parser-output configuration change retained a cache selected before the change");
+      return false;
+   }
+
+   return true;
+}
+
 } // namespace
 
 void cache_manifest_unit_tests(int &Passed, int &Total)
 {
    kt::Log log("CacheManifestTests");
-   for (auto test : { round_trip_contract, malformed_and_bounds_contract, compilation_capture_contract }) {
+   for (auto test : { round_trip_contract, malformed_and_bounds_contract, compilation_capture_contract,
+      automatic_cache_lifecycle_contract }) {
       Total++;
       if (test(log)) Passed++;
    }

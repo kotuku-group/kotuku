@@ -39,6 +39,7 @@ static bool glRelaunched = false;
 static bool glTime = false;
 static bool glDialog = false;
 static bool glBackstage = false;
+static bool glCache = false;
 
 static ERR exec_source(std::string_view, int, const std::string_view);
 
@@ -69,6 +70,7 @@ The following options are available:
  --audio-device  Select the audio output device.
  --jit-options   Development options that control the behaviour of the compiler.
  --version       Prints the version, git branch and commit, and build type on separate lines.
+ --cache         Enables automatic caching of script results.
 
 Logging options; messages are printed to stderr:
 
@@ -124,6 +126,7 @@ constexpr uint32_t ARG_JIT_OPTIONS  = kt::strhash("--jit-options");
 constexpr uint32_t ARG_LOG_FILE     = kt::strhash("--log-file");
 constexpr uint32_t ARG_C            = kt::strhash("-c");
 constexpr uint32_t ARG_E            = kt::strhash("-e");
+constexpr uint32_t ARG_CACHE        = kt::strhash("--cache");
 
 static ERR process_args(void)
 {
@@ -155,6 +158,9 @@ static ERR process_args(void)
          else if (hash IS ARG_RELAUNCH) {
             // Internal argument to detect relaunching at an altered security level
             glRelaunched = true;
+         }
+         else if (hash IS ARG_CACHE) {
+            glCache = true;
          }
          else if (hash IS ARG_BACKSTAGE) {
             glBackstage = true;

@@ -581,6 +581,12 @@ inline GCobject * push_object(lua_State *Lua, OBJECTPTR Object, bool Detached = 
    }
 }
 
+enum class CacheDestinationOrigin : uint8_t {
+   NONE,
+   EXPLICIT,
+   AUTOMATIC
+};
+
 class extTiri : public objTiri {
    public:
    lua_State *Lua;                        // Lua instance
@@ -591,12 +597,13 @@ class extTiri : public objTiri {
    std::vector<std::unique_ptr<std::jthread>> Threads; // Simple mechanism for auto-joining all the threads on object destruction
    kt::vector<std::string> Procedures;
    ankerl::unordered_dense::map<OBJECTID, int> StateMap;
-   std::shared_ptr<SharedPool> Pool;     // Thread-safe shared pool for async.pool (created on first use, shared with child scripts)
+   std::shared_ptr<SharedPool> Pool;      // Thread-safe shared pool for async.pool (created on first use, shared with child scripts)
    std::unique_ptr<tiri::cache::Manifest> CompilationManifest; // Inputs observed by the last successful source compile
-   std::string CompilationSourcePath;    // Resolver spelling used for the root chunk and cache identity
-   std::string CacheFallbackSource;      // Root snapshot retained while validated cache bytecode is selected
+   std::string CompilationSourcePath;     // Resolver spelling used for the root chunk and cache identity
+   std::string EffectiveCacheFile;        // Selected explicit or automatic destination; never aliases public fields
+   std::string CacheSelectionValue;       // Public CacheFile value from the last destination selection
    APTR     FocusEventHandle;
-   struct finput *InputList;           // Managed by the input interface
+   struct finput *InputList;              // Managed by the input interface
    PERMIT   CachePermissions;
    JOF      JitOptions;
    JOF      LocalJitOptions = JOF::NIL;
@@ -605,10 +612,12 @@ class extTiri : public objTiri {
    uint8_t  Recurse;
    uint8_t  SaveCompiled;
    bool     LoadedFromCache = false;
-   bool     CacheFallbackAvailable = false;
-   bool     CacheFallbackAttempted = false;
    bool     CompilationPrepared = false; // Libraries and interfaces have been registered and globals protected
+   bool     CacheHit = false;             // Deterministic provenance hook: Query bypassed source parsing
+   bool     CacheSelectionParserOutput = false;
+   CacheDestinationOrigin CacheOrigin = CacheDestinationOrigin::NONE;
    int64_t  SourceModifiedHint = 0;
+   uint32_t SourceCompilationCount = 0;   // Deterministic hook for source parser invocations on this object
    uint16_t RequireCounter;
 
    extTiri(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objTiri(ClassPtr, ObjectID) { }
@@ -623,3 +632,7 @@ enum class CachePublishFailure : uint8_t {
    FLUSH,
    MOVE
 };
+
+#ifdef UNIT_TESTS
+void set_cache_publish_failure(CachePublishFailure Failure);
+#endif

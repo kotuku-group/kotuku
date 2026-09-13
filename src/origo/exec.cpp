@@ -115,6 +115,7 @@ ERR exec_source(std::string_view TargetFile, int ShowTime, const std::string_vie
    if (!NewObject(derived_id != CLASSID::NIL ? derived_id : class_id, &glScript)) {
       glScript->setTarget(glTarget ? glTarget->UID : CurrentTaskID());
       glScript->setPath(TargetFile);
+      if (glCache) glScript->setFlags(SCF::AUTO_CACHE);
 
       if (!Procedure.empty()) glScript->setProcedure(Procedure);
 
