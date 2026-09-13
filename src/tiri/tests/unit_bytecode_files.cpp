@@ -168,6 +168,47 @@ static bool bytecode_save_contract(kt::Log &Log)
 
    if (not check_loaded_lifecycle(wrapped) or not check_loaded_lifecycle(raw)) return false;
 
+   // A caller-owned statement remains source even when Path has a bytecode suffix.  Init must not infer provenance
+   // from the path after deliberately skipping the file load.
+   objTiri::create overridden;
+   if (not overridden.ok()) return false;
+   overridden->Path = "missing_statement_override.tbc";
+   overridden->Statement = "global statement_override_ran = true";
+   if (overridden->init() != ERR::Okay or acQuery(*overridden) != ERR::Okay or acActivate(*overridden) != ERR::Okay or
+       overridden->Error != ERR::Okay) return false;
+   auto overridden_script = (extTiri *)*overridden;
+   lua_getglobal(overridden_script->Lua, "statement_override_ran");
+   const bool override_ran = lua_toboolean(overridden_script->Lua, -1);
+   lua_pop(overridden_script->Lua, 1);
+   if (not override_ran) return false;
+
+   const std::string direct_path = "temp:tiri-statement-override.tbc";
+   DeleteFile(direct_path, nullptr);
+   struct DirectFileCleanup {
+      const std::string &Path;
+      ~DirectFileCleanup() { DeleteFile(Path, nullptr); }
+   } direct_file_cleanup { direct_path };
+   {
+      objFile::create direct_file = { fl::Path(direct_path), fl::Flags(FL::NEW|FL::WRITE) };
+      int written = 0;
+      if (not direct_file.ok() or
+          direct_file->write(std::span((const int8_t *)wrapped.data(), wrapped.size()), &written) != ERR::Okay or
+          written != int(wrapped.size()) or direct_file->flush() != ERR::Okay) return false;
+   }
+
+   objTiri::create replaced = { fl::Path(direct_path) };
+   if (not replaced.ok()) return false;
+   auto replaced_script = (extTiri *)*replaced;
+   if (not replaced_script->LoadedFromBytecodeFile or
+       replaced->setStatement("global replaced_bytecode_ran = true") != ERR::Okay or
+       acQuery(*replaced) != ERR::Okay or acActivate(*replaced) != ERR::Okay or replaced->Error != ERR::Okay) {
+      return false;
+   }
+   lua_getglobal(replaced_script->Lua, "replaced_bytecode_ran");
+   const bool replacement_ran = lua_toboolean(replaced_script->Lua, -1);
+   lua_pop(replaced_script->Lua, 1);
+   if (not replacement_ran) return false;
+
    objTiri::create invalid = { fl::Statement("local =") };
    if (not invalid.ok()) return false;
    auto invalid_script = (extTiri *)*invalid;

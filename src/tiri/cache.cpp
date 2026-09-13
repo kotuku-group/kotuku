@@ -565,6 +565,7 @@ static ERR load_selected_cache(extTiri *Self, ERR SourceError, std::optional<std
       if ((SourceError IS ERR::Okay) and SourceFallback) SourceFallback->emplace(std::move(Self->Statement));
       Self->Statement = std::move(payload);
       Self->LoadedFromCache = true;
+      Self->LoadedFromBytecodeFile = false;
       Self->CacheHit = true;
       Self->SaveCompiled = false;
    }
@@ -579,6 +580,7 @@ static ERR load_source(extTiri *Self)
    kt::Log log(__FUNCTION__);
 
    log.branch("Loading script from %s", Self->Path.c_str());
+   Self->LoadedFromBytecodeFile = false;
 
    objFile::create file = { fl::Path(Self->Path), fl::Flags(FL::READ) };
    if (not file.ok()) return file.error;
@@ -597,6 +599,7 @@ static ERR load_source(extTiri *Self)
 
    Self->Statement = std::move(source);
    Self->LoadedFromCache = false;
+   Self->LoadedFromBytecodeFile = has_script_extension(Self->Path, ".tbc");
    Self->SaveCompiled = false;
    Self->CachePermissions = PERMIT::NIL;
    if (auto error = file->getPermissions(Self->CachePermissions); error != ERR::Okay) {
@@ -631,6 +634,7 @@ static ERR refresh_cache_lifecycle(extTiri *Self)
 
    if (Self->Path.empty()) {
       Self->LoadedFromCache = false;
+      Self->LoadedFromBytecodeFile = false;
       Self->CacheHit = false;
       Self->SaveCompiled = false;
       Self->CompilationSourcePath.clear();
@@ -682,6 +686,7 @@ static ERR load_statement_with_cache_fallback(extTiri *Self, std::optional<std::
          Self->Statement = std::move(*SourceFallback);
          SourceFallback.reset();
          Self->LoadedFromCache = false;
+         Self->LoadedFromBytecodeFile = false;
          Self->CacheHit = false;
          Self->SaveCompiled = cache_destination_permitted(Self);
          error = load_statement(Self);

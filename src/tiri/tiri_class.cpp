@@ -306,7 +306,9 @@ static ERR load_compilation_input(lua_State *Lua, extTiri *Self, std::string_vie
 static CompilationInputOrigin compilation_input_origin(const extTiri *Self)
 {
    if (Self->LoadedFromCache) return CompilationInputOrigin::SELECTED_CACHE;
-   if (has_script_extension(Self->Path, ".tbc")) return CompilationInputOrigin::DIRECT_BYTECODE;
+   if (Self->LoadedFromBytecodeFile and has_script_extension(Self->Path, ".tbc")) {
+      return CompilationInputOrigin::DIRECT_BYTECODE;
+   }
    return CompilationInputOrigin::SOURCE;
 }
 

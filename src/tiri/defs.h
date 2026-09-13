@@ -612,6 +612,7 @@ class extTiri : public objTiri {
    uint8_t  Recurse;
    uint8_t  SaveCompiled;
    bool     LoadedFromCache = false;
+   bool     LoadedFromBytecodeFile = false; // Statement was read from the current direct .tbc path
    bool     CompilationPrepared = false; // Libraries and interfaces have been registered and globals protected
    bool     CacheHit = false;             // Deterministic provenance hook: Query bypassed source parsing
    bool     CacheSelectionParserOutput = false;
