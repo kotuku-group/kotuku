@@ -1,0 +1,242 @@
+-- Whole-script automatic cache behaviour that must hold across independent process states.
+
+include 'core'
+
+local glRoot
+local glSerial = 0
+
+@BeforeAll function setup()
+   local err, temp = mSys.ResolvePath('temp:', 0)
+   check err
+   glRoot = temp .. f'/automatic_cache.tests_{processing.task().id}_{mSys.PreciseTime()}/'
+   local folder <close> = obj.new('file', { path=glRoot, flags=FL_NEW|FL_FOLDER })
+end
+
+@AfterAll function cleanup()
+   if glRoot then check mSys.DeleteFile(glRoot) end
+end
+
+function path(Suffix:str):str
+   glSerial++
+   return glRoot .. tostring(glSerial) .. Suffix
+end
+
+function write_file(Path:str, Content:str)
+   local file <close> = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
+   if #Content > 0 then check file.acWrite(Content) end
+end
+
+function date_file(Path:str, Day:num)
+   local file <close> = obj.new('file', { path=Path, flags=FL_READ|FL_WRITE })
+   check file.mtSetDate(2025, 2, Day, 12, 0, 0, FDT_MODIFIED)
+end
+
+function child(Parameters:array<str>):<num, str>
+   local output = ''
+   local executable = processing.task().processPath .. 'origo'
+   if mSys.GetSystemState().platform is 'Windows' then executable ..= '.exe' end
+   local task <close> = obj.new('task', {
+      location=executable, flags=TSF_WAIT, timeout=20,
+      outputCallback=function(Task, Buffer) output ..= Buffer.getString() end,
+      errorCallback=function(Task, Buffer) output ..= Buffer.getString() end
+   })
+   for parameter in values(Parameters) do check task.mtAddArgument(parameter) end
+   check task.acActivate()
+   return task.returnCode, output
+end
+
+function run(Runner:str, Source:str, Mode:str, Cache:str, Jit:str):<num, str>
+   local arguments = array<str> {
+      Runner, 'source=' .. Source, 'mode=' .. Mode, 'cache=' .. Cache, '--log-trace', '--gfx-driver=headless',
+      '--set-volume', 'temp=' .. glRoot
+   }
+   if Jit != '' then
+      arguments.push('--jit-options')
+      arguments.push(Jit)
+   end
+   return child(arguments)
+end
+
+function assert_run(Output:str, Value:num)
+   assert(Output.count('C05_CACHE_RUN:' .. tostring(Value) .. ':1') is 2,
+      'Each fresh Script must activate twice while each imported body initialises once: ' .. Output)
+end
+
+function fixtures():<str, str, str>
+   local stem = path('.unicode-ā.main')
+   local source = stem .. '.tiri'
+   local child_path = glRoot .. 'c05_child.tiri'
+   local nested_path = glRoot .. 'c05_nested.tiri'
+   local empty_path = glRoot .. 'c05_empty.tiri'
+   local runner = path('_runner.tiri')
+
+   write_file(nested_path, 'global function c05_nested_value():num return 42 end')
+   write_file(child_path, [[
+      import './c05_nested'
+      namespace c05_fixture { }
+      c05_fixture.value = c05_nested_value
+      glC05ImportRuns++
+   ]])
+   write_file(empty_path, '')
+   write_file(source, [[
+      global glC05ImportRuns = 0
+      import './c05_child' as cached
+      import './c05_child' as cached
+      import './c05_empty'
+      assert(cached.value() > 0)
+      print('C05_CACHE_RUN:' .. tostring(cached.value()) .. ':' .. tostring(glC05ImportRuns))
+   ]])
+   write_file(runner, [[
+      local source = arg('source')
+      local mode = arg('mode')
+      local cache = arg('cache')
+      local script:obj
+      if mode is 'direct' then
+         script = obj.new('tiri', { path=cache })
+      elseif mode is 'automatic' then
+         script = obj.new('tiri', { path=source, flags=SCF_AUTO_CACHE })
+      elseif mode is 'explicit_auto' then
+         script = obj.new('tiri', { path=source, cacheFile=cache, flags=SCF_AUTO_CACHE })
+      elseif mode is 'explicit' then
+         script = obj.new('tiri', { path=source, cacheFile=cache })
+      else
+         script = obj.new('tiri', { path=source })
+      end
+      defer script = nil end
+      check script.acQuery()
+      for i in {0 to 2} do
+         check script.acActivate()
+         assert(script.error is ERR_Okay, script.errorMessage)
+      end
+   ]])
+   return source, nested_path, runner
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- A cold producer and warm consumers use independent Lua states.  JIT policy does not affect cache identity, and
+-- omitting AUTO_CACHE must ignore a pre-existing automatic entry.
+
+@Test function FreshAutomaticProducerAndConsumers()
+   local source, _, runner = fixtures()
+   local code, output = run(runner, source, 'automatic', '', '')
+   assert(code is 0 and output.find('Cache hit') is nil, output)
+   assert_run(output, 42)
+
+   code, output = run(runner, source, 'automatic', '', '')
+   assert(code is 0 and output.find('Cache hit') != nil, output)
+   assert_run(output, 42)
+
+   code, output = run(runner, source, 'automatic', '', 'off')
+   assert(code is 0 and output.find('Cache hit') != nil, output)
+   assert_run(output, 42)
+
+   code, output = run(runner, source, 'disabled', '', '')
+   assert(code is 0 and output.find('Cache hit') is nil, output)
+   assert_run(output, 42)
+
+   check mSys.DeleteFile(glRoot .. 'tiri/cache/')
+   code, output = run(runner, source, 'automatic', '', '')
+   assert(code is 0 and output.find('Cache hit') is nil, output)
+   assert_run(output, 42)
+   code, output = run(runner, source, 'automatic', '', '')
+   assert(code is 0 and output.find('Cache hit') != nil, output)
+   assert_run(output, 42)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- An explicit destination works independently of AUTO_CACHE and remains authoritative when the flag is also set.
+
+@Test function ExplicitDestinationPrecedenceAcrossProcesses()
+   local source, _, runner = fixtures()
+   local cache = path('_explicit.tbc')
+   local code, output = run(runner, source, 'explicit', cache, '')
+   assert(code is 0 and output.find('Cache hit') is nil, output)
+   assert_run(output, 42)
+
+   code, output = run(runner, source, 'explicit_auto', cache, '')
+   assert(code is 0 and output.find('Cache hit') != nil, output)
+   assert_run(output, 42)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Dependency content, rather than size or modification time, invalidates a warm entry in a fresh consumer.
+
+@Test function SameSizeSameDateDependencyInvalidation()
+   local source, nested, runner = fixtures()
+   date_file(nested, 1)
+   local code, output = run(runner, source, 'automatic', '', '')
+   assert(code is 0, output)
+   assert_run(output, 42)
+   code, output = run(runner, source, 'automatic', '', '')
+   assert(code is 0 and output.find('Cache hit') != nil, output)
+
+   write_file(nested, 'global function c05_nested_value():num return 43 end')
+   date_file(nested, 1)
+   code, output = run(runner, source, 'automatic', '', '')
+   assert(code is 0 and output.find('Cache hit') is nil, output)
+   assert_run(output, 43)
+
+   code, output = run(runner, source, 'automatic', '', '')
+   assert(code is 0 and output.find('Cache hit') != nil, output)
+   assert_run(output, 43)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Competing fresh producers must publish complete self-describing entries.  A later reader must observe a valid
+-- generation rather than a partial or mixed payload.
+
+@Test function ConcurrentProducersPublishCompleteEntry()
+   local source, nested, runner = fixtures()
+   local cache = path('_concurrent.tbc')
+   local code, output = run(runner, source, 'explicit', cache, '')
+   assert(code is 0, output)
+   assert_run(output, 42)
+   write_file(nested, 'global function c05_nested_value():num return 43 end')
+
+   local executable = processing.task().processPath .. 'origo'
+   if mSys.GetSystemState().platform is 'Windows' then executable ..= '.exe' end
+   local tasks = array<obj> {}
+   local outputs = array<str> {}
+   local modes = array<str> {}
+   local completed = 0
+   defer
+      for task in values(tasks) do task.free() end
+   end
+
+   for index in {0 to 8} do
+      outputs.push('')
+      local mode = index % 2 is 0 ? 'explicit_auto' : 'direct'
+      modes.push(mode)
+      local task = obj.new('task', {
+         location=executable, timeout=20,
+         outputCallback=function(Task, Buffer) outputs[index] ..= Buffer.getString() end,
+         errorCallback=function(Task, Buffer) outputs[index] ..= Buffer.getString() end,
+         exitCallback=function(Task) completed++ processing.signal() end
+      })
+      check task.mtAddArgument(runner)
+      check task.mtAddArgument('source=' .. source)
+      check task.mtAddArgument('mode=' .. mode)
+      check task.mtAddArgument('cache=' .. cache)
+      check task.mtAddArgument('--log-warning')
+      tasks.push(task)
+      check task.acActivate()
+   end
+
+   local deadline = mSys.PreciseTime() + 3000000
+   while completed < #tasks and mSys.PreciseTime() < deadline do
+      check processing.sleep(0.1)
+   end
+   assert(completed is #tasks, 'Concurrent cache producers did not finish within 30 seconds')
+   for index, task in ipairs(tasks) do
+      assert(task.returnCode is 0, outputs[index])
+      if modes[index] is 'direct' and outputs[index].find('C05_CACHE_RUN:42:1') != nil then
+         assert_run(outputs[index], 42)
+      else
+         assert_run(outputs[index], 43)
+      end
+   end
+
+   code, output = run(runner, source, 'explicit', cache, '')
+   assert(code is 0 and output.find('Cache hit') != nil, output)
+   assert_run(output, 43)
+end

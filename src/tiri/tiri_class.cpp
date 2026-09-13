@@ -9,6 +9,10 @@ The Tiri class provides functionality for running scripts written in the Tiri pr
 
 Setting `SCF::AUTO_CACHE` automatically caches eligible file-backed scripts under `temp:tiri/cache/`.  A non-empty
 @Script.CacheFile remains authoritative and selects an explicit destination even when automatic caching is enabled.
+Automatic caching is disabled by default.  Without `SCF::AUTO_CACHE`, a script uses a cache only when
+@Script.CacheFile is set explicitly.  Direct byte-code input, statement input and overrides, string paths,
+documentation processing and parser diagnostic modes do not use automatically selected caches.
+
 Cache output records a schema-versioned manifest and byte-code payload in one envelope.  The manifest identifies the
 producing build, root source, compilation options, imports, path resolutions and compile-time conditions.  A cache is
 reused only when those observations can be reproduced from current source content.  Content digests detect edits even
@@ -17,6 +21,8 @@ republishes the cache.
 
 Schema-versioned caches require readable root and imported sources.  Legacy same-build explicit caches retain their
 source-free deployment behaviour, and a cache envelope opened directly as a `.tbc` file remains authoritative.
+Cache lookup and publication are best-effort optimisations: a missing, invalid or unwritable cache does not prevent
+valid source from compiling.  Warm validation still reads and digests the root and imported source files.
 
 Caches are disabled for a script that sets `SCF::PROCESS_DOC`, because the parser metadata collected for
 documentation tools is not stored in byte code.  Runtime-only Script flags and JIT options do not change cache
