@@ -416,116 +416,87 @@ static bool check_try_handler(lua_State *L, int errcode)
       return false;
    }
 
-   // Don't intercept errors from C frames without Lua frames (like lj_vm_cpcall used for trace recording). These
-   // protected calls should handle errors first. Walk the cframe chain for a saved stack offset, which identifies
-   // a C frame without a Lua frame.
+   // Validate try stack depth is within bounds
+   lj_assertL(L->try_stack.depth <= LJ_MAX_TRY_DEPTH,
+      "check_try_handler: try_stack depth %u exceeds LJ_MAX_TRY_DEPTH", L->try_stack.depth);
 
-   {
-      void *cf = L->cframe;
-      TryFrame *try_frame = &L->try_stack.frames[L->try_stack.depth - 1];
+   ERR err_code = ERR::Exception;  // Default for Lua errors
+   if (L->CaughtError >= ERR::ExceptionThreshold) err_code = L->CaughtError;
+
+   // Search from the innermost try outwards.  This function also runs during Windows SEH's search phase, so it must
+   // not pop unmatched frames.  setup_try_handler() repeats the deterministic search and discards those frames while
+   // performing the actual unwind.
+
+   for (int try_index = L->try_stack.depth - 1; try_index >= 0; try_index--) {
+      TryFrame *try_frame = &L->try_stack.frames[try_index];
       TValue *try_base = restorestack(L, try_frame->frame_base);
+      lj_assertL(try_frame->func != nullptr, "check_try_handler: try_frame->func is null");
+      log.trace("try_frame[%u]: func=%p, frame_base_offset=%td", try_index, try_frame->func,
+         try_frame->frame_base);
 
+      // A protected native call between the error and this candidate must see the error first.  Since outer try
+      // frames are even farther down the stack, it is also a barrier to the rest of the search.
+
+      void *cf = L->cframe;
       while (cf) {
          void *raw_cframe = cframe_raw(cf);
          if (cframe_has_stack_offset(raw_cframe)) {
-            // This is a C frame without Lua frame (e.g., trace recording cpcall).
-            // Check if it's above the try block by comparing saved top position.
             ptrdiff_t stack_offset = cframe_stack_offset(raw_cframe);
             TValue *cf_top = restorestack(L, stack_offset);
             if (cf_top >= try_base) {
                log.trace("Returning false: cpcall frame (stack_offset=%td) at cf_top=%p >= try_base=%p",
                   stack_offset, cf_top, try_base);
-               return false; // The cpcall is above/at the try block - let it handle the error
+               return false;
             }
          }
          cf = cframe_prev(cf);
       }
-   }
 
-   // Validate try stack depth is within bounds
-   lj_assertL(L->try_stack.depth <= LJ_MAX_TRY_DEPTH, "check_try_handler: try_stack depth %u exceeds LJ_MAX_TRY_DEPTH", L->try_stack.depth);
+      TValue *frame = L->base - 1;
+      int frame_count = 0;
+      bool found_try_func = false;
+      lj_assertL(frame >= tvref(L->stack), "check_try_handler: initial frame below stack start");
+      log.trace("Walking frame chain from L->base-1=%p, looking for func=%p", frame, try_frame->func);
 
-   TryFrame *try_frame = &L->try_stack.frames[L->try_stack.depth - 1];
+      while (frame > tvref(L->stack) + LJ_FR2) {
+         int frame_type = frame_typep(frame);
+         GCfunc *func = frame_func(frame);
+         const BCIns *pc = frame_pc(frame);
+         log.trace("  Frame %d: frame=%p, func=%p, pc=%p, type=%d", frame_count++, frame, func, pc,
+            frame_type);
 
-   lj_assertL(try_frame->func != nullptr, "check_try_handler: try_frame->func is null");
-
-   log.trace("try_frame[%u]: func=%p, frame_base_offset=%td", L->try_stack.depth - 1, try_frame->func, try_frame->frame_base);
-
-   // Check if there's a protected call frame (FRAME_CP, FRAME_PCALL, FRAME_PCALLH) between
-   // the current error and the try block. If so, let the protected call handle the error first.
-   // This ensures that lua_pcall() inside functions like exec() works correctly.
-   //
-   // We walk the Lua frame chain looking for protected frames that are "above" the try block
-   // (i.e., started after the try block).
-
-   {
-      TValue *pf = L->base - 1;
-      TValue *try_base = restorestack(L, try_frame->frame_base);
-
-      while (pf > tvref(L->stack) + LJ_FR2) {
-         int pf_type = frame_typep(pf);
-
-         // Check if this is a protected frame (C protected or Lua pcall)
-         if (pf_type IS FRAME_CP or pf_type IS FRAME_PCALL or pf_type IS FRAME_PCALLH) {
-            // This protected frame is above the try block's base - it should handle the error first
-            if (pf >= try_base) {
-               log.trace("Returning false: protected frame type=%d at pf=%p >= try_base=%p", pf_type, pf, try_base);
+         if (frame_type IS FRAME_CP or frame_type IS FRAME_PCALL or frame_type IS FRAME_PCALLH) {
+            if (frame >= try_base) {
+               log.trace("Returning false: protected frame type=%d at frame=%p >= try_base=%p", frame_type,
+                  frame, try_base);
                return false;
             }
          }
 
-         // Match the activation, not merely the closure: recursive calls can share one function object.
-         if (pf + 1 IS try_base) break;
+         if (func IS try_frame->func and frame + 1 IS try_base) {
+            log.trace("  Found try_frame->func at frame %d", frame_count - 1);
+            found_try_func = true;
+            break;
+         }
 
-         // A language handler below a native re-entry must resume in its own VM C frame.  Let the platform
-         // unwinder discard the intervening C frame first; resuming in this frame leaves abandoned native calls
-         // on the machine stack and eventually returns through stale frame links.
-         if (pf_type IS FRAME_C or (pf_type IS FRAME_CONT and frame_iscont_fficb(pf))) return false;
+         // A language handler below a native re-entry must resume in its own VM C frame.  Let the platform unwinder
+         // discard the intervening C frame first.
+         if (frame_type IS FRAME_C or (frame_type IS FRAME_CONT and frame_iscont_fficb(frame))) return false;
 
-         // Move to previous frame based on frame type
-
-         if (pf_type IS FRAME_LUA or pf_type IS FRAME_LUAP) pf = frame_prevl(pf);
-         else pf = frame_prevd(pf);
+         if (frame_type IS FRAME_LUA or frame_type IS FRAME_LUAP) frame = frame_prevl(frame);
+         else frame = frame_prevd(frame);
       }
-   }
 
-   // Verify try frame is in current call chain by walking up the frame chain.  The error may have been raised from
-   // a C function (like error()) so we need to check if the try block's function is anywhere in the call chain.
-
-   TValue *frame = L->base - 1;
-   bool found_try_func = false;
-   int frame_count = 0;
-
-   // Validate initial frame pointer is within stack bounds
-   lj_assertL(frame >= tvref(L->stack), "check_try_handler: initial frame below stack start");
-
-   log.trace("Walking frame chain from L->base-1=%p, looking for func=%p", frame, try_frame->func);
-
-   while (frame > tvref(L->stack) + LJ_FR2) {
-      GCfunc *func = frame_func(frame);
-      const BCIns *pc = frame_pc(frame);
-      int ftype = frame_typep(frame);
-      log.trace("  Frame %d: frame=%p, func=%p, pc=%p, type=%d", frame_count++, frame, func, pc, ftype);
-
-      if (func IS try_frame->func and frame + 1 IS restorestack(L, try_frame->frame_base)) {
-         log.trace("  Found try_frame->func at frame %d", frame_count - 1);
-         found_try_func = true;
-         break;
+      if (not found_try_func) {
+         log.trace("Returning false: try_frame->func=%p not found in frame chain after %d frames",
+            try_frame->func, frame_count);
+         return false;
       }
-      frame = frame_prev(frame);
-   }
 
-   if (not found_try_func) {
-      log.trace("Returning false: try_frame->func=%p not found in frame chain after %d frames", try_frame->func, frame_count);
-      return false;
-   }
+      const BCIns *handler_pc = nullptr;
+      BCREG exception_reg = 0xff;
+      if (not lj_try_find_handler(L, try_frame, err_code, &handler_pc, &exception_reg)) continue;
 
-   ERR err_code = ERR::Exception;  // Default for Lua errors
-   if (L->CaughtError >= ERR::ExceptionThreshold) err_code = L->CaughtError;
-
-   const BCIns *handler_pc = nullptr;
-   BCREG exception_reg = 0xFF;
-   if (lj_try_find_handler(L, try_frame, err_code, &handler_pc, &exception_reg)) {
       lj_assertL(handler_pc != nullptr, "check_try_handler: handler found but handler_pc is null");
 
       if (try_frame->flags & TRY_FLAG_TRACE) { // Capture stack trace
@@ -551,22 +522,27 @@ extern "C" void setup_try_handler(lua_State *L)
 
    if (L->try_stack.depth IS 0) return;
 
-   lj_assertL(L->try_stack.depth <= LJ_MAX_TRY_DEPTH, "setup_try_handler: try_stack depth %u exceeds LJ_MAX_TRY_DEPTH", L->try_stack.depth);
-
-   TryFrame *try_frame = &L->try_stack.frames[L->try_stack.depth - 1];
-
-   lj_assertL(try_frame->func != nullptr, "setup_try_handler: try_frame->func is null");
+   lj_assertL(L->try_stack.depth <= LJ_MAX_TRY_DEPTH,
+      "setup_try_handler: try_stack depth %u exceeds LJ_MAX_TRY_DEPTH", L->try_stack.depth);
 
    ERR err_code = (L->CaughtError >= ERR::ExceptionThreshold) ? L->CaughtError : ERR::Exception;
 
    const BCIns *handler_pc = nullptr;
    BCREG exception_reg = 0xFF;
+   int try_index = L->try_stack.depth - 1;
+   for (; try_index >= 0; try_index--) {
+      TryFrame *candidate = &L->try_stack.frames[try_index];
+      lj_assertL(candidate->func != nullptr, "setup_try_handler: try_frame->func is null");
+      if (lj_try_find_handler(L, candidate, err_code, &handler_pc, &exception_reg)) break;
+   }
 
-   if (not lj_try_find_handler(L, try_frame, err_code, &handler_pc, &exception_reg)) {
+   if (try_index < 0) {
       // This should not happen if check_try_handler returned true - assert in debug builds
       lj_assertL(false, "setup_try_handler: no handler found but check_try_handler returned true");
       return;
    }
+
+   TryFrame *try_frame = &L->try_stack.frames[try_index];
 
    // Validate handler PC
    lj_assertL(handler_pc != nullptr, "setup_try_handler: handler found but handler_pc is null");
@@ -681,7 +657,7 @@ extern "C" void setup_try_handler(lua_State *L)
    L->array_view_scopes = try_frame->array_view_scopes;
    L->array_view_depth = try_frame->array_view_depth;
    L->checkall_stack->depth = try_frame->checkall_depth;
-   L->try_stack.depth--; // Pop try frame
+   L->try_stack.depth = try_index; // Pop the selected frame and every unmatched frame nested within it
 
    // Build exception table and place in handler's register (pass pending_trace, which may be null)
 

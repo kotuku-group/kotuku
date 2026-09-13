@@ -178,6 +178,65 @@ end
    assert(matched_args, "Rethrown ERR_Args should match outer ERR_Args filter")
 end
 
+@Test(priority=5) function UnmatchedInnerFilterFallsThroughToOuterTry()
+   local caught = false
+
+   try
+      try
+         raise ERR_Failed
+      except e when ERR_Args
+         assert(false, 'The unmatched inner handler must not run')
+      end
+   except e when ERR_Failed
+      caught = true
+      assert(e.code is ERR_Failed, 'The outer handler must receive the original error code')
+   end
+
+   assert(caught, 'An unmatched inner filter must allow the enclosing try to handle the exception')
+end
+
+@Test(priority=5) function UnmatchedInnerFilterUnwindsCleanupBeforeOuterTry()
+   local order = array<str>
+
+   try
+      defer
+         order.push('outer')
+      end
+      try
+         defer
+            order.push('inner')
+         end
+         raise ERR_Failed
+      except e when ERR_Args
+         assert(false, 'The unmatched inner handler must not run')
+      end
+   except e when ERR_Failed
+      order.push('except')
+   end
+
+   assert(order.concat(',') is 'inner,outer,except',
+      'Skipped try frames must unwind in lexical order before the outer handler')
+end
+
+@Test(priority=5) function UnmatchedFilterInCalledFunctionFallsThroughToCallerTry()
+   local caught = false
+   local function subject()
+      try
+         raise ERR_Failed
+      except e when ERR_Args
+         assert(false, 'The unmatched callee handler must not run')
+      end
+   end
+
+   try
+      subject()
+   except e when ERR_Failed
+      caught = true
+   end
+
+   assert(caught, 'Handler search must continue into the calling activation')
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- Exception table fields
 
