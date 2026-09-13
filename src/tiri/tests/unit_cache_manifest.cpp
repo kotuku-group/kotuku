@@ -265,7 +265,7 @@ bool compilation_capture_contract(kt::Log &Log)
    if (negative_exists IS snapshot.ConditionalInputs.end() or module IS snapshot.ConditionalInputs.end() or
        not has_kind(ConditionalKind::IMPORTED) or not has_kind(ConditionalKind::DEBUG_MODE) or
        not has_kind(ConditionalKind::LOG_LEVEL) or not has_kind(ConditionalKind::PLATFORM) or
-       snapshot.Options.size() != 1 or snapshot.Options[0].Name != "script-flags" or
+       not snapshot.Options.empty() or
        snapshot.ResolutionInputs.size() != 5) {
       Log.error("Conditional, module, resolution or JIT-independent Script-option capture was incomplete");
       return false;

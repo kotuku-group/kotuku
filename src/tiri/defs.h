@@ -594,9 +594,9 @@ class extTiri : public objTiri {
    std::shared_ptr<SharedPool> Pool;     // Thread-safe shared pool for async.pool (created on first use, shared with child scripts)
    std::unique_ptr<tiri::cache::Manifest> CompilationManifest; // Inputs observed by the last successful source compile
    std::string CompilationSourcePath;    // Resolver spelling used for the root chunk and cache identity
+   std::string CacheFallbackSource;      // Root snapshot retained while validated cache bytecode is selected
    APTR     FocusEventHandle;
    struct finput *InputList;           // Managed by the input interface
-   DateTime CacheDate;
    PERMIT   CachePermissions;
    JOF      JitOptions;
    JOF      LocalJitOptions = JOF::NIL;
@@ -605,6 +605,7 @@ class extTiri : public objTiri {
    uint8_t  Recurse;
    uint8_t  SaveCompiled;
    bool     LoadedFromCache = false;
+   bool     CacheFallbackAvailable = false;
    bool     CacheFallbackAttempted = false;
    bool     CompilationPrepared = false; // Libraries and interfaces have been registered and globals protected
    int64_t  SourceModifiedHint = 0;
@@ -619,7 +620,6 @@ enum class CachePublishFailure : uint8_t {
    NIL,
    CREATE,
    WRITE,
-   DATE,
    FLUSH,
    MOVE
 };

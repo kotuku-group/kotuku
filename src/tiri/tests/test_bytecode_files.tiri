@@ -136,6 +136,10 @@ function is_compiled(Bytes:str):bool
    return Bytes.sub(separator + 1).startsWith('\x1bLJ')
 end
 
+function is_cache(Bytes:str):bool
+   return Bytes.startsWith('TIRICACH') and #Bytes > 56
+end
+
 function write_file(Path:str, Content:str)
    local file <close> = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
    if #Content > 0 then check file.acWrite(Content) end
@@ -273,11 +277,11 @@ end
       local cache_producer <close> = obj.new('tiri', { path=source, cacheFile=cache })
       check cache_producer.acQuery()
    end
-   assert(is_compiled(read_file(cache)))
-   -- Removing the source leaves the cache as the only usable input, so the saves below re-save a selected cache.
+   assert(is_cache(read_file(cache)))
+   -- A cache envelope is also accepted as an authoritative direct input and can be re-saved as ordinary bytecode.
    check mSys.DeleteFile(source)
    do
-      local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      local script <close> = obj.new('tiri', { path=cache })
       append_outputs(outputs, save_lifecycle(script))
    end
 
@@ -307,18 +311,20 @@ end
       check script.acQuery()
       activate(script)
    end
-   assert(is_compiled(read_file(cache)), 'Query must retain and use its own source fallback')
+   assert(is_cache(read_file(cache)), 'Query must retain and use its own source fallback')
    check mSys.DeleteFile(source)
    local code, output = child(array<str> { resaved, '--log-warning', '--gfx-driver=headless' })
    assert(code is 0 and output.count('B06_RESAVE_OK:1:42') is 1, output)
 
    local missing_cache = path('_b06_missing_cache.tbc')
    write_file(missing_cache, 'not bytecode')
-   local missing <close> = obj.new('tiri', { path=path('_b06_missing_source.tiri'), cacheFile=missing_cache })
-   local destination <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
-   assert(missing.acSaveToObject(destination) is ERR_InvalidData)
-   assert(destination.size is 0 and missing.errorMessage.find('Expected a compiled Tiri wrapper') != nil,
-      missing.errorMessage)
+   try
+      local missing <close> = obj.new('tiri', {
+         path=path('_b06_missing_source.tiri'), cacheFile=missing_cache
+      })
+      assert(false, 'Malformed cache and missing source must fail initialisation')
+   except e when ERR_FileNotFound
+   end
 
    local invalid_source = path('_b06_invalid_source.tiri')
    local invalid_cache = path('_b06_invalid_cache.tbc')
@@ -584,7 +590,7 @@ end
       local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
       check script.acQuery()
    end
-   assert(is_compiled(read_file(cache)))
+   assert(is_cache(read_file(cache)))
    check mSys.DeleteFile(source)
    for mode in values({ 'off', '' }) do
       local args = array<str> { cache, '--log-warning' }
@@ -676,8 +682,7 @@ end
       check script.acQuery()
    end
    local original = read_file(cache)
-   assert(is_compiled(original))
-   local wrapper = wrapper_size(original)
+   assert(is_cache(original))
    -- An unchanged source reuses the cache, which the deliberately broken replacement below then invalidates.
    do
       local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
@@ -714,127 +719,145 @@ end
       activate(script)
    end
    assert(read_file(cache) != original, 'Stale cache must be regenerated')
-   for corrupt in values({ '', glMarker .. '\0', 'not bytecode', original.sub(0, wrapper + 4),
-      original.sub(0, wrapper + 3) .. '\x01' .. original.sub(wrapper + 4) }) do
+   local current = read_file(cache)
+   write_file(cache, current.sub(0, #current - 1) .. '\x01')
+   do
+      local recovered <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      check recovered.acQuery()
+      activate(recovered)
+   end
+   assert(read_file(cache) is current, 'Structurally invalid payload must fall back without contaminating the state')
+
+   local legacy = path('.tbc')
+   do
+      local producer <close> = obj.new('tiri', { path=source })
+      save(producer, legacy)
+   end
+   for corrupt in values({ '', glMarker .. '\0', 'not bytecode', original.sub(0, 20),
+      original.sub(0, #original - 1) }) do
       write_file(cache, corrupt)
       date_file(cache, 2)
       local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
       check script.acQuery()
       activate(script)
-      assert(is_compiled(read_file(cache)))
+      assert(is_cache(read_file(cache)))
    end
    check mSys.DeleteFile(source)
-   do
-      local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
-      activate(script)
+   try
+      local unavailable <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      assert(false, 'A schema-1 cache must not resurrect a missing source')
+   except e when ERR_FileNotFound
    end
-   write_file(cache, glMarker .. '\0')
-   local missing <close> = obj.new('tiri', { path=source, cacheFile=cache })
-   assert(missing.acQuery() is ERR_InvalidData)
-   write_file(source, 'assert(true)')
-   assert(missing.acQuery() is ERR_InvalidData, 'A rejected cache gets only one fallback attempt')
+   do
+      local legacy_fallback <close> = obj.new('tiri', { path=source, cacheFile=legacy })
+      activate(legacy_fallback)
+   end
+   local direct_cache <close> = obj.new('tiri', { path=cache })
+   activate(direct_cache)
+
    local alternative = path('.tbc')
    write_file(alternative, original)
-   date_file(alternative, 1)
-   date_file(cache, 1)
+   write_file(cache, glMarker .. '\0')
    local direct <close> = obj.new('tiri', { path=cache, cacheFile=alternative })
    assert(direct.acQuery() is ERR_InvalidData)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Sources containing imports must not publish or consume automatic caches until imported dependency identity is
--- supported, although explicitly produced bytecode remains valid as a direct input.
+-- Imported caches are reusable only while every dependency resolves to the same path and has the same content.
 
-@Test function ImportedAutomaticCacheEmbargo()
+@Test function ImportedCacheReuseAndInvalidation()
    local source = path('_b04_cache_main.tiri')
    local helper = glRoot .. 'b04_cache_helper.tiri'
    local cache = path('_b04_cache.tbc')
    write_file(helper, 'global glB04CacheValue = 42')
-   write_file(source, "import './b04_cache_helper'\nassert(glB04CacheValue is 42)")
+   write_file(source, "import './b04_cache_helper'\nassert(glB04CacheValue > 0)")
    date_file(source, 3)
+   date_file(helper, 3)
    do
       local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
       check script.acQuery()
-      assert(not exists(cache), 'Imported source must not create an automatic cache before B07c')
       activate(script)
    end
+   local original = read_file(cache)
+   assert(is_cache(original), 'Imported source must publish a manifest cache')
+   do
+      local cached <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      activate(cached)
+   end
+   assert(read_file(cache) is original, 'Unchanged imports must reuse the cache')
+
+   -- Same-size, same-timestamp edits are detected by dependency content digest.
+   write_file(helper, 'global glB04CacheValue = 43')
+   date_file(helper, 3)
+   do
+      local rebuilt <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      activate(rebuilt)
+   end
+   assert(read_file(cache) != original, 'An edited import must rebuild the cache')
+
+   local legacy = path('_b04_legacy.tbc')
    do
       local producer <close> = obj.new('tiri', { path=source })
-      save(producer, cache)
+      save(producer, legacy)
    end
-   date_file(cache, 3)
-   do
-      local fallback <close> = obj.new('tiri', { path=source, cacheFile=cache })
-      activate(fallback)
-      assert(exists(cache), 'The embargo must not remove an explicitly produced bytecode fixture')
-   end
-   check mSys.DeleteFile(source)
+
+   check mSys.DeleteFile(helper)
    local missing <close> = obj.new('tiri', { path=source, cacheFile=cache })
-   assert(missing.acQuery() is ERR_InvalidData,
-      'An imported automatic cache must fail when its source fallback is unavailable')
-   local direct <close> = obj.new('tiri', { path=cache })
-   activate(direct)
+   assert(missing.acQuery() is ERR_Syntax, 'A removed import must fall back and report the source error')
+   check mSys.DeleteFile(source)
+   try
+      local legacy_missing <close> = obj.new('tiri', { path=source, cacheFile=legacy })
+      assert(false, 'A legacy imported cache must remain unavailable without source validation metadata')
+   except e when ERR_FileNotFound
+   end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Cache identity metadata must bind bytecode to both its producing build and source, replacing foreign caches when
--- the source exists and rejecting foreign or malformed identities when regeneration is impossible.
+-- Runtime-only Script flags must neither invalidate nor change a cache entry.
 
-@Test function CacheIdentityGuardsBuildAndSource()
+@Test function RuntimeFlagsDoNotChangeCacheIdentity()
    local source = path('.tiri')
    local cache = path('.tbc')
-   write_file(source, "print('B07A_IDENTITY_OK')")
+   write_file(source, 'assert(true)')
    date_file(source, 4)
    do
       local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
       check script.acQuery()
    end
    local original = read_file(cache)
-   local token = identity_token(original)
-   assert(token.startsWith('b:'), 'A cache must record its producing build: ' .. token)
-   assert(token.find(' s:') != nil, 'A cache must record its source identity: ' .. token)
-   local build_end = token.find(' ')
-   assert(build_end != nil)
-   local build = token.sub(0, build_end)
-   assert(build.startsWith('b:g:') and #build > 4, 'The build identity must contain a Git commit: ' .. build)
-
-   -- A foreign build identity is rejected and replaced while the source remains readable.
-   local foreign = 'b:deadbeef s:1,00000000'
-   write_file(cache, retoken(original, foreign))
-   date_file(cache, 4)
    do
-      local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      local script <close> = obj.new('tiri', {
+         path=source, cacheFile=cache, flags=SCF_EXIT_ON_ERROR|SCF_LOG_ALL
+      })
       activate(script)
    end
-   assert(identity_token(read_file(cache)) is token, 'A foreign build must be replaced by a local cache')
+   assert(read_file(cache) is original, 'EXIT_ON_ERROR and LOG_ALL must not invalidate or republish bytecode')
+end
 
-   -- Byte code that cannot be regenerated must be refused rather than executed under a foreign identity.
-   write_file(cache, retoken(original, foreign))
-   date_file(cache, 4)
-   check mSys.DeleteFile(source)
-   try
-      local rejected <close> = obj.new('tiri', { path=source, cacheFile=cache })
-      assert(false, 'A foreign build with no readable source must not initialise')
-   except e when ERR_FileNotFound
+----------------------------------------------------------------------------------------------------------------------
+-- A changed conditional observation invalidates a cache even when the source itself is unchanged.
+
+@Test function ConditionalObservationInvalidatesCache()
+   local source = path('_conditional_main.tiri')
+   local gate = glRoot .. 'conditional_gate'
+   local cache = path('_conditional_cache.tbc')
+   write_file(source, [[
+      @if(exists='./conditional_gate')
+      local enabled = true
+      @end
+      assert(true)
+   ]])
+   do
+      local script <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      check script.acQuery()
    end
-
-   -- A build-field prefix is not a build match.  With no source, malformed metadata must not reach the VM payload.
-   for malformed in values({ build .. '-invalid', build .. ' source', build .. ' s:,00000000',
-      build .. ' s:1,0000000g' }) do
-      write_file(cache, retoken(original, malformed))
-      date_file(cache, 4)
-      try
-         local rejected <close> = obj.new('tiri', { path=source, cacheFile=cache })
-         assert(false, 'Malformed identity metadata with no readable source must not initialise')
-      except e when ERR_FileNotFound
-      end
+   local original = read_file(cache)
+   write_file(gate, '')
+   do
+      local rebuilt <close> = obj.new('tiri', { path=source, cacheFile=cache })
+      check rebuilt.acQuery()
    end
-
-   -- A matching build identity stays reusable without its source.
-   write_file(cache, original)
-   date_file(cache, 4)
-   local cached <close> = obj.new('tiri', { path=source, cacheFile=cache })
-   activate(cached)
+   assert(read_file(cache) != original, 'A changed exists observation must rebuild the cache')
 end
 
 ----------------------------------------------------------------------------------------------------------------------

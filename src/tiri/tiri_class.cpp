@@ -8,18 +8,18 @@ The Tiri class provides functionality for running scripts written in the Tiri pr
 <header>Automatic Caching</>
 
 Setting @Script.CacheFile to a path other than @Script.Path compiles the source to byte code and publishes it there.
-Compiled output records an identity token that names the build which produced it, together with the size and a
-checksum of the source it was compiled from.  A cache is reused only when that token matches the running build and
-the current source content, so a source edit is detected even when it leaves the modification date and file size
-unchanged.  Any mismatch recompiles from the source and republishes the cache.
+Cache output records a schema-versioned manifest and byte-code payload in one envelope.  The manifest identifies the
+producing build, root source, compilation options, imports, path resolutions and compile-time conditions.  A cache is
+reused only when those observations can be reproduced from current source content.  Content digests detect edits even
+when modification dates and file sizes are unchanged.  Any mismatch recompiles from the retained source snapshot and
+republishes the cache.
 
-If the source is unavailable, a cache that names the running build is reused so that byte code can be deployed
-without it.  A cache naming a different build is refused, because it cannot be regenerated and its byte code may not
-match this build's interfaces.
+Schema-versioned caches require readable root and imported sources.  Legacy same-build explicit caches retain their
+source-free deployment behaviour, and a cache envelope opened directly as a `.tbc` file remains authoritative.
 
 Caches are disabled for a script that sets `SCF::PROCESS_DOC`, because the parser metadata collected for
-documentation tools is not stored in byte code.  Compilation units with imported dependencies are also excluded
-until import invalidation is available.
+documentation tools is not stored in byte code.  Runtime-only Script flags and JIT options do not change cache
+identity.
 
 -END-
 
@@ -75,6 +75,7 @@ static ERR stack_args(lua_State *, OBJECTID, const FunctionField *, int8_t *);
 static ERR save_binary(lua_State *, OBJECTPTR, std::string_view);
 static ERR register_interfaces(lua_State *);
 static ERR publish_cache(extTiri *);
+static ERR initialise_compilation_state(lua_State *);
 
 static ERR TIRI_Activate(extTiri *);
 static ERR TIRI_DataFeed(extTiri *, struct acDataFeed *);
@@ -152,6 +153,15 @@ static ERR read_open_file_to_string(objFile *File, int64_t Size, std::string &Bu
    }
 
    return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Script flags currently affect runtime behaviour or parser-only metadata, not emitted bytecode.  Keep this helper
+// explicit so a future bytecode-affecting flag has one identity boundary to update.
+
+static std::vector<tiri::cache::CompilationOption> cache_compilation_options(const extTiri *)
+{
+   return {};
 }
 
 //********************************************************************************************************************
@@ -238,6 +248,15 @@ static bool identity_token_matches_build(std::string_view Token, std::string_vie
 static ERR classify_compilation_input(std::string_view Source, CompilationInputOrigin Origin, CompilationInput &Input,
    std::string &Diagnostic)
 {
+   if (Origin IS CompilationInputOrigin::DIRECT_BYTECODE) {
+      tiri::cache::EnvelopeView envelope;
+      if (tiri::cache::decode_envelope(Source, envelope) IS tiri::cache::FormatError::OKAY) {
+         Input = { envelope.Payload, true };
+         Diagnostic.clear();
+         return ERR::Okay;
+      }
+   }
+
    const bool binary = (Origin != CompilationInputOrigin::SOURCE) or Source.starts_with(LUA_COMPILED) or
       Source.starts_with("\x1b");
    std::string_view payload = Source;
@@ -284,18 +303,6 @@ static ERR load_compilation_input(lua_State *Lua, extTiri *Self, std::string_vie
 
       lua_settop(Lua, stack_top);
       return input.Binary ? ERR::InvalidData : ERR::Syntax;
-   }
-
-   if ((Origin IS CompilationInputOrigin::SELECTED_CACHE) and lua_isfunction(Lua, -1) and
-       not lua_iscfunction(Lua, -1)) {
-      GCproto *prototype = funcproto(funcV(Lua->top - 1));
-      const CompilationSourceMap *sources = proto_compilation_sources(prototype);
-      if (sources and sources->count > 1) {
-         lua_settop(Lua, stack_top);
-         Diagnostic = "Automatic caches with imported dependencies are disabled until dependency validation is "
-            "available.";
-         return ERR::InvalidData;
-      }
    }
 
    Diagnostic.clear();
@@ -678,10 +685,9 @@ static ERR read_source_file(objFile *File, const std::string &Path, std::string 
 // read leaves only the build identity verifiable, which is the documented source-free deployment contract.  A cache
 // written before identity tokens existed carries no build field and is therefore rejected.
 //
-// Only identity is judged here.  Structurally unusable byte code is passed through to Query, which owns the
-// established one-shot source fallback for a cache that fails to load.
+// Only legacy identity is judged here.  The caller performs isolated structural validation before selection.
 
-static bool cache_identity_matches(const extTiri *Self, const std::string &Cache)
+static bool legacy_cache_identity_matches(const extTiri *Self, const std::string &Cache, bool SourceAvailable)
 {
    kt::Log log(__FUNCTION__);
 
@@ -691,17 +697,8 @@ static bool cache_identity_matches(const extTiri *Self, const std::string &Cache
       return true;
    }
 
-   // Read the source so that a rejection can report whether recompilation is still possible.
-
-   std::string source;
-   bool source_available;
-   {
-      objFile::create file = { fl::Path(Self->Path), fl::Flags(FL::READ) };
-      source_available = file.ok() and (read_source_file(*file, Self->Path, source) IS ERR::Okay);
-   }
-
    auto reject = [&](CSTRING Reason) {
-      if (source_available) log.msg("Rejecting cache '%s', %s.", Self->CacheFile.c_str(), Reason);
+      if (SourceAvailable) log.msg("Rejecting cache '%s', %s.", Self->CacheFile.c_str(), Reason);
       else log.warning("Rejecting cache '%s' and its source is unreadable, %s.", Self->CacheFile.c_str(), Reason);
       return false;
    };
@@ -711,13 +708,238 @@ static bool cache_identity_matches(const extTiri *Self, const std::string &Cache
       return reject("its identity token is invalid or it was produced by a different build");
    }
 
-   if (not source_available) {
+   if (not SourceAvailable) {
       log.msg("Accepting cache '%s' on its build identity, the source is unavailable.", Self->CacheFile.c_str());
       return true;
    }
 
-   if (token != make_identity_token(&source)) return reject("the source content has changed");
+   if (token != make_identity_token(&Self->Statement)) return reject("the source content has changed");
 
+   return true;
+}
+
+//********************************************************************************************************************
+// Validate and split an original import request using the same name grammar as the parser's import resolver.
+
+static bool valid_import_name(std::string_view Request, bool &Local, std::string &ParentPrefix,
+   std::string_view &Name)
+{
+   Local = false;
+   ParentPrefix.clear();
+   Name = Request;
+   int slash_count = 0;
+
+   if (Name.starts_with("./")) {
+      Local = true;
+      Name.remove_prefix(2);
+   }
+   else {
+      while (Name.starts_with("../")) {
+         Local = true;
+         ParentPrefix.append("../");
+         Name.remove_prefix(3);
+         slash_count++;
+      }
+   }
+
+   size_t i = 0;
+   for (; i < Name.size(); ++i) {
+      const char value = Name[i];
+      if ((value >= 'a') and (value <= 'z')) continue;
+      if ((value >= 'A') and (value <= 'Z')) continue;
+      if ((value >= '0') and (value <= '9')) continue;
+      if ((value IS '-') or (value IS '_')) continue;
+      if (value IS '/') { slash_count++; continue; }
+      break;
+   }
+   return (i IS Name.size()) and (i < 96) and (slash_count <= 2);
+}
+
+//********************************************************************************************************************
+// Replay an import request from its recorded parent context and return the resolver's current target spelling.
+
+static std::string replay_import_resolution(extTiri *Self, std::string_view Parent,
+   std::string_view Request)
+{
+   bool local = false;
+   std::string parent_prefix;
+   std::string_view name;
+   if (not valid_import_name(Request, local, parent_prefix, name)) return {};
+
+   std::string path(parent_prefix);
+   path.append(name);
+   if (local) {
+      auto separator = Parent.find_last_of("/\\");
+      if (separator != std::string_view::npos) path.insert(0, Parent.substr(0, separator + 1));
+      else {
+         std::string_view working_path;
+         Self->getWorkingPath(working_path);
+         if (not working_path.empty()) path.insert(0, working_path);
+      }
+   }
+   else path.insert(0, "scripts:");
+   path.append(".tiri");
+
+   std::string resolved;
+   if (ResolvePath(path, RSF::NO_FILE_CHECK, &resolved) IS ERR::Okay) return resolved;
+   return path;
+}
+
+//********************************************************************************************************************
+// Reconstruct the path tested by an `@if(exists=...)` observation from its original compilation context.
+
+static std::string replay_exists_resolution(extTiri *Self, std::string_view Context,
+   std::string_view Request)
+{
+   auto separator = Context.find_last_of("/\\");
+   if (separator != std::string_view::npos) {
+      std::string result(Context.substr(0, separator + 1));
+      result.append(Request);
+      return result;
+   }
+
+   std::string_view working_path;
+   Self->getWorkingPath(working_path);
+   std::string result(working_path);
+   result.append(Request);
+   return result;
+}
+
+//********************************************************************************************************************
+// Check the restricted alpha-numeric module-name grammar accepted by compile-time module observations.
+
+static bool module_name_is_valid(std::string_view Name)
+{
+   if (Name.empty() or Name.size() >= 32) return false;
+   for (char value : Name) {
+      if ((value >= 'a') and (value <= 'z')) continue;
+      if ((value >= 'A') and (value <= 'Z')) continue;
+      if ((value >= '0') and (value <= '9')) continue;
+      return false;
+   }
+   return true;
+}
+
+//********************************************************************************************************************
+// Verify that all recorded compilation inputs still reproduce the manifest without loading candidate bytecode.
+
+static bool validate_cache_manifest(extTiri *Self, const tiri::cache::Manifest &Stored, std::string &Reason)
+{
+   using namespace tiri::cache;
+
+   tiri::cache::Manifest expected;
+   expected.BuildIdentity = TIRI_BUILD_COMMIT;
+   expected.MainSource.ResolvedPath = Self->CompilationSourcePath;
+   expected.Options = cache_compilation_options(Self);
+   if (not lookup_identity_matches(Stored, expected)) {
+      Reason = "its build, root identity or compilation options have changed";
+      return false;
+   }
+   if ((Stored.MainSource.Size != Self->Statement.size()) or
+       (Stored.MainSource.ContentDigest != content_digest(Self->Statement))) {
+      Reason = "the main source content has changed";
+      return false;
+   }
+
+   for (const auto &dependency : Stored.Imports) {
+      auto resolved = replay_import_resolution(Self, dependency.ParentPath, dependency.OriginalRequest);
+      if (resolved.empty() or (resolved != dependency.Source.ResolvedPath)) {
+         Reason = "an import now resolves to a different source";
+         return false;
+      }
+
+      objFile::create file = { fl::Path(resolved), fl::Flags(FL::READ) };
+      std::string source;
+      if (not file.ok() or (read_source_file(*file, resolved, source) != ERR::Okay)) {
+         Reason = "an imported source is missing or unreadable";
+         return false;
+      }
+      if ((dependency.Source.Size != source.size()) or
+          (dependency.Source.ContentDigest != content_digest(source))) {
+         Reason = "an imported source has changed";
+         return false;
+      }
+   }
+
+   for (const auto &resolution : Stored.ResolutionInputs) {
+      bool matched = std::ranges::any_of(Stored.Imports, [&](const auto &Import) {
+         return (Import.ParentPath IS resolution.Context) and (Import.OriginalRequest IS resolution.Name) and
+            (Import.Source.ResolvedPath IS resolution.Value) and
+            (replay_import_resolution(Self, Import.ParentPath, Import.OriginalRequest) IS resolution.Value);
+      });
+      if (not matched) {
+         matched = std::ranges::any_of(Stored.ConditionalInputs, [&](const auto &Input) {
+            return (Input.Kind IS ConditionalKind::EXISTS) and (Input.Context IS resolution.Context) and
+               (Input.Name IS resolution.Name) and (replay_exists_resolution(Self, Input.Context, Input.Name) IS
+               resolution.Value);
+         });
+      }
+      if (not matched) {
+         Reason = "a recorded path resolution input has changed or is unsupported";
+         return false;
+      }
+   }
+
+   for (const auto &input : Stored.ConditionalInputs) {
+      std::string current;
+      switch (input.Kind) {
+         case ConditionalKind::IMPORTED:
+            current = input.Context IS Stored.MainSource.ResolvedPath ? "false" : "true";
+            break;
+         case ConditionalKind::DEBUG_MODE: current = GetResource(RES::LOG_LEVEL) > 2 ? "true" : "false"; break;
+         case ConditionalKind::LOG_LEVEL: current = std::to_string(GetResource(RES::LOG_LEVEL)); break;
+         case ConditionalKind::PLATFORM: {
+            const SystemState *state = GetSystemState();
+            current = state->Platform ? state->Platform : "";
+            break;
+         }
+         case ConditionalKind::EXISTS: {
+            auto resolved = replay_exists_resolution(Self, input.Context, input.Name);
+            current = AnalysePath(resolved, nullptr) IS ERR::Okay ? "true" : "false";
+            break;
+         }
+         case ConditionalKind::MODULE_AVAILABLE:
+            current = module_name_is_valid(input.Name) and (load_module_defs(input.Name) IS ERR::Okay) ?
+               "true" : "false";
+            break;
+         case ConditionalKind::OTHER:
+            Reason = "the cache contains an unsupported conditional observation";
+            return false;
+      }
+      if (current != input.Value) {
+         Reason = "a compile-time condition has changed";
+         return false;
+      }
+   }
+   return true;
+}
+
+//********************************************************************************************************************
+// Load candidate bytecode in a disposable Lua state to validate its structure and optionally detect imported sources.
+
+static bool validate_cache_bytecode(extTiri *Self, std::string_view Payload, std::string &Reason,
+   bool *HasImports = nullptr)
+{
+   std::unique_ptr<lua_State, decltype(&lua_close)> validation(luaL_newstate(Self), lua_close);
+   if (not validation or (initialise_compilation_state(validation.get()) != ERR::Okay)) {
+      Reason = "an isolated validation state could not be created";
+      return false;
+   }
+
+   std::string diagnostic;
+   if (load_compilation_input(validation.get(), Self, Payload, CompilationInputOrigin::DIRECT_BYTECODE,
+       diagnostic) != ERR::Okay) {
+      Reason = diagnostic.empty() ? "its bytecode is structurally invalid" : diagnostic;
+      return false;
+   }
+   if (HasImports) {
+      *HasImports = false;
+      if (lua_isfunction(validation.get(), -1) and not lua_iscfunction(validation.get(), -1)) {
+         GCproto *prototype = funcproto(funcV(validation->top - 1));
+         const CompilationSourceMap *sources = proto_compilation_sources(prototype);
+         *HasImports = sources and (sources->count > 1);
+      }
+   }
    return true;
 }
 
@@ -766,7 +988,7 @@ static std::string temporary_cache_path(std::string_view CachePath)
 }
 
 //********************************************************************************************************************
-// Cache output is written to an exclusively owned temporary file beside the destination, dated, flushed and closed
+// Cache output is written to an exclusively owned temporary file beside the destination, flushed and closed
 // before publication.  The normal same-filesystem rename exposes either the previous complete cache or the new one.
 // Concurrent producers use last-completed-move wins.  Temporary files receive the source-derived `PERMIT` bits;
 // platform ownership, ACL and extended-attribute handling follows the File move implementation.  That implementation
@@ -779,6 +1001,22 @@ static ERR publish_cache(extTiri *Self)
 {
    kt::Log log(__FUNCTION__);
    constexpr int MAX_TEMP_ATTEMPTS = 16;
+
+   if (not Self->CompilationManifest) return ERR::InvalidData;
+
+   std::string payload;
+   auto append_payload = [](lua_State *, const void *Data, size_t Size, void *Context) {
+      ((std::string *)Context)->append((const char *)Data, Size);
+      return 0;
+   };
+   const int stack_top = lua_gettop(Self->Lua);
+   const int dump_error = lua_dump(Self->Lua, append_payload, &payload);
+   lua_settop(Self->Lua, stack_top);
+   if (dump_error) return ERR::InvalidData;
+
+   std::string envelope;
+   if (tiri::cache::encode_envelope(*Self->CompilationManifest, payload, envelope) !=
+       tiri::cache::FormatError::OKAY) return ERR::InvalidData;
 
    for (int attempt = 0; attempt < MAX_TEMP_ATTEMPTS; ++attempt) {
       auto temporary_path = temporary_cache_path(Self->CacheFile);
@@ -805,11 +1043,17 @@ static ERR publish_cache(extTiri *Self)
          owns_temporary = true;
 
          if (fail_cache_publication(CachePublishFailure::WRITE)) error = ERR::TestFailed;
-         else error = save_binary(Self->Lua, *cache, make_identity_token(&Self->Statement));
-
-         if (error IS ERR::Okay) {
-            if (fail_cache_publication(CachePublishFailure::DATE)) error = ERR::TestFailed;
-            else error = cache->setDate(Self->CacheDate);
+         else {
+            size_t total = 0;
+            error = ERR::Okay;
+            while ((total < envelope.size()) and (error IS ERR::Okay)) {
+               const size_t remaining = envelope.size() - total;
+               const size_t count = std::min(remaining, size_t(std::numeric_limits<int>::max()));
+               int written = 0;
+               error = cache->write(std::span((const int8_t *)envelope.data() + total, count), &written);
+               if ((error IS ERR::Okay) and (written != int(count))) error = ERR::Write;
+               total += size_t(written);
+            }
          }
 
          if (error IS ERR::Okay) {
@@ -854,13 +1098,12 @@ static ERR load_source(extTiri *Self)
    file->getTimestamp(Self->SourceModifiedHint);
 
    Self->Statement = std::move(source);
+   Self->CacheFallbackSource.clear();
+   Self->CacheFallbackAvailable = false;
    Self->LoadedFromCache = false;
    Self->SaveCompiled = cache_destination_permitted(Self);
 
    if (Self->SaveCompiled) {
-      DateTime *date;
-      if (auto error = file->getDate(date); error IS ERR::Okay) Self->CacheDate = *date;
-      else Self->SaveCompiled = false; // Cannot publish a cache with a reliable source timestamp.
       Self->CachePermissions = PERMIT::NIL;
       if (auto error = file->getPermissions(Self->CachePermissions); error != ERR::Okay) {
          log.warning("Failed to read source permissions for cache file: %s", GetErrorMsg(error));
@@ -895,47 +1138,69 @@ static ERR TIRI_Init(extTiri *Self)
    }
 
    if ((Self->Statement.empty()) and (not Self->Path.empty())) {
-      int64_t source_timestamp = -1;
-      ERR source_error;
-      {
-         objFile::create file = { fl::Path(Self->Path) };
-         source_error = file.error;
-         if (file.ok()) {
-            source_error = file->getTimestamp(source_timestamp);
-            if (source_error IS ERR::NoSupport) source_error = ERR::Okay; // Prefer readable source to an undated cache.
-         }
-      }
+      const ERR source_error = load_source(Self);
 
       // A directly opened .tbc file is authoritative and must never fall back to another path.
 
       if (cache_lookup_permitted(Self)) {
          objFile::create cache = { fl::Path(Self->CacheFile), fl::Flags(FL::READ) };
-         int64_t timestamp = -1, size = 0;
-         if (cache.ok() and (cache->getTimestamp(timestamp) IS ERR::Okay) and
-             ((source_error != ERR::Okay) or (timestamp IS source_timestamp)) and
-             (cache->getSize(size) IS ERR::Okay)) {
-            // The timestamp is only a cheap pre-filter.  Reuse depends on the embedded identity token, which is
-            // compared against this build and the current source content.
-
+         int64_t size = 0;
+         if (cache.ok() and (cache->getSize(size) IS ERR::Okay)) {
             std::string content;
             auto error = read_open_file_to_string(*cache, size, content);
             if (error IS ERR::Okay) {
-               if (cache_identity_matches(Self, content)) {
+               bool accepted = false;
+               std::string payload;
+               tiri::cache::EnvelopeView envelope;
+               auto format_error = tiri::cache::decode_envelope(content, envelope);
+               if (format_error IS tiri::cache::FormatError::OKAY) {
+                  std::string reason;
+                  if (source_error != ERR::Okay) reason = "schema-1 caches require readable source for validation";
+                  else if (validate_cache_manifest(Self, envelope.Metadata, reason) and
+                           validate_cache_bytecode(Self, envelope.Payload, reason)) {
+                     payload.assign(envelope.Payload);
+                     accepted = true;
+                  }
+                  if (not accepted) log.msg("Rejecting cache '%s', %s.", Self->CacheFile.c_str(), reason.c_str());
+               }
+               else if (format_error IS tiri::cache::FormatError::NOT_CACHE) {
+                  accepted = legacy_cache_identity_matches(Self, content, source_error IS ERR::Okay);
+                  if (accepted) {
+                     std::string reason;
+                     bool has_imports = false;
+                     if (validate_cache_bytecode(Self, content, reason, &has_imports) and
+                         ((source_error IS ERR::Okay) or not has_imports)) payload = std::move(content);
+                     else {
+                        accepted = false;
+                        if (reason.empty()) reason = "legacy imported caches require source validation metadata";
+                        log.msg("Rejecting cache '%s', %s.", Self->CacheFile.c_str(), reason.c_str());
+                     }
+                  }
+               }
+               else {
+                  log.msg("Rejecting cache '%s', malformed schema-1 envelope (%s).", Self->CacheFile.c_str(),
+                     tiri::cache::format_error_name(format_error));
+               }
+
+               if (accepted) {
                   log.msg("Using cache '%s'", Self->CacheFile.c_str());
-                  Self->Statement = std::move(content); // Even an empty cache needs validation in Query.
+                  if (source_error IS ERR::Okay) {
+                     Self->CacheFallbackSource = std::move(Self->Statement);
+                     Self->CacheFallbackAvailable = true;
+                  }
+                  Self->Statement = std::move(payload);
                   Self->LoadedFromCache = true;
+                  Self->SaveCompiled = false;
                }
             }
             else {
                log.warning("Failed to read cache '%s': %s", Self->CacheFile.c_str(), GetErrorMsg(error));
-               if (auto fallback_error = load_source(Self); fallback_error != ERR::Okay) return error;
+               if (source_error != ERR::Okay) return error;
             }
          }
       }
 
-      if ((not Self->LoadedFromCache) and Self->Statement.empty()) {
-         if (auto error = load_source(Self); error != ERR::Okay) return log.warning(error);
-      }
+      if ((not Self->LoadedFromCache) and (source_error != ERR::Okay)) return log.warning(source_error);
    }
 
    if (not (Self->Lua = luaL_newstate(Self))) {
@@ -1020,7 +1285,7 @@ static ERR load_statement(extTiri *Self)
       capture->MainSource.Size = Self->Statement.size();
       capture->MainSource.ModifiedHint = Self->SourceModifiedHint;
       capture->MainSource.ContentDigest = tiri::cache::content_digest(Self->Statement);
-      capture->Options = { { "script-flags", std::to_string(uint32_t(Self->Flags)) } };
+      capture->Options = cache_compilation_options(Self);
    }
 
    struct CaptureGuard {
@@ -1057,6 +1322,8 @@ static ERR TIRI_Query(extTiri *Self)
 
    if (Self->Path.empty()) {
       Self->LoadedFromCache = false;
+      Self->CacheFallbackSource.clear();
+      Self->CacheFallbackAvailable = false;
       Self->SaveCompiled = false;
       Self->CompilationSourcePath.clear();
       Self->SourceModifiedHint = 0;
@@ -1074,20 +1341,17 @@ static ERR TIRI_Query(extTiri *Self)
       if ((error != ERR::Okay) and Self->LoadedFromCache and not Self->CacheFallbackAttempted) {
          Self->CacheFallbackAttempted = true;
          log.warning("Failed to load cache '%s': %s", Self->CacheFile.c_str(), Self->ErrorMessage.c_str());
-         if (load_source(Self) IS ERR::Okay) error = load_statement(Self);
+         if (Self->CacheFallbackAvailable) {
+            Self->Statement = std::move(Self->CacheFallbackSource);
+            Self->CacheFallbackAvailable = false;
+            Self->LoadedFromCache = false;
+            Self->SaveCompiled = cache_destination_permitted(Self);
+            error = load_statement(Self);
+         }
       }
       if (error != ERR::Okay) {
          log.warning("%s", Self->ErrorMessage.c_str());
          return error;
-      }
-
-      if (Self->SaveCompiled and lua_isfunction(Self->Lua, -1) and not lua_iscfunction(Self->Lua, -1)) {
-         GCproto *prototype = funcproto(funcV(Self->Lua->top - 1));
-         const CompilationSourceMap *sources = proto_compilation_sources(prototype);
-         if (sources and sources->count > 1) {
-            log.msg("Skipping automatic cache for a compilation unit with imported dependencies.");
-            Self->SaveCompiled = false;
-         }
       }
 
       lua_pushvalue(Self->Lua, -1);
