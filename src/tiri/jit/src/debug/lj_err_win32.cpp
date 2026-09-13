@@ -56,7 +56,7 @@ VOID RtlUnwindEx_FIXED(PVOID, PVOID, PVOID, PVOID, PVOID, PVOID) asm("RtlUnwindE
 #define LJ_EXCODE_ERRCODE(cl) ((int)((cl) & 0xff))
 
 extern void * err_unwind(lua_State *L, void *, int);
-extern "C" void setup_try_handler(lua_State *);
+extern "C" bool setup_try_handler(lua_State *);
 
 // Sentinel value returned by err_unwind when a try-except handler is found.
 #define ERR_TRYHANDLER ((void*)(intptr_t)-2)
@@ -155,15 +155,16 @@ extern "C" int lj_err_unwind_win(EXCEPTION_RECORD *rec, void* f, CONTEXT* ctx, U
             char message[128];
             lj_err_prepare_foreign_exception(L, win_exception_message(rec, message, sizeof(message)));
          }
-         setup_try_handler(L);
-         //
-         // Resume execution at the handler PC using the VM entry point.
-         // Use 'cf' (the current frame) as TargetFrame, matching the pattern
-         // used by the standard exception handlers.
-         RtlUnwindEx(cf, (void*)lj_vm_resume_try_eh, rec, (void*)(uintptr_t)0, ctx, dispatch->HistoryTable);
-         // RtlUnwindEx should never return.
+         if (setup_try_handler(L)) {
+            // Resume execution at the handler PC using the VM entry point.
+            // Use 'cf' (the current frame) as TargetFrame, matching the pattern
+            // used by the standard exception handlers.
+            RtlUnwindEx(cf, (void*)lj_vm_resume_try_eh, rec, (void*)(uintptr_t)0, ctx, dispatch->HistoryTable);
+            // RtlUnwindEx should never return.
+         }
+         cf2 = err_unwind(L, cf, 0);
       }
-      else if (cf2) {  // We catch it, so start unwinding the upper frames.
+      if (cf2) {  // We catch it, so start unwinding the upper frames.
          if (is_cpp_exception) {
             setstrV(L, L->top++, lj_err_str(L, ErrMsg::ERRCPP));
          }
