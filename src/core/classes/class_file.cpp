@@ -121,7 +121,19 @@ static int duplicate_std_handle(FILE *Stream, unsigned long StdHandle, int OpenF
 
    return -1;
 }
+
+static int open_file(CSTRING Path, int OpenFlags, int Permissions)
+{
+   return winOpenFile(Path, OpenFlags, Permissions);
+}
 #endif // _WIN32
+
+#ifndef _WIN32
+static int open_file(CSTRING Path, int OpenFlags, int Permissions)
+{
+   return open(Path, OpenFlags, Permissions);
+}
+#endif
 
 #ifdef __APPLE__
  #include <sys/param.h>
@@ -233,14 +245,14 @@ static ERR FILE_Activate(extFile *Self)
       }
    #endif
 
-   if ((Self->Handle = open(path.data(), openflags|WIN32OPEN|O_LARGEFILE, secureflags)) IS -1) {
+   if ((Self->Handle = open_file(path.data(), openflags|WIN32OPEN|O_LARGEFILE, secureflags)) IS -1) {
       int err = errno;
 
       if ((Self->Flags & FL::NEW) != FL::NIL) {
          // Attempt to create the necessary directories that might be required for this new file.
 
          if ((err != EEXIST) and (!check_paths(path, Self->Permissions))) {
-            Self->Handle = open(path.data(), openflags|WIN32OPEN|O_LARGEFILE, secureflags);
+            Self->Handle = open_file(path.data(), openflags|WIN32OPEN|O_LARGEFILE, secureflags);
             if (Self->Handle IS -1) err = errno;
          }
 
@@ -257,7 +269,7 @@ static ERR FILE_Activate(extFile *Self)
          log.warning("Reverting to read-only access for this read-only file.");
          openflags = O_RDONLY;
          Self->Flags &= ~FL::WRITE;
-         Self->Handle = open(path.data(), openflags|WIN32OPEN|O_LARGEFILE, secureflags);
+         Self->Handle = open_file(path.data(), openflags|WIN32OPEN|O_LARGEFILE, secureflags);
       }
       else if ((Self->Flags & FL::LINK) != FL::NIL) {
          // The file is a broken symbolic link (i.e. refers to a file that no longer exists).  Even

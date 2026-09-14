@@ -60,10 +60,15 @@ constexpr int MAX_ENV_VALUE = 512;
 
 #include <string>
 #include <array>
+#include <atomic>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <string_view>
 #include <cstring>
 #include <vector>
+
+static std::wstring win_utf8_to_wide(std::string_view Text);
 
 #define WAITLOCK_EVENTS 1 // Use events instead of semaphores for waitlocks (recommended)
 
@@ -2155,9 +2160,175 @@ extern "C" int winGetUserFolder(STRING Buffer, int Size)
 
 //********************************************************************************************************************
 
+static void set_open_errno(DWORD Error)
+{
+   switch (Error) {
+      case ERROR_FILE_EXISTS:
+      case ERROR_ALREADY_EXISTS:        errno = EEXIST; break;
+      case ERROR_FILE_NOT_FOUND:
+      case ERROR_PATH_NOT_FOUND:        errno = ENOENT; break;
+      case ERROR_ACCESS_DENIED:
+      case ERROR_SHARING_VIOLATION:
+      case ERROR_LOCK_VIOLATION:        errno = EACCES; break;
+      case ERROR_FILENAME_EXCED_RANGE:  errno = ENAMETOOLONG; break;
+      case ERROR_INVALID_PARAMETER:
+      case ERROR_INVALID_NAME:          errno = EINVAL; break;
+      case ERROR_TOO_MANY_OPEN_FILES:   errno = EMFILE; break;
+      default:                          errno = EIO; break;
+   }
+}
+
+// Open a host file with delete sharing so that POSIX-style replacement can preserve existing readers on Windows.
+
+extern "C" int winOpenFile(CSTRING Location, int OpenFlags, int Permissions)
+{
+   (void)Permissions;
+
+   if (not Location) {
+      errno = EINVAL;
+      return -1;
+   }
+
+   auto location = win_utf8_to_wide(Location);
+   if (location.empty()) {
+      errno = EINVAL;
+      return -1;
+   }
+
+   DWORD access;
+   if (OpenFlags & O_RDWR) access = GENERIC_READ|GENERIC_WRITE;
+   else if (OpenFlags & O_WRONLY) access = GENERIC_WRITE;
+   else access = GENERIC_READ;
+
+   DWORD creation;
+   if ((OpenFlags & O_CREAT) and (OpenFlags & O_EXCL)) creation = CREATE_NEW;
+   else if ((OpenFlags & O_CREAT) and (OpenFlags & O_TRUNC)) creation = CREATE_ALWAYS;
+   else if (OpenFlags & O_CREAT) creation = OPEN_ALWAYS;
+   else if (OpenFlags & O_TRUNC) creation = TRUNCATE_EXISTING;
+   else creation = OPEN_EXISTING;
+
+   auto handle = CreateFileW(location.c_str(), access, FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE, nullptr,
+      creation, FILE_ATTRIBUTE_NORMAL, nullptr);
+   if (handle IS INVALID_HANDLE_VALUE) {
+      set_open_errno(GetLastError());
+      return -1;
+   }
+
+   int descriptor_flags = OpenFlags & (O_APPEND|O_RDONLY|O_WRONLY|O_RDWR|O_BINARY|O_TEXT);
+   int descriptor = _open_osfhandle((intptr_t)handle, descriptor_flags);
+   if (descriptor IS -1) CloseHandle(handle);
+   return descriptor;
+}
+
+//********************************************************************************************************************
+
+struct WinRenameInfo {
+   DWORD Flags;
+   HANDLE RootDirectory;
+   DWORD FileNameLength;
+   WCHAR FileName[1];
+};
+
+constexpr DWORD WIN_FILE_RENAME_REPLACE_IF_EXISTS = 0x00000001;
+constexpr DWORD WIN_FILE_RENAME_POSIX_SEMANTICS = 0x00000002;
+constexpr int WIN_FILE_RENAME_INFO_EX = 22;
+constexpr int WIN_RENAME_ATTEMPTS = 5;
+
+static std::atomic_bool glPosixRenameSupported = true;
+
+static bool retryable_rename_error(DWORD Error)
+{
+   return (Error IS ERROR_ACCESS_DENIED) or (Error IS ERROR_SHARING_VIOLATION) or (Error IS ERROR_LOCK_VIOLATION);
+}
+
+static DWORD win_rename_file(CSTRING OldName, CSTRING NewName)
+{
+   std::string old_path(OldName);
+   std::string new_path(NewName);
+   trim_trailing_separators(old_path);
+   trim_trailing_separators(new_path);
+
+   auto old_name = win_utf8_to_wide(old_path);
+   auto new_name = win_utf8_to_wide(new_path);
+   if (old_name.empty() or new_name.empty()) return ERROR_INVALID_NAME;
+
+   for (int attempt = 0; attempt < WIN_RENAME_ATTEMPTS; attempt++) {
+      DWORD error = ERROR_SUCCESS;
+
+      if (glPosixRenameSupported.load(std::memory_order_relaxed)) {
+         auto handle = CreateFileW(old_name.c_str(), DELETE,
+            FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+         if (handle IS INVALID_HANDLE_VALUE) error = GetLastError();
+         else {
+            const size_t name_size = new_name.size() * sizeof(WCHAR);
+            std::vector<uint8_t> buffer(offsetof(WinRenameInfo, FileName) + name_size + sizeof(WCHAR));
+            auto info = (WinRenameInfo *)buffer.data();
+            info->Flags = WIN_FILE_RENAME_REPLACE_IF_EXISTS|WIN_FILE_RENAME_POSIX_SEMANTICS;
+            info->RootDirectory = nullptr;
+            info->FileNameLength = DWORD(name_size);
+            memcpy(info->FileName, new_name.c_str(), name_size + sizeof(WCHAR));
+
+            if (SetFileInformationByHandle(handle, FILE_INFO_BY_HANDLE_CLASS(WIN_FILE_RENAME_INFO_EX), info,
+                  DWORD(buffer.size()))) {
+               CloseHandle(handle);
+               return ERROR_SUCCESS;
+            }
+
+            error = GetLastError();
+            CloseHandle(handle);
+            if ((error IS ERROR_INVALID_PARAMETER) or (error IS ERROR_NOT_SUPPORTED) or
+                (error IS ERROR_INVALID_FUNCTION)) {
+               if (error IS ERROR_INVALID_PARAMETER) glPosixRenameSupported.store(false, std::memory_order_relaxed);
+               if (MoveFileExW(old_name.c_str(), new_name.c_str(), MOVEFILE_REPLACE_EXISTING)) return ERROR_SUCCESS;
+               error = GetLastError();
+            }
+         }
+      }
+      else {
+         if (MoveFileExW(old_name.c_str(), new_name.c_str(), MOVEFILE_REPLACE_EXISTING)) return ERROR_SUCCESS;
+         error = GetLastError();
+      }
+
+      if (not retryable_rename_error(error) or (attempt + 1 IS WIN_RENAME_ATTEMPTS)) return error;
+      Sleep(DWORD(1 << attempt));
+   }
+
+   return ERROR_GEN_FAILURE;
+}
+
+static ERR convert_rename_error(DWORD Error)
+{
+   switch (Error) {
+      case ERROR_SUCCESS:           return ERR::Okay;
+      case ERROR_FILE_NOT_FOUND:
+      case ERROR_PATH_NOT_FOUND:    return ERR::FileNotFound;
+      case ERROR_ACCESS_DENIED:     return ERR::NoPermission;
+      case ERROR_SHARING_VIOLATION:
+      case ERROR_LOCK_VIOLATION:    return ERR::InUse;
+      case ERROR_NOT_SAME_DEVICE:
+      case ERROR_NOT_SUPPORTED:     return ERR::NoSupport;
+      case ERROR_DISK_FULL:         return ERR::OutOfSpace;
+      default:                      return ERR::Failed;
+   }
+}
+
+extern "C" ERR winRenameFile(CSTRING OldName, CSTRING NewName)
+{
+   if ((not OldName) or (not NewName)) return ERR::NullArgs;
+   return convert_rename_error(win_rename_file(OldName, NewName));
+}
+
+//********************************************************************************************************************
+
 extern "C" int winMoveFile(STRING oldname, STRING newname)
 {
-   return MoveFileExA(oldname, newname, MOVEFILE_REPLACE_EXISTING|MOVEFILE_COPY_ALLOWED);
+   if (win_rename_file(oldname, newname) IS ERROR_SUCCESS) return 1;
+
+   auto old_name = win_utf8_to_wide(oldname);
+   auto new_name = win_utf8_to_wide(newname);
+   if (old_name.empty() or new_name.empty()) return 0;
+   return MoveFileExW(old_name.c_str(), new_name.c_str(), MOVEFILE_REPLACE_EXISTING|MOVEFILE_COPY_ALLOWED);
 }
 
 //********************************************************************************************************************
