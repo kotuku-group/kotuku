@@ -1,6 +1,7 @@
 // Copyright © 2025-2026 Paul Manias
 // Shared helper functions used by AST parser
 
+#include <cctype>
 #include <format>
 #include <string>
 
@@ -64,49 +65,11 @@ static void expr_kvalue(FuncState *fs, TValue *v, ExpDesc *e)
 
 //********************************************************************************************************************
 
-static bool token_starts_expression(LexToken Tok)
-{
-   switch (Tok) {
-      case TK_number:
-      case TK_string:
-      case TK_regex_string:
-      case TK_nil:
-      case TK_true:
-      case TK_false:
-      case TK_dots:
-      case TK_function:
-      case TK_thunk:
-      case TK_annotate:
-      case TK_choose:
-      case TK_raise:
-      case TK_check:
-      case TK_name:
-      case '{':
-      case '(':
-      case '[':
-      case TK_defer_open:
-      case TK_defer_typed:
-      case TK_array_typed:
-      case TK_struct_typed:
-      case TK_not:
-      case TK_plusplus:
-      case '-':
-      case '~':
-      case '#':
-      case '&':
-      case TK_current_context:
-         return true;
-      default:
-         return false;
-   }
-}
-
-//********************************************************************************************************************
-// Determine if ?? operator should be treated as postfix presence check or binary if-empty.
+// Determine if ?? is adjacent to its left operand and should be treated as a postfix presence check.
 // Used by AST pipeline (ast_builder.cpp).
 
-bool LexState::should_emit_presence()
+bool LexState::should_emit_presence() const
 {
-   LexToken lookahead = (this->lookahead != TK_eof) ? this->lookahead : this->lookahead_token();
-   return !token_starts_expression(lookahead);
+   if (this->current_token_offset IS 0 or this->current_token_offset > this->source.size()) return false;
+   return not std::isspace(uint8_t(this->source[this->current_token_offset - 1]));
 }

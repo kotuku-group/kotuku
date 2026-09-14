@@ -1429,7 +1429,7 @@ std::optional<AstBuilder::BinaryOpInfo> AstBuilder::match_binary_operator(const 
          info.right = 3;
          return info;
       case TokenKind::Presence:
-         // Only treat ?? as binary if-empty when lookahead indicates binary usage
+         // Whitespace before ?? selects the binary if-empty form; adjacency selects postfix presence.
          if (not this->ctx.lex().should_emit_presence()) {
             info.op = AstBinaryOperator::IfEmpty;
             info.left = 1;

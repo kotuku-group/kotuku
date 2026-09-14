@@ -262,7 +262,7 @@ public:
    FuncState& fs_init();
 
    [[maybe_unused]] void assign_adjust(BCREG VariableCount, BCREG, ExpDesc *);
-   [[nodiscard]] bool should_emit_presence();
+   [[nodiscard]] bool should_emit_presence() const;
 
    // Public parser helpers
    GCstr * keepstr(std::string_view Value);

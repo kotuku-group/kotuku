@@ -2840,6 +2840,29 @@ return (value ?? fallback) ? value : fallback, value??, (value ?? fallback)??, (
       return false;
    }
 
+   auto separated = build_ast_from_source(
+      "local value = 'present'\n"
+      "local present = value??\n"
+      "next_value()\n");
+   if (not separated.chunk.ok()) {
+      log.error("an adjacent presence check before an expression statement did not parse");
+      log_diagnostics(separated.diagnostics, log);
+      return false;
+   }
+
+   StatementListView separated_statements = separated.chunk.value_ref()->view();
+   const auto *presence_declaration = separated_statements.size() > 1 ?
+      std::get_if<LocalDeclStmtPayload>(&separated_statements[1].data) : nullptr;
+   const auto *following_statement = separated_statements.size() > 2 ?
+      std::get_if<ExpressionStmtPayload>(&separated_statements[2].data) : nullptr;
+   if (separated_statements.size() != 3 or not presence_declaration or presence_declaration->values.size() != 1 or
+       presence_declaration->values[0]->kind != AstNodeKind::PresenceExpr or not following_statement or
+       not following_statement->expression or following_statement->expression->kind != AstNodeKind::CallExpr) {
+      log.error("an adjacent presence check consumed the following expression statement");
+      log_block_outline(*separated.chunk.value_ref(), log);
+      return false;
+   }
+
    return true;
 }
 

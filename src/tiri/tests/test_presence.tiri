@@ -173,6 +173,21 @@ end
    assert(result != 42, "Should return boolean, not the numeric value")
 end
 
+@Test function EndsBeforeFollowingExpressionStatement()
+   local calls = 0
+
+   function next_value()
+      calls++
+   end
+
+   local value = 'present'
+   local present = value??
+   next_value()
+
+   assert(present is true, 'An adjacent postfix presence check should produce a boolean')
+   assert(calls is 1, 'The expression statement after a postfix presence check should execute')
+end
+
 -- Test chained field access
 @Test function ChainedAccess()
    local obj = { user = { name = "Alice" } }
