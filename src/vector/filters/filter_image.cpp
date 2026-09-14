@@ -60,7 +60,7 @@ static ERR IMAGEFX_Draw(extImageFX *Self, struct acDraw *Args)
 
 static ERR IMAGEFX_Init(extImageFX *Self)
 {
-   if (!Self->Bitmap) return kt::Log().warning(ERR::UndefinedField);
+   if (!Self->Bitmap) return kt::Log().warning(ERR::FieldNotSet);
    return ERR::Okay;
 }
 

@@ -75,7 +75,7 @@ function declareErrors()
     "AddClass",                      -- An error occurred while creating a new class
     "Activate",                      -- Error while Activate()ing an object
     "DoubleInit",                    -- Warning - Attempt to initialise a resource twice
-    "UndefinedField|FieldNotSet",    -- A required field value is undefined
+    "FieldNotSet",                   -- A required field value is undefined
     "MissingClass",                  -- The class could not be found in the system
     "FileReadFlag",                  -- The File flag FL_READ was not set on initialisation
     "FileWriteFlag",                 -- The File flag FL_WRITE was not set on initialisation

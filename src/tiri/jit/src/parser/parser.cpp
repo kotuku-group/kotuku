@@ -34,15 +34,17 @@ static const struct {
    CSTRING name;      // Name for bitlib function (if applicable).
    uint8_t name_len;  // Cached name length for bitlib lookups.
 } priority[] = {
-  {6,6,nullptr,0}, {6,6,nullptr,0}, {7,7,nullptr,0}, {7,7,nullptr,0}, {7,7,nullptr,0},   // ADD SUB MUL DIV MOD
-  {10,9,nullptr,0}, {5,4,nullptr,0},                  // POW CONCAT (right associative)
-  {3,3,nullptr,0}, {3,3,nullptr,0},                  // EQ NE
-  {3,3,nullptr,0}, {3,3,nullptr,0}, {3,3,nullptr,0}, {3,3,nullptr,0},      // LT GE GT LE
-  {5,4,"band",4}, {3,2,"bor",3}, {4,3,"bxor",4}, {7,5,"lshift",6}, {7,5,"rshift",6},   // BAND BOR BXOR SHL SHR (C-style precedence: XOR binds tighter than OR)
-  {2,2,nullptr,0}, {1,1,nullptr,0}, {1,1,nullptr,0},         // AND OR IF_EMPTY
-  {3,3,"band",4},                     // HAS (flag test: bit.band(a,b) != 0)
-  {3,3,nullptr,0},                     // APPROX
-  {1,1,nullptr,0}                     // TERNARY
+   {9,9,nullptr,0}, {9,9,nullptr,0},                         // ADD SUB
+   {10,10,nullptr,0}, {10,10,nullptr,0}, {10,10,nullptr,0},  // MUL DIV MOD
+   {12,11,nullptr,0}, {6,5,nullptr,0},                       // POW CONCAT (right associative)
+   {3,3,nullptr,0}, {3,3,nullptr,0},                         // EQ NE
+   {3,3,nullptr,0}, {3,3,nullptr,0}, {3,3,nullptr,0}, {3,3,nullptr,0}, // LT GE GT LE
+   {7,7,"band",4}, {4,4,"bor",3}, {5,5,"bxor",4},        // BAND BOR BXOR
+   {8,8,"lshift",6}, {8,8,"rshift",6},                    // SHL SHR
+   {2,2,nullptr,0}, {1,1,nullptr,0}, {1,1,nullptr,0},        // AND OR IF_EMPTY
+   {3,3,"band",4},                                          // HAS (flag test: bit.band(a,b) != 0)
+   {3,3,nullptr,0},                                          // APPROX
+   {1,1,nullptr,0}                                           // TERNARY
 };
 
 #include "dump_bytecode.h"
