@@ -1,3 +1,4 @@
-namespace library_namespace_thunk thunk():num
+namespace library_namespace_thunk
+thunk():num
    return 7
 end

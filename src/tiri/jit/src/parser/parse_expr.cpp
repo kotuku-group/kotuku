@@ -1,6 +1,7 @@
 // Copyright © 2025-2026 Paul Manias
 // Shared helper functions used by AST parser
 
+#include <cctype>
 #include <format>
 #include <string>
 
@@ -64,50 +65,11 @@ static void expr_kvalue(FuncState *fs, TValue *v, ExpDesc *e)
 
 //********************************************************************************************************************
 
-static int token_starts_expression(LexToken tok)
-{
-   switch (tok) {
-      case TK_number:
-      case TK_string:
-      case TK_regex_string:
-      case TK_nil:
-      case TK_true:
-      case TK_false:
-      case TK_dots:
-      case TK_function:
-      case TK_raise:
-      case TK_name:
-      case '{':
-      case '(':
-      case TK_not:
-      case TK_plusplus:
-      case '-':
-      case '~':
-      case '#':
-      case '&':
-      case TK_current_context:
-         return 1;
-      default:
-         return 0;
-   }
-}
-
-//********************************************************************************************************************
-// Determine if ?? operator should be treated as postfix presence check or binary if-empty.
+// Determine if ?? is adjacent to its left operand and should be treated as a postfix presence check.
 // Used by AST pipeline (ast_builder.cpp).
 
-bool LexState::should_emit_presence()
+bool LexState::should_emit_presence() const
 {
-   // Use raw line numbers for comparison (lastline and lookahead_line are raw,
-   // effective_line() is encoded with file index in upper bits)
-   BCLine token_line = this->lastline;
-   BCLine operator_line = this->effective_line().lineNumber();
-   LexToken lookahead = (this->lookahead != TK_eof) ? this->lookahead : this->lookahead_token();
-   BCLine lookahead_line = this->lookahead_line;
-   // If the operator is on a different line than the token, it's definitely postfix
-   if (operator_line > token_line) return true;
-   // If the lookahead is on a different line than the operator, it's postfix
-   if (lookahead_line > operator_line) return true;
-   // Otherwise, check if the lookahead starts an expression
-   return !token_starts_expression(lookahead);
+   if (this->current_token_offset IS 0 or this->current_token_offset > this->source.size()) return false;
+   return not std::isspace(uint8_t(this->source[this->current_token_offset - 1]));
 }

@@ -1,4 +1,8 @@
 import './library_namespace_root'
 namespace library_namespace
 
-library_namespace.component_a = true
+function exported():bool
+   return true
+end
+
+library_namespace.component_a = exported()

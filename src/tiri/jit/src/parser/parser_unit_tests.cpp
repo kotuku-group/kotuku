@@ -2135,7 +2135,8 @@ static bool test_error_removal(kt::Log &Log)
 static bool test_library_namespace_declarations(kt::Log &Log)
 {
    auto created = discover_bindings_from_source(
-      "namespace sample { value=1 }\n"
+      "namespace sample\n"
+      "{ value=1 }\n"
       "local observed = sample.value\n");
    if (not created.chunk.ok() or not created.diagnostics.empty() or
        created.chunk.value_ref()->statements.empty() or
@@ -2154,7 +2155,8 @@ static bool test_library_namespace_declarations(kt::Log &Log)
    }
 
    auto callable = discover_bindings_from_source(
-      "namespace callable function(Value:num):num "
+      "namespace callable\n"
+      "function(Value:num):num "
       "if Value <= 1 then return 1 end return Value * callable(Value - 1) end\n");
    const NamespaceStmtPayload *callable_payload = callable.chunk.ok() and
       not callable.chunk.value_ref()->statements.empty() ?
@@ -2163,6 +2165,36 @@ static bool test_library_namespace_declarations(kt::Log &Log)
        callable_payload->initialiser->kind != AstNodeKind::FunctionExpr or not callable.diagnostics.empty()) {
       Log.error("a function namespace declaration did not retain its function literal");
       log_diagnostics(callable.diagnostics, Log);
+      return false;
+   }
+
+   auto deferred = discover_bindings_from_source(
+      "namespace deferred\n"
+      "thunk():num return 7 end\n");
+   const NamespaceStmtPayload *deferred_payload = deferred.chunk.ok() and
+      not deferred.chunk.value_ref()->statements.empty() ?
+      std::get_if<NamespaceStmtPayload>(&deferred.chunk.value_ref()->statements[0]->data) : nullptr;
+   if (not deferred_payload or deferred_payload->mode != NamespaceDeclarationMode::Create or
+       not deferred_payload->initialiser or deferred_payload->initialiser->kind != AstNodeKind::CallExpr or
+       not deferred.diagnostics.empty()) {
+      Log.error("a multiline thunk namespace declaration did not retain its deferred initialiser");
+      log_diagnostics(deferred.diagnostics, Log);
+      return false;
+   }
+
+   auto joined = discover_bindings_from_source(
+      "namespace shared\n"
+      "function exported():num return 1 end\n"
+      "thunk deferred_export():num return 2 end\n");
+   const NamespaceStmtPayload *joined_payload = joined.chunk.ok() and
+      not joined.chunk.value_ref()->statements.empty() ?
+      std::get_if<NamespaceStmtPayload>(&joined.chunk.value_ref()->statements[0]->data) : nullptr;
+   if (not joined_payload or joined_payload->mode != NamespaceDeclarationMode::Join or joined_payload->initialiser or
+       joined.chunk.value_ref()->statements.size() != 3 or
+       joined.chunk.value_ref()->statements[1]->kind != AstNodeKind::FunctionStmt or
+       joined.chunk.value_ref()->statements[2]->kind != AstNodeKind::FunctionStmt or not joined.diagnostics.empty()) {
+      Log.error("a namespace join consumed a following named function or thunk declaration");
+      log_diagnostics(joined.diagnostics, Log);
       return false;
    }
 
@@ -2759,7 +2791,8 @@ static bool test_ternary_presence_expr_ast(kt::Log &log)
    constexpr const char* source = R"(
 local value = nil
 local fallback = 10
-return (value ?? fallback) ? value : fallback, value??, (value ?? fallback)??
+return (value ?? fallback) ? value : fallback, value??, (value ?? fallback)??, (value ??
+   fallback)
 )";
 
    auto result = build_ast_from_source(source);
@@ -2784,8 +2817,8 @@ return (value ?? fallback) ? value : fallback, value??, (value ?? fallback)??
    }
 
    const auto* payload = std::get_if<ReturnStmtPayload>(&return_stmt.data);
-   if (not payload or payload->values.size() != 3) {
-      log.error("return should provide three expressions");
+   if (not payload or payload->values.size() != 4) {
+      log.error("return should provide four expressions");
       return false;
    }
 
@@ -2799,6 +2832,34 @@ return (value ?? fallback) ? value : fallback, value??, (value ?? fallback)??
    }
    if (not payload->values[2] or not (payload->values[2]->kind IS AstNodeKind::PresenceExpr)) {
       log.error("third return expression should be nested presence check");
+      return false;
+   }
+   const auto *multiline = payload->values[3] ? std::get_if<BinaryExprPayload>(&payload->values[3]->data) : nullptr;
+   if (not multiline or not (multiline->op IS AstBinaryOperator::IfEmpty)) {
+      log.error("fourth return expression should be a multiline if-empty expression");
+      return false;
+   }
+
+   auto separated = build_ast_from_source(
+      "local value = 'present'\n"
+      "local present = value??\n"
+      "next_value()\n");
+   if (not separated.chunk.ok()) {
+      log.error("an adjacent presence check before an expression statement did not parse");
+      log_diagnostics(separated.diagnostics, log);
+      return false;
+   }
+
+   StatementListView separated_statements = separated.chunk.value_ref()->view();
+   const auto *presence_declaration = separated_statements.size() > 1 ?
+      std::get_if<LocalDeclStmtPayload>(&separated_statements[1].data) : nullptr;
+   const auto *following_statement = separated_statements.size() > 2 ?
+      std::get_if<ExpressionStmtPayload>(&separated_statements[2].data) : nullptr;
+   if (separated_statements.size() != 3 or not presence_declaration or presence_declaration->values.size() != 1 or
+       presence_declaration->values[0]->kind != AstNodeKind::PresenceExpr or not following_statement or
+       not following_statement->expression or following_statement->expression->kind != AstNodeKind::CallExpr) {
+      log.error("an adjacent presence check consumed the following expression statement");
+      log_block_outline(*separated.chunk.value_ref(), log);
       return false;
    }
 
