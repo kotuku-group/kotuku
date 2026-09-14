@@ -287,6 +287,23 @@ extern "C" void bc_object_getfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
 }
 
 //********************************************************************************************************************
+// Report a write-table miss according to whether the field is absent or immutable.
+
+LJ_NORET static void object_write_field_error(lua_State *L, GCobject *Obj, GCstr *Key)
+{
+   Field *field;
+   auto error = ERR::UnsupportedField;
+
+   if (Obj->classptr and (Obj->classptr->findField(Key->hash, &field, nullptr) IS ERR::Okay) and
+      not (field->Flags & (FD_W|FD_I))) {
+      error = ERR::ImmutableField;
+   }
+
+   luaL_error(L, error, "%s: %s.%s", GetErrorMsg(error),
+      Obj->classptr ? Obj->classptr->ClassName.c_str() : "?", strdata(Key));
+}
+
+//********************************************************************************************************************
 // Fast object field set - called from BC_OBSETF bytecode handler. Writes Val to the object field, or throws an error.
 //
 // Ins points to the current 64-bit instruction.  The P32 field caches the write table index for O(1) repeat access.
@@ -337,8 +354,7 @@ extern "C" void bc_object_setfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
       else { // Cache miss - binary search and cache
          auto found = std::lower_bound(wt_data, wt_data + wt_size, obj_write(Key->hash), write_hash);
          if ((found IS wt_data + wt_size) or (found->Hash != Key->hash)) {
-            luaL_error(L, ERR::UnsupportedField, "Field does not exist or is read-only: %s.%s",
-               Obj->classptr ? Obj->classptr->ClassName.c_str() : "?", strdata(Key));
+            object_write_field_error(L, Obj, Key);
          }
          setbc_p32(Ins, uint32_t(found - wt_data));
          func = found;
@@ -347,8 +363,7 @@ extern "C" void bc_object_setfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
    else { // JIT path - no caching
       auto found = std::lower_bound(wt_data, wt_data + wt_size, obj_write(Key->hash), write_hash);
       if ((found IS wt_data + wt_size) or (found->Hash != Key->hash)) {
-         luaL_error(L, ERR::UnsupportedField, "Field does not exist or is read-only: %s.%s",
-            Obj->classptr ? Obj->classptr->ClassName.c_str() : "?", strdata(Key));
+         object_write_field_error(L, Obj, Key);
       }
       func = found;
    }

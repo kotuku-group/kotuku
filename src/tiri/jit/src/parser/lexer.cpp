@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <cmath>
 #include <concepts>
 #include <format>
 #include <string>
@@ -1539,23 +1538,24 @@ static LexToken lex_scan(LexState *State, TValue *tv)
                setintV(tv, 0);  // 0 = unlimited (default)
                return TK_pipe;
             }
-            else if (isdigit(State->c)) {
-               // Pipe with limit: |2>, |10>, etc.
-               TValue limit_val;
-               lex_number(State, &limit_val);
-               if (State->c IS '>') {
+            else if (isdigit(State->c) and
+                     ((State->peek_next() IS '>') or
+                      (isdigit(State->peek_next()) and (State->peek(1) IS '>')))) {
+               // Limited pipe: |2> or |10>.  Recognise the complete token before consuming digits so that an
+               // ordinary bitwise OR such as flags|1 remains unambiguous.  Limits are intentionally capped at two
+               // digits to keep this lookahead bounded.
+               int limit = State->c - '0';
+               lex_next(State);
+               if (isdigit(State->c)) {
+                  limit = (limit * 10) + State->c - '0';
                   lex_next(State);
-                  // Validate limit is a positive integer
-                  double num = tvisnum(&limit_val) ? numV(&limit_val) : double(intV(&limit_val));
-                  if (num < 1 or num != std::floor(num)) lj_lex_error(State, TK_pipe, ErrMsg::XSYMBOL);
+               }
+               State->assert_condition(State->c IS '>', "limited pipe lookahead mismatch");
+               lex_next(State);
+               if (limit < 1) lj_lex_error(State, TK_pipe, ErrMsg::XSYMBOL);
 
-                  // Store limit in token payload
-                  *tv = limit_val;
-                  return TK_pipe;
-               }
-               else { // Error: expected '>' after number
-                  lj_lex_error(State, TK_pipe, ErrMsg::XSYMBOL);
-               }
+               setintV(tv, limit);
+               return TK_pipe;
             }
             return '|';  // Bitwise OR
 

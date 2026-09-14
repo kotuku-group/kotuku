@@ -135,12 +135,17 @@ ParserResult<IrEmitUnit> IrEmitter::emit_try_except_stmt(const TryExceptPayload 
    size_t handler_index = first_handler_index;
 
    for (const auto &clause : Payload.except_clauses) {
-      // Pack filter codes inline (up to 4 16-bit error codes into 64-bit integer)
+      if (clause.filter_codes.size() > MAX_EXCEPTION_FILTER_CODES) {
+         return ParserResult<IrEmitUnit>::failure(this->make_error(
+            ParserErrorCode::InternalInvariant, "too many error-code filters in try block", SourceSpan{}));
+      }
+
+      // Pack filter codes inline (up to MAX_EXCEPTION_FILTER_CODES 16-bit error codes into a 64-bit integer)
       uint64_t packed_filter = 0;
       if (not clause.filter_codes.empty()) {
          int shift = 0;
          for (const auto &code_expr : clause.filter_codes) {
-            if (not code_expr or shift >= 64) break;
+            if (not code_expr) continue;
 
             // Try to evaluate the expression as a constant
             auto code_result = this->emit_expression(*code_expr);

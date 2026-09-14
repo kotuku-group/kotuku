@@ -157,6 +157,7 @@ enum class TiriType : uint8_t {
 
 // Maximum number of explicitly typed return values per function
 constexpr size_t MAX_RETURN_TYPES = 8;
+constexpr size_t MAX_EXCEPTION_FILTER_CODES = 4;
 
 //********************************************************************************************************************
 // Memory reference

@@ -1055,6 +1055,7 @@ static CSTRING diagnostic_code_name(ParserErrorCode Code)
       case ParserErrorCode::RecoverySkippedTokens:  return "RecoverySkippedTokens";
       case ParserErrorCode::InvalidAssignment:      return "InvalidAssignment";
       case ParserErrorCode::UnresolvedMethodReceiver: return "UnresolvedMethodReceiver";
+      case ParserErrorCode::TooManyExceptionFilters: return "TooManyExceptionFilters";
       default: return "Unknown";
    }
 }

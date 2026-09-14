@@ -87,7 +87,6 @@ enum class ERR : int32_t {
    AddClass = 65,
    Activate = 66,
    DoubleInit = 67,
-   UndefinedField = 68,
    FieldNotSet = 68,
    MissingClass = 69,
    FileReadFlag = 70,

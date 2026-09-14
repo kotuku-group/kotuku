@@ -211,8 +211,10 @@ end
    -- Test OBSETF - write to a read-only field (runtime error, timestamp exists in dictionary)
    try
       t.timestamp = 1
-   except ex
+   except ex when ERR_ImmutableField
       assert(ex.message.find('Time.timestamp'), "Error message should mention the accessed field, got: " .. ex.message)
+   except ex
+      assert(false, "Expected ImmutableField, got error code " .. tostring(ex.code) .. ": " .. ex.message)
    success
       assert(false, "Expected error when writing a read-only field")
    end
