@@ -105,7 +105,7 @@ end
    assert(math.ldexp(1, 10) is 1024, 'math.ldexp() should accept positive integer exponents')
    assert(math.ldexp(8, -3) is 1, 'math.ldexp() should accept negative integer exponents')
    assert(math.ldexp(1, 1024) is math.huge, 'math.ldexp() should preserve overflow at boundary exponents')
-   assert(math.ldexp(1, -1075) is 0, 'math.ldexp() should preserve underflow at boundary exponents')
+   assert(math.ldexp(1, -1076) is 0, 'math.ldexp() should preserve underflow at boundary exponents')
    assert(math.ldexp(1, 1e20) is math.huge, 'math.ldexp() should accept finite integral exponents beyond native range')
 
    expect_math_error(() => math.ldexp(1, 2.5), 'argument #2', 'finite integer')

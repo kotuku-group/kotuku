@@ -16,10 +16,6 @@ function ensureFolder(Path)
    end
 end
 
-function resetPath(Path:str)
-   mSys.DeleteFile(Path)
-end
-
 function writeFile(Path:str, Content:str)
    file = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
    file.acWrite(Content)
@@ -172,7 +168,7 @@ end
    read_path = glTempRoot .. 'mutable_string_read.txt'
    expected = 'Mutable string buffer content'
 
-   resetPath(read_path)
+   mSys.DeleteFile(read_path)
    writeFile(read_path, expected)
 
    fl = obj.new('file', { src=read_path, flags=FL_READ } )
@@ -190,7 +186,7 @@ end
    end
 
    write_path = glTempRoot .. 'immutable_string_write.txt'
-   resetPath(write_path)
+   mSys.DeleteFile(write_path)
    write_file = obj.new('file', { src=write_path, flags=FL_NEW|FL_WRITE } )
    err, result = write_file.acWrite('ordinary input')
    assert(err is ERR_Okay, 'acWrite() should continue accepting ordinary immutable strings.')
@@ -229,7 +225,7 @@ end
    read_path = glTempRoot .. 'buffer_content_source.txt'
    expected = 'Alpha\nBeta\nGamma'
 
-   resetPath(read_path)
+   mSys.DeleteFile(read_path)
    writeFile(read_path, expected)
 
    fl = obj.new('file', { src=read_path, flags=FL_READ|FL_WRITE })
@@ -291,7 +287,7 @@ end
 @Test function BufferContentEmptyFile()
    read_path = glTempRoot .. 'buffer_content_empty.txt'
 
-   resetPath(read_path)
+   mSys.DeleteFile(read_path)
 
    fl = obj.new('file', { src=read_path, flags=FL_NEW|FL_WRITE })
    fl = nil
@@ -358,7 +354,7 @@ end
 
 @Test function ResolvePathNoFileCheck()
    missing_path = glTempRoot .. 'resolve_path.tmp'
-   resetPath(missing_path)
+   mSys.DeleteFile(missing_path)
 
    err = mSys.ResolvePath(missing_path)
    assert(err is ERR_FileNotFound, 'ResolvePath() without RSF_NO_FILE_CHECK should fail for a missing file, got: ' .. mSys.GetErrorMsg(err))
@@ -376,7 +372,7 @@ end
    nested_path = test_root .. 'nested/'
    target_path = test_root .. 'resolve_approx.txt'
 
-   resetPath(test_root)
+   mSys.DeleteFile(test_root)
    ensureFolder(nested_path)
    writeFile(target_path, 'Resolve path content')
 
@@ -419,7 +415,7 @@ end
 @Test function CompareFilePaths()
    compare_path = glTempRoot .. 'compare_file.tmp'
 
-   resetPath(compare_path)
+   mSys.DeleteFile(compare_path)
 
    writeFile(compare_path, 'Compare me')
 
@@ -434,7 +430,7 @@ end
 
 @Test function ExclusiveFileCreation()
    local target = glTempRoot .. 'exclusive.tmp'
-   resetPath(target)
+   mSys.DeleteFile(target)
    writeFile(target, 'original')
 
    try
@@ -444,7 +440,7 @@ end
    end
    assert(readFile(target) is 'original', 'Exclusive creation must not truncate an existing file.')
 
-   resetPath(target)
+   mSys.DeleteFile(target)
    do
       local created <close> = obj.new('file', { path=target, flags=FL_NEW|FL_WRITE|FL_EXCLUSIVE })
       check created.acWrite('exclusive')
@@ -471,7 +467,7 @@ end
    folder_path = root_path .. 'alpha/beta/'
    child_path = folder_path .. 'child.txt'
 
-   resetPath(root_path)
+   mSys.DeleteFile(root_path)
 
    err = mSys.CreateFolder(folder_path, 0)
    assert(err is ERR_Okay, 'CreateFolder() failed: ' .. mSys.GetErrorMsg(err))
@@ -499,8 +495,8 @@ end
    dest_path = glTempRoot .. 'copy_dest.tmp'
    callback_hits = 0
 
-   resetPath(src_path)
-   resetPath(dest_path)
+   mSys.DeleteFile(src_path)
+   mSys.DeleteFile(dest_path)
 
    writeFile(src_path, 'Copied content')
 
@@ -519,9 +515,8 @@ end
 @Test function MoveFile()
    src_path = glTempRoot .. 'move_source.tmp'
    dest_path = glTempRoot .. 'move_dest.tmp'
-
-   resetPath(src_path)
-   resetPath(dest_path)
+   mSys.DeleteFile(src_path)
+   mSys.DeleteFile(dest_path)
 
    writeFile(src_path, 'Moved content')
 
@@ -536,11 +531,41 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@Test; @Requires(windows_platform=true)
+function MoveFileReplacesOpenDestination()
+   src_path = glTempRoot .. 'move_open_source.tmp'
+   dest_path = glTempRoot .. 'move_open_dest.tmp'
+   old_content = 'Original destination content'
+   new_content = 'Replacement content'
+   mSys.DeleteFile(src_path)
+   mSys.DeleteFile(dest_path)
+
+   writeFile(src_path, new_content)
+   writeFile(dest_path, old_content)
+
+   local old_reader <close> = obj.new('file', { path=dest_path, flags=FL_READ })
+   err = mSys.MoveFile(src_path, dest_path)
+   assert(err is ERR_Okay, 'MoveFile() should replace a destination that has an open reader: ' .. mSys.GetErrorMsg(err))
+
+   old_buffer = string.alloc(#old_content)
+   err, result = old_reader.acRead(old_buffer)
+   assert(err is ERR_Okay, 'The existing destination reader should remain readable: ' .. mSys.GetErrorMsg(err))
+   assert(result is #old_content, 'The existing destination reader returned an unexpected byte count.')
+   assert(old_buffer.sub(0, result) is old_content,
+      'The existing destination reader should retain the original file content.')
+
+   err = mSys.AnalysePath(src_path)
+   assert(err != ERR_Okay, 'MoveFile() should remove the replacement source file.')
+   assert(readFile(dest_path) is new_content, 'New readers should observe the replacement file content.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Test function ReadFileToBuffer()
    read_path = glTempRoot .. 'buffer_read.txt'
    expected = 'Buffer content'
 
-   resetPath(read_path)
+   mSys.DeleteFile(read_path)
    writeFile(read_path, expected)
 
    buffer = array<byte, #expected>
@@ -665,7 +690,7 @@ end
    source = glTempRoot .. 'link_source.txt'
    target = glTempRoot .. 'link_target.txt'
 
-   resetPath(target)
+   mSys.DeleteFile(target)
    writeFile(source, 'Linked file content')
 
    err = mSys.CreateLink(target, source)
