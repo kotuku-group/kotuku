@@ -399,6 +399,19 @@ WRITE_TABLE * get_write_table(objMetaClass *Class)
 }
 
 //********************************************************************************************************************
+// Classify a write-table miss by checking whether the field exists but is immutable.
+
+ERR classify_object_write_miss(objMetaClass *Class, uint32_t FieldHash)
+{
+   Field *field;
+
+   if (Class and (Class->findField(FieldHash, &field, nullptr) IS ERR::Okay) and not (field->Flags & (FD_W|FD_I))) {
+      return ERR::ImmutableField;
+   }
+   else return ERR::UnsupportedField;
+}
+
+//********************************************************************************************************************
 // Usage: object.fieldName = newvalue
 //
 // Using all caps abbreviations is discouraged when designing class fields, e.g. JITOptions won't work out, but
@@ -422,7 +435,7 @@ extern int object_newindex(lua_State *Lua)
                if ((func->Field->Flags & FD_INIT) and obj->initialised()) error = ERR::NoFieldAccess;
                else error = func->Call(Lua, obj, func->Field, 3);
             }
-            else error = ERR::NoSupport;
+            else error = classify_object_write_miss(def->classptr, hash);
             release_object(def);
 
             if (error >= ERR::ExceptionThreshold) {

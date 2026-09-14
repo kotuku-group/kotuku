@@ -374,6 +374,7 @@ constexpr uint32_t simple_hash(CSTRING String, uint32_t Hash = 0) {
 
 READ_TABLE * get_read_table(objMetaClass *);
 WRITE_TABLE * get_write_table(objMetaClass *);
+ERR classify_object_write_miss(objMetaClass *, uint32_t);
 
 //********************************************************************************************************************
 

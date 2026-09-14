@@ -222,8 +222,10 @@ extern "C" void bc_object_getfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
 
    const auto saved_base = savestack(L, L->base);
    const auto saved_top = savestack(L, L->top);
+
    // Interpreter destinations are stack slots and must follow relocation.  JIT recorders pass global_State::tmptv
    // with no instruction pointer, so that external destination must remain a raw pointer.
+
    const auto dest_offset = Ins ? savestack(L, Dest) : ptrdiff_t(0);
 
    if (not Ins) {
@@ -235,6 +237,7 @@ extern "C" void bc_object_getfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
 
    // Deliberately redundant with the access_object() failure inside the field handler: testing here yields a precise
    // DoesNotExist message instead of a generic read failure.  Do not remove as an optimisation.
+
    if (object_is_dead(Obj)) luaL_error(L, ERR::DoesNotExist, "Object dereferenced, unable to read field.");
 
    // Use raw pointers for std::lower_bound to avoid MSVC debug iterator tracking.
@@ -271,6 +274,7 @@ extern "C" void bc_object_getfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
    }
 
    // Call the field handler - it pushes result onto the Lua stack
+
    const auto result_count = func->Call(L, *func, Obj);
    const auto result_dest = Ins ? restorestack(L, dest_offset) : Dest;
    if (result_count > 0) copyTV(L, result_dest, L->top - 1);
@@ -291,13 +295,7 @@ extern "C" void bc_object_getfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
 
 LJ_NORET static void object_write_field_error(lua_State *L, GCobject *Obj, GCstr *Key)
 {
-   Field *field;
-   auto error = ERR::UnsupportedField;
-
-   if (Obj->classptr and (Obj->classptr->findField(Key->hash, &field, nullptr) IS ERR::Okay) and
-      not (field->Flags & (FD_W|FD_I))) {
-      error = ERR::ImmutableField;
-   }
+   auto error = classify_object_write_miss(Obj->classptr, Key->hash);
 
    luaL_error(L, error, "%s: %s.%s", GetErrorMsg(error),
       Obj->classptr ? Obj->classptr->ClassName.c_str() : "?", strdata(Key));
@@ -327,6 +325,7 @@ extern "C" void bc_object_setfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
 
    // Ensure L->top is past the value register before any error can be thrown.
    // luaL_error pushes the error string to L->top, which would corrupt active registers if too low.
+
    const auto stack_base = tvref(L->stack);
    const auto stack_end  = stack_base + L->stacksize;
    auto val_ptr    = Val;
@@ -339,6 +338,7 @@ extern "C" void bc_object_setfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
 
    // Deliberately redundant with the access_object() failure below: testing here yields a precise DoesNotExist
    // message instead of a generic ERR::AccessObject.  Do not remove as an optimisation.
+
    if (object_is_dead(Obj)) luaL_error(L, ERR::DoesNotExist, "Object dereferenced, unable to write field.");
 
    auto write_table = get_write_table(Obj->classptr);
@@ -401,6 +401,7 @@ extern "C" int ir_object_field_type(GCobject *Obj, GCstr *Key, int &Offset, uint
       FieldFlags = flags;
 
       // NB: Order is important
+
       if (flags & (FD_ARRAY|FD_VECTOR)) return IRT_ARRAY;
       else if (flags & FD_STRING) { FieldFlags &= ~FD_POINTER; return IRT_STR; }
       else if (flags & (FD_DOUBLE|FD_INT64)) return IRT_NUM;
