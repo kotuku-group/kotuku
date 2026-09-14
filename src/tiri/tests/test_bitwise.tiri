@@ -47,6 +47,16 @@ end
    assert(3 != 4, '!= remains not-equal')
 end
 
+@Test function BitwiseBindsBeforeComparisons()
+   local lhs, first, second = 3, 1, 2
+   assert(lhs is first | second, 'OR on the right of equality should evaluate before the comparison')
+   assert(first | second is lhs, 'OR on the left of equality should evaluate before the comparison')
+   assert(lhs != first | first, 'OR on the right of inequality should evaluate before the comparison')
+   assert(lhs < first | 4, 'OR on the right of ordering should evaluate before the comparison')
+   assert(first | second in array<int> { 3 }, 'OR on the left of membership should evaluate before the membership test')
+   assert(lhs has first | second, 'has should continue to consume an unparenthesised OR mask')
+end
+
 @Test function CStylePrecedence()
    -- Test C-style precedence: AND > XOR > OR
    -- XOR should bind tighter than OR

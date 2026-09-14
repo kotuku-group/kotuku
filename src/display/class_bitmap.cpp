@@ -1139,7 +1139,7 @@ static ERR BITMAP_Resize(extBitmap *Self, struct acResize *Args)
       }
       else return log.warning(ERR::AllocMemory);
    }
-   else return log.warning(ERR::UndefinedField);
+   else return log.warning(ERR::FieldNotSet);
 
 setfields:
    Self->Width         = width;
