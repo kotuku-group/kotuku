@@ -4,7 +4,7 @@
 #pragma warning (disable : 4244 4311 4312 4267 4244 4068) // Disable annoying VC++ warnings
 #endif
 
-#define _WIN32_WINNT 0x0601 // Required for time-zone APIs and CRITICAL_SECTION.
+#define _WIN32_WINNT 0x0A00 // Required for FileRenameInfoEx and POSIX-style file replacement.
 #define NO_STRICT // Turn off type management due to C++ mangling issues.
 #define PSAPI_VERSION 1
 
