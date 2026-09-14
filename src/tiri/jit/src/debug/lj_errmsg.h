@@ -154,7 +154,7 @@ ERRDEF(XFSTR_EMPTY, ERR::Syntax,      "Empty interpolation in f-string")
 ERRDEF(XFSTR_BRACE, ERR::Syntax,      "Unclosed brace in f-string interpolation")
 ERRDEF(XEMPTYCOMMENT, ERR::Syntax,    "Empty comment appended to variable is not a decrement operation")
 ERRDEF(XNEST,       ERR::BufferOverflow, "Try blocks nested too deeply")
-ERRDEF(BADLIBRARY,  ERR::Syntax,      "Invalid library name; only alpha-numeric names are permitted with max 96 chars.")
+ERRDEF(BADLIBRARY,  ERR::Syntax,      "Invalid library path; use non-empty letter, digit, '-' or '_' components.")
 
 // Bytecode reader errors.
 ERRDEF(BCFMT,   ERR::WrongVersion,    "Cannot load incompatible bytecode")

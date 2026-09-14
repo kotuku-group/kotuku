@@ -16,6 +16,31 @@
 #endif
 
 //********************************************************************************************************************
+// Compare resolved host paths at a component boundary.  ResolvePath() removes lexical traversal components before
+// this check; folding separators (and ASCII case on Windows) keeps the comparison independent of host spelling.
+
+static bool import_path_is_contained(std::string Path, std::string Root)
+{
+   auto normalise = [](std::string &Value) {
+      for (char &value : Value) {
+         if (value IS '\\') value = '/';
+         #ifdef _WIN32
+            if ((value >= 'A') and (value <= 'Z')) value += 'a' - 'A';
+         #endif
+      }
+      while ((Value.size() > 1) and (Value.back() IS '/')) Value.pop_back();
+   };
+
+   normalise(Path);
+   normalise(Root);
+   if (Path IS Root) return true;
+   if (Root IS "/") return Path.starts_with('/');
+   if (Root.ends_with(':')) return Path.starts_with(Root);
+   Root.push_back('/');
+   return Path.starts_with(Root);
+}
+
+//********************************************************************************************************************
 
 ParserContext & ParserContext::operator=(ParserContext &&other) noexcept
 {
@@ -458,13 +483,9 @@ void ParserContext::pop_import()
 
 std::string ParserContext::resolve_lib_to_path(std::string_view &Library) const
 {
-   // For security purposes, check the validity of the library name.
-
-   int slash_count = 0;
-
    bool local = false;
    std::string parent_prefix;
-   if (Library.starts_with("./")) { // Local libraries are permitted if the name starts with "./" and otherwise adheres to path rules
+   if (Library.starts_with("./")) {
       local = true;
       Library.remove_prefix(2);
    }
@@ -473,62 +494,76 @@ std::string ParserContext::resolve_lib_to_path(std::string_view &Library) const
          local = true;
          parent_prefix.append("../");
          Library.remove_prefix(3);
-         slash_count++;
       }
    }
 
-   size_t i;
-   for (i=0; i < Library.size(); i++) {
-      if ((Library[i] >= 'a') and (Library[i] <= 'z')) continue;
-      if ((Library[i] >= 'A') and (Library[i] <= 'Z')) continue;
-      if ((Library[i] >= '0') and (Library[i] <= '9')) continue;
-      if ((Library[i] IS '-') or (Library[i] IS '_')) continue;
-      if (Library[i] IS '/') { slash_count++; continue; }
-      break;
-   }
-
-   if ((i < Library.size()) or (i >= 96) or (slash_count > 2)) {
+   bool component_has_character = false;
+   for (char value : Library) {
+      if (value IS '/') {
+         if (not component_has_character) {
+            lj_lex_error(this->lex_state, 0, ErrMsg::BADLIBRARY);
+            return "";
+         }
+         component_has_character = false;
+         continue;
+      }
+      if (((value >= 'a') and (value <= 'z')) or ((value >= 'A') and (value <= 'Z')) or
+          ((value >= '0') and (value <= '9')) or (value IS '-') or (value IS '_')) {
+         component_has_character = true;
+         continue;
+      }
       lj_lex_error(this->lex_state, 0, ErrMsg::BADLIBRARY);
       return "";
    }
 
-   std::string result(parent_prefix);
-   result.append(Library);
+   if (not component_has_character) {
+      lj_lex_error(this->lex_state, 0, ErrMsg::BADLIBRARY);
+      return "";
+   }
 
-   // Prepend the base path
+   std::string root;
 
    if (local) {
+      root = parent_prefix;
       if (this->lex_state->chunk_arg) {
-         // Get the directory of the current file from chunk_arg
          std::string current_file(this->lex_state->chunk_arg);
 
-         // Strip leading '@' or '=' from chunk_arg (Lua conventions for source naming)
          if (not current_file.empty() and (current_file[0] == '@' or current_file[0] == '=')) {
             current_file = current_file.substr(1);
          }
 
-         // Find the last path separator
          size_t last_sep = current_file.find_last_of("/\\");
          if (last_sep != std::string::npos) {
-            std::string dir = current_file.substr(0, last_sep + 1);
-            result = dir + result;
+            root.insert(0, current_file.substr(0, last_sep + 1));
          }
-         else { // Use script's working path as fallback
+         else {
             std::string_view working_path;
             this->lua_state->script->getWorkingPath(working_path);
-            if (not working_path.empty()) result.insert(0, working_path.data(), working_path.size());
+            if (not working_path.empty()) root.insert(0, working_path.data(), working_path.size());
          }
       }
       else { // Use script's working path as fallback
          std::string_view working_path;
          this->lua_state->script->getWorkingPath(working_path);
-         if (not working_path.empty()) result.insert(0, working_path.data(), working_path.size());
+         if (not working_path.empty()) root.insert(0, working_path.data(), working_path.size());
       }
    }
-   else result.insert(0, "scripts:");
+   else root = "scripts:";
 
+   std::string result(root);
+   result.append(Library);
    result.append(".tiri");
-   return result;
+
+   std::string resolved_root;
+   std::string resolved_result;
+   if ((ResolvePath(root, RSF::NO_FILE_CHECK, &resolved_root) != ERR::Okay) or
+       (ResolvePath(result, RSF::NO_FILE_CHECK, &resolved_result) != ERR::Okay) or
+       not import_path_is_contained(resolved_result, resolved_root)) {
+      lj_lex_error(this->lex_state, 0, ErrMsg::BADLIBRARY);
+      return "";
+   }
+
+   return resolved_result;
 }
 
 //********************************************************************************************************************

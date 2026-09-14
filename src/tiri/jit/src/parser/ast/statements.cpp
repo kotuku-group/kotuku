@@ -1787,6 +1787,10 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
    }
 
    std::string path = this->ctx.resolve_lib_to_path(mod_name);
+   if (path.empty()) {
+      return ParserResult<ImportEntryPayload>::failure(
+         this->ctx.make_error(ParserErrorCode::UnexpectedToken, path_token, "Invalid import path"));
+   }
 
    // Check for circular import
 
