@@ -2184,13 +2184,16 @@ static bool test_library_namespace_declarations(kt::Log &Log)
 
    auto joined = discover_bindings_from_source(
       "namespace shared\n"
-      "local observed = shared\n");
+      "function exported():num return 1 end\n"
+      "thunk deferred_export():num return 2 end\n");
    const NamespaceStmtPayload *joined_payload = joined.chunk.ok() and
       not joined.chunk.value_ref()->statements.empty() ?
       std::get_if<NamespaceStmtPayload>(&joined.chunk.value_ref()->statements[0]->data) : nullptr;
    if (not joined_payload or joined_payload->mode != NamespaceDeclarationMode::Join or joined_payload->initialiser or
-       not joined.diagnostics.empty()) {
-      Log.error("a namespace declaration without an initialiser did not remain a join");
+       joined.chunk.value_ref()->statements.size() != 3 or
+       joined.chunk.value_ref()->statements[1]->kind != AstNodeKind::FunctionStmt or
+       joined.chunk.value_ref()->statements[2]->kind != AstNodeKind::FunctionStmt or not joined.diagnostics.empty()) {
+      Log.error("a namespace join consumed a following named function or thunk declaration");
       log_diagnostics(joined.diagnostics, Log);
       return false;
    }

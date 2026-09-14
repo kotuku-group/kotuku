@@ -1945,8 +1945,9 @@ ParserResult<StmtNodePtr> AstBuilder::parse_namespace()
       if (not initialiser.ok()) return ParserResult<StmtNodePtr>::failure(initialiser.error_ref());
       payload.initialiser = std::move(initialiser.value_ref());
    }
-   else if (initialiser_token.kind() IS TokenKind::Function or
-            initialiser_token.kind() IS TokenKind::ThunkToken) {
+   else if ((initialiser_token.kind() IS TokenKind::Function or
+             initialiser_token.kind() IS TokenKind::ThunkToken) and
+            this->ctx.tokens().peek(1).kind() IS TokenKind::LeftParen) {
       bool is_thunk = initialiser_token.kind() IS TokenKind::ThunkToken;
       this->ctx.tokens().advance();
       auto initialiser = this->parse_function_literal(initialiser_token, is_thunk, name_str);
