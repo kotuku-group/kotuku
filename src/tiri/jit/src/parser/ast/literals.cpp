@@ -995,23 +995,9 @@ ParserResult<FunctionReturnTypes> AstBuilder::parse_return_type_annotation()
             break;  // ... must be last
          }
 
-         // Handle overflow: 9th+ types force 8th to 'any'
          if (result.count >= MAX_RETURN_TYPES) {
-            if (result.count IS MAX_RETURN_TYPES) {
-               result.types[MAX_RETURN_TYPES - 1] = TiriType::Any;
-               result.required[MAX_RETURN_TYPES - 1] = false;
-            }
-            TiriType overflow_type = TiriType::Unknown;
-            struct_record *overflow_struct = nullptr;
-            ArrayElementDescriptor overflow_array;
-            bool overflow_required = false;
-            auto overflow_token = this->parse_type_annotation(
-               overflow_type, overflow_struct, overflow_array, overflow_required);
-            if (not overflow_token.ok()) {
-               return ParserResult<FunctionReturnTypes>::failure(overflow_token.error_ref());
-            }
-            result.count++;
-            continue;
+            return this->fail<FunctionReturnTypes>(ParserErrorCode::TooManyReturnTypes, current,
+               "A function supports at most 8 declared return types");
          }
 
          TiriType parsed = TiriType::Unknown;

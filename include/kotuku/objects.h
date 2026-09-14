@@ -919,7 +919,7 @@ class Create {
                }
                else {
                   log.warning("%s.%s field not defined.", T::CLASS_NAME, FieldName(f.FieldID));
-                  error = log.warning(ERR::UndefinedField);
+                  error = log.warning(ERR::FieldNotFound);
                   return;
                }
             }

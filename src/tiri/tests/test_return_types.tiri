@@ -673,17 +673,11 @@ end
    assert(h is 8, "8th of 8 returns")
 end
 
-@Test function MoreThanEightTypesDropped()
-   -- 9th+ types should be treated as 'any' (no type checking)
-   function manyReturns():<num, num, num, num, num, num, num, num, str>
-      -- 9th type (str) should be treated as any due to MAX_RETURN_TYPES = 8
-      return 1, 2, 3, 4, 5, 6, 7, 8, "ninth", false
-   end
-   a, b, c, d, e, f, g, h, i, j = manyReturns()
-   assert(a is 1, "1st return should be 1")
-   assert(h is 8, "8th return should be 8")
-   assert(i is "ninth", "9th return should work (treated as any)")
-   assert(j is nil, "10th undeclared return should be truncated")
+@Test function MoreThanEightTypesRejected()
+   local result = debug.validate('function invalid():<num, num, num, num, num, num, num, num, str!> end')
+   assert(result.success is false, 'A ninth return annotation should be rejected')
+   assert(result.diagnostics[0].code is 'TooManyReturnTypes',
+      'A ninth return annotation should report TooManyReturnTypes')
 end
 
 ----------------------------------------------------------------------------------------------------------------------

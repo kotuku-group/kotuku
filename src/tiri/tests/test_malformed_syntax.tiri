@@ -253,6 +253,14 @@ end
    })
 end
 
+@Test function ValidateReturnTypeAnnotationLimit()
+   local maximum = debug.validate('function valid():<num, num, num, num, num, num, num, str!> end')
+   assert(maximum.success is true, 'Eight return type annotations should remain valid')
+
+   assertInvalidCode('function invalid():<num, num, num, num, num, num, num, num, str!> end',
+      'TooManyReturnTypes', 'ninth return type annotation')
+end
+
 @Test function ValidateMalformedTypedArrays()
    assertInvalidCases('typed arrays', {
       {
@@ -519,6 +527,16 @@ end
          source = "with target print(target.name) end"
       }
    })
+end
+
+@Test function ValidateExceptFilterLimit()
+   local maximum = debug.validate(
+      'try print(1) except e when ERR_Args, ERR_Failed, ERR_Read, ERR_Search\nprint(e) end')
+   assert(maximum.success is true, 'Four except filter codes should remain valid')
+
+   assertInvalidCode(
+      'try print(1) except e when ERR_Args, ERR_Failed, ERR_Read, ERR_Search, ERR_TimeOut\nprint(e) end',
+      'TooManyExceptionFilters', 'fifth except filter code')
 end
 
 ----------------------------------------------------------------------------------------------------------------------

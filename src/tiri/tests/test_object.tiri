@@ -211,10 +211,37 @@ end
    -- Test OBSETF - write to a read-only field (runtime error, timestamp exists in dictionary)
    try
       t.timestamp = 1
-   except ex
+   except ex when ERR_ImmutableField
       assert(ex.message.find('Time.timestamp'), "Error message should mention the accessed field, got: " .. ex.message)
+   except ex
+      assert(false, "Expected ImmutableField, got error code " .. tostring(ex.code) .. ": " .. ex.message)
    success
       assert(false, "Expected error when writing a read-only field")
+   end
+
+   -- Computed-key assignments use object_newindex() and must report the same error code.
+   local dynamic_t:any = obj.new('time', {})
+   local field_name = 'timestamp'
+   try
+      dynamic_t[field_name] = 1
+   except ex when ERR_ImmutableField
+      assert(ex.message.find('Time.timestamp'), "Error message should mention the accessed field, got: " .. ex.message)
+   except ex
+      assert(false,
+         "Expected ImmutableField for computed key, got error code " .. tostring(ex.code) .. ": " .. ex.message)
+   success
+      assert(false, "Expected error when writing a read-only field through a computed key")
+   end
+
+   field_name = 'does_not_exist'
+   try
+      dynamic_t[field_name] = 1
+   except ex when ERR_UnsupportedField
+   except ex
+      assert(false,
+         "Expected UnsupportedField for absent computed key, got error code " .. tostring(ex.code) .. ": " .. ex.message)
+   success
+      assert(false, "Expected error when writing an absent field through a computed key")
    end
 
    -- Test compile-time detection of non-existent field (write)

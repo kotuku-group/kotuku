@@ -66,6 +66,7 @@ static CSTRING error_code_name(ParserErrorCode Code)
       case ParserErrorCode::ReturnTypeRequired:        return "Return type required";
       case ParserErrorCode::UndefinedVariable:         return "Undefined variable";
       case ParserErrorCode::ThunkDirectCall:           return "Thunk direct call";
+      case ParserErrorCode::TooManyReturnTypes:        return "Too many return types";
       case ParserErrorCode::FunctionSignatureMismatch: return "Function signature mismatch";
       case ParserErrorCode::RecoverySkippedTokens:     return "Recovery skipped tokens";
       case ParserErrorCode::AssignToConstant:          return "Assign to constant";
@@ -73,6 +74,7 @@ static CSTRING error_code_name(ParserErrorCode Code)
       case ParserErrorCode::OverrideProtectedGlobal:   return "Override protected global";
       case ParserErrorCode::InvalidAssignment:         return "Invalid assignment";
       case ParserErrorCode::UnresolvedMethodReceiver:  return "Unresolved method receiver";
+      case ParserErrorCode::TooManyExceptionFilters:   return "Too many exception filters";
       default: return "Unknown";
    }
 }

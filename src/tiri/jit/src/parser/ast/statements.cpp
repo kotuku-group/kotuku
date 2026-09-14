@@ -1330,6 +1330,10 @@ ParserResult<StmtNodePtr> AstBuilder::parse_try()
                return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, comma_token,
                   "Expected error code after ',' on the same line as 'when'");
             }
+            if (clause.filter_codes.size() >= MAX_EXCEPTION_FILTER_CODES) {
+               return this->fail<StmtNodePtr>(ParserErrorCode::TooManyExceptionFilters, code_token,
+                  "An 'except ... when' clause supports at most 4 error codes");
+            }
 
             auto next_code = this->parse_expression();
             if (not next_code.ok()) return ParserResult<StmtNodePtr>::failure(next_code.error_ref());
