@@ -16,6 +16,61 @@ reserved_keywords = array<str> {
    'where',
 }
 
+all_reserved_words = array<str> {
+   'and',
+   'as',
+   'await',
+   'break',
+   'check',
+   'checkall',
+   'choose',
+   'class',
+   'continue',
+   'defer',
+   'do',
+   'else',
+   'elseif',
+   'end',
+   'enum',
+   'except',
+   'export',
+   'extends',
+   'extern',
+   'false',
+   'finally',
+   'for',
+   'from',
+   'function',
+   'global',
+   'has',
+   'if',
+   'import',
+   'in',
+   'interface',
+   'is',
+   'local',
+   'namespace',
+   'nil',
+   'not',
+   'or',
+   'raise',
+   'record',
+   'repeat',
+   'return',
+   'success',
+   'then',
+   'thunk',
+   'true',
+   'try',
+   'until',
+   'using',
+   'when',
+   'where',
+   'while',
+   'with',
+   'yield',
+}
+
 assignment_operators = array<str> { '=', '?=', '??=' }
 
 primary_forms = array<str> {
@@ -67,15 +122,15 @@ end
    end
 end
 
-@Test function FutureKeywordsRemainAvailableAsMemberNames()
-   for _, keyword in reserved_keywords do
+@Test function ReservedWordsRemainAvailableAsMemberNames()
+   for _, keyword in all_reserved_words do
       result = exec("local object = { }; object." .. keyword .. " = '" .. keyword .. "'; return object." .. keyword)
       assert(result is keyword, keyword .. ' should remain usable as a member name')
    end
 end
 
-@Test function FutureKeywordsRemainAvailableAsTableFieldNames()
-   for _, keyword in reserved_keywords do
+@Test function ReservedWordsRemainAvailableAsTableFieldNames()
+   for _, keyword in all_reserved_words do
       result = exec('local object = { ' .. keyword .. " = '" .. keyword .. "' }; return object." .. keyword)
       assert(result is keyword, keyword .. ' should remain usable as a table field name')
    end

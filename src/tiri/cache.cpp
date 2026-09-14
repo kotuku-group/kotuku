@@ -107,7 +107,6 @@ static bool valid_import_name(std::string_view Request, bool &Local, std::string
    Local = false;
    ParentPrefix.clear();
    Name = Request;
-   int slash_count = 0;
 
    if (Name.starts_with("./")) {
       Local = true;
@@ -118,21 +117,47 @@ static bool valid_import_name(std::string_view Request, bool &Local, std::string
          Local = true;
          ParentPrefix.append("../");
          Name.remove_prefix(3);
-         slash_count++;
       }
    }
 
-   size_t i = 0;
-   for (; i < Name.size(); ++i) {
-      const char value = Name[i];
-      if ((value >= 'a') and (value <= 'z')) continue;
-      if ((value >= 'A') and (value <= 'Z')) continue;
-      if ((value >= '0') and (value <= '9')) continue;
-      if ((value IS '-') or (value IS '_')) continue;
-      if (value IS '/') { slash_count++; continue; }
-      break;
+   bool component_has_character = false;
+   for (char value : Name) {
+      if (value IS '/') {
+         if (not component_has_character) return false;
+         component_has_character = false;
+         continue;
+      }
+      if (((value >= 'a') and (value <= 'z')) or ((value >= 'A') and (value <= 'Z')) or
+          ((value >= '0') and (value <= '9')) or (value IS '-') or (value IS '_')) {
+         component_has_character = true;
+         continue;
+      }
+      return false;
    }
-   return (i IS Name.size()) and (i < 96) and (slash_count <= 2);
+   return component_has_character;
+}
+
+//********************************************************************************************************************
+
+static bool cached_import_path_is_contained(std::string Path, std::string Root)
+{
+   auto normalise = [](std::string &Value) {
+      for (char &value : Value) {
+         if (value IS '\\') value = '/';
+         #ifdef _WIN32
+            if ((value >= 'A') and (value <= 'Z')) value += 'a' - 'A';
+         #endif
+      }
+      while ((Value.size() > 1) and (Value.back() IS '/')) Value.pop_back();
+   };
+
+   normalise(Path);
+   normalise(Root);
+   if (Path IS Root) return true;
+   if (Root IS "/") return Path.starts_with('/');
+   if (Root.ends_with(':')) return Path.starts_with(Root);
+   Root.push_back('/');
+   return Path.starts_with(Root);
 }
 
 //********************************************************************************************************************
@@ -146,23 +171,28 @@ static std::string replay_import_resolution(extTiri *Self, std::string_view Pare
    std::string_view name;
    if (not valid_import_name(Request, local, parent_prefix, name)) return {};
 
-   std::string path(parent_prefix);
-   path.append(name);
+   std::string root(parent_prefix);
    if (local) {
       auto separator = Parent.find_last_of("/\\");
-      if (separator != std::string_view::npos) path.insert(0, Parent.substr(0, separator + 1));
+      if (separator != std::string_view::npos) root.insert(0, Parent.substr(0, separator + 1));
       else {
          std::string_view working_path;
          Self->getWorkingPath(working_path);
-         if (not working_path.empty()) path.insert(0, working_path);
+         if (not working_path.empty()) root.insert(0, working_path);
       }
    }
-   else path.insert(0, "scripts:");
+   else root = "scripts:";
+
+   std::string path(root);
+   path.append(name);
    path.append(".tiri");
 
+   std::string resolved_root;
    std::string resolved;
-   if (ResolvePath(path, RSF::NO_FILE_CHECK, &resolved) IS ERR::Okay) return resolved;
-   return path;
+   if ((ResolvePath(root, RSF::NO_FILE_CHECK, &resolved_root) IS ERR::Okay) and
+       (ResolvePath(path, RSF::NO_FILE_CHECK, &resolved) IS ERR::Okay) and
+       cached_import_path_is_contained(resolved, resolved_root)) return resolved;
+   return {};
 }
 
 //********************************************************************************************************************
