@@ -1304,32 +1304,18 @@ ParserResult<StmtNodePtr> AstBuilder::parse_try()
       }
 
       if (this->ctx.check(TokenKind::When)) {
-         Token when_token = this->ctx.tokens().current();
          this->ctx.tokens().advance();  // consume 'when'
-
-         // Filter code(s) must be on the same line as 'when'
-         Token next_token = this->ctx.tokens().current();
-         if (next_token.span().line != when_token.span().line) {
-            return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, when_token,
-               "Expected error code(s) after 'when' on the same line");
-         }
 
          // Parse error code filter(s): when ERR_A or when ERR_A, ERR_B
          auto first_code = this->parse_expression();
          if (not first_code.ok()) return ParserResult<StmtNodePtr>::failure(first_code.error_ref());
          clause.filter_codes.push_back(std::move(first_code.value_ref()));
 
-         // Continue parsing comma-separated codes on the same line as 'when'
+         // Continue parsing comma-separated codes.
          while (this->ctx.check(TokenKind::Comma)) {
-            Token comma_token = this->ctx.tokens().current();
-            if (comma_token.span().line != when_token.span().line) break;
             this->ctx.tokens().advance();  // consume ','
 
             Token code_token = this->ctx.tokens().current();
-            if (code_token.span().line != when_token.span().line) {
-               return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, comma_token,
-                  "Expected error code after ',' on the same line as 'when'");
-            }
             if (clause.filter_codes.size() >= MAX_EXCEPTION_FILTER_CODES) {
                return this->fail<StmtNodePtr>(ParserErrorCode::TooManyExceptionFilters, code_token,
                   "An 'except ... when' clause supports at most 4 error codes");
@@ -1954,34 +1940,33 @@ ParserResult<StmtNodePtr> AstBuilder::parse_namespace()
    payload.name.has_const = true;
 
    Token initialiser_token = this->ctx.tokens().current();
-   if (initialiser_token.span().line IS name_token.span().line) {
-      if (initialiser_token.kind() IS TokenKind::LeftBrace) {
-         auto initialiser = this->parse_table_literal(false);
-         if (not initialiser.ok()) return ParserResult<StmtNodePtr>::failure(initialiser.error_ref());
-         payload.initialiser = std::move(initialiser.value_ref());
-      }
-      else if (initialiser_token.kind() IS TokenKind::Function or
-               initialiser_token.kind() IS TokenKind::ThunkToken) {
-         bool is_thunk = initialiser_token.kind() IS TokenKind::ThunkToken;
-         this->ctx.tokens().advance();
-         auto initialiser = this->parse_function_literal(initialiser_token, is_thunk, name_str);
-         if (not initialiser.ok()) return ParserResult<StmtNodePtr>::failure(initialiser.error_ref());
-         if (is_thunk) {
-            auto *function = std::get_if<FunctionExprPayload>(&initialiser.value_ref()->data);
-            if (function and function->parameters.empty()) {
-               SourceSpan span = initialiser.value_ref()->span;
-               ExprNodeList arguments;
-               initialiser.value_ref() = make_call_expr(
-                  span, std::move(initialiser.value_ref()), std::move(arguments), false);
-            }
+   if (initialiser_token.kind() IS TokenKind::LeftBrace) {
+      auto initialiser = this->parse_table_literal(false);
+      if (not initialiser.ok()) return ParserResult<StmtNodePtr>::failure(initialiser.error_ref());
+      payload.initialiser = std::move(initialiser.value_ref());
+   }
+   else if (initialiser_token.kind() IS TokenKind::Function or
+            initialiser_token.kind() IS TokenKind::ThunkToken) {
+      bool is_thunk = initialiser_token.kind() IS TokenKind::ThunkToken;
+      this->ctx.tokens().advance();
+      auto initialiser = this->parse_function_literal(initialiser_token, is_thunk, name_str);
+      if (not initialiser.ok()) return ParserResult<StmtNodePtr>::failure(initialiser.error_ref());
+      if (is_thunk) {
+         auto *function = std::get_if<FunctionExprPayload>(&initialiser.value_ref()->data);
+         if (function and function->parameters.empty()) {
+            SourceSpan span = initialiser.value_ref()->span;
+            ExprNodeList arguments;
+            initialiser.value_ref() = make_call_expr(
+               span, std::move(initialiser.value_ref()), std::move(arguments), false);
          }
-         payload.initialiser = std::move(initialiser.value_ref());
       }
-      else if (initialiser_token.kind() != TokenKind::Semicolon and
-               initialiser_token.kind() != TokenKind::EndOfFile) {
-         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, initialiser_token,
-            "Namespace initialisers must be table, function or thunk literals");
-      }
+      payload.initialiser = std::move(initialiser.value_ref());
+   }
+   else if (initialiser_token.span().line IS name_token.span().line and
+            initialiser_token.kind() != TokenKind::Semicolon and
+            initialiser_token.kind() != TokenKind::EndOfFile) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, initialiser_token,
+         "Namespace initialisers must be table, function or thunk literals");
    }
 
    payload.mode = payload.initialiser ? NamespaceDeclarationMode::Create : NamespaceDeclarationMode::Join;

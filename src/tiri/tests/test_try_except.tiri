@@ -387,6 +387,26 @@ end
    assert(correct_handler, "Multiple filter should match")
 end
 
+@Test(priority=9) function MultilineFilters()
+   local after_when = false
+   try
+      raise ERR_Args
+   except e when
+      ERR_Args
+      after_when = true
+   end
+   assert(after_when, "A filter may start on the line after 'when'")
+
+   local after_comma = false
+   try
+      raise ERR_Search
+   except e when ERR_Failed,
+      ERR_Search
+      after_comma = true
+   end
+   assert(after_comma, "A filter may continue on the line after a comma")
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- Filter falling through to catch-all
 

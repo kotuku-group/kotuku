@@ -64,9 +64,9 @@ static void expr_kvalue(FuncState *fs, TValue *v, ExpDesc *e)
 
 //********************************************************************************************************************
 
-static int token_starts_expression(LexToken tok)
+static bool token_starts_expression(LexToken Tok)
 {
-   switch (tok) {
+   switch (Tok) {
       case TK_number:
       case TK_string:
       case TK_regex_string:
@@ -75,10 +75,19 @@ static int token_starts_expression(LexToken tok)
       case TK_false:
       case TK_dots:
       case TK_function:
+      case TK_thunk:
+      case TK_annotate:
+      case TK_choose:
       case TK_raise:
+      case TK_check:
       case TK_name:
       case '{':
       case '(':
+      case '[':
+      case TK_defer_open:
+      case TK_defer_typed:
+      case TK_array_typed:
+      case TK_struct_typed:
       case TK_not:
       case TK_plusplus:
       case '-':
@@ -86,9 +95,9 @@ static int token_starts_expression(LexToken tok)
       case '#':
       case '&':
       case TK_current_context:
-         return 1;
+         return true;
       default:
-         return 0;
+         return false;
    }
 }
 
@@ -98,16 +107,6 @@ static int token_starts_expression(LexToken tok)
 
 bool LexState::should_emit_presence()
 {
-   // Use raw line numbers for comparison (lastline and lookahead_line are raw,
-   // effective_line() is encoded with file index in upper bits)
-   BCLine token_line = this->lastline;
-   BCLine operator_line = this->effective_line().lineNumber();
    LexToken lookahead = (this->lookahead != TK_eof) ? this->lookahead : this->lookahead_token();
-   BCLine lookahead_line = this->lookahead_line;
-   // If the operator is on a different line than the token, it's definitely postfix
-   if (operator_line > token_line) return true;
-   // If the lookahead is on a different line than the operator, it's postfix
-   if (lookahead_line > operator_line) return true;
-   // Otherwise, check if the lookahead starts an expression
    return !token_starts_expression(lookahead);
 }

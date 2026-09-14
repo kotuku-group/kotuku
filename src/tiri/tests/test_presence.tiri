@@ -98,53 +98,53 @@ end
 @Test function Parentheses()
    x = 5
    y = 10
-   v = (x + y)??
+   v = (x + y)??;
    assert(v is true, "Failed parentheses test: expected true for non-zero sum")
 
    z = -5
-   w = (x + z)??
+   w = (x + z)??;
    assert(w is false, "Failed parentheses test: expected false for zero sum")
 end
 
 -- Test with table access
 @Test function TableAccess()
    t = { name = "Test" }
-   v = t.name??
+   v = t.name??;
    assert(v is true, "Failed table access test: expected true for non-empty string")
 
    t2 = { name = "" }
-   v2 = t2.name??
+   v2 = t2.name??;
    assert(v2 is false, "Failed table access test: expected false for empty string")
 
    t3 = { value = 0 }
-   v3 = t3.value??
+   v3 = t3.value??;
    assert(v3 is false, "Failed table access test: expected false for zero")
 end
 
 -- Test runtime values
 @Test function Runtime()
    x = 0
-   v = x??
+   v = x??;
    assert(v is false, "Runtime zero test failed: expected false")
 
    x = 5
-   v = x??
+   v = x??;
    assert(v is true, "Runtime non-zero test failed: expected true")
 
    s = ""
-   v = s??
+   v = s??;
    assert(v is false, "Runtime empty string test failed: expected false")
 
    s = "Hello"
-   v = s??
+   v = s??;
    assert(v is true, "Runtime non-empty string test failed: expected true")
 
    b = false
-   v = b??
+   v = b??;
    assert(v is false, "Runtime false test failed: expected false")
 
    b = true
-   v = b??
+   v = b??;
    assert(v is true, "Runtime true test failed: expected true")
 end
 
@@ -163,12 +163,12 @@ end
 -- Test that ?? returns boolean, not the value
 @Test function ReturnsBool()
    v = "Hello"
-   result = v??
+   result = v??;
    assert(result is true, "Should return true, not the value")
    assert(result != "Hello", "Should return boolean, not the string value")
 
    n = 42
-   result = n??
+   result = n??;
    assert(result is true, "Should return true, not the value")
    assert(result != 42, "Should return boolean, not the numeric value")
 end
@@ -232,28 +232,28 @@ end
 -- Test: Verify truthy string returns true (proves jumps don't fire incorrectly)
 @Test function BytecodeSemanticsTruthyString()
    s = "test"
-   result = s??
+   result = s??;
    assert(result is true, "Truthy string must return true")
 end
 
 -- Test: Verify truthy number returns true
 @Test function BytecodeSemanticsTruthyNumber()
    n = 42
-   result = n??
+   result = n??;
    assert(result is true, "Truthy number must return true")
 end
 
 -- Test: Verify falsey string returns false (proves jumps fire correctly)
 @Test function BytecodeSemanticsFalseyString()
    s = ""
-   result = s??
+   result = s??;
    assert(result is false, "Falsey string must return false")
 end
 
 -- Test: Verify falsey number returns false
 @Test function BytecodeSemanticsFalseyNumber()
    n = 0
-   result = n??
+   result = n??;
    assert(result is false, "Falsey number must return false")
 end
 
@@ -261,7 +261,7 @@ end
 @Test function BytecodeSemanticsTypeMismatchStringToNumber()
    s = "hello"
    -- Comparing string to number (zero check) should not trigger false jump
-   result = s??
+   result = s??;
    assert(result is true, "String compared to number (zero check) should not trigger false - type mismatch handling")
 end
 
@@ -269,21 +269,21 @@ end
 @Test function BytecodeSemanticsTypeMismatchNumberToString()
    n = 42
    -- Comparing number to string (empty check) should not trigger false jump
-   result = n??
+   result = n??;
    assert(result is true, "Number compared to string (empty check) should not trigger false - type mismatch handling")
 end
 
 -- Test: Verify nil returns false correctly
 @Test function BytecodeSemanticsNil()
    v = nil
-   result = v??
+   result = v??;
    assert(result is false, "Nil must return false")
 end
 
 -- Test: Verify false returns false correctly
 @Test function BytecodeSemanticsFalse()
    v = false
-   result = v??
+   result = v??;
    assert(result is false, "False must return false")
 end
 
@@ -298,7 +298,7 @@ end
       {val = {x=1}, name = "non-empty table"}
    }
    for _, tc in ipairs(test_cases) do
-      result = (tc.val)??
+      result = (tc.val)??;
       assert(result is true, "Truthy value '" .. tc.name .. "' must return true, got: " .. tostring(result))
    end
 end
@@ -313,7 +313,7 @@ end
       {val = {}, name = "empty table"}
    }
    for _, tc in ipairs(test_cases) do
-      result = (tc.val)??
+      result = (tc.val)??;
       assert(result is false, "Falsey value '" .. tc.name .. "' must return false, got: " .. tostring(result))
    end
 end
@@ -420,7 +420,7 @@ end
       {val = { name = "table" }, name = "non-empty table", expected = true}
    }
    for _, tc in ipairs(test_cases) do
-      result = (tc.val)??
+      result = (tc.val)??;
       assert(result is tc.expected, "Value '" .. tc.name .. "' should return " .. tostring(tc.expected) .. ", got: " .. tostring(result))
    end
 end
