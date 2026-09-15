@@ -261,6 +261,15 @@ setAction('Next', {
    tiriPrototype = 'err = Object.acNext()'
 })
 
+setAction('Pause', {
+   comment   = 'Pause or unpause the current object activity.',
+   prototype = 'ERR acPause(*Object, INT Operation)',
+   tiriPrototype = 'err = Object.acPause(Operation:num)',
+   params    = {
+      { name='Operation', type='INT', comment='1 to pause, 0 to unpause, -1 to toggle' }
+   }
+})
+
 setAction('Prev', {
    comment   = 'Move to the previous record.',
    prototype = 'ERR acPrev(*Object)',

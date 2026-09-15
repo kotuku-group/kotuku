@@ -204,6 +204,13 @@ static int obj_jump_setfield(lua_State *Lua, const obj_read &Handle, GCobject *d
 static int obj_jump_clipboard(lua_State *Lua, const obj_read &Handle, GCobject *def) { lua_pushvalue(Lua, 1); lua_pushinteger(Lua, int(AC::Clipboard)); lua_pushcclosure(Lua, object_action_call_args, 2); return 1; }
 static int obj_jump_refresh(lua_State *Lua, const obj_read &Handle, GCobject *def) { lua_pushvalue(Lua, 1); lua_pushinteger(Lua, int(AC::Refresh)); lua_pushcclosure(Lua, object_action_call, 2); return 1; }
 static int obj_jump_disable(lua_State *Lua, const obj_read &Handle, GCobject *def) { lua_pushvalue(Lua, 1); lua_pushinteger(Lua, int(AC::Disable)); lua_pushcclosure(Lua, object_action_call, 2); return 1; }
+static int obj_jump_pause(lua_State *Lua, const obj_read &Handle, GCobject *Def)
+{
+   lua_pushvalue(Lua, 1);
+   lua_pushinteger(Lua, int(AC::Pause));
+   lua_pushcclosure(Lua, object_action_call_args, 2);
+   return 1;
+}
 static int obj_jump_enable(lua_State *Lua, const obj_read &Handle, GCobject *def) { lua_pushvalue(Lua, 1); lua_pushinteger(Lua, int(AC::Enable)); lua_pushcclosure(Lua, object_action_call, 2); return 1; }
 static int obj_jump_redimension(lua_State *Lua, const obj_read &Handle, GCobject *def) { lua_pushvalue(Lua, 1); lua_pushinteger(Lua, int(AC::Redimension)); lua_pushcclosure(Lua, object_action_call_args, 2); return 1; }
 static int obj_jump_movetopoint(lua_State *Lua, const obj_read &Handle, GCobject *def) { lua_pushvalue(Lua, 1); lua_pushinteger(Lua, int(AC::MoveToPoint)); lua_pushcclosure(Lua, object_action_call_args, 2); return 1; }
@@ -256,7 +263,8 @@ static std::array<obj_read::JUMP *, int(AC::END)> glJumpActions = {
    obj_jump_setfield,
    obj_jump_clipboard,
    obj_jump_refresh,
-   obj_jump_disable
+   obj_jump_disable,
+   obj_jump_pause
 };
 
 #include "../../tiri_objects_indexes.cpp"

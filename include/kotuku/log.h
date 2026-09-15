@@ -122,6 +122,15 @@ class Log { // C++ wrapper for Kotuku's log functionality
          return Code; // Breakpoint here
       }
 
+      void debug(CSTRING Message, ...) {
+         #ifndef NDEBUG
+            va_list arg;
+            va_start(arg, Message);
+            VLogF(VLF::DEBUG, header, Message, arg);
+            va_end(arg);
+         #endif
+      }
+
       void trace(CSTRING Message, ...) {
          #ifndef NDEBUG
             va_list arg;

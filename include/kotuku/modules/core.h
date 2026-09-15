@@ -32,7 +32,7 @@
 #include "ankerl/unordered_dense.h"
 #endif
 
-#define CORE_BUILD_DATE 20260914
+#define CORE_BUILD_DATE 20260915
 class objMetaClass;
 
 // Predefined cursor styles
@@ -145,8 +145,9 @@ enum class VLF : uint32_t {
    INFO = 0x00000010,
    API = 0x00000020,
    DETAIL = 0x00000040,
-   TRACE = 0x00000080,
-   FUNCTION = 0x00000100,
+   DEBUG = 0x00000080,
+   TRACE = 0x00000100,
+   FUNCTION = 0x00000200,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(VLF)
@@ -705,7 +706,8 @@ enum class AC : int {
    Clipboard = 45,
    Refresh = 46,
    Disable = 47,
-   END = 48,
+   Pause = 48,
+   END = 49,
 };
 
 // Permission flags
