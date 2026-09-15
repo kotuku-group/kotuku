@@ -28,7 +28,7 @@ end
 
    local time, time_taken
    snd.onStop = function(Sound:obj)
-      time_taken = (mSys.preciseTime() - time) / 1000000
+      time_taken = (mSys.PreciseTime() - time) / 1000000
       Sound.acSignal()
    end
 
@@ -37,7 +37,7 @@ end
 
    proc = processing.new({ signals = array<obj> { snd } })
    check snd.acActivate()
-   time = mSys.preciseTime()
+   time = mSys.PreciseTime()
 
    proc.sleep()
 
@@ -50,7 +50,7 @@ end
    assert(snd, 'Failed to process high-tone wav file.')
 
    snd.onStop = function(Sound:obj)
-      time_taken = (mSys.preciseTime() - time) / 1000000
+      time_taken = (mSys.PreciseTime() - time) / 1000000
       Sound.acSignal()
    end
 
@@ -58,7 +58,7 @@ end
 
    duration = snd.duration
    check snd.acActivate()
-   time = mSys.preciseTime()
+   time = mSys.PreciseTime()
 
    proc.sleep()
 
@@ -209,7 +209,8 @@ end
          orig_byte = string.byte(original_data, i)
          saved_byte = string.byte(saved_data, i)
          if orig_byte != saved_byte then
-            error('Byte mismatch at offset ' .. (bytes_compared + i - 1) .. ': original=' .. orig_byte .. ', saved=' .. saved_byte)
+            raise 'Byte mismatch at offset ' .. (bytes_compared + i - 1) .. ': original=' .. orig_byte ..
+               ', saved=' .. saved_byte
          end
       end
 

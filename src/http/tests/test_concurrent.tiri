@@ -139,7 +139,7 @@ end
          contentType = 'application/json',
          flags       = HTF_NO_HEAD,
          inputFile   = 'string:' .. test_data,
-         size        = test_data.len(),
+         size        = #test_data,
          incoming = function(HTTP, Buffer)
             if not results[i].data then results[i].data = '' end
             results[i].data ..= Buffer.getString()

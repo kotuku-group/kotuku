@@ -10,7 +10,7 @@ function assert_valid(Source:str, Context:str)
    assert(result.success is true, Context .. ': source should validate successfully')
 end
 
-function assert_invalid(Source:str, ExpectedMessage:str, Context:str)
+function assert_invalid(Source:str, ExpectedMessage:str, Context:str):table
    local result = debug.validate(Source)
 
    assert(type(result) is 'table', Context .. ': debug.validate() should return a table')
@@ -20,6 +20,7 @@ function assert_invalid(Source:str, ExpectedMessage:str, Context:str)
    assert(result.diagnostics[0].message.find(ExpectedMessage, 0, true) != nil,
       Context .. ': diagnostic should contain "' .. ExpectedMessage .. '", got: ' ..
       tostring(result.diagnostics[0].message))
+   return result
 end
 
 @Test function ImportBasic()
@@ -90,6 +91,17 @@ end
 @Test function MalformedImportListsAreRejected()
    assert_invalid([[import 'json',]], 'Import list items must be string literals', 'trailing comma')
    assert_invalid([[import 'json', name]], 'Import list items must be string literals', 'non-string list item')
+end
+
+@Test function MalformedImportPathComponentsAreRejected()
+   result = assert_invalid([[import 'company//component']], 'Invalid library path', 'empty middle component')
+   assert(#result.diagnostics is 1, 'empty middle component should report one diagnostic')
+
+   result = assert_invalid([[import 'company/component/']], 'Invalid library path', 'empty trailing component')
+   assert(#result.diagnostics is 1, 'empty trailing component should report one diagnostic')
+
+   result = assert_invalid([[import './']], 'Invalid library path', 'empty local path')
+   assert(#result.diagnostics is 1, 'empty local path should report one diagnostic')
 end
 
 @Test function ImportInsideFunctionRemainsRejected()

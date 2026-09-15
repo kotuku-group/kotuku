@@ -62,7 +62,7 @@ function lastItem(self):table -- Return the last item
 end
 
 function newItem(self, Name, ID) -- Append an item to the menu bar
-   if ID and self._lookup[ID] then error(f'An item with identifier {ID} already exists.') end
+   if ID and self._lookup[ID] then raise f'An item with identifier {ID} already exists.' end
 
    item = { id=ID, name=Name }
    if Name?? then

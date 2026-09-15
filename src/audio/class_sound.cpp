@@ -398,7 +398,7 @@ static ERR SOUND_Activate(extSound *Self)
 
       if (strerr) {
          log.warning("Failed to create audio buffer, reason: %s (sample length %d)", strerr, Self->Length);
-         return ERR::Failed;
+         return ERR::CreateResource;
       }
 
       Self->Active = true;
@@ -416,9 +416,11 @@ static ERR SOUND_Activate(extSound *Self)
    sndPan((PlatformData *)Self->PlatformData, Self->Pan);
 
    if ((Self->Flags & SDF::STREAM) != SDF::NIL) {
-      if (SubscribeTimer(0.25, C_FUNCTION(win32_audio_stream), &Self->StreamTimer) != ERR::Okay) return log.warning(ERR::Failed);
+      if (auto error = SubscribeTimer(0.25, C_FUNCTION(win32_audio_stream), &Self->StreamTimer); error != ERR::Okay) {
+         return log.warning(error);
+      }
    }
-   else if (set_playback_trigger(Self) != ERR::Okay) return log.warning(ERR::Failed);
+   else if (auto error = set_playback_trigger(Self); error != ERR::Okay) return log.warning(error);
 
    auto error = (ERR)sndPlay((PlatformData *)Self->PlatformData, ((Self->Flags & SDF::LOOP) != SDF::NIL) ? true : false, Self->Position);
    return (error != ERR::Okay) ? log.warning(error) : ERR::Okay;
@@ -758,7 +760,7 @@ static ERR SOUND_Init(extSound *Self)
          }
          else {
             log.warning("Failed to open audio channels.");
-            return ERR::Failed;
+            return ERR::CreateResource;
          }
       }
       else return log.warning(ERR::AccessObject);
@@ -866,7 +868,7 @@ static ERR SOUND_Init(extSound *Self)
          }
          else {
             log.warning("Failed to open audio channels.");
-            return ERR::Failed;
+            return ERR::CreateResource;
          }
       }
       else return log.warning(ERR::AccessObject);

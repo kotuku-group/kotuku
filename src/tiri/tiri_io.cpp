@@ -620,9 +620,17 @@ static int file_write(lua_State *Lua)
 
 //********************************************************************************************************************
 
+// Unlike io.close(), a receiver is mandatory.  Deferring to io_close() would silently close the default output
+// file if the handle were omitted, e.g. when the method is retrieved with file['close'] and called unbound.
+
 static int file_close(lua_State *Lua)
 {
-   return io_close(Lua);
+   if (auto handle = check_file_handle(Lua, 1)) {
+      handle->close();
+      lua_pushboolean(Lua, 1);
+      return 1;
+   }
+   else luaL_error(Lua, ERR::File);
 }
 
 //********************************************************************************************************************
@@ -739,8 +747,10 @@ static int io_writeAll(lua_State *Lua)
       luaL_error(Lua, ERR::CreateFile, "Failed to create file: %s", path);
    }
 
+   // Empty content is a valid request; FL::NEW has already truncated the file, so no write is necessary.
+
    int result;
-   if (file->write(std::span<const int8_t>((const int8_t *)content, len), &result) != ERR::Okay) {
+   if ((len > 0) and (file->write(std::span<const int8_t>((const int8_t *)content, len), &result) != ERR::Okay)) {
       file.~Create();
       luaL_error(Lua, ERR::Write, "Failed to write to file: %s", path);
    }
@@ -857,6 +867,7 @@ void register_io_class(lua_State *Lua)
       { "flush",       file_flush },
       { "seek",        file_seek },
       { "lines",       file_lines },
+      { "__close",     file_gc },
       { "__gc",        file_gc },
       { nullptr, nullptr }
    };
@@ -893,14 +904,18 @@ void register_io_class(lua_State *Lua)
    lua_pop(Lua, 3); // Drop the Tiri.file metatable, Tiri.io metatable, and io library table
 
    // Register io interface prototypes for compile-time type inference
-   reg_iface_prototype("io", "open", { TiriType::Userdata }, { TiriType::Str, TiriType::Str });
+   reg_iface_prototype("io", "open", { TiriType::Userdata }, { TiriType::Str, TiriType::Str }, FProtoFlags::None,
+      FProtoArity::required(1));
    reg_iface_prototype("io", "close", { TiriType::Bool }, { TiriType::Any });
    reg_iface_prototype("io", "read", { TiriType::Any }, { TiriType::Any });
    reg_iface_prototype("io", "write", {}, { TiriType::Any });
    reg_iface_prototype("io", "flush", { TiriType::Bool }, {});
-   reg_iface_prototype("io", "input", { TiriType::Any }, { TiriType::Any });
-   reg_iface_prototype("io", "output", { TiriType::Any }, { TiriType::Any });
-   reg_iface_prototype("io", "lines", { TiriType::Func }, { TiriType::Any });
+   reg_iface_prototype("io", "input", { TiriType::Any }, { TiriType::Any }, FProtoFlags::None,
+      FProtoArity::required(0));
+   reg_iface_prototype("io", "output", { TiriType::Any }, { TiriType::Any }, FProtoFlags::None,
+      FProtoArity::required(0));
+   reg_iface_prototype("io", "lines", { TiriType::Func }, { TiriType::Any }, FProtoFlags::None,
+      FProtoArity::required(0));
    reg_iface_prototype("io", "tempFile", { TiriType::Userdata }, {});
    reg_iface_prototype("io", "type", { TiriType::Str }, { TiriType::Any });
    reg_iface_prototype("io", "readAll", { TiriType::Str }, { TiriType::Str });

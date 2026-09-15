@@ -49,7 +49,7 @@ end
    try
       exec("function variadic(\u{2026}) return {} end")
    success
-      error("Unicode ellipsis should not be accepted as a vararg parameter")
+      assert(false, "Unicode ellipsis should not be accepted as a vararg parameter")
    end
 end
 
@@ -57,7 +57,7 @@ end
    try
       exec("function variadic(...) return {\u{2026}} end")
    success
-      error("Unicode ellipsis should not be accepted as a vararg expression")
+      assert(false, "Unicode ellipsis should not be accepted as a vararg expression")
    end
 end
 
@@ -65,6 +65,6 @@ end
    try
       exec("local value\u{2026} = 1")
    success
-      error("Unicode ellipsis should not be accepted inside an identifier")
+      assert(false, "Unicode ellipsis should not be accepted inside an identifier")
    end
 end

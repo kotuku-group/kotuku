@@ -595,7 +595,7 @@ strview Group: The multicast group address to join (e.g. `224.1.1.1`).
 Okay: Successfully joined the multicast group.
 Args: Invalid multicast address.
 NoSupport: Socket is not configured for UDP mode.
-Failed: Failed to join multicast group.
+SystemCall: The socket option to join the multicast group was rejected.
 NullArgs
 
 -TAGS-
@@ -628,7 +628,7 @@ static ERR NETSOCKET_JoinMulticastGroup(extNetSocket *Self, struct ns::JoinMulti
       else {
          log.warning("Failed to join IPv4 multicast group");
       }
-      return ERR::Failed;
+      return error;
    }
 
    return ERR::Okay;
@@ -649,7 +649,7 @@ strview Group: The multicast group address to leave.
 Okay: Successfully left the multicast group.
 Args: Invalid multicast address.
 NoSupport: Socket is not configured for UDP mode.
-Failed: Failed to leave multicast group.
+SystemCall: The socket option to leave the multicast group was rejected.
 NullArgs
 
 -TAGS-
@@ -682,7 +682,7 @@ static ERR NETSOCKET_LeaveMulticastGroup(extNetSocket *Self, struct ns::LeaveMul
       else {
          log.warning("Failed to leave IPv4 multicast group");
       }
-      return ERR::Failed;
+      return error;
    }
 
    return ERR::Okay;
@@ -751,7 +751,7 @@ static ERR NETSOCKET_Read(extNetSocket *Self, struct acRead *Args)
          else if (error IS SSL_ERROR_WOULD_BLOCK) return ERR::Okay; // Not considered an error.
          else {
             log.warning("Windows SSL read error (code %d)", error);
-            return ERR::Failed;
+            return ERR::Read;
          }
       #else // OpenSSL
          bool read_blocked;

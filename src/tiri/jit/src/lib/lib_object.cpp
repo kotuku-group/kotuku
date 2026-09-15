@@ -204,6 +204,13 @@ static int obj_jump_setfield(lua_State *Lua, const obj_read &Handle, GCobject *d
 static int obj_jump_clipboard(lua_State *Lua, const obj_read &Handle, GCobject *def) { lua_pushvalue(Lua, 1); lua_pushinteger(Lua, int(AC::Clipboard)); lua_pushcclosure(Lua, object_action_call_args, 2); return 1; }
 static int obj_jump_refresh(lua_State *Lua, const obj_read &Handle, GCobject *def) { lua_pushvalue(Lua, 1); lua_pushinteger(Lua, int(AC::Refresh)); lua_pushcclosure(Lua, object_action_call, 2); return 1; }
 static int obj_jump_disable(lua_State *Lua, const obj_read &Handle, GCobject *def) { lua_pushvalue(Lua, 1); lua_pushinteger(Lua, int(AC::Disable)); lua_pushcclosure(Lua, object_action_call, 2); return 1; }
+static int obj_jump_pause(lua_State *Lua, const obj_read &Handle, GCobject *Def)
+{
+   lua_pushvalue(Lua, 1);
+   lua_pushinteger(Lua, int(AC::Pause));
+   lua_pushcclosure(Lua, object_action_call_args, 2);
+   return 1;
+}
 static int obj_jump_enable(lua_State *Lua, const obj_read &Handle, GCobject *def) { lua_pushvalue(Lua, 1); lua_pushinteger(Lua, int(AC::Enable)); lua_pushcclosure(Lua, object_action_call, 2); return 1; }
 static int obj_jump_redimension(lua_State *Lua, const obj_read &Handle, GCobject *def) { lua_pushvalue(Lua, 1); lua_pushinteger(Lua, int(AC::Redimension)); lua_pushcclosure(Lua, object_action_call_args, 2); return 1; }
 static int obj_jump_movetopoint(lua_State *Lua, const obj_read &Handle, GCobject *def) { lua_pushvalue(Lua, 1); lua_pushinteger(Lua, int(AC::MoveToPoint)); lua_pushcclosure(Lua, object_action_call_args, 2); return 1; }
@@ -256,7 +263,8 @@ static std::array<obj_read::JUMP *, int(AC::END)> glJumpActions = {
    obj_jump_setfield,
    obj_jump_clipboard,
    obj_jump_refresh,
-   obj_jump_disable
+   obj_jump_disable,
+   obj_jump_pause
 };
 
 #include "../../tiri_objects_indexes.cpp"
@@ -399,6 +407,19 @@ WRITE_TABLE * get_write_table(objMetaClass *Class)
 }
 
 //********************************************************************************************************************
+// Classify a write-table miss by checking whether the field exists but is immutable.
+
+ERR classify_object_write_miss(objMetaClass *Class, uint32_t FieldHash)
+{
+   Field *field;
+
+   if (Class and (Class->findField(FieldHash, &field, nullptr) IS ERR::Okay) and not (field->Flags & (FD_W|FD_I))) {
+      return ERR::ImmutableField;
+   }
+   else return ERR::UnsupportedField;
+}
+
+//********************************************************************************************************************
 // Usage: object.fieldName = newvalue
 //
 // Using all caps abbreviations is discouraged when designing class fields, e.g. JITOptions won't work out, but
@@ -422,7 +443,7 @@ extern int object_newindex(lua_State *Lua)
                if ((func->Field->Flags & FD_INIT) and obj->initialised()) error = ERR::NoFieldAccess;
                else error = func->Call(Lua, obj, func->Field, 3);
             }
-            else error = ERR::NoSupport;
+            else error = classify_object_write_miss(def->classptr, hash);
             release_object(def);
 
             if (error >= ERR::ExceptionThreshold) {
@@ -469,8 +490,10 @@ extern int object_newindex(lua_State *Lua)
 
    // Escaped intrinsic methods must not manufacture bound closures.  Other failed field reads retain the usual
    // NoFieldAccess error, including accesses through an any receiver or a computed key.
-   const std::string_view key(strdata(keystr), keystr->len);
-   if ((key IS "new") or (key IS "_state")) return 0;
+
+   constexpr auto hash_new = kt::strhash("new");
+   constexpr auto hash_state = kt::strhash("state");
+   if ((keystr->hash IS hash_new) or (keystr->hash IS hash_state)) return 0;
 
    luaL_error(Lua, ERR::NoFieldAccess, "Field does not exist or is unreadable: %s.%s",
       def->classptr ? def->classptr->ClassName.c_str() : "?", strdata(keystr));
@@ -691,7 +714,7 @@ ERR push_object_id(lua_State *Lua, OBJECTID ObjectID)
 //********************************************************************************************************************
 // Object instance methods. State is maintained globally, so other object variables reference the same state table.
 
-LJLIB_INTRINSIC LJLIB_CF(object__state)
+LJLIB_INTRINSIC LJLIB_CF(object_state)
 {
    auto def = lj_get_object_fast(L, 1);
 
@@ -1112,11 +1135,13 @@ extern "C" int luaopen_object(lua_State *L)
    setgcref(basemt_it(g, LJ_TOBJECT), obj2gco(lib));
 
    // Register obj interface prototypes for compile-time type inference
-   reg_iface_prototype("obj", "new", { TiriType::Object }, { TiriType::Any, TiriType::Table });
+   reg_iface_prototype("obj", "new", { TiriType::Object }, { TiriType::Any, TiriType::Table }, FProtoFlags::None,
+      FProtoArity::required(1));
    reg_iface_prototype("obj", "find", { TiriType::Object }, { TiriType::Any });
    reg_intrinsic_method(L, "obj", "new", TiriType::Object, builtin_callable_id(FastFunc::object_new),
-      { TiriType::Object }, { TiriType::Object, TiriType::Any, TiriType::Table });
-   reg_intrinsic_method(L, "obj", "_state", TiriType::Object, builtin_callable_id(FastFunc::object__state),
+      { TiriType::Object }, { TiriType::Object, TiriType::Any, TiriType::Table }, FProtoFlags::None,
+      FProtoArity::required(2));
+   reg_intrinsic_method(L, "obj", "state", TiriType::Object, builtin_callable_id(FastFunc::object_state),
       { TiriType::Table }, { TiriType::Object });
    reg_iface_method(L, "obj", "class", TiriType::Object, builtin_callable_id(FastFunc::object_class),
       { TiriType::Object }, { TiriType::Object });
@@ -1125,21 +1150,24 @@ extern "C" int luaopen_object(lua_State *L)
    reg_iface_method(L, "obj", "free", TiriType::Object, builtin_callable_id(FastFunc::object_free), {},
       { TiriType::Object });
    reg_iface_method(L, "obj", "children", TiriType::Object, builtin_callable_id(FastFunc::object_children),
-      { TiriType::Array }, { TiriType::Object, TiriType::Str });
+      { TiriType::Array }, { TiriType::Object, TiriType::Str }, FProtoFlags::None, FProtoArity::required(1));
    reg_iface_method(L, "obj", "detach", TiriType::Object, builtin_callable_id(FastFunc::object_detach), {},
       { TiriType::Object });
    reg_iface_method(L, "obj", "get", TiriType::Object, builtin_callable_id(FastFunc::object_get),
-      { TiriType::Any }, { TiriType::Object, TiriType::Str, TiriType::Any });
+      { TiriType::Any }, { TiriType::Object, TiriType::Str, TiriType::Any }, FProtoFlags::None,
+      FProtoArity::required(2));
    reg_iface_method(L, "obj", "set", TiriType::Object, builtin_callable_id(FastFunc::object_set),
       { TiriType::Num }, { TiriType::Object, TiriType::Str, TiriType::Any });
    reg_iface_method(L, "obj", "getKey", TiriType::Object, builtin_callable_id(FastFunc::object_getKey),
-      { TiriType::Any }, { TiriType::Object, TiriType::Str, TiriType::Any });
+      { TiriType::Any }, { TiriType::Object, TiriType::Str, TiriType::Any }, FProtoFlags::None,
+      FProtoArity::required(2));
    reg_iface_method(L, "obj", "setKey", TiriType::Object, builtin_callable_id(FastFunc::object_setKey),
       { TiriType::Num }, { TiriType::Object, TiriType::Str, TiriType::Any });
    reg_iface_method(L, "obj", "exists", TiriType::Object, builtin_callable_id(FastFunc::object_exists),
       { TiriType::Bool }, { TiriType::Object });
    reg_iface_method(L, "obj", "subscribe", TiriType::Object, builtin_callable_id(FastFunc::object_subscribe), {},
-      { TiriType::Object, TiriType::Str, TiriType::Func, TiriType::Any });
+      { TiriType::Object, TiriType::Str, TiriType::Func, TiriType::Any }, FProtoFlags::None,
+      FProtoArity::required(3));
    reg_iface_method(L, "obj", "unsubscribe", TiriType::Object,
       builtin_callable_id(FastFunc::object_unsubscribe), {}, { TiriType::Object, TiriType::Any });
 

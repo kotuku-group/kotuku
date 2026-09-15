@@ -40,7 +40,7 @@ ParserResult<ExpDesc> IrEmitter::emit_table_expr(const TableExprPayload &Payload
          case TableFieldKind::Computed: {
             if (not field.key) return this->unsupported_expr(AstNodeKind::TableExpr, field.span);
             auto key_result = this->emit_expression(*field.key);
-            if (not key_result.ok()) return key_result;
+            if (not key_result.ok() or key_result.value_ref().is_unreachable()) return key_result;
             key = key_result.value_ref();
             ExpressionValue key_toval(fs, key);
             key_toval.to_val();
@@ -72,7 +72,7 @@ ParserResult<ExpDesc> IrEmitter::emit_table_expr(const TableExprPayload &Payload
       }
 
       auto value_result = this->emit_expression(*field.value);
-      if (not value_result.ok()) return value_result;
+      if (not value_result.ok() or value_result.value_ref().is_unreachable()) return value_result;
 
       ExpDesc val = value_result.value_ref();
       vcall_primary = val.k IS ExpKind::Call ? val.u.s.info : NO_JMP;

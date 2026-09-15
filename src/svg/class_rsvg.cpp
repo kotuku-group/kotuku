@@ -132,7 +132,7 @@ static ERR RSVG_Query(extRSVG *Self)
       while ((view) and (view->classID() != CLASSID::VECTORVIEWPORT)) view = view->Next;
       if (not view) {
          log.warning("SVG source file does not define a valid <svg/> tag.");
-         return ERR::Failed;
+         return ERR::InvalidData;
       }
 
       // Check for fixed dimensions specified by the SVG.
@@ -204,7 +204,7 @@ static ERR RSVG_Resize(extRSVG *Self, struct acResize *Args)
 
          return ERR::Okay;
       }
-      else return ERR::Failed;
+      else return ERR::Resize;
    }
    else return ERR::NotInitialised;
 }

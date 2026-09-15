@@ -326,7 +326,8 @@ std::optional<std::string> resolve_document_uri(const XPathContext &Context, XTa
    if (Context.xml) {
       for (auto &entry : Context.eval->parse_context->XMLCache) {
          if (entry.second IS document) {
-            return xml::uri::normalise_uri_separators(entry.first); // TODO: Is normalisation needed here?
+            // Keep cached and path-backed document URIs in the same canonical form.
+            return xml::uri::normalise_uri_separators(entry.first);
          }
       }
    }

@@ -48,7 +48,7 @@ static ERR tls_setup_client(extNetSocket *Self)
 
    bool validate_cert = (Self->Flags & NSF::DISABLE_SERVER_VERIFY) != NSF::NIL ? false : true;
    if (Self->TLS.Handle = ssl_create_context(validate_cert, false); !Self->TLS.Handle) {
-      return ERR::Failed;
+      return ERR::CreateResource;
    }
 
    return ERR::Okay;
@@ -66,7 +66,7 @@ static ERR tls_setup_server(extNetServer *Self)
 
    bool validate_cert = (Self->Flags & NSF::DISABLE_SERVER_VERIFY) != NSF::NIL ? false : true;
    if (Self->TLS.Handle = ssl_create_context(validate_cert, true); !Self->TLS.Handle) {
-      return ERR::Failed;
+      return ERR::CreateResource;
    }
 
    if (not Self->SSLCertificate.empty()) {
@@ -84,7 +84,7 @@ static ERR tls_setup_server(extNetServer *Self)
       if (error != SSL_OK) {
          ssl_free_context(Self->TLS.Handle);
          Self->TLS.Handle = nullptr;
-         return log.warning(ERR::Failed);
+         return log.warning(ERR::LoadCertificate);
       }
    }
    else {
@@ -98,7 +98,7 @@ static ERR tls_setup_server(extNetServer *Self)
              (!load_pem_certificate(Self->TLS.Handle, glCertPath + "localhost.pem", no_private_key, no_password))) {
             ssl_free_context(Self->TLS.Handle);
             Self->TLS.Handle = nullptr;
-            return log.warning(ERR::Failed);
+            return log.warning(ERR::LoadCertificate);
          }
       }
    }
@@ -187,7 +187,7 @@ template <class T> ERR tls_receive_encrypted(T *Self)
             "Failed to queue encrypted SSL input: %d (incoming=%d, queued=%d, limit=%d)",
             ssl_error, int(bytes_received), int(ssl_encrypted_input_size(Self->TLS.Handle)),
             int(ssl_encrypted_input_limit(Self->TLS.Handle)));
-         return ERR::Failed;
+         return ERR::Write;
       }
 
       auto prepare_error = ssl_prepare_read(Self->TLS.Handle);
@@ -197,7 +197,7 @@ template <class T> ERR tls_receive_encrypted(T *Self)
             "Failed to decrypt SSL input: %d (queued=%d, security-status=0x%08x)",
             prepare_error, int(ssl_encrypted_input_size(Self->TLS.Handle)),
             unsigned(ssl_last_security_status(Self->TLS.Handle)));
-         return ERR::Failed;
+         return ERR::Decryption;
       }
    }
 
@@ -245,7 +245,7 @@ template <class T> ERR tls_handshake_received(T *Self, const void *Data, int Len
             ssl_last_security_status(Self->TLS.Handle),
             ssl_last_win32_error(Self->TLS.Handle));
          Self->setState(NTC::DISCONNECTED);
-         return ERR::Failed;
+         return ERR::Handshake;
    }
 }
 
@@ -286,6 +286,6 @@ template <class T> ERR tls_connect(T *Self)
             ssl_last_security_status(Self->TLS.Handle),
             ssl_last_win32_error(Self->TLS.Handle));
          Self->setState(NTC::DISCONNECTED);
-         return ERR::Failed;
+         return ERR::Handshake;
    }
 }

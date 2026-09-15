@@ -42,7 +42,7 @@ function copyFeedback(Size:num!, Position:num!, Path:str!, Dest:str!, User, Feed
    if progress_dialog and (Position is 0 or Size > 32768) then
       local folder, file = io.splitPath(Path)
 
-      if string.len(file) >= 80 then file = '...' .. file.sub(-80) end
+      if #file >= 80 then file = '...' .. file.sub(-80) end
 
       local msg
       if Position is 0 then
@@ -94,9 +94,12 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- NB: This call can block if it needs a response from the user.  It does not return until the copy is complete.
 
-io.ui.copy = function(Source:any!, Dest:str!, Move:bool!)
-   if Source is <str> then Source = { Source } end
-   if Source != <table> then error('Provided Source is not a table') end
+io.ui.copy = function(Source:any!, Dest:str!, Move:bool)
+   if Source is <str> then
+      Source = array<str> { Source }
+   elseif Source != <table> and Source != <array> then
+      raise 'Provided Source is not a collection'
+   end
 
    -- Scan the file list and move or copy each file to the Dest folder
 
@@ -209,8 +212,11 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 io.ui.delete = function(Paths)
-   if Paths is <str> then Paths = { Paths } end
-   if Paths != <table> then error('Path must be a string or string list.') end
+   if Paths is <str> then
+      Paths = array<str> { Paths }
+   elseif Paths != <table> and Paths != <array> then
+      raise 'Path must be a string or collection.'
+   end
 
    for path in values(Paths) do
       mSys.DeleteFile(path, function(Feedback)

@@ -53,7 +53,7 @@ function saveOption(Value:any, Param:table):any
       'yes'   -> true
       'false' -> false
       'no'    -> false
-      else    -> error("save must be a boolean value or 'all'.")
+      else    -> raise("save must be a boolean value or 'all'.")
    end
 end
 

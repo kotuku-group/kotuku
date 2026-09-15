@@ -307,7 +307,8 @@ constexpr uint8_t  NO_REG = BCMAX_A;
   _(CHECKALLLEAVE, base, ___, ___, ___) \
   /* Runtime defer registration. Appended to preserve existing opcode numbers. */ \
   _(DEFERARM,      var,  lit, lit, ___) \
-  _(DEFERCONSUME,  var,  ___, ___, ___)
+  _(DEFERCONSUME,  var,  ___, ___, ___) \
+  _(RETHROW,       var,  ___, ___, ___)
 
 // Bytecode opcode numbers.
 // Explicitly enumerated for debugger visibility and easy value lookup.
@@ -492,7 +493,9 @@ typedef enum {
    BC_DEFERARM = 140,
    BC_DEFERCONSUME = 141,
 
-   BC__MAX   = 142
+   BC_RETHROW = 142,
+
+   BC__MAX   = 143
 } BCOp;
 
 [[nodiscard]] inline constexpr bool bc_is_func_header(BCOp Op) noexcept

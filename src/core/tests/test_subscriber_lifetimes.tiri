@@ -13,7 +13,7 @@
       local target = obj.find('sub_lifetime_target')
       assert(target != nil, 'Sub-script could not find the target object')
       target.subscribe('refresh', function(UID, Args)
-         error('An action callback fired for a freed script context')
+         raise('An action callback fired for a freed script context')
       end)
    ]] })
 
@@ -35,7 +35,7 @@ end
       local target = obj.find('sub_lifetime_live')
       assert(target != nil, 'Sub-script could not find the target object')
       target.subscribe('refresh', function(UID, Args)
-         error('An action callback fired for a freed script context')
+         raise('An action callback fired for a freed script context')
       end)
    ]] })
 

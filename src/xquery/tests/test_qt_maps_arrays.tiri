@@ -58,7 +58,7 @@ function loadCases(Path)
    end)
 
    if err != ERR_Okay then
-      error('Failed to enumerate QT3 subset (' .. Path .. '): ' .. mSys.GetErrorMsg(err))
+      raise 'Failed to enumerate QT3 subset (' .. Path .. '): ' .. mSys.GetErrorMsg(err)
    end
 
    return cases

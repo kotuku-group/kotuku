@@ -61,8 +61,8 @@ end
       function(ID, Elapsed, CurrentTime)
          glAngle = glAngle + 1
          -- Incremental rotation
-         mVec.rotate(mxEdge, 1, glEllipse.cx, glEllipse.cy)
-         mVec.rotate(mxRectangle, 1, glEllipse.cx, glEllipse.cy)
+         mVec.Rotate(mxEdge, 1, glEllipse.cx, glEllipse.cy)
+         mVec.Rotate(mxRectangle, 1, glEllipse.cx, glEllipse.cy)
 
          -- Manual single-point rotation
          local x, y = rotate(50, 50, glEllipse.cx, glEllipse.cy, glAngle)

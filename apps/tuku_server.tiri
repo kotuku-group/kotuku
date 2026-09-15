@@ -33,7 +33,7 @@ Examples:
          { name = 'port', type = 'int', default = 8080, group = 'Server', comment = 'Port number to listen on.',
            exec = function(Parser:table, ArgName:str, Value:any!, Param:table)
               if Value < 1 or Value > 65535 then
-                 error("Parameter 'port' must be between 1 and 65535.")
+                 raise "Parameter 'port' must be between 1 and 65535."
               end
            end
          },
@@ -44,7 +44,7 @@ Examples:
          { name = 'timeout', type = 'int', default = 30, group = 'Behaviour', comment = 'Request timeout in seconds.',
            exec = function(Parser:table, ArgName:str, Value:any!, Param:table)
               if Value < 1 or Value > 300 then
-                 error("Parameter 'timeout' must be between 1 and 300 seconds.")
+                 raise "Parameter 'timeout' must be between 1 and 300 seconds."
               end
            end
          },
@@ -54,7 +54,7 @@ Examples:
            comment = 'Maximum requests per rate-limit window; 0 disables rate limiting.',
            exec = function(Parser:table, ArgName:str, Value:any!, Param:table)
               if Value < 0 or Value > 1000 then
-                 error("Parameter 'ratelimit' must be between 0 and 1000.")
+                 raise "Parameter 'ratelimit' must be between 0 and 1000."
               end
            end
          },

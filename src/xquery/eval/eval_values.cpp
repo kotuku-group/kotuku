@@ -2457,7 +2457,7 @@ ERR XPathEvaluator::process_expression_node_set(const XPathVal &Value)
 
 ERR XPathEvaluator::evaluate_top_level_expression(const XPathNode *Node, uint32_t CurrentPrefix)
 {
-   if (not Node) return ERR::Failed;
+   if (not Node) return ERR::NullArgs;
 
    const XPathNode *expression = Node;
 
@@ -2470,7 +2470,7 @@ ERR XPathEvaluator::evaluate_top_level_expression(const XPathNode *Node, uint32_
    auto value = evaluate_expression(expression, CurrentPrefix);
    if (expression_unsupported) {
       if (xml and xml->ErrorMsg.empty()) xml->ErrorMsg = "Unsupported XPath expression.";
-      return ERR::Failed;
+      return ERR::NoSupport;
    }
 
    switch (value.Type) {
@@ -2488,7 +2488,7 @@ ERR XPathEvaluator::evaluate_top_level_expression(const XPathNode *Node, uint32_
          return ERR::Okay;
    }
 
-   return ERR::Failed;
+   return ERR::InvalidType;
 }
 
 //********************************************************************************************************************

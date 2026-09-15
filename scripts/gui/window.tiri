@@ -160,7 +160,7 @@ gui.window = function(Options:table!)
    end
 
    self.parentSize = function():<num, num>
-      err, info = mGfx.getDisplayInfo(self.surface.display)
+      err, info = mGfx.GetDisplayInfo(self.surface.display)
       return info.monitorWidth, info.monitorHeight
    end
 
@@ -337,7 +337,7 @@ gui.window = function(Options:table!)
       Viewport.acDraw()
    end)
 
-   mGfx.windowHook(self.surface.id, WH_CLOSE, function()
+   mGfx.WindowHook(self.surface.id, WH_CLOSE, function()
       local window = lifecycle.window
       if not window then return ERR_Terminate end
 

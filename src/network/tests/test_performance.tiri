@@ -166,7 +166,7 @@ end
             if (err is ERR_Okay) then
                transfer_results.push({ size = size, start_time = start_time })
             else
-               error('[Server] Failed to send large message: ' .. mSys.GetErrorMsg(err))
+               raise '[Server] Failed to send large message: ' .. mSys.GetErrorMsg(err)
             end
          end
       end,

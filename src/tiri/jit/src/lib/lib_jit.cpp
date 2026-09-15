@@ -738,14 +738,19 @@ extern int luaopen_jit(lua_State* L)
    lua_pop(L, 1);
 
    // Register jit interface prototypes for compile-time type inference
-   reg_iface_prototype("jit", "on", {}, { TiriType::Any, TiriType::Bool });
-   reg_iface_prototype("jit", "off", {}, { TiriType::Any, TiriType::Bool });
-   reg_iface_prototype("jit", "flush", {}, { TiriType::Any });
+   reg_iface_prototype("jit", "on", {}, { TiriType::Any, TiriType::Bool }, FProtoFlags::None,
+      FProtoArity::required(0));
+   reg_iface_prototype("jit", "off", {}, { TiriType::Any, TiriType::Bool }, FProtoFlags::None,
+      FProtoArity::required(0));
+   reg_iface_prototype("jit", "flush", {}, { TiriType::Any, TiriType::Bool }, FProtoFlags::None,
+      FProtoArity::required(0));
    reg_iface_prototype("jit", "status", { TiriType::Bool, TiriType::Table }, {});
-   reg_iface_prototype("jit", "attach", {}, { TiriType::Func, TiriType::Str });
+   reg_iface_prototype("jit", "attach", {}, { TiriType::Func, TiriType::Str }, FProtoFlags::None,
+      FProtoArity::required(1));
 
    // Register jit.util interface prototypes
-   reg_iface_prototype("jit.util", "funcInfo", { TiriType::Table }, { TiriType::Func, TiriType::Num });
+   reg_iface_prototype("jit.util", "funcInfo", { TiriType::Table }, { TiriType::Func, TiriType::Num },
+      FProtoFlags::None, FProtoArity::required(1));
    reg_iface_prototype("jit.util", "funcBC", { TiriType::Num, TiriType::Num }, { TiriType::Func, TiriType::Num });
    reg_iface_prototype("jit.util", "funcK", { TiriType::Any }, { TiriType::Func, TiriType::Num });
    reg_iface_prototype("jit.util", "funcUName", { TiriType::Str }, { TiriType::Func, TiriType::Num });
@@ -754,12 +759,15 @@ extern int luaopen_jit(lua_State* L)
    reg_iface_prototype("jit.util", "traceK", { TiriType::Any, TiriType::Num, TiriType::Num }, { TiriType::Num, TiriType::Num });
    reg_iface_prototype("jit.util", "traceSnap", { TiriType::Table }, { TiriType::Num, TiriType::Num });
    reg_iface_prototype("jit.util", "traceMC", { TiriType::Str, TiriType::Num, TiriType::Num }, { TiriType::Num });
-   reg_iface_prototype("jit.util", "traceExitStub", { TiriType::Num }, { TiriType::Num, TiriType::Num });
+   reg_iface_prototype("jit.util", "traceExitStub", { TiriType::Num }, { TiriType::Num, TiriType::Num },
+      FProtoFlags::None, FProtoArity::required(1));
    reg_iface_prototype("jit.util", "irCallAddr", { TiriType::Num }, { TiriType::Num });
-   reg_iface_prototype("jit.util", "contextStats", { TiriType::Table }, { TiriType::Bool });
+   reg_iface_prototype("jit.util", "contextStats", { TiriType::Table }, { TiriType::Bool }, FProtoFlags::None,
+      FProtoArity::required(0));
 
    // Register jit.opt interface prototypes
-   reg_iface_prototype("jit.opt", "start", {}, { TiriType::Str }, FProtoFlags::Variadic);
+   reg_iface_prototype("jit.opt", "start", {}, { TiriType::Str }, FProtoFlags::Variadic,
+      FProtoArity::required(0));
 
    return 1;
 }

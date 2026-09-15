@@ -193,7 +193,7 @@ end
                return
             end
             Socket.acSignal()
-            error('[Server] Failed to read data from client: ' .. mSys.GetErrorMsg(err))
+            raise '[Server] Failed to read data from client: ' .. mSys.GetErrorMsg(err)
          end
 
          local msg = buffer.sub(0, read_len)

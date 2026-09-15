@@ -68,6 +68,25 @@ ParserResult<Token> AstBuilder::consume_ternary_separator()
 }
 
 //********************************************************************************************************************
+// Builds an assignment after enforcing Tiri's explicit value-list arity.  A single trailing call or vararg expression
+// remains free to produce more results than the target list consumes because it occupies only one explicit list entry.
+
+ParserResult<StmtNodePtr> AstBuilder::make_assignment_statement(const Token &Operator, AssignmentOperator Assignment,
+   ExprNodeList Targets, ExprNodeList Values)
+{
+   if (Values.size() > Targets.size()) {
+      const ExprNodePtr &surplus = Values[Targets.size()];
+      Token error_token = surplus ? Token::from_span(surplus->span) : Operator;
+      return this->fail<StmtNodePtr>(ParserErrorCode::InvalidAssignment, error_token,
+         "Assignment has more explicit values than targets; surplus results are only permitted from a trailing "
+         "function call or vararg expression");
+   }
+
+   return ParserResult<StmtNodePtr>::success(
+      make_assignment_stmt(Operator.span(), Assignment, std::move(Targets), std::move(Values)));
+}
+
+//********************************************************************************************************************
 // Parses expression statements, handling assignments, compound assignments, conditional shorthands, and standalone expressions.
 
 ParserResult<StmtNodePtr> AstBuilder::parse_expression_stmt()
@@ -111,10 +130,8 @@ ParserResult<StmtNodePtr> AstBuilder::parse_expression_stmt()
       this->ctx.tokens().advance();
       auto values = this->parse_expression_list();
       if (not values.ok()) return ParserResult<StmtNodePtr>::failure(values.error_ref());
-      auto stmt = std::make_unique<StmtNode>(AstNodeKind::AssignmentStmt, op.span());
-      AssignmentStmtPayload payload(assignment, std::move(targets), std::move(values.value_ref()));
-      stmt->data = std::move(payload);
-      return ParserResult<StmtNodePtr>::success(std::move(stmt));
+      return this->make_assignment_statement(
+         op, assignment, std::move(targets), std::move(values.value_ref()));
    }
 
    // Guard shorthand pattern: value ?! return/break/continue/raise/check
@@ -233,6 +250,8 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
                "forEach(Callback) to iterate");
          }
 
+         std::get<CallExprPayload>(rhs.value_ref()->data).receives_pipe_results = true;
+
          SourceSpan span = combine_spans(left.value_ref()->span, rhs.value_ref()->span);
          ExprNodePtr pipe = make_pipe_expr(span, std::move(left.value_ref()), std::move(rhs.value_ref()), limit);
          left = ParserResult<ExprNodePtr>::success(std::move(pipe));
@@ -281,9 +300,9 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
          continue;
       }
 
-      // An ampersand-prefixed name on a later line begins a current-context expression.  Whitespace after `&` keeps
-      // a leading binary bitwise-AND operator available for conventional multi-line expression continuation.
-      if (next.kind() IS TokenKind::Ampersand and next.span().line != left.value_ref()->span.line) {
+      // An ampersand-prefixed name begins a current-context expression.  Whitespace after `&` keeps the binary
+      // bitwise-AND operator available regardless of whether the expression continues on the same or a later line.
+      if (next.kind() IS TokenKind::Ampersand) {
          const Token member = this->ctx.tokens().peek(1);
          if (member.kind() IS TokenKind::Identifier and member.span().offset IS next.span().offset + 1) break;
       }
@@ -393,7 +412,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
 
 ParserResult<ExprNodePtr> AstBuilder::parse_unary()
 {
-   constexpr uint8_t unary_precedence = 10;
+   constexpr uint8_t unary_precedence = 11;
 
    Token current = this->ctx.tokens().current();
    if (current.kind() IS TokenKind::CheckToken) {
@@ -453,6 +472,18 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
    Token current = this->ctx.tokens().current();
    ExprNodePtr node;
    switch (current.kind()) {
+      case TokenKind::RaiseToken: {
+         this->ctx.tokens().advance();
+         if (not this->ctx.check(TokenKind::LeftParen)) {
+            return this->fail<ExprNodePtr>(ParserErrorCode::UnexpectedToken, current,
+               "raise in an expression requires parentheses");
+         }
+         auto payload = this->parse_raise_payload(true);
+         if (not payload.ok()) return ParserResult<ExprNodePtr>::failure(payload.error_ref());
+         node = std::make_unique<ExprNode>(AstNodeKind::RaiseExpr, current.span());
+         node->data = std::move(payload.value_ref());
+         return ParserResult<ExprNodePtr>::success(std::move(node));
+      }
       case TokenKind::Number:
       case TokenKind::String:
       case TokenKind::Nil:
@@ -806,11 +837,11 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
       case TokenKind::ArrayTyped: {
          // Typed array expression: array<type> or array<type, size> or array<type, expr> { values }
          // Desugar to:
-         //   array<type>             -> array.new(0, 'type')
-         //   array<type, size>       -> array.new(size, 'type')
-         //   array<type, expr>       -> array.new(expr, 'type')
+         //   array<type>             -> array.new('type', 0)
+         //   array<type, size>       -> array.new('type', size)
+         //   array<type, expr>       -> array.new('type', expr)
          //   array<type> { v1, v2 }  -> array.of('type', v1, v2, ...)
-         //   array<type, size> { v1, v2 } -> array.new(max(size, #values), 'type') then populate
+         //   array<type, size> { v1, v2 } -> array.new('type', max(size, #values)) then populate
 
          Token start = this->ctx.tokens().current();
          GCstr *type_str = start.payload().as_string();
@@ -940,16 +971,15 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          }
          else {
             // Empty braces {} or no initialiser: use array.new()
-            // array<type> or array<type, size> -> array.new(size, 'type')
+            // array<type> or array<type, size> -> array.new('type', size)
 
-            // Build argument list: (size, 'type')
+            // Build argument list: ('type', size)
 
             ExprNodeList args;
+            args.push_back(make_literal_expr(span, LiteralValue::string(type_str)));
             if (size_expr) args.push_back(std::move(size_expr));
             else args.push_back(make_literal_expr(span, LiteralValue::number(
                specified_size.is_literal() ? double(specified_size.literal) : 0.0)));
-
-            args.push_back(make_literal_expr(span, LiteralValue::string(type_str)));
 
             node = make_builtin_call(this->ctx, span, FastFunc::array_new, std::move(args), TiriType::Array);
          }
@@ -970,10 +1000,12 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          Token start = this->ctx.tokens().current();
          GCstr *name_str = start.payload().as_string();
          std::string_view struct_name(strdata(name_str), name_str->len);
-         if (not find_struct(&this->ctx.lua(), struct_name)) {
+         auto definition = find_struct(&this->ctx.lua(), struct_name);
+         if (not definition) {
             return this->fail<ExprNodePtr>(ParserErrorCode::UnknownTypeName, start,
                std::format("Unknown struct name '{}'; declarations must precede use", struct_name));
          }
+         this->track_struct_reference(definition);
          this->ctx.tokens().advance();
 
          SourceSpan span = start.span();
@@ -1252,6 +1284,18 @@ ParserResult<ExprNodePtr> AstBuilder::parse_suffixed(ExprNodePtr base)
          }
 
          bool forwards = false;
+         bool struct_registry_call = false;
+         if (base->kind IS AstNodeKind::MemberExpr) {
+            const auto &member = std::get<MemberExprPayload>(base->data);
+            if (member.table and member.table->kind IS AstNodeKind::IdentifierExpr) {
+               const auto &name = std::get<NameRef>(member.table->data);
+               if (name.identifier.symbol and member.member.symbol and
+                   std::string_view(strdata(name.identifier.symbol), name.identifier.symbol->len) IS "struct") {
+                  std::string_view operation(strdata(member.member.symbol), member.member.symbol->len);
+                  struct_registry_call = operation IS "new" or operation IS "def" or operation IS "size";
+               }
+            }
+         }
          CallArgumentSyntax argument_syntax = token.kind() IS TokenKind::LeftParen ?
             CallArgumentSyntax::Parenthesised : token.kind() IS TokenKind::LeftBrace ?
             CallArgumentSyntax::TableConstructor : CallArgumentSyntax::StringLiteral;
@@ -1259,6 +1303,17 @@ ParserResult<ExprNodePtr> AstBuilder::parse_suffixed(ExprNodePtr base)
          if (not args.ok()) return ParserResult<ExprNodePtr>::failure(args.error_ref());
          SourceSpan span = combine_spans(base->span, token.span());
          base = make_call_expr(span, std::move(base), std::move(args.value_ref()), forwards, argument_syntax);
+         if (auto call = std::get_if<CallExprPayload>(&base->data); call and struct_registry_call) {
+            if (not call->arguments.empty()) {
+               auto literal = std::get_if<LiteralValue>(&call->arguments[0]->data);
+               if (literal and literal->kind IS LiteralKind::String and literal->string_value) {
+                  std::string_view name(strdata(literal->string_value), literal->string_value->len);
+                  this->track_struct_reference(find_struct(&this->ctx.lua(), name));
+               }
+               else this->track_dynamic_struct_reference();
+            }
+            else this->track_dynamic_struct_reference();
+         }
          continue;
       }
 
@@ -1287,8 +1342,8 @@ std::optional<AstBuilder::BinaryOpInfo> AstBuilder::match_binary_operator(const 
    switch (token.kind()) {
       case TokenKind::Plus:
          info.op = AstBinaryOperator::Add;
-         info.left = 7;
-         info.right = 7;
+         info.left = 9;
+         info.right = 9;
          return info;
       case TokenKind::Minus:
          // Check if this is actually the start of a choose case negative literal pattern
@@ -1298,28 +1353,28 @@ std::optional<AstBuilder::BinaryOpInfo> AstBuilder::match_binary_operator(const 
             if (this->is_choose_relational_pattern(1)) return std::nullopt;
          }
          info.op = AstBinaryOperator::Subtract;
-         info.left = 7;
-         info.right = 7;
+         info.left = 9;
+         info.right = 9;
          return info;
       case TokenKind::Multiply:
          info.op = AstBinaryOperator::Multiply;
-         info.left = 8;
-         info.right = 8;
+         info.left = 10;
+         info.right = 10;
          return info;
       case TokenKind::Divide:
          info.op = AstBinaryOperator::Divide;
-         info.left = 8;
-         info.right = 8;
+         info.left = 10;
+         info.right = 10;
          return info;
       case TokenKind::Modulo:
          info.op = AstBinaryOperator::Modulo;
-         info.left = 8;
-         info.right = 8;
+         info.left = 10;
+         info.right = 10;
          return info;
       case TokenKind::Cat:
          info.op = AstBinaryOperator::Concat;
-         info.left = 5;
-         info.right = 4;
+         info.left = 6;
+         info.right = 5;
          return info;
       case TokenKind::NotEqual:
          info.op = AstBinaryOperator::NotEqual;
@@ -1371,10 +1426,10 @@ std::optional<AstBuilder::BinaryOpInfo> AstBuilder::match_binary_operator(const 
       case TokenKind::HasToken:
          info.op = AstBinaryOperator::HasFlag;
          info.left = 3;
-         info.right = 2;  // Allow bitwise ops (|, ^, &) to be parsed as RHS without parentheses
+         info.right = 3;
          return info;
       case TokenKind::Presence:
-         // Only treat ?? as binary if-empty when lookahead indicates binary usage
+         // Whitespace before ?? selects the binary if-empty form; adjacency selects postfix presence.
          if (not this->ctx.lex().should_emit_presence()) {
             info.op = AstBinaryOperator::IfEmpty;
             info.left = 1;
@@ -1384,18 +1439,18 @@ std::optional<AstBuilder::BinaryOpInfo> AstBuilder::match_binary_operator(const 
          break;  // Not a binary operator, will be handled as postfix
       case TokenKind::ShiftLeft:
          info.op = AstBinaryOperator::ShiftLeft;
-         info.left = 6;   // C precedence: shifts bind tighter than AND (5)
-         info.right = 6;  // Left-associative: 1 << 2 << 3 = (1 << 2) << 3
+         info.left = 8;
+         info.right = 8;  // Left-associative: 1 << 2 << 3 = (1 << 2) << 3
          return info;
       case TokenKind::ShiftRight:
          info.op = AstBinaryOperator::ShiftRight;
-         info.left = 6;   // C precedence: shifts bind tighter than AND (5)
-         info.right = 6;  // Left-associative
+         info.left = 8;
+         info.right = 8;  // Left-associative
          return info;
       case TokenKind::Power:
          info.op = AstBinaryOperator::Power;
-         info.left = 11;
-         info.right = 10;  // Right-associative
+         info.left = 12;
+         info.right = 11;  // Right-associative
          return info;
       default:
          break;
@@ -1447,22 +1502,22 @@ std::optional<AstBuilder::BinaryOpInfo> AstBuilder::match_binary_operator(const 
 
    if (token.raw() IS '&') {
       info.op = AstBinaryOperator::BitAnd;
-      info.left = 5;  // AND > XOR > OR per C precedence; above shifts (6)
-      info.right = 5;  // Left-associative: a & b & c = (a & b) & c
+      info.left = 7;
+      info.right = 7;  // Left-associative: a & b & c = (a & b) & c
       return info;
    }
 
    if (token.raw() IS '|') {
       info.op = AstBinaryOperator::BitOr;
-      info.left = 3;  // Above logical-and (2); allows `x has A|B` to parse as `x has (A|B)`
-      info.right = 3;  // Left-associative: a | b | c = (a | b) | c
+      info.left = 4;
+      info.right = 4;  // Left-associative: a | b | c = (a | b) | c
       return info;
    }
 
    if (token.raw() IS '^') {
       info.op = AstBinaryOperator::BitXor;
-      info.left = 4;  // XOR binds tighter than OR (3), looser than AND (5)
-      info.right = 4;  // Left-associative: a ^ b ^ c = (a ^ b) ^ c
+      info.left = 5;
+      info.right = 5;  // Left-associative: a ^ b ^ c = (a ^ b) ^ c
       return info;
    }
    return std::nullopt;

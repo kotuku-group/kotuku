@@ -85,7 +85,7 @@ end
    try
       obj.new("xml", { statement = malformedXML, flags = XMF_WELL_FORMED })
    success
-      error("Should reject malformed XML in well-formed mode")
+      assert(false, "Should reject malformed XML in well-formed mode")
    end
 end
 

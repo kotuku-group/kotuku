@@ -241,15 +241,15 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    // Set the first entry of glFonts with the default font face.
 
    std::string_view resolved_face;
-   if (!fnt::ResolveFamilyName(DEFAULT_FONTFACE, &resolved_face)) {
+   if (auto error = fnt::ResolveFamilyName(DEFAULT_FONTFACE, &resolved_face); !error) {
       APTR new_handle = nullptr;
-      if (!vec::GetFontHandle(resolved_face, DEFAULT_FONTSTYLE, 400, DEFAULT_FONTSIZE, &new_handle)) {
+      if ((error = vec::GetFontHandle(resolved_face, DEFAULT_FONTSTYLE, 400, DEFAULT_FONTSIZE, &new_handle)) IS ERR::Okay) {
          glFonts.emplace_back(new_handle, resolved_face, DEFAULT_FONTSTYLE, DEFAULT_FONTSIZE);
          glFontIndexCache.try_emplace(font_cache_key { std::string(resolved_face), DEFAULT_FONTSTYLE, DEFAULT_FONTSIZE }, 0);
       }
-      else return ERR::Failed;
+      else return error;
    }
-   else return ERR::Failed;
+   else return error;
 
    return add_document_class();
 }

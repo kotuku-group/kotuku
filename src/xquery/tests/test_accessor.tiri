@@ -9,7 +9,7 @@ glXMLPath = glBaseFolder .. 'primary.xml'
 function ensureFolder(path)
    err = mSys.CreateFolder(path, 0)
    if (err != ERR_Okay) and (err != ERR_FileExists) then
-      error('Failed to create folder ' .. path .. ': ' .. mSys.GetErrorMsg(err))
+      raise 'Failed to create folder ' .. path .. ': ' .. mSys.GetErrorMsg(err)
    end
 end
 

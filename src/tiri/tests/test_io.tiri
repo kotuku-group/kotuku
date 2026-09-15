@@ -83,7 +83,7 @@ end
    try
       io.open(glTestFolder .. 'nonexistent.txt', 'r')
    success
-      error('Should fail for non-existent file')
+      assert(false, 'Should fail for non-existent file')
    end
 end
 
@@ -98,6 +98,37 @@ end
    assert(result is true, 'io.close should return true on success')
    file_type = io.type(file)
    assert(file_type is 'closed file', 'File should be marked as closed, got ' .. tostring(file_type))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test(labels=['io', 'file']) function IOAutomaticClose()
+   test_path = createTestFile('test_automatic_close.txt', 'test')
+   file_ref = nil
+
+   do
+      local file <close> = io.open(test_path, 'r')
+      file_ref = file
+      assert(io.type(file_ref) is 'file', 'File should remain open inside its owning scope')
+   end
+
+   assert(io.type(file_ref) is 'closed file', 'File should be closed when its owning scope exits')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test(labels=['io', 'file']) function IOAutomaticCloseOnError()
+   test_path = createTestFile('test_automatic_close_error.txt', 'test')
+   file_ref = nil
+
+   try
+      local file <close> = io.open(test_path, 'r')
+      file_ref = file
+      raise 'Intentional automatic file close test error'
+   except e
+   end
+
+   assert(io.type(file_ref) is 'closed file', 'File should be closed during error unwinding')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -204,7 +235,7 @@ end
    except err
       assert(tostring(err).find('Tiri.file expected'), 'Grouped calls without an explicit receiver should fail')
    success
-      error('Grouped file method calls should remain unbound')
+      assert(false, 'Grouped file method calls should remain unbound')
    end
 
    file.close()
@@ -323,7 +354,7 @@ end
    try
       file.flush()
    success
-      error('file.flush() on a closed handle should throw an error')
+      assert(false, 'file.flush() on a closed handle should throw an error')
    end
 end
 
@@ -438,7 +469,7 @@ end
    except ex
       assert(ex.code is ERR_OpenFile, 'Should return relevant error code, got: ' .. ex.message)
    success
-      error('Should fail for invalid file path')
+      assert(false, 'Should fail for invalid file path')
    end
 
    -- Test operations on closed file
@@ -448,14 +479,14 @@ end
 
    try
       file.write('should fail') -- Expect failure
-      error('SUCCESS')
+      raise 'SUCCESS'
    except e
       assert(e.message != 'SUCCESS', 'Writing to closed file should fail')
    end
 
    try
       file.seek('set', 0) -- Expect failure
-      error('SUCCESS')
+      raise 'SUCCESS'
    except e
       assert(e.message != 'SUCCESS', 'Seeking in closed file should fail')
    end
@@ -483,7 +514,7 @@ end
    except ex
       assert(ex.code is ERR_OpenFile, 'readAll should raise OpenFile error for missing file')
    success
-      error('readAll should fail for non-existent file')
+      assert(false, 'readAll should fail for non-existent file')
    end
 end
 

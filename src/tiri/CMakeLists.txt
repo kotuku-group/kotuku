@@ -129,10 +129,37 @@ set (JIT_KOTUKU_HEADER_DEPENDENCIES
 )
 
 set (JIT_TIRI_HEADER_DEPENDENCIES
+   "${CMAKE_CURRENT_SOURCE_DIR}/cache_manifest.h"
    "${CMAKE_CURRENT_SOURCE_DIR}/defs.h"
    "${CMAKE_CURRENT_SOURCE_DIR}/struct_def.h"
    "${JIT_SRC}/runtime/lj_contract.h"
 )
+
+# The non-MSVC JIT build compiles each source with a hand-written custom command, so CMake cannot infer header
+# dependencies the way it does for ordinary targets.  Compiler-generated depfiles restore that tracking; without them
+# an edit to a JIT header such as lj_asm_x86.h does not rebuild the objects that include it.  Makefile generators
+# gained depfile support in CMake 3.20 and Xcode in 3.21; unsupported combinations fall back to a glob of every JIT
+# header.  The explicit dependency lists above are still required either way, because they order the first build
+# against headers that are themselves generated.
+
+if (CMAKE_GENERATOR MATCHES "Ninja"
+    OR (CMAKE_GENERATOR MATCHES "Makefiles" AND CMAKE_VERSION VERSION_GREATER_EQUAL 3.20)
+    OR (CMAKE_GENERATOR STREQUAL "Xcode" AND CMAKE_VERSION VERSION_GREATER_EQUAL 3.21))
+   set (JIT_USE_DEPFILES TRUE)
+   set (JIT_HEADER_DEPENDENCIES "")
+else ()
+   set (JIT_USE_DEPFILES FALSE)
+   file (GLOB JIT_HEADER_DEPENDENCIES CONFIGURE_DEPENDS
+      "${JIT_SRC}/*.h"
+      "${JIT_SRC}/bytecode/*.h"
+      "${JIT_SRC}/debug/*.h"
+      "${JIT_SRC}/host/*.h"
+      "${JIT_SRC}/jit/*.h"
+      "${JIT_SRC}/lib/*.h"
+      "${JIT_SRC}/parser/*.h"
+      "${JIT_SRC}/runtime/*.h"
+   )
+endif ()
 
 option(KOTUKU_PARSER_TRACE "Emit parser token and expectation traces" OFF)
 option(INCLUDE_TIPS "Include the parser tips system for code analysis" ON)
@@ -558,14 +585,24 @@ else ()
          list (APPEND BUILDVM_SOURCE_DEPENDENCIES "${JIT_SRC}/lj_ircall.h")
       endif ()
 
+      set (BUILDVM_DEPFILE_FLAGS "")
+      set (BUILDVM_DEPFILE_ARGS "")
+      if (JIT_USE_DEPFILES)
+         set (BUILDVM_DEPFILE_FLAGS -MD -MP -MF "${BUILDVM_OBJECT}.d")
+         set (BUILDVM_DEPFILE_ARGS DEPFILE "${BUILDVM_OBJECT}.d")
+      endif ()
+
       add_custom_command(
          OUTPUT ${BUILDVM_OBJECT}
          COMMAND ${CMAKE_CXX_COMPILER} ${JIT_COMMON_CXXFLAGS}
             ${JIT_NON_MSVC_DEFS}
             ${JIT_INCLUDE_DIRS}
+            ${BUILDVM_DEPFILE_FLAGS}
             -c ${BUILDVM_SOURCE} -o ${BUILDVM_OBJECT}
          DEPENDS ${BUILDVM_SOURCE} ${BUILDVM_ARCH_H} ${JIT_LAYOUT_HEADERS}
             ${BUILDVM_SOURCE_DEPENDENCIES} ${JIT_KOTUKU_HEADER_DEPENDENCIES}
+            ${JIT_HEADER_DEPENDENCIES}
+         ${BUILDVM_DEPFILE_ARGS}
          COMMENT "Compiling host/${BUILDVM_FILENAME}.cpp"
          VERBATIM
       )
@@ -683,6 +720,15 @@ else ()
          list(APPEND JIT_SOURCE_CXXFLAGS -mavx2)
       endif ()
 
+      # Emit a depfile alongside the object so that edits to any included header rebuild it.  -MP adds phony targets
+      # for each header, which keeps the build working after a header is renamed or deleted.
+      set (JIT_SOURCE_DEPFILE_FLAGS "")
+      set (JIT_SOURCE_DEPFILE_ARGS "")
+      if (JIT_USE_DEPFILES)
+         set (JIT_SOURCE_DEPFILE_FLAGS -MD -MP -MF "${OBJECT_FILE}.d")
+         set (JIT_SOURCE_DEPFILE_ARGS DEPFILE "${OBJECT_FILE}.d")
+      endif ()
+
       # Create custom command to compile each source file with explicit flags
       add_custom_command(
          OUTPUT ${OBJECT_FILE}
@@ -693,9 +739,12 @@ else ()
             -DLUA_ROOT=\"${CMAKE_INSTALL_PREFIX}\"
             ${JIT_INCLUDE_DIRS}
             -Wno-trigraphs
+            ${JIT_SOURCE_DEPFILE_FLAGS}
             -c ${SOURCE_FILE} -o ${OBJECT_FILE}
          DEPENDS ${SOURCE_FILE} ${JIT_GENERATED_HEADERS} "${JIT_SRC}/lj_ircall.h"
             ${JIT_KOTUKU_HEADER_DEPENDENCIES} ${JIT_TIRI_HEADER_DEPENDENCIES}
+            ${JIT_HEADER_DEPENDENCIES}
+         ${JIT_SOURCE_DEPFILE_ARGS}
          COMMENT "Compiling ${FILENAME}.cpp"
          VERBATIM
       )
@@ -764,7 +813,8 @@ if (BUILD_DEFS)
    add_dependencies (jit_lib core_defs)
 endif ()
 
-set (TIRI_SOURCES "${MOD}.cpp" "tiri_module.cpp" "tiri_async.cpp" "tiri_struct.cpp" "tiri_processing.cpp"
+set (TIRI_SOURCES "${MOD}.cpp" "cache_manifest.cpp" "tiri_module.cpp" "tiri_async.cpp" "tiri_struct.cpp"
+   "tiri_processing.cpp"
    "tiri_functions.cpp" "tiri_regex.cpp"
    "tiri_io.cpp" "tiri_class.cpp"
    "${JIT_SRC}/lib/lib.cpp"
@@ -798,8 +848,10 @@ if (INCLUDE_TIPS)
 endif ()
 
 if (UNIT_TESTS)
+   list (APPEND TIRI_SOURCES "tests/unit_cache_manifest.cpp")
    list (APPEND TIRI_SOURCES "tests/unit_module_marshalling.cpp")
    list (APPEND TIRI_SOURCES "tests/unit_set_variable.cpp")
+   list (APPEND TIRI_SOURCES "tests/unit_bytecode_files.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_test_indexing.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_test_vm_asm.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_tests_arrays.cpp")
@@ -818,6 +870,28 @@ endif ()
 if (NOT DISABLE_DISPLAY)
    list (APPEND TIRI_SOURCES "tiri_input.cpp")
 endif ()
+
+# Generate the same current-commit build marker used by `origo --version`.  Refreshing at build time prevents an
+# existing build tree from retaining the commit that was current when CMake was last configured.
+
+set (TIRI_BUILD_IDENTITY_H "${JIT_BUILD_DIR}/tiri_build_identity.h")
+set (TIRI_BUILD_IDENTITY_ARGS
+   "-DSRC_DIR=${PROJECT_SOURCE_DIR}"
+   "-DVERSION_IN=${CMAKE_CURRENT_SOURCE_DIR}/tiri_build_identity.h.in"
+   "-DVERSION_OUT=${TIRI_BUILD_IDENTITY_H}")
+
+execute_process (
+   COMMAND ${CMAKE_COMMAND} ${TIRI_BUILD_IDENTITY_ARGS}
+      -P "${PROJECT_SOURCE_DIR}/src/origo/generate_version.cmake")
+
+add_custom_target (tiri_build_identity ALL
+   COMMAND ${CMAKE_COMMAND} ${TIRI_BUILD_IDENTITY_ARGS}
+      -P "${PROJECT_SOURCE_DIR}/src/origo/generate_version.cmake"
+   BYPRODUCTS "${TIRI_BUILD_IDENTITY_H}"
+   COMMENT "Refreshing Tiri bytecode build identity"
+   VERBATIM)
+
+add_dependencies (${MOD} tiri_build_identity)
 
 target_sources (${MOD} PRIVATE ${TIRI_SOURCES})
 
@@ -866,12 +940,14 @@ endif ()
 # Register Flute tests
 
 set (TIRI_TESTS
-   defer debuglog io object regex struct async async_actions async_wait xml strings math array array_any array_manip
+   defer debuglog io filesearch object regex struct async async_actions async_wait xml strings math array array_any array_manip
    array_element_validation array_view
    array_functional array_typed_syntax recursive_array_types bitshift bitwise has_operator approx if_empty if_empty_guard
-   presence blank ternary table stress unit_tests
+   presence blank ternary table stress unit_tests bytecode_files bytecode_jit_eligibility automatic_cache
    jitoptions fstring const const_optimisation import_scope unicode ellipsis safe_nav close type_annotations type_fixing
-   type_inference jit jit_try_regex pipe for_each arrow_functions result_filter thunks deferred_expr shadow_assert
+   type_inference jit jit_uclo jit_fnew jit_arrays jit_objects jit_try_regex pipe for_each arrow_functions
+   result_filter thunks deferred_expr
+   shadow_assert
    ranges contains bare_iteration compiler_intrinsics
    annotations locality anonymous_for key_values debug_filesources compound choose_from enum flow table_slice options type_name
    library_namespaces

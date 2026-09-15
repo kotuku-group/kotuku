@@ -49,7 +49,7 @@ end
       xq.init()
    except error_value when ERR_Syntax
    success
-      error('Missing assignment should be a syntax error')
+      assert(false, 'Missing assignment should be a syntax error')
    end
    local message = xq.errorMsg ?? ''
    assert(message.find("Expected ':=' in let binding", 0, true),
@@ -60,7 +60,7 @@ end
       xq.init()
    except error_value when ERR_Syntax
    success
-      error('Missing expression should be a syntax error')
+      assert(false, 'Missing expression should be a syntax error')
    end
    local message = xq.errorMsg ?? ''
    assert(message.find("Expected expression after ':=' in let binding", 0, true),

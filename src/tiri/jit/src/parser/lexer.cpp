@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <cmath>
 #include <concepts>
 #include <format>
 #include <string>
@@ -1539,23 +1538,24 @@ static LexToken lex_scan(LexState *State, TValue *tv)
                setintV(tv, 0);  // 0 = unlimited (default)
                return TK_pipe;
             }
-            else if (isdigit(State->c)) {
-               // Pipe with limit: |2>, |10>, etc.
-               TValue limit_val;
-               lex_number(State, &limit_val);
-               if (State->c IS '>') {
+            else if (isdigit(State->c) and
+                     ((State->peek_next() IS '>') or
+                      (isdigit(State->peek_next()) and (State->peek(1) IS '>')))) {
+               // Limited pipe: |2> or |10>.  Recognise the complete token before consuming digits so that an
+               // ordinary bitwise OR such as flags|1 remains unambiguous.  Limits are intentionally capped at two
+               // digits to keep this lookahead bounded.
+               int limit = State->c - '0';
+               lex_next(State);
+               if (isdigit(State->c)) {
+                  limit = (limit * 10) + State->c - '0';
                   lex_next(State);
-                  // Validate limit is a positive integer
-                  double num = tvisnum(&limit_val) ? numV(&limit_val) : double(intV(&limit_val));
-                  if (num < 1 or num != std::floor(num)) lj_lex_error(State, TK_pipe, ErrMsg::XSYMBOL);
+               }
+               State->assert_condition(State->c IS '>', "limited pipe lookahead mismatch");
+               lex_next(State);
+               if (limit < 1) lj_lex_error(State, TK_pipe, ErrMsg::XSYMBOL);
 
-                  // Store limit in token payload
-                  *tv = limit_val;
-                  return TK_pipe;
-               }
-               else { // Error: expected '>' after number
-                  lj_lex_error(State, TK_pipe, ErrMsg::XSYMBOL);
-               }
+               setintV(tv, limit);
+               return TK_pipe;
             }
             return '|';  // Bitwise OR
 
@@ -1665,8 +1665,7 @@ LexState::LexState(lua_State* L, std::string_view Source, std::string_view Chunk
 
 #ifdef INCLUDE_TIPS
    // Initialise tip system from JIT options
-   JOF tip_options = glJitOptions;
-   if (L) tip_options |= L->script->JitOptions;
+   JOF tip_options = L ? L->script->JitOptions : JOF::NIL;
    this->tip_level = compute_tip_level(tip_options);
    if (this->tip_level > 0) {
       bool print_tips = (tip_options & JOF::DIAGNOSE) IS JOF::NIL;
@@ -1835,6 +1834,10 @@ LexState::LexState(lua_State* L, lua_Reader Rfunc, void* Rdata, std::string_view
 LexState::~LexState()
 {
    if (not this->L) return;  // Not properly initialised
+
+   if (not this->loaded_structs_committed) {
+      for (uint32_t key : this->loaded_structs) this->L->struct_declarations.erase(key);
+   }
 
    global_State* g = G(this->L);
    if (this->bc_stack) lj_mem_freevec(g, this->bc_stack, this->size_bc_stack, BCInsLine);

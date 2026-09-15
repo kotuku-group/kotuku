@@ -23,14 +23,14 @@ This test suite verifies all improvements made to the HTTP server including:
 function createTestFiles()
    err = mSys.DeleteFile(glTestDir .. '/')
    if (err != ERR_Okay) and (err != ERR_FileNotFound) and (err != ERR_Search) and (err != ERR_ResolvePath) then
-      error('Failed to reset test directory: ' .. mSys.GetErrorMsg(err))
+      raise 'Failed to reset test directory: ' .. mSys.GetErrorMsg(err)
    end
 
    -- Create test directory if it doesn't exist
    if mSys.AnalysePath(glTestDir .. '/') != ERR_Okay then
       err = mSys.CreateFolder(glTestDir .. '/', 0)
       if err != ERR_Okay then
-         error('Failed to create test directory: ' .. mSys.GetErrorMsg(err))
+         raise 'Failed to create test directory: ' .. mSys.GetErrorMsg(err)
       end
    end
 
@@ -125,7 +125,7 @@ function sendHttpRequest(Host:str, Port:num, Request:str):str
          if State is NTC_CONNECTED then
             local err, len = Socket.acWrite(Request)
             if err != ERR_Okay then
-               error('Failed to send HTTP request: ' .. mSys.GetErrorMsg(err))
+               raise 'Failed to send HTTP request: ' .. mSys.GetErrorMsg(err)
             end
          elseif State is NTC_DISCONNECTED then
             Socket.acSignal()
@@ -140,7 +140,7 @@ function sendHttpRequest(Host:str, Port:num, Request:str):str
          elseif err is ERR_Disconnected then
             Socket.acSignal()
          else
-            error('Failed to read HTTP response: ' .. mSys.GetErrorMsg(err))
+            raise 'Failed to read HTTP response: ' .. mSys.GetErrorMsg(err)
          end
       end
    })
@@ -149,7 +149,7 @@ function sendHttpRequest(Host:str, Port:num, Request:str):str
    err = client.mtConnect(Host, Port, 3.0)
    if err != ERR_Okay then
       client.free()
-      error('Failed to connect to server: ' .. mSys.GetErrorMsg(err))
+      raise 'Failed to connect to server: ' .. mSys.GetErrorMsg(err)
    end
 
    err = proc.sleep()

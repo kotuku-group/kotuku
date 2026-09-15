@@ -100,7 +100,8 @@ object can perform configuration operations but cannot process audio samples.
 
 -ERRORS-
 Okay: Hardware activation completed successfully.
-Failed: Hardware device unavailable or driver initialisation failed.
+CreateResource: The hardware audio buffer could not be created.
+Activate: The hardware device could not begin playback.
 
 *********************************************************************************************************************/
 
@@ -156,12 +157,12 @@ static ERR AUDIO_Activate(extAudio *Self)
       if (auto strerr = sndCreateBuffer(Self, &wave, mix_buffer_size, 0x7fffffff, (PlatformData *)Self->PlatformData, TRUE)) {
          log.warning(strerr);
          Self->Initialising = false;
-         return ERR::Failed;
+         return ERR::CreateResource;
       }
 
       if (sndPlay((PlatformData *)Self->PlatformData, TRUE, 0)) {
          Self->Initialising = false;
-         return log.warning(ERR::Failed);
+         return log.warning(ERR::Activate);
       }
    #endif
 
@@ -779,7 +780,7 @@ large Length: Byte length of the sample stream.
 Okay
 NullArgs
 Args
-Failed: Sample is not a stream.
+NoSupport: Sample is not a stream.
 
 -TAGS-
 mutates-object
@@ -803,7 +804,7 @@ static ERR AUDIO_SetSampleLength(extAudio *Self, struct snd::SetSampleLength *Ar
       sample.StreamLength = BYTELEN(Args->Length);
       return ERR::Okay;
    }
-   else return log.warning(ERR::Failed);
+   else return log.warning(ERR::NoSupport);
 }
 
 /*********************************************************************************************************************
@@ -1061,7 +1062,7 @@ static ERR SET_BitDepth(extAudio *Self, int Value)
    if (Value IS 16) Self->BitDepth = 16;
    else if (Value IS 8) Self->BitDepth = 8;
    else if (Value IS 24) Self->BitDepth = 24;
-   else return ERR::Failed;
+   else return ERR::InvalidValue;
    return ERR::Okay;
 }
 

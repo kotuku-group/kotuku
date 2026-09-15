@@ -57,6 +57,12 @@ typedef struct CCallInfo {
 // Helpers for conditional function definitions.
 #define IRCALLCOND_ANY(x)      x
 
+#if LJ_TARGET_X64
+#define IRCALLCOND_X64(x)      x
+#else
+#define IRCALLCOND_X64(x)      NULL
+#endif
+
 #if LJ_TARGET_X86ORX64
 #define IRCALLCOND_FPMATH(x)      NULL
 #else
@@ -151,6 +157,8 @@ typedef struct CCallInfo {
   _(ANY,    lj_tab_new_ah,         3,   A, TAB, CCI_L|CCI_T) \
   _(ANY,    lj_tab_new1,           2,  FA, TAB, CCI_L|CCI_T) \
   _(ANY,    lj_tab_dup,            2,  FA, TAB, CCI_L|CCI_T) \
+  _(ANY,    lj_func_newL_zero,     3,   A, FUNC, CCI_L|CCI_T) \
+  _(ANY,    lj_func_newL_inherited,3,   A, FUNC, CCI_L|CCI_T) \
   _(ANY,    lj_tab_clear,          1,  FS, NIL, 0) \
   _(ANY,    lj_tab_newkey,         3,   S, PGC, CCI_L|CCI_T) \
   _(ANY,    lj_tab_keyindex,       2,  FL, INT, 0) \
@@ -162,6 +170,9 @@ typedef struct CCallInfo {
   _(ANY,    lj_mem_newgco,         2,  FA, PGC, CCI_L|CCI_T) \
   _(ANY,    lj_prng_u64d,          1,  FS, NUM, CCI_CASTU64) \
   _(ANY,    lj_vm_modi,            2,  FN, INT, 0) \
+  _(X64,    lj_vm_fmod,            2,   N, NUM, XA2_FP) \
+  _(ANY,    lj_vm_min,             2,   N, NUM, XA2_FP) \
+  _(ANY,    lj_vm_max,             2,   N, NUM, XA2_FP) \
   _(ANY,    cmath_log10,           1,   N, NUM, XA_FP) \
   _(ANY,    deg,                   1,   N, NUM, XA_FP) \
   _(ANY,    rad,                   1,   N, NUM, XA_FP) \
@@ -175,6 +186,7 @@ typedef struct CCallInfo {
   _(ANY,    cmath_sinh,            1,   N, NUM, XA_FP) \
   _(ANY,    cmath_cosh,            1,   N, NUM, XA_FP) \
   _(ANY,    cmath_tanh,            1,   N, NUM, XA_FP) \
+  _(ANY,    cmath_fmod,            2,   N, NUM, XA2_FP) \
   _(ANY,    fputc,                 2,   S, INT, 0) \
   _(ANY,    fwrite,                4,   S, INT, 0) \
   _(ANY,    fflush,                1,   S, INT, 0) \
@@ -268,6 +280,11 @@ typedef struct CCallInfo {
   _(ANY,        lj_tab_mark_contextual_jit, 1, S, NIL, 0) \
   _(ANY,        lj_context_begin_block_jit, 5, S, NIL, CCI_L) \
   _(ANY,        lj_context_end_block_jit,   3, S, NIL, CCI_L) \
+  _(ANY,        lj_context_has_call_jit,    2, FS, INT, CCI_L) \
+  /* Non-allocating upvalue close; bracketed by lifetime XBARs. */ \
+  _(ANY,        lj_func_closeuv,            2, S, NIL, CCI_L) \
+  _(ANY,        lj_func_newL_local,         4, A, FUNC, CCI_L|CCI_T) \
+  _(ANY,        lj_context_leave_tail_jit,  2, S, NIL, CCI_L) \
   \
   // End of list.
 

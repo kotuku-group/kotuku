@@ -68,7 +68,7 @@ end
       try
          exec(Source)
       success
-         error(f"Expected number type name to be rejected in {Context}")
+         assert(false, f"Expected number type name to be rejected in {Context}")
       end
    end
 
@@ -84,7 +84,7 @@ end
       try
          exec(Source)
       success
-         error(f"Expected string type name to be rejected in {Context}")
+         assert(false, f"Expected string type name to be rejected in {Context}")
       end
    end
 
@@ -103,7 +103,7 @@ end
       try
          exec(Source)
       success
-         error(f"Expected object type name to be rejected in {Context}")
+         assert(false, f"Expected object type name to be rejected in {Context}")
       end
    end
 
@@ -124,7 +124,7 @@ end
       try
          exec(Source)
       success
-         error(f"Expected boolean type name to be rejected in {Context}")
+         assert(false, f"Expected boolean type name to be rejected in {Context}")
       end
    end
 
@@ -137,7 +137,7 @@ end
    try
       exec("local function rejected(Value:unknown_type) return Value end return rejected")
    success
-      error("Expected unknown type name to prevent compilation")
+      assert(false, "Expected unknown type name to prevent compilation")
    end
 end
 
@@ -160,7 +160,7 @@ end
    function assert_rejected(Source:str, Message:str)
       try
          exec(Source)
-         error('Expected array annotation syntax to be rejected')
+         raise 'Expected array annotation syntax to be rejected'
       except e
          assert(e.message.find(Message) != nil, 'Unexpected array annotation diagnostic: ' .. e.message)
       end
@@ -185,7 +185,7 @@ end
    local plain_table = { 1, 2, 3 }
    try
       increment(plain_table)
-      error("Expected a table argument to an array-annotated parameter to raise")
+      raise "Expected a table argument to an array-annotated parameter to raise"
    except e
       assert(e.message != nil, "The mistyped argument error should carry a message")
    end

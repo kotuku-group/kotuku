@@ -58,6 +58,7 @@ public:
    }
 
    // Control flow query
+   [[nodiscard]] inline bool is_unreachable() const { return desc_->is_unreachable(); }
    [[nodiscard]] inline bool has_jump() const { return desc_->has_jump(); }
 
    // Flag management
@@ -114,12 +115,14 @@ public:
    }
 
    [[nodiscard]] inline BCReg to_register(BCReg Target) {
+      if (this->is_unreachable()) return BCReg(NO_REG);
       RegisterAllocator allocator(this->func_state_);
       allocator.discharge_to_register(*this->desc_, Target);
       return BCReg(this->desc_->u.s.info);
    }
 
    [[nodiscard]] inline BCReg to_next_register() {
+      if (this->is_unreachable()) return BCReg(NO_REG);
       RegisterAllocator allocator(this->func_state_);
       allocator.discharge_to_next_register(*this->desc_);
       return BCReg(this->desc_->u.s.info);

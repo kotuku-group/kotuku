@@ -50,6 +50,7 @@ JUMPTABLE_CORE
 JUMPTABLE_REGEX
 
 #include "defs.h"
+#include "protected_call.h"
 
 namespace tiri {
 OBJECTPTR modDisplay = nullptr; // Required by tiri_input.c
@@ -363,11 +364,15 @@ extern void bulk_unit_tests(int &, int &);
 extern void gc_unit_tests(int &, int &);
 extern void module_marshalling_unit_tests(int &, int &);
 extern void set_variable_unit_tests(int &, int &);
+extern void bytecode_file_unit_tests(int &, int &);
+extern void cache_manifest_unit_tests(int &, int &);
 #endif
 
 static void MODTest(std::string_view Options, int *Passed, int *Total)
 {
 #ifdef UNIT_TESTS
+   bytecode_file_unit_tests(*Passed, *Total);
+   cache_manifest_unit_tests(*Passed, *Total);
    {
       kt::Log log("TiriTests");
       log.branch("Running SetVariable unit tests...");
@@ -455,7 +460,7 @@ tags Variable: A variable that matches the indicated `Type`.
 -ERRORS-
 Okay: The variable was defined successfully.
 Args:
-Failed: A Lua allocation or other runtime error prevented the store.
+SetField: A Lua allocation or other runtime error prevented the store.
 FieldTypeMismatch: A valid field type was not specified, or the value conflicts with a sticky global type contract.
 InvalidState: The script does not have an active Tiri state, or is currently executing.
 ObjectCorrupt: Privately maintained memory has become inaccessible.
@@ -512,7 +517,7 @@ static ERR set_variable_error(std::string_view Message)
       return ERR::ReadOnly;
    }
    if (Message.find("type contract failed") != std::string_view::npos) return ERR::FieldTypeMismatch;
-   return ERR::Failed;
+   return ERR::SetField;
 }
 
 } // namespace
@@ -688,22 +693,26 @@ ERR make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Eleme
    setarrayV(Lua, Lua->top++, arr); // Push to stack immediately to protect from GC during loop
    int arr_idx = lua_gettop(Lua);
 
+   int status = 0;
    if (Values) {
       std::vector<lua_ref> ref;
-      for (int i=0; i < Elements; i++) {
-         if (!struct_to_table(Lua, ref, *sdef, Values[i])) {
-            // Table is now on top of stack; retrieve arr from stack in case GC moved it
-            arr = arrayV(Lua->base + arr_idx - 1);
-            TValue *tv = Lua->top - 1;
-            GCtab *tab = tabV(tv);
-            setgcref(arr->get<GCRef>()[i], obj2gco(tab));
-            lj_gc_objbarrier(Lua, arr, tab);
+      auto convert = [&]() {
+         for (int i=0; i < Elements; i++) {
+            if (!struct_to_table(Lua, ref, *sdef, Values[i])) {
+               // Table is now on top of stack; retrieve arr from stack in case GC moved it
+               arr = arrayV(Lua->base + arr_idx - 1);
+               TValue *tv = Lua->top - 1;
+               GCtab *tab = tabV(tv);
+               setgcref(arr->get<GCRef>()[i], obj2gco(tab));
+               lj_gc_objbarrier(Lua, arr, tab);
+            }
+            Lua->top--;  // Pop the table
          }
-         Lua->top--;  // Pop the table
-      }
-
+      };
+      status = protected_tiri_call(Lua, convert);
       unref_struct_references(Lua, ref);
    }
+   if (status) lj_err_throw(Lua, status);
 
    return ERR::Okay;
 }
@@ -745,25 +754,28 @@ void make_struct_array(lua_State *Lua, std::string_view StructName, int Elements
    setarrayV(Lua, Lua->top++, arr); // Push to stack immediately to protect from GC during loop
    int arr_idx = lua_gettop(Lua);
 
+   int status = 0;
    if (Input) {
       std::vector<lua_ref> ref;
+      auto convert = [&]() {
+         for (int i=0; i < Elements; i++) {
+            if (!struct_to_table(Lua, ref, *sdef, Input)) {
+               // Table is now on top of stack; retrieve arr from stack in case GC moved it
+               arr = arrayV(Lua->base + arr_idx - 1);
+               TValue *tv = Lua->top - 1;
+               GCtab *tab = tabV(tv);
+               setgcref(arr->get<GCRef>()[i], obj2gco(tab));
+               lj_gc_objbarrier(Lua, arr, tab);
+            }
+            Lua->top--;  // Pop the table
 
-      for (int i=0; i < Elements; i++) {
-         if (!struct_to_table(Lua, ref, *sdef, Input)) {
-            // Table is now on top of stack; retrieve arr from stack in case GC moved it
-            arr = arrayV(Lua->base + arr_idx - 1);
-            TValue *tv = Lua->top - 1;
-            GCtab *tab = tabV(tv);
-            setgcref(arr->get<GCRef>()[i], obj2gco(tab));
-            lj_gc_objbarrier(Lua, arr, tab);
+            Input = (int8_t *)Input + struct_stride;
          }
-         Lua->top--;  // Pop the table
-
-         Input = (int8_t *)Input + struct_stride;
-      }
-
+      };
+      status = protected_tiri_call(Lua, convert);
       unref_struct_references(Lua, ref);
    }
+   if (status) lj_err_throw(Lua, status);
 }
 
 //********************************************************************************************************************
@@ -805,7 +817,8 @@ void make_any_array(lua_State *Lua, int Flags, std::string_view TypeName, int El
       }
       else make_struct_serial_array(Lua, TypeName, Elements, Values, StructDef);
    }
-   else make_array(Lua, ff_to_aet(Flags), Elements, Values, TypeName);
+   // A descriptor's argument name is not a structure type for scalar containers.
+   else make_array(Lua, ff_to_aet(Flags), Elements, Values);
 }
 
 //********************************************************************************************************************

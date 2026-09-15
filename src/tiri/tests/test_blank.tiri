@@ -217,7 +217,7 @@ end
    except ex
       assert(ex.message.find("blank identifier") != nil, "Error message should mention 'blank identifier', got: " .. ex.message)
    success
-      error("Expected parsing to fail when reading blank identifier")
+      assert(false, "Expected parsing to fail when reading blank identifier")
    end
 end
 
@@ -227,7 +227,7 @@ end
    except ex
       assert(ex.message.find("blank identifier") != nil, "Error message should mention 'blank identifier', got: " .. ex.message)
    success
-      error("Expected parsing to fail when reading blank identifier")
+      assert(false, "Expected parsing to fail when reading blank identifier")
    end
 end
 
@@ -237,7 +237,7 @@ end
    except ex
       assert(ex.message.find("blank identifier") != nil, "Error message should mention 'blank identifier', got: " .. ex.message)
    success
-      error("Expected parsing to fail when reading blank identifier")
+      assert(false, "Expected parsing to fail when reading blank identifier")
    end
 end
 
@@ -248,6 +248,6 @@ end
    except ex
       assert(ex.message.find("blank identifier") != nil, "Error message should mention 'blank identifier', got: " .. ex.message)
    success
-      error("Expected parsing to fail when reading blank identifier")
+      assert(false, "Expected parsing to fail when reading blank identifier")
    end
 end

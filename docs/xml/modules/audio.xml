@@ -179,8 +179,9 @@
     </description>
     <result type="ERR">
       <error code="Okay">Playback successfully initiated.</error>
-      <error code="Failed">Channel not associated with a valid sample.</error>
+      <error code="NoData">The referenced sample is unconfigured.</error>
       <error code="OutOfRange">Position exceeds sample boundaries.</error>
+      <error code="FieldNotSet">Channel not associated with a valid sample.</error>
       <error code="NullArgs">Required parameters are null or missing.</error>
     </result>
   </function>
@@ -223,8 +224,9 @@
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Failed">General failure</error>
+      <error code="NoData">The sample handle refers to a dead or unconfigured sample.</error>
       <error code="OutOfRange">A value is outside of the valid range</error>
+      <error code="DataSize">The sample has an invalid length.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>

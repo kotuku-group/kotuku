@@ -69,6 +69,7 @@ static CSTRING get_expkind_name(ExpKind k)
 {
    switch (k) {
       case ExpKind::Void: return "void";
+      case ExpKind::Unreachable: return "unreachable";
       case ExpKind::Nil: return "nil";
       case ExpKind::True: return "true";
       case ExpKind::False: return "false";
@@ -387,8 +388,9 @@ static void bcemit_shift_call_at_base(FuncState* fs, std::string_view fname, Exp
       *rhs = rhs_value.legacy();
    }
 
-   // Ensure freereg is past the call frame to prevent callee loading from clobbering
-   if (fs->freereg <= arg2) fs->freereg = arg2 + 1;
+   // Ensure freereg and the declared frame size cover the complete call frame before loading the callee.
+   BCREG required_top = arg2 + 1;
+   if (fs->freereg < required_top) allocator.reserve(BCReg(required_top - fs->freereg));
 
    // Now load bit.fname to base (safe since any operand at base has been moved)
    emit_bit_function_lookup(*fs, allocator, fname, BCReg(base));
@@ -490,9 +492,10 @@ static void bcemit_unary_bit_call(FuncState* fs, std::string_view fname, ExpDesc
    arg_value.to_reg(allocator, arg_reg);
    *arg = arg_value.legacy();
 
-   // Ensure freereg accounts for argument register so it's not clobbered.
+   // Ensure freereg and the declared frame size account for the argument register so it is not clobbered.
 
-   if (fs->freereg <= arg_reg) fs->freereg = arg_reg + 1;
+   BCREG required_top = arg_reg.raw() + 1;
+   if (fs->freereg < required_top) allocator.reserve(BCReg(required_top - fs->freereg));
 
    // Load bit.fname into base register.
 
@@ -778,8 +781,9 @@ void OperatorEmitter::complete_bitwise(BinOpr opr, ExprValue left, ExpDesc right
    rhs_to_arg2.to_reg(local_alloc, BCReg(arg2));
    right = rhs_to_arg2.legacy();
 
-   // Ensure freereg is past arg2 before loading callee to avoid clobbering args
-   if (fs->freereg <= arg2) fs->freereg = arg2 + 1;
+   // Ensure freereg and the declared frame size cover arg2 before loading the callee.
+   BCREG required_top = arg2 + 1;
+   if (fs->freereg < required_top) local_alloc.reserve(BCReg(required_top - fs->freereg));
 
    // Load bit.fname into base register
    CSTRING op_name = priority[int(opr)].name;

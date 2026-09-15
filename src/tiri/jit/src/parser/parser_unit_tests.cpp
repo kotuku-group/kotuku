@@ -7,6 +7,7 @@
 #include "lua.h"
 #include "lauxlib.h"
 #include "lualib.h"
+#include "luajit.h"
 
 #include "lj_bc.h"
 #include "lj_ff.h"
@@ -254,6 +255,72 @@ static AstHarnessResult build_resolved_ast_from_source(std::string_view Source,
 }
 
 //********************************************************************************************************************
+
+static bool test_raise_payload_and_context(kt::Log &Log)
+{
+   constexpr std::string_view accepted[] = {
+      "raise 'message'", "raise 12", "raise 12, 'message'",
+      "raise (12 + 0), 'message'", "raise (12) + 0, 'message'", "raise('message')", "raise(12, 'message')",
+      "try except\nraise\nend", "try except e\nif true then raise end\nend",
+      "try except\ntry except\nraise\nend\nraise\nend",
+      "try except\nfalse ?! raise\nend",
+      "return raise('message')", "return false ? 1 : raise(12, 'message'), 2",
+      "return f(raise('message'), 2)", "return (raise('message'))",
+      "return choose 1 from 1 -> raise('message') else -> 2 end"
+   };
+   for (auto source : accepted) {
+      auto ast = build_ast_from_source(source, true);
+      if (not ast.chunk.ok() or not ast.diagnostics.empty()) {
+         Log.error("raise syntax rejected: %.*s", int(source.size()), source.data());
+         log_diagnostics(ast.diagnostics, Log);
+         return false;
+      }
+   }
+   constexpr std::string_view rejected[] = {
+      "raise", "raise\nprint(1)", "try raise except end", "try except end\nraise",
+      "try except\nfunction f() raise end\nend",
+      "try except\nlocal f = function() raise end\nend",
+      "try except\ndefer raise end\nend",
+      "try except\nlocal f = (() => do raise end)\nend",
+      "try except\nsuccess\nraise\nend",
+      "return raise", "return raise()", "raise()", "raise(1,)", "raise(1, 2, 3)",
+      "return raise(1, 2, 3)", "return raise 'message'", "raise('message') = 2"
+   };
+   for (auto source : rejected) {
+      auto ast = build_ast_from_source(source, true);
+      if (ast.chunk.ok() and ast.diagnostics.empty()) {
+         Log.error("invalid raise syntax accepted: %.*s", int(source.size()), source.data());
+         return false;
+      }
+   }
+   auto ast = build_ast_from_source("return false ? 1 : raise(12, 'message'), 2", true);
+   auto &values = std::get<ReturnStmtPayload>(ast.chunk.value_ref()->statements.front()->data).values;
+   if (values.size() != 2 or infer_expression_type(*values.front()) != TiriType::Num) {
+      Log.error("raise consumed an enclosing comma or poisoned the ternary result type");
+      return false;
+   }
+   auto &branch = std::get<TernaryExprPayload>(values.front()->data).if_false;
+   if (not expression_never_returns(*branch) or expression_never_returns(*values.front())) {
+      Log.error("raise bottom semantics did not distinguish the returning ternary path");
+      return false;
+   }
+   auto choice = build_ast_from_source("return choose 1 from 1 -> raise('failure') else -> 2 end", true);
+   auto &choice_value = std::get<ReturnStmtPayload>(choice.chunk.value_ref()->statements.front()->data).values.front();
+   if (infer_expression_type(*choice_value) != TiriType::Num or expression_never_returns(*choice_value)) {
+      Log.error("raise poisoned the choose result type");
+      return false;
+   }
+   auto unhandled = build_ast_from_source("raise", true);
+   bool focused = false;
+   for (const auto &diagnostic : unhandled.diagnostics) {
+      if (diagnostic.message IS "bare raise is only valid inside an except handler") focused = true;
+   }
+   if (not focused) {
+      Log.error("bare raise did not report its lexical handler restriction");
+      return false;
+   }
+   return true;
+}
 
 static bool test_assignment_target_semantic_resolution(kt::Log &Log)
 {
@@ -2025,10 +2092,51 @@ static BindingDiscoveryResult discover_bindings_from_source(std::string_view Sou
 
 //********************************************************************************************************************
 
+static bool test_error_removal(kt::Log &Log)
+{
+   constexpr std::string_view source = "error('removed')";
+   auto result = discover_bindings_from_source(source, true, true);
+   lua_State *L = result.state->get();
+   lua_getglobal(L, "error");
+   bool absent = lua_isnil(L, -1);
+   lua_pop(L, 1);
+   if (not absent) {
+      Log.error("the removed error built-in remains in the public base environment");
+      return false;
+   }
+
+   for (const auto &diagnostic : result.diagnostics) {
+      if (diagnostic.code IS ParserErrorCode::DeprecatedApi) {
+         Log.error("the removed error name still emitted a deprecation warning");
+         return false;
+      }
+   }
+   if (not result.chunk.ok()) return false;
+
+   if (lua_load(L, source, "=error-removal") IS 0) {
+      Log.error("the removed error built-in still compiled as a public global");
+      lua_pop(L, 1);
+      return false;
+   }
+   std::string_view message = lua_tostring(L, -1);
+   if (message.find("Undeclared variable 'error'") IS std::string_view::npos) {
+      Log.error("the removed error built-in produced the wrong diagnostic: %s", lua_tostring(L, -1));
+      lua_pop(L, 1);
+      return false;
+   }
+   lua_pop(L, 1);
+
+   auto local = discover_bindings_from_source(
+      "local error = function(Message) end\nerror('local')\nlocal api = { error=function() end }\napi.error()", true,
+      true);
+   return local.chunk.ok() and local.diagnostics.empty();
+}
+
 static bool test_library_namespace_declarations(kt::Log &Log)
 {
    auto created = discover_bindings_from_source(
-      "namespace sample { value=1 }\n"
+      "namespace sample\n"
+      "{ value=1 }\n"
       "local observed = sample.value\n");
    if (not created.chunk.ok() or not created.diagnostics.empty() or
        created.chunk.value_ref()->statements.empty() or
@@ -2047,7 +2155,8 @@ static bool test_library_namespace_declarations(kt::Log &Log)
    }
 
    auto callable = discover_bindings_from_source(
-      "namespace callable function(Value:num):num "
+      "namespace callable\n"
+      "function(Value:num):num "
       "if Value <= 1 then return 1 end return Value * callable(Value - 1) end\n");
    const NamespaceStmtPayload *callable_payload = callable.chunk.ok() and
       not callable.chunk.value_ref()->statements.empty() ?
@@ -2056,6 +2165,36 @@ static bool test_library_namespace_declarations(kt::Log &Log)
        callable_payload->initialiser->kind != AstNodeKind::FunctionExpr or not callable.diagnostics.empty()) {
       Log.error("a function namespace declaration did not retain its function literal");
       log_diagnostics(callable.diagnostics, Log);
+      return false;
+   }
+
+   auto deferred = discover_bindings_from_source(
+      "namespace deferred\n"
+      "thunk():num return 7 end\n");
+   const NamespaceStmtPayload *deferred_payload = deferred.chunk.ok() and
+      not deferred.chunk.value_ref()->statements.empty() ?
+      std::get_if<NamespaceStmtPayload>(&deferred.chunk.value_ref()->statements[0]->data) : nullptr;
+   if (not deferred_payload or deferred_payload->mode != NamespaceDeclarationMode::Create or
+       not deferred_payload->initialiser or deferred_payload->initialiser->kind != AstNodeKind::CallExpr or
+       not deferred.diagnostics.empty()) {
+      Log.error("a multiline thunk namespace declaration did not retain its deferred initialiser");
+      log_diagnostics(deferred.diagnostics, Log);
+      return false;
+   }
+
+   auto joined = discover_bindings_from_source(
+      "namespace shared\n"
+      "function exported():num return 1 end\n"
+      "thunk deferred_export():num return 2 end\n");
+   const NamespaceStmtPayload *joined_payload = joined.chunk.ok() and
+      not joined.chunk.value_ref()->statements.empty() ?
+      std::get_if<NamespaceStmtPayload>(&joined.chunk.value_ref()->statements[0]->data) : nullptr;
+   if (not joined_payload or joined_payload->mode != NamespaceDeclarationMode::Join or joined_payload->initialiser or
+       joined.chunk.value_ref()->statements.size() != 3 or
+       joined.chunk.value_ref()->statements[1]->kind != AstNodeKind::FunctionStmt or
+       joined.chunk.value_ref()->statements[2]->kind != AstNodeKind::FunctionStmt or not joined.diagnostics.empty()) {
+      Log.error("a namespace join consumed a following named function or thunk declaration");
+      log_diagnostics(joined.diagnostics, Log);
       return false;
    }
 
@@ -2652,7 +2791,8 @@ static bool test_ternary_presence_expr_ast(kt::Log &log)
    constexpr const char* source = R"(
 local value = nil
 local fallback = 10
-return (value ?? fallback) ? value : fallback, value??, (value ?? fallback)??
+return (value ?? fallback) ? value : fallback, value??, (value ?? fallback)??, (value ??
+   fallback)
 )";
 
    auto result = build_ast_from_source(source);
@@ -2677,8 +2817,8 @@ return (value ?? fallback) ? value : fallback, value??, (value ?? fallback)??
    }
 
    const auto* payload = std::get_if<ReturnStmtPayload>(&return_stmt.data);
-   if (not payload or payload->values.size() != 3) {
-      log.error("return should provide three expressions");
+   if (not payload or payload->values.size() != 4) {
+      log.error("return should provide four expressions");
       return false;
    }
 
@@ -2692,6 +2832,34 @@ return (value ?? fallback) ? value : fallback, value??, (value ?? fallback)??
    }
    if (not payload->values[2] or not (payload->values[2]->kind IS AstNodeKind::PresenceExpr)) {
       log.error("third return expression should be nested presence check");
+      return false;
+   }
+   const auto *multiline = payload->values[3] ? std::get_if<BinaryExprPayload>(&payload->values[3]->data) : nullptr;
+   if (not multiline or not (multiline->op IS AstBinaryOperator::IfEmpty)) {
+      log.error("fourth return expression should be a multiline if-empty expression");
+      return false;
+   }
+
+   auto separated = build_ast_from_source(
+      "local value = 'present'\n"
+      "local present = value??\n"
+      "next_value()\n");
+   if (not separated.chunk.ok()) {
+      log.error("an adjacent presence check before an expression statement did not parse");
+      log_diagnostics(separated.diagnostics, log);
+      return false;
+   }
+
+   StatementListView separated_statements = separated.chunk.value_ref()->view();
+   const auto *presence_declaration = separated_statements.size() > 1 ?
+      std::get_if<LocalDeclStmtPayload>(&separated_statements[1].data) : nullptr;
+   const auto *following_statement = separated_statements.size() > 2 ?
+      std::get_if<ExpressionStmtPayload>(&separated_statements[2].data) : nullptr;
+   if (separated_statements.size() != 3 or not presence_declaration or presence_declaration->values.size() != 1 or
+       presence_declaration->values[0]->kind != AstNodeKind::PresenceExpr or not following_statement or
+       not following_statement->expression or following_statement->expression->kind != AstNodeKind::CallExpr) {
+      log.error("an adjacent presence check consumed the following expression statement");
+      log_block_outline(*separated.chunk.value_ref(), log);
       return false;
    }
 
@@ -2845,6 +3013,216 @@ static int bytecode_writer(lua_State *, const void *Data, size_t Size, void *Con
    auto *dump = (std::string *)Context;
    dump->append((const char *)Data, Size);
    return 0;
+}
+
+static GCproto * first_child_proto(GCproto *Proto);
+
+static bool test_structural_bytecode_reader_validation(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   constexpr std::string_view source =
+      "local captured = 4\n"
+      "local function child(Value)\n"
+      "   local copy = Value\n"
+      "   if copy then return captured + 1 end\n"
+      "   return 0\n"
+      "end\n"
+      "return child\n";
+   if (lua_load(lua, source, "structural-reader")) {
+      Log.error("failed to compile structural-reader fixture: %s", lua_tostring(lua, -1));
+      return false;
+   }
+   GCproto *root = funcproto(funcV(lua->top - 1));
+   GCproto *child = first_child_proto(root);
+   if (not child or not child->sizeuv or not proto_lineinfo(child)) {
+      Log.error("structural-reader fixture lacks a child capture or debug metadata");
+      return false;
+   }
+
+   auto rejected = [&](std::string_view Dump, std::string_view Label) {
+      int status = lua_load(lua, Dump, "malformed-structural-bytecode");
+      if (status != LUA_ERRSYNTAX) {
+         if (status) lua_pop(lua, 1);
+         Log.error("bytecode reader returned %d for malformed %.*s", status, int(Label.size()), Label.data());
+         return false;
+      }
+      lua_pop(lua, 1);
+      if (lua_load(lua, "return 42", "structural-reader-recovery") or lua_pcall(lua, 0, 1, 0) or
+          lua_tointeger(lua, -1) != 42) {
+         Log.error("state was not reusable after malformed %.*s", int(Label.size()), Label.data());
+         return false;
+      }
+      lua_pop(lua, 1);
+      return true;
+   };
+   auto dump_rejected = [&](std::string_view Label) {
+      std::string dump;
+      if (lua_dump(lua, bytecode_writer, &dump) != 0) return false;
+      return rejected(dump, Label);
+   };
+   auto append_uleb = [](std::string &Output, uint32_t Value) {
+      do {
+         uint8_t byte = uint8_t(Value & 0x7f);
+         Value >>= 7;
+         Output.push_back(char(byte | (Value ? 0x80 : 0)));
+      } while (Value);
+   };
+   auto read_uleb = [](std::string_view Input, size_t &Cursor, uint32_t &Value) {
+      Value = 0;
+      for (uint32_t shift = 0; shift <= 28 and Cursor < Input.size(); shift += 7) {
+         uint32_t byte = uint8_t(Input[Cursor++]);
+         if ((shift IS 28) and byte > 0x0f) return false;
+         Value |= (byte & 0x7f) << shift;
+         if (not (byte & 0x80)) return true;
+      }
+      return false;
+   };
+
+   BCIns *root_bc = proto_bc(root);
+   MSize register_pc = 0;
+   MSize constant_pc = 0;
+   for (MSize pc = 1; pc < root->sizebc; ++pc) {
+      BCOp op = bc_op(root_bc[pc]);
+      if (not register_pc and bcmode_a(op) != BCMnone) register_pc = pc;
+      if (not constant_pc and bcmode_hasd(op) and
+          (bcmode_d(op) IS BCMstr or bcmode_d(op) IS BCMfunc or bcmode_d(op) IS BCMtab)) constant_pc = pc;
+   }
+   MSize jump_pc = 0;
+   for (MSize pc = 1; pc < child->sizebc; ++pc) {
+      if (bcmode_hasd(bc_op(proto_bc(child)[pc])) and bcmode_d(bc_op(proto_bc(child)[pc])) IS BCMjump) {
+         jump_pc = pc;
+         break;
+      }
+   }
+   if (not register_pc or not constant_pc or not jump_pc) {
+      Log.error("structural-reader fixture lacks register, constant or branch operands");
+      return false;
+   }
+
+   BCIns saved = root_bc[register_pc];
+   setbc_a(&root_bc[register_pc], root->framesize);
+   bool valid = dump_rejected("register operand");
+   root_bc[register_pc] = saved;
+   if (not valid) return false;
+
+   saved = root_bc[constant_pc];
+   setbc_d(&root_bc[constant_pc], root->sizekgc);
+   valid = dump_rejected("constant operand");
+   root_bc[constant_pc] = saved;
+   if (not valid) return false;
+
+   saved = root_bc[constant_pc];
+   setbc_op(&root_bc[constant_pc], bcmode_d(bc_op(saved)) IS BCMfunc ? BC_KSTR : BC_FNEW);
+   valid = dump_rejected("constant kind");
+   root_bc[constant_pc] = saved;
+   if (not valid) return false;
+
+   saved = proto_bc(child)[jump_pc];
+   setbc_d(&proto_bc(child)[jump_pc], 0);
+   valid = dump_rejected("branch target");
+   proto_bc(child)[jump_pc] = saved;
+   if (not valid) return false;
+
+   saved = root_bc[register_pc];
+   setbc_op(&root_bc[register_pc], BC_FUNCF);
+   valid = dump_rejected("function-header opcode");
+   root_bc[register_pc] = saved;
+   if (not valid) return false;
+
+   uint16_t saved_capture = proto_uv(child)[0];
+   proto_uv(child)[0] = PROTO_UV_LOCAL | root->framesize;
+   valid = dump_rejected("upvalue capture");
+   proto_uv(child)[0] = saved_capture;
+   if (not valid) return false;
+
+   uint8_t *debug_end = (uint8_t *)child + child->sizept;
+   uint8_t saved_terminator = debug_end[-1];
+   debug_end[-1] = 1;
+   valid = dump_rejected("missing debug terminator");
+   debug_end[-1] = saved_terminator;
+   if (not valid) return false;
+
+   std::string stripped;
+   if (lj_bcwrite(lua, root, bytecode_writer, &stripped, 1) != 0) return false;
+   size_t cursor = 4;
+   uint32_t header_flags = 0;
+   if (not read_uleb(stripped, cursor, header_flags) or not (header_flags & BCDUMP_F_STRIP)) return false;
+   uint32_t metadata_length = 0;
+   for (int block = 0; block < 2; ++block) {
+      if (not read_uleb(stripped, cursor, metadata_length) or metadata_length > stripped.size() - cursor) return false;
+      cursor += metadata_length;
+   }
+   size_t length_offset = cursor;
+   uint32_t prototype_length = 0;
+   if (not read_uleb(stripped, cursor, prototype_length) or prototype_length < 2 or
+       prototype_length > stripped.size() - cursor) return false;
+   size_t body_offset = cursor;
+
+   std::string short_record = stripped.substr(0, length_offset);
+   append_uleb(short_record, prototype_length - 1);
+   short_record.append(stripped, body_offset, std::string::npos);
+   if (not rejected(short_record, "truncated prototype record")) return false;
+
+   // Replace the first prototype's sizekgc field with 65,537 without relying on host-sized arithmetic. The reader
+   // must reject the count before allocating or walking the shortened constant section.
+   size_t constant_cursor = body_offset + 4;
+   uint32_t old_constant_count = 0;
+   if (not read_uleb(stripped, constant_cursor, old_constant_count)) return false;
+   std::string changed_body = stripped.substr(body_offset, 4);
+   append_uleb(changed_body, BCMAX_D + 2u);
+   changed_body.append(stripped, constant_cursor, prototype_length - (constant_cursor - body_offset));
+   std::string excessive_count = stripped.substr(0, length_offset);
+   append_uleb(excessive_count, uint32_t(changed_body.size()));
+   excessive_count += changed_body;
+   excessive_count.append(stripped, body_offset + prototype_length, std::string::npos);
+   if (not rejected(excessive_count, "overflowing constant count")) return false;
+
+   // Bounded deterministic mutation pass: every payload byte is independently cleared and inverted. Mutations may
+   // remain structurally valid, but every outcome must be either a clean load or a syntax rejection.
+   size_t mutation_stop = std::min<size_t>(stripped.size(), 1024);
+   for (size_t offset = 5; offset < mutation_stop; ++offset) {
+      for (uint8_t replacement : { uint8_t(0), uint8_t(uint8_t(stripped[offset]) ^ 0xff) }) {
+         std::string mutation = stripped;
+         mutation[offset] = char(replacement);
+         int status = lua_load(lua, mutation, "bounded-bytecode-mutation");
+         if (status != 0 and status != LUA_ERRSYNTAX) {
+            if (status) lua_pop(lua, 1);
+            Log.error("payload mutation at byte %zu returned unexpected status %d", offset, status);
+            return false;
+         }
+         lua_pop(lua, 1);
+      }
+   }
+
+   // A depth-201 synthetic tree exceeds the same nesting ceiling used by the source parser. Each prototype contains
+   // one RET0 instruction and each parent owns exactly one child constant.
+   std::string nested;
+   nested.append("\x1bLJ", 3);
+   nested.push_back(char(BCDUMP_VERSION));
+   append_uleb(nested, BCDUMP_F_STRIP | (LJ_FR2 ? BCDUMP_F_FR2 : 0));
+   for (uint32_t depth = 0; depth <= uint32_t(LJ_MAX_XLEVEL); ++depth) {
+      bool parent = depth != 0;
+      std::string body;
+      body.push_back(char(parent ? PROTO_CHILD : 0));
+      body.append("\0\1\0", 3); // Parameters, frame size, upvalues.
+      append_uleb(body, parent ? 1 : 0);
+      append_uleb(body, 0);
+      append_uleb(body, 1);
+      append_uleb(body, 0);
+      append_uleb(body, 0);
+      BCIns instruction = BCINS_AD(BC_RET0, 0, 1);
+      body.append((const char *)&instruction, sizeof(instruction));
+      if (parent) body.push_back(char(BCDUMP_KGC_CHILD));
+      body.append("\0\0", 2); // No exception blocks or handlers.
+      append_uleb(nested, uint32_t(body.size()));
+      nested += body;
+   }
+   nested.push_back(0);
+   if (not rejected(nested, "prototype nesting")) return false;
+
+   lua_pop(lua, 1);
+   return true;
 }
 
 static GCproto * first_child_proto(GCproto *Proto)
@@ -3134,7 +3512,8 @@ static bool test_old_bytecode_versions_rejected(kt::Log &Log)
    // replaced it with BC_MODACT.  Gate E selected format rejection over a compatibility shim.
 
    for (uint8_t version : { uint8_t(0x81), uint8_t(0x83), uint8_t(0x85), uint8_t(0x86), uint8_t(0x8e),
-      uint8_t(0x90), uint8_t(0x91), uint8_t(0x97), uint8_t(0x99) }) {
+      uint8_t(0x90), uint8_t(0x91), uint8_t(0x97), uint8_t(0x99), uint8_t(0x9c), uint8_t(0x9f), uint8_t(0xa0),
+      uint8_t(0xa5) }) {
       std::string old_dump = dump;
       old_dump[3] = char(version);
       if (lua_load(L, std::string_view(old_dump.data(), old_dump.size()), "old-version") IS 0) {
@@ -3489,11 +3868,21 @@ static bool test_malformed_signature_rejected(kt::Log &Log)
 
    size_t position = 5;
    uint32_t value = 0;
-   if (not read_uleb(position, value) or position + 4 > dump.size()) {
+   if (not read_uleb(position, value) or value > dump.size() - position) {
+      Log.error("could not skip the source manifest in the malformed-signature fixture");
+      return false;
+   }
+   position += value;
+   if (not read_uleb(position, value) or value > dump.size() - position) {
+      Log.error("could not skip the struct manifest in the malformed-signature fixture");
+      return false;
+   }
+   position += value;
+   if (not read_uleb(position, value) or position + 5 > dump.size()) {
       Log.error("could not locate the prototype header in the malformed-signature fixture");
       return false;
    }
-   position += 4;
+   position += 5;
 
    // Header ULEB fields, in order: sizekgc, sizekn, sizebc, siglen, deplen.  The dump is stripped, so no debug
    // length follows and the signature payload begins immediately after deplen.
@@ -3575,6 +3964,84 @@ static bool test_malformed_signature_rejected(kt::Log &Log)
    return true;
 }
 
+static bool test_source_manifest_validation(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   if (lua_load(L, "return function() return 42 end", "source-manifest")) {
+      Log.error("failed to compile the source-manifest fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+   std::string dump;
+   if (lj_bcwrite(L, funcproto(funcV(L->top - 1)), bytecode_writer, &dump, 1) != 0) {
+      Log.error("failed to dump the source-manifest fixture");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   auto read_uleb = [&dump](size_t &Position, uint32_t &Value) {
+      Value = 0;
+      for (uint32_t shift = 0; shift <= 28 and Position < dump.size(); shift += 7) {
+         const uint8_t byte = uint8_t(dump[Position++]);
+         Value |= uint32_t(byte & 0x7f) << shift;
+         if (not (byte & 0x80)) return true;
+      }
+      return false;
+   };
+   size_t source_offset = 5;
+   uint32_t source_size = 0;
+   if (not read_uleb(source_offset, source_size) or source_size > dump.size() - source_offset) {
+      Log.error("could not locate the source manifest");
+      return false;
+   }
+   size_t struct_offset = source_offset + source_size;
+   uint32_t struct_size = 0;
+   if (not read_uleb(struct_offset, struct_size) or struct_size > dump.size() - struct_offset) {
+      Log.error("could not locate the struct manifest");
+      return false;
+   }
+   size_t prototype_offset = struct_offset + struct_size;
+   uint32_t prototype_size = 0;
+   if (not read_uleb(prototype_offset, prototype_size) or prototype_offset + 5 > dump.size()) {
+      Log.error("could not locate the prototype source identity");
+      return false;
+   }
+
+   std::array<std::string, 3> invalid = { dump, dump, dump };
+   invalid[0][source_offset] = char(0xff);
+   invalid[1][source_offset + 2] = char(1);
+   invalid[2][prototype_offset + 4] = char(1);
+   constexpr std::array<const char *, 3> descriptions = {
+      "unsupported source version", "out-of-range source root", "out-of-range prototype source"
+   };
+   for (size_t invalid_index = 0; invalid_index < invalid.size(); ++invalid_index) {
+      const auto &bytes = invalid[invalid_index];
+      const size_t source_count = L->file_sources.size();
+      if (lua_load(L, std::string_view(bytes.data(), bytes.size()), "invalid-source-manifest") IS 0) {
+         Log.error("the bytecode reader accepted %s", descriptions[invalid_index]);
+         lua_pop(L, 1);
+         return false;
+      }
+      lua_pop(L, 1);
+      if (L->file_sources.size() != source_count) {
+         Log.error("a rejected source manifest published runtime source records");
+         return false;
+      }
+   }
+   if (lua_load(L, std::string_view(dump.data(), dump.size()), "valid-source-manifest")) {
+      Log.error("the state was not reusable after source-manifest rejection: %s", lua_tostring(L, -1));
+      return false;
+   }
+   GCproto *root = funcproto(funcV(L->top - 1));
+   const CompilationSourceMap *sources = proto_compilation_sources(root);
+   if (not sources or sources->count != 1 or sources->root != 0) {
+      Log.error("the valid source manifest was not attached to its root prototype");
+      return false;
+   }
+   lua_pop(L, 1);
+   return true;
+}
+
 static bool snapshot_has_opcode(const BytecodeSnapshot &Snapshot, BCOp Opcode)
 {
    for (BCIns instruction : Snapshot.instructions) {
@@ -3582,6 +4049,17 @@ static bool snapshot_has_opcode(const BytecodeSnapshot &Snapshot, BCOp Opcode)
    }
    for (const BytecodeSnapshot &child : Snapshot.children) {
       if (snapshot_has_opcode(child, Opcode)) return true;
+   }
+   return false;
+}
+
+static bool snapshot_has_resolved_field_hint(const BytecodeSnapshot &Snapshot, BCOp Opcode)
+{
+   for (BCIns instruction : Snapshot.instructions) {
+      if (bc_op(instruction) IS Opcode and bc_p32(instruction) != 0xffffffffu) return true;
+   }
+   for (const BytecodeSnapshot &child : Snapshot.children) {
+      if (snapshot_has_resolved_field_hint(child, Opcode)) return true;
    }
    return false;
 }
@@ -4228,51 +4706,90 @@ static bool test_complex_contract_jit_eligibility(kt::Log &Log)
 {
    LuaStateHolder state;
    lua_State *lua = state.get();
-   auto compile_proto = [lua, &Log](std::string_view Source, const char *Label, bool Child) -> GCproto * {
+   auto check_policy = [&Log](const GCproto *Prototype, bool Required, const char *Label) {
+      if (not Prototype or bool(Prototype->interpreter_required) != Required or
+          bool(Prototype->flags & PROTO_NOJIT) != Required) {
+         Log.error("%s had unexpected required or effective JIT policy", Label);
+         return false;
+      }
+      return true;
+   };
+   auto verify_roundtrip = [lua, &Log, &check_policy](
+      std::string_view Source, const char *Label, uint8_t ChildDepth, bool Required) {
       if (lua_load(lua, Source, Label)) {
          Log.error("%s failed to compile: %s", Label, lua_tostring(lua, -1));
          lua_pop(lua, 1);
-         return nullptr;
+         return false;
       }
 
       GCproto *root = funcproto(funcV(lua->top - 1));
-      GCproto *result = Child ? first_child_proto(root) : root;
-      lua->top--;
-      return result;
+      GCproto *prototype = root;
+      for (uint8_t depth = 0; depth < ChildDepth and prototype; ++depth) prototype = first_child_proto(prototype);
+      if (not check_policy(prototype, Required, Label)) {
+         lua_pop(lua, 1);
+         return false;
+      }
+
+      for (int strip : { 0, 1 }) {
+         std::string dump;
+         if (lj_bcwrite(lua, root, bytecode_writer, &dump, strip) != 0 or
+             lua_load(lua, std::string_view(dump.data(), dump.size()), Label)) {
+            Log.error("%s failed its %s round-trip: %s", Label, strip ? "stripped" : "unstripped",
+               lua_tostring(lua, -1));
+            lua_pop(lua, 1);
+            return false;
+         }
+         GCproto *loaded = funcproto(funcV(lua->top - 1));
+         for (uint8_t depth = 0; depth < ChildDepth and loaded; ++depth) loaded = first_child_proto(loaded);
+         bool valid = check_policy(loaded, Required, Label);
+         lua_pop(lua, 1);
+         if (not valid) {
+            lua_pop(lua, 1);
+            return false;
+         }
+      }
+      lua_pop(lua, 1);
+      return true;
    };
 
-   GCproto *fixed = compile_proto(
+   if (not verify_roundtrip(
       "return function(Value:func):func\n"
       "   return Value\n"
       "end\n",
-      "fixed-complex-contract", true);
-   if (not fixed or (fixed->flags & PROTO_NOJIT)) {
-      Log.error("a fixed complex contract remained interpreter-only");
-      return false;
-   }
+      "fixed-complex-contract", 1, false)) return false;
 
-   GCproto *fixed_object_class = compile_proto(
+   if (not verify_roundtrip(
       "extern obj\n"
       "return function(Value:any)\n"
       "   local stored = obj.new('time')\n"
       "   stored = Value\n"
       "   return stored\n"
       "end\n",
-      "fixed-object-class-contract", true);
-   if (not fixed_object_class or (fixed_object_class->flags & PROTO_NOJIT)) {
-      Log.error("a fixed object-class contract became interpreter-only");
-      return false;
-   }
+      "fixed-object-class-contract", 1, false)) return false;
 
-   GCproto *dynamic = compile_proto(
+   if (not verify_roundtrip(
       "return function(...):<num, ...>\n"
       "   return ...\n"
       "end\n",
-      "dynamic-result-contract", true);
-   if (not dynamic or not (dynamic->flags & PROTO_NOJIT)) {
-      Log.error("a dynamic-result contract became JIT-eligible without exact multi-result recorder support");
-      return false;
-   }
+      "dynamic-result-contract", 1, true)) return false;
+
+   if (not verify_roundtrip(
+      "local function values() return 7, 'kept' end\n"
+      "return function()\n"
+      "   defer local ignored = 1 end\n"
+      "   return values()\n"
+      "end\n",
+      "multi-result-cleanup", 1, true)) return false;
+
+   constexpr std::string_view nested_source =
+      "return function()\n"
+      "   return function()\n"
+      "      global glNestedPolicy <const> = 1\n"
+      "   end\n"
+      "end\n";
+   if (not verify_roundtrip(nested_source, "nested const root", 0, false) or
+       not verify_roundtrip(nested_source, "nested const parent", 1, false) or
+       not verify_roundtrip(nested_source, "nested const grandchild", 2, true)) return false;
 
    struct EligibilityCase {
       const char *label;
@@ -4293,20 +4810,137 @@ static bool test_complex_contract_jit_eligibility(kt::Log &Log)
    for (const EligibilityCase &test : cases) {
       std::string child_source = std::format("return function()\n   {}\nend\n", test.statement);
       std::string child_label = std::format("{}-child", test.label);
-      GCproto *child = compile_proto(child_source, child_label.c_str(), true);
-      if (not child or bool(child->flags & PROTO_NOJIT) != test.no_jit) {
-         Log.error("%s had unexpected child prototype JIT eligibility", test.label);
+      if (not verify_roundtrip(child_source, child_label.c_str(), 1, test.no_jit)) return false;
+
+      std::string main_label = std::format("{}-main", test.label);
+      if (not verify_roundtrip(test.statement, main_label.c_str(), 0, test.no_jit)) return false;
+   }
+
+   if (lua_load(lua, "local descriptor = '\\5\\0\\1\\1\\3\\4\\1\\0\\0\\0'\nreturn descriptor\n",
+       "unused-descriptor-string")) return false;
+   GCproto *supported = funcproto(funcV(lua->top - 1));
+   if (not check_policy(supported, false, "unused descriptor-like string")) {
+      lua_pop(lua, 1);
+      return false;
+   }
+   luaJIT_setmode(lua, -1, LUAJIT_MODE_FUNC | LUAJIT_MODE_OFF);
+   if (not (supported->flags & PROTO_NOJIT) or supported->interpreter_required) {
+      Log.error("explicit runtime disabling was confused with required interpreter policy");
+      lua_pop(lua, 1);
+      return false;
+   }
+   std::string disabled_dump;
+   if (lua_dump(lua, bytecode_writer, &disabled_dump) != 0 or
+       lua_load(lua, std::string_view(disabled_dump.data(), disabled_dump.size()), "transient-disable-load")) {
+      Log.error("failed to round-trip a transiently disabled prototype");
+      lua_pop(lua, 1);
+      return false;
+   }
+   bool transient_valid = check_policy(funcproto(funcV(lua->top - 1)), false, "transient disable load");
+   lua_pop(lua, 2);
+   if (not transient_valid) return false;
+
+   if (lua_load(lua, "global glRequiredEnable <const> = 1", "required-enable")) return false;
+   GCproto *required = funcproto(funcV(lua->top - 1));
+   luaJIT_setmode(lua, -1, LUAJIT_MODE_FUNC | LUAJIT_MODE_ON);
+   bool enable_valid = check_policy(required, true, "required policy after explicit enable");
+   lua_pop(lua, 1);
+   if (not enable_valid) return false;
+   return true;
+}
+
+static bool test_contract_bytecode_policy_validation(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *lua = state.get();
+
+   auto exercise = [lua, &Log](std::string_view Source, BCOp Opcode, const char *Label) {
+      if (lua_load(lua, Source, Label)) {
+         Log.error("%s failed to compile: %s", Label, lua_tostring(lua, -1));
+         lua_pop(lua, 1);
+         return false;
+      }
+      GCproto *root = funcproto(funcV(lua->top - 1));
+      MSize descriptor_pc = 0;
+      GCstr *encoded = nullptr;
+      for (MSize pc = 1; pc < root->sizebc; ++pc) {
+         BCIns instruction = proto_bc(root)[pc];
+         if (bc_op(instruction) != Opcode) continue;
+         GCstr *candidate = gco_to_string(proto_kgc(root, ~(ptrdiff_t)bc_d(instruction)));
+         RuntimeContractDescriptor descriptor;
+         if (not decode_runtime_contract(candidate, descriptor)) continue;
+         if (Opcode != BC_CONTRACT or contract_requires_interpreter(descriptor)) {
+            descriptor_pc = pc;
+            encoded = candidate;
+            break;
+         }
+      }
+      if (not descriptor_pc or not encoded or encoded->len < 4) {
+         Log.error("%s did not emit the expected descriptor", Label);
+         lua_pop(lua, 1);
          return false;
       }
 
-      std::string main_label = std::format("{}-main", test.label);
-      GCproto *main = compile_proto(test.statement, main_label.c_str(), false);
-      if (not main or bool(main->flags & PROTO_NOJIT) != test.no_jit) {
-         Log.error("%s had unexpected main prototype JIT eligibility", test.label);
-         return false;
+      auto expect_rejected = [&](int Strip, const char *Mutation) {
+         std::string malformed;
+         if (lj_bcwrite(lua, root, bytecode_writer, &malformed, Strip) != 0) return false;
+         int status = lua_load(lua, std::string_view(malformed.data(), malformed.size()), Mutation);
+         if (status != LUA_ERRSYNTAX) {
+            lua_pop(lua, 1);
+            Log.error("the reader accepted %s in a %s dump", Mutation, Strip ? "stripped" : "unstripped");
+            return false;
+         }
+         lua_pop(lua, 1);
+         return true;
+      };
+
+      for (int strip : { 0, 1 }) {
+         char *bytes = (char *)strdata(encoded);
+         uint8_t saved_flags = uint8_t(bytes[1]);
+         bytes[1] = char(0x80);
+         bool valid = expect_rejected(strip, "unknown contract descriptor flags");
+         bytes[1] = char(saved_flags);
+         if (not valid) {
+            lua_pop(lua, 1);
+            return false;
+         }
+
+         uint8_t saved_count = uint8_t(bytes[3]);
+         bytes[3] = char(saved_count + 1);
+         valid = expect_rejected(strip, "truncated contract descriptor entries");
+         bytes[3] = char(saved_count);
+         if (not valid) {
+            lua_pop(lua, 1);
+            return false;
+         }
+
+         BCIns saved_instruction = proto_bc(root)[descriptor_pc];
+         setbc_a(&proto_bc(root)[descriptor_pc], root->framesize);
+         valid = expect_rejected(strip, "contract operand span");
+         proto_bc(root)[descriptor_pc] = saved_instruction;
+         if (not valid) {
+            lua_pop(lua, 1);
+            return false;
+         }
+
+         std::string recovery;
+         if (lj_bcwrite(lua, root, bytecode_writer, &recovery, strip) != 0 or
+             lua_load(lua, std::string_view(recovery.data(), recovery.size()), "contract-validation-recovery")) {
+            Log.error("the reader did not recover after rejecting malformed %s bytecode", Label);
+            lua_pop(lua, 1);
+            return false;
+         }
+         lua_pop(lua, 1);
       }
+      lua_pop(lua, 1);
+      return true;
+   };
+
+   if (not exercise("global glMalformedConst <const> = 1", BC_CONTRACT, "const-contract-validation")) {
+      return false;
    }
-   return true;
+   return exercise(
+      "local value:any = 1\nreturn value is <num>\n", BC_TYPETEST, "type-test-contract-validation");
 }
 
 static bool test_parser_diagnostics_reset_per_load(kt::Log &Log)
@@ -4777,8 +5411,238 @@ static bool test_state_local_struct_declarations(kt::Log &Log)
    return true;
 }
 
-// Covers the process-wide module registry: indexed case-insensitive lookup, revalidation of the canonical name after
-// hashing, stable record addresses across registry growth, and single publication under concurrent first resolution.
+static bool test_named_struct_bytecode_manifest(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      "struct BytecodeLeaf Value: int end\n"
+      "struct BytecodeMiddle Leaf: struct<BytecodeLeaf> end\n"
+      "struct BytecodeRoot Middle: struct<BytecodeMiddle>, Numbers: int[3], "
+         "Leaves: array<struct<BytecodeLeaf>>, Name: str, Clock: obj<Time>, Link: ptr<BytecodeLeaf> end\n"
+      "struct BytecodeUnused Value: double end\n"
+      "local function identity(Value:struct<BytecodeRoot>):struct<BytecodeRoot> return Value end\n"
+      "local item = struct<BytecodeRoot> { }\n"
+      "item.Middle.Leaf.Value = 42\n"
+      "item.Name = 'fresh'\n"
+      "return identity(item).Middle.Leaf.Value\n";
+
+   LuaStateHolder producer;
+   lua_State *source_state = producer.get();
+   luaL_openlibs(source_state);
+   if (lua_load(source_state, source, "struct-bytecode-producer")) {
+      Log.error("failed to compile struct bytecode fixture: %s", lua_tostring(source_state, -1));
+      return false;
+   }
+   GCproto *root = funcproto(funcV(source_state->top - 1));
+   uint32_t manifest_size = 0;
+   const uint8_t *manifest = proto_struct_manifest(root, &manifest_size);
+   std::string_view manifest_view((const char *)manifest, manifest_size);
+   if (not manifest or manifest_size < 2 or manifest_view.find("BytecodeRoot") IS std::string_view::npos or
+       manifest_view.find("BytecodeMiddle") IS std::string_view::npos or
+       manifest_view.find("BytecodeLeaf") IS std::string_view::npos or
+       manifest_view.find("BytecodeUnused") != std::string_view::npos) {
+      Log.error("struct manifest omitted a dependency or retained an unused declaration");
+      return false;
+   }
+   {
+      LuaStateHolder validation;
+      std::vector<uint32_t> inserted;
+      std::string detail;
+      ERR error = load_declared_struct_manifest(validation.get(), manifest_view, inserted, &detail);
+      if (error != ERR::Okay) {
+         Log.error("direct struct manifest validation failed (%s): %s", GetErrorMsg(error), detail.c_str());
+         return false;
+      }
+      std::vector<uint32_t> reused;
+      if (load_declared_struct_manifest(validation.get(), manifest_view, reused, &detail) != ERR::Okay or
+          not reused.empty()) {
+         Log.error("an identical pre-existing declaration was not reused");
+         return false;
+      }
+
+      std::array<std::vector<uint8_t>, 3> malformed = {
+         std::vector<uint8_t>(manifest, manifest + manifest_size),
+         std::vector<uint8_t>(manifest, manifest + manifest_size),
+         std::vector<uint8_t>(manifest, manifest + manifest_size)
+      };
+      malformed[0][0]++;
+      malformed[1].pop_back();
+      malformed[2].push_back(0);
+      for (size_t malformed_index = 0; malformed_index < malformed.size(); ++malformed_index) {
+         const auto &bytes = malformed[malformed_index];
+         LuaStateHolder rejected;
+         std::vector<uint32_t> rejected_insertions;
+         ERR rejected_error = load_declared_struct_manifest(rejected.get(),
+            std::string_view((const char *)bytes.data(), bytes.size()), rejected_insertions, &detail);
+         if (rejected_error IS ERR::Okay or find_struct(rejected.get(), "BytecodeLeaf") or
+               find_struct(rejected.get(), "BytecodeMiddle") or find_struct(rejected.get(), "BytecodeRoot")) {
+            Log.error("malformed semantic struct manifest %zu was accepted or published declarations (%s): %s",
+               malformed_index, GetErrorMsg(rejected_error), detail.c_str());
+            return false;
+         }
+      }
+   }
+
+   {
+      LuaStateHolder dynamic_producer;
+      lua_State *dynamic_state = dynamic_producer.get();
+      luaL_openlibs(dynamic_state);
+      constexpr std::string_view dynamic_source =
+         "struct BytecodeDynamicFirst Value: int end\n"
+         "struct BytecodeDynamicSecond Value: int end\n"
+         "local name = 'BytecodeDynamicFirst' return struct.size(name)\n";
+      if (lua_load(dynamic_state, dynamic_source, "struct-bytecode-dynamic")) {
+         Log.error("failed to compile the dynamic struct registry fixture");
+         return false;
+      }
+      uint32_t dynamic_size = 0;
+      const uint8_t *dynamic_manifest = proto_struct_manifest(funcproto(funcV(dynamic_state->top - 1)),
+         &dynamic_size);
+      std::string_view dynamic_view((const char *)dynamic_manifest, dynamic_size);
+      if (dynamic_view.find("BytecodeDynamicFirst") IS std::string_view::npos or
+          dynamic_view.find("BytecodeDynamicSecond") IS std::string_view::npos) {
+         Log.error("a dynamic struct registry call did not retain all declarations owned by its compilation unit");
+         return false;
+      }
+   }
+
+   for (int strip : { 0, 1 }) {
+      std::string dump;
+      int write_status = strip ? lj_bcwrite(source_state, root, bytecode_writer, &dump, 1) :
+         lua_dump(source_state, bytecode_writer, &dump);
+      if (write_status != 0) {
+         Log.error("failed to write %s struct dump", strip ? "stripped" : "unstripped");
+         return false;
+      }
+      if (strip IS 1) {
+         auto read_uleb = [&dump](size_t &Position, uint32_t &Value) {
+            Value = 0;
+            for (uint32_t shift = 0; shift <= 28 and Position < dump.size(); shift += 7) {
+               const uint8_t byte = uint8_t(dump[Position++]);
+               Value |= uint32_t(byte & 0x7f) << shift;
+               if (not (byte & 0x80)) return true;
+            }
+            return false;
+         };
+         size_t source_offset = 5;
+         uint32_t source_size = 0;
+         if (not read_uleb(source_offset, source_size) or source_size > dump.size() - source_offset) return false;
+         size_t manifest_offset = source_offset + source_size;
+         uint32_t wire_manifest_size = 0;
+         if (not read_uleb(manifest_offset, wire_manifest_size) or
+             wire_manifest_size > dump.size() - manifest_offset) return false;
+         size_t value_offset = dump.find("Value", manifest_offset);
+         if (value_offset IS std::string::npos or
+             value_offset + 6 >= manifest_offset + wire_manifest_size) return false;
+
+         std::array<std::string, 3> malformed = { dump, dump, dump };
+         malformed[0][manifest_offset]++;
+         malformed[1][value_offset + 5] = char(0xff);
+         malformed[2][value_offset + 6] = 0;
+         for (size_t malformed_index = 0; malformed_index < malformed.size(); ++malformed_index) {
+            const auto &bytes = malformed[malformed_index];
+            LuaStateHolder rejected;
+            lua_State *rejected_state = rejected.get();
+            luaL_openlibs(rejected_state);
+            int rejected_status = lua_load(rejected_state, bytes, "struct-bytecode-malformed-manifest");
+            if (rejected_status != LUA_ERRSYNTAX or
+                find_struct(rejected_state, "BytecodeLeaf") or find_struct(rejected_state, "BytecodeMiddle") or
+                find_struct(rejected_state, "BytecodeRoot")) {
+               Log.error("malformed struct block %zu was accepted or changed the declaration registry (status %d)",
+                  malformed_index, rejected_status);
+               return false;
+            }
+            lua_pop(rejected_state, 1);
+            if (lua_load(rejected_state, dump, "struct-bytecode-recovery")) {
+               Log.error("the state could not load valid bytecode after rejecting malformed struct block %zu: %s",
+                  malformed_index, lua_tostring(rejected_state, -1));
+               return false;
+            }
+         }
+      }
+      LuaStateHolder consumer;
+      lua_State *target = consumer.get();
+      luaL_openlibs(target);
+      if (find_struct(target, "BytecodeRoot") or
+          lua_load(target, std::string_view(dump.data(), dump.size()), "struct-bytecode-consumer")) {
+         Log.error("failed to load %s struct dump in an independent state: %s",
+            strip ? "stripped" : "unstripped", lua_tostring(target, -1));
+         return false;
+      }
+      GCproto *loaded_proto = funcproto(funcV(target->top - 1));
+      std::string redump;
+      int redump_status = strip ? lj_bcwrite(target, loaded_proto, bytecode_writer, &redump, 1) :
+         lua_dump(target, bytecode_writer, &redump);
+      if (redump_status != 0) {
+         Log.error("a loaded struct chunk could not be dumped again");
+         return false;
+      }
+      {
+         LuaStateHolder redump_consumer;
+         lua_State *redump_target = redump_consumer.get();
+         luaL_openlibs(redump_target);
+         if (lua_load(redump_target, redump, "struct-bytecode-redump") or
+             lua_pcall(redump_target, 0, 1, 0) or lua_tointeger(redump_target, -1) != 42) {
+            Log.error("a raw re-dump did not retain its portable struct manifest");
+            return false;
+         }
+      }
+      auto loaded_root = find_struct(target, "BytecodeRoot");
+      auto loaded_middle = find_struct(target, "BytecodeMiddle");
+      auto loaded_leaf = find_struct(target, "BytecodeLeaf");
+      if (not loaded_root or not loaded_middle or not loaded_leaf or find_struct(target, "BytecodeUnused") or
+          loaded_root->Fields.size() != 6 or loaded_root->Fields[0].StructDefinition != loaded_middle or
+          loaded_middle->Fields[0].StructDefinition != loaded_leaf or
+          loaded_root->Fields[4].ObjectClassName != "Time") {
+         Log.error("%s struct dump reconstructed the wrong dependency graph or field semantics",
+            strip ? "stripped" : "unstripped");
+         return false;
+      }
+      if (lua_pcall(target, 0, 1, 0) or lua_tointeger(target, -1) != 42) {
+         Log.error("%s struct dump did not execute with reconstructed layouts: %s",
+            strip ? "stripped" : "unstripped", lua_tostring(target, -1));
+         return false;
+      }
+      lua_pop(target, 1);
+      lua_gc(target, LUA_GCCOLLECT, 0);
+      if (lua_load(target, "local value = struct<BytecodeRoot> { } return value.Middle.Leaf.Value",
+          "struct-bytecode-lifetime") or lua_pcall(target, 0, 1, 0) or lua_tointeger(target, -1) != 0) {
+         Log.error("loaded struct declarations did not survive closure execution");
+         return false;
+      }
+
+      LuaStateHolder rollback;
+      lua_State *rollback_state = rollback.get();
+      std::string malformed = dump;
+      malformed.back() = 1;
+      int malformed_status = lua_load(rollback_state, malformed, "struct-bytecode-rollback");
+      lua_gc(rollback_state, LUA_GCCOLLECT, 0);
+      if (malformed_status != LUA_ERRSYNTAX or
+          find_struct(rollback_state, "BytecodeLeaf") or find_struct(rollback_state, "BytecodeMiddle") or
+          find_struct(rollback_state, "BytecodeRoot")) {
+         Log.error("a malformed prototype retained definitions published by its struct manifest");
+         return false;
+      }
+      lua_pop(rollback_state, 1);
+
+      LuaStateHolder conflict;
+      lua_State *conflict_state = conflict.get();
+      if (lua_load(conflict_state, "struct BytecodeRoot Other: int end", "struct-bytecode-conflict")) return false;
+      lua_pop(conflict_state, 1);
+      if (lua_load(conflict_state, dump, "struct-bytecode-conflict-load") != LUA_ERRSYNTAX or
+          find_struct(conflict_state, "BytecodeLeaf") or find_struct(conflict_state, "BytecodeMiddle") or
+          not find_struct(conflict_state, "BytecodeRoot") or
+          find_struct(conflict_state, "BytecodeRoot")->Fields[0].Name != "Other") {
+         Log.error("a conflicting declaration was replaced or partial dependencies were retained");
+         return false;
+      }
+      lua_pop(conflict_state, 1);
+   }
+   return true;
+}
+
+// Covers the process-wide module registry: indexed module lookup, case-sensitive function lookup, revalidation of the
+// canonical name after hashing, stable record addresses across registry growth, and single publication under concurrent
+// first resolution.
 
 static bool test_module_registry_lookup(kt::Log &Log)
 {
@@ -4809,20 +5673,20 @@ static bool test_module_registry_lookup(kt::Log &Log)
       return false;
    }
 
-   // Function lookup must be case-insensitive and must revalidate the canonical spelling.
+   // Function lookup must require the canonical case and must revalidate the spelling after hashing.
 
    auto fields = static_module_function(core, "PreciseTime");
    if (not fields) {
       Log.error("PreciseTime was not found through the function index");
       return false;
    }
-   for (auto spelling : { "precisetime", "PRECISETIME", "PreciseTime" }) {
-      if (static_module_function(core, spelling) != fields) {
-         Log.error("function spelling '%s' did not resolve to the canonical entry", spelling);
+   for (auto spelling : { "precisetime", "PRECISETIME", "preciseTime" }) {
+      if (static_module_function(core, spelling)) {
+         Log.error("incorrectly cased function spelling '%s' resolved", spelling);
          return false;
       }
-      if (static_module_function_name(core, spelling) != std::string_view("PreciseTime")) {
-         Log.error("function spelling '%s' did not report the canonical name", spelling);
+      if (not static_module_function_name(core, spelling).empty()) {
+         Log.error("incorrectly cased function spelling '%s' reported a canonical name", spelling);
          return false;
       }
    }
@@ -4864,9 +5728,9 @@ static bool test_module_registry_shared_ordinal(kt::Log &Log)
       return false;
    }
 
-   // Every spelling of a function must resolve through both entry points, to the same ordinal.
+   // Every canonical function name must resolve through both entry points, to the same ordinal.
 
-   for (auto spelling : { "PreciseTime", "precisetime", "PRECISETIME", "GetErrorMsg", "geterrormsg" }) {
+   for (auto spelling : { "PreciseTime", "GetErrorMsg" }) {
       auto resolution = test_module_resolve("core", spelling);
       if ((not resolution.Found) or (not resolution.CallableFound)) {
          Log.error("'%s' resolved through only one of the compiler and runtime paths", spelling);
@@ -4894,13 +5758,13 @@ static bool test_module_registry_shared_ordinal(kt::Log &Log)
       }
    }
 
-   // Case variants of one function share one ordinal, and distinct functions do not.
+   // Incorrect case must fail through both paths, and distinct functions must not share an ordinal.
 
    auto lower = test_module_resolve("core", "precisetime");
    auto exact = test_module_resolve("core", "PreciseTime");
    auto other = test_module_resolve("core", "GetErrorMsg");
-   if (lower.Ordinal != exact.Ordinal) {
-      Log.error("case variants of one function resolved to differing ordinals");
+   if (lower.Found or lower.CallableFound) {
+      Log.error("an incorrectly cased function name resolved through the shared index");
       return false;
    }
    if (other.Ordinal IS exact.Ordinal) {
@@ -5074,11 +5938,21 @@ static bool test_module_dependency_corruption_rejected(kt::Log &Log)
 
    size_t position = 5;
    uint32_t value = 0;
-   if (not read_uleb(position, value) or position + 4 > dump.size()) {
+   if (not read_uleb(position, value) or value > dump.size() - position) {
+      Log.error("could not skip the source manifest in the corruption fixture");
+      return false;
+   }
+   position += value;
+   if (not read_uleb(position, value) or value > dump.size() - position) {
+      Log.error("could not skip the struct manifest in the corruption fixture");
+      return false;
+   }
+   position += value;
+   if (not read_uleb(position, value) or position + 5 > dump.size()) {
       Log.error("could not locate the prototype header in the corruption fixture");
       return false;
    }
-   position += 4;
+   position += 5;
 
    uint32_t signature_length = 0, dependency_length = 0;
    for (int field = 0; field < 3; ++field) {
@@ -5395,6 +6269,52 @@ static bool test_contextual_member_ast_foundations(kt::Log &Log)
    if (not multiline_bitwise.chunk.ok() or multiline_bitwise.chunk.value_ref()->statements.size() != 1) {
       Log.error("a spaced ampersand did not remain available for multi-line bitwise-AND continuation");
       return false;
+   }
+
+   constexpr std::array<std::string_view, 2> contextual_adjacency_sources = {
+      "local value = 7&glProbe\n",
+      "local value = 7 &glProbe\n"
+   };
+   for (std::string_view contextual_source : contextual_adjacency_sources) {
+      auto contextual = build_ast_from_source(contextual_source, false, false);
+      if (not contextual.chunk.ok() or contextual.chunk.value_ref()->statements.size() != 2) {
+         Log.error("an ampersand-prefixed identifier was not treated as contextual syntax");
+         log_diagnostics(contextual.diagnostics, Log);
+         return false;
+      }
+
+      const auto *contextual_statement =
+         std::get_if<ExpressionStmtPayload>(&contextual.chunk.value_ref()->statements[1]->data);
+      const auto *contextual_member = contextual_statement and contextual_statement->expression ?
+         std::get_if<MemberExprPayload>(&contextual_statement->expression->data) : nullptr;
+      if (not contextual_member or not contextual_member->table or
+          contextual_member->table->kind != AstNodeKind::CurrentContextExpr) {
+         Log.error("an adjacent identifier after '&' did not retain its current-context receiver");
+         return false;
+      }
+   }
+
+   constexpr std::array<std::string_view, 4> bitwise_adjacency_sources = {
+      "local value = 7& 3\n",
+      "local value = 7&3\n",
+      "local value = 7&(3)\n",
+      "local value = 7& glProbe\n"
+   };
+   for (std::string_view bitwise_source : bitwise_adjacency_sources) {
+      auto bitwise = build_ast_from_source(bitwise_source, false, false);
+      if (not bitwise.chunk.ok() or bitwise.chunk.value_ref()->statements.size() != 1) {
+         Log.error("a non-contextual ampersand did not remain a bitwise-AND operator");
+         log_diagnostics(bitwise.diagnostics, Log);
+         return false;
+      }
+
+      const auto &declaration = std::get<LocalDeclStmtPayload>(bitwise.chunk.value_ref()->statements[0]->data);
+      const auto *binary = declaration.values.size() IS 1 ?
+         std::get_if<BinaryExprPayload>(&declaration.values[0]->data) : nullptr;
+      if (not binary or binary->op != AstBinaryOperator::BitAnd) {
+         Log.error("a non-contextual ampersand did not produce a binary expression");
+         return false;
+      }
    }
 
    constexpr std::string_view materialisation_source =
@@ -6822,6 +7742,84 @@ static bool test_native_prototype_result_descriptors(kt::Log &Log)
    return true;
 }
 
+static bool test_native_prototype_arity(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   lua_protect_globals(L);
+
+   const fprototype *log = get_prototype("math", "log");
+   const fprototype *random = get_prototype("math", "random");
+   const fprototype *minimum = get_prototype("math", "min");
+   if (not log or log->min_param_count != 1 or log->param_count != 2 or
+       not random or random->min_param_count != 0 or random->param_count != 2 or
+       not minimum or minimum->min_param_count != 1 or
+       (minimum->flags & FProtoFlags::Variadic) IS FProtoFlags::None) {
+      Log.error("native prototype arity did not distinguish required, optional and variadic parameters");
+      return false;
+   }
+
+   ERR duplicate = reg_iface_prototype("math", "log", { TiriType::Num },
+      { TiriType::Num, TiriType::Num }, FProtoFlags::None, FProtoArity::required(1));
+   ERR conflicting = reg_iface_prototype("math", "log", { TiriType::Num },
+      { TiriType::Num, TiriType::Num });
+   if (duplicate != ERR::Exists or conflicting != ERR::Mismatch) {
+      Log.error("repeated prototype registration did not compare arity metadata");
+      return false;
+   }
+
+   std::string error;
+   constexpr std::string_view valid =
+      "local unary:num = math.log(8)\n"
+      "local binary:num = math.log(8, 2)\n"
+      "local unbounded:num = math.random()\n"
+      "local stopped:num = math.random(4)\n"
+      "local bounded:num = math.random(1, 4)\n"
+      "local nil_value:num = math.log(nil)\n"
+      "local piped:num = 8 |> math.log()\n"
+      "local repeated:str = 'x' |> string.rep(3)\n"
+      "local clamped:num = 1 |> math.clamp(0, 2)\n"
+      "local locality:str = debug.locality()\n"
+      "return unary, binary, unbounded, stopped, bounded, nil_value, piped, repeated, clamped, locality\n";
+   if (not compile_snapshot(L, valid, true, error)) {
+      Log.error("valid optional native calls failed static analysis: %s", error.c_str());
+      return false;
+   }
+
+   auto expect_rejected = [&](std::string_view Source, std::string_view Expected) {
+      error.clear();
+      if (compile_snapshot(L, Source, true, error) or error.find(Expected) IS std::string::npos) {
+         Log.error("native arity diagnostic did not contain '%.*s': %s",
+            int(Expected.size()), Expected.data(), error.c_str());
+         return false;
+      }
+      return true;
+   };
+   if (not expect_rejected("return math.log()\n", "required argument 1 is missing") or
+       not expect_rejected("return math.round(1, 2)\n", "expected at most 1 arguments, got 2") or
+       not expect_rejected("return math.random(1, 2, 3)\n", "expected at most 2 arguments, got 3") or
+       not expect_rejected("return 1 |> math.clamp()\n", "required argument 2 is missing") or
+       not expect_rejected("return 'x' |> string.rep('bad')\n", "argument 2 expects num, got str")) return false;
+
+   constexpr std::string_view forwarded =
+      "local function arguments():<num, ...> return 8, 2 end\n"
+      "return math.log(arguments())\n";
+   if (not compile_snapshot(L, forwarded, true, error)) {
+      Log.error("forwarded multi-result native call was rejected statically: %s", error.c_str());
+      return false;
+   }
+
+   constexpr std::string_view dynamic =
+      "local callable = math.log\n"
+      "return callable()\n";
+   if (not compile_snapshot(L, dynamic, true, error)) {
+      Log.error("dynamic native call lost runtime arity validation: %s", error.c_str());
+      return false;
+   }
+   return true;
+}
+
 static bool test_builtin_method_registry(kt::Log &Log)
 {
    LuaStateHolder state;
@@ -6872,7 +7870,8 @@ static bool test_builtin_method_registry(kt::Log &Log)
       return false;
    }
    if (not table_insert->is_method() or table_insert->receiver_type != TiriType::Table or
-       table_insert->param_count != 2 or table_insert->param_types()[0] != TiriType::Table) {
+       table_insert->min_param_count != 2 or table_insert->param_count != 3 or
+       table_insert->param_types()[0] != TiriType::Table) {
       Log.error("table.insert method metadata did not retain its receiver ABI");
       return false;
    }
@@ -6880,7 +7879,7 @@ static bool test_builtin_method_registry(kt::Log &Log)
    const fprototype *struct_clone = get_method_prototype(TiriType::Struct, "clone");
    const fprototype *object_exists = get_method_prototype(TiriType::Object, "exists");
    const fprototype *object_new = get_method_prototype(TiriType::Object, "new");
-   const fprototype *object_state = get_method_prototype(TiriType::Object, "_state");
+   const fprototype *object_state = get_method_prototype(TiriType::Object, "state");
    const fprototype *namespace_new = get_prototype("obj", "new");
    lua_getglobal(L, "obj");
    lua_getfield(L, -1, "new");
@@ -6892,15 +7891,16 @@ static bool test_builtin_method_registry(kt::Log &Log)
        struct_clone->builtin_callable_id != builtin_callable_id(FastFunc::struct_clone) or
        object_exists->builtin_callable_id != builtin_callable_id(FastFunc::object_exists) or
        object_new->builtin_callable_id != builtin_callable_id(FastFunc::object_new) or
-       object_state->builtin_callable_id != builtin_callable_id(FastFunc::object__state) or
+       object_state->builtin_callable_id != builtin_callable_id(FastFunc::object_state) or
        object_new IS namespace_new or object_new->param_count != 3 or
        object_new->param_types()[0] != TiriType::Object or object_new->param_types()[1] != TiriType::Any or
        object_new->param_types()[2] != TiriType::Table or object_state->param_count != 1 or
        object_state->param_types()[0] != TiriType::Object or namespace_new->is_method() or
-       namespace_new->builtin_callable_id != BuiltinCallableID::Invalid or get_prototype("obj", "_state") or
+       namespace_new->builtin_callable_id != BuiltinCallableID::Invalid or get_prototype("obj", "state") or
        public_create != lj_builtin_callable(L, builtin_callable_id(FastFunc::object_create)) or
        array_insert IS table_insert or get_method_prototype(TiriType::Array, "contains") or
        get_method_prototype(TiriType::Range, "contains") or get_method_prototype(TiriType::Str, "contains") or
+       get_method_prototype(TiriType::Str, "len") or
        get_method_prototype(TiriType::Table, "push") or
        get_method_prototype(TiriType::Table, "new")) {
       Log.error("complete method lookup lost receiver separation, callable identity or constructor exclusion");
@@ -6914,9 +7914,9 @@ static bool test_builtin_method_registry(kt::Log &Log)
       "clone"
    };
    constexpr std::array<std::string_view, 22> string_methods = {
-      "byte", "cap", "count", "decap", "endsWith", "escXML", "find", "format", "hash", "len",
+      "byte", "cap", "count", "decap", "endsWith", "escXML", "find", "format", "hash",
       "lower", "pop", "rep", "replace", "reverse", "rtrim", "split", "startsWith", "sub", "trim",
-      "unescapeXML", "upper"
+      "toArray", "unescapeXML", "upper"
    };
    constexpr std::array<std::string_view, 12> table_methods = {
       "insert", "remove", "move", "concat", "sort", "empty", "kind", "size", "clear", "slice", "sortByKeys",
@@ -6964,25 +7964,29 @@ static bool test_builtin_method_registry(kt::Log &Log)
    }
 
    ERR duplicate = reg_iface_method(L, "table", "insert", TiriType::Table,
-      builtin_callable_id(FastFunc::table_insert), {}, { TiriType::Table, TiriType::Any });
+      builtin_callable_id(FastFunc::table_insert), {}, { TiriType::Table, TiriType::Any, TiriType::Any },
+      FProtoFlags::None, FProtoArity::required(2));
    ERR conflicting = reg_iface_method(L, "table", "insert", TiriType::Table,
-      builtin_callable_id(FastFunc::table_insert), { TiriType::Num }, { TiriType::Table, TiriType::Any });
+      builtin_callable_id(FastFunc::table_insert), { TiriType::Num },
+      { TiriType::Table, TiriType::Any, TiriType::Any }, FProtoFlags::None, FProtoArity::required(2));
    ERR invalid_receiver = reg_iface_method(L, "table", "insert", TiriType::Any,
       builtin_callable_id(FastFunc::table_insert), {}, { TiriType::Any, TiriType::Any });
    ERR wrong_callable = reg_iface_method(L, "table", "insert", TiriType::Table,
-      builtin_callable_id(FastFunc::string_upper), {}, { TiriType::Table, TiriType::Any });
+      builtin_callable_id(FastFunc::string_upper), {}, { TiriType::Table, TiriType::Any, TiriType::Any },
+      FProtoFlags::None, FProtoArity::required(2));
    lua_getglobal(L, "table");
    lua_getfield(L, -1, "insert");
    lua_pushnil(L);
    lua_setfield(L, -3, "insert");
    ERR wrong_export = reg_iface_method(L, "table", "insert", TiriType::Table,
-      builtin_callable_id(FastFunc::table_insert), {}, { TiriType::Table, TiriType::Any });
+      builtin_callable_id(FastFunc::table_insert), {}, { TiriType::Table, TiriType::Any, TiriType::Any },
+      FProtoFlags::None, FProtoArity::required(2));
    lua_pushvalue(L, -1);
    lua_setfield(L, -3, "insert");
    lua_pop(L, 2);
    ERR hidden_duplicate = reg_intrinsic_method(L, "obj", "new", TiriType::Object,
       builtin_callable_id(FastFunc::object_new), { TiriType::Object },
-      { TiriType::Object, TiriType::Any, TiriType::Table });
+      { TiriType::Object, TiriType::Any, TiriType::Table }, FProtoFlags::None, FProtoArity::required(2));
    ERR hidden_conflict = reg_intrinsic_method(L, "obj", "new", TiriType::Object,
       builtin_callable_id(FastFunc::object_new), { TiriType::Table },
       { TiriType::Object, TiriType::Any, TiriType::Table });
@@ -7519,21 +8523,21 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
 
    error.clear();
    auto object_methods = compile_snapshot(L,
-      "local parent = obj.new('time')\nlocal child = parent.new('time')\nreturn parent._state()\n", true, error);
+      "local parent = obj.new('time')\nlocal child = parent.new('time')\nreturn parent.state()\n", true, error);
    if (not object_methods or not find_builtin_callable_opcode(*object_methods,
          builtin_callable_id(FastFunc::object_new)) or not find_builtin_callable_opcode(*object_methods,
-         builtin_callable_id(FastFunc::object__state)) or count_opcode(*object_methods, BC_BFUNC) != 2 or
+         builtin_callable_id(FastFunc::object_state)) or count_opcode(*object_methods, BC_BFUNC) != 2 or
        count_opcode(*object_methods, BC_TGETS) != 1 or count_opcode(*object_methods, BC_TGETV) != 0) {
-      Log.error("proved Object new and _state calls did not use canonical lookup-free emission: %s", error.c_str());
+      Log.error("proved Object new and state calls did not use canonical lookup-free emission: %s", error.c_str());
       return false;
    }
 
    error.clear();
    auto dynamic_object_methods = compile_snapshot(L,
-      "local function use(Parent:any):any\nParent.new('time')\nreturn Parent._state()\nend\nreturn use\n", true, error);
+      "local function use(Parent:any):any\nParent.new('time')\nreturn Parent.state()\nend\nreturn use\n", true, error);
    if (not dynamic_object_methods or count_opcode_tree(*dynamic_object_methods, BC_BMETH) != 2 or
        count_opcode_tree(*dynamic_object_methods, BC_BFUNC) != 0) {
-      Log.error("runtime Object new and _state calls did not retain BC_BMETH dispatch: %s", error.c_str());
+      Log.error("runtime Object new and state calls did not retain BC_BMETH dispatch: %s", error.c_str());
       return false;
    }
 
@@ -7757,7 +8761,7 @@ static bool test_canonical_core_syntax_bytecode_emission(kt::Log &Log)
 
    error.clear();
    auto explicit_calls = compile_snapshot(L,
-      "local values = array.new(2, 'int')\n"
+      "local values = array.new('int', 2)\n"
       "array.resize(values, 3)\n"
       "return range(0, 2), range.slice({}, {0 to 1}), bit.band(1, 1)\n", true, error);
    if (not explicit_calls or count_opcode_tree(*explicit_calls, BC_GGET) IS 0 or
@@ -7766,6 +8770,73 @@ static bool test_canonical_core_syntax_bytecode_emission(kt::Log &Log)
       return false;
    }
 
+   return true;
+}
+
+static bool test_cache_payload_bytecode_roundtrip(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   std::string source =
+      "local function sink(A:num, B:num, C:num, D:num, E:num):num return E end\n"
+      "local function invoke(X:num, Y:num):num return sink(X, Y, 0, 4, X | Y) end\n"
+      "local function inspect(Value:num):num\n"
+      "   if Value has 1 then return sink(0, 0, 0, 0, ~Value) end\n"
+      "   return 0\n"
+      "end\n"
+      "local function object_field():num\n"
+      "   local clock = obj<Time> { year=2026 }\n"
+      "   return clock.year\n"
+      "end\n"
+      "local context = {}\n"
+      "local function context_raise()\n"
+      "   using context do raise 'expected' end\n"
+      "end\n";
+   for (int i = 0; i < LJ_MAX_LOCVAR + 1; ++i) {
+      source.append("if true then local sequential = 1 end\n");
+   }
+   source.append("assert(object_field() is 2026)\nreturn inspect(invoke(1, 2))\n");
+
+   if (lua_load(L, source, "cache-payload-roundtrip")) {
+      Log.error("failed to compile cache payload fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+   BytecodeSnapshot snapshot = snapshot_proto(funcproto(funcV(L->top - 1)));
+   if (not snapshot_has_opcode(snapshot, BC_BFUNC) or not snapshot_has_opcode(snapshot, BC_OBGETF) or
+       not snapshot_has_opcode(snapshot, BC_CTXBEGIN) or not snapshot_has_opcode(snapshot, BC_RAISE)) {
+      Log.error("cache payload fixture omitted a required bytecode family");
+      return false;
+   }
+
+   lua_pushvalue(L, -1);
+   if (lua_pcall(L, 0, 1, 0) or lua_tointeger(L, -1) != -4) {
+      Log.error("cache payload fixture returned the wrong result before dumping: %s", lua_tostring(L, -1));
+      return false;
+   }
+   lua_pop(L, 1);
+   BytecodeSnapshot executed = snapshot_proto(funcproto(funcV(L->top - 1)));
+   if (not snapshot_has_resolved_field_hint(executed, BC_OBGETF)) {
+      Log.error("cache payload fixture did not resolve its object field hint before dumping");
+      return false;
+   }
+
+   std::string dump;
+   if (lua_dump(L, bytecode_writer, &dump) != 0) {
+      Log.error("failed to write cache payload bytecode");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   if (lua_load(L, std::string_view(dump.data(), dump.size()), "cache-payload-roundtrip")) {
+      Log.error("failed to reload cache payload bytecode: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (lua_pcall(L, 0, 1, 0) or lua_tointeger(L, -1) != -4) {
+      Log.error("reloaded cache payload returned the wrong result: %s", lua_tostring(L, -1));
+      return false;
+   }
+   lua_pop(L, 1);
    return true;
 }
 
@@ -8351,7 +9422,7 @@ static bool test_module_namespace_ast(kt::Log &Log)
 {
    auto valid = build_ast_from_source(
       "module core as mCore\n"
-      "local first = mCore.preciseTime()\n"
+      "local first = mCore.PreciseTime()\n"
       "local callable = mCore.PreciseTime\n");
    if (not valid.chunk.ok() or not valid.diagnostics.empty() or valid.chunk.value_ref()->statements.size() != 3) {
       Log.error("valid module namespace declaration did not produce the expected AST");
@@ -8413,7 +9484,7 @@ static bool test_module_namespace_ast(kt::Log &Log)
       "module core as mFirst\n"
       "module core as mSecond\n"
       "local a = mFirst.PreciseTime()\n"
-      "local b = mSecond.preciseTime()\n"
+      "local b = mSecond.PreciseTime()\n"
       "local c = mSecond.GetErrorMsg(0)\n");
    if (not aliased.chunk.ok() or not aliased.diagnostics.empty()) {
       Log.error("aliased module namespaces failed to parse");
@@ -8485,7 +9556,7 @@ static bool test_implicit_module_namespace(kt::Log &Log)
 
    auto implicit = build_ast_from_source(
       "local started = mSys.PreciseTime()\n"
-      "local message = mSys.getErrorMsg(0)\n"
+      "local message = mSys.GetErrorMsg(0)\n"
       "local clock <const> = mSys.PreciseTime\n");
    if (not implicit.chunk.ok() or not implicit.diagnostics.empty()) {
       Log.error("an implicit mSys reference failed to parse");
@@ -8548,7 +9619,7 @@ static bool test_implicit_module_namespace(kt::Log &Log)
 static bool test_module_namespace_diagnostics(kt::Log &Log)
 {
    struct InvalidCase { std::string_view source; std::string_view diagnostic; };
-   constexpr std::array<InvalidCase, 15> invalid = { {
+   constexpr std::array<InvalidCase, 17> invalid = { {
       { "module 'core' as mCore\n", "Module name must be an identifier" },
       { "module core mCore\n", "Expected 'as'" },
       { "do module core as mCore end\n", "compilation-unit level" },
@@ -8567,7 +9638,9 @@ static bool test_module_namespace_diagnostics(kt::Log &Log)
       { "local mSys = 1\n", "cannot be declared as a variable" },
       { "local function accept(mSys) end\n", "cannot be declared as a function parameter" },
       { "module display as mSys\n", "reserved for the core module" },
-      { "local value = mSys.NotARealCoreFunction()\n", "Unknown function" }
+      { "local value = mSys.NotARealCoreFunction()\n", "Unknown function" },
+      { "local value = mSys.preciseTime()\n", "Unknown function 'preciseTime'" },
+      { "module display as mGfx\nlocal value = mGfx.drawPixel\n", "Unknown function 'drawPixel'" }
    } };
    for (const auto &entry : invalid) {
       auto result = build_ast_from_source(entry.source);
@@ -10620,6 +11693,241 @@ static bool test_checkall_syntax_and_bytecode(kt::Log &Log)
 // Defer error-unwind registration is intentionally test-first.  Resolve the planned opcodes by name so this test
 // remains compileable until the bytecode definitions land, while still failing clearly when either opcode is absent.
 
+static bool test_expression_raise_bytecode(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   std::string error;
+   auto raised = compile_snapshot(lua, "return raise('failure')", true, error);
+   if (not raised or count_opcode_tree(*raised, BC_RAISE) != 1 or
+       count_opcode_tree(*raised, BC_KPRI) != 0 or count_opcode_tree(*raised, BC_KNIL) != 0 or
+       count_opcode_tree(*raised, BC_RET1) != 0) {
+      Log.error("expression raise fabricated a return value: %s", error.c_str());
+      return false;
+   }
+   auto discarded = compile_snapshot(lua,
+      "return true ? 42 : raise('discarded'), false ? raise('discarded') : 24", true, error);
+   if (not discarded or count_opcode_tree(*discarded, BC_RAISE) != 0) {
+      Log.error("constant-folded branches emitted a discarded raise: %s", error.c_str());
+      return false;
+   }
+   auto branches = compile_snapshot(lua,
+      "local function pick(C) return C ? raise('true') : raise('false') end", true, error);
+   if (not branches or branches->children.size() != 1 or
+       count_opcode_tree(branches->children[0], BC_RAISE) != 2 or
+       count_opcode_tree(branches->children[0], BC_KPRI) != 0 or
+       count_opcode_tree(branches->children[0], BC_RET1) != 0) {
+      Log.error("non-returning ternary branches acquired a result join: %s", error.c_str());
+      return false;
+   }
+   auto arguments = compile_snapshot(lua,
+      "local function target(A, B) end\nreturn target(raise('argument'), 99)", true, error);
+   if (not arguments or count_opcode_tree(*arguments, BC_CALL) != 0 or
+       count_opcode_tree(*arguments, BC_CALLT) != 0 or count_opcode_tree(*arguments, BC_KSHORT) != 0) {
+      Log.error("argument raise emitted its enclosing call or later argument: %s", error.c_str());
+      return false;
+   }
+   return true;
+}
+
+static bool test_rethrow_dump_validation(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (lua_load(lua, "try\nraise 12\nexcept\nraise\nend", "rethrow-dump")) return false;
+   GCproto *proto = funcproto(funcV(lua->top - 1));
+   if (proto->try_block_count != 1 or proto->try_handler_count != 1) return false;
+   BCIns *bytecode = proto_bc(proto);
+   BCPOS rethrow_pc = 0;
+   for (BCPOS pc = 1; pc < proto->sizebc; ++pc) {
+      if (bc_op(bytecode[pc]) IS BC_RETHROW) rethrow_pc = pc;
+   }
+   if (not rethrow_pc or bc_a(bytecode[rethrow_pc]) != proto->try_handlers[0].exception_reg) {
+      Log.error("bare raise did not emit the hidden handler register");
+      return false;
+   }
+
+   TryBlockDesc saved_block = proto->try_blocks[0];
+   TryHandlerDesc saved_handler = proto->try_handlers[0];
+   BCIns saved_ins = bytecode[rethrow_pc];
+   for (int malformed = 0; malformed < 5; ++malformed) {
+      switch (malformed) {
+         case 0: proto->try_blocks[0].first_handler = 2; break;
+         case 1: proto->try_blocks[0].flags = 0xff; break;
+         case 2: proto->try_handlers[0].handler_pc = proto->sizebc; break;
+         case 3: proto->try_handlers[0].exception_reg = proto->framesize; break;
+         case 4: bytecode[rethrow_pc] = BCINS_AD(BC_RETHROW, proto->framesize, 0); break;
+      }
+      std::string dump;
+      int status = lj_bcwrite(lua, proto, bytecode_writer, &dump, 1);
+      proto->try_blocks[0] = saved_block;
+      proto->try_handlers[0] = saved_handler;
+      bytecode[rethrow_pc] = saved_ins;
+      if (status != 0 or lua_load(lua, std::string_view(dump), "malformed-rethrow") IS 0) {
+         Log.error("rethrow dump accepted invalid metadata case %d", malformed);
+         return false;
+      }
+      lua_pop(lua, 1);
+   }
+   return true;
+}
+
+static bool verify_close_metadata_tree(const GCproto *Proto, bool RequireConsumers, size_t &ClosePrototypes,
+   kt::Log &Log, std::string_view Stage)
+{
+   uint64_t arm_slots = 0;
+   uint64_t consume_slots = 0;
+   for (MSize pc = 1; pc < Proto->sizebc; ++pc) {
+      BCIns instruction = proto_bc(Proto)[pc];
+      BCOp op = bc_op(instruction);
+      if (op != BC_CLOSEARM and op != BC_CLOSE) continue;
+      BCREG slot = bc_a(instruction);
+      if (slot >= 64) {
+         Log.error("%.*s close bytecode contains slot %u", int(Stage.size()), Stage.data(), unsigned(slot));
+         return false;
+      }
+      if (op IS BC_CLOSEARM) arm_slots |= uint64_t(1) << slot;
+      else consume_slots |= uint64_t(1) << slot;
+   }
+
+   if (Proto->closeslots != arm_slots or (consume_slots & ~arm_slots) or
+       (RequireConsumers and (arm_slots & ~consume_slots))) {
+      Log.error("%.*s close metadata mismatch: prototype=%" PRIx64 " arm=%" PRIx64 " consume=%" PRIx64,
+         int(Stage.size()), Stage.data(), Proto->closeslots, arm_slots, consume_slots);
+      return false;
+   }
+   if (arm_slots) ++ClosePrototypes;
+
+   for (ptrdiff_t i = -ptrdiff_t(Proto->sizekgc); i < 0; ++i) {
+      GCobj *object = proto_kgc(Proto, i);
+      if (object->gch.gct IS uint8_t(~LJ_TPROTO) and
+          not verify_close_metadata_tree(gco_to_proto(object), RequireConsumers, ClosePrototypes, Log, Stage)) {
+         return false;
+      }
+   }
+   return true;
+}
+
+static bool test_close_slot_metadata_roundtrip(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) {
+      Log.error("failed to create a state for close-slot bytecode testing");
+      return false;
+   }
+   luaL_openlibs(lua);
+
+   constexpr std::string_view source =
+      "local root <close> = setmetatable({}, { __close=function() end })\n"
+      "local function child()\n"
+      "   local nested <close> = setmetatable({}, { __close=function() end })\n"
+      "   raise 'close child'\n"
+      "end\n"
+      "return child\n";
+   if (lua_load(lua, source, "close-slot-metadata")) {
+      Log.error("failed to compile close-slot fixture: %s", lua_tostring(lua, -1));
+      return false;
+   }
+
+   GCproto *prototype = funcproto(funcV(lua->top - 1));
+   size_t close_prototypes = 0;
+   if (not verify_close_metadata_tree(prototype, true, close_prototypes, Log, "source") or
+       close_prototypes != 2) {
+      if (close_prototypes != 2) Log.error("close-slot fixture contained %zu close prototypes instead of two",
+         close_prototypes);
+      return false;
+   }
+
+   for (int strip : { 0, 1 }) {
+      std::string dump;
+      int status = strip ? lj_bcwrite(lua, prototype, bytecode_writer, &dump, 1) :
+         lua_dump(lua, bytecode_writer, &dump);
+      if (status != 0 or lua_load(lua, std::string_view(dump), "close-slot-roundtrip")) {
+         Log.error("failed to %s close-slot bytecode: %s", strip ? "round-trip stripped" : "raw-dump and load",
+            lua_tostring(lua, -1));
+         return false;
+      }
+
+      GCproto *loaded = funcproto(funcV(lua->top - 1));
+      close_prototypes = 0;
+      bool valid = verify_close_metadata_tree(loaded, true, close_prototypes, Log,
+         strip ? "stripped round-trip" : "unstripped round-trip");
+      lua_pop(lua, 1);
+      if (not valid or close_prototypes != 2) {
+         if (valid) Log.error("loaded close-slot fixture contained %zu close prototypes instead of two",
+            close_prototypes);
+         return false;
+      }
+   }
+
+   BCIns *bytecode = proto_bc(prototype);
+   MSize arm_position = 0;
+   MSize consume_position = 0;
+   uint64_t arm_slots = 0;
+   for (MSize pc = 1; pc < prototype->sizebc; ++pc) {
+      BCOp op = bc_op(bytecode[pc]);
+      if (op IS BC_CLOSEARM) {
+         if (not arm_position) arm_position = pc;
+         arm_slots |= uint64_t(1) << bc_a(bytecode[pc]);
+      }
+      else if (op IS BC_CLOSE and not consume_position) consume_position = pc;
+   }
+   BCREG unmatched_slot = 0xff;
+   for (BCREG slot = 0; slot < prototype->framesize and slot < 64; ++slot) {
+      if (not (arm_slots & (uint64_t(1) << slot))) {
+         unmatched_slot = slot;
+         break;
+      }
+   }
+   if (not arm_position or not consume_position or unmatched_slot IS 0xff or prototype->framesize >= 64) {
+      Log.error("close-slot malformed fixture lacks the required arm, consumer or spare frame slot");
+      return false;
+   }
+
+   auto malformed_rejected = [&](MSize Position, BCIns Invalid, std::string_view Label) {
+      BCIns saved = bytecode[Position];
+      bytecode[Position] = Invalid;
+      std::string dump;
+      bool wrote = lj_bcwrite(lua, prototype, bytecode_writer, &dump, 1) IS 0;
+      bytecode[Position] = saved;
+      if (not wrote) {
+         Log.error("failed to write malformed %.*s fixture", int(Label.size()), Label.data());
+         return false;
+      }
+
+      int status = lua_load(lua, std::string_view(dump), "malformed-close-bytecode");
+      if (status != LUA_ERRSYNTAX) {
+         lua_pop(lua, 1);
+         Log.error("bytecode reader returned %d for malformed %.*s operands", status,
+            int(Label.size()), Label.data());
+         return false;
+      }
+      lua_pop(lua, 1);
+
+      if (lua_load(lua, "return 42", "close-reader-recovery") or lua_pcall(lua, 0, 1, 0) or
+          lua_tointeger(lua, -1) != 42) {
+         Log.error("state was not reusable after rejecting malformed %.*s bytecode", int(Label.size()), Label.data());
+         return false;
+      }
+      lua_pop(lua, 1);
+      return true;
+   };
+
+   BCIns arm = bytecode[arm_position];
+   BCIns consume = bytecode[consume_position];
+   if (not malformed_rejected(arm_position,
+         BCINS_AD(BC_CLOSEARM, prototype->framesize, bc_d(arm)), "out-of-frame CLOSEARM") or
+       not malformed_rejected(arm_position, BCINS_AD(BC_CLOSEARM, 64, bc_d(arm)), "slot-64 CLOSEARM") or
+       not malformed_rejected(consume_position,
+         BCINS_AD(BC_CLOSE, unmatched_slot, bc_d(consume)), "unmatched CLOSE")) {
+      return false;
+   }
+
+   lua_pop(lua, 1);
+   return true;
+}
+
 static bool test_defer_unwind_registration_bytecode(kt::Log &Log)
 {
    auto find_opcode = [](std::string_view Name) -> std::optional<BCOp> {
@@ -10859,9 +12167,14 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 99> tests = { {
+   constexpr std::array<TestCase, 110> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
+      { "error_removal", test_error_removal },
+      { "expression_raise_bytecode", test_expression_raise_bytecode },
+      { "rethrow_dump_validation", test_rethrow_dump_validation },
+      { "close_slot_metadata_roundtrip", test_close_slot_metadata_roundtrip },
+      { "raise_payload_and_context", test_raise_payload_and_context },
       { "assignment_target_resolution_ast", test_assignment_target_resolution_ast },
       { "assignment_target_semantic_resolution", test_assignment_target_semantic_resolution },
       { "assignment_target_descriptor_discovery", test_assignment_target_descriptor_discovery },
@@ -10907,6 +12220,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "current_context_materialisation_bytecode", test_current_context_materialisation_bytecode },
       { "ast_call_lowering", test_ast_call_lowering },
       { "bytecode_equivalence", test_bytecode_equivalence },
+      { "structural_bytecode_reader_validation", test_structural_bytecode_reader_validation },
       { "signature_metadata_roundtrip", test_signature_metadata_roundtrip },
       { "forward_declaration_signature_validation", test_forward_declaration_signature_validation },
       { "old_bytecode_versions_rejected", test_old_bytecode_versions_rejected },
@@ -10914,13 +12228,16 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "signature_static_inference", test_signature_static_inference },
       { "signature_void_and_bare_return", test_signature_void_and_bare_return },
       { "malformed_signature_rejected", test_malformed_signature_rejected },
+      { "source_manifest_validation", test_source_manifest_validation },
       { "contract_bytecode_roundtrip", test_contract_bytecode_roundtrip },
       { "runtime_contract_decoder", test_runtime_contract_decoder },
       { "runtime_contract_batching", test_runtime_contract_batching },
       { "complex_contract_jit_eligibility", test_complex_contract_jit_eligibility },
+      { "contract_bytecode_policy_validation", test_contract_bytecode_policy_validation },
       { "parser_diagnostics_reset_per_load", test_parser_diagnostics_reset_per_load },
       { "userdata_type_annotations", test_userdata_type_annotations },
       { "state_local_struct_declarations", test_state_local_struct_declarations },
+      { "named_struct_bytecode_manifest", test_named_struct_bytecode_manifest },
       { "module_registry", test_module_registry },
       { "struct_declaration_syntax", test_struct_declaration_syntax },
       { "struct_field_documentation", test_struct_field_documentation },
@@ -10932,6 +12249,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "static_result_set_model", test_static_result_set_model },
       { "environment_store_boundary", test_environment_store_boundary },
       { "native_prototype_result_descriptors", test_native_prototype_result_descriptors },
+      { "native_prototype_arity", test_native_prototype_arity },
       { "builtin_method_registry", test_builtin_method_registry },
       { "builtin_method_table_initialiser_rejection", test_builtin_method_table_initialiser_rejection },
       { "builtin_method_static_classification", test_builtin_method_static_classification },
@@ -10940,6 +12258,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "builtin_method_bytecode_emission", test_builtin_method_bytecode_emission },
       { "compiler_intrinsic_bytecode_emission", test_compiler_intrinsic_bytecode_emission },
       { "canonical_core_syntax_bytecode_emission", test_canonical_core_syntax_bytecode_emission },
+      { "cache_payload_bytecode_roundtrip", test_cache_payload_bytecode_roundtrip },
       { "object_constructor_syntax", test_object_constructor_syntax },
       { "regex_literal_canonical_bytecode_emission", test_regex_literal_canonical_bytecode_emission },
       { "contextual_call_specialisation", test_contextual_call_specialisation },

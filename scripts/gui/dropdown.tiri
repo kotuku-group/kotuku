@@ -259,12 +259,12 @@ gui.dropdown = function(Options)
 
    self.surface.subscribe('hide', function(Surface, Args)
       self.visible = false
-      self.timeHide = mSys.preciseTime()
+      self.timeHide = mSys.PreciseTime()
    end)
 
    self.surface.subscribe('show', function(Surface, Args)
       self.visible = true
-      self.timeShow = mSys.preciseTime()
+      self.timeShow = mSys.PreciseTime()
 
       -- Keyboard support requires a client reference to grab input from.
 

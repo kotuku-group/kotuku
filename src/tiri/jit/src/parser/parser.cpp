@@ -34,15 +34,17 @@ static const struct {
    CSTRING name;      // Name for bitlib function (if applicable).
    uint8_t name_len;  // Cached name length for bitlib lookups.
 } priority[] = {
-  {6,6,nullptr,0}, {6,6,nullptr,0}, {7,7,nullptr,0}, {7,7,nullptr,0}, {7,7,nullptr,0},   // ADD SUB MUL DIV MOD
-  {10,9,nullptr,0}, {5,4,nullptr,0},                  // POW CONCAT (right associative)
-  {3,3,nullptr,0}, {3,3,nullptr,0},                  // EQ NE
-  {3,3,nullptr,0}, {3,3,nullptr,0}, {3,3,nullptr,0}, {3,3,nullptr,0},      // LT GE GT LE
-  {5,4,"band",4}, {3,2,"bor",3}, {4,3,"bxor",4}, {7,5,"lshift",6}, {7,5,"rshift",6},   // BAND BOR BXOR SHL SHR (C-style precedence: XOR binds tighter than OR)
-  {2,2,nullptr,0}, {1,1,nullptr,0}, {1,1,nullptr,0},         // AND OR IF_EMPTY
-  {3,3,"band",4},                     // HAS (flag test: bit.band(a,b) != 0)
-  {3,3,nullptr,0},                     // APPROX
-  {1,1,nullptr,0}                     // TERNARY
+   {9,9,nullptr,0}, {9,9,nullptr,0},                         // ADD SUB
+   {10,10,nullptr,0}, {10,10,nullptr,0}, {10,10,nullptr,0},  // MUL DIV MOD
+   {12,11,nullptr,0}, {6,5,nullptr,0},                       // POW CONCAT (right associative)
+   {3,3,nullptr,0}, {3,3,nullptr,0},                         // EQ NE
+   {3,3,nullptr,0}, {3,3,nullptr,0}, {3,3,nullptr,0}, {3,3,nullptr,0}, // LT GE GT LE
+   {7,7,"band",4}, {4,4,"bor",3}, {5,5,"bxor",4},        // BAND BOR BXOR
+   {8,8,"lshift",6}, {8,8,"rshift",6},                    // SHL SHR
+   {2,2,nullptr,0}, {1,1,nullptr,0}, {1,1,nullptr,0},        // AND OR IF_EMPTY
+   {3,3,"band",4},                                          // HAS (flag test: bit.band(a,b) != 0)
+   {3,3,nullptr,0},                                          // APPROX
+   {1,1,nullptr,0}                                           // TERNARY
 };
 
 #include "dump_bytecode.h"
@@ -258,7 +260,7 @@ static ParserConfig make_parser_config(lua_State &State)
       // Cancel aborting on error and enable deeper log tracing.
       config.abort_on_error = false;
       config.max_diagnostics = 32;
-      config.warn_unresolved_methods = true;
+      config.warn_unresolved_methods = not State.script->SuppressUnresolvedMethodWarnings;
    }
 
    return config;
@@ -284,6 +286,11 @@ extern GCproto * lj_parse(LexState *State)
    // should fall back to their chunk name in diagnostics rather than being added to the persistent file source map.
    // Note: We don't clear existing file_sources to preserve import deduplication across loadFile() calls.
 
+   BCLine source_lines = 1;
+   for (char c : State->source) {
+      if (c IS '\n') source_lines++;
+   }
+
    if (State->chunk_arg and State->chunk_arg[0] IS '@') {
       std::string path = State->chunk_arg;
       path = path.substr(1);
@@ -292,16 +299,31 @@ extern GCproto * lj_parse(LexState *State)
       auto pos = path.find_last_of("/\\");
       std::string filename = (pos != std::string::npos) ? path.substr(pos + 1) : path;
 
-      // Estimate source lines from the source view (count newlines + 1)
-      BCLine source_lines = 1;
-      for (char c : State->source) {
-         if (c IS '\n') source_lines++;
-      }
       State->current_file_index = register_main_file_source(L, path, filename, source_lines);
+      State->compilation_sources.push_back(CompilationSourceRecord{
+         .role = CompilationSourceRole::Main,
+         .canonical_path = path,
+         .display_filename = filename,
+         .first_line = 1,
+         .total_lines = source_lines,
+         .runtime_index = State->current_file_index
+      });
    }
-   else State->current_file_index = FILESOURCE_OVERFLOW_INDEX;
+   else {
+      State->current_file_index = FILESOURCE_SYNTHETIC_INDEX;
+      std::string display = State->chunk_arg ? State->chunk_arg : "=(anonymous)";
+      State->compilation_sources.push_back(CompilationSourceRecord{
+         .role = CompilationSourceRole::Synthetic,
+         .display_filename = std::move(display),
+         .first_line = 1,
+         .total_lines = source_lines,
+         .runtime_index = FILESOURCE_SYNTHETIC_INDEX
+      });
+   }
+   State->current_source_descriptor = 0;
 
-   log.branch("Chunk: %.*s, Registered: %c", State->chunk_name->len, strdata(State->chunk_name), State->current_file_index IS FILESOURCE_OVERFLOW_INDEX ? 'N' : 'Y');
+   log.branch("Chunk: %.*s, Registered: %c", State->chunk_name->len, strdata(State->chunk_name),
+      State->current_file_index < FILESOURCE_SYNTHETIC_INDEX ? 'Y' : 'N');
 
    setstrV(L, L->top, State->chunk_name);  // Anchor chunk_name string.
    incr_top(L);
@@ -339,6 +361,20 @@ extern GCproto * lj_parse(LexState *State)
 
    if (State->tok != TK_eof) State->err_token(TK_eof);
    pt = State->fs_finish(State->effective_line());
+   setprotoV(L, L->top, pt);
+   incr_top(L);
+   attach_compilation_sources(L, pt, State->compilation_sources);
+   std::vector<uint8_t> struct_manifest;
+   std::string manifest_detail;
+   ERR manifest_error = build_declared_struct_manifest(L, State->compilation_struct_roots,
+      State->compilation_structs, State->dynamic_struct_reference, struct_manifest, &manifest_detail);
+   if (manifest_error IS ERR::Okay) {
+      auto manifest = (uint8_t *)lj_mem_new(L, MSize(struct_manifest.size()));
+      memcpy(manifest, struct_manifest.data(), struct_manifest.size());
+      setmref(pt->struct_manifest, manifest);
+      pt->struct_manifest_size = uint32_t(struct_manifest.size());
+   }
+   L->top--;
    L->top--;  // Drop chunk_name.
 
    // Transfer tips to lua_State for debug.validate() access

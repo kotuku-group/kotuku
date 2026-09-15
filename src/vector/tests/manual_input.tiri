@@ -50,15 +50,15 @@ module vector as mVector
 
    local br = lViewport.new('VectorRectangle', { x=400, y=20, width='90', height='90', fill=COL_SHAPE })
    local err, brt = br.mtNewMatrix()
-   mVector.rotate(brt, 45, br.width*0.5, br.height*0.5)
+   mVector.Rotate(brt, 45, br.width*0.5, br.height*0.5)
    vectors.insert(br)
 
    local vp = lViewport.new('VectorViewport', { x=200, y=20, width='90', height='90', cursor='hand' })
    vp.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill=COL_VIEWPORT })
    local err, mxTransform = vp.mtNewMatrix()
-   mVector.translate(mxTransform, vp.width*0.5, vp.height*0.5)
-   mVector.rotate(mxTransform, 45, vp.width*0.5, vp.height*0.5)
-   mVector.translate(mxTransform, -vp.width*0.5, -vp.height*0.5)
+   mVector.Translate(mxTransform, vp.width*0.5, vp.height*0.5)
+   mVector.Rotate(mxTransform, 45, vp.width*0.5, vp.height*0.5)
+   mVector.Translate(mxTransform, -vp.width*0.5, -vp.height*0.5)
    vectors.insert(vp)
 
    -- Apply a standard input capture to all created vectors

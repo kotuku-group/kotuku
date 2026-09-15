@@ -303,6 +303,7 @@ static void gc_mark(global_State *g, GCobj* o)
 
 static void gc_mark_gcroot(global_State *g)
 {
+   if (g->exception_metatable) gc_markobj(g, g->exception_metatable);
    for (size_t builtin_index = 0; builtin_index < BUILTIN_CALLABLE_CAPACITY; builtin_index++) {
       if (gcref(G2GG(g)->builtin_callables[builtin_index]) != nullptr) {
          gc_markobj(g, gcref(G2GG(g)->builtin_callables[builtin_index]));
@@ -623,6 +624,15 @@ static void gc_traverse_proto(global_State *g, GCproto* pt)
 {
    ptrdiff_t i;
    gc_mark_str(proto_chunk_name(pt));
+   if (gcref(pt->source_root)) gc_markobj(g, gcref(pt->source_root));
+   if (auto map = pt->compilation_sources.get<CompilationSourceMap>()) {
+      auto entries = compilation_source_entries(map);
+      for (uint32_t i = 0; i < map->count; ++i) {
+         gc_mark_str(gco_to_string(gcref(entries[i].canonical_path)));
+         gc_mark_str(gco_to_string(gcref(entries[i].display_filename)));
+         gc_mark_str(gco_to_string(gcref(entries[i].declared_namespace)));
+      }
+   }
    for (i = -(ptrdiff_t)pt->sizekgc; i < 0; i++)  //  Mark collectable consts.
       gc_markobj(g, proto_kgc(pt, i));
    if (pt->trace) gc_marktrace(g, pt->trace);
@@ -704,6 +714,8 @@ static void gc_traverse_thread(global_State *g, lua_State* th)
          if (cf->funcname) gc_markobj(g, cf->funcname);
       }
    }
+   if (th->pending_exception) gc_markobj(g, th->pending_exception);
+   for (GCtab *exception : th->exception_unwind_roots) gc_markobj(g, exception);
    if (th->pending_exception_message) gc_markobj(g, th->pending_exception_message);
    if (th->pending_exception_source) gc_markobj(g, th->pending_exception_source);
    for (const auto &saved_frame : th->saved_multres) {
@@ -968,6 +980,7 @@ static void gc_call_finaliser(global_State *G, lua_State *L, cTValue* Metamethod
    ptrdiff_t saved_top = savestack(L, L->top);
    const BCIns *saved_try_handler = L->try_handler_pc;
    CapturedStackTrace *saved_pending_trace = L->pending_trace;
+   GCtab *saved_exception = L->pending_exception;
    GCstr *saved_exception_message = L->pending_exception_message;
    GCstr *saved_exception_source = L->pending_exception_source;
    int saved_exception_line = L->pending_exception_line;
@@ -1030,6 +1043,7 @@ static void gc_call_finaliser(global_State *G, lua_State *L, cTValue* Metamethod
    }
 
    L->pending_trace = saved_pending_trace;
+   L->pending_exception = saved_exception;
    L->pending_exception_message = saved_exception_message;
    L->pending_exception_source = saved_exception_source;
    L->pending_exception_line = saved_exception_line;

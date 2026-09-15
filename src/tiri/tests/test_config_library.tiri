@@ -6,7 +6,7 @@ function expect_encode_error(Value:any, Description:str)
    try
       config.encode(Value)
    success
-      error(Description)
+      assert(false, Description)
    end
 end
 

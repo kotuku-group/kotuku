@@ -182,42 +182,42 @@ end
 
 -- Compile-time constant optimization tests
 @Test function ConstantTrue()
-   v = true ? "A" : error("Should not be called")
+   v = true ? "A" : raise("Should not be called")
    assert(v is "A", "Failed constant true")
 end
 
 @Test function ConstantFalse()
-   v = false ? error("Should not be called") : "B"
+   v = false ? raise("Should not be called") : "B"
    assert(v is "B", "Failed constant false")
 end
 
 @Test function ConstantZero()
-   v = 0 ? "A" : error("Should not be called")
+   v = 0 ? "A" : raise("Should not be called")
    assert(v is "A", "Failed constant zero")
 end
 
 @Test function ConstantEmptyString()
-   v = "" ? "A" : error("Should not be called")
+   v = "" ? "A" : raise("Should not be called")
    assert(v is "A", "Failed constant empty string")
 end
 
 @Test function ExtendedConstantZero()
-   v = 0 ?? error("Should not be called") : "B"
+   v = 0 ?? raise("Should not be called") : "B"
    assert(v is "B", "Failed extended constant zero")
 end
 
 @Test function ExtendedConstantEmptyString()
-   v = "" ?? error("Should not be called") : "B"
+   v = "" ?? raise("Should not be called") : "B"
    assert(v is "B", "Failed extended constant empty string")
 end
 
 @Test function ConstantNonZero()
-   v = 5 ? "A" : error("Should not be called")
+   v = 5 ? "A" : raise("Should not be called")
    assert(v is "A", "Failed constant non-zero")
 end
 
 @Test function ConstantNonEmptyString()
-   v = "hello" ? "A" : error("Should not be called")
+   v = "hello" ? "A" : raise("Should not be called")
    assert(v is "A", "Failed constant non-empty string")
 end
 
@@ -534,4 +534,97 @@ end
    -- Critical: verify data is still intact after the ternary
    assert(data[1] is "second", "Local variable corrupted: expected 'second', got " .. tostring(data[1]))
    assert(data[2] is "third", "Local variable corrupted: expected 'third', got " .. tostring(data[2]))
+end
+
+@Test function ExpressionRaiseBranches()
+   local evaluations = 0
+   local function message():str
+      evaluations += 1
+      return 'selected expression'
+   end
+   local function select(Value:bool):num
+      return Value ? 42 : raise(message())
+   end
+   local function reverse(Value:bool):num
+      return Value ? raise(message()) : 24
+   end
+   assert(select(true) is 42 and reverse(false) is 24)
+   assert(evaluations is 0, 'Discarded raise payloads must remain lazy')
+   for direction in {0 to 2} do
+      try
+         local result = direction is 0 ? select(false) : reverse(true)
+      except e
+         assert(e.code is ERR_Exception and e.message is 'selected expression')
+      success
+         assert(false, 'Selected raise branch must throw')
+      end
+   end
+   assert(evaluations is 2, 'Selected payload must be evaluated exactly once: ' .. evaluations)
+end
+
+@Test function ExpressionRaiseChoose()
+   local function select(Value:num):num
+      return choose Value from
+         0 -> raise('zero')
+         1 -> 17
+         2 -> (Value > 0 ? 29 : raise('nested'))
+         else -> raise(ERR_Args, 'fallback')
+      end
+   end
+   assert(select(1) is 17 and select(2) is 29)
+   try
+      local value = select(0)
+   except e
+      assert(e.message is 'zero')
+   success
+      assert(false, 'Selected choose arm must throw')
+   end
+   try
+      local value = select(3)
+   except e when ERR_Args
+      assert(e.message is 'fallback')
+   success
+      assert(false, 'Choose fallback must preserve its code')
+   end
+end
+
+@Test function ExpressionRaiseShortCircuit()
+   local function probe(Value:any):any
+      return Value or raise('or')
+   end
+   local function probeAnd(Value:any):any
+      return Value and raise('and')
+   end
+   local function probeEmpty(Value:any):any
+      return Value ?? raise('empty')
+   end
+   assert(probe(0) is 0 and probe('ok') is 'ok')
+   assert(probeAnd(false) is false and probeAnd(nil) is nil)
+   assert(probeEmpty('ok') is 'ok')
+   local funcs = { probe, probeAnd, probeEmpty }
+   local values = { false, true, 0 }
+   for i in {0 to 3} do
+      try
+         local value = funcs[i](values[i])
+      except e
+         assert(e.code is ERR_Exception)
+      success
+         assert(false, 'Selected short-circuit RHS must throw')
+      end
+   end
+end
+
+@Test function ExpressionRaisePreservesSingleResult()
+   local function values():<num, num>
+      return 11, 22
+   end
+   local first, second = true ? values() : raise('discarded')
+   assert(first is 11 and second is nil, 'Folded ternary must retain only one call result')
+   local third, fourth = false ? raise('discarded') : values()
+   assert(third is 11 and fourth is nil, 'False folded branch must retain only one call result')
+   local function select(Value:bool):<num, any>
+      return Value ? values() : raise('selected')
+   end
+   local fifth, sixth = select(true)
+   assert(fifth is 11 and sixth is nil, 'Runtime ternary must retain only one call result')
 end

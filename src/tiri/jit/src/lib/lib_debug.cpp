@@ -12,8 +12,8 @@
 //   debug.getRegistry()         - Returns the Tiri registry table
 //   debug.getMetatable(obj)     - Returns the metatable of any object
 //   debug.setMetatable(obj, mt) - Sets the metatable of any object
-//   debug.getEnv(obj)           - Returns the environment of a function/thread/userdata
-//   debug.setEnv(obj, env)      - Sets the environment of a function/thread/userdata
+//   debug.getEnv(func)          - Returns the environment of a function
+//   debug.setEnv(func, env)     - Sets the environment of a function
 //   debug.getInfo(f [, what])   - Returns debug information about a function or stack level
 //   debug.getLocal(level, idx)  - Returns local variable name and value at stack level
 //   debug.setLocal(level, idx, val) - Sets local variable value at stack level
@@ -456,7 +456,7 @@ LJLIB_CF(debug_getRegistry)
 // debug.fileSources(): Returns a table of all registered file sources.
 //
 // Each entry in the returned array contains:
-//   index       - File index (0 = main file, 255 = overflow)
+//   index       - Runtime file index (0-253)
 //   path        - Full resolved path
 //   filename    - Short name for error display
 //   namespace   - Declared namespace (empty string if none)
@@ -464,7 +464,7 @@ LJLIB_CF(debug_getRegistry)
 //   sourceLines - Total lines in source file
 //   parentIndex - Which file imported this one (0 for main)
 //   importLine  - Line in parent where import occurred (0 for main)
-//   isOverflow  - True if this is the overflow fallback (index 255)
+//   isOverflow  - Reserved for compatibility; real records are never overflow sentinels
 //
 // Example:
 //   local sources = debug.fileSources()
@@ -569,10 +569,10 @@ LJLIB_CF(debug_setMetatable)
 }
 
 //********************************************************************************************************************
-// debug.getEnv(object:any):table
+// debug.getEnv(function:func):table
 //
-// Returns the environment of the given object.  The object can be a Tiri function, a thread, or a userdata.
-// For functions, this is the table that is used for global variable access within the function.
+// Returns the table used for global variable access within the given function.  Use debug.getUserValue() to access
+// the value associated with userdata.
 //
 // Example:
 //   env = debug.getEnv(myFunction)
@@ -580,20 +580,19 @@ LJLIB_CF(debug_setMetatable)
 
 LJLIB_CF(debug_getEnv)
 {
-   lj_lib_checkany(L, 1);
+   lj_lib_checkfunc(L, 1);
    lua_getfenv(L, 1);
    return 1;
 }
 
 //********************************************************************************************************************
-// debug.setEnv(object:any, table):any
+// debug.setEnv(function:func, table):func
 //
-// Sets the environment of the given object to the given table.  The object can be a Tiri function, a thread,
-// or a userdata.  For functions, this changes the table used for global variable access.  Throws an error if the
-// environment cannot be set (e.g., for C functions)
+// Sets the table used for global variable access within the given function.  Use debug.setUserValue() to associate a
+// table with userdata.
 //
-//   object - A function, thread, or userdata
-//   table  - The new environment table
+//   function - A function value
+//   table    - The new environment table
 //
 // Example:
 //   sandbox = { print = print }
@@ -601,6 +600,7 @@ LJLIB_CF(debug_getEnv)
 
 LJLIB_CF(debug_setEnv)
 {
+   lj_lib_checkfunc(L, 1);
    lj_lib_checktab(L, 2);
    L->top = L->base + 2;
    if (not lua_setfenv(L, 1)) luaL_error(L, ErrMsg::SETFENV);
@@ -1055,6 +1055,7 @@ static CSTRING diagnostic_code_name(ParserErrorCode Code)
       case ParserErrorCode::RecoverySkippedTokens:  return "RecoverySkippedTokens";
       case ParserErrorCode::InvalidAssignment:      return "InvalidAssignment";
       case ParserErrorCode::UnresolvedMethodReceiver: return "UnresolvedMethodReceiver";
+      case ParserErrorCode::TooManyExceptionFilters: return "TooManyExceptionFilters";
       default: return "Unknown";
    }
 }
@@ -1222,12 +1223,13 @@ LJLIB_CF(debug_validate)
 {
    CSTRING statement = luaL_checkstring(L, 1);
 
-   // The optional second argument may be an options table.  The 'symbols' boolean
-   // enables parser symbol extraction, and 'path' enables relative import resolution against the source file's
-   // directory (used by the LSP).
+   // The optional second argument may be an options table.  The 'symbols' boolean enables parser symbol extraction,
+   // 'path' enables relative import resolution against the source file's directory (used by the LSP), and
+   // 'unresolvedMethods' opts into advisory warnings for dot-method receivers classified at runtime.
 
    std::string source_path;
    bool include_symbols = false;
+   bool include_unresolved_methods = false;
    if (lua_istable(L, 2)) {
       lua_getfield(L, 2, "symbols");
       bool has_symbols_option = not lua_isnil(L, -1);
@@ -1236,6 +1238,10 @@ LJLIB_CF(debug_validate)
 
       lua_getfield(L, 2, "path");
       if (CSTRING p = lua_tostring(L, -1)) source_path.assign(p);
+      lua_pop(L, 1);
+
+      lua_getfield(L, 2, "unresolvedMethods");
+      if (not lua_isnil(L, -1)) include_unresolved_methods = lua_toboolean(L, -1);
       lua_pop(L, 1);
    }
 
@@ -1251,7 +1257,9 @@ LJLIB_CF(debug_validate)
    // This requires temporarily enabling JOF::DIAGNOSE
    JOF old_options = L->script->JitOptions;
    SCF old_flags = L->script->Flags;
+   bool old_suppress_unresolved_methods = L->script->SuppressUnresolvedMethodWarnings;
    L->script->JitOptions |= JOF::DIAGNOSE|JOF::ALL_TIPS;
+   L->script->SuppressUnresolvedMethodWarnings = not include_unresolved_methods;
    if (include_symbols) L->script->Flags |= SCF::PROCESS_DOC;
    if (L->parser_symbols) { delete L->parser_symbols; L->parser_symbols = nullptr; }
 
@@ -1271,6 +1279,7 @@ LJLIB_CF(debug_validate)
 
    L->script->JitOptions = old_options;  // Restore options
    L->script->Flags = old_flags;
+   L->script->SuppressUnresolvedMethodWarnings = old_suppress_unresolved_methods;
 
    // Pop the compiled chunk or error message
    lua_pop(L, 1);
@@ -1289,7 +1298,7 @@ LJLIB_CF(debug_validate)
          int column = source_position(span.column);
          settabsi(L, "line", line);
          settabsi(L, "column", column);
-         settabsi(L, "endColumn", column > 0 ? column + 1 : 0);
+         settabsi(L, "endColumn", column > 0 ? column + int(entry.length ? entry.length : 1) : 0);
          settabsi(L, "severity", int(entry.severity));
          settabss(L, "code", diagnostic_code_name(entry.code));
          settabss(L, "message", entry.message.empty() ? "Syntax error" : entry.message.c_str());
@@ -1616,9 +1625,10 @@ extern int luaopen_debug(lua_State *L)
    reg_iface_prototype("debug", "fileSources", { TiriType::Array }, {});
    reg_iface_prototype("debug", "getMetatable", { TiriType::Table }, { TiriType::Any });
    reg_iface_prototype("debug", "setMetatable", { TiriType::Any }, { TiriType::Any, TiriType::Table });
-   reg_iface_prototype("debug", "getEnv", { TiriType::Table }, { TiriType::Any });
-   reg_iface_prototype("debug", "setEnv", { TiriType::Any }, { TiriType::Any, TiriType::Table });
-   reg_iface_prototype("debug", "getInfo", { TiriType::Table }, { TiriType::Any, TiriType::Str });
+   reg_iface_prototype("debug", "getEnv", { TiriType::Table }, { TiriType::Func });
+   reg_iface_prototype("debug", "setEnv", { TiriType::Func }, { TiriType::Func, TiriType::Table });
+   reg_iface_prototype("debug", "getInfo", { TiriType::Table }, { TiriType::Any, TiriType::Str },
+      FProtoFlags::None, FProtoArity::required(1));
    reg_iface_prototype("debug", "getLocal", { TiriType::Str, TiriType::Any }, { TiriType::Num, TiriType::Num });
    reg_iface_prototype("debug", "setLocal", { TiriType::Str }, { TiriType::Num, TiriType::Num, TiriType::Any });
    reg_iface_prototype("debug", "getUpvalue", { TiriType::Str, TiriType::Any }, { TiriType::Func, TiriType::Num });
@@ -1627,15 +1637,21 @@ extern int luaopen_debug(lua_State *L)
    reg_iface_prototype("debug", "upvalueJoin", {}, { TiriType::Func, TiriType::Num, TiriType::Func, TiriType::Num });
    reg_iface_prototype("debug", "getUserValue", { TiriType::Table }, { TiriType::Any });
    reg_iface_prototype("debug", "setUserValue", { TiriType::Any }, { TiriType::Any, TiriType::Table });
-   reg_iface_prototype("debug", "setHook", {}, { TiriType::Func, TiriType::Str, TiriType::Num });
+   reg_iface_prototype("debug", "setHook", {}, { TiriType::Func, TiriType::Str, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(0));
    reg_iface_prototype("debug", "getHook", { TiriType::Func, TiriType::Str, TiriType::Num }, {});
-   reg_iface_prototype("debug", "traceback", { TiriType::Str }, { TiriType::Str, TiriType::Num });
-   reg_iface_prototype("debug", "validate", { TiriType::Table }, { TiriType::Str, TiriType::Any });
-   reg_iface_prototype("debug", "locality", { TiriType::Str }, { TiriType::Str, TiriType::Num });
+   reg_iface_prototype("debug", "traceback", { TiriType::Str }, { TiriType::Str, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(0));
+   reg_iface_prototype("debug", "validate", { TiriType::Table }, { TiriType::Str, TiriType::Any }, FProtoFlags::None,
+      FProtoArity::required(1));
+   reg_iface_prototype("debug", "locality", { TiriType::Str }, { TiriType::Str, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(0));
 
    // Register debug.anno interface prototypes
    reg_iface_prototype("debug.anno", "get", { TiriType::Table }, { TiriType::Func });
-   reg_iface_prototype("debug.anno", "set", { TiriType::Table }, { TiriType::Func, TiriType::Any, TiriType::Str, TiriType::Str });
+   reg_iface_prototype("debug.anno", "set", { TiriType::Table },
+      { TiriType::Func, TiriType::Any, TiriType::Str, TiriType::Str }, FProtoFlags::None,
+      FProtoArity::required(2));
    reg_iface_prototype("debug.anno", "list", { TiriType::Table }, {});
 
    return 1;

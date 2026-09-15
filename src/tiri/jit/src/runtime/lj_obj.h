@@ -68,6 +68,7 @@ struct SBuf;
 
 class ParserDiagnostics;
 class extTiri;
+namespace tiri::cache { struct Manifest; }
 
 // Memory and GC object sizes.
 
@@ -105,6 +106,7 @@ enum class AstNodeKind : uint16_t {
    DeferredExpr,  // Deferred expression <{ expr }>
    RangeExpr,     // Range literal {start to stop} or {start into stop}
    ChooseExpr,    // Choose expression: choose value from pattern -> result ... end
+   RaiseExpr,
    ModuleFunctionExpr, // Compiler-managed module function selection, e.g. mCore.PreciseTime
    BlockStmt,
    AssignmentStmt,
@@ -155,6 +157,7 @@ enum class TiriType : uint8_t {
 
 // Maximum number of explicitly typed return values per function
 constexpr size_t MAX_RETURN_TYPES = 8;
+constexpr size_t MAX_EXCEPTION_FILTER_CODES = 4;
 
 //********************************************************************************************************************
 // Memory reference
@@ -585,6 +588,21 @@ inline constexpr FProtoFlags operator&(FProtoFlags a, FProtoFlags b) {
 
 constexpr size_t FPROTO_MAX_PARAMS = 16; // Maximum parameter count for prototypes
 
+// Arity metadata is deliberately independent of parameter nil acceptance.  An exact prototype requires every
+// declared parameter; optional prototypes specify the number of leading parameters that are required.  Variadic
+// prototypes continue to use FProtoFlags::Variadic to remove the declared upper bound.
+
+struct FProtoArity {
+   static constexpr uint8_t EXACT = UINT8_MAX - 1;
+   static constexpr uint8_t UNSPECIFIED = UINT8_MAX;
+
+   uint8_t minimum;
+
+   [[nodiscard]] static constexpr FProtoArity unspecified() noexcept { return { UNSPECIFIED }; }
+   [[nodiscard]] static constexpr FProtoArity exact() noexcept { return { EXACT }; }
+   [[nodiscard]] static constexpr FProtoArity required(uint8_t Minimum) noexcept { return { Minimum }; }
+};
+
 // Function prototype storing type signature
 
 struct fprototype {
@@ -593,7 +611,8 @@ struct fprototype {
    FProtoFlags flags;        // Optional flags
    TiriType receiver_type;   // Concrete receiver for instance methods; Unknown for namespace functions
    BuiltinCallableID builtin_callable_id; // Canonical callable identity for instance methods
-   uint16_t reserved;        // Reserved for future prototype metadata
+   uint8_t min_param_count;  // Required leading parameters, or FProtoArity::UNSPECIFIED when unaudited
+   uint8_t reserved;         // Reserved for future prototype metadata
    std::array<TiriType, PROTO_MAX_RETURN_TYPES> result_types;
 
    // Parameter types follow (accessed via param_types())
@@ -843,6 +862,45 @@ struct CheckallFrameStack {
    int depth = 0;
 };
 
+enum class CompilationSourceRole : uint8_t {
+   Main = 0,
+   Import = 1,
+   Synthetic = 2
+};
+
+inline constexpr uint8_t COMPILATION_SOURCE_VERSION = 1;
+
+struct CompilationSourceEntry {
+   GCRef canonical_path;
+   GCRef display_filename;
+   GCRef declared_namespace;
+   BCLine first_line;
+   BCLine total_lines;
+   BCLine import_line;
+   uint8_t runtime_index;
+   uint8_t parent;
+   CompilationSourceRole role;
+   uint8_t reserved;
+};
+
+struct CompilationSourceMap {
+   uint8_t version;
+   uint8_t count;
+   uint8_t root;
+   uint8_t reserved;
+};
+
+[[nodiscard]] inline CompilationSourceEntry * compilation_source_entries(CompilationSourceMap *Map) noexcept
+{
+   return Map ? (CompilationSourceEntry *)(Map + 1) : nullptr;
+}
+
+[[nodiscard]] inline const CompilationSourceEntry * compilation_source_entries(
+   const CompilationSourceMap *Map) noexcept
+{
+   return Map ? (const CompilationSourceEntry *)(Map + 1) : nullptr;
+}
+
 typedef struct GCproto {
    GCHeader;
    uint8_t  numparams; //  Number of parameters.
@@ -863,6 +921,11 @@ typedef struct GCproto {
    BCLine firstline;  //  First line of the function definition.
    BCLine numline;    //  Number of lines for the function definition.
    uint8_t file_source_idx;  //  Index into lua_State::file_sources (fallback for edge cases).
+   uint8_t interpreter_required; // Deterministic policy reconstructed from this prototype's bytecode.
+   GCRef source_root;        // Root prototype which owns the compilation-unit source descriptor.
+   MRef compilation_sources; // CompilationSourceMap owned by the root prototype only.
+   MRef struct_manifest; // Portable named-structure semantics owned by the root prototype only.
+   uint32_t struct_manifest_size;
    MRef   lineinfo;   //  BCLine[sizebc-1] array - file index in upper 8 bits, line in lower 24.
    MRef   uvinfo;     //  Upvalue names.
    MRef   varinfo;    //  Names and compressed extents of local variables.
@@ -902,6 +965,19 @@ inline constexpr int PROTO_CLC_POLY         = 3 * PROTO_CLCOUNT;  //  Polymorphi
 
 inline constexpr uint16_t PROTO_UV_LOCAL     = 0x8000;   //  Upvalue for local slot.
 inline constexpr uint16_t PROTO_UV_IMMUTABLE = 0x4000;   //  Immutable upvalue.
+
+inline void proto_set_interpreter_required(GCproto *Proto, bool Required) noexcept
+{
+   Proto->interpreter_required = Required ? 1 : 0;
+   if (Required) Proto->flags |= PROTO_NOJIT;
+   else Proto->flags &= ~PROTO_NOJIT;
+}
+
+inline void proto_restore_jit_policy(GCproto *Proto) noexcept
+{
+   Proto->flags &= ~PROTO_NOJIT;
+   if (Proto->interpreter_required) Proto->flags |= PROTO_NOJIT;
+}
 
 [[nodiscard]] inline GCobj* proto_kgc(const GCproto* pt, ptrdiff_t idx) noexcept {
    return check_exp(uintptr_t(intptr_t(idx)) >= uintptr_t(-intptr_t(pt->sizekgc)),
@@ -980,8 +1056,13 @@ inline constexpr uint16_t PROTO_UV_IMMUTABLE = 0x4000;   //  Immutable upvalue.
 
 inline void proto_metadata_init(GCproto *Proto) noexcept
 {
+   Proto->interpreter_required = 0;
    setmref(Proto->contract_cache, nullptr);
    Proto->file_source_idx = 0;
+   setgcrefnull(Proto->source_root);
+   setmref(Proto->compilation_sources, nullptr);
+   setmref(Proto->struct_manifest, nullptr);
+   Proto->struct_manifest_size = 0;
    setmref(Proto->lineinfo, nullptr);
    setmref(Proto->uvinfo, nullptr);
    setmref(Proto->varinfo, nullptr);
@@ -999,6 +1080,26 @@ inline void proto_metadata_init(GCproto *Proto) noexcept
    Proto->resolved_count = 0;
    Proto->resolved_dependency_states = nullptr;
    Proto->resolved_dependency_count = 0;
+}
+
+[[nodiscard]] inline const uint8_t * proto_struct_manifest(const GCproto *Proto, uint32_t *Size = nullptr) noexcept
+{
+   if (not Proto) return nullptr;
+   const GCproto *root = gcref(Proto->source_root) ? (const GCproto *)gcref(Proto->source_root) : Proto;
+   if (Size) *Size = root->struct_manifest_size;
+   return root->struct_manifest.get<const uint8_t>();
+}
+
+[[nodiscard]] inline CompilationSourceMap * proto_compilation_sources(GCproto *Proto) noexcept
+{
+   if (not Proto) return nullptr;
+   GCproto *root = gcref(Proto->source_root) ? (GCproto *)gcref(Proto->source_root) : Proto;
+   return root->compilation_sources.get<CompilationSourceMap>();
+}
+
+[[nodiscard]] inline const CompilationSourceMap * proto_compilation_sources(const GCproto *Proto) noexcept
+{
+   return proto_compilation_sources((GCproto *)Proto);
 }
 
 [[nodiscard]] inline const ProtoDependencyTable * proto_dependencies(const GCproto *Proto) noexcept
@@ -1659,6 +1760,7 @@ typedef struct StrInternState {
 
 // Global state, shared by all threads of a Lua universe.
 typedef struct global_State {
+   GCtab *exception_metatable = nullptr; // Protected runtime exception identity
    lua_Alloc allocf;         // Memory allocator.
    void      *allocd;        // Memory allocator data.
    GCState   gc;             // Garbage collector.
@@ -1743,6 +1845,7 @@ struct lua_State {
    void    *cframe;     //  End of C stack frame chain.
    MSize   stacksize;   //  True stack size (incl. LJ_STACK_EXTRA).
    class extTiri *script;  // Back-reference to the script that owns this lua_State
+   tiri::cache::Manifest *cache_manifest_capture = nullptr; // Non-owning source compilation-local input capture
    bool    sent_traceback;   // True if traceback has been sent for the current error
    uint8_t resolving_thunk;  // Flag to prevent recursive thunk resolution
    uint64_t array_view_scopes = 0; // One armed bit per active <view> declaration initialiser
@@ -1758,6 +1861,8 @@ struct lua_State {
    CheckallFrameStack *checkall_stack = nullptr; // Preallocated lexical automatic native error promotion scopes
    const BCIns   *try_handler_pc; // Handler PC for error re-entry (set during unwind)
    CapturedStackTrace *pending_trace; // Trace captured during exception handling (for try<trace>)
+   GCtab  *pending_exception = nullptr; // Original exception during rethrow
+   std::vector<GCtab *> exception_unwind_roots; // Preserve outer rethrows during nested cleanup
    GCstr  *pending_exception_message = nullptr; // Raw exception message for try/except tables
    GCstr  *pending_exception_source = nullptr;  // Display source filename for try/except tables
    int    pending_exception_line = 0;           // Source line for try/except tables

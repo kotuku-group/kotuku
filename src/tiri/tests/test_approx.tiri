@@ -72,12 +72,12 @@ end
    try
       local fail = 'hello' ≈ 1
    success
-      error('Expected failure when using approx with a string left operand')
+      assert(false, 'Expected failure when using approx with a string left operand')
    end
 
    try
       local fail = 1 ≈ 'hello'
    success
-      error('Expected failure when using approx with a string right operand')
+      assert(false, 'Expected failure when using approx with a string right operand')
    end
 end

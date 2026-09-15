@@ -229,7 +229,7 @@ end
          end
       ]])
    success
-      error('an unspecified dynamic return requires an explicit result annotation')
+      assert(false, 'an unspecified dynamic return requires an explicit result annotation')
    end
 end
 
@@ -242,7 +242,7 @@ end
          end
       ]])
    success
-      error('an unresolved call result requires an explicit result annotation')
+      assert(false, 'an unresolved call result requires an explicit result annotation')
    end
 end
 
@@ -291,7 +291,7 @@ end
          end
       ]])
    success
-      error("should detect return type mismatch: str returned for num declaration")
+      assert(false, "should detect return type mismatch: str returned for num declaration")
    end
 end
 
@@ -303,7 +303,7 @@ end
          end
       ]])
    success
-      error("should detect return type mismatch: num returned for str declaration")
+      assert(false, "should detect return type mismatch: num returned for str declaration")
    end
 end
 
@@ -315,7 +315,7 @@ end
          end
       ]])
    success
-      error("should detect return type mismatch: table returned for bool declaration")
+      assert(false, "should detect return type mismatch: table returned for bool declaration")
    end
 end
 
@@ -327,7 +327,7 @@ end
          end
       ]])
    success
-      error("should detect return type mismatch in multiple returns")
+      assert(false, "should detect return type mismatch in multiple returns")
    end
 end
 
@@ -437,7 +437,7 @@ end
    except ex
       assert(ex.message, "the terminal activation should report the invalid result")
    success
-      error("a forwarded recursive return contract should still reject an invalid result")
+      assert(false, "a forwarded recursive return contract should still reject an invalid result")
    end
 end
 
@@ -473,7 +473,7 @@ end
          end
       ]])
    success
-      error("recursive function without explicit return type should error")
+      assert(false, "recursive function without explicit return type should error")
    end
 end
 
@@ -531,7 +531,7 @@ end
          bad = (x => num: "not a number")
       ]])
    success
-      error("arrow function with mismatched return type should error")
+      assert(false, "arrow function with mismatched return type should error")
    end
 end
 
@@ -575,7 +575,7 @@ end
          end
       ]])
    success
-      error("inconsistent return types should error (first wins rule)")
+      assert(false, "inconsistent return types should error (first wins rule)")
    end
 end
 
@@ -603,7 +603,7 @@ end
          end
       ]])
    success
-      error("inconsistent multiple return types should error")
+      assert(false, "inconsistent multiple return types should error")
    end
 end
 
@@ -673,17 +673,11 @@ end
    assert(h is 8, "8th of 8 returns")
 end
 
-@Test function MoreThanEightTypesDropped()
-   -- 9th+ types should be treated as 'any' (no type checking)
-   function manyReturns():<num, num, num, num, num, num, num, num, str>
-      -- 9th type (str) should be treated as any due to MAX_RETURN_TYPES = 8
-      return 1, 2, 3, 4, 5, 6, 7, 8, "ninth", false
-   end
-   a, b, c, d, e, f, g, h, i, j = manyReturns()
-   assert(a is 1, "1st return should be 1")
-   assert(h is 8, "8th return should be 8")
-   assert(i is "ninth", "9th return should work (treated as any)")
-   assert(j is nil, "10th undeclared return should be truncated")
+@Test function MoreThanEightTypesRejected()
+   local result = debug.validate('function invalid():<num, num, num, num, num, num, num, num, str!> end')
+   assert(result.success is false, 'A ninth return annotation should be rejected')
+   assert(result.diagnostics[0].code is 'TooManyReturnTypes',
+      'A ninth return annotation should report TooManyReturnTypes')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -709,7 +703,7 @@ end
          local result: str = getNum()
       ]])
    success
-      error("Expected exception to be raised from invalid typed assignment")
+      assert(false, "Expected exception to be raised from invalid typed assignment")
    end
 end
 
@@ -823,6 +817,33 @@ end
    assert(c is 3, "third from varargs should be 3")
 end
 
+@Test function DynamicReturnContractsPreserveExpandedResults()
+   local script = obj.new('tiri', { statement=[=[
+jit.opt.start('hotloop=1', 'hotexit=1')
+local aborts = 0
+function trace_event(Event, Trace, Func, Pc, Reason)
+   if Event is 'abort' then aborts++ end
+end
+jit.attach(trace_event, 'trace')
+function firstAndRest(...):<num, any, ...>
+   return ...
+end
+for i in {0 to 100} do
+   local a, b, c, d = firstAndRest(1, 2, 'third', nil)
+   assert(a is 1 and b is 2 and c is 'third' and d is nil,
+      f'Expanded results must survive trace abortion: {a}, {b}, {c}, {d}')
+end
+jit.attach(trace_event)
+assert(aborts > 0, 'The dynamic contract must exercise trace abortion')
+jit.off()
+local deferred = <{ 1 }>
+local a, b, c = firstAndRest(deferred, 2, 3)
+assert(a is 1 and b is 2 and c is 3, 'Thunk resolution must preserve the other expanded results')
+]=] })
+   check script.acActivate()
+   assert(script.error is 0, script.errorMessage)
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- ERROR MESSAGE QUALITY
 
@@ -839,6 +860,6 @@ end
       assert(msg.find("type") or string.find(msg, "num") or string.find(msg, "str"),
          "error message should mention type information")
    success
-      error("should have caught type error")
+      assert(false, "should have caught type error")
    end
 end

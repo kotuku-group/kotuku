@@ -364,7 +364,7 @@ static ERR DOCUMENT_Clipboard(extDocument *Self, struct acClipboard *Args)
 
       if ((Self->Flags & DCF::EDIT) IS DCF::NIL) {
          log.warning("Edit mode is not enabled, paste operation aborted.");
-         return ERR::Failed;
+         return ERR::ReadOnly;
       }
 
       objClipboard::create clipboard = { };
@@ -573,7 +573,7 @@ strview String: Content to insert
 -ERRORS-
 Okay
 NullArgs
-Failed
+InvalidState: The document is not in a parsing state.
 NoSupport
 
 -TAGS-
@@ -587,7 +587,7 @@ static ERR DOCUMENT_FeedParser(extDocument *Self, doc::FeedParser *Args)
 
    if ((not Args) or (Args->String.empty())) return ERR::NullArgs;
 
-   if (not Self->Processing) return log.warning(ERR::Failed);
+   if (not Self->Processing) return log.warning(ERR::InvalidState);
 
 
 

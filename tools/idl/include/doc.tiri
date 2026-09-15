@@ -261,6 +261,15 @@ setAction('Next', {
    tiriPrototype = 'err = Object.acNext()'
 })
 
+setAction('Pause', {
+   comment   = 'Pause or unpause the current object activity.',
+   prototype = 'ERR acPause(*Object, INT Operation)',
+   tiriPrototype = 'err = Object.acPause(Operation:num)',
+   params    = {
+      { name='Operation', type='INT', comment='1 to pause, 0 to unpause, -1 to toggle' }
+   }
+})
+
 setAction('Prev', {
    comment   = 'Move to the previous record.',
    prototype = 'ERR acPrev(*Object)',
@@ -598,7 +607,7 @@ global function extractParagraph(Input:str, Context:table, References:table)
 
    -- Handle <field>, <method> and <action> references
 
-   if output?? and output.len() > 12 then
+   if output?? and #output > 12 then
       if Context and Context.meta then
          output = substituteReferences(output, Context)
       else
@@ -1176,7 +1185,7 @@ global function docFunction(Function)
    if Function.description?? then
       out ..= f'    <description>\n{extractParagraph(Function.description, Function, Function.references)}\n    </description>\n'
    else
-      error(f'{Function.name}() has no description.')
+      raise f'{Function.name}() has no description.'
    end
 
    -- Results
@@ -1224,13 +1233,13 @@ global function docTypes(References:table)
       typeName = choose ct.grouping from
          'constants' -> 'const'
          'flags' -> 'flag'
-         else -> error("Unknown grouping for custom type, '" .. ct.grouping .. "'")
+         else -> raise("Unknown grouping for custom type, '" .. ct.grouping .. "'")
       end
 
       if not References or (not References['TYPE:' .. ct.prefix]) then
          -- Type is not referenced
       else
-         out ..= "    <constants lookup=\"" .. ct.prefix .. '"' .. comment.escXML() .. '>\n'
+         out ..= "    <constants lookup=\"" .. ct.prefix .. '"' .. comment .. '>\n'
 
          sortedValues = { }
          for v in values(ct.list) do

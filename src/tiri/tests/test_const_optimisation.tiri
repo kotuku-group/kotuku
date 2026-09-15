@@ -38,7 +38,7 @@ function expect_undeclared_diagnostic(Source:str)
          f'Elided control flow should retain source diagnostics: {ex.message}')
       return
    end
-   error('An undeclared name in elided control flow should still fail compilation')
+   assert(false, 'An undeclared name in elided control flow should still fail compilation')
 end
 
 function count_trace_opcode(TraceNo:num, Info:table, Opcode:num):num
@@ -62,7 +62,7 @@ function first_trace_metrics():table
          }
       end
    end
-   error('Failed to record a JIT trace for const optimisation baseline')
+   raise 'Failed to record a JIT trace for const optimisation baseline'
 end
 
 function local_workload(Count:num):num
@@ -413,7 +413,7 @@ end
       try
          try_count++
       except ex
-         error(ex)
+         raise
       end
    until true
    assert(try_count is 1, 'A one-pass repeat should preserve try block execution')
@@ -424,7 +424,7 @@ end
          try_continue_count++
          continue
       except ex
-         error(ex)
+         raise
       end
    until true
    assert(try_continue_count is 1, 'Continue from try should leave a one-pass repeat cleanly')
@@ -473,7 +473,7 @@ end
          f'An unreachable expression should retain its source diagnostics: {ex.message}')
       return
    end
-   error('An undeclared name in an unreachable expression should still fail compilation')
+   assert(false, 'An undeclared name in an unreachable expression should still fail compilation')
 end
 
 -----------------------------------------------------------------------------------------------------------------------

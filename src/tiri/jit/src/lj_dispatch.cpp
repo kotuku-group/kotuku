@@ -11,6 +11,7 @@
 #include "lj_str.h"
 #include "lj_tab.h"
 #include "lj_meta.h"
+#include "lj_contract.h"
 #include "lj_debug.h"
 #include "lj_state.h"
 #include "lj_frame.h"
@@ -207,7 +208,7 @@ void lj_dispatch_update(global_State* g)
 static void setptmode(global_State* g, GCproto* pt, int mode)
 {
    if ((mode & LUAJIT_MODE_ON)) {  // (Re-)enable JIT compilation.
-      pt->flags &= ~PROTO_NOJIT;
+      proto_restore_jit_policy(pt);
       lj_trace_reenableproto(pt);  //  Unpatch all ILOOP etc. bytecodes.
    }
    else {  // Flush and/or disable JIT compilation.
@@ -366,6 +367,15 @@ static BCREG cur_topslot(GCproto* pt, const BCIns* pc, uint32_t nres)
          BCIns call_ins = pc[-2];
          if (bc_b(call_ins) or not nres) return pt->framesize;
          return bc_a(ins) + nres - 1;
+      }
+      case BC_CONTRACT: {
+         RuntimeContractDescriptor descriptor;
+         GCstr *encoded = gco_to_string(proto_kgc(pt, ~(ptrdiff_t)bc_d(ins)));
+         if (decode_runtime_contract(encoded, descriptor) and descriptor.dynamic_count()) {
+            BCREG result_top = bc_a(ins) + descriptor.static_value_count + nres - 1;
+            return result_top > pt->framesize ? result_top : pt->framesize;
+         }
+         return pt->framesize;
       }
       case BC_RETM: return bc_a(ins) + bc_d(ins) + nres - 1;
       case BC_TSETM: return bc_a(ins) + nres - 1;

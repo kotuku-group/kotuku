@@ -416,27 +416,27 @@ end
       local invalid:any = "not a function"
       arr.each(invalid)
    success
-      error("each() should reject non-function argument")
+      assert(false, "each() should reject non-function argument")
    end
 
    try
       local invalid:any = 42
       arr.mapSame(invalid)
    success
-      error("mapSame() should reject non-function argument")
+      assert(false, "mapSame() should reject non-function argument")
    end
 
    try
       local invalid:any = {}
       arr.filter(invalid)
    success
-      error("filter() should reject non-function argument")
+      assert(false, "filter() should reject non-function argument")
    end
 
    try
       arr.reduce(0, nil)
    success
-      error("reduce() should reject non-function reducer")
+      assert(false, "reduce() should reject non-function reducer")
    end
 end
 
@@ -528,14 +528,14 @@ end
          return Value
       end, 'not-an-array-type')
    success
-      error('map() should reject an invalid destination type')
+      assert(false, 'map() should reject an invalid destination type')
    end
    assert(calls is 0, 'map() should validate the destination type before invoking callbacks')
 
    try
       items.map(Value => 'wrong', 'int')
    success
-      error('map() should reject an incompatible transformed value')
+      assert(false, 'map() should reject an incompatible transformed value')
    end
    assert(items[0] is 1 and items[1] is 2, 'a failed map() should not modify its source array')
 end

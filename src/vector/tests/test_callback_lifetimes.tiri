@@ -41,7 +41,7 @@ end
       local rect = obj.find('callback_lifetime_rect')
       assert(rect != nil, 'Sub-script could not find the target rectangle')
       check rect.mtSubscribeFeedback(FM_PATH_CHANGED, function(Vector, EventFlag, EventObject)
-         error('A feedback callback fired for a freed script context')
+         raise('A feedback callback fired for a freed script context')
       end)
    ]] })
 
@@ -64,7 +64,7 @@ end
       local rect = obj.find('callback_lifetime_rect_live')
       assert(rect != nil, 'Sub-script could not find the target rectangle')
       check rect.mtSubscribeFeedback(FM_PATH_CHANGED, function(Vector, EventFlag, EventObject)
-         error('A feedback callback fired for a freed script context')
+         raise('A feedback callback fired for a freed script context')
       end)
    ]] })
 
@@ -123,7 +123,7 @@ end
    scene, viewport, rect = newRectScene('callback_lifetime_scene_free')
 
    rect.resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
-      error('A resize callback fired during scene destruction')
+      raise 'A resize callback fired during scene destruction'
    end
 
    scene.free()
@@ -144,7 +144,7 @@ end
       local rect = obj.find('callback_lifetime_resize_rect')
       assert(rect != nil, 'Sub-script could not find the target rectangle')
       rect.resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
-         error('A resize callback fired for a freed script context')
+         raise('A resize callback fired for a freed script context')
       end
    ]] })
 

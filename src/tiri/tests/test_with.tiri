@@ -121,7 +121,7 @@ end
    function inner()
       with t do
          t.hour = 11
-         error('test error inside with')
+         raise 'test error inside with'
       end
    end
 
@@ -149,7 +149,7 @@ end
       with t1, t2 do
          t1.hour = 1
          t2.hour = 2
-         error('multi-object error')
+         raise 'multi-object error'
       end
    end
 

@@ -94,7 +94,7 @@ static ERR resolve_name_receiver(APTR Custom, int MsgID, MSGID MsgType, std::spa
          nl->Info = cached;
          resolve_callback(*nl, ERR::Okay, nl->Info.HostName, nl->Info.Addresses);
       }
-      else resolve_callback(*nl, ERR::Failed, "");
+      else resolve_callback(*nl, r.Error, "");
    }
    return ERR::Okay;
 }
@@ -126,7 +126,7 @@ static ERR resolve_addr_receiver(APTR Custom, int MsgID, MSGID MsgType, std::spa
          nl->Info = cached;
          resolve_callback(*nl, ERR::Okay, nl->Info.HostName, nl->Info.Addresses);
       }
-      else resolve_callback(*nl, ERR::Failed, "");
+      else resolve_callback(*nl, r.Error, "");
    }
    return ERR::Okay;
 }
@@ -152,7 +152,7 @@ Okay: The IP address was resolved successfully.
 Args
 NullArgs
 Retry
-Failed: The address could not be resolved.
+HostNotFound: The address could not be resolved.
 Memory
 BufferOverflow
 SystemCall
@@ -204,7 +204,7 @@ strview HostName: The host name to be resolved.
 Okay
 NullArgs
 Retry
-Failed
+HostNotFound: The host name could not be resolved.
 Memory
 BufferOverflow
 SystemCall
@@ -279,7 +279,7 @@ strview Address: IP address to be resolved, e.g. "123.111.94.82".
 Okay: The IP address was resolved successfully.
 NullArgs
 FieldNotSet
-Failed: The address could not be resolved
+Syntax: The address is not a valid IP address literal.
 
 -TAGS-
 non-blocking, mutates-object, copies-input, callback-inlines
@@ -331,7 +331,7 @@ static ERR NETLOOKUP_ResolveAddress(extNetLookup *Self, struct nl::ResolveAddres
 
       return ERR::Okay;
    }
-   else return log.warning(ERR::Failed);
+   else return log.warning(ERR::Syntax);
 }
 
 /*********************************************************************************************************************

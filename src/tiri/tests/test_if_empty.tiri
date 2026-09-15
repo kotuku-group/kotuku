@@ -41,6 +41,18 @@ end
    assert(v is 5, "Failed truthy number case: expected 5, got '" .. tostring(v) .. "'")
 end
 
+@Test function MultilineRightOperand()
+   local fallback = 'fallback'
+   local value = nil ??
+      fallback
+   assert(value is fallback, 'A right operand on the following line should keep ?? binary')
+
+   local present = fallback??;
+   local following = 'separate statement'
+   assert(present is true, 'A semicolon should terminate a postfix presence check')
+   assert(following is 'separate statement', 'The statement after a postfix presence check should remain separate')
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- Basic checks with a function on either side
 
@@ -136,7 +148,7 @@ end
 
 @Test function ShortCircuitTruth()
    function rhs()
-      error("RHS should not be evaluated when LHS is truthy")
+      assert(false, "RHS should not be evaluated when LHS is truthy")
    end
    v = "X" ?? rhs()
    assert(v is "X", "Failed short-circuit truth: expected 'X', got '" .. tostring(v) .. "'")

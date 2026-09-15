@@ -22,6 +22,7 @@ constexpr int SIZE_READ = 1024;
 #include <format>
 #include <memory>
 
+#include "cache_manifest.h"
 #include "lj_obj.h"
 #include "lj_frame.h"
 #include "lj_state.h"
@@ -373,6 +374,7 @@ constexpr uint32_t simple_hash(CSTRING String, uint32_t Hash = 0) {
 
 READ_TABLE * get_read_table(objMetaClass *);
 WRITE_TABLE * get_write_table(objMetaClass *);
+ERR classify_object_write_miss(objMetaClass *, uint32_t);
 
 //********************************************************************************************************************
 
@@ -436,6 +438,11 @@ ERR load_module_defs(std::string_view);
 [[nodiscard]] std::string_view static_module_function_name(StaticModuleHandle, std::string_view) noexcept;
 [[nodiscard]] APTR proto_dependency_callable(struct GCproto *, uint32_t);
 #ifdef UNIT_TESTS
+[[nodiscard]] std::string test_module_zero_call(lua_State *, APTR, uint32_t Type, bool ForceBridge, CSTRING Source);
+[[nodiscard]] std::string test_module_zero_eligibility();
+[[nodiscard]] std::string test_module_simple_call(lua_State *, APTR, uint32_t Type,
+   std::span<const uint32_t> Inputs, bool ForceBridge, bool Eligible, CSTRING Source, bool Probe = true);
+[[nodiscard]] int test_module_live_temporaries();
 [[nodiscard]] std::string test_module_string_view_call(lua_State *, APTR,
    std::span<const std::string> Inputs);
 
@@ -467,6 +474,11 @@ void remove_struct(std::string_view);
    std::string_view Name);
 [[nodiscard]] ERR register_declared_struct(lua_State *Lua, struct_record &&Record, bool *Inserted,
    const struct_record **Existing = nullptr, std::string *Detail = nullptr);
+[[nodiscard]] ERR build_declared_struct_manifest(lua_State *Lua, const std::vector<std::string> &Roots,
+   const std::vector<std::string> &Owned, bool DynamicReference, std::vector<uint8_t> &Manifest,
+   std::string *Detail = nullptr);
+[[nodiscard]] ERR load_declared_struct_manifest(lua_State *Lua, std::string_view Manifest,
+   std::vector<uint32_t> &Inserted, std::string *Detail = nullptr);
 void construct_trivial_struct_vector(APTR Address);
 void destroy_trivial_struct_vector(APTR Address);
 void assign_trivial_struct_vector(APTR Address, CPTR Source, size_t Elements, size_t Stride);
@@ -570,6 +582,12 @@ inline GCobject * push_object(lua_State *Lua, OBJECTPTR Object, bool Detached = 
    }
 }
 
+enum class CacheDestinationOrigin : uint8_t {
+   NONE,
+   EXPLICIT,
+   AUTOMATIC
+};
+
 class extTiri : public objTiri {
    public:
    lua_State *Lua;                        // Lua instance
@@ -580,18 +598,44 @@ class extTiri : public objTiri {
    std::vector<std::unique_ptr<std::jthread>> Threads; // Simple mechanism for auto-joining all the threads on object destruction
    kt::vector<std::string> Procedures;
    ankerl::unordered_dense::map<OBJECTID, int> StateMap;
-   std::shared_ptr<SharedPool> Pool;     // Thread-safe shared pool for async.pool (created on first use, shared with child scripts)
+   std::shared_ptr<SharedPool> Pool;      // Thread-safe shared pool for async.pool (created on first use, shared with child scripts)
+   std::unique_ptr<tiri::cache::Manifest> CompilationManifest; // Inputs observed by the last successful source compile
+   std::string CompilationSourcePath;     // Resolver spelling used for the root chunk and cache identity
+   std::string EffectiveCacheFile;        // Selected explicit or automatic destination; never aliases public fields
+   std::string CacheSelectionValue;       // Public CacheFile value from the last destination selection
    APTR     FocusEventHandle;
-   struct finput *InputList;           // Managed by the input interface
-   DateTime CacheDate;
+   struct finput *InputList;              // Managed by the input interface
    PERMIT   CachePermissions;
    JOF      JitOptions;
+   JOF      LocalJitOptions = JOF::NIL;
+   JOF      GlobalJitOptions = JOF::NIL;
    int      MainChunkRef;              // Registry reference to the main chunk for post-execution analysis
    uint8_t  Recurse;
    uint8_t  SaveCompiled;
+   bool     LoadedFromCache = false;
+   bool     LoadedFromBytecodeFile = false; // Statement was read from the current direct .tbc path
+   bool     CompilationPrepared = false; // Libraries and interfaces have been registered and globals protected
+   bool     CacheHit = false;             // Deterministic provenance hook: Query bypassed source parsing
+   bool     CacheSelectionParserOutput = false;
+   bool     SuppressUnresolvedMethodWarnings = false; // Tooling may collect errors without runtime-dispatch advice
+   CacheDestinationOrigin CacheOrigin = CacheDestinationOrigin::NONE;
+   int64_t  SourceModifiedHint = 0;
+   uint32_t SourceCompilationCount = 0;   // Deterministic hook for source parser invocations on this object
    uint16_t RequireCounter;
 
    extTiri(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objTiri(ClassPtr, ObjectID) { }
 
    ~extTiri();
 };
+
+enum class CachePublishFailure : uint8_t {
+   NIL,
+   CREATE,
+   WRITE,
+   FLUSH,
+   MOVE
+};
+
+#ifdef UNIT_TESTS
+void set_cache_publish_failure(CachePublishFailure Failure);
+#endif

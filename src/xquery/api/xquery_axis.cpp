@@ -136,9 +136,6 @@ bool AxisEvaluator::is_reverse_axis(AxisType Axis) {
 //********************************************************************************************************************
 // Perform an ID-based lookup with caching to avoid repeated depth-first scans.
 //
-// TODO: There *might* be an issue with using find_parent() on dynamically allocated XTag nodes during
-// expression evaluation.  Haven't checked to confirm this yet.
-
 XTag * AxisEvaluator::find_parent(XTag *ReferenceNode)
 {
    if ((!ReferenceNode) or (!xml)) return nullptr;

@@ -1903,7 +1903,7 @@ function parse_empty_task_input_from_user_config(Parser:table!):table
    except ex when ERR_ParameterRequired
       return nil
    except ex
-      if Parser._user_config_loaded != nil then error(ex) end
+      if Parser._user_config_loaded != nil then raise end
       return nil
    end
 

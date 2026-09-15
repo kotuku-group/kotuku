@@ -156,8 +156,9 @@ ParserResult<StmtNodePtr> AstBuilder::parse_local_name_list(const Token &StartTo
             reference.identifier = std::move(identifier);
             targets.push_back(make_identifier_expr(reference.identifier.span, reference));
          }
-         return ParserResult<StmtNodePtr>::success(
-            make_assignment_stmt(StartToken.span(), assign_op, std::move(targets), std::move(values)));
+         Token assignment_token = Token::from_span(StartToken.span(), TokenKind::Equals);
+         return this->make_assignment_statement(
+            assignment_token, assign_op, std::move(targets), std::move(values));
       }
    }
 
@@ -569,6 +570,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
             GCstr *class_symbol = class_name.value_ref().identifier();
             std::string_view class_view(strdata(class_symbol), class_symbol->len);
             field.ObjectClassID = CLASSID(kt::strihash(class_view));
+            field.ObjectClassName.assign(class_view);
             type_display = std::format("obj<{}>", class_view);
             auto close = this->ctx.consume(TokenKind::Greater, ParserErrorCode::ExpectedToken);
             if (not close.ok()) return ParserResult<StmtNodePtr>::failure(close.error_ref());
@@ -1126,7 +1128,10 @@ ParserResult<StmtNodePtr> AstBuilder::parse_defer()
 
    const TokenKind body_terms[] = { TokenKind::EndToken };
    BlockDepthScope block_scope(*this);
+   int saved_handler_depth = this->handler_depth;
+   this->handler_depth = 0;
    auto body = this->parse_block(body_terms);
+   this->handler_depth = saved_handler_depth;
    if (not body.ok()) return ParserResult<StmtNodePtr>::failure(body.error_ref());
    this->ctx.consume(TokenKind::EndToken, ParserErrorCode::ExpectedToken);
 
@@ -1299,31 +1304,21 @@ ParserResult<StmtNodePtr> AstBuilder::parse_try()
       }
 
       if (this->ctx.check(TokenKind::When)) {
-         Token when_token = this->ctx.tokens().current();
          this->ctx.tokens().advance();  // consume 'when'
-
-         // Filter code(s) must be on the same line as 'when'
-         Token next_token = this->ctx.tokens().current();
-         if (next_token.span().line != when_token.span().line) {
-            return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, when_token,
-               "Expected error code(s) after 'when' on the same line");
-         }
 
          // Parse error code filter(s): when ERR_A or when ERR_A, ERR_B
          auto first_code = this->parse_expression();
          if (not first_code.ok()) return ParserResult<StmtNodePtr>::failure(first_code.error_ref());
          clause.filter_codes.push_back(std::move(first_code.value_ref()));
 
-         // Continue parsing comma-separated codes on the same line as 'when'
+         // Continue parsing comma-separated codes.
          while (this->ctx.check(TokenKind::Comma)) {
-            Token comma_token = this->ctx.tokens().current();
-            if (comma_token.span().line != when_token.span().line) break;
             this->ctx.tokens().advance();  // consume ','
 
             Token code_token = this->ctx.tokens().current();
-            if (code_token.span().line != when_token.span().line) {
-               return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, comma_token,
-                  "Expected error code after ',' on the same line as 'when'");
+            if (clause.filter_codes.size() >= MAX_EXCEPTION_FILTER_CODES) {
+               return this->fail<StmtNodePtr>(ParserErrorCode::TooManyExceptionFilters, code_token,
+                  "An 'except ... when' clause supports at most 4 error codes");
             }
 
             auto next_code = this->parse_expression();
@@ -1339,7 +1334,9 @@ ParserResult<StmtNodePtr> AstBuilder::parse_try()
       const TokenKind except_terms[] = { TokenKind::ExceptToken, TokenKind::SuccessToken, TokenKind::EndToken };
       {
          BlockDepthScope block_scope(*this);
+         ++this->handler_depth;
          auto except_body = this->parse_block(except_terms);
+         --this->handler_depth;
          if (not except_body.ok()) return ParserResult<StmtNodePtr>::failure(except_body.error_ref());
          clause.block = std::move(except_body.value_ref());
       }
@@ -1417,24 +1414,83 @@ ParserResult<StmtNodePtr> AstBuilder::parse_raise()
    Token raise_token = this->ctx.tokens().current();
    this->ctx.tokens().advance();  // consume 'raise'
 
-   // Parse error code expression (required)
-   auto error_code = this->parse_expression();
-   if (not error_code.ok()) return ParserResult<StmtNodePtr>::failure(error_code.error_ref());
-
-   RaiseStmtPayload payload;
-   payload.error_code = std::move(error_code.value_ref());
-
-   // Check for optional message
-   if (this->ctx.check(TokenKind::Comma)) {
-      this->ctx.tokens().advance();  // consume ','
-      auto message = this->parse_expression();
-      if (not message.ok()) return ParserResult<StmtNodePtr>::failure(message.error_ref());
-      payload.message = std::move(message.value_ref());
+   Token next = this->ctx.tokens().current();
+   bool omitted = next.span().line != raise_token.span().line or
+      next.kind() IS TokenKind::EndToken or next.kind() IS TokenKind::ExceptToken or
+      next.kind() IS TokenKind::SuccessToken or next.kind() IS TokenKind::Else or
+      next.kind() IS TokenKind::ElseIf or next.kind() IS TokenKind::Until or
+      next.kind() IS TokenKind::EndOfFile or next.kind() IS TokenKind::Semicolon;
+   RaisePayload payload;
+   if (omitted) {
+      if (not this->handler_depth) {
+         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, raise_token,
+            "bare raise is only valid inside an except handler");
+      }
+      payload.rethrow = true;
    }
-
+   else {
+      bool parenthesised = this->ctx.check(TokenKind::LeftParen);
+      if (parenthesised) {
+         // A grouped first operand may continue with an operator or suffix in the original statement syntax.
+         size_t offset = 1;
+         int depth = 1;
+         while (depth > 0) {
+            Token ahead = this->ctx.tokens().peek(offset++);
+            if (ahead.kind() IS TokenKind::EndOfFile) break;
+            if (ahead.kind() IS TokenKind::LeftParen) ++depth;
+            else if (ahead.kind() IS TokenKind::RightParen) --depth;
+         }
+         if (depth IS 0) {
+            Token after = this->ctx.tokens().peek(offset);
+            if (this->match_binary_operator(after) or after.kind() IS TokenKind::Dot or
+                after.kind() IS TokenKind::LeftBracket or after.kind() IS TokenKind::LeftParen) parenthesised = false;
+         }
+      }
+      auto parsed = this->parse_raise_payload(parenthesised);
+      if (not parsed.ok()) return ParserResult<StmtNodePtr>::failure(parsed.error_ref());
+      payload = std::move(parsed.value_ref());
+      if (this->ctx.check(TokenKind::Comma) and not payload.message) {
+         this->ctx.tokens().advance();
+         auto message = this->parse_expression();
+         if (not message.ok()) return ParserResult<StmtNodePtr>::failure(message.error_ref());
+         payload.message = std::move(message.value_ref());
+      }
+   }
    auto stmt = std::make_unique<StmtNode>(AstNodeKind::RaiseStmt, raise_token.span());
    stmt->data = std::move(payload);
    return ParserResult<StmtNodePtr>::success(std::move(stmt));
+}
+
+ParserResult<RaisePayload> AstBuilder::parse_raise_payload(bool Parenthesised)
+{
+   if (Parenthesised) this->ctx.tokens().advance();
+   if (this->ctx.check(TokenKind::RightParen) or this->ctx.check(TokenKind::Comma)) {
+      return this->fail<RaisePayload>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+         "raise requires one value or a code and message");
+   }
+   RaisePayload payload;
+   auto value = this->parse_expression();
+   if (not value.ok()) return ParserResult<RaisePayload>::failure(value.error_ref());
+   payload.error_code = std::move(value.value_ref());
+   if (this->ctx.check(TokenKind::Comma)) {
+      this->ctx.tokens().advance();
+      if (this->ctx.check(TokenKind::RightParen) or this->ctx.check(TokenKind::Comma)) {
+         return this->fail<RaisePayload>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+            "raise requires a message after the comma");
+      }
+      auto message = this->parse_expression();
+      if (not message.ok()) return ParserResult<RaisePayload>::failure(message.error_ref());
+      payload.message = std::move(message.value_ref());
+   }
+   if (this->ctx.check(TokenKind::Comma)) {
+      return this->fail<RaisePayload>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+         "raise accepts at most two arguments");
+   }
+   if (Parenthesised) {
+      auto close = this->ctx.consume(TokenKind::RightParen, ParserErrorCode::ExpectedToken);
+      if (not close.ok()) return ParserResult<RaisePayload>::failure(close.error_ref());
+   }
+   return ParserResult<RaisePayload>::success(std::move(payload));
 }
 
 //********************************************************************************************************************
@@ -1457,6 +1513,41 @@ ParserResult<StmtNodePtr> AstBuilder::parse_check()
    auto stmt = std::make_unique<StmtNode>(AstNodeKind::CheckStmt, check_token.span());
    stmt->data = std::move(payload);
    return ParserResult<StmtNodePtr>::success(std::move(stmt));
+}
+
+//********************************************************************************************************************
+// Compilation-local cache observation helpers.
+
+tiri::cache::Manifest *AstBuilder::cache_manifest()
+{
+   return this->root_builder()->ctx.lua().cache_manifest_capture;
+}
+
+std::string AstBuilder::cache_context_path()
+{
+   AstBuilder *root = this->root_builder();
+   auto &lex = root->ctx.lex();
+   const uint8_t descriptor = this->ctx.lex().current_source_descriptor;
+   if (descriptor < lex.compilation_sources.size()) return lex.compilation_sources[descriptor].canonical_path;
+
+   std::string result = this->ctx.lex().chunk_arg ? this->ctx.lex().chunk_arg : "";
+   if (not result.empty() and (result[0] IS '@' or result[0] IS '=')) result.erase(0, 1);
+   return result;
+}
+
+void AstBuilder::record_conditional_input(
+   tiri::cache::ConditionalKind Kind, std::string_view Name, std::string_view Value)
+{
+   if (auto manifest = this->cache_manifest()) {
+      manifest->ConditionalInputs.push_back({ Kind, std::string(Name), this->cache_context_path(),
+         std::string(Value) });
+   }
+}
+
+void AstBuilder::record_module_observation(std::string_view Name, bool Available)
+{
+   this->record_conditional_input(tiri::cache::ConditionalKind::MODULE_AVAILABLE, Name,
+      Available ? "true" : "false");
 }
 
 //********************************************************************************************************************
@@ -1545,10 +1636,12 @@ ParserResult<StmtNodePtr> AstBuilder::parse_module_decl()
    }
 
    if (auto error = load_module_defs(module_name); error != ERR::Okay) {
+      this->record_module_observation(module_name, false);
       return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token,
          std::format("Module '{}' is not available: {}. Guard optional dependencies with "
             "@if(exists='modules:{}').", module_name, GetErrorMsg(error), module_name));
    }
+   this->record_module_observation(module_name, true);
 
    StaticModuleHandle signature = static_module_by_name(module_name);
    std::string canonical_module = signature ? std::string(static_module_name(signature)) : module_name;
@@ -1616,12 +1709,14 @@ ParserResult<StmtNodePtr> AstBuilder::parse_include_stmt()
       }
 
       if (auto error = load_module_defs(module_name); error != ERR::Okay) {
+         this->record_module_observation(module_name, false);
          std::string message;
          if (error IS ERR::FileNotFound) message = std::format("Requested include file '{}' does not exist", module_name);
          else message = std::format("Failed to process include file '{}': {}", module_name, GetErrorMsg(error));
 
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token, std::move(message));
       }
+      this->record_module_observation(module_name, true);
 
       this->ctx.tokens().advance();  // consume module string
       first_item = false;
@@ -1663,7 +1758,8 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
       return this->fail<ImportEntryPayload>(ParserErrorCode::ExpectedToken, path_token, "Invalid import path");
    }
 
-   std::string_view mod_name(strdata(path_str), path_str->len);
+   std::string original_request(strdata(path_str), path_str->len);
+   std::string_view mod_name(original_request);
    this->ctx.tokens().advance();  // consume string
 
    log.traceBranch("Library: %.*s", int(mod_name.size()), mod_name.data());
@@ -1691,6 +1787,10 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
    }
 
    std::string path = this->ctx.resolve_lib_to_path(mod_name);
+   if (path.empty()) {
+      return ParserResult<ImportEntryPayload>::failure(
+         this->ctx.make_error(ParserErrorCode::UnexpectedToken, path_token, "Invalid import path"));
+   }
 
    // Check for circular import
 
@@ -1701,13 +1801,13 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
 
    // Parse the imported file
 
-   auto imported_body = this->parse_imported_file(path, mod_name, ImportToken);
+   auto imported_body = this->parse_imported_file(path, original_request, ImportToken);
    if (not imported_body.ok()) return ParserResult<ImportEntryPayload>::failure(imported_body.error_ref());
 
    // Look up the FileSource index and namespace for this import (registered during parse_imported_file)
 
    lua_State *L = &this->ctx.lua();
-   auto file_idx = find_file_source(L, kt::strihash(path));
+   auto file_idx = find_file_source(L, path);
    std::string default_ns;
 
    if (file_idx.has_value()) {
@@ -1719,7 +1819,7 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
 
    if (alias and default_ns.empty()) {
       return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, as_token,
-         std::string("Cannot use 'as' alias: library '") + std::string(mod_name) + "' does not declare a namespace");
+         std::string("Cannot use 'as' alias: library '") + original_request + "' does not declare a namespace");
    }
 
    // Determine final namespace name (alias takes precedence)
@@ -1835,42 +1935,43 @@ ParserResult<StmtNodePtr> AstBuilder::parse_namespace()
       log.detail("Note: namespace '%.*s' already defined by another library", int(ns_name.size()), ns_name.data());
    }
 
-   // Record the namespace in the current file's FileSource entry
+   // Record the namespace in both the runtime diagnostic record and the compilation-unit manifest.
    set_file_source_namespace(L, current_file_index, std::string(ns_name));
+   this->record_source_namespace(ns_name);
 
    NamespaceStmtPayload payload;
    payload.name = make_identifier(name_token);
    payload.name.has_const = true;
 
    Token initialiser_token = this->ctx.tokens().current();
-   if (initialiser_token.span().line IS name_token.span().line) {
-      if (initialiser_token.kind() IS TokenKind::LeftBrace) {
-         auto initialiser = this->parse_table_literal(false);
-         if (not initialiser.ok()) return ParserResult<StmtNodePtr>::failure(initialiser.error_ref());
-         payload.initialiser = std::move(initialiser.value_ref());
-      }
-      else if (initialiser_token.kind() IS TokenKind::Function or
-               initialiser_token.kind() IS TokenKind::ThunkToken) {
-         bool is_thunk = initialiser_token.kind() IS TokenKind::ThunkToken;
-         this->ctx.tokens().advance();
-         auto initialiser = this->parse_function_literal(initialiser_token, is_thunk, name_str);
-         if (not initialiser.ok()) return ParserResult<StmtNodePtr>::failure(initialiser.error_ref());
-         if (is_thunk) {
-            auto *function = std::get_if<FunctionExprPayload>(&initialiser.value_ref()->data);
-            if (function and function->parameters.empty()) {
-               SourceSpan span = initialiser.value_ref()->span;
-               ExprNodeList arguments;
-               initialiser.value_ref() = make_call_expr(
-                  span, std::move(initialiser.value_ref()), std::move(arguments), false);
-            }
+   if (initialiser_token.kind() IS TokenKind::LeftBrace) {
+      auto initialiser = this->parse_table_literal(false);
+      if (not initialiser.ok()) return ParserResult<StmtNodePtr>::failure(initialiser.error_ref());
+      payload.initialiser = std::move(initialiser.value_ref());
+   }
+   else if ((initialiser_token.kind() IS TokenKind::Function or
+             initialiser_token.kind() IS TokenKind::ThunkToken) and
+            this->ctx.tokens().peek(1).kind() IS TokenKind::LeftParen) {
+      bool is_thunk = initialiser_token.kind() IS TokenKind::ThunkToken;
+      this->ctx.tokens().advance();
+      auto initialiser = this->parse_function_literal(initialiser_token, is_thunk, name_str);
+      if (not initialiser.ok()) return ParserResult<StmtNodePtr>::failure(initialiser.error_ref());
+      if (is_thunk) {
+         auto *function = std::get_if<FunctionExprPayload>(&initialiser.value_ref()->data);
+         if (function and function->parameters.empty()) {
+            SourceSpan span = initialiser.value_ref()->span;
+            ExprNodeList arguments;
+            initialiser.value_ref() = make_call_expr(
+               span, std::move(initialiser.value_ref()), std::move(arguments), false);
          }
-         payload.initialiser = std::move(initialiser.value_ref());
       }
-      else if (initialiser_token.kind() != TokenKind::Semicolon and
-               initialiser_token.kind() != TokenKind::EndOfFile) {
-         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, initialiser_token,
-            "Namespace initialisers must be table, function or thunk literals");
-      }
+      payload.initialiser = std::move(initialiser.value_ref());
+   }
+   else if (initialiser_token.span().line IS name_token.span().line and
+            initialiser_token.kind() != TokenKind::Semicolon and
+            initialiser_token.kind() != TokenKind::EndOfFile) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, initialiser_token,
+         "Namespace initialisers must be table, function or thunk literals");
    }
 
    payload.mode = payload.initialiser ? NamespaceDeclarationMode::Create : NamespaceDeclarationMode::Join;
@@ -1887,28 +1988,42 @@ ParserResult<StmtNodePtr> AstBuilder::parse_namespace()
 // Each imported file is registered with a unique FileSource index for accurate error reporting.
 // The file index is encoded in the upper 8 bits of BCLine values.
 
-ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::string &Path, std::string_view Library, const Token &ImportToken)
+ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(
+   std::string &Path, std::string_view Library, const Token &ImportToken)
 {
    kt::Log log(__FUNCTION__);
 
    lua_State *L = &this->ctx.lua();
 
+   const std::string parent_path = this->cache_context_path();
    std::string resolved_path;
    if (!ResolvePath(Path, RSF::NO_FILE_CHECK, &resolved_path)) {
       Path = resolved_path;
    }
 
-   auto libhash = kt::strihash(Path);
+   if (auto manifest = this->cache_manifest()) {
+      manifest->ResolutionInputs.push_back({ std::string(Library), parent_path, Path });
+   }
 
-   // Check if this file is already registered in FileSource.  FileSource entries persist for the lifetime of the
-   // lua_State, so this hit can come from an earlier, unrelated compilation.  In diagnose mode the type analyser
-   // needs the real body regardless - validation never emits or executes code, so re-parsing cannot double-execute
-   // library code, and skipping here would silently drop imported-file diagnostics on every validation after the
-   // first.  The existing FileSource index is reused below instead of registering a duplicate.
-   auto existing_index = find_file_source(L, libhash);
+   const uint32_t libhash = kt::strihash(Path);
+
+   // Runtime loadFile() compilations share imports with the existing state.  Re-emitting an imported body would
+   // execute its initialisation again and replace namespace tables, losing extensions installed by other libraries.
+   // SaveToObject compiles in a fresh state, so this reuse does not omit dependencies from public bytecode exports.
+   // Diagnose mode still needs the real body on each validation; only deduplicate within that compilation and reuse
+   // the existing FileSource index.  Validation never emits or executes the imported initialisation.
+   auto existing_index = find_file_source(L, Path);
    bool seen_this_chunk = this->import_seen_this_chunk(libhash);
    if (existing_index.has_value()) {
-      if (seen_this_chunk or not this->ctx.lex().diagnose_mode) {
+      if (seen_this_chunk or (not this->ctx.lex().diagnose_mode and not this->cache_manifest())) {
+         if (auto manifest = this->cache_manifest()) {
+            auto previous = std::ranges::find_if(manifest->Imports, [&](const auto &Import) {
+               return Import.Source.ResolvedPath IS Path;
+            });
+            if (previous != manifest->Imports.end()) {
+               manifest->Imports.push_back({ parent_path, std::string(Library), previous->Source });
+            }
+         }
          log.detail("Library %.*s already imported (file index %d)", int(Library.size()), Library.data(), existing_index.value());
          return ParserResult<std::unique_ptr<BlockStmt>>::success(make_block(ImportToken.span(), {}));
       }
@@ -1929,22 +2044,56 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
 
    // Get file size and read contents
    int64_t file_size = 0;
-   if (file->getSize(file_size) != ERR::Okay or file_size <= 0) {
+   if (file->getSize(file_size) != ERR::Okay) {
       this->ctx.pop_import();
-      // Empty file - return an empty block
-      return ParserResult<std::unique_ptr<BlockStmt>>::success(make_block(ImportToken.span(), {}));
+      return this->fail<std::unique_ptr<BlockStmt>>(ParserErrorCode::UnexpectedToken, ImportToken,
+         "Cannot inspect imported file: " + Path);
+   }
+   if ((file_size < 0) or (file_size > int64_t(std::numeric_limits<int>::max()))) {
+      this->ctx.pop_import();
+      return this->fail<std::unique_ptr<BlockStmt>>(ParserErrorCode::UnexpectedToken, ImportToken,
+         "Imported file is too large: " + Path);
    }
 
-   std::string source;
-   source.resize(size_t(file_size));
-   int bytes_read = 0;
-   ERR err = file->read(std::span<int8_t>((int8_t *)source.data(), size_t(file_size)), &bytes_read);
-
-   if (err != ERR::Okay or bytes_read <= 0) {
-      this->ctx.pop_import();
-      return this->fail<std::unique_ptr<BlockStmt>>(ParserErrorCode::UnexpectedToken, ImportToken, "Cannot read imported file: " + Path);
+   std::string source(size_t(file_size), '\0');
+   int64_t total = 0;
+   while (total < file_size) {
+      int bytes_read = 0;
+      auto output = std::span((int8_t *)source.data() + total, size_t(file_size - total));
+      ERR error = file->read(output, &bytes_read);
+      if (error != ERR::Okay or bytes_read <= 0) {
+         this->ctx.pop_import();
+         return this->fail<std::unique_ptr<BlockStmt>>(ParserErrorCode::UnexpectedToken, ImportToken,
+            "Cannot read imported file: " + Path);
+      }
+      total += bytes_read;
    }
-   source.resize(size_t(bytes_read));
+
+   int64_t final_size = 0;
+   if (file->getSize(final_size) != ERR::Okay or final_size != file_size) {
+      this->ctx.pop_import();
+      return this->fail<std::unique_ptr<BlockStmt>>(ParserErrorCode::UnexpectedToken, ImportToken,
+         "Imported file changed while being read: " + Path);
+   }
+
+   int64_t modified_hint = 0;
+   file->getTimestamp(modified_hint);
+
+   std::string_view compiled_source = source;
+   if ((compiled_source.size() >= 3) and (compiled_source[0] IS '\xef') and
+       (compiled_source[1] IS '\xbb') and (compiled_source[2] IS '\xbf')) compiled_source.remove_prefix(3);
+   else if ((compiled_source.size() >= 2) and
+            ((compiled_source[0] IS '\xfe' and compiled_source[1] IS '\xff') or
+             (compiled_source[0] IS '\xff' and compiled_source[1] IS '\xfe'))) compiled_source.remove_prefix(2);
+   if (compiled_source.data() != source.data()) source.assign(compiled_source);
+
+   if (auto manifest = this->cache_manifest()) {
+      manifest->Imports.push_back({
+         parent_path,
+         std::string(Library),
+         { Path, uint64_t(source.size()), modified_hint, tiri::cache::content_digest(source) }
+      });
+   }
 
    // Count source lines for FileSource metadata
    BCLine source_lines = 1;
@@ -1968,12 +2117,20 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
 
    uint8_t new_file_index = existing_index.has_value() ? existing_index.value()
       : register_file_source(L, Path, filename, 1, source_lines, parent_index, import_line);
+   const uint8_t source_descriptor = this->record_import_source(
+      Path, filename, source_lines, this->ctx.lex().current_source_descriptor, import_line, new_file_index);
+
+   if (file_size IS 0) {
+      this->ctx.pop_import();
+      return ParserResult<std::unique_ptr<BlockStmt>>::success(make_block(ImportToken.span(), {}));
+   }
 
    // RAII guard handles cleanup on normal path; lua_load handles SEH error path
    ImportLexerGuard import_guard(L, source, std::string("@") + Path);
    LexState *import_lex = import_guard.get();
 
    import_lex->current_file_index = new_file_index; // Set the file index for this imported file
+   import_lex->current_source_descriptor = source_descriptor;
    import_lex->diagnose_mode = this->ctx.lex().diagnose_mode;  // Propagate diagnose mode from parent
 
    // Set chunk_name for error reporting (normally done in lj_parse for the main file)
@@ -2042,6 +2199,33 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
    this->adopt_registered_structs(import_builder);
 
    return result;
+}
+
+uint8_t AstBuilder::record_import_source(const std::string &Path, const std::string &Filename, BCLine SourceLines,
+   uint8_t Parent, BCLine ImportLine, uint8_t RuntimeIndex)
+{
+   AstBuilder *root = this->root_builder();
+   auto &sources = root->ctx.lex().compilation_sources;
+   if (sources.size() >= FILESOURCE_MAX_COUNT) return FILESOURCE_OVERFLOW_INDEX;
+   sources.push_back(CompilationSourceRecord{
+      .role = CompilationSourceRole::Import,
+      .canonical_path = Path,
+      .display_filename = Filename,
+      .first_line = 1,
+      .total_lines = SourceLines,
+      .import_line = ImportLine,
+      .runtime_index = RuntimeIndex,
+      .parent = Parent
+   });
+   return uint8_t(sources.size() - 1);
+}
+
+void AstBuilder::record_source_namespace(std::string_view Namespace)
+{
+   AstBuilder *root = this->root_builder();
+   auto &sources = root->ctx.lex().compilation_sources;
+   const uint8_t descriptor = this->ctx.lex().current_source_descriptor;
+   if (descriptor < sources.size()) sources[descriptor].declared_namespace.assign(Namespace);
 }
 
 //********************************************************************************************************************
@@ -2158,16 +2342,25 @@ ParserResult<StmtNodePtr> AstBuilder::parse_compile_if()
       if (not is_bool_value) return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, value_token, "Condition 'imported' requires a boolean value");
       bool is_imported = this->ctx.is_being_imported();
       condition_result = is_imported IS bool_value;
+      this->record_conditional_input(tiri::cache::ConditionalKind::IMPORTED, condition_name,
+         is_imported ? "true" : "false");
    }
    else if (condition_name IS "debug") {
       if (not is_bool_value) return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, value_token, "Condition 'debug' requires a boolean value");
-      condition_result = (GetResource(RES::LOG_LEVEL) > 2) IS bool_value;
+      const int64_t log_level = GetResource(RES::LOG_LEVEL);
+      const bool debug_mode = log_level > 2;
+      condition_result = debug_mode IS bool_value;
+      this->record_conditional_input(tiri::cache::ConditionalKind::DEBUG_MODE, condition_name,
+         debug_mode ? "true" : "false");
+      this->record_conditional_input(tiri::cache::ConditionalKind::LOG_LEVEL, condition_name,
+         std::to_string(log_level));
    }
    else if (condition_name IS "platform") {
       if (is_bool_value) return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, value_token, "Condition 'platform' requires a string value");
       const SystemState *state = GetSystemState();
       std::string_view current_platform = state->Platform ? state->Platform : "";
       condition_result = kt::iequals(current_platform, string_value);
+      this->record_conditional_input(tiri::cache::ConditionalKind::PLATFORM, string_value, current_platform);
    }
    else if (condition_name IS "exists") {
       if (is_bool_value) return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, value_token, "Condition 'exists' requires a string path value");
@@ -2175,6 +2368,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_compile_if()
       if (string_value.starts_with("modules:")) {
          std::string_view module_name = string_value.substr(8);
          condition_result = include_module_name_is_valid(module_name) and this->module_is_available(module_name);
+         this->record_module_observation(module_name, condition_result);
       }
       else {
 
@@ -2204,6 +2398,11 @@ ParserResult<StmtNodePtr> AstBuilder::parse_compile_if()
          }
 
          condition_result = (!AnalysePath(check_path, nullptr));
+         if (auto manifest = this->cache_manifest()) {
+            manifest->ResolutionInputs.push_back({ std::string(string_value), this->cache_context_path(), check_path });
+         }
+         this->record_conditional_input(tiri::cache::ConditionalKind::EXISTS, string_value,
+            condition_result ? "true" : "false");
       }
    }
    else return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, ident_token, "Unknown @if condition: " + std::string(condition_name));

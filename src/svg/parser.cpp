@@ -966,7 +966,7 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
       }
       else {
          log.warning("Unrecognised %s child node '%s'", Tag.name(), child.name());
-         error = ERR::Failed;
+         error = ERR::NoSupport;
       }
 
       if (error != ERR::Okay) {
@@ -1134,7 +1134,7 @@ ERR svgState::parse_fe_component_xfer(objVectorFilter *Filter, XTag &Tag) noexce
             case 'A': cmp = CMP::ALPHA; break;
             default:
                log.warning("Invalid feComponentTransfer element %s", child.name());
-               return ERR::Failed;
+               return ERR::InvalidData;
          }
 
          uint32_t type = 0;
@@ -1158,18 +1158,24 @@ ERR svgState::parse_fe_component_xfer(objVectorFilter *Filter, XTag &Tag) noexce
             }
          }
 
-         switch(type) {
-            case SVF_table:    fx->selectTable(cmp, values); break;
-            case SVF_linear:   fx->selectLinear(cmp, slope, intercept);  break;
-            case SVF_gamma:    fx->selectGamma(cmp, amp, offset, exp);  break;
-            case SVF_discrete: fx->selectDiscrete(cmp, values);  break;
-            case SVF_identity: fx->selectIdentity(cmp); break;
-            // The following additions are specific to Kotuku and not SVG compatible.
-            case SVF_invert:   fx->selectInvert(cmp); break;
-            case SVF_mask:     fx->selectMask(cmp, mask); break;
-            default:
-               log.warning("feComponentTransfer node failed to specify its type.");
-               return ERR::UndefinedField;
+         if (type) {
+            switch(type) {
+               case SVF_table:    fx->selectTable(cmp, values); break;
+               case SVF_linear:   fx->selectLinear(cmp, slope, intercept);  break;
+               case SVF_gamma:    fx->selectGamma(cmp, amp, offset, exp);  break;
+               case SVF_discrete: fx->selectDiscrete(cmp, values);  break;
+               case SVF_identity: fx->selectIdentity(cmp); break;
+               // The following additions are specific to Kotuku and not SVG compatible.
+               case SVF_invert:   fx->selectInvert(cmp); break;
+               case SVF_mask:     fx->selectMask(cmp, mask); break;
+               default:
+                  log.warning("feComponentTransfer type invalid.");
+                  return ERR::InvalidValue;
+            }
+         }
+         else {
+            log.warning("feComponentTransfer requires a type.");
+            return ERR::FieldNotSet;
          }
       }
       else log.warning("Unrecognised feComponentTransfer child node '%s'", child.name());
@@ -1496,7 +1502,7 @@ ERR svgState::parse_fe_source(objVectorFilter *Filter, XTag &Tag) noexcept
       }
       else error = ERR::Search;
    }
-   else error = ERR::UndefinedField;
+   else error = ERR::FieldNotSet;
 
    FreeResource(fx);
    if (required) return log.warning(error);
@@ -2360,7 +2366,7 @@ ERR svgState::proc_style(XTag &Tag)
       // The application of CSS styles is possible on initial loading of the document, but not in post-processing
       // once the XML object has been abandoned.
       log.warning("Unable to apply CSS style-sheet, XML object already terminated.");
-      return ERR::Failed;
+      return ERR::InvalidState;
    }
 
    for (auto &a : Tag.Attribs) {

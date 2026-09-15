@@ -132,7 +132,7 @@ end
    assert(count_guarded_field(irfl_udata_meta, ir_eq) > 0,
       'A range contract should guard the exact userdata metatable field')
 
-   expect_jit_contract_failure(function() callback(dynamic_contract_value(newproxy(true))) end, 'range')
+   expect_jit_contract_failure(function() callback(dynamic_contract_value(regex.new(''))) end, 'range')
 
    local registry = debug.getRegistry()
    local saved_metatable = registry['Tiri.range']
@@ -153,7 +153,7 @@ end
       return Value
    end
 
-   local proxy = newproxy(true)
+   local proxy = regex.new('')
    local captured = 3
    function capture() return captured end
    local pointer = debug.upvalueID(capture, 0)
@@ -286,7 +286,7 @@ end
    assert(total is 2040 and metrics.traces > 0,
       'Named-structure and range result contracts should remain traceable')
    expect_jit_contract_failure(function() checked_structure(bravo) end, 'JitContractAlpha')
-   expect_jit_contract_failure(function() checked_range(newproxy(true)) end, 'range')
+   expect_jit_contract_failure(function() checked_range(regex.new('')) end, 'range')
 end
 
 @Test function ReloadedComplexContractRetainsTracingAndIdentity()
@@ -342,7 +342,7 @@ end
    local alpha = struct<JitContractAlpha> { Value=3 }
    local bravo = struct<JitContractBravo> { Value=5 }
    local sequence = {0 to 4}
-   local proxy = newproxy(true)
+   local proxy = regex.new('')
    local callable = setmetatable({ offset=2 }, {
       __call = function(Value) return &offset + Value end
    })

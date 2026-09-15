@@ -1601,25 +1601,24 @@ static void asm_intmin_max(ASMState* as, IRIns* ir, A64CC cc)
    emit_nm(as, A64I_CMPw, left, right);
 }
 
-static void asm_fpmin_max(ASMState* as, IRIns* ir, A64CC fcc)
+static void asm_fpmin_max(ASMState* as, IRIns* ir, A64Ins Instruction)
 {
    Reg dest = (ra_dest(as, ir, RSET_FPR) & 31);
    Reg right, left = ra_alloc2(as, ir, RSET_FPR);
    right = ((left >> 8) & 31); left &= 31;
-   emit_dnm(as, A64I_FCSELd | A64F_CC(fcc), dest, right, left);
-   emit_nm(as, A64I_FCMPd, left, right);
+   emit_dnm(as, Instruction, dest, left, right);
 }
 
-static void asm_min_max(ASMState* as, IRIns* ir, A64CC cc, A64CC fcc)
+static void asm_min_max(ASMState* as, IRIns* ir, A64CC cc, A64Ins Instruction)
 {
    if (irt_isnum(ir->t))
-      asm_fpmin_max(as, ir, fcc);
+      asm_fpmin_max(as, ir, Instruction);
    else
       asm_intmin_max(as, ir, cc);
 }
 
-#define asm_min(as, ir)      asm_min_max(as, ir, CC_LT, CC_PL)
-#define asm_max(as, ir)      asm_min_max(as, ir, CC_GT, CC_LE)
+#define asm_min(as, ir)      asm_min_max(as, ir, CC_LT, A64I_FMINd)
+#define asm_max(as, ir)      asm_min_max(as, ir, CC_GT, A64I_FMAXd)
 
 // -- Comparisons ---------------------------------------------------------
 
@@ -2098,4 +2097,3 @@ void lj_asm_patchexit(jit_State* J, GCtrace* T, ExitNo exitno, MCode* target)
    if (cstart) lj_mcode_sync(cstart, px + 1);
    lj_mcode_patch(J, mcarea, 1);
 }
-

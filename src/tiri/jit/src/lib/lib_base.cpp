@@ -839,139 +839,6 @@ LJLIB_ASM(tostring)      LJLIB_REC(.)
    return FFH_RES(1);
 }
 
-//********************************************************************************************************************
-// Base library: throw and catch errors
-//
-// error(Message:str, [Level:int])
-// error(Exception:table, [Level:int]) For rethrowing exceptions
-//
-// Level can be set to zero to suppress the inclusion of source and line number injection.
-
-LJLIB_CF(error)
-{
-   int32_t level = lj_lib_optint(L, 2, 1);
-   lua_settop(L, 1);
-
-   L->pending_exception_message = nullptr;
-   L->pending_exception_source  = nullptr;
-   L->pending_exception_line    = 0;
-   L->pending_exception_valid   = false;
-
-   // Handle exception tables (as received by 'except' keyword) by extracting the message field
-   // The error code will remain in the lua_State, so does not require management.
-   // TODO: There is room for improvement (e.g. retaining stack traces if a stack trace is present) but this will do for
-   // now - a rewrite of exception management is probably in order later.
-
-   bool rethrow_metadata = false;
-   if (lua_istable(L, 1)) {
-      GCstr *message = nullptr;
-      GCstr *source = nullptr;
-      int line = 0;
-      ERR error_code = ERR::Okay;
-      bool has_error_code = false;
-
-      lua_getfield(L, 1, "message");
-      if (tvisstr(L->top - 1)) message = strV(L->top - 1);
-
-      lua_getfield(L, 1, "source");
-      if (tvisstr(L->top - 1)) source = strV(L->top - 1);
-      lua_pop(L, 1);
-
-      lua_getfield(L, 1, "line");
-      if (tvisnum(L->top - 1)) line = int(numV(L->top - 1));
-      lua_pop(L, 1);
-
-      lua_getfield(L, 1, "code");
-      if (tvisnum(L->top - 1)) {
-         error_code = ERR(numberVint(L->top - 1));
-         has_error_code = true;
-      }
-      lua_pop(L, 1);
-
-      if (message) {
-         L->pending_exception_message = message;
-         L->pending_exception_source  = source;
-         L->pending_exception_line    = line;
-         L->pending_exception_valid   = true;
-         if (has_error_code) L->CaughtError = error_code;
-         rethrow_metadata = true;
-         lua_replace(L, 1);  // Replace the table with the message string
-      }
-      else lua_pop(L, 1);  // Pop the nil/non-string message value, keep original table
-   }
-
-   // Handle regular string errors.
-   if (lua_isstring(L, 1)) {
-      if (not rethrow_metadata and tvisstr(L->base)) {
-         L->pending_exception_message = strV(L->base);
-         L->pending_exception_source  = nullptr;
-         L->pending_exception_line    = 0;
-         L->pending_exception_valid   = true;
-      }
-
-      if (level > 0) {
-         if (not L->pending_exception_source and L->pending_exception_line IS 0) {
-            int size;
-            cTValue *frame = lj_debug_frame(L, level, &size);
-            cTValue *nextframe = (frame and size) ? frame + size : nullptr;
-            DebugLocation location;
-
-            if (lj_debug_getloc(L, frame, nextframe, &location)) {
-               L->pending_exception_source = location.source;
-               L->pending_exception_line   = location.line;
-            }
-         }
-
-         luaL_where(L, level);  // Keep unhandled error output compatible.
-         lua_pushvalue(L, 1);
-         lua_concat(L, 2);
-      }
-   }
-   lj_err_run(L); // Does not return
-   return 0;
-}
-
-//********************************************************************************************************************
-
-LJLIB_CF(collectgarbage)
-{
-   kt::Log("collectgarbage").warning("DEPRECATED - Use processing.collect()");
-   return 0;
-}
-
-//********************************************************************************************************************
-// newproxy() is deprecated and not published for client use.  It remains only to assist some tests that need a
-// userdata return type.
-
-LJLIB_PUSH(top-2)  //  Upvalue holds weak table.
-LJLIB_CF(newproxy)
-{
-   lua_settop(L, 1);
-   lua_newuserdata(L, 0);
-   if (lua_toboolean(L, 1) IS 0) {  // newproxy(): without metatable.
-      return 1;
-   }
-   else if (lua_isboolean(L, 1)) {  // newproxy(true): with metatable.
-      lua_newtable(L);
-      lua_pushvalue(L, -1);
-      lua_pushboolean(L, 1);
-      lua_rawset(L, lua_upvalueindex(1));  //  Remember mt in weak table.
-   }
-   else {  // newproxy(proxy): inherit metatable.
-      int validproxy = 0;
-      if (lua_getmetatable(L, 1)) {
-         lua_rawget(L, lua_upvalueindex(1));
-         validproxy = lua_toboolean(L, -1);
-         lua_pop(L, 1);
-      }
-      if (!validproxy) lj_err_arg(L, 1, ErrMsg::NOPROXY);
-      lua_getmetatable(L, 1);
-   }
-   lua_setmetatable(L, 2);
-   return 1;
-}
-
-//********************************************************************************************************************
 // RAII Pattern: Uses StackFrame to ensure L->top is restored if tostring conversion
 // fails or triggers an error during the print loop, preventing stack corruption.
 
@@ -1021,7 +888,7 @@ LJLIB_CF(print)
    return 0;
 }
 
-LJLIB_PUSH(top-3)
+LJLIB_PUSH(top-2)
 LJLIB_SET(_VERSION)
 
 //********************************************************************************************************************
@@ -1257,33 +1124,22 @@ LJLIB_INTRINSIC LJLIB_CF(__setmetatable_ctx)
 
 //********************************************************************************************************************
 
-static void newproxy_weaktable(lua_State* L)
-{
-   // NOBARRIER: The table is new (marked white). This internal metatable only defines __mode.
-   GCtab *t = lj_tab_new(L, 0, 1);
-   settabV(L, L->top++, t);
-   setgcref(t->metatable, obj2gco(t));
-   setstrV(L, lj_tab_setstr(L, t, lj_str_newlit(L, "__mode")), lj_str_newlit(L, "kv"));
-   t->nomm = (uint8_t)(~(1u << MM_mode));
-}
-
-//********************************************************************************************************************
-
 extern int luaopen_base(lua_State* L)
 {
    // NOBARRIER: Table and value are the same.
    GCtab *env = tabref(L->env);
    settabV(L, lj_tab_setstr(L, env, lj_str_newlit(L, "_G")), env);
-   lua_pushliteral(L, "5.4");  //  top-3. // Lua version number, set as _VERSION
-   newproxy_weaktable(L);  //  top-2.
+   lua_pushliteral(L, "5.4");  //  top-2. // Lua version number, set as _VERSION
    LJ_LIB_REG(L, "_G", base);
 
    // Register function prototypes for compile-time type inference
-   reg_func_prototype("print", { }, {}, FProtoFlags::Variadic);
-   reg_func_prototype("assert", { TiriType::Any }, { TiriType::Any, TiriType::Str });
+   reg_func_prototype("print", { }, {}, FProtoFlags::Variadic, FProtoArity::required(0));
+   reg_func_prototype("assert", { TiriType::Any }, { TiriType::Any, TiriType::Str }, FProtoFlags::None,
+      FProtoArity::required(1));
    reg_func_prototype("type", { TiriType::Str }, { TiriType::Any });
    reg_func_prototype("rawtype", { TiriType::Str }, { TiriType::Any });
-   reg_func_prototype("tonumber", { TiriType::Num }, { TiriType::Any, TiriType::Num });
+   reg_func_prototype("tonumber", { TiriType::Num }, { TiriType::Any, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(1));
    reg_func_prototype("tostring", { TiriType::Str }, { TiriType::Any });
    reg_func_prototype("pairs", { TiriType::Func, TiriType::Table, TiriType::Nil }, { TiriType::Any });
    reg_func_prototype("ipairs", { TiriType::Func, TiriType::Table, TiriType::Num }, { TiriType::Any });
@@ -1291,12 +1147,10 @@ extern int luaopen_base(lua_State* L)
    reg_func_prototype("forEach", { TiriType::Any }, { TiriType::Any, TiriType::Func });
    reg_func_prototype("rawget", { TiriType::Any }, { TiriType::Table, TiriType::Any });
    reg_func_prototype("rawset", { TiriType::Table }, { TiriType::Table, TiriType::Any, TiriType::Any });
-   reg_func_prototype("error", { }, { TiriType::Any }, FProtoFlags::NoNil);
    reg_func_prototype("getmetatable", { TiriType::Any }, { TiriType::Any });
    reg_func_prototype("setmetatable", { TiriType::Table }, { TiriType::Table, TiriType::Table });
-   reg_func_prototype("select", { TiriType::Any }, { TiriType::Any }, FProtoFlags::Variadic);
-   reg_func_prototype("next", { TiriType::Any, TiriType::Any }, { TiriType::Table, TiriType::Any });
-   reg_func_prototype("newproxy", { TiriType::Userdata }, { TiriType::Any });
+   reg_func_prototype("next", { TiriType::Any, TiriType::Any }, { TiriType::Table, TiriType::Any }, FProtoFlags::None,
+      FProtoArity::required(1));
    reg_func_prototype("ltr", { TiriType::Str }, { TiriType::Str });
    reg_func_prototype("resolve", { TiriType::Any }, { TiriType::Any });
 

@@ -10,7 +10,7 @@ function basic_test()
    hello = 'world'
    index = 0xdeadbeef
    math = 111 * 444 + 999
-   time = mSys.preciseTime()
+   time = mSys.PreciseTime()
    msg('Test finished.')
 end
    basic_test()
@@ -19,7 +19,7 @@ end
    glBadScript = [[
 function basic_test()
    hello = 'world'
-   time = mSys.preciseTime()
+   time = mSys.PreciseTime()
    syntax = error ! here @
    msg('Test finished.')
    >>another_error<<

@@ -1443,7 +1443,7 @@ void parser::tag_call(const tag_view &Tag)
    }
 
    if (not script) {
-      log_error(&Tag, ERR::Failed, "doc.call-no-script", "No script is available in this document for the requested <call/>.");
+      log_error(&Tag, ERR::NotFound, "doc.call-no-script", "No script is available in this document for the requested <call/>.");
       return;
    }
 

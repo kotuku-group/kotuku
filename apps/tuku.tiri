@@ -110,7 +110,7 @@ function encodeFormBody(Form:array<str>!):str
       text = tostring(field)
       eq = text.find('=')
       if eq is nil then
-         error("Parameter 'form' entries must use name=value syntax.")
+         raise "Parameter 'form' entries must use name=value syntax."
       end
 
       params.push({
@@ -141,14 +141,14 @@ function buildMultipartBody(Fields:array<str>!):<str, str>
       text = tostring(field)
       eq = text.find('=', 0, true)
       if eq is nil then
-         error("Parameter 'multipart' entries must use name=value syntax.")
+         raise "Parameter 'multipart' entries must use name=value syntax."
       end
 
       name = string.trim(text.sub(0, eq))
       value = text.sub(eq + 1)
 
       if name is '' then
-         error("Parameter 'multipart' entries require a field name.")
+         raise "Parameter 'multipart' entries require a field name."
       end
 
       body ..= '--' .. boundary .. crlf
@@ -156,7 +156,7 @@ function buildMultipartBody(Fields:array<str>!):<str, str>
       if value.startsWith('@') then
          path = value.sub(1)
          if path is '' then
-            error("Parameter 'multipart' file entries require a path after '@'.")
+            raise "Parameter 'multipart' file entries require a path after '@'."
          end
 
          _, filename = io.splitPath(path)
@@ -183,14 +183,14 @@ end
 function splitHeader(Header:str!):<str, str>
    colon = Header.find(':')
    if colon is nil then
-      error("Parameter 'header' entries must use Name: Value syntax.")
+      raise "Parameter 'header' entries must use Name: Value syntax."
    end
 
    name = string.trim(Header.sub(0, colon))
    value = string.trim(Header.sub(colon + 1))
 
    if name is '' then
-      error("Parameter 'header' entries require a header name.")
+      raise "Parameter 'header' entries require a header name."
    end
 
    return name, value
@@ -202,7 +202,7 @@ end
 function splitUser(User:str!):<str, str>
    colon = User.find(':')
    if colon is nil then
-      error("Parameter 'user' must use username:password syntax.")
+      raise "Parameter 'user' must use username:password syntax."
    end
 
    return User.sub(0, colon), User.sub(colon + 1)
@@ -214,7 +214,7 @@ end
 function splitProxy(Proxy:str!):<str, num>
    colon = Proxy.find(':')
    if colon is nil then
-      error("Parameter 'proxy' must use host:port syntax.")
+      raise "Parameter 'proxy' must use host:port syntax."
    end
 
    host = string.trim(Proxy.sub(0, colon))
@@ -222,11 +222,11 @@ function splitProxy(Proxy:str!):<str, num>
    port = tonumber(port_text)
 
    if host is '' then
-      error("Parameter 'proxy' requires a proxy host.")
+      raise "Parameter 'proxy' requires a proxy host."
    end
 
    if port is nil or math.floor(port) != port or port < 1 or port > 65535 then
-      error("Parameter 'proxy' requires a port between 1 and 65535.")
+      raise "Parameter 'proxy' requires a port between 1 and 65535."
    end
 
    return host, port
@@ -237,7 +237,7 @@ end
 
 function requirePositive(Name:str!, Value:num!)
    if Value <= 0 then
-      error(f"Parameter '{Name}' must be greater than zero.")
+      raise f"Parameter '{Name}' must be greater than zero."
    end
 end
 
@@ -245,7 +245,7 @@ end
 -- Rejects command-line options that are declared now but intentionally deferred to a later implementation phase.
 
 function rejectPhaseFuture(Name:str!)
-   error(f"Parameter '{Name}' is reserved for a later Tuku phase.")
+   raise f"Parameter '{Name}' is reserved for a later Tuku phase."
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -255,7 +255,7 @@ function validateArgs(Args:table!)
    if Args.version then return end
 
    if Args.url is nil then
-      error("Required parameter 'url' is missing.")
+      raise "Required parameter 'url' is missing."
    end
 
    requirePositive('timeout', Args.timeout)
@@ -263,20 +263,20 @@ function validateArgs(Args:table!)
    requirePositive('data-timeout', Args['data-timeout'])
 
    if Args['max-redirects'] < 1 then
-      error("Parameter 'max-redirects' must be at least 1.")
+      raise "Parameter 'max-redirects' must be at least 1."
    end
 
    if Args.url.startsWith('http://') is false and Args.url.startsWith('https://') is false then
-      error("Parameter 'url' must start with http:// or https://.")
+      raise "Parameter 'url' must start with http:// or https://."
    end
 
    if Args.resume then
       if Args.output is nil then
-         error("Parameter 'resume' requires 'output'.")
+         raise "Parameter 'resume' requires 'output'."
       end
 
       if Args.method != 'get' then
-         error("Parameter 'resume' can only be used with method=get.")
+         raise "Parameter 'resume' can only be used with method=get."
       end
    end
 end
@@ -507,7 +507,7 @@ function applyTransferHeaders(HTTP:obj!, Args:table!)
    if Args.resume and Args.resumeOffset != nil and Args.resumeOffset > 0 then
       err = HTTP.acSetKey('Range', f"bytes={Args.resumeOffset}-")
       if err != ERR_Okay then
-         error('Failed to set resume range header: ' .. mSys.GetErrorMsg(err))
+         raise 'Failed to set resume range header: ' .. mSys.GetErrorMsg(err)
       end
    end
 end
@@ -522,7 +522,7 @@ function applyRequestHeaders(HTTP:obj!, Args:table!)
       name, value = splitHeader(header)
       err = HTTP.acSetKey(name, value)
       if err != ERR_Okay then
-         error("Invalid request header '" .. name .. "': " .. mSys.GetErrorMsg(err))
+         raise "Invalid request header '" .. name .. "': " .. mSys.GetErrorMsg(err)
       end
    end
 end
@@ -721,7 +721,7 @@ function commitCapturedResponseBody(Args:table!, Result:table!)
          end
 
          if err != ERR_Okay then
-            error('Failed to move followed output file: ' .. mSys.GetErrorMsg(err))
+            raise 'Failed to move followed output file: ' .. mSys.GetErrorMsg(err)
          end
       elseif Result.body != nil then
          io.writeAll(Args.resumeTempPath ?? Args.output, Result.body)

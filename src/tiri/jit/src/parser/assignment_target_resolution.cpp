@@ -227,6 +227,12 @@ private:
                if (operand) this->resolve_expression(*operand);
             }
             break;
+         case AstNodeKind::RaiseExpr: {
+            auto &payload = std::get<RaisePayload>(Expression.data);
+            if (payload.error_code) this->resolve_expression(*payload.error_code);
+            if (payload.message) this->resolve_expression(*payload.message);
+            break;
+         }
          case AstNodeKind::TernaryExpr: {
             auto &payload = std::get<TernaryExprPayload>(Expression.data);
             if (payload.condition) this->resolve_expression(*payload.condition);

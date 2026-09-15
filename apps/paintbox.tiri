@@ -163,7 +163,7 @@ function generatePalette(BaseRGB, Scheme, Count)
          addHue(base_hsl.h, sat, lit)
       end
    else
-      error("Invalid palette scheme. Supported values: analogous, complementary, triadic, split, monochrome")
+      raise "Invalid palette scheme. Supported values: analogous, complementary, triadic, split, monochrome"
    end
 
    return palette
@@ -390,7 +390,7 @@ end
             return tostring(oklab)
          end
       else
-         error('Provided output type is not supported.')
+         raise 'Provided output type is not supported.'
       end
 
       for start, stop in rx_hex.findAll(buffer) do

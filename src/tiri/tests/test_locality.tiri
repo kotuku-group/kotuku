@@ -129,6 +129,7 @@ end
 -- Test debug.locality with nil argument
 
 @Test(hotpath=true) function LocalityNilArg()
+   assert(debug.locality() is 'nil', 'debug.locality() should accept a missing name')
    assert(debug.locality(nil) is 'nil', 'debug.locality(nil) should return nil')
 end
 
@@ -448,6 +449,20 @@ end
    assert(debug.locality('first') is 'local', 'first should be local')
    assert(debug.locality('second') is 'local', 'second should be local')
    assert(debug.locality('third') is 'local', 'third should be local')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Surplus function results remain valid even though surplus explicit values are rejected.
+
+@Test(hotpath=true) function MultiReturnSurplusResults()
+   function three_values()
+      return 'first', 'second', 'discarded'
+   end
+
+   first, second = three_values()
+
+   assert(first is 'first', 'first should receive the first function result')
+   assert(second is 'second', 'second should receive the second function result')
 end
 
 -----------------------------------------------------------------------------------------------------------------------

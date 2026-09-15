@@ -185,7 +185,7 @@ static ERR SOURCEFX_Init(extSourceFX *Self)
    kt::Log log;
 
    validate_object_link(Self->Source);
-   if (!Self->Source) return log.warning(ERR::UndefinedField);
+   if (!Self->Source) return log.warning(ERR::FieldNotSet);
 
    Self->Scene->Viewport->setColourSpace(Self->Filter->ColourSpace);
 
@@ -253,7 +253,7 @@ static ERR SOURCEFX_SET_SourceName(extSourceFX *Self, const std::string_view &Va
 {
    kt::Log log;
 
-   if ((not Self->Filter) or (not Self->Filter->Scene)) return log.warning(ERR::UndefinedField);
+   if ((not Self->Filter) or (not Self->Filter->Scene)) return log.warning(ERR::FieldNotSet);
 
    if (Self->Source) {
       Self->Source->unpinWeak();

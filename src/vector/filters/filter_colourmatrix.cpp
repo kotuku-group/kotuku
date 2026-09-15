@@ -490,7 +490,7 @@ static ERR COLOURFX_Init(extColourFX *Self)
 {
    kt::Log log;
 
-   if (Self->SourceType IS VSF::NIL) return log.warning(ERR::UndefinedField);
+   if (Self->SourceType IS VSF::NIL) return log.warning(ERR::FieldNotSet);
 
    // If a special colour mode was selected, convert the provided value(s) to the matrix format.
 

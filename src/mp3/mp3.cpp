@@ -632,7 +632,7 @@ static ERR MP3_Seek(objMP3 *Self, struct acSeek *Args)
 
          if (Self->Length <= 0) {
             log.warning("MP3 stream length unknown, cannot seek.");
-            return ERR::Failed;
+            return ERR::Seek;
          }
 
          double pct = double(offset) / double(Self->Length);

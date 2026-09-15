@@ -79,7 +79,7 @@ glTestTimeout = 3.0
 
    err, bytesSent = client.mtSendTo(dest, message)
    assert(err is ERR_Okay, 'Client failed to send UDP data: ' .. mSys.GetErrorMsg(err))
-   assert(bytesSent is string.len(message), 'Not all bytes were sent')
+   assert(bytesSent is #message, 'Not all bytes were sent')
 
    check proc.sleep()
 

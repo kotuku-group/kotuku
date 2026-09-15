@@ -159,7 +159,7 @@ if (!StrToAddress(&quot;127.0.0.1&quot;, &amp;addr)) {
     </description>
     <result type="ERR">
       <error code="Okay">The <code>Address</code> was converted successfully.</error>
-      <error code="Failed">The <code>String</code> was not a valid IP Address.</error>
+      <error code="Syntax">The <code>String</code> was not a valid IP Address.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>

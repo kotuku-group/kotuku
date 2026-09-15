@@ -562,7 +562,7 @@ static ERR VECTOR_PointInPath(extVector *Self, struct vec::PointInPath *Args)
       if (get_bounds(path).hit_test(Args->X, Args->Y)) {
          if ((Self->DisableHitTesting) or (Self->classID() IS CLASSID::VECTORTEXT)) return ERR::Okay;
          else {
-            // Full hit testing using the true path.  TODO: Find out if there are more optimal hit testing methods.
+            // Full hit testing using the true path.
 
             agg::conv_transform<agg::path_storage, agg::trans_affine> t_path(Self->BasePath, Self->Transform);
             agg::rasterizer_scanline_aa<> raster;

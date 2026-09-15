@@ -92,12 +92,12 @@ function BasicSSLCommunication()
                ssl_data_received = true
                Socket.mtDisconnectSocket(Client)
             else
-               error('[Server] SSL message integrity check failed. Got: "' .. emsg .. '"')
+               raise '[Server] SSL message integrity check failed. Got: "' .. emsg .. '"'
             end
          elseif err is ERR_Disconnected then
             raise ERR_Terminate
          else
-            error('[Server] SSL read error: ' .. mSys.GetErrorMsg(err))
+            raise '[Server] SSL read error: ' .. mSys.GetErrorMsg(err)
          end
       end,
       port = glPort,
@@ -143,7 +143,7 @@ function BasicSSLCommunication()
          elseif err is ERR_Disconnected then
             raise ERR_Terminate
          else
-            error('[Client] SSL read error: ' .. mSys.GetErrorMsg(err))
+            raise '[Client] SSL read error: ' .. mSys.GetErrorMsg(err)
          end
       end,
       flags = 'DISABLE_SERVER_VERIFY'
@@ -201,7 +201,7 @@ function SSLStateTransitions()
             data_exchange_complete = true
             Socket.mtDisconnectSocket(Client)
          elseif (err != ERR_Disconnected) then
-            error('[Server] Read error: ' .. mSys.GetErrorMsg(err))
+            raise '[Server] Read error: ' .. mSys.GetErrorMsg(err)
          end
       end,
       port = glPort,
@@ -227,7 +227,7 @@ function SSLStateTransitions()
             logOutput('[Client] Received: ' .. emsg)
             check Socket.acWrite('SSL_STATES_VERIFIED')
          elseif (err != ERR_Disconnected) then
-            error('[Client] Read error: ' .. mSys.GetErrorMsg(err))
+            raise '[Client] Read error: ' .. mSys.GetErrorMsg(err)
          end
       end,
       flags = NSF_SSL|NSF_DISABLE_SERVER_VERIFY
@@ -309,7 +309,7 @@ function SSLDataIntegrity()
                   Socket.acSignal()
                end
             else
-               error('[Server] Message integrity failed for message ' .. msgIndex)
+               raise '[Server] Message integrity failed for message ' .. msgIndex
             end
          end
       end,
@@ -482,10 +482,10 @@ function HTTPSConnection()
       if connection_established and data_received and #page_content > 0 then
          logOutput('Timeout but data was received - acceptable for this test')
       else
-         error('HTTPS connection test timed out without receiving data')
+         raise 'HTTPS connection test timed out without receiving data'
       end
    elseif err != ERR_Okay then
-      error('HTTPS connection test failed: ' .. mSys.GetErrorMsg(err))
+      raise 'HTTPS connection test failed: ' .. mSys.GetErrorMsg(err)
    end
 
    assert(connection_established, 'HTTPS connection was not established')
@@ -521,7 +521,7 @@ function HTTPSConnection()
       end
    else
       logOutput('Response content preview: ' .. page_content.sub(0, 200))
-      error('Invalid HTTP response received from ' .. SITE)
+      raise 'Invalid HTTP response received from ' .. SITE
    end
 end
 
@@ -708,7 +708,7 @@ function PendingSSLFreeDropsCompletion()
          buffer = array<byte, 256>
          err, read_len = Client.acRead(buffer)
          if (err != ERR_Okay) and (err != ERR_Disconnected) and (err != ERR_InvalidState) then
-            error('SSL server read failed during pending SSL free test: ' .. mSys.GetErrorMsg(err))
+            raise 'SSL server read failed during pending SSL free test: ' .. mSys.GetErrorMsg(err)
          end
       end
    })
@@ -724,7 +724,7 @@ function PendingSSLFreeDropsCompletion()
          buffer = array<byte, 256>
          err, read_len = Socket.acRead(buffer)
          if (err != ERR_Okay) and (err != ERR_Disconnected) and (err != ERR_InvalidState) then
-            error('SSL client read failed during pending SSL free test: ' .. mSys.GetErrorMsg(err))
+            raise 'SSL client read failed during pending SSL free test: ' .. mSys.GetErrorMsg(err)
          end
       end
    })

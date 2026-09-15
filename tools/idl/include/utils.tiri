@@ -30,7 +30,7 @@ global function readTextFile(Path:str, Description:str):str
       return content
    except ex
       fl?.close()
-      error(f'Failed to read "{Path}" for {Description}: {ex.message}')
+      raise f'Failed to read "{Path}" for {Description}: {ex.message}'
    end
 end
 
@@ -55,7 +55,7 @@ global function saveIfModified(Path:str, Content:str, Description:str):bool
       fl.close()
    except ex
       fl?.close()
-      error(f'Failed to write "{Path}" for {Description}: {ex.message}')
+      raise f'Failed to write "{Path}" for {Description}: {ex.message}'
    end
 
    return true
@@ -156,7 +156,7 @@ global function cleanXMLString(String:str):str
          local extracted = rx_root_extract.extract(clean_str)
          if extracted then String = extracted.trim() end
       except ex
-         error(f'Failed to parse XML: {ex.message}\n' .. debug.traceback())
+         raise f'Failed to parse XML: {ex.message}\n' .. debug.traceback()
       end
    end
 
@@ -270,7 +270,7 @@ global function resolveSDKPath(Path:str)
          msg ..= path .. '\n'
       end
       print('Unable to find CMakeLists.txt after searching the following paths:\n' .. msg)
-      error('A path to the Kotuku SDK could not be determined.')
+      raise 'A path to the Kotuku SDK could not be determined.'
    end
 
    mSys.SetVolume('sdk', sdk_path)

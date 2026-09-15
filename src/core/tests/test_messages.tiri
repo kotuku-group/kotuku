@@ -16,7 +16,7 @@ end
 -- an individual function.  Safe navigation is not applicable because Core is a required dependency.
 
 @Test function ModuleResultSignatures()
-   local precise_time <const> = mSys.preciseTime
+   local precise_time <const> = mSys.PreciseTime
    assert(precise_time() > 0, 'Case-insensitive module lookup or extracted callable typing failed.')
 
    local actions = mSys.ActionList()

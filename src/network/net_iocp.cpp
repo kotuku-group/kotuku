@@ -37,10 +37,10 @@ static ERR convert_lookup_error(int Result)
    switch (Result) {
       case 0: return ERR::Okay;
       case EAI_AGAIN: return ERR::Retry;
-      case EAI_FAIL: return ERR::Failed;
+      case EAI_FAIL: return ERR::HostNotFound;
       case EAI_MEMORY: return ERR::Memory;
       case EAI_SYSTEM: return ERR::SystemCall;
-      default: return ERR::Failed;
+      default: return ERR::HostNotFound;
    }
 }
 
@@ -181,8 +181,9 @@ public:
 
       auto completion_function = C_FUNCTION(iocp_completion_receiver);
       completion_function.Context = CurrentTask();
-      if (AddMsgHandler(glIocpCompletionMsgID, &completion_function, &glIocpCompletionHandler) != ERR::Okay) {
-         return ERR::Failed;
+      if (auto error = AddMsgHandler(glIocpCompletionMsgID, &completion_function, &glIocpCompletionHandler);
+            error != ERR::Okay) {
+         return error;
       }
 
       return iocp_initialise(int(glIocpCompletionMsgID), post_iocp_completion);
@@ -508,7 +509,7 @@ public:
 
       auto lookup_result = getaddrinfo(HostName, nullptr, &hints, &servinfo);
       if (lookup_result) return convert_lookup_error(lookup_result);
-      if (!servinfo) return ERR::Failed;
+      if (!servinfo) return ERR::HostNotFound;
 
       if (servinfo->ai_canonname) Result.HostName = servinfo->ai_canonname;
       else Result.HostName = HostName;

@@ -59,7 +59,7 @@ end
 
    local err6, projectedDate = xml.mtEvaluate('string(xs:date(current-dateTime()))')
    assert(err6 is ERR_Okay, 'xs:date(current-dateTime()) should be valid: ' .. mSys.GetErrorMsg(err6))
-   assert(string.len(projectedDate ?? '') > 0,
+   assert(#(projectedDate ?? '') > 0,
       'xs:date(current-dateTime()) should yield a lexical value, got: ' .. tostring(projectedDate))
 end
 

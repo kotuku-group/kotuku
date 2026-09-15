@@ -83,7 +83,7 @@ static ERR receive_from_client(extClientSocket *Self, APTR Buffer, size_t Buffer
             log.traceWarning("No more data to read from the SSL socket.");
             return ERR::Okay;
          }
-         else log.warning(ERR::Failed);
+         else log.warning(ERR::Read);
       }
    #else // OpenSSL
       bool read_blocked;

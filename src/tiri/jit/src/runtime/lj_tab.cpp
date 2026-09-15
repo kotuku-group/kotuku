@@ -732,7 +732,7 @@ void lj_tab_set_global_contract(lua_State *L, GCtab *Environment, const GCstr *N
    if (not contracts) {
       contracts = lj_tab_new(L, 0, 1);
       setgcref(Environment->global_type_contracts, obj2gco(contracts));
-      lj_gc_objbarrier(L, Environment, contracts);
+      lj_gc_objbarriert(L, Environment, contracts);
    }
 
    TValue *policy_slot = lj_tab_setstr(L, contracts, Name);

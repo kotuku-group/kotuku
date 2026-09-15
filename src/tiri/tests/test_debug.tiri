@@ -110,6 +110,49 @@ end
    assert(result is testFunc, "debug.setEnv should return the original object")
 end
 
+@Test function EnvRejectsUserdata()
+   user_data = regex.new('')
+
+   function get_env_dynamic(Value:any)
+      return debug.getEnv(Value)
+   end
+
+   function set_env_dynamic(Value:any)
+      return debug.setEnv(Value, {})
+   end
+
+   get_failed = false
+   try
+      get_env_dynamic(user_data)
+   except e
+      get_failed = true
+      assert(e.message.find('function') != nil, 'getEnv should report its function-only contract: ' .. e.message)
+   end
+   assert(get_failed, 'debug.getEnv should reject userdata')
+
+   set_failed = false
+   try
+      set_env_dynamic(user_data)
+   except e
+      set_failed = true
+      assert(e.message.find('function') != nil, 'setEnv should report its function-only contract: ' .. e.message)
+   end
+   assert(set_failed, 'debug.setEnv should reject userdata')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- debug.getUserValue() / debug.setUserValue()
+
+@Test function SetAndGetUserValue()
+   user_data = regex.new('')
+   user_value = { purpose = 'debug user value' }
+
+   result = debug.setUserValue(user_data, user_value)
+   assert(result is user_data, 'debug.setUserValue should return the original userdata')
+   assert(debug.getUserValue(user_data) is user_value,
+      'debug.getUserValue should return the table assigned by debug.setUserValue')
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- debug.getInfo()
 
@@ -420,6 +463,36 @@ end
    assert(tip.line is 1, f"Expected tip on line 1, got {tip.line}")
    assert(tip.column is 7, f"Expected tip at column 7, got {tip.column}")
    assert(tip.endColumn is 8, f"Expected tip to end after column 7, got {tip.endColumn}")
+end
+
+@Test function ValidateUnresolvedMethodsAreOptIn()
+   local source = 'local body = { values={} }\nbody.values.insert(1)'
+   local result = debug.validate(source)
+
+   for diagnostic in values(result.diagnostics) do
+      assert(diagnostic.code != 'UnresolvedMethodReceiver',
+         'Default validation should omit runtime method-selection advice')
+   end
+
+   result = debug.validate(source, { unresolvedMethods=true })
+   assert(#result.diagnostics is 1, 'Explicit unresolved-method validation should produce one diagnostic')
+   assert(result.diagnostics[0].code is 'UnresolvedMethodReceiver',
+      'Explicit unresolved-method validation should preserve the diagnostic code')
+
+   result = debug.validate(source)
+   assert(#result.diagnostics is 0, 'The unresolved-method option should not leak into later validations')
+end
+
+@Test function ValidateAdvisoriesDoNotHideErrors()
+   local source = 'local body = { values={} }\n'
+   for _ in {0 to 40} do source ..= 'body.values.insert(1)\n' end
+   source ..= "local invalid:num = 'text'\n"
+
+   local result = debug.validate(source)
+   assert(result.success is false, 'A type error after unresolved method receivers should fail validation')
+   assert(#result.diagnostics is 1, 'Runtime method-selection advice should not consume the diagnostic budget')
+   assert(result.diagnostics[0].code is 'TypeMismatchAssignment',
+      'The type error after unresolved method receivers should remain visible')
 end
 
 function hasTipMessage(Result, Message)

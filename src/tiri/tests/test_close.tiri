@@ -51,7 +51,7 @@ end
          local resource <close>:obj = obj.new('time')
          id = resource.id
          alias = obj.find(id)
-         error('Intentional native object close test error')
+         raise 'Intentional native object close test error'
       end
    end
 
@@ -375,13 +375,13 @@ end
 
    function inner()
       local obj <close> = setmetatable({}, mt)
-      error('test error message')
+      raise 'test error message'
    end
 
    try
       inner()
    success
-      error('try should catch error')
+      assert(false, 'try should catch error')
    end
 
    assert(closed, 'Close should be called when error is caught by try')
@@ -405,7 +405,7 @@ end
             global_during_close = _G.__close_err
          end
       })
-      error('private close error')
+      raise 'private close error'
    end
 
    try
@@ -437,7 +437,7 @@ end
 
          function nested_failure()
             local nested <close> = setmetatable({}, inner_mt)
-            error('nested close error')
+            raise 'nested close error'
          end
 
          try
@@ -456,7 +456,7 @@ end
    function outer_failure()
       local trailing <close> = setmetatable({}, trailing_mt)
       local nesting <close> = setmetatable({}, nesting_mt)
-      error('outer close error')
+      raise 'outer close error'
    end
 
    try
@@ -505,13 +505,13 @@ end
       a <close> = setmetatable({}, makeMt(0))
       b <close> = setmetatable({}, makeMt(1))
       c <close> = setmetatable({}, makeMt(2))
-      error('multi close error')
+      raise 'multi close error'
    end
 
    try
       inner()
    success
-      error('try should catch error')
+      assert(false, 'try should catch error')
    end
 
    assert(#order is 3, 'All three close handlers should be called: ' .. #order)
@@ -662,7 +662,7 @@ end
    mt1 = {
       __close = function(Error)
          order.insert('close1')
-         error('close1 error')
+         raise 'close1 error'
       end
    }
    mt2 = {
@@ -675,7 +675,7 @@ end
    function inner()
       obj2 <close> = setmetatable({}, mt2)  -- Called second (LIFO)
       obj1 <close> = setmetatable({}, mt1)  -- Called first (LIFO), throws
-      error('original error')
+      raise 'original error'
    end
 
    caught_ex = nil
@@ -702,21 +702,21 @@ end
       __close = function(Error)
          msg('mt1 __close called')
          order.insert('close1')
-         error('close1 error')
+         raise 'close1 error'
       end
    }
    mt2 = {
       __close = function(Error)
          msg('mt2 __close called')
          order.insert('close2')
-         error('close2 error')
+         raise 'close2 error'
       end
    }
 
    function inner()
       local obj2 <close> = setmetatable({}, mt2)  -- Called second, also throws
       local obj1 <close> = setmetatable({}, mt1)  -- Called first, throws
-      error('Intentional error')
+      raise 'Intentional error'
    end
 
    caught_ex = nil
@@ -726,13 +726,122 @@ end
       print('Caught error: ' .. ex.message)
       caught_ex = ex
    success
-      error('Expected failure from inner()')
+      assert(false, 'Expected failure from inner()')
    end
 
    assert(#order is 2, 'Both close handlers should be called, got ' .. #order)
    -- The last error (from close2) should be the final error
    assert(caught_ex, 'Exception should be caught')
    assert(caught_ex.message.find('close2 error'), 'Last __close error should win: ' .. caught_ex.message)
+end
+
+function close_roundtrip_subject():str
+   local order = {}
+   local counts = {}
+
+   function record_event(Label:str)
+      order.insert(Label)
+      counts[Label] = (counts[Label] ?? 0) + 1
+   end
+
+   function close_value(Label:str):table
+      return setmetatable({}, {
+         __close=function(Error)
+            record_event(Label)
+         end
+      })
+   end
+
+   do
+      local outer <close> = close_value('normal_outer')
+      local inner <close> = close_value('normal_inner')
+   end
+   assert(order[0] is 'normal_inner' and order[1] is 'normal_outer', 'Normal close order changed')
+
+   function return_subject():num
+      local returned <close> = close_value('return')
+      return 17
+   end
+   assert(return_subject() is 17 and order[2] is 'return', 'Return close changed its value or order')
+
+   for i in {0 to 4} do
+      local loop_value <close> = close_value('loop')
+      if i is 0 then continue end
+      if i is 2 then break end
+   end
+   assert(counts.loop is 3, 'Break and continue must each consume one armed close')
+
+   try
+      local caught_value <close> = close_value('caught')
+      raise 'caught source error'
+   except caught_error
+      assert(caught_error.message.find('caught source error'), 'Same-function handler received the wrong error')
+   end
+   assert(counts.caught is 1, 'Same-function unwinding must close exactly once')
+
+   function propagating_child()
+      local child_value <close> = close_value('propagating_child')
+      raise 'propagated source error'
+   end
+   function propagating_caller()
+      local caller_value <close> = close_value('propagating_caller')
+      propagating_child()
+   end
+   try
+      propagating_caller()
+   except propagated_error
+      assert(propagated_error.message.find('propagated source error'), 'Caller received the wrong propagated error')
+   end
+   assert(order[#order - 2] is 'propagating_child' and order[#order - 1] is 'propagating_caller',
+      'Propagation must close child before caller')
+
+   local received_replacement = false
+   local observer_mt = {
+      __close=function(Error)
+         record_event('replacement_observer')
+         received_replacement = Error != nil
+      end
+   }
+   local throwing_mt = {
+      __close=function(Error)
+         record_event('replacement_thrower')
+         raise 'replacement error'
+      end
+   }
+   function replacement_subject()
+      local earlier <close> = setmetatable({}, observer_mt)
+      local throwing <close> = setmetatable({}, throwing_mt)
+      raise 'original error'
+   end
+   try
+      replacement_subject()
+   except replacement_error
+      assert(replacement_error.message.find('replacement error'),
+         'Close error must replace the active error: ' .. replacement_error.message)
+   end
+   assert(received_replacement, 'Earlier handlers must receive the replacement error')
+   assert(counts.replacement_thrower is 1 and counts.replacement_observer is 1,
+      'Replacement-error handlers must each run exactly once')
+
+   do
+      local nil_value <close> = nil
+      local false_value <close> = false
+   end
+
+   return f'{#order}:{counts.loop}:{counts.caught}:{counts.replacement_thrower}:{counts.replacement_observer}'
+end
+
+@Test function CloseBytecodeRoundTrips()
+   for enabled in values({ false, true }) do
+      if enabled then jit.on() else jit.off() end
+      local expected = close_roundtrip_subject()
+      for stripped in values({ false, true }) do
+         local observed = exec(string.dump(close_roundtrip_subject, stripped))
+         assert(observed is expected,
+            f'Close bytecode changed behaviour (jit={enabled}, stripped={stripped}): {observed}')
+      end
+   end
+   jit.on()
 end
 
 -- An error from __gc must remain contained by the collector's protected call, even when collection is requested from
@@ -747,17 +856,17 @@ end
       value = setmetatable({}, {
          __gc = function()
             try
-               error('finaliser-local handled error')
+               raise 'finaliser-local handled error'
             except ex
                finalised = true
             end
-            error('intentional finaliser error')
+            raise 'intentional finaliser error'
          end
       })
       value = nil
       processing.collect('full')
       continued_after_collection = true
-      error('caller error after collection')
+      raise 'caller error after collection'
    except ex
       caught_message = ex.message
    end

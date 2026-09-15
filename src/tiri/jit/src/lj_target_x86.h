@@ -241,6 +241,7 @@ typedef enum {
    XO_MOVAPS = XO_0f(28),
    XO_XORPS = XO_0f(57),
    XO_ANDPS = XO_0f(54),
+   XO_ORPS = XO_0f(56),
    XO_ADDSD = XO_f20f(58),
    XO_SUBSD = XO_f20f(5c),
    XO_MULSD = XO_f20f(59),

@@ -1146,6 +1146,8 @@ static void apply_cached_contract(lua_State *L, TValue *Base, uint32_t DynamicCo
    L->top = curr_topL(L);
    uint32_t available_value_count = (Record.flags & contract_flag(ContractDescriptorFlag::DynamicCount)) ?
       DynamicCount + Record.static_value_count : Record.static_value_count;
+   // Expanded results are live stack values even when they exceed the prototype's fixed frame size.
+   if (L->top < Base + available_value_count) L->top = Base + available_value_count;
    uint32_t value_count = available_value_count > Record.contract_count ?
       available_value_count : Record.contract_count;
    bool variadic = (Record.flags & contract_flag(ContractDescriptorFlag::Variadic)) != 0;
@@ -1279,6 +1281,7 @@ void lj_contract_build_cache(lua_State *L, GCproto *Prototype)
       BCIns instruction = proto_bc(Prototype)[i];
       if (bc_op(instruction) != BC_CONTRACT and bc_op(instruction) != BC_TYPETEST) continue;
 
+      if (bc_d(instruction) >= Prototype->sizekgc) continue;
       GCobj *constant = proto_kgc(Prototype, ~(ptrdiff_t)bc_d(instruction));
       if (constant->gch.gct != uint8_t(~LJ_TSTR)) continue;
       RuntimeContractDescriptor descriptor;
@@ -1310,6 +1313,7 @@ void lj_contract_build_cache(lua_State *L, GCproto *Prototype)
       BCIns instruction = proto_bc(Prototype)[i];
       if (bc_op(instruction) != BC_CONTRACT and bc_op(instruction) != BC_TYPETEST) continue;
 
+      if (bc_d(instruction) >= Prototype->sizekgc) continue;
       GCobj *constant = proto_kgc(Prototype, ~(ptrdiff_t)bc_d(instruction));
       if (constant->gch.gct != uint8_t(~LJ_TSTR)) continue;
       GCstr *encoded = gco_to_string(constant);
@@ -1412,6 +1416,8 @@ extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCou
 
    uint32_t available_value_count = descriptor.dynamic_count() ?
       DynamicCount + descriptor.static_value_count : descriptor.static_value_count;
+   // Expanded results are live stack values even when they exceed the prototype's fixed frame size.
+   if (L->top < Base + available_value_count) L->top = Base + available_value_count;
    uint32_t value_count = available_value_count > descriptor.contract_count ?
       available_value_count : descriptor.contract_count;
    ptrdiff_t base_offset = savestack(L, Base);

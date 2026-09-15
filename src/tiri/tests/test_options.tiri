@@ -3,6 +3,12 @@
    include 'core'
    import 'options'
 
+local glTestFiles = array<str>
+
+@AfterAll function cleanup_test_files()
+   for path in values(glTestFiles) do mSys.DeleteFile(path) end
+end
+
 function expect_error(Parser:table, Input:any, Code:num, MessagePart:str):table
    local args, err = Parser.tryProcess(Input)
    assert(args is nil, 'Expected parsing to fail')
@@ -38,7 +44,7 @@ function expect_validate_error(Parser:table, Args:table, Code:num, MessagePart:s
       return err
    end
 
-   error('Expected validation to fail')
+   assert(false, 'Expected validation to fail')
 end
 
 function expect_options_error(Config:table, Code:num, MessagePart:str):table
@@ -53,7 +59,7 @@ function expect_options_error(Config:table, Code:num, MessagePart:str):table
       return err
    end
 
-   error('Expected parser construction to fail')
+   assert(false, 'Expected parser construction to fail')
 end
 
 function set_test_env(Name:str, Value:any)
@@ -63,6 +69,7 @@ function set_test_env(Name:str, Value:any)
 end
 
 function write_test_file(Path:str, Content:str)
+   glTestFiles.push(Path)
    local file = io.open(Path, 'w')
    file.write(Content)
    file.close()
@@ -146,7 +153,7 @@ end
       return
    end
 
-   error('Duplicate aliases should throw')
+   assert(false, 'Duplicate aliases should throw')
 end
 
 @Test function DuplicateAliasesWithinDefinitionFail()
@@ -158,7 +165,7 @@ end
       return
    end
 
-   error('Duplicate aliases inside one definition should throw')
+   assert(false, 'Duplicate aliases inside one definition should throw')
 end
 
 @Test function AddParamRejectsDuplicates()
@@ -172,7 +179,7 @@ end
       return
    end
 
-   error('addParam() should reject duplicate names')
+   assert(false, 'addParam() should reject duplicate names')
 end
 
 @Test function DefaultsAndRequired()
@@ -311,7 +318,7 @@ end
          {
             name = 'fail',
             type = function(RawValue:any, Definition:table, Parser:table):any
-               error('custom failure')
+               raise 'custom failure'
             end
          }
       }
@@ -329,7 +336,7 @@ end
    called = false
    parser.error = function(Error:any, ParamName:str)
       called = true
-      error(Error)
+      assert(false, 'The parser failure callback must not be invoked')
    end
 
    args, err = parser.tryProcess(array<str> { 'unknown=value' })
@@ -343,7 +350,7 @@ end
    called = false
    parser.error = function(Error:any, ParamName:str)
       called = true
-      error(Error)
+      assert(false, 'The parser failure callback must not be invoked')
    end
 
    args = parser.process(array<str> { 'file=scene.svg' })
@@ -497,7 +504,7 @@ end
       return
    end
 
-   error('Variadic positional definitions should be final')
+   assert(false, 'Variadic positional definitions should be final')
 end
 
 @Test function StrictOrderedUnknownTokens()
@@ -823,7 +830,7 @@ end
       return
    end
 
-   error('Enum parameters should require choices')
+   assert(false, 'Enum parameters should require choices')
 end
 
 @Test function ExistingPathValidation()
@@ -1320,7 +1327,7 @@ end
       return
    end
 
-   error('Duplicate command aliases should fail')
+   assert(false, 'Duplicate command aliases should fail')
 end
 
 @Test function CommandGlobalDispatchTokenCollisionsFail()
@@ -1381,7 +1388,7 @@ end
       return
    end
 
-   error('Global parameters should not be allowed to hide existing commands')
+   assert(false, 'Global parameters should not be allowed to hide existing commands')
 end
 
 @Test function CommandDispatchAndResultShape()

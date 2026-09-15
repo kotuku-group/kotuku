@@ -648,7 +648,7 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
 
       return ERR::Okay;
    }
-   else return ERR::Failed;
+   else return ERR::GetField;
 }
 
 //*********************************************************************************************************************

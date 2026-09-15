@@ -38,7 +38,7 @@ ERR exec_source(std::string_view TargetFile, int ShowTime, const std::string_vie
 
             char exe_buffer[128];
             uint32_t i = get_exe(exe_buffer, sizeof(exe_buffer));
-            if ((!i) or (i >= sizeof(exe_buffer)-1)) return ERR::Failed;
+            if ((!i) or (i >= sizeof(exe_buffer)-1)) return ERR::BufferOverflow;
 
             cmdline << '"' << exe_buffer << "\" --relaunch";
             if (GetResource(RES::LOG_LEVEL) >= 5) cmdline << " --log-debug";
@@ -115,6 +115,7 @@ ERR exec_source(std::string_view TargetFile, int ShowTime, const std::string_vie
    if (!NewObject(derived_id != CLASSID::NIL ? derived_id : class_id, &glScript)) {
       glScript->setTarget(glTarget ? glTarget->UID : CurrentTaskID());
       glScript->setPath(TargetFile);
+      if (glCache) glScript->setFlags(SCF::AUTO_CACHE);
 
       if (!Procedure.empty()) glScript->setProcedure(Procedure);
 
@@ -196,6 +197,6 @@ ERR exec_source(std::string_view TargetFile, int ShowTime, const std::string_vie
    }
    else {
       printf("Internal Failure: Failed to create a new Script object for file processing.\n");
-      return ERR::Failed;
+      return ERR::CreateObject;
    }
 }

@@ -62,6 +62,17 @@ end
    assert(#result.diagnostics is 0, 'LSP diagnostics should accept current-context materialisation.')
 end
 
+@Test function DiagnosticsRemainWithinCurrentDocument()
+   local source = "import './diagnostic_import_helper'\nlocal invalid_document_value:num = 'text'\n"
+   local result = computeDiagnostics(makeDoc(source))
+
+   assert(#result.diagnostics is 1, 'The current document should not receive diagnostics from imported files.')
+   assert(result.diagnostics[0].code is 'TypeMismatchAssignment',
+      'The current document should retain its own diagnostic after filtering imported files.')
+   assert(result.diagnostics[0].range.start.line is 1,
+      'The retained diagnostic should use the current document source position.')
+end
+
 @Test function ParserAnnotationsReceiveSemanticTokens()
    source = 'value = @SourceFile\n' ..
       'line = @SourceLine\n' ..
@@ -766,4 +777,37 @@ end
    assertOperatorToken(tokens, 5, 3, '<', 'A relational choose range should retain its less-than token.')
    assertOperatorToken(tokens, 5, 11, '>', 'A relational choose range should retain its greater-than token.')
    assertNoToken(tokens, 5, 5, 'lower', 'A relational arm ending in an arrow must not become a type pattern.')
+end
+
+@Test function RemovedErrorDiagnostic()
+   local doc = makeDoc("error('message')")
+   local result = computeDiagnostics(doc)
+   local undeclared = false
+   for diagnostic in values(result.diagnostics) do
+      assert(diagnostic.code != 'DeprecatedApi', 'The removed error name must not emit a deprecation warning.')
+      if diagnostic.message.find("Undeclared variable 'error'", 0, true) then undeclared = true end
+   end
+   assert(undeclared, 'The removed error built-in must be reported as an undeclared variable.')
+end
+
+@Test function ErrorRemovalIgnoresUnrelatedNames()
+   local source = [[
+local error = function(Message) end
+error('local')
+local api = { error=function() end }
+api.error()
+local text = "error('string')"
+-- error('comment')
+local query = 'fn:error()'
+]]
+   local result = computeDiagnostics(makeDoc(source))
+   for diagnostic in values(result.diagnostics) do
+      assert(diagnostic.code != 'DeprecatedApi', 'Local names, members, keys, strings and comments must not warn.')
+   end
+
+   local tokens = tokenizeTiri("raise('message')\ntry except\nraise\nend")
+   local keyword = findToken(tokens, 0, 0, 'raise')
+   assert(keyword and keyword.type is 0, 'Expression raise must retain keyword highlighting.')
+   keyword = findToken(tokens, 2, 0, 'raise')
+   assert(keyword and keyword.type is 0, 'Bare raise must retain keyword highlighting.')
 end

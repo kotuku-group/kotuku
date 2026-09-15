@@ -474,7 +474,8 @@ static AliasRet aa_uref(IRIns* refa, IRIns* refb)
 TRef lj_opt_fwd_uload(jit_State* J)
 {
    IRRef uref = fins->op1;
-   IRRef lim = REF_BASE;  //  Search limit.
+   IRRef lim = J->chain[IR_XBAR];  // Upvalue lifetime boundary.
+   if (lim < REF_BASE) lim = REF_BASE;
    IRIns* xr = IR(uref);
    IRRef ref;
 
@@ -511,7 +512,9 @@ TRef lj_opt_dse_ustore(jit_State* J)
    IRIns* xr = IR(xref);
    IRRef1* refp = &J->chain[IR_USTORE];
    IRRef ref = *refp;
-   while (ref > xref) {  // Search for redundant or conflicting stores.
+   IRRef limit = xref;
+   if (J->chain[IR_XBAR] > limit) limit = J->chain[IR_XBAR];
+   while (ref > limit) {  // Do not eliminate stores across an upvalue lifetime transition.
       IRIns* store = IR(ref);
       switch (aa_uref(xr, IR(store->op1))) {
       case ALIAS_NO:

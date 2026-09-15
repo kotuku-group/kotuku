@@ -148,7 +148,7 @@ function newParticle()
    elseif glMode is MODE_PRIMITIVE then
       particle.colour = glColours[(math.floor(math.random() * #glColours))]
    else
-      error('Unknown benchmark mode')
+      raise 'Unknown benchmark mode'
    end
 
    return particle
@@ -345,7 +345,7 @@ end
         obj.new('VectorColour', { red=0.4,   green=0.1, blue=0.6 })
       }
    else
-      error('Unknown benchmark mode')
+      raise 'Unknown benchmark mode'
    end
 
    max = glArgs.maxParticles

@@ -68,6 +68,19 @@ end
    assert(result is 2, "Failed limit two values: expected 2, got " .. tostring(result))  -- math.max(1, 2) = 2
 end
 
+@Test function LimitedPipeRecognitionIsBounded()
+   function returns_ten()
+      return 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+   end
+
+   local result = returns_ten() |10> math.max()
+   assert(result is 10, 'A two-digit result limit should be recognised')
+
+   assert((4 |1) is 5, 'A one-digit bitwise operand without > should remain bitwise OR')
+   assert((4 |12) is 12, 'A two-digit bitwise operand without > should remain bitwise OR')
+   assert(4 |123 > 0, 'Three digits followed by > should remain bitwise OR and comparison operators')
+end
+
 @Test function ComplexChaining()
    function process(data)
       return data * 2, data + 1
@@ -177,17 +190,8 @@ end
    assert(result is 60, "Failed nested function pipe: expected 60, got " .. tostring(result))  -- outer(inner(5)) = outer(6) = 60
 end
 
-@Test function InvalidFloatLimit()
-   -- Floating-point limits like |2.5> should cause a parse error
-   script = obj.new('tiri', {
-      statement = [[
-         function identity(x) return x end
-         result = 1 |2.5> identity()
-      ]]
-   })
-
-   script.acActivate()
-   assert(script.error != ERR_Okay, "Script with float limit should have thrown an error")
+@Test function NonIntegerTextIsNotResultLimiter()
+   assert(1 |2.5 > 0, 'A decimal number followed by > should remain bitwise OR and comparison operators')
 end
 
 @Test function InvalidZeroLimit()

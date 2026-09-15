@@ -165,9 +165,9 @@ initially fill the internal write buffer, thereafter it will be called whenever 
       </description>
       <result>
         <error code="Okay">Successfully joined the multicast group.</error>
-        <error code="Failed">Failed to join multicast group.</error>
         <error code="Args">Invalid multicast address.</error>
         <error code="NoSupport">Socket is not configured for UDP mode.</error>
+        <error code="SystemCall">The socket option to join the multicast group was rejected.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>mutates-object</tags>
@@ -186,9 +186,9 @@ initially fill the internal write buffer, thereafter it will be called whenever 
       </description>
       <result>
         <error code="Okay">Successfully left the multicast group.</error>
-        <error code="Failed">Failed to leave multicast group.</error>
         <error code="Args">Invalid multicast address.</error>
         <error code="NoSupport">Socket is not configured for UDP mode.</error>
+        <error code="SystemCall">The socket option to leave the multicast group was rejected.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>mutates-object</tags>

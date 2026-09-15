@@ -612,6 +612,20 @@ static bool array_copy_identity_compatible(const GCarray *Destination, const GCa
    return lj_array_identity_matches(Source, destination_name);
 }
 
+// Publish an empty, collectable owner before allocating its payload.  If payload allocation raises, GC can
+// reclaim the header; allocating the payload first would leak it when header allocation fails.
+static GCarray * array_allocate_owned(lua_State *Lua, AET Type, MSize ElemSize, uint32_t Length,
+   uint8_t Flags, struct_record *StructDef, GCstr *NestedIdentity = nullptr)
+{
+   auto array = (GCarray *)lj_mem_newgco(Lua, sizeof(GCarray));
+   array->init(nullptr, Type, ElemSize, 0, 0, Flags, StructDef, NestedIdentity);
+   size_t byte_size = size_t(Length) * ElemSize;
+   array->storage = byte_size ? lj_mem_new(Lua, byte_size) : nullptr;
+   array->len = Length;
+   array->capacity = Length;
+   return array;
+}
+
 extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Data, uint8_t Flags,
    std::string_view StructName, struct_record *StructDef, GCstr *NestedIdentity)
 {
@@ -646,10 +660,7 @@ extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Dat
          // Cached data - copy into owned storage
          if (Type IS AET::CSTR or Type IS AET::STR_CPP) {
             // String caching: store CSTRING pointers that point into strcache
-            size_t byte_size = Length * sizeof(CSTRING);
-            void *storage = (byte_size > 0) ? lj_mem_new(L, byte_size) : nullptr;
-            auto arr = (GCarray *)lj_mem_newgco(L, sizeof(GCarray));
-            arr->init(storage, AET::CSTR, sizeof(CSTRING), Length, Length, 0, sdef);
+            auto arr = array_allocate_owned(L, AET::CSTR, sizeof(CSTRING), Length, 0, sdef);
             array_attach_basemt(L, arr);
 
             // Calculate total string content size
@@ -707,11 +718,12 @@ extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Dat
             // Object arrays returned by the Kōtuku API contain native OBJECTPTR values.  Tiri object arrays store
             // GCobject references, so wrap each native object before exposing the array to the script.
             size_t byte_size = Length * elem_size;
-            void *storage = (byte_size > 0) ? lj_mem_new(L, byte_size) : nullptr;
-            auto arr = (GCarray *)lj_mem_newgco(L, sizeof(GCarray));
-            arr->init(storage, Type, elem_size, Length, Length, Flags, sdef, NestedIdentity);
+            auto arr = array_allocate_owned(L, Type, elem_size, Length, Flags, sdef, NestedIdentity);
+            void *storage = arr->storage;
             array_attach_basemt(L, arr);
 
+            // Failed wrapping must leave the remaining GC references safe to visit during collection.
+            if (byte_size) std::memset(storage, 0, byte_size);
             auto refs = arr->get<GCRef>();
             auto objects = (OBJECTPTR *)Data;
             for (uint32_t i=0; i < Length; i++) {
@@ -729,9 +741,8 @@ extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Dat
             // Non-string cached array - allocate storage via GC, then copy data
             // Capacity equals length for cached arrays
             size_t byte_size = Length * elem_size;
-            void *storage = (byte_size > 0) ? lj_mem_new(L, byte_size) : nullptr;
-            auto arr = (GCarray *)lj_mem_newgco(L, sizeof(GCarray));
-            arr->init(storage, Type, elem_size, Length, Length, Flags, sdef, NestedIdentity);
+            auto arr = array_allocate_owned(L, Type, elem_size, Length, Flags, sdef, NestedIdentity);
+            void *storage = arr->storage;
             array_attach_basemt(L, arr);
             if (byte_size > 0) {
                if (Type IS AET::ANY) lj_bulk_copy_tvalue((TValue *)storage, (const TValue *)Data, Length);
@@ -745,9 +756,9 @@ extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Dat
       // New empty array with owned storage allocated via GC
       // Capacity equals length for newly created arrays
       size_t byte_size = Length * elem_size;
-      void *storage = (byte_size > 0) ? lj_mem_new(L, byte_size) : nullptr;
-      auto arr = (GCarray *)lj_mem_newgco(L, sizeof(GCarray));
-      arr->init(storage, Type, elem_size, Length, Length, Flags & ~(ARRAY_EXTERNAL|ARRAY_CACHED), sdef, NestedIdentity);
+      auto arr = array_allocate_owned(L, Type, elem_size, Length, Flags & ~(ARRAY_EXTERNAL|ARRAY_CACHED),
+         sdef, NestedIdentity);
+      void *storage = arr->storage;
       array_attach_basemt(L, arr);
       if (storage) {
          if (Type IS AET::ANY) {

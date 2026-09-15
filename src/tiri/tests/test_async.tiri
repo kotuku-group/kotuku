@@ -50,7 +50,7 @@ end
 -- Verify that the async.script() callback receives an error code and message when the script fails.
 
 @Test(priority=2) function ScriptCallbackError()
-   script = obj.new('tiri', { statement=[[ error('Deliberate test failure') ]] })
+   script = obj.new('tiri', { statement=[[ raise('Deliberate test failure') ]] })
 
    glCallbackError = nil
    glCallbackMsg = nil
@@ -638,11 +638,26 @@ end
 @Test(priority=29) function ActionArgumentOffset()
    script = obj.new('tiri', { statement=[[ ]] })
 
+   callback_fired = false
+   callback_action = nil
+   callback_object_id = nil
+   callback_error = nil
+   callback_key = nil
+
    async.action(script, 'SetKey', function(ActionID, Object, Error, Key)
-      check Error
+      callback_fired = true
+      callback_action = ActionID
+      callback_object_id = Object.id
+      callback_error = Error
+      callback_key = Key
    end, 123, 'AsyncName', 'AsyncValue')
 
    check async.wait(script, 3.0)
 
+   assert(callback_fired, 'async.action() callback was not invoked for a Script-based target.')
+   assert(callback_action is AC_SetKey, f'Expected action ID {AC_SetKey}, got {callback_action}')
+   assert(callback_object_id is script.id, 'async.action() callback received the wrong Script object.')
+   assert(callback_error is ERR_Okay, f'Expected ERR_Okay, got {callback_error}')
+   assert(callback_key is 123, f'Expected callback key 123, got {callback_key}')
    assert(script.getKey('AsyncName') is 'AsyncValue', 'async.action() did not pass SetKey arguments correctly.')
 end

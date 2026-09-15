@@ -191,6 +191,9 @@ std::optional<CompileTimeValue> ConstantEvaluator::evaluate(const ExprNode &Expr
       }
       case AstNodeKind::BinaryExpr:
          return this->evaluate_binary(std::get<BinaryExprPayload>(Expression.data));
+      case AstNodeKind::RaiseExpr:
+         // Raising is an effect, even when every payload operand is constant.
+         return std::nullopt;
       case AstNodeKind::TernaryExpr:
          return this->evaluate_ternary(std::get<TernaryExprPayload>(Expression.data));
       default:

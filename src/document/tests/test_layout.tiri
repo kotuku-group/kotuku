@@ -51,14 +51,16 @@ function crcTest(Name:str, Path:str, ExpectedCRC:any, TimeLimit:num)
          bmp_crc = mSys.GenCRC32(0, bmpdata, #bmpdata)
          if crc is 0 then
             saveBitmap(bmp, f'{Name}_{res}')
-            error(f'File "{Path}" @ page width {res} is yet to be assigned a checksum, current CRC is {string.format("0x%.8x", bmp_crc)}')
+            raise f'File "{Path}" @ page width {res} is yet to be assigned a checksum, current CRC is ' ..
+               string.format("0x%.8x", bmp_crc)
          elseif crc != bmp_crc then
             saveBitmap(bmp, f'{Name}_{res}')
-            error(f'The CRC for "{Path}" @ page width {res} is {string.format("0x%.8x", bmp_crc)}, expected {string.format("0x%.8x", crc)}')
+            raise f'The CRC for "{Path}" @ page width {res} is {string.format("0x%.8x", bmp_crc)}, ' ..
+               f'expected {string.format("0x%.8x", crc)}'
          end
 
          if TimeLimit and (timeTaken > TimeLimit) and (mSys.GetSystemState().ReleaseBuild is 1) then
-            error(f'File "{Path}" @ page width {res} took {timeTaken}s to render, expected {TimeLimit}s')
+            raise f'File "{Path}" @ page width {res} took {timeTaken}s to render, expected {TimeLimit}s'
          end
       end
       return
@@ -72,16 +74,16 @@ function crcTest(Name:str, Path:str, ExpectedCRC:any, TimeLimit:num)
    crc = mSys.GenCRC32(0, bmpdata, #bmpdata)
    if ExpectedCRC is 0 then
       saveBitmap(bmp, Name)
-      error(f'The {Name} test is yet to be assigned a checksum, current CRC is {string.format("0x%.8x", crc)}')
+      raise f'The {Name} test is yet to be assigned a checksum, current CRC is {string.format("0x%.8x", crc)}'
    elseif ExpectedCRC != crc then
       saveBitmap(bmp, Name)
-      error(f'The CRC for {Name} is {string.format("0x%.8x", crc)}, expected {string.format("0x%.8x", ExpectedCRC)}')
+      raise f'The CRC for {Name} is {string.format("0x%.8x", crc)}, expected {string.format("0x%.8x", ExpectedCRC)}'
    else
       --saveBitmap(bmp, Name)
    end
 
    if TimeLimit and (timeTaken > TimeLimit) and (mSys.GetSystemState().ReleaseBuild is 1) then
-      error(f'File "{Path}" took {timeTaken}s to render, expected {TimeLimit}s')
+      raise f'File "{Path}" took {timeTaken}s to render, expected {TimeLimit}s'
    end
 end
 

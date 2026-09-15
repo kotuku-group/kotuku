@@ -121,7 +121,19 @@ static int duplicate_std_handle(FILE *Stream, unsigned long StdHandle, int OpenF
 
    return -1;
 }
+
+static int open_file(CSTRING Path, int OpenFlags, int Permissions)
+{
+   return winOpenFile(Path, OpenFlags, Permissions);
+}
 #endif // _WIN32
+
+#ifndef _WIN32
+static int open_file(CSTRING Path, int OpenFlags, int Permissions)
+{
+   return open(Path, OpenFlags, Permissions);
+}
+#endif
 
 #ifdef __APPLE__
  #include <sys/param.h>
@@ -170,6 +182,12 @@ static ERR FILE_Activate(extFile *Self)
 
    if (Self->Handle != -1) return ERR::Okay;
    if ((Self->Flags & (FL::NEW|FL::READ|FL::WRITE)) IS FL::NIL) return log.warning(ERR::NothingDone);
+   if (((Self->Flags & FL::EXCLUSIVE) != FL::NIL) and ((Self->Flags & FL::NEW) IS FL::NIL)) {
+      return log.warning(ERR::InvalidState);
+   }
+   if (((Self->Flags & FL::EXCLUSIVE) != FL::NIL) and ((Self->Flags & FL::BUFFER) != FL::NIL)) {
+      return log.warning(ERR::NoSupport);
+   }
 
    // Setup the open flags.  Note that for new files, the owner will always have read/write/delete permissions by
    // default.  Extra flags can be set through the Permissions field.  If the user wishes to turn off his access to
@@ -177,6 +195,7 @@ static ERR FILE_Activate(extFile *Self)
 
    int openflags = 0;
    if ((Self->Flags & FL::NEW) != FL::NIL) openflags |= O_CREAT|O_TRUNC;
+   if ((Self->Flags & FL::EXCLUSIVE) != FL::NIL) openflags |= O_EXCL;
 
    std::string_view path;
    if (GET_ResolvedPath(Self, path) != ERR::Okay) return ERR::ResolvePath;
@@ -219,26 +238,28 @@ static ERR FILE_Activate(extFile *Self)
    #endif
 
    #ifdef _WIN32
-      if ((Self->Flags & FL::NEW) != FL::NIL) {
+      if (((Self->Flags & FL::NEW) != FL::NIL) and ((Self->Flags & FL::EXCLUSIVE) IS FL::NIL)) {
          // Make sure that we'll be able to recreate the file from new if it already exists and is marked read-only.
 
          chmod(path.data(), S_IRUSR|S_IWUSR);
       }
    #endif
 
-   if ((Self->Handle = open(path.data(), openflags|WIN32OPEN|O_LARGEFILE, secureflags)) IS -1) {
+   if ((Self->Handle = open_file(path.data(), openflags|WIN32OPEN|O_LARGEFILE, secureflags)) IS -1) {
       int err = errno;
 
       if ((Self->Flags & FL::NEW) != FL::NIL) {
          // Attempt to create the necessary directories that might be required for this new file.
 
-         if (!check_paths(path, Self->Permissions)) {
-            Self->Handle = open(path.data(), openflags|WIN32OPEN|O_LARGEFILE, secureflags);
+         if ((err != EEXIST) and (!check_paths(path, Self->Permissions))) {
+            Self->Handle = open_file(path.data(), openflags|WIN32OPEN|O_LARGEFILE, secureflags);
+            if (Self->Handle IS -1) err = errno;
          }
 
          if (Self->Handle IS -1) {
             log.warning("New file error \"%.*s\"", int(path.size()), path.data());
             if (err IS EACCES) return log.warning(ERR::NoPermission);
+            else if (err IS EEXIST) return log.warning(ERR::FileExists);
             else if (err IS ENAMETOOLONG) return log.warning(ERR::BufferOverflow);
             else return ERR::CreateFile;
          }
@@ -248,7 +269,7 @@ static ERR FILE_Activate(extFile *Self)
          log.warning("Reverting to read-only access for this read-only file.");
          openflags = O_RDONLY;
          Self->Flags &= ~FL::WRITE;
-         Self->Handle = open(path.data(), openflags|WIN32OPEN|O_LARGEFILE, secureflags);
+         Self->Handle = open_file(path.data(), openflags|WIN32OPEN|O_LARGEFILE, secureflags);
       }
       else if ((Self->Flags & FL::LINK) != FL::NIL) {
          // The file is a broken symbolic link (i.e. refers to a file that no longer exists).  Even
@@ -627,6 +648,10 @@ static ERR FILE_Init(extFile *Self)
 {
    kt::Log log;
 
+   if (((Self->Flags & FL::EXCLUSIVE) != FL::NIL) and ((Self->Flags & FL::NEW) IS FL::NIL)) {
+      return log.warning(ERR::InvalidState);
+   }
+
    // If the BUFFER flag is set then the file will be located in RAM.  Minimal initialisation is necessary.
    // If a path has been specified, we load the entire file into memory (see elsewhere in this routine for details).
 
@@ -647,6 +672,10 @@ static ERR FILE_Init(extFile *Self)
    if (glDefaultPermissions != PERMIT::NIL) Self->Permissions = glDefaultPermissions;
 
    auto volume = get_volume(Self->Path);
+
+   if (((Self->Flags & FL::EXCLUSIVE) != FL::NIL) and ((volume IS "string") or (volume IS "std"))) {
+      return log.warning(ERR::NoSupport);
+   }
 
    if (volume IS "string") {
       // The "string:" path enables buffer mode
@@ -720,6 +749,7 @@ static ERR FILE_Init(extFile *Self)
    }
 
    if (Self->Path.starts_with(':')) {
+      if ((Self->Flags & FL::EXCLUSIVE) != FL::NIL) return log.warning(ERR::NoSupport);
       if ((Self->Flags & FL::FILE) != FL::NIL) return log.warning(ERR::ExpectedFile);
       log.trace("Root folder initialised.");
       Self->Flags |= FL::VIRTUAL;
@@ -764,6 +794,8 @@ retrydir:
    Self->prvResolvedPath.clear();
    if (auto error = ResolvePath(Self->Path, resolveflags|RSF::CHECK_VIRTUAL, &Self->prvResolvedPath); error != ERR::Okay) {
       if (error IS ERR::VirtualVolume) {
+         if ((Self->Flags & FL::EXCLUSIVE) != FL::NIL) return log.warning(ERR::NoSupport);
+
          // For virtual volumes, update the path to ensure that the volume name is referenced in the path string.
          // Then return ERR::UseDerived to have support delegated to the correct File derived class.
          Self->Flags |= FL::VIRTUAL;
@@ -1184,10 +1216,12 @@ static ERR FILE_ReadLine(extFile *Self, struct fl::ReadLine *Args)
       int result;
       constexpr int chunk = 256;
       std::size_t line_offset = 0;
+      bool line_feed_found = false;
       while ((result = read(Self->Handle, output.data() + line_offset, chunk)) > 0) {
          auto block = std::string_view(output.data() + line_offset, result);
          if (auto line_feed = block.find('\n'); line_feed != std::string_view::npos) {
             line_offset += line_feed;
+            line_feed_found = true;
             break;
          }
 
@@ -1200,13 +1234,13 @@ static ERR FILE_ReadLine(extFile *Self, struct fl::ReadLine *Args)
          }
       }
 
-      if (not line_offset) {
+      if ((not line_offset) and (not line_feed_found)) {
          output.clear();
          return ERR::NoData;
       }
 
       Self->Position += line_offset;
-      if (output[line_offset] IS '\n') {
+      if (line_feed_found) {
          Self->Position++; // Skip the line feed
          lseek64(Self->Handle, Self->Position, SEEK_SET); // Reset position to the start of the next line
       }

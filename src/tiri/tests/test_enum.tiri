@@ -180,7 +180,7 @@ end
          f'Error should reject enum as an identifier: {ex.message}')
       return
    end
-   error('enum should be a reserved keyword')
+   assert(false, 'enum should be a reserved keyword')
 end
 
 @Test function OldEnumSyntaxError()
@@ -191,7 +191,7 @@ end
          f'Error should reject old enum syntax: {ex.message}')
       return
    end
-   error('Old enum assignment syntax should fail')
+   assert(false, 'Old enum assignment syntax should fail')
 end
 
 @Test function LocalEnumError()
@@ -202,7 +202,7 @@ end
          f'Error should mention local enum is unsupported: {ex.message}')
       return
    end
-   error('local enum declaration should fail')
+   assert(false, 'local enum declaration should fail')
 end
 
 @Test function EnumInsideDoBlockError()
@@ -216,7 +216,7 @@ end
       assert(ex.message.find('top-level'), f'Error should mention top-level enum scope: {ex.message}')
       return
    end
-   error('Enum inside do block should fail')
+   assert(false, 'Enum inside do block should fail')
 end
 
 @Test function EnumInsideIfBlockError()
@@ -230,7 +230,7 @@ end
       assert(ex.message.find('top-level'), f'Error should mention top-level enum scope: {ex.message}')
       return
    end
-   error('Enum inside if block should fail')
+   assert(false, 'Enum inside if block should fail')
 end
 
 @Test function EnumInsideLoopError()
@@ -244,7 +244,7 @@ end
       assert(ex.message.find('top-level'), f'Error should mention top-level enum scope: {ex.message}')
       return
    end
-   error('Enum inside loop should fail')
+   assert(false, 'Enum inside loop should fail')
 end
 
 @Test function EnumInsideFunctionError()
@@ -258,7 +258,7 @@ end
       assert(ex.message.find('top-level'), f'Error should mention top-level enum scope: {ex.message}')
       return
    end
-   error('Enum inside function should fail')
+   assert(false, 'Enum inside function should fail')
 end
 
 @Test function EmptyEnumError()
@@ -268,7 +268,7 @@ end
       assert(ex.message.find('at least one member'), f'Error should mention empty enum: {ex.message}')
       return
    end
-   error('Empty enum declaration should fail')
+   assert(false, 'Empty enum declaration should fail')
 end
 
 @Test function LowercasePrefixError()
@@ -278,7 +278,7 @@ end
       assert(ex.message.find('uppercase'), f'Error should mention uppercase style: {ex.message}')
       return
    end
-   error('Lowercase enum prefix should fail')
+   assert(false, 'Lowercase enum prefix should fail')
 end
 
 @Test function LowercaseMemberError()
@@ -288,7 +288,7 @@ end
       assert(ex.message.find('uppercase'), f'Error should mention uppercase style: {ex.message}')
       return
    end
-   error('Lowercase enum member should fail')
+   assert(false, 'Lowercase enum member should fail')
 end
 
 @Test function NonIntegerValueError()
@@ -298,7 +298,7 @@ end
       assert(ex.message.find('integer literal'), f'Error should mention integer literal: {ex.message}')
       return
    end
-   error('Non-integer enum value should fail')
+   assert(false, 'Non-integer enum value should fail')
 end
 
 @Test function DuplicateMemberError()
@@ -308,7 +308,7 @@ end
       assert(ex.message.find('Duplicate enum member'), f'Error should mention duplicate enum member: {ex.message}')
       return
    end
-   error('Duplicate enum member should fail')
+   assert(false, 'Duplicate enum member should fail')
 end
 
 @Test function DuplicateRegisteredConstantError()
@@ -321,7 +321,7 @@ enum DUP_REG_ENUM { ONE }
       assert(ex.message.find('Duplicate enum constant'), f'Error should mention duplicate enum constant: {ex.message}')
       return
    end
-   error('Duplicate registered enum constant should fail')
+   assert(false, 'Duplicate registered enum constant should fail')
 end
 
 @Test function TypeAnnotatedPrefixError()
@@ -331,7 +331,7 @@ end
       assert(ex.message.find('type annotation'), f'Error should mention type annotation: {ex.message}')
       return
    end
-   error('Enum prefix with type annotation should fail')
+   assert(false, 'Enum prefix with type annotation should fail')
 end
 
 @Test function ConstPrefixError()
@@ -342,7 +342,7 @@ end
          f'Error should mention const attribute: {ex.message}')
       return
    end
-   error('Enum prefix with <const> should fail')
+   assert(false, 'Enum prefix with <const> should fail')
 end
 
 @Test function ClosePrefixError()
@@ -353,5 +353,5 @@ end
          f'Error should mention close attribute: {ex.message}')
       return
    end
-   error('Enum prefix with <close> should fail')
+   assert(false, 'Enum prefix with <close> should fail')
 end

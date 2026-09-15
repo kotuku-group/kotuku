@@ -54,6 +54,24 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Assignment value-list arity
+
+@Test function ValidateSurplusExplicitAssignmentValues()
+   local result = debug.validate('a, b = 1, 2, 3')
+   assert(result.success is false, 'An assignment with surplus explicit values should fail validation')
+   assert(result.diagnostics[0].code is 'InvalidAssignment',
+      'A surplus explicit value should report InvalidAssignment')
+   assert(result.diagnostics[0].message.find('more explicit values than targets') != nil,
+      'The diagnostic should distinguish explicit values from multi-return results')
+
+   result = debug.validate([[
+      function three():<num, num, num> return 1, 2, 3 end
+      a, b = three()
+   ]])
+   assert(result.success is true, 'Surplus results from a function call should remain valid')
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Removed Lua-style numeric for syntax
 
 @Test function ValidateDeprecatedNumericForDiagnostic()
@@ -82,6 +100,12 @@ end
       'unknown variable read in local declaration')
    assertInvalidCode("local code = ERR_ThisDoesNotExist", 'UndefinedVariable',
       'unknown constant read in local declaration')
+   assertInvalidCode("collectgarbage()", 'UndefinedVariable',
+      'removed collectgarbage function')
+   assertInvalidCode("newproxy()", 'UndefinedVariable',
+      'removed newproxy function')
+   assertInvalidCode("select(0)", 'UndefinedVariable',
+      'removed select function')
 
    result = debug.validate("local something = print")
    assert(result.success is true, "Known global read should validate")
@@ -227,6 +251,14 @@ end
          source = "local value: widget = nil"
       }
    })
+end
+
+@Test function ValidateReturnTypeAnnotationLimit()
+   local maximum = debug.validate('function valid():<num, num, num, num, num, num, num, str!> end')
+   assert(maximum.success is true, 'Eight return type annotations should remain valid')
+
+   assertInvalidCode('function invalid():<num, num, num, num, num, num, num, num, str!> end',
+      'TooManyReturnTypes', 'ninth return type annotation')
 end
 
 @Test function ValidateMalformedTypedArrays()
@@ -495,6 +527,16 @@ end
          source = "with target print(target.name) end"
       }
    })
+end
+
+@Test function ValidateExceptFilterLimit()
+   local maximum = debug.validate(
+      'try print(1) except e when ERR_Args, ERR_Failed, ERR_Read, ERR_Search\nprint(e) end')
+   assert(maximum.success is true, 'Four except filter codes should remain valid')
+
+   assertInvalidCode(
+      'try print(1) except e when ERR_Args, ERR_Failed, ERR_Read, ERR_Search, ERR_TimeOut\nprint(e) end',
+      'TooManyExceptionFilters', 'fifth except filter code')
 end
 
 ----------------------------------------------------------------------------------------------------------------------

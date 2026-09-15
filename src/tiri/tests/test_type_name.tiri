@@ -83,7 +83,7 @@ end
    invalid = {}
    metatable.__name = invalid
    assert(type(value) is 'table', 'a table __name should fall back')
-   invalid = function() error('__name must never be called') end
+   invalid = function() raise '__name must never be called' end
    metatable.__name = invalid
    assert(type(value) is 'table', 'a function __name should fall back without being called')
 end
@@ -148,7 +148,7 @@ end
    local stop = 2
    assert(rawtype({0 to stop}) is 'range', 'variable-bound ranges should be recognised')
    assert(rawtype({2 to -1 by -1}) is 'range', 'descending ranges should be recognised')
-   assert(rawtype(newproxy(true)) is 'userdata', 'full userdata should retain its category name')
+   assert(rawtype(regex.new('')) is 'userdata', 'full userdata should retain its category name')
    local captured = 1
    function capture() return captured end
    assert(rawtype(debug.upvalueID(capture, 0)) is 'userdata', 'light userdata should retain its category name')
@@ -158,7 +158,7 @@ end
    local executed = false
    thunk deferred_number():num
       executed = true
-      error('rawtype() must not resolve a declared thunk')
+      assert(false, 'rawtype() must not resolve a declared thunk')
    end
 
    local value = deferred_number()
@@ -168,7 +168,7 @@ end
 
    function undeclared_body():any
       executed = true
-      error('rawtype() must not resolve an undeclared thunk')
+      assert(false, 'rawtype() must not resolve an undeclared thunk')
    end
    local undeclared:any = <{ undeclared_body() }>
    assert(rawtype(undeclared) is 'thunk', 'rawtype() should identify an undeclared thunk container')
@@ -228,7 +228,7 @@ end
    local point = struct<RawTypeNamePoint> { Value=5 }
    local clock = obj.new('time')
    local objects = array<obj> { clock }
-   local proxy = newproxy(true)
+   local proxy = regex.new('')
    local sequence = {0 to 2}
    local deferred:any = <{ 1 }>
 

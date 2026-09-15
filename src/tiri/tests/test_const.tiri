@@ -101,7 +101,7 @@ end
    try
       exec('mutable_value, fixed_value <const> = 1, 2; fixed_value = 3')
    success
-      error('Reassigning a later const name should fail')
+      assert(false, 'Reassigning a later const name should fail')
    end
 end
 
@@ -190,7 +190,7 @@ x = 2
       assert(ex.message.find('cannot assign to const local'), f'Error should mention const local: {ex.message}')
       return -- Happy path
    end
-   error('Reassigning const local should fail to compile')
+   assert(false, 'Reassigning const local should fail to compile')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -206,7 +206,7 @@ X = 2
       assert(ex.message.find('cannot assign to const global'), f'Error should mention const global: {ex.message}')
       return -- Happy path
    end
-   error('Reassigning const global should fail to compile')
+   assert(false, 'Reassigning const global should fail to compile')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -390,7 +390,7 @@ end
    local global_name = f"glRetriedConst{failed_const_test_id}"
    failed_const_test_id++
 
-   setmetatable(_G, { __newindex = function(Key, Value) error('blocked const store') end })
+   setmetatable(_G, { __newindex = function(Key, Value) raise 'blocked const store' end })
    try
       exec(f"global {global_name} <const> = 'first'")
    except e
@@ -417,7 +417,7 @@ end
       assert(ex.message.find('requires an initialiser'), 'Error should mention initialiser: {ex.message}')
       return -- Happy path
    end
-   error('Local const without initialiser should fail to compile')
+   assert(false, 'Local const without initialiser should fail to compile')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -430,5 +430,5 @@ end
       assert(ex.message.find('requires an initialiser'), 'Error should mention initialiser: {ex.message}')
       return -- Happy path
    end
-   error('Global const without initialiser should fail to compile')
+   assert(false, 'Global const without initialiser should fail to compile')
 end

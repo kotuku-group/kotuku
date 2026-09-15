@@ -22,6 +22,7 @@
 #define LUA_CORE
 
 #include <bit>
+#include <cfloat>
 #include <cstring>
 
 #include "lj_obj.h"
@@ -153,7 +154,6 @@ static void recff_nyi(jit_State* J, RecordFFData* rd)
          if (!(op IS BC_CALLM or op IS BC_CALLMT or
             op IS BC_RETM or op IS BC_TSETM)) {
             switch (J->fn->c.ffid) {
-               case FF_error:
                case FF_debug_setHook:
                case FF_jit_flush:
                   break;  //  Don't stitch across special builtins.
@@ -697,7 +697,7 @@ static bool array_elemtype_from_string(GCstr *TypeStr, AET *Result)
    else if (TypeStr->len IS 6 and memcmp(type_name, "struct", 6) IS 0) *Result = AET::STRUCT;
    else if (TypeStr->len IS 7 and memcmp(type_name, "pointer", 7) IS 0) *Result = AET::PTR;
    // Source syntax uses "obj", but array:type() returns the canonical runtime name "object".  Accept both so that
-   // array.new(Size, Existing:type()) records consistently with interpreted execution.
+   // array.new(Existing:type(), Size) records consistently with interpreted execution.
    else if (TypeStr->len IS 3 and memcmp(type_name, "obj", 3) IS 0) *Result = AET::OBJECT;
    else if (TypeStr->len IS 6 and memcmp(type_name, "object", 6) IS 0) *Result = AET::OBJECT;
    else if (TypeStr->len IS 5 and memcmp(type_name, "table", 5) IS 0) *Result = AET::TABLE;
@@ -709,30 +709,30 @@ static bool array_elemtype_from_string(GCstr *TypeStr, AET *Result)
 }
 
 //********************************************************************************************************************
-// Record array.new(size, literal_type).  String-initialised byte arrays are left for the interpreter for now.
+// Record array.new(literal_type, size).
 
 static void recff_array_new(jit_State* J, RecordFFData* rd)
 {
-   TRef size_ref = J->base[0];
-   TRef type_ref = size_ref ? J->base[1] : 0;
+   TRef type_ref = J->base[0];
+   TRef size_ref = type_ref ? J->base[1] : 0;
 
-   if (!type_ref) {
+   if (not size_ref) {
       recff_nyi(J, rd);
       return;
    }
 
-   if (not tvisnumber(&rd->argv[0])) {
+   if (not tvisnumber(&rd->argv[1])) {
       recff_nyi(J, rd);
       return;
    }
 
-   if (not tvisstr(&rd->argv[1]) or not tref_isk(type_ref)) {
+   if (not tvisstr(&rd->argv[0]) or not tref_isk(type_ref)) {
       recff_nyi(J, rd);
       return;
    }
 
    AET elem_type;
-   if (not array_elemtype_from_string(strV(&rd->argv[1]), &elem_type) or elem_type IS AET::PTR or
+   if (not array_elemtype_from_string(strV(&rd->argv[0]), &elem_type) or elem_type IS AET::PTR or
        elem_type IS AET::STRUCT) {
       recff_nyi(J, rd);
       return;
@@ -794,8 +794,9 @@ static void recff_array_getString(jit_State* J, RecordFFData* rd)
    TRef elem_type_ref = emitir(IRT(IR_FLOAD, IRT_U8), array_ref, IRFL_ARRAY_ELEMTYPE);
    emitir(IRTGI(IR_EQ), elem_type_ref, lj_ir_kint(J, int32_t(AET::BYTE)));
 
+   // Only the first slot beyond the arguments is cleared; later slots can retain refs from previous calls.
    TRef start_ref = lj_ir_kint(J, 0);
-   if (J->base[1] and not tref_isnil(J->base[1])) {
+   if (J->maxslot > 1 and not tref_isnil(J->base[1])) {
       if (not tvisnumber(&rd->argv[1])) {
          recff_nyi(J, rd);
          return;
@@ -804,7 +805,7 @@ static void recff_array_getString(jit_State* J, RecordFFData* rd)
    }
 
    TRef len_ref = lj_ir_kint(J, -1);
-   if (J->base[2] and not tref_isnil(J->base[2])) {
+   if (J->maxslot > 2 and not tref_isnil(J->base[2])) {
       if (not tvisnumber(&rd->argv[2])) {
          recff_nyi(J, rd);
          return;
@@ -1259,12 +1260,16 @@ static void recff_math_atan2(jit_State* J, RecordFFData* rd)
 static void recff_math_ldexp(jit_State* J, RecordFFData* rd)
 {
    TRef tr = lj_ir_tonum(J, J->base[0]);
+   TRef tr2 = J->base[1];
+   if (not tref_isinteger(tr2)) {
+      tr2 = lj_ir_tonum(J, tr2);
+      tr2 = emitir(IRTGI(IR_CONV), tr2, IRCONV_INT_NUM | IRCONV_CHECK);
+   }
 #if LJ_TARGET_X86ORX64
-   TRef tr2 = lj_ir_tonum(J, J->base[1]);
-#else
-   TRef tr2 = lj_opt_narrow_toint(J, J->base[1]);
+   tr2 = emitir(IRTN(IR_CONV), tr2, IRCONV_NUM_INT);
 #endif
    J->base[0] = emitir(IRTN(IR_LDEXP), tr, tr2);
+   UNUSED(rd);
 }
 
 //********************************************************************************************************************
@@ -1277,27 +1282,26 @@ static void recff_math_call(jit_State* J, RecordFFData* rd)
 
 //********************************************************************************************************************
 
-static void recff_math_pow(jit_State* J, RecordFFData* rd)
-{
-   J->base[0] = lj_opt_narrow_pow(J, J->base[0], J->base[1], &rd->argv[0], &rd->argv[1]);
-}
-
-//********************************************************************************************************************
-
 static void recff_math_minmax(jit_State* J, RecordFFData* rd)
 {
    TRef tr = lj_ir_tonumber(J, J->base[0]);
+   bool accumulator_non_nan = tref_isinteger(tr);
    uint32_t op = rd->data;
    BCREG i;
    for (i = 1; J->base[i] != 0; i++) {
       TRef tr2 = lj_ir_tonumber(J, J->base[i]);
+      bool operand_non_nan = tref_isinteger(tr2);
       IRType t = IRT_INT;
       if (!(tref_isinteger(tr) and tref_isinteger(tr2))) {
          if (tref_isinteger(tr)) tr = emitir(IRTN(IR_CONV), tr, IRCONV_NUM_INT);
          if (tref_isinteger(tr2)) tr2 = emitir(IRTN(IR_CONV), tr2, IRCONV_NUM_INT);
          t = IRT_NUM;
+         if (!accumulator_non_nan) emitir(IRTG(IR_EQ, IRT_NUM), tr, tr);
+         if (!operand_non_nan) emitir(IRTG(IR_EQ, IRT_NUM), tr2, tr2);
       }
       tr = emitir(IRT(op, t), tr, tr2);
+      // Selecting either of two non-NaN operands cannot introduce NaN.  Do not guard each intermediate reduction.
+      accumulator_non_nan = true;
    }
    J->base[0] = tr;
 }
@@ -1314,29 +1318,57 @@ static void recff_math_clamp(jit_State* J, RecordFFData* rd)
       if (tref_isinteger(lower)) lower = emitir(IRTN(IR_CONV), lower, IRCONV_NUM_INT);
       if (tref_isinteger(upper)) upper = emitir(IRTN(IR_CONV), upper, IRCONV_NUM_INT);
       t = IRT_NUM;
+      emitir(IRTG(IR_EQ, IRT_NUM), tr, tr);  // A NaN value must side-exit so the interpreter can propagate it.
    }
 
+   emitir(IRTG(IR_LE, t), lower, upper);  // Also rejects NaN bounds for floating-point traces.
    tr = emitir(IRT(IR_MAX, t), tr, lower);
    tr = emitir(IRT(IR_MIN, t), tr, upper);
    J->base[0] = tr;
    UNUSED(rd);
 }
 
+static TRef recff_math_finite_integer(jit_State* J, TRef Ref)
+{
+   TRef number = lj_ir_tonum(J, Ref);
+   if (not tref_isinteger(Ref)) {
+      emitir(IRTG(IR_GE, IRT_NUM), number, lj_ir_knum(J, -DBL_MAX));
+      emitir(IRTG(IR_LE, IRT_NUM), number, lj_ir_knum(J, DBL_MAX));
+      TRef truncated = emitir(IRTN(IR_FPMATH), number, IRFPM_TRUNC);
+      emitir(IRTG(IR_EQ, IRT_NUM), number, truncated);
+   }
+   return number;
+}
+
 static void recff_math_random(jit_State* J, RecordFFData* rd)
 {
    GCudata* ud = udataV(&J->fn->c.upvalue[0]);
    TRef tr, one;
+   TRef tr1 = 0;
+   TRef tr2 = 0;
+   TRef range = 0;
+   bool integer_result = false;
+
+   if (J->base[0]) {
+      integer_result = tref_isinteger(J->base[0]) and (not J->base[1] or tref_isinteger(J->base[1]));
+      tr1 = recff_math_finite_integer(J, J->base[0]);
+      if (J->base[1]) {
+         tr2 = recff_math_finite_integer(J, J->base[1]);
+         emitir(IRTG(IR_LE, IRT_NUM), tr1, tr2);
+         range = emitir(IRTN(IR_SUB), tr2, tr1);
+         emitir(IRTG(IR_LE, IRT_NUM), range, lj_ir_knum(J, DBL_MAX));
+      }
+      else emitir(IRTG(IR_GT, IRT_NUM), tr1, lj_ir_knum_zero(J));
+   }
+
    lj_ir_kgc(J, obj2gco(ud), IRT_UDATA);  //  Prevent collection.
    tr = lj_ir_call(J, IRCALL_lj_prng_u64d, lj_ir_kptr(J, uddata(ud)));
    one = lj_ir_knum_one(J);
    tr = emitir(IRTN(IR_SUB), tr, one);
    if (J->base[0]) {
-      TRef tr1 = lj_ir_tonum(J, J->base[0]);
       if (J->base[1]) {  // d = floor(d*(r2-r1+1.0)) + r1
-         TRef tr2 = lj_ir_tonum(J, J->base[1]);
-         tr2 = emitir(IRTN(IR_SUB), tr2, tr1);
-         tr2 = emitir(IRTN(IR_ADD), tr2, one);
-         tr = emitir(IRTN(IR_MUL), tr, tr2);
+         range = emitir(IRTN(IR_ADD), range, one);
+         tr = emitir(IRTN(IR_MUL), tr, range);
          tr = emitir(IRTN(IR_FPMATH), tr, IRFPM_FLOOR);
          tr = emitir(IRTN(IR_ADD), tr, tr1);
       }
@@ -1345,6 +1377,7 @@ static void recff_math_random(jit_State* J, RecordFFData* rd)
          tr = emitir(IRTN(IR_FPMATH), tr, IRFPM_FLOOR);
       }
    }
+   if (integer_result) tr = emitir(IRTGI(IR_CONV), tr, IRCONV_INT_NUM | IRCONV_CHECK);
    J->base[0] = tr;
    UNUSED(rd);
 }

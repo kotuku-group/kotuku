@@ -1015,7 +1015,7 @@ static int get_results(lua_State *Lua, const FunctionField *Args, const int8_t *
                }
                else {
                   if (named_struct_to_table(Lua, Args[i].Name, ptr_struct) != ERR::Okay) {
-                     luaL_error(Lua, ERR::Failed, "Failed to create struct for %s, %p", Args[i].Name, ptr_struct);
+                     luaL_error(Lua, ERR::CreateResource, "Failed to create struct for %s, %p", Args[i].Name, ptr_struct);
                      return total;
                   }
                   if (type & FD_ALLOC) FreeResource(ptr_struct);

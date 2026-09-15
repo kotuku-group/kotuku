@@ -4,18 +4,18 @@
    module font as mFont
 
 @Test function SelectFont()
-   err, path, meta = mFont.selectFont("Noto Sans", "Regular")
+   err, path, meta = mFont.SelectFont("Noto Sans", "Regular")
    assert(err is ERR_Okay, "SelectFont() returned error " .. mSys.GetErrorMsg(err))
 
-   err, path, meta = mFont.selectFont("Does Not Exist,*", "Regular")
+   err, path, meta = mFont.SelectFont("Does Not Exist,*", "Regular")
    assert(err != ERR_Okay, "SelectFont() returned error " .. mSys.GetErrorMsg(err))
 
-   err, path, meta = mFont.selectFont("Does Not Exist", "Regular")
+   err, path, meta = mFont.SelectFont("Does Not Exist", "Regular")
    assert(err != ERR_Okay, "SelectFont() returned error " .. mSys.GetErrorMsg(err))
 end
 
 @Test function ResolveFamily()
-   err, name = mFont.resolveFamilyName("Does Not Exist,*")
+   err, name = mFont.ResolveFamilyName("Does Not Exist,*")
    assert(err is ERR_Okay, "ResolveFamilyName() returned error " .. mSys.GetErrorMsg(err))
    assert(name is "Noto Sans", "Expected ResolveFamilyName() to return 'Noto Sans' as the default font")
 end

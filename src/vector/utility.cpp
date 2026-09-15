@@ -558,14 +558,14 @@ ERR get_font(kt::Log &Log, std::string_view Family, std::string_view Style, int 
 
                if (font.metrics.contains(style)) {
                   auto new_size = sz.try_emplace(Size, font, font.metrics[style], Size);
-                  if (!new_size.first->second.ft_size) return ERR::Failed; // Verify success
+                  if (!new_size.first->second.ft_size) return ERR::CreateResource; // Verify success
                   *Handle = &new_size.first->second;
                   return ERR::Okay;
                }
                else {
                   if (!font.metrics.empty()) Log.warning("Font metrics do not support style '%s'", style.c_str());
                   auto new_size = sz.try_emplace(Size, font, Size);
-                  if (!new_size.first->second.ft_size) return ERR::Failed; // Verify success
+                  if (!new_size.first->second.ft_size) return ERR::CreateResource; // Verify success
                   *Handle = &new_size.first->second;
                   return ERR::Okay;
                }

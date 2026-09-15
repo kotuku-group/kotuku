@@ -27,7 +27,7 @@ end
    except ex
       assert(ex.message.find('Custom error message'), 'Error message should contain custom message')
    success
-      error('Assert should have failed')
+      assert(false, 'Assert should have failed')
    end
 end
 
@@ -40,7 +40,7 @@ end
    except ex
       assert(ex.message.find('Assertion failed'), 'Error should contain default message, got ' .. ex.message)
    success
-      error('Assert should have failed')
+      assert(false, 'Assert should have failed')
    end
 end
 
@@ -98,7 +98,7 @@ end
    try
       assert(nil, 'nil is falsey')
    success
-      error('Assert on nil should fail')
+      assert(false, 'Assert on nil should fail')
    end
 end
 
@@ -128,6 +128,6 @@ end
 
    -- Both a and b should be nil since shadow assert() returns nothing
    if type(a) != 'nil' or type(b) != 'nil' then
-      error('Shadow assert() should return no values, got ' .. tostring(a) .. ' and ' .. tostring(b))
+      assert(false, 'Shadow assert() should return no values, got ' .. tostring(a) .. ' and ' .. tostring(b))
    end
 end

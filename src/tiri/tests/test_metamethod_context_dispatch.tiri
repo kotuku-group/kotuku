@@ -12,7 +12,7 @@ function enforce_hotpath() end
          return &id is Other.id
       end,
       __newindex = function(Key, Value)
-         error(f'Colour tables are immutable: {Key}')
+         raise f'Colour tables are immutable: {Key}'
       end
    }
    local first = setmetatable({ name = 'red', id = 7 }, colour_mt)
@@ -137,7 +137,7 @@ end
 @Test function MetamethodReturnsAndErrorsRestoreTheCallerContext()
    local caller = { name = 'caller' }
    local read_or_fail = function(Fail:bool):str
-      if Fail then error('expected method failure') end
+      if Fail then raise 'expected method failure' end
       return &name
    end
    local receiver = setmetatable({ name = 'metamethod' }, { __call = read_or_fail })
@@ -156,6 +156,37 @@ end
       assert(failed, 'The method should propagate its body error')
       assert(&name is 'caller', 'An error should restore the caller context')
    end
+end
+
+@Test(hotpath=1) function MetamethodReturnRootsRestoreContextBeforeTryEntry()
+   jit.flush()
+
+   function exercise_return()
+      local caller = { name = 'caller' }
+      local receiver = setmetatable({ name = 'receiver' }, {
+         __call = function(Fail:bool):str
+            if Fail then raise 'return root failure' end
+            return &name
+         end
+      })
+      using caller do
+         assert(receiver(false) is 'receiver')
+         assert(&name is 'caller', 'A compiled return must remove its receiver before entering try')
+         local caught = false
+         try
+            receiver(true)
+         except e
+            caught = true
+            assert(e.message.find('return root failure') != nil)
+            assert(&name is 'caller', 'The exception handler should retain the enclosing caller context')
+         end
+         assert(caught, 'The metamethod error should reach the handler')
+         assert(&name is 'caller', 'Exception cleanup should preserve the context saved at try entry')
+      end
+   end
+
+   for _ in {0 to 200} do exercise_return() end
+   jit.flush()
 end
 
 @Test function MetamethodCleanupRunsBeforeItsContextIsRestored()
@@ -213,7 +244,7 @@ end
    })
    function fail_with_close()
       local resource <close> = close_target
-      error('dispatch close failure')
+      raise 'dispatch close failure'
    end
    try
       fail_with_close()
@@ -258,7 +289,7 @@ end
    setmetatable(values, {
       __iter = function():func
          assert(&name is 'iterator', '__iter should enter its selected table context before an error')
-         error('expected iteration preparation failure')
+         raise 'expected iteration preparation failure'
       end
    })
 

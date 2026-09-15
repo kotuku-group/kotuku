@@ -32,6 +32,8 @@ LJ_ASMF int lj_vm_cpuid(uint32_t f, uint32_t res[4]);
 void lj_vm_cachesync(void *start, void *end);
 #endif
 LJ_ASMF double lj_vm_foldarith(double x, double y, int op);
+LJ_ASMF double lj_vm_min(double X, double Y);
+LJ_ASMF double lj_vm_max(double X, double Y);
 #if LJ_HASJIT
 LJ_ASMF double lj_vm_foldfpm(double x, int op);
 #endif
@@ -78,6 +80,7 @@ LJ_ASMF double cmath_atan(double);
 LJ_ASMF double cmath_sinh(double);
 LJ_ASMF double cmath_cosh(double);
 LJ_ASMF double cmath_tanh(double);
+LJ_ASMF double cmath_fmod(double, double);
 LJ_ASMF double cmath_sqrt(double);
 LJ_ASMF double cmath_log(double);
 LJ_ASMF double cmath_log2(double);
@@ -90,6 +93,9 @@ LJ_ASMF double lj_vm_log2(double);
 #define lj_vm_log2   cmath_log2
 #endif
 LJ_ASMF int32_t lj_vm_modi(int32_t, int32_t);
+#if LJ_TARGET_X64
+LJ_ASMF double lj_vm_fmod(double, double);
+#endif
 
 #if LJ_HASJIT
 #if LJ_TARGET_X86ORX64

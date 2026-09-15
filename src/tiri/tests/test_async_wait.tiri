@@ -75,7 +75,7 @@ end
       msg('--- Going to sleep ---')
       async.wait(script, 0.1)
    success
-      error('Expected exception on timeout inside try block')
+      assert(false, 'Expected exception on timeout inside try block')
    end
 
    async.wait(script, 2.0)

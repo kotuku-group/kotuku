@@ -64,7 +64,7 @@ end
 
 @Test; @Requires(display=true)
 function ErrorUnwindClearsViewMode()
-   expect_failure(() => do local failed <view> = error('expected failure') end,
+   expect_failure(() => do local failed <view> = raise('expected failure') end,
       'The failing view initialiser should be catchable')
 
    local bitmap = new_bitmap()
@@ -80,7 +80,7 @@ function CaughtErrorPreservesOuterViewMode()
 
    function read_after_error(Bitmap:obj):array<any>
       try
-         error('expected failure')
+         raise 'expected failure'
       except error_value
       end
       return Bitmap.data

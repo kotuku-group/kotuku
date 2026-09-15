@@ -439,6 +439,7 @@ static const FieldDef clStatus[] = {
 //********************************************************************************************************************
 
 static ERR  check_incoming_end(extHTTP *);
+static void set_http_status_error(extHTTP *);
 static ERR  parse_file(extHTTP *, std::string &);
 static void parse_file(extHTTP *, std::ostringstream &);
 static ERR  parse_response(extHTTP *, std::string_view);
@@ -768,7 +769,7 @@ static ERR HTTP_Activate(extHTTP *Self)
       }
       else {
          log.warning("HTTP method no. %d not understood.", int(Self->Method));
-         Self->Error = ERR::Failed;
+         Self->Error = ERR::NoSupport;
          return Self->Error;
       }
 

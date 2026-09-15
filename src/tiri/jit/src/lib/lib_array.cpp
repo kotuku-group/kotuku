@@ -317,47 +317,28 @@ static bool is_unsigned_format(CSTRING Format, bool Wide)
 }
 
 //********************************************************************************************************************
-// Usage: array.new(size, type) or array.new('str')
+// Usage: array.new(type, size)
 //
-// Creates a new array of the specified size and element type.
-//
-//   size: number of elements (must be non-negative)
-//   type: element type string ("char", "int16", "int", "int64", "float", "double", "str", "StructName")
+// Creates a new array of the specified element type and non-negative size.
 
 LJLIB_CF(array_new)      LJLIB_REC(.)
 {
-   GCarray *arr;
+   auto size = lj_lib_checkint(L, 2);
+   if (size < 0) lj_err_argv(L, 2, ErrMsg::NUMRNG, "non-negative", "negative");
+   auto descriptor = parse_elemtype(L, 1);
 
-   auto type = lua_type(L, 1);
-   if (type IS LUA_TSTRING) {
-      TValue *o = L->base;
-      GCstr *s = strV(o);
-      auto elem_type = AET::BYTE;
-      arr = lj_array_new(L, s->len, elem_type);
-
-      kt::copymem(strdata(s), arr->get<CSTRING>(), s->len);
-   }
-   else {
-      auto size = lj_lib_checkint(L, 1);
-      if (size < 0) lj_err_argv(L, 1, ErrMsg::NUMRNG, "non-negative", "negative");
-      auto descriptor = parse_elemtype(L, 2);
-
-      if (descriptor.storage IS AET::PTR) lj_err_argv(L, 2, ErrMsg::ARRTYPE); // For Kotuku functions only
-      else if (descriptor.storage IS AET::STRUCT) {
-         auto struct_name = array_struct_name(L, 2);
-         if (struct_name.empty()) lj_err_argv(L, 2, ErrMsg::ARRTYPE);
-         auto struct_def = find_struct(L, struct_name);
-         if ((not struct_def) or (not lj_array_struct_is_trivial(*struct_def))) {
-            lj_err_argv(L, 2, ErrMsg::ARRTYPE);
-         }
-         descriptor.struct_def = struct_def;
-         arr = lj_array_new(L, uint32_t(size), descriptor);
+   if (descriptor.storage IS AET::PTR) lj_err_argv(L, 1, ErrMsg::ARRTYPE); // For Kotuku functions only
+   else if (descriptor.storage IS AET::STRUCT) {
+      auto struct_name = array_struct_name(L, 1);
+      if (struct_name.empty()) lj_err_argv(L, 1, ErrMsg::ARRTYPE);
+      auto struct_def = find_struct(L, struct_name);
+      if ((not struct_def) or (not lj_array_struct_is_trivial(*struct_def))) {
+         lj_err_argv(L, 1, ErrMsg::ARRTYPE);
       }
-      else arr = lj_array_new(L, uint32_t(size), descriptor);
+      descriptor.struct_def = struct_def;
    }
 
-   // Per-instance metatable is null - base metatable will be used automatically
-
+   GCarray *arr = lj_array_new(L, uint32_t(size), descriptor);
    setarrayV(L, L->top++, arr);
    return 1;
 }
@@ -2235,6 +2216,7 @@ LJLIB_CF(array_each)
 }
 
 //********************************************************************************************************************
+
 static int array_map_same(lua_State *L)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
@@ -2293,10 +2275,57 @@ LJLIB_CF(array_map)
 // Usage: array.mapSame(arr, transform)
 //
 // Maps values into a new array with the source array's exact storage descriptor.
+//
+// Zero denotes an uninitialised worker; a function is the cached worker.
 
+LJLIB_PUSH(0)
 LJLIB_CF(array_mapSame)
 {
-   return array_map_same(L);
+   GCarray *source = lj_lib_checkarray(L, 1);
+   luaL_checktype(L, 2, LUA_TFUNCTION);
+   if (not source->len) return array_map_same(L);
+
+   GCfunc *method = curr_func(L);
+   TValue *worker = &method->c.upvalue[0];
+   if (tvisnumber(worker)) {
+      // Diagnostic parsing owns script-level variable metadata; internal compilation must not replace it.
+      if ((L->script->JitOptions & JOF::DIAGNOSE) != JOF::NIL) return array_map_same(L);
+
+      // Compile only on first use, retaining canonical BFUNC identity.  Publish after successful compilation so
+      // an allocation failure leaves the worker retryable.  The active native frame roots the method and arguments.
+
+      constexpr auto worker_source = R"tiri(
+return function(Source:array<any>, Callback:func, Result:array<any>, Count:num)
+   local index = 0
+   while index < Count do
+      if index >= #Source then break end
+      Result[index] = Callback(Source[index], index)
+      index++
+   end
+end
+)tiri";
+      if (lua_load(L, worker_source, "=array.mapSame") != 0) lua_error(L);
+      lua_call(L, 0, 1);
+      copyTV(L, worker, L->top - 1);
+      lj_gc_barrier(L, method, L->top - 1);
+      lua_pop(L, 1);
+   }
+
+   if (not tvisfunc(worker)) return array_map_same(L);
+
+   MSize count = source->len;
+   GCarray *result = lj_array_new_like(L, source, count);
+   setarrayV(L, L->top++, result);
+
+   // All values remain rooted in this native frame and the bytecode call frame.  Only one C boundary per pipeline.
+   
+   copyTV(L, L->top++, worker);
+   lua_pushvalue(L, 1);
+   lua_pushvalue(L, 2);
+   setarrayV(L, L->top++, result);
+   lua_pushinteger(L, count);
+   lua_call(L, 4, 0);
+   return 1;
 }
 
 //********************************************************************************************************************
@@ -2959,52 +2988,64 @@ extern "C" int luaopen_array(lua_State *L)
    setgcref(basemt_it(g, LJ_TARRAY), obj2gco(lib));
 
    // Register array interface prototypes for compile-time type inference
-   reg_iface_prototype("array", "new", { TiriType::Array }, { TiriType::Num, TiriType::Str });
-   reg_iface_prototype("array", "of", { TiriType::Array }, { TiriType::Str }, FProtoFlags::Variadic);
+   reg_iface_prototype("array", "new", { TiriType::Array }, { TiriType::Str, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(2));
+   reg_iface_prototype("array", "of", { TiriType::Array }, { TiriType::Str, TiriType::Any }, FProtoFlags::Variadic,
+      FProtoArity::required(2));
    // Methods
    reg_iface_method(L, "array", "table", TiriType::Array, builtin_callable_id(FastFunc::array_table),
       { TiriType::Table }, { TiriType::Array });
    reg_iface_method(L, "array", "concat", TiriType::Array, builtin_callable_id(FastFunc::array_concat),
-      { TiriType::Str }, { TiriType::Array, TiriType::Str, TiriType::Str, TiriType::Num, TiriType::Num });
+      { TiriType::Str }, { TiriType::Array, TiriType::Str, TiriType::Str, TiriType::Num, TiriType::Num },
+      FProtoFlags::None, FProtoArity::required(1));
    reg_iface_method(L, "array", "first", TiriType::Array, builtin_callable_id(FastFunc::array_first),
-      { TiriType::Any }, { TiriType::Array, TiriType::Func }, FProtoFlags::ContextIndependent);
+      { TiriType::Any }, { TiriType::Array, TiriType::Func }, FProtoFlags::ContextIndependent,
+      FProtoArity::required(1));
    reg_iface_method(L, "array", "last", TiriType::Array, builtin_callable_id(FastFunc::array_last),
-      { TiriType::Any }, { TiriType::Array, TiriType::Func }, FProtoFlags::ContextIndependent);
+      { TiriType::Any }, { TiriType::Array, TiriType::Func }, FProtoFlags::ContextIndependent,
+      FProtoArity::required(1));
    reg_iface_method(L, "array", "clear", TiriType::Array, builtin_callable_id(FastFunc::array_clear), {},
       { TiriType::Array });
    reg_iface_method(L, "array", "resize", TiriType::Array, builtin_callable_id(FastFunc::array_resize), {},
       { TiriType::Array, TiriType::Num });
    reg_iface_method(L, "array", "push", TiriType::Array, builtin_callable_id(FastFunc::array_push), {},
-      { TiriType::Array, TiriType::Any }, FProtoFlags::ContextIndependent);
+      { TiriType::Array, TiriType::Any }, FProtoFlags::Variadic | FProtoFlags::ContextIndependent,
+      FProtoArity::required(1));
 
    reg_iface_method(L, "array", "pop", TiriType::Array, builtin_callable_id(FastFunc::array_pop),
-      { TiriType::Any }, { TiriType::Array }, FProtoFlags::ContextIndependent);
+      { TiriType::Any }, { TiriType::Array, TiriType::Num }, FProtoFlags::ContextIndependent,
+      FProtoArity::required(1));
    reg_iface_method(L, "array", "copy", TiriType::Array, builtin_callable_id(FastFunc::array_copy), {},
-      { TiriType::Array, TiriType::Any, TiriType::Num, TiriType::Num, TiriType::Num });
+      { TiriType::Array, TiriType::Any, TiriType::Num, TiriType::Num, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(2));
    reg_iface_method(L, "array", "getString", TiriType::Array, builtin_callable_id(FastFunc::array_getString),
-      { TiriType::Str }, { TiriType::Array, TiriType::Num, TiriType::Num });
+      { TiriType::Str }, { TiriType::Array, TiriType::Num, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(1));
    reg_iface_method(L, "array", "setString", TiriType::Array, builtin_callable_id(FastFunc::array_setString), {},
-      { TiriType::Array, TiriType::Str, TiriType::Num });
+      { TiriType::Array, TiriType::Str, TiriType::Num }, FProtoFlags::None, FProtoArity::required(2));
    reg_iface_method(L, "array", "type", TiriType::Array, builtin_callable_id(FastFunc::array_type),
       { TiriType::Str }, { TiriType::Array });
    reg_iface_method(L, "array", "readOnly", TiriType::Array, builtin_callable_id(FastFunc::array_readOnly),
       { TiriType::Bool }, { TiriType::Array });
    reg_iface_method(L, "array", "fill", TiriType::Array, builtin_callable_id(FastFunc::array_fill), {},
-      { TiriType::Array, TiriType::Any, TiriType::Any, TiriType::Num });
+      { TiriType::Array, TiriType::Any, TiriType::Any, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(2));
    reg_iface_method(L, "array", "find", TiriType::Array, builtin_callable_id(FastFunc::array_find),
       { TiriType::Any }, { TiriType::Array, TiriType::Func });
    reg_iface_method(L, "array", "indexOf", TiriType::Array, builtin_callable_id(FastFunc::array_indexOf),
-      { TiriType::Num }, { TiriType::Array, TiriType::Any, TiriType::Any, TiriType::Num });
+      { TiriType::Num }, { TiriType::Array, TiriType::Any, TiriType::Any, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(2));
    reg_iface_method(L, "array", "reverse", TiriType::Array, builtin_callable_id(FastFunc::array_reverse),
       { TiriType::Array }, { TiriType::Array });
    reg_iface_method(L, "array", "slice", TiriType::Array, builtin_callable_id(FastFunc::array_slice),
-      { TiriType::Array }, { TiriType::Array, TiriType::Any });
+      { TiriType::Array }, { TiriType::Array, TiriType::Any }, FProtoFlags::None, FProtoArity::required(2));
    reg_iface_method(L, "array", "sort", TiriType::Array, builtin_callable_id(FastFunc::array_sort),
-      { TiriType::Array }, { TiriType::Array, TiriType::Any });
+      { TiriType::Array }, { TiriType::Array, TiriType::Any }, FProtoFlags::None, FProtoArity::required(1));
    reg_iface_method(L, "array", "each", TiriType::Array, builtin_callable_id(FastFunc::array_each), {},
       { TiriType::Array, TiriType::Func });
    reg_iface_method(L, "array", "map", TiriType::Array, builtin_callable_id(FastFunc::array_map),
-      { TiriType::Array }, { TiriType::Array, TiriType::Func, TiriType::Str });
+      { TiriType::Array }, { TiriType::Array, TiriType::Func, TiriType::Str }, FProtoFlags::None,
+      FProtoArity::required(2));
    reg_iface_method(L, "array", "mapSame", TiriType::Array, builtin_callable_id(FastFunc::array_mapSame),
       { TiriType::Array }, { TiriType::Array, TiriType::Func });
    reg_iface_method(L, "array", "findIndex", TiriType::Array, builtin_callable_id(FastFunc::array_findIndex),
@@ -3018,9 +3059,11 @@ extern "C" int luaopen_array(lua_State *L)
    reg_iface_method(L, "array", "all", TiriType::Array, builtin_callable_id(FastFunc::array_all),
       { TiriType::Bool }, { TiriType::Array, TiriType::Func });
    reg_iface_method(L, "array", "insert", TiriType::Array, builtin_callable_id(FastFunc::array_insert), {},
-      { TiriType::Array, TiriType::Num, TiriType::Any });
+      { TiriType::Array, TiriType::Num, TiriType::Any }, FProtoFlags::Variadic,
+      FProtoArity::required(2));
    reg_iface_method(L, "array", "remove", TiriType::Array, builtin_callable_id(FastFunc::array_remove),
-      { TiriType::Any }, { TiriType::Array, TiriType::Num });
+      { TiriType::Any }, { TiriType::Array, TiriType::Num, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(2));
    reg_iface_method(L, "array", "clone", TiriType::Array, builtin_callable_id(FastFunc::array_clone),
       { TiriType::Array }, { TiriType::Array });
 

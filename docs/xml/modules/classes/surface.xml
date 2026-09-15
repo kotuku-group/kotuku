@@ -213,11 +213,11 @@ the surface area first).</li>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Failed">The intermediate image object could not be initialised or saved.</error>
         <error code="Search">A search routine in this function failed</error>
         <error code="AccessObject">Attempting to lock an object failed</error>
         <error code="NewObject">The intermediate image object could not be created.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="CreateResource">The intermediate image object could not be initialised or saved.</error>
       </result>
     </action>
 
@@ -348,7 +348,9 @@ the surface area first).</li>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Failed">General failure</error>
+        <error code="Args">An invalid refresh rate was calculated for the timer subscription.</error>
+        <error code="SystemLocked">The timer subsystem could not be locked.</error>
+        <error code="InvalidState">The surface is marked for termination.</error>
       </result>
       <tags>non-blocking, mutates-object</tags>
     </method>

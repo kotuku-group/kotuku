@@ -52,9 +52,19 @@ constexpr uint8_t BCDUMP_HEAD3 = 0x4a;
 // Version 0x96 adds BC_ISIN and BC_ISNIN. Version 0x97 adds rawtype and shifts the generated fast-function ordering.
 // Version 0x98 adds forEach and shifts the generated fast-function ordering.  Version 0x99 adds the Stage A array
 // and range collection compatibility callables. Version 0x9a adds BC_CHECKALLENTER and BC_CHECKALLLEAVE. Version 0x9b
-// adds BC_DEFERARM and BC_DEFERCONSUME. Older chunks are rejected rather than retaining compatibility shims.
+// adds BC_DEFERARM and BC_DEFERCONSUME. Version 0x9c removes math.fmod from the generated fast-function ordering.
+// Version 0x9d removes math.pow from that ordering.  Older chunks are rejected rather than retaining compatibility
+// shims.  Version 0x9e renames the canonical object._state callable to object.state.
 
-constexpr uint8_t BCDUMP_VERSION = 0x9b;
+// Version 0x9f reorders array.new arguments and adds the string.toArray callable.
+
+// Version 0xa0 adds BC_RETHROW, the hidden exception debug variable and a portable exception metadata trailer.
+// Version 0xa1 removes the public error callable and shifts the generated fast-function ordering.
+// Version 0xa2 removes string.len and shifts the generated fast-function ordering.
+// Version 0xa3 removes collectgarbage and newproxy from the generated fast-function ordering.
+// Version 0xa4 adds a portable compilation-unit source manifest and remapped prototype/line source identities.
+// Version 0xa6 reconstructs deterministic interpreter-only policy from validated contract descriptors and bytecode.
+constexpr uint8_t BCDUMP_VERSION = 0xa6;
 
 // Compatibility flags.
 

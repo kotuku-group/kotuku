@@ -87,3 +87,32 @@ This boundary is deliberate:
 
 Serialised bytecode format `0x87` carries names and `BC_MODACT` operands, never native pointers or export-list indices.
 Older formats are rejected rather than retaining the removed compiler-private dependency binder.
+
+## Invocation storage and output ownership
+
+Published callable metadata still contains no invocation storage.  The cached-CIF bridge uses aligned eight-byte
+argument/result slots inside its existing 256-byte buffer, plus exact-type bounded stores for C++ temporaries.
+Preparation and result traversal use the same padding rules.
+
+The bridge holds native owners outside `protected_tiri_call()`, which uses a protected runtime C frame without adding
+another Lua call frame or changing the closure upvalue.  Caller try handlers are saved and suspended while the bridge
+runs; checkall's immediate-scope identity remains intact.  On an error, the runtime returns to this boundary before
+native storage is released, then the original error is rethrown.  Ownership is cleared after a copied allocation is
+freed or a GC wrapper successfully adopts it.  The same protection releases structure conversion's temporary registry
+references.  This does not depend on platform-specific C++ destructor unwinding.
+
+For a non-void function, the native return value is the first Tiri result.  Each `FD_RESULT` parameter then contributes
+one result in descriptor order.  Result slots begin zero/null, so an error path that leaves an output untouched exposes
+that initial value.  Unchecked calls retain native error results and any outputs produced by the native function; `check`
+and immediate-scope `checkall` promote qualifying native errors without invoking the native function again.
+
+Output conversion preserves established representations rather than normalising them to native-return semantics:
+unsigned native scalar returns are pushed as numbers, whereas `FD_INT` output slots use the legacy integer conversion;
+64-bit values retain the runtime's numeric precision limits.  A null plain-pointer native return is `nil`, while a null
+plain-pointer output slot remains light userdata.  Strings and structures are copied unless their descriptor specifies
+resource ownership.  An allocated object or resource transfers ownership to its GC wrapper only after that wrapper is
+successfully pushed; every allocation not transferred is released exactly once, including after a native error or a
+later conversion failure.
+
+Supported output signatures remain on cached CIF; this design adds no production direct dispatch or state pointer to a
+callable.

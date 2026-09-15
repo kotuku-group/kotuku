@@ -169,7 +169,7 @@
     <struct name="TimeZoneInfo" comment="Time zone information returned from GetTimeZoneInfo()">
       <field name="ZoneID" type="STRING">Preferred public ID, e.g. Europe/London or UTC.</field>
       <field name="NativeID" type="STRING">Host-native ID, e.g. GMT Standard Time on Windows.</field>
-      <field name="Source" type="STRING">"tzif", "win32", or "utc".</field>
+      <field name="Source" type="STRING">&quot;tzif&quot;, &quot;win32&quot;, or &quot;utc&quot;.</field>
       <field name="DataPath" type="STRING">TZif path on Linux, otherwise empty.</field>
       <field name="Version" type="STRING">TZDB/source version if available, otherwise empty.</field>
       <field name="Transitions" type="kt::vector&lt;TimeZoneTransition&gt;">Transitions available for the requested range.</field>

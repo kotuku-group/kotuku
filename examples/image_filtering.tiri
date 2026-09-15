@@ -17,8 +17,8 @@ Image Filter Demonstration
    glRotate = 0
    glScale = 1.0
 
-   glSelf = <{ obj.find('self') }>
-   glPath = <{ glSelf.workingPath }>
+   glSelf:obj = <obj{ obj.find('self') }>
+   glPath:str = <str{ glSelf.workingPath }>
 
 ----------------------------------------------------------------------------------------------------------------------
 

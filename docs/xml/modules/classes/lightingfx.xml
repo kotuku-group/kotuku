@@ -147,7 +147,7 @@ Lr,Lg,Lb = RGB components of light
 
     <field>
       <name>Exponent</name>
-      <comment>Exponent for specular lighting, larger is more "shiny".  Ranges from 1.0 to 128.0.</comment>
+      <comment>Exponent for specular lighting, larger is more &quot;shiny&quot;.  Ranges from 1.0 to 128.0.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>

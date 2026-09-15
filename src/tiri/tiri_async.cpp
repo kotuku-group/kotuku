@@ -34,6 +34,7 @@ struct ThreadMsg {
    int      ObjRef;   // Registry reference that pins the GCobject from GC collection
    extTiri *Owner;    // The parent script that owns the registry references
    double   Key;      // Client-provided key value forwarded to the callback
+   bool     ScriptCallback; // Use the simplified async.script() callback signature
 };
 
 static bool has_results(const FunctionField *Args)
@@ -56,7 +57,7 @@ static void msg_thread_complete(ACTIONID ActionID, OBJECTPTR Object, ERR Error, 
    auto lua = tiri->Lua;
 
    if (Msg->Callback.defined()) {
-      if ((Object) and (Object->baseClassID() IS CLASSID::SCRIPT)) {
+      if (Msg->ScriptCallback) {
          auto args = std::to_array<ScriptArg>({
             { "Object", Object, FD_OBJECTPTR }
          });
@@ -132,7 +133,7 @@ static int async_script(lua_State *Lua)
    lua_pushvalue(Lua, 1);
    int obj_ref = luaL_ref(Lua, LUA_REGISTRYINDEX);
 
-   auto msg = new ThreadMsg { client_callback, obj_ref, Lua->script, 0 };
+   auto msg = new ThreadMsg { client_callback, obj_ref, Lua->script, 0, true };
    auto callback = C_FUNCTION(msg_thread_complete, msg);
 
    if (AsyncAction(AC::Activate, gc_script->ptr, nullptr, &callback) != ERR::Okay) {
@@ -173,7 +174,7 @@ static int dispatch_async_object_call(lua_State *Lua, GCobject *GcObj, CSTRING N
    lua_pushvalue(Lua, 1);
    int obj_ref = luaL_ref(Lua, LUA_REGISTRYINDEX);
 
-   auto msg = new ThreadMsg { client_callback, obj_ref, Lua->script, lua_tonumber(Lua, 4) };
+   auto msg = new ThreadMsg { client_callback, obj_ref, Lua->script, lua_tonumber(Lua, 4), false };
    auto callback = C_FUNCTION(msg_thread_complete, msg);
 
    auto abort = [&]() {
@@ -595,12 +596,16 @@ void register_async_class(lua_State *Lua)
    lua_pop(Lua, 2);                            // Pop async table and pool table
 
    // Register async interface prototypes for compile-time type inference
-   reg_iface_prototype("async", "action",  {}, { TiriType::Any, TiriType::Any, TiriType::Func, TiriType::Num });
+   reg_iface_prototype("async", "action",  {}, { TiriType::Any, TiriType::Any, TiriType::Func, TiriType::Num },
+      FProtoFlags::Variadic, FProtoArity::required(2));
    reg_iface_prototype("async", "cancel",  { TiriType::Num }, { TiriType::Any });
-   reg_iface_prototype("async", "method",  {}, { TiriType::Any, TiriType::Any, TiriType::Func, TiriType::Num });
+   reg_iface_prototype("async", "method",  {}, { TiriType::Any, TiriType::Any, TiriType::Func, TiriType::Num },
+      FProtoFlags::Variadic, FProtoArity::required(2));
    reg_iface_prototype("async", "pending", { TiriType::Num }, { TiriType::Object });
-   reg_iface_prototype("async", "script",  {}, { TiriType::Object, TiriType::Func });
-   reg_iface_prototype("async", "wait",    { TiriType::Num }, { TiriType::Any, TiriType::Num });
+   reg_iface_prototype("async", "script",  {}, { TiriType::Object, TiriType::Func }, FProtoFlags::None,
+      FProtoArity::required(1));
+   reg_iface_prototype("async", "wait",    { TiriType::Num }, { TiriType::Any, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(1));
 
    lua_pop(Lua, 2); // Drop the Tiri.async metatable and the async library table
 }

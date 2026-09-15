@@ -42,7 +42,7 @@ end
          elseif err is ERR_Disconnected then
             Socket.acSignal()
          else
-            error('Read() failed on NetSocket.')
+            raise 'Read() failed on NetSocket.'
          end
       end
    } )

@@ -43,7 +43,7 @@ function rawHttpRequestWithHeaders(Method:str, Path:str, Headers:table):<num, st
          elseif err is ERR_Disconnected then
             Socket.acSignal()
          else
-            error('Raw HTTP read failed: ' .. mSys.GetErrorMsg(err))
+            raise 'Raw HTTP read failed: ' .. mSys.GetErrorMsg(err)
          end
       end
    })
@@ -142,7 +142,7 @@ end
                res.json({
                   message = 'Compression test response',
                   data = largeMessage,
-                  size = largeMessage.len()
+                  size = #largeMessage
                })
             end
          },
@@ -153,6 +153,15 @@ end
                   error = 'Internal server error occurred',
                   code = 'INTERNAL_ERROR',
                   timestamp = mSys.PreciseTime()
+               })
+            end
+         },
+         { pattern = '/error/large',
+            method = 'GET',
+            handler = function(req, res)
+               res.status(500).json({
+                  error = 'Large internal server error',
+                  details = 'x'.rep(8192)
                })
             end
          },
@@ -418,6 +427,58 @@ end
    response = json.decode(content)
    assert(response.error, 'Error response should contain error message')
    assert(response.code is 'INTERNAL_ERROR', 'Error response should contain error code')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ErrorStatusWithoutContent()
+   http = obj.new('http', {
+      src      = 'http://127.0.0.1:' .. SERVER_PORT .. '/error/test',
+      method   = 'GET',
+      flags    = HTF_NO_HEAD,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.status is 500, 'Error response should return 500, got: ' .. http.status)
+   assert(http.error is ERR_HTTPStatus, 'Non-streamed error response should return HTTPStatus, got: ' ..
+      mSys.GetErrorMsg(http.error))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ErrorStatusAfterContent()
+   content = ''
+
+   http = obj.new('http', {
+      src      = 'http://127.0.0.1:' .. SERVER_PORT .. '/error/large',
+      method   = 'GET',
+      flags    = HTF_NO_HEAD,
+      incoming = function(HTTP, Buffer)
+         content ..= Buffer.getString()
+      end,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.status is 500, 'Large error response should return 500, got: ' .. http.status)
+   assert(http.error is ERR_HTTPStatus, 'Large error response should return HTTPStatus, got: ' ..
+      mSys.GetErrorMsg(http.error))
+   assert(#content > 512, 'Large error response body was not received')
 end
 
 ----------------------------------------------------------------------------------------------------------------------

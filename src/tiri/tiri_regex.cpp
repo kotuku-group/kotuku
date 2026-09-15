@@ -695,14 +695,23 @@ void register_regex_class(lua_State *Lua)
    lua_pop(Lua, 2); // Drop the Tiri.regex metatable and the regex library table
 
    // Register regex interface prototypes for compile-time type inference
-   reg_iface_prototype("regex", "new", { TiriType::Userdata }, { TiriType::Str, TiriType::Num });
+   reg_iface_prototype("regex", "new", { TiriType::Userdata }, { TiriType::Str, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(1));
    reg_iface_prototype("regex", "escape", { TiriType::Str }, { TiriType::Str });
-   reg_iface_prototype("regex", "test", { TiriType::Bool }, { TiriType::Str, TiriType::Num });
-   reg_iface_prototype("regex", "match", { TiriType::Array }, { TiriType::Str, TiriType::Num });
-   reg_iface_prototype("regex", "search", { TiriType::Array }, { TiriType::Str, TiriType::Num });
-   reg_iface_prototype("regex", "replace", { TiriType::Str }, { TiriType::Str, TiriType::Str, TiriType::Num });
-   reg_iface_prototype("regex", "split", { TiriType::Array }, { TiriType::Str, TiriType::Num });
-   reg_iface_prototype("regex", "findFirst", { TiriType::Num, TiriType::Num, TiriType::Array }, { TiriType::Str, TiriType::Num, TiriType::Num });
-   reg_iface_prototype("regex", "extract", { TiriType::Str }, { TiriType::Str, TiriType::Num, TiriType::Num });
-   reg_iface_prototype("regex", "findAll", { TiriType::Func }, { TiriType::Str, TiriType::Num, TiriType::Num });
+   reg_iface_prototype("regex", "test", { TiriType::Bool }, { TiriType::Str, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(1));
+   reg_iface_prototype("regex", "match", { TiriType::Array }, { TiriType::Str, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(1));
+   reg_iface_prototype("regex", "search", { TiriType::Array }, { TiriType::Str, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(1));
+   reg_iface_prototype("regex", "replace", { TiriType::Str }, { TiriType::Str, TiriType::Str, TiriType::Num },
+      FProtoFlags::None, FProtoArity::required(2));
+   reg_iface_prototype("regex", "split", { TiriType::Array }, { TiriType::Str, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(1));
+   reg_iface_prototype("regex", "findFirst", { TiriType::Num, TiriType::Num, TiriType::Array },
+      { TiriType::Str, TiriType::Num, TiriType::Num }, FProtoFlags::None, FProtoArity::required(1));
+   reg_iface_prototype("regex", "extract", { TiriType::Str }, { TiriType::Str, TiriType::Num, TiriType::Num },
+      FProtoFlags::None, FProtoArity::required(2));
+   reg_iface_prototype("regex", "findAll", { TiriType::Func }, { TiriType::Str, TiriType::Num, TiriType::Num },
+      FProtoFlags::None, FProtoArity::required(1));
 }

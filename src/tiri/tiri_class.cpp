@@ -5,6 +5,29 @@ Tiri: Extends the Script class with support for the Tiri language.
 
 The Tiri class provides functionality for running scripts written in the Tiri programming language.
 
+<header>Automatic Caching</>
+
+Setting `SCF::AUTO_CACHE` automatically caches eligible file-backed scripts under `temp:tiri/cache/`.  A non-empty
+@Script.CacheFile remains authoritative and selects an explicit destination even when automatic caching is enabled.
+Automatic caching is disabled by default.  Without `SCF::AUTO_CACHE`, a script uses a cache only when
+@Script.CacheFile is set explicitly.  Direct byte-code input, statement input and overrides, string paths,
+documentation processing and parser diagnostic modes do not use automatically selected caches.
+
+Cache output records a schema-versioned manifest and byte-code payload in one envelope.  The manifest identifies the
+producing build, root source, compilation options, imports, path resolutions and compile-time conditions.  A cache is
+reused only when those observations can be reproduced from current source content.  Content digests detect edits even
+when modification dates and file sizes are unchanged.  Any mismatch recompiles from the retained source snapshot and
+republishes the cache.
+
+Schema-versioned caches require readable root and imported sources.  Legacy same-build explicit caches retain their
+source-free deployment behaviour, and a cache envelope opened directly as a `.tbc` file remains authoritative.
+Cache lookup and publication are best-effort optimisations: a missing, invalid or unwritable cache does not prevent
+valid source from compiling.  Warm validation still reads and digests the root and imported source files.
+
+Caches are disabled for a script that sets `SCF::PROCESS_DOC`, because the parser metadata collected for
+documentation tools is not stored in byte code.  Runtime-only Script flags and JIT options do not change cache
+identity.
+
 -END-
 
 *********************************************************************************************************************/
@@ -16,12 +39,15 @@ The Tiri class provides functionality for running scripts written in the Tiri pr
 #include <kotuku/modules/xml.h>
 #include <kotuku/modules/tiri.h>
 #include <kotuku/modules/module.h>
+#include <kotuku/modules/processes.h>
 #include <kotuku/strings.hpp>
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cctype>
 #include <format>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <ranges>
 #include <string>
@@ -35,14 +61,39 @@ The Tiri class provides functionality for running scripts written in the Tiri pr
 #include "parser/parser_diagnostics.h"
 #include "jit/src/debug/dump_bytecode.h"
 #include "lj_proto_registry.h"
+#include "tiri_build_identity.h"
+#include "cache_manifest.h"
 
 #include "defs.h"
 
+enum class CompilationInputOrigin : uint8_t {
+   SOURCE,
+   DIRECT_BYTECODE,
+   SELECTED_CACHE
+};
+
+struct CompilationInput {
+   std::string_view Payload;
+   bool Binary;
+};
+
 static ERR run_script(extTiri *);
 static ERR stack_args(lua_State *, OBJECTID, const FunctionField *, int8_t *);
-static ERR save_binary(extTiri *, OBJECTPTR);
+static ERR save_binary(lua_State *, OBJECTPTR, std::string_view);
+static ERR register_interfaces(lua_State *);
+static ERR initialise_compilation_state(lua_State *);
+static ERR load_statement(extTiri *);
 
-[[maybe_unused]] constexpr std::string_view check_bom(std::string_view Value)
+static ERR TIRI_Activate(extTiri *);
+static ERR TIRI_DataFeed(extTiri *, struct acDataFeed *);
+static ERR TIRI_Init(extTiri *);
+static ERR TIRI_NewChild(extTiri *, struct acNewChild &);
+static ERR TIRI_Query(extTiri *);
+static ERR TIRI_SaveToObject(extTiri *, struct acSaveToObject *);
+
+//********************************************************************************************************************
+
+constexpr std::string_view check_bom(std::string_view Value)
 {
    if ((Value.size() >= 3) and (Value[0] IS '\xef') and (Value[1] IS '\xbb') and (Value[2] IS '\xbf'))
       return Value.substr(3); // UTF-8 BOM
@@ -53,52 +104,213 @@ static ERR save_binary(extTiri *, OBJECTPTR);
    return Value;
 }
 
+//********************************************************************************************************************
+
+static bool has_script_extension(std::string_view Path, std::string_view Extension)
+{
+   return (Path.size() >= Extension.size()) and iequals(Path.substr(Path.size() - Extension.size()), Extension);
+}
+
+//********************************************************************************************************************
+
 static std::string make_chunk_name(const extTiri *Self)
 {
-   if (Self->Path.empty()) return "=script";
+   const std::string &path = (Self->Path.empty() or Self->CompilationSourcePath.empty()) ?
+      Self->Path : Self->CompilationSourcePath;
+   if (path.empty()) return "=script";
 
    std::string chunk_name;
-   chunk_name.reserve(Self->Path.size() + 1);
+   chunk_name.reserve(path.size() + 1);
    chunk_name.push_back('@');
-   chunk_name.append(Self->Path);
+   chunk_name.append(path);
    return chunk_name;
 }
 
-static ERR read_file_to_string(const std::string_view &Path, int64_t Size, std::string &Buffer, int *BytesRead)
+//********************************************************************************************************************
+
+static ERR read_open_file_to_string(objFile *File, int64_t Size, std::string &Buffer)
 {
+   if (not File) return ERR::NullArgs;
    if ((Size < 0) or (Size > int64_t(std::numeric_limits<int>::max()))) return ERR::OutOfRange;
 
-   if (Size IS 0) {
+   Buffer.resize(size_t(Size));
+   int total = 0;
+   while (total < Size) {
+      int result = 0;
+      auto output = std::span((int8_t *)Buffer.data() + total, size_t(Size - total));
+      if (auto error = File->read(output, &result); error != ERR::Okay) {
+         Buffer.clear();
+         return error;
+      }
+      if (not result) {
+         Buffer.clear();
+         return ERR::Read;
+      }
+      total += result;
+   }
+
+   int64_t final_size = 0;
+   if ((File->getSize(final_size) != ERR::Okay) or (final_size != Size)) {
       Buffer.clear();
-      if (BytesRead) *BytesRead = 0;
-      return ERR::Okay;
+      return ERR::Read;
    }
 
-   int read_size = int(Size);
-   int bytes_read = 0;
-   Buffer.resize(read_size);
-
-   auto error = ReadFileToBuffer(Path, std::span((int8_t *)Buffer.data(), size_t(read_size)), &bytes_read);
-   if (!error) {
-      Buffer.resize(bytes_read);
-      if (BytesRead) *BytesRead = bytes_read;
-   }
-   else Buffer.clear();
-
-   return error;
-}
-
-static ERR compiled_payload(std::string_view Source, std::string_view &Payload)
-{
-   auto header_len = std::string_view(LUA_COMPILED).size();
-   auto payload_offset = Source.find('\0', header_len);
-   if (payload_offset IS std::string_view::npos) return ERR::InvalidData;
-
-   Payload = Source.substr(payload_offset + 1);
    return ERR::Okay;
 }
 
-[[maybe_unused]] static ERR register_interfaces(extTiri *);
+//********************************************************************************************************************
+// Most bytes accepted between the compiled marker and the NUL separator, including the separating space.  Bounding
+// the search keeps a malformed file from being scanned in full for a separator that does not exist.
+
+constexpr size_t MAX_IDENTITY_TOKEN = 128;
+
+//********************************************************************************************************************
+// Split a compiled Tiri file into its optional identity token and the VM payload.  Files produced before identity
+// tokens existed carry no token, which Token reports as an empty view.
+
+static ERR compiled_payload(std::string_view Source, std::string_view &Payload, std::string_view *Token = nullptr)
+{
+   constexpr size_t marker_len = sizeof(LUA_COMPILED) - 1;
+   if (not Source.starts_with(LUA_COMPILED)) return ERR::InvalidData;
+
+   auto window = Source.substr(0, std::min(Source.size(), marker_len + MAX_IDENTITY_TOKEN + 1));
+   auto separator = window.find('\0', marker_len);
+   if (separator IS std::string_view::npos) return ERR::InvalidData;
+
+   Payload = Source.substr(separator + 1);
+   if (not Payload.starts_with("\x1bLJ")) return ERR::InvalidData;
+
+   if (Token) {
+      auto token = Source.substr(marker_len, separator - marker_len);
+      while ((not token.empty()) and (token.front() IS ' ')) token.remove_prefix(1);
+      *Token = token;
+   }
+
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// The build identity field always leads an identity token so that a consumer can verify the build without knowing
+// whether the source content was recorded.
+
+static std::string identity_build_field()
+{
+   return std::format("b:g:{}", TIRI_BUILD_COMMIT);
+}
+
+//********************************************************************************************************************
+// Compose the identity token embedded in compiled output.  Source is omitted when the compilation unit did not
+// originate from readable source text, in which case only the build identity can be verified on reload.
+
+static std::string make_identity_token(const std::string *Source)
+{
+   if (Source) return std::format("{} s:{:x},{:08x}", identity_build_field(), Source->size(), kt::strhash(*Source));
+   else return identity_build_field();
+}
+
+//********************************************************************************************************************
+// Validate the complete token grammar as well as the build field.  Source-free cache loading cannot compare the
+// optional source identity, but it must not allow an arbitrary suffix to turn a build-field prefix into a match.
+
+static bool identity_token_matches_build(std::string_view Token, std::string_view BuildField)
+{
+   if (Token IS BuildField) return true;
+   if ((not Token.starts_with(BuildField)) or (Token.size() <= BuildField.size()) or
+       (Token[BuildField.size()] != ' ')) return false;
+
+   auto source_field = Token.substr(BuildField.size() + 1);
+   if (not source_field.starts_with("s:")) return false;
+   source_field.remove_prefix(2);
+
+   auto comma = source_field.find(',');
+   if ((comma IS 0) or (comma IS std::string_view::npos)) return false;
+
+   auto source_size = source_field.substr(0, comma);
+   auto checksum = source_field.substr(comma + 1);
+   if (checksum.size() != 8) return false;
+
+   auto is_hex = [](char Value) {
+      constexpr std::string_view hex_digits = "0123456789abcdef";
+      return hex_digits.find(Value) != std::string_view::npos;
+   };
+   return std::ranges::all_of(source_size, is_hex) and std::ranges::all_of(checksum, is_hex);
+}
+
+//********************************************************************************************************************
+// Classify source, direct bytecode and selected cache input without changing Script provenance.
+
+static ERR classify_compilation_input(std::string_view Source, CompilationInputOrigin Origin, CompilationInput &Input,
+   std::string &Diagnostic)
+{
+   if (Origin IS CompilationInputOrigin::DIRECT_BYTECODE) {
+      tiri::cache::EnvelopeView envelope;
+      if (tiri::cache::decode_envelope(Source, envelope) IS tiri::cache::FormatError::OKAY) {
+         Input = { envelope.Payload, true };
+         Diagnostic.clear();
+         return ERR::Okay;
+      }
+   }
+
+   const bool binary = (Origin != CompilationInputOrigin::SOURCE) or Source.starts_with(LUA_COMPILED) or
+      Source.starts_with("\x1b");
+   std::string_view payload = Source;
+   if (Source.starts_with(LUA_COMPILED)) {
+      if (auto error = compiled_payload(Source, payload); error != ERR::Okay) {
+         Diagnostic = "Invalid compiled Tiri wrapper or missing VM payload.";
+         return error;
+      }
+   }
+   else if (binary and not Source.starts_with("\x1b")) {
+      Diagnostic = "Expected a compiled Tiri wrapper and VM payload.";
+      return ERR::InvalidData;
+   }
+
+   Input = { payload, binary };
+   Diagnostic.clear();
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Load one compilation unit.  Failure restores the stack; success leaves exactly one executable function.
+
+static ERR load_compilation_input(lua_State *Lua, extTiri *Self, std::string_view Source,
+   CompilationInputOrigin Origin, std::string &Diagnostic)
+{
+   const int stack_top = lua_gettop(Lua);
+   CompilationInput input;
+   if (auto error = classify_compilation_input(Source, Origin, input, Diagnostic); error != ERR::Okay) return error;
+
+   auto chunk_name = make_chunk_name(Self);
+   const int result = lua_load(Lua, input.Payload, chunk_name.c_str());
+   if (result) {
+      if (not input.Binary and Lua->parser_diagnostics and Lua->parser_diagnostics->has_errors()) {
+         Diagnostic.clear();
+         for (const auto &entry : Lua->parser_diagnostics->entries()) {
+            if (not Diagnostic.empty()) Diagnostic += "\n";
+            Diagnostic += entry.to_string(Self->LineOffset, Lua);
+         }
+      }
+      else if (auto errorstr = lua_tostringview(Lua, -1); not errorstr.empty()) {
+         Diagnostic.assign(errorstr.data(), errorstr.size());
+      }
+      else Diagnostic = input.Binary ? "Invalid compiled Tiri bytecode." : "Failed to compile Tiri source.";
+
+      lua_settop(Lua, stack_top);
+      return input.Binary ? ERR::InvalidData : ERR::Syntax;
+   }
+
+   Diagnostic.clear();
+   return ERR::Okay;
+}
+
+static CompilationInputOrigin compilation_input_origin(const extTiri *Self)
+{
+   if (Self->LoadedFromCache) return CompilationInputOrigin::SELECTED_CACHE;
+   if (Self->LoadedFromBytecodeFile and has_script_extension(Self->Path, ".tbc")) {
+      return CompilationInputOrigin::DIRECT_BYTECODE;
+   }
+   return CompilationInputOrigin::SOURCE;
+}
 
 //********************************************************************************************************************
 // Dump the variables of any global table
@@ -117,15 +329,6 @@ static ERR compiled_payload(std::string_view Source, std::string_view &Payload)
       }
    }
 }
-
-//********************************************************************************************************************
-
-static ERR TIRI_Activate(extTiri *);
-static ERR TIRI_DataFeed(extTiri *, struct acDataFeed *);
-static ERR TIRI_Init(extTiri *);
-static ERR TIRI_NewChild(extTiri *, struct acNewChild &);
-static ERR TIRI_Query(extTiri *);
-static ERR TIRI_SaveToObject(extTiri *, struct acSaveToObject *);
 
 //********************************************************************************************************************
 // Only to be used immediately after a failed lua_pcall().  Lua stores a description of the error that occurred on the
@@ -218,7 +421,7 @@ static ERR stack_args(lua_State *Lua, OBJECTID ObjectID, const FunctionField *ar
       }
       else {
          log.warning("Unsupported arg %s, flags $%.8x, aborting now.", args[i].Name, args[i].Type);
-         return ERR::Failed;
+         return ERR::UnrecognisedFieldType;
       }
       lua_settable(Lua, -3);
    }
@@ -306,7 +509,9 @@ static ERR TIRI_Activate(extTiri *Self)
 {
    kt::Log log;
 
-   if (Self->Statement.empty()) return log.warning(ERR::FieldNotSet);
+   if (Self->Statement.empty() and not Self->LoadedFromCache and not has_script_extension(Self->Path, ".tbc")) {
+      return log.warning(ERR::FieldNotSet);
+   }
 
    log.trace("Target: %d, Procedure: %s / ID #%u", Self->TargetID,
       Self->Procedure.empty() ? "." : Self->Procedure.c_str(), FUNCTION::unpackProcedureID(Self->ProcedureID));
@@ -333,7 +538,7 @@ static ERR TIRI_Activate(extTiri *Self)
 
             if (lua_pcall(Self->Lua, 0, 0, 0)) {
                process_error(Self, "Activation");
-               if (!(error = Self->Error)) error = ERR::Failed;
+               if (!(error = Self->Error)) error = ERR::Exception;
             }
          }
       }
@@ -452,13 +657,22 @@ extTiri::~extTiri()
 
 //********************************************************************************************************************
 
+#include "cache.cpp"
+
+//********************************************************************************************************************
+
 static ERR TIRI_Init(extTiri *Self)
 {
    kt::Log log;
 
+   // Cache selection and source compilation must see the same process-wide and Script-local effective options.
+   Self->LocalJitOptions = Self->JitOptions;
+   Self->GlobalJitOptions = glJitOptions;
+   Self->JitOptions |= Self->GlobalJitOptions;
+
    if (not Self->Path.empty()) {
       if (Self->Path.starts_with("string:") or Self->Path.starts_with("STRING:")); // Assume Tiri for string paths
-      else if (not wildcmp("*.tiri|*.tbc", Self->Path)) {
+      else if (not (has_script_extension(Self->Path, ".tiri") or has_script_extension(Self->Path, ".tbc"))) {
          log.warning("Path extension not recognised for '%s'", Self->Path.c_str());
          return ERR::NoSupport;
       }
@@ -469,87 +683,15 @@ static ERR TIRI_Init(extTiri *Self)
       return ERR::NoSupport;
    }
 
-   ERR error;
-   bool compile = false;
-   bool loaded = false;
-   objFile *src_file = nullptr;
    if ((Self->Statement.empty()) and (not Self->Path.empty())) {
-      int64_t src_ts = 0, src_size = 0;
-
-      if ((src_file = objFile::create::local(fl::Path(Self->Path)))) {
-         error = src_file->getTimestamp(src_ts);
-         if ((!error) or (error IS ERR::NoSupport)) error = src_file->getSize(src_size);
-      }
-      else error = ERR::File;
-
-      if (not Self->CacheFile.empty()) {
-         // Compare the cache file date to the original source.  If they match, or if there was a problem
-         // analysing the original location (i.e. the original location does not exist) then the cache file is loaded
-         // instead of the original source code.
-
-         int64_t cache_ts = -1, cache_size = 0;
-
-         {
-            objFile::create cache_file = { fl::Path(Self->CacheFile) };
-            if (cache_file.ok()) {
-               auto cache_error = cache_file->getTimestamp(cache_ts);
-               if (!cache_error) cache_error = cache_file->getSize(cache_size);
-               if (cache_error != ERR::Okay) cache_ts = -1;
-            }
-         }
-
-         if (cache_ts != -1) {
-            if ((cache_ts IS src_ts) or (error != ERR::Okay)) {
-               log.msg("Using cache '%s'", Self->CacheFile.c_str());
-               int len = 0;
-               error = read_file_to_string(Self->CacheFile, cache_size, Self->Statement, &len);
-               if (!error) loaded = len > 0;
-            }
-         }
-      }
-
-      if ((!error) and (not loaded)) {
-         int len = 0;
-         error = read_file_to_string(Self->Path, src_size, Self->Statement, &len);
-         if (!error) {
-            // Unicode BOM handler - in case the file starts with a BOM header.
-            auto content = check_bom(Self->Statement);
-            if (content.data() != Self->Statement.data()) Self->Statement.assign(content);
-
-            if (not Self->CacheFile.empty()) compile = true; // Saving a compilation of the source is desired
-         }
-         else {
-            log.trace("Failed to read %" PRId64 " bytes from '%s'", (int64_t)src_size, Self->Path.c_str());
-            Self->Statement.clear();
-            if (error != ERR::OutOfRange) error = ERR::ReadFileToBuffer;
-         }
-      }
+      if (auto error = prepare_cached_input(Self); error != ERR::Okay) return log.warning(error);
    }
-   else error = ERR::Okay;
-
-   if ((!error) and (Self->SaveCompiled = compile)) {
-      DateTime *dt;
-      if (!src_file->getDate(dt)) Self->CacheDate = *dt;
-      Self->CachePermissions = PERMIT::NIL;
-      if (auto permissions_error = src_file->getPermissions(Self->CachePermissions); permissions_error != ERR::Okay) {
-         log.warning("Failed to read source permissions for cache file: %s", GetErrorMsg(permissions_error));
-      }
-   }
-
-   if (error != ERR::Okay) {
-      if (src_file) FreeResource(src_file);
-      return log.warning(error);
-   }
-
-   Self->JitOptions |= glJitOptions;
 
    if (not (Self->Lua = luaL_newstate(Self))) {
       log.warning("Failed to open a Lua instance.");
-      if (src_file) FreeResource(src_file);
-      return ERR::Failed;
+      return ERR::CreateResource;
    }
 
-   if (src_file) FreeResource(src_file);
    return ERR::Okay;
 }
 
@@ -564,6 +706,84 @@ static ERR TIRI_NewChild(extTiri *Self, struct acNewChild &Args)
       return ERR::OwnerPassThrough;
    }
    else return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Initialise the standard compilation environment in a Lua state without copying any values from another state.
+
+static ERR initialise_compilation_state(lua_State *Lua)
+{
+   lua_gc(Lua, LUA_GCSTOP, 0);  // Stop collector during initialisation
+      luaL_openlibs(Lua);  // Open Lua libraries
+   lua_gc(Lua, LUA_GCRESTART, 0);
+
+   // Register private variables in the registry, which is tamper proof from the user's Lua code.
+
+   if (auto error = register_interfaces(Lua); error != ERR::Okay) return error;
+
+   // 'mSys' is a compiler-managed namespace for Core rather than a global value, so no module object is created
+   // here.  The compiler materialises Core's callables as hidden locals in any compilation unit that uses them.
+
+   lua_protect_globals(Lua);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Prepare the script's execution state once, including when compilation is retried.
+
+static ERR prepare_compilation(extTiri *Self)
+{
+   if (not Self->Lua) return ERR::NotInitialised;
+   if (Self->CompilationPrepared) return ERR::Okay;
+
+   if (auto error = initialise_compilation_state(Self->Lua); error != ERR::Okay) return error;
+
+   // Line hook, executes on the execution of a new line (doesn't execute during Query() compilation)
+
+   if ((Self->Flags & SCF::LOG_ALL) != SCF::NIL) {
+      // LUA_MASKLINE:  Interpreter is executing a line.
+      // LUA_MASKCALL:  Interpreter is calling a function.
+      // LUA_MASKRET:   Interpreter returns from a function.
+      // LUA_MASKCOUNT: The hook runs every X instructions (set to 1 for exactness).
+
+      lua_sethook(Self->Lua, hook_debug, LUA_MASKCALL|LUA_MASKRET|LUA_MASKLINE, 0);
+   }
+
+   Self->CompilationPrepared = true;
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// A failed load leaves the stack unchanged; success leaves one executable function.
+
+static ERR load_statement(extTiri *Self)
+{
+   Self->CompilationManifest.reset();
+
+   std::unique_ptr<tiri::cache::Manifest> capture;
+   const auto origin = compilation_input_origin(Self);
+   if ((origin IS CompilationInputOrigin::SOURCE) and not Self->CompilationSourcePath.empty()) {
+      capture = std::make_unique<tiri::cache::Manifest>();
+      capture->BuildIdentity = TIRI_BUILD_COMMIT;
+      capture->MainSource.ResolvedPath = Self->CompilationSourcePath;
+      capture->MainSource.Size = Self->Statement.size();
+      capture->MainSource.ModifiedHint = Self->SourceModifiedHint;
+      capture->MainSource.ContentDigest = tiri::cache::content_digest(Self->Statement);
+      capture->Options = cache_compilation_options(Self);
+   }
+
+   struct CaptureGuard {
+      lua_State *Lua;
+      ~CaptureGuard() { Lua->cache_manifest_capture = nullptr; }
+   } capture_guard { Self->Lua };
+   Self->Lua->cache_manifest_capture = capture.get();
+
+   std::string diagnostic;
+   if (origin IS CompilationInputOrigin::SOURCE) Self->SourceCompilationCount++;
+   auto error = load_compilation_input(Self->Lua, Self, Self->Statement, origin, diagnostic);
+   if (error IS ERR::Okay) Self->CompilationManifest = std::move(capture);
+   Self->setErrorMessage(diagnostic);
+   return error;
 }
 
 /*********************************************************************************************************************
@@ -582,100 +802,29 @@ Introspection of available procedures will be limited until the script is activa
 static ERR TIRI_Query(extTiri *Self)
 {
    kt::Log log;
+   if (auto error = refresh_cache_lifecycle(Self); error != ERR::Okay) return log.warning(error);
 
-   if (Self->Statement.empty()) return log.warning(ERR::FieldNotSet);
-
-   if (Self->Recurse) return ERR::NothingDone; // Do nothing, script is running.
+   if (Self->Statement.empty() and not Self->LoadedFromCache and not has_script_extension(Self->Path, ".tbc")) {
+      return log.warning(ERR::FieldNotSet);
+   }
+   if (Self->Recurse) return ERR::NothingDone;
 
    if (not Self->MainChunkRef) {
-      log.branch("Target: %d, Procedure: %s / ID #%u", Self->TargetID,
-         Self->Procedure.empty() ? "." : Self->Procedure.c_str(), FUNCTION::unpackProcedureID(Self->ProcedureID));
+      if (auto error = prepare_compilation(Self); error != ERR::Okay) return error;
 
-      lua_gc(Self->Lua, LUA_GCSTOP, 0);  // Stop collector during initialization
-         luaL_openlibs(Self->Lua);  // Open Lua libraries
-      lua_gc(Self->Lua, LUA_GCRESTART, 0);
+      std::optional<std::string> cache_fallback_source;
+      if (auto error = prepare_query_cache(Self, cache_fallback_source); error != ERR::Okay) return error;
 
-      // Register private variables in the registry, which is tamper proof from the user's Lua code
-
-      if (register_interfaces(Self) != ERR::Okay) return ERR::Failed;
-
-      // Line hook, executes on the execution of a new line (doesn't execute during Query() compilation)
-
-      if ((Self->Flags & SCF::LOG_ALL) != SCF::NIL) {
-         // LUA_MASKLINE:  Interpreter is executing a line.
-         // LUA_MASKCALL:  Interpreter is calling a function.
-         // LUA_MASKRET:   Interpreter returns from a function.
-         // LUA_MASKCOUNT: The hook will be called every X number of instructions executed (could be set to 1 for exactness).
-
-         lua_sethook(Self->Lua, hook_debug, LUA_MASKCALL|LUA_MASKRET|LUA_MASKLINE, 0);
+      auto error = load_statement_with_cache_fallback(Self, cache_fallback_source);
+      if (error != ERR::Okay) {
+         log.warning("%s", Self->ErrorMessage.c_str());
+         return error;
       }
 
-      // 'mSys' is a compiler-managed namespace for Core rather than a global value, so no module object is created
-      // here.  The compiler materialises Core's callables as hidden locals in any compilation unit that uses them.
+      lua_pushvalue(Self->Lua, -1);
+      Self->MainChunkRef = luaL_ref(Self->Lua, LUA_REGISTRYINDEX);
 
-      lua_protect_globals(Self->Lua);
-
-      // Determine chunk name for better debug output.
-      // Prefix with '@' to indicate file-based chunk (Lua convention), otherwise use '=' for special sources.
-      // This ensures debug output shows the actual filename instead of "[string]".
-
-      auto chunk_name = make_chunk_name(Self);
-
-      int result;
-      std::string_view source(Self->Statement);
-      if (source.starts_with(LUA_COMPILED)) { // The source is compiled
-         log.trace("Loading pre-compiled Lua script.");
-         if (auto payload_error = compiled_payload(source, source); payload_error != ERR::Okay) {
-            return log.warning(payload_error);
-         }
-         result = lua_load(Self->Lua, source, chunk_name.c_str());
-      }
-      else {
-         log.trace("Compiling Lua script.");
-         result = lua_load(Self->Lua, source, chunk_name.c_str());
-      }
-
-      if (result) { // Error reported from parser
-         if (auto errorstr = lua_tostring(Self->Lua, -1)) {
-            if (Self->Lua->parser_diagnostics and Self->Lua->parser_diagnostics->has_errors()) {
-               std::string error_msg;
-               for (const auto &entry : Self->Lua->parser_diagnostics->entries()) {
-                  if (not error_msg.empty()) error_msg += "\n";
-                  error_msg += entry.to_string(Self->LineOffset, Self->Lua);
-               }
-               Self->setErrorMessage(error_msg);
-            }
-            else Self->setErrorMessage(errorstr);
-
-            log.warning("%s", Self->ErrorMessage.c_str());
-         }
-
-         lua_pop(Self->Lua, 1);  // Pop error string
-         return ERR::Syntax;
-      }
-      else {
-         log.trace("Script successfully compiled.");
-
-         // Store a reference to the compiled main chunk for post-execution analysis (e.g., bytecode disassembly)
-         if (Self->MainChunkRef) luaL_unref(Self->Lua, LUA_REGISTRYINDEX, Self->MainChunkRef);
-         lua_pushvalue(Self->Lua, -1); // Duplicate the function on top of the stack
-         Self->MainChunkRef = luaL_ref(Self->Lua, LUA_REGISTRYINDEX); // Store reference, pops the duplicate
-      }
-
-      if (Self->SaveCompiled) { // Compile the script and save the result to the cache file
-         log.msg("Compiling the source into the cache file.");
-
-         Self->SaveCompiled = false;
-
-         objFile::create cachefile = {
-            fl::Path(Self->CacheFile), fl::Flags(FL::NEW|FL::WRITE), fl::Permissions(Self->CachePermissions)
-         };
-
-         if (cachefile.ok()) {
-            save_binary(Self, *cachefile);
-            cachefile->setDate(Self->CacheDate);
-         }
-      }
+      publish_pending_cache(Self);
 
       return ERR::Okay;
    }
@@ -687,9 +836,28 @@ static ERR TIRI_Query(extTiri *Self)
 -ACTION-
 SaveToObject: Compiles the current script statement and saves it as byte code.
 
-Use the SaveToObject action to compile the statement in the Script's String field and save the resulting byte code to a
-target object.  The byte code can be loaded into any script object for execution or referenced in the Tiri code for
-usage.
+Use the SaveToObject action to compile @Script.Statement and save the resulting byte code to a target object without
+executing the program.  Each save compiles the statement afresh, including after #Query() or #Activate(), and
+preserves any pending executable chunk.  Saving during active execution returns `ERR::InvalidState`.
+
+Source statements, wrapped byte code and raw VM byte code can be saved.  A rejected selected cache receives one local
+source fallback during each save, without consuming the later Query fallback or changing cache provenance.  A direct
+`.tbc` file is authoritative and never falls back to another file.
+
+The output contains the Tiri compiled marker, an identity token, a NUL separator and VM byte code with debug
+information.  The token records the build that produced the output, and is informational here because a caller-owned
+destination is authoritative when it is loaded.  Automatic caches record a source identity alongside it and are
+validated on reload.  Byte code is platform-agnostic across supported 64-bit Kōtuku targets, but requires a
+compatible Tiri bytecode ABI and the referenced runtime interfaces.  Runtime state is not saved.  Required
+locally named struct definitions, imported declarations, source identities and diagnostic line mappings are embedded
+in the output; unused struct declarations and source text are not embedded.
+
+Loading publishes embedded layouts in the consumer state for its lifetime.  An identical existing declaration is
+reused, while a conflicting declaration rejects the complete load without changing the prior registry.  Save
+compilation is isolated from the execution state, so rejected and repeated saves do not change imports, declarations,
+diagnostics, captures or a pending executable chunk.  To-be-closed locals are preserved in saved byte code.
+
+A failed save can leave partial output.
 
 *********************************************************************************************************************/
 
@@ -699,23 +867,58 @@ static ERR TIRI_SaveToObject(extTiri *Self, struct acSaveToObject *Args)
 
    if ((not Args) or (not Args->Dest)) return log.warning(ERR::NullArgs);
 
-   if (Self->Statement.empty()) return log.warning(ERR::FieldNotSet);
-
-   log.branch("Compiling the statement...");
-
-   auto chunk_name = make_chunk_name(Self);
-
-   if (not lua_load(Self->Lua, std::string_view(Self->Statement), chunk_name.c_str())) {
-      ERR error = save_binary(Self, Args->Dest);
-      return error;
+   if (Self->Statement.empty() and not Self->LoadedFromCache and not has_script_extension(Self->Path, ".tbc")) {
+      return log.warning(ERR::FieldNotSet);
    }
+
+   if (not Self->Lua) return ERR::NotInitialised;
+   if (Self->Recurse) return ERR::InvalidState;
+
+   const int stack_top = lua_gettop(Self->Lua);
+   const int main_chunk_ref = Self->MainChunkRef;
+
+   // The parser intentionally keeps imports, source maps and declarations in a state for runtime loadFile() calls.
+   // Saving is speculative, so compile in a fresh state rather than trying to roll back every Lua-owned registration.
+
+   std::unique_ptr<lua_State, decltype(&lua_close)> compilation(luaL_newstate(Self), lua_close);
+   if (not compilation) return ERR::CreateResource;
+   if (auto error = initialise_compilation_state(compilation.get()); error != ERR::Okay) return error;
+
+   struct CaptureRestore {
+      extTiri *Script;
+      std::vector<VariableInfo> Saved;
+      ~CaptureRestore() { Script->CapturedVariables = std::move(Saved); }
+   } capture_restore { Self, std::move(Self->CapturedVariables) };
+
+   log.branch("Loading the statement for saving...");
+
+   const auto origin = compilation_input_origin(Self);
+   std::string diagnostic;
+   ERR error = load_compilation_input(compilation.get(), Self, Self->Statement, origin, diagnostic);
+
+   // A selected cache is replaceable.  Keep this fallback local so saving cannot consume or alter Query's state.
+
+   std::string source;
+   if ((error != ERR::Okay) and (origin IS CompilationInputOrigin::SELECTED_CACHE)) {
+      objFile::create source_file = { fl::Path(Self->Path), fl::Flags(FL::READ) };
+      if (source_file.ok() and (read_source_file(*source_file, Self->Path, source) IS ERR::Okay)) {
+         error = load_compilation_input(compilation.get(), Self, source, CompilationInputOrigin::SOURCE, diagnostic);
+      }
+   }
+
+   // Saved output records the build identity only.  A caller-owned destination is authoritative on load, so a source
+   // identity would imply a content comparison that is never performed for it.
+
+   if (error IS ERR::Okay) error = save_binary(compilation.get(), Args->Dest, make_identity_token(nullptr));
    else {
-      auto str = lua_tostringview(Self->Lua,-1);
-      auto error_msg = str.empty() ? "" : str.data();
-      log.warning("Compile Failure: %.*s", int(str.size()), error_msg);
-      lua_pop(Self->Lua, 1);
-      return ERR::InvalidData;
+      Self->setErrorMessage(diagnostic);
+      log.warning("Save load failure: %s", diagnostic.c_str());
+      if (error IS ERR::Syntax) error = ERR::InvalidData;
    }
+
+   if (error IS ERR::Okay) Self->setErrorMessage("");
+   if ((lua_gettop(Self->Lua) != stack_top) or (Self->MainChunkRef != main_chunk_ref)) return ERR::InvalidState;
+   return error;
 }
 
 /*********************************************************************************************************************
@@ -741,7 +944,11 @@ static ERR SET_JitOptions(extTiri *Self, JOF Value)
       kt::Log().warning("Changing JIT options after parsing is ineffective.");
       return ERR::InvalidState;
    }
-   Self->JitOptions = Value;
+   if (Self->Lua) {
+      Self->LocalJitOptions = Value;
+      Self->JitOptions = Value|Self->GlobalJitOptions;
+   }
+   else Self->JitOptions = Value;
    return ERR::Okay;
 }
 
@@ -777,13 +984,54 @@ static ERR GET_Procedures(extTiri *Self, std::span<std::string> &Value)
 }
 
 //********************************************************************************************************************
-// LuaJIT does support saving multi-platform compiled bytecode and we just need to implement it here.
+// The top stack entry must be a compiled Tiri function.  Preserve the stack and report success only after every
+// wrapper and VM byte has been written.  The initial compatibility contract is the same build and platform.
 
-static ERR save_binary(extTiri *Self, OBJECTPTR Target)
+struct BytecodeWriter {
+   OBJECTPTR Destination;
+   ERR Error = ERR::Okay;
+};
+
+static int write_bytecode(lua_State *, const void *Data, size_t Size, void *Context)
 {
-   // TODO No support for save_binary() yet.
+   auto &writer = *((BytecodeWriter *)Context);
+   auto data = (const int8_t *)Data;
+   while (Size and (writer.Error IS ERR::Okay)) {
+      const auto count = std::min(Size, size_t(std::numeric_limits<int>::max()));
+      int written = 0;
+      writer.Error = acWrite(writer.Destination, std::span<const int8_t>(data, count), &written);
+      if ((writer.Error <= ERR::ExceptionThreshold) and
+          ((writer.Error != ERR::Okay) or (written != int(count)))) writer.Error = ERR::Write;
+      if (writer.Error != ERR::Okay) break;
+      data += count;
+      Size -= count;
+   }
+   return writer.Error IS ERR::Okay ? 0 : 1;
+}
 
-   return ERR::NoSupport;
+//********************************************************************************************************************
+
+static ERR save_binary(lua_State *Lua, OBJECTPTR Target, std::string_view Token)
+{
+   if ((not Lua) or (not Target)) return ERR::NullArgs;
+
+   if ((not lua_gettop(Lua)) or (not lua_isfunction(Lua, -1)) or lua_iscfunction(Lua, -1)) return ERR::InvalidData;
+   if ((not Token.empty()) and (Token.size() + 1 > MAX_IDENTITY_TOKEN)) return ERR::BufferOverflow;
+
+   std::string header(LUA_COMPILED);
+   if (not Token.empty()) {
+      header.push_back(' ');
+      header.append(Token);
+   }
+   header.push_back('\0');
+
+   const int stack_top = lua_gettop(Lua);
+   BytecodeWriter writer { Target };
+   if (write_bytecode(Lua, header.data(), header.size(), &writer)) return writer.Error;
+   const int result = lua_dump(Lua, write_bytecode, &writer);
+   lua_settop(Lua, stack_top);
+   if (writer.Error != ERR::Okay) return writer.Error;
+   return result ? ERR::InvalidData : ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -990,43 +1238,44 @@ static ERR run_script(extTiri *Self)
 
 //********************************************************************************************************************
 
-static ERR register_interfaces(extTiri *Self)
+static ERR register_interfaces(lua_State *Lua)
 {
    kt::Log log;
 
    log.traceBranch("Registering Kotuku and Tiri interfaces with Lua.");
 
 #ifndef NDEBUG
-   int stack_top = lua_gettop(Self->Lua);
+   int stack_top = lua_gettop(Lua);
 #endif
 
-   register_io_class(Self->Lua);
-   register_module_class(Self->Lua);
-   register_regex_class(Self->Lua);
-   register_async_class(Self->Lua);
+   register_io_class(Lua);
+   register_module_class(Lua);
+   register_regex_class(Lua);
+   register_async_class(Lua);
 #ifndef DISABLE_DISPLAY
-   register_input_class(Self->Lua);
+   register_input_class(Lua);
 #endif
-   register_processing_class(Self->Lua);
+   register_processing_class(Lua);
 
-   lua_register(Self->Lua, "arg", fcmd_arg);
-   lua_register(Self->Lua, "loadFile", fcmd_loadfile);
-   lua_register(Self->Lua, "exec", fcmd_exec);
-   lua_register(Self->Lua, "print", fcmd_print);
-   lua_register(Self->Lua, "msg", fcmd_msg);
-   lua_register(Self->Lua, "subscribeEvent", fcmd_subscribe_event);
-   lua_register(Self->Lua, "unsubscribeEvent", fcmd_unsubscribe_event);
-   lua_register(Self->Lua, "MAKESTRUCT", MAKESTRUCT);
+   lua_register(Lua, "arg", fcmd_arg);
+   lua_register(Lua, "loadFile", fcmd_loadfile);
+   lua_register(Lua, "exec", fcmd_exec);
+   lua_register(Lua, "print", fcmd_print);
+   lua_register(Lua, "msg", fcmd_msg);
+   lua_register(Lua, "subscribeEvent", fcmd_subscribe_event);
+   lua_register(Lua, "unsubscribeEvent", fcmd_unsubscribe_event);
+   lua_register(Lua, "MAKESTRUCT", MAKESTRUCT);
 
    // Register global function prototypes for compile-time type inference
-   reg_func_prototype("arg", { TiriType::Str }, { TiriType::Str, TiriType::Str });
+   reg_func_prototype("arg", { TiriType::Str }, { TiriType::Str, TiriType::Str }, FProtoFlags::None,
+      FProtoArity::required(1));
    reg_func_prototype("loadFile", {}, { TiriType::Str }, FProtoFlags::Variadic);
    reg_func_prototype("exec", {}, { TiriType::Str }, FProtoFlags::Variadic);
    reg_func_prototype("print", {}, {}, FProtoFlags::Variadic);
    reg_func_prototype("msg", {}, { TiriType::Str }, FProtoFlags::Variadic);
    reg_func_prototype("subscribeEvent", { TiriType::Num, TiriType::Userdata }, { TiriType::Str, TiriType::Func });
    reg_func_prototype("unsubscribeEvent", {}, { TiriType::Userdata });
-   reg_func_prototype("MAKESTRUCT", { TiriType::Any }, { TiriType::Str });
+   reg_func_prototype("MAKESTRUCT", { TiriType::Any }, { TiriType::Str }, FProtoFlags::Variadic);
 
    if (auto error = load_module_defs("core"); error != ERR::Okay) {
       log.error("Failed to process the core includes.");
@@ -1040,7 +1289,7 @@ static ERR register_interfaces(extTiri *Self)
    seal_proto_registry();
 
 #ifndef NDEBUG
-   int stack_delta = lua_gettop(Self->Lua) - stack_top;
+   int stack_delta = lua_gettop(Lua) - stack_top;
    if (stack_delta) log.warning("Lua initialisation left %d value(s) on the Lua stack.", stack_delta);
 #endif
 

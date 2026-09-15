@@ -208,7 +208,7 @@ end
    try
       exec("[x]multi()")()
    success
-      error("Invalid pattern char 'x' should fail to parse")
+      assert(false, "Invalid pattern char 'x' should fail to parse")
    end
 end
 
@@ -216,7 +216,7 @@ end
    try
       exec("x = [_*]42")()
    success
-      error("filter on non-call should fail to parse")
+      assert(false, "filter on non-call should fail to parse")
    end
 end
 
@@ -224,6 +224,6 @@ end
    try
       exec("t = {}; x = [_*]t")()
    success
-      error("filter on variable should fail to parse")
+      assert(false, "filter on variable should fail to parse")
    end
 end

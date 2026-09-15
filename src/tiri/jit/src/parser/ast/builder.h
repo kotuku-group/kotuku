@@ -19,6 +19,7 @@
 
 #include "nodes.h"
 #include "../parser_context.h"
+#include "../../../../cache_manifest.h"
 
 class AstBuilder {
 public:
@@ -36,6 +37,8 @@ public:
    void rollback_registered_enum_hierarchy();
    void commit_registered_structs();
    void rollback_registered_structs();
+   void track_struct_reference(struct_record *Definition);
+   void track_dynamic_struct_reference();
 
    [[nodiscard]] bool at_top_level() const { return function_depth IS 0 and block_depth IS 0; }
 
@@ -43,6 +46,7 @@ private:
    ParserContext& ctx;
    bool in_guard_expression = false;  // True when parsing 'when' clause guard expression
    bool in_choose_expression = false; // True when parsing choose expression cases (for tuple pattern detection)
+   int handler_depth = 0;            // Active handlers in the current lexical function
    int function_depth = 0;           // Tracks nesting depth inside function bodies
    int block_depth = 0;              // Tracks nested statement blocks below chunk scope
    bool enum_constants_committed = false;
@@ -95,6 +99,19 @@ private:
       return false;
    }
 
+   [[nodiscard]] AstBuilder * root_builder() {
+      AstBuilder *root = this;
+      while (root->parent_builder) root = root->parent_builder;
+      return root;
+   }
+
+   uint8_t record_import_source(const std::string &, const std::string &, BCLine, uint8_t, BCLine, uint8_t);
+   void record_source_namespace(std::string_view);
+   [[nodiscard]] tiri::cache::Manifest *cache_manifest();
+   [[nodiscard]] std::string cache_context_path();
+   void record_conditional_input(tiri::cache::ConditionalKind, std::string_view, std::string_view);
+   void record_module_observation(std::string_view, bool);
+
    class FunctionNameScope {
    public:
       FunctionNameScope(AstBuilder &Builder, GCstr *FunctionName);
@@ -105,6 +122,7 @@ private:
 
    private:
       AstBuilder &builder;
+      int saved_handler_depth;
    };
 
    class BlockDepthScope {
@@ -158,13 +176,15 @@ private:
    ParserResult<StmtNodePtr> parse_try();
    ParserResult<StmtNodePtr> parse_checkall();
    ParserResult<StmtNodePtr> parse_raise();
+   ParserResult<RaisePayload> parse_raise_payload(bool Parenthesised);
    ParserResult<StmtNodePtr> parse_check();
    ParserResult<StmtNodePtr> parse_include_stmt();
    ParserResult<StmtNodePtr> parse_module_decl();
    ParserResult<ImportEntryPayload> parse_import_entry(const Token&, bool, bool * = nullptr);
    ParserResult<StmtNodePtr> parse_import();
    ParserResult<StmtNodePtr> parse_namespace();
-   ParserResult<std::unique_ptr<BlockStmt>> parse_imported_file(std::string &, std::string_view, const Token& import_token);
+   ParserResult<std::unique_ptr<BlockStmt>> parse_imported_file(
+      std::string &, std::string_view, const Token &ImportToken);
    ParserResult<StmtNodePtr> parse_compile_if();
    void skip_to_compile_end();
    ParserResult<StmtNodePtr> parse_expression_stmt();
@@ -235,6 +255,8 @@ private:
       std::string_view, const SourceSpan &, bool Implicit);
    [[nodiscard]] GCstr *module_function_binding(ModuleDependency &, GCstr *CanonicalFunction);
    [[nodiscard]] StmtNodePtr make_dependency_activation(ModuleDependency &, const SourceSpan &);
+   [[nodiscard]] ParserResult<StmtNodePtr> make_assignment_statement(const Token &, AssignmentOperator,
+      ExprNodeList, ExprNodeList);
    void finalise_module_dependencies();
    void publish_dependency_descriptors();
    void prepend_implicit_dependencies(BlockStmt &);

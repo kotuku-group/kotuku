@@ -401,7 +401,7 @@ end
       assert(tostring(err.message).find('__len metamethod must return a number'),
          'A string __len result should report the numeric result requirement')
    success
-      error('A string __len result should fail')
+      assert(false, 'A string __len result should fail')
    end
 
    local nil_length = setmetatable({}, { __len = function():num return nil end })
@@ -411,7 +411,7 @@ end
       assert(tostring(err.message).find('__len metamethod must return a number'),
          'A nil __len result should report the numeric result requirement')
    success
-      error('A nil __len result should fail')
+      assert(false, 'A nil __len result should fail')
    end
 end
 
@@ -593,7 +593,7 @@ end
 @Test function MetaNewIndexReadOnly()
    mt = {
       __newindex = function(Key, Value)
-         error("Cannot modify read-only table: key '" .. Key .. "'")
+         raise "Cannot modify read-only table: key '" .. Key .. "'"
       end
    }
    t = setmetatable({}, mt)
@@ -603,7 +603,7 @@ end
    except err
       assert(tostring(err.message).find('read-only'), "Error should mention read-only, got: " .. tostring(err.message))
    success
-      error("Setting a key on read-only table should fail")
+      assert(false, "Setting a key on read-only table should fail")
    end
 end
 
@@ -720,7 +720,7 @@ end
    except err
       assert(tostring(err.message).find('protect'), "Error should mention protection, got: " .. tostring(err.message))
    success
-      error("setmetatable on protected table should fail")
+      assert(false, "setmetatable on protected table should fail")
    end
 end
 

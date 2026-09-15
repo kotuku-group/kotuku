@@ -50,14 +50,14 @@ end
    if flags has DEVICE_FLOPPY_DISK|DEVICE_COMPACT_DISC|DEVICE_FIXED then
       -- Success
    else
-      error('Failed to correctly detect DEVICE_FLOPPY_DISK')
+      raise 'Failed to correctly detect DEVICE_FLOPPY_DISK'
    end
 
    flags = DEVICE_FIXED
    if flags has DEVICE_FLOPPY_DISK|DEVICE_COMPACT_DISC|DEVICE_FIXED then
       -- Success
    else
-      error('Failed to correctly detect DEVICE_FIXED')
+      raise 'Failed to correctly detect DEVICE_FIXED'
    end
 end
 
@@ -117,12 +117,12 @@ end
    try
       local fail = 0x100 has strvar
    success
-      error('Expected failure when using "has" with string value')
+      assert(false, 'Expected failure when using "has" with string value')
    end
 
    try
       local fail = strvar has 0x10
    success
-      error('Expected failure when using "has" with string value')
+      assert(false, 'Expected failure when using "has" with string value')
    end
 end

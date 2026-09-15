@@ -45,7 +45,8 @@ enum class ParserErrorCode : uint16_t {
    DeprecatedSyntax,        // Removed source syntax with a targeted replacement diagnostic
    DeprecatedApi,           // Supported API contract with a pending migration target
    UnresolvedMethodReceiver, // Dot-method receiver type must be classified at runtime
-   FunctionSignatureMismatch // Function definition does not match an earlier forward declaration
+   FunctionSignatureMismatch, // Function definition does not match an earlier forward declaration
+   TooManyExceptionFilters  // More than 4 error codes declared for an except handler
 };
 
 struct ParserDiagnostic {
@@ -54,6 +55,7 @@ struct ParserDiagnostic {
    uint8_t file_index = 0;   // FileSource index captured from the lexer at creation (token spans store raw lines)
    std::string message;
    Token token;
+   size_t length = 0;      // Optional source width; zero retains the diagnostic consumer's range inference.
 
    [[nodiscard]] std::string to_string(int LineOffset = 0, lua_State *L = nullptr) const;
 };

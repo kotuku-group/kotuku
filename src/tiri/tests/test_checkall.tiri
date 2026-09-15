@@ -58,7 +58,7 @@ end
    try
       err = mSys.AllocResource(-1024, 0)
    except e
-      error(f"Plain try promoted {e.code}")
+      raise f"Plain try promoted {e.code}"
    end
    assert(err is ERR_Args, f"Expected ERR_Args, got {err}")
 end
@@ -71,7 +71,7 @@ end
    except e when ERR_Args
       assert(e.message.find('AllocResource()'), 'Module diagnostic should retain the call name')
    success
-      error('checkall should promote ERR_Args')
+      assert(false, 'checkall should promote ERR_Args')
    end
 
    local time = obj.new('time', { })
@@ -82,7 +82,7 @@ end
    except e
       assert(e.code >= ERR_ExceptionThreshold, 'Object action should promote its error result')
    success
-      error('Object action should have been promoted')
+      assert(false, 'Object action should have been promoted')
    end
 end
 
@@ -100,7 +100,7 @@ end
    except e when ERR_Args
       return
    end
-   error('Standalone checkall should propagate to a caller handler')
+   assert(false, 'Standalone checkall should propagate to a caller handler')
 end
 
 @Test function NestedTryAndCheckallOrdersWork()
@@ -110,7 +110,7 @@ end
       end
    except e when ERR_Args
    success
-      error('Outer try should catch an inner checkall promotion')
+      assert(false, 'Outer try should catch an inner checkall promotion')
    end
 
    checkall
@@ -118,7 +118,7 @@ end
          mSys.AllocResource(-1024, 0)
       except e when ERR_Args
       success
-         error('Inner try should catch a promotion from its enclosing checkall')
+         assert(false, 'Inner try should catch a promotion from its enclosing checkall')
       end
    end
 
@@ -165,7 +165,7 @@ end
 
    try
       checkall
-         error('ordinary failure')
+         raise 'ordinary failure'
       end
    except e
       assert(e.code is ERR_Exception, 'checkall must not alter ordinary exceptions')
@@ -178,7 +178,7 @@ end
    except e when ERR_Args
       return
    end
-   error('Explicit check should continue to work in plain try')
+   assert(false, 'Explicit check should continue to work in plain try')
 end
 
 @Test function JitPathsPreserveCheckallState()
@@ -193,7 +193,7 @@ end
       hotCheckedCall(true)
    except e when ERR_Args
    success
-      error('A hot checkall path should promote a native error')
+      assert(false, 'A hot checkall path should promote a native error')
    end
 
    local err = mSys.AllocResource(-1024, 0)

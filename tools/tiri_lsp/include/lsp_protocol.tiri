@@ -152,7 +152,7 @@ end
 -- Incoming Data Handling
 
 function initClientState(Self:table, ClientSocket:any):table
-   state = ClientSocket._state()
+   state = ClientSocket.state()
 
    if not state.initialised then
       state.buffer             = ''

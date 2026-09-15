@@ -37,6 +37,7 @@ struct struct_field {
    std::string Name;      // Field name
    uint32_t StructRef = 0; // struct_key() of a referenced structure; 0 = no reference
    CLASSID ObjectClassID = CLASSID::NIL; // Optional class constraint for obj<Class> fields
+   std::string ObjectClassName; // Portable spelling of an optional obj<Class> constraint
    struct_record *StructDefinition = nullptr; // Resolved definition; registry ownership remains external
    uint16_t Offset = 0;   // Offset to the field value.
    int  Type      = 0;    // FD flags
@@ -51,6 +52,10 @@ struct struct_field {
    private:
    uint32_t NameHash = 0;     // Lowercase hash of the field name
 };
+
+inline constexpr uint8_t STRUCT_MANIFEST_VERSION = 1;
+inline constexpr uint32_t STRUCT_MANIFEST_MAX_DEFINITIONS = 1024;
+inline constexpr uint32_t STRUCT_MANIFEST_MAX_FIELDS = 16384;
 
 [[nodiscard]] inline NativeStructType effective_scalar_type(const struct_field &Field) noexcept
 {

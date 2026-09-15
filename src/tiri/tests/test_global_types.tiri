@@ -110,7 +110,7 @@ glGTAuthoritativePolicy = dynamic
 
    try
       rawset(_G, 'glGTAuthoritativePolicy', 42)
-      error('The original environment policy should remain authoritative')
+      assert(false, 'The original environment policy should remain authoritative')
    except e
       assert(e.message.find('expected str') != nil,
          'The preserved environment policy should report its string contract: ' .. e.message)
@@ -123,7 +123,7 @@ end
    local previous_metatable = getmetatable(_G)
    local trapped = false
 
-   setmetatable(_G, { __newindex = function(Key, Value) error('blocked global store') end })
+   setmetatable(_G, { __newindex = function(Key, Value) raise 'blocked global store' end })
    defer
       setmetatable(_G, previous_metatable)
       rawset(_G, 'glGTFailedDeclaration', nil)
@@ -368,7 +368,7 @@ end
 
    assert_global_contract_before_store([[
 try
-   error('expected')
+   raise('expected')
 except e
    global glGTReducedExcept = 'text'
 end
@@ -559,7 +559,7 @@ end
    try
       local _ = glGTNilable.alpha
    success
-      error('Reading a field from a nil-valued global should raise an index error')
+      assert(false, 'Reading a field from a nil-valued global should raise an index error')
    end
 end
 
@@ -722,7 +722,7 @@ end
 
    try
       writer(42)
-      error('An incompatible cross-chunk aliased store should raise')
+      assert(false, 'An incompatible cross-chunk aliased store should raise')
    except e
       assert(tostring(e.message).find('type contract failed for global') != nil,
          'Expected a global contract error, got: ' .. tostring(e.message))
@@ -743,7 +743,7 @@ end
    assert(glGTMemberArray[0] is 9, 'A matching member identity should cross an environment alias')
    try
       writer(array<str> { 'wrong' })
-      error('A different array member identity should be rejected')
+      assert(false, 'A different array member identity should be rejected')
    except e
       assert(e.message.find('expected array<int>') != nil and e.message.find('got array<str>') != nil,
          'The global member diagnostic should include both array identities: ' .. e.message)
@@ -761,7 +761,7 @@ end
 
    try
       rawset(_G, 'glGTSeeded', 42)
-      error('A rawset conflicting with the declared contract should raise')
+      assert(false, 'A rawset conflicting with the declared contract should raise')
    except e
       assert(tostring(e.message).find('type contract failed for global') != nil,
          'Expected a global contract error, got: ' .. tostring(e.message))

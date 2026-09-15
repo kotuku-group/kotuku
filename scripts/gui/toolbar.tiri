@@ -55,7 +55,7 @@ gui.toolbar = function(Options)
    end
 
    function newItem(Type, Name, ID)
-      if ID and self._lookup[ID] then error('An item with identifier ' .. ID .. ' already exists.') end
+      if ID and self._lookup[ID] then raise 'An item with identifier ' .. ID .. ' already exists.' end
 
       item = { type=Type, id=ID, name=Name, x=0, y=0, width=0, height=0 }
       if Name?? then

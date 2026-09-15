@@ -196,6 +196,7 @@ ParserResult<Token> AstBuilder::parse_type_annotation(
       }
       Type = TiriType::Array;
       ArrayElement = *element;
+      this->track_struct_reference(element->struct_def);
       return finish_annotation();
    }
 
@@ -211,6 +212,7 @@ ParserResult<Token> AstBuilder::parse_type_annotation(
       }
       Type = TiriType::Struct;
       StructDef = found;
+      this->track_struct_reference(found);
       return finish_annotation();
    }
 
@@ -278,6 +280,7 @@ ParserResult<Token> AstBuilder::parse_type_annotation(
                std::format("Unknown array element type '{}'", element_storage));
          }
          ArrayElement = *element;
+         this->track_struct_reference(element->struct_def);
          return finish_annotation();
       }
       return this->fail<Token>(ParserErrorCode::ExpectedTypeName, type_token,
@@ -296,6 +299,7 @@ ParserResult<Token> AstBuilder::parse_type_annotation(
             std::format("Unknown struct name '{}'; declarations must precede use", name));
       }
       StructDef = found;
+      this->track_struct_reference(found);
       auto close = this->ctx.consume(TokenKind::Greater, ParserErrorCode::ExpectedToken);
       if (not close.ok()) return ParserResult<Token>::failure(close.error_ref());
    }
@@ -372,7 +376,10 @@ ParserResult<TypeTestDescriptor> AstBuilder::parse_type_test_descriptor()
       if (descriptor.type IS TiriType::Array) {
          auto element = parse_array_element_type(constraint_name, &this->ctx.lua(), &this->ctx.lex());
          if (element and element->storage != AET::PTR and
-             (element->storage != AET::STRUCT or element->struct_def)) descriptor.array_element = *element;
+             (element->storage != AET::STRUCT or element->struct_def)) {
+            descriptor.array_element = *element;
+            this->track_struct_reference(element->struct_def);
+         }
          else if (struct_record *definition = find_struct(&this->ctx.lua(), constraint_name)) {
             return this->fail<TypeTestDescriptor>(ParserErrorCode::UnknownTypeName, constraint_token,
                std::format("Structure array type tests require 'struct<{}>'; use '<array struct<{}>>'",
@@ -396,6 +403,7 @@ ParserResult<TypeTestDescriptor> AstBuilder::parse_type_test_descriptor()
             return this->fail<TypeTestDescriptor>(ParserErrorCode::UnknownTypeName, constraint_token,
                std::format("Unknown structure '{}'; declarations must precede use", constraint_name));
          }
+         this->track_struct_reference(descriptor.struct_def);
       }
 
       if (not this->ctx.check(TokenKind::Greater)) {
@@ -716,7 +724,7 @@ ParserResult<std::vector<TableField>> AstBuilder::parse_table_fields(bool *has_a
          field.key = std::move(key.value_ref());
          field.value = std::move(value.value_ref());
       }
-      else if ((current.is_identifier_or_future_reserved() or current.kind() IS TokenKind::CheckallToken) and
+      else if ((current.is_identifier() or current.has_flag(TKF_RESERVED)) and
          this->ctx.tokens().peek(1).kind() IS TokenKind::Equals) {
          this->ctx.tokens().advance();
          this->ctx.tokens().advance();
@@ -725,10 +733,6 @@ ParserResult<std::vector<TableField>> AstBuilder::parse_table_fields(bool *has_a
 
          field.kind = TableFieldKind::Record;
          field.name = make_identifier(current);
-         if (field.name and not field.name->symbol and current.kind() IS TokenKind::CheckallToken) {
-            constexpr std::string_view keyword = "checkall";
-            field.name->symbol = lj_str_new(&this->ctx.lua(), keyword.data(), keyword.size());
-         }
          field.value = std::move(value.value_ref());
       }
       else {
@@ -987,23 +991,9 @@ ParserResult<FunctionReturnTypes> AstBuilder::parse_return_type_annotation()
             break;  // ... must be last
          }
 
-         // Handle overflow: 9th+ types force 8th to 'any'
          if (result.count >= MAX_RETURN_TYPES) {
-            if (result.count IS MAX_RETURN_TYPES) {
-               result.types[MAX_RETURN_TYPES - 1] = TiriType::Any;
-               result.required[MAX_RETURN_TYPES - 1] = false;
-            }
-            TiriType overflow_type = TiriType::Unknown;
-            struct_record *overflow_struct = nullptr;
-            ArrayElementDescriptor overflow_array;
-            bool overflow_required = false;
-            auto overflow_token = this->parse_type_annotation(
-               overflow_type, overflow_struct, overflow_array, overflow_required);
-            if (not overflow_token.ok()) {
-               return ParserResult<FunctionReturnTypes>::failure(overflow_token.error_ref());
-            }
-            result.count++;
-            continue;
+            return this->fail<FunctionReturnTypes>(ParserErrorCode::TooManyReturnTypes, current,
+               "A function supports at most 8 declared return types");
          }
 
          TiriType parsed = TiriType::Unknown;

@@ -18,8 +18,8 @@ Log levels are:
 4  INFO     Application log message, level 2
 5  API      Top-level API messages, e.g. function entry points (default)
 6  DETAIL   Detailed API messages.  For messages within functions, and entry-points for minor functions.
-8  TRACE    Extremely detailed API messages suitable for intensive debugging only.
-9  Noisy debug messages that will appear frequently, e.g. being used in inner loops.
+8  DEBUG    Debug-build only API messages, suitable for intensive debugging only.
+9  TRACE    Noisy debug messages that will appear frequently, e.g. being used in inner loops.
 
 *********************************************************************************************************************/
 
@@ -251,8 +251,8 @@ void VLogF(VLF Flags, CSTRING Header, CSTRING Message, va_list Args)
       VLF::API|VLF::INFO|VLF::WARNING|VLF::ERROR|VLF::CRITICAL,
       VLF::DETAIL|VLF::API|VLF::INFO|VLF::WARNING|VLF::ERROR|VLF::CRITICAL,
       VLF::DETAIL|VLF::API|VLF::INFO|VLF::WARNING|VLF::ERROR|VLF::CRITICAL,
-      VLF::TRACE|VLF::DETAIL|VLF::API|VLF::INFO|VLF::WARNING|VLF::ERROR|VLF::CRITICAL,
-      VLF::TRACE|VLF::DETAIL|VLF::API|VLF::INFO|VLF::WARNING|VLF::ERROR|VLF::CRITICAL
+      VLF::DEBUG|VLF::DETAIL|VLF::API|VLF::INFO|VLF::WARNING|VLF::ERROR|VLF::CRITICAL,
+      VLF::TRACE|VLF::DEBUG|VLF::DETAIL|VLF::API|VLF::INFO|VLF::WARNING|VLF::ERROR|VLF::CRITICAL
    };
 
    if ((Flags & VLF::CRITICAL) != VLF::NIL) { // Print the message irrespective of the log level
@@ -557,7 +557,8 @@ static uint8_t message_log_level(VLF Flags)
    if ((Flags & VLF::CRITICAL) != VLF::NIL) return 0;
    if ((Flags & VLF::ERROR) != VLF::NIL) return 1;
    if ((Flags & VLF::WARNING) != VLF::NIL) return 2;
-   if ((Flags & VLF::TRACE) != VLF::NIL) return 8;
+   if ((Flags & VLF::DEBUG) != VLF::NIL) return 8;
+   if ((Flags & VLF::TRACE) != VLF::NIL) return 9;
    if ((Flags & VLF::DETAIL) != VLF::NIL) return 6;
    if ((Flags & VLF::API) != VLF::NIL) return 5;
    if ((Flags & VLF::INFO) != VLF::NIL) return 3;

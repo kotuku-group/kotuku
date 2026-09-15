@@ -14,6 +14,7 @@
 #include "../../../defs.h"
 #include "../runtime/lj_proto_registry.h"
 #include "../runtime/lj_tab.h"
+#include "../debug/lj_ff.h"
 
 namespace {
 
@@ -68,6 +69,28 @@ public:
    }
 
 private:
+   // AST spans hold file-relative lines.  Keep the source context active during imported traversals,
+   // including diagnostics emitted through ParserContext and nested validation analysers.
+   struct ImportSourceGuard {
+      LexState &lex;
+      uint8_t saved_file_index;
+
+      ImportSourceGuard(LexState &Lex, uint8_t FileIndex)
+         : lex(Lex), saved_file_index(Lex.current_file_index) {
+         this->lex.current_file_index = FileIndex;
+      }
+
+      ~ImportSourceGuard() {
+         this->lex.current_file_index = this->saved_file_index;
+      }
+   };
+
+   void report_diagnostic(ParserDiagnostic &Diagnostic)
+   {
+      Diagnostic.file_index = this->context_.lex().current_file_index;
+      this->context_.diagnostics().report(Diagnostic);
+   }
+
    [[nodiscard]] StaticBindingID resolve(GCstr *Name) const
    {
       for (auto scope = this->scopes_.rbegin(); scope != this->scopes_.rend(); ++scope) {
@@ -118,7 +141,7 @@ private:
          diagnostic.message = std::format(
             "declaration attribute on existing variable '{}' requires explicit 'local'", name_view);
          diagnostic.token = Token::from_span(name.span, TokenKind::Identifier);
-         this->context_.diagnostics().report(diagnostic);
+         this->report_diagnostic(diagnostic);
       }
    }
 
@@ -129,7 +152,7 @@ private:
       diagnostic.code = ParserErrorCode::InternalInvariant;
       diagnostic.message = std::move(Message);
       diagnostic.token = Token::from_span(Name.span, TokenKind::Identifier);
-      this->context_.diagnostics().report(diagnostic);
+      this->report_diagnostic(diagnostic);
    }
 
    [[nodiscard]] bool binding_is_catalogued(StaticBindingID Binding) const
@@ -267,6 +290,12 @@ private:
             for (auto &operand : std::get<ComparisonChainExprPayload>(Expression.data).operands) {
                if (operand) this->discover_expression(*operand);
             }
+            break;
+         }
+         case AstNodeKind::RaiseExpr: {
+            auto &payload = std::get<RaisePayload>(Expression.data);
+            if (payload.error_code) this->discover_expression(*payload.error_code);
+            if (payload.message) this->discover_expression(*payload.message);
             break;
          }
          case AstNodeKind::TernaryExpr: {
@@ -599,7 +628,10 @@ private:
          }
          case AstNodeKind::ImportStmt: {
             for (auto &entry : std::get<ImportStmtPayload>(Statement.data).entries) {
-               if (entry.inlined_body) this->discover_block(*entry.inlined_body);
+               if (entry.inlined_body) {
+                  ImportSourceGuard guard(this->context_.lex(), entry.file_source_idx);
+                  this->discover_block(*entry.inlined_body);
+               }
                if (entry.namespace_name) {
                   const ExprNode *initialiser = nullptr;
                   const FunctionExprPayload *function = nullptr;
@@ -840,6 +872,7 @@ private:
       }
 
       if (not prototype) return {};
+      Call.native_prototype = prototype;
       StaticResultSet results = describe_native_prototype_results(prototype);
       if (results.stored_count > 0) {
          if (results.values[0].primary IS TiriType::Object and Call.object_class_id != CLASSID::NIL) {
@@ -956,14 +989,14 @@ private:
       return {};
    }
 
-   void report_method_argument(SourceSpan Span, std::string Message)
+   void report_native_argument(SourceSpan Span, std::string Message)
    {
       ParserDiagnostic diagnostic;
       diagnostic.severity = ParserDiagnosticSeverity::Error;
       diagnostic.code = ParserErrorCode::TypeMismatchArgument;
       diagnostic.message = std::move(Message);
       diagnostic.token = Token::from_span(Span, TokenKind::Identifier);
-      this->context_.diagnostics().report(diagnostic);
+      this->report_diagnostic(diagnostic);
    }
 
    void reject_builtin_method_shadow(ExprNode &Target, const StaticValueDescriptor &Assigned)
@@ -984,7 +1017,7 @@ private:
          std::string_view(strdata(member.member.symbol), member.member.symbol->len),
          std::string_view(strdata(member.member.symbol), member.member.symbol->len));
       diagnostic.token = Token::from_span(Target.span, TokenKind::Identifier);
-      this->context_.diagnostics().report(diagnostic);
+      this->report_diagnostic(diagnostic);
       member.builtin_shadow_reported = true;
    }
 
@@ -1003,21 +1036,20 @@ private:
          std::string_view(strdata(Field.name->symbol), Field.name->symbol->len),
          std::string_view(strdata(Field.name->symbol), Field.name->symbol->len));
       diagnostic.token = Token::from_span(Field.name->span, TokenKind::Identifier);
-      this->context_.diagnostics().report(diagnostic);
+      this->report_diagnostic(diagnostic);
       Field.builtin_shadow_reported = true;
    }
 
-   void validate_builtin_method_arguments(CallExprPayload &Call)
+   void validate_native_arguments(CallExprPayload &Call, const fprototype *Prototype, size_t NativeOffset,
+      size_t PipedArguments, bool &ArgumentsValidated)
    {
-      if (not Call.builtin_method or Call.builtin_method->arguments_validated) return;
-      const fprototype *prototype = Call.builtin_method->prototype;
-      if (not prototype or prototype->param_count IS 0) return;
+      if (ArgumentsValidated or not Prototype) return;
 
-      const TiriType *parameters = prototype->param_types();
+      const TiriType *parameters = Prototype->param_types();
       bool validation_complete = true;
       for (size_t index = 0; index < Call.arguments.size(); ++index) {
-         size_t native_index = index + 1;
-         if (native_index >= prototype->param_count) break;
+         size_t native_index = index + NativeOffset + PipedArguments;
+         if (native_index >= Prototype->param_count) break;
          if (Call.arguments[index]->kind IS AstNodeKind::IdentifierExpr) {
             const auto &reference = std::get<NameRef>(Call.arguments[index]->data);
             if (reference.binding_id and this->catalogue_.binding(reference.binding_id).is_variant) continue;
@@ -1025,28 +1057,81 @@ private:
          const StaticValueDescriptor actual = this->descriptor_of(*Call.arguments[index]);
          TiriType expected = parameters[native_index];
          if (actual.primary IS TiriType::Nil) {
-            if ((prototype->flags & FProtoFlags::NoNil) != FProtoFlags::None) {
-               this->report_method_argument(Call.arguments[index]->span,
-                  std::format("required argument {} cannot be nil", index + 1));
+            if ((Prototype->flags & FProtoFlags::NoNil) != FProtoFlags::None) {
+               this->report_native_argument(Call.arguments[index]->span,
+                  std::format("required argument {} cannot be nil", index + PipedArguments + 1));
             }
          }
          else if (expected != TiriType::Any and not actual.proved()) validation_complete = false;
          else if (expected != TiriType::Any and actual.primary != TiriType::Unknown and
              actual.primary != TiriType::Any and actual.primary != expected and
              not (expected IS TiriType::Func and actual.primary IS TiriType::Table)) {
-            this->report_method_argument(Call.arguments[index]->span,
-               std::format("argument {} expects {}, got {}", index + 1,
+            this->report_native_argument(Call.arguments[index]->span,
+               std::format("argument {} expects {}, got {}", index + PipedArguments + 1,
                   type_name(expected), type_name(actual.primary)));
          }
       }
 
-      if ((prototype->flags & FProtoFlags::NoNil) != FProtoFlags::None and
-          Call.arguments.size() + 1 < prototype->param_count and not Call.forwards_multret) {
-         this->report_method_argument(Call.arguments.empty() ? SourceSpan{} : Call.arguments.back()->span,
-            std::format("required argument {} is missing", Call.arguments.size() + 1));
+      size_t fixed_arguments = PipedArguments + Call.arguments.size() -
+         size_t(Call.forwards_multret and not Call.arguments.empty());
+      size_t minimum = Prototype->min_param_count >= NativeOffset ?
+         Prototype->min_param_count - NativeOffset : 0;
+      size_t maximum = Prototype->param_count >= NativeOffset ? Prototype->param_count - NativeOffset : 0;
+      SourceSpan arity_span = Call.arguments.empty() ? SourceSpan{} : Call.arguments.back()->span;
+      bool arity_known = Prototype->min_param_count != FProtoArity::UNSPECIFIED;
+      size_t supplied_arguments = PipedArguments + Call.arguments.size();
+      if (arity_known and not Call.forwards_multret and supplied_arguments < minimum) {
+         this->report_native_argument(arity_span,
+            std::format("required argument {} is missing", supplied_arguments + 1));
       }
-      if (Call.forwards_multret) validation_complete = false;
-      Call.builtin_method->arguments_validated = validation_complete;
+      if (arity_known and (Prototype->flags & FProtoFlags::Variadic) IS FProtoFlags::None and
+          fixed_arguments > maximum) {
+         this->report_native_argument(arity_span,
+            std::format("expected at most {} arguments, got {}", maximum, supplied_arguments));
+      }
+      if (Call.forwards_multret or Call.receives_pipe_results) validation_complete = false;
+      ArgumentsValidated = validation_complete;
+   }
+
+   void validate_builtin_method_arguments(CallExprPayload &Call)
+   {
+      if (not Call.builtin_method or Call.receives_pipe_results) return;
+      this->validate_native_arguments(Call, Call.builtin_method->prototype, 1, 0,
+         Call.builtin_method->arguments_validated);
+   }
+
+   [[nodiscard]] std::optional<size_t> pipe_argument_count(const PipeExprPayload &Pipe) const
+   {
+      if (not Pipe.lhs) return std::nullopt;
+
+      bool multi_result_source = Pipe.lhs->kind IS AstNodeKind::CallExpr or
+         Pipe.lhs->kind IS AstNodeKind::SafeCallExpr or Pipe.lhs->kind IS AstNodeKind::PipeExpr or
+         Pipe.lhs->kind IS AstNodeKind::ResultFilterExpr or Pipe.lhs->kind IS AstNodeKind::VarArgExpr;
+      if (not multi_result_source) return 1;
+      if (Pipe.limit > 0) return Pipe.limit;
+      if (not Pipe.lhs->static_results) return std::nullopt;
+
+      const StaticResultSet &results = this->catalogue_.results(Pipe.lhs->static_results);
+      if (results.dynamic or results.variadic) return std::nullopt;
+      return results.declared_count;
+   }
+
+   void validate_pipe_native_arguments(PipeExprPayload &Pipe)
+   {
+      if (not Pipe.rhs_call or (Pipe.rhs_call->kind != AstNodeKind::CallExpr and
+          Pipe.rhs_call->kind != AstNodeKind::SafeCallExpr)) return;
+      std::optional<size_t> piped_arguments = this->pipe_argument_count(Pipe);
+      if (not piped_arguments) return;
+
+      auto &call = std::get<CallExprPayload>(Pipe.rhs_call->data);
+      if (call.builtin_method) {
+         this->validate_native_arguments(call, call.builtin_method->prototype, 1, *piped_arguments,
+            call.builtin_method->arguments_validated);
+      }
+      else if (call.native_prototype and call.compiler_callable IS BuiltinCallableID::Invalid) {
+         this->validate_native_arguments(call, call.native_prototype, 0, *piped_arguments,
+            call.native_arguments_validated);
+      }
    }
 
    void resolve_builtin_method(CallExprPayload &Call)
@@ -1245,7 +1330,7 @@ private:
       bool is_of = member.member.symbol->hash IS kt::strhash("of");
       bool is_new = member.member.symbol->hash IS kt::strhash("new");
       if (not is_of and not is_new) return std::nullopt;
-      size_t position = is_of ? 0 : 1;
+      size_t position = 0;
       if (position >= Call.arguments.size() or Call.arguments[position]->kind != AstNodeKind::LiteralExpr) {
          return std::nullopt;
       }
@@ -1266,6 +1351,11 @@ private:
          if (not Call.results) Call.results = this->native_call_results(Call);
       }
       else this->annotate_call(Call);
+      if (not Call.receives_pipe_results and Call.native_prototype and
+          Call.native_prototype->min_param_count != FProtoArity::UNSPECIFIED and
+          Call.compiler_callable IS BuiltinCallableID::Invalid) {
+         this->validate_native_arguments(Call, Call.native_prototype, 0, 0, Call.native_arguments_validated);
+      }
       StaticValueDescriptor result;
 
       if (Call.results) {
@@ -1794,7 +1884,7 @@ private:
          "cannot designate a contextual table through '__context' because {}",
          foreign_table_source_reason(proof.foreign_source));
       diagnostic.token = Token::from_span(target.span, TokenKind::Identifier);
-      this->context_.diagnostics().report(diagnostic);
+      this->report_diagnostic(diagnostic);
    }
 
    void propagate_call_children(CallExprPayload &Call)
@@ -1942,6 +2032,7 @@ private:
          case AstNodeKind::PipeExpr: {
             auto &pipe = std::get<PipeExprPayload>(Expression.data);
             if (pipe.rhs_call) {
+               this->validate_pipe_native_arguments(pipe);
                if (pipe.lhs and (pipe.rhs_call->kind IS AstNodeKind::CallExpr or
                                 pipe.rhs_call->kind IS AstNodeKind::SafeCallExpr)) {
                   auto &call = std::get<CallExprPayload>(pipe.rhs_call->data);
@@ -1955,7 +2046,7 @@ private:
                            diagnostic.message = std::format("forEach expects exactly 2 arguments, got {}",
                               input.stored_count + call.arguments.size());
                            diagnostic.token = Token::from_span(pipe.rhs_call->span, TokenKind::Identifier);
-                           this->context_.diagnostics().report(diagnostic);
+                           this->report_diagnostic(diagnostic);
                         }
                      }
                      StaticValueDescriptor target = this->descriptor_of(*pipe.lhs);
@@ -2069,7 +2160,9 @@ private:
          case AstNodeKind::TernaryExpr: {
             auto &payload = std::get<TernaryExprPayload>(Expression.data);
             if (payload.if_true and payload.if_false) {
-               value = join_static_descriptors(
+               if (expression_never_returns(*payload.if_true)) value = this->descriptor_of(*payload.if_false);
+               else if (expression_never_returns(*payload.if_false)) value = this->descriptor_of(*payload.if_true);
+               else value = join_static_descriptors(
                   this->descriptor_of(*payload.if_true), this->descriptor_of(*payload.if_false));
             }
             break;
@@ -2077,7 +2170,7 @@ private:
          case AstNodeKind::ChooseExpr: {
             bool have_value = false;
             for (auto &choice : std::get<ChooseExprPayload>(Expression.data).cases) {
-               if (not choice.result) continue;
+               if (not choice.result or expression_never_returns(*choice.result)) continue;
                if (not have_value) {
                   value = this->descriptor_of(*choice.result);
                   have_value = true;
@@ -2253,6 +2346,11 @@ private:
          if (not statement) continue;
          if (statement->kind IS AstNodeKind::ReturnStmt) {
             auto &payload = std::get<ReturnStmtPayload>(statement->data);
+            bool returns = true;
+            for (const auto &value : payload.values) {
+               if (value and expression_never_returns(*value)) returns = false;
+            }
+            if (not returns) continue;
             StaticResultSet current;
             current.declared_count = uint16_t(payload.values.size());
             current.stored_count = uint8_t(std::min<size_t>(payload.values.size(), MAX_RETURN_TYPES));
@@ -2476,6 +2574,9 @@ private:
    {
       auto visit = [&](ExprNodePtr &Node) { if (Node) Visit(*Node); };
       switch (Expression.kind) {
+         case AstNodeKind::RaiseExpr: {
+            auto &p = std::get<RaisePayload>(Expression.data); visit(p.error_code); visit(p.message); break;
+         }
          case AstNodeKind::UnaryExpr: visit(std::get<UnaryExprPayload>(Expression.data).operand); break;
          case AstNodeKind::UpdateExpr: visit(std::get<UpdateExprPayload>(Expression.data).target); break;
          case AstNodeKind::TypeTestExpr: visit(std::get<TypeTestExprPayload>(Expression.data).value); break;
@@ -2629,7 +2730,10 @@ private:
             visit(std::get<CheckallStmtPayload>(Statement.data).block);
             break;
          case AstNodeKind::ImportStmt:
-            for (auto &e : std::get<ImportStmtPayload>(Statement.data).entries) visit(e.inlined_body);
+            for (auto &entry : std::get<ImportStmtPayload>(Statement.data).entries) {
+               ImportSourceGuard guard(this->context_.lex(), entry.file_source_idx);
+               visit(entry.inlined_body);
+            }
             break;
          case AstNodeKind::WithStmt: visit(std::get<WithStmtPayload>(Statement.data).block); break;
          default: break;

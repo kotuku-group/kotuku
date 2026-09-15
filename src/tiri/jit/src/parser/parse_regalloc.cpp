@@ -409,6 +409,7 @@ static void bcemit_nil(FuncState *fs, BCREG from, BCREG n)
 
 static void expr_toreg_nobranch(FuncState *fs, ExpDesc *e, BCREG reg)
 {
+   if (e->is_unreachable()) return;
    BCIns ins;
    expr_discharge(fs, e);
    if (e->k IS ExpKind::Str) {
@@ -445,7 +446,8 @@ static void expr_toreg_nobranch(FuncState *fs, ExpDesc *e, BCREG reg)
       ins = BCINS_AD(BC_KPRI, reg, const_pri(e));
    }
    else {
-      fs_check_assert(fs,e->k IS ExpKind::Void or e->k IS ExpKind::Jmp, "bad expr type %d", int(e->k));
+      fs_check_assert(fs, e->k IS ExpKind::Void or e->k IS ExpKind::Jmp or e->k IS ExpKind::Unreachable,
+         "bad expr type %d", int(e->k));
       return;
    }
 
@@ -461,6 +463,7 @@ noins:
 
 static void expr_toreg(FuncState *fs, ExpDesc *e, BCREG reg)
 {
+   if (e->is_unreachable()) return;
    expr_toreg_nobranch(fs, e, reg);
    ControlFlowGraph cfg(fs);
 
@@ -500,6 +503,7 @@ static void expr_toreg(FuncState *fs, ExpDesc *e, BCREG reg)
 
 static void expr_tonextreg(FuncState *fs, ExpDesc *e)
 {
+   if (e->is_unreachable()) return;
    expr_discharge(fs, e);
    expr_free(fs, e);
    bcreg_reserve(fs, 1);
@@ -511,6 +515,7 @@ static void expr_tonextreg(FuncState *fs, ExpDesc *e)
 
 static BCREG expr_toanyreg(FuncState *fs, ExpDesc *e)
 {
+   if (e->is_unreachable()) return NO_REG;
    expr_discharge(fs, e);
    if (e->k IS ExpKind::NonReloc) [[likely]] {
       if (!e->has_jump()) [[likely]] return e->u.s.info;  // Already in a register.
@@ -559,17 +564,6 @@ static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeCo
    BCREG StaticValueCount, bool DynamicCount, bool Variadic)
 {
    if (Contracts.empty()) return;
-
-   // Dynamic result counts still require interpreter-only MRSAVE/MRRESTORE handling.  Const contracts retain
-   // prototype-wide lifecycle semantics.  Ordinary global declaration finalisers are bytecode-local side-effect
-   // boundaries handled by the recorder; other fixed contracts have exact recorder predicates.
-   if (DynamicCount) fs->flags |= PROTO_NOJIT;
-   for (const RuntimeContract &contract : Contracts) {
-      if (contract.is_const) {
-         fs->flags |= PROTO_NOJIT;
-         break;
-      }
-   }
 
    std::string descriptor;
    descriptor.reserve(4 + Contracts.size() * 8);
@@ -728,6 +722,7 @@ static void check_object_class_assignment(FuncState *Fs, const VarInfo &Variable
 static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS,
    const RuntimeContract *GlobalDeclarationContract, bool IsGlobalDeclaration)
 {
+   if (RHS->is_unreachable()) return;
    BCIns ins;
    RuntimeContract global_declaration_finaliser;
    BCREG global_declaration_base = 0;
@@ -939,6 +934,7 @@ inline void invertcond(FuncState *fs, ExpDesc *e)
 
 static void bcemit_branch_t(FuncState *fs, ExpDesc *e)
 {
+   if (e->is_unreachable()) return;
    BCPOS pc;
    expr_discharge(fs, e);
    if (e->k IS ExpKind::Str or e->k IS ExpKind::Num or e->k IS ExpKind::True) pc = NO_JMP;  // Never jump.

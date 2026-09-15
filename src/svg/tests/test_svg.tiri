@@ -54,9 +54,10 @@ function hashTestSVG(Path:str, ExpectedHash:num, Stable:bool)
    if ExpectedHash != hash then
       saveBitmap(bmp, Path, Stable)
       if ExpectedHash then
-         error('Computed hash for "' .. Path .. '" is ' .. string.format('0x%.8x', hash) .. ', expected ' .. string.format('0x%.8x', ExpectedHash))
+         raise 'Computed hash for "' .. Path .. '" is ' .. string.format('0x%.8x', hash) ..
+            ', expected ' .. string.format('0x%.8x', ExpectedHash)
       else
-         error('Hash for "' .. Path .. '" is '  .. string.format('0x%.8x', hash))
+         raise 'Hash for "' .. Path .. '" is '  .. string.format('0x%.8x', hash)
       end
    end
 end
@@ -178,8 +179,8 @@ function pHashTestSVG(Path:str, ExpectedHash:array<byte>, MaxDistance:num, Stabl
 
    if distance > MaxDistance then
       saveBitmap(bmp, Path)
-      error('Computed pHash for "' .. Path .. '" is ' .. pHashString(hash) .. ', expected ' ..
-         pHashString(ExpectedHash) .. ' (Hamming distance ' .. distance .. ', maximum ' .. MaxDistance .. ')')
+      raise 'Computed pHash for "' .. Path .. '" is ' .. pHashString(hash) .. ', expected ' ..
+         pHashString(ExpectedHash) .. ' (Hamming distance ' .. distance .. ', maximum ' .. MaxDistance .. ')'
    end
 end
 

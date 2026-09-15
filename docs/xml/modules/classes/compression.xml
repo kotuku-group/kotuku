@@ -570,6 +570,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <const name="DIRECTORY">The file object represents a folder.</const>
       <const name="EXCLUDE_FILES">Exclude files when scanning this folder.</const>
       <const name="EXCLUDE_FOLDERS">Exclude folders when scanning this folder.</const>
+      <const name="EXCLUSIVE">Create a new file only if its path does not already exist.  Requires <code>NEW</code>.</const>
       <const name="FILE">Explicitly declares the file object as an entity that stores content (as opposed to a device or folder for example).</const>
       <const name="FOLDER">The file object represents a folder.</const>
       <const name="LINK">Read-Only.  Indicates that the file is a symbolic link or shortcut to another file.</const>

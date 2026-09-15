@@ -134,7 +134,7 @@ static ERR IMAGE_Activate(extImage *Self)
 
    log.branch();
 
-   ERR error = ERR::Failed;
+   ERR error = ERR::Decompression;
    tlError = false;
 
    auto bmp = Self->Bitmap;
@@ -148,7 +148,10 @@ static ERR IMAGE_Activate(extImage *Self)
       std::string_view path;
       if ((Self->getPath(path) != ERR::Okay) or path.empty()) return log.warning(ERR::FieldNotSet);
 
-      if (!(Self->prvFile = objFile::create::local(fl::Path(path), fl::Flags(FL::READ|FL::APPROXIMATE)))) goto exit;
+      if (!(Self->prvFile = objFile::create::local(fl::Path(path), fl::Flags(FL::READ|FL::APPROXIMATE)))) {
+         error = ERR::CreateObject;
+         goto exit;
+      }
       file_opened = true;
    }
 
@@ -503,7 +506,7 @@ static ERR IMAGE_Query(extImage *Self)
    log.branch();
 
    objBitmap *Bitmap = Self->Bitmap;
-   ERR error = ERR::Failed;
+   ERR error = ERR::Decompression;
    png_structp read_ptr = nullptr;
    png_infop info_ptr = nullptr;
    png_infop end_info = nullptr;
@@ -514,7 +517,10 @@ static ERR IMAGE_Query(extImage *Self)
    if (!Self->prvFile) {
       if (Self->getPath(path) != ERR::Okay) return log.warning(ERR::GetField);
 
-      if (!(Self->prvFile = objFile::create::local(fl::Path(path), fl::Flags(FL::READ|FL::APPROXIMATE)))) goto exit;
+      if (!(Self->prvFile = objFile::create::local(fl::Path(path), fl::Flags(FL::READ|FL::APPROXIMATE)))) {
+         error = ERR::CreateObject;
+         goto exit;
+      }
    }
 
    if ((error = Self->prvFile->seekStart(0)) != ERR::Okay) goto exit;
@@ -611,7 +617,7 @@ static ERR IMAGE_SaveImage(extImage *Self, struct acSaveImage *Args)
    OBJECTPTR file        = nullptr;
    png_structp write_ptr = nullptr;
    png_infop info_ptr    = nullptr;
-   ERR error = ERR::Failed;
+   ERR error = ERR::Compression;
    tlError = false;
 
    bool alpha_mask = ((Self->Flags & PCF::ALPHA) != PCF::NIL);
@@ -1136,7 +1142,7 @@ static void png_warning_hook(png_structp png_ptr, png_const_charp message)
 static ERR decompress_png(extImage *Self, objBitmap *Bitmap, int BitDepth, int ColourType, png_structp ReadPtr,
                             png_infop InfoPtr, png_uint_32 PngWidth, png_uint_32 PngHeight)
 {
-   ERR error = ERR::Failed;
+   ERR error = ERR::Decompression;
    std::vector<uint8_t> row;
    std::vector<uint8_t> image_data;
    std::vector<uint8_t> scratch_row;

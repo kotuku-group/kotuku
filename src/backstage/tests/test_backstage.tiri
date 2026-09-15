@@ -102,7 +102,7 @@ function websocket_frame(Payload:str, Opcode:num):str
       frame ..= string.char((len >> 8) & 0xff)
       frame ..= string.char(len & 0xff)
    else
-      error('Test WebSocket frame is too large.')
+      raise 'Test WebSocket frame is too large.'
    end
 
    frame ..= mask

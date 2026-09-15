@@ -82,7 +82,7 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_pipe(
    BCLine call_line = this->lex_state.lastline;
    BCReg call_base = state->free_reg();
    auto receiver_result = this->emit_expression(*receiver_node);
-   if (not receiver_result.ok()) return receiver_result;
+   if (not receiver_result.ok() or receiver_result.value_ref().is_unreachable()) return receiver_result;
 
    std::unique_ptr<NilShortCircuitGuard> nil_guard;
    ExpDesc receiver = receiver_result.value_ref();
@@ -115,6 +115,7 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_pipe(
       state->freereg = branch_base.raw() + 1 + LJ_FR2 + (BuiltinBranch ? 1 : 0);
       auto lhs_result = this->emit_expression(*Payload.lhs);
       if (not lhs_result.ok()) return ParserResult<BCPos>::failure(lhs_result.error_ref());
+      if (lhs_result.value_ref().is_unreachable()) return ParserResult<BCPos>::success(BCPos(NO_JMP));
       ExpDesc lhs = lhs_result.value_ref();
       bool forward_multret = false;
       if (lhs.k IS ExpKind::Call) {
@@ -135,6 +136,7 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_pipe(
          auto arguments_result = this->emit_expression_list(Call.arguments, argument_count);
          if (not arguments_result.ok()) return ParserResult<BCPos>::failure(arguments_result.error_ref());
          arguments = arguments_result.value_ref();
+         if (arguments.is_unreachable()) return ParserResult<BCPos>::success(BCPos(NO_JMP));
       }
 
       BCIns instruction;
@@ -216,6 +218,11 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_pipe(
       skip_nil.patch_here();
    }
 
+   if (field_call.raw() IS NO_JMP and builtin_call.raw() IS NO_JMP) {
+      if (nil_guard) return nil_guard->complete_unreachable(call_base);
+      return ParserResult<ExpDesc>::success(ExpDesc(ExpKind::Unreachable));
+   }
+
    ParserResult<ExpDesc> emitted = nil_guard ? nil_guard->complete_call(call_base, field_call) :
       ParserResult<ExpDesc>::success(ExpDesc(ExpKind::Call, field_call.raw()));
    if (not emitted.ok()) return emitted;
@@ -274,7 +281,7 @@ ParserResult<ExpDesc> IrEmitter::emit_pipe_expr(const PipeExprPayload &Payload)
 
       BCReg context_result_base = fs->free_reg();
       auto receiver_result = this->emit_expression(*context_receiver_node);
-      if (not receiver_result.ok()) return receiver_result;
+      if (not receiver_result.ok() or receiver_result.value_ref().is_unreachable()) return receiver_result;
       ExpDesc receiver = receiver_result.value_ref();
       this->materialise_to_next_reg(receiver, "contextual pipe receiver");
       context_result_base = BCReg(receiver.u.s.info);
@@ -306,6 +313,13 @@ ParserResult<ExpDesc> IrEmitter::emit_pipe_expr(const PipeExprPayload &Payload)
          bcemit_AD(fs, BC_MOV, retained_receiver_reg, context_result_base.raw());
          auto key_result = this->emit_expression(*index_node);
          if (not key_result.ok()) return key_result;
+         if (key_result.value_ref().is_unreachable()) {
+            if (not safe_callable) return key_result;
+            receiver_nil_jump.patch_here();
+            bcemit_nil(fs, context_result_base.raw(), 1);
+            fs->freereg = context_result_base.raw() + 1;
+            return ParserResult<ExpDesc>::success(ExpDesc(ExpKind::NonReloc, context_result_base.raw()));
+         }
          ExpDesc key = key_result.value_ref();
          ExpressionValue key_value(fs, key);
          key_value.to_val();
@@ -347,8 +361,18 @@ ParserResult<ExpDesc> IrEmitter::emit_pipe_expr(const PipeExprPayload &Payload)
          }
       }
 
+      auto finish_unreachable = [&]() -> ParserResult<ExpDesc> {
+         if (not safe_callable) return ParserResult<ExpDesc>::success(ExpDesc(ExpKind::Unreachable));
+         if (not receiver_nil_jump.empty()) receiver_nil_jump.patch_here();
+         nil_jump.patch_here();
+         bcemit_nil(fs, context_result_base.raw(), 1);
+         fs->freereg = context_result_base.raw() + 1;
+         return ParserResult<ExpDesc>::success(ExpDesc(ExpKind::NonReloc, context_result_base.raw()));
+      };
+
       auto lhs_result = this->emit_expression(*Payload.lhs);
       if (not lhs_result.ok()) return lhs_result;
+      if (lhs_result.value_ref().is_unreachable()) return finish_unreachable();
       ExpDesc lhs = lhs_result.value_ref();
       bool forward_multret = false;
       if (lhs.k IS ExpKind::Call) {
@@ -369,6 +393,7 @@ ParserResult<ExpDesc> IrEmitter::emit_pipe_expr(const PipeExprPayload &Payload)
          auto args_result = this->emit_expression_list(call_payload.arguments, arg_count);
          if (not args_result.ok()) return ParserResult<ExpDesc>::failure(args_result.error_ref());
          args = args_result.value_ref();
+         if (args.is_unreachable()) return finish_unreachable();
       }
 
       BCIns instruction;
@@ -419,7 +444,7 @@ ParserResult<ExpDesc> IrEmitter::emit_pipe_expr(const PipeExprPayload &Payload)
       }
 
       auto receiver_result = this->emit_expression(*receiver_node);
-      if (not receiver_result.ok()) return receiver_result;
+      if (not receiver_result.ok() or receiver_result.value_ref().is_unreachable()) return receiver_result;
       ExpDesc receiver = receiver_result.value_ref();
       RegisterAllocator allocator(fs);
       BCReg receiver_reg(0);
@@ -439,7 +464,7 @@ ParserResult<ExpDesc> IrEmitter::emit_pipe_expr(const PipeExprPayload &Payload)
    else if (const auto* direct = std::get_if<DirectCallTarget>(&call_payload.target)) {
       if (not direct->callable) return this->unsupported_expr(AstNodeKind::PipeExpr, SourceSpan{});
       auto callee_result = this->emit_expression(*direct->callable);
-      if (not callee_result.ok()) return callee_result;
+      if (not callee_result.ok() or callee_result.value_ref().is_unreachable()) return callee_result;
       callee = callee_result.value_ref();
       this->materialise_to_next_reg(callee, "pipe call callee");
       RegisterAllocator allocator(fs);
@@ -452,6 +477,10 @@ ParserResult<ExpDesc> IrEmitter::emit_pipe_expr(const PipeExprPayload &Payload)
 
    auto lhs_result = this->emit_expression(*Payload.lhs);
    if (not lhs_result.ok()) return lhs_result;
+   if (lhs_result.value_ref().is_unreachable()) {
+      if (nil_guard) return nil_guard->complete_unreachable(base);
+      return lhs_result;
+   }
    ExpDesc lhs = lhs_result.value_ref();
 
    // Determine if LHS is a multi-value expression (function call)
@@ -492,6 +521,10 @@ ParserResult<ExpDesc> IrEmitter::emit_pipe_expr(const PipeExprPayload &Payload)
       auto args_result = this->emit_expression_list(call_payload.arguments, arg_count);
       if (not args_result.ok()) return ParserResult<ExpDesc>::failure(args_result.error_ref());
       args = args_result.value_ref();
+      if (args.is_unreachable()) {
+         if (nil_guard) return nil_guard->complete_unreachable(base);
+         return args_result;
+      }
    }
 
    // Emit the call instruction
@@ -549,7 +582,7 @@ ParserResult<ExpDesc> IrEmitter::emit_builtin_method_call(const CallExprPayload 
    BCLine call_line = this->lex_state.lastline;
    BCReg call_base = this->func_state.free_reg();
    auto receiver_result = this->emit_expression(*receiver_node);
-   if (not receiver_result.ok()) return receiver_result;
+   if (not receiver_result.ok() or receiver_result.value_ref().is_unreachable()) return receiver_result;
 
    std::unique_ptr<NilShortCircuitGuard> nil_guard;
    ExpDesc receiver = receiver_result.value_ref();
@@ -576,6 +609,11 @@ ParserResult<ExpDesc> IrEmitter::emit_builtin_method_call(const CallExprPayload 
       auto args_result = this->emit_expression_list(Payload.arguments, arg_count);
       if (not args_result.ok()) return ParserResult<ExpDesc>::failure(args_result.error_ref());
       args = args_result.value_ref();
+   }
+
+   if (args.is_unreachable()) {
+      if (nil_guard) return nil_guard->complete_unreachable(call_base);
+      return ParserResult<ExpDesc>::success(args);
    }
 
    BCIns ins;
@@ -632,7 +670,7 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_call(const CallExpr
    BCLine call_line = this->lex_state.lastline;
    BCReg call_base = state->free_reg();
    auto receiver_result = this->emit_expression(*receiver_node);
-   if (not receiver_result.ok()) return receiver_result;
+   if (not receiver_result.ok() or receiver_result.value_ref().is_unreachable()) return receiver_result;
 
    std::unique_ptr<NilShortCircuitGuard> nil_guard;
    ExpDesc receiver = receiver_result.value_ref();
@@ -669,6 +707,7 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_call(const CallExpr
          auto arguments_result = this->emit_expression_list(Payload.arguments, argument_count);
          if (not arguments_result.ok()) return ParserResult<BCPos>::failure(arguments_result.error_ref());
          arguments = arguments_result.value_ref();
+         if (arguments.is_unreachable()) return ParserResult<BCPos>::success(BCPos(NO_JMP));
       }
 
       BCIns instruction;
@@ -754,6 +793,11 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_call(const CallExpr
       field_nil_init = state->pc;
       bcemit_nil(state, call_base.raw(), 1);
       skip_nil.patch_here();
+   }
+
+   if (field_call.raw() IS NO_JMP and builtin_call.raw() IS NO_JMP) {
+      if (nil_guard) return nil_guard->complete_unreachable(call_base);
+      return ParserResult<ExpDesc>::success(ExpDesc(ExpKind::Unreachable));
    }
 
    ParserResult<ExpDesc> emitted = nil_guard ? nil_guard->complete_call(call_base, field_call) :
@@ -884,7 +928,7 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
       }
       else if (is_contextual_call) {
          auto receiver_result = this->emit_expression(*receiver_node);
-         if (not receiver_result.ok()) return receiver_result;
+         if (not receiver_result.ok() or receiver_result.value_ref().is_unreachable()) return receiver_result;
          ExpDesc receiver = receiver_result.value_ref();
          this->materialise_to_next_reg(receiver, "contextual call receiver");
          auto receiver_reg = BCReg(receiver.u.s.info);
@@ -913,6 +957,13 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
 
             auto key_result = this->emit_expression(*index_node);
             if (not key_result.ok()) return key_result;
+            if (key_result.value_ref().is_unreachable()) {
+               if (not is_safe_callable) return key_result;
+               receiver_nil_jump.patch_here();
+               bcemit_nil(&this->func_state, context_result_base.raw(), 1);
+               this->func_state.freereg = context_result_base.raw() + 1;
+               return ParserResult<ExpDesc>::success(ExpDesc(ExpKind::NonReloc, context_result_base.raw()));
+            }
             ExpDesc key = key_result.value_ref();
             ExpressionValue key_value(&this->func_state, key);
             key_value.to_val();
@@ -937,7 +988,7 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
       }
       else {
          auto callee_result = this->emit_expression(*direct->callable);
-         if (not callee_result.ok()) return callee_result;
+         if (not callee_result.ok() or callee_result.value_ref().is_unreachable()) return callee_result;
          callee = callee_result.value_ref();
       }
 
@@ -1045,6 +1096,16 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
       auto args_result = this->emit_expression_list(Payload.arguments, arg_count);
       if (not args_result.ok()) return ParserResult<ExpDesc>::failure(args_result.error_ref());
       args = args_result.value_ref();
+   }
+
+   if (args.is_unreachable()) {
+      if (not is_safe_callable) return ParserResult<ExpDesc>::success(args);
+      BCReg result_reg = is_contextual_call ? context_result_base : base;
+      nil_jump.patch_here();
+      if (not receiver_nil_jump.empty()) receiver_nil_jump.patch_here();
+      bcemit_nil(&this->func_state, result_reg.raw(), 1);
+      this->func_state.freereg = result_reg + 1;
+      return ParserResult<ExpDesc>::success(ExpDesc(ExpKind::NonReloc, result_reg.raw()));
    }
 
    BCIns ins;
@@ -1196,7 +1257,7 @@ ParserResult<ExpDesc> IrEmitter::emit_result_filter_expr(const ResultFilterPaylo
    // Emit the call expression
 
    auto call_result = this->emit_expression(*Payload.expression);
-   if (not call_result.ok()) return call_result;
+   if (not call_result.ok() or call_result.value_ref().is_unreachable()) return call_result;
    ExpDesc call = call_result.value_ref();
 
    // Set B=0 on the inner call to request all return values

@@ -107,7 +107,7 @@ void seal_proto_registry()
 
 static fprototype * alloc_prototype(std::initializer_list<TiriType> ResultTypes,
    std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags, TiriType ReceiverType = TiriType::Unknown,
-   BuiltinCallableID Callable = BuiltinCallableID::Invalid)
+   BuiltinCallableID Callable = BuiltinCallableID::Invalid, FProtoArity Arity = FProtoArity::unspecified())
 {
    size_t struct_size = sizeof(fprototype) + ParamTypes.size() * sizeof(TiriType);
    auto *proto = (fprototype*)glArena.allocate(struct_size, alignof(fprototype));
@@ -117,6 +117,7 @@ static fprototype * alloc_prototype(std::initializer_list<TiriType> ResultTypes,
    proto->flags = Flags;
    proto->receiver_type = ReceiverType;
    proto->builtin_callable_id = Callable;
+   proto->min_param_count = Arity.minimum IS FProtoArity::EXACT ? proto->param_count : Arity.minimum;
    proto->reserved = 0;
 
    // Initialise result types
@@ -146,11 +147,13 @@ static fprototype * alloc_prototype(std::initializer_list<TiriType> ResultTypes,
 
 static bool prototype_matches(const fprototype *Prototype, std::initializer_list<TiriType> ResultTypes,
    std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags, TiriType ReceiverType,
-   BuiltinCallableID Callable)
+   BuiltinCallableID Callable, FProtoArity Arity)
 {
+   uint8_t minimum = Arity.minimum IS FProtoArity::EXACT ? uint8_t(ParamTypes.size()) : Arity.minimum;
    if (not Prototype or Prototype->result_count != ResultTypes.size() or
        Prototype->param_count != ParamTypes.size() or Prototype->flags != Flags or
-       Prototype->receiver_type != ReceiverType or Prototype->builtin_callable_id != Callable) return false;
+       Prototype->receiver_type != ReceiverType or Prototype->builtin_callable_id != Callable or
+       Prototype->min_param_count != minimum) return false;
 
    size_t index = 0;
    for (TiriType type : ResultTypes) {
@@ -164,9 +167,10 @@ static bool prototype_matches(const fprototype *Prototype, std::initializer_list
 }
 
 static ERR validate_prototype_limits(
-   std::initializer_list<TiriType> ResultTypes, std::initializer_list<TiriType> ParamTypes)
+   std::initializer_list<TiriType> ResultTypes, std::initializer_list<TiriType> ParamTypes, FProtoArity Arity)
 {
-   if (ResultTypes.size() > PROTO_MAX_RETURN_TYPES or ParamTypes.size() > FPROTO_MAX_PARAMS) {
+   if (ResultTypes.size() > PROTO_MAX_RETURN_TYPES or ParamTypes.size() > FPROTO_MAX_PARAMS or
+       (Arity.minimum < FProtoArity::EXACT and Arity.minimum > ParamTypes.size())) {
       return ERR::BufferOverflow;
    }
    return ERR::Okay;
@@ -217,30 +221,30 @@ static ERR validate_method_state(lua_State *L, std::string_view Interface, std::
 //********************************************************************************************************************
 
 ERR reg_func_prototype(std::string_view Name, std::initializer_list<TiriType> ResultTypes,
-   std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags)
+   std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags, FProtoArity Arity)
 {
-   if (validate_prototype_limits(ResultTypes, ParamTypes) != ERR::Okay) return ERR::BufferOverflow;
+   if (validate_prototype_limits(ResultTypes, ParamTypes, Arity) != ERR::Okay) return ERR::BufferOverflow;
    ProtoKey key{ 0, kt::strhash(Name) };
 
    { // Fast path: check under shared lock first (common case after first script init)
       std::shared_lock read_lock(glRegistryMutex);
       if (auto existing = glRegistry.find(key); existing != glRegistry.end()) {
          return prototype_matches(existing->second, ResultTypes, ParamTypes, Flags, TiriType::Unknown,
-            BuiltinCallableID::Invalid) ? ERR::Exists : ERR::Mismatch;
+            BuiltinCallableID::Invalid, Arity) ? ERR::Exists : ERR::Mismatch;
       }
    }
 
    std::unique_lock lock(glRegistryMutex);
    if (auto existing = glRegistry.find(key); existing != glRegistry.end()) {
       return prototype_matches(existing->second, ResultTypes, ParamTypes, Flags, TiriType::Unknown,
-         BuiltinCallableID::Invalid) ? ERR::Exists : ERR::Mismatch;
+         BuiltinCallableID::Invalid, Arity) ? ERR::Exists : ERR::Mismatch;
    }
 
    lj_assertX(not glRegistrySealed.load(std::memory_order_acquire), // See reg_iface_method() for the rationale.
       "function prototype '%.*s' registered after the prototype registry was sealed",
       int(Name.size()), Name.data());
 
-   auto *proto = alloc_prototype(ResultTypes, ParamTypes, Flags);
+   auto *proto = alloc_prototype(ResultTypes, ParamTypes, Flags, TiriType::Unknown, BuiltinCallableID::Invalid, Arity);
    glRegistry[key] = proto;
    return ERR::Okay;
 }
@@ -248,30 +252,30 @@ ERR reg_func_prototype(std::string_view Name, std::initializer_list<TiriType> Re
 //********************************************************************************************************************
 
 ERR reg_iface_prototype(std::string_view Interface, std::string_view Method, std::initializer_list<TiriType> ResultTypes,
-   std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags)
+   std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags, FProtoArity Arity)
 {
-   if (validate_prototype_limits(ResultTypes, ParamTypes) != ERR::Okay) return ERR::BufferOverflow;
+   if (validate_prototype_limits(ResultTypes, ParamTypes, Arity) != ERR::Okay) return ERR::BufferOverflow;
    ProtoKey key{ kt::strhash(Interface), kt::strhash(Method) };
 
    {
       std::shared_lock read_lock(glRegistryMutex);
       if (auto existing = glRegistry.find(key); existing != glRegistry.end()) {
          return prototype_matches(existing->second, ResultTypes, ParamTypes, Flags, TiriType::Unknown,
-            BuiltinCallableID::Invalid) ? ERR::Exists : ERR::Mismatch;
+            BuiltinCallableID::Invalid, Arity) ? ERR::Exists : ERR::Mismatch;
       }
    }
 
    std::unique_lock lock(glRegistryMutex);
    if (auto existing = glRegistry.find(key); existing != glRegistry.end()) {
       return prototype_matches(existing->second, ResultTypes, ParamTypes, Flags, TiriType::Unknown,
-         BuiltinCallableID::Invalid) ? ERR::Exists : ERR::Mismatch;
+         BuiltinCallableID::Invalid, Arity) ? ERR::Exists : ERR::Mismatch;
    }
 
    lj_assertX(not glRegistrySealed.load(std::memory_order_acquire), // See reg_iface_method() for the rationale.
       "interface prototype '%.*s' registered after the prototype registry was sealed",
       int(Method.size()), Method.data());
 
-   auto *proto = alloc_prototype(ResultTypes, ParamTypes, Flags);
+   auto *proto = alloc_prototype(ResultTypes, ParamTypes, Flags, TiriType::Unknown, BuiltinCallableID::Invalid, Arity);
    glRegistry[key] = proto;
    return ERR::Okay;
 }
@@ -280,12 +284,12 @@ ERR reg_iface_prototype(std::string_view Interface, std::string_view Method, std
 
 ERR reg_iface_method(lua_State *L, std::string_view Interface, std::string_view Method, TiriType ReceiverType,
    BuiltinCallableID Callable, std::initializer_list<TiriType> ResultTypes,
-   std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags, bool AllowAlias)
+   std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags, FProtoArity Arity, bool AllowAlias)
 {
    if (Interface.empty() or Method.empty() or ReceiverType IS TiriType::Any or
        ReceiverType IS TiriType::Unknown or ReceiverType IS TiriType::Nil or
        ParamTypes.size() IS 0 or *ParamTypes.begin() != ReceiverType) return ERR::InvalidValue;
-   ERR limits = validate_prototype_limits(ResultTypes, ParamTypes);
+   ERR limits = validate_prototype_limits(ResultTypes, ParamTypes, Arity);
    if (limits != ERR::Okay) return limits;
    ERR state_validation = validate_method_state(L, Interface, Method, Callable, true, AllowAlias);
    if (state_validation != ERR::Okay) return state_validation;
@@ -301,7 +305,7 @@ ERR reg_iface_method(lua_State *L, std::string_view Interface, std::string_view 
       auto existing_prototype = glRegistry.find(prototype_key);
       if (existing_prototype != glRegistry.end()) {
          if (not prototype_matches(existing_prototype->second, ResultTypes, ParamTypes, Flags, ReceiverType,
-               Callable)) return ERR::Mismatch;
+               Callable, Arity)) return ERR::Mismatch;
          auto existing_method = glMethodRegistry.find(method_key);
          return existing_method != glMethodRegistry.end() and
             existing_method->second IS existing_prototype->second ? ERR::Exists : ERR::Mismatch;
@@ -313,7 +317,8 @@ ERR reg_iface_method(lua_State *L, std::string_view Interface, std::string_view 
 
    auto existing_prototype = glRegistry.find(prototype_key);
    if (existing_prototype != glRegistry.end()) {
-      if (not prototype_matches(existing_prototype->second, ResultTypes, ParamTypes, Flags, ReceiverType, Callable)) {
+      if (not prototype_matches(existing_prototype->second, ResultTypes, ParamTypes, Flags, ReceiverType, Callable,
+            Arity)) {
          return ERR::Mismatch;
       }
       auto existing_method = glMethodRegistry.find(method_key);
@@ -334,7 +339,7 @@ ERR reg_iface_method(lua_State *L, std::string_view Interface, std::string_view 
       "interface method '%.*s' registered after the prototype registry was sealed",
       int(Method.size()), Method.data());
 
-   auto *prototype = alloc_prototype(ResultTypes, ParamTypes, Flags, ReceiverType, Callable);
+   auto *prototype = alloc_prototype(ResultTypes, ParamTypes, Flags, ReceiverType, Callable, Arity);
    glRegistry[prototype_key] = prototype;
    glMethodRegistry[method_key] = prototype;
    return ERR::Okay;
@@ -344,12 +349,12 @@ ERR reg_iface_method(lua_State *L, std::string_view Interface, std::string_view 
 
 ERR reg_intrinsic_method(lua_State *L, std::string_view Interface, std::string_view Method,
    TiriType ReceiverType, BuiltinCallableID Callable, std::initializer_list<TiriType> ResultTypes,
-   std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags)
+   std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags, FProtoArity Arity)
 {
    if (Interface.empty() or Method.empty() or ReceiverType IS TiriType::Any or
        ReceiverType IS TiriType::Unknown or ReceiverType IS TiriType::Nil or ParamTypes.size() IS 0 or
        *ParamTypes.begin() != ReceiverType) return ERR::InvalidValue;
-   ERR limits = validate_prototype_limits(ResultTypes, ParamTypes);
+   ERR limits = validate_prototype_limits(ResultTypes, ParamTypes, Arity);
    if (limits != ERR::Okay) return limits;
    ERR state_validation = validate_method_state(L, Interface, Method, Callable, false, false);
    if (state_validation != ERR::Okay) return state_validation;
@@ -362,14 +367,14 @@ ERR reg_intrinsic_method(lua_State *L, std::string_view Interface, std::string_v
    { // Repeated state initialisation only needs shared access after its state-local callable validation.
       std::shared_lock read_lock(glRegistryMutex);
       if (auto existing = glMethodRegistry.find(method_key); existing != glMethodRegistry.end()) {
-         return prototype_matches(existing->second, ResultTypes, ParamTypes, Flags, ReceiverType, Callable) ?
+         return prototype_matches(existing->second, ResultTypes, ParamTypes, Flags, ReceiverType, Callable, Arity) ?
             ERR::Exists : ERR::Mismatch;
       }
    }
 
    std::unique_lock lock(glRegistryMutex);
    if (auto existing = glMethodRegistry.find(method_key); existing != glMethodRegistry.end()) {
-      return prototype_matches(existing->second, ResultTypes, ParamTypes, Flags, ReceiverType, Callable) ?
+      return prototype_matches(existing->second, ResultTypes, ParamTypes, Flags, ReceiverType, Callable, Arity) ?
          ERR::Exists : ERR::Mismatch;
    }
 
@@ -377,7 +382,7 @@ ERR reg_intrinsic_method(lua_State *L, std::string_view Interface, std::string_v
       "intrinsic method '%.*s' registered after the prototype registry was sealed",
       int(Method.size()), Method.data());
 
-   auto *prototype = alloc_prototype(ResultTypes, ParamTypes, Flags, ReceiverType, Callable);
+   auto *prototype = alloc_prototype(ResultTypes, ParamTypes, Flags, ReceiverType, Callable, Arity);
    glMethodRegistry[method_key] = prototype;
    return ERR::Okay;
 }

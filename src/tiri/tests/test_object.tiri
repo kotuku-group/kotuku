@@ -120,7 +120,7 @@ end
    except error_value when ERR_MissingPath
       -- Expected failure due to missing path
    success
-      error('Expected a file without a path to fail initialisation')
+      assert(false, 'Expected a file without a path to fail initialisation')
    end
 end
 
@@ -146,7 +146,7 @@ end
       assert(ex.message.find('Parsing failed') or ex.message.find('does_not_exist'),
          'Invalid typed constructor fields should retain the regular object-field diagnostic: ' .. ex.message)
    success
-      error('Expected an invalid typed constructor field to fail')
+      assert(false, 'Expected an invalid typed constructor field to fail')
    end
 
    try
@@ -155,7 +155,7 @@ end
       assert(ex.message.find('UnavailableObjectClass') or ex.message.find('class'),
          'Unavailable typed constructor classes should fail through object creation: ' .. ex.message)
    success
-      error('Expected unavailable typed constructor class creation to fail')
+      assert(false, 'Expected unavailable typed constructor class creation to fail')
    end
 end
 
@@ -205,16 +205,43 @@ end
       assert(ex.message.find("Parsing failed") or ex.message.find("not_a_field"),
          "Expected parsing error for invalid field, got: " .. ex.message)
    success
-      error("Expected error when accessing invalid field")
+      assert(false, "Expected error when accessing invalid field")
    end
 
    -- Test OBSETF - write to a read-only field (runtime error, timestamp exists in dictionary)
    try
       t.timestamp = 1
-   except ex
+   except ex when ERR_ImmutableField
       assert(ex.message.find('Time.timestamp'), "Error message should mention the accessed field, got: " .. ex.message)
+   except ex
+      assert(false, "Expected ImmutableField, got error code " .. tostring(ex.code) .. ": " .. ex.message)
    success
-      error("Expected error when writing a read-only field")
+      assert(false, "Expected error when writing a read-only field")
+   end
+
+   -- Computed-key assignments use object_newindex() and must report the same error code.
+   local dynamic_t:any = obj.new('time', {})
+   local field_name = 'timestamp'
+   try
+      dynamic_t[field_name] = 1
+   except ex when ERR_ImmutableField
+      assert(ex.message.find('Time.timestamp'), "Error message should mention the accessed field, got: " .. ex.message)
+   except ex
+      assert(false,
+         "Expected ImmutableField for computed key, got error code " .. tostring(ex.code) .. ": " .. ex.message)
+   success
+      assert(false, "Expected error when writing a read-only field through a computed key")
+   end
+
+   field_name = 'does_not_exist'
+   try
+      dynamic_t[field_name] = 1
+   except ex when ERR_UnsupportedField
+   except ex
+      assert(false,
+         "Expected UnsupportedField for absent computed key, got error code " .. tostring(ex.code) .. ": " .. ex.message)
+   success
+      assert(false, "Expected error when writing an absent field through a computed key")
    end
 
    -- Test compile-time detection of non-existent field (write)
@@ -228,7 +255,7 @@ end
       assert(ex.message.find("Parsing failed") or ex.message.find("does_not_exist"),
          "Expected parsing error for invalid field, got: " .. ex.message)
    success
-      error("Expected error when writing a non-existent field")
+      assert(false, "Expected error when writing a non-existent field")
    end
 end
 
@@ -274,33 +301,33 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Test obj._state() for per-object state storage
+-- Test obj.state() for per-object state storage
 
 @Test(hotpath=true) function ObjState()
    f = obj.new('file')
 
-   state = f._state()
-   assert(type(state) is 'table', "Expected _state() to return a table")
+   state = f.state()
+   assert(type(state) is 'table', "Expected state() to return a table")
 
    -- Store something in state
    state.myvalue = 42
 
    -- Retrieve state again and verify
-   state2 = f._state()
+   state2 = f.state()
    assert(state2.myvalue is 42, "Expected state to persist value")
 
    f.free()
    caught = false
    try
-      f._state()
+      f.state()
    except e
       caught = true
    end
-   assert(caught, 'Expected _state() to reject a dead object')
+   assert(caught, 'Expected state() to reject a dead object')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Registered obj.* methods, including new and _state, are dispatched as canonical built-in methods with the object
+-- Registered obj.* methods, including new and state, are dispatched as canonical built-in methods with the object
 -- supplied as an explicit receiver.
 
 @Test(hotpath=true) @Requires(display=true)
@@ -316,9 +343,9 @@ function RegisteredMethodsUseExplicitReceiver()
    assert(err is ERR_Okay, "set() should update a field through the explicit receiver")
    assert(math.abs(vp.get('opacity') - 0.5) < 0.0001, "set() should have persisted the field value")
 
-   state = f._state()
+   state = f.state()
    state.marker = 7
-   assert(f._state().marker is 7, "_state() should use the explicit receiver and persist state")
+   assert(f.state().marker is 7, "state() should use the explicit receiver and persist state")
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -326,9 +353,9 @@ end
 @Test function ObjectMethodEscapePaths()
    parent = obj.new('time')
    assert(parent.new is nil, 'Bare new access should not manufacture a bound closure')
-   assert(parent._state is nil, 'Bare _state access should not manufacture a bound closure')
+   assert(parent.state is nil, 'Bare state access should not manufacture a bound closure')
    assert(parent['new'] is nil, 'Computed new access should not manufacture a bound closure')
-   assert(parent['_state'] is nil, 'Computed _state access should not manufacture a bound closure')
+   assert(parent['state'] is nil, 'Computed state access should not manufacture a bound closure')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -356,6 +383,14 @@ end
    f.free()
 
    assert(callback_count is 1, "Expected Free action callback to be called once")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Actions appended to AC must have a matching Tiri jump-table entry.  A missing entry dispatches through null.
+
+@Test function AppendedActionDispatch()
+   target = obj.new('config')
+   assert(target.acPause(1) is ERR_NoAction, 'Expected an unsupported Pause action to return ERR_NoAction')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -397,7 +432,7 @@ end
          time_obj = file_obj
       ]])
    success
-      error("Expected error when assigning object of different class")
+      assert(false, "Expected error when assigning object of different class")
    end
 end
 
@@ -417,7 +452,7 @@ end
       assert(ex.message.find('Type mismatch') or ex.message.find('type contract failed'),
          "Expected type mismatch error, got: " .. ex.message)
    success
-      error("Expected type error when assigning str field to num variable")
+      assert(false, "Expected type error when assigning str field to num variable")
    end
 end
 
@@ -435,7 +470,7 @@ end
       assert(ex.message.find('Type mismatch') or ex.message.find('type contract failed'),
          "Expected type mismatch error, got: " .. ex.message)
    success
-      error("Expected type error when assigning num field to str variable")
+      assert(false, "Expected type error when assigning num field to str variable")
    end
 end
 
@@ -496,7 +531,7 @@ value = obj.new('file')
       assert(ex.message.find('object class mismatch') != nil or ex.message.find('ObjectClassMismatch') != nil,
          'A visible cross-class assignment should retain its compile-time diagnostic: ' .. ex.message)
    success
-      error('Expected a compile-time object class mismatch')
+      assert(false, 'Expected a compile-time object class mismatch')
    end
 
    local broad:obj = obj.new('time')
