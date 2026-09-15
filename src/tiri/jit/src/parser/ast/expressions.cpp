@@ -300,9 +300,9 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
          continue;
       }
 
-      // An ampersand-prefixed name on a later line begins a current-context expression.  Whitespace after `&` keeps
-      // a leading binary bitwise-AND operator available for conventional multi-line expression continuation.
-      if (next.kind() IS TokenKind::Ampersand and next.span().line != left.value_ref()->span.line) {
+      // An ampersand-prefixed name begins a current-context expression.  Whitespace after `&` keeps the binary
+      // bitwise-AND operator available regardless of whether the expression continues on the same or a later line.
+      if (next.kind() IS TokenKind::Ampersand) {
          const Token member = this->ctx.tokens().peek(1);
          if (member.kind() IS TokenKind::Identifier and member.span().offset IS next.span().offset + 1) break;
       }

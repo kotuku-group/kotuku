@@ -6271,6 +6271,52 @@ static bool test_contextual_member_ast_foundations(kt::Log &Log)
       return false;
    }
 
+   constexpr std::array<std::string_view, 2> contextual_adjacency_sources = {
+      "local value = 7&glProbe\n",
+      "local value = 7 &glProbe\n"
+   };
+   for (std::string_view contextual_source : contextual_adjacency_sources) {
+      auto contextual = build_ast_from_source(contextual_source, false, false);
+      if (not contextual.chunk.ok() or contextual.chunk.value_ref()->statements.size() != 2) {
+         Log.error("an ampersand-prefixed identifier was not treated as contextual syntax");
+         log_diagnostics(contextual.diagnostics, Log);
+         return false;
+      }
+
+      const auto *contextual_statement =
+         std::get_if<ExpressionStmtPayload>(&contextual.chunk.value_ref()->statements[1]->data);
+      const auto *contextual_member = contextual_statement and contextual_statement->expression ?
+         std::get_if<MemberExprPayload>(&contextual_statement->expression->data) : nullptr;
+      if (not contextual_member or not contextual_member->table or
+          contextual_member->table->kind != AstNodeKind::CurrentContextExpr) {
+         Log.error("an adjacent identifier after '&' did not retain its current-context receiver");
+         return false;
+      }
+   }
+
+   constexpr std::array<std::string_view, 4> bitwise_adjacency_sources = {
+      "local value = 7& 3\n",
+      "local value = 7&3\n",
+      "local value = 7&(3)\n",
+      "local value = 7& glProbe\n"
+   };
+   for (std::string_view bitwise_source : bitwise_adjacency_sources) {
+      auto bitwise = build_ast_from_source(bitwise_source, false, false);
+      if (not bitwise.chunk.ok() or bitwise.chunk.value_ref()->statements.size() != 1) {
+         Log.error("a non-contextual ampersand did not remain a bitwise-AND operator");
+         log_diagnostics(bitwise.diagnostics, Log);
+         return false;
+      }
+
+      const auto &declaration = std::get<LocalDeclStmtPayload>(bitwise.chunk.value_ref()->statements[0]->data);
+      const auto *binary = declaration.values.size() IS 1 ?
+         std::get_if<BinaryExprPayload>(&declaration.values[0]->data) : nullptr;
+      if (not binary or binary->op != AstBinaryOperator::BitAnd) {
+         Log.error("a non-contextual ampersand did not produce a binary expression");
+         return false;
+      }
+   }
+
    constexpr std::string_view materialisation_source =
       "local current = &&\n"
       "consume(&&, &value)\n"
