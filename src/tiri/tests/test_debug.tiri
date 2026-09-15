@@ -465,6 +465,36 @@ end
    assert(tip.endColumn is 8, f"Expected tip to end after column 7, got {tip.endColumn}")
 end
 
+@Test function ValidateUnresolvedMethodsAreOptIn()
+   local source = 'local body = { values={} }\nbody.values.insert(1)'
+   local result = debug.validate(source)
+
+   for diagnostic in values(result.diagnostics) do
+      assert(diagnostic.code != 'UnresolvedMethodReceiver',
+         'Default validation should omit runtime method-selection advice')
+   end
+
+   result = debug.validate(source, { unresolvedMethods=true })
+   assert(#result.diagnostics is 1, 'Explicit unresolved-method validation should produce one diagnostic')
+   assert(result.diagnostics[0].code is 'UnresolvedMethodReceiver',
+      'Explicit unresolved-method validation should preserve the diagnostic code')
+
+   result = debug.validate(source)
+   assert(#result.diagnostics is 0, 'The unresolved-method option should not leak into later validations')
+end
+
+@Test function ValidateAdvisoriesDoNotHideErrors()
+   local source = 'local body = { values={} }\n'
+   for _ in {0 to 40} do source ..= 'body.values.insert(1)\n' end
+   source ..= "local invalid:num = 'text'\n"
+
+   local result = debug.validate(source)
+   assert(result.success is false, 'A type error after unresolved method receivers should fail validation')
+   assert(#result.diagnostics is 1, 'Runtime method-selection advice should not consume the diagnostic budget')
+   assert(result.diagnostics[0].code is 'TypeMismatchAssignment',
+      'The type error after unresolved method receivers should remain visible')
+end
+
 function hasTipMessage(Result, Message)
    if not Result.tips then return false end
    for tip in values(Result.tips) do

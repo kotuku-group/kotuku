@@ -1223,12 +1223,13 @@ LJLIB_CF(debug_validate)
 {
    CSTRING statement = luaL_checkstring(L, 1);
 
-   // The optional second argument may be an options table.  The 'symbols' boolean
-   // enables parser symbol extraction, and 'path' enables relative import resolution against the source file's
-   // directory (used by the LSP).
+   // The optional second argument may be an options table.  The 'symbols' boolean enables parser symbol extraction,
+   // 'path' enables relative import resolution against the source file's directory (used by the LSP), and
+   // 'unresolvedMethods' opts into advisory warnings for dot-method receivers classified at runtime.
 
    std::string source_path;
    bool include_symbols = false;
+   bool include_unresolved_methods = false;
    if (lua_istable(L, 2)) {
       lua_getfield(L, 2, "symbols");
       bool has_symbols_option = not lua_isnil(L, -1);
@@ -1237,6 +1238,10 @@ LJLIB_CF(debug_validate)
 
       lua_getfield(L, 2, "path");
       if (CSTRING p = lua_tostring(L, -1)) source_path.assign(p);
+      lua_pop(L, 1);
+
+      lua_getfield(L, 2, "unresolvedMethods");
+      if (not lua_isnil(L, -1)) include_unresolved_methods = lua_toboolean(L, -1);
       lua_pop(L, 1);
    }
 
@@ -1252,7 +1257,9 @@ LJLIB_CF(debug_validate)
    // This requires temporarily enabling JOF::DIAGNOSE
    JOF old_options = L->script->JitOptions;
    SCF old_flags = L->script->Flags;
+   bool old_suppress_unresolved_methods = L->script->SuppressUnresolvedMethodWarnings;
    L->script->JitOptions |= JOF::DIAGNOSE|JOF::ALL_TIPS;
+   L->script->SuppressUnresolvedMethodWarnings = not include_unresolved_methods;
    if (include_symbols) L->script->Flags |= SCF::PROCESS_DOC;
    if (L->parser_symbols) { delete L->parser_symbols; L->parser_symbols = nullptr; }
 
@@ -1272,6 +1279,7 @@ LJLIB_CF(debug_validate)
 
    L->script->JitOptions = old_options;  // Restore options
    L->script->Flags = old_flags;
+   L->script->SuppressUnresolvedMethodWarnings = old_suppress_unresolved_methods;
 
    // Pop the compiled chunk or error message
    lua_pop(L, 1);
