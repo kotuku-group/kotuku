@@ -178,6 +178,19 @@ static LJ_AINLINE void lj_gc_barrierback(global_State* g, GCtab* t)
    setgcref(g->gc.grayagain, o);
 }
 
+// Move the GC propagation frontier back for arrays.  Unlike the table helper, this accepts repeated calls so bulk
+// mutation paths can apply one unconditional post-store barrier without linking an already-grey array twice.
+static LJ_AINLINE void lj_gc_barrierbackarray(global_State* g, GCarray* a)
+{
+   GCobj *o = obj2gco(a);
+   if (LJ_LIKELY(not isblack(o))) return;
+   lj_assertG(not isdead(g, o), "bad object state for array backward barrier");
+   lj_assertG(g->gc.state != GCPhase::Finalize and g->gc.state != GCPhase::Pause, "bad GC state");
+   black2gray(o);
+   setgcrefr(a->gclist, g->gc.grayagain);
+   setgcref(g->gc.grayagain, o);
+}
+
 // Barrier for stores to table objects. TValue and GCobj variant.
 #define lj_gc_anybarriert(L, t)  { if (LJ_UNLIKELY(isblack(obj2gco(t)))) lj_gc_barrierback(G(L), (t)); }
 #define lj_gc_barriert(L, t, tv) { if (tviswhite(tv) and isblack(obj2gco(t))) lj_gc_barrierback(G(L), (t)); }
@@ -317,6 +330,11 @@ public:
    // Backward barrier: make black table gray when storing to it.
    void barrierBack(GCtab* t) noexcept {
       lj_gc_barrierback(gs, t);
+   }
+
+   // Backward barrier: make a black array grey when storing to it.
+   void barrierBack(GCarray* a) noexcept {
+      lj_gc_barrierbackarray(gs, a);
    }
 
    // Barrier for closed upvalue.
