@@ -572,6 +572,10 @@ global function computeDiagnostics(Doc:table)
       rebuildLineIndex(Doc)
 
       for diag in values(result.diagnostics) do
+         -- The response is published against Doc.uri, so imported-file positions cannot be represented here.  The
+         -- parser attributes the current in-memory buffer with no file and imported diagnostics with diag.file.
+         if diag.file then continue end
+
          source_line = validationPositionToLsp(diag.line)
          source_column = validationPositionToLsp(diag.column)
          source_end_column = validationPositionToLsp(diag.endColumn)

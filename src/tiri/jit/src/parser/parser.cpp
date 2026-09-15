@@ -260,7 +260,7 @@ static ParserConfig make_parser_config(lua_State &State)
       // Cancel aborting on error and enable deeper log tracing.
       config.abort_on_error = false;
       config.max_diagnostics = 32;
-      config.warn_unresolved_methods = true;
+      config.warn_unresolved_methods = not State.script->SuppressUnresolvedMethodWarnings;
    }
 
    return config;

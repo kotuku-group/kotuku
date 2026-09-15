@@ -617,6 +617,7 @@ class extTiri : public objTiri {
    bool     CompilationPrepared = false; // Libraries and interfaces have been registered and globals protected
    bool     CacheHit = false;             // Deterministic provenance hook: Query bypassed source parsing
    bool     CacheSelectionParserOutput = false;
+   bool     SuppressUnresolvedMethodWarnings = false; // Tooling may collect errors without runtime-dispatch advice
    CacheDestinationOrigin CacheOrigin = CacheDestinationOrigin::NONE;
    int64_t  SourceModifiedHint = 0;
    uint32_t SourceCompilationCount = 0;   // Deterministic hook for source parser invocations on this object

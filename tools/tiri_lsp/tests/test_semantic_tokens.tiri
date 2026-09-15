@@ -62,6 +62,17 @@ end
    assert(#result.diagnostics is 0, 'LSP diagnostics should accept current-context materialisation.')
 end
 
+@Test function DiagnosticsRemainWithinCurrentDocument()
+   local source = "import './diagnostic_import_helper'\nlocal invalid_document_value:num = 'text'\n"
+   local result = computeDiagnostics(makeDoc(source))
+
+   assert(#result.diagnostics is 1, 'The current document should not receive diagnostics from imported files.')
+   assert(result.diagnostics[0].code is 'TypeMismatchAssignment',
+      'The current document should retain its own diagnostic after filtering imported files.')
+   assert(result.diagnostics[0].range.start.line is 1,
+      'The retained diagnostic should use the current document source position.')
+end
+
 @Test function ParserAnnotationsReceiveSemanticTokens()
    source = 'value = @SourceFile\n' ..
       'line = @SourceLine\n' ..
