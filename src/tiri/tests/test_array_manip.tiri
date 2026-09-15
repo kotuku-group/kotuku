@@ -889,6 +889,38 @@ end
       'an overlapping GC-reference array.copy did not preserve memmove semantics')
 end
 
+@Test function ArrayCopyAnyDistributionsSurviveCollection()
+   local numeric_source = array<any, 128>
+   local numeric_destination = array<any, 128>
+   local sparse_source = array<any, 128>
+   local sparse_destination = array<any, 128>
+   local dense_source = array<any, 128>
+   local dense_destination = array<any, 128>
+
+   for i in {0 to 128} do
+      numeric_source[i] = i * 3
+      sparse_source[i] = i * 5
+      if i % 16 is 0 then sparse_source[i] = f'sparse-{i}' end
+      dense_source[i] = f'dense-{i}'
+   end
+
+   numeric_destination.copy(numeric_source)
+   sparse_destination.copy(sparse_source)
+   dense_destination.copy(dense_source)
+   numeric_source = nil
+   sparse_source = nil
+   dense_source = nil
+   processing.collect('step', { stepSize=1 })
+   processing.collect('full')
+
+   for i in {0 to 128} do
+      assert(numeric_destination[i] is i * 3, 'numeric ANY copy changed a value')
+      assert(sparse_destination[i] is (i % 16 is 0 ? f'sparse-{i}' : i * 5),
+         'sparse-reference ANY copy changed a value')
+      assert(dense_destination[i] is f'dense-{i}', 'dense-reference ANY copy changed a value')
+   end
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- Test array.clone() functionality
 

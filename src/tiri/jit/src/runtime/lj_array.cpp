@@ -97,6 +97,14 @@ static bool array_is_gc_ref_type(AET Type)
    return Type IS AET::STR_GC or Type IS AET::TABLE or Type IS AET::ARRAY or Type IS AET::OBJECT;
 }
 
+static bool array_copy_prefers_backward_barrier(const GCarray *Destination, MSize Count)
+{
+   // Keep the eventual destination traversal within a small multiple of the copied span.
+   constexpr MSize span_divisor = 4;
+   MSize backward_threshold = Destination->len / span_divisor + (Destination->len % span_divisor != 0);
+   return Count >= backward_threshold;
+}
+
 //********************************************************************************************************************
 
 static uint64_t array_unsigned_integer(lua_Number Value, unsigned Bits);
@@ -886,15 +894,24 @@ void lj_array_copy_unchecked(
    const void *src_ptr = lj_array_index(Src, SrcIdx);
    if (Dest->elemtype IS AET::ANY) {
       lj_bulk_move_tvalue((TValue *)dst_ptr, (const TValue *)src_ptr, Count);
-      auto dst_slots = (TValue *)dst_ptr;
-      for (MSize i = 0; i < Count; i++) {
-         if (tvisgcv(&dst_slots[i])) lj_gc_objbarrier(L, Dest, gcV(&dst_slots[i]));
+      if (array_copy_prefers_backward_barrier(Dest, Count)) lj_gc_barrierbackarray(G(L), Dest);
+      else {
+         auto dst_slots = (TValue *)dst_ptr;
+         for (MSize i = 0; i < Count; i++) {
+            if (tvisgcv(&dst_slots[i])) lj_gc_objbarrier(L, Dest, gcV(&dst_slots[i]));
+         }
       }
    }
    else if (array_is_gc_ref_type(Dest->elemtype)) {
       size_t byte_count = Count * Dest->elemsize;
       memmove(dst_ptr, src_ptr, byte_count);
-      lj_gc_barrierbackarray(G(L), Dest);
+      if (array_copy_prefers_backward_barrier(Dest, Count)) lj_gc_barrierbackarray(G(L), Dest);
+      else {
+         auto refs = (GCRef *)dst_ptr;
+         for (MSize i = 0; i < Count; i++) {
+            if (gcref(refs[i])) lj_gc_objbarrier(L, Dest, gcref(refs[i]));
+         }
+      }
    }
    else {
       size_t byte_count = Count * Dest->elemsize;

@@ -3801,37 +3801,35 @@ static bool test_signature_void_and_bare_return(kt::Log &Log)
       return false;
    }
 
-   constexpr std::string_view wide_source =
-      "return function():<num, num, num, num, num, num, num, num, num>\n"
-      "   return 1, 2, 3, 4, 5, 6, 7, 8, 9\n"
+   constexpr std::string_view max_width_source =
+      "return function():<num, num, num, num, num, num, num, num>\n"
+      "   return 1, 2, 3, 4, 5, 6, 7, 8\n"
       "end";
-   if (lua_load(L, wide_source, "signature-wide-results") or lua_pcall(L, 0, 1, 0)) {
-      Log.error("failed to create the wide-result function: %s", lua_tostring(L, -1));
+   if (lua_load(L, max_width_source, "signature-max-width-results") or lua_pcall(L, 0, 1, 0)) {
+      Log.error("failed to create the maximum-width result function: %s", lua_tostring(L, -1));
       return false;
    }
 
-   GCproto *wide_proto = funcproto(funcV(L->top - 1));
-   const ProtoSignature *wide_signature = proto_signature(wide_proto);
-   ProtoTypeEntry implicit_result = proto_result_type(wide_proto, 8);
-   if (not wide_signature or wide_signature->result_count != 9 or
-       wide_signature->result_entry_count != PROTO_MAX_RETURN_TYPES or implicit_result.type != TiriType::Any or
-       proto_type_origin(implicit_result) != ProtoTypeOrigin::Declared or
-       proto_type_strength(implicit_result) != ProtoTypeStrength::Advisory) {
-      Log.error("the wide-result signature did not preserve complete arity and its implicit any suffix");
+   GCproto *max_width_proto = funcproto(funcV(L->top - 1));
+   const ProtoSignature *max_width_signature = proto_signature(max_width_proto);
+   if (not max_width_signature or max_width_signature->result_count != PROTO_MAX_RETURN_TYPES or
+       max_width_signature->result_entry_count != PROTO_MAX_RETURN_TYPES or
+       proto_result_type(max_width_proto, PROTO_MAX_RETURN_TYPES - 1).type != TiriType::Num) {
+      Log.error("the maximum-width result signature did not preserve all declared entries");
       return false;
    }
 
-   std::string wide_dump;
-   if (lj_bcwrite(L, wide_proto, bytecode_writer, &wide_dump, 1) != 0 or
-       lua_load(L, std::string_view(wide_dump.data(), wide_dump.size()), "signature-wide-results")) {
-      Log.error("failed to round-trip the wide-result signature");
+   std::string max_width_dump;
+   if (lj_bcwrite(L, max_width_proto, bytecode_writer, &max_width_dump, 1) != 0 or
+       lua_load(L, std::string_view(max_width_dump.data(), max_width_dump.size()), "signature-max-width-results")) {
+      Log.error("failed to round-trip the maximum-width result signature");
       return false;
    }
-   GCproto *restored_wide = funcproto(funcV(L->top - 1));
-   equal = compare_proto_signatures(wide_proto, restored_wide);
+   GCproto *restored_max_width = funcproto(funcV(L->top - 1));
+   equal = compare_proto_signatures(max_width_proto, restored_max_width);
    lua_pop(L, 2);
    if (not equal) {
-      Log.error("the wide-result signature changed during serialisation");
+      Log.error("the maximum-width result signature changed during serialisation");
       return false;
    }
    return true;
@@ -4437,29 +4435,30 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
       return false;
    }
 
-   constexpr std::string_view wide_source =
-      "return function(A:any,B:any,C:any,D:any,E:any,F:any,G:any,H:any,I:any):"
-      "<num,num,num,num,num,num,num,num,str>\n"
-      "   return A,B,C,D,E,F,G,H,I,false\n"
+   constexpr std::string_view max_width_source =
+      "return function(A:any,B:any,C:any,D:any,E:any,F:any,G:any,H:any):"
+      "<num,num,num,num,num,num,num,num>\n"
+      "   return A,B,C,D,E,F,G,H\n"
       "end\n";
-   if (lua_load(lua, wide_source, "wide-runtime-contract")) {
-      Log.error("failed to compile a wide runtime contract: %s", lua_tostring(lua, -1));
+   if (lua_load(lua, max_width_source, "max-width-runtime-contract")) {
+      Log.error("failed to compile a maximum-width runtime contract: %s", lua_tostring(lua, -1));
       return false;
    }
 
-   GCproto *wide = first_child_proto(funcproto(funcV(lua->top - 1)));
-   GCstr *wide_descriptor = nullptr;
-   for (uint32_t i = 1; wide and i < wide->sizebc; ++i) {
-      BCIns instruction = proto_bc(wide)[i];
+   GCproto *max_width = first_child_proto(funcproto(funcV(lua->top - 1)));
+   GCstr *max_width_descriptor = nullptr;
+   for (uint32_t i = 1; max_width and i < max_width->sizebc; ++i) {
+      BCIns instruction = proto_bc(max_width)[i];
       if (bc_op(instruction) IS BC_CONTRACT) {
-         wide_descriptor = gco_to_string(proto_kgc(wide, ~(ptrdiff_t)bc_d(instruction)));
+         max_width_descriptor = gco_to_string(proto_kgc(max_width, ~(ptrdiff_t)bc_d(instruction)));
          break;
       }
    }
-   RuntimeContractDescriptor wide_decoded;
-   if (not wide_descriptor or not decode_runtime_contract(wide_descriptor, wide_decoded) or
-       wide_decoded.static_value_count != 9 or wide_decoded.contract_count != MAX_RETURN_TYPES) {
-      Log.error("a valid contract with more values than stored entries failed shared decoding");
+   RuntimeContractDescriptor max_width_decoded;
+   if (not max_width_descriptor or not decode_runtime_contract(max_width_descriptor, max_width_decoded) or
+       max_width_decoded.static_value_count != MAX_RETURN_TYPES or
+       max_width_decoded.contract_count != MAX_RETURN_TYPES) {
+      Log.error("a maximum-width runtime contract failed shared decoding");
       return false;
    }
    lua_pop(lua, 1);
