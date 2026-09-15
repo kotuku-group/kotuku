@@ -7892,6 +7892,8 @@ static bool test_builtin_method_registry(kt::Log &Log)
    }
    const fprototype *array_insert = get_method_prototype(TiriType::Array, "insert");
    const fprototype *struct_clone = get_method_prototype(TiriType::Struct, "clone");
+   const fprototype *struct_size = get_method_prototype(TiriType::Struct, "size");
+   const fprototype *namespace_struct_size = get_prototype("struct", "size");
    const fprototype *object_exists = get_method_prototype(TiriType::Object, "exists");
    const fprototype *object_new = get_method_prototype(TiriType::Object, "new");
    const fprototype *object_state = get_method_prototype(TiriType::Object, "state");
@@ -7919,6 +7921,15 @@ static bool test_builtin_method_registry(kt::Log &Log)
        get_method_prototype(TiriType::Table, "push") or
        get_method_prototype(TiriType::Table, "new")) {
       Log.error("complete method lookup lost receiver separation, callable identity or constructor exclusion");
+      return false;
+   }
+   if (not struct_size or not namespace_struct_size or struct_size IS namespace_struct_size or
+       not struct_size->is_method() or struct_size->receiver_type != TiriType::Struct or
+       struct_size->builtin_callable_id != builtin_callable_id(FastFunc::struct_size) or
+       struct_size->param_count != 1 or struct_size->param_types()[0] != TiriType::Struct or
+       namespace_struct_size->is_method() or namespace_struct_size->param_count != 1 or
+       namespace_struct_size->param_types()[0] != TiriType::Any) {
+      Log.error("struct.size lost its separate namespace and instance signatures");
       return false;
    }
 
@@ -8505,6 +8516,17 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
        bc_a(fixed->instructions[load_position - 1]) != bc_a(*fixed_load) + 1 + LJ_FR2 or
        bc_op(fixed->instructions[load_position + 1]) != BC_KSHORT) {
       Log.error("built-in method receiver was not inserted before written arguments");
+      return false;
+   }
+
+   error.clear();
+   auto fixed_struct_size = compile_snapshot(L,
+      "struct BuiltinMethodSize Value: int end\n"
+      "local value = struct<BuiltinMethodSize> { Value=1 }\n"
+      "return value.size()\n", true, error);
+   if (not fixed_struct_size or not find_builtin_callable_opcode(*fixed_struct_size,
+         builtin_callable_id(FastFunc::struct_size)) or count_opcode(*fixed_struct_size, BC_BMETH) != 0) {
+      Log.error("fixed struct.size method did not use canonical lookup-free emission: %s", error.c_str());
       return false;
    }
 

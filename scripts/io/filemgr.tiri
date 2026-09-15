@@ -110,7 +110,7 @@ io.ui.copy = function(Source:any!, Dest:str!, Move:bool)
       if response != 'yes-all' and response != 'no-all' then response = 'yes' end -- Reset to the default
 
       msg('Processing file source ' .. src_path)
-      local src_folder, src_file = io.splitPath(src_path)
+      local _, src_file = io.splitPath(src_path)
       local dest_path = Dest .. src_file
 
       -- Check if the destination already exists

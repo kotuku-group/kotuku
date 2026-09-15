@@ -320,7 +320,6 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
 
    if ((Info->Flags & OPF::DETAIL) != OPF::NIL)      glLogLevel = (int16_t)Info->Detail;
    if ((Info->Flags & OPF::MAX_DEPTH) != OPF::NIL)   glMaxDepth = (int16_t)Info->MaxDepth;
-   if ((Info->Flags & OPF::SHOW_MEMORY) != OPF::NIL) glShowPrivate = true;
 
    // Android sets an important JNI pointer on initialisation.
 
@@ -355,11 +354,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
          if ((arg[0] != '-') or (arg[1] != '-')) { newargs.push_back(arg); continue; }
          arg += 2; // Skip '--' as this prepends all Core arguments
 
-         if (iequals(arg, "log-memory")) {
-            glShowPrivate = true;
-            glDebugMemory = true;
-         }
-         else if (startswith("gfx-driver=", arg)) {
+         if (startswith("gfx-driver=", arg)) {
             glDisplayDriver.assign(arg+11);
          }
          else if ((iequals(arg, "set-volume")) and (i+1 < Info->ArgCount)) { // --set-volume scripts=my:location/

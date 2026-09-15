@@ -2,6 +2,7 @@
 
 struct BuiltinMethodRecord
    Value: int
+   Size: int
 end
 
 @BeforeEach(hotpath=true)
@@ -73,14 +74,16 @@ end
       text='AB',
       values=array<int> { 1 },
       sequence={0 to 3},
-      record=struct<BuiltinMethodRecord> { Value=9 },
+      record=struct<BuiltinMethodRecord> { Value=9, Size=5 },
       file=obj.new('file')
    }
    local first, second = holder.text.byte(0, 2)
    holder.values.push(2)
    local clone = holder.record.clone()
+   local record_size = holder.record.size()
    assert(first is 65 and second is 66 and holder.values[1] is 2 and 2 in holder.sequence and
-      clone.Value is 9 and holder.file.exists(),
+      clone.Value is 9 and holder.record.size is 5 and record_size is struct.size(holder.record) and
+      holder.file.exists(),
       'Runtime fallback should classify strings, arrays, ranges, structs and objects reached through table fields')
    holder.file.free()
 end
@@ -207,7 +210,10 @@ end
 end
 
 @Test function StructMethods()
-   local source = struct<BuiltinMethodRecord> { Value=42 }
+   local source = struct<BuiltinMethodRecord> { Value=42, Size=17 }
+   assert(source.size is 17, 'A size field should remain readable when size() is a built-in method')
+   assert(source.size() is struct.size(source) and source.size() is struct.size('BuiltinMethodRecord'),
+      'Struct size should support equivalent instance, reference and definition-name calls')
    local clone = source.clone()
    assert(clone.Value is 42, 'Struct clone should retain the payload')
    local destination = struct<BuiltinMethodRecord> { Value=1 }

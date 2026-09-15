@@ -40,8 +40,9 @@ ERR reg_iface_method(lua_State *L, std::string_view Interface, std::string_view 
    std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags = FProtoFlags::None,
    FProtoArity Arity = FProtoArity::unspecified(), bool AllowAlias = false);
 
-// Register a hidden instance method.  Unlike reg_iface_method(), this does not require a matching public interface
-// field and stores only the receiver/member prototype entry.
+// Register a receiver-only method prototype.  Unlike reg_iface_method(), this does not require or replace a matching
+// public interface prototype and stores only the receiver/member entry.  This supports hidden methods and methods whose
+// namespace form accepts a broader first-argument type.
 
 ERR reg_intrinsic_method(lua_State *L, std::string_view Interface, std::string_view Method, TiriType ReceiverType,
    BuiltinCallableID Callable, std::initializer_list<TiriType> ResultTypes,
