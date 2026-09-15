@@ -7087,12 +7087,12 @@ static bool test_static_descriptor_model(kt::Log &Log)
    LuaStateHolder recursive_state;
    lua_State *recursive_lua = recursive_state.get();
    auto recursive = parse_array_element_type(" array < array < char > > ", recursive_lua);
-   auto recursive_name = canonical_array_type_name(" array < array < char > > ", recursive_lua);
+   auto constructor_identity = canonical_array_constructor_identity(" array < char > ", recursive_lua);
    if (not recursive or recursive->storage != AET::ARRAY or
        not recursive->nested_array_identity or
        std::string_view(strdata(recursive->nested_array_identity), recursive->nested_array_identity->len) !=
           "array<array<byte>>" or
-       not recursive_name or *recursive_name != "array<array<byte>>") {
+       not constructor_identity or *constructor_identity != "array<array<byte>>") {
       Log.error("recursive array type parsing did not preserve and canonicalise the complete identity");
       return false;
    }
@@ -7128,6 +7128,22 @@ static bool test_static_descriptor_model(kt::Log &Log)
        parse_array_element_type("object") or parse_array_element_type("array<string>") or
        parse_array_element_type("array<object>")) {
       Log.error("malformed recursive array type spelling was accepted");
+      return false;
+   }
+
+   auto recursive_type = [](size_t Depth) {
+      std::string result = "int";
+      for (size_t i = 0; i < Depth; ++i) result = "array<" + result + ">";
+      return result;
+   };
+   std::string maximum_member = recursive_type(31);
+   std::string over_depth_member = recursive_type(32);
+   auto maximum_identity = canonical_array_constructor_identity(maximum_member, recursive_lua);
+   if (not maximum_identity or *maximum_identity != recursive_type(32) or
+       canonical_array_constructor_identity(over_depth_member, recursive_lua) or
+       not parse_array_element_type(maximum_member, recursive_lua) or
+       parse_array_element_type(over_depth_member, recursive_lua)) {
+      Log.error("recursive array type parsing did not preserve its maximum accepted depth");
       return false;
    }
    return true;

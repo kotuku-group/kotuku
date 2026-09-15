@@ -54,7 +54,7 @@ struct ArrayElementDescriptor {
 [[nodiscard]] std::string array_element_name(const ArrayElementDescriptor &);
 [[nodiscard]] std::optional<ArrayElementDescriptor> parse_array_element_type(
    std::string_view, lua_State *State = nullptr, LexState *Lexer = nullptr);
-[[nodiscard]] std::optional<std::string> canonical_array_type_name(
+[[nodiscard]] std::optional<std::string> canonical_array_constructor_identity(
    std::string_view, lua_State *State = nullptr);
 
 // Whether a table value is known to establish context when one of its members is called.  `Unknown` is the sound

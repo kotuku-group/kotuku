@@ -141,18 +141,24 @@ public:
       auto result = this->parse_member(0, nullptr);
       this->skip_space();
       if (not result or this->position_ != this->text_.size()) return std::nullopt;
+      if (not this->canonical_.empty()) {
+         if (this->lexer_) result->nested_array_identity = this->lexer_->keepstr(this->canonical_);
+         else if (this->state_) {
+            result->nested_array_identity = lj_str_new(this->state_, this->canonical_.data(), this->canonical_.size());
+         }
+      }
       return result;
    }
 
-   std::optional<std::string> canonical_name()
+   std::optional<std::string> constructor_identity()
    {
-      this->retain_nested_identity_ = false;
-      std::string canonical;
-      auto result = this->parse_member(0, &canonical);
+      this->canonical_.reserve(this->text_.size() + 7);
+      this->canonical_.append("array<");
+      auto result = this->parse_member(0, &this->canonical_);
       this->skip_space();
       if (not result or this->position_ != this->text_.size()) return std::nullopt;
-      if (result->storage IS AET::ARRAY) return canonical;
-      return std::format("array<{}>", canonical);
+      this->canonical_.push_back('>');
+      return std::move(this->canonical_);
    }
 
 private:
@@ -194,44 +200,56 @@ private:
          ArrayElementDescriptor result { AET::ARRAY, TiriType::Array, CLASSID::NIL, nullptr, true };
          this->skip_space();
          if (this->position_ >= this->text_.size() or this->text_[this->position_] != '<') {
-            if (Canonical) *Canonical = "array";
+            if (Canonical) Canonical->append("array");
             return result;
          }
          this->position_++;
-         std::string member_name;
-         auto member = this->parse_member(Depth + 1, &member_name);
+         if (not Canonical) {
+            this->canonical_.reserve(this->text_.size());
+            Canonical = &this->canonical_;
+         }
+         Canonical->append("array<");
+         auto member = this->parse_member(Depth + 1, Canonical);
          if (not member or member->storage IS AET::PTR or
              (this->state_ and member->storage IS AET::STRUCT and not member->struct_def) or
              not this->consume('>')) {
             return std::nullopt;
          }
-         std::string identity = std::format("array<{}>", member_name);
-         if (this->retain_nested_identity_ and this->lexer_) {
-            result.nested_array_identity = this->lexer_->keepstr(identity);
-         }
-         else if (this->retain_nested_identity_ and this->state_) {
-            result.nested_array_identity = lj_str_new(this->state_, identity.data(), identity.size());
-         }
-         if (Canonical) *Canonical = identity;
+         Canonical->push_back('>');
          return result;
       }
 
       if (name IS "struct") {
          if (not this->consume('<')) {
-            if (Canonical) *Canonical = "struct";
+            if (Canonical) Canonical->append("struct");
             return describe_array_element("struct", this->state_);
          }
          std::string_view structure_name = this->identifier();
          if (structure_name.empty() or not this->consume('>')) return std::nullopt;
-         if (Canonical) *Canonical = std::format("struct<{}>", structure_name);
-         auto result = describe_array_element(std::format("struct<{}>", structure_name), this->state_);
+         std::string structure_identity;
+         std::string_view identity;
+         if (Canonical) {
+            size_t identity_start = Canonical->size();
+            Canonical->append("struct<");
+            Canonical->append(structure_name);
+            Canonical->push_back('>');
+            identity = std::string_view(*Canonical).substr(identity_start);
+         }
+         else {
+            structure_identity.reserve(structure_name.size() + 8);
+            structure_identity.append("struct<");
+            structure_identity.append(structure_name);
+            structure_identity.push_back('>');
+            identity = structure_identity;
+         }
+         auto result = describe_array_element(identity, this->state_);
          if (this->state_ and result and not result->struct_def) return std::nullopt;
          return result;
       }
 
       auto result = describe_array_element(name, this->state_);
       if (result and result->storage IS AET::PTR) return std::nullopt;
-      if (result and Canonical) *Canonical = array_element_name(*result);
+      if (result and Canonical) Canonical->append(lj_array_elemtype_name(public_array_storage(result->storage)));
       return result;
    }
 
@@ -239,7 +257,7 @@ private:
    lua_State *state_ = nullptr;
    LexState *lexer_ = nullptr;
    size_t position_ = 0;
-   bool retain_nested_identity_ = true;
+   std::string canonical_;
 };
 
 } // namespace
@@ -250,9 +268,9 @@ std::optional<ArrayElementDescriptor> parse_array_element_type(
    return RecursiveArrayTypeParser(Name, State, Lexer).parse_element();
 }
 
-std::optional<std::string> canonical_array_type_name(std::string_view Name, lua_State *State)
+std::optional<std::string> canonical_array_constructor_identity(std::string_view Name, lua_State *State)
 {
-   return RecursiveArrayTypeParser(Name, State, nullptr).canonical_name();
+   return RecursiveArrayTypeParser(Name, State, nullptr).constructor_identity();
 }
 
 StaticValueDescriptor StaticResultSet::value_at(size_t Position) const

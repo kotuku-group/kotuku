@@ -99,6 +99,28 @@ end
    end
 end
 
+@Test function MaximumRecursiveConstructorDepthRemainsStable()
+   function recursive_member_type(Depth:num):str
+      local result = 'int'
+      for _ in {0 to Depth} do result = 'array<' .. result .. '>' end
+      return result
+   end
+
+   local maximum_member = recursive_member_type(31)
+   local maximum = array.new(maximum_member, 0)
+   assert(rawtype(maximum) is 'array<' .. maximum_member .. '>',
+      'the maximum recursive constructor depth lost its complete public identity')
+
+   try
+      array.new(recursive_member_type(32), 0)
+   except e
+      assert(e.message.find('valid array type') != nil,
+         'the over-depth recursive constructor diagnostic changed: ' .. e.message)
+   success
+      assert(false, 'an over-depth recursive constructor was accepted')
+   end
+end
+
 @Test function OrdinaryArrayIdentitiesRemainCanonicalOnTraces()
    local values = {
       array<char>,
