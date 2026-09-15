@@ -61,7 +61,6 @@ APTR glPageFault     = nullptr;
 bool glScanClasses   = false;
 bool glJanitorActive = false;
 CONTYPE glConsoleType  = CONTYPE::NONE;
-bool glDebugMemory   = false;
 bool glEnableCrashHandler = true;
 struct CoreBase *LocalCoreBase = nullptr;
 
@@ -232,7 +231,6 @@ std::atomic_uint8_t glLogCallbackCount = 0;
 #endif
 int16_t glMaxDepth  = 20; // Thread global
 bool glShowIO       = false;
-bool glShowPrivate  = false;
 bool glPrivileged   = false;
 bool glSync         = false;
 bool glLogThreads   = false;
