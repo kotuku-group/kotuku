@@ -389,8 +389,8 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
          else if (iequals(arg, "log-info"))    glLogLevel = 4; // Levels 3/4 are for applications (no internal detail)
          else if (iequals(arg, "log-api"))     glLogLevel = 5; // Default level for API messages
          else if (iequals(arg, "log-xapi"))    glLogLevel = 6; // Extended API messages (detail() level).
-         else if (iequals(arg, "log-debug"))   glLogLevel = 7;
-         else if (iequals(arg, "log-trace"))   glLogLevel = 9;
+         else if (iequals(arg, "log-debug"))   glLogLevel = 8; // Messages in debug builds only
+         else if (iequals(arg, "log-trace"))   glLogLevel = 9; // Extremely detailed messages in debug builds
          else if (iequals(arg, "log-all"))     glLogLevel = 9; // 9 is the absolute maximum
          else if (iequals(arg, "time"))        glTimeLog = PreciseTime();
          #if defined(__unix__) && !defined(__ANDROID__)

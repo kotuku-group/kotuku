@@ -14,6 +14,7 @@ FDEF argsMove[]          = { { "DeltaX", FD_DOUBLE }, { "DeltaY", FD_DOUBLE }, {
 FDEF argsMoveToPoint[]   = { { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { "Z", FD_DOUBLE }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF argsNewChild[]      = { { "NewChild", FD_OBJECTPTR }, { 0, 0 } };
 FDEF argsNewOwner[]      = { { "NewOwner", FD_OBJECTPTR }, { 0, 0 } };
+FDEF argsPause[]         = { { "Operation", FD_INT }, { 0, 0 } };
 FDEF argsRead[]          = { { "Buffer", FDF_SPAN|FD_MUTABLE|FD_BYTE }, { "Result", FD_INT|FD_RESULT }, { 0, 0 } };
 FDEF argsRedimension[]   = { { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { "Z", FD_DOUBLE }, { "Width", FD_DOUBLE }, { "Height", FD_DOUBLE }, { "Depth", FD_DOUBLE }, { 0, 0 } };
 FDEF argsRedo[]          = { { "Steps", FD_INT }, { 0, 0 } };
@@ -75,5 +76,6 @@ extern "C" const struct ActionTable ActionTable[] = { // Sorted by action ID.
    { kt::strhash("clipboard"),      sizeof(struct acClipboard), "Clipboard", argsClipboard },
    { kt::strhash("refresh"),        0, "Refresh", 0 },
    { kt::strhash("disable"),        0, "Disable", 0 },
+   { kt::strhash("pause"),          sizeof(struct acPause), "Pause", argsPause },
    { 0, 0, 0, 0 }
 };

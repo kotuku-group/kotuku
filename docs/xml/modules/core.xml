@@ -2127,6 +2127,7 @@ identifier has no effect.</li>
       <const name="NewChild"/>
       <const name="NewOwner"/>
       <const name="Next"/>
+      <const name="Pause"/>
       <const name="Prev"/>
       <const name="Query"/>
       <const name="Read"/>

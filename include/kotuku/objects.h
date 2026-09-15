@@ -1009,6 +1009,7 @@ struct acMove          { static const AC id = AC::Move; double DeltaX; double De
 struct acMoveToPoint   { static const AC id = AC::MoveToPoint; double X; double Y; double Z; MTF Flags; };
 struct acNewChild      { static const AC id = AC::NewChild; OBJECTPTR Object; };
 struct acNewOwner      { static const AC id = AC::NewOwner; OBJECTPTR NewOwner; };
+struct acPause         { static const AC id = AC::Pause; int Operation; }; // 1 = Pause, 0 = Unpause, -1 = Toggle
 struct acRead          { static const AC id = AC::Read; std::span<int8_t> Buffer; int Result; };
 struct acRedimension   { static const AC id = AC::Redimension; double X; double Y; double Z; double Width; double Height; double Depth; };
 struct acRedo          { static const AC id = AC::Redo; int Steps; };
@@ -1076,6 +1077,11 @@ inline ERR acGetKey(OBJECTPTR Object, std::string_view Key, std::string &Value) 
 inline ERR acMove(OBJECTPTR Object, double X, double Y, double Z) {
    struct acMove args = { X, Y, Z };
    return Action(AC::Move, Object, &args);
+}
+
+inline ERR acPause(OBJECTPTR Object, int Operation) {
+   struct acPause args = { Operation };
+   return Action(AC::Pause, Object, &args);
 }
 
 inline ERR acRead(OBJECTPTR Object, std::span<int8_t> Buffer, int *Read = nullptr) {

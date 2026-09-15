@@ -61,6 +61,11 @@ global glActionStubs = {
       struct acMove args = { X, Y, Z };
       return Action(AC::Move, this, &args);
    }]],
+   Pause = [[
+   inline ERR pause(int Operation) noexcept {
+      struct acPause args = { Operation };
+      return Action(AC::Pause, this, &args);
+   }]],
    Read = [[
    template <class T> ERR read(std::span<int8_t> Buffer, T *Result) noexcept {
       static_assert(std::is_integral<T>::value, "Result value must be an integer type");

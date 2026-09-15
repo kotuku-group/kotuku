@@ -386,6 +386,14 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
+-- Actions appended to AC must have a matching Tiri jump-table entry.  A missing entry dispatches through null.
+
+@Test function AppendedActionDispatch()
+   target = obj.new('config')
+   assert(target.acPause(1) is ERR_NoAction, 'Expected an unsupported Pause action to return ERR_NoAction')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
 -- Test garbage collection of objects
 
 @Test function GarbageCollection()

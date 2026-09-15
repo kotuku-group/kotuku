@@ -53,8 +53,7 @@ enums("AC", { type="int", start=1, comment="Action identifiers", module="Core" }
     "MoveToBack",   "MoveToFront",    "NewChild",     "NewOwner", "New",          "Redo",         "Query",
     "Read",         "Rename",         "Reset",        "Resize",   "SaveImage",    "SaveToObject", "MoveToPoint",
     "Seek",         "SetKey",         "Show",         "Undo",     "Unlock",       "Next",         "Prev",
-    "Write",        "SetField",       "Clipboard",    "Refresh",  "Disable",
-    -- "Pause" < For pausing animation, audio, etc; differs to activation which represents start/stop
+    "Write",        "SetField",       "Clipboard",    "Refresh",  "Disable",      "Pause",
     "END")
 
 flags("PERMIT", { comment="Permission flags", module="Core" },
