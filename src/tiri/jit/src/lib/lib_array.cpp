@@ -122,11 +122,10 @@ static ArrayAllocationDescriptor parse_elemtype(lua_State *L, int NArg)
    }
 
    if (type_name.starts_with("array")) {
-      if (auto member_identity = canonical_array_type_name(type_name, L)) {
-         std::string complete_identity = std::format("array<{}>", *member_identity);
+      if (auto complete_identity = canonical_array_constructor_identity(type_name, L)) {
          return {
             .storage = AET::ARRAY,
-            .nested_identity = lj_str_new(L, complete_identity.data(), complete_identity.size())
+            .nested_identity = lj_str_new(L, complete_identity->data(), complete_identity->size())
          };
       }
    }
