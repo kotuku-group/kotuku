@@ -765,7 +765,7 @@ extern std::string glSystemPath;
 extern std::string glModulePath;
 extern std::string glRootPath;
 extern std::string glDisplayDriver;
-extern bool glShowIO, glShowPrivate, glEnableCrashHandler;
+extern bool glShowIO, glEnableCrashHandler;
 extern bool glJanitorActive;
 extern CONTYPE glConsoleType;
 extern std::array<LogCallbackSlot, LC_LIMIT> glLogCallbacks;
@@ -843,7 +843,6 @@ extern int8_t fs_initialised;
 extern APTR glPageFault;
 extern bool glScanClasses;
 extern uint8_t glTimerCycle;
-extern bool glDebugMemory;
 extern struct CoreBase *LocalCoreBase;
 extern std::atomic_int glUniqueMsgID;
 

@@ -827,6 +827,8 @@ extern "C" int luaopen_struct(lua_State *L)
       FProtoArity::required(1));
    reg_iface_prototype("struct", "def", { TiriType::Func }, { TiriType::Str });
    reg_iface_prototype("struct", "size", { TiriType::Num }, { TiriType::Any }); // Accepts a struct name or reference
+   reg_intrinsic_method(L, "struct", "size", TiriType::Struct, builtin_callable_id(FastFunc::struct_size),
+      { TiriType::Num }, { TiriType::Struct });
    reg_iface_method(L, "struct", "copy", TiriType::Struct, builtin_callable_id(FastFunc::struct_copy),
       { TiriType::Struct }, { TiriType::Struct, TiriType::Struct });
    reg_iface_method(L, "struct", "clone", TiriType::Struct, builtin_callable_id(FastFunc::struct_clone),
