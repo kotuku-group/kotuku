@@ -252,6 +252,58 @@ cache::FormatError encode_root_module_bundle(const RootModuleGraphAssembly &Asse
 }
 
 //********************************************************************************************************************
+// Indexes the interface payloads in a structurally valid bundle without copying or decoding record contents.
+
+cache::FormatError index_root_module_bundle(
+   std::string_view Input, std::vector<RootModuleRecordLocation> &Output)
+{
+   Output.clear();
+   if (Input.empty() or Input.size() > MAX_ROOT_BUNDLE_SIZE or uint8_t(Input[0]) != ROOT_BUNDLE_VERSION) {
+      return cache::FormatError::UNSUPPORTED_VERSION;
+   }
+   size_t position = 1;
+   uint32_t count = 0;
+   if (not read_uleb(Input, position, count) or count > MAX_ROOT_MODULES) return cache::FormatError::COUNT_LIMIT;
+
+   std::vector<RootModuleRecordLocation> result;
+   result.reserve(count);
+   for (uint32_t i = 0; i < count; ++i) {
+      uint32_t field_size = 0;
+      if (not read_uleb(Input, position, field_size) or field_size > cache::MAX_STRING_SIZE or
+          field_size > Input.size() - position) return cache::FormatError::INVALID_METADATA;
+      position += field_size;
+      if (not read_uleb(Input, position, field_size) or field_size > cache::MAX_STRING_SIZE or
+          field_size > Input.size() - position) return cache::FormatError::INVALID_METADATA;
+      position += field_size;
+      if (position >= Input.size()) return cache::FormatError::INVALID_METADATA;
+      position++;
+
+      uint32_t dependency_count = 0;
+      if (not read_uleb(Input, position, dependency_count) or dependency_count > MAX_ROOT_MODULES) {
+         return cache::FormatError::COUNT_LIMIT;
+      }
+      for (uint32_t d = 0; d < dependency_count; ++d) {
+         uint32_t dependency = 0;
+         if (not read_uleb(Input, position, dependency) or dependency >= i) {
+            return cache::FormatError::INVALID_METADATA;
+         }
+      }
+
+      uint32_t interface_size = 0;
+      if (not read_uleb(Input, position, interface_size) or interface_size > MAX_INTERFACE_SIZE or
+          interface_size > Input.size() - position or position > std::numeric_limits<uint32_t>::max()) {
+         return cache::FormatError::INVALID_METADATA;
+      }
+      result.push_back({ uint32_t(position), interface_size });
+      position += interface_size;
+   }
+
+   if (position != Input.size()) return cache::FormatError::INVALID_METADATA;
+   Output = std::move(result);
+   return cache::FormatError::OKAY;
+}
+
+//********************************************************************************************************************
 // Decodes a complete root-module bundle and validates every reconstructed record.
 
 cache::FormatError decode_root_module_bundle(std::string_view Input, std::vector<RootModuleRecord> &Output)

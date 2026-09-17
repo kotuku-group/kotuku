@@ -195,7 +195,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_import_entry(const ImportEntryPayload &
       return ParserResult<IrEmitUnit>::failure(this->make_error(
          ParserErrorCode::InternalInvariant, "Imported module edge has no compilation unit"));
    }
-   if (unit and not Entry.module_already_imported and unit->module_identity.empty()) {
+   if (unit and not Entry.module_already_imported and not Entry.state_satisfied and unit->module_identity.empty()) {
       return ParserResult<IrEmitUnit>::failure(this->make_error(
          ParserErrorCode::InternalInvariant, "Imported module has no runtime identity"));
    }

@@ -703,7 +703,10 @@ int lj_bcwrite_relocated(lua_State *L, GCproto *Pt, lua_Writer Writer, void *Dat
              not gcref(entry.initialiser) or gcref(entry.initialiser)->gch.gct != ~LJ_TPROTO or
              gco_to_proto(gcref(entry.initialiser))->sizeuv != 0 or entry.source_index != record.SourceIndex or
              entry.dependency_count != record.Dependencies.size() or
-             entry.first_dependency != dependency_count) return 1;
+             entry.first_dependency != dependency_count or entry.interface_offset > ctx.import_module_bundle_size or
+             entry.interface_size > ctx.import_module_bundle_size - entry.interface_offset or
+             std::string_view((const char *)ctx.import_module_bundle + entry.interface_offset,
+                entry.interface_size) != record.InterfaceBytes) return 1;
          GCstr *identity = gco_to_string(gcref(entry.compiled_identity));
          if (identity->len != record.CompiledIdentity.size() or
              memcmp(strdata(identity), record.CompiledIdentity.data(), identity->len) != 0) return 1;

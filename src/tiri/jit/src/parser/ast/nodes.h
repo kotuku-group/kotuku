@@ -1106,6 +1106,7 @@ struct ImportEntryPayload {
    uint8_t file_source_idx = 0;                // FileSource index for this imported file
    bool module_initialiser = false;            // Execute body through a child prototype for non-local imports
    bool module_already_imported = false;       // Publish aliases without repeating an earlier module activation
+   bool state_satisfied = false;               // Active state supplies the module; emit no executable reference
    bool reuses_namespace_binding = false;      // A sibling import already published this registry namespace locally
 
    ~ImportEntryPayload();

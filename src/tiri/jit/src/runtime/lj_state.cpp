@@ -950,6 +950,9 @@ static void close_state(lua_State *L)
 {
    global_State *g = G(L);
    // Teardown also covers states terminated while an activation or asynchronous root boundary is still live.
+   L->active_import_module_counters.released += uint32_t(L->active_import_modules.size());
+   L->active_import_modules.clear();
+   L->active_import_module_bytes = 0;
    L->defer_stack.clear();
    L->context_stack.clear();
    L->context_active = 0;

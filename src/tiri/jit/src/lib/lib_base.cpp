@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <bit>
 #include <cctype>
+#include <algorithm>
 
 #define lib_base_c
 #define LUA_LIB
@@ -42,6 +43,9 @@
 #include "runtime/lj_thunk.h"
 #include "runtime/lj_object.h"
 #include "runtime/lj_proto_registry.h"
+#include "runtime/import_module_state.h"
+#include "../../cache_manifest.h"
+#include "tiri_build_identity.h"
 #include "debug/error_guard.h"
 #include "lib_range.h"
 
@@ -111,6 +115,40 @@ static int import_module_activate(lua_State *L)
    }
 
    owner->import_module_activations[identity] = ImportModuleActivationState::Initialised;
+
+   // The runtime directory indexes the already-validated root bundle, so activation decodes only this record's
+   // portable interface rather than reconstructing the complete module graph.
+   uint32_t bundle_size = 0;
+   const uint8_t *bundle = proto_import_module_bundle(funcproto(caller), &bundle_size);
+   if (bundle and entry.interface_offset <= bundle_size and
+       entry.interface_size <= bundle_size - entry.interface_offset) {
+      std::string_view interface_bytes(
+         (const char *)bundle + entry.interface_offset, entry.interface_size);
+      tiri::import_cache::Interface portable;
+      tiri::import_cache::FinalisedInterfacePtr artifact;
+      if (tiri::import_cache::decode_interface(interface_bytes, portable) IS tiri::cache::FormatError::OKAY and
+          tiri::import_cache::FinalisedInterface::finalise(std::move(portable), artifact) IS
+            tiri::cache::FormatError::OKAY and artifact->bytes() IS interface_bytes) {
+         const auto &interface = artifact->descriptors();
+         const tiri::import_cache::SourceDescriptor *primary = nullptr;
+         for (const auto &source : interface.Sources) {
+            const bool nested = std::ranges::any_of(interface.NestedModules, [&](const auto &Dependency) {
+               return Dependency.LogicalRequest IS source.LogicalRequest and
+                  Dependency.ResolvedPath IS source.ResolvedPath;
+            });
+            if (not nested and not source.LogicalRequest.empty()) {
+               primary = &source;
+               break;
+            }
+         }
+         if (primary) {
+            const auto options = tiri::cache::effective_compilation_options();
+            std::string contract = import_module_resolution_contract(TIRI_BUILD_COMMIT, options,
+               primary->LogicalRequest, primary->ResolvedPath, true);
+            publish_active_import_module(owner, contract, identity, std::move(artifact));
+         }
+      }
+   }
    return 0;
 }
 

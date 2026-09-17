@@ -1809,6 +1809,20 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
       return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, ImportToken,
          "Circular import detected: " + path);
    }
+   lua_State *L = &this->ctx.lua();
+
+   // Ordinary runtime roots may bind to a module whose initialiser has already completed in this state.  Persistent
+   // cache production and diagnostics continue through source validation so their output remains self-contained.
+
+   const ActiveImportModuleRecord *active_module = nullptr;
+   if (module_initialiser and L->runtime_import_reuse_allowed and not this->ctx.lex().diagnose_mode and
+       not this->cache_manifest() and
+       ((this->ctx.lua().script->Flags & SCF::PROCESS_DOC) IS SCF::NIL)) {
+      const auto options = tiri::cache::effective_compilation_options();
+      const std::string contract = import_module_resolution_contract(
+         TIRI_BUILD_COMMIT, options, original_request, path, true);
+      active_module = find_active_import_module(&this->ctx.lua(), contract);
+   }
 
    // Non-local modules are definitions owned by the root compilation.  Each source import remains a separate edge,
    // but a completed definition is reused without another lookup or parse.
@@ -1816,6 +1830,7 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
    std::shared_ptr<ImportedModuleUnit> module_unit;
    bool module_already_imported = false;
    bool reused_module = false;
+   bool state_satisfied = false;
    if (module_initialiser) {
       ImportedModuleKey key { path, original_request, true };
       module_already_imported = this->import_seen_this_unit(key);
@@ -1831,6 +1846,20 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
          }
          reused_module = true;
       }
+      else if (active_module) {
+         module_unit = std::make_shared<ImportedModuleUnit>();
+         module_unit->key = key;
+         module_unit->module_identity = active_module->compiled_identity;
+         module_unit->module_cache_identity.BuildIdentity = TIRI_BUILD_COMMIT;
+         module_unit->module_cache_identity.LogicalRequest = original_request;
+         module_unit->module_cache_identity.Source.ResolvedPath = path;
+         module_unit->module_cache_identity.Options = tiri::cache::effective_compilation_options();
+         module_unit->interface_artifact = active_module->interface_artifact;
+         module_unit->interface_prepared = true;
+         module_unit->state = ImportedModuleState::InterfaceReady;
+         state_satisfied = true;
+         this->register_imported_module(module_unit);
+      }
       else {
          module_unit = std::make_shared<ImportedModuleUnit>();
          module_unit->key = std::move(key);
@@ -1841,7 +1870,58 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
    tiri::import_cache::ModuleLookup module_lookup;
    std::vector<FuncState::DependencyDescriptor> module_dependencies;
    std::unique_ptr<BlockStmt> imported_body;
-   if (reused_module) {
+   if (state_satisfied) {
+      log.branch("Reusing active imported module '%s'", path.c_str());
+      const auto &portable = module_unit->interface_artifact->descriptors();
+      const tiri::import_cache::SourceDescriptor *primary = nullptr;
+      for (const auto &source : portable.Sources) {
+         if (source.ResolvedPath IS path and source.LogicalRequest IS original_request) {
+            primary = &source;
+            break;
+         }
+      }
+      if (not primary) {
+         this->discard_imported_module(module_unit->key);
+         return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, ImportToken,
+            "Active imported module has no matching source descriptor: " + path);
+      }
+
+      const uint8_t parent_index = this->ctx.lex().current_file_index;
+      const BCLine import_line = ImportToken.span().line.lineNumber();
+      std::string primary_path = primary->ResolvedPath;
+      uint8_t primary_index = register_file_source(L, primary_path, primary->Filename,
+         BCLine(primary->FirstLine), BCLine(primary->TotalLines), parent_index, import_line);
+      const uint8_t primary_descriptor = this->record_import_source(primary->ResolvedPath, primary->Filename,
+         BCLine(primary->TotalLines), this->ctx.lex().current_source_descriptor, import_line, primary_index);
+      if (not primary->DeclaredNamespace.empty()) {
+         set_file_source_namespace(L, primary_index, primary->DeclaredNamespace);
+      }
+      module_unit->file_source_idx = primary_index;
+
+      for (const auto &source : portable.Sources) {
+         if (&source IS primary) continue;
+         auto existing = find_file_source(L, source.ResolvedPath);
+         std::string source_path = source.ResolvedPath;
+         uint8_t source_index = existing.has_value() ? existing.value() :
+            register_file_source(L, source_path, source.Filename, BCLine(source.FirstLine),
+               BCLine(source.TotalLines), primary_index, BCLine(source.ImportLine ? source.ImportLine : 1));
+         if (not source.DeclaredNamespace.empty()) {
+            set_file_source_namespace(L, source_index, source.DeclaredNamespace);
+         }
+         (void)this->record_import_source(source.ResolvedPath, source.Filename, BCLine(source.TotalLines),
+            primary_descriptor, BCLine(source.ImportLine ? source.ImportLine : 1), source_index);
+      }
+
+      std::string diagnostic;
+      module_unit->installed_interface = InstalledImportInterface::create(
+         this->ctx, module_unit->interface_artifact, diagnostic);
+      if (not module_unit->installed_interface) {
+         this->discard_imported_module(module_unit->key);
+         return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, ImportToken,
+            diagnostic.empty() ? "Cannot install active imported-module interface" : diagnostic);
+      }
+   }
+   else if (reused_module) {
       if (auto *manifest = this->cache_manifest()) {
          manifest->ResolutionInputs.push_back({ original_request, this->cache_context_path(), path });
          manifest->Imports.push_back({ this->cache_context_path(), original_request,
@@ -1871,7 +1951,6 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
 
    // Look up the FileSource index and namespace for this import (registered during parse_imported_file)
 
-   lua_State *L = &this->ctx.lua();
    auto file_idx = find_file_source(L, path);
    std::string default_ns;
 
@@ -1897,7 +1976,7 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
    entry.lib_path = path;
    if (module_initialiser) {
       entry.module_unit = module_unit;
-      if (not reused_module) {
+      if (not reused_module and not state_satisfied) {
          module_unit->module_cache_hit = module_lookup.Cached.CacheHit;
          if (not module_unit->module_cache_hit) {
             this->root_builder()->ctx.lex().imported_module_counters.source_parses++;
@@ -1946,6 +2025,7 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
 
    entry.module_initialiser = module_initialiser;
    entry.module_already_imported = module_already_imported;
+   entry.state_satisfied = state_satisfied;
 
    if (file_idx.has_value()) entry.file_source_idx = file_idx.value();
 

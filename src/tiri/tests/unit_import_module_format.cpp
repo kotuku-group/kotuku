@@ -440,6 +440,22 @@ bool compiled_identity_and_graph_assembly(kt::Log &Log)
          int(decoded.size()));
       return false;
    }
+   std::vector<RootModuleRecordLocation> locations;
+   if (index_root_module_bundle(encoded, locations) != tiri::cache::FormatError::OKAY or
+       locations.size() != assembled.records().size()) {
+      Log.error("Root graph interfaces were not indexed");
+      return false;
+   }
+   for (size_t i = 0; i < locations.size(); ++i) {
+      const auto &location = locations[i];
+      if (location.InterfaceOffset > encoded.size() or
+          location.InterfaceSize > encoded.size() - location.InterfaceOffset or
+          std::string_view(encoded).substr(location.InterfaceOffset, location.InterfaceSize) !=
+             assembled.records()[i].InterfaceBytes) {
+         Log.error("Root graph interface index %d did not identify its canonical bytes", int(i));
+         return false;
+      }
+   }
    std::string expected = encode_raw_root_module_bundle(assembled.records());
    if (encoded != expected) {
       Log.error("Root graph encoding changed the locked version 3 field representation");
@@ -555,10 +571,13 @@ bool root_module_graph_validation(kt::Log &Log)
    auto duplicate_dependency = wire;
    duplicate_dependency[1].Dependencies = { 0, 0 };
    std::vector<RootModuleRecord> decoded;
+   std::vector<RootModuleRecordLocation> locations = { { 1, 1 } };
    if (not expect_wire_rejection(noncanonical_order, "non-canonical ready-node order") or
        not expect_wire_rejection(forward_dependency, "forward dependency") or
        not expect_wire_rejection(duplicate_dependency, "duplicate dependency") or
-       decode_root_module_bundle(valid + "x", decoded) IS tiri::cache::FormatError::OKAY) return false;
+       decode_root_module_bundle(valid + "x", decoded) IS tiri::cache::FormatError::OKAY or
+       index_root_module_bundle(valid + "x", locations) IS tiri::cache::FormatError::OKAY or
+       not locations.empty()) return false;
    return true;
 }
 

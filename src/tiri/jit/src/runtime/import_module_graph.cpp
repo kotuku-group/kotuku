@@ -18,7 +18,7 @@ namespace {
 bool collect_selected_records(std::span<const ImportModuleGraphInput> Inputs, std::span<const uint32_t> Roots,
    bool SelectAll, std::vector<uint32_t> &Selected)
 {
-   enum class Visit : uint8_t { Unseen, Visiting, Complete };
+   enum class Visit { Unseen, Visiting, Complete };
    struct Frame { uint32_t Index; size_t NextDependency; };
 
    std::vector<Visit> visits(Inputs.size(), Visit::Unseen);
@@ -135,6 +135,18 @@ ImportModuleTable * install_import_module_directory(lua_State *L, GCproto *Root,
        measured.byte_size != Layout.byte_size) return nullptr;
    if (not Layout.entry_count) return nullptr;
 
+   uint32_t bundle_size = 0;
+   const uint8_t *bundle = proto_import_module_bundle(Root, &bundle_size);
+   std::vector<tiri::import_cache::RootModuleRecordLocation> locations;
+   if (not bundle or tiri::import_cache::index_root_module_bundle(
+         std::string_view((const char *)bundle, bundle_size), locations) != tiri::cache::FormatError::OKAY or
+       locations.size() != Records.size()) return nullptr;
+   for (size_t i = 0; i < Records.size(); ++i) {
+      const auto &location = locations[i];
+      if (std::string_view((const char *)bundle + location.InterfaceOffset, location.InterfaceSize) !=
+          Records[i].InterfaceBytes) return nullptr;
+   }
+
    auto table = (ImportModuleTable *)lj_mem_new(L, MSize(Layout.byte_size));
    table->version = IMPORT_MODULE_TABLE_VERSION;
    memset(table->reserved, 0, sizeof(table->reserved));
@@ -150,6 +162,8 @@ ImportModuleTable * install_import_module_directory(lua_State *L, GCproto *Root,
       setgcref(entries[i].initialiser, obj2gco(Initialisers[i]));
       entries[i].first_dependency = next_dependency;
       entries[i].dependency_count = uint32_t(Records[i].Dependencies.size());
+      entries[i].interface_offset = locations[i].InterfaceOffset;
+      entries[i].interface_size = locations[i].InterfaceSize;
       entries[i].source_index = Records[i].SourceIndex;
       memset(entries[i].reserved, 0, sizeof(entries[i].reserved));
       for (uint32_t dependency : Records[i].Dependencies) dependencies[next_dependency++] = dependency;

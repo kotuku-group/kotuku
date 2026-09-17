@@ -13,6 +13,7 @@
 #include "lj_ffid.h"
 #include <array>
 #include <format>
+#include <memory>
 #include <vector>
 #include <unordered_set>
 #include <unordered_map>
@@ -69,6 +70,26 @@ struct SBuf;
 class ParserDiagnostics;
 class extTiri;
 namespace tiri::cache { struct Manifest; }
+namespace tiri::import_cache { class FinalisedInterface; }
+
+struct ActiveImportModuleRecord {
+   std::string compiled_identity; // Immutable identity of the compiled imported module.
+   std::shared_ptr<const tiri::import_cache::FinalisedInterface> interface_artifact; // Reusable portable interface.
+   uint64_t retained_bytes = 0; // Memory retained by interface_artifact.
+};
+
+struct ActiveImportModuleBinding {
+   ActiveImportModuleRecord record; // Reusable record for this resolution contract.
+   bool ambiguous = false; // True when conflicting identities prohibit reuse.
+};
+
+struct ActiveImportModuleCounters {
+   uint32_t candidates = 0; // Candidate records considered for publication.
+   uint32_t publications = 0; // Records published for later reuse.
+   uint32_t reuse_hits = 0; // Successful active-record lookups.
+   uint32_t fallbacks = 0; // Lookups or publications that fell back.
+   uint32_t released = 0; // Records released during state teardown.
+};
 
 // Memory and GC object sizes.
 
@@ -871,42 +892,44 @@ enum class CompilationSourceRole : uint8_t {
 inline constexpr uint8_t COMPILATION_SOURCE_VERSION = 1;
 
 struct CompilationSourceEntry {
-   GCRef canonical_path;
-   GCRef display_filename;
-   GCRef declared_namespace;
-   BCLine first_line;
-   BCLine total_lines;
-   BCLine import_line;
-   uint8_t runtime_index;
-   uint8_t parent;
-   CompilationSourceRole role;
-   uint8_t reserved;
+   GCRef   canonical_path;     // Resolved source path used to identify the file.
+   GCRef   display_filename;   // Filename shown in diagnostics and tracebacks.
+   GCRef   declared_namespace; // Namespace declared by this source file.
+   BCLine  first_line;         // First line in the source's unified line range.
+   BCLine  total_lines;        // Number of lines in the source file.
+   BCLine  import_line;        // Parent-source line containing this import.
+   uint8_t runtime_index;      // Corresponding lua_State::file_sources index.
+   uint8_t parent;             // Parent compilation-source entry, or the root sentinel.
+   CompilationSourceRole role; // Whether the source is main, imported, or synthetic.
+   uint8_t reserved;           // Reserved for source-map format extensions.
 };
 
 struct CompilationSourceMap {
-   uint8_t version;
-   uint8_t count;
-   uint8_t root;
-   uint8_t reserved;
+   uint8_t version;  // Serialised source-map format version.
+   uint8_t count;    // Number of trailing CompilationSourceEntry records.
+   uint8_t root;     // Index of the compilation unit's root source entry.
+   uint8_t reserved; // Reserved for source-map format extensions.
 };
 
-inline constexpr uint8_t IMPORT_MODULE_TABLE_VERSION = 1;
+inline constexpr uint8_t IMPORT_MODULE_TABLE_VERSION = 2;
 
 struct ImportModuleTableEntry {
-   GCRef compiled_identity;
-   GCRef initialiser;
-   uint32_t first_dependency;
-   uint32_t dependency_count;
-   uint8_t source_index;
-   uint8_t reserved[3];
+   GCRef    compiled_identity; // Immutable identity of the compiled module.
+   GCRef    initialiser;       // Module initialiser prototype.
+   uint32_t first_dependency;  // Offset of this module's first dependency index.
+   uint32_t dependency_count;  // Number of dependency indices for this module.
+   uint32_t interface_offset;  // Offset of the serialised interface in the module bundle.
+   uint32_t interface_size;    // Size of the serialised interface in bytes.
+   uint8_t  source_index;      // Compilation-source entry associated with the module.
+   uint8_t  reserved[3];       // Reserved for table format extensions.
 };
 
 struct ImportModuleTable {
-   uint8_t version;
-   uint8_t reserved[3];
-   uint32_t entry_count;
-   uint32_t dependency_count;
-   uint32_t byte_size;
+   uint8_t  version;          // Serialised table format version.
+   uint8_t  reserved[3];      // Reserved for header format extensions.
+   uint32_t entry_count;      // Number of ImportModuleTableEntry records.
+   uint32_t dependency_count; // Number of trailing dependency indices.
+   uint32_t byte_size;        // Total allocation size, including entries and dependencies.
 };
 
 [[nodiscard]] inline ImportModuleTableEntry * import_module_table_entries(ImportModuleTable *Table) noexcept
@@ -967,7 +990,7 @@ typedef struct GCproto {
    MRef struct_manifest; // Portable named-structure semantics owned by the root prototype only.
    uint32_t struct_manifest_size;
    MRef import_module_bundle; // Canonical imported-module records owned by the root prototype only.
-   uint32_t import_module_bundle_size;
+   uint32_t import_module_bundle_size; // Byte size of import_module_bundle.
    MRef import_module_table; // Root-owned executable imported-module entries.
    MRef   lineinfo;   //  BCLine[sizebc-1] array - file index in upper 8 bits, line in lower 24.
    MRef   uvinfo;     //  Upvalue names.
@@ -1992,7 +2015,15 @@ struct lua_State {
 
    // Runtime import modules are identified by their immutable resolved compilation identity.  Keep this on the main
    // interpreter state so activations from child threads share one lifecycle without retaining any module prototype.
-   std::unordered_map<std::string, ImportModuleActivationState> import_module_activations;
+   std::unordered_map<std::string, ImportModuleActivationState> import_module_activations; // States by module identity.
+
+   // Portable compile-time metadata for successfully activated imported modules.  Contract keys contain no source
+   // digest, so later runtime parser roots can reuse an active identity without reopening its source or cache file.
+   // Records deliberately contain no GC pointers; conflicting active versions make a contract permanently ambiguous.
+   std::unordered_map<std::string, ActiveImportModuleBinding> active_import_modules; // Bindings by resolution contract.
+   uint64_t active_import_module_bytes = 0; // Total bytes retained by active bindings.
+   ActiveImportModuleCounters active_import_module_counters; // Reuse lifecycle telemetry.
+   bool runtime_import_reuse_allowed = false; // Set only while loadFile() compiles an immediately executed root.
 
    // Stack of pending import lexers for cleanup if SEH throws during import parsing.
    // Note: Windows SEH doesn't call C++ destructors, so we track these for manual cleanup.

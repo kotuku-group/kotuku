@@ -23,6 +23,7 @@
 #include "lj_meta.h"
 #include "lj_vmevent.h"
 #include "../runtime/import_module_graph.h"
+#include "../runtime/import_module_state.h"
 #include "lauxlib.h"
 #include "lualib.h"
 #include "field_type_lookup.h"
@@ -442,14 +443,14 @@ extern GCproto * lj_parse(LexState *State)
        final_relocation_roots, module_graph.compilation_to_canonical, final_relocation)) {
       luaL_error(L, ERR::InvalidData, "Invalid imported-module executable references.");
    }
-   if (module_graph.directory.entry_count and not install_import_module_directory(
-       L, pt, module_graph.assembly.records(), module_graph.initialisers, module_graph.directory)) {
-      luaL_error(L, ERR::InvalidData, "Invalid imported-module executable graph.");
-   }
    auto bundle = (uint8_t *)lj_mem_new(L, MSize(module_graph.bundle.size()));
    memcpy(bundle, module_graph.bundle.data(), module_graph.bundle.size());
    setmref(pt->import_module_bundle, bundle);
    pt->import_module_bundle_size = uint32_t(module_graph.bundle.size());
+   if (module_graph.directory.entry_count and not install_import_module_directory(
+       L, pt, module_graph.assembly.records(), module_graph.initialisers, module_graph.directory)) {
+      luaL_error(L, ERR::InvalidData, "Invalid imported-module executable graph.");
+   }
    apply_import_module_relocations(final_relocation);
    for (GCproto *initialiser : module_graph.initialisers) {
       if (not initialiser or gcref(initialiser->source_root) != obj2gco(pt)) {

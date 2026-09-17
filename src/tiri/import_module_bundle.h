@@ -24,6 +24,11 @@ struct RootModuleRecord {
    [[nodiscard]] bool operator==(const RootModuleRecord &) const = default;
 };
 
+struct RootModuleRecordLocation {
+   uint32_t InterfaceOffset = 0;
+   uint32_t InterfaceSize = 0;
+};
+
 class RootModuleGraphAssembly {
 public:
    [[nodiscard]] const std::vector<RootModuleRecord> & records() const { return records_; }
@@ -60,6 +65,8 @@ private:
 // Serialises a successfully assembled internal graph without validating interfaces or rebuilding the graph.
 [[nodiscard]] cache::FormatError encode_root_module_bundle(
    const RootModuleGraphAssembly &Assembly, std::string &Output);
+[[nodiscard]] cache::FormatError index_root_module_bundle(
+   std::string_view Input, std::vector<RootModuleRecordLocation> &Output);
 [[nodiscard]] cache::FormatError decode_root_module_bundle(
    std::string_view Input, std::vector<RootModuleRecord> &Output);
 

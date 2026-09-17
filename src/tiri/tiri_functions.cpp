@@ -392,7 +392,11 @@ int fcmd_loadfile(lua_State *Lua)
       // Prefix chunk name with '@' (Lua convention for file-based chunks) for better debug output
       std::string chunk_name = std::string("@") + resolved_path;
 
-      if (not lua_load(Lua, *file, chunk_name.c_str())) {
+      const bool saved_runtime_reuse = Lua->runtime_import_reuse_allowed;
+      Lua->runtime_import_reuse_allowed = true;
+      const int load_status = lua_load(Lua, *file, chunk_name.c_str());
+      Lua->runtime_import_reuse_allowed = saved_runtime_reuse;
+      if (not load_status) {
          // TODO Code compilation not currently supported
 /*
          if (recompile) {

@@ -16,6 +16,7 @@
 #include "lib/load.h"
 #include "runtime/lj_contract.h"
 #include "runtime/import_module_graph.h"
+#include "runtime/import_module_state.h"
 #include "runtime/lj_meta.h"
 #include "runtime/lj_proto_registry.h"
 #include "runtime/lj_state.h"
@@ -12207,6 +12208,146 @@ static bool test_import_module_initialiser_boundary(kt::Log &Log)
    return true;
 }
 
+//********************************************************************************************************************
+// Successful activation publishes portable state metadata.  Later parser roots bind to it without source/cache work
+// or an executable directory, while query-only and failed roots remain on the ordinary retryable path.
+
+static bool test_import_module_runtime_state_reuse(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) return false;
+   luaL_openlibs(lua);
+
+   constexpr std::string_view first =
+      "import 'tests/i01_alias' as alias\n"
+      "alias.extension = function():num return 42 end\n"
+      "return alias";
+   if (lua_load(lua, first, "runtime-state-first") != 0 or lua_pcall(lua, 0, 1, 0) != 0 or
+       not lua_istable(lua, -1)) {
+      Log.error("The first runtime-state root did not activate: %s", lua_tostring(lua, -1));
+      return false;
+   }
+   const void *namespace_identity = lua_topointer(lua, -1);
+   lua_pop(lua, 1);
+   if (lua->active_import_module_counters.publications != 1 or lua->active_import_modules.size() != 1) {
+      Log.error("Successful activation did not publish one active imported-module record");
+      return false;
+   }
+
+   if (lua_load(lua, "import 'tests/i01_alias'\nreturn i01_alias", "persistent-after-activation") != 0) {
+      Log.error("A persistence-capable root failed to compile after activation: %s", lua_tostring(lua, -1));
+      return false;
+   }
+   const ImportModuleTable *persistent_table = proto_import_module_table(funcproto(funcV(lua->top - 1)));
+   if (not persistent_table or persistent_table->entry_count != 1 or
+       parser_last_imported_module_counters().lookup_attempts != 1) {
+      Log.error("A persistence-capable root omitted its executable dependency after activation");
+      return false;
+   }
+   lua_pop(lua, 1);
+
+   constexpr std::string_view reused =
+      "import 'tests/i01_alias' as alias\n"
+      "return alias, alias.extension(), alias.initialisations";
+   lua->runtime_import_reuse_allowed = true;
+   for (uint32_t root = 0; root < 2; ++root) {
+      if (lua_load(lua, reused, "runtime-state-reused") != 0) {
+         Log.error("An active-state parser root failed to compile: %s", lua_tostring(lua, -1));
+         return false;
+      }
+      const auto compilation = parser_last_imported_module_counters();
+      GCproto *prototype = funcproto(funcV(lua->top - 1));
+      const ImportModuleTable *table = proto_import_module_table(prototype);
+      if (compilation.lookup_attempts != 0 or compilation.source_parses != 0 or
+          (table and table->entry_count)) {
+         Log.error("An active-state parser root repeated physical import work or linked an executable");
+         return false;
+      }
+      if (lua_pcall(lua, 0, 3, 0) != 0 or lua_topointer(lua, -3) != namespace_identity or
+          lua_tointeger(lua, -2) != 42 or lua_tointeger(lua, -1) != 1) {
+         Log.error("Active-state reuse lost namespace identity, extensions or initialisation count");
+         return false;
+      }
+      lua_pop(lua, 3);
+   }
+   if (lua->active_import_module_counters.reuse_hits != 2) {
+      Log.error("Active-state reuse counters did not record both parser hits");
+      return false;
+   }
+
+   const std::string active_contract = lua->active_import_modules.begin()->first;
+   const auto active_artifact = lua->active_import_modules.begin()->second.record.interface_artifact;
+   publish_active_import_module(lua, active_contract, "explicit-conflicting-identity", active_artifact);
+   if (not lua->active_import_modules.begin()->second.ambiguous or
+       find_active_import_module(lua, active_contract)) {
+      Log.error("Conflicting active identities did not deterministically disable contract reuse");
+      return false;
+   }
+
+   LuaStateHolder limit_holder;
+   lua_State *limited = limit_holder.get();
+   if (not limited) return false;
+   for (uint32_t index = 0; index < tiri::import_cache::MAX_ROOT_MODULES; ++index) {
+      ActiveImportModuleBinding binding;
+      binding.record.compiled_identity = std::to_string(index);
+      binding.record.interface_artifact = active_artifact;
+      limited->active_import_modules.emplace(std::to_string(index), std::move(binding));
+   }
+   publish_active_import_module(limited, "beyond-limit", "beyond-limit", active_artifact);
+   if (limited->active_import_modules.size() != tiri::import_cache::MAX_ROOT_MODULES or
+       limited->active_import_module_counters.fallbacks != 1) {
+      Log.error("Active imported-module saturation did not fall back without publishing");
+      return false;
+   }
+
+   LuaStateHolder query_holder;
+   lua_State *query = query_holder.get();
+   if (not query) return false;
+   luaL_openlibs(query);
+   constexpr std::string_view direct =
+      "global i01_boundary_trace = i01_boundary_trace ?? ''\n"
+      "import 'tests/i01_direct'\nreturn i01_boundary_trace";
+   query->runtime_import_reuse_allowed = true;
+   if (lua_load(query, direct, "runtime-state-query") != 0) return false;
+   lua_pop(query, 1);
+   if (not query->active_import_modules.empty() or lua_load(query, direct, "runtime-state-after-query") != 0) {
+      Log.error("Query-only compilation published reusable imported-module state");
+      return false;
+   }
+   const auto query_compilation = parser_last_imported_module_counters();
+   if (query_compilation.lookup_attempts != 1) {
+      Log.error("A root compiled before activation did not take the ordinary import path");
+      return false;
+   }
+   lua_pop(query, 1);
+
+   LuaStateHolder failure_holder;
+   lua_State *failure = failure_holder.get();
+   if (not failure) return false;
+   luaL_openlibs(failure);
+   lua_pushinteger(failure, 0);
+   lua_setglobal(failure, "glI05FailureAttempts");
+   lua_pushinteger(failure, 0);
+   lua_setglobal(failure, "glI05FailureCleanups");
+   constexpr std::string_view failing = "import 'tests/i05_failure'\nreturn glI05FailureAttempts";
+   failure->runtime_import_reuse_allowed = true;
+   if (lua_load(failure, failing, "runtime-state-failure") != 0 or lua_pcall(failure, 0, 1, 0) IS 0) {
+      Log.error("The failing imported-module fixture did not fail its first activation");
+      return false;
+   }
+   lua_pop(failure, 1);
+   if (not failure->active_import_modules.empty() or
+       lua_load(failure, failing, "runtime-state-retry") != 0 or
+       parser_last_imported_module_counters().lookup_attempts != 1 or
+       lua_pcall(failure, 0, 1, 0) != 0 or lua_tointeger(failure, -1) != 2 or
+       failure->active_import_modules.size() != 1) {
+      Log.error("Failed activation published state or did not remain retryable: %s", lua_tostring(failure, -1));
+      return false;
+   }
+   return true;
+}
+
 static bool remove_import_module_fixture_caches(
    std::string_view Source, const char *Name, kt::Log &Log)
 {
@@ -13333,7 +13474,7 @@ static bool test_import_module_publication_failure_lifecycle(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 120> tests = { {
+   constexpr std::array<TestCase, 121> tests = { {
       { "bytecode_load_metadata_transaction", test_bytecode_load_metadata_transaction },
       { "import_module_metadata_release_idempotence", test_import_module_metadata_release_idempotence },
       { "import_module_cycle_recovery", test_import_module_cycle_recovery },
@@ -13344,6 +13485,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "import_module_executable_warm_diamond", test_import_module_executable_warm_diamond },
       { "import_module_dependency_invalidation", test_import_module_dependency_invalidation },
       { "import_module_initialiser_boundary", test_import_module_initialiser_boundary },
+      { "import_module_runtime_state_reuse", test_import_module_runtime_state_reuse },
       { "import_module_layered_reuse", test_import_module_layered_reuse },
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
