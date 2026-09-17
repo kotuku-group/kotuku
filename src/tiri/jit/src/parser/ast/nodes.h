@@ -1074,6 +1074,7 @@ struct ImportedModuleUnit {
    std::shared_ptr<BlockStmt> body;
    std::string module_identity;
    tiri::import_cache::Identity module_cache_identity;
+   tiri::import_cache::FinalisedInterfacePtr interface_artifact;
    std::string module_payload;
    std::shared_ptr<const InstalledImportInterface> installed_interface;
    std::vector<FuncState::DependencyDescriptor> module_dependencies;

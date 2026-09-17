@@ -97,31 +97,30 @@ void initialise_native_field(struct_field &Field, TiriType Type)
 // Create and fully initialise a state-local representation of a portable import interface.
 
 std::shared_ptr<const InstalledImportInterface> InstalledImportInterface::create(
-   ParserContext &Context, const tiri::import_cache::Interface &Interface, std::string &Diagnostic)
+   ParserContext &Context, tiri::import_cache::FinalisedInterfacePtr Artifact, std::string &Diagnostic)
 {
-   auto installed = std::shared_ptr<InstalledImportInterface>(new InstalledImportInterface(Context));
-   if (not installed->initialise(Interface, Diagnostic)) return {};
+   if (not Artifact) {
+      Diagnostic = "Imported module has no finalised compile-time interface.";
+      return {};
+   }
+   auto installed = std::shared_ptr<InstalledImportInterface>(
+      new InstalledImportInterface(Context, std::move(Artifact)));
+   if (not installed->initialise(Diagnostic)) return {};
    return installed;
 }
 
 //********************************************************************************************************************
 // Validate and translate the complete portable interface into parser-owned records and indexes.
 
-bool InstalledImportInterface::initialise(const tiri::import_cache::Interface &Interface, std::string &Diagnostic)
+bool InstalledImportInterface::initialise(std::string &Diagnostic)
 {
    using namespace tiri::import_cache;
-   auto interface_error = install_interface(Interface, this->context_);
-   if (interface_error != tiri::cache::FormatError::OKAY) {
-      Diagnostic = std::format("Imported module has an invalid compile-time interface: {}.",
-         tiri::cache::format_error_name(interface_error));
-      return false;
-   }
-   this->portable_interface_ = Interface;
+   const Interface &interface = this->artifact_->descriptors();
 
    // Cached modules bypass their source-level include and module declarations.  Reinstall native definitions before
    // the parent resumes parsing so constants and structures have the same availability as a cold compilation.
 
-   for (const NativeDependency &dependency : this->context_.NativeDependencies) {
+   for (const NativeDependency &dependency : interface.NativeDependencies) {
       if (load_module_defs(dependency.Module) IS ERR::Okay) continue;
       Diagnostic = std::format("Imported module requires unavailable native module '{}'.", dependency.Module);
       return false;
@@ -129,15 +128,15 @@ bool InstalledImportInterface::initialise(const tiri::import_cache::Interface &I
 
    // Allocate every definition first so transitive references can be resolved without ordering constraints.
 
-   for (const StructureDescriptor &portable : this->context_.Structures) {
+   for (const StructureDescriptor &portable : interface.Structures) {
       auto record = std::make_unique<struct_record>(portable.Name);
       struct_record *address = record.get();
       this->structures_.push_back(std::move(record));
       this->structure_index_.emplace(portable.Name, address);
    }
 
-   for (size_t i = 0; i < this->context_.Structures.size(); ++i) {
-      const StructureDescriptor &portable = this->context_.Structures[i];
+   for (size_t i = 0; i < interface.Structures.size(); ++i) {
+      const StructureDescriptor &portable = interface.Structures[i];
       struct_record &record = *this->structures_[i];
       for (const StructureField &portable_field : portable.Fields) {
          struct_field field;
@@ -182,8 +181,8 @@ bool InstalledImportInterface::initialise(const tiri::import_cache::Interface &I
 
    // Resolve fields again after compatible state-local declarations have replaced private interface definitions.
 
-   for (size_t i = 0; i < this->context_.Structures.size(); ++i) {
-      const StructureDescriptor &portable = this->context_.Structures[i];
+   for (size_t i = 0; i < interface.Structures.size(); ++i) {
+      const StructureDescriptor &portable = interface.Structures[i];
       for (size_t field_index = 0; field_index < portable.Fields.size(); ++field_index) {
          const ValueDescriptor &value = portable.Fields[field_index].Value;
          struct_field &field = this->structures_[i]->Fields[field_index];
@@ -192,19 +191,19 @@ bool InstalledImportInterface::initialise(const tiri::import_cache::Interface &I
       }
    }
 
-   for (const ExportDescriptor &exported : this->context_.Bindings) {
+   for (const ExportDescriptor &exported : interface.Exports) {
       this->exports_.emplace(exported.Name, &exported);
    }
 
    // Namespace records make member value descriptors available to the ordinary member-analysis path.  Callable
    // signatures are retained separately because struct fields intentionally carry no parser callable pointers.
 
-   for (const NamespaceDescriptor &portable : this->context_.Namespaces) {
+   for (const NamespaceDescriptor &portable : interface.Namespaces) {
       if (this->namespace_index_.contains(portable.Name)) continue;
       auto record = std::make_unique<struct_record>(portable.Name);
       struct_record *address = record.get();
       std::string prefix = portable.Name + ".";
-      for (const ExportDescriptor &exported : this->context_.Bindings) {
+      for (const ExportDescriptor &exported : interface.Exports) {
          if (not exported.Name.starts_with(prefix)) continue;
 
          std::string_view suffix(exported.Name.data() + prefix.size(), exported.Name.size() - prefix.size());
@@ -226,7 +225,7 @@ bool InstalledImportInterface::initialise(const tiri::import_cache::Interface &I
       this->namespace_index_.emplace(portable.Name, address);
    }
 
-   for (const ExportDescriptor &exported : this->context_.Bindings) {
+   for (const ExportDescriptor &exported : interface.Exports) {
       if (not exported.Callable) continue;
 
       auto function = std::make_unique<FunctionExprPayload>();

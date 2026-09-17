@@ -1911,9 +1911,10 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
             module_unit->module_cache_identity = std::move(module_lookup.Cached.CompilationIdentity);
             module_unit->module_identity = module_unit->module_cache_identity.CompiledIdentity;
             module_unit->module_payload = std::move(module_lookup.Cached.Payload);
+            module_unit->interface_artifact = std::move(module_lookup.Cached.CompileTimeInterface);
             std::string diagnostic;
             module_unit->installed_interface = InstalledImportInterface::create(
-               this->ctx, module_lookup.Cached.CompileTimeInterface, diagnostic);
+               this->ctx, module_unit->interface_artifact, diagnostic);
 
             if (not module_unit->installed_interface) {
                module_unit->state = ImportedModuleState::Failed;
@@ -1927,7 +1928,7 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
       }
 
       if (module_unit->installed_interface) {
-         for (const auto &exported : module_unit->installed_interface->context().Bindings) {
+         for (const auto &exported : module_unit->installed_interface->bindings()) {
             if (exported.Name.find('.') != std::string::npos or
                 module_unit->installed_interface->is_namespace(exported.Name)) continue;
             GCstr *name = this->ctx.lex().keepstr(exported.Name);
@@ -2143,7 +2144,7 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(
       }
 
       if (Lookup->Cached.CacheHit) {
-         const auto &portable = Lookup->Cached.CompileTimeInterface;
+         const auto &portable = Lookup->Cached.CompileTimeInterface->descriptors();
          BCLine source_lines = 1;
          for (char c : Lookup->Source) if (c IS '\n') source_lines++;
          std::string filename = Path;

@@ -343,8 +343,9 @@ bool prepare_block(ParserContext &Context, BlockStmt &Block, std::string &Diagno
                case AstNodeKind::ImportStmt:
                   for (const auto &nested : std::get<ImportStmtPayload>(child_statement->data).entries) {
                      if (nested.module_unit and nested.module_unit->installed_interface) {
-                        const auto &nested_interface = nested.module_unit->installed_interface->portable_interface();
-                        const auto nested_digest = interface_digest(nested_interface);
+                        const auto &nested_artifact = nested.module_unit->installed_interface->artifact();
+                        const auto &nested_interface = nested_artifact.descriptors();
+                        const auto &nested_digest = nested_artifact.digest();
                         merge_interface(portable, nested_interface);
                         portable.NestedModules.push_back({ nested.module_unit->module_cache_identity.LogicalRequest,
                            nested.lib_path, nested_digest });
@@ -410,19 +411,32 @@ bool prepare_block(ParserContext &Context, BlockStmt &Block, std::string &Diagno
             }
          }
 
-         unit.installed_interface = InstalledImportInterface::create(Context, portable, Diagnostic);
-         if (not unit.installed_interface) {
-            Diagnostic = std::format("{}: {}", entry.lib_path, Diagnostic);
+         InterfaceOperationCounters interface_counters;
+         FinalisedInterfacePtr artifact;
+         auto interface_error = FinalisedInterface::finalise(
+            std::move(portable), artifact, &interface_counters);
+         if (interface_error != cache::FormatError::OKAY) {
+            Diagnostic = std::format("{}: invalid compile-time interface: {}", entry.lib_path,
+               cache::format_error_name(interface_error));
             return false;
          }
          if (finalise_identity(unit.module_cache_identity) != cache::FormatError::OKAY) {
             Diagnostic = std::format("{}: compiled module identity is invalid", entry.lib_path);
             return false;
          }
+         auto installed = InstalledImportInterface::create(Context, artifact, Diagnostic);
+         if (not installed) {
+            Diagnostic = std::format("{}: {}", entry.lib_path, Diagnostic);
+            return false;
+         }
+         unit.interface_artifact = std::move(artifact);
+         unit.installed_interface = std::move(installed);
          unit.module_identity = unit.module_cache_identity.CompiledIdentity;
          unit.interface_prepared = true;
          unit.state = ImportedModuleState::InterfaceReady;
          Context.lex().imported_module_counters.interface_preparations++;
+         Context.lex().imported_module_counters.interface_finalisations += interface_counters.ColdFinalisations;
+         Context.lex().imported_module_counters.interface_encodes += interface_counters.Encodes;
       }
    }
    return true;

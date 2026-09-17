@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "ast/nodes.h"
@@ -20,9 +21,11 @@ class ParserContext;
 class InstalledImportInterface {
 public:
    [[nodiscard]] static std::shared_ptr<const InstalledImportInterface> create(
-      ParserContext &, const tiri::import_cache::Interface &, std::string &Diagnostic);
+      ParserContext &, tiri::import_cache::FinalisedInterfacePtr, std::string &Diagnostic);
 
-   [[nodiscard]] const tiri::import_cache::CompileTimeContext & context() const noexcept { return this->context_; }
+   [[nodiscard]] const std::vector<tiri::import_cache::ExportDescriptor> & bindings() const noexcept {
+      return this->portable_interface().Exports;
+   }
    [[nodiscard]] const tiri::import_cache::ExportDescriptor * find_export(std::string_view Name) const;
    [[nodiscard]] const tiri::import_cache::ExportDescriptor * find_member(
       std::string_view Namespace, std::string_view Member) const;
@@ -35,20 +38,22 @@ public:
    [[nodiscard]] StaticValueDescriptor namespace_value(std::string_view Namespace) const;
    [[nodiscard]] InferredType namespace_type(std::string_view Namespace) const;
    [[nodiscard]] const tiri::import_cache::Interface & portable_interface() const noexcept {
-      return this->portable_interface_;
+      return this->artifact_->descriptors();
    }
+   [[nodiscard]] const tiri::import_cache::FinalisedInterface & artifact() const noexcept { return *this->artifact_; }
 
 private:
-   explicit InstalledImportInterface(ParserContext &Context) : parser_context_(Context) {}
+   InstalledImportInterface(ParserContext &Context, tiri::import_cache::FinalisedInterfacePtr Artifact) :
+      parser_context_(Context), artifact_(std::move(Artifact)) { }
 
-   [[nodiscard]] bool initialise(const tiri::import_cache::Interface &, std::string &Diagnostic);
+   [[nodiscard]] bool initialise(std::string &Diagnostic);
    [[nodiscard]] struct_record * structure(std::string_view Name) const;
    [[nodiscard]] ArrayElementDescriptor array_element(const tiri::import_cache::ArrayDescriptor &) const;
    [[nodiscard]] CLASSID object_class(std::string_view Name) const;
 
    ParserContext &parser_context_;
-   tiri::import_cache::CompileTimeContext context_;
-   tiri::import_cache::Interface portable_interface_;
+   // Declared before every descriptor-address index so it is released after those borrowers are destroyed.
+   tiri::import_cache::FinalisedInterfacePtr artifact_;
    std::vector<std::unique_ptr<struct_record>> structures_;
    std::vector<std::unique_ptr<struct_record>> namespace_structures_;
    std::unordered_map<std::string, const tiri::import_cache::ExportDescriptor *> exports_;

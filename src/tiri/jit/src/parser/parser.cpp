@@ -383,10 +383,12 @@ extern GCproto * lj_parse(LexState *State)
    const auto &cache_counters = State->import_cache_counters;
    if (cache_counters.SourceReads or cache_counters.EnvelopeDecodes or cache_counters.SourceCompilations) {
       log.trace("Imported-module validation: hits=%u misses=%u source-reads=%u envelope-decodes=%u "
-         "payload-validations=%u validation-reuses=%u validation-states=%u source-compilations=%u publications=%u",
+         "payload-validations=%u payload-bundle-decodes=%u validation-reuses=%u validation-states=%u "
+         "source-compilations=%u publications=%u",
          cache_counters.CacheHits, cache_counters.LookupMisses, cache_counters.SourceReads,
-         cache_counters.EnvelopeDecodes, cache_counters.PayloadValidations, cache_counters.ValidationReuses,
-         cache_counters.ValidationStateCreations, cache_counters.SourceCompilations, cache_counters.Publications);
+         cache_counters.EnvelopeDecodes, cache_counters.PayloadValidations, cache_counters.PayloadBundleDecodes,
+         cache_counters.ValidationReuses, cache_counters.ValidationStateCreations, cache_counters.SourceCompilations,
+         cache_counters.Publications);
    }
 
 #ifdef UNIT_TESTS

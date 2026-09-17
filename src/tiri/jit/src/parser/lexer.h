@@ -79,6 +79,8 @@ struct ImportedModuleCompilationCounters {
    uint32_t static_propagation_visits = 0;
    uint32_t type_analysis_visits = 0;
    uint32_t interface_preparations = 0;
+   uint32_t interface_finalisations = 0;
+   uint32_t interface_encodes = 0;
    uint32_t initialiser_emissions = 0;
    uint32_t root_normalisation_traversals = 0;
    uint32_t root_normalisation_edges = 0;

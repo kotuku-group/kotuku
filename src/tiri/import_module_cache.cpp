@@ -185,7 +185,7 @@ bool try_cache(const std::string &Path, const Identity &Expected, const Identity
 
    EnvelopeView envelope;
    Counters.EnvelopeDecodes++;
-   if (decode_envelope(content, envelope) != cache::FormatError::OKAY or
+   if (decode_envelope(content, envelope, &Counters.InterfaceOperations) != cache::FormatError::OKAY or
        not identity_matches(envelope.CompilationIdentity, Expected)) return false;
 
    std::string reason;
@@ -299,8 +299,9 @@ ERR lookup_module(const CompilationRequest &Request, const IdentityValidator &Va
 //********************************************************************************************************************
 // Encodes and best-effort publishes a parser-compiled module.
 
-ERR publish_module(const CompilationRequest &Request, const Identity &IdentityValue, const Interface &InterfaceValue,
-   std::string_view Payload, LifecycleCounters &Counters, ModulePublication &Output)
+ERR publish_module(const CompilationRequest &Request, const Identity &IdentityValue,
+   const FinalisedInterface &InterfaceValue, std::string_view Payload, LifecycleCounters &Counters,
+   ModulePublication &Output)
 {
    Output = {};
    if (IdentityValue.Source.ResolvedPath.empty() or IdentityValue.LogicalRequest.empty() or Payload.empty()) {

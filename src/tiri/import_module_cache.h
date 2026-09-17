@@ -18,10 +18,12 @@ struct LifecycleCounters {
    uint32_t SourceReads = 0;
    uint32_t EnvelopeDecodes = 0;
    uint32_t PayloadValidations = 0;
+   uint32_t PayloadBundleDecodes = 0;
    uint32_t ValidationReuses = 0;
    uint32_t ValidationStateCreations = 0;
    uint32_t SourceCompilations = 0;
    uint32_t Publications = 0;
+   InterfaceOperationCounters InterfaceOperations;
 };
 
 struct SourceSnapshot {
@@ -39,7 +41,7 @@ struct CompiledModule {
    Identity CompilationIdentity;
    std::string LookupIdentity;
    std::string CompiledIdentity;
-   Interface CompileTimeInterface;
+   FinalisedInterfacePtr CompileTimeInterface;
    std::string Payload;
    std::string CachePath;
    std::string Diagnostic;
@@ -70,8 +72,8 @@ using PayloadValidator = std::function<bool(std::string_view, std::string &)>;
    const PayloadValidator &, LifecycleCounters &, ModuleLookup &);
 [[nodiscard]] ERR lookup_module(const CompilationRequest &, const IdentityValidator &, const PayloadValidator &,
    LifecycleCounters &, ModuleLookup &);
-[[nodiscard]] ERR publish_module(const CompilationRequest &, const Identity &, const Interface &, std::string_view,
-   LifecycleCounters &, ModulePublication &);
+[[nodiscard]] ERR publish_module(const CompilationRequest &, const Identity &, const FinalisedInterface &,
+   std::string_view, LifecycleCounters &, ModulePublication &);
 
 #ifdef UNIT_TESTS
 enum class ModulePublishFailure : uint8_t { NIL, CREATE, WRITE, FLUSH, MOVE };

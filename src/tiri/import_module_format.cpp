@@ -409,25 +409,77 @@ cache::FormatError validate_interface(const Interface &Value)
 }
 
 //********************************************************************************************************************
-// Produces the canonical interface byte stream by sorting all order-independent records.
+// Places every order-independent collection in the stable wire order.
+
+auto source_order_key(const SourceDescriptor &Entry)
+{
+   return std::tie(Entry.ResolvedPath, Entry.LogicalRequest, Entry.Filename, Entry.DeclaredNamespace,
+      Entry.ParentResolvedPath, Entry.FirstLine, Entry.TotalLines, Entry.ImportLine);
+}
+
+auto nested_module_order_key(const NestedModuleDescriptor &Entry)
+{
+   return std::tie(Entry.LogicalRequest, Entry.ResolvedPath, Entry.InterfaceDigest);
+}
+
+void canonicalise_interface(Interface &Value)
+{
+   std::ranges::sort(Value.Namespaces, {}, [](const auto &Entry) { return std::tie(Entry.Name, Entry.Mode); });
+   std::ranges::sort(Value.Exports, {}, [](const auto &Entry) { return std::tie(Entry.Name, Entry.Kind); });
+   std::ranges::sort(Value.Structures, {}, &StructureDescriptor::Name);
+   for (auto &entry : Value.Structures) std::ranges::sort(entry.Fields, {}, &StructureField::Name);
+   std::ranges::sort(Value.Enums, {}, &EnumDescriptor::Name);
+   for (auto &entry : Value.Enums) std::ranges::sort(entry.Members, {}, &EnumMember::Name);
+   std::ranges::sort(Value.NativeDependencies, {}, &NativeDependency::Module);
+   for (auto &entry : Value.NativeDependencies) std::ranges::sort(entry.Functions);
+   std::ranges::sort(Value.Sources, {}, source_order_key);
+   std::ranges::sort(Value.NestedModules, {}, nested_module_order_key);
+}
+
+//********************************************************************************************************************
+// Confirms that decoded collections use the writer's exact canonical order.
+
+bool interface_is_canonical(const Interface &Value)
+{
+   if (not std::ranges::is_sorted(Value.Namespaces, {}, [](const auto &Entry) {
+          return std::tie(Entry.Name, Entry.Mode);
+       }) or
+       not std::ranges::is_sorted(Value.Exports, {}, [](const auto &Entry) {
+          return std::tie(Entry.Name, Entry.Kind);
+       }) or
+       not std::ranges::is_sorted(Value.Structures, {}, &StructureDescriptor::Name) or
+       not std::ranges::is_sorted(Value.Enums, {}, &EnumDescriptor::Name) or
+       not std::ranges::is_sorted(Value.NativeDependencies, {}, &NativeDependency::Module) or
+       not std::ranges::is_sorted(Value.Sources, {}, source_order_key) or
+       not std::ranges::is_sorted(Value.NestedModules, {}, nested_module_order_key)) return false;
+
+   for (const auto &entry : Value.Structures) {
+      if (not std::ranges::is_sorted(entry.Fields, {}, &StructureField::Name)) return false;
+   }
+   for (const auto &entry : Value.Enums) {
+      if (not std::ranges::is_sorted(entry.Members, {}, &EnumMember::Name)) return false;
+   }
+   for (const auto &entry : Value.NativeDependencies) {
+      if (not std::ranges::is_sorted(entry.Functions)) return false;
+   }
+   return true;
+}
+
+//********************************************************************************************************************
+// Produces the canonical interface byte stream from an already ordered and validated graph.
 
 cache::FormatError encode_interface_impl(const Interface &Value, std::string &Output)
 {
-   if (auto error = validate_interface(Value); error != cache::FormatError::OKAY) return error;
    Encoder encoder(MAX_INTERFACE_SIZE);
 
-   auto namespaces = Value.Namespaces;
-   std::ranges::sort(namespaces, {}, [](const auto &Entry) { return std::tie(Entry.Name, Entry.Mode); });
-   encoder.u32(uint32_t(namespaces.size()));
-   for (const auto &entry : namespaces) {
+   encoder.u32(uint32_t(Value.Namespaces.size()));
+   for (const auto &entry : Value.Namespaces) {
       encoder.string(entry.Name);
       encoder.byte(uint8_t(entry.Mode));
    }
 
-   auto exports = Value.Exports;
-   std::ranges::sort(exports, {}, [](const auto &Entry) { return std::tie(Entry.Name, Entry.Kind); });
-   encoder.u32(uint32_t(exports.size()));
-   for (const auto &entry : exports) {
+   encoder.u32(uint32_t(Value.Exports.size()));
+   for (const auto &entry : Value.Exports) {
       encoder.string(entry.Name);
       encoder.byte(uint8_t(entry.Kind));
       encoder.boolean(entry.IsConst);
@@ -441,11 +493,8 @@ cache::FormatError encode_interface_impl(const Interface &Value, std::string &Ou
       encoder.boolean(entry.Constant.Boolean);
    }
 
-   auto structures = Value.Structures;
-   std::ranges::sort(structures, {}, &StructureDescriptor::Name);
-   encoder.u32(uint32_t(structures.size()));
-   for (auto &entry : structures) {
-      std::ranges::sort(entry.Fields, {}, &StructureField::Name);
+   encoder.u32(uint32_t(Value.Structures.size()));
+   for (const auto &entry : Value.Structures) {
       encoder.string(entry.Name);
       encoder.u32(uint32_t(entry.Fields.size()));
       for (const auto &field : entry.Fields) {
@@ -455,11 +504,8 @@ cache::FormatError encode_interface_impl(const Interface &Value, std::string &Ou
       }
    }
 
-   auto enums = Value.Enums;
-   std::ranges::sort(enums, {}, &EnumDescriptor::Name);
-   encoder.u32(uint32_t(enums.size()));
-   for (auto &entry : enums) {
-      std::ranges::sort(entry.Members, {}, &EnumMember::Name);
+   encoder.u32(uint32_t(Value.Enums.size()));
+   for (const auto &entry : Value.Enums) {
       encoder.string(entry.Name);
       encoder.u32(uint32_t(entry.Members.size()));
       for (const auto &member : entry.Members) {
@@ -472,25 +518,17 @@ cache::FormatError encode_interface_impl(const Interface &Value, std::string &Ou
       }
    }
 
-   auto native_dependencies = Value.NativeDependencies;
-   std::ranges::sort(native_dependencies, {}, &NativeDependency::Module);
-   encoder.u32(uint32_t(native_dependencies.size()));
+   encoder.u32(uint32_t(Value.NativeDependencies.size()));
 
-   for (auto &entry : native_dependencies) {
-      std::ranges::sort(entry.Functions);
+   for (const auto &entry : Value.NativeDependencies) {
       encoder.string(entry.Module);
       encoder.u32(entry.ActivationOrder);
       encoder.u32(uint32_t(entry.Functions.size()));
       for (const auto &function : entry.Functions) encoder.string(function);
    }
 
-   auto sources = Value.Sources;
-   std::ranges::sort(sources, {}, [](const auto &Entry) {
-      return std::tie(Entry.ResolvedPath, Entry.LogicalRequest);
-   });
-
-   encoder.u32(uint32_t(sources.size()));
-   for (const auto &entry : sources) {
+   encoder.u32(uint32_t(Value.Sources.size()));
+   for (const auto &entry : Value.Sources) {
       encoder.string(entry.ResolvedPath);
       encoder.string(entry.LogicalRequest);
       encoder.string(entry.Filename);
@@ -501,13 +539,8 @@ cache::FormatError encode_interface_impl(const Interface &Value, std::string &Ou
       encoder.u32(entry.ImportLine);
    }
 
-   auto nested = Value.NestedModules;
-   std::ranges::sort(nested, {}, [](const auto &Entry) {
-      return std::tie(Entry.LogicalRequest, Entry.ResolvedPath);
-   });
-
-   encoder.u32(uint32_t(nested.size()));
-   for (const auto &entry : nested) {
+   encoder.u32(uint32_t(Value.NestedModules.size()));
+   for (const auto &entry : Value.NestedModules) {
       encoder.string(entry.LogicalRequest);
       encoder.string(entry.ResolvedPath);
       encoder.digest(entry.InterfaceDigest);
@@ -609,6 +642,7 @@ cache::FormatError decode_interface_impl(std::string_view Bytes, Interface &Outp
    if (input.Error != cache::FormatError::OKAY) return input.Error;
    if (input.Position != input.size()) return cache::FormatError::INVALID_METADATA;
    if (auto error = validate_interface(result); error != cache::FormatError::OKAY) return error;
+   if (not interface_is_canonical(result)) return cache::FormatError::INVALID_METADATA;
    Output = std::move(result);
    return cache::FormatError::OKAY;
 }
@@ -779,10 +813,16 @@ cache::FormatError decode_identity(std::string_view Bytes, Identity &Output)
 //********************************************************************************************************************
 // Encodes a portable compile-time interface in its canonical form.
 
+#ifdef UNIT_TESTS
 cache::FormatError encode_interface(const Interface &Value, std::string &Output)
 {
-   return encode_interface_impl(Value, Output);
+   FinalisedInterfacePtr finalised;
+   auto error = FinalisedInterface::finalise(Value, finalised);
+   if (error != cache::FormatError::OKAY) return error;
+   Output.assign(finalised->bytes());
+   return cache::FormatError::OKAY;
 }
+#endif
 
 //********************************************************************************************************************
 // Decodes a portable compile-time interface and validates its metadata.
@@ -790,6 +830,43 @@ cache::FormatError encode_interface(const Interface &Value, std::string &Output)
 cache::FormatError decode_interface(std::string_view Bytes, Interface &Output)
 {
    return decode_interface_impl(Bytes, Output);
+}
+
+//********************************************************************************************************************
+// Validates, canonicalises and encodes one mutable cold interface before publishing it atomically.
+
+cache::FormatError FinalisedInterface::finalise(
+   Interface Value, FinalisedInterfacePtr &Output, InterfaceOperationCounters *Counters)
+{
+   if (auto error = validate_interface(Value); error != cache::FormatError::OKAY) return error;
+   canonicalise_interface(Value);
+   std::string bytes;
+   if (auto error = encode_interface_impl(Value, bytes); error != cache::FormatError::OKAY) return error;
+   auto digest = cache::content_digest(bytes);
+   FinalisedInterfacePtr result(new FinalisedInterface(std::move(Value), std::move(bytes), digest));
+   Output = std::move(result);
+   if (Counters) {
+      Counters->ColdFinalisations++;
+      Counters->Encodes++;
+   }
+   return cache::FormatError::OKAY;
+}
+
+//********************************************************************************************************************
+// Adopts verified canonical interface bytes without re-encoding the decoded descriptor graph.
+
+cache::FormatError FinalisedInterface::from_canonical_bytes(std::string_view Bytes, const cache::Digest &Digest,
+   FinalisedInterfacePtr &Output, InterfaceOperationCounters *Counters)
+{
+   if (Bytes.size() > MAX_INTERFACE_SIZE) return cache::FormatError::SIZE_LIMIT;
+   if (cache::content_digest(Bytes) != Digest) return cache::FormatError::INVALID_METADATA;
+   Interface descriptors;
+   if (auto error = decode_interface_impl(Bytes, descriptors); error != cache::FormatError::OKAY) return error;
+   FinalisedInterfacePtr result(
+      new FinalisedInterface(std::move(descriptors), std::string(Bytes), Digest));
+   Output = std::move(result);
+   if (Counters) Counters->WarmDecodes++;
+   return cache::FormatError::OKAY;
 }
 
 //********************************************************************************************************************
@@ -846,19 +923,9 @@ cache::FormatError finalise_identity(Identity &IdentityValue)
 }
 
 //********************************************************************************************************************
-// Calculates the digest of an interface's canonical encoding.
-
-cache::Digest interface_digest(const Interface &InterfaceValue)
-{
-   std::string bytes;
-   if (encode_interface(InterfaceValue, bytes) != cache::FormatError::OKAY) return {};
-   return cache::content_digest(bytes);
-}
-
-//********************************************************************************************************************
 // Packages module identity, interface metadata and bytecode into a verified cache envelope.
 
-cache::FormatError encode_envelope(const Identity &IdentityValue, const Interface &InterfaceValue,
+cache::FormatError encode_envelope(const Identity &IdentityValue, const FinalisedInterface &InterfaceValue,
    std::string_view Payload, std::string &Output)
 {
    Output.clear();
@@ -866,9 +933,9 @@ cache::FormatError encode_envelope(const Identity &IdentityValue, const Interfac
    if (not Payload.starts_with("\x1bLJ")) return cache::FormatError::INVALID_PAYLOAD;
    Identity final_identity = IdentityValue;
    if (auto error = finalise_identity(final_identity); error != cache::FormatError::OKAY) return error;
-   std::string identity, interface_bytes;
+   std::string identity;
    if (auto error = encode_identity(final_identity, identity); error != cache::FormatError::OKAY) return error;
-   if (auto error = encode_interface(InterfaceValue, interface_bytes); error != cache::FormatError::OKAY) return error;
+   const std::string_view interface_bytes = InterfaceValue.bytes();
 
    Encoder header;
    header.Bytes.append((const char *)MODULE_MAGIC.data(), MODULE_MAGIC.size());
@@ -877,7 +944,7 @@ cache::FormatError encode_envelope(const Identity &IdentityValue, const Interfac
    header.u32(uint32_t(interface_bytes.size()));
    header.u64(Payload.size());
    header.digest(cache::content_digest(identity));
-   header.digest(cache::content_digest(interface_bytes));
+   header.digest(InterfaceValue.digest());
    header.digest(cache::content_digest(Payload));
    Output.reserve(header.Bytes.size() + identity.size() + interface_bytes.size() + Payload.size());
    Output = std::move(header.Bytes);
@@ -890,7 +957,8 @@ cache::FormatError encode_envelope(const Identity &IdentityValue, const Interfac
 //********************************************************************************************************************
 // Validates a cache envelope and exposes its decoded metadata and borrowed bytecode payload.
 
-cache::FormatError decode_envelope(std::string_view Input, EnvelopeView &Output)
+cache::FormatError decode_envelope(
+   std::string_view Input, EnvelopeView &Output, InterfaceOperationCounters *Counters)
 {
    Output = {};
 
@@ -916,8 +984,7 @@ cache::FormatError decode_envelope(std::string_view Input, EnvelopeView &Output)
    auto identity = Input.substr(HEADER_SIZE, identity_size);
    auto interface_bytes = Input.substr(HEADER_SIZE + identity_size, interface_size);
    auto payload = Input.substr(HEADER_SIZE + identity_size + interface_size, size_t(payload_size));
-   if ((cache::content_digest(identity) != identity_hash) or
-       (cache::content_digest(interface_bytes) != interface_hash)) return cache::FormatError::INVALID_METADATA;
+   if (cache::content_digest(identity) != identity_hash) return cache::FormatError::INVALID_METADATA;
 
    if (cache::content_digest(payload) != payload_hash or not payload.starts_with("\x1bLJ")) {
       return cache::FormatError::INVALID_PAYLOAD;
@@ -926,31 +993,13 @@ cache::FormatError decode_envelope(std::string_view Input, EnvelopeView &Output)
    EnvelopeView result;
    if (auto error = decode_identity(identity, result.CompilationIdentity);
        error != cache::FormatError::OKAY) return error;
-   if (auto error = decode_interface(interface_bytes, result.CompileTimeInterface);
+   if (auto error = FinalisedInterface::from_canonical_bytes(
+       interface_bytes, interface_hash, result.CompileTimeInterface, Counters);
        error != cache::FormatError::OKAY) return error;
-   result.InterfaceDigest = interface_hash;
    result.LookupIdentity = result.CompilationIdentity.LookupIdentity;
    result.CompiledIdentity = result.CompilationIdentity.CompiledIdentity;
    result.Payload = payload;
    Output = std::move(result);
-   return cache::FormatError::OKAY;
-}
-
-//********************************************************************************************************************
-// Atomically replaces the compile-time context with a validated portable interface.
-
-cache::FormatError install_interface(const Interface &Value, CompileTimeContext &Context)
-{
-   if (auto error = validate_interface(Value); error != cache::FormatError::OKAY) return error;
-   CompileTimeContext staged;
-   staged.Namespaces    = Value.Namespaces;
-   staged.Bindings      = Value.Exports;
-   staged.Structures    = Value.Structures;
-   staged.Enums         = Value.Enums;
-   staged.NativeDependencies = Value.NativeDependencies;
-   staged.Sources       = Value.Sources;
-   staged.NestedModules = Value.NestedModules;
-   Context = std::move(staged);
    return cache::FormatError::OKAY;
 }
 

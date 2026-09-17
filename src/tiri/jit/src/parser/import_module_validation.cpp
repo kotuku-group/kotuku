@@ -1,4 +1,5 @@
 #include "import_module_validation.h"
+#include "../lib/load.h"
 
 #include <ranges>
 #include <utility>
@@ -134,7 +135,7 @@ bool ImportModuleValidationSession::validate_identity(
          return false;
       }
       if (not lookup.Cached.CacheHit or
-          tiri::import_cache::interface_digest(lookup.Cached.CompileTimeInterface) != dependency.InterfaceDigest or
+          lookup.Cached.CompileTimeInterface->digest() != dependency.InterfaceDigest or
           lookup.Cached.CompiledIdentity != dependency.CompiledIdentity) {
          Reason = lookup.Cached.Diagnostic.empty() ?
             "an imported module dependency has changed or is unavailable" : lookup.Cached.Diagnostic;
@@ -161,22 +162,19 @@ bool ImportModuleValidationSession::validate_payload(std::string_view Payload, s
       Reason = "an isolated validation state could not be initialised";
       return false;
    }
-   if (lua_load(validation.get(), Payload, "=import-cache-validation") != 0) {
+   BytecodeLoadMetadata metadata;
+   if (lj_load_with_bytecode_metadata(validation.get(), Payload, "=import-cache-validation", metadata) != 0) {
       auto message = lua_tostringview(validation.get(), -1);
       Reason.assign(message.data(), message.size());
       return false;
    }
 
-   GCproto *prototype = funcproto(funcV(validation->top - 1));
-   uint32_t bundle_size = 0;
-   const uint8_t *bundle = proto_import_module_bundle(prototype, &bundle_size);
-   std::vector<tiri::import_cache::RootModuleRecord> discarded_modules;
-   auto &modules = EmbeddedModules ? *EmbeddedModules : discarded_modules;
-   if (not bundle or tiri::import_cache::decode_root_module_bundle(
-       std::string_view((const char *)bundle, bundle_size), modules) != tiri::cache::FormatError::OKAY) {
-      Reason = "the imported-module dependency bundle is invalid";
+   if (not metadata.Bytecode) {
+      Reason = "the imported-module cache payload did not contain bytecode metadata";
       return false;
    }
+   this->counters.PayloadBundleDecodes++;
+   if (EmbeddedModules) *EmbeddedModules = std::move(metadata.ImportedModules);
    return true;
 }
 
@@ -219,13 +217,16 @@ ERR ImportModuleValidationSession::ensure_validated(
    auto identity_validator = [&](const tiri::import_cache::Identity &IdentityValue, std::string &Reason) {
       return this->validate_identity(IdentityValue, Reason);
    };
+   std::vector<tiri::import_cache::RootModuleRecord> embedded_modules;
    auto payload_validator = [&](std::string_view Payload, std::string &Reason) {
-      return this->validate_payload(Payload, Reason, &node->Lookup.EmbeddedModules);
+      return this->validate_payload(Payload, Reason, &embedded_modules);
    };
 
    auto error = tiri::import_cache::lookup_module(
       Request, *source, identity_validator, payload_validator, this->counters, node->Lookup);
    if (error != ERR::Okay) return error;
+
+   if (node->Lookup.Cached.CacheHit) node->Lookup.EmbeddedModules = std::move(embedded_modules);
 
    node->State = node->Lookup.Cached.CacheHit ? NodeState::VALID : NodeState::INVALID;
    Output = node->Lookup;

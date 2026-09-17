@@ -657,7 +657,7 @@ private:
                   }
                }
                if (entry.module_unit and installed) {
-                  for (const auto &exported : installed->context().Bindings) {
+                  for (const auto &exported : installed->bindings()) {
                      if (exported.Name.find('.') != std::string::npos or
                          installed->is_namespace(exported.Name)) continue;
                      GCstr *name = this->context_.lex().keepstr(exported.Name);
@@ -2669,7 +2669,7 @@ private:
                   }
                }
                if (installed) {
-                  for (const auto &exported : installed->context().Bindings) {
+                  for (const auto &exported : installed->bindings()) {
                      if (exported.Name.find('.') != std::string::npos or
                          installed->is_namespace(exported.Name)) continue;
                      GCstr *name = this->context_.lex().keepstr(exported.Name);

@@ -68,7 +68,7 @@ PayloadValidator payload_validator()
 
 struct FixtureArtifact {
    Identity CompilationIdentity;
-   Interface CompileTimeInterface;
+   FinalisedInterfacePtr CompileTimeInterface;
    std::string Payload;
 };
 
@@ -81,7 +81,9 @@ bool prepare_artifact(const ModuleLookup &Lookup, FixtureArtifact &Output)
    Output.CompilationIdentity.ConditionalInputs.push_back({ tiri::cache::ConditionalKind::IMPORTED,
       "imported", Output.CompilationIdentity.Source.ResolvedPath, "true" });
    if (finalise_identity(Output.CompilationIdentity) != tiri::cache::FormatError::OKAY) return false;
-   Output.CompileTimeInterface = interface_for(Output.CompilationIdentity);
+   if (FinalisedInterface::finalise(
+       interface_for(Output.CompilationIdentity), Output.CompileTimeInterface) !=
+       tiri::cache::FormatError::OKAY) return false;
    Output.Payload.assign("\x1bLJ", 3);
    Output.Payload.append(Lookup.Source);
    Output.Payload.append("-complete");
@@ -131,7 +133,7 @@ bool cold_hit_and_invalidation(kt::Log &Log)
    FixtureArtifact cold;
    ModulePublication publication;
    if (not prepare_artifact(cold_lookup, cold) or
-       publish_module(request, cold.CompilationIdentity, cold.CompileTimeInterface, cold.Payload,
+       publish_module(request, cold.CompilationIdentity, *cold.CompileTimeInterface, cold.Payload,
           counters, publication) != ERR::Okay or publication.StorageError != ERR::Okay or
        counters.Publications != 1) {
       Log.error("Direct imported-module publication did not store one complete generation");
@@ -146,8 +148,11 @@ bool cold_hit_and_invalidation(kt::Log &Log)
        lookup_module(request, warm_snapshot, {}, payload_validator(), counters, warm) != ERR::Okay or
        not warm.Cached.CacheHit or counters.CacheHits != 1 or counters.SourceReads != 2 or
        counters.EnvelopeDecodes != 1 or counters.PayloadValidations != 1 or
+       counters.InterfaceOperations.WarmDecodes != 1 or counters.InterfaceOperations.Encodes != 0 or
        counters.SourceCompilations != 1 or warm.Cached.CompilationIdentity.LookupIdentity !=
-          cold.CompilationIdentity.LookupIdentity or warm.Cached.CompileTimeInterface != cold.CompileTimeInterface or
+          cold.CompilationIdentity.LookupIdentity or not warm.Cached.CompileTimeInterface or
+       warm.Cached.CompileTimeInterface->descriptors() != cold.CompileTimeInterface->descriptors() or
+       warm.Cached.CompileTimeInterface->bytes() != cold.CompileTimeInterface->bytes() or
        warm.Cached.Payload != cold.Payload) {
       Log.error("A fresh imported-module lookup did not return the exact published generation");
       return false;
@@ -157,7 +162,8 @@ bool cold_hit_and_invalidation(kt::Log &Log)
    ModuleLookup stable;
    if (lookup_module(request, warm_snapshot, {}, payload_validator(), counters, stable) != ERR::Okay or
        not stable.Cached.CacheHit or stable.Source != "first" or counters.SourceReads != 2 or
-       counters.CacheHits != 2) {
+       counters.CacheHits != 2 or counters.InterfaceOperations.WarmDecodes != 2 or
+       counters.InterfaceOperations.Encodes != 0) {
       Log.error("A captured source snapshot changed within its validation session");
       return false;
    }
@@ -176,7 +182,7 @@ bool cold_hit_and_invalidation(kt::Log &Log)
    FixtureArtifact changed;
    ModulePublication changed_publication;
    if (not prepare_artifact(changed_lookup, changed) or
-       publish_module(request, changed.CompilationIdentity, changed.CompileTimeInterface, changed.Payload,
+       publish_module(request, changed.CompilationIdentity, *changed.CompileTimeInterface, changed.Payload,
           counters, changed_publication) != ERR::Okay or changed_publication.StorageError != ERR::Okay or
        changed_publication.CachePath IS publication.CachePath) {
       Log.error("Changed imported-module source did not publish a distinct generation");
@@ -200,7 +206,7 @@ bool malformed_rejection_and_publication_failure(kt::Log &Log)
    if (snapshot_source(source_path, counters, snapshot) != ERR::Okay or
        lookup_module(request, snapshot, {}, payload_validator(), counters, cold) != ERR::Okay or
        not prepare_artifact(cold, artifact) or
-       publish_module(request, artifact.CompilationIdentity, artifact.CompileTimeInterface, artifact.Payload,
+       publish_module(request, artifact.CompilationIdentity, *artifact.CompileTimeInterface, artifact.Payload,
           counters, initial) != ERR::Okay or initial.StorageError != ERR::Okay) return false;
    cleanup.Paths.push_back(initial.CachePath);
    request.ExpectedIdentity = artifact.CompilationIdentity;
@@ -214,7 +220,7 @@ bool malformed_rejection_and_publication_failure(kt::Log &Log)
    }
 
    ModulePublication replacement;
-   if (publish_module(request, artifact.CompilationIdentity, artifact.CompileTimeInterface, artifact.Payload,
+   if (publish_module(request, artifact.CompilationIdentity, *artifact.CompileTimeInterface, artifact.Payload,
        counters, replacement) != ERR::Okay or replacement.StorageError != ERR::Okay) return false;
 
    IdentityValidator reject = [](const Identity &, std::string &Reason) {
@@ -230,13 +236,13 @@ bool malformed_rejection_and_publication_failure(kt::Log &Log)
    }
 
    ModulePublication accepted_replacement;
-   if (publish_module(request, artifact.CompilationIdentity, artifact.CompileTimeInterface, artifact.Payload,
+   if (publish_module(request, artifact.CompilationIdentity, *artifact.CompileTimeInterface, artifact.Payload,
        counters, accepted_replacement) != ERR::Okay or accepted_replacement.StorageError != ERR::Okay) return false;
 
    DeleteFile(accepted_replacement.CachePath, nullptr);
    set_module_publish_failure(ModulePublishFailure::WRITE);
    ModulePublication unpublished;
-   if (publish_module(request, artifact.CompilationIdentity, artifact.CompileTimeInterface, artifact.Payload,
+   if (publish_module(request, artifact.CompilationIdentity, *artifact.CompileTimeInterface, artifact.Payload,
        counters, unpublished) != ERR::Okay or unpublished.StorageError IS ERR::Okay or
        AnalysePath(unpublished.CachePath, nullptr) IS ERR::Okay or
        has_staging_file(request.CacheDirectory, unpublished.CachePath)) {
@@ -304,7 +310,7 @@ bool concurrent_complete_generations(kt::Log &Log)
       producers[i] = std::thread([&, i] {
          ready.fetch_add(1, std::memory_order_release);
          while (not start.load(std::memory_order_acquire)) std::this_thread::yield();
-         errors[i] = publish_module(request, artifact.CompilationIdentity, artifact.CompileTimeInterface,
+         errors[i] = publish_module(request, artifact.CompilationIdentity, *artifact.CompileTimeInterface,
             artifact.Payload, counters[i], outputs[i]);
       });
    }
@@ -332,7 +338,11 @@ bool concurrent_complete_generations(kt::Log &Log)
    if (lookup_module(request, snapshot, {}, payload_validator(), reader_counters, reader) != ERR::Okay or
        not reader.Cached.CacheHit or reader.Cached.CompilationIdentity.LookupIdentity !=
           artifact.CompilationIdentity.LookupIdentity or
-       reader.Cached.CompileTimeInterface != artifact.CompileTimeInterface or
+       not reader.Cached.CompileTimeInterface or
+       reader.Cached.CompileTimeInterface->descriptors() != artifact.CompileTimeInterface->descriptors() or
+       reader.Cached.CompileTimeInterface->digest() != artifact.CompileTimeInterface->digest() or
+       reader_counters.InterfaceOperations.WarmDecodes != 1 or
+       reader_counters.InterfaceOperations.Encodes != 0 or
        reader.Cached.Payload != artifact.Payload) {
       Log.error("A reader did not observe one complete generation after concurrent publication");
       return false;

@@ -3,9 +3,11 @@
 #include "cache_manifest.h"
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace tiri::import_cache {
@@ -173,6 +175,34 @@ struct Interface {
    [[nodiscard]] bool operator==(const Interface &) const = default;
 };
 
+struct InterfaceOperationCounters {
+   uint32_t ColdFinalisations = 0;
+   uint32_t Encodes = 0;
+   uint32_t WarmDecodes = 0;
+};
+
+class FinalisedInterface {
+public:
+   [[nodiscard]] static cache::FormatError finalise(Interface, std::shared_ptr<const FinalisedInterface> &,
+      InterfaceOperationCounters *Counters = nullptr);
+   [[nodiscard]] static cache::FormatError from_canonical_bytes(std::string_view, const cache::Digest &,
+      std::shared_ptr<const FinalisedInterface> &, InterfaceOperationCounters *Counters = nullptr);
+
+   [[nodiscard]] const Interface & descriptors() const noexcept { return this->descriptors_; }
+   [[nodiscard]] std::string_view bytes() const noexcept { return this->bytes_; }
+   [[nodiscard]] const cache::Digest & digest() const noexcept { return this->digest_; }
+
+private:
+   FinalisedInterface(Interface Descriptors, std::string Bytes, const cache::Digest &Digest) :
+      descriptors_(std::move(Descriptors)), bytes_(std::move(Bytes)), digest_(Digest) { }
+
+   Interface descriptors_;
+   std::string bytes_;
+   cache::Digest digest_ = {};
+};
+
+using FinalisedInterfacePtr = std::shared_ptr<const FinalisedInterface>;
+
 struct LocalImportIdentity {
    std::string ParentPath;
    std::string OriginalRequest;
@@ -205,21 +235,8 @@ struct EnvelopeView {
    Identity CompilationIdentity;
    std::string LookupIdentity;
    std::string CompiledIdentity;
-   Interface CompileTimeInterface;
-   cache::Digest InterfaceDigest = {};
+   FinalisedInterfacePtr CompileTimeInterface;
    std::string_view Payload;
-};
-
-// Installation deliberately owns portable records rather than live parser or Lua values.  I04 may translate these
-// records to transient analyser handles, while decoded interfaces can already be compared and staged atomically.
-struct CompileTimeContext {
-   std::vector<NamespaceDescriptor> Namespaces;
-   std::vector<ExportDescriptor> Bindings;
-   std::vector<StructureDescriptor> Structures;
-   std::vector<EnumDescriptor> Enums;
-   std::vector<NativeDependency> NativeDependencies;
-   std::vector<SourceDescriptor> Sources;
-   std::vector<NestedModuleDescriptor> NestedModules;
 };
 
 [[nodiscard]] bool is_envelope(std::string_view Input) noexcept;
@@ -227,12 +244,13 @@ struct CompileTimeContext {
 [[nodiscard]] std::string lookup_key(const Identity &IdentityValue);
 [[nodiscard]] std::string compiled_key(const Identity &IdentityValue);
 [[nodiscard]] cache::FormatError finalise_identity(Identity &IdentityValue);
-[[nodiscard]] cache::Digest interface_digest(const Interface &InterfaceValue);
+#ifdef UNIT_TESTS
 [[nodiscard]] cache::FormatError encode_interface(const Interface &, std::string &Output);
+#endif
 [[nodiscard]] cache::FormatError decode_interface(std::string_view Bytes, Interface &Output);
 [[nodiscard]] cache::FormatError encode_envelope(
-   const Identity &, const Interface &, std::string_view Payload, std::string &Output);
-[[nodiscard]] cache::FormatError decode_envelope(std::string_view Input, EnvelopeView &Output);
-[[nodiscard]] cache::FormatError install_interface(const Interface &, CompileTimeContext &Context);
+   const Identity &, const FinalisedInterface &, std::string_view Payload, std::string &Output);
+[[nodiscard]] cache::FormatError decode_envelope(std::string_view Input, EnvelopeView &Output,
+   InterfaceOperationCounters *Counters = nullptr);
 
 } // namespace tiri::import_cache

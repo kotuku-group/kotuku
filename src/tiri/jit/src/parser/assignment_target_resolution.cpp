@@ -528,7 +528,7 @@ private:
                }
                const auto &installed = entry.module_unit ? entry.module_unit->installed_interface : nullptr;
                if (installed) {
-                  for (const auto &exported : installed->context().Bindings) {
+                  for (const auto &exported : installed->bindings()) {
                      if (exported.Name.find('.') != std::string::npos or
                          installed->is_namespace(exported.Name)) continue;
                      this->global_names_.push_back(this->context_.lex().keepstr(exported.Name));

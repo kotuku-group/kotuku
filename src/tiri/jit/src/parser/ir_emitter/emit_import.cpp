@@ -529,7 +529,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_import_entry(const ImportEntryPayload &
                      request.ExpectedIdentity = unit->module_cache_identity;
                      tiri::import_cache::ModulePublication published;
                      (void)tiri::import_cache::publish_module(request, unit->module_cache_identity,
-                        unit->installed_interface->portable_interface(), payload,
+                        unit->installed_interface->artifact(), payload,
                         this->lex_state.import_cache_counters, published);
                      if (published.StorageError != ERR::Okay) {
                         kt::Log("Parser").trace(
@@ -541,18 +541,13 @@ ParserResult<IrEmitUnit> IrEmitter::emit_import_entry(const ImportEntryPayload &
 
                uint32_t module_index = 0;
                if (new_module) {
-                  std::string interface_bytes;
-                  tiri::import_cache::Interface empty_interface;
-                  const auto &portable = unit->installed_interface ?
-                     unit->installed_interface->portable_interface() : empty_interface;
-                  auto interface_error = tiri::import_cache::encode_interface(portable, interface_bytes);
-                  if (interface_error != tiri::cache::FormatError::OKAY) {
+                  if (not unit->interface_artifact) {
                      this->lex_state.import_module_stack.pop_back();
                      return ParserResult<IrEmitUnit>::failure(this->make_error(
-                        ParserErrorCode::InternalInvariant, std::format(
-                           "Imported module '{}' has an invalid portable interface: {}", Entry.lib_path,
-                           tiri::cache::format_error_name(interface_error))));
+                        ParserErrorCode::InternalInvariant,
+                        std::format("Imported module '{}' has no finalised portable interface", Entry.lib_path)));
                   }
+                  std::string interface_bytes(unit->interface_artifact->bytes());
 
                   ImportModuleCompilationFrame frame = std::move(this->lex_state.import_module_stack.back());
                   this->lex_state.import_module_stack.pop_back();

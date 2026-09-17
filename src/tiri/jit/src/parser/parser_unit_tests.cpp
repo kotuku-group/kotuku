@@ -13,6 +13,7 @@
 #include "lj_ff.h"
 #include "lj_obj.h"
 #include "bytecode/lj_bcdump.h"
+#include "lib/load.h"
 #include "runtime/lj_contract.h"
 #include "runtime/lj_meta.h"
 #include "runtime/lj_proto_registry.h"
@@ -12224,6 +12225,89 @@ static bool remove_import_module_fixture_caches(
 }
 
 //********************************************************************************************************************
+// Internal metadata capture is transactional across source, successful bytecode and failed bytecode loads.
+
+static bool test_bytecode_load_metadata_transaction(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      "global i01_boundary_trace = ''\nimport 'tests/i01_direct'\nreturn i01_boundary_trace";
+   LuaStateHolder producer_holder;
+   lua_State *producer = producer_holder.get();
+   if (not producer) return false;
+   luaL_openlibs(producer);
+   if (lua_load(producer, source, "metadata-producer") != 0) {
+      Log.error("metadata producer did not compile: %s", lua_tostring(producer, -1));
+      return false;
+   }
+
+   GCproto *root = funcproto(funcV(producer->top - 1));
+   uint32_t bundle_size = 0;
+   const uint8_t *bundle = proto_import_module_bundle(root, &bundle_size);
+   std::vector<tiri::import_cache::RootModuleRecord> expected;
+   if (not bundle or tiri::import_cache::decode_root_module_bundle(
+       std::string_view((const char *)bundle, bundle_size), expected) != tiri::cache::FormatError::OKAY or
+       expected.empty()) {
+      Log.error("metadata producer has no imported-module records");
+      return false;
+   }
+
+   std::string dump;
+   if (lj_bcwrite(producer, root, bytecode_writer, &dump, 0) != 0) {
+      Log.error("metadata producer could not be dumped");
+      return false;
+   }
+
+   LuaStateHolder consumer_holder;
+   lua_State *consumer = consumer_holder.get();
+   if (not consumer) return false;
+   luaL_openlibs(consumer);
+   BytecodeLoadMetadata metadata;
+   metadata.Bytecode = true;
+   metadata.ImportedModules = expected;
+   if (lj_load_with_bytecode_metadata(consumer, "return 1", "metadata-source", metadata) != 0 or
+       metadata.Bytecode or not metadata.ImportedModules.empty()) {
+      Log.error("a source load retained stale bytecode metadata");
+      return false;
+   }
+   lua_pop(consumer, 1);
+
+   if (lj_load_with_bytecode_metadata(consumer, dump, "metadata-bytecode", metadata) != 0 or
+       not metadata.Bytecode or metadata.ImportedModules != expected) {
+      Log.error("a successful bytecode load did not return the reader's imported-module records");
+      return false;
+   }
+   lua_pop(consumer, 1);
+
+   std::string malformed = dump + "x";
+   if (lj_load_with_bytecode_metadata(consumer, malformed, "metadata-malformed", metadata) IS 0 or
+       metadata.Bytecode or not metadata.ImportedModules.empty()) {
+      Log.error("a failed bytecode load published partial or stale metadata");
+      return false;
+   }
+   lua_pop(consumer, 1);
+
+   if (lj_load_with_bytecode_metadata(consumer, dump, "metadata-recovery", metadata) != 0 or
+       not metadata.Bytecode or metadata.ImportedModules != expected) {
+      Log.error("metadata capture did not recover after a failed load");
+      return false;
+   }
+
+   LuaStateHolder empty_producer_holder;
+   lua_State *empty_producer = empty_producer_holder.get();
+   if (not empty_producer) return false;
+   luaL_openlibs(empty_producer);
+   if (lua_load(empty_producer, "return 42", "metadata-empty-producer") != 0) return false;
+   std::string empty_dump;
+   if (lj_bcwrite(empty_producer, funcproto(funcV(empty_producer->top - 1)), bytecode_writer, &empty_dump, 0) != 0 or
+       lj_load_with_bytecode_metadata(consumer, empty_dump, "metadata-empty", metadata) != 0 or
+       not metadata.Bytecode or not metadata.ImportedModules.empty()) {
+      Log.error("a valid empty bytecode graph was not distinguished from source input");
+      return false;
+   }
+   return true;
+}
+
+//********************************************************************************************************************
 // A cold graph owns one executable prototype for each compiled identity.  The shared leaf is referenced by both
 // parents, but is stored and initialised once.
 
@@ -12276,7 +12360,8 @@ static bool test_import_module_executable_table(kt::Log &Log)
    if (counters.unique_units != 3 or counters.lookup_attempts != 3 or counters.source_parses != 3 or
        counters.assignment_visits != 3 or counters.static_discovery_visits != 3 or
        counters.static_propagation_visits != 6 or counters.type_analysis_visits != 3 or
-       counters.interface_preparations != 3 or counters.initialiser_emissions != 3) {
+       counters.interface_preparations != 3 or counters.interface_finalisations != 3 or
+       counters.interface_encodes != 3 or counters.initialiser_emissions != 3) {
       Log.error("D03 cold diamond work did not scale by unique units: units=%u lookups=%u parses=%u "
          "assignment=%u discovery=%u propagation=%u types=%u interfaces=%u emissions=%u",
          counters.unique_units, counters.lookup_attempts, counters.source_parses, counters.assignment_visits,
@@ -12356,7 +12441,8 @@ static bool test_import_module_layered_reuse(kt::Log &Log)
    if (counters.unique_units != 5 or counters.lookup_attempts != 5 or counters.source_parses != 5 or
        counters.assignment_visits != 5 or counters.static_discovery_visits != 5 or
        counters.static_propagation_visits != 10 or counters.type_analysis_visits != 5 or
-       counters.interface_preparations != 5 or counters.initialiser_emissions != 5 or
+       counters.interface_preparations != 5 or counters.interface_finalisations != 5 or
+       counters.interface_encodes != 5 or counters.initialiser_emissions != 5 or
        counters.root_normalisation_traversals != 6 or counters.root_normalisation_edges != 4) {
       Log.error("U03 layered work did not scale by five unique units: units=%u lookups=%u parses=%u "
          "assignment=%u discovery=%u propagation=%u types=%u interfaces=%u emissions=%u roots=%u root-edges=%u",
@@ -12382,14 +12468,16 @@ static bool test_import_module_layered_reuse(kt::Log &Log)
    }
    const auto &validation = parser_last_import_cache_counters();
    if (validation.SourceReads != 5 or validation.EnvelopeDecodes != 5 or
-       validation.PayloadValidations != 5 or validation.ValidationStateCreations != 5 or
+       validation.PayloadValidations != 5 or validation.PayloadBundleDecodes != 5 or
+       validation.ValidationStateCreations != 5 or
        validation.ValidationReuses != 3 or validation.CacheHits != 5 or validation.LookupMisses != 0 or
-       validation.SourceCompilations != 0) {
+       validation.SourceCompilations != 0 or validation.InterfaceOperations.WarmDecodes != 5 or
+       validation.InterfaceOperations.Encodes != 0) {
       Log.error("warm layered validation did not scale by five unique nodes: reads=%u decodes=%u payloads=%u "
-         "states=%u reuses=%u hits=%u misses=%u compiles=%u", validation.SourceReads,
-         validation.EnvelopeDecodes, validation.PayloadValidations, validation.ValidationStateCreations,
-         validation.ValidationReuses, validation.CacheHits, validation.LookupMisses,
-         validation.SourceCompilations);
+         "bundles=%u states=%u reuses=%u hits=%u misses=%u compiles=%u", validation.SourceReads,
+         validation.EnvelopeDecodes, validation.PayloadValidations, validation.PayloadBundleDecodes,
+         validation.ValidationStateCreations, validation.ValidationReuses, validation.CacheHits,
+         validation.LookupMisses, validation.SourceCompilations);
       return false;
    }
    if (lua_pcall(warm, 0, 1, 0) != 0 or not lua_isstring(warm, -1) or lua_tostringview(warm, -1) != "LABXY") {
@@ -12600,14 +12688,16 @@ static bool test_import_module_executable_warm_diamond(kt::Log &Log)
    }
    const auto &validation = parser_last_import_cache_counters();
    if (validation.SourceReads != 3 or validation.EnvelopeDecodes != 3 or
-       validation.PayloadValidations != 3 or validation.ValidationStateCreations != 3 or
+       validation.PayloadValidations != 3 or validation.PayloadBundleDecodes != 3 or
+       validation.ValidationStateCreations != 3 or
        validation.ValidationReuses != 1 or validation.CacheHits != 3 or validation.LookupMisses != 0 or
-       validation.SourceCompilations != 0) {
+       validation.SourceCompilations != 0 or validation.InterfaceOperations.WarmDecodes != 3 or
+       validation.InterfaceOperations.Encodes != 0) {
       Log.error("warm diamond validation did not scale by three unique nodes: reads=%u decodes=%u payloads=%u "
-         "states=%u reuses=%u hits=%u misses=%u compiles=%u", validation.SourceReads,
-         validation.EnvelopeDecodes, validation.PayloadValidations, validation.ValidationStateCreations,
-         validation.ValidationReuses, validation.CacheHits, validation.LookupMisses,
-         validation.SourceCompilations);
+         "bundles=%u states=%u reuses=%u hits=%u misses=%u compiles=%u", validation.SourceReads,
+         validation.EnvelopeDecodes, validation.PayloadValidations, validation.PayloadBundleDecodes,
+         validation.ValidationStateCreations, validation.ValidationReuses, validation.CacheHits,
+         validation.LookupMisses, validation.SourceCompilations);
       return false;
    }
    if (leaf_identity(root_records) != cold_leaf_identity) {
@@ -12937,7 +13027,8 @@ static bool test_import_module_publication_failure_lifecycle(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 117> tests = { {
+   constexpr std::array<TestCase, 118> tests = { {
+      { "bytecode_load_metadata_transaction", test_bytecode_load_metadata_transaction },
       { "import_module_cycle_recovery", test_import_module_cycle_recovery },
       { "import_module_publication_failure_lifecycle", test_import_module_publication_failure_lifecycle },
       { "import_module_executable_lifetime", test_import_module_executable_lifetime },

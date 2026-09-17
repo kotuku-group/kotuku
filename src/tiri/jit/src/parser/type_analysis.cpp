@@ -1531,7 +1531,7 @@ void TypeAnalyser::analyse_statement(StmtNode &Statement)
                const auto installed = entry.module_unit ? entry.module_unit->installed_interface : nullptr;
                if (installed) {
                   namespace_type = installed->namespace_type(entry.default_namespace);
-                  for (const auto &exported : installed->context().Bindings) {
+                  for (const auto &exported : installed->bindings()) {
                      if (exported.Name.find('.') != std::string::npos or
                          installed->is_namespace(exported.Name)) continue;
                      GCstr *name = this->ctx_.lex().keepstr(exported.Name);
