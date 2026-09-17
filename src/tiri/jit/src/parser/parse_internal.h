@@ -134,7 +134,7 @@ static inline BCPOS bcemit_AJ(FuncState *fs, Op o, BCREG a, BCPOS j) {
 [[nodiscard]] static inline ExpDesc bcemit_builtin_callable(
    FuncState *State, BuiltinCallableID Id, BCREG Destination)
 {
-   fs_check_assert(State, builtin_callable_valid(Id), "invalid built-in callable ID");
+   fs_check_assert(State, builtin_callable_loadable(Id), "invalid built-in callable ID");
    bcemit_AD(State, BC_BFUNC, Destination, BCREG(builtin_callable_index(Id)));
    ExpDesc result(ExpKind::NonReloc, Destination);
    result.result_type = TiriType::Func;

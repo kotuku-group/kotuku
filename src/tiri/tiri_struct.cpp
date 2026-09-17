@@ -1409,6 +1409,21 @@ ERR load_declared_struct_manifest(lua_State *Lua, std::string_view Manifest, std
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
+// Validates a portable manifest against a private copy of the state-local registry.  Existing declarations remain
+// available for dependency and compatibility checks, while successful insertions never become visible to the state.
+
+ERR validate_declared_struct_manifest(lua_State *Lua, std::string_view Manifest, std::string *Detail)
+{
+   if (not Lua) return ERR::NullArgs;
+   auto validation_registry = Lua->struct_declarations;
+   Lua->struct_declarations.swap(validation_registry);
+   std::vector<uint32_t> inserted;
+   const ERR result = load_declared_struct_manifest(Lua, Manifest, inserted, Detail);
+   Lua->struct_declarations.swap(validation_registry);
+   return result;
+}
+
 // Register a parser-built declaration.  Keeping layout calculation here ensures declarative definitions use the
 // same alignment and embedded-structure rules as MAKESTRUCT.
 

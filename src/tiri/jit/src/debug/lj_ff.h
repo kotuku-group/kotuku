@@ -34,6 +34,11 @@ inline constexpr unsigned int FF__MAX = unsigned(FastFunc::_MAX);
    return index > FF_C_ and index < FF__MAX;
 }
 
+[[nodiscard]] inline constexpr bool builtin_callable_loadable(BuiltinCallableID Value) noexcept
+{
+   return builtin_callable_valid(Value) or builtin_callable_is_compiler_intrinsic(Value);
+}
+
 inline constexpr std::array<const char *, FF__MAX> glBuiltinCallableNames = {
    nullptr,
    nullptr,
@@ -43,6 +48,7 @@ inline constexpr std::array<const char *, FF__MAX> glBuiltinCallableNames = {
 
 [[nodiscard]] inline constexpr const char *builtin_callable_name(BuiltinCallableID Value) noexcept
 {
+   if (Value IS BuiltinCallableID::ImportModuleActivate) return "<import-module-activate>";
    return builtin_callable_valid(Value) ? glBuiltinCallableNames[builtin_callable_index(Value)] : nullptr;
 }
 
@@ -62,7 +68,7 @@ inline constexpr std::array<const char *, FF__MAX> glBuiltinCallableNames = {
 }
 
 static_assert(FF__MAX > FF_C_ + 1);
-static_assert(FF__MAX <= BUILTIN_CALLABLE_CAPACITY);
+static_assert(FF__MAX < builtin_callable_index(BuiltinCallableID::ImportModuleActivate));
 static_assert(FF__MAX - 1 <= (std::numeric_limits<uint16_t>::max)());
 static_assert(builtin_callable_index(BuiltinCallableID::Invalid) >= FF__MAX);
 #ifdef FFDEF_BFUNC_ABI

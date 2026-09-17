@@ -1,0 +1,3 @@
+import 'tests/i01_diamond_leaf'
+
+i01_boundary_trace ..= 'B'

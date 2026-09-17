@@ -21,6 +21,7 @@ class LexState;
 struct struct_field;
 struct struct_record;
 struct RuntimeContract;
+class InstalledImportInterface;
 
 using StaticValueHandle = StrongIndex<struct StaticValueHandleTag, uint32_t>;
 using StaticResultSetHandle = StrongIndex<struct StaticResultSetHandleTag, uint32_t>;
@@ -114,6 +115,8 @@ struct StaticBindingDescriptor {
    StaticValueHandle analysed_value{};
    StaticCallableHandle callable{};
    StaticBindingID alias_of{};
+   const InstalledImportInterface *import_interface = nullptr;
+   const std::string *import_namespace = nullptr;
    uint8_t result_position = 0;
    uint16_t function_depth = 0;
    bool immutable = true;
@@ -121,6 +124,7 @@ struct StaticBindingDescriptor {
    bool is_parameter = false;
    bool is_variant = false;
    bool captured = false;
+   bool is_import_namespace = false;
    bool resolving = false;
 };
 

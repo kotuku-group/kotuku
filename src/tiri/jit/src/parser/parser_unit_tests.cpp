@@ -13,7 +13,9 @@
 #include "lj_ff.h"
 #include "lj_obj.h"
 #include "bytecode/lj_bcdump.h"
+#include "lib/load.h"
 #include "runtime/lj_contract.h"
+#include "runtime/import_module_graph.h"
 #include "runtime/lj_meta.h"
 #include "runtime/lj_proto_registry.h"
 #include "runtime/lj_state.h"
@@ -50,6 +52,8 @@
 #include "table_ownership.h"
 #include "ir_emitter/ir_emitter.h"
 #include "../runtime/lj_array.h"
+#include "../../../import_module_format.h"
+#include "../../../import_module_bundle.h"
 #include "../../../defs.h"
 
 static extTiri *glTestScript = nullptr;
@@ -1635,63 +1639,6 @@ static bool test_current_context_range_operands(kt::Log &Log)
 
 //********************************************************************************************************************
 
-static bool test_deprecated_numeric_for_rejected(kt::Log &Log)
-{
-   struct DeprecatedForCase {
-      std::string_view source;
-      int expected_column;
-   };
-
-   constexpr std::array<DeprecatedForCase, 3> cases = { {
-      { "for i = 0, 8 do end", 7 },
-      { "for i=0,8 do end", 6 },
-      { "for i = start, stop, step do end", 7 }
-   } };
-
-   for (const auto &test_case : cases) {
-      auto result = build_ast_from_source(test_case.source, true);
-      size_t deprecated_count = 0;
-
-      for (const ParserDiagnostic &diagnostic : result.diagnostics) {
-         if (diagnostic.code != ParserErrorCode::DeprecatedSyntax) continue;
-
-         deprecated_count++;
-         if (diagnostic.severity != ParserDiagnosticSeverity::Error or
-             diagnostic.token.kind() != TokenKind::Equals or
-             diagnostic.token.span().line.lineNumber() != 1 or
-             diagnostic.token.span().column.lineNumber() != test_case.expected_column or
-             diagnostic.file_index != 0) {
-            Log.error("deprecated numeric for diagnostic has the wrong severity, token or source location");
-            log_diagnostics(result.diagnostics, Log);
-            return false;
-         }
-
-         if (diagnostic.message.find("inclusive range") IS std::string::npos) {
-            Log.error("deprecated numeric for diagnostic does not identify the supported inclusive range syntax");
-            return false;
-         }
-      }
-
-      if (deprecated_count != 1) {
-         Log.error("expected one deprecated numeric for diagnostic, got %" PRId64, int64_t(deprecated_count));
-         log_diagnostics(result.diagnostics, Log);
-         return false;
-      }
-   }
-
-   auto range_result = build_ast_from_source("for i in {0 into 8} do end", true);
-   for (const ParserDiagnostic &diagnostic : range_result.diagnostics) {
-      if (diagnostic.code IS ParserErrorCode::DeprecatedSyntax) {
-         Log.error("supported range loop emitted a deprecated syntax diagnostic");
-         return false;
-      }
-   }
-
-   return true;
-}
-
-//********************************************************************************************************************
-
 static bool test_colon_method_syntax_rejected(kt::Log &Log)
 {
    constexpr std::array<std::string_view, 3> cases = { {
@@ -2532,23 +2479,6 @@ static bool test_ternary_colon_separators(kt::Log &Log)
       }
    }
 
-   auto deprecated = build_ast_from_source("return true ? 1 :> 2");
-   if (not deprecated.chunk.ok() or deprecated.diagnostics.size() != 1) {
-      Log.error("deprecated ternary separator did not parse with exactly one diagnostic");
-      log_diagnostics(deprecated.diagnostics, Log);
-      return false;
-   }
-
-   const ParserDiagnostic &diagnostic = deprecated.diagnostics[0];
-   if (diagnostic.code != ParserErrorCode::DeprecatedSyntax or
-       diagnostic.severity != ParserDiagnosticSeverity::Warning or
-       diagnostic.token.kind() != TokenKind::TernarySep or
-       diagnostic.message.find("deprecated") IS std::string::npos) {
-      Log.error("deprecated ternary separator diagnostic has incorrect metadata");
-      log_diagnostics(deprecated.diagnostics, Log);
-      return false;
-   }
-
    return true;
 }
 
@@ -2872,6 +2802,15 @@ struct BytecodeSnapshot {
    std::vector<BytecodeSnapshot> children;
 };
 
+static bool exact_snapshot_match(const BytecodeSnapshot &Left, const BytecodeSnapshot &Right)
+{
+   if (Left.instructions != Right.instructions or Left.children.size() != Right.children.size()) return false;
+   for (size_t i = 0; i < Left.children.size(); ++i) {
+      if (not exact_snapshot_match(Left.children[i], Right.children[i])) return false;
+   }
+   return true;
+}
+
 struct PipelineSnippet {
    const char* label;
    const char* source;
@@ -3149,7 +3088,7 @@ static bool test_structural_bytecode_reader_validation(kt::Log &Log)
    uint32_t header_flags = 0;
    if (not read_uleb(stripped, cursor, header_flags) or not (header_flags & BCDUMP_F_STRIP)) return false;
    uint32_t metadata_length = 0;
-   for (int block = 0; block < 2; ++block) {
+   for (int block = 0; block < 3; ++block) {
       if (not read_uleb(stripped, cursor, metadata_length) or metadata_length > stripped.size() - cursor) return false;
       cursor += metadata_length;
    }
@@ -3872,6 +3811,11 @@ static bool test_malformed_signature_rejected(kt::Log &Log)
    }
    position += value;
    if (not read_uleb(position, value) or value > dump.size() - position) {
+      Log.error("could not skip the module bundle in the malformed-signature fixture");
+      return false;
+   }
+   position += value;
+   if (not read_uleb(position, value) or value > dump.size() - position) {
       Log.error("could not skip the struct manifest in the malformed-signature fixture");
       return false;
    }
@@ -3992,7 +3936,13 @@ static bool test_source_manifest_validation(kt::Log &Log)
       Log.error("could not locate the source manifest");
       return false;
    }
-   size_t struct_offset = source_offset + source_size;
+   size_t module_offset = source_offset + source_size;
+   uint32_t module_size = 0;
+   if (not read_uleb(module_offset, module_size) or module_size > dump.size() - module_offset) {
+      Log.error("could not locate the module bundle");
+      return false;
+   }
+   size_t struct_offset = module_offset + module_size;
    uint32_t struct_size = 0;
    if (not read_uleb(struct_offset, struct_size) or struct_size > dump.size() - struct_offset) {
       Log.error("could not locate the struct manifest");
@@ -5525,7 +5475,10 @@ static bool test_named_struct_bytecode_manifest(kt::Log &Log)
          size_t source_offset = 5;
          uint32_t source_size = 0;
          if (not read_uleb(source_offset, source_size) or source_size > dump.size() - source_offset) return false;
-         size_t manifest_offset = source_offset + source_size;
+         size_t module_offset = source_offset + source_size;
+         uint32_t module_size = 0;
+         if (not read_uleb(module_offset, module_size) or module_size > dump.size() - module_offset) return false;
+         size_t manifest_offset = module_offset + module_size;
          uint32_t wire_manifest_size = 0;
          if (not read_uleb(manifest_offset, wire_manifest_size) or
              wire_manifest_size > dump.size() - manifest_offset) return false;
@@ -5939,6 +5892,11 @@ static bool test_module_dependency_corruption_rejected(kt::Log &Log)
    uint32_t value = 0;
    if (not read_uleb(position, value) or value > dump.size() - position) {
       Log.error("could not skip the source manifest in the corruption fixture");
+      return false;
+   }
+   position += value;
+   if (not read_uleb(position, value) or value > dump.size() - position) {
+      Log.error("could not skip the module bundle in the corruption fixture");
       return false;
    }
    position += value;
@@ -6434,25 +6392,6 @@ static bool test_contextual_member_ast_foundations(kt::Log &Log)
    if (legacy_context.diagnostics.empty()) {
       Log.error("leading-dot context access remained accepted after the prefix change");
       return false;
-   }
-
-   constexpr std::array<std::string_view, 2> legacy_sources = {
-      "receiver:member()\n",
-      "function receiver:member() end\n"
-   };
-   for (std::string_view legacy_source : legacy_sources) {
-      auto legacy = build_ast_from_source(legacy_source, false, false, true);
-      if (legacy.diagnostics.empty()) {
-         Log.error("removed colon syntax did not emit a parser diagnostic");
-         return false;
-      }
-
-      for (const ParserDiagnostic &diagnostic : legacy.diagnostics) {
-         if (diagnostic.code IS ParserErrorCode::DeprecatedSyntax) {
-            Log.error("removed colon syntax emitted a deprecated-syntax diagnostic");
-            return false;
-         }
-      }
    }
 
    return true;
@@ -12200,11 +12139,363 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
    return true;
 }
 
+//********************************************************************************************************************
+// Internal metadata capture is transactional across source, successful bytecode and failed bytecode loads.
+
+static bool test_bytecode_load_metadata_transaction(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      "global i01_boundary_trace = ''\nimport 'tests/i01_direct'\nreturn i01_boundary_trace";
+   LuaStateHolder producer_holder;
+   lua_State *producer = producer_holder.get();
+   if (not producer) return false;
+   luaL_openlibs(producer);
+   if (lua_load(producer, source, "metadata-producer") != 0) {
+      Log.error("metadata producer did not compile: %s", lua_tostring(producer, -1));
+      return false;
+   }
+
+   GCproto *root = funcproto(funcV(producer->top - 1));
+   uint32_t bundle_size = 0;
+   const uint8_t *bundle = proto_import_module_bundle(root, &bundle_size);
+   std::vector<tiri::import_cache::RootModuleRecord> expected;
+   if (not bundle or tiri::import_cache::decode_root_module_bundle(
+       std::string_view((const char *)bundle, bundle_size), expected) != tiri::cache::FormatError::OKAY or
+       expected.empty()) {
+      Log.error("metadata producer has no imported-module records");
+      return false;
+   }
+
+   std::string dump;
+   if (lj_bcwrite(producer, root, bytecode_writer, &dump, 0) != 0) {
+      Log.error("metadata producer could not be dumped");
+      return false;
+   }
+
+   LuaStateHolder consumer_holder;
+   lua_State *consumer = consumer_holder.get();
+   if (not consumer) return false;
+   luaL_openlibs(consumer);
+   BytecodeLoadMetadata metadata;
+   metadata.Bytecode = true;
+   metadata.ImportedModules = expected;
+   if (lj_load_with_bytecode_metadata(consumer, "return 1", "metadata-source", metadata) != 0 or
+       metadata.Bytecode or not metadata.ImportedModules.empty()) {
+      Log.error("a source load retained stale bytecode metadata");
+      return false;
+   }
+   lua_pop(consumer, 1);
+
+   if (lj_load_with_bytecode_metadata(consumer, dump, "metadata-bytecode", metadata) != 0 or
+       not metadata.Bytecode or metadata.ImportedModules != expected) {
+      Log.error("a successful bytecode load did not return the reader's imported-module records");
+      return false;
+   }
+   lua_pop(consumer, 1);
+
+   LuaStateHolder validation_holder;
+   lua_State *validation = validation_holder.get();
+   if (not validation) return false;
+   luaL_openlibs(validation);
+   const size_t structure_count = validation->struct_declarations.size();
+   metadata.Bytecode = true;
+   metadata.ImportedModules = expected;
+   if (lj_validate_bytecode(validation, dump, "metadata-validation-only", metadata) != 0 or
+       not metadata.Bytecode or metadata.ImportedModules != expected) {
+      Log.error("validation-only loading did not return the portable imported-module records");
+      return false;
+   }
+   GCproto *validated = funcproto(funcV(validation->top - 1));
+   const auto &operations = metadata.Operations;
+   if (measure_proto_root_metadata(validated).total() or not validation->file_sources.empty() or
+       validation->struct_declarations.size() != structure_count or operations.payload_loads != 1 or
+       operations.prototype_decodes IS 0 or operations.source_records_decoded IS 0 or
+       operations.file_source_registrations or operations.line_map_remaps or operations.structure_commits or
+       operations.source_map_allocations or operations.executable_directory_allocations) {
+      Log.error("validation-only loading published runtime metadata or reported inconsistent operation counts");
+      return false;
+   }
+
+   std::string malformed = dump + "x";
+   if (lj_load_with_bytecode_metadata(consumer, malformed, "metadata-malformed", metadata) IS 0 or
+       metadata.Bytecode or not metadata.ImportedModules.empty()) {
+      Log.error("a failed bytecode load published partial or stale metadata");
+      return false;
+   }
+   lua_pop(consumer, 1);
+
+   if (lj_load_with_bytecode_metadata(consumer, dump, "metadata-recovery", metadata) != 0 or
+       not metadata.Bytecode or metadata.ImportedModules != expected) {
+      Log.error("metadata capture did not recover after a failed load");
+      return false;
+   }
+
+   LuaStateHolder empty_producer_holder;
+   lua_State *empty_producer = empty_producer_holder.get();
+   if (not empty_producer) return false;
+   luaL_openlibs(empty_producer);
+   if (lua_load(empty_producer, "return 42", "metadata-empty-producer") != 0) return false;
+   std::string empty_dump;
+   if (lj_bcwrite(empty_producer, funcproto(funcV(empty_producer->top - 1)), bytecode_writer, &empty_dump, 0) != 0 or
+       lj_load_with_bytecode_metadata(consumer, empty_dump, "metadata-empty", metadata) != 0 or
+       not metadata.Bytecode or not metadata.ImportedModules.empty()) {
+      Log.error("a valid empty bytecode graph was not distinguished from source input");
+      return false;
+   }
+   return true;
+}
+
+//********************************************************************************************************************
+// Indexed source lookup retains exact-path fallback when the hash index points at a different canonical path.
+
+static bool test_file_source_index_collision_fallback(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) return false;
+   std::string first = "scripts:tests/source-index-first.tiri";
+   std::string second = "scripts:tests/source-index-second.tiri";
+   const uint8_t first_index = register_file_source(lua, first, "source-index-first.tiri", 1, 3, 0, 0);
+   const uint8_t second_index = register_file_source(lua, second, "source-index-second.tiri", 1, 4, 0, 0);
+   if (first_index IS second_index or first_index IS FILESOURCE_OVERFLOW_INDEX or
+       second_index IS FILESOURCE_OVERFLOW_INDEX) return false;
+
+   lua->file_index_map[kt::strihash(second)] = first_index;
+   const auto collision_lookup = find_file_source(lua, second);
+   std::string duplicate = second;
+   const uint8_t duplicate_index = register_file_source(
+      lua, duplicate, "source-index-second.tiri", 1, 4, 0, 0);
+   if (not collision_lookup or *collision_lookup != second_index or duplicate_index != second_index or
+       lua->file_sources.size() != 2) {
+      Log.error("Indexed file-source lookup did not preserve exact-path collision fallback");
+      return false;
+   }
+   return true;
+}
+
+//********************************************************************************************************************
+// Direct root-metadata release is idempotent and prototype GC observes cleared ownership fields.
+
+static bool test_import_module_metadata_release_idempotence(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      "global i01_boundary_trace = ''\nimport 'tests/i01_direct'\nreturn i01_boundary_trace";
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) return false;
+   luaL_openlibs(lua);
+   if (lua_load(lua, source, "import-metadata-release") != 0) {
+      Log.error("metadata-release fixture did not compile: %s", lua_tostring(lua, -1));
+      return false;
+   }
+
+   GCproto *root = funcproto(funcV(lua->top - 1));
+   const ProtoRootMetadataSize before = measure_proto_root_metadata(root);
+   const GCSize allocated_before = G(lua)->gc.total;
+   GCobj *source_root = gcref(root->source_root);
+   if (not before.compilation_sources or not before.struct_manifest or not before.import_module_bundle or
+       not before.import_module_table) return false;
+
+   release_proto_root_metadata(G(lua), root);
+   const ProtoRootMetadataSize after = measure_proto_root_metadata(root);
+   if (after.total() or G(lua)->gc.total != allocated_before - before.total() or
+       not (gcref(root->source_root) IS source_root)) {
+      Log.error("direct metadata release did not clear the exact owned allocation size");
+      return false;
+   }
+   release_proto_root_metadata(G(lua), root);
+   if (measure_proto_root_metadata(root).total() or G(lua)->gc.total != allocated_before - before.total()) {
+      Log.error("direct metadata release was not idempotent");
+      return false;
+   }
+
+   lua_pop(lua, 1);
+   lua_gc(lua, LUA_GCCOLLECT, 0);
+   return true;
+}
+
+//********************************************************************************************************************
+// Relocation is preflighted as a complete operation and writer-side translation never changes live prototypes.
+
+static bool test_import_module_relocation_transaction(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      "global i01_boundary_trace = ''\n"
+      "import 'tests/i01_diamond_a', 'tests/i01_diamond_b'\n"
+      "return i01_boundary_trace";
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) return false;
+   luaL_openlibs(lua);
+   if (lua_load(lua, source, "import-relocation-transaction") != 0) {
+      Log.error("Relocation transaction fixture did not compile: %s", lua_tostring(lua, -1));
+      return false;
+   }
+   GCproto *root = funcproto(funcV(lua->top - 1));
+   const ImportModuleTable *table = proto_import_module_table(root);
+   if (not table or table->entry_count < 2) {
+      Log.error("Relocation transaction fixture has no executable diamond directory");
+      return false;
+   }
+
+   uint32_t bundle_size = 0;
+   const uint8_t *bundle = proto_import_module_bundle(root, &bundle_size);
+   std::vector<tiri::import_cache::RootModuleRecord> records;
+   if (not bundle or tiri::import_cache::decode_root_module_bundle(
+       std::string_view((const char *)bundle, bundle_size), records) != tiri::cache::FormatError::OKAY) return false;
+   const CompilationSourceMap *source_map = proto_compilation_sources(root);
+   if (not source_map) return false;
+   const CompilationSourceEntry *source_entries = compilation_source_entries(source_map);
+   std::vector<CompilationSourceRecord> sources(source_map->count);
+   for (uint32_t i = 0; i < source_map->count; ++i) {
+      const auto &entry = source_entries[i];
+      sources[i] = {
+         .role = entry.role,
+         .canonical_path = std::string(strdata(gco_to_string(gcref(entry.canonical_path))),
+            gco_to_string(gcref(entry.canonical_path))->len),
+         .display_filename = std::string(strdata(gco_to_string(gcref(entry.display_filename))),
+            gco_to_string(gcref(entry.display_filename))->len),
+         .declared_namespace = std::string(strdata(gco_to_string(gcref(entry.declared_namespace))),
+            gco_to_string(gcref(entry.declared_namespace))->len),
+         .first_line = entry.first_line,
+         .total_lines = entry.total_lines,
+         .import_line = entry.import_line,
+         .runtime_index = entry.runtime_index,
+         .parent = entry.parent
+      };
+   }
+
+   std::vector<GCproto *> roots;
+   std::vector<BytecodeSnapshot> before;
+   const ImportModuleTableEntry *entries = import_module_table_entries(table);
+   for (uint32_t i = 0; i < table->entry_count; ++i) {
+      roots.push_back(gco_to_proto(gcref(entries[i].initialiser)));
+   }
+   roots.push_back(root);
+   for (GCproto *prototype : roots) before.push_back(snapshot_proto(prototype));
+
+   std::vector<ImportModuleGraphInput> inputs;
+   for (uint32_t i = 0; i < table->entry_count; ++i) {
+      const auto &record = records[i];
+      const uint8_t runtime_source = record.SourceIndex IS FILESOURCE_OVERFLOW_INDEX ? FILESOURCE_OVERFLOW_INDEX :
+         sources[record.SourceIndex].runtime_index;
+      inputs.push_back({ record.LookupIdentity, record.CompiledIdentity, record.InterfaceBytes,
+         record.Dependencies, roots[i], runtime_source });
+   }
+   PreparedImportModuleGraph full_graph;
+   if (not prepare_import_module_graph(inputs, sources, {}, true, full_graph) or
+       full_graph.bundle != std::string((const char *)bundle, bundle_size) or
+       full_graph.compilation_to_canonical.size() != records.size()) {
+      Log.error("Complete prepared graph changed the canonical executable bundle");
+      return false;
+   }
+   size_t subset_root = records.size();
+   for (size_t i = 0; i < records.size(); ++i) {
+      if (not records[i].Dependencies.empty()) subset_root = i;
+   }
+   if (subset_root IS records.size()) return false;
+   const std::array<uint32_t, 1> selected_root = { uint32_t(subset_root) };
+   PreparedImportModuleGraph subset;
+   if (not prepare_import_module_graph(inputs, sources, selected_root, false, subset) or
+       subset.compilation_to_canonical[subset_root] IS UINT32_MAX) {
+      Log.error("Prepared subset did not retain its selected dependency root");
+      return false;
+   }
+   PreparedImportModuleGraph standalone;
+   if (not prepare_import_module_graph(
+       inputs, sources, selected_root, false, standalone, roots[subset_root]) or
+       standalone.sources.records.empty() or standalone.sources.records[0].role != CompilationSourceRole::Main or
+       standalone.sources.records[0].runtime_index != roots[subset_root]->file_source_idx or
+       standalone.sources.records.size() >= sources.size()) {
+      Log.error("Standalone graph did not produce a dense module-rooted source closure");
+      return false;
+   }
+   for (const auto &record : standalone.assembly.records()) {
+      if (record.SourceIndex != FILESOURCE_OVERFLOW_INDEX and
+          record.SourceIndex >= standalone.sources.records.size()) {
+         Log.error("Standalone graph retained a source reference outside its dense map");
+         return false;
+      }
+   }
+   bool has_excluded = false;
+   for (size_t i = 0; i < subset.compilation_to_canonical.size(); ++i) {
+      has_excluded |= subset.compilation_to_canonical[i] IS UINT32_MAX;
+   }
+   if (not has_excluded) {
+      Log.error("Prepared subset unexpectedly retained every disconnected compilation record");
+      return false;
+   }
+   auto missing_source = inputs;
+   uint8_t unused_source = 0;
+   while (unused_source < FILESOURCE_MAX_COUNT and
+          std::ranges::any_of(sources, [=](const auto &Source) { return Source.runtime_index IS unused_source; })) {
+      unused_source++;
+   }
+   if (unused_source >= FILESOURCE_MAX_COUNT) return false;
+   missing_source[subset_root].runtime_source_index = unused_source;
+   if (prepare_import_module_graph(missing_source, sources, selected_root, false, subset)) {
+      Log.error("Prepared graph accepted a missing runtime source translation");
+      return false;
+   }
+
+   std::vector<uint32_t> identity(table->entry_count);
+   for (uint32_t i = 0; i < table->entry_count; ++i) identity[i] = i;
+   ImportModuleRelocationPlan relocation;
+   if (not preflight_import_module_relocations(roots, identity, relocation) or relocation.sites.empty()) {
+      Log.error("Valid imported-module activations did not produce a relocation plan");
+      return false;
+   }
+
+   struct FailingWriter {
+      size_t calls = 0;
+      static int write(lua_State *, const void *, size_t, void *Context) {
+         auto &state = *(FailingWriter *)Context;
+         state.calls++;
+         return state.calls >= 5 ? 1 : 0;
+      }
+   } writer;
+   if (lj_bcwrite_relocated(lua, root, FailingWriter::write, &writer, 0, &relocation) IS 0 or writer.calls < 5) {
+      Log.error("Relocation-aware writer did not expose the injected callback failure");
+      return false;
+   }
+   for (size_t i = 0; i < roots.size(); ++i) {
+      if (not exact_snapshot_match(before[i], snapshot_proto(roots[i]))) {
+         Log.error("Relocation-aware writer changed live prototype bytecode after callback failure");
+         return false;
+      }
+   }
+
+   const ImportModuleRelocationSite &last = relocation.sites.back();
+   BCIns saved = proto_bc(last.prototype)[last.instruction];
+   setbc_d(&proto_bc(last.prototype)[last.instruction], uint16_t(-1));
+   BytecodeSnapshot malformed = snapshot_proto(last.prototype);
+   ImportModuleRelocationPlan rejected;
+   const bool accepted = preflight_import_module_relocations(roots, identity, rejected);
+   const bool unchanged = exact_snapshot_match(malformed, snapshot_proto(last.prototype));
+   proto_bc(last.prototype)[last.instruction] = saved;
+   if (accepted or not unchanged) {
+      Log.error("Malformed late relocation was accepted or partially changed before rejection");
+      return false;
+   }
+
+   std::vector<uint32_t> excluded = identity;
+   excluded[relocation.sites.front().old_index] = UINT32_MAX;
+   if (preflight_import_module_relocations(roots, excluded, rejected)) {
+      Log.error("A relocation to an excluded subset record was accepted");
+      return false;
+   }
+   return true;
+}
+
 }  // namespace
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 110> tests = { {
+   constexpr std::array<TestCase, 113> tests = { {
+      { "bytecode_load_metadata_transaction", test_bytecode_load_metadata_transaction },
+      { "file_source_index_collision_fallback", test_file_source_index_collision_fallback },
+      { "import_module_metadata_release_idempotence", test_import_module_metadata_release_idempotence },
+      { "import_module_relocation_transaction", test_import_module_relocation_transaction },
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "error_removal", test_error_removal },
@@ -12235,7 +12526,6 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "defer_runtime_registration_state", test_defer_runtime_registration_state },
       { "range_for_ast", test_range_for_ast },
       { "current_context_range_operands", test_current_context_range_operands },
-      { "deprecated_numeric_for_rejected", test_deprecated_numeric_for_rejected },
       { "colon_method_syntax_rejected", test_colon_method_syntax_rejected },
       { "typed_assignment_name_resolution", test_typed_assignment_name_resolution },
       { "annotated_local_validation_parity", test_annotated_local_validation_parity },

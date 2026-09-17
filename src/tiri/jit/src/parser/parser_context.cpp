@@ -547,23 +547,31 @@ std::string ParserContext::resolve_lib_to_path(std::string_view &Library) const
          this->lua_state->script->getWorkingPath(working_path);
          if (not working_path.empty()) root.insert(0, working_path.data(), working_path.size());
       }
+
+      std::string result(root);
+      result.append(Library);
+      result.append(".tiri");
+
+      std::string resolved_root, resolved_result;
+      if ((ResolvePath(root, RSF::NO_FILE_CHECK, &resolved_root) != ERR::Okay) or
+         (ResolvePath(result, RSF::NO_FILE_CHECK, &resolved_result) != ERR::Okay) or
+         not import_path_is_contained(resolved_result, resolved_root)) {
+         lj_lex_error(this->lex_state, 0, ErrMsg::BADLIBRARY);
+         return "";
+      }
+
+      return resolved_result;
    }
-   else root = "scripts:";
+   else {
+      std::string result("scripts:");
+      result.append(Library);
+      result.append(".tiri");
 
-   std::string result(root);
-   result.append(Library);
-   result.append(".tiri");
-
-   std::string resolved_root;
-   std::string resolved_result;
-   if ((ResolvePath(root, RSF::NO_FILE_CHECK, &resolved_root) != ERR::Okay) or
-       (ResolvePath(result, RSF::NO_FILE_CHECK, &resolved_result) != ERR::Okay) or
-       not import_path_is_contained(resolved_result, resolved_root)) {
-      lj_lex_error(this->lex_state, 0, ErrMsg::BADLIBRARY);
-      return "";
+      // Resolve an existing source with file checking so multi-path `scripts:` volumes select the path that actually
+      // owns the library.  Keep the volume spelling for missing files so the caller reports its normal import error.
+      std::string resolved_result;
+      return ResolvePath(result, RSF::NIL, &resolved_result) IS ERR::Okay ? resolved_result : result;
    }
-
-   return resolved_result;
 }
 
 //********************************************************************************************************************

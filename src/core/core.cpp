@@ -405,8 +405,6 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
       }
    }
 
-   glShowIO = ((Info->Flags & OPF::SHOW_IO) != OPF::NIL);
-
 #if defined(__unix__) && !defined(__ANDROID__)
    // Setting stdout to non-blocking can prevent dead-locks at the cost of dropping excess output.  It is only
    // necessary if the terminal has the means to lock a resource that is in use by the running program.
@@ -986,8 +984,6 @@ const CSTRING ExceptionTable[EXP_END] = {
    "Illegal instruction execution",
    "Stack overflow"
 };
-
-APTR glExceptionAddress = 0;
 
 static int CrashHandler(int Code, APTR Address, int Continuable, int *Info)
 {

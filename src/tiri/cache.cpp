@@ -6,6 +6,20 @@
 // Cache files for deleted sources, obsolete configurations and older builds may accumulate; users may clear
 // `temp:tiri/cache/` at any time.  Size limits and crash-orphan cleanup are not currently provided, and cache
 // publication is not crash-durable.
+//
+// Non-local Tiri libraries imported from the `scripts:` volume use a separate imported-module cache under the same
+// `temp:tiri/cache/` directory.  This cache is always enabled and does not set or require `SCF::AUTO_CACHE`; the flag
+// continues to control only complete root scripts.  Each non-local library executes through the same private module
+// initialiser boundary on cold and warm paths, and each resolved module initialises at most once per Lua state.  Imports
+// beginning with `./` or `../` remain inline dependencies of their owner and do not create independent entries.
+//
+// An imported-module hit still requires readable source.  Its identity covers the producing build, logical and resolved
+// path, exact source content, inline and nested dependencies, path observations and compile-time conditions.  Invalid or
+// malformed entries rebuild from source; one root-compilation validation session reuses immutable source snapshots and
+// completed candidate results across shared dependency paths.  Publication failures retain the valid in-memory
+// compilation.  Complete root byte-code embeds its imported-module graph, so direct dumps, `SaveToObject` output and
+// whole-script cache hits do not depend on the disposable module entries.  Applications may clear `temp:tiri/cache/` at
+// any time; entries are recreated on demand.
 
 static std::atomic_uint64_t glCacheTemporarySequence = 0;
 
@@ -33,7 +47,7 @@ static bool fail_cache_publication(CachePublishFailure) { return false; }
 
 static std::vector<tiri::cache::CompilationOption> cache_compilation_options(const extTiri *)
 {
-   return {};
+   return tiri::cache::effective_compilation_options();
 }
 
 //********************************************************************************************************************
@@ -138,29 +152,6 @@ static bool valid_import_name(std::string_view Request, bool &Local, std::string
 }
 
 //********************************************************************************************************************
-
-static bool cached_import_path_is_contained(std::string Path, std::string Root)
-{
-   auto normalise = [](std::string &Value) {
-      for (char &value : Value) {
-         if (value IS '\\') value = '/';
-         #ifdef _WIN32
-            if ((value >= 'A') and (value <= 'Z')) value += 'a' - 'A';
-         #endif
-      }
-      while ((Value.size() > 1) and (Value.back() IS '/')) Value.pop_back();
-   };
-
-   normalise(Path);
-   normalise(Root);
-   if (Path IS Root) return true;
-   if (Root IS "/") return Path.starts_with('/');
-   if (Root.ends_with(':')) return Path.starts_with(Root);
-   Root.push_back('/');
-   return Path.starts_with(Root);
-}
-
-//********************************************************************************************************************
 // Replay an import request from its recorded parent context and return the resolver's current target spelling.
 
 static std::string replay_import_resolution(extTiri *Self, std::string_view Parent,
@@ -187,11 +178,8 @@ static std::string replay_import_resolution(extTiri *Self, std::string_view Pare
    path.append(name);
    path.append(".tiri");
 
-   std::string resolved_root;
    std::string resolved;
-   if ((ResolvePath(root, RSF::NO_FILE_CHECK, &resolved_root) IS ERR::Okay) and
-       (ResolvePath(path, RSF::NO_FILE_CHECK, &resolved) IS ERR::Okay) and
-       cached_import_path_is_contained(resolved, resolved_root)) return resolved;
+   if (ResolvePath(path, RSF::NIL, &resolved) IS ERR::Okay) return resolved;
    return {};
 }
 
@@ -254,7 +242,8 @@ static bool validate_cache_manifest(extTiri *Self, const tiri::cache::Manifest &
    for (const auto &dependency : Stored.Imports) {
       auto resolved = replay_import_resolution(Self, dependency.ParentPath, dependency.OriginalRequest);
       if (resolved.empty() or (resolved != dependency.Source.ResolvedPath)) {
-         Reason = "an import now resolves to a different source";
+         Reason = "import '" + dependency.OriginalRequest + "' from '" + dependency.ParentPath +
+            "' now resolves to '" + resolved + "' instead of '" + dependency.Source.ResolvedPath + "'";
          return false;
       }
 
@@ -331,7 +320,7 @@ static bool validate_cache_bytecode(extTiri *Self, std::string_view Payload, std
    bool *HasImports = nullptr)
 {
    std::unique_ptr<lua_State, decltype(&lua_close)> validation(luaL_newstate(Self), lua_close);
-   if (not validation or (initialise_compilation_state(validation.get()) != ERR::Okay)) {
+   if (not validation or (initialise_tiri_compilation_state(validation.get()) != ERR::Okay)) {
       Reason = "an isolated validation state could not be created";
       return false;
    }
@@ -466,6 +455,7 @@ static ERR publish_cache(extTiri *Self)
       ((std::string *)Context)->append((const char *)Data, Size);
       return 0;
    };
+
    const int stack_top = lua_gettop(Self->Lua);
    const int dump_error = lua_dump(Self->Lua, append_payload, &payload);
    lua_settop(Self->Lua, stack_top);

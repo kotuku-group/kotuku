@@ -6,7 +6,12 @@
 #include <string>
 #include <optional>
 #include <cstdint>
+#include <span>
+#include <array>
+#include <vector>
 #include "lj_obj.h"
+
+struct BytecodeLoadOperationCounters;
 
 // FileSource tracks source file metadata for accurate error reporting when code is imported.
 // Real files use indices 0-253.  Anonymous source and overflow have distinct sentinel identities.
@@ -20,6 +25,7 @@ struct FileSource {
    uint32_t path_hash;             // For fast deduplication lookup
    uint8_t parent_file_index;      // Which file imported this one (0 for main)
    BCLine import_line;             // Line in parent where import occurred (0 for main)
+   bool provisional_cache_metadata = false;  // True until a warm-cache payload supplies authoritative metadata.
 };
 
 constexpr uint8_t FILESOURCE_MAX_COUNT = 254;
@@ -39,46 +45,71 @@ struct CompilationSourceRecord {
    uint8_t parent = FILESOURCE_OVERFLOW_INDEX;
 };
 
+class PreparedCompilationSources {
+public:
+   PreparedCompilationSources() {
+      this->runtime_to_wire.fill(FILESOURCE_OVERFLOW_INDEX);
+   }
+
+   std::vector<CompilationSourceRecord> records;
+   std::array<uint8_t, 256> runtime_to_wire;
+   std::vector<uint8_t> compilation_to_wire;
+};
+
 // Register a new file source in the lua_State.
 // Returns the file index, or FILESOURCE_OVERFLOW_INDEX (255) if the limit is exceeded.
 // The overflow index is initialised with "unknown" on first use.
-// Path will be resolved to an absolute path if possible.
+// Direct paths will be resolved to an absolute path if possible.  scripts: paths retain their virtual-volume form.
+
 uint8_t register_file_source(lua_State *L, std::string &Path, const std::string &Filename,
-   BCLine FirstLine, BCLine SourceLines, uint8_t ParentIndex, BCLine ImportLine);
+   BCLine FirstLine, BCLine SourceLines, uint8_t ParentIndex, BCLine ImportLine,
+   bool ProvisionalCacheMetadata = false);
 
 // Find a file source by path hash.
 // Returns the file index if found, or std::nullopt if not found.
+
 std::optional<uint8_t> find_file_source(lua_State *L, uint32_t PathHash);
 std::optional<uint8_t> find_file_source(lua_State *, const std::string &);
 
 // Get a file source by index.
 // Returns nullptr if the index is out of range.
+
 const FileSource* get_file_source(lua_State *L, uint8_t Index);
 
 // Check if an index represents the overflow fallback.
-[[nodiscard]] inline bool is_file_source_overflow(uint8_t Index) noexcept
-{
+
+[[nodiscard]] inline bool is_file_source_overflow(uint8_t Index) noexcept {
    return Index IS FILESOURCE_OVERFLOW_INDEX;
 }
 
-[[nodiscard]] inline bool is_file_source_synthetic(uint8_t Index) noexcept
-{
+[[nodiscard]] inline bool is_file_source_synthetic(uint8_t Index) noexcept {
    return Index IS FILESOURCE_SYNTHETIC_INDEX;
 }
 
 void attach_compilation_sources(lua_State *, GCproto *, const std::vector<CompilationSourceRecord> &);
-void attach_loaded_compilation_sources(lua_State *, GCproto *, const std::vector<CompilationSourceRecord> &);
+void attach_loaded_compilation_sources(lua_State *, GCproto *, const std::vector<CompilationSourceRecord> &,
+   std::span<GCproto *const> AdditionalRoots = {}, BytecodeLoadOperationCounters *Operations = nullptr);
+void attach_compilation_source_root(GCproto *, GCproto *);
+
+// Builds the minimal self-contained source map for a standalone prototype and its selected executable module roots.
+// The standalone prototype's source becomes wire root zero; unrelated producer roots are deliberately omitted.
+[[nodiscard]] bool prepare_standalone_compilation_sources(
+   std::span<const CompilationSourceRecord>, GCproto *, std::span<GCproto *const>,
+   std::span<const uint8_t>, PreparedCompilationSources &);
 
 // Register a file being parsed as a "main" file source (from lj_parse or loadFile).
 // Returns the file index (may be > 0 if this file was already registered or other files exist).
+
 uint8_t register_main_file_source(lua_State *, std::string &, const std::string &, BCLine);
 
 // Set the declared namespace for a file source.
 // Returns true if successful, false if the index is out of range.
+
 bool set_file_source_namespace(lua_State *, uint8_t, const std::string &);
 
 // Find a file source by its declared namespace.
 // Returns the file index if found, or std::nullopt if not found.
+
 std::optional<uint8_t> find_file_source_by_namespace(lua_State *, const std::string &);
 
 int widest_file_source(lua_State *, bool);

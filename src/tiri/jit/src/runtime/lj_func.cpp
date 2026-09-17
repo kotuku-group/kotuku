@@ -13,6 +13,7 @@
 #include "lj_contract.h"
 #include "lj_trace.h"
 #include "lj_vm.h"
+#include "import_module_graph.h"
 
 #ifdef UNIT_TESTS
 ClosureAllocationProbe &lj_func_allocation_probe()
@@ -44,13 +45,7 @@ static void func_probe_begin(lua_State *L, GCproto *Proto, int Helper)
 void lj_func_freeproto(global_State *g, GCproto *pt)
 {
    if (auto cache = proto_contract_cache(pt)) lj_mem_free(g, cache, cache->byte_size);
-   if (auto map = pt->compilation_sources.get<CompilationSourceMap>()) {
-      const MSize bytes = MSize(sizeof(CompilationSourceMap) + map->count * sizeof(CompilationSourceEntry));
-      lj_mem_free(g, map, bytes);
-   }
-   if (auto manifest = pt->struct_manifest.get<uint8_t>()) {
-      lj_mem_free(g, manifest, pt->struct_manifest_size);
-   }
+   release_proto_root_metadata(g, pt);
 
    // Free try-except metadata if present
    if (pt->try_blocks) lj_mem_free(g, pt->try_blocks, pt->try_block_count * sizeof(TryBlockDesc));

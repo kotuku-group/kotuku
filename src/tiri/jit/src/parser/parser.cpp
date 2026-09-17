@@ -15,16 +15,40 @@
 #include "lj_func.h"
 #include "lj_state.h"
 #include "lj_bc.h"
+#include "lj_bcdump.h"
 #include "lj_strfmt.h"
 #include "lexer.h"
 #include "parser.h"
 #include "lj_vm.h"
 #include "lj_meta.h"
 #include "lj_vmevent.h"
+#include "../runtime/import_module_graph.h"
+#include "../runtime/import_module_state.h"
+#include "lauxlib.h"
+#include "lualib.h"
 #include "field_type_lookup.h"
 #include "../../../defs.h"
 
+#ifdef UNIT_TESTS
+static thread_local ImportedModuleCompilationCounters glLastImportedModuleCounters;
+static thread_local tiri::import_cache::LifecycleCounters glLastImportCacheCounters;
+
+const ImportedModuleCompilationCounters &parser_last_imported_module_counters()
+{
+   return glLastImportedModuleCounters;
+}
+
+const tiri::import_cache::LifecycleCounters &parser_last_import_cache_counters()
+{
+   return glLastImportCacheCounters;
+}
+#endif
+#include "../../../import_module_bundle.h"
+#include "tiri_build_identity.h"
+
 #include <kotuku/main.h>
+
+#include <limits>
 
 // Priorities for each binary operator. ORDER OPR.
 
@@ -53,6 +77,8 @@ static const struct {
 #include "parse_internal.h"
 #include "parser_symbols.h"
 #include "parser_profiler.h"
+#include "import_module_validation.h"
+#include "import_interface_export.h"
 #include "assignment_target_resolution.h"
 #include "static_type_descriptor.h"
 #include "static_descriptor_analysis.h"
@@ -63,6 +89,7 @@ static const struct {
 #include "token_stream.cpp"
 #include "parser_diagnostics.cpp"
 #include "parser_context.cpp"
+#include "import_module_validation.cpp"
 #include "static_type_descriptor.cpp"
 #include "static_descriptor_analysis.cpp"
 #include "table_ownership.cpp"
@@ -70,6 +97,7 @@ static const struct {
 #include "assignment_target_resolution.cpp"
 #include "ast/builder.cpp"
 #include "parser_symbols.cpp"
+#include "import_interface_export.cpp"
 #include "parse_control_flow.cpp"
 #include "constant_evaluator.cpp"
 #include "ir_emitter/ir_emitter.cpp"
@@ -223,6 +251,12 @@ static void run_ast_pipeline(ParserContext &Context, ParserProfiler &Profiler)
    }
 
    propagate_static_descriptors(Context, *chunk);
+   std::string interface_diagnostic;
+   if (not prepare_import_interfaces(Context, *chunk, interface_diagnostic)) {
+      Context.emit_error(ParserErrorCode::InternalInvariant, Token{}, interface_diagnostic);
+      raise_accumulated_diagnostics(Context);
+      return;
+   }
    collect_parser_symbols(Context.lua(), Context.lex(), *chunk);
 
    // Emit bytecode instructions
@@ -348,6 +382,26 @@ extern GCproto * lj_parse(LexState *State)
 
    run_ast_pipeline(root_context, profiler);
 
+   const auto &cache_counters = State->import_cache_counters;
+   if (cache_counters.SourceReads or cache_counters.EnvelopeDecodes or cache_counters.SourceCompilations) {
+      log.msg("Imported-module validation: hits=%u misses=%u source-reads=%u envelope-decodes=%u "
+         "payload-validations=%u payload-bundle-decodes=%u validation-reuses=%u validation-states=%u "
+         "source-compilations=%u publications=%u validation-loads=%u destination-loads=%u prototype-decodes=%u "
+         "source-records=%u registrations=%u line-remaps=%u structure-commits=%u source-maps=%u directories=%u",
+         cache_counters.CacheHits, cache_counters.LookupMisses, cache_counters.SourceReads,
+         cache_counters.EnvelopeDecodes, cache_counters.PayloadValidations, cache_counters.PayloadBundleDecodes,
+         cache_counters.ValidationReuses, cache_counters.ValidationStateCreations, cache_counters.SourceCompilations,
+         cache_counters.Publications, cache_counters.ValidationPayloadLoads, cache_counters.DestinationPayloadLoads,
+         cache_counters.PrototypeDecodes, cache_counters.SourceRecordsDecoded,
+         cache_counters.FileSourceRegistrations, cache_counters.LineMapRemaps, cache_counters.StructureCommits,
+         cache_counters.SourceMapAllocations, cache_counters.ExecutableDirectoryAllocations);
+   }
+
+#ifdef UNIT_TESTS
+   glLastImportedModuleCounters = State->imported_module_counters;
+   glLastImportCacheCounters = State->import_cache_counters;
+#endif
+
    if ((L->script->JitOptions & JOF::DUMP_BYTECODE) != JOF::NIL) dump_bytecode(root_context.func());
 
    flush_non_fatal_errors(root_context);
@@ -364,6 +418,7 @@ extern GCproto * lj_parse(LexState *State)
    setprotoV(L, L->top, pt);
    incr_top(L);
    attach_compilation_sources(L, pt, State->compilation_sources);
+
    std::vector<uint8_t> struct_manifest;
    std::string manifest_detail;
    ERR manifest_error = build_declared_struct_manifest(L, State->compilation_struct_roots,
@@ -374,6 +429,52 @@ extern GCproto * lj_parse(LexState *State)
       setmref(pt->struct_manifest, manifest);
       pt->struct_manifest_size = uint32_t(struct_manifest.size());
    }
+   std::vector<ImportModuleGraphInput> module_inputs;
+   module_inputs.reserve(State->import_module_records.size());
+   for (const auto &record : State->import_module_records) {
+      module_inputs.push_back({ record.lookup_identity, record.compiled_identity, record.interface_bytes,
+         record.dependencies, record.initialiser, record.source_index });
+   }
+   PreparedImportModuleGraph module_graph;
+   if (not prepare_import_module_graph(
+       module_inputs, State->compilation_sources, {}, true, module_graph)) {
+      luaL_error(L, ERR::InvalidData, "Invalid imported-module executable graph.");
+   }
+   std::vector<GCproto *> final_relocation_roots = module_graph.initialisers;
+   final_relocation_roots.push_back(pt);
+   ImportModuleRelocationPlan final_relocation;
+   if (not preflight_import_module_relocations(
+       final_relocation_roots, module_graph.compilation_to_canonical, final_relocation)) {
+      luaL_error(L, ERR::InvalidData, "Invalid imported-module executable references.");
+   }
+   auto bundle = (uint8_t *)lj_mem_new(L, MSize(module_graph.bundle.size()));
+   memcpy(bundle, module_graph.bundle.data(), module_graph.bundle.size());
+   setmref(pt->import_module_bundle, bundle);
+   pt->import_module_bundle_size = uint32_t(module_graph.bundle.size());
+   if (module_graph.directory.entry_count and not install_import_module_directory(
+       L, pt, module_graph.assembly.records(), module_graph.initialisers, module_graph.directory)) {
+      luaL_error(L, ERR::InvalidData, "Invalid imported-module executable graph.");
+   }
+   apply_import_module_relocations(final_relocation);
+   for (GCproto *initialiser : module_graph.initialisers) {
+      if (not initialiser or gcref(initialiser->source_root) != obj2gco(pt)) {
+         luaL_error(L, ERR::InvalidData, "Imported-module initialiser has no final metadata root.");
+      }
+   }
+   State->release_import_module_staging_metadata();
+   const auto &staging = State->imported_module_counters;
+   if (staging.staging_metadata_roots) {
+      log.trace("Imported-module staging release: roots=%u source-bytes=%" PRIu64
+         " manifest-bytes=%" PRIu64 " bundle-bytes=%" PRIu64 " directory-bytes=%" PRIu64,
+         staging.staging_metadata_roots, staging.staging_compilation_source_bytes,
+         staging.staging_struct_manifest_bytes, staging.staging_import_module_bundle_bytes,
+         staging.staging_import_module_table_bytes);
+   }
+   for (int reference : State->import_module_anchors) luaL_unref(L, LUA_REGISTRYINDEX, reference);
+   State->import_module_anchors.clear();
+#ifdef UNIT_TESTS
+   glLastImportedModuleCounters = State->imported_module_counters;
+#endif
    L->top--;
    L->top--;  // Drop chunk_name.
 

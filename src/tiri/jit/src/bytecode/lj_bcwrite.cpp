@@ -14,6 +14,8 @@
 #include "lj_bcdump.h"
 #include "lj_vm.h"
 #include "../debug/filesource.h"
+#include "../runtime/import_module_graph.h"
+#include "../../../import_module_bundle.h"
 
 // Context for bytecode writer.
 typedef struct BCWriteCtx {
@@ -28,6 +30,10 @@ typedef struct BCWriteCtx {
    const CompilationSourceMap *sources;
    const uint8_t *struct_manifest;
    uint32_t struct_manifest_size;
+   const uint8_t *import_module_bundle;
+   uint32_t import_module_bundle_size;
+   const ImportModuleTable *import_module_table;
+   const ImportModuleRelocationPlan *relocation;
 #ifdef LUA_USE_ASSERT
    global_State* g;
 #endif
@@ -41,8 +47,8 @@ static bool bcwrite_source_id(BCWriteCtx *Ctx, uint8_t Runtime, uint8_t &Wire)
       Wire = Ctx->source_wire[Runtime];
       return true;
    }
-   if (Runtime IS FILESOURCE_OVERFLOW_INDEX) {
-      Wire = FILESOURCE_OVERFLOW_INDEX;
+   if (Runtime IS FILESOURCE_SYNTHETIC_INDEX or Runtime IS FILESOURCE_OVERFLOW_INDEX) {
+      Wire = Runtime;
       return true;
    }
    return false;
@@ -121,6 +127,17 @@ static void bcwrite_structs(BCWriteCtx *Ctx)
    char *p = lj_buf_need(&Ctx->sb, 5 + Ctx->struct_manifest_size);
    p = lj_strfmt_wuleb128(p, Ctx->struct_manifest_size);
    p = lj_buf_wmem(p, Ctx->struct_manifest, Ctx->struct_manifest_size);
+   Ctx->status = Ctx->wfunc(sbufL(&Ctx->sb), Ctx->sb.b, MSize(p - Ctx->sb.b), Ctx->wdata);
+   lj_buf_reset(&Ctx->sb);
+}
+
+static void bcwrite_import_modules(BCWriteCtx *Ctx)
+{
+   if (Ctx->status != 0) return;
+   lj_buf_reset(&Ctx->sb);
+   char *p = lj_buf_need(&Ctx->sb, 5 + Ctx->import_module_bundle_size);
+   p = lj_strfmt_wuleb128(p, Ctx->import_module_bundle_size);
+   p = lj_buf_wmem(p, Ctx->import_module_bundle, Ctx->import_module_bundle_size);
    Ctx->status = Ctx->wfunc(sbufL(&Ctx->sb), Ctx->sb.b, MSize(p - Ctx->sb.b), Ctx->wdata);
    lj_buf_reset(&Ctx->sb);
 }
@@ -337,6 +354,16 @@ static char * bcwrite_bytecode(BCWriteCtx *ctx, char *p, GCproto *pt)
       if (op IS BC_OBGETF or op IS BC_OBSETF or op IS BC_STGETF or op IS BC_STSETF) {
          setbc_p32(&instruction, 0xffffffffu);
          memcpy(bytecode + i * sizeof(BCIns), &instruction, sizeof(instruction));
+      }
+   }
+
+   if (ctx->relocation) {
+      for (const ImportModuleRelocationSite &site : ctx->relocation->sites) {
+         if (site.prototype != pt) continue;
+         BCIns instruction;
+         memcpy(&instruction, bytecode + (site.instruction - 1) * sizeof(BCIns), sizeof(instruction));
+         setbc_d(&instruction, site.mapped_index);
+         memcpy(bytecode + (site.instruction - 1) * sizeof(BCIns), &instruction, sizeof(instruction));
       }
    }
 
@@ -595,6 +622,7 @@ static void bcwrite_header(BCWriteCtx* ctx)
    ctx->status = ctx->wfunc(sbufL(&ctx->sb), ctx->sb.b,
       (MSize)(p - ctx->sb.b), ctx->wdata);
    if (ctx->status IS 0) bcwrite_sources(ctx);
+   if (ctx->status IS 0) bcwrite_import_modules(ctx);
    if (ctx->status IS 0) bcwrite_structs(ctx);
 }
 
@@ -618,6 +646,12 @@ static TValue* cpwriter(lua_State* L, lua_CFunction dummy, void* ud)
 
    (void)lj_buf_need(&ctx->sb, 1024);  //  Avoids resize for most prototypes.
    bcwrite_header(ctx);
+   if (ctx->import_module_table) {
+      const ImportModuleTableEntry *entries = import_module_table_entries(ctx->import_module_table);
+      for (uint32_t i = 0; i < ctx->import_module_table->entry_count and ctx->status IS 0; ++i) {
+         bcwrite_proto(ctx, gco_to_proto(gcref(entries[i].initialiser)));
+      }
+   }
    bcwrite_proto(ctx, ctx->pt);
    bcwrite_footer(ctx);
    return nullptr;
@@ -626,50 +660,145 @@ static TValue* cpwriter(lua_State* L, lua_CFunction dummy, void* ud)
 //********************************************************************************************************************
 // Write bytecode for a prototype.
 
-int lj_bcwrite(lua_State *L, GCproto *pt, lua_Writer writer, void *data, int strip)
+int lj_bcwrite_relocated(lua_State *L, GCproto *Pt, lua_Writer Writer, void *Data, int Strip,
+   const ImportModuleRelocationPlan *Relocation)
 {
+   kt::Log log(__FUNCTION__);
    BCWriteCtx ctx;
    int status;
-   ctx.pt = pt;
-   ctx.wfunc = writer;
-   ctx.wdata = data;
-   ctx.strip = strip;
+   ctx.pt = Pt;
+   ctx.wfunc = Writer;
+   ctx.wdata = Data;
+   ctx.strip = Strip;
    ctx.status = 0;
    memset(ctx.source_wire, 0, sizeof(ctx.source_wire));
    memset(ctx.source_mapped, 0, sizeof(ctx.source_mapped));
-   ctx.sources = proto_compilation_sources(pt);
-   ctx.struct_manifest = proto_struct_manifest(pt, &ctx.struct_manifest_size);
+   ctx.sources = proto_compilation_sources(Pt);
+   ctx.struct_manifest = proto_struct_manifest(Pt, &ctx.struct_manifest_size);
+   ctx.import_module_bundle = proto_import_module_bundle(Pt, &ctx.import_module_bundle_size);
+   ctx.import_module_table = proto_import_module_table(Pt);
+   ctx.relocation = Relocation;
+   if (Relocation and not validate_import_module_relocation_plan(*Relocation)) {
+      log.warning("Invalid relocation plan.");
+      return 1;
+   }
    if (not ctx.sources or ctx.sources->version != COMPILATION_SOURCE_VERSION or ctx.sources->count IS 0 or
-       ctx.sources->count > FILESOURCE_MAX_COUNT or ctx.sources->root >= ctx.sources->count) return 1;
+       ctx.sources->count > FILESOURCE_MAX_COUNT or ctx.sources->root >= ctx.sources->count) {
+      log.warning("Invalid compilation source map header.");
+      return 1;
+   }
    if (not ctx.struct_manifest or ctx.struct_manifest_size < 2 or
-       ctx.struct_manifest[0] != STRUCT_MANIFEST_VERSION) return 1;
+       ctx.struct_manifest[0] != STRUCT_MANIFEST_VERSION) {
+      log.warning("Invalid structure manifest.");
+      return 1;
+   }
+   if (not ctx.import_module_bundle or not ctx.import_module_bundle_size) {
+      log.warning("Missing imported-module bundle.");
+      return 1;
+   }
+   std::vector<tiri::import_cache::RootModuleRecord> validated_modules;
+   if (tiri::import_cache::decode_root_module_bundle(std::string_view(
+       (const char *)ctx.import_module_bundle, ctx.import_module_bundle_size), validated_modules) !=
+       tiri::cache::FormatError::OKAY) {
+      log.warning("Invalid imported-module bundle.");
+      return 1;
+   }
+   if (validated_modules.empty()) {
+      if (ctx.import_module_table) return 1;
+   }
+   else {
+      if (not ctx.import_module_table or ctx.import_module_table->version != IMPORT_MODULE_TABLE_VERSION or
+          ctx.import_module_table->entry_count != validated_modules.size()) return 1;
+      const ImportModuleTableEntry *table_entries = import_module_table_entries(ctx.import_module_table);
+      const uint32_t *table_dependencies = import_module_table_dependencies(ctx.import_module_table);
+      uint32_t dependency_count = 0;
+      for (uint32_t i = 0; i < ctx.import_module_table->entry_count; ++i) {
+         const ImportModuleTableEntry &entry = table_entries[i];
+         const auto &record = validated_modules[i];
+         if (not gcref(entry.compiled_identity) or gcref(entry.compiled_identity)->gch.gct != ~LJ_TSTR or
+             not gcref(entry.initialiser) or gcref(entry.initialiser)->gch.gct != ~LJ_TPROTO or
+             gco_to_proto(gcref(entry.initialiser))->sizeuv != 0 or entry.source_index != record.SourceIndex or
+             entry.dependency_count != record.Dependencies.size() or
+             entry.first_dependency != dependency_count or entry.interface_offset > ctx.import_module_bundle_size or
+             entry.interface_size > ctx.import_module_bundle_size - entry.interface_offset or
+             std::string_view((const char *)ctx.import_module_bundle + entry.interface_offset,
+                entry.interface_size) != record.InterfaceBytes) {
+            log.warning("Imported-module directory entry %u is inconsistent.", i);
+            return 1;
+         }
+         GCstr *identity = gco_to_string(gcref(entry.compiled_identity));
+         if (identity->len != record.CompiledIdentity.size() or
+             memcmp(strdata(identity), record.CompiledIdentity.data(), identity->len) != 0) {
+            log.warning("Imported-module identity %u is inconsistent.", i);
+            return 1;
+         }
+         for (uint32_t d = 0; d < entry.dependency_count; ++d) {
+            if (table_dependencies[entry.first_dependency + d] != record.Dependencies[d]) {
+               log.warning("Imported-module dependency %u:%u is inconsistent.", i, d);
+               return 1;
+            }
+         }
+         dependency_count += entry.dependency_count;
+      }
+      if (dependency_count != ctx.import_module_table->dependency_count) {
+         log.warning("Imported-module dependency count is inconsistent.");
+         return 1;
+      }
+   }
    auto entries = compilation_source_entries(ctx.sources);
    for (uint32_t i = 0; i < ctx.sources->count; ++i) {
       GCstr *path = gco_to_string(gcref(entries[i].canonical_path));
       GCstr *filename = gco_to_string(gcref(entries[i].display_filename));
       if (filename->len IS 0 or entries[i].first_line.lineNumber() IS 0 or
-          entries[i].total_lines.lineNumber() IS 0) return 1;
+          entries[i].total_lines.lineNumber() IS 0) {
+         log.warning("Compilation source %u has invalid basic metadata.", i);
+         return 1;
+      }
       if (i IS ctx.sources->root) {
          if ((entries[i].role != CompilationSourceRole::Main and
               entries[i].role != CompilationSourceRole::Synthetic) or
              entries[i].parent != FILESOURCE_OVERFLOW_INDEX or entries[i].import_line.lineNumber() != 0 or
-             ((entries[i].role IS CompilationSourceRole::Synthetic) != (path->len IS 0))) return 1;
+             ((entries[i].role IS CompilationSourceRole::Synthetic) != (path->len IS 0))) {
+            log.warning("Compilation source root is invalid.");
+            return 1;
+         }
       }
       else if (entries[i].role != CompilationSourceRole::Import or entries[i].parent >= i or path->len IS 0 or
                entries[i].import_line.lineNumber() IS 0 or entries[i].import_line.lineNumber() >
-               entries[entries[i].parent].total_lines.lineNumber()) return 1;
+               entries[entries[i].parent].total_lines.lineNumber()) {
+         log.warning("Compilation source %u has invalid ancestry.", i);
+         return 1;
+      }
       for (uint32_t prior = 0; prior < i; ++prior) {
          GCstr *prior_path = gco_to_string(gcref(entries[prior].canonical_path));
          if (path->len and path->len IS prior_path->len and
-             memcmp(strdata(path), strdata(prior_path), path->len) IS 0) return 1;
+             memcmp(strdata(path), strdata(prior_path), path->len) IS 0) {
+            log.warning("Compilation source %u duplicates source %u.", i, prior);
+            return 1;
+         }
       }
       const uint8_t runtime = entries[i].runtime_index;
       if (runtime IS FILESOURCE_OVERFLOW_INDEX) continue;
-      if (ctx.source_mapped[runtime]) return 1;
+      if (ctx.source_mapped[runtime]) {
+         log.warning("Compilation source %u duplicates runtime index %u.", i, runtime);
+         return 1;
+      }
       ctx.source_mapped[runtime] = 1;
       ctx.source_wire[runtime] = uint8_t(i);
    }
-   if (not bcwrite_validate_proto(&ctx, pt)) return 1;
+   if (ctx.import_module_table) {
+      const ImportModuleTableEntry *entries = import_module_table_entries(ctx.import_module_table);
+      for (uint32_t i = 0; i < ctx.import_module_table->entry_count; ++i) {
+         if (not bcwrite_validate_proto(&ctx, gco_to_proto(gcref(entries[i].initialiser)))) {
+            log.warning("Executable module %u references an unmapped source.", i);
+            return 1;
+         }
+      }
+   }
+   if (not bcwrite_validate_proto(&ctx, Pt)) {
+      log.warning("Root prototype references an unmapped source.");
+      return 1;
+   }
 #ifdef LUA_USE_ASSERT
    ctx.g = G(L);
 #endif
@@ -678,4 +807,9 @@ int lj_bcwrite(lua_State *L, GCproto *pt, lua_Writer writer, void *data, int str
    if (status IS 0) status = ctx.status;
    lj_buf_free(G(sbufL(&ctx.sb)), &ctx.sb);
    return status;
+}
+
+int lj_bcwrite(lua_State *L, GCproto *pt, lua_Writer writer, void *data, int strip)
+{
+   return lj_bcwrite_relocated(L, pt, writer, data, strip, nullptr);
 }

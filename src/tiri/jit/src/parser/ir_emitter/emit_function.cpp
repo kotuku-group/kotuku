@@ -90,6 +90,18 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       return result;
    }
 
+   return this->emit_function_body(Payload, *Payload.body, funcname);
+}
+
+//********************************************************************************************************************
+// Emit a child function around an existing block.  Imported-module initialisers use this path so semantic analysis can
+// retain the source AST as the compile-time interface while runtime execution crosses an explicit prototype boundary.
+
+ParserResult<ExpDesc> IrEmitter::emit_function_body(
+   const FunctionExprPayload &Payload, const BlockStmt &Body, GCstr *funcname, bool InheritModuleDependencies,
+   GCproto **Prototype, const std::vector<FuncState::DependencyDescriptor> *ModuleDependencies, bool Detached)
+{
+
    // Regular function emission
    FuncState *parent_state = &this->func_state;
    ptrdiff_t oldbase = parent_state->bcbase - this->lex_state.bc_stack;
@@ -108,6 +120,14 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
    child_state.declared_globals = parent_state->declared_globals;
    child_state.const_globals = parent_state->const_globals;
    child_state.external_symbols = parent_state->external_symbols;
+   if (InheritModuleDependencies) {
+      if (ModuleDependencies) {
+         for (const auto &dependency : *ModuleDependencies) {
+            if (not dependency.compile_time_only) child_state.module_descriptors.push_back(dependency);
+         }
+      }
+      child_state.upvalue_boundary = true;
+   }
 
    // Set linedefined to the earliest line that bytecode might reference.
    // Note: SourceSpan.line represents the END line of a span (due to combine_spans behavior),
@@ -115,8 +135,8 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
    // For functions with bodies, the first statement's span gives us the earliest bytecode line.
 
    BCLine body_first_line = this->lex_state.lastline;
-   if (Payload.body and not Payload.body->statements.empty()) {
-      const StmtNodePtr& first_stmt = Payload.body->statements.front();
+   if (not Body.statements.empty()) {
+      const StmtNodePtr& first_stmt = Body.statements.front();
       if (first_stmt) body_first_line = first_stmt->span.line;
    }
 
@@ -306,7 +326,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       }
    }
 
-   auto inherited_cache = child_emitter.allocate_inherited_context_cache(*Payload.body);
+   auto inherited_cache = child_emitter.allocate_inherited_context_cache(Body);
    IrEmitter::ContextSourceScope child_context_scope;
    if (inherited_cache) {
       child_context_scope.activate(&child_emitter, ContextSource{ .slot = inherited_cache.value(),
@@ -317,11 +337,20 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
    // to restore it so the BC_FNEW instruction gets the correct line (start of function, not body).
    BCLine saved_lastline = this->lex_state.lastline;
 
-   auto body_result = child_emitter.emit_block(*Payload.body, FuncScopeFlag::None);
+   auto body_result = child_emitter.emit_block(Body, FuncScopeFlag::None);
    if (not body_result.ok()) return ParserResult<ExpDesc>::failure(body_result.error_ref());
 
+   // Module declarations retain their historical compile-time visibility after the runtime body moves into a child
+   // frame.  Copy only environment-level declaration state back; lexical locals and captures remain module-private.
+   if (InheritModuleDependencies) {
+      parent_state->declared_globals = child_state.declared_globals;
+      parent_state->const_globals = child_state.const_globals;
+      parent_state->external_symbols = child_state.external_symbols;
+   }
+
    fs_guard.disarm();  // fs_finish will handle cleanup
-   GCproto *pt = this->lex_state.fs_finish(Payload.body->span.line);
+   GCproto *pt = this->lex_state.fs_finish(Body.span.line);
+   if (Prototype) *Prototype = pt;
    scope_guard.disarm();
    parent_state->bcbase = this->lex_state.bc_stack + oldbase;
    parent_state->bclim = BCPos(this->lex_state.size_bc_stack - oldbase).raw();
@@ -330,6 +359,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
    this->lex_state.lastline = saved_lastline;
 
    ExpDesc expr;
+   if (Detached) return ParserResult<ExpDesc>::success(expr);
    expr.init(ExpKind::Relocable, bcemit_AD(parent_state, BC_FNEW, 0, const_gc(parent_state, obj2gco(pt), LJ_TPROTO)));
 
    if (not (parent_state->flags & PROTO_CHILD)) {

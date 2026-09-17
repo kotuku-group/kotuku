@@ -366,13 +366,35 @@ extern void module_marshalling_unit_tests(int &, int &);
 extern void set_variable_unit_tests(int &, int &);
 extern void bytecode_file_unit_tests(int &, int &);
 extern void cache_manifest_unit_tests(int &, int &);
+extern void import_module_format_unit_tests(int &, int &);
+extern void import_module_cache_unit_tests(int &, int &);
 #endif
 
 static void MODTest(std::string_view Options, int *Passed, int *Total)
 {
 #ifdef UNIT_TESTS
-   bytecode_file_unit_tests(*Passed, *Total);
-   cache_manifest_unit_tests(*Passed, *Total);
+   // Redirect the scripts volume to the test directory so that we can load test scripts without polluting the volume.
+
+   const std::string test_scripts = std::string("system:scripts/|") + TIRI_IMPORT_TEST_PATH;
+   if (auto error = SetVolume("scripts", test_scripts, "filetypes/source", "", "",
+       VOLUME::HIDDEN|VOLUME::SYSTEM|VOLUME::REPLACE); error != ERR::Okay) {
+      kt::Log("TiriTests").error("Failed to configure the import fixture volume: %s", GetErrorMsg(error));
+      (*Total)++;
+      return;
+   }
+
+   {
+      kt::Log log("TiriTests");
+      log.branch("Running bytecode unit tests...");
+      bytecode_file_unit_tests(*Passed, *Total);
+   }
+   {
+      kt::Log log("TiriTests");
+      log.branch("Running module import unit tests...");
+      cache_manifest_unit_tests(*Passed, *Total);
+      import_module_format_unit_tests(*Passed, *Total);
+      import_module_cache_unit_tests(*Passed, *Total);
+   }
    {
       kt::Log log("TiriTests");
       log.branch("Running SetVariable unit tests...");

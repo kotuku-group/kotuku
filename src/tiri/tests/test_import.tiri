@@ -3,6 +3,12 @@
 
 extern on_windows, on_linux, on_osx, debug_on, debug_off
 
+global glImportValidationPath
+
+@BeforeAll function setup(State)
+   glImportValidationPath = State.folder .. 'import_validation.tiri'
+end
+
 function assert_valid(Source:str, Context:str)
    local result = debug.validate(Source)
 
@@ -110,4 +116,12 @@ end
          import 'json'
       end
    ]], "Use of 'import' is not permitted inside function blocks", 'import inside function')
+end
+
+@Test function CircularImportIsRejected()
+   local result = debug.validate("import './import_cycle_helper'", { path=glImportValidationPath })
+   assert(result.success is false, 'A circular module import must fail validation')
+   assert(#result.diagnostics > 0 and
+      result.diagnostics[0].message.find('Circular import detected', 0, true) != nil,
+      'A circular module import must report the cycle')
 end

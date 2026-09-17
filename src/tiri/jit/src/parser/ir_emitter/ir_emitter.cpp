@@ -24,6 +24,7 @@
 #include "../parse_value.h"
 #include "../token_types.h"
 #include "../../../defs.h"  // For glPrintMsg, TiriConstant
+#include "../../runtime/import_module_graph.h"
 
 //********************************************************************************************************************
 // Returns nullptr if not found.
@@ -230,7 +231,10 @@ private:
          case AstNodeKind::ImportStmt: {
             const auto &payload = std::get<ImportStmtPayload>(Statement.data);
             for (const ImportEntryPayload &entry : payload.entries) {
-               if (this->block_uses_context(entry.inlined_body)) return true;
+               if (entry.module_unit) {
+                  if (entry.module_unit->body and this->block_uses_context(*entry.module_unit->body)) return true;
+               }
+               else if (this->block_uses_context(entry.inlined_body)) return true;
             }
             return false;
          }
@@ -456,7 +460,10 @@ static bool statement_contains_try(const StmtNode &Statement)
       }
       case AstNodeKind::ImportStmt:
          for (const auto &entry : std::get<ImportStmtPayload>(Statement.data).entries) {
-            if (contains(entry.inlined_body)) return true;
+            if (entry.module_unit) {
+               if (entry.module_unit->body and block_contains_try(entry.module_unit->body.get())) return true;
+            }
+            else if (contains(entry.inlined_body)) return true;
          }
          return false;
       case AstNodeKind::WithStmt:
@@ -4721,5 +4728,6 @@ ParserResult<ExpDesc> IrEmitter::unsupported_expr(AstNodeKind kind, const Source
 #include "ir_emitter/emit_function.cpp"
 #include "ir_emitter/emit_table.cpp"
 #include "ir_emitter/emit_call.cpp"
+#include "ir_emitter/emit_import.cpp"
 #include "ir_emitter/emit_try.cpp"
 #include "ir_emitter/emit_checkall.cpp"

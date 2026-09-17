@@ -479,6 +479,8 @@ void remove_struct(std::string_view);
    std::string *Detail = nullptr);
 [[nodiscard]] ERR load_declared_struct_manifest(lua_State *Lua, std::string_view Manifest,
    std::vector<uint32_t> &Inserted, std::string *Detail = nullptr);
+[[nodiscard]] ERR validate_declared_struct_manifest(
+   lua_State *Lua, std::string_view Manifest, std::string *Detail = nullptr);
 void construct_trivial_struct_vector(APTR Address);
 void destroy_trivial_struct_vector(APTR Address);
 void assign_trivial_struct_vector(APTR Address, CPTR Source, size_t Elements, size_t Stride);
@@ -627,6 +629,8 @@ class extTiri : public objTiri {
 
    ~extTiri();
 };
+
+ERR initialise_tiri_compilation_state(lua_State *Lua);
 
 enum class CachePublishFailure : uint8_t {
    NIL,

@@ -11,6 +11,7 @@ inline constexpr uint8_t FF_LUA = 0;
 inline constexpr uint8_t FF_C   = 1;
 
 enum class BuiltinCallableID : uint16_t {
+   ImportModuleActivate = (std::numeric_limits<uint8_t>::max)(),
    Invalid = (std::numeric_limits<uint16_t>::max)()
 };
 
@@ -22,6 +23,11 @@ enum class BuiltinCallableID : uint16_t {
 [[nodiscard]] inline constexpr bool builtin_callable_assigned(BuiltinCallableID Value) noexcept
 {
    return Value != BuiltinCallableID::Invalid;
+}
+
+[[nodiscard]] inline constexpr bool builtin_callable_is_compiler_intrinsic(BuiltinCallableID Value) noexcept
+{
+   return Value IS BuiltinCallableID::ImportModuleActivate;
 }
 
 // GCfunc::ffid is an 8-bit field.  Keep the state layout independent of the generated fast-function count so buildvm

@@ -19,11 +19,13 @@
 
 #include "nodes.h"
 #include "../parser_context.h"
+#include "../import_module_validation.h"
 #include "../../../../cache_manifest.h"
+#include "../../../../import_module_cache.h"
 
 class AstBuilder {
 public:
-   explicit AstBuilder(ParserContext& context, AstBuilder *Parent = nullptr);
+   explicit AstBuilder(ParserContext& context, AstBuilder *Parent = nullptr, bool ModuleInitialiser = false);
    ~AstBuilder();
 
    AstBuilder(const AstBuilder &) = delete;
@@ -39,6 +41,7 @@ public:
    void rollback_registered_structs();
    void track_struct_reference(struct_record *Definition);
    void track_dynamic_struct_reference();
+   void track_installed_declarations(const InstalledImportInterface &);
 
    [[nodiscard]] bool at_top_level() const { return function_depth IS 0 and block_depth IS 0; }
 
@@ -46,16 +49,21 @@ private:
    ParserContext& ctx;
    bool in_guard_expression = false;  // True when parsing 'when' clause guard expression
    bool in_choose_expression = false; // True when parsing choose expression cases (for tuple pattern detection)
-   int handler_depth = 0;            // Active handlers in the current lexical function
-   int function_depth = 0;           // Tracks nesting depth inside function bodies
-   int block_depth = 0;              // Tracks nested statement blocks below chunk scope
+   int handler_depth = 0;             // Active handlers in the current lexical function
+   int function_depth = 0;            // Tracks nesting depth inside function bodies
+   int block_depth = 0;               // Tracks nested statement blocks below chunk scope
    bool enum_constants_committed = false;
    bool source_namespace_declared = false;
+   bool module_initialiser = false;
    AstBuilder *parent_builder = nullptr;
    std::vector<GCstr *> function_name_stack;
    std::vector<uint32_t> registered_enum_constants;
    std::vector<uint32_t> registered_structs;
-   std::vector<uint32_t> chunk_import_hashes;  // Path hashes inlined during this compilation (root builder only)
+   std::vector<uint32_t> local_import_hashes;   // Inline imports already expanded by this lexical compilation unit
+   std::vector<ImportedModuleKey> imported_edges; // Non-local imports already activated by this module initialiser
+   std::unordered_map<ImportedModuleKey, std::shared_ptr<ImportedModuleUnit>, ImportedModuleKeyHash>
+      imported_module_units;                   // Definition registry owned by the root builder
+   std::unique_ptr<ImportModuleValidationSession> import_validation_session;
    StmtNodeList pending_statements;
 
    // One record per canonical module declared by this compilation unit.  Aliases of the same module share a
@@ -76,6 +84,7 @@ private:
       uint32_t descriptor = 0;                        // Index in the prototype dependency table
       SourceSpan declaration_span{};
       bool implicit = false;                          // Created on demand by an implicit namespace such as mSys
+      bool compile_time_only = false;                 // Loaded by include without runtime activation
    };
 
    struct ModuleNamespaceSymbol {
@@ -87,22 +96,49 @@ private:
 
    std::unordered_map<GCstr *, ModuleNamespaceSymbol> module_namespaces;
    std::vector<std::unique_ptr<ModuleDependency>> module_dependencies;
+   std::vector<FuncState::DependencyDescriptor> published_module_descriptors;
    std::unordered_map<std::string, bool> module_availability;
 
-   // FileSource entries persist across compilations, so diagnose-mode re-parsing of cached imports needs a
-   // dedup scope limited to the current chunk.  Records Hash on the root builder; returns true if already seen.
-   [[nodiscard]] bool import_seen_this_chunk(uint32_t Hash) {
-      AstBuilder *root = this;
-      while (root->parent_builder) root = root->parent_builder;
-      if (std::find(root->chunk_import_hashes.begin(), root->chunk_import_hashes.end(), Hash) != root->chunk_import_hashes.end()) return true;
-      root->chunk_import_hashes.push_back(Hash);
+   // FileSource entries persist across compilations, so duplicate suppression must be limited to one compilation
+   // unit.  A non-local imported module owns a separate builder and must retain its dependency activations even when
+   // the importing root has already referenced the same module.
+
+   [[nodiscard]] bool import_seen_this_unit(const ImportedModuleKey &Key) {
+      if (std::ranges::find(this->imported_edges, Key) != this->imported_edges.end()) return true;
+      this->imported_edges.push_back(Key);
       return false;
+   }
+
+   [[nodiscard]] bool local_import_seen(uint32_t Hash) {
+      AstBuilder *scope = this->ctx.lex().diagnose_mode ? this->root_builder() : this;
+      if (std::ranges::find(scope->local_import_hashes, Hash) != scope->local_import_hashes.end()) return true;
+      scope->local_import_hashes.push_back(Hash);
+      return false;
+   }
+
+   [[nodiscard]] std::shared_ptr<ImportedModuleUnit> find_imported_module(const ImportedModuleKey &Key) {
+      auto &units = this->root_builder()->imported_module_units;
+      auto found = units.find(Key);
+      return found IS units.end() ? nullptr : found->second;
+   }
+
+   void register_imported_module(const std::shared_ptr<ImportedModuleUnit> &Unit) {
+      this->root_builder()->imported_module_units.emplace(Unit->key, Unit);
+      this->root_builder()->ctx.lex().imported_module_counters.unique_units++;
+   }
+
+   void discard_imported_module(const ImportedModuleKey &Key) {
+      this->root_builder()->imported_module_units.erase(Key);
    }
 
    [[nodiscard]] AstBuilder * root_builder() {
       AstBuilder *root = this;
       while (root->parent_builder) root = root->parent_builder;
       return root;
+   }
+
+   [[nodiscard]] ImportModuleValidationSession &validation_session() {
+      return *this->root_builder()->import_validation_session;
    }
 
    uint8_t record_import_source(const std::string &, const std::string &, BCLine, uint8_t, BCLine, uint8_t);
@@ -166,8 +202,7 @@ private:
    ParserResult<StmtNodePtr> parse_repeat();
    ParserResult<StmtNodePtr> parse_for();
    ParserResult<StmtNodePtr> parse_anonymous_for(const Token &);
-   ParserResult<ExprNodePtr> parse_scanned_range_in_braces(
-      bool HasStep, bool HasBareStringOperand);
+   ParserResult<ExprNodePtr> parse_scanned_range_in_braces(bool HasStep, bool HasBareStringOperand);
    ParserResult<StmtNodePtr> parse_do();
    ParserResult<StmtNodePtr> parse_using();
    ParserResult<StmtNodePtr> parse_with();
@@ -184,7 +219,9 @@ private:
    ParserResult<StmtNodePtr> parse_import();
    ParserResult<StmtNodePtr> parse_namespace();
    ParserResult<std::unique_ptr<BlockStmt>> parse_imported_file(
-      std::string &, std::string_view, const Token &ImportToken);
+      std::string &, std::string_view, const Token &ImportToken, bool ModuleInitialiser,
+      tiri::import_cache::ModuleLookup *Lookup = nullptr,
+      std::vector<FuncState::DependencyDescriptor> *ModuleDependencies = nullptr);
    ParserResult<StmtNodePtr> parse_compile_if();
    void skip_to_compile_end();
    ParserResult<StmtNodePtr> parse_expression_stmt();
@@ -194,8 +231,7 @@ private:
    ParserResult<ExprNodePtr> parse_suffixed(ExprNodePtr);
    ParserResult<Token> consume_ternary_separator();
    ParserResult<ExprNodePtr> parse_arrow_function(ExprNodeList parameters);
-   ParserResult<ExprNodePtr> parse_function_literal(
-      const Token &, bool IsThunk = false, GCstr *FunctionName = nullptr);
+   ParserResult<ExprNodePtr> parse_function_literal(const Token &, bool IsThunk = false, GCstr *FunctionName = nullptr);
    ParserResult<ExprNodePtr> parse_table_literal(bool AllowRange = true);
    ParserResult<ExprNodeList> parse_array_initialiser();
    ParserResult<ReturnStmtPayload> parse_return_payload(const Token &, bool same_line_only);
@@ -264,6 +300,7 @@ private:
 
    // Helper to emit an error and return a failure result in one step.
    // Reduces boilerplate for the common pattern of emit_error + return failure.
+
    template<typename T>
    [[nodiscard]] ParserResult<T> fail(ParserErrorCode Code, const Token& ErrorToken, std::string Message) {
       this->ctx.emit_error(Code, ErrorToken, Message);
@@ -273,5 +310,6 @@ private:
 
    // Helper to map TokenKind to AssignmentOperator.
    // Returns std::nullopt if the token is not an assignment operator.
+   
    [[nodiscard]] static std::optional<AssignmentOperator> token_to_assignment_op(TokenKind Kind);
 };

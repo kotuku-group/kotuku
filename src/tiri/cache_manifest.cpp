@@ -10,6 +10,11 @@
 #include <tuple>
 
 namespace tiri::cache {
+
+std::vector<CompilationOption> effective_compilation_options()
+{
+   return {};
+}
 namespace {
 
 constexpr std::array<uint8_t, 8> CACHE_MAGIC = { 'T', 'I', 'R', 'I', 'C', 'A', 'C', 'H' };

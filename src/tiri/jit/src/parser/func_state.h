@@ -103,12 +103,14 @@ struct FuncState {
    uint8_t try_depth = 0;  // Current try nesting depth for break/continue cleanup
    std::vector<RuntimeScope> runtime_scopes; // Ordered lexical scopes requiring runtime leave bytecodes
    bool is_root = false;   // True if this is the top-level (root) function
+   bool upvalue_boundary = false; // Prevent this function and its descendants from capturing earlier functions
 
    // Portable module dependency descriptors, appended by the root and imported AST builders and copied to the
    // prototype during fs_finish. Names are canonical and interned, so they are also anchored as GC constants.
    struct DependencyDescriptor {
       GCstr *name = nullptr;                 // Canonical module name
       std::vector<GCstr *> functions;        // Canonical names of the functions this unit references
+      bool compile_time_only = false;        // Source include metadata; omitted from the executable prototype
    };
 
    std::vector<DependencyDescriptor> module_descriptors;

@@ -432,26 +432,37 @@ end
 -- Runtime loads must share imports with their caller, including when the caller was restored from bytecode.
 
 @Test function RuntimeLoadsReuseImports()
-   local helper = glRoot .. 'runtime_reuse_helper.tiri'
+   local scripts = glRoot .. 'runtime_reuse_scripts/'
+   local scripts_folder <close> = obj.new('file', { path=scripts, flags=FL_NEW|FL_FOLDER })
+   local helper = scripts .. 'runtime_reuse_helper.tiri'
    local loader = glRoot .. 'runtime_reuse_loader.tiri'
    local main = path('_runtime_reuse.tiri')
    local binary = path('_runtime_reuse.tbc')
+   local producer = path('_runtime_reuse_producer.tiri')
    write_file(loader, [[
-      import './runtime_reuse_helper' as reused
+      import 'runtime_reuse_helper' as reused
       assert(reused.extension() is 42, 'Runtime imports must preserve namespace extensions')
       assert(glRuntimeImportRuns is 1, 'Runtime imports must initialise only once')
       return reused
    ]])
    write_file(main, [[
       global glRuntimeImportRuns = 0
-      import './runtime_reuse_helper'
+      import 'runtime_reuse_helper'
       runtimeReuse.extension = function():num return 42 end
       local first = loadFile(arg('loader'))
       assert(first is runtimeReuse, 'Runtime imports must retain the original namespace table')
-      check mSys.DeleteFile(arg('helper'))
+      do
+         local changed <close> = obj.new('file', { path=arg('helper'), flags=FL_NEW|FL_WRITE })
+         check changed.acWrite("this source is deliberately invalid")
+      end
       local second = loadFile(arg('loader'))
-      assert(second is runtimeReuse, 'An existing import must not require another source read')
+      assert(second is runtimeReuse, 'An existing import must not reopen changed source')
       print('RUNTIME_IMPORT_REUSE_OK')
+   ]])
+   write_file(producer, [[
+      local script <close> = obj.new('tiri', { path=arg('source') })
+      local output <close> = obj.new('file', { path=arg('binary'), flags=FL_NEW|FL_WRITE })
+      check script.acSaveToObject(output)
    ]])
 
    for compiled in values({ false, true }) do
@@ -461,14 +472,131 @@ end
       ]])
       local input = main
       if compiled then
-         local script <close> = obj.new('tiri', { path=main })
-         check script.acQuery()
-         save(script, binary)
+         local producer_code, producer_output = child(array<str> { producer, 'source=' .. main,
+            'binary=' .. binary, '--set-volume', 'scripts=' .. scripts, '--log-warning' })
+         assert(producer_code is 0, producer_output)
          input = binary
       end
-      local code, output = child(array<str> { input, 'loader=' .. loader, 'helper=' .. helper, '--log-warning' })
+      local code, output = child(array<str> { input, 'loader=' .. loader, 'helper=' .. helper,
+         '--set-volume', 'scripts=' .. scripts, '--log-warning' })
       assert(code is 0, output)
       assert(output.count('RUNTIME_IMPORT_REUSE_OK') is 1, output)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- A module cache identity must not capture the runtime importer context that happened to produce it.
+
+@Test function ImportedCacheIdentityIgnoresRuntimeImporterContext()
+   local scripts = glRoot .. 'identity_scripts/'
+   local modules = scripts .. 'identity_context/'
+   local isolated_temp = glRoot .. 'identity_temp/'
+   local scripts_folder <close> = obj.new('file', { path=scripts, flags=FL_NEW|FL_FOLDER })
+   local modules_folder <close> = obj.new('file', { path=modules, flags=FL_NEW|FL_FOLDER })
+   local temp_folder <close> = obj.new('file', { path=isolated_temp, flags=FL_NEW|FL_FOLDER })
+
+   local style = glRoot .. 'identity_style.tiri'
+   local main = glRoot .. 'identity_main.tiri'
+   write_file(modules .. 'base.tiri', 'namespace identity_context { base=true }')
+   write_file(style, "import 'identity_context/base'\nassert(identity_context.base)")
+   write_file(modules .. 'extension.tiri',
+      "import 'identity_context/base'\n" ..
+      "namespace identity_context\n" ..
+      "loadFile([[" .. style .. "]])\n" ..
+      "identity_context.extension = true\n")
+   write_file(main, [[
+      import 'identity_context/base', 'identity_context/extension'
+      assert(identity_context.base and identity_context.extension)
+      print('IMPORT_IDENTITY_CONTEXT_OK')
+   ]])
+
+   for _ in {0 to 2} do
+      local code, output = child(array<str> { '--cache', main, '--log-warning', '--gfx-driver=headless',
+         '--set-volume', 'scripts=' .. scripts, '--set-volume', 'temp=' .. isolated_temp })
+      assert(code is 0 and output.find('IMPORT_IDENTITY_CONTEXT_OK') != nil, output)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Indexed imported interfaces must preserve direct namespace members, nested qualification, joined dependencies and
+-- one-time activation across cold and warm module-cache processes.
+
+@Test function ImportedInterfaceLookupIndexes()
+   local scripts = glRoot .. 'interface_lookup_scripts/'
+   local modules = scripts .. 'interface_lookup/'
+   local isolated_temp = glRoot .. 'interface_lookup_temp/'
+   local scripts_folder <close> = obj.new('file', { path=scripts, flags=FL_NEW|FL_FOLDER })
+   local modules_folder <close> = obj.new('file', { path=modules, flags=FL_NEW|FL_FOLDER })
+   local temp_folder <close> = obj.new('file', { path=isolated_temp, flags=FL_NEW|FL_FOLDER })
+   local main = glRoot .. 'interface_lookup_main.tiri'
+
+   write_file(modules .. 'base.tiri', [[
+namespace interfaceLookup { child={} }
+struct InterfaceLookupRecord Value: int end
+enum INTERFACE_LOOKUP_MODE { READY = 43 }
+enum INTERFACE_LOOKUP_MODE { CACHED = 47 }
+global glInterfaceLookupRuns = (glInterfaceLookupRuns or 0) + 1
+interfaceLookup.initialisations = glInterfaceLookupRuns
+interfaceLookup.scalar = 19
+function interfaceLookup.call(Value:num):num return Value + 23 end
+global function interface_lookup_record(Value:struct<InterfaceLookupRecord>):struct<InterfaceLookupRecord>
+   return Value
+end
+interfaceLookup.child.hidden = 29
+]])
+   write_file(modules .. 'extension.tiri', [[
+import 'interface_lookup/base'
+namespace interfaceLookup
+interfaceLookup.joined = 31
+]])
+   write_file(modules .. 'left.tiri', [[
+import 'interface_lookup/extension'
+namespace interfaceLookup
+interfaceLookup.left = 37
+]])
+   write_file(modules .. 'right.tiri', [[
+import 'interface_lookup/extension'
+namespace interfaceLookup
+interfaceLookup.right = 41
+]])
+   write_file(main, [=[
+import 'interface_lookup/left', 'interface_lookup/right', 'interface_lookup/extension', 'interface_lookup/base'
+local imported_record = struct<InterfaceLookupRecord> { Value=42 }
+assert(interfaceLookup.scalar is 19, 'A direct scalar member must survive interface installation')
+assert(interfaceLookup.call(19) is 42, 'A direct callable member must retain its signature and value')
+assert(interface_lookup_record(imported_record).Value is 42,
+   'An imported structure declaration and callable contract must survive interface installation')
+assert(INTERFACE_LOOKUP_MODE_READY is 43, 'An imported enum constant must survive interface installation')
+assert(INTERFACE_LOOKUP_MODE_CACHED is 47,
+   'Members from repeated imported enum prefixes must survive interface installation')
+assert(interfaceLookup.child.hidden is 29, 'A nested qualified export must remain available at its nested path')
+assert(interfaceLookup.hidden is nil, 'A nested qualified export must not appear as a direct namespace member')
+assert(interfaceLookup.joined is 31 and interfaceLookup.left is 37 and interfaceLookup.right is 41,
+   'Namespace joins from repeated dependencies must retain every first-seen member')
+assert(interfaceLookup.initialisations is 1 and glInterfaceLookupRuns is 1,
+   'Diamond and duplicate imports must activate the base module exactly once')
+
+local valid = debug.validate([[import 'interface_lookup/base'
+local answer:num = interfaceLookup.call(interfaceLookup.scalar)]], { path=arg('validation_path') })
+assert(valid.success and #valid.diagnostics is 0, 'Direct imported members must validate from the installed interface')
+
+local invalid = debug.validate([[import 'interface_lookup/base'
+local wrong:str = interfaceLookup.scalar]], { path=arg('validation_path') })
+assert(not invalid.success and #invalid.diagnostics is 1,
+   'Indexed direct-member metadata must retain deterministic static diagnostics')
+assert(invalid.diagnostics[0].message.find('cannot assign', 0, true) != nil,
+   'The indexed direct-member diagnostic must preserve its type mismatch message')
+print('IMPORT_INTERFACE_LOOKUP_OK')
+]=])
+
+   local expected = ''
+   for pass in {0 to 2} do
+      local code, output = child(array<str> { '--cache', main, 'validation_path=' .. glRoot .. 'validation.tiri',
+         '--set-volume', 'scripts=' .. scripts, '--set-volume', 'temp=' .. isolated_temp, '--log-warning' })
+      assert(code is 0, output)
+      assert(output.count('IMPORT_INTERFACE_LOOKUP_OK') is 1, output)
+      if pass is 0 then expected = output
+      else assert(output is expected, 'Cold and warm imported-interface behaviour and diagnostics must match') end
    end
 end
 

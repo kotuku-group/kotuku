@@ -15,11 +15,14 @@
 #include <string_view>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include "lj_obj.h"
 #include "lj_err.h"
 #include "../debug/filesource.h"
 #include "func_state.h"
+#include "../lib/load.h"
+#include "../../../import_module_cache.h"
 
 #ifdef INCLUDE_TIPS
 #include <memory>
@@ -51,6 +54,49 @@ enum class GlobalContractPolicy : uint8_t {
    Advisory,
    Enforced,
    Variant
+};
+
+struct ImportModuleCompilationRecord {
+   std::string lookup_identity;
+   std::string compiled_identity;
+   std::string interface_bytes;
+   std::vector<uint32_t> dependencies;
+   GCproto *initialiser = nullptr;
+   uint8_t source_index = 0;
+};
+
+struct ImportModuleCompilationFrame {
+   std::string lookup_identity;
+   std::string compiled_identity;
+   std::vector<uint32_t> dependencies;
+};
+
+struct ImportedModuleCompilationCounters {
+   uint32_t unique_units = 0;
+   uint32_t lookup_attempts = 0;
+   uint32_t source_parses = 0;
+   uint32_t assignment_visits = 0;
+   uint32_t static_discovery_visits = 0;
+   uint32_t static_propagation_visits = 0;
+   uint32_t type_analysis_visits = 0;
+   uint32_t interface_preparations = 0;
+   uint32_t interface_finalisations = 0;
+   uint32_t interface_encodes = 0;
+   uint32_t interface_assembly_probes = 0;
+   uint32_t interface_namespace_export_visits = 0;
+   uint32_t initialiser_emissions = 0;
+   uint32_t root_normalisation_traversals = 0;
+   uint32_t root_normalisation_edges = 0;
+   uint32_t staging_metadata_roots = 0;
+   uint64_t staging_compilation_source_bytes = 0;
+   uint64_t staging_struct_manifest_bytes = 0;
+   uint64_t staging_import_module_bundle_bytes = 0;
+   uint64_t staging_import_module_table_bytes = 0;
+};
+
+struct ImportedEnumDeclaration {
+   std::string source;
+   tiri::import_cache::EnumDescriptor descriptor;
 };
 
 enum class ArraySizeKind : uint8_t {
@@ -145,10 +191,22 @@ public:
    std::vector<CompilationSourceRecord> compilation_sources;
    std::vector<std::string> compilation_struct_roots;
    std::vector<std::string> compilation_structs;
+   std::vector<ImportedEnumDeclaration> imported_enum_declarations;
    std::vector<uint32_t> loaded_structs;
    std::vector<uint8_t> bytecode_struct_manifest;
+   std::vector<uint8_t> bytecode_import_module_bundle;
+   std::vector<tiri::import_cache::RootModuleRecord> bytecode_import_module_records;
+   std::vector<ImportModuleCompilationRecord> import_module_records;
+   std::vector<ImportModuleCompilationFrame> import_module_stack;
+   std::vector<int> import_module_anchors;
+   std::vector<GCproto *> import_module_staging_roots;
+   tiri::import_cache::LifecycleCounters import_cache_counters;
+   ImportedModuleCompilationCounters imported_module_counters;
+   uint32_t static_analysis_generation = 0;
    bool dynamic_struct_reference = false;
    bool loaded_structs_committed = false;
+   BytecodeLoadPolicy bytecode_load_policy = BytecodeLoadPolicy::Install;
+   BytecodeLoadOperationCounters bytecode_load_operations;
 
    GCstr *    chunk_name;     // Current chunk name (interned string).
    const char *chunk_arg;     // Chunk name argument.
@@ -161,6 +219,9 @@ public:
    MSize      size_bc_stack;  // Size of bytecode stack.
    uint32_t   level;          // Syntactical nesting level.
    uint8_t    bytecode_version = 0; // Private bytecode format version while reading a binary chunk.
+
+   void register_import_module_staging_root(GCproto *Prototype);
+   void release_import_module_staging_metadata() noexcept;
    uint32_t   bytecode_prototype_count = 0; // Structural reader resource accounting.
    uint64_t   bytecode_allocation = 0;
    uint64_t   bytecode_validation_work = 0;

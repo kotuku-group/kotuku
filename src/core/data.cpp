@@ -230,7 +230,6 @@ std::atomic_uint8_t glLogCallbackCount = 0;
    int16_t glLogLevel = 0;
 #endif
 int16_t glMaxDepth  = 20; // Thread global
-bool glShowIO       = false;
 bool glPrivileged   = false;
 bool glSync         = false;
 bool glLogThreads   = false;

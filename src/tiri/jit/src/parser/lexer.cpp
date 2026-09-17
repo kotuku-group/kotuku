@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "lj_obj.h"
+#include "lauxlib.h"
 #include "lj_gc.h"
 #include "lj_err.h"
 #include "lj_buf.h"
@@ -34,6 +35,7 @@
 #include "lj_strscan.h"
 #include "lj_strfmt.h"
 #include "../bytecode/lj_bcdump.h"
+#include "../runtime/import_module_graph.h"
 
 //********************************************************************************************************************
 // Compile-time token name generation using TOKEN_DEFINITIONS from lexer.h
@@ -1829,11 +1831,39 @@ LexState::LexState(lua_State* L, lua_Reader Rfunc, void* Rdata, std::string_view
 }
 
 //********************************************************************************************************************
+// Imported-module staging metadata ownership.
+
+void LexState::register_import_module_staging_root(GCproto *Prototype)
+{
+   if (not Prototype or std::ranges::find(this->import_module_staging_roots, Prototype) !=
+       this->import_module_staging_roots.end()) return;
+   this->import_module_staging_roots.push_back(Prototype);
+}
+
+void LexState::release_import_module_staging_metadata() noexcept
+{
+   if (not this->L) return;
+   for (GCproto *prototype : this->import_module_staging_roots) {
+      const ProtoRootMetadataSize size = measure_proto_root_metadata(prototype);
+      if (size.total()) this->imported_module_counters.staging_metadata_roots++;
+      this->imported_module_counters.staging_compilation_source_bytes += size.compilation_sources;
+      this->imported_module_counters.staging_struct_manifest_bytes += size.struct_manifest;
+      this->imported_module_counters.staging_import_module_bundle_bytes += size.import_module_bundle;
+      this->imported_module_counters.staging_import_module_table_bytes += size.import_module_table;
+      release_proto_root_metadata(G(this->L), prototype);
+   }
+   this->import_module_staging_roots.clear();
+}
+
+//********************************************************************************************************************
 // LexState destructor
 
 LexState::~LexState()
 {
    if (not this->L) return;  // Not properly initialised
+
+   this->release_import_module_staging_metadata();
+   for (int reference : this->import_module_anchors) luaL_unref(this->L, LUA_REGISTRYINDEX, reference);
 
    if (not this->loaded_structs_committed) {
       for (uint32_t key : this->loaded_structs) this->L->struct_declarations.erase(key);

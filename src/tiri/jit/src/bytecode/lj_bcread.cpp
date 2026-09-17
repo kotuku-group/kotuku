@@ -14,12 +14,14 @@
 #include "lj_bc.h"
 #include "../parser/lexer.h"
 #include "lj_bcdump.h"
+#include "../runtime/import_module_graph.h"
 #include "lj_state.h"
 #include "lj_strfmt.h"
 #include "lj_meta.h"
 #include "lj_contract.h"
 #include "../debug/lj_debug.h"
 #include "../../../defs.h"
+#include "../../../import_module_bundle.h"
 
 #include <limits>
 #include <vector>
@@ -430,7 +432,7 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
       if (op >= BC__MAX) bcread_error(State, ErrMsg::BCBAD);
       if (op IS BC_BFUNC) {
          BuiltinCallableID id = BuiltinCallableID(bc_d(bc[i]));
-         if (not builtin_callable_valid(id) or not lj_builtin_callable(State->L, id)) {
+         if (not builtin_callable_loadable(id) or not lj_builtin_callable(State->L, id)) {
             bcread_error(State, ErrMsg::BCBAD);
          }
       }
@@ -1191,6 +1193,7 @@ static void bcread_exceptions(LexState *State, GCproto *Proto)
 
 GCproto *lj_bcread_proto(LexState *State)
 {
+   State->bytecode_load_operations.prototype_decodes++;
    GCproto *pt;
    MSize framesize, numparams, flags, sizeuv, sizekgc, sizekn, sizebc, sizept;
    MSize ofsk, ofsuv, ofssig, ofsdep, ofsdbg;
@@ -1406,6 +1409,7 @@ static int bcread_header(LexState *State)
        source_count > FILESOURCE_MAX_COUNT or source_root != 0) return 0;
    State->compilation_sources.clear();
    State->compilation_sources.reserve(source_count);
+   State->bytecode_load_operations.source_records_decoded += source_count;
    bcread_account(State, source_count);
    bcread_reserve_allocation(State, source_block_size + source_count * sizeof(CompilationSourceRecord));
    for (uint32_t i = 0; i < source_count; ++i) {
@@ -1452,6 +1456,24 @@ static int bcread_header(LexState *State)
    if (cursor != end) bcread_error(State, ErrMsg::BCBAD);
    State->p = (const char *)end;
 
+   const MSize module_block_size = bcread_uleb128(State);
+   if (module_block_size < 2 or module_block_size > tiri::import_cache::MAX_ROOT_BUNDLE_SIZE) return 0;
+   bcread_need(State, module_block_size);
+   bcread_account(State, module_block_size);
+   bcread_reserve_allocation(State, module_block_size);
+   std::string_view module_bytes(State->p, module_block_size);
+   std::vector<tiri::import_cache::RootModuleRecord> modules;
+   if (tiri::import_cache::decode_root_module_bundle(module_bytes, modules) !=
+       tiri::cache::FormatError::OKAY) return 0;
+   for (const auto &module : modules) {
+      if (module.SourceIndex >= State->compilation_sources.size() and
+          module.SourceIndex != FILESOURCE_OVERFLOW_INDEX) return 0;
+   }
+   State->bytecode_import_module_bundle.assign(
+      (const uint8_t *)State->p, (const uint8_t *)State->p + module_block_size);
+   State->bytecode_import_module_records = std::move(modules);
+   State->p += module_block_size;
+
    const MSize struct_block_size = bcread_uleb128(State);
    if (struct_block_size < 2 or struct_block_size > BCREAD_MAX_VALIDATION_WORK) return 0;
    bcread_need(State, struct_block_size);
@@ -1459,12 +1481,6 @@ static int bcread_header(LexState *State)
    bcread_reserve_allocation(State, struct_block_size);
    State->bytecode_struct_manifest.assign((const uint8_t *)State->p,
       (const uint8_t *)State->p + struct_block_size);
-   std::string detail;
-   ERR struct_error = load_declared_struct_manifest(State->L,
-      std::string_view(State->p, struct_block_size), State->loaded_structs, &detail);
-   if (struct_error != ERR::Okay) {
-      bcread_error(State, ErrMsg::BCBAD);
-   }
    State->p += struct_block_size;
    return 1;  //  Ok.
 }
@@ -1484,8 +1500,12 @@ GCproto *lj_bcread(LexState *State)
    State->bytecode_prototype_depths.clear();
    State->compilation_sources.clear();
    State->bytecode_struct_manifest.clear();
+   State->bytecode_import_module_bundle.clear();
+   State->bytecode_import_module_records.clear();
    State->loaded_structs.clear();
    State->loaded_structs_committed = false;
+   State->bytecode_load_operations = {};
+   State->bytecode_load_operations.payload_loads = 1;
 
    // Check for a valid bytecode dump header.
    if (!bcread_header(State)) bcread_error(State, ErrMsg::BCFMT);
@@ -1517,19 +1537,74 @@ GCproto *lj_bcread(LexState *State)
       incr_top(L);
    }
 
-   if ((State->pe != State->p and !State->endmark) or L->top - 1 != bcread_oldtop(L, ls) or
-       State->bytecode_prototype_depths.size() != 1)
+   const size_t module_count = State->bytecode_import_module_records.size();
+   TValue *old_top = bcread_oldtop(L, ls);
+   if ((State->pe != State->p and !State->endmark) or L->top - ptrdiff_t(module_count + 1) != old_top or
+       State->bytecode_prototype_depths.size() != module_count + 1)
       bcread_error(State, ErrMsg::BCBAD);
 
    // Publish source records only after all bytecode validation has succeeded.  Keep the root on the stack while
    // installing interned strings and state records can allocate.
    GCproto *root = protoV(L->top - 1);
-   attach_loaded_compilation_sources(L, root, State->compilation_sources);
+   std::vector<GCproto *> module_roots;
+   module_roots.reserve(module_count);
+   for (size_t i = 0; i < module_count; ++i) {
+      GCproto *prototype = protoV(old_top + ptrdiff_t(i));
+      if (prototype->sizeuv != 0) bcread_error(State, ErrMsg::BCBAD);
+      module_roots.push_back(prototype);
+   }
+
+   ImportModuleDirectoryLayout layout;
+   if (not measure_import_module_directory(
+       State->bytecode_import_module_records, module_roots, layout)) bcread_error(State, ErrMsg::BCBAD);
+   bcread_account(State, size_t(layout.entry_count) + layout.dependency_count);
+   if (layout.entry_count) bcread_reserve_allocation(State, layout.byte_size);
+
+   std::vector<tiri::import_cache::RootModuleRecordLocation> locations;
+   const std::string_view module_bytes((const char *)State->bytecode_import_module_bundle.data(),
+      State->bytecode_import_module_bundle.size());
+   if (tiri::import_cache::index_root_module_bundle(module_bytes, locations) !=
+       tiri::cache::FormatError::OKAY or locations.size() != State->bytecode_import_module_records.size()) {
+      bcread_error(State, ErrMsg::BCBAD);
+   }
+   for (size_t i = 0; i < locations.size(); ++i) {
+      const auto &location = locations[i];
+      if (location.InterfaceOffset > module_bytes.size() or
+          location.InterfaceSize > module_bytes.size() - location.InterfaceOffset or
+          module_bytes.substr(location.InterfaceOffset, location.InterfaceSize) !=
+             State->bytecode_import_module_records[i].InterfaceBytes) bcread_error(State, ErrMsg::BCBAD);
+   }
+
+   std::string detail;
+   const std::string_view structure_bytes((const char *)State->bytecode_struct_manifest.data(),
+      State->bytecode_struct_manifest.size());
+   const ERR structure_error = State->bytecode_load_policy IS BytecodeLoadPolicy::ValidateOnly ?
+      validate_declared_struct_manifest(L, structure_bytes, &detail) :
+      load_declared_struct_manifest(L, structure_bytes, State->loaded_structs, &detail);
+   if (structure_error != ERR::Okay) bcread_error(State, ErrMsg::BCBAD);
+
+   if (State->bytecode_load_policy IS BytecodeLoadPolicy::ValidateOnly) {
+      L->top = old_top;
+      return root;
+   }
+
+   State->bytecode_load_operations.structure_commits += uint32_t(State->loaded_structs.size());
+   attach_loaded_compilation_sources(
+      L, root, State->compilation_sources, module_roots, &State->bytecode_load_operations);
    auto manifest = (uint8_t *)lj_mem_new(L, MSize(State->bytecode_struct_manifest.size()));
    memcpy(manifest, State->bytecode_struct_manifest.data(), State->bytecode_struct_manifest.size());
    setmref(root->struct_manifest, manifest);
    root->struct_manifest_size = uint32_t(State->bytecode_struct_manifest.size());
+   auto module_bundle = (uint8_t *)lj_mem_new(L, MSize(State->bytecode_import_module_bundle.size()));
+   memcpy(module_bundle, State->bytecode_import_module_bundle.data(), State->bytecode_import_module_bundle.size());
+   setmref(root->import_module_bundle, module_bundle);
+   root->import_module_bundle_size = uint32_t(State->bytecode_import_module_bundle.size());
+   if (module_count) {
+      if (not install_import_module_directory(
+          L, root, State->bytecode_import_module_records, module_roots, layout)) bcread_error(State, ErrMsg::BCBAD);
+      State->bytecode_load_operations.executable_directory_allocations++;
+   }
    State->loaded_structs_committed = true;
-   L->top--;
+   L->top = old_top;
    return root;
 }

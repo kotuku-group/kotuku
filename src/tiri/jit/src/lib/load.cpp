@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string>
+#include <utility>
 
 #define lj_load_c
 #define LUA_CORE
@@ -25,6 +26,7 @@
 #include "lj_bcdump.h"
 #include "../parser/parser.h"
 #include "../../defs.h"
+#include "load.h"
 
 //********************************************************************************************************************
 // Load Lua source code and bytecode
@@ -53,14 +55,18 @@ static TValue * cpparser(lua_State *L, lua_CFunction dummy, APTR ud)
 // Stack-allocated C++ objects with non-trivial destructors would leak their internal allocations (bc_stack,
 // vstack) when a parse error occurs.
 
-extern int lua_load(lua_State *Lua, std::string_view Source, CSTRING SourceName)
+static int load(lua_State *Lua, std::string_view Source, CSTRING SourceName, BytecodeLoadMetadata *Metadata,
+   BytecodeLoadPolicy Policy = BytecodeLoadPolicy::Install)
 {
+   if (Metadata) *Metadata = {};
+
    if (Lua->parser_diagnostics) {
       delete Lua->parser_diagnostics;
       Lua->parser_diagnostics = nullptr;
    }
 
    auto *ls = new LexState(Lua, Source, SourceName, std::nullopt);
+   ls->bytecode_load_policy = Policy;
 
    // Set diagnose mode if enabled - this allows lexer to collect errors instead of throwing
 
@@ -69,6 +75,13 @@ extern int lua_load(lua_State *Lua, std::string_view Source, CSTRING SourceName)
 
    auto status = lj_vm_cpcall(Lua, nullptr, ls, cpparser); // Call the parser
 
+   BytecodeLoadMetadata completed;
+   if (not status and Metadata and ls->is_bytecode) {
+      completed.ImportedModules = std::move(ls->bytecode_import_module_records);
+      completed.Operations = ls->bytecode_load_operations;
+      completed.Bytecode = true;
+   }
+
    // Cleanup any pending import lexers left behind if parsing was interrupted by SEH
    for (void *lex : Lua->pending_import_lexers) {
       delete (LexState *)lex;
@@ -76,8 +89,26 @@ extern int lua_load(lua_State *Lua, std::string_view Source, CSTRING SourceName)
    Lua->pending_import_lexers.clear();
 
    delete ls;  // Manual cleanup required - SEH doesn't call C++ destructors
+   if (not status and Metadata) *Metadata = std::move(completed);
    lj_gc_check(Lua);
    return status;
+}
+
+extern int lua_load(lua_State *Lua, std::string_view Source, CSTRING SourceName)
+{
+   return load(Lua, Source, SourceName, nullptr);
+}
+
+extern int lj_load_with_bytecode_metadata(
+   lua_State *Lua, std::string_view Source, CSTRING SourceName, BytecodeLoadMetadata &Metadata)
+{
+   return load(Lua, Source, SourceName, &Metadata);
+}
+
+extern int lj_validate_bytecode(
+   lua_State *Lua, std::string_view Source, CSTRING SourceName, BytecodeLoadMetadata &Metadata)
+{
+   return load(Lua, Source, SourceName, &Metadata, BytecodeLoadPolicy::ValidateOnly);
 }
 
 //********************************************************************************************************************

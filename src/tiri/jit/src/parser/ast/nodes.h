@@ -44,8 +44,11 @@
 
 #include "lexer.h"
 #include "../static_type_descriptor.h"
+#include "../../../../import_module_format.h"
+#include "../../../../import_module_bundle.h"
 
 class ParserDiagnostics;
+class InstalledImportInterface;
 
 // Forward declarations for recursive ownership.
 struct ExprNode;
@@ -1039,6 +1042,55 @@ struct CheckStmtPayload {
    ~CheckStmtPayload();
 };
 
+enum class ImportedModuleState : uint8_t {
+   Resolving,
+   Parsed,
+   InterfaceReady,
+   Emitted,
+   Failed
+};
+
+struct ImportedModuleKey {
+   std::string resolved_path;
+   std::string logical_request;
+   bool imported_root = true;
+
+   bool operator==(const ImportedModuleKey &) const = default;
+};
+
+struct ImportedModuleKeyHash {
+   size_t operator()(const ImportedModuleKey &Key) const noexcept {
+      size_t hash = std::hash<std::string>{}(Key.resolved_path);
+      hash ^= std::hash<std::string>{}(Key.logical_request) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+      hash ^= size_t(Key.imported_root) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+      return hash;
+   }
+};
+
+// Definition-level state shared by every non-local import edge in one root compilation.
+struct ImportedModuleUnit {
+   ImportedModuleKey key;
+   ImportedModuleState state = ImportedModuleState::Resolving;
+   std::shared_ptr<BlockStmt> body;
+   std::string module_identity;
+   tiri::import_cache::Identity module_cache_identity;
+   tiri::import_cache::FinalisedInterfacePtr interface_artifact;
+   std::string module_payload;
+   std::shared_ptr<const InstalledImportInterface> installed_interface;
+   std::vector<FuncState::DependencyDescriptor> module_dependencies;
+   std::vector<tiri::import_cache::RootModuleRecord> embedded_modules;
+   uint8_t file_source_idx = 0;
+   bool module_cache_hit = false;
+   bool assignment_resolved = false;
+   bool static_discovered = false;
+   uint32_t static_propagation_generation = 0;
+   bool type_analysed = false;
+   bool unanalysed_lowered = false;
+   bool interface_prepared = false;
+   bool ownership_visited = false;
+   uint32_t compilation_record = UINT32_MAX;
+};
+
 struct ImportEntryPayload {
    ImportEntryPayload() = default;
    ImportEntryPayload(const ImportEntryPayload&) = delete;
@@ -1046,16 +1098,21 @@ struct ImportEntryPayload {
    ImportEntryPayload(ImportEntryPayload&&) noexcept = default;
    ImportEntryPayload& operator=(ImportEntryPayload&&) noexcept = default;
 
-   std::optional<Identifier> namespace_name;  // The local variable name (alias or default)
-   std::string lib_path;                      // Resolved path to library file
-   std::string default_namespace;             // The declared namespace for _LIB lookup
-   std::unique_ptr<BlockStmt> inlined_body;   // Parsed content of imported file
-   uint8_t file_source_idx = 0;               // FileSource index for this imported file
+   std::optional<Identifier> namespace_name;   // The local variable name (alias or default)
+   std::string lib_path;                       // Resolved path to library file
+   std::string default_namespace;              // The declared namespace for _LIB lookup
+   std::unique_ptr<BlockStmt> inlined_body;    // Parsed content of imported file
+   std::shared_ptr<ImportedModuleUnit> module_unit; // Shared definition for a non-local imported module
+   uint8_t file_source_idx = 0;                // FileSource index for this imported file
+   bool module_initialiser = false;            // Execute body through a child prototype for non-local imports
+   bool module_already_imported = false;       // Publish aliases without repeating an earlier module activation
+   bool state_satisfied = false;               // Active state supplies the module; emit no executable reference
+   bool reuses_namespace_binding = false;      // A sibling import already published this registry namespace locally
 
    ~ImportEntryPayload();
 };
 
-// Import statement payload: import 'library' [, 'library'...] - compile-time file inlining
+// Import statement payload: local imports are inlined; non-local imports retain source AST for module initialisers.
 struct ImportStmtPayload {
    ImportStmtPayload() = default;
    ImportStmtPayload(const ImportStmtPayload&) = delete;

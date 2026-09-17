@@ -633,6 +633,13 @@ static void gc_traverse_proto(global_State *g, GCproto* pt)
          gc_mark_str(gco_to_string(gcref(entries[i].declared_namespace)));
       }
    }
+   if (auto table = pt->import_module_table.get<ImportModuleTable>()) {
+      auto entries = import_module_table_entries(table);
+      for (uint32_t i = 0; i < table->entry_count; ++i) {
+         gc_mark_str(gco_to_string(gcref(entries[i].compiled_identity)));
+         if (gcref(entries[i].initialiser)) gc_markobj(g, gcref(entries[i].initialiser));
+      }
+   }
    for (i = -(ptrdiff_t)pt->sizekgc; i < 0; i++)  //  Mark collectable consts.
       gc_markobj(g, proto_kgc(pt, i));
    if (pt->trace) gc_marktrace(g, pt->trace);

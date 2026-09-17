@@ -267,6 +267,11 @@ private:
    ParserResult<ExpDesc> emit_range_expr(const RangeExprPayload& payload);
    ParserResult<ExpDesc> emit_choose_expr(const ChooseExprPayload& payload);
    ParserResult<ExpDesc> emit_function_expr(const FunctionExprPayload& payload, GCstr* funcname = nullptr);
+   ParserResult<ExpDesc> emit_function_body(
+      const FunctionExprPayload& payload, const BlockStmt& body, GCstr* funcname = nullptr,
+      bool InheritModuleDependencies = false, GCproto **Prototype = nullptr,
+      const std::vector<FuncState::DependencyDescriptor> *ModuleDependencies = nullptr,
+      bool Detached = false);
    ParserResult<IrEmitUnit> emit_annotation_registration(BCReg func_reg, const std::vector<AnnotationEntry>& annotations, GCstr* funcname);
    ParserResult<ExpDesc> emit_expression_list(const ExprNodeList& expressions, BCReg& count);
    ParserResult<ExpDesc> emit_lvalue_expr(
