@@ -1,0 +1,2 @@
+import 'tests/i03_cycle_direct'
+local cycle_value = true

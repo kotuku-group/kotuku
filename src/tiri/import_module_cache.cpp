@@ -9,7 +9,6 @@
 #include <atomic>
 #include <format>
 #include <limits>
-#include <ranges>
 
 namespace tiri::import_cache {
 namespace {
@@ -22,6 +21,7 @@ std::atomic<uint64_t> glModuleTemporarySequence = 0;
 
 #ifdef UNIT_TESTS
 ModulePublishFailure glModulePublishFailure = ModulePublishFailure::NIL;
+bool glForceSnapshotFinalSizeChange = false;
 
 bool fail_publication(ModulePublishFailure Stage)
 {
@@ -55,6 +55,12 @@ ERR read_open_file(objFile *File, std::string &Output, int64_t &ModifiedHint)
 
    int64_t final_size = 0;
    if (File->getSize(final_size) != ERR::Okay or final_size != initial_size) return ERR::Read;
+#ifdef UNIT_TESTS
+   if (glForceSnapshotFinalSizeChange) {
+      glForceSnapshotFinalSizeChange = false;
+      return ERR::Read;
+   }
+#endif
    ModifiedHint = 0;
    File->getTimestamp(ModifiedHint);
    return ERR::Okay;
@@ -204,21 +210,6 @@ bool try_cache(const std::string &Path, const Identity &Expected, const Identity
    return true;
 }
 
-//********************************************************************************************************************
-
-// Keeps the active source on the caller's import stack for the lifetime of a compilation.
-
-class ImportStackGuard {
-public:
-   ImportStackGuard(std::vector<std::string> *Stack, const std::string &Path) : stack_(Stack) {
-      if (stack_) stack_->push_back(Path);
-   }
-   ~ImportStackGuard() { if (stack_) stack_->pop_back(); }
-
-private:
-   std::vector<std::string> *stack_;
-};
-
 } // namespace
 
 #ifdef UNIT_TESTS
@@ -227,6 +218,13 @@ private:
 void set_module_publish_failure(ModulePublishFailure Failure)
 {
    glModulePublishFailure = Failure;
+}
+
+// Forces the final-size validation branch for one source snapshot.
+
+void force_snapshot_final_size_change()
+{
+   glForceSnapshotFinalSizeChange = true;
 }
 #endif
 
@@ -241,107 +239,16 @@ ERR snapshot_source(std::string_view Path, LifecycleCounters &Counters, SourceSn
    objFile::create source_file = { fl::Path(std::string(Path)), fl::Flags(FL::READ) };
    if (not source_file.ok()) return source_file.error;
 
-   int64_t modified_hint = 0;
-   if (auto error = read_open_file(*source_file, Output.Source, modified_hint); error != ERR::Okay) return error;
-   normalise_bom(Output.Source);
+   SourceSnapshot captured;
+   if (auto error = read_open_file(*source_file, captured.Source, captured.Identity.ModifiedHint);
+       error != ERR::Okay) return error;
+   normalise_bom(captured.Source);
 
-   Output.Identity.ResolvedPath.assign(Path);
-   Output.Identity.Size = Output.Source.size();
-   Output.Identity.ModifiedHint = modified_hint;
-   Output.Identity.ContentDigest = cache::content_digest(Output.Source);
+   captured.Identity.ResolvedPath.assign(Path);
+   captured.Identity.Size = captured.Source.size();
+   captured.Identity.ContentDigest = cache::content_digest(captured.Source);
+   Output = std::move(captured);
    Counters.SourceReads++;
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-// Returns a validated cached module or compiles and publishes a replacement from one source snapshot.
-
-ERR load_or_compile_module(const CompilationRequest &Request, const ModuleCompiler &Compile,
-   const IdentityValidator &ValidateIdentity, const PayloadValidator &ValidatePayload,
-   LifecycleCounters &Counters, CompiledModule &Output)
-{
-   kt::Log log(__FUNCTION__);
-   Output = {};
-   if (not Compile or Request.ExpectedIdentity.Source.ResolvedPath.empty() or
-       Request.ExpectedIdentity.LogicalRequest.empty()) return ERR::NullArgs;
-
-   const auto &source_path = Request.ExpectedIdentity.Source.ResolvedPath;
-   if (Request.ImportStack and std::ranges::find(*Request.ImportStack, source_path) != Request.ImportStack->end()) {
-      Output.Diagnostic = "Circular imported-module compilation: " + source_path;
-      return ERR::Loop;
-   }
-
-   SourceSnapshot snapshot;
-   if (auto error = snapshot_source(source_path, Counters, snapshot); error != ERR::Okay) return error;
-
-   Identity expected = Request.ExpectedIdentity;
-   expected.Source = snapshot.Identity;
-   auto selected_path = cache_path(Request.CacheDirectory, expected);
-
-   if (try_cache(selected_path, expected, ValidateIdentity, ValidatePayload, Counters, Output)) {
-      Counters.CacheHits++;
-      log.detail("Imported-module cache hit '%s'.", selected_path.c_str());
-      return ERR::Okay;
-   }
-
-   Counters.LookupMisses++;
-   Counters.SourceCompilations++;
-   log.detail("Imported-module cache miss '%s'.", selected_path.c_str());
-   ImportStackGuard stack_guard(Request.ImportStack, source_path);
-
-   Identity compiled_identity = expected;
-   Interface interface_value;
-   std::string payload;
-   std::string diagnostic;
-   auto error = Compile(snapshot.Source, compiled_identity, interface_value, payload, diagnostic);
-   if (error != ERR::Okay) {
-      Output.Diagnostic = std::move(diagnostic);
-      return error;
-   }
-
-   compiled_identity.Schema = SCHEMA_VERSION;
-   compiled_identity.BuildIdentity = expected.BuildIdentity;
-   compiled_identity.LogicalRequest = expected.LogicalRequest;
-   compiled_identity.Source = expected.Source;
-   compiled_identity.ImportedRoot = true;
-   if (finalise_identity(compiled_identity) != cache::FormatError::OKAY) {
-      Output.Diagnostic = "Compiled imported-module identity is invalid.";
-      return ERR::InvalidData;
-   }
-
-   std::string reason;
-   if (ValidatePayload) {
-      Counters.PayloadValidations++;
-      if (not ValidatePayload(payload, reason)) {
-         Output.Diagnostic = reason.empty() ? "Compiled imported-module bytecode is invalid." : std::move(reason);
-         return ERR::InvalidData;
-      }
-   }
-
-   std::string envelope;
-   if (encode_envelope(compiled_identity, interface_value, payload, envelope) != cache::FormatError::OKAY) {
-      Output.Diagnostic = "Compiled imported-module representation is invalid.";
-      return ERR::InvalidData;
-   }
-
-   Output.CompilationIdentity = std::move(compiled_identity);
-   Output.LookupIdentity = Output.CompilationIdentity.LookupIdentity;
-   Output.CompiledIdentity = Output.CompilationIdentity.CompiledIdentity;
-   Output.CompileTimeInterface = std::move(interface_value);
-   Output.Payload = std::move(payload);
-   Output.CachePath = cache_path(Request.CacheDirectory, Output.CompilationIdentity);
-
-   auto folder_error = CreateFolder(Request.CacheDirectory, PERMIT::USER);
-   if ((folder_error IS ERR::Okay) or (folder_error IS ERR::FileExists)) {
-      Output.PublicationError = write_complete_file(Output.CachePath, envelope, Request.Permissions);
-      if (Output.PublicationError IS ERR::Okay) Counters.Publications++;
-   }
-   else Output.PublicationError = folder_error;
-
-   if (Output.PublicationError != ERR::Okay) {
-      log.warning("Failed to publish imported-module cache '%s': %s", Output.CachePath.c_str(),
-         GetErrorMsg(Output.PublicationError));
-   }
    return ERR::Okay;
 }
 
@@ -358,11 +265,6 @@ ERR lookup_module(const CompilationRequest &Request, const SourceSnapshot &Snaps
        Request.ExpectedIdentity.LogicalRequest.empty()) return ERR::NullArgs;
 
    const auto &source_path = Request.ExpectedIdentity.Source.ResolvedPath;
-   if (Request.ImportStack and std::ranges::find(*Request.ImportStack, source_path) != Request.ImportStack->end()) {
-      Output.Cached.Diagnostic = "Circular imported-module compilation: " + source_path;
-      return ERR::Loop;
-   }
-
    if (Snapshot.Identity.ResolvedPath != source_path) return ERR::InvalidData;
 
    Output.ExpectedIdentity = Request.ExpectedIdentity;
@@ -395,47 +297,32 @@ ERR lookup_module(const CompilationRequest &Request, const IdentityValidator &Va
 }
 
 //********************************************************************************************************************
-// Packages a parser-compiled module for immediate use and best-effort cache publication.
+// Encodes and best-effort publishes a parser-compiled module.
 
 ERR publish_module(const CompilationRequest &Request, const Identity &IdentityValue, const Interface &InterfaceValue,
-   std::string_view Payload, LifecycleCounters &Counters, CompiledModule &Output)
+   std::string_view Payload, LifecycleCounters &Counters, ModulePublication &Output)
 {
-   kt::Log log(__FUNCTION__);
    Output = {};
    if (IdentityValue.Source.ResolvedPath.empty() or IdentityValue.LogicalRequest.empty() or Payload.empty()) {
       return ERR::NullArgs;
    }
 
    Identity final_identity = IdentityValue;
-   if (finalise_identity(final_identity) != cache::FormatError::OKAY) {
-      Output.Diagnostic = "Compiled imported-module identity is invalid.";
-      return ERR::InvalidData;
-   }
+   if (finalise_identity(final_identity) != cache::FormatError::OKAY) return ERR::InvalidData;
 
    std::string envelope;
    if (encode_envelope(final_identity, InterfaceValue, Payload, envelope) != cache::FormatError::OKAY) {
-      Output.Diagnostic = "Compiled imported-module representation is invalid.";
       return ERR::InvalidData;
    }
 
-   Output.CompilationIdentity = std::move(final_identity);
-   Output.LookupIdentity = Output.CompilationIdentity.LookupIdentity;
-   Output.CompiledIdentity = Output.CompilationIdentity.CompiledIdentity;
-   Output.CompileTimeInterface = InterfaceValue;
-   Output.Payload.assign(Payload);
-   Output.CachePath = cache_path(Request.CacheDirectory, Output.CompilationIdentity);
+   Output.CachePath = cache_path(Request.CacheDirectory, final_identity);
 
    auto folder_error = CreateFolder(Request.CacheDirectory, PERMIT::USER);
    if ((folder_error IS ERR::Okay) or (folder_error IS ERR::FileExists)) {
-      Output.PublicationError = write_complete_file(Output.CachePath, envelope, Request.Permissions);
-      if (Output.PublicationError IS ERR::Okay) Counters.Publications++;
+      Output.StorageError = write_complete_file(Output.CachePath, envelope, Request.Permissions);
+      if (Output.StorageError IS ERR::Okay) Counters.Publications++;
    }
-   else Output.PublicationError = folder_error;
-
-   if (Output.PublicationError != ERR::Okay) {
-      log.trace("Imported-module in-memory use after publication failure '%s': %s.", Output.CachePath.c_str(),
-         GetErrorMsg(Output.PublicationError));
-   }
+   else Output.StorageError = folder_error;
    return ERR::Okay;
 }
 

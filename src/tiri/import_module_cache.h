@@ -33,7 +33,6 @@ struct CompilationRequest {
    Identity ExpectedIdentity;
    std::string CacheDirectory = "temp:tiri/cache/";
    PERMIT Permissions = PERMIT::USER;
-   std::vector<std::string> *ImportStack = nullptr;
 };
 
 struct CompiledModule {
@@ -44,8 +43,12 @@ struct CompiledModule {
    std::string Payload;
    std::string CachePath;
    std::string Diagnostic;
-   ERR PublicationError = ERR::Okay;
    bool CacheHit = false;
+};
+
+struct ModulePublication {
+   std::string CachePath;
+   ERR StorageError = ERR::Okay;
 };
 
 struct ModuleLookup {
@@ -55,20 +58,12 @@ struct ModuleLookup {
    std::vector<RootModuleRecord> EmbeddedModules;
 };
 
-using ModuleCompiler = std::function<ERR(std::string_view, Identity &, Interface &, std::string &, std::string &)>;
 using IdentityValidator = std::function<bool(const Identity &, std::string &)>;
 using PayloadValidator = std::function<bool(std::string_view, std::string &)>;
 
-// Resolve the request before calling this service.  The service owns the remaining lifecycle: a single source
-// snapshot, exact candidate validation, cold compilation, validated in-memory handoff and best-effort publication.
-// ModuleCompiler is expected to compile in an isolated state and transfer only the portable interface and bytecode.
-
-[[nodiscard]] ERR load_or_compile_module(const CompilationRequest &, const ModuleCompiler &,
-   const IdentityValidator &, const PayloadValidator &, LifecycleCounters &, CompiledModule &);
-
-// Split lookup/publication is used by the parser: a cold module must first participate in the importing root's
-// analysis before its finished initialiser prototype can be serialised.  Snapshot-driven lookup validates the cache
-// against bytes owned by the current compilation; publication accepts only the identity derived from that snapshot.
+// Imported-module caching follows the parser lifecycle: snapshot-driven lookup validates a candidate against bytes
+// owned by the current compilation, and best-effort publication accepts the parser's finished identity, portable
+// interface and serialised initialiser.
 
 [[nodiscard]] ERR snapshot_source(std::string_view, LifecycleCounters &, SourceSnapshot &);
 [[nodiscard]] ERR lookup_module(const CompilationRequest &, const SourceSnapshot &, const IdentityValidator &,
@@ -76,11 +71,12 @@ using PayloadValidator = std::function<bool(std::string_view, std::string &)>;
 [[nodiscard]] ERR lookup_module(const CompilationRequest &, const IdentityValidator &, const PayloadValidator &,
    LifecycleCounters &, ModuleLookup &);
 [[nodiscard]] ERR publish_module(const CompilationRequest &, const Identity &, const Interface &, std::string_view,
-   LifecycleCounters &, CompiledModule &);
+   LifecycleCounters &, ModulePublication &);
 
 #ifdef UNIT_TESTS
 enum class ModulePublishFailure : uint8_t { NIL, CREATE, WRITE, FLUSH, MOVE };
 void set_module_publish_failure(ModulePublishFailure);
+void force_snapshot_final_size_change();
 #endif
 
 } // namespace tiri::import_cache

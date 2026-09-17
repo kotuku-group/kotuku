@@ -55,6 +55,7 @@
 #include "../runtime/lj_array.h"
 #include "../../../import_module_format.h"
 #include "../../../import_module_bundle.h"
+#include "../../../import_module_cache.h"
 #include "../../../defs.h"
 
 static extTiri *glTestScript = nullptr;
@@ -12847,11 +12848,98 @@ static bool test_import_module_dependency_invalidation(kt::Log &Log)
    return execute_fixture("dependency_v1/", false) and execute_fixture("dependency_v2/", true);
 }
 
+//********************************************************************************************************************
+// Cold imported-module cycles are diagnosed by parser compilation state, which must unwind cleanly for the next load.
+
+static bool test_import_module_cycle_recovery(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) return false;
+   luaL_openlibs(lua);
+
+   auto expect_cycle = [&](std::string_view Source, const char *Name) {
+      if (lua_load(lua, Source, Name) IS 0) {
+         Log.error("%s imported-module cycle compiled successfully", Name);
+         lua_pop(lua, 1);
+         return false;
+      }
+      const char *message = lua_tostring(lua, -1);
+      const auto *diagnostics = (const ParserDiagnostics *)lua->parser_diagnostics;
+      const bool diagnosed = diagnostics and std::ranges::any_of(diagnostics->entries(), [](const auto &Diagnostic) {
+         return Diagnostic.message.find("Circular import detected") != std::string::npos;
+      });
+      if (not diagnosed) Log.error("%s returned the wrong cycle diagnostic: %s", Name, message ? message : "<nil>");
+      lua_pop(lua, 1);
+      return diagnosed;
+   };
+
+   if (not expect_cycle("import 'tests/i03_cycle_direct'\nreturn true", "i03-direct-cycle")) return false;
+   constexpr std::string_view valid_source =
+      "global i01_boundary_trace = ''\nimport 'tests/i01_direct'\nreturn i01_boundary_trace";
+   if (lua_load(lua, valid_source, "i03-cycle-recovery") != 0 or lua_pcall(lua, 0, 1, 0) != 0 or
+       not lua_isstring(lua, -1) or lua_tostringview(lua, -1) != "D") {
+      Log.error("Parser state did not recover after an imported-module cycle: %s", lua_tostring(lua, -1));
+      return false;
+   }
+   lua_pop(lua, 1);
+   return expect_cycle("import 'tests/i03_cycle_indirect_a'\nreturn true", "i03-indirect-cycle");
+}
+
+//********************************************************************************************************************
+// A storage failure after successful cold compilation must not discard that compilation's executable module.
+
+static bool test_import_module_publication_failure_lifecycle(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      "global i01_boundary_trace = ''\nimport 'tests/i01_direct'\nreturn i01_boundary_trace";
+   if (not remove_import_module_fixture_caches(source, "i03-publication-failure-probe", Log)) return false;
+   auto cleanup = kt::deferred_call([&] {
+      (void)remove_import_module_fixture_caches(source, "i03-publication-failure-cleanup", Log);
+   });
+
+   tiri::import_cache::set_module_publish_failure(tiri::import_cache::ModulePublishFailure::WRITE);
+   LuaStateHolder failed_publication_holder;
+   lua_State *failed_publication = failed_publication_holder.get();
+   if (not failed_publication) return false;
+   luaL_openlibs(failed_publication);
+   if (lua_load(failed_publication, source, "i03-publication-failure") != 0) {
+      Log.error("A cache publication failure invalidated cold compilation: %s", lua_tostring(failed_publication, -1));
+      return false;
+   }
+   const auto failed_counters = parser_last_import_cache_counters();
+   if (failed_counters.SourceCompilations != 1 or failed_counters.Publications != 0 or
+       lua_pcall(failed_publication, 0, 1, 0) != 0 or not lua_isstring(failed_publication, -1) or
+       lua_tostringview(failed_publication, -1) != "D") {
+      Log.error("A failed publication did not retain the cold module for in-memory execution");
+      return false;
+   }
+
+   LuaStateHolder retry_holder;
+   lua_State *retry = retry_holder.get();
+   if (not retry) return false;
+   luaL_openlibs(retry);
+   if (lua_load(retry, source, "i03-publication-retry") != 0) {
+      Log.error("The post-failure import retry did not compile: %s", lua_tostring(retry, -1));
+      return false;
+   }
+   const auto retry_counters = parser_last_import_cache_counters();
+   if (retry_counters.SourceCompilations != 1 or retry_counters.LookupMisses != 1 or
+       retry_counters.Publications != 1 or lua_pcall(retry, 0, 1, 0) != 0 or not lua_isstring(retry, -1) or
+       lua_tostringview(retry, -1) != "D") {
+      Log.error("A fresh run did not recompile and publish after the prior storage failure");
+      return false;
+   }
+   return true;
+}
+
 }  // namespace
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 115> tests = { {
+   constexpr std::array<TestCase, 117> tests = { {
+      { "import_module_cycle_recovery", test_import_module_cycle_recovery },
+      { "import_module_publication_failure_lifecycle", test_import_module_publication_failure_lifecycle },
       { "import_module_executable_lifetime", test_import_module_executable_lifetime },
       { "import_module_executable_table", test_import_module_executable_table },
       { "import_module_executable_warm_diamond", test_import_module_executable_warm_diamond },

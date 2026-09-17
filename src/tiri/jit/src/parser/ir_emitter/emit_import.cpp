@@ -527,10 +527,15 @@ ParserResult<IrEmitUnit> IrEmitter::emit_import_entry(const ImportEntryPayload &
                   if (prepare_import_module_dump(this->lex_state, module_prototype, payload)) {
                      tiri::import_cache::CompilationRequest request;
                      request.ExpectedIdentity = unit->module_cache_identity;
-                     tiri::import_cache::CompiledModule published;
+                     tiri::import_cache::ModulePublication published;
                      (void)tiri::import_cache::publish_module(request, unit->module_cache_identity,
                         unit->installed_interface->portable_interface(), payload,
                         this->lex_state.import_cache_counters, published);
+                     if (published.StorageError != ERR::Okay) {
+                        kt::Log("Parser").trace(
+                           "Imported-module in-memory use after publication failure '%s': %s.",
+                           published.CachePath.c_str(), GetErrorMsg(published.StorageError));
+                     }
                   }
                }
 
