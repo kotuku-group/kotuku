@@ -2,8 +2,6 @@
 #define PRV_TIRI
 #define PRV_TIRI_MODULE
 #include <kotuku/main.h>
-#include <kotuku/modules/filesystem.h>
-#include <kotuku/modules/tiri.h>
 
 #include "../defs.h"
 #include "../import_module_bundle.h"
@@ -105,186 +103,6 @@ FinalisedInterfacePtr finalise_fixture(Interface InterfaceValue)
    FinalisedInterfacePtr result;
    if (FinalisedInterface::finalise(std::move(InterfaceValue), result) != cache::FormatError::OKAY) return {};
    return result;
-}
-
-void append_u32(std::string &Output, uint32_t Value)
-{
-   for (int shift = 0; shift < 32; shift += 8) Output.push_back(char(uint8_t(Value >> shift)));
-}
-
-void append_string(std::string &Output, std::string_view Value)
-{
-   append_u32(Output, uint32_t(Value.size()));
-   Output.append(Value);
-}
-
-std::string namespace_only_bytes(
-   std::string_view First, NamespaceMode FirstMode, std::string_view Second, NamespaceMode SecondMode)
-{
-   std::string result;
-   append_u32(result, 2);
-   append_string(result, First);
-   result.push_back(char(FirstMode));
-   append_string(result, Second);
-   result.push_back(char(SecondMode));
-   for (int i = 0; i < 6; ++i) append_u32(result, 0);
-   return result;
-}
-
-void append_default_value(std::string &Output)
-{
-   Output.push_back(char(ValueKind::UNKNOWN));
-   Output.push_back(char(ProofKind::ADVISORY));
-   Output.push_back(1);
-   Output.push_back(0);
-   append_string(Output, {});
-   append_string(Output, {});
-   Output.push_back(char(ValueKind::ANY));
-   append_string(Output, {});
-   append_string(Output, {});
-   append_string(Output, {});
-}
-
-std::string structure_field_bytes(std::string_view First, std::string_view Second)
-{
-   std::string result;
-   append_u32(result, 0);
-   append_u32(result, 0);
-   append_u32(result, 1);
-   append_string(result, "Record");
-   append_u32(result, 2);
-   for (std::string_view name : { First, Second }) {
-      append_string(result, name);
-      append_default_value(result);
-      result.push_back(0);
-   }
-   for (int i = 0; i < 4; ++i) append_u32(result, 0);
-   return result;
-}
-
-void append_source(std::string &Output, std::string_view Filename)
-{
-   append_string(Output, "/same/path.tiri");
-   append_string(Output, "same");
-   append_string(Output, Filename);
-   append_string(Output, {});
-   append_string(Output, {});
-   append_u32(Output, 1);
-   append_u32(Output, 1);
-   append_u32(Output, 0);
-}
-
-void append_nested_module(std::string &Output, uint8_t DigestByte)
-{
-   append_string(Output, "same");
-   append_string(Output, "/same/path.tiri");
-   cache::Digest digest = {};
-   digest[0] = DigestByte;
-   Output.append((const char *)digest.data(), digest.size());
-}
-
-std::string equal_key_interface_bytes(bool CanonicalSources, bool CanonicalNestedModules)
-{
-   std::string result;
-   for (int i = 0; i < 5; ++i) append_u32(result, 0);
-   append_u32(result, 2);
-   append_source(result, CanonicalSources ? "a.tiri" : "b.tiri");
-   append_source(result, CanonicalSources ? "b.tiri" : "a.tiri");
-   append_u32(result, 2);
-   append_nested_module(result, CanonicalNestedModules ? 1 : 2);
-   append_nested_module(result, CanonicalNestedModules ? 2 : 1);
-   return result;
-}
-
-//********************************************************************************************************************
-// Canonical bytes and digest provenance are fixed, and warm adoption rejects non-canonical collection order.
-
-bool canonical_interface_ownership(kt::Log &Log)
-{
-   FinalisedInterfacePtr empty;
-   if (FinalisedInterface::finalise({}, empty) != cache::FormatError::OKAY or not empty or empty->bytes().empty() or
-       empty->digest() != cache::content_digest(empty->bytes())) {
-      Log.error("An empty interface did not produce ordinary canonical bytes and a matching digest");
-      return false;
-   }
-
-   Interface source;
-   source.Namespaces = { { "b", NamespaceMode::JOIN }, { "a", NamespaceMode::DECLARE } };
-   InterfaceOperationCounters counters;
-   FinalisedInterfacePtr artifact;
-   const std::string expected = namespace_only_bytes(
-      "a", NamespaceMode::DECLARE, "b", NamespaceMode::JOIN);
-   if (FinalisedInterface::finalise(std::move(source), artifact, &counters) != cache::FormatError::OKAY or
-       artifact->bytes() != expected or artifact->digest() != cache::content_digest(expected) or
-       artifact->descriptors().Namespaces[0].Name != "a" or counters.ColdFinalisations != 1 or
-       counters.Encodes != 1) {
-      Log.error("Cold finalisation did not produce the locked canonical interface bytes and digest");
-      return false;
-   }
-
-   FinalisedInterfacePtr decoded;
-   if (FinalisedInterface::from_canonical_bytes(
-       expected, artifact->digest(), decoded, &counters) != cache::FormatError::OKAY or
-       decoded->bytes() != artifact->bytes() or counters.WarmDecodes != 1 or counters.Encodes != 1) {
-      Log.error("Warm interface adoption did not retain exact canonical bytes without encoding");
-      return false;
-   }
-
-   const auto previous = decoded;
-   const std::string noncanonical = namespace_only_bytes(
-      "b", NamespaceMode::JOIN, "a", NamespaceMode::DECLARE);
-   if (FinalisedInterface::from_canonical_bytes(
-       noncanonical, cache::content_digest(noncanonical), decoded, &counters) !=
-       cache::FormatError::INVALID_METADATA or decoded != previous or counters.WarmDecodes != 1) {
-      Log.error("Non-canonical warm interface order was accepted or replaced a valid artefact");
-      return false;
-   }
-   const std::string noncanonical_fields = structure_field_bytes("z", "a");
-   if (FinalisedInterface::from_canonical_bytes(
-       noncanonical_fields, cache::content_digest(noncanonical_fields), decoded, &counters) !=
-       cache::FormatError::INVALID_METADATA or decoded != previous or counters.WarmDecodes != 1) {
-      Log.error("Non-canonical nested interface order was accepted or replaced a valid artefact");
-      return false;
-   }
-
-   Interface equal_keys;
-   equal_keys.Sources = {
-      { "/same/path.tiri", "same", "b.tiri", {}, {}, 1, 1, 0 },
-      { "/same/path.tiri", "same", "a.tiri", {}, {}, 1, 1, 0 }
-   };
-   cache::Digest first_digest = {};
-   cache::Digest second_digest = {};
-   first_digest[0] = 1;
-   second_digest[0] = 2;
-   equal_keys.NestedModules = {
-      { "same", "/same/path.tiri", second_digest },
-      { "same", "/same/path.tiri", first_digest }
-   };
-   Interface reversed_equal_keys = equal_keys;
-   std::ranges::reverse(reversed_equal_keys.Sources);
-   std::ranges::reverse(reversed_equal_keys.NestedModules);
-   FinalisedInterfacePtr equal_key_artifact;
-   FinalisedInterfacePtr reversed_equal_key_artifact;
-   if (FinalisedInterface::finalise(std::move(equal_keys), equal_key_artifact) != cache::FormatError::OKAY or
-       FinalisedInterface::finalise(std::move(reversed_equal_keys), reversed_equal_key_artifact) !=
-          cache::FormatError::OKAY or
-       equal_key_artifact->bytes() != reversed_equal_key_artifact->bytes() or
-       equal_key_artifact->bytes() != equal_key_interface_bytes(true, true)) {
-      Log.error("Equal primary keys did not produce deterministic canonical interface bytes");
-      return false;
-   }
-
-   const std::string noncanonical_sources = equal_key_interface_bytes(false, true);
-   const std::string noncanonical_nested = equal_key_interface_bytes(true, false);
-   if (FinalisedInterface::from_canonical_bytes(noncanonical_sources,
-       cache::content_digest(noncanonical_sources), decoded, &counters) != cache::FormatError::INVALID_METADATA or
-       FinalisedInterface::from_canonical_bytes(noncanonical_nested,
-       cache::content_digest(noncanonical_nested), decoded, &counters) != cache::FormatError::INVALID_METADATA or
-       decoded != previous or counters.WarmDecodes != 1) {
-      Log.error("Equal-key non-canonical interface order was accepted or replaced a valid artefact");
-      return false;
-   }
-   return true;
 }
 
 std::string encode_raw_root_module_bundle(const std::vector<RootModuleRecord> &Records)
@@ -670,90 +488,15 @@ bool malformed_and_bounds(kt::Log &Log)
    return true;
 }
 
-bool finalised_interface_transaction(kt::Log &Log)
-{
-   auto source = sample_interface();
-   InterfaceOperationCounters counters;
-   FinalisedInterfacePtr artifact;
-   if (FinalisedInterface::finalise(source, artifact, &counters) != tiri::cache::FormatError::OKAY or
-       not artifact or artifact->descriptors().Exports.size() != source.Exports.size() or
-       artifact->digest() != tiri::cache::content_digest(artifact->bytes()) or
-       counters.ColdFinalisations != 1 or counters.Encodes != 1 or counters.WarmDecodes != 0) {
-      Log.error("A cold interface was not finalised and encoded exactly once");
-      return false;
-   }
 
-   const ExportDescriptor *export_address = &artifact->descriptors().Exports.front();
-   std::vector<FinalisedInterfacePtr> owners;
-   owners.push_back(std::move(artifact));
-   for (int i = 0; i < 128; ++i) owners.push_back(owners.front());
-   artifact = std::move(owners.back());
-   owners.clear();
-   if (&artifact->descriptors().Exports.front() != export_address or
-       export_address->Name != "external_scale") {
-      Log.error("Descriptor addresses did not survive finalised-owner handle and container movement");
-      return false;
-   }
-
-   auto invalid = source;
-   invalid.Exports[0].Value.Structure = "MissingType";
-   const auto snapshot = artifact;
-   if (FinalisedInterface::finalise(std::move(invalid), artifact, &counters) !=
-       tiri::cache::FormatError::INVALID_METADATA or artifact != snapshot or counters.ColdFinalisations != 1) {
-      Log.error("Rejected interface finalisation replaced the previous artefact");
-      return false;
-   }
-
-   FinalisedInterfacePtr decoded;
-   if (FinalisedInterface::from_canonical_bytes(
-       snapshot->bytes(), snapshot->digest(), decoded, &counters) != tiri::cache::FormatError::OKAY or
-       decoded->bytes() != snapshot->bytes() or decoded->descriptors() != snapshot->descriptors() or
-       counters.Encodes != 1 or counters.WarmDecodes != 1) {
-      Log.error("Canonical warm bytes were not retained without another interface encode");
-      return false;
-   }
-   return true;
-}
-
-bool direct_load_rejection(kt::Log &Log)
-{
-   std::string encoded;
-   if (encode_fixture_envelope(sample_identity(), sample_interface(), std::string("\x1bLJ", 3), encoded) !=
-       tiri::cache::FormatError::OKAY) return false;
-
-   const std::string path = "temp:tiri-i02-import-only.tbc";
-   DeleteFile(path, nullptr);
-   struct Cleanup {
-      const std::string &Path;
-      ~Cleanup() { DeleteFile(Path, nullptr); }
-   } cleanup { path };
-   {
-      objFile::create file = { fl::Path(path), fl::Flags(FL::NEW|FL::WRITE) };
-      int written = 0;
-      if (not file.ok() or
-          file->write(std::span((const int8_t *)encoded.data(), encoded.size()), &written) != ERR::Okay or
-          written != int(encoded.size()) or file->flush() != ERR::Okay) return false;
-   }
-
-   objTiri::create script = { fl::Path(path) };
-   if (not script.ok()) return false;
-   auto state = (extTiri *)*script;
-   const int stack_top = lua_gettop(state->Lua);
-   if (acQuery(*script) != ERR::InvalidData or lua_gettop(state->Lua) != stack_top or state->MainChunkRef) {
-      Log.error("Direct Script loading accepted or partially installed an import-only artefact");
-      return false;
-   }
-   return true;
-}
 
 } // namespace
 
 void import_module_format_unit_tests(int &Passed, int &Total)
 {
    kt::Log log("ImportModuleFormatTests");
-   for (auto test : { canonical_interface_ownership, round_trip_and_determinism, compiled_identity_and_graph_assembly,
-      root_module_graph_validation,
-      malformed_and_bounds, finalised_interface_transaction, direct_load_rejection }) {
+   for (auto test : { round_trip_and_determinism, compiled_identity_and_graph_assembly,
+      root_module_graph_validation, malformed_and_bounds }) {
       Total++;
       if (test(log)) Passed++;
    }

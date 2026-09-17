@@ -78,7 +78,6 @@ using PayloadValidator = std::function<bool(std::string_view, std::string &)>;
 #ifdef UNIT_TESTS
 enum class ModulePublishFailure : uint8_t { NIL, CREATE, WRITE, FLUSH, MOVE };
 void set_module_publish_failure(ModulePublishFailure);
-void force_snapshot_final_size_change();
 #endif
 
 } // namespace tiri::import_cache

@@ -485,6 +485,39 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- A module cache identity must not capture the runtime importer context that happened to produce it.
+
+@Test function ImportedCacheIdentityIgnoresRuntimeImporterContext()
+   local scripts = glRoot .. 'identity_scripts/'
+   local modules = scripts .. 'identity_context/'
+   local isolated_temp = glRoot .. 'identity_temp/'
+   local scripts_folder <close> = obj.new('file', { path=scripts, flags=FL_NEW|FL_FOLDER })
+   local modules_folder <close> = obj.new('file', { path=modules, flags=FL_NEW|FL_FOLDER })
+   local temp_folder <close> = obj.new('file', { path=isolated_temp, flags=FL_NEW|FL_FOLDER })
+
+   local style = glRoot .. 'identity_style.tiri'
+   local main = glRoot .. 'identity_main.tiri'
+   write_file(modules .. 'base.tiri', 'namespace identity_context { base=true }')
+   write_file(style, "import 'identity_context/base'\nassert(identity_context.base)")
+   write_file(modules .. 'extension.tiri',
+      "import 'identity_context/base'\n" ..
+      "namespace identity_context\n" ..
+      "loadFile([[" .. style .. "]])\n" ..
+      "identity_context.extension = true\n")
+   write_file(main, [[
+      import 'identity_context/base', 'identity_context/extension'
+      assert(identity_context.base and identity_context.extension)
+      print('IMPORT_IDENTITY_CONTEXT_OK')
+   ]])
+
+   for _ in {0 to 2} do
+      local code, output = child(array<str> { '--cache', main, '--log-warning', '--gfx-driver=headless',
+         '--set-volume', 'scripts=' .. scripts, '--set-volume', 'temp=' .. isolated_temp })
+      assert(code is 0 and output.find('IMPORT_IDENTITY_CONTEXT_OK') != nil, output)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Saving and re-saving an imported compilation unit must preserve import order, declarations and source diagnostics so
 -- the unit remains executable after every contributing source file is removed.
 

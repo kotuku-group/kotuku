@@ -1,5 +1,0 @@
-namespace i07_dependency_child { }
-
-function i07_dependency_child.value():str
-   return 'one'
-end

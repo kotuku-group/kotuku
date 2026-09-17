@@ -1,3 +1,0 @@
-extern importer_secret
-
-global i01_lexical_result = tostring(importer_secret)

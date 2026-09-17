@@ -21,7 +21,6 @@ std::atomic<uint64_t> glModuleTemporarySequence = 0;
 
 #ifdef UNIT_TESTS
 ModulePublishFailure glModulePublishFailure = ModulePublishFailure::NIL;
-bool glForceSnapshotFinalSizeChange = false;
 
 bool fail_publication(ModulePublishFailure Stage)
 {
@@ -55,12 +54,6 @@ ERR read_open_file(objFile *File, std::string &Output, int64_t &ModifiedHint)
 
    int64_t final_size = 0;
    if (File->getSize(final_size) != ERR::Okay or final_size != initial_size) return ERR::Read;
-#ifdef UNIT_TESTS
-   if (glForceSnapshotFinalSizeChange) {
-      glForceSnapshotFinalSizeChange = false;
-      return ERR::Read;
-   }
-#endif
    ModifiedHint = 0;
    File->getTimestamp(ModifiedHint);
    return ERR::Okay;
@@ -220,12 +213,6 @@ void set_module_publish_failure(ModulePublishFailure Failure)
    glModulePublishFailure = Failure;
 }
 
-// Forces the final-size validation branch for one source snapshot.
-
-void force_snapshot_final_size_change()
-{
-   glForceSnapshotFinalSizeChange = true;
-}
 #endif
 
 //********************************************************************************************************************

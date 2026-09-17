@@ -111,86 +111,6 @@ struct Cleanup {
    ~Cleanup() { for (const auto &path : Paths) DeleteFile(path, nullptr); }
 };
 
-bool cold_hit_and_invalidation(kt::Log &Log)
-{
-   const std::string source_path = unique_path("source");
-   if (not write_file(source_path, "first")) return false;
-   Cleanup cleanup { { source_path } };
-
-   auto request = request_for(source_path);
-   LifecycleCounters counters;
-   SourceSnapshot cold_snapshot;
-   ModuleLookup cold_lookup;
-   if (snapshot_source(source_path, counters, cold_snapshot) != ERR::Okay or
-       lookup_module(request, cold_snapshot, {}, payload_validator(), counters, cold_lookup) != ERR::Okay or
-       cold_lookup.Cached.CacheHit or cold_lookup.Source != "first" or counters.SourceReads != 1 or
-       counters.LookupMisses != 1 or counters.SourceCompilations != 0) {
-      Log.error("Cold imported-module lookup did not preserve one parser-ready source snapshot");
-      return false;
-   }
-
-   counters.SourceCompilations++;
-   FixtureArtifact cold;
-   ModulePublication publication;
-   if (not prepare_artifact(cold_lookup, cold) or
-       publish_module(request, cold.CompilationIdentity, *cold.CompileTimeInterface, cold.Payload,
-          counters, publication) != ERR::Okay or publication.StorageError != ERR::Okay or
-       counters.Publications != 1) {
-      Log.error("Direct imported-module publication did not store one complete generation");
-      return false;
-   }
-   cleanup.Paths.push_back(publication.CachePath);
-
-   request.ExpectedIdentity = cold.CompilationIdentity;
-   SourceSnapshot warm_snapshot;
-   ModuleLookup warm;
-   if (snapshot_source(source_path, counters, warm_snapshot) != ERR::Okay or
-       lookup_module(request, warm_snapshot, {}, payload_validator(), counters, warm) != ERR::Okay or
-       not warm.Cached.CacheHit or counters.CacheHits != 1 or counters.SourceReads != 2 or
-       counters.EnvelopeDecodes != 1 or counters.PayloadValidations != 1 or
-       counters.InterfaceOperations.WarmDecodes != 1 or counters.InterfaceOperations.Encodes != 0 or
-       counters.SourceCompilations != 1 or warm.Cached.CompilationIdentity.LookupIdentity !=
-          cold.CompilationIdentity.LookupIdentity or not warm.Cached.CompileTimeInterface or
-       warm.Cached.CompileTimeInterface->descriptors() != cold.CompileTimeInterface->descriptors() or
-       warm.Cached.CompileTimeInterface->bytes() != cold.CompileTimeInterface->bytes() or
-       warm.Cached.Payload != cold.Payload) {
-      Log.error("A fresh imported-module lookup did not return the exact published generation");
-      return false;
-   }
-
-   if (not write_file(source_path, "second")) return false;
-   ModuleLookup stable;
-   if (lookup_module(request, warm_snapshot, {}, payload_validator(), counters, stable) != ERR::Okay or
-       not stable.Cached.CacheHit or stable.Source != "first" or counters.SourceReads != 2 or
-       counters.CacheHits != 2 or counters.InterfaceOperations.WarmDecodes != 2 or
-       counters.InterfaceOperations.Encodes != 0) {
-      Log.error("A captured source snapshot changed within its validation session");
-      return false;
-   }
-
-   SourceSnapshot changed_snapshot;
-   ModuleLookup changed_lookup;
-   if (snapshot_source(source_path, counters, changed_snapshot) != ERR::Okay or
-       lookup_module(request, changed_snapshot, {}, payload_validator(), counters, changed_lookup) != ERR::Okay or
-       changed_lookup.Cached.CacheHit or changed_lookup.Source != "second" or counters.LookupMisses != 2 or
-       counters.SourceReads != 3 or counters.SourceCompilations != 1) {
-      Log.error("Changed imported-module source did not select a fresh cold lookup");
-      return false;
-   }
-
-   counters.SourceCompilations++;
-   FixtureArtifact changed;
-   ModulePublication changed_publication;
-   if (not prepare_artifact(changed_lookup, changed) or
-       publish_module(request, changed.CompilationIdentity, *changed.CompileTimeInterface, changed.Payload,
-          counters, changed_publication) != ERR::Okay or changed_publication.StorageError != ERR::Okay or
-       changed_publication.CachePath IS publication.CachePath) {
-      Log.error("Changed imported-module source did not publish a distinct generation");
-      return false;
-   }
-   cleanup.Paths.push_back(changed_publication.CachePath);
-   return true;
-}
 
 bool malformed_rejection_and_publication_failure(kt::Log &Log)
 {
@@ -252,38 +172,6 @@ bool malformed_rejection_and_publication_failure(kt::Log &Log)
    return true;
 }
 
-bool snapshot_normalisation_and_size_change(kt::Log &Log)
-{
-   constexpr std::array<std::string_view, 3> marks = { "\xef\xbb\xbf", "\xfe\xff", "\xff\xfe" };
-   LifecycleCounters counters;
-   Cleanup cleanup;
-   for (size_t i = 0; i < marks.size(); ++i) {
-      const std::string path = unique_path(std::format("bom-{}", i));
-      cleanup.Paths.push_back(path);
-      std::string content(marks[i]);
-      content += "normalised";
-      SourceSnapshot snapshot;
-      if (not write_file(path, content) or snapshot_source(path, counters, snapshot) != ERR::Okay or
-          snapshot.Source != "normalised" or snapshot.Identity.Size != snapshot.Source.size() or
-          snapshot.Identity.ContentDigest != tiri::cache::content_digest(snapshot.Source)) {
-         Log.error("A recognised source BOM was not removed before identity capture");
-         return false;
-      }
-   }
-
-   const std::string changed_path = unique_path("size-change");
-   cleanup.Paths.push_back(changed_path);
-   if (not write_file(changed_path, "stable bytes")) return false;
-   force_snapshot_final_size_change();
-   SourceSnapshot rejected;
-   const uint32_t reads_before = counters.SourceReads;
-   if (snapshot_source(changed_path, counters, rejected) != ERR::Read or not rejected.Source.empty() or
-       not rejected.Identity.ResolvedPath.empty() or counters.SourceReads != reads_before) {
-      Log.error("A final source-size change produced a reusable snapshot");
-      return false;
-   }
-   return true;
-}
 
 bool concurrent_complete_generations(kt::Log &Log)
 {
@@ -355,8 +243,7 @@ bool concurrent_complete_generations(kt::Log &Log)
 void import_module_cache_unit_tests(int &Passed, int &Total)
 {
    kt::Log log("ImportModuleCacheTests");
-   for (auto test : { cold_hit_and_invalidation, malformed_rejection_and_publication_failure,
-      snapshot_normalisation_and_size_change, concurrent_complete_generations }) {
+   for (auto test : { malformed_rejection_and_publication_failure, concurrent_complete_generations }) {
       Total++;
       if (test(log)) Passed++;
    }

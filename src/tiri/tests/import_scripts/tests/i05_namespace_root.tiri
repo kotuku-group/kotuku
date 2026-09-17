@@ -1,4 +1,0 @@
-namespace i05_runtime_namespace { initialisations=0 }
-
-i05_runtime_namespace.initialisations++
-glI05NamespaceTrace ..= 'R'

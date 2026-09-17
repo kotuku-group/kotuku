@@ -1,2 +1,0 @@
-import 'tests/i03_cycle_indirect_b'
-local cycle_value = true

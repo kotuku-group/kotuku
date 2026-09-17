@@ -1,5 +1,0 @@
-import 'tests/i05_namespace_root'
-
-namespace i05_runtime_namespace
-i05_runtime_namespace.component_a = true
-glI05NamespaceTrace ..= 'A'

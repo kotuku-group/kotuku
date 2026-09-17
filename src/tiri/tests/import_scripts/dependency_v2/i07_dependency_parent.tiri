@@ -1,7 +1,0 @@
-namespace i07_dependency_parent { }
-
-import 'i07_dependency_child' as child
-
-function i07_dependency_parent.value():any
-   return child.value()
-end
