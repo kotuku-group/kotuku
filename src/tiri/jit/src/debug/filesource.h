@@ -25,6 +25,7 @@ struct FileSource {
    uint32_t path_hash;             // For fast deduplication lookup
    uint8_t parent_file_index;      // Which file imported this one (0 for main)
    BCLine import_line;             // Line in parent where import occurred (0 for main)
+   bool provisional_cache_metadata = false;  // True until a warm-cache payload supplies authoritative metadata.
 };
 
 constexpr uint8_t FILESOURCE_MAX_COUNT = 254;
@@ -61,7 +62,8 @@ public:
 // Direct paths will be resolved to an absolute path if possible.  scripts: paths retain their virtual-volume form.
 
 uint8_t register_file_source(lua_State *L, std::string &Path, const std::string &Filename,
-   BCLine FirstLine, BCLine SourceLines, uint8_t ParentIndex, BCLine ImportLine);
+   BCLine FirstLine, BCLine SourceLines, uint8_t ParentIndex, BCLine ImportLine,
+   bool ProvisionalCacheMetadata = false);
 
 // Find a file source by path hash.
 // Returns the file index if found, or std::nullopt if not found.

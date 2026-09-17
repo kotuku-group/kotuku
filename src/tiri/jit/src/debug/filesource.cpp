@@ -16,7 +16,7 @@
 // NB: Path is the full path, including filename.
 
 uint8_t register_file_source(lua_State *L, std::string &Path, const std::string &Filename, BCLine FirstLine,
-   BCLine SourceLines, uint8_t ParentIndex, BCLine ImportLine)
+   BCLine SourceLines, uint8_t ParentIndex, BCLine ImportLine, bool ProvisionalCacheMetadata)
 {
    kt::Log log(__FUNCTION__);
 
@@ -52,6 +52,7 @@ uint8_t register_file_source(lua_State *L, std::string &Path, const std::string 
    source.path_hash          = path_hash;
    source.parent_file_index  = ParentIndex;
    source.import_line        = ImportLine;
+   source.provisional_cache_metadata = ProvisionalCacheMetadata;
 
    L->file_sources.push_back(std::move(source));
    L->file_index_map[path_hash] = new_index;
@@ -179,6 +180,7 @@ void attach_loaded_compilation_sources(lua_State *L, GCproto *Root,
    const std::vector<CompilationSourceRecord> &Records, std::span<GCproto *const> AdditionalRoots,
    BytecodeLoadOperationCounters *Operations)
 {
+   kt::Log log(__FUNCTION__);
    std::vector<CompilationSourceRecord> resolved = Records;
    L->file_sources.reserve(std::min<size_t>(FILESOURCE_MAX_COUNT, L->file_sources.size() + Records.size()));
    L->file_index_map.reserve(L->file_sources.size() + Records.size());
@@ -194,17 +196,27 @@ void attach_loaded_compilation_sources(lua_State *L, GCproto *Root,
 
       if (existing) {
          source.runtime_index = existing.value();
-         // The parser may have pre-registered warm graph sources from portable interfaces before the payload is
-         // installed.  Preserve the consuming import site for the payload root, but restore exact nested ancestry
-         // and line attribution from the validated payload once its parent has been resolved.
-         if (i and source.parent < i) {
-            FileSource &registered = L->file_sources[source.runtime_index];
-            registered.parent_file_index  = resolved[source.parent].runtime_index;
-            registered.import_line        = source.import_line;
+         FileSource &registered = L->file_sources[source.runtime_index];
+
+         // The parser pre-registers warm graph sources from portable interfaces before installing the payload.  Only
+         // those provisional entries may be enriched: an older registration can still be referenced by live code.
+
+         if (registered.provisional_cache_metadata) {
+            if (i and source.parent < i) {
+               registered.parent_file_index = resolved[source.parent].runtime_index;
+               registered.import_line = source.import_line;
+            }
             registered.first_line         = source.first_line;
             registered.total_lines        = source.total_lines;
             registered.filename           = source.display_filename;
             registered.declared_namespace = source.declared_namespace;
+            registered.provisional_cache_metadata = false;
+         }
+         else if (registered.filename != source.display_filename or registered.first_line != source.first_line or
+                  registered.total_lines != source.total_lines or
+                  registered.declared_namespace != source.declared_namespace) {
+            log.warning("BC metadata for '%s' conflicts with the active registration.  Clear 'temp:tiri/cache/' if the bytecode came from the automatic cache.",
+               source.canonical_path.c_str());
          }
       }
       else {

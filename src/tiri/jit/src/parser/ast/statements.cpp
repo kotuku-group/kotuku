@@ -2250,7 +2250,8 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(
             else {
                std::string nested_path = nested_source.ResolvedPath;
                runtime_index = register_file_source(L, nested_path, nested_source.Filename, nested_source.FirstLine,
-                  nested_source.TotalLines, new_file_index, nested_source.ImportLine ? nested_source.ImportLine : 1);
+                  nested_source.TotalLines, new_file_index, nested_source.ImportLine ? nested_source.ImportLine : 1,
+                  true);
             }
 
             record.SourceIndex = runtime_index;
