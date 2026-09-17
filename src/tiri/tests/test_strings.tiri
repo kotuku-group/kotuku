@@ -75,6 +75,9 @@ end
    assert(values['\0\0\0\0'] is nil,
       'An interned string with equal content must be a different table key')
 
+   for index in {0 to 32} do values['rehash-key-' .. index] = index end
+   assert(values[key] is 'buffer', 'Table rehash must preserve a mutable buffer identity key')
+
    local matches = 0
    for _ in {0 to 100} do
       if values[key] is 'buffer' then matches++ end

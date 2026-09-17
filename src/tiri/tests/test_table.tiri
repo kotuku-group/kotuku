@@ -698,6 +698,29 @@ end
    assert(t.kind() is 'sparse', "Expected sparse, got " .. t.kind())
 end
 
+@Test function NumericHashKeysRoundTrip()
+   local values = {}
+   values[0.5] = 10
+   values[1.5] = 11
+   values[65536.5] = 12
+   values[131072.5] = 13
+
+   assert(values[0.5] is 10 and values[1.5] is 11,
+      'Small fractional hash keys should retrieve their stored values')
+   assert(values[65536.5] is 12 and values[131072.5] is 13,
+      'Large fractional hash keys should retrieve their stored values')
+end
+
+@Test function ReferenceHashKeysRoundTrip()
+   local first = {}
+   local second = {}
+   local values = { [first] = 20, [second] = 21 }
+
+   assert(values[first] is 20 and values[second] is 21,
+      'Table identity keys should retrieve their distinct stored values')
+   assert(values[{}] is nil, 'A different table identity must not match an existing key')
+end
+
 @Test function LengthSurvivesDistantNumericKey()
    -- Positive holes remain in the sequence-compatible key domain.  This classification records key usage and does
    -- not promise that the current live table shape is dense.

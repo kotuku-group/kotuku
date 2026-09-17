@@ -2235,4 +2235,12 @@ end
       if diagnostic.message.find("Undeclared variable 'error'", 0, true) then undeclared = true end
    end
    assert(result.success is false and undeclared, 'A direct error() call must report an undeclared variable.')
+
+   result = debug.validate([[
+local error = function(Message:str):str return Message end
+local api = { error=function():str return 'member' end }
+return error('local'), api.error()
+]])
+   assert(result.success is true,
+      'Removing the global error() built-in must not reserve the name for locals or table fields.')
 end

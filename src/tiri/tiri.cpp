@@ -360,7 +360,6 @@ extern void jit_frame_unit_tests(int &, int &);
 extern void parser_unit_tests(int &, int &);
 extern void array_unit_tests(int &, int &);
 extern void allocator_unit_tests(int &, int &);
-extern void bulk_unit_tests(int &, int &);
 extern void gc_unit_tests(int &, int &);
 extern void module_marshalling_unit_tests(int &, int &);
 extern void set_variable_unit_tests(int &, int &);
@@ -434,11 +433,6 @@ static void MODTest(std::string_view Options, int *Passed, int *Total)
       kt::Log log("TiriTests");
       log.branch("Running allocator unit tests...");
       allocator_unit_tests(*Passed, *Total);
-   }
-   {
-      kt::Log log("TiriTests");
-      log.branch("Running bulk TValue unit tests...");
-      bulk_unit_tests(*Passed, *Total);
    }
    {
       kt::Log log("TiriTests");

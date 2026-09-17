@@ -247,10 +247,26 @@ end
 end
 
 @Test function FloorAndCeilWithIntegers()
-   assert(math.floor(3.9) is 3, 'floor(3.9) should be 3')
-   assert(math.floor(-3.1) is -4, 'floor(-3.1) should be -4')
-   assert(math.ceil(3.1) is 4, 'ceil(3.1) should be 4')
-   assert(math.ceil(-3.9) is -3, 'ceil(-3.9) should be -3')
+   assert(math.floor(3.7) is 3, 'floor(3.7) should be 3')
+   assert(math.floor(-3.7) is -4, 'floor(-3.7) should be -4')
+   assert(math.floor(5) is 5 and math.floor(-5) is -5,
+      'floor() should preserve integral values')
+   assert(math.ceil(3.2) is 4, 'ceil(3.2) should be 4')
+   assert(math.ceil(-3.2) is -3, 'ceil(-3.2) should be -3')
+   assert(math.ceil(5) is 5 and math.ceil(-5) is -5,
+      'ceil() should preserve integral values')
+
+   assert(1 / math.floor(0.0) is math.huge, 'floor() should preserve positive zero')
+   assert(1 / math.floor(-0.0) is -math.huge, 'floor() should preserve negative zero')
+   assert(1 / math.ceil(-0.0) is -math.huge, 'ceil() should preserve negative zero')
+   assert(math.floor(math.huge) is math.huge and math.floor(-math.huge) is -math.huge,
+      'floor() should preserve infinities')
+   local nan = math.floor(0 / 0)
+   assert(nan != nan, 'floor() should preserve NaN')
+
+   local large = 4503599627370496.5
+   assert(math.floor(large) is 4503599627370496,
+      'floor() should handle values at the exact-integer precision boundary')
 end
 
 @Test function ModfSplitsParts()

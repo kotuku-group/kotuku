@@ -1160,6 +1160,26 @@ function local_contract_scoped(Value:num):num return Value end
 return local_contract_scoped(5)
 ]])
    assert(scoped_result is 5, 'A nested local function must not inherit an outer forward declaration')
+
+   local conditional_failed = false
+   try
+      exec([[
+global function glConditionalForward(Value:num) end
+if true then
+   global function glConditionalForward(Value:num) return Value end
+else
+   global function glConditionalForward(Value:str) return Value end
+end
+]])
+   except e
+      conditional_failed = true
+      assert(e.message.find("signature for global function 'glConditionalForward'") != nil,
+         'A conditional mismatch must retain the original forward-signature diagnostic: ' .. e.message)
+      assert(e.message.find("parameter 1 has type 'str', expected 'num'") != nil,
+         'A conditional mismatch must identify the incompatible parameter: ' .. e.message)
+   end
+   assert(conditional_failed,
+      'An incompatible conditional definition must not bypass its forward declaration')
 end
 
 @Test function CompiledGlobalWriterRetainsImmutablePolicy()

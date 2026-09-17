@@ -308,14 +308,35 @@ end
 @Test function NumericArrayRepresentationsUseNativeMembership()
    assert(numeric_array_membership_workload(array<int8> { -128, 0, 127 }, 127, 12, 100) is 200,
       'Signed eight-bit membership failed after JIT warming')
+   assert(numeric_array_membership_workload(array<byte> { 0, 7, 255 }, 255, 12, 100) is 200,
+      'Byte membership failed after JIT warming')
+   assert(numeric_array_membership_workload(array<uint8> { 0, 7, 255 }, 255, 12, 100) is 200,
+      'Unsigned eight-bit membership failed after JIT warming')
+   assert(numeric_array_membership_workload(array<int16> { -32768, 0, 32767 }, 32767, 12, 100) is 200,
+      'Signed sixteen-bit membership failed after JIT warming')
+   assert(numeric_array_membership_workload(array<uint16> { 0, 7, 65535 }, 65535, 12, 100) is 200,
+      'Unsigned sixteen-bit membership failed after JIT warming')
    assert(numeric_array_membership_workload(array<int> { -2147483648, 0, 2147483647 }, 2147483647, 12, 100) is 200,
       'Signed integer membership failed after JIT warming')
+   assert(numeric_array_membership_workload(array<uint> { 0, 7, 4294967295 }, 4294967295, 12, 100) is 200,
+      'Unsigned integer membership failed after JIT warming')
+   assert(numeric_array_membership_workload(array<int64> { -9007199254740991, 7, 9007199254740991 },
+      9007199254740991, 12, 100) is 200, 'Signed 64-bit membership failed after JIT warming')
    assert(numeric_array_membership_workload(array<uint64> { 0, 17, 9007199254740991 }, 9007199254740991, 12, 100)
       is 200, 'Unsigned 64-bit membership failed after JIT warming')
    assert(numeric_array_membership_workload(array<float> { -1.25, 0.0, 7.5 }, 7.5, 12.0, 100) is 200,
       'Float membership failed after JIT warming')
    assert(numeric_array_membership_workload(array<double> { -1.25, 0.0, 7.5 }, 7.5, 12.0, 100) is 200,
       'Double membership failed after JIT warming')
+
+   assert(7.75 in array<int> { 7 }, 'Integral membership should retain numeric truncation semantics')
+   assert(not (7.75 in array<double> { 7.0 }), 'Floating-point membership should retain exact-value semantics')
+
+   local nan = 0 / 0
+   assert(0.0 in array<float> { -0.0, nan } and not (nan in array<float> { -0.0, nan }),
+      'Float membership should equate signed zero and reject NaN')
+   assert(0.0 in array<double> { -0.0, nan } and not (nan in array<double> { -0.0, nan }),
+      'Double membership should equate signed zero and reject NaN')
 end
 
 @Test function NumericArrayRepresentationsUseDistinctTraceCalls()

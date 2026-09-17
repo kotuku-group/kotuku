@@ -173,6 +173,24 @@ end
       "local callback = function(Value) end; local values = { insert = callback }",
       'A proved function alias in a colliding table field')
 
+   local table_methods = array<str> {
+      'insert', 'remove', 'move', 'concat', 'sort', 'empty', 'kind', 'size', 'clear', 'slice', 'sortByKeys',
+      'toXML'
+   }
+   for method in values(table_methods) do
+      local source = f'local values = {{ {method} = function(Value) end }}'
+      local rejected = debug.validate(source)
+      assert(rejected.success is false and rejected.diagnostics[0].code is 'InvalidAssignment',
+         f'A function-valued {method} field must report InvalidAssignment')
+   end
+
+   expect_shadow_rejection(
+      "local values = { nested = { insert = function(Value) end } }",
+      'A nested bare function field colliding with table.insert')
+   expect_shadow_rejection(
+      "local mt = { insert = function(Value) end }; debug.setMetatable({}, mt)",
+      'A metatable field colliding with table.insert')
+
    exec("local values = {}; values.insert = 1")
    exec("local values = {}; values['insert'] = function(Value) end")
    exec("local mt = {}; mt.push = function(Value) end")
@@ -187,6 +205,13 @@ end
 
    local ordinary = exec("return { callback = function(Value:any):any return Value end }")
    assert(ordinary.callback(42) is 42, 'Non-colliding bare function fields should remain legal')
+
+   exec([[
+local function build(Value:any):table return { insert=Value } end
+local array_only = { push=function(Value):any return Value end }
+local interface_only = { new=function(Value):any return Value end }
+assert(build(3).insert is 3 and array_only.push(4) is 4 and interface_only.new(5) is 5)
+]])
 end
 
 @Test function RangeMethods()

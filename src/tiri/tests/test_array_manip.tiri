@@ -889,6 +889,25 @@ end
       'an overlapping GC-reference array.copy did not preserve memmove semantics')
 end
 
+@Test function ArrayCopyAnyValuesOverlap()
+   local table_value = { answer=23 }
+   local nested_value = array<int> { 29 }
+   local values = array<any> { 17, 'overlap-string', table_value, 3.5, nested_value, nil, true, 31 }
+
+   values.copy(values, 2, 0, 6)
+   assert(values[2] is 17 and values[3] is 'overlap-string' and values[4] is table_value and values[5] is 3.5 and
+      values[6] is nested_value and values[7] is nil,
+      'A forward overlapping any-array copy should preserve mixed values')
+
+   values.copy(values, 0, 2, 6)
+   processing.collect('full')
+   assert(values[0] is 17 and values[1] is 'overlap-string' and values[2] is table_value and values[3] is 3.5 and
+      values[4] is nested_value and values[5] is nil,
+      'A backward overlapping any-array copy should preserve mixed values')
+   assert(table_value.answer is 23 and nested_value[0] is 29,
+      'An overlapping any-array copy should preserve referenced children')
+end
+
 @Test function ArrayCopyAnyDistributionsSurviveCollection()
    local numeric_source = array<any, 128>
    local numeric_destination = array<any, 128>

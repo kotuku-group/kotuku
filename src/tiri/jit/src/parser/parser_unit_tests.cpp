@@ -1162,21 +1162,6 @@ static bool test_expression_list_entry_point(kt::Log &log)
 
 //********************************************************************************************************************
 
-static bool test_empty_comment_appended_to_variable(kt::Log &log)
-{
-   auto result = build_ast_from_source("value--\n", true);
-
-   for (const ParserDiagnostic &diagnostic : result.diagnostics) {
-      if (diagnostic.message IS "Empty comment appended to variable is not a decrement operation") return true;
-   }
-
-   log.error("expected empty appended comment diagnostic");
-   log_diagnostics(result.diagnostics, log);
-   return false;
-}
-
-//********************************************************************************************************************
-
 static bool test_global_callable_contract_without_type_analysis(kt::Log &Log)
 {
    constexpr std::string_view source =
@@ -2038,46 +2023,6 @@ static BindingDiscoveryResult discover_bindings_from_source(std::string_view Sou
 }
 
 //********************************************************************************************************************
-
-static bool test_error_removal(kt::Log &Log)
-{
-   constexpr std::string_view source = "error('removed')";
-   auto result = discover_bindings_from_source(source, true, true);
-   lua_State *L = result.state->get();
-   lua_getglobal(L, "error");
-   bool absent = lua_isnil(L, -1);
-   lua_pop(L, 1);
-   if (not absent) {
-      Log.error("the removed error built-in remains in the public base environment");
-      return false;
-   }
-
-   for (const auto &diagnostic : result.diagnostics) {
-      if (diagnostic.code IS ParserErrorCode::DeprecatedApi) {
-         Log.error("the removed error name still emitted a deprecation warning");
-         return false;
-      }
-   }
-   if (not result.chunk.ok()) return false;
-
-   if (lua_load(L, source, "=error-removal") IS 0) {
-      Log.error("the removed error built-in still compiled as a public global");
-      lua_pop(L, 1);
-      return false;
-   }
-   std::string_view message = lua_tostring(L, -1);
-   if (message.find("Undeclared variable 'error'") IS std::string_view::npos) {
-      Log.error("the removed error built-in produced the wrong diagnostic: %s", lua_tostring(L, -1));
-      lua_pop(L, 1);
-      return false;
-   }
-   lua_pop(L, 1);
-
-   auto local = discover_bindings_from_source(
-      "local error = function(Message) end\nerror('local')\nlocal api = { error=function() end }\napi.error()", true,
-      true);
-   return local.chunk.ok() and local.diagnostics.empty();
-}
 
 static bool test_library_namespace_declarations(kt::Log &Log)
 {
@@ -3306,123 +3251,6 @@ static bool test_signature_metadata_roundtrip(kt::Log &Log)
          Log.error("%s signature dump changed prototype metadata", strip ? "stripped" : "unstripped");
          return false;
       }
-   }
-
-   lua_pop(L, 1);
-   return true;
-}
-
-static bool test_forward_declaration_signature_validation(kt::Log &Log)
-{
-   LuaStateHolder state;
-   lua_State *L = state.get();
-   constexpr std::string_view matching_source =
-      "global function declared(Name:str, Options:table, ...):<str, num> end\n"
-      "global function declared(Value:str, Settings:table, ...):<str, num>\n"
-      "   return Value, 1\n"
-      "end\n";
-
-   if (lua_load(L, matching_source, "matching-forward-signature")) {
-      Log.error("matching forward declaration was rejected: %s", lua_tostring(L, -1));
-      return false;
-   }
-   lua_pop(L, 1);
-
-   constexpr std::string_view mismatched_source =
-      "global function klass(Name:str, Options:table, Def:str, Private:bool, Custom:str) end\n"
-      "global function klass(Name:str, Options:table, Def:str, Private:str, Custom:str)\n"
-      "end\n";
-
-   if (lua_load(L, mismatched_source, "mismatched-forward-signature") IS 0) {
-      Log.error("mismatched forward declaration was accepted");
-      lua_pop(L, 1);
-      return false;
-   }
-
-   std::string_view message = lua_tostring(L, -1);
-   if (message.find("signature for global function 'klass' does not match its forward declaration") IS
-       std::string_view::npos or message.find("parameter 4 has type 'str', expected 'bool'") IS
-       std::string_view::npos) {
-      Log.error("mismatched forward declaration produced the wrong diagnostic: %s", lua_tostring(L, -1));
-      lua_pop(L, 1);
-      return false;
-   }
-
-   lua_pop(L, 1);
-
-   constexpr std::string_view matching_local_source =
-      "function local_declared(Name:str, Options:table, ...):<str, num> end\n"
-      "function local_declared(Value:str, Settings:table, ...):<str, num>\n"
-      "   return Value, 1\n"
-      "end\n";
-
-   if (lua_load(L, matching_local_source, "matching-local-forward-signature")) {
-      Log.error("matching local forward declaration was rejected: %s", lua_tostring(L, -1));
-      return false;
-   }
-   lua_pop(L, 1);
-
-   constexpr std::string_view mismatched_local_source =
-      "function local_klass(Name:str, Options:table):str end\n"
-      "function local_klass(Name:num, Options:table):num\n"
-      "   return ''\n"
-      "end\n";
-
-   if (lua_load(L, mismatched_local_source, "mismatched-local-forward-signature") IS 0) {
-      Log.error("mismatched local forward declaration was accepted");
-      lua_pop(L, 1);
-      return false;
-   }
-
-   message = lua_tostring(L, -1);
-   if (message.find("signature for local function 'local_klass' does not match its forward declaration") IS
-       std::string_view::npos or message.find("parameter 1 has type 'num', expected 'str'") IS
-       std::string_view::npos) {
-      Log.error("mismatched local forward declaration produced the wrong diagnostic: %s", lua_tostring(L, -1));
-      lua_pop(L, 1);
-      return false;
-   }
-
-   lua_pop(L, 1);
-
-   constexpr std::string_view nested_local_source =
-      "function local_scoped(Value:num):num end\n"
-      "function outer()\n"
-      "   function local_scoped(Value:str):str return Value end\n"
-      "end\n"
-      "function local_scoped(Value:num):num return Value end\n";
-
-   if (lua_load(L, nested_local_source, "nested-local-forward-signature")) {
-      Log.error("nested local function inherited an outer forward declaration: %s", lua_tostring(L, -1));
-      return false;
-   }
-   lua_pop(L, 1);
-
-   constexpr std::string_view conditional_mismatch_source =
-      "global function routed(Value:num) end\n"
-      "if true then\n"
-      "   global function routed(Value:num)\n"
-      "      return Value\n"
-      "   end\n"
-      "else\n"
-      "   global function routed(Value:str)\n"
-      "      return Value\n"
-      "   end\n"
-      "end\n";
-
-   if (lua_load(L, conditional_mismatch_source, "conditional-forward-signature") IS 0) {
-      Log.error("a conditional definition bypassed its original forward declaration");
-      lua_pop(L, 1);
-      return false;
-   }
-
-   message = lua_tostring(L, -1);
-   if (message.find("signature for global function 'routed' does not match its forward declaration") IS
-       std::string_view::npos or message.find("parameter 1 has type 'str', expected 'num'") IS
-       std::string_view::npos) {
-      Log.error("conditional forward declaration produced the wrong diagnostic: %s", lua_tostring(L, -1));
-      lua_pop(L, 1);
-      return false;
    }
 
    lua_pop(L, 1);
@@ -4892,42 +4720,6 @@ static bool test_contract_bytecode_policy_validation(kt::Log &Log)
       "local value:any = 1\nreturn value is <num>\n", BC_TYPETEST, "type-test-contract-validation");
 }
 
-static bool test_parser_diagnostics_reset_per_load(kt::Log &Log)
-{
-   LuaStateHolder state;
-   lua_State *lua = state.get();
-
-   constexpr std::string_view invalid =
-      "local value:str = 'text'\n"
-      "value = 1\n";
-   if (lua_load(lua, invalid, "diagnostic-reset-invalid") IS 0) {
-      Log.error("invalid source compiled while testing parser diagnostic reset");
-      lua_pop(lua, 1);
-      return false;
-   }
-   if (not lua->parser_diagnostics or not lua->parser_diagnostics->has_errors()) {
-      Log.error("invalid source did not publish parser diagnostics");
-      lua_pop(lua, 1);
-      return false;
-   }
-   lua_pop(lua, 1);
-
-   if (lua_load(lua, "return 1", "diagnostic-reset-valid")) {
-      Log.error("valid source failed after an earlier parser diagnostic: %s", lua_tostring(lua, -1));
-      lua_pop(lua, 1);
-      return false;
-   }
-   if (lua->parser_diagnostics) {
-      Log.error("a successful parse retained diagnostics from an earlier load");
-      lua_pop(lua, 1);
-      return false;
-   }
-   lua_pop(lua, 1);
-   return true;
-}
-
-//********************************************************************************************************************
-
 static bool test_userdata_type_annotations(kt::Log &Log)
 {
    if (parse_type_name("num") != TiriType::Num or parse_type_name("number") != TiriType::Unknown) {
@@ -6015,33 +5807,6 @@ static bool test_module_registry(kt::Log &Log)
       test_module_dependency_corruption_rejected(Log);
 }
 
-static bool test_struct_declaration_syntax(kt::Log &Log)
-{
-   std::string error;
-   LuaStateHolder holder;
-   lua_State *state = holder.get();
-   if (not state) {
-      Log.error("failed to allocate state for struct declaration syntax test");
-      return false;
-   }
-
-   if (not parse_struct_source(state, "struct ParserSingleLine X: int, Y: int end", error)) {
-      Log.error("single-line end-terminated declaration failed: %s", error.c_str());
-      return false;
-   }
-
-   if (parse_struct_source(state, "struct ParserBraceDeclaration { X: int }", error)) {
-      Log.error("brace-delimited struct declaration compiled successfully");
-      return false;
-   }
-   if (error.find("Struct declarations use 'end' termination") IS std::string::npos) {
-      Log.error("brace-delimited declaration produced an unexpected diagnostic: %s", error.c_str());
-      return false;
-   }
-
-   return true;
-}
-
 static bool test_bytecode_equivalence(kt::Log &log)
 {
    constexpr const char* source = R"(
@@ -6692,161 +6457,6 @@ static bool test_expdesc_is_falsey(kt::Log &log)
 
 //********************************************************************************************************************
 // Test ?? operator with constant folding
-
-static bool test_if_empty_operator_constants(kt::Log &log)
-{
-   // Test: nil ?? 5 should evaluate to 5
-   {
-      auto result = build_ast_from_source("return nil ?? 5");
-      if (not result.chunk.ok()) {
-         log.error("failed to parse 'nil ?? 5'");
-         log_diagnostics(result.diagnostics, log);
-         return false;
-      }
-   }
-
-   // Test: false ?? 10 should evaluate to 10
-   {
-      auto result = build_ast_from_source("return false ?? 10");
-      if (not result.chunk.ok()) {
-         log.error("failed to parse 'false ?? 10'");
-         log_diagnostics(result.diagnostics, log);
-         return false;
-      }
-   }
-
-   // Test: 0 ?? 20 should evaluate to 20
-   {
-      auto result = build_ast_from_source("return 0 ?? 20");
-      if (not result.chunk.ok()) {
-         log.error("failed to parse '0 ?? 20'");
-         log_diagnostics(result.diagnostics, log);
-         return false;
-      }
-   }
-
-   // Test: "" ?? "default" should evaluate to "default"
-   {
-      auto result = build_ast_from_source("return \"\" ?? \"default\"");
-      if (not result.chunk.ok()) {
-         log.error("failed to parse '\"\" ?? \"default\"'");
-         log_diagnostics(result.diagnostics, log);
-         return false;
-      }
-   }
-
-   // Test: true ?? 30 should evaluate to true (not 30)
-   {
-      auto result = build_ast_from_source("return true ?? 30");
-      if (not result.chunk.ok()) {
-         log.error("failed to parse 'true ?? 30'");
-         log_diagnostics(result.diagnostics, log);
-         return false;
-      }
-   }
-
-   // Test: 42 ?? 50 should evaluate to 42 (not 50)
-   {
-      auto result = build_ast_from_source("return 42 ?? 50");
-      if (not result.chunk.ok()) {
-         log.error("failed to parse '42 ?? 50'");
-         log_diagnostics(result.diagnostics, log);
-         return false;
-      }
-   }
-
-   // Test: "hello" ?? "world" should evaluate to "hello"
-   {
-      auto result = build_ast_from_source("return \"hello\" ?? \"world\"");
-      if (not result.chunk.ok()) {
-         log.error("failed to parse '\"hello\" ?? \"world\"'");
-         log_diagnostics(result.diagnostics, log);
-         return false;
-      }
-   }
-
-   return true;
-}
-
-//********************************************************************************************************************
-// Test ternary operator with falsey semantics
-
-static bool test_ternary_falsey_semantics(kt::Log &log)
-{
-   // Test: nil ? "yes" : "no" should evaluate to "no"
-   {
-      auto result = build_ast_from_source("return nil ? 'yes' : 'no'");
-      if (not result.chunk.ok()) {
-         log.error("failed to parse 'nil ? yes : no'");
-         log_diagnostics(result.diagnostics, log);
-         return false;
-      }
-   }
-
-   // Test: false ? "yes" : "no" should evaluate to "no"
-   {
-      auto result = build_ast_from_source("return false ? 'yes' : 'no'");
-      if (not result.chunk.ok()) {
-         log.error("failed to parse 'false ? yes : no'");
-         log_diagnostics(result.diagnostics, log);
-         return false;
-      }
-   }
-
-   // Test: 0 ? "yes" : "no" should evaluate to "no"
-   {
-      auto result = build_ast_from_source("return 0 ? 'yes' : 'no'");
-      if (not result.chunk.ok()) {
-         log.error("failed to parse '0 ? yes : no'");
-         log_diagnostics(result.diagnostics, log);
-         return false;
-      }
-   }
-
-   // Test: "" ? "yes" : "no" should evaluate to "no"
-   {
-      auto result = build_ast_from_source("return \"\" ? 'yes' : 'no'");
-      if (not result.chunk.ok()) {
-         log.error("failed to parse '\"\" ? yes : no'");
-         log_diagnostics(result.diagnostics, log);
-         return false;
-      }
-   }
-
-   // Test: true ? "yes" : "no" should evaluate to "yes"
-   {
-      auto result = build_ast_from_source("return true ? 'yes' : 'no'");
-      if (not result.chunk.ok()) {
-         log.error("failed to parse 'true ? yes : no'");
-         log_diagnostics(result.diagnostics, log);
-         return false;
-      }
-   }
-
-   // Test: 42 ? "yes" : "no" should evaluate to "yes"
-   {
-      auto result = build_ast_from_source("return 42 ? 'yes' : 'no'");
-      if (not result.chunk.ok()) {
-         log.error("failed to parse '42 ? yes : no'");
-         log_diagnostics(result.diagnostics, log);
-         return false;
-      }
-   }
-
-   // Test: "hello" ? "yes" : "no" should evaluate to "yes"
-   {
-      auto result = build_ast_from_source("return \"hello\" ? 'yes' : 'no'");
-      if (not result.chunk.ok()) {
-         log.error("failed to parse '\"hello\" ? yes : no'");
-         log_diagnostics(result.diagnostics, log);
-         return false;
-      }
-   }
-
-   return true;
-}
-
-//********************************************************************************************************************
 
 static bool test_static_descriptor_model(kt::Log &Log)
 {
@@ -7968,85 +7578,6 @@ static bool test_builtin_method_registry(kt::Log &Log)
       Log.error("method registration consistency checks returned unexpected errors");
       return false;
    }
-   return true;
-}
-
-static bool test_builtin_method_table_initialiser_rejection(kt::Log &Log)
-{
-   LuaStateHolder state;
-   lua_State *L = state.get();
-   luaL_openlibs(L);
-
-   auto expect_rejected = [&](std::string_view Source, std::string_view Name) {
-      if (not lua_load(L, Source, "builtin-method-table-shadow")) {
-         Log.error("bare function field '%.*s' compiled despite colliding with a table method",
-            int(Name.size()), Name.data());
-         lua_pop(L, 1);
-         return false;
-      }
-
-      std::string message = lua_tostring(L, -1) ? lua_tostring(L, -1) : "";
-      lua_pop(L, 1);
-      std::string named_method = std::format("built-in method '{}'", Name);
-      std::string bracketed_key = std::format("['{}']", Name);
-      if (message.find(named_method) IS std::string::npos or
-          message.find(bracketed_key) IS std::string::npos) {
-         Log.error("table method shadow diagnostic for '%.*s' omitted its name or bracketed escape: %s",
-            int(Name.size()), Name.data(), message.c_str());
-         return false;
-      }
-
-      bool invalid_assignment = false;
-      if (L->parser_diagnostics) {
-         for (const ParserDiagnostic &diagnostic : L->parser_diagnostics->entries()) {
-            if (diagnostic.code IS ParserErrorCode::InvalidAssignment) invalid_assignment = true;
-         }
-      }
-      if (not invalid_assignment) {
-         Log.error("table method shadow for '%.*s' did not report InvalidAssignment",
-            int(Name.size()), Name.data());
-         return false;
-      }
-      return true;
-   };
-
-   auto expect_accepted = [&](std::string_view Source, std::string_view Description) {
-      if (lua_load(L, Source, "builtin-method-table-shadow")) {
-         Log.error("%.*s was rejected: %s", int(Description.size()), Description.data(), lua_tostring(L, -1));
-         lua_pop(L, 1);
-         return false;
-      }
-      lua_pop(L, 1);
-      return true;
-   };
-
-   constexpr std::array<std::string_view, 12> table_methods = {
-      "insert", "remove", "move", "concat", "sort", "empty", "kind", "size", "clear", "slice", "sortByKeys",
-      "toXML"
-   };
-   for (std::string_view method : table_methods) {
-      std::string source = std::format("local values = {{ {} = function(Value) end }}\n", method);
-      if (not expect_rejected(source, method)) return false;
-   }
-
-   if (not expect_rejected(
-       "local callback = function(Value) end\nlocal values = { insert = callback }\n", "insert") or
-       not expect_rejected(
-          "local values = { nested = { insert = function(Value) end } }\n", "insert") or
-       not expect_rejected(
-          "local mt = { insert = function(Value) end }\ndebug.setMetatable({}, mt)\n", "insert")) return false;
-
-   constexpr std::string_view accepted =
-      "local function build(Value:any):table\n"
-      "   return { insert = Value }\n"
-      "end\n"
-      "local values = { size = 1, insert = 1 }\n"
-      "local explicit = { ['insert'] = function(Value) end }\n"
-      "local ordinary = { callback = function(Value) end }\n"
-      "local array_only = { push = function(Value) end }\n"
-      "local interface_only = { new = function(Value) end }\n";
-   if (not expect_accepted(accepted, "legal table initialiser boundaries")) return false;
-
    return true;
 }
 
@@ -12491,14 +12022,13 @@ static bool test_import_module_relocation_transaction(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 113> tests = { {
+   constexpr std::array<TestCase, 105> tests = { {
       { "bytecode_load_metadata_transaction", test_bytecode_load_metadata_transaction },
       { "file_source_index_collision_fallback", test_file_source_index_collision_fallback },
       { "import_module_metadata_release_idempotence", test_import_module_metadata_release_idempotence },
       { "import_module_relocation_transaction", test_import_module_relocation_transaction },
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
-      { "error_removal", test_error_removal },
       { "expression_raise_bytecode", test_expression_raise_bytecode },
       { "rethrow_dump_validation", test_rethrow_dump_validation },
       { "close_slot_metadata_roundtrip", test_close_slot_metadata_roundtrip },
@@ -12514,7 +12044,6 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "choose_type_pattern_ast", test_choose_type_pattern_ast },
       { "expression_entry_point", test_expression_entry_point },
       { "expression_list_entry_point", test_expression_list_entry_point },
-      { "empty_comment_appended_to_variable", test_empty_comment_appended_to_variable },
       { "global_callable_contract_without_type_analysis", test_global_callable_contract_without_type_analysis },
       { "immutable_global_contract_analysis", test_immutable_global_contract_analysis },
       { "loop_ast", test_loop_ast },
@@ -12549,7 +12078,6 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "bytecode_equivalence", test_bytecode_equivalence },
       { "structural_bytecode_reader_validation", test_structural_bytecode_reader_validation },
       { "signature_metadata_roundtrip", test_signature_metadata_roundtrip },
-      { "forward_declaration_signature_validation", test_forward_declaration_signature_validation },
       { "old_bytecode_versions_rejected", test_old_bytecode_versions_rejected },
       { "unmatched_context_entry_rejected", test_unmatched_context_entry_rejected },
       { "signature_static_inference", test_signature_static_inference },
@@ -12561,24 +12089,19 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "runtime_contract_batching", test_runtime_contract_batching },
       { "complex_contract_jit_eligibility", test_complex_contract_jit_eligibility },
       { "contract_bytecode_policy_validation", test_contract_bytecode_policy_validation },
-      { "parser_diagnostics_reset_per_load", test_parser_diagnostics_reset_per_load },
       { "userdata_type_annotations", test_userdata_type_annotations },
       { "state_local_struct_declarations", test_state_local_struct_declarations },
       { "named_struct_bytecode_manifest", test_named_struct_bytecode_manifest },
       { "module_registry", test_module_registry },
-      { "struct_declaration_syntax", test_struct_declaration_syntax },
       { "struct_field_documentation", test_struct_field_documentation },
       { "struct_declaration_metadata", test_struct_declaration_metadata },
       { "expdesc_is_falsey", test_expdesc_is_falsey },
-      { "if_empty_operator_constants", test_if_empty_operator_constants },
-      { "ternary_falsey_semantics", test_ternary_falsey_semantics },
       { "static_descriptor_model", test_static_descriptor_model },
       { "static_result_set_model", test_static_result_set_model },
       { "environment_store_boundary", test_environment_store_boundary },
       { "native_prototype_result_descriptors", test_native_prototype_result_descriptors },
       { "native_prototype_arity", test_native_prototype_arity },
       { "builtin_method_registry", test_builtin_method_registry },
-      { "builtin_method_table_initialiser_rejection", test_builtin_method_table_initialiser_rejection },
       { "builtin_method_static_classification", test_builtin_method_static_classification },
       { "stage_b_collection_api_contracts", test_stage_b_collection_api_contracts },
       { "unresolved_method_receiver_diagnostic", test_unresolved_method_receiver_diagnostic },

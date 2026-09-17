@@ -4,12 +4,22 @@
 function enforce_hotpath() end
 
 @Test function ArrayAnyNew()
-   arr = array<any, 5>
-   assert(#arr is 5, "array should have 5 elements")
+   arr = array<any, 129>
+   assert(#arr is 129, "array should span the allocator boundary used by the native regression")
    assert(array.type(arr) is 'any', "array type should be 'any'")
    -- All elements should be nil initially
    for i, v in arr do
       assert(v is nil, "element " .. i .. " should be nil, got " .. type(v))
+   end
+end
+
+@Test function ArrayAnyGrowthInitialisesNewSlots()
+   local arr = array<any> { 17, 25.0 }
+   arr.resize(129)
+
+   assert(arr[0] is 17 and arr[1] is 25.0, 'Growing an any array should preserve existing values')
+   for index in {2 to 129} do
+      assert(arr[index] is nil, f'Grown any-array slot {index} should be nil')
    end
 end
 
@@ -163,12 +173,13 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function ArrayAnyToTable()
-   arr = array<any> { 42, 'text', true }
+   arr = array<any> { nil, 42, 3.5, 'bulk' }
    t = array.table(arr)
 
-   assert(t[0] is 42, "table[0] should be 42")
-   assert(t[1] is 'text', "table[1] should be 'text'")
-   assert(t[2] is true, "table[2] should be true")
+   assert(t[0] is nil, 'table[0] should preserve nil')
+   assert(t[1] is 42, 'table[1] should preserve an integer')
+   assert(t[2] is 3.5, 'table[2] should preserve a number')
+   assert(t[3] is 'bulk', 'table[3] should preserve a string')
 end
 
 ----------------------------------------------------------------------------------------------------------------------

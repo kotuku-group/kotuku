@@ -863,7 +863,6 @@ if (UNIT_TESTS)
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_test_vm_asm.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_tests_arrays.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_tests_allocator.cpp")
-   list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_tests_bulk.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_tests_gc.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/jit/jit_unit_tests.cpp")
 
@@ -964,6 +963,7 @@ set (TIRI_TESTS
    object_pinning import_type_analysis global_types type_contracts type_tests thunk_contract_argument type_signature_dumps
    type_guided_emission type_guided_jit_signatures
    context_access contextual_member_calls contextual_designation context_blocks context_materialisation
+   gc_lifecycle
    metamethod_context_dispatch stack_growth function_callback_context
 )
 
