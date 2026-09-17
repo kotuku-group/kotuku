@@ -57,7 +57,10 @@ private:
    std::vector<GCstr *> function_name_stack;
    std::vector<uint32_t> registered_enum_constants;
    std::vector<uint32_t> registered_structs;
-   std::vector<uint32_t> chunk_import_hashes;  // Path hashes inlined during this compilation (root builder only)
+   std::vector<uint32_t> local_import_hashes;   // Inline imports already expanded by this lexical compilation unit
+   std::vector<ImportedModuleKey> imported_edges; // Non-local imports already activated by this module initialiser
+   std::unordered_map<ImportedModuleKey, std::shared_ptr<ImportedModuleUnit>, ImportedModuleKeyHash>
+      imported_module_units;                   // Definition registry owned by the root builder
    StmtNodeList pending_statements;
 
    // One record per canonical module declared by this compilation unit.  Aliases of the same module share a
@@ -97,13 +100,32 @@ private:
    // unit.  A non-local imported module owns a separate builder and must retain its dependency activations even when
    // the importing root has already referenced the same module.
 
-   [[nodiscard]] bool import_seen_this_chunk(uint32_t Hash) {
-      AstBuilder *scope = this;
-      if (this->ctx.lex().diagnose_mode) while (scope->parent_builder) scope = scope->parent_builder;
-      if (std::find(scope->chunk_import_hashes.begin(), scope->chunk_import_hashes.end(), Hash) !=
-          scope->chunk_import_hashes.end()) return true;
-      scope->chunk_import_hashes.push_back(Hash);
+   [[nodiscard]] bool import_seen_this_unit(const ImportedModuleKey &Key) {
+      if (std::ranges::find(this->imported_edges, Key) != this->imported_edges.end()) return true;
+      this->imported_edges.push_back(Key);
       return false;
+   }
+
+   [[nodiscard]] bool local_import_seen(uint32_t Hash) {
+      AstBuilder *scope = this->ctx.lex().diagnose_mode ? this->root_builder() : this;
+      if (std::ranges::find(scope->local_import_hashes, Hash) != scope->local_import_hashes.end()) return true;
+      scope->local_import_hashes.push_back(Hash);
+      return false;
+   }
+
+   [[nodiscard]] std::shared_ptr<ImportedModuleUnit> find_imported_module(const ImportedModuleKey &Key) {
+      auto &units = this->root_builder()->imported_module_units;
+      auto found = units.find(Key);
+      return found IS units.end() ? nullptr : found->second;
+   }
+
+   void register_imported_module(const std::shared_ptr<ImportedModuleUnit> &Unit) {
+      this->root_builder()->imported_module_units.emplace(Unit->key, Unit);
+      this->root_builder()->ctx.lex().imported_module_counters.unique_units++;
+   }
+
+   void discard_imported_module(const ImportedModuleKey &Key) {
+      this->root_builder()->imported_module_units.erase(Key);
    }
 
    [[nodiscard]] AstBuilder * root_builder() {
@@ -192,8 +214,7 @@ private:
    ParserResult<std::unique_ptr<BlockStmt>> parse_imported_file(
       std::string &, std::string_view, const Token &ImportToken, bool ModuleInitialiser,
       tiri::import_cache::ModuleLookup *Lookup = nullptr,
-      std::vector<FuncState::DependencyDescriptor> *ModuleDependencies = nullptr,
-      bool *AlreadyImported = nullptr);
+      std::vector<FuncState::DependencyDescriptor> *ModuleDependencies = nullptr);
    ParserResult<StmtNodePtr> parse_compile_if();
    void skip_to_compile_end();
    ParserResult<StmtNodePtr> parse_expression_stmt();

@@ -70,6 +70,18 @@ struct ImportModuleCompilationFrame {
    std::vector<uint32_t> dependencies;
 };
 
+struct ImportedModuleCompilationCounters {
+   uint32_t unique_units = 0;
+   uint32_t lookup_attempts = 0;
+   uint32_t source_parses = 0;
+   uint32_t assignment_visits = 0;
+   uint32_t static_discovery_visits = 0;
+   uint32_t static_propagation_visits = 0;
+   uint32_t type_analysis_visits = 0;
+   uint32_t interface_preparations = 0;
+   uint32_t initialiser_emissions = 0;
+};
+
 enum class ArraySizeKind : uint8_t {
    Absent,
    Literal,
@@ -171,6 +183,8 @@ public:
    std::vector<int> import_module_anchors;
    std::vector<GCproto *> linked_import_module_roots;
    tiri::import_cache::LifecycleCounters import_cache_counters;
+   ImportedModuleCompilationCounters imported_module_counters;
+   uint32_t static_analysis_generation = 0;
    bool dynamic_struct_reference = false;
    bool loaded_structs_committed = false;
 

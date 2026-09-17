@@ -8,6 +8,7 @@
 
 #ifdef UNIT_TESTS
 extern void parser_unit_tests(int &Passed, int &Total);
+extern const ImportedModuleCompilationCounters &parser_last_imported_module_counters();
 #endif
 
 extern GCproto *lj_parse(LexState *ls);

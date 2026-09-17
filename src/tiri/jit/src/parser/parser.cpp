@@ -26,6 +26,15 @@
 #include "lualib.h"
 #include "field_type_lookup.h"
 #include "../../../defs.h"
+
+#ifdef UNIT_TESTS
+static thread_local ImportedModuleCompilationCounters glLastImportedModuleCounters;
+
+const ImportedModuleCompilationCounters &parser_last_imported_module_counters()
+{
+   return glLastImportedModuleCounters;
+}
+#endif
 #include "../../../import_module_bundle.h"
 #include "tiri_build_identity.h"
 
@@ -362,6 +371,10 @@ extern GCproto * lj_parse(LexState *State)
    State->next(); // Read-ahead first token.
 
    run_ast_pipeline(root_context, profiler);
+
+#ifdef UNIT_TESTS
+   glLastImportedModuleCounters = State->imported_module_counters;
+#endif
 
    if ((L->script->JitOptions & JOF::DUMP_BYTECODE) != JOF::NIL) dump_bytecode(root_context.func());
 

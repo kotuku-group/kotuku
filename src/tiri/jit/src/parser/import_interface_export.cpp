@@ -303,23 +303,33 @@ bool prepare_block(ParserContext &Context, BlockStmt &Block, std::string &Diagno
       if (not statement or statement->kind != AstNodeKind::ImportStmt) continue;
       auto &import = std::get<ImportStmtPayload>(statement->data);
       for (auto &entry : import.entries) {
-         if (entry.inlined_body and not prepare_block(Context, *entry.inlined_body, Diagnostic)) return false;
-         if (not entry.module_initialiser or entry.module_cache_hit) continue;
+         BlockStmt *body = entry.module_unit ? entry.module_unit->body.get() : entry.inlined_body.get();
+         if (body and (not entry.module_unit or not entry.module_unit->interface_prepared) and
+             not prepare_block(Context, *body, Diagnostic)) return false;
+         if (not entry.module_initialiser) continue;
+         ImportedModuleUnit &unit = *entry.module_unit;
+         if (unit.interface_prepared) continue;
+         if (unit.module_cache_hit) {
+            unit.interface_prepared = true;
+            unit.state = ImportedModuleState::InterfaceReady;
+            Context.lex().imported_module_counters.interface_preparations++;
+            continue;
+         }
 
          Interface portable;
          SourceDescriptor source;
          source.ResolvedPath = entry.lib_path;
-         source.LogicalRequest = entry.module_cache_identity.LogicalRequest;
+         source.LogicalRequest = unit.module_cache_identity.LogicalRequest;
          auto separator = entry.lib_path.find_last_of("/\\:");
          source.Filename = separator IS std::string::npos ? entry.lib_path : entry.lib_path.substr(separator + 1);
-         if (const FileSource *file = get_file_source(&Context.lua(), entry.file_source_idx)) {
+         if (const FileSource *file = get_file_source(&Context.lua(), unit.file_source_idx)) {
             source.DeclaredNamespace = file->declared_namespace;
             source.TotalLines = file->total_lines.lineNumber();
          }
          portable.Sources.push_back(std::move(source));
 
          uint32_t activation_order = 0;
-         for (const auto &dependency : entry.module_dependencies) {
+         for (const auto &dependency : unit.module_dependencies) {
             NativeDependency native;
             native.Module = symbol_name(dependency.name);
             native.ActivationOrder = activation_order++;
@@ -327,20 +337,20 @@ bool prepare_block(ParserContext &Context, BlockStmt &Block, std::string &Diagno
             portable.NativeDependencies.push_back(std::move(native));
          }
 
-         for (auto &child_statement : entry.inlined_body->statements) {
+         for (auto &child_statement : body->statements) {
             if (not child_statement) continue;
             switch (child_statement->kind) {
                case AstNodeKind::ImportStmt:
                   for (const auto &nested : std::get<ImportStmtPayload>(child_statement->data).entries) {
-                     if (nested.installed_interface) {
-                        const auto &nested_interface = nested.installed_interface->portable_interface();
+                     if (nested.module_unit and nested.module_unit->installed_interface) {
+                        const auto &nested_interface = nested.module_unit->installed_interface->portable_interface();
                         const auto nested_digest = interface_digest(nested_interface);
                         merge_interface(portable, nested_interface);
-                        portable.NestedModules.push_back({ nested.module_cache_identity.LogicalRequest,
+                        portable.NestedModules.push_back({ nested.module_unit->module_cache_identity.LogicalRequest,
                            nested.lib_path, nested_digest });
-                        entry.module_cache_identity.ModuleDependencies.push_back({
-                           nested.module_cache_identity.LogicalRequest, nested.lib_path, nested_digest,
-                           nested.module_identity
+                        unit.module_cache_identity.ModuleDependencies.push_back({
+                           nested.module_unit->module_cache_identity.LogicalRequest, nested.lib_path, nested_digest,
+                           nested.module_unit->module_identity
                         });
                      }
                   }
@@ -400,16 +410,19 @@ bool prepare_block(ParserContext &Context, BlockStmt &Block, std::string &Diagno
             }
          }
 
-         entry.installed_interface = InstalledImportInterface::create(Context, portable, Diagnostic);
-         if (not entry.installed_interface) {
+         unit.installed_interface = InstalledImportInterface::create(Context, portable, Diagnostic);
+         if (not unit.installed_interface) {
             Diagnostic = std::format("{}: {}", entry.lib_path, Diagnostic);
             return false;
          }
-         if (finalise_identity(entry.module_cache_identity) != cache::FormatError::OKAY) {
+         if (finalise_identity(unit.module_cache_identity) != cache::FormatError::OKAY) {
             Diagnostic = std::format("{}: compiled module identity is invalid", entry.lib_path);
             return false;
          }
-         entry.module_identity = entry.module_cache_identity.CompiledIdentity;
+         unit.module_identity = unit.module_cache_identity.CompiledIdentity;
+         unit.interface_prepared = true;
+         unit.state = ImportedModuleState::InterfaceReady;
+         Context.lex().imported_module_counters.interface_preparations++;
       }
    }
    return true;

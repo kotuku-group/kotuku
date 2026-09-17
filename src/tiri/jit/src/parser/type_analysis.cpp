@@ -1248,9 +1248,12 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
          auto *payload = std::get_if<ImportStmtPayload>(&Statement.data);
          if (payload) {
             for (auto &entry : payload->entries) {
-               if (not entry.inlined_body) continue;
-               ImportGuard guard(*this, entry.file_source_idx);
-               this->lower_unanalysed_block(*entry.inlined_body);
+               BlockStmt *body = entry.module_unit ? entry.module_unit->body.get() : entry.inlined_body.get();
+               if (not body or (entry.module_unit and entry.module_unit->unanalysed_lowered)) continue;
+               ImportGuard guard(*this,
+                  entry.module_unit ? entry.module_unit->file_source_idx : entry.file_source_idx);
+               this->lower_unanalysed_block(*body);
+               if (entry.module_unit) entry.module_unit->unanalysed_lowered = true;
             }
          }
          break;
@@ -1494,16 +1497,18 @@ void TypeAnalyser::analyse_statement(StmtNode &Statement)
 
          auto *payload = std::get_if<ImportStmtPayload>(&Statement.data);
          if (payload) {
-            for (const auto &entry : payload->entries) {
+            for (auto &entry : payload->entries) {
                std::optional<InferredType> namespace_type;
-               if (entry.inlined_body) {
-                  ImportGuard guard(*this, entry.file_source_idx);
+               BlockStmt *body = entry.module_unit ? entry.module_unit->body.get() : entry.inlined_body.get();
+               if (body and (not entry.module_unit or not entry.module_unit->type_analysed)) {
+                  ImportGuard guard(*this,
+                     entry.module_unit ? entry.module_unit->file_source_idx : entry.file_source_idx);
                   std::vector<TypeCheckScope> importer_scopes;
                   if (entry.module_initialiser) importer_scopes = std::move(this->scope_stack_);
                   this->push_scope();
                   FunctionExprPayload module_initialiser;
                   if (entry.module_initialiser) this->enter_function(module_initialiser);
-                  this->analyse_block(*entry.inlined_body);
+                  this->analyse_block(*body);
                   if (not entry.default_namespace.empty()) {
                      GCstr *namespace_symbol = lj_str_new(
                         &this->ctx_.lua(), entry.default_namespace.data(), entry.default_namespace.size());
@@ -1512,21 +1517,31 @@ void TypeAnalyser::analyse_statement(StmtNode &Statement)
                   if (entry.module_initialiser) this->leave_function();
                   this->pop_scope();
                   if (entry.module_initialiser) this->scope_stack_ = std::move(importer_scopes);
+                  if (entry.module_unit) {
+                     entry.module_unit->type_analysed = true;
+                     this->ctx_.lex().imported_module_counters.type_analysis_visits++;
+                  }
+               }
+               else if (entry.module_unit and not entry.default_namespace.empty()) {
+                  GCstr *namespace_symbol = lj_str_new(
+                     &this->ctx_.lua(), entry.default_namespace.data(), entry.default_namespace.size());
+                  namespace_type = this->resolve_identifier(namespace_symbol);
                }
 
-               if (entry.installed_interface) {
-                  namespace_type = entry.installed_interface->namespace_type(entry.default_namespace);
-                  for (const auto &exported : entry.installed_interface->context().Bindings) {
+               const auto installed = entry.module_unit ? entry.module_unit->installed_interface : nullptr;
+               if (installed) {
+                  namespace_type = installed->namespace_type(entry.default_namespace);
+                  for (const auto &exported : installed->context().Bindings) {
                      if (exported.Name.find('.') != std::string::npos or
-                         entry.installed_interface->is_namespace(exported.Name)) continue;
+                         installed->is_namespace(exported.Name)) continue;
                      GCstr *name = this->ctx_.lex().keepstr(exported.Name);
                      if (exported.Kind IS tiri::import_cache::ExportKind::EXTERN and
                          this->global_types_.contains(name)) continue;
-                     InferredType type = entry.installed_interface->inferred_type(exported.Value);
+                     InferredType type = installed->inferred_type(exported.Value);
                      GlobalContractPolicy policy = type.primary IS TiriType::Any ?
                         GlobalContractPolicy::Variant : GlobalContractPolicy::Enforced;
                      this->declare_global(name, type, Statement.span, exported.IsConst, policy);
-                     if (const FunctionExprPayload *function = entry.installed_interface->callable(exported)) {
+                     if (const FunctionExprPayload *function = installed->callable(exported)) {
                         auto found = this->global_types_.find(name);
                         if (found != this->global_types_.end()) found->second.function = function;
                      }

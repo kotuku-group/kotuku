@@ -12144,7 +12144,7 @@ static bool test_import_module_initialiser_boundary(kt::Log &Log)
       const char *expected;
    };
 
-   constexpr std::array<Fixture, 6> fixtures = { {
+   constexpr std::array<Fixture, 7> fixtures = { {
       { "direct", "global i01_boundary_trace = ''\nimport 'tests/i01_direct'\nreturn i01_boundary_trace", "D" },
       { "duplicate", "global i01_boundary_trace = ''\nimport 'tests/i01_direct', 'tests/i01_direct'\n"
          "return i01_boundary_trace", "D" },
@@ -12154,7 +12154,9 @@ static bool test_import_module_initialiser_boundary(kt::Log &Log)
       { "return", "global i01_boundary_trace = ''\nimport 'tests/i01_return'\ni01_boundary_trace ..= 'O'\n"
          "return i01_boundary_trace", "RO" },
       { "lexical isolation", "local importer_secret = 'captured'\nimport 'tests/i01_lexical_isolation'\n"
-         "return i01_lexical_result", "nil" }
+         "return i01_lexical_result", "nil" },
+      { "aliases", "import 'tests/i01_alias' as first\nimport 'tests/i01_alias' as second\n"
+         "return tostring(first is second) .. ':' .. first.initialisations", "true:1" }
    } };
 
    for (const Fixture &fixture : fixtures) {
@@ -12269,6 +12271,19 @@ static bool test_import_module_executable_table(kt::Log &Log)
       return false;
    }
 
+   const auto &counters = parser_last_imported_module_counters();
+   if (counters.unique_units != 3 or counters.lookup_attempts != 3 or counters.source_parses != 3 or
+       counters.assignment_visits != 3 or counters.static_discovery_visits != 3 or
+       counters.static_propagation_visits != 6 or counters.type_analysis_visits != 3 or
+       counters.interface_preparations != 3 or counters.initialiser_emissions != 3) {
+      Log.error("D03 cold diamond work did not scale by unique units: units=%u lookups=%u parses=%u "
+         "assignment=%u discovery=%u propagation=%u types=%u interfaces=%u emissions=%u",
+         counters.unique_units, counters.lookup_attempts, counters.source_parses, counters.assignment_visits,
+         counters.static_discovery_visits, counters.static_propagation_visits, counters.type_analysis_visits,
+         counters.interface_preparations, counters.initialiser_emissions);
+      return false;
+   }
+
    GCproto *root = funcproto(funcV(lua->top - 1));
    const ImportModuleTable *table = proto_import_module_table(root);
    if (not table or table->version != IMPORT_MODULE_TABLE_VERSION or table->entry_count != 3 or
@@ -12309,6 +12324,48 @@ static bool test_import_module_executable_table(kt::Log &Log)
 
    if (lua_pcall(lua, 0, 1, 0) != 0 or not lua_isstring(lua, -1) or lua_tostringview(lua, -1) != "LAB") {
       Log.error("D03 cold diamond did not initialise once in source order: %s", lua_tostring(lua, -1));
+      return false;
+   }
+   return true;
+}
+
+//********************************************************************************************************************
+// A layered diamond must perform every front-end pass once per graph node, irrespective of the number of paths that
+// reach the shared definitions.
+
+static bool test_import_module_layered_reuse(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      "global i01_boundary_trace = ''\n"
+      "import 'tests/i01_layer_a', 'tests/i01_layer_b'\n"
+      "return i01_boundary_trace";
+
+   if (not remove_import_module_fixture_caches(source, "u03-layered-probe", Log)) return false;
+
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) return false;
+   luaL_openlibs(lua);
+   if (lua_load(lua, source, "u03-layered-cold") != 0) {
+      Log.error("U03 layered diamond failed to compile: %s", lua_tostring(lua, -1));
+      return false;
+   }
+
+   const auto &counters = parser_last_imported_module_counters();
+   if (counters.unique_units != 5 or counters.lookup_attempts != 5 or counters.source_parses != 5 or
+       counters.assignment_visits != 5 or counters.static_discovery_visits != 5 or
+       counters.static_propagation_visits != 10 or counters.type_analysis_visits != 5 or
+       counters.interface_preparations != 5 or counters.initialiser_emissions != 5) {
+      Log.error("U03 layered work did not scale by five unique units: units=%u lookups=%u parses=%u "
+         "assignment=%u discovery=%u propagation=%u types=%u interfaces=%u emissions=%u",
+         counters.unique_units, counters.lookup_attempts, counters.source_parses, counters.assignment_visits,
+         counters.static_discovery_visits, counters.static_propagation_visits, counters.type_analysis_visits,
+         counters.interface_preparations, counters.initialiser_emissions);
+      return false;
+   }
+
+   if (lua_pcall(lua, 0, 1, 0) != 0 or not lua_isstring(lua, -1) or lua_tostringview(lua, -1) != "LABXY") {
+      Log.error("U03 layered diamond did not initialise in dependency order: %s", lua_tostring(lua, -1));
       return false;
    }
    return true;
@@ -12755,12 +12812,13 @@ static bool test_import_module_dependency_invalidation(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 114> tests = { {
+   constexpr std::array<TestCase, 115> tests = { {
       { "import_module_executable_lifetime", test_import_module_executable_lifetime },
       { "import_module_executable_table", test_import_module_executable_table },
       { "import_module_executable_warm_diamond", test_import_module_executable_warm_diamond },
       { "import_module_dependency_invalidation", test_import_module_dependency_invalidation },
       { "import_module_initialiser_boundary", test_import_module_initialiser_boundary },
+      { "import_module_layered_reuse", test_import_module_layered_reuse },
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "error_removal", test_error_removal },

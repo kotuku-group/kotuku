@@ -1042,6 +1042,54 @@ struct CheckStmtPayload {
    ~CheckStmtPayload();
 };
 
+enum class ImportedModuleState : uint8_t {
+   Resolving,
+   Parsed,
+   InterfaceReady,
+   Emitted,
+   Failed
+};
+
+struct ImportedModuleKey {
+   std::string resolved_path;
+   std::string logical_request;
+   bool imported_root = true;
+
+   bool operator==(const ImportedModuleKey &) const = default;
+};
+
+struct ImportedModuleKeyHash {
+   size_t operator()(const ImportedModuleKey &Key) const noexcept {
+      size_t hash = std::hash<std::string>{}(Key.resolved_path);
+      hash ^= std::hash<std::string>{}(Key.logical_request) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+      hash ^= size_t(Key.imported_root) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+      return hash;
+   }
+};
+
+// Definition-level state shared by every non-local import edge in one root compilation.
+struct ImportedModuleUnit {
+   ImportedModuleKey key;
+   ImportedModuleState state = ImportedModuleState::Resolving;
+   std::shared_ptr<BlockStmt> body;
+   std::string module_identity;
+   tiri::import_cache::Identity module_cache_identity;
+   std::string module_payload;
+   std::shared_ptr<const InstalledImportInterface> installed_interface;
+   std::vector<FuncState::DependencyDescriptor> module_dependencies;
+   std::vector<tiri::import_cache::RootModuleRecord> embedded_modules;
+   uint8_t file_source_idx = 0;
+   bool module_cache_hit = false;
+   bool assignment_resolved = false;
+   bool static_discovered = false;
+   uint32_t static_propagation_generation = 0;
+   bool type_analysed = false;
+   bool unanalysed_lowered = false;
+   bool interface_prepared = false;
+   bool ownership_visited = false;
+   uint32_t compilation_record = UINT32_MAX;
+};
+
 struct ImportEntryPayload {
    ImportEntryPayload() = default;
    ImportEntryPayload(const ImportEntryPayload&) = delete;
@@ -1051,17 +1099,11 @@ struct ImportEntryPayload {
 
    std::optional<Identifier> namespace_name;   // The local variable name (alias or default)
    std::string lib_path;                       // Resolved path to library file
-   std::string module_identity;                // Immutable runtime deduplication identity for non-local imports
-   tiri::import_cache::Identity module_cache_identity; // Exact source identity used for lookup/publication
-   std::string module_payload;                 // Validated warm structural artefact, decoded during graph linking
    std::string default_namespace;              // The declared namespace for _LIB lookup
    std::unique_ptr<BlockStmt> inlined_body;    // Parsed content of imported file
-   std::shared_ptr<const InstalledImportInterface> installed_interface; // Validated cold/warm module interface
-   std::vector<FuncState::DependencyDescriptor> module_dependencies;    // Native dependencies owned by the initialiser
-   std::vector<tiri::import_cache::RootModuleRecord> embedded_modules;  // Transitive records retained by a warm payload
+   std::shared_ptr<ImportedModuleUnit> module_unit; // Shared definition for a non-local imported module
    uint8_t file_source_idx = 0;                // FileSource index for this imported file
    bool module_initialiser = false;            // Execute body through a child prototype for non-local imports
-   bool module_cache_hit = false;
    bool module_already_imported = false;       // Publish aliases without repeating an earlier module activation
    bool reuses_namespace_binding = false;      // A sibling import already published this registry namespace locally
 

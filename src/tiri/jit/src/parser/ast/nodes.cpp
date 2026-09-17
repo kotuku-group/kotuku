@@ -631,7 +631,8 @@ struct StatementChildCounter {
    {
       size_t total = 0;
       for (const ImportEntryPayload &entry : Payload.entries) {
-         total += block_child_count(entry.inlined_body);
+         if (entry.module_unit and entry.module_unit->body) total += entry.module_unit->body->view().size();
+         else total += block_child_count(entry.inlined_body);
       }
       return total;
    }

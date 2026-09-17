@@ -517,14 +517,20 @@ private:
          }
          case AstNodeKind::ImportStmt:
             for (ImportEntryPayload &entry : std::get<ImportStmtPayload>(Statement.data).entries) {
-               if (entry.inlined_body) {
-                  if (entry.module_initialiser) this->resolve_import_initialiser(*entry.inlined_body);
-                  else this->resolve_block(*entry.inlined_body);
+               BlockStmt *body = entry.module_unit ? entry.module_unit->body.get() : entry.inlined_body.get();
+               if (body and (not entry.module_unit or not entry.module_unit->assignment_resolved)) {
+                  if (entry.module_initialiser) this->resolve_import_initialiser(*body);
+                  else this->resolve_block(*body);
+                  if (entry.module_unit) {
+                     entry.module_unit->assignment_resolved = true;
+                     this->context_.lex().imported_module_counters.assignment_visits++;
+                  }
                }
-               if (entry.installed_interface) {
-                  for (const auto &exported : entry.installed_interface->context().Bindings) {
+               const auto &installed = entry.module_unit ? entry.module_unit->installed_interface : nullptr;
+               if (installed) {
+                  for (const auto &exported : installed->context().Bindings) {
                      if (exported.Name.find('.') != std::string::npos or
-                         entry.installed_interface->is_namespace(exported.Name)) continue;
+                         installed->is_namespace(exported.Name)) continue;
                      this->global_names_.push_back(this->context_.lex().keepstr(exported.Name));
                   }
                }
@@ -537,7 +543,7 @@ private:
                      entry.reuses_namespace_binding = true;
                   }
                   else {
-                     if (entry.installed_interface and existing) {
+                     if (installed and existing) {
                         this->report_namespace_conflict(*entry.namespace_name);
                      }
                      AssignmentBinding binding = this->prepare_declaration(*entry.namespace_name);

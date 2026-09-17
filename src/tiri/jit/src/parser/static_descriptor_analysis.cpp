@@ -642,25 +642,34 @@ private:
          }
          case AstNodeKind::ImportStmt: {
             for (auto &entry : std::get<ImportStmtPayload>(Statement.data).entries) {
-               if (entry.inlined_body) {
-                  ImportSourceGuard guard(this->context_.lex(), entry.file_source_idx);
-                  if (entry.module_initialiser) this->discover_import_initialiser(*entry.inlined_body);
-                  else this->discover_block(*entry.inlined_body);
+               BlockStmt *body = entry.module_unit ? entry.module_unit->body.get() : entry.inlined_body.get();
+               const auto installed = entry.module_unit ? entry.module_unit->installed_interface : nullptr;
+               const bool visit_body = body and
+                  (not entry.module_unit or not entry.module_unit->static_discovered);
+               if (visit_body) {
+                  ImportSourceGuard guard(this->context_.lex(),
+                     entry.module_unit ? entry.module_unit->file_source_idx : entry.file_source_idx);
+                  if (entry.module_initialiser) this->discover_import_initialiser(*body);
+                  else this->discover_block(*body);
+                  if (entry.module_unit) {
+                     entry.module_unit->static_discovered = true;
+                     this->context_.lex().imported_module_counters.static_discovery_visits++;
+                  }
                }
-               if (entry.installed_interface) {
-                  for (const auto &exported : entry.installed_interface->context().Bindings) {
+               if (entry.module_unit and installed) {
+                  for (const auto &exported : installed->context().Bindings) {
                      if (exported.Name.find('.') != std::string::npos or
-                         entry.installed_interface->is_namespace(exported.Name)) continue;
+                         installed->is_namespace(exported.Name)) continue;
                      GCstr *name = this->context_.lex().keepstr(exported.Name);
                      this->global_names_.push_back(name);
-                     this->interface_globals_[name] = { entry.installed_interface.get(), &exported };
+                     this->interface_globals_[name] = { installed.get(), &exported };
                   }
                }
                if (entry.namespace_name) {
                   const ExprNode *initialiser = nullptr;
                   const FunctionExprPayload *function = nullptr;
-                  if (entry.inlined_body) {
-                     for (const auto &statement : entry.inlined_body->statements) {
+                  if (body) {
+                     for (const auto &statement : body->statements) {
                         if (not statement or statement->kind != AstNodeKind::NamespaceStmt) continue;
                         const auto &namespace_payload = std::get<NamespaceStmtPayload>(statement->data);
                         StaticBindingID binding_id = namespace_payload.name.binding_id;
@@ -672,13 +681,13 @@ private:
                   }
                   StaticBindingID binding_id = entry.reuses_namespace_binding ? entry.namespace_name->binding_id :
                      this->declare(*entry.namespace_name, initialiser, 0, function);
-                  if (binding_id and entry.installed_interface) {
+                  if (binding_id and entry.module_unit and installed) {
                      auto &binding = this->catalogue_.binding(binding_id);
-                     binding.import_interface = entry.installed_interface.get();
+                     binding.import_interface = installed.get();
                      binding.import_namespace = &entry.default_namespace;
                      binding.is_import_namespace = true;
-                     if (const auto *exported = entry.installed_interface->find_export(entry.default_namespace)) {
-                        binding.function = entry.installed_interface->callable(*exported);
+                     if (const auto *exported = installed->find_export(entry.default_namespace)) {
+                        binding.function = installed->callable(*exported);
                      }
                   }
                }
@@ -2636,30 +2645,41 @@ private:
          }
          case AstNodeKind::ImportStmt: {
             for (auto &entry : std::get<ImportStmtPayload>(Statement.data).entries) {
-               if (entry.inlined_body) {
-                  ImportSourceGuard guard(this->context_.lex(), entry.file_source_idx);
+               BlockStmt *body = entry.module_unit ? entry.module_unit->body.get() : entry.inlined_body.get();
+               const auto installed = entry.module_unit ? entry.module_unit->installed_interface : nullptr;
+               const bool visit_body = body and (not entry.module_unit or
+                  entry.module_unit->static_propagation_generation !=
+                     this->context_.lex().static_analysis_generation);
+               if (visit_body) {
+                  ImportSourceGuard guard(this->context_.lex(),
+                     entry.module_unit ? entry.module_unit->file_source_idx : entry.file_source_idx);
                   if (entry.module_initialiser) {
                      const BlockStmt *outer_body = this->enclosing_body_;
-                     this->enclosing_body_ = entry.inlined_body.get();
+                     this->enclosing_body_ = body;
                      this->function_depth_++;
-                     this->propagate_block(*entry.inlined_body);
+                     this->propagate_block(*body);
                      this->function_depth_--;
                      this->enclosing_body_ = outer_body;
                   }
-                  else this->propagate_block(*entry.inlined_body);
+                  else this->propagate_block(*body);
+                  if (entry.module_unit) {
+                     entry.module_unit->static_propagation_generation =
+                        this->context_.lex().static_analysis_generation;
+                     this->context_.lex().imported_module_counters.static_propagation_visits++;
+                  }
                }
-               if (entry.installed_interface) {
-                  for (const auto &exported : entry.installed_interface->context().Bindings) {
+               if (installed) {
+                  for (const auto &exported : installed->context().Bindings) {
                      if (exported.Name.find('.') != std::string::npos or
-                         entry.installed_interface->is_namespace(exported.Name)) continue;
+                         installed->is_namespace(exported.Name)) continue;
                      GCstr *name = this->context_.lex().keepstr(exported.Name);
                      this->global_values_.emplace_back(
-                        name, this->add_value(entry.installed_interface->static_value(exported.Value)));
+                        name, this->add_value(installed->static_value(exported.Value)));
                   }
                   if (entry.namespace_name and entry.namespace_name->binding_id) {
                      auto &binding = this->catalogue_.binding(entry.namespace_name->binding_id);
                      binding.value = this->add_value(
-                        entry.installed_interface->namespace_value(entry.default_namespace));
+                        installed->namespace_value(entry.default_namespace));
                      entry.namespace_name->static_value = binding.value;
                   }
                }
@@ -2839,8 +2859,16 @@ private:
             break;
          case AstNodeKind::ImportStmt:
             for (auto &entry : std::get<ImportStmtPayload>(Statement.data).entries) {
-               ImportSourceGuard guard(this->context_.lex(), entry.file_source_idx);
-               visit(entry.inlined_body);
+               if (entry.module_unit) {
+                  if (entry.module_unit->ownership_visited) continue;
+                  entry.module_unit->ownership_visited = true;
+                  ImportSourceGuard guard(this->context_.lex(), entry.module_unit->file_source_idx);
+                  if (entry.module_unit->body) Visit(*entry.module_unit->body);
+               }
+               else {
+                  ImportSourceGuard guard(this->context_.lex(), entry.file_source_idx);
+                  visit(entry.inlined_body);
+               }
             }
             break;
          case AstNodeKind::WithStmt: visit(std::get<WithStmtPayload>(Statement.data).block); break;
@@ -2901,6 +2929,7 @@ void discover_static_bindings(ParserContext &Context, BlockStmt &Module)
 
 void propagate_static_descriptors(ParserContext &Context, BlockStmt &Module)
 {
+   Context.lex().static_analysis_generation++;
    StaticDescriptorAnalyser analyser(Context);
    analyser.propagate(Module);
 }

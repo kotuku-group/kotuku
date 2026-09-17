@@ -300,7 +300,12 @@ static void canonicalise_import_module_dependencies(
 ParserResult<IrEmitUnit> IrEmitter::emit_import_entry(const ImportEntryPayload &Entry)
 {
    FuncState *fs = &this->func_state;
-   if (Entry.module_initialiser and not Entry.module_already_imported and Entry.module_identity.empty()) {
+   ImportedModuleUnit *unit = Entry.module_unit.get();
+   if (Entry.module_initialiser and not unit) {
+      return ParserResult<IrEmitUnit>::failure(this->make_error(
+         ParserErrorCode::InternalInvariant, "Imported module edge has no compilation unit"));
+   }
+   if (unit and not Entry.module_already_imported and unit->module_identity.empty()) {
       return ParserResult<IrEmitUnit>::failure(this->make_error(
          ParserErrorCode::InternalInvariant, "Imported module has no runtime identity"));
    }
@@ -308,209 +313,21 @@ ParserResult<IrEmitUnit> IrEmitter::emit_import_entry(const ImportEntryPayload &
    // Local imports retain their inline block.  Non-local module initialisers are detached from ordinary child
    // traversal and owned exactly once by the root executable directory.
 
-   if (Entry.inlined_body) {
+   if ((unit and unit->body) or Entry.inlined_body) {
       // Temporarily switch to the imported file's FileSource index
       // so that prototypes created for functions in the import get the correct file_source_idx
 
       uint8_t saved_file_index = this->lex_state.current_file_index;
       BCLine saved_lastline = this->lex_state.lastline;
-      this->lex_state.current_file_index = Entry.file_source_idx;
+      this->lex_state.current_file_index = unit ? unit->file_source_idx : Entry.file_source_idx;
 
       ParserResult<IrEmitUnit> result = ParserResult<IrEmitUnit>::success(IrEmitUnit{});
       if (Entry.module_initialiser and not Entry.module_already_imported) {
-         GCproto *warm_root = nullptr;
-         const ImportModuleTable *warm_table = nullptr;
-         if (Entry.module_cache_hit) {
-            lua_State *L = this->lex_state.L;
-            if (lua_load(L, Entry.module_payload, "=import-cache-link") != 0 or
-                not lua_isfunction(L, -1) or lua_iscfunction(L, -1)) {
-               std::string diagnostic = "Warm imported-module executable graph could not be decoded";
-               if (const char *message = lua_tostring(L, -1)) diagnostic += std::string(": ") + message;
-               lua_pop(L, 1);
-               return ParserResult<IrEmitUnit>::failure(this->make_error(
-                  ParserErrorCode::InternalInvariant, diagnostic));
-            }
-            warm_root = funcproto(funcV(L->top - 1));
-            warm_table = proto_import_module_table(warm_root);
-            const uint32_t warm_count = warm_table ? warm_table->entry_count : 0;
-            if (warm_count != Entry.embedded_modules.size()) {
-               lua_pop(L, 1);
-               return ParserResult<IrEmitUnit>::failure(this->make_error(
-                  ParserErrorCode::InternalInvariant, "Warm imported-module directory does not match its metadata"));
-            }
-            this->lex_state.import_module_anchors.push_back(luaL_ref(L, LUA_REGISTRYINDEX));
-            this->lex_state.linked_import_module_roots.push_back(warm_root);
-         }
-
-         std::vector<uint32_t> embedded_mapping(Entry.embedded_modules.size(), UINT32_MAX);
-         std::vector<bool> embedded_dependency(Entry.embedded_modules.size(), false);
-         std::vector<bool> embedded_inserted(Entry.embedded_modules.size(), false);
-         for (size_t i = 0; i < Entry.embedded_modules.size(); ++i) {
-            const auto &record = Entry.embedded_modules[i];
-            for (uint32_t dependency : record.Dependencies) {
-               if (dependency >= i or embedded_mapping[dependency] IS UINT32_MAX) {
-                  return ParserResult<IrEmitUnit>::failure(this->make_error(
-                     ParserErrorCode::InternalInvariant, "Warm imported-module dependency order is invalid"));
-               }
-               embedded_dependency[dependency] = true;
-            }
-
-            std::vector<uint32_t> dependencies;
-            for (uint32_t dependency : record.Dependencies) {
-               dependencies.push_back(embedded_mapping[dependency]);
-            }
-
-            auto found = std::ranges::find(this->lex_state.import_module_records, record.CompiledIdentity,
-               &ImportModuleCompilationRecord::compiled_identity);
-            if (found != this->lex_state.import_module_records.end()) {
-               auto dependency_identities = [&](const std::vector<uint32_t> &Dependencies) {
-                  std::vector<std::string_view> identities;
-                  identities.reserve(Dependencies.size());
-                  for (uint32_t dependency : Dependencies) {
-                     if (dependency >= this->lex_state.import_module_records.size()) {
-                        return std::optional<std::vector<std::string_view>>{};
-                     }
-                     identities.push_back(this->lex_state.import_module_records[dependency].compiled_identity);
-                  }
-                  std::ranges::sort(identities);
-                  return std::optional<std::vector<std::string_view>>(std::move(identities));
-               };
-               const auto existing_dependencies = dependency_identities(found->dependencies);
-               const auto incoming_dependencies = dependency_identities(dependencies);
-               const bool dependencies_match = existing_dependencies and incoming_dependencies and
-                  *existing_dependencies IS *incoming_dependencies;
-               if (found->lookup_identity != record.LookupIdentity or
-                   found->interface_bytes != record.InterfaceBytes or not dependencies_match) {
-                  auto describe_dependencies = [](const auto &Dependencies) {
-                     std::string result;
-                     for (std::string_view identity : Dependencies) {
-                        if (not result.empty()) result += ", ";
-                        result += identity;
-                     }
-                     return result;
-                  };
-                  tiri::import_cache::Interface conflicting_interface;
-                  std::string source_path = "<unknown>";
-                  if (tiri::import_cache::decode_interface(record.InterfaceBytes, conflicting_interface) IS
-                      tiri::cache::FormatError::OKAY and not conflicting_interface.Sources.empty()) {
-                     source_path = conflicting_interface.Sources.front().ResolvedPath;
-                  }
-                  return ParserResult<IrEmitUnit>::failure(this->make_error(
-                     ParserErrorCode::InternalInvariant,
-                     std::format("Conflicting warm imported-module graph record '{}' for '{}' (lookup {}, "
-                        "interface {}, dependencies {}; existing [{}], incoming [{}])", record.CompiledIdentity,
-                        source_path,
-                        found->lookup_identity IS record.LookupIdentity ? "matches" : "differs",
-                        found->interface_bytes IS record.InterfaceBytes ? "matches" : "differs",
-                        dependencies_match ? "match" : "differ",
-                        existing_dependencies ? describe_dependencies(*existing_dependencies) : "<invalid>",
-                        incoming_dependencies ? describe_dependencies(*incoming_dependencies) : "<invalid>")));
-               }
-               embedded_mapping[i] = uint32_t(found - this->lex_state.import_module_records.begin());
-            }
-            else {
-               if (not warm_table or not gcref(import_module_table_entries(warm_table)[i].initialiser)) {
-                  return ParserResult<IrEmitUnit>::failure(this->make_error(
-                     ParserErrorCode::InternalInvariant, "Warm imported-module executable body is missing"));
-               }
-               embedded_mapping[i] = uint32_t(this->lex_state.import_module_records.size());
-               this->lex_state.import_module_records.push_back({ record.LookupIdentity, record.CompiledIdentity,
-                  record.InterfaceBytes, std::move(dependencies),
-                  gco_to_proto(gcref(import_module_table_entries(warm_table)[i].initialiser)), record.SourceIndex });
-               embedded_inserted[i] = true;
-            }
-         }
-
-         for (size_t i = 0; i < embedded_mapping.size(); ++i) {
-            if (embedded_inserted[i] and not remap_import_module_references(
-                this->lex_state.import_module_records[embedded_mapping[i]].initialiser, embedded_mapping)) {
-               return ParserResult<IrEmitUnit>::failure(this->make_error(
-                  ParserErrorCode::InternalInvariant, "Warm imported-module references could not be relocated"));
-            }
-         }
-         if (warm_root and not remap_import_module_references(warm_root, embedded_mapping)) {
-            return ParserResult<IrEmitUnit>::failure(this->make_error(
-               ParserErrorCode::InternalInvariant, "Warm imported-module root references could not be relocated"));
-         }
-
-         std::vector<uint32_t> embedded_roots;
-         for (size_t i = 0; i < embedded_mapping.size(); ++i) {
-            if (not embedded_dependency[i]) embedded_roots.push_back(embedded_mapping[i]);
-         }
-
-         auto existing = std::ranges::find_if(this->lex_state.import_module_records, [&](const auto &Record) {
-            return Record.compiled_identity IS Entry.module_identity;
-         });
-
-         const bool new_module = existing IS this->lex_state.import_module_records.end();
-         if (new_module) {
-            this->lex_state.import_module_stack.push_back({ Entry.module_cache_identity.LookupIdentity,
-               Entry.module_identity, std::move(embedded_roots) });
-         }
-
-         FunctionExprPayload initialiser;
-         GCproto *module_prototype = nullptr;
-         ParserResult<ExpDesc> function = ParserResult<ExpDesc>::success(ExpDesc{});
-
-         if (Entry.module_cache_hit) module_prototype = warm_root;
-         else if (new_module or not existing->initialiser) {
-            function = this->emit_function_body(
-               initialiser, *Entry.inlined_body, nullptr, true, &module_prototype, &Entry.module_dependencies, true);
-            if (function.ok() and module_prototype) {
-               lua_State *L = this->lex_state.L;
-               setfuncV(L, L->top, lj_func_newL_empty(L, module_prototype, tabref(L->env)));
-               incr_top(L);
-               this->lex_state.import_module_anchors.push_back(luaL_ref(L, LUA_REGISTRYINDEX));
-            }
-         }
-
-         if (not function.ok()) {
-            if (new_module) this->lex_state.import_module_stack.pop_back();
-            result = ParserResult<IrEmitUnit>::failure(function.error_ref());
-         }
-         else {
-            if (new_module and not Entry.module_cache_hit and Entry.installed_interface and module_prototype) {
-               std::string payload;
-               if (prepare_import_module_dump(this->lex_state, module_prototype, payload)) {
-                  tiri::import_cache::CompilationRequest request;
-                  request.ExpectedIdentity = Entry.module_cache_identity;
-                  tiri::import_cache::CompiledModule published;
-                  (void)tiri::import_cache::publish_module(request, Entry.module_cache_identity,
-                     Entry.installed_interface->portable_interface(), payload,
-                     this->lex_state.import_cache_counters, published);
-               }
-            }
-
-            uint32_t module_index = 0;
-            if (new_module) {
-               std::string interface_bytes;
-               tiri::import_cache::Interface empty_interface;
-               const auto &portable = Entry.installed_interface ?
-                  Entry.installed_interface->portable_interface() : empty_interface;
-               auto interface_error = tiri::import_cache::encode_interface(portable, interface_bytes);
-               if (interface_error != tiri::cache::FormatError::OKAY) {
-                  this->lex_state.import_module_stack.pop_back();
-                  return ParserResult<IrEmitUnit>::failure(this->make_error(
-                     ParserErrorCode::InternalInvariant, std::format(
-                        "Imported module '{}' has an invalid portable interface: {}", Entry.lib_path,
-                        tiri::cache::format_error_name(interface_error))));
-               }
-
-               ImportModuleCompilationFrame frame = std::move(this->lex_state.import_module_stack.back());
-               this->lex_state.import_module_stack.pop_back();
-               canonicalise_import_module_dependencies(this->lex_state.import_module_records, frame.dependencies);
-               module_index = uint32_t(this->lex_state.import_module_records.size());
-               this->lex_state.import_module_records.push_back({
-                  std::move(frame.lookup_identity), std::move(frame.compiled_identity),
-                  std::move(interface_bytes), std::move(frame.dependencies), module_prototype, Entry.file_source_idx
-               });
-            }
-            else module_index = uint32_t(existing - this->lex_state.import_module_records.begin());
-
+         auto activate_module = [&](uint32_t ModuleIndex) {
             if (not this->lex_state.import_module_stack.empty()) {
                auto &dependencies = this->lex_state.import_module_stack.back().dependencies;
-               if (std::ranges::find(dependencies, module_index) IS dependencies.end()) {
-                  dependencies.push_back(module_index);
+               if (std::ranges::find(dependencies, ModuleIndex) IS dependencies.end()) {
+                  dependencies.push_back(ModuleIndex);
                }
             }
 
@@ -520,12 +337,210 @@ ParserResult<IrEmitUnit> IrEmitter::emit_import_entry(const ImportEntryPayload &
             bcemit_builtin_callable(fs, BuiltinCallableID::ImportModuleActivate, base.raw());
 
             lua_State *L = this->lex_state.L;
-            GCstr *identity = lj_str_new(L, Entry.module_identity.data(), Entry.module_identity.size());
+            GCstr *identity = lj_str_new(L, unit->module_identity.data(), unit->module_identity.size());
             bcemit_AD(fs, BC_KSTR, base.raw() + 1 + LJ_FR2, const_gc(fs, obj2gco(identity), LJ_TSTR));
 
-            bcemit_AD(fs, BC_KSHORT, base.raw() + 2 + LJ_FR2, int32_t(module_index));
+            bcemit_AD(fs, BC_KSHORT, base.raw() + 2 + LJ_FR2, int32_t(ModuleIndex));
             bcemit_ABC(fs, BC_CALL, base.raw(), 1, argument_count + 1);
             fs->freereg = base.raw();
+         };
+
+         if (unit->compilation_record != UINT32_MAX) activate_module(unit->compilation_record);
+         else {
+            GCproto *warm_root = nullptr;
+            const ImportModuleTable *warm_table = nullptr;
+            if (unit->module_cache_hit) {
+               lua_State *L = this->lex_state.L;
+               if (lua_load(L, unit->module_payload, "=import-cache-link") != 0 or
+                   not lua_isfunction(L, -1) or lua_iscfunction(L, -1)) {
+                  std::string diagnostic = "Warm imported-module executable graph could not be decoded";
+                  if (const char *message = lua_tostring(L, -1)) diagnostic += std::string(": ") + message;
+                  lua_pop(L, 1);
+                  return ParserResult<IrEmitUnit>::failure(this->make_error(
+                     ParserErrorCode::InternalInvariant, diagnostic));
+               }
+               warm_root = funcproto(funcV(L->top - 1));
+               warm_table = proto_import_module_table(warm_root);
+               const uint32_t warm_count = warm_table ? warm_table->entry_count : 0;
+               if (warm_count != unit->embedded_modules.size()) {
+                  lua_pop(L, 1);
+                  return ParserResult<IrEmitUnit>::failure(this->make_error(
+                     ParserErrorCode::InternalInvariant, "Warm imported-module directory does not match its metadata"));
+               }
+               this->lex_state.import_module_anchors.push_back(luaL_ref(L, LUA_REGISTRYINDEX));
+               this->lex_state.linked_import_module_roots.push_back(warm_root);
+            }
+
+            std::vector<uint32_t> embedded_mapping(unit->embedded_modules.size(), UINT32_MAX);
+            std::vector<bool> embedded_dependency(unit->embedded_modules.size(), false);
+            std::vector<bool> embedded_inserted(unit->embedded_modules.size(), false);
+            for (size_t i = 0; i < unit->embedded_modules.size(); ++i) {
+               const auto &record = unit->embedded_modules[i];
+               for (uint32_t dependency : record.Dependencies) {
+                  if (dependency >= i or embedded_mapping[dependency] IS UINT32_MAX) {
+                     return ParserResult<IrEmitUnit>::failure(this->make_error(
+                        ParserErrorCode::InternalInvariant, "Warm imported-module dependency order is invalid"));
+                  }
+                  embedded_dependency[dependency] = true;
+               }
+
+               std::vector<uint32_t> dependencies;
+               for (uint32_t dependency : record.Dependencies) {
+                  dependencies.push_back(embedded_mapping[dependency]);
+               }
+
+               auto found = std::ranges::find(this->lex_state.import_module_records, record.CompiledIdentity,
+                  &ImportModuleCompilationRecord::compiled_identity);
+               if (found != this->lex_state.import_module_records.end()) {
+                  auto dependency_identities = [&](const std::vector<uint32_t> &Dependencies) {
+                     std::vector<std::string_view> identities;
+                     identities.reserve(Dependencies.size());
+                     for (uint32_t dependency : Dependencies) {
+                        if (dependency >= this->lex_state.import_module_records.size()) {
+                           return std::optional<std::vector<std::string_view>>{};
+                        }
+                        identities.push_back(this->lex_state.import_module_records[dependency].compiled_identity);
+                     }
+                     std::ranges::sort(identities);
+                     return std::optional<std::vector<std::string_view>>(std::move(identities));
+                  };
+                  const auto existing_dependencies = dependency_identities(found->dependencies);
+                  const auto incoming_dependencies = dependency_identities(dependencies);
+                  const bool dependencies_match = existing_dependencies and incoming_dependencies and
+                     *existing_dependencies IS *incoming_dependencies;
+                  if (found->lookup_identity != record.LookupIdentity or
+                      found->interface_bytes != record.InterfaceBytes or not dependencies_match) {
+                     auto describe_dependencies = [](const auto &Dependencies) {
+                        std::string result;
+                        for (std::string_view identity : Dependencies) {
+                           if (not result.empty()) result += ", ";
+                           result += identity;
+                        }
+                        return result;
+                     };
+                     tiri::import_cache::Interface conflicting_interface;
+                     std::string source_path = "<unknown>";
+                     if (tiri::import_cache::decode_interface(record.InterfaceBytes, conflicting_interface) IS
+                         tiri::cache::FormatError::OKAY and not conflicting_interface.Sources.empty()) {
+                        source_path = conflicting_interface.Sources.front().ResolvedPath;
+                     }
+                     return ParserResult<IrEmitUnit>::failure(this->make_error(
+                        ParserErrorCode::InternalInvariant,
+                        std::format("Conflicting warm imported-module graph record '{}' for '{}' (lookup {}, "
+                           "interface {}, dependencies {}; existing [{}], incoming [{}])", record.CompiledIdentity,
+                           source_path,
+                           found->lookup_identity IS record.LookupIdentity ? "matches" : "differs",
+                           found->interface_bytes IS record.InterfaceBytes ? "matches" : "differs",
+                           dependencies_match ? "match" : "differ",
+                           existing_dependencies ? describe_dependencies(*existing_dependencies) : "<invalid>",
+                           incoming_dependencies ? describe_dependencies(*incoming_dependencies) : "<invalid>")));
+                  }
+                  embedded_mapping[i] = uint32_t(found - this->lex_state.import_module_records.begin());
+               }
+               else {
+                  if (not warm_table or not gcref(import_module_table_entries(warm_table)[i].initialiser)) {
+                     return ParserResult<IrEmitUnit>::failure(this->make_error(
+                        ParserErrorCode::InternalInvariant, "Warm imported-module executable body is missing"));
+                  }
+                  embedded_mapping[i] = uint32_t(this->lex_state.import_module_records.size());
+                  this->lex_state.import_module_records.push_back({ record.LookupIdentity, record.CompiledIdentity,
+                     record.InterfaceBytes, std::move(dependencies),
+                     gco_to_proto(gcref(import_module_table_entries(warm_table)[i].initialiser)), record.SourceIndex });
+                  embedded_inserted[i] = true;
+               }
+            }
+
+            for (size_t i = 0; i < embedded_mapping.size(); ++i) {
+               if (embedded_inserted[i] and not remap_import_module_references(
+                   this->lex_state.import_module_records[embedded_mapping[i]].initialiser, embedded_mapping)) {
+                  return ParserResult<IrEmitUnit>::failure(this->make_error(
+                     ParserErrorCode::InternalInvariant, "Warm imported-module references could not be relocated"));
+               }
+            }
+            if (warm_root and not remap_import_module_references(warm_root, embedded_mapping)) {
+               return ParserResult<IrEmitUnit>::failure(this->make_error(
+                  ParserErrorCode::InternalInvariant, "Warm imported-module root references could not be relocated"));
+            }
+
+            std::vector<uint32_t> embedded_roots;
+            for (size_t i = 0; i < embedded_mapping.size(); ++i) {
+               if (not embedded_dependency[i]) embedded_roots.push_back(embedded_mapping[i]);
+            }
+
+            auto existing = std::ranges::find_if(this->lex_state.import_module_records, [&](const auto &Record) {
+               return Record.compiled_identity IS unit->module_identity;
+            });
+
+            const bool new_module = existing IS this->lex_state.import_module_records.end();
+            if (new_module) {
+               this->lex_state.import_module_stack.push_back({ unit->module_cache_identity.LookupIdentity,
+                  unit->module_identity, std::move(embedded_roots) });
+            }
+
+            FunctionExprPayload initialiser;
+            GCproto *module_prototype = nullptr;
+            ParserResult<ExpDesc> function = ParserResult<ExpDesc>::success(ExpDesc{});
+
+            if (unit->module_cache_hit) module_prototype = warm_root;
+            else if (new_module or not existing->initialiser) {
+               this->lex_state.imported_module_counters.initialiser_emissions++;
+               function = this->emit_function_body(
+                  initialiser, *unit->body, nullptr, true, &module_prototype, &unit->module_dependencies, true);
+               if (function.ok() and module_prototype) {
+                  lua_State *L = this->lex_state.L;
+                  setfuncV(L, L->top, lj_func_newL_empty(L, module_prototype, tabref(L->env)));
+                  incr_top(L);
+                  this->lex_state.import_module_anchors.push_back(luaL_ref(L, LUA_REGISTRYINDEX));
+               }
+            }
+
+            if (not function.ok()) {
+               if (new_module) this->lex_state.import_module_stack.pop_back();
+               result = ParserResult<IrEmitUnit>::failure(function.error_ref());
+            }
+            else {
+               if (new_module and not unit->module_cache_hit and unit->installed_interface and module_prototype) {
+                  std::string payload;
+                  if (prepare_import_module_dump(this->lex_state, module_prototype, payload)) {
+                     tiri::import_cache::CompilationRequest request;
+                     request.ExpectedIdentity = unit->module_cache_identity;
+                     tiri::import_cache::CompiledModule published;
+                     (void)tiri::import_cache::publish_module(request, unit->module_cache_identity,
+                        unit->installed_interface->portable_interface(), payload,
+                        this->lex_state.import_cache_counters, published);
+                  }
+               }
+
+               uint32_t module_index = 0;
+               if (new_module) {
+                  std::string interface_bytes;
+                  tiri::import_cache::Interface empty_interface;
+                  const auto &portable = unit->installed_interface ?
+                     unit->installed_interface->portable_interface() : empty_interface;
+                  auto interface_error = tiri::import_cache::encode_interface(portable, interface_bytes);
+                  if (interface_error != tiri::cache::FormatError::OKAY) {
+                     this->lex_state.import_module_stack.pop_back();
+                     return ParserResult<IrEmitUnit>::failure(this->make_error(
+                        ParserErrorCode::InternalInvariant, std::format(
+                           "Imported module '{}' has an invalid portable interface: {}", Entry.lib_path,
+                           tiri::cache::format_error_name(interface_error))));
+                  }
+
+                  ImportModuleCompilationFrame frame = std::move(this->lex_state.import_module_stack.back());
+                  this->lex_state.import_module_stack.pop_back();
+                  canonicalise_import_module_dependencies(this->lex_state.import_module_records, frame.dependencies);
+                  module_index = uint32_t(this->lex_state.import_module_records.size());
+                  this->lex_state.import_module_records.push_back({
+                     std::move(frame.lookup_identity), std::move(frame.compiled_identity),
+                     std::move(interface_bytes), std::move(frame.dependencies), module_prototype, unit->file_source_idx
+                  });
+               }
+               else module_index = uint32_t(existing - this->lex_state.import_module_records.begin());
+
+               unit->compilation_record = module_index;
+               unit->state = ImportedModuleState::Emitted;
+               activate_module(module_index);
+            }
          }
       }
       else if (not Entry.module_initialiser) {

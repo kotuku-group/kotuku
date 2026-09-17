@@ -97,7 +97,11 @@ void collect_assignments(
       }
       case AstNodeKind::ImportStmt:
          for (const auto &entry : std::get<ImportStmtPayload>(Statement.data).entries) {
-            if (block_writes(entry.inlined_body, InspectAssignments)) return true;
+            if (entry.module_unit) {
+               if (entry.module_unit->body and
+                   binding_written_in_closure(*entry.module_unit->body, Binding, InspectAssignments)) return true;
+            }
+            else if (block_writes(entry.inlined_body, InspectAssignments)) return true;
          }
          return false;
       case AstNodeKind::NamespaceStmt: {
@@ -226,7 +230,11 @@ void collect_statement_assignments(
       }
       case AstNodeKind::ImportStmt:
          for (const auto &entry : std::get<ImportStmtPayload>(Statement.data).entries) {
-            visit_block(entry.inlined_body, false);
+            if (entry.module_unit) {
+               if (entry.module_unit->body) collect_assignments(*entry.module_unit->body, Binding,
+                  UseOffset, false, Sources, InitialReaches, Unresolved);
+            }
+            else visit_block(entry.inlined_body, false);
          }
          return;
 

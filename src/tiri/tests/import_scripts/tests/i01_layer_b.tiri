@@ -1,0 +1,3 @@
+import 'tests/i01_diamond_a', 'tests/i01_diamond_b'
+
+i01_boundary_trace ..= 'Y'

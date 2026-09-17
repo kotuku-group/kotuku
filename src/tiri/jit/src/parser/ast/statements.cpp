@@ -1810,15 +1810,64 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
          "Circular import detected: " + path);
    }
 
-   // Parse the imported file
+   // Non-local modules are definitions owned by the root compilation.  Each source import remains a separate edge,
+   // but a completed definition is reused without another lookup or parse.
+
+   std::shared_ptr<ImportedModuleUnit> module_unit;
+   bool module_already_imported = false;
+   bool reused_module = false;
+   if (module_initialiser) {
+      ImportedModuleKey key { path, original_request, true };
+      module_already_imported = this->import_seen_this_unit(key);
+      module_unit = this->find_imported_module(key);
+      if (module_unit) {
+         if (module_unit->state IS ImportedModuleState::Resolving) {
+            return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, ImportToken,
+               "Circular import detected: " + path);
+         }
+         if (module_unit->state IS ImportedModuleState::Failed) {
+            return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, ImportToken,
+               "Imported module failed earlier in this compilation: " + path);
+         }
+         reused_module = true;
+      }
+      else {
+         module_unit = std::make_shared<ImportedModuleUnit>();
+         module_unit->key = std::move(key);
+         this->register_imported_module(module_unit);
+      }
+   }
 
    tiri::import_cache::ModuleLookup module_lookup;
    std::vector<FuncState::DependencyDescriptor> module_dependencies;
-   bool module_already_imported = false;
-   auto imported_body = this->parse_imported_file(
-      path, original_request, ImportToken, module_initialiser, module_initialiser ? &module_lookup : nullptr,
-      module_initialiser ? &module_dependencies : nullptr, &module_already_imported);
-   if (not imported_body.ok()) return ParserResult<ImportEntryPayload>::failure(imported_body.error_ref());
+   std::unique_ptr<BlockStmt> imported_body;
+   if (reused_module) {
+      if (auto *manifest = this->cache_manifest()) {
+         manifest->ResolutionInputs.push_back({ original_request, this->cache_context_path(), path });
+         manifest->Imports.push_back({ this->cache_context_path(), original_request,
+            module_unit->module_cache_identity.Source });
+      }
+      const FileSource *source = get_file_source(&this->ctx.lua(), module_unit->file_source_idx);
+      if (source) {
+         (void)this->record_import_source(path, source->filename, source->total_lines.lineNumber(),
+            this->ctx.lex().current_source_descriptor, ImportToken.span().line.lineNumber(),
+            module_unit->file_source_idx);
+      }
+   }
+   else {
+      if (module_unit) this->root_builder()->ctx.lex().imported_module_counters.lookup_attempts++;
+      auto parsed = this->parse_imported_file(
+         path, original_request, ImportToken, module_initialiser, module_initialiser ? &module_lookup : nullptr,
+         module_initialiser ? &module_dependencies : nullptr);
+      if (not parsed.ok()) {
+         if (module_unit) {
+            module_unit->state = ImportedModuleState::Failed;
+            this->discard_imported_module(module_unit->key);
+         }
+         return ParserResult<ImportEntryPayload>::failure(parsed.error_ref());
+      }
+      imported_body = std::move(parsed.value_ref());
+   }
 
    // Look up the FileSource index and namespace for this import (registered during parse_imported_file)
 
@@ -1847,42 +1896,53 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
    ImportEntryPayload entry;
    entry.lib_path = path;
    if (module_initialiser) {
-      entry.module_cache_hit      = module_lookup.Cached.CacheHit;
-      entry.embedded_modules      = std::move(module_lookup.EmbeddedModules);
+      entry.module_unit = module_unit;
+      if (not reused_module) {
+         module_unit->module_cache_hit = module_lookup.Cached.CacheHit;
+         if (not module_unit->module_cache_hit) {
+            this->root_builder()->ctx.lex().imported_module_counters.source_parses++;
+         }
+         module_unit->embedded_modules = std::move(module_lookup.EmbeddedModules);
+         module_unit->body = std::shared_ptr<BlockStmt>(std::move(imported_body));
+         module_unit->module_dependencies = std::move(module_dependencies);
+         module_unit->file_source_idx = file_idx.value_or(0);
 
-      if (entry.module_cache_hit) {
-         entry.module_cache_identity = std::move(module_lookup.Cached.CompilationIdentity);
-         entry.module_identity = entry.module_cache_identity.CompiledIdentity;
-         entry.module_payload = std::move(module_lookup.Cached.Payload);
-         if (not module_already_imported) {
+         if (module_unit->module_cache_hit) {
+            module_unit->module_cache_identity = std::move(module_lookup.Cached.CompilationIdentity);
+            module_unit->module_identity = module_unit->module_cache_identity.CompiledIdentity;
+            module_unit->module_payload = std::move(module_lookup.Cached.Payload);
             std::string diagnostic;
-            entry.installed_interface = InstalledImportInterface::create(
+            module_unit->installed_interface = InstalledImportInterface::create(
                this->ctx, module_lookup.Cached.CompileTimeInterface, diagnostic);
 
-            if (not entry.installed_interface) {
+            if (not module_unit->installed_interface) {
+               module_unit->state = ImportedModuleState::Failed;
+               this->discard_imported_module(module_unit->key);
                return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, ImportToken,
                   diagnostic.empty() ? "Cannot install imported-module interface" : diagnostic);
             }
+         }
+         else module_unit->module_cache_identity = std::move(module_lookup.ExpectedIdentity);
+         module_unit->state = ImportedModuleState::Parsed;
+      }
 
-            for (const auto &exported : entry.installed_interface->context().Bindings) {
-               if (exported.Name.find('.') != std::string::npos or
-                   entry.installed_interface->is_namespace(exported.Name)) continue;
-               GCstr *name = this->ctx.lex().keepstr(exported.Name);
-               if (exported.Kind IS tiri::import_cache::ExportKind::EXTERN) {
-                  this->ctx.func().external_symbols.insert(name);
-               }
-               else {
-                  this->ctx.func().declared_globals.insert(name);
-                  if (exported.IsConst) this->ctx.func().const_globals.insert(name);
-               }
+      if (module_unit->installed_interface) {
+         for (const auto &exported : module_unit->installed_interface->context().Bindings) {
+            if (exported.Name.find('.') != std::string::npos or
+                module_unit->installed_interface->is_namespace(exported.Name)) continue;
+            GCstr *name = this->ctx.lex().keepstr(exported.Name);
+            if (exported.Kind IS tiri::import_cache::ExportKind::EXTERN) {
+               this->ctx.func().external_symbols.insert(name);
+            }
+            else {
+               this->ctx.func().declared_globals.insert(name);
+               if (exported.IsConst) this->ctx.func().const_globals.insert(name);
             }
          }
       }
-      else entry.module_cache_identity = std::move(module_lookup.ExpectedIdentity);
    }
+   else entry.inlined_body = std::move(imported_body);
 
-   entry.inlined_body = std::move(imported_body.value_ref());
-   entry.module_dependencies = std::move(module_dependencies);
    entry.module_initialiser = module_initialiser;
    entry.module_already_imported = module_already_imported;
 
@@ -2044,7 +2104,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_namespace()
 ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(
    std::string &Path, std::string_view Library, const Token &ImportToken, bool ModuleInitialiser,
    tiri::import_cache::ModuleLookup *Lookup,
-   std::vector<FuncState::DependencyDescriptor> *ModuleDependencies, bool *AlreadyImported)
+   std::vector<FuncState::DependencyDescriptor> *ModuleDependencies)
 {
    kt::Log log(__FUNCTION__);
 
@@ -2062,16 +2122,7 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(
    // The edge above belongs to the importer.  The module identity starts with observations made while parsing the
    // imported source so that loading the same immutable source from another parent produces the same identity.
    const size_t resolution_start = manifest ? manifest->ResolutionInputs.size() : 0;
-
-   const uint32_t libhash = kt::strihash(Path);
-   bool seen_this_chunk = this->import_seen_this_chunk(libhash);
-
-   if (AlreadyImported) *AlreadyImported = seen_this_chunk;
-
-   if (ModuleInitialiser and seen_this_chunk) {
-      log.detail("Library %.*s already imported in this compilation", int(Library.size()), Library.data());
-      return ParserResult<std::unique_ptr<BlockStmt>>::success(make_block(ImportToken.span(), {}));
-   }
+   const bool local_seen = not ModuleInitialiser and this->local_import_seen(kt::strihash(Path));
 
    const bool cache_allowed = ModuleInitialiser and Lookup and
       ((L->script->Flags & SCF::PROCESS_DOC) IS SCF::NIL);
@@ -2335,7 +2386,7 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(
 
    auto existing_index = find_file_source(L, Path);
    if (existing_index.has_value()) {
-      if (seen_this_chunk or
+      if (local_seen or
           (not ModuleInitialiser and not this->ctx.lex().diagnose_mode and not this->cache_manifest())) {
          if (auto manifest = this->cache_manifest()) {
             auto previous = std::ranges::find_if(manifest->Imports, [&](const auto &Import) {
