@@ -19,6 +19,7 @@
 
 #include "nodes.h"
 #include "../parser_context.h"
+#include "../import_module_validation.h"
 #include "../../../../cache_manifest.h"
 #include "../../../../import_module_cache.h"
 
@@ -61,6 +62,7 @@ private:
    std::vector<ImportedModuleKey> imported_edges; // Non-local imports already activated by this module initialiser
    std::unordered_map<ImportedModuleKey, std::shared_ptr<ImportedModuleUnit>, ImportedModuleKeyHash>
       imported_module_units;                   // Definition registry owned by the root builder
+   std::unique_ptr<ImportModuleValidationSession> import_validation_session;
    StmtNodeList pending_statements;
 
    // One record per canonical module declared by this compilation unit.  Aliases of the same module share a
@@ -132,6 +134,10 @@ private:
       AstBuilder *root = this;
       while (root->parent_builder) root = root->parent_builder;
       return root;
+   }
+
+   [[nodiscard]] ImportModuleValidationSession &validation_session() {
+      return *this->root_builder()->import_validation_session;
    }
 
    uint8_t record_import_source(const std::string &, const std::string &, BCLine, uint8_t, BCLine, uint8_t);

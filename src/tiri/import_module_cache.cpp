@@ -168,7 +168,7 @@ bool identity_matches(const Identity &Stored, const Identity &Expected)
 // Loads and validates a cache candidate, leaving the output ready for immediate use on success.
 
 bool try_cache(const std::string &Path, const Identity &Expected, const IdentityValidator &ValidateIdentity,
-   const PayloadValidator &ValidatePayload, CompiledModule &Output)
+   const PayloadValidator &ValidatePayload, LifecycleCounters &Counters, CompiledModule &Output)
 {
    objFile::create input = { fl::Path(Path), fl::Flags(FL::READ) };
    if (not input.ok()) return false;
@@ -178,16 +178,22 @@ bool try_cache(const std::string &Path, const Identity &Expected, const Identity
    if (read_open_file(*input, content, modified) != ERR::Okay) return false;
 
    EnvelopeView envelope;
+   Counters.EnvelopeDecodes++;
    if (decode_envelope(content, envelope) != cache::FormatError::OKAY or
        not identity_matches(envelope.CompilationIdentity, Expected)) return false;
 
    std::string reason;
-   if ((ValidateIdentity and not ValidateIdentity(envelope.CompilationIdentity, reason)) or
-       (ValidatePayload and not ValidatePayload(envelope.Payload, reason))) {
+   if (ValidateIdentity and not ValidateIdentity(envelope.CompilationIdentity, reason)) {
       Output.Diagnostic = std::move(reason);
       return false;
    }
-
+   if (ValidatePayload) {
+      Counters.PayloadValidations++;
+      if (not ValidatePayload(envelope.Payload, reason)) {
+         Output.Diagnostic = std::move(reason);
+         return false;
+      }
+   }
    Output.CompilationIdentity = std::move(envelope.CompilationIdentity);
    Output.LookupIdentity = std::move(envelope.LookupIdentity);
    Output.CompiledIdentity = std::move(envelope.CompiledIdentity);
@@ -225,6 +231,29 @@ void set_module_publish_failure(ModulePublishFailure Failure)
 #endif
 
 //********************************************************************************************************************
+// Captures one stable, BOM-normalised source snapshot and its complete identity.
+
+ERR snapshot_source(std::string_view Path, LifecycleCounters &Counters, SourceSnapshot &Output)
+{
+   Output = {};
+   if (Path.empty()) return ERR::NullArgs;
+
+   objFile::create source_file = { fl::Path(std::string(Path)), fl::Flags(FL::READ) };
+   if (not source_file.ok()) return source_file.error;
+
+   int64_t modified_hint = 0;
+   if (auto error = read_open_file(*source_file, Output.Source, modified_hint); error != ERR::Okay) return error;
+   normalise_bom(Output.Source);
+
+   Output.Identity.ResolvedPath.assign(Path);
+   Output.Identity.Size = Output.Source.size();
+   Output.Identity.ModifiedHint = modified_hint;
+   Output.Identity.ContentDigest = cache::content_digest(Output.Source);
+   Counters.SourceReads++;
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
 // Returns a validated cached module or compiles and publishes a replacement from one source snapshot.
 
 ERR load_or_compile_module(const CompilationRequest &Request, const ModuleCompiler &Compile,
@@ -242,26 +271,20 @@ ERR load_or_compile_module(const CompilationRequest &Request, const ModuleCompil
       return ERR::Loop;
    }
 
-   objFile::create source_file = { fl::Path(source_path), fl::Flags(FL::READ) };
-   if (not source_file.ok()) return source_file.error;
-   std::string source;
-   int64_t modified_hint = 0;
-   if (auto error = read_open_file(*source_file, source, modified_hint); error != ERR::Okay) return error;
-   normalise_bom(source);
+   SourceSnapshot snapshot;
+   if (auto error = snapshot_source(source_path, Counters, snapshot); error != ERR::Okay) return error;
 
    Identity expected = Request.ExpectedIdentity;
-   expected.Source.Size = source.size();
-   expected.Source.ModifiedHint = modified_hint;
-   expected.Source.ContentDigest = cache::content_digest(source);
+   expected.Source = snapshot.Identity;
    auto selected_path = cache_path(Request.CacheDirectory, expected);
 
-   if (try_cache(selected_path, expected, ValidateIdentity, ValidatePayload, Output)) {
-      Counters.Hits++;
+   if (try_cache(selected_path, expected, ValidateIdentity, ValidatePayload, Counters, Output)) {
+      Counters.CacheHits++;
       log.trace("Imported-module cache hit '%s'.", selected_path.c_str());
       return ERR::Okay;
    }
 
-   Counters.Misses++;
+   Counters.LookupMisses++;
    Counters.SourceCompilations++;
    log.trace("Imported-module cache miss '%s'.", selected_path.c_str());
    ImportStackGuard stack_guard(Request.ImportStack, source_path);
@@ -270,7 +293,7 @@ ERR load_or_compile_module(const CompilationRequest &Request, const ModuleCompil
    Interface interface_value;
    std::string payload;
    std::string diagnostic;
-   auto error = Compile(source, compiled_identity, interface_value, payload, diagnostic);
+   auto error = Compile(snapshot.Source, compiled_identity, interface_value, payload, diagnostic);
    if (error != ERR::Okay) {
       Output.Diagnostic = std::move(diagnostic);
       return error;
@@ -287,9 +310,12 @@ ERR load_or_compile_module(const CompilationRequest &Request, const ModuleCompil
    }
 
    std::string reason;
-   if (ValidatePayload and not ValidatePayload(payload, reason)) {
-      Output.Diagnostic = reason.empty() ? "Compiled imported-module bytecode is invalid." : std::move(reason);
-      return ERR::InvalidData;
+   if (ValidatePayload) {
+      Counters.PayloadValidations++;
+      if (not ValidatePayload(payload, reason)) {
+         Output.Diagnostic = reason.empty() ? "Compiled imported-module bytecode is invalid." : std::move(reason);
+         return ERR::InvalidData;
+      }
    }
 
    std::string envelope;
@@ -322,8 +348,9 @@ ERR load_or_compile_module(const CompilationRequest &Request, const ModuleCompil
 //********************************************************************************************************************
 // Captures source identity and attempts a cache lookup before parser-led compilation.
 
-ERR lookup_module(const CompilationRequest &Request, const IdentityValidator &ValidateIdentity,
-   const PayloadValidator &ValidatePayload, LifecycleCounters &Counters, ModuleLookup &Output)
+ERR lookup_module(const CompilationRequest &Request, const SourceSnapshot &Snapshot,
+   const IdentityValidator &ValidateIdentity, const PayloadValidator &ValidatePayload,
+   LifecycleCounters &Counters, ModuleLookup &Output)
 {
    kt::Log log(__FUNCTION__);
    Output = {};
@@ -336,29 +363,35 @@ ERR lookup_module(const CompilationRequest &Request, const IdentityValidator &Va
       return ERR::Loop;
    }
 
-   objFile::create source_file = { fl::Path(source_path), fl::Flags(FL::READ) };
-   if (not source_file.ok()) return source_file.error;
-   int64_t modified_hint = 0;
-   if (auto error = read_open_file(*source_file, Output.Source, modified_hint); error != ERR::Okay) return error;
-   normalise_bom(Output.Source);
+   if (Snapshot.Identity.ResolvedPath != source_path) return ERR::InvalidData;
 
    Output.ExpectedIdentity = Request.ExpectedIdentity;
-   Output.ExpectedIdentity.Source.Size = Output.Source.size();
-   Output.ExpectedIdentity.Source.ModifiedHint = modified_hint;
-   Output.ExpectedIdentity.Source.ContentDigest = cache::content_digest(Output.Source);
+   Output.ExpectedIdentity.Source = Snapshot.Identity;
+   Output.Source = Snapshot.Source;
    const auto selected_path = cache_path(Request.CacheDirectory, Output.ExpectedIdentity);
 
-   if (try_cache(selected_path, Output.ExpectedIdentity, ValidateIdentity, ValidatePayload, Output.Cached)) {
-      Counters.Hits++;
+   if (try_cache(selected_path, Output.ExpectedIdentity, ValidateIdentity, ValidatePayload, Counters, Output.Cached)) {
+      Counters.CacheHits++;
       log.trace("Imported-module cache hit '%s'.", selected_path.c_str());
    }
    else {
-      Counters.Misses++;
-      Counters.SourceCompilations++;
+      Counters.LookupMisses++;
       log.trace("Imported-module source rebuild '%s'%s%s.", selected_path.c_str(),
          Output.Cached.Diagnostic.empty() ? "" : ": ", Output.Cached.Diagnostic.c_str());
    }
    return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Convenience lookup for callers that do not own a compilation-scoped snapshot cache.
+
+ERR lookup_module(const CompilationRequest &Request, const IdentityValidator &ValidateIdentity,
+   const PayloadValidator &ValidatePayload, LifecycleCounters &Counters, ModuleLookup &Output)
+{
+   SourceSnapshot snapshot;
+   if (auto error = snapshot_source(Request.ExpectedIdentity.Source.ResolvedPath, Counters, snapshot);
+       error != ERR::Okay) return error;
+   return lookup_module(Request, snapshot, ValidateIdentity, ValidatePayload, Counters, Output);
 }
 
 //********************************************************************************************************************

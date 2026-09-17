@@ -13,10 +13,20 @@
 namespace tiri::import_cache {
 
 struct LifecycleCounters {
+   uint32_t CacheHits = 0;
+   uint32_t LookupMisses = 0;
+   uint32_t SourceReads = 0;
+   uint32_t EnvelopeDecodes = 0;
+   uint32_t PayloadValidations = 0;
+   uint32_t ValidationReuses = 0;
+   uint32_t ValidationStateCreations = 0;
    uint32_t SourceCompilations = 0;
-   uint32_t Hits = 0;
-   uint32_t Misses = 0;
    uint32_t Publications = 0;
+};
+
+struct SourceSnapshot {
+   std::string Source;
+   cache::SourceIdentity Identity;
 };
 
 struct CompilationRequest {
@@ -57,9 +67,12 @@ using PayloadValidator = std::function<bool(std::string_view, std::string &)>;
    const IdentityValidator &, const PayloadValidator &, LifecycleCounters &, CompiledModule &);
 
 // Split lookup/publication is used by the parser: a cold module must first participate in the importing root's
-// analysis before its finished initialiser prototype can be serialised.  Lookup still owns the single source snapshot
-// and all cache validation; publication accepts only the identity derived from that snapshot.
+// analysis before its finished initialiser prototype can be serialised.  Snapshot-driven lookup validates the cache
+// against bytes owned by the current compilation; publication accepts only the identity derived from that snapshot.
 
+[[nodiscard]] ERR snapshot_source(std::string_view, LifecycleCounters &, SourceSnapshot &);
+[[nodiscard]] ERR lookup_module(const CompilationRequest &, const SourceSnapshot &, const IdentityValidator &,
+   const PayloadValidator &, LifecycleCounters &, ModuleLookup &);
 [[nodiscard]] ERR lookup_module(const CompilationRequest &, const IdentityValidator &, const PayloadValidator &,
    LifecycleCounters &, ModuleLookup &);
 [[nodiscard]] ERR publish_module(const CompilationRequest &, const Identity &, const Interface &, std::string_view,

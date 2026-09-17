@@ -12368,6 +12368,31 @@ static bool test_import_module_layered_reuse(kt::Log &Log)
       Log.error("U03 layered diamond did not initialise in dependency order: %s", lua_tostring(lua, -1));
       return false;
    }
+
+   LuaStateHolder warm_holder;
+   lua_State *warm = warm_holder.get();
+   if (not warm) return false;
+   luaL_openlibs(warm);
+   if (lua_load(warm, source, "u03-layered-warm") != 0) {
+      Log.error("U03 warm layered diamond failed to compile: %s", lua_tostring(warm, -1));
+      return false;
+   }
+   const auto &validation = parser_last_import_cache_counters();
+   if (validation.SourceReads != 5 or validation.EnvelopeDecodes != 5 or
+       validation.PayloadValidations != 5 or validation.ValidationStateCreations != 5 or
+       validation.ValidationReuses != 3 or validation.CacheHits != 5 or validation.LookupMisses != 0 or
+       validation.SourceCompilations != 0) {
+      Log.error("warm layered validation did not scale by five unique nodes: reads=%u decodes=%u payloads=%u "
+         "states=%u reuses=%u hits=%u misses=%u compiles=%u", validation.SourceReads,
+         validation.EnvelopeDecodes, validation.PayloadValidations, validation.ValidationStateCreations,
+         validation.ValidationReuses, validation.CacheHits, validation.LookupMisses,
+         validation.SourceCompilations);
+      return false;
+   }
+   if (lua_pcall(warm, 0, 1, 0) != 0 or not lua_isstring(warm, -1) or lua_tostringview(warm, -1) != "LABXY") {
+      Log.error("U03 warm layered diamond did not initialise in dependency order: %s", lua_tostring(warm, -1));
+      return false;
+   }
    return true;
 }
 
@@ -12568,6 +12593,18 @@ static bool test_import_module_executable_warm_diamond(kt::Log &Log)
    std::vector<tiri::import_cache::RootModuleRecord> root_records;
    if (not compile(root_holder, both_parents, "d01-diamond-root", root_records) or root_records.size() != 3) {
       Log.error("the warm root did not retain three unique metadata records");
+      return false;
+   }
+   const auto &validation = parser_last_import_cache_counters();
+   if (validation.SourceReads != 3 or validation.EnvelopeDecodes != 3 or
+       validation.PayloadValidations != 3 or validation.ValidationStateCreations != 3 or
+       validation.ValidationReuses != 1 or validation.CacheHits != 3 or validation.LookupMisses != 0 or
+       validation.SourceCompilations != 0) {
+      Log.error("warm diamond validation did not scale by three unique nodes: reads=%u decodes=%u payloads=%u "
+         "states=%u reuses=%u hits=%u misses=%u compiles=%u", validation.SourceReads,
+         validation.EnvelopeDecodes, validation.PayloadValidations, validation.ValidationStateCreations,
+         validation.ValidationReuses, validation.CacheHits, validation.LookupMisses,
+         validation.SourceCompilations);
       return false;
    }
    if (leaf_identity(root_records) != cold_leaf_identity) {

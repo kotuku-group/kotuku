@@ -15,10 +15,11 @@
 //
 // An imported-module hit still requires readable source.  Its identity covers the producing build, logical and resolved
 // path, exact source content, inline and nested dependencies, path observations and compile-time conditions.  Invalid or
-// malformed entries rebuild from source; publication failures retain the valid in-memory compilation.  Complete root
-// byte-code embeds its imported-module graph, so direct dumps, `SaveToObject` output and whole-script cache hits do not
-// depend on the disposable module entries.  Applications may clear `temp:tiri/cache/` at any time; entries are recreated
-// on demand.
+// malformed entries rebuild from source; one root-compilation validation session reuses immutable source snapshots and
+// completed candidate results across shared dependency paths.  Publication failures retain the valid in-memory
+// compilation.  Complete root byte-code embeds its imported-module graph, so direct dumps, `SaveToObject` output and
+// whole-script cache hits do not depend on the disposable module entries.  Applications may clear `temp:tiri/cache/` at
+// any time; entries are recreated on demand.
 
 static std::atomic_uint64_t glCacheTemporarySequence = 0;
 
@@ -46,7 +47,7 @@ static bool fail_cache_publication(CachePublishFailure) { return false; }
 
 static std::vector<tiri::cache::CompilationOption> cache_compilation_options(const extTiri *)
 {
-   return {};
+   return tiri::cache::effective_compilation_options();
 }
 
 //********************************************************************************************************************

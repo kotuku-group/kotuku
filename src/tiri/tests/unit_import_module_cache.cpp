@@ -89,7 +89,8 @@ bool cold_hit_and_invalidation(kt::Log &Log)
    int compile_calls = 0;
    if (load_or_compile_module(request, counting_compiler(compile_calls), {}, payload_validator(), counters, cold) !=
        ERR::Okay or cold.CacheHit or cold.PublicationError != ERR::Okay or compile_calls != 1 or
-       counters.SourceCompilations != 1 or counters.Misses != 1 or counters.Publications != 1) {
+       counters.SourceCompilations != 1 or counters.LookupMisses != 1 or counters.SourceReads != 1 or
+       counters.Publications != 1) {
       Log.error("Cold imported-module compilation did not publish one complete generation");
       return false;
    }
@@ -98,17 +99,33 @@ bool cold_hit_and_invalidation(kt::Log &Log)
    // The compiler contributes observations to the final identity.  A parent retains that identity for the warm
    // lookup, exactly as nested module descriptors do for transitive imports.
    request.ExpectedIdentity = cold.CompilationIdentity;
+   SourceSnapshot warm_snapshot;
+   if (snapshot_source(source_path, counters, warm_snapshot) != ERR::Okay) return false;
+   ModuleLookup warm_lookup;
+   if (lookup_module(request, warm_snapshot, {}, payload_validator(), counters, warm_lookup) != ERR::Okay) {
+      return false;
+   }
    CompiledModule warm;
-   if (load_or_compile_module(request, counting_compiler(compile_calls), {}, payload_validator(), counters, warm) !=
-       ERR::Okay or not warm.CacheHit or compile_calls != 1 or counters.Hits != 1 or warm.Payload != cold.Payload) {
+   warm = std::move(warm_lookup.Cached);
+   if (not warm.CacheHit or compile_calls != 1 or counters.CacheHits != 1 or counters.SourceReads != 2 or
+       counters.EnvelopeDecodes != 1 or counters.PayloadValidations != 2 or counters.SourceCompilations != 1 or
+       warm.Payload != cold.Payload) {
       Log.error("A fresh imported-module lookup did not consume the published generation");
       return false;
    }
 
    if (not write_file(source_path, "second")) return false;
+   ModuleLookup stable;
+   if (lookup_module(request, warm_snapshot, {}, payload_validator(), counters, stable) != ERR::Okay or
+       not stable.Cached.CacheHit or stable.Source != "first" or counters.SourceReads != 2 or
+       counters.CacheHits != 2) {
+      Log.error("A captured source snapshot changed within its validation session");
+      return false;
+   }
    CompiledModule changed;
    if (load_or_compile_module(request, counting_compiler(compile_calls), {}, payload_validator(), counters, changed) !=
-       ERR::Okay or changed.CacheHit or compile_calls != 2 or counters.Misses != 2 or
+       ERR::Okay or changed.CacheHit or compile_calls != 2 or counters.LookupMisses != 2 or
+       counters.SourceReads != 3 or
        changed.CachePath IS cold.CachePath) {
       Log.error("Changed imported-module source did not select a new cold generation");
       return false;

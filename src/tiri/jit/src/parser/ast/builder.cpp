@@ -350,6 +350,16 @@ AstBuilder::AstBuilder(ParserContext &Context, AstBuilder *Parent, bool ModuleIn
    ctx(Context), module_initialiser(ModuleInitialiser), parent_builder(Parent)
 {
    this->ctx.set_error_rollback_callback(rollback_ast_builder_constants, this);
+   if (not Parent) {
+      ImportModuleValidationSession::Environment environment;
+      environment.ResolveLibrary = [this](std::string_view Name) {
+         std::string_view request = Name;
+         return this->ctx.resolve_lib_to_path(request);
+      };
+      environment.ModuleAvailable = [this](std::string_view Name) { return this->module_is_available(Name); };
+      this->import_validation_session = std::make_unique<ImportModuleValidationSession>(
+         this->ctx.lua(), this->ctx.lex().import_cache_counters, std::move(environment));
+   }
 }
 
 AstBuilder::~AstBuilder()

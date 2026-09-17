@@ -29,10 +29,16 @@
 
 #ifdef UNIT_TESTS
 static thread_local ImportedModuleCompilationCounters glLastImportedModuleCounters;
+static thread_local tiri::import_cache::LifecycleCounters glLastImportCacheCounters;
 
 const ImportedModuleCompilationCounters &parser_last_imported_module_counters()
 {
    return glLastImportedModuleCounters;
+}
+
+const tiri::import_cache::LifecycleCounters &parser_last_import_cache_counters()
+{
+   return glLastImportCacheCounters;
 }
 #endif
 #include "../../../import_module_bundle.h"
@@ -69,6 +75,7 @@ static const struct {
 #include "parse_internal.h"
 #include "parser_symbols.h"
 #include "parser_profiler.h"
+#include "import_module_validation.h"
 #include "import_interface_export.h"
 #include "assignment_target_resolution.h"
 #include "static_type_descriptor.h"
@@ -80,6 +87,7 @@ static const struct {
 #include "token_stream.cpp"
 #include "parser_diagnostics.cpp"
 #include "parser_context.cpp"
+#include "import_module_validation.cpp"
 #include "static_type_descriptor.cpp"
 #include "static_descriptor_analysis.cpp"
 #include "table_ownership.cpp"
@@ -372,8 +380,18 @@ extern GCproto * lj_parse(LexState *State)
 
    run_ast_pipeline(root_context, profiler);
 
+   const auto &cache_counters = State->import_cache_counters;
+   if (cache_counters.SourceReads or cache_counters.EnvelopeDecodes or cache_counters.SourceCompilations) {
+      log.trace("Imported-module validation: hits=%u misses=%u source-reads=%u envelope-decodes=%u "
+         "payload-validations=%u validation-reuses=%u validation-states=%u source-compilations=%u publications=%u",
+         cache_counters.CacheHits, cache_counters.LookupMisses, cache_counters.SourceReads,
+         cache_counters.EnvelopeDecodes, cache_counters.PayloadValidations, cache_counters.ValidationReuses,
+         cache_counters.ValidationStateCreations, cache_counters.SourceCompilations, cache_counters.Publications);
+   }
+
 #ifdef UNIT_TESTS
    glLastImportedModuleCounters = State->imported_module_counters;
+   glLastImportCacheCounters = State->import_cache_counters;
 #endif
 
    if ((L->script->JitOptions & JOF::DUMP_BYTECODE) != JOF::NIL) dump_bytecode(root_context.func());
