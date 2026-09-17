@@ -23,6 +23,7 @@
 #include "../token_types.h"
 #include "../parse_types.h"
 #include "../parse_internal.h"
+#include "../import_interface.h"
 #include "runtime/lj_str.h"
 #include "runtime/lj_tab.h"
 #include "runtime/lj_gc.h"
@@ -665,6 +666,15 @@ void AstBuilder::track_struct_reference(struct_record *Definition)
 void AstBuilder::track_dynamic_struct_reference()
 {
    this->root_builder()->ctx.lex().dynamic_struct_reference = true;
+}
+
+void AstBuilder::track_installed_declarations(const InstalledImportInterface &Interface)
+{
+   this->registered_structs.insert(this->registered_structs.end(),
+      Interface.inserted_structures().begin(), Interface.inserted_structures().end());
+   this->registered_enum_constants.insert(this->registered_enum_constants.end(),
+      Interface.inserted_enum_constants().begin(), Interface.inserted_enum_constants().end());
+   if (not Interface.inserted_enum_constants().empty()) this->enum_constants_committed = false;
 }
 
 void AstBuilder::track_registered_struct(uint32_t Key)

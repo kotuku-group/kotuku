@@ -42,6 +42,12 @@ public:
       return this->artifact_->descriptors();
    }
    [[nodiscard]] const tiri::import_cache::FinalisedInterface & artifact() const noexcept { return *this->artifact_; }
+   [[nodiscard]] const std::vector<uint32_t> & inserted_structures() const noexcept {
+      return this->inserted_structures_;
+   }
+   [[nodiscard]] const std::vector<uint32_t> & inserted_enum_constants() const noexcept {
+      return this->inserted_enum_constants_;
+   }
 
 private:
    struct TransparentStringHash {
@@ -66,6 +72,8 @@ private:
       parser_context_(Context), artifact_(std::move(Artifact)) { }
 
    [[nodiscard]] bool initialise(std::string &Diagnostic);
+   [[nodiscard]] bool structure_compatible(
+      const tiri::import_cache::StructureDescriptor &, const struct_record &) const;
    [[nodiscard]] struct_record * structure(std::string_view Name) const;
    [[nodiscard]] ArrayElementDescriptor array_element(const tiri::import_cache::ArrayDescriptor &) const;
    [[nodiscard]] CLASSID object_class(std::string_view Name) const;
@@ -81,4 +89,6 @@ private:
    std::unordered_map<const tiri::import_cache::ExportDescriptor *, std::unique_ptr<FunctionExprPayload>> callables_;
    StringIndex<struct_record *> structure_index_;
    StringIndex<NamespaceRecord *> namespace_index_;
+   std::vector<uint32_t> inserted_structures_;
+   std::vector<uint32_t> inserted_enum_constants_;
 };

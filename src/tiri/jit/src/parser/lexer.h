@@ -94,6 +94,11 @@ struct ImportedModuleCompilationCounters {
    uint64_t staging_import_module_table_bytes = 0;
 };
 
+struct ImportedEnumDeclaration {
+   std::string source;
+   tiri::import_cache::EnumDescriptor descriptor;
+};
+
 enum class ArraySizeKind : uint8_t {
    Absent,
    Literal,
@@ -186,6 +191,7 @@ public:
    std::vector<CompilationSourceRecord> compilation_sources;
    std::vector<std::string> compilation_struct_roots;
    std::vector<std::string> compilation_structs;
+   std::vector<ImportedEnumDeclaration> imported_enum_declarations;
    std::vector<uint32_t> loaded_structs;
    std::vector<uint8_t> bytecode_struct_manifest;
    std::vector<uint8_t> bytecode_import_module_bundle;

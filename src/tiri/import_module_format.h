@@ -12,7 +12,7 @@
 
 namespace tiri::import_cache {
 
-constexpr uint32_t SCHEMA_VERSION = 9;
+constexpr uint32_t SCHEMA_VERSION = 10;
 constexpr size_t MAX_INTERFACE_SIZE = 8 * 1024 * 1024;
 constexpr size_t MAX_INTERFACE_RECORDS = 4096;
 
@@ -168,6 +168,7 @@ struct Interface {
    std::vector<ExportDescriptor> Exports;         // Describes symbols exported by the module.
    std::vector<StructureDescriptor> Structures;   // Describes structures declared by the module.
    std::vector<EnumDescriptor> Enums;             // Describes enumerations declared by the module.
+   std::string StructureManifest;                  // Preserves exact state-local structure layouts.
    std::vector<NativeDependency> NativeDependencies; // Describes native module dependencies.
    std::vector<SourceDescriptor> Sources;         // Describes source files in the module.
    std::vector<NestedModuleDescriptor> NestedModules; // Describes imported nested modules.

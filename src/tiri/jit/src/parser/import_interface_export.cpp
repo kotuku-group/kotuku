@@ -5,6 +5,7 @@
 #include "ast/nodes.h"
 #include "import_interface.h"
 #include "parser_context.h"
+#include "static_type_descriptor.h"
 
 #include <algorithm>
 #include <bit>
@@ -12,6 +13,7 @@
 #include <ranges>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace {
 
@@ -61,6 +63,12 @@ public:
       }
       for (size_t i = 0; i < this->interface_.Enums.size(); ++i) {
          this->enum_index_.try_emplace(this->interface_.Enums[i].Name, i);
+         this->enum_member_indexes_.emplace_back();
+         auto &member_index = this->enum_member_indexes_.back();
+         member_index.reserve(this->interface_.Enums[i].Members.size());
+         for (size_t member = 0; member < this->interface_.Enums[i].Members.size(); ++member) {
+            member_index.try_emplace(this->interface_.Enums[i].Members[member].Name, member);
+         }
       }
    }
 
@@ -125,10 +133,27 @@ public:
 
       for (const auto &item : Source.Enums) {
          this->counters_.interface_assembly_probes++;
-         if (this->enum_index_.contains(item.Name)) continue;
+         auto found = this->enum_index_.find(item.Name);
+         if (found != this->enum_index_.end()) {
+            auto &members = this->interface_.Enums[found->second].Members;
+            auto &member_index = this->enum_member_indexes_[found->second];
+            member_index.reserve(member_index.size() + item.Members.size());
+            for (const auto &member : item.Members) {
+               if (member_index.contains(member.Name)) continue;
+               member_index.emplace(member.Name, members.size());
+               members.push_back(member);
+            }
+            continue;
+         }
          size_t position = this->interface_.Enums.size();
          this->interface_.Enums.push_back(item);
          this->enum_index_.emplace(this->interface_.Enums.back().Name, position);
+         this->enum_member_indexes_.emplace_back();
+         auto &member_index = this->enum_member_indexes_.back();
+         member_index.reserve(item.Members.size());
+         for (size_t member = 0; member < item.Members.size(); ++member) {
+            member_index.try_emplace(item.Members[member].Name, member);
+         }
       }
    }
 
@@ -141,6 +166,7 @@ private:
    AssemblyIndex export_index_;
    AssemblyIndex structure_index_;
    AssemblyIndex enum_index_;
+   std::vector<AssemblyIndex> enum_member_indexes_;
 };
 
 //********************************************************************************************************************
@@ -208,6 +234,40 @@ tiri::import_cache::ValueDescriptor portable_value(const StaticValueDescriptor &
       result.Array.NestedIdentity = symbol_name(Value.array_element.nested_array_identity);
    }
    return result;
+}
+
+//********************************************************************************************************************
+// Copies a named structure and its transitive field types into the portable compile-time interface.
+
+void append_portable_structure(ParserContext &Context, const struct_record &Structure,
+   tiri::import_cache::Interface &Output, std::unordered_set<std::string> &Visited)
+{
+   if (not Visited.insert(Structure.Name).second) return;
+
+   for (const struct_field &field : Structure.Fields) {
+      if (field.StructDefinition) append_portable_structure(Context, *field.StructDefinition, Output, Visited);
+   }
+
+   tiri::import_cache::StructureDescriptor descriptor;
+   descriptor.Name = Structure.Name;
+   for (const struct_field &field : Structure.Fields) {
+      GCstr *name = Context.lex().keepstr(field.Name);
+      StaticValueDescriptor value = describe_struct_field(&Structure, name);
+      descriptor.Fields.push_back({ field.Name, portable_value(value), not value.nullable });
+   }
+   Output.Structures.push_back(std::move(descriptor));
+}
+
+//********************************************************************************************************************
+// Reports whether a declaration source belongs to a module root or one of its inline local imports.
+
+bool module_owns_source(const tiri::import_cache::Identity &Identity, std::string_view Source)
+{
+   if (Identity.Source.ResolvedPath IS Source) return true;
+   for (const auto &local : Identity.LocalImports) {
+      if (local.Source.ResolvedPath IS Source) return true;
+   }
+   return false;
 }
 
 //********************************************************************************************************************
@@ -512,29 +572,67 @@ bool prepare_block(ParserContext &Context, BlockStmt &Block, std::string &Diagno
             }
          }
 
+         Interface declarations;
+         std::unordered_set<std::string> declared_structures;
+         for (const auto &[key, structure] : Context.lua().struct_declarations) {
+            (void)key;
+            if (module_owns_source(unit.module_cache_identity, structure.DeclarationSource)) {
+               append_portable_structure(Context, structure, declarations, declared_structures);
+            }
+         }
+
+         for (const ImportedEnumDeclaration &item : Context.lex().imported_enum_declarations) {
+            if (module_owns_source(unit.module_cache_identity, item.source)) {
+               declarations.Enums.push_back(item.descriptor);
+            }
+         }
+         merge_interface(assembly, declarations);
+
+         std::vector<std::string> structure_roots;
+         for (const StructureDescriptor &structure : portable.Structures) {
+            auto found = Context.lua().struct_declarations.find(struct_key(structure.Name));
+            if (found != Context.lua().struct_declarations.end() and found->second.Name IS structure.Name) {
+               structure_roots.push_back(structure.Name);
+            }
+         }
+
+         std::vector<uint8_t> structure_manifest;
+         std::string structure_diagnostic;
+         ERR structure_error = build_declared_struct_manifest(&Context.lua(), structure_roots, structure_roots,
+            false, structure_manifest, &structure_diagnostic);
+         if (structure_error != ERR::Okay) {
+            Diagnostic = std::format("{}: cannot preserve imported structures: {}", entry.lib_path,
+               structure_diagnostic.empty() ? GetErrorMsg(structure_error) : structure_diagnostic);
+            return false;
+         }
+
+         portable.StructureManifest.assign((const char *)structure_manifest.data(), structure_manifest.size());
+
          InterfaceOperationCounters interface_counters;
          FinalisedInterfacePtr artifact;
-         auto interface_error = FinalisedInterface::finalise(
-            std::move(portable), artifact, &interface_counters);
+         auto interface_error = FinalisedInterface::finalise(std::move(portable), artifact, &interface_counters);
          if (interface_error != cache::FormatError::OKAY) {
             Diagnostic = std::format("{}: invalid compile-time interface: {}", entry.lib_path,
                cache::format_error_name(interface_error));
             return false;
          }
+
          if (finalise_identity(unit.module_cache_identity) != cache::FormatError::OKAY) {
             Diagnostic = std::format("{}: compiled module identity is invalid", entry.lib_path);
             return false;
          }
+
          auto installed = InstalledImportInterface::create(Context, artifact, Diagnostic);
          if (not installed) {
             Diagnostic = std::format("{}: {}", entry.lib_path, Diagnostic);
             return false;
          }
-         unit.interface_artifact = std::move(artifact);
+         unit.interface_artifact  = std::move(artifact);
          unit.installed_interface = std::move(installed);
-         unit.module_identity = unit.module_cache_identity.CompiledIdentity;
-         unit.interface_prepared = true;
+         unit.module_identity     = unit.module_cache_identity.CompiledIdentity;
+         unit.interface_prepared  = true;
          unit.state = ImportedModuleState::InterfaceReady;
+
          Context.lex().imported_module_counters.interface_preparations++;
          Context.lex().imported_module_counters.interface_finalisations += interface_counters.ColdFinalisations;
          Context.lex().imported_module_counters.interface_encodes += interface_counters.Encodes;

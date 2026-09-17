@@ -518,6 +518,8 @@ cache::FormatError encode_interface_impl(const Interface &Value, std::string &Ou
       }
    }
 
+   encoder.string(Value.StructureManifest);
+
    encoder.u32(uint32_t(Value.NativeDependencies.size()));
 
    for (const auto &entry : Value.NativeDependencies) {
@@ -613,6 +615,8 @@ cache::FormatError decode_interface_impl(std::string_view Bytes, Interface &Outp
       });
       return entry;
    });
+
+   result.StructureManifest = input.string();
 
    decode_records<NativeDependency>(input, result.NativeDependencies, [](Decoder &Value) {
       NativeDependency entry;

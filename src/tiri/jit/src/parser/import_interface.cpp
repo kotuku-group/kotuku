@@ -126,6 +126,16 @@ bool InstalledImportInterface::initialise(std::string &Diagnostic)
       return false;
    }
 
+   if (not interface.StructureManifest.empty()) {
+      std::string detail;
+      ERR error = validate_declared_struct_manifest(
+         &this->parser_context_.lua(), interface.StructureManifest, &detail);
+      if (error != ERR::Okay) {
+         Diagnostic = detail.empty() ? "Imported structure manifest is invalid." : std::move(detail);
+         return false;
+      }
+   }
+
    // Allocate every definition first so transitive references can be resolved without ordering constraints.
 
    this->structures_.reserve(interface.Structures.size());
@@ -153,26 +163,7 @@ bool InstalledImportInterface::initialise(std::string &Diagnostic)
       }
 
       if (struct_record *existing = find_struct(&this->parser_context_.lua(), portable.Name)) {
-         bool compatible = existing->Fields.size() IS portable.Fields.size();
-         for (const StructureField &portable_field : portable.Fields) {
-            GCstr *name = this->parser_context_.lex().keepstr(portable_field.Name);
-            StaticValueDescriptor actual   = describe_struct_field(existing, name);
-            StaticValueDescriptor expected = this->static_value(portable_field.Value);
-            compatible = compatible and actual.primary IS expected.primary;
-
-            if (expected.primary IS TiriType::Object) {
-               compatible = compatible and actual.object_class_id IS expected.object_class_id;
-            }
-
-            if (expected.primary IS TiriType::Struct) {
-               compatible = compatible and actual.struct_def and expected.struct_def and
-                  actual.struct_def->Name IS expected.struct_def->Name;
-            }
-
-            if (not compatible) break;
-         }
-
-         if (not compatible) {
+         if (not this->structure_compatible(portable, *existing)) {
             Diagnostic = std::format("Imported structure '{}' conflicts with an existing declaration.", portable.Name);
             return false;
          }
@@ -270,6 +261,82 @@ bool InstalledImportInterface::initialise(std::string &Diagnostic)
          returns.required[i]         = not result.Nullable;
       }
       this->callables_.emplace(&exported, std::move(function));
+   }
+
+   if (not interface.StructureManifest.empty()) {
+      std::string detail;
+      ERR error = load_declared_struct_manifest(&this->parser_context_.lua(), interface.StructureManifest,
+         this->inserted_structures_, &detail);
+      if (error != ERR::Okay) {
+         for (uint32_t key : this->inserted_structures_) {
+            this->parser_context_.lua().struct_declarations.erase(key);
+         }
+         this->inserted_structures_.clear();
+         Diagnostic = detail.empty() ? "Imported structures could not be installed." : std::move(detail);
+         return false;
+      }
+
+      for (const StructureDescriptor &portable : interface.Structures) {
+         struct_record *installed = find_struct(&this->parser_context_.lua(), portable.Name);
+         if (installed and this->structure_compatible(portable, *installed)) continue;
+         for (uint32_t key : this->inserted_structures_) {
+            this->parser_context_.lua().struct_declarations.erase(key);
+         }
+         this->inserted_structures_.clear();
+         Diagnostic = std::format("Imported structure manifest disagrees with '{}'.", portable.Name);
+         return false;
+      }
+   }
+
+   auto rollback = [&]() {
+      for (uint32_t hash : this->inserted_enum_constants_) glConstantRegistry.erase(hash);
+      for (uint32_t key : this->inserted_structures_) this->parser_context_.lua().struct_declarations.erase(key);
+      this->inserted_enum_constants_.clear();
+      this->inserted_structures_.clear();
+   };
+
+   std::unique_lock lock(glConstantMutex);
+   for (const EnumDescriptor &enumeration : interface.Enums) {
+      for (const EnumMember &member : enumeration.Members) {
+         if (member.Value.Kind != ConstantKind::INTEGER) {
+            Diagnostic = std::format("Imported enum '{}.{}' has an unsupported value.",
+               enumeration.Name, member.Name);
+            rollback();
+            return false;
+         }
+         std::string name = enumeration.Name + "_" + member.Name;
+         uint32_t hash = kt::strhash(name);
+         TiriConstant value(member.Value.Integer);
+         auto existing = glConstantRegistry.find(hash);
+         if (existing != glConstantRegistry.end()) {
+            if (existing->second IS value) continue;
+            Diagnostic = std::format("Imported enum constant '{}' conflicts with an existing declaration.", name);
+            rollback();
+            return false;
+         }
+         glConstantRegistry.emplace(hash, value);
+         this->inserted_enum_constants_.push_back(hash);
+      }
+   }
+   return true;
+}
+
+//********************************************************************************************************************
+// Compare a portable structure's compile-time field types with an exact state-local declaration.
+
+bool InstalledImportInterface::structure_compatible(
+   const tiri::import_cache::StructureDescriptor &Portable, const struct_record &Existing) const
+{
+   if (Existing.Fields.size() != Portable.Fields.size()) return false;
+   for (const tiri::import_cache::StructureField &portable_field : Portable.Fields) {
+      GCstr *name = this->parser_context_.lex().keepstr(portable_field.Name);
+      StaticValueDescriptor actual   = describe_struct_field(&Existing, name);
+      StaticValueDescriptor expected = this->static_value(portable_field.Value);
+      if (actual.primary != expected.primary) return false;
+      if (expected.primary IS TiriType::Object and actual.object_class_id != expected.object_class_id) return false;
+      if (expected.primary IS TiriType::Struct and
+          (not actual.struct_def or not expected.struct_def or
+           actual.struct_def->Name != expected.struct_def->Name)) return false;
    }
    return true;
 }

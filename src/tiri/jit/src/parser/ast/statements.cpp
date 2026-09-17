@@ -888,6 +888,20 @@ ParserResult<StmtNodePtr> AstBuilder::parse_enum(const Token &StartToken)
          "Duplicate enum constant '" + duplicate_name + "'");
    }
 
+   tiri::import_cache::EnumDescriptor descriptor;
+   descriptor.Name = prefix;
+   for (size_t i = 0; i < members.size(); ++i) {
+      tiri::import_cache::ConstantValue value;
+      value.Kind = tiri::import_cache::ConstantKind::INTEGER;
+      value.Integer = constants[i].value;
+      descriptor.Members.push_back({ members[i], std::move(value) });
+   }
+   GCstr *source_symbol = this->current_source_file();
+   std::string source(strdata(source_symbol), source_symbol->len);
+   this->root_builder()->ctx.lex().imported_enum_declarations.push_back({
+      std::move(source), std::move(descriptor)
+   });
+
    return ParserResult<StmtNodePtr>::success(nullptr);
 }
 
@@ -1920,6 +1934,7 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
          return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, ImportToken,
             diagnostic.empty() ? "Cannot install active imported-module interface" : diagnostic);
       }
+      this->track_installed_declarations(*module_unit->installed_interface);
    }
    else if (reused_module) {
       if (auto *manifest = this->cache_manifest()) {
@@ -2001,6 +2016,7 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
                return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, ImportToken,
                   diagnostic.empty() ? "Cannot install imported-module interface" : diagnostic);
             }
+            this->track_installed_declarations(*module_unit->installed_interface);
          }
          else module_unit->module_cache_identity = std::move(module_lookup.ExpectedIdentity);
          module_unit->state = ImportedModuleState::Parsed;

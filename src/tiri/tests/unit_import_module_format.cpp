@@ -62,6 +62,7 @@ Interface sample_interface()
    result.Structures.push_back(std::move(point));
    result.Enums = { { "Axis", { { "Y", { .Kind = ConstantKind::INTEGER, .Integer = 1 } },
       { "X", { .Kind = ConstantKind::INTEGER, .Integer = 0 } } } } };
+   result.StructureManifest = std::string("\x01\x00", 2);
    result.NativeDependencies = { { "vector", { "length", "normalise" }, 1 } };
    result.Sources = {
       { "scripts:geometry.tiri", "geometry", "geometry.tiri", "geometry", "", 1, 80, 0 },

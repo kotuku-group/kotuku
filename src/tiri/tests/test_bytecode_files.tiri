@@ -532,10 +532,16 @@ end
 
    write_file(modules .. 'base.tiri', [[
 namespace interfaceLookup { child={} }
+struct InterfaceLookupRecord Value: int end
+enum INTERFACE_LOOKUP_MODE { READY = 43 }
+enum INTERFACE_LOOKUP_MODE { CACHED = 47 }
 global glInterfaceLookupRuns = (glInterfaceLookupRuns or 0) + 1
 interfaceLookup.initialisations = glInterfaceLookupRuns
 interfaceLookup.scalar = 19
 function interfaceLookup.call(Value:num):num return Value + 23 end
+global function interface_lookup_record(Value:struct<InterfaceLookupRecord>):struct<InterfaceLookupRecord>
+   return Value
+end
 interfaceLookup.child.hidden = 29
 ]])
    write_file(modules .. 'extension.tiri', [[
@@ -555,8 +561,14 @@ interfaceLookup.right = 41
 ]])
    write_file(main, [=[
 import 'interface_lookup/left', 'interface_lookup/right', 'interface_lookup/extension', 'interface_lookup/base'
+local imported_record = struct<InterfaceLookupRecord> { Value=42 }
 assert(interfaceLookup.scalar is 19, 'A direct scalar member must survive interface installation')
 assert(interfaceLookup.call(19) is 42, 'A direct callable member must retain its signature and value')
+assert(interface_lookup_record(imported_record).Value is 42,
+   'An imported structure declaration and callable contract must survive interface installation')
+assert(INTERFACE_LOOKUP_MODE_READY is 43, 'An imported enum constant must survive interface installation')
+assert(INTERFACE_LOOKUP_MODE_CACHED is 47,
+   'Members from repeated imported enum prefixes must survive interface installation')
 assert(interfaceLookup.child.hidden is 29, 'A nested qualified export must remain available at its nested path')
 assert(interfaceLookup.hidden is nil, 'A nested qualified export must not appear as a direct namespace member')
 assert(interfaceLookup.joined is 31 and interfaceLookup.left is 37 and interfaceLookup.right is 41,
