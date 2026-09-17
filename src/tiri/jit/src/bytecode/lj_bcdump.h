@@ -94,6 +94,10 @@ enum {
 
 // Bytecode reader/writer
 
+class ImportModuleRelocationPlan;
+
 LJ_FUNC int lj_bcwrite(lua_State* L, GCproto* pt, lua_Writer writer, void* data, int strip);
+LJ_FUNC int lj_bcwrite_relocated(lua_State *L, GCproto *Pt, lua_Writer Writer, void *Data, int Strip,
+   const ImportModuleRelocationPlan *Relocation);
 LJ_FUNC GCproto* lj_bcread_proto(LexState* ls);
 LJ_FUNC GCproto* lj_bcread(LexState* ls);

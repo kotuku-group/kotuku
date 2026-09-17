@@ -14,6 +14,7 @@
 #include "lj_bc.h"
 #include "../parser/lexer.h"
 #include "lj_bcdump.h"
+#include "../runtime/import_module_graph.h"
 #include "lj_state.h"
 #include "lj_strfmt.h"
 #include "lj_meta.h"
@@ -1564,40 +1565,13 @@ GCproto *lj_bcread(LexState *State)
    setmref(root->import_module_bundle, module_bundle);
    root->import_module_bundle_size = uint32_t(State->bytecode_import_module_bundle.size());
    if (module_count) {
-      size_t dependency_count = 0;
-      for (const auto &record : State->bytecode_import_module_records) {
-         dependency_count += record.Dependencies.size();
-      }
-      if (dependency_count > tiri::import_cache::MAX_ROOT_MODULES) bcread_error(State, ErrMsg::BCBAD);
-      const size_t table_size = sizeof(ImportModuleTable) + module_count * sizeof(ImportModuleTableEntry) +
-         dependency_count * sizeof(uint32_t);
-      if (table_size > std::numeric_limits<uint32_t>::max()) bcread_error(State, ErrMsg::BCBAD);
-      bcread_account(State, module_count + dependency_count);
-      bcread_reserve_allocation(State, table_size);
-      auto table = (ImportModuleTable *)lj_mem_new(L, MSize(table_size));
-      table->version = IMPORT_MODULE_TABLE_VERSION;
-      memset(table->reserved, 0, sizeof(table->reserved));
-      table->entry_count = uint32_t(module_count);
-      table->dependency_count = uint32_t(dependency_count);
-      table->byte_size = uint32_t(table_size);
-      auto entries = import_module_table_entries(table);
-      auto dependencies = import_module_table_dependencies(table);
-      uint32_t next_dependency = 0;
-      for (size_t i = 0; i < module_count; ++i) {
-         const auto &record = State->bytecode_import_module_records[i];
-         setgcref(entries[i].compiled_identity, obj2gco(&G(L)->strempty));
-         setgcref(entries[i].initialiser, obj2gco(module_roots[i]));
-         entries[i].first_dependency = next_dependency;
-         entries[i].dependency_count = uint32_t(record.Dependencies.size());
-         entries[i].source_index = record.SourceIndex;
-         memset(entries[i].reserved, 0, sizeof(entries[i].reserved));
-         for (uint32_t dependency : record.Dependencies) dependencies[next_dependency++] = dependency;
-      }
-      setmref(root->import_module_table, table);
-      for (size_t i = 0; i < module_count; ++i) {
-         const std::string &identity = State->bytecode_import_module_records[i].CompiledIdentity;
-         setgcref(entries[i].compiled_identity, obj2gco(lj_str_new(L, identity.data(), identity.size())));
-      }
+      ImportModuleDirectoryLayout layout;
+      if (not measure_import_module_directory(
+          State->bytecode_import_module_records, module_roots, layout)) bcread_error(State, ErrMsg::BCBAD);
+      bcread_account(State, size_t(layout.entry_count) + layout.dependency_count);
+      bcread_reserve_allocation(State, layout.byte_size);
+      if (not install_import_module_directory(
+          L, root, State->bytecode_import_module_records, module_roots, layout)) bcread_error(State, ErrMsg::BCBAD);
    }
    State->loaded_structs_committed = true;
    L->top = old_top;

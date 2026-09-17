@@ -84,6 +84,11 @@ struct ImportedModuleCompilationCounters {
    uint32_t initialiser_emissions = 0;
    uint32_t root_normalisation_traversals = 0;
    uint32_t root_normalisation_edges = 0;
+   uint32_t staging_metadata_roots = 0;
+   uint64_t staging_compilation_source_bytes = 0;
+   uint64_t staging_struct_manifest_bytes = 0;
+   uint64_t staging_import_module_bundle_bytes = 0;
+   uint64_t staging_import_module_table_bytes = 0;
 };
 
 enum class ArraySizeKind : uint8_t {
@@ -185,7 +190,7 @@ public:
    std::vector<ImportModuleCompilationRecord> import_module_records;
    std::vector<ImportModuleCompilationFrame> import_module_stack;
    std::vector<int> import_module_anchors;
-   std::vector<GCproto *> linked_import_module_roots;
+   std::vector<GCproto *> import_module_staging_roots;
    tiri::import_cache::LifecycleCounters import_cache_counters;
    ImportedModuleCompilationCounters imported_module_counters;
    uint32_t static_analysis_generation = 0;
@@ -203,6 +208,9 @@ public:
    MSize      size_bc_stack;  // Size of bytecode stack.
    uint32_t   level;          // Syntactical nesting level.
    uint8_t    bytecode_version = 0; // Private bytecode format version while reading a binary chunk.
+
+   void register_import_module_staging_root(GCproto *Prototype);
+   void release_import_module_staging_metadata() noexcept;
    uint32_t   bytecode_prototype_count = 0; // Structural reader resource accounting.
    uint64_t   bytecode_allocation = 0;
    uint64_t   bytecode_validation_work = 0;

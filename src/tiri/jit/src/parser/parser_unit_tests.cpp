@@ -15,6 +15,7 @@
 #include "bytecode/lj_bcdump.h"
 #include "lib/load.h"
 #include "runtime/lj_contract.h"
+#include "runtime/import_module_graph.h"
 #include "runtime/lj_meta.h"
 #include "runtime/lj_proto_registry.h"
 #include "runtime/lj_state.h"
@@ -2804,6 +2805,15 @@ struct BytecodeSnapshot {
    std::vector<BCIns> instructions;
    std::vector<BytecodeSnapshot> children;
 };
+
+static bool exact_snapshot_match(const BytecodeSnapshot &Left, const BytecodeSnapshot &Right)
+{
+   if (Left.instructions != Right.instructions or Left.children.size() != Right.children.size()) return false;
+   for (size_t i = 0; i < Left.children.size(); ++i) {
+      if (not exact_snapshot_match(Left.children[i], Right.children[i])) return false;
+   }
+   return true;
+}
 
 struct PipelineSnippet {
    const char* label;
@@ -12308,6 +12318,99 @@ static bool test_bytecode_load_metadata_transaction(kt::Log &Log)
 }
 
 //********************************************************************************************************************
+// Verifies that executable initialisers own no private staging metadata and resolve every accessor through Root.
+
+static bool verify_linked_staging_metadata_released(GCproto *Root, kt::Log &Log, const char *Label)
+{
+   if (not Root) return false;
+   const ProtoRootMetadataSize root_size = measure_proto_root_metadata(Root);
+   if (not root_size.compilation_sources or not root_size.struct_manifest or
+       not root_size.import_module_bundle or not root_size.import_module_table) {
+      Log.error("%s final root has incomplete directly owned metadata", Label);
+      return false;
+   }
+
+   const ImportModuleTable *table = Root->import_module_table.get<const ImportModuleTable>();
+   const CompilationSourceMap *sources = Root->compilation_sources.get<const CompilationSourceMap>();
+   const uint8_t *manifest = Root->struct_manifest.get<const uint8_t>();
+   const uint8_t *bundle = Root->import_module_bundle.get<const uint8_t>();
+   std::unordered_set<GCproto *> visited;
+   auto verify_tree = [&](auto &Self, GCproto *Prototype) -> bool {
+      if (not Prototype or not visited.insert(Prototype).second) return Prototype != nullptr;
+      const ProtoRootMetadataSize direct = measure_proto_root_metadata(Prototype);
+      uint32_t manifest_size = 0;
+      uint32_t bundle_size = 0;
+      if (direct.total() or not (gcref(Prototype->source_root) IS obj2gco(Root)) or
+          proto_compilation_sources(Prototype) != sources or
+          proto_struct_manifest(Prototype, &manifest_size) != manifest or manifest_size != Root->struct_manifest_size or
+          proto_import_module_bundle(Prototype, &bundle_size) != bundle or
+          bundle_size != Root->import_module_bundle_size or proto_import_module_table(Prototype) != table) {
+         return false;
+      }
+      if (Prototype->flags & PROTO_CHILD) {
+         GCRef *constant = mref<GCRef>(Prototype->k) - 1;
+         for (MSize i = 0; i < Prototype->sizekgc; ++i, --constant) {
+            GCobj *object = gcref(*constant);
+            if (object->gch.gct IS ~LJ_TPROTO and not Self(Self, gco_to_proto(object))) return false;
+         }
+      }
+      return true;
+   };
+
+   const ImportModuleTableEntry *entries = import_module_table_entries(table);
+   for (uint32_t i = 0; i < table->entry_count; ++i) {
+      if (not gcref(entries[i].initialiser) or
+          not verify_tree(verify_tree, gco_to_proto(gcref(entries[i].initialiser)))) {
+         Log.error("%s executable entry %u retained private metadata or lost its final root", Label, i);
+         return false;
+      }
+   }
+   return true;
+}
+
+//********************************************************************************************************************
+// Direct root-metadata release is idempotent and prototype GC observes cleared ownership fields.
+
+static bool test_import_module_metadata_release_idempotence(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      "global i01_boundary_trace = ''\nimport 'tests/i01_direct'\nreturn i01_boundary_trace";
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) return false;
+   luaL_openlibs(lua);
+   if (lua_load(lua, source, "import-metadata-release") != 0) {
+      Log.error("metadata-release fixture did not compile: %s", lua_tostring(lua, -1));
+      return false;
+   }
+
+   GCproto *root = funcproto(funcV(lua->top - 1));
+   const ProtoRootMetadataSize before = measure_proto_root_metadata(root);
+   const GCSize allocated_before = G(lua)->gc.total;
+   GCobj *source_root = gcref(root->source_root);
+   if (not before.compilation_sources or not before.struct_manifest or not before.import_module_bundle or
+       not before.import_module_table) return false;
+
+   release_proto_root_metadata(G(lua), root);
+   const ProtoRootMetadataSize after = measure_proto_root_metadata(root);
+   if (after.total() or G(lua)->gc.total != allocated_before - before.total() or
+       not (gcref(root->source_root) IS source_root)) {
+      Log.error("direct metadata release did not clear the exact owned allocation size");
+      return false;
+   }
+   release_proto_root_metadata(G(lua), root);
+   if (measure_proto_root_metadata(root).total() or G(lua)->gc.total != allocated_before - before.total()) {
+      Log.error("direct metadata release was not idempotent");
+      return false;
+   }
+
+   lua_pop(lua, 1);
+   lua_gc(lua, LUA_GCCOLLECT, 0);
+   return true;
+}
+
+//********************************************************************************************************************
+
 // A cold graph owns one executable prototype for each compiled identity.  The shared leaf is referenced by both
 // parents, but is stored and initialised once.
 
@@ -12375,6 +12478,17 @@ static bool test_import_module_executable_table(kt::Log &Log)
    if (not table or table->version != IMPORT_MODULE_TABLE_VERSION or table->entry_count != 3 or
        table->dependency_count != 2) {
       Log.error("D03 cold diamond has an invalid executable table");
+      return false;
+   }
+   if (counters.staging_metadata_roots != 3 or not counters.staging_compilation_source_bytes or
+       not counters.staging_struct_manifest_bytes or not counters.staging_import_module_bundle_bytes or
+       not counters.staging_import_module_table_bytes or
+       not verify_linked_staging_metadata_released(root, Log, "cold diamond")) {
+      Log.error("D03 cold staging metadata was not fully released: roots=%u sources=%" PRIu64
+         " manifests=%" PRIu64 " bundles=%" PRIu64 " directories=%" PRIu64,
+         counters.staging_metadata_roots, counters.staging_compilation_source_bytes,
+         counters.staging_struct_manifest_bytes, counters.staging_import_module_bundle_bytes,
+         counters.staging_import_module_table_bytes);
       return false;
    }
 
@@ -12507,7 +12621,24 @@ static bool test_import_module_executable_lifetime(kt::Log &Log)
       Log.error("D03 exported closure fixture failed: %s", lua_tostring(closure_state, -1));
       return false;
    }
+   GCproto *exported_prototype = funcproto(funcV(closure_state->top - 1));
+   GCproto *metadata_root = gcref(exported_prototype->source_root) ?
+      gco_to_proto(gcref(exported_prototype->source_root)) : nullptr;
+   if (not metadata_root or not verify_linked_staging_metadata_released(
+         metadata_root, Log, "exported closure")) return false;
    lua_gc(closure_state, LUA_GCCOLLECT, 0);
+   if (not (gcref(exported_prototype->source_root) IS obj2gco(metadata_root)) or
+       not proto_compilation_sources(exported_prototype) or not proto_import_module_table(exported_prototype)) {
+      Log.error("exported imported-module closure lost final-root metadata after collection");
+      return false;
+   }
+   lua_pushvalue(closure_state, -1);
+   lua_Debug debug_info {};
+   if (not lua_getinfo(closure_state, ">S", &debug_info) or
+       not strstr(debug_info.short_src, "i03_exported_closure.tiri") or debug_info.linedefined != 3) {
+      Log.error("exported imported-module closure lost its source diagnostic after collection");
+      return false;
+   }
    lua_pushvalue(closure_state, -1);
    if (lua_pcall(closure_state, 0, 1, 0) != 0 or not lua_isstring(closure_state, -1) or
        lua_tostringview(closure_state, -1) != "alive") {
@@ -12646,7 +12777,12 @@ static bool test_import_module_executable_warm_diamond(kt::Log &Log)
    lua_State *mixed = mixed_holder.get();
    GCproto *mixed_root = funcproto(funcV(mixed->top - 1));
    const ImportModuleTable *mixed_table = proto_import_module_table(mixed_root);
-   if (not mixed_table or mixed_table->entry_count != 3 or lua_pcall(mixed, 0, 1, 0) != 0 or
+   const auto mixed_staging = parser_last_imported_module_counters();
+   if (not mixed_table or mixed_table->entry_count != 3 or not mixed_staging.staging_metadata_roots or
+       not mixed_staging.staging_compilation_source_bytes or not mixed_staging.staging_struct_manifest_bytes or
+       not mixed_staging.staging_import_module_bundle_bytes or
+       not verify_linked_staging_metadata_released(mixed_root, Log, "mixed diamond") or
+       lua_pcall(mixed, 0, 1, 0) != 0 or
        not lua_isstring(mixed, -1) or lua_tostringview(mixed, -1) != "LAB") {
       Log.error("the mixed warm/cold diamond did not own and execute one module per identity");
       return false;
@@ -12716,6 +12852,18 @@ static bool test_import_module_executable_warm_diamond(kt::Log &Log)
 
    lua_State *lua = root_holder.get();
    GCproto *root = funcproto(funcV(lua->top - 1));
+   const auto warm_staging = parser_last_imported_module_counters();
+   if (not warm_staging.staging_metadata_roots or not warm_staging.staging_compilation_source_bytes or
+       not warm_staging.staging_struct_manifest_bytes or not warm_staging.staging_import_module_bundle_bytes or
+       not warm_staging.staging_import_module_table_bytes or
+       not verify_linked_staging_metadata_released(root, Log, "warm diamond")) {
+      Log.error("warm staging metadata was not fully released: roots=%u sources=%" PRIu64
+         " manifests=%" PRIu64 " bundles=%" PRIu64 " directories=%" PRIu64,
+         warm_staging.staging_metadata_roots, warm_staging.staging_compilation_source_bytes,
+         warm_staging.staging_struct_manifest_bytes, warm_staging.staging_import_module_bundle_bytes,
+         warm_staging.staging_import_module_table_bytes);
+      return false;
+   }
    tiri::debug::ImportExecutableInspection inspection;
    std::string detail;
    if (not tiri::debug::inspect_import_executables(lua, root, inspection, detail)) {
@@ -12817,6 +12965,7 @@ static bool test_import_module_executable_warm_diamond(kt::Log &Log)
          return false;
       }
       GCproto *loaded_root = funcproto(funcV(loaded->top - 1));
+      if (not verify_linked_staging_metadata_released(loaded_root, Log, Label)) return false;
       tiri::debug::ImportExecutableInspection loaded_inspection;
       std::string loaded_detail;
       if (not tiri::debug::inspect_import_executables(
@@ -12977,6 +13126,147 @@ static bool test_import_module_cycle_recovery(kt::Log &Log)
 }
 
 //********************************************************************************************************************
+// Relocation is preflighted as a complete operation and writer-side translation never changes live prototypes.
+
+static bool test_import_module_relocation_transaction(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      "global i01_boundary_trace = ''\n"
+      "import 'tests/i01_diamond_a', 'tests/i01_diamond_b'\n"
+      "return i01_boundary_trace";
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) return false;
+   luaL_openlibs(lua);
+   if (lua_load(lua, source, "import-relocation-transaction") != 0) {
+      Log.error("Relocation transaction fixture did not compile: %s", lua_tostring(lua, -1));
+      return false;
+   }
+   GCproto *root = funcproto(funcV(lua->top - 1));
+   const ImportModuleTable *table = proto_import_module_table(root);
+   if (not table or table->entry_count < 2) {
+      Log.error("Relocation transaction fixture has no executable diamond directory");
+      return false;
+   }
+
+   uint32_t bundle_size = 0;
+   const uint8_t *bundle = proto_import_module_bundle(root, &bundle_size);
+   std::vector<tiri::import_cache::RootModuleRecord> records;
+   if (not bundle or tiri::import_cache::decode_root_module_bundle(
+       std::string_view((const char *)bundle, bundle_size), records) != tiri::cache::FormatError::OKAY) return false;
+   const CompilationSourceMap *source_map = proto_compilation_sources(root);
+   if (not source_map) return false;
+   const CompilationSourceEntry *source_entries = compilation_source_entries(source_map);
+   std::vector<CompilationSourceRecord> sources(source_map->count);
+   for (uint32_t i = 0; i < source_map->count; ++i) sources[i].runtime_index = source_entries[i].runtime_index;
+
+   std::vector<GCproto *> roots;
+   std::vector<BytecodeSnapshot> before;
+   const ImportModuleTableEntry *entries = import_module_table_entries(table);
+   for (uint32_t i = 0; i < table->entry_count; ++i) {
+      roots.push_back(gco_to_proto(gcref(entries[i].initialiser)));
+   }
+   roots.push_back(root);
+   for (GCproto *prototype : roots) before.push_back(snapshot_proto(prototype));
+
+   std::vector<ImportModuleGraphInput> inputs;
+   for (uint32_t i = 0; i < table->entry_count; ++i) {
+      const auto &record = records[i];
+      const uint8_t runtime_source = record.SourceIndex IS FILESOURCE_OVERFLOW_INDEX ? FILESOURCE_OVERFLOW_INDEX :
+         sources[record.SourceIndex].runtime_index;
+      inputs.push_back({ record.LookupIdentity, record.CompiledIdentity, record.InterfaceBytes,
+         record.Dependencies, roots[i], runtime_source });
+   }
+   PreparedImportModuleGraph full_graph;
+   if (not prepare_import_module_graph(inputs, sources, {}, true, full_graph) or
+       full_graph.bundle != std::string((const char *)bundle, bundle_size) or
+       full_graph.compilation_to_canonical.size() != records.size()) {
+      Log.error("Complete prepared graph changed the canonical executable bundle");
+      return false;
+   }
+   size_t subset_root = records.size();
+   for (size_t i = 0; i < records.size(); ++i) {
+      if (not records[i].Dependencies.empty()) subset_root = i;
+   }
+   if (subset_root IS records.size()) return false;
+   const std::array<uint32_t, 1> selected_root = { uint32_t(subset_root) };
+   PreparedImportModuleGraph subset;
+   if (not prepare_import_module_graph(inputs, sources, selected_root, false, subset) or
+       subset.compilation_to_canonical[subset_root] IS UINT32_MAX) {
+      Log.error("Prepared subset did not retain its selected dependency root");
+      return false;
+   }
+   bool has_excluded = false;
+   for (size_t i = 0; i < subset.compilation_to_canonical.size(); ++i) {
+      has_excluded |= subset.compilation_to_canonical[i] IS UINT32_MAX;
+   }
+   if (not has_excluded) {
+      Log.error("Prepared subset unexpectedly retained every disconnected compilation record");
+      return false;
+   }
+   auto missing_source = inputs;
+   uint8_t unused_source = 0;
+   while (unused_source < FILESOURCE_MAX_COUNT and
+          std::ranges::any_of(sources, [=](const auto &Source) { return Source.runtime_index IS unused_source; })) {
+      unused_source++;
+   }
+   if (unused_source >= FILESOURCE_MAX_COUNT) return false;
+   missing_source[subset_root].runtime_source_index = unused_source;
+   if (prepare_import_module_graph(missing_source, sources, selected_root, false, subset)) {
+      Log.error("Prepared graph accepted a missing runtime source translation");
+      return false;
+   }
+
+   std::vector<uint32_t> identity(table->entry_count);
+   for (uint32_t i = 0; i < table->entry_count; ++i) identity[i] = i;
+   ImportModuleRelocationPlan relocation;
+   if (not preflight_import_module_relocations(roots, identity, relocation) or relocation.sites.empty()) {
+      Log.error("Valid imported-module activations did not produce a relocation plan");
+      return false;
+   }
+
+   struct FailingWriter {
+      size_t calls = 0;
+      static int write(lua_State *, const void *, size_t, void *Context) {
+         auto &state = *(FailingWriter *)Context;
+         state.calls++;
+         return state.calls >= 5 ? 1 : 0;
+      }
+   } writer;
+   if (lj_bcwrite_relocated(lua, root, FailingWriter::write, &writer, 0, &relocation) IS 0 or writer.calls < 5) {
+      Log.error("Relocation-aware writer did not expose the injected callback failure");
+      return false;
+   }
+   for (size_t i = 0; i < roots.size(); ++i) {
+      if (not exact_snapshot_match(before[i], snapshot_proto(roots[i]))) {
+         Log.error("Relocation-aware writer changed live prototype bytecode after callback failure");
+         return false;
+      }
+   }
+
+   const ImportModuleRelocationSite &last = relocation.sites.back();
+   BCIns saved = proto_bc(last.prototype)[last.instruction];
+   setbc_d(&proto_bc(last.prototype)[last.instruction], uint16_t(-1));
+   BytecodeSnapshot malformed = snapshot_proto(last.prototype);
+   ImportModuleRelocationPlan rejected;
+   const bool accepted = preflight_import_module_relocations(roots, identity, rejected);
+   const bool unchanged = exact_snapshot_match(malformed, snapshot_proto(last.prototype));
+   proto_bc(last.prototype)[last.instruction] = saved;
+   if (accepted or not unchanged) {
+      Log.error("Malformed late relocation was accepted or partially changed before rejection");
+      return false;
+   }
+
+   std::vector<uint32_t> excluded = identity;
+   excluded[relocation.sites.front().old_index] = UINT32_MAX;
+   if (preflight_import_module_relocations(roots, excluded, rejected)) {
+      Log.error("A relocation to an excluded subset record was accepted");
+      return false;
+   }
+   return true;
+}
+
+//********************************************************************************************************************
 // A storage failure after successful cold compilation must not discard that compilation's executable module.
 
 static bool test_import_module_publication_failure_lifecycle(kt::Log &Log)
@@ -12988,23 +13278,39 @@ static bool test_import_module_publication_failure_lifecycle(kt::Log &Log)
       (void)remove_import_module_fixture_caches(source, "i03-publication-failure-cleanup", Log);
    });
 
-   tiri::import_cache::set_module_publish_failure(tiri::import_cache::ModulePublishFailure::WRITE);
-   LuaStateHolder failed_publication_holder;
-   lua_State *failed_publication = failed_publication_holder.get();
-   if (not failed_publication) return false;
-   luaL_openlibs(failed_publication);
-   if (lua_load(failed_publication, source, "i03-publication-failure") != 0) {
-      Log.error("A cache publication failure invalidated cold compilation: %s", lua_tostring(failed_publication, -1));
-      return false;
-   }
-   const auto failed_counters = parser_last_import_cache_counters();
-   if (failed_counters.SourceCompilations != 1 or failed_counters.Publications != 0 or
-       lua_pcall(failed_publication, 0, 1, 0) != 0 or not lua_isstring(failed_publication, -1) or
-       lua_tostringview(failed_publication, -1) != "D") {
-      Log.error("A failed publication did not retain the cold module for in-memory execution");
-      return false;
+   constexpr std::array failures = {
+      tiri::import_cache::ModulePublishFailure::CREATE,
+      tiri::import_cache::ModulePublishFailure::WRITE,
+      tiri::import_cache::ModulePublishFailure::FLUSH,
+      tiri::import_cache::ModulePublishFailure::MOVE
+   };
+   for (auto failure : failures) {
+      if (not remove_import_module_fixture_caches(source, "i03-publication-failure-reset", Log)) return false;
+      tiri::import_cache::set_module_publish_failure(failure);
+      LuaStateHolder failed_publication_holder;
+      lua_State *failed_publication = failed_publication_holder.get();
+      if (not failed_publication) return false;
+      luaL_openlibs(failed_publication);
+      if (lua_load(failed_publication, source, "i03-publication-failure") != 0) {
+         Log.error("A cache publication failure invalidated cold compilation: %s",
+            lua_tostring(failed_publication, -1));
+         return false;
+      }
+      const auto failed_counters = parser_last_import_cache_counters();
+      const auto failed_staging = parser_last_imported_module_counters();
+      if (failed_counters.SourceCompilations != 1 or failed_counters.Publications != 0 or
+          failed_staging.staging_metadata_roots != 1 or
+          not failed_staging.staging_compilation_source_bytes or
+          not failed_staging.staging_struct_manifest_bytes or
+          not failed_staging.staging_import_module_bundle_bytes or
+          lua_pcall(failed_publication, 0, 1, 0) != 0 or not lua_isstring(failed_publication, -1) or
+          lua_tostringview(failed_publication, -1) != "D") {
+         Log.error("A failed publication did not retain the cold module for in-memory execution");
+         return false;
+      }
    }
 
+   if (not remove_import_module_fixture_caches(source, "i03-publication-retry-reset", Log)) return false;
    LuaStateHolder retry_holder;
    lua_State *retry = retry_holder.get();
    if (not retry) return false;
@@ -13027,9 +13333,11 @@ static bool test_import_module_publication_failure_lifecycle(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 118> tests = { {
+   constexpr std::array<TestCase, 120> tests = { {
       { "bytecode_load_metadata_transaction", test_bytecode_load_metadata_transaction },
+      { "import_module_metadata_release_idempotence", test_import_module_metadata_release_idempotence },
       { "import_module_cycle_recovery", test_import_module_cycle_recovery },
+      { "import_module_relocation_transaction", test_import_module_relocation_transaction },
       { "import_module_publication_failure_lifecycle", test_import_module_publication_failure_lifecycle },
       { "import_module_executable_lifetime", test_import_module_executable_lifetime },
       { "import_module_executable_table", test_import_module_executable_table },

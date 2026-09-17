@@ -24,6 +24,7 @@
 #include "../parse_value.h"
 #include "../token_types.h"
 #include "../../../defs.h"  // For glPrintMsg, TiriConstant
+#include "../../runtime/import_module_graph.h"
 
 //********************************************************************************************************************
 // Returns nullptr if not found.

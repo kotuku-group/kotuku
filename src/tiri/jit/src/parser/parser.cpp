@@ -22,6 +22,7 @@
 #include "lj_vm.h"
 #include "lj_meta.h"
 #include "lj_vmevent.h"
+#include "../runtime/import_module_graph.h"
 #include "lauxlib.h"
 #include "lualib.h"
 #include "field_type_lookup.h"
@@ -423,67 +424,52 @@ extern GCproto * lj_parse(LexState *State)
       setmref(pt->struct_manifest, manifest);
       pt->struct_manifest_size = uint32_t(struct_manifest.size());
    }
-   std::vector<tiri::import_cache::RootModuleRecord> module_records;
-   std::vector<GCproto *> module_initialisers;
-   module_records.reserve(State->import_module_records.size());
-   module_initialisers.reserve(State->import_module_records.size());
+   std::vector<ImportModuleGraphInput> module_inputs;
+   module_inputs.reserve(State->import_module_records.size());
    for (const auto &record : State->import_module_records) {
-      uint8_t source_index = FILESOURCE_OVERFLOW_INDEX;
-      for (size_t i = 0; i < State->compilation_sources.size(); ++i) {
-         if (State->compilation_sources[i].runtime_index IS record.source_index) {
-            source_index = uint8_t(i);
-            break;
-         }
-      }
-      module_records.push_back({
-         record.lookup_identity, record.compiled_identity, record.interface_bytes, record.dependencies, source_index
-      });
-      module_initialisers.push_back(record.initialiser);
+      module_inputs.push_back({ record.lookup_identity, record.compiled_identity, record.interface_bytes,
+         record.dependencies, record.initialiser, record.source_index });
    }
-   tiri::import_cache::RootModuleGraphAssembly module_assembly;
-   if (tiri::import_cache::assemble_root_module_graph(module_records, module_assembly) !=
-       tiri::cache::FormatError::OKAY or module_assembly.input_to_canonical().size() != module_records.size()) {
+   PreparedImportModuleGraph module_graph;
+   if (not prepare_import_module_graph(
+       module_inputs, State->compilation_sources, {}, true, module_graph)) {
       luaL_error(L, ERR::InvalidData, "Invalid imported-module executable graph.");
    }
-   std::vector<GCproto *> canonical_initialisers(module_assembly.records().size(), nullptr);
-   for (size_t i = 0; i < module_records.size(); ++i) {
-      const uint32_t index = module_assembly.input_to_canonical()[i];
-      if (index >= canonical_initialisers.size()) {
-         luaL_error(L, ERR::InvalidData, "Invalid imported-module executable graph.");
-      }
-      // Equivalent records share validated immutable metadata.  The first record is the authoritative executable
-      // owner, matching the warm-graph merge rule used during import emission.
-      if (not canonical_initialisers[index]) canonical_initialisers[index] = module_initialisers[i];
-   }
-   if (not remap_import_module_references(pt, module_assembly.input_to_canonical())) {
+   std::vector<GCproto *> final_relocation_roots = module_graph.initialisers;
+   final_relocation_roots.push_back(pt);
+   ImportModuleRelocationPlan final_relocation;
+   if (not preflight_import_module_relocations(
+       final_relocation_roots, module_graph.compilation_to_canonical, final_relocation)) {
       luaL_error(L, ERR::InvalidData, "Invalid imported-module executable references.");
    }
-   for (GCproto *initialiser : canonical_initialisers) {
-      if (not initialiser or
-          not remap_import_module_references(initialiser, module_assembly.input_to_canonical())) {
-         luaL_error(L, ERR::InvalidData, "Invalid imported-module executable references.");
-      }
-   }
-   std::string module_bundle;
-   if (tiri::import_cache::encode_root_module_bundle(module_assembly, module_bundle) !=
-       tiri::cache::FormatError::OKAY or
-       not install_import_module_table(L, pt, module_assembly.records(), canonical_initialisers)) {
+   if (module_graph.directory.entry_count and not install_import_module_directory(
+       L, pt, module_graph.assembly.records(), module_graph.initialisers, module_graph.directory)) {
       luaL_error(L, ERR::InvalidData, "Invalid imported-module executable graph.");
    }
-   auto bundle = (uint8_t *)lj_mem_new(L, MSize(module_bundle.size()));
-   memcpy(bundle, module_bundle.data(), module_bundle.size());
+   auto bundle = (uint8_t *)lj_mem_new(L, MSize(module_graph.bundle.size()));
+   memcpy(bundle, module_graph.bundle.data(), module_graph.bundle.size());
    setmref(pt->import_module_bundle, bundle);
-   pt->import_module_bundle_size = uint32_t(module_bundle.size());
-   for (GCproto *linked_root : State->linked_import_module_roots) {
-      auto staged_table = linked_root->import_module_table.get<ImportModuleTable>();
-      if (not staged_table) continue;
-      const uint32_t staged_size = staged_table->byte_size;
-      setmref(linked_root->import_module_table, nullptr);
-      lj_mem_free(G(L), staged_table, staged_size);
+   pt->import_module_bundle_size = uint32_t(module_graph.bundle.size());
+   apply_import_module_relocations(final_relocation);
+   for (GCproto *initialiser : module_graph.initialisers) {
+      if (not initialiser or gcref(initialiser->source_root) != obj2gco(pt)) {
+         luaL_error(L, ERR::InvalidData, "Imported-module initialiser has no final metadata root.");
+      }
    }
-   State->linked_import_module_roots.clear();
+   State->release_import_module_staging_metadata();
+   const auto &staging = State->imported_module_counters;
+   if (staging.staging_metadata_roots) {
+      log.trace("Imported-module staging release: roots=%u source-bytes=%" PRIu64
+         " manifest-bytes=%" PRIu64 " bundle-bytes=%" PRIu64 " directory-bytes=%" PRIu64,
+         staging.staging_metadata_roots, staging.staging_compilation_source_bytes,
+         staging.staging_struct_manifest_bytes, staging.staging_import_module_bundle_bytes,
+         staging.staging_import_module_table_bytes);
+   }
    for (int reference : State->import_module_anchors) luaL_unref(L, LUA_REGISTRYINDEX, reference);
    State->import_module_anchors.clear();
+#ifdef UNIT_TESTS
+   glLastImportedModuleCounters = State->imported_module_counters;
+#endif
    L->top--;
    L->top--;  // Drop chunk_name.
 

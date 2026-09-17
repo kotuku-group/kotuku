@@ -2,10 +2,6 @@
 // IR emitter implementation: import and namespace statement emission
 // This file is #included from ir_emitter.cpp
 
-static bool remap_import_module_references(GCproto *, const std::vector<uint32_t> &);
-
-//********************************************************************************************************************
-
 static int append_import_module_dump(lua_State *, const void *Data, size_t Size, void *Context)
 {
    ((std::string *)Context)->append((const char *)Data, Size);
@@ -14,58 +10,10 @@ static int append_import_module_dump(lua_State *, const void *Data, size_t Size,
 
 //********************************************************************************************************************
 
-static bool install_import_module_table(lua_State *L, GCproto *Root,
-   const std::vector<tiri::import_cache::RootModuleRecord> &Records,
-   const std::vector<GCproto *> &Initialisers)
-{
-   if (Records.size() != Initialisers.size()) return false;
-   if (Records.empty()) return true;
-   size_t dependency_count = 0;
-   for (size_t i = 0; i < Records.size(); ++i) {
-      if (not Initialisers[i] or Initialisers[i]->sizeuv != 0) return false;
-      dependency_count += Records[i].Dependencies.size();
-      if (dependency_count > tiri::import_cache::MAX_ROOT_MODULES) return false;
-      for (uint32_t dependency : Records[i].Dependencies) if (dependency >= i) return false;
-   }
-
-   const size_t byte_size = sizeof(ImportModuleTable) + Records.size() * sizeof(ImportModuleTableEntry) +
-      dependency_count * sizeof(uint32_t);
-   if (byte_size > std::numeric_limits<uint32_t>::max()) return false;
-   auto table = (ImportModuleTable *)lj_mem_new(L, MSize(byte_size));
-   table->version = IMPORT_MODULE_TABLE_VERSION;
-   memset(table->reserved, 0, sizeof(table->reserved));
-   table->entry_count = uint32_t(Records.size());
-   table->dependency_count = uint32_t(dependency_count);
-   table->byte_size = uint32_t(byte_size);
-
-   auto entries = import_module_table_entries(table);
-   auto dependencies = import_module_table_dependencies(table);
-   uint32_t next_dependency = 0;
-   for (size_t i = 0; i < Records.size(); ++i) {
-      const auto &record = Records[i];
-      setgcref(entries[i].compiled_identity, obj2gco(&G(L)->strempty));
-      setgcref(entries[i].initialiser, obj2gco(Initialisers[i]));
-      entries[i].first_dependency = next_dependency;
-      entries[i].dependency_count = uint32_t(record.Dependencies.size());
-      entries[i].source_index = record.SourceIndex;
-      memset(entries[i].reserved, 0, sizeof(entries[i].reserved));
-      for (uint32_t dependency : record.Dependencies) dependencies[next_dependency++] = dependency;
-   }
-
-   setmref(Root->import_module_table, table);
-   for (size_t i = 0; i < Records.size(); ++i) {
-      attach_compilation_source_root(Initialisers[i], Root);
-      const std::string &identity = Records[i].CompiledIdentity;
-      setgcref(entries[i].compiled_identity, obj2gco(lj_str_new(L, identity.data(), identity.size())));
-   }
-   return true;
-}
-
-//********************************************************************************************************************
-
 static bool prepare_import_module_dump(LexState &State, GCproto *Prototype, std::string &Output)
 {
    lua_State *L = State.L;
+   State.register_import_module_staging_root(Prototype);
    attach_compilation_sources(L, Prototype, State.compilation_sources);
 
    std::vector<uint8_t> structure_manifest;
@@ -77,79 +25,33 @@ static bool prepare_import_module_dump(LexState &State, GCproto *Prototype, std:
    setmref(Prototype->struct_manifest, structures);
    Prototype->struct_manifest_size = uint32_t(structure_manifest.size());
 
-   std::vector<tiri::import_cache::RootModuleRecord> records;
-   std::vector<GCproto *> initialisers;
-   std::vector<uint32_t> remap(State.import_module_records.size(), UINT32_MAX);
-   std::function<bool(uint32_t)> append_record = [&](uint32_t Index) {
-      if (Index >= State.import_module_records.size()) return false;
-      if (remap[Index] != UINT32_MAX) return true;
-      const auto &source = State.import_module_records[Index];
-      std::vector<uint32_t> dependencies;
-      for (uint32_t dependency : source.dependencies) {
-         if (not append_record(dependency)) return false;
-         dependencies.push_back(remap[dependency]);
-      }
-      remap[Index] = uint32_t(records.size());
-      uint8_t source_index = FILESOURCE_OVERFLOW_INDEX;
-      for (size_t i = 0; i < State.compilation_sources.size(); ++i) {
-         if (State.compilation_sources[i].runtime_index IS source.source_index) {
-            source_index = uint8_t(i);
-            break;
-         }
-      }
-      records.push_back({ source.lookup_identity, source.compiled_identity, source.interface_bytes,
-         std::move(dependencies), source_index });
-      initialisers.push_back(source.initialiser);
-      return true;
-   };
+   std::vector<ImportModuleGraphInput> inputs;
+   inputs.reserve(State.import_module_records.size());
+   for (const auto &record : State.import_module_records) {
+      inputs.push_back({ record.lookup_identity, record.compiled_identity, record.interface_bytes,
+         record.dependencies, record.initialiser, record.source_index });
+   }
+   std::vector<uint32_t> roots;
    if (not State.import_module_stack.empty()) {
       for (uint32_t dependency : State.import_module_stack.back().dependencies) {
-         if (not append_record(dependency)) return false;
+         roots.push_back(dependency);
       }
    }
-   tiri::import_cache::RootModuleGraphAssembly assembly;
-   if (tiri::import_cache::assemble_root_module_graph(records, assembly) !=
-       tiri::cache::FormatError::OKAY or assembly.input_to_canonical().size() != records.size()) return false;
-   std::vector<GCproto *> canonical_initialisers(assembly.records().size(), nullptr);
-   for (size_t i = 0; i < records.size(); ++i) {
-      const uint32_t index = assembly.input_to_canonical()[i];
-      if (index >= canonical_initialisers.size()) return false;
-      if (not canonical_initialisers[index]) canonical_initialisers[index] = initialisers[i];
-   }
-   std::vector<uint32_t> wire_mapping(State.import_module_records.size(), UINT32_MAX);
-   std::vector<uint32_t> restore_mapping(assembly.records().size(), UINT32_MAX);
-   for (size_t i = 0; i < remap.size(); ++i) {
-      if (remap[i] IS UINT32_MAX) continue;
-      if (remap[i] >= assembly.input_to_canonical().size()) return false;
-      wire_mapping[i] = assembly.input_to_canonical()[remap[i]];
-      if (wire_mapping[i] >= restore_mapping.size()) return false;
-      if (restore_mapping[wire_mapping[i]] IS UINT32_MAX) restore_mapping[wire_mapping[i]] = uint32_t(i);
-   }
-   for (uint32_t restored : restore_mapping) if (restored IS UINT32_MAX) return false;
-   if (not remap_import_module_references(Prototype, wire_mapping)) return false;
-   for (GCproto *initialiser : canonical_initialisers) {
-      if (not initialiser or not remap_import_module_references(initialiser, wire_mapping)) return false;
-   }
-   std::string module_bundle;
-   if (tiri::import_cache::encode_root_module_bundle(assembly, module_bundle) !=
-       tiri::cache::FormatError::OKAY) return false;
-   auto modules = (uint8_t *)lj_mem_new(L, MSize(module_bundle.size()));
-   memcpy(modules, module_bundle.data(), module_bundle.size());
+   PreparedImportModuleGraph graph;
+   if (not prepare_import_module_graph(inputs, State.compilation_sources, roots, false, graph)) return false;
+   std::vector<GCproto *> relocation_roots = graph.initialisers;
+   relocation_roots.push_back(Prototype);
+   ImportModuleRelocationPlan relocation;
+   if (not preflight_import_module_relocations(
+       relocation_roots, graph.compilation_to_canonical, relocation)) return false;
+   auto modules = (uint8_t *)lj_mem_new(L, MSize(graph.bundle.size()));
+   memcpy(modules, graph.bundle.data(), graph.bundle.size());
    setmref(Prototype->import_module_bundle, modules);
-   Prototype->import_module_bundle_size = uint32_t(module_bundle.size());
-   if (not install_import_module_table(L, Prototype, assembly.records(), canonical_initialisers)) return false;
-   const bool written = lj_bcwrite(L, Prototype, append_import_module_dump, &Output, 0) IS 0;
-   auto table = Prototype->import_module_table.get<ImportModuleTable>();
-   if (table) {
-      const uint32_t table_size = table->byte_size;
-      setmref(Prototype->import_module_table, nullptr);
-      lj_mem_free(G(L), table, table_size);
-   }
-   bool restored = remap_import_module_references(Prototype, restore_mapping);
-   for (GCproto *initialiser : canonical_initialisers) {
-      restored = remap_import_module_references(initialiser, restore_mapping) and restored;
-   }
-   if (not restored) return false;
+   Prototype->import_module_bundle_size = uint32_t(graph.bundle.size());
+   if (graph.directory.entry_count and not install_import_module_directory(
+       L, Prototype, graph.assembly.records(), graph.initialisers, graph.directory)) return false;
+   const bool written = lj_bcwrite_relocated(
+      L, Prototype, append_import_module_dump, &Output, 0, &relocation) IS 0;
    return written;
 }
 
@@ -225,41 +127,6 @@ void IrEmitter::publish_namespace_local(const Identifier &Name, BCReg Slot)
 
    this->update_local_binding(Name.symbol, Slot);
    fs->reset_freereg();
-}
-
-//********************************************************************************************************************
-
-static bool remap_import_module_references(GCproto *Prototype, const std::vector<uint32_t> &Mapping)
-{
-   BCIns *bytecode = proto_bc(Prototype);
-   for (MSize i = 1; i < Prototype->sizebc; ++i) {
-      if (bc_op(bytecode[i]) != BC_BFUNC or
-          bc_d(bytecode[i]) != builtin_callable_index(BuiltinCallableID::ImportModuleActivate)) continue;
-      const BCREG base = bc_a(bytecode[i]);
-      const BCREG reference_slot = base + 2 + LJ_FR2;
-      bool remapped = false;
-      for (MSize next = i + 1; next < Prototype->sizebc; ++next) {
-         if (bc_op(bytecode[next]) IS BC_KSHORT and bc_a(bytecode[next]) IS reference_slot) {
-            const int32_t old_index = int32_t(int16_t(bc_d(bytecode[next])));
-            if (old_index < 0 or uint32_t(old_index) >= Mapping.size() or
-                Mapping[uint32_t(old_index)] > uint32_t(INT16_MAX)) return false;
-            setbc_d(&bytecode[next], uint16_t(Mapping[uint32_t(old_index)]));
-            remapped = true;
-         }
-         if (bc_op(bytecode[next]) IS BC_CALL and bc_a(bytecode[next]) IS base) break;
-      }
-      if (not remapped) return false;
-   }
-
-   if (Prototype->flags & PROTO_CHILD) {
-      GCRef *constant = mref<GCRef>(Prototype->k) - 1;
-      for (MSize i = 0; i < Prototype->sizekgc; ++i, --constant) {
-         GCobj *object = gcref(*constant);
-         if (object->gch.gct IS ~LJ_TPROTO and
-             not remap_import_module_references(gco_to_proto(object), Mapping)) return false;
-      }
-   }
-   return true;
 }
 
 //********************************************************************************************************************
@@ -391,7 +258,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_import_entry(const ImportEntryPayload &
                      ParserErrorCode::InternalInvariant, "Warm imported-module directory does not match its metadata"));
                }
                this->lex_state.import_module_anchors.push_back(luaL_ref(L, LUA_REGISTRYINDEX));
-               this->lex_state.linked_import_module_roots.push_back(warm_root);
+               this->lex_state.register_import_module_staging_root(warm_root);
             }
 
             std::vector<uint32_t> embedded_mapping(unit->embedded_modules.size(), UINT32_MAX);
@@ -473,17 +340,19 @@ ParserResult<IrEmitUnit> IrEmitter::emit_import_entry(const ImportEntryPayload &
                }
             }
 
+            std::vector<GCproto *> warm_relocation_roots;
             for (size_t i = 0; i < embedded_mapping.size(); ++i) {
-               if (embedded_inserted[i] and not remap_import_module_references(
-                   this->lex_state.import_module_records[embedded_mapping[i]].initialiser, embedded_mapping)) {
-                  return ParserResult<IrEmitUnit>::failure(this->make_error(
-                     ParserErrorCode::InternalInvariant, "Warm imported-module references could not be relocated"));
-               }
+               if (embedded_inserted[i]) warm_relocation_roots.push_back(
+                  this->lex_state.import_module_records[embedded_mapping[i]].initialiser);
             }
-            if (warm_root and not remap_import_module_references(warm_root, embedded_mapping)) {
+            if (warm_root) warm_relocation_roots.push_back(warm_root);
+            ImportModuleRelocationPlan warm_relocation;
+            if (not preflight_import_module_relocations(
+                warm_relocation_roots, embedded_mapping, warm_relocation)) {
                return ParserResult<IrEmitUnit>::failure(this->make_error(
                   ParserErrorCode::InternalInvariant, "Warm imported-module root references could not be relocated"));
             }
+            apply_import_module_relocations(warm_relocation);
 
             std::vector<uint32_t> embedded_roots;
             for (size_t i = 0; i < embedded_mapping.size(); ++i) {

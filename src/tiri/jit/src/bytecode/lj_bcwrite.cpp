@@ -14,6 +14,7 @@
 #include "lj_bcdump.h"
 #include "lj_vm.h"
 #include "../debug/filesource.h"
+#include "../runtime/import_module_graph.h"
 #include "../../../import_module_bundle.h"
 
 // Context for bytecode writer.
@@ -32,6 +33,7 @@ typedef struct BCWriteCtx {
    const uint8_t *import_module_bundle;
    uint32_t import_module_bundle_size;
    const ImportModuleTable *import_module_table;
+   const ImportModuleRelocationPlan *relocation;
 #ifdef LUA_USE_ASSERT
    global_State* g;
 #endif
@@ -355,6 +357,16 @@ static char * bcwrite_bytecode(BCWriteCtx *ctx, char *p, GCproto *pt)
       }
    }
 
+   if (ctx->relocation) {
+      for (const ImportModuleRelocationSite &site : ctx->relocation->sites) {
+         if (site.prototype != pt) continue;
+         BCIns instruction;
+         memcpy(&instruction, bytecode + (site.instruction - 1) * sizeof(BCIns), sizeof(instruction));
+         setbc_d(&instruction, site.mapped_index);
+         memcpy(bytecode + (site.instruction - 1) * sizeof(BCIns), &instruction, sizeof(instruction));
+      }
+   }
+
    return p;
 }
 
@@ -648,21 +660,24 @@ static TValue* cpwriter(lua_State* L, lua_CFunction dummy, void* ud)
 //********************************************************************************************************************
 // Write bytecode for a prototype.
 
-int lj_bcwrite(lua_State *L, GCproto *pt, lua_Writer writer, void *data, int strip)
+int lj_bcwrite_relocated(lua_State *L, GCproto *Pt, lua_Writer Writer, void *Data, int Strip,
+   const ImportModuleRelocationPlan *Relocation)
 {
    BCWriteCtx ctx;
    int status;
-   ctx.pt = pt;
-   ctx.wfunc = writer;
-   ctx.wdata = data;
-   ctx.strip = strip;
+   ctx.pt = Pt;
+   ctx.wfunc = Writer;
+   ctx.wdata = Data;
+   ctx.strip = Strip;
    ctx.status = 0;
    memset(ctx.source_wire, 0, sizeof(ctx.source_wire));
    memset(ctx.source_mapped, 0, sizeof(ctx.source_mapped));
-   ctx.sources = proto_compilation_sources(pt);
-   ctx.struct_manifest = proto_struct_manifest(pt, &ctx.struct_manifest_size);
-   ctx.import_module_bundle = proto_import_module_bundle(pt, &ctx.import_module_bundle_size);
-   ctx.import_module_table = proto_import_module_table(pt);
+   ctx.sources = proto_compilation_sources(Pt);
+   ctx.struct_manifest = proto_struct_manifest(Pt, &ctx.struct_manifest_size);
+   ctx.import_module_bundle = proto_import_module_bundle(Pt, &ctx.import_module_bundle_size);
+   ctx.import_module_table = proto_import_module_table(Pt);
+   ctx.relocation = Relocation;
+   if (Relocation and not validate_import_module_relocation_plan(*Relocation)) return 1;
    if (not ctx.sources or ctx.sources->version != COMPILATION_SOURCE_VERSION or ctx.sources->count IS 0 or
        ctx.sources->count > FILESOURCE_MAX_COUNT or ctx.sources->root >= ctx.sources->count) return 1;
    if (not ctx.struct_manifest or ctx.struct_manifest_size < 2 or
@@ -731,7 +746,7 @@ int lj_bcwrite(lua_State *L, GCproto *pt, lua_Writer writer, void *data, int str
          if (not bcwrite_validate_proto(&ctx, gco_to_proto(gcref(entries[i].initialiser)))) return 1;
       }
    }
-   if (not bcwrite_validate_proto(&ctx, pt)) return 1;
+   if (not bcwrite_validate_proto(&ctx, Pt)) return 1;
 #ifdef LUA_USE_ASSERT
    ctx.g = G(L);
 #endif
@@ -740,4 +755,9 @@ int lj_bcwrite(lua_State *L, GCproto *pt, lua_Writer writer, void *data, int str
    if (status IS 0) status = ctx.status;
    lj_buf_free(G(sbufL(&ctx.sb)), &ctx.sb);
    return status;
+}
+
+int lj_bcwrite(lua_State *L, GCproto *pt, lua_Writer writer, void *data, int strip)
+{
+   return lj_bcwrite_relocated(L, pt, writer, data, strip, nullptr);
 }
