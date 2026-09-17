@@ -12355,12 +12355,14 @@ static bool test_import_module_layered_reuse(kt::Log &Log)
    if (counters.unique_units != 5 or counters.lookup_attempts != 5 or counters.source_parses != 5 or
        counters.assignment_visits != 5 or counters.static_discovery_visits != 5 or
        counters.static_propagation_visits != 10 or counters.type_analysis_visits != 5 or
-       counters.interface_preparations != 5 or counters.initialiser_emissions != 5) {
+       counters.interface_preparations != 5 or counters.initialiser_emissions != 5 or
+       counters.root_normalisation_traversals != 6 or counters.root_normalisation_edges != 4) {
       Log.error("U03 layered work did not scale by five unique units: units=%u lookups=%u parses=%u "
-         "assignment=%u discovery=%u propagation=%u types=%u interfaces=%u emissions=%u",
+         "assignment=%u discovery=%u propagation=%u types=%u interfaces=%u emissions=%u roots=%u root-edges=%u",
          counters.unique_units, counters.lookup_attempts, counters.source_parses, counters.assignment_visits,
          counters.static_discovery_visits, counters.static_propagation_visits, counters.type_analysis_visits,
-         counters.interface_preparations, counters.initialiser_emissions);
+         counters.interface_preparations, counters.initialiser_emissions,
+         counters.root_normalisation_traversals, counters.root_normalisation_edges);
       return false;
    }
 

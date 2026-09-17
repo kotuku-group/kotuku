@@ -438,37 +438,34 @@ extern GCproto * lj_parse(LexState *State)
       });
       module_initialisers.push_back(record.initialiser);
    }
-   std::vector<tiri::import_cache::RootModuleRecord> canonical_modules;
-   if (tiri::import_cache::assemble_root_module_graph(module_records, canonical_modules) !=
-       tiri::cache::FormatError::OKAY) {
+   tiri::import_cache::RootModuleGraphAssembly module_assembly;
+   if (tiri::import_cache::assemble_root_module_graph(module_records, module_assembly) !=
+       tiri::cache::FormatError::OKAY or module_assembly.input_to_canonical().size() != module_records.size()) {
       luaL_error(L, ERR::InvalidData, "Invalid imported-module executable graph.");
    }
-   std::vector<uint32_t> module_mapping(module_records.size(), UINT32_MAX);
-   std::vector<GCproto *> canonical_initialisers(canonical_modules.size(), nullptr);
+   std::vector<GCproto *> canonical_initialisers(module_assembly.records().size(), nullptr);
    for (size_t i = 0; i < module_records.size(); ++i) {
-      auto found = std::ranges::find(canonical_modules, module_records[i].CompiledIdentity,
-         &tiri::import_cache::RootModuleRecord::CompiledIdentity);
-      if (found IS canonical_modules.end()) {
+      const uint32_t index = module_assembly.input_to_canonical()[i];
+      if (index >= canonical_initialisers.size()) {
          luaL_error(L, ERR::InvalidData, "Invalid imported-module executable graph.");
       }
-      const uint32_t index = uint32_t(found - canonical_modules.begin());
-      module_mapping[i] = index;
-      canonical_initialisers[index] = module_initialisers[i];
+      // Equivalent records share validated immutable metadata.  The first record is the authoritative executable
+      // owner, matching the warm-graph merge rule used during import emission.
+      if (not canonical_initialisers[index]) canonical_initialisers[index] = module_initialisers[i];
    }
-   if (not remap_import_module_references(pt, module_mapping)) {
+   if (not remap_import_module_references(pt, module_assembly.input_to_canonical())) {
       luaL_error(L, ERR::InvalidData, "Invalid imported-module executable references.");
    }
    for (GCproto *initialiser : canonical_initialisers) {
-      if (not initialiser or not remap_import_module_references(initialiser, module_mapping)) {
+      if (not initialiser or
+          not remap_import_module_references(initialiser, module_assembly.input_to_canonical())) {
          luaL_error(L, ERR::InvalidData, "Invalid imported-module executable references.");
       }
    }
-   module_records = std::move(canonical_modules);
-   module_initialisers = std::move(canonical_initialisers);
    std::string module_bundle;
-   if (tiri::import_cache::encode_root_module_bundle(module_records, module_bundle) !=
+   if (tiri::import_cache::encode_root_module_bundle(module_assembly, module_bundle) !=
        tiri::cache::FormatError::OKAY or
-       not install_import_module_table(L, pt, module_records, module_initialisers)) {
+       not install_import_module_table(L, pt, module_assembly.records(), canonical_initialisers)) {
       luaL_error(L, ERR::InvalidData, "Invalid imported-module executable graph.");
    }
    auto bundle = (uint8_t *)lj_mem_new(L, MSize(module_bundle.size()));

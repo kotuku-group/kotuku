@@ -280,13 +280,13 @@ ERR load_or_compile_module(const CompilationRequest &Request, const ModuleCompil
 
    if (try_cache(selected_path, expected, ValidateIdentity, ValidatePayload, Counters, Output)) {
       Counters.CacheHits++;
-      log.trace("Imported-module cache hit '%s'.", selected_path.c_str());
+      log.detail("Imported-module cache hit '%s'.", selected_path.c_str());
       return ERR::Okay;
    }
 
    Counters.LookupMisses++;
    Counters.SourceCompilations++;
-   log.trace("Imported-module cache miss '%s'.", selected_path.c_str());
+   log.detail("Imported-module cache miss '%s'.", selected_path.c_str());
    ImportStackGuard stack_guard(Request.ImportStack, source_path);
 
    Identity compiled_identity = expected;
@@ -372,11 +372,11 @@ ERR lookup_module(const CompilationRequest &Request, const SourceSnapshot &Snaps
 
    if (try_cache(selected_path, Output.ExpectedIdentity, ValidateIdentity, ValidatePayload, Counters, Output.Cached)) {
       Counters.CacheHits++;
-      log.trace("Imported-module cache hit '%s'.", selected_path.c_str());
+      log.detail("Imported-module cache hit '%s'.", selected_path.c_str());
    }
    else {
       Counters.LookupMisses++;
-      log.trace("Imported-module source rebuild '%s'%s%s.", selected_path.c_str(),
+      log.detail("Imported-module source rebuild '%s'%s%s.", selected_path.c_str(),
          Output.Cached.Diagnostic.empty() ? "" : ": ", Output.Cached.Diagnostic.c_str());
    }
    return ERR::Okay;

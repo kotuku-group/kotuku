@@ -107,40 +107,37 @@ static bool prepare_import_module_dump(LexState &State, GCproto *Prototype, std:
          if (not append_record(dependency)) return false;
       }
    }
-   std::vector<tiri::import_cache::RootModuleRecord> canonical_records;
-   if (tiri::import_cache::assemble_root_module_graph(records, canonical_records) !=
-       tiri::cache::FormatError::OKAY) return false;
-   std::vector<uint32_t> subset_mapping(records.size(), UINT32_MAX);
-   std::vector<GCproto *> canonical_initialisers(canonical_records.size(), nullptr);
+   tiri::import_cache::RootModuleGraphAssembly assembly;
+   if (tiri::import_cache::assemble_root_module_graph(records, assembly) !=
+       tiri::cache::FormatError::OKAY or assembly.input_to_canonical().size() != records.size()) return false;
+   std::vector<GCproto *> canonical_initialisers(assembly.records().size(), nullptr);
    for (size_t i = 0; i < records.size(); ++i) {
-      auto found = std::ranges::find(canonical_records, records[i].CompiledIdentity,
-         &tiri::import_cache::RootModuleRecord::CompiledIdentity);
-      if (found IS canonical_records.end()) return false;
-      const uint32_t index = uint32_t(found - canonical_records.begin());
-      subset_mapping[i] = index;
-      canonical_initialisers[index] = initialisers[i];
+      const uint32_t index = assembly.input_to_canonical()[i];
+      if (index >= canonical_initialisers.size()) return false;
+      if (not canonical_initialisers[index]) canonical_initialisers[index] = initialisers[i];
    }
    std::vector<uint32_t> wire_mapping(State.import_module_records.size(), UINT32_MAX);
-   std::vector<uint32_t> restore_mapping(canonical_records.size(), UINT32_MAX);
+   std::vector<uint32_t> restore_mapping(assembly.records().size(), UINT32_MAX);
    for (size_t i = 0; i < remap.size(); ++i) {
       if (remap[i] IS UINT32_MAX) continue;
-      wire_mapping[i] = subset_mapping[remap[i]];
-      restore_mapping[wire_mapping[i]] = uint32_t(i);
+      if (remap[i] >= assembly.input_to_canonical().size()) return false;
+      wire_mapping[i] = assembly.input_to_canonical()[remap[i]];
+      if (wire_mapping[i] >= restore_mapping.size()) return false;
+      if (restore_mapping[wire_mapping[i]] IS UINT32_MAX) restore_mapping[wire_mapping[i]] = uint32_t(i);
    }
+   for (uint32_t restored : restore_mapping) if (restored IS UINT32_MAX) return false;
    if (not remap_import_module_references(Prototype, wire_mapping)) return false;
    for (GCproto *initialiser : canonical_initialisers) {
       if (not initialiser or not remap_import_module_references(initialiser, wire_mapping)) return false;
    }
-   records = std::move(canonical_records);
-   initialisers = std::move(canonical_initialisers);
    std::string module_bundle;
-   if (tiri::import_cache::encode_root_module_bundle(records, module_bundle) !=
+   if (tiri::import_cache::encode_root_module_bundle(assembly, module_bundle) !=
        tiri::cache::FormatError::OKAY) return false;
    auto modules = (uint8_t *)lj_mem_new(L, MSize(module_bundle.size()));
    memcpy(modules, module_bundle.data(), module_bundle.size());
    setmref(Prototype->import_module_bundle, modules);
    Prototype->import_module_bundle_size = uint32_t(module_bundle.size());
-   if (not install_import_module_table(L, Prototype, records, initialisers)) return false;
+   if (not install_import_module_table(L, Prototype, assembly.records(), canonical_initialisers)) return false;
    const bool written = lj_bcwrite(L, Prototype, append_import_module_dump, &Output, 0) IS 0;
    auto table = Prototype->import_module_table.get<ImportModuleTable>();
    if (table) {
@@ -149,7 +146,7 @@ static bool prepare_import_module_dump(LexState &State, GCproto *Prototype, std:
       lj_mem_free(G(L), table, table_size);
    }
    bool restored = remap_import_module_references(Prototype, restore_mapping);
-   for (GCproto *initialiser : initialisers) {
+   for (GCproto *initialiser : canonical_initialisers) {
       restored = remap_import_module_references(initialiser, restore_mapping) and restored;
    }
    if (not restored) return false;
@@ -267,32 +264,58 @@ static bool remap_import_module_references(GCproto *Prototype, const std::vector
 
 //********************************************************************************************************************
 
-static void canonicalise_import_module_dependencies(
-   const std::vector<ImportModuleCompilationRecord> &Records, std::vector<uint32_t> &Dependencies)
+static bool canonicalise_import_module_dependencies(
+   const std::vector<ImportModuleCompilationRecord> &Records, std::vector<uint32_t> &Dependencies,
+   ImportedModuleCompilationCounters &Counters)
 {
-   auto reaches = [&](auto &Self, uint32_t From, uint32_t Target) -> bool {
-      if (From >= Records.size()) return false;
-      for (uint32_t dependency : Records[From].dependencies) {
-         if (dependency IS Target or Self(Self, dependency, Target)) return true;
-      }
-      return false;
-   };
-
    std::vector<uint32_t> roots;
+   std::vector<int32_t> root_positions(Records.size(), -1);
    for (uint32_t candidate : Dependencies) {
-      bool transitive = false;
-      for (uint32_t other : Dependencies) {
-         if (other != candidate and reaches(reaches, other, candidate)) {
-            transitive = true;
-            break;
+      if (candidate >= Records.size()) return false;
+      if (root_positions[candidate] < 0) {
+         root_positions[candidate] = int32_t(roots.size());
+         roots.push_back(candidate);
+      }
+   }
+
+   std::vector<bool> reached(roots.size(), false);
+   std::vector<uint32_t> visited(Records.size(), 0);
+   std::vector<uint32_t> stack;
+   uint32_t generation = 0;
+   for (size_t root_position = 0; root_position < roots.size(); ++root_position) {
+      Counters.root_normalisation_traversals++;
+      if (++generation IS 0) {
+         std::ranges::fill(visited, 0);
+         generation = 1;
+      }
+      stack.clear();
+      stack.push_back(roots[root_position]);
+      visited[roots[root_position]] = generation;
+      while (not stack.empty()) {
+         const uint32_t current = stack.back();
+         stack.pop_back();
+         for (uint32_t dependency : Records[current].dependencies) {
+            Counters.root_normalisation_edges++;
+            if (dependency >= Records.size()) return false;
+            const int32_t reached_position = root_positions[dependency];
+            if (reached_position >= 0 and size_t(reached_position) != root_position) {
+               reached[size_t(reached_position)] = true;
+            }
+            if (visited[dependency] != generation) {
+               visited[dependency] = generation;
+               stack.push_back(dependency);
+            }
          }
       }
-      if (not transitive and std::ranges::find(roots, candidate) IS roots.end()) roots.push_back(candidate);
    }
-   std::ranges::sort(roots, [&](uint32_t Left, uint32_t Right) {
+
+   std::vector<uint32_t> canonical;
+   for (size_t i = 0; i < roots.size(); ++i) if (not reached[i]) canonical.push_back(roots[i]);
+   std::ranges::sort(canonical, [&](uint32_t Left, uint32_t Right) {
       return Records[Left].compiled_identity < Records[Right].compiled_identity;
    });
-   Dependencies = std::move(roots);
+   Dependencies = std::move(canonical);
+   return true;
 }
 
 //********************************************************************************************************************
@@ -528,7 +551,12 @@ ParserResult<IrEmitUnit> IrEmitter::emit_import_entry(const ImportEntryPayload &
 
                   ImportModuleCompilationFrame frame = std::move(this->lex_state.import_module_stack.back());
                   this->lex_state.import_module_stack.pop_back();
-                  canonicalise_import_module_dependencies(this->lex_state.import_module_records, frame.dependencies);
+                  if (not canonicalise_import_module_dependencies(
+                      this->lex_state.import_module_records, frame.dependencies,
+                      this->lex_state.imported_module_counters)) {
+                     return ParserResult<IrEmitUnit>::failure(this->make_error(
+                        ParserErrorCode::InternalInvariant, "Imported module dependencies contain an invalid index"));
+                  }
                   module_index = uint32_t(this->lex_state.import_module_records.size());
                   this->lex_state.import_module_records.push_back({
                      std::move(frame.lookup_identity), std::move(frame.compiled_identity),

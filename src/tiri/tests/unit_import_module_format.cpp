@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <format>
 #include <ranges>
 
 #ifdef UNIT_TESTS
@@ -87,6 +88,33 @@ Identity sample_identity()
    result.ResolutionInputs = { { "volume:scripts", result.Source.ResolvedPath, "/opt/kotuku/scripts/" } };
    result.ConditionalInputs = { { tiri::cache::ConditionalKind::IMPORTED, "imported",
       result.Source.ResolvedPath, "true" } };
+   return result;
+}
+
+std::string encode_raw_root_module_bundle(const std::vector<RootModuleRecord> &Records)
+{
+   auto append_uleb = [](std::string &Output, uint32_t Value) {
+      do {
+         uint8_t byte = uint8_t(Value & 0x7f);
+         Value >>= 7;
+         if (Value) byte |= 0x80;
+         Output.push_back(char(byte));
+      } while (Value);
+   };
+
+   std::string result { char(ROOT_BUNDLE_VERSION) };
+   append_uleb(result, uint32_t(Records.size()));
+   for (const auto &record : Records) {
+      append_uleb(result, uint32_t(record.LookupIdentity.size()));
+      result += record.LookupIdentity;
+      append_uleb(result, uint32_t(record.CompiledIdentity.size()));
+      result += record.CompiledIdentity;
+      result.push_back(char(record.SourceIndex));
+      append_uleb(result, uint32_t(record.Dependencies.size()));
+      for (uint32_t dependency : record.Dependencies) append_uleb(result, dependency);
+      append_uleb(result, uint32_t(record.InterfaceBytes.size()));
+      result += record.InterfaceBytes;
+   }
    return result;
 }
 
@@ -180,33 +208,160 @@ bool compiled_identity_and_graph_assembly(kt::Log &Log)
    if (encode_interface(sample_interface(), interface_bytes) != tiri::cache::FormatError::OKAY) return false;
    std::vector<RootModuleRecord> input = {
       { "lookup-b", "compiled-parent-b", interface_bytes, { 3 }, 7 },
-      { "lookup-a", "compiled-parent-a", interface_bytes, { 2 }, 6 },
+      { "lookup-a", "compiled-parent-a", interface_bytes, { 2, 3 }, 6 },
       { "lookup-leaf", "compiled-leaf", interface_bytes, {}, 9 },
       { "lookup-leaf", "compiled-leaf", interface_bytes, {}, 2 }
    };
-   std::vector<RootModuleRecord> assembled;
+   RootModuleGraphAssembly assembled;
    if (assemble_root_module_graph(input, assembled) != tiri::cache::FormatError::OKAY or
-       assembled.size() != 3 or assembled[0].CompiledIdentity != "compiled-leaf" or
-       assembled[0].SourceIndex != 2 or assembled[1].Dependencies != std::vector<uint32_t>{ 0 } or
-       assembled[2].Dependencies != std::vector<uint32_t>{ 0 }) {
+       assembled.records().size() != 3 or assembled.records()[0].CompiledIdentity != "compiled-leaf" or
+       assembled.records()[0].SourceIndex != 2 or
+       assembled.records()[1].Dependencies != std::vector<uint32_t>{ 0 } or
+       assembled.records()[2].Dependencies != std::vector<uint32_t>{ 0 } or
+       assembled.input_to_canonical() != std::vector<uint32_t>({ 2, 1, 0, 0 })) {
       Log.error("Module graph assembly did not intern and order equivalent dependency records");
       return false;
    }
 
    auto conflict = input;
    conflict[3].LookupIdentity = "conflicting-lookup";
-   if (assemble_root_module_graph(conflict, assembled) != tiri::cache::FormatError::INVALID_METADATA) {
+   RootModuleGraphAssembly rejected;
+   if (assemble_root_module_graph(conflict, rejected) != tiri::cache::FormatError::INVALID_METADATA) {
       Log.error("Module graph assembly accepted conflicting records for one compiled identity");
       return false;
    }
 
    std::string encoded;
    std::vector<RootModuleRecord> decoded;
-   if (encode_root_module_bundle(input, encoded) != tiri::cache::FormatError::OKAY or
-       decode_root_module_bundle(encoded, decoded) != tiri::cache::FormatError::OKAY or decoded.size() != 3) {
-      Log.error("The assembled module graph did not survive its wire-format round trip");
+   auto encode_error = encode_root_module_bundle(assembled, encoded);
+   auto decode_error = encode_error IS tiri::cache::FormatError::OKAY ?
+      decode_root_module_bundle(encoded, decoded) : encode_error;
+   if (encode_error != tiri::cache::FormatError::OKAY or decode_error != tiri::cache::FormatError::OKAY or
+       decoded.size() != 3) {
+      Log.error("The assembled module graph did not survive its wire-format round trip: encode=%s decode=%s size=%d",
+         tiri::cache::format_error_name(encode_error), tiri::cache::format_error_name(decode_error),
+         int(decoded.size()));
       return false;
    }
+   std::string expected = encode_raw_root_module_bundle(assembled.records());
+   if (encoded != expected) {
+      Log.error("Root graph encoding changed the locked version 3 field representation");
+      return false;
+   }
+
+   std::vector<RootModuleRecord> permutation = {
+      { "lookup-leaf", "compiled-leaf", interface_bytes, {}, 2 },
+      { "lookup-a", "compiled-parent-a", interface_bytes, { 0, 2 }, 6 },
+      { "lookup-leaf", "compiled-leaf", interface_bytes, {}, 9 },
+      { "lookup-b", "compiled-parent-b", interface_bytes, { 2 }, 7 }
+   };
+   RootModuleGraphAssembly permuted;
+   std::string permuted_bytes;
+   if (assemble_root_module_graph(permutation, permuted) != tiri::cache::FormatError::OKAY or
+       permuted.input_to_canonical() != std::vector<uint32_t>({ 0, 1, 0, 2 }) or
+       encode_root_module_bundle(permuted, permuted_bytes) != tiri::cache::FormatError::OKAY or
+       permuted_bytes != encoded) {
+      Log.error("Equivalent graph permutations changed canonical version 3 bytes or index mappings");
+      return false;
+   }
+   return true;
+}
+
+bool root_module_graph_validation(kt::Log &Log)
+{
+   std::string interface_bytes;
+   if (encode_interface(Interface {}, interface_bytes) != tiri::cache::FormatError::OKAY) return false;
+   auto record = [&](std::string Identity, std::vector<uint32_t> Dependencies = {}) {
+      return RootModuleRecord { "lookup-" + Identity, std::move(Identity), interface_bytes,
+         std::move(Dependencies), 1 };
+   };
+   auto expect_error = [&](std::vector<RootModuleRecord> Input, tiri::cache::FormatError Expected,
+                           const char *Description) {
+      RootModuleGraphAssembly result;
+      if (assemble_root_module_graph({ record("sentinel") }, result) != tiri::cache::FormatError::OKAY) return false;
+      auto error = assemble_root_module_graph(Input, result);
+      if (error != Expected or not result.records().empty() or not result.input_to_canonical().empty()) {
+         Log.error("Root graph %s returned %s and left %d records", Description,
+            tiri::cache::format_error_name(error), int(result.records().size()));
+         return false;
+      }
+      return true;
+   };
+
+   if (not expect_error({ record("self", { 0 }) }, tiri::cache::FormatError::INVALID_METADATA, "self edge") or
+       not expect_error({ record("duplicate", { 1, 1 }), record("leaf") },
+          tiri::cache::FormatError::INVALID_METADATA, "repeated input dependency") or
+       not expect_error({ record("a", { 1 }), record("b", { 0 }) },
+          tiri::cache::FormatError::INVALID_METADATA, "cycle") or
+       not expect_error({ record("same", { 1 }), record("same") },
+          tiri::cache::FormatError::INVALID_METADATA, "equivalent self edge")) return false;
+
+   auto malformed = record("malformed");
+   malformed.InterfaceBytes = "invalid";
+   if (not expect_error({ malformed }, tiri::cache::FormatError::INVALID_METADATA, "malformed interface")) {
+      return false;
+   }
+   std::string different_interface;
+   if (encode_interface(sample_interface(), different_interface) != tiri::cache::FormatError::OKAY) return false;
+   auto interface_conflict = std::vector<RootModuleRecord> { record("same"), record("same") };
+   interface_conflict[1].InterfaceBytes = different_interface;
+   auto dependency_conflict = std::vector<RootModuleRecord> {
+      record("same", { 2 }), record("same"), record("leaf")
+   };
+   if (not expect_error(interface_conflict, tiri::cache::FormatError::INVALID_METADATA,
+           "conflicting duplicate interface") or
+       not expect_error(dependency_conflict, tiri::cache::FormatError::INVALID_METADATA,
+          "conflicting duplicate dependencies")) return false;
+
+   std::vector<RootModuleRecord> maximum_depth;
+   maximum_depth.reserve(MAX_ROOT_MODULE_DEPTH);
+   for (uint32_t i = 0; i < MAX_ROOT_MODULE_DEPTH; ++i) {
+      maximum_depth.push_back(record(std::format("depth-{:03}", i), i ? std::vector<uint32_t>{ i - 1 } :
+         std::vector<uint32_t>{}));
+   }
+   RootModuleGraphAssembly depth_assembly;
+   if (assemble_root_module_graph(maximum_depth, depth_assembly) != tiri::cache::FormatError::OKAY) {
+      Log.error("Root graph rejected the maximum supported depth");
+      return false;
+   }
+   maximum_depth.push_back(record("depth-overflow", { MAX_ROOT_MODULE_DEPTH - 1 }));
+   if (not expect_error(maximum_depth, tiri::cache::FormatError::COUNT_LIMIT, "depth overflow")) return false;
+
+   std::vector<RootModuleRecord> no_edges;
+   for (uint32_t i = 0; i < 512; ++i) no_edges.push_back(record(std::format("node-{:03}", 511 - i)));
+   RootModuleGraphAssembly linear;
+   if (assemble_root_module_graph(no_edges, linear) != tiri::cache::FormatError::OKAY or
+       linear.work().RecordInspections != no_edges.size() or
+       linear.work().InterfaceValidations != no_edges.size() or
+       linear.work().QueuePops != no_edges.size() or linear.work().EdgeTraversals != 0) {
+      Log.error("Root graph no-edge work did not remain linear");
+      return false;
+   }
+
+   std::vector<RootModuleRecord> wire(linear.records().begin(), linear.records().begin() + 2);
+   wire[0].Dependencies.clear();
+   wire[1].Dependencies.clear();
+   std::string valid = encode_raw_root_module_bundle(wire);
+   auto expect_wire_rejection = [&](std::vector<RootModuleRecord> Invalid, const char *Description) {
+      std::string bytes = encode_raw_root_module_bundle(Invalid);
+      std::vector<RootModuleRecord> decoded;
+      if (decode_root_module_bundle(bytes, decoded) IS tiri::cache::FormatError::OKAY) {
+         Log.error("Root bundle decoder accepted %s", Description);
+         return false;
+      }
+      return true;
+   };
+   auto noncanonical_order = wire;
+   std::ranges::swap(noncanonical_order[0], noncanonical_order[1]);
+   auto forward_dependency = wire;
+   forward_dependency[0].Dependencies = { 1 };
+   auto duplicate_dependency = wire;
+   duplicate_dependency[1].Dependencies = { 0, 0 };
+   std::vector<RootModuleRecord> decoded;
+   if (not expect_wire_rejection(noncanonical_order, "non-canonical ready-node order") or
+       not expect_wire_rejection(forward_dependency, "forward dependency") or
+       not expect_wire_rejection(duplicate_dependency, "duplicate dependency") or
+       decode_root_module_bundle(valid + "x", decoded) IS tiri::cache::FormatError::OKAY) return false;
    return true;
 }
 
@@ -371,6 +526,7 @@ void import_module_format_unit_tests(int &Passed, int &Total)
 {
    kt::Log log("ImportModuleFormatTests");
    for (auto test : { round_trip_and_determinism, compiled_identity_and_graph_assembly,
+      root_module_graph_validation,
       malformed_and_bounds, staged_installation, direct_load_rejection }) {
       Total++;
       if (test(log)) Passed++;

@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <queue>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -15,14 +16,26 @@ namespace {
 //********************************************************************************************************************
 // Appends an unsigned integer using the bundle's compact LEB128 representation.
 
-void append_uleb(std::string &Output, uint32_t Value)
+bool append_uleb(std::string &Output, uint32_t Value)
 {
    do {
+      if (Output.size() >= MAX_ROOT_BUNDLE_SIZE) return false;
       uint8_t byte = uint8_t(Value & 0x7f);
       Value >>= 7;
       if (Value) byte |= 0x80;
       Output.push_back(char(byte));
    } while (Value);
+   return true;
+}
+
+//********************************************************************************************************************
+// Appends bytes while enforcing the complete bundle limit before allocation.
+
+bool append_bytes(std::string &Output, std::string_view Bytes)
+{
+   if (Bytes.size() > MAX_ROOT_BUNDLE_SIZE - Output.size()) return false;
+   Output += Bytes;
+   return true;
 }
 
 //********************************************************************************************************************
@@ -79,21 +92,33 @@ cache::FormatError validate_record_fields(const std::vector<RootModuleRecord> &R
 // Interns an arbitrary module record collection and emits deterministic dependency-first records.
 
 cache::FormatError assemble_root_module_graph(
-   const std::vector<RootModuleRecord> &Input, std::vector<RootModuleRecord> &Output)
+   const std::vector<RootModuleRecord> &Input, RootModuleGraphAssembly &Result)
 {
-   Output.clear();
-   if (auto error = validate_record_fields(Input); error != cache::FormatError::OKAY) return error;
+   Result = {};
+   if (auto error = validate_record_fields(Input); error != cache::FormatError::OKAY) {
+      Result = {};
+      return error;
+   }
+#ifdef UNIT_TESTS
+   Result.work_.RecordInspections = Input.size();
+   Result.work_.InterfaceValidations = Input.size();
+#endif
 
    struct InternedRecord {
       RootModuleRecord Record;
       std::vector<std::string> DependencyIdentities;
+      std::vector<uint32_t> Dependencies;
+      std::vector<uint32_t> Dependants;
+      uint32_t CanonicalIndex = UINT32_MAX;
+      uint32_t Indegree = 0;
       uint32_t Depth = 0;
-      bool Emitted = false;
    };
 
    std::vector<InternedRecord> interned;
    std::unordered_map<std::string, size_t> identity_map;
+   std::vector<uint32_t> input_nodes;
    interned.reserve(Input.size());
+   input_nodes.reserve(Input.size());
    for (const RootModuleRecord &record : Input) {
       std::vector<std::string> dependencies;
       dependencies.reserve(record.Dependencies.size());
@@ -109,78 +134,117 @@ cache::FormatError assemble_root_module_graph(
          canonical.Dependencies.clear();
          identity_map.emplace(record.CompiledIdentity, interned.size());
          interned.push_back({ std::move(canonical), std::move(dependencies) });
+         input_nodes.push_back(uint32_t(interned.size() - 1));
       }
       else {
          InternedRecord &existing = interned[found->second];
          if (existing.Record.LookupIdentity != record.LookupIdentity or
              existing.Record.InterfaceBytes != record.InterfaceBytes or
-             existing.DependencyIdentities != dependencies) return cache::FormatError::INVALID_METADATA;
+             existing.DependencyIdentities != dependencies) {
+            Result = {};
+            return cache::FormatError::INVALID_METADATA;
+         }
          existing.Record.SourceIndex = std::min(existing.Record.SourceIndex, record.SourceIndex);
+         input_nodes.push_back(uint32_t(found->second));
       }
    }
 
-   std::unordered_map<std::string, uint32_t> output_indices;
-   Output.reserve(interned.size());
-   while (Output.size() < interned.size()) {
-      size_t selected = interned.size();
-      for (size_t i = 0; i < interned.size(); ++i) {
-         const InternedRecord &candidate = interned[i];
-         if (candidate.Emitted) continue;
-         bool ready = true;
-         uint32_t depth = 1;
-         for (const std::string &dependency : candidate.DependencyIdentities) {
-            auto dependency_index = identity_map.find(dependency);
-            if (dependency_index IS identity_map.end()) return cache::FormatError::INVALID_METADATA;
-            const InternedRecord &dependency_record = interned[dependency_index->second];
-            if (not dependency_record.Emitted) {
-               ready = false;
-               break;
-            }
-            depth = std::max(depth, dependency_record.Depth + 1);
+   for (size_t i = 0; i < interned.size(); ++i) {
+      InternedRecord &record = interned[i];
+      record.Dependencies.reserve(record.DependencyIdentities.size());
+      for (const std::string &identity : record.DependencyIdentities) {
+         auto found = identity_map.find(identity);
+         if (found IS identity_map.end() or found->second IS i) {
+            Result = {};
+            return cache::FormatError::INVALID_METADATA;
          }
-         if (not ready) continue;
-         if (depth > MAX_ROOT_MODULE_DEPTH) return cache::FormatError::COUNT_LIMIT;
-         if (selected IS interned.size() or
-             candidate.Record.CompiledIdentity < interned[selected].Record.CompiledIdentity) selected = i;
+         const uint32_t dependency = uint32_t(found->second);
+         record.Dependencies.push_back(dependency);
+         interned[dependency].Dependants.push_back(uint32_t(i));
+#ifdef UNIT_TESTS
+         Result.work_.EdgeTraversals++;
+#endif
       }
+      record.Indegree = uint32_t(record.Dependencies.size());
+   }
 
-      if (selected IS interned.size()) return cache::FormatError::INVALID_METADATA;
+   auto greater_identity = [&](uint32_t Left, uint32_t Right) {
+      return interned[Left].Record.CompiledIdentity > interned[Right].Record.CompiledIdentity;
+   };
+   std::priority_queue<uint32_t, std::vector<uint32_t>, decltype(greater_identity)> ready(greater_identity);
+   for (size_t i = 0; i < interned.size(); ++i) {
+      if (interned[i].Indegree IS 0) ready.push(uint32_t(i));
+   }
+
+   Result.records_.reserve(interned.size());
+   while (not ready.empty()) {
+      const uint32_t selected = ready.top();
+      ready.pop();
+#ifdef UNIT_TESTS
+      Result.work_.QueuePops++;
+#endif
       InternedRecord &record = interned[selected];
       record.Depth = 1;
-      for (const std::string &dependency : record.DependencyIdentities) {
-         const InternedRecord &dependency_record = interned[identity_map[dependency]];
+      for (uint32_t dependency : record.Dependencies) {
+         const InternedRecord &dependency_record = interned[dependency];
          record.Depth = std::max(record.Depth, dependency_record.Depth + 1);
-         record.Record.Dependencies.push_back(output_indices[dependency]);
+         record.Record.Dependencies.push_back(dependency_record.CanonicalIndex);
       }
-      record.Emitted = true;
-      output_indices.emplace(record.Record.CompiledIdentity, uint32_t(Output.size()));
-      Output.push_back(std::move(record.Record));
+      if (record.Depth > MAX_ROOT_MODULE_DEPTH) {
+         Result = {};
+         return cache::FormatError::COUNT_LIMIT;
+      }
+      record.CanonicalIndex = uint32_t(Result.records_.size());
+      Result.records_.push_back(std::move(record.Record));
+      for (uint32_t dependant : record.Dependants) {
+#ifdef UNIT_TESTS
+         Result.work_.EdgeTraversals++;
+#endif
+         if (--interned[dependant].Indegree IS 0) ready.push(dependant);
+      }
    }
+
+   if (Result.records_.size() != interned.size()) {
+      Result = {};
+      return cache::FormatError::INVALID_METADATA;
+   }
+   Result.input_to_canonical_.reserve(input_nodes.size());
+   for (uint32_t node : input_nodes) Result.input_to_canonical_.push_back(interned[node].CanonicalIndex);
    return cache::FormatError::OKAY;
 }
 
 //********************************************************************************************************************
 // Serialises validated root-module records into the compact bundle format.
 
-cache::FormatError encode_root_module_bundle(const std::vector<RootModuleRecord> &Records, std::string &Output)
+cache::FormatError encode_root_module_bundle(const RootModuleGraphAssembly &Assembly, std::string &Output)
 {
-   std::vector<RootModuleRecord> canonical;
-   if (auto error = assemble_root_module_graph(Records, canonical); error != cache::FormatError::OKAY) return error;
+   const auto &records = Assembly.records();
+   if (records.size() > MAX_ROOT_MODULES or records.size() > std::numeric_limits<uint32_t>::max()) {
+      return cache::FormatError::COUNT_LIMIT;
+   }
 
    std::string result;
    result.push_back(char(ROOT_BUNDLE_VERSION));
-   append_uleb(result, uint32_t(canonical.size()));
-   for (const RootModuleRecord &record : canonical) {
-      append_uleb(result, uint32_t(record.LookupIdentity.size()));
-      result += record.LookupIdentity;
-      append_uleb(result, uint32_t(record.CompiledIdentity.size()));
-      result += record.CompiledIdentity;
+   if (not append_uleb(result, uint32_t(records.size()))) return cache::FormatError::SIZE_LIMIT;
+   for (const RootModuleRecord &record : records) {
+      if (record.LookupIdentity.empty() or record.LookupIdentity.size() > cache::MAX_STRING_SIZE or
+          record.CompiledIdentity.empty() or record.CompiledIdentity.size() > cache::MAX_STRING_SIZE or
+          record.Dependencies.size() > MAX_ROOT_MODULES or record.InterfaceBytes.size() > MAX_INTERFACE_SIZE) {
+         return cache::FormatError::INVALID_METADATA;
+      }
+      if (not append_uleb(result, uint32_t(record.LookupIdentity.size())) or
+          not append_bytes(result, record.LookupIdentity) or
+          not append_uleb(result, uint32_t(record.CompiledIdentity.size())) or
+          not append_bytes(result, record.CompiledIdentity) or result.size() >= MAX_ROOT_BUNDLE_SIZE) {
+         return cache::FormatError::SIZE_LIMIT;
+      }
       result.push_back(char(record.SourceIndex));
-      append_uleb(result, uint32_t(record.Dependencies.size()));
-      for (uint32_t dependency : record.Dependencies) append_uleb(result, dependency);
-      append_uleb(result, uint32_t(record.InterfaceBytes.size()));
-      result += record.InterfaceBytes;
-      if (result.size() > MAX_ROOT_BUNDLE_SIZE) return cache::FormatError::SIZE_LIMIT;
+      if (not append_uleb(result, uint32_t(record.Dependencies.size()))) return cache::FormatError::SIZE_LIMIT;
+      for (uint32_t dependency : record.Dependencies) {
+         if (not append_uleb(result, dependency)) return cache::FormatError::SIZE_LIMIT;
+      }
+      if (not append_uleb(result, uint32_t(record.InterfaceBytes.size())) or
+          not append_bytes(result, record.InterfaceBytes)) return cache::FormatError::SIZE_LIMIT;
    }
 
    Output = std::move(result);
@@ -238,9 +302,9 @@ cache::FormatError decode_root_module_bundle(std::string_view Input, std::vector
    }
 
    if (position != Input.size()) return cache::FormatError::INVALID_METADATA;
-   std::vector<RootModuleRecord> canonical;
-   if (auto error = assemble_root_module_graph(result, canonical); error != cache::FormatError::OKAY) return error;
-   if (canonical != result) return cache::FormatError::INVALID_METADATA;
+   RootModuleGraphAssembly assembly;
+   if (auto error = assemble_root_module_graph(result, assembly); error != cache::FormatError::OKAY) return error;
+   if (assembly.records() != result) return cache::FormatError::INVALID_METADATA;
    Output = std::move(result);
    return cache::FormatError::OKAY;
 }
