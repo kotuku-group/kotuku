@@ -10,6 +10,8 @@
 #include <bit>
 #include <format>
 #include <ranges>
+#include <string_view>
+#include <unordered_map>
 
 namespace {
 
@@ -20,6 +22,126 @@ std::string symbol_name(GCstr *Symbol)
 {
    return Symbol ? std::string(strdata(Symbol), Symbol->len) : std::string();
 }
+
+//********************************************************************************************************************
+// Returns a non-owning view of an interned Tiri symbol.
+
+std::string_view symbol_view(GCstr *Symbol)
+{
+   return Symbol ? std::string_view(strdata(Symbol), Symbol->len) : std::string_view();
+}
+
+//********************************************************************************************************************
+// Maintains owned name indexes while a portable interface is assembled.  The indexes are deliberately parser-local;
+// only the descriptor vectors are transferred to the final immutable artefact.
+
+struct AssemblyStringHash {
+   using is_transparent = void;
+
+   [[nodiscard]] size_t operator()(std::string_view Value) const noexcept {
+      return std::hash<std::string_view>{}(Value);
+   }
+};
+
+using AssemblyIndex = std::unordered_map<std::string, size_t, AssemblyStringHash, std::equal_to<>>;
+
+class InterfaceAssembly {
+public:
+   InterfaceAssembly(tiri::import_cache::Interface &InterfaceValue, ImportedModuleCompilationCounters &Counters) :
+      interface_(InterfaceValue), counters_(Counters)
+   {
+      for (size_t i = 0; i < this->interface_.Namespaces.size(); ++i) {
+         this->namespace_index_.try_emplace(this->interface_.Namespaces[i].Name, i);
+      }
+      for (size_t i = 0; i < this->interface_.Exports.size(); ++i) {
+         this->export_index_.try_emplace(this->interface_.Exports[i].Name, i);
+      }
+      for (size_t i = 0; i < this->interface_.Structures.size(); ++i) {
+         this->structure_index_.try_emplace(this->interface_.Structures[i].Name, i);
+      }
+      for (size_t i = 0; i < this->interface_.Enums.size(); ++i) {
+         this->enum_index_.try_emplace(this->interface_.Enums[i].Name, i);
+      }
+   }
+
+   [[nodiscard]] std::pair<size_t, bool> distinct_export(std::string Name)
+   {
+      this->counters_.interface_assembly_probes++;
+      auto found = this->export_index_.find(Name);
+      if (found != this->export_index_.end()) return { found->second, false };
+
+      size_t position = this->interface_.Exports.size();
+      this->interface_.Exports.push_back({});
+      this->interface_.Exports.back().Name = std::move(Name);
+      this->export_index_.emplace(this->interface_.Exports.back().Name, position);
+      return { position, true };
+   }
+
+   [[nodiscard]] tiri::import_cache::ExportDescriptor * find_export(std::string_view Name)
+   {
+      this->counters_.interface_assembly_probes++;
+      auto found = this->export_index_.find(Name);
+      return found IS this->export_index_.end() ? nullptr : &this->interface_.Exports[found->second];
+   }
+
+   void append_namespace(tiri::import_cache::NamespaceDescriptor Namespace)
+   {
+      size_t position = this->interface_.Namespaces.size();
+      this->interface_.Namespaces.push_back(std::move(Namespace));
+      this->counters_.interface_assembly_probes++;
+      this->namespace_index_.try_emplace(this->interface_.Namespaces.back().Name, position);
+   }
+
+   void merge(const tiri::import_cache::Interface &Source)
+   {
+      this->namespace_index_.reserve(this->interface_.Namespaces.size() + Source.Namespaces.size());
+      this->export_index_.reserve(this->interface_.Exports.size() + Source.Exports.size());
+      this->structure_index_.reserve(this->interface_.Structures.size() + Source.Structures.size());
+      this->enum_index_.reserve(this->interface_.Enums.size() + Source.Enums.size());
+
+      for (const auto &item : Source.Namespaces) {
+         this->counters_.interface_assembly_probes++;
+         if (this->namespace_index_.contains(item.Name)) continue;
+         size_t position = this->interface_.Namespaces.size();
+         this->interface_.Namespaces.push_back(item);
+         this->namespace_index_.emplace(this->interface_.Namespaces.back().Name, position);
+      }
+
+      for (const auto &item : Source.Exports) {
+         this->counters_.interface_assembly_probes++;
+         if (this->export_index_.contains(item.Name)) continue;
+         size_t position = this->interface_.Exports.size();
+         this->interface_.Exports.push_back(item);
+         this->export_index_.emplace(this->interface_.Exports.back().Name, position);
+      }
+
+      for (const auto &item : Source.Structures) {
+         this->counters_.interface_assembly_probes++;
+         if (this->structure_index_.contains(item.Name)) continue;
+         size_t position = this->interface_.Structures.size();
+         this->interface_.Structures.push_back(item);
+         this->structure_index_.emplace(this->interface_.Structures.back().Name, position);
+      }
+
+      for (const auto &item : Source.Enums) {
+         this->counters_.interface_assembly_probes++;
+         if (this->enum_index_.contains(item.Name)) continue;
+         size_t position = this->interface_.Enums.size();
+         this->interface_.Enums.push_back(item);
+         this->enum_index_.emplace(this->interface_.Enums.back().Name, position);
+      }
+   }
+
+   [[nodiscard]] tiri::import_cache::Interface & descriptors() noexcept { return this->interface_; }
+
+private:
+   tiri::import_cache::Interface &interface_;
+   ImportedModuleCompilationCounters &counters_;
+   AssemblyIndex namespace_index_;
+   AssemblyIndex export_index_;
+   AssemblyIndex structure_index_;
+   AssemblyIndex enum_index_;
+};
 
 //********************************************************************************************************************
 // Maps a parser value type to the equivalent import-cache value kind.
@@ -211,17 +333,16 @@ void constant_value(const ExprNode *Expression, tiri::import_cache::ConstantValu
 //********************************************************************************************************************
 // Adds a distinct export and records its value, callable signature, and constant metadata.
 
-void add_export(tiri::import_cache::Interface &InterfaceValue, std::string Name,
+void add_export(InterfaceAssembly &Assembly, std::string Name,
    tiri::import_cache::ExportKind Kind, const ExprNode *Initialiser, const FunctionExprPayload *Function,
    bool IsConst, ParserContext &Context)
 {
    if (Name.empty()) return;
 
-   auto found = std::ranges::find(InterfaceValue.Exports, Name, &tiri::import_cache::ExportDescriptor::Name);
-   if (found != InterfaceValue.Exports.end()) return;
+   auto [position, inserted] = Assembly.distinct_export(std::move(Name));
+   if (not inserted) return;
 
-   tiri::import_cache::ExportDescriptor exported;
-   exported.Name = std::move(Name);
+   tiri::import_cache::ExportDescriptor &exported = Assembly.descriptors().Exports[position];
    exported.Kind = Kind;
    exported.Value = expression_value(Context, Initialiser);
 
@@ -243,19 +364,16 @@ void add_export(tiri::import_cache::Interface &InterfaceValue, std::string Name,
    }
 
    exported.IsConst = IsConst;
-   InterfaceValue.Exports.push_back(std::move(exported));
 }
 
 //********************************************************************************************************************
 // Refines an existing export with the type information declared for its source identifier.
 
-void apply_declared_value(tiri::import_cache::Interface &InterfaceValue, const Identifier &Name,
+void apply_declared_value(InterfaceAssembly &Assembly, const Identifier &Name,
    ParserContext &Context)
 {
-   auto found = std::ranges::find(InterfaceValue.Exports, symbol_name(Name.symbol),
-      &tiri::import_cache::ExportDescriptor::Name);
-
-   if (found IS InterfaceValue.Exports.end()) return;
+   auto *found = Assembly.find_export(symbol_view(Name.symbol));
+   if (not found) return;
    if (Name.static_value) found->Value = portable_value(Context.descriptors().value(Name.static_value));
    TiriType type = Name.global_contract_type != TiriType::Unknown ? Name.global_contract_type : Name.type;
 
@@ -270,27 +388,9 @@ void apply_declared_value(tiri::import_cache::Interface &InterfaceValue, const I
 //********************************************************************************************************************
 // Adds the source interface's unique declarations to the target interface.
 
-void merge_interface(tiri::import_cache::Interface &Target, const tiri::import_cache::Interface &Source)
+void merge_interface(InterfaceAssembly &Target, const tiri::import_cache::Interface &Source)
 {
-   for (const auto &item : Source.Namespaces) {
-      if (std::ranges::find(Target.Namespaces, item.Name, &tiri::import_cache::NamespaceDescriptor::Name) IS
-          Target.Namespaces.end()) Target.Namespaces.push_back(item);
-   }
-
-   for (const auto &item : Source.Exports) {
-      if (std::ranges::find(Target.Exports, item.Name, &tiri::import_cache::ExportDescriptor::Name) IS
-          Target.Exports.end()) Target.Exports.push_back(item);
-   }
-
-   for (const auto &item : Source.Structures) {
-      if (std::ranges::find(Target.Structures, item.Name, &tiri::import_cache::StructureDescriptor::Name) IS
-          Target.Structures.end()) Target.Structures.push_back(item);
-   }
-
-   for (const auto &item : Source.Enums) {
-      if (std::ranges::find(Target.Enums, item.Name, &tiri::import_cache::EnumDescriptor::Name) IS
-          Target.Enums.end()) Target.Enums.push_back(item);
-   }
+   Target.merge(Source);
 }
 
 //********************************************************************************************************************
@@ -317,6 +417,7 @@ bool prepare_block(ParserContext &Context, BlockStmt &Block, std::string &Diagno
          }
 
          Interface portable;
+         InterfaceAssembly assembly(portable, Context.lex().imported_module_counters);
          SourceDescriptor source;
          source.ResolvedPath = entry.lib_path;
          source.LogicalRequest = unit.module_cache_identity.LogicalRequest;
@@ -346,7 +447,7 @@ bool prepare_block(ParserContext &Context, BlockStmt &Block, std::string &Diagno
                         const auto &nested_artifact = nested.module_unit->installed_interface->artifact();
                         const auto &nested_interface = nested_artifact.descriptors();
                         const auto &nested_digest = nested_artifact.digest();
-                        merge_interface(portable, nested_interface);
+                        merge_interface(assembly, nested_interface);
                         portable.NestedModules.push_back({ nested.module_unit->module_cache_identity.LogicalRequest,
                            nested.lib_path, nested_digest });
                         unit.module_cache_identity.ModuleDependencies.push_back({
@@ -359,9 +460,9 @@ bool prepare_block(ParserContext &Context, BlockStmt &Block, std::string &Diagno
                case AstNodeKind::NamespaceStmt: {
                   const auto &item = std::get<NamespaceStmtPayload>(child_statement->data);
                   std::string name = symbol_name(item.name.symbol);
-                  portable.Namespaces.push_back({ name, item.mode IS NamespaceDeclarationMode::Create ?
+                  assembly.append_namespace({ name, item.mode IS NamespaceDeclarationMode::Create ?
                      NamespaceMode::DECLARE : NamespaceMode::JOIN });
-                  add_export(portable, name, ExportKind::GLOBAL, item.initialiser.get(),
+                  add_export(assembly, name, ExportKind::GLOBAL, item.initialiser.get(),
                      function_expression(item.initialiser.get(), Context), true, Context);
                   break;
                }
@@ -370,15 +471,15 @@ bool prepare_block(ParserContext &Context, BlockStmt &Block, std::string &Diagno
                   for (size_t i = 0; i < item.names.size(); ++i) {
                      const ExprNode *value = i < item.values.size() ? item.values[i].get() :
                         (item.values.empty() ? nullptr : item.values.back().get());
-                     add_export(portable, symbol_name(item.names[i].symbol), ExportKind::GLOBAL, value,
+                     add_export(assembly, symbol_name(item.names[i].symbol), ExportKind::GLOBAL, value,
                         function_expression(value, Context), item.names[i].has_const, Context);
-                     apply_declared_value(portable, item.names[i], Context);
+                     apply_declared_value(assembly, item.names[i], Context);
                   }
                   break;
                }
                case AstNodeKind::ExternStmt:
                   for (const auto &name : std::get<ExternDeclStmtPayload>(child_statement->data).names) {
-                     add_export(portable, symbol_name(name.symbol), ExportKind::EXTERN, nullptr, nullptr,
+                     add_export(assembly, symbol_name(name.symbol), ExportKind::EXTERN, nullptr, nullptr,
                         name.has_const, Context);
                   }
                   break;
@@ -390,7 +491,7 @@ bool prepare_block(ParserContext &Context, BlockStmt &Block, std::string &Diagno
                         if (not name.empty()) name.push_back('.');
                         name += symbol_name(segment.symbol);
                      }
-                     add_export(portable, std::move(name), ExportKind::GLOBAL, nullptr,
+                     add_export(assembly, std::move(name), ExportKind::GLOBAL, nullptr,
                         item.function.get(), true, Context);
                   }
                   break;
@@ -402,7 +503,7 @@ bool prepare_block(ParserContext &Context, BlockStmt &Block, std::string &Diagno
                      if (name.find('.') IS std::string::npos) continue;
                      const ExprNode *value = i < item.values.size() ? item.values[i].get() :
                         (item.values.empty() ? nullptr : item.values.back().get());
-                     add_export(portable, std::move(name), ExportKind::GLOBAL, value,
+                     add_export(assembly, std::move(name), ExportKind::GLOBAL, value,
                         function_expression(value, Context), false, Context);
                   }
                   break;

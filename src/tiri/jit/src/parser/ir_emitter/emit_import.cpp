@@ -71,14 +71,7 @@ static bool prepare_import_module_dump(LexState &State, GCproto *Prototype, std:
 }
 
 //********************************************************************************************************************
-// Emit bytecode for one import entry.
-//
-// The import entry inlines the content of the referenced file at compile time.
-// The inlined_body block is emitted as if its statements were written directly at the import location.
-// This creates a new scope for the imported content to provide some isolation.
-//
-// When namespace_name is set (from 'as alias' or module's default namespace), emits:
-//   local <namespace_name> <const> = _LIB['<default_namespace>']
+// Load a namespace registry value into the destination register.
 
 void IrEmitter::emit_namespace_registry_load(std::string_view Name, BCReg Destination)
 {
@@ -201,6 +194,9 @@ static bool canonicalise_import_module_dependencies(
 }
 
 //********************************************************************************************************************
+// Emit one import entry.  Local './' and '../' imports emit their inlined body in the importer scope.  Non-local
+// modules emit or reuse a detached initialiser and activate it at the import site.  Namespace binding is published
+// after the relevant body or initialiser completes.
 
 ParserResult<IrEmitUnit> IrEmitter::emit_import_entry(const ImportEntryPayload &Entry)
 {

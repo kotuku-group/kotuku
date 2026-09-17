@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -30,7 +31,7 @@ public:
    [[nodiscard]] const tiri::import_cache::ExportDescriptor * find_member(
       std::string_view Namespace, std::string_view Member) const;
    [[nodiscard]] bool is_namespace(std::string_view Name) const {
-      return this->namespace_index_.contains(std::string(Name));
+      return this->namespace_index_.contains(Name);
    }
    [[nodiscard]] const FunctionExprPayload * callable(const tiri::import_cache::ExportDescriptor &) const;
    [[nodiscard]] StaticValueDescriptor static_value(const tiri::import_cache::ValueDescriptor &) const;
@@ -43,6 +44,24 @@ public:
    [[nodiscard]] const tiri::import_cache::FinalisedInterface & artifact() const noexcept { return *this->artifact_; }
 
 private:
+   struct TransparentStringHash {
+      using is_transparent = void;
+
+      [[nodiscard]] size_t operator()(std::string_view Value) const noexcept {
+         return std::hash<std::string_view>{}(Value);
+      }
+   };
+
+   template<typename Value>
+   using StringIndex = std::unordered_map<std::string, Value, TransparentStringHash, std::equal_to<>>;
+
+   struct NamespaceRecord {
+      explicit NamespaceRecord(std::string Name) : structure(std::make_unique<struct_record>(std::move(Name))) { }
+
+      std::unique_ptr<struct_record> structure;
+      StringIndex<const tiri::import_cache::ExportDescriptor *> members;
+   };
+
    InstalledImportInterface(ParserContext &Context, tiri::import_cache::FinalisedInterfacePtr Artifact) :
       parser_context_(Context), artifact_(std::move(Artifact)) { }
 
@@ -50,14 +69,16 @@ private:
    [[nodiscard]] struct_record * structure(std::string_view Name) const;
    [[nodiscard]] ArrayElementDescriptor array_element(const tiri::import_cache::ArrayDescriptor &) const;
    [[nodiscard]] CLASSID object_class(std::string_view Name) const;
+   [[nodiscard]] struct_field export_field(
+      const tiri::import_cache::ExportDescriptor &Export, std::string_view Name) const;
 
    ParserContext &parser_context_;
    // Declared before every descriptor-address index so it is released after those borrowers are destroyed.
    tiri::import_cache::FinalisedInterfacePtr artifact_;
    std::vector<std::unique_ptr<struct_record>> structures_;
-   std::vector<std::unique_ptr<struct_record>> namespace_structures_;
-   std::unordered_map<std::string, const tiri::import_cache::ExportDescriptor *> exports_;
+   std::vector<std::unique_ptr<NamespaceRecord>> namespace_records_;
+   StringIndex<const tiri::import_cache::ExportDescriptor *> exports_;
    std::unordered_map<const tiri::import_cache::ExportDescriptor *, std::unique_ptr<FunctionExprPayload>> callables_;
-   std::unordered_map<std::string, struct_record *> structure_index_;
-   std::unordered_map<std::string, struct_record *> namespace_index_;
+   StringIndex<struct_record *> structure_index_;
+   StringIndex<NamespaceRecord *> namespace_index_;
 };

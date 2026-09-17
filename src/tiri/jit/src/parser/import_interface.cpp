@@ -128,6 +128,8 @@ bool InstalledImportInterface::initialise(std::string &Diagnostic)
 
    // Allocate every definition first so transitive references can be resolved without ordering constraints.
 
+   this->structures_.reserve(interface.Structures.size());
+   this->structure_index_.reserve(interface.Structures.size());
    for (const StructureDescriptor &portable : interface.Structures) {
       auto record = std::make_unique<struct_record>(portable.Name);
       struct_record *address = record.get();
@@ -191,38 +193,34 @@ bool InstalledImportInterface::initialise(std::string &Diagnostic)
       }
    }
 
-   for (const ExportDescriptor &exported : interface.Exports) {
-      this->exports_.emplace(exported.Name, &exported);
-   }
-
    // Namespace records make member value descriptors available to the ordinary member-analysis path.  Callable
    // signatures are retained separately because struct fields intentionally carry no parser callable pointers.
 
+   this->namespace_records_.reserve(interface.Namespaces.size());
+   this->namespace_index_.reserve(interface.Namespaces.size());
    for (const NamespaceDescriptor &portable : interface.Namespaces) {
       if (this->namespace_index_.contains(portable.Name)) continue;
-      auto record = std::make_unique<struct_record>(portable.Name);
-      struct_record *address = record.get();
-      std::string prefix = portable.Name + ".";
-      for (const ExportDescriptor &exported : interface.Exports) {
-         if (not exported.Name.starts_with(prefix)) continue;
-
-         std::string_view suffix(exported.Name.data() + prefix.size(), exported.Name.size() - prefix.size());
-         if (suffix.empty() or suffix.find('.') != std::string_view::npos) continue;
-
-         struct_field field;
-         field.Name.assign(suffix);
-         initialise_native_field(field, value_kind(exported.Value.Kind));
-         field.ObjectClassName  = exported.Value.ObjectClass;
-         field.ObjectClassID    = this->object_class(exported.Value.ObjectClass);
-         field.StructDefinition = this->structure(exported.Value.Structure);
-
-         if (field.StructDefinition) field.StructRef = struct_key(field.StructDefinition->Name);
-
-         field.precomputeNameHash();
-         record->Fields.push_back(std::move(field));
-      }
-      this->namespace_structures_.push_back(std::move(record));
+      auto record = std::make_unique<NamespaceRecord>(portable.Name);
+      NamespaceRecord *address = record.get();
+      this->namespace_records_.push_back(std::move(record));
       this->namespace_index_.emplace(portable.Name, address);
+   }
+
+   this->exports_.reserve(interface.Exports.size());
+   for (const ExportDescriptor &exported : interface.Exports) {
+      this->parser_context_.lex().imported_module_counters.interface_namespace_export_visits++;
+      this->exports_.emplace(exported.Name, &exported);
+
+      size_t separator = exported.Name.rfind('.');
+      if (separator IS std::string::npos or separator IS 0 or separator + 1 >= exported.Name.size()) continue;
+      std::string_view namespace_name(exported.Name.data(), separator);
+      auto namespace_found = this->namespace_index_.find(namespace_name);
+      if (namespace_found IS this->namespace_index_.end()) continue;
+
+      std::string_view member_name(exported.Name.data() + separator + 1, exported.Name.size() - separator - 1);
+      NamespaceRecord &record = *namespace_found->second;
+      record.structure->Fields.push_back(this->export_field(exported, member_name));
+      record.members.emplace(record.structure->Fields.back().Name, &exported);
    }
 
    for (const ExportDescriptor &exported : interface.Exports) {
@@ -281,17 +279,20 @@ bool InstalledImportInterface::initialise(std::string &Diagnostic)
 
 const tiri::import_cache::ExportDescriptor * InstalledImportInterface::find_export(std::string_view Name) const
 {
-   auto found = this->exports_.find(std::string(Name));
+   auto found = this->exports_.find(Name);
    return found IS this->exports_.end() ? nullptr : found->second;
 }
 
 //********************************************************************************************************************
-// Find an exported member by composing its namespace-qualified name.
+// Find an exported member through its installed namespace index.
 
 const tiri::import_cache::ExportDescriptor * InstalledImportInterface::find_member(
    std::string_view Namespace, std::string_view Member) const
 {
-   return this->find_export(std::format("{}.{}", Namespace, Member));
+   auto namespace_found = this->namespace_index_.find(Namespace);
+   if (namespace_found IS this->namespace_index_.end()) return nullptr;
+   auto member_found = namespace_found->second->members.find(Member);
+   return member_found IS namespace_found->second->members.end() ? nullptr : member_found->second;
 }
 
 //********************************************************************************************************************
@@ -310,7 +311,7 @@ const FunctionExprPayload * InstalledImportInterface::callable(
 struct_record * InstalledImportInterface::structure(std::string_view Name) const
 {
    if (Name.empty()) return nullptr;
-   auto found = this->structure_index_.find(std::string(Name));
+   auto found = this->structure_index_.find(Name);
    return found IS this->structure_index_.end() ? nullptr : found->second;
 }
 
@@ -320,6 +321,23 @@ struct_record * InstalledImportInterface::structure(std::string_view Name) const
 CLASSID InstalledImportInterface::object_class(std::string_view Name) const
 {
    return Name.empty() ? CLASSID::NIL : ResolveClassName(Name);
+}
+
+//********************************************************************************************************************
+// Translate an exported value into a namespace structure field.
+
+struct_field InstalledImportInterface::export_field(
+   const tiri::import_cache::ExportDescriptor &Export, std::string_view Name) const
+{
+   struct_field field;
+   field.Name.assign(Name);
+   initialise_native_field(field, value_kind(Export.Value.Kind));
+   field.ObjectClassName  = Export.Value.ObjectClass;
+   field.ObjectClassID    = this->object_class(Export.Value.ObjectClass);
+   field.StructDefinition = this->structure(Export.Value.Structure);
+   if (field.StructDefinition) field.StructRef = struct_key(field.StructDefinition->Name);
+   field.precomputeNameHash();
+   return field;
 }
 
 //********************************************************************************************************************
@@ -382,8 +400,8 @@ StaticValueDescriptor InstalledImportInterface::namespace_value(std::string_view
    result.primary  = TiriType::Table;
    result.proof    = StaticProof::Closed;
    result.nullable = false;
-   auto found = this->namespace_index_.find(std::string(Namespace));
-   if (found != this->namespace_index_.end()) result.struct_def = found->second;
+   auto found = this->namespace_index_.find(Namespace);
+   if (found != this->namespace_index_.end()) result.struct_def = found->second->structure.get();
    return result;
 }
 
@@ -394,7 +412,7 @@ InferredType InstalledImportInterface::namespace_type(std::string_view Namespace
 {
    if (const auto *exact = this->find_export(Namespace)) return this->inferred_type(exact->Value);
    InferredType result(TiriType::Table, true, false, true);
-   auto found = this->namespace_index_.find(std::string(Namespace));
-   if (found != this->namespace_index_.end()) result.struct_def = found->second;
+   auto found = this->namespace_index_.find(Namespace);
+   if (found != this->namespace_index_.end()) result.struct_def = found->second->structure.get();
    return result;
 }

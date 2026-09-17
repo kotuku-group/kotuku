@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 struct BlockStmt;
 class ParserContext;
 

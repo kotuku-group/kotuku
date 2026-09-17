@@ -518,6 +518,77 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Indexed imported interfaces must preserve direct namespace members, nested qualification, joined dependencies and
+-- one-time activation across cold and warm module-cache processes.
+
+@Test function ImportedInterfaceLookupIndexes()
+   local scripts = glRoot .. 'interface_lookup_scripts/'
+   local modules = scripts .. 'interface_lookup/'
+   local isolated_temp = glRoot .. 'interface_lookup_temp/'
+   local scripts_folder <close> = obj.new('file', { path=scripts, flags=FL_NEW|FL_FOLDER })
+   local modules_folder <close> = obj.new('file', { path=modules, flags=FL_NEW|FL_FOLDER })
+   local temp_folder <close> = obj.new('file', { path=isolated_temp, flags=FL_NEW|FL_FOLDER })
+   local main = glRoot .. 'interface_lookup_main.tiri'
+
+   write_file(modules .. 'base.tiri', [[
+namespace interfaceLookup { child={} }
+global glInterfaceLookupRuns = (glInterfaceLookupRuns or 0) + 1
+interfaceLookup.initialisations = glInterfaceLookupRuns
+interfaceLookup.scalar = 19
+function interfaceLookup.call(Value:num):num return Value + 23 end
+interfaceLookup.child.hidden = 29
+]])
+   write_file(modules .. 'extension.tiri', [[
+import 'interface_lookup/base'
+namespace interfaceLookup
+interfaceLookup.joined = 31
+]])
+   write_file(modules .. 'left.tiri', [[
+import 'interface_lookup/extension'
+namespace interfaceLookup
+interfaceLookup.left = 37
+]])
+   write_file(modules .. 'right.tiri', [[
+import 'interface_lookup/extension'
+namespace interfaceLookup
+interfaceLookup.right = 41
+]])
+   write_file(main, [=[
+import 'interface_lookup/left', 'interface_lookup/right', 'interface_lookup/extension', 'interface_lookup/base'
+assert(interfaceLookup.scalar is 19, 'A direct scalar member must survive interface installation')
+assert(interfaceLookup.call(19) is 42, 'A direct callable member must retain its signature and value')
+assert(interfaceLookup.child.hidden is 29, 'A nested qualified export must remain available at its nested path')
+assert(interfaceLookup.hidden is nil, 'A nested qualified export must not appear as a direct namespace member')
+assert(interfaceLookup.joined is 31 and interfaceLookup.left is 37 and interfaceLookup.right is 41,
+   'Namespace joins from repeated dependencies must retain every first-seen member')
+assert(interfaceLookup.initialisations is 1 and glInterfaceLookupRuns is 1,
+   'Diamond and duplicate imports must activate the base module exactly once')
+
+local valid = debug.validate([[import 'interface_lookup/base'
+local answer:num = interfaceLookup.call(interfaceLookup.scalar)]], { path=arg('validation_path') })
+assert(valid.success and #valid.diagnostics is 0, 'Direct imported members must validate from the installed interface')
+
+local invalid = debug.validate([[import 'interface_lookup/base'
+local wrong:str = interfaceLookup.scalar]], { path=arg('validation_path') })
+assert(not invalid.success and #invalid.diagnostics is 1,
+   'Indexed direct-member metadata must retain deterministic static diagnostics')
+assert(invalid.diagnostics[0].message.find('cannot assign', 0, true) != nil,
+   'The indexed direct-member diagnostic must preserve its type mismatch message')
+print('IMPORT_INTERFACE_LOOKUP_OK')
+]=])
+
+   local expected = ''
+   for pass in {0 to 2} do
+      local code, output = child(array<str> { '--cache', main, 'validation_path=' .. glRoot .. 'validation.tiri',
+         '--set-volume', 'scripts=' .. scripts, '--set-volume', 'temp=' .. isolated_temp, '--log-warning' })
+      assert(code is 0, output)
+      assert(output.count('IMPORT_INTERFACE_LOOKUP_OK') is 1, output)
+      if pass is 0 then expected = output
+      else assert(output is expected, 'Cold and warm imported-interface behaviour and diagnostics must match') end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Saving and re-saving an imported compilation unit must preserve import order, declarations and source diagnostics so
 -- the unit remains executable after every contributing source file is removed.
 

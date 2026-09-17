@@ -82,6 +82,8 @@ struct ImportedModuleCompilationCounters {
    uint32_t interface_preparations = 0;
    uint32_t interface_finalisations = 0;
    uint32_t interface_encodes = 0;
+   uint32_t interface_assembly_probes = 0;
+   uint32_t interface_namespace_export_visits = 0;
    uint32_t initialiser_emissions = 0;
    uint32_t root_normalisation_traversals = 0;
    uint32_t root_normalisation_edges = 0;
