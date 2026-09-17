@@ -48,6 +48,7 @@ public:
    std::vector<uint32_t> compilation_to_canonical;
    std::string bundle;
    ImportModuleDirectoryLayout directory;
+   PreparedCompilationSources sources;
 };
 
 struct ImportModuleRelocationSite {
@@ -70,7 +71,8 @@ public:
 
 [[nodiscard]] bool prepare_import_module_graph(
    std::span<const ImportModuleGraphInput> Inputs, std::span<const CompilationSourceRecord> Sources,
-   std::span<const uint32_t> Roots, bool SelectAll, PreparedImportModuleGraph &Result);
+   std::span<const uint32_t> Roots, bool SelectAll, PreparedImportModuleGraph &Result,
+   GCproto *StandaloneRoot = nullptr);
 
 // Performs allocation-free validation and calculates the exact trailing-array storage required by a directory.
 [[nodiscard]] bool measure_import_module_directory(

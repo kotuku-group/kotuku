@@ -236,7 +236,7 @@ void release_proto_root_metadata(global_State *State, GCproto *Prototype) noexce
 
 bool prepare_import_module_graph(std::span<const ImportModuleGraphInput> Inputs,
    std::span<const CompilationSourceRecord> Sources, std::span<const uint32_t> Roots, bool SelectAll,
-   PreparedImportModuleGraph &Result)
+   PreparedImportModuleGraph &Result, GCproto *StandaloneRoot)
 {
    Result = PreparedImportModuleGraph {};
    std::array<int16_t, 256> source_lookup;
@@ -256,8 +256,10 @@ bool prepare_import_module_graph(std::span<const ImportModuleGraphInput> Inputs,
 
    std::vector<tiri::import_cache::RootModuleRecord> records;
    std::vector<GCproto *> initialisers;
+   std::vector<uint8_t> module_sources;
    records.reserve(selected.size());
    initialisers.reserve(selected.size());
+   module_sources.reserve(selected.size());
    for (uint32_t original : selected) {
       const ImportModuleGraphInput &input = Inputs[original];
       uint8_t source = FILESOURCE_OVERFLOW_INDEX;
@@ -278,9 +280,22 @@ bool prepare_import_module_graph(std::span<const ImportModuleGraphInput> Inputs,
       records.push_back({ std::string(input.lookup_identity), std::string(input.compiled_identity),
          std::string(input.interface_bytes), std::move(dependencies), source });
       initialisers.push_back(input.initialiser);
+      module_sources.push_back(input.runtime_source_index);
    }
 
    PreparedImportModuleGraph prepared;
+   if (StandaloneRoot) {
+      if (not prepare_standalone_compilation_sources(
+          Sources, StandaloneRoot, initialisers, module_sources, prepared.sources)) return false;
+      for (auto &record : records) {
+         if (record.SourceIndex IS FILESOURCE_OVERFLOW_INDEX) continue;
+         if (record.SourceIndex >= prepared.sources.compilation_to_wire.size()) return false;
+         const uint8_t mapped = prepared.sources.compilation_to_wire[record.SourceIndex];
+         if (mapped IS FILESOURCE_OVERFLOW_INDEX) return false;
+         record.SourceIndex = mapped;
+      }
+   }
+
    if (tiri::import_cache::assemble_root_module_graph(records, prepared.assembly) !=
        tiri::cache::FormatError::OKAY) return false;
 

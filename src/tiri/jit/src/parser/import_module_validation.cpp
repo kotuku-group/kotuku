@@ -163,7 +163,7 @@ bool ImportModuleValidationSession::validate_payload(std::string_view Payload, s
       return false;
    }
    BytecodeLoadMetadata metadata;
-   if (lj_load_with_bytecode_metadata(validation.get(), Payload, "=import-cache-validation", metadata) != 0) {
+   if (lj_validate_bytecode(validation.get(), Payload, "=import-cache-validation", metadata) != 0) {
       auto message = lua_tostringview(validation.get(), -1);
       Reason.assign(message.data(), message.size());
       return false;
@@ -173,6 +173,15 @@ bool ImportModuleValidationSession::validate_payload(std::string_view Payload, s
       Reason = "the imported-module cache payload did not contain bytecode metadata";
       return false;
    }
+   const auto &operations = metadata.Operations;
+   this->counters.ValidationPayloadLoads += operations.payload_loads;
+   this->counters.PrototypeDecodes += operations.prototype_decodes;
+   this->counters.SourceRecordsDecoded += operations.source_records_decoded;
+   this->counters.FileSourceRegistrations += operations.file_source_registrations;
+   this->counters.LineMapRemaps += operations.line_map_remaps;
+   this->counters.StructureCommits += operations.structure_commits;
+   this->counters.SourceMapAllocations += operations.source_map_allocations;
+   this->counters.ExecutableDirectoryAllocations += operations.executable_directory_allocations;
    this->counters.PayloadBundleDecodes++;
    if (EmbeddedModules) *EmbeddedModules = std::move(metadata.ImportedModules);
    return true;

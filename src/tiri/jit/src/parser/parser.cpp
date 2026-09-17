@@ -384,13 +384,17 @@ extern GCproto * lj_parse(LexState *State)
 
    const auto &cache_counters = State->import_cache_counters;
    if (cache_counters.SourceReads or cache_counters.EnvelopeDecodes or cache_counters.SourceCompilations) {
-      log.trace("Imported-module validation: hits=%u misses=%u source-reads=%u envelope-decodes=%u "
+      log.msg("Imported-module validation: hits=%u misses=%u source-reads=%u envelope-decodes=%u "
          "payload-validations=%u payload-bundle-decodes=%u validation-reuses=%u validation-states=%u "
-         "source-compilations=%u publications=%u",
+         "source-compilations=%u publications=%u validation-loads=%u destination-loads=%u prototype-decodes=%u "
+         "source-records=%u registrations=%u line-remaps=%u structure-commits=%u source-maps=%u directories=%u",
          cache_counters.CacheHits, cache_counters.LookupMisses, cache_counters.SourceReads,
          cache_counters.EnvelopeDecodes, cache_counters.PayloadValidations, cache_counters.PayloadBundleDecodes,
          cache_counters.ValidationReuses, cache_counters.ValidationStateCreations, cache_counters.SourceCompilations,
-         cache_counters.Publications);
+         cache_counters.Publications, cache_counters.ValidationPayloadLoads, cache_counters.DestinationPayloadLoads,
+         cache_counters.PrototypeDecodes, cache_counters.SourceRecordsDecoded,
+         cache_counters.FileSourceRegistrations, cache_counters.LineMapRemaps, cache_counters.StructureCommits,
+         cache_counters.SourceMapAllocations, cache_counters.ExecutableDirectoryAllocations);
    }
 
 #ifdef UNIT_TESTS

@@ -12,14 +12,17 @@ static int append_import_module_dump(lua_State *, const void *Data, size_t Size,
 
 static bool prepare_import_module_dump(LexState &State, GCproto *Prototype, std::string &Output)
 {
+   kt::Log log(__FUNCTION__);
    lua_State *L = State.L;
    State.register_import_module_staging_root(Prototype);
-   attach_compilation_sources(L, Prototype, State.compilation_sources);
 
    std::vector<uint8_t> structure_manifest;
    std::string detail;
    if (build_declared_struct_manifest(L, State.compilation_struct_roots, State.compilation_structs,
-       State.dynamic_struct_reference, structure_manifest, &detail) != ERR::Okay) return false;
+       State.dynamic_struct_reference, structure_manifest, &detail) != ERR::Okay) {
+      log.warning("Cannot prepare imported-module structures: %s", detail.c_str());
+      return false;
+   }
    auto structures = (uint8_t *)lj_mem_new(L, MSize(structure_manifest.size()));
    memcpy(structures, structure_manifest.data(), structure_manifest.size());
    setmref(Prototype->struct_manifest, structures);
@@ -38,20 +41,32 @@ static bool prepare_import_module_dump(LexState &State, GCproto *Prototype, std:
       }
    }
    PreparedImportModuleGraph graph;
-   if (not prepare_import_module_graph(inputs, State.compilation_sources, roots, false, graph)) return false;
+   if (not prepare_import_module_graph(
+       inputs, State.compilation_sources, roots, false, graph, Prototype)) {
+      log.warning("Cannot prepare imported-module graph or source closure.");
+      return false;
+   }
+   attach_compilation_sources(L, Prototype, graph.sources.records);
    std::vector<GCproto *> relocation_roots = graph.initialisers;
    relocation_roots.push_back(Prototype);
    ImportModuleRelocationPlan relocation;
    if (not preflight_import_module_relocations(
-       relocation_roots, graph.compilation_to_canonical, relocation)) return false;
+       relocation_roots, graph.compilation_to_canonical, relocation)) {
+      log.warning("Cannot prepare imported-module bytecode relocation.");
+      return false;
+   }
    auto modules = (uint8_t *)lj_mem_new(L, MSize(graph.bundle.size()));
    memcpy(modules, graph.bundle.data(), graph.bundle.size());
    setmref(Prototype->import_module_bundle, modules);
    Prototype->import_module_bundle_size = uint32_t(graph.bundle.size());
    if (graph.directory.entry_count and not install_import_module_directory(
-       L, Prototype, graph.assembly.records(), graph.initialisers, graph.directory)) return false;
+       L, Prototype, graph.assembly.records(), graph.initialisers, graph.directory)) {
+      log.warning("Cannot install the imported-module staging directory.");
+      return false;
+   }
    const bool written = lj_bcwrite_relocated(
       L, Prototype, append_import_module_dump, &Output, 0, &relocation) IS 0;
+   if (not written) log.warning("Cannot serialise the imported-module bytecode payload.");
    return written;
 }
 
@@ -241,7 +256,9 @@ ParserResult<IrEmitUnit> IrEmitter::emit_import_entry(const ImportEntryPayload &
             const ImportModuleTable *warm_table = nullptr;
             if (unit->module_cache_hit) {
                lua_State *L = this->lex_state.L;
-               if (lua_load(L, unit->module_payload, "=import-cache-link") != 0 or
+               BytecodeLoadMetadata link_metadata;
+               if (lj_load_with_bytecode_metadata(
+                   L, unit->module_payload, "=import-cache-link", link_metadata) != 0 or
                    not lua_isfunction(L, -1) or lua_iscfunction(L, -1)) {
                   std::string diagnostic = "Warm imported-module executable graph could not be decoded";
                   if (const char *message = lua_tostring(L, -1)) diagnostic += std::string(": ") + message;
@@ -249,6 +266,16 @@ ParserResult<IrEmitUnit> IrEmitter::emit_import_entry(const ImportEntryPayload &
                   return ParserResult<IrEmitUnit>::failure(this->make_error(
                      ParserErrorCode::InternalInvariant, diagnostic));
                }
+               auto &cache_counters = this->lex_state.import_cache_counters;
+               const auto &operations = link_metadata.Operations;
+               cache_counters.DestinationPayloadLoads += operations.payload_loads;
+               cache_counters.PrototypeDecodes += operations.prototype_decodes;
+               cache_counters.SourceRecordsDecoded += operations.source_records_decoded;
+               cache_counters.FileSourceRegistrations += operations.file_source_registrations;
+               cache_counters.LineMapRemaps += operations.line_map_remaps;
+               cache_counters.StructureCommits += operations.structure_commits;
+               cache_counters.SourceMapAllocations += operations.source_map_allocations;
+               cache_counters.ExecutableDirectoryAllocations += operations.executable_directory_allocations;
                warm_root = funcproto(funcV(L->top - 1));
                warm_table = proto_import_module_table(warm_root);
                const uint32_t warm_count = warm_table ? warm_table->entry_count : 0;

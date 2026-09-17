@@ -47,8 +47,8 @@ static bool bcwrite_source_id(BCWriteCtx *Ctx, uint8_t Runtime, uint8_t &Wire)
       Wire = Ctx->source_wire[Runtime];
       return true;
    }
-   if (Runtime IS FILESOURCE_OVERFLOW_INDEX) {
-      Wire = FILESOURCE_OVERFLOW_INDEX;
+   if (Runtime IS FILESOURCE_SYNTHETIC_INDEX or Runtime IS FILESOURCE_OVERFLOW_INDEX) {
+      Wire = Runtime;
       return true;
    }
    return false;
@@ -663,6 +663,7 @@ static TValue* cpwriter(lua_State* L, lua_CFunction dummy, void* ud)
 int lj_bcwrite_relocated(lua_State *L, GCproto *Pt, lua_Writer Writer, void *Data, int Strip,
    const ImportModuleRelocationPlan *Relocation)
 {
+   kt::Log log(__FUNCTION__);
    BCWriteCtx ctx;
    int status;
    ctx.pt = Pt;
@@ -677,16 +678,31 @@ int lj_bcwrite_relocated(lua_State *L, GCproto *Pt, lua_Writer Writer, void *Dat
    ctx.import_module_bundle = proto_import_module_bundle(Pt, &ctx.import_module_bundle_size);
    ctx.import_module_table = proto_import_module_table(Pt);
    ctx.relocation = Relocation;
-   if (Relocation and not validate_import_module_relocation_plan(*Relocation)) return 1;
+   if (Relocation and not validate_import_module_relocation_plan(*Relocation)) {
+      log.warning("Invalid relocation plan.");
+      return 1;
+   }
    if (not ctx.sources or ctx.sources->version != COMPILATION_SOURCE_VERSION or ctx.sources->count IS 0 or
-       ctx.sources->count > FILESOURCE_MAX_COUNT or ctx.sources->root >= ctx.sources->count) return 1;
+       ctx.sources->count > FILESOURCE_MAX_COUNT or ctx.sources->root >= ctx.sources->count) {
+      log.warning("Invalid compilation source map header.");
+      return 1;
+   }
    if (not ctx.struct_manifest or ctx.struct_manifest_size < 2 or
-       ctx.struct_manifest[0] != STRUCT_MANIFEST_VERSION) return 1;
-   if (not ctx.import_module_bundle or not ctx.import_module_bundle_size) return 1;
+       ctx.struct_manifest[0] != STRUCT_MANIFEST_VERSION) {
+      log.warning("Invalid structure manifest.");
+      return 1;
+   }
+   if (not ctx.import_module_bundle or not ctx.import_module_bundle_size) {
+      log.warning("Missing imported-module bundle.");
+      return 1;
+   }
    std::vector<tiri::import_cache::RootModuleRecord> validated_modules;
    if (tiri::import_cache::decode_root_module_bundle(std::string_view(
        (const char *)ctx.import_module_bundle, ctx.import_module_bundle_size), validated_modules) !=
-       tiri::cache::FormatError::OKAY) return 1;
+       tiri::cache::FormatError::OKAY) {
+      log.warning("Invalid imported-module bundle.");
+      return 1;
+   }
    if (validated_modules.empty()) {
       if (ctx.import_module_table) return 1;
    }
@@ -706,50 +722,83 @@ int lj_bcwrite_relocated(lua_State *L, GCproto *Pt, lua_Writer Writer, void *Dat
              entry.first_dependency != dependency_count or entry.interface_offset > ctx.import_module_bundle_size or
              entry.interface_size > ctx.import_module_bundle_size - entry.interface_offset or
              std::string_view((const char *)ctx.import_module_bundle + entry.interface_offset,
-                entry.interface_size) != record.InterfaceBytes) return 1;
+                entry.interface_size) != record.InterfaceBytes) {
+            log.warning("Imported-module directory entry %u is inconsistent.", i);
+            return 1;
+         }
          GCstr *identity = gco_to_string(gcref(entry.compiled_identity));
          if (identity->len != record.CompiledIdentity.size() or
-             memcmp(strdata(identity), record.CompiledIdentity.data(), identity->len) != 0) return 1;
+             memcmp(strdata(identity), record.CompiledIdentity.data(), identity->len) != 0) {
+            log.warning("Imported-module identity %u is inconsistent.", i);
+            return 1;
+         }
          for (uint32_t d = 0; d < entry.dependency_count; ++d) {
-            if (table_dependencies[entry.first_dependency + d] != record.Dependencies[d]) return 1;
+            if (table_dependencies[entry.first_dependency + d] != record.Dependencies[d]) {
+               log.warning("Imported-module dependency %u:%u is inconsistent.", i, d);
+               return 1;
+            }
          }
          dependency_count += entry.dependency_count;
       }
-      if (dependency_count != ctx.import_module_table->dependency_count) return 1;
+      if (dependency_count != ctx.import_module_table->dependency_count) {
+         log.warning("Imported-module dependency count is inconsistent.");
+         return 1;
+      }
    }
    auto entries = compilation_source_entries(ctx.sources);
    for (uint32_t i = 0; i < ctx.sources->count; ++i) {
       GCstr *path = gco_to_string(gcref(entries[i].canonical_path));
       GCstr *filename = gco_to_string(gcref(entries[i].display_filename));
       if (filename->len IS 0 or entries[i].first_line.lineNumber() IS 0 or
-          entries[i].total_lines.lineNumber() IS 0) return 1;
+          entries[i].total_lines.lineNumber() IS 0) {
+         log.warning("Compilation source %u has invalid basic metadata.", i);
+         return 1;
+      }
       if (i IS ctx.sources->root) {
          if ((entries[i].role != CompilationSourceRole::Main and
               entries[i].role != CompilationSourceRole::Synthetic) or
              entries[i].parent != FILESOURCE_OVERFLOW_INDEX or entries[i].import_line.lineNumber() != 0 or
-             ((entries[i].role IS CompilationSourceRole::Synthetic) != (path->len IS 0))) return 1;
+             ((entries[i].role IS CompilationSourceRole::Synthetic) != (path->len IS 0))) {
+            log.warning("Compilation source root is invalid.");
+            return 1;
+         }
       }
       else if (entries[i].role != CompilationSourceRole::Import or entries[i].parent >= i or path->len IS 0 or
                entries[i].import_line.lineNumber() IS 0 or entries[i].import_line.lineNumber() >
-               entries[entries[i].parent].total_lines.lineNumber()) return 1;
+               entries[entries[i].parent].total_lines.lineNumber()) {
+         log.warning("Compilation source %u has invalid ancestry.", i);
+         return 1;
+      }
       for (uint32_t prior = 0; prior < i; ++prior) {
          GCstr *prior_path = gco_to_string(gcref(entries[prior].canonical_path));
          if (path->len and path->len IS prior_path->len and
-             memcmp(strdata(path), strdata(prior_path), path->len) IS 0) return 1;
+             memcmp(strdata(path), strdata(prior_path), path->len) IS 0) {
+            log.warning("Compilation source %u duplicates source %u.", i, prior);
+            return 1;
+         }
       }
       const uint8_t runtime = entries[i].runtime_index;
       if (runtime IS FILESOURCE_OVERFLOW_INDEX) continue;
-      if (ctx.source_mapped[runtime]) return 1;
+      if (ctx.source_mapped[runtime]) {
+         log.warning("Compilation source %u duplicates runtime index %u.", i, runtime);
+         return 1;
+      }
       ctx.source_mapped[runtime] = 1;
       ctx.source_wire[runtime] = uint8_t(i);
    }
    if (ctx.import_module_table) {
       const ImportModuleTableEntry *entries = import_module_table_entries(ctx.import_module_table);
       for (uint32_t i = 0; i < ctx.import_module_table->entry_count; ++i) {
-         if (not bcwrite_validate_proto(&ctx, gco_to_proto(gcref(entries[i].initialiser)))) return 1;
+         if (not bcwrite_validate_proto(&ctx, gco_to_proto(gcref(entries[i].initialiser)))) {
+            log.warning("Executable module %u references an unmapped source.", i);
+            return 1;
+         }
       }
    }
-   if (not bcwrite_validate_proto(&ctx, Pt)) return 1;
+   if (not bcwrite_validate_proto(&ctx, Pt)) {
+      log.warning("Root prototype references an unmapped source.");
+      return 1;
+   }
 #ifdef LUA_USE_ASSERT
    ctx.g = G(L);
 #endif

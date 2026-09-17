@@ -7,7 +7,11 @@
 #include <optional>
 #include <cstdint>
 #include <span>
+#include <array>
+#include <vector>
 #include "lj_obj.h"
+
+struct BytecodeLoadOperationCounters;
 
 // FileSource tracks source file metadata for accurate error reporting when code is imported.
 // Real files use indices 0-253.  Anonymous source and overflow have distinct sentinel identities.
@@ -38,6 +42,17 @@ struct CompilationSourceRecord {
    BCLine import_line = 0;
    uint8_t runtime_index = FILESOURCE_SYNTHETIC_INDEX;
    uint8_t parent = FILESOURCE_OVERFLOW_INDEX;
+};
+
+class PreparedCompilationSources {
+public:
+   PreparedCompilationSources() {
+      this->runtime_to_wire.fill(FILESOURCE_OVERFLOW_INDEX);
+   }
+
+   std::vector<CompilationSourceRecord> records;
+   std::array<uint8_t, 256> runtime_to_wire;
+   std::vector<uint8_t> compilation_to_wire;
 };
 
 // Register a new file source in the lua_State.
@@ -71,8 +86,14 @@ const FileSource* get_file_source(lua_State *L, uint8_t Index);
 
 void attach_compilation_sources(lua_State *, GCproto *, const std::vector<CompilationSourceRecord> &);
 void attach_loaded_compilation_sources(lua_State *, GCproto *, const std::vector<CompilationSourceRecord> &,
-   std::span<GCproto *const> AdditionalRoots = {});
+   std::span<GCproto *const> AdditionalRoots = {}, BytecodeLoadOperationCounters *Operations = nullptr);
 void attach_compilation_source_root(GCproto *, GCproto *);
+
+// Builds the minimal self-contained source map for a standalone prototype and its selected executable module roots.
+// The standalone prototype's source becomes wire root zero; unrelated producer roots are deliberately omitted.
+[[nodiscard]] bool prepare_standalone_compilation_sources(
+   std::span<const CompilationSourceRecord>, GCproto *, std::span<GCproto *const>,
+   std::span<const uint8_t>, PreparedCompilationSources &);
 
 // Register a file being parsed as a "main" file source (from lj_parse or loadFile).
 // Returns the file index (may be > 0 if this file was already registered or other files exist).

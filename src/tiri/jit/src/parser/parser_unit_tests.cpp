@@ -12193,6 +12193,29 @@ static bool test_bytecode_load_metadata_transaction(kt::Log &Log)
    }
    lua_pop(consumer, 1);
 
+   LuaStateHolder validation_holder;
+   lua_State *validation = validation_holder.get();
+   if (not validation) return false;
+   luaL_openlibs(validation);
+   const size_t structure_count = validation->struct_declarations.size();
+   metadata.Bytecode = true;
+   metadata.ImportedModules = expected;
+   if (lj_validate_bytecode(validation, dump, "metadata-validation-only", metadata) != 0 or
+       not metadata.Bytecode or metadata.ImportedModules != expected) {
+      Log.error("validation-only loading did not return the portable imported-module records");
+      return false;
+   }
+   GCproto *validated = funcproto(funcV(validation->top - 1));
+   const auto &operations = metadata.Operations;
+   if (measure_proto_root_metadata(validated).total() or not validation->file_sources.empty() or
+       validation->struct_declarations.size() != structure_count or operations.payload_loads != 1 or
+       operations.prototype_decodes IS 0 or operations.source_records_decoded IS 0 or
+       operations.file_source_registrations or operations.line_map_remaps or operations.structure_commits or
+       operations.source_map_allocations or operations.executable_directory_allocations) {
+      Log.error("validation-only loading published runtime metadata or reported inconsistent operation counts");
+      return false;
+   }
+
    std::string malformed = dump + "x";
    if (lj_load_with_bytecode_metadata(consumer, malformed, "metadata-malformed", metadata) IS 0 or
        metadata.Bytecode or not metadata.ImportedModules.empty()) {
@@ -12217,6 +12240,34 @@ static bool test_bytecode_load_metadata_transaction(kt::Log &Log)
        lj_load_with_bytecode_metadata(consumer, empty_dump, "metadata-empty", metadata) != 0 or
        not metadata.Bytecode or not metadata.ImportedModules.empty()) {
       Log.error("a valid empty bytecode graph was not distinguished from source input");
+      return false;
+   }
+   return true;
+}
+
+//********************************************************************************************************************
+// Indexed source lookup retains exact-path fallback when the hash index points at a different canonical path.
+
+static bool test_file_source_index_collision_fallback(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) return false;
+   std::string first = "scripts:tests/source-index-first.tiri";
+   std::string second = "scripts:tests/source-index-second.tiri";
+   const uint8_t first_index = register_file_source(lua, first, "source-index-first.tiri", 1, 3, 0, 0);
+   const uint8_t second_index = register_file_source(lua, second, "source-index-second.tiri", 1, 4, 0, 0);
+   if (first_index IS second_index or first_index IS FILESOURCE_OVERFLOW_INDEX or
+       second_index IS FILESOURCE_OVERFLOW_INDEX) return false;
+
+   lua->file_index_map[kt::strihash(second)] = first_index;
+   const auto collision_lookup = find_file_source(lua, second);
+   std::string duplicate = second;
+   const uint8_t duplicate_index = register_file_source(
+      lua, duplicate, "source-index-second.tiri", 1, 4, 0, 0);
+   if (not collision_lookup or *collision_lookup != second_index or duplicate_index != second_index or
+       lua->file_sources.size() != 2) {
+      Log.error("Indexed file-source lookup did not preserve exact-path collision fallback");
       return false;
    }
    return true;
@@ -12296,7 +12347,23 @@ static bool test_import_module_relocation_transaction(kt::Log &Log)
    if (not source_map) return false;
    const CompilationSourceEntry *source_entries = compilation_source_entries(source_map);
    std::vector<CompilationSourceRecord> sources(source_map->count);
-   for (uint32_t i = 0; i < source_map->count; ++i) sources[i].runtime_index = source_entries[i].runtime_index;
+   for (uint32_t i = 0; i < source_map->count; ++i) {
+      const auto &entry = source_entries[i];
+      sources[i] = {
+         .role = entry.role,
+         .canonical_path = std::string(strdata(gco_to_string(gcref(entry.canonical_path))),
+            gco_to_string(gcref(entry.canonical_path))->len),
+         .display_filename = std::string(strdata(gco_to_string(gcref(entry.display_filename))),
+            gco_to_string(gcref(entry.display_filename))->len),
+         .declared_namespace = std::string(strdata(gco_to_string(gcref(entry.declared_namespace))),
+            gco_to_string(gcref(entry.declared_namespace))->len),
+         .first_line = entry.first_line,
+         .total_lines = entry.total_lines,
+         .import_line = entry.import_line,
+         .runtime_index = entry.runtime_index,
+         .parent = entry.parent
+      };
+   }
 
    std::vector<GCproto *> roots;
    std::vector<BytecodeSnapshot> before;
@@ -12333,6 +12400,22 @@ static bool test_import_module_relocation_transaction(kt::Log &Log)
        subset.compilation_to_canonical[subset_root] IS UINT32_MAX) {
       Log.error("Prepared subset did not retain its selected dependency root");
       return false;
+   }
+   PreparedImportModuleGraph standalone;
+   if (not prepare_import_module_graph(
+       inputs, sources, selected_root, false, standalone, roots[subset_root]) or
+       standalone.sources.records.empty() or standalone.sources.records[0].role != CompilationSourceRole::Main or
+       standalone.sources.records[0].runtime_index != roots[subset_root]->file_source_idx or
+       standalone.sources.records.size() >= sources.size()) {
+      Log.error("Standalone graph did not produce a dense module-rooted source closure");
+      return false;
+   }
+   for (const auto &record : standalone.assembly.records()) {
+      if (record.SourceIndex != FILESOURCE_OVERFLOW_INDEX and
+          record.SourceIndex >= standalone.sources.records.size()) {
+         Log.error("Standalone graph retained a source reference outside its dense map");
+         return false;
+      }
    }
    bool has_excluded = false;
    for (size_t i = 0; i < subset.compilation_to_canonical.size(); ++i) {
@@ -12408,8 +12491,9 @@ static bool test_import_module_relocation_transaction(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 112> tests = { {
+   constexpr std::array<TestCase, 113> tests = { {
       { "bytecode_load_metadata_transaction", test_bytecode_load_metadata_transaction },
+      { "file_source_index_collision_fallback", test_file_source_index_collision_fallback },
       { "import_module_metadata_release_idempotence", test_import_module_metadata_release_idempotence },
       { "import_module_relocation_transaction", test_import_module_relocation_transaction },
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },

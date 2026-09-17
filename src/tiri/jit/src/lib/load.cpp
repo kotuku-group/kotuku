@@ -55,7 +55,8 @@ static TValue * cpparser(lua_State *L, lua_CFunction dummy, APTR ud)
 // Stack-allocated C++ objects with non-trivial destructors would leak their internal allocations (bc_stack,
 // vstack) when a parse error occurs.
 
-static int load(lua_State *Lua, std::string_view Source, CSTRING SourceName, BytecodeLoadMetadata *Metadata)
+static int load(lua_State *Lua, std::string_view Source, CSTRING SourceName, BytecodeLoadMetadata *Metadata,
+   BytecodeLoadPolicy Policy = BytecodeLoadPolicy::Install)
 {
    if (Metadata) *Metadata = {};
 
@@ -65,6 +66,7 @@ static int load(lua_State *Lua, std::string_view Source, CSTRING SourceName, Byt
    }
 
    auto *ls = new LexState(Lua, Source, SourceName, std::nullopt);
+   ls->bytecode_load_policy = Policy;
 
    // Set diagnose mode if enabled - this allows lexer to collect errors instead of throwing
 
@@ -76,6 +78,7 @@ static int load(lua_State *Lua, std::string_view Source, CSTRING SourceName, Byt
    BytecodeLoadMetadata completed;
    if (not status and Metadata and ls->is_bytecode) {
       completed.ImportedModules = std::move(ls->bytecode_import_module_records);
+      completed.Operations = ls->bytecode_load_operations;
       completed.Bytecode = true;
    }
 
@@ -100,6 +103,12 @@ extern int lj_load_with_bytecode_metadata(
    lua_State *Lua, std::string_view Source, CSTRING SourceName, BytecodeLoadMetadata &Metadata)
 {
    return load(Lua, Source, SourceName, &Metadata);
+}
+
+extern int lj_validate_bytecode(
+   lua_State *Lua, std::string_view Source, CSTRING SourceName, BytecodeLoadMetadata &Metadata)
+{
+   return load(Lua, Source, SourceName, &Metadata, BytecodeLoadPolicy::ValidateOnly);
 }
 
 //********************************************************************************************************************

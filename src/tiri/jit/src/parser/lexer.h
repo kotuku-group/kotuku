@@ -21,6 +21,7 @@
 #include "lj_err.h"
 #include "../debug/filesource.h"
 #include "func_state.h"
+#include "../lib/load.h"
 #include "../../../import_module_cache.h"
 
 #ifdef INCLUDE_TIPS
@@ -196,6 +197,8 @@ public:
    uint32_t static_analysis_generation = 0;
    bool dynamic_struct_reference = false;
    bool loaded_structs_committed = false;
+   BytecodeLoadPolicy bytecode_load_policy = BytecodeLoadPolicy::Install;
+   BytecodeLoadOperationCounters bytecode_load_operations;
 
    GCstr *    chunk_name;     // Current chunk name (interned string).
    const char *chunk_arg;     // Chunk name argument.

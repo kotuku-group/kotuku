@@ -37,148 +37,148 @@ enum class NamespaceMode : uint8_t { DECLARE = 1, JOIN };
 enum class ConstantKind : uint8_t { NONE = 1, NIL_VALUE, BOOLEAN, INTEGER, NUMBER, STRING };
 
 struct ArrayDescriptor {
-   uint8_t Storage = 0;
-   ValueKind ElementKind = ValueKind::ANY;
-   std::string ObjectClass;
-   std::string Structure;
-   std::string NestedIdentity;
+   uint8_t Storage = 0;                          // Stores the array representation.
+   ValueKind ElementKind = ValueKind::ANY;       // Identifies values stored in the array.
+   std::string ObjectClass;                      // Names the object class of array elements.
+   std::string Structure;                        // Names the structure of array elements.
+   std::string NestedIdentity;                   // Identifies a nested module's array type.
 
    [[nodiscard]] bool operator==(const ArrayDescriptor &) const = default;
 };
 
 struct ValueDescriptor {
-   ValueKind Kind = ValueKind::UNKNOWN;
-   ProofKind Proof = ProofKind::ADVISORY;
-   std::string ObjectClass;
-   std::string Structure;
-   ArrayDescriptor Array;
-   bool Nullable = true;
+   ValueKind Kind = ValueKind::UNKNOWN;          // Identifies the value type.
+   ProofKind Proof = ProofKind::ADVISORY;        // Specifies the strength of the type proof.
+   std::string ObjectClass;                      // Names the value's object class.
+   std::string Structure;                        // Names the value's structure.
+   ArrayDescriptor Array;                        // Describes the value when it is an array.
+   bool Nullable = true;                         // Indicates whether the value may be nil.
 
    [[nodiscard]] bool operator==(const ValueDescriptor &) const = default;
 };
 
 struct ContractDescriptor {
-   ValueDescriptor Value;
-   std::string Label;
-   uint8_t Position = 0;
-   bool Required = false;
-   bool IsConst = false;
+   ValueDescriptor Value;                        // Describes the contracted value.
+   std::string Label;                            // Stores the parameter or result label.
+   uint8_t Position = 0;                         // Stores the value's declared position.
+   bool Required = false;                        // Indicates whether the value is mandatory.
+   bool IsConst = false;                         // Indicates whether the value is immutable.
 
    [[nodiscard]] bool operator==(const ContractDescriptor &) const = default;
 };
 
 struct CallableDescriptor {
-   std::vector<ContractDescriptor> Parameters;
-   std::vector<ValueDescriptor> Results;
-   uint16_t DeclaredResults = 0;
-   bool VariadicParameters = false;
-   bool VariadicResults = false;
+   std::vector<ContractDescriptor> Parameters;   // Describes the callable's parameters.
+   std::vector<ValueDescriptor> Results;         // Describes the callable's result values.
+   uint16_t DeclaredResults = 0;                  // Stores the number of declared results.
+   bool VariadicParameters = false;               // Indicates whether parameters are variadic.
+   bool VariadicResults = false;                  // Indicates whether results are variadic.
 
    [[nodiscard]] bool operator==(const CallableDescriptor &) const = default;
 };
 
 struct ConstantValue {
-   ConstantKind Kind = ConstantKind::NONE;
-   int64_t Integer = 0;
-   uint64_t NumberBits = 0;
-   std::string String;
-   bool Boolean = false;
+   ConstantKind Kind = ConstantKind::NONE;        // Identifies the constant value type.
+   int64_t Integer = 0;                           // Stores an integer constant.
+   uint64_t NumberBits = 0;                       // Stores the bit pattern of a numeric constant.
+   std::string String;                            // Stores a string constant.
+   bool Boolean = false;                          // Stores a Boolean constant.
 
    [[nodiscard]] bool operator==(const ConstantValue &) const = default;
 };
 
 struct NamespaceDescriptor {
-   std::string Name;
-   NamespaceMode Mode = NamespaceMode::DECLARE;
+   std::string Name;                              // Stores the namespace name.
+   NamespaceMode Mode = NamespaceMode::DECLARE;   // Specifies how the namespace is introduced.
 
    [[nodiscard]] bool operator==(const NamespaceDescriptor &) const = default;
 };
 
 struct ExportDescriptor {
-   std::string Name;
-   ExportKind Kind = ExportKind::GLOBAL;
-   ValueDescriptor Value;
-   std::optional<CallableDescriptor> Callable;
-   ConstantValue Constant;
-   bool IsConst = false;
+   std::string Name;                              // Stores the exported symbol name.
+   ExportKind Kind = ExportKind::GLOBAL;          // Identifies the exported symbol kind.
+   ValueDescriptor Value;                         // Describes the exported value.
+   std::optional<CallableDescriptor> Callable;    // Describes the export when it is callable.
+   ConstantValue Constant;                        // Stores the export's constant value.
+   bool IsConst = false;                          // Indicates whether the export is immutable.
 
    [[nodiscard]] bool operator==(const ExportDescriptor &) const = default;
 };
 
 struct StructureField {
-   std::string Name;
-   ValueDescriptor Value;
-   bool Required = false;
+   std::string Name;                              // Stores the field name.
+   ValueDescriptor Value;                         // Describes the field value.
+   bool Required = false;                         // Indicates whether the field is required.
 
    [[nodiscard]] bool operator==(const StructureField &) const = default;
 };
 
 struct StructureDescriptor {
-   std::string Name;
-   std::vector<StructureField> Fields;
+   std::string Name;                              // Stores the structure name.
+   std::vector<StructureField> Fields;            // Describes the structure's fields.
 
    [[nodiscard]] bool operator==(const StructureDescriptor &) const = default;
 };
 
 struct EnumMember {
-   std::string Name;
-   ConstantValue Value;
+   std::string Name;                              // Stores the enumeration member name.
+   ConstantValue Value;                           // Stores the enumeration member value.
 
    [[nodiscard]] bool operator==(const EnumMember &) const = default;
 };
 
 struct EnumDescriptor {
-   std::string Name;
-   std::vector<EnumMember> Members;
+   std::string Name;                              // Stores the enumeration name.
+   std::vector<EnumMember> Members;               // Stores the enumeration members.
 
    [[nodiscard]] bool operator==(const EnumDescriptor &) const = default;
 };
 
 struct NativeDependency {
-   std::string Module;
-   std::vector<std::string> Functions;
-   uint32_t ActivationOrder = 0;
+   std::string Module;                            // Names the required native module.
+   std::vector<std::string> Functions;            // Lists required functions from the module.
+   uint32_t ActivationOrder = 0;                  // Specifies the module activation order.
 
    [[nodiscard]] bool operator==(const NativeDependency &) const = default;
 };
 
 struct SourceDescriptor {
-   std::string ResolvedPath;
-   std::string LogicalRequest;
-   std::string Filename;
-   std::string DeclaredNamespace;
-   std::string ParentResolvedPath;
-   uint32_t FirstLine = 1;
-   uint32_t TotalLines = 1;
-   uint32_t ImportLine = 0;
+   std::string ResolvedPath;                      // Stores the resolved source path.
+   std::string LogicalRequest;                    // Stores the original source request.
+   std::string Filename;                          // Stores the source filename.
+   std::string DeclaredNamespace;                 // Stores the namespace declared by the source.
+   std::string ParentResolvedPath;                // Stores the importing source path.
+   uint32_t FirstLine = 1;                        // Stores the source's first line in its parent.
+   uint32_t TotalLines = 1;                       // Stores the number of source lines.
+   uint32_t ImportLine = 0;                       // Stores the importing line number.
 
    [[nodiscard]] bool operator==(const SourceDescriptor &) const = default;
 };
 
 struct NestedModuleDescriptor {
-   std::string LogicalRequest;
-   std::string ResolvedPath;
-   cache::Digest InterfaceDigest = {};
+   std::string LogicalRequest;                    // Stores the nested module's original request.
+   std::string ResolvedPath;                      // Stores the nested module's resolved path.
+   cache::Digest InterfaceDigest = {};            // Identifies the nested module interface.
 
    [[nodiscard]] bool operator==(const NestedModuleDescriptor &) const = default;
 };
 
 struct Interface {
-   std::vector<NamespaceDescriptor> Namespaces;
-   std::vector<ExportDescriptor> Exports;
-   std::vector<StructureDescriptor> Structures;
-   std::vector<EnumDescriptor> Enums;
-   std::vector<NativeDependency> NativeDependencies;
-   std::vector<SourceDescriptor> Sources;
-   std::vector<NestedModuleDescriptor> NestedModules;
+   std::vector<NamespaceDescriptor> Namespaces;   // Describes namespaces declared by the module.
+   std::vector<ExportDescriptor> Exports;         // Describes symbols exported by the module.
+   std::vector<StructureDescriptor> Structures;   // Describes structures declared by the module.
+   std::vector<EnumDescriptor> Enums;             // Describes enumerations declared by the module.
+   std::vector<NativeDependency> NativeDependencies; // Describes native module dependencies.
+   std::vector<SourceDescriptor> Sources;         // Describes source files in the module.
+   std::vector<NestedModuleDescriptor> NestedModules; // Describes imported nested modules.
 
    [[nodiscard]] bool operator==(const Interface &) const = default;
 };
 
 struct InterfaceOperationCounters {
-   uint32_t ColdFinalisations = 0;
-   uint32_t Encodes = 0;
-   uint32_t WarmDecodes = 0;
+   uint32_t ColdFinalisations = 0;                // Counts cold interface finalisations.
+   uint32_t Encodes = 0;                          // Counts interface encodes.
+   uint32_t WarmDecodes = 0;                      // Counts cache-backed interface decodes.
 };
 
 class FinalisedInterface {
@@ -196,47 +196,47 @@ private:
    FinalisedInterface(Interface Descriptors, std::string Bytes, const cache::Digest &Digest) :
       descriptors_(std::move(Descriptors)), bytes_(std::move(Bytes)), digest_(Digest) { }
 
-   Interface descriptors_;
-   std::string bytes_;
-   cache::Digest digest_ = {};
+   Interface descriptors_;                        // Stores the canonical interface descriptors.
+   std::string bytes_;                            // Stores the canonical serialised interface.
+   cache::Digest digest_ = {};                    // Stores the digest of the canonical interface.
 };
 
 using FinalisedInterfacePtr = std::shared_ptr<const FinalisedInterface>;
 
 struct LocalImportIdentity {
-   std::string ParentPath;
-   std::string OriginalRequest;
-   cache::SourceIdentity Source;
+   std::string ParentPath;                        // Stores the importing source path.
+   std::string OriginalRequest;                   // Stores the import request text.
+   cache::SourceIdentity Source;                  // Identifies the imported source content.
 };
 
 struct ModuleDependencyIdentity {
-   std::string OriginalRequest;
-   std::string ResolvedPath;
-   cache::Digest InterfaceDigest = {};
-   std::string CompiledIdentity;
+   std::string OriginalRequest;                   // Stores the dependency request text.
+   std::string ResolvedPath;                      // Stores the dependency's resolved path.
+   cache::Digest InterfaceDigest = {};            // Identifies the dependency interface.
+   std::string CompiledIdentity;                  // Identifies the compiled dependency.
 };
 
 struct Identity {
-   uint32_t Schema = SCHEMA_VERSION;
-   std::string LookupIdentity;
-   std::string CompiledIdentity;
-   std::string BuildIdentity;
-   std::string LogicalRequest;
-   cache::SourceIdentity Source;
-   std::vector<cache::CompilationOption> Options;
-   std::vector<LocalImportIdentity> LocalImports;
-   std::vector<ModuleDependencyIdentity> ModuleDependencies;
-   std::vector<cache::ResolutionInput> ResolutionInputs;
-   std::vector<cache::ConditionalInput> ConditionalInputs;
-   bool ImportedRoot = true;
+   uint32_t Schema = SCHEMA_VERSION;              // Identifies the cache schema version.
+   std::string LookupIdentity;                    // Identifies the module for cache lookup.
+   std::string CompiledIdentity;                  // Identifies the compiled module content.
+   std::string BuildIdentity;                     // Identifies the Tiri build that compiled the module.
+   std::string LogicalRequest;                    // Stores the original module request.
+   cache::SourceIdentity Source;                  // Identifies the root source content.
+   std::vector<cache::CompilationOption> Options; // Stores compilation options affecting output.
+   std::vector<LocalImportIdentity> LocalImports; // Identifies imported local source files.
+   std::vector<ModuleDependencyIdentity> ModuleDependencies; // Identifies imported module dependencies.
+   std::vector<cache::ResolutionInput> ResolutionInputs; // Stores inputs that affect module resolution.
+   std::vector<cache::ConditionalInput> ConditionalInputs; // Stores inputs that affect conditional compilation.
+   bool ImportedRoot = true;                      // Indicates whether the root is imported.
 };
 
 struct EnvelopeView {
-   Identity CompilationIdentity;
-   std::string LookupIdentity;
-   std::string CompiledIdentity;
-   FinalisedInterfacePtr CompileTimeInterface;
-   std::string_view Payload;
+   Identity CompilationIdentity;                  // Identifies the compilation represented by the envelope.
+   std::string LookupIdentity;                    // Identifies the envelope for cache lookup.
+   std::string CompiledIdentity;                  // Identifies the compiled envelope content.
+   FinalisedInterfacePtr CompileTimeInterface;    // Provides the interface used during compilation.
+   std::string_view Payload;                      // Views the serialised module payload.
 };
 
 [[nodiscard]] bool is_envelope(std::string_view Input) noexcept;
