@@ -346,7 +346,8 @@ static ParserResult<StmtNodePtr> make_control_stmt(ParserContext& Context, AstNo
    return ParserResult<StmtNodePtr>::success(std::move(node));
 }
 
-AstBuilder::AstBuilder(ParserContext &Context, AstBuilder *Parent) : ctx(Context), parent_builder(Parent)
+AstBuilder::AstBuilder(ParserContext &Context, AstBuilder *Parent, bool ModuleInitialiser) :
+   ctx(Context), module_initialiser(ModuleInitialiser), parent_builder(Parent)
 {
    this->ctx.set_error_rollback_callback(rollback_ast_builder_constants, this);
 }
@@ -447,6 +448,7 @@ const AstBuilder::ModuleNamespaceSymbol * AstBuilder::resolve_module_namespace(G
    // one set of hidden callable bindings.
 
    size_t dependency_index = this->find_or_create_module_dependency(canonical_module, {}, true).first;
+   this->module_dependencies[dependency_index]->compile_time_only = false;
 
    ModuleNamespaceSymbol symbol;
    symbol.source_name      = Name;
@@ -465,7 +467,7 @@ const AstBuilder::ModuleNamespaceSymbol * AstBuilder::resolve_module_namespace(G
 void AstBuilder::prepend_implicit_dependencies(BlockStmt &Block)
 {
    for (auto &dependency : this->module_dependencies) {
-      if (not dependency->implicit or dependency->activation) continue;
+      if (not dependency->implicit or dependency->activation or dependency->compile_time_only) continue;
       Block.statements.insert(Block.statements.begin(),
          this->make_dependency_activation(*dependency, Block.span));
    }
@@ -531,24 +533,29 @@ void AstBuilder::finalise_module_dependencies()
 // process.  Deduplication has already happened: aliases of one canonical module share a single ModuleDependency, and
 // module_function_binding() pools repeated references to one function.
 //
-// Descriptors are activation-scope isolated.  Imports use nested builders against the same root function state, so
-// each builder appends its descriptors and rebases its BC_MODACT ordinals rather than replacing earlier imports.
+// Non-local imports own a child prototype and therefore retain a private descriptor list.  Root chunks and local
+// imports share one prototype, so their builders append descriptors and rebase BC_MODACT ordinals into that table.
 
 void AstBuilder::publish_dependency_descriptors()
 {
    if (this->module_dependencies.empty()) return;
 
    auto &target = this->ctx.func();
-   size_t descriptor_base = target.module_descriptors.size();
+   auto &descriptors = this->module_initialiser ? this->published_module_descriptors : target.module_descriptors;
+   const size_t descriptor_base = std::ranges::count_if(descriptors, [](const auto &Descriptor) {
+      return not Descriptor.compile_time_only;
+   });
+   const size_t runtime_dependency_count = std::ranges::count_if(this->module_dependencies,
+      [](const auto &Dependency) { return not Dependency->compile_time_only; });
 
-   if (descriptor_base + this->module_dependencies.size() > PROTO_MAX_DEPENDENCIES) {
+   if (descriptor_base + runtime_dependency_count > PROTO_MAX_DEPENDENCIES) {
       this->ctx.emit_error(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
          std::format("A compilation unit may declare at most {} module dependencies", PROTO_MAX_DEPENDENCIES));
       return;
    }
 
    size_t total_functions = 0;
-   for (const auto &descriptor : target.module_descriptors) total_functions += descriptor.functions.size();
+   for (const auto &descriptor : descriptors) total_functions += descriptor.functions.size();
    for (const auto &dependency : this->module_dependencies) total_functions += dependency->functions.size();
 
    if (total_functions > PROTO_MAX_DEPENDENCY_FUNCTIONS) {
@@ -558,10 +565,11 @@ void AstBuilder::publish_dependency_descriptors()
       return;
    }
 
-   target.module_descriptors.reserve(descriptor_base + this->module_dependencies.size());
-   for (size_t index = 0; index < this->module_dependencies.size(); ++index) {
-      auto &dependency = this->module_dependencies[index];
-      dependency->descriptor = uint32_t(descriptor_base + index);
+   descriptors.reserve(descriptors.size() + this->module_dependencies.size());
+   size_t runtime_index = 0;
+   for (auto &dependency : this->module_dependencies) {
+      if (dependency->compile_time_only) continue;
+      dependency->descriptor = uint32_t(descriptor_base + runtime_index++);
       if (dependency->activation) {
          std::get<LocalDeclStmtPayload>(dependency->activation->data).module_dependency = dependency->descriptor;
       }
@@ -570,12 +578,22 @@ void AstBuilder::publish_dependency_descriptors()
       // otherwise emitted as a constant - a dependency-only module in particular - would be unreachable and could be
       // collected while the prototype still refers to it.
 
-      auto &descriptor = target.module_descriptors.emplace_back();
+      auto &descriptor = descriptors.emplace_back();
       descriptor.name = this->ctx.lex().anchorstr(this->ctx.lex().keepstr(dependency->canonical_module));
       descriptor.functions.reserve(dependency->functions.size());
       for (const auto &function : dependency->functions) {
          descriptor.functions.push_back(this->ctx.lex().anchorstr(function.function));
       }
+   }
+
+   // Module interfaces also retain source-level includes, but these descriptors never enter the executable
+   // prototype or consume a BC_MODACT ordinal.
+
+   if (this->module_initialiser) for (auto &dependency : this->module_dependencies) {
+      if (not dependency->compile_time_only) continue;
+      auto &descriptor = descriptors.emplace_back();
+      descriptor.name = this->ctx.lex().anchorstr(this->ctx.lex().keepstr(dependency->canonical_module));
+      descriptor.compile_time_only = true;
    }
 }
 

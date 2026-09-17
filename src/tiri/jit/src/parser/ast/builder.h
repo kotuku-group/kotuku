@@ -20,10 +20,11 @@
 #include "nodes.h"
 #include "../parser_context.h"
 #include "../../../../cache_manifest.h"
+#include "../../../../import_module_cache.h"
 
 class AstBuilder {
 public:
-   explicit AstBuilder(ParserContext& context, AstBuilder *Parent = nullptr);
+   explicit AstBuilder(ParserContext& context, AstBuilder *Parent = nullptr, bool ModuleInitialiser = false);
    ~AstBuilder();
 
    AstBuilder(const AstBuilder &) = delete;
@@ -46,11 +47,12 @@ private:
    ParserContext& ctx;
    bool in_guard_expression = false;  // True when parsing 'when' clause guard expression
    bool in_choose_expression = false; // True when parsing choose expression cases (for tuple pattern detection)
-   int handler_depth = 0;            // Active handlers in the current lexical function
-   int function_depth = 0;           // Tracks nesting depth inside function bodies
-   int block_depth = 0;              // Tracks nested statement blocks below chunk scope
+   int handler_depth = 0;             // Active handlers in the current lexical function
+   int function_depth = 0;            // Tracks nesting depth inside function bodies
+   int block_depth = 0;               // Tracks nested statement blocks below chunk scope
    bool enum_constants_committed = false;
    bool source_namespace_declared = false;
+   bool module_initialiser = false;
    AstBuilder *parent_builder = nullptr;
    std::vector<GCstr *> function_name_stack;
    std::vector<uint32_t> registered_enum_constants;
@@ -76,6 +78,7 @@ private:
       uint32_t descriptor = 0;                        // Index in the prototype dependency table
       SourceSpan declaration_span{};
       bool implicit = false;                          // Created on demand by an implicit namespace such as mSys
+      bool compile_time_only = false;                 // Loaded by include without runtime activation
    };
 
    struct ModuleNamespaceSymbol {
@@ -87,15 +90,19 @@ private:
 
    std::unordered_map<GCstr *, ModuleNamespaceSymbol> module_namespaces;
    std::vector<std::unique_ptr<ModuleDependency>> module_dependencies;
+   std::vector<FuncState::DependencyDescriptor> published_module_descriptors;
    std::unordered_map<std::string, bool> module_availability;
 
-   // FileSource entries persist across compilations, so diagnose-mode re-parsing of cached imports needs a
-   // dedup scope limited to the current chunk.  Records Hash on the root builder; returns true if already seen.
+   // FileSource entries persist across compilations, so duplicate suppression must be limited to one compilation
+   // unit.  A non-local imported module owns a separate builder and must retain its dependency activations even when
+   // the importing root has already referenced the same module.
+
    [[nodiscard]] bool import_seen_this_chunk(uint32_t Hash) {
-      AstBuilder *root = this;
-      while (root->parent_builder) root = root->parent_builder;
-      if (std::find(root->chunk_import_hashes.begin(), root->chunk_import_hashes.end(), Hash) != root->chunk_import_hashes.end()) return true;
-      root->chunk_import_hashes.push_back(Hash);
+      AstBuilder *scope = this;
+      if (this->ctx.lex().diagnose_mode) while (scope->parent_builder) scope = scope->parent_builder;
+      if (std::find(scope->chunk_import_hashes.begin(), scope->chunk_import_hashes.end(), Hash) !=
+          scope->chunk_import_hashes.end()) return true;
+      scope->chunk_import_hashes.push_back(Hash);
       return false;
    }
 
@@ -166,8 +173,7 @@ private:
    ParserResult<StmtNodePtr> parse_repeat();
    ParserResult<StmtNodePtr> parse_for();
    ParserResult<StmtNodePtr> parse_anonymous_for(const Token &);
-   ParserResult<ExprNodePtr> parse_scanned_range_in_braces(
-      bool HasStep, bool HasBareStringOperand);
+   ParserResult<ExprNodePtr> parse_scanned_range_in_braces(bool HasStep, bool HasBareStringOperand);
    ParserResult<StmtNodePtr> parse_do();
    ParserResult<StmtNodePtr> parse_using();
    ParserResult<StmtNodePtr> parse_with();
@@ -184,7 +190,10 @@ private:
    ParserResult<StmtNodePtr> parse_import();
    ParserResult<StmtNodePtr> parse_namespace();
    ParserResult<std::unique_ptr<BlockStmt>> parse_imported_file(
-      std::string &, std::string_view, const Token &ImportToken);
+      std::string &, std::string_view, const Token &ImportToken, bool ModuleInitialiser,
+      tiri::import_cache::ModuleLookup *Lookup = nullptr,
+      std::vector<FuncState::DependencyDescriptor> *ModuleDependencies = nullptr,
+      bool *AlreadyImported = nullptr);
    ParserResult<StmtNodePtr> parse_compile_if();
    void skip_to_compile_end();
    ParserResult<StmtNodePtr> parse_expression_stmt();
@@ -194,8 +203,7 @@ private:
    ParserResult<ExprNodePtr> parse_suffixed(ExprNodePtr);
    ParserResult<Token> consume_ternary_separator();
    ParserResult<ExprNodePtr> parse_arrow_function(ExprNodeList parameters);
-   ParserResult<ExprNodePtr> parse_function_literal(
-      const Token &, bool IsThunk = false, GCstr *FunctionName = nullptr);
+   ParserResult<ExprNodePtr> parse_function_literal(const Token &, bool IsThunk = false, GCstr *FunctionName = nullptr);
    ParserResult<ExprNodePtr> parse_table_literal(bool AllowRange = true);
    ParserResult<ExprNodeList> parse_array_initialiser();
    ParserResult<ReturnStmtPayload> parse_return_payload(const Token &, bool same_line_only);
@@ -264,6 +272,7 @@ private:
 
    // Helper to emit an error and return a failure result in one step.
    // Reduces boilerplate for the common pattern of emit_error + return failure.
+
    template<typename T>
    [[nodiscard]] ParserResult<T> fail(ParserErrorCode Code, const Token& ErrorToken, std::string Message) {
       this->ctx.emit_error(Code, ErrorToken, Message);
@@ -273,5 +282,6 @@ private:
 
    // Helper to map TokenKind to AssignmentOperator.
    // Returns std::nullopt if the token is not an assignment operator.
+   
    [[nodiscard]] static std::optional<AssignmentOperator> token_to_assignment_op(TokenKind Kind);
 };

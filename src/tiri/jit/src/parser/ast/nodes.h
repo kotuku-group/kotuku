@@ -44,8 +44,11 @@
 
 #include "lexer.h"
 #include "../static_type_descriptor.h"
+#include "../../../../import_module_format.h"
+#include "../../../../import_module_bundle.h"
 
 class ParserDiagnostics;
+class InstalledImportInterface;
 
 // Forward declarations for recursive ownership.
 struct ExprNode;
@@ -1046,16 +1049,26 @@ struct ImportEntryPayload {
    ImportEntryPayload(ImportEntryPayload&&) noexcept = default;
    ImportEntryPayload& operator=(ImportEntryPayload&&) noexcept = default;
 
-   std::optional<Identifier> namespace_name;  // The local variable name (alias or default)
-   std::string lib_path;                      // Resolved path to library file
-   std::string default_namespace;             // The declared namespace for _LIB lookup
-   std::unique_ptr<BlockStmt> inlined_body;   // Parsed content of imported file
-   uint8_t file_source_idx = 0;               // FileSource index for this imported file
+   std::optional<Identifier> namespace_name;   // The local variable name (alias or default)
+   std::string lib_path;                       // Resolved path to library file
+   std::string module_identity;                // Immutable runtime deduplication identity for non-local imports
+   tiri::import_cache::Identity module_cache_identity; // Exact source identity used for lookup/publication
+   std::string module_payload;                 // Validated warm structural artefact, decoded during graph linking
+   std::string default_namespace;              // The declared namespace for _LIB lookup
+   std::unique_ptr<BlockStmt> inlined_body;    // Parsed content of imported file
+   std::shared_ptr<const InstalledImportInterface> installed_interface; // Validated cold/warm module interface
+   std::vector<FuncState::DependencyDescriptor> module_dependencies;    // Native dependencies owned by the initialiser
+   std::vector<tiri::import_cache::RootModuleRecord> embedded_modules;  // Transitive records retained by a warm payload
+   uint8_t file_source_idx = 0;                // FileSource index for this imported file
+   bool module_initialiser = false;            // Execute body through a child prototype for non-local imports
+   bool module_cache_hit = false;
+   bool module_already_imported = false;       // Publish aliases without repeating an earlier module activation
+   bool reuses_namespace_binding = false;      // A sibling import already published this registry namespace locally
 
    ~ImportEntryPayload();
 };
 
-// Import statement payload: import 'library' [, 'library'...] - compile-time file inlining
+// Import statement payload: local imports are inlined; non-local imports retain source AST for module initialisers.
 struct ImportStmtPayload {
    ImportStmtPayload() = default;
    ImportStmtPayload(const ImportStmtPayload&) = delete;

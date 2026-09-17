@@ -20,6 +20,7 @@
 
 #include <ankerl/unordered_dense.h>
 #include <kotuku/main.h>
+#include "parser/import_interface.h"
 #include "parser/parser_context.h"
 #include "../runtime/lj_array.h"
 #include "../runtime/lj_tab.h"
@@ -1490,26 +1491,52 @@ void TypeAnalyser::analyse_statement(StmtNode &Statement)
          // descent cannot double-analyse a library.  The scope pair mirrors emit_import_entry(),
          // which wraps the inlined body in its own lexical scope - imported top-level locals must
          // not leak into the importer's scope tables.  Globals intentionally remain shared.
+
          auto *payload = std::get_if<ImportStmtPayload>(&Statement.data);
          if (payload) {
             for (const auto &entry : payload->entries) {
                std::optional<InferredType> namespace_type;
                if (entry.inlined_body) {
                   ImportGuard guard(*this, entry.file_source_idx);
+                  std::vector<TypeCheckScope> importer_scopes;
+                  if (entry.module_initialiser) importer_scopes = std::move(this->scope_stack_);
                   this->push_scope();
+                  FunctionExprPayload module_initialiser;
+                  if (entry.module_initialiser) this->enter_function(module_initialiser);
                   this->analyse_block(*entry.inlined_body);
                   if (not entry.default_namespace.empty()) {
                      GCstr *namespace_symbol = lj_str_new(
                         &this->ctx_.lua(), entry.default_namespace.data(), entry.default_namespace.size());
                      namespace_type = this->resolve_identifier(namespace_symbol);
                   }
+                  if (entry.module_initialiser) this->leave_function();
                   this->pop_scope();
+                  if (entry.module_initialiser) this->scope_stack_ = std::move(importer_scopes);
+               }
+
+               if (entry.installed_interface) {
+                  namespace_type = entry.installed_interface->namespace_type(entry.default_namespace);
+                  for (const auto &exported : entry.installed_interface->context().Bindings) {
+                     if (exported.Name.find('.') != std::string::npos or
+                         entry.installed_interface->is_namespace(exported.Name)) continue;
+                     GCstr *name = this->ctx_.lex().keepstr(exported.Name);
+                     if (exported.Kind IS tiri::import_cache::ExportKind::EXTERN and
+                         this->global_types_.contains(name)) continue;
+                     InferredType type = entry.installed_interface->inferred_type(exported.Value);
+                     GlobalContractPolicy policy = type.primary IS TiriType::Any ?
+                        GlobalContractPolicy::Variant : GlobalContractPolicy::Enforced;
+                     this->declare_global(name, type, Statement.span, exported.IsConst, policy);
+                     if (const FunctionExprPayload *function = entry.installed_interface->callable(exported)) {
+                        auto found = this->global_types_.find(name);
+                        if (found != this->global_types_.end()) found->second.function = function;
+                     }
+                  }
                }
 
                // Import emission publishes the namespace as a const local after the isolated library body.  Type
                // analysis must mirror that declaration so later assignments receive a user-facing const diagnostic
                // instead of appearing to reference an unknown lexical binding.
-               if (entry.namespace_name) {
+               if (entry.namespace_name and not entry.reuses_namespace_binding) {
                   const Identifier &name = *entry.namespace_name;
                   this->current_scope().declare_local(
                      name.symbol, namespace_type.value_or(InferredType(TiriType::Any)), name.span, name.has_const);

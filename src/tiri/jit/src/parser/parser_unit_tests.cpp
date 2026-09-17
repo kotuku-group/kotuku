@@ -20,6 +20,7 @@
 #include "runtime/lj_str.h"
 #include "runtime/lj_tab.h"
 #include "debug/dump_bytecode.h"
+#include "debug/import_module_inspection.h"
 #include "debug/lj_debug.h"
 
 #include <array>
@@ -33,6 +34,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 #include <cstdio>
 
@@ -49,7 +51,10 @@
 #include "static_descriptor_analysis.h"
 #include "table_ownership.h"
 #include "ir_emitter/ir_emitter.h"
+#include "import_interface.h"
 #include "../runtime/lj_array.h"
+#include "../../../import_module_format.h"
+#include "../../../import_module_bundle.h"
 #include "../../../defs.h"
 
 static extTiri *glTestScript = nullptr;
@@ -1635,63 +1640,6 @@ static bool test_current_context_range_operands(kt::Log &Log)
 
 //********************************************************************************************************************
 
-static bool test_deprecated_numeric_for_rejected(kt::Log &Log)
-{
-   struct DeprecatedForCase {
-      std::string_view source;
-      int expected_column;
-   };
-
-   constexpr std::array<DeprecatedForCase, 3> cases = { {
-      { "for i = 0, 8 do end", 7 },
-      { "for i=0,8 do end", 6 },
-      { "for i = start, stop, step do end", 7 }
-   } };
-
-   for (const auto &test_case : cases) {
-      auto result = build_ast_from_source(test_case.source, true);
-      size_t deprecated_count = 0;
-
-      for (const ParserDiagnostic &diagnostic : result.diagnostics) {
-         if (diagnostic.code != ParserErrorCode::DeprecatedSyntax) continue;
-
-         deprecated_count++;
-         if (diagnostic.severity != ParserDiagnosticSeverity::Error or
-             diagnostic.token.kind() != TokenKind::Equals or
-             diagnostic.token.span().line.lineNumber() != 1 or
-             diagnostic.token.span().column.lineNumber() != test_case.expected_column or
-             diagnostic.file_index != 0) {
-            Log.error("deprecated numeric for diagnostic has the wrong severity, token or source location");
-            log_diagnostics(result.diagnostics, Log);
-            return false;
-         }
-
-         if (diagnostic.message.find("inclusive range") IS std::string::npos) {
-            Log.error("deprecated numeric for diagnostic does not identify the supported inclusive range syntax");
-            return false;
-         }
-      }
-
-      if (deprecated_count != 1) {
-         Log.error("expected one deprecated numeric for diagnostic, got %" PRId64, int64_t(deprecated_count));
-         log_diagnostics(result.diagnostics, Log);
-         return false;
-      }
-   }
-
-   auto range_result = build_ast_from_source("for i in {0 into 8} do end", true);
-   for (const ParserDiagnostic &diagnostic : range_result.diagnostics) {
-      if (diagnostic.code IS ParserErrorCode::DeprecatedSyntax) {
-         Log.error("supported range loop emitted a deprecated syntax diagnostic");
-         return false;
-      }
-   }
-
-   return true;
-}
-
-//********************************************************************************************************************
-
 static bool test_colon_method_syntax_rejected(kt::Log &Log)
 {
    constexpr std::array<std::string_view, 3> cases = { {
@@ -2532,23 +2480,6 @@ static bool test_ternary_colon_separators(kt::Log &Log)
       }
    }
 
-   auto deprecated = build_ast_from_source("return true ? 1 :> 2");
-   if (not deprecated.chunk.ok() or deprecated.diagnostics.size() != 1) {
-      Log.error("deprecated ternary separator did not parse with exactly one diagnostic");
-      log_diagnostics(deprecated.diagnostics, Log);
-      return false;
-   }
-
-   const ParserDiagnostic &diagnostic = deprecated.diagnostics[0];
-   if (diagnostic.code != ParserErrorCode::DeprecatedSyntax or
-       diagnostic.severity != ParserDiagnosticSeverity::Warning or
-       diagnostic.token.kind() != TokenKind::TernarySep or
-       diagnostic.message.find("deprecated") IS std::string::npos) {
-      Log.error("deprecated ternary separator diagnostic has incorrect metadata");
-      log_diagnostics(deprecated.diagnostics, Log);
-      return false;
-   }
-
    return true;
 }
 
@@ -3149,7 +3080,7 @@ static bool test_structural_bytecode_reader_validation(kt::Log &Log)
    uint32_t header_flags = 0;
    if (not read_uleb(stripped, cursor, header_flags) or not (header_flags & BCDUMP_F_STRIP)) return false;
    uint32_t metadata_length = 0;
-   for (int block = 0; block < 2; ++block) {
+   for (int block = 0; block < 3; ++block) {
       if (not read_uleb(stripped, cursor, metadata_length) or metadata_length > stripped.size() - cursor) return false;
       cursor += metadata_length;
    }
@@ -3872,6 +3803,11 @@ static bool test_malformed_signature_rejected(kt::Log &Log)
    }
    position += value;
    if (not read_uleb(position, value) or value > dump.size() - position) {
+      Log.error("could not skip the module bundle in the malformed-signature fixture");
+      return false;
+   }
+   position += value;
+   if (not read_uleb(position, value) or value > dump.size() - position) {
       Log.error("could not skip the struct manifest in the malformed-signature fixture");
       return false;
    }
@@ -3992,7 +3928,13 @@ static bool test_source_manifest_validation(kt::Log &Log)
       Log.error("could not locate the source manifest");
       return false;
    }
-   size_t struct_offset = source_offset + source_size;
+   size_t module_offset = source_offset + source_size;
+   uint32_t module_size = 0;
+   if (not read_uleb(module_offset, module_size) or module_size > dump.size() - module_offset) {
+      Log.error("could not locate the module bundle");
+      return false;
+   }
+   size_t struct_offset = module_offset + module_size;
    uint32_t struct_size = 0;
    if (not read_uleb(struct_offset, struct_size) or struct_size > dump.size() - struct_offset) {
       Log.error("could not locate the struct manifest");
@@ -5525,7 +5467,10 @@ static bool test_named_struct_bytecode_manifest(kt::Log &Log)
          size_t source_offset = 5;
          uint32_t source_size = 0;
          if (not read_uleb(source_offset, source_size) or source_size > dump.size() - source_offset) return false;
-         size_t manifest_offset = source_offset + source_size;
+         size_t module_offset = source_offset + source_size;
+         uint32_t module_size = 0;
+         if (not read_uleb(module_offset, module_size) or module_size > dump.size() - module_offset) return false;
+         size_t manifest_offset = module_offset + module_size;
          uint32_t wire_manifest_size = 0;
          if (not read_uleb(manifest_offset, wire_manifest_size) or
              wire_manifest_size > dump.size() - manifest_offset) return false;
@@ -5939,6 +5884,11 @@ static bool test_module_dependency_corruption_rejected(kt::Log &Log)
    uint32_t value = 0;
    if (not read_uleb(position, value) or value > dump.size() - position) {
       Log.error("could not skip the source manifest in the corruption fixture");
+      return false;
+   }
+   position += value;
+   if (not read_uleb(position, value) or value > dump.size() - position) {
+      Log.error("could not skip the module bundle in the corruption fixture");
       return false;
    }
    position += value;
@@ -6434,25 +6384,6 @@ static bool test_contextual_member_ast_foundations(kt::Log &Log)
    if (legacy_context.diagnostics.empty()) {
       Log.error("leading-dot context access remained accepted after the prefix change");
       return false;
-   }
-
-   constexpr std::array<std::string_view, 2> legacy_sources = {
-      "receiver:member()\n",
-      "function receiver:member() end\n"
-   };
-   for (std::string_view legacy_source : legacy_sources) {
-      auto legacy = build_ast_from_source(legacy_source, false, false, true);
-      if (legacy.diagnostics.empty()) {
-         Log.error("removed colon syntax did not emit a parser diagnostic");
-         return false;
-      }
-
-      for (const ParserDiagnostic &diagnostic : legacy.diagnostics) {
-         if (diagnostic.code IS ParserErrorCode::DeprecatedSyntax) {
-            Log.error("removed colon syntax emitted a deprecated-syntax diagnostic");
-            return false;
-         }
-      }
    }
 
    return true;
@@ -12200,11 +12131,636 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
    return true;
 }
 
+//********************************************************************************************************************
+// Exercise the uncached import-module boundary in fresh states.  Compilation must be side-effect free, import-site
+// order must be retained, duplicate and diamond dependencies must initialise once, and a module return must not
+// return from its importer.
+
+static bool test_import_module_initialiser_boundary(kt::Log &Log)
+{
+   struct Fixture {
+      const char *name;
+      const char *source;
+      const char *expected;
+   };
+
+   constexpr std::array<Fixture, 6> fixtures = { {
+      { "direct", "global i01_boundary_trace = ''\nimport 'tests/i01_direct'\nreturn i01_boundary_trace", "D" },
+      { "duplicate", "global i01_boundary_trace = ''\nimport 'tests/i01_direct', 'tests/i01_direct'\n"
+         "return i01_boundary_trace", "D" },
+      { "nested", "global i01_boundary_trace = ''\nimport 'tests/i01_nested'\nreturn i01_boundary_trace", "DN" },
+      { "diamond", "global i01_boundary_trace = ''\nimport 'tests/i01_diamond_a', 'tests/i01_diamond_b'\n"
+         "return i01_boundary_trace", "LAB" },
+      { "return", "global i01_boundary_trace = ''\nimport 'tests/i01_return'\ni01_boundary_trace ..= 'O'\n"
+         "return i01_boundary_trace", "RO" },
+      { "lexical isolation", "local importer_secret = 'captured'\nimport 'tests/i01_lexical_isolation'\n"
+         "return i01_lexical_result", "nil" }
+   } };
+
+   for (const Fixture &fixture : fixtures) {
+      LuaStateHolder holder;
+      lua_State *lua = holder.get();
+      if (not lua) {
+         Log.error("%s: failed to create a fresh Lua state", fixture.name);
+         return false;
+      }
+      luaL_openlibs(lua);
+
+      if (lua_load(lua, fixture.source, fixture.name) != 0) {
+         Log.error("%s: failed to compile import fixture: %s", fixture.name, lua_tostring(lua, -1));
+         return false;
+      }
+
+      lua_getglobal(lua, "i01_boundary_trace");
+      if (not lua_isnil(lua, -1)) {
+         Log.error("%s: Query/compilation executed a module side effect", fixture.name);
+         return false;
+      }
+      lua_pop(lua, 1);
+
+      if (lua_pcall(lua, 0, 1, 0) != 0) {
+         Log.error("%s: module activation failed: %s", fixture.name, lua_tostring(lua, -1));
+         return false;
+      }
+      const char *actual = lua_tostring(lua, -1);
+      if (not actual or std::string_view(actual) != fixture.expected) {
+         Log.error("%s: expected activation trace '%s', got '%s'", fixture.name, fixture.expected,
+            actual ? actual : "<non-string>");
+         return false;
+      }
+   }
+
+   return true;
+}
+
+static bool remove_import_module_fixture_caches(
+   std::string_view Source, const char *Name, kt::Log &Log)
+{
+   LuaStateHolder probe_holder;
+   lua_State *probe = probe_holder.get();
+   if (not probe) return false;
+   luaL_openlibs(probe);
+   if (lua_load(probe, Source, Name) != 0) {
+      Log.error("%s cache probe failed to compile: %s", Name, lua_tostring(probe, -1));
+      return false;
+   }
+
+   GCproto *root = funcproto(funcV(probe->top - 1));
+   uint32_t bundle_size = 0;
+   const uint8_t *bundle = proto_import_module_bundle(root, &bundle_size);
+   std::vector<tiri::import_cache::RootModuleRecord> records;
+   if (not bundle or tiri::import_cache::decode_root_module_bundle(
+       std::string_view((const char *)bundle, bundle_size), records) != tiri::cache::FormatError::OKAY) {
+      Log.error("%s cache probe has no valid imported-module bundle", Name);
+      return false;
+   }
+   for (const auto &record : records) {
+      (void)DeleteFile("temp:tiri/cache/" + record.LookupIdentity + ".tbc", nullptr);
+   }
+   return true;
+}
+
+//********************************************************************************************************************
+// A cold graph owns one executable prototype for each compiled identity.  The shared leaf is referenced by both
+// parents, but is stored and initialised once.
+
+static bool test_import_module_executable_table(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      "global i01_boundary_trace = ''\n"
+      "import 'tests/i01_diamond_a', 'tests/i01_diamond_b'\n"
+      "return i01_boundary_trace";
+
+   std::vector<std::string> cache_paths;
+   {
+      LuaStateHolder probe_holder;
+      lua_State *probe = probe_holder.get();
+      if (not probe) return false;
+      luaL_openlibs(probe);
+      if (lua_load(probe, source, "d03-cold-diamond-probe") != 0) {
+         Log.error("D03 diamond probe failed to compile: %s", lua_tostring(probe, -1));
+         return false;
+      }
+      GCproto *root = funcproto(funcV(probe->top - 1));
+      uint32_t bundle_size = 0;
+      const uint8_t *bundle = proto_import_module_bundle(root, &bundle_size);
+      std::vector<tiri::import_cache::RootModuleRecord> records;
+      if (not bundle or tiri::import_cache::decode_root_module_bundle(
+          std::string_view((const char *)bundle, bundle_size), records) != tiri::cache::FormatError::OKAY or
+          records.size() != 3) {
+         Log.error("D03 diamond probe did not discover the three-node graph");
+         return false;
+      }
+      for (const auto &record : records) {
+         cache_paths.push_back("temp:tiri/cache/" + record.LookupIdentity + ".tbc");
+         (void)DeleteFile(cache_paths.back(), nullptr);
+      }
+   }
+   auto cleanup = kt::deferred_call([&] {
+      for (const auto &path : cache_paths) (void)DeleteFile(path, nullptr);
+   });
+
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) return false;
+   luaL_openlibs(lua);
+   if (lua_load(lua, source, "d03-cold-diamond") != 0) {
+      Log.error("D03 cold diamond failed to compile: %s", lua_tostring(lua, -1));
+      return false;
+   }
+
+   GCproto *root = funcproto(funcV(lua->top - 1));
+   const ImportModuleTable *table = proto_import_module_table(root);
+   if (not table or table->version != IMPORT_MODULE_TABLE_VERSION or table->entry_count != 3 or
+       table->dependency_count != 2) {
+      Log.error("D03 cold diamond has an invalid executable table");
+      return false;
+   }
+
+   std::unordered_set<GCproto *> prototypes;
+   std::unordered_set<std::string> identities;
+   const ImportModuleTableEntry *entries = import_module_table_entries(table);
+   const uint32_t *dependencies = import_module_table_dependencies(table);
+   for (uint32_t i = 0; i < table->entry_count; ++i) {
+      if (not gcref(entries[i].initialiser) or gcref(entries[i].initialiser)->gch.gct != ~LJ_TPROTO) {
+         Log.error("D03 executable entry %u has no initialiser", i);
+         return false;
+      }
+      GCproto *initialiser = gco_to_proto(gcref(entries[i].initialiser));
+      if (initialiser->sizeuv != 0 or initialiser->import_module_table.get<ImportModuleTable>() or
+          proto_import_module_table(initialiser) != table) {
+         Log.error("D03 executable entry %u has invalid ownership or captures", i);
+         return false;
+      }
+      prototypes.insert(initialiser);
+      GCstr *identity = gco_to_string(gcref(entries[i].compiled_identity));
+      identities.emplace(strdata(identity), identity->len);
+      for (uint32_t d = 0; d < entries[i].dependency_count; ++d) {
+         if (dependencies[entries[i].first_dependency + d] >= i) {
+            Log.error("D03 executable table is not dependency-first");
+            return false;
+         }
+      }
+   }
+   if (prototypes.size() != 3 or identities.size() != 3) {
+      Log.error("D03 cold diamond did not intern one executable per compiled identity");
+      return false;
+   }
+
+   if (lua_pcall(lua, 0, 1, 0) != 0 or not lua_isstring(lua, -1) or lua_tostringview(lua, -1) != "LAB") {
+      Log.error("D03 cold diamond did not initialise once in source order: %s", lua_tostring(lua, -1));
+      return false;
+   }
+   return true;
+}
+
+//********************************************************************************************************************
+// Module descendants keep the compilation root and executable table alive, and roots queried against different
+// source snapshots retain the implementation they captured even when activated in reverse order.
+
+static bool test_import_module_executable_lifetime(kt::Log &Log)
+{
+   constexpr std::string_view exported_source =
+      "import 'tests/i03_exported_closure'\nreturn i03_make_exported_closure()";
+
+   if (not remove_import_module_fixture_caches(exported_source, "d03-exported-closure-probe", Log)) return false;
+
+   LuaStateHolder closure_holder;
+   lua_State *closure_state = closure_holder.get();
+   if (not closure_state) return false;
+   luaL_openlibs(closure_state);
+   if (lua_load(closure_state, exported_source, "d03-exported-closure") != 0 or
+       lua_pcall(closure_state, 0, 1, 0) != 0 or not lua_isfunction(closure_state, -1)) {
+      Log.error("D03 exported closure fixture failed: %s", lua_tostring(closure_state, -1));
+      return false;
+   }
+   lua_gc(closure_state, LUA_GCCOLLECT, 0);
+   lua_pushvalue(closure_state, -1);
+   if (lua_pcall(closure_state, 0, 1, 0) != 0 or not lua_isstring(closure_state, -1) or
+       lua_tostringview(closure_state, -1) != "alive") {
+      Log.error("exported imported-module closure did not survive collection");
+      return false;
+   }
+
+   const std::string fixture_root = TIRI_IMPORT_TEST_PATH;
+   const std::string default_volume = "system:scripts/|" + fixture_root;
+   auto restore_volume = kt::deferred_call([&] {
+      (void)SetVolume("scripts", default_volume, "filetypes/source", "", "",
+         VOLUME::HIDDEN|VOLUME::SYSTEM|VOLUME::REPLACE);
+   });
+
+   LuaStateHolder roots_holder;
+   lua_State *roots = roots_holder.get();
+   if (not roots) return false;
+   luaL_openlibs(roots);
+   constexpr std::string_view root_source = "import 'i03_captured'\nreturn i03_captured_value";
+   auto query = [&](std::string_view Directory, const char *Name) {
+      const std::string volume = "system:scripts/|" + fixture_root + std::string(Directory);
+      if (SetVolume("scripts", volume, "filetypes/source", "", "",
+          VOLUME::HIDDEN|VOLUME::SYSTEM|VOLUME::REPLACE) != ERR::Okay) return -1;
+      if (not remove_import_module_fixture_caches(root_source, Name, Log)) return -1;
+      return lua_load(roots, root_source, Name);
+   };
+
+   if (query("captured_v1/", "d03-captured-one") != 0) {
+      Log.error("first captured root failed to compile: %s", lua_tostring(roots, -1));
+      return false;
+   }
+   const int first_root = luaL_ref(roots, LUA_REGISTRYINDEX);
+   if (query("captured_v2/", "d03-captured-two") != 0) {
+      Log.error("second captured root failed to compile: %s", lua_tostring(roots, -1));
+      return false;
+   }
+   const int second_root = luaL_ref(roots, LUA_REGISTRYINDEX);
+
+   lua_rawgeti(roots, LUA_REGISTRYINDEX, second_root);
+   if (lua_pcall(roots, 0, 1, 0) != 0 or not lua_isstring(roots, -1) or
+       lua_tostringview(roots, -1) != "two") {
+      Log.error("second queried root did not activate its captured implementation");
+      return false;
+   }
+   lua_pop(roots, 1);
+   lua_rawgeti(roots, LUA_REGISTRYINDEX, first_root);
+   if (lua_pcall(roots, 0, 1, 0) != 0 or not lua_isstring(roots, -1) or
+       lua_tostringview(roots, -1) != "one") {
+      Log.error("first queried root did not retain its captured implementation");
+      return false;
+   }
+   luaL_unref(roots, LUA_REGISTRYINDEX, first_root);
+   luaL_unref(roots, LUA_REGISTRYINDEX, second_root);
+   return true;
+}
+
+//********************************************************************************************************************
+// Build a warm diamond from independently compiled parents and inspect executable import definitions without using
+// filenames or the metadata bundle as a proxy.  Structural warm linking must retain one executable per identity.
+
+static bool test_import_module_executable_warm_diamond(kt::Log &Log)
+{
+   constexpr std::string_view both_parents =
+      "global i01_boundary_trace = ''\n"
+      "import 'tests/i01_diamond_a', 'tests/i01_diamond_b'\n"
+      "return i01_boundary_trace";
+   constexpr std::string_view parent_a =
+      "global i01_boundary_trace = ''\nimport 'tests/i01_diamond_a'\n";
+   constexpr std::string_view parent_b =
+      "global i01_boundary_trace = ''\nimport 'tests/i01_diamond_b'\n";
+
+   auto compile = [&](LuaStateHolder &Holder, std::string_view Source, const char *Name,
+      std::vector<tiri::import_cache::RootModuleRecord> &Records) {
+      lua_State *lua = Holder.get();
+      if (not lua) return false;
+      luaL_openlibs(lua);
+      if (lua_load(lua, Source, Name) != 0) {
+         Log.error("%s did not compile: %s", Name, lua_tostring(lua, -1));
+         return false;
+      }
+
+      GCproto *root = funcproto(funcV(lua->top - 1));
+      uint32_t bundle_size = 0;
+      const uint8_t *bundle = proto_import_module_bundle(root, &bundle_size);
+      if (not bundle or tiri::import_cache::decode_root_module_bundle(
+          std::string_view((const char *)bundle, bundle_size), Records) != tiri::cache::FormatError::OKAY) {
+         Log.error("%s has no valid imported-module metadata bundle", Name);
+         return false;
+      }
+      return true;
+   };
+
+   // Probe the stable fixture identities first, then remove only those exact cache files.  This makes the producer
+   // sequence deterministic without clearing unrelated imported-module caches.
+   LuaStateHolder probe_holder;
+   std::vector<tiri::import_cache::RootModuleRecord> probe_records;
+   if (not compile(probe_holder, both_parents, "d01-diamond-probe", probe_records) or
+       probe_records.size() != 3) {
+      Log.error("the D01 probe did not discover the three-node diamond");
+      return false;
+   }
+
+   std::vector<std::string> cache_paths;
+   for (const auto &record : probe_records) {
+      cache_paths.push_back("temp:tiri/cache/" + record.LookupIdentity + ".tbc");
+      (void)DeleteFile(cache_paths.back(), nullptr);
+   }
+   auto cleanup = kt::deferred_call([&] {
+      for (const auto &path : cache_paths) (void)DeleteFile(path, nullptr);
+   });
+
+   LuaStateHolder parent_a_holder;
+   std::vector<tiri::import_cache::RootModuleRecord> parent_a_records;
+   if (not compile(parent_a_holder, parent_a, "d01-parent-a-producer", parent_a_records) or
+       parent_a_records.size() != 2) {
+      Log.error("parent A did not publish itself and the shared leaf");
+      return false;
+   }
+
+   std::unordered_set<std::string> parent_a_lookups;
+   for (const auto &record : parent_a_records) parent_a_lookups.insert(record.LookupIdentity);
+   std::string parent_b_cache;
+   for (const auto &record : probe_records) {
+      if (not parent_a_lookups.contains(record.LookupIdentity)) {
+         parent_b_cache = "temp:tiri/cache/" + record.LookupIdentity + ".tbc";
+         (void)DeleteFile(parent_b_cache, nullptr);
+      }
+   }
+   LuaStateHolder mixed_holder;
+   std::vector<tiri::import_cache::RootModuleRecord> mixed_records;
+   if (parent_b_cache.empty() or
+       not compile(mixed_holder, both_parents, "d04-mixed-diamond", mixed_records) or mixed_records.size() != 3) {
+      Log.error("the mixed warm/cold diamond did not retain three graph entries");
+      return false;
+   }
+   lua_State *mixed = mixed_holder.get();
+   GCproto *mixed_root = funcproto(funcV(mixed->top - 1));
+   const ImportModuleTable *mixed_table = proto_import_module_table(mixed_root);
+   if (not mixed_table or mixed_table->entry_count != 3 or lua_pcall(mixed, 0, 1, 0) != 0 or
+       not lua_isstring(mixed, -1) or lua_tostringview(mixed, -1) != "LAB") {
+      Log.error("the mixed warm/cold diamond did not own and execute one module per identity");
+      return false;
+   }
+   (void)DeleteFile(parent_b_cache, nullptr);
+
+   LuaStateHolder parent_b_holder;
+   std::vector<tiri::import_cache::RootModuleRecord> parent_b_records;
+   if (not compile(parent_b_holder, parent_b, "d01-parent-b-producer", parent_b_records) or
+       parent_b_records.size() != 2) {
+      Log.error("parent B did not publish itself and the shared leaf");
+      return false;
+   }
+
+   auto leaf_identity = [](const std::vector<tiri::import_cache::RootModuleRecord> &Records) {
+      auto leaf = std::ranges::find_if(Records, [](const auto &Record) {
+         return Record.Dependencies.empty();
+      });
+      return leaf IS Records.end() ? std::string{} : leaf->CompiledIdentity;
+   };
+   const std::string cold_leaf_identity = leaf_identity(parent_a_records);
+   if (cold_leaf_identity.empty() or cold_leaf_identity != leaf_identity(parent_b_records)) {
+      Log.error("cold parent compilations assigned different compiled identities to the shared leaf");
+      return false;
+   }
+
+   for (const auto &path : cache_paths) {
+      if (AnalysePath(path, nullptr) != ERR::Okay) {
+         Log.error("the independently warmed diamond is missing cache file '%s'", path.c_str());
+         return false;
+      }
+   }
+
+   LuaStateHolder root_holder;
+   std::vector<tiri::import_cache::RootModuleRecord> root_records;
+   if (not compile(root_holder, both_parents, "d01-diamond-root", root_records) or root_records.size() != 3) {
+      Log.error("the warm root did not retain three unique metadata records");
+      return false;
+   }
+   if (leaf_identity(root_records) != cold_leaf_identity) {
+      Log.error("cold and warm graph assembly assigned different compiled identities to unchanged source");
+      return false;
+   }
+   std::unordered_set<std::string> cold_identities;
+   for (const auto &record : parent_a_records) cold_identities.insert(record.CompiledIdentity);
+   for (const auto &record : parent_b_records) cold_identities.insert(record.CompiledIdentity);
+   std::unordered_set<std::string> warm_identities;
+   for (const auto &record : root_records) warm_identities.insert(record.CompiledIdentity);
+   if (cold_identities != warm_identities) {
+      Log.error("cold and warm module graphs did not converge on the same compiled identities");
+      return false;
+   }
+
+   lua_State *lua = root_holder.get();
+   GCproto *root = funcproto(funcV(lua->top - 1));
+   tiri::debug::ImportExecutableInspection inspection;
+   std::string detail;
+   if (not tiri::debug::inspect_import_executables(lua, root, inspection, detail)) {
+      Log.error("the executable import inspector failed: %s", detail.c_str());
+      return false;
+   }
+
+   std::unordered_map<std::string, uint32_t> definitions_by_identity;
+   for (const auto &definition : inspection.Definitions) {
+      definitions_by_identity[definition.Identity]++;
+   }
+
+   uint32_t duplicated_identities = 0;
+   for (const auto &[identity, count] : definitions_by_identity) {
+      (void)identity;
+      if (count > 1) duplicated_identities++;
+   }
+   if (inspection.Definitions.size() != 3 or definitions_by_identity.size() != 3 or
+       duplicated_identities != 0) {
+      Log.error("expected three unique prototype definitions; got %zu definitions, %zu identities and %u duplicates",
+         inspection.Definitions.size(), definitions_by_identity.size(), duplicated_identities);
+      return false;
+   }
+
+   auto contains_embedded_dump = [&](auto &Self, GCproto *Prototype) -> bool {
+      for (ptrdiff_t i = -ptrdiff_t(Prototype->sizekgc); i < 0; ++i) {
+         GCobj *constant = proto_kgc(Prototype, i);
+         if (constant->gch.gct IS ~LJ_TSTR) {
+            GCstr *string = gco_to_string(constant);
+            if (string->len >= 3 and memcmp(strdata(string), "\x1bLJ", 3) IS 0) return true;
+         }
+         else if (constant->gch.gct IS ~LJ_TPROTO and Self(Self, gco_to_proto(constant))) return true;
+      }
+      return false;
+   };
+   if (contains_embedded_dump(contains_embedded_dump, root)) {
+      Log.error("the structurally linked warm root contains an embedded bytecode string");
+      return false;
+   }
+   const ImportModuleTable *executable_table = proto_import_module_table(root);
+   for (uint32_t i = 0; executable_table and i < executable_table->entry_count; ++i) {
+      GCproto *initialiser = gco_to_proto(gcref(import_module_table_entries(executable_table)[i].initialiser));
+      if (initialiser->import_module_table.get<ImportModuleTable>()) {
+         Log.error("warm executable entry %u retained a private staging directory", i);
+         return false;
+      }
+      if (contains_embedded_dump(contains_embedded_dump, initialiser)) {
+         Log.error("warm executable entry %u contains an embedded bytecode string", i);
+         return false;
+      }
+   }
+
+   auto verify_dump = [&](int Strip, const char *Label) {
+      std::string dump;
+      if (lj_bcwrite(lua, root, bytecode_writer, &dump, Strip) != 0) {
+         Log.error("failed to write the %s structural warm dump", Label);
+         return false;
+      }
+      LuaStateHolder loaded_holder;
+      lua_State *loaded = loaded_holder.get();
+      if (not loaded) return false;
+      luaL_openlibs(loaded);
+      if (not Strip) {
+         auto read_uleb = [&dump](size_t &Position, uint32_t &Value) {
+            Value = 0;
+            for (uint32_t shift = 0; shift <= 28 and Position < dump.size(); shift += 7) {
+               const uint8_t byte = uint8_t(dump[Position++]);
+               Value |= uint32_t(byte & 0x7f) << shift;
+               if (not (byte & 0x80)) return true;
+            }
+            return false;
+         };
+         size_t cursor = 4;
+         uint32_t flags = 0;
+         uint32_t length = 0;
+         if (not read_uleb(cursor, flags) or (flags & BCDUMP_F_STRIP) or not read_uleb(cursor, length) or
+             length > dump.size() - cursor) return false;
+         cursor += length;
+         if (not read_uleb(cursor, length) or length > dump.size() - cursor) return false;
+         cursor += length;
+         if (not read_uleb(cursor, length) or length < 2 or length > dump.size() - cursor) return false;
+         std::string malformed = dump;
+         malformed[cursor] = char(uint8_t(tiri::import_cache::ROOT_BUNDLE_VERSION + 1));
+         if (lua_load(loaded, std::string_view(malformed), "malformed-module-directory") != LUA_ERRSYNTAX) {
+            Log.error("the bytecode reader accepted an unsupported imported-module directory");
+            lua_pop(loaded, 1);
+            return false;
+         }
+         lua_pop(loaded, 1);
+         if (lua_load(loaded, "return 7", "module-directory-recovery") != 0 or
+             lua_pcall(loaded, 0, 1, 0) != 0 or lua_tointeger(loaded, -1) != 7) {
+            Log.error("the state was not reusable after rejecting an imported-module directory");
+            return false;
+         }
+         lua_pop(loaded, 1);
+      }
+      if (lua_load(loaded, std::string_view(dump), Label) != 0) {
+         Log.error("failed to reload the %s structural warm dump: %s", Label, lua_tostring(loaded, -1));
+         return false;
+      }
+      GCproto *loaded_root = funcproto(funcV(loaded->top - 1));
+      tiri::debug::ImportExecutableInspection loaded_inspection;
+      std::string loaded_detail;
+      if (not tiri::debug::inspect_import_executables(
+            loaded, loaded_root, loaded_inspection, loaded_detail) or loaded_inspection.Definitions.size() != 3) {
+         Log.error("the %s structural warm dump lost executable ownership: %s", Label, loaded_detail.c_str());
+         return false;
+      }
+      std::string resaved;
+      if (lj_bcwrite(loaded, loaded_root, bytecode_writer, &resaved, Strip) != 0) {
+         Log.error("failed to re-save the %s structural warm dump", Label);
+         return false;
+      }
+      LuaStateHolder resaved_holder;
+      lua_State *resaved_state = resaved_holder.get();
+      if (not resaved_state) return false;
+      luaL_openlibs(resaved_state);
+      if (lua_load(resaved_state, std::string_view(resaved), Label) != 0 or
+          lua_pcall(resaved_state, 0, 1, 0) != 0 or not lua_isstring(resaved_state, -1) or
+          lua_tostringview(resaved_state, -1) != "LAB") {
+         Log.error("the re-saved %s structural warm dump did not execute source-free: %s",
+            Label, lua_tostring(resaved_state, -1));
+         return false;
+      }
+      return true;
+   };
+   if (not verify_dump(0, "raw-warm-diamond") or not verify_dump(1, "stripped-warm-diamond")) return false;
+
+   auto verify_string_dump = [&](bool Strip) {
+      const int root_index = lua_gettop(lua);
+      lua_getglobal(lua, "string");
+      lua_getfield(lua, -1, "dump");
+      lua_remove(lua, -2);
+      lua_pushvalue(lua, root_index);
+      lua_pushboolean(lua, Strip);
+      if (lua_pcall(lua, 2, 1, 0) != 0 or not lua_isstring(lua, -1)) {
+         Log.error("string.dump() failed for the %s structural warm root: %s", Strip ? "stripped" : "raw",
+            lua_tostring(lua, -1));
+         return false;
+      }
+      std::string dump(lua_tostringview(lua, -1));
+      lua_pop(lua, 1);
+
+      LuaStateHolder loaded_holder;
+      lua_State *loaded = loaded_holder.get();
+      if (not loaded) return false;
+      luaL_openlibs(loaded);
+      if (lua_load(loaded, std::string_view(dump), "string-dump-warm-diamond") != 0 or
+          lua_pcall(loaded, 0, 1, 0) != 0 or not lua_isstring(loaded, -1) or
+          lua_tostringview(loaded, -1) != "LAB") {
+         Log.error("the %s string.dump() root did not execute source-free: %s", Strip ? "stripped" : "raw",
+            lua_tostring(loaded, -1));
+         return false;
+      }
+      return true;
+   };
+   if (not verify_string_dump(false) or not verify_string_dump(true)) return false;
+
+   if (lua_pcall(lua, 0, 1, 0) != 0 or not lua_isstring(lua, -1) or lua_tostringview(lua, -1) != "LAB") {
+      const char *actual = lua_tostring(lua, -1);
+      Log.error("the inspected warm diamond did not preserve dependency-first runtime order: %s",
+         actual ? actual : "<non-string>");
+      return false;
+   }
+   return true;
+}
+
+//********************************************************************************************************************
+// A parent cache must be rejected when the current cache for one of its non-local dependencies exposes a different
+// compile-time interface.  The two fixture directories provide the same logical paths and parent source, while the
+// child's declared result type and implementation differ.
+
+static bool test_import_module_dependency_invalidation(kt::Log &Log)
+{
+   const std::string fixture_root = TIRI_IMPORT_TEST_PATH;
+   const std::string default_volume = "system:scripts/|" + fixture_root;
+   auto restore_volume = kt::deferred_call([&] {
+      (void)SetVolume("scripts", default_volume, "filetypes/source", "", "",
+         VOLUME::HIDDEN|VOLUME::SYSTEM|VOLUME::REPLACE);
+   });
+
+   auto execute_fixture = [&](std::string_view Directory, bool ExpectNumber) {
+      const std::string volume = "system:scripts/|" + fixture_root + std::string(Directory);
+      if (SetVolume("scripts", volume, "filetypes/source", "", "",
+          VOLUME::HIDDEN|VOLUME::SYSTEM|VOLUME::REPLACE) != ERR::Okay) {
+         Log.error("failed to configure dependency invalidation fixture '%.*s'", int(Directory.size()),
+            Directory.data());
+         return false;
+      }
+
+      LuaStateHolder holder;
+      lua_State *lua = holder.get();
+      if (not lua) return false;
+      luaL_openlibs(lua);
+
+      constexpr std::string_view source =
+         "import 'i07_dependency_parent' as parent\nreturn parent.value()";
+      if (lua_load(lua, source, "dependency-invalidation") != 0) {
+         Log.error("dependency invalidation fixture did not compile: %s", lua_tostring(lua, -1));
+         return false;
+      }
+      if (lua_pcall(lua, 0, 1, 0) != 0) {
+         Log.error("dependency invalidation fixture did not execute: %s", lua_tostring(lua, -1));
+         return false;
+      }
+
+      if (ExpectNumber) {
+         if (not lua_isnumber(lua, -1) or lua_tonumber(lua, -1) != 2) {
+            Log.error("changed child interface did not invalidate the parent module cache");
+            return false;
+         }
+      }
+      else if (not lua_isstring(lua, -1) or lua_tostringview(lua, -1) != "one") {
+         Log.error("initial dependency invalidation fixture returned the wrong value");
+         return false;
+      }
+      return true;
+   };
+
+   return execute_fixture("dependency_v1/", false) and execute_fixture("dependency_v2/", true);
+}
+
 }  // namespace
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 110> tests = { {
+   constexpr std::array<TestCase, 114> tests = { {
+      { "import_module_executable_lifetime", test_import_module_executable_lifetime },
+      { "import_module_executable_table", test_import_module_executable_table },
+      { "import_module_executable_warm_diamond", test_import_module_executable_warm_diamond },
+      { "import_module_dependency_invalidation", test_import_module_dependency_invalidation },
+      { "import_module_initialiser_boundary", test_import_module_initialiser_boundary },
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "error_removal", test_error_removal },
@@ -12235,7 +12791,6 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "defer_runtime_registration_state", test_defer_runtime_registration_state },
       { "range_for_ast", test_range_for_ast },
       { "current_context_range_operands", test_current_context_range_operands },
-      { "deprecated_numeric_for_rejected", test_deprecated_numeric_for_rejected },
       { "colon_method_syntax_rejected", test_colon_method_syntax_rejected },
       { "typed_assignment_name_resolution", test_typed_assignment_name_resolution },
       { "annotated_local_validation_parity", test_annotated_local_validation_parity },

@@ -1,0 +1,4 @@
+global function i03_make_exported_closure()
+   local captured = 'alive'
+   return () => captured
+end

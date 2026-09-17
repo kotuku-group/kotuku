@@ -29,8 +29,8 @@
 
 void lj_builtin_register(lua_State *L, BuiltinCallableID Id, GCfunc *Function)
 {
-   if (not builtin_callable_valid(Id) or not Function or
-       Function->c.ffid != builtin_callable_index(Id)) {
+   if (not builtin_callable_loadable(Id) or not Function or
+       (not builtin_callable_is_compiler_intrinsic(Id) and Function->c.ffid != builtin_callable_index(Id))) {
       lj_err_callermsg(L, ERR::Args, "invalid built-in callable registration");
    }
 
@@ -46,7 +46,7 @@ void lj_builtin_register(lua_State *L, BuiltinCallableID Id, GCfunc *Function)
 
 GCfunc *lj_builtin_callable(lua_State *L, BuiltinCallableID Id) noexcept
 {
-   if (not builtin_callable_valid(Id)) return nullptr;
+   if (not builtin_callable_loadable(Id)) return nullptr;
    GCobj *callable = gcref(L2GG(L)->builtin_callables[builtin_callable_index(Id)]);
    return callable and callable->gch.gct IS uint8_t(~LJ_TFUNC) ? gco_to_function(callable) : nullptr;
 }

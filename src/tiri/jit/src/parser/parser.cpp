@@ -15,16 +15,23 @@
 #include "lj_func.h"
 #include "lj_state.h"
 #include "lj_bc.h"
+#include "lj_bcdump.h"
 #include "lj_strfmt.h"
 #include "lexer.h"
 #include "parser.h"
 #include "lj_vm.h"
 #include "lj_meta.h"
 #include "lj_vmevent.h"
+#include "lauxlib.h"
+#include "lualib.h"
 #include "field_type_lookup.h"
 #include "../../../defs.h"
+#include "../../../import_module_bundle.h"
+#include "tiri_build_identity.h"
 
 #include <kotuku/main.h>
+
+#include <limits>
 
 // Priorities for each binary operator. ORDER OPR.
 
@@ -53,6 +60,7 @@ static const struct {
 #include "parse_internal.h"
 #include "parser_symbols.h"
 #include "parser_profiler.h"
+#include "import_interface_export.h"
 #include "assignment_target_resolution.h"
 #include "static_type_descriptor.h"
 #include "static_descriptor_analysis.h"
@@ -70,6 +78,7 @@ static const struct {
 #include "assignment_target_resolution.cpp"
 #include "ast/builder.cpp"
 #include "parser_symbols.cpp"
+#include "import_interface_export.cpp"
 #include "parse_control_flow.cpp"
 #include "constant_evaluator.cpp"
 #include "ir_emitter/ir_emitter.cpp"
@@ -223,6 +232,12 @@ static void run_ast_pipeline(ParserContext &Context, ParserProfiler &Profiler)
    }
 
    propagate_static_descriptors(Context, *chunk);
+   std::string interface_diagnostic;
+   if (not prepare_import_interfaces(Context, *chunk, interface_diagnostic)) {
+      Context.emit_error(ParserErrorCode::InternalInvariant, Token{}, interface_diagnostic);
+      raise_accumulated_diagnostics(Context);
+      return;
+   }
    collect_parser_symbols(Context.lua(), Context.lex(), *chunk);
 
    // Emit bytecode instructions
@@ -364,6 +379,7 @@ extern GCproto * lj_parse(LexState *State)
    setprotoV(L, L->top, pt);
    incr_top(L);
    attach_compilation_sources(L, pt, State->compilation_sources);
+
    std::vector<uint8_t> struct_manifest;
    std::string manifest_detail;
    ERR manifest_error = build_declared_struct_manifest(L, State->compilation_struct_roots,
@@ -374,6 +390,70 @@ extern GCproto * lj_parse(LexState *State)
       setmref(pt->struct_manifest, manifest);
       pt->struct_manifest_size = uint32_t(struct_manifest.size());
    }
+   std::vector<tiri::import_cache::RootModuleRecord> module_records;
+   std::vector<GCproto *> module_initialisers;
+   module_records.reserve(State->import_module_records.size());
+   module_initialisers.reserve(State->import_module_records.size());
+   for (const auto &record : State->import_module_records) {
+      uint8_t source_index = FILESOURCE_OVERFLOW_INDEX;
+      for (size_t i = 0; i < State->compilation_sources.size(); ++i) {
+         if (State->compilation_sources[i].runtime_index IS record.source_index) {
+            source_index = uint8_t(i);
+            break;
+         }
+      }
+      module_records.push_back({
+         record.lookup_identity, record.compiled_identity, record.interface_bytes, record.dependencies, source_index
+      });
+      module_initialisers.push_back(record.initialiser);
+   }
+   std::vector<tiri::import_cache::RootModuleRecord> canonical_modules;
+   if (tiri::import_cache::assemble_root_module_graph(module_records, canonical_modules) !=
+       tiri::cache::FormatError::OKAY) {
+      luaL_error(L, ERR::InvalidData, "Invalid imported-module executable graph.");
+   }
+   std::vector<uint32_t> module_mapping(module_records.size(), UINT32_MAX);
+   std::vector<GCproto *> canonical_initialisers(canonical_modules.size(), nullptr);
+   for (size_t i = 0; i < module_records.size(); ++i) {
+      auto found = std::ranges::find(canonical_modules, module_records[i].CompiledIdentity,
+         &tiri::import_cache::RootModuleRecord::CompiledIdentity);
+      if (found IS canonical_modules.end()) {
+         luaL_error(L, ERR::InvalidData, "Invalid imported-module executable graph.");
+      }
+      const uint32_t index = uint32_t(found - canonical_modules.begin());
+      module_mapping[i] = index;
+      canonical_initialisers[index] = module_initialisers[i];
+   }
+   if (not remap_import_module_references(pt, module_mapping)) {
+      luaL_error(L, ERR::InvalidData, "Invalid imported-module executable references.");
+   }
+   for (GCproto *initialiser : canonical_initialisers) {
+      if (not initialiser or not remap_import_module_references(initialiser, module_mapping)) {
+         luaL_error(L, ERR::InvalidData, "Invalid imported-module executable references.");
+      }
+   }
+   module_records = std::move(canonical_modules);
+   module_initialisers = std::move(canonical_initialisers);
+   std::string module_bundle;
+   if (tiri::import_cache::encode_root_module_bundle(module_records, module_bundle) !=
+       tiri::cache::FormatError::OKAY or
+       not install_import_module_table(L, pt, module_records, module_initialisers)) {
+      luaL_error(L, ERR::InvalidData, "Invalid imported-module executable graph.");
+   }
+   auto bundle = (uint8_t *)lj_mem_new(L, MSize(module_bundle.size()));
+   memcpy(bundle, module_bundle.data(), module_bundle.size());
+   setmref(pt->import_module_bundle, bundle);
+   pt->import_module_bundle_size = uint32_t(module_bundle.size());
+   for (GCproto *linked_root : State->linked_import_module_roots) {
+      auto staged_table = linked_root->import_module_table.get<ImportModuleTable>();
+      if (not staged_table) continue;
+      const uint32_t staged_size = staged_table->byte_size;
+      setmref(linked_root->import_module_table, nullptr);
+      lj_mem_free(G(L), staged_table, staged_size);
+   }
+   State->linked_import_module_roots.clear();
+   for (int reference : State->import_module_anchors) luaL_unref(L, LUA_REGISTRYINDEX, reference);
+   State->import_module_anchors.clear();
    L->top--;
    L->top--;  // Drop chunk_name.
 

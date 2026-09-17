@@ -63,6 +63,7 @@ identity.
 #include "lj_proto_registry.h"
 #include "tiri_build_identity.h"
 #include "cache_manifest.h"
+#include "import_module_format.h"
 
 #include "defs.h"
 
@@ -81,7 +82,7 @@ static ERR run_script(extTiri *);
 static ERR stack_args(lua_State *, OBJECTID, const FunctionField *, int8_t *);
 static ERR save_binary(lua_State *, OBJECTPTR, std::string_view);
 static ERR register_interfaces(lua_State *);
-static ERR initialise_compilation_state(lua_State *);
+ERR initialise_tiri_compilation_state(lua_State *);
 static ERR load_statement(extTiri *);
 
 static ERR TIRI_Activate(extTiri *);
@@ -243,6 +244,11 @@ static ERR classify_compilation_input(std::string_view Source, CompilationInputO
    std::string &Diagnostic)
 {
    if (Origin IS CompilationInputOrigin::DIRECT_BYTECODE) {
+      if (tiri::import_cache::is_envelope(Source)) {
+         Diagnostic = "Import-module artefacts cannot be loaded directly; "
+            "embed them in a complete root bytecode file.";
+         return ERR::InvalidData;
+      }
       tiri::cache::EnvelopeView envelope;
       if (tiri::cache::decode_envelope(Source, envelope) IS tiri::cache::FormatError::OKAY) {
          Input = { envelope.Payload, true };
@@ -711,7 +717,7 @@ static ERR TIRI_NewChild(extTiri *Self, struct acNewChild &Args)
 //********************************************************************************************************************
 // Initialise the standard compilation environment in a Lua state without copying any values from another state.
 
-static ERR initialise_compilation_state(lua_State *Lua)
+ERR initialise_tiri_compilation_state(lua_State *Lua)
 {
    lua_gc(Lua, LUA_GCSTOP, 0);  // Stop collector during initialisation
       luaL_openlibs(Lua);  // Open Lua libraries
@@ -736,7 +742,7 @@ static ERR prepare_compilation(extTiri *Self)
    if (not Self->Lua) return ERR::NotInitialised;
    if (Self->CompilationPrepared) return ERR::Okay;
 
-   if (auto error = initialise_compilation_state(Self->Lua); error != ERR::Okay) return error;
+   if (auto error = initialise_tiri_compilation_state(Self->Lua); error != ERR::Okay) return error;
 
    // Line hook, executes on the execution of a new line (doesn't execute during Query() compilation)
 
@@ -882,7 +888,7 @@ static ERR TIRI_SaveToObject(extTiri *Self, struct acSaveToObject *Args)
 
    std::unique_ptr<lua_State, decltype(&lua_close)> compilation(luaL_newstate(Self), lua_close);
    if (not compilation) return ERR::CreateResource;
-   if (auto error = initialise_compilation_state(compilation.get()); error != ERR::Okay) return error;
+   if (auto error = initialise_tiri_compilation_state(compilation.get()); error != ERR::Okay) return error;
 
    struct CaptureRestore {
       extTiri *Script;

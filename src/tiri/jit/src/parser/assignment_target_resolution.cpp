@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "ast/nodes.h"
+#include "import_interface.h"
 #include "parser_context.h"
 #include "../../../defs.h"
 #include "../runtime/lj_tab.h"
@@ -193,6 +194,16 @@ private:
       this->scopes_.pop_back();
       --this->function_depth_;
       this->global_names_.resize(inherited_global_count);
+   }
+
+   void resolve_import_initialiser(BlockStmt &Body)
+   {
+      std::vector<AssignmentScope> importer_scopes = std::move(this->scopes_);
+      ++this->function_depth_;
+      this->scopes_.push_back(AssignmentScope{});
+      this->resolve_block(Body, false);
+      this->scopes_ = std::move(importer_scopes);
+      --this->function_depth_;
    }
 
    void resolve_expression(ExprNode &Expression)
@@ -506,12 +517,34 @@ private:
          }
          case AstNodeKind::ImportStmt:
             for (ImportEntryPayload &entry : std::get<ImportStmtPayload>(Statement.data).entries) {
-               if (entry.inlined_body) this->resolve_block(*entry.inlined_body);
+               if (entry.inlined_body) {
+                  if (entry.module_initialiser) this->resolve_import_initialiser(*entry.inlined_body);
+                  else this->resolve_block(*entry.inlined_body);
+               }
+               if (entry.installed_interface) {
+                  for (const auto &exported : entry.installed_interface->context().Bindings) {
+                     if (exported.Name.find('.') != std::string::npos or
+                         entry.installed_interface->is_namespace(exported.Name)) continue;
+                     this->global_names_.push_back(this->context_.lex().keepstr(exported.Name));
+                  }
+               }
                if (entry.namespace_name) {
-                  AssignmentBinding binding = this->prepare_declaration(*entry.namespace_name);
-                  binding.is_import_namespace = true;
-                  binding.import_registry_namespace = entry.default_namespace;
-                  this->publish_declaration(std::move(binding));
+                  const AssignmentBinding *existing = this->find_binding(entry.namespace_name->symbol);
+                  if (existing and existing->is_import_namespace and
+                      existing->function_depth IS this->function_depth_ and
+                      existing->import_registry_namespace IS entry.default_namespace) {
+                     entry.namespace_name->binding_id = existing->binding_id;
+                     entry.reuses_namespace_binding = true;
+                  }
+                  else {
+                     if (entry.installed_interface and existing) {
+                        this->report_namespace_conflict(*entry.namespace_name);
+                     }
+                     AssignmentBinding binding = this->prepare_declaration(*entry.namespace_name);
+                     binding.is_import_namespace = true;
+                     binding.import_registry_namespace = entry.default_namespace;
+                     this->publish_declaration(std::move(binding));
+                  }
                }
             }
             break;
@@ -558,6 +591,8 @@ private:
 };
 
 } // namespace
+
+//********************************************************************************************************************
 
 void resolve_assignment_targets(ParserContext &Context, BlockStmt &Module)
 {

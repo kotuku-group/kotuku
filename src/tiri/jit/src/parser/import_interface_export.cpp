@@ -1,0 +1,426 @@
+// Portable imported-module interface extraction.
+
+#include "import_interface_export.h"
+
+#include "ast/nodes.h"
+#include "import_interface.h"
+#include "parser_context.h"
+
+#include <algorithm>
+#include <bit>
+#include <format>
+#include <ranges>
+
+namespace {
+
+//********************************************************************************************************************
+// Converts an interned Tiri symbol to its portable string representation.
+
+std::string symbol_name(GCstr *Symbol)
+{
+   return Symbol ? std::string(strdata(Symbol), Symbol->len) : std::string();
+}
+
+//********************************************************************************************************************
+// Maps a parser value type to the equivalent import-cache value kind.
+
+tiri::import_cache::ValueKind portable_kind(TiriType Type)
+{
+   using tiri::import_cache::ValueKind;
+   switch (Type) {
+      case TiriType::Nil:    return ValueKind::NIL_VALUE;
+      case TiriType::Bool:   return ValueKind::BOOLEAN;
+      case TiriType::Num:    return ValueKind::NUMBER;
+      case TiriType::Str:    return ValueKind::STRING;
+      case TiriType::Table:  return ValueKind::TABLE;
+      case TiriType::Array:  return ValueKind::ARRAY;
+      case TiriType::Func:   return ValueKind::FUNCTION;
+      case TiriType::Object: return ValueKind::OBJECT;
+      case TiriType::Struct: return ValueKind::STRUCTURE;
+      case TiriType::Range:
+      case TiriType::Userdata: return ValueKind::ANY;
+      case TiriType::Any: return ValueKind::ANY;
+      default: return ValueKind::UNKNOWN;
+   }
+}
+
+//********************************************************************************************************************
+// Maps a parser static-proof level to the portable import-cache representation.
+
+tiri::import_cache::ProofKind portable_proof(StaticProof Proof)
+{
+   using tiri::import_cache::ProofKind;
+   switch (Proof) {
+      case StaticProof::Closed: return ProofKind::CLOSED;
+      case StaticProof::Checked: return ProofKind::CHECKED;
+      case StaticProof::Trusted: return ProofKind::TRUSTED;
+      default: return ProofKind::ADVISORY;
+   }
+}
+
+//********************************************************************************************************************
+// Copies static type information into a value descriptor that can be cached independently of the parser.
+
+tiri::import_cache::ValueDescriptor portable_value(const StaticValueDescriptor &Value)
+{
+   tiri::import_cache::ValueDescriptor result;
+   result.Kind = portable_kind(Value.primary);
+   result.Proof = portable_proof(Value.proof);
+   result.Nullable = Value.nullable;
+   if (Value.object_class_id != CLASSID::NIL) {
+      if (auto name = ResolveClassID(Value.object_class_id)) result.ObjectClass = name;
+   }
+
+   if (Value.struct_def) result.Structure = Value.struct_def->Name;
+
+   result.Array.Storage = uint8_t(Value.array_element.storage);
+   result.Array.ElementKind = portable_kind(Value.array_element.logical_type);
+
+   if (Value.array_element.object_class_id != CLASSID::NIL) {
+      if (auto name = ResolveClassID(Value.array_element.object_class_id)) result.Array.ObjectClass = name;
+   }
+
+   if (Value.array_element.struct_def) result.Array.Structure = Value.array_element.struct_def->Name;
+
+   if (Value.array_element.nested_array_identity) {
+      result.Array.NestedIdentity = symbol_name(Value.array_element.nested_array_identity);
+   }
+   return result;
+}
+
+//********************************************************************************************************************
+// Returns the best available portable descriptor for an expression, inferring its type when no static value exists.
+
+tiri::import_cache::ValueDescriptor expression_value(ParserContext &Context, const ExprNode *Expression)
+{
+   if (Expression and Expression->static_value) {
+      return portable_value(Context.descriptors().value(Expression->static_value));
+   }
+   StaticValueDescriptor fallback;
+   if (Expression) fallback.primary = infer_expression_type(*Expression);
+   return portable_value(fallback);
+}
+
+//********************************************************************************************************************
+// Creates a checked portable descriptor from an explicit source annotation.
+
+tiri::import_cache::ValueDescriptor annotated_value(
+   TiriType Type, struct_record *Structure, const ArrayElementDescriptor &Array, bool Nullable)
+{
+   StaticValueDescriptor value;
+   value.primary       = Type;
+   value.struct_def    = Structure;
+   value.array_element = Array;
+   value.proof         = StaticProof::Checked;
+   value.nullable      = Nullable;
+   return portable_value(value);
+}
+
+//********************************************************************************************************************
+// Serialises a function signature into the portable representation used by import interfaces.
+
+tiri::import_cache::CallableDescriptor portable_callable(const FunctionExprPayload &Function)
+{
+   tiri::import_cache::CallableDescriptor result;
+   result.VariadicParameters = Function.is_vararg;
+   result.VariadicResults    = Function.return_types.is_variadic;
+   result.DeclaredResults    = Function.return_types.count;
+
+   for (size_t i = 0; i < Function.parameters.size(); ++i) {
+      const auto &parameter = Function.parameters[i];
+      result.Parameters.push_back({
+         annotated_value(parameter.type, parameter.struct_def, parameter.array_element, not parameter.required),
+         symbol_name(parameter.name.symbol), uint8_t(i), parameter.required, parameter.name.has_const
+      });
+   }
+
+   for (size_t i = 0; i < Function.return_types.count; ++i) {
+      StaticValueDescriptor value;
+      value.primary         = Function.return_types.types[i];
+      value.object_class_id = Function.return_types.object_class_ids[i];
+      value.struct_def      = Function.return_types.struct_defs[i];
+      value.array_element   = Function.return_types.array_elements[i];
+      value.proof           = Function.return_types.is_explicit ? StaticProof::Checked : StaticProof::Trusted;
+      value.nullable        = not Function.return_types.required[i];
+      result.Results.push_back(portable_value(value));
+   }
+
+   return result;
+}
+
+//********************************************************************************************************************
+
+// Locates a function payload represented directly by an expression or indirectly through an identifier binding.
+const FunctionExprPayload * function_expression(const ExprNode *Expression, ParserContext &Context)
+{
+   if (not Expression) return nullptr;
+   if (Expression->kind IS AstNodeKind::FunctionExpr) return &std::get<FunctionExprPayload>(Expression->data);
+   if (Expression->kind != AstNodeKind::IdentifierExpr) return nullptr;
+   StaticBindingID binding_id = std::get<NameRef>(Expression->data).binding_id;
+   if (not binding_id or binding_id.raw() >= Context.descriptors().binding_count()) return nullptr;
+   return Context.descriptors().binding(binding_id).function;
+}
+
+//********************************************************************************************************************
+// Returns the dotted name represented by an identifier or member-access expression.
+
+std::string qualified_name(const ExprNode *Expression)
+{
+   if (not Expression) return {};
+
+   if (Expression->kind IS AstNodeKind::IdentifierExpr) {
+      return symbol_name(std::get<NameRef>(Expression->data).identifier.symbol);
+   }
+
+   if (Expression->kind IS AstNodeKind::MemberExpr) {
+      const auto &member = std::get<MemberExprPayload>(Expression->data);
+      std::string result = qualified_name(member.table.get());
+      if (result.empty()) return {};
+      result.push_back('.');
+      result += symbol_name(member.member.symbol);
+      return result;
+   }
+   return {};
+}
+
+//********************************************************************************************************************
+// Records a literal expression's value when it can be represented as an exported constant.
+
+void constant_value(const ExprNode *Expression, tiri::import_cache::ConstantValue &Output)
+{
+   using namespace tiri::import_cache;
+   if (not Expression or Expression->kind != AstNodeKind::LiteralExpr) return;
+   const auto &literal = std::get<LiteralValue>(Expression->data);
+   switch (literal.kind) {
+      case LiteralKind::Nil: Output.Kind = ConstantKind::NIL_VALUE; break;
+      case LiteralKind::Boolean:
+         Output.Kind = ConstantKind::BOOLEAN;
+         Output.Boolean = literal.bool_value;
+         break;
+      case LiteralKind::Number:
+         Output.Kind = ConstantKind::NUMBER;
+         Output.NumberBits = std::bit_cast<uint64_t>(double(literal.number_value));
+         break;
+      case LiteralKind::String:
+         Output.Kind = ConstantKind::STRING;
+         Output.String = symbol_name(literal.string_value);
+         break;
+   }
+}
+
+//********************************************************************************************************************
+// Adds a distinct export and records its value, callable signature, and constant metadata.
+
+void add_export(tiri::import_cache::Interface &InterfaceValue, std::string Name,
+   tiri::import_cache::ExportKind Kind, const ExprNode *Initialiser, const FunctionExprPayload *Function,
+   bool IsConst, ParserContext &Context)
+{
+   if (Name.empty()) return;
+
+   auto found = std::ranges::find(InterfaceValue.Exports, Name, &tiri::import_cache::ExportDescriptor::Name);
+   if (found != InterfaceValue.Exports.end()) return;
+
+   tiri::import_cache::ExportDescriptor exported;
+   exported.Name = std::move(Name);
+   exported.Kind = Kind;
+   exported.Value = expression_value(Context, Initialiser);
+
+   if (not Function and exported.Value.Kind IS tiri::import_cache::ValueKind::FUNCTION) {
+      exported.Value.Kind = tiri::import_cache::ValueKind::ANY;
+      exported.Value.Proof = tiri::import_cache::ProofKind::ADVISORY;
+      exported.Value.Nullable = true;
+   }
+
+   if (Function) {
+      exported.Value.Kind = tiri::import_cache::ValueKind::FUNCTION;
+      exported.Value.Proof = tiri::import_cache::ProofKind::CLOSED;
+      exported.Value.Nullable = false;
+      exported.Callable = portable_callable(*Function);
+   }
+
+   if (IsConst or Kind IS tiri::import_cache::ExportKind::ENUM_CONSTANT) {
+      constant_value(Initialiser, exported.Constant);
+   }
+
+   exported.IsConst = IsConst;
+   InterfaceValue.Exports.push_back(std::move(exported));
+}
+
+//********************************************************************************************************************
+// Refines an existing export with the type information declared for its source identifier.
+
+void apply_declared_value(tiri::import_cache::Interface &InterfaceValue, const Identifier &Name,
+   ParserContext &Context)
+{
+   auto found = std::ranges::find(InterfaceValue.Exports, symbol_name(Name.symbol),
+      &tiri::import_cache::ExportDescriptor::Name);
+
+   if (found IS InterfaceValue.Exports.end()) return;
+   if (Name.static_value) found->Value = portable_value(Context.descriptors().value(Name.static_value));
+   TiriType type = Name.global_contract_type != TiriType::Unknown ? Name.global_contract_type : Name.type;
+
+   if (type != TiriType::Unknown and type != TiriType::Any) {
+      struct_record *structure = Name.global_contract_struct_def ? Name.global_contract_struct_def : Name.struct_def;
+      const auto &array = Name.global_contract_type != TiriType::Unknown ?
+         Name.global_contract_array_element : Name.array_element;
+      found->Value = annotated_value(type, structure, array, false);
+   }
+}
+
+//********************************************************************************************************************
+// Adds the source interface's unique declarations to the target interface.
+
+void merge_interface(tiri::import_cache::Interface &Target, const tiri::import_cache::Interface &Source)
+{
+   for (const auto &item : Source.Namespaces) {
+      if (std::ranges::find(Target.Namespaces, item.Name, &tiri::import_cache::NamespaceDescriptor::Name) IS
+          Target.Namespaces.end()) Target.Namespaces.push_back(item);
+   }
+
+   for (const auto &item : Source.Exports) {
+      if (std::ranges::find(Target.Exports, item.Name, &tiri::import_cache::ExportDescriptor::Name) IS
+          Target.Exports.end()) Target.Exports.push_back(item);
+   }
+
+   for (const auto &item : Source.Structures) {
+      if (std::ranges::find(Target.Structures, item.Name, &tiri::import_cache::StructureDescriptor::Name) IS
+          Target.Structures.end()) Target.Structures.push_back(item);
+   }
+
+   for (const auto &item : Source.Enums) {
+      if (std::ranges::find(Target.Enums, item.Name, &tiri::import_cache::EnumDescriptor::Name) IS
+          Target.Enums.end()) Target.Enums.push_back(item);
+   }
+}
+
+//********************************************************************************************************************
+// Builds and installs portable interfaces for imported modules contained in this block and its descendants.
+
+bool prepare_block(ParserContext &Context, BlockStmt &Block, std::string &Diagnostic)
+{
+   using namespace tiri::import_cache;
+   for (auto &statement : Block.statements) {
+      if (not statement or statement->kind != AstNodeKind::ImportStmt) continue;
+      auto &import = std::get<ImportStmtPayload>(statement->data);
+      for (auto &entry : import.entries) {
+         if (entry.inlined_body and not prepare_block(Context, *entry.inlined_body, Diagnostic)) return false;
+         if (not entry.module_initialiser or entry.module_cache_hit) continue;
+
+         Interface portable;
+         SourceDescriptor source;
+         source.ResolvedPath = entry.lib_path;
+         source.LogicalRequest = entry.module_cache_identity.LogicalRequest;
+         auto separator = entry.lib_path.find_last_of("/\\:");
+         source.Filename = separator IS std::string::npos ? entry.lib_path : entry.lib_path.substr(separator + 1);
+         if (const FileSource *file = get_file_source(&Context.lua(), entry.file_source_idx)) {
+            source.DeclaredNamespace = file->declared_namespace;
+            source.TotalLines = file->total_lines.lineNumber();
+         }
+         portable.Sources.push_back(std::move(source));
+
+         uint32_t activation_order = 0;
+         for (const auto &dependency : entry.module_dependencies) {
+            NativeDependency native;
+            native.Module = symbol_name(dependency.name);
+            native.ActivationOrder = activation_order++;
+            for (GCstr *function : dependency.functions) native.Functions.push_back(symbol_name(function));
+            portable.NativeDependencies.push_back(std::move(native));
+         }
+
+         for (auto &child_statement : entry.inlined_body->statements) {
+            if (not child_statement) continue;
+            switch (child_statement->kind) {
+               case AstNodeKind::ImportStmt:
+                  for (const auto &nested : std::get<ImportStmtPayload>(child_statement->data).entries) {
+                     if (nested.installed_interface) {
+                        const auto &nested_interface = nested.installed_interface->portable_interface();
+                        const auto nested_digest = interface_digest(nested_interface);
+                        merge_interface(portable, nested_interface);
+                        portable.NestedModules.push_back({ nested.module_cache_identity.LogicalRequest,
+                           nested.lib_path, nested_digest });
+                        entry.module_cache_identity.ModuleDependencies.push_back({
+                           nested.module_cache_identity.LogicalRequest, nested.lib_path, nested_digest,
+                           nested.module_identity
+                        });
+                     }
+                  }
+                  break;
+               case AstNodeKind::NamespaceStmt: {
+                  const auto &item = std::get<NamespaceStmtPayload>(child_statement->data);
+                  std::string name = symbol_name(item.name.symbol);
+                  portable.Namespaces.push_back({ name, item.mode IS NamespaceDeclarationMode::Create ?
+                     NamespaceMode::DECLARE : NamespaceMode::JOIN });
+                  add_export(portable, name, ExportKind::GLOBAL, item.initialiser.get(),
+                     function_expression(item.initialiser.get(), Context), true, Context);
+                  break;
+               }
+               case AstNodeKind::GlobalDeclStmt: {
+                  const auto &item = std::get<GlobalDeclStmtPayload>(child_statement->data);
+                  for (size_t i = 0; i < item.names.size(); ++i) {
+                     const ExprNode *value = i < item.values.size() ? item.values[i].get() :
+                        (item.values.empty() ? nullptr : item.values.back().get());
+                     add_export(portable, symbol_name(item.names[i].symbol), ExportKind::GLOBAL, value,
+                        function_expression(value, Context), item.names[i].has_const, Context);
+                     apply_declared_value(portable, item.names[i], Context);
+                  }
+                  break;
+               }
+               case AstNodeKind::ExternStmt:
+                  for (const auto &name : std::get<ExternDeclStmtPayload>(child_statement->data).names) {
+                     add_export(portable, symbol_name(name.symbol), ExportKind::EXTERN, nullptr, nullptr,
+                        name.has_const, Context);
+                  }
+                  break;
+               case AstNodeKind::FunctionStmt: {
+                  const auto &item = std::get<FunctionStmtPayload>(child_statement->data);
+                  if (item.name.is_explicit_global or item.name.segments.size() > 1) {
+                     std::string name;
+                     for (const auto &segment : item.name.segments) {
+                        if (not name.empty()) name.push_back('.');
+                        name += symbol_name(segment.symbol);
+                     }
+                     add_export(portable, std::move(name), ExportKind::GLOBAL, nullptr,
+                        item.function.get(), true, Context);
+                  }
+                  break;
+               }
+               case AstNodeKind::AssignmentStmt: {
+                  const auto &item = std::get<AssignmentStmtPayload>(child_statement->data);
+                  for (size_t i = 0; i < item.targets.size(); ++i) {
+                     std::string name = qualified_name(item.targets[i].get());
+                     if (name.find('.') IS std::string::npos) continue;
+                     const ExprNode *value = i < item.values.size() ? item.values[i].get() :
+                        (item.values.empty() ? nullptr : item.values.back().get());
+                     add_export(portable, std::move(name), ExportKind::GLOBAL, value,
+                        function_expression(value, Context), false, Context);
+                  }
+                  break;
+               }
+               default: break;
+            }
+         }
+
+         entry.installed_interface = InstalledImportInterface::create(Context, portable, Diagnostic);
+         if (not entry.installed_interface) {
+            Diagnostic = std::format("{}: {}", entry.lib_path, Diagnostic);
+            return false;
+         }
+         if (finalise_identity(entry.module_cache_identity) != cache::FormatError::OKAY) {
+            Diagnostic = std::format("{}: compiled module identity is invalid", entry.lib_path);
+            return false;
+         }
+         entry.module_identity = entry.module_cache_identity.CompiledIdentity;
+      }
+   }
+   return true;
+}
+
+} // namespace
+
+//********************************************************************************************************************
+// Prepares portable import interfaces for every imported module in the parsed block.
+
+bool prepare_import_interfaces(ParserContext &Context, BlockStmt &Block, std::string &Diagnostic)
+{
+   return prepare_block(Context, Block, Diagnostic);
+}

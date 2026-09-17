@@ -4721,5 +4721,6 @@ ParserResult<ExpDesc> IrEmitter::unsupported_expr(AstNodeKind kind, const Source
 #include "ir_emitter/emit_function.cpp"
 #include "ir_emitter/emit_table.cpp"
 #include "ir_emitter/emit_call.cpp"
+#include "ir_emitter/emit_import.cpp"
 #include "ir_emitter/emit_try.cpp"
 #include "ir_emitter/emit_checkall.cpp"

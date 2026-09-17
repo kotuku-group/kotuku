@@ -813,7 +813,9 @@ if (BUILD_DEFS)
    add_dependencies (jit_lib core_defs)
 endif ()
 
-set (TIRI_SOURCES "${MOD}.cpp" "cache_manifest.cpp" "tiri_module.cpp" "tiri_async.cpp" "tiri_struct.cpp"
+set (TIRI_SOURCES "${MOD}.cpp" "cache_manifest.cpp" "import_module_format.cpp" "import_module_bundle.cpp"
+   "import_module_cache.cpp" "tiri_module.cpp"
+   "tiri_async.cpp" "tiri_struct.cpp"
    "tiri_processing.cpp"
    "tiri_functions.cpp" "tiri_regex.cpp"
    "tiri_io.cpp" "tiri_class.cpp"
@@ -840,6 +842,7 @@ set (TIRI_SOURCES "${MOD}.cpp" "cache_manifest.cpp" "tiri_module.cpp" "tiri_asyn
    "${JIT_SRC}/debug/dump_bytecode.cpp"
    "${JIT_SRC}/debug/filesource.cpp"
    "${JIT_SRC}/parser/parser.cpp"
+   "${JIT_SRC}/parser/import_interface.cpp"
    "${JIT_SRC}/parser/lexer.cpp"
    "${JIT_SRC}/parser/parser_unit_tests.cpp")
 
@@ -848,7 +851,10 @@ if (INCLUDE_TIPS)
 endif ()
 
 if (UNIT_TESTS)
+   list (APPEND TIRI_SOURCES "${JIT_SRC}/debug/import_module_inspection.cpp")
    list (APPEND TIRI_SOURCES "tests/unit_cache_manifest.cpp")
+   list (APPEND TIRI_SOURCES "tests/unit_import_module_format.cpp")
+   list (APPEND TIRI_SOURCES "tests/unit_import_module_cache.cpp")
    list (APPEND TIRI_SOURCES "tests/unit_module_marshalling.cpp")
    list (APPEND TIRI_SOURCES "tests/unit_set_variable.cpp")
    list (APPEND TIRI_SOURCES "tests/unit_bytecode_files.cpp")
@@ -930,7 +936,9 @@ else ()
 endif ()
 
 if (UNIT_TESTS)
-   target_compile_definitions(${MOD} PRIVATE UNIT_TESTS)
+   target_compile_definitions(${MOD} PRIVATE
+      UNIT_TESTS
+      TIRI_IMPORT_TEST_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/import_scripts/")
 endif ()
 
 if (DISABLE_DISPLAY)
@@ -944,11 +952,10 @@ set (TIRI_TESTS
    array_element_validation array_view
    array_functional array_typed_syntax recursive_array_types bitshift bitwise has_operator approx if_empty if_empty_guard
    presence blank ternary table stress unit_tests bytecode_files bytecode_jit_eligibility automatic_cache
+   import_module_deduplication
    jitoptions fstring const const_optimisation import_scope unicode ellipsis safe_nav close type_annotations type_fixing
    type_inference jit jit_uclo jit_fnew jit_arrays jit_objects jit_try_regex pipe for_each arrow_functions
-   result_filter thunks deferred_expr
-   shadow_assert
-   ranges contains bare_iteration compiler_intrinsics
+   result_filter thunks deferred_expr shadow_assert ranges contains bare_iteration compiler_intrinsics
    annotations locality anonymous_for key_values debug_filesources compound choose_from enum flow table_slice options type_name
    library_namespaces
    try_except checkall import include_list processing metatables with thunk_table_index debug malformed_syntax numeric_limits return_types url tips tempus

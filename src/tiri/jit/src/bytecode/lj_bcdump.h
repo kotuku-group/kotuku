@@ -11,8 +11,11 @@
 // Bytecode dump format
 
 /*
-** dump   = header proto+ 0U
+** dump   = header sources modules structs proto+ 0U
 ** header = ESC 'L' 'J' versionB flagsU [namelenU nameB*]
+** sources = lengthU sourceB*
+** modules = lengthU moduleB*
+** structs = lengthU structB*
 ** proto  = lengthU pdata
 ** pdata  = phead signatureB* dependB* bcinsW* uvdataH* kgc* knum* [debugB*]
 ** phead  = flagsB numparamsB framesizeB numuvB numkgcU numknU numbcU siglenU deplenU
@@ -64,7 +67,10 @@ constexpr uint8_t BCDUMP_HEAD3 = 0x4a;
 // Version 0xa3 removes collectgarbage and newproxy from the generated fast-function ordering.
 // Version 0xa4 adds a portable compilation-unit source manifest and remapped prototype/line source identities.
 // Version 0xa6 reconstructs deterministic interpreter-only policy from validated contract descriptors and bytecode.
-constexpr uint8_t BCDUMP_VERSION = 0xa6;
+// Version 0xa7 added a validated imported-module metadata bundle to complete root dumps.
+// Version 0xa8 stores each imported-module prototype tree once in a separate executable directory.
+// Version 0xa9 invalidates roots whose imported modules used caller-specific resolution observations.
+constexpr uint8_t BCDUMP_VERSION = 0xa9;
 
 // Compatibility flags.
 

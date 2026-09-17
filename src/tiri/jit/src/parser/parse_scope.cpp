@@ -209,6 +209,10 @@ static MSize var_lookup_(LexState* ls, GCstr* name, ExpDesc* e)
          }
          return vidx;
       }
+
+      // Module initialisers are reusable compilation units.  Their own descendants may capture module locals, but
+      // lookup must not continue into the importing function's lexical frames.
+      if (search_fs.upvalue_boundary) break;
    }
 
    // Not found in any function - scope is undetermined

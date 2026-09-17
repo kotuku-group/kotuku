@@ -21,9 +21,9 @@ uint8_t register_file_source(lua_State *L, std::string &Path, const std::string 
       return FILESOURCE_OVERFLOW_INDEX;
    }
 
-   std::string resolved_path;
-   if (!ResolvePath(Path, RSF::NO_FILE_CHECK, &resolved_path)) {
-      Path = resolved_path;
+   if (not Path.starts_with("scripts:")) {
+      std::string resolved_path;
+      if (ResolvePath(Path, RSF::NO_FILE_CHECK, &resolved_path) IS ERR::Okay) Path = resolved_path;
    }
 
    auto path_hash = kt::strihash(Path);
@@ -90,6 +90,11 @@ static void set_source_root(GCproto *Proto, GCproto *Root)
    }
 }
 
+void attach_compilation_source_root(GCproto *Prototype, GCproto *Root)
+{
+   if (Prototype and Root) set_source_root(Prototype, Root);
+}
+
 void attach_compilation_sources(lua_State *L, GCproto *Root, const std::vector<CompilationSourceRecord> &Records)
 {
    if (not Root or Records.empty() or Records.size() > FILESOURCE_MAX_COUNT) return;
@@ -150,7 +155,7 @@ static void remap_loaded_sources(GCproto *Proto, const std::vector<CompilationSo
 }
 
 void attach_loaded_compilation_sources(lua_State *L, GCproto *Root,
-   const std::vector<CompilationSourceRecord> &Records)
+   const std::vector<CompilationSourceRecord> &Records, std::span<GCproto *const> AdditionalRoots)
 {
    std::vector<CompilationSourceRecord> resolved = Records;
    L->file_sources.reserve(std::min<size_t>(FILESOURCE_MAX_COUNT, L->file_sources.size() + Records.size()));
@@ -178,7 +183,9 @@ void attach_loaded_compilation_sources(lua_State *L, GCproto *Root,
       }
    }
    remap_loaded_sources(Root, resolved);
+   for (GCproto *prototype : AdditionalRoots) remap_loaded_sources(prototype, resolved);
    attach_compilation_sources(L, Root, resolved);
+   for (GCproto *prototype : AdditionalRoots) set_source_root(prototype, Root);
 }
 
 //********************************************************************************************************************

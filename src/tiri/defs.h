@@ -628,6 +628,8 @@ class extTiri : public objTiri {
    ~extTiri();
 };
 
+ERR initialise_tiri_compilation_state(lua_State *Lua);
+
 enum class CachePublishFailure : uint8_t {
    NIL,
    CREATE,

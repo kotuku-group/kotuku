@@ -73,7 +73,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_try_except_stmt(const TryExceptPayload 
    // Emit BC_TRYENTER with try block index
    bcemit_AD(fs, BC_TRYENTER, base_reg, BCReg(try_block_index));
 
-   // Emit try body inline (not in closure!).  Nested try blocks will add their handlers to try_handlers during this phase.
+   // Emit the try body inline (not in a closure). Nested try blocks add their handlers during this phase.
    // We manually manage the scope here so we can emit BC_TRYLEAVE before defer execution.
    // The ScopeGuard destructor will call fscope_end() which executes defers AFTER BC_TRYLEAVE.
    {
@@ -330,6 +330,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_check_stmt(const CheckStmtPayload &Payl
 
    // Native calls must retain their call-specific diagnostic. A transient checkall scope lets supported direct native
    // boundaries promote before BC_CHECK, while ordinary expressions still fall through to the explicit check opcode.
+
    BCReg checkall_base = BCReg(fs->freereg);
    bcemit_AD(fs, BC_CHECKALLENTER, checkall_base, BCReg(0));
    fs->runtime_scopes.push_back(RuntimeScope{ RuntimeScopeKind::Checkall, checkall_base });
@@ -343,192 +344,11 @@ ParserResult<IrEmitUnit> IrEmitter::emit_check_stmt(const CheckStmtPayload &Payl
    fs->runtime_scopes.pop_back();
 
    // Preserve the expression column for assert-style error formatting.  BC_CHECK's D operand is otherwise unused.
+
    int32_t raw_column = Payload.error_code->span.column.lineNumber();
    BCReg source_column = BCReg(raw_column > int32_t(BCMAX_D) ? BCMAX_D : raw_column);
    bcemit_AD(fs, BC_CHECK, BCReg(code_expr.u.s.info), source_column);
    expr_free(fs, &code_expr);
-
-   return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
-}
-
-//********************************************************************************************************************
-// Emit bytecode for one import entry.
-//
-// The import entry inlines the content of the referenced file at compile time.
-// The inlined_body block is emitted as if its statements were written directly at the import location.
-// This creates a new scope for the imported content to provide some isolation.
-//
-// When namespace_name is set (from 'as alias' or module's default namespace), emits:
-//   local <namespace_name> <const> = _LIB['<default_namespace>']
-
-void IrEmitter::emit_namespace_registry_load(std::string_view Name, BCReg Destination)
-{
-   FuncState *fs = &this->func_state;
-   lua_State *L = this->lex_state.L;
-   auto str_const = [fs](GCstr *String) -> BCREG {
-      return const_gc(fs, obj2gco(String), LJ_TSTR);
-   };
-
-   bcemit_AD(fs, BC_GGET, Destination.raw(), str_const(lj_str_newlit(L, "_LIB")));
-   GCstr *namespace_name = lj_str_new(L, Name.data(), Name.size());
-   bcemit_tgets(fs, Destination.raw(), Destination.raw(), str_const(namespace_name));
-}
-
-void IrEmitter::emit_namespace_missing_guard(std::string_view Name, BCReg Value)
-{
-   FuncState *fs = &this->func_state;
-   lua_State *L = this->lex_state.L;
-   ExpDesc nil_value(ExpKind::Nil);
-   bcemit_INS(fs, BCINS_AD(BC_ISEQP, Value.raw(), const_pri(&nil_value)));
-   ControlFlowEdge missing = this->control_flow.make_unconditional(BCPos(bcemit_jmp(fs)));
-   ControlFlowEdge present = this->control_flow.make_unconditional(BCPos(bcemit_jmp(fs)));
-
-   missing.patch_here();
-   BCReg saved_freereg = fs->free_reg();
-   BCReg message_reg = saved_freereg;
-   bcreg_reserve(fs, BCReg(2));
-   auto str_const = [fs](GCstr *String) -> BCREG {
-      return const_gc(fs, obj2gco(String), LJ_TSTR);
-   };
-   std::string message = std::format("Cannot join namespace '{}': registry entry does not exist", Name);
-   bcemit_AD(fs, BC_KSTR, message_reg.raw(), str_const(lj_str_new(L, message.c_str(), message.size())));
-   BCReg raise_message_reg = BCReg(message_reg.raw() + 1);
-   bcemit_AD(fs, BC_MOV, raise_message_reg, message_reg);
-   bcemit_AD(fs, BC_RAISE, message_reg, raise_message_reg);
-   fs->freereg = saved_freereg.raw();
-   present.patch_here();
-}
-
-void IrEmitter::publish_namespace_local(const Identifier &Name, BCReg Slot)
-{
-   FuncState *fs = &this->func_state;
-   this->lex_state.var_new(BCReg(0), Name.symbol, Name.span.line, Name.span.column);
-   this->lex_state.var_add(BCReg(1));
-
-   VarInfo *info = &fs->var_get(fs->varmap.size() - 1);
-   info->info |= VarInfoFlag::Const;
-   info->binding_id = Name.binding_id;
-   info->static_value = Name.static_value;
-   if (Name.binding_id) {
-      const auto &binding = this->ctx.descriptors().binding(Name.binding_id);
-      info->static_callable = binding.callable;
-      if (binding.callable) info->static_results = this->ctx.descriptors().callable(binding.callable).results;
-      this->apply_analysed_local_type(Slot, Name.binding_id);
-      this->assert_analysed_local_type(Slot, Name.binding_id);
-   }
-
-   this->update_local_binding(Name.symbol, Slot);
-   fs->reset_freereg();
-}
-
-ParserResult<IrEmitUnit> IrEmitter::emit_import_entry(const ImportEntryPayload &Entry)
-{
-   FuncState *fs = &this->func_state;
-
-   // If there's a body, emit the inlined content first
-   if (Entry.inlined_body) {
-      // Temporarily switch to the imported file's FileSource index
-      // so that prototypes created for functions in the import get the correct file_source_idx
-      uint8_t saved_file_index = this->lex_state.current_file_index;
-      BCLine saved_lastline = this->lex_state.lastline;
-      this->lex_state.current_file_index = Entry.file_source_idx;
-
-      auto result = this->emit_block(*Entry.inlined_body, FuncScopeFlag::None);
-
-      // Restore the parent source location before emitting the namespace binding generated for the import.
-      this->lex_state.current_file_index = saved_file_index;
-      this->lex_state.lastline = saved_lastline;
-
-      if (not result.ok()) return result;
-   }
-
-   // If namespace_name is set, emit: local <name> <const> = _LIB['<default_namespace>']
-   if (Entry.namespace_name) {
-      const Identifier &ns_id = *Entry.namespace_name;
-      const std::string &default_ns = Entry.default_namespace;
-
-      if (default_ns.empty()) {
-         return ParserResult<IrEmitUnit>::failure(this->make_error(
-            ParserErrorCode::InternalInvariant,
-            "import namespace_name is set but default_namespace is empty"));
-      }
-
-      // Allocate a register for the namespace local variable
-      BCReg dest = BCReg(fs->freereg);
-      bcreg_reserve(fs, BCReg(1));
-      this->emit_namespace_registry_load(default_ns, dest);
-      this->publish_namespace_local(ns_id, dest);
-   }
-
-   return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
-}
-
-//********************************************************************************************************************
-// Emit a namespace declaration.  Creation publishes its const local before evaluating the literal so closures can
-// capture their owning namespace, then stores the completed value in the registry.  A join loads the registry value
-// and rejects a missing entry before publishing the local.  Joins following an import already have the correct
-// binding and only validate that its registry value is present.
-
-ParserResult<IrEmitUnit> IrEmitter::emit_namespace_stmt(const NamespaceStmtPayload &Payload)
-{
-   std::string_view namespace_name(strdata(Payload.name.symbol), Payload.name.symbol->len);
-   if (Payload.reuses_import_binding) {
-      std::optional<BCReg> existing = this->resolve_local(Payload.name.symbol);
-      if (not existing) {
-         return ParserResult<IrEmitUnit>::failure(this->make_error(
-            ParserErrorCode::InternalInvariant, "Reused namespace import binding is unavailable"));
-      }
-      this->emit_namespace_missing_guard(namespace_name, *existing);
-      return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
-   }
-
-   FuncState *fs = &this->func_state;
-   lua_State *L = this->lex_state.L;
-   BCReg value_reg = fs->free_reg();
-
-   if (Payload.mode IS NamespaceDeclarationMode::Create) {
-      if (not Payload.initialiser) {
-         return ParserResult<IrEmitUnit>::failure(this->make_error(
-            ParserErrorCode::InternalInvariant, "Creating namespace has no initialiser"));
-      }
-
-      bcreg_reserve(fs, BCReg(1));
-      this->publish_namespace_local(Payload.name, value_reg);
-
-      auto emitted = this->emit_expression(*Payload.initialiser);
-      if (not emitted.ok()) return ParserResult<IrEmitUnit>::failure(emitted.error_ref());
-      ExpDesc value = emitted.value_ref();
-      this->materialise_to_reg(value, value_reg, "namespace initialiser");
-      fs->reset_freereg();
-
-      BCReg registry_reg = fs->free_reg();
-      bcreg_reserve(fs, BCReg(1));
-      auto str_const = [fs](GCstr *String) -> BCREG {
-         return const_gc(fs, obj2gco(String), LJ_TSTR);
-      };
-      bcemit_AD(fs, BC_GGET, registry_reg.raw(), str_const(lj_str_newlit(L, "_LIB")));
-      bcemit_tsets(fs, value_reg.raw(), registry_reg.raw(), str_const(Payload.name.symbol));
-      fs->reset_freereg();
-   }
-   else {
-      bcreg_reserve(fs, BCReg(1));
-      this->emit_namespace_registry_load(namespace_name, value_reg);
-      this->emit_namespace_missing_guard(namespace_name, value_reg);
-      this->publish_namespace_local(Payload.name, value_reg);
-   }
-
-   return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
-}
-
-//********************************************************************************************************************
-// Emit bytecode for import statement: import 'path' [, 'path'...]
-
-ParserResult<IrEmitUnit> IrEmitter::emit_import_stmt(const ImportStmtPayload &Payload)
-{
-   for (const ImportEntryPayload &entry : Payload.entries) {
-      auto result = this->emit_import_entry(entry);
-      if (not result.ok()) return result;
-   }
 
    return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
 }

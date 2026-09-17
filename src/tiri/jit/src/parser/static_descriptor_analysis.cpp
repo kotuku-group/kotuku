@@ -5,10 +5,12 @@
 #include <algorithm>
 #include <shared_mutex>
 #include <string>
+#include <unordered_map>
 #include <utility>
 
 #include "ast/nodes.h"
 #include "field_type_lookup.h"
+#include "import_interface.h"
 #include "parser_context.h"
 #include "table_ownership.h"
 #include "../../../defs.h"
@@ -52,6 +54,7 @@ public:
    {
       this->scopes_.clear();
       this->global_names_.clear();
+      this->interface_globals_.clear();
       this->scopes_.push_back(BindingScope{});
       this->discover_block(Module, false);
       this->resolve_all_callables();
@@ -259,6 +262,16 @@ private:
       this->function_depth_--;
    }
 
+   void discover_import_initialiser(BlockStmt &Body)
+   {
+      std::vector<BindingScope> importer_scopes = std::move(this->scopes_);
+      this->function_depth_++;
+      this->scopes_.push_back(BindingScope{});
+      this->discover_block(Body, false);
+      this->scopes_ = std::move(importer_scopes);
+      this->function_depth_--;
+   }
+
    void discover_expression(ExprNode &Expression, bool Write = false)
    {
       switch (Expression.kind) {
@@ -325,6 +338,7 @@ private:
             for (auto &argument : payload.arguments) {
                if (argument) this->discover_expression(*argument);
             }
+            this->annotate_import_call(payload);
             break;
          }
          case AstNodeKind::MemberExpr: {
@@ -630,7 +644,17 @@ private:
             for (auto &entry : std::get<ImportStmtPayload>(Statement.data).entries) {
                if (entry.inlined_body) {
                   ImportSourceGuard guard(this->context_.lex(), entry.file_source_idx);
-                  this->discover_block(*entry.inlined_body);
+                  if (entry.module_initialiser) this->discover_import_initialiser(*entry.inlined_body);
+                  else this->discover_block(*entry.inlined_body);
+               }
+               if (entry.installed_interface) {
+                  for (const auto &exported : entry.installed_interface->context().Bindings) {
+                     if (exported.Name.find('.') != std::string::npos or
+                         entry.installed_interface->is_namespace(exported.Name)) continue;
+                     GCstr *name = this->context_.lex().keepstr(exported.Name);
+                     this->global_names_.push_back(name);
+                     this->interface_globals_[name] = { entry.installed_interface.get(), &exported };
+                  }
                }
                if (entry.namespace_name) {
                   const ExprNode *initialiser = nullptr;
@@ -646,7 +670,17 @@ private:
                         function = binding.function;
                      }
                   }
-                  this->declare(*entry.namespace_name, initialiser, 0, function);
+                  StaticBindingID binding_id = entry.reuses_namespace_binding ? entry.namespace_name->binding_id :
+                     this->declare(*entry.namespace_name, initialiser, 0, function);
+                  if (binding_id and entry.installed_interface) {
+                     auto &binding = this->catalogue_.binding(binding_id);
+                     binding.import_interface = entry.installed_interface.get();
+                     binding.import_namespace = &entry.default_namespace;
+                     binding.is_import_namespace = true;
+                     if (const auto *exported = entry.installed_interface->find_export(entry.default_namespace)) {
+                        binding.function = entry.installed_interface->callable(*exported);
+                     }
+                  }
                }
             }
             break;
@@ -783,6 +817,32 @@ private:
       }
    }
 
+   void annotate_import_call(CallExprPayload &Call)
+   {
+      auto *direct = std::get_if<DirectCallTarget>(&Call.target);
+      if (not direct or not direct->callable) return;
+      if (direct->callable->kind IS AstNodeKind::IdentifierExpr) {
+         const auto &reference = std::get<NameRef>(direct->callable->data);
+         if (reference.binding_id or not reference.identifier.symbol) return;
+         auto imported = this->interface_globals_.find(reference.identifier.symbol);
+         if (imported IS this->interface_globals_.end()) return;
+         const FunctionExprPayload *function = imported->second.first->callable(*imported->second.second);
+         if (function) Call.callable = this->function_callable(*function);
+         return;
+      }
+      if (direct->callable->kind != AstNodeKind::MemberExpr) return;
+      const auto &member = std::get<MemberExprPayload>(direct->callable->data);
+      if (not member.table or member.table->kind != AstNodeKind::IdentifierExpr or not member.member.symbol) return;
+      const auto &base = std::get<NameRef>(member.table->data);
+      if (not base.binding_id) return;
+      const auto &binding = this->catalogue_.binding(base.binding_id);
+      if (not binding.import_interface or not binding.import_namespace) return;
+      std::string_view member_name(strdata(member.member.symbol), member.member.symbol->len);
+      const auto *exported = binding.import_interface->find_member(*binding.import_namespace, member_name);
+      const FunctionExprPayload *function = exported ? binding.import_interface->callable(*exported) : nullptr;
+      if (function) Call.callable = this->function_callable(*function);
+   }
+
    void annotate_call(CallExprPayload &Call)
    {
       if (auto *direct = std::get_if<DirectCallTarget>(&Call.target); direct and direct->callable) {
@@ -791,7 +851,8 @@ private:
          }
          else if (direct->callable->kind IS AstNodeKind::IdentifierExpr) {
             const auto &reference = std::get<NameRef>(direct->callable->data);
-            Call.callable = this->resolve_binding_callable(reference.binding_id);
+            StaticCallableHandle resolved = this->resolve_binding_callable(reference.binding_id);
+            if (resolved) Call.callable = resolved;
          }
       }
       if (Call.callable) Call.results = this->catalogue_.callable(Call.callable).results;
@@ -2112,7 +2173,22 @@ private:
                base = payload.table.get();
                member = payload.member.symbol;
             }
-            if (base) value = this->member_descriptor(this->descriptor_of(*base), member);
+            if (base) {
+               value = this->member_descriptor(this->descriptor_of(*base), member);
+               if (base->kind IS AstNodeKind::IdentifierExpr and member) {
+                  const auto &reference = std::get<NameRef>(base->data);
+                  if (reference.binding_id) {
+                     const auto &binding = this->catalogue_.binding(reference.binding_id);
+                     if (binding.import_interface and binding.import_namespace) {
+                        std::string_view member_name(strdata(member), member->len);
+                        if (const auto *exported = binding.import_interface->find_member(
+                            *binding.import_namespace, member_name)) {
+                           value = binding.import_interface->static_value(exported->Value);
+                        }
+                     }
+                  }
+               }
+            }
             if (safe) value.nullable = true;
             break;
          }
@@ -2558,6 +2634,38 @@ private:
             if (payload.callable) this->propagate_function(*payload.callable);
             break;
          }
+         case AstNodeKind::ImportStmt: {
+            for (auto &entry : std::get<ImportStmtPayload>(Statement.data).entries) {
+               if (entry.inlined_body) {
+                  ImportSourceGuard guard(this->context_.lex(), entry.file_source_idx);
+                  if (entry.module_initialiser) {
+                     const BlockStmt *outer_body = this->enclosing_body_;
+                     this->enclosing_body_ = entry.inlined_body.get();
+                     this->function_depth_++;
+                     this->propagate_block(*entry.inlined_body);
+                     this->function_depth_--;
+                     this->enclosing_body_ = outer_body;
+                  }
+                  else this->propagate_block(*entry.inlined_body);
+               }
+               if (entry.installed_interface) {
+                  for (const auto &exported : entry.installed_interface->context().Bindings) {
+                     if (exported.Name.find('.') != std::string::npos or
+                         entry.installed_interface->is_namespace(exported.Name)) continue;
+                     GCstr *name = this->context_.lex().keepstr(exported.Name);
+                     this->global_values_.emplace_back(
+                        name, this->add_value(entry.installed_interface->static_value(exported.Value)));
+                  }
+                  if (entry.namespace_name and entry.namespace_name->binding_id) {
+                     auto &binding = this->catalogue_.binding(entry.namespace_name->binding_id);
+                     binding.value = this->add_value(
+                        entry.installed_interface->namespace_value(entry.default_namespace));
+                     entry.namespace_name->static_value = binding.value;
+                  }
+               }
+            }
+            break;
+         }
          default:
             this->walk_statement_expressions(Statement, [this](ExprNode &Expression) {
                this->propagate_expression(Expression);
@@ -2775,6 +2883,8 @@ private:
    std::vector<BindingScope> scopes_;
    std::vector<std::pair<GCstr *, StaticValueHandle>> global_values_;
    std::vector<GCstr *> global_names_;
+   std::unordered_map<GCstr *, std::pair<const InstalledImportInterface *,
+      const tiri::import_cache::ExportDescriptor *>> interface_globals_;
    const BlockStmt *enclosing_body_ = nullptr;
    uint16_t function_depth_ = 0;
    bool native_calls_only_ = false;

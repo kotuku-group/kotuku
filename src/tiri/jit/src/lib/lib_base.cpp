@@ -25,6 +25,7 @@
 #include "lj_meta.h"
 #include "lj_state.h"
 #include "lj_frame.h"
+#include "lj_func.h"
 #include "lj_vm.h"
 #include "lj_bc.h"
 #include "lj_ff.h"
@@ -45,6 +46,73 @@
 #include "lib_range.h"
 
 #define LJLIB_MODULE_base
+
+//********************************************************************************************************************
+// Execute one imported-module initialiser at most once in this interpreter.  Failed initialisers are deliberately
+// retried by a later activation: Script.Activate() reruns the root, and retaining a terminal failure here would make
+// that ordinary retry skip the import which caused it.  The initialising state remains terminal only for the active
+// call chain, where it provides a defensive runtime cycle check in addition to parser-time cycle diagnostics.
+
+static int import_module_activate(lua_State *L)
+{
+   GCstr *identity_value = lj_lib_checkstr(L, 1);
+   const bool has_reference = lua_isnumber(L, 2);
+   if (not has_reference) luaL_typerror(L, 2, "imported-module reference");
+   std::string identity(strdata(identity_value), identity_value->len);
+   lua_State *owner = mainthread(G(L));
+
+   auto found = owner->import_module_activations.find(identity);
+   ImportModuleActivationState state = found IS owner->import_module_activations.end() ?
+      ImportModuleActivationState::Unseen : found->second;
+   if (state IS ImportModuleActivationState::Initialised) return 0;
+   if (state IS ImportModuleActivationState::Initialising) {
+      luaL_error(L, ERR::InvalidState, "Circular runtime import activation for '%s'.", identity.c_str());
+   }
+
+   const int32_t signed_index = lj_lib_checkint(L, 2);
+   if (signed_index < 0) luaL_error(L, ERR::InvalidData, "Invalid imported-module table index.");
+
+   TValue *c_frame = L->base - 1;
+   if (not frame_islua(c_frame)) {
+      luaL_error(L, ERR::InvalidState, "Imported-module activation has no Lua caller.");
+   }
+   TValue *caller_frame = frame_prev(c_frame);
+   GCfunc *caller = frame_func(caller_frame);
+   if (not isluafunc(caller)) {
+      luaL_error(L, ERR::InvalidState, "Imported-module activation has no Lua caller.");
+   }
+   const ImportModuleTable *table = proto_import_module_table(funcproto(caller));
+   const uint32_t module_index = uint32_t(signed_index);
+   if (not table or table->version != IMPORT_MODULE_TABLE_VERSION or module_index >= table->entry_count) {
+      luaL_error(L, ERR::InvalidData, "Invalid imported-module table reference.");
+   }
+
+   const ImportModuleTableEntry &entry = import_module_table_entries(table)[module_index];
+   GCstr *stored_identity = gco_to_string(gcref(entry.compiled_identity));
+   if (stored_identity->len != identity_value->len or
+       memcmp(strdata(stored_identity), strdata(identity_value), identity_value->len) != 0) {
+      luaL_error(L, ERR::InvalidData, "Imported-module identity does not match its table entry.");
+   }
+   if (not gcref(entry.initialiser) or gcref(entry.initialiser)->gch.gct != ~LJ_TPROTO) {
+      luaL_error(L, ERR::InvalidData, "Imported-module table entry has no executable initialiser.");
+   }
+   GCproto *referenced_initialiser = gco_to_proto(gcref(entry.initialiser));
+   if (referenced_initialiser->sizeuv != 0) {
+      luaL_error(L, ERR::InvalidData, "Imported-module initialiser has unsupported captures.");
+   }
+   GCtab *referenced_environment = tabref(caller->l.env);
+
+   owner->import_module_activations[identity] = ImportModuleActivationState::Initialising;
+   setfuncV(L, L->top++, lj_func_newL_zero(L, referenced_initialiser, referenced_environment));
+   if (lua_pcall(L, 0, 0, 0) != 0) {
+      owner->import_module_activations[identity] = ImportModuleActivationState::Failed;
+      lua_error(L);
+      return 0;
+   }
+
+   owner->import_module_activations[identity] = ImportModuleActivationState::Initialised;
+   return 0;
+}
 
 static uint64_t low_bit_mask(int32_t Count)
 {
@@ -1131,6 +1199,12 @@ extern int luaopen_base(lua_State* L)
    settabV(L, lj_tab_setstr(L, env, lj_str_newlit(L, "_G")), env);
    lua_pushliteral(L, "5.4");  //  top-2. // Lua version number, set as _VERSION
    LJ_LIB_REG(L, "_G", base);
+
+   // Unlike generated fast functions, this compiler-only callable has no source-visible table entry.  Its reserved
+   // BC_BFUNC identity is stable across generated library order changes and the GG slot keeps the closure alive.
+   lua_pushcfunction(L, import_module_activate);
+   lj_builtin_register(L, BuiltinCallableID::ImportModuleActivate, funcV(L->top - 1));
+   L->top--;
 
    // Register function prototypes for compile-time type inference
    reg_func_prototype("print", { }, {}, FProtoFlags::Variadic, FProtoArity::required(0));

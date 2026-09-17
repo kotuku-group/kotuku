@@ -1,0 +1,8 @@
+extern glI05FailureAttempts, glI05FailureCleanups
+
+defer glI05FailureCleanups++ end
+
+glI05FailureAttempts++
+if glI05FailureAttempts is 1 then
+   raise 'I05 deliberate initialiser failure'
+end

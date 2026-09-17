@@ -15,11 +15,13 @@
 #include <string_view>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include "lj_obj.h"
 #include "lj_err.h"
 #include "../debug/filesource.h"
 #include "func_state.h"
+#include "../../../import_module_cache.h"
 
 #ifdef INCLUDE_TIPS
 #include <memory>
@@ -51,6 +53,21 @@ enum class GlobalContractPolicy : uint8_t {
    Advisory,
    Enforced,
    Variant
+};
+
+struct ImportModuleCompilationRecord {
+   std::string lookup_identity;
+   std::string compiled_identity;
+   std::string interface_bytes;
+   std::vector<uint32_t> dependencies;
+   GCproto *initialiser = nullptr;
+   uint8_t source_index = 0;
+};
+
+struct ImportModuleCompilationFrame {
+   std::string lookup_identity;
+   std::string compiled_identity;
+   std::vector<uint32_t> dependencies;
 };
 
 enum class ArraySizeKind : uint8_t {
@@ -147,6 +164,13 @@ public:
    std::vector<std::string> compilation_structs;
    std::vector<uint32_t> loaded_structs;
    std::vector<uint8_t> bytecode_struct_manifest;
+   std::vector<uint8_t> bytecode_import_module_bundle;
+   std::vector<tiri::import_cache::RootModuleRecord> bytecode_import_module_records;
+   std::vector<ImportModuleCompilationRecord> import_module_records;
+   std::vector<ImportModuleCompilationFrame> import_module_stack;
+   std::vector<int> import_module_anchors;
+   std::vector<GCproto *> linked_import_module_roots;
+   tiri::import_cache::LifecycleCounters import_cache_counters;
    bool dynamic_struct_reference = false;
    bool loaded_structs_committed = false;
 

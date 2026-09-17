@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "lj_obj.h"
+#include "lauxlib.h"
 #include "lj_gc.h"
 #include "lj_err.h"
 #include "lj_buf.h"
@@ -1834,6 +1835,8 @@ LexState::LexState(lua_State* L, lua_Reader Rfunc, void* Rdata, std::string_view
 LexState::~LexState()
 {
    if (not this->L) return;  // Not properly initialised
+
+   for (int reference : this->import_module_anchors) luaL_unref(this->L, LUA_REGISTRYINDEX, reference);
 
    if (not this->loaded_structs_committed) {
       for (uint32_t key : this->loaded_structs) this->L->struct_declarations.erase(key);

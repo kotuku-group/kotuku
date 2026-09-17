@@ -401,6 +401,10 @@ private:
 
       const auto &binding = this->catalogue_.binding(ID);
 
+      if (binding.is_import_namespace) {
+         return { TableOwnership::Foreign, ForeignTableSource::Import };
+      }
+
       // The caller owns a parameter's table, so designating it would permanently alter a foreign table.
       if (binding.is_parameter) return { TableOwnership::Foreign, ForeignTableSource::Parameter };
 

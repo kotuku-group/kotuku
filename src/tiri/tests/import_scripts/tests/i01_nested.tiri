@@ -1,0 +1,3 @@
+import 'tests/i01_direct'
+
+i01_boundary_trace ..= 'N'

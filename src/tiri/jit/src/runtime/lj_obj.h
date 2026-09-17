@@ -890,6 +890,46 @@ struct CompilationSourceMap {
    uint8_t reserved;
 };
 
+inline constexpr uint8_t IMPORT_MODULE_TABLE_VERSION = 1;
+
+struct ImportModuleTableEntry {
+   GCRef compiled_identity;
+   GCRef initialiser;
+   uint32_t first_dependency;
+   uint32_t dependency_count;
+   uint8_t source_index;
+   uint8_t reserved[3];
+};
+
+struct ImportModuleTable {
+   uint8_t version;
+   uint8_t reserved[3];
+   uint32_t entry_count;
+   uint32_t dependency_count;
+   uint32_t byte_size;
+};
+
+[[nodiscard]] inline ImportModuleTableEntry * import_module_table_entries(ImportModuleTable *Table) noexcept
+{
+   return Table ? (ImportModuleTableEntry *)(Table + 1) : nullptr;
+}
+
+[[nodiscard]] inline const ImportModuleTableEntry * import_module_table_entries(
+   const ImportModuleTable *Table) noexcept
+{
+   return Table ? (const ImportModuleTableEntry *)(Table + 1) : nullptr;
+}
+
+[[nodiscard]] inline uint32_t * import_module_table_dependencies(ImportModuleTable *Table) noexcept
+{
+   return Table ? (uint32_t *)(import_module_table_entries(Table) + Table->entry_count) : nullptr;
+}
+
+[[nodiscard]] inline const uint32_t * import_module_table_dependencies(const ImportModuleTable *Table) noexcept
+{
+   return Table ? (const uint32_t *)(import_module_table_entries(Table) + Table->entry_count) : nullptr;
+}
+
 [[nodiscard]] inline CompilationSourceEntry * compilation_source_entries(CompilationSourceMap *Map) noexcept
 {
    return Map ? (CompilationSourceEntry *)(Map + 1) : nullptr;
@@ -926,6 +966,9 @@ typedef struct GCproto {
    MRef compilation_sources; // CompilationSourceMap owned by the root prototype only.
    MRef struct_manifest; // Portable named-structure semantics owned by the root prototype only.
    uint32_t struct_manifest_size;
+   MRef import_module_bundle; // Canonical imported-module records owned by the root prototype only.
+   uint32_t import_module_bundle_size;
+   MRef import_module_table; // Root-owned executable imported-module entries.
    MRef   lineinfo;   //  BCLine[sizebc-1] array - file index in upper 8 bits, line in lower 24.
    MRef   uvinfo;     //  Upvalue names.
    MRef   varinfo;    //  Names and compressed extents of local variables.
@@ -1063,6 +1106,9 @@ inline void proto_metadata_init(GCproto *Proto) noexcept
    setmref(Proto->compilation_sources, nullptr);
    setmref(Proto->struct_manifest, nullptr);
    Proto->struct_manifest_size = 0;
+   setmref(Proto->import_module_bundle, nullptr);
+   Proto->import_module_bundle_size = 0;
+   setmref(Proto->import_module_table, nullptr);
    setmref(Proto->lineinfo, nullptr);
    setmref(Proto->uvinfo, nullptr);
    setmref(Proto->varinfo, nullptr);
@@ -1100,6 +1146,27 @@ inline void proto_metadata_init(GCproto *Proto) noexcept
 [[nodiscard]] inline const CompilationSourceMap * proto_compilation_sources(const GCproto *Proto) noexcept
 {
    return proto_compilation_sources((GCproto *)Proto);
+}
+
+[[nodiscard]] inline const uint8_t * proto_import_module_bundle(
+   const GCproto *Proto, uint32_t *Size = nullptr) noexcept
+{
+   if (not Proto) return nullptr;
+   const GCproto *root = gcref(Proto->source_root) ? (const GCproto *)gcref(Proto->source_root) : Proto;
+   if (Size) *Size = root->import_module_bundle_size;
+   return root->import_module_bundle.get<const uint8_t>();
+}
+
+[[nodiscard]] inline ImportModuleTable * proto_import_module_table(GCproto *Proto) noexcept
+{
+   if (not Proto) return nullptr;
+   GCproto *root = gcref(Proto->source_root) ? (GCproto *)gcref(Proto->source_root) : Proto;
+   return root->import_module_table.get<ImportModuleTable>();
+}
+
+[[nodiscard]] inline const ImportModuleTable * proto_import_module_table(const GCproto *Proto) noexcept
+{
+   return proto_import_module_table((GCproto *)Proto);
 }
 
 [[nodiscard]] inline const ProtoDependencyTable * proto_dependencies(const GCproto *Proto) noexcept
@@ -1830,6 +1897,13 @@ struct DeferRegistration {
    uint8_t scope_base = 0;
 };
 
+enum class ImportModuleActivationState : uint8_t {
+   Unseen,
+   Initialising,
+   Initialised,
+   Failed
+};
+
 struct lua_State {
    GCHeader;            // NB: C++ placement new can trash any preset values here.
    uint8_t dummy_ffid;  //  Fake FF_C for curr_funcisL() on dummy frames.
@@ -1915,6 +1989,10 @@ struct lua_State {
    // Parser-declared structures are scoped to this interpreter.  Registry nodes remain stable while GC objects
    // reference their struct_record values and are released after those objects during state shutdown.
    std::unordered_map<uint32_t, struct_record> struct_declarations;
+
+   // Runtime import modules are identified by their immutable resolved compilation identity.  Keep this on the main
+   // interpreter state so activations from child threads share one lifecycle without retaining any module prototype.
+   std::unordered_map<std::string, ImportModuleActivationState> import_module_activations;
 
    // Stack of pending import lexers for cleanup if SEH throws during import parsing.
    // Note: Windows SEH doesn't call C++ destructors, so we track these for manual cleanup.

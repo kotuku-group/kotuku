@@ -20,6 +20,7 @@
 #include "lj_contract.h"
 #include "../debug/lj_debug.h"
 #include "../../../defs.h"
+#include "../../../import_module_bundle.h"
 
 #include <limits>
 #include <vector>
@@ -430,7 +431,7 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
       if (op >= BC__MAX) bcread_error(State, ErrMsg::BCBAD);
       if (op IS BC_BFUNC) {
          BuiltinCallableID id = BuiltinCallableID(bc_d(bc[i]));
-         if (not builtin_callable_valid(id) or not lj_builtin_callable(State->L, id)) {
+         if (not builtin_callable_loadable(id) or not lj_builtin_callable(State->L, id)) {
             bcread_error(State, ErrMsg::BCBAD);
          }
       }
@@ -1452,6 +1453,24 @@ static int bcread_header(LexState *State)
    if (cursor != end) bcread_error(State, ErrMsg::BCBAD);
    State->p = (const char *)end;
 
+   const MSize module_block_size = bcread_uleb128(State);
+   if (module_block_size < 2 or module_block_size > tiri::import_cache::MAX_ROOT_BUNDLE_SIZE) return 0;
+   bcread_need(State, module_block_size);
+   bcread_account(State, module_block_size);
+   bcread_reserve_allocation(State, module_block_size);
+   std::string_view module_bytes(State->p, module_block_size);
+   std::vector<tiri::import_cache::RootModuleRecord> modules;
+   if (tiri::import_cache::decode_root_module_bundle(module_bytes, modules) !=
+       tiri::cache::FormatError::OKAY) return 0;
+   for (const auto &module : modules) {
+      if (module.SourceIndex >= State->compilation_sources.size() and
+          module.SourceIndex != FILESOURCE_OVERFLOW_INDEX) return 0;
+   }
+   State->bytecode_import_module_bundle.assign(
+      (const uint8_t *)State->p, (const uint8_t *)State->p + module_block_size);
+   State->bytecode_import_module_records = std::move(modules);
+   State->p += module_block_size;
+
    const MSize struct_block_size = bcread_uleb128(State);
    if (struct_block_size < 2 or struct_block_size > BCREAD_MAX_VALIDATION_WORK) return 0;
    bcread_need(State, struct_block_size);
@@ -1484,6 +1503,8 @@ GCproto *lj_bcread(LexState *State)
    State->bytecode_prototype_depths.clear();
    State->compilation_sources.clear();
    State->bytecode_struct_manifest.clear();
+   State->bytecode_import_module_bundle.clear();
+   State->bytecode_import_module_records.clear();
    State->loaded_structs.clear();
    State->loaded_structs_committed = false;
 
@@ -1517,19 +1538,68 @@ GCproto *lj_bcread(LexState *State)
       incr_top(L);
    }
 
-   if ((State->pe != State->p and !State->endmark) or L->top - 1 != bcread_oldtop(L, ls) or
-       State->bytecode_prototype_depths.size() != 1)
+   const size_t module_count = State->bytecode_import_module_records.size();
+   TValue *old_top = bcread_oldtop(L, ls);
+   if ((State->pe != State->p and !State->endmark) or L->top - ptrdiff_t(module_count + 1) != old_top or
+       State->bytecode_prototype_depths.size() != module_count + 1)
       bcread_error(State, ErrMsg::BCBAD);
 
    // Publish source records only after all bytecode validation has succeeded.  Keep the root on the stack while
    // installing interned strings and state records can allocate.
    GCproto *root = protoV(L->top - 1);
-   attach_loaded_compilation_sources(L, root, State->compilation_sources);
+   std::vector<GCproto *> module_roots;
+   module_roots.reserve(module_count);
+   for (size_t i = 0; i < module_count; ++i) {
+      GCproto *prototype = protoV(old_top + ptrdiff_t(i));
+      if (prototype->sizeuv != 0) bcread_error(State, ErrMsg::BCBAD);
+      module_roots.push_back(prototype);
+   }
+   attach_loaded_compilation_sources(L, root, State->compilation_sources, module_roots);
    auto manifest = (uint8_t *)lj_mem_new(L, MSize(State->bytecode_struct_manifest.size()));
    memcpy(manifest, State->bytecode_struct_manifest.data(), State->bytecode_struct_manifest.size());
    setmref(root->struct_manifest, manifest);
    root->struct_manifest_size = uint32_t(State->bytecode_struct_manifest.size());
+   auto module_bundle = (uint8_t *)lj_mem_new(L, MSize(State->bytecode_import_module_bundle.size()));
+   memcpy(module_bundle, State->bytecode_import_module_bundle.data(), State->bytecode_import_module_bundle.size());
+   setmref(root->import_module_bundle, module_bundle);
+   root->import_module_bundle_size = uint32_t(State->bytecode_import_module_bundle.size());
+   if (module_count) {
+      size_t dependency_count = 0;
+      for (const auto &record : State->bytecode_import_module_records) {
+         dependency_count += record.Dependencies.size();
+      }
+      if (dependency_count > tiri::import_cache::MAX_ROOT_MODULES) bcread_error(State, ErrMsg::BCBAD);
+      const size_t table_size = sizeof(ImportModuleTable) + module_count * sizeof(ImportModuleTableEntry) +
+         dependency_count * sizeof(uint32_t);
+      if (table_size > std::numeric_limits<uint32_t>::max()) bcread_error(State, ErrMsg::BCBAD);
+      bcread_account(State, module_count + dependency_count);
+      bcread_reserve_allocation(State, table_size);
+      auto table = (ImportModuleTable *)lj_mem_new(L, MSize(table_size));
+      table->version = IMPORT_MODULE_TABLE_VERSION;
+      memset(table->reserved, 0, sizeof(table->reserved));
+      table->entry_count = uint32_t(module_count);
+      table->dependency_count = uint32_t(dependency_count);
+      table->byte_size = uint32_t(table_size);
+      auto entries = import_module_table_entries(table);
+      auto dependencies = import_module_table_dependencies(table);
+      uint32_t next_dependency = 0;
+      for (size_t i = 0; i < module_count; ++i) {
+         const auto &record = State->bytecode_import_module_records[i];
+         setgcref(entries[i].compiled_identity, obj2gco(&G(L)->strempty));
+         setgcref(entries[i].initialiser, obj2gco(module_roots[i]));
+         entries[i].first_dependency = next_dependency;
+         entries[i].dependency_count = uint32_t(record.Dependencies.size());
+         entries[i].source_index = record.SourceIndex;
+         memset(entries[i].reserved, 0, sizeof(entries[i].reserved));
+         for (uint32_t dependency : record.Dependencies) dependencies[next_dependency++] = dependency;
+      }
+      setmref(root->import_module_table, table);
+      for (size_t i = 0; i < module_count; ++i) {
+         const std::string &identity = State->bytecode_import_module_records[i].CompiledIdentity;
+         setgcref(entries[i].compiled_identity, obj2gco(lj_str_new(L, identity.data(), identity.size())));
+      }
+   }
    State->loaded_structs_committed = true;
-   L->top--;
+   L->top = old_top;
    return root;
 }

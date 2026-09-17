@@ -14,6 +14,7 @@
 #include "lj_bcdump.h"
 #include "lj_vm.h"
 #include "../debug/filesource.h"
+#include "../../../import_module_bundle.h"
 
 // Context for bytecode writer.
 typedef struct BCWriteCtx {
@@ -28,6 +29,9 @@ typedef struct BCWriteCtx {
    const CompilationSourceMap *sources;
    const uint8_t *struct_manifest;
    uint32_t struct_manifest_size;
+   const uint8_t *import_module_bundle;
+   uint32_t import_module_bundle_size;
+   const ImportModuleTable *import_module_table;
 #ifdef LUA_USE_ASSERT
    global_State* g;
 #endif
@@ -121,6 +125,17 @@ static void bcwrite_structs(BCWriteCtx *Ctx)
    char *p = lj_buf_need(&Ctx->sb, 5 + Ctx->struct_manifest_size);
    p = lj_strfmt_wuleb128(p, Ctx->struct_manifest_size);
    p = lj_buf_wmem(p, Ctx->struct_manifest, Ctx->struct_manifest_size);
+   Ctx->status = Ctx->wfunc(sbufL(&Ctx->sb), Ctx->sb.b, MSize(p - Ctx->sb.b), Ctx->wdata);
+   lj_buf_reset(&Ctx->sb);
+}
+
+static void bcwrite_import_modules(BCWriteCtx *Ctx)
+{
+   if (Ctx->status != 0) return;
+   lj_buf_reset(&Ctx->sb);
+   char *p = lj_buf_need(&Ctx->sb, 5 + Ctx->import_module_bundle_size);
+   p = lj_strfmt_wuleb128(p, Ctx->import_module_bundle_size);
+   p = lj_buf_wmem(p, Ctx->import_module_bundle, Ctx->import_module_bundle_size);
    Ctx->status = Ctx->wfunc(sbufL(&Ctx->sb), Ctx->sb.b, MSize(p - Ctx->sb.b), Ctx->wdata);
    lj_buf_reset(&Ctx->sb);
 }
@@ -595,6 +610,7 @@ static void bcwrite_header(BCWriteCtx* ctx)
    ctx->status = ctx->wfunc(sbufL(&ctx->sb), ctx->sb.b,
       (MSize)(p - ctx->sb.b), ctx->wdata);
    if (ctx->status IS 0) bcwrite_sources(ctx);
+   if (ctx->status IS 0) bcwrite_import_modules(ctx);
    if (ctx->status IS 0) bcwrite_structs(ctx);
 }
 
@@ -618,6 +634,12 @@ static TValue* cpwriter(lua_State* L, lua_CFunction dummy, void* ud)
 
    (void)lj_buf_need(&ctx->sb, 1024);  //  Avoids resize for most prototypes.
    bcwrite_header(ctx);
+   if (ctx->import_module_table) {
+      const ImportModuleTableEntry *entries = import_module_table_entries(ctx->import_module_table);
+      for (uint32_t i = 0; i < ctx->import_module_table->entry_count and ctx->status IS 0; ++i) {
+         bcwrite_proto(ctx, gco_to_proto(gcref(entries[i].initialiser)));
+      }
+   }
    bcwrite_proto(ctx, ctx->pt);
    bcwrite_footer(ctx);
    return nullptr;
@@ -639,10 +661,44 @@ int lj_bcwrite(lua_State *L, GCproto *pt, lua_Writer writer, void *data, int str
    memset(ctx.source_mapped, 0, sizeof(ctx.source_mapped));
    ctx.sources = proto_compilation_sources(pt);
    ctx.struct_manifest = proto_struct_manifest(pt, &ctx.struct_manifest_size);
+   ctx.import_module_bundle = proto_import_module_bundle(pt, &ctx.import_module_bundle_size);
+   ctx.import_module_table = proto_import_module_table(pt);
    if (not ctx.sources or ctx.sources->version != COMPILATION_SOURCE_VERSION or ctx.sources->count IS 0 or
        ctx.sources->count > FILESOURCE_MAX_COUNT or ctx.sources->root >= ctx.sources->count) return 1;
    if (not ctx.struct_manifest or ctx.struct_manifest_size < 2 or
        ctx.struct_manifest[0] != STRUCT_MANIFEST_VERSION) return 1;
+   if (not ctx.import_module_bundle or not ctx.import_module_bundle_size) return 1;
+   std::vector<tiri::import_cache::RootModuleRecord> validated_modules;
+   if (tiri::import_cache::decode_root_module_bundle(std::string_view(
+       (const char *)ctx.import_module_bundle, ctx.import_module_bundle_size), validated_modules) !=
+       tiri::cache::FormatError::OKAY) return 1;
+   if (validated_modules.empty()) {
+      if (ctx.import_module_table) return 1;
+   }
+   else {
+      if (not ctx.import_module_table or ctx.import_module_table->version != IMPORT_MODULE_TABLE_VERSION or
+          ctx.import_module_table->entry_count != validated_modules.size()) return 1;
+      const ImportModuleTableEntry *table_entries = import_module_table_entries(ctx.import_module_table);
+      const uint32_t *table_dependencies = import_module_table_dependencies(ctx.import_module_table);
+      uint32_t dependency_count = 0;
+      for (uint32_t i = 0; i < ctx.import_module_table->entry_count; ++i) {
+         const ImportModuleTableEntry &entry = table_entries[i];
+         const auto &record = validated_modules[i];
+         if (not gcref(entry.compiled_identity) or gcref(entry.compiled_identity)->gch.gct != ~LJ_TSTR or
+             not gcref(entry.initialiser) or gcref(entry.initialiser)->gch.gct != ~LJ_TPROTO or
+             gco_to_proto(gcref(entry.initialiser))->sizeuv != 0 or entry.source_index != record.SourceIndex or
+             entry.dependency_count != record.Dependencies.size() or
+             entry.first_dependency != dependency_count) return 1;
+         GCstr *identity = gco_to_string(gcref(entry.compiled_identity));
+         if (identity->len != record.CompiledIdentity.size() or
+             memcmp(strdata(identity), record.CompiledIdentity.data(), identity->len) != 0) return 1;
+         for (uint32_t d = 0; d < entry.dependency_count; ++d) {
+            if (table_dependencies[entry.first_dependency + d] != record.Dependencies[d]) return 1;
+         }
+         dependency_count += entry.dependency_count;
+      }
+      if (dependency_count != ctx.import_module_table->dependency_count) return 1;
+   }
    auto entries = compilation_source_entries(ctx.sources);
    for (uint32_t i = 0; i < ctx.sources->count; ++i) {
       GCstr *path = gco_to_string(gcref(entries[i].canonical_path));
@@ -668,6 +724,12 @@ int lj_bcwrite(lua_State *L, GCproto *pt, lua_Writer writer, void *data, int str
       if (ctx.source_mapped[runtime]) return 1;
       ctx.source_mapped[runtime] = 1;
       ctx.source_wire[runtime] = uint8_t(i);
+   }
+   if (ctx.import_module_table) {
+      const ImportModuleTableEntry *entries = import_module_table_entries(ctx.import_module_table);
+      for (uint32_t i = 0; i < ctx.import_module_table->entry_count; ++i) {
+         if (not bcwrite_validate_proto(&ctx, gco_to_proto(gcref(entries[i].initialiser)))) return 1;
+      }
    }
    if (not bcwrite_validate_proto(&ctx, pt)) return 1;
 #ifdef LUA_USE_ASSERT
