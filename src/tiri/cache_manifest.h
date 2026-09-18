@@ -10,7 +10,7 @@
 
 namespace tiri::cache {
 
-constexpr uint32_t SCHEMA_VERSION = 1;
+constexpr uint32_t SCHEMA_VERSION = 2;
 constexpr size_t DIGEST_SIZE = 32;
 constexpr size_t MAX_METADATA_SIZE = 8 * 1024 * 1024;
 constexpr size_t MAX_STRING_SIZE = 64 * 1024;
@@ -95,7 +95,7 @@ enum class FormatError : uint8_t {
 
 struct EnvelopeView {
    Manifest Metadata;
-   std::string_view Payload;
+   std::string Payload;
 };
 
 [[nodiscard]] Digest content_digest(std::span<const uint8_t> Bytes) noexcept;

@@ -166,7 +166,14 @@ static bool bytecode_save_contract(kt::Log &Log)
       return ran_twice_after_save and (lua_tointeger(loaded->Lua, 1) IS 123);
    };
 
-   if (not check_loaded_lifecycle(wrapped) or not check_loaded_lifecycle(raw)) return false;
+   if (not check_loaded_lifecycle(wrapped)) return false;
+
+   objTiri::create raw_holder = { fl::Statement(raw) };
+   if (not raw_holder.ok()) return false;
+   auto raw_script = (extTiri *)*raw_holder;
+   state = {};
+   if (not save_and_check(raw_script, ERR::InvalidData) or state.Calls or
+       acQuery(raw_script) != ERR::InvalidData) return false;
 
    // A caller-owned statement remains source even when Path has a bytecode suffix.  Init must not infer provenance
    // from the path after deliberately skipping the file load.

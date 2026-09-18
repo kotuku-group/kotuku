@@ -12,7 +12,7 @@
 
 namespace tiri::import_cache {
 
-constexpr uint32_t SCHEMA_VERSION = 10;
+constexpr uint32_t SCHEMA_VERSION = 11;
 constexpr size_t MAX_INTERFACE_SIZE = 8 * 1024 * 1024;
 constexpr size_t MAX_INTERFACE_RECORDS = 4096;
 
@@ -237,7 +237,7 @@ struct EnvelopeView {
    std::string LookupIdentity;                    // Identifies the envelope for cache lookup.
    std::string CompiledIdentity;                  // Identifies the compiled envelope content.
    FinalisedInterfacePtr CompileTimeInterface;    // Provides the interface used during compilation.
-   std::string_view Payload;                      // Views the serialised module payload.
+   std::string Payload;                           // Owns the verified serialised module payload.
 };
 
 [[nodiscard]] bool is_envelope(std::string_view Input) noexcept;

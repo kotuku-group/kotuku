@@ -8,6 +8,7 @@
 
 #include <format>
 #include <algorithm>
+#include <limits>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -17,21 +18,47 @@
 #include "lj_state.h"
 #include "parser/parser_diagnostics.h"
 
+#include "bytecode_storage.h"
 #include "defs.h"
 
 static int lua_load(lua_State *Lua, class objFile *File, CSTRING SourceName)
 {
    int64_t filesize = 0;
-   if (File->getSize(filesize) != ERR::Okay) return 1;
+   if ((File->getSize(filesize) != ERR::Okay) or (filesize < 0) or
+       (uint64_t(filesize) > tiri::bytecode_storage::MAX_PERSISTED_SIZE)) {
+      lua_pushliteral(Lua, "Tiri input exceeds the encoded size limit.");
+      return 1;
+   }
 
    std::string buffer;
-   buffer.resize(filesize);
+   buffer.resize(size_t(filesize));
+   size_t total = 0;
+   while (total < buffer.size()) {
+      const auto count = std::min(buffer.size() - total, size_t(std::numeric_limits<int>::max()));
+      int bytes_read = 0;
+      if ((File->read(std::span((int8_t *)buffer.data() + total, count), &bytes_read) != ERR::Okay) or
+          (bytes_read <= 0) or (size_t(bytes_read) > count)) {
+         lua_pushliteral(Lua, "Failed to read the complete Tiri input.");
+         return 1;
+      }
+      total += size_t(bytes_read);
+   }
 
-   int bytes_read = 0;
-   if (File->read(std::span<int8_t>((int8_t *)buffer.data(), size_t(filesize)), &bytes_read) != ERR::Okay) return 1;
-   buffer.resize(bytes_read); // Guard against a short read leaving uninitialised tail bytes
-
-   return lua_load(Lua, std::string_view(buffer.data(), buffer.size()), SourceName);
+   std::string decoded;
+   std::string_view input = buffer;
+   if (input.starts_with(LUA_COMPILED)) {
+      auto error = tiri::bytecode_storage::decode_wrapper(input, decoded);
+      if (error != tiri::bytecode_storage::Error::OKAY) {
+         lua_pushfstring(Lua, "Invalid compiled Tiri input (%s).", tiri::bytecode_storage::error_name(error));
+         return 1;
+      }
+      input = decoded;
+   }
+   else if (input.starts_with("\x1b")) {
+      lua_pushliteral(Lua, "Persisted Tiri bytecode requires a compiled wrapper and gzip payload.");
+      return 1;
+   }
+   return lua_load(Lua, input, SourceName);
 }
 
 //********************************************************************************************************************
@@ -305,7 +332,6 @@ int fcmd_loadfile(lua_State *Lua)
 
    log.branch("%.*s", int(path.size()), path.data());
 
-   bool recompile = false;
    bool inject_working_path = false;
    if (path.starts_with("./")) {
       path.remove_prefix(2);
@@ -363,25 +389,6 @@ int fcmd_loadfile(lua_State *Lua)
 
    objFile::create file = { fl::Path(src), fl::Flags(FL::READ) };
    if (file.ok()) {
-      // Check for the presence of a compiled header and skip it if present
-
-      {
-         int len, i;
-         char header[256];
-         if (!file->read(std::span<int8_t>((int8_t *)header, sizeof(header)), &len)) {
-            if (kt::startswith(LUA_COMPILED, std::string_view(header, sizeof(header)))) {
-               recompile = false; // Do not recompile that which is already compiled
-               for (i=sizeof(LUA_COMPILED)-1; (i < len) and (header[i]); i++); // Skip any identity token
-               if ((i < len) and (not header[i])) i++;
-               else i = 0;
-            }
-            else i = 0;
-         }
-         else i = 0;
-
-         file->setPosition(i);
-      }
-
       // Resolve the full path for the chunk name (needed for import statement path resolution)
       std::string resolved_path;
       if (!ResolvePath(src, RSF::NIL, &resolved_path)) {
@@ -463,18 +470,17 @@ int fcmd_exec(lua_State *Lua)
       kt::Log log("exec");
       log.branch();
 
-      // Check for the presence of a compiled header and skip it if present
-
-      if (kt::startswith(LUA_COMPILED, std::string_view(statement, len))) {
-         size_t i;
-         for (i=sizeof(LUA_COMPILED)-1; (i < len) and (statement[i]); i++); // Skip any identity token
-         if (i < len) {
-            statement += i + 1;
-            len -= i + 1;
+      std::string decoded;
+      std::string_view input(statement, len);
+      if (input.starts_with(LUA_COMPILED)) {
+         auto decode_error = tiri::bytecode_storage::decode_wrapper(input, decoded);
+         if (decode_error != tiri::bytecode_storage::Error::OKAY) {
+            luaL_error(Lua, ERR::InvalidData, "Invalid compiled Tiri input (%s).",
+               tiri::bytecode_storage::error_name(decode_error));
          }
+         input = decoded;
       }
-
-      if (not lua_load(Lua, std::string_view(statement, len), "exec")) {
+      if (not lua_load(Lua, input, "exec")) {
          int result_top = lua_gettop(Lua);
          if (not lua_pcall(Lua, 0, LUA_MULTRET, 0)) {
             results = lua_gettop(Lua) - result_top + 1;

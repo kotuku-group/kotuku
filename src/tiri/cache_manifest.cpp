@@ -1,6 +1,7 @@
 #include <kotuku/main.h>
 
 #include "cache_manifest.h"
+#include "bytecode_storage.h"
 
 #include <algorithm>
 #include <bit>
@@ -18,7 +19,7 @@ std::vector<CompilationOption> effective_compilation_options()
 namespace {
 
 constexpr std::array<uint8_t, 8> CACHE_MAGIC = { 'T', 'I', 'R', 'I', 'C', 'A', 'C', 'H' };
-constexpr size_t HEADER_SIZE = CACHE_MAGIC.size() + 4 + 4 + 8 + DIGEST_SIZE;
+constexpr size_t HEADER_SIZE = CACHE_MAGIC.size() + 4 + 4 + 8 + 8 + DIGEST_SIZE;
 
 constexpr std::array<uint32_t, 64> SHA256_CONSTANTS = {
    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -355,7 +356,7 @@ std::string file_key(const Manifest &Metadata)
    }
    auto build = digest_hex(content_digest(Metadata.BuildIdentity));
    auto key = digest_hex(content_digest(identity.Bytes));
-   return "v1-" + build.substr(0, 16) + "-" + key;
+   return "v2-" + build.substr(0, 16) + "-" + key;
 }
 
 bool lookup_identity_matches(const Manifest &Stored, const Manifest &Expected)
@@ -375,16 +376,21 @@ FormatError encode_envelope(const Manifest &Metadata, std::string_view Payload, 
    std::string metadata;
    if (auto error = encode_metadata(Metadata, metadata); error != FormatError::OKAY) return error;
 
+   std::string encoded_payload;
+   if (auto error = bytecode_storage::compress(Payload, encoded_payload);
+       error != bytecode_storage::Error::OKAY) return FormatError::INVALID_PAYLOAD;
+
    Encoder header;
    header.Bytes.append((const char *)CACHE_MAGIC.data(), CACHE_MAGIC.size());
    header.u32(SCHEMA_VERSION);
    header.u32(uint32_t(metadata.size()));
+   header.u64(encoded_payload.size());
    header.u64(Payload.size());
    header.digest(content_digest(metadata));
-   Output.reserve(header.Bytes.size() + metadata.size() + Payload.size());
+   Output.reserve(header.Bytes.size() + metadata.size() + encoded_payload.size());
    Output = std::move(header.Bytes);
    Output += metadata;
-   Output += Payload;
+   Output += encoded_payload;
    return FormatError::OKAY;
 }
 
@@ -398,11 +404,13 @@ FormatError decode_envelope(std::string_view Input, EnvelopeView &Output)
    Decoder header(Input.substr(CACHE_MAGIC.size(), HEADER_SIZE - CACHE_MAGIC.size()));
    auto schema = header.u32();
    auto metadata_size = header.u32();
-   auto payload_size = header.u64();
+   auto encoded_size = header.u64();
+   auto decoded_size = header.u64();
    auto expected_digest = header.digest();
    if (schema != SCHEMA_VERSION) return FormatError::UNSUPPORTED_VERSION;
-   if ((metadata_size > MAX_METADATA_SIZE) or (payload_size > MAX_PAYLOAD_SIZE)) return FormatError::SIZE_LIMIT;
-   if ((uint64_t(HEADER_SIZE) + metadata_size + payload_size) != Input.size()) return FormatError::TRUNCATED;
+   if ((metadata_size > MAX_METADATA_SIZE) or (decoded_size > MAX_PAYLOAD_SIZE) or
+       (encoded_size > bytecode_storage::MAX_ENCODED_SIZE)) return FormatError::SIZE_LIMIT;
+   if ((uint64_t(HEADER_SIZE) + metadata_size + encoded_size) != Input.size()) return FormatError::TRUNCATED;
 
    auto metadata_bytes = Input.substr(HEADER_SIZE, metadata_size);
    if (content_digest(metadata_bytes) != expected_digest) return FormatError::INVALID_METADATA;
@@ -436,8 +444,9 @@ FormatError decode_envelope(std::string_view Input, EnvelopeView &Output)
 
    if (metadata.Error != FormatError::OKAY) return metadata.Error;
    if (metadata.Position != metadata.Bytes.size()) return FormatError::INVALID_METADATA;
-   decoded.Payload = Input.substr(HEADER_SIZE + metadata_size, size_t(payload_size));
-   if (not decoded.Payload.starts_with("\x1bLJ")) return FormatError::INVALID_PAYLOAD;
+   auto encoded_payload = Input.substr(HEADER_SIZE + metadata_size, size_t(encoded_size));
+   if (bytecode_storage::decompress(encoded_payload, decoded.Payload, decoded_size) !=
+       bytecode_storage::Error::OKAY) return FormatError::INVALID_PAYLOAD;
    Output = std::move(decoded);
    return FormatError::OKAY;
 }

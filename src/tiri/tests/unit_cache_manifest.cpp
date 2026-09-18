@@ -5,6 +5,7 @@
 #include <kotuku/modules/tiri.h>
 
 #include "../cache_manifest.h"
+#include "../bytecode_storage.h"
 #include "../defs.h"
 #include "../lua.hpp"
 
@@ -117,7 +118,7 @@ bool malformed_and_bounds_contract(kt::Log &Log)
        not expect(encoded.substr(0, 20), FormatError::TRUNCATED)) return false;
 
    auto unsupported = encoded;
-   unsupported[8] = 2;
+   unsupported[8] = 1;
    if (not expect(unsupported, FormatError::UNSUPPORTED_VERSION)) return false;
 
    auto oversized = encoded;
@@ -126,7 +127,7 @@ bool malformed_and_bounds_contract(kt::Log &Log)
    if (not expect(oversized, FormatError::SIZE_LIMIT)) return false;
 
    auto damaged = encoded;
-   damaged[52] ^= 0x01;
+   damaged[60] ^= 0x01;
    if (not expect(damaged, FormatError::INVALID_METADATA)) return false;
 
    auto set_u32 = [](std::string &Bytes, size_t Offset, uint32_t Value) {
@@ -135,17 +136,17 @@ bool malformed_and_bounds_contract(kt::Log &Log)
    auto refresh_metadata_digest = [](std::string &Bytes) {
       uint32_t size = 0;
       for (int i = 0; i < 4; ++i) size |= uint32_t(uint8_t(Bytes[12 + i])) << (i * 8);
-      auto digest = content_digest(std::string_view(Bytes).substr(56, size));
-      std::memcpy(Bytes.data() + 24, digest.data(), digest.size());
+      auto digest = content_digest(std::string_view(Bytes).substr(64, size));
+      std::memcpy(Bytes.data() + 32, digest.data(), digest.size());
    };
 
    auto long_decoded_string = encoded;
-   set_u32(long_decoded_string, 60, uint32_t(MAX_STRING_SIZE + 1));
+   set_u32(long_decoded_string, 68, uint32_t(MAX_STRING_SIZE + 1));
    refresh_metadata_digest(long_decoded_string);
    if (not expect(long_decoded_string, FormatError::STRING_LIMIT)) return false;
 
    // Skip the BOM field, build identity and complete main-source record to locate the option count.
-   const size_t option_count_offset = 56 + 4 + 4 + manifest.BuildIdentity.size() + 4 +
+   const size_t option_count_offset = 64 + 4 + 4 + manifest.BuildIdentity.size() + 4 +
       manifest.MainSource.ResolvedPath.size() + 8 + 8 + DIGEST_SIZE;
    auto excessive_decoded_count = encoded;
    set_u32(excessive_decoded_count, option_count_offset, uint32_t(MAX_OPTIONS + 1));
@@ -180,6 +181,22 @@ bool malformed_and_bounds_contract(kt::Log &Log)
    }
 
    if (encode_envelope(manifest, "source", encoded) != FormatError::INVALID_PAYLOAD) return false;
+
+   std::string compressed, decoded_payload;
+   const std::string vm_payload("\x1bLJresource-boundary", 20);
+   if (bytecode_storage::compress(vm_payload, compressed) != bytecode_storage::Error::OKAY or
+       bytecode_storage::decompress(compressed, decoded_payload, UINT64_MAX, 3) !=
+          bytecode_storage::Error::DECODED_LIMIT or
+       bytecode_storage::decompress(compressed, decoded_payload, vm_payload.size() + 1) !=
+          bytecode_storage::Error::DECOMPRESSION or
+       bytecode_storage::decompress(compressed + "x", decoded_payload) !=
+          bytecode_storage::Error::TRAILING_DATA or
+       bytecode_storage::decompress("\x78\xda", decoded_payload) !=
+          bytecode_storage::Error::INVALID_GZIP) return false;
+
+   if (bytecode_storage::compress("source", compressed) != bytecode_storage::Error::OKAY or
+       bytecode_storage::decompress(compressed, decoded_payload) !=
+          bytecode_storage::Error::INVALID_BYTECODE) return false;
    return true;
 }
 
@@ -475,7 +492,7 @@ bool automatic_cache_lifecycle_contract(kt::Log &Log)
    return true;
 }
 
-bool source_free_cache_retarget_contract(kt::Log &Log)
+bool legacy_cache_rejection_contract(kt::Log &Log)
 {
    const std::string source_path = "temp:tiri-c05-missing.tiri";
    const std::string initial_path = "temp:tiri-c05-initial.tbc";
@@ -491,21 +508,11 @@ bool source_free_cache_retarget_contract(kt::Log &Log)
        not write_legacy_cache(replacement_path, "global c05_cache_value = 2")) return false;
 
    objTiri::create holder = { fl::Path(source_path), kt::FieldValue("CacheFile", initial_path) };
-   if (not holder.ok()) return false;
-   auto script = (extTiri *)*holder;
-   if (not script->LoadedFromCache or not script->CacheHit or
-       (script->setCacheFile(replacement_path) != ERR::Okay) or (acQuery(script) != ERR::Okay) or
-       not script->LoadedFromCache or not script->CacheHit or
-       (script->EffectiveCacheFile != replacement_path) or (acActivate(script) != ERR::Okay)) {
-      Log.error("A source-free explicit cache could not be retargeted before Query");
+   if (holder.ok()) {
+      Log.error("A source-free legacy wrapper was accepted as a whole-script cache");
       return false;
    }
-
-   lua_getglobal(script->Lua, "c05_cache_value");
-   const bool replacement_executed = lua_tointeger(script->Lua, -1) IS 2;
-   lua_pop(script->Lua, 1);
-   if (not replacement_executed) Log.error("Cache retargeting executed the original explicit cache");
-   return replacement_executed;
+   return true;
 }
 
 } // namespace
@@ -514,7 +521,7 @@ void cache_manifest_unit_tests(int &Passed, int &Total)
 {
    kt::Log log("CacheManifestTests");
    for (auto test : { round_trip_contract, malformed_and_bounds_contract, compilation_capture_contract,
-      automatic_cache_lifecycle_contract, source_free_cache_retarget_contract }) {
+      automatic_cache_lifecycle_contract, legacy_cache_rejection_contract }) {
       Total++;
       if (test(log)) Passed++;
    }

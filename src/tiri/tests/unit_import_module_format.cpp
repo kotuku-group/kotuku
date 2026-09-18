@@ -422,13 +422,13 @@ bool malformed_and_bounds(kt::Log &Log)
        not expect(encoded.substr(0, 40), tiri::cache::FormatError::TRUNCATED)) return false;
 
    auto unsupported = encoded;
-   unsupported[8] = 2;
+   unsupported[8] = 10;
    if (not expect(unsupported, tiri::cache::FormatError::UNSUPPORTED_VERSION)) return false;
 
    auto damaged_interface = encoded;
    uint32_t identity_size = 0;
    for (int i = 0; i < 4; ++i) identity_size |= uint32_t(uint8_t(encoded[12 + i])) << (i * 8);
-   damaged_interface[124 + identity_size] ^= 0x01;
+   damaged_interface[132 + identity_size] ^= 0x01;
    if (not expect(damaged_interface, tiri::cache::FormatError::INVALID_METADATA)) return false;
 
    auto damaged_payload = encoded;
@@ -438,11 +438,11 @@ bool malformed_and_bounds(kt::Log &Log)
    auto unknown_decoded_kind = encoded;
    uint32_t interface_size = 0;
    for (int i = 0; i < 4; ++i) interface_size |= uint32_t(uint8_t(encoded[16 + i])) << (i * 8);
-   const size_t interface_offset = 124 + identity_size;
+   const size_t interface_offset = 132 + identity_size;
    unknown_decoded_kind[interface_offset + 4 + 4 + std::string_view("geometry").size()] = char(255);
    auto interface_hash = tiri::cache::content_digest(
       std::string_view(unknown_decoded_kind).substr(interface_offset, interface_size));
-   std::memcpy(unknown_decoded_kind.data() + 60, interface_hash.data(), interface_hash.size());
+   std::memcpy(unknown_decoded_kind.data() + 68, interface_hash.data(), interface_hash.size());
    if (not expect(unknown_decoded_kind, tiri::cache::FormatError::INVALID_ENUM)) return false;
 
    auto duplicate = sample_interface();

@@ -813,7 +813,7 @@ if (BUILD_DEFS)
    add_dependencies (jit_lib core_defs)
 endif ()
 
-set (TIRI_SOURCES "${MOD}.cpp" "cache_manifest.cpp" "import_module_format.cpp" "import_module_bundle.cpp"
+set (TIRI_SOURCES "${MOD}.cpp" "bytecode_storage.cpp" "cache_manifest.cpp" "import_module_format.cpp" "import_module_bundle.cpp"
    "import_module_cache.cpp" "tiri_module.cpp"
    "tiri_async.cpp" "tiri_struct.cpp"
    "tiri_processing.cpp"

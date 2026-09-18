@@ -68,6 +68,7 @@ constexpr int MAX_ENV_VALUE = 512;
 #include <cstring>
 #include <vector>
 
+static std::string win_wide_to_utf8(const wchar_t *Text);
 static std::wstring win_utf8_to_wide(std::string_view Text);
 
 #define WAITLOCK_EVENTS 1 // Use events instead of semaphores for waitlocks (recommended)
@@ -1521,6 +1522,41 @@ extern "C" void winEnumSpecialFolders(void (*enumfolder)(const char *, const cha
 extern "C" int winGetFullPathName(const char *Path, int PathLength, char *Output, char **NamePart)
 {
    return GetFullPathName(Path, PathLength, Output, NamePart);
+}
+
+//********************************************************************************************************************
+
+extern "C" int winGetFinalPathName(CSTRING Path, std::string &Result)
+{
+   if ((not Path) or (not Path[0])) return 0;
+
+   auto path = win_utf8_to_wide(Path);
+   if (path.empty()) return 0;
+
+   auto handle = CreateFileW(path.c_str(), 0, FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE, nullptr,
+      OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+   if (handle IS INVALID_HANDLE_VALUE) return 0;
+
+   constexpr DWORD flags = FILE_NAME_NORMALIZED | VOLUME_NAME_DOS;
+   const DWORD required = GetFinalPathNameByHandleW(handle, nullptr, 0, flags);
+   if (not required) {
+      CloseHandle(handle);
+      return 0;
+   }
+
+   std::wstring final_path(required, 0);
+   const DWORD written = GetFinalPathNameByHandleW(handle, final_path.data(), DWORD(final_path.size()), flags);
+   CloseHandle(handle);
+   if ((not written) or (written >= final_path.size())) return 0;
+
+   final_path.resize(written);
+   std::string result = win_wide_to_utf8(final_path.c_str());
+   if (result.starts_with("\\\\?\\UNC\\")) result.replace(0, 8, "\\\\");
+   else if (result.starts_with("\\\\?\\")) result.erase(0, 4);
+   if (result.empty()) return 0;
+
+   Result = std::move(result);
+   return 1;
 }
 
 //********************************************************************************************************************
