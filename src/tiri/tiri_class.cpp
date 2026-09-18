@@ -1024,6 +1024,9 @@ static ERR save_binary(lua_State *Lua, OBJECTPTR Target, std::string_view Token)
    if (result) return ERR::InvalidData;
    if (auto error = compressed->write(std::span<const int8_t>()); error != ERR::Okay) return error;
    if (not compressed->Finished) return ERR::Compression;
+   if ((compressed->TotalInput < 0) or (compressed->TotalOutput < 0)) return ERR::Compression;
+   if ((uint64_t(compressed->TotalInput) > tiri::bytecode_storage::MAX_DECODED_SIZE) or
+       (uint64_t(compressed->TotalOutput) > tiri::bytecode_storage::MAX_ENCODED_SIZE)) return ERR::BufferOverflow;
    return ERR::Okay;
 }
 
