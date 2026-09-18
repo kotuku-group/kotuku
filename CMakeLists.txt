@@ -1265,6 +1265,10 @@ if (KOTUKU_INSTALL)
       "${PROJECT_SOURCE_DIR}/apps/vuepoint.tiri"
       DESTINATION "${SHARE_TARGET}/apps")
 
+   install (FILES
+      "${PROJECT_SOURCE_DIR}/tools/flute.tiri"
+      DESTINATION "${SHARE_TARGET}/tools")
+
    install (DIRECTORY "${PROJECT_SOURCE_DIR}/tools/tiri_lsp/include" DESTINATION "${SHARE_TARGET}/tools/tiri_lsp")
    install (FILES
       "${PROJECT_SOURCE_DIR}/tools/tiri_lsp/server.tiri"
