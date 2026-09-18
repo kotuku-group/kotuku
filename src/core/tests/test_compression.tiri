@@ -13,8 +13,41 @@ global glScanCount = 0
    mSys.DeleteFile('temp:cmp_decompress_object.tiri')
    mSys.DeleteFile('temp:scripts.gz')
    mSys.DeleteFile('temp:compressed_stream.gz')
+   mSys.DeleteFile('temp:compressed_stream_boundaries.gz')
+   mSys.DeleteFile('temp:compressed_stream_corrupt.gz')
+   mSys.DeleteFile('temp:compressed_stream_truncated.gz')
+   mSys.DeleteFile('temp:compressed_stream_empty.gz')
+   mSys.DeleteFile('temp:compressed_stream_write_error.gz')
    mSys.DeleteFile('temp:gui.tiri')
    mSys.DeleteFile('temp:window.tiri')
+end
+
+function deterministicBytes(Size:num):str
+   local bytes = array<byte, Size>
+   local state = 0x6d2b79f5
+   for i in {0 to Size} do
+      state = state ^ (state << 13)
+      state = state ^ (state >> 17)
+      state = state ^ (state << 5)
+      bytes[i] = state & 0xff
+   end
+   return bytes.getString()
+end
+
+function readTestFile(Path:str):array<byte>
+   local file = obj.new('file', { path=Path })
+   local bytes = array<byte, file.size>
+   local err = mSys.ReadFileToBuffer(Path, bytes)
+   assert(err is ERR_Okay, f'Failed to read {Path}: {mSys.GetErrorMsg(err)}')
+   return bytes
+end
+
+function writeTestFile(Path:str, Content:any)
+   local file = obj.new('file', { path=Path, flags=FL_WRITE|FL_NEW })
+   local err, written = file.acWrite(Content)
+   assert(err is ERR_Okay, f'Failed to write {Path}: {mSys.GetErrorMsg(err)}')
+   assert(written is #Content, f'Write to {Path} stored {written} of {#Content} bytes.')
+   file.free()
 end
 
 global function streamedOutput(CompressedID, Data)
@@ -367,6 +400,11 @@ end
 
    err = encoder.acWrite(nil)
    assert(err is ERR_Okay, 'CompressedStream finalisation failed: ' .. mSys.GetErrorMsg(err))
+   assert(encoder.finished is 1, 'A finalised CompressedStream should report Finished.')
+   assert(encoder.totalInput is #source, 'The encoder TotalInput count is incorrect.')
+
+   err = encoder.acWrite('x')
+   assert(err is ERR_Finished, 'Writes after finalisation should return Finished until Reset.')
 
    encoder = nil
    output = nil
@@ -379,4 +417,161 @@ end
    err, restored_size = decoder.acRead(restored)
    assert(err is ERR_Okay, 'Finalised stream could not be decompressed: ' .. mSys.GetErrorMsg(err))
    assert(restored.sub(0, restored_size) is source, 'Finalised compressed stream did not round-trip correctly.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Exercise persistent encoded input, exact output capacities, trailing-byte accounting, stable EOF and Reset.
+
+@Test(priority=12) function CompressedStreamSequentialReads()
+   local source = deterministicBytes(70000)
+   local path = 'temp:compressed_stream_boundaries.gz'
+   local output = obj.new('file', { path=path, flags=FL_READ|FL_WRITE|FL_NEW })
+   local encoder = obj.new('compressedstream', { output=output })
+
+   local err, consumed = encoder.acWrite(source)
+   assert(err is ERR_Okay and consumed is #source, 'The encoder did not consume the complete boundary fixture.')
+   err = encoder.acWrite(nil)
+   assert(err is ERR_Okay, 'Failed to finalise the boundary fixture: ' .. mSys.GetErrorMsg(err))
+
+   local member_size = encoder.totalOutput
+   assert(member_size > 4096, 'The deterministic fixture did not span multiple encoded input buffers.')
+   err, consumed = output.acWrite('trailing-data')
+   assert(err is ERR_Okay and consumed is 13, 'Failed to append the trailing-data fixture.')
+   encoder = nil
+   output.free()
+
+   local input = obj.new('file', { path=path, flags=FL_READ })
+   local decoder = obj.new('compressedstream', { input=input })
+   assert(decoder.size is -1, 'Decoded Size should be unknown before verified completion.')
+
+   local restored = array<byte, #source>
+   local offset = 0
+   local capacities = array<int> { 1, 2047, 2048, 2049, 34815, 34816, 34817 }
+   local capacity_index = 0
+   while decoder.finished is 0 do
+      local capacity = capacities[capacity_index % #capacities]
+      local buffer = array<byte, capacity>
+      local length
+      err, length = decoder.acRead(buffer)
+      assert(err is ERR_Okay, 'Sequential decompression failed: ' .. mSys.GetErrorMsg(err))
+      assert(length <= capacity, f'Read returned {length} bytes for a {capacity}-byte destination.')
+      if length > 0 then restored.copy(buffer.getString(0, length), offset) end
+      offset += length
+      capacity_index++
+   end
+
+   assert(offset is #source, f'Sequential decompression returned {offset} of {#source} bytes.')
+   assert(restored.getString() is source, 'Sequential reads changed the decoded data.')
+   assert(decoder.totalInput is member_size, 'TotalInput should exclude prefetched trailing bytes.')
+   assert(decoder.totalOutput is #source, 'TotalOutput should equal the full decoded size.')
+   assert(decoder.size is #source, 'Size should equal the full decoded size after completion.')
+
+   local eof_buffer = array<byte, 3>
+   err, consumed = decoder.acRead(eof_buffer)
+   assert(err is ERR_Okay and consumed is 0, 'The first read after completion should remain at EOF.')
+   err, consumed = decoder.acRead(eof_buffer)
+   assert(err is ERR_Okay and consumed is 0, 'Repeated reads after completion should remain at EOF.')
+
+   check input.acSeek(0, SEEK_START)
+   check decoder.acReset()
+   assert(decoder.finished is 0, 'Reset should clear Finished.')
+   assert(decoder.totalInput is 0 and decoder.totalOutput is 0, 'Reset should clear stream counters.')
+   assert(decoder.size is -1, 'Reset should make decoded Size unknown again.')
+
+   local first_byte = array<byte, 1>
+   err, consumed = decoder.acRead(first_byte)
+   assert(err is ERR_Okay and consumed is 1, 'A one-byte read after Reset should make progress.')
+   assert(first_byte.getString() is source.sub(0, 1), 'Reset decompression restarted with the wrong byte.')
+
+   check decoder.acSeek(4096, SEEK_START)
+   err, consumed = decoder.acRead(first_byte)
+   assert(err is ERR_Okay and consumed is 1, 'An absolute seek should permit a following read.')
+   assert(first_byte.getString() is source.sub(4096, 4097), 'Absolute seek selected the wrong decoded byte.')
+
+   check decoder.acSeek(3, SEEK_CURRENT)
+   err, consumed = decoder.acRead(first_byte)
+   assert(err is ERR_Okay and consumed is 1, 'A relative seek should permit a following read.')
+   assert(first_byte.getString() is source.sub(4100, 4101), 'Relative seek selected the wrong decoded byte.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Empty members are complete only after zlib has verified their trailer.
+
+@Test(priority=13) function CompressedStreamEmptyMember()
+   local path = 'temp:compressed_stream_empty.gz'
+   local output = obj.new('file', { path=path, flags=FL_WRITE|FL_NEW })
+   local encoder = obj.new('compressedstream', { output=output })
+   local err = encoder.acWrite(nil)
+   assert(err is ERR_Okay and encoder.finished is 1, 'Failed to create a complete empty gzip member.')
+   local member_size = encoder.totalOutput
+   encoder = nil
+   output.free()
+
+   local input = obj.new('file', { path=path, flags=FL_READ })
+   local decoder = obj.new('compressedstream', { input=input })
+   local buffer = array<byte, 1>
+   local length
+   err, length = decoder.acRead(buffer)
+   assert(err is ERR_Okay and length is 0, 'An empty member should decode as verified EOF.')
+   assert(decoder.finished is 1, 'An empty member should report Finished after trailer verification.')
+   assert(decoder.totalInput is member_size and decoder.totalOutput is 0,
+      'Empty-member counters should retain the encoded size and zero decoded bytes.')
+   assert(decoder.size is 0, 'A verified empty member should have decoded Size zero.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Truncation and checksum corruption must become sticky terminal errors rather than successful EOF.
+
+@Test(priority=14) function CompressedStreamRejectsInvalidMembers()
+   local source_path = 'temp:compressed_stream_empty.gz'
+   local encoded = readTestFile(source_path)
+   local truncated = encoded.slice({0 to #encoded - 1})
+   writeTestFile('temp:compressed_stream_truncated.gz', truncated)
+
+   local input = obj.new('file', { path='temp:compressed_stream_truncated.gz', flags=FL_READ })
+   local decoder = obj.new('compressedstream', { input=input })
+   local buffer = array<byte, 16>
+   local err = decoder.acRead(buffer)
+   assert(err is ERR_Decompression, 'A truncated member should return Decompression, got ' .. mSys.GetErrorMsg(err))
+   assert(decoder.finished is 0, 'A truncated member must not report Finished.')
+   local repeated = decoder.acRead(buffer)
+   assert(repeated is err, 'A decompression failure should remain sticky until Reset.')
+
+   encoded[#encoded - 8] = encoded[#encoded - 8] ^ 1
+   writeTestFile('temp:compressed_stream_corrupt.gz', encoded)
+   input = obj.new('file', { path='temp:compressed_stream_corrupt.gz', flags=FL_READ })
+   decoder = obj.new('compressedstream', { input=input })
+   err = decoder.acRead(buffer)
+   assert(err is ERR_InvalidData, 'A corrupt checksum should return InvalidData, got ' .. mSys.GetErrorMsg(err))
+   assert(decoder.finished is 0, 'A corrupt member must not report Finished.')
+   repeated = decoder.acRead(buffer)
+   assert(repeated is err, 'A checksum failure should remain sticky until Reset.')
+
+   local unreadable = obj.new('file', { path=source_path, flags=FL_WRITE })
+   decoder = obj.new('compressedstream', { input=unreadable })
+   err = decoder.acRead(buffer)
+   assert(err is ERR_FileReadFlag, 'An upstream read error should be preserved, got ' .. mSys.GetErrorMsg(err))
+   repeated = decoder.acRead(buffer)
+   assert(repeated is err, 'An upstream read error should remain sticky until Reset.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Preserve destination errors and reject all subsequent output until Reset.
+
+@Test(priority=15) function CompressedStreamWriteFailureIsSticky()
+   local path = 'temp:compressed_stream_write_error.gz'
+   writeTestFile(path, 'read-only destination')
+   local output = obj.new('file', { path=path, flags=FL_READ })
+   local encoder = obj.new('compressedstream', { output=output })
+
+   local err = encoder.acWrite('content that cannot be written')
+   assert(err is ERR_FileWriteFlag, 'The destination write error should be preserved, got ' .. mSys.GetErrorMsg(err))
+   local repeated = encoder.acWrite('more content')
+   assert(repeated is err, 'A destination failure should remain sticky until Reset.')
+   assert(encoder.finished is 0, 'A failed encoder must not report Finished.')
+
+   check encoder.acReset()
+   assert(encoder.totalInput is 0 and encoder.totalOutput is 0, 'Reset should clear failed encoder counters.')
+   repeated = encoder.acWrite('retry')
+   assert(repeated is ERR_FileWriteFlag, 'Reset should permit a retry and preserve its new destination error.')
 end
