@@ -170,9 +170,6 @@ end
 
    check mSys.SetVolume("fstestnest", "bin:|system:scripts/", "filetypes/source", "", "", VOLUME_HIDDEN|VOLUME_SYSTEM);
    check mSys.AnalysePath("fstestnest:gui.tiri");
-
-   check mSys.SetVolume("scripts", "system:scripts/|/home/paul/kotuku/src/tiri/tests/import_scripts/", "filetypes/source", "", "", VOLUME_HIDDEN|VOLUME_SYSTEM|VOLUME_REPLACE);
-   check mSys.AnalysePath("scripts:tests/i01_direct.tiri")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
