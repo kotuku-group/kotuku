@@ -24,8 +24,8 @@ src/
 ├── debug/               # Error guard documentation
 ├── host/                # Build tools (buildvm, minilua)
 
-build/agents/src/tiri/jitlib-generated/  # Generated headers, VM object, host helpers
-build/agents/jit/lib/              # Final static library
+build/agents/src/tiri/jitlib-generated/  # Generated headers, VM code, host helpers and non-MSVC objects
+build/agents/jit/lib/                    # Platform-specific JIT static library
 ```
 
 ## Lua State Thread Confinement
@@ -41,43 +41,60 @@ interfaces and copy or otherwise marshal data between the independent states.
 
 
 ## Integration & Build Tips
-- Always rebuild via CMake (e.g. `cmake --build build/agents --config <BuildType>`) after touching LuaJIT or Tiri sources so the static library target is regenerated and relinked into the Tiri module.
+
+- Use the repository's Debug build.  Always rebuild via CMake after touching LuaJIT or Tiri sources so the JIT static
+  library is regenerated and relinked into the Tiri module.
 - CMake drives three build strategies, matching the logic in `src/tiri/CMakeLists.txt`:
-  - **MSVC**: `msvcbuild_codegen.bat` produces generated headers and `lj_vm.obj`, and CMake links `lua51.lib` next to the upstream sources.
-  - **Unix-like toolchains**: CMake builds the host tools (`minilua` and `buildvm`), generates assembly with DynASM, then archives `lj_vm.o` + `ljamalg.o` into `libluajit-5.1.a`.
-- Install (`cmake --install build/agents --config <BuildType>`) before running tests so the freshly built `origo` binary (or `origo.exe` on Windows) and scripts land in `build/agents-install/`.
+  - **MSVC**: CMake builds `minilua` and `buildvm`, generates the headers and `lj_vm.obj`, then creates `lua51.lib`.
+  - **MinGW**: CMake uses DynASM and `buildvm` to generate a PE VM object, then creates `libjitlib.a` from that object
+    and the separately compiled JIT sources.
+  - **Unix-like toolchains**: CMake selects the x64, arm64 or PPC DynASM source, generates `lj_vm.S`, compiles the JIT
+    sources separately and archives them as `libjitlib.a`.
+- The generated headers, VM code and host tools live under `build/agents/src/tiri/jitlib-generated/`.  Do not edit them.
+  CMake tracks the source and layout-header dependencies needed to regenerate them.
+- Install (`cmake --install build/agents --config Debug`) before running tests so the freshly built `origo` binary (or
+  `origo.exe` on Windows) and scripts land in `build/agents-install/`.
 
 ## Error Handling Configuration
-- **Windows (MSVC)**: Must NOT define `LUAJIT_NO_UNWIND`. MSVC always uses Structured Exception Handling (SEH) via `RaiseException()` and `lj_err_unwind_win()`.  There is no "internal unwinding" implementation for MSVC - SEH is the only viable mechanism. Setting `LJ_NO_UNWIND` for MSVC breaks exception handling and causes catch() tests to fail with "attempt to call a nil value" errors.
-- The `LJ_NO_UNWIND` flag results in broken code that corrupts memory if used in GCC builds.
+
+- **Windows (MSVC)**: Do not define `LUAJIT_NO_UNWIND`.  MSVC uses Structured Exception Handling (SEH) through
+  `RaiseException()` and `lj_err_unwind_win()`; forcing no-unwind mode breaks Tiri exception handling.
+- **GCC and Clang**: CMake supplies `-funwind-tables -DLUAJIT_UNWIND_EXTERNAL` to the JIT runtime and generated VM
+  assembly.  Do not remove these flags or force `LUAJIT_NO_UNWIND`; the runtime frame layout and error paths assume the
+  configured external unwinder.
 
 ## Testing
 
 ### Running Tests
+
 ```bash
 # Run all tests
-ctest --build-config <BuildType> --test-dir build/agents
+ctest --build-config Debug --test-dir build/agents --output-on-failure
 
 # Run specific test by label
-ctest --build-config <BuildType> --test-dir build/agents -R <label>
+ctest --build-config Debug --test-dir build/agents --output-on-failure -L '^tiri_debug$'
 ```
 
 ### Manual Testing
+
 ```bash
 # Quick checks with log output
-origo --no-crash-handler --log-warning your_script.tiri
+build/agents-install/origo --statement "print('Hello')" --log-warning
+
+# Run one Flute file directly while iterating
+build/agents-install/origo tools/flute.tiri file=src/tiri/tests/test_debug.tiri --log-warning
 ```
 
 ### After Modifying LuaJIT Sources
 
 **Critical**: Rebuild and reinstall after touching LuaJIT C sources:
 ```bash
-cmake --build build/agents --config <BuildType> --parallel
-cmake --install build/agents --config <BuildType>
+cmake --build build/agents --config Debug --parallel
+cmake --install build/agents --config Debug
 ```
 
-When building targeted instead of the full tree, include `origo_cmd` alongside `tiri` (e.g.
-`--target tiri origo_cmd`) so the installed `origo` executable picks up the changes.
+For a targeted modular build, use `--target tiri`.  In a static build, use `--target tiri origo_cmd` so the `origo`
+executable is relinked with the changes.
 
 ### JIT Debugging Options
 
@@ -106,6 +123,7 @@ Run `origo` with `--jit-options` to pass JIT engine flags as a CSV list:
 Example: `--jit-options dump-bytecode,trace-registers`
 
 ### Per-Script JIT Options
+
 ```lua
 local script = obj.new('tiri', {
    statement = [[
@@ -161,8 +179,9 @@ In `LJLIB_CF(debug_validate)`:
 `collect_parser_symbols()` is deliberately gated on `SCF::PROCESS_DOC`; without the flag it deletes any stale
 `Lua.parser_symbols` value and returns without walking the AST.
 
-The collector walks function declarations and function expressions assigned to variables or members.  For every function
-it builds a `ParserSymbolMetadata` record:
+The collector recursively walks function declarations and function expressions assigned to variables or members.
+Struct declarations are collected separately while parsing because they lower to ordinary local declarations in the
+AST.  Both paths produce `ParserSymbolMetadata` records:
 
 ```cpp
 struct ParserSymbolMetadata {
@@ -176,6 +195,7 @@ struct ParserSymbolMetadata {
    std::vector<ParserDocParamMetadata> params;
    std::vector<ParserDocReturnMetadata> results;
    std::vector<ParserDocErrorMetadata> errors;
+   std::vector<ParserStructFieldMetadata> fields;  // Populated for "struct" symbols only
 };
 ```
 
@@ -222,7 +242,8 @@ The table exposed to Tiri is zero-indexed and has this shape:
          },
          errors = {
             [0] = { code = "Args", doc = "If the name is invalid", inferred = false }
-         }
+         },
+         fields = {}
       }
    }
 }
@@ -230,6 +251,10 @@ The table exposed to Tiri is zero-indexed and has this shape:
 
 The parser exposes result values as `results`, not `returns`.  This matches the field name used by
 `ParserSymbolMetadata` and by the Tiri tests.
+
+Struct symbols use `kind = "struct"`, a signature of `struct Name`, and a zero-indexed `fields` table.  Each field has
+`name`, `type`, `doc`, `line` and `column` entries.  Function symbols expose an empty `fields` table for a consistent
+consumer shape.
 
 ### `@Doc(text=...)` Parsing
 
@@ -315,8 +340,11 @@ Documentation text augments parser-derived signature metadata; it does not repla
   collector yet, so `errors[].inferred` is currently `false`.
 
 ### Unit Tests
+
 - Unit tests are managed by `MODTests()` in `src/tiri/tiri.cpp`
-- Run compiled-in unit tests: `src/tiri/tests/test_unit_tests.tiri` with `--log-api`
+- Run compiled-in unit tests with
+  `build/agents-install/origo tools/flute.tiri file=src/tiri/tests/test_unit_tests.tiri --log-api`.
+- Add new unit tests only when a code path cannot be exercised by a Flute-based Tiri test.
 
 ## Common Gotchas
 
@@ -326,33 +354,24 @@ Documentation text augments parser-derived signature metadata; it does not repla
 
 ## VM Assembly and buildvm Dependencies
 
-**Critical Build Dependency**: The `lj_obj.h` file contains the `MMDEF` macro which defines the metamethod table. When modifying `MMDEF` (e.g., adding new metamethods like `__close`), both `buildvm` and `lj_vm.obj` must be regenerated.
+**Critical Build Dependency**: The `lj_obj.h` file contains the `MMDEF` macro which defines the metamethod table.  When
+modifying `MMDEF`, `buildvm` and the platform-specific generated VM code must be regenerated.
 
 **Why This Matters:**
-- `buildvm` generates `lj_vm.obj` with hardcoded metamethod offsets derived from `MMDEF`
-- If `lj_obj.h` changes but `lj_vm.obj` is not regenerated, the VM assembly will have stale offsets
+- `buildvm` generates the VM object or assembly with hardcoded metamethod offsets derived from `MMDEF`.
+- If `lj_obj.h` changes but the generated VM code is not regenerated, the VM will have stale offsets.
 - This causes cryptic runtime failures like `PANIC: unprotected error in call to Lua API ()` affecting *all* Tiri scripts
 
 ### Adding New Metamethods
 
 When adding entries to `MMDEF` in `lj_obj.h`:
 
-1. **Position matters**: The `MMDEF` macro generates an enum (`MM_*`) with sequential values. The first 6-8 metamethods are "fast" (negative cached). Add new metamethods at the end, after `_(tostring)`, to avoid shifting existing indices.
-
-2. **Force rebuild**: After modifying `MMDEF`, delete the generated VM files:
-   ```bash
-   # Windows
-   del build\agents\src\tiri\jitlib-generated\buildvm.exe
-   del build\agents\src\tiri\jitlib-generated\lj_vm.obj
-
-   # Unix
-   rm build/agents/src/tiri/jitlib-generated/buildvm
-   rm build/agents/src/tiri/jitlib-generated/lj_vm.o
-   ```
-
-3. **Full rebuild**: Run `cmake --build build/agents --config <BuildType> --parallel`
-
-**Note**: CMake includes `lj_obj.h` in the `DEPENDS` clause for both buildvm compilation and VM generation, ensuring automatic regeneration when `lj_obj.h` changes.
+1. **Position matters**: The `MMDEF` macro generates sequential `MM_*` values.  The first six metamethods, through
+   `MM_len`, are negative-cached fast metamethods.  Add new metamethods at the end of `MMDEF` unless the implementation
+   explicitly requires a particular ordering.
+2. **Rebuild through CMake**: Run `cmake --build build/agents --config Debug --parallel`.  `lj_obj.h` is a dependency of
+   both the `buildvm` host objects and VM generation, so normal CMake builds regenerate the affected outputs.  Manual
+   deletion should only be necessary when diagnosing a damaged or externally modified build tree.
 
 ## Environment Mutation Boundary (Global Type Contracts)
 

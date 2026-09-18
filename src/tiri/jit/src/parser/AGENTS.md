@@ -1,232 +1,178 @@
 # Parser Implementation Notes
 
-This file captures parser-specific practices and gotchas for the Tiri JIT parser that ships inside Kōtuku. The parser
-has been modernised to C++20 and implements a two-phase architecture: AST construction followed by IR emission.
+This file describes the C++20 Tiri parser embedded in Kōtuku.  Read the parent `src/tiri/jit/AGENTS.md` for JIT
+build, test and runtime conventions that also apply here.
 
-The parser is built as an amalgamated build, with all source files included in a single compilation unit at
-`parser.cpp`. This simplifies dependency management and ensures consistent compiler settings across the entire parser
-codebase.
+## Compilation Layout
 
-## Architecture Overview
+Most parser implementation files form a unity build rooted at `parser.cpp`.  That file includes the AST, semantic
+analysis and IR-emission implementation files directly.  `ast/builder.cpp` and `ir_emitter/ir_emitter.cpp` similarly
+include their specialised implementation files at the end.
 
-The parser follows a classic two-phase compilation model:
+The lexer (`lexer.cpp`), imported-interface loader (`import_interface.cpp`), parser unit tests
+(`parser_unit_tests.cpp`) and, when enabled, tips implementation (`parser_tips.cpp`) are separate CMake sources.  Do
+not add an included implementation file to `TIRI_SOURCES`; doing so will compile it twice.
 
-1. **AST Building Phase** (`ast/`) - Parses source tokens into a typed Abstract Syntax Tree
-2. **IR Emission Phase** (`ir_emitter/`) - Lowers the AST to LuaJIT bytecode
+## Compilation Pipeline
 
-This separation allows the AST and bytecode emission to evolve independently while sharing a single AST boundary.
+The parser is organised around an AST boundary, but the complete pipeline has several passes:
 
-## Parser File Structure
+1. `AstBuilder::parse_chunk()` constructs a typed `BlockStmt` tree.
+2. `resolve_assignment_targets()` records assignment bindings.
+3. `discover_static_bindings()` and `propagate_static_descriptors()` publish static value information.
+4. `run_type_analysis()` performs optional semantic type analysis, followed by a second descriptor propagation pass.
+5. `prepare_import_interfaces()` finalises imported-module interfaces and `collect_parser_symbols()` extracts tooling
+   metadata.
+6. `IrEmitter::emit_chunk()` lowers the AST to LuaJIT bytecode.
 
-### Core Infrastructure
+The builder may register enum constants and structures while parsing.  Keep its commit and rollback paths paired when
+changing pipeline error handling.
 
-| File | Purpose |
-|------|---------|
-| `parse_types.h` | Type definitions, enums, constexpr helper functions for expressions and scopes |
-| `parse_concepts.h` | C++20 concepts for compile-time type validation (15+ concepts) |
-| `parse_raii.h` | RAII guards (ScopeGuard, RegisterGuard, VStackGuard) with move semantics |
-| `parse_internal.h` | Internal function declarations and template helpers for bytecode emission |
-| `parse_value.h` | Value type definitions |
+## File Map
 
-### Lexer
-
-| File | Purpose |
-|------|---------|
-| `lexer.h` / `lexer.cpp` | Tokenisation and lexical analysis |
-| `token_types.h` / `token_types.cpp` | Strongly typed `TokenKind` enum and `Token` class with payloads |
-| `token_stream.h` / `token_stream.cpp` | Token stream adapter for lookahead and consumption |
-
-### Parser Context and Configuration
+### Entry Points and Context
 
 | File | Purpose |
 |------|---------|
-| `parser.h` / `parser.cpp` | Main parser entry point (`lj_parse`) |
-| `parser_context.h` / `parser_context.cpp` | `ParserContext` class managing lexer state, diagnostics, configuration, and `ParserConfig` struct |
-| `parser_diagnostics.h` / `parser_diagnostics.cpp` | `ParserDiagnostics` for error and warning collection |
-| `parser_tips.h` / `parser_tips.cpp` | Optional tips system for IDE integration |
-| `parser_profiler.h` | Profiling instrumentation for parser performance analysis |
+| `parser.cpp` / `parser.h` | `lj_parse()` entry point, pipeline orchestration and unity-build root |
+| `parser_context.cpp` / `parser_context.h` | Parser configuration, diagnostics, token stream, import stack and shared static descriptors |
+| `parser_diagnostics.cpp` / `parser_diagnostics.h` | Collected parser errors and warnings |
+| `parser_profiler.h` | Parse, type-analysis and emission timing |
+| `parser_symbols.cpp` / `parser_symbols.h` | Symbol and documentation metadata for tooling |
+| `parser_tips.cpp` / `parser_tips.h` | Optional IDE tips, guarded by `INCLUDE_TIPS` |
 
-### AST Building (`ast/` subdirectory)
-
-| File | Purpose |
-|------|---------|
-| `nodes.h` / `nodes.cpp` | Complete AST node schema with 30+ node types |
-| `builder.h` / `builder.cpp` | `AstBuilder` class entry point and core infrastructure |
-| `expressions.cpp` | Expression parsing (primary, suffix, binary, unary, ternary) |
-| `literals.cpp` | Literal parsing (numbers, strings, tables, functions) |
-| `statements.cpp` | Statement parsing (assignments, declarations, returns) |
-| `loops.cpp` | Loop parsing (for, while, repeat, break, continue) |
-| `choose.cpp` | Pattern-matching `choose` expression parsing |
-| `annotations.cpp` | Annotation (`@`) parsing for function metadata |
-
-### IR Emission (`ir_emitter/` subdirectory)
+### Lexer and Tokens
 
 | File | Purpose |
 |------|---------|
-| `ir_emitter.h` / `ir_emitter.cpp` | `IrEmitter` class that lowers AST to bytecode |
-| `operator_emitter.h` / `operator_emitter.cpp` | Operator-specific bytecode emission (arithmetic, logical, bitwise) |
-| `emit_assignment.cpp` | Assignment statement emission (plain, compound, conditional) |
-| `emit_call.cpp` | Function call emission |
-| `emit_choose.cpp` | `choose` expression bytecode generation |
-| `emit_function.cpp` | Function literal and closure emission |
-| `emit_global.cpp` | Global declaration emission with const tracking |
-| `emit_table.cpp` | Table constructor emission |
-| `emit_try.cpp` | Try-except exception handling bytecode generation |
+| `lexer.cpp` / `lexer.h` | Tokenisation and `LexState` |
+| `lexer_types.h` | Token definitions, flags, source spans and lexer-side type declarations |
+| `token_types.cpp` / `token_types.h` | Strongly typed `TokenKind` and `Token` adapters |
+| `token_stream.cpp` / `token_stream.h` | Lookahead and token consumption for the AST builder |
 
-### Register and Control Flow Management
+### AST Construction
 
 | File | Purpose |
 |------|---------|
-| `parse_regalloc.h` / `parse_regalloc.cpp` | `RegisterAllocator` class and expression discharge logic |
-| `parse_control_flow.h` / `parse_control_flow.cpp` | `ControlFlowGraph` for jump patching and branching |
-| `parse_scope.cpp` | Scope management, variable resolution, and upvalue tracking |
-| `parse_constants.cpp` | Constant table management and jump list handling |
+| `ast/nodes.cpp` / `ast/nodes.h` | AST payloads, ownership types and type-name conversion |
+| `ast/builder.cpp` / `ast/builder.h` | `AstBuilder`, block parsing and registration transactions |
+| `ast/expressions.cpp` | Primary, suffix, binary, unary and ternary expressions |
+| `ast/literals.cpp` | Literals, tables and function expressions |
+| `ast/statements.cpp` | Declarations, assignments, imports and other statements |
+| `ast/loops.cpp` | Loop statements, `break` and `continue` |
+| `ast/choose.cpp` | `choose` expressions |
+| `ast/annotations.cpp` | Function annotation parsing |
 
-### Type System
-
-| File | Purpose |
-|------|---------|
-| `type_checker.h` / `type_checker.cpp` | `TypeCheckScope` for static type validation |
-| `type_analysis.cpp` | Static type analysis pass over the AST |
-| `value_categories.h` / `value_categories.cpp` | `ExprValue`, `RValue`, `LValue` hierarchy |
-
-### Legacy/Support Files
+### Semantic Analysis
 
 | File | Purpose |
 |------|---------|
-| `parse_expr.cpp` | Legacy expression parsing utilities |
-| `parser_unit_tests.cpp` | Unit tests for parser components |
+| `assignment_target_resolution.*` | Assignment binding resolution before type analysis |
+| `constant_evaluator.*` | Compile-time AST value evaluation |
+| `field_type_lookup.*` | Static field and member type lookup |
+| `static_type_descriptor.*` | Static value descriptors and catalogue storage |
+| `static_descriptor_analysis.*` | Binding discovery and descriptor propagation |
+| `table_ownership.*` | Ownership proof for contextual table designation |
+| `type_checker.*` / `type_analysis.cpp` | Scope facts, inference and semantic type validation |
+| `value_categories.*` | `ExprValue`, `RValue` and `LValue` handling |
 
-## Key Classes
+### Imports
+
+| File | Purpose |
+|------|---------|
+| `import_interface.*` | Translation of portable module interfaces into parser-owned descriptors |
+| `import_interface_export.*` | Export of parser declarations to portable module interfaces |
+| `import_module_validation.*` | Validation of imported-module state and cache inputs |
+
+### IR Emission and Bytecode Support
+
+| File | Purpose |
+|------|---------|
+| `ir_emitter/ir_emitter.*` | `IrEmitter` and general statement/expression lowering |
+| `ir_emitter/operator_emitter.*` | Arithmetic, logical, comparison and bitwise operators |
+| `ir_emitter/emit_*.cpp` | Specialised assignment, call, checkall, choose, function, global, import, table and try emission |
+| `func_state.*` | `FuncState` helpers used during bytecode construction |
+| `parse_regalloc.*` | Register allocation and RAII register handles |
+| `parse_control_flow.*` | Jump chains and `ControlFlowEdge` patching |
+| `parse_constants.cpp` | LuaJIT constant table and jump-list helpers |
+| `parse_scope.cpp` | Runtime local, scope and upvalue handling during emission |
+| `parse_expr.cpp` | Low-level `ExpDesc` and bytecode-expression helpers |
+
+### Shared Headers and Tests
+
+| File | Purpose |
+|------|---------|
+| `parse_types.h` | Strong index types, parser enums and expression descriptors |
+| `parse_concepts.h` | C++20 concepts for parser and bytecode helper constraints |
+| `parse_internal.h` | Internal bytecode and scope helper declarations |
+| `parse_raii.h` | Scope and parser-state guards |
+| `parse_value.h` | Compile-time parser value representation |
+| `strong_index.h` | Strongly typed index wrapper |
+| `parser_unit_tests.cpp` | Compiled parser unit tests, enabled by `UNIT_TESTS` |
+
+## Main Types
 
 ### `ParserContext`
-Central context object that bundles:
-- `LexState` reference for tokenisation
-- `FuncState` reference for bytecode state
-- `ParserDiagnostics` for error collection
-- `TokenStreamAdapter` for token consumption
-- `ParserConfig` for behaviour options
+
+Owns the configuration, diagnostics and `TokenStreamAdapter`, and provides access to `LexState`, `FuncState` and
+`lua_State`.  It also tracks nested imports and owns a shared `StaticDescriptorCatalogue`.  Use `ParserSession` for a
+temporary configuration override.
 
 ### `AstBuilder`
-Constructs a typed AST from the token stream. Entry point is `parse_chunk()` which returns a `BlockStmt` root node.
-The builder is stateless between chunks and does not touch `FuncState` or emit bytecode.
+
+Builds a `std::unique_ptr<BlockStmt>` through `parse_chunk()`.  It does not emit bytecode, but it does perform parser
+registrations whose commit or rollback is controlled by the top-level pipeline.
 
 ### `IrEmitter`
-Lowers AST nodes to LuaJIT bytecode. Entry point is `emit_chunk()` which consumes a `BlockStmt` and populates
-`FuncState` with bytecode instructions. Uses `RegisterAllocator` and `ControlFlowGraph` for resource management.
+
+Lowers a completed `BlockStmt` through `emit_chunk()`.  It owns the emission-time `RegisterAllocator` and
+`ControlFlowGraph` and delegates operator lowering to `OperatorEmitter`.
 
 ### `RegisterAllocator`
-Manages register allocation with RAII-based `RegisterSpan` for automatic cleanup. Tracks the register floor and
-provides debugging assertions for register balance.
 
-### `ControlFlowGraph`
-Manages jump patching for branching constructs. Provides `ControlFlowEdge` for forward jumps that are resolved when
-targets become known.
+Manages `FuncState::freereg`.  Prefer `acquire()` for one temporary register and `reserve_span()` for a strict LIFO
+range.  `reserve()` and soft spans require explicit lifetime management.  Use the emitter's register-floor checks when
+an emission path may disturb the enclosing expression floor.
 
-## Key Implementation Patterns
+### `TypeCheckScope`
 
-### Type Safety with Concepts
-```cpp
-// Use concepts for compile-time validation
-template<BytecodeOpcode Op>
-static inline BCPOS bcemit_ABC(FuncState *, Op, BCREG, BCREG, BCREG);
-```
+Tracks parameters, locals, inferred types, const state and usage during semantic analysis.  The implementation-wide
+analysis driver is `run_type_analysis()`; static descriptors are a separate, complementary data flow.
 
-### RAII for Resource Management
-```cpp
-// Automatic scope cleanup
-FuncScope bl;
-ScopeGuard scope_guard(fs, &bl, FuncScopeFlag::None);
-// ... parse statements ...
-// Automatic cleanup on scope exit
-```
+### `InstalledImportInterface`
 
-### Result Types for Error Handling
-```cpp
-// ParserResult<T> wraps success/failure without exceptions
-ParserResult<ExprNodePtr> result = parse_expression();
-if (not result.ok()) return ParserResult<StmtNodePtr>::failure(result.error_ref());
-```
+Owns the parser-side translation of a finalised portable import interface.  Imported structures, callables and static
+descriptors must remain tied to this object's lifetime.
 
-### AST Node Ownership
-```cpp
-// Nodes own children through unique_ptr
-using ExprNodePtr = std::unique_ptr<ExprNode>;
-using StmtNodePtr = std::unique_ptr<StmtNode>;
-using ExprNodeList = std::vector<ExprNodePtr>;
-```
+## Implementation Rules
 
-### Modern Container Usage
-```cpp
-// Prefer std::span for array access
-auto uvmap_range = std::span(fs->uvmap.data(), fs->nuv);
-for (auto uv_idx : uvmap_range) { ... }
+- Return recoverable parser failures with `ParserResult<T>`; the parser does not use C++ exceptions.
+- AST children use `std::unique_ptr` and vectors of owning pointers.  Preserve ownership and assign a `SourceSpan` to
+  every new node.
+- `AstNodeKind` and `TiriType` are shared runtime enums in `src/tiri/jit/src/runtime/lj_obj.h`, not parser-local enums.
+- Keep static descriptor, type-analysis and import-interface handling in sync when adding a construct that carries
+  compile-time type or callable information.
+- Use `ControlFlowEdge` for deferred jump patching and resolve or release every created edge before CFG finalisation.
+- Follow the Kōtuku C++ rules from the repository guidance, including `and`, `or`, `IS`, three-space indentation and
+  no C++ exceptions.
 
-// Use std::string_view for string parameters
-static GCstr * keepstr(std::string_view str);
-```
+## Common Changes
 
-## Quick Reference
+- **Add an AST node:** Add the `AstNodeKind` entry in `runtime/lj_obj.h`, define its payload and variant membership in
+  `ast/nodes.h`, construct it in the relevant `ast/*.cpp` file, update applicable semantic walkers, and add emission in
+  `ir_emitter.cpp` or an `emit_*.cpp` file.
+- **Add an operator:** Update the AST operator enum, lexer token metadata if new syntax is required, precedence/token
+  mapping in `parser.cpp`, parsing in `ast/expressions.cpp`, semantic inference, and `operator_emitter.cpp`.
+- **Change type behaviour:** Check `TiriType`, `FunctionReturnTypes`, `type_checker.*`, `type_analysis.cpp`, static
+  descriptors and runtime contract consumers.  Source spellings are `any`, `nil`, `bool`, `num`, `str`, `table`,
+  `array`, `func`, `struct`, `obj`, `range` and `userdata`.
+- **Change imports:** Review AST parsing, module validation, portable interface export/installation, static descriptors,
+  bytecode emission and cache tests as one path.
+- **Add parser coverage:** Put low-level AST, semantic and emission tests in `parser_unit_tests.cpp`; put source-level
+  behaviour tests under `src/tiri/tests/` and register them through the existing Tiri test list.
 
-### File Locations
-- Parser source: `src/tiri/jit/src/parser/`
-- AST definitions: `src/tiri/jit/src/parser/ast/`
-- IR emission: `src/tiri/jit/src/parser/ir_emitter/`
+## References
+
 - Bytecode reference: `src/tiri/jit/BYTECODE.md`
-- Tiri tests: `src/tiri/tests/`
-- Troubleshooting Guide: `src/tiri/jit/src/parser/TROUBLESHOOTING.md`
-
-### Common Tasks
-- **Adding an AST node**: Define struct in `nodes.h`, add `AstNodeKind` enum entry, implement parsing in
-  `builder_*.cpp`, implement emission in `ir_emitter/emit_*.cpp`
-- **Adding an operator**: Add to `AstBinaryOperator`/`AstUnaryOperator` enum, handle in `expressions.cpp`,
-  emit in `operator_emitter.cpp`
-- **Register allocation**: Use `RegisterAllocator::reserve()` for temporary registers, ensure balance with
-  `ensure_register_floor()`
-- **Understanding concepts**: See `parse_concepts.h` for type constraints
-- **Expression builders**: See `parse_types.h` for constexpr factories
-
-### Key Headers
-| Header | Purpose |
-|--------|---------|
-| `ast/nodes.h` | AST node types and payloads |
-| `ast/builder.h` | AST construction interface |
-| `ir_emitter/ir_emitter.h` | Bytecode emission interface |
-| `parser_context.h` | Central parser context |
-| `parse_types.h` | Core types and expression builders |
-| `parse_concepts.h` | C++20 type constraints |
-| `parse_raii.h` | RAII guards |
-| `token_types.h` | Token representation |
-
-## AST Node Hierarchy
-
-The AST uses a discriminated union pattern:
-
-```
-ExprNode (AstNodeKind discriminator)
-├── Literals: Nil, Boolean, Number, String
-├── References: Identifier, Vararg
-├── Operations: Unary, Binary, Ternary, Update, Presence
-├── Access: Member, Index, SafeMember, SafeIndex
-├── Calls: Call, SafeCall, Pipe
-├── Constructors: Table, Function, Range
-└── Extensions: Choose, ResultFilter
-
-StmtNode (AstNodeKind discriminator)
-├── Declarations: LocalDecl, GlobalDecl, LocalFunction, Function
-├── Control Flow: If, While, Repeat, NumericFor, GenericFor
-├── Jumps: Break, Continue, Return
-├── Blocks: Block, Defer
-└── Expressions: ExpressionStmt, Assignment, ConditionalShorthand
-```
-
-## Type System Overview
-
-The parser includes optional static type analysis:
-
-- `TiriType` enum defines supported types (Nil, Boolean, Number, String, Table, Function, etc.)
-- `FunctionReturnTypes` captures declared return type annotations
-- `TypeCheckScope` tracks variable types within scopes
-- Type mismatches can be configured as errors or warnings via `ParserConfig`
-
-Type annotations use the syntax `local x: number = 42` and function return types use `: <type1, type2>`.
+- Parser and register troubleshooting: `src/tiri/jit/src/TROUBLESHOOTING.md`
+- Tiri integration tests: `src/tiri/tests/`
