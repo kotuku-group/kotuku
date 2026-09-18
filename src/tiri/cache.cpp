@@ -59,6 +59,8 @@ static ERR read_source_file(objFile *File, const std::string &Path, std::string 
 
    int64_t size = 0;
    if (auto error = File->getSize(size); error != ERR::Okay) return error;
+   if (has_script_extension(Path, ".tbc") and
+       ((size < 0) or (uint64_t(size) > tiri::bytecode_storage::MAX_PERSISTED_SIZE))) return ERR::OutOfRange;
    if (auto error = read_open_file_to_string(File, size, Source); error != ERR::Okay) return error;
 
    // Bytecode paths are never treated as text, including malformed wrappers with a leading BOM.
@@ -71,48 +73,6 @@ static ERR read_source_file(objFile *File, const std::string &Path, std::string 
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-// Confirm that a candidate cache was produced by this build from the current source content.  Source that cannot be
-// read leaves only the build identity verifiable, which is the documented source-free deployment contract.  A cache
-// written before identity tokens existed carries no build field and is therefore rejected.
-//
-// Only legacy identity is judged here.  The caller performs isolated structural validation before selection.
-
-static bool legacy_cache_identity_matches(const extTiri *Self, const std::string &Cache, bool SourceAvailable)
-{
-   kt::Log log(__FUNCTION__);
-
-   std::string_view payload, token;
-   if (compiled_payload(Cache, payload, &token) != ERR::Okay) {
-      log.trace("Deferring cache '%s' to Query, it is not a well-formed compiled file.",
-         Self->EffectiveCacheFile.c_str());
-      return true;
-   }
-
-   auto reject = [&](CSTRING Reason) {
-      if (SourceAvailable) log.detail("Cache miss '%s': %s.", Self->EffectiveCacheFile.c_str(), Reason);
-      else log.warning("Rejecting cache '%s' and its source is unreadable, %s.",
-         Self->EffectiveCacheFile.c_str(), Reason);
-      return false;
-   };
-
-   auto build_field = identity_build_field();
-   if (not identity_token_matches_build(token, build_field)) {
-      return reject("its identity token is invalid or it was produced by a different build");
-   }
-
-   if (not SourceAvailable) {
-      log.detail("Accepting cache '%s' on its build identity, the source is unavailable.",
-         Self->EffectiveCacheFile.c_str());
-      return true;
-   }
-
-   if (token != make_identity_token(&Self->Statement)) return reject("the source content has changed");
-
-   return true;
-}
-
-//********************************************************************************************************************
 // Validate and split an original import request using the same name grammar as the parser's import resolver.
 
 static bool valid_import_name(std::string_view Request, bool &Local, std::string &ParentPrefix,
@@ -316,8 +276,7 @@ static bool validate_cache_manifest(extTiri *Self, const tiri::cache::Manifest &
 //********************************************************************************************************************
 // Load candidate bytecode in a disposable Lua state to validate its structure and optionally detect imported sources.
 
-static bool validate_cache_bytecode(extTiri *Self, std::string_view Payload, std::string &Reason,
-   bool *HasImports = nullptr)
+static bool validate_cache_bytecode(extTiri *Self, std::string_view Payload, std::string &Reason)
 {
    std::unique_ptr<lua_State, decltype(&lua_close)> validation(luaL_newstate(Self), lua_close);
    if (not validation or (initialise_tiri_compilation_state(validation.get()) != ERR::Okay)) {
@@ -326,18 +285,10 @@ static bool validate_cache_bytecode(extTiri *Self, std::string_view Payload, std
    }
 
    std::string diagnostic;
-   if (load_compilation_input(validation.get(), Self, Payload, CompilationInputOrigin::DIRECT_BYTECODE,
+   if (load_compilation_input(validation.get(), Self, Payload, CompilationInputOrigin::SELECTED_CACHE,
        diagnostic) != ERR::Okay) {
       Reason = diagnostic.empty() ? "its bytecode is structurally invalid" : diagnostic;
       return false;
-   }
-   if (HasImports) {
-      *HasImports = false;
-      if (lua_isfunction(validation.get(), -1) and not lua_iscfunction(validation.get(), -1)) {
-         GCproto *prototype = funcproto(funcV(validation->top - 1));
-         const CompilationSourceMap *sources = proto_compilation_sources(prototype);
-         *HasImports = sources and (sources->count > 1);
-      }
    }
    return true;
 }
@@ -548,7 +499,7 @@ static ERR load_selected_cache(extTiri *Self, ERR SourceError, std::optional<std
    auto format_error = tiri::cache::decode_envelope(content, envelope);
    if (format_error IS tiri::cache::FormatError::OKAY) {
       std::string reason;
-      if (SourceError != ERR::Okay) reason = "schema-1 caches require readable source for validation";
+      if (SourceError != ERR::Okay) reason = "schema-2 caches require readable source for validation";
       else if (validate_cache_manifest(Self, envelope.Metadata, reason) and
                validate_cache_bytecode(Self, envelope.Payload, reason)) {
          payload.assign(envelope.Payload);
@@ -556,27 +507,10 @@ static ERR load_selected_cache(extTiri *Self, ERR SourceError, std::optional<std
       }
       if (not accepted) log.detail("Cache miss '%s': %s.", Self->EffectiveCacheFile.c_str(), reason.c_str());
    }
-   else if (format_error IS tiri::cache::FormatError::NOT_CACHE) {
-      accepted = Self->CacheOrigin IS CacheDestinationOrigin::EXPLICIT and
-         legacy_cache_identity_matches(Self, content, SourceError IS ERR::Okay);
-      if (accepted) {
-         std::string reason;
-         bool has_imports = false;
-         if (validate_cache_bytecode(Self, content, reason, &has_imports) and
-             ((SourceError IS ERR::Okay) or not has_imports)) payload = std::move(content);
-         else {
-            accepted = false;
-            if (reason.empty()) reason = "legacy imported caches require source validation metadata";
-            log.detail("Cache miss '%s': %s.", Self->EffectiveCacheFile.c_str(), reason.c_str());
-         }
-      }
-      else if (Self->CacheOrigin IS CacheDestinationOrigin::AUTOMATIC) {
-         log.detail("Cache miss '%s': legacy bytecode is not an automatic cache.",
-            Self->EffectiveCacheFile.c_str());
-      }
-   }
+   else if (format_error IS tiri::cache::FormatError::NOT_CACHE)
+      log.detail("Cache miss '%s': legacy raw cache format is unsupported.", Self->EffectiveCacheFile.c_str());
    else {
-      log.detail("Cache miss '%s': malformed schema-1 envelope (%s).", Self->EffectiveCacheFile.c_str(),
+      log.detail("Cache miss '%s': malformed schema-2 envelope (%s).", Self->EffectiveCacheFile.c_str(),
          tiri::cache::format_error_name(format_error));
    }
 

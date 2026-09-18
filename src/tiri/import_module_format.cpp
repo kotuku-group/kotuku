@@ -1,6 +1,7 @@
 #include <kotuku/main.h>
 
 #include "import_module_format.h"
+#include "bytecode_storage.h"
 
 #include <algorithm>
 #include <array>
@@ -15,7 +16,7 @@ namespace tiri::import_cache {
 namespace {
 
 constexpr std::array<uint8_t, 8> MODULE_MAGIC = { 'T', 'I', 'R', 'I', 'M', 'O', 'D', '1' };
-constexpr size_t HEADER_SIZE = 8 + 4 + 4 + 4 + 8 + (cache::DIGEST_SIZE * 3);
+constexpr size_t HEADER_SIZE = 8 + 4 + 4 + 4 + 8 + 8 + (cache::DIGEST_SIZE * 3);
 
 //********************************************************************************************************************
 // Serialises primitive values into the module cache's bounded little-endian byte representation.
@@ -940,21 +941,26 @@ cache::FormatError encode_envelope(const Identity &IdentityValue, const Finalise
    std::string identity;
    if (auto error = encode_identity(final_identity, identity); error != cache::FormatError::OKAY) return error;
    const std::string_view interface_bytes = InterfaceValue.bytes();
+   std::string encoded_payload;
+   if (bytecode_storage::compress(Payload, encoded_payload) != bytecode_storage::Error::OKAY) {
+      return cache::FormatError::INVALID_PAYLOAD;
+   }
 
    Encoder header;
    header.Bytes.append((const char *)MODULE_MAGIC.data(), MODULE_MAGIC.size());
    header.u32(SCHEMA_VERSION);
    header.u32(uint32_t(identity.size()));
    header.u32(uint32_t(interface_bytes.size()));
+   header.u64(encoded_payload.size());
    header.u64(Payload.size());
    header.digest(cache::content_digest(identity));
    header.digest(InterfaceValue.digest());
    header.digest(cache::content_digest(Payload));
-   Output.reserve(header.Bytes.size() + identity.size() + interface_bytes.size() + Payload.size());
+   Output.reserve(header.Bytes.size() + identity.size() + interface_bytes.size() + encoded_payload.size());
    Output = std::move(header.Bytes);
    Output += identity;
    Output += interface_bytes;
-   Output += Payload;
+   Output += encoded_payload;
    return cache::FormatError::OKAY;
 }
 
@@ -973,26 +979,24 @@ cache::FormatError decode_envelope(
    auto schema         = header.u32();
    auto identity_size  = header.u32();
    auto interface_size = header.u32();
-   auto payload_size   = header.u64();
+   auto encoded_size   = header.u64();
+   auto decoded_size   = header.u64();
    auto identity_hash  = header.digest();
    auto interface_hash = header.digest();
    auto payload_hash   = header.digest();
 
    if (schema != SCHEMA_VERSION) return cache::FormatError::UNSUPPORTED_VERSION;
    if ((identity_size > cache::MAX_METADATA_SIZE) or (interface_size > MAX_INTERFACE_SIZE) or
-       (payload_size > cache::MAX_PAYLOAD_SIZE)) return cache::FormatError::SIZE_LIMIT;
-   if ((uint64_t(HEADER_SIZE) + identity_size + interface_size + payload_size) != Input.size()) {
+       (decoded_size > cache::MAX_PAYLOAD_SIZE) or
+       (encoded_size > bytecode_storage::MAX_ENCODED_SIZE)) return cache::FormatError::SIZE_LIMIT;
+   if ((uint64_t(HEADER_SIZE) + identity_size + interface_size + encoded_size) != Input.size()) {
       return cache::FormatError::TRUNCATED;
    }
 
    auto identity = Input.substr(HEADER_SIZE, identity_size);
    auto interface_bytes = Input.substr(HEADER_SIZE + identity_size, interface_size);
-   auto payload = Input.substr(HEADER_SIZE + identity_size + interface_size, size_t(payload_size));
+   auto encoded_payload = Input.substr(HEADER_SIZE + identity_size + interface_size, size_t(encoded_size));
    if (cache::content_digest(identity) != identity_hash) return cache::FormatError::INVALID_METADATA;
-
-   if (cache::content_digest(payload) != payload_hash or not payload.starts_with("\x1bLJ")) {
-      return cache::FormatError::INVALID_PAYLOAD;
-   }
 
    EnvelopeView result;
    if (auto error = decode_identity(identity, result.CompilationIdentity);
@@ -1002,7 +1006,12 @@ cache::FormatError decode_envelope(
        error != cache::FormatError::OKAY) return error;
    result.LookupIdentity = result.CompilationIdentity.LookupIdentity;
    result.CompiledIdentity = result.CompilationIdentity.CompiledIdentity;
-   result.Payload = payload;
+   std::string payload;
+   if (bytecode_storage::decompress(encoded_payload, payload, decoded_size) != bytecode_storage::Error::OKAY or
+       cache::content_digest(payload) != payload_hash) {
+      return cache::FormatError::INVALID_PAYLOAD;
+   }
+   result.Payload = std::move(payload);
    Output = std::move(result);
    return cache::FormatError::OKAY;
 }

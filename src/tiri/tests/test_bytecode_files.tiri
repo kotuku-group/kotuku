@@ -133,11 +133,11 @@ function is_compiled(Bytes:str):bool
    if not Bytes.startsWith(glMarker) then return false end
    local separator = Bytes.find('\0', #glMarker)
    if separator is nil then return false end
-   return Bytes.sub(separator + 1).startsWith('\x1bLJ')
+   return Bytes.sub(separator + 1).startsWith('\x1f\x8b\x08')
 end
 
 function is_cache(Bytes:str):bool
-   return Bytes.startsWith('TIRICACH') and #Bytes > 56
+   return Bytes.startsWith('TIRICACH') and #Bytes > 64
 end
 
 function write_file(Path:str, Content:str)
@@ -246,8 +246,8 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Wrapped bytecode, raw VM payloads and a selected source cache must all support repeated re-saving before and after
--- Query/Activate, with every result executing in a fresh process state.
+-- Wrapped bytecode and a selected source cache support repeated re-saving before and after Query/Activate.  Persisted
+-- raw or merely gzip-framed payloads are rejected at the public file boundary.
 
 @Test function ResaveWrappedRawAndSelectedCache()
    local wrapped = path('_b06_seed.tbc')
@@ -266,7 +266,7 @@ end
    end
    do
       local script <close> = obj.new('tiri', { path=raw })
-      append_outputs(outputs, save_lifecycle(script))
+      assert(script.acQuery() is ERR_InvalidData)
    end
 
    local source = path('_b06_cache_source.tiri')
@@ -343,7 +343,7 @@ end
    local direct <close> = obj.new('tiri', { path=direct_path, cacheFile=resaved })
    local direct_output <close> = obj.new('file', { flags=FL_BUFFER|FL_WRITE })
    assert(direct.acSaveToObject(direct_output) is ERR_InvalidData)
-   assert(direct_output.size is 0 and direct.errorMessage.find('Expected a compiled Tiri wrapper') != nil,
+   assert(direct_output.size is 0 and direct.errorMessage.find('requires a compiled wrapper') != nil,
       'A direct .tbc must fail without consulting a valid alternative cache')
 end
 
@@ -729,25 +729,28 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Compiled-file loading must reject malformed, oversized, version-invalid and truncated wrappers without corrupting
--- reusable script state, while still accepting a valid raw VM payload.
+-- Compiled-file loading must reject malformed, oversized, corrupt and truncated wrappers without corrupting reusable
+-- script state.  Bare VM dumps and unwrapped gzip members are not persisted-file formats.
 
 @Test function BinaryBoundariesAndRecovery()
    local script <close> = obj.new('tiri', { statement=glProgram })
    local binary = path('.version.TBC')
    save(script, binary)
    local bytes = read_file(binary)
-   assert(is_compiled(bytes), 'Exact wrapper and VM magic required')
+   assert(is_compiled(bytes), 'Exact wrapper and gzip magic required')
    local wrapper = wrapper_size(bytes)
-   -- The serializer's current version comes from a dump rather than duplicating its private ABI constant.
    local vm = string.dump(function() return 1 end)
-   assert(bytes.sub(wrapper + 3, wrapper + 4) is vm.sub(3, 4))
    local variants = {
       '', glMarker, glMarker .. '\0', glMarker .. '\0print("BAD")',
       glMarker .. ' ' .. string.rep('x', 200) .. '\0' .. payload(bytes), -- Identity token exceeds its bound
       glMarker .. payload(bytes), -- Marker without a separator
-      bytes.sub(0, wrapper + 3) .. '\x01' .. bytes.sub(wrapper + 4),
-      bytes.sub(0, wrapper + 4) .. '\x80\x01' .. bytes.sub(wrapper + 5)
+      glMarker .. '\0\x78\xda\x93\xf6\xf1\x02\x00\x01\x36\x00\xb2', -- Zlib is not gzip
+      glMarker .. '\0\x1f\x8b\x08\x00\x00\x00\x00\x00\x02\xff\xcb\xcb\x2f\xd1\x4d\xaa\x2c' ..
+         '\x49\x4d\xce\x4f\x49\x05\x00\xc1\x31\x88\x89\x0c\x00\x00\x00', -- Valid gzip, not VM bytecode
+      bytes.sub(0, wrapper + 2) .. '\x09' .. bytes.sub(wrapper + 3), -- Not the gzip compression method
+      bytes.sub(0, #bytes - 8) .. '\x00\x00\x00\x00\x00\x00\x00\x00', -- Invalid trailer
+      bytes .. 'trailing', bytes .. payload(bytes), -- Trailing data and concatenated members
+      vm -- Bare VM bytecode is internal only
    }
    for size in values({ wrapper + 1, wrapper + 4, wrapper + 8, math.floor(#bytes / 2), #bytes - 1 }) do
       variants[#variants] = bytes.sub(0, size)
@@ -766,7 +769,7 @@ end
    local raw = path('.tbc')
    write_file(raw, payload(bytes))
    local loaded <close> = obj.new('tiri', { path=raw })
-   activate(loaded)
+   assert(loaded.acQuery() is ERR_InvalidData)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -873,12 +876,13 @@ end
    check mSys.DeleteFile(source)
    try
       local unavailable <close> = obj.new('tiri', { path=source, cacheFile=cache })
-      assert(false, 'A schema-1 cache must not resurrect a missing source')
+      assert(false, 'A schema-2 cache must not resurrect a missing source')
    except e when ERR_FileNotFound
    end
-   do
+   try
       local legacy_fallback <close> = obj.new('tiri', { path=source, cacheFile=legacy })
-      activate(legacy_fallback)
+      assert(false, 'A wrapped bytecode file must not be accepted as a legacy cache')
+   except e when ERR_FileNotFound
    end
    local direct_cache <close> = obj.new('tiri', { path=cache })
    activate(direct_cache)
@@ -1062,8 +1066,12 @@ end
    local source = path('.tiri')
    local cache = path('.tbc')
    local runner = path('.tiri')
-   write_file(source, 'local text = "' .. string.rep('x', 4096) ..
-      '" assert(#text is 4096) print("PARTIAL_CACHE_SOURCE_OK")')
+   local source_text = 'local values = {}\n'
+   for i in {0 to 384} do
+      source_text ..= f'values[{i}] = "{i * 2654435761}:{i * 2246822519}"\n'
+   end
+   source_text ..= 'assert(values[383] != nil) print("PARTIAL_CACHE_SOURCE_OK")'
+   write_file(source, source_text)
    write_file(runner, [[
       local script <close> = obj.new('tiri', { path=arg('source'), cacheFile=arg('cache') })
       check script.acQuery()

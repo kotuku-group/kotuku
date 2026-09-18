@@ -13,16 +13,16 @@ Automatic caching is disabled by default.  Without `SCF::AUTO_CACHE`, a script u
 @Script.CacheFile is set explicitly.  Direct byte-code input, statement input and overrides, string paths,
 documentation processing and parser diagnostic modes do not use automatically selected caches.
 
-Cache output records a schema-versioned manifest and byte-code payload in one envelope.  The manifest identifies the
-producing build, root source, compilation options, imports, path resolutions and compile-time conditions.  A cache is
-reused only when those observations can be reproduced from current source content.  Content digests detect edits even
-when modification dates and file sizes are unchanged.  Any mismatch recompiles from the retained source snapshot and
-republishes the cache.
+Cache output records a schema-versioned manifest and gzip-compressed byte-code payload in one envelope.  The manifest
+identifies the producing build, root source, compilation options, imports, path resolutions and compile-time conditions.
+A cache is reused only when those observations can be reproduced from current source content.  Content digests detect
+edits even when modification dates and file sizes are unchanged.  Any mismatch recompiles from the retained source
+snapshot and republishes the cache.
 
-Schema-versioned caches require readable root and imported sources.  Legacy same-build explicit caches retain their
-source-free deployment behaviour, and a cache envelope opened directly as a `.tbc` file remains authoritative.
-Cache lookup and publication are best-effort optimisations: a missing, invalid or unwritable cache does not prevent
-valid source from compiling.  Warm validation still reads and digests the root and imported source files.
+Schema-versioned caches require readable root and imported sources.  Obsolete schemas and legacy raw cache files are
+cache misses.  A current cache envelope opened directly as a `.tbc` file remains authoritative.  Cache lookup and
+publication are best-effort optimisations: a missing, invalid or unwritable cache does not prevent valid source from
+compiling.  Warm validation still reads and digests the root and imported source files.
 
 Caches are disabled for a script that sets `SCF::PROCESS_DOC`, because the parser metadata collected for
 documentation tools is not stored in byte code.  Runtime-only Script flags and JIT options do not change cache
@@ -38,6 +38,7 @@ identity.
 #include <kotuku/main.h>
 #include <kotuku/modules/xml.h>
 #include <kotuku/modules/tiri.h>
+#include <kotuku/modules/compression.h>
 #include <kotuku/modules/module.h>
 #include <kotuku/modules/processes.h>
 #include <kotuku/strings.hpp>
@@ -63,6 +64,7 @@ identity.
 #include "lj_proto_registry.h"
 #include "tiri_build_identity.h"
 #include "cache_manifest.h"
+#include "bytecode_storage.h"
 #include "import_module_format.h"
 
 #include "defs.h"
@@ -74,8 +76,9 @@ enum class CompilationInputOrigin : uint8_t {
 };
 
 struct CompilationInput {
-   std::string_view Payload;
-   bool Binary;
+   std::string OwnedPayload;
+   bool OwnsPayload = false;
+   bool Binary = false;
 };
 
 static ERR run_script(extTiri *);
@@ -160,37 +163,6 @@ static ERR read_open_file_to_string(objFile *File, int64_t Size, std::string &Bu
 }
 
 //********************************************************************************************************************
-// Most bytes accepted between the compiled marker and the NUL separator, including the separating space.  Bounding
-// the search keeps a malformed file from being scanned in full for a separator that does not exist.
-
-constexpr size_t MAX_IDENTITY_TOKEN = 128;
-
-//********************************************************************************************************************
-// Split a compiled Tiri file into its optional identity token and the VM payload.  Files produced before identity
-// tokens existed carry no token, which Token reports as an empty view.
-
-static ERR compiled_payload(std::string_view Source, std::string_view &Payload, std::string_view *Token = nullptr)
-{
-   constexpr size_t marker_len = sizeof(LUA_COMPILED) - 1;
-   if (not Source.starts_with(LUA_COMPILED)) return ERR::InvalidData;
-
-   auto window = Source.substr(0, std::min(Source.size(), marker_len + MAX_IDENTITY_TOKEN + 1));
-   auto separator = window.find('\0', marker_len);
-   if (separator IS std::string_view::npos) return ERR::InvalidData;
-
-   Payload = Source.substr(separator + 1);
-   if (not Payload.starts_with("\x1bLJ")) return ERR::InvalidData;
-
-   if (Token) {
-      auto token = Source.substr(marker_len, separator - marker_len);
-      while ((not token.empty()) and (token.front() IS ' ')) token.remove_prefix(1);
-      *Token = token;
-   }
-
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
 // The build identity field always leads an identity token so that a consumer can verify the build without knowing
 // whether the source content was recorded.
 
@@ -210,34 +182,6 @@ static std::string make_identity_token(const std::string *Source)
 }
 
 //********************************************************************************************************************
-// Validate the complete token grammar as well as the build field.  Source-free cache loading cannot compare the
-// optional source identity, but it must not allow an arbitrary suffix to turn a build-field prefix into a match.
-
-static bool identity_token_matches_build(std::string_view Token, std::string_view BuildField)
-{
-   if (Token IS BuildField) return true;
-   if ((not Token.starts_with(BuildField)) or (Token.size() <= BuildField.size()) or
-       (Token[BuildField.size()] != ' ')) return false;
-
-   auto source_field = Token.substr(BuildField.size() + 1);
-   if (not source_field.starts_with("s:")) return false;
-   source_field.remove_prefix(2);
-
-   auto comma = source_field.find(',');
-   if ((comma IS 0) or (comma IS std::string_view::npos)) return false;
-
-   auto source_size = source_field.substr(0, comma);
-   auto checksum = source_field.substr(comma + 1);
-   if (checksum.size() != 8) return false;
-
-   auto is_hex = [](char Value) {
-      constexpr std::string_view hex_digits = "0123456789abcdef";
-      return hex_digits.find(Value) != std::string_view::npos;
-   };
-   return std::ranges::all_of(source_size, is_hex) and std::ranges::all_of(checksum, is_hex);
-}
-
-//********************************************************************************************************************
 // Classify source, direct bytecode and selected cache input without changing Script provenance.
 
 static ERR classify_compilation_input(std::string_view Source, CompilationInputOrigin Origin, CompilationInput &Input,
@@ -251,27 +195,56 @@ static ERR classify_compilation_input(std::string_view Source, CompilationInputO
       }
       tiri::cache::EnvelopeView envelope;
       if (tiri::cache::decode_envelope(Source, envelope) IS tiri::cache::FormatError::OKAY) {
-         Input = { envelope.Payload, true };
+         Input.OwnedPayload = std::move(envelope.Payload);
+         Input.OwnsPayload = true;
+         Input.Binary = true;
          Diagnostic.clear();
          return ERR::Okay;
       }
    }
 
-   const bool binary = (Origin != CompilationInputOrigin::SOURCE) or Source.starts_with(LUA_COMPILED) or
-      Source.starts_with("\x1b");
-   std::string_view payload = Source;
-   if (Source.starts_with(LUA_COMPILED)) {
-      if (auto error = compiled_payload(Source, payload); error != ERR::Okay) {
-         Diagnostic = "Invalid compiled Tiri wrapper or missing VM payload.";
-         return error;
+   if (Origin IS CompilationInputOrigin::SELECTED_CACHE) {
+      if (not Source.starts_with("\x1bLJ")) {
+         Diagnostic = "Selected cache does not contain internal VM bytecode.";
+         return ERR::InvalidData;
       }
+      Input.OwnsPayload = false;
+      Input.Binary = true;
+      Diagnostic.clear();
+      return ERR::Okay;
    }
-   else if (binary and not Source.starts_with("\x1b")) {
-      Diagnostic = "Expected a compiled Tiri wrapper and VM payload.";
+
+   if (Source.starts_with(LUA_COMPILED)) {
+      auto error = tiri::bytecode_storage::decode_wrapper(Source, Input.OwnedPayload);
+      if (error != tiri::bytecode_storage::Error::OKAY) {
+         Diagnostic = std::format("Invalid compiled Tiri wrapper ({}).",
+            tiri::bytecode_storage::error_name(error));
+         return ERR::InvalidData;
+      }
+      Input.OwnsPayload = true;
+      Input.Binary = true;
+      Diagnostic.clear();
+      return ERR::Okay;
+   }
+
+   if (Origin IS CompilationInputOrigin::DIRECT_BYTECODE) {
+      Diagnostic = "Persisted Tiri bytecode requires a compiled wrapper and gzip payload.";
       return ERR::InvalidData;
    }
 
-   Input = { payload, binary };
+   if (Source.starts_with("\x1bLJ")) {
+      Input.OwnsPayload = false;
+      Input.Binary = true;
+      Diagnostic.clear();
+      return ERR::Okay;
+   }
+   if (Source.starts_with("\x1f\x8b")) {
+      Diagnostic = "A gzip member without a compiled Tiri wrapper is not executable.";
+      return ERR::InvalidData;
+   }
+
+   Input.OwnsPayload = false;
+   Input.Binary = false;
    Diagnostic.clear();
    return ERR::Okay;
 }
@@ -287,7 +260,8 @@ static ERR load_compilation_input(lua_State *Lua, extTiri *Self, std::string_vie
    if (auto error = classify_compilation_input(Source, Origin, input, Diagnostic); error != ERR::Okay) return error;
 
    auto chunk_name = make_chunk_name(Self);
-   const int result = lua_load(Lua, input.Payload, chunk_name.c_str());
+   const std::string_view payload = input.OwnsPayload ? std::string_view(input.OwnedPayload) : Source;
+   const int result = lua_load(Lua, payload, chunk_name.c_str());
    if (result) {
       if (not input.Binary and Lua->parser_diagnostics and Lua->parser_diagnostics->has_errors()) {
          Diagnostic.clear();
@@ -846,17 +820,18 @@ Use the SaveToObject action to compile @Script.Statement and save the resulting 
 executing the program.  Each save compiles the statement afresh, including after #Query() or #Activate(), and
 preserves any pending executable chunk.  Saving during active execution returns `ERR::InvalidState`.
 
-Source statements, wrapped byte code and raw VM byte code can be saved.  A rejected selected cache receives one local
-source fallback during each save, without consuming the later Query fallback or changing cache provenance.  A direct
-`.tbc` file is authoritative and never falls back to another file.
+Source statements, wrapped byte code and caller-supplied raw VM byte code can be saved.  Persisted `.tbc` input must
+use the wrapped gzip format; bare VM byte code and unwrapped gzip data are rejected.  A rejected selected cache
+receives one local source fallback during each save, without consuming the later Query fallback or changing cache
+provenance.  A direct `.tbc` file is authoritative and never falls back to another file.
 
-The output contains the Tiri compiled marker, an identity token, a NUL separator and VM byte code with debug
-information.  The token records the build that produced the output, and is informational here because a caller-owned
-destination is authoritative when it is loaded.  Automatic caches record a source identity alongside it and are
-validated on reload.  Byte code is platform-agnostic across supported 64-bit Kōtuku targets, but requires a
-compatible Tiri bytecode ABI and the referenced runtime interfaces.  Runtime state is not saved.  Required
-locally named struct definitions, imported declarations, source identities and diagnostic line mappings are embedded
-in the output; unused struct declarations and source text are not embedded.
+The output contains the Tiri compiled marker, an identity token, a NUL separator and gzip-compressed VM byte code with
+debug information.  The token records the build that produced the output, and is informational here because a
+caller-owned destination is authoritative when it is loaded.  Automatic caches record a source identity alongside it
+and are validated on reload.  Byte code is platform-agnostic across supported 64-bit Kōtuku targets, but requires a
+compatible Tiri bytecode ABI and the referenced runtime interfaces.  Runtime state is not saved.  Required locally
+named struct definitions, imported declarations, source identities and diagnostic line mappings are embedded in the
+output; unused struct declarations and source text are not embedded.
 
 Loading publishes embedded layouts in the consumer state for its lifetime.  An identical existing declaration is
 reused, while a conflicting declaration rejects the complete load without changing the prior registry.  Save
@@ -1022,7 +997,9 @@ static ERR save_binary(lua_State *Lua, OBJECTPTR Target, std::string_view Token)
    if ((not Lua) or (not Target)) return ERR::NullArgs;
 
    if ((not lua_gettop(Lua)) or (not lua_isfunction(Lua, -1)) or lua_iscfunction(Lua, -1)) return ERR::InvalidData;
-   if ((not Token.empty()) and (Token.size() + 1 > MAX_IDENTITY_TOKEN)) return ERR::BufferOverflow;
+   if ((not Token.empty()) and (Token.size() + 1 > tiri::bytecode_storage::MAX_IDENTITY_TOKEN)) {
+      return ERR::BufferOverflow;
+   }
 
    std::string header(LUA_COMPILED);
    if (not Token.empty()) {
@@ -1034,10 +1011,20 @@ static ERR save_binary(lua_State *Lua, OBJECTPTR Target, std::string_view Token)
    const int stack_top = lua_gettop(Lua);
    BytecodeWriter writer { Target };
    if (write_bytecode(Lua, header.data(), header.size(), &writer)) return writer.Error;
+
+   objCompressedStream::create compressed(NF::LOCAL);
+   if (not compressed.ok() or (compressed->setOutput(Target) != ERR::Okay) or
+       (compressed->setFormat(CF::GZIP) != ERR::Okay) or (compressed->init() != ERR::Okay)) {
+      return ERR::Compression;
+   }
+   writer.Destination = *compressed;
    const int result = lua_dump(Lua, write_bytecode, &writer);
    lua_settop(Lua, stack_top);
    if (writer.Error != ERR::Okay) return writer.Error;
-   return result ? ERR::InvalidData : ERR::Okay;
+   if (result) return ERR::InvalidData;
+   if (auto error = compressed->write(std::span<const int8_t>()); error != ERR::Okay) return error;
+   if (not compressed->Finished) return ERR::Compression;
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************

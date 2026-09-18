@@ -7,14 +7,20 @@ Name: Files
 // included by lib_filesystem.cpp
 
 //********************************************************************************************************************
-// Cleans up path strings such as "../../myfile.txt".  Note that for Linux, the targeted file/folder has to exist or
-// NULL will be returned.
+// Canonicalises native host paths.  Existing targets resolve symbolic links and Windows reparse points.  Windows
+// falls back to lexical canonicalisation for missing targets; on Linux, a missing target returns no result.
 //
 // The Path must be resolved to the native OS format.
 
 static std::optional<std::string> true_path(CSTRING Path)
 {
 #ifdef _WIN32
+   std::string final_path;
+   if (winGetFinalPathName(Path, final_path)) return std::make_optional<std::string>(std::move(final_path));
+
+   // Missing paths cannot be opened for final-name resolution.  Preserve lexical canonicalisation for callers using
+   // RSF::NO_FILE_CHECK so that they can resolve destinations before creating them.
+
    std::string buffer;
    buffer.resize(256);
    while (true) {
