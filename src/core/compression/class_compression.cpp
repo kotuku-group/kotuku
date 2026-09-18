@@ -303,12 +303,12 @@ ERR convert_zip_error(struct z_stream_s *Stream, int Result)
 
    ERR error;
    switch(Result) {
-      case Z_STREAM_ERROR:  error = ERR::CompressionStreamError;
-      case Z_DATA_ERROR:    error = ERR::InvalidData;
-      case Z_MEM_ERROR:     error = ERR::Memory;
-      case Z_BUF_ERROR:     error = ERR::BufferOverflow;
-      case Z_VERSION_ERROR: error = ERR::WrongVersion;
-      default:              error = ERR::CompressionStreamError;
+      case Z_STREAM_ERROR:  error = ERR::CompressionStreamError; break;
+      case Z_DATA_ERROR:    error = ERR::InvalidData; break;
+      case Z_MEM_ERROR:     error = ERR::Memory; break;
+      case Z_BUF_ERROR:     error = ERR::BufferOverflow; break;
+      case Z_VERSION_ERROR: error = ERR::WrongVersion; break;
+      default:              error = ERR::CompressionStreamError; break;
    }
 
    if (Stream->msg) log.warning("%s", Stream->msg);

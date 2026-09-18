@@ -164,6 +164,16 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@Test function SetVolume()
+   check mSys.SetVolume("fstest", "system:scripts/", "filetypes/source", "", "", VOLUME_HIDDEN|VOLUME_SYSTEM);
+   check mSys.AnalysePath("fstest:gui.tiri");
+
+   check mSys.SetVolume("fstestnest", "bin:|system:scripts/", "filetypes/source", "", "", VOLUME_HIDDEN|VOLUME_SYSTEM);
+   check mSys.AnalysePath("fstestnest:gui.tiri");
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Test function MutableStringReadBuffer()
    read_path = glTempRoot .. 'mutable_string_read.txt'
    expected = 'Mutable string buffer content'
@@ -705,4 +715,10 @@ end
    assert(err is ERR_Okay, 'CreateLink() failed: ' .. mSys.GetErrorMsg(err))
    assert(mSys.AnalysePath(target, nil) is ERR_Okay, 'Created link path could not be resolved.')
    assert(readFile(target) is 'Linked file content', 'Reading through the created link returned unexpected content.')
+
+   err, resolved_source = mSys.ResolvePath(source)
+   assert(err is ERR_Okay, 'ResolvePath() failed for the symbolic-link source: ' .. mSys.GetErrorMsg(err))
+   err, resolved_target = mSys.ResolvePath(target)
+   assert(err is ERR_Okay, 'ResolvePath() failed for the symbolic-link target: ' .. mSys.GetErrorMsg(err))
+   assert(resolved_target is resolved_source, 'ResolvePath() did not follow the symbolic link to its final path.')
 end

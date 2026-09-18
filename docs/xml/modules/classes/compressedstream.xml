@@ -15,8 +15,8 @@
     <copyright>Paul Manias © 1996-2026</copyright>
     <description>
 <p>Use the CompressedStream class to compress and decompress data on the fly without the need for a temporary storage area.  The default compression algorithm is DEFLATE with gzip header data.  It is compatible with common command-line tools such as gzip.</p>
-<p>To decompress data, set the <fl>Input</fl> field with a source object that supports the Read() action, such as a <class name="File">File</class>. Repeatedly reading from the CompressedStream will automatically handle the decompression process.  If the decompressed size of the incoming data is defined in the source header, it will be reflected in the <fl>Size</fl> field.</p>
-<p>To compress data, set the <fl>Output</fl> field with a source object that supports the Write() action, such as a <class name="File">File</class>. Repeatedly writing to the CompressedStream with raw data will automatically handle the compression process for you. Once all of the data has been written, call the <action>Write</action> action with a null empty <code>Buffer</code> to finalise the stream.  In Tiri, call <code>acWrite(nil)</code>.</p></description>
+<p>To decompress data, set the <fl>Input</fl> field with a source object that supports the Read() action, such as a <class name="File">File</class>. Repeatedly reading from the CompressedStream will automatically handle the decompression process.  The <fl>Finished</fl> field becomes true only after the complete compressed stream, including its checksum, has been verified.  The <fl>Size</fl> field remains unknown until that point.</p>
+<p>To compress data, set the <fl>Output</fl> field with a source object that supports the Write() action, such as a <class name="File">File</class>. Repeatedly writing to the CompressedStream with raw data will automatically handle the compression process for you. Once all of the data has been written, call the <action>Write</action> action with a null empty <code>Buffer</code> to finalise the stream.  In Tiri, call <code>acWrite(nil)</code>.  Finalisation is mandatory and may report destination or compression errors.  No further writes are accepted after finalisation or a terminal failure until <action>Reset</action> is called.</p></description>
     <source>
       <file path="../compression/">class_compressed_stream.cpp</file>
     </source>
@@ -70,6 +70,16 @@
 
   <fields>
     <field>
+      <name>Finished</name>
+      <comment>True when compression has been finalised or decompression has verified the complete input stream.</comment>
+      <access read="R">Read</access>
+      <type>INT</type>
+      <description>
+<p>After decompression finishes, further reads remain at end-of-file.  After compression finishes, further writes return an error.  Call <action>Reset</action> before reusing the CompressedStream.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Format</name>
       <comment>The format of the compressed stream.  The default is GZIP.</comment>
       <access read="R" write="I">Read/Init</access>
@@ -103,12 +113,22 @@
 
     <field>
       <name>Size</name>
-      <comment>The uncompressed size of the input source, if known.</comment>
+      <comment>The full uncompressed size of the input source, if known.</comment>
       <access read="G">Get</access>
       <type>INT64</type>
       <description>
-<p>The Size field will reflect the uncompressed size of the input source, if this can be determined from the header. In the case of GZIP decompression, the size will not be known until the parser has consumed the header. This means that at least one call to the <action>Read</action> action is required before the Size is known.</p>
+<p>The Size field remains unknown while decompression is in progress.  It reports the full decoded byte count only after the compressed stream and its checksum have been read successfully and <fl>Finished</fl> is true.</p>
 <p>If the size is unknown, a value of <code>-1</code> is returned.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>TotalInput</name>
+      <comment>A live counter of total bytes consumed by the compression engine.</comment>
+      <access read="R">Read</access>
+      <type>INT64</type>
+      <description>
+<p>During decompression this count excludes any trailing bytes that the Input object prefetched into the stream's input buffer.  The final value is retained after completion or failure and is reset to zero by <action>Reset</action>.</p>
       </description>
     </field>
 

@@ -324,9 +324,11 @@ class objCompressedStream : public Object {
    objCompressedStream(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
    int64_t   TotalOutput;  // A live counter of total bytes that have been output by the stream.
+   int64_t   TotalInput;   // A live counter of total bytes consumed by the compression engine.
    OBJECTPTR Input;        // An input object that will supply data for decompression.
    OBJECTPTR Output;       // A target object that will receive data compressed by the stream.
    CF        Format;       // The format of the compressed stream.  The default is GZIP.
+   int       Finished;     // True when compression has been finalised or decompression has verified the complete input stream.
 
    // Action stubs
 
@@ -382,6 +384,11 @@ class objCompressedStream : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getTotalInput(int64_t &Value) noexcept {
+      Value = this->TotalInput;
+      return ERR::Okay;
+   }
+
    inline ERR getInput(OBJECTPTR &Value) noexcept {
       Value = this->Input;
       return ERR::Okay;
@@ -394,6 +401,11 @@ class objCompressedStream : public Object {
 
    inline ERR getFormat(CF &Value) noexcept {
       Value = this->Format;
+      return ERR::Okay;
+   }
+
+   inline ERR getFinished(int &Value) noexcept {
+      Value = this->Finished;
       return ERR::Okay;
    }
 
