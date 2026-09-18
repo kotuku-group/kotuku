@@ -218,16 +218,16 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 function outputText(Report, Format:array<str>)
-   if Format.find('rgb')   then print(f'RGB:     {Report.rgb}') end
-   if Format.find('hex')   then print(f'RGB Hex: {Report.hex}') end
-   if Format.find('hsl')   then print(f'HSL:     {Report.css.hsl}') end
-   if Format.find('xyz')   then print(f'CIE XYZ: {Report.css.xyz}') end
-   if Format.find('oklab') then print(f'OKLAB:   {Report.css.oklab}') end
-   if Format.find('oklch') then print(f'OKLCH:   {Report.css.oklch}') end
-   if Format.find('p3')    then print(f'P3:      {Report.css.p3}') end
-   if Format.find('hsv')   then print(f'HSV:     {Report.css.hsv}') end
+   if 'rgb' in Format   then print(f'RGB:     {Report.rgb}') end
+   if 'hex' in Format   then print(f'RGB Hex: {Report.hex}') end
+   if 'hsl' in Format   then print(f'HSL:     {Report.css.hsl}') end
+   if 'xyz' in Format   then print(f'CIE XYZ: {Report.css.xyz}') end
+   if 'oklab' in Format then print(f'OKLAB:   {Report.css.oklab}') end
+   if 'oklch' in Format then print(f'OKLCH:   {Report.css.oklch}') end
+   if 'p3' in Format    then print(f'P3:      {Report.css.p3}') end
+   if 'hsv' in Format   then print(f'HSV:     {Report.css.hsv}') end
 
-   if Format.find('info') then
+   if 'info' in Format then
       print('')
       print('Luminance: %.4g'.format(Report.luminance))
       print('Contrast:  %.2f:1 (black) / %.2f:1 (white)'.format(Report.cr_black, Report.cr_white))
@@ -321,16 +321,16 @@ end
 function outputJSON(Report, Format, Palette, Scheme)
    output = {}
 
-   if Format.find('rgb')   then output.rgb = Report.rgb end
-   if Format.find('hex')   then output.hex = Report.hex end
-   if Format.find('hsl')   then output.hsl = Report.hsl; output.css_hsl = Report.css.hsl end
-   if Format.find('xyz')   then output.xyz = Report.xyz; output.css_xyz = Report.css.xyz end
-   if Format.find('oklab') then output.oklab = Report.oklab; output.css_oklab = Report.css.oklab end
-   if Format.find('oklch') then output.oklch = Report.oklch; output.css_oklch = Report.css.oklch end
-   if Format.find('p3')    then output.p3 = Report.p3; output.css_p3 = Report.css.p3 end
-   if Format.find('hsv')   then output.hsv = Report.hsv; output.css_hsv = Report.css.hsv end
+   if 'rgb' in Format   then output.rgb = Report.rgb end
+   if 'hex' in Format   then output.hex = Report.hex end
+   if 'hsl' in Format   then output.hsl = Report.hsl; output.css_hsl = Report.css.hsl end
+   if 'xyz' in Format   then output.xyz = Report.xyz; output.css_xyz = Report.css.xyz end
+   if 'oklab' in Format then output.oklab = Report.oklab; output.css_oklab = Report.css.oklab end
+   if 'oklch' in Format then output.oklch = Report.oklch; output.css_oklch = Report.css.oklch end
+   if 'p3' in Format    then output.p3 = Report.p3; output.css_p3 = Report.css.p3 end
+   if 'hsv' in Format   then output.hsv = Report.hsv; output.css_hsv = Report.css.hsv end
 
-   if Format.find('info') then
+   if 'info' in Format then
       output.info = {
          alpha      = Report.alpha,
          luminance  = Report.luminance,
