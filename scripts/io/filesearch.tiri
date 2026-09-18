@@ -3,15 +3,17 @@ The FileSearch interface simplifies the process of searching for files and folde
 Refer to the Tiri I/O Wiki page for documentation.
 --]]
 
+rxIsHidden = <{ regex.new([[(?:^|[:\/\\])\.(?!\.?(?:[:\/\\]|$))]]) }>
+
 io.search = function(Path:any!, Options:table!)
-   l_options       = Options
-   l_stop          = false
-   match_count      = 0
-   is_regex_filter  = false
-   is_exclude_regex = false
-   has_min_date     = l_options.minDate != nil
-   has_max_date     = l_options.maxDate != nil
-   name_filter:any  = l_options.nameFilter
+   l_options          = Options
+   l_stop             = false
+   match_count        = 0
+   is_regex_filter    = false
+   is_exclude_regex   = false
+   has_min_date       = l_options.minDate != nil
+   has_max_date       = l_options.maxDate != nil
+   name_filter:any    = l_options.nameFilter
    exclude_filter:any = l_options.excludeFilter
 
    function normaliseFolderPath(Path:str!):str
@@ -28,11 +30,6 @@ io.search = function(Path:any!, Options:table!)
 
    function cancellationRequested():bool
       if l_stop then return true end
-
-      if l_options.cancelToken and l_options.cancelToken.cancelled then
-         l_stop = true
-         return true
-      end
 
       if l_options.cancelCheck then
          local result:any = l_options.cancelCheck(match_count)
@@ -226,6 +223,8 @@ io.search = function(Path:any!, Options:table!)
 
                if fl.flags has FL_LINK then
                   -- Do not scan symbolically linked directories (possible recursion)
+               elseif not l_options.scanHidden and rxIsHidden.test(fl.path) then
+                  -- Do not scan hidden directories (those starting with a dot)
                else
                   local descend = true
                   if l_options.shouldDescend then
