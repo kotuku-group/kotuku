@@ -156,13 +156,15 @@ static ERR COMPRESSEDSTREAM_Read(extCompressedStream *Self, struct acRead *Args)
       Self->Stream->next_in = Self->InputBuffer.data() + Self->InputOffset;
       Self->Stream->avail_in = uInt(Self->InputLength - Self->InputOffset);
 
-      const auto previous_input = Self->Stream->total_in;
-      const auto previous_output = Self->Stream->total_out;
+      const auto available_input = Self->Stream->avail_in;
+      const auto available_output = Self->Stream->avail_out;
       const int result = inflate(Self->Stream.get(), Z_NO_FLUSH);
+      const auto consumed = available_input - Self->Stream->avail_in;
+      const auto produced = available_output - Self->Stream->avail_out;
       Self->InputOffset = Self->InputLength - Self->Stream->avail_in;
-      Self->TotalInput = int64_t(Self->Stream->total_in);
-      Self->TotalOutput = int64_t(Self->Stream->total_out);
-      Args->Result = int(Args->Buffer.size() - Self->Stream->avail_out);
+      Self->TotalInput += int64_t(consumed);
+      Self->TotalOutput += int64_t(produced);
+      Args->Result += int(produced);
 
       if (result IS Z_STREAM_END) {
          Self->Finished = true;
@@ -171,7 +173,7 @@ static ERR COMPRESSEDSTREAM_Read(extCompressedStream *Self, struct acRead *Args)
       }
 
       if (result != Z_OK) return Self->fail(convert_zip_error(Self->Stream.get(), result));
-      if ((Self->Stream->total_in IS previous_input) and (Self->Stream->total_out IS previous_output)) {
+      if ((consumed IS 0) and (produced IS 0)) {
          return Self->fail(log.warning(ERR::Decompression));
       }
    }
@@ -218,7 +220,8 @@ static ERR COMPRESSEDSTREAM_Seek(extCompressedStream *Self, struct acSeek *Args)
    else if (Args->Position IS SEEK::CURRENT) position = double(Self->TotalOutput) + Args->Offset;
    else return log.warning(ERR::Args);
 
-   if ((not std::isfinite(position)) or (position < 0) or (position > double(INT64_MAX))) {
+   constexpr double int64_limit = 9223372036854775808.0;
+   if ((not std::isfinite(position)) or (position < 0) or (position >= int64_limit)) {
       return log.warning(ERR::OutOfRange);
    }
    const int64_t pos_target = int64_t(position);
@@ -300,8 +303,9 @@ static ERR COMPRESSEDSTREAM_Write(extCompressedStream *Self, struct acWrite *Arg
       Self->Stream->next_out  = Self->OutputBuffer.data();
       Self->Stream->avail_out = MIN_OUTPUT_SIZE;
 
+      const auto available_input = Self->Stream->avail_in;
       result = deflate(Self->Stream.get(), mode);
-      Self->TotalInput = int64_t(Self->Stream->total_in);
+      Self->TotalInput += int64_t(available_input - Self->Stream->avail_in);
       if ((result != Z_OK) and (result != Z_STREAM_END)) {
          log.warning("deflate() failed with zlib error %d.", result);
          return Self->fail(log.warning(ERR::Compression));

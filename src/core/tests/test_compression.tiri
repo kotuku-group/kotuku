@@ -492,6 +492,9 @@ end
    err, consumed = decoder.acRead(first_byte)
    assert(err is ERR_Okay and consumed is 1, 'A relative seek should permit a following read.')
    assert(first_byte.getString() is source.sub(4100, 4101), 'Relative seek selected the wrong decoded byte.')
+
+   err = decoder.acSeek(9.223372036854776e18, SEEK_START)
+   assert(err is ERR_OutOfRange, 'A seek to 2^63 should return OutOfRange.')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
