@@ -334,6 +334,9 @@ restart:
          case BC_BFUNC:
             *name = builtin_callable_name(BuiltinCallableID(bc_d(ins)));
             return *name ? "builtin" : nullptr;
+         case BC_BMETH:
+            *name = strdata(gco_to_string(proto_kgc(pt, ~(ptrdiff_t)bc_p32(ins))));
+            return "method";
          default:
             return nullptr;
          }
