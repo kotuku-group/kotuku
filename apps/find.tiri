@@ -142,7 +142,8 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-   glPath       = obj.find('self').workingPath
+   glPath = processing.task().path
+
    glParser = options({
       name        = 'Find',
       description = 'Search for files and folders matching specified criteria.',
@@ -160,7 +161,7 @@ Examples:
   origo apps/find name=CMakeLists.txt exec="wc -l {}"       Run wc -l on each match
 ]],
       args = array<table> {
-         { name = 'path', type = 'folder', exists = true, default = f'{glPath}../', group = 'Search',
+         { name = 'path', type = 'folder', exists = true, default = f'{glPath}', group = 'Search',
            comment = 'The folder to search.' },
          { name = 'filter', type = 'regex', excludes = 'name', group = 'Search',
            comment = "A regex pattern to filter filenames; mutually exclusive with 'name'." },
