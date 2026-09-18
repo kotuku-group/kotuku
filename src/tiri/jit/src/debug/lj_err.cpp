@@ -1555,6 +1555,13 @@ LJ_NOINLINE void luaL_error(lua_State *L, ErrMsg Message)
 //********************************************************************************************************************
 // Argument error message.
 
+static void err_argtop(lua_State *L)
+{
+   // A failed JIT handoff can expose an invalid argument extent with top below base.  Repair it before allocating an
+   // error string: repairing it afterwards may remove that string's only stack root and leave a stale C pointer.
+   if (L->top < L->base) L->top = L->base;
+}
+
 LJ_NORET LJ_NOINLINE static void err_argmsg(lua_State *L, int narg, CSTRING msg)
 {
    // ERR::Args is raised for the whole family rather than a code taken from the message catalogue.  The incoming
@@ -1563,6 +1570,8 @@ LJ_NORET LJ_NOINLINE static void err_argmsg(lua_State *L, int narg, CSTRING msg)
 
    CSTRING fname = "?";
    CSTRING ftype = lj_debug_funcname(L, L->base - 1, &fname);
+   err_argtop(L);  // Covers direct callers whose message does not require stack allocation.
+
    if (narg < 0 and narg > LUA_REGISTRYINDEX) narg = (int)(L->top - L->base) + narg + 1;
    if (ftype and ftype[3] IS 'h' and --narg IS 0) { //  Check for "method".
       msg = lj_strfmt_pushf(L, err2msg(ErrMsg::BADSELF), fname, msg);
@@ -1576,6 +1585,7 @@ LJ_NORET LJ_NOINLINE static void err_argmsg(lua_State *L, int narg, CSTRING msg)
 
 LJ_NOINLINE void lj_err_argv(lua_State *L, int narg, ErrMsg em, ...)
 {
+   err_argtop(L);
    va_list argp;
    va_start(argp, em);
    auto msg = lj_strfmt_pushvf(L, err2msg(em), argp);
@@ -1596,6 +1606,7 @@ LJ_NOINLINE void lj_err_arg(lua_State *L, int narg, ErrMsg em)
 
 LJ_NOINLINE void lj_err_argtype(lua_State *L, int narg, CSTRING xname)
 {
+   err_argtop(L);
    CSTRING tname;
    if (narg <= LUA_REGISTRYINDEX) {
       if (narg >= LUA_GLOBALSINDEX) {
