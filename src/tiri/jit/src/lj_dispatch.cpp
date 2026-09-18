@@ -519,9 +519,9 @@ uint32_t lj_dispatch_stitch(jit_State* J, const BCIns* pc)
    // Before dispatch, have to bias PC by 1.
    L->top = L->base + cur_topslot(curr_proto(L), pc + 1, cframe_multres_n(cf));
    BCIns call_ins = pc[-1];
-   if ((bc_op(call_ins) IS BC_CTXCALL or bc_op(call_ins) IS BC_CTXCALLM) and bc_b(call_ins) IS 0) {
-      // A stitched trace has no IR value for the dynamic result count consumed by CTXLEAVE. Blacklist this link until
-      // MULTRES becomes explicit trace state; fixed-result contextual calls remain eligible for stitching.
+   if (bc_b(call_ins) IS 0) {
+      // A stitched trace has no IR value for the dynamic result count.  Blacklist calls that return all results until
+      // MULTRES becomes explicit trace state; fixed-result calls remain eligible for stitching.
       GCtrace *trace = traceref(J, J->exitno);
       trace->link = trace->traceno;
    }
