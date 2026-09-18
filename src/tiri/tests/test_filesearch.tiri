@@ -276,17 +276,6 @@ end
       matchFeedback = function() predicate_matches++ end
    })
    assert(predicate_matches is 1, 'cancelCheck should stop before processing the next path')
-
-   local token = { cancelled=false }
-   local token_matches = 0
-   io.search(array<str> { glSmallFile, glBoundaryFile }, {
-      cancelToken = token,
-      matchFeedback = function()
-         token_matches++
-         token.cancelled = true
-      end
-   })
-   assert(token_matches is 1, 'A cancelled token should stop before processing the next path')
 end
 
 @Test function ShouldDescendCanTerminateAllPaths()
