@@ -1,22 +1,10 @@
 # Origo executable
 
-# Generate version information based on current date (YYYY.MM.DD format)
-string(TIMESTAMP KOTUKU_VERSION_MAJOR "%Y")
-string(TIMESTAMP KOTUKU_VERSION_MINOR "%m")
-string(TIMESTAMP KOTUKU_VERSION_PATCH "%d")
+# Use the release version from pkg/version.txt, shared by Origo and Tiri compatibility checks.
+set(KOTUKU_VERSION_MAJOR "${PROJECT_VERSION_MAJOR}")
+set(KOTUKU_VERSION_MINOR "${PROJECT_VERSION_MINOR}")
+set(KOTUKU_VERSION_PATCH "${PROJECT_VERSION_PATCH}")
 string(TIMESTAMP KOTUKU_COPYRIGHT_YEAR "%Y")
-
-# Remove leading zeros from month and day for proper version format
-string(REGEX REPLACE "^0+" "" KOTUKU_VERSION_MINOR "${KOTUKU_VERSION_MINOR}")
-string(REGEX REPLACE "^0+" "" KOTUKU_VERSION_PATCH "${KOTUKU_VERSION_PATCH}")
-
-# Ensure we don't get empty strings for single digit values
-if(KOTUKU_VERSION_MINOR STREQUAL "")
-    set(KOTUKU_VERSION_MINOR "0")
-endif()
-if(KOTUKU_VERSION_PATCH STREQUAL "")
-    set(KOTUKU_VERSION_PATCH "0")
-endif()
 
 message(STATUS "Kotuku version: ${KOTUKU_VERSION_MAJOR}.${KOTUKU_VERSION_MINOR}.${KOTUKU_VERSION_PATCH}")
 

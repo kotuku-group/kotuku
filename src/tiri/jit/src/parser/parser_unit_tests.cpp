@@ -3041,7 +3041,7 @@ static bool test_structural_bytecode_reader_validation(kt::Log &Log)
    uint32_t header_flags = 0;
    if (not read_uleb(stripped, cursor, header_flags) or not (header_flags & BCDUMP_F_STRIP)) return false;
    uint32_t metadata_length = 0;
-   for (int block = 0; block < 3; ++block) {
+   for (int block = 0; block < 5; ++block) {
       if (not read_uleb(stripped, cursor, metadata_length) or metadata_length > stripped.size() - cursor) return false;
       cursor += metadata_length;
    }
@@ -3652,6 +3652,11 @@ static bool test_malformed_signature_rejected(kt::Log &Log)
    }
    position += value;
    if (not read_uleb(position, value) or value > dump.size() - position) {
+      Log.error("could not skip the compatibility block in the malformed-signature fixture");
+      return false;
+   }
+   position += value;
+   if (not read_uleb(position, value) or value > dump.size() - position) {
       Log.error("could not skip the module bundle in the malformed-signature fixture");
       return false;
    }
@@ -3777,7 +3782,20 @@ static bool test_source_manifest_validation(kt::Log &Log)
       Log.error("could not locate the source manifest");
       return false;
    }
-   size_t module_offset = source_offset + source_size;
+   size_t package_offset = source_offset + source_size;
+   uint32_t package_size = 0;
+   if (not read_uleb(package_offset, package_size) or package_size > dump.size() - package_offset) {
+      Log.error("could not locate the package block");
+      return false;
+   }
+   size_t compatibility_offset = package_offset + package_size;
+   uint32_t compatibility_size = 0;
+   if (not read_uleb(compatibility_offset, compatibility_size) or
+       compatibility_size > dump.size() - compatibility_offset) {
+      Log.error("could not locate the compatibility block");
+      return false;
+   }
+   size_t module_offset = compatibility_offset + compatibility_size;
    uint32_t module_size = 0;
    if (not read_uleb(module_offset, module_size) or module_size > dump.size() - module_offset) {
       Log.error("could not locate the module bundle");
@@ -5284,6 +5302,10 @@ static bool test_named_struct_bytecode_manifest(kt::Log &Log)
          uint32_t package_size = 0;
          if (not read_uleb(module_offset, package_size) or package_size > dump.size() - module_offset) return false;
          module_offset += package_size;
+         uint32_t compatibility_size = 0;
+         if (not read_uleb(module_offset, compatibility_size) or
+             compatibility_size > dump.size() - module_offset) return false;
+         module_offset += compatibility_size;
          uint32_t module_size = 0;
          if (not read_uleb(module_offset, module_size) or module_size > dump.size() - module_offset) return false;
          size_t manifest_offset = module_offset + module_size;
@@ -5705,6 +5727,11 @@ static bool test_module_dependency_corruption_rejected(kt::Log &Log)
    position += value;
    if (not read_uleb(position, value) or value > dump.size() - position) {
       Log.error("could not skip the package block in the corruption fixture");
+      return false;
+   }
+   position += value;
+   if (not read_uleb(position, value) or value > dump.size() - position) {
+      Log.error("could not skip the compatibility block in the corruption fixture");
       return false;
    }
    position += value;

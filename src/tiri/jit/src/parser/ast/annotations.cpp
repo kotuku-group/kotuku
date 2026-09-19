@@ -13,13 +13,79 @@ ParserResult<bool> AstBuilder::parse_compilation_unit_preamble()
 {
    while (this->ctx.check(TokenKind::Annotate)) {
       Token name = this->ctx.tokens().peek(1);
-      if (not name.is_identifier() or not name.identifier() or
-          std::string_view(strdata(name.identifier()), name.identifier()->len) != "Package") break;
+      if (not name.is_identifier() or not name.identifier()) break;
+      const std::string_view annotation_name(strdata(name.identifier()), name.identifier()->len);
+      if (annotation_name != "Package" and annotation_name != "Dependencies") break;
 
       Token declaration = this->ctx.tokens().current();
       auto parsed = this->parse_annotations(true);
       if (not parsed.ok()) return ParserResult<bool>::failure(parsed.error_ref());
       auto &annotations = parsed.value_ref();
+      if (annotation_name IS "Dependencies") {
+         if (this->dependency_requirements_) {
+            return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
+               "@Dependencies may be declared only once per compilation unit");
+         }
+         if (this->parent_builder and not this->module_initialiser) {
+            return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
+               "@Dependencies is not permitted in a local source inclusion");
+         }
+
+         tiri::DependencyRequirements requirements;
+         bool have_tiri = false;
+         bool have_kotuku = false;
+         for (const auto &[key, value] : annotations.front().args) {
+            const std::string_view key_text(strdata(key), key->len);
+            if (key_text != "tiri" and key_text != "kotuku") {
+               return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
+                  "@Dependencies accepts only the named arguments 'tiri' and 'kotuku'");
+            }
+            if (value.type != AnnotationArgValue::Type::String or not value.string_literal) {
+               return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
+                  "@Dependencies arguments must be string literals");
+            }
+            const std::string text(strdata(value.string_value), value.string_value->len);
+            tiri::VersionConstraint constraint;
+            if (auto error = tiri::parse_version_constraint(text, constraint); error) {
+               return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
+                  std::format("invalid {} version constraint at byte {}: {}", key_text, error.Offset,
+                     tiri::version_error_text(error.Error)));
+            }
+            if (key_text IS "tiri") {
+               if (have_tiri) return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
+                  "@Dependencies contains a duplicate 'tiri' argument");
+               requirements.Tiri = std::move(constraint);
+               have_tiri = true;
+            }
+            else {
+               if (have_kotuku) return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
+                  "@Dependencies contains a duplicate 'kotuku' argument");
+               requirements.Kotuku = std::move(constraint);
+               have_kotuku = true;
+            }
+         }
+
+         tiri::CompatibilityFailure failure;
+         if (not tiri::check_requirements(requirements, tiri::runtime_versions(), &failure)) {
+            return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
+               std::format("unsatisfied {} dependency '{}': running version {} fails comparison {}",
+                  failure.Domain, failure.Constraint->Original, failure.Running->Text,
+                  tiri::comparison_text(*failure.Comparison)));
+         }
+         this->dependency_requirements_ = std::move(requirements);
+         this->ctx.lex().dependency_requirements = this->dependency_requirements_;
+         if (this->ctx.check(TokenKind::Annotate) and
+             this->ctx.tokens().current().span().line IS declaration.span().line) {
+            return this->fail<bool>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+               "@Dependencies may not be combined with other annotations");
+         }
+         continue;
+      }
+
+      if (this->dependency_requirements_) {
+         return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
+            "@Package must precede @Dependencies in the compilation-unit preamble");
+      }
       if (this->package_identity_) {
          return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
             "@Package may be declared only once per compilation unit");
@@ -310,6 +376,11 @@ ParserResult<StmtNodePtr> AstBuilder::parse_annotated_statement()
          Token current = this->ctx.tokens().current();
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, current,
             "@Package must appear in the compilation-unit preamble");
+      }
+      if (annotation.name and std::string_view(strdata(annotation.name), annotation.name->len) IS "Dependencies") {
+         Token current = this->ctx.tokens().current();
+         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, current,
+            "@Dependencies must appear in the compilation-unit preamble");
       }
    }
 

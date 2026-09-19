@@ -2,6 +2,7 @@
 
 #include "cache_manifest.h"
 #include "package_identity.h"
+#include "version_constraints.h"
 
 #include <cstdint>
 #include <memory>
@@ -13,7 +14,7 @@
 
 namespace tiri::import_cache {
 
-constexpr uint32_t SCHEMA_VERSION = 12;
+constexpr uint32_t SCHEMA_VERSION = 13;
 constexpr size_t MAX_INTERFACE_SIZE = 8 * 1024 * 1024;
 constexpr size_t MAX_INTERFACE_RECORDS = 4096;
 
@@ -166,6 +167,7 @@ struct NestedModuleDescriptor {
 
 struct Interface {
    std::optional<tiri::PackageIdentity> Package; // Declares the module's canonical package identity, when present.
+   std::string CompatibilityManifest = std::string("\x01\x00", 2); // Canonical transitive runtime requirements.
    std::vector<NamespaceDescriptor> Namespaces;   // Describes namespaces declared by the module.
    std::vector<ExportDescriptor> Exports;         // Describes symbols exported by the module.
    std::vector<StructureDescriptor> Structures;   // Describes structures declared by the module.

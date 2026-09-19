@@ -51,8 +51,9 @@ Bytecode is tied to the Kōtuku release, not the Tiri version number.  Bytecode 
 
 Users are instructed to regenerate bytecode from source when breaking changes occur.
 
-The private dump format includes semantic `@Package` metadata even when debug information is stripped.  Format and
-imported-module cache schema changes intentionally invalidate older generated artefacts; they are rebuilt from source.
+The private dump format includes semantic `@Package` and transitive `@Dependencies` metadata even when debug information
+is stripped.  A loader checks dependency requirements before committing prototypes.  Format and imported-module cache
+schema changes intentionally invalidate older generated artefacts; they are rebuilt from source.
 
 Programs can be distributed as compiled bytecode, but this should normally be done in conjunction with a compiled Kōtuku build.
 

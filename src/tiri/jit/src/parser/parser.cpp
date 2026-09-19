@@ -44,6 +44,8 @@ const tiri::import_cache::LifecycleCounters &parser_last_import_cache_counters()
 }
 #endif
 #include "../../../import_module_bundle.h"
+#include "../../../import_module_format.h"
+#include "../../../version_constraints.h"
 #include "tiri_build_identity.h"
 
 #include <kotuku/main.h>
@@ -420,6 +422,28 @@ extern GCproto * lj_parse(LexState *State)
    attach_compilation_sources(L, pt, State->compilation_sources);
    install_proto_package_metadata(L, pt, State->package_identity);
 
+   std::vector<tiri::CompatibilityRecord> compatibility_records;
+   const auto &root_source = State->compilation_sources.front();
+   compatibility_records.push_back({ root_source.canonical_path.empty() ? root_source.display_filename :
+      root_source.canonical_path, State->dependency_requirements.value_or(tiri::DependencyRequirements {}) });
+   for (const auto &record : State->import_module_records) {
+      tiri::import_cache::Interface interface_value;
+      if (tiri::import_cache::decode_interface(record.interface_bytes, interface_value) !=
+          tiri::cache::FormatError::OKAY) {
+         luaL_error(L, ERR::InvalidData, "Invalid imported-module compatibility interface.");
+      }
+      std::vector<tiri::CompatibilityRecord> nested;
+      if (tiri::decode_compatibility_manifest(interface_value.CompatibilityManifest, nested)) {
+         luaL_error(L, ERR::InvalidData, "Invalid imported-module compatibility manifest.");
+      }
+      compatibility_records.insert(compatibility_records.end(), nested.begin(), nested.end());
+   }
+   std::string compatibility_manifest;
+   if (tiri::encode_compatibility_manifest(compatibility_records, compatibility_manifest)) {
+      luaL_error(L, ERR::InvalidData, "Cannot encode compatibility manifest.");
+   }
+   install_proto_compatibility_manifest(L, pt, compatibility_manifest);
+
    std::vector<uint8_t> struct_manifest;
    std::string manifest_detail;
    ERR manifest_error = build_declared_struct_manifest(L, State->compilation_struct_roots,
@@ -466,10 +490,12 @@ extern GCproto * lj_parse(LexState *State)
    const auto &staging = State->imported_module_counters;
    if (staging.staging_metadata_roots) {
       log.trace("Imported-module staging release: roots=%u source-bytes=%" PRIu64
-         " package-bytes=%" PRIu64 " manifest-bytes=%" PRIu64 " bundle-bytes=%" PRIu64
+         " package-bytes=%" PRIu64 " compatibility-bytes=%" PRIu64 " manifest-bytes=%" PRIu64
+         " bundle-bytes=%" PRIu64
          " directory-bytes=%" PRIu64,
          staging.staging_metadata_roots, staging.staging_compilation_source_bytes,
-         staging.staging_package_metadata_bytes, staging.staging_struct_manifest_bytes,
+         staging.staging_package_metadata_bytes, staging.staging_compatibility_manifest_bytes,
+         staging.staging_struct_manifest_bytes,
          staging.staging_import_module_bundle_bytes,
          staging.staging_import_module_table_bytes);
    }

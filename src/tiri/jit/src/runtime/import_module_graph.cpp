@@ -192,6 +192,9 @@ ProtoRootMetadataSize measure_proto_root_metadata(const GCproto *Prototype) noex
    if (Prototype->package_metadata.get<const ProtoPackageMetadata>()) {
       result.package_metadata = sizeof(ProtoPackageMetadata);
    }
+   if (Prototype->compatibility_manifest.get<const uint8_t>()) {
+      result.compatibility_manifest = Prototype->compatibility_manifest_size;
+   }
    if (Prototype->struct_manifest.get<const uint8_t>()) result.struct_manifest = Prototype->struct_manifest_size;
    if (Prototype->import_module_bundle.get<const uint8_t>()) {
       result.import_module_bundle = Prototype->import_module_bundle_size;
@@ -217,6 +220,12 @@ void release_proto_root_metadata(global_State *State, GCproto *Prototype) noexce
    if (auto package = Prototype->package_metadata.get<ProtoPackageMetadata>()) {
       setmref(Prototype->package_metadata, nullptr);
       lj_mem_free(State, package, sizeof(ProtoPackageMetadata));
+   }
+   if (auto compatibility = Prototype->compatibility_manifest.get<uint8_t>()) {
+      const uint32_t bytes = Prototype->compatibility_manifest_size;
+      setmref(Prototype->compatibility_manifest, nullptr);
+      Prototype->compatibility_manifest_size = 0;
+      lj_mem_free(State, compatibility, bytes);
    }
    if (auto manifest = Prototype->struct_manifest.get<uint8_t>()) {
       const uint32_t bytes = Prototype->struct_manifest_size;
@@ -255,6 +264,18 @@ void install_proto_package_metadata(
    setgcref(metadata->name, obj2gco(lj_str_new(State, Package->Name.data(), Package->Name.size())));
    setgcref(metadata->package_version,
       obj2gco(lj_str_new(State, Package->Version.data(), Package->Version.size())));
+}
+
+//********************************************************************************************************************
+// Installs canonical compatibility bytes on a standalone root.
+
+void install_proto_compatibility_manifest(lua_State *State, GCproto *Prototype, std::string_view Manifest)
+{
+   if (not State or not Prototype or Manifest.empty()) return;
+   auto bytes = (uint8_t *)lj_mem_new(State, MSize(Manifest.size()));
+   memcpy(bytes, Manifest.data(), Manifest.size());
+   setmref(Prototype->compatibility_manifest, bytes);
+   Prototype->compatibility_manifest_size = uint32_t(Manifest.size());
 }
 
 //********************************************************************************************************************

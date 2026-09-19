@@ -58,7 +58,21 @@ string(STRIP "${KOTUKU_VERSION_STRING}" KOTUKU_VERSION_STRING)
 
 project (Kotuku VERSION ${KOTUKU_VERSION_STRING} LANGUAGES C CXX)
 
+set (TIRI_LANGUAGE_VERSION "1.0")
+
+if (NOT TIRI_LANGUAGE_VERSION MATCHES "^(0|[1-9][0-9]*)(\\.(0|[1-9][0-9]*))*$")
+   message (FATAL_ERROR "Invalid canonical Tiri language version: ${TIRI_LANGUAGE_VERSION}")
+endif ()
+
+if (NOT KOTUKU_VERSION_STRING MATCHES "^(0|[1-9][0-9]*)(\\.(0|[1-9][0-9]*))*$")
+   message (FATAL_ERROR "Invalid canonical Kotuku runtime version: ${KOTUKU_VERSION_STRING}")
+endif ()
+
+configure_file ("${PROJECT_SOURCE_DIR}/src/tiri/runtime_versions.h.in"
+   "${CMAKE_BINARY_DIR}/runtime_versions.h" @ONLY)
+
 cmake_policy (SET CMP0082 NEW) # Process install commands in the order that they appear
+
 if(POLICY CMP0177)
    cmake_policy(SET CMP0177 NEW) # Normalise install destination paths (converts slashes etc)
 endif()

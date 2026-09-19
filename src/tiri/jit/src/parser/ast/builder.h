@@ -22,6 +22,7 @@
 #include "../import_module_validation.h"
 #include "../../../../cache_manifest.h"
 #include "../../../../import_module_cache.h"
+#include "../../../../version_constraints.h"
 
 class AstBuilder {
 public:
@@ -35,6 +36,9 @@ public:
    ParserResult<std::unique_ptr<BlockStmt>> parse_chunk();
    [[nodiscard]] const std::optional<tiri::PackageIdentity> & package_identity() const noexcept {
       return this->package_identity_;
+   }
+   [[nodiscard]] const std::optional<tiri::DependencyRequirements> & dependency_requirements() const noexcept {
+      return this->dependency_requirements_;
    }
    ParserResult<ExprNodePtr> parse_expression(uint8_t precedence = 0);
    ParserResult<ExprNodeList> parse_expression_list();
@@ -60,6 +64,7 @@ private:
    bool source_namespace_declared = false;
    bool module_initialiser = false;
    std::optional<tiri::PackageIdentity> package_identity_;
+   std::optional<tiri::DependencyRequirements> dependency_requirements_;
    std::optional<tiri::PackageIdentity> expected_package_;
    SourceSpan package_declaration_span_{};
    AstBuilder *parent_builder = nullptr;
@@ -231,7 +236,8 @@ private:
       std::string &, std::string_view, const Token &ImportToken, bool ModuleInitialiser,
       tiri::import_cache::ModuleLookup *Lookup = nullptr,
       std::vector<FuncState::DependencyDescriptor> *ModuleDependencies = nullptr,
-      std::optional<tiri::PackageIdentity> *DeclaredPackage = nullptr);
+      std::optional<tiri::PackageIdentity> *DeclaredPackage = nullptr,
+      std::optional<tiri::DependencyRequirements> *DeclaredRequirements = nullptr);
    ParserResult<StmtNodePtr> parse_compile_if();
    void skip_to_compile_end();
    ParserResult<StmtNodePtr> parse_expression_stmt();

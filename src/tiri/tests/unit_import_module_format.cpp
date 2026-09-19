@@ -550,7 +550,7 @@ bool malformed_and_bounds(kt::Log &Log)
    for (int i = 0; i < 4; ++i) interface_size |= uint32_t(uint8_t(encoded[16 + i])) << (i * 8);
    const size_t interface_offset = 132 + identity_size;
    unknown_decoded_kind[interface_offset + 1 + 4 + std::string_view("geometry").size() + 4 +
-      std::string_view("2.4.1").size() + 4 + 4 + std::string_view("geometry").size()] = char(255);
+      std::string_view("2.4.1").size() + 4 + 2 + 4 + 4 + std::string_view("geometry").size()] = char(255);
    auto interface_hash = tiri::cache::content_digest(
       std::string_view(unknown_decoded_kind).substr(interface_offset, interface_size));
    std::memcpy(unknown_decoded_kind.data() + 68, interface_hash.data(), interface_hash.size());

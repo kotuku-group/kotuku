@@ -1076,6 +1076,7 @@ struct ImportedModuleUnit {
    std::string module_identity;
    tiri::import_cache::Identity module_cache_identity;
    std::optional<tiri::PackageIdentity> declared_package;
+   std::optional<tiri::DependencyRequirements> dependency_requirements;
    tiri::import_cache::FinalisedInterfacePtr interface_artifact;
    std::string module_payload;
    std::shared_ptr<const InstalledImportInterface> installed_interface;

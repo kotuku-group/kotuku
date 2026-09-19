@@ -2,6 +2,7 @@
 #include "../lib/load.h"
 
 #include <ranges>
+#include <format>
 #include <utility>
 
 ImportModuleValidationSession::ImportModuleValidationSession(lua_State &Lua,
@@ -150,7 +151,7 @@ bool ImportModuleValidationSession::validate_identity(
 
 bool ImportModuleValidationSession::validate_payload(std::string_view Payload, std::string &Reason,
    std::vector<tiri::import_cache::RootModuleRecord> *EmbeddedModules,
-   std::optional<tiri::PackageIdentity> *Package)
+   std::optional<tiri::PackageIdentity> *Package, std::string *CompatibilityManifest)
 {
    std::unique_ptr<lua_State, decltype(&lua_close)> validation(luaL_newstate(this->lua.script), lua_close);
    if (not validation) {
@@ -186,6 +187,7 @@ bool ImportModuleValidationSession::validate_payload(std::string_view Payload, s
    this->counters.PayloadBundleDecodes++;
    if (EmbeddedModules) *EmbeddedModules = std::move(metadata.ImportedModules);
    if (Package) *Package = std::move(metadata.Package);
+   if (CompatibilityManifest) *CompatibilityManifest = std::move(metadata.CompatibilityManifest);
    return true;
 }
 
@@ -230,8 +232,10 @@ ERR ImportModuleValidationSession::ensure_validated(
    };
    std::vector<tiri::import_cache::RootModuleRecord> embedded_modules;
    std::optional<tiri::PackageIdentity> payload_package;
+   std::string payload_compatibility;
    auto payload_validator = [&](std::string_view Payload, std::string &Reason) {
-      return this->validate_payload(Payload, Reason, &embedded_modules, &payload_package);
+      return this->validate_payload(
+         Payload, Reason, &embedded_modules, &payload_package, &payload_compatibility);
    };
 
    auto error = tiri::import_cache::lookup_module(
@@ -243,6 +247,26 @@ ERR ImportModuleValidationSession::ensure_validated(
         payload_package != node->Lookup.Cached.CompileTimeInterface->descriptors().Package)) {
       node->Lookup.Cached.CacheHit = false;
       node->Lookup.Cached.Diagnostic = "cached bytecode package metadata does not agree with its envelope";
+   }
+
+   if (node->Lookup.Cached.CacheHit) {
+      const auto &interface_compatibility =
+         node->Lookup.Cached.CompileTimeInterface->descriptors().CompatibilityManifest;
+      std::vector<tiri::CompatibilityRecord> records;
+      tiri::CompatibilityFailure failure;
+      if (payload_compatibility != interface_compatibility or
+          tiri::decode_compatibility_manifest(interface_compatibility, records)) {
+         node->Lookup.Cached.CacheHit = false;
+         node->Lookup.Cached.Diagnostic =
+            "cached bytecode compatibility metadata does not agree with its interface";
+      }
+      else if (not tiri::check_compatibility_records(records, tiri::runtime_versions(), &failure)) {
+         node->Lookup.Cached.CacheHit = false;
+         node->Lookup.Cached.Diagnostic = std::format(
+            "unsatisfied {} dependency '{}' for '{}': running version {} fails comparison {}",
+            failure.Domain, failure.Constraint->Original, failure.Owner, failure.Running->Text,
+            tiri::comparison_text(*failure.Comparison));
+      }
    }
 
    if (node->Lookup.Cached.CacheHit) node->Lookup.EmbeddedModules = std::move(embedded_modules);

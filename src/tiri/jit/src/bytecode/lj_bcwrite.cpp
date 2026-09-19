@@ -16,6 +16,7 @@
 #include "../debug/filesource.h"
 #include "../runtime/import_module_graph.h"
 #include "../../../import_module_bundle.h"
+#include "../../../version_constraints.h"
 
 // Context for bytecode writer.
 typedef struct BCWriteCtx {
@@ -29,6 +30,8 @@ typedef struct BCWriteCtx {
    uint8_t source_mapped[256];
    const CompilationSourceMap *sources;
    const ProtoPackageMetadata *package;
+   const uint8_t *compatibility_manifest;
+   uint32_t compatibility_manifest_size;
    const uint8_t *struct_manifest;
    uint32_t struct_manifest_size;
    const uint8_t *import_module_bundle;
@@ -119,6 +122,19 @@ static void bcwrite_sources(BCWriteCtx *Ctx)
    Ctx->sb.w = p;
    Ctx->status = Ctx->wfunc(sbufL(&Ctx->sb), Ctx->sb.b, MSize(p - Ctx->sb.b), Ctx->wdata);
    lj_buf_reset(&Ctx->sb);
+}
+
+//********************************************************************************************************************
+// Writes the canonical compatibility manifest as unconditional semantic metadata.
+
+static void bcwrite_compatibility(BCWriteCtx *Ctx)
+{
+   lj_buf_reset(&Ctx->sb);
+   char *p = lj_buf_need(&Ctx->sb, 5 + Ctx->compatibility_manifest_size);
+   p = lj_strfmt_wuleb128(p, Ctx->compatibility_manifest_size);
+   p = lj_buf_wmem(p, Ctx->compatibility_manifest, Ctx->compatibility_manifest_size);
+   Ctx->sb.w = p;
+   Ctx->status = Ctx->wfunc(sbufL(&Ctx->sb), Ctx->sb.b, MSize(p - Ctx->sb.b), Ctx->wdata);
 }
 
 static void bcwrite_structs(BCWriteCtx *Ctx)
@@ -646,6 +662,7 @@ static void bcwrite_header(BCWriteCtx* ctx)
       (MSize)(p - ctx->sb.b), ctx->wdata);
    if (ctx->status IS 0) bcwrite_sources(ctx);
    if (ctx->status IS 0) bcwrite_package(ctx);
+   if (ctx->status IS 0) bcwrite_compatibility(ctx);
    if (ctx->status IS 0) bcwrite_import_modules(ctx);
    if (ctx->status IS 0) bcwrite_structs(ctx);
 }
@@ -699,6 +716,7 @@ int lj_bcwrite_relocated(lua_State *L, GCproto *Pt, lua_Writer Writer, void *Dat
    memset(ctx.source_mapped, 0, sizeof(ctx.source_mapped));
    ctx.sources = proto_compilation_sources(Pt);
    ctx.package = proto_package_metadata(Pt);
+   ctx.compatibility_manifest = proto_compatibility_manifest(Pt, &ctx.compatibility_manifest_size);
    ctx.struct_manifest = proto_struct_manifest(Pt, &ctx.struct_manifest_size);
    ctx.import_module_bundle = proto_import_module_bundle(Pt, &ctx.import_module_bundle_size);
    ctx.import_module_table = proto_import_module_table(Pt);
@@ -717,6 +735,13 @@ int lj_bcwrite_relocated(lua_State *L, GCproto *Pt, lua_Writer Writer, void *Dat
        not gcref(ctx.package->name) or gcref(ctx.package->name)->gch.gct != ~LJ_TSTR or
        not gcref(ctx.package->package_version) or gcref(ctx.package->package_version)->gch.gct != ~LJ_TSTR)) {
       log.warning("Invalid package metadata.");
+      return 1;
+   }
+   std::vector<tiri::CompatibilityRecord> validated_compatibility;
+   if (not ctx.compatibility_manifest or not ctx.compatibility_manifest_size or
+       tiri::decode_compatibility_manifest(std::string_view((const char *)ctx.compatibility_manifest,
+          ctx.compatibility_manifest_size), validated_compatibility)) {
+      log.warning("Invalid compatibility manifest.");
       return 1;
    }
    if (not ctx.struct_manifest or ctx.struct_manifest_size < 2 or

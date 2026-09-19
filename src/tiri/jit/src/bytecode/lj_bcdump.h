@@ -11,10 +11,11 @@
 // Bytecode dump format
 
 /*
-** dump   = header sources package modules structs proto+ 0U
+** dump   = header sources package compatibility modules structs proto+ 0U
 ** header = ESC 'L' 'J' versionB flagsU [namelenU nameB*]
 ** sources = lengthU sourceB*
 ** package = lengthU schemaversionB flagsB [namelenU nameB* versionlenU versionB*]
+** compatibility = lengthU schemaB recordcountU recordB*
 ** modules = lengthU moduleB*
 ** structs = lengthU structB*
 ** proto  = lengthU pdata
@@ -72,7 +73,8 @@ constexpr uint8_t BCDUMP_HEAD3 = 0x4a;
 // Version 0xa8 stores each imported-module prototype tree once in a separate executable directory.
 // Version 0xa9 invalidates roots whose imported modules used caller-specific resolution observations.
 // Version 0xaa adds immutable compilation-unit package metadata.
-constexpr uint8_t BCDUMP_VERSION = 0xaa;
+// Version 0xab adds the canonical transitive runtime-compatibility manifest.
+constexpr uint8_t BCDUMP_VERSION = 0xab;
 
 // Compatibility flags.
 

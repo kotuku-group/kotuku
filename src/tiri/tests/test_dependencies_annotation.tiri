@@ -1,0 +1,67 @@
+@Dependencies(tiri=">=1.0 <2.0", kotuku=">=2026.2.23")
+
+include 'core'
+
+@Note(value="function metadata remains independent")
+function dependencies_annotation_helper()
+   return 42
+end
+
+function expect_dependency_error(Source:str, Message:str)
+   local result = debug.validate(Source)
+   assert(result.success is false, 'Dependency source should fail validation: ' .. Source)
+   assert(result.diagnostics[0].message.find(Message, 0, true) != nil,
+      'Expected diagnostic containing "' .. Message .. '", got: ' .. result.diagnostics[0].message)
+end
+
+@Test function ValidDependenciesPreserveFunctionAnnotations()
+   assert(dependencies_annotation_helper() is 42, 'The dependency-checked body should execute normally')
+   local entry = debug.anno.get(dependencies_annotation_helper)
+   assert(entry != nil and #entry.annotations is 1, 'Function metadata should remain registered')
+   assert(entry.annotations[0].name is 'Note', '@Dependencies must not become function metadata')
+   assert(debug.validate('@Dependencies()\nreturn 1').success is true, 'An empty declaration should be valid')
+   assert(debug.validate('@Dependencies(kotuku=">=2026.2.23", tiri="1.0")\nreturn 1').success is true,
+      'Argument order should be insignificant')
+end
+
+@Test function ConstraintsAndArgumentsAreValidated()
+   for constraint in values(array<str> { '=1', '==1', '!=1', '> 1', '1,2', '1 and 2', '01', '1.' }) do
+      expect_dependency_error(f'@Dependencies(tiri="{constraint}")\nreturn 1', 'invalid tiri version constraint')
+   end
+   expect_dependency_error('@Dependencies(tiri=1)\nreturn 1', 'string literals')
+   expect_dependency_error('@Dependencies(extra="1")\nreturn 1', 'accepts only')
+   expect_dependency_error('@Dependencies(tiri="1", tiri="1")\nreturn 1', "duplicate 'tiri'")
+   expect_dependency_error('@Dependencies(tiri=">=2.0")\nthis is unsupported body syntax',
+      'unsatisfied tiri dependency')
+end
+
+@Test function PlacementAndPackageOrderingAreValidated()
+   local ordered = '@Package(name="tests/dependencies", version="1")\n@Dependencies(tiri="1.0")\nreturn 1'
+   assert(debug.validate(ordered).success,
+      '@Package followed by @Dependencies should be valid')
+   expect_dependency_error('@Dependencies(tiri="1.0")\n@Package(name="tests/dependencies", version="1")\nreturn 1',
+      '@Package must precede @Dependencies')
+   expect_dependency_error('return 1\n@Dependencies(tiri="1.0")', 'compilation-unit preamble')
+   expect_dependency_error('@Dependencies()\n@Dependencies()\nreturn 1', 'only once')
+end
+
+@Test function RequirementsSurviveCompiledFileRoundTrip()
+   local err, temp = mSys.ResolvePath('temp:', 0)
+   check err
+   local output = temp .. f'/dependencies_{processing.task().id}_{mSys.PreciseTime()}.tbc'
+   defer mSys.DeleteFile(output) end
+
+   local producer <close> = obj.new('tiri', {
+      statement='@Dependencies(tiri=">=1.0 <2.0", kotuku=">=2026.2.23")\n' ..
+         'global glDependencyBytecodeRuns = (glDependencyBytecodeRuns or 0) + 1'
+   })
+   do
+      local file <close> = obj.new('file', { path=output, flags=FL_NEW|FL_WRITE })
+      check producer.acSaveToObject(file)
+   end
+
+   local consumer <close> = obj.new('tiri', { path=output })
+   check consumer.acQuery()
+   check consumer.acActivate()
+   assert(consumer.error is ERR_Okay, consumer.errorMessage)
+end
