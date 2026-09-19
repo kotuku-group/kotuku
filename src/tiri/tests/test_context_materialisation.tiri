@@ -95,15 +95,12 @@ end
       end
    }
 
-   function workload():num
-      local checksum = 0
-      for i in {0 to 1000} do
-         checksum += worker.read()
-      end
-      return checksum
+   local checksum = 0
+   for _ in {0 to 1000} do
+      checksum += worker.read()
    end
 
-   assert(workload() is 9000, 'Array, string and range helpers should preserve their results')
+   assert(checksum is 9000, 'Array, string and range helpers should preserve their results')
    local counters = jit.util.contextStats()
    assert(counters.maximumVirtualDepth >= 1 and counters.traceCompilations > 0,
       'The built-in workload should execute under a compiled virtual context')
@@ -318,7 +315,7 @@ end
    local other = { value = 5 }
 
    local checksum = 0
-   for _ in {0 to 300} do
+   for {0 to 300} do
       local result = receiver + other
       checksum += result.value
    end
@@ -355,7 +352,7 @@ end
 
    function workload():num
       local checksum = 0
-      for _ in {0 to 300} do
+      for {0 to 300} do
          if first is equal then checksum++ end
          if first < second then checksum++ end
          if first <= second then checksum++ end
@@ -383,7 +380,7 @@ end
 
    function workload():str
       local result = ''
-      for _ in {0 to 300} do
+      for {0 to 300} do
          result = tostring(target)
          target.clear()
       end
