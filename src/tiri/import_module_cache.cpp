@@ -181,6 +181,15 @@ bool try_cache(const std::string &Path, const Identity &Expected, const Identity
    if (decode_envelope(content, envelope, &Counters.InterfaceOperations) != cache::FormatError::OKAY or
        not identity_matches(envelope.CompilationIdentity, Expected)) return false;
 
+   const auto &stored_identity = envelope.CompilationIdentity;
+   const auto &interface_package = envelope.CompileTimeInterface->descriptors().Package;
+   if (stored_identity.ExpectedPackage != Expected.ExpectedPackage or
+       stored_identity.DeclaredPackage != interface_package or
+       (Expected.ExpectedPackage and interface_package != Expected.ExpectedPackage)) {
+      Output.Diagnostic = "imported-module package identity metadata does not agree";
+      return false;
+   }
+
    std::string reason;
    if (ValidateIdentity and not ValidateIdentity(envelope.CompilationIdentity, reason)) {
       Output.Diagnostic = std::move(reason);
@@ -297,6 +306,10 @@ ERR publish_module(const CompilationRequest &Request, const Identity &IdentityVa
 
    Identity final_identity = IdentityValue;
    if (finalise_identity(final_identity) != cache::FormatError::OKAY) return ERR::InvalidData;
+   if (final_identity.DeclaredPackage != InterfaceValue.descriptors().Package or
+       (final_identity.ExpectedPackage and final_identity.ExpectedPackage != final_identity.DeclaredPackage)) {
+      return ERR::InvalidData;
+   }
 
    std::string envelope;
    if (encode_envelope(final_identity, InterfaceValue, Payload, envelope) != cache::FormatError::OKAY) {

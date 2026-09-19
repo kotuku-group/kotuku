@@ -1456,6 +1456,48 @@ static int bcread_header(LexState *State)
    if (cursor != end) bcread_error(State, ErrMsg::BCBAD);
    State->p = (const char *)end;
 
+   const MSize package_block_size = bcread_uleb128(State);
+   if (package_block_size < 2 or package_block_size >
+       2 + 10 + tiri::MAX_PACKAGE_NAME_LENGTH + tiri::MAX_PACKAGE_VERSION_LENGTH) return 0;
+   bcread_need(State, package_block_size);
+   bcread_account(State, package_block_size);
+   const uint8_t *package_cursor = (const uint8_t *)State->p;
+   const uint8_t *package_end = package_cursor + package_block_size;
+   auto package_byte = [&]() -> uint8_t {
+      if (package_cursor >= package_end) bcread_error(State, ErrMsg::BCBAD);
+      return *package_cursor++;
+   };
+   auto package_uleb = [&]() -> uint32_t {
+      uint32_t value = 0;
+      for (unsigned shift = 0; shift <= 28; shift += 7) {
+         const uint32_t current = package_byte();
+         if (shift IS 28 and current > 0x0f) bcread_error(State, ErrMsg::BCBAD);
+         value |= (current & 0x7f) << shift;
+         if (not (current & 0x80)) return value;
+      }
+      bcread_error(State, ErrMsg::BCBAD);
+      return 0;
+   };
+   auto package_string = [&]() -> std::string {
+      const uint32_t length = package_uleb();
+      if (length > uint32_t(package_end - package_cursor)) bcread_error(State, ErrMsg::BCBAD);
+      std::string result((const char *)package_cursor, length);
+      package_cursor += length;
+      if (result.find('\0') != std::string::npos) bcread_error(State, ErrMsg::BCBAD);
+      return result;
+   };
+   if (package_byte() != PROTO_PACKAGE_METADATA_VERSION) return 0;
+   const uint8_t package_flags = package_byte();
+   if (package_flags & ~PROTO_PACKAGE_PRESENT) return 0;
+   State->bytecode_package_identity.reset();
+   if (package_flags & PROTO_PACKAGE_PRESENT) {
+      tiri::PackageIdentity identity { package_string(), package_string() };
+      if (tiri::validate_package_identity(identity) != tiri::PackageValidationError::OKAY) return 0;
+      State->bytecode_package_identity = std::move(identity);
+   }
+   if (package_cursor != package_end) return 0;
+   State->p = (const char *)package_end;
+
    const MSize module_block_size = bcread_uleb128(State);
    if (module_block_size < 2 or module_block_size > tiri::import_cache::MAX_ROOT_BUNDLE_SIZE) return 0;
    bcread_need(State, module_block_size);
@@ -1500,6 +1542,7 @@ GCproto *lj_bcread(LexState *State)
    State->bytecode_prototype_depths.clear();
    State->compilation_sources.clear();
    State->bytecode_struct_manifest.clear();
+   State->bytecode_package_identity.reset();
    State->bytecode_import_module_bundle.clear();
    State->bytecode_import_module_records.clear();
    State->loaded_structs.clear();
@@ -1591,6 +1634,7 @@ GCproto *lj_bcread(LexState *State)
    State->bytecode_load_operations.structure_commits += uint32_t(State->loaded_structs.size());
    attach_loaded_compilation_sources(
       L, root, State->compilation_sources, module_roots, &State->bytecode_load_operations);
+   install_proto_package_metadata(L, root, State->bytecode_package_identity);
    auto manifest = (uint8_t *)lj_mem_new(L, MSize(State->bytecode_struct_manifest.size()));
    memcpy(manifest, State->bytecode_struct_manifest.data(), State->bytecode_struct_manifest.size());
    setmref(root->struct_manifest, manifest);

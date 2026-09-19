@@ -189,6 +189,9 @@ ProtoRootMetadataSize measure_proto_root_metadata(const GCproto *Prototype) noex
    if (const auto map = Prototype->compilation_sources.get<const CompilationSourceMap>()) {
       result.compilation_sources = sizeof(CompilationSourceMap) + map->count * sizeof(CompilationSourceEntry);
    }
+   if (Prototype->package_metadata.get<const ProtoPackageMetadata>()) {
+      result.package_metadata = sizeof(ProtoPackageMetadata);
+   }
    if (Prototype->struct_manifest.get<const uint8_t>()) result.struct_manifest = Prototype->struct_manifest_size;
    if (Prototype->import_module_bundle.get<const uint8_t>()) {
       result.import_module_bundle = Prototype->import_module_bundle_size;
@@ -211,6 +214,10 @@ void release_proto_root_metadata(global_State *State, GCproto *Prototype) noexce
       setmref(Prototype->compilation_sources, nullptr);
       lj_mem_free(State, map, bytes);
    }
+   if (auto package = Prototype->package_metadata.get<ProtoPackageMetadata>()) {
+      setmref(Prototype->package_metadata, nullptr);
+      lj_mem_free(State, package, sizeof(ProtoPackageMetadata));
+   }
    if (auto manifest = Prototype->struct_manifest.get<uint8_t>()) {
       const uint32_t bytes = Prototype->struct_manifest_size;
       setmref(Prototype->struct_manifest, nullptr);
@@ -228,6 +235,26 @@ void release_proto_root_metadata(global_State *State, GCproto *Prototype) noexce
       setmref(Prototype->import_module_table, nullptr);
       lj_mem_free(State, table, bytes);
    }
+}
+
+//********************************************************************************************************************
+// Installs immutable package metadata on a standalone root.  The absent state is represented by a null sidecar.
+
+void install_proto_package_metadata(
+   lua_State *State, GCproto *Prototype, const std::optional<tiri::PackageIdentity> &Package)
+{
+   if (not State or not Prototype or not Package) return;
+   auto metadata = (ProtoPackageMetadata *)lj_mem_new(State, sizeof(ProtoPackageMetadata));
+   metadata->version = PROTO_PACKAGE_METADATA_VERSION;
+   metadata->flags = PROTO_PACKAGE_PRESENT;
+   metadata->reserved[0] = 0;
+   metadata->reserved[1] = 0;
+   setgcrefnull(metadata->name);
+   setgcrefnull(metadata->package_version);
+   setmref(Prototype->package_metadata, metadata);
+   setgcref(metadata->name, obj2gco(lj_str_new(State, Package->Name.data(), Package->Name.size())));
+   setgcref(metadata->package_version,
+      obj2gco(lj_str_new(State, Package->Version.data(), Package->Version.size())));
 }
 
 //********************************************************************************************************************

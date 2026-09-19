@@ -188,7 +188,8 @@ struct AstHarnessResult {
 //********************************************************************************************************************
 
 static AstHarnessResult build_ast_from_source(std::string_view source, bool Diagnose = false,
-   bool EnableTypeAnalysis = true, bool RejectLegacyMemberSyntax = false)
+   bool EnableTypeAnalysis = true, bool RejectLegacyMemberSyntax = false,
+   std::optional<tiri::PackageIdentity> ExpectedPackage = std::nullopt, bool LocalInclusion = false)
 {
    AstHarnessResult result;
    result.state = std::make_unique<LuaStateHolder>();
@@ -212,8 +213,15 @@ static AstHarnessResult build_ast_from_source(std::string_view source, bool Diag
    ParserSession session(context, config);
 
    lex.next();
-   AstBuilder builder(context);
-   result.chunk = builder.parse_chunk();
+   if (LocalInclusion) {
+      AstBuilder parent(context);
+      AstBuilder builder(context, &parent, false, std::move(ExpectedPackage));
+      result.chunk = builder.parse_chunk();
+   }
+   else {
+      AstBuilder builder(context, nullptr, false, std::move(ExpectedPackage));
+      result.chunk = builder.parse_chunk();
+   }
 
    auto diag_entries = context.diagnostics().entries();
    result.diagnostics.assign(diag_entries.begin(), diag_entries.end());
@@ -3639,6 +3647,11 @@ static bool test_malformed_signature_rejected(kt::Log &Log)
    }
    position += value;
    if (not read_uleb(position, value) or value > dump.size() - position) {
+      Log.error("could not skip the package block in the malformed-signature fixture");
+      return false;
+   }
+   position += value;
+   if (not read_uleb(position, value) or value > dump.size() - position) {
       Log.error("could not skip the module bundle in the malformed-signature fixture");
       return false;
    }
@@ -5268,6 +5281,9 @@ static bool test_named_struct_bytecode_manifest(kt::Log &Log)
          uint32_t source_size = 0;
          if (not read_uleb(source_offset, source_size) or source_size > dump.size() - source_offset) return false;
          size_t module_offset = source_offset + source_size;
+         uint32_t package_size = 0;
+         if (not read_uleb(module_offset, package_size) or package_size > dump.size() - module_offset) return false;
+         module_offset += package_size;
          uint32_t module_size = 0;
          if (not read_uleb(module_offset, module_size) or module_size > dump.size() - module_offset) return false;
          size_t manifest_offset = module_offset + module_size;
@@ -5684,6 +5700,11 @@ static bool test_module_dependency_corruption_rejected(kt::Log &Log)
    uint32_t value = 0;
    if (not read_uleb(position, value) or value > dump.size() - position) {
       Log.error("could not skip the source manifest in the corruption fixture");
+      return false;
+   }
+   position += value;
+   if (not read_uleb(position, value) or value > dump.size() - position) {
+      Log.error("could not skip the package block in the corruption fixture");
       return false;
    }
    position += value;
@@ -11671,6 +11692,140 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
 }
 
 //********************************************************************************************************************
+// Package declarations are compilation-unit metadata and survive both bytecode dump modes.
+
+static bool test_package_annotation_metadata(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      "@Package(version=\"2026.12\", name=\"net/url\")\n"
+      "@Note(value=\"retained\")\nfunction packageFunction() return 42 end\nreturn packageFunction()";
+   LuaStateHolder producer_holder;
+   lua_State *producer = producer_holder.get();
+   if (not producer or lua_load(producer, source, "package-annotation") != 0) {
+      Log.error("valid package declaration did not compile: %s", producer ? lua_tostring(producer, -1) : "no state");
+      return false;
+   }
+
+   GCproto *root = funcproto(funcV(producer->top - 1));
+   const ProtoPackageMetadata *package = proto_package_metadata(root);
+   if (not package or package->version != PROTO_PACKAGE_METADATA_VERSION or
+       std::string_view(strdata(gco_to_string(gcref(package->name))),
+          gco_to_string(gcref(package->name))->len) != "net/url" or
+       std::string_view(strdata(gco_to_string(gcref(package->package_version))),
+          gco_to_string(gcref(package->package_version))->len) != "2026.12") {
+      Log.error("source compilation did not attach canonical package metadata");
+      return false;
+   }
+
+   for (int strip : { 0, 1 }) {
+      std::string dump;
+      if (lj_bcwrite(producer, root, bytecode_writer, &dump, strip) != 0) {
+         Log.error("package bytecode dump failed (strip=%d)", strip);
+         return false;
+      }
+      LuaStateHolder consumer_holder;
+      lua_State *consumer = consumer_holder.get();
+      BytecodeLoadMetadata metadata;
+      if (lj_load_with_bytecode_metadata(consumer, dump, "package-roundtrip", metadata) != 0 or
+          metadata.Package != std::optional<tiri::PackageIdentity>({ "net/url", "2026.12" })) {
+         Log.error("package bytecode metadata was not preserved (strip=%d)", strip);
+         return false;
+      }
+      const ProtoPackageMetadata *loaded = proto_package_metadata(funcproto(funcV(consumer->top - 1)));
+      if (not loaded) {
+         Log.error("package prototype sidecar was not installed (strip=%d)", strip);
+         return false;
+      }
+   }
+
+   std::string corruptible;
+   if (lj_bcwrite(producer, root, bytecode_writer, &corruptible, 1) != 0) return false;
+   auto read_uleb = [&corruptible](size_t &Position, uint32_t &Value) {
+      Value = 0;
+      for (uint32_t shift = 0; shift <= 28 and Position < corruptible.size(); shift += 7) {
+         const uint8_t byte = uint8_t(corruptible[Position++]);
+         Value |= uint32_t(byte & 0x7f) << shift;
+         if (not (byte & 0x80)) return true;
+      }
+      return false;
+   };
+   size_t package_length_offset = 5;
+   uint32_t source_size = 0;
+   if (not read_uleb(package_length_offset, source_size) or
+       source_size > corruptible.size() - package_length_offset) return false;
+   package_length_offset += source_size;
+   size_t package_offset = package_length_offset;
+   uint32_t package_size = 0;
+   if (not read_uleb(package_offset, package_size) or package_size < 2 or
+       package_size > corruptible.size() - package_offset) return false;
+   std::array<std::string, 2> malformed = { corruptible, corruptible };
+   malformed[0][package_offset] = char(PROTO_PACKAGE_METADATA_VERSION + 1);
+   malformed[1][package_offset + 1] = char(0x80);
+   for (const auto &bytes : malformed) {
+      LuaStateHolder rejected_holder;
+      lua_State *rejected_state = rejected_holder.get();
+      if (lua_load(rejected_state, bytes, "malformed-package-bytecode") IS 0) {
+         Log.error("malformed package bytecode metadata was accepted");
+         return false;
+      }
+   }
+
+   constexpr std::string_view rejected[] = {
+      "@Package(name=\"Gui\", version=\"1\")\nreturn 1",
+      "@Package(name=\"gui\", version=\"01\")\nreturn 1",
+      "@Package(name=\"gui\", version=1)\nreturn 1",
+      "@Package(name=\"gui\", name=\"other\", version=\"1\")\nreturn 1",
+      "return 1\n@Package(name=\"gui\", version=\"1\")",
+      "@Package(name=\"gui\", version=\"1\")\n@Package(name=\"gui\", version=\"1\")\nreturn 1"
+   };
+   for (auto invalid : rejected) {
+      auto ast = build_ast_from_source(invalid, true);
+      if (ast.diagnostics.empty()) {
+         Log.error("invalid package declaration was accepted: %.*s", int(invalid.size()), invalid.data());
+         return false;
+      }
+   }
+
+   auto matching = build_ast_from_source("@Package(name=\"net/url\", version=\"2026.12\")\nreturn 1",
+      true, true, false, tiri::PackageIdentity { "net/url", "2026.12" });
+   if (not matching.diagnostics.empty()) {
+      Log.error("an exact expected package identity was rejected");
+      return false;
+   }
+
+   auto mismatched = build_ast_from_source("@Package(name=\"net/url\", version=\"2026.13\")\nreturn 1",
+      true, true, false, tiri::PackageIdentity { "net/url", "2026.12" });
+   auto missing = build_ast_from_source("return 1", true, true, false,
+      tiri::PackageIdentity { "net/url", "2026.12" });
+   if (mismatched.diagnostics.empty() or missing.diagnostics.empty()) {
+      Log.error("expected package identity did not reject mismatched or missing declarations");
+      return false;
+   }
+
+   constexpr std::string_view declared_import = "import 'tests/package_declared'\nreturn 1";
+   auto declared = build_ast_from_source(declared_import, true);
+   if (not declared.diagnostics.empty()) {
+      Log.error("a non-local import rejected valid package metadata");
+      return false;
+   }
+
+   auto local = build_ast_from_source("@Package(name=\"net/url\", version=\"2026.12\")\nreturn 1",
+      true, true, false, std::nullopt, true);
+   if (local.diagnostics.empty()) {
+      Log.error("a local source inclusion accepted a package declaration");
+      return false;
+   }
+   const bool expected_diagnostic = std::ranges::any_of(local.diagnostics, [](const auto &Diagnostic) {
+      return Diagnostic.message.find("not permitted in a local source inclusion") != std::string::npos;
+   });
+   if (not expected_diagnostic) {
+      Log.error("local package rejection returned the wrong diagnostic");
+      return false;
+   }
+   return true;
+}
+
+//********************************************************************************************************************
 // Internal metadata capture is transactional across source, successful bytecode and failed bytecode loads.
 
 static bool test_bytecode_load_metadata_transaction(kt::Log &Log)
@@ -12022,7 +12177,8 @@ static bool test_import_module_relocation_transaction(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 105> tests = { {
+   constexpr std::array<TestCase, 106> tests = { {
+      { "package_annotation_metadata", test_package_annotation_metadata },
       { "bytecode_load_metadata_transaction", test_bytecode_load_metadata_transaction },
       { "file_source_index_collision_fallback", test_file_source_index_collision_fallback },
       { "import_module_metadata_release_idempotence", test_import_module_metadata_release_idempotence },

@@ -3,9 +3,11 @@
 #include "lj_obj.h"
 #include "../debug/filesource.h"
 #include "../../../import_module_bundle.h"
+#include "../../../package_identity.h"
 
 #include <cstddef>
 #include <span>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -26,12 +28,13 @@ struct ImportModuleDirectoryLayout {
 
 struct ProtoRootMetadataSize {
    size_t compilation_sources = 0;
+   size_t package_metadata = 0;
    size_t struct_manifest = 0;
    size_t import_module_bundle = 0;
    size_t import_module_table = 0;
 
    [[nodiscard]] constexpr size_t total() const noexcept {
-      return compilation_sources + struct_manifest + import_module_bundle + import_module_table;
+      return compilation_sources + package_metadata + struct_manifest + import_module_bundle + import_module_table;
    }
 };
 
@@ -89,6 +92,8 @@ public:
 // not follow source_root, because a linked initialiser resolves accessors through the final compilation root.
 [[nodiscard]] ProtoRootMetadataSize measure_proto_root_metadata(const GCproto *Prototype) noexcept;
 void release_proto_root_metadata(global_State *State, GCproto *Prototype) noexcept;
+void install_proto_package_metadata(
+   lua_State *State, GCproto *Prototype, const std::optional<tiri::PackageIdentity> &Package);
 
 [[nodiscard]] bool preflight_import_module_relocations(
    std::span<GCproto *const> Roots, std::span<const uint32_t> Mapping, ImportModuleRelocationPlan &Result);

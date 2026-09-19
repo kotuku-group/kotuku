@@ -1,0 +1,33 @@
+@Package(name="tests/package-annotation", version="2026.9.19")
+
+@Note(value="function metadata remains independent")
+function package_annotation_helper()
+   return 42
+end
+
+function expect_package_error(Source:str, Message:str)
+   local result = debug.validate(Source)
+   assert(result.success is false, 'Package source should fail validation: ' .. Source)
+   assert(result.diagnostics[0].message.find(Message, 0, true) != nil,
+      'Expected diagnostic containing "' .. Message .. '", got: ' .. result.diagnostics[0].message)
+end
+
+@Test function ValidPackagePreamblePreservesFunctionAnnotations()
+   assert(package_annotation_helper() is 42, 'The package body should execute normally')
+   local entry = debug.anno.get(package_annotation_helper)
+   assert(entry != nil and #entry.annotations is 1, 'Function metadata should remain registered after @Package')
+   assert(entry.annotations[0].name is 'Note', '@Package must not be lowered into function annotation metadata')
+end
+
+@Test function PackageArgumentsAndPlacementAreValidated()
+   assert(debug.validate('@Package(version="1.0", name="gui")\nreturn 1').success is true,
+      'Package argument order should be insignificant')
+   expect_package_error('@Package(name="Gui", version="1")\nreturn 1', 'invalid package name')
+   expect_package_error('@Package(name="gui", version="01")\nreturn 1', 'invalid package version')
+   expect_package_error('@Package(name="gui", version=1)\nreturn 1', 'string literals')
+   expect_package_error('@Package(name="gui")\nreturn 1', 'requires exactly one')
+   expect_package_error('@Package(name="gui", version="1", extra="x")\nreturn 1', 'accepts only')
+   expect_package_error('return 1\n@Package(name="gui", version="1")', 'compilation-unit preamble')
+   expect_package_error('@Package(name="gui", version="1")\n@Package(name="gui", version="1")\nreturn 1',
+      'only once')
+end

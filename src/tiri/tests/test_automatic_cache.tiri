@@ -113,6 +113,35 @@ function fixtures():<str, str, str>
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Package declarations discovered during parsing must not change the cache location used by subsequent imports.
+
+@Test function DeclaredPackageImportsReusePublishedCache()
+   local module_path = glRoot .. 'declared_package.tiri'
+   local arguments = array<str> {
+      '--statement', "import 'declared_package'; print('PACKAGE_CACHE_VALUE:' .. declared_package.value)",
+      '--log-trace', '--gfx-driver=headless', '--set-volume', 'scripts=' .. glRoot,
+      '--set-volume', 'temp=' .. glRoot
+   }
+
+   for version in {1 into 2} do
+      write_file(module_path, '@Package(name="tests/declared-package", version="' .. tostring(version) .. '")\n' ..
+         'namespace declared_package { }\ndeclared_package.value = ' .. tostring(version))
+
+      local code, output = child(arguments)
+      assert(code is 0 and output.find('PACKAGE_CACHE_VALUE:' .. tostring(version)) != nil, output)
+      assert(output.find('Imported-module validation: hits=0 misses=1') != nil and
+         output.find('source-compilations=1 publications=1') != nil,
+         'A new package source must compile and publish its cache: ' .. output)
+
+      code, output = child(arguments)
+      assert(code is 0 and output.find('PACKAGE_CACHE_VALUE:' .. tostring(version)) != nil, output)
+      assert(output.find('Imported-module validation: hits=1 misses=0') != nil and
+         output.find('source-compilations=0 publications=0') != nil,
+         'A fresh process must reuse the declared package cache without recompilation: ' .. output)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- A cold producer and warm consumers use independent Lua states.  JIT policy does not affect cache identity, and
 -- omitting AUTO_CACHE must ignore a pre-existing automatic entry.
 

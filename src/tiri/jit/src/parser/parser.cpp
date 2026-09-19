@@ -418,6 +418,7 @@ extern GCproto * lj_parse(LexState *State)
    setprotoV(L, L->top, pt);
    incr_top(L);
    attach_compilation_sources(L, pt, State->compilation_sources);
+   install_proto_package_metadata(L, pt, State->package_identity);
 
    std::vector<uint8_t> struct_manifest;
    std::string manifest_detail;
@@ -465,9 +466,11 @@ extern GCproto * lj_parse(LexState *State)
    const auto &staging = State->imported_module_counters;
    if (staging.staging_metadata_roots) {
       log.trace("Imported-module staging release: roots=%u source-bytes=%" PRIu64
-         " manifest-bytes=%" PRIu64 " bundle-bytes=%" PRIu64 " directory-bytes=%" PRIu64,
+         " package-bytes=%" PRIu64 " manifest-bytes=%" PRIu64 " bundle-bytes=%" PRIu64
+         " directory-bytes=%" PRIu64,
          staging.staging_metadata_roots, staging.staging_compilation_source_bytes,
-         staging.staging_struct_manifest_bytes, staging.staging_import_module_bundle_bytes,
+         staging.staging_package_metadata_bytes, staging.staging_struct_manifest_bytes,
+         staging.staging_import_module_bundle_bytes,
          staging.staging_import_module_table_bytes);
    }
    for (int reference : State->import_module_anchors) luaL_unref(L, LUA_REGISTRYINDEX, reference);

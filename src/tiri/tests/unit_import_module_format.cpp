@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cstring>
 #include <format>
+#include <limits>
 #include <ranges>
 
 #ifdef UNIT_TESTS
@@ -40,6 +41,7 @@ ValueDescriptor structure_value(std::string Name)
 Interface sample_interface()
 {
    Interface result;
+   result.Package = tiri::PackageIdentity { "geometry", "2.4.1" };
    result.Namespaces = { { "geometry", NamespaceMode::DECLARE }, { "geometry", NamespaceMode::JOIN } };
 
    CallableDescriptor callable;
@@ -78,6 +80,7 @@ Identity sample_identity()
    Identity result;
    result.BuildIdentity = "build:0123456789abcdef";
    result.LogicalRequest = "geometry";
+   result.DeclaredPackage = tiri::PackageIdentity { "geometry", "2.4.1" };
    result.Source = { "scripts:geometry.tiri", 123, 456, tiri::cache::content_digest("geometry source") };
    result.Options = { { "optimisation", "debug" }, { "language", "tiri" } };
    result.LocalImports = { { result.Source.ResolvedPath, "./local",
@@ -179,6 +182,90 @@ bool round_trip_and_determinism(kt::Log &Log)
    return true;
 }
 
+bool package_identity_validation(kt::Log &Log)
+{
+   constexpr std::string_view valid_names[] = {
+      "a", "gui", "net/url", "a1/b2-c3"
+   };
+   for (auto name : valid_names) {
+      if (tiri::validate_package_name(name) != tiri::PackageValidationError::OKAY) {
+         Log.error("Valid package name '%.*s' was rejected", int(name.size()), name.data());
+         return false;
+      }
+   }
+   constexpr std::string_view invalid_names[] = {
+      "", "Gui", "gui_tools", "/gui", "gui/", "gui//tools", "-gui", "gui-", "gui--tools", "../gui"
+   };
+   for (auto name : invalid_names) {
+      if (tiri::validate_package_name(name) IS tiri::PackageValidationError::OKAY) {
+         Log.error("Invalid package name '%.*s' was accepted", int(name.size()), name.data());
+         return false;
+      }
+   }
+
+   constexpr std::string_view ordered_versions[] = { "1", "1.0", "1.0.1", "1.1", "1.10", "2" };
+   tiri::ParsedPackageVersion previous;
+   if (tiri::parse_package_version(ordered_versions[0], &previous) != tiri::PackageValidationError::OKAY) return false;
+   for (size_t i = 1; i < std::size(ordered_versions); ++i) {
+      tiri::ParsedPackageVersion current;
+      if (tiri::parse_package_version(ordered_versions[i], &current) != tiri::PackageValidationError::OKAY or
+          not (previous < current)) {
+         Log.error("Package version ordering failed at '%.*s'", int(ordered_versions[i].size()),
+            ordered_versions[i].data());
+         return false;
+      }
+      previous = current;
+   }
+   constexpr std::string_view invalid_versions[] = {
+      "", "01", ".1", "1.", "1..2", "+1", "1-beta", "1 2", "4294967296"
+   };
+   for (auto version : invalid_versions) {
+      if (tiri::parse_package_version(version) IS tiri::PackageValidationError::OKAY) {
+         Log.error("Invalid package version '%.*s' was accepted", int(version.size()), version.data());
+         return false;
+      }
+   }
+
+   std::string longest_name(tiri::MAX_PACKAGE_NAME_COMPONENT_LENGTH, 'a');
+   if (tiri::validate_package_name(longest_name) != tiri::PackageValidationError::OKAY) return false;
+   longest_name.push_back('a');
+   if (tiri::validate_package_name(longest_name) != tiri::PackageValidationError::COMPONENT_LENGTH) return false;
+
+   std::string maximum_name;
+   for (size_t i = 0; i < 4; ++i) {
+      if (not maximum_name.empty()) maximum_name += '/';
+      maximum_name.append(tiri::MAX_PACKAGE_NAME_COMPONENT_LENGTH, 'a');
+   }
+   if (maximum_name.size() != tiri::MAX_PACKAGE_NAME_LENGTH or
+       tiri::validate_package_name(maximum_name) != tiri::PackageValidationError::OKAY or
+       tiri::validate_package_name(maximum_name + "a") != tiri::PackageValidationError::TOTAL_LENGTH) {
+      Log.error("Package name total-length boundary is incorrect");
+      return false;
+   }
+
+   tiri::ParsedPackageVersion maximum_component;
+   if (tiri::parse_package_version("4294967295", &maximum_component) != tiri::PackageValidationError::OKAY or
+       maximum_component.Components[0] != (std::numeric_limits<uint32_t>::max)()) {
+      Log.error("Package version component-value boundary is incorrect");
+      return false;
+   }
+
+   std::string overlong_version(tiri::MAX_PACKAGE_VERSION_LENGTH + 1, '1');
+   if (tiri::parse_package_version(overlong_version) != tiri::PackageValidationError::TOTAL_LENGTH) {
+      Log.error("Package version total-length boundary is incorrect");
+      return false;
+   }
+
+   std::string sixteen_components = "1";
+   for (size_t i = 1; i < tiri::MAX_PACKAGE_VERSION_COMPONENTS; ++i) sixteen_components += ".1";
+   if (tiri::parse_package_version(sixteen_components) != tiri::PackageValidationError::OKAY or
+       tiri::parse_package_version(sixteen_components + ".1") != tiri::PackageValidationError::COMPONENT_COUNT) {
+      Log.error("Package version component-count boundary is incorrect");
+      return false;
+   }
+   return true;
+}
+
 bool compiled_identity_and_graph_assembly(kt::Log &Log)
 {
    auto parent = sample_identity();
@@ -203,6 +290,29 @@ bool compiled_identity_and_graph_assembly(kt::Log &Log)
    changed_hint.Source.ModifiedHint++;
    if (compiled_key(parent) != compiled_key(changed_hint) or lookup_key(parent) IS lookup_key(changed_hint)) {
       Log.error("A source timestamp hint became semantic or failed to select a fresh lookup candidate");
+      return false;
+   }
+
+   auto changed_package = parent;
+   changed_package.DeclaredPackage = tiri::PackageIdentity { "geometry", "2.4.2" };
+   if (lookup_key(parent) != lookup_key(changed_package) or compiled_key(parent) IS compiled_key(changed_package)) {
+      Log.error("A package declaration change did not affect only the compiled identity");
+      return false;
+   }
+
+   auto undeclared_package = parent;
+   undeclared_package.DeclaredPackage.reset();
+   if (lookup_key(parent) != lookup_key(undeclared_package) or
+       compiled_key(parent) IS compiled_key(undeclared_package)) {
+      Log.error("Discovering a package declaration changed its lookup key or failed to change its compiled identity");
+      return false;
+   }
+
+   auto expected_package = undeclared_package;
+   expected_package.ExpectedPackage = parent.DeclaredPackage;
+   if (lookup_key(undeclared_package) IS lookup_key(expected_package) or
+       compiled_key(undeclared_package) IS compiled_key(expected_package)) {
+      Log.error("A resolver package expectation failed to change lookup and compiled identities");
       return false;
    }
 
@@ -439,7 +549,8 @@ bool malformed_and_bounds(kt::Log &Log)
    uint32_t interface_size = 0;
    for (int i = 0; i < 4; ++i) interface_size |= uint32_t(uint8_t(encoded[16 + i])) << (i * 8);
    const size_t interface_offset = 132 + identity_size;
-   unknown_decoded_kind[interface_offset + 4 + 4 + std::string_view("geometry").size()] = char(255);
+   unknown_decoded_kind[interface_offset + 1 + 4 + std::string_view("geometry").size() + 4 +
+      std::string_view("2.4.1").size() + 4 + 4 + std::string_view("geometry").size()] = char(255);
    auto interface_hash = tiri::cache::content_digest(
       std::string_view(unknown_decoded_kind).substr(interface_offset, interface_size));
    std::memcpy(unknown_decoded_kind.data() + 68, interface_hash.data(), interface_hash.size());
@@ -496,7 +607,7 @@ bool malformed_and_bounds(kt::Log &Log)
 void import_module_format_unit_tests(int &Passed, int &Total)
 {
    kt::Log log("ImportModuleFormatTests");
-   for (auto test : { round_trip_and_determinism, compiled_identity_and_graph_assembly,
+   for (auto test : { package_identity_validation, round_trip_and_determinism, compiled_identity_and_graph_assembly,
       root_module_graph_validation, malformed_and_bounds }) {
       Total++;
       if (test(log)) Passed++;

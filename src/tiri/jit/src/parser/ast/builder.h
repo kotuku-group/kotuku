@@ -25,13 +25,17 @@
 
 class AstBuilder {
 public:
-   explicit AstBuilder(ParserContext& context, AstBuilder *Parent = nullptr, bool ModuleInitialiser = false);
+   explicit AstBuilder(ParserContext& context, AstBuilder *Parent = nullptr, bool ModuleInitialiser = false,
+      std::optional<tiri::PackageIdentity> ExpectedPackage = std::nullopt);
    ~AstBuilder();
 
    AstBuilder(const AstBuilder &) = delete;
    AstBuilder& operator=(const AstBuilder &) = delete;
 
    ParserResult<std::unique_ptr<BlockStmt>> parse_chunk();
+   [[nodiscard]] const std::optional<tiri::PackageIdentity> & package_identity() const noexcept {
+      return this->package_identity_;
+   }
    ParserResult<ExprNodePtr> parse_expression(uint8_t precedence = 0);
    ParserResult<ExprNodeList> parse_expression_list();
    void commit_registered_enum_constants();
@@ -55,6 +59,9 @@ private:
    bool enum_constants_committed = false;
    bool source_namespace_declared = false;
    bool module_initialiser = false;
+   std::optional<tiri::PackageIdentity> package_identity_;
+   std::optional<tiri::PackageIdentity> expected_package_;
+   SourceSpan package_declaration_span_{};
    AstBuilder *parent_builder = nullptr;
    std::vector<GCstr *> function_name_stack;
    std::vector<uint32_t> registered_enum_constants;
@@ -180,6 +187,8 @@ private:
    };
 
    [[nodiscard]] ParserResult<std::unique_ptr<BlockStmt>> parse_block(std::span<const TokenKind> terminators);
+   [[nodiscard]] ParserResult<std::unique_ptr<BlockStmt>> parse_compilation_unit();
+   [[nodiscard]] ParserResult<bool> parse_compilation_unit_preamble();
    ParserResult<StmtNodePtr> parse_statement();
    ParserResult<StmtNodePtr> parse_explicit_local_declaration();
    ParserResult<StmtNodePtr> parse_bare_annotated_assignment();
@@ -195,7 +204,7 @@ private:
    void track_registered_struct(uint32_t Key);
    ParserResult<StmtNodePtr> parse_function_stmt();
    ParserResult<StmtNodePtr> parse_annotated_statement();
-   ParserResult<std::vector<AnnotationEntry>> parse_annotations();
+   ParserResult<std::vector<AnnotationEntry>> parse_annotations(bool Single = false);
    ParserResult<AnnotationArgValue> parse_annotation_value();
    ParserResult<StmtNodePtr> parse_if();
    ParserResult<StmtNodePtr> parse_while();
@@ -221,7 +230,8 @@ private:
    ParserResult<std::unique_ptr<BlockStmt>> parse_imported_file(
       std::string &, std::string_view, const Token &ImportToken, bool ModuleInitialiser,
       tiri::import_cache::ModuleLookup *Lookup = nullptr,
-      std::vector<FuncState::DependencyDescriptor> *ModuleDependencies = nullptr);
+      std::vector<FuncState::DependencyDescriptor> *ModuleDependencies = nullptr,
+      std::optional<tiri::PackageIdentity> *DeclaredPackage = nullptr);
    ParserResult<StmtNodePtr> parse_compile_if();
    void skip_to_compile_end();
    ParserResult<StmtNodePtr> parse_expression_stmt();

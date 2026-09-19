@@ -911,6 +911,17 @@ struct CompilationSourceMap {
    uint8_t reserved; // Reserved for source-map format extensions.
 };
 
+inline constexpr uint8_t PROTO_PACKAGE_METADATA_VERSION = 1;
+inline constexpr uint8_t PROTO_PACKAGE_PRESENT = 1 << 0;
+
+struct ProtoPackageMetadata {
+   uint8_t version;
+   uint8_t flags;
+   uint8_t reserved[2];
+   GCRef name;
+   GCRef package_version;
+};
+
 inline constexpr uint8_t IMPORT_MODULE_TABLE_VERSION = 2;
 
 struct ImportModuleTableEntry {
@@ -987,6 +998,7 @@ typedef struct GCproto {
    uint8_t interpreter_required; // Deterministic policy reconstructed from this prototype's bytecode.
    GCRef source_root;        // Root prototype which owns the compilation-unit source descriptor.
    MRef compilation_sources; // CompilationSourceMap owned by the root prototype only.
+   MRef package_metadata; // ProtoPackageMetadata owned by the root prototype only.
    MRef struct_manifest; // Portable named-structure semantics owned by the root prototype only.
    uint32_t struct_manifest_size;
    MRef import_module_bundle; // Canonical imported-module records owned by the root prototype only.
@@ -1127,6 +1139,7 @@ inline void proto_metadata_init(GCproto *Proto) noexcept
    Proto->file_source_idx = 0;
    setgcrefnull(Proto->source_root);
    setmref(Proto->compilation_sources, nullptr);
+   setmref(Proto->package_metadata, nullptr);
    setmref(Proto->struct_manifest, nullptr);
    Proto->struct_manifest_size = 0;
    setmref(Proto->import_module_bundle, nullptr);
@@ -1149,6 +1162,18 @@ inline void proto_metadata_init(GCproto *Proto) noexcept
    Proto->resolved_count = 0;
    Proto->resolved_dependency_states = nullptr;
    Proto->resolved_dependency_count = 0;
+}
+
+[[nodiscard]] inline ProtoPackageMetadata * proto_package_metadata(GCproto *Proto) noexcept
+{
+   if (not Proto) return nullptr;
+   GCproto *root = gcref(Proto->source_root) ? (GCproto *)gcref(Proto->source_root) : Proto;
+   return root->package_metadata.get<ProtoPackageMetadata>();
+}
+
+[[nodiscard]] inline const ProtoPackageMetadata * proto_package_metadata(const GCproto *Proto) noexcept
+{
+   return proto_package_metadata((GCproto *)Proto);
 }
 
 [[nodiscard]] inline const uint8_t * proto_struct_manifest(const GCproto *Proto, uint32_t *Size = nullptr) noexcept

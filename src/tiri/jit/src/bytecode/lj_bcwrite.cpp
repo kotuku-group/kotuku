@@ -28,6 +28,7 @@ typedef struct BCWriteCtx {
    uint8_t source_wire[256];
    uint8_t source_mapped[256];
    const CompilationSourceMap *sources;
+   const ProtoPackageMetadata *package;
    const uint8_t *struct_manifest;
    uint32_t struct_manifest_size;
    const uint8_t *import_module_bundle;
@@ -127,6 +128,28 @@ static void bcwrite_structs(BCWriteCtx *Ctx)
    char *p = lj_buf_need(&Ctx->sb, 5 + Ctx->struct_manifest_size);
    p = lj_strfmt_wuleb128(p, Ctx->struct_manifest_size);
    p = lj_buf_wmem(p, Ctx->struct_manifest, Ctx->struct_manifest_size);
+   Ctx->status = Ctx->wfunc(sbufL(&Ctx->sb), Ctx->sb.b, MSize(p - Ctx->sb.b), Ctx->wdata);
+   lj_buf_reset(&Ctx->sb);
+}
+
+static void bcwrite_package(BCWriteCtx *Ctx)
+{
+   if (Ctx->status != 0) return;
+   GCstr *name = Ctx->package ? gco_to_string(gcref(Ctx->package->name)) : nullptr;
+   GCstr *version = Ctx->package ? gco_to_string(gcref(Ctx->package->package_version)) : nullptr;
+   const MSize block_size = 2 + (name ? bcwrite_uleb128_size(name->len) + name->len +
+      bcwrite_uleb128_size(version->len) + version->len : 0);
+   lj_buf_reset(&Ctx->sb);
+   char *p = lj_buf_need(&Ctx->sb, 5 + block_size);
+   p = lj_strfmt_wuleb128(p, block_size);
+   *p++ = PROTO_PACKAGE_METADATA_VERSION;
+   *p++ = name ? PROTO_PACKAGE_PRESENT : 0;
+   if (name) {
+      p = lj_strfmt_wuleb128(p, name->len);
+      p = lj_buf_wmem(p, strdata(name), name->len);
+      p = lj_strfmt_wuleb128(p, version->len);
+      p = lj_buf_wmem(p, strdata(version), version->len);
+   }
    Ctx->status = Ctx->wfunc(sbufL(&Ctx->sb), Ctx->sb.b, MSize(p - Ctx->sb.b), Ctx->wdata);
    lj_buf_reset(&Ctx->sb);
 }
@@ -622,6 +645,7 @@ static void bcwrite_header(BCWriteCtx* ctx)
    ctx->status = ctx->wfunc(sbufL(&ctx->sb), ctx->sb.b,
       (MSize)(p - ctx->sb.b), ctx->wdata);
    if (ctx->status IS 0) bcwrite_sources(ctx);
+   if (ctx->status IS 0) bcwrite_package(ctx);
    if (ctx->status IS 0) bcwrite_import_modules(ctx);
    if (ctx->status IS 0) bcwrite_structs(ctx);
 }
@@ -674,6 +698,7 @@ int lj_bcwrite_relocated(lua_State *L, GCproto *Pt, lua_Writer Writer, void *Dat
    memset(ctx.source_wire, 0, sizeof(ctx.source_wire));
    memset(ctx.source_mapped, 0, sizeof(ctx.source_mapped));
    ctx.sources = proto_compilation_sources(Pt);
+   ctx.package = proto_package_metadata(Pt);
    ctx.struct_manifest = proto_struct_manifest(Pt, &ctx.struct_manifest_size);
    ctx.import_module_bundle = proto_import_module_bundle(Pt, &ctx.import_module_bundle_size);
    ctx.import_module_table = proto_import_module_table(Pt);
@@ -685,6 +710,13 @@ int lj_bcwrite_relocated(lua_State *L, GCproto *Pt, lua_Writer Writer, void *Dat
    if (not ctx.sources or ctx.sources->version != COMPILATION_SOURCE_VERSION or ctx.sources->count IS 0 or
        ctx.sources->count > FILESOURCE_MAX_COUNT or ctx.sources->root >= ctx.sources->count) {
       log.warning("Invalid compilation source map header.");
+      return 1;
+   }
+   if (ctx.package and (ctx.package->version != PROTO_PACKAGE_METADATA_VERSION or
+       ctx.package->flags != PROTO_PACKAGE_PRESENT or ctx.package->reserved[0] or ctx.package->reserved[1] or
+       not gcref(ctx.package->name) or gcref(ctx.package->name)->gch.gct != ~LJ_TSTR or
+       not gcref(ctx.package->package_version) or gcref(ctx.package->package_version)->gch.gct != ~LJ_TSTR)) {
+      log.warning("Invalid package metadata.");
       return 1;
    }
    if (not ctx.struct_manifest or ctx.struct_manifest_size < 2 or

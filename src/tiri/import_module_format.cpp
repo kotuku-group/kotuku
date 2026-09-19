@@ -285,6 +285,9 @@ CallableDescriptor decode_callable(Decoder &Input)
 
 cache::FormatError validate_interface(const Interface &Value)
 {
+   if (Value.Package and validate_package_identity(*Value.Package) != PackageValidationError::OKAY) {
+      return cache::FormatError::INVALID_METADATA;
+   }
    if ((Value.Namespaces.size() > MAX_INTERFACE_RECORDS) or (Value.Exports.size() > MAX_INTERFACE_RECORDS) or
        (Value.Structures.size() > MAX_INTERFACE_RECORDS) or
        (Value.Enums.size() > MAX_INTERFACE_RECORDS) or
@@ -473,6 +476,12 @@ cache::FormatError encode_interface_impl(const Interface &Value, std::string &Ou
 {
    Encoder encoder(MAX_INTERFACE_SIZE);
 
+   encoder.boolean(Value.Package.has_value());
+   if (Value.Package) {
+      encoder.string(Value.Package->Name);
+      encoder.string(Value.Package->Version);
+   }
+
    encoder.u32(uint32_t(Value.Namespaces.size()));
    for (const auto &entry : Value.Namespaces) {
       encoder.string(entry.Name);
@@ -561,6 +570,8 @@ cache::FormatError decode_interface_impl(std::string_view Bytes, Interface &Outp
 {
    Decoder input(Bytes);
    Interface result;
+
+   if (input.boolean()) result.Package = tiri::PackageIdentity { input.string(), input.string() };
 
    decode_records<NamespaceDescriptor>(input, result.Namespaces, [](Decoder &Value) {
       NamespaceDescriptor entry { Value.string(), NamespaceMode(Value.byte()) };
@@ -670,6 +681,29 @@ cache::FormatError encode_identity_inputs(const Identity &Value, bool IncludeObs
    encoder.u32(Value.Schema);
    encoder.string(Value.BuildIdentity);
    encoder.string(Value.LogicalRequest);
+   encoder.boolean(Value.ExpectedPackage.has_value());
+   if (Value.ExpectedPackage) {
+      if (validate_package_identity(*Value.ExpectedPackage) != PackageValidationError::OKAY) {
+         return cache::FormatError::INVALID_METADATA;
+      }
+      encoder.string(Value.ExpectedPackage->Name);
+      encoder.string(Value.ExpectedPackage->Version);
+   }
+   // The declaration is learned during parsing, so it must not change the pre-parse lookup key.
+   // Keep its validation and full identity serialisation even when lookup inputs omit it.
+   if (IncludeObservations) encoder.boolean(Value.DeclaredPackage.has_value());
+   if (Value.DeclaredPackage) {
+      if (validate_package_identity(*Value.DeclaredPackage) != PackageValidationError::OKAY) {
+         return cache::FormatError::INVALID_METADATA;
+      }
+      if (IncludeObservations) {
+         encoder.string(Value.DeclaredPackage->Name);
+         encoder.string(Value.DeclaredPackage->Version);
+      }
+   }
+   if (Value.ExpectedPackage and Value.DeclaredPackage and Value.ExpectedPackage != Value.DeclaredPackage) {
+      return cache::FormatError::INVALID_METADATA;
+   }
    encoder.boolean(Value.ImportedRoot);
    cache::SourceIdentity source = Value.Source;
    if (not IncludeModifiedHints) source.ModifiedHint = 0;
@@ -777,6 +811,8 @@ cache::FormatError decode_identity(std::string_view Bytes, Identity &Output)
    result.Schema = input.u32();
    result.BuildIdentity = input.string();
    result.LogicalRequest = input.string();
+   if (input.boolean()) result.ExpectedPackage = tiri::PackageIdentity { input.string(), input.string() };
+   if (input.boolean()) result.DeclaredPackage = tiri::PackageIdentity { input.string(), input.string() };
    result.ImportedRoot = input.boolean();
    result.Source = decode_source(input);
 

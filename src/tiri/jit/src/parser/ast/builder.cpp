@@ -347,8 +347,10 @@ static ParserResult<StmtNodePtr> make_control_stmt(ParserContext& Context, AstNo
    return ParserResult<StmtNodePtr>::success(std::move(node));
 }
 
-AstBuilder::AstBuilder(ParserContext &Context, AstBuilder *Parent, bool ModuleInitialiser) :
-   ctx(Context), module_initialiser(ModuleInitialiser), parent_builder(Parent)
+AstBuilder::AstBuilder(ParserContext &Context, AstBuilder *Parent, bool ModuleInitialiser,
+   std::optional<tiri::PackageIdentity> ExpectedPackage) :
+   ctx(Context), module_initialiser(ModuleInitialiser), expected_package_(std::move(ExpectedPackage)),
+   parent_builder(Parent)
 {
    this->ctx.set_error_rollback_callback(rollback_ast_builder_constants, this);
    if (not Parent) {
@@ -782,13 +784,24 @@ GCstr *AstBuilder::current_source_file()
 
 ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_chunk()
 {
-   const TokenKind terminators[] = { TokenKind::EndOfFile };
-   auto chunk = this->parse_block(terminators);
+   auto chunk = this->parse_compilation_unit();
    if (chunk.ok()) {
       this->prepend_implicit_dependencies(*chunk.value_ref());
       this->finalise_module_dependencies();
    }
    return chunk;
+}
+
+//********************************************************************************************************************
+// Parses a complete compilation unit.  Imported files use this same entry point so root metadata is never skipped.
+
+ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_compilation_unit()
+{
+   auto preamble = this->parse_compilation_unit_preamble();
+   if (not preamble.ok()) return ParserResult<std::unique_ptr<BlockStmt>>::failure(preamble.error_ref());
+
+   const TokenKind terminators[] = { TokenKind::EndOfFile };
+   return this->parse_block(terminators);
 }
 
 //********************************************************************************************************************

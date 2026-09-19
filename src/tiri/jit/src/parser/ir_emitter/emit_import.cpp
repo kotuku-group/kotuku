@@ -10,11 +10,13 @@ static int append_import_module_dump(lua_State *, const void *Data, size_t Size,
 
 //********************************************************************************************************************
 
-static bool prepare_import_module_dump(LexState &State, GCproto *Prototype, std::string &Output)
+static bool prepare_import_module_dump(LexState &State, GCproto *Prototype,
+   const std::optional<tiri::PackageIdentity> &Package, std::string &Output)
 {
    kt::Log log(__FUNCTION__);
    lua_State *L = State.L;
    State.register_import_module_staging_root(Prototype);
+   install_proto_package_metadata(L, Prototype, Package);
 
    std::vector<uint8_t> structure_manifest;
    std::string detail;
@@ -262,6 +264,14 @@ ParserResult<IrEmitUnit> IrEmitter::emit_import_entry(const ImportEntryPayload &
                   return ParserResult<IrEmitUnit>::failure(this->make_error(
                      ParserErrorCode::InternalInvariant, diagnostic));
                }
+               if (link_metadata.Package != unit->declared_package or
+                   link_metadata.Package != unit->interface_artifact->descriptors().Package or
+                   link_metadata.Package != unit->module_cache_identity.DeclaredPackage) {
+                  lua_pop(L, 1);
+                  return ParserResult<IrEmitUnit>::failure(this->make_error(
+                     ParserErrorCode::InternalInvariant,
+                     "Warm imported-module package metadata does not agree with its interface"));
+               }
                auto &cache_counters = this->lex_state.import_cache_counters;
                const auto &operations = link_metadata.Operations;
                cache_counters.DestinationPayloadLoads += operations.payload_loads;
@@ -416,7 +426,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_import_entry(const ImportEntryPayload &
             else {
                if (new_module and not unit->module_cache_hit and unit->installed_interface and module_prototype) {
                   std::string payload;
-                  if (prepare_import_module_dump(this->lex_state, module_prototype, payload)) {
+                  if (prepare_import_module_dump(
+                      this->lex_state, module_prototype, unit->declared_package, payload)) {
                      tiri::import_cache::CompilationRequest request;
                      request.ExpectedIdentity = unit->module_cache_identity;
                      tiri::import_cache::ModulePublication published;

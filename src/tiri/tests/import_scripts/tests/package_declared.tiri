@@ -1,0 +1,5 @@
+@Package(name="tests/package-declared", version="1.0.0")
+
+namespace package_declared { }
+
+package_declared.value = 73

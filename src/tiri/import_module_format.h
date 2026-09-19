@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cache_manifest.h"
+#include "package_identity.h"
 
 #include <cstdint>
 #include <memory>
@@ -12,7 +13,7 @@
 
 namespace tiri::import_cache {
 
-constexpr uint32_t SCHEMA_VERSION = 11;
+constexpr uint32_t SCHEMA_VERSION = 12;
 constexpr size_t MAX_INTERFACE_SIZE = 8 * 1024 * 1024;
 constexpr size_t MAX_INTERFACE_RECORDS = 4096;
 
@@ -164,6 +165,7 @@ struct NestedModuleDescriptor {
 };
 
 struct Interface {
+   std::optional<tiri::PackageIdentity> Package; // Declares the module's canonical package identity, when present.
    std::vector<NamespaceDescriptor> Namespaces;   // Describes namespaces declared by the module.
    std::vector<ExportDescriptor> Exports;         // Describes symbols exported by the module.
    std::vector<StructureDescriptor> Structures;   // Describes structures declared by the module.
@@ -223,6 +225,8 @@ struct Identity {
    std::string CompiledIdentity;                  // Identifies the compiled module content.
    std::string BuildIdentity;                     // Identifies the Tiri build that compiled the module.
    std::string LogicalRequest;                    // Stores the original module request.
+   std::optional<tiri::PackageIdentity> ExpectedPackage; // Stores the resolver-provided package identity.
+   std::optional<tiri::PackageIdentity> DeclaredPackage; // Stores the package declared by the compiled source.
    cache::SourceIdentity Source;                  // Identifies the root source content.
    std::vector<cache::CompilationOption> Options; // Stores compilation options affecting output.
    std::vector<LocalImportIdentity> LocalImports; // Identifies imported local source files.

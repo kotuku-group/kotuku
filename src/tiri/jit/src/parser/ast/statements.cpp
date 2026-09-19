@@ -1869,6 +1869,8 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
          module_unit->module_cache_identity.Source.ResolvedPath = path;
          module_unit->module_cache_identity.Options = tiri::cache::effective_compilation_options();
          module_unit->interface_artifact = active_module->interface_artifact;
+         module_unit->declared_package = active_module->interface_artifact->descriptors().Package;
+         module_unit->module_cache_identity.DeclaredPackage = module_unit->declared_package;
          module_unit->interface_prepared = true;
          module_unit->state = ImportedModuleState::InterfaceReady;
          state_satisfied = true;
@@ -1883,6 +1885,7 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
 
    tiri::import_cache::ModuleLookup module_lookup;
    std::vector<FuncState::DependencyDescriptor> module_dependencies;
+   std::optional<tiri::PackageIdentity> declared_package;
    std::unique_ptr<BlockStmt> imported_body;
    if (state_satisfied) {
       log.branch("Reusing active imported module '%s'", path.c_str());
@@ -1953,7 +1956,7 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
       if (module_unit) this->root_builder()->ctx.lex().imported_module_counters.lookup_attempts++;
       auto parsed = this->parse_imported_file(
          path, original_request, ImportToken, module_initialiser, module_initialiser ? &module_lookup : nullptr,
-         module_initialiser ? &module_dependencies : nullptr);
+         module_initialiser ? &module_dependencies : nullptr, module_initialiser ? &declared_package : nullptr);
       if (not parsed.ok()) {
          if (module_unit) {
             module_unit->state = ImportedModuleState::Failed;
@@ -1999,10 +2002,12 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
          module_unit->embedded_modules = std::move(module_lookup.EmbeddedModules);
          module_unit->body = std::shared_ptr<BlockStmt>(std::move(imported_body));
          module_unit->module_dependencies = std::move(module_dependencies);
+         module_unit->declared_package = std::move(declared_package);
          module_unit->file_source_idx = file_idx.value_or(0);
 
          if (module_unit->module_cache_hit) {
             module_unit->module_cache_identity = std::move(module_lookup.Cached.CompilationIdentity);
+            module_unit->declared_package = module_unit->module_cache_identity.DeclaredPackage;
             module_unit->module_identity = module_unit->module_cache_identity.CompiledIdentity;
             module_unit->module_payload = std::move(module_lookup.Cached.Payload);
             module_unit->interface_artifact = std::move(module_lookup.Cached.CompileTimeInterface);
@@ -2201,7 +2206,8 @@ ParserResult<StmtNodePtr> AstBuilder::parse_namespace()
 ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(
    std::string &Path, std::string_view Library, const Token &ImportToken, bool ModuleInitialiser,
    tiri::import_cache::ModuleLookup *Lookup,
-   std::vector<FuncState::DependencyDescriptor> *ModuleDependencies)
+   std::vector<FuncState::DependencyDescriptor> *ModuleDependencies,
+   std::optional<tiri::PackageIdentity> *DeclaredPackage)
 {
    kt::Log log(__FUNCTION__);
 
@@ -2440,15 +2446,16 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(
 
    import_lex->next(); // Prime the lexer
 
-   // Parse up to EOF
-   AstBuilder import_builder(import_ctx, this, ModuleInitialiser);
-   const TokenKind terms[] = { TokenKind::EndOfFile };
-   auto result = import_builder.parse_block(terms);
+   // Parse the imported compilation unit, including its metadata preamble.
+   AstBuilder import_builder(import_ctx, this, ModuleInitialiser,
+      Lookup ? Lookup->ExpectedIdentity.ExpectedPackage : std::nullopt);
+   auto result = import_builder.parse_compilation_unit();
 
    // The imported file is its own compilation unit for module namespace purposes, so its dependency activations are
    // completed here rather than by the parent's parse_chunk().
 
    if (result.ok()) {
+      if (DeclaredPackage) *DeclaredPackage = import_builder.package_identity();
       import_builder.prepend_implicit_dependencies(*result.value_ref());
       import_builder.finalise_module_dependencies();
       if (ModuleDependencies) {
