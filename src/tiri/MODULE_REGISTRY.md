@@ -7,7 +7,8 @@ The module registry is the process-wide owner of native modules used by Tiri.  `
 
 - the loaded `objModule`;
 - an immutable signature and its collision-safe function index;
-- stable `ModuleCallable` records containing native addresses, marshalling profiles and prepared `ffi_cif` values; and
+- stable `ModuleCallable` records containing native addresses and precomputed dispatch and marshalling metadata,
+  including a prepared `ffi_cif` for each typed signature; and
 - the state and result of publishing the module's constants and structures.
 
 The registry index is non-owning.  It maps case-insensitive hashes to entries that retain the indexed spelling, so
@@ -17,11 +18,12 @@ allocated individually and remain at stable addresses until registry expunge.
 ## One Representation of Function Metadata
 
 The immutable signature is the sole owner of each function's canonical name and copied `FunctionField` metadata.
-Compile-time queries read those copies, and so does every `ModuleCallable`: a callable's `Name` and `Fields` point into
-its binding's signature rather than into the loaded module's original `Function` list.  That list is consulted only
-while the binding is being constructed, as the source of the native addresses the signature deliberately does not
-retain.  A module may therefore be unloaded from under its metadata without leaving a callable pointing at freed
-descriptors, and a name or field descriptor cannot drift between the compiler's view and the runtime's.
+Compile-time queries read those copies, and so does every `ModuleCallable`: a callable's `Name`, and its `Fields` when
+present, point into its binding's signature rather than into the loaded module's original `Function` list (`Fields`
+remains null for an untyped no-argument export).  That list is consulted only while the binding is being constructed,
+as the source of the native addresses the signature deliberately does not retain.  The metadata therefore does not
+depend on the loaded module's descriptor storage, and a name or field descriptor cannot drift between the compiler's
+view and the runtime's.
 
 Function lookup is likewise single.  `ModuleBinding::Callables` is parallel to `static_module_signature::Functions`:
 element *i* describes the same export in both, because both are built in the module's export order.  Runtime lookup
@@ -58,11 +60,13 @@ registry-facing paths; such resolution is rejected with `ERR::InvalidState`.
 | Lock | Protects | Rules |
 |---|---|---|
 | `ModuleRegistry::Mutex` | Binding ownership, name index and publication | Hold only for lookup or publication.  Never call module creation or destruction while held. |
-| `glConstantMutex` | Global Tiri constants, global structure publication and each binding's definition state | Use shared access for compiler reads and exclusive access for definition publication. |
+| `glConstantMutex` | Global Tiri constants, module definition batches and each binding's definition state | Use shared access for compiler reads and exclusive access for definition publication. |
+| `glStructMutex` | The global structure registry | Definition commit and rollback hold it while `glConstantMutex` is held, preventing readers from observing structures that may be withdrawn. |
 
-The two locks are not nested.  Resolve and publish a binding, release the registry mutex, and only then acquire
-`glConstantMutex` to process definitions.  Code holding `glConstantMutex` must not perform registry lookup.  This
-separation is the lock order: registry work completes before definition work begins, with no simultaneous ownership.
+The registry mutex is not nested with either definition lock.  Resolve and publish a binding, release the registry
+mutex, and only then acquire `glConstantMutex` to process definitions.  A definition commit acquires `glStructMutex`
+inside `glConstantMutex`; code holding either definition lock must not perform registry lookup.  Registry work therefore
+completes before definition work begins, with no simultaneous ownership.
 
 Lua state access is outside this global lock hierarchy.  A state must be entered according to the normal Tiri runtime
 contract before its prototypes, stack or closures are touched.  Registry locks never protect Lua GC objects.
@@ -76,7 +80,7 @@ resolved.  Resolution is descriptor-local so failures occur at the source declar
 
 The sidecar is allocated by the owning Lua state and freed with the `GCproto`.  It owns no module data and is never
 placed in a process-wide map.  Each activation materialises state-owned C closures in the destination registers; each
-closure retains one stable callable pointer and uses the shared `module_call_inner()` marshaller.
+closure retains one stable callable pointer and uses the shared `module_call_inner()` dispatcher.
 
 This boundary is deliberate:
 
@@ -85,14 +89,17 @@ This boundary is deliberate:
 - resolved slots are prototype-owned, non-owning process pointers; and
 - closures, arguments, results, callbacks, errors and temporary marshalling storage are Lua-state-owned.
 
-Serialised bytecode format `0x87` carries names and `BC_MODACT` operands, never native pointers or export-list indices.
-Older formats are rejected rather than retaining the removed compiler-private dependency binder.
+Native-module dependency descriptors in the current serialised bytecode format (`0xa9`) carry canonical names and
+`BC_MODACT` operands, never native pointers or export-list indices.  Older formats are rejected rather than retaining
+compatibility shims, including one for the removed compiler-private dependency binder.
 
-## Invocation storage and output ownership
+## Invocation Storage and Output Ownership
 
-Published callable metadata still contains no invocation storage.  The cached-CIF bridge uses aligned eight-byte
-argument/result slots inside its existing 256-byte buffer, plus exact-type bounded stores for C++ temporaries.
-Preparation and result traversal use the same padding rules.
+Published callable metadata contains no invocation storage.  Eligible void and scalar signatures use preselected
+direct dispatch: untyped no-argument functions, typed zero-argument functions and typed functions with one to four
+exact `FD_INT`, `FD_INT64` or `FD_DOUBLE` inputs.  Other supported typed signatures use the cached-CIF bridge.  The
+bridge uses aligned eight-byte argument/result slots inside its 256-byte buffer, plus exact-type bounded stores for
+C++ temporaries.  Preparation and result traversal use the same padding rules.
 
 The bridge holds native owners outside `protected_tiri_call()`, which uses a protected runtime C frame without adding
 another Lua call frame or changing the closure upvalue.  Caller try handlers are saved and suspended while the bridge
@@ -114,5 +121,5 @@ resource ownership.  An allocated object or resource transfers ownership to its 
 successfully pushed; every allocation not transferred is released exactly once, including after a native error or a
 later conversion failure.
 
-Supported output signatures remain on cached CIF; this design adds no production direct dispatch or state pointer to a
-callable.
+Signatures with `FD_RESULT` parameters remain on cached CIF; direct dispatch is limited to calls without output
+parameters.  A callable contains no Lua-state pointer, whichever dispatch path it uses.

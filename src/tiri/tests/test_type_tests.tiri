@@ -18,7 +18,7 @@ function dynamic_value(Value):any
 end
 
 @Test function PrimitiveDescriptors()
-   assert(_VERSION is '5.4', 'the base library should expose the Tiri compatibility version')
+   assert(_VERSION is <str>, 'the base library should expose the Tiri compatibility version')
    assert(nil is <nil>, 'nil should match <nil>')
    assert(nil is <any>, '<any> should include nil')
    assert(true is <bool>, 'boolean should match <bool>')

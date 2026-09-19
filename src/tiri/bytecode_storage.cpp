@@ -165,17 +165,17 @@ Error decode_wrapper(std::string_view Input, std::string &Output, std::string_vi
 //********************************************************************************************************************
 // Returns the stable diagnostic name associated with a bytecode storage error.
 
-const char *error_name(Error ErrorValue) noexcept
+const char * error_name(Error ErrorValue) noexcept
 {
    switch (ErrorValue) {
-      case Error::OKAY: return "okay";
-      case Error::INVALID_WRAPPER: return "invalid-wrapper";
-      case Error::INVALID_GZIP: return "invalid-gzip";
-      case Error::ENCODED_LIMIT: return "encoded-size-limit";
-      case Error::DECODED_LIMIT: return "decoded-size-limit";
-      case Error::COMPRESSION: return "compression-failed";
-      case Error::DECOMPRESSION: return "decompression-failed";
-      case Error::TRAILING_DATA: return "trailing-data";
+      case Error::OKAY:             return "okay";
+      case Error::INVALID_WRAPPER:  return "invalid-wrapper";
+      case Error::INVALID_GZIP:     return "invalid-gzip";
+      case Error::ENCODED_LIMIT:    return "encoded-size-limit";
+      case Error::DECODED_LIMIT:    return "decoded-size-limit";
+      case Error::COMPRESSION:      return "compression-failed";
+      case Error::DECOMPRESSION:    return "decompression-failed";
+      case Error::TRAILING_DATA:    return "trailing-data";
       case Error::INVALID_BYTECODE: return "invalid-bytecode";
    }
    return "unknown";

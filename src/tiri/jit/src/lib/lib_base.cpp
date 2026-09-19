@@ -1235,7 +1235,7 @@ extern int luaopen_base(lua_State* L)
    // NOBARRIER: Table and value are the same.
    GCtab *env = tabref(L->env);
    settabV(L, lj_tab_setstr(L, env, lj_str_newlit(L, "_G")), env);
-   lua_pushliteral(L, "5.4");  //  top-2. // Lua version number, set as _VERSION
+   lua_pushliteral(L, "1.0");  //  top-2. // Tiri version number, set as _VERSION
    LJ_LIB_REG(L, "_G", base);
 
    // Unlike generated fast functions, this compiler-only callable has no source-visible table entry.  Its reserved

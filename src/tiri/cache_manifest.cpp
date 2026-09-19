@@ -1,3 +1,4 @@
+
 #include <kotuku/main.h>
 
 #include "cache_manifest.h"
@@ -31,6 +32,8 @@ constexpr std::array<uint32_t, 64> SHA256_CONSTANTS = {
    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
 };
+
+//********************************************************************************************************************
 
 class Encoder {
    size_t Limit;
@@ -81,6 +84,8 @@ public:
       if (available(Value.size())) Bytes.append((const char *)Value.data(), Value.size());
    }
 };
+
+//********************************************************************************************************************
 
 class Decoder {
 public:
@@ -138,10 +143,14 @@ public:
    }
 };
 
+//********************************************************************************************************************
+
 uint32_t rotate_right(uint32_t Value, unsigned Count) noexcept
 {
    return (Value >> Count) | (Value << (32 - Count));
 }
+
+//********************************************************************************************************************
 
 void sha256_block(std::array<uint32_t, 8> &State, const uint8_t *Block) noexcept
 {
@@ -174,10 +183,14 @@ void sha256_block(std::array<uint32_t, 8> &State, const uint8_t *Block) noexcept
    State[4] += e; State[5] += f; State[6] += g; State[7] += h;
 }
 
+//********************************************************************************************************************
+
 bool option_less(const CompilationOption *Left, const CompilationOption *Right)
 {
    return std::tie(Left->Name, Left->Value) < std::tie(Right->Name, Right->Value);
 }
+
+//********************************************************************************************************************
 
 std::vector<const CompilationOption *> sorted_options(const std::vector<CompilationOption> &Options)
 {
@@ -187,6 +200,8 @@ std::vector<const CompilationOption *> sorted_options(const std::vector<Compilat
    std::ranges::sort(result, option_less);
    return result;
 }
+
+//********************************************************************************************************************
 
 bool same_options(const std::vector<CompilationOption> &Left, const std::vector<CompilationOption> &Right)
 {
@@ -199,6 +214,8 @@ bool same_options(const std::vector<CompilationOption> &Left, const std::vector<
    return true;
 }
 
+//********************************************************************************************************************
+
 void encode_source(Encoder &Output, const SourceIdentity &Source)
 {
    Output.string(Source.ResolvedPath);
@@ -206,6 +223,8 @@ void encode_source(Encoder &Output, const SourceIdentity &Source)
    Output.i64(Source.ModifiedHint);
    Output.digest(Source.ContentDigest);
 }
+
+//********************************************************************************************************************
 
 SourceIdentity decode_source(Decoder &Input)
 {
@@ -216,6 +235,8 @@ SourceIdentity decode_source(Decoder &Input)
    result.ContentDigest = Input.digest();
    return result;
 }
+
+//********************************************************************************************************************
 
 FormatError encode_metadata(const Manifest &Metadata, std::string &Output)
 {
@@ -269,6 +290,8 @@ FormatError encode_metadata(const Manifest &Metadata, std::string &Output)
    return FormatError::OKAY;
 }
 
+//********************************************************************************************************************
+
 template <class Record, class Reader>
 void decode_records(Decoder &Input, uint32_t Count, size_t Limit, std::vector<Record> &Output, Reader Read)
 {
@@ -282,6 +305,8 @@ void decode_records(Decoder &Input, uint32_t Count, size_t Limit, std::vector<Re
 }
 
 } // namespace
+
+//********************************************************************************************************************
 
 Digest content_digest(std::span<const uint8_t> Bytes) noexcept
 {
@@ -315,10 +340,14 @@ Digest content_digest(std::span<const uint8_t> Bytes) noexcept
    return result;
 }
 
+//********************************************************************************************************************
+
 Digest content_digest(std::string_view Bytes) noexcept
 {
    return content_digest(std::span((const uint8_t *)Bytes.data(), Bytes.size()));
 }
+
+//********************************************************************************************************************
 
 std::string digest_hex(const Digest &DigestValue)
 {
@@ -331,6 +360,8 @@ std::string digest_hex(const Digest &DigestValue)
    }
    return result;
 }
+
+//********************************************************************************************************************
 
 std::string file_key(const Manifest &Metadata)
 {
@@ -359,6 +390,8 @@ std::string file_key(const Manifest &Metadata)
    return "v2-" + build.substr(0, 16) + "-" + key;
 }
 
+//********************************************************************************************************************
+
 bool lookup_identity_matches(const Manifest &Stored, const Manifest &Expected)
 {
    return (Stored.Schema IS Expected.Schema) and (Stored.Schema IS SCHEMA_VERSION) and
@@ -366,6 +399,8 @@ bool lookup_identity_matches(const Manifest &Stored, const Manifest &Expected)
       (Stored.MainSource.ResolvedPath IS Expected.MainSource.ResolvedPath) and
       same_options(Stored.Options, Expected.Options);
 }
+
+//********************************************************************************************************************
 
 FormatError encode_envelope(const Manifest &Metadata, std::string_view Payload, std::string &Output)
 {
@@ -394,6 +429,8 @@ FormatError encode_envelope(const Manifest &Metadata, std::string_view Payload, 
    return FormatError::OKAY;
 }
 
+//********************************************************************************************************************
+
 FormatError decode_envelope(std::string_view Input, EnvelopeView &Output)
 {
    Output = {};
@@ -407,6 +444,7 @@ FormatError decode_envelope(std::string_view Input, EnvelopeView &Output)
    auto encoded_size = header.u64();
    auto decoded_size = header.u64();
    auto expected_digest = header.digest();
+
    if (schema != SCHEMA_VERSION) return FormatError::UNSUPPORTED_VERSION;
    if ((metadata_size > MAX_METADATA_SIZE) or (decoded_size > MAX_PAYLOAD_SIZE) or
        (encoded_size > bytecode_storage::MAX_ENCODED_SIZE)) return FormatError::SIZE_LIMIT;
@@ -414,6 +452,7 @@ FormatError decode_envelope(std::string_view Input, EnvelopeView &Output)
 
    auto metadata_bytes = Input.substr(HEADER_SIZE, metadata_size);
    if (content_digest(metadata_bytes) != expected_digest) return FormatError::INVALID_METADATA;
+
    EnvelopeView decoded;
    Decoder metadata(metadata_bytes);
    auto bom_policy = metadata.byte();
@@ -426,12 +465,15 @@ FormatError decode_envelope(std::string_view Input, EnvelopeView &Output)
 
    decode_records<CompilationOption>(metadata, metadata.u32(), MAX_OPTIONS, decoded.Metadata.Options,
       [](Decoder &Input) { return CompilationOption { Input.string(), Input.string() }; });
+
    decode_records<ImportIdentity>(metadata, metadata.u32(), MAX_IMPORTS, decoded.Metadata.Imports,
       [](Decoder &Input) { return ImportIdentity { Input.string(), Input.string(), decode_source(Input) }; });
+
    decode_records<ResolutionInput>(metadata, metadata.u32(), MAX_RESOLUTION_INPUTS,
       decoded.Metadata.ResolutionInputs, [](Decoder &Input) {
          return ResolutionInput { Input.string(), Input.string(), Input.string() };
       });
+
    decode_records<ConditionalInput>(metadata, metadata.u32(), MAX_CONDITIONAL_INPUTS,
       decoded.Metadata.ConditionalInputs, [](Decoder &Input) {
          auto kind = Input.byte();
@@ -450,6 +492,8 @@ FormatError decode_envelope(std::string_view Input, EnvelopeView &Output)
    Output = std::move(decoded);
    return FormatError::OKAY;
 }
+
+//********************************************************************************************************************
 
 const char *format_error_name(FormatError Error) noexcept
 {
