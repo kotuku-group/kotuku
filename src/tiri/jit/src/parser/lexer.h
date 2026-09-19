@@ -24,6 +24,7 @@
 #include "../lib/load.h"
 #include "../../../import_module_cache.h"
 #include "../../../package_identity.h"
+#include "../../../version_constraints.h"
 
 #ifdef INCLUDE_TIPS
 #include <memory>
@@ -91,6 +92,7 @@ struct ImportedModuleCompilationCounters {
    uint32_t staging_metadata_roots = 0;
    uint64_t staging_compilation_source_bytes = 0;
    uint64_t staging_package_metadata_bytes = 0;
+   uint64_t staging_compatibility_manifest_bytes = 0;
    uint64_t staging_struct_manifest_bytes = 0;
    uint64_t staging_import_module_bundle_bytes = 0;
    uint64_t staging_import_module_table_bytes = 0;
@@ -192,12 +194,14 @@ public:
    uint8_t    current_source_descriptor = 0; // Dense identity in this compilation unit.
    std::vector<CompilationSourceRecord> compilation_sources;
    std::optional<tiri::PackageIdentity> package_identity;
+   std::optional<tiri::DependencyRequirements> dependency_requirements;
    std::vector<std::string> compilation_struct_roots;
    std::vector<std::string> compilation_structs;
    std::vector<ImportedEnumDeclaration> imported_enum_declarations;
    std::vector<uint32_t> loaded_structs;
    std::vector<uint8_t> bytecode_struct_manifest;
    std::optional<tiri::PackageIdentity> bytecode_package_identity;
+   std::vector<uint8_t> bytecode_compatibility_manifest;
    std::vector<uint8_t> bytecode_import_module_bundle;
    std::vector<tiri::import_cache::RootModuleRecord> bytecode_import_module_records;
    std::vector<ImportModuleCompilationRecord> import_module_records;

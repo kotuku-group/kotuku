@@ -22,6 +22,7 @@
 #include "../debug/lj_debug.h"
 #include "../../../defs.h"
 #include "../../../import_module_bundle.h"
+#include "../../../version_constraints.h"
 
 #include <limits>
 #include <vector>
@@ -1498,6 +1499,28 @@ static int bcread_header(LexState *State)
    if (package_cursor != package_end) return 0;
    State->p = (const char *)package_end;
 
+   const MSize compatibility_block_size = bcread_uleb128(State);
+   if (compatibility_block_size < 2 or compatibility_block_size > BCREAD_MAX_VALIDATION_WORK) return 0;
+   bcread_need(State, compatibility_block_size);
+   bcread_account(State, compatibility_block_size);
+   bcread_reserve_allocation(State, compatibility_block_size);
+   const std::string_view compatibility_bytes(State->p, compatibility_block_size);
+   std::vector<tiri::CompatibilityRecord> compatibility_records;
+   if (tiri::decode_compatibility_manifest(compatibility_bytes, compatibility_records)) return 0;
+   tiri::CompatibilityFailure compatibility_failure;
+   if (not tiri::check_compatibility_records(
+          compatibility_records, tiri::runtime_versions(), &compatibility_failure)) {
+      luaL_error(State->L, ERR::WrongVersion,
+         "Unsatisfied %.*s dependency '%s' for '%.*s': running version %s fails comparison %s.",
+         int(compatibility_failure.Domain.size()), compatibility_failure.Domain.data(),
+         compatibility_failure.Constraint->Original.c_str(), int(compatibility_failure.Owner.size()),
+         compatibility_failure.Owner.data(), compatibility_failure.Running->Text.c_str(),
+         tiri::comparison_text(*compatibility_failure.Comparison).c_str());
+   }
+   State->bytecode_compatibility_manifest.assign((const uint8_t *)State->p,
+      (const uint8_t *)State->p + compatibility_block_size);
+   State->p += compatibility_block_size;
+
    const MSize module_block_size = bcread_uleb128(State);
    if (module_block_size < 2 or module_block_size > tiri::import_cache::MAX_ROOT_BUNDLE_SIZE) return 0;
    bcread_need(State, module_block_size);
@@ -1543,6 +1566,7 @@ GCproto *lj_bcread(LexState *State)
    State->compilation_sources.clear();
    State->bytecode_struct_manifest.clear();
    State->bytecode_package_identity.reset();
+   State->bytecode_compatibility_manifest.clear();
    State->bytecode_import_module_bundle.clear();
    State->bytecode_import_module_records.clear();
    State->loaded_structs.clear();
@@ -1635,6 +1659,9 @@ GCproto *lj_bcread(LexState *State)
    attach_loaded_compilation_sources(
       L, root, State->compilation_sources, module_roots, &State->bytecode_load_operations);
    install_proto_package_metadata(L, root, State->bytecode_package_identity);
+   install_proto_compatibility_manifest(L, root, std::string_view(
+      (const char *)State->bytecode_compatibility_manifest.data(),
+      State->bytecode_compatibility_manifest.size()));
    auto manifest = (uint8_t *)lj_mem_new(L, MSize(State->bytecode_struct_manifest.size()));
    memcpy(manifest, State->bytecode_struct_manifest.data(), State->bytecode_struct_manifest.size());
    setmref(root->struct_manifest, manifest);

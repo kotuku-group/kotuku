@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../../package_identity.h"
+#include "../../../version_constraints.h"
 
 #include "../../../import_module_bundle.h"
 
@@ -29,6 +30,7 @@ struct BytecodeLoadOperationCounters {
 struct BytecodeLoadMetadata {
    std::vector<tiri::import_cache::RootModuleRecord> ImportedModules;
    std::optional<tiri::PackageIdentity> Package;
+   std::string CompatibilityManifest;
    BytecodeLoadOperationCounters Operations;
    bool Bytecode = false;
 };

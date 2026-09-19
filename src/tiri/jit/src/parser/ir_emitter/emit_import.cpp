@@ -11,12 +11,14 @@ static int append_import_module_dump(lua_State *, const void *Data, size_t Size,
 //********************************************************************************************************************
 
 static bool prepare_import_module_dump(LexState &State, GCproto *Prototype,
-   const std::optional<tiri::PackageIdentity> &Package, std::string &Output)
+   const std::optional<tiri::PackageIdentity> &Package, std::string_view CompatibilityManifest,
+   std::string &Output)
 {
    kt::Log log(__FUNCTION__);
    lua_State *L = State.L;
    State.register_import_module_staging_root(Prototype);
    install_proto_package_metadata(L, Prototype, Package);
+   install_proto_compatibility_manifest(L, Prototype, CompatibilityManifest);
 
    std::vector<uint8_t> structure_manifest;
    std::string detail;
@@ -427,7 +429,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_import_entry(const ImportEntryPayload &
                if (new_module and not unit->module_cache_hit and unit->installed_interface and module_prototype) {
                   std::string payload;
                   if (prepare_import_module_dump(
-                      this->lex_state, module_prototype, unit->declared_package, payload)) {
+                      this->lex_state, module_prototype, unit->declared_package,
+                      unit->installed_interface->artifact().descriptors().CompatibilityManifest, payload)) {
                      tiri::import_cache::CompilationRequest request;
                      request.ExpectedIdentity = unit->module_cache_identity;
                      tiri::import_cache::ModulePublication published;

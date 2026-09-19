@@ -478,6 +478,9 @@ bool prepare_block(ParserContext &Context, BlockStmt &Block, std::string &Diagno
 
          Interface portable;
          portable.Package = unit.declared_package;
+         std::vector<tiri::CompatibilityRecord> compatibility_records {
+            { entry.lib_path, unit.dependency_requirements.value_or(tiri::DependencyRequirements {}) }
+         };
          unit.module_cache_identity.DeclaredPackage = unit.declared_package;
          InterfaceAssembly assembly(portable, Context.lex().imported_module_counters);
          SourceDescriptor source;
@@ -509,6 +512,15 @@ bool prepare_block(ParserContext &Context, BlockStmt &Block, std::string &Diagno
                         const auto &nested_artifact = nested.module_unit->installed_interface->artifact();
                         const auto &nested_interface = nested_artifact.descriptors();
                         const auto &nested_digest = nested_artifact.digest();
+                        std::vector<tiri::CompatibilityRecord> nested_compatibility;
+                        if (tiri::decode_compatibility_manifest(
+                               nested_interface.CompatibilityManifest, nested_compatibility)) {
+                           Diagnostic = std::format("{}: nested module has invalid compatibility metadata",
+                              nested.lib_path);
+                           return false;
+                        }
+                        compatibility_records.insert(compatibility_records.end(),
+                           nested_compatibility.begin(), nested_compatibility.end());
                         merge_interface(assembly, nested_interface);
                         portable.NestedModules.push_back({ nested.module_unit->module_cache_identity.LogicalRequest,
                            nested.lib_path, nested_digest });
@@ -609,6 +621,10 @@ bool prepare_block(ParserContext &Context, BlockStmt &Block, std::string &Diagno
          }
 
          portable.StructureManifest.assign((const char *)structure_manifest.data(), structure_manifest.size());
+         if (tiri::encode_compatibility_manifest(compatibility_records, portable.CompatibilityManifest)) {
+            Diagnostic = std::format("{}: cannot encode compatibility metadata", entry.lib_path);
+            return false;
+         }
 
          InterfaceOperationCounters interface_counters;
          FinalisedInterfacePtr artifact;

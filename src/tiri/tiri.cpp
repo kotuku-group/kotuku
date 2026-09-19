@@ -367,6 +367,7 @@ extern void bytecode_file_unit_tests(int &, int &);
 extern void cache_manifest_unit_tests(int &, int &);
 extern void import_module_format_unit_tests(int &, int &);
 extern void import_module_cache_unit_tests(int &, int &);
+extern void version_constraint_unit_tests(int &, int &);
 #endif
 
 static void MODTest(std::string_view Options, int *Passed, int *Total)
@@ -393,6 +394,7 @@ static void MODTest(std::string_view Options, int *Passed, int *Total)
       cache_manifest_unit_tests(*Passed, *Total);
       import_module_format_unit_tests(*Passed, *Total);
       import_module_cache_unit_tests(*Passed, *Total);
+      version_constraint_unit_tests(*Passed, *Total);
    }
    {
       kt::Log log("TiriTests");

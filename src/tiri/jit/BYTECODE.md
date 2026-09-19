@@ -12,19 +12,23 @@ canonical built-in callable?"  It is aimed at maintainers working on the parser,
 - Registers are shown as `R0`, `R1`, etc. Fields A/B/C/D follow LuaJIT encoding: `A` is usually a destination or base, `B`/`C` are sources, `D` is a constant or split field. `base` is the current stack frame start.
 - Conditions are expressed as "condition true → skip next instruction; condition false → execute next instruction (normally a `JMP`)." "Next instruction" means the sequential `BCIns`; a taken `JMP` applies its offset from the following instruction.
 - Version: LuaJIT 2.1 with extensive changes, assuming the `LJ_FR2` two-slot frame layout used by all supported platforms.
-- Serialised bytecode format: `0xaa`.  This private version adds a versioned compilation-unit package block.  Earlier
+- Serialised bytecode format: `0xab`.  This private version adds a canonical compatibility-manifest block.  Earlier
   formats are rejected and must be regenerated from source.
 - **64-bit bytecode**: `BCIns` is now `uint64_t` (was `uint32_t`). Instructions occupy 8 bytes each. New extended formats (ABCP, ADP, AP) enable native 64-bit pointer storage for inline caching. See section 3.1 for format details.
 - Keep this file aligned with changes in `src/tiri/jit/src/parser/*`, whenever bytecode emission patterns change.
 
 ### 2.1 Root Metadata Layout
 
-The dump header is followed by length-delimited compilation source, package, imported-module and structure blocks before
-the prototype trees:
+The dump header is followed by length-delimited compilation source, package, compatibility, imported-module and
+structure blocks before the prototype trees:
 
 ```text
-dump     = header sources package modules structs proto+ 0U
+dump     = header sources package compatibility modules structs proto+ 0U
 package  = lengthU schemaB flagsB [namelenU nameB* versionlenU versionB*]
+compatibility = lengthU schemaB record_countU record*
+record   = owner_lenU ownerB* flagsB [constraint] [constraint]
+constraint = comparison_countU comparison+
+comparison = operatorB version_lenU versionB*
 ```
 
 Package schema `1` defines flag bit `0` as identity-present; all other flags are rejected.  The absent form still stores
@@ -33,6 +37,13 @@ The reader bounds both strings, rejects embedded zero bytes, unknown schemas, un
 does not install prototype metadata until the complete dump has validated.  The package block is always emitted,
 including for stripped dumps.  Imported-module cache loading additionally requires the block to agree with the cache
 envelope and portable interface before linking or executing the module initialiser.
+
+Compatibility schema `1` stores constraints in fixed Tiri-then-Kōtuku order.  Operator tags represent exact, `<`,
+`<=`, `>`, `>=` comparisons, and versions use canonical decimal text.  Records are sorted by owner and encoded
+requirements; identical records are removed, while distinct requirements for the same owner remain separate.  The
+block is always present and survives stripping and re-saving.  The reader rejects malformed, unsorted, duplicate,
+oversized or trailing metadata as invalid bytecode and reports a valid unsatisfied constraint as `ERR::WrongVersion`.
+It performs this check before decoding or committing prototype trees.
 
 ## 3. Bytecode Overview
 ### 3.1 High-Level Structure

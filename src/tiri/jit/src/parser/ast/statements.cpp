@@ -1886,6 +1886,7 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
    tiri::import_cache::ModuleLookup module_lookup;
    std::vector<FuncState::DependencyDescriptor> module_dependencies;
    std::optional<tiri::PackageIdentity> declared_package;
+   std::optional<tiri::DependencyRequirements> declared_requirements;
    std::unique_ptr<BlockStmt> imported_body;
    if (state_satisfied) {
       log.branch("Reusing active imported module '%s'", path.c_str());
@@ -1956,7 +1957,8 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
       if (module_unit) this->root_builder()->ctx.lex().imported_module_counters.lookup_attempts++;
       auto parsed = this->parse_imported_file(
          path, original_request, ImportToken, module_initialiser, module_initialiser ? &module_lookup : nullptr,
-         module_initialiser ? &module_dependencies : nullptr, module_initialiser ? &declared_package : nullptr);
+         module_initialiser ? &module_dependencies : nullptr, module_initialiser ? &declared_package : nullptr,
+         module_initialiser ? &declared_requirements : nullptr);
       if (not parsed.ok()) {
          if (module_unit) {
             module_unit->state = ImportedModuleState::Failed;
@@ -2003,6 +2005,7 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
          module_unit->body = std::shared_ptr<BlockStmt>(std::move(imported_body));
          module_unit->module_dependencies = std::move(module_dependencies);
          module_unit->declared_package = std::move(declared_package);
+         module_unit->dependency_requirements = std::move(declared_requirements);
          module_unit->file_source_idx = file_idx.value_or(0);
 
          if (module_unit->module_cache_hit) {
@@ -2207,7 +2210,8 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(
    std::string &Path, std::string_view Library, const Token &ImportToken, bool ModuleInitialiser,
    tiri::import_cache::ModuleLookup *Lookup,
    std::vector<FuncState::DependencyDescriptor> *ModuleDependencies,
-   std::optional<tiri::PackageIdentity> *DeclaredPackage)
+   std::optional<tiri::PackageIdentity> *DeclaredPackage,
+   std::optional<tiri::DependencyRequirements> *DeclaredRequirements)
 {
    kt::Log log(__FUNCTION__);
 
@@ -2456,6 +2460,7 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(
 
    if (result.ok()) {
       if (DeclaredPackage) *DeclaredPackage = import_builder.package_identity();
+      if (DeclaredRequirements) *DeclaredRequirements = import_builder.dependency_requirements();
       import_builder.prepend_implicit_dependencies(*result.value_ref());
       import_builder.finalise_module_dependencies();
       if (ModuleDependencies) {

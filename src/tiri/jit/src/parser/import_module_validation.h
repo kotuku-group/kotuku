@@ -42,5 +42,5 @@ private:
    [[nodiscard]] bool validate_identity(
       const tiri::import_cache::Identity &, std::string &);
    [[nodiscard]] bool validate_payload(std::string_view, std::string &,
-      std::vector<tiri::import_cache::RootModuleRecord> *, std::optional<tiri::PackageIdentity> *);
+      std::vector<tiri::import_cache::RootModuleRecord> *, std::optional<tiri::PackageIdentity> *, std::string *);
 };

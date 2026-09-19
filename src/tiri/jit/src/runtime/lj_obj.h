@@ -999,6 +999,8 @@ typedef struct GCproto {
    GCRef source_root;        // Root prototype which owns the compilation-unit source descriptor.
    MRef compilation_sources; // CompilationSourceMap owned by the root prototype only.
    MRef package_metadata; // ProtoPackageMetadata owned by the root prototype only.
+   MRef compatibility_manifest; // Canonical runtime requirements owned by the root prototype only.
+   uint32_t compatibility_manifest_size;
    MRef struct_manifest; // Portable named-structure semantics owned by the root prototype only.
    uint32_t struct_manifest_size;
    MRef import_module_bundle; // Canonical imported-module records owned by the root prototype only.
@@ -1140,6 +1142,8 @@ inline void proto_metadata_init(GCproto *Proto) noexcept
    setgcrefnull(Proto->source_root);
    setmref(Proto->compilation_sources, nullptr);
    setmref(Proto->package_metadata, nullptr);
+   setmref(Proto->compatibility_manifest, nullptr);
+   Proto->compatibility_manifest_size = 0;
    setmref(Proto->struct_manifest, nullptr);
    Proto->struct_manifest_size = 0;
    setmref(Proto->import_module_bundle, nullptr);
@@ -1174,6 +1178,15 @@ inline void proto_metadata_init(GCproto *Proto) noexcept
 [[nodiscard]] inline const ProtoPackageMetadata * proto_package_metadata(const GCproto *Proto) noexcept
 {
    return proto_package_metadata((GCproto *)Proto);
+}
+
+[[nodiscard]] inline const uint8_t * proto_compatibility_manifest(
+   const GCproto *Proto, uint32_t *Size = nullptr) noexcept
+{
+   if (not Proto) return nullptr;
+   const GCproto *root = gcref(Proto->source_root) ? (const GCproto *)gcref(Proto->source_root) : Proto;
+   if (Size) *Size = root->compatibility_manifest_size;
+   return root->compatibility_manifest.get<const uint8_t>();
 }
 
 [[nodiscard]] inline const uint8_t * proto_struct_manifest(const GCproto *Proto, uint32_t *Size = nullptr) noexcept

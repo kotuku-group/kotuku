@@ -288,6 +288,10 @@ cache::FormatError validate_interface(const Interface &Value)
    if (Value.Package and validate_package_identity(*Value.Package) != PackageValidationError::OKAY) {
       return cache::FormatError::INVALID_METADATA;
    }
+   std::vector<tiri::CompatibilityRecord> compatibility;
+   if (tiri::decode_compatibility_manifest(Value.CompatibilityManifest, compatibility)) {
+      return cache::FormatError::INVALID_METADATA;
+   }
    if ((Value.Namespaces.size() > MAX_INTERFACE_RECORDS) or (Value.Exports.size() > MAX_INTERFACE_RECORDS) or
        (Value.Structures.size() > MAX_INTERFACE_RECORDS) or
        (Value.Enums.size() > MAX_INTERFACE_RECORDS) or
@@ -481,6 +485,7 @@ cache::FormatError encode_interface_impl(const Interface &Value, std::string &Ou
       encoder.string(Value.Package->Name);
       encoder.string(Value.Package->Version);
    }
+   encoder.string(Value.CompatibilityManifest);
 
    encoder.u32(uint32_t(Value.Namespaces.size()));
    for (const auto &entry : Value.Namespaces) {
@@ -572,6 +577,7 @@ cache::FormatError decode_interface_impl(std::string_view Bytes, Interface &Outp
    Interface result;
 
    if (input.boolean()) result.Package = tiri::PackageIdentity { input.string(), input.string() };
+   result.CompatibilityManifest = input.string();
 
    decode_records<NamespaceDescriptor>(input, result.Namespaces, [](Decoder &Value) {
       NamespaceDescriptor entry { Value.string(), NamespaceMode(Value.byte()) };
