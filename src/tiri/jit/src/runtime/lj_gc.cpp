@@ -633,6 +633,10 @@ static void gc_traverse_proto(global_State *g, GCproto* pt)
          gc_mark_str(gco_to_string(gcref(entries[i].declared_namespace)));
       }
    }
+   if (auto package = pt->package_metadata.get<ProtoPackageMetadata>()) {
+      if (gcref(package->name)) gc_mark_str(gco_to_string(gcref(package->name)));
+      if (gcref(package->package_version)) gc_mark_str(gco_to_string(gcref(package->package_version)));
+   }
    if (auto table = pt->import_module_table.get<ImportModuleTable>()) {
       auto entries = import_module_table_entries(table);
       for (uint32_t i = 0; i < table->entry_count; ++i) {

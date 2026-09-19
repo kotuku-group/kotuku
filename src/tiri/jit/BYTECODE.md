@@ -12,10 +12,27 @@ canonical built-in callable?"  It is aimed at maintainers working on the parser,
 - Registers are shown as `R0`, `R1`, etc. Fields A/B/C/D follow LuaJIT encoding: `A` is usually a destination or base, `B`/`C` are sources, `D` is a constant or split field. `base` is the current stack frame start.
 - Conditions are expressed as "condition true → skip next instruction; condition false → execute next instruction (normally a `JMP`)." "Next instruction" means the sequential `BCIns`; a taken `JMP` applies its offset from the following instruction.
 - Version: LuaJIT 2.1 with extensive changes, assuming the `LJ_FR2` two-slot frame layout used by all supported platforms.
-- Serialised bytecode format: `0x8b`.  This version extends `BMETH` dispatch to method-compatible userdata
-  metatables.  Earlier formats are rejected because they cannot safely select the new call-frame semantics.
+- Serialised bytecode format: `0xaa`.  This private version adds a versioned compilation-unit package block.  Earlier
+  formats are rejected and must be regenerated from source.
 - **64-bit bytecode**: `BCIns` is now `uint64_t` (was `uint32_t`). Instructions occupy 8 bytes each. New extended formats (ABCP, ADP, AP) enable native 64-bit pointer storage for inline caching. See section 3.1 for format details.
 - Keep this file aligned with changes in `src/tiri/jit/src/parser/*`, whenever bytecode emission patterns change.
+
+### 2.1 Root Metadata Layout
+
+The dump header is followed by length-delimited compilation source, package, imported-module and structure blocks before
+the prototype trees:
+
+```text
+dump     = header sources package modules structs proto+ 0U
+package  = lengthU schemaB flagsB [namelenU nameB* versionlenU versionB*]
+```
+
+Package schema `1` defines flag bit `0` as identity-present; all other flags are rejected.  The absent form still stores
+the schema and zero flags.  A present identity contains its canonical package name and strict decimal-component version.
+The reader bounds both strings, rejects embedded zero bytes, unknown schemas, unknown flags and non-canonical values, and
+does not install prototype metadata until the complete dump has validated.  The package block is always emitted,
+including for stripped dumps.  Imported-module cache loading additionally requires the block to agree with the cache
+envelope and portable interface before linking or executing the module initialiser.
 
 ## 3. Bytecode Overview
 ### 3.1 High-Level Structure

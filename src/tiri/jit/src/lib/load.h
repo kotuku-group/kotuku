@@ -1,8 +1,11 @@
 #pragma once
 
+#include "../../../package_identity.h"
+
 #include "../../../import_module_bundle.h"
 
 #include <string_view>
+#include <optional>
 #include <vector>
 #include <cstdint>
 
@@ -25,6 +28,7 @@ struct BytecodeLoadOperationCounters {
 // imported-module graph from source input or a failed load.
 struct BytecodeLoadMetadata {
    std::vector<tiri::import_cache::RootModuleRecord> ImportedModules;
+   std::optional<tiri::PackageIdentity> Package;
    BytecodeLoadOperationCounters Operations;
    bool Bytecode = false;
 };

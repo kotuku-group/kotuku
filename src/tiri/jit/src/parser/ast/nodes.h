@@ -127,6 +127,7 @@ struct AnnotationArgValue {
    bool bool_value = false;
    double number_value = 0.0;
    GCstr* string_value = nullptr;
+   bool string_literal = false;
    std::vector<AnnotationArgValue> array_value;
 };
 
@@ -1074,6 +1075,7 @@ struct ImportedModuleUnit {
    std::shared_ptr<BlockStmt> body;
    std::string module_identity;
    tiri::import_cache::Identity module_cache_identity;
+   std::optional<tiri::PackageIdentity> declared_package;
    tiri::import_cache::FinalisedInterfacePtr interface_artifact;
    std::string module_payload;
    std::shared_ptr<const InstalledImportInterface> installed_interface;

@@ -78,6 +78,7 @@ static int load(lua_State *Lua, std::string_view Source, CSTRING SourceName, Byt
    BytecodeLoadMetadata completed;
    if (not status and Metadata and ls->is_bytecode) {
       completed.ImportedModules = std::move(ls->bytecode_import_module_records);
+      completed.Package = std::move(ls->bytecode_package_identity);
       completed.Operations = ls->bytecode_load_operations;
       completed.Bytecode = true;
    }

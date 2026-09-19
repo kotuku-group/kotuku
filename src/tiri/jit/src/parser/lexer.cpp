@@ -1847,6 +1847,7 @@ void LexState::release_import_module_staging_metadata() noexcept
       const ProtoRootMetadataSize size = measure_proto_root_metadata(prototype);
       if (size.total()) this->imported_module_counters.staging_metadata_roots++;
       this->imported_module_counters.staging_compilation_source_bytes += size.compilation_sources;
+      this->imported_module_counters.staging_package_metadata_bytes += size.package_metadata;
       this->imported_module_counters.staging_struct_manifest_bytes += size.struct_manifest;
       this->imported_module_counters.staging_import_module_bundle_bytes += size.import_module_bundle;
       this->imported_module_counters.staging_import_module_table_bytes += size.import_module_table;

@@ -665,7 +665,7 @@ static ERR test_path(std::string &Path, RSF Flags, LOC *Type)
 
 static const ActionArray clArchiveActions[] = {
    { AC::Activate, ARCHIVE_Activate },
-   { AC::Free, ARCHIVE_Free },
+   { AC::Free,     ARCHIVE_Free },
    { AC::Init,     ARCHIVE_Init },
    { AC::Query,    ARCHIVE_Query },
    { AC::Read,     ARCHIVE_Read },

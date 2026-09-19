@@ -477,6 +477,8 @@ bool prepare_block(ParserContext &Context, BlockStmt &Block, std::string &Diagno
          }
 
          Interface portable;
+         portable.Package = unit.declared_package;
+         unit.module_cache_identity.DeclaredPackage = unit.declared_package;
          InterfaceAssembly assembly(portable, Context.lex().imported_module_counters);
          SourceDescriptor source;
          source.ResolvedPath = entry.lib_path;

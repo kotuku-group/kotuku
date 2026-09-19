@@ -7,6 +7,92 @@
 // - Annotated statements (functions with annotations)
 
 //********************************************************************************************************************
+// Parses the metadata preamble that belongs to this compilation unit.
+
+ParserResult<bool> AstBuilder::parse_compilation_unit_preamble()
+{
+   while (this->ctx.check(TokenKind::Annotate)) {
+      Token name = this->ctx.tokens().peek(1);
+      if (not name.is_identifier() or not name.identifier() or
+          std::string_view(strdata(name.identifier()), name.identifier()->len) != "Package") break;
+
+      Token declaration = this->ctx.tokens().current();
+      auto parsed = this->parse_annotations(true);
+      if (not parsed.ok()) return ParserResult<bool>::failure(parsed.error_ref());
+      auto &annotations = parsed.value_ref();
+      if (this->package_identity_) {
+         return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
+            "@Package may be declared only once per compilation unit");
+      }
+      if (this->parent_builder and not this->module_initialiser) {
+         return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
+            "@Package is not permitted in a local source inclusion");
+      }
+
+      tiri::PackageIdentity identity;
+      bool have_name = false;
+      bool have_version = false;
+      for (const auto &[key, value] : annotations.front().args) {
+         const std::string_view key_text(strdata(key), key->len);
+         if (key_text != "name" and key_text != "version") {
+            return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
+               "@Package accepts only the named arguments 'name' and 'version'");
+         }
+         if (value.type != AnnotationArgValue::Type::String or not value.string_literal) {
+            return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
+               "@Package arguments must be string literals");
+         }
+         std::string text(strdata(value.string_value), value.string_value->len);
+         if (key_text IS "name") {
+            if (have_name) return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
+               "@Package contains a duplicate 'name' argument");
+            identity.Name = std::move(text);
+            have_name = true;
+         }
+         else {
+            if (have_version) return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
+               "@Package contains a duplicate 'version' argument");
+            identity.Version = std::move(text);
+            have_version = true;
+         }
+      }
+      if (not have_name or not have_version) {
+         return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
+            "@Package requires exactly one 'name' and one 'version' argument");
+      }
+
+      if (auto error = tiri::validate_package_name(identity.Name); error != tiri::PackageValidationError::OKAY) {
+         return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
+            std::string("invalid package name: ") + std::string(tiri::package_validation_error_text(error)));
+      }
+      if (auto error = tiri::parse_package_version(identity.Version); error != tiri::PackageValidationError::OKAY) {
+         return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
+            std::string("invalid package version: ") + std::string(tiri::package_validation_error_text(error)));
+      }
+      if (this->expected_package_ and identity != *this->expected_package_) {
+         return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
+            std::format("package identity mismatch: expected '{}@{}', declared '{}@{}'",
+               this->expected_package_->Name, this->expected_package_->Version, identity.Name, identity.Version));
+      }
+
+      this->package_identity_ = std::move(identity);
+      this->package_declaration_span_ = declaration.span();
+      this->ctx.lex().package_identity = this->package_identity_;
+      if (this->ctx.check(TokenKind::Annotate) and
+          this->ctx.tokens().current().span().line IS declaration.span().line) {
+         return this->fail<bool>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+            "@Package may not be combined with other annotations");
+      }
+   }
+   if (this->expected_package_ and not this->package_identity_) {
+      return this->fail<bool>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+         std::format("package entry point must declare @Package(name=\"{}\", version=\"{}\")",
+            this->expected_package_->Name, this->expected_package_->Version));
+   }
+   return ParserResult<bool>::success(true);
+}
+
+//********************************************************************************************************************
 // Parses annotation value types: strings, numbers, booleans, arrays, and bare identifiers.
 // @Test(name="foo", count=5, enabled=true, labels=["a","b"], fast)
 
@@ -19,6 +105,7 @@ ParserResult<AnnotationArgValue> AstBuilder::parse_annotation_value()
    if (current.kind() IS TokenKind::String) {
       value.type = AnnotationArgValue::Type::String;
       value.string_value = current.payload().as_string();
+      value.string_literal = true;
       this->ctx.tokens().advance();
       return ParserResult<AnnotationArgValue>::success(std::move(value));
    }
@@ -84,7 +171,7 @@ ParserResult<AnnotationArgValue> AstBuilder::parse_annotation_value()
 // Parses one or more annotations in sequence: @Name(args); @Name2; @Name3(args)
 // Returns when a non-@ token is encountered.
 
-ParserResult<std::vector<AnnotationEntry>> AstBuilder::parse_annotations()
+ParserResult<std::vector<AnnotationEntry>> AstBuilder::parse_annotations(bool Single)
 {
    std::vector<AnnotationEntry> annotations;
 
@@ -140,6 +227,7 @@ ParserResult<std::vector<AnnotationEntry>> AstBuilder::parse_annotations()
 
       // Optional semicolon separator between annotations
       this->ctx.match(TokenKind::Semicolon);
+      if (Single) break;
    }
 
    return ParserResult<std::vector<AnnotationEntry>>::success(std::move(annotations));
@@ -215,6 +303,14 @@ ParserResult<StmtNodePtr> AstBuilder::parse_annotated_statement()
    if (annotations.empty()) {
       // No annotations were parsed, return null statement
       return ParserResult<StmtNodePtr>::success(nullptr);
+   }
+
+   for (const auto &annotation : annotations) {
+      if (annotation.name and std::string_view(strdata(annotation.name), annotation.name->len) IS "Package") {
+         Token current = this->ctx.tokens().current();
+         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, current,
+            "@Package must appear in the compilation-unit preamble");
+      }
    }
 
    Token current = this->ctx.tokens().current();

@@ -149,7 +149,8 @@ bool ImportModuleValidationSession::validate_identity(
 // Validates bytecode in an isolated state and retains only decoded portable dependency records.
 
 bool ImportModuleValidationSession::validate_payload(std::string_view Payload, std::string &Reason,
-   std::vector<tiri::import_cache::RootModuleRecord> *EmbeddedModules)
+   std::vector<tiri::import_cache::RootModuleRecord> *EmbeddedModules,
+   std::optional<tiri::PackageIdentity> *Package)
 {
    std::unique_ptr<lua_State, decltype(&lua_close)> validation(luaL_newstate(this->lua.script), lua_close);
    if (not validation) {
@@ -184,6 +185,7 @@ bool ImportModuleValidationSession::validate_payload(std::string_view Payload, s
    this->counters.ExecutableDirectoryAllocations += operations.executable_directory_allocations;
    this->counters.PayloadBundleDecodes++;
    if (EmbeddedModules) *EmbeddedModules = std::move(metadata.ImportedModules);
+   if (Package) *Package = std::move(metadata.Package);
    return true;
 }
 
@@ -227,13 +229,21 @@ ERR ImportModuleValidationSession::ensure_validated(
       return this->validate_identity(IdentityValue, Reason);
    };
    std::vector<tiri::import_cache::RootModuleRecord> embedded_modules;
+   std::optional<tiri::PackageIdentity> payload_package;
    auto payload_validator = [&](std::string_view Payload, std::string &Reason) {
-      return this->validate_payload(Payload, Reason, &embedded_modules);
+      return this->validate_payload(Payload, Reason, &embedded_modules, &payload_package);
    };
 
    auto error = tiri::import_cache::lookup_module(
       Request, *source, identity_validator, payload_validator, this->counters, node->Lookup);
    if (error != ERR::Okay) return error;
+
+   if (node->Lookup.Cached.CacheHit and
+       (payload_package != node->Lookup.Cached.CompilationIdentity.DeclaredPackage or
+        payload_package != node->Lookup.Cached.CompileTimeInterface->descriptors().Package)) {
+      node->Lookup.Cached.CacheHit = false;
+      node->Lookup.Cached.Diagnostic = "cached bytecode package metadata does not agree with its envelope";
+   }
 
    if (node->Lookup.Cached.CacheHit) node->Lookup.EmbeddedModules = std::move(embedded_modules);
 
