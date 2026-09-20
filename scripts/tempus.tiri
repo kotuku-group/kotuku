@@ -1,5 +1,8 @@
 -- Tempus value library.
 
+@Package(name="tempus", version="1.0")
+@Dependencies(tiri="1.0")
+
    namespace tempus { }
 
 value_storage = setmetatable({}, { __mode = 'k' })

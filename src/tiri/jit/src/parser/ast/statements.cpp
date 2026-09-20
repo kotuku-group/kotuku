@@ -29,9 +29,8 @@ ParserResult<StmtNodePtr> AstBuilder::parse_explicit_local_declaration()
    }
 
    if (this->ctx.check(TokenKind::Function) or is_thunk) {
-      if (not is_thunk) {
-         this->ctx.tokens().advance();
-      }
+      if (not is_thunk) this->ctx.tokens().advance();
+
       Token function_token = local_token;  // Use local_token as span start
       auto name_token = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
       if (not name_token.ok()) return ParserResult<StmtNodePtr>::failure(name_token.error_ref());
@@ -39,9 +38,11 @@ ParserResult<StmtNodePtr> AstBuilder::parse_explicit_local_declaration()
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token.value_ref(),
             "Module namespaces cannot be declared as functions");
       }
+
       GCstr *funcname = name_token.value_ref().identifier();
       auto fn = this->parse_function_literal(function_token, is_thunk, funcname);
       if (not fn.ok()) return ParserResult<StmtNodePtr>::failure(fn.error_ref());
+
       ExprNodePtr function_expr = std::move(fn.value_ref());
       auto stmt = std::make_unique<StmtNode>(AstNodeKind::LocalFunctionStmt,
          this->span_from(local_token, name_token.value_ref()));
@@ -74,6 +75,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_local_name_list(const Token &StartTo
    AssignmentOperator assign_op = AssignmentOperator::Plain;
 
    // Check for plain = or conditional ?=/??= assignment
+
    if (this->ctx.match(TokenKind::Equals).ok()) {
       auto rhs = this->parse_expression_list();
       if (not rhs.ok()) return ParserResult<StmtNodePtr>::failure(rhs.error_ref());
@@ -112,12 +114,12 @@ ParserResult<StmtNodePtr> AstBuilder::parse_local_name_list(const Token &StartTo
                name_list.push_back(name_ref->identifier);
             }
          }
-         else {
-            // Non-identifier expression in trailing position - this is an error
+         else { // Non-identifier expression in trailing position - this is an error
             return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedIdentifier, this->ctx.tokens().current(),
                "Expected identifier after values in local declaration");
          }
       }
+
       // Remove the converted identifiers from the values list
       values.resize(name_count);
    }
@@ -125,17 +127,20 @@ ParserResult<StmtNodePtr> AstBuilder::parse_local_name_list(const Token &StartTo
    auto view = std::find_if(name_list.begin(), name_list.end(), [](const Identifier &Identifier) {
       return Identifier.has_view;
    });
+
    if (view != name_list.end()) {
       if (name_list.size() != 1) {
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken,
             Token::from_span(view->span, TokenKind::Identifier),
             "A <view> declaration requires exactly one local name");
       }
+
       if (values.empty() or assign_op != AssignmentOperator::Plain) {
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken,
             Token::from_span(view->span, TokenKind::Identifier),
             "A <view> local requires an initialiser");
       }
+
       if (view->has_close or view->has_const) {
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken,
             Token::from_span(view->span, TokenKind::Identifier),
@@ -156,6 +161,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_local_name_list(const Token &StartTo
             reference.identifier = std::move(identifier);
             targets.push_back(make_identifier_expr(reference.identifier.span, reference));
          }
+
          Token assignment_token = Token::from_span(StartToken.span(), TokenKind::Equals);
          return this->make_assignment_statement(
             assignment_token, assign_op, std::move(targets), std::move(values));
@@ -402,6 +408,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
 
    // Tooling metadata (field display types, doc comments, spans) is only captured for documentation-processing
    // parses such as debug.validate(source, { symbols = true }); normal compiles skip the collection entirely.
+
    lua_State &lua_ref = this->ctx.lua();
    bool collect_meta = lua_ref.script and ((lua_ref.script->Flags & SCF::PROCESS_DOC) != SCF::NIL);
    LexState::StructDeclarationMetadata meta;
@@ -437,16 +444,19 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
 
       auto colon = this->ctx.consume(TokenKind::Colon, ParserErrorCode::ExpectedToken);
       if (not colon.ok()) return ParserResult<StmtNodePtr>::failure(colon.error_ref());
+
       Token type_token = this->ctx.tokens().current();
       bool array_type = type_token.kind() IS TokenKind::ArrayTyped;
       bool struct_typed = type_token.kind() IS TokenKind::StructTyped;
       ArrayTypedSize array_dimension = array_type ? this->ctx.lex().array_typed_size : ArrayTypedSize::absent();
+
       if (array_type or struct_typed) this->ctx.tokens().advance();
       else {
          auto type_result = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
          if (not type_result.ok()) return ParserResult<StmtNodePtr>::failure(type_result.error_ref());
          type_token = type_result.value_ref();
       }
+
       GCstr *type_symbol = (array_type or struct_typed) ? type_token.payload().as_string() : type_token.identifier();
       std::string_view type_name = array_type ? std::string_view("array") :
          struct_typed ? std::string_view("struct") :
@@ -609,8 +619,11 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
                return this->fail<StmtNodePtr>(ParserErrorCode::UnknownTypeName, reference.value_ref(),
                   std::format("Unknown struct name '{}'; declarations must precede use", reference_name));
             }
+
             type_display = std::format("{}<{}", type_name, reference_name);
+
             // Handling for ptr<Struct[]>
+
             if (is_pointer and this->ctx.match(TokenKind::LeftBracket).ok()) {
                auto empty = this->ctx.consume(TokenKind::RightBracket, ParserErrorCode::ExpectedToken);
                if (not empty.ok()) return ParserResult<StmtNodePtr>::failure(empty.error_ref());
@@ -641,16 +654,19 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
                "Dynamically sized array fields cannot have a fixed dimension");
          }
          lua_Number dimension_value = dimension.payload().as_number();
+
          if (dimension.kind() != TokenKind::Number or dimension_value < 1 or
                dimension_value > lua_Number(std::numeric_limits<int>::max()) or
                dimension_value != lua_Number(int64_t(dimension_value))) {
             return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, dimension,
                "Struct array dimensions must be positive integers within the supported range");
          }
+
          if ((field.Type & FD_STRING) and (field.Type & FD_CPP)) {
             return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, dimension,
                "Fixed arrays of owned strings are not supported");
          }
+
          field.Type |= FD_ARRAY;
          field.ArraySize = int(dimension_value);
          type_display += std::format("[{}]", int(dimension_value));
@@ -664,10 +680,12 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
 
       auto documentation = this->ctx.lex().documentation_for_line(
          field_token.value_ref().span().line.lineNumber());
+
       if (collect_meta) {
          meta.fields.push_back({ field_name, std::move(type_display), documentation,
             field_token.value_ref().span() });
       }
+
       if (not documentation.empty()) {
          this->ctx.lex().struct_field_documentation.push_back({ struct_name, field_name,
             std::move(documentation), field_token.value_ref().span() });
@@ -700,11 +718,13 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
             registration_detail.empty() ? std::format("Failed to lay out struct '{}': {}", struct_name,
                GetErrorMsg(registration)) : registration_detail);
       }
+
       std::string location = (existing and not existing->DeclarationSource.empty()) ?
          std::format(" at {}:{}", existing->DeclarationSource, existing->DeclarationLine) : " from native code";
       return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token.value_ref(),
          std::format("Struct '{}' conflicts with its previous declaration{}", struct_name, location));
    }
+
    if (inserted) this->track_registered_struct(struct_key(struct_name));
 
    if (collect_meta) {
@@ -929,9 +949,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_function_stmt()
    }
 
    GCstr *funcname = nullptr;
-   if (not path.segments.empty()) {
-      funcname = path.segments.back().symbol;
-   }
+   if (not path.segments.empty()) funcname = path.segments.back().symbol;
 
    auto fn = this->parse_function_literal(func_token, is_thunk, funcname);
    if (not fn.ok()) return ParserResult<StmtNodePtr>::failure(fn.error_ref());
@@ -1762,6 +1780,102 @@ ParserResult<StmtNodePtr> AstBuilder::parse_include_stmt()
 // When using 'as alias' syntax, the imported library must declare a namespace. The alias creates a local const variable
 // that references _LIB['namespace'] for convenient access to the library exports.
 
+static bool contextual_identifier(const Token &TokenValue, std::string_view Name)
+{
+   return TokenValue.is_identifier() and TokenValue.identifier() and
+      std::string_view(strdata(TokenValue.identifier()), TokenValue.identifier()->len) IS Name;
+}
+
+ParserResult<tiri::PackageImportRequirement> AstBuilder::parse_import_requirement(
+   const Token &ImportToken, std::string_view PackageName, bool ModuleInitialiser)
+{
+   Token version_token = this->ctx.tokens().current();
+   this->ctx.tokens().advance();
+
+   if (not ModuleInitialiser) {
+      return this->fail<tiri::PackageImportRequirement>(ParserErrorCode::UnexpectedToken, version_token,
+         "Local imports do not support version clauses");
+   }
+   if (auto error = tiri::validate_package_name(PackageName); error != tiri::PackageValidationError::OKAY) {
+      return this->fail<tiri::PackageImportRequirement>(ParserErrorCode::UnexpectedToken, ImportToken,
+         std::string("Invalid versioned import package name: ") +
+            std::string(tiri::package_validation_error_text(error)));
+   }
+
+   std::string constraint_text;
+   bool exact = false;
+   if (this->ctx.check(TokenKind::String)) {
+      GCstr *value = this->ctx.tokens().current().payload().as_string();
+      constraint_text.assign(strdata(value), value->len);
+      exact = true;
+      this->ctx.tokens().advance();
+   }
+   else {
+      bool need_comparison = true;
+      while (need_comparison) {
+         Token operation = this->ctx.tokens().current();
+         std::string_view operation_text;
+         switch (operation.kind()) {
+            case TokenKind::Less:         operation_text = "<"; break;
+            case TokenKind::LessEqual:    operation_text = "<="; break;
+            case TokenKind::Greater:      operation_text = ">"; break;
+            case TokenKind::GreaterEqual: operation_text = ">="; break;
+            default:
+               return this->fail<tiri::PackageImportRequirement>(ParserErrorCode::UnexpectedToken, operation,
+                  "Version range requires one of '<', '<=', '>' or '>='");
+         }
+         this->ctx.tokens().advance();
+         Token value_token = this->ctx.tokens().current();
+         if (not value_token.is(TokenKind::String)) {
+            return this->fail<tiri::PackageImportRequirement>(ParserErrorCode::ExpectedToken, value_token,
+               "Version comparison requires a string literal");
+         }
+         GCstr *value = value_token.payload().as_string();
+         if (not constraint_text.empty()) constraint_text.push_back(' ');
+         constraint_text.append(operation_text);
+         constraint_text.append(strdata(value), value->len);
+         this->ctx.tokens().advance();
+
+         if (this->ctx.match(TokenKind::AndToken).ok()) continue;
+         if (this->ctx.check(TokenKind::Less) or this->ctx.check(TokenKind::LessEqual) or
+             this->ctx.check(TokenKind::Greater) or this->ctx.check(TokenKind::GreaterEqual)) {
+            return this->fail<tiri::PackageImportRequirement>(ParserErrorCode::UnexpectedToken,
+               this->ctx.tokens().current(), "Version comparisons must be separated by 'and'");
+         }
+         if (this->ctx.check(TokenKind::OrToken) or this->ctx.check(TokenKind::IsToken) or
+             this->ctx.check(TokenKind::NotEqual) or this->ctx.check(TokenKind::Equals)) {
+            return this->fail<tiri::PackageImportRequirement>(ParserErrorCode::UnexpectedToken,
+               this->ctx.tokens().current(), "Version comparisons support only the 'and' connector");
+         }
+         need_comparison = false;
+      }
+   }
+
+   if (exact and this->ctx.check(TokenKind::AndToken)) {
+      return this->fail<tiri::PackageImportRequirement>(ParserErrorCode::UnexpectedToken,
+         this->ctx.tokens().current(), "An exact version clause cannot contain 'and'");
+   }
+   if (exact and (this->ctx.check(TokenKind::OrToken) or this->ctx.check(TokenKind::IsToken) or
+       this->ctx.check(TokenKind::NotEqual) or this->ctx.check(TokenKind::Equals))) {
+      return this->fail<tiri::PackageImportRequirement>(ParserErrorCode::UnexpectedToken,
+         this->ctx.tokens().current(), "An exact version clause cannot contain another operator");
+   }
+   if (exact and (this->ctx.check(TokenKind::Less) or this->ctx.check(TokenKind::LessEqual) or
+       this->ctx.check(TokenKind::Greater) or this->ctx.check(TokenKind::GreaterEqual))) {
+      return this->fail<tiri::PackageImportRequirement>(ParserErrorCode::UnexpectedToken,
+         this->ctx.tokens().current(), "An exact version clause cannot contain range comparisons");
+   }
+
+   tiri::VersionConstraint constraint;
+   if (auto error = tiri::parse_version_constraint(constraint_text, constraint); error) {
+      return this->fail<tiri::PackageImportRequirement>(ParserErrorCode::UnexpectedToken, version_token,
+         std::format("Invalid import version constraint at byte {}: {}", error.Offset,
+            tiri::version_error_text(error.Error)));
+   }
+   return ParserResult<tiri::PackageImportRequirement>::success(
+      { std::string(PackageName), std::move(constraint) });
+}
+
 ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &ImportToken, bool AllowAlias,
    bool *UsedAlias)
 {
@@ -1773,6 +1887,10 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
 
    Token path_token = this->ctx.tokens().current();
    if (not path_token.is(TokenKind::String)) {
+      if (not AllowAlias and contextual_identifier(path_token, "version")) {
+         return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, path_token,
+            "Version clauses are permitted only on single-item imports");
+      }
       const char *message = AllowAlias ? "Import path must be a string literal" :
          "Import list items must be string literals";
       return this->fail<ImportEntryPayload>(ParserErrorCode::ExpectedToken, path_token, message);
@@ -1787,6 +1905,19 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
    std::string_view mod_name(original_request);
    const bool module_initialiser = not mod_name.starts_with("./") and not mod_name.starts_with("../");
    this->ctx.tokens().advance();  // consume string
+
+   std::optional<tiri::PackageImportRequirement> import_requirement;
+   if (contextual_identifier(this->ctx.tokens().current(), "version")) {
+      if (not AllowAlias) {
+         return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+            "Version clauses are permitted only on single-item imports");
+      }
+      auto parsed_requirement = this->parse_import_requirement(ImportToken, mod_name, module_initialiser);
+      if (not parsed_requirement.ok()) {
+         return ParserResult<ImportEntryPayload>::failure(parsed_requirement.error_ref());
+      }
+      import_requirement = std::move(parsed_requirement.value_ref());
+   }
 
    log.branch("Library: %.*s", int(mod_name.size()), mod_name.data());
 
@@ -1810,6 +1941,23 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
       alias = make_identifier(alias_result.value_ref());
       alias->has_const = true;  // Namespace alias is const
       if (UsedAlias) *UsedAlias = true;
+   }
+
+   if (alias and contextual_identifier(this->ctx.tokens().current(), "version")) {
+      return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+         "A version clause must precede the 'as' alias");
+   }
+   if (import_requirement and alias and
+       (this->ctx.check(TokenKind::AndToken) or this->ctx.check(TokenKind::Less) or
+        this->ctx.check(TokenKind::LessEqual) or this->ctx.check(TokenKind::Greater) or
+        this->ctx.check(TokenKind::GreaterEqual))) {
+      return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+         "The 'as' alias must follow the complete version clause");
+   }
+
+   if (import_requirement and this->ctx.check(TokenKind::Comma)) {
+      return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+         "Version clauses are permitted only on single-item imports");
    }
 
    std::string path = this->ctx.resolve_lib_to_path(mod_name);
@@ -1843,11 +1991,11 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
 
    std::shared_ptr<ImportedModuleUnit> module_unit;
    bool module_already_imported = false;
+   bool new_module_unit = false;
    bool reused_module = false;
    bool state_satisfied = false;
    if (module_initialiser) {
       ImportedModuleKey key { path, original_request, true };
-      module_already_imported = this->import_seen_this_unit(key);
       module_unit = this->find_imported_module(key);
       if (module_unit) {
          if (module_unit->state IS ImportedModuleState::Resolving) {
@@ -1857,6 +2005,13 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
          if (module_unit->state IS ImportedModuleState::Failed) {
             return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, ImportToken,
                "Imported module failed earlier in this compilation: " + path);
+         }
+         if (import_requirement) {
+            tiri::PackageImportFailure failure;
+            if (not tiri::check_package_import(*import_requirement, module_unit->declared_package, &failure)) {
+               return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, ImportToken,
+                  tiri::package_import_error(*import_requirement, module_unit->declared_package, failure));
+            }
          }
          reused_module = true;
       }
@@ -1874,12 +2029,21 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
          module_unit->interface_prepared = true;
          module_unit->state = ImportedModuleState::InterfaceReady;
          state_satisfied = true;
+         if (import_requirement) {
+            tiri::PackageImportFailure failure;
+            if (not tiri::check_package_import(*import_requirement, module_unit->declared_package, &failure)) {
+               return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, ImportToken,
+                  tiri::package_import_error(*import_requirement, module_unit->declared_package, failure));
+            }
+         }
          this->register_imported_module(module_unit);
+         new_module_unit = true;
       }
       else {
          module_unit = std::make_shared<ImportedModuleUnit>();
          module_unit->key = std::move(key);
          this->register_imported_module(module_unit);
+         new_module_unit = true;
       }
    }
 
@@ -1958,7 +2122,7 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
       auto parsed = this->parse_imported_file(
          path, original_request, ImportToken, module_initialiser, module_initialiser ? &module_lookup : nullptr,
          module_initialiser ? &module_dependencies : nullptr, module_initialiser ? &declared_package : nullptr,
-         module_initialiser ? &declared_requirements : nullptr);
+         module_initialiser ? &declared_requirements : nullptr, &import_requirement);
       if (not parsed.ok()) {
          if (module_unit) {
             module_unit->state = ImportedModuleState::Failed;
@@ -1967,6 +2131,18 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
          return ParserResult<ImportEntryPayload>::failure(parsed.error_ref());
       }
       imported_body = std::move(parsed.value_ref());
+
+      if (import_requirement) {
+         tiri::PackageImportFailure failure;
+         if (not tiri::check_package_import(*import_requirement, declared_package, &failure)) {
+            if (module_unit) {
+               module_unit->state = ImportedModuleState::Failed;
+               this->discard_imported_module(module_unit->key);
+            }
+            return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, ImportToken,
+               tiri::package_import_error(*import_requirement, declared_package, failure));
+         }
+      }
    }
 
    // Look up the FileSource index and namespace for this import (registered during parse_imported_file)
@@ -1982,9 +2158,12 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
    // If using 'as' alias, the library must declare a namespace
 
    if (alias and default_ns.empty()) {
+      if (new_module_unit) this->discard_imported_module(module_unit->key);
       return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, as_token,
          std::string("Cannot use 'as' alias: library '") + original_request + "' does not declare a namespace");
    }
+
+   if (module_initialiser) module_already_imported = this->import_seen_this_unit(module_unit->key);
 
    // Determine final namespace name (alias takes precedence)
 
@@ -1994,6 +2173,7 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
 
    ImportEntryPayload entry;
    entry.lib_path = path;
+   entry.package_requirement = std::move(import_requirement);
    if (module_initialiser) {
       entry.module_unit = module_unit;
       if (not reused_module and not state_satisfied) {
@@ -2090,9 +2270,11 @@ ParserResult<StmtNodePtr> AstBuilder::parse_import()
    if (not first_entry.ok()) return ParserResult<StmtNodePtr>::failure(first_entry.error_ref());
    payload.entries.push_back(std::move(first_entry.value_ref()));
 
-   if (this->ctx.check(TokenKind::Comma) and first_used_alias) {
+   if (this->ctx.check(TokenKind::Comma) and
+       (first_used_alias or payload.entries.front().package_requirement.has_value())) {
       return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
-         "Import lists do not support 'as' aliases");
+         first_used_alias ? "Import lists do not support 'as' aliases" :
+            "Version clauses are permitted only on single-item imports");
    }
 
    while (this->ctx.match(TokenKind::Comma).ok()) {
@@ -2211,7 +2393,8 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(
    tiri::import_cache::ModuleLookup *Lookup,
    std::vector<FuncState::DependencyDescriptor> *ModuleDependencies,
    std::optional<tiri::PackageIdentity> *DeclaredPackage,
-   std::optional<tiri::DependencyRequirements> *DeclaredRequirements)
+   std::optional<tiri::DependencyRequirements> *DeclaredRequirements,
+   const std::optional<tiri::PackageImportRequirement> *ImportRequirement)
 {
    kt::Log log(__FUNCTION__);
 
@@ -2251,6 +2434,15 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(
 
       if (Lookup->Cached.CacheHit) {
          const auto &portable = Lookup->Cached.CompileTimeInterface->descriptors();
+         if (DeclaredPackage) *DeclaredPackage = Lookup->Cached.CompilationIdentity.DeclaredPackage;
+         if (ImportRequirement and *ImportRequirement) {
+            tiri::PackageImportFailure failure;
+            const auto &identity = Lookup->Cached.CompilationIdentity.DeclaredPackage;
+            if (not tiri::check_package_import(**ImportRequirement, identity, &failure)) {
+               return this->fail<std::unique_ptr<BlockStmt>>(ParserErrorCode::UnexpectedToken, ImportToken,
+                  tiri::package_import_error(**ImportRequirement, identity, failure));
+            }
+         }
          BCLine source_lines = 1;
          for (char c : Lookup->Source) if (c IS '\n') source_lines++;
          std::string filename = Path;
@@ -2452,7 +2644,8 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(
 
    // Parse the imported compilation unit, including its metadata preamble.
    AstBuilder import_builder(import_ctx, this, ModuleInitialiser,
-      Lookup ? Lookup->ExpectedIdentity.ExpectedPackage : std::nullopt);
+      Lookup ? Lookup->ExpectedIdentity.ExpectedPackage : std::nullopt,
+      ImportRequirement ? *ImportRequirement : std::nullopt);
    auto result = import_builder.parse_compilation_unit();
 
    // The imported file is its own compilation unit for module namespace purposes, so its dependency activations are

@@ -8,6 +8,8 @@
 #include <string_view>
 #include <vector>
 
+#include "package_identity.h"
+
 namespace tiri {
 
 inline constexpr size_t MAX_VERSION_LENGTH = 255;
@@ -73,6 +75,20 @@ struct CompatibilityFailure {
    std::string_view Owner;
 };
 
+struct PackageImportRequirement {
+   std::string PackageName;
+   VersionConstraint Constraint;
+   [[nodiscard]] bool operator==(const PackageImportRequirement &) const = default;
+};
+
+enum class PackageImportFailureKind : uint8_t { None, MissingMetadata, InvalidMetadata, NameMismatch, Unsatisfied };
+
+struct PackageImportFailure {
+   PackageImportFailureKind Kind = PackageImportFailureKind::None;
+   const VersionComparison *Comparison = nullptr;
+   Version LoadedVersion;
+};
+
 [[nodiscard]] VersionParseError parse_version(std::string_view Text, Version &Output) noexcept;
 [[nodiscard]] VersionParseError parse_version_constraint(std::string_view Text, VersionConstraint &Output) noexcept;
 [[nodiscard]] std::string_view version_error_text(VersionError Error) noexcept;
@@ -85,6 +101,10 @@ struct CompatibilityFailure {
    CompatibilityFailure *Failure = nullptr, std::string_view Owner = {}) noexcept;
 [[nodiscard]] bool check_compatibility_records(std::span<const CompatibilityRecord> Records,
    const RuntimeVersions &Runtime, CompatibilityFailure *Failure = nullptr) noexcept;
+[[nodiscard]] bool check_package_import(const PackageImportRequirement &Requirement,
+   const std::optional<PackageIdentity> &Identity, PackageImportFailure *Failure = nullptr) noexcept;
+[[nodiscard]] std::string package_import_error(const PackageImportRequirement &Requirement,
+   const std::optional<PackageIdentity> &Identity, const PackageImportFailure &Failure);
 [[nodiscard]] VersionParseError encode_compatibility_manifest(
    std::span<const CompatibilityRecord> Records, std::string &Output);
 [[nodiscard]] VersionParseError decode_compatibility_manifest(

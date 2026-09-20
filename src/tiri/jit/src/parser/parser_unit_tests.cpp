@@ -11853,6 +11853,63 @@ static bool test_package_annotation_metadata(kt::Log &Log)
 }
 
 //********************************************************************************************************************
+// Version clauses are contextual import syntax and validate every concrete package identity before publication.
+
+static bool test_versioned_import_syntax(kt::Log &Log)
+{
+   constexpr std::string_view accepted[] = {
+      "import 'tests/versioned-package' version \"1.10\"\nreturn versioned_package.value",
+      "import 'tests/versioned-package' version >= \"1.0\" and < \"2\"\nreturn versioned_package.value",
+      "import 'tests/versioned-package' version > \"1.1\" and <= \"1.10\" as selected\nreturn selected.value",
+      "version = 1\nreturn version"
+   };
+   for (auto source : accepted) {
+      auto result = build_ast_from_source(source, true);
+      if (not result.chunk.ok() or not result.diagnostics.empty()) {
+         Log.error("valid versioned import syntax was rejected: %.*s", int(source.size()), source.data());
+         log_diagnostics(result.diagnostics, Log);
+         return false;
+      }
+   }
+
+   struct InvalidCase { std::string_view Source; std::string_view Diagnostic; };
+   constexpr InvalidCase rejected[] = {
+      { "import './local' version \"1\"", "Local imports do not support version clauses" },
+      { "import 'tests/versioned-package', 'tests/versioned-package' version \"1.10\"",
+         "Version clauses are permitted only on single-item imports" },
+      { "import 'tests/versioned-package' version \"1.10\", 'tests/versioned-package'",
+         "Version clauses are permitted only on single-item imports" },
+      { "import 'tests/versioned-package' version 1.10", "Version range requires" },
+      { "import 'tests/versioned-package' version >= 1", "requires a string literal" },
+      { "import 'tests/versioned-package' version >= \"1\" < \"2\"", "separated by 'and'" },
+      { "import 'tests/versioned-package' version \"1\" and < \"2\"", "exact version clause" },
+      { "import 'tests/versioned-package' version = \"1\"", "Version range requires" },
+      { "import 'tests/versioned-package' version >= \"1\" or < \"2\"", "only the 'and' connector" },
+      { "import 'tests/versioned-package' version \"1.10\" is \"1.10\"", "cannot contain another operator" },
+      { "import 'tests/versioned-package' version \"1.10\" != \"2\"", "cannot contain another operator" },
+      { "import 'tests/versioned-package' version >= \"1\" and", "Version range requires" },
+      { "import 'tests/versioned-package' version >= as selected", "requires a string literal" },
+      { "import 'tests/versioned-package' as selected version \"1.10\"", "must precede the 'as' alias" },
+      { "import 'tests/versioned-package' version >= \"1\" as selected and < \"2\"",
+         "must follow the complete version clause" },
+      { "import 'tests/versioned-package' version \"01\"", "non-canonical leading zero" },
+      { "import 'tests/versioned-package' version \"2\"", "fails comparison 2" },
+      { "import 'tests/versioned-missing' version \"1\"", "requires @Package metadata" },
+      { "import 'tests/versioned-other' version \"1.10\"", "loaded package 'tests/other-package@1.10'" },
+      { "import 'tests/versioned-broken' version < \"2\"", "loaded version 2 fails comparison <2" }
+   };
+   for (const auto &entry : rejected) {
+      auto result = build_ast_from_source(entry.Source, true);
+      if (not diagnostics_contain(result, entry.Diagnostic)) {
+         Log.error("versioned import did not report '%.*s'", int(entry.Diagnostic.size()), entry.Diagnostic.data());
+         log_diagnostics(result.diagnostics, Log);
+         return false;
+      }
+   }
+   return true;
+}
+
+//********************************************************************************************************************
 // Internal metadata capture is transactional across source, successful bytecode and failed bytecode loads.
 
 static bool test_bytecode_load_metadata_transaction(kt::Log &Log)
@@ -12204,8 +12261,9 @@ static bool test_import_module_relocation_transaction(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 106> tests = { {
+   constexpr std::array<TestCase, 107> tests = { {
       { "package_annotation_metadata", test_package_annotation_metadata },
+      { "versioned_import_syntax", test_versioned_import_syntax },
       { "bytecode_load_metadata_transaction", test_bytecode_load_metadata_transaction },
       { "file_source_index_collision_fallback", test_file_source_index_collision_fallback },
       { "import_module_metadata_release_idempotence", test_import_module_metadata_release_idempotence },

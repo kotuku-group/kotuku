@@ -2,6 +2,9 @@
 Declarative command-line option parsing for Tiri scripts.  Refer to the Tiri-Options-API.md Wiki for usage information.
 --]]
 
+@Package(name="options", version="1.0")
+@Dependencies(tiri="1.0")
+
    include 'core'
    import 'json'
 

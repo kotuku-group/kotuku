@@ -1,5 +1,8 @@
 -- Visual FX interface.  Applies cosmetic effects to viewports.
 
+@Package(name="vfx", version="1.0")
+@Dependencies(tiri="1.0")
+
    include 'vector'
 
    module vector as mVec

@@ -12,9 +12,11 @@ bool version_and_constraint_tests(kt::Log &Log)
 {
    using namespace tiri;
    Version one, one_zero, one_zero_one, one_one, one_ten, two;
+
    if (parse_version("1", one) or parse_version("1.0", one_zero) or
        parse_version("1.0.1", one_zero_one) or parse_version("1.1", one_one) or
        parse_version("1.10", one_ten) or parse_version("2", two)) return false;
+
    if (one.compare(one_zero) >= 0 or one_zero.compare(one_zero_one) >= 0 or
        one_zero_one.compare(one_one) >= 0 or one_one.compare(one_ten) >= 0 or
        one_ten.compare(two) >= 0) {
@@ -28,6 +30,7 @@ bool version_and_constraint_tests(kt::Log &Log)
       Log.error("Bounded constraint evaluation is incorrect");
       return false;
    }
+
    for (std::string_view invalid : { "", "=1", "==1", "!=1", "> 1", "1,2", "1 and 2", "01", "1." }) {
       if (not parse_version_constraint(invalid, constraint)) {
          Log.error("Malformed constraint was accepted: %.*s", int(invalid.size()), invalid.data());
@@ -42,13 +45,16 @@ bool manifest_tests(kt::Log &Log)
    using namespace tiri;
    VersionConstraint tiri_constraint;
    VersionConstraint kotuku_constraint;
+
    if (parse_version_constraint(">=1.0 <2.0", tiri_constraint) or
        parse_version_constraint(">=2026.2.23", kotuku_constraint)) return false;
+
    std::vector<CompatibilityRecord> records {
       { "scripts:z.tiri", { tiri_constraint, std::nullopt } },
       { "scripts:a.tiri", { std::nullopt, kotuku_constraint } },
       { "scripts:z.tiri", { tiri_constraint, std::nullopt } }
    };
+
    std::string encoded;
    if (encode_compatibility_manifest(records, encoded)) return false;
    std::vector<CompatibilityRecord> decoded;
@@ -57,12 +63,14 @@ bool manifest_tests(kt::Log &Log)
       Log.error("Compatibility manifest did not canonicalise and round-trip");
       return false;
    }
+
    auto malformed = encoded;
    malformed.push_back('\0');
    if (not decode_compatibility_manifest(malformed, decoded)) {
       Log.error("Compatibility manifest trailing data was accepted");
       return false;
    }
+
    return true;
 }
 
@@ -70,15 +78,67 @@ bool injected_runtime_tests(kt::Log &Log)
 {
    using namespace tiri;
    RuntimeVersions runtime;
+
    if (parse_version("1.0", runtime.Tiri) or parse_version("2026.2.23", runtime.Kotuku)) return false;
    VersionConstraint future;
+
    if (parse_version_constraint(">=2.0", future)) return false;
    CompatibilityFailure failure;
+
    if (check_requirements({ future, std::nullopt }, runtime, &failure) or failure.Domain != "tiri" or
        not failure.Comparison or not failure.Running) {
       Log.error("Injected runtime did not report the first failed comparison");
       return false;
    }
+
+   return true;
+}
+
+bool package_import_tests(kt::Log &Log)
+{
+   using namespace tiri;
+   VersionConstraint constraint;
+   if (parse_version_constraint(">=1.0 <2", constraint)) return false;
+   PackageImportRequirement requirement { "example/pkg", constraint };
+   PackageImportFailure failure;
+
+   for (std::string_view version : { "1.0", "1.0.1", "1.1", "1.10" }) {
+      if (not check_package_import(requirement, PackageIdentity { "example/pkg", std::string(version) }, &failure)) {
+         Log.error("Compatible package version was rejected: %.*s", int(version.size()), version.data());
+         return false;
+      }
+   }
+
+   if (check_package_import(requirement, std::nullopt, &failure) or
+       failure.Kind != PackageImportFailureKind::MissingMetadata) {
+      Log.error("Missing package metadata was not reported");
+      return false;
+   }
+
+   if (check_package_import(requirement, PackageIdentity { "other/pkg", "1.1" }, &failure) or
+       failure.Kind != PackageImportFailureKind::NameMismatch) {
+      Log.error("Package-name mismatch was not reported");
+      return false;
+   }
+
+   if (check_package_import(requirement, PackageIdentity { "example/pkg", "2" }, &failure) or
+       failure.Kind != PackageImportFailureKind::Unsatisfied or not failure.Comparison or
+       comparison_text(*failure.Comparison) != "<2") {
+      Log.error("The first failed package comparison was not reported");
+      return false;
+   }
+
+   for (std::string_view text : { "<1.1", "<=1.1", ">1.1", ">=1.1", "1.1" }) {
+      VersionConstraint single;
+      if (parse_version_constraint(text, single)) return false;
+      PackageImportRequirement single_requirement { "example/pkg", std::move(single) };
+      const bool expected = text IS "<=1.1" or text IS ">=1.1" or text IS "1.1";
+      if (check_package_import(single_requirement, PackageIdentity { "example/pkg", "1.1" }) != expected) {
+         Log.error("Package operator evaluation is incorrect for %.*s", int(text.size()), text.data());
+         return false;
+      }
+   }
+
    return true;
 }
 
@@ -87,7 +147,7 @@ bool injected_runtime_tests(kt::Log &Log)
 void version_constraint_unit_tests(int &Passed, int &Total)
 {
    kt::Log log("VersionConstraintTests");
-   for (auto test : { version_and_constraint_tests, manifest_tests, injected_runtime_tests }) {
+   for (auto test : { version_and_constraint_tests, manifest_tests, injected_runtime_tests, package_import_tests }) {
       Total++;
       if (test(log)) Passed++;
    }

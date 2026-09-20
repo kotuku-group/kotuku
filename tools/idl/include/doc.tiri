@@ -62,7 +62,7 @@ global glIgnoreList = {
 
 global function setAction(Action, Options)
    for k, v in pairs(Options) do
-      glActions[Action][k] = v
+      glActions?[Action]?[k] = v
    end
 end
 

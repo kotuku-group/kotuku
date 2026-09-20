@@ -1,5 +1,8 @@
 -- A compact pure-Lua JSON library originally written by @tylerneylon for the public domain.
 
+@Package(name="json", version="1.0")
+@Dependencies(tiri="1.0")
+
    namespace json {
       ['null'] = {}
    }

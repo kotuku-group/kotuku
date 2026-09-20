@@ -348,9 +348,10 @@ static ParserResult<StmtNodePtr> make_control_stmt(ParserContext& Context, AstNo
 }
 
 AstBuilder::AstBuilder(ParserContext &Context, AstBuilder *Parent, bool ModuleInitialiser,
-   std::optional<tiri::PackageIdentity> ExpectedPackage) :
+   std::optional<tiri::PackageIdentity> ExpectedPackage,
+   std::optional<tiri::PackageImportRequirement> ImportRequirement) :
    ctx(Context), module_initialiser(ModuleInitialiser), expected_package_(std::move(ExpectedPackage)),
-   parent_builder(Parent)
+   import_requirement_(std::move(ImportRequirement)), parent_builder(Parent)
 {
    this->ctx.set_error_rollback_callback(rollback_ast_builder_constants, this);
    if (not Parent) {

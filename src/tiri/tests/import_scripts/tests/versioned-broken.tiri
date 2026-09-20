@@ -1,0 +1,3 @@
+@Package(name="tests/versioned-broken", version="2")
+
+this body is deliberately malformed

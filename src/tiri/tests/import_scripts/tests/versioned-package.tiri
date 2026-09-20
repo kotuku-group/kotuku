@@ -1,0 +1,4 @@
+@Package(name="tests/versioned-package", version="1.10")
+
+namespace versioned_package { }
+versioned_package.value = 110
