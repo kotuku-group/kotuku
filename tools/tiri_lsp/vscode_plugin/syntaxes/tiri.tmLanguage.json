@@ -4,6 +4,7 @@
    "scopeName": "source.tiri",
    "patterns": [
       { "include": "#comments" },
+      { "include": "#versioned-imports" },
       { "include": "#strings" },
       { "include": "#annotations" },
       { "include": "#typetests" },
@@ -16,6 +17,26 @@
       { "include": "#variables" }
    ],
    "repository": {
+      "versioned-imports": {
+         "patterns": [
+            {
+               "name": "meta.import.versioned.tiri",
+               "begin": "\\b(import)\\b(?=\\s*['\\\"])",
+               "beginCaptures": {
+                  "1": { "name": "keyword.other.import.tiri" }
+               },
+               "end": "$",
+               "patterns": [
+                  { "include": "#comments" },
+                  { "include": "#strings" },
+                  { "name": "keyword.other.version.tiri", "match": "\\bversion\\b" },
+                  { "name": "keyword.other.alias.tiri", "match": "\\bas\\b" },
+                  { "name": "keyword.operator.logical.tiri", "match": "\\band\\b" },
+                  { "name": "keyword.operator.comparison.tiri", "match": "<=|>=|<|>" }
+               ]
+            }
+         ]
+      },
       "comments": {
          "patterns": [
             {
@@ -155,7 +176,7 @@
          "patterns": [
             {
                "name": "support.constant.parser-annotation.tiri",
-               "match": "@(FunctionName|SourceFile|SourceLine)\\b"
+               "match": "@(FunctionName|SourceFile|SourceLine|Package|Dependencies)\\b"
             },
             {
                "name": "entity.name.function.annotation.tiri",

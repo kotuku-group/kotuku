@@ -117,6 +117,31 @@ end
    assert(import_path and import_path.type is 4, 'Parent-relative import path should remain a string token.')
 end
 
+@Test function PackageMetadataAndVersionedImportsReceiveSemanticTokens()
+   source = '@Package(name="sample-package", version="1.10")\n' ..
+      '@Dependencies(tiri="1.0", kotuku=">=2026.9.19")\n' ..
+      'import \'sample-package\' version >= "1.0" and < "2" as sample\n' ..
+      'version = "ordinary identifier"\n'
+
+   tokens = tokenizeTiri(source)
+
+   package_annotation = findToken(tokens, 0, 1, 'Package')
+   dependencies_annotation = findToken(tokens, 1, 1, 'Dependencies')
+   version_keyword = findToken(tokens, 2, 24, 'version')
+   connector = findToken(tokens, 2, 41, 'and')
+   alias_keyword = findToken(tokens, 2, 51, 'as')
+
+   assert(package_annotation and package_annotation.type is 12,
+      '@Package should be highlighted as semantic compilation metadata.')
+   assert(dependencies_annotation and dependencies_annotation.type is 12,
+      '@Dependencies should be highlighted as semantic compilation metadata.')
+   assert(version_keyword and version_keyword.type is 0,
+      'version should be highlighted as a keyword inside a versioned import.')
+   assert(connector and connector.type is 1, 'Import constraint and should be highlighted as an operator.')
+   assert(alias_keyword and alias_keyword.type is 0, 'The alias after a version clause should remain a keyword.')
+   assertNoToken(tokens, 3, 0, 'version', 'version should remain an ordinary identifier outside imports.')
+end
+
 @Test function ModuleDeclarationsReceiveContextualSemanticTokens()
    source = 'module core as runtimeCore\n' ..
       'runtimeCore.PreciseTime()\n' ..

@@ -42,6 +42,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
    len = #Source
    module_prefixes = ModulePrefixes or modulePrefixesForDocument({ content=Source, lineIndex=nil })
    library_namespaces = { }
+   import_state = nil
 
    -- Helper to add a token (skips zero-length tokens)
    function addToken(TokenLine, TokenCol, TokenLen, TokenType, TokenMod)
@@ -647,6 +648,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
             end
          end
          addToken(line, str_start, col - str_start, 4, 0)  -- string
+         if import_state is 'path' then import_state = 'after_path' end
 
       -- Multiline string [[
       elseif c is '[' and pos + 1 < len and Source.sub(pos + 1, pos + 2) is '[' then
@@ -735,7 +737,20 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
          ident = Source.sub(start_pos, pos)
          ident_len = col - ident_start
 
-         if isRangeOperator(start_pos, pos, ident) then
+         if ident is 'import' then
+            addToken(line, ident_start, ident_len, 0, 0)
+            import_state = 'path'
+         elseif ident is 'version' and import_state is 'after_path' then
+            -- `version` is contextual: it is a keyword only after the single path in an import statement.
+            addToken(line, ident_start, ident_len, 0, 0)
+            import_state = 'version'
+         elseif ident is 'and' and import_state is 'version' then
+            addToken(line, ident_start, ident_len, 1, 0)
+         elseif ident is 'as' and (import_state is 'after_path' or import_state is 'version') then
+            addToken(line, ident_start, ident_len, 0, 0)
+            import_state = 'alias'
+         elseif isRangeOperator(start_pos, pos, ident) then
+            import_state = nil
             addToken(line, ident_start, ident_len, 1, 0)  -- range separator operator
          elseif ident is 'obj' then
             -- `obj` remains the public namespace except for the compiler-owned `obj<Class> { ... }` constructor.
@@ -958,8 +973,10 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
                line = probe_line
             end
          elseif FLUID_KEYWORDS[ident] then
+            if import_state then import_state = nil end
             addToken(line, ident_start, ident_len, 0, 0)  -- keyword
          elseif FLUID_OPERATORS[ident] then
+            if import_state and import_state != 'version' then import_state = nil end
             addToken(line, ident_start, ident_len, 1, 0)  -- operator
          elseif FLUID_CONSTANTS[ident] then
             addToken(line, ident_start, ident_len, 12, 4)  -- macro + readonly
@@ -974,6 +991,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
          elseif rx_starts_upper.test(ident) and rx_all_upper.test(ident) then
             addToken(line, ident_start, ident_len, 12, 4)  -- macro + readonly (CONSTANTS)
          else
+            if import_state then import_state = nil end
             -- Check if it's a function call (followed by parenthesis)
             -- Save all position state since skipWhitespace may cross newlines
             save_pos = pos
@@ -1004,7 +1022,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
             anno_name = Source.sub(name_pos, pos)
             token_type = 3
             token_mod = 0
-            if FLUID_PARSER_ANNOTATIONS[anno_name] then
+            if FLUID_PARSER_ANNOTATIONS[anno_name] or FLUID_COMPILATION_ANNOTATIONS[anno_name] then
                token_type = 12
                token_mod = 4
             elseif FLUID_KEYWORDS[anno_name] then
@@ -1280,6 +1298,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
          pos++
          col++
       else -- Skip other characters (punctuation, brackets, etc.)
+         if c is ',' and import_state then import_state = nil end
          pos++
          col++
       end

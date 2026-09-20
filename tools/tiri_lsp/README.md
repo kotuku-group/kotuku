@@ -77,7 +77,11 @@ Outline view showing:
 - Function scope (global/local/thunk)
 - Nested function support
 
-### Annotation Markers
+### Annotations
+
+The compilation-unit annotations `@Package(name="...", version="...")` and
+`@Dependencies(tiri="...", kotuku="...")` are recognised as semantic metadata, with dedicated highlighting and hover
+help. They are not attached to the next function in the document outline.
 
 Document symbols include annotation markers that appear directly before a function or thunk declaration.  The marker
 name is shown in the symbol detail, and `@Deprecated` is also reported with the LSP deprecated tag so supporting editors
@@ -99,6 +103,8 @@ used by Tiri tooling are:
 
 |Marker|Arguments|Purpose|
 |-|-|-|
+|`@Package`|`name:str`, `version:str`|Declares an importable package's canonical identity.|
+|`@Dependencies`|`tiri:str`, `kotuku:str`|Declares compilation-unit compatibility requirements.|
 |`@Deprecated`|`message:str`, `since:str`|Marks a function as deprecated.|
 |`@Override`|(none)|Documents that a function overrides another implementation.|
 |`@SuppressWarnings`|warning flags|Suppresses selected tooling warnings.|

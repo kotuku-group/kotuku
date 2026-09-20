@@ -10,7 +10,7 @@ rx_struct_new  = <{ regex.new("([\\w]+)\\s*=\\s*struct\\.new\\s*\\(\\s*['\"]([\\
 rx_struct_anno = <{ regex.new([[([A-Za-z_]\w*)\s*:\s*struct<\s*([A-Za-z_]\w*)\s*>]]) }>
 rx_struct_ctor = <{ regex.new([[([A-Za-z_]\w*)\s*=\s*struct<\s*([A-Za-z_]\w*)\s*>]]) }>
 
-extern lspUriToPath, maskNonCode
+extern lspUriToPath, maskNonCode, modulePrefixesForDocument, tokenizeTiri
 
 ----------------------------------------------------------------------------------------------------------------------
 
@@ -256,12 +256,23 @@ function formatKeywordHover(Keyword, KeywordDoc):str
 end
 
 function formatParserAnnotationHover(AnnotationName, AnnotationDoc):str
-   md = f'**@{AnnotationName}** _(Parser annotation)_\n\n'
+   annotation_kind = AnnotationDoc.kind or 'Parser annotation'
+   md = f'**@{AnnotationName}** _({annotation_kind})_\n\n'
    if AnnotationDoc.prototype?? then
       md ..= '```lua\n' .. AnnotationDoc.prototype .. '\n```\n\n'
    end
    md ..= AnnotationDoc.comment
    return md
+end
+
+function isContextualKeywordAt(TokenInfo:table, Doc:table):bool
+   for semantic_token in values(tokenizeTiri(Doc.content, modulePrefixesForDocument(Doc))) do
+      if semantic_token.line is TokenInfo.line and semantic_token.char is TokenInfo.startCol and
+            semantic_token.length is TokenInfo.endCol - TokenInfo.startCol then
+         return semantic_token.type is 0
+      end
+   end
+   return false
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -475,7 +486,7 @@ global function resolveHoverContent(TokenInfo, Doc, Position):str
    context = TokenInfo.context
 
    -- Check for keywords
-   if glDefs?.keywords?[token] then
+   if glDefs?.keywords?[token] and (token != 'version' or isContextualKeywordAt(TokenInfo, Doc)) then
       return formatKeywordHover(token, glDefs.keywords[token])
    end
 

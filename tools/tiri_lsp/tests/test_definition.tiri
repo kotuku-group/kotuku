@@ -118,6 +118,13 @@ end
    assertUriContains(locations, '/scripts/json.tiri', 'Aliased import should still resolve its script target')
 end
 
+@Test function VersionedImportScriptResolution()
+   doc = makeDoc("import 'json' version >= \"1\" and < \"2\" as jsonLib\n")
+   locations = resolveDefinition(doc, { line = 0, character = 9 })
+   assertUriContains(locations, '/scripts/json.tiri',
+      'A version clause should not interfere with import target navigation')
+end
+
 @Test function ExplicitLocalImportDoesNotFallbackToSdk()
    doc = makeDoc("import './json'\n")
    locations = resolveDefinition(doc, { line = 0, character = 10 })
