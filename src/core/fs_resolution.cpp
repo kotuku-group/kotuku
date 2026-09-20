@@ -15,11 +15,38 @@ Name: Files
 
 static std::optional<std::string> true_path(CSTRING Path, RSF Flags)
 {
-#ifdef _WIN32
-   if ((Flags & RSF::NO_FOLLOW) IS RSF::NIL) {
-      std::string final_path;
-      if (winGetFinalPathName(Path, final_path)) return std::make_optional<std::string>(std::move(final_path));
+   if ((Flags & RSF::NO_FOLLOW) != RSF::NIL) {
+      const std::string_view source(Path);
+      const bool trailing_separator = source.ends_with('/') or source.ends_with('\\');
+
+      std::error_code error;
+      std::filesystem::path path(Path);
+      while (path.filename().empty() and (path != path.root_path())) path = path.parent_path();
+
+      auto filename = path.filename();
+      std::filesystem::path resolved;
+      if (filename.empty() or (filename IS ".") or (filename IS "..")) {
+         resolved = std::filesystem::weakly_canonical(path, error);
+      }
+      else {
+         auto parent = path.parent_path();
+         if (parent.empty()) parent = ".";
+         parent = std::filesystem::weakly_canonical(parent, error);
+         if (not error) resolved = parent / filename;
+      }
+
+      if (error or resolved.empty()) return std::nullopt;
+      resolved.make_preferred();
+      auto result = resolved.string();
+      if (trailing_separator and (not result.ends_with('/')) and (not result.ends_with('\\'))) {
+         result += std::filesystem::path::preferred_separator;
+      }
+      return std::make_optional<std::string>(std::move(result));
    }
+
+#ifdef _WIN32
+   std::string final_path;
+   if (winGetFinalPathName(Path, final_path)) return std::make_optional<std::string>(std::move(final_path));
 
    // Missing paths cannot be opened for final-name resolution.  Preserve lexical canonicalisation for callers using
    // RSF::NO_FILE_CHECK so that they can resolve destinations before creating them.
@@ -39,17 +66,6 @@ static std::optional<std::string> true_path(CSTRING Path, RSF Flags)
 
    return std::nullopt;
 #else
-   if ((Flags & RSF::NO_FOLLOW) != RSF::NIL) {
-      std::error_code error;
-      auto path = std::filesystem::absolute(Path, error).lexically_normal().string();
-      if (error or path.empty()) return std::nullopt;
-
-      const std::string_view source(Path);
-      const bool trailing_separator = source.ends_with('/') or source.ends_with('\\');
-      if (trailing_separator and (not path.ends_with('/')) and (not path.ends_with('\\'))) path += '/';
-      return std::make_optional<std::string>(std::move(path));
-   }
-
    if (char *rp = realpath(Path, nullptr)) {
       std::string p(rp);
       free(rp);
@@ -225,7 +241,11 @@ ERR ResolvePath(const std::string_view &pPath, RSF Flags, std::string *Result)
       else {
          #ifdef _WIN32 // UNC network path check
             if (((dest[0] IS '\\') and (dest[1] IS '\\')) or ((dest[0] IS '/') and (dest[1] IS '/'))) {
-               if (Result) Result->assign(dest);
+               if (Result) {
+                  auto tp = true_path(dest.c_str(), Flags);
+                  if (tp.has_value()) Result->assign(tp.value());
+                  else Result->assign(dest);
+               }
                return ERR::Okay;
             }
          #endif

@@ -2297,7 +2297,7 @@ static DWORD win_rename_file(CSTRING OldName, CSTRING NewName)
       if (glPosixRenameSupported.load(std::memory_order_relaxed)) {
          auto handle = CreateFileW(old_name.c_str(), DELETE,
             FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
-            FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+            FILE_FLAG_BACKUP_SEMANTICS|FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
          if (handle IS INVALID_HANDLE_VALUE) error = GetLastError();
          else {
             const size_t name_size = new_name.size() * sizeof(WCHAR);
