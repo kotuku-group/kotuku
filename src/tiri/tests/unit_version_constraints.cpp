@@ -91,6 +91,39 @@ bool injected_runtime_tests(kt::Log &Log)
       return false;
    }
 
+   VersionConstraint compatible_language;
+   RuntimeVersions later_runtime;
+   if (parse_version_constraint("1.0", compatible_language) or
+       parse_version("1.1", later_runtime.Tiri) or parse_version("2026.2.23", later_runtime.Kotuku) or
+       not check_requirements({ compatible_language, std::nullopt }, later_runtime)) {
+      Log.error("A later same-major Tiri runtime did not satisfy an unprefixed language requirement");
+      return false;
+   }
+
+   RuntimeVersions next_major_runtime;
+   if (parse_version("2.0", next_major_runtime.Tiri) or
+       parse_version("2026.2.23", next_major_runtime.Kotuku) or
+       check_requirements({ compatible_language, std::nullopt }, next_major_runtime)) {
+      Log.error("A different-major Tiri runtime satisfied an unprefixed language requirement");
+      return false;
+   }
+
+   VersionConstraint later_language;
+   if (parse_version_constraint("1.1", later_language) or
+       check_requirements({ later_language, std::nullopt }, runtime)) {
+      Log.error("An older Tiri runtime satisfied a later unprefixed language requirement");
+      return false;
+   }
+
+   VersionConstraint exact_kotuku;
+   RuntimeVersions later_kotuku;
+   if (parse_version_constraint("2026.2.23", exact_kotuku) or
+       parse_version("1.0", later_kotuku.Tiri) or parse_version("2026.2.24", later_kotuku.Kotuku) or
+       check_requirements({ std::nullopt, exact_kotuku }, later_kotuku)) {
+      Log.error("The Tiri compatibility rule was incorrectly applied to an unprefixed Kotuku requirement");
+      return false;
+   }
+
    return true;
 }
 

@@ -11861,6 +11861,7 @@ static bool test_versioned_import_syntax(kt::Log &Log)
       "import 'tests/versioned-package' version \"1.10\"\nreturn versioned_package.value",
       "import 'tests/versioned-package' version >= \"1.0\" and < \"2\"\nreturn versioned_package.value",
       "import 'tests/versioned-package' version > \"1.1\" and <= \"1.10\" as selected\nreturn selected.value",
+      "import 'tests/versioned-package'\nversion = \"dev\"\nreturn version",
       "version = 1\nreturn version"
    };
    for (auto source : accepted) {

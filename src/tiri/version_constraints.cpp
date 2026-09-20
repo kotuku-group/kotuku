@@ -312,6 +312,34 @@ bool satisfies(const Version &Running, const VersionConstraint &Constraint,
 }
 
 //********************************************************************************************************************
+// Determines whether a running Tiri version meets its language-contract constraint.  An unprefixed requirement
+// accepts later versions within the same major language version; explicit comparison operators retain their normal
+// numeric meanings.
+
+static bool satisfies_tiri(const Version &Running, const VersionConstraint &Constraint,
+   const VersionComparison **Failed) noexcept
+{
+   if (Failed) *Failed = nullptr;
+
+   for (const auto &comparison : Constraint.Comparisons) {
+      bool compatible;
+      if (comparison.Operator IS VersionOperator::Exact) {
+         compatible = not Running.Components.empty() and not comparison.Required.Components.empty() and
+            Running.Components.front() IS comparison.Required.Components.front() and
+            Running.compare(comparison.Required) >= 0;
+      }
+      else compatible = satisfies(Running, comparison);
+
+      if (not compatible) {
+         if (Failed) *Failed = &comparison;
+         return false;
+      }
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
 // Returns the parsed Tiri and Kōtuku versions of the running environment.
 
 const RuntimeVersions &runtime_versions() noexcept
@@ -335,7 +363,7 @@ bool check_requirements(const DependencyRequirements &Requirements, const Runtim
    if (Failure) *Failure = {};
    const VersionComparison *failed = nullptr;
 
-   if (Requirements.Tiri and not satisfies(Runtime.Tiri, *Requirements.Tiri, &failed)) {
+   if (Requirements.Tiri and not satisfies_tiri(Runtime.Tiri, *Requirements.Tiri, &failed)) {
       if (Failure) *Failure = { "tiri", &*Requirements.Tiri, failed, &Runtime.Tiri, Owner };
       return false;
    }

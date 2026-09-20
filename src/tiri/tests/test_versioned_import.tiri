@@ -1,6 +1,7 @@
 include 'core'
 
 local glRoot
+local glRunID = 0
 
 function write_file(Name:str, Content:str)
    local file <close> = obj.new('file', { path=glRoot .. Name, flags=FL_NEW|FL_WRITE })
@@ -32,6 +33,10 @@ end
 
 function run(Source:str, Trace:bool):<num, str>
    local output = ''
+   local source_name = f'run_{glRunID}.tiri'
+   local source_path = glRoot .. source_name
+   glRunID++
+   write_file(source_name, Source)
    local executable = processing.task().processPath .. 'origo'
    if mSys.GetSystemState().platform is 'Windows' then executable ..= '.exe' end
    local task <close> = obj.new('task', {
@@ -39,8 +44,7 @@ function run(Source:str, Trace:bool):<num, str>
       outputCallback=function(Task, Buffer) output ..= Buffer.getString() end,
       errorCallback=function(Task, Buffer) output ..= Buffer.getString() end
    })
-   check task.mtAddArgument('--statement')
-   check task.mtAddArgument(Source)
+   check task.mtAddArgument(source_path)
    check task.mtAddArgument(Trace ? '--log-trace' : '--log-warning')
    check task.mtAddArgument('--gfx-driver=headless')
    check task.mtAddArgument('--set-volume')

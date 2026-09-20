@@ -1907,7 +1907,8 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
    this->ctx.tokens().advance();  // consume string
 
    std::optional<tiri::PackageImportRequirement> import_requirement;
-   if (contextual_identifier(this->ctx.tokens().current(), "version")) {
+   if (contextual_identifier(this->ctx.tokens().current(), "version") and
+       this->ctx.tokens().current().span().line.lineNumber() IS path_token.span().line.lineNumber()) {
       if (not AllowAlias) {
          return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
             "Version clauses are permitted only on single-item imports");
