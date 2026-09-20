@@ -43,6 +43,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
    module_prefixes = ModulePrefixes or modulePrefixesForDocument({ content=Source, lineIndex=nil })
    library_namespaces = { }
    import_state = nil
+   import_path_line = nil
 
    -- Helper to add a token (skips zero-length tokens)
    function addToken(TokenLine, TokenCol, TokenLen, TokenType, TokenMod)
@@ -547,6 +548,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
    while pos < len do
       skipWhitespace()
       if pos >= len then break end
+      if import_state and import_path_line != nil and line != import_path_line then import_state = nil end
 
       c = Source.sub(pos, pos + 1)
       start_col = col
@@ -648,7 +650,10 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
             end
          end
          addToken(line, str_start, col - str_start, 4, 0)  -- string
-         if import_state is 'path' then import_state = 'after_path' end
+         if import_state is 'path' then
+            import_state = 'after_path'
+            import_path_line = line
+         end
 
       -- Multiline string [[
       elseif c is '[' and pos + 1 < len and Source.sub(pos + 1, pos + 2) is '[' then
@@ -740,6 +745,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
          if ident is 'import' then
             addToken(line, ident_start, ident_len, 0, 0)
             import_state = 'path'
+            import_path_line = nil
          elseif ident is 'version' and import_state is 'after_path' then
             -- `version` is contextual: it is a keyword only after the single path in an import statement.
             addToken(line, ident_start, ident_len, 0, 0)

@@ -142,6 +142,16 @@ end
    assertNoToken(tokens, 3, 0, 'version', 'version should remain an ordinary identifier outside imports.')
 end
 
+@Test function ImportVersionContextDoesNotCrossLines()
+   source = "import 'json'\n" ..
+      'version = "ordinary identifier"\n'
+
+   tokens = tokenizeTiri(source)
+
+   assertNoToken(tokens, 1, 0, 'version',
+      'version on the line after an unversioned import should remain an ordinary identifier.')
+end
+
 @Test function ModuleDeclarationsReceiveContextualSemanticTokens()
    source = 'module core as runtimeCore\n' ..
       'runtimeCore.PreciseTime()\n' ..

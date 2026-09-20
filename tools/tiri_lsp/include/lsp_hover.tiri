@@ -55,8 +55,11 @@ global function getTokenAtPosition(Doc:table, Line:num, Character:num):table
    context = 'identifier'
    precedingIdent = nil
 
+   if startCol > 0 and lineText.sub(startCol - 1, startCol) is '@' then
+      context = 'annotation'
+
    -- Check for preceding dot (field access or method call)
-   if startCol > 0 then
+   elseif startCol > 0 then
       beforeStart = startCol - 1
 
       -- Skip whitespace
@@ -491,7 +494,7 @@ global function resolveHoverContent(TokenInfo, Doc, Position):str
    end
 
    -- Check parser intrinsic annotations
-   if glDefs?.parserAnnotations?[token] then
+   if context is 'annotation' and glDefs?.parserAnnotations?[token] then
       return formatParserAnnotationHover(token, glDefs.parserAnnotations[token])
    end
 

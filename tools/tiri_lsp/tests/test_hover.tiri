@@ -84,6 +84,16 @@ end
    assertContains(hover, 'Tiri-language and Kotuku-runtime', '@Dependencies hover should explain its domains.')
 end
 
+@Test function CompilationUnitAnnotationHoverRequiresAtPrefix()
+   source = 'function Package():str\n   return "ordinary"\nend\n\nresult = Pack|age()\n'
+   hover, token = hoverAt(source)
+
+   assert(token and token.text is 'Package', 'Hover token extraction should identify the Package function call.')
+   assertContains(hover, 'Package():str', 'An ordinary Package function should retain its function hover.')
+   assert(not hover.find('Compilation-unit annotation', 0, true),
+      'An ordinary Package identifier should not receive compilation-unit annotation hover.')
+end
+
 @Test function ImportVersionHoverIsContextual()
    hover, token = hoverAt("import 'sample-package' ver|sion >= \"1\"\n")
    assert(token and token.text is 'version', 'Hover token extraction should identify import version.')

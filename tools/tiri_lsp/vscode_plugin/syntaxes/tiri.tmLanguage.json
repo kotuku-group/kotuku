@@ -28,8 +28,14 @@
                "end": "$",
                "patterns": [
                   { "include": "#comments" },
+                  {
+                     "match": "(\\G\\s*)('(?:\\\\.|[^'\\\\])*'|\"(?:\\\\.|[^\"\\\\])*\")(\\s+)(version)\\b",
+                     "captures": {
+                        "2": { "name": "string.quoted.tiri" },
+                        "4": { "name": "keyword.other.version.tiri" }
+                     }
+                  },
                   { "include": "#strings" },
-                  { "name": "keyword.other.version.tiri", "match": "\\bversion\\b" },
                   { "name": "keyword.other.alias.tiri", "match": "\\bas\\b" },
                   { "name": "keyword.operator.logical.tiri", "match": "\\band\\b" },
                   { "name": "keyword.operator.comparison.tiri", "match": "<=|>=|<|>" }
