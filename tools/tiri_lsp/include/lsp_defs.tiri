@@ -202,7 +202,12 @@ glKeywords = {
    },
    ['import'] = {
       comment = 'Inlines one or more Tiri script libraries at parse time. List entries must be string literals; ' ..
-         'use ./ or ../ for local libraries. The as alias form is only valid for single imports.'
+         'use ./ or ../ for local libraries. A single non-local import may add an exact or comparative version ' ..
+         'constraint before its optional as alias.'
+   },
+   ['version'] = {
+      comment = 'Introduces a package-version constraint in a single non-local import. It is contextual and remains ' ..
+         'available as an ordinary identifier elsewhere.'
    },
    ['as'] = { comment = 'Introduces a local alias for an imported library namespace.' },
 
@@ -241,6 +246,18 @@ glKeywords = {
 -- Parser Intrinsic Annotations
 
 glParserAnnotations = {
+   ['Package'] = {
+      kind = 'Compilation-unit annotation',
+      comment = 'Declares the canonical package name and version for an importable package entry point. It must be ' ..
+         'the first non-comment construct in the compilation unit.',
+      prototype = '@Package(name="package-name", version="1.0")'
+   },
+   ['Dependencies'] = {
+      kind = 'Compilation-unit annotation',
+      comment = 'Declares optional Tiri-language and Kotuku-runtime version requirements for the compilation unit. ' ..
+         'When @Package is present, @Dependencies must follow it.',
+      prototype = '@Dependencies(tiri="1.0", kotuku=">=2026.9.19")'
+   },
    ['FunctionName'] = {
       comment = 'Expands at parse time to the current function name as a string.  Top-level code resolves to ' ..
          '"Main"; anonymous functions resolve to "Anonymous".',

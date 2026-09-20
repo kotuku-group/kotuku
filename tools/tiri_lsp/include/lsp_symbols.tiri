@@ -125,6 +125,13 @@ function symbolMergeAnnotations(Left:array<table>, Right:array<table>):array<tab
    return merged
 end
 
+function symbolHasCompilationUnitAnnotation(Annotations:array<table>):bool
+   for anno in values(Annotations or array<table>) do
+      if anno.name is 'Package' or anno.name is 'Dependencies' then return true end
+   end
+   return false
+end
+
 function symbolSkipSpaces(Text:str, Pos:num):num
    while Pos < #Text do
       c = Text.sub(Pos, Pos + 1)
@@ -486,7 +493,12 @@ global function extractDocumentSymbols(Doc:table):array<table>
          symbol_code = line_code.sub(annotation_end)
 
          if rx_symbol_trim.extract(symbol_code) is '' then
-            pending_annotations = line_annotations
+            -- Package metadata belongs to the compilation unit and must never decorate the next function symbol.
+            if symbolHasCompilationUnitAnnotation(line_annotations) then
+               pending_annotations = array<table>
+            else
+               pending_annotations = line_annotations
+            end
             continue
          end
       end

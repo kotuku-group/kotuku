@@ -72,6 +72,40 @@ end
    assertContains(hover, 'Parser annotation', 'Parser annotation hover should identify the symbol kind.')
 end
 
+@Test function CompilationUnitAnnotationHover()
+   hover, token = hoverAt('@Pack|age(name="sample-package", version="1.0")\n')
+
+   assert(token and token.text is 'Package', 'Hover token extraction should identify @Package.')
+   assertContains(hover, 'Compilation-unit annotation', '@Package hover should identify semantic metadata.')
+   assertContains(hover, 'canonical package name and version', '@Package hover should explain its purpose.')
+
+   hover, token = hoverAt('@Depend|encies(tiri="1.0")\n')
+   assert(token and token.text is 'Dependencies', 'Hover token extraction should identify @Dependencies.')
+   assertContains(hover, 'Tiri-language and Kotuku-runtime', '@Dependencies hover should explain its domains.')
+end
+
+@Test function CompilationUnitAnnotationHoverRequiresAtPrefix()
+   source = 'function Package():str\n   return "ordinary"\nend\n\nresult = Pack|age()\n'
+   hover, token = hoverAt(source)
+
+   assert(token and token.text is 'Package', 'Hover token extraction should identify the Package function call.')
+   assertContains(hover, 'Package():str', 'An ordinary Package function should retain its function hover.')
+   assert(not hover.find('Compilation-unit annotation', 0, true),
+      'An ordinary Package identifier should not receive compilation-unit annotation hover.')
+end
+
+@Test function ImportVersionHoverIsContextual()
+   hover, token = hoverAt("import 'sample-package' ver|sion >= \"1\"\n")
+   assert(token and token.text is 'version', 'Hover token extraction should identify import version.')
+   assertContains(hover, '**version** _(Keyword)_', 'A versioned import should provide contextual keyword hover.')
+
+   hover, token = hoverAt('local ver|sion = "1"\n')
+   assert(not hover, 'An ordinary variable named version should not receive keyword hover.')
+
+   hover, token = hoverAt("import 'json'; ver|sion = 'ordinary'\n")
+   assert(not hover, 'A variable after a semicolon-delimited import should not receive keyword hover.')
+end
+
 @Test function DeclaredModuleFunctionHover()
    hover, token = hoverAt("module core as runtimeCore\nruntimeCore.Res|olvePath('test:')\n")
 

@@ -303,6 +303,12 @@ global FLUID_PARSER_ANNOTATIONS = {
    ['SourceLine'] = true
 }
 
+-- Compilation-unit annotations are semantic metadata rather than executable function annotations.
+global FLUID_COMPILATION_ANNOTATIONS = {
+   ['Package'] = true,
+   ['Dependencies'] = true
+}
+
 -- Built-in functions (default library)
 global FLUID_BUILTINS = {
    -- Output

@@ -196,6 +196,19 @@ end
    assert(value_args.detail.find('@Tag', 0, true), 'Inline value annotation detail should include @Tag.')
 end
 
+@Test function CompilationUnitAnnotationsDoNotDecorateFunctions()
+   doc = makeDoc('@Package(name="sample-package", version="1.0")\n' ..
+      '@Dependencies(tiri="1.0")\n' ..
+      'function initialise()\nend\n')
+   initialise = findSymbol(extractDocumentSymbols(doc), 'initialise')
+
+   assert(initialise, 'A function after compilation-unit metadata should remain visible.')
+   assert(not initialise.detail or not initialise.detail.find('@Package', 0, true),
+      '@Package must not be attached to the following function symbol.')
+   assert(not initialise.detail or not initialise.detail.find('@Dependencies', 0, true),
+      '@Dependencies must not be attached to the following function symbol.')
+end
+
 @Test function IgnoresCommentsStringsAndTableKeys()
    doc = makeDoc([[
 -- function commentOnly()
