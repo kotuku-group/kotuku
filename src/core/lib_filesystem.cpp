@@ -63,6 +63,7 @@ typedef int HANDLE;
 #include <memory>
 #include <bit>
 #include <chrono>
+#include <filesystem>
 
 #ifdef _WIN32
  #include <io.h>
@@ -854,7 +855,7 @@ ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback)
    if (Path.ends_with(':')) return DeleteVolume(Path);
 
    std::string resolve;
-   if (!ResolvePath(Path, RSF::NIL, &resolve)) {
+   if (!ResolvePath(Path, RSF::NO_FOLLOW, &resolve)) {
       auto vd = get_fs(resolve);
       if (vd.Delete) return vd.Delete(resolve, Callback);
       else return ERR::NoSupport;
@@ -1571,8 +1572,10 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
    log.traceBranch("\"%s\" to \"%s\"", Source.data(), Dest.data());
 
    std::string src, dest;
-   if ((error = ResolvePath(Source, RSF::NIL, &src)) != ERR::Okay) return ERR::FileNotFound;
-   if ((error = ResolvePath(Dest, RSF::NO_FILE_CHECK, &dest)) != ERR::Okay) return ERR::ResolvePath;
+   const auto source_flags = Move ? RSF::NO_FOLLOW : RSF::NIL;
+   const auto dest_flags = Move ? RSF::NO_FILE_CHECK|RSF::NO_FOLLOW : RSF::NO_FILE_CHECK;
+   if ((error = ResolvePath(Source, source_flags, &src)) != ERR::Okay) return ERR::FileNotFound;
+   if ((error = ResolvePath(Dest, dest_flags, &dest)) != ERR::Okay) return ERR::ResolvePath;
 
    auto srcvirtual  = get_fs(src);
    auto destvirtual = get_fs(dest);
@@ -1759,7 +1762,7 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
 
          unlink(dest.c_str()); // Remove any existing file first
 
-         if (not symlink(linkto, dest.c_str())) return ERR::Okay;
+         if (not symlink(linkto, dest.c_str())) error = ERR::Okay;
          else {
             // On failure, it may be possible that precursing folders need to be created for the link.  Do this here and then try
             // creating the link a second time.

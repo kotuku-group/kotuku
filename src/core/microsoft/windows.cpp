@@ -68,6 +68,7 @@ constexpr int MAX_ENV_VALUE = 512;
 #include <cstring>
 #include <vector>
 
+static std::string win_wide_to_utf8(const wchar_t *Text);
 static std::wstring win_utf8_to_wide(std::string_view Text);
 
 #define WAITLOCK_EVENTS 1 // Use events instead of semaphores for waitlocks (recommended)
@@ -1525,6 +1526,44 @@ extern "C" int winGetFullPathName(const char *Path, int PathLength, char *Output
 
 //********************************************************************************************************************
 
+extern "C" int winGetFinalPathName(CSTRING Path, std::string &Result)
+{
+   if ((not Path) or (not Path[0])) return 0;
+
+   auto path = win_utf8_to_wide(Path);
+   if (path.empty()) return 0;
+
+   const bool trailing_separator = path.ends_with('/') or path.ends_with('\\');
+
+   auto handle = CreateFileW(path.c_str(), 0, FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE, nullptr,
+      OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+   if (handle IS INVALID_HANDLE_VALUE) return 0;
+
+   constexpr DWORD flags = FILE_NAME_NORMALIZED | VOLUME_NAME_DOS;
+   const DWORD required = GetFinalPathNameByHandleW(handle, nullptr, 0, flags);
+   if (not required) {
+      CloseHandle(handle);
+      return 0;
+   }
+
+   std::wstring final_path(required, 0);
+   const DWORD written = GetFinalPathNameByHandleW(handle, final_path.data(), DWORD(final_path.size()), flags);
+   CloseHandle(handle);
+   if ((not written) or (written >= final_path.size())) return 0;
+
+   final_path.resize(written);
+   std::string result = win_wide_to_utf8(final_path.c_str());
+   if (result.starts_with("\\\\?\\UNC\\")) result.replace(0, 8, "\\\\");
+   else if (result.starts_with("\\\\?\\")) result.erase(0, 4);
+   if (result.empty()) return 0;
+   if (trailing_separator and (not result.ends_with('/')) and (not result.ends_with('\\'))) result += '\\';
+
+   Result = std::move(result);
+   return 1;
+}
+
+//********************************************************************************************************************
+
 extern "C" int8_t winGetCommand(char *Path, char *Buffer, int BufferSize)
 {
    if (BufferSize < MAX_PATH+3) return 1;
@@ -2258,7 +2297,7 @@ static DWORD win_rename_file(CSTRING OldName, CSTRING NewName)
       if (glPosixRenameSupported.load(std::memory_order_relaxed)) {
          auto handle = CreateFileW(old_name.c_str(), DELETE,
             FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
-            FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+            FILE_FLAG_BACKUP_SEMANTICS|FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
          if (handle IS INVALID_HANDLE_VALUE) error = GetLastError();
          else {
             const size_t name_size = new_name.size() * sizeof(WCHAR);

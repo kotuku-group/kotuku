@@ -7,14 +7,50 @@ Name: Files
 // included by lib_filesystem.cpp
 
 //********************************************************************************************************************
-// Cleans up path strings such as "../../myfile.txt".  Note that for Linux, the targeted file/folder has to exist or
-// NULL will be returned.
+// Canonicalises native host paths.  Existing targets resolve symbolic links and Windows reparse points unless
+// RSF::NO_FOLLOW is set.  Windows falls back to lexical canonicalisation for missing targets; on Linux, a missing
+// target returns no result unless RSF::NO_FOLLOW is set.
 //
 // The Path must be resolved to the native OS format.
 
-static std::optional<std::string> true_path(CSTRING Path)
+static std::optional<std::string> true_path(CSTRING Path, RSF Flags)
 {
+   if ((Flags & RSF::NO_FOLLOW) != RSF::NIL) {
+      const std::string_view source(Path);
+      const bool trailing_separator = source.ends_with('/') or source.ends_with('\\');
+
+      std::error_code error;
+      std::filesystem::path path(Path);
+      while (path.filename().empty() and (path != path.root_path())) path = path.parent_path();
+
+      auto filename = path.filename();
+      std::filesystem::path resolved;
+      if (filename.empty() or (filename IS ".") or (filename IS "..")) {
+         resolved = std::filesystem::weakly_canonical(path, error);
+      }
+      else {
+         auto parent = path.parent_path();
+         if (parent.empty()) parent = ".";
+         parent = std::filesystem::weakly_canonical(parent, error);
+         if (not error) resolved = parent / filename;
+      }
+
+      if (error or resolved.empty()) return std::nullopt;
+      resolved.make_preferred();
+      auto result = resolved.string();
+      if (trailing_separator and (not result.ends_with('/')) and (not result.ends_with('\\'))) {
+         result += std::filesystem::path::preferred_separator;
+      }
+      return std::make_optional<std::string>(std::move(result));
+   }
+
 #ifdef _WIN32
+   std::string final_path;
+   if (winGetFinalPathName(Path, final_path)) return std::make_optional<std::string>(std::move(final_path));
+
+   // Missing paths cannot be opened for final-name resolution.  Preserve lexical canonicalisation for callers using
+   // RSF::NO_FILE_CHECK so that they can resolve destinations before creating them.
+
    std::string buffer;
    buffer.resize(256);
    while (true) {
@@ -95,7 +131,7 @@ blocking, path-resolved
 *********************************************************************************************************************/
 
 static ERR resolve(const std::string &, std::string &, RSF);
-static ERR resolve_path_env(std::string_view, std::string *);
+static ERR resolve_path_env(std::string_view, RSF, std::string *);
 static thread_local bool tlClassLoaded;
 
 ERR ResolvePath(const std::string_view &pPath, RSF Flags, std::string *Result)
@@ -148,7 +184,7 @@ ERR ResolvePath(const std::string_view &pPath, RSF Flags, std::string *Result)
       // (ideally with no leading folder references).
 
       if (((sep IS std::string::npos) or (Path[sep] != ':')) and ((Flags & RSF::PATH) != RSF::NIL)) {
-         if (!resolve_path_env(Path, Result)) return ERR::Okay;
+         if (!resolve_path_env(Path, Flags, Result)) return ERR::Okay;
       }
 
       if ((sep IS std::string::npos) or (Path[sep] != ':')) resolved = true;
@@ -169,7 +205,7 @@ ERR ResolvePath(const std::string_view &pPath, RSF Flags, std::string *Result)
 
       if (!Result) return ERR::Okay;
 
-      auto tp = true_path(dest.c_str());
+      auto tp = true_path(dest.c_str(), Flags);
       if (tp.has_value()) Result->assign(tp.value());
       else Result->assign(dest);
       return ERR::Okay;
@@ -205,7 +241,11 @@ ERR ResolvePath(const std::string_view &pPath, RSF Flags, std::string *Result)
       else {
          #ifdef _WIN32 // UNC network path check
             if (((dest[0] IS '\\') and (dest[1] IS '\\')) or ((dest[0] IS '/') and (dest[1] IS '/'))) {
-               if (Result) Result->assign(dest);
+               if (Result) {
+                  auto tp = true_path(dest.c_str(), Flags);
+                  if (tp.has_value()) Result->assign(tp.value());
+                  else Result->assign(dest);
+               }
                return ERR::Okay;
             }
          #endif
@@ -228,7 +268,7 @@ ERR ResolvePath(const std::string_view &pPath, RSF Flags, std::string *Result)
       }
 
       if (Result) {
-         auto tp = true_path(dest.c_str());
+         auto tp = true_path(dest.c_str(), Flags);
          if (tp.has_value()) Result->assign(tp.value());
          else Result->assign(dest);
       }
@@ -248,7 +288,7 @@ ERR ResolvePath(const std::string_view &pPath, RSF Flags, std::string *Result)
 
 #ifdef __unix__
 
-static ERR resolve_path_env(std::string_view RelativePath, std::string *Result)
+static ERR resolve_path_env(std::string_view RelativePath, RSF Flags, std::string *Result)
 {
    // If a path to the file isn't available, scan the PATH environment variable. In Unix the separator is :
 
@@ -268,7 +308,7 @@ static ERR resolve_path_env(std::string_view RelativePath, std::string *Result)
          if (!stat64(src.c_str(), &info)) {
             if (!S_ISDIR(info.st_mode)) { // Successfully identified file location
                if (Result) {
-                  auto tp = true_path(src.c_str());
+                  auto tp = true_path(src.c_str(), Flags);
                   if (tp.has_value()) Result->assign(tp.value());
                   else Result->assign(src);
                }
@@ -286,7 +326,7 @@ static ERR resolve_path_env(std::string_view RelativePath, std::string *Result)
 
 #elif _WIN32
 
-static ERR resolve_path_env(std::string_view RelativePath, std::string *Result)
+static ERR resolve_path_env(std::string_view RelativePath, RSF Flags, std::string *Result)
 {
    // If a path to the file isn't available, scan the PATH environment variable. In Windows the separator is ;
 
@@ -306,7 +346,7 @@ static ERR resolve_path_env(std::string_view RelativePath, std::string *Result)
          if (!stat64(src.c_str(), &info)) {
             if (!S_ISDIR(info.st_mode)) { // Successfully identified file location
                if (Result) {
-                  auto tp = true_path(src.c_str());
+                  auto tp = true_path(src.c_str(), Flags);
                   if (tp.has_value()) Result->assign(tp.value());
                   else Result->assign(src);
                }

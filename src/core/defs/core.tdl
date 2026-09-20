@@ -55,7 +55,8 @@ module({ name="Core", copyright="Paul Manias 1996-2026", timestamp=20241015,
     "APPROXIMATE: Ignores file extensions for the purpose of file name matching.",
     "NO_DEEP_SCAN: Do not perform more than one iteration when resolving the source file path.",
     "PATH: Use the `PATH` environment variable to resolve the file name in the `Path` parameter.",
-    "CASE_SENSITIVE: For use on host systems that use case-insensitive file systems such as Windows; this option checks that the discovered file is a case-sensitive match to the Path.")
+    "CASE_SENSITIVE: For use on host systems that use case-insensitive file systems such as Windows; this option checks that the discovered file is a case-sensitive match to the Path.",
+    "NO_FOLLOW: Preserve a final symbolic link or reparse point rather than replacing it with its target.")
 
   enums("STT", { type="int", start=1, comment="Types for StrDatatype()." },
     "NUMBER: The string represents a whole number.",

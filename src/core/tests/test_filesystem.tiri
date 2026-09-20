@@ -404,6 +404,19 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@Test; @Requires(windows_platform=true)
+function ResolveWindowsFolderCanonicalPath()
+   folder_path = glTempRoot .. 'resolve_windows_folder/'
+   ensureFolder(folder_path)
+
+   err, resolved_folder = mSys.ResolvePath(folder_path)
+   assert(err is ERR_Okay, 'ResolvePath() failed for a folder path: ' .. mSys.GetErrorMsg(err))
+   assert(resolved_folder.endsWith('/') or resolved_folder.endsWith('\\'),
+      'ResolvePath() should preserve a trailing separator on Windows folder paths.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Test function ResolvePathSpecialCases()
    err = mSys.ResolvePath('codex_missing_volume:missing.file')
    assert(err is ERR_Search, 'ResolvePath() should return ERR_Search for an unknown volume, got: ' .. mSys.GetErrorMsg(err))
@@ -703,6 +716,9 @@ end
    mSys.DeleteFile(target)
    writeFile(source, 'Linked file content')
 
+   err, lexical_target = mSys.ResolvePath(target, RSF_NO_FILE_CHECK|RSF_NO_FOLLOW)
+   assert(err is ERR_Okay, 'ResolvePath() failed to prepare the symbolic-link path: ' .. mSys.GetErrorMsg(err))
+
    err = mSys.CreateLink(target, source)
    if err is ERR_NoSupport then
       return 'Host platform does not support symbolic link creation.'
@@ -721,4 +737,85 @@ end
    err, resolved_target = mSys.ResolvePath(target)
    assert(err is ERR_Okay, 'ResolvePath() failed for the symbolic-link target: ' .. mSys.GetErrorMsg(err))
    assert(resolved_target is resolved_source, 'ResolvePath() did not follow the symbolic link to its final path.')
+
+   err, unresolved_target = mSys.ResolvePath(target, RSF_NO_FOLLOW)
+   assert(err is ERR_Okay, 'ResolvePath() with RSF_NO_FOLLOW failed: ' .. mSys.GetErrorMsg(err))
+   assert(unresolved_target is lexical_target, 'RSF_NO_FOLLOW did not preserve the symbolic-link path.')
+
+   err = mSys.DeleteFile(target)
+   assert(err is ERR_Okay, 'DeleteFile() failed to remove the symbolic link: ' .. mSys.GetErrorMsg(err))
+   assert(mSys.AnalysePath(target, nil) != ERR_Okay, 'DeleteFile() left the symbolic link in place.')
+   assert(readFile(source) is 'Linked file content', 'DeleteFile() removed the symbolic-link target.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function MoveSymbolicLink()
+   source = glTempRoot .. 'move_link_source.txt'
+   link = glTempRoot .. 'move_link_source.link'
+   moved_link = glTempRoot .. 'move_link_destination.link'
+
+   mSys.DeleteFile(link)
+   mSys.DeleteFile(moved_link)
+   writeFile(source, 'Move link content')
+
+   err = mSys.CreateLink(link, source)
+   if err is ERR_NoSupport then
+      return 'Host platform does not support symbolic link creation.'
+   end
+
+   if err is ERR_NoPermission then
+      return 'Symbolic link creation is blocked for the current user or host policy.'
+   end
+
+   assert(err is ERR_Okay, 'CreateLink() failed for the move test: ' .. mSys.GetErrorMsg(err))
+
+   err = mSys.MoveFile(link, moved_link)
+   assert(err is ERR_Okay, 'MoveFile() failed to move a symbolic link: ' .. mSys.GetErrorMsg(err))
+   assert(mSys.AnalysePath(link, nil) != ERR_Okay, 'MoveFile() left the source symbolic link in place.')
+   assert(readFile(moved_link) is 'Move link content', 'The moved symbolic link does not resolve to its target.')
+   assert(readFile(source) is 'Move link content', 'MoveFile() moved the link target instead of the link.')
+
+   err = mSys.DeleteFile(moved_link)
+   assert(err is ERR_Okay, 'DeleteFile() failed to remove the moved symbolic link: ' .. mSys.GetErrorMsg(err))
+   assert(readFile(source) is 'Move link content', 'Removing the moved link also removed its target.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test; @Requires(linux_platform=true)
+function ResolveNoFollowWithLinkedParent()
+   root = glTempRoot .. 'linked_parent/'
+   actual = root .. 'actual/'
+   child = actual .. 'child/'
+   link = root .. 'link'
+   lexical_victim = root .. 'victim.txt'
+   actual_victim = actual .. 'victim.txt'
+
+   mSys.DeleteFile(root)
+   ensureFolder(child)
+   writeFile(lexical_victim, 'Lexical victim')
+   writeFile(actual_victim, 'Actual victim')
+
+   err = mSys.CreateLink(link, child)
+   if err is ERR_NoSupport then
+      return 'Host platform does not support symbolic link creation.'
+   end
+
+   if err is ERR_NoPermission then
+      return 'Symbolic link creation is blocked for the current user or host policy.'
+   end
+
+   assert(err is ERR_Okay, 'CreateLink() failed for the linked-parent test: ' .. mSys.GetErrorMsg(err))
+
+   err, resolved = mSys.ResolvePath(link .. '/../victim.txt', RSF_NO_FOLLOW)
+   assert(err is ERR_Okay, 'ResolvePath() failed for a linked parent: ' .. mSys.GetErrorMsg(err))
+   err, expected = mSys.ResolvePath(actual_victim, RSF_NO_FOLLOW)
+   assert(err is ERR_Okay, 'ResolvePath() failed for the expected linked-parent path: ' .. mSys.GetErrorMsg(err))
+   assert(resolved is expected, 'RSF_NO_FOLLOW collapsed .. before resolving the linked parent.')
+
+   err = mSys.DeleteFile(link .. '/../victim.txt')
+   assert(err is ERR_Okay, 'DeleteFile() failed through a linked parent: ' .. mSys.GetErrorMsg(err))
+   assert(mSys.AnalysePath(actual_victim, nil) != ERR_Okay, 'DeleteFile() did not remove the link-resolved path.')
+   assert(readFile(lexical_victim) is 'Lexical victim', 'DeleteFile() removed the lexically normalised path.')
 end
