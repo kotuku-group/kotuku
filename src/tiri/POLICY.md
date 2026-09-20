@@ -67,6 +67,17 @@ The Tiri version number is exposed in the `_VERSION` string as `major.minor`.
 - **Tiri 2.0:** Removals and intentional incompatible semantic changes.
 - **Kōtuku release number:** states which Tiri version it implements, but does not replace the independent language version.
 
+## Dependency Declarations
+
+An unprefixed version in the `tiri` field of `@Dependencies` names the language contract that the source expects.  A
+runtime satisfies that declaration when it implements the same major language version and its minor version is at least
+the declared minor version.  Consequently, `tiri="1.0"` accepts compatible Tiri 1.1 and later 1.x runtimes, but rejects
+Tiri 0.x and 2.x runtimes.  A Tiri 1.0 runtime rejects `tiri="1.1"`.
+
+The comparison operators `<`, `<=`, `>` and `>=` retain their numeric meanings and may be used to state explicit bounds.
+This compatibility interpretation is specific to the Tiri language domain.  An unprefixed Kōtuku or package version is
+an exact requirement because those version domains do not inherit Tiri's same-major compatibility promise.
+
 ## Summary
 
 A conforming Tiri 1.x implementation shall continue to accept valid Tiri 1.0 source and preserve its documented observable behaviour. Compatible additions may be made in minor releases; incompatible changes and removal of deprecated facilities require a new major language version.

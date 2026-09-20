@@ -9,6 +9,9 @@
 --
 -- Decoded values are always strings.  Comments, source ordering and formatting are not preserved.
 
+@Package(name="config", version="1.0")
+@Dependencies(tiri="1.0")
+
    namespace config { }
 
 local rx_non_space = regex.new('[^ \\t]')

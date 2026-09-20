@@ -46,6 +46,7 @@
 #include "../static_type_descriptor.h"
 #include "../../../../import_module_format.h"
 #include "../../../../import_module_bundle.h"
+#include "../../../../version_constraints.h"
 
 class ParserDiagnostics;
 class InstalledImportInterface;
@@ -1106,6 +1107,7 @@ struct ImportEntryPayload {
    std::string default_namespace;              // The declared namespace for _LIB lookup
    std::unique_ptr<BlockStmt> inlined_body;    // Parsed content of imported file
    std::shared_ptr<ImportedModuleUnit> module_unit; // Shared definition for a non-local imported module
+   std::optional<tiri::PackageImportRequirement> package_requirement; // Constraint belonging to this import edge
    uint8_t file_source_idx = 0;                // FileSource index for this imported file
    bool module_initialiser = false;            // Execute body through a child prototype for non-local imports
    bool module_already_imported = false;       // Publish aliases without repeating an earlier module activation

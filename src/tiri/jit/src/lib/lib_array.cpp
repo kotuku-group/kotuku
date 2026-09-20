@@ -2317,7 +2317,7 @@ end
    setarrayV(L, L->top++, result);
 
    // All values remain rooted in this native frame and the bytecode call frame.  Only one C boundary per pipeline.
-   
+
    copyTV(L, L->top++, worker);
    lua_pushvalue(L, 1);
    lua_pushvalue(L, 2);

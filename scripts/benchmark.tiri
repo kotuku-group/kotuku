@@ -1,5 +1,8 @@
 -- Common interface for benchmarking
 
+@Package(name="benchmark", version="1.0")
+@Dependencies(tiri="1.0")
+
    import 'json'
 
    namespace bmark { }

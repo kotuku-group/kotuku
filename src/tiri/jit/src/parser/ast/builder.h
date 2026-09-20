@@ -27,7 +27,8 @@
 class AstBuilder {
 public:
    explicit AstBuilder(ParserContext& context, AstBuilder *Parent = nullptr, bool ModuleInitialiser = false,
-      std::optional<tiri::PackageIdentity> ExpectedPackage = std::nullopt);
+      std::optional<tiri::PackageIdentity> ExpectedPackage = std::nullopt,
+      std::optional<tiri::PackageImportRequirement> ImportRequirement = std::nullopt);
    ~AstBuilder();
 
    AstBuilder(const AstBuilder &) = delete;
@@ -66,6 +67,7 @@ private:
    std::optional<tiri::PackageIdentity> package_identity_;
    std::optional<tiri::DependencyRequirements> dependency_requirements_;
    std::optional<tiri::PackageIdentity> expected_package_;
+   std::optional<tiri::PackageImportRequirement> import_requirement_;
    SourceSpan package_declaration_span_{};
    AstBuilder *parent_builder = nullptr;
    std::vector<GCstr *> function_name_stack;
@@ -230,6 +232,8 @@ private:
    ParserResult<StmtNodePtr> parse_include_stmt();
    ParserResult<StmtNodePtr> parse_module_decl();
    ParserResult<ImportEntryPayload> parse_import_entry(const Token&, bool, bool * = nullptr);
+   ParserResult<tiri::PackageImportRequirement> parse_import_requirement(
+      const Token &, std::string_view, bool);
    ParserResult<StmtNodePtr> parse_import();
    ParserResult<StmtNodePtr> parse_namespace();
    ParserResult<std::unique_ptr<BlockStmt>> parse_imported_file(
@@ -237,7 +241,8 @@ private:
       tiri::import_cache::ModuleLookup *Lookup = nullptr,
       std::vector<FuncState::DependencyDescriptor> *ModuleDependencies = nullptr,
       std::optional<tiri::PackageIdentity> *DeclaredPackage = nullptr,
-      std::optional<tiri::DependencyRequirements> *DeclaredRequirements = nullptr);
+      std::optional<tiri::DependencyRequirements> *DeclaredRequirements = nullptr,
+      const std::optional<tiri::PackageImportRequirement> *ImportRequirement = nullptr);
    ParserResult<StmtNodePtr> parse_compile_if();
    void skip_to_compile_end();
    ParserResult<StmtNodePtr> parse_expression_stmt();
@@ -326,6 +331,6 @@ private:
 
    // Helper to map TokenKind to AssignmentOperator.
    // Returns std::nullopt if the token is not an assignment operator.
-   
+
    [[nodiscard]] static std::optional<AssignmentOperator> token_to_assignment_op(TokenKind Kind);
 };

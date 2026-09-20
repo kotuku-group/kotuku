@@ -1,5 +1,8 @@
 -- Common interface for querying git repositories
 
+@Package(name="git", version="1.0")
+@Dependencies(tiri="1.0")
+
    namespace git { }
 
 local rx_head = <{ regex.new('ref: refs/heads/(.+)') }>

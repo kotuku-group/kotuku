@@ -115,7 +115,7 @@ inline void collect_garbage(lua_State *Lua, bool Force = false)
    kt::Log log;
    log.traceBranch("Collecting garbage.");
    #endif
-   
+
    lua_gc(Lua, LUA_GCCOLLECT, 0);
 }
 

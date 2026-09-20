@@ -40,10 +40,12 @@ ParserResult<bool> AstBuilder::parse_compilation_unit_preamble()
                return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
                   "@Dependencies accepts only the named arguments 'tiri' and 'kotuku'");
             }
+
             if (value.type != AnnotationArgValue::Type::String or not value.string_literal) {
                return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
                   "@Dependencies arguments must be string literals");
             }
+
             const std::string text(strdata(value.string_value), value.string_value->len);
             tiri::VersionConstraint constraint;
             if (auto error = tiri::parse_version_constraint(text, constraint); error) {
@@ -51,6 +53,7 @@ ParserResult<bool> AstBuilder::parse_compilation_unit_preamble()
                   std::format("invalid {} version constraint at byte {}: {}", key_text, error.Offset,
                      tiri::version_error_text(error.Error)));
             }
+
             if (key_text IS "tiri") {
                if (have_tiri) return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
                   "@Dependencies contains a duplicate 'tiri' argument");
@@ -72,6 +75,7 @@ ParserResult<bool> AstBuilder::parse_compilation_unit_preamble()
                   failure.Domain, failure.Constraint->Original, failure.Running->Text,
                   tiri::comparison_text(*failure.Comparison)));
          }
+
          this->dependency_requirements_ = std::move(requirements);
          this->ctx.lex().dependency_requirements = this->dependency_requirements_;
          if (this->ctx.check(TokenKind::Annotate) and
@@ -79,6 +83,7 @@ ParserResult<bool> AstBuilder::parse_compilation_unit_preamble()
             return this->fail<bool>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
                "@Dependencies may not be combined with other annotations");
          }
+
          continue;
       }
 
@@ -86,10 +91,12 @@ ParserResult<bool> AstBuilder::parse_compilation_unit_preamble()
          return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
             "@Package must precede @Dependencies in the compilation-unit preamble");
       }
+
       if (this->package_identity_) {
          return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
             "@Package may be declared only once per compilation unit");
       }
+
       if (this->parent_builder and not this->module_initialiser) {
          return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
             "@Package is not permitted in a local source inclusion");
@@ -104,10 +111,12 @@ ParserResult<bool> AstBuilder::parse_compilation_unit_preamble()
             return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
                "@Package accepts only the named arguments 'name' and 'version'");
          }
+
          if (value.type != AnnotationArgValue::Type::String or not value.string_literal) {
             return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
                "@Package arguments must be string literals");
          }
+
          std::string text(strdata(value.string_value), value.string_value->len);
          if (key_text IS "name") {
             if (have_name) return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
@@ -122,6 +131,7 @@ ParserResult<bool> AstBuilder::parse_compilation_unit_preamble()
             have_version = true;
          }
       }
+
       if (not have_name or not have_version) {
          return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
             "@Package requires exactly one 'name' and one 'version' argument");
@@ -131,10 +141,12 @@ ParserResult<bool> AstBuilder::parse_compilation_unit_preamble()
          return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
             std::string("invalid package name: ") + std::string(tiri::package_validation_error_text(error)));
       }
+
       if (auto error = tiri::parse_package_version(identity.Version); error != tiri::PackageValidationError::OKAY) {
          return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
             std::string("invalid package version: ") + std::string(tiri::package_validation_error_text(error)));
       }
+
       if (this->expected_package_ and identity != *this->expected_package_) {
          return this->fail<bool>(ParserErrorCode::UnexpectedToken, declaration,
             std::format("package identity mismatch: expected '{}@{}', declared '{}@{}'",
@@ -150,10 +162,19 @@ ParserResult<bool> AstBuilder::parse_compilation_unit_preamble()
             "@Package may not be combined with other annotations");
       }
    }
+
    if (this->expected_package_ and not this->package_identity_) {
       return this->fail<bool>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
          std::format("package entry point must declare @Package(name=\"{}\", version=\"{}\")",
             this->expected_package_->Name, this->expected_package_->Version));
+   }
+
+   if (this->import_requirement_) {
+      tiri::PackageImportFailure failure;
+      if (not tiri::check_package_import(*this->import_requirement_, this->package_identity_, &failure)) {
+         return this->fail<bool>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+            tiri::package_import_error(*this->import_requirement_, this->package_identity_, failure));
+      }
    }
    return ParserResult<bool>::success(true);
 }

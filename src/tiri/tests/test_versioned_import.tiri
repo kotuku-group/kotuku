@@ -1,0 +1,162 @@
+include 'core'
+
+local glRoot
+local glRunID = 0
+
+function write_file(Name:str, Content:str)
+   local file <close> = obj.new('file', { path=glRoot .. Name, flags=FL_NEW|FL_WRITE })
+   check file.acWrite(Content)
+end
+
+@BeforeAll function setup()
+   local err, temp = mSys.ResolvePath('temp:', 0)
+   check err
+   glRoot = temp .. f'/versioned_import.tests_{processing.task().id}_{mSys.PreciseTime()}/'
+   local folder <close> = obj.new('file', { path=glRoot, flags=FL_NEW|FL_FOLDER })
+
+   write_file('versioned-pkg.tiri', [[
+      @Package(name="versioned-pkg", version="1.10")
+      namespace versioned_pkg { value=110 }
+   ]])
+   write_file('component-pkg.tiri', [[
+      @Package(name="component-pkg", version="1.0")
+      namespace component_pkg { value=10 }
+   ]])
+   write_file('missing-pkg.tiri', 'namespace missing_pkg { }')
+   write_file('wrong-pkg.tiri', '@Package(name="different-pkg", version="1.10")\nnamespace wrong_pkg { }')
+   write_file('broken-pkg.tiri', '@Package(name="broken-pkg", version="2")\nthis body is malformed')
+end
+
+@AfterAll function cleanup()
+   if glRoot then check mSys.DeleteFile(glRoot) end
+end
+
+function run(Source:str, Trace:bool):<num, str>
+   local output = ''
+   local source_name = f'run_{glRunID}.tiri'
+   local source_path = glRoot .. source_name
+   glRunID++
+   write_file(source_name, Source)
+   local executable = processing.task().processPath .. 'origo'
+   if mSys.GetSystemState().platform is 'Windows' then executable ..= '.exe' end
+   local task <close> = obj.new('task', {
+      location=executable, flags=TSF_WAIT, timeout=20,
+      outputCallback=function(Task, Buffer) output ..= Buffer.getString() end,
+      errorCallback=function(Task, Buffer) output ..= Buffer.getString() end
+   })
+   check task.mtAddArgument(source_path)
+   check task.mtAddArgument(Trace ? '--log-trace' : '--log-warning')
+   check task.mtAddArgument('--gfx-driver=headless')
+   check task.mtAddArgument('--set-volume')
+   check task.mtAddArgument('scripts=' .. glRoot)
+   check task.mtAddArgument('--set-volume')
+   check task.mtAddArgument('temp=' .. glRoot)
+   check task.acActivate()
+   return task.returnCode, output
+end
+
+function assert_success(Source:str, Marker:str)
+   local code, output = run(Source, false)
+   assert(code is 0 and output.find(Marker, 0, true) != nil, output)
+end
+
+function assert_failure(Source:str, Message:str):str
+   local code, output = run(Source, false)
+   assert(code != 0, 'Source unexpectedly succeeded: ' .. Source .. '\n' .. output)
+   assert(output.find(Message, 0, true) != nil,
+      f"Expected diagnostic '{Message}' for {Source}, got: {output}")
+   return output
+end
+
+@Test function ExactRangesAliasesAndOrdering()
+   assert_success([[import 'versioned-pkg' version "1.10" as selected
+      print('VERSIONED:' .. tostring(selected.value))]], 'VERSIONED:110')
+   assert_success([[import 'versioned-pkg' version > "1.1" and >= "1.0" and <= "1.10" and < "2"
+      print('BOUNDED:' .. tostring(versioned_pkg.value))]], 'BOUNDED:110')
+   assert_success([[import 'component-pkg' version > "1"
+      print('COMPONENT:' .. tostring(component_pkg.value))]], 'COMPONENT:10')
+   assert_failure([[import 'component-pkg' version "1"]], 'fails comparison 1')
+end
+
+@Test function FailedOperatorsAndMetadata()
+   local cases = {
+      { [[import 'versioned-pkg' version < "1.10"]], 'fails comparison <1.10' },
+      { [[import 'versioned-pkg' version <= "1.1"]], 'fails comparison <=1.1' },
+      { [[import 'versioned-pkg' version > "1.10"]], 'fails comparison >1.10' },
+      { [[import 'versioned-pkg' version >= "1.11"]], 'fails comparison >=1.11' },
+      { [[import 'missing-pkg' version "1"]], 'requires @Package metadata' },
+      { [[import 'wrong-pkg' version "1.10"]], "loaded package 'different-pkg@1.10'" }
+   }
+   for case in values(cases) do assert_failure(case[0], case[1]) end
+end
+
+@Test function SyntaxRestrictionsAndPreamblePriority()
+   local cases = {
+      { [[import './versioned-pkg' version "1.10"]], 'Local imports do not support version clauses' },
+      { [[import 'versioned-pkg', 'component-pkg' version "1.0"]],
+         'Version clauses are permitted only on single-item imports' },
+      { [[import 'versioned-pkg' version "1.10", 'component-pkg']],
+         'Version clauses are permitted only on single-item imports' },
+      { [[import 'versioned-pkg' version >= 1]], 'requires a string literal' },
+      { [[import 'versioned-pkg' version >= "1" < "2"]],
+         "separated by 'and'" },
+      { [[import 'versioned-pkg' version "1" and < "2"]], 'exact version clause' },
+      { [[import 'versioned-pkg' as selected version "1.10"]], "must precede the 'as' alias" }
+   }
+   for case in values(cases) do assert_failure(case[0], case[1]) end
+
+   local output = assert_failure([[import 'broken-pkg' version < "2"]],
+      'loaded version 2 fails comparison <2')
+   assert(output.find('malformed', 0, true) is nil, 'The imported body was parsed before package validation: ' .. output)
+end
+
+@Test function ReusedDefinitionsRecheckEveryEdge()
+   assert_failure([[import 'versioned-pkg'
+      import 'versioned-pkg' version >= "2"]], 'fails comparison >=2')
+   assert_failure([[import 'versioned-pkg' version >= "1"
+      import 'versioned-pkg' version > "2"]], 'fails comparison >2')
+end
+
+@Test function ColdAndWarmCacheParity()
+   local source = [[import 'versioned-pkg' version >= "1" and < "2"
+      print('CACHE-VERSIONED')]]
+   local code, output = run(source, true)
+   assert(code is 0 and output.find('CACHE-VERSIONED', 0, true) != nil, output)
+   code, output = run(source, true)
+   assert(code is 0 and output.find('CACHE-VERSIONED', 0, true) != nil and
+      output.find('Imported-module validation: hits=1', 0, true) != nil,
+      'A fresh process did not enforce a compatible constraint through the warm cache: ' .. output)
+
+   output = assert_failure([[import 'versioned-pkg' version >= "2"]], 'fails comparison >=2')
+end
+
+@Test function ActiveRuntimeReuseRechecksConstraint()
+   local runner = glRoot .. 'active-reuse.tiri'
+   local file <close> = obj.new('file', { path=runner, flags=FL_NEW|FL_WRITE })
+   check file.acWrite([[
+      exec("import 'versioned-pkg' version \"1.10\"")
+      try
+         exec("import 'versioned-pkg' version >= \"2\"")
+         raise 'incompatible active import succeeded'
+      except e
+         assert(e.message.find('fails comparison >=2', 0, true) != nil, e.message)
+         print('ACTIVE-REUSE-CHECKED')
+      end
+   ]])
+   file = nil
+
+   local output = ''
+   local executable = processing.task().processPath .. 'origo'
+   if mSys.GetSystemState().platform is 'Windows' then executable ..= '.exe' end
+   local task <close> = obj.new('task', {
+      location=executable, flags=TSF_WAIT, timeout=20,
+      outputCallback=function(Task, Buffer) output ..= Buffer.getString() end,
+      errorCallback=function(Task, Buffer) output ..= Buffer.getString() end
+   })
+   for argument in values(array<str> { runner, '--log-warning', '--set-volume', 'scripts=' .. glRoot,
+      '--set-volume', 'temp=' .. glRoot }) do
+      check task.mtAddArgument(argument)
+   end
+   check task.acActivate()
+   assert(task.returnCode is 0 and output.find('ACTIVE-REUSE-CHECKED', 0, true) != nil, output)
+end
