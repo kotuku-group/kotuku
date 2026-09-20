@@ -404,6 +404,19 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@Test; @Requires(windows_platform=true)
+function ResolveWindowsFolderCanonicalPath()
+   folder_path = glTempRoot .. 'resolve_windows_folder/'
+   ensureFolder(folder_path)
+
+   err, resolved_folder = mSys.ResolvePath(folder_path)
+   assert(err is ERR_Okay, 'ResolvePath() failed for a folder path: ' .. mSys.GetErrorMsg(err))
+   assert(resolved_folder.endsWith('/') or resolved_folder.endsWith('\\'),
+      'ResolvePath() should preserve a trailing separator on Windows folder paths.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Test function ResolvePathSpecialCases()
    err = mSys.ResolvePath('codex_missing_volume:missing.file')
    assert(err is ERR_Search, 'ResolvePath() should return ERR_Search for an unknown volume, got: ' .. mSys.GetErrorMsg(err))
