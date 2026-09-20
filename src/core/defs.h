@@ -1305,7 +1305,6 @@ extern "C" int winGetFreeDiskSpace(char, int64_t *, int64_t *);
 extern "C" int winGetLogicalDrives(void);
 extern "C" int winGetLogicalDriveStrings(STRING, int);
 extern ERR winGetVolumeInformation(STRING Volume, std::string &Label, std::string &FileSystem, int &Type);
-extern "C" int winGetFinalPathName(CSTRING Path, std::string &Result);
 extern "C" int winGetFullPathName(const char *Path, int PathLength, char *Output, char **NamePart);
 extern "C" int winGetUserFolder(STRING, int);
 extern "C" int winGetUserName(STRING, int);
