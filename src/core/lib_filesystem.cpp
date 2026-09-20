@@ -63,6 +63,7 @@ typedef int HANDLE;
 #include <memory>
 #include <bit>
 #include <chrono>
+#include <filesystem>
 
 #ifdef _WIN32
  #include <io.h>
@@ -854,7 +855,7 @@ ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback)
    if (Path.ends_with(':')) return DeleteVolume(Path);
 
    std::string resolve;
-   if (!ResolvePath(Path, RSF::NIL, &resolve)) {
+   if (!ResolvePath(Path, RSF::NO_FOLLOW, &resolve)) {
       auto vd = get_fs(resolve);
       if (vd.Delete) return vd.Delete(resolve, Callback);
       else return ERR::NoSupport;

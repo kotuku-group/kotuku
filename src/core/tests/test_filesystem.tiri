@@ -716,6 +716,9 @@ end
    mSys.DeleteFile(target)
    writeFile(source, 'Linked file content')
 
+   err, lexical_target = mSys.ResolvePath(target, RSF_NO_FILE_CHECK|RSF_NO_FOLLOW)
+   assert(err is ERR_Okay, 'ResolvePath() failed to prepare the symbolic-link path: ' .. mSys.GetErrorMsg(err))
+
    err = mSys.CreateLink(target, source)
    if err is ERR_NoSupport then
       return 'Host platform does not support symbolic link creation.'
@@ -734,4 +737,13 @@ end
    err, resolved_target = mSys.ResolvePath(target)
    assert(err is ERR_Okay, 'ResolvePath() failed for the symbolic-link target: ' .. mSys.GetErrorMsg(err))
    assert(resolved_target is resolved_source, 'ResolvePath() did not follow the symbolic link to its final path.')
+
+   err, unresolved_target = mSys.ResolvePath(target, RSF_NO_FOLLOW)
+   assert(err is ERR_Okay, 'ResolvePath() with RSF_NO_FOLLOW failed: ' .. mSys.GetErrorMsg(err))
+   assert(unresolved_target is lexical_target, 'RSF_NO_FOLLOW did not preserve the symbolic-link path.')
+
+   err = mSys.DeleteFile(target)
+   assert(err is ERR_Okay, 'DeleteFile() failed to remove the symbolic link: ' .. mSys.GetErrorMsg(err))
+   assert(mSys.AnalysePath(target, nil) != ERR_Okay, 'DeleteFile() left the symbolic link in place.')
+   assert(readFile(source) is 'Linked file content', 'DeleteFile() removed the symbolic-link target.')
 end

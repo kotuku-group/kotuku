@@ -2410,6 +2410,7 @@ identifier has no effect.</li>
       <const name="CHECK_VIRTUAL">If the volume referenced by Path is traced to another volume that is reserved by a virtual file system driver, <code>ERR::VirtualVolume</code> is returned. The volume is still resolved as far as possible and the resulting path will be returned by this function.</const>
       <const name="NO_DEEP_SCAN">Do not perform more than one iteration when resolving the source file path.</const>
       <const name="NO_FILE_CHECK">Do not test for the existence of the targeted file or folder during the resolution process.</const>
+      <const name="NO_FOLLOW">Preserve symbolic links and reparse points in the resolved path rather than replacing them with their final targets.</const>
       <const name="PATH">Use the <code>PATH</code> environment variable to resolve the file name in the <code>Path</code> parameter.</const>
     </constants>
 
