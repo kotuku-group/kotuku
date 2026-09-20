@@ -101,6 +101,9 @@ end
 
    hover, token = hoverAt('local ver|sion = "1"\n')
    assert(not hover, 'An ordinary variable named version should not receive keyword hover.')
+
+   hover, token = hoverAt("import 'json'; ver|sion = 'ordinary'\n")
+   assert(not hover, 'A variable after a semicolon-delimited import should not receive keyword hover.')
 end
 
 @Test function DeclaredModuleFunctionHover()

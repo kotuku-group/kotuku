@@ -25,7 +25,7 @@
                "beginCaptures": {
                   "1": { "name": "keyword.other.import.tiri" }
                },
-               "end": "$",
+               "end": "(?=;)|$",
                "patterns": [
                   { "include": "#comments" },
                   {

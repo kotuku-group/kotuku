@@ -142,14 +142,17 @@ end
    assertNoToken(tokens, 3, 0, 'version', 'version should remain an ordinary identifier outside imports.')
 end
 
-@Test function ImportVersionContextDoesNotCrossLines()
+@Test function ImportVersionContextStopsAtStatementBoundaries()
    source = "import 'json'\n" ..
-      'version = "ordinary identifier"\n'
+      'version = "ordinary identifier"\n' ..
+      "import 'json'; version = \"same-line identifier\"\n"
 
    tokens = tokenizeTiri(source)
 
    assertNoToken(tokens, 1, 0, 'version',
       'version on the line after an unversioned import should remain an ordinary identifier.')
+   assertNoToken(tokens, 2, 15, 'version',
+      'version after a semicolon-delimited import should remain an ordinary identifier.')
 end
 
 @Test function ModuleDeclarationsReceiveContextualSemanticTokens()

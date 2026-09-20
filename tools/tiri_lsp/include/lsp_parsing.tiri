@@ -1304,7 +1304,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
          pos++
          col++
       else -- Skip other characters (punctuation, brackets, etc.)
-         if c is ',' and import_state then import_state = nil end
+         if (c is ',' or c is ';') and import_state then import_state = nil end
          pos++
          col++
       end
