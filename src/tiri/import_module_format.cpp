@@ -753,11 +753,13 @@ cache::FormatError encode_identity_inputs(const Identity &Value, bool IncludeObs
 
    auto resolution_inputs = Value.ResolutionInputs;
    std::ranges::sort(resolution_inputs, {}, [](const auto &Entry) {
-      return std::tie(Entry.Name, Entry.Context, Entry.Value);
+      return std::tie(Entry.Name, Entry.Context, Entry.Value, Entry.Constraint, Entry.SelectedVersion,
+         Entry.PackageManaged);
    });
    encoder.u32(uint32_t(resolution_inputs.size()));
    for (const auto &entry : resolution_inputs) {
       encoder.string(entry.Name); encoder.string(entry.Context); encoder.string(entry.Value);
+      encoder.string(entry.Constraint); encoder.string(entry.SelectedVersion); encoder.boolean(entry.PackageManaged);
    }
 
    auto conditional_inputs = Value.ConditionalInputs;
@@ -835,7 +837,9 @@ cache::FormatError decode_identity(std::string_view Bytes, Identity &Output)
    });
 
    decode_records<cache::ResolutionInput>(input, result.ResolutionInputs, [](Decoder &Value) {
-      return cache::ResolutionInput { Value.string(), Value.string(), Value.string() };
+      return cache::ResolutionInput {
+         Value.string(), Value.string(), Value.string(), Value.string(), Value.string(), Value.boolean()
+      };
    });
 
    decode_records<cache::ConditionalInput>(input, result.ConditionalInputs, [](Decoder &Value) {

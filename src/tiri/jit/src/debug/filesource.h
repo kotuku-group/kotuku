@@ -59,7 +59,7 @@ public:
 // Register a new file source in the lua_State.
 // Returns the file index, or FILESOURCE_OVERFLOW_INDEX (255) if the limit is exceeded.
 // The overflow index is initialised with "unknown" on first use.
-// Direct paths will be resolved to an absolute path if possible.  scripts: paths retain their virtual-volume form.
+// Direct paths will be resolved to an absolute path if possible.
 
 uint8_t register_file_source(lua_State *L, std::string &Path, const std::string &Filename,
    BCLine FirstLine, BCLine SourceLines, uint8_t ParentIndex, BCLine ImportLine,

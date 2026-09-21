@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "name": "gui/menubar",
+  "version": "1.0",
+  "description": "Application menu-bar widget for Tiri graphical interfaces.",
+  "entry": "menubar.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2006-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-GUI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "gui",
+    "menu",
+    "menubar"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "gui": "1.0",
+    "gui/menu": "1.0"
+  },
+  "files": [
+    {
+      "path": "menubar.tiri",
+      "size": 10056,
+      "sha256": "1f78742f45b405538c68b334943659a8ae78d3a96042e68e40dbe7f09455ca9e",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

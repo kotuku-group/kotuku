@@ -14,17 +14,32 @@ end
    glRoot = temp .. f'/versioned_import.tests_{processing.task().id}_{mSys.PreciseTime()}/'
    local folder <close> = obj.new('file', { path=glRoot, flags=FL_NEW|FL_FOLDER })
 
-   write_file('versioned-pkg.tiri', [[
+   local packages <close> = obj.new('file', { path=glRoot .. 'packages/', flags=FL_NEW|FL_FOLDER })
+   for name in values(array<str> { 'versioned-pkg', 'component-pkg', 'missing-pkg', 'wrong-pkg', 'broken-pkg' }) do
+      local folder <close> = obj.new('file', { path=glRoot .. 'packages/' .. name .. '/', flags=FL_NEW|FL_FOLDER })
+   end
+   write_file('packages/index.cfg', '[versioned-pkg]\n1.10 = versioned-pkg/1.10/main.tiri\n\n' ..
+      '[component-pkg]\n1.0 = component-pkg/1.0/main.tiri\n\n' ..
+      '[missing-pkg]\n1 = missing-pkg/1/main.tiri\n\n' ..
+      '[wrong-pkg]\n1.10 = wrong-pkg/1.10/main.tiri\n\n' ..
+      '[broken-pkg]\n2 = broken-pkg/2/main.tiri\n')
+   for path in values(array<str> { 'versioned-pkg/1.10', 'component-pkg/1.0', 'missing-pkg/1',
+         'wrong-pkg/1.10', 'broken-pkg/2' }) do
+      local folder <close> = obj.new('file', { path=glRoot .. 'packages/' .. path .. '/', flags=FL_NEW|FL_FOLDER })
+   end
+
+   write_file('packages/versioned-pkg/1.10/main.tiri', [[
       @Package(name="versioned-pkg", version="1.10")
       namespace versioned_pkg { value=110 }
    ]])
-   write_file('component-pkg.tiri', [[
+   write_file('packages/component-pkg/1.0/main.tiri', [[
       @Package(name="component-pkg", version="1.0")
       namespace component_pkg { value=10 }
    ]])
-   write_file('missing-pkg.tiri', 'namespace missing_pkg { }')
-   write_file('wrong-pkg.tiri', '@Package(name="different-pkg", version="1.10")\nnamespace wrong_pkg { }')
-   write_file('broken-pkg.tiri', '@Package(name="broken-pkg", version="2")\nthis body is malformed')
+   write_file('packages/missing-pkg/1/main.tiri', 'namespace missing_pkg { }')
+   write_file('packages/wrong-pkg/1.10/main.tiri',
+      '@Package(name="different-pkg", version="1.10")\nnamespace wrong_pkg { value=110 }')
+   write_file('packages/broken-pkg/2/main.tiri', '@Package(name="broken-pkg", version="2")\nthis body is malformed')
 end
 
 @AfterAll function cleanup()
@@ -48,7 +63,7 @@ function run(Source:str, Trace:bool):<num, str>
    check task.mtAddArgument(Trace ? '--log-trace' : '--log-warning')
    check task.mtAddArgument('--gfx-driver=headless')
    check task.mtAddArgument('--set-volume')
-   check task.mtAddArgument('scripts=' .. glRoot)
+   check task.mtAddArgument('packages=' .. glRoot .. 'packages/')
    check task.mtAddArgument('--set-volume')
    check task.mtAddArgument('temp=' .. glRoot)
    check task.acActivate()
@@ -75,17 +90,18 @@ end
       print('BOUNDED:' .. tostring(versioned_pkg.value))]], 'BOUNDED:110')
    assert_success([[import 'component-pkg' version > "1"
       print('COMPONENT:' .. tostring(component_pkg.value))]], 'COMPONENT:10')
-   assert_failure([[import 'component-pkg' version "1"]], 'fails comparison 1')
+   assert_success([[import 'wrong-pkg' version "1.10"
+      print('EXPORTED:' .. tostring(wrong_pkg.value))]], 'EXPORTED:110')
+   assert_failure([[import 'component-pkg' version "1"]], 'no version satisfying')
 end
 
 @Test function FailedOperatorsAndMetadata()
    local cases = {
-      { [[import 'versioned-pkg' version < "1.10"]], 'fails comparison <1.10' },
-      { [[import 'versioned-pkg' version <= "1.1"]], 'fails comparison <=1.1' },
-      { [[import 'versioned-pkg' version > "1.10"]], 'fails comparison >1.10' },
-      { [[import 'versioned-pkg' version >= "1.11"]], 'fails comparison >=1.11' },
-      { [[import 'missing-pkg' version "1"]], 'requires @Package metadata' },
-      { [[import 'wrong-pkg' version "1.10"]], "loaded package 'different-pkg@1.10'" }
+      { [[import 'versioned-pkg' version < "1.10"]], 'no version satisfying' },
+      { [[import 'versioned-pkg' version <= "1.1"]], 'no version satisfying' },
+      { [[import 'versioned-pkg' version > "1.10"]], 'no version satisfying' },
+      { [[import 'versioned-pkg' version >= "1.11"]], 'no version satisfying' },
+      { [[import 'missing-pkg' version "1"]], 'requires @Package metadata' }
    }
    for case in values(cases) do assert_failure(case[0], case[1]) end
 end
@@ -106,15 +122,15 @@ end
    for case in values(cases) do assert_failure(case[0], case[1]) end
 
    local output = assert_failure([[import 'broken-pkg' version < "2"]],
-      'loaded version 2 fails comparison <2')
+      'no version satisfying')
    assert(output.find('malformed', 0, true) is nil, 'The imported body was parsed before package validation: ' .. output)
 end
 
 @Test function ReusedDefinitionsRecheckEveryEdge()
    assert_failure([[import 'versioned-pkg'
-      import 'versioned-pkg' version >= "2"]], 'fails comparison >=2')
+      import 'versioned-pkg' version >= "2"]], 'no version satisfying')
    assert_failure([[import 'versioned-pkg' version >= "1"
-      import 'versioned-pkg' version > "2"]], 'fails comparison >2')
+      import 'versioned-pkg' version > "2"]], 'no version satisfying')
 end
 
 @Test function ColdAndWarmCacheParity()
@@ -127,7 +143,7 @@ end
       output.find('Imported-module validation: hits=1', 0, true) != nil,
       'A fresh process did not enforce a compatible constraint through the warm cache: ' .. output)
 
-   output = assert_failure([[import 'versioned-pkg' version >= "2"]], 'fails comparison >=2')
+   output = assert_failure([[import 'versioned-pkg' version >= "2"]], 'no version satisfying')
 end
 
 @Test function ActiveRuntimeReuseRechecksConstraint()
@@ -139,7 +155,7 @@ end
          exec("import 'versioned-pkg' version >= \"2\"")
          raise 'incompatible active import succeeded'
       except e
-         assert(e.message.find('fails comparison >=2', 0, true) != nil, e.message)
+         assert(e.message.find('no version satisfying', 0, true) != nil, e.message)
          print('ACTIVE-REUSE-CHECKED')
       end
    ]])
@@ -153,7 +169,7 @@ end
       outputCallback=function(Task, Buffer) output ..= Buffer.getString() end,
       errorCallback=function(Task, Buffer) output ..= Buffer.getString() end
    })
-   for argument in values(array<str> { runner, '--log-warning', '--set-volume', 'scripts=' .. glRoot,
+   for argument in values(array<str> { runner, '--log-warning', '--set-volume', 'packages=' .. glRoot .. 'packages/',
       '--set-volume', 'temp=' .. glRoot }) do
       check task.mtAddArgument(argument)
    end

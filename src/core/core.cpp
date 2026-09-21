@@ -357,7 +357,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
          if (startswith("gfx-driver=", arg)) {
             glDisplayDriver.assign(arg+11);
          }
-         else if ((iequals(arg, "set-volume")) and (i+1 < Info->ArgCount)) { // --set-volume scripts=my:location/
+         else if ((iequals(arg, "set-volume")) and (i+1 < Info->ArgCount)) { // --set-volume assets=my:location/
             volumes.emplace_front(Info->Args[++i]);
          }
          else if (iequals(arg, "log-file")) {
@@ -1178,11 +1178,9 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
 
    #ifdef __ANDROID__
       SetVolume("assets", "EXT:FileAssets", "", "", "", VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
-      SetVolume("templates", "assets:templates/", "misc/openbook", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
       SetVolume("config", "localcache:config/|assets:config/", "tools/cog", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
       SetVolume("HostTemp:", "temp:", "items/trash", "Temp", "", VOLUME::REPLACE|VOLUME::HIDDEN);
    #else
-      SetVolume("templates", "scripts:templates/", "misc/openbook", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
       SetVolume("config", "system:config/", "tools/cog", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
       if (!AnalysePath("kotuku:bin/", nullptr)) { // Bin is the location of the tiri and kotuku binaries
          SetVolume("bin", "kotuku:bin/", "", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
@@ -1192,7 +1190,7 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
 
    SetVolume("temp", "user:temp/", "items/trash", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
    SetVolume("fonts", "system:config/fonts/", "items/font", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
-   SetVolume("scripts", "system:scripts/", "filetypes/source", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
+   SetVolume("packages", "system:packages/", "filetypes/source", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
    SetVolume("styles", "system:config/styles/", "tools/image_gallery", "", "", VOLUME::HIDDEN);
 
    // Some platforms need to have special volumes added - these are provided in the OpenInfo structure passed to

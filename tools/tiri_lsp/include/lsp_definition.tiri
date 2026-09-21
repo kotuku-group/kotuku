@@ -1,4 +1,5 @@
 extern maskNonCode
+module tiri as mTiri
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Go to Definition Support
@@ -549,25 +550,46 @@ function normaliseModuleName(Name:str):str
    return nil
 end
 
-function resolveScriptImport(Doc:table, Name:str):table
-   candidates = array<str>
-   doc_path = lspUriToPath(Doc.uri)
-   base_path = getParentPath(doc_path)
-   script_name = Name.endsWith('.tiri') and Name or (Name .. '.tiri')
-   local_import = Name.startsWith('./') or Name.startsWith('../')
+function importVersionConstraint(Doc:table, StringInfo:table):str
+   local suffix = getLine(Doc, StringInfo.line).sub(StringInfo.quoteEnd + 1)
+   local marker = regex.new([[^\s+version\s+]])
+   local start, stop = marker.findFirst(suffix)
+   if not start then return '' end
+
+   local clause:str = suffix.sub(stop)
+   local token = regex.new([=[^(>=|<=|>|<)?\s*['"]([0-9]+(?:\.[0-9]+)*)['"]]=])
+   local connector = regex.new([[^\s+and\s+]])
+   local requirement = ''
+   while true do
+      local _, token_end, capture = token.findFirst(clause)
+      if not capture then return nil end
+      if requirement != '' then requirement ..= ' ' end
+      requirement ..= (capture[0] ?? '') .. capture[1]
+      clause = clause.sub(token_end)
+      local _, connector_end = connector.findFirst(clause)
+      if not connector_end then break end
+      clause = clause.sub(connector_end)
+   end
+   return requirement
+end
+
+function resolveScriptImport(Doc:table, StringInfo:table):table
+   local name = StringInfo.text
+   local doc_path = lspUriToPath(Doc.uri)
+   local base_path = getParentPath(doc_path)
+   local script_name = name.endsWith('.tiri') and name or (name .. '.tiri')
+   local local_import = name.startsWith('./') or name.startsWith('../')
 
    if local_import then
-      candidates.push(base_path .. script_name)
-   else
-      candidates.push('sdk:scripts/' .. script_name)
-      candidates.push('scripts:' .. script_name)
+      local resolved = resolveExistingPath(base_path .. script_name)
+      return resolved and makeLocation(resolved, 0, 0, 0, 0) or nil
    end
+   if StringInfo.keyword != 'import' then return nil end
 
-   for candidate in values(candidates) do
-      resolved = resolveExistingPath(candidate)
-      if resolved then return makeLocation(resolved, 0, 0, 0, 0) end
-   end
-
+   local requirement = importVersionConstraint(Doc, StringInfo)
+   if requirement is nil then return nil end
+   local err, resolved = mTiri.ResolvePackage(name, requirement)
+   if err is ERR_Okay then return makeLocation(resolved, 0, 0, 0, 0) end
    return nil
 end
 
@@ -584,7 +606,7 @@ function resolveLoaderDefinition(Doc:table, Position:table):array<table>
          pushLocation(locations, makeXmlLocation(module_doc, module_doc.byteStart, module_doc.byteEnd))
       end
    else
-      pushLocation(locations, resolveScriptImport(Doc, string_info.text))
+      pushLocation(locations, resolveScriptImport(Doc, string_info))
    end
 
    if #locations > 0 then return locations end

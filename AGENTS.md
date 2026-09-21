@@ -5,7 +5,7 @@ This file provides guidance to Agentic programs when working with code in this r
 ### Essential Build Commands
 
 **Configure build:**
-- `cmake -S . -B build/agents -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=build/agents-install -DRUN_ANYWHERE=TRUE -DKOTUKU_STATIC=OFF -DUNIT_TESTS=ON -DORIGO_CONSOLE=ON`
+- `cmake -S . -B build/agents -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=build/agents-install -DRUN_ANYWHERE=TRUE -DKOTUKU_STATIC=OFF -DUNIT_TESTS=ON -DORIGO_CONSOLE=ON -DLINKED_PACKAGES=ON`
 - Modular/Static builds: Use `-DKOTUKU_STATIC=OFF` for modular builds and `-DKOTUKU_STATIC=ON` for static.
 - Always use Debug builds unless the user requests otherwise.
 - `UNIT_TESTS=ON` enables compiled C++ unit tests and prolongs the build.  Note that this is not declared as a CMake
@@ -23,7 +23,7 @@ This file provides guidance to Agentic programs when working with code in this r
 - Use the `flute-testing` skill before writing, reviewing, planning, or running Flute tests.
 - When running the Origo executable for individual tests, append `--log-warning` at a minimum for log messages, or `--log-api` if more detail is required.  Log output is directed to stderr.
 - For ad-hoc testing, statements can be tested on the commandline with `--statement`, e.g. `origo --statement "print('Hello')"`
-- If modifying files in the `scripts` folder, **ALWAYS** append `--set-volume scripts=/absolute/path/to/project/scripts` to ensure your modified files are given priority over the installed versions.
+- If modifying files in the `packages` folder, ensure the build option `LINKED_PACKAGES=ON` is active so that script changes are always visible to origo.
 - If debugging issues involving threads, add `--log-threads` for improved log output.
 
 **Verify:**
@@ -48,7 +48,7 @@ Kōtuku uses Interface Definition Language (IDL) files with `.tdl` extension to 
 **Tiri** is the integrated scripting language:
 
 - Tiri is a LuaJIT-based language that provides high-level access to Kōtuku APIs, but it is not standard Lua.
-- GUI toolkit available through `scripts/gui/` modules (modular widget system)
+- GUI toolkit available through the indexed `gui/*` packages (modular widget system)
 - All Tiri scripts use `.tiri` extension
 - Tiri scripts are executed with the `origo` executable, which has a dependency on the project being built and installed
 - Tiri scripts execute top-to-bottom with NO entry point function

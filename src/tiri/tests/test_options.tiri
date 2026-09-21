@@ -5,8 +5,15 @@
 
 local glTestFiles = array<str>
 
+@BeforeAll function setup_path_fixture()
+   local folder <close> = obj.new('file', { path='temp:options_path_fixture/', flags=FL_NEW|FL_FOLDER })
+   local file <close> = obj.new('file', { path='temp:options_path_fixture/options.tiri', flags=FL_NEW|FL_WRITE })
+   check file.acWrite('options fixture\n')
+end
+
 @AfterAll function cleanup_test_files()
    for path in values(glTestFiles) do mSys.DeleteFile(path) end
+   check mSys.DeleteFile('temp:options_path_fixture/')
 end
 
 function expect_error(Parser:table, Input:any, Code:num, MessagePart:str):table
@@ -411,7 +418,7 @@ end
       taskParameters = array<str> {
          '--log-warning',
          '--set-volume',
-         'scripts=E:/kotuku/scripts',
+         'assets=E:/kotuku/assets',
          'examples/vue.tiri',
          'scene.svg',
          'output=preview.png',
@@ -843,17 +850,17 @@ end
    })
 
    args = parser.process(array<str> {
-      'path=sdk:scripts/options.tiri',
-      'file=sdk:scripts/options.tiri',
-      'folder=sdk:scripts'
+      'path=temp:options_path_fixture/options.tiri',
+      'file=temp:options_path_fixture/options.tiri',
+      'folder=temp:options_path_fixture'
    })
-   assert(args.path is 'sdk:scripts/options.tiri', 'Existing path should parse')
-   assert(args.file is 'sdk:scripts/options.tiri', 'Existing file should parse')
-   assert(args.folder is 'sdk:scripts', 'Existing folder should parse')
+   assert(args.path is 'temp:options_path_fixture/options.tiri', 'Existing path should parse')
+   assert(args.file is 'temp:options_path_fixture/options.tiri', 'Existing file should parse')
+   assert(args.folder is 'temp:options_path_fixture', 'Existing folder should parse')
 
    expect_error(parser, array<str> { 'path=does-not-exist' }, ERR_FileNotFound, "does not exist")
-   expect_error(parser, array<str> { 'file=sdk:scripts' }, ERR_ExpectedFile, "is not a file")
-   expect_error(parser, array<str> { 'folder=sdk:scripts/options.tiri' }, ERR_ExpectedFolder, "is not a folder")
+   expect_error(parser, array<str> { 'file=temp:options_path_fixture' }, ERR_ExpectedFile, "is not a file")
+   expect_error(parser, array<str> { 'folder=temp:options_path_fixture/options.tiri' }, ERR_ExpectedFolder, "is not a folder")
 end
 
 @Test function MultipleValuesUseValidationRules()

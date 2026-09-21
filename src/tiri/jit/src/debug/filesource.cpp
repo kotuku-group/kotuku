@@ -25,10 +25,8 @@ uint8_t register_file_source(lua_State *L, std::string &Path, const std::string 
       return FILESOURCE_OVERFLOW_INDEX;
    }
 
-   if (not Path.starts_with("scripts:")) {
-      std::string resolved_path;
-      if (ResolvePath(Path, RSF::NO_FILE_CHECK, &resolved_path) IS ERR::Okay) Path = resolved_path;
-   }
+   std::string resolved_path;
+   if (ResolvePath(Path, RSF::NO_FILE_CHECK, &resolved_path) IS ERR::Okay) Path = resolved_path;
 
    auto path_hash = kt::strihash(Path);
 

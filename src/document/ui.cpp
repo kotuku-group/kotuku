@@ -415,12 +415,20 @@ static void error_dialog(const std::string_view Title, const std::string_view Me
       detect_recursive_dialog = true;
    }
 
+   std::string dialog_path;
+   if (auto error = ti::ResolvePackage("gui/dialog", "", &dialog_path); error != ERR::Okay) {
+      log.warning("Unable to resolve gui/dialog: %s", GetErrorMsg(error));
+      std::lock_guard lk(dialog_mutex);
+      detect_recursive_dialog = false;
+      return;
+   }
+
    objScript *dialog;
    OBJECTID new_dialog_id = 0;
    if (!NewObject(CLASSID::TIRI, &dialog)) {
       dialog->setName("scDialog");
       dialog->setOwner(CurrentTaskID());
-      dialog->setPath("scripts:gui/dialog.tiri");
+      dialog->setPath(dialog_path);
 
       acSetKey(dialog, "modal", "1");
       acSetKey(dialog, "title", Title);

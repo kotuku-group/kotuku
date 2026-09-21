@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "name": "gui/slider",
+  "version": "1.0",
+  "description": "Range slider widget for Tiri graphical interfaces.",
+  "entry": "slider.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2006-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-GUI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "gui",
+    "slider",
+    "widget"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "gui": "1.0"
+  },
+  "files": [
+    {
+      "path": "slider.tiri",
+      "size": 4957,
+      "sha256": "dc3573d3e5a4d5a8cea2448c33e1e69fb8169680d239dbbeed227c95614b9ac9",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

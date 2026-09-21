@@ -46,7 +46,6 @@
 /projects/*
 
 /install/
-/packages/
 /extras/
 /temp/
 /tests/

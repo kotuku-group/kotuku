@@ -388,7 +388,8 @@ bool check_compatibility_records(std::span<const CompatibilityRecord> Records,
 }
 
 //********************************************************************************************************************
-// Checks a concrete package identity against one versioned import edge.
+// Checks concrete package metadata against one versioned import edge.  The public import name does not imply package
+// ownership; a package resolver supplies and validates the expected package identity separately.
 
 bool check_package_import(const PackageImportRequirement &Requirement,
    const std::optional<PackageIdentity> &Identity, PackageImportFailure *Failure) noexcept
@@ -403,14 +404,6 @@ bool check_package_import(const PackageImportRequirement &Requirement,
    if (validate_package_name(Identity->Name) != PackageValidationError::OKAY or
        parse_version(Identity->Version, loaded)) {
       if (Failure) Failure->Kind = PackageImportFailureKind::InvalidMetadata;
-      return false;
-   }
-
-   if (Identity->Name != Requirement.PackageName) {
-      if (Failure) {
-         Failure->Kind = PackageImportFailureKind::NameMismatch;
-         Failure->LoadedVersion = std::move(loaded);
-      }
       return false;
    }
 
@@ -429,25 +422,21 @@ bool check_package_import(const PackageImportRequirement &Requirement,
 //********************************************************************************************************************
 // Formats the stable user-facing diagnostic for a failed versioned import check.
 
-std::string package_import_error(const PackageImportRequirement &Requirement,
-   const std::optional<PackageIdentity> &Identity, const PackageImportFailure &Failure)
+std::string package_import_error(const PackageImportRequirement &Requirement, const PackageImportFailure &Failure)
 {
    switch (Failure.Kind) {
       case PackageImportFailureKind::MissingMetadata:
-         return std::format("versioned import '{}' requires @Package metadata", Requirement.PackageName);
+         return std::format("versioned import '{}' requires @Package metadata", Requirement.ImportName);
       case PackageImportFailureKind::InvalidMetadata:
-         return std::format("versioned import '{}' loaded invalid package metadata", Requirement.PackageName);
-      case PackageImportFailureKind::NameMismatch:
-         return std::format("versioned import '{}' loaded package '{}@{}'", Requirement.PackageName,
-            Identity ? Identity->Name : std::string(), Identity ? Identity->Version : std::string());
+         return std::format("versioned import '{}' loaded invalid package metadata", Requirement.ImportName);
       case PackageImportFailureKind::Unsatisfied:
          return std::format("versioned import '{}' requires '{}', but loaded version {} fails comparison {}",
-            Requirement.PackageName, Requirement.Constraint.Original, Failure.LoadedVersion.Text,
+            Requirement.ImportName, Requirement.Constraint.Original, Failure.LoadedVersion.Text,
             Failure.Comparison ? comparison_text(*Failure.Comparison) : std::string("<unknown>"));
       case PackageImportFailureKind::None:
          break;
    }
-   return std::format("versioned import '{}' failed package validation", Requirement.PackageName);
+   return std::format("versioned import '{}' failed package validation", Requirement.ImportName);
 }
 
 //********************************************************************************************************************

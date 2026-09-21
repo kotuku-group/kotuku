@@ -36,6 +36,7 @@ that is distributed with this package.  Please refer to it for further informati
 #include <kotuku/modules/filesystem.h>
 #include <kotuku/modules/processes.h>
 #include <kotuku/modules/script.h>
+#include <kotuku/modules/tiri.h>
 #include <kotuku/modules/xquery.h>
 #include <kotuku/modules/time.h>
 #include <kotuku/modules/module.h>
@@ -84,6 +85,9 @@ JUMPTABLE_CORE
 JUMPTABLE_FONT
 JUMPTABLE_DISPLAY
 JUMPTABLE_VECTOR
+JUMPTABLE_TIRI
+
+static OBJECTPTR modTiri = nullptr;
 
 #include "defs/document.h"
 
@@ -229,6 +233,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    if (objModule::load("display", &modDisplay, &DisplayBase) != ERR::Okay) return ERR::InitModule;
    if (objModule::load("font", &modFont, &FontBase) != ERR::Okay) return ERR::InitModule;
    if (objModule::load("vector", &modVector, &VectorBase) != ERR::Okay) return ERR::InitModule;
+   if (objModule::load("tiri", &modTiri, &TiriBase) != ERR::Okay) return ERR::InitModule;
 
    OBJECTID style_id;
    if (!FindObject("glStyle", CLASSID::XML, &style_id)) {
@@ -259,6 +264,7 @@ static ERR MODExpunge(void)
    glFontIndexCache.clear();
    glFonts.clear();
 
+   if (modTiri)    { FreeResource(modTiri);    modTiri = nullptr; }
    if (modVector)  { FreeResource(modVector);  modVector  = nullptr; }
    if (modDisplay) { FreeResource(modDisplay); modDisplay = nullptr; }
    if (modFont)    { FreeResource(modFont);    modFont    = nullptr; }

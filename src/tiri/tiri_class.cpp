@@ -1017,6 +1017,7 @@ static ERR save_binary(lua_State *Lua, OBJECTPTR Target, std::string_view Token)
        (compressed->setFormat(CF::GZIP) != ERR::Okay) or (compressed->init() != ERR::Okay)) {
       return ERR::Compression;
    }
+
    writer.Destination = *compressed;
    const int result = lua_dump(Lua, write_bytecode, &writer);
    lua_settop(Lua, stack_top);

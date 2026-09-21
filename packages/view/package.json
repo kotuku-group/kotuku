@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "name": "gui/view",
+  "version": "1.0",
+  "description": "Adds support for list views, column views and tree views to the Tiri UI.",
+  "entry": "view.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2006-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-GUI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "gui",
+    "list-view",
+    "tree-view"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "gui": "1.0",
+    "gui/scrollbar": "1.0"
+  },
+  "files": [
+    {
+      "path": "columnview.tiri",
+      "size": 24630,
+      "sha256": "0482a6e495d4a1dd40917d2946c6ae427a298627047efc2ea96c21e3f3385bc9",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "libview.tiri",
+      "size": 22099,
+      "sha256": "506ac075c9d3637052ff4211474ee18691b5df843b4baf5e00a3d772f494be28",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "listview.tiri",
+      "size": 8268,
+      "sha256": "8f1626204b80d52f14a6acda974cf784346b321eae6b367790c5c6e3557e5d7b",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "treeview.tiri",
+      "size": 4272,
+      "sha256": "35d5f6d2cb3fb7b1e49359cfbc8222e5337848f03337bbe2a1119a13454561af",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "view.tiri",
+      "size": 96,
+      "sha256": "8c7f65f0a4cab441fb8981ff0fb9921394149a60baed923e9872745c8ddbd0b7",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ],
+  "exports": [
+    {
+      "gui/view": "view.tiri"
+    },
+    {
+      "gui/columnview": "columnview.tiri"
+    },
+    {
+      "gui/listview": "listview.tiri"
+    },
+    {
+      "gui/libview": "libview.tiri"
+    }
+  ]
+}

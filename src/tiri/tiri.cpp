@@ -31,6 +31,7 @@ For more information on the Tiri syntax, please refer to the official Tiri Refer
 #include <kotuku/modules/tiri.h>
 #include <kotuku/modules/regex.h>
 #include <kotuku/modules/module.h>
+#include <kotuku/modules/config.h>
 #include <kotuku/strings.hpp>
 
 #include <format>
@@ -51,6 +52,7 @@ JUMPTABLE_REGEX
 
 #include "defs.h"
 #include "protected_call.h"
+#include "package_resolver.h"
 
 namespace tiri {
 OBJECTPTR modDisplay = nullptr; // Required by tiri_input.c
@@ -176,6 +178,8 @@ ERR access_object(GCobject *Object, OBJECTPTR &ObjectPtr)
    return error;
 }
 
+//********************************************************************************************************************
+
 void release_object(GCobject *Object)
 {
    if (Object->accesscount > 0) {
@@ -211,8 +215,10 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
       }
    }
 
+   // NOTE: Stick to the indirect get() method here because it otherwise crashes if the MetaClass table requires
+   // regeneration
+
    std::string_view module_name;
-   // NOTE: Stick to the indirect get() method here because it otherwise crashes if the MetaClass table requires regeneration
    if (auto error = MetaClass->get(strhash("module"), module_name); !error) {
       if (auto error = load_module_defs(module_name); error != ERR::Okay) {
          luaL_error(Lua, error,
@@ -220,6 +226,40 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
       }
    }
    else kt::Log(__FUNCTION__).traceWarning("Failed to get module name from class '%s', \"%s\"", MetaClass->ClassName.c_str(), GetErrorMsg(error));
+}
+
+//********************************************************************************************************************
+
+static ERR init_pkg_index(kt::Log &Log)
+{
+   if (AnalysePath("packages:index.cfg", NULL) != ERR::Okay) {
+      Log.error("The packages:index.cfg file is missing");
+      return ERR::FileNotFound;
+   }
+
+   objConfig *config = objConfig::create::global({ fl::Path("packages:index.cfg") });
+   if (not config) return ERR::CreateObject;
+
+   std::shared_ptr<const tiri::PackageResolverSnapshot> snapshot;
+   std::string diagnostic;
+   if (tiri::build_package_resolver_snapshot(config->Groups, snapshot, diagnostic) !=
+       tiri::ImportResolutionError::Okay) {
+      Log.error("Invalid package index 'packages:index.cfg': %s", diagnostic.c_str());
+      FreeResource(config);
+      return ERR::InvalidData;
+   }
+
+   tiri::glPackageIndex = config;
+   tiri::glPackageResolver = std::move(snapshot);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static void expunge_package_index()
+{
+   tiri::glPackageResolver.reset();
+   if (tiri::glPackageIndex) { FreeResource(tiri::glPackageIndex); tiri::glPackageIndex = nullptr; }
 }
 
 //********************************************************************************************************************
@@ -329,7 +369,13 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
       }
    }
 
-   return create_tiri();
+   if (auto error = init_pkg_index(log); error != ERR::Okay) return error;
+
+   if (auto error = create_tiri(); error != ERR::Okay) {
+      expunge_package_index();
+      return error;
+   }
+   return ERR::Okay;
 }
 
 static ERR MODExpunge(void)
@@ -340,6 +386,7 @@ static ERR MODExpunge(void)
    if (modDisplay)  { FreeResource(modDisplay); modDisplay = nullptr; }
    if (modRegex)    { FreeResource(modRegex); modRegex = nullptr; }
    expunge_modules();
+   expunge_package_index();
    return ERR::Okay;
 }
 
@@ -368,20 +415,58 @@ extern void cache_manifest_unit_tests(int &, int &);
 extern void import_module_format_unit_tests(int &, int &);
 extern void import_module_cache_unit_tests(int &, int &);
 extern void version_constraint_unit_tests(int &, int &);
+extern void package_resolver_unit_tests(int &, int &);
 #endif
 
 static void MODTest(std::string_view Options, int *Passed, int *Total)
 {
 #ifdef UNIT_TESTS
-   // Redirect the scripts volume to the test directory so that we can load test scripts without polluting the volume.
-
-   const std::string test_scripts = std::string("system:scripts/|") + TIRI_IMPORT_TEST_PATH;
-   if (auto error = SetVolume("scripts", test_scripts, "filetypes/source", "", "",
-       VOLUME::HIDDEN|VOLUME::SYSTEM|VOLUME::REPLACE); error != ERR::Okay) {
-      kt::Log("TiriTests").error("Failed to configure the import fixture volume: %s", GetErrorMsg(error));
+   // Read parser fixtures alongside installed packages and restore the volume and snapshot afterwards.
+   std::string installed_packages;
+   if (ResolvePath("packages:", RSF::NO_FILE_CHECK, &installed_packages) != ERR::Okay) {
+      kt::Log("TiriTests").error("Failed to resolve the installed packages volume");
       (*Total)++;
       return;
    }
+
+   struct FixturePackages {
+      std::string InstalledPath;
+      std::shared_ptr<const tiri::PackageResolverSnapshot> InstalledSnapshot;
+      bool VolumeChanged = false;
+      ~FixturePackages() {
+         tiri::glPackageResolver = std::move(InstalledSnapshot);
+         if (VolumeChanged) {
+            SetVolume("packages", InstalledPath, "filetypes/source", "", "",
+               VOLUME::HIDDEN|VOLUME::SYSTEM|VOLUME::REPLACE);
+         }
+      }
+   } fixture { installed_packages, tiri::glPackageResolver };
+
+   const std::string test_packages = std::string(TIRI_PACKAGE_TEST_PATH) + "|" + installed_packages;
+   if (auto error = SetVolume("packages", test_packages, "filetypes/source", "", "",
+       VOLUME::HIDDEN|VOLUME::SYSTEM|VOLUME::REPLACE); error != ERR::Okay) {
+      kt::Log("TiriTests").error("Failed to configure the package fixture volume: %s", GetErrorMsg(error));
+      (*Total)++;
+      return;
+   }
+   fixture.VolumeChanged = true;
+
+   objConfig *fixture_index = objConfig::create::global({ fl::Path("packages:index.cfg") });
+   std::shared_ptr<const tiri::PackageResolverSnapshot> snapshot;
+   std::string diagnostic;
+   ConfigGroups groups = tiri::glPackageIndex ? tiri::glPackageIndex->Groups : ConfigGroups();
+   if (fixture_index) {
+      for (const auto &[name, keys] : fixture_index->Groups) groups.emplace_back(name, keys);
+   }
+   if (not fixture_index or tiri::build_package_resolver_snapshot(groups, snapshot, diagnostic) !=
+       tiri::ImportResolutionError::Okay) {
+      kt::Log("TiriTests").error("Invalid package fixture index: %s", diagnostic.c_str());
+      if (fixture_index) FreeResource(fixture_index);
+      (*Total)++;
+      return;
+   }
+   FreeResource(fixture_index);
+   tiri::glPackageResolver = std::move(snapshot);
 
    {
       kt::Log log("TiriTests");
@@ -395,6 +480,7 @@ static void MODTest(std::string_view Options, int *Passed, int *Total)
       import_module_format_unit_tests(*Passed, *Total);
       import_module_cache_unit_tests(*Passed, *Total);
       version_constraint_unit_tests(*Passed, *Total);
+      package_resolver_unit_tests(*Passed, *Total);
    }
    {
       kt::Log log("TiriTests");
@@ -457,6 +543,61 @@ CSTRING const glBytecodeNames[] = {
 };
 }
 
+namespace ti {
+
+/*********************************************************************************************************************
+
+-FUNCTION-
+ResolvePackage: Resolve an importable library package to its filesystem path.
+
+Use ResolvePackage() to discover the filesystem location of an importable library package such as `gui` or
+`io/filesearch`.  The returned path identifies the same versioned source file that would be selected for a Tiri
+`import` declaration.  If Constraint is empty, the highest available version is returned.  Otherwise, Constraint
+should match a valid version expression accepted by an import clause.
+
+-INPUT-
+strview Name: Public import name, including any export alias.
+strview Constraint: Optional version constraint; empty selects the highest version.
+^&string Path: Receives the resolved executable file path on success.
+
+-ERRORS-
+Okay: The selected package source exists.
+InvalidData: The name or constraint is invalid, or the package is unavailable.
+NotFound: No package version satisfies the request.
+FileNotFound: The selected source file is unavailable.
+NullArgs: The output path pointer was not supplied.
+
+-TAGS-
+pure-query
+-END-
+
+*********************************************************************************************************************/
+
+ERR ResolvePackage(const std::string_view &Name, const std::string_view &Constraint, std::string *Path)
+{
+   if (not Path) return ERR::NullArgs;
+   Path->clear();
+   std::optional<tiri::PackageImportRequirement> requirement;
+
+   if (not Constraint.empty()) {
+      tiri::VersionConstraint parsed;
+      if (tiri::parse_version_constraint(Constraint, parsed)) return ERR::InvalidData;
+      requirement = tiri::PackageImportRequirement { std::string(Name), std::move(parsed) };
+   }
+
+   auto result = tiri::resolve_package_import({ Name, requirement ? &*requirement : nullptr });
+   if (result) {
+      *Path = std::move(result.Import.ResolvedPath);
+      return ERR::Okay;
+   }
+
+   if (result.Error IS tiri::ImportResolutionError::MissingTarget) return ERR::FileNotFound;
+
+   if ((result.Error IS tiri::ImportResolutionError::MissingGroup) or
+       (result.Error IS tiri::ImportResolutionError::UnsatisfiedConstraint)) return ERR::NotFound;
+   return ERR::InvalidData;
+}
+
 /*********************************************************************************************************************
 
 -FUNCTION-
@@ -490,7 +631,6 @@ mutates-object, copies-input
 
 *********************************************************************************************************************/
 
-namespace ti {
 namespace {
 
 enum class SetVariableValueType : uint8_t { String, Pointer, Int, Int64, Double };

@@ -16,8 +16,8 @@ project-specific syntax, runtime behaviour, API bindings, typing, and testing co
 1. Read nearby existing `.tiri` files before editing. For new tests, read at least three existing Flute tests first.
 2. Prefer current project examples over assumptions from Lua:
    - `examples/*.tiri` for applications and GUI usage
-   - `scripts/gui/*.tiri` for widget and layout patterns
-   - `scripts/*.tiri` for standard library APIs
+   - `packages/*/*.tiri` for widget and layout patterns
+   - `packages/*/*.tiri` for standard library APIs
    - `tools/*.tiri` for file, process, and utility scripts
    - `tools/idl/idl-c.tiri` for extensive file I/O and API usage
 3. Consult `docs/wiki/Tiri-Reference-Manual.md`, `docs/wiki/Tiri-*.md`, or the Tiri LSP for details that are not
@@ -207,11 +207,14 @@ Run scripts with the installed `origo` executable. When invoking `origo` directl
 build/agents-install/origo --statement "print('Hello')" --log-warning
 ```
 
-If changing files under `scripts/`, make sure the modified source tree overrides installed scripts:
+After changing a bundled package, build and install it with its generated index.  To test an isolated staged tree:
 
 ```powershell
-build/agents-install/origo path/to/script.tiri --set-volume scripts=E:/kotuku/scripts --log-warning
+cmake --install build/agents --prefix build/package-stage
+build/agents-install/origo path/to/script.tiri --set-volume packages=build/package-stage/packages --log-warning
 ```
+
+The override directory must contain both `index.cfg` and the versioned payloads.
 
 Use `--log-api` for more detail and `--log-threads` when debugging thread-related issues.
 

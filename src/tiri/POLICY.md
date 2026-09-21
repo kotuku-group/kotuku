@@ -26,7 +26,7 @@ Tiri libraries are distinct from Kōtuku module APIs.  For the Tiri standard lib
 
 The definitive standard library documentation is found in the Tiri Reference Manual.
 
-Tiri library scripts under the "scripts:" folder should establish their contracts using document annotations, with expanded details in their associated Wiki page.
+Tiri libraries installed through the indexed `packages:` volume should establish their contracts using document annotations, with expanded details in their associated Wiki page.
 
 ## Deprecation Policy
 

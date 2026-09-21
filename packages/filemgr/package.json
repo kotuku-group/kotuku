@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "name": "io/filemgr",
+  "version": "1.0",
+  "description": "User-interface helpers for copying, moving and deleting groups of files.",
+  "entry": "filemgr.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2020-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-IO-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "file",
+    "file-management",
+    "gui"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "gui/dialog": "1.0"
+  },
+  "files": [
+    {
+      "path": "filemgr.tiri",
+      "size": 9067,
+      "sha256": "63e90b184808ab15a01339f0ad480a11c7b13c050614e05d23145cae541aae5a",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

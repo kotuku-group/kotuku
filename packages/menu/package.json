@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "name": "gui/menu",
+  "version": "1.0",
+  "description": "Pop-up menu widget for Tiri graphical interfaces.",
+  "entry": "menu.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2006-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-GUI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "gui",
+    "menu",
+    "widget"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "gui": "1.0"
+  },
+  "files": [
+    {
+      "path": "menu.tiri",
+      "size": 16374,
+      "sha256": "96d1f781716c64ddeda7712cfdef250531b20f24a87ca439e24275b6f38f89aa",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

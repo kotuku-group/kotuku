@@ -37,6 +37,7 @@ end
    out = obj.new('file', { src=glRawPath, flags=FL_NEW|FL_WRITE } )
    out.acWrite('ABCD')
    out = nil
+   writeFile(glTempRoot .. 'source.tiri', 'fixture source\n')
    processing.collect()
 end
 
@@ -165,11 +166,11 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function SetVolume()
-   check mSys.SetVolume("fstest", "system:scripts/", "filetypes/source", "", "", VOLUME_HIDDEN|VOLUME_SYSTEM);
-   check mSys.AnalysePath("fstest:gui.tiri");
+   check mSys.SetVolume("fstest", "temp:filesystem_tests/", "filetypes/source", "", "", VOLUME_HIDDEN|VOLUME_SYSTEM);
+   check mSys.AnalysePath("fstest:source.tiri");
 
-   check mSys.SetVolume("fstestnest", "bin:|system:scripts/", "filetypes/source", "", "", VOLUME_HIDDEN|VOLUME_SYSTEM);
-   check mSys.AnalysePath("fstestnest:gui.tiri");
+   check mSys.SetVolume("fstestnest", "bin:|temp:filesystem_tests/", "filetypes/source", "", "", VOLUME_HIDDEN|VOLUME_SYSTEM);
+   check mSys.AnalysePath("fstestnest:source.tiri");
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -327,7 +328,7 @@ end
    icon_pairs = {
       { path='fonts:fonts.cfg',            icon='icons:filetypes/text' },
       { path='fonts:truetype/Micro-6.ttf', icon='icons:filetypes/font' },
-      { path='scripts:gui.tiri',           icon='icons:filetypes/source' }
+      { path='temp:filesystem_tests/source.tiri',           icon='icons:filetypes/source' }
    }
 
    for v in values(icon_pairs) do
@@ -355,7 +356,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function AnalyseFile()
-   local err, type = mSys.AnalysePath('scripts:gui.tiri')
+   local err, type = mSys.AnalysePath('temp:filesystem_tests/source.tiri')
    assert(err is ERR_Okay, 'AnalysePath() failed with error: ' .. mSys.GetErrorMsg(err))
    assert(type is LOC_FILE, 'AnalysePath() returned type ' .. type .. ' and not LOC_FILE')
 end

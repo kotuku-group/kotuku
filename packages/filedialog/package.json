@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "name": "gui/filedialog",
+  "version": "1.0",
+  "description": "File-selection dialog for Tiri graphical interfaces.",
+  "entry": "filedialog.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2006-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-GUI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "dialog",
+    "file",
+    "gui"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "gui": "1.0",
+    "gui/button": "1.0",
+    "gui/combobox": "1.0",
+    "gui/fileview": "1.0",
+    "gui/input": "1.0",
+    "gui/view": "1.0",
+    "gui/window": "1.0"
+  },
+  "files": [
+    {
+      "path": "filedialog.tiri",
+      "size": 7430,
+      "sha256": "813d31a923c6cf2d55e782594dabfcf26205c5e3a3b9ccb7d32fe138dc5e4786",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

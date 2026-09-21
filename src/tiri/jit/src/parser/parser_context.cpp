@@ -481,8 +481,10 @@ void ParserContext::pop_import()
 // Resolve an import path relative to the file currently being parsed.
 // The Library parameter will be sanitised on return.
 
-std::string ParserContext::resolve_lib_to_path(std::string_view &Library) const
+tiri::ImportResolutionResult ParserContext::resolve_lib_to_path(
+   std::string_view &Library, const tiri::PackageImportRequirement *Requirement) const
 {
+   tiri::ImportResolutionResult resolution;
    bool local = false;
    std::string parent_prefix;
    if (Library.starts_with("./")) {
@@ -501,8 +503,9 @@ std::string ParserContext::resolve_lib_to_path(std::string_view &Library) const
    for (char value : Library) {
       if (value IS '/') {
          if (not component_has_character) {
-            lj_lex_error(this->lex_state, 0, ErrMsg::BADLIBRARY);
-            return "";
+            resolution.Error = tiri::ImportResolutionError::InvalidName;
+            resolution.Detail = "invalid-library-path";
+            return resolution;
          }
          component_has_character = false;
          continue;
@@ -512,13 +515,15 @@ std::string ParserContext::resolve_lib_to_path(std::string_view &Library) const
          component_has_character = true;
          continue;
       }
-      lj_lex_error(this->lex_state, 0, ErrMsg::BADLIBRARY);
-      return "";
+      resolution.Error = tiri::ImportResolutionError::InvalidName;
+      resolution.Detail = "invalid-library-path";
+      return resolution;
    }
 
    if (not component_has_character) {
-      lj_lex_error(this->lex_state, 0, ErrMsg::BADLIBRARY);
-      return "";
+      resolution.Error = tiri::ImportResolutionError::InvalidName;
+      resolution.Detail = "invalid-library-path";
+      return resolution;
    }
 
    std::string root;
@@ -556,21 +561,18 @@ std::string ParserContext::resolve_lib_to_path(std::string_view &Library) const
       if ((ResolvePath(root, RSF::NO_FILE_CHECK, &resolved_root) != ERR::Okay) or
          (ResolvePath(result, RSF::NO_FILE_CHECK, &resolved_result) != ERR::Okay) or
          not import_path_is_contained(resolved_result, resolved_root)) {
-         lj_lex_error(this->lex_state, 0, ErrMsg::BADLIBRARY);
-         return "";
+         resolution.Error = tiri::ImportResolutionError::InvalidTarget;
+         resolution.Detail = "invalid-library-path";
+         return resolution;
       }
 
-      return resolved_result;
+      resolution.Import.LogicalName.assign(Library);
+      resolution.Import.ResolvedPath = std::move(resolved_result);
+      return resolution;
    }
    else {
-      std::string result("scripts:");
-      result.append(Library);
-      result.append(".tiri");
-
-      // Resolve an existing source with file checking so multi-path `scripts:` volumes select the path that actually
-      // owns the library.  Keep the volume spelling for missing files so the caller reports its normal import error.
-      std::string resolved_result;
-      return ResolvePath(result, RSF::NIL, &resolved_result) IS ERR::Okay ? resolved_result : result;
+      return tiri::resolve_package_import(
+         { Library, Requirement });
    }
 }
 

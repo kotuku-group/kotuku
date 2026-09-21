@@ -67,10 +67,10 @@ Interface sample_interface()
    result.StructureManifest = std::string("\x01\x00", 2);
    result.NativeDependencies = { { "vector", { "length", "normalise" }, 1 } };
    result.Sources = {
-      { "scripts:geometry.tiri", "geometry", "geometry.tiri", "geometry", "", 1, 80, 0 },
-      { "scripts:geometry/local.tiri", "./local", "local.tiri", "", "scripts:geometry.tiri", 81, 12, 4 }
+      { "packages:geometry.tiri", "geometry", "geometry.tiri", "geometry", "", 1, 80, 0 },
+      { "packages:geometry/local.tiri", "./local", "local.tiri", "", "packages:geometry.tiri", 81, 12, 4 }
    };
-   result.NestedModules = { { "math/constants", "scripts:math/constants.tiri",
+   result.NestedModules = { { "math/constants", "packages:math/constants.tiri",
       tiri::cache::content_digest("constants-interface") } };
    return result;
 }
@@ -81,13 +81,14 @@ Identity sample_identity()
    result.BuildIdentity = "build:0123456789abcdef";
    result.LogicalRequest = "geometry";
    result.DeclaredPackage = tiri::PackageIdentity { "geometry", "2.4.1" };
-   result.Source = { "scripts:geometry.tiri", 123, 456, tiri::cache::content_digest("geometry source") };
+   result.Source = { "packages:geometry.tiri", 123, 456, tiri::cache::content_digest("geometry source") };
    result.Options = { { "optimisation", "debug" }, { "language", "tiri" } };
    result.LocalImports = { { result.Source.ResolvedPath, "./local",
-      { "scripts:geometry/local.tiri", 12, 457, tiri::cache::content_digest("local source") } } };
-   result.ModuleDependencies = { { "math/constants", "scripts:math/constants.tiri",
+      { "packages:geometry/local.tiri", 12, 457, tiri::cache::content_digest("local source") } } };
+   result.ModuleDependencies = { { "math/constants", "packages:math/constants.tiri",
       tiri::cache::content_digest("constants-interface"), "compiled-constants-v1" } };
-   result.ResolutionInputs = { { "volume:scripts", result.Source.ResolvedPath, "/opt/kotuku/scripts/" } };
+   result.ResolutionInputs = { { "package:geometry", result.Source.ResolvedPath,
+      "/opt/kotuku/packages/geometry/2.4.1/geometry.tiri", "2.4.1", "2.4.1", true } };
    result.ConditionalInputs = { { tiri::cache::ConditionalKind::IMPORTED, "imported",
       result.Source.ResolvedPath, "true" } };
    return result;
@@ -153,6 +154,7 @@ bool round_trip_and_determinism(kt::Log &Log)
        (decoded.Payload != payload) or
        (decoded.CompilationIdentity.LogicalRequest != identity.LogicalRequest) or
        (decoded.CompilationIdentity.Source.ContentDigest != identity.Source.ContentDigest) or
+       (decoded.CompilationIdentity.ResolutionInputs != identity.ResolutionInputs) or
        decoded.LookupIdentity != lookup_key(identity) or decoded.CompiledIdentity != compiled_key(identity) or
        not decoded.CompileTimeInterface or
        (decoded.CompileTimeInterface->descriptors().Exports.size() != interface_value.Exports.size()) or

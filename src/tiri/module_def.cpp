@@ -4,10 +4,12 @@
 #define FDEF static const struct FunctionField
 #endif
 
+FDEF argsResolvePackage[] = { { "Error", FD_INT|FD_ERROR }, { "Name", FDF_CPPSTRING }, { "Constraint", FDF_CPPSTRING }, { "Path", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsSetVariable[] = { { "Error", FD_INT|FD_ERROR }, { "Script", FD_OBJECTPTR }, { "Name", FDF_CPPSTRING }, { "Type", FD_INT }, { "Variable", FD_TAGS }, { 0, 0 } };
 
 const struct Function glFunctions[] = {
    { (APTR)ti::SetVariable, "SetVariable", argsSetVariable },
+   { (APTR)ti::ResolvePackage, "ResolvePackage", argsResolvePackage },
    { nullptr, nullptr, nullptr }
 };
 

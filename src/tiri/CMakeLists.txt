@@ -802,6 +802,14 @@ add_library (${MOD})
 
 set_module_defaults (${MOD} "Fl")
 
+# Export the ModHeader symbol only.
+
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT KOTUKU_STATIC)
+   target_link_options (${MOD} PRIVATE
+      "LINKER:--version-script=${CMAKE_CURRENT_SOURCE_DIR}/exports.map")
+   set_property (TARGET ${MOD} APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/exports.map")
+endif ()
+
 if (TARGET ${MOD}_defs)
    add_dependencies (${MOD} ${MOD}_defs)
 endif ()
@@ -814,6 +822,7 @@ if (BUILD_DEFS)
 endif ()
 
 set (TIRI_SOURCES "${MOD}.cpp" "bytecode_storage.cpp" "cache_manifest.cpp" "package_identity.cpp"
+   "package_resolver.cpp"
    "version_constraints.cpp"
    "import_module_format.cpp" "import_module_bundle.cpp"
    "import_module_cache.cpp" "tiri_module.cpp"
@@ -862,6 +871,7 @@ if (UNIT_TESTS)
    list (APPEND TIRI_SOURCES "tests/unit_set_variable.cpp")
    list (APPEND TIRI_SOURCES "tests/unit_bytecode_files.cpp")
    list (APPEND TIRI_SOURCES "tests/unit_version_constraints.cpp")
+   list (APPEND TIRI_SOURCES "tests/unit_package_resolver.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_test_indexing.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_test_vm_asm.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_tests_arrays.cpp")
@@ -941,7 +951,7 @@ endif ()
 if (UNIT_TESTS)
    target_compile_definitions(${MOD} PRIVATE
       UNIT_TESTS
-      TIRI_IMPORT_TEST_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/import_scripts/")
+      TIRI_PACKAGE_TEST_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/package_fixtures/")
 endif ()
 
 if (DISABLE_DISPLAY)
@@ -961,7 +971,7 @@ set (TIRI_TESTS
    annotations package_annotation dependencies_annotation locality anonymous_for key_values debug_filesources compound choose_from enum flow
    table_slice options type_name
    library_namespaces
-   try_except checkall import versioned_import include_list processing metatables with thunk_table_index debug
+   try_except checkall import versioned_import package_index_import include_list processing metatables with thunk_table_index debug
    malformed_syntax numeric_limits return_types url tips tempus
    comparison_chaining reserved_keywords compile_if_import overflow protected_globals constant_shadowing config_library
    module_namespaces module_result_contracts builtin_methods

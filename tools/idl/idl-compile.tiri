@@ -3,8 +3,8 @@
 -- dynamically consumed by any language for the purpose of achieving full integration with the Kotuku runtime
 -- environment, which is written in C++.
 --
--- Usage: origo sdk:scripts/idl-tiri.tiri src=source.tdl
--- Example: origo sdk:scripts/idl-tiri.tiri src=sdk:core/modules/core/core.tdl
+-- Usage: origo sdk:tools/idl/idl-compile.tiri src=source.tdl
+-- Example: origo sdk:tools/idl/idl-compile.tiri src=sdk:src/core/core.tdl
 
 global glSelf = obj.find('self')
 global glPath = glSelf.workingPath

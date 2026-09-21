@@ -1,0 +1,134 @@
+@Package(name="gui/slider", version="1.0")
+
+--[[
+Documentation is available in the Kotuku Wiki.
+--]]
+
+   import 'gui'
+
+   namespace gui
+
+FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(gui.fonts.widget)
+BOX_SIZE <const> = math.floor(FONT_MAX_HEIGHT * 1.35) + 1
+MARGIN <const> = math.floor(FONT_HEIGHT * 0.5) + 1
+
+local lStyle = thunk():str
+   if mSys.AnalysePath('style:slider.tiri') is ERR_Okay then
+      return loadFile('style:slider.tiri')
+   else
+      return loadFile('styles:default/slider.tiri')
+   end
+end
+
+gui.slider = function(Options:table!)
+   self = entity {
+      min    = Options.min ?? 0,
+      max    = Options.max ?? 1,
+      value  = Options.value ?? Options.min + ((Options.max - Options.min) * 0.5),
+      label  = Options.label,
+      events = Options.events ?? { },
+      viewport = nil,
+      setRange = function(Min:num!, Max:num!)
+         assert(Max > Min, 'The min/max values are invalid.')
+         &min = Min
+         &max = Max
+         if &value < &min then &setValue(&min) end
+         if &value > &max then &setValue(&max) end
+      end,
+      setValue = function(Value:num)
+         &value = Value
+         &events?.activate(&&, Value)
+         &viewport.scene.surface.mtScheduleRedraw()
+      end
+   }
+
+   using self do
+      target = Options.target
+      assert(target, 'A target viewport is required.')
+      assert(&max > &min, 'The min/max values are invalid.')
+
+      &prvTheme = gui.getTheme(target)
+      &orientation = (Options.orientation is 'vertical') ? 'V' : 'H'
+      &prvLabelSize = 0
+
+      if &orientation is 'V' then
+         &viewport = target.new('VectorViewport', { x = Options.x, y = Options.y, height = (Options.size ?? 100), width = BOX_SIZE })
+
+         &prvSliderHostVP = &viewport.new('VectorViewport', { y = 0, width = '100%', yOffset = 0 })
+         lStyle.background(self, &prvSliderHostVP, &prvTheme)
+
+         &prvSliderVP = &prvSliderHostVP.new('VectorViewport', { width = BOX_SIZE, height = BOX_SIZE })
+
+         &prvSliderVP.dragCallback = function(Viewport:obj!, X:num!, Y:num!)
+            max_size = &prvSliderHostVP.height - BOX_SIZE
+            Y = math.clamp(Y, 0, max_size)
+            if Viewport.y is Y then return end
+
+            Viewport.y = Y
+            &setValue(&min + (&max - &min) * ((max_size - Y) / max_size))
+         end
+
+         max_size = &prvSliderHostVP.height - BOX_SIZE
+         &prvSliderVP.y = max_size - ((&value - &min) / ((&max - &min) / max_size))
+      else
+         &viewport = target.new('VectorViewport', { x = Options.x, y = Options.y, width = (Options.size ?? 100), height = BOX_SIZE })
+
+         if &label then
+            &labelText = &viewport.new('VectorText', {
+               name      = 'Label',
+               x         = 0,
+               y         = math.round(FONT_HEIGHT + math.floor((BOX_SIZE - FONT_HEIGHT) * 0.5)),
+               face      = gui.fonts.label.face,
+               fontSize  = string.format('%.2fpt', gui.fonts.label.size),
+               fontStyle = gui.fonts.label.style,
+               fill      = &prvTheme.window.text,
+               string    = &label,
+               lineLimit = 1
+            })
+
+            &prvLabelSize = &labelText.textWidth + MARGIN
+            &viewport.width = &viewport.width + &prvLabelSize
+         end
+
+         &prvSliderHostVP = &viewport.new('VectorViewport', { x = &prvLabelSize, height = '100%', xOffset = 0 })
+         lStyle.background(self, &prvSliderHostVP, &prvTheme)
+
+         &prvSliderVP = &prvSliderHostVP.new('VectorViewport', { width = BOX_SIZE, height = BOX_SIZE })
+
+         &prvSliderVP.dragCallback = function(Viewport:obj!, X:num!, Y:num!)
+            max_size  = &prvSliderHostVP.width - BOX_SIZE
+            X = math.clamp(X, 0, max_size)
+            if Viewport.x is X then return end
+
+            Viewport.x = X
+            &setValue(&min + (&max - &min) * (X / max_size))
+         end
+
+         &prvSliderVP.x = (&value - &min) / ((&max - &min) / (&prvSliderHostVP.width - BOX_SIZE))
+      end
+
+      lStyle.slider(self, &prvSliderVP, &prvTheme)
+
+      &prvSliderHostVP.mtSubscribeInput(JTYPE_BUTTON,
+         function(Viewport:obj!, Msg)
+            repeat
+               if (Msg.type is JET_LMB) and (Msg.value > 0) then
+                  if &orientation is 'V' then
+                     new_value = &min + ((Msg.y / &prvSliderHostVP.height) * (&max - &min))
+                     &prvSliderVP.y = (new_value - &min) / ((&max - &min) / (&prvSliderHostVP.height - BOX_SIZE))
+                     &setValue(new_value)
+                  else
+                     new_value = &min + ((Msg.x / &prvSliderHostVP.width) * (&max - &min))
+                     &prvSliderVP.x = (new_value - &min) / ((&max - &min) / (&prvSliderHostVP.width - BOX_SIZE))
+                     &setValue(new_value)
+                  end
+               end
+               Msg = Msg.next
+            until Msg is nil
+         end)
+
+      &events?.show(self)
+   end
+
+   return self
+end

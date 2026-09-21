@@ -11829,7 +11829,7 @@ static bool test_package_annotation_metadata(kt::Log &Log)
       return false;
    }
 
-   constexpr std::string_view declared_import = "import 'tests/package_declared'\nreturn 1";
+   constexpr std::string_view declared_import = "import 'tests/package-declared'\nreturn 1";
    auto declared = build_ast_from_source(declared_import, true);
    if (not declared.diagnostics.empty()) {
       Log.error("a non-local import rejected valid package metadata");
@@ -11861,6 +11861,7 @@ static bool test_versioned_import_syntax(kt::Log &Log)
       "import 'tests/versioned-package' version \"1.10\"\nreturn versioned_package.value",
       "import 'tests/versioned-package' version >= \"1.0\" and < \"2\"\nreturn versioned_package.value",
       "import 'tests/versioned-package' version > \"1.1\" and <= \"1.10\" as selected\nreturn selected.value",
+      "import 'tests/versioned-other' version \"1.10\"\nreturn 1",
       "import 'tests/versioned-package'\nversion = \"dev\"\nreturn version",
       "version = 1\nreturn version"
    };
@@ -11894,10 +11895,9 @@ static bool test_versioned_import_syntax(kt::Log &Log)
       { "import 'tests/versioned-package' version >= \"1\" as selected and < \"2\"",
          "must follow the complete version clause" },
       { "import 'tests/versioned-package' version \"01\"", "non-canonical leading zero" },
-      { "import 'tests/versioned-package' version \"2\"", "fails comparison 2" },
+      { "import 'tests/versioned-package' version \"2\"", "no version satisfying" },
       { "import 'tests/versioned-missing' version \"1\"", "requires @Package metadata" },
-      { "import 'tests/versioned-other' version \"1.10\"", "loaded package 'tests/other-package@1.10'" },
-      { "import 'tests/versioned-broken' version < \"2\"", "loaded version 2 fails comparison <2" }
+      { "import 'tests/versioned-broken' version < \"2\"", "no version satisfying" }
    };
    for (const auto &entry : rejected) {
       auto result = build_ast_from_source(entry.Source, true);
@@ -11916,7 +11916,7 @@ static bool test_versioned_import_syntax(kt::Log &Log)
 static bool test_bytecode_load_metadata_transaction(kt::Log &Log)
 {
    constexpr std::string_view source =
-      "global i01_boundary_trace = ''\nimport 'tests/i01_direct'\nreturn i01_boundary_trace";
+      "global i01_boundary_trace = ''\nimport 'tests/i01-direct'\nreturn i01_boundary_trace";
    LuaStateHolder producer_holder;
    lua_State *producer = producer_holder.get();
    if (not producer) return false;
@@ -12024,8 +12024,8 @@ static bool test_file_source_index_collision_fallback(kt::Log &Log)
    LuaStateHolder holder;
    lua_State *lua = holder.get();
    if (not lua) return false;
-   std::string first = "scripts:tests/source-index-first.tiri";
-   std::string second = "scripts:tests/source-index-second.tiri";
+   std::string first = "packages:tests/source-index-first.tiri";
+   std::string second = "packages:tests/source-index-second.tiri";
    const uint8_t first_index = register_file_source(lua, first, "source-index-first.tiri", 1, 3, 0, 0);
    const uint8_t second_index = register_file_source(lua, second, "source-index-second.tiri", 1, 4, 0, 0);
    if (first_index IS second_index or first_index IS FILESOURCE_OVERFLOW_INDEX or
@@ -12050,7 +12050,7 @@ static bool test_file_source_index_collision_fallback(kt::Log &Log)
 static bool test_import_module_metadata_release_idempotence(kt::Log &Log)
 {
    constexpr std::string_view source =
-      "global i01_boundary_trace = ''\nimport 'tests/i01_direct'\nreturn i01_boundary_trace";
+      "global i01_boundary_trace = ''\nimport 'tests/i01-direct'\nreturn i01_boundary_trace";
    LuaStateHolder holder;
    lua_State *lua = holder.get();
    if (not lua) return false;
@@ -12092,7 +12092,7 @@ static bool test_import_module_relocation_transaction(kt::Log &Log)
 {
    constexpr std::string_view source =
       "global i01_boundary_trace = ''\n"
-      "import 'tests/i01_diamond_a', 'tests/i01_diamond_b'\n"
+      "import 'tests/i01-diamond-a', 'tests/i01-diamond-b'\n"
       "return i01_boundary_trace";
    LuaStateHolder holder;
    lua_State *lua = holder.get();

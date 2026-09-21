@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "name": "config",
+  "version": "1.0",
+  "description": "Encoder and decoder for Kōtuku configuration text.",
+  "entry": "config.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 1996-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "config",
+    "configuration",
+    "serialization"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "files": [
+    {
+      "path": "config.tiri",
+      "size": 4881,
+      "sha256": "28d1ea5c157f3d47c6d8d2c4928f448f29663ecef4fd10c474a1fbf5d324ae8b",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

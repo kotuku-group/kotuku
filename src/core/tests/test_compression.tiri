@@ -5,6 +5,7 @@ global glScanItems = { }
 global glScanCount = 0
 
 @AfterAll function cleanup()
+   mSys.DeleteFile('temp:cmp_fixture/')
    mSys.DeleteFile('temp:cmp_test/')
    mSys.DeleteFile('temp:cmp_icons/')
    mSys.DeleteFile('temp:cmp_test_json.zip')
@@ -48,6 +49,15 @@ function writeTestFile(Path:str, Content:any)
    assert(err is ERR_Okay, f'Failed to write {Path}: {mSys.GetErrorMsg(err)}')
    assert(written is #Content, f'Write to {Path} stored {written} of {#Content} bytes.')
    file.free()
+end
+
+@BeforeAll function setupFixtures()
+   local root <close> = obj.new('file', { path='temp:cmp_fixture/', flags=FL_NEW|FL_FOLDER })
+   local scripts <close> = obj.new('file', { path='temp:cmp_fixture/scripts/', flags=FL_NEW|FL_FOLDER })
+   writeTestFile('temp:cmp_fixture/gui.tiri', 'fixture GUI source\n')
+   writeTestFile('temp:cmp_fixture/window.tiri', 'fixture window source\n')
+   writeTestFile('temp:cmp_fixture/scripts/button.tiri', 'fixture button source\n')
+   writeTestFile('temp:cmp_fixture/scripts/menu.tiri', 'fixture menu source\n')
 end
 
 global function streamedOutput(CompressedID, Data)
@@ -105,10 +115,10 @@ end
 @Test(priority=1) function CreateCompress()
    local cmp = obj.new('compression', { path='temp:cmp_test_json.zip', flags=FL_NEW } )
 
-   err = cmp.mtCompressFile('scripts:gui.tiri', '')
+   err = cmp.mtCompressFile('temp:cmp_fixture/gui.tiri', '')
    assert(err is ERR_Okay, 'CompressFile() failed: ' .. mSys.GetErrorMsg(err))
 
-   err = cmp.mtCompressFile('config:styles/default/window.tiri', '')
+   err = cmp.mtCompressFile('temp:cmp_fixture/window.tiri', '')
    assert(err is ERR_Okay, 'CompressFile() failed: ' .. mSys.GetErrorMsg(err))
 
    cmp = nil
@@ -148,10 +158,10 @@ end
    assert(err is ERR_Okay, 'Find() failed: ' .. mSys.GetErrorMsg(err))
    assert(item.path is 'gui.tiri', 'Find() returned ' .. tostring(item.path))
 
-   source_file = obj.new('file', { path='scripts:gui.tiri' })
+   source_file = obj.new('file', { path='temp:cmp_fixture/gui.tiri' })
    source_size = source_file.size
    source_data = array<byte, source_size>
-   err = mSys.ReadFileToBuffer('scripts:gui.tiri', source_data)
+   err = mSys.ReadFileToBuffer('temp:cmp_fixture/gui.tiri', source_data)
    assert(err is ERR_Okay, 'Failed to read source data: ' .. mSys.GetErrorMsg(err))
 
    output = obj.new('file', { path='temp:cmp_decompress_object.tiri', flags=FL_WRITE|FL_NEW })
@@ -218,7 +228,7 @@ end
       end
    } )
 
-   err = cmp.mtCompressFile('scripts:gui/', 'scripts')
+   err = cmp.mtCompressFile('temp:cmp_fixture/scripts/', 'scripts')
    assert(err is ERR_Okay, 'CompressFile() failed: ' .. mSys.GetErrorMsg(err))
 
    print('Compressed ' .. file_count .. ' files.')
@@ -254,7 +264,7 @@ end
 
 @Test(priority=7) function StreamedCompression()
    cmp = obj.new('compression' , { } )
-   file = obj.new('file', { src='scripts:gui.tiri', flags=FL_READ } )
+   file = obj.new('file', { src='temp:cmp_fixture/gui.tiri', flags=FL_READ } )
 
    global glOutFile = obj.new('file', { src='temp:scripts.gz', flags=FL_WRITE|FL_NEW } )
    if cmp.mtCompressStreamStart() is ERR_Okay then
@@ -277,13 +287,13 @@ end
 
 @Test(priority=8) function ArchiveVolume()
    cmp = obj.new('compression', { path='temp:cmp_test_scripts.zip', archiveName='test' } )
-   file = obj.new('file', { path='scripts:gui/button.tiri' } )
+   file = obj.new('file', { path='temp:cmp_fixture/scripts/button.tiri' } )
    file_size = file.size
 
    cmpbuffer = array<byte, file_size>
    cmpsrc = array<byte, file_size>
 
-   err = mSys.ReadFileToBuffer('scripts:gui/button.tiri', cmpsrc)
+   err = mSys.ReadFileToBuffer('temp:cmp_fixture/scripts/button.tiri', cmpsrc)
    assert(err is ERR_Okay, 'Failed to read original source file for comparison: ' .. mSys.GetErrorMsg(err))
    cmpstr = cmpsrc.getString()
    assert(#cmpstr is file_size, f"Array length of {#cmpstr} does not match expected file length of {file_size}.")
@@ -343,7 +353,7 @@ end
 
    -- Verify that the streamed round-trip reproduced the original source exactly.
 
-   source_file = obj.new('file', { path='scripts:gui.tiri' })
+   source_file = obj.new('file', { path='temp:cmp_fixture/gui.tiri' })
    source_size = source_file.size
 
    output_file = obj.new('file', { path='temp:gui.tiri' })
@@ -351,7 +361,7 @@ end
 
    source_data = array<byte, source_size>
    output_data = array<byte, source_size>
-   assert(mSys.ReadFileToBuffer('scripts:gui.tiri', source_data) is ERR_Okay, 'Failed to read source data.')
+   assert(mSys.ReadFileToBuffer('temp:cmp_fixture/gui.tiri', source_data) is ERR_Okay, 'Failed to read source data.')
    assert(mSys.ReadFileToBuffer('temp:gui.tiri', output_data) is ERR_Okay, 'Failed to read decompressed output.')
    assert(output_data.getString() is source_data.getString(), 'Round-tripped stream output does not match the source.')
 end

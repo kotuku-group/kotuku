@@ -10,7 +10,7 @@
 
 namespace tiri::cache {
 
-constexpr uint32_t SCHEMA_VERSION = 2;
+constexpr uint32_t SCHEMA_VERSION = 3;
 constexpr size_t DIGEST_SIZE = 32;
 constexpr size_t MAX_METADATA_SIZE = 8 * 1024 * 1024;
 constexpr size_t MAX_STRING_SIZE = 64 * 1024;
@@ -60,6 +60,10 @@ struct ResolutionInput {
    std::string Name;
    std::string Context;
    std::string Value;
+   std::string Constraint;
+   std::string SelectedVersion;
+   bool PackageManaged = false;
+   [[nodiscard]] bool operator==(const ResolutionInput &) const = default;
 };
 
 struct ConditionalInput {

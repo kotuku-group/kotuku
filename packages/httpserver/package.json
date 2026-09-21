@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "name": "net/httpserver",
+  "version": "1.0",
+  "description": "Event-driven HTTP server library for Tiri applications.",
+  "entry": "httpserver.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2025-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-HTTP-Server-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "http",
+    "network",
+    "server"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "json": "1.0",
+    "tempus": "1.0"
+  },
+  "files": [
+    {
+      "path": "httpserver.tiri",
+      "size": 74564,
+      "sha256": "137d92100ecec72cea808abc33b821bf859b84c9653a2ea25296a5586e9dd882",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

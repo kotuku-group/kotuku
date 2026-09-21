@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "name": "gui",
+  "version": "1.0",
+  "description": "Core graphical user-interface functions for Tiri applications.",
+  "entry": "gui.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2006-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-GUI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "gui",
+    "user-interface",
+    "vector"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "config": "1.0"
+  },
+  "files": [
+    {
+      "path": "gui.tiri",
+      "size": 37362,
+      "sha256": "98973e23009611b3a19f99381d009963931c2f038ec5ddef49b5b21d121d8fc8",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

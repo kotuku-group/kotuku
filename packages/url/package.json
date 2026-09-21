@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "name": "net/url",
+  "version": "1.0",
+  "description": "URL parsing, construction and percent-encoding utilities for Tiri applications.",
+  "entry": "url.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2025-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-URL-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "network",
+    "uri",
+    "url"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "files": [
+    {
+      "path": "url.tiri",
+      "size": 19245,
+      "sha256": "b86067a170075f330ff45c8406a2bddfcdc25db3ae5ba87cf7a88091107f575f",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

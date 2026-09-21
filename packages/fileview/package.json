@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "name": "gui/fileview",
+  "version": "1.0",
+  "description": "File-system browser built on Tiri list and column view widgets.",
+  "entry": "fileview.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2016-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-GUI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "browser",
+    "file",
+    "gui"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "gui": "1.0",
+    "gui/dialog": "1.0",
+    "gui/fontdialog": "1.0",
+    "gui/menu": "1.0",
+    "gui/toolbar": "1.0",
+    "gui/view": "1.0",
+    "io/filemgr": "1.0",
+    "json": "1.0"
+  },
+  "files": [
+    {
+      "path": "fileview.tiri",
+      "size": 62206,
+      "sha256": "784e4934612131db117f17542d5f927c82add04eb30678f970fdf73bd6cd2e3a",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

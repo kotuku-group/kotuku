@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "name": "gui/fontdialog",
+  "version": "1.0",
+  "description": "Font-selection dialog for Tiri graphical interfaces.",
+  "entry": "fontdialog.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2020-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-GUI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "dialog",
+    "font",
+    "gui"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "config": "1.0",
+    "gui": "1.0",
+    "gui/button": "1.0",
+    "gui/view": "1.0",
+    "gui/window": "1.0"
+  },
+  "files": [
+    {
+      "path": "fontdialog.tiri",
+      "size": 13334,
+      "sha256": "de5c370f80cd0f429d791583b23bded57b8b5e85135959de6b6951bb9d2292a4",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

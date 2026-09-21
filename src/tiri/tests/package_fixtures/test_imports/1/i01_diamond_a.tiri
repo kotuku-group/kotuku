@@ -1,0 +1,4 @@
+@Package(name="tests/i01-diamond-a", version="1")
+import 'tests/i01-diamond-leaf'
+
+i01_boundary_trace ..= 'A'

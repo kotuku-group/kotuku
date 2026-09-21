@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "name": "json",
+  "version": "1.0",
+  "description": "Compact JSON encoder and decoder for Tiri values.",
+  "entry": "json.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2025-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-JSON-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "data",
+    "json",
+    "serialization"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "files": [
+    {
+      "path": "json.tiri",
+      "size": 7448,
+      "sha256": "4aa1b0c1c3df977d1972e5ce3d057cf3ab8755b7e006a59c21cab1970745ec7b",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

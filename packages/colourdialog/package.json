@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "name": "gui/colourdialog",
+  "version": "1.0",
+  "description": "Interactive colour picker and palette dialog for Tiri graphical interfaces.",
+  "entry": "colourdialog.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2020-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-GUI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "colour",
+    "dialog",
+    "gui"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "gui": "1.0",
+    "gui/button": "1.0",
+    "gui/icon": "1.0",
+    "gui/input": "1.0",
+    "gui/window": "1.0",
+    "json": "1.0"
+  },
+  "files": [
+    {
+      "path": "colourdialog.tiri",
+      "size": 20140,
+      "sha256": "422b54ca2fd0906fc827ebc6956fcb947b310e797ef541dd2fc8fbac368f3dd2",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

@@ -38,20 +38,10 @@ else
     echo "WARNING: Configuration directory not found"
 fi
 
-# Check scripts directory
-SCRIPTS_DIR="/usr/share/kotuku/scripts"
-
-if [ -d "$SCRIPTS_DIR" ]; then
-    echo "Checking scripts directory permissions..."
-
-    if [ ! -r "$SCRIPTS_DIR" ]; then
-        echo "FAIL: Scripts directory not readable"
-        exit 1
-    fi
-
-    echo "Scripts directory accessible"
-else
-    echo "WARNING: Scripts directory not found"
+# Check the package index and a versioned payload.
+PACKAGES_DIR="/usr/share/kotuku/packages"
+if [ ! -r "$PACKAGES_DIR/index.cfg" ] || \
+   ! find "$PACKAGES_DIR" -mindepth 3 -type f -name '*.tiri' -print -quit | grep -q .; then
+    echo "FAIL: Package index or payloads are missing"
+    exit 1
 fi
-
-echo "PASS: Configuration validation completed successfully"

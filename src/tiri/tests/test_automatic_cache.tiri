@@ -116,15 +116,22 @@ end
 -- Package declarations discovered during parsing must not change the cache location used by subsequent imports.
 
 @Test function DeclaredPackageImportsReusePublishedCache()
-   local module_path = glRoot .. 'declared_package.tiri'
+   local packages = glRoot .. 'packages/'
+   local root_folder <close> = obj.new('file', { path=packages, flags=FL_NEW|FL_FOLDER })
+   local package_folder <close> = obj.new('file', { path=packages .. 'declared-package/', flags=FL_NEW|FL_FOLDER })
    local arguments = array<str> {
-      '--statement', "import 'declared_package'; print('PACKAGE_CACHE_VALUE:' .. declared_package.value)",
-      '--log-trace', '--gfx-driver=headless', '--set-volume', 'scripts=' .. glRoot,
+      '--statement', "import 'declared-package'; print('PACKAGE_CACHE_VALUE:' .. declared_package.value)",
+      '--log-trace', '--gfx-driver=headless', '--set-volume', 'packages=' .. packages,
       '--set-volume', 'temp=' .. glRoot
    }
 
    for version in {1 into 2} do
-      write_file(module_path, '@Package(name="tests/declared-package", version="' .. tostring(version) .. '")\n' ..
+      local version_path = packages .. 'declared-package/' .. tostring(version) .. '/'
+      local version_folder <close> = obj.new('file', { path=version_path, flags=FL_NEW|FL_FOLDER })
+      write_file(packages .. 'index.cfg', '[declared-package]\n' .. tostring(version) ..
+         ' = declared-package/' .. tostring(version) .. '/main.tiri\n')
+      write_file(version_path .. 'main.tiri',
+         '@Package(name="declared-package", version="' .. tostring(version) .. '")\n' ..
          'namespace declared_package { }\ndeclared_package.value = ' .. tostring(version))
 
       local code, output = child(arguments)

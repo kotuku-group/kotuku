@@ -50,16 +50,16 @@ bool manifest_tests(kt::Log &Log)
        parse_version_constraint(">=2026.2.23", kotuku_constraint)) return false;
 
    std::vector<CompatibilityRecord> records {
-      { "scripts:z.tiri", { tiri_constraint, std::nullopt } },
-      { "scripts:a.tiri", { std::nullopt, kotuku_constraint } },
-      { "scripts:z.tiri", { tiri_constraint, std::nullopt } }
+      { "packages:z.tiri", { tiri_constraint, std::nullopt } },
+      { "packages:a.tiri", { std::nullopt, kotuku_constraint } },
+      { "packages:z.tiri", { tiri_constraint, std::nullopt } }
    };
 
    std::string encoded;
    if (encode_compatibility_manifest(records, encoded)) return false;
    std::vector<CompatibilityRecord> decoded;
    if (decode_compatibility_manifest(encoded, decoded) or decoded.size() != 2 or
-       decoded[0].Owner != "scripts:a.tiri" or decoded[1].Owner != "scripts:z.tiri") {
+       decoded[0].Owner != "packages:a.tiri" or decoded[1].Owner != "packages:z.tiri") {
       Log.error("Compatibility manifest did not canonicalise and round-trip");
       return false;
    }
@@ -148,9 +148,14 @@ bool package_import_tests(kt::Log &Log)
       return false;
    }
 
-   if (check_package_import(requirement, PackageIdentity { "other/pkg", "1.1" }, &failure) or
-       failure.Kind != PackageImportFailureKind::NameMismatch) {
-      Log.error("Package-name mismatch was not reported");
+   if (not check_package_import(requirement, PackageIdentity { "other/pkg", "1.1" }, &failure)) {
+      Log.error("An exported import name was incorrectly required to match its owning package name");
+      return false;
+   }
+
+   if (check_package_import(requirement, PackageIdentity { "Invalid", "1.1" }, &failure) or
+       failure.Kind != PackageImportFailureKind::InvalidMetadata) {
+      Log.error("An invalid declared package name was not reported");
       return false;
    }
 
