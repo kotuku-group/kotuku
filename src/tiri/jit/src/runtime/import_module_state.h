@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../../../cache_manifest.h"
-#include "../../../import_module_format.h"
+#include "../../../packaging/cache_manifest.h"
+#include "../../../packaging/import_module_format.h"
 
 #include <span>
 #include <string>

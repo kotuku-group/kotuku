@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../../../import_module_cache.h"
-#include "../../../package_resolver.h"
+#include "../../../packaging/import_module_cache.h"
+#include "../../../packaging/package_resolver.h"
 
 #include <functional>
 #include <map>

@@ -21,8 +21,8 @@
 #include "lj_contract.h"
 #include "../debug/lj_debug.h"
 #include "../../../defs.h"
-#include "../../../import_module_bundle.h"
-#include "../../../version_constraints.h"
+#include "../../../packaging/import_module_bundle.h"
+#include "../../../packaging/version_constraints.h"
 
 #include <limits>
 #include <vector>

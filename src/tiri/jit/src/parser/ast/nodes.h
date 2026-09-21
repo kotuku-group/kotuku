@@ -44,9 +44,9 @@
 
 #include "lexer.h"
 #include "../static_type_descriptor.h"
-#include "../../../../import_module_format.h"
-#include "../../../../import_module_bundle.h"
-#include "../../../../version_constraints.h"
+#include "../../../../packaging/import_module_format.h"
+#include "../../../../packaging/import_module_bundle.h"
+#include "../../../../packaging/version_constraints.h"
 
 class ParserDiagnostics;
 class InstalledImportInterface;

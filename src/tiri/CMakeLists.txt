@@ -129,7 +129,7 @@ set (JIT_KOTUKU_HEADER_DEPENDENCIES
 )
 
 set (JIT_TIRI_HEADER_DEPENDENCIES
-   "${CMAKE_CURRENT_SOURCE_DIR}/cache_manifest.h"
+   "${CMAKE_CURRENT_SOURCE_DIR}/packaging/cache_manifest.h"
    "${CMAKE_CURRENT_SOURCE_DIR}/defs.h"
    "${CMAKE_CURRENT_SOURCE_DIR}/struct_def.h"
    "${JIT_SRC}/runtime/lj_contract.h"
@@ -821,11 +821,12 @@ if (BUILD_DEFS)
    add_dependencies (jit_lib core_defs)
 endif ()
 
-set (TIRI_SOURCES "${MOD}.cpp" "bytecode_storage.cpp" "cache_manifest.cpp" "package_identity.cpp"
-   "package_resolver.cpp"
-   "version_constraints.cpp"
-   "import_module_format.cpp" "import_module_bundle.cpp"
-   "import_module_cache.cpp" "tiri_module.cpp"
+set (TIRI_SOURCES "${MOD}.cpp" "bytecode_storage.cpp" "packaging/cache_manifest.cpp" "packaging/package_identity.cpp"
+   "packaging/package_resolver.cpp"
+   "packaging/version_constraints.cpp"
+   "packaging/import_module_format.cpp" "packaging/import_module_bundle.cpp"
+   "packaging/import_module_cache.cpp"
+   "tiri_module.cpp"
    "tiri_async.cpp" "tiri_struct.cpp"
    "tiri_processing.cpp"
    "tiri_functions.cpp" "tiri_regex.cpp"

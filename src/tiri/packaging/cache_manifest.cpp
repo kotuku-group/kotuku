@@ -2,7 +2,7 @@
 #include <kotuku/main.h>
 
 #include "cache_manifest.h"
-#include "bytecode_storage.h"
+#include "../bytecode_storage.h"
 
 #include <algorithm>
 #include <bit>

@@ -23,8 +23,8 @@ constexpr int SIZE_READ = 1024;
 #include <format>
 #include <memory>
 
-#include "cache_manifest.h"
-#include "package_resolver.h"
+#include "packaging/cache_manifest.h"
+#include "packaging/package_resolver.h"
 #include "lj_obj.h"
 #include "lj_frame.h"
 #include "lj_state.h"

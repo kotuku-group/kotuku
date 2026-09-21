@@ -22,9 +22,9 @@
 #include "../debug/filesource.h"
 #include "func_state.h"
 #include "../lib/load.h"
-#include "../../../import_module_cache.h"
-#include "../../../package_identity.h"
-#include "../../../version_constraints.h"
+#include "../../../packaging/import_module_cache.h"
+#include "../../../packaging/package_identity.h"
+#include "../../../packaging/version_constraints.h"
 
 #ifdef INCLUDE_TIPS
 #include <memory>

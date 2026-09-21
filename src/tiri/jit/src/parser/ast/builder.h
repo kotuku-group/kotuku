@@ -20,9 +20,9 @@
 #include "nodes.h"
 #include "../parser_context.h"
 #include "../import_module_validation.h"
-#include "../../../../cache_manifest.h"
-#include "../../../../import_module_cache.h"
-#include "../../../../version_constraints.h"
+#include "../../../../packaging/cache_manifest.h"
+#include "../../../../packaging/import_module_cache.h"
+#include "../../../../packaging/version_constraints.h"
 
 class AstBuilder {
 public:

@@ -52,8 +52,8 @@
 #include "table_ownership.h"
 #include "ir_emitter/ir_emitter.h"
 #include "../runtime/lj_array.h"
-#include "../../../import_module_format.h"
-#include "../../../import_module_bundle.h"
+#include "../../../packaging/import_module_format.h"
+#include "../../../packaging/import_module_bundle.h"
 #include "../../../defs.h"
 
 static extTiri *glTestScript = nullptr;

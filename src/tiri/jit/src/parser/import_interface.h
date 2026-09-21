@@ -15,7 +15,7 @@
 
 #include "ast/nodes.h"
 #include "type_checker.h"
-#include "../../../import_module_format.h"
+#include "../../../packaging/import_module_format.h"
 
 class ParserContext;
 

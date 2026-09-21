@@ -15,8 +15,8 @@
 #include "lj_vm.h"
 #include "../debug/filesource.h"
 #include "../runtime/import_module_graph.h"
-#include "../../../import_module_bundle.h"
-#include "../../../version_constraints.h"
+#include "../../../packaging/import_module_bundle.h"
+#include "../../../packaging/version_constraints.h"
 
 // Context for bytecode writer.
 typedef struct BCWriteCtx {

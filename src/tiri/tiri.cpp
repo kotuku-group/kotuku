@@ -52,7 +52,7 @@ JUMPTABLE_REGEX
 
 #include "defs.h"
 #include "protected_call.h"
-#include "package_resolver.h"
+#include "packaging/package_resolver.h"
 
 namespace tiri {
 OBJECTPTR modDisplay = nullptr; // Required by tiri_input.c

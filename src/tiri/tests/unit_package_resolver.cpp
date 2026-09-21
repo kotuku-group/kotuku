@@ -1,6 +1,6 @@
 #include <kotuku/main.h>
 
-#include "../package_resolver.h"
+#include "../packaging/package_resolver.h"
 
 namespace {
 

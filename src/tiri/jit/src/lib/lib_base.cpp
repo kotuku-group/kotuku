@@ -44,7 +44,7 @@
 #include "runtime/lj_object.h"
 #include "runtime/lj_proto_registry.h"
 #include "runtime/import_module_state.h"
-#include "../../cache_manifest.h"
+#include "../../packaging/cache_manifest.h"
 #include "tiri_build_identity.h"
 #include "runtime_versions.h"
 #include "debug/error_guard.h"
