@@ -103,7 +103,6 @@ enum class TokenKind : uint16_t {
    ExtendsToken = TK_extends,
    ExportToken = TK_export,
    AwaitToken = TK_await,
-   FinallyToken = TK_finally,
    YieldToken = TK_yield,
    UsingToken = TK_using,
    WhereToken = TK_where,
@@ -244,7 +243,6 @@ enum class TokenKind : uint16_t {
       case TokenKind::ExtendsToken: return "extends";
       case TokenKind::ExportToken: return "export";
       case TokenKind::AwaitToken: return "await";
-      case TokenKind::FinallyToken: return "finally";
       case TokenKind::YieldToken: return "yield";
       case TokenKind::UsingToken: return "using";
       case TokenKind::WhereToken: return "where";
@@ -333,7 +331,6 @@ public:
          case TokenKind::ExtendsToken:
          case TokenKind::ExportToken:
          case TokenKind::AwaitToken:
-         case TokenKind::FinallyToken:
          case TokenKind::YieldToken:
          case TokenKind::UsingToken:
          case TokenKind::WhereToken:

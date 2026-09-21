@@ -85,7 +85,6 @@ struct TokenDefinition {
    TOKEN_DEF(extends,      "extends",  TKF_RESERVED) \
    TOKEN_DEF(export,       "export",   TKF_RESERVED) \
    TOKEN_DEF(await,        "await",    TKF_RESERVED) \
-   TOKEN_DEF(finally,      "finally",  TKF_RESERVED) \
    TOKEN_DEF(yield,        "yield",    TKF_RESERVED) \
    TOKEN_DEF(using,        "using",    TKF_RESERVED | TKF_STATEMENT_START) \
    TOKEN_DEF(where,        "where",    TKF_RESERVED) \
