@@ -41,6 +41,7 @@ struct CompilationOption {
 
 // Script flags currently affect runtime behaviour or parser metadata, not emitted bytecode.  Keep this identity
 // boundary shared by whole-root and imported-module caches so future bytecode-affecting options cannot diverge.
+
 [[nodiscard]] std::vector<CompilationOption> effective_compilation_options();
 
 struct SourceIdentity {

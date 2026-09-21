@@ -11,7 +11,7 @@
 #include "parser/token_stream.h"
 #include "parser/parser_profiler.h"
 #include "parser/static_type_descriptor.h"
-#include "../../../package_resolver.h"
+#include "../../../packaging/package_resolver.h"
 
 #ifdef INCLUDE_TIPS
 class TipEmitter;

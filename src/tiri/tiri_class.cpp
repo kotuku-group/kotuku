@@ -63,9 +63,9 @@ identity.
 #include "jit/src/debug/dump_bytecode.h"
 #include "lj_proto_registry.h"
 #include "tiri_build_identity.h"
-#include "cache_manifest.h"
+#include "packaging/cache_manifest.h"
 #include "bytecode_storage.h"
-#include "import_module_format.h"
+#include "packaging/import_module_format.h"
 
 #include "defs.h"
 
@@ -637,7 +637,7 @@ extTiri::~extTiri()
 
 //********************************************************************************************************************
 
-#include "cache.cpp"
+#include "packaging/cache.cpp"
 
 //********************************************************************************************************************
 

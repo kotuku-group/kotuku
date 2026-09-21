@@ -1,7 +1,7 @@
 
 #include "import_module_bundle.h"
 #include "import_module_format.h"
-#include "defs.h"
+#include "../defs.h"
 
 #include <algorithm>
 #include <limits>

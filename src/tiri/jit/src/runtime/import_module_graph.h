@@ -2,8 +2,8 @@
 
 #include "lj_obj.h"
 #include "../debug/filesource.h"
-#include "../../../import_module_bundle.h"
-#include "../../../package_identity.h"
+#include "../../../packaging/import_module_bundle.h"
+#include "../../../packaging/package_identity.h"
 
 #include <cstddef>
 #include <span>

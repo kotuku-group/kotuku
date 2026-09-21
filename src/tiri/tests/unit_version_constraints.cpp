@@ -3,7 +3,7 @@
 #define PRV_TIRI_MODULE
 #include <kotuku/main.h>
 
-#include "../version_constraints.h"
+#include "../packaging/version_constraints.h"
 
 #ifdef UNIT_TESTS
 namespace {

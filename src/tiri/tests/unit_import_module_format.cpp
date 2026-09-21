@@ -4,8 +4,8 @@
 #include <kotuku/main.h>
 
 #include "../defs.h"
-#include "../import_module_bundle.h"
-#include "../import_module_format.h"
+#include "../packaging/import_module_bundle.h"
+#include "../packaging/import_module_format.h"
 #include "../lua.hpp"
 
 #include <algorithm>

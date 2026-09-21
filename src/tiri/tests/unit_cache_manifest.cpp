@@ -4,7 +4,7 @@
 #include <kotuku/main.h>
 #include <kotuku/modules/tiri.h>
 
-#include "../cache_manifest.h"
+#include "../packaging/cache_manifest.h"
 #include "../bytecode_storage.h"
 #include "../defs.h"
 #include "../lua.hpp"

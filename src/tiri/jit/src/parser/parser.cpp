@@ -43,9 +43,10 @@ const tiri::import_cache::LifecycleCounters &parser_last_import_cache_counters()
    return glLastImportCacheCounters;
 }
 #endif
-#include "../../../import_module_bundle.h"
-#include "../../../import_module_format.h"
-#include "../../../version_constraints.h"
+
+#include "../../../packaging/import_module_bundle.h"
+#include "../../../packaging/import_module_format.h"
+#include "../../../packaging/version_constraints.h"
 #include "tiri_build_identity.h"
 
 #include <kotuku/main.h>
@@ -232,9 +233,11 @@ static void run_ast_pipeline(ParserContext &Context, ParserProfiler &Profiler)
    trace_ast_boundary(Context, *chunk, "parse");
    resolve_assignment_targets(Context, *chunk);
    discover_static_bindings(Context, *chunk);
+
    // Publish the first descriptor pass before semantic type analysis so dynamic-ingress policy can distinguish
    // genuinely unknown values from concrete native and callable results.  A second pass below refreshes descriptors
    // after type analysis has refined inferred function results.
+
    propagate_static_descriptors(Context, *chunk);
 
    if (Context.config().enable_type_analysis) {

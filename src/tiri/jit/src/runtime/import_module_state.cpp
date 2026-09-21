@@ -1,7 +1,7 @@
 #include "import_module_state.h"
 
 #include "lj_obj.h"
-#include "../../../import_module_bundle.h"
+#include "../../../packaging/import_module_bundle.h"
 
 #include <algorithm>
 #include <charconv>

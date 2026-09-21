@@ -5,7 +5,7 @@
 #include <kotuku/modules/filesystem.h>
 #include <kotuku/modules/processes.h>
 
-#include "../import_module_cache.h"
+#include "../packaging/import_module_cache.h"
 
 #include <array>
 #include <atomic>

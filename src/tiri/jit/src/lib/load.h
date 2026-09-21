@@ -1,9 +1,8 @@
 #pragma once
 
-#include "../../../package_identity.h"
-#include "../../../version_constraints.h"
-
-#include "../../../import_module_bundle.h"
+#include "../../../packaging/package_identity.h"
+#include "../../../packaging/version_constraints.h"
+#include "../../../packaging/import_module_bundle.h"
 
 #include <string_view>
 #include <optional>

@@ -1,7 +1,7 @@
 #include <kotuku/main.h>
 
 #include "import_module_format.h"
-#include "bytecode_storage.h"
+#include "../bytecode_storage.h"
 
 #include <algorithm>
 #include <array>
