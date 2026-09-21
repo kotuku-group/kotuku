@@ -1,11 +1,14 @@
 # Generate the import index and install each package in its versioned directory.
 
 # Only the supported bundled libraries are published.  Locally present, unpublished manifests remain private.
+
 set (BUNDLED_PACKAGES
    benchmark button checkbox colourdialog combobox config dialog divider dropdown filedialog filemgr filesearch
    fileview fontdialog git gui httpserver icon input json menu menubar options proxyserver scrollbar slider tempus
    toolbar tooltip url vfx view window)
+
 set (PACKAGE_MANIFESTS)
+
 foreach (PACKAGE_NAME IN LISTS BUNDLED_PACKAGES)
    set (PACKAGE_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/${PACKAGE_NAME}/package.json")
    if (NOT EXISTS "${PACKAGE_MANIFEST}")
@@ -13,9 +16,11 @@ foreach (PACKAGE_NAME IN LISTS BUNDLED_PACKAGES)
    endif ()
    list (APPEND PACKAGE_MANIFESTS "${PACKAGE_MANIFEST}")
 endforeach ()
+
 list (SORT PACKAGE_MANIFESTS)
 
 # Reconfigure when a supported manifest changes.  New bundled packages must be added to BUNDLED_PACKAGES.
+
 set_property (DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${PACKAGE_MANIFESTS})
 
 function (package_json_string OUTPUT MANIFEST_JSON MANIFEST_PATH)
