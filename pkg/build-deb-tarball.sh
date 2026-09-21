@@ -172,7 +172,6 @@ while [[ $# -gt 0 ]]; do
             fi
 
             # Ensure the parent directory exists for the build directory
-            local parent_dir
             parent_dir="$(dirname "$BUILD_DIR")"
             if [[ ! -d "$parent_dir" ]]; then
                 echo "Error: Parent directory for build path does not exist: $parent_dir"
@@ -329,18 +328,53 @@ if [[ "$EXECUTABLE_NAME" != "origo" ]]; then
     ln -s origo "$RUNTIME_STAGING/usr/bin/$EXECUTABLE_NAME" || { echo "Warning: Failed to create symlink for $EXECUTABLE_NAME"; }
 fi
 
-# Copy configuration and scripts with validation
+# A modular release needs its native modules beside the runtime executable.
+if [[ ! -d "$BUILD_DIR/extracted/lib" ]] || \
+   ! find "$BUILD_DIR/extracted/lib" -maxdepth 1 -type f -name '*.so*' -print -quit | grep -q .; then
+    echo "Error: Native modules are missing from tarball"
+    exit 1
+fi
+mkdir -p "$RUNTIME_STAGING/usr/lib/kotuku"
+cp -a "$BUILD_DIR/extracted/lib/." "$RUNTIME_STAGING/usr/lib/kotuku/" || {
+    echo "Error: Failed to copy native modules"
+    exit 1
+}
+
+# Copy configuration and versioned packages with validation
 if [[ -d "$BUILD_DIR/extracted/config" ]]; then
     cp -r "$BUILD_DIR/extracted/config" "$RUNTIME_STAGING/usr/share/kotuku/" || { echo "Warning: Failed to copy config directory"; }
 else
     echo "Warning: No config directory found in tarball"
 fi
 
-if [[ -d "$BUILD_DIR/extracted/scripts" ]]; then
-    cp -r "$BUILD_DIR/extracted/scripts" "$RUNTIME_STAGING/usr/share/kotuku/" || { echo "Warning: Failed to copy scripts directory"; }
-else
-    echo "Warning: No scripts directory found in tarball"
+if [[ ! -f "$BUILD_DIR/extracted/packages/index.cfg" ]]; then
+    echo "Error: Package index is missing from tarball"
+    exit 1
 fi
+if ! find "$BUILD_DIR/extracted/packages" -mindepth 3 -type f -name '*.tiri' -print -quit | grep -q .; then
+    echo "Error: Package payloads are missing from tarball"
+    exit 1
+fi
+package_entries=0
+while IFS= read -r package_target; do
+    if [[ ! -f "$BUILD_DIR/extracted/packages/$package_target" ]]; then
+        echo "Error: Indexed package payload is missing: $package_target"
+        exit 1
+    fi
+    package_entries=$((package_entries + 1))
+done < <(awk -F= '/^[[:space:]]*[0-9]+(\.[0-9]+)*[[:space:]]*=/ {
+    target = $2
+    gsub(/^[[:space:]]+|[[:space:]]+$/, "", target)
+    print target
+}' "$BUILD_DIR/extracted/packages/index.cfg")
+if [[ "$package_entries" -eq 0 ]]; then
+    echo "Error: Package index contains no payload entries"
+    exit 1
+fi
+cp -r "$BUILD_DIR/extracted/packages" "$RUNTIME_STAGING/usr/share/kotuku/" || {
+    echo "Error: Failed to copy packages directory"
+    exit 1
+}
 
 # Copy examples if they exist
 if [ -d "$BUILD_DIR/extracted/examples" ]; then
@@ -428,13 +462,13 @@ echo "Building .deb packages..."
 
 # Build runtime package
 RUNTIME_PACKAGE="kotuku_${VERSION}-1_${ARCH}.deb"
-dpkg-deb --build "$RUNTIME_STAGING" "$RUNTIME_PACKAGE"
+dpkg-deb --root-owner-group --build "$RUNTIME_STAGING" "$RUNTIME_PACKAGE"
 echo "Created: $RUNTIME_PACKAGE"
 
 # Build development package if requested
 if [ "$INSTALL_INCLUDES" = "ON" ]; then
     DEV_PACKAGE="kotuku-dev_${VERSION}-1_${ARCH}.deb"
-    dpkg-deb --build "$DEV_STAGING" "$DEV_PACKAGE"
+    dpkg-deb --root-owner-group --build "$DEV_STAGING" "$DEV_PACKAGE"
     echo "Created: $DEV_PACKAGE"
 fi
 

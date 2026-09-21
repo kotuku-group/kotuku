@@ -32,6 +32,7 @@ capabilities.
 #include <string>
 #include <sstream>
 #include <vector>
+#include <algorithm>
 #include <map>
 
 #include "Platform.h"
@@ -101,6 +102,8 @@ capabilities.
 #include <kotuku/modules/display.h>
 #include <kotuku/modules/font.h>
 #include <kotuku/modules/tiri.h>
+#include <kotuku/modules/filesystem.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/modules/vector.h>
 #include <kotuku/strings.hpp>
 
@@ -112,6 +115,9 @@ JUMPTABLE_CORE
 JUMPTABLE_DISPLAY
 JUMPTABLE_VECTOR
 JUMPTABLE_FONT
+JUMPTABLE_TIRI
+
+static OBJECTPTR modTiri = nullptr;
 
 static OBJECTPTR clScintilla = nullptr;
 static OBJECTPTR modDisplay = nullptr, modFont = nullptr, modVector = nullptr;
@@ -240,6 +246,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    if (objModule::load("display", &modDisplay, &DisplayBase) != ERR::Okay) return ERR::InitModule;
    if (objModule::load("font", &modFont, &FontBase) != ERR::Okay) return ERR::InitModule;
    if (objModule::load("vector", &modVector, &VectorBase) != ERR::Okay) return ERR::InitModule;
+   if (objModule::load("tiri", &modTiri, &TiriBase) != ERR::Okay) return ERR::InitModule;
 
    OBJECTID id;
    if (!FindObject("glStyle", CLASSID::XML, &id)) {
@@ -261,6 +268,7 @@ static ERR MODExpunge(void)
 {
    if (modDisplay)  { FreeResource(modDisplay);  modDisplay = nullptr; }
    if (modFont)     { FreeResource(modFont);     modFont = nullptr; }
+   if (modTiri)     { FreeResource(modTiri);     modTiri = nullptr; }
    if (modVector)   { FreeResource(modVector);   modVector = nullptr; }
    if (clScintilla) { FreeResource(clScintilla); clScintilla = nullptr; }
    if (clScintillaSearch) { FreeResource(clScintillaSearch); clScintillaSearch = nullptr; }
@@ -380,9 +388,8 @@ static void notify_write(OBJECTPTR Object, ACTIONID ActionID, ERR Result, struct
 
    SCICALL(SCI_SETUNDOCOLLECTION, 0UL); // Turn off undo
 
-   if (Args->Buffer) {
-      acDataFeed(Self, Self, DATA::TEXT,
-         std::span<const int8_t>((const int8_t *)Args->Buffer, size_t(Args->Result)));
+   if (not Args->Buffer.empty()) {
+      acDataFeed(Self, Self, DATA::TEXT, Args->Buffer.first(std::min(size_t(Args->Result), Args->Buffer.size())));
    }
    else { // We have to read the data from the file stream
    }
@@ -473,7 +480,7 @@ static ERR SCINTILLA_DataFeed(extScintilla *Self, struct acDataFeed *Args)
                         };
 
                         auto script = (objScript *)Self->FileDrop.Context;
-                        script->callback(Self->FileDrop.ProcedureID, args, std::ssize(args), nullptr);
+                        script->callback(Self->FileDrop.procedureID(), args, std::ssize(args), nullptr);
                      }
                      break;
                   }
@@ -1016,7 +1023,8 @@ static ERR SCINTILLA_ReplaceText(extScintilla *Self, struct sci::ReplaceText *Ar
 
    if ((not Args) or (Args->Find.empty())) return log.warning(ERR::NullArgs);
 
-   log.branch("Text: '%.10s'... Between: %d - %d, Flags: $%.8x", Args->Find, Args->Start, Args->End, int(Args->Flags));
+   log.branch("Text: '%.*s'... Between: %d - %d, Flags: $%.8x",
+      int(std::min(size_t(10), Args->Find.size())), Args->Find.data(), Args->Start, Args->End, int(Args->Flags));
 
    // Calculate the start and end positions
 
@@ -1117,7 +1125,7 @@ static ERR SCINTILLA_SaveToObject(extScintilla *Self, struct acSaveToObject *Arg
 
    std::vector<char> buffer(len+1);
    SCICALL(SCI_GETTEXT, buffer.size(), (const char *)buffer.data());
-   return acWrite(Args->Dest, buffer.data(), len, nullptr);
+   return acWrite(Args->Dest, std::span<const int8_t>((const int8_t *)buffer.data(), size_t(len)));
 }
 
 /*********************************************************************************************************************
@@ -1940,9 +1948,9 @@ static void create_styled_fonts(extScintilla *Self)
 {
    kt::Log log;
 
-   log.msg("create_styled_fonts(%s,%.2f,$%.8x)", Self->Font->Face, Self->Font->Point, int(Self->Font->Flags));
-
    if (!Self->Font) return;
+   log.msg("create_styled_fonts(%s,%.2f,$%.8x)", Self->Font->Face.c_str(),
+      Self->Font->Point, int(Self->Font->Flags));
 
    if (Self->BoldFont)   { FreeResource(Self->BoldFont); Self->BoldFont = nullptr; }
    if (Self->ItalicFont) { FreeResource(Self->ItalicFont); Self->ItalicFont = nullptr; }
@@ -2007,17 +2015,23 @@ static void error_dialog(std::string_view Title, std::string_view Message, ERR E
    kt::Log log;
    static OBJECTID dialog_id = 0;
 
-   log.warning("%s", Message);
+   log.warning("%.*s", int(Message.size()), Message.data());
 
    if (dialog_id) {
       if (CheckResourceExists(dialog_id) IS ERR::True) return;
+   }
+
+   std::string dialog_path;
+   if (auto error = ti::ResolvePackage("gui/dialog", "", &dialog_path); error != ERR::Okay) {
+      log.warning("Unable to resolve gui/dialog: %s", GetErrorMsg(error));
+      return;
    }
 
    objTiri *dialog;
    if (!NewObject(CLASSID::TIRI, &dialog)) {
       dialog->setName("scDialog");
       dialog->setOwner(CurrentTaskID());
-      dialog->setPath("system:scripts/gui/dialog.tiri");
+      dialog->setPath(dialog_path);
 
       acSetKey(dialog, "modal", "1");
       acSetKey(dialog, "title", Title);
@@ -2048,7 +2062,6 @@ static void error_dialog(std::string_view Title, std::string_view Message, ERR E
 static ERR load_file(extScintilla *Self, std::string_view Path)
 {
    kt::Log log(__FUNCTION__);
-   STRING str;
    int64_t size, len;
    ERR error = ERR::Okay;
 
@@ -2066,10 +2079,10 @@ static ERR load_file(extScintilla *Self, std::string_view Path)
       else if (!file->getSize(size)) {
          if (size > 0) {
             if (size < 1024 * 1024 * 10) {
-               std::vector<char> str(size);
-               if (!file->read(str.data(), size, &len)) {
+               std::vector<char> str(size + 1);
+               if (!file->read(std::span<int8_t>((int8_t *)str.data(), size_t(size)), &len)) {
                   str[len] = 0;
-                  SCICALL(SCI_SETTEXT, str);
+                  SCICALL(SCI_SETTEXT, str.data());
                   SCICALL(SCI_EMPTYUNDOBUFFER);
                   error = ERR::Okay;
 
@@ -2091,7 +2104,7 @@ static ERR load_file(extScintilla *Self, std::string_view Path)
       auto i = Path.find_last_of("/\\:");
       if (i != std::string::npos) Path.remove_prefix(i+1);
 
-      for (i=0; i < std::ssize(glLexers); i++) {
+      for (i=0; i < std::size(glLexers); i++) {
          if (wildcmp(glLexers[i].File, Path)) {
             kt::Log log;
             Self->Lexer = glLexers[i].Lexer;
@@ -2100,7 +2113,7 @@ static ERR load_file(extScintilla *Self, std::string_view Path)
             break;
          }
       }
-      if (i >= std::ssize(glLexers)) log.msg("Failed to choose a lexer for %.*s", int(Path.size()), Path.data());
+      if (i >= std::size(glLexers)) log.msg("Failed to choose a lexer for %.*s", int(Path.size()), Path.data());
    }
 
    return error;

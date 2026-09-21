@@ -1,0 +1,380 @@
+#!/usr/bin/env origo
+
+-- Refresh package manifests from the exact files stored in each package folder.
+
+   import 'io/filesearch'
+   import 'json'
+   import 'options'
+
+MASK_32 <const> = 0xffffffff
+
+SHA256_CONSTANTS <const> = array<int64> {
+   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+   0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+   0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+   0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+   0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+   0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+   0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+   0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+}
+
+JSON_FIELD_ORDER <const> = {
+   schemaVersion = 1,
+   name          = 2,
+   version       = 3,
+   description   = 4,
+   entry         = 5,
+   authors       = 6,
+   contributors  = 7,
+   copyright     = 8,
+   license       = 9,
+   homepage      = 10,
+   repository    = 11,
+   keywords      = 12,
+   requires      = 13,
+   dependencies  = 14,
+   files         = 15,
+   path          = 16,
+   size          = 17,
+   sha256        = 18,
+   mediaType     = 19
+}
+
+----------------------------------------------------------------------------------------------------------------------
+-- Resolve the location of the Kotuku SDK and create an 'sdk:' volume.
+
+global function resolveSDKPath()
+   script_path = obj.find('self').workingPath
+   err = ERR_Failed
+   search_list = array<str>
+   search_path = 'CMakeLists.txt'
+   limit = 5
+   local sdk_path
+   while (err != ERR_Okay) and (limit > 0) do
+      search_list.push(search_path)
+      err, sdk_path = mSys.ResolvePath(script_path .. search_path)
+      search_path = f'../{search_path}'
+      limit -= 1
+   end
+
+   if err is ERR_Okay then
+      rx_cmake_path = regex.new('^(.+)CMakeLists\\.txt')
+      sdk_path = rx_cmake_path.extract(sdk_path) ?? sdk_path
+   else
+      local msg = ''
+      for path in values(search_list) do
+         msg ..= path .. '\n'
+      end
+      print('Unable to find CMakeLists.txt after searching the following paths:\n' .. msg)
+   end
+
+   mSys.SetVolume('sdk', sdk_path)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function normaliseFolderPath(Path:str!):str
+   Path = Path.replace('\\', '/')
+   if Path.endsWith('/') or Path.endsWith(':') then return Path end
+   return Path .. '/'
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function rotateRight(Value:num!, Count:num!):num
+   return ((Value >> Count) | (Value << (32 - Count))) & MASK_32
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function unsigned32(Value:num!):num
+   return Value < 0 ? Value + 0x100000000 : Value
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function sha256(Data:str!):str
+   local data_size = #Data
+   local bit_high = math.floor(data_size / 0x20000000)
+   local bit_low = (data_size * 8) & MASK_32
+   local padding_size = (119 - (data_size % 64)) % 64
+
+   local padded = Data .. string.char(0x80) .. string.char(0).rep(padding_size)
+   padded ..= string.char(
+      (bit_high >> 24) & 0xff, (bit_high >> 16) & 0xff, (bit_high >> 8) & 0xff, bit_high & 0xff,
+      (bit_low >> 24) & 0xff, (bit_low >> 16) & 0xff, (bit_low >> 8) & 0xff, bit_low & 0xff)
+
+   local state = array<int64> {
+      0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+      0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+   }
+
+   for offset in {0 to #padded by 64} do
+      local words = array<int64, 64>
+      for i in {0 to 16} do
+         local pos = offset + (i * 4)
+         words[i] = ((padded.byte(pos) << 24) | (padded.byte(pos + 1) << 16) |
+            (padded.byte(pos + 2) << 8) | padded.byte(pos + 3)) & MASK_32
+      end
+
+      for i in {16 to 64} do
+         local s0 = rotateRight(words[i - 15], 7) ^ rotateRight(words[i - 15], 18) ^ (words[i - 15] >> 3)
+         local s1 = rotateRight(words[i - 2], 17) ^ rotateRight(words[i - 2], 19) ^ (words[i - 2] >> 10)
+         words[i] = (words[i - 16] + s0 + words[i - 7] + s1) & MASK_32
+      end
+
+      local a, b, c, d = state[0], state[1], state[2], state[3]
+      local e, f, g, h = state[4], state[5], state[6], state[7]
+
+      for i in {0 to 64} do
+         local sum1 = rotateRight(e, 6) ^ rotateRight(e, 11) ^ rotateRight(e, 25)
+         local choice = (e & f) ^ ((~e) & g)
+         local temporary1 = (h + sum1 + choice + SHA256_CONSTANTS[i] + words[i]) & MASK_32
+         local sum0 = rotateRight(a, 2) ^ rotateRight(a, 13) ^ rotateRight(a, 22)
+         local majority = (a & b) ^ (a & c) ^ (b & c)
+         local temporary2 = (sum0 + majority) & MASK_32
+
+         h = g
+         g = f
+         f = e
+         e = (d + temporary1) & MASK_32
+         d = c
+         c = b
+         b = a
+         a = (temporary1 + temporary2) & MASK_32
+      end
+
+      state[0] = (state[0] + a) & MASK_32
+      state[1] = (state[1] + b) & MASK_32
+      state[2] = (state[2] + c) & MASK_32
+      state[3] = (state[3] + d) & MASK_32
+      state[4] = (state[4] + e) & MASK_32
+      state[5] = (state[5] + f) & MASK_32
+      state[6] = (state[6] + g) & MASK_32
+      state[7] = (state[7] + h) & MASK_32
+   end
+
+   local digest = array<str>
+   for value in values(state) do digest.push(string.format('%08x', unsigned32(value))) end
+   return digest.concat()
+end
+
+-- The tight bitwise loop is maintenance work rather than an application hot path.  Keeping it interpreted also avoids
+-- contextual-call trace instability when many large package files are hashed in one run.
+
+jit.off(sha256, true)
+
+----------------------------------------------------------------------------------------------------------------------
+
+function jsonIndent(Level:num!):str
+   return '  '.rep(Level)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function jsonKeys(Value:table!):array<str>
+   local keys = array<str>
+   for key, _ in pairs(Value) do keys.push(tostring(key)) end
+   keys.sort(function(A:str!, B:str!):bool
+      local a_order = JSON_FIELD_ORDER[A] ?? 1000
+      local b_order = JSON_FIELD_ORDER[B] ?? 1000
+      return (a_order is b_order) ? A < B : a_order < b_order
+   end)
+   return keys
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function encodeJSON(Value:any, Level:num):str
+   Level ?= 0
+   if Value is <array> then
+      if #Value is 0 then return '[]' end
+      local items = array<str>
+      for item in values(Value) do items.push(jsonIndent(Level + 1) .. encodeJSON(item, Level + 1)) end
+      return '[\n' .. items.concat(',\n') .. '\n' .. jsonIndent(Level) .. ']'
+   elseif Value is <table> then
+      local keys = jsonKeys(Value)
+      if #keys is 0 then return '{}' end
+      local items = array<str>
+      for key in values(keys) do
+         items.push(jsonIndent(Level + 1) .. json.encode(key).replace('\\/', '/') .. ': ' ..
+            encodeJSON(Value[key], Level + 1))
+      end
+      return '{\n' .. items.concat(',\n') .. '\n' .. jsonIndent(Level) .. '}'
+   else
+      local encoded = json.encode(Value)
+      return Value is <str> ? encoded.replace('\\/', '/') : encoded
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function mediaType(Path:str!):str
+   local path = Path.lower()
+   if path.endsWith('.tiri') then return 'application/vnd.kotuku.tiri'
+   elseif path.endsWith('.json') then return 'application/json'
+   elseif path.endsWith('.svg') then return 'image/svg+xml'
+   elseif path.endsWith('.png') then return 'image/png'
+   elseif path.endsWith('.jpg') or path.endsWith('.jpeg') then return 'image/jpeg'
+   elseif path.endsWith('.gif') then return 'image/gif'
+   elseif path.endsWith('.webp') then return 'image/webp'
+   elseif path.endsWith('.xml') then return 'application/xml'
+   elseif path.endsWith('.md') then return 'text/markdown'
+   elseif path.endsWith('.txt') then return 'text/plain'
+   else return 'application/octet-stream' end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function relativePath(PackagePath:str!, FilePath:str!):str
+   local root = normaliseFolderPath(PackagePath)
+   local path = FilePath.replace('\\', '/')
+   if not path.startsWith(root) then
+      raise f'File path "{path}" is outside package folder "{root}".'
+   end
+   return path.sub(#root)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function collectFiles(PackagePath:str!):array<table>
+   local files = array<table>
+   io.search(PackagePath, {
+      scanHidden = true,
+      strict = true,
+      matchFeedback = function(Path:str!, FileName:str!, File:obj!)
+         local relative_path = relativePath(PackagePath, File.path)
+         if relative_path is 'package.json' then return end
+         local content = io.readAll(File.path)
+         files.push({
+            path = relative_path,
+            size = #content,
+            sha256 = sha256(content),
+            mediaType = mediaType(relative_path)
+         })
+      end
+   })
+   files.sort(function(A:table!, B:table!):bool return A.path < B.path end)
+   return files
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function inferredEntry(PackageName:str!, Files:array<table>!):str
+   local preferred = PackageName .. '.tiri'
+   local first_tiri
+   for file in values(Files) do
+      if file.path is preferred then return preferred end
+      if not first_tiri and file.path.endsWith('.tiri') then first_tiri = file.path end
+   end
+   if not first_tiri then raise f'Package "{PackageName}" has no Tiri entry point.' end
+   return first_tiri
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function mockManifest(PackageName:str!, Files:array<table>!):table
+   return {
+      schemaVersion = 1,
+      name = PackageName,
+      version = '1.0',
+      description = 'TODO: Describe this package.',
+      entry = inferredEntry(PackageName, Files),
+      authors = array<table> { { name = 'TODO' } },
+      copyright = 'TODO',
+      files = Files
+   }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function updatePackage(PackagePath:str!, PackageName:str!):str
+   local manifest_path = normaliseFolderPath(PackagePath) .. 'package.json'
+   local files = collectFiles(PackagePath)
+   local manifest:table
+   local action:str
+   local original:str
+   local manifest_error = mSys.AnalysePath(manifest_path)
+
+   if manifest_error is ERR_Okay then
+      original = io.readAll(manifest_path)
+      manifest = json.decode(original)
+      if manifest != <table> then raise f'Manifest "{manifest_path}" must contain a JSON object.' end
+      if manifest.author then
+         if not manifest.authors then manifest.authors = array<table> { manifest.author } end
+         manifest.author = nil
+      end
+      manifest.files = files
+      action = 'Updated'
+   elseif manifest_error is ERR_FileNotFound then
+      manifest = mockManifest(PackageName, files)
+      action = 'Created'
+   else
+      raise manifest_error, f'Unable to inspect manifest "{manifest_path}".'
+   end
+
+   local encoded = encodeJSON(manifest) .. '\n'
+   if original is encoded then return 'Unchanged' end
+   io.writeAll(manifest_path, encoded)
+   return action
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function packageName(PackagePath:str!):str
+   local path = PackagePath.replace('\\', '/')
+   if path.endsWith('/') then path = path.sub(0, -1) end
+   local _, name = io.splitPath(path)
+   return name
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+   resolveSDKPath()
+
+   glParser = options({
+      name = 'Update Packages',
+      cmdName = 'update_packages',
+      description = 'Create missing package manifests and refresh the payload inventory in existing manifests.',
+      epilog = [[
+Examples:
+  origo tools/update_packages.tiri
+  origo tools/update_packages.tiri path=packages/
+]],
+      autoHelp = false,
+      args = array<table> {
+         { name = 'path', type = 'folder', exists = true, default = 'sdk:packages/', group = 'Input',
+           comment = 'Root folder containing one subfolder per package.' },
+         { names = array<str> { 'help', 'h' }, kind = 'flag', hidden = true,
+           exec = function(Parser:table!)
+              Parser.printHelp()
+              raise ERR_Terminate
+           end }
+      }
+   })
+
+   glArgs = glParser.process()
+   if not glArgs then return end
+
+   glPackagesPath = normaliseFolderPath(glArgs.path)
+   glPackageFolders = array<table>
+
+   io.search(glPackagesPath, {
+      maxDepth = 0,
+      matchFolders = true,
+      ignoreFiles = true,
+      scanHidden = true,
+      strict = true,
+      matchFeedback = function(Path:str!, FileName:str!, File:obj!)
+         glPackageFolders.push({ name=packageName(File.path), path=normaliseFolderPath(File.path) })
+      end
+   })
+
+   glPackageFolders.sort(function(A:table!, B:table!):bool return A.name < B.name end)
+   for package in values(glPackageFolders) do
+      local action = updatePackage(package.path, package.name)
+      print(f'{action}: {package.path}package.json')
+   end
+
+   print(f'Processed {#glPackageFolders} package folders.')

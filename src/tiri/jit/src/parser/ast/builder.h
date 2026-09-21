@@ -28,7 +28,8 @@ class AstBuilder {
 public:
    explicit AstBuilder(ParserContext& context, AstBuilder *Parent = nullptr, bool ModuleInitialiser = false,
       std::optional<tiri::PackageIdentity> ExpectedPackage = std::nullopt,
-      std::optional<tiri::PackageImportRequirement> ImportRequirement = std::nullopt);
+      std::optional<tiri::PackageImportRequirement> ImportRequirement = std::nullopt,
+      std::optional<tiri::ResolvedImport> ExpectedResolution = std::nullopt);
    ~AstBuilder();
 
    AstBuilder(const AstBuilder &) = delete;
@@ -68,6 +69,7 @@ private:
    std::optional<tiri::DependencyRequirements> dependency_requirements_;
    std::optional<tiri::PackageIdentity> expected_package_;
    std::optional<tiri::PackageImportRequirement> import_requirement_;
+   std::optional<tiri::ResolvedImport> expected_resolution_;
    SourceSpan package_declaration_span_{};
    AstBuilder *parent_builder = nullptr;
    std::vector<GCstr *> function_name_stack;
@@ -237,7 +239,7 @@ private:
    ParserResult<StmtNodePtr> parse_import();
    ParserResult<StmtNodePtr> parse_namespace();
    ParserResult<std::unique_ptr<BlockStmt>> parse_imported_file(
-      std::string &, std::string_view, const Token &ImportToken, bool ModuleInitialiser,
+      std::string &, std::string_view, const tiri::ResolvedImport &, const Token &ImportToken, bool ModuleInitialiser,
       tiri::import_cache::ModuleLookup *Lookup = nullptr,
       std::vector<FuncState::DependencyDescriptor> *ModuleDependencies = nullptr,
       std::optional<tiri::PackageIdentity> *DeclaredPackage = nullptr,

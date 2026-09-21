@@ -271,6 +271,9 @@ FormatError encode_metadata(const Manifest &Metadata, std::string &Output)
       encoder.string(input.Name);
       encoder.string(input.Context);
       encoder.string(input.Value);
+      encoder.string(input.Constraint);
+      encoder.string(input.SelectedVersion);
+      encoder.byte(input.PackageManaged ? 1 : 0);
    }
 
    encoder.u32(uint32_t(Metadata.ConditionalInputs.size()));
@@ -387,7 +390,7 @@ std::string file_key(const Manifest &Metadata)
    }
    auto build = digest_hex(content_digest(Metadata.BuildIdentity));
    auto key = digest_hex(content_digest(identity.Bytes));
-   return "v2-" + build.substr(0, 16) + "-" + key;
+   return "v3-" + build.substr(0, 16) + "-" + key;
 }
 
 //********************************************************************************************************************
@@ -471,7 +474,11 @@ FormatError decode_envelope(std::string_view Input, EnvelopeView &Output)
 
    decode_records<ResolutionInput>(metadata, metadata.u32(), MAX_RESOLUTION_INPUTS,
       decoded.Metadata.ResolutionInputs, [](Decoder &Input) {
-         return ResolutionInput { Input.string(), Input.string(), Input.string() };
+         ResolutionInput result { Input.string(), Input.string(), Input.string(), Input.string(), Input.string() };
+         const uint8_t package_managed = Input.byte();
+         if (package_managed > 1) Input.Error = FormatError::INVALID_METADATA;
+         result.PackageManaged = package_managed != 0;
+         return result;
       });
 
    decode_records<ConditionalInput>(metadata, metadata.u32(), MAX_CONDITIONAL_INPUTS,

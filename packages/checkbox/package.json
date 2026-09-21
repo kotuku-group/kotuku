@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "name": "gui/checkbox",
+  "version": "1.0",
+  "description": "Checkbox widget for Tiri graphical interfaces.",
+  "entry": "checkbox.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2016-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-GUI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "checkbox",
+    "gui",
+    "widget"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "gui": "1.0"
+  },
+  "files": [
+    {
+      "path": "checkbox.tiri",
+      "size": 5116,
+      "sha256": "0b3a47c94683a5beafd27c366b59f3d40ea9d97c25fe1de2137522559de8e915",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

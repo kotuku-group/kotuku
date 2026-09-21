@@ -36,6 +36,20 @@ ERR ImportModuleValidationSession::snapshot(
 }
 
 //********************************************************************************************************************
+// Resolve each logical import and constraint once for the immutable package index used by this compilation.
+
+const tiri::ResolvedImport &ImportModuleValidationSession::resolve_library(
+   std::string_view Name, std::string_view Constraint)
+{
+   auto key = std::make_pair(std::string(Name), std::string(Constraint));
+   auto found = this->resolved_libraries.find(key);
+   if (found != this->resolved_libraries.end()) return found->second;
+
+   auto resolved = this->environment.ResolveLibrary(Name, Constraint);
+   return this->resolved_libraries.emplace(std::move(key), std::move(resolved)).first->second;
+}
+
+//********************************************************************************************************************
 // Replays every non-payload observation retained by a cache candidate.
 
 bool ImportModuleValidationSession::validate_identity(
@@ -75,7 +89,15 @@ bool ImportModuleValidationSession::validate_identity(
          std::string resolved;
          if (ResolvePath(current, RSF::NO_FILE_CHECK, &resolved) IS ERR::Okay) current = std::move(resolved);
       }
-      else if (this->environment.ResolveLibrary) current = this->environment.ResolveLibrary(input.Name);
+      else if (this->environment.ResolveLibrary) {
+         const auto &resolved = this->resolve_library(input.Name, input.Constraint);
+         if (resolved.SelectedVersion.value_or("") != input.SelectedVersion or
+             resolved.PackageManaged != input.PackageManaged) {
+            Reason = "an imported package now selects a different version";
+            return false;
+         }
+         current = resolved.ResolvedPath;
+      }
 
       if (current != input.Value) {
          Reason = "an imported path now resolves to a different source";

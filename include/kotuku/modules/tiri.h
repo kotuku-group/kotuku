@@ -98,6 +98,7 @@ class objTiri : public objScript {
 struct TiriBase {
 #ifndef KOTUKU_STATIC
    ERR (*_SetVariable)(objTiri *Script, const std::string_view &Name, int Type, ...);
+   ERR (*_ResolvePackage)(const std::string_view &Name, const std::string_view &Constraint, std::string *Path);
 #endif // KOTUKU_STATIC
 };
 
@@ -105,9 +106,11 @@ struct TiriBase {
 extern struct TiriBase *TiriBase;
 namespace ti {
 template<class... Args> ERR SetVariable(objTiri *Script, const std::string_view &Name, int Type, Args... Tags) { return TiriBase->_SetVariable(Script,Name,Type,Tags...); }
+inline ERR ResolvePackage(const std::string_view &Name, const std::string_view &Constraint, std::string *Path) { return TiriBase->_ResolvePackage(Name,Constraint,Path); }
 } // namespace
 #else
 namespace ti {
 extern ERR SetVariable(objTiri *Script, const std::string_view &Name, int Type, ...);
+extern ERR ResolvePackage(const std::string_view &Name, const std::string_view &Constraint, std::string *Path);
 } // namespace
 #endif // KOTUKU_STATIC

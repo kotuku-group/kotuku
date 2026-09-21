@@ -12,6 +12,7 @@ constexpr int SIZE_READ = 1024;
 #include <shared_mutex>
 #include <kotuku/strings.hpp>
 #include <kotuku/modules/regex.h>
+#include <kotuku/modules/config.h>
 #include <kotuku/modules/tiri.h>
 #include <kotuku/modules/filesystem.h>
 #include <kotuku/modules/processes.h>
@@ -23,6 +24,7 @@ constexpr int SIZE_READ = 1024;
 #include <memory>
 
 #include "cache_manifest.h"
+#include "package_resolver.h"
 #include "lj_obj.h"
 #include "lj_frame.h"
 #include "lj_state.h"

@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "name": "git",
+  "version": "1.0",
+  "description": "Repository discovery and status queries for Git working trees.",
+  "entry": "git.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2025-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "git",
+    "repository",
+    "version-control"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "files": [
+    {
+      "path": "git.tiri",
+      "size": 2800,
+      "sha256": "70f49d960d82205886f30783683cf764ae9f226f5c3cdda83b6c7d17402bc133",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

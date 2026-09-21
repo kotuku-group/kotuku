@@ -76,12 +76,12 @@ struct CompatibilityFailure {
 };
 
 struct PackageImportRequirement {
-   std::string PackageName;
+   std::string ImportName;
    VersionConstraint Constraint;
    [[nodiscard]] bool operator==(const PackageImportRequirement &) const = default;
 };
 
-enum class PackageImportFailureKind : uint8_t { None, MissingMetadata, InvalidMetadata, NameMismatch, Unsatisfied };
+enum class PackageImportFailureKind : uint8_t { None, MissingMetadata, InvalidMetadata, Unsatisfied };
 
 struct PackageImportFailure {
    PackageImportFailureKind Kind = PackageImportFailureKind::None;
@@ -104,7 +104,7 @@ struct PackageImportFailure {
 [[nodiscard]] bool check_package_import(const PackageImportRequirement &Requirement,
    const std::optional<PackageIdentity> &Identity, PackageImportFailure *Failure = nullptr) noexcept;
 [[nodiscard]] std::string package_import_error(const PackageImportRequirement &Requirement,
-   const std::optional<PackageIdentity> &Identity, const PackageImportFailure &Failure);
+   const PackageImportFailure &Failure);
 [[nodiscard]] VersionParseError encode_compatibility_manifest(
    std::span<const CompatibilityRecord> Records, std::string &Output);
 [[nodiscard]] VersionParseError decode_compatibility_manifest(

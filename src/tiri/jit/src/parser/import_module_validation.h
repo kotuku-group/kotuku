@@ -1,19 +1,22 @@
 #pragma once
 
 #include "../../../import_module_cache.h"
+#include "../../../package_resolver.h"
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 
 struct lua_State;
 
 class ImportModuleValidationSession {
 public:
    struct Environment {
-      std::function<std::string(std::string_view)> ResolveLibrary;
+      std::function<tiri::ResolvedImport(std::string_view, std::string_view)> ResolveLibrary;
       std::function<bool(std::string_view)> ModuleAvailable;
    };
 
@@ -36,11 +39,13 @@ private:
    std::unordered_map<std::string, std::shared_ptr<const tiri::import_cache::SourceSnapshot>> snapshots;
    std::unordered_map<std::string, ERR> snapshot_errors;
    std::unordered_map<std::string, Node> nodes;
+   std::map<std::pair<std::string, std::string>, tiri::ResolvedImport> resolved_libraries;
 
    [[nodiscard]] ERR snapshot(
       std::string_view, std::shared_ptr<const tiri::import_cache::SourceSnapshot> &);
    [[nodiscard]] bool validate_identity(
       const tiri::import_cache::Identity &, std::string &);
+   [[nodiscard]] const tiri::ResolvedImport &resolve_library(std::string_view, std::string_view);
    [[nodiscard]] bool validate_payload(std::string_view, std::string &,
       std::vector<tiri::import_cache::RootModuleRecord> *, std::optional<tiri::PackageIdentity> *, std::string *);
 };

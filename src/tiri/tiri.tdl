@@ -51,5 +51,6 @@ function()
   ]])
 
   functionNames("ti",
-    "SetVariable")
+    "SetVariable",
+    "ResolvePackage")
 end)

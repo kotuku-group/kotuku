@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "name": "gui/dialog",
+  "version": "1.0",
+  "description": "Modal message dialog support for Tiri graphical interfaces.",
+  "entry": "dialog.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2006-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-GUI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "dialog",
+    "gui",
+    "message"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "gui": "1.0",
+    "gui/window": "1.0"
+  },
+  "files": [
+    {
+      "path": "dialog.tiri",
+      "size": 9316,
+      "sha256": "3e4b1fb4ddf64202624fa60319a73f38988ca0dfa3e6f5a2d8a02259ce866066",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

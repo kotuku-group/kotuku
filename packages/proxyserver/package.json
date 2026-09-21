@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "name": "net/proxyserver",
+  "version": "1.0",
+  "description": "Event-driven HTTP proxy server library for Tiri applications.",
+  "entry": "proxyserver.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-Proxy-Server-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "http",
+    "network",
+    "proxy"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "json": "1.0",
+    "tempus": "1.0"
+  },
+  "files": [
+    {
+      "path": "proxyserver.tiri",
+      "size": 47927,
+      "sha256": "763b30f3a53fb3c636394ef4be2dc23d3d461a01b72d7846e586ca16c3e0025f",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

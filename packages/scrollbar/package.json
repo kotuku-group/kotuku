@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "name": "gui/scrollbar",
+  "version": "1.0",
+  "description": "Horizontal and vertical scrollbar widget for Tiri graphical interfaces.",
+  "entry": "scrollbar.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2006-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-GUI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "gui",
+    "scrollbar",
+    "widget"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "gui": "1.0"
+  },
+  "files": [
+    {
+      "path": "scrollbar.tiri",
+      "size": 11866,
+      "sha256": "a27d9cf0a815938950b9aa268c5a6bde198471bb26a8cd0b84ea7c6471fb77d9",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

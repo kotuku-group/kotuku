@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "name": "gui/dropdown",
+  "version": "1.0",
+  "description": "Drop-down menu widget used by Tiri combobox controls.",
+  "entry": "dropdown.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2016-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-GUI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "dropdown",
+    "gui",
+    "widget"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "gui": "1.0"
+  },
+  "files": [
+    {
+      "path": "dropdown.tiri",
+      "size": 10631,
+      "sha256": "12a4450d295ecca7448c54daef52bc9c1cb994399a03f0d461895aafaaed9d41",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

@@ -1787,7 +1787,7 @@ static bool contextual_identifier(const Token &TokenValue, std::string_view Name
 }
 
 ParserResult<tiri::PackageImportRequirement> AstBuilder::parse_import_requirement(
-   const Token &ImportToken, std::string_view PackageName, bool ModuleInitialiser)
+   const Token &ImportToken, std::string_view ImportName, bool ModuleInitialiser)
 {
    Token version_token = this->ctx.tokens().current();
    this->ctx.tokens().advance();
@@ -1796,9 +1796,9 @@ ParserResult<tiri::PackageImportRequirement> AstBuilder::parse_import_requiremen
       return this->fail<tiri::PackageImportRequirement>(ParserErrorCode::UnexpectedToken, version_token,
          "Local imports do not support version clauses");
    }
-   if (auto error = tiri::validate_package_name(PackageName); error != tiri::PackageValidationError::OKAY) {
+   if (auto error = tiri::validate_package_name(ImportName); error != tiri::PackageValidationError::OKAY) {
       return this->fail<tiri::PackageImportRequirement>(ParserErrorCode::UnexpectedToken, ImportToken,
-         std::string("Invalid versioned import package name: ") +
+         std::string("Invalid versioned import name: ") +
             std::string(tiri::package_validation_error_text(error)));
    }
 
@@ -1873,7 +1873,7 @@ ParserResult<tiri::PackageImportRequirement> AstBuilder::parse_import_requiremen
             tiri::version_error_text(error.Error)));
    }
    return ParserResult<tiri::PackageImportRequirement>::success(
-      { std::string(PackageName), std::move(constraint) });
+      { std::string(ImportName), std::move(constraint) });
 }
 
 ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &ImportToken, bool AllowAlias,
@@ -1891,7 +1891,8 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
          return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, path_token,
             "Version clauses are permitted only on single-item imports");
       }
-      const char *message = AllowAlias ? "Import path must be a string literal" :
+
+      CSTRING message = AllowAlias ? "Import path must be a string literal" :
          "Import list items must be string literals";
       return this->fail<ImportEntryPayload>(ParserErrorCode::ExpectedToken, path_token, message);
    }
@@ -1948,6 +1949,7 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
       return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
          "A version clause must precede the 'as' alias");
    }
+
    if (import_requirement and alias and
        (this->ctx.check(TokenKind::AndToken) or this->ctx.check(TokenKind::Less) or
         this->ctx.check(TokenKind::LessEqual) or this->ctx.check(TokenKind::Greater) or
@@ -1961,11 +1963,17 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
          "Version clauses are permitted only on single-item imports");
    }
 
-   std::string path = this->ctx.resolve_lib_to_path(mod_name);
-   if (path.empty()) {
-      return ParserResult<ImportEntryPayload>::failure(
-         this->ctx.make_error(ParserErrorCode::UnexpectedToken, path_token, "Invalid import path"));
+   auto resolution = this->ctx.resolve_lib_to_path(mod_name, import_requirement ? &*import_requirement : nullptr);
+   if (not resolution) {
+      if (resolution.Detail IS "invalid-library-path") {
+         return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, path_token,
+            "Invalid library path");
+      }
+      return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, path_token,
+         tiri::import_resolution_error({ mod_name, import_requirement ? &*import_requirement : nullptr }, resolution));
    }
+   std::string path = resolution.Import.ResolvedPath;
+
    // Check for circular import
 
    if (this->ctx.is_importing(path)) {
@@ -1996,23 +2004,31 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
    bool reused_module = false;
    bool state_satisfied = false;
    if (module_initialiser) {
-      ImportedModuleKey key { path, original_request, true };
+      ImportedModuleKey key { path, original_request, resolution.Import.SelectedVersion.value_or(""),
+         resolution.Import.PackageManaged, true };
       module_unit = this->find_imported_module(key);
       if (module_unit) {
          if (module_unit->state IS ImportedModuleState::Resolving) {
             return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, ImportToken,
                "Circular import detected: " + path);
          }
+
          if (module_unit->state IS ImportedModuleState::Failed) {
             return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, ImportToken,
                "Imported module failed earlier in this compilation: " + path);
          }
+
          if (import_requirement) {
             tiri::PackageImportFailure failure;
             if (not tiri::check_package_import(*import_requirement, module_unit->declared_package, &failure)) {
                return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, ImportToken,
-                  tiri::package_import_error(*import_requirement, module_unit->declared_package, failure));
+                  tiri::package_import_error(*import_requirement, failure));
             }
+         }
+
+         std::string diagnostic;
+         if (not tiri::check_resolved_package(resolution.Import, module_unit->declared_package, diagnostic)) {
+            return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, ImportToken, diagnostic);
          }
          reused_module = true;
       }
@@ -2034,9 +2050,15 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
             tiri::PackageImportFailure failure;
             if (not tiri::check_package_import(*import_requirement, module_unit->declared_package, &failure)) {
                return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, ImportToken,
-                  tiri::package_import_error(*import_requirement, module_unit->declared_package, failure));
+                  tiri::package_import_error(*import_requirement, failure));
             }
          }
+
+         std::string diagnostic;
+         if (not tiri::check_resolved_package(resolution.Import, module_unit->declared_package, diagnostic)) {
+            return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, ImportToken, diagnostic);
+         }
+
          this->register_imported_module(module_unit);
          new_module_unit = true;
       }
@@ -2053,6 +2075,7 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
    std::optional<tiri::PackageIdentity> declared_package;
    std::optional<tiri::DependencyRequirements> declared_requirements;
    std::unique_ptr<BlockStmt> imported_body;
+
    if (state_satisfied) {
       log.branch("Reusing active imported module '%s'", path.c_str());
       const auto &portable = module_unit->interface_artifact->descriptors();
@@ -2063,6 +2086,7 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
             break;
          }
       }
+
       if (not primary) {
          this->discard_imported_module(module_unit->key);
          return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, ImportToken,
@@ -2076,9 +2100,11 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
          BCLine(primary->FirstLine), BCLine(primary->TotalLines), parent_index, import_line);
       const uint8_t primary_descriptor = this->record_import_source(primary->ResolvedPath, primary->Filename,
          BCLine(primary->TotalLines), this->ctx.lex().current_source_descriptor, import_line, primary_index);
+
       if (not primary->DeclaredNamespace.empty()) {
          set_file_source_namespace(L, primary_index, primary->DeclaredNamespace);
       }
+
       module_unit->file_source_idx = primary_index;
 
       for (const auto &source : portable.Sources) {
@@ -2107,7 +2133,9 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
    }
    else if (reused_module) {
       if (auto *manifest = this->cache_manifest()) {
-         manifest->ResolutionInputs.push_back({ original_request, this->cache_context_path(), path });
+         manifest->ResolutionInputs.push_back({ original_request, this->cache_context_path(), path,
+            import_requirement ? import_requirement->Constraint.Original : std::string(),
+            resolution.Import.SelectedVersion.value_or(""), resolution.Import.PackageManaged });
          manifest->Imports.push_back({ this->cache_context_path(), original_request,
             module_unit->module_cache_identity.Source });
       }
@@ -2121,7 +2149,8 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
    else {
       if (module_unit) this->root_builder()->ctx.lex().imported_module_counters.lookup_attempts++;
       auto parsed = this->parse_imported_file(
-         path, original_request, ImportToken, module_initialiser, module_initialiser ? &module_lookup : nullptr,
+         path, original_request, resolution.Import, ImportToken, module_initialiser,
+         module_initialiser ? &module_lookup : nullptr,
          module_initialiser ? &module_dependencies : nullptr, module_initialiser ? &declared_package : nullptr,
          module_initialiser ? &declared_requirements : nullptr, &import_requirement);
       if (not parsed.ok()) {
@@ -2141,8 +2170,16 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
                this->discard_imported_module(module_unit->key);
             }
             return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, ImportToken,
-               tiri::package_import_error(*import_requirement, declared_package, failure));
+               tiri::package_import_error(*import_requirement, failure));
          }
+      }
+      std::string diagnostic;
+      if (not tiri::check_resolved_package(resolution.Import, declared_package, diagnostic)) {
+         if (module_unit) {
+            module_unit->state = ImportedModuleState::Failed;
+            this->discard_imported_module(module_unit->key);
+         }
+         return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, ImportToken, diagnostic);
       }
    }
 
@@ -2390,7 +2427,8 @@ ParserResult<StmtNodePtr> AstBuilder::parse_namespace()
 // The file index is encoded in the upper 8 bits of BCLine values.
 
 ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(
-   std::string &Path, std::string_view Library, const Token &ImportToken, bool ModuleInitialiser,
+   std::string &Path, std::string_view Library, const tiri::ResolvedImport &Resolution,
+   const Token &ImportToken, bool ModuleInitialiser,
    tiri::import_cache::ModuleLookup *Lookup,
    std::vector<FuncState::DependencyDescriptor> *ModuleDependencies,
    std::optional<tiri::PackageIdentity> *DeclaredPackage,
@@ -2407,7 +2445,9 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(
    const std::string parent_path  = this->cache_context_path();
 
    if (manifest) {
-      manifest->ResolutionInputs.push_back({ std::string(Library), parent_path, Path });
+      manifest->ResolutionInputs.push_back({ std::string(Library), parent_path, Path,
+         ImportRequirement and *ImportRequirement ? (*ImportRequirement)->Constraint.Original : std::string(),
+         Resolution.SelectedVersion.value_or(""), Resolution.PackageManaged });
    }
 
    // The edge above belongs to the importer.  The module identity starts with observations made while parsing the
@@ -2441,8 +2481,14 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(
             const auto &identity = Lookup->Cached.CompilationIdentity.DeclaredPackage;
             if (not tiri::check_package_import(**ImportRequirement, identity, &failure)) {
                return this->fail<std::unique_ptr<BlockStmt>>(ParserErrorCode::UnexpectedToken, ImportToken,
-                  tiri::package_import_error(**ImportRequirement, identity, failure));
+                  tiri::package_import_error(**ImportRequirement, failure));
             }
+         }
+         std::string diagnostic;
+         if (not tiri::check_resolved_package(Resolution,
+             Lookup->Cached.CompilationIdentity.DeclaredPackage, diagnostic)) {
+            return this->fail<std::unique_ptr<BlockStmt>>(
+               ParserErrorCode::UnexpectedToken, ImportToken, diagnostic);
          }
          BCLine source_lines = 1;
          for (char c : Lookup->Source) if (c IS '\n') source_lines++;
@@ -2646,7 +2692,8 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(
    // Parse the imported compilation unit, including its metadata preamble.
    AstBuilder import_builder(import_ctx, this, ModuleInitialiser,
       Lookup ? Lookup->ExpectedIdentity.ExpectedPackage : std::nullopt,
-      ImportRequirement ? *ImportRequirement : std::nullopt);
+      ImportRequirement ? *ImportRequirement : std::nullopt,
+      Resolution.PackageManaged ? std::optional<tiri::ResolvedImport>(Resolution) : std::nullopt);
    auto result = import_builder.parse_compilation_unit();
 
    // The imported file is its own compilation unit for module namespace purposes, so its dependency activations are

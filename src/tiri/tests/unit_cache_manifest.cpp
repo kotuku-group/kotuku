@@ -22,15 +22,16 @@ Manifest sample_manifest()
 {
    Manifest result;
    result.BuildIdentity = "build:0123456789abcdef";
-   result.MainSource = { "scripts:Case/../Case/main.tiri", 14, 123456, content_digest("print('main')") };
+   result.MainSource = { "packages:Case/../Case/main.tiri", 14, 123456, content_digest("print('main')") };
    result.Options = { { "jit", "on" }, { "log-level", "warning" } };
    result.Imports = {
-      { result.MainSource.ResolvedPath, "./library", { "scripts:Case/library.tiri", 12, 123450,
+      { result.MainSource.ResolvedPath, "./library", { "packages:Case/library.tiri", 12, 123450,
          content_digest("return 'one'") } },
-      { "scripts:Case/library.tiri", "nested.value", { "scripts:Case/nested/value.tiri", 0, 123451,
+      { "packages:Case/library.tiri", "nested.value", { "packages:Case/nested/value.tiri", 0, 123451,
          content_digest("") } }
    };
-   result.ResolutionInputs = { { "volume:scripts", result.MainSource.ResolvedPath, "/opt/kotuku/scripts/" } };
+   result.ResolutionInputs = { { "package:json", result.MainSource.ResolvedPath,
+      "/opt/kotuku/packages/json/1.0/json.tiri", ">=1 <2", "1.0", true } };
    result.ConditionalInputs = {
       { ConditionalKind::EXISTS, "optional.tiri", result.MainSource.ResolvedPath, "false" },
       { ConditionalKind::PLATFORM, "platform", "", "Linux" }
@@ -63,9 +64,15 @@ bool round_trip_contract(kt::Log &Log)
        (decoded.Metadata.MainSource.ContentDigest != manifest.MainSource.ContentDigest) or
        (decoded.Metadata.Imports.size() != 2) or
        (decoded.Metadata.Imports[0].OriginalRequest != "./library") or
-       (decoded.Metadata.Imports[1].ParentPath != "scripts:Case/library.tiri") or
+       (decoded.Metadata.Imports[1].ParentPath != "packages:Case/library.tiri") or
        (decoded.Metadata.ResolutionInputs.size() != 1) or (decoded.Metadata.ConditionalInputs.size() != 2)) {
       Log.error("Decoded envelope did not preserve its bounded metadata");
+      return false;
+   }
+   const auto &resolution = decoded.Metadata.ResolutionInputs[0];
+   if (resolution.Constraint != ">=1 <2" or resolution.SelectedVersion != "1.0" or
+       not resolution.PackageManaged) {
+      Log.error("Decoded envelope did not preserve package resolution metadata");
       return false;
    }
 
@@ -77,7 +84,7 @@ bool round_trip_contract(kt::Log &Log)
    }
 
    auto different_path = manifest;
-   different_path.MainSource.ResolvedPath = "scripts:case/../case/main.tiri";
+   different_path.MainSource.ResolvedPath = "packages:case/../case/main.tiri";
    auto different_option = manifest;
    different_option.Options[0].Value = "off";
    if ((file_key(different_path) IS file_key(manifest)) or (file_key(different_option) IS file_key(manifest)) or

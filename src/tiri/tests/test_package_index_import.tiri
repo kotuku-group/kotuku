@@ -1,0 +1,205 @@
+include 'core'
+
+local glRoot
+local glPackages
+local glScripts
+local glSerial = 0
+
+function make_folder(Path:str)
+   local folder <close> = obj.new('file', { path=Path, flags=FL_NEW|FL_FOLDER })
+end
+
+function write_file(Path:str, Content:str)
+   local file <close> = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
+   check file.acWrite(Content)
+end
+
+function package_source(Owner:str, Version:str, Value:num):str
+   return f'@Package(name="{Owner}", version="{Version}")\nnamespace indexed {{ value={Value} }}\n' ..
+      f'@if(imported=false)\nprint("DIRECT:{Value}")\n@end'
+end
+
+function write_valid_index(IncludeTwo:bool)
+   local two = IncludeTwo ? '2 = selector/2/main.tiri\n' : ''
+   write_file(glPackages .. 'index.cfg', '[selector]\n1.9 = selector/1.9/main.tiri\n' ..
+      '1 = selector/1/main.tiri\n1.10 = selector/1.10/main.tiri\n1.0 = selector/1.0/main.tiri\n' .. two ..
+      '\n[public/alias]\n1.0 = alias/1.0/main.tiri\n' ..
+      '\n[local-package]\n1.0 = local/1.0/main.tiri\n' ..
+      '\n[repeated]\n1.0 = repeated/1.0/main.tiri\n' ..
+      '\n[mismatch]\n2 = mismatch/2/main.tiri\n' ..
+      '\n[missing-file]\n1 = missing/1/main.tiri\n' ..
+      '\n[directory-target]\n1 = local/1.0\n' ..
+      '\n[linked-package]\n1.0 = linked/1.0/main.tiri\n' ..
+      '\n[linked-nested]\n1.0 = linked/1.0/nested.tiri\n' ..
+      '\n[fallback-boundary]\n1 = boundary/1/main.tiri\n')
+end
+
+@BeforeAll function setup()
+   local err, temp = mSys.ResolvePath('temp:', 0)
+   check err
+   glRoot = temp .. f'/package_index.tests_{processing.task().id}_{mSys.PreciseTime()}/'
+   glPackages = glRoot .. 'packages/'
+   glScripts = glRoot .. 'scripts/'
+   make_folder(glRoot)
+   make_folder(glPackages)
+   make_folder(glScripts)
+
+   for folder in values(array<str> { 'selector', 'alias', 'local', 'repeated', 'mismatch', 'boundary' }) do
+      make_folder(glPackages .. folder .. '/')
+   end
+   for version in values(array<str> { '1', '1.0', '1.9', '1.10', '2' }) do
+      make_folder(glPackages .. 'selector/' .. version .. '/')
+      write_file(glPackages .. 'selector/' .. version .. '/main.tiri',
+         package_source('selector-owner', version, tonumber(version) * 100))
+   end
+   make_folder(glPackages .. 'alias/1.0/')
+   write_file(glPackages .. 'alias/1.0/main.tiri', package_source('different-owner', '1.0', 10))
+   make_folder(glPackages .. 'local/1.0/')
+   write_file(glPackages .. 'local/1.0/helper.tiri', 'global helper_value = 17')
+   write_file(glPackages .. 'local/1.0/main.tiri',
+      '@Package(name="local-owner", version="1.0")\nimport \'./helper\'\nnamespace indexed { value=helper_value }')
+   make_folder(glPackages .. 'repeated/1.0/')
+   write_file(glPackages .. 'repeated/1.0/main.tiri',
+      '@Package(name="repeated-owner", version="1.0")\nglPackageRuns++\nnamespace indexed { value=glPackageRuns }')
+   make_folder(glPackages .. 'mismatch/2/')
+   write_file(glPackages .. 'mismatch/2/main.tiri',
+      '@Package(name="mismatch-owner", version="1")\nthis malformed body must not be parsed')
+   make_folder(glPackages .. 'boundary/1/')
+   write_file(glPackages .. 'boundary/1/main.tiri', package_source('boundary-owner', '1', 1))
+   write_file(glScripts .. 'fallback-boundary.tiri', package_source('legacy-owner', '9', 9))
+   write_valid_index(true)
+end
+
+@AfterAll function cleanup()
+   if glRoot then check mSys.DeleteFile(glRoot) end
+end
+
+function run_packages(Source:str, Trace:bool, Packages:str):<num, str>
+   local output = ''
+   local executable = processing.task().processPath .. 'origo'
+   if mSys.GetSystemState().platform is 'Windows' then executable ..= '.exe' end
+   local task <close> = obj.new('task', {
+      location=executable, flags=TSF_WAIT, timeout=20,
+      outputCallback=function(Task, Buffer) output ..= Buffer.getString() end,
+      errorCallback=function(Task, Buffer) output ..= Buffer.getString() end
+   })
+   for argument in values(array<str> {
+      '--statement', Source, Trace ? '--log-trace' : '--log-warning', '--gfx-driver=headless',
+      '--set-volume', 'packages=' .. Packages,
+      '--set-volume', 'temp=' .. glRoot
+   }) do
+      check task.mtAddArgument(argument)
+   end
+   check task.acActivate()
+   return task.returnCode, output
+end
+
+function run(Source:str, Trace:bool):<num, str>
+   return run_packages(Source, Trace, glPackages)
+end
+
+function assert_success(Source:str, Marker:str, Trace:bool):str
+   local code, output = run(Source, Trace)
+   assert(code is 0 and output.find(Marker, 0, true) != nil, output)
+   return output
+end
+
+function assert_failure(Source:str, Marker:str):str
+   local code, output = run(Source, false)
+   assert(code != 0, 'Source unexpectedly succeeded: ' .. Source .. '\n' .. output)
+   assert(output.find(Marker, 0, true) != nil, f"Expected '{Marker}', got: {output}")
+   return output
+end
+
+@Test function HighestAndConstrainedSelection()
+   assert_success("import 'selector'; print('SELECT:' .. tostring(indexed.value))", 'SELECT:200', false)
+   assert_success("import 'selector' version >= \"1\" and < \"2\"; print('RANGE:' .. tostring(indexed.value))",
+      'RANGE:110', false)
+   assert_success("import 'selector' version \"1.0\"; print('EXACT:' .. tostring(indexed.value))", 'EXACT:100', false)
+end
+
+@Test function AliasLocalAndRepeatedImports()
+   assert_success("import 'public/alias'; print('ALIAS:' .. tostring(indexed.value))", 'ALIAS:10', false)
+   assert_success("import 'local-package'; print('LOCAL:' .. tostring(indexed.value))", 'LOCAL:17', false)
+   assert_success("global glPackageRuns=0; import 'repeated'; import 'repeated'; " ..
+      "print('REPEATED:' .. tostring(indexed.value))", 'REPEATED:1', false)
+end
+
+@Test function TargetAndConstraintFailures()
+   local output = assert_failure("import 'mismatch'", 'selected version 2')
+   assert(output.find('malformed', 0, true) is nil, output)
+   assert_failure("import 'missing-file'", 'file is unavailable')
+   assert_failure("import 'directory-target'", 'file is unavailable')
+   assert_failure("import 'fallback-boundary' version > \"1\"", 'no version satisfying')
+end
+
+@Test function LinkedPackageVersionResolvesIndexedFiles()
+   local linked_source = glRoot .. 'linked-source/'
+   make_folder(glPackages .. 'linked/')
+   make_folder(linked_source)
+   write_file(linked_source .. 'main.tiri', package_source('linked', '1.0', 25))
+   write_file(glRoot .. 'secret.tiri', package_source('secret', '1.0', 99))
+
+   local err = mSys.CreateLink(glPackages .. 'linked/1.0', linked_source)
+   if err is ERR_NoSupport or err is ERR_NoPermission then
+      return 'Host platform does not permit symbolic link creation.'
+   end
+   assert(err is ERR_Okay, 'Could not create version-directory link: ' .. mSys.GetErrorMsg(err))
+   assert_success("import 'linked-package'; print('LINKED:' .. tostring(indexed.value))", 'LINKED:25', false)
+
+   err = mSys.CreateLink(linked_source .. 'nested.tiri', glRoot .. 'secret.tiri')
+   assert(err is ERR_Okay, 'Could not create nested payload link: ' .. mSys.GetErrorMsg(err))
+   assert_success("import 'linked-nested'; print('NESTED:' .. tostring(indexed.value))", 'NESTED:99', false)
+end
+
+@Test function ImportSourcesOpenOnce()
+   write_file(glRoot .. 'reuse.tiri', "import 'public/alias'")
+   local source = [[
+      import 'public/alias'
+      import 'public/alias'
+      loadFile('temp:reuse.tiri')
+      print('OPEN_ONCE:' .. tostring(indexed.value))
+   ]]
+   for pass in {0 to 2} do
+      local output = assert_success(source, 'OPEN_ONCE:10', true)
+      assert(output.count('main.tiri" [R]') is 1,
+         'Resolution, duplicate imports and active reuse must not reopen the source: ' .. output)
+      if pass is 1 then
+         assert(output.find('Imported-module validation: hits=1', 0, true) != nil, output)
+      end
+   end
+end
+
+@Test function CacheReplayTracksIndexSelection()
+   write_valid_index(false)
+   local source = "import 'selector'; print('CACHE:' .. tostring(indexed.value))"
+   assert_success(source, 'CACHE:110', true)
+   local warm = assert_success(source, 'CACHE:110', true)
+   assert(warm.find('Imported-module validation: hits=1', 0, true) != nil, warm)
+   write_valid_index(true)
+   local changed = assert_success(source, 'CACHE:200', true)
+   assert(changed.find('CACHE:110', 0, true) is nil, changed)
+end
+
+@Test function InvalidIndexFailsInitialisation()
+   write_file(glPackages .. 'index.cfg', '[unsafe]\n1 = ../escape.tiri\n')
+   local code, output = run("print('SHOULD-NOT-RUN')", false)
+   assert(code != 0 and output.find('unsafe path', 0, true) != nil and
+      output.find('SHOULD-NOT-RUN', 0, true) is nil, output)
+   write_valid_index(true)
+end
+
+@Test function LegacyFilesCannotSatisfyImports()
+   write_file(glScripts .. 'legacy-only.tiri', '@Package(name="legacy-only", version="1")\nprint("LEGACY-RAN")')
+   local output = assert_failure("import 'legacy-only'", 'no public import named')
+   assert(output.find('LEGACY-RAN', 0, true) is nil, output)
+   output = assert_failure("import 'Legacy-Only'", 'Invalid package import name')
+   assert(output.find('LEGACY-RAN', 0, true) is nil, output)
+   assert_success("local err = mSys.AnalysePath('scripts:legacy-only.tiri'); " ..
+      "print('ABSENT:' .. tostring(err != ERR_Okay))", 'ABSENT:true', false)
+end
+
+@Test function ExplicitVersionedPayloadExecutes()
+   assert_success("loadFile('packages:selector/2/main.tiri')",
+      'DIRECT:200', false)
+end

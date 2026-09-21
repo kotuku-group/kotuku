@@ -329,7 +329,7 @@ void ScintillaKTK::Paste()
             int64_t len, size;
             if ((!file->getSize(size)) and (size > 0)) {
                std::vector<char> buffer(size);
-               if (!file->read(buffer.data(), size, &len)) {
+               if (!file->read(std::span<int8_t>((int8_t *)buffer.data(), size_t(size)), &len)) {
                   pdoc->BeginUndoAction();
 
                      ClearSelection();

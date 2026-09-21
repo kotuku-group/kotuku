@@ -85,25 +85,25 @@ end
 @Test function ImportScriptResolution()
    doc = makeDoc("import 'json'\n")
    locations = resolveDefinition(doc, { line = 0, character = 9 })
-   assertUriContains(locations, '/scripts/json.tiri', 'Import should resolve to SDK script')
+   assertUriContains(locations, '/packages/json/1.0/json.tiri', 'Import should resolve to indexed package')
 end
 
 @Test function ImportNestedScriptResolution()
    doc = makeDoc("import 'gui/window'\n")
    locations = resolveDefinition(doc, { line = 0, character = 12 })
-   assertUriContains(locations, '/scripts/gui/window.tiri', 'Nested import should resolve to SDK script')
+   assertUriContains(locations, '/packages/window/1.0/window.tiri', 'Nested import should resolve to indexed package')
 end
 
 @Test function ImportListScriptResolution()
    doc = makeDoc("import 'json', 'options'\n")
    locations = resolveDefinition(doc, { line = 0, character = 17 })
-   assertUriContains(locations, '/scripts/options.tiri', 'Second import list item should resolve to SDK script')
+   assertUriContains(locations, '/packages/options/1.0/options.tiri', 'Second import list item should resolve to indexed package')
 end
 
 @Test function WrappedImportListScriptResolution()
    doc = makeDoc("import 'json',\n   'options'\n")
    locations = resolveDefinition(doc, { line = 1, character = 6 })
-   assertUriContains(locations, '/scripts/options.tiri', 'Wrapped import list item should resolve to SDK script')
+   assertUriContains(locations, '/packages/options/1.0/options.tiri', 'Wrapped import list item should resolve to indexed package')
 end
 
 @Test function ImportParentRelativeScriptResolution()
@@ -115,20 +115,20 @@ end
 @Test function ImportAliasScriptResolution()
    doc = makeDoc("import 'json' as jsonLib\n")
    locations = resolveDefinition(doc, { line = 0, character = 9 })
-   assertUriContains(locations, '/scripts/json.tiri', 'Aliased import should still resolve its script target')
+   assertUriContains(locations, '/packages/json/1.0/json.tiri', 'Aliased import should still resolve its package target')
 end
 
 @Test function VersionedImportScriptResolution()
    doc = makeDoc("import 'json' version >= \"1\" and < \"2\" as jsonLib\n")
    locations = resolveDefinition(doc, { line = 0, character = 9 })
-   assertUriContains(locations, '/scripts/json.tiri',
+   assertUriContains(locations, '/packages/json/1.0/json.tiri',
       'A version clause should not interfere with import target navigation')
 end
 
 @Test function ExplicitLocalImportDoesNotFallbackToSdk()
    doc = makeDoc("import './json'\n")
    locations = resolveDefinition(doc, { line = 0, character = 10 })
-   assert(not locations, 'Explicit local import should not fall back to SDK script resolution')
+   assert(not locations, 'Explicit local import should not fall back to indexed package resolution')
 end
 
 @Test function IncludeModuleResolution()
@@ -289,4 +289,30 @@ end
    doc = makeDoc('struct A Value: int end\nstruct B Value: float end\na = struct<A> { }\nprint(a.Value)\na = struct<B> { }\n')
    locations = resolveDefinition(doc, { line = 3, character = 10 })
    assertLocationLine(locations, 0, 'A later assignment must not change the type at an earlier field access')
+end
+
+@Test function ExportAliasResolvesIndexedPayload()
+   doc = makeDoc("import 'gui/listview'\n")
+   locations = resolveDefinition(doc, { line = 0, character = 12 })
+   assertUriContains(locations, '/packages/view/1.0/listview.tiri',
+      'A public export should select its concrete package payload')
+end
+
+@Test function MissingPackageHasNoDefinition()
+   doc = makeDoc("import 'definitely-missing-library'\n")
+   locations = resolveDefinition(doc, { line = 0, character = 12 })
+   assert(not locations, 'An absent public import should not navigate to a source')
+end
+
+@Test function UnsatisfiedVersionHasNoDefinition()
+   doc = makeDoc("import 'json' version >= \"999\"\n")
+   locations = resolveDefinition(doc, { line = 0, character = 9 })
+   assert(not locations, 'An unsatisfied version should not navigate to a different release')
+end
+
+@Test function MultiClauseVersionSelectsIndexedPayload()
+   doc = makeDoc("import 'json' version > \"0\" and >= \"1\" and < \"2\"\n")
+   locations = resolveDefinition(doc, { line = 0, character = 9 })
+   assertUriContains(locations, '/packages/json/1.0/json.tiri',
+      'Every version comparison should participate in indexed navigation')
 end

@@ -1055,6 +1055,8 @@ enum class ImportedModuleState : uint8_t {
 struct ImportedModuleKey {
    std::string resolved_path;
    std::string logical_request;
+   std::string selected_version;
+   bool package_managed = false;
    bool imported_root = true;
 
    bool operator==(const ImportedModuleKey &) const = default;
@@ -1064,6 +1066,8 @@ struct ImportedModuleKeyHash {
    size_t operator()(const ImportedModuleKey &Key) const noexcept {
       size_t hash = std::hash<std::string>{}(Key.resolved_path);
       hash ^= std::hash<std::string>{}(Key.logical_request) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+      hash ^= std::hash<std::string>{}(Key.selected_version) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+      hash ^= size_t(Key.package_managed) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
       hash ^= size_t(Key.imported_root) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
       return hash;
    }

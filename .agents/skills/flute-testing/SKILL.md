@@ -77,13 +77,7 @@ build/agents-install/origo tools/flute.tiri file=src/network/tests/test_bind_add
 Use `--log-api` when runner or API detail is needed, and `--log-threads` for thread-related failures. Use
 `--gfx-driver=headless` for CI, automated display tests, and other non-interactive graphics checks.
 
-If running outside the repository root, use an absolute path for the `file=` parameter. If testing changes under
-`scripts/`, add the source override so the installed runtime loads the edited scripts:
-
-```powershell
-build/agents-install/origo tools/flute.tiri file=src/example/tests/test_example.tiri `
-   --set-volume scripts=E:/kotuku/scripts --log-warning
-```
+If running outside the repository root, use an absolute path for the `file=` parameter.
 
 After C++ or build-system changes, build and install before running `ctest`:
 

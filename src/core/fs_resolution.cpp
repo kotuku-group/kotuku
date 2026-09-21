@@ -441,7 +441,7 @@ static ERR resolve(const std::string &Source, std::string &Dest, RSF Flags)
       while ((Source[j] IS '/') or (Source[j] IS '\\')) j++;
       Dest.append(Source, j);
 
-      // Fully resolve the path to a system folder before testing it (e.g. "scripts:" to "kotuku:scripts/" to "c:\kotuku\scripts\" will be resolved through this recursion).
+      // Fully resolve the path to a system folder before testing it (e.g. "assets:" to "kotuku:assets/" to "c:\kotuku\assets\" will be resolved through this recursion).
 
       #ifdef _WIN32
          if ((Dest[1] IS ':') and ((Dest[2] IS '/') or (Dest[2] IS '\\'))) j = std::string::npos;

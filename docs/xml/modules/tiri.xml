@@ -23,6 +23,29 @@
   </info>
 
   <function>
+    <name>ResolvePackage</name>
+    <comment>Resolve an importable library package to its filesystem path.</comment>
+    <prototype>ERR ti::ResolvePackage(STRVIEW Name, STRVIEW Constraint, STRING * Path)</prototype>
+    <tiriPrototype>err, Path:str = ResolvePackage(Name:str, Constraint:str)</tiriPrototype>
+    <tags>pure-query, mutates-input</tags>
+    <input>
+      <param type="STRVIEW" name="Name">Public import name, including any export alias.</param>
+      <param type="STRVIEW" name="Constraint">Optional version constraint; empty selects the highest version.</param>
+      <param type="STRING *" name="Path">Receives the resolved executable file path on success.</param>
+    </input>
+    <description>
+<p>Use ResolvePackage() to discover the filesystem location of an importable library package such as <code>gui</code> or <code>io/filesearch</code>.  The returned path identifies the same versioned source file that would be selected for a Tiri <code>import</code> declaration.  If Constraint is empty, the highest available version is returned.  Otherwise, Constraint should match a valid version expression accepted by an import clause.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">The selected package source exists.</error>
+      <error code="InvalidData">The name or constraint is invalid, or the package is unavailable.</error>
+      <error code="NotFound">No package version satisfies the request.</error>
+      <error code="FileNotFound">The selected source file is unavailable.</error>
+      <error code="NullArgs">The output path pointer was not supplied.</error>
+    </result>
+  </function>
+
+  <function>
     <name>SetVariable</name>
     <comment>Sets any variable in a loaded Tiri script.</comment>
     <prototype>ERR ti::SetVariable(objTiri * Script, STRVIEW Name, INT Type, ...)</prototype>

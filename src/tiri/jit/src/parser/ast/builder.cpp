@@ -349,16 +349,25 @@ static ParserResult<StmtNodePtr> make_control_stmt(ParserContext& Context, AstNo
 
 AstBuilder::AstBuilder(ParserContext &Context, AstBuilder *Parent, bool ModuleInitialiser,
    std::optional<tiri::PackageIdentity> ExpectedPackage,
-   std::optional<tiri::PackageImportRequirement> ImportRequirement) :
+   std::optional<tiri::PackageImportRequirement> ImportRequirement,
+   std::optional<tiri::ResolvedImport> ExpectedResolution) :
    ctx(Context), module_initialiser(ModuleInitialiser), expected_package_(std::move(ExpectedPackage)),
-   import_requirement_(std::move(ImportRequirement)), parent_builder(Parent)
+   import_requirement_(std::move(ImportRequirement)), expected_resolution_(std::move(ExpectedResolution)),
+   parent_builder(Parent)
 {
    this->ctx.set_error_rollback_callback(rollback_ast_builder_constants, this);
    if (not Parent) {
       ImportModuleValidationSession::Environment environment;
-      environment.ResolveLibrary = [this](std::string_view Name) {
+      environment.ResolveLibrary = [this](std::string_view Name, std::string_view Constraint) {
          std::string_view request = Name;
-         return this->ctx.resolve_lib_to_path(request);
+         std::optional<tiri::PackageImportRequirement> requirement;
+         if (not Constraint.empty()) {
+            tiri::VersionConstraint parsed;
+            if (tiri::parse_version_constraint(Constraint, parsed)) return tiri::ResolvedImport();
+            requirement = tiri::PackageImportRequirement { std::string(Name), std::move(parsed) };
+         }
+         auto resolution = this->ctx.resolve_lib_to_path(request, requirement ? &*requirement : nullptr);
+         return resolution ? std::move(resolution.Import) : tiri::ResolvedImport();
       };
       environment.ModuleAvailable = [this](std::string_view Name) { return this->module_is_available(Name); };
       this->import_validation_session = std::make_unique<ImportModuleValidationSession>(

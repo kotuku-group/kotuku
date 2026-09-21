@@ -2,6 +2,15 @@
 
 module core as mCore
 
+@BeforeAll function setup_callback_source()
+   local file <close> = obj.new('file', { path='temp:function_callback_source.tiri', flags=FL_NEW|FL_WRITE })
+   check file.acWrite('callback source fixture\n')
+end
+
+@AfterAll function cleanup_callback_source()
+   mSys.DeleteFile('temp:function_callback_source.tiri')
+end
+
 function wait_for_callback(Context:str)
    check processing.sleep(1.0)
 end
@@ -105,7 +114,7 @@ end
 @Test function ObjectMethodCallbacksRestoreNestedContexts()
    local outer = entity { name = 'outer callback', before = nil, after = nil }
    local inner = entity { name = 'inner callback', observed = nil }
-   local source = obj.new('file', { src='scripts:gui.tiri', flags=FL_READ })
+   local source = obj.new('file', { src='temp:function_callback_source.tiri', flags=FL_READ })
 
    defer
       mSys.DeleteFile('temp:function_callback_outer.tiri')
@@ -116,7 +125,7 @@ end
       check source.mtCopy('temp:function_callback_outer.tiri', function()
          &before = &name
          using inner do
-            check mCore.CopyFile('scripts:gui.tiri', 'temp:function_callback_inner.tiri', function()
+            check mCore.CopyFile('temp:function_callback_source.tiri', 'temp:function_callback_inner.tiri', function()
                &observed = &name
             end)
          end
@@ -169,7 +178,7 @@ end
    defer mSys.DeleteFile('temp:function_callback_error.tiri') end
    local script = obj.new('tiri', { statement=[[
       local owner = entity { name = 'failing callback' }
-      local source = obj.new('file', { src='scripts:gui.tiri', flags=FL_READ })
+      local source = obj.new('file', { src='temp:function_callback_source.tiri', flags=FL_READ })
 
       using owner do
          source.mtCopy('temp:function_callback_error.tiri', function()
@@ -198,7 +207,7 @@ end
    end
 
    using consumed do
-      local err = mCore.CopyFile('scripts:gui.tiri', '', function()
+      local err = mCore.CopyFile('temp:function_callback_source.tiri', '', function()
          &called = true
       end)
       assert(err != ERR_Okay, 'CopyFile() should consume a callback when native validation rejects the call')
@@ -216,7 +225,7 @@ end
 
    jit.off()
    using context do
-      check mCore.CopyFile('scripts:gui.tiri', 'temp:function_callback_jit.tiri', function()
+      check mCore.CopyFile('temp:function_callback_source.tiri', 'temp:function_callback_jit.tiri', function()
          &observed = &value
       end)
    end
@@ -226,7 +235,7 @@ end
    jit.on()
    for _ in {0 to iterations} do
       using context do
-         check mCore.CopyFile('scripts:gui.tiri', 'temp:function_callback_jit.tiri', function()
+         check mCore.CopyFile('temp:function_callback_source.tiri', 'temp:function_callback_jit.tiri', function()
             &observed = &value
          end)
       end

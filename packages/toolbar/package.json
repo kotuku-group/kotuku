@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "name": "gui/toolbar",
+  "version": "1.0",
+  "description": "Icon toolbar widget for Tiri graphical interfaces.",
+  "entry": "toolbar.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2006-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-GUI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "gui",
+    "toolbar",
+    "widget"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "gui": "1.0",
+    "gui/tooltip": "1.0"
+  },
+  "files": [
+    {
+      "path": "toolbar.tiri",
+      "size": 23685,
+      "sha256": "6411e47b903a4a8522327598db4b8bbe7185e2c02af621ec25cf3d2950b098c3",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 # Kotuku Core Build File
 #
 # Release Config:  cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release
-# Debug Config:    cmake -S . -B build/debug -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=local -DRUN_ANYWHERE=TRUE
+# Debug Config:    cmake -S . -B build/debug -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=local -DRUN_ANYWHERE=TRUE -DLINKED_PACKAGES=ON
 # Fast Config:     cmake -S . -B build/fast -DCMAKE_BUILD_TYPE=FastBuild -DCMAKE_INSTALL_PREFIX=local -DRUN_ANYWHERE=TRUE
 #                  (FastBuild optimises for compilation speed rather than runtime performance - uses -O0, faster linkers, minimal debug info)
 # Git Release:     cmake -S . -B build/release-git -DCMAKE_BUILD_TYPE=Release -DINSTALL_EXAMPLES=TRUE -DCMAKE_INSTALL_PREFIX=kotuku-linux64-$(date +'%Y%m%d') -DRUN_ANYWHERE=TRUE -DBUILD_TESTS=OFF
@@ -29,7 +29,7 @@
 #   - 7-Zip installed for SFX generation (optional, auto-detected)
 #   - NSIS for installer generation (optional, auto-detected)
 
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.19)
 
 if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
    message (STATUS "CMAKE_BUILD_TYPE not set, defaulting to Release")
@@ -81,6 +81,7 @@ endif()
 
 option (KOTUKU_STATIC            "Build as a set of static libraries instead of the default modular build." OFF)
 option (KOTUKU_INSTALL           "Create installation targets" ON)
+option (LINKED_PACKAGES          "Link installed package versions to their SDK source directories" OFF)
 option (KOTUKU_VLOG              "Enable verbose log messages in the generated binaries" OFF)
 option (KOTUKU_ICON_DEPENDENCIES "Track icon source files as dependencies for rebuilding the icon package." ON)
 option (ORIGO_CONSOLE            "Build Origo as a Windows console application rather than a GUI application (Windows only)" OFF)
@@ -1125,6 +1126,7 @@ add_subdirectory (src/json)
 add_subdirectory (src/regex)
 
 add_subdirectory (src/origo)
+add_subdirectory (packages)
 
 if (EXISTS "${PROJECT_SOURCE_DIR}/docs/tiri/CMakeLists.txt")
    add_subdirectory (docs/tiri)
@@ -1289,7 +1291,6 @@ if (KOTUKU_INSTALL)
       "${PROJECT_SOURCE_DIR}/tools/tiri_lsp/README.md"
       DESTINATION "${SHARE_TARGET}/tools/tiri_lsp")
 
-   install (DIRECTORY "${PROJECT_SOURCE_DIR}/scripts/" DESTINATION "${SHARE_TARGET}/scripts")
 
    if (INSTALL_EXAMPLES)
       install (DIRECTORY "${PROJECT_SOURCE_DIR}/examples/" DESTINATION "${SHARE_TARGET}/examples")

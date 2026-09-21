@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "name": "benchmark",
+  "version": "1.0",
+  "description": "Benchmark execution, statistical analysis and report persistence for Tiri applications.",
+  "entry": "benchmark.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "benchmarking",
+    "performance",
+    "statistics"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "json": "1.0"
+  },
+  "files": [
+    {
+      "path": "benchmark.tiri",
+      "size": 32028,
+      "sha256": "5191456e8b2c70183a4b92e703c6911ac0c35138c70ffe669f1f5d7b5de73bd2",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

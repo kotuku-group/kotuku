@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "name": "options",
+  "version": "1.0",
+  "description": "Declarative command-line option parsing and help generation for Tiri scripts.",
+  "entry": "options.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-Options-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "cli",
+    "options",
+    "parsing"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "json": "1.0"
+  },
+  "files": [
+    {
+      "path": "options.tiri",
+      "size": 87664,
+      "sha256": "1646e27351fbcda5cbb88db99421e5df57f4044d155476bd91402f7a3d563119",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

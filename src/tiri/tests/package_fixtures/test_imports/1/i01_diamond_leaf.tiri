@@ -1,0 +1,2 @@
+@Package(name="tests/i01-diamond-leaf", version="1")
+i01_boundary_trace ..= 'L'

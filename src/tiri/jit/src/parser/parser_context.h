@@ -11,6 +11,7 @@
 #include "parser/token_stream.h"
 #include "parser/parser_profiler.h"
 #include "parser/static_type_descriptor.h"
+#include "../../../package_resolver.h"
 
 #ifdef INCLUDE_TIPS
 class TipEmitter;
@@ -197,7 +198,8 @@ public:
    void pop_import();
    [[nodiscard]] const std::vector<std::string> & import_stack() const { return import_stack_; }
    [[nodiscard]] bool is_being_imported() const { return not import_stack_.empty(); }
-   [[nodiscard]] std::string resolve_lib_to_path(std::string_view &) const;
+   [[nodiscard]] tiri::ImportResolutionResult resolve_lib_to_path(
+      std::string_view &, const tiri::PackageImportRequirement * = nullptr) const;
 
 private:
    void attach_to_lex();

@@ -219,9 +219,7 @@ ERROR prep_environment(int WindowHandle, int Width, int Height)
    if (target.ok()) {
       objPointer::create pointer = { fl::Owner(target->UID), fl::Name("SystemPointer") }
       if (pointer.ok()) {
-         objTiri::create script = { fl::Path("templates:defaultvariables.tiri"), fl::Target(target->UID) };
-         if (script.ok()) return acActivate(script);
-         else return ERR_CreateObject;
+         return ERR::Okay;
       }
       else return ERR_CreateObject;
    }

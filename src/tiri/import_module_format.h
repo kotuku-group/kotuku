@@ -14,7 +14,7 @@
 
 namespace tiri::import_cache {
 
-constexpr uint32_t SCHEMA_VERSION = 13;
+constexpr uint32_t SCHEMA_VERSION = 14;
 constexpr size_t MAX_INTERFACE_SIZE = 8 * 1024 * 1024;
 constexpr size_t MAX_INTERFACE_RECORDS = 4096;
 

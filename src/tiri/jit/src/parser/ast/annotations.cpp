@@ -169,11 +169,18 @@ ParserResult<bool> AstBuilder::parse_compilation_unit_preamble()
             this->expected_package_->Name, this->expected_package_->Version));
    }
 
+   if (this->expected_resolution_) {
+      std::string diagnostic;
+      if (not tiri::check_resolved_package(*this->expected_resolution_, this->package_identity_, diagnostic)) {
+         return this->fail<bool>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(), diagnostic);
+      }
+   }
+
    if (this->import_requirement_) {
       tiri::PackageImportFailure failure;
       if (not tiri::check_package_import(*this->import_requirement_, this->package_identity_, &failure)) {
          return this->fail<bool>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
-            tiri::package_import_error(*this->import_requirement_, this->package_identity_, failure));
+            tiri::package_import_error(*this->import_requirement_, failure));
       }
    }
    return ParserResult<bool>::success(true);

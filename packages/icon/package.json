@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "name": "gui/icon",
+  "version": "1.0",
+  "description": "Icon widget and SVG icon-loading support for Tiri graphical interfaces.",
+  "entry": "icon.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2006-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-GUI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "gui",
+    "icon",
+    "svg"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "gui": "1.0"
+  },
+  "files": [
+    {
+      "path": "icon.tiri",
+      "size": 6328,
+      "sha256": "d004042b764093ce78e294e2bfcc1bc0691e1374172d2db219db665af0ed0fe6",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

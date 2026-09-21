@@ -7,7 +7,7 @@
 // `temp:tiri/cache/` at any time.  Size limits and crash-orphan cleanup are not currently provided, and cache
 // publication is not crash-durable.
 //
-// Non-local Tiri libraries imported from the `scripts:` volume use a separate imported-module cache under the same
+// Non-local Tiri libraries selected through the package index use a separate imported-module cache under the same
 // `temp:tiri/cache/` directory.  This cache is always enabled and does not set or require `SCF::AUTO_CACHE`; the flag
 // continues to control only complete root scripts.  Each non-local library executes through the same private module
 // initialiser boundary on cold and warm paths, and each resolved module initialises at most once per Lua state.  Imports
@@ -101,11 +101,13 @@ static bool valid_import_name(std::string_view Request, bool &Local, std::string
          component_has_character = false;
          continue;
       }
+
       if (((value >= 'a') and (value <= 'z')) or ((value >= 'A') and (value <= 'Z')) or
           ((value >= '0') and (value <= '9')) or (value IS '-') or (value IS '_')) {
          component_has_character = true;
          continue;
       }
+
       return false;
    }
    return component_has_character;
@@ -114,32 +116,45 @@ static bool valid_import_name(std::string_view Request, bool &Local, std::string
 //********************************************************************************************************************
 // Replay an import request from its recorded parent context and return the resolver's current target spelling.
 
-static std::string replay_import_resolution(extTiri *Self, std::string_view Parent,
-   std::string_view Request)
+static tiri::ResolvedImport replay_import_resolution(extTiri *Self, std::string_view Parent,
+   std::string_view Request, std::string_view Constraint)
 {
    bool local = false;
    std::string parent_prefix;
    std::string_view name;
    if (not valid_import_name(Request, local, parent_prefix, name)) return {};
 
-   std::string root(parent_prefix);
-   if (local) {
-      auto separator = Parent.find_last_of("/\\");
-      if (separator != std::string_view::npos) root.insert(0, Parent.substr(0, separator + 1));
-      else {
-         std::string_view working_path;
-         Self->getWorkingPath(working_path);
-         if (not working_path.empty()) root.insert(0, working_path);
+   if (not local) {
+      std::optional<tiri::PackageImportRequirement> requirement;
+      if (not Constraint.empty()) {
+         tiri::VersionConstraint parsed;
+         if (tiri::parse_version_constraint(Constraint, parsed)) return {};
+         requirement = tiri::PackageImportRequirement { std::string(name), std::move(parsed) };
       }
+
+      auto resolved = tiri::resolve_package_import({ name, requirement ? &*requirement : nullptr });
+
+      return resolved ? std::move(resolved.Import) : tiri::ResolvedImport();
    }
-   else root = "scripts:";
+
+   std::string root(parent_prefix);
+   auto separator = Parent.find_last_of("/\\");
+   if (separator != std::string_view::npos) root.insert(0, Parent.substr(0, separator + 1));
+   else {
+      std::string_view working_path;
+      Self->getWorkingPath(working_path);
+      if (not working_path.empty()) root.insert(0, working_path);
+   }
 
    std::string path(root);
    path.append(name);
    path.append(".tiri");
 
    std::string resolved;
-   if (ResolvePath(path, RSF::NIL, &resolved) IS ERR::Okay) return resolved;
+   if (ResolvePath(path, RSF::NIL, &resolved) IS ERR::Okay) {
+      return { std::string(Request), std::move(resolved), std::nullopt, false };
+   }
+
    return {};
 }
 
@@ -193,39 +208,30 @@ static bool validate_cache_manifest(extTiri *Self, const tiri::cache::Manifest &
       Reason = "its build, root identity or compilation options have changed";
       return false;
    }
+
    if ((Stored.MainSource.Size != Self->Statement.size()) or
        (Stored.MainSource.ContentDigest != content_digest(Self->Statement))) {
       Reason = "the main source content has changed";
       return false;
    }
 
-   for (const auto &dependency : Stored.Imports) {
-      auto resolved = replay_import_resolution(Self, dependency.ParentPath, dependency.OriginalRequest);
-      if (resolved.empty() or (resolved != dependency.Source.ResolvedPath)) {
-         Reason = "import '" + dependency.OriginalRequest + "' from '" + dependency.ParentPath +
-            "' now resolves to '" + resolved + "' instead of '" + dependency.Source.ResolvedPath + "'";
-         return false;
-      }
-
-      objFile::create file = { fl::Path(resolved), fl::Flags(FL::READ) };
-      std::string source;
-      if (not file.ok() or (read_source_file(*file, resolved, source) != ERR::Okay)) {
-         Reason = "an imported source is missing or unreadable";
-         return false;
-      }
-      if ((dependency.Source.Size != source.size()) or
-          (dependency.Source.ContentDigest != content_digest(source))) {
-         Reason = "an imported source has changed";
-         return false;
-      }
-   }
-
    for (const auto &resolution : Stored.ResolutionInputs) {
       bool matched = std::ranges::any_of(Stored.Imports, [&](const auto &Import) {
          return (Import.ParentPath IS resolution.Context) and (Import.OriginalRequest IS resolution.Name) and
-            (Import.Source.ResolvedPath IS resolution.Value) and
-            (replay_import_resolution(Self, Import.ParentPath, Import.OriginalRequest) IS resolution.Value);
+            (Import.Source.ResolvedPath IS resolution.Value);
       });
+
+      if (matched) {
+         auto replayed = replay_import_resolution(Self, resolution.Context, resolution.Name, resolution.Constraint);
+         if (replayed.ResolvedPath.empty() or replayed.ResolvedPath != resolution.Value or
+             replayed.SelectedVersion.value_or("") != resolution.SelectedVersion or
+             replayed.PackageManaged != resolution.PackageManaged) {
+            Reason = "import '" + resolution.Name + "' from '" + resolution.Context +
+               "' now selects a different path or package version";
+            return false;
+         }
+      }
+
       if (not matched) {
          matched = std::ranges::any_of(Stored.ConditionalInputs, [&](const auto &Input) {
             return (Input.Kind IS ConditionalKind::EXISTS) and (Input.Context IS resolution.Context) and
@@ -233,8 +239,34 @@ static bool validate_cache_manifest(extTiri *Self, const tiri::cache::Manifest &
                resolution.Value);
          });
       }
+
       if (not matched) {
          Reason = "a recorded path resolution input has changed or is unsupported";
+         return false;
+      }
+   }
+
+   for (const auto &dependency : Stored.Imports) {
+      auto resolution = std::ranges::find_if(Stored.ResolutionInputs, [&](const auto &Input) {
+         return Input.Context IS dependency.ParentPath and Input.Name IS dependency.OriginalRequest and
+            Input.Value IS dependency.Source.ResolvedPath;
+      });
+
+      if (resolution IS Stored.ResolutionInputs.end()) {
+         Reason = "an imported source has no matching resolution record";
+         return false;
+      }
+
+      objFile::create file = { fl::Path(dependency.Source.ResolvedPath), fl::Flags(FL::READ) };
+      std::string source;
+      if (not file.ok() or (read_source_file(*file, dependency.Source.ResolvedPath, source) != ERR::Okay)) {
+         Reason = "an imported source is missing or unreadable";
+         return false;
+      }
+
+      if ((dependency.Source.Size != source.size()) or
+          (dependency.Source.ContentDigest != content_digest(source))) {
+         Reason = "an imported source has changed";
          return false;
       }
    }
@@ -265,6 +297,7 @@ static bool validate_cache_manifest(extTiri *Self, const tiri::cache::Manifest &
             Reason = "the cache contains an unsupported conditional observation";
             return false;
       }
+
       if (current != input.Value) {
          Reason = "a compile-time condition has changed";
          return false;
@@ -499,24 +532,26 @@ static ERR load_selected_cache(extTiri *Self, ERR SourceError, std::optional<std
    auto format_error = tiri::cache::decode_envelope(content, envelope);
    if (format_error IS tiri::cache::FormatError::OKAY) {
       std::string reason;
-      if (SourceError != ERR::Okay) reason = "schema-2 caches require readable source for validation";
+      if (SourceError != ERR::Okay) reason = "schema-3 caches require readable source for validation";
       else if (validate_cache_manifest(Self, envelope.Metadata, reason) and
                validate_cache_bytecode(Self, envelope.Payload, reason)) {
          payload.assign(envelope.Payload);
          accepted = true;
       }
+
       if (not accepted) log.detail("Cache miss '%s': %s.", Self->EffectiveCacheFile.c_str(), reason.c_str());
    }
    else if (format_error IS tiri::cache::FormatError::NOT_CACHE)
       log.detail("Cache miss '%s': legacy raw cache format is unsupported.", Self->EffectiveCacheFile.c_str());
    else {
-      log.detail("Cache miss '%s': malformed schema-2 envelope (%s).", Self->EffectiveCacheFile.c_str(),
+      log.detail("Cache miss '%s': malformed schema-3 envelope (%s).", Self->EffectiveCacheFile.c_str(),
          tiri::cache::format_error_name(format_error));
    }
 
    if (accepted) {
       log.detail("Cache hit '%s'.", Self->EffectiveCacheFile.c_str());
       if ((SourceError IS ERR::Okay) and SourceFallback) SourceFallback->emplace(std::move(Self->Statement));
+
       Self->Statement = std::move(payload);
       Self->LoadedFromCache = true;
       Self->LoadedFromBytecodeFile = false;
@@ -577,6 +612,7 @@ static ERR refresh_cache_lifecycle(extTiri *Self)
          Self->LoadedFromCache = false;
          Self->CacheHit = false;
       }
+
       select_cache_destination(Self, source_error);
       Self->SaveCompiled = (source_error IS ERR::Okay) and cache_destination_permitted(Self);
       if (Self->CacheOrigin IS CacheDestinationOrigin::AUTOMATIC) Self->CachePermissions = PERMIT::USER;
@@ -614,6 +650,7 @@ static ERR prepare_cached_input(extTiri *Self)
    if (source_error != ERR::Okay) {
       if (auto error = load_selected_cache(Self, source_error); error != ERR::Okay) return error;
    }
+
    if ((not Self->LoadedFromCache) and (source_error != ERR::Okay)) return source_error;
    return ERR::Okay;
 }

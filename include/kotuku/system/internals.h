@@ -55,7 +55,7 @@ public:
    bool Terminating;      // A FreeObject() call owns the destruction path; guarded by glmObjects
    bool CollectOnUnlock;  // Destruction is deferred until the final unlock; guarded by glmObjects
    // Can be null or a valid pointer whilst glmObjects is held.  Nulled by object_free() when the owner dies first.
-   OBJECTPTR Owner; 
+   OBJECTPTR Owner;
    // Object children entries are valid pointers whilst glmObjects is held.  Pinning of child objects is unnecessary,
    // the code has been designed for this and maintaining that behaviour is essential.
    ankerl::unordered_dense::set<OBJECTPTR> Children;

@@ -6,7 +6,8 @@
 -- The server supports handler registration for extending LSP functionality:
 --    server.registerHandler('textDocument/hover', function(msg, state) ... end)
 
-   include 'network'
+   include 'network','tiri'
+   module tiri as mTiri
    import 'json'
    import 'io/filesearch'
 

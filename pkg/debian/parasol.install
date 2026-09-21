@@ -1,5 +1,5 @@
 usr/bin/origo
 usr/lib/lib*.so*
-usr/share/kotuku/scripts/*
+usr/share/kotuku/packages/*
 usr/share/kotuku/data/*
 usr/share/kotuku/config/*

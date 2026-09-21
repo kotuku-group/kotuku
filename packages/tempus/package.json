@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "name": "tempus",
+  "version": "1.0",
+  "description": "Immutable date, time, duration and time-zone values for Tiri applications.",
+  "entry": "tempus.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-Tempus-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "date-time",
+    "temporal",
+    "time"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "files": [
+    {
+      "path": "tempus.tiri",
+      "size": 101922,
+      "sha256": "96c1765ed585e23f9768b760f0b865ea33cae458a78ea87aea924de546f8bfaf",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}
