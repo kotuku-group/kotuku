@@ -41,6 +41,16 @@
     </field>
 
     <field>
+      <name>Decay</name>
+      <comment>Reduces the radial spacing after each revolution.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The default value of <code>1.0</code> leaves the spacing unchanged.  Values between <code>0.0</code> and <code>1.0</code> multiply the spacing between successive turns, so <code>0.5</code> halves it each revolution.  Values must be greater than zero and no greater than one. The radius approaches <code>Offset + Spacing / (1 - Decay)</code> when Spacing is set.  If Spacing is zero, a base spacing of 36 units per revolution is used.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Height</name>
       <comment>The height (vertical diameter) of the spiral.</comment>
       <access read="G" write="S">Get/Set</access>
@@ -57,7 +67,7 @@
       <type>DOUBLE</type>
       <description>
 <p>The LoopLimit can be used to impose a limit on the total number of loops that are performed by the spiral path generator.  It can be used as an alternative to, or conjunction with the <fl>Radius</fl> value to limit the final spiral size.</p>
-<p>If the LoopLimit is not set, the <fl>Radius</fl> will take precedence.</p>
+<p>If the LoopLimit is not set, the <fl>Radius</fl> will take precedence. When <fl>Decay</fl> makes the Radius unreachable, generation stops once radial growth is less than <code>0.01</code> units per turn.</p>
       </description>
     </field>
 
@@ -98,7 +108,7 @@
       <type>DOUBLE</type>
       <description>
 <p>Spacing tightly controls the computation of the spiral path, ensuring that a specific amount of empty space is left between each loop.  The space is declared in pixel units.</p>
-<p>If Spacing is undeclared, the spiral expands at an incremental rate of <code>Step * 0.1</code>.</p>
+<p>If Spacing is undeclared, the base spacing is 36 units per revolution, equivalent to an incremental rate of <code>Step * 0.1</code> when <fl>Decay</fl> is <code>1.0</code>.</p>
       </description>
     </field>
 

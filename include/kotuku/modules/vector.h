@@ -5338,48 +5338,53 @@ class objVectorSpiral : public objVector {
       return ERR::Okay;
    }
 
-   inline ERR getOffset(double &Value) noexcept {
+   inline ERR getDecay(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 8));
       return ERR::Okay;
    }
 
-   inline ERR getStep(double &Value) noexcept {
+   inline ERR getOffset(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 16));
       return ERR::Okay;
    }
 
-   inline ERR getLoopLimit(double &Value) noexcept {
+   inline ERR getStep(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 24));
       return ERR::Okay;
    }
 
+   inline ERR getLoopLimit(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 32));
+      return ERR::Okay;
+   }
+
    inline ERR getRadius(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 32));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 40));
       return ERR::Okay;
    }
 
    inline ERR getCX(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 48));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 56));
       return ERR::Okay;
    }
 
    inline ERR getCY(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 64));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 72));
       return ERR::Okay;
    }
 
    inline ERR getPathLength(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[45];
+      auto field = &this->Class->Dictionary[46];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getWidth(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[47];
+      auto field = &this->Class->Dictionary[48];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getHeight(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[53];
+      auto field = &this->Class->Dictionary[54];
       return field->GetValue(this, &Value);
    }
 
@@ -5387,52 +5392,57 @@ class objVectorSpiral : public objVector {
    // Customised field setting
 
    inline ERR setSpacing(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[52];
+      auto field = &this->Class->Dictionary[53];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setDecay(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[45];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setOffset(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[54];
+      auto field = &this->Class->Dictionary[55];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setStep(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[51];
+      auto field = &this->Class->Dictionary[52];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setLoopLimit(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[50];
+      auto field = &this->Class->Dictionary[51];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setRadius(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[55];
+      auto field = &this->Class->Dictionary[56];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setCX(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[48];
+      auto field = &this->Class->Dictionary[49];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setCY(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[46];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setPathLength(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[45];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setWidth(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[47];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
+   inline ERR setPathLength(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[46];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setWidth(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[48];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
    inline ERR setHeight(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[53];
+      auto field = &this->Class->Dictionary[54];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
