@@ -1137,6 +1137,13 @@ static ERR save_svg_scan_spiral(extSVG *Self, objXML *XML, objVector *Vector, in
       if ((!spiral->getSpacing(dbl)) and (dbl != 0)) xml::NewAttrib(tag, "spacing", dbl);
       if ((!spiral->getDecay(dbl)) and (dbl != 1.0)) xml::NewAttrib(tag, "decay", dbl);
       if ((!spiral->getLoopLimit(dbl)) and (dbl != 0)) xml::NewAttrib(tag, "loopLimit", dbl);
+      if ((!spiral->getStartTurn(dbl)) and (dbl != 0)) xml::NewAttrib(tag, "startTurn", dbl);
+      if ((!spiral->getEndTurn(dbl)) and (dbl != 0)) xml::NewAttrib(tag, "endTurn", dbl);
+      if ((!spiral->getTolerance(dbl)) and (dbl != 0)) xml::NewAttrib(tag, "tolerance", dbl);
+      if ((!spiral->getThickness(unit)) and (double(unit) != 0)) set_dimension(tag, "thickness", unit);
+      int direction;
+      if ((!spiral->getClockwise(direction)) and (not direction)) xml::NewAttrib(tag, "clockwise", "false");
+      if ((!spiral->getReverse(direction)) and direction) xml::NewAttrib(tag, "reverse", "true");
       if ((!spiral->getPathLength(length)) and (length != 0)) xml::NewAttrib(tag, "pathLength", length);
 
       ChildIndex = tag->ID;

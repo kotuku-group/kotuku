@@ -41,12 +41,32 @@
     </field>
 
     <field>
+      <name>Clockwise</name>
+      <comment>Controls the winding direction as the spiral grows outwards.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT</type>
+      <description>
+<p>The default is TRUE, producing clockwise winding in the usual screen coordinate system where Y increases downwards. FALSE produces anticlockwise winding by reflecting the spiral about the horizontal line through <fl>CY</fl>.  The start remains on the positive X axis at turn zero.  This setting is independent of <fl>Reverse</fl>; reversing traversal does not change the shape's winding as measured outwards.  Transforms can change its apparent winding on screen.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Decay</name>
-      <comment>Reduces the radial spacing after each revolution.</comment>
+      <comment>Multiplies the radial spacing after each revolution.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>The default value of <code>1.0</code> leaves the spacing unchanged.  Values between <code>0.0</code> and <code>1.0</code> multiply the spacing between successive turns, so <code>0.5</code> halves it each revolution.  Values must be greater than zero and no greater than one. The radius approaches <code>Offset + Spacing / (1 - Decay)</code> when Spacing is set.  If Spacing is zero, a base spacing of 36 units per revolution is used.</p>
+<p>The default value of <code>1.0</code> leaves the spacing unchanged.  Values between <code>0.0</code> and <code>1.0</code> multiply the spacing between successive turns, so <code>0.5</code> halves it each revolution.  Values above <code>1.0</code> expand the spacing; <code>2.0</code> doubles it each revolution.  Values must be finite and greater than zero.  For values below <code>1.0</code>, the radius approaches <code>Offset + Spacing / (1 - Decay)</code> when Spacing is set.  If Spacing is zero, a base spacing of 36 units per revolution is used.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>EndTurn</name>
+      <comment>The absolute turn at which the spiral ends.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>A positive value clips the original spiral without restarting radial growth.  Zero (the default) disables this limit.  Values must be finite and non-negative.  The earliest of EndTurn, <fl>LoopLimit</fl> and <fl>Radius</fl> determines the end. The final point is included, including for fractional turns.</p>
       </description>
     </field>
 
@@ -67,7 +87,7 @@
       <type>DOUBLE</type>
       <description>
 <p>The LoopLimit can be used to impose a limit on the total number of loops that are performed by the spiral path generator.  It can be used as an alternative to, or conjunction with the <fl>Radius</fl> value to limit the final spiral size.</p>
-<p>If the LoopLimit is not set, the <fl>Radius</fl> will take precedence. When <fl>Decay</fl> makes the Radius unreachable, generation stops once radial growth is less than <code>0.01</code> units per turn.</p>
+<p>LoopLimit is an absolute turn limit measured from turn zero, including when <fl>StartTurn</fl> is non-zero. If the LoopLimit is not set, <fl>EndTurn</fl> or <fl>Radius</fl> takes precedence. When <fl>Decay</fl> makes the Radius unreachable, generation stops once radial growth is less than <code>0.01</code> units per turn.</p>
       </description>
     </field>
 
@@ -102,6 +122,16 @@
     </field>
 
     <field>
+      <name>Reverse</name>
+      <comment>Reverses traversal along the generated spiral.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT</type>
+      <description>
+<p>The default is FALSE, traversing from <fl>StartTurn</fl> towards the final clipped turn.  TRUE traverses the same sampled path from its last point to its first point.  Geometry, bounds, sampling and clipping remain unchanged.  This applies to the generated portion even if the vertex cap truncates the path.  Use <fl>Clockwise</fl> to change the outward winding independently of traversal.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Spacing</name>
       <comment>Declares the amount of empty space between each loop of the spiral.</comment>
       <access read="R" write="S">Read/Set</access>
@@ -113,12 +143,44 @@
     </field>
 
     <field>
+      <name>StartTurn</name>
+      <comment>The absolute turn at which the spiral begins.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Defaults to zero.  Fractional turns are supported; radial growth and orientation remain relative to turn zero. The value must be finite and non-negative.  An interval whose end precedes StartTurn produces an empty path. Without an end or radius limit, one turn is generated starting here.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Step</name>
       <comment>Determines the angle between sampled points in the spiral's path.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>The default Step is <code>1.0</code> degree.  Values are clamped to the range <code>0.1</code> to <code>180.0</code> degrees.  Using larger values will create a spiral with jagged corners due to the reduction in vertices.</p>
+<p>The default Step is <code>1.0</code> degree.  Values are clamped to the range <code>0.1</code> to <code>180.0</code> degrees.  Using larger values will create a spiral with jagged corners due to the reduction in vertices.  A positive <fl>Tolerance</fl> overrides Step.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Thickness</name>
+      <comment>Expands the spiral centreline into a closed ribbon.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
+      <description>
+<p>Zero (the default) keeps the original open spiral.  A positive value specifies the full width of a constant-width ribbon centred on the sampled spiral.  Fixed values use local user units; percentages are resolved against the normalised diagonal of the parent viewport, matching <class name="VectorWave" field="Thickness">VectorWave.Thickness</class> and <class name="Vector" field="StrokeWidth">Vector.StrokeWidth</class>.  Values must be finite and non-negative.</p>
+<p>The ribbon uses <class name="Vector" field="LineCap">Vector.LineCap</class>, <class name="Vector" field="LineJoin">Vector.LineJoin</class>, <class name="Vector" field="InnerJoin">Vector.InnerJoin</class> and the miter limits to construct its outline. Fill paints its interior and Stroke paints its boundary.  Simple self-intersection loops at tight turns are resolved by the outline generator.  Wider ribbons can overlap neighbouring turns.</p>
+<p><fl>Radius</fl>, <fl>StartTurn</fl> and <fl>EndTurn</fl> clip the centreline, so the ribbon's boundary can extend beyond Radius.  <fl>Tolerance</fl> controls centreline sampling and the precision of rounded joins, with join refinement capped for extreme values. An empty or single-point centreline produces no ribbon.  <fl>Reverse</fl> reverses each closed contour without changing its geometry.  Ribbon outlines can contain more vertices than the centreline's 65535-vertex limit.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Tolerance</name>
+      <comment>Enables adaptive sampling with a maximum local-coordinate error.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Zero (the default) uses fixed angular sampling controlled by <fl>Step</fl>.  A positive value replaces Step with adaptive sampling, bounding the distance between the ideal spiral and each line segment in local user units, before transforms. Smaller values produce more vertices.  Values must be finite and non-negative.  Adaptive sampling retains sub-unit segments.  Generation stops at 65535 vertices or when numerical precision prevents further progress, so extreme settings can truncate the path before its requested endpoint.</p>
       </description>
     </field>
 

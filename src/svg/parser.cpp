@@ -3748,6 +3748,12 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
             case SVF_step:       spiral->setStep(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_spacing:    spiral->setSpacing(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_decay:      spiral->setDecay(svtonum<double>(StrValue)); return ERR::Okay;
+            case SVF_startTurn:  spiral->setStartTurn(svtonum<double>(StrValue)); return ERR::Okay;
+            case SVF_endTurn:    spiral->setEndTurn(svtonum<double>(StrValue)); return ERR::Okay;
+            case SVF_tolerance:  spiral->setTolerance(svtonum<double>(StrValue)); return ERR::Okay;
+            case SVF_thickness:  spiral->setThickness(SVGUnit(StrValue)); return ERR::Okay;
+            case SVF_clockwise:  spiral->setClockwise(iequals("true", StrValue) or iequals("1", StrValue)); return ERR::Okay;
+            case SVF_reverse:    spiral->setReverse(iequals("true", StrValue) or iequals("1", StrValue)); return ERR::Okay;
             case SVF_loop_limit: // Deprecated dash-style
             case SVF_loopLimit:  spiral->setLoopLimit(SVGUnit(StrValue)); return ERR::Okay;
          }
