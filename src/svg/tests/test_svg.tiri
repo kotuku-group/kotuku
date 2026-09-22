@@ -226,7 +226,7 @@ end
 @Test global function Polygons()        hashTestSVG('paths/polygons.svg', 0x6e755c7b) end
 @Test global function Rough()           hashTestSVG('paths/rough_js.svg', 0xdb8d9130) end
 @Test global function Shapes()          hashTestSVG('paths/shapes.svg', 0xfa35b557) end
-@Test global function Spirals()         hashTestSVG('paths/spirals.svg', 0x785a3408) end
+@Test global function Spirals()         hashTestSVG('paths/spirals.svg', 0xad2029e9) end
 @Test global function Strokes()         hashTestSVG('paths/strokes.svg', 0xc35a546a) end
 @Test global function SuperShapes()     hashTestSVG('paths/supershapes.svg', 0x07dc5ee7) end
 @Test global function SuperSpiral()     hashTestSVG('paths/superspiral.svg', 0x87dd0122) end
