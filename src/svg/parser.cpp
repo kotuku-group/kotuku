@@ -3490,13 +3490,9 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
          auto vp = (objVectorViewport *)Vector;
          switch (Hash) {
             // The following 'view-*' fields are for defining the SVG view box
-            case SVF_view_x:     // Deprecated dash-style
             case SVF_viewX:      vp->setViewX(svtonum<double>(StrValue)); return ERR::Okay;
-            case SVF_view_y:     // Deprecated dash-style
             case SVF_viewY:      vp->setViewY(svtonum<double>(StrValue)); return ERR::Okay;
-            case SVF_view_width: // Deprecated dash-style
             case SVF_viewWidth:  vp->setViewWidth(svtonum<double>(StrValue)); return ERR::Okay;
-            case SVF_view_height: // Deprecated dash-style
             case SVF_viewHeight: vp->setViewHeight(svtonum<double>(StrValue)); return ERR::Okay;
             // The following dimension fields are for defining the position and clipping of the vector display
             case SVF_x:      vp->setX(SVGUnit(StrValue)); return ERR::Okay;
