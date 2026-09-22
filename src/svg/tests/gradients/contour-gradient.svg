@@ -29,7 +29,7 @@
     transform="skewX(30)"  fill="url(#contour1)"/>
 
   <kotuku:spiral id="Spiral" transform="translate(500,650)" stroke="none" stroke-width="4" fill="url(#halfcontour)"
-    spacing="30" loop-limit="3"/>
+    spacing="30" loopLimit="3"/>
 
   <rect x="400" y="500" width="200" height="100" fill="url(#halfcontour)" stroke="pink" stroke-width="2" transform="rotate(40,100,100)"/>
 
