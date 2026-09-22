@@ -44,42 +44,49 @@ static void generate_spiral(extVectorSpiral *Vector, agg::path_storage &Path)
    const double cx = Vector->CX.scaled() ? Vector->CX * get_parent_width(Vector) : double(Vector->CX);
    const double cy = Vector->CY.scaled() ? Vector->CY * get_parent_height(Vector) : double(Vector->CY);
 
-   double min_x = DBL_MAX, max_x = -DBL_MAX, min_y = DBL_MAX, max_y = -DBL_MAX;
+   double min_x = 0, max_x = 0, min_y = 0, max_y = 0;
    double angle  = 0;
    double radius = Vector->Offset;
    double limit  = Vector->LoopLimit * 360.0;
    const bool has_radius_limit = Vector->Radius.defined() and (double(Vector->Radius) != 0);
-   double max_radius = has_radius_limit ? double(Vector->Radius) : DBL_MAX;
-   double lx = -DBL_MAX, ly = -DBL_MAX;
-   double step = std::clamp(Vector->Step, 0.1, 180.0);
+   const double max_radius = has_radius_limit ?
+      (Vector->Radius.scaled() ? double(Vector->Radius) * svg_diag(get_parent_width(Vector),
+         get_parent_height(Vector)) : double(Vector->Radius)) : DBL_MAX;
+   const double step = Vector->Step;
+   double lx = 0, ly = 0;
+   bool recorded = false;
 
    if ((max_radius IS DBL_MAX) and (limit <= 0.01)) limit = 360;
    else if (limit < 0.001) limit = DBL_MAX; // Ignore the loop limit in favour of radius limit
 
-   for (int v=0; (v < MAX_SPIRAL_VERTICES) and (angle < limit) and (radius < max_radius); v++) {
+   for (int v=0; (v < MAX_SPIRAL_VERTICES) and (angle < limit); v++) {
+      if (Vector->Spacing) radius = Vector->Offset + (Vector->Spacing * (angle / 360.0));
+      if (radius >= max_radius) break;
+
       double x = radius * cos(angle * DEG2RAD);
       double y = radius * sin(angle * DEG2RAD);
 
       x += cx;
       y += cy;
-      if ((std::abs(x - lx) >= 1.0) or (std::abs(y - ly) >= 1.0)) { // Only record a vertex if its position has significantly changed from the last
-         if (!v) Path.move_to(x, y); // First vertex
-         else Path.line_to(x, y);
+      if ((not recorded) or (std::abs(x - lx) >= 1.0) or (std::abs(y - ly) >= 1.0)) {
+         if (not recorded) {
+            Path.move_to(x, y);
+            min_x = max_x = x;
+            min_y = max_y = y;
+            recorded = true;
+         }
+         else {
+            Path.line_to(x, y);
+            if (x < min_x) min_x = x;
+            if (y < min_y) min_y = y;
+            if (x > max_x) max_x = x;
+            if (y > max_y) max_y = y;
+         }
          lx = x;
          ly = y;
       }
 
-      // Boundary management
-
-      if (x < min_x) min_x = x;
-      if (y < min_y) min_y = y;
-      if (x > max_x) max_x = x;
-      if (y > max_y) max_y = y;
-
-      // These computations control the radius, effectively changing the rate at which the spiral expands.
-
-      if (Vector->Spacing) radius = Vector->Offset + (Vector->Spacing * (angle / 360.0));
-      else radius += step * 0.1;
+      if (not Vector->Spacing) radius += step * 0.1;
 
       // Increment the angle by the step.  A high step value results in a jagged spiral.
 
@@ -229,10 +236,10 @@ static ERR VECTORSPIRAL_SET_PathLength(extVectorSpiral *Self, int Value)
 
 /*********************************************************************************************************************
 -FIELD-
-Radius: The radius of the spiral.  Expressed as a fixed or scaled coordinate.
+Radius: Clamps the radius of the spiral.  Expressed as a fixed or scaled coordinate.
 
-The radius of the spiral is defined here as either a fixed or scaled value.  If zero, preference is given to
-#LoopLimit.
+The maximum radius of the spiral is defined here as either a fixed value or a percentage of the viewport's normalised
+diagonal.  If zero, preference is given to #LoopLimit.
 
 *********************************************************************************************************************/
 
@@ -246,17 +253,17 @@ static ERR VECTORSPIRAL_SET_Radius(extVectorSpiral *Self, Unit &Value)
 
 /*********************************************************************************************************************
 -FIELD-
-Step: Determines the distance between each vertex in the spiral's path.
+Step: Determines the angle between sampled points in the spiral's path.
 
-The Step value affects the distance between each vertex in the spiral path during its generation.  The default value
-is `1.0`.  Using larger values will create a spiral with jagged corners due to the reduction in vertices.
+The default Step is `1.0` degree.  Values are clamped to the range `0.1` to `180.0` degrees.  Using larger values will
+create a spiral with jagged corners due to the reduction in vertices.
 
 *********************************************************************************************************************/
 
 static ERR VECTORSPIRAL_SET_Step(extVectorSpiral *Self, double Value)
 {
-   if (Value != 0.0) {
-      Self->Step = Value;
+   if (std::isfinite(Value) and (Value > 0.0)) {
+      Self->Step = std::clamp(Value, 0.1, 180.0);
       reset_path(Self);
       return ERR::Okay;
    }

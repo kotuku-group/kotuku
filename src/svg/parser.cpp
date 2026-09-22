@@ -3490,10 +3490,14 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
          auto vp = (objVectorViewport *)Vector;
          switch (Hash) {
             // The following 'view-*' fields are for defining the SVG view box
-            case SVF_view_x:      vp->setViewX(svtonum<double>(StrValue)); return ERR::Okay;
-            case SVF_view_y:      vp->setViewY(svtonum<double>(StrValue)); return ERR::Okay;
-            case SVF_view_width:  vp->setViewWidth(svtonum<double>(StrValue)); return ERR::Okay;
-            case SVF_view_height: vp->setViewHeight(svtonum<double>(StrValue)); return ERR::Okay;
+            case SVF_view_x:     // Deprecated dash-style
+            case SVF_viewX:      vp->setViewX(svtonum<double>(StrValue)); return ERR::Okay;
+            case SVF_view_y:     // Deprecated dash-style
+            case SVF_viewY:      vp->setViewY(svtonum<double>(StrValue)); return ERR::Okay;
+            case SVF_view_width: // Deprecated dash-style
+            case SVF_viewWidth:  vp->setViewWidth(svtonum<double>(StrValue)); return ERR::Okay;
+            case SVF_view_height: // Deprecated dash-style
+            case SVF_viewHeight: vp->setViewHeight(svtonum<double>(StrValue)); return ERR::Okay;
             // The following dimension fields are for defining the position and clipping of the vector display
             case SVF_x:      vp->setX(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_y:      vp->setY(SVGUnit(StrValue)); return ERR::Okay;
@@ -3746,7 +3750,8 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
             case SVF_offset:     spiral->setOffset(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_step:       spiral->setStep(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_spacing:    spiral->setSpacing(SVGUnit(StrValue)); return ERR::Okay;
-            case SVF_loop_limit: spiral->setLoopLimit(SVGUnit(StrValue)); return ERR::Okay;
+            case SVF_loop_limit: // Deprecated dash-style
+            case SVF_loopLimit:  spiral->setLoopLimit(SVGUnit(StrValue)); return ERR::Okay;
          }
          break;
       }
@@ -3789,16 +3794,18 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
    // Fall-through to generic attributes.
 
    switch (Hash) {
-      case SVF_append_path: {
-         // The append-path option is a Kotuku attribute that requires a reference to an instantiated vector with a path.
+      case SVF_append_path: // Deprecated dash-style
+      case SVF_appendPath: {
+         // The appendPath option is a Kotuku attribute that requires a reference to an instantiated vector with a path.
          OBJECTPTR other = nullptr;
          if (!Self->Scene->findDef(StrValue, &other)) Vector->setAppendPath(other);
          else log.warning("Unable to find element '%s' referenced at line %d", StrValue.c_str(), Tag.LineNo);
          break;
       }
 
-      case SVF_join_path: {
-         // The join-path option is a Kotuku attribute that requires a reference to an instantiated vector with a path.
+      case SVF_join_path: // Deprecated dash-style
+      case SVF_joinPath: {
+         // The joinPath option is a Kotuku attribute that requires a reference to an instantiated vector with a path.
          OBJECTPTR other = nullptr;
          if (!Self->Scene->findDef(StrValue, &other)) {
             Vector->setAppendPath(other);
