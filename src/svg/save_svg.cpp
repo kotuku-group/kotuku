@@ -1134,6 +1134,9 @@ static ERR save_svg_scan_spiral(extSVG *Self, objXML *XML, objVector *Vector, in
       if (!spiral->getOffset(dbl))  xml::NewAttrib(tag, "offset", dbl);
       if (!spiral->getRadius(unit)) set_dimension(tag, "r", unit);
       if (!spiral->getStep(dbl))    xml::NewAttrib(tag, "step", dbl);
+      if ((!spiral->getSpacing(dbl)) and (dbl != 0)) xml::NewAttrib(tag, "spacing", dbl);
+      if ((!spiral->getDecay(dbl)) and (dbl != 1.0)) xml::NewAttrib(tag, "decay", dbl);
+      if ((!spiral->getLoopLimit(dbl)) and (dbl != 0)) xml::NewAttrib(tag, "loopLimit", dbl);
       if ((!spiral->getPathLength(length)) and (length != 0)) xml::NewAttrib(tag, "pathLength", length);
 
       ChildIndex = tag->ID;

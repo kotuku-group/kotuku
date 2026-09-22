@@ -3742,10 +3742,12 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
             case SVF_pathLength: spiral->setPathLength(svtonum<int>(StrValue)); return ERR::Okay;
             case SVF_cx:         spiral->setCX(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_cy:         spiral->setCY(SVGUnit(StrValue)); return ERR::Okay;
+            case SVF_radius:
             case SVF_r:          spiral->setRadius(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_offset:     spiral->setOffset(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_step:       spiral->setStep(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_spacing:    spiral->setSpacing(SVGUnit(StrValue)); return ERR::Okay;
+            case SVF_decay:      spiral->setDecay(svtonum<double>(StrValue)); return ERR::Okay;
             case SVF_loop_limit: // Deprecated dash-style
             case SVF_loopLimit:  spiral->setLoopLimit(SVGUnit(StrValue)); return ERR::Okay;
          }

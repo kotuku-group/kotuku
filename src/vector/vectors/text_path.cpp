@@ -207,7 +207,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
 
    auto guide = Vector->GuidePath;
    double start_x, start_y, end_vx, end_vy;
-   double path_scale = 1.0;
+   double advance_scale = 1.0;
    if (guide) {
       if ((Vector->GuideFlags & VMF::STRETCH) != VMF::NIL) {
          // In stretch mode, the standard morphing algorithm is used (see gen_vector_path())
@@ -223,7 +223,8 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             end_vx = start_x;
             end_vy = start_y;
             if (guide->PathLength > 0) {
-               path_scale = guide->PathLength / agg::path_length(guide->BasePath);
+               const double measured_length = agg::path_length(guide->BasePath);
+               if (measured_length > 0) advance_scale = measured_length / guide->PathLength;
                guide->BasePath.rewind(0);
             }
          }
@@ -260,16 +261,6 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
    }
 
    if (guide) {
-      // The scale_char transform is applied to each character to ensure that it is scaled to the path correctly.
-
-      agg::trans_affine scale_char;
-
-      if (path_scale != 1.0) {
-         scale_char.translate(0, Vector->txFontSize);
-         scale_char.scale(path_scale);
-         scale_char.translate(0, -Vector->txFontSize * path_scale);
-      }
-
       int char_index = 0;
       int cmd = -1;
       int prev_glyph_index = 0;
@@ -290,7 +281,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
 
             if (unicode > 0x20) char_index++; // Index for transitions only increases if a glyph is being drawn
 
-            agg::trans_affine transform(scale_char); // The initial transform scales the char to the path.
+            agg::trans_affine transform;
 
             if (Vector->Transition) { // Apply any special transitions to transform early.
                apply_transition(Vector->Transition, double(char_index) / double(total_chars), transform);
@@ -300,9 +291,9 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
 
             double kx, ky;
             get_kerning_xy(pt.font->face, glyph.glyph_index, prev_glyph_index, kx, ky);
-            start_x += kx;
+            start_x += kx * advance_scale;
 
-            double char_width = glyph.adv_x * std::abs(transform.sx); //transform.scale();
+            double char_width = glyph.adv_x * std::abs(transform.sx) * advance_scale;
 
             // Compute end_vx,end_vy (the last vertex to use for angle computation) and store the distance from start_x,start_y to end_vx,end_vy in dist.
             if (char_width > dist) {
