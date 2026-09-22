@@ -1,7 +1,9 @@
 <?xml version="1.0" standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
 
-<svg viewBox="0 0 1500 1000" width="1500" height="1000" version = "1.1"  xmlns="http://www.w3.org/2000/svg"  xmlns:xlink="http://www.w3.org/1999/xlink">
+<svg viewBox="0 0 1024 768" width="1024" height="768" version="1.1"
+     xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     xmlns:kotuku="http://www.kotuku.dev/xmlns/svg">
   <defs>
     <image id="points" xlink:href="../brushes/triangle.png"/>
   </defs>
@@ -20,4 +22,55 @@
 
   <kotuku:spiral transform="translate(500,100)" stroke="blue" stroke-width="4" spacing="30" loopLimit="3"/>
 
+  <!-- Traversal changes the order of the same geometry.  Filled dots mark the starting points:
+       turn zero is 15 units to the right of the centre; turn two is 65 units to the right with offset=15 and spacing=25. -->
+  <kotuku:spiral cx="740" cy="110" offset="15" spacing="25" endTurn="2" tolerance="0.1"
+                 stroke="#6d28d9" stroke-width="2" fill="none"/>
+  <circle cx="755" cy="110" r="4" fill="#6d28d9"/>
+  <kotuku:spiral cx="930" cy="110" offset="15" spacing="25" endTurn="2" tolerance="0.1" reverse="true"
+                 stroke="#6d28d9" stroke-width="2" fill="none"/>
+  <circle cx="995" cy="110" r="4" fill="#6d28d9"/>
+
+  <!-- Expanding and contracting spacing use the same radial growth equation. -->
+  <kotuku:spiral cx="520" cy="320" spacing="10" decay="1.6" r="80" tolerance="0.1"
+                 stroke="#c2410c" stroke-width="3" fill="none"/>
+  <kotuku:spiral cx="730" cy="320" spacing="40" decay="0.6" endTurn="4" tolerance="0.1"
+                 stroke="#0f766e" stroke-width="2" fill="none"/>
+
+  <!-- Clip the original spiral between fractional turns without restarting radial growth. -->
+  <kotuku:spiral cx="920" cy="320" spacing="30" startTurn="0.25" endTurn="2.25" tolerance="0.1"
+                 stroke="#be185d" stroke-width="3" fill="none"/>
+  <circle cx="920" cy="327.5" r="4" fill="#be185d"/>
+  <circle cx="920" cy="387.5" r="4" fill="white" stroke="#be185d" stroke-width="2"/>
+
+  <!-- A positive tolerance overrides the deliberately coarse Step value. -->
+  <kotuku:spiral cx="320" cy="530" spacing="25" endTurn="3" step="60" tolerance="0.05"
+                 stroke="#1d4ed8" stroke-width="2" fill="none"/>
+
+  <!-- Winding reflects the geometry, independently of traversal direction. -->
+  <kotuku:spiral cx="520" cy="530" spacing="25" endTurn="3" clockwise="false" tolerance="0.1"
+                 stroke="#6d28d9" stroke-width="2" fill="none"/>
+
+  <!-- Thickness generates a filled outline and honours the standard cap/join settings. -->
+  <kotuku:spiral cx="730" cy="530" spacing="25" endTurn="3" thickness="12" tolerance="0.1"
+                 stroke-linecap="round" stroke-linejoin="round" fill="#fbbf24" stroke="#92400e" stroke-width="1"/>
+  <kotuku:spiral cx="920" cy="530" spacing="25" startTurn="0.5" endTurn="3" thickness="1%" tolerance="0.1"
+                 clockwise="false" stroke-linecap="square" stroke-linejoin="round"
+                 fill="#67e8f9" stroke="#155e75" stroke-width="1"/>
+
+  <g font-family="DejaVu Sans" font-size="13" fill="#334155" text-anchor="middle">
+    <text text-anchor="middle" x="740" y="210">Forward traversal</text>
+    <text text-anchor="middle" x="930" y="210">reverse="true"</text>
+    <text text-anchor="middle" x="520" y="425">Expanding: decay="1.6"</text>
+    <text text-anchor="middle" x="730" y="425">Contracting: decay="0.6"</text>
+    <text text-anchor="middle" x="920" y="425">Turns 0.25 to 2.25</text>
+    <text text-anchor="middle" x="320" y="640">Adaptive: tolerance="0.05"</text>
+    <text text-anchor="middle" x="520" y="640">clockwise="false"</text>
+    <text text-anchor="middle" x="730" y="640">thickness="12", round caps</text>
+    <text text-anchor="middle" x="920" y="640">thickness="1%", square caps</text>
+  </g>
+  <g font-family="DejaVu Sans" font-size="14" fill="#475569">
+    <text x="40" y="700">Filled dots mark path starts; the hollow dot marks the partial spiral's end.</text>
+    <text x="40" y="725">Thickness percentages use the viewport's normalised diagonal.</text>
+  </g>
 </svg>

@@ -1443,7 +1443,8 @@ path.
 static ERR VECTOR_SET_InnerJoin(extVector *Self, VIJ Value)
 {
    Self->InnerJoin = Value;
-   mark_buffers_for_refresh(Self);
+   if ((Self->classID() IS CLASSID::VECTORSPIRAL) or (Self->classID() IS CLASSID::VECTORWAVE)) reset_path(Self);
+   else mark_buffers_for_refresh(Self);
    return ERR::Okay;
 }
 
@@ -1467,7 +1468,8 @@ the stroke develops spikes or unwanted self-overlap at tight corners.
 static ERR VECTOR_SET_InnerMiterLimit(extVector *Self, double Value)
 {
    Self->InnerMiterLimit = Value;
-   mark_buffers_for_refresh(Self);
+   if ((Self->classID() IS CLASSID::VECTORSPIRAL) or (Self->classID() IS CLASSID::VECTORWAVE)) reset_path(Self);
+   else mark_buffers_for_refresh(Self);
    return ERR::Okay;
 }
 
@@ -1485,7 +1487,8 @@ of a stroked path.
 static ERR VECTOR_SET_LineCap(extVector *Self, VLC Value)
 {
    Self->LineCap = Value;
-   mark_buffers_for_refresh(Self);
+   if ((Self->classID() IS CLASSID::VECTORSPIRAL) or (Self->classID() IS CLASSID::VECTORWAVE)) reset_path(Self);
+   else mark_buffers_for_refresh(Self);
    return ERR::Okay;
 }
 
@@ -1502,7 +1505,8 @@ that are being stroked.
 static ERR VECTOR_SET_LineJoin(extVector *Self, VLJ Value)
 {
    Self->LineJoin = Value;
-   mark_buffers_for_refresh(Self);
+   if ((Self->classID() IS CLASSID::VECTORSPIRAL) or (Self->classID() IS CLASSID::VECTORWAVE)) reset_path(Self);
+   else mark_buffers_for_refresh(Self);
    return ERR::Okay;
 }
 
@@ -1591,7 +1595,8 @@ static ERR VECTOR_SET_MiterLimit(extVector *Self, double Value)
 {
    if (Value >= 1.0) {
       Self->MiterLimit = Value;
-      mark_buffers_for_refresh(Self);
+      if ((Self->classID() IS CLASSID::VECTORSPIRAL) or (Self->classID() IS CLASSID::VECTORWAVE)) reset_path(Self);
+      else mark_buffers_for_refresh(Self);
       return ERR::Okay;
    }
    else return ERR::InvalidValue;
