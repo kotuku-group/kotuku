@@ -243,9 +243,9 @@ set (JIT_INCLUDE_DIRS -I${PROJECT_SOURCE_DIR}/include -I${CMAKE_BINARY_DIR} -I${
 
 if (KOTUKU_MULTI_CONFIG)
    # Multi-config generators resolve the configuration at build time, not configure time. Custom commands cannot
-   # vary their optimisation flags per configuration here, so keep the optimised defaults and select NDEBUG with a
-   # generator expression.
-   set (JIT_BUILD_TYPE_CXXFLAGS -O2 -fomit-frame-pointer $<$<NOT:$<CONFIG:Debug>>:-DNDEBUG>)
+   # vary their optimisation flags per configuration here, so keep the optimised defaults. Both branches of this
+   # expression must produce an argument: an empty one is passed to the compiler as an input file in Debug builds.
+   set (JIT_BUILD_TYPE_CXXFLAGS -O2 -fomit-frame-pointer $<IF:$<CONFIG:Debug>,-O2,-DNDEBUG>)
 elseif (CMAKE_BUILD_TYPE STREQUAL "Debug")
    # Unoptimised with full debug info. Frame pointers are retained so that the interpreter and JIT-generated frames
    # remain walkable in gdb, which matters when diagnosing trace and VM faults.
