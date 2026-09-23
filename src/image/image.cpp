@@ -953,8 +953,7 @@ static ERR IMAGE_SaveToObject(extImage *Self, struct acSaveToObject *Args)
             return actions[int(AC::SaveToObject)].PerformAction(Self, Args);
          }
          else if ((actions[int(AC::SaveImage)].PerformAction) and (actions[int(AC::SaveImage)].PerformAction != (APTR)IMAGE_SaveImage)) {
-            struct acSaveImage saveimage;
-            saveimage.Dest = Args->Dest;
+            struct acSaveImage saveimage = { Args->Dest, { Args->ClassID } };
             return actions[int(AC::SaveImage)].PerformAction(Self, &saveimage);
          }
          else return log.warning(ERR::NoSupport);
