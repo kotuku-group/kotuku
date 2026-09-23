@@ -611,7 +611,22 @@ static ERR IMAGE_SaveImage(extImage *Self, struct acSaveImage *Args)
    std::vector<uint8_t> row_buffer;
    png_color palette[256];
 
-   log.branch();
+   if (Args) log.branch("Dest: %d, ClassID: $%.8x", Args->Dest ? Args->Dest->UID : 0, unsigned(Args->ClassID));
+   else log.branch();
+
+   if ((Args) and (Args->ClassID != CLASSID::NIL) and (Args->ClassID != CLASSID::IMAGE)) {
+      if (auto other_class = FindClass(Args->ClassID))  {
+         if (other_class->BaseClassID IS CLASSID::IMAGE) {
+            std::span<ActionEntry> at;
+            if ((!other_class->getActionTable(at)) and (at[int(AC::SaveImage)].PerformAction)) {
+               return at[int(AC::SaveImage)].PerformAction(Self, Args);
+            }
+            else return log.warning(ERR::NoSupport);
+         }
+         else return log.warning(ERR::WrongClass);
+      }
+      else return log.warning(ERR::NotFound);
+   }
 
    objBitmap *bmp        = Self->Bitmap;
    OBJECTPTR file        = nullptr;
@@ -938,8 +953,7 @@ static ERR IMAGE_SaveToObject(extImage *Self, struct acSaveToObject *Args)
             return actions[int(AC::SaveToObject)].PerformAction(Self, Args);
          }
          else if ((actions[int(AC::SaveImage)].PerformAction) and (actions[int(AC::SaveImage)].PerformAction != (APTR)IMAGE_SaveImage)) {
-            struct acSaveImage saveimage;
-            saveimage.Dest = Args->Dest;
+            struct acSaveImage saveimage = { Args->Dest, { Args->ClassID } };
             return actions[int(AC::SaveImage)].PerformAction(Self, &saveimage);
          }
          else return log.warning(ERR::NoSupport);
