@@ -73,6 +73,18 @@ end
    assert(response.result is json.null, 'A null LSP result must be encoded as JSON null.')
 end
 
+@Test function NullRequestIdPreservesSuccessResult()
+   local server = makeServer()
+   local client = makeClient()
+   sendBody(server, client, '{"jsonrpc":"2.0","id":null,"method":"shutdown","params":{}}')
+
+   assert(#client.writes is 1, 'A request with a null ID must receive one response.')
+   local response = lastResponse(client)
+   assert(response.id is json.null, 'The response must preserve the null request ID.')
+   assert(response.result is json.null, 'A successful shutdown must contain a null result.')
+   assert(response.error is nil, 'A successful shutdown must not contain an error.')
+end
+
 @Test function ClientDocumentsAreIndependent()
    local server = makeServer()
    local first = makeClient()

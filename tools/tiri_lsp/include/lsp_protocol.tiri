@@ -71,11 +71,15 @@ end
 
 function formatResponse(ResponseTable:table, TextOutput:bool):str
    local body
-   -- The bundled JSON encoder represents nested json.null values as {}.  Build these two JSON-RPC cases explicitly.
-   if ResponseTable.id is json.null then
-      body = '{"jsonrpc":"2.0","id":null,"error":' .. json.encode(ResponseTable.error) .. '}'
-   elseif ResponseTable.result is json.null then
-      body = '{"jsonrpc":"2.0","id":' .. json.encode(ResponseTable.id) .. ',"result":null}'
+   -- The bundled JSON encoder represents nested json.null values as {}.  Build responses with null members explicitly.
+   if ResponseTable.id is json.null or ResponseTable.result is json.null then
+      local id = ResponseTable.id is json.null ? 'null' : json.encode(ResponseTable.id)
+      if ResponseTable.error then
+         body = '{"jsonrpc":"2.0","id":' .. id .. ',"error":' .. json.encode(ResponseTable.error) .. '}'
+      else
+         local result = ResponseTable.result is json.null ? 'null' : json.encode(ResponseTable.result)
+         body = '{"jsonrpc":"2.0","id":' .. id .. ',"result":' .. result .. '}'
+      end
    else
       body = json.encode(ResponseTable)
    end
