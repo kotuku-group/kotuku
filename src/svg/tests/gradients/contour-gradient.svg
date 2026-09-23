@@ -33,8 +33,8 @@
 
   <rect x="400" y="500" width="200" height="100" fill="url(#halfcontour)" stroke="pink" stroke-width="2" transform="rotate(40,100,100)"/>
 
-  <kotuku:shape id="starfish" cx="500" cy="200" r="200" stroke="black" stroke-width="3" fill="url(#contour1)"/>
+  <kotuku:shape id="starfish" cx="530" cy="200" r="200" stroke="black" stroke-width="3" fill="url(#contour1)"/>
 
-  <kotuku:shape id="triangle" cx="200" cy="300" r="300" spiral="2" vertices="7" m="0"
+  <kotuku:shape id="triangle" cx="180" cy="250" r="200" spiral="2" vertices="20" m="0"
     stroke="white" stroke-width="0.5" fill="url(#contour2)"/>
 </svg>

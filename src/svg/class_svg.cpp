@@ -32,8 +32,6 @@ Please refer to the W3C's online documentation for exhaustive information on the
 
 *********************************************************************************************************************/
 
-//********************************************************************************************************************
-
 static void notify_free_scene(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
    auto Self = (extSVG *)CurrentContext();

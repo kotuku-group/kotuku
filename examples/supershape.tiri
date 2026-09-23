@@ -1,0 +1,148 @@
+#!/usr/bin/env origo
+--[[
+Supershape Demonstration
+--]]
+
+   import 'gui', 'gui/window', 'gui/combobox', 'gui/slider'
+
+   local glWindow, glViewport, glShapeView, glShape
+   glY = 14
+   glMode = 'Shape'
+   glCount = 5
+
+   FILL_COLOUR <const> = '#65b5df'
+
+   MODS <const> = {
+      'None', 'exp(r)', 'log(r)', 'atan(r)', 'exp(1/r)', '1+cos(r)^2', 'sin(r)^2', '1+sin(r)^2', 'cos(r)^2'
+   }
+
+----------------------------------------------------------------------------------------------------------------------
+
+function redraw()
+   glShapeView.scene.surface.mtScheduleRedraw()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Repeat and Spiral are mutually exclusive, so only the field for the active mode receives the count.  Spirals are
+-- drawn as open strokes because closing them would draw a line back to the centre.
+
+function applyMode()
+   glShape.repeat = (glMode is 'Repeat') ? glCount : 0
+   glShape.spiral = (glMode is 'Spiral') ? glCount : 0
+   glShape.close  = (glMode is 'Spiral') ? 0 : 1
+   glShape.fill   = (glMode is 'Spiral') ? 'none' : FILL_COLOUR
+   glShape.stroke = (glMode is 'Spiral') ? '#65b5df' : 'none'
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Keep the widget range above zero: the slider's default-value handling treats zero as an unset value.
+
+function addSlider(Label:str, Value:num, Min:num, Max:num, Apply:func)
+   caption = glViewport.new('VectorText', {
+      x = 16, y = glY + 14,
+      face = gui.fonts.label.face, fontSize = '10pt', fill = gui.getTheme(glViewport).window.text,
+      string = string.format('%s: %.2f', Label, Value)
+   })
+
+   gui.slider({
+      target = glViewport, x = 16, y = glY + 20, size = 270,
+      min = 1, max = 101, value = 1 + 100 * (Value - Min) / (Max - Min),
+      events = {
+         activate = function(Widget:table, Position:num)
+            value = Min + (Position - 1) * (Max - Min) / 100
+            Apply(value)
+            caption.string = string.format('%s: %.2f', Label, value)
+            redraw()
+         end
+      }
+   })
+   glY += 52
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function buildScene()
+   glY = glWindow.margins.top
+
+   glShapeView = glViewport.new('VectorViewport', {
+      x = 310, y = glWindow.margins.top, xOffset = 10, yOffset = glWindow.margins.bottom,
+      viewWidth = 640, viewHeight = 640, aspectRatio = ARF_X_MID|ARF_Y_MID|ARF_SLICE,
+      overflow = 'hidden'
+   })
+
+   glShapeView.new('VectorRectangle', { width = '100%', height = '100%', fill = '#f5f7fa' })
+
+   glShape = glShapeView.new('VectorShape', {
+      name = 'supershape', cx = 320, cy = 320, radius = 260,
+      m = 6, n1 = 1, n2 = 7, n3 = 8, a = 1, b = 1, phi = 2, close = false,
+      fill = FILL_COLOUR, fillRule = 'evenodd', stroke = 'none', strokeWidth = 1.5,
+      lineJoin = 'round', lineCap = 'round'
+   })
+
+   addSlider('M (symmetry)', glShape.m, 0, 20, function(Value:num) glShape.m = Value end)
+
+   addSlider('N1', glShape.n1, 0.1, 20, function(Value:num) glShape.n1 = Value end)
+
+   addSlider('N2', glShape.n2, 0, 20, function(Value:num) glShape.n2 = Value end)
+
+   addSlider('N3', glShape.n3, 0, 20, function(Value:num) glShape.n3 = Value end)
+
+   addSlider('A', glShape.a, 0.1, 3, function(Value:num) glShape.a = Value end)
+
+   addSlider('B', glShape.b, 0.1, 3, function(Value:num) glShape.b = Value end)
+
+   addSlider('Phi (sweep)', glShape.phi, 2, 100, function(Value:num) glShape.phi = math.floor(Value) end)
+
+   addSlider('Radius', glShape.radius, 10, 440, function(Value:num) glShape.radius = Value end)
+
+   addSlider('Vertices', glShape.vertices, 3, 1440, function(Value:num)
+      if Value > 3 then
+         glShape.vertices = math.floor(Value)
+      else
+         glShape.tolerance = 0.25
+      end
+   end)
+
+   addSlider('Repeat / spiral count', glCount, 1, 20, function(Value:num)
+      glCount = math.floor(Value)
+      applyMode()
+   end)
+
+   gui.combobox({
+      target = glViewport, label = 'Mode:', text = glMode, x = 16, y = glY,
+      items = array<table> { { item = 'Shape' }, { item = 'Repeat' }, { item = 'Spiral' } },
+      events = {
+         activate = function(Widget:table, Text:str)
+            glMode = Text
+            applyMode()
+            redraw()
+         end
+      }
+   })
+   glY += 32
+
+   mod_items = array<table>
+   for i in {0 to #MODS} do mod_items.push({ item = MODS[i] }) end
+
+   gui.combobox({
+      target = glViewport, label = 'Mod:', text = MODS[0], x = 16, y = glY,
+      items = mod_items,
+      events = {
+         activate = function(Widget:table, Text:str)
+            for i in {0 to #MODS} do
+               if MODS[i] is Text then glShape.mod = i end
+            end
+            redraw()
+         end
+      }
+   })
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+   glWindow = gui.window({ title = 'Supershape Demo', insideWidth = 1024, insideHeight = 800, minWidth = 1024, minHeight = 800 })
+   glViewport = glWindow.clientViewport({ aspectRatio = ARF_MEET })
+
+   buildScene()
+   glWindow.show()
+   processing.sleep()

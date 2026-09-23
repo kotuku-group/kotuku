@@ -13,7 +13,8 @@
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p>The VectorShape class extends the Vector class with support for generating paths with the Superformula algorithm by Johan Gielis.  This feature is not part of the SVG standard and therefore should not be used in cases where SVG compliance is a strict requirement.</p>
+<p>The VectorShape class extends the Vector class with support for generating paths with the Superformula algorithm by Johan Gielis.  Formula parameters must be finite; A, B and N1 must also be non-zero.  Parameter combinations that produce singular or overflowing geometry generate an empty path.  Degenerate zero-extent shapes collapse to the centre.</p>
+<p>This feature is not part of the SVG standard and therefore should not be used in cases where SVG compliance is a strict requirement.</p>
 <p>The Superformula is documented in detail at Wikipedia: http://en.wikipedia.org/wiki/Superformula</p></description>
     <source>
       <file path="vectors/">supershape.cpp</file>
@@ -68,6 +69,16 @@
       <type>INT</type>
       <description>
 <p>If TRUE, the shape path will be closed between the beginning and end points.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>EndAngle</name>
+      <comment>Selects the end of the shape in degrees.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Zero (the default) uses the complete sweep specified by <fl>Phi</fl> and <fl>Spiral</fl>.  A positive value clips that sweep; both selected endpoints are included.  Values must be finite and non-negative.  Equal endpoints produce a single point.</p>
       </description>
     </field>
 
@@ -133,6 +144,26 @@
     </field>
 
     <field>
+      <name>Normalise</name>
+      <comment>Fits the sampled formula to Radius when enabled.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT</type>
+      <description>
+<p>TRUE (the default) divides by the largest absolute X or Y coordinate of the complete sampled unspiralled sweep. Partial sections retain this common scale.  Adaptive probes contribute to the fitted extent, so its precision depends on sampling.  FALSE preserves the natural formula radius, using Radius or the configured superspiral growth envelope as a multiplier; coordinates may then exceed Radius.  Disabling normalisation is useful when animating formula parameters without automatic size compensation.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Offset</name>
+      <comment>Sets the starting radial envelope of a superspiral.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Defaults to zero.  Values must be finite and non-negative, in local user units.  Only applies when <fl>Spiral</fl> is greater than one.  The offset is multiplied by the formula profile along with the growth envelope.  It does not change the starting angle.  Use <fl>StartAngle</fl> to select a later section without restarting growth.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Phi</name>
       <comment>A parameter for the super shape algorithm.</comment>
       <access read="R" write="S">Read/Set</access>
@@ -148,7 +179,7 @@
       <access read="G" write="S">Get/Set</access>
       <type>UNIT</type>
       <description>
-<p>The Radius defines the final size of the generated shape.  It can be expressed in fixed or scaled terms.</p>
+<p>The Radius defines the final size of the generated shape.  It can be expressed in fixed or scaled terms and must be finite and non-negative.  With <fl>Normalise</fl> enabled, the unspiralled formula is fitted by its largest sampled absolute X or Y extent.  With Normalise disabled, Radius multiplies the natural formula coordinates.</p>
       </description>
     </field>
 
@@ -169,17 +200,37 @@
       <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
-<p>Setting the Spiral field to a value greater than one will cause the path generator to form spirals, up to the value specified.  For instance, a value of 5 will generate five spirals.</p>
+<p>Setting the Spiral field to a value greater than one will cause the path generator to form spirals, up to the value specified.  For instance, a value of 5 with the default Phi generates five revolutions.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>StartAngle</name>
+      <comment>Selects the beginning of the shape in degrees.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Defaults to zero.  Values must be finite and non-negative.  Angles are measured from the positive X axis, increasing clockwise in screen coordinates.  Radial spiral growth remains relative to the complete sweep.  A start beyond the end produces an empty path.  Use Close=FALSE for an open section; repeated shapes remain closed.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Tolerance</name>
+      <comment>Controls adaptive sampling error in local user units.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The default of 0.25 automatically selects samples without requiring a vertex count.  Smaller positive values produce finer paths.  Zero enables manual uniform sampling with <fl>Vertices</fl>.  Positive values enable recursive refinement using deviations at quarter, midpoint and three-quarter positions of each segment.  This is a sampled error criterion, not a rigorous bound for arbitrary singular or sharply varying parameters.  Values must be finite and non-negative.  Limits of 65535 samples, 262144 formula evaluations and 20 subdivision levels prevent excessive work; failure to satisfy the criterion within these limits produces an empty path.  Closing edges are not refined.</p>
       </description>
     </field>
 
     <field>
       <name>Vertices</name>
-      <comment>Limits the total number of vertices generated for the super shape.</comment>
+      <comment>Controls the number of angular sampling intervals for the super shape.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
-<p>Setting a value in Vertices will limit the total number of vertices that are generated for the super shape.  This feature is useful for generating common convex geometrical shapes such as triangles, polygons, hexagons and so forth; because their vertices will always touch the sides of an elliptical area.</p>
+<p>Setting the Vertices field disables the <fl>Tolerance</fl> behaviour by setting it to zero, and enables manual mode. Vertices specifies uniform angular sampling intervals across the sweep. Low values can deliberately produce polygonal shapes.  Values must be between 3 and 16KiB.</p>
       </description>
     </field>
 

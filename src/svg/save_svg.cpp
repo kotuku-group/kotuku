@@ -1176,7 +1176,14 @@ static ERR save_svg_scan_shape(extSVG *Self, objXML *XML, objVector *Vector, int
       if (!shape->getN2(dbl))       xml::NewAttrib(tag, "n2", dbl);
       if (!shape->getN3(dbl))       xml::NewAttrib(tag, "n3", dbl);
       if (!shape->getPhi(dbl))      xml::NewAttrib(tag, "phi", dbl);
-      if (!shape->getVertices(num)) xml::NewAttrib(tag, "vertices", num);
+      if ((!shape->getOffset(dbl)) and (dbl != 0)) xml::NewAttrib(tag, "offset", dbl);
+      if ((!shape->getStartAngle(dbl)) and (dbl != 0)) xml::NewAttrib(tag, "startAngle", dbl);
+      if ((!shape->getEndAngle(dbl)) and (dbl != 0)) xml::NewAttrib(tag, "endAngle", dbl);
+      if ((!shape->getNormalise(num)) and (not num)) xml::NewAttrib(tag, "normalise", "false");
+      if (!shape->getTolerance(dbl) and (dbl != 0)) {
+         if (dbl != 0.25) xml::NewAttrib(tag, "tolerance", dbl);
+      }
+      else if (!shape->getVertices(num)) xml::NewAttrib(tag, "vertices", num);
       if (!shape->getMod(num))      xml::NewAttrib(tag, "mod", num);
       if (!shape->getSpiral(num))   xml::NewAttrib(tag, "spiral", num);
       if (!shape->getRepeat(num))   xml::NewAttrib(tag, "repeat", num);

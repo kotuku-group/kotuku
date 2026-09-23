@@ -214,3 +214,75 @@ end
    local saved = saveScene(scene, 'temp:svg_wave_noise.svg')
    assertContains(saved, 'noise=', 'Saved SVG should include VectorWave noise, got ' .. saved)
 end
+
+@Test function SpiralSamplingFieldsRoundTrip()
+   local scene <close> = obj.new('VectorScene', { pageWidth=200, pageHeight=200 })
+   local svg = obj.new('svg', { target=scene, statement=[[
+<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg"
+     xmlns:kotuku="http://www.kotuku.dev/xmlns/svg">
+  <kotuku:spiral id="sampling_spiral" startTurn="0.25" endTurn="2.5"
+                 tolerance="0.01" clockwise="false" reverse="true" thickness="2%" fill="none" stroke="black"/>
+</svg>]] })
+   local spiral = obj.find('sampling_spiral')
+   assert(spiral != nil, 'SVG should create the spiral')
+   assertNear(spiral.startTurn, 0.25, 'Start turn should import')
+   assertNear(spiral.endTurn, 2.5, 'End turn should import')
+   assertNear(spiral.tolerance, 0.01, 'Tolerance should import')
+   assertNear(spiral.thickness, 0.02, 'Percentage thickness should import')
+   assert(spiral.clockwise is 0 and spiral.reverse is 1, 'Spiral directions should import')
+   local saved = saveScene(scene, 'temp:svg_spiral_sampling.svg')
+   assertContains(saved, 'startTurn="0.25"', 'Start turn should export')
+   assertContains(saved, 'endTurn="2.5"', 'End turn should export')
+   assertContains(saved, 'tolerance="0.01"', 'Tolerance should export')
+   assertContains(saved, 'thickness="2%"', 'Percentage thickness should export')
+   assertContains(saved, 'clockwise="false"', 'Anticlockwise winding should export')
+   assertContains(saved, 'reverse="true"', 'Reverse traversal should export')
+   local loaded_scene <close> = obj.new('VectorScene', { pageWidth=200, pageHeight=200 })
+   local loaded_svg = obj.new('svg', { target=loaded_scene, statement=saved })
+   local loaded = loaded_svg.viewport.child
+   assertNear(loaded.startTurn, 0.25, 'Start turn should survive round trip')
+   assertNear(loaded.endTurn, 2.5, 'End turn should survive round trip')
+   assertNear(loaded.tolerance, 0.01, 'Tolerance should survive round trip')
+   assertNear(loaded.thickness, 0.02, 'Percentage thickness should survive round trip')
+   assert(loaded.clockwise is 0 and loaded.reverse is 1, 'Spiral directions should survive round trip')
+end
+
+
+@Test function SupershapeSamplingFieldsRoundTrip()
+   local scene <close> = obj.new('VectorScene', { pageWidth=200, pageHeight=200 })
+   local svg = obj.new('svg', { target=scene, statement=[[
+<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg"
+     xmlns:kotuku="http://www.kotuku.dev/xmlns/svg">
+  <kotuku:shape tolerance="0.1" startAngle="45" endAngle="135" normalise="false" close="false"
+                spiral="3" offset="5"/>
+</svg>]] })
+   local shape = svg.viewport.child
+   assertNear(shape.tolerance, 0.1, 'Tolerance should import')
+   assertNear(shape.startAngle, 45, 'Start angle should import')
+   assertNear(shape.endAngle, 135, 'End angle should import')
+   assertNear(shape.offset, 5, 'Offset should import')
+   assert(shape.normalise is 0 and shape.close is 0, 'Natural scale and open path should import')
+   local saved = saveScene(scene, 'temp:svg_supershape_sampling.svg')
+   assertContains(saved, 'normalise="false"', 'Natural scale should export')
+   local loaded_scene <close> = obj.new('VectorScene', { pageWidth=200, pageHeight=200 })
+   local loaded_svg = obj.new('svg', { target=loaded_scene, statement=saved })
+   local loaded = loaded_svg.viewport.child
+   assertNear(loaded.tolerance, 0.1, 'Tolerance should survive round trip')
+   assertNear(loaded.startAngle, 45, 'Start angle should survive round trip')
+   assertNear(loaded.endAngle, 135, 'End angle should survive round trip')
+   assertNear(loaded.offset, 5, 'Offset should survive round trip')
+   assert(loaded.normalise is 0 and loaded.close is 0, 'Natural scale and open path should survive round trip')
+end
+
+@Test function SupershapeManualSamplingRoundTrip()
+   local scene <close> = obj.new('VectorScene', { pageWidth=200, pageHeight=200 })
+   local viewport = scene.new('VectorViewport', { width=200, height=200 })
+   viewport.new('VectorShape', { vertices=8 })
+   local saved = saveScene(scene, 'temp:svg_supershape_manual.svg')
+   print(saved)
+   local loaded_scene <close> = obj.new('VectorScene', { pageWidth=200, pageHeight=200 })
+   local loaded_svg = obj.new('svg', { target=loaded_scene, statement=saved })
+   local loaded = loaded_svg.viewport.child
+   assertNear(loaded.tolerance, 0, 'Manual sampling should survive round trip')
+   assert(loaded.vertices is 8, 'Manual interval count should survive round trip, got ' .. loaded.vertices)
+end

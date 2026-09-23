@@ -3,10 +3,7 @@
 WaveFunction Demonstration
 --]]
 
-   import 'gui'
-   import 'gui/window'
-   import 'gui/combobox'
-   import 'gui/slider'
+   import 'gui', 'gui/window', 'gui/combobox', 'gui/slider'
    include 'vector'
 
    local win, viewport, waveFunction, waveVP, rect, filter, text
