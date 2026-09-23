@@ -208,7 +208,7 @@ void lj_snap_add(jit_State* J)
    MSize nsnapmap = J->cur.nsnapmap;
 
    kt::Log log(__FUNCTION__);
-   log.msg(VLF::BRANCH|VLF::DETAIL, "Adding snapshot %d, baseslot=%d, maxslot=%d, retdepth=%d, ByteCode: %d", nsnap, J->baseslot, J->maxslot, J->retdepth, bc_op(*J->pc));
+   log.traceBranch("Adding snapshot %d, baseslot=%d, maxslot=%d, retdepth=%d, ByteCode: %d", nsnap, J->baseslot, J->maxslot, J->retdepth, bc_op(*J->pc));
 
    // Merge if no ins. inbetween or if requested and no guard inbetween.
    if ((nsnap > 0 and J->cur.snap[nsnap - 1].ref IS J->cur.nins) or
@@ -220,7 +220,7 @@ void lj_snap_add(jit_State* J)
       nsnapmap = J->cur.snap[--nsnap].mapofs;
    }
    else {
-   nomerge:
+nomerge:
       lj_snap_grow_buf(J, nsnap + 1);
       J->cur.nsnap = (uint16_t)(nsnap + 1);
    }

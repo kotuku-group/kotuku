@@ -276,8 +276,7 @@ typedef struct CCallInfo {
   _(ANY,        jit_object_getobj, 4, S, NIL, CCI_L|CCI_T) \
   /* Environment mutation boundary */ \
   _(ANY,        lj_env_check,      4, S, NIL, CCI_L|CCI_T) \
-  /* Permanent contextual table designation */ \
-  _(ANY,        lj_tab_mark_contextual_jit, 1, S, NIL, 0) \
+  /* Temporary context blocks */ \
   _(ANY,        lj_context_begin_block_jit, 5, S, NIL, CCI_L) \
   _(ANY,        lj_context_end_block_jit,   3, S, NIL, CCI_L) \
   _(ANY,        lj_context_has_call_jit,    2, FS, INT, CCI_L) \
@@ -323,8 +322,6 @@ extern "C" void lj_defer_arm(lua_State *L, TValue *OwnerBase, uint32_t CallableS
    uint32_t ArgumentCount, uint32_t ScopeBase);
 extern "C" void lj_defer_consume_jit(lua_State *L, TValue *OwnerBase, uint32_t CallableSlot);
 
-// Permanent contextual designation of a recorded table (see lj_state.cpp).
-extern "C" void lj_tab_mark_contextual_jit(GCtab *Table) noexcept;
 extern "C" void lj_context_begin_block_jit(
    lua_State *L, GCtab *Table, TValue *OwnerBase, uint32_t BlockIndex, uint32_t EntrySlots);
 extern "C" void lj_context_end_block_jit(lua_State *L, TValue *OwnerBase, uint32_t BlockIndex) noexcept;

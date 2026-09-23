@@ -258,7 +258,7 @@ class SlotView {
    // Internal bounds check helper (only active in debug builds)
    // Note: idx can be more negative than FUNC_SLOT_OFFSET when upvalues alias parent frame slots
    void check_bounds([[maybe_unused]] int32_t idx) const {
-      int32_t abs_slot = int32_t(J->baseslot) + idx;
+      [[maybe_unused]] int32_t abs_slot = int32_t(J->baseslot) + idx;
       assert(abs_slot >= 0 && "absolute slot index below zero");
       // The slot array is sized LJ_MAX_JSLOTS + LJ_STACK_EXTRA; the extra region is legitimate
       // transient headroom used during call/metamethod setup before a frame is committed.

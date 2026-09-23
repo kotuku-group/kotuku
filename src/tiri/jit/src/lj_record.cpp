@@ -5305,11 +5305,19 @@ void lj_record_ins(jit_State *J)
       break;
 
    case BC_TCTX:
-      // Designation is a runtime side effect on the constructor result, not speculative IR: a side exit taken after
-      // this point must observe the already-marked table.  Snapshotting after the call gives the exit that state.
-      lj_ir_call(J, IRCALL_lj_tab_mark_contextual_jit, ra);
+   {
+      // Designation is recorded as a flags store rather than an opaque call so that load forwarding observes it.
+      // Flag loads from a fresh TNEW/TDUP otherwise fold to the constructor's flags, and a later classification
+      // store would write them back without the contextual bit.  Cached bytecode is exposed to this because its
+      // TDUP templates are not designated.  A sunk store is replayed on exit, so exits after this point observe the
+      // designated table.
+      IRBuilder ir(J);
+      TRef fref = ir.emit(IRT(IR_FREF, IRT_PGC), ra, IRFL_TAB_FLAGS);
+      TRef flags = ir.fload(ra, IRFL_TAB_FLAGS, IRT_U8);
+      ir.emit(IRT(IR_FSTORE, IRT_U8), fref, ir.emit_int(IR_BOR, flags, ir.kint(TAB_CONTEXTUAL)));
       J->needsnap = 1;
       break;
+   }
 
    case BC_CTXBEGIN:
       if (not tref_istab(ra)) lj_trace_err_info(J, LJ_TRERR_NYIBC);

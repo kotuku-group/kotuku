@@ -288,6 +288,43 @@ end
    assert(&name is nil, 'A completed recorded designation workload should restore the root context')
 end
 
+@Test(hotpath=80) function RecordedDesignationSurvivesLaterKeyStores()
+   -- A trace folds flag loads from a fresh allocation to the constructor's flags.  Storing keys into the table
+   -- rewrites its flags, so the recorded designation must be visible to that fold or the store clears it.  An empty
+   -- constructor has no designated template to hide the fault, as does a TDUP template loaded from cached bytecode.
+   function make_counter(Start:num):table
+      local counter = entity { }
+      counter[0] = Start
+      counter.name = 'counter'
+      counter.value = Start
+      counter.read = probe_name
+      return counter
+   end
+
+   function run(Count:num):num
+      local total = 0
+      for i in {0 to Count} do
+         local counter = make_counter(i)
+         if counter.read() is 'counter' then total += counter.value end
+      end
+      return total
+   end
+
+   jit.off()
+   local interpreted = run(64)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   local recorded = run(64)
+   jit.off()
+   jit.opt.start()
+
+   assert(recorded is interpreted,
+      f'A recorded designation should survive later key stores: {recorded} vs {interpreted}')
+   assert(&name is nil, 'A completed recorded designation workload should restore the root context')
+end
+
 @Test(hotpath=80) function LateDesignationRespecialisesLiveTraces()
    -- Section 5.2.2 and 6.2: a trace specialised to an ordinary receiver guards TAB_CONTEXTUAL, so designation
    -- side-exits it and recompilation specialises to the contextual path.
