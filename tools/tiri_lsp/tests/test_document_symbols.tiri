@@ -52,7 +52,7 @@ end
    assert(init.result.capabilities.documentSymbolProvider is true, 'Server must advertise documentSymbolProvider.')
 
    doc = makeDoc('function alpha()\nend\n')
-   glDocuments[doc.uri] = doc
+   state = { documents = { [doc.uri] = doc } }
 
    response = server._handlers['textDocument/documentSymbol']({
       jsonrpc = '2.0',
@@ -60,9 +60,7 @@ end
       params = {
          textDocument = { uri = doc.uri }
       }
-   }, {})
-
-   glDocuments[doc.uri] = nil
+   }, state)
 
    assert(response.result and #response.result is 1, 'Document symbol handler should return symbols.')
    assert(response.result[0].name is 'alpha', 'Handler should return the parsed function symbol.')

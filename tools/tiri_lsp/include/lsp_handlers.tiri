@@ -1,11 +1,6 @@
 
    glNextResultId = 1
 
-   -- Token cache for delta semantic tokens.  URI indexed
-   -- Structure: { [uri] = { resultId = number, data = { ... } } }
-
-   glTokenCache = { }
-
 ----------------------------------------------------------------------------------------------------------------------
 -- Text Edit Helper
 
@@ -95,11 +90,13 @@ global function maskNonCode(LineText:str, InBlockComment:bool):<str, bool>
    return result, InBlockComment
 end
 
--- Complete unqualified built-ins.  Deprecated candidates are resolved in a parser probe at the cursor.
-global function resolveBuiltinCompletion(Doc:table, Position:table):array<table>
+-- Return the unqualified identifier prefix ending at the cursor, and its starting byte column.  Nil is returned when
+-- the cursor follows a member access or sits within a string or comment.
+
+function unqualifiedPrefixAt(Doc:table, Position:table):<str, num>
    local line_text = getLine(Doc, Position.line)
    local byte_col = utf16ColToByteCol(line_text, Position.character)
-   local start = byte_col
+   local start:num = byte_col
    while start > 0 do
       local char = line_text.sub(start - 1, start)
       if not ((char >= 'a' and char <= 'z') or (char >= 'A' and char <= 'Z') or
@@ -107,15 +104,47 @@ global function resolveBuiltinCompletion(Doc:table, Position:table):array<table>
       start -= 1
    end
    local prefix = line_text.sub(start, byte_col)
-   local items = array<table>
-   if prefix is '' or line_text.sub(0, start).rtrim().endsWith('.') then return items end
+   if prefix is '' or line_text.sub(0, start).rtrim().endsWith('.') then return nil, 0 end
 
    local line_code
    local in_block_comment = false
    for line_no in {0 into Position.line} do
       line_code, in_block_comment = maskNonCode(getLine(Doc, line_no), in_block_comment)
    end
-   if line_code.sub(start, byte_col) != prefix then return items end
+   if line_code.sub(start, byte_col) != prefix then return nil, 0 end
+   return prefix, start
+end
+
+-- Complete documented API constants such as BMF_ALPHA_CHANNEL.  Constants always start with an upper-case prefix, so
+-- lower-case identifiers are ignored to keep ordinary completion lists free of constant noise.
+
+global function resolveConstantCompletion(Doc:table, Position:table):array<table>
+   local items = array<table>
+   local prefix = unqualifiedPrefixAt(Doc, Position)
+   prefix ?! return items
+   local first = prefix.sub(0, 1)
+   if first < 'A' or first > 'Z' then return items end
+
+   for name, constant in pairs(constantIndex()) do
+      if not name.startsWith(prefix) then continue end
+      local detail = constant.groupComment != '' and f'{constant.group}: {constant.groupComment}' or constant.group
+      items.push({
+         label = name,
+         kind = 21,
+         detail = detail,
+         documentation = constant.comment != '' and { kind='markdown', value=constant.comment } or nil,
+         insertText = name
+      })
+   end
+   return items
+end
+
+-- Complete unqualified built-ins.  Deprecated candidates are resolved in a parser probe at the cursor.
+global function resolveBuiltinCompletion(Doc:table, Position:table):array<table>
+   local items = array<table>
+   local prefix, start = unqualifiedPrefixAt(Doc, Position)
+   prefix ?! return items
+   local line_text = getLine(Doc, Position.line)
 
    for name, builtin in pairs(glDefs?.builtins or {}) do
       if not name.startsWith(prefix) or name.find('.') then continue end
@@ -301,11 +330,11 @@ global function resolveModuleRename(Doc:table, Position:table, NewName:str):tabl
    local is_library_namespace = old_name and libraryNamespaceDeclarationsForDocument(Doc)[old_name]
    if not is_module_namespace and not is_library_namespace then return nil end
 
-   local definitions = is_library_namespace and extractDefinitionSymbols(Doc) or nil
-   local document_scopes = is_library_namespace and extractLexicalScopes(Doc) or nil
+   local definitions = extractDefinitionSymbols(Doc)
+   local document_scopes = extractLexicalScopes(Doc)
    local tokens = tokenizeTiri(Doc.content, modulePrefixesForDocument(Doc))
 
-   if is_library_namespace then
+   if is_module_namespace or is_library_namespace then
       local target_is_namespace = false
       for token in values(tokens) do
          if token.line != Position.line then continue end
@@ -332,7 +361,7 @@ global function resolveModuleRename(Doc:table, Position:table, NewName:str):tabl
       local token_end_byte = utf16ColToByteCol(line_text, token.char + token.length)
       local text = line_text.sub(token_start_byte, token_end_byte)
       if token.type is 10 and text is old_name and (token.modifiers & 8) is 0 and
-            (is_module_namespace or renameTokenResolvesToNamespace(Doc, token, definitions, document_scopes)) then
+            renameTokenResolvesToNamespace(Doc, token, definitions, document_scopes) then
          edits.push({
             range = {
                start = { line=token.line, character=token.char },
@@ -399,19 +428,23 @@ global function registerCoreHandlers(Self)
       }
    end
 
-   -- textDocument/completion: Complete functions from a declared module namespace.
+   -- textDocument/completion: Complete functions from a declared module namespace, otherwise built-ins and API
+   -- constants.
    Self._handlers['textDocument/completion'] = function(Msg, State)
       uri = Msg.params.textDocument.uri
-      doc = glDocuments[uri]
+      doc = State.documents[uri]
       items = doc and resolveModuleCompletion(doc, Msg.params.position) or array<table>
-      if doc and #items is 0 then items = resolveBuiltinCompletion(doc, Msg.params.position) end
+      if doc and #items is 0 then
+         items = resolveBuiltinCompletion(doc, Msg.params.position)
+         for item in values(resolveConstantCompletion(doc, Msg.params.position)) do items.push(item) end
+      end
       return { jsonrpc='2.0', id=Msg.id, result={ isIncomplete=false, items=items } }
    end
 
    -- textDocument/rename: Rename a declared namespace and its references within this compilation unit.
    Self._handlers['textDocument/rename'] = function(Msg, State)
       uri = Msg.params.textDocument.uri
-      doc = glDocuments[uri]
+      doc = State.documents[uri]
       edit = doc and resolveModuleRename(doc, Msg.params.position, Msg.params.newName) or nil
       return { jsonrpc='2.0', id=Msg.id, result=edit or json.null }
    end
@@ -455,7 +488,7 @@ global function registerCoreHandlers(Self)
    -- textDocument/didOpen: Client opened a document
    Self._handlers['textDocument/didOpen'] = function(Msg, State)
       doc = Msg.params.textDocument
-      glDocuments[doc.uri] = {
+      State.documents[doc.uri] = {
          uri = doc.uri,
          languageId = doc.languageId,
          version = doc.version,
@@ -465,7 +498,7 @@ global function registerCoreHandlers(Self)
       logMessage(Self, 'Document opened: ' .. doc.uri)
 
       -- Compute and publish diagnostics
-      params = computeDiagnostics(glDocuments[doc.uri])
+      params = computeDiagnostics(State.documents[doc.uri])
       sendNotification(Self, State.clientSocket, 'textDocument/publishDiagnostics', params)
    end
 
@@ -474,7 +507,7 @@ global function registerCoreHandlers(Self)
       uri = Msg.params.textDocument.uri
       version = Msg.params.textDocument.version
 
-      if glDocuments[uri] then
+      if State.documents[uri] then
          edit_line = nil  -- Track earliest edited line for incremental index update
          for change in values(Msg.params.contentChanges) do
             if change.range then
@@ -483,26 +516,26 @@ global function registerCoreHandlers(Self)
                   edit_line = change.range.start.line
                end
                -- Incremental sync: apply text edit at range
-               glDocuments[uri].content = applyTextEdit(
-                  glDocuments[uri].content,
+               State.documents[uri].content = applyTextEdit(
+                  State.documents[uri].content,
                   change.range,
                   change.text
                )
             else
                -- Full sync fallback: replace entire content
-               glDocuments[uri].content = change.text
+               State.documents[uri].content = change.text
                edit_line = 0  -- Force full rebuild
             end
          end
-         glDocuments[uri].version = version
+         State.documents[uri].version = version
 
          -- Incrementally rebuild line index from the edited line
-         markLineIndex(glDocuments[uri], edit_line)
+         markLineIndex(State.documents[uri], edit_line)
 
          logVerbose(Self, 'Document updated: ' .. uri .. ' (version ' .. version .. ')')
 
          -- Compute and publish diagnostics
-         params = computeDiagnostics(glDocuments[uri])
+         params = computeDiagnostics(State.documents[uri])
          sendNotification(Self, State.clientSocket, 'textDocument/publishDiagnostics', params)
       end
    end
@@ -510,9 +543,8 @@ global function registerCoreHandlers(Self)
    -- textDocument/didClose: Client closed a document
    Self._handlers['textDocument/didClose'] = function(Msg, State)
       uri = Msg.params.textDocument.uri
-      glDocuments[uri] = nil
-      glTokenCache[uri] = nil  -- Clear token cache to free memory
-      glSignatureSymbolCache[uri] = nil
+      State.documents[uri] = nil
+      State.tokenCache[uri] = nil  -- Clear token cache to free memory
       logMessage(Self, 'Document closed: ' .. uri)
 
       -- Clear diagnostics for closed document
@@ -529,7 +561,7 @@ global function registerCoreHandlers(Self)
 
    Self._handlers['textDocument/semanticTokens/full'] = function(Msg, State)
       uri = Msg.params.textDocument.uri
-      doc = glDocuments[uri]
+      doc = State.documents[uri]
 
       if not doc then
          logMessage(Self, 'Semantic tokens requested for unknown document: ' .. uri)
@@ -549,7 +581,7 @@ global function registerCoreHandlers(Self)
       result_id = tostring(glNextResultId)
       glNextResultId++
 
-      glTokenCache[uri] = {
+      State.tokenCache[uri] = {
          resultId = result_id,
          data = encoded
       }
@@ -570,7 +602,7 @@ global function registerCoreHandlers(Self)
    Self._handlers['textDocument/semanticTokens/full/delta'] = function(Msg, State)
       uri = Msg.params.textDocument.uri
       previous_result_id = Msg.params.previousResultId
-      doc = glDocuments[uri]
+      doc = State.documents[uri]
 
       if not doc then
          logMessage(Self, 'Semantic tokens delta requested for unknown document: ' .. uri)
@@ -582,7 +614,7 @@ global function registerCoreHandlers(Self)
       end
 
       -- Check if we have the previous result cached
-      cached = glTokenCache[uri]
+      cached = State.tokenCache[uri]
       if not cached or cached.resultId != previous_result_id then
          -- Can't compute delta, return full tokens
          logWarning(Self, 'Cannot compute delta (no cache or resultId mismatch), returning full tokens')
@@ -593,7 +625,7 @@ global function registerCoreHandlers(Self)
          result_id = tostring(glNextResultId)
          glNextResultId++
 
-         glTokenCache[uri] = {
+         State.tokenCache[uri] = {
             resultId = result_id,
             data = encoded
          }
@@ -621,7 +653,7 @@ global function registerCoreHandlers(Self)
       result_id = tostring(glNextResultId)
       glNextResultId++
 
-      glTokenCache[uri] = {
+      State.tokenCache[uri] = {
          resultId = result_id,
          data = new_encoded
       }
@@ -651,7 +683,7 @@ global function registerCoreHandlers(Self)
    -- textDocument/documentSymbol: Return symbols for outline view
    Self._handlers['textDocument/documentSymbol'] = function(Msg, State)
       uri = Msg.params.textDocument.uri
-      doc = glDocuments[uri]
+      doc = State.documents[uri]
 
       if not doc then
          logMessage(Self, 'Document symbols requested for unknown document: ' .. uri)
@@ -681,7 +713,7 @@ global function registerCoreHandlers(Self)
    -- textDocument/foldingRange: Return folding ranges for code folding
    Self._handlers['textDocument/foldingRange'] = function(Msg, State)
       uri = Msg.params.textDocument.uri
-      doc = glDocuments[uri]
+      doc = State.documents[uri]
 
       if not doc then
          logMessage(Self, 'Folding ranges requested for unknown document: ' .. uri)
@@ -713,7 +745,7 @@ global function registerCoreHandlers(Self)
    Self._handlers['textDocument/signatureHelp'] = function(Msg, State)
       uri = Msg.params.textDocument.uri
       position = Msg.params.position
-      doc = glDocuments[uri]
+      doc = State.documents[uri]
 
       if not doc then
          logMessage(Self, 'Signature help requested for unknown document: ' .. uri)
@@ -750,7 +782,7 @@ global function registerCoreHandlers(Self)
    Self._handlers['textDocument/hover'] = function(Msg, State)
       uri = Msg.params.textDocument.uri
       position = Msg.params.position
-      doc = glDocuments[uri]
+      doc = State.documents[uri]
 
       if not doc then
          logMessage(Self, 'Hover requested for unknown document: ' .. uri)
@@ -810,7 +842,7 @@ global function registerCoreHandlers(Self)
    Self._handlers['textDocument/definition'] = function(Msg, State)
       uri = Msg.params.textDocument.uri
       position = Msg.params.position
-      doc = glDocuments[uri]
+      doc = State.documents[uri]
 
       if not doc then
          logMessage(Self, 'Definition requested for unknown document: ' .. uri)

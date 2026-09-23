@@ -4,8 +4,6 @@
 rx_sig_obj_new = <{ regex.new([=[([A-Za-z_][A-Za-z0-9_]*)\s*=\s*obj\.new\s*\(\s*['"]([^'"]+)['"]]=],
    regex.DOT_ALL) }>
 
-global glSignatureSymbolCache = {}
-
 ----------------------------------------------------------------------------------------------------------------------
 -- Source Scanning
 
@@ -354,11 +352,10 @@ function signatureGetDocumentSymbols(Doc:table):table
    if result and result.symbols and #result.symbols > 0 then
       Doc.signatureSymbols = result.symbols
       Doc.signatureSymbolsContent = Doc.content
-      glSignatureSymbolCache[Doc.uri] = result.symbols
       return result.symbols
    end
 
-   return Doc.signatureSymbols or glSignatureSymbolCache[Doc.uri]
+   return Doc.signatureSymbols
 end
 
 -- Return true when a parsed document symbol can satisfy the current call context.
@@ -671,7 +668,7 @@ end
 Public resolver for signatureHelp calls
 
 -INPUT-
-Doc: Document record from glDocuments[URI]
+Doc: Open document record for the requesting client.
 Position: Document position being queried
 ]])
 global function resolveSignatureHelp(Doc:table, Position:table):table
