@@ -172,7 +172,8 @@ flags("JTYPE", { comment="JTYPE flags are used to categorise input types", modul
     "MOVEMENT: X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system",
     "DBL_CLICK: Set by the input system if the `Type` is a button and the button has been clicked in quick succession so as to be classed as a double-click",
     "REPEATED: Input is a repeated entry (i.e. user is holding down a button and a repetition timer is being triggered)",
-    "DRAG_ITEM: This special flag is set by the input system if the pointer is click-dragging an object at the time of the event")
+    "DRAG_ITEM: This special flag is set by the input system if the pointer is click-dragging an object at the time of the event",
+    "TOUCH: Contact input from a touch device; the Value field carries the contact ID")
 
 enums("JET", { type="int", start=1, comment="JET constants are documented in GetInputEvent()", module="Core" },
     "BUTTON_1|LMB: Left mouse button; XBox A button, PS square button.  Value is pressure sensitive, ranging between 0 - 1.0 (0 is released, 1.0 is fully depressed)",
@@ -195,6 +196,10 @@ enums("JET", { type="int", start=1, comment="JET constants are documented in Get
     "DEVICE_TILT_XY: Controller tilted on the X/Y axis.  Value indicates angle, -ve = left, +ve = right",
     "DEVICE_TILT_Z: Controller is rising or falling.  Value expressed as 'speed',",
     "DISPLAY_EDGE: Recently supplied input occurred at the edge of the display",
+    "TOUCH_DOWN: A contact began on a surface; Value is the contact ID",
+    "TOUCH_MOTION: A contact moved within a surface; Value is the contact ID",
+    "TOUCH_UP: A contact ended; Value is the contact ID",
+    "TOUCH_CANCEL: The compositor cancelled a contact; Value is the contact ID",
     "END: Private")
 
 -- Flags for defining fields, methods, actions and functions.  CLASSDEF's can only be used in field definitions for

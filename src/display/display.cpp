@@ -48,7 +48,11 @@ const InputType glInputType[int(JET::END)] = {
    { JTYPE::EXT_MOVEMENT, JTYPE::EXT_MOVEMENT }, // JET::PRESSURE
    { JTYPE::EXT_MOVEMENT, JTYPE::EXT_MOVEMENT }, // JET::DEVICE_TILT_XY
    { JTYPE::EXT_MOVEMENT, JTYPE::EXT_MOVEMENT }, // JET::DEVICE_TILT_Z
-   { JTYPE::EXT_MOVEMENT, JTYPE::EXT_MOVEMENT }  // JET::DISPLAY_EDGE
+   { JTYPE::EXT_MOVEMENT, JTYPE::EXT_MOVEMENT }, // JET::DISPLAY_EDGE
+   { JTYPE::TOUCH,        JTYPE::TOUCH },        // JET::TOUCH_DOWN
+   { JTYPE::TOUCH,        JTYPE::TOUCH },        // JET::TOUCH_MOTION
+   { JTYPE::TOUCH,        JTYPE::TOUCH },        // JET::TOUCH_UP
+   { JTYPE::TOUCH,        JTYPE::TOUCH }         // JET::TOUCH_CANCEL
 };
 
 const CSTRING glInputNames[int(JET::END)] = {
@@ -72,7 +76,11 @@ const CSTRING glInputNames[int(JET::END)] = {
    "PRESSURE",
    "DEVICE_TILT_XY",
    "DEVICE_TILT_Z",
-   "DISPLAY_EDGE"
+   "DISPLAY_EDGE",
+   "TOUCH_DOWN",
+   "TOUCH_MOTION",
+   "TOUCH_UP",
+   "TOUCH_CANCEL"
 };
 
 std::recursive_mutex glInputLock;

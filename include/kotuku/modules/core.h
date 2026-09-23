@@ -32,7 +32,7 @@
 #include "ankerl/unordered_dense.h"
 #endif
 
-#define CORE_BUILD_DATE 20260918
+#define CORE_BUILD_DATE 20260923
 class objMetaClass;
 
 // Predefined cursor styles
@@ -856,6 +856,7 @@ enum class JTYPE : uint32_t {
    DBL_CLICK = 0x00000200,
    REPEATED = 0x00000400,
    DRAG_ITEM = 0x00000800,
+   TOUCH = 0x00001000,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(JTYPE)
@@ -887,7 +888,11 @@ enum class JET : int {
    DEVICE_TILT_XY = 18,
    DEVICE_TILT_Z = 19,
    DISPLAY_EDGE = 20,
-   END = 21,
+   TOUCH_DOWN = 21,
+   TOUCH_MOTION = 22,
+   TOUCH_UP = 23,
+   TOUCH_CANCEL = 24,
+   END = 25,
 };
 
 // Field descriptors
