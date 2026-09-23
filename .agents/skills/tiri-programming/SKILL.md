@@ -20,22 +20,24 @@ project-specific syntax, runtime behaviour, API bindings, typing, and testing co
    - `packages/*/*.tiri` for standard library APIs
    - `tools/*.tiri` for file, process, and utility scripts
    - `tools/idl/idl-c.tiri` for extensive file I/O and API usage
-3. Consult `docs/wiki/Tiri-Reference-Manual.md`, `docs/wiki/Tiri-*.md`, or the Tiri LSP for details that are not
-   summarised here.
+3. Consult `docs/tiri/tiri-reference/book.adoc` and its included chapters for language details that are not
+   summarised here. The `docs/wiki/Tiri-*.md` guides and Tiri LSP can help with specific APIs and editor behaviour.
 4. Consult `docs/xml/modules` and `docs/xml/modules/classes` for generated class and module API documentation.
 5. Deal with uncertainty over language and API behaviour by running `origo` with the `--statement` option to run micro tests.
 
 ## Core Rules
 
 - Tiri scripts use `.tiri` and execute top-to-bottom with no entry point function.
-- `.lua` files may also be parsed as Tiri; use `-- $TIRI` near the start when a file needs explicit recognition.
+- The runtime recognises `.tiri` source and `.tbc` bytecode by extension. The optional `-- $TIRI` comment helps editors
+  identify source when the filename is unavailable; it does not affect runtime recognition.
 - Script named arguments are read with `arg(Name, Default)`. Argument values arrive as strings.
-- Variables and functions are local by default and scoped to their statement block. Use `global` before first use only when a symbol must be exported.  Use `local` to manage the scope of local variables.
+- Variables and functions are local by default and scoped to their statement block. Use `global` before first use only when a symbol must be exported. Use `local` to shadow a visible name with a new binding.
 - Use upper camel-case for function arguments and lower snake-case for local variables.
 - Use three spaces for indentation.
 - Use zero-based indexing for tables and string functions.
 - Prefer arrays for sequential data. Arrays are a distinct, typed, JIT-friendly container.
-- The Tiri object interface is case sensitive. Object fields are lower snake-case, for example `netlookup.hostName`.
+- The Tiri object interface is case sensitive. Object fields use lower camel-case; preserve acronym capitals, for
+  example `surfaceID` and `vectorObject`.
 - Tiri uses `is` instead of `==`. Avoid deprecated `==` and `~=`.
 - Use `!=` for not-equal.
 - Use `try-except-when`, `checkall`, `check`, and `raise` instead of deprecated `pcall()` and `xpcall()`.
@@ -112,7 +114,7 @@ search tools, and mixed editor environments.
   `each`, `map`, `filter`, `reduce`, `take`, `any`, `all`, and `find`.
 - Use native arrays for sequential data and buffers:
   - `array<type>`, `array<type, size>`, `array<type> { values... }`
-  - common element types include `byte`, `int16`, `int`, `int64`, `float`, `double`, `string`, `object`, `struct`,
+  - common element types include `byte`, `int16`, `int`, `int64`, `float`, `double`, `str`, `obj`, `struct<Name>`,
     `table`, `array`, and `any`
   - useful methods include `push`, `pop`, `clear`, `resize`, `fill`, `insert`, `remove`, `reverse`, `sort`,
     `contains`, `first`, `last`, `find`, `copy`, `getString`, `setString`, `slice`, `concat`, `clone`,
@@ -126,7 +128,8 @@ search tools, and mixed editor environments.
   `trim`, `rtrim`, `split`, `startsWith`, `sub`, `endsWith`, and `unescapeXML`.
 - Use f-strings for readable formatting. Add `??` fallbacks when interpolating externally sourced values.
 
-Regex uses compiled PCRE-compatible objects. Compile once and reuse; wrap untrusted patterns in `try`.
+Regex uses compiled ECMAScript-compatible objects. Compile once and reuse; wrap untrusted patterns in `try`.
+Use raw regex literals such as `r'\d+'` or long strings such as `[[\d+]]` to avoid doubling backslashes.
 
 Available regex signatures:
 
@@ -153,18 +156,22 @@ Regex object properties: `pattern`, `flags`, and `error`.
 
 ## Scripts, Modules, And Objects
 
-- Use `include 'core','xml','display'` to load API definitions when needed.
-- Use top-level `import 'name' [as namespace]` for parse-time inlined libraries. Do not include `.tiri` in imports.
+- Use `include 'xml', 'display'` to load module definitions without binding callable namespaces. A `module` declaration
+  loads its definitions as well, so a matching `include` is unnecessary.
+- Use top-level `import 'name' [version Constraint] [as namespace]` for parse-time inlined libraries. Do not include
+  `.tiri` in imports. Package imports resolve through the installed package index; local imports use `./` or `../`.
 - Use `import './local_name'` for application-specific libraries in the local folder.
+- Prefer a library's `namespace Name { ... }` declaration for exports; `import` binds that namespace in the caller.
 - Use `@if(imported=true)` and `@if(imported=false)` to separate library-import behaviour from direct execution.
 - Use `loadFile(Path)` only when runtime loading is required; it does not get parse-time inlining benefits.
 - Use `exec(Statement)` for dynamic statements and expect parse/runtime failures to raise exceptions.
-- Declare modules at compilation-unit level with `module name as mName`; common namespaces are `mAudio`, `mSys`,
-  `mGfx`, `mFont`, `mNet`, `mVec`, and `mXML`. Guard optional modules with `@if(exists='modules:name')`.
+- Declare modules at compilation-unit level with `module name as mName`; `mSys` is implicitly bound to Core. Common
+  namespaces are `mAudio`, `mGfx`, `mFont`, `mNet`, `mVec`, and `mXML`. Guard optional modules with
+  `@if(exists='modules:name')`.
 - Module and object API calls often return `ERR` as the first result; use `check`, result filters, or explicit
   handling rather than ignoring error codes accidentally.
-- Create objects with `obj.new('Class', { field=value })` when fields are known up front; this initialises the
-  object automatically and raises on error.
+- Create objects with `obj<Class> { field=value }` when the class is known at parse time. Use
+  `obj.new('Class', { field=value })` for dynamic class names or IDs. Both initialise the object and raise on error.
 - If fields must be set in stages, call `obj.new('Class')`, assign fields, then call `object.init()`.
 - Use `obj.find(NameOrUID)` to access existing objects; it returns `nil` if not found.
 - Use `local resource <close> = obj.new(...)` for deterministic native-object ownership.  Scope exit follows the
