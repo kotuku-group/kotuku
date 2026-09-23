@@ -157,6 +157,8 @@ void handle_button_press(XEvent *xevent)
    else if (xevent->xbutton.button IS 1) glDriverCallbacks.ButtonInput(0x0001, true);
    else if (xevent->xbutton.button IS 2) glDriverCallbacks.ButtonInput(0x0004, true);
    else if (xevent->xbutton.button IS 3) glDriverCallbacks.ButtonInput(0x0002, true);
+   else if (xevent->xbutton.button IS 8) glDriverCallbacks.ButtonInput(0x0008, true);
+   else if (xevent->xbutton.button IS 9) glDriverCallbacks.ButtonInput(0x0010, true);
 
    XFlush(XDisplay);
 }
@@ -168,6 +170,8 @@ void handle_button_release(XEvent *xevent)
    if (xevent->xbutton.button IS 1) glDriverCallbacks.ButtonInput(0x0001, false);
    else if (xevent->xbutton.button IS 2) glDriverCallbacks.ButtonInput(0x0004, false);
    else if (xevent->xbutton.button IS 3) glDriverCallbacks.ButtonInput(0x0002, false);
+   else if (xevent->xbutton.button IS 8) glDriverCallbacks.ButtonInput(0x0008, false);
+   else if (xevent->xbutton.button IS 9) glDriverCallbacks.ButtonInput(0x0010, false);
 
    XFlush(XDisplay);
 
