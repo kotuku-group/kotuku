@@ -58,6 +58,7 @@ glIntroduction = [[
          { name = 'height', type = 'int', default = 800, comment = 'Height of the application window.' },
          { name = 'browser', kind = 'flag', default = true, comment = 'Show or hide the file browser panel.' },
          { name = 'animate', kind = 'flag', default = true, comment = 'Enables automated animation.' },
+         { name = 'output', type = 'file', comment = 'Save the input file to this output file, using PNG format (extension automatically applied).' },
          { name = 'help', kind = 'flag', hidden = true,
             exec = function(Parser:table!)
                print(Parser.getHelp())
@@ -179,6 +180,8 @@ function displaySVG(Path:str!)
    end
 end
 
+----------------------------------------------------------------------------------------------------------------------
+
 function displayDoc(Path:str!)
    msg(f'displayDoc() {Path}')
 
@@ -190,6 +193,8 @@ function displayDoc(Path:str!)
       doc.free()
    end
 end
+
+----------------------------------------------------------------------------------------------------------------------
 
 function displayImage(Path:str!)
    msg(f'displayImage() {Path}')
@@ -223,9 +228,13 @@ function displayImage(Path:str!)
    end
 end
 
+----------------------------------------------------------------------------------------------------------------------
+
 function displayText(Path:str)
 
 end
+
+----------------------------------------------------------------------------------------------------------------------
 
 function displayFile(Path:str)
    Path ?! return
@@ -259,6 +268,95 @@ function displayFile(Path:str)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+
+glImageClasses = array<table>
+
+function discoverImageClasses()
+   err, classdb = mSys.ClassDatabase()
+   if err is ERR_Okay then
+      for cl in values(classdb) do
+         if cl.classID is CLASSID_IMAGE or cl.parentID is CLASSID_IMAGE then
+            if cl.extension then
+               msg('Found class ' .. cl.name .. ', extension ' .. cl.extension)
+               glImageClasses.push({
+                  name = cl.name,
+                  extensions = cl.extension.split('|')
+               })
+            end
+         end
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+   discoverImageClasses()
+
+   if glArgs.output?? then -- Output mode
+      output_path = glArgs.output
+
+      -- Compute the correct output class to use, based on the extension
+
+      rx_ext = r'.*\.([a-zA-Z0-9]+)$'
+      ext = rx_ext.extract(output_path)
+      local output_class:num
+      if ext then
+         ext = ext.lower()
+         for cl in values(glImageClasses) do
+            if ext in cl.extensions then
+               output_class = cl.name.hash()
+               msg('Output class is ' .. cl.name)
+               break
+            end
+         end
+         output_class ?! raise ERR_NoSupport, f'File extension "{ext}" not supported.'
+      else
+         output_class = CLASSID_IMAGE -- PNG default for output
+         output_path ..= '.png'
+      end
+
+      glArgs.file ?! raise ERR_Args, 'No input file specified for output mode.'
+
+      local bmp:obj, pic:obj, file:obj
+
+      src_path = glArgs.file.lower()
+      if src_path.endsWith('.png') or src_path.endsWith('.jpeg') or src_path.endsWith('.jpg') then
+         pic = obj.new('image', { src=glArgs.file, flags=PCF_FORCE_ALPHA_32 })
+      elseif src_path.endsWith('.svg') then
+         svg = obj.new('svg', { path=glArgs.file })
+
+         scene = svg.scene
+         vp_width = scene.viewport.width
+         vp_height = scene.viewport.height
+         if vp_width  <= 0 then vp_width  = scene.viewport.viewWidth end
+         if vp_height <= 0 then vp_height = scene.viewport.viewHeight end
+         if vp_width  <= 0 then vp_width  = 1920 end
+         if vp_height <= 0 then vp_height = 1080 end
+         vp_width = math.ceil(vp_width)
+         vp_height = math.ceil(vp_height)
+         scene.pageWidth = vp_width
+         scene.pageHeight = vp_height
+
+         white = struct<RGB8> { red = 255, green = 255, blue = 255, alpha = 0 }
+         bmp = obj.new('bitmap', { width=vp_width, height=vp_height, bitsPerPixel=32, flags=BMF_ALPHA_CHANNEL|BMF_CLEAR, bkgd=white })
+         scene.bitmap = bmp
+         scene.acDraw()
+
+         pic = obj.new('image', {
+            width = bmp.width, height = bmp.height, bitsPerPixel = bmp.bitsPerPixel,
+            flags = PCF_NEW|PCF_FORCE_ALPHA_32
+         })
+
+         bmp.acCopyData(pic.bitmap)
+      else
+         raise ERR_Args, f'Input file unsupported for direct rendering: :{glArgs.file}"'
+      end
+
+      file = obj.new('file', { flags=FL_NEW|FL_WRITE, path=output_path })
+      pic.acSaveImage(file, output_class)
+      print(f'Saved {pic.bitmap.width} x {pic.bitmap.height} image to {output_path}')
+      return
+   end
 
    glWindow = gui.window({
       width      = glArgs.width,
@@ -387,8 +485,6 @@ end
          doc.free()
       end
    end
-
-   processing.collect()
 
    glWindow.show(true)
 
