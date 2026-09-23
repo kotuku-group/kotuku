@@ -389,15 +389,6 @@ extern "C" void lj_tab_designate_contextual(lua_State *L, uint32_t Slot)
    if (tvistab(target)) lj_tab_mark_contextual(tabV(target));
 }
 
-// Recorded form of the designation above.  The recorder already holds the constructor's table reference, so no stack
-// slot is involved and the helper never reallocates or raises.
-
-extern "C" void lj_tab_mark_contextual_jit(GCtab *Table) noexcept
-{
-   lj_assertX(Table, "contextual designation of a null table");
-   lj_tab_mark_contextual(Table);
-}
-
 extern "C" void lj_context_begin_block(lua_State *L, uint32_t Slot, uint32_t BlockIndex)
 {
    TValue *reference = L->base + Slot;

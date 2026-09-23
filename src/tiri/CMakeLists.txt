@@ -243,8 +243,9 @@ set (JIT_INCLUDE_DIRS -I${PROJECT_SOURCE_DIR}/include -I${CMAKE_BINARY_DIR} -I${
 
 if (KOTUKU_MULTI_CONFIG)
    # Multi-config generators resolve the configuration at build time, not configure time. Custom commands cannot
-   # vary their flags per configuration here, so keep the optimised defaults.
-   set (JIT_BUILD_TYPE_CXXFLAGS -O2 -fomit-frame-pointer)
+   # vary their optimisation flags per configuration here, so keep the optimised defaults and select NDEBUG with a
+   # generator expression.
+   set (JIT_BUILD_TYPE_CXXFLAGS -O2 -fomit-frame-pointer $<$<NOT:$<CONFIG:Debug>>:-DNDEBUG>)
 elseif (CMAKE_BUILD_TYPE STREQUAL "Debug")
    # Unoptimised with full debug info. Frame pointers are retained so that the interpreter and JIT-generated frames
    # remain walkable in gdb, which matters when diagnosing trace and VM faults.
@@ -253,12 +254,13 @@ elseif (CMAKE_BUILD_TYPE STREQUAL "FastBuild")
    # Optimised for compilation speed rather than runtime performance, matching the top-level FastBuild settings.
    set (JIT_BUILD_TYPE_CXXFLAGS -O0 -g1 -fno-var-tracking -fno-var-tracking-assignments)
 elseif (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
-   set (JIT_BUILD_TYPE_CXXFLAGS -O2 -g -fno-omit-frame-pointer)
+   set (JIT_BUILD_TYPE_CXXFLAGS -O2 -g -fno-omit-frame-pointer -DNDEBUG)
 elseif (CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
-   set (JIT_BUILD_TYPE_CXXFLAGS -Os -fomit-frame-pointer)
+   set (JIT_BUILD_TYPE_CXXFLAGS -Os -fomit-frame-pointer -DNDEBUG)
 else ()
-   # Release and any unrecognised configuration.
-   set (JIT_BUILD_TYPE_CXXFLAGS -O2 -fomit-frame-pointer)
+   # Release and any unrecognised configuration.  NDEBUG must be supplied here because CMAKE_CXX_FLAGS_RELEASE is
+   # not applied to custom commands, and without it Log::trace() and assert() remain active in release builds.
+   set (JIT_BUILD_TYPE_CXXFLAGS -O2 -fomit-frame-pointer -DNDEBUG)
 endif ()
 
 message (STATUS "Tiri JIT build flags (${CMAKE_BUILD_TYPE}): ${JIT_BUILD_TYPE_CXXFLAGS}")
