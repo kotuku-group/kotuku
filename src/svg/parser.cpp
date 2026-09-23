@@ -3773,6 +3773,13 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
             case SVF_a:        shape->setA(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_b:        shape->setB(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_phi:      shape->setPhi(SVGUnit(StrValue)); return ERR::Okay;
+            case SVF_offset:   shape->setOffset(svtonum<double>(StrValue)); return ERR::Okay;
+            case SVF_tolerance:  shape->setTolerance(svtonum<double>(StrValue)); return ERR::Okay;
+            case SVF_startAngle: shape->setStartAngle(svtonum<double>(StrValue)); return ERR::Okay;
+            case SVF_endAngle:   shape->setEndAngle(svtonum<double>(StrValue)); return ERR::Okay;
+            case SVF_normalise:
+               shape->setNormalise(iequals("true", StrValue) or iequals("1", StrValue));
+               return ERR::Okay;
             case SVF_vertices: shape->setVertices(int(SVGUnit(StrValue))); return ERR::Okay;
             case SVF_mod:      shape->setMod(int(SVGUnit(StrValue))); return ERR::Okay;
             case SVF_spiral:   shape->setSpiral(int(SVGUnit(StrValue))); return ERR::Okay;

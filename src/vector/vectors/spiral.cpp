@@ -53,15 +53,15 @@ static void generate_spiral(extVectorSpiral *Vector, agg::path_storage &Path)
    const double cx = Vector->CX.scaled() ? Vector->CX * get_parent_width(Vector) : double(Vector->CX);
    const double cy = Vector->CY.scaled() ? Vector->CY * get_parent_height(Vector) : double(Vector->CY);
 
-   const double thickness = Vector->Thickness.scaled() ?
+   double thickness = Vector->Thickness.scaled() ?
       get_parent_diagonal(Vector) * INV_SQRT2 * Vector->Thickness : double(Vector->Thickness);
-   const unsigned first_vertex = Path.total_vertices();
-   const double spacing = Vector->Spacing > 0 ? Vector->Spacing : 36.0;
-   const double log_decay = std::log(Vector->Decay);
+   const unsigned first_vertex    = Path.total_vertices();
+   const double spacing           = Vector->Spacing > 0 ? Vector->Spacing : 36.0;
+   const double log_decay         = std::log(Vector->Decay);
    const double decay_denominator = Vector->Decay - 1.0;
-   const double tau = 360.0 * DEG2RAD;
-   const bool has_radius_limit = Vector->Radius.defined() and (double(Vector->Radius) != 0);
-   const double max_radius = has_radius_limit ?
+   const double tau               = 360.0 * DEG2RAD;
+   const bool has_radius_limit    = Vector->Radius.defined() and (double(Vector->Radius) != 0);
+   const double max_radius        = has_radius_limit ?
       (Vector->Radius.scaled() ? double(Vector->Radius) * svg_diag(get_parent_width(Vector),
          get_parent_height(Vector)) : double(Vector->Radius)) : DBL_MAX;
 
@@ -142,6 +142,8 @@ static void generate_spiral(extVectorSpiral *Vector, agg::path_storage &Path)
       turn = next_turn;
    }
 
+   if (thickness > spacing - 1) thickness = spacing - 1; // Sanity check to avoid self-intersection of the ribbon.
+
    if (thickness > 0) {
       agg::path_storage centreline;
       for (unsigned i=first_vertex; i < Path.total_vertices(); i++) {
@@ -153,6 +155,7 @@ static void generate_spiral(extVectorSpiral *Vector, agg::path_storage &Path)
 
       agg::conv_stroke<agg::path_storage> ribbon(centreline);
       configure_stroke(*Vector, ribbon);
+
       ribbon.width(thickness);
       if (Vector->Tolerance > 0) {
          ribbon.approximation_scale(std::clamp(0.25 / Vector->Tolerance, 1.0, 1000000.0));
@@ -319,8 +322,9 @@ Decay: Multiplies the radial spacing after each revolution.
 
 The default value of `1.0` leaves the spacing unchanged.  Values between `0.0` and `1.0` multiply the spacing between
 successive turns, so `0.5` halves it each revolution.  Values above `1.0` expand the spacing; `2.0` doubles it each
-revolution.  Values must be finite and greater than zero.  For values below `1.0`, the radius approaches `Offset + Spacing / (1 - Decay)` when Spacing is set.  If Spacing is zero, a base spacing
-of 36 units per revolution is used.
+revolution.  Values must be finite and greater than zero.  For values below `1.0`, the radius approaches
+`Offset + Spacing / (1 - Decay)` when Spacing is set.  If Spacing is zero, a base spacing of 36 units per revolution
+is used.
 
 *********************************************************************************************************************/
 
@@ -421,7 +425,7 @@ static ERR VECTORSPIRAL_SET_Offset(extVectorSpiral *Self, double Value)
       reset_path(Self);
       return ERR::Okay;
    }
-   else return ERR::InvalidValue;
+   else return kt::Log().warning(ERR::InvalidValue);
 }
 
 /*********************************************************************************************************************
@@ -448,7 +452,7 @@ static ERR VECTORSPIRAL_SET_PathLength(extVectorSpiral *Self, int Value)
       Self->PathLength = Value;
       return ERR::Okay;
    }
-   else return ERR::InvalidValue;
+   else return kt::Log().warning(ERR::InvalidValue);
 }
 
 /*********************************************************************************************************************
@@ -486,7 +490,7 @@ static ERR VECTORSPIRAL_SET_Step(extVectorSpiral *Self, double Value)
       reset_path(Self);
       return ERR::Okay;
    }
-   else return ERR::InvalidValue;
+   else return kt::Log().warning(ERR::InvalidValue);
 }
 
 /*********************************************************************************************************************

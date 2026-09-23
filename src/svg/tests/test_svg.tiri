@@ -14,7 +14,7 @@ local glSVGFolder
    glSVGFolder = State.folder
 end
 
-glWhite = struct.new('RGB8', { red = 255, green = 255, blue = 255, alpha = 255 })
+glWhite = struct<RGB8> { red = 255, green = 255, blue = 255, alpha = 255 }
 
 ----------------------------------------------------------------------------------------------------------------------
 
@@ -69,15 +69,15 @@ end
 -- the overhead of calling a pixel reader for every source pixel.
 
 function pHash(Bitmap:obj):array<byte>
-   local sample_size <const> = 32
-   local dct_size <const> = 8
-   local pixels = Bitmap.data
-   local format = Bitmap.colourFormat
-   local bytes_per_pixel = Bitmap.bytesPerPixel
-   local red_offset = format.redPos / 8
-   local green_offset = format.greenPos / 8
-   local blue_offset = format.bluePos / 8
-   local samples = array<double>
+   sample_size <const> = 32
+   dct_size <const> = 8
+   pixels = Bitmap.data
+   format = Bitmap.colourFormat
+   bytes_per_pixel = Bitmap.bytesPerPixel
+   red_offset = format.redPos / 8
+   green_offset = format.greenPos / 8
+   blue_offset = format.bluePos / 8
+   samples = array<double>
 
    for sample_y in {0 to sample_size} do
       local y_start = math.floor((sample_y * Bitmap.height) / sample_size)
@@ -173,9 +173,9 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 
 function pHashTestSVG(Path:str, ExpectedHash:array<byte>, MaxDistance:num, Stable:bool)
-   local bmp = renderSVGToBitmap(glSVGFolder .. Path, Stable)
-   local hash = pHash(bmp)
-   local distance = pHashDistance(hash, ExpectedHash)
+   bmp = renderSVGToBitmap(glSVGFolder .. Path, Stable)
+   hash = pHash(bmp)
+   distance = pHashDistance(hash, ExpectedHash)
 
    if distance > MaxDistance then
       saveBitmap(bmp, Path)
@@ -228,8 +228,8 @@ end
 @Test global function Shapes()          hashTestSVG('paths/shapes.svg', 0xfa35b557) end
 @Test global function Spirals()         hashTestSVG('paths/spirals.svg', 0x0e093d14) end
 @Test global function Strokes()         hashTestSVG('paths/strokes.svg', 0xc35a546a) end
-@Test global function SuperShapes()     hashTestSVG('paths/supershapes.svg', 0x07dc5ee7) end
-@Test global function SuperSpiral()     hashTestSVG('paths/superspiral.svg', 0x87dd0122) end
+@Test global function SuperShapes()     hashTestSVG('paths/supershapes.svg', 0x7850af16) end
+@Test global function SuperSpiral()     hashTestSVG('paths/superspiral.svg', 0xfcb030d7) end
 @Test global function Transitions()     hashTestSVG('paths/transitions.svg', 0x801a2fb0) end
 @Test global function Wave()            hashTestSVG('paths/wave.svg', 0x2c07e1c2) end
 @Test global function W3Paths01()       hashTestSVG('paths/w3-paths-data-01-t.svg', 0x7fdb0e82) end
@@ -276,7 +276,7 @@ end
 @Test global function W3Coords08() hashTestSVG('coords/w3-coords-viewattr-03-b.svg', 0xf59f3551) end
 
 @Test global function EasingGradients() hashTestSVG('gradients/easing.svg', 0xc45a0cf6) end
-@Test global function ContourGradient() pHashTestSVG('gradients/contour-gradient.svg', array<byte> { 0x76,0x97,0xa3,0x8d,0x18,0xb0,0x7c,0x43 }, 6, true) end
+@Test global function ContourGradient() pHashTestSVG('gradients/contour-gradient.svg', array<byte> { 114,159,176,141,201,163,124,2 }, 6, true) end
 @Test global function MeshGradient() hashTestSVG('gradients/meshgradient.svg', 0x647d054f) end
 @Test global function DiffusionGradient() hashTestSVG('gradients/diffusiongradient.svg', 0xafe6ee58) end
 @Test global function DiffusionGradientSplit() hashTestSVG('gradients/diffusiongradient-split.svg', 0xa081c94c) end

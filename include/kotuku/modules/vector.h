@@ -5195,43 +5195,68 @@ class objVectorShape : public objVector {
       return ERR::Okay;
    }
 
+   inline ERR getTolerance(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 56));
+      return ERR::Okay;
+   }
+
+   inline ERR getStartAngle(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 64));
+      return ERR::Okay;
+   }
+
+   inline ERR getEndAngle(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 72));
+      return ERR::Okay;
+   }
+
+   inline ERR getOffset(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 80));
+      return ERR::Okay;
+   }
+
    inline ERR getVertices(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 56));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 88));
       return ERR::Okay;
    }
 
    inline ERR getSpiral(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 60));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 92));
       return ERR::Okay;
    }
 
    inline ERR getRepeat(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 64));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 96));
       return ERR::Okay;
    }
 
    inline ERR getClose(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 68));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 100));
       return ERR::Okay;
    }
 
    inline ERR getMod(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 72));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 104));
+      return ERR::Okay;
+   }
+
+   inline ERR getNormalise(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 108));
       return ERR::Okay;
    }
 
    inline ERR getCX(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[55];
+      auto field = &this->Class->Dictionary[59];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getCY(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[47];
+      auto field = &this->Class->Dictionary[48];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getRadius(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[60];
+      auto field = &this->Class->Dictionary[65];
       return field->GetValue(this, &Value);
    }
 
@@ -5239,32 +5264,32 @@ class objVectorShape : public objVector {
    // Customised field setting
 
    inline ERR setM(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[52];
+      auto field = &this->Class->Dictionary[53];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setN1(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[46];
+      auto field = &this->Class->Dictionary[47];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setN2(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[48];
+      auto field = &this->Class->Dictionary[49];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setN3(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[54];
+      auto field = &this->Class->Dictionary[58];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setA(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[56];
+      auto field = &this->Class->Dictionary[60];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setB(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[59];
+      auto field = &this->Class->Dictionary[63];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -5273,43 +5298,68 @@ class objVectorShape : public objVector {
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
+   inline ERR setTolerance(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[57];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setStartAngle(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[46];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setEndAngle(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[56];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setOffset(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[64];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
    inline ERR setVertices(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[58];
+      auto field = &this->Class->Dictionary[62];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setSpiral(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[50];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setRepeat(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[53];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setClose(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[49];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setMod(const int Value) noexcept {
       auto field = &this->Class->Dictionary[51];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setCX(const Unit Value) noexcept {
+   inline ERR setRepeat(const int Value) noexcept {
       auto field = &this->Class->Dictionary[55];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setClose(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[50];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setMod(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[52];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setNormalise(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[54];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setCX(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[59];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setCY(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[47];
+      auto field = &this->Class->Dictionary[48];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setRadius(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[60];
+      auto field = &this->Class->Dictionary[65];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 

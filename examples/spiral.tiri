@@ -1,0 +1,105 @@
+#!/usr/bin/env origo
+--[[
+Spiral Demonstration
+--]]
+
+   import 'gui', 'gui/window', 'gui/combobox', 'gui/slider', 'gui/checkbox'
+
+   local glWindow, glViewport, glSpiralView, glSpiral
+   glY = 14
+
+----------------------------------------------------------------------------------------------------------------------
+
+function redraw()
+   glSpiralView.scene.surface.mtScheduleRedraw()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Keep the widget range above zero: the slider's default-value handling treats zero as an unset value.
+
+function addSlider(Label:str, Value:num, Min:num, Max:num, Apply:func)
+   caption = glViewport.new('VectorText', {
+      x = 16, y = glY + 14,
+      face = gui.fonts.label.face, fontSize = '10pt', fill = gui.getTheme(glViewport).window.text,
+      string = string.format('%s: %.2f', Label, Value)
+   })
+
+   gui.slider({
+      target = glViewport, x = 16, y = glY + 20, size = 270,
+      min = 1, max = 101, value = 1 + 100 * (Value - Min) / (Max - Min),
+      events = {
+         activate = function(Widget:table, Position:num)
+            value = Min + (Position - 1) * (Max - Min) / 100
+            Apply(value)
+            caption.string = string.format('%s: %.2f', Label, value)
+            redraw()
+         end
+      }
+   })
+   glY += 52
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function buildScene()
+   glY = glWindow.margins.top
+
+   glSpiralView = glViewport.new('VectorViewport', {
+      x = 310, y = glWindow.margins.top, xOffset = 10, yOffset = glWindow.margins.bottom,
+      viewWidth = '640', viewHeight = 640, aspectRatio = ARF_X_MID|ARF_Y_MID|ARF_SLICE,
+      overflow = 'hidden' -- buffered = true
+   })
+
+   glSpiralView.new('VectorRectangle', { width = '100%', height = '100%', fill = '#f5f7fa' })
+
+   glSpiral = glSpiralView.new('VectorSpiral', {
+      name = 'spiral', cx = 320, cy = 320, radius = 440,
+      spacing = 36, decay = 1, offset = 0, loopLimit = 0,
+      startTurn = 0, endTurn = 0, step = 1, tolerance = 0, thickness = 12,
+      clockwise = 1, reverse = 0,
+      fill = '#65b5df', stroke = '#18364b', strokeWidth = 1.5, lineJoin = 'round', lineCap = 'round'
+   })
+
+   addSlider('Spacing', glSpiral.spacing, 1, 100, function(Value:num) glSpiral.spacing = Value end)
+
+   addSlider('Decay', 1, 0.1, 2, function(Value:num) glSpiral.decay = Value end)
+
+   addSlider('Offset', glSpiral.offset, 0, 150, function(Value:num) glSpiral.offset = Value end)
+
+   addSlider('Radius', glSpiral.radius, 10, 480, function(Value:num) glSpiral.radius = Value end)
+
+   addSlider('Loop limit (0 = off)', 0, 0, 20, function(Value:num) glSpiral.loopLimit = Value end)
+
+   addSlider('Start turn', 0, 0, 10, function(Value:num) glSpiral.startTurn = Value end)
+
+   addSlider('End turn (0 = off)', 0, 0, 20, function(Value:num) glSpiral.endTurn = Value end)
+
+   addSlider('Step (degrees)', glSpiral.step, 0.1, 120, function(Value:num) glSpiral.step = Value end)
+
+   addSlider('Tolerance (0 = fixed step)', 0, 0, 5, function(Value:num) glSpiral.tolerance = Value end)
+
+   addSlider('Ribbon thickness (0 = open)', glSpiral.thickness, 0, 60, function(Value:num)
+      glSpiral.thickness = Value
+      glSpiral.fill = (Value > 0) ? '#65b5df' : 'none'
+   end)
+
+   winding = gui.combobox({
+      target = glViewport, label = 'Winding:', text = 'Clockwise', x = 16, y = glY,
+      items = array<table> { { item = 'Clockwise' }, { item = 'Anticlockwise' } },
+      events = {
+         activate = function(Widget:table, Text:str)
+            glSpiral.clockwise = (Text is 'Clockwise') ? 1 : 0
+            redraw()
+         end
+      }
+   })
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+   glWindow = gui.window({ title = 'Spiral Demo', insideWidth = 1024, insideHeight = 800, minWidth = 1024, minHeight = 800 })
+   glViewport = glWindow.clientViewport({ aspectRatio = ARF_MEET })
+
+   buildScene()
+   glWindow.show()
+   processing.sleep()
