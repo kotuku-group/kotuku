@@ -90,6 +90,7 @@ static const struct FieldDef clSurfaceJTYPE[] = {
    { "DblClick", 0x00000200 },
    { "Repeated", 0x00000400 },
    { "DragItem", 0x00000800 },
+   { "Touch", 0x00001000 },
    { nullptr, 0 }
 };
 
@@ -117,6 +118,10 @@ static const struct FieldDef clSurfaceJET[] = {
    { "DeviceTiltXY", 0x00000012 },
    { "DeviceTiltZ", 0x00000013 },
    { "DisplayEdge", 0x00000014 },
+   { "TouchDown", 0x00000015 },
+   { "TouchMotion", 0x00000016 },
+   { "TouchUp", 0x00000017 },
+   { "TouchCancel", 0x00000018 },
    { nullptr, 0 }
 };
 

@@ -770,6 +770,7 @@ Z: Close Path
       <const name="MOVEMENT">X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system</const>
       <const name="REPEATED">Input is a repeated entry (i.e. user is holding down a button and a repetition timer is being triggered)</const>
       <const name="SECONDARY">Indicates to the receiver of this message that it is not the primary/original recipient</const>
+      <const name="TOUCH">Contact input from a touch device; the Value field carries the contact ID</const>
     </constants>
 
     <constants lookup="PTC" comment="Predefined cursor styles">
