@@ -389,7 +389,22 @@ static ERR JPEG_SaveImage(extImage *Self, struct acSaveImage *Args)
 {
    kt::Log log;
 
-   log.branch();
+   if (Args) log.branch("Dest: %d, ClassID: $%.8x", Args->Dest ? Args->Dest->UID : 0, unsigned(Args->ClassID));
+   else log.branch();
+
+   if ((Args) and (Args->ClassID != CLASSID::NIL) and (Args->ClassID != CLASSID::JPEG)) {
+      if (auto other_class = FindClass(Args->ClassID))  {
+         if (other_class->BaseClassID IS CLASSID::IMAGE) {
+            std::span<ActionEntry> at;
+            if ((!other_class->getActionTable(at)) and (at[int(AC::SaveImage)].PerformAction)) {
+               return at[int(AC::SaveImage)].PerformAction(Self, Args);
+            }
+            else return log.warning(ERR::NoSupport);
+         }
+         else return log.warning(ERR::WrongClass);
+      }
+      else return log.warning(ERR::NotFound);
+   }
 
    OBJECTPTR file = nullptr;
 
