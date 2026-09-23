@@ -19,12 +19,13 @@
    global glTime = obj.new('time')
    global glSelf = obj.find('self')
 
-   -- Document storage for open files.  URI indexed
-   global glDocuments = { }
-
    -- Documentation cache and static definitions for hover
    global glDocCache:table = nil
    global glDefs = nil
+
+   -- Constant index derived from glDocCache on first use
+   global glConstantIndex:table = nil
+   global glConstantIndexSource:table = nil
 
    extern lspUriToPath, registerCoreHandlers
 
@@ -431,6 +432,39 @@ global function moduleDocumentByName(Name:str):table
       if module_name.lower() is canonical_name then return module_doc end
    end
    return nil
+end
+
+-- Merge the constants of all documented modules and classes into a single index keyed by script name.  Constant
+-- groups can be documented in more than one file, so a described entry is preferred over an undescribed one.  Group
+-- prefixes never contain underscores, so the group is everything before the first one.
+
+global function constantIndex():table
+   if not glDocCache then return {} end
+   if glConstantIndexSource is glDocCache then return glConstantIndex end
+
+   local index = {}
+   function addEntries(Entries:table, Owner:str)
+      for _, entry in pairs(Entries or {}) do
+         for name, comment in pairs(entry.constants or {}) do
+            local existing = index[name]
+            if existing and existing.comment != '' then continue end
+            local prefix = name.sub(0, name.find('_'))
+            index[name] = {
+               comment = comment,
+               group = prefix,
+               groupComment = entry.constantGroups?[prefix] or '',
+               owner = Owner
+            }
+         end
+      end
+   end
+
+   addEntries(glDocCache.modules, 'module')
+   addEntries(glDocCache.classes, 'class')
+
+   glConstantIndex = index
+   glConstantIndexSource = glDocCache
+   return index
 end
 
 global function moduleDocumentForNamespace(Doc:table, Namespace:str):<table, str>

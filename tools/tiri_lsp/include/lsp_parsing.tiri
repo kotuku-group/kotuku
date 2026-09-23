@@ -18,7 +18,7 @@ rx_kw_struct   = <{ regex.new([[^\s*struct\s+[A-Za-z_][A-Za-z0-9_]*\b]]) }>
 -- Deferred regex patterns for token parsing
 rx_global_var   = <{ regex.new("^gl[A-Z]") }>
 rx_starts_upper = <{ regex.new("^[A-Z]") }>
-rx_all_upper    = <{ regex.new([[^[A-Z_]+$]]) }>
+rx_all_upper    = <{ regex.new([[^[A-Z0-9_]+$]]) }>
 
 -- Multi-byte (non-ASCII) operators recognised by the Tiri lexer, keyed by their UTF-8 byte sequence.  These are
 -- scanned byte-at-a-time by .sub(), so the tokeniser cannot match them with a single-character comparison and must

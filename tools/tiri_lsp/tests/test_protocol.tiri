@@ -1,0 +1,131 @@
+   import 'json'
+
+extern processIncomingData, registerCoreHandlers
+
+@BeforeAll function SetupProtocolTests(State)
+   local err, sdk_path = mSys.ResolvePath(State.folder .. '../../../')
+   assert(err is ERR_Okay, 'Failed to resolve SDK path for LSP protocol tests.')
+   mSys.SetVolume('sdk', sdk_path)
+   loadFile('sdk:tools/tiri_lsp/include/lsp_lib.tiri')
+end
+
+function makeServer():table
+   local server = { _handlers={}, verbose=false, logMessage=function(Message) end }
+   registerCoreHandlers(server)
+   return server
+end
+
+function makeClient():table
+   local session = {}
+   local writes = array<str>
+   return {
+      session = session,
+      writes = writes,
+      state = function() return session end,
+      acWrite = function(Data:str):num
+         writes.push(Data)
+         return ERR_Okay
+      end
+   }
+end
+
+function sendBody(Server:table, Client:table, Body:str)
+   processIncomingData(Server, Client, 'Content-Length: ' .. #Body .. '\r\n\r\n' .. Body)
+end
+
+function sendMessage(Server:table, Client:table, Message:table)
+   sendBody(Server, Client, json.encode(Message))
+end
+
+function lastResponse(Client:table):table
+   local frame = Client.writes[#Client.writes - 1]
+   local separator = frame.find('\r\n\r\n')
+   return json.decode(frame.sub(separator + 4))
+end
+
+@Test function ParseErrorReturnsNullId()
+   local server = makeServer()
+   local client = makeClient()
+   sendBody(server, client, 'null')
+
+   assert(#client.writes is 1, 'Malformed JSON-RPC must receive an error response.')
+   local response = lastResponse(client)
+   assert(response.error.code is -32700, 'Malformed JSON-RPC must use the parse error code.')
+   assert(response.id is json.null, 'Parse error response must carry a null ID.')
+end
+
+@Test function StringRequestIdReceivesError()
+   local server = makeServer()
+   local client = makeClient()
+   sendMessage(server, client, { jsonrpc='2.0', id='request-1', method='unknown/method', params={} })
+
+   local response = lastResponse(client)
+   assert(response.id is 'request-1', 'Error response must preserve a string request ID.')
+   assert(response.error.code is -32601, 'Unknown method must return method-not-found.')
+end
+
+@Test function NullResultUsesJsonNull()
+   local server = makeServer()
+   local client = makeClient()
+   sendMessage(server, client, { jsonrpc='2.0', id=1, method='shutdown', params={} })
+
+   local response = lastResponse(client)
+   assert(response.result is json.null, 'A null LSP result must be encoded as JSON null.')
+end
+
+@Test function NullRequestIdPreservesSuccessResult()
+   local server = makeServer()
+   local client = makeClient()
+   sendBody(server, client, '{"jsonrpc":"2.0","id":null,"method":"shutdown","params":{}}')
+
+   assert(#client.writes is 1, 'A request with a null ID must receive one response.')
+   local response = lastResponse(client)
+   assert(response.id is json.null, 'The response must preserve the null request ID.')
+   assert(response.result is json.null, 'A successful shutdown must contain a null result.')
+   assert(response.error is nil, 'A successful shutdown must not contain an error.')
+end
+
+@Test function ClientDocumentsAreIndependent()
+   local server = makeServer()
+   local first = makeClient()
+   local second = makeClient()
+   local uri = 'file:///tmp/tiri_lsp_shared_document.tiri'
+
+   sendMessage(server, first, {
+      jsonrpc='2.0', method='textDocument/didOpen',
+      params={ textDocument={ uri=uri, languageId='tiri', version=1, text='function FromFirst()\nend\n' } }
+   })
+   sendMessage(server, second, {
+      jsonrpc='2.0', method='textDocument/didOpen',
+      params={ textDocument={ uri=uri, languageId='tiri', version=1, text='function FromSecond()\nend\n' } }
+   })
+
+   sendMessage(server, first, {
+      jsonrpc='2.0', id=1, method='textDocument/documentSymbol', params={ textDocument={ uri=uri } }
+   })
+   assert(lastResponse(first).result[0].name is 'FromFirst',
+      'The first client must retain its own content after another client opens the URI.')
+
+   sendMessage(server, first, {
+      jsonrpc='2.0', id=3, method='textDocument/semanticTokens/full', params={ textDocument={ uri=uri } }
+   })
+   local first_result_id = lastResponse(first).result.resultId
+   sendMessage(server, second, {
+      jsonrpc='2.0', id=4, method='textDocument/semanticTokens/full', params={ textDocument={ uri=uri } }
+   })
+   sendMessage(server, first, {
+      jsonrpc='2.0', id=5, method='textDocument/semanticTokens/full/delta',
+      params={ textDocument={ uri=uri }, previousResultId=first_result_id }
+   })
+   assert(lastResponse(first).result.edits,
+      'Another client\'s semantic token request must not replace the first client\'s delta baseline.')
+
+   sendMessage(server, second, {
+      jsonrpc='2.0', method='textDocument/didClose', params={ textDocument={ uri=uri } }
+   })
+   sendMessage(server, first, {
+      jsonrpc='2.0', id=2, method='textDocument/documentSymbol', params={ textDocument={ uri=uri } }
+   })
+   assert(lastResponse(first).result[0].name is 'FromFirst',
+      'Closing a document in another client must not discard the first client\'s document.')
+end

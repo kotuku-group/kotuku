@@ -1,6 +1,7 @@
 global glModuleNamespaceLspUri = nil
 extern lspInitDocs, lspPathToUri, markLineIndex, moduleDeclarationsForDocument, modulePrefixesForDocument,
-   resolveModuleCompletion, resolveModuleRename, registerCoreHandlers, resolveBuiltinCompletion
+   resolveModuleCompletion, resolveModuleRename, registerCoreHandlers, resolveBuiltinCompletion,
+   resolveConstantCompletion
 
 @BeforeAll function SetupModuleNamespaceLspTests(State)
    local err, sdk_path = mSys.ResolvePath(State.folder .. '../../../')
@@ -56,6 +57,26 @@ local text = 'runtimeCore'
    assert(edits and #edits is 2, 'Rename should edit only the declaration and code reference.')
    assert(edits[0].newText is 'mClock' and edits[1].newText is 'mClock',
       'Every namespace edit should use the requested name.')
+end
+
+@Test function ModuleNamespaceRenameSkipsShadowedBindings()
+   local doc = makeDoc([[
+module core as runtimeCore
+runtimeCore.PreciseTime()
+function inspect_shadow()
+   local runtimeCore = {}
+   print(runtimeCore)
+end
+runtimeCore.PreciseTime()
+]])
+   local edit = resolveModuleRename(doc, { line=0, character=17 }, 'newCore')
+   local edits = edit?.changes?[doc.uri]
+
+   assert(edits and #edits is 3, 'Module alias rename should omit shadowing local declarations and references.')
+   assert(edits[0].range.start.line is 0 and edits[1].range.start.line is 1 and
+         edits[2].range.start.line is 6, 'Only the module declaration and its references should change.')
+   assert(not resolveModuleRename(doc, { line=3, character=10 }, 'newCore'),
+      'Starting a rename on a shadowing local must not select the module alias.')
 end
 
 @Test function RenamesLibraryNamespaceReferences()
@@ -195,4 +216,40 @@ end
    assert(not findCompletion(items, 'print'), 'Strings must not receive built-in completion.')
    items = resolveBuiltinCompletion(makeDoc('--[[\npri'), { line=1, character=3 })
    assert(not findCompletion(items, 'print'), 'Block comments must not receive built-in completion.')
+end
+
+@Test function CompletesDocumentedConstants()
+   local line = 'flags = BMF_AL'
+   local items:array<table> = resolveConstantCompletion(makeDoc(line), { line=0, character=#line })
+   local alpha = findCompletion(items, 'BMF_ALPHA_CHANNEL')
+   assert(alpha, 'A constant prefix should complete documented constants from class documentation.')
+   assert(alpha.kind is 21, 'Constants should use the LSP constant completion kind.')
+   assert(alpha.detail.startsWith('BMF'), 'Constant detail should name the constant group.')
+   assert(alpha.documentation?.value.find('alpha channel'), 'Constant documentation should carry its description.')
+   assert(not findCompletion(items, 'BMF_BLANK_PALETTE'), 'Constants must match the typed prefix.')
+
+   line = 'BMF_'
+   items = resolveConstantCompletion(makeDoc(line), { line=0, character=#line })
+   assert(#items > 5, 'A bare group prefix should list every member of the group.')
+end
+
+@Test function CompletesConstantsFromModulesAndUndescribedEntries()
+   local line = 'REGEX_DOT'
+   local items:array<table> = resolveConstantCompletion(makeDoc(line), { line=0, character=#line })
+   local dot_all = findCompletion(items, 'REGEX_DOT_ALL')
+   assert(dot_all, 'Module documentation constants should be completed.')
+   assert(dot_all.documentation.value.find('`.`'), 'Inline code markup should be converted to markdown.')
+
+   line = 'HTS_ACC'
+   items = resolveConstantCompletion(makeDoc(line), { line=0, character=#line })
+   assert(findCompletion(items, 'HTS_ACCEPTED'), 'Self-closing constant entries should be completed.')
+end
+
+@Test function DoesNotCompleteConstantsOutsideUnqualifiedCode()
+   local items:array<table> = resolveConstantCompletion(makeDoc('bmf_'), { line=0, character=4 })
+   assert(#items is 0, 'Lower-case identifiers must not receive constant completion.')
+   items = resolveConstantCompletion(makeDoc('-- BMF_'), { line=0, character=7 })
+   assert(#items is 0, 'Comments must not receive constant completion.')
+   items = resolveConstantCompletion(makeDoc('local api = {}\napi.BMF_'), { line=1, character=8 })
+   assert(#items is 0, 'Members must not receive constant completion.')
 end

@@ -15,6 +15,10 @@ rx_source_file_path  = <{ regex.new([[<file\s+path="([^"]*)">([^<]+)<\/file>]]) 
 rx_source_file_plain = <{ regex.new([[<file>([^<]+)<\/file>]]) }>
 rx_input_param       = <{ regex.new([[<param\s+([^>]*)>(.*?)<\/param>]], regex.DOT_ALL) }>
 rx_xml_attr          = <{ regex.new([=[([A-Za-z_][A-Za-z0-9_]*)="([^"]*)"]=]) }>
+rx_constants_block   = <{ regex.new([[<constants\s+([^>]*)>(.*?)<\/constants>]], regex.DOT_ALL) }>
+rx_const_entry       = <{ regex.new([[<const\s+name="([^"]*)"\s*(?:\/>|>(.*?)<\/const>)]], regex.DOT_ALL) }>
+rx_inline_code       = <{ regex.new([[<code>(.*?)<\/code>]], regex.DOT_ALL) }>
+rx_xml_tag           = <{ regex.new([[<[^>]+>]]) }>
 
 function countTableEntries(Tbl:table):num
    local count = 0
@@ -78,7 +82,7 @@ global function buildDocManifest(DocPath:str):table
 end
 
 global function validateDocCache(Cache:table, DocPath:str, CurrentManifest:table):bool
-   if not Cache or Cache.version != 7 or Cache.sdkPath != DocPath then return false end
+   if not Cache or Cache.version != 8 or Cache.sdkPath != DocPath then return false end
    if not Cache.modules or not Cache.classes or not Cache.sourceManifest or not CurrentManifest then return false end
    if countTableEntries(Cache.sourceManifest) != countTableEntries(CurrentManifest) then return false end
 
@@ -262,6 +266,32 @@ function extractInputParams(Content:str):array<table>
    return params
 end
 
+-- Reduce inline XML markup in a constant description to markdown.
+
+function constantCommentToMarkdown(Text:str):str
+   if Text is '' then return '' end
+   local text:str = rx_inline_code.replace(Text, '`$1`')
+   text = rx_xml_tag.replace(text, '')
+   return text.unescapeXML().trim()
+end
+
+-- Extract constant groups from a module or class XML file.  Constants are keyed by their script name (PREFIX_NAME)
+-- and map to their description; group descriptions are keyed by prefix.
+
+function extractConstants(Content:str):<table, table>
+   local constants = {}
+   local groups = {}
+   for _, _, block in rx_constants_block.findAll(Content) do
+      local prefix = extractAttrFromText(block[0], 'lookup')
+      if not prefix then continue end
+      groups[prefix] = extractAttrFromText(block[0], 'comment') or ''
+      for _, _, entry in rx_const_entry.findAll(block[1] or '') do
+         constants[prefix .. '_' .. entry[0]] = constantCommentToMarkdown(entry[1] or '')
+      end
+   end
+   return constants, groups
+end
+
 function processModuleXML(FilePath:str, DocPath:str):<str,table>
    -- Process a module XML file and extract function information
    content = io.readAll(FilePath)
@@ -284,6 +314,8 @@ function processModuleXML(FilePath:str, DocPath:str):<str,table>
       sources = extractSources(infoMatch.content),
       functions = {}
    }
+
+   modEntry.constants, modEntry.constantGroups = extractConstants(content)
 
    -- Extract functions (using compact string format)
    pos = 0
@@ -336,6 +368,8 @@ function processClassXML(FilePath:str, DocPath:str):<str, table>
       actions   = {},
       fields    = {}
    }
+
+   classEntry.constants, classEntry.constantGroups = extractConstants(content)
 
    -- Extract methods (using compact string format)
    pos = 0
@@ -411,7 +445,7 @@ global function buildDocCache(DocPath):table
    -- Build the documentation cache from XML files
 
    cache = {
-      version = 7,
+      version = 8,
       built   = mSys.PreciseTime() / 1000000,
       sdkPath = DocPath,
       modules = {},
@@ -530,7 +564,8 @@ global function loadDocCache(DocPath):table
       return
    end
 
-   if cache.version != 7 then msg('Unsupported version'); return end
+   if type(cache) != 'table' then msg('Invalid documentation cache'); return end
+   if cache.version != 8 then msg('Unsupported version'); return end
    if cache.sdkPath != DocPath then msg('Path mismatch: ' .. cache.sdkPath .. ' != ' .. DocPath); return end
 
    local current_manifest = buildDocManifest(DocPath)

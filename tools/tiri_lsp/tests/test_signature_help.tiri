@@ -267,7 +267,7 @@ end
    registerCoreHandlers(server)
 
    doc, position = makeDocAtMarker('assert(true, |)\n')
-   glDocuments[doc.uri] = doc
+   state = { documents = { [doc.uri] = doc } }
 
    response = server._handlers['textDocument/signatureHelp']({
       jsonrpc = '2.0',
@@ -276,9 +276,7 @@ end
          textDocument = { uri = doc.uri },
          position = position
       }
-   }, {})
-
-   glDocuments[doc.uri] = nil
+   }, state)
 
    assert(response.result and response.result.signatures[0].label is 'assert(condition, [message])',
       'Handler should return resolver signature help.')

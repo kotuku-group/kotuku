@@ -30,8 +30,11 @@ end
 
 function assertUriContains(Locations:array<table>, Needle:str, Message:str)
    assert(Locations and #Locations > 0, Message .. ': expected at least one location.')
-   uri = Locations[0].uri.replace('\\', '/').lower()
-   assert(uri.find(Needle.lower(), 0, true), f'{Message}: expected URI to contain {Needle}, got {Locations[0].uri}')
+   local uri = Locations[0].uri.replace('\\', '/').lower()
+   local installed_path = Needle.lower()
+   local linked_path = installed_path.replace('/1.0/', '/')
+   assert(uri.find(installed_path, 0, true) or uri.find(linked_path, 0, true),
+      f'{Message}: expected URI to contain {installed_path} or {linked_path}, got {Locations[0].uri}')
 end
 
 @Test function CurrentDocumentFunction()
@@ -238,7 +241,7 @@ end
    assert(init.result.capabilities.definitionProvider is true, 'Server must advertise definitionProvider.')
 
    doc = makeDoc('local function beta()\nend\n\nbeta()\n')
-   glDocuments[doc.uri] = doc
+   state = { documents = { [doc.uri] = doc } }
 
    response = server._handlers['textDocument/definition']({
       jsonrpc = '2.0',
@@ -247,9 +250,7 @@ end
          textDocument = { uri = doc.uri },
          position = { line = 3, character = 1 }
       }
-   }, {})
-
-   glDocuments[doc.uri] = nil
+   }, state)
 
    assert(response.result and #response.result > 0, 'Definition handler should return a location array.')
    assert(response.result[0].range.start.line is 0, 'Definition handler should resolve through resolver.')

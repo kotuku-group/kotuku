@@ -2,7 +2,7 @@
 rx_split_header_lines = <{ regex.new([[([^\r\n]+)]]) }>
 rx_header_value = <{ regex.new([[([^:]+):\s*(.+)]]) }>
 
-function makeErrorResponse(Id:num, Code:num, Message:str):table
+function makeErrorResponse(Id:any, Code:num, Message:str):table
    return {
       jsonrpc = '2.0',
       id = Id,
@@ -70,7 +70,19 @@ end
 -- base protocol, https://github.com/Microsoft/language-server-protocol/blob/gh-pages/_specifications/lsp/3.17/specification.md
 
 function formatResponse(ResponseTable:table, TextOutput:bool):str
-   local body = json.encode(ResponseTable)
+   local body
+   -- The bundled JSON encoder represents nested json.null values as {}.  Build responses with null members explicitly.
+   if ResponseTable.id is json.null or ResponseTable.result is json.null then
+      local id = ResponseTable.id is json.null ? 'null' : json.encode(ResponseTable.id)
+      if ResponseTable.error then
+         body = '{"jsonrpc":"2.0","id":' .. id .. ',"error":' .. json.encode(ResponseTable.error) .. '}'
+      else
+         local result = ResponseTable.result is json.null ? 'null' : json.encode(ResponseTable.result)
+         body = '{"jsonrpc":"2.0","id":' .. id .. ',"result":' .. result .. '}'
+      end
+   else
+      body = json.encode(ResponseTable)
+   end
    return 'Content-Length: ' .. #body .. '\r\n\r\n' .. body
 end
 
@@ -162,6 +174,8 @@ function initClientState(Self:table, ClientSocket:any):table
       state.shutdown_requested = false
       state.should_disconnect  = false
       state.clientSocket       = ClientSocket  -- Store for sending notifications
+      state.documents          = {}
+      state.tokenCache         = {}
       state.initialised        = true
       logVerbose(Self, 'New client connection initialized')
    end

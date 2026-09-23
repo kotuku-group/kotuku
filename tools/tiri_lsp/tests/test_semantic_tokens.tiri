@@ -414,7 +414,8 @@ end
 
 @Test function IncrementalEditAtEndOfLineUsesFullLineText()
    uri = glSemanticTokensTestUri .. '#edit'
-   glDocuments[uri] = {
+   state = { documents = {} }
+   state.documents[uri] = {
       uri = uri,
       languageId = 'tiri',
       version = 1,
@@ -427,10 +428,8 @@ end
       verbose = false,
       logMessage = function(Message) end
    }
-   state = {
-      clientSocket = {
-         acWrite = function(Text):num return ERR_Okay end
-      }
+   state.clientSocket = {
+      acWrite = function(Text):num return ERR_Okay end
    }
 
    registerCoreHandlers(server)
@@ -450,9 +449,8 @@ end
       }
    }, state)
 
-   assert(glDocuments[uri].content is 'abc!\n',
+   assert(state.documents[uri].content is 'abc!\n',
       'Incremental edit at an end-of-line UTF-16 column should append after the final character.')
-   glDocuments[uri] = nil
 end
 
 @Test function ParserAnnotationHoverDocumentation()

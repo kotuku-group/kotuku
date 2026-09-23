@@ -1,4 +1,4 @@
-extern buildDocCache, buildDocManifest, validateDocCache
+extern buildDocCache, buildDocManifest, validateDocCache, loadDocCache, CACHE_PATH
 
 @BeforeAll function SetupCacheTests(State)
    local err, sdk_path = mSys.ResolvePath(State.folder .. '../../../')
@@ -20,7 +20,7 @@ end
 
 function makeCache():table
    return {
-      version = 7,
+      version = 8,
       sdkPath = 'sdk:docs/xml/',
       sourceManifest = makeManifest(),
       modules = {
@@ -85,13 +85,26 @@ end
    cache.version = 6
    assert(not validateDocCache(cache, 'sdk:docs/xml/', makeManifest()), 'An old cache schema should be rejected.')
 
-   cache.version = 7
+   cache.version = 8
    assert(not validateDocCache(cache, 'other:docs/xml/', makeManifest()),
       'A cache built for another SDK path should be rejected.')
 end
 
 @Test function RejectsUnavailableDocumentationTree()
-   local cache = { version = 7, sdkPath = 'sdk:docs/xml/', sourceManifest = {}, modules = {}, classes = {} }
+   local cache = { version = 8, sdkPath = 'sdk:docs/xml/', sourceManifest = {}, modules = {}, classes = {} }
    assert(not validateDocCache(cache, 'sdk:docs/xml/', {}),
       'An empty documentation tree should not make an empty cache appear valid.')
+end
+
+@Test function RejectsCacheWithoutTableValue()
+   local cache_path = 'temp:tiri_lsp_nil_cache.tiri'
+   local original_path = CACHE_PATH
+   defer
+      CACHE_PATH = original_path
+      mSys.DeleteFile(cache_path)
+   end
+
+   io.writeAll(cache_path, 'return nil\n')
+   CACHE_PATH = cache_path
+   assert(not loadDocCache('sdk:docs/xml/'), 'A cache returning nil should be rebuilt.')
 end
