@@ -113,10 +113,11 @@ static int read_stream(int Handle, int Offset, APTR Buffer, int Length)
    auto Self = (extSound *)CurrentContext();
 
    if (Length > 0) {
-      // The mixer holds the Audio lock while invoking this callback.  Never wait for Sound here because Sound actions
-      // such as a streamed seek can need the Audio lock in the opposite direction.
+      // Client-side producer seeks must not restart the consuming mixer channel.
 
+      Self->FeedingStream = true;
       if ((Offset >= 0) and (Self->Position != Offset)) Self->seekStart(Offset);
+      Self->FeedingStream = false;
 
       int result;
       Self->read(std::span<int8_t>((int8_t *)Buffer, Length), &result);
@@ -292,6 +293,10 @@ static ERR sound_play_position(extSound *Self, int64_t *Value)
    if ((Self->ChannelIndex) and (Self->AudioID)) {
       kt::ScopedObjectLock<extAudio> audio(Self->AudioID);
       if (audio.granted()) {
+         std::lock_guard mixer_lock(audio->MixerMutex);
+         #ifdef ALSA_ENABLED
+         flush_audio_commands(*audio);
+         #endif
          if (auto channel = audio->GetChannel(Self->ChannelIndex)) {
             if ((channel->SampleHandle IS Self->Handle) and (channel->State != CHS::STOPPED)) {
                auto &sample = audio->Samples[Self->Handle];
@@ -300,7 +305,11 @@ static ERR sound_play_position(extSound *Self, int64_t *Value)
                   ((int64_t(channel->PositionLow) << shift) >> 16);
 
                if (sample.Stream) {
+                  #ifdef ALSA_ENABLED
+                  position = sample.PlayPos;
+                  #else
                   position = int64_t(sample.PlayPos) - int64_t(sample.BufferedLength) + position;
+                  #endif
                }
 
                *Value = clamp_sound_position(Self, position);
@@ -407,6 +416,10 @@ static ERR SOUND_Activate(extSound *Self)
    if (Self->AudioID) {
       kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 200);
       if (audio.granted()) {
+         std::lock_guard mixer_lock(audio->MixerMutex);
+         #ifdef ALSA_ENABLED
+         flush_audio_commands(*audio);
+         #endif
          sndVolume((PlatformData *)Self->PlatformData, audio->MasterVolume * Self->Volume);
       }
    }
@@ -535,6 +548,10 @@ static ERR SOUND_Activate(extSound *Self)
 
    kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 2000);
    if (audio.granted()) {
+      std::lock_guard mixer_lock(audio->MixerMutex);
+      #ifdef ALSA_ENABLED
+      flush_audio_commands(*audio);
+      #endif
       // Restricted and streaming audio can be played on only one channel at any given time.  This search will check
       // if the sound object is already active on one of our channels.
 
@@ -622,7 +639,11 @@ static ERR SOUND_Deactivate(extSound *Self)
 #else
    if (Self->ChannelIndex) {
       kt::ScopedObjectLock<extAudio> audio(Self->AudioID);
-      if (audio.granted()) { // Stop the sample if it's live.
+      if (audio.granted()) {
+         std::lock_guard mixer_lock(audio->MixerMutex);
+         #ifdef ALSA_ENABLED
+         flush_audio_commands(*audio);
+         #endif // Stop the sample if it's live.
          if (auto channel = audio->GetChannel(Self->ChannelIndex)) {
             if (channel->SampleHandle IS Self->Handle) snd::MixStop(*audio, Self->ChannelIndex);
          }
@@ -657,6 +678,10 @@ static ERR SOUND_Disable(extSound *Self)
 
    kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 5000);
    if (audio.granted()) {
+      std::lock_guard mixer_lock(audio->MixerMutex);
+      #ifdef ALSA_ENABLED
+      flush_audio_commands(*audio);
+      #endif
       if (auto channel = audio->GetChannel(Self->ChannelIndex)) {
          if (channel->SampleHandle IS Self->Handle) snd::MixStop(*audio, Self->ChannelIndex);
       }
@@ -690,6 +715,10 @@ static ERR SOUND_Enable(extSound *Self)
 
    kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 5000);
    if (audio.granted()) {
+      std::lock_guard mixer_lock(audio->MixerMutex);
+      #ifdef ALSA_ENABLED
+      flush_audio_commands(*audio);
+      #endif
       if (auto channel = audio->GetChannel(Self->ChannelIndex)) {
          if (channel->SampleHandle IS Self->Handle) snd::MixContinue(*audio, Self->ChannelIndex);
       }
@@ -755,6 +784,10 @@ static ERR SOUND_Init(extSound *Self)
    if (!(Self->ChannelIndex = glSoundChannels[Self->AudioID])) {
       kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 3000);
       if (audio.granted()) {
+         std::lock_guard mixer_lock(audio->MixerMutex);
+         #ifdef ALSA_ENABLED
+         flush_audio_commands(*audio);
+         #endif
          if (!audio->openChannels(audio->MaxChannels, &Self->ChannelIndex)) {
             glSoundChannels[Self->AudioID] = Self->ChannelIndex;
          }
@@ -863,6 +896,10 @@ static ERR SOUND_Init(extSound *Self)
    if (!(Self->ChannelIndex = glSoundChannels[Self->AudioID])) {
       kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 3000);
       if (audio.granted()) {
+         std::lock_guard mixer_lock(audio->MixerMutex);
+         #ifdef ALSA_ENABLED
+         flush_audio_commands(*audio);
+         #endif
          if (!audio->openChannels(audio->MaxChannels, &Self->ChannelIndex)) {
             glSoundChannels[Self->AudioID] = Self->ChannelIndex;
          }
@@ -1141,19 +1178,23 @@ static ERR SOUND_Seek(extSound *Self, struct acSeek *Args)
 
    log.traceBranch("Seek to %" PF64 " + %d", (long long)Self->Position, Self->DataOffset);
 
+   if ((Self->File) and (!Self->isDerived())) {
+      Self->File->seekStart(Self->DataOffset + Self->Position);
+   }
+
    kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 2000);
    if (audio.granted()) {
-      if ((Self->File) and (!Self->isDerived())) {
-         Self->File->seekStart(Self->DataOffset + Self->Position);
-      }
-
+      std::lock_guard mixer_lock(audio->MixerMutex);
+      #ifdef ALSA_ENABLED
+      flush_audio_commands(*audio);
+      #endif
       #ifdef USE_WIN32_PLAYBACK
          if (sndCheckActivity((PlatformData *)Self->PlatformData) > 0) {
             set_playback_trigger(Self);
             sndSetPosition((PlatformData *)Self->PlatformData, Self->Position);
          }
       #else
-         if (Self->Handle) {
+         if (Self->Handle and !Self->FeedingStream) {
             audio->Samples[Self->Handle].PlayPos = BYTELEN(Self->Position);
 
             if (Self->Active) {
@@ -1222,6 +1263,10 @@ static ERR SOUND_GET_Active(extSound *Self, int *Value)
    if (Self->ChannelIndex) {
       kt::ScopedObjectLock<extAudio> audio(Self->AudioID);
       if (audio.granted()) {
+         std::lock_guard mixer_lock(audio->MixerMutex);
+         #ifdef ALSA_ENABLED
+         flush_audio_commands(*audio);
+         #endif
          if (auto channel = audio->GetChannel(Self->ChannelIndex)) {
             if (!channel->isStopped()) *Value = TRUE;
          }
@@ -1360,8 +1405,12 @@ static ERR SOUND_SET_Length(extSound *Self, int Value)
          return ERR::Okay;
       #else
          if ((Self->Handle) and (Self->AudioID)) {
-            kt::ScopedObjectLock<objAudio> audio(Self->AudioID);
+            kt::ScopedObjectLock<extAudio> audio(Self->AudioID);
             if (audio.granted()) {
+               std::lock_guard mixer_lock(audio->MixerMutex);
+               #ifdef ALSA_ENABLED
+               flush_audio_commands(*audio);
+               #endif
                return audio->setSampleLength(Self->Handle, Value);
             }
             else return log.warning(ERR::AccessObject);
@@ -1518,6 +1567,10 @@ static ERR SOUND_SET_Note(extSound *Self, const std::string_view &Value)
    if (Self->ChannelIndex) {
       kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 200);
       if (audio.granted()) {
+         std::lock_guard mixer_lock(audio->MixerMutex);
+         #ifdef ALSA_ENABLED
+         flush_audio_commands(*audio);
+         #endif
          snd::MixFrequency(*audio, Self->ChannelIndex, Self->Playback);
       }
       else return ERR::AccessObject;
@@ -1616,6 +1669,10 @@ static ERR SOUND_SET_Pan(extSound *Self, double Value)
    if (Self->ChannelIndex) {
       kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 200);
       if (audio.granted()) {
+         std::lock_guard mixer_lock(audio->MixerMutex);
+         #ifdef ALSA_ENABLED
+         flush_audio_commands(*audio);
+         #endif
          snd::MixPan(*audio, Self->ChannelIndex, Self->Pan);
       }
       else return ERR::AccessObject;
@@ -1659,6 +1716,10 @@ static ERR SOUND_SET_Playback(extSound *Self, int Value)
    if (Self->ChannelIndex) {
       kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 200);
       if (audio.granted()) {
+         std::lock_guard mixer_lock(audio->MixerMutex);
+         #ifdef ALSA_ENABLED
+         flush_audio_commands(*audio);
+         #endif
          snd::MixFrequency(*audio, Self->ChannelIndex, Self->Playback);
       }
       else return log.warning(ERR::AccessObject);
@@ -1797,6 +1858,10 @@ static ERR SOUND_SET_Volume(extSound *Self, double Value)
    if (Self->initialised()) {
       kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 200);
       if (audio.granted()) {
+         std::lock_guard mixer_lock(audio->MixerMutex);
+         #ifdef ALSA_ENABLED
+         flush_audio_commands(*audio);
+         #endif
          sndVolume((PlatformData *)Self->PlatformData, audio->MasterVolume * Self->Volume);
       }
    }
@@ -1804,6 +1869,10 @@ static ERR SOUND_SET_Volume(extSound *Self, double Value)
    if (Self->ChannelIndex) {
       kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 200);
       if (audio.granted()) {
+         std::lock_guard mixer_lock(audio->MixerMutex);
+         #ifdef ALSA_ENABLED
+         flush_audio_commands(*audio);
+         #endif
          snd::MixVolume(*audio, Self->ChannelIndex, Self->Volume);
       }
       else return ERR::AccessObject;
@@ -1879,6 +1948,10 @@ extSound::~extSound() {
    if ((Handle) and (AudioID)) {
       kt::ScopedObjectLock<extAudio> audio(AudioID);
       if (audio.granted()) {
+         std::lock_guard mixer_lock(audio->MixerMutex);
+         #ifdef ALSA_ENABLED
+         flush_audio_commands(*audio);
+         #endif
          audio->removeSample(Handle);
          Handle = 0;
       }

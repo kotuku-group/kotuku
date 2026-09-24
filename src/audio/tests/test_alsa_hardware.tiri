@@ -1,0 +1,90 @@
+-- Opt-in tests for a real ALSA PCM.  Silence/zero volume avoids audible test tones.
+   module audio as mAudio
+
+@BeforeAll function init(State)
+   global glFolder = State.folder
+end
+
+@Requires(audio=true, linux_platform=true)
+@Test function NegotiatedConfiguration()
+   low_lag = 0
+   low_frames = 0
+   low_periods = 0
+   for frames in values({256, 1024}) do
+      audio <close> = obj.new('Audio', { periods=3, periodSize=frames, outputRate=48000, flags='STEREO' })
+      check audio.acActivate()
+      assert(audio.periods >= 2 and audio.periodSize > 0)
+      assert(audio.mixerLag > 0 and audio.mixerLag < 2, 'Negotiated queue latency must be plausible')
+      logOutput(f'Requested 3 x {frames}; effective {audio.periods} x {audio.periodSize}; lag {audio.mixerLag}s')
+      if frames is 256 then
+         low_lag = audio.mixerLag
+         low_frames = audio.periodSize
+         low_periods = audio.periods
+      elseif low_frames is 256 and low_periods is 3 and audio.periodSize is 1024 and audio.periods is 3 then
+         assert(low_lag < audio.mixerLag, 'Smaller honoured periods should reduce queue latency')
+      else
+         logOutput('Latency comparison skipped: PCM did not honour both requested geometries')
+      end
+      check audio.acDeactivate()
+      assert(audio.mixerLag is 0)
+      check audio.acActivate()
+      assert(audio.mixerLag > 0)
+   end
+end
+
+@Requires(audio=true, linux_platform=true)
+@Test function SoundStopReplayAndCompletion()
+   audio <close> = obj.new('Audio', { name='SystemAudio', periods=3, periodSize=256, flags='STEREO' })
+   check audio.acActivate()
+   sound <close> = obj.new('Sound', { path=glFolder .. 'low-tone.wav', volume=0 })
+   completed = 0
+   elapsed = 0
+   started = 0
+   sound.onStop = function(Sound)
+      completed++
+      elapsed = (mSys.PreciseTime() - started) / 1000000
+   end
+   for i in {0 to 3} do
+      check sound.acActivate()
+      processing.sleep(0.025)
+      check sound.acDeactivate()
+      completed = 0
+      started = mSys.PreciseTime()
+      check sound.acActivate()
+      deadline = started + (sound.duration + audio.mixerLag + 0.5) * 1000000
+      while completed < 2 and mSys.PreciseTime() < deadline do processing.sleep(0.005) end
+      assert(completed is 2, 'Explicit stop and replay must each deliver one completion')
+      assert(elapsed >= sound.duration - 0.05, 'Completion must not precede playback')
+      assert(elapsed <= sound.duration + audio.mixerLag + 0.5)
+      logOutput(f'Replay completion {elapsed}s; source {sound.duration}s; queue {audio.mixerLag}s')
+   end
+end
+
+@Requires(audio=true, linux_platform=true)
+@Test function PrefetchSurvivesClientDelay()
+   audio <close> = obj.new('Audio', { periods=3, periodSize=256, outputRate=48000, flags='STEREO' })
+   check audio.acActivate()
+   reads = 0
+   completed = 0
+   err, sample = audio.mtAddStream(function(Handle, Offset, Buffer)
+      reads++
+      Buffer.fill(128)
+      return #Buffer
+   end, function(Audio, Handle) completed++ end, SFM_U8_BIT_MONO, 48000, 0, nil)
+   assert(err is ERR_Okay)
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(audio, channel, sample)
+   check mAudio.MixFrequency(audio, channel, 48000)
+   started = mSys.PreciseTime()
+   check mAudio.MixPlay(audio, channel, 0)
+   deadline = started + 500000
+   while reads is 0 and mSys.PreciseTime() < deadline do processing.sleep(0.005) end
+   assert(reads > 0, 'Producer must prefill before the client stalls')
+   before = reads
+   mSys.WaitTime(-0.2)
+   assert(reads is before and completed is 0, 'The worker must not invoke client callbacks')
+   deadline = started + (1 + audio.mixerLag + 0.5) * 1000000
+   while completed is 0 and mSys.PreciseTime() < deadline do processing.sleep(0.005) end
+   assert(completed is 1, 'Prefetched playback must finish despite the client delay')
+end

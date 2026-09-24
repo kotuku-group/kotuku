@@ -186,7 +186,7 @@ class objAudio : public Object {
    ADF Flags;         // Special audio flags can be set here.
    int BitDepth;      // The bit depth affects the overall quality of audio input and output.
    int Periods;       // Defines the number of periods that make up the internal audio buffer.
-   int PeriodSize;    // Defines the byte size of each period allocated to the internal audio buffer.
+   int PeriodSize;    // Defines the number of frames in each ALSA period.
 
    // Action stubs
 

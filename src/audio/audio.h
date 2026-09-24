@@ -2,6 +2,18 @@
 using namespace kt;
 
 #include <variant>
+#include <mutex>
+#include <optional>
+#ifdef ALSA_ENABLED
+#include <pthread.h>
+#include <atomic>
+#include <poll.h>
+#include <sys/eventfd.h>
+#endif
+#include "audio_buffer.h"
+#ifdef ALSA_ENABLED
+#include "audio_worker.h"
+#endif
 #include "mixer_dispatch.h"
 
 #ifdef _WIN32
@@ -83,7 +95,6 @@ static const int16_t WAVE_RAW   = 0x0001;  // Uncompressed waveform data.
 static const int16_t WAVE_ADPCM = 0x0002;  // ADPCM compressed waveform data.
 static const int16_t WAVE_FLOAT = 0x0003;  // Uncompressed floating point waveform
 
-const int DEFAULT_BUFFER_SIZE = 8096; // Measured in samples, not bytes
 
 struct PlatformData { void *Void; };
 
@@ -103,6 +114,20 @@ struct AudioSample {
    SFM      SampleType;   // Type of sample (bit format)
    LTYPE    Loop1Type;    // First loop type (unidirectional, bidirectional)
    LTYPE    Loop2Type;    // Second loop type (unidirectional, bidirectional)
+   #ifdef ALSA_ENABLED
+   uint64_t Generation = 0;
+   uint64_t DeferredStops = 0;
+   int64_t DeferredStopDue = 0;
+   AudioRingCursor Ring;
+   int SourceOffset = 0;
+   int64_t RetryAt = 0;
+   bool Refilling = false;
+   bool SourceSeek = true;
+   bool RefillPending = false;
+   bool Prefilled = false;
+   bool Starved = false;
+   bool EndOfSource = false;
+   #endif
    bool     Stream;       // True if this is a stream
 
    AudioSample() {
@@ -110,11 +135,25 @@ struct AudioSample {
       clear();
    }
 
+   AudioSample(AudioSample and) noexcept = default;
+   AudioSample &operator=(AudioSample and) noexcept = default;
+   AudioSample(const AudioSample &) = delete;
+   AudioSample &operator=(const AudioSample &) = delete;
+
    ~AudioSample() {
       clear();
    }
 
    void clear() {
+      #ifdef ALSA_ENABLED
+      ++Generation;
+      DeferredStops = 0;
+      Ring.Read = Ring.Used = 0;
+      RefillPending = Prefilled = Starved = EndOfSource = false;
+      RetryAt = 0;
+      Refilling = false;
+      #endif
+      Stream = false;
       Callback.clear();
       OnStop.clear();
       std::vector<uint8_t>().swap(Data);
@@ -190,6 +229,11 @@ struct ChannelSet {
       clear();
    }
 
+   ChannelSet(ChannelSet and) noexcept = default;
+   ChannelSet &operator=(ChannelSet and) noexcept = default;
+   ChannelSet(const ChannelSet &) = delete;
+   ChannelSet &operator=(const ChannelSet &) = delete;
+
    ~ChannelSet() {
       clear();
    }
@@ -197,6 +241,7 @@ struct ChannelSet {
    void clear() {
       Channel.clear();
       Shadow.clear();
+      Commands.clear();
       UpdateRate = 0;
       MixLeft    = SAMPLE(0);
    }
@@ -227,6 +272,9 @@ struct MixTimer {
 
 class extAudio : public objAudio {
    public:
+   // Public entry points and the mixer share this lock.  The worker never takes the Core object lock.
+   std::recursive_mutex MixerMutex;
+   int StreamBufferMs = 1000; // Source prefetch duration; independent of output latency.
    std::vector<ChannelSet> Sets; // Channels are grouped into sets.  Index 0 is a dummy entry.
    std::vector<AudioSample> Samples; // Buffered samples loaded into the audio object.
    std::vector<VolumeCtl> Volumes;
@@ -239,6 +287,24 @@ class extAudio : public objAudio {
       uint8_t  PlatformData[128];  // Data area for holding platform/hardware specific information
    #endif
    #ifdef ALSA_ENABLED
+      pthread_t Worker{};
+      bool WorkerStarted = false;
+      std::atomic<bool> StopWorker{true};
+      std::atomic<int> WorkerError{0};
+      int WakeFD = -1;
+      int NotifyFD = -1;
+      std::vector<pollfd> PollDescriptors;
+      std::array<AudioCommand, 1024> PendingCommands;
+      size_t PendingCount = 0;
+      struct Notification { int Sample; uint64_t Generation; int64_t Due; };
+      std::array<Notification, 4096> Notifications;
+      size_t NotificationCount = 0;
+      AudioWorkerStats WorkerStats;
+      uint64_t Starvations = 0;
+      float FilterHistory[4] = {};
+      snd_pcm_uframes_t PeriodFrames = 0;
+      snd_pcm_uframes_t BufferFrames = 0;
+      unsigned FrameBytes = 0;
       std::vector<uint8_t> AudioBuffer;
       snd_pcm_t    *Handle;
       snd_mixer_t  *MixHandle;
@@ -255,7 +321,9 @@ class extAudio : public objAudio {
    bool    Initialising;
 
    inline struct AudioChannel * GetChannel(int Handle) {
-      return &this->Sets[Handle>>16].Channel[Handle & 0xffff];
+      const auto index = unsigned(Handle) >> 16;
+      if (index >= Sets.size() or size_t(Handle & 0xffff) >= Sets[index].Channel.size()) return nullptr;
+      return &this->Sets[index].Channel[Handle & 0xffff];
    }
 
    inline struct AudioChannel * GetShadow(int Handle) {
@@ -268,6 +336,7 @@ class extAudio : public objAudio {
    }
 
    inline double MixerLag();
+   void reset_lag() { mixerLag = 0; }
 
    inline void finish(AudioChannel &Channel, bool Notify);
 
@@ -275,7 +344,7 @@ class extAudio : public objAudio {
    ~extAudio();
 
    private:
-      double mixerLag;
+      double mixerLag = 0;
 };
 
 class extSound : public objSound {
@@ -294,6 +363,7 @@ class extSound : public objSound {
    int   DataOffset;         // Start of raw audio data within the source file
    int   Note;               // Note to play back (e.g. C, C#, G...)
    std::string NoteString;
+   bool  FeedingStream = false;
    bool  Active;             // True once the sound is registered with the audio driver or mixer.
 
    extSound(objMetaClass *ClassPtr, OBJECTID ObjectID) : objSound(ClassPtr, ObjectID) {
@@ -306,4 +376,48 @@ class extSound : public objSound {
    }
 
    ~extSound();
+};
+
+#ifdef ALSA_ENABLED
+static thread_local bool glAudioWorker = false;
+
+static void wake_audio(extAudio *Self)
+{
+   if (Self->WakeFD >= 0) {
+      uint64_t value = 1;
+      (void)write(Self->WakeFD, &value, sizeof(value));
+   }
+}
+
+static void notify_audio(extAudio *Self)
+{
+   if (Self->NotifyFD >= 0) {
+      uint64_t value = 1;
+      (void)write(Self->NotifyFD, &value, sizeof(value));
+   }
+}
+
+static void execute_audio_command(extAudio *, const AudioCommand &);
+static ERR start_audio_worker(extAudio *);
+static void stop_audio_worker(extAudio *);
+static void request_stream(extAudio *, AudioSample &);
+#endif
+
+// Logging may acquire Core locks or perform I/O, so it is disabled on the PCM worker.
+class AudioLog {
+   std::optional<kt::Log> logger;
+public:
+   AudioLog(CSTRING Name) {
+      #ifdef ALSA_ENABLED
+      if (glAudioWorker) return;
+      #endif
+      logger.emplace(Name);
+   }
+   ERR warning(ERR Error) { if (logger) return logger->warning(Error); return Error; }
+   template<class... Args> void warning(CSTRING Format, const Args &... Values) {
+      if (logger) logger->warning(Format, Values...);
+   }
+   template<class... Args> void traceBranch(CSTRING Format, const Args &... Values) {
+      if (logger) logger->traceBranch(Format, Values...);
+   }
 };

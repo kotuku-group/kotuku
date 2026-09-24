@@ -47,14 +47,12 @@ static ERR init_audio(extAudio *Self)
 
 inline double extAudio::MixerLag() {
    if (!mixerLag) {
-      kt::Log log(__FUNCTION__);
       #ifdef _WIN32
          // Windows uses a split buffer technique, so the write cursor is always 1/2 a buffer ahead.
          mixerLag = MIX_INTERVAL + (double(MixElements>>1) / double(OutputRate));
       #elif ALSA_ENABLED
-         mixerLag = MIX_INTERVAL + (double(AudioBuffer.size()) / double(DriverBitSize)) / double(OutputRate);
+         mixerLag = audio_latency(BufferFrames, OutputRate);
       #endif
-      log.trace("Mixer lag: %.2f", mixerLag);
    }
    return mixerLag;
 }
@@ -64,11 +62,18 @@ inline void extAudio::finish(AudioChannel &Channel, bool Notify) {
       Channel.State = CHS::FINISHED;
       if ((Channel.SampleHandle) and (Notify)) {
          #ifdef ALSA_ENABLED
-            if ((Channel.EndTime) and (PreciseTime() < Channel.EndTime)) {
-               this->MixTimers.emplace_back(Channel.EndTime, Channel.SampleHandle);
-               Channel.EndTime = 0;
+            if (NotificationCount < Notifications.size()) {
+               Notifications[NotificationCount++] = { Channel.SampleHandle,
+                  Samples[Channel.SampleHandle].Generation,
+                  PreciseTime() + int64_t(MixerLag() * 1000000) };
             }
-            else audio_stopped_event(*this, Channel.SampleHandle);
+            else {
+               // Preserve completions during an extended client stall without allocating on the worker.
+               auto &sample = Samples[Channel.SampleHandle];
+               ++sample.DeferredStops;
+               sample.DeferredStopDue = PreciseTime() + int64_t(MixerLag() * 1000000);
+            }
+            notify_audio(this);
          #else
             audio_stopped_event(*this, Channel.SampleHandle);
          #endif
@@ -109,6 +114,10 @@ static ERR AUDIO_Activate(extAudio *Self)
 {
    kt::Log log;
 
+   #ifdef ALSA_ENABLED
+   if (Self->WorkerStarted and !Self->StopWorker) return ERR::Okay;
+   if (Self->WorkerStarted) free_alsa(Self);
+   #endif
    if (Self->Initialising) return ERR::Okay;
 
    log.branch();
@@ -118,6 +127,9 @@ static ERR AUDIO_Activate(extAudio *Self)
    ERR error;
    if ((error = init_audio(Self)) != ERR::Okay) {
       Self->Initialising = false;
+      #ifdef ALSA_ENABLED
+      free_alsa(Self);
+      #endif
       return error;
    }
 
@@ -166,11 +178,16 @@ static ERR AUDIO_Activate(extAudio *Self)
       }
    #endif
 
-   // Note: The audio feed is managed by audio_timer() and is not started until an audio playback command
-   // is executed by the client.
+   // ALSA owns a readiness worker; the Win32 feed starts its timer on the first playback command.
 
    Self->Initialising = false;
+   #ifdef ALSA_ENABLED
+   auto worker_error = start_audio_worker(Self);
+   if (worker_error != ERR::Okay) free_alsa(Self);
+   return worker_error;
+   #else
    return ERR::Okay;
+   #endif
 }
 
 /*********************************************************************************************************************
@@ -233,6 +250,12 @@ ERR AUDIO_AddSample(extAudio *Self, struct snd::AddSample *Args)
 
    if (Args->Data.size_bytes() > size_t(INT_MAX)) return log.warning(ERR::Args);
 
+   std::vector<uint8_t> data;
+   if (Args->SampleFormat != SFM::NIL) data.assign(Args->Data.begin(), Args->Data.end());
+   std::vector<AudioSample> sample_slots;
+   if (Self->Samples.size() + 10 > Self->Samples.capacity()) sample_slots.reserve(Self->Samples.size() + 10);
+   std::lock_guard mixer_lock(Self->MixerMutex);
+
    // Find an unused sample block.  If there is none, increase the size of the sample management area.
 
    int idx;
@@ -240,12 +263,19 @@ ERR AUDIO_AddSample(extAudio *Self, struct snd::AddSample *Args)
       if (Self->Samples[idx].Data.empty()) break;
    }
 
-   if (idx >= std::ssize(Self->Samples)) Self->Samples.resize(std::ssize(Self->Samples)+10);
+   if (idx >= std::ssize(Self->Samples)) {
+      if (sample_slots.capacity()) {
+         for (auto &entry : Self->Samples) sample_slots.emplace_back(std::move(entry));
+         Self->Samples.swap(sample_slots);
+      }
+      Self->Samples.resize(Self->Samples.size() + 10);
+   }
 
    auto shift = sample_shift(Args->SampleFormat);
 
    auto &sample = Self->Samples[idx];
    deref_audio_sample(sample);
+   sample.clear();
    sample.SampleType   = Args->SampleFormat;
    sample.SampleLength = SAMPLE(Args->Data.size_bytes() >> shift);
    sample.BufferedLength = BYTELEN(0);
@@ -270,13 +300,7 @@ ERR AUDIO_AddSample(extAudio *Self, struct snd::AddSample *Args)
       sample.Loop2Type = LTYPE::NIL;
    }
 
-   if ((sample.SampleType IS SFM::NIL) or Args->Data.empty()) {
-      sample.Data.clear();
-   }
-   else {
-      sample.Data.resize(Args->Data.size_bytes());
-      copymem(Args->Data.data(), sample.Data.data(), Args->Data.size_bytes());
-   }
+   sample.Data.swap(data);
 
    Args->Result = idx;
    return ERR::Okay;
@@ -297,6 +321,13 @@ is `INT callback(INT SampleHandle, INT Offset, UINT8 *Buffer, INT BufferSize)`.
 The `Offset` reflects the retrieval point of the decoded data and is measured in bytes.  The `Buffer` and
 `BufferSize` reflect the target for the decoded data.  The function must return the total number of bytes that were
 written to the `Buffer`. If an error occurs, return zero.
+
+On ALSA, callbacks run on the client thread and fill a frame-aligned source ring.  The saved `StreamBufferMs` setting
+requests 100–10000 ms of source data at #OutputRate (default 1000 ms), capped at 8 MiB per stream and 64 MiB per Audio
+object.  Refills are requested at half capacity.  Initial playback uses the first fill; a short fill permits playback
+with the available data.  A zero-byte result is retried without blocking other sounds.  If the ring empties, that source
+contributes silence and resumes from its preserved position when data arrives.  Source prefetch adds no output queue
+latency.  Sources played faster than #OutputRate exhaust the ring proportionally sooner.
 
 When creating a new stream, pay attention to the audio format that is being used for the sample data.
 It is important to differentiate between 8-bit, 16-bit, mono and stereo, but also be aware of whether or not the data
@@ -350,8 +381,33 @@ static ERR AUDIO_AddStream(extAudio *Self, struct snd::AddStream *Args)
 
    if ((!Args) or (Args->SampleFormat IS SFM::NIL)) return log.warning(ERR::NullArgs);
    if (Args->Callback.Type IS CALL::NIL) return log.warning(ERR::NullArgs);
+   if (Args->PlayOffset < 0) return ERR::OutOfRange;
+   if (Args->Loop and (Args->Loop->Loop1Start < 0 or Args->Loop->Loop1End < Args->Loop->Loop1Start or
+       (Args->SampleLength > 0 and Args->Loop->Loop1End > Args->SampleLength))) return ERR::OutOfRange;
 
    log.branch("Length: %d", Args->SampleLength);
+
+   auto shift = sample_shift(Args->SampleFormat);
+
+   int buffer_len;
+   #ifdef ALSA_ENABLED
+   // Cap each source at 8 MiB and all source rings together at 64 MiB.
+   buffer_len = int(std::min<int64_t>((int64_t(Self->OutputRate) * Self->StreamBufferMs / 1000) << shift,
+      8 * 1024 * 1024));
+   buffer_len = std::max(2 << shift, buffer_len);
+   #else
+   buffer_len = Args->SampleLength > 0 ? std::min(Args->SampleLength / 2, MAX_STREAM_BUFFER) : MAX_STREAM_BUFFER;
+   #endif
+
+   std::vector<uint8_t> data(buffer_len);
+   std::vector<AudioSample> sample_slots;
+   if (Self->Samples.size() + 10 > Self->Samples.capacity()) sample_slots.reserve(Self->Samples.size() + 10);
+   std::lock_guard mixer_lock(Self->MixerMutex);
+   #ifdef ALSA_ENABLED
+   size_t allocated = 0;
+   for (const auto &entry : Self->Samples) if (entry.Stream) allocated += entry.Data.size();
+   if (allocated + buffer_len > 64 * 1024 * 1024) return ERR::AllocMemory;
+   #endif
 
    // Find an unused sample block.  If there is none, increase the size of the sample management area.
 
@@ -360,29 +416,19 @@ static ERR AUDIO_AddStream(extAudio *Self, struct snd::AddStream *Args)
       if (Self->Samples[idx].Data.empty()) break;
    }
 
-   if (idx >= std::ssize(Self->Samples)) Self->Samples.resize(std::ssize(Self->Samples)+10);
-
-   auto shift = sample_shift(Args->SampleFormat);
-
-   int buffer_len;
-   if (Args->SampleLength > 0) {
-      buffer_len = Args->SampleLength / 2;
-      if (buffer_len > MAX_STREAM_BUFFER) buffer_len = MAX_STREAM_BUFFER;
-   }
-   else buffer_len = MAX_STREAM_BUFFER; // Use the recommended amount of buffer space
-
-   #ifdef ALSA_ENABLED
-      auto audio_buffer_size = int(Self->AudioBuffer.size());
-      if (buffer_len < audio_buffer_size) {
-         log.warning("Warning: Buffer length of %d is less than audio buffer size of %d.",
-            buffer_len, audio_buffer_size);
+   if (idx >= std::ssize(Self->Samples)) {
+      if (sample_slots.capacity()) {
+         for (auto &entry : Self->Samples) sample_slots.emplace_back(std::move(entry));
+         Self->Samples.swap(sample_slots);
       }
-   #endif
+      Self->Samples.resize(Self->Samples.size() + 10);
+   }
 
    // Setup the audio sample
 
    auto &sample = Self->Samples[idx];
    deref_audio_sample(sample);
+   sample.clear();
    sample.SampleType   = Args->SampleFormat;
    sample.SampleLength = SAMPLE(buffer_len>>shift);
    sample.StreamLength = BYTELEN((Args->SampleLength > 0) ? Args->SampleLength : 0x7fffffff); // 'Infinite' stream length
@@ -401,14 +447,18 @@ static ERR AUDIO_AddStream(extAudio *Self, struct snd::AddStream *Args)
 
    if (Args->Loop) {
       sample.Loop2Type    = LTYPE::UNIDIRECTIONAL;
-      sample.Loop2Start   = SAMPLE(Args->Loop->Loop1Start);
-      sample.Loop2End     = SAMPLE(Args->Loop->Loop1End);
+      sample.Loop2Start   = SAMPLE(Args->Loop->Loop1Start >> shift);
+      sample.Loop2End     = SAMPLE(Args->Loop->Loop1End >> shift);
       sample.StreamLength = BYTELEN(sample.Loop2End<<shift);
 
       if (sample.Loop2Start IS sample.Loop2End) sample.Loop2Type = LTYPE::NIL;
    }
 
-   sample.Data.resize(buffer_len);
+   sample.Data.swap(data);
+   #ifdef ALSA_ENABLED
+   ++sample.Generation;
+   sample.Ring.Read = sample.Ring.Used = 0;
+   #endif
    Args->Result = idx;
    return ERR::Okay;
 }
@@ -481,6 +531,7 @@ mutates-object
 
 static ERR AUDIO_CloseChannels(extAudio *Self, struct snd::CloseChannels *Args)
 {
+   std::lock_guard mixer_lock(Self->MixerMutex);
    kt::Log log;
 
    if (!Args) return log.warning(ERR::NullArgs);
@@ -488,7 +539,7 @@ static ERR AUDIO_CloseChannels(extAudio *Self, struct snd::CloseChannels *Args)
    log.branch("Handle: $%.8x", Args->Handle);
 
    int index = Args->Handle>>16;
-   if ((index < 0) or (index >= std::ssize(Self->Sets))) log.warning(ERR::Args);
+   if ((index < 1) or (index >= std::ssize(Self->Sets))) return log.warning(ERR::Args);
 
    Self->Sets[index].clear(); // We can't erase because that would mess up other channel handles.
    return ERR::Okay;
@@ -527,6 +578,7 @@ static ERR AUDIO_Deactivate(extAudio *Self)
 
 static ERR AUDIO_Init(extAudio *Self)
 {
+   std::lock_guard mixer_lock(Self->MixerMutex);
    kt::Log log;
 
 #ifdef _WIN32
@@ -579,19 +631,27 @@ static ERR AUDIO_OpenChannels(extAudio *Self, struct snd::OpenChannels *Args)
       return log.warning(ERR::OutOfRange);
    }
 
-   // Bear in mind that the +1 is for channel set 0 being a dummy entry.
+   ChannelSet channels;
+   channels.Channel.resize(Args->Total);
+   #ifdef ALSA_ENABLED
+   channels.Shadow.resize(Args->Total); // Quality may enable oversampling during playback.
+   #else
+   if ((Self->Flags & ADF::OVER_SAMPLING) != ADF::NIL) channels.Shadow.resize(Args->Total);
+   #endif
+   channels.UpdateRate = 125;
+   channels.MixLeft = Self->MixLeft(channels.UpdateRate);
+   channels.Commands.reserve(1024);
 
-   int index = std::ssize(Self->Sets) + 1;
-   Self->Sets.resize(index+1);
-
-   Self->Sets[index].Channel.resize(Args->Total);
-
-   if ((Self->Flags & ADF::OVER_SAMPLING) != ADF::NIL) Self->Sets[index].Shadow.resize(Args->Total);
-   else Self->Sets[index].Shadow.clear();
-
-   Self->Sets[index].UpdateRate = 125;  // Default mixer update rate of 125ms
-   Self->Sets[index].MixLeft    = Self->MixLeft(Self->Sets[index].UpdateRate);
-   Self->Sets[index].Commands.reserve(32);
+   std::vector<ChannelSet> set_slots;
+   if (Self->Sets.size() + 2 > Self->Sets.capacity()) set_slots.reserve(Self->Sets.size() + 2);
+   std::lock_guard mixer_lock(Self->MixerMutex);
+   const int index = Self->Sets.size() + 1; // Set zero remains a dummy entry.
+   if (set_slots.capacity()) {
+      for (auto &entry : Self->Sets) set_slots.emplace_back(std::move(entry));
+      Self->Sets.swap(set_slots);
+   }
+   Self->Sets.resize(index + 1);
+   Self->Sets[index] = std::move(channels);
 
    Args->Result = index<<16;
    return ERR::Okay;
@@ -624,6 +684,8 @@ mutates-object
 
 static ERR AUDIO_RemoveSample(extAudio *Self, struct snd::RemoveSample *Args)
 {
+   std::vector<uint8_t> retired_data;
+   std::lock_guard mixer_lock(Self->MixerMutex);
    kt::Log log;
 
    if (!Args) return log.warning(ERR::NullArgs);
@@ -632,7 +694,25 @@ static ERR AUDIO_RemoveSample(extAudio *Self, struct snd::RemoveSample *Args)
 
    if ((Args->Handle < 1) or (Args->Handle >= std::ssize(Self->Samples))) return log.warning(ERR::OutOfRange);
 
+   #ifdef ALSA_ENABLED
+   flush_audio_commands(Self);
+   #endif
+   for (auto &set : Self->Sets) {
+      for (auto &channel : set.Channel) {
+         if (channel.SampleHandle IS Args->Handle) {
+            channel.State = CHS::STOPPED;
+            channel.SampleHandle = 0;
+         }
+      }
+      for (auto &channel : set.Shadow) {
+         if (channel.SampleHandle IS Args->Handle) {
+            channel.State = CHS::STOPPED;
+            channel.SampleHandle = 0;
+         }
+      }
+   }
    deref_audio_sample(Self->Samples[Args->Handle]);
+   Self->Samples[Args->Handle].Data.swap(retired_data);
    Self->Samples[Args->Handle].clear();
 
    return ERR::Okay;
@@ -671,7 +751,8 @@ static ERR AUDIO_SaveToObject(extAudio *Self, struct acSaveToObject *Args)
       config->write("AUDIO", "Quality", std::to_string(Self->Quality));
       config->write("AUDIO", "BitDepth", std::to_string(Self->BitDepth));
       config->write("AUDIO", "Periods", std::to_string(Self->Periods));
-      config->write("AUDIO", "PeriodSize", std::to_string(Self->PeriodSize));
+      config->write("AUDIO", "StreamBufferMs", std::to_string(Self->StreamBufferMs));
+      config->write("AUDIO", "PeriodFrames", std::to_string(Self->PeriodSize));
 
       if ((Self->Flags & ADF::STEREO) != ADF::NIL) config->write("AUDIO", "Stereo", "TRUE");
       else config->write("AUDIO", "Stereo", "FALSE");
@@ -790,6 +871,7 @@ mutates-object
 
 static ERR AUDIO_SetSampleLength(extAudio *Self, struct snd::SetSampleLength *Args)
 {
+   std::lock_guard mixer_lock(Self->MixerMutex);
    kt::Log log;
 
    if (!Args) return log.warning(ERR::NullArgs);
@@ -801,7 +883,16 @@ static ERR AUDIO_SetSampleLength(extAudio *Self, struct snd::SetSampleLength *Ar
    auto &sample = Self->Samples[Args->Sample];
 
    if (sample.Stream) {
-      sample.StreamLength = BYTELEN(Args->Length);
+      if (Args->Length < -1 or Args->Length > INT_MAX) return ERR::OutOfRange;
+      if (Args->Length >= 0 and sample.Loop2Type != LTYPE::NIL and
+          Args->Length <= (int64_t(sample.Loop2Start) << sample_shift(sample.SampleType))) return ERR::OutOfRange;
+      sample.StreamLength = BYTELEN(Args->Length < 0 ? INT_MAX : Args->Length);
+      #ifdef ALSA_ENABLED
+      sample.EndOfSource = sample.SourceOffset >= sample.StreamLength;
+      const int remaining = std::max(0, int(sample.StreamLength) - int(sample.PlayPos));
+      sample.Ring.Used = std::min(sample.Ring.Used, size_t(remaining));
+      sample.Ring.Used -= sample.Ring.Used % (1 << sample_shift(sample.SampleType));
+      #endif
       return ERR::Okay;
    }
    else return log.warning(ERR::NoSupport);
@@ -851,6 +942,7 @@ blocking, mutates-object
 
 static ERR AUDIO_SetVolume(extAudio *Self, struct snd::SetVolume *Args)
 {
+   std::unique_lock mixer_lock(Self->MixerMutex);
    kt::Log log;
 
 #ifdef ALSA_ENABLED
@@ -865,7 +957,25 @@ static ERR AUDIO_SetVolume(extAudio *Self, struct snd::SetVolume *Args)
       return log.warning(ERR::OutOfRange);
    }
    if (Self->Volumes.empty()) return log.warning(ERR::NoSupport);
-   if (!Self->MixHandle) return ERR::NotInitialised;
+   if (!Self->MixHandle) {
+      for (auto &volume : Self->Volumes) {
+         if (!iequals("Master", volume.Name)) continue;
+         if (Args->Volume >= 0) {
+            Self->MasterVolume = Args->Volume;
+            volume.Channels[0] = Args->Volume;
+         }
+         if ((Args->Flags & SVF::MUTE) != SVF::NIL) {
+            Self->Mute = true;
+            volume.Flags |= VCF::MUTE;
+         }
+         if ((Args->Flags & SVF::UNMUTE) != SVF::NIL) {
+            Self->Mute = false;
+            volume.Flags &= ~VCF::MUTE;
+         }
+         break;
+      }
+      return ERR::Okay;
+   }
 
    // Determine what mixer we are going to adjust
 
@@ -895,6 +1005,8 @@ static ERR AUDIO_SetVolume(extAudio *Self, struct snd::SetVolume *Args)
          Self->Mute = true;
       }
    }
+
+   mixer_lock.unlock();
 
    // Apply the volume
 
@@ -1052,16 +1164,17 @@ static ERR AUDIO_SetVolume(extAudio *Self, struct snd::SetVolume *Args)
 -FIELD-
 BitDepth: The bit depth affects the overall quality of audio input and output.
 
-This field manages the bit depth for audio mixing and output.  Valid bit depths are `8`, `16` and `24`, with `16`
-being the recommended value for CD quality playback.
+ALSA supports `8`, `16` and `32` (floating point) output.  The recommended value for CD quality playback is `16`.
 
 *********************************************************************************************************************/
 
 static ERR SET_BitDepth(extAudio *Self, int Value)
 {
+   std::lock_guard mixer_lock(Self->MixerMutex);
    if (Value IS 16) Self->BitDepth = 16;
    else if (Value IS 8) Self->BitDepth = 8;
    else if (Value IS 24) Self->BitDepth = 24;
+   else if (Value IS 32) Self->BitDepth = 32;
    else return ERR::InvalidValue;
    return ERR::Okay;
 }
@@ -1075,12 +1188,15 @@ A host platform may have multiple audio devices installed, but a given audio obj
 at a time.  A new audio object will always represent the default device initially.  Choose a different device by
 setting the `Device` field to a valid alternative.
 
-The default device can always be referenced with a name of `default`.
+The default device can always be referenced with a name of `default`.  ALSA PCM names such as `hw:0,0` and
+`plughw:0,0` are also accepted.  Direct hardware access can avoid sound-server buffering, but may require exclusive
+access and stricter sample-format support.
 
 *********************************************************************************************************************/
 
 static ERR GET_Device(extAudio *Self, std::string_view &Value)
 {
+   std::lock_guard mixer_lock(Self->MixerMutex);
    Value = Self->Device;
    if (not Self->Device.empty()) return ERR::Okay;
    else return ERR::FieldNotSet;
@@ -1128,6 +1244,7 @@ a value between `0` and `1.0`.
 
 static ERR GET_MasterVolume(extAudio *Self, double *Value)
 {
+   std::lock_guard mixer_lock(Self->MixerMutex);
    *Value = Self->MasterVolume;
    return ERR::Okay;
 }
@@ -1145,13 +1262,16 @@ static ERR SET_MasterVolume(extAudio *Self, double Value)
 -FIELD-
 MixerLag: Returns the lag time of the internal mixer, measured in seconds.
 
-This field will return the worst-case value for latency imposed by the internal audio mixer.  The value is measured
-in seconds and will differ between platforms and user configurations.
+This field reports the configured mixer queue duration in seconds.  On ALSA it is the negotiated buffer size
+in frames divided by the output rate, and is zero while inactive.  It excludes client scheduling, source starvation,
+and downstream sound-server or wireless-device buffering; it is not an acoustic latency guarantee.
+Source prefetch uses the saved `StreamBufferMs` setting (100–10000 ms, default 1000 ms) independently of this value.
 
 *********************************************************************************************************************/
 
 static ERR GET_MixerLag(extAudio *Self, double *Value)
 {
+   std::lock_guard mixer_lock(Self->MixerMutex);
    *Value = Self->MixerLag();
    return ERR::Okay;
 }
@@ -1168,6 +1288,7 @@ field to `false`.  Muting does not disable the audio system, which is achieved b
 
 static ERR GET_Mute(extAudio *Self, int *Value)
 {
+   std::lock_guard mixer_lock(Self->MixerMutex);
    *Value = FALSE;
    for (int i=0; i < std::ssize(Self->Volumes); i++) {
       if (iequals("Master", Self->Volumes[i].Name)) {
@@ -1197,8 +1318,9 @@ The OutputRate can only be set prior to initialisation, further attempts to set 
 
 static ERR SET_OutputRate(extAudio *Self, int Value)
 {
+   std::lock_guard mixer_lock(Self->MixerMutex);
    if (Value < 0) return ERR::OutOfRange;
-   else if (Value > 44100) Self->OutputRate = 44100;
+   else if (Value > 192000) Self->OutputRate = 192000;
    else Self->OutputRate = Value;
    return ERR::Okay;
 }
@@ -1218,7 +1340,7 @@ system processes data period by period, allowing for predictable latency charact
 <list type="bullet">
 <li><b>Minimum</b>: 2 periods (provides double-buffering for basic audio continuity)</li>
 <li><b>Maximum</b>: 16 periods (enables extensive buffering for demanding applications)</li>
-<li><b>Recommended</b>: 4 periods (balances latency and reliability for most use cases)</li>
+<li><b>Recommended</b>: 3 periods (balances latency and reliability for most use cases)</li>
 </list>
 
 Fewer periods reduce overall system latency but increase the risk of audio dropouts if processing cannot keep pace with
@@ -1228,49 +1350,27 @@ audio consumption. More periods provide greater buffering security at the cost o
 
 static ERR SET_Periods(extAudio *Self, int Value)
 {
-   Self->Periods = Value;
-   if (Self->Periods < 2) Self->Periods = 2;
-   else if (Self->Periods > 16) Self->Periods = 16;
+   std::lock_guard mixer_lock(Self->MixerMutex);
+   Self->Periods = audio_period_count(Value);
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 
 -FIELD-
-PeriodSize: Defines the byte size of each period allocated to the internal audio buffer.
+PeriodSize: Defines the number of frames in each ALSA period.
 
-The PeriodSize field determines the granularity of audio buffer management, affecting system responsiveness, processing
-efficiency, and overall audio quality. This setting works in conjunction with the #Periods field to define the complete
-buffering architecture.
-
-<list type="bullet">
-<li><b>Minimum</b>: 1024 bytes (1KB) - Enables very low latency but requires high-performance processing.</li>
-<li><b>Maximum</b>: 16384 bytes (16KB) - Provides maximum buffering and processing time per period.</li>
-<li><b>Recommended</b>: 2048 bytes (2KB) - Optimal balance for most applications and hardware configurations.</li>
-</list>
-
-Period latency (in seconds) = `PeriodSize ÷ (SampleRate × Channels × BytesPerSample)`
-
-For example, with a 2048-byte period at 44100Hz stereo 16-bit `Latency = 2048 ÷ (44100 × 2 × 2) = 11.6ms per period`
-
-The combination of PeriodSize and #Periods creates a multi-stage buffering system where audio data flows through
-sequential periods, providing time for processing whilst maintaining continuous playback.
-
-<header>Application Guidelines</header>
-
-<list type="bullet">
-<li><b>Real-time applications</b>: Use smaller periods (1-2KB) with fewer periods for minimal latency.</li>
-<li><b>General applications</b>: Use medium periods (2-4KB) with 4 periods for reliable performance.</li>
-<li><b>Background audio</b>: Use larger periods (8-16KB) with more periods for maximum efficiency.</li>
-</list>
+A frame contains one sample for every output channel.  Period duration is `PeriodSize / OutputRate` seconds,
+independent of bit depth and channel count.  The default ALSA request is 256 frames in three periods.
+Values are clamped to 32–16384 frames before activation; ALSA may negotiate a different value.
+After activation this field reports the negotiated period size.
 
 *********************************************************************************************************************/
 
 static ERR SET_PeriodSize(extAudio *Self, int Value)
 {
-   Self->PeriodSize = Value;
-   if (Self->PeriodSize < 1024) Self->PeriodSize = 1024;
-   else if (Self->PeriodSize > 16384) Self->PeriodSize = 16384;
+   std::lock_guard mixer_lock(Self->MixerMutex);
+   Self->PeriodSize = audio_period_frames(Value);
    return ERR::Okay;
 }
 
@@ -1298,14 +1398,16 @@ Setting the Quality value automatically adjusts the following processing flags:
 
 static ERR SET_Quality(extAudio *Self, int Value)
 {
+   std::lock_guard mixer_lock(Self->MixerMutex);
    Self->Quality = Value;
 
    Self->Flags &= ~(ADF::FILTER_LOW|ADF::FILTER_HIGH|ADF::OVER_SAMPLING);
 
-   if (Self->Quality < 10) return ERR::Okay;
+   if (Self->Quality < 10) {}
    else if (Self->Quality < 33) Self->Flags |= ADF::FILTER_LOW;
    else if (Self->Quality < 66) Self->Flags |= ADF::FILTER_HIGH;
    else Self->Flags |= ADF::OVER_SAMPLING|ADF::FILTER_HIGH;
+   Self->MixConfig = AudioConfig(Self->Stereo, (Self->Flags & ADF::OVER_SAMPLING) != ADF::NIL);
 
    return ERR::Okay;
 }
@@ -1321,6 +1423,7 @@ Stereo: Set to `true` for stereo output and `false` for mono output.
 
 static ERR GET_Stereo(extAudio *Self, int *Value)
 {
+   std::lock_guard mixer_lock(Self->MixerMutex);
    if ((Self->Flags & ADF::STEREO) != ADF::NIL) *Value = TRUE;
    else *Value = FALSE;
    return ERR::Okay;
@@ -1328,6 +1431,7 @@ static ERR GET_Stereo(extAudio *Self, int *Value)
 
 static ERR SET_Stereo(extAudio *Self, int Value)
 {
+   std::lock_guard mixer_lock(Self->MixerMutex);
    if (Value IS TRUE) Self->Flags |= ADF::STEREO;
    else Self->Flags &= ~ADF::STEREO;
    return ERR::Okay;
@@ -1342,8 +1446,13 @@ extAudio::extAudio(objMetaClass *ClassPtr, OBJECTID ObjectID) : objAudio(ClassPt
    Quality     = 80;
    BitDepth    = 16;
    Flags       = ADF::OVER_SAMPLING|ADF::FILTER_HIGH|ADF::VOL_RAMPING|ADF::STEREO;
+   #ifdef ALSA_ENABLED
+   Periods     = 3;
+   PeriodSize  = 256;
+   #else
    Periods     = 4;
    PeriodSize  = 2048;
+   #endif
    MaxChannels = 8;
    Device      = glAudioDevice.empty() ? "default" : glAudioDevice;
    MasterVolume = 1.0;
@@ -1380,8 +1489,8 @@ extAudio::extAudio(objMetaClass *ClassPtr, OBJECTID ObjectID) : objAudio(ClassPt
       config->read("AUDIO", "BitDepth", BitDepth);
 
       int value;
+      if (!config->read("AUDIO", "StreamBufferMs", value)) StreamBufferMs = std::clamp(value, 100, 10000);
       if (!config->read("AUDIO", "Periods", value)) SET_Periods(this, value);
-      if (!config->read("AUDIO", "PeriodSize", value)) SET_PeriodSize(this, value);
       if (glAudioDevice.empty()) config->read("AUDIO", "Device", Device);
 
       std::string str;
@@ -1390,7 +1499,8 @@ extAudio::extAudio(objMetaClass *ClassPtr, OBJECTID ObjectID) : objAudio(ClassPt
          if (iequals("FALSE", str)) Flags &= ~ADF::STEREO;
       }
 
-      if ((BitDepth != 8) and (BitDepth != 16) and (BitDepth != 24)) BitDepth = 16;
+      if ((BitDepth != 8) and (BitDepth != 16) and (BitDepth != 24) and (BitDepth != 32)) BitDepth = 16;
+      if (!config->read("AUDIO", "PeriodFrames", value)) SET_PeriodSize(this, value);
       SET_Quality(this, Quality);
 
       // Find the mixer section, then load the mixer information
@@ -1442,6 +1552,9 @@ extAudio::~extAudio() {
 
    if (Timer) { UpdateTimer(Timer, 0); Timer = nullptr; }
 
+   #ifdef ALSA_ENABLED
+   stop_audio_worker(this);
+   #endif
    for (auto &sample : Samples) deref_audio_sample(sample);
 
    glSoundChannels.erase(UID);
