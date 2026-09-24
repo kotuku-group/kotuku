@@ -1,5 +1,5 @@
 #!/usr/bin/env origo
--- This script will play WAV and MP3 files for the user.
+-- A basic example for playing WAV and MP3 files
 
 ----------------------------------------------------------------------------------------------------------------------
 -- This function identifies the type of file being loaded and uses the correct class to open it.
@@ -25,28 +25,16 @@ end
    -- Retrieve the sound sample path from the command line arguments
 
    src = arg('src')
-   if src is nil then
-      print('Please supply a source audio file with "src=[file]"')
-      return
-   end
+   src ?! raise 'Please supply a source audio file with "src=[file]"'
 
    seek = tonumber(arg('seek'))
 
    player = id_file(src)
-   if not player then
-      print('Failed to identify the type of the source file "' .. src .. '"')
-      return
-   end
+   player ?! raise 'Failed to identify the type of the source file "' .. src .. '"'
 
    -- Use the processing API to help us manage the program flow
 
    proc = processing.new()
-
-   -- Subscribe to OnStop so that we can exit once the sample has fully played.
-
-   player.onStop = function(Sound)
-      proc.signal()
-   end
 
    -- User can request seeking to a position expressed as 0.0 - 1.0
 
@@ -54,8 +42,14 @@ end
       if (seek > 0) and (seek <= 1.0) then
          player.acSeek(seek, SEEK_RELATIVE)
       else
-         print('Seek must be expressed as a value from 0.0 to 1.0')
+         raise 'Seek must be expressed as a value from 0.0 to 1.0'
       end
+   end
+
+   -- Subscribe to OnStop so that we can exit once the sample has fully played.
+
+   player.onStop = function(Sound)
+      proc.signal()
    end
 
    -- Play the sound and wait for it to finish
@@ -67,5 +61,5 @@ end
 
       proc.sleep(player.audio.mixerLag) -- Slight pause to flush any buffered audio before exiting
    else
-      print('Failed to play audio file.')
+      raise 'Failed to play audio file.'
    end

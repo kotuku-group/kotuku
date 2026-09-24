@@ -5,52 +5,46 @@
   <info>
     <name>Audio</name>
     <type>module</type>
-    <comment>Comprehensive audio processing and playback system with professional-grade mixing capabilities.</comment>
+    <comment>Sample mixing and playback system with a floating-point mixer and platform audio output.</comment>
     <version>1</version>
     <copyright>Paul Manias © 2002-2026</copyright>
     <description>
-<p>The Audio module provides a robust, cross-platform audio infrastructure that manages the complete audio pipeline from sample loading through to hardware output.  The module's architecture supports both high-level convenience interfaces and low-level professional audio control, making it suitable for applications ranging from simple media playback to sophisticated audio production environments.</p>
-<p>The module implements a client-server design pattern with two complementary class interfaces:</p>
+<p>The Audio module manages the audio pipeline from sample loading through to hardware output.  It provides three class interfaces:</p>
 <list type="bullet">
-<li><class name="Audio">Audio</class>: Low-level hardware interface providing precise control over audio mixing, buffering, and output configuration.  Designed for applications requiring professional audio capabilities including real-time processing, multi-channel mixing, and advanced streaming architectures</li>
-<li><class name="Sound">Sound</class>: High-level sample playback interface optimised for simplicity and performance.  Automatically manages resource allocation, format conversion, and hardware abstraction whilst providing intelligent streaming decisions</li>
+<li><class name="Sound">Sound</class>: High-level sample playback.  Loads WAVE files, manages its own resources and decides whether a sample is
+played from memory or streamed.  This is the recommended interface for most applications.</li>
+<li><class name="Audio">Audio</class>: Low-level mixer and device interface.  Provides channel sets, sample buffers and streams, command
+sequencing, and control over output rate, bit depth, buffering and mixing quality.</li>
+<li><class name="AudioEffect">AudioEffect</class>: Base class for DSP processors that attach to a channel set or to the global mix of an <class name="Audio">Audio</class>
+object.</li>
 </list>
-<p>The internal mixer is a floating-point engine that processes all audio internally at 32-bit precision regardless of output bit depth.  The mixer supports features that include:</p>
+<p>The internal mixer processes all audio as 32-bit floating-point data regardless of the output bit depth.  The mixer supports:</p>
 <list type="bullet">
-<li>Oversampling with interpolation for enhanced quality and reduced aliasing</li>
-<li>Real-time volume ramping to eliminate audio artefacts during playback transitions</li>
-<li>Multi-stage filtering with configurable low-pass and high-pass characteristics</li>
-<li>Sample-accurate playback positioning with sub-sample interpolation</li>
-<li>Bidirectional and unidirectional looping with precision loop point handling</li>
+<li>Linear interpolation between sample frames when <code>ADF::OVER_SAMPLING</code> is enabled, reducing aliasing when samples are
+played at rates that differ from the output rate.</li>
+<li>Volume ramping to avoid clicks when channel volumes change, enabled by <code>ADF::VOL_RAMPING</code> in combination with
+<code>ADF::OVER_SAMPLING</code>.</li>
+<li>Two levels of low-pass output smoothing, selected with <code>ADF::FILTER_LOW</code> or <code>ADF::FILTER_HIGH</code>.  The <class name="Audio" field="Quality">Audio.Quality</class>
+field configures the filtering and oversampling flags as a group.</li>
+<li>Unidirectional and bidirectional sample looping, including a secondary loop region.</li>
+<li>Per-channel and global effect chains built from <class name="AudioEffect">AudioEffect</class> processors.</li>
 </list>
-<header>Platform-Specific Optimisations</header>
-<p>Audio implementation is optimised for each supported platform to maximise performance and minimise latency:</p>
+<p>Output behaviour differs by platform:</p>
 <list type="bullet">
-<li><b>Linux (ALSA Integration):</b> Utilises ALSA's period-based buffering with configurable period counts and sizes.  All samples are processed through the unified mixer with support for system-wide volume control and hardware mixer integration</li>
-<li><b>Windows (DirectSound Integration):</b> Implements dual-path audio where simple playback can bypass the internal mixer for reduced latency, whilst complex operations utilise the full mixing pipeline.  Automatic fallback ensures compatibility across Windows audio driver variations</li>
-<li><b>Cross-Platform Consistency:</b> API behaviour remains consistent across platforms, with platform-specific optimisations operating transparently to applications</li>
+<li><b>Linux (ALSA):</b> All playback, including <class name="Sound">Sound</class> objects, is mixed by the internal mixer and written by a
+dedicated worker thread.  Buffering is configured with the <class name="Audio" field="Periods">Audio.Periods</class> and <class name="Audio" field="PeriodSize">Audio.PeriodSize</class> fields, and the
+ALSA mixer is used for system volume control.</li>
+<li><b>Windows (DirectSound):</b> Each <class name="Sound">Sound</class> object is given its own DirectSound buffer and bypasses the internal
+mixer.  Channels opened directly on an <class name="Audio">Audio</class> object are mixed internally and output at a fixed rate of 44.1 kHz.</li>
 </list>
-<header>Streaming and Memory Management</header>
-<p>The module implements streaming technology that automatically adapts to sample characteristics and system resources:</p>
+<p>The <class name="Sound" field="Stream">Sound.Stream</class> field determines whether a sample is loaded into memory or streamed from its source.  With <code>STREAM::SMART</code>, samples larger than 256KB are streamed; with <code>STREAM::ALWAYS</code>, samples larger than 16KB are streamed; with <code>STREAM::NEVER</code>, the sample is always memory-resident.  Loop points are preserved when a sample is streamed.</p>
+<p>Technical specifications:</p>
 <list type="bullet">
-<li>Smart streaming decisions based on sample size, available memory, and playback requirements</li>
-<li>Configurable streaming thresholds with support for forced streaming or memory-resident operation</li>
-<li>Rolling buffer architecture for large samples with automatic buffer management</li>
-<li>Loop-aware streaming that maintains loop points during streaming operations</li>
-</list>
-<header>Usage Guidelines</header>
-<p>For optimal results, choose the appropriate interface based on application requirements:</p>
-<list type="bullet">
-<li><b><class name="Sound">Sound</class> Class (Recommended for Most Applications):</b> Provides immediate audio playback with automatic resource management, format detection, and intelligent streaming.  Ideal for media players, games, and general-purpose audio applications</li>
-<li><b><class name="Audio">Audio</class> Class (Advanced Applications):</b> Offers complete control over the audio pipeline including custom mixer configurations, real-time effects processing, and professional-grade timing control.  Required for audio workstations, synthesisers, and applications with demanding audio requirements</li>
-</list>
-<header>Technical Specifications</header>
-<list type="bullet">
-<li>Internal processing: 32-bit floating-point precision</li>
-<li>Output formats: 8, 16, 24, and 32-bit with automatic conversion</li>
-<li>Sample rates: Up to 44.1 kHz (hardware dependent)</li>
-<li>Channel configurations: Mono and stereo with automatic format adaptation</li>
-<li>Latency: Platform-optimised with configurable buffering for real-time applications</li>
+<li>Internal processing: 32-bit floating-point.</li>
+<li>Output formats: 8-bit and 16-bit integer, and 32-bit floating-point.</li>
+<li>Output rates: Up to 192 kHz, subject to hardware negotiation.  The Windows mixer output is fixed at 44.1 kHz.</li>
+<li>Channel configurations: Mono and stereo output.  Mono and stereo samples are converted to the output layout during
+mixing.</li>
 </list></description>
     <source>
       <file path="src/audio/">audio.cpp</file>
@@ -58,6 +52,8 @@
     </source>
     <classes>
       <class>Audio</class>
+      <class>AudioEffect</class>
+      <class>AudioEqualiser</class>
       <class>Sound</class>
     </classes>
   </info>
@@ -325,6 +321,14 @@
   </function>
 
   <types>
+    <constants lookup="EQB" comment="Parametric equaliser band types.">
+      <const name="HIGH_PASS">High-pass filter; gain is ignored.</const>
+      <const name="HIGH_SHELF">High-frequency shelf with gain in decibels.</const>
+      <const name="LOW_PASS">Low-pass filter; gain is ignored.</const>
+      <const name="LOW_SHELF">Low-frequency shelf with gain in decibels.</const>
+      <const name="PEAK">Bell filter with gain in decibels.</const>
+    </constants>
+
     <constants lookup="LOOP" comment="Loop modes for the AudioLoop structure.">
       <const name="AMIGA">Single loop: Amiga style.</const>
       <const name="AMIGA_NONE">Amiga loop: Do nothing.</const>
@@ -340,6 +344,13 @@
 
   </types>
   <structs>
+    <struct name="AudioEQBand" comment="One parametric equaliser band.">
+      <field name="Type" type="EQB" lookup="EQB">Filter type</field>
+      <field name="Frequency" type="DOUBLE">Centre or corner frequency in hertz</field>
+      <field name="Gain" type="DOUBLE">Band gain in decibels</field>
+      <field name="Q" type="DOUBLE">Quality factor or shelf slope</field>
+    </struct>
+
     <struct name="AudioLoop" comment="Loop settings for the AddSample() method.">
       <field name="LoopMode" type="LOOP" lookup="LOOP">Loop mode (single, double)</field>
       <field name="Loop1Type" type="LTYPE" lookup="LTYPE">First loop type (unidirectional, bidirectional)</field>

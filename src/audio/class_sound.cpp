@@ -1702,7 +1702,7 @@ static ERR SOUND_SET_Playback(extSound *Self, int Value)
 {
    kt::Log log;
 
-   if ((Value < 0) or (Value > 500000)) return ERR::OutOfRange;
+   if ((Value < 0) or (Value > 192000)) return ERR::OutOfRange;
 
    Self->Playback = Value;
    Self->Flags &= ~SDF::NOTE;

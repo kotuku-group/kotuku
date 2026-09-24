@@ -4,6 +4,7 @@ using namespace kt;
 #include <variant>
 #include <mutex>
 #include <optional>
+#include <unordered_map>
 #ifdef ALSA_ENABLED
 #include <pthread.h>
 #include <atomic>
@@ -39,6 +40,7 @@ inline void release_audio_callback(FUNCTION &Function)
    }
 }
 
+//********************************************************************************************************************
 // Audio channel commands
 
 enum class CMD : int {
@@ -58,6 +60,7 @@ enum class CMD : int {
    CONTINUE
 };
 
+//********************************************************************************************************************
 // Sample shift - value used for converting total data size down to samples.
 
 inline const int sample_shift(const SFM Type)
@@ -70,6 +73,8 @@ inline const int sample_shift(const SFM Type)
    }
    return 0;
 }
+
+//********************************************************************************************************************
 
 typedef struct _GUID {
   unsigned long  Data1;
@@ -95,8 +100,9 @@ static const int16_t WAVE_RAW   = 0x0001;  // Uncompressed waveform data.
 static const int16_t WAVE_ADPCM = 0x0002;  // ADPCM compressed waveform data.
 static const int16_t WAVE_FLOAT = 0x0003;  // Uncompressed floating point waveform
 
-
 struct PlatformData { void *Void; };
+
+//********************************************************************************************************************
 
 struct AudioSample {
    FUNCTION Callback;     // For feeding audio streams.
@@ -171,6 +177,8 @@ struct AudioSample {
    }
 };
 
+//********************************************************************************************************************
+
 struct AudioCommand {
    CMD  CommandID;    // Command ID
    int Handle;       // Channel handle
@@ -190,6 +198,8 @@ struct AudioCommand {
 
    AudioCommand() = default;
 };
+
+//********************************************************************************************************************
 
 struct AudioChannel {
    double   LVolume;        // Current left speaker volume after applying Pan (0 - 1.0)
@@ -218,10 +228,64 @@ struct AudioChannel {
    }
 };
 
+class extAudioEffect;
+
+#include "audio_effect_params.h"
+
+//********************************************************************************************************************
+// Separate from Object: a vtable must never precede the framework's fixed object header.
+
+class AudioEffectProcessor {
+public:
+   virtual ~AudioEffectProcessor() = default;
+   virtual void process(float *Buffer, int Frames) = 0;
+   virtual void reset() = 0;
+};
+
+struct AudioEffectChain {
+   std::shared_ptr<std::recursive_mutex> Mutex;
+   std::vector<extAudioEffect *> Effects;
+   uint64_t NextSequence = 0;
+
+   explicit AudioEffectChain(std::shared_ptr<std::recursive_mutex> Lock) : Mutex(std::move(Lock)) { }
+};
+
+class extAudioEffect : public objAudioEffect {
+public:
+   // The weak reference allows Audio or a channel set to disappear before an externally owned effect.
+   std::weak_ptr<AudioEffectChain> Chain;
+   uint64_t Sequence = 0;
+   bool ResetPending = true;
+   // Set by subclass constructors that publish parameters.  Static storage; never freed.
+   const AudioEffectSchema *Schema = nullptr;
+   // Changes staged by SetParameter(), InsertEntry() and RemoveEntry() after initialisation, pending Flush().
+   std::unique_ptr<AudioParamState> Pending;
+
+   extAudioEffect(objMetaClass *ClassPtr, OBJECTID ObjectID) : objAudioEffect(ClassPtr, ObjectID) {
+      AudioID = Channel = Order = OutputRate = Stereo = 0;
+      Flags = AEF::NIL;
+   }
+   ~extAudioEffect();
+   void detach();
+   // Subclasses publish a fully configured processor as their final Init step.  No subsequent unsynchronised writes.
+   ERR set_processor(std::unique_ptr<AudioEffectProcessor> Processor);
+   void process(float *Buffer, int Frames);
+
+private:
+   std::unique_ptr<AudioEffectProcessor> processor;
+};
+
+static void process_effects(AudioEffectChain &, float *, int);
+static void configure_effects(AudioEffectChain &, int, bool);
+
+//********************************************************************************************************************
+
 struct ChannelSet {
    std::vector<AudioChannel> Channel;  // Array of channel objects
    std::vector<AudioChannel> Shadow;   // Array of shadow channels for oversampling
    std::vector<AudioCommand> Commands; // Buffered commands.
+   std::shared_ptr<AudioEffectChain> Effects;
+   std::vector<float> ScratchBuffer;
    int UpdateRate;   // Update rate, measured in milliseconds
    SAMPLE MixLeft;    // Amount of mix elements left before the next command-update occurs
 
@@ -242,10 +306,14 @@ struct ChannelSet {
       Channel.clear();
       Shadow.clear();
       Commands.clear();
+      Effects.reset();
+      ScratchBuffer.clear();
       UpdateRate = 0;
       MixLeft    = SAMPLE(0);
    }
 };
+
+//********************************************************************************************************************
 
 struct VolumeCtl {
    std::string Name;     // Name of the mixer
@@ -264,16 +332,22 @@ struct VolumeCtl {
    }
 };
 
+//********************************************************************************************************************
+
 struct MixTimer {
    int64_t Time;
    int  SampleHandle;
    MixTimer(int64_t pTime, int pHandle) : Time(pTime), SampleHandle(pHandle) { }
 };
 
+//********************************************************************************************************************
+
 class extAudio : public objAudio {
    public:
    // Public entry points and the mixer share this lock.  The worker never takes the Core object lock.
-   std::recursive_mutex MixerMutex;
+   std::shared_ptr<std::recursive_mutex> MixerLock = std::make_shared<std::recursive_mutex>();
+   std::recursive_mutex &MixerMutex = *MixerLock;
+   std::shared_ptr<AudioEffectChain> GlobalEffects = std::make_shared<AudioEffectChain>(MixerLock);
    int StreamBufferMs = 1000; // Source prefetch duration; independent of output latency.
    std::vector<ChannelSet> Sets; // Channels are grouped into sets.  Index 0 is a dummy entry.
    std::vector<AudioSample> Samples; // Buffered samples loaded into the audio object.
@@ -347,6 +421,8 @@ class extAudio : public objAudio {
       double mixerLag = 0;
 };
 
+//********************************************************************************************************************
+
 class extSound : public objSound {
    public:
    FUNCTION OnStop;
@@ -378,6 +454,8 @@ class extSound : public objSound {
    ~extSound();
 };
 
+//********************************************************************************************************************
+
 #ifdef ALSA_ENABLED
 static thread_local bool glAudioWorker = false;
 
@@ -403,7 +481,9 @@ static void stop_audio_worker(extAudio *);
 static void request_stream(extAudio *, AudioSample &);
 #endif
 
+//********************************************************************************************************************
 // Logging may acquire Core locks or perform I/O, so it is disabled on the PCM worker.
+
 class AudioLog {
    std::optional<kt::Log> logger;
 public:

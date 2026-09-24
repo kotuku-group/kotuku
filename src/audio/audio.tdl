@@ -10,6 +10,16 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     "AUTO_SAVE: Save configuration information on exit.",
     "SYSTEM_WIDE: Mixer changes should be applied system-wide.")
 
+  flags("AEF", { comment="Audio effect flags." },
+    "BYPASS: Skip an application effect.  Global effects cannot be bypassed.")
+
+  enums("EQB", { type="int", start=0, comment="Parametric equaliser band types." },
+    "PEAK: Bell filter with gain in decibels.",
+    "LOW_SHELF: Low-frequency shelf with gain in decibels.",
+    "HIGH_SHELF: High-frequency shelf with gain in decibels.",
+    "LOW_PASS: Low-pass filter; gain is ignored.",
+    "HIGH_PASS: High-pass filter; gain is ignored.")
+
   flags("VCF", { comment="Volume control flags" },
     { PLAYBACK = "0x00000001: The mixer supports audio output." },
     { CAPTURE  = "0x00000010: The mixer supports audio input." },
@@ -85,6 +95,13 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     int Loop2End            # End of the second loop
   ]])
 
+  structdef("AudioEQBand", { comment="One parametric equaliser band." }, [[
+    int(EQB) Type       # Filter type
+    double Frequency   # Centre or corner frequency in hertz
+    double Gain        # Band gain in decibels
+    double Q           # Quality factor or shelf slope
+  ]])
+
   methods("Audio", "Snd", {
     { id=1, name="OpenChannels" },
     { id=2, name="CloseChannels" },
@@ -104,6 +121,32 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     int BitDepth       # Typically `8` or `16` bit, reflects the hardware driver's bit depth
     int Periods        # Number of periods for ALSA audio buffering
     int PeriodSize     # Frames per period for ALSA audio buffering
+  ]])
+
+  methods("AudioEffect", "Fx", {
+    { id=1, name="SetParameter" },
+    { id=2, name="GetParameter" },
+    { id=3, name="InsertEntry" },
+    { id=4, name="RemoveEntry" },
+    { id=5, name="GetResponse" },
+    { id=6, name="GetGroupCount" }
+  })
+
+  klass("AudioEffect", { src="class_audioeffect.cpp", output="class_audioeffect_def.c", extended=true }, [[
+    oid Audio
+    int Channel
+    int Order
+    int(AEF) Flags
+    int OutputRate
+    int Stereo
+    ~int Mutable
+    ~string Schema
+  ]])
+
+  klass("AudioEqualiser", { base="AudioEffect", src="class_audioequaliser.cpp",
+    output="class_audioequaliser_def.c", extended=true }, [[
+    ~array(struct(AudioEQBand)) Bands
+    ~double Gain
   ]])
 
   klass("Sound", { src="class_sound.cpp", output="class_sound_def.c", extended=true }, [[

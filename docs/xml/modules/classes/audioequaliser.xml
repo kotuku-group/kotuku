@@ -1,0 +1,74 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>AudioEqualiser</name>
+    <type>class</type>
+    <module>Audio</module>
+    <comment>A parametric equaliser for an Audio mixing chain.</comment>
+    <version>1</version>
+    <id>594edf92</id>
+    <idstring>AUDIOEQUALISER</idstring>
+    <category>Audio</category>
+    <copyright>Paul Manias © 2002-2026</copyright>
+    <description>
+<p>Create as a child of an Audio object or set the inherited Audio field.  Use Channel to process one channel set, or leave it at zero to process the global mix.  Bands run in list order.  Application equalisers accept live changes; global equalisers become immutable after initialisation.</p>
+<p>The equaliser publishes its parameters through the inherited <class name="AudioEffect">AudioEffect</class> schema.  The top-level <code>gain</code> parameter is the output trim.  The <code>bands</code> group holds up to 64 bands, each with <code>type</code>, <code>frequency</code>, <code>gain</code> and <code>q</code> members.  Band gain is ignored by pass filters, and Q is limited to one for shelf filters, where it sets the shelf slope.  New bands are silent peak filters at 1000 Hz until they are edited.</p>
+<p>The following adds a bass shelf to a playing channel set.  The change is applied as a single step by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>:</p>
+<pre>eq.mtInsertEntry('bands', 0)
+eq.mtSetParameter('bands[0].type', EQB_LOW_SHELF)
+eq.mtSetParameter('bands[0].frequency', 100)
+eq.mtSetParameter('bands[0].gain', 4)
+eq.mtSetParameter('bands[0].q', 0.7)
+eq.acFlush()
+</pre>
+<p>Assign the <fl>Bands</fl> field to replace every band at once.</p>
+<p>Live changes crossfade the old and new filter chains over 10 ms, including output trim changes.  An edit during a crossfade replaces a single queued target, which starts its own crossfade when the current one finishes.  Parameter reads and <class name="AudioEffect" method="GetResponse">AudioEffect.GetResponse()</class> describe the latest committed target immediately, even during a transition. Device reactivation and leaving bypass reset filter history and apply the latest target without a crossfade.</p></description>
+    <source>
+      <file>class_audioequaliser.cpp</file>
+    </source>
+  </info>
+
+  <fields>
+    <field>
+      <name>Bands</name>
+      <comment>The ordered array of AudioEQBand structures.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>AudioEQBand[]</type>
+      <description>
+<p>The list can contain at most 64 bands.  Replacing the list clears filter history, so use <class name="AudioEffect" method="SetParameter">AudioEffect.SetParameter()</class> for live adjustment.  A global equaliser accepts this field only before initialisation.  Writes return <code>ERR::InvalidState</code> while changes staged by <class name="AudioEffect" method="SetParameter">AudioEffect.SetParameter()</class> are waiting for <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Gain</name>
+      <comment>Output trim in decibels, applied after all bands.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Writes return <code>ERR::InvalidState</code> while changes staged by <class name="AudioEffect" method="SetParameter">AudioEffect.SetParameter()</class> are waiting for <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>.</p>
+      </description>
+    </field>
+
+  </fields>
+  <types>
+    <constants lookup="EQB" comment="Parametric equaliser band types.">
+      <const name="HIGH_PASS">High-pass filter; gain is ignored.</const>
+      <const name="HIGH_SHELF">High-frequency shelf with gain in decibels.</const>
+      <const name="LOW_PASS">Low-pass filter; gain is ignored.</const>
+      <const name="LOW_SHELF">Low-frequency shelf with gain in decibels.</const>
+      <const name="PEAK">Bell filter with gain in decibels.</const>
+    </constants>
+
+  </types>
+  <structs>
+    <struct name="AudioEQBand" comment="One parametric equaliser band.">
+      <field name="Type" type="EQB" lookup="EQB">Filter type</field>
+      <field name="Frequency" type="DOUBLE">Centre or corner frequency in hertz</field>
+      <field name="Gain" type="DOUBLE">Band gain in decibels</field>
+      <field name="Q" type="DOUBLE">Quality factor or shelf slope</field>
+    </struct>
+
+  </structs>
+</book>

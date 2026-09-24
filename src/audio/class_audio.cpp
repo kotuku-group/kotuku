@@ -150,6 +150,17 @@ static ERR AUDIO_Activate(extAudio *Self)
    Self->MixBuffer.resize(mix_buffer_size / sizeof(float));
    Self->MixElements = SAMPLE(mix_buffer_size / mixbitsize);
 
+   // Activation may negotiate a new rate/layout or resize the mix buffer after deactivation.
+   {
+      std::lock_guard mixer_lock(Self->MixerMutex);
+      configure_effects(*Self->GlobalEffects, Self->OutputRate, Self->Stereo);
+      for (auto &set : Self->Sets) {
+         if (!set.Effects) continue;
+         set.ScratchBuffer.resize(Self->MixBuffer.size());
+         configure_effects(*set.Effects, Self->OutputRate, Self->Stereo);
+      }
+   }
+
    // Configure the mixing system
 
    bool use_interpolation = (Self->Flags & ADF::OVER_SAMPLING) != ADF::NIL;

@@ -1,0 +1,349 @@
+   module audio as mAudio
+
+-- Helpers that interpret an AudioEffect schema without knowledge of the effect class.
+
+function attrib(Tag:table, Name:str):any
+   for a in values(Tag.attribs) do
+      if a.name is Name then return a.value end
+   end
+   return nil
+end
+
+function parse_param(Tag:table):table
+   param = { key=attrib(Tag, 'key'), description=attrib(Tag, 'description'), type=attrib(Tag, 'type'),
+      default=tonumber(attrib(Tag, 'default')), min=tonumber(attrib(Tag, 'min')), max=attrib(Tag, 'max'),
+      options={}, optionDescriptions={}, rules={} }
+   for child in values(Tag.children) do
+      name = child.attribs[0].name
+      if name is 'option' then
+         param.options.insert(tonumber(attrib(child, 'value')))
+         param.optionDescriptions.insert(attrib(child, 'description') ?? '')
+      elseif name is 'rule' then
+         values_list = {}
+         for v in values(attrib(child, 'values').split(',')) do values_list.insert(tonumber(v)) end
+         param.rules.insert({ key=attrib(child, 'key'), values=values_list, max=tonumber(attrib(child, 'max')),
+            inactive=attrib(child, 'inactive') is '1' })
+      end
+   end
+   return param
+end
+
+function parse_schema(Xml:str):table
+   xml = obj.new('xml', { statement=Xml })
+   root = xml.tags[0]
+   assert(root.attribs[0].name is 'effect', 'The schema root must be an effect element')
+   schema = { class=attrib(root, 'class'), description=attrib(root, 'description'), params={}, groups={}, outputs={} }
+   for tag in values(root.children) do
+      name = tag.attribs[0].name
+      if name is 'param' then
+         schema.params.insert(parse_param(tag))
+      elseif name is 'group' then
+         group = { key=attrib(tag, 'key'), description=attrib(tag, 'description'), min=tonumber(attrib(tag, 'min')),
+            max=tonumber(attrib(tag, 'max')), members={} }
+         for member in values(tag.children) do group.members.insert(parse_param(member)) end
+         schema.groups.insert(group)
+      elseif name is 'output' then
+         schema.outputs.insert(attrib(tag, 'key'))
+      end
+   end
+   return schema
+end
+
+-- Choose a valid, non-default value for each member of a parameter set, honouring rules that lower a maximum.
+
+function choose_values(Params:table, Rate:num):table
+   chosen = {}
+   for p in values(Params) do
+      if p.type is 'enum' then chosen[p.key] = p.options[#p.options - 1] end
+   end
+   for p in values(Params) do
+      if p.type != 'enum' then
+         max = (p.max is 'nyquist') ? (Rate * 0.5) : tonumber(p.max)
+         for rule in values(p.rules) do
+            for v in values(rule.values) do
+               if (not rule.inactive) and (chosen[rule.key] is v) and (rule.max < max) then max = rule.max end
+            end
+         end
+         chosen[p.key] = p.min + ((max - p.min) * 0.25)
+      end
+   end
+   return chosen
+end
+
+function new_equaliser(Audio:obj):<obj, num>
+   err, channel = Audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   return obj.new('AudioEqualiser', { audio=Audio, channel=channel }), channel
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function SchemaDrivenModel()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   eq <close> = new_equaliser(audio)
+   schema = parse_schema(eq.schema)
+   assert(schema.class is 'AudioEqualiser')
+   assert(#schema.groups is 1 and schema.outputs[0] is 'response')
+   assert(eq.mutable is 1)
+
+   -- Every item carries a description for presentation to the user.
+
+   assert((schema.description ?? '') != '', 'The effect must be described')
+   for group in values(schema.groups) do
+      assert((group.description ?? '') != '', f'Group {group.key} must be described')
+      for m in values(group.members) do
+         assert((m.description ?? '') != '', f'{group.key}.{m.key} must be described')
+         for i, text in ipairs(m.optionDescriptions) do
+            assert(text != '', f'Option {m.options[i]} of {group.key}.{m.key} must be described')
+         end
+      end
+   end
+   for p in values(schema.params) do assert((p.description ?? '') != '', f'{p.key} must be described') end
+
+   -- Top-level parameters report their defaults, then accept a chosen value.
+
+   top = choose_values(schema.params, eq.outputRate)
+   for p in values(schema.params) do
+      err, value = eq.mtGetParameter(p.key)
+      assert(err is ERR_Okay and value is p.default, f'{p.key} should default to {p.default}')
+      check eq.mtSetParameter(p.key, top[p.key])
+   end
+
+   -- Every group gets one new entry, which reports the published defaults before it is edited.
+
+   for group in values(schema.groups) do
+      check eq.mtInsertEntry(group.key, 0)
+      entry = choose_values(group.members, eq.outputRate)
+      for m in values(group.members) do
+         path = f'{group.key}[0].{m.key}'
+         err, value = eq.mtGetParameter(path)
+         assert(err is ERR_Okay and value is m.default, f'{path} should default to {m.default}, got {value}')
+         check eq.mtSetParameter(path, entry[m.key])
+      end
+   end
+
+   check eq.acFlush()
+
+   for p in values(schema.params) do
+      err, value = eq.mtGetParameter(p.key)
+      assert(err is ERR_Okay and value is top[p.key], f'{p.key} was not committed')
+   end
+   for group in values(schema.groups) do
+      entry = choose_values(group.members, eq.outputRate)
+      for m in values(group.members) do
+         err, value = eq.mtGetParameter(f'{group.key}[0].{m.key}')
+         assert(err is ERR_Okay and value is entry[m.key], f'{group.key}[0].{m.key} was not committed')
+      end
+   end
+end
+
+@Test function PathErrors()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   eq <close> = new_equaliser(audio)
+   check eq.mtInsertEntry('bands', 0)
+   check eq.acFlush()
+
+   assert(eq.mtSetParameter('unknown', 1) is ERR_Search)
+   assert(eq.mtSetParameter('bands[0].unknown', 1) is ERR_Search)
+   assert(eq.mtSetParameter('bands[x].gain', 1) is ERR_Search)
+   assert(eq.mtSetParameter('bands[0]', 1) is ERR_Search)
+   assert(eq.mtSetParameter('bands[1].gain', 1) is ERR_OutOfRange)
+   assert(eq.mtSetParameter('gain', 49) is ERR_InvalidValue)
+   assert(eq.mtSetParameter('bands[0].type', 9) is ERR_InvalidValue)
+   assert(eq.mtSetParameter('bands[0].frequency', 0) is ERR_InvalidValue)
+   assert(eq.mtSetParameter('bands[0].frequency', 24000) is ERR_InvalidValue)
+   err, value = eq.mtGetParameter('bands[5].q')
+   assert(err is ERR_OutOfRange)
+   assert(eq.mtInsertEntry('unknown', 0) is ERR_Search)
+   assert(eq.mtInsertEntry('bands', 5) is ERR_OutOfRange)
+   assert(eq.mtRemoveEntry('bands', -1) is ERR_OutOfRange)
+
+   -- Rejected calls must not leave a working copy behind; the gain field remains writable.
+
+   eq.gain = 1
+   assert(eq.gain is 1)
+
+   -- The group is limited to its published maximum.
+
+   for i in {1 to 64} do check eq.mtInsertEntry('bands', i) end
+   assert(eq.mtInsertEntry('bands', 64) is ERR_OutOfRange)
+   check eq.acFlush()
+   assert(#eq.bands is 64)
+
+   -- A base AudioEffect publishes no schema.
+
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   plain <close> = obj.new('AudioEffect', { audio=audio, channel=channel })
+   assert(plain.schema is '' or plain.schema is nil)
+   assert(plain.mtSetParameter('gain', 0) is ERR_NoSupport)
+   check plain.acFlush()
+end
+
+@Test function StagedChanges()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   eq <close> = new_equaliser(audio)
+   check eq.acFlush() -- Nothing staged
+
+   check eq.mtInsertEntry('bands', 0)
+   check eq.mtSetParameter('bands[0].q', 5)
+   check eq.acFlush()
+
+   -- Staged changes are visible to GetParameter() but not to the committed Bands.
+
+   check eq.mtSetParameter('bands[0].gain', 6)
+   err, value = eq.mtGetParameter('bands[0].gain')
+   assert(err is ERR_Okay and value is 6)
+   assert(eq.bands[0].gain is 0)
+
+   -- Direct field writes are refused while changes are pending.
+
+   try
+      eq.gain = -1
+   except e when ERR_InvalidState
+   success
+      raise 'Gain writes must be refused while changes are staged'
+   end
+
+   check eq.acFlush()
+   assert(eq.bands[0].gain is 6)
+   eq.gain = -1
+   assert(eq.gain is -1)
+
+   -- Switching a Q 5 peak to a shelf only passes if the Q change is flushed with it.
+
+   check eq.mtSetParameter('bands[0].type', EQB_LOW_SHELF)
+   assert(eq.acFlush() is ERR_InvalidValue)
+   assert(eq.bands[0].type is EQB_PEAK and eq.bands[0].q is 5, 'A failed flush must leave the effect unchanged')
+   err, value = eq.mtGetParameter('bands[0].type')
+   assert(value is EQB_PEAK, 'A failed flush must discard the working copy')
+
+   check eq.mtSetParameter('bands[0].type', EQB_LOW_SHELF)
+   check eq.mtSetParameter('bands[0].q', 0.7)
+   check eq.acFlush()
+   assert(eq.bands[0].type is EQB_LOW_SHELF and eq.bands[0].q is 0.7)
+
+   -- Paths follow the working copy after insertion and removal.
+
+   check eq.mtInsertEntry('bands', 0)
+   check eq.mtSetParameter('bands[0].frequency', 250)
+   err, value = eq.mtGetParameter('bands[1].type')
+   assert(value is EQB_LOW_SHELF)
+   check eq.mtRemoveEntry('bands', 1)
+   assert(#eq.bands is 1 and eq.bands[0].type is EQB_LOW_SHELF)
+   check eq.acFlush()
+   assert(#eq.bands is 1 and eq.bands[0].type is EQB_PEAK and eq.bands[0].frequency is 250)
+end
+
+@Test function PreInitialisation()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+
+   -- Before initialisation, changes apply directly and Init() validates the rules.
+
+   eq = audio.new('AudioEqualiser')
+   eq.channel = channel
+   check eq.mtInsertEntry('bands', 0)
+   check eq.mtSetParameter('bands[0].frequency', 120)
+   assert(#eq.bands is 1 and eq.bands[0].frequency is 120)
+   eq.init()
+   assert(eq.bands[0].frequency is 120)
+
+   bad = audio.new('AudioEqualiser')
+   bad.channel = channel
+   check bad.mtInsertEntry('bands', 0)
+   check bad.mtSetParameter('bands[0].type', EQB_HIGH_SHELF)
+   check bad.mtSetParameter('bands[0].q', 3)
+   try
+      bad.init()
+   except e
+      assert(e.code is ERR_InvalidValue, f'Expected ERR_InvalidValue, got {e.code}')
+   success
+      raise 'Init() must reject a shelf with Q above one'
+   end
+end
+
+@Test function ResponseCurve()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   eq <close> = new_equaliser(audio)
+   check eq.mtInsertEntry('bands', 0)
+   check eq.mtSetParameter('bands[0].gain', 6)
+   check eq.mtSetParameter('bands[0].q', 1)
+   check eq.acFlush()
+   eq.gain = -2
+
+   frequencies = array<double> { 20, 1000, 20000 }
+   magnitudes = array<double, 3>
+   check eq.mtGetResponse(frequencies, magnitudes)
+   assert(math.abs(magnitudes[1] - 4) < 0.001, f'Expected 4 dB at the centre, got {magnitudes[1]}')
+   assert(math.abs(magnitudes[0] + 2) < 0.05)
+
+   -- Staged changes are not included.
+
+   check eq.mtSetParameter('bands[0].gain', -6)
+   check eq.mtGetResponse(frequencies, magnitudes)
+   assert(math.abs(magnitudes[1] - 4) < 0.001)
+   check eq.acFlush()
+
+   assert(eq.mtGetResponse(frequencies, array<double, 2>) is ERR_Args)
+   assert(eq.mtGetResponse(array<double, 0>, array<double, 0>) is ERR_Args)
+   assert(eq.mtGetResponse(array<double> { 0 }, array<double, 1>) is ERR_InvalidValue)
+   assert(eq.mtGetResponse(array<double> { 24000 }, array<double, 1>) is ERR_InvalidValue)
+
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   plain <close> = obj.new('AudioEffect', { audio=audio, channel=channel })
+   assert(plain.mtGetResponse(frequencies, magnitudes) is ERR_NoSupport)
+end
+
+@Test function GlobalEffectsAreImmutable()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   eq = audio.new('AudioEqualiser')
+   check eq.mtInsertEntry('bands', 0)
+   eq.init()
+   assert(eq.mutable is 0)
+   assert(eq.mtSetParameter('bands[0].gain', 1) is ERR_Immutable)
+   assert(eq.mtInsertEntry('bands', 1) is ERR_Immutable)
+   assert(eq.mtRemoveEntry('bands', 0) is ERR_Immutable)
+   err, value = eq.mtGetParameter('bands[0].frequency')
+   assert(err is ERR_Okay and value is 1000, 'Global effects remain readable')
+   check eq.acFlush()
+end
+
+@Test function GroupCounts()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   eq <close> = new_equaliser(audio)
+   err, count = eq.mtGetGroupCount('bands')
+   assert(err is ERR_Okay and count is 0)
+   assert(eq.mtGetGroupCount('missing') is ERR_Search)
+
+   check eq.mtInsertEntry('bands', 0)
+   _, count = check eq.mtGetGroupCount('bands')
+   assert(count is 1 and #eq.bands is 0, 'Counts must include staged insertions')
+   check eq.acFlush()
+   _, count = check eq.mtGetGroupCount('bands')
+   assert(count is 1 and #eq.bands is 1)
+
+   check eq.mtRemoveEntry('bands', 0)
+   _, count = check eq.mtGetGroupCount('bands')
+   assert(count is 0 and #eq.bands is 1, 'Counts must include staged removals')
+   check eq.mtInsertEntry('bands', 0)
+   check eq.mtSetParameter('bands[0].type', EQB_LOW_SHELF)
+   check eq.mtSetParameter('bands[0].q', 5)
+   check eq.mtInsertEntry('bands', 1)
+   assert(eq.acFlush() is ERR_InvalidValue)
+   _, count = check eq.mtGetGroupCount('bands')
+   assert(count is 1, 'Rejected changes must restore the committed count')
+
+   check audio.mtCloseChannels(eq.channel)
+   _, count = check eq.mtGetGroupCount('bands')
+   assert(count is 1, 'Disconnected effects retain their parameters')
+
+   uninitialised <close> = obj.new('AudioEqualiser')
+   check uninitialised.mtInsertEntry('bands', 0)
+   _, count = check uninitialised.mtGetGroupCount('bands')
+   assert(count is 1, 'Counts must work before initialisation')
+   plain <close> = obj.new('AudioEffect')
+   assert(plain.mtGetGroupCount('bands') is ERR_NoSupport)
+end
