@@ -103,7 +103,7 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     int(ADF) Flags     # Special flags
     int BitDepth       # Typically `8` or `16` bit, reflects the hardware driver's bit depth
     int Periods        # Number of periods for ALSA audio buffering
-    int PeriodSize     # Period size for ALSA audio buffering
+    int PeriodSize     # Frames per period for ALSA audio buffering
   ]])
 
   klass("Sound", { src="class_sound.cpp", output="class_sound_def.c", extended=true }, [[

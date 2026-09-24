@@ -218,6 +218,7 @@ static ERR MODExpunge(void)
 #include "functions.cpp"
 #include "mixers.cpp"
 #include "commands.cpp"
+#include "alsa_worker.cpp"
 #include "class_audio.cpp"
 #include "class_sound.cpp"
 #include "mixer_dispatch.cpp"

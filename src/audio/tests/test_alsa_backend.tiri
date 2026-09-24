@@ -1,0 +1,313 @@
+-- The ALSA null PCM exercises the backend without making sound or requiring hardware.
+   module audio as mAudio
+
+@Test function QueuedCommandsValidateBeforeReportingSuccess()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   assert(mAudio.MixPlay(audio, channel, 0) is ERR_FieldNotSet,
+      'Play without an assigned sample must fail synchronously')
+
+   data = array<byte, 512>
+   data.fill(128)
+   err, sample = audio.mtAddSample(nil, SFM_U8_BIT_MONO, data, nil)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(audio, channel, sample)
+   assert(mAudio.MixPlay(audio, channel, 513) is ERR_OutOfRange,
+      'The queued sample assignment must be used to validate the play position')
+   check mAudio.MixFrequency(audio, channel, 44100)
+   check mAudio.MixPlay(audio, channel, 0)
+
+   check audio.mtRemoveSample(sample)
+   assert(mAudio.MixSample(audio, channel, sample) is ERR_NoData,
+      'An unconfigured sample must fail before the command is queued')
+
+   err, stream = audio.mtAddStream(function(Handle, Offset, Buffer)
+      Buffer.fill(128)
+      return #Buffer
+   end, nil, SFM_U8_BIT_MONO, 100, 0, nil)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(audio, channel, stream)
+   assert(mAudio.MixPlay(audio, channel, 101) is ERR_OutOfRange,
+      'A stream position beyond its declared length must fail synchronously')
+   check audio.mtRemoveSample(stream)
+   check audio.mtCloseChannels(channel)
+end
+
+@Test function NegotiatedFramesAndLifecycle()
+   for i in {0 to 8} do
+      audio <close> = obj.new('Audio', { device='null', periods=3, periodSize=256, outputRate=48000 })
+      check audio.acActivate()
+      assert(audio.periodSize is 256, 'Null PCM should honour the requested period frames')
+      assert(audio.periods is 3, 'Null PCM should honour the requested period count')
+      assert(math.abs(audio.mixerLag - 0.016) < 0.00001, 'Latency must exclude the former timer interval')
+      check audio.acDeactivate()
+      assert(audio.mixerLag is 0, 'Deactivation must invalidate negotiated latency')
+      check audio.acActivate()
+      check audio.acDeactivate()
+   end
+end
+
+@Test function WorkerCompletionRunsOnClient()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   completed = 0
+   data = array<byte, 4096>
+   data.fill(128)
+   err, sample = audio.mtAddSample(function(Audio, Handle) completed++ end, SFM_U8_BIT_MONO, data, nil)
+   assert(err is ERR_Okay)
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(audio, channel, sample)
+   check mAudio.MixFrequency(audio, channel, 44100)
+   check mAudio.MixPlay(audio, channel, 0)
+   mSys.WaitTime(-0.08)
+   assert(completed is 0, 'The PCM worker must never call the script')
+   processing.sleep(0.15)
+   assert(completed is 1, 'Completion should be delivered when the client resumes')
+   check audio.mtRemoveSample(sample)
+   check audio.mtCloseChannels(channel)
+end
+
+@Test function CompletionWithoutCallback()
+   for streaming in values({false, true}) do
+      audio <close> = obj.new('Audio', { device='null' })
+      check audio.acActivate()
+      data = array<byte, 512>
+      data.fill(128)
+      sample = 0
+      if streaming then
+         err, handle = audio.mtAddStream(function(Handle, Offset, Buffer)
+            Buffer.fill(128)
+            return #Buffer
+         end, nil, SFM_U8_BIT_MONO, #data, 0, nil)
+         assert(err is ERR_Okay)
+         sample = handle
+      else
+         err, handle = audio.mtAddSample(nil, SFM_U8_BIT_MONO, data, nil)
+         assert(err is ERR_Okay)
+         sample = handle
+      end
+      err, channel = audio.mtOpenChannels(1)
+      assert(err is ERR_Okay)
+      check mAudio.MixSample(audio, channel, sample)
+      check mAudio.MixFrequency(audio, channel, 44100)
+      check mAudio.MixPlay(audio, channel, 0)
+      processing.sleep(0.15)
+      check audio.mtRemoveSample(sample)
+
+      completed = 0
+      err, handle = audio.mtAddSample(function(Audio, Handle) completed++ end, SFM_U8_BIT_MONO, data, nil)
+      assert(err is ERR_Okay)
+      check mAudio.MixSample(audio, channel, handle)
+      check mAudio.MixPlay(audio, channel, 0)
+      processing.sleep(0.15)
+      assert(completed is 1, 'Playback must still deliver callbacks after completion without OnStop')
+   end
+end
+
+@Test function StreamProducerAndRemoval()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   reads = 0
+   completed = 0
+   err, sample = audio.mtAddStream(function(Handle, Offset, Buffer)
+      reads++
+      Buffer.fill(128)
+      return #Buffer
+   end, function(Audio, Handle) completed++ end, SFM_U8_BIT_MONO, 100000, 0, nil)
+   assert(err is ERR_Okay)
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(audio, channel, sample)
+   check mAudio.MixFrequency(audio, channel, 44100)
+   check mAudio.MixPlay(audio, channel, 0)
+   mSys.WaitTime(-0.03)
+   assert(reads is 0, 'Stream callbacks must remain on the client thread')
+   processing.sleep(0.2)
+   assert(reads >= 3, 'The ring should refill until the declared end')
+   assert(completed is 1, 'A finite stream should complete exactly once')
+   check mAudio.MixPlay(audio, channel, 2000)
+   processing.sleep(0.01)
+   check audio.mtRemoveSample(sample)
+   check audio.acDeactivate()
+end
+
+@Test function IncompleteSequenceWaitsForEnd()
+   audio <close> = obj.new('Audio', { device='null', bitDepth=32 })
+   check audio.acActivate()
+   completed = 0
+   data = array<byte, 512>
+   data.fill(128)
+   err, sample = audio.mtAddSample(function(Audio, Handle) completed++ end, SFM_U8_BIT_MONO, data, nil)
+   assert(err is ERR_Okay)
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   check mAudio.MixStartSequence(audio, channel)
+   check mAudio.MixSample(audio, channel, sample)
+   check mAudio.MixFrequency(audio, channel, 44100)
+   check mAudio.MixPlay(audio, channel, 0)
+   processing.sleep(0.04)
+   assert(completed is 0, 'An unfinished sequence must not execute')
+   check mAudio.MixEndSequence(audio, channel)
+   processing.sleep(0.08)
+   assert(completed is 1, 'A completed sequence must execute once in order')
+end
+
+@Test function EmptyProducerResumes()
+   audio <close> = obj.new('Audio', { device='null', bitDepth=8, stereo=false })
+   check audio.acActivate()
+   reads = 0
+   completed = 0
+   err, sample = audio.mtAddStream(function(Handle, Offset, Buffer)
+      reads++
+      if reads < 3 then return 0 end
+      Buffer.fill(128)
+      return #Buffer
+   end, function(Audio, Handle) completed++ end, SFM_U8_BIT_MONO, 1000, 0, nil)
+   assert(err is ERR_Okay)
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(audio, channel, sample)
+   check mAudio.MixFrequency(audio, channel, 44100)
+   check mAudio.MixPlay(audio, channel, 0)
+   processing.sleep(0.15)
+   assert(reads is 3, 'An empty producer should retry without advancing its source position')
+   assert(completed is 1, 'Playback should finish after the producer resumes')
+end
+
+@Test function ProducerCanRemoveItsSample()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   removed = false
+   err, sample = audio.mtAddStream(function(Handle, Offset, Buffer)
+      check audio.mtRemoveSample(Handle)
+      removed = true
+      return 0
+   end, nil, SFM_U8_BIT_MONO, 1000, 0, nil)
+   assert(err is ERR_Okay)
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(audio, channel, sample)
+   check mAudio.MixFrequency(audio, channel, 44100)
+   check mAudio.MixPlay(audio, channel, 0)
+   processing.sleep(0.05)
+   assert(removed, 'A producer may remove its stream without retaining a stale ring reference')
+end
+
+@Test function StreamLoopOffsetsAreBytes()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   saw_loop = false
+   completed = 0
+   loop = struct.new('AudioLoop', { loopMode=LOOP_SINGLE, loop1Type=LTYPE_UNIDIRECTIONAL,
+      loop1Start=400, loop1End=800 })
+   err, sample = audio.mtAddStream(function(Handle, Offset, Buffer)
+      if Offset is 400 then saw_loop = true end
+      Buffer.fill(0)
+      return #Buffer
+   end, function(Audio, Handle) completed++ end, SFM_S16_BIT_STEREO, 800, 0, loop)
+   assert(err is ERR_Okay)
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(audio, channel, sample)
+   check mAudio.MixFrequency(audio, channel, 44100)
+   check mAudio.MixPlay(audio, channel, 0)
+   processing.sleep(0.03)
+   assert(saw_loop, 'Stereo 16-bit loop offsets must remain byte positions')
+   assert(completed is 0, 'A looping stream must remain active')
+   check mAudio.MixStopLoop(audio, channel)
+   processing.sleep(0.08)
+   assert(completed is 1, 'Releasing a stream loop must drain and finish')
+end
+
+@Test function CommandSequenceHasBoundedCapacity()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   check mAudio.MixStartSequence(audio, channel)
+   for i in {0 to 1023} do
+      check mAudio.MixVolume(audio, channel, 0.5)
+   end
+   err = mAudio.MixVolume(audio, channel, 0.5)
+   assert(err is ERR_BufferOverflow, 'Command overflow must be reported without growing the queue')
+   check mAudio.MixEndSequence(audio, channel)
+   check audio.acDeactivate()
+end
+
+@Test function BoundaryConfigurationAndActivationFailure()
+   low <close> = obj.new('Audio', { device='null', periods=-1, periodSize=-1 })
+   assert(low.periods is 2 and low.periodSize is 32)
+   high <close> = obj.new('Audio', { device='null', periods=100, periodSize=100000 })
+   assert(high.periods is 16 and high.periodSize is 16384)
+   broken <close> = obj.new('Audio', { device='hw:999,999' })
+   assert(broken.acActivate() != ERR_Okay, 'Unavailable devices must report activation failure')
+   check broken.acDeactivate()
+   check low.acActivate()
+   check low.acDeactivate()
+   assert(low.mixerLag is 0)
+   check low.acActivate()
+   assert(low.mixerLag > 0, 'Reactivation must recalculate latency')
+end
+
+@Test function DeactivateCancelsPendingCompletion()
+   audio <close> = obj.new('Audio', { device='null' })
+   completed = 0
+   data = array<byte, 512>
+   data.fill(128)
+   err, sample = audio.mtAddSample(function(Audio, Handle) completed++ end, SFM_U8_BIT_MONO, data, nil)
+   assert(err is ERR_Okay)
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   for i in {0 to 8} do
+      check audio.acActivate()
+      check mAudio.MixSample(audio, channel, sample)
+      check mAudio.MixFrequency(audio, channel, 44100)
+      check mAudio.MixPlay(audio, channel, 0)
+      mSys.WaitTime(-0.02)
+      check audio.acDeactivate()
+      processing.sleep(0.03)
+      assert(completed is 0, 'Shutdown must cancel undelivered completion events')
+   end
+end
+
+@Test function StarvedStreamDoesNotBlockOtherChannels()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   supplied = 0
+   paused = false
+   resumed = false
+   stream_done = 0
+   resident_done = 0
+   err, stream = audio.mtAddStream(function(Handle, Offset, Buffer)
+      if supplied > 0 and not resumed then
+         paused = true
+         return 0
+      end
+      supplied += #Buffer
+      Buffer.fill(128)
+      return #Buffer
+   end, function(Audio, Handle) stream_done++ end, SFM_U8_BIT_MONO, 100000, 0, nil)
+   assert(err is ERR_Okay)
+   err, channels = audio.mtOpenChannels(2)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(audio, channels, stream)
+   check mAudio.MixFrequency(audio, channels, 44100)
+   check mAudio.MixPlay(audio, channels, 0)
+   processing.sleep(0.08)
+   assert(paused and stream_done is 0, 'An exhausted source must wait for its producer')
+   data = array<byte, 512>
+   data.fill(128)
+   err, resident = audio.mtAddSample(function(Audio, Handle) resident_done++ end, SFM_U8_BIT_MONO, data, nil)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(audio, channels + 1, resident)
+   check mAudio.MixFrequency(audio, channels + 1, 44100)
+   check mAudio.MixPlay(audio, channels + 1, 0)
+   processing.sleep(0.08)
+   assert(resident_done is 1 and stream_done is 0, 'Source starvation must leave other channels playable')
+   resumed = true
+   processing.sleep(0.15)
+   assert(stream_done is 1 and supplied is 100000, 'Resuming must consume the complete source without skipping bytes')
+end
