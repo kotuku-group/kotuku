@@ -25,7 +25,7 @@ end
    -- Retrieve the sound sample path from the command line arguments
 
    src = arg('src')
-   if (src is nil) then
+   if src is nil then
       print('Please supply a source audio file with "src=[file]"')
       return
    end

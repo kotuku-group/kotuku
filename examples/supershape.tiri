@@ -6,13 +6,13 @@ Supershape Demonstration
    import 'gui', 'gui/window', 'gui/combobox', 'gui/slider'
 
    local glWindow, glViewport, glShapeView, glShape
-   glY = 14
-   glMode = 'Shape'
+   glY     = 14
+   glMode  = 'Shape'
    glCount = 5
 
    FILL_COLOUR <const> = '#65b5df'
 
-   MODS <const> = {
+   MODS <const> = array<str> {
       'None', 'exp(r)', 'log(r)', 'atan(r)', 'exp(1/r)', '1+cos(r)^2', 'sin(r)^2', '1+sin(r)^2', 'cos(r)^2'
    }
 
@@ -37,21 +37,22 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Keep the widget range above zero: the slider's default-value handling treats zero as an unset value.
 
-function addSlider(Label:str, Value:num, Min:num, Max:num, Apply:func)
+function addSlider(Label:str, Value:num, Min:num, Max:num, Step:num, Apply:func)
+   caption_format = (Step and Step % 1 is 0) ? '%s: %.0f' : '%s: %.2f'
    caption = glViewport.new('VectorText', {
       x = 16, y = glY + 14,
       face = gui.fonts.label.face, fontSize = '10pt', fill = gui.getTheme(glViewport).window.text,
-      string = string.format('%s: %.2f', Label, Value)
+      string = string.format(caption_format, Label, Value)
    })
 
    gui.slider({
-      target = glViewport, x = 16, y = glY + 20, size = 270,
-      min = 1, max = 101, value = 1 + 100 * (Value - Min) / (Max - Min),
+      target = glViewport, x = 16, y = glY + 20, size = 270, step = Step,
+      min = Min, max = Max, value = Value,
       events = {
          activate = function(Widget:table, Position:num)
-            value = Min + (Position - 1) * (Max - Min) / 100
+            value = Position
             Apply(value)
-            caption.string = string.format('%s: %.2f', Label, value)
+            caption.string = string.format(caption_format, Label, value)
             redraw()
          end
       }
@@ -79,23 +80,23 @@ function buildScene()
       lineJoin = 'round', lineCap = 'round'
    })
 
-   addSlider('M (symmetry)', glShape.m, 0, 20, function(Value:num) glShape.m = Value end)
+   addSlider('Symmetry', glShape.m, 0, 20, 1, function(Value:num) glShape.m = Value end)
 
-   addSlider('N1', glShape.n1, 0.1, 20, function(Value:num) glShape.n1 = Value end)
+   addSlider('N1', glShape.n1, 0.1, 20, nil, function(Value:num) glShape.n1 = Value end)
 
-   addSlider('N2', glShape.n2, 0, 20, function(Value:num) glShape.n2 = Value end)
+   addSlider('N2', glShape.n2, 0, 20, nil, function(Value:num) glShape.n2 = Value end)
 
-   addSlider('N3', glShape.n3, 0, 20, function(Value:num) glShape.n3 = Value end)
+   addSlider('N3', glShape.n3, 0, 20, nil, function(Value:num) glShape.n3 = Value end)
 
-   addSlider('A', glShape.a, 0.1, 3, function(Value:num) glShape.a = Value end)
+   addSlider('A', glShape.a, 0.1, 3, nil, function(Value:num) glShape.a = Value end)
 
-   addSlider('B', glShape.b, 0.1, 3, function(Value:num) glShape.b = Value end)
+   addSlider('B', glShape.b, 0.1, 3, nil, function(Value:num) glShape.b = Value end)
 
-   addSlider('Phi (sweep)', glShape.phi, 2, 100, function(Value:num) glShape.phi = math.floor(Value) end)
+   addSlider('Sweep', glShape.phi, 2, 100, 1, function(Value:num) glShape.phi = math.floor(Value) end)
 
-   addSlider('Radius', glShape.radius, 10, 440, function(Value:num) glShape.radius = Value end)
+   addSlider('Radius', glShape.radius, 10, 440, 1, function(Value:num) glShape.radius = Value end)
 
-   addSlider('Vertices', glShape.vertices, 3, 1440, function(Value:num)
+   addSlider('Vertices', glShape.vertices, 3, 1440, 1, function(Value:num)
       if Value > 3 then
          glShape.vertices = math.floor(Value)
       else
@@ -103,7 +104,7 @@ function buildScene()
       end
    end)
 
-   addSlider('Repeat / spiral count', glCount, 1, 20, function(Value:num)
+   addSlider('Repeat / spiral count', glCount, 1, 20, 1, function(Value:num)
       glCount = math.floor(Value)
       applyMode()
    end)

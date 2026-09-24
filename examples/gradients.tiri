@@ -3,12 +3,7 @@
 Gradient Demonstration
 --]]
 
-   import 'gui'
-   import 'gui/window'
-   import 'gui/combobox'
-   import 'gui/slider'
-   import 'gui/button'
-   import 'gui/filedialog'
+   import 'gui', 'gui/window', 'gui/combobox', 'gui/slider', 'gui/button', 'gui/filedialog'
    include 'image'
 
 local win, viewport, gradientVP, rect
