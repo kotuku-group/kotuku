@@ -6,6 +6,7 @@ Supershape Demonstration
    import 'gui', 'gui/window', 'gui/combobox', 'gui/slider'
 
    local glWindow, glViewport, glShapeView, glShape
+
    glY     = 14
    glMode  = 'Shape'
    glCount = 5

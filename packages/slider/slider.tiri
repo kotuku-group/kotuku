@@ -57,7 +57,7 @@ gui.slider = function(Options:table!)
          if &step <= 0 then return Value end
          snapped = math.min(&min + (math.round((Value - &min) / &step) * &step), &max)
          if (&max - Value) < (Value - snapped) then snapped = &max end
-         return tonumber(string.format('%.14g', snapped)) -- Discard floating point noise, e.g. 3 * 0.1
+         return snapped
       end,
 
       -- Convert a slider position within the track to a value.  Vertical sliders place max at the top.
