@@ -12,7 +12,7 @@ FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(gui.fonts.widget)
 BOX_SIZE <const> = math.floor(FONT_MAX_HEIGHT * 1.35) + 1
 MARGIN <const> = math.floor(FONT_HEIGHT * 0.5) + 1
 
-local lStyle = thunk():str
+lStyle = thunk():str
    if mSys.AnalysePath('style:slider.tiri') is ERR_Okay then
       return loadFile('style:slider.tiri')
    else
@@ -21,10 +21,14 @@ local lStyle = thunk():str
 end
 
 gui.slider = function(Options:table!)
+   min = (Options.min != nil) ? Options.min : 0
+   max = (Options.max != nil) ? Options.max : 1
+
    self = entity {
-      min    = Options.min ?? 0,
-      max    = Options.max ?? 1,
-      value  = Options.value ?? Options.min + ((Options.max - Options.min) * 0.5),
+      min    = min,
+      max    = max,
+      step   = (Options.step != nil) ? Options.step : 0,
+      value  = (Options.value != nil) ? Options.value : min + ((max - min) * 0.5),
       label  = Options.label,
       events = Options.events ?? { },
       viewport = nil,
@@ -32,13 +36,50 @@ gui.slider = function(Options:table!)
          assert(Max > Min, 'The min/max values are invalid.')
          &min = Min
          &max = Max
-         if &value < &min then &setValue(&min) end
-         if &value > &max then &setValue(&max) end
+         &prvPlaceSlider()
+         &viewport.scene.surface.mtScheduleRedraw()
+         &setValue(&value) -- Clamp and snap the existing value to the new range
       end,
       setValue = function(Value:num)
+         Value = &prvSnap(Value)
+         if Value is &value then return end
          &value = Value
+         &prvPlaceSlider()
          &events?.activate(&&, Value)
          &viewport.scene.surface.mtScheduleRedraw()
+      end,
+
+      -- Clamp a value to the slider range and snap it to the nearest step.  Steps are counted from min, and max is
+      -- always reachable even if the range is not an exact multiple of the step.
+
+      prvSnap = function(Value:num):num
+         Value = math.clamp(Value, &min, &max)
+         if &step <= 0 then return Value end
+         snapped = math.min(&min + (math.round((Value - &min) / &step) * &step), &max)
+         if (&max - Value) < (Value - snapped) then snapped = &max end
+         return snapped
+      end,
+
+      -- Convert a slider position within the track to a value.  Vertical sliders place max at the top.
+
+      prvTrackValue = function(Position:num):num
+         if &orientation is 'V' then
+            track = &prvSliderHostVP.height - BOX_SIZE
+            return &min + ((&max - &min) * math.clamp((track - Position) / track, 0, 1))
+         else
+            track = &prvSliderHostVP.width - BOX_SIZE
+            return &min + ((&max - &min) * math.clamp(Position / track, 0, 1))
+         end
+      end,
+
+      prvPlaceSlider = function()
+         fraction = (&value - &min) / (&max - &min)
+         if &orientation is 'V' then
+            track = &prvSliderHostVP.height - BOX_SIZE
+            &prvSliderVP.y = track - (fraction * track)
+         else
+            &prvSliderVP.x = fraction * (&prvSliderHostVP.width - BOX_SIZE)
+         end
       end
    }
 
@@ -46,30 +87,18 @@ gui.slider = function(Options:table!)
       target = Options.target
       assert(target, 'A target viewport is required.')
       assert(&max > &min, 'The min/max values are invalid.')
+      assert(&step >= 0, 'The step value cannot be negative.')
 
       &prvTheme = gui.getTheme(target)
       &orientation = (Options.orientation is 'vertical') ? 'V' : 'H'
       &prvLabelSize = 0
+      &value = &prvSnap(&value)
 
       if &orientation is 'V' then
          &viewport = target.new('VectorViewport', { x = Options.x, y = Options.y, height = (Options.size ?? 100), width = BOX_SIZE })
 
          &prvSliderHostVP = &viewport.new('VectorViewport', { y = 0, width = '100%', yOffset = 0 })
          lStyle.background(self, &prvSliderHostVP, &prvTheme)
-
-         &prvSliderVP = &prvSliderHostVP.new('VectorViewport', { width = BOX_SIZE, height = BOX_SIZE })
-
-         &prvSliderVP.dragCallback = function(Viewport:obj!, X:num!, Y:num!)
-            max_size = &prvSliderHostVP.height - BOX_SIZE
-            Y = math.clamp(Y, 0, max_size)
-            if Viewport.y is Y then return end
-
-            Viewport.y = Y
-            &setValue(&min + (&max - &min) * ((max_size - Y) / max_size))
-         end
-
-         max_size = &prvSliderHostVP.height - BOX_SIZE
-         &prvSliderVP.y = max_size - ((&value - &min) / ((&max - &min) / max_size))
       else
          &viewport = target.new('VectorViewport', { x = Options.x, y = Options.y, width = (Options.size ?? 100), height = BOX_SIZE })
 
@@ -92,36 +121,25 @@ gui.slider = function(Options:table!)
 
          &prvSliderHostVP = &viewport.new('VectorViewport', { x = &prvLabelSize, height = '100%', xOffset = 0 })
          lStyle.background(self, &prvSliderHostVP, &prvTheme)
-
-         &prvSliderVP = &prvSliderHostVP.new('VectorViewport', { width = BOX_SIZE, height = BOX_SIZE })
-
-         &prvSliderVP.dragCallback = function(Viewport:obj!, X:num!, Y:num!)
-            max_size  = &prvSliderHostVP.width - BOX_SIZE
-            X = math.clamp(X, 0, max_size)
-            if Viewport.x is X then return end
-
-            Viewport.x = X
-            &setValue(&min + (&max - &min) * (X / max_size))
-         end
-
-         &prvSliderVP.x = (&value - &min) / ((&max - &min) / (&prvSliderHostVP.width - BOX_SIZE))
       end
+
+      &prvSliderVP = &prvSliderHostVP.new('VectorViewport', { width = BOX_SIZE, height = BOX_SIZE })
+
+      -- Drag coordinates are relative to the drag origin, so snapping the slider does not impede its movement.
+
+      &prvSliderVP.dragCallback = function(Viewport:obj!, X:num!, Y:num!)
+         &setValue(&prvTrackValue((&orientation is 'V') ? Y : X))
+      end
+
+      &prvPlaceSlider()
 
       lStyle.slider(self, &prvSliderVP, &prvTheme)
 
       &prvSliderHostVP.mtSubscribeInput(JTYPE_BUTTON,
          function(Viewport:obj!, Msg)
             repeat
-               if (Msg.type is JET_LMB) and (Msg.value > 0) then
-                  if &orientation is 'V' then
-                     new_value = &min + ((Msg.y / &prvSliderHostVP.height) * (&max - &min))
-                     &prvSliderVP.y = (new_value - &min) / ((&max - &min) / (&prvSliderHostVP.height - BOX_SIZE))
-                     &setValue(new_value)
-                  else
-                     new_value = &min + ((Msg.x / &prvSliderHostVP.width) * (&max - &min))
-                     &prvSliderVP.x = (new_value - &min) / ((&max - &min) / (&prvSliderHostVP.width - BOX_SIZE))
-                     &setValue(new_value)
-                  end
+               if (Msg.type is JET_LMB) and (Msg.value > 0) then -- Centre the slider on the click position
+                  &setValue(&prvTrackValue(((&orientation is 'V') ? Msg.y : Msg.x) - (BOX_SIZE * 0.5)))
                end
                Msg = Msg.next
             until Msg is nil

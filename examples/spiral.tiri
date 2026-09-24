@@ -26,10 +26,10 @@ function addSlider(Label:str, Value:num, Min:num, Max:num, Apply:func)
 
    gui.slider({
       target = glViewport, x = 16, y = glY + 20, size = 270,
-      min = 1, max = 101, value = 1 + 100 * (Value - Min) / (Max - Min),
+      min = Min, max = Max, value = Value,
       events = {
          activate = function(Widget:table, Position:num)
-            value = Min + (Position - 1) * (Max - Min) / 100
+            value = Position
             Apply(value)
             caption.string = string.format('%s: %.2f', Label, value)
             redraw()

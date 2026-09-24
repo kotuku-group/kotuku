@@ -3,9 +3,7 @@
 Gamepad demonstration
 --]]
 
-   import 'gui'
-   import 'gui/slider'
-   import 'gui/window'
+   import 'gui', 'gui/slider', 'gui/window'
 
    module vector as mVec
 
