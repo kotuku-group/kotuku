@@ -884,6 +884,8 @@ static ERR AUDIO_SetSampleLength(extAudio *Self, struct snd::SetSampleLength *Ar
 
    if (sample.Stream) {
       if (Args->Length < -1 or Args->Length > INT_MAX) return ERR::OutOfRange;
+      if (Args->Length >= 0 and sample.Loop2Type != LTYPE::NIL and
+          Args->Length <= (int64_t(sample.Loop2Start) << sample_shift(sample.SampleType))) return ERR::OutOfRange;
       sample.StreamLength = BYTELEN(Args->Length < 0 ? INT_MAX : Args->Length);
       #ifdef ALSA_ENABLED
       sample.EndOfSource = sample.SourceOffset >= sample.StreamLength;
@@ -956,9 +958,22 @@ static ERR AUDIO_SetVolume(extAudio *Self, struct snd::SetVolume *Args)
    }
    if (Self->Volumes.empty()) return log.warning(ERR::NoSupport);
    if (!Self->MixHandle) {
-      if (Args->Volume >= 0) Self->MasterVolume = Args->Volume;
-      if ((Args->Flags & SVF::MUTE) != SVF::NIL) Self->Mute = true;
-      if ((Args->Flags & SVF::UNMUTE) != SVF::NIL) Self->Mute = false;
+      for (auto &volume : Self->Volumes) {
+         if (!iequals("Master", volume.Name)) continue;
+         if (Args->Volume >= 0) {
+            Self->MasterVolume = Args->Volume;
+            volume.Channels[0] = Args->Volume;
+         }
+         if ((Args->Flags & SVF::MUTE) != SVF::NIL) {
+            Self->Mute = true;
+            volume.Flags |= VCF::MUTE;
+         }
+         if ((Args->Flags & SVF::UNMUTE) != SVF::NIL) {
+            Self->Mute = false;
+            volume.Flags &= ~VCF::MUTE;
+         }
+         break;
+      }
       return ERR::Okay;
    }
 

@@ -965,6 +965,7 @@ ERR MixStopLoop(objAudio *Audio, int Handle)
       sample.SourceSeek = true;
       sample.Refilling = sample.RefillPending = false;
       sample.EndOfSource = sample.SourceOffset >= sample.StreamLength;
+      sample.Prefilled = true;
       if (!sample.EndOfSource) request_stream((extAudio *)Audio, sample);
       return ERR::Okay;
    }

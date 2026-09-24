@@ -776,7 +776,10 @@ static void mix_stream(extAudio *Self, AudioChannel &Channel, AudioSample &Sampl
       int64_t play_pos = int64_t(Sample.PlayPos) + consumed;
       if (Sample.Loop2Type != LTYPE::NIL and play_pos >= Sample.StreamLength) {
          const int start = Sample.Loop2Start << sample_shift(Sample.SampleType);
-         play_pos = start + (play_pos - Sample.StreamLength) % (Sample.StreamLength - start);
+         if (Sample.StreamLength > start) {
+            play_pos = start + (play_pos - Sample.StreamLength) % (Sample.StreamLength - start);
+         }
+         else Sample.Loop2Type = LTYPE::NIL;
       }
       Sample.PlayPos = BYTELEN(play_pos);
       Sample.BufferedLength = BYTELEN(Sample.Ring.Used);

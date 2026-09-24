@@ -17,6 +17,10 @@
    assert(mAudio.MixPlay(audio, channel, 513) is ERR_OutOfRange,
       'The queued sample assignment must be used to validate the play position')
    check mAudio.MixFrequency(audio, channel, 44100)
+   check mAudio.MixFrequency(audio, channel, 500000)
+   assert(mAudio.MixFrequency(audio, channel, 500001) is ERR_OutOfRange,
+      'The mixer must preserve the Sound playback frequency limit')
+   check mAudio.MixFrequency(audio, channel, 44100)
    check mAudio.MixPlay(audio, channel, 0)
 
    check audio.mtRemoveSample(sample)
@@ -218,8 +222,53 @@ end
    assert(saw_loop, 'Stereo 16-bit loop offsets must remain byte positions')
    assert(completed is 0, 'A looping stream must remain active')
    check mAudio.MixStopLoop(audio, channel)
-   processing.sleep(0.08)
+   deadline = mSys.PreciseTime() + 300000
+   while completed is 0 and mSys.PreciseTime() < deadline do processing.sleep(0.005) end
    assert(completed is 1, 'Releasing a stream loop must drain and finish')
+end
+
+@Test function StreamLengthCannotCrossLoopStart()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   loop = struct.new('AudioLoop', { loopMode=LOOP_SINGLE, loop1Type=LTYPE_UNIDIRECTIONAL,
+      loop1Start=400, loop1End=800 })
+   err, sample = audio.mtAddStream(function(Handle, Offset, Buffer)
+      Buffer.fill(0)
+      return #Buffer
+   end, nil, SFM_S16_BIT_STEREO, 800, 0, loop)
+   assert(err is ERR_Okay)
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(audio, channel, sample)
+   check mAudio.MixFrequency(audio, channel, 44100)
+   check mAudio.MixPlay(audio, channel, 0)
+   processing.sleep(0.02)
+   assert(audio.mtSetSampleLength(sample, 400) is ERR_OutOfRange,
+      'A stream loop needs at least one frame beyond its start')
+   assert(audio.mtSetSampleLength(sample, 396) is ERR_OutOfRange,
+      'A stream length before the loop start is invalid')
+   check audio.mtSetSampleLength(sample, 600)
+   processing.sleep(0.02)
+   check mAudio.MixStopLoop(audio, channel)
+end
+
+@Test function SoftwareMixerVolumeAndMuteSurviveActivation()
+   audio <close> = obj.new('Audio', { device='null' })
+   audio.masterVolume = 0.4
+   audio.mute = true
+   assert(audio.mute is 1 and math.abs(audio.masterVolume - 0.4) < 0.00001,
+      'Inactive software mixer settings must read back')
+   check audio.acActivate()
+   assert(audio.mute is 1 and math.abs(audio.masterVolume - 0.4) < 0.00001,
+      'Activation must apply the saved software mixer settings')
+   audio.masterVolume = 0.6
+   audio.mute = false
+   assert(audio.mute is 0 and math.abs(audio.masterVolume - 0.6) < 0.00001,
+      'Active software mixer settings must read back')
+   check audio.acDeactivate()
+   check audio.acActivate()
+   assert(audio.mute is 0 and math.abs(audio.masterVolume - 0.6) < 0.00001,
+      'Reactivation must retain software mixer settings')
 end
 
 @Test function CommandSequenceHasBoundedCapacity()
