@@ -138,10 +138,13 @@ mixing.</li>
       <param type="DOUBLE" name="Pan">The desired pan value between -1.0 and 1.0.</param>
     </input>
     <description>
-<p>Use this function to set a mixer channel's panning value.  Accepted values are between -1.0 (left) and 1.0 (right).</p>
+<p>Use this function to set a mixer channel's panning value, from -1.0 (left) through 0 (centre) to 1.0 (right). Finite values outside this range are clamped.  Non-finite values (NaN and infinities) are rejected with <code>OutOfRange</code> and the channel is not modified.</p>
+<p>Panning uses a linear balance law.  The side being panned towards keeps the channel's full volume, while the opposite side is attenuated linearly: for a volume <code>V</code> and a pan <code>P</code> below zero, the left gain is <code>V</code> and the right gain is <code>V * (1 + P)</code>; above zero, the left gain is <code>V * (1 - P)</code> and the right gain is <code>V</code>.  A centred channel is therefore played at full volume on both sides, not at constant power.  Pan has no effect when the Audio object outputs in mono.</p>
+<p>The pan applies from the next mixed frame, ramping towards the new gains if both <code>ADF::VOL_RAMPING</code> and <code>ADF::OVER_SAMPLING</code> are enabled.  When the mixer runs on a worker thread, <code>Okay</code> confirms that the command was accepted for application before the next period is rendered.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="OutOfRange">The channel handle is invalid or <code>Pan</code> is not a finite number.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -349,13 +352,16 @@ A stream without a loop is unaffected.</li>
     <input>
       <param type="objAudio *" name="Audio">The target Audio object.</param>
       <param type="INT" name="Handle">The target channel.</param>
-      <param type="DOUBLE" name="Volume">The new volume for the channel.</param>
+      <param type="DOUBLE" name="Volume">The new volume for the channel, from 0 to 1.0.</param>
     </input>
     <description>
-<p>This function will change the volume of the mixer channel identified by Handle.  Valid values are from 0 (silent) to 1.0 (maximum).</p>
+<p>This function will change the volume of the mixer channel identified by Handle.  Volume is a linear amplitude multiplier from 0 (silent) to 1.0 (unity gain).  It is not expressed in decibels; a value of 0.5 attenuates the channel by approximately 6 dB.  Finite values outside this range are clamped.  Non-finite values (NaN and infinities) are rejected with <code>OutOfRange</code> and the channel is not modified.</p>
+<p>The rendered gain of each side is the product of the channel volume, the pan attenuation described in <function>MixPan</function> and the Audio object's <code>MasterVolume</code>.  Stereo samples mixed to mono output are additionally halved.</p>
+<p>The volume applies from the next mixed frame, ramping towards the new gains if both <code>ADF::VOL_RAMPING</code> and <code>ADF::OVER_SAMPLING</code> are enabled.  When the mixer runs on a worker thread, <code>Okay</code> confirms that the command was accepted for application before the next period is rendered.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="OutOfRange">The channel handle is invalid or <code>Volume</code> is not a finite number.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>

@@ -151,7 +151,7 @@ static inline BCPOS bcemit_AJ(FuncState *fs, Op o, BCREG a, BCPOS j) {
    BCREG required_top = CallBase.raw() + 1 + LJ_FR2 + argument_count;
    if (State->freereg < required_top) bcreg_reserve(State, required_top - State->freereg);
    if (Receiver.raw() != NO_REG) bcemit_AD(State, BC_MOV, CallBase.raw() + 1 + LJ_FR2, Receiver.raw());
-   bcemit_builtin_callable(State, Id, CallBase.raw());
+   (void)bcemit_builtin_callable(State, Id, CallBase.raw());
    return CallBase;
 }
 
