@@ -321,7 +321,7 @@ processing.sleep()  -- Wait for completion
       <type>FUNCTION</type>
       <description>
 <p>Set OnStop to a callback function to receive an event trigger when sample playback stops.  The prototype for the function is <code>void OnStop(*Sound)</code>.</p>
-<p>The timing of this event does not guarantee precision, but should be accurate to approximately 1/100th of a second in most cases.</p>
+<p>This notification is approximate and does not guarantee that the final sample has reached the speakers.  On Windows, delivery accounts for the estimated device queue, rather than tracking the hardware playback position.  Timing can be early or late by approximately 10 ms in normal operation; buffering and client scheduling can add further delay. Allow a timing margin when comparing the callback time with <fl>Duration</fl>, and start elapsed-time measurements before calling <action>Activate</action>.  Do not use this callback for precise audiovisual synchronisation.</p>
       </description>
     </field>
 
@@ -331,7 +331,7 @@ processing.sleep()  -- Wait for completion
       <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>The Pan field adjusts the &quot;horizontal position&quot; of a sample that is being played through stereo speakers. The default value for this field is zero, which plays the sound through both speakers at an equal level.  The minimum value is <code>-1.0</code> to force play through the left speaker and the maximum value is <code>1.0</code> for the right speaker.</p>
+<p>The Pan field adjusts the &quot;horizontal position&quot; of a sample that is being played through stereo speakers. The default value for this field is zero, which plays the sound through both speakers at an equal level.  The minimum value is <code>-1.0</code> to force play through the left speaker and the maximum value is <code>1.0</code> for the right speaker. Finite values outside this range are clamped, and non-finite values are rejected with <code>OutOfRange</code>.  The pan law is described in the Audio module's <code>MixPan()</code> function.</p>
       </description>
     </field>
 
@@ -424,7 +424,7 @@ processing.sleep()  -- Wait for completion
       <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>The field specifies the volume of a sound in the range 0 - 1.0 (low to high).  Setting this field during sample playback will dynamically alter the volume.</p>
+<p>The field specifies the volume of a sound as a linear amplitude multiplier in the range 0 (silent) to 1.0 (unity gain).  Finite values outside this range are clamped, and non-finite values are rejected with <code>OutOfRange</code>.  Setting this field during sample playback will dynamically alter the volume.</p>
       </description>
     </field>
 
