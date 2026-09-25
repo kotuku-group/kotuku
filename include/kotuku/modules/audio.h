@@ -873,7 +873,7 @@ class objSound : public Object {
 
    inline ERR setLength(const int64_t Value) noexcept {
       auto field = &this->Class->Dictionary[33];
-      return field->WriteValue(this, field, FD_INT, &Value);
+      return field->WriteValue(this, field, FD_INT64, &Value);
    }
 
    inline ERR setOctave(const int Value) noexcept {

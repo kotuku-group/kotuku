@@ -125,7 +125,9 @@ static void refill_audio_stream(extAudio *Self, int Handle)
       const int frame_bytes = 1 << sample_shift(sample.SampleType);
       int bytes = sample.Data.size() - sample.Ring.Used;
       if (bytes <= 0) return;
-      if (sample.StreamLengthKnown) bytes = int(std::min<int64_t>(bytes, sample.StreamLength - offset));
+      if (sample.StreamLengthKnown) {
+         bytes = int(std::clamp<int64_t>(sample.StreamLength - offset, 0, bytes));
+      }
       bytes -= bytes % frame_bytes;
       if (bytes <= 0 or sample.Callback.stale()) {
          sample.EndOfSource = true;

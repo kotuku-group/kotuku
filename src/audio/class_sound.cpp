@@ -346,7 +346,7 @@ static ERR SOUND_Activate(extSound *Self)
             Self->seekStart(client_pos);
 
             struct snd::AddSample add;
-            AudioLoop loop;
+            AudioLoop loop{};
 
             if ((Self->Flags & SDF::LOOP) != SDF::NIL) {
                loop.LoopMode   = LOOP::SINGLE;
