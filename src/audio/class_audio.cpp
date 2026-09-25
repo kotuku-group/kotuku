@@ -253,6 +253,24 @@ ERR AUDIO_AddSample(extAudio *Self, struct snd::AddSample *Args)
 
    if (Args->Data.size_bytes() > size_t(INT_MAX)) return log.warning(ERR::Args);
 
+   const int shift = sample_shift(Args->SampleFormat);
+   const int64_t frame_bytes = int64_t(1) << shift;
+   if ((Args->Data.size_bytes() % frame_bytes) != 0) return log.warning(ERR::Args);
+   if (Args->Loop) {
+      if (Args->Loop->Loop1Type != LTYPE::NIL and
+          (Args->Loop->Loop1Start < 0 or Args->Loop->Loop1End < Args->Loop->Loop1Start or
+          Args->Loop->Loop1End > int64_t(Args->Data.size_bytes()) or
+          (Args->Loop->Loop1Start % frame_bytes) or (Args->Loop->Loop1End % frame_bytes))) {
+         return log.warning(ERR::Args);
+      }
+      if (Args->Loop->Loop2Type != LTYPE::NIL and
+          (Args->Loop->Loop2Start < 0 or Args->Loop->Loop2End < Args->Loop->Loop2Start or
+          Args->Loop->Loop2End > int64_t(Args->Data.size_bytes()) or
+          (Args->Loop->Loop2Start % frame_bytes) or (Args->Loop->Loop2End % frame_bytes))) {
+         return log.warning(ERR::Args);
+      }
+   }
+
    std::vector<uint8_t> data;
    if (Args->SampleFormat != SFM::NIL) data.assign(Args->Data.begin(), Args->Data.end());
    std::vector<AudioSample> sample_slots;
@@ -273,8 +291,6 @@ ERR AUDIO_AddSample(extAudio *Self, struct snd::AddSample *Args)
       }
       Self->Samples.resize(Self->Samples.size() + 10);
    }
-
-   auto shift = sample_shift(Args->SampleFormat);
 
    auto &sample = Self->Samples[idx];
    deref_audio_sample(sample);
@@ -318,12 +334,12 @@ Use AddStream to load large sound samples to an Audio object, allowing it to pla
 machine without over-provisioning available resources.  For small samples under 256k consider using #AddSample()
 instead.
 
-The data source used for a stream will need to be provided by a client provided `Callback` function.  The prototype
-is `INT callback(INT SampleHandle, INT Offset, UINT8 *Buffer, INT BufferSize)`.
+The data source used for a stream must be provided by a client callback.  The native prototype is
+`INT callback(INT SampleHandle, INT64 Offset, UINT8 *Buffer, INT BufferSize)`.
 
-The `Offset` reflects the retrieval point of the decoded data and is measured in bytes.  The `Buffer` and
-`BufferSize` reflect the target for the decoded data.  The function must return the total number of bytes that were
-written to the `Buffer`. If an error occurs, return zero.
+The `Offset` is the 64-bit byte position of the decoded data.  The `Buffer` and `BufferSize` identify the destination.
+The callback must return the number of bytes written, or zero when no data is currently available.  Offset, stream
+length, play offset and loop boundaries must be aligned to a complete source frame.
 
 On ALSA and Windows, callbacks run on the client thread and fill a frame-aligned source ring.  The saved
 `StreamBufferMs` setting
@@ -360,14 +376,15 @@ currently supported for streams.  For that reason, set the type variables to eit
 func Callback: This callback function must be able to return raw audio data for streaming.  The function context will be pinned as a safety measure.
 func OnStop: This optional callback function will be called when the stream stops playing.  The function context will be pinned as a safety measure.
 int(SFM) SampleFormat: Indicates the format of the sample data that you are adding.
-int SampleLength: Total byte-length of the sample data that is being streamed.  May be set to zero if the length is infinite or unknown.
-int PlayOffset: Offset the playing position by this byte index.
+large SampleLength: Total byte length of the stream, or `-1` when the length is unknown.  Zero is also accepted as the legacy unknown-length value.
+large PlayOffset: Initial byte position.  It must be aligned to a complete source frame.
 struct(*AudioLoop) Loop: Refers to sample loop information, or `NULL` if no loop is required.
 &int Result: The resulting sample handle will be returned in this parameter.
 
 -ERRORS-
 Okay: Stream successfully configured and added to the audio system.
 Args: Invalid argument values provided.
+OutOfRange: A length, play offset or loop boundary is outside the stream.
 NullArgs: Required parameters are null or missing.
 AllocMemory: Failed to allocate the stream buffer.
 
@@ -385,13 +402,18 @@ static ERR AUDIO_AddStream(extAudio *Self, struct snd::AddStream *Args)
 
    if ((!Args) or (Args->SampleFormat IS SFM::NIL)) return log.warning(ERR::NullArgs);
    if (Args->Callback.Type IS CALL::NIL) return log.warning(ERR::NullArgs);
-   if (Args->PlayOffset < 0) return ERR::OutOfRange;
+   if (Args->SampleLength < -1 or Args->PlayOffset < 0) return ERR::OutOfRange;
+   if (Args->SampleLength > 0 and Args->PlayOffset > Args->SampleLength) return ERR::OutOfRange;
+   const int shift = sample_shift(Args->SampleFormat);
+   const int64_t frame_bytes = int64_t(1) << shift;
+   if ((Args->PlayOffset % frame_bytes) or
+       (Args->SampleLength > 0 and Args->SampleLength % frame_bytes)) return ERR::Args;
    if (Args->Loop and (Args->Loop->Loop1Start < 0 or Args->Loop->Loop1End < Args->Loop->Loop1Start or
        (Args->SampleLength > 0 and Args->Loop->Loop1End > Args->SampleLength))) return ERR::OutOfRange;
+   if (Args->Loop and ((Args->Loop->Loop1Start % frame_bytes) or
+       (Args->Loop->Loop1End % frame_bytes))) return ERR::Args;
 
-   log.branch("Length: %d", Args->SampleLength);
-
-   auto shift = sample_shift(Args->SampleFormat);
+   log.branch("Length: %" PF64, (long long)Args->SampleLength);
 
    int buffer_len;
    #ifdef AUDIO_WORKER
@@ -400,7 +422,8 @@ static ERR AUDIO_AddStream(extAudio *Self, struct snd::AddStream *Args)
       8 * 1024 * 1024));
    buffer_len = std::max(2 << shift, buffer_len);
    #else
-   buffer_len = Args->SampleLength > 0 ? std::min(Args->SampleLength / 2, MAX_STREAM_BUFFER) : MAX_STREAM_BUFFER;
+   buffer_len = Args->SampleLength > 0 ? int(std::min<int64_t>(Args->SampleLength / 2, MAX_STREAM_BUFFER)) :
+      MAX_STREAM_BUFFER;
    #endif
 
    std::vector<uint8_t> data(buffer_len);
@@ -435,7 +458,8 @@ static ERR AUDIO_AddStream(extAudio *Self, struct snd::AddStream *Args)
    sample.clear();
    sample.SampleType   = Args->SampleFormat;
    sample.SampleLength = SAMPLE(buffer_len>>shift);
-   sample.StreamLength = BYTELEN((Args->SampleLength > 0) ? Args->SampleLength : 0x7fffffff); // 'Infinite' stream length
+   sample.StreamLength = BYTELEN(std::max<int64_t>(0, Args->SampleLength));
+   sample.StreamLengthKnown = Args->SampleLength > 0;
    sample.Callback     = Args->Callback;
    sample.OnStop       = Args->OnStop;
    sample.BufferedLength = BYTELEN(0);
@@ -454,6 +478,7 @@ static ERR AUDIO_AddStream(extAudio *Self, struct snd::AddStream *Args)
       sample.Loop2Start   = SAMPLE(Args->Loop->Loop1Start >> shift);
       sample.Loop2End     = SAMPLE(Args->Loop->Loop1End >> shift);
       sample.StreamLength = BYTELEN(sample.Loop2End<<shift);
+      sample.StreamLengthKnown = true;
 
       if (sample.Loop2Start IS sample.Loop2End) sample.Loop2Type = LTYPE::NIL;
    }
@@ -881,6 +906,7 @@ large Length: Byte length of the sample stream.
 Okay
 NullArgs
 Args
+OutOfRange
 NoSupport: Sample is not a stream.
 
 -TAGS-
@@ -903,14 +929,19 @@ static ERR AUDIO_SetSampleLength(extAudio *Self, struct snd::SetSampleLength *Ar
    auto &sample = Self->Samples[Args->Sample];
 
    if (sample.Stream) {
-      if (Args->Length < -1 or Args->Length > INT_MAX) return ERR::OutOfRange;
+      if (Args->Length < -1) return ERR::OutOfRange;
+      const int64_t frame_bytes = int64_t(1) << sample_shift(sample.SampleType);
+      if (Args->Length >= 0 and Args->Length % frame_bytes) return ERR::Args;
       if (Args->Length >= 0 and sample.Loop2Type != LTYPE::NIL and
           Args->Length <= (int64_t(sample.Loop2Start) << sample_shift(sample.SampleType))) return ERR::OutOfRange;
-      sample.StreamLength = BYTELEN(Args->Length < 0 ? INT_MAX : Args->Length);
+      sample.StreamLength = BYTELEN(std::max<int64_t>(0, Args->Length));
+      sample.StreamLengthKnown = Args->Length >= 0;
       #ifdef AUDIO_WORKER
-      sample.EndOfSource = sample.SourceOffset >= sample.StreamLength;
-      const int remaining = std::max(0, int(sample.StreamLength) - int(sample.PlayPos));
-      sample.Ring.Used = std::min(sample.Ring.Used, size_t(remaining));
+      sample.EndOfSource = sample.StreamLengthKnown and sample.SourceOffset >= sample.StreamLength;
+      if (sample.StreamLengthKnown) {
+         const int64_t remaining = std::max<int64_t>(0, sample.StreamLength - sample.PlayPos);
+         sample.Ring.Used = std::min(sample.Ring.Used, size_t(remaining));
+      }
       sample.Ring.Used -= sample.Ring.Used % (1 << sample_shift(sample.SampleType));
       #endif
       return ERR::Okay;

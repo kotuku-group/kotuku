@@ -262,7 +262,7 @@ processing.sleep()  -- Wait for completion
       <name>Length</name>
       <comment>Indicates the total byte-length of sample data.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>INT</type>
+      <type>INT64</type>
       <description>
 <p>This field specifies the length of the sample data in bytes.  To get the length of the sample in seconds, divide this value by the <fl>BytesPerSecond</fl> field.</p>
       </description>
@@ -272,7 +272,7 @@ processing.sleep()  -- Wait for completion
       <name>LoopEnd</name>
       <comment>The byte position at which sample looping will end.</comment>
       <access read="R" write="W">Read/Write</access>
-      <type>INT</type>
+      <type>INT64</type>
       <description>
 <p>When using looped samples (via the <code>SDF::LOOP</code> flag), set the LoopEnd field if the sample should end at a position that is earlier than the sample's actual length.  The LoopEnd value is specified in bytes and must be less or equal to the length of the sample and greater than the <fl>LoopStart</fl> value.</p>
       </description>
@@ -282,7 +282,7 @@ processing.sleep()  -- Wait for completion
       <name>LoopStart</name>
       <comment>The byte position at which sample looping begins.</comment>
       <access read="R" write="W">Read/Write</access>
-      <type>INT</type>
+      <type>INT64</type>
       <description>
 <p>When using looped samples (via the <code>SDF::LOOP</code> flag), set the LoopStart field if the sample should begin at a position other than zero.  The LoopStart value is specified in bytes and must be less than the length of the sample and the <fl>LoopEnd</fl> value.</p>
 <p>Note that the LoopStart variable does not affect the position at which playback occurs for the first time - it only affects the restart position when the end of the sample is reached.</p>

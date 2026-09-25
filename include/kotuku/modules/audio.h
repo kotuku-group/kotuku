@@ -183,20 +183,20 @@ enum class MIX : int {
 };
 
 struct AudioMixCommand {
-   MIX    Operation; // Mixer operation
-   int    Handle;    // Target channel; all commands in a batch must use the same channel set
-   int    Integer;   // Integer argument for the selected operation; otherwise ignored
-   double Value;     // Finite floating-point argument for PAN and VOLUME; otherwise ignored
+   MIX     Operation; // Mixer operation
+   int     Handle;   // Target channel; all commands in a batch must use the same channel set
+   int64_t Integer;  // Integer argument for the selected operation; otherwise ignored
+   double  Value;    // Finite floating-point argument for PAN and VOLUME; otherwise ignored
 };
 
 struct AudioLoop {
-   LOOP  LoopMode;   // Loop mode (single, double)
-   LTYPE Loop1Type;  // First loop type (unidirectional, bidirectional)
-   LTYPE Loop2Type;  // Second loop type (unidirectional, bidirectional)
-   int   Loop1Start; // Start of the first loop
-   int   Loop1End;   // End of the first loop
-   int   Loop2Start; // Start of the second loop
-   int   Loop2End;   // End of the second loop
+   LOOP    LoopMode;      // Loop mode (single, double)
+   LTYPE   Loop1Type;     // First loop type (unidirectional, bidirectional)
+   LTYPE   Loop2Type;     // Second loop type (unidirectional, bidirectional)
+   int64_t Loop1Start;    // Byte position at the start of the first loop
+   int64_t Loop1End;      // Byte position at the end of the first loop
+   int64_t Loop2Start;    // Byte position at the start of the second loop
+   int64_t Loop2End;      // Byte position at the end of the second loop
 };
 
 struct AudioEQBand {
@@ -218,7 +218,7 @@ struct CloseChannels { int Handle; static const AC id = AC(-2); ERR call(OBJECTP
 struct AddSample { FUNCTION OnStop; SFM SampleFormat; std::span<const int8_t> Data; struct AudioLoop *Loop; int Result; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct RemoveSample { int Handle; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetSampleLength { int Sample; int64_t Length; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct AddStream { FUNCTION Callback; FUNCTION OnStop; SFM SampleFormat; int SampleLength; int PlayOffset; struct AudioLoop *Loop; int Result; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddStream { FUNCTION Callback; FUNCTION OnStop; SFM SampleFormat; int64_t SampleLength; int64_t PlayOffset; struct AudioLoop *Loop; int Result; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Beep { int Pitch; int Duration; int Volume; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetVolume { int Index; std::string_view Name; SVF Flags; int Channel; double Volume; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
@@ -274,7 +274,7 @@ class objAudio : public Object {
       struct snd::SetSampleLength args = { Sample, Length };
       return Action(AC(-5), this, &args);
    }
-   inline ERR addStream(FUNCTION Callback, FUNCTION OnStop, SFM SampleFormat, int SampleLength, int PlayOffset, struct AudioLoop * Loop, int * Result) noexcept {
+   inline ERR addStream(FUNCTION Callback, FUNCTION OnStop, SFM SampleFormat, int64_t SampleLength, int64_t PlayOffset, struct AudioLoop * Loop, int * Result) noexcept {
       struct snd::AddStream args = { Callback, OnStop, SampleFormat, SampleLength, PlayOffset, Loop, (int)0 };
       ERR error = Action(AC(-6), this, &args);
       if (Result) *Result = args.Result;
@@ -627,7 +627,7 @@ class objSound : public Object {
    double   Pan;        // Determines the horizontal position of a sound when played through stereo speakers.
    int64_t  Position;   // The current playback position.
    int      Priority;   // The priority of a sound in relation to other sound samples being played.
-   int      Length;     // Indicates the total byte-length of sample data.
+   int64_t  Length;     // Indicates the total byte-length of sample data.
    int      Octave;     // The octave to use for sample playback.
    SDF      Flags;      // Optional initialisation flags.
    int      Frequency;  // The frequency of a sampled sound is specified here.
@@ -636,8 +636,8 @@ class objSound : public Object {
    int      BytesPerSecond; // The flow of bytes-per-second when the sample is played at normal frequency.
    int      BitsPerSample; // Indicates the sample rate of the audio sample, typically 8 or 16 bit.
    OBJECTID AudioID;    // Refers to the audio object/device to use for playback.
-   int      LoopStart;  // The byte position at which sample looping begins.
-   int      LoopEnd;    // The byte position at which sample looping will end.
+   int64_t  LoopStart;  // The byte position at which sample looping begins.
+   int64_t  LoopEnd;    // The byte position at which sample looping will end.
    STREAM   Stream;     // Defines the preferred streaming method for the sample.
    int      Handle;     // Audio handle acquired at the audio object [Private - Available to child classes]
    int      ChannelIndex; // Refers to the channel that the sound is playing through.
@@ -711,7 +711,7 @@ class objSound : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getLength(int &Value) noexcept {
+   inline ERR getLength(int64_t &Value) noexcept {
       Value = this->Length;
       return ERR::Okay;
    }
@@ -756,12 +756,12 @@ class objSound : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getLoopStart(int &Value) noexcept {
+   inline ERR getLoopStart(int64_t &Value) noexcept {
       Value = this->LoopStart;
       return ERR::Okay;
    }
 
-   inline ERR getLoopEnd(int &Value) noexcept {
+   inline ERR getLoopEnd(int64_t &Value) noexcept {
       Value = this->LoopEnd;
       return ERR::Okay;
    }
@@ -871,7 +871,7 @@ class objSound : public Object {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setLength(const int Value) noexcept {
+   inline ERR setLength(const int64_t Value) noexcept {
       auto field = &this->Class->Dictionary[33];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
@@ -918,12 +918,12 @@ class objSound : public Object {
       return ERR::Okay;
    }
 
-   inline ERR setLoopStart(const int Value) noexcept {
+   inline ERR setLoopStart(const int64_t Value) noexcept {
       this->LoopStart = Value;
       return ERR::Okay;
    }
 
-   inline ERR setLoopEnd(const int Value) noexcept {
+   inline ERR setLoopEnd(const int64_t Value) noexcept {
       this->LoopEnd = Value;
       return ERR::Okay;
    }
@@ -957,7 +957,7 @@ struct AudioBase {
    ERR (*_MixFrequency)(objAudio *Audio, int Handle, int Frequency);
    ERR (*_MixMute)(objAudio *Audio, int Handle, int Mute);
    ERR (*_MixPan)(objAudio *Audio, int Handle, double Pan);
-   ERR (*_MixPlay)(objAudio *Audio, int Handle, int Position);
+   ERR (*_MixPlay)(objAudio *Audio, int Handle, int64_t Position);
    ERR (*_MixTempo)(objAudio *Audio, int Handle, int Tempo);
    ERR (*_MixSample)(objAudio *Audio, int Handle, int Sample);
    ERR (*_MixStop)(objAudio *Audio, int Handle);
@@ -974,7 +974,7 @@ inline ERR MixContinue(objAudio *Audio, int Handle) { return AudioBase->_MixCont
 inline ERR MixFrequency(objAudio *Audio, int Handle, int Frequency) { return AudioBase->_MixFrequency(Audio,Handle,Frequency); }
 inline ERR MixMute(objAudio *Audio, int Handle, int Mute) { return AudioBase->_MixMute(Audio,Handle,Mute); }
 inline ERR MixPan(objAudio *Audio, int Handle, double Pan) { return AudioBase->_MixPan(Audio,Handle,Pan); }
-inline ERR MixPlay(objAudio *Audio, int Handle, int Position) { return AudioBase->_MixPlay(Audio,Handle,Position); }
+inline ERR MixPlay(objAudio *Audio, int Handle, int64_t Position) { return AudioBase->_MixPlay(Audio,Handle,Position); }
 inline ERR MixTempo(objAudio *Audio, int Handle, int Tempo) { return AudioBase->_MixTempo(Audio,Handle,Tempo); }
 inline ERR MixSample(objAudio *Audio, int Handle, int Sample) { return AudioBase->_MixSample(Audio,Handle,Sample); }
 inline ERR MixStop(objAudio *Audio, int Handle) { return AudioBase->_MixStop(Audio,Handle); }
@@ -988,7 +988,7 @@ extern ERR MixContinue(objAudio *Audio, int Handle);
 extern ERR MixFrequency(objAudio *Audio, int Handle, int Frequency);
 extern ERR MixMute(objAudio *Audio, int Handle, int Mute);
 extern ERR MixPan(objAudio *Audio, int Handle, double Pan);
-extern ERR MixPlay(objAudio *Audio, int Handle, int Position);
+extern ERR MixPlay(objAudio *Audio, int Handle, int64_t Position);
 extern ERR MixTempo(objAudio *Audio, int Handle, int Tempo);
 extern ERR MixSample(objAudio *Audio, int Handle, int Sample);
 extern ERR MixStop(objAudio *Audio, int Handle);

@@ -89,6 +89,13 @@ int main()
    assert(submit_audio_batch(set, 1, {}) IS ERR::NullArgs);
    assert(set.Commands.empty());
 
+   // Playback positions retain their full 64-bit value through batch staging.
+   constexpr int64_t large_position = int64_t(INT32_MAX) + 4097;
+   std::array<AudioMixCommand, 1> play = {{{ MIX::PLAY, handle, large_position, 0 }}};
+   assert(submit_audio_batch(set, 1, play) IS ERR::Okay);
+   assert(std::get<int64_t>(set.Commands.front().Data) IS large_position);
+   set.Commands.clear();
+
    // One boundary consumes only the first batch, preserving cross-channel array order and later batches.
    batch[1].Handle = handle + 1;
    assert(submit_audio_batch(set, 1, batch) IS ERR::Okay);

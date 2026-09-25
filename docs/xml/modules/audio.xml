@@ -144,22 +144,25 @@ mixing.</li>
   <function>
     <name>MixPlay</name>
     <comment>Commences channel playback at a set frequency.</comment>
-    <prototype>ERR snd::MixPlay(objAudio * Audio, INT Handle, INT Position)</prototype>
+    <prototype>ERR snd::MixPlay(objAudio * Audio, INT Handle, INT64 Position)</prototype>
     <tiriPrototype>err = MixPlay(Audio:obj, Handle:num, Position:num)</tiriPrototype>
     <tags>mutates-object</tags>
     <input>
       <param type="objAudio *" name="Audio">The target Audio object.</param>
       <param type="INT" name="Handle">The target channel.</param>
-      <param type="INT" name="Position">The new playing position, measured in bytes.</param>
+      <param type="INT64" name="Position">The new playing position, measured in bytes.  It must be aligned to a complete source frame.</param>
     </input>
     <description>
 <p>This function will start playback of the sound sample associated with the target mixer channel.  If the channel is already in playback mode, it will be stopped to facilitate the new playback request.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Playback successfully initiated.</error>
+      <error code="Args">Position is not frame-aligned.</error>
       <error code="NoData">The referenced sample is unconfigured.</error>
       <error code="OutOfRange">Position exceeds sample boundaries.</error>
       <error code="FieldNotSet">Channel not associated with a valid sample.</error>
+      <error code="BufferOverflow">The worker command queue is full.</error>
+      <error code="NotInitialised">The audio worker is stopping.</error>
       <error code="NullArgs">Required parameters are null or missing.</error>
     </result>
   </function>
@@ -355,16 +358,16 @@ mixing.</li>
       <field name="LoopMode" type="LOOP" lookup="LOOP">Loop mode (single, double)</field>
       <field name="Loop1Type" type="LTYPE" lookup="LTYPE">First loop type (unidirectional, bidirectional)</field>
       <field name="Loop2Type" type="LTYPE" lookup="LTYPE">Second loop type (unidirectional, bidirectional)</field>
-      <field name="Loop1Start" type="INT">Start of the first loop</field>
-      <field name="Loop1End" type="INT">End of the first loop</field>
-      <field name="Loop2Start" type="INT">Start of the second loop</field>
-      <field name="Loop2End" type="INT">End of the second loop</field>
+      <field name="Loop1Start" type="INT64">Byte position at the start of the first loop</field>
+      <field name="Loop1End" type="INT64">Byte position at the end of the first loop</field>
+      <field name="Loop2Start" type="INT64">Byte position at the start of the second loop</field>
+      <field name="Loop2End" type="INT64">Byte position at the end of the second loop</field>
     </struct>
 
     <struct name="AudioMixCommand" comment="One command in a caller-owned mixer batch.">
       <field name="Operation" type="MIX" lookup="MIX">Mixer operation</field>
       <field name="Handle" type="INT">Target channel; all commands in a batch must use the same channel set</field>
-      <field name="Integer" type="INT">Integer argument for the selected operation; otherwise ignored</field>
+      <field name="Integer" type="INT64">Integer argument for the selected operation; otherwise ignored</field>
       <field name="Value" type="DOUBLE">Finite floating-point argument for PAN and VOLUME; otherwise ignored</field>
     </struct>
 

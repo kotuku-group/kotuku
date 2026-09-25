@@ -219,7 +219,7 @@ ERR MixContinue(objAudio *Audio, int Handle)
 
    auto &sample = ((extAudio *)Audio)->Samples[channel->SampleHandle];
 
-   if ((sample.Stream) and (sample.PlayPos >= sample.StreamLength)) return ERR::Okay;
+   if (sample.Stream and sample.StreamLengthKnown and sample.PlayPos >= sample.StreamLength) return ERR::Okay;
    else if (channel->Position >= sample.SampleLength) return ERR::Okay;
 
    fade_out((extAudio *)Audio, Handle);
@@ -411,14 +411,17 @@ already in playback mode, it will be stopped to facilitate the new playback requ
 -INPUT-
 obj(Audio) Audio: The target Audio object.
 int Handle: The target channel.
-int Position: The new playing position, measured in bytes.
+large Position: The new playing position, measured in bytes.  It must be aligned to a complete source frame.
 
 -ERRORS-
 Okay: Playback successfully initiated.
 NullArgs: Required parameters are null or missing.
 OutOfRange: Position exceeds sample boundaries.
+Args: Position is not frame-aligned.
 FieldNotSet: Channel not associated with a valid sample.
 NoData: The referenced sample is unconfigured.
+BufferOverflow: The worker command queue is full.
+NotInitialised: The audio worker is stopping.
 
 -TAGS-
 mutates-object
@@ -426,7 +429,7 @@ mutates-object
 
 *********************************************************************************************************************/
 
-ERR MixPlay(objAudio *Audio, int Handle, int Position)
+ERR MixPlay(objAudio *Audio, int Handle, int64_t Position)
 {
    if (!Audio or !Handle) return ERR::NullArgs;
    std::lock_guard mixer_lock(((extAudio *)Audio)->MixerMutex);
@@ -442,8 +445,9 @@ ERR MixPlay(objAudio *Audio, int Handle, int Position)
       if (sample_handle < 0 or size_t(sample_handle) >= self->Samples.size()) return ERR::NoData;
       const auto &sample = self->Samples[sample_handle];
       if (sample.Data.empty()) return ERR::NoData;
+      if (Position % (int64_t(1) << sample_shift(sample.SampleType))) return ERR::Args;
       if (sample.Stream) {
-         if (Position > sample.StreamLength) return ERR::OutOfRange;
+         if (sample.StreamLengthKnown and Position > sample.StreamLength) return ERR::OutOfRange;
       }
       else if (SAMPLE(Position >> sample_shift(sample.SampleType)) > sample.SampleLength) return ERR::OutOfRange;
       if (self->PendingCount >= self->PendingCommands.size()) return ERR::BufferOverflow;
@@ -461,7 +465,7 @@ ERR MixPlay(objAudio *Audio, int Handle, int Position)
 
    auto channel = ((extAudio *)Audio)->GetChannel(Handle);
 
-   log.traceBranch("Audio: #%d, Channel: $%.8x, Position: %d", Audio->UID, Handle, Position);
+   log.traceBranch("Audio: #%d, Channel: $%.8x, Position: %" PF64, Audio->UID, Handle, (long long)Position);
 
 
    if (!channel->SampleHandle) { // A sample must be defined for the channel.
@@ -473,6 +477,8 @@ ERR MixPlay(objAudio *Audio, int Handle, int Position)
 
    auto &sample = ((extAudio *)Audio)->Samples[channel->SampleHandle];
 
+   if (Position % (int64_t(1) << sample_shift(sample.SampleType))) return log.warning(ERR::Args);
+
    // Convert position from bytes to samples
 
    auto bitpos = SAMPLE(Position >> sample_shift(sample.SampleType));
@@ -483,7 +489,7 @@ ERR MixPlay(objAudio *Audio, int Handle, int Position)
    }
 
    if (sample.Stream) {
-      if (Position > sample.StreamLength) return log.warning(ERR::OutOfRange);
+      if (sample.StreamLengthKnown and Position > sample.StreamLength) return log.warning(ERR::OutOfRange);
 #ifdef AUDIO_WORKER
       ++sample.Generation;
       sample.DeferredStops = 0;
@@ -530,13 +536,14 @@ ERR MixPlay(objAudio *Audio, int Handle, int Position)
 
          if (sample.OnStop.defined()) {
             double sec;
-            if (sample.Stream) {
+            if (sample.Stream and sample.StreamLengthKnown) {
                // NB: Accuracy is dependent on the StreamLength value being correct.  PlayPos already includes the
                // buffered fill, which still has to be played, so it is added back to the anticipated time.
                sec = double((sample.StreamLength - sample.PlayPos + sample.BufferedLength)>>sample_shift(sample.SampleType)) / double(channel->Frequency);
             }
-            else sec = double(sample.SampleLength - bitpos) / double(channel->Frequency);
-            channel->EndTime = PreciseTime() + std::lrint(sec * 1000000.0);
+            else if (!sample.Stream) sec = double(sample.SampleLength - bitpos) / double(channel->Frequency);
+            else sec = -1;
+            channel->EndTime = sec >= 0 ? PreciseTime() + std::lrint(sec * 1000000.0) : 0;
          }
          else channel->EndTime = 0;
 
@@ -771,7 +778,8 @@ ERR MixSample(objAudio *Audio, int Handle, int SampleIndex)
       return ERR::NoData;
    }
    else if (((extAudio *)Audio)->Samples[idx].SampleLength <= 0) {
-      log.warning("Sample #%d has invalid sample length %d", idx, ((extAudio *)Audio)->Samples[idx].SampleLength);
+      log.warning("Sample #%d has invalid sample length %" PF64, idx,
+         (long long)((extAudio *)Audio)->Samples[idx].SampleLength);
       return ERR::DataSize;
    }
 
@@ -936,11 +944,14 @@ ERR MixStopLoop(objAudio *Audio, int Handle)
       ++sample.Generation;
       sample.DeferredStops = 0;
       sample.Loop2Type = LTYPE::NIL;
-      sample.Ring.Used = std::min(sample.Ring.Used, size_t(std::max(0, int(sample.StreamLength - sample.PlayPos))));
-      sample.SourceOffset = int(sample.PlayPos) + sample.Ring.Used;
+      if (sample.StreamLengthKnown) {
+         sample.Ring.Used = std::min(sample.Ring.Used,
+            size_t(std::max<int64_t>(0, sample.StreamLength - sample.PlayPos)));
+      }
+      sample.SourceOffset = int64_t(sample.PlayPos) + sample.Ring.Used;
       sample.SourceSeek = true;
       sample.Refilling = sample.RefillPending = false;
-      sample.EndOfSource = sample.SourceOffset >= sample.StreamLength;
+      sample.EndOfSource = sample.StreamLengthKnown and sample.SourceOffset >= sample.StreamLength;
       sample.Prefilled = true;
       if (!sample.EndOfSource) request_stream((extAudio *)Audio, sample);
       return ERR::Okay;
