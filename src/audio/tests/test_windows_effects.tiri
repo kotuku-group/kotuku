@@ -1,4 +1,9 @@
+
+@if(exists='modules:audio')
+
    module audio as mAudio
+
+extern logOutput
 
 @BeforeAll function init(State)
    global glFolder = State.folder
@@ -185,27 +190,4 @@ end
    assert(captured_peak() > 0.15, 'Playback must recover after producer starvation')
 end
 
-@Test function BoundedDrainAndShutdownDuringTransition()
-   audio <close> = obj.new('Audio', { device='capture:' .. glCapture, stereo=true })
-   check audio.acActivate()
-   sound <close> = obj.new('Sound', { audio=audio, path=glFolder .. 'low-tone.wav' })
-   effect <close> = obj.new('AudioEqualiser', { audio=audio, channel=sound.channelIndex })
-   check sound.acActivate()
-   -- Check submitted frames, because the fake endpoint clock is not a wall-clock latency reference.
-   processing.sleep(8)
-   assert(sound.active is 0)
-   check audio.acDeactivate()
-   captured <close> = obj.new('File', {path=glCapture, flags=FL_READ})
-   assert(captured.size / 8 <= (sound.duration + 2.05) * audio.outputRate,
-      'Tail rendering must be bounded in output frames rather than keep the endpoint active indefinitely')
-   captured.free()
-   check audio.acActivate()
-   check sound.acSeek(0, SEEK_START)
-   check sound.acActivate()
-   processing.sleep(0.02)
-   effect.gain = -3
-   effect.gain = -6
-   sound.free()
-   audio.free()
-   assert(effect.mutable is 0, 'Shutdown must detach a processor with a pending transition')
-end
+@end

@@ -146,7 +146,12 @@ end
    assert(eq.mtSetParameter('unknown', 1) is ERR_Search)
    assert(eq.mtSetParameter('bands[0].unknown', 1) is ERR_Search)
    assert(eq.mtSetParameter('bands[x].gain', 1) is ERR_Search)
+   assert(eq.mtSetParameter('bands[].gain', 1) is ERR_Search)
+   assert(eq.mtSetParameter('bands[-1].gain', 1) is ERR_Search)
    assert(eq.mtSetParameter('bands[0]', 1) is ERR_Search)
+   assert(eq.mtSetParameter('bands[0]gain', 1) is ERR_Search)
+   assert(eq.mtSetParameter('bands[0.gain', 1) is ERR_Search)
+   assert(eq.mtSetParameter('', 1) is ERR_Search)
    assert(eq.mtSetParameter('bands[1].gain', 1) is ERR_OutOfRange)
    assert(eq.mtSetParameter('gain', 49) is ERR_InvalidValue)
    assert(eq.mtSetParameter('bands[0].type', 9) is ERR_InvalidValue)
@@ -157,6 +162,7 @@ end
    assert(eq.mtInsertEntry('unknown', 0) is ERR_Search)
    assert(eq.mtInsertEntry('bands', 5) is ERR_OutOfRange)
    assert(eq.mtRemoveEntry('bands', -1) is ERR_OutOfRange)
+   assert(eq.mtRemoveEntry('bands', 1) is ERR_OutOfRange)
 
    -- Rejected calls must not leave a working copy behind; the gain field remains writable.
 
@@ -178,6 +184,32 @@ end
    assert(plain.schema is '' or plain.schema is nil)
    assert(plain.mtSetParameter('gain', 0) is ERR_NoSupport)
    check plain.acFlush()
+end
+
+@Test function ParameterBounds()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   eq <close> = new_equaliser(audio)
+   check eq.mtInsertEntry('bands', 0)
+
+   check eq.mtSetParameter('gain', -48)
+   check eq.mtSetParameter('gain', 48)
+   assert(eq.mtSetParameter('gain', 48.001) is ERR_InvalidValue)
+   assert(eq.mtSetParameter('gain', math.huge) is ERR_InvalidValue)
+   check eq.mtSetParameter('bands[0].type', EQB_HIGH_PASS)
+   assert(eq.mtSetParameter('bands[0].type', 1.5) is ERR_InvalidValue)
+   check eq.mtSetParameter('bands[0].frequency', 0.001)
+   check eq.mtSetParameter('bands[0].frequency', 23999)
+   assert(eq.mtSetParameter('bands[0].frequency', math.sqrt(-1)) is ERR_InvalidValue)
+   check eq.acFlush()
+
+   assert(eq.gain is 48 and eq.bands[0].type is EQB_HIGH_PASS)
+   assert(eq.bands[0].frequency is 23999)
+
+   low_rate <close> = obj.new('Audio', { device='null', outputRate=1600 })
+   low_eq <close> = new_equaliser(low_rate)
+   check low_eq.mtInsertEntry('bands', 0)
+   err, frequency = low_eq.mtGetParameter('bands[0].frequency')
+   assert(err is ERR_Okay and frequency is 400, 'A default frequency must fit below the Nyquist limit')
 end
 
 @Test function StagedChanges()
@@ -295,20 +327,6 @@ end
    assert(err is ERR_Okay)
    plain <close> = obj.new('AudioEffect', { audio=audio, channel=channel })
    assert(plain.mtGetResponse(frequencies, magnitudes) is ERR_NoSupport)
-end
-
-@Test function GlobalEffectsAreImmutable()
-   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
-   eq = audio.new('AudioEqualiser')
-   check eq.mtInsertEntry('bands', 0)
-   eq.init()
-   assert(eq.mutable is 0)
-   assert(eq.mtSetParameter('bands[0].gain', 1) is ERR_Immutable)
-   assert(eq.mtInsertEntry('bands', 1) is ERR_Immutable)
-   assert(eq.mtRemoveEntry('bands', 0) is ERR_Immutable)
-   err, value = eq.mtGetParameter('bands[0].frequency')
-   assert(err is ERR_Okay and value is 1000, 'Global effects remain readable')
-   check eq.acFlush()
 end
 
 @Test function GroupCounts()

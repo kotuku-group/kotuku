@@ -4,7 +4,9 @@
 -- NB: Latency differs between platforms.  Do not expect playback gaps to match between Windows and Linux.
 
 @if(exists='modules:audio')
+
    module audio as mAudio
+   extern logOutput
 
 @BeforeAll function init(State)
    global glFolder = State.folder
@@ -17,6 +19,20 @@ end
 
 @AfterAll function cleanup()
    mSys.DeleteFile('temp:low-tone.wav')
+end
+
+@Test function RequestedPeriodLimits()
+   minimum <close> = obj.new('Audio', { device='null', periods=-1, periodSize=-1 })
+   assert(minimum.periods is 2, 'Periods must be clamped to the documented minimum')
+   assert(minimum.periodSize is 32, 'PeriodSize must be clamped to the documented minimum')
+
+   maximum <close> = obj.new('Audio', { device='null', periods=100, periodSize=100000 })
+   assert(maximum.periods is 16, 'Periods must be clamped to the documented maximum')
+   assert(maximum.periodSize is 16384, 'PeriodSize must be clamped to the documented maximum')
+
+   requested <close> = obj.new('Audio', { device='null', periods=3, periodSize=256 })
+   assert(requested.periods is 3 and requested.periodSize is 256,
+      'Values inside the supported range must be preserved')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
