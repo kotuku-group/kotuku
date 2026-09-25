@@ -174,8 +174,10 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     double Volume      # Volume of sample (0 - 100%)
     double Pan         # Horizontal positioning for playback on stereo speakers (`-100` to `+100`)
     large Position     # Byte position to start playing from
-    int Priority       # Priority over other sounds
     large Length       # Length of sample data in bytes
+    large LoopStart    # Byte position of looping start
+    large LoopEnd      # Byte position of looping end
+    int Priority       # Priority over other sounds
     int Octave         # Current octave to use for playing back notes (defaults to zero)
     int(SDF) Flags     # Sound flags
     int Frequency      # Frequency of sampled sound (nb: does not affect playback - use the Playback field)
@@ -184,8 +186,6 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     int BytesPerSecond # Bytes per second, measured as `Frequency * BytesPerSample`
     int BitsPerSample  # Usually set to `8` or `16` bit
     oid Audio          # Reference to an @Audio object to use for audio output and input
-    large LoopStart    # Byte position of looping start
-    large LoopEnd      # Byte position of looping end
     int(STREAM) Stream # Streaming type (smart by default)
     int Handle         # Audio handle acquired at the audio object [Private - Available to child classes]
     int ChannelIndex   # Channel handle that the sound was last played on

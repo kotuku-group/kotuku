@@ -627,8 +627,10 @@ class objSound : public Object {
    double   Volume;     // The volume to use when playing the sound sample.
    double   Pan;        // Determines the horizontal position of a sound when played through stereo speakers.
    int64_t  Position;   // The current playback position.
-   int      Priority;   // The priority of a sound in relation to other sound samples being played.
    int64_t  Length;     // Indicates the total byte-length of sample data.
+   int64_t  LoopStart;  // The byte position at which sample looping begins.
+   int64_t  LoopEnd;    // The byte position at which sample looping will end.
+   int      Priority;   // The priority of a sound in relation to other sound samples being played.
    int      Octave;     // The octave to use for sample playback.
    SDF      Flags;      // Optional initialisation flags.
    int      Frequency;  // The frequency of a sampled sound is specified here.
@@ -637,8 +639,6 @@ class objSound : public Object {
    int      BytesPerSecond; // The flow of bytes-per-second when the sample is played at normal frequency.
    int      BitsPerSample; // Indicates the sample rate of the audio sample, typically 8 or 16 bit.
    OBJECTID AudioID;    // Refers to the audio object/device to use for playback.
-   int64_t  LoopStart;  // The byte position at which sample looping begins.
-   int64_t  LoopEnd;    // The byte position at which sample looping will end.
    STREAM   Stream;     // Defines the preferred streaming method for the sample.
    int      Handle;     // Audio handle acquired at the audio object [Private - Available to child classes]
    int      ChannelIndex; // Refers to the channel that the sound is playing through.
@@ -707,13 +707,23 @@ class objSound : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getPriority(int &Value) noexcept {
-      Value = this->Priority;
+   inline ERR getLength(int64_t &Value) noexcept {
+      Value = this->Length;
       return ERR::Okay;
    }
 
-   inline ERR getLength(int64_t &Value) noexcept {
-      Value = this->Length;
+   inline ERR getLoopStart(int64_t &Value) noexcept {
+      Value = this->LoopStart;
+      return ERR::Okay;
+   }
+
+   inline ERR getLoopEnd(int64_t &Value) noexcept {
+      Value = this->LoopEnd;
+      return ERR::Okay;
+   }
+
+   inline ERR getPriority(int &Value) noexcept {
+      Value = this->Priority;
       return ERR::Okay;
    }
 
@@ -754,16 +764,6 @@ class objSound : public Object {
 
    inline ERR getAudio(OBJECTID &Value) noexcept {
       Value = this->AudioID;
-      return ERR::Okay;
-   }
-
-   inline ERR getLoopStart(int64_t &Value) noexcept {
-      Value = this->LoopStart;
-      return ERR::Okay;
-   }
-
-   inline ERR getLoopEnd(int64_t &Value) noexcept {
-      Value = this->LoopEnd;
       return ERR::Okay;
    }
 
@@ -867,14 +867,24 @@ class objSound : public Object {
       return field->WriteValue(this, field, FD_INT64, &Value);
    }
 
-   inline ERR setPriority(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
    inline ERR setLength(const int64_t Value) noexcept {
       auto field = &this->Class->Dictionary[33];
       return field->WriteValue(this, field, FD_INT64, &Value);
+   }
+
+   inline ERR setLoopStart(const int64_t Value) noexcept {
+      this->LoopStart = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setLoopEnd(const int64_t Value) noexcept {
+      this->LoopEnd = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setPriority(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[9];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setOctave(const int Value) noexcept {
@@ -916,16 +926,6 @@ class objSound : public Object {
    inline ERR setAudio(OBJECTID Value) noexcept {
       if (this->initialised()) return ERR::ImmutableField;
       this->AudioID = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setLoopStart(const int64_t Value) noexcept {
-      this->LoopStart = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setLoopEnd(const int64_t Value) noexcept {
-      this->LoopEnd = Value;
       return ERR::Okay;
    }
 

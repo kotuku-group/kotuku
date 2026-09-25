@@ -2,6 +2,10 @@
 -- these tests remain valid on unpaced null devices.
    module audio as mAudio
 
+@BeforeAll function init(State)
+   global glAudioTestFolder = State.folder
+end
+
 function new_audio()
    audio = obj.new('Audio', { device='null' })
    check audio.acActivate()
@@ -76,6 +80,20 @@ end
    await_count(stops, 1)
    processing.sleep(0.05)
    assert(stops[0] is 1, 'Stopping a paused playback must notify exactly once')
+end
+
+@Test function PausedSoundKeepsItsChannel()
+   audio <close> = new_audio()
+   first <close> = obj.new('Sound', { audio=audio, path=glAudioTestFolder .. 'low-tone.wav', flags=SDF_LOOP })
+   second <close> = obj.new('Sound', { audio=audio, path=glAudioTestFolder .. 'low-tone.wav', flags=SDF_LOOP })
+   check first.acActivate()
+   first_channel = first.channelIndex
+   check mAudio.MixPause(audio, first_channel)
+   check second.acActivate()
+   assert(second.channelIndex != first_channel, 'Activating another Sound must not reuse a paused channel')
+   check mAudio.MixContinue(audio, first_channel)
+   check first.acDeactivate()
+   check second.acDeactivate()
 end
 
 @Test function ReleaseEndsSingleLoopNote()
