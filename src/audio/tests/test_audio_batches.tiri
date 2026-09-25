@@ -1,0 +1,95 @@
+   module audio as mAudio
+
+function command(Operation, Handle, Integer, Value)
+   return struct.new('AudioMixCommand', { operation=Operation, handle=Handle, integer=Integer ?? 0, value=Value ?? 0 })
+end
+
+@Test function OwnedBatchesExecuteInOrder()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100 })
+   check audio.acActivate()
+   err, channel = audio.mtOpenChannels(2)
+   assert(err is ERR_Okay)
+   completed = array<int>
+   data = array<byte, 128>
+   data.fill(128)
+   err, first = audio.mtAddSample(function(Audio, Handle) completed.push(1) end, SFM_U8_BIT_MONO, data, nil)
+   assert(err is ERR_Okay)
+   err, second = audio.mtAddSample(function(Audio, Handle) completed.push(2) end, SFM_U8_BIT_MONO, data, nil)
+   assert(err is ERR_Okay)
+   batch = array<struct<AudioMixCommand>> {
+      command(MIX_SAMPLE, channel, first),
+      command(MIX_FREQUENCY, channel, 44100),
+      command(MIX_PLAY, channel)
+   }
+   processing.sleep(0.04)
+   assert(#completed is 0, 'A caller-owned batch has no effect before submission')
+   check mAudio.MixSubmitBatch(audio, batch)
+   batch[0] = command(MIX_SAMPLE, channel + 1, second)
+   batch[1] = command(MIX_FREQUENCY, channel + 1, 44100)
+   batch[2] = command(MIX_PLAY, channel + 1)
+   check mAudio.MixSubmitBatch(audio, batch)
+   batch.clear()
+   processing.sleep(0.2)
+   assert(#completed is 2, 'Submitted arrays are copied and each batch runs once')
+   assert(completed[0] is 1 and completed[1] is 2, 'Batches must execute in submission order')
+end
+
+@Test function RejectedSuffixDoesNotPublishPlayback()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   completed = 0
+   data = array<byte, 128>
+   data.fill(128)
+   err, sample = audio.mtAddSample(function(Audio, Handle) completed++ end, SFM_U8_BIT_MONO, data, nil)
+   assert(err is ERR_Okay)
+   batch = array<struct<AudioMixCommand>> {
+      command(MIX_SAMPLE, channel, sample),
+      command(MIX_FREQUENCY, channel, 44100),
+      command(MIX_PLAY, channel),
+      command(MIX_STOP, channel + 1)
+   }
+   assert(mAudio.MixSubmitBatch(audio, batch) is ERR_OutOfRange)
+   processing.sleep(0.06)
+   assert(completed is 0, 'An invalid suffix must reject the playback prefix')
+   batch.clear()
+   check mAudio.MixSample(audio, channel, sample)
+   check mAudio.MixFrequency(audio, channel, 44100)
+   check mAudio.MixPlay(audio, channel, 0)
+   processing.sleep(0.1)
+   assert(completed is 1, 'Abandoning a batch must not buffer individual Mix calls')
+end
+
+@Test function TimingSingleCommandPriorityAndExecutionFailure()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100 })
+   check audio.acActivate()
+   err, channel = audio.mtOpenChannels(2)
+   assert(err is ERR_Okay)
+   completed = 0
+   data = array<byte, 128>
+   data.fill(128)
+   err, sample = audio.mtAddSample(function(Audio, Handle) completed++ end, SFM_U8_BIT_MONO, data, nil)
+   assert(err is ERR_Okay)
+   -- Prime the update interval to 500 ms.  Rate changes apply when the next boundary is scheduled.
+   check mAudio.MixSubmitBatch(audio, array<struct<AudioMixCommand>> { command(MIX_RATE, channel, 5) })
+   check mAudio.MixSubmitBatch(audio, array<struct<AudioMixCommand>> { command(MIX_MUTE, channel, 0) })
+   processing.sleep(0.08)
+   batch = array<struct<AudioMixCommand>> {
+      command(MIX_PLAY, channel), -- No selected sample: this command fails at execution.
+      command(MIX_SAMPLE, channel, sample),
+      command(MIX_FREQUENCY, channel, 44100),
+      command(MIX_PLAY, channel),
+      command(MIX_SAMPLE, channel + 1, sample),
+      command(MIX_FREQUENCY, channel + 1, 44100),
+      command(MIX_PLAY, channel + 1)
+   }
+   check mAudio.MixSubmitBatch(audio, batch)
+   -- This later single command must run before the timed batch, whose frequency restores playback.
+   check mAudio.MixFrequency(audio, channel, 0)
+   for i in {0 to 60} do
+      if completed is 2 then break end
+      processing.sleep(0.05)
+   end
+   assert(completed is 2, 'Both channels must play despite the failed command and later single command')
+end

@@ -8,8 +8,6 @@ static void execute_audio_command(extAudio *Self, const AudioCommand &Command)
 {
    auto channel = Self->GetChannel(Command.Handle);
    if (!channel) return;
-   const bool buffering = channel->Buffering;
-   channel->Buffering = false;
    switch (Command.CommandID) {
       case CMD::CONTINUE: snd::MixContinue(Self, Command.Handle); break;
       case CMD::PAUSE: snd::pause_channel(Self, Command.Handle); break;
@@ -24,7 +22,6 @@ static void execute_audio_command(extAudio *Self, const AudioCommand &Command)
       case CMD::STOP_LOOPING: snd::MixStopLoop(Self, Command.Handle); break;
       default: break;
    }
-   channel->Buffering = buffering;
 }
 
 //********************************************************************************************************************

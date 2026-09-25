@@ -138,27 +138,6 @@ end
    check audio.acDeactivate()
 end
 
-@Test function IncompleteSequenceWaitsForEnd()
-   audio <close> = obj.new('Audio', { device='null', bitDepth=32 })
-   check audio.acActivate()
-   completed = 0
-   data = array<byte, 512>
-   data.fill(128)
-   err, sample = audio.mtAddSample(function(Audio, Handle) completed++ end, SFM_U8_BIT_MONO, data, nil)
-   assert(err is ERR_Okay)
-   err, channel = audio.mtOpenChannels(1)
-   assert(err is ERR_Okay)
-   check mAudio.MixStartSequence(audio, channel)
-   check mAudio.MixSample(audio, channel, sample)
-   check mAudio.MixFrequency(audio, channel, 44100)
-   check mAudio.MixPlay(audio, channel, 0)
-   processing.sleep(0.04)
-   assert(completed is 0, 'An unfinished sequence must not execute')
-   check mAudio.MixEndSequence(audio, channel)
-   processing.sleep(0.08)
-   assert(completed is 1, 'A completed sequence must execute once in order')
-end
-
 @Test function EmptyProducerResumes()
    audio <close> = obj.new('Audio', { device='null', bitDepth=8, stereo=false })
    check audio.acActivate()
@@ -269,21 +248,6 @@ end
    check audio.acActivate()
    assert(audio.mute is 0 and math.abs(audio.masterVolume - 0.6) < 0.00001,
       'Reactivation must retain software mixer settings')
-end
-
-@Test function CommandSequenceHasBoundedCapacity()
-   audio <close> = obj.new('Audio', { device='null' })
-   check audio.acActivate()
-   err, channel = audio.mtOpenChannels(1)
-   assert(err is ERR_Okay)
-   check mAudio.MixStartSequence(audio, channel)
-   for i in {0 to 1023} do
-      check mAudio.MixVolume(audio, channel, 0.5)
-   end
-   err = mAudio.MixVolume(audio, channel, 0.5)
-   assert(err is ERR_BufferOverflow, 'Command overflow must be reported without growing the queue')
-   check mAudio.MixEndSequence(audio, channel)
-   check audio.acDeactivate()
 end
 
 @Test function BoundaryConfigurationAndActivationFailure()
