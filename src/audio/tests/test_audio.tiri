@@ -13,8 +13,8 @@
    global glAudio = obj.new('audio', { name='SystemAudio' })
 
    check glAudio.acActivate()
-   -- MixerLag can be zero while idle.  Use the negotiated buffer, rounded up to whole periods on Windows.
-   global glBufferDuration = glAudio.periods * glAudio.periodSize / glAudio.outputRate
+   -- ALSA MixerLag uses the negotiated buffer.  On idle Windows it can be zero, so retain the period-based fallback.
+   global glBufferDuration = math.max(glAudio.mixerLag, glAudio.periods * glAudio.periodSize / glAudio.outputRate)
    logOutput('Audio buffer timing allowance is ' .. string.format('%.3fs', glBufferDuration))
 end
 
