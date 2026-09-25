@@ -944,8 +944,11 @@ target_compile_definitions(${MOD} PRIVATE
    $<$<CONFIG:Debug>:LUA_USE_ASSERT>)
 
 if (MSVC)
-   # /MP enables multi-processor compilation for parallel builds within this target
-   target_compile_options(${MOD} PRIVATE /MP)
+   # parser.cpp is an amalgamation unit that exceeds the standard COFF section limit in Debug builds.  Keep MSVC
+   # options scoped to C++ so that the register-capture MASM source does not receive them.
+   target_compile_options(${MOD} PRIVATE
+      "$<$<COMPILE_LANGUAGE:CXX>:/MP>"
+      "$<$<COMPILE_LANGUAGE:CXX>:/bigobj>")
 else ()
    # Suppress offsetof warnings for non-standard-layout types (lua_State, GG_State contain C++ members)
    target_compile_options(${MOD} PRIVATE -Wno-invalid-offsetof)
