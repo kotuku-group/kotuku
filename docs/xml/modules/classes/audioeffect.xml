@@ -1,0 +1,296 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>AudioEffect</name>
+    <type>class</type>
+    <module>Audio</module>
+    <comment>Support class for processors attached to an Audio mixing chain.</comment>
+    <version>1</version>
+    <id>93ba38b3</id>
+    <idstring>AUDIOEFFECT</idstring>
+    <category>Audio</category>
+    <copyright>Paul Manias © 2002-2026</copyright>
+    <description>
+<p>AudioEffect is a support class for audio processors.  Use a derived class to perform DSP; the AudioEffect class itself passes samples through unchanged.</p>
+<p>A zero <fl>Channel</fl> applies the effect universally.  Otherwise use the complete handle returned by <class name="Audio" method="OpenChannels">Audio.OpenChannels()</class>. Application chains process their channel set before it is added to the master mix.  The global chain processes the master mix before the built-in output filter.  Lower <fl>Order</fl> values run first; ties retain attachment order.</p>
+<p>Attachment, field changes and detachment are serialised with mixing.  Freeing an effect waits for any current mix window before detaching it.  Closing its channel set or freeing its Audio target disconnects the effect; a disconnected effect must be replaced to attach it again.  Global effects are immutable after initialisation.</p>
+<header>Parameter Schema</header>
+<p>Subclasses can publish their parameters in the <fl>Schema</fl> field, so that a client can present and change any effect without knowing its class.  The schema is an XML document:</p>
+<pre>&lt;effect class=&quot;AudioEqualiser&quot; version=&quot;1&quot; description=&quot;A parametric equaliser.&quot;&gt;
+  &lt;param key=&quot;gain&quot; label=&quot;Output Trim&quot; type=&quot;double&quot; unit=&quot;dB&quot; scale=&quot;linear&quot; min=&quot;-48&quot; max=&quot;48&quot; default=&quot;0&quot;/&gt;
+  &lt;group key=&quot;bands&quot; label=&quot;Band&quot; min=&quot;0&quot; max=&quot;64&quot;&gt;
+    &lt;param key=&quot;type&quot; label=&quot;Type&quot; type=&quot;enum&quot; default=&quot;0&quot;&gt;
+      &lt;option value=&quot;0&quot; key=&quot;peak&quot; label=&quot;Peak&quot; description=&quot;Boosts or cuts a range.&quot;/&gt;
+    &lt;/param&gt;
+    &lt;param key=&quot;q&quot; label=&quot;Q&quot; type=&quot;double&quot; scale=&quot;log&quot; min=&quot;0.1&quot; max=&quot;20&quot; default=&quot;0.707&quot;&gt;
+      &lt;rule key=&quot;type&quot; values=&quot;1,2&quot; max=&quot;1&quot;/&gt;
+    &lt;/param&gt;
+  &lt;/group&gt;
+  &lt;output key=&quot;response&quot; type=&quot;curve&quot;/&gt;
+&lt;/effect&gt;
+</pre>
+<p>The <code>effect</code>, <code>group</code>, <code>param</code> and <code>option</code> elements may carry a <code>description</code> attribute.  It contains one or more complete sentences that explain the item's purpose in terms suitable for presentation to the user, e.g. as a tooltip. The attribute is omitted if no description is available.</p>
+<p>A <code>param</code> element describes one value.  Its <code>type</code> is <code>double</code>, <code>int</code>, <code>bool</code> or <code>enum</code>; enumerations list their values as <code>option</code> elements.  The <code>unit</code> attribute is omitted for unitless values.  The <code>scale</code> is <code>linear</code> or <code>log</code> and indicates how a control should map positions to values.  The <code>min</code> and <code>max</code> bounds are inclusive unless <code>min-exclusive</code> or <code>max-exclusive</code> is set.  A <code>max</code> of <code>nyquist</code> means half of the <fl>OutputRate</fl> and is always exclusive. A <code>step</code> is present only for stepped values.</p>
+<p>A <code>group</code> element describes a repeated structure, such as a list of equaliser bands, with <code>min</code> and <code>max</code> entry counts. Its entries are numbered from zero. Use <method>GetGroupCount</method> to read the number of entries, including staged insertions and removals.</p>
+<p>A <code>rule</code> element relates a parameter to a sibling in the same group, or to another top-level parameter.  If the sibling named by <code>key</code> holds one of the listed <code>values</code>, the parameter is either ignored by the processor (<code>inactive=&quot;1&quot;</code>) or limited to a lower <code>max</code>.</p>
+<p>An <code>output</code> element names data that can be read back from the processor.  A <code>curve</code> output is read with <method>GetResponse</method>.</p>
+<p>Parameters are addressed by key-paths: <code>key</code> for a top-level parameter, or <code>group[index].key</code> for a group member, e.g. <code>bands[2].frequency</code>.  Values are always in real units, such as hertz or decibels; they are never normalised.</p>
+<header>Staged Changes</header>
+<p>Before initialisation, <method>SetParameter</method>, <method>InsertEntry</method> and <method>RemoveEntry</method> change the effect directly and <code>Init()</code> validates the result.  After initialisation they change a working copy instead, which is applied as a single change when the client calls <code>Flush()</code>.  This allows related changes, such as switching a band's type together with its Q, without the processor ever running the state between them.  <method>GetParameter</method> reports staged values.  A flush that breaks any rule is rejected in full and the working copy is discarded.</p></description>
+    <source>
+      <file>class_audioeffect.cpp</file>
+    </source>
+  </info>
+
+  <actions>
+    <action>
+      <name>Flush</name>
+      <comment>Applies changes staged by SetParameter(), InsertEntry() and RemoveEntry().</comment>
+      <prototype>ERR acFlush(*Object)</prototype>
+      <tiriPrototype>err = Object.acFlush()</tiriPrototype>
+      <description>
+<p>After initialisation, parameter changes made through <method>SetParameter</method>, <method>InsertEntry</method> and <method>RemoveEntry</method> are held in a working copy.  Flush() validates the working copy as a whole and applies it in a single step, so the processor never runs a partially changed state.</p>
+<p>The working copy is discarded whether or not the flush succeeds.  If any value or rule is invalid, the effect is left unchanged and <code>ERR::InvalidValue</code> is returned.  Calling Flush() with no staged changes has no effect.</p>
+      </description>
+      <result>
+        <error code="Okay">The staged changes were applied, or there were none.</error>
+        <error code="NotInitialised">The effect has been disconnected from its Audio object.</error>
+        <error code="InvalidValue">The staged changes break a rule or range.  Nothing was applied.</error>
+        <error code="Immutable">The effect is attached to the global chain.</error>
+      </result>
+    </action>
+
+  </actions>
+
+  <methods>
+    <method>
+      <name>GetGroupCount</name>
+      <comment>Reads the number of entries in a parameter group.</comment>
+      <prototype>ERR fx::GetGroupCount(OBJECTPTR Object, STRVIEW Group, INT * Count)</prototype>
+      <tiriPrototype>err, Count:num = GetGroupCount(Group:str)</tiriPrototype>
+      <input>
+        <param type="STRVIEW" name="Group">The group key published in <fl>Schema</fl>, e.g. <code>bands</code>.</param>
+        <param type="INT *" name="Count">The number of entries is returned here.</param>
+      </input>
+      <description>
+<p>Returns the current entry count for the named group.  Staged insertions and removals are included, matching <method>GetParameter</method>.  A failed Flush() discards staged changes, so subsequent queries return the committed count. The count can be read before initialisation or after the effect has been disconnected.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Search">The group is unknown.</error>
+        <error code="NoSupport">The effect does not publish a schema.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+    </method>
+
+    <method>
+      <name>GetParameter</name>
+      <comment>Reads a parameter value by key.</comment>
+      <prototype>ERR fx::GetParameter(OBJECTPTR Object, STRVIEW Path, DOUBLE * Value)</prototype>
+      <tiriPrototype>err, Value:num = GetParameter(Path:str)</tiriPrototype>
+      <input>
+        <param type="STRVIEW" name="Path">A parameter key such as <code>gain</code> or <code>bands[2].frequency</code>.</param>
+        <param type="DOUBLE *" name="Value">The parameter value is returned here.</param>
+      </input>
+      <description>
+<p>Reads the value of a parameter published in the <fl>Schema</fl>.  If changes are staged, the staged value is returned, so a client always reads back what it has set.  Enumerated values are returned as their numeric value.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Search">The key is malformed or names an unknown parameter.</error>
+        <error code="NoSupport">The effect does not publish a schema.</error>
+        <error code="OutOfRange">The group index does not refer to an existing entry.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+    </method>
+
+    <method>
+      <name>GetResponse</name>
+      <comment>Computes the effect's frequency response.</comment>
+      <prototype>ERR fx::GetResponse(OBJECTPTR Object, std::span&lt;const double&gt; Frequencies, std::span&lt;double&gt; Magnitudes)</prototype>
+      <tiriPrototype>err = GetResponse(Frequencies:array, Magnitudes:array)</tiriPrototype>
+      <input>
+        <param type="std::span&lt;const double&gt;" name="Frequencies">Frequencies in hertz.  Each must be above zero and below half of the <fl>OutputRate</fl>.</param>
+        <param type="std::span&lt;double&gt;" name="Magnitudes">Receives the response in decibels.  Must be the same length as <code>Frequencies</code>.</param>
+      </input>
+      <description>
+<p>Computes the response of the effect at each of the given frequencies, in decibels, from its committed parameters at the current <fl>OutputRate</fl>.  Staged changes are not included.  Effects that support this method list an <code>output</code> of type <code>curve</code> in their <fl>Schema</fl>.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Args">The arrays are empty, of different lengths, or longer than 4096 entries.</error>
+        <error code="NoSupport">The effect does not compute a response.</error>
+        <error code="NotInitialised">The output rate is not yet known.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="InvalidValue">A frequency is not above zero and below half of the output rate.</error>
+      </result>
+      <tags>mutates-input</tags>
+    </method>
+
+    <method>
+      <name>InsertEntry</name>
+      <comment>Inserts a new entry into a parameter group.</comment>
+      <prototype>ERR fx::InsertEntry(OBJECTPTR Object, STRVIEW Group, INT Index)</prototype>
+      <tiriPrototype>err = InsertEntry(Group:str, Index:num)</tiriPrototype>
+      <input>
+        <param type="STRVIEW" name="Group">The key of the group, e.g. <code>bands</code>.</param>
+        <param type="INT" name="Index">The zero-based position for the new entry.</param>
+      </input>
+      <description>
+<p>Inserts an entry at <code>Index</code>, filled with the default values published in the <fl>Schema</fl>.  Later entries move up by one. Set <code>Index</code> to the current entry count to append.  After initialisation the insertion is staged until <code>Flush()</code> is called.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Search">The group is unknown.</error>
+        <error code="NoSupport">The effect does not publish a schema.</error>
+        <error code="OutOfRange">The index is invalid or the group is full.</error>
+        <error code="NotInitialised">The effect has been disconnected from its Audio object.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="Immutable">The effect is attached to the global chain.</error>
+      </result>
+    </method>
+
+    <method>
+      <name>RemoveEntry</name>
+      <comment>Removes an entry from a parameter group.</comment>
+      <prototype>ERR fx::RemoveEntry(OBJECTPTR Object, STRVIEW Group, INT Index)</prototype>
+      <tiriPrototype>err = RemoveEntry(Group:str, Index:num)</tiriPrototype>
+      <input>
+        <param type="STRVIEW" name="Group">The key of the group, e.g. <code>bands</code>.</param>
+        <param type="INT" name="Index">The zero-based position of the entry to remove.</param>
+      </input>
+      <description>
+<p>Removes the entry at <code>Index</code>.  Later entries move down by one and keep their processing state.  After initialisation the removal is staged until <code>Flush()</code> is called.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Search">The group is unknown.</error>
+        <error code="NoSupport">The effect does not publish a schema.</error>
+        <error code="OutOfRange">The index is invalid or the group is at its minimum size.</error>
+        <error code="NotInitialised">The effect has been disconnected from its Audio object.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="Immutable">The effect is attached to the global chain.</error>
+      </result>
+    </method>
+
+    <method>
+      <name>SetParameter</name>
+      <comment>Changes a parameter value by key.</comment>
+      <prototype>ERR fx::SetParameter(OBJECTPTR Object, STRVIEW Path, DOUBLE Value)</prototype>
+      <tiriPrototype>err = SetParameter(Path:str, Value:num)</tiriPrototype>
+      <input>
+        <param type="STRVIEW" name="Path">A parameter key such as <code>gain</code> or <code>bands[2].frequency</code>.</param>
+        <param type="DOUBLE" name="Value">The new value, in the parameter's unit.</param>
+      </input>
+      <description>
+<p>Sets a parameter published in the <fl>Schema</fl>.  The value is checked against the parameter's own range immediately. Rules that relate parameters to each other are checked when the change is applied: by <code>Init()</code> before initialisation, or by <code>Flush()</code> afterwards.  After initialisation the change is staged and has no effect on the processor until <code>Flush()</code> is called.</p>
+<p>Enumerated values are set with their numeric value.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Search">The key is malformed or names an unknown parameter.</error>
+        <error code="NoSupport">The effect does not publish a schema.</error>
+        <error code="OutOfRange">The group index does not refer to an existing entry.</error>
+        <error code="NotInitialised">The effect has been disconnected from its Audio object.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="InvalidValue">The value is outside the parameter's range.</error>
+        <error code="Immutable">The effect is attached to the global chain.</error>
+      </result>
+    </method>
+
+  </methods>
+
+  <fields>
+    <field>
+      <name>Audio</name>
+      <comment>Target Audio object, inherited from an Audio owner if omitted.</comment>
+      <access read="R" write="I">Read/Init</access>
+      <type>OBJECTID</type>
+      <description>
+<p>Set before initialisation.  Explicit targets take precedence over ownership.  Ownership changes after attachment do not change the target.  Freeing the target disconnects all its effects, including effects owned by other objects.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Channel</name>
+      <comment>Channel-set handle, or zero for the global chain.</comment>
+      <access read="R" write="I">Read/Init</access>
+      <type>INT</type>
+      <description>
+<p>Set before initialisation.  Use the complete handle returned by <class name="Audio" method="OpenChannels">Audio.OpenChannels()</class>, with a zero low word. Individual channel handles and closed channel sets are rejected.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Flags</name>
+      <comment>Optional processing flags.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="AEF">AEF</type>
+      <description>
+<types lookup="AEF"/>
+      </description>
+    </field>
+
+    <field>
+      <name>Mutable</name>
+      <comment>Read-only.  Zero if the effect's parameters can no longer be changed.</comment>
+      <access read="G">Get</access>
+      <type>INT</type>
+      <description>
+<p>Returns zero for an initialised effect in the global chain or an initialised effect disconnected from its Audio object or channel set.  Otherwise returns one.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Order</name>
+      <comment>Processing position within the chain.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT</type>
+      <description>
+<p>Lower values run first.  Ties resolve by original attachment order, including after an application effect is reordered. Global effects cannot change order after initialisation.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>OutputRate</name>
+      <comment>Read-only output sample rate of the attached Audio object.</comment>
+      <access read="G">Get</access>
+      <type>INT</type>
+      <description>
+<p>Updated when the Audio device is activated.  Processors reset before processing the new output configuration.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Schema</name>
+      <comment>Read-only.  An XML description of the effect's parameters.</comment>
+      <access read="G">Get</access>
+      <type>STRING</type>
+      <description>
+<p>The schema describes every parameter that can be read or changed with <method>GetParameter</method> and <method>SetParameter</method>, including units, ranges, defaults, repeated groups and the rules between parameters.  The format is described in the class documentation.  The schema is the same for every instance of a class; instance-specific bounds, such as the Nyquist frequency, are resolved against <fl>OutputRate</fl>.</p>
+<p>The value is empty if the class does not publish a schema.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Stereo</name>
+      <comment>Read-only output layout; one for stereo and zero for mono.</comment>
+      <access read="G">Get</access>
+      <type>INT</type>
+      <description>
+<p>Updated on device activation together with <fl>OutputRate</fl>.</p>
+      </description>
+    </field>
+
+  </fields>
+  <types>
+    <constants lookup="AEF" comment="Audio effect flags.">
+      <const name="BYPASS">Skip an application effect.  Global effects cannot be bypassed.</const>
+    </constants>
+
+  </types>
+  <structs>
+  </structs>
+</book>

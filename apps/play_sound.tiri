@@ -1,0 +1,630 @@
+#!/usr/bin/env origo
+-- Play audio files through any combination of audio effects.
+--
+-- Effects are treated as plugins.  Every installed AudioEffect class is discovered at startup and gains a
+-- command-line option of its own, with a help page generated from its parameter schema.  The script reads the schema
+-- to discover parameters, units, ranges and rules, and never hard-codes an effect's limits, so a new effect class is
+-- supported without any change here.
+
+   import 'options'
+   include 'audio'
+
+WRAP_COL <const> = 120
+
+----------------------------------------------------------------------------------------------------------------------
+-- List every class derived from AudioEffect.
+
+thunk get_effects():array<table>
+   result = array<table>
+   CLASSID_EFFECT = 'AudioEffect'.hash()
+
+   err, classdb = check mSys.ClassDatabase()
+   for cl in values(classdb) do
+      if cl.parentID is CLASSID_EFFECT then
+         result.push({ name = cl.name, id = cl.classID })
+      end
+   end
+   return result
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- List every class derived from Sound.
+
+thunk supported_files():array<table>
+   result = array<table>
+   CLASSID_SOUND = 'sound'.hash()
+
+   _, classdb = check mSys.ClassDatabase()
+   for cl in values(classdb) do
+      if cl.parentID is CLASSID_SOUND or cl.classID is CLASSID_SOUND then
+         result.push({ name = cl.name, id = cl.classID, extensions = cl?.extension?.split('|') })
+      end
+   end
+   return result
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Schema interpretation.  These functions only rely on the documented schema format.
+
+function attrib(Tag:table, Name:str):any
+   for a in values(Tag.attribs) do
+      if a.name is Name then return a.value end
+   end
+   return nil
+end
+
+function parse_param(Tag:table):table
+   param = {
+      key     = attrib(Tag, 'key'),
+      label   = attrib(Tag, 'label'),
+      description = attrib(Tag, 'description') ?? '',
+      type    = attrib(Tag, 'type'),
+      unit    = attrib(Tag, 'unit') ?? '',
+      min     = tonumber(attrib(Tag, 'min')),
+      max     = attrib(Tag, 'max'),
+      default = tonumber(attrib(Tag, 'default')),
+      minExclusive = attrib(Tag, 'min-exclusive') is '1',
+      options = {},
+      rules   = {}
+   }
+
+   for child in values(Tag.children) do
+      local name = child.attribs[0].name
+      if name is 'option' then
+         param.options.insert({
+            value       = tonumber(attrib(child, 'value')),
+            key         = attrib(child, 'key'),
+            label       = attrib(child, 'label'),
+            description = attrib(child, 'description') ?? ''
+         })
+      elseif name is 'rule' then
+         local rule_values = {}
+         for v in values(attrib(child, 'values').split(',')) do rule_values.insert(tonumber(v)) end
+         param.rules.insert({
+            key      = attrib(child, 'key'),
+            values   = rule_values,
+            max      = tonumber(attrib(child, 'max')),
+            inactive = attrib(child, 'inactive') is '1'
+         })
+      end
+   end
+   return param
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function parse_schema(Xml:str):table
+   local xml = obj.new('xml', { statement=Xml })
+   local root = xml.tags[0]
+   local schema = { class=attrib(root, 'class'), description=attrib(root, 'description') ?? '', params={}, groups={},
+      outputs={} }
+
+   for tag in values(root.children) do
+      local name = tag.attribs[0].name
+      if name is 'param' then
+         schema.params.insert(parse_param(tag))
+      elseif name is 'group' then
+         local group = { key=attrib(tag, 'key'), label=attrib(tag, 'label'),
+            description=attrib(tag, 'description') ?? '', max=tonumber(attrib(tag, 'max')), members={} }
+         for member in values(tag.children) do group.members.insert(parse_param(member)) end
+         schema.groups.insert(group)
+      elseif name is 'output' then
+         schema.outputs.insert({ key=attrib(tag, 'key'), type=attrib(tag, 'type') })
+      end
+   end
+   return schema
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Resolve a path such as 'gain' or 'bands[2].frequency' to its descriptor and, for groups, the entry index.
+
+rx_path = regex.new([[^([A-Za-z_]+)(?:\[(\d+)\]\.([A-Za-z_]+))?$]])
+
+function find_param(Schema:table, Path:str):<table, table, num>
+   captures = rx_path.match(Path)
+   captures ?! return
+   key, index, member = captures[1], captures[2], captures[3]
+
+   if not index?? then
+      for p in values(Schema.params) do
+         if p.key is key then return p, nil, nil end
+      end
+      return
+   end
+
+   for group in values(Schema.groups) do
+      if group.key is key then
+         for m in values(group.members) do
+            if m.key is member then return m, group, tonumber(index) end
+         end
+      end
+   end
+   return
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function option_label(Param:table, Value:num):str
+   for option in values(Param.options) do
+      if option.value is Value then return option.label end
+   end
+   return tostring(Value)
+end
+
+function format_value(Param:table, Value:num):str
+   if Param.type is 'enum' then return option_label(Param, Value) end
+   text = string.format('%g', Value)
+   return (Param.unit != '') ? f'{text} {Param.unit}' : text
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Describe a parameter's accepted values.  A Rate of zero means that the output rate is not known yet, in which case
+-- a Nyquist-bound limit is described rather than calculated.
+
+function format_range(Param:table, Rate:num):str
+   if Param.type is 'enum' then
+      local keys = {}
+      for option in values(Param.options) do keys.insert(option.key) end
+      return keys.concat(', ')
+   end
+   lower = string.format(Param.minExclusive ? 'above %g' : 'from %g', Param.min)
+   unit = (Param.unit != '') ? ' ' .. Param.unit : ''
+   if Param.max != 'nyquist' then return f'{lower} to {Param.max}{unit}' end
+   if Rate > 0 then return string.format('%s and below %g%s', lower, Rate * 0.5, unit) end
+   return f'{lower}{unit} and below half the output rate'
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Convert command-line text to a parameter value.  Enumerations accept an option key or its numeric value.
+
+function parse_value(Param:table, Text:str):any
+   if Param.type is 'enum' then
+      for option in values(Param.options) do
+         if (option.key is Text) or (tostring(option.value) is Text) then return option.value end
+      end
+      return nil
+   end
+   return tonumber(Text)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Group counts include changes that are waiting for Flush().
+
+function entry_count(Effect:obj, Group:table):num
+   _, count = check Effect.mtGetGroupCount(Group.key)
+   return count
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Check every rule against the staged values, so that a problem can be explained before Flush() rejects it.
+-- Flush() discards the working copy when it fails, so this check has to come first.  Returns true if all rules pass.
+
+function check_rules(Effect:obj, Schema:table):bool
+   ok = true
+   for group in values(Schema.groups) do
+      for index in {0 to entry_count(Effect, group)} do
+         for m in values(group.members) do
+            for rule in values(m.rules) do
+               if not rule.inactive then
+                  local path = f'{group.key}[{index}].'
+                  local _, sibling = Effect.mtGetParameter(path .. rule.key)
+                  local _, value = Effect.mtGetParameter(path .. m.key)
+                  for v in values(rule.values) do
+                     if (sibling is v) and (value > rule.max) then
+                        sibling_desc = find_param(Schema, path .. rule.key)
+                        print(f'  {path}{m.key} must be at most {rule.max} when {rule.key} is ' ..
+                           option_label(sibling_desc, sibling))
+                        ok = false
+                     end
+                  end
+               end
+            end
+         end
+      end
+   end
+   return ok
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Text formatting shared by the help pages and the describe report.
+
+-- Word-wrap a schema description for the terminal.  Descriptions are plain sentences with no formatting, separated
+-- by two spaces.
+
+function wrap(Text:str, Indent:str):str
+   lines = {}
+   line = ''
+   gap = ' '
+   for word in values(Text.split(' ')) do
+      if word is '' then
+         gap = '  '
+      elseif (#line > 0) and (#Indent + #line + #word >= WRAP_COL) then
+         lines.insert(Indent .. line)
+         line = word
+         gap = ' '
+      else
+         line = (#line > 0) ? line .. gap .. word : word
+         gap = ' '
+      end
+   end
+   if #line > 0 then lines.insert(Indent .. line) end
+   return lines.concat('\n')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Split a description into its first sentence, used as a summary, and the remaining text.
+
+function split_summary(Text:str):<str, str>
+   stop = Text.find('. ')
+   if not stop then return Text, '' end
+   return Text.sub(0, stop + 1), Text.sub(stop + 1).trim()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Append a parameter's description to Lines.  Note follows the accepted range, e.g. the current or default value.
+
+function param_lines(Param:table, Rate:num, Indent:str, Note:str, Lines:table)
+   Lines.insert(f'{Indent}{Param.label} ({Param.key}): {format_range(Param, Rate)}{Note}')
+   if Param.description != '' then Lines.insert(wrap(Param.description, Indent .. '    ')) end
+   for option in values(Param.options) do
+      Lines.insert(f'{Indent}    {option.key}: {option.label}')
+      if option.description != '' then Lines.insert(wrap(option.description, Indent .. '        ')) end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Generate an effect's help page from its schema.  The options library shows it for help=<effect>.
+
+function default_note(Param:table):str
+   return (Param.default != nil) ? f', default {format_value(Param, Param.default)}' : ''
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Explain the rules that tie a parameter to one of its siblings.
+
+function rule_lines(Param:table, Prefix:str, Siblings:table, Lines:table)
+   for rule in values(Param.rules) do
+      local sibling
+      for s in values(Siblings) do
+         if s.key is rule.key then sibling = s end
+      end
+
+      labels = {}
+      for v in values(rule.values) do labels.insert(sibling ? option_label(sibling, v) : tostring(v)) end
+      condition = f'when {rule.key} is {labels.concat(" or ")}'
+
+      if rule.inactive then
+         Lines.insert(f'  {Prefix}{Param.key} has no effect {condition}.')
+      else
+         Lines.insert(f'  {Prefix}{Param.key} must be at most {rule.max} {condition}.')
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- An example value for a parameter: the second option of an enumeration (the first is usually the default), or the
+-- default of anything else.
+
+function example_value(Param:table):str
+   if Param.type is 'enum' then return Param.options[(#Param.options > 1) ? 1 : 0].key end
+   if Param.default != nil then return string.format('%g', Param.default) end
+   return string.format('%g', Param.min ?? 0)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function effect_help(Fx:table):str
+   schema = Fx.schema
+   lines = {}
+   _, detail = split_summary(schema.description)
+
+   if detail != '' then
+      lines.insert(wrap(detail, ''))
+      lines.insert('')
+   end
+
+   lines.insert(f'Each {Fx.name}-[key]=VALUE sets one parameter, and may be repeated.  {Fx.name}=on enables the ' ..
+      'effect with its default settings.  Enumerated values accept their key.')
+
+   if #schema.params > 0 then
+      lines.insert('')
+      lines.insert('Parameters:')
+      for p in values(schema.params) do param_lines(p, 0, '  ', default_note(p), lines) end
+   end
+
+   for group in values(schema.groups) do
+      lines.insert('')
+      lines.insert(f'{group.label} entries ({group.key}[N].MEMBER), up to {group.max}, created as they are set:')
+      if group.description != '' then lines.insert(wrap(group.description, '    ')) end
+      for m in values(group.members) do param_lines(m, 0, '  ', default_note(m), lines) end
+   end
+
+   rules = {}
+   for p in values(schema.params) do rule_lines(p, '', schema.params, rules) end
+
+   for group in values(schema.groups) do
+      for m in values(group.members) do rule_lines(m, f'{group.key}[N].', group.members, rules) end
+   end
+
+   if #rules > 0 then
+      lines.insert('')
+      lines.insert('Rules:')
+      for line in values(rules) do lines.insert(line) end
+   end
+
+   lines.insert('')
+   lines.insert('Examples:')
+   for p in values(schema.params) do
+      lines.insert(f'  {Fx.name}-{p.key}={example_value(p)}')
+      break
+   end
+
+   for group in values(schema.groups) do
+      settings = {}
+      for m in values(group.members) do
+         settings.insert(f'{Fx.name}-{group.key}[0].{m.key}={example_value(m)}')
+         if #settings is 2 then break end
+      end
+      lines.insert('  ' .. settings.concat(' '))
+   end
+
+   return lines.concat('\n')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Report an effect's current settings and, if it publishes one, its response curve.
+
+function describe(Effect:obj, Schema:table)
+   rate = Effect.outputRate
+   lines = {}
+   print(f'{Schema.class} at {rate} Hz')
+   if Schema.description != '' then print(wrap(Schema.description, '  ')) end
+
+   for p in values(Schema.params) do
+      local _, value = Effect.mtGetParameter(p.key)
+      lines.insert('')
+      param_lines(p, rate, '', f'  = {format_value(p, value)}', lines)
+   end
+
+   -- Group members are described once, followed by a table of every entry's values.
+
+   for group in values(Schema.groups) do
+      local count = entry_count(Effect, group)
+      lines.insert('')
+      lines.insert(f'{group.label} ({group.key}): {count} of up to {group.max}')
+      if group.description != '' then lines.insert(wrap(group.description, '    ')) end
+      for m in values(group.members) do param_lines(m, rate, '  ', '', lines) end
+
+      lines.insert('')
+      header = string.format('  %-10s', '')
+      for m in values(group.members) do header ..= string.format('%-14s', m.label) end
+      lines.insert(header.rtrim())
+
+      for index in {0 to count} do
+         row = string.format('  %-10s', f'{group.key}[{index}]')
+         for m in values(group.members) do
+            _, value = Effect.mtGetParameter(f'{group.key}[{index}].{m.key}')
+            row ..= string.format('%-14s', format_value(m, value))
+         end
+         lines.insert(row.rtrim())
+      end
+   end
+
+   for line in values(lines) do print(line) end
+   print()
+
+   for output in values(Schema.outputs) do
+      if output.type is 'curve' then
+         print('Frequency response:')
+         points = array<double> { 31.25, 62.5, 125, 250, 500, 1000, 2000, 4000, 8000, 16000 }
+         points = points.filter(f => f < rate * 0.5)
+         magnitudes = array<double, #points>
+         check Effect.mtGetResponse(points, magnitudes)
+
+         for i in {0 to #points} do
+            db    = math.max(-12, math.min(12, magnitudes[i]))
+            bars  = math.floor(math.abs(db) * 2 + 0.5)
+            left  = (db < 0) ? string.rep(' ', 24 - bars) .. string.rep('#', bars) : string.rep(' ', 24)
+            right = (db > 0) ? string.rep('#', bars) : ''
+            print(string.format('  %7g Hz %+6.1f dB %s|%s', points[i], magnitudes[i], left, right))
+         end
+
+         print()
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Create an effect on a channel set and apply the command-line assignments to it.  The effect is initialised first,
+-- so every change is staged in a working copy and applied as a single step by Flush().  The processor never runs a
+-- partially configured state.  Returns nil if an assignment is rejected.
+
+rx_assignment = regex.new('^([^=]+)=(.*)$')
+
+function configure(Fx:table, Assignments:array<any>, Audio:obj, Channel:num):obj
+   local effect = obj.new(Fx.class, { audio=Audio, channel=Channel })
+   local schema = Fx.schema
+
+   for assignment in values(Assignments) do
+      if assignment is 'on' then continue end
+
+      local captures = rx_assignment.match(assignment)
+      if not captures then
+         print(f'Expected {Fx.name}-PATH=VALUE or {Fx.name}=on, got "{assignment}"')
+         return nil
+      end
+      local path, text = captures[1], captures[2]
+
+      -- Validate each setting against the schema before passing it on, so that errors can be reported in the
+      -- parameter's own terms.
+
+      local param, group, index = find_param(schema, path)
+      if not param then
+         print(f'Unknown {Fx.name} parameter "{path}".  Use help={Fx.name} to list the parameters.')
+         return nil
+      end
+
+      local value = parse_value(param, text)
+      if value is nil then
+         print(f'Invalid value "{text}" for {path}; expected {format_range(param, effect.outputRate)}')
+         return nil
+      end
+
+      -- Group entries are created on demand, so that bands[2].gain=3 also creates any missing earlier entries.
+
+      if group then
+         if index >= group.max then
+            print(f'{path}: {Fx.name} supports at most {group.max} {group.label} entries.')
+            return nil
+         end
+
+         local count = entry_count(effect, group)
+         while count <= index do
+            check effect.mtInsertEntry(group.key, count)
+            count++
+         end
+      end
+
+      if effect.mtSetParameter(path, value) != ERR_Okay then
+         print(f'{path}: {format_value(param, value)} is not {format_range(param, effect.outputRate)}')
+         return nil
+      end
+   end
+
+   -- Rules between parameters are checked once every setting is staged.
+
+   if not check_rules(effect, schema) then return nil end
+   check effect.acFlush()
+   return effect
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Discover the installed effects.  Reading the schema does not require initialisation, so help can be generated
+-- before any audio device is opened.  An effect's option name is its class name without the Audio prefix.
+
+   reserved = { src=true, seek=true, describe=true, help=true }
+   effects = array<table>
+   for cl in values(get_effects()) do
+      local xml = obj.new(cl.name).schema
+      local name = (cl.name.startsWith('Audio') ? cl.name.sub(5) : cl.name).lower()
+      if (xml != '') and not reserved[name] then
+         effects.push({ class=cl.name, name=name, schema=parse_schema(xml) })
+      end
+   end
+
+   args = array<table> {
+      { name = 'src', type = 'file', exists = true,
+        comment = 'Audio file to play.  Optional with describe.' },
+      { name = 'seek', type = 'num',
+        comment = 'Start position as a fraction greater than 0 and at most 1.' },
+      { name = 'describe', kind = 'flag',
+        comment = 'Print the settings of each enabled effect, and its response curve if it has one.' }
+   }
+
+   effect_names = {}
+   for fx in values(effects) do
+      fx.help = effect_help(fx)
+      effect_names.insert(fx.name)
+      args.push({ name = fx.name, type = 'str', multiple = true, prefix = '-', group = 'Effects', metavar = 'on',
+         comment = f'{split_summary(fx.schema.description)}  Configure with {fx.name}-KEY=VALUE.',
+         description = fx.help })
+   end
+
+   file_ext_list = array<str>
+   for cl in values(supported_files()) do
+      if cl.extensions?? then
+         file_ext_list.push(cl.extensions[0])
+      end
+   end
+
+   example_effect = effects[0]?.name ?? 'EFFECT'
+
+   parser = options({
+      name        = 'Play Sound',
+      cmdName     = 'play_sound.tiri',
+      description = 'Play a supported audio file through any of the installed audio effects.  Each effect is ' ..
+         'configured through its parameter schema, and is only applied if its option is given.  Supported files: ' .. file_ext_list.concat(', '),
+      epilog      = [[
+Effects are applied in the order listed.  Use help=EFFECT for an effect's parameters, rules and examples.
+
+Examples:
+  origo apps/play_sound.tiri src=examples/data/alarm.mp3 seek=0.5
+]] ..
+         f'  origo apps/play_sound.tiri help={example_effect}\n' ..
+         f'  origo apps/play_sound.tiri describe {example_effect}=on\n',
+         f'  origo apps/play_sound.tiri src=examples/data/alarm.mp3 equaliser-bands[0].type=low_pass equaliser-bands[0].gain=10',
+      args = args
+   })
+
+   cli = parser.process()
+   cli ?! return
+
+   if not cli.src and not cli.describe then
+      raise 'A src file is required unless describe is used.'
+   end
+
+   -- Sound opens its channel set during initialisation.  Apply effects to this set rather than every Audio client.
+   -- Without a source file, a silent Audio object provides a channel set so that the settings can be described.
+
+   local player:obj, audio:obj, channel:num
+   if cli.src then
+      try
+         player = obj.new('sound', { path=cli.src })
+      except ex
+         raise f'Failed to load source file "{cli.src}: {ex.message}"'
+      end
+
+      audio = player.audio
+      channel = player.channelIndex & 0xffff0000
+   else
+      audio = obj.new('Audio', { device='null' })
+      _, channel = check audio.mtOpenChannels(1)
+   end
+
+   active = effects.filter(fx => cli[fx.name] != nil)
+   for fx in values(active) do
+      fx.effect = configure(fx, cli[fx.name], audio, channel)
+      if not fx.effect then return end
+   end
+
+   if cli.describe then
+      if #active is 0 then
+         print(f'No effects are enabled.  Available effects: {effect_names.concat(", ")}')
+      end
+      for fx in values(active) do describe(fx.effect, fx.schema) end
+      if not cli.src then return end
+   end
+
+   -- Use the processing API to help us manage the program flow
+
+   proc = processing.new()
+
+   -- Subscribe to OnStop so that we can exit once the sample has fully played.
+
+   player.onStop = function(Sound)
+      proc.signal()
+   end
+
+   -- User can request seeking to a position expressed as 0.0 - 1.0
+
+   seek = cli.seek
+   if seek then
+      if (seek > 0) and (seek <= 1.0) then
+         player.acSeek(seek, SEEK_RELATIVE)
+      else
+         raise 'Seek must be expressed as a value from 0.0 to 1.0'
+      end
+   end
+
+   -- Play the sound and wait for it to finish
+
+   if player.acActivate() is ERR_Okay then
+      print('Press CTRL-C to exit or wait for sound sample to finish.  Duration: ' ..
+         string.format('%.2fs', player.duration))
+
+      proc.sleep() -- This will wake on receipt of a signal.
+
+      proc.sleep(player.audio.mixerLag) -- Slight pause to flush any buffered audio before exiting
+   else
+      raise 'Failed to play audio file.'
+   end

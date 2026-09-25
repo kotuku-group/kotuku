@@ -6,69 +6,57 @@ that is distributed with this package.  Please refer to it for further informati
 **********************************************************************************************************************
 
 -MODULE-
-Audio: Comprehensive audio processing and playback system with professional-grade mixing capabilities.
+Audio: Sample mixing and playback system with a floating-point mixer and platform audio output.
 
-The Audio module provides a robust, cross-platform audio infrastructure that manages the complete audio pipeline from sample
-loading through to hardware output.  The module's architecture supports both high-level convenience interfaces and low-level
-professional audio control, making it suitable for applications ranging from simple media playback to sophisticated audio
-production environments.
-
-The module implements a client-server design pattern with two complementary class interfaces:
+The Audio module manages the audio pipeline from sample loading through to hardware output.  It provides three class
+interfaces:
 
 <list type="bullet">
-<li>@Audio: Low-level hardware interface providing precise control over audio mixing, buffering, and output configuration.  Designed for applications requiring professional audio capabilities including real-time processing, multi-channel mixing, and advanced streaming architectures</li>
-<li>@Sound: High-level sample playback interface optimised for simplicity and performance.  Automatically manages resource allocation, format conversion, and hardware abstraction whilst providing intelligent streaming decisions</li>
+<li>@Sound: High-level sample playback.  Loads WAVE files, manages its own resources and decides whether a sample is
+played from memory or streamed.  This is the recommended interface for most applications.</li>
+<li>@Audio: Low-level mixer and device interface.  Provides channel sets, sample buffers and streams, command
+sequencing, and control over output rate, bit depth, buffering and mixing quality.</li>
+<li>@AudioEffect: Base class for DSP processors that attach to a channel set or to the global mix of an @Audio
+object.</li>
 </list>
 
-The internal mixer is a floating-point engine that processes all audio internally at 32-bit precision regardless of
-output bit depth.  The mixer supports features that include:
+The internal mixer processes all audio as 32-bit floating-point data regardless of the output bit depth.  The mixer
+supports:
 
 <list type="bullet">
-<li>Oversampling with interpolation for enhanced quality and reduced aliasing</li>
-<li>Real-time volume ramping to eliminate audio artefacts during playback transitions</li>
-<li>Multi-stage filtering with configurable low-pass and high-pass characteristics</li>
-<li>Sample-accurate playback positioning with sub-sample interpolation</li>
-<li>Bidirectional and unidirectional looping with precision loop point handling</li>
+<li>Linear interpolation between sample frames when `ADF::OVER_SAMPLING` is enabled, reducing aliasing when samples are
+played at rates that differ from the output rate.</li>
+<li>Volume ramping to avoid clicks when channel volumes change, enabled by `ADF::VOL_RAMPING` in combination with
+`ADF::OVER_SAMPLING`.</li>
+<li>Two levels of low-pass output smoothing, selected with `ADF::FILTER_LOW` or `ADF::FILTER_HIGH`.  The @Audio.Quality
+field configures the filtering and oversampling flags as a group.</li>
+<li>Unidirectional and bidirectional sample looping, including a secondary loop region.</li>
+<li>Per-channel and global effect chains built from @AudioEffect processors.</li>
 </list>
 
-<header>Platform-Specific Optimisations</header>
-
-Audio implementation is optimised for each supported platform to maximise performance and minimise latency:
+Output behaviour differs by platform:
 
 <list type="bullet">
-<li><b>Linux (ALSA Integration):</b> Utilises ALSA's period-based buffering with configurable period counts and sizes.  All samples are processed through the unified mixer with support for system-wide volume control and hardware mixer integration</li>
-<li><b>Windows (DirectSound Integration):</b> Implements dual-path audio where simple playback can bypass the internal mixer for reduced latency, whilst complex operations utilise the full mixing pipeline.  Automatic fallback ensures compatibility across Windows audio driver variations</li>
-<li><b>Cross-Platform Consistency:</b> API behaviour remains consistent across platforms, with platform-specific optimisations operating transparently to applications</li>
+<li><b>Linux (ALSA):</b> All playback, including @Sound objects, is mixed by the internal mixer and written by a
+dedicated worker thread.  Buffering is configured with the @Audio.Periods and @Audio.PeriodSize fields, and the
+ALSA mixer is used for system volume control.</li>
+<li><b>Windows (DirectSound):</b> Each @Sound object is given its own DirectSound buffer and bypasses the internal
+mixer.  Channels opened directly on an @Audio object are mixed internally and output at a fixed rate of 44.1 kHz.</li>
 </list>
 
-<header>Streaming and Memory Management</header>
+The @Sound.Stream field determines whether a sample is loaded into memory or streamed from its source.  With
+`STREAM::SMART`, samples larger than 256KB are streamed; with `STREAM::ALWAYS`, samples larger than 16KB are
+streamed; with `STREAM::NEVER`, the sample is always memory-resident.  Loop points are preserved when a sample is
+streamed.
 
-The module implements streaming technology that automatically adapts to sample characteristics and system resources:
-
-<list type="bullet">
-<li>Smart streaming decisions based on sample size, available memory, and playback requirements</li>
-<li>Configurable streaming thresholds with support for forced streaming or memory-resident operation</li>
-<li>Rolling buffer architecture for large samples with automatic buffer management</li>
-<li>Loop-aware streaming that maintains loop points during streaming operations</li>
-</list>
-
-<header>Usage Guidelines</header>
-
-For optimal results, choose the appropriate interface based on application requirements:
+Technical specifications:
 
 <list type="bullet">
-<li><b>@Sound Class (Recommended for Most Applications):</b> Provides immediate audio playback with automatic resource management, format detection, and intelligent streaming.  Ideal for media players, games, and general-purpose audio applications</li>
-<li><b>@Audio Class (Advanced Applications):</b> Offers complete control over the audio pipeline including custom mixer configurations, real-time effects processing, and professional-grade timing control.  Required for audio workstations, synthesisers, and applications with demanding audio requirements</li>
-</list>
-
-<header>Technical Specifications</header>
-
-<list type="bullet">
-<li>Internal processing: 32-bit floating-point precision</li>
-<li>Output formats: 8, 16, 24, and 32-bit with automatic conversion</li>
-<li>Sample rates: Up to 44.1 kHz (hardware dependent)</li>
-<li>Channel configurations: Mono and stereo with automatic format adaptation</li>
-<li>Latency: Platform-optimised with configurable buffering for real-time applications</li>
+<li>Internal processing: 32-bit floating-point.</li>
+<li>Output formats: 8-bit and 16-bit integer, and 32-bit floating-point.</li>
+<li>Output rates: Up to 192 kHz, subject to hardware negotiation.  The Windows mixer output is fixed at 44.1 kHz.</li>
+<li>Channel configurations: Mono and stereo output.  Mono and stereo samples are converted to the output layout during
+mixing.</li>
 </list>
 
 -END-
@@ -112,6 +100,10 @@ static ERR MODOpen(OBJECTPTR);
 
 JUMPTABLE_CORE
 static OBJECTPTR clAudio = 0;
+static OBJECTPTR clAudioEffect = nullptr;
+static OBJECTPTR clAudioEqualiser = nullptr;
+static ERR add_audioeffect_class();
+static ERR add_audioequaliser_class();
 static ankerl::unordered_dense::map<OBJECTID, int> glSoundChannels;
 static std::string glAudioDevice;
 class extAudio;
@@ -186,6 +178,8 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 #endif
 
    if (add_audio_class() != ERR::Okay) return ERR::AddClass;
+   if (add_audioeffect_class() != ERR::Okay) return ERR::AddClass;
+   if (add_audioequaliser_class() != ERR::Okay) return ERR::AddClass;
    if (add_sound_class() != ERR::Okay) return ERR::AddClass;
    return ERR::Okay;
 }
@@ -207,6 +201,8 @@ static ERR MODExpunge(void)
    }
    glSoundChannels.clear();
 
+   if (clAudioEqualiser) { FreeResource(clAudioEqualiser); clAudioEqualiser = nullptr; }
+   if (clAudioEffect) { FreeResource(clAudioEffect); clAudioEffect = nullptr; }
    free_audio_class();
    free_sound_class();
    return ERR::Okay;
@@ -219,6 +215,9 @@ static ERR MODExpunge(void)
 #include "mixers.cpp"
 #include "commands.cpp"
 #include "alsa_worker.cpp"
+#include "audio_effect.cpp"
+#include "class_audioeffect.cpp"
+#include "class_audioequaliser.cpp"
 #include "class_audio.cpp"
 #include "class_sound.cpp"
 #include "mixer_dispatch.cpp"

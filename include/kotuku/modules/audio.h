@@ -9,6 +9,8 @@
 #define MODVERSION_AUDIO (1)
 
 class objAudio;
+class objAudioEffect;
+class objAudioEqualiser;
 class objSound;
 
 // Optional flags for the Audio object.
@@ -25,6 +27,26 @@ enum class ADF : uint32_t {
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(ADF)
+
+// Audio effect flags.
+
+enum class AEF : uint32_t {
+   NIL = 0,
+   BYPASS = 0x00000001,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(AEF)
+
+// Parametric equaliser band types.
+
+enum class EQB : int {
+   NIL = 0,
+   PEAK = 0,
+   LOW_SHELF = 1,
+   HIGH_SHELF = 2,
+   LOW_PASS = 3,
+   HIGH_PASS = 4,
+};
 
 // Volume control flags
 
@@ -152,6 +174,13 @@ struct AudioLoop {
    int   Loop1End;   // End of the first loop
    int   Loop2Start; // Start of the second loop
    int   Loop2End;   // End of the second loop
+};
+
+struct AudioEQBand {
+   EQB    Type;         // Filter type
+   double Frequency;    // Centre or corner frequency in hertz
+   double Gain;         // Band gain in decibels
+   double Q;            // Quality factor or shelf slope
 };
 
 // Audio class definition
@@ -364,6 +393,196 @@ class objAudio : public Object {
    inline ERR setStereo(const int Value) noexcept {
       auto field = &this->Class->Dictionary[3];
       return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+};
+
+// AudioEffect class definition
+
+#define VER_AUDIOEFFECT (1.000000)
+
+// AudioEffect methods
+
+namespace fx {
+struct SetParameter { std::string_view Path; double Value; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetParameter { std::string_view Path; double Value; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct InsertEntry { std::string_view Group; int Index; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct RemoveEntry { std::string_view Group; int Index; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetResponse { std::span<const double> Frequencies; std::span<double> Magnitudes; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetGroupCount { std::string_view Group; int Count; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+
+} // namespace
+
+class objAudioEffect : public Object {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::AUDIOEFFECT;
+   static constexpr CSTRING CLASS_NAME = "AudioEffect";
+
+   using create = kt::Create<objAudioEffect>;
+   objAudioEffect(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
+
+   OBJECTID AudioID;  // Target Audio object, inherited from an Audio owner if omitted.
+   int      Channel;  // Channel-set handle, or zero for the global chain.
+   int      Order;    // Processing position within the chain.
+   AEF      Flags;    // Optional processing flags.
+   int      OutputRate; // Read-only output sample rate of the attached Audio object.
+   int      Stereo;   // Read-only output layout; one for stereo and zero for mono.
+
+   // Action stubs
+
+   inline ERR flush() noexcept { return Action(AC::Flush, this, nullptr); }
+   inline ERR init() noexcept { return InitObject(this); }
+   inline ERR setParameter(const std::string_view &Path, double Value) noexcept {
+      struct fx::SetParameter args = { Path, Value };
+      return Action(AC(-1), this, &args);
+   }
+   inline ERR getParameter(const std::string_view &Path, double * Value) noexcept {
+      struct fx::GetParameter args = { Path, (double)0 };
+      ERR error = Action(AC(-2), this, &args);
+      if (Value) *Value = args.Value;
+      return error;
+   }
+   inline ERR insertEntry(const std::string_view &Group, int Index) noexcept {
+      struct fx::InsertEntry args = { Group, Index };
+      return Action(AC(-3), this, &args);
+   }
+   inline ERR removeEntry(const std::string_view &Group, int Index) noexcept {
+      struct fx::RemoveEntry args = { Group, Index };
+      return Action(AC(-4), this, &args);
+   }
+   inline ERR getResponse(std::span<const double> Frequencies, std::span<double> Magnitudes) noexcept {
+      struct fx::GetResponse args = { Frequencies, Magnitudes };
+      return Action(AC(-5), this, &args);
+   }
+   inline ERR getGroupCount(const std::string_view &Group, int * Count) noexcept {
+      struct fx::GetGroupCount args = { Group, (int)0 };
+      ERR error = Action(AC(-6), this, &args);
+      if (Count) *Count = args.Count;
+      return error;
+   }
+
+   // Customised field getting
+
+   inline ERR getAudio(OBJECTID &Value) noexcept {
+      Value = this->AudioID;
+      return ERR::Okay;
+   }
+
+   inline ERR getChannel(int &Value) noexcept {
+      Value = this->Channel;
+      return ERR::Okay;
+   }
+
+   inline ERR getOrder(int &Value) noexcept {
+      Value = this->Order;
+      return ERR::Okay;
+   }
+
+   inline ERR getFlags(AEF &Value) noexcept {
+      Value = this->Flags;
+      return ERR::Okay;
+   }
+
+   inline ERR getOutputRate(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getStereo(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[3];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getMutable(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[11];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getSchema(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[0];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+
+   // Customised field setting
+
+   inline ERR setAudio(OBJECTID Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
+      this->AudioID = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setChannel(const int Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
+      this->Channel = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setOrder(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setFlags(const AEF Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+};
+
+// AudioEqualiser class definition
+
+#define VER_AUDIOEQUALISER (1.000000)
+
+class objAudioEqualiser : public objAudioEffect {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::AUDIOEQUALISER;
+   static constexpr CSTRING CLASS_NAME = "AudioEqualiser";
+
+   using create = kt::Create<objAudioEqualiser>;
+   objAudioEqualiser(objMetaClass *pClass, OBJECTID pUID) noexcept : objAudioEffect(pClass, pUID) {}
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+   inline ERR getBands(std::span<struct AudioEQBand> &Value) noexcept {
+      auto field = &this->Class->Dictionary[14];
+      auto get_field = (ERR (*)(APTR, std::span<struct AudioEQBand> &))field->GetValue;
+      return get_field(this, Value);
+   }
+
+   inline ERR getGain(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[13];
+      return field->GetValue(this, &Value);
+   }
+
+
+   // Customised field setting
+
+   inline ERR setBands(std::span<const struct AudioEQBand> Value) noexcept {
+      auto field = &this->Class->Dictionary[14];
+      return field->WriteValue(this, field, 0x00101318, &Value);
+   }
+
+   inline ERR setGain(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[13];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
 };

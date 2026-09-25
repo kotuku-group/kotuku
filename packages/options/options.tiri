@@ -150,6 +150,12 @@ function clone_definition(Definition:table!):table
       raise ERR_TypeMismatch, f"Unsupported parameter kind '{param.kind}'."
    end
 
+   if param.prefix != nil then
+      if param.kind != 'option' or param.prefix != <str> or param.prefix is '' or param.prefix.find('=') then
+         raise ERR_Syntax, f"Parameter '{param.name}' prefix must be a non-empty string without '=' on an option."
+      end
+   end
+
    for name in values(names) do
       validate_name(name)
    end
@@ -188,6 +194,7 @@ function clone_command_definition(Parser:table!, Definition:table!):table
    command.onHelp      = Parser.onHelp
    command._params     = array<table>
    command._positionals  = array<table>
+   command._prefixes     = array<table>
    command._lookup       = {}
    command._named_lookup = {}
    command._set_defaults = nil
@@ -209,6 +216,26 @@ function split_token(Token:str!):<str, any, bool>
    end
 
    return Token.sub(0, eq), Token.sub(eq + 1), true
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Resolve an opt-in prefixed option.  The longest prefix wins when names or aliases overlap.
+
+function find_prefixed_param(Parser:table!, Name:str!):<table, str>
+   local matched:table
+   local suffix:str
+   local best_length = 0
+
+   for entry in values(Parser._prefixes) do
+      prefix = entry.name .. entry.param.prefix
+      if #prefix > best_length and #Name > #prefix and Name.startsWith(prefix) then
+         matched = entry.param
+         suffix = Name.sub(#prefix)
+         best_length = #prefix
+      end
+   end
+
+   return matched, suffix
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -791,6 +818,15 @@ function parse_ordered_input(Parser:table!, Result:table!, ArgNames:table!, Pres
 
       if parse_flag_negation(Parser, Result, ArgNames, Presence, name) then
          return PosIndex
+      end
+
+      if has_explicit_value then
+         prefixed, suffix = find_prefixed_param(Parser, name)
+         if prefixed then
+            parse_observed_value(Parser, Result, ArgNames, Presence, prefixed, prefixed.name,
+               suffix .. '=' .. value, true)
+            return PosIndex
+         end
       end
 
       if has_explicit_value then
@@ -1926,6 +1962,11 @@ function is_global_ordered_token(Parser:table, Name:str, HasExplicitValue:bool):
       return true
    end
 
+   if HasExplicitValue then
+      param = find_prefixed_param(Parser, Name)
+      if param then return true end
+   end
+
    return false
 end
 
@@ -2108,6 +2149,9 @@ function add_param(Parser:table!, Definition:table!):table
       if param.kind != 'positional' then
          Parser._named_lookup[name] = param
       end
+      if param.prefix != nil then
+         Parser._prefixes.push({ name=name, param=param })
+      end
    end
 
    if param.kind is 'positional' then
@@ -2224,6 +2268,7 @@ create_parser = function(Config:table):table
    parser._positionals    = array<table>
    parser._lookup         = {}
    parser._named_lookup   = {}
+   parser._prefixes       = array<table>
    parser._commands       = array<table>
    parser._command_lookup = {}
    parser._set_defaults   = nil
@@ -2235,7 +2280,8 @@ create_parser = function(Config:table):table
    Validates and registers a parameter definition using the same rules as entries supplied through the parser
    configuration `args` array.  The definition may use `name` or `names`; when `names` is supplied, the first name is
    the canonical parameter name and later names are aliases.  Omitted `kind`, `type`, `required`, `multiple`, and
-   `hidden` fields default to `option`, `str`, `false`, `false`, and `false` respectively.
+   `hidden` fields default to `option`, `str`, `false`, `false`, and `false` respectively.  An option with a `prefix`
+   separator also accepts `name<separator>key=value`, storing `key=value` under the canonical option name.
 
    Duplicate canonical names or aliases are rejected.  Positional parameters are stored in declaration order, and a
    multiple positional parameter must be the final positional definition.  Global named parameters must not collide

@@ -26,6 +26,8 @@ header({ path="system/registry", copyright="Paul Manias 1996-2026" }, function()
     "ROOTMODULE",
     "BROADCAST",
     "AUDIO",
+    "AUDIOEFFECT",
+    "AUDIOEQUALISER",
     "CLIPBOARD",
     "DOCUMENT",
     "XML",

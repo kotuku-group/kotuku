@@ -226,6 +226,7 @@ extern "C" int dsReadData(Object *Self, void *Buffer, int Length) {
       else return result;
    }
    else if (Self->Class->BaseClassID IS CLASSID::AUDIO) {
+      std::lock_guard mixer_lock(((extAudio *)Self)->MixerMutex);
       auto space_left = SAMPLE(Length / ((extAudio *)Self)->DriverBitSize); // Convert to number of samples
 
       SAMPLE mix_left;
@@ -686,14 +687,26 @@ static bool handle_sample_end(extAudio *Self, AudioChannel &Channel)
       clearmem(Self->MixBuffer.data(), window_size);
 
       for (auto n=1; n < (int)Self->Sets.size(); n++) {
-         for (auto &c : Self->Sets[n].Channel) {
-            if (c.active()) mix_channel(Self, c, window, Self->MixBuffer.data());
+         auto &set = Self->Sets[n];
+         const bool effects = set.Effects and !set.Effects->Effects.empty();
+         auto buffer = effects ? set.ScratchBuffer.data() : Self->MixBuffer.data();
+         if (effects) clearmem(buffer, window_size);
+
+         for (auto &c : set.Channel) {
+            if (c.active()) mix_channel(Self, c, window, buffer);
          }
 
-         for (auto &c : Self->Sets[n].Shadow) {
-            if (c.active()) mix_channel(Self, c, window, Self->MixBuffer.data());
+         for (auto &c : set.Shadow) {
+            if (c.active()) mix_channel(Self, c, window, buffer);
+         }
+
+         if (effects) {
+            process_effects(*set.Effects, buffer, window);
+            for (int i = 0; i < window_size / int(sizeof(float)); ++i) Self->MixBuffer[i] += buffer[i];
          }
       }
+
+      process_effects(*Self->GlobalEffects, Self->MixBuffer.data(), window);
 
       // Do optional post-processing
 
