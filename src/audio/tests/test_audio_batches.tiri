@@ -4,6 +4,146 @@ function command(Operation, Handle, Integer, Value)
    return struct.new('AudioMixCommand', { operation=Operation, handle=Handle, integer=Integer ?? 0, value=Value ?? 0 })
 end
 
+function await_count(Results, Count)
+   for i in {0 to 500} do
+      if #Results >= Count then return end
+      processing.sleep(0.01)
+   end
+   assert(false, 'Batch completion callback timed out')
+end
+
+function slow_ticks(Audio, Channel)
+   results = array<int>
+   check mAudio.MixSubmitBatch(Audio,
+      array<struct<AudioMixCommand>> { command(MIX_TEMPO, Channel, 5) },
+      function(Audio, Error, FailedCommand)
+         assert(Error is ERR_Okay and FailedCommand is -1)
+         results.push(Error)
+      end)
+   await_count(results, 1)
+end
+
+@Test function BatchCallbackReportsExecutionOnceAndContinuesAfterFailure()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   results = array<table>
+   batch = array<struct<AudioMixCommand>> {
+      command(MIX_PLAY, channel),
+      command(MIX_SAMPLE, channel, 999999),
+      command(MIX_VOLUME, channel, 0, 0.5)
+   }
+   check mAudio.MixSubmitBatch(audio, batch, function(Audio, Error, FailedCommand)
+      assert(Audio.id is audio.id)
+      results.push({ error=Error, failed=FailedCommand })
+   end)
+   assert(#results is 0, 'Submission must not invoke the callback inline')
+   check mAudio.MixSubmitBatch(audio, array<struct<AudioMixCommand>> { command(MIX_MUTE, channel, 1) },
+      function(Audio, Error, FailedCommand) results.push({ error=Error, failed=FailedCommand }) end)
+   await_count(results, 2)
+   assert(results[0].error is ERR_FieldNotSet and results[0].failed is 0,
+      'The first error must be preserved while remaining commands execute')
+   assert(results[1].error is ERR_Okay and results[1].failed is -1, 'Notifications follow batch order in a set')
+   processing.sleep(0.05)
+   assert(#results is 2, 'Completion must be delivered exactly once')
+end
+
+@Test function BatchCallbackCanSubmitAndDeactivate()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   results = array<int>
+   check mAudio.MixSubmitBatch(audio, array<struct<AudioMixCommand>> { command(MIX_TEMPO, channel, 5) },
+      function(Audio, Error, FailedCommand)
+         assert(Error is ERR_Okay)
+         results.push(Error)
+         check mAudio.MixSubmitBatch(Audio, array<struct<AudioMixCommand>> { command(MIX_MUTE, channel, 1) },
+            function(Audio, Error, FailedCommand)
+               results.push(Error)
+               assert((Error is ERR_Cancelled and FailedCommand is 0) or
+                  (Error is ERR_Okay and FailedCommand is -1))
+            end)
+         check Audio.acDeactivate()
+      end)
+   await_count(results, 2)
+   @if(platform="windows")
+   assert(results[1] is ERR_Cancelled, 'Cancellation delivery must survive deactivation inside a callback')
+   @end
+end
+
+@Test function BatchCallbacksSurviveChannelClosureAndSampleRemoval()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   slow_ticks(audio, channel)
+   data = array<byte, 128>
+   data.fill(128)
+   err, sample = audio.mtAddSample(nil, SFM_U8_BIT_MONO, data, nil)
+   assert(err is ERR_Okay)
+   results = array<int>
+   check mAudio.MixSubmitBatch(audio, array<struct<AudioMixCommand>> { command(MIX_SAMPLE, channel, sample) },
+      function(Audio, Error, FailedCommand) results.push(Error) end)
+   check audio.mtRemoveSample(sample)
+   err, replacement = audio.mtAddSample(nil, SFM_U8_BIT_MONO, data, nil)
+   assert(err is ERR_Okay and replacement is sample)
+   await_count(results, 1)
+   assert(results[0] is ERR_NoData or results[0] is ERR_Okay, 'Selection either executed before removal or fails')
+   @if(platform="windows")
+   assert(results[0] is ERR_NoData, 'The paced device must exercise removal before execution')
+   @end
+   check mAudio.MixSubmitBatch(audio, array<struct<AudioMixCommand>> { command(MIX_MUTE, channel, 1) },
+      function(Audio, Error, FailedCommand) results.push(Error) end)
+   check audio.mtCloseChannels(channel)
+   await_count(results, 2)
+   assert(results[1] is ERR_Cancelled or results[1] is ERR_Okay)
+   @if(platform="windows")
+   assert(results[1] is ERR_Cancelled, 'Channel removal must not discard its cancellation callback')
+   @end
+end
+
+@Test function RejectedAndDestroyedBatchesDoNotCallBack()
+   results = array<int>
+   audio = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   invalid = array<struct<AudioMixCommand>> { command(MIX_STOP, channel + 1) }
+   for i in {0 to 1030} do
+      err = mAudio.MixSubmitBatch(audio, invalid, function(Audio, Error, FailedCommand) results.push(Error) end)
+      assert(err is ERR_OutOfRange, 'Rejected submissions must not retain callback capacity')
+   end
+   processing.sleep(0.03)
+   assert(#results is 0, 'Rejected batches have no completion callback')
+   slow_ticks(audio, channel)
+   check mAudio.MixSubmitBatch(audio, array<struct<AudioMixCommand>> { command(MIX_STOP, channel) },
+      function(Audio, Error, FailedCommand) results.push(Error) end)
+   audio.free()
+   processing.sleep(0.05)
+   assert(#results is 0, 'Freeing Audio must discard pending callbacks')
+end
+
+@Test function BatchCallbackCanFreeAudio()
+   audio = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   results = array<int>
+   check mAudio.MixSubmitBatch(audio, array<struct<AudioMixCommand>> { command(MIX_MUTE, channel, 1) },
+      function(Audio, Error, FailedCommand)
+         results.push(Error)
+         Audio.free()
+      end)
+   check mAudio.MixSubmitBatch(audio, array<struct<AudioMixCommand>> { command(MIX_MUTE, channel, 0) },
+      function(Audio, Error, FailedCommand) results.push(Error) end)
+   await_count(results, 1)
+   processing.sleep(0.05)
+   assert(#results is 1 and results[0] is ERR_Okay, 'Freeing Audio in a callback must suppress later callbacks')
+   assert(not audio.exists())
+end
+
 @Test function OwnedBatchesExecuteInOrder()
    audio <close> = obj.new('Audio', { device='null', outputRate=44100 })
    check audio.acActivate()

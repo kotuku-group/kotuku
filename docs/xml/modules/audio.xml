@@ -229,25 +229,33 @@ mixing.</li>
   <function>
     <name>MixSubmitBatch</name>
     <comment>Submits an independently owned batch of mixer commands.</comment>
-    <prototype>ERR snd::MixSubmitBatch(objAudio * Audio, const std::span&lt;const struct AudioMixCommand&gt; &amp;Commands)</prototype>
-    <tiriPrototype>err = MixSubmitBatch(Audio:obj, Commands:array)</tiriPrototype>
+    <prototype>ERR snd::MixSubmitBatch(objAudio * Audio, const std::span&lt;const struct AudioMixCommand&gt; &amp;Commands, FUNCTION * OnComplete)</prototype>
+    <tiriPrototype>err = MixSubmitBatch(Audio:obj, Commands:array, OnComplete:func)</tiriPrototype>
     <tags>mutates-object, copies-input</tags>
     <input>
       <param type="objAudio *" name="Audio">The target Audio object.</param>
       <param type="std::span&lt;const struct AudioMixCommand&gt;" name="Commands">Commands to copy into one channel set's queue.</param>
+      <param type="FUNCTION *" name="OnComplete">Optional completion callback; pass NULL when no execution acknowledgement is needed.</param>
     </input>
     <description>
 <p>This function submits a list of mixer commands in a single batch.  <code>Commands</code> is an array of <st>AudioMixCommand</st> records.  Submission takes a copy of the complete array, or rejects it without publishing any commands.</p>
 <p>All commands must address live channels in the same channel set.  At most 1023 commands can be submitted at once; the set's queue holds 1024 entries, including one internal boundary entry per batch.  Invalid command types, channels or numeric arguments reject the entire batch.  Sample availability and playback state are checked at execution time.</p>
 <p>Batches execute in submission order within their set, with one batch per mixer update boundary as determined by <function>MixTempo</function>.  Commands execute in array order without rendering frames.  Different sets have independent update boundaries.  On worker backends, individual Mix calls use a separate FIFO which is drained before rendering each period (and by synchronous Sound queries); they can overtake queued batches, even when submitted later.  On backends without a worker, individual Mix calls execute immediately.</p>
-<p>Successful submission means queue admission, not successful playback or audible output.  A failed command does not roll back earlier commands or prevent later commands in the batch from running.  Closing the channel set discards its queued batches.  Existing sample lifetime rules apply; keep referenced samples alive until execution.</p>
+<p>Successful submission means queue admission, not successful playback or audible output.  A failed command does not roll back earlier commands or prevent later commands in the batch from running.</p>
+<p>The optional <code>OnComplete</code> callback receives <code>(Audio, Error, FailedCommand)</code> once all commands have executed or been cancelled.  <code>Error</code> is <code>Okay</code> on success and <code>FailedCommand</code> is -1.  Otherwise they identify the first failing command's error and zero-based array index.  Completion acknowledges application to mixer state, not audible output.  Native callbacks have the signature <code>void Callback(objAudio *Audio, ERR Error, int FailedCommand, APTR Meta)</code>.</p>
+<p>Callbacks run through the client event loop, outside the mixer mutex, never inline during submission or on the render worker.  They may submit more batches or deactivate Audio.  Notifications follow completion order; batches within a set execute FIFO, while different sets have independent boundaries.  Use a closure or native callback metadata to associate the notification with caller-owned batch state.  No callback is delivered for a rejected submission.</p>
+<p>Callback storage is reserved before admission.  Up to 1024 batches with callbacks may be awaiting execution or delivery per Audio object; exhaustion rejects admission with <code>BufferOverflow</code>.  Delivery releases storage automatically.  A <code>NULL</code> callback uses no completion slot.  The event loop must run to deliver notifications.</p>
+<p>Closing a channel set or deactivating Audio cancels its queued batches with <code>Cancelled</code> and failed index zero. Already completed results remain unchanged.  Notifications remain deliverable after deactivation and are independent of channel lifetime.  Removing a sample drains the single-command FIFO, then invalidates queued batch sample selections referencing it: they fail with <code>NoData</code> even if the sample slot is reused.  Other batch commands continue. Keep samples alive until completion when successful playback is required.</p>
+<p>The callback context is weakly pinned for stale-reference detection.  Destruction of that context suppresses delivery. Freeing Audio discards pending callbacks without invoking application code; deactivate Audio and process notifications before freeing it if cancellation reporting is required.  Device recovery may delay execution until it succeeds or shutdown cancels the queued batches.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Args">Invalid arguments passed to function</error>
       <error code="OutOfRange">A value is outside of the valid range</error>
+      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
       <error code="BufferOverflow">A buffer overflow has occurred</error>
       <error code="NotInitialised">The resource has not been initialised</error>
+      <error code="InvalidState">Object was in an incorrect state for the operation</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>

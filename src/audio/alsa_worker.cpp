@@ -121,6 +121,7 @@ static void stop_audio_worker(extAudio *Self)
    if (Self->WakeFD >= 0) { close(Self->WakeFD); Self->WakeFD = -1; }
    if (Self->Timer) { UpdateTimer(Self->Timer, 0); Self->Timer = nullptr; }
    std::lock_guard lock(Self->MixerMutex);
+   cancel_audio_batches(Self);
    Self->PendingCount = Self->NotificationCount = 0;
    for (auto &sample : Self->Samples) {
       ++sample.Generation;

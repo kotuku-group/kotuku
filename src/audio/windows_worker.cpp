@@ -135,6 +135,7 @@ static void stop_audio_worker(extAudio *Self)
    std::lock_guard lock(Self->MixerMutex);
    Self->WorkerStarted = false;
    Self->Reopening = false;
+   cancel_audio_batches(Self);
    Self->PendingCount = Self->NotificationCount = 0;
    Self->QueuedFrames = Self->TailFrames = 0;
    for (auto &sample : Self->Samples) {

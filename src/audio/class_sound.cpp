@@ -1383,7 +1383,11 @@ static ERR SOUND_SET_Playback(extSound *Self, int Value)
 PlayPosition: Returns the current playback position, measured in bytes.
 
 This field differs from #Position because it reflects the live playback cursor while the sound is active.  For streamed
-playback this is a best-effort source offset derived from the rolling stream buffer.
+playback this is a best-effort source offset derived from the rolling stream buffer.  Reads are synchronised with
+the mixer and may apply pending individual mixer commands.  ALSA reports the rendered source position, ahead of
+audible output by the device queue.  Windows subtracts the estimated queued output duration to approximate audible
+playback; this is not a hardware presentation timestamp.  Use the ~MixSubmitBatch() completion callback to acknowledge
+batch execution independently of playback position.
 
 *********************************************************************************************************************/
 

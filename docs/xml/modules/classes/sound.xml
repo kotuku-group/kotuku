@@ -351,7 +351,7 @@ processing.sleep()  -- Wait for completion
       <access read="G">Get</access>
       <type>INT64</type>
       <description>
-<p>This field differs from <fl>Position</fl> because it reflects the live playback cursor while the sound is active.  For streamed playback this is a best-effort source offset derived from the rolling stream buffer.</p>
+<p>This field differs from <fl>Position</fl> because it reflects the live playback cursor while the sound is active.  For streamed playback this is a best-effort source offset derived from the rolling stream buffer.  Reads are synchronised with the mixer and may apply pending individual mixer commands.  ALSA reports the rendered source position, ahead of audible output by the device queue.  Windows subtracts the estimated queued output duration to approximate audible playback; this is not a hardware presentation timestamp.  Use the <function>MixSubmitBatch</function> completion callback to acknowledge batch execution independently of playback position.</p>
       </description>
     </field>
 

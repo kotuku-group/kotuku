@@ -545,6 +545,7 @@ static ERR AUDIO_CloseChannels(extAudio *Self, struct snd::CloseChannels *Args)
    int index = Args->Handle>>16;
    if ((index < 1) or (index >= std::ssize(Self->Sets))) return log.warning(ERR::Args);
 
+   cancel_audio_batches(Self, unsigned(index));
    Self->Sets[index].clear(); // We can't erase because that would mess up other channel handles.
    return ERR::Okay;
 }
@@ -573,6 +574,9 @@ static ERR AUDIO_Deactivate(extAudio *Self)
 
 #ifdef AUDIO_WORKER
    stop_audio_worker(Self);
+#else
+   std::lock_guard mixer_lock(Self->MixerMutex);
+   cancel_audio_batches(Self);
 #endif
 
 #ifdef ALSA_ENABLED
@@ -709,6 +713,11 @@ static ERR AUDIO_RemoveSample(extAudio *Self, struct snd::RemoveSample *Args)
    flush_audio_commands(Self);
    #endif
    for (auto &set : Self->Sets) {
+      for (auto &command : set.Commands) {
+         if (command.CommandID IS CMD::SAMPLE and std::get<int>(command.Data) IS Args->Handle) {
+            command.DeferredError = ERR::NoData;
+         }
+      }
       for (auto &channel : set.Channel) {
          if (channel.SampleHandle IS Args->Handle) {
             channel.State = CHS::STOPPED;
@@ -1568,6 +1577,8 @@ extAudio::~extAudio() {
    #ifdef AUDIO_WORKER
    stop_audio_worker(this);
    #endif
+   if (BatchTimer) { UpdateTimer(BatchTimer, 0); BatchTimer = nullptr; }
+   BatchCompletions.clear([](FUNCTION &Callback) { release_audio_callback(Callback); });
    for (auto &sample : Samples) deref_audio_sample(sample);
 
    glSoundChannels.erase(UID);

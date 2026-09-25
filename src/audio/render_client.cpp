@@ -1,28 +1,85 @@
-#ifdef AUDIO_WORKER
-
-static void dispatch_audio_client(extAudio *Self);
-
-//********************************************************************************************************************
+static ERR apply_audio_command(extAudio *Self, const AudioCommand &Command)
+{
+   auto channel = Self->GetChannel(Command.Handle);
+   if (!channel) return ERR::OutOfRange;
+   if (Command.DeferredError != ERR::Okay) return Command.DeferredError;
+   switch (Command.CommandID) {
+      case CMD::CONTINUE: return snd::MixContinue(Self, Command.Handle);
+      case CMD::PAUSE: return snd::pause_channel(Self, Command.Handle);
+      case CMD::MUTE: return snd::MixMute(Self, Command.Handle, std::get<bool>(Command.Data));
+      case CMD::PLAY: return snd::MixPlay(Self, Command.Handle, std::get<int>(Command.Data));
+      case CMD::FREQUENCY: return snd::MixFrequency(Self, Command.Handle, std::get<int>(Command.Data));
+      case CMD::PAN: return snd::MixPan(Self, Command.Handle, std::get<double>(Command.Data));
+      case CMD::TEMPO: return snd::MixTempo(Self, Command.Handle, std::get<int>(Command.Data));
+      case CMD::SAMPLE: return snd::MixSample(Self, Command.Handle, std::get<int>(Command.Data));
+      case CMD::VOLUME: return snd::MixVolume(Self, Command.Handle, std::get<double>(Command.Data));
+      case CMD::STOP: return snd::MixStop(Self, Command.Handle);
+      case CMD::STOP_LOOPING: return snd::MixStopLoop(Self, Command.Handle);
+      default: return ERR::Args;
+   }
+}
 
 static void execute_audio_command(extAudio *Self, const AudioCommand &Command)
 {
-   auto channel = Self->GetChannel(Command.Handle);
-   if (!channel) return;
-   switch (Command.CommandID) {
-      case CMD::CONTINUE: snd::MixContinue(Self, Command.Handle); break;
-      case CMD::PAUSE: snd::pause_channel(Self, Command.Handle); break;
-      case CMD::MUTE: snd::MixMute(Self, Command.Handle, std::get<bool>(Command.Data)); break;
-      case CMD::PLAY: snd::MixPlay(Self, Command.Handle, std::get<int>(Command.Data)); break;
-      case CMD::FREQUENCY: snd::MixFrequency(Self, Command.Handle, std::get<int>(Command.Data)); break;
-      case CMD::PAN: snd::MixPan(Self, Command.Handle, std::get<double>(Command.Data)); break;
-      case CMD::TEMPO: snd::MixTempo(Self, Command.Handle, std::get<int>(Command.Data)); break;
-      case CMD::SAMPLE: snd::MixSample(Self, Command.Handle, std::get<int>(Command.Data)); break;
-      case CMD::VOLUME: snd::MixVolume(Self, Command.Handle, std::get<double>(Command.Data)); break;
-      case CMD::STOP: snd::MixStop(Self, Command.Handle); break;
-      case CMD::STOP_LOOPING: snd::MixStopLoop(Self, Command.Handle); break;
-      default: break;
+   const auto error = apply_audio_command(Self, Command);
+   Self->BatchCompletions.complete(Command.CompletionSlot, Command.CommandIndex, error);
+}
+
+// Cancellation completes every command before discarding queues, independently of channel lifetime.
+static void cancel_audio_batches(extAudio *Self, unsigned SetIndex)
+{
+   for (size_t i = 1; i < Self->Sets.size(); ++i) {
+      if (SetIndex and i != SetIndex) continue;
+      for (const auto &command : Self->Sets[i].Commands) {
+         Self->BatchCompletions.complete(command.CompletionSlot, command.CommandIndex, ERR::Cancelled);
+      }
+      Self->Sets[i].Commands.clear();
    }
 }
+
+// This client timer survives device shutdown.  Core holds the Audio object lock throughout dispatch.
+static ERR audio_batch_timer(extAudio *Self, int64_t, int64_t)
+{
+   size_t count;
+   {
+      std::lock_guard lock(Self->MixerMutex);
+      if (Self->DispatchingBatches) return ERR::Okay;
+      Self->DispatchingBatches = true;
+      count = std::min(size_t(128), Self->BatchCompletions.available());
+   }
+   for (size_t i = 0; i < count; ++i) {
+      AudioCompletions::Entry result;
+      {
+         std::lock_guard lock(Self->MixerMutex);
+         if (!Self->BatchCompletions.take(result)) break;
+      }
+      auto &callback = result.Callback;
+      if (!callback.stale()) {
+         if (callback.isC()) {
+            kt::SwitchContext context(callback.Context);
+            auto routine = (void (*)(extAudio *, ERR, int, APTR))callback.Routine;
+            routine(Self, result.Error, result.FailedCommand, callback.Meta);
+         }
+         else if (callback.isScript()) {
+            sc::Call(callback, std::to_array<ScriptArg>({
+               { "Audio", Self, FD_OBJECTPTR }, { "Error", int(result.Error) },
+               { "FailedCommand", result.FailedCommand }
+            }));
+         }
+      }
+      release_audio_callback(callback);
+      if (Self->collecting()) break;
+   }
+   std::lock_guard lock(Self->MixerMutex);
+   Self->DispatchingBatches = false;
+   if (Self->BatchCompletions.pending()) return ERR::Okay;
+   Self->BatchTimer = nullptr;
+   return ERR::Terminate;
+}
+
+#ifdef AUDIO_WORKER
+
+static void dispatch_audio_client(extAudio *Self);
 
 //********************************************************************************************************************
 // Sound's synchronous channel queries use the same serialisation boundary as a mixer period.
