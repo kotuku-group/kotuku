@@ -1241,8 +1241,7 @@ ParserResult<ExpDesc> IrEmitter::emit_result_filter_expr(const ResultFilterPaylo
 
    FuncState* fs = &this->func_state;
 
-   BCReg base = fs->free_reg();
-   bcemit_builtin_call_frame(fs, builtin_callable_id(FastFunc::__filter), base);
+   BCReg base = bcemit_builtin_call_frame(fs, builtin_callable_id(FastFunc::__filter), fs->free_reg());
 
    // Emit arguments: mask, count, trailing_keep
    ExpDesc mask_expr(double(Payload.keep_mask));

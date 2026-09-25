@@ -239,7 +239,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_import_entry(const ImportEntryPayload &
             BCReg base = fs->free_reg();
             constexpr BCREG argument_count = 2;
             bcreg_reserve(fs, BCReg(1 + LJ_FR2 + argument_count));
-            bcemit_builtin_callable(fs, BuiltinCallableID::ImportModuleActivate, base.raw());
+            (void)bcemit_builtin_callable(fs, BuiltinCallableID::ImportModuleActivate, base.raw());
 
             lua_State *L = this->lex_state.L;
             GCstr *identity = lj_str_new(L, unit->module_identity.data(), unit->module_identity.size());

@@ -533,9 +533,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_compound_assignment(AssignmentOperator 
             "compound assignment expects exactly one RHS value");
       }
 
-      auto call_base = BCReg(this->func_state.free_reg());
-      bcemit_builtin_call_frame(
-         &this->func_state, builtin_callable_id(FastFunc::array_append), call_base);
+      auto call_base = bcemit_builtin_call_frame(
+         &this->func_state, builtin_callable_id(FastFunc::array_append), this->func_state.free_reg());
 
       this->materialise_to_next_reg(working, "array append compound receiver");
 

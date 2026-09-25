@@ -1104,7 +1104,7 @@ static void emit_bit_function_lookup(FuncState &State, RegisterAllocator &Alloca
       case kt::strhash("rshift"): callable = builtin_callable_id(FastFunc::bit_rshift); break;
       default: fs_check_assert(&State, false, "unknown compiler-generated bit operation"); break;
    }
-   bcemit_builtin_callable(&State, callable, Base.raw());
+   (void)bcemit_builtin_callable(&State, callable, Base.raw());
 }
 
 IrEmitter::IrEmitter(ParserContext& context)
@@ -2812,21 +2812,22 @@ ParserResult<IrEmitUnit> IrEmitter::emit_generic_for_stmt(const GenericForStmtPa
       isnext = (nvars <= 5) ? predict_next(this->lex_state, *fs, exprpc) : 0;
    }
    else {
-      bcemit_builtin_call_frame(fs, builtin_callable_id(FastFunc::__tiri_iter_prepare), fs->free_reg());
+      BCReg call_base = bcemit_builtin_call_frame(
+         fs, builtin_callable_id(FastFunc::__tiri_iter_prepare), fs->free_reg());
 
       auto collection = this->emit_expression(*Payload.iterators.front());
       if (not collection.ok()) return ParserResult<IrEmitUnit>::failure(collection.error_ref());
       ExpDesc value = collection.value_ref();
       if (value.k IS ExpKind::Call) {
          set_call_result_count(fs, value, CallResultMode::AllResults);
-         bcemit_INS(fs, BCINS_ABC(BC_CALLM, base - BCREG(3), 4,
-            value.u.s.aux - (base - BCREG(3)) - BCREG(2)));
+         bcemit_INS(fs, BCINS_ABC(BC_CALLM, call_base, 4,
+            value.u.s.aux - call_base - BCREG(2)));
       }
       else {
          this->materialise_to_next_reg(value, "generic for runtime target");
-         bcemit_INS(fs, BCINS_ABC(BC_CALL, base - BCREG(3), 4, 2));
+         bcemit_INS(fs, BCINS_ABC(BC_CALL, call_base, 4, 2));
       }
-      fs->freereg = (base - BCREG(3) + BCREG(3)).raw();
+      fs->freereg = (call_base + BCREG(3)).raw();
       if (Payload.target IS GenericForTarget::BareTable and nvars <= 5) isnext = 1;
    }
 
@@ -4429,9 +4430,7 @@ ParserResult<ExpDesc> IrEmitter::emit_table_slice_call(const IndexExprPayload &P
    FuncState *fs = &this->func_state;
 
    // Capture the call base register before emitting anything
-   BCReg call_base = fs->free_reg();
-
-   bcemit_builtin_call_frame(fs, builtin_callable_id(FastFunc::range_slice), call_base);
+   BCReg call_base = bcemit_builtin_call_frame(fs, builtin_callable_id(FastFunc::range_slice), fs->free_reg());
 
    // Emit base expression (table or string) as arg1
    auto base_result = this->emit_expression(*Payload.table);
@@ -4602,8 +4601,7 @@ ParserResult<ExpDesc> IrEmitter::emit_range_expr(const RangeExprPayload &Payload
    }
 
    // Load the canonical range constructor first.
-   BCReg base = fs->free_reg();
-   bcemit_builtin_call_frame(fs, builtin_callable_id(FastFunc::range_new), base);
+   BCReg base = bcemit_builtin_call_frame(fs, builtin_callable_id(FastFunc::range_new), fs->free_reg());
 
    // Emit start expression as arg1
    auto start_result = this->emit_expression(*Payload.start);
