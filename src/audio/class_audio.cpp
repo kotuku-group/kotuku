@@ -20,6 +20,8 @@ Note: Support for audio recording is not currently available in this implementat
 
 -END-
 
+TODO: Add support for recording audio and live microphone streaming
+
 *********************************************************************************************************************/
 
 #include "mixer_dispatch.h"
@@ -30,7 +32,7 @@ static void deref_audio_sample(AudioSample &Sample)
    release_audio_callback(Sample.OnStop);
 }
 
-#ifndef ALSA_ENABLED
+#if !defined(ALSA_ENABLED) and !defined(_WIN32)
 static ERR init_audio(extAudio *Self)
 {
    Self->BitDepth     = 16;
@@ -46,25 +48,24 @@ static ERR init_audio(extAudio *Self)
 #endif
 
 inline double extAudio::MixerLag() {
-   if (!mixerLag) {
-      #ifdef _WIN32
-         // Windows uses a split buffer technique, so the write cursor is always 1/2 a buffer ahead.
-         mixerLag = MIX_INTERVAL + (double(MixElements>>1) / double(OutputRate));
-      #elif ALSA_ENABLED
-         mixerLag = audio_latency(BufferFrames, OutputRate);
-      #endif
-   }
-   return mixerLag;
+   #ifdef _WIN32
+   const double elapsed = QueuedAt ? double(PreciseTime() - QueuedAt) / 1000000.0 : 0;
+   return std::max(0.0, audio_latency(QueuedFrames, OutputRate) - elapsed);
+   #elif defined(ALSA_ENABLED)
+   return audio_latency(BufferFrames, OutputRate);
+   #else
+   return 0;
+   #endif
 }
 
 inline void extAudio::finish(AudioChannel &Channel, bool Notify) {
    if (!Channel.isStopped()) {
       Channel.State = CHS::FINISHED;
       if ((Channel.SampleHandle) and (Notify)) {
-         #ifdef ALSA_ENABLED
+         #ifdef AUDIO_WORKER
             if (NotificationCount < Notifications.size()) {
-               Notifications[NotificationCount++] = { Channel.SampleHandle,
-                  Samples[Channel.SampleHandle].Generation,
+               Notifications[NotificationCount++] = { Channel.SampleHandle, Channel.Handle,
+                  Samples[Channel.SampleHandle].Generation, Channel.PlaybackGeneration,
                   PreciseTime() + int64_t(MixerLag() * 1000000) };
             }
             else {
@@ -82,10 +83,6 @@ inline void extAudio::finish(AudioChannel &Channel, bool Notify) {
    else Channel.State = CHS::FINISHED;
 }
 
-//********************************************************************************************************************
-// The individual mixing functions and function pointer arrays have been replaced by the
-// consolidated AudioMixer::dispatch_mix() function in mixer_dispatch.cpp
-
 /*********************************************************************************************************************
 -ACTION-
 Activate: Enables access to the audio hardware and initialises the mixer.
@@ -95,7 +92,7 @@ hardware resource acquisition, mixer buffer allocation, and platform-specific dr
 
 Activation attempts to gain exclusive or shared access to the audio hardware device. On some platforms, this may fail if
 another process has obtained an exclusive lock on the audio device. The specific behaviour depends on the underlying
-audio system (ALSA on Linux, DirectSound on Windows).
+audio system (ALSA on Linux, WASAPI on Windows).
 
 If activation fails, the audio object remains in an inactive state but retains its configuration. Common failure
 causes include hardware device unavailability, insufficient system resources, or driver compatibility issues.
@@ -114,10 +111,18 @@ static ERR AUDIO_Activate(extAudio *Self)
 {
    kt::Log log;
 
-   #ifdef ALSA_ENABLED
+#ifdef AUDIO_WORKER
    if (Self->WorkerStarted and !Self->StopWorker) return ERR::Okay;
-   if (Self->WorkerStarted) free_alsa(Self);
-   #endif
+
+   if (Self->WorkerStarted) {
+      #ifdef ALSA_ENABLED
+      free_alsa(Self);
+      #else
+      stop_audio_worker(Self);
+      #endif
+   }
+#endif
+
    if (Self->Initialising) return ERR::Okay;
 
    log.branch();
@@ -127,9 +132,12 @@ static ERR AUDIO_Activate(extAudio *Self)
    ERR error;
    if ((error = init_audio(Self)) != ERR::Okay) {
       Self->Initialising = false;
-      #ifdef ALSA_ENABLED
+#ifdef AUDIO_WORKER
+      stop_audio_worker(Self);
+#endif
+#ifdef ALSA_ENABLED
       free_alsa(Self);
-      #endif
+#endif
       return error;
    }
 
@@ -146,7 +154,12 @@ static ERR AUDIO_Activate(extAudio *Self)
 
    const int mixbitsize = Self->Stereo ? sizeof(float) * 2 : sizeof(float);
 
-   auto mix_buffer_size = BYTELEN((int((mixbitsize * Self->OutputRate) * (MIX_INTERVAL * 1.5)) + 15) & (~15));
+#ifdef _WIN32
+   const auto mix_buffer_size = BYTELEN(Self->BufferFrames * mixbitsize);
+#else
+   const auto mix_buffer_size = BYTELEN((int((mixbitsize * Self->OutputRate) * (MIX_INTERVAL * 1.5)) + 15) & (~15));
+#endif
+
    Self->MixBuffer.resize(mix_buffer_size / sizeof(float));
    Self->MixElements = SAMPLE(mix_buffer_size / mixbitsize);
 
@@ -166,39 +179,18 @@ static ERR AUDIO_Activate(extAudio *Self)
    bool use_interpolation = (Self->Flags & ADF::OVER_SAMPLING) != ADF::NIL;
    Self->MixConfig = AudioConfig(Self->Stereo, use_interpolation);
 
-   #ifdef _WIN32
-      WAVEFORMATEX wave = {
-         .Format            = int16_t((Self->BitDepth IS 32) ? WAVE_FLOAT : WAVE_RAW),
-         .Channels          = int16_t(Self->Stereo ? 2 : 1),
-         .Frequency         = 44100,
-         .AvgBytesPerSecond = 44100 * Self->DriverBitSize,
-         .BlockAlign        = Self->DriverBitSize,
-         .BitsPerSample     = int16_t(Self->BitDepth),
-         .ExtraLength       = 0
-      };
-
-      if (auto strerr = sndCreateBuffer(Self, &wave, mix_buffer_size, 0x7fffffff, (PlatformData *)Self->PlatformData, TRUE)) {
-         log.warning(strerr);
-         Self->Initialising = false;
-         return ERR::CreateResource;
-      }
-
-      if (sndPlay((PlatformData *)Self->PlatformData, TRUE, 0)) {
-         Self->Initialising = false;
-         return log.warning(ERR::Activate);
-      }
-   #endif
-
-   // ALSA owns a readiness worker; the Win32 feed starts its timer on the first playback command.
-
    Self->Initialising = false;
-   #ifdef ALSA_ENABLED
+
+#ifdef AUDIO_WORKER
    auto worker_error = start_audio_worker(Self);
-   if (worker_error != ERR::Okay) free_alsa(Self);
-   return worker_error;
-   #else
-   return ERR::Okay;
+   if (worker_error != ERR::Okay) stop_audio_worker(Self);
+   #ifdef ALSA_ENABLED
+      if (worker_error != ERR::Okay) free_alsa(Self);
    #endif
+   return worker_error;
+#else
+   return ERR::Okay;
+#endif
 }
 
 /*********************************************************************************************************************
@@ -333,7 +325,8 @@ The `Offset` reflects the retrieval point of the decoded data and is measured in
 `BufferSize` reflect the target for the decoded data.  The function must return the total number of bytes that were
 written to the `Buffer`. If an error occurs, return zero.
 
-On ALSA, callbacks run on the client thread and fill a frame-aligned source ring.  The saved `StreamBufferMs` setting
+On ALSA and Windows, callbacks run on the client thread and fill a frame-aligned source ring.  The saved
+`StreamBufferMs` setting
 requests 100–10000 ms of source data at #OutputRate (default 1000 ms), capped at 8 MiB per stream and 64 MiB per Audio
 object.  Refills are requested at half capacity.  Initial playback uses the first fill; a short fill permits playback
 with the available data.  A zero-byte result is retried without blocking other sounds.  If the ring empties, that source
@@ -401,7 +394,7 @@ static ERR AUDIO_AddStream(extAudio *Self, struct snd::AddStream *Args)
    auto shift = sample_shift(Args->SampleFormat);
 
    int buffer_len;
-   #ifdef ALSA_ENABLED
+   #ifdef AUDIO_WORKER
    // Cap each source at 8 MiB and all source rings together at 64 MiB.
    buffer_len = int(std::min<int64_t>((int64_t(Self->OutputRate) * Self->StreamBufferMs / 1000) << shift,
       8 * 1024 * 1024));
@@ -414,7 +407,7 @@ static ERR AUDIO_AddStream(extAudio *Self, struct snd::AddStream *Args)
    std::vector<AudioSample> sample_slots;
    if (Self->Samples.size() + 10 > Self->Samples.capacity()) sample_slots.reserve(Self->Samples.size() + 10);
    std::lock_guard mixer_lock(Self->MixerMutex);
-   #ifdef ALSA_ENABLED
+   #ifdef AUDIO_WORKER
    size_t allocated = 0;
    for (const auto &entry : Self->Samples) if (entry.Stream) allocated += entry.Data.size();
    if (allocated + buffer_len > 64 * 1024 * 1024) return ERR::AllocMemory;
@@ -466,7 +459,7 @@ static ERR AUDIO_AddStream(extAudio *Self, struct snd::AddStream *Args)
    }
 
    sample.Data.swap(data);
-   #ifdef ALSA_ENABLED
+   #ifdef AUDIO_WORKER
    ++sample.Generation;
    sample.Ring.Read = sample.Ring.Used = 0;
    #endif
@@ -508,7 +501,7 @@ static ERR AUDIO_Beep(extAudio *Self, struct snd::Beep *Args)
       return ERR::Okay;
    }
 #elif _WIN32
-   if (sndBeep(Args->Pitch, Args->Duration)) {
+   if (wasapi_beep(Args->Pitch, Args->Duration)) {
       return ERR::Okay;
    }
 #else
@@ -578,6 +571,10 @@ static ERR AUDIO_Deactivate(extAudio *Self)
 
    acClear(Self);
 
+#ifdef AUDIO_WORKER
+   stop_audio_worker(Self);
+#endif
+
 #ifdef ALSA_ENABLED
    free_alsa(Self);
 #endif
@@ -592,9 +589,6 @@ static ERR AUDIO_Init(extAudio *Self)
    std::lock_guard mixer_lock(Self->MixerMutex);
    kt::Log log;
 
-#ifdef _WIN32
-   Self->OutputRate = 44100; // Mix rate is forced for direct sound
-#endif
 
    return ERR::Okay;
 }
@@ -644,7 +638,7 @@ static ERR AUDIO_OpenChannels(extAudio *Self, struct snd::OpenChannels *Args)
 
    ChannelSet channels;
    channels.Channel.resize(Args->Total);
-   #ifdef ALSA_ENABLED
+   #ifdef AUDIO_WORKER
    channels.Shadow.resize(Args->Total); // Quality may enable oversampling during playback.
    #else
    if ((Self->Flags & ADF::OVER_SAMPLING) != ADF::NIL) channels.Shadow.resize(Args->Total);
@@ -663,6 +657,12 @@ static ERR AUDIO_OpenChannels(extAudio *Self, struct snd::OpenChannels *Args)
    }
    Self->Sets.resize(index + 1);
    Self->Sets[index] = std::move(channels);
+
+   for (int channel = 0; channel < Args->Total; ++channel) {
+      const int handle = (index << 16) | channel;
+      Self->Sets[index].Channel[channel].Handle = handle;
+      if (channel < std::ssize(Self->Sets[index].Shadow)) Self->Sets[index].Shadow[channel].Handle = handle;
+   }
 
    Args->Result = index<<16;
    return ERR::Okay;
@@ -705,7 +705,7 @@ static ERR AUDIO_RemoveSample(extAudio *Self, struct snd::RemoveSample *Args)
 
    if ((Args->Handle < 1) or (Args->Handle >= std::ssize(Self->Samples))) return log.warning(ERR::OutOfRange);
 
-   #ifdef ALSA_ENABLED
+   #ifdef AUDIO_WORKER
    flush_audio_commands(Self);
    #endif
    for (auto &set : Self->Sets) {
@@ -898,7 +898,7 @@ static ERR AUDIO_SetSampleLength(extAudio *Self, struct snd::SetSampleLength *Ar
       if (Args->Length >= 0 and sample.Loop2Type != LTYPE::NIL and
           Args->Length <= (int64_t(sample.Loop2Start) << sample_shift(sample.SampleType))) return ERR::OutOfRange;
       sample.StreamLength = BYTELEN(Args->Length < 0 ? INT_MAX : Args->Length);
-      #ifdef ALSA_ENABLED
+      #ifdef AUDIO_WORKER
       sample.EndOfSource = sample.SourceOffset >= sample.StreamLength;
       const int remaining = std::max(0, int(sample.StreamLength) - int(sample.PlayPos));
       sample.Ring.Used = std::min(sample.Ring.Used, size_t(remaining));
@@ -1175,6 +1175,7 @@ static ERR AUDIO_SetVolume(extAudio *Self, struct snd::SetVolume *Args)
 -FIELD-
 BitDepth: The bit depth affects the overall quality of audio input and output.
 
+Windows uses a 32-bit float mixer and converts to the endpoint format at the output boundary.
 ALSA supports `8`, `16` and `32` (floating point) output.  The recommended value for CD quality playback is `16`.
 
 *********************************************************************************************************************/
@@ -1199,9 +1200,9 @@ A host platform may have multiple audio devices installed, but a given audio obj
 at a time.  A new audio object will always represent the default device initially.  Choose a different device by
 setting the `Device` field to a valid alternative.
 
-The default device can always be referenced with a name of `default`.  ALSA PCM names such as `hw:0,0` and
-`plughw:0,0` are also accepted.  Direct hardware access can avoid sound-server buffering, but may require exclusive
-access and stricter sample-format support.
+The default device can always be referenced with a name of `default`.  Windows also accepts a WASAPI endpoint ID.
+ALSA PCM names such as `hw:0,0` and `plughw:0,0` are also accepted.  Direct hardware access can avoid sound-server
+buffering, but may require exclusive access and stricter sample-format support.
 
 *********************************************************************************************************************/
 
@@ -1273,10 +1274,11 @@ static ERR SET_MasterVolume(extAudio *Self, double Value)
 -FIELD-
 MixerLag: Returns the lag time of the internal mixer, measured in seconds.
 
-This field reports the configured mixer queue duration in seconds.  On ALSA it is the negotiated buffer size
-in frames divided by the output rate, and is zero while inactive.  It excludes client scheduling, source starvation,
-and downstream sound-server or wireless-device buffering; it is not an acoustic latency guarantee.
-Source prefetch uses the saved `StreamBufferMs` setting (100–10000 ms, default 1000 ms) independently of this value.
+On Windows this field estimates the outstanding submitted frames from the most recent endpoint padding and render
+time.  On ALSA it is the negotiated buffer size in frames divided by the output rate, and is zero while inactive.
+It excludes client scheduling, source starvation, and downstream sound-server or wireless-device buffering; it is not
+an acoustic latency guarantee.  Source prefetch uses the saved `StreamBufferMs` setting (100–10000ms, default
+1000ms) independently of this value.
 
 *********************************************************************************************************************/
 
@@ -1563,7 +1565,7 @@ extAudio::~extAudio() {
 
    if (Timer) { UpdateTimer(Timer, 0); Timer = nullptr; }
 
-   #ifdef ALSA_ENABLED
+   #ifdef AUDIO_WORKER
    stop_audio_worker(this);
    #endif
    for (auto &sample : Samples) deref_audio_sample(sample);
@@ -1576,9 +1578,6 @@ extAudio::~extAudio() {
 
    free_alsa(this);
 
-#elif _WIN32
-
-   dsCloseDevice();
 
 #endif
 }

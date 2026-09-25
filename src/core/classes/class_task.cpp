@@ -811,6 +811,7 @@ static ERR TASK_Activate(extTask *Self)
 
       // Parameters are individual argument values, not command-line fragments.  Quote each value and escape
       // backslashes before literal quotes and the closing delimiter using the Windows argv rules.
+
       buffer << " \"";
       size_t backslashes = 0;
       for (char ch : param) {

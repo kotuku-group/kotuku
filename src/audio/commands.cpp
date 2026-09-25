@@ -60,7 +60,9 @@ static ERR fade_out(extAudio *Audio, int Handle)
 
 namespace snd {
 
-#ifdef ALSA_ENABLED
+static ERR pause_channel(objAudio *Audio, int Handle);
+
+#ifdef AUDIO_WORKER
 // A queued MixSample can precede MixPlay without having reached the mixer yet.
 static int queued_sample_handle(extAudio *Self, int Handle, int Current)
 {
@@ -121,7 +123,7 @@ ERR MixStartSequence(objAudio *Audio, int Handle)
    if (!Audio or !Handle) return ERR::NullArgs;
    std::lock_guard mixer_lock(((extAudio *)Audio)->MixerMutex);
    if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
-   #ifdef ALSA_ENABLED
+   #ifdef AUDIO_WORKER
    if (((extAudio *)Audio)->StopWorker) return ERR::NotInitialised;
    #endif
 
@@ -162,7 +164,7 @@ ERR MixEndSequence(objAudio *Audio, int Handle)
    if (!Audio or !Handle) return ERR::NullArgs;
    std::lock_guard mixer_lock(((extAudio *)Audio)->MixerMutex);
    if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
-   #ifdef ALSA_ENABLED
+   #ifdef AUDIO_WORKER
    if (((extAudio *)Audio)->StopWorker) return ERR::NotInitialised;
    #endif
 
@@ -178,7 +180,7 @@ ERR MixEndSequence(objAudio *Audio, int Handle)
    // Inserting an END_SEQUENCE informs the mixer that the instructions for this period have concluded.
 
    auto result = add_command(Audio, CMD::END_SEQUENCE, Handle);
-   #ifdef ALSA_ENABLED
+   #ifdef AUDIO_WORKER
    wake_audio((extAudio *)Audio);
    #endif
    return result;
@@ -211,7 +213,7 @@ ERR MixContinue(objAudio *Audio, int Handle)
    std::lock_guard mixer_lock(((extAudio *)Audio)->MixerMutex);
    if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
 
-#ifdef ALSA_ENABLED
+#ifdef AUDIO_WORKER
    if (!glAudioWorker and !((extAudio *)Audio)->GetChannel(Handle)->Buffering) {
       auto self = (extAudio *)Audio;
       if (self->StopWorker) return ERR::NotInitialised;
@@ -229,10 +231,7 @@ ERR MixContinue(objAudio *Audio, int Handle)
    if ((!Audio) or (!Handle)) return log.warning(ERR::NullArgs);
 
    auto channel = ((extAudio *)Audio)->GetChannel(Handle);
-
-   if (channel->Buffering) {
-      return add_command(Audio, CMD::CONTINUE, Handle);
-   }
+   if (channel->Buffering) return add_command(Audio, CMD::CONTINUE, Handle);
 
    if (channel->State IS CHS::PLAYING) return ERR::Okay;
 
@@ -245,6 +244,7 @@ ERR MixContinue(objAudio *Audio, int Handle)
 
    fade_out((extAudio *)Audio, Handle);
 
+   ++channel->PlaybackGeneration;
    channel->State = CHS::PLAYING;
 
    if ((Audio->Flags & ADF::OVER_SAMPLING) != ADF::NIL) {
@@ -252,11 +252,6 @@ ERR MixContinue(objAudio *Audio, int Handle)
       shadow->State = CHS::PLAYING;
    }
 
-   #ifdef _WIN32
-   kt::SwitchContext context(Audio);
-   if (((extAudio *)Audio)->Timer) UpdateTimer(((extAudio *)Audio)->Timer, -MIX_INTERVAL);
-   else SubscribeTimer(MIX_INTERVAL, C_FUNCTION(audio_timer), &((extAudio *)Audio)->Timer);
-   #endif
 
    return ERR::Okay;
 }
@@ -290,7 +285,7 @@ ERR MixMute(objAudio *Audio, int Handle, int Mute)
    std::lock_guard mixer_lock(((extAudio *)Audio)->MixerMutex);
    if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
 
-#ifdef ALSA_ENABLED
+#ifdef AUDIO_WORKER
    if (!glAudioWorker and !((extAudio *)Audio)->GetChannel(Handle)->Buffering) {
       auto self = (extAudio *)Audio;
       if (self->StopWorker) return ERR::NotInitialised;
@@ -350,7 +345,7 @@ ERR MixFrequency(objAudio *Audio, int Handle, int Frequency)
    if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
    if (Frequency < 0 or Frequency > 192000) return ERR::OutOfRange;
 
-#ifdef ALSA_ENABLED
+#ifdef AUDIO_WORKER
    if (!glAudioWorker and !((extAudio *)Audio)->GetChannel(Handle)->Buffering) {
       auto self = (extAudio *)Audio;
       if (self->StopWorker) return ERR::NotInitialised;
@@ -368,10 +363,7 @@ ERR MixFrequency(objAudio *Audio, int Handle, int Frequency)
    log.traceBranch("Audio: #%d, Channel: $%.8x, Frequency: %d", Audio->UID, Handle, Frequency);
 
    auto channel = ((extAudio *)Audio)->GetChannel(Handle);
-
-   if (channel->Buffering) {
-      return add_command(Audio, CMD::FREQUENCY, Handle, Frequency);
-   }
+   if (channel->Buffering) return add_command(Audio, CMD::FREQUENCY, Handle, Frequency);
 
    channel->Frequency = Frequency;
    return ERR::Okay;
@@ -405,7 +397,7 @@ ERR MixPan(objAudio *Audio, int Handle, double Pan)
    std::lock_guard mixer_lock(((extAudio *)Audio)->MixerMutex);
    if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
 
-#ifdef ALSA_ENABLED
+#ifdef AUDIO_WORKER
    if (!glAudioWorker and !((extAudio *)Audio)->GetChannel(Handle)->Buffering) {
       auto self = (extAudio *)Audio;
       if (self->StopWorker) return ERR::NotInitialised;
@@ -423,10 +415,7 @@ ERR MixPan(objAudio *Audio, int Handle, double Pan)
    log.traceBranch("Audio: #%d, Channel: $%.8x, Pan: %.2f", Audio->UID, Handle, Pan);
 
    auto channel = ((extAudio *)Audio)->GetChannel(Handle);
-
-   if (channel->Buffering) {
-      return add_command(Audio, CMD::PAN, Handle, Pan);
-   }
+   if (channel->Buffering) return add_command(Audio, CMD::PAN, Handle, Pan);
 
    if (Pan < -1.0) channel->Pan = -1.0;
    else if (Pan > 1.0) channel->Pan = 1.0;
@@ -469,7 +458,7 @@ ERR MixPlay(objAudio *Audio, int Handle, int Position)
    if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
    if (Position < 0) return ERR::OutOfRange;
 
-#ifdef ALSA_ENABLED
+#ifdef AUDIO_WORKER
    if (!glAudioWorker and !((extAudio *)Audio)->GetChannel(Handle)->Buffering) {
       auto self = (extAudio *)Audio;
       if (self->StopWorker) return ERR::NotInitialised;
@@ -523,7 +512,7 @@ ERR MixPlay(objAudio *Audio, int Handle, int Position)
 
    if (sample.Stream) {
       if (Position > sample.StreamLength) return log.warning(ERR::OutOfRange);
-#ifdef ALSA_ENABLED
+#ifdef AUDIO_WORKER
       ++sample.Generation;
       sample.DeferredStops = 0;
       sample.Ring.Read = sample.Ring.Used = 0;
@@ -547,6 +536,7 @@ ERR MixPlay(objAudio *Audio, int Handle, int Position)
    else if (bitpos > sample.SampleLength) return log.warning(ERR::OutOfRange);
 
    fade_out((extAudio *)Audio, Handle);
+   ++channel->PlaybackGeneration;
 
    // Check if sample has been changed, and if so, set the values to the channel structure
 
@@ -667,14 +657,6 @@ ERR MixPlay(objAudio *Audio, int Handle, int Position)
 
    fade_in((extAudio *)Audio, channel);
 
-   if (channel->State IS CHS::PLAYING) {
-      #ifdef _WIN32
-      kt::SwitchContext context(Audio);
-      if (((extAudio *)Audio)->Timer) UpdateTimer(((extAudio *)Audio)->Timer, -MIX_INTERVAL);
-      else SubscribeTimer(MIX_INTERVAL, C_FUNCTION(audio_timer), &((extAudio *)Audio)->Timer);
-      #endif
-   }
-
    return ERR::Okay;
 }
 
@@ -709,7 +691,7 @@ ERR MixRate(objAudio *Audio, int Handle, int Rate)
    if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
    if (Rate < 1 or Rate > 100000) return ERR::OutOfRange;
 
-#ifdef ALSA_ENABLED
+#ifdef AUDIO_WORKER
    if (!glAudioWorker and !((extAudio *)Audio)->GetChannel(Handle)->Buffering) {
       auto self = (extAudio *)Audio;
       if (self->StopWorker) return ERR::NotInitialised;
@@ -729,10 +711,7 @@ ERR MixRate(objAudio *Audio, int Handle, int Rate)
    if ((Rate < 1) or (Rate > 100000)) return log.warning(ERR::OutOfRange);
 
    auto channel = ((extAudio *)Audio)->GetChannel(Handle);
-
-   if (channel->Buffering) {
-      return add_command(Audio, CMD::RATE, Handle, Rate);
-   }
+   if (channel->Buffering) return add_command(Audio, CMD::RATE, Handle, Rate);
 
    int16_t index = Handle>>16;
    if ((index >= 0) and (index < (int)((extAudio *)Audio)->Sets.size())) {
@@ -778,7 +757,7 @@ ERR MixSample(objAudio *Audio, int Handle, int SampleIndex)
    if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
    if (SampleIndex <= 0 or size_t(SampleIndex) >= ((extAudio *)Audio)->Samples.size()) return ERR::OutOfRange;
 
-#ifdef ALSA_ENABLED
+#ifdef AUDIO_WORKER
    if (!glAudioWorker and !((extAudio *)Audio)->GetChannel(Handle)->Buffering) {
       auto self = (extAudio *)Audio;
       if (self->StopWorker) return ERR::NotInitialised;
@@ -813,11 +792,7 @@ ERR MixSample(objAudio *Audio, int Handle, int SampleIndex)
    }
 
    auto channel = ((extAudio *)Audio)->GetChannel(Handle);
-
-   if (channel->Buffering) {
-      return add_command(Audio, CMD::SAMPLE, Handle, SampleIndex);
-   }
-
+   if (channel->Buffering) return add_command(Audio, CMD::SAMPLE, Handle, SampleIndex);
    if (channel->SampleHandle IS idx) return ERR::Okay; // Already associated?
 
    channel->SampleHandle = idx;     // Set new sample number to channel
@@ -866,7 +841,7 @@ ERR MixStop(objAudio *Audio, int Handle)
    std::lock_guard mixer_lock(((extAudio *)Audio)->MixerMutex);
    if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
 
-#ifdef ALSA_ENABLED
+#ifdef AUDIO_WORKER
    if (!glAudioWorker and !((extAudio *)Audio)->GetChannel(Handle)->Buffering) {
       auto self = (extAudio *)Audio;
       if (self->StopWorker) return ERR::NotInitialised;
@@ -884,10 +859,7 @@ ERR MixStop(objAudio *Audio, int Handle)
    if ((!Audio) or (!Handle)) return log.warning(ERR::NullArgs);
 
    auto channel = ((extAudio *)Audio)->GetChannel(Handle);
-
-   if (channel->Buffering) {
-      return add_command(Audio, CMD::STOP, Handle);
-   }
+   if (channel->Buffering) return add_command(Audio, CMD::STOP, Handle);
 
    ((extAudio *)Audio)->finish(*channel, true);
    channel->State = CHS::STOPPED;
@@ -897,6 +869,34 @@ ERR MixStop(objAudio *Audio, int Handle)
       shadow->State = CHS::STOPPED;
    }
 
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Pause a channel without completing its current playback.  This is internal because the public mixer API uses
+// MixStop() for terminal stops.
+
+static ERR pause_channel(objAudio *Audio, int Handle)
+{
+   if (!Audio or !Handle) return ERR::NullArgs;
+   auto self = (extAudio *)Audio;
+   std::lock_guard mixer_lock(self->MixerMutex);
+   auto channel = self->GetChannel(Handle);
+   if (!channel) return ERR::OutOfRange;
+
+#ifdef AUDIO_WORKER
+   if (!glAudioWorker and !channel->Buffering) {
+      if (self->StopWorker) return ERR::NotInitialised;
+      if (self->PendingCount >= self->PendingCommands.size()) return ERR::BufferOverflow;
+      self->PendingCommands[self->PendingCount++] = AudioCommand(CMD::PAUSE, Handle);
+      wake_audio(self);
+      return ERR::Okay;
+   }
+   if (channel->Buffering) return add_command(Audio, CMD::PAUSE, Handle);
+#endif
+
+   channel->State = CHS::STOPPED;
+   if ((Audio->Flags & ADF::OVER_SAMPLING) != ADF::NIL) self->GetShadow(Handle)->State = CHS::STOPPED;
    return ERR::Okay;
 }
 
@@ -928,7 +928,7 @@ ERR MixStopLoop(objAudio *Audio, int Handle)
    std::lock_guard mixer_lock(((extAudio *)Audio)->MixerMutex);
    if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
 
-#ifdef ALSA_ENABLED
+#ifdef AUDIO_WORKER
    if (!glAudioWorker and !((extAudio *)Audio)->GetChannel(Handle)->Buffering) {
       auto self = (extAudio *)Audio;
       if (self->StopWorker) return ERR::NotInitialised;
@@ -946,16 +946,12 @@ ERR MixStopLoop(objAudio *Audio, int Handle)
    if ((!Audio) or (!Handle)) return log.warning(ERR::NullArgs);
 
    auto channel = ((extAudio *)Audio)->GetChannel(Handle);
-
-   if (channel->Buffering) {
-      return add_command(Audio, CMD::STOP_LOOPING, Handle);
-   }
-
+   if (channel->Buffering) return add_command(Audio, CMD::STOP_LOOPING, Handle);
    if (channel->State != CHS::PLAYING) return ERR::Okay;
 
    auto &sample = ((extAudio *)Audio)->Samples[channel->SampleHandle];
 
-#ifdef ALSA_ENABLED
+#ifdef AUDIO_WORKER
    if (sample.Stream) {
       ++sample.Generation;
       sample.DeferredStops = 0;
@@ -1007,7 +1003,7 @@ ERR MixVolume(objAudio *Audio, int Handle, double Volume)
    std::lock_guard mixer_lock(((extAudio *)Audio)->MixerMutex);
    if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
 
-#ifdef ALSA_ENABLED
+#ifdef AUDIO_WORKER
    if (!glAudioWorker and !((extAudio *)Audio)->GetChannel(Handle)->Buffering) {
       auto self = (extAudio *)Audio;
       if (self->StopWorker) return ERR::NotInitialised;
@@ -1025,10 +1021,7 @@ ERR MixVolume(objAudio *Audio, int Handle, double Volume)
    if ((!Audio) or (!Handle)) return log.warning(ERR::NullArgs);
 
    auto channel = ((extAudio *)Audio)->GetChannel(Handle);
-
-   if (channel->Buffering) {
-      return add_command(Audio, CMD::VOLUME, Handle, Volume);
-   }
+   if (channel->Buffering) return add_command(Audio, CMD::VOLUME, Handle, Volume);
 
    if (Volume > 1.0) channel->Volume = 1.0;
    else if (Volume < 0) channel->Volume = 0;

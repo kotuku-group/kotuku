@@ -453,6 +453,56 @@ end
    assert(args.tag[1] is 2, 'Second repeated value should be converted')
 end
 
+@Test function PrefixedNamedValues()
+   parser = options({
+      args = array<table> {
+         { names = array<str> { 'equaliser', 'eq' }, type = 'str', multiple = true, prefix = '-', group = 'Effects' },
+         { name = 'equaliser-bands', type = 'str', prefix = '-' },
+         { name = 'equaliser-gain', type = 'str' }
+      }
+   })
+
+   args = parser.process(array<str> {
+      'equaliser=on', 'eq-bands[0].gain=4', 'equaliser-bands[1].gain=5',
+      'equaliser-bands-index=2', 'equaliser-gain=direct'
+   })
+   assert(#args.equaliser is 3, 'Bare and prefixed values should share the repeatable option')
+   assert(args.equaliser[0] is 'on', 'Exact option should retain its value')
+   assert(args.equaliser[1] is 'bands[0].gain=4', 'Alias prefix should preserve the suffix and value')
+   assert(args.equaliser[2] is 'bands[1].gain=5', 'Repeated prefixed values should preserve order')
+   assert(args['equaliser-bands'] is 'index=2', 'The longest prefix should win')
+   assert(args['equaliser-gain'] is 'direct', 'Exact option names should win over prefixes')
+
+   expect_error(parser, array<str> { 'unknown-bands[0].gain=4' }, ERR_ParameterUnknown,
+      "Unknown parameter 'unknown-bands[0].gain'.")
+   expect_error(parser, array<str> { 'equaliser-=4' }, ERR_ParameterUnknown,
+      "Unknown parameter 'equaliser-'.")
+   expect_error(parser, array<str> { 'equaliser-bands[0].gain' }, ERR_ParameterUnknown,
+      "Unknown parameter 'equaliser-bands[0].gain'.")
+end
+
+@Test function PrefixedOptionDefinitionValidation()
+   expect_options_error({ args = array<table> { { name = 'bad', prefix = '' } } }, ERR_Syntax, 'prefix')
+   expect_options_error({ args = array<table> { { name = 'bad', prefix = '=' } } }, ERR_Syntax, 'prefix')
+   expect_options_error({ args = array<table> { { name = 'bad', kind = 'flag', prefix = '-' } } }, ERR_Syntax,
+      'prefix')
+end
+
+@Test function PrefixedTaskAndCommandOptions()
+   parser = options({
+      args = array<table> { { name = 'effect', multiple = true, prefix = '-' } },
+      commands = array<table> {
+         { name = 'play', args = array<table> { { name = 'channel', prefix = '-' } } }
+      }
+   })
+
+   result = parser.process(nil, { taskParameters = array<str> {
+      '--log-warning', 'player.tiri', 'effect-gain=4', 'play', 'channel-volume=8'
+   } })
+   assert(result.globals.effect[0] is 'gain=4', 'Task input should route prefixed global options')
+   assert(result.args.channel is 'volume=8', 'Command input should route prefixed command options')
+end
+
 @Test function MultipleDefaultsAreArrayShaped()
    parser = options({
       args = array<table> {

@@ -1,0 +1,211 @@
+   module audio as mAudio
+
+@BeforeAll function init(State)
+   global glFolder = State.folder
+   err, path = mSys.ResolvePath('temp:kotuku_audio_capture.pcm', RSF_NO_FILE_CHECK)
+   assert(err is ERR_Okay)
+   global glCapture = path
+   global glStream = 'temp:kotuku_audio_stream.wav'
+   source <close> = obj.new('File', { path=glFolder .. 'low-tone.wav', flags=FL_READ })
+   header = array<byte, 44>
+   check source.acRead(header)
+   size = source.size - 44
+   pcm = array<byte, size>
+   check source.acRead(pcm)
+   total = size * 16
+   for i in {0 to 4} do
+      divisor = math.ldexp(1, i * 8)
+      header[4+i] = math.floor((total + 36) / divisor) % 256
+      header[40+i] = math.floor(total / divisor) % 256
+   end
+   output <close> = obj.new('File', { path=glStream, flags=FL_NEW | FL_WRITE })
+   check output.acWrite(header)
+   for i in {0 to 16} do check output.acWrite(pcm) end
+end
+
+@AfterAll function cleanup()
+   mSys.DeleteFile(glCapture)
+   mSys.DeleteFile(glStream)
+end
+
+function captured_peak_window(Start:num, End:num):num
+   file <close> = obj.new('File', { path=glCapture, flags=FL_READ })
+   assert(file.size > 1024, 'The endpoint must receive rendered PCM')
+   samples = array<byte, file.size>
+   check file.acRead(samples)
+   peak = 0
+   first = math.floor(#samples / 4 * Start) * 4
+   last = math.floor(#samples / 4 * End) * 4
+   for i in {first to last by 4} do
+      exponent = (samples[i+3] % 128) * 2 + math.floor(samples[i+2] / 128)
+      mantissa = samples[i] + samples[i+1] * 256 + (samples[i+2] % 128) * 65536
+      if exponent > 0 then
+         value = math.ldexp(1 + mantissa / 8388608, exponent - 127)
+         peak = math.max(peak, value)
+      end
+   end
+   return peak
+end
+
+function captured_peak():num
+   return captured_peak_window(0, 1)
+end
+
+function sound_peak(Gain:num, Global:bool, Bypass:bool, Stream:num):num
+   audio <close> = obj.new('Audio', { device='capture:' .. glCapture, outputRate=48000, quality=0 })
+   audio.masterVolume = 1
+   check audio.acActivate()
+   path = Stream is STREAM_ALWAYS and glStream or glFolder .. 'low-tone.wav'
+   sound <close> = obj.new('Sound', { audio=audio, path=path, stream=Stream })
+   effect <close> = obj.new('AudioEqualiser', { audio=audio, channel=Global and 0 or sound.channelIndex,
+      gain=Gain, flags=Bypass and AEF_BYPASS or 0 })
+   check sound.acActivate()
+   if Stream is STREAM_ALWAYS then assert((sound.flags & SDF_STREAM) != 0, 'Exercise the source ring') end
+   processing.sleep(0.12)
+   check audio.acDeactivate()
+   return captured_peak()
+end
+
+@Test function OrdinarySoundTraversesBothEffectScopes()
+   baseline = sound_peak(0, false, false, STREAM_NEVER)
+   application = sound_peak(-12, false, false, STREAM_NEVER)
+   master = sound_peak(-12, true, false, STREAM_NEVER)
+   bypass = sound_peak(-12, false, true, STREAM_NEVER)
+   logOutput(f'Captured peaks: baseline={baseline}, application={application}, global={master}, bypass={bypass}')
+   assert(baseline > 0.01, 'Sound playback must reach the endpoint')
+   ratio = 10 ** (-12 / 20)
+   assert(math.abs(application / baseline - ratio) < 0.02, 'Application effects must change Sound PCM')
+   assert(math.abs(master / baseline - ratio) < 0.02, 'Global effects must change Sound PCM')
+   assert(math.abs(bypass / baseline - 1) < 0.02, 'Bypass must preserve Sound PCM')
+end
+
+@Test function StreamedSoundTraversesEffects()
+   baseline = sound_peak(0, false, false, STREAM_ALWAYS)
+   filtered = sound_peak(-12, false, false, STREAM_ALWAYS)
+   assert(baseline > 0.01)
+   assert(math.abs(filtered / baseline - 10 ** (-12 / 20)) < 0.02)
+end
+
+@Test function LiveAttachmentEditsAndTargetDestruction()
+   audio <close> = obj.new('Audio', { device='capture:' .. glCapture, quality=0 })
+   audio.masterVolume = 1
+   check audio.acActivate()
+   sound <close> = obj.new('Sound', { audio=audio, path=glFolder .. 'low-tone.wav', flags=SDF_LOOP })
+   check sound.acActivate()
+   processing.sleep(0.12)
+   effect <close> = obj.new('AudioEqualiser', { audio=audio, channel=sound.channelIndex, gain=-12 })
+   for gain in {-1 to -24 by -1} do effect.gain = gain end
+   processing.sleep(0.20)
+   sound.free()
+   audio.free()
+   assert(effect.mutable is 0, 'Destroying the target must detach its effect')
+   assert(captured_peak() > 0.01)
+   initial = captured_peak_window(0, 0.25)
+   edited = captured_peak_window(0.8, 1)
+   assert(edited < initial * 0.15, 'Live attachment and rapid edits must change later submitted PCM')
+end
+
+@Test function ChannelSetScopeAndSoundSharing()
+   audio <close> = obj.new('Audio', { device='capture:' .. glCapture, quality=0 })
+   audio.masterVolume = 1
+   check audio.acActivate()
+   first <close> = obj.new('Sound', { audio=audio, path=glFolder .. 'low-tone.wav' })
+   second <close> = obj.new('Sound', { audio=audio, path=glFolder .. 'low-tone.wav' })
+   assert(first.channelIndex is second.channelIndex, 'Sounds on one Audio share their channel set')
+   effect <close> = obj.new('AudioEqualiser', { audio=audio, channel=first.channelIndex, gain=-24 })
+   err, isolated = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay and isolated != first.channelIndex)
+   data = array<byte, 48000>
+   data.fill(160)
+   err, sample = audio.mtAddSample(nil, SFM_U8_BIT_MONO, data, nil)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(audio, isolated, sample)
+   check mAudio.MixFrequency(audio, isolated, 48000)
+   check mAudio.MixVolume(audio, isolated, 1)
+   check mAudio.MixPlay(audio, isolated, 0)
+   check first.acActivate()
+   check second.acActivate()
+   processing.sleep(0.12)
+   check audio.acDeactivate()
+   assert(captured_peak() > 0.15, 'A Sound channel-set effect must not attenuate a separate channel set')
+end
+
+@Test function SeekPauseReplayAndCompletion()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   completed = 0
+   sound <close> = obj.new('Sound', { audio=audio, path=glFolder .. 'low-tone.wav',
+      onStop=function(Sound) completed++ end })
+   check sound.acActivate()
+   processing.sleep(0.06)
+   assert(sound.playPosition > 0)
+   check sound.acDisable()
+   paused = sound.playPosition
+   processing.sleep(0.04)
+   assert(completed is 0, 'Pausing must not deliver completion')
+   assert(sound.playPosition is paused, 'Pause must preserve the source position')
+   check sound.acEnable()
+   check sound.acSeek(0, SEEK_START)
+   processing.sleep(0.04)
+   assert(completed is 0, 'Resuming must not deliver the completion of the paused playback')
+   check sound.acDeactivate()
+   completed = 0
+   check sound.acSeek(0, SEEK_START)
+   check sound.acActivate()
+   processing.sleep(0.03)
+   assert(completed is 0, 'A resident replay must invalidate the previous playback completion')
+   deadline = mSys.PreciseTime() + 2000000
+   while completed is 0 and mSys.PreciseTime() < deadline do processing.sleep(0.01) end
+   assert(completed is 1, 'Replay must deliver one completion on the client')
+end
+
+@Test function ProducerStallRunsOnlyOnClient()
+   audio <close> = obj.new('Audio', { device='capture:' .. glCapture, quality=0 })
+   audio.masterVolume = 1
+   check audio.acActivate()
+   reads = 0
+   err, sample = audio.mtAddStream(function(Handle, Offset, Buffer)
+      reads++
+      if reads < 3 then return 0 end
+      Buffer.fill(160)
+      return #Buffer
+   end, nil, SFM_U8_BIT_MONO, 16000, 0, nil)
+   assert(err is ERR_Okay)
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(audio, channel, sample)
+   check mAudio.MixFrequency(audio, channel, 44100)
+   check mAudio.MixVolume(audio, channel, 1)
+   check mAudio.MixPlay(audio, channel, 0)
+   mSys.WaitTime(-0.03)
+   assert(reads is 0, 'The render worker must not enter a source callback')
+   processing.sleep(0.15)
+   assert(reads >= 3, 'Empty source reads must retry on the client')
+   check audio.acDeactivate()
+   assert(captured_peak() > 0.15, 'Playback must recover after producer starvation')
+end
+
+@Test function BoundedDrainAndShutdownDuringTransition()
+   audio <close> = obj.new('Audio', { device='capture:' .. glCapture, stereo=true })
+   check audio.acActivate()
+   sound <close> = obj.new('Sound', { audio=audio, path=glFolder .. 'low-tone.wav' })
+   effect <close> = obj.new('AudioEqualiser', { audio=audio, channel=sound.channelIndex })
+   check sound.acActivate()
+   -- Check submitted frames, because the fake endpoint clock is not a wall-clock latency reference.
+   processing.sleep(8)
+   assert(sound.active is 0)
+   check audio.acDeactivate()
+   captured <close> = obj.new('File', {path=glCapture, flags=FL_READ})
+   assert(captured.size / 8 <= (sound.duration + 2.05) * audio.outputRate,
+      'Tail rendering must be bounded in output frames rather than keep the endpoint active indefinitely')
+   captured.free()
+   check audio.acActivate()
+   check sound.acSeek(0, SEEK_START)
+   check sound.acActivate()
+   processing.sleep(0.02)
+   effect.gain = -3
+   effect.gain = -6
+   sound.free()
+   audio.free()
+   assert(effect.mutable is 0, 'Shutdown must detach a processor with a pending transition')
+end

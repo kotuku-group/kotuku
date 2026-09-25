@@ -8,7 +8,9 @@
 #include <kotuku/main.h>
 #include <kotuku/strings.hpp>
 
+//********************************************************************************************************************
 // Device information structure
+
 struct ALSADeviceInfo {
    int card_number;
    std::string card_id;
@@ -20,11 +22,15 @@ struct ALSADeviceInfo {
    ALSADeviceInfo() : card_number(-1), mixer_controls(0), is_modem(false) {}
 };
 
+//********************************************************************************************************************
 // Device enumeration callback types
+
 using DeviceFilter = std::function<bool(const ALSADeviceInfo&)>;
 using DeviceSelector = std::function<bool(const ALSADeviceInfo&, const ALSADeviceInfo&)>; // Returns true if first is better
 
+//********************************************************************************************************************
 // Unified device enumeration interface
+
 class ALSADeviceEnumerator {
 public:
    // Enumerate all available audio devices

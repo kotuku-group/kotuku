@@ -17,8 +17,8 @@
    assert(mAudio.MixPlay(audio, channel, 513) is ERR_OutOfRange,
       'The queued sample assignment must be used to validate the play position')
    check mAudio.MixFrequency(audio, channel, 44100)
-   check mAudio.MixFrequency(audio, channel, 500000)
-   assert(mAudio.MixFrequency(audio, channel, 500001) is ERR_OutOfRange,
+   check mAudio.MixFrequency(audio, channel, 192000)
+   assert(mAudio.MixFrequency(audio, channel, 192001) is ERR_OutOfRange,
       'The mixer must preserve the Sound playback frequency limit')
    check mAudio.MixFrequency(audio, channel, 44100)
    check mAudio.MixPlay(audio, channel, 0)
