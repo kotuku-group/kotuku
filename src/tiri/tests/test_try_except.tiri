@@ -2223,6 +2223,34 @@ end]])
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Exceptions across native callback boundaries
+
+@Test function NativeReentryPreservesOuterHandler()
+   local source = array<int> { 1 }
+   for iteration in {0 to 3} do
+      local order = ''
+      try
+         source.mapSame(function(Value):num
+            defer order ..= 'outer;' end
+            source.mapSame(function(Inner):num
+               defer order ..= 'inner;' end
+               raise ERR_Args, 'nested callback'
+            end)
+            return Value
+         end)
+      except e when ERR_Args
+         assert(e.message is 'nested callback', 'Native re-entry lost the original exception')
+         order ..= 'caught;'
+      success
+         assert(false, 'The outer handler must catch across nested native calls')
+      end
+      assert(order is 'inner;outer;caught;', 'Native re-entry must unwind callbacks in order')
+      assert(source.mapSame(Value => num: Value + iteration)[0] is 1 + iteration,
+         'Native calls must remain usable after recovery')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Removed error() built-in
 
 @Test function ErrorBuiltinIsUndeclared()

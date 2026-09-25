@@ -303,4 +303,35 @@ asm_call_cpuid_and_capture PROC
     ret
 asm_call_cpuid_and_capture ENDP
 
+;------------------------------------------------------------------------------
+; double asm_call_round_and_capture(RegisterSnapshot* before, RegisterSnapshot* after,
+;    double (*fn)(double), double input)
+;
+; Keep the snapshots and helper call in assembly so the C++ caller cannot use
+; nonvolatile registers for intermediate arithmetic between the snapshots.
+;------------------------------------------------------------------------------
+asm_call_round_and_capture PROC FRAME
+    ; RCX=before, RDX=after, R8=fn, XMM3=input
+    sub     rsp, 88
+    .allocstack 88
+    .endprolog
+    mov     QWORD PTR [rsp + 32], rcx
+    mov     QWORD PTR [rsp + 40], rdx
+    mov     QWORD PTR [rsp + 48], r8
+    movsd   QWORD PTR [rsp + 56], xmm3
+
+    call    asm_capture_registers
+
+    movsd   xmm0, QWORD PTR [rsp + 56]
+    call    QWORD PTR [rsp + 48]
+    movsd   QWORD PTR [rsp + 64], xmm0
+
+    mov     rcx, QWORD PTR [rsp + 40]
+    call    asm_capture_registers
+
+    movsd   xmm0, QWORD PTR [rsp + 64]
+    add     rsp, 88
+    ret
+asm_call_round_and_capture ENDP
+
 END

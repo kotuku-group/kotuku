@@ -8940,6 +8940,19 @@ static bool test_module_call_result_descriptors(kt::Log &Log)
       return false;
    }
 
+   constexpr FunctionField structure_pointer_vector[] = {
+      { "Error", FD_ERROR|FD_INT },
+      { "ClassRecord:Classes", FD_RESULT|FDF_VECTOR|FD_MUTABLE|FD_PTR|FD_STRUCT },
+      { nullptr, 0 }
+   };
+   results = describe_module_call_results(structure_pointer_vector);
+   if (results.declared_count != 2 or results.value_at(1).primary != TiriType::Array or
+       results.value_at(1).array_element.storage != AET::TABLE or
+       results.value_at(1).array_element.logical_type != TiriType::Table) {
+      Log.error("structure pointer vector result must be described as an array of tables");
+      return false;
+   }
+
    constexpr FunctionField void_result[] = {
       { "Void", FD_VOID },
       { nullptr, 0 }

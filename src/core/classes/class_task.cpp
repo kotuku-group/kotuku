@@ -781,7 +781,7 @@ static ERR TASK_Activate(extTask *Self)
    hide_output = false;
 
    for (auto &param : Self->Parameters) {
-      if (param[0] IS '>') {
+      if (param.starts_with('>')) {
          // Redirection argument detected
 
          auto sv = std::string_view(param.begin()+1, param.end());
@@ -794,14 +794,14 @@ static ERR TASK_Activate(extTask *Self)
          hide_output = true;
          continue;
       }
-      else if ((param[0] IS '2') and (param[1] IS '>')) {
+      else if (param.starts_with("2>")) {
          log.msg("StdErr redirected to %s", param.c_str() + 2);
          auto sv = std::string_view(param.begin()+2, param.end());
          ResolvePath(sv, RSF::NO_FILE_CHECK, &redirect_stderr);
          hide_output = true;
          continue;
       }
-      else if ((param[0] IS '1') and (param[1] IS '>')) {
+      else if (param.starts_with("1>")) {
          log.msg("StdOut redirected to %s", param.c_str() + 2);
          auto sv = std::string_view(param.begin()+2, param.end());
          ResolvePath(sv, RSF::NO_FILE_CHECK, &redirect_stdout);
@@ -809,45 +809,24 @@ static ERR TASK_Activate(extTask *Self)
          continue;
       }
 
-      buffer << ' ';
-
-      if (param.find(' ') != std::string::npos) buffer << '"' << param << '"';
-      else buffer << param;
-   }
-
-   // Convert single quotes into double quotes
-
-   std::string final_buffer = buffer.str();
-   bool whitespace = true;
-   for (i=0; i < std::ssize(final_buffer); i++) {
-      if (whitespace) {
-         if (final_buffer[i] IS '"') {
-            // Skip everything inside double quotes
-            i++;
-            while ((i < std::ssize(final_buffer)) and (final_buffer[i] != '"')) i++;
-            if (i >= std::ssize(final_buffer)) break;
-            whitespace = false;
+      // Parameters are individual argument values, not command-line fragments.  Quote each value and escape
+      // backslashes before literal quotes and the closing delimiter using the Windows argv rules.
+      buffer << " \"";
+      size_t backslashes = 0;
+      for (char ch : param) {
+         if (ch IS '\\') {
+            backslashes++;
             continue;
          }
-         else if (final_buffer[i] IS '\'') {
-            for (auto j=i+1; final_buffer[j]; j++) {
-               if (final_buffer[j] IS '\'') {
-                  if (final_buffer[j+1] <= 0x20) {
-                     final_buffer[i] = '"';
-                     final_buffer[j] = '"';
-                  }
-                  i = j;
-                  break;
-               }
-               else if (final_buffer[j] IS '"') break;
-            }
-         }
+         if (ch IS '"') buffer << std::string(backslashes * 2 + 1, '\\');
+         else buffer << std::string(backslashes, '\\');
+         buffer << ch;
+         backslashes = 0;
       }
-
-      if (final_buffer[i] <= 0x20) whitespace = true;
-      else whitespace = false;
+      buffer << std::string(backslashes * 2, '\\') << '"';
    }
 
+   std::string final_buffer = buffer.str();
    log.trace("Exec: %s", final_buffer.c_str());
 
    // Hide window if this is designated a shell program (i.e. hide the DOS window).

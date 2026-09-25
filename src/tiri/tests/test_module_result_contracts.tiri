@@ -48,6 +48,21 @@ end
    assert(#actions > 0 and #classes > 0 and type(state) is 'table', 'Results outlive conversion temporaries')
 end
 
+@Test function StructurePointerVectorWithBlankAssignment()
+   _, classes = check mCore.ClassDatabase()
+   assert(#classes > 0 and type(classes[0]) is 'table',
+      'An inferred local must accept copied structure pointer vectors as arrays of tables')
+
+   thunk load_classes():array<table>
+      _, classdb = check mCore.ClassDatabase()
+      return classdb
+   end
+
+   local thunk_classes = resolve(load_classes())
+   assert(#thunk_classes > 0 and type(thunk_classes[0]) is 'table',
+      'Thunk evaluation must preserve the native vector element type')
+end
+
 @if(exists='modules:network')
 @Test; @Requires(network=true)
 function AddressOutputCopiesAndErrors()

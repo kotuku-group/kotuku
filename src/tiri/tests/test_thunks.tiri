@@ -197,6 +197,36 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@Test function ThunkValuesAndKeysIterators()
+   table_resolutions = 0
+   thunk make_table():table
+      table_resolutions++
+      return { first = 10, second = 20 }
+   end
+
+   total = 0
+   for value in values(make_table()) do total += value end
+   assert(total is 30, "values() should iterate over a resolved thunk table")
+
+   found = {}
+   for key in keys(make_table()) do found[key] = true end
+   assert(found.first and found.second, "keys() should iterate over a resolved thunk table")
+   assert(table_resolutions is 2, "Each iterator should resolve its own thunk exactly once")
+
+   array_resolutions = 0
+   thunk make_array():array<table>
+      array_resolutions++
+      return array<table> { { value = 10 }, { value = 20 } }
+   end
+
+   array_total = 0
+   for item in values(make_array()) do array_total += item.value end
+   assert(array_total is 30, "values() should iterate over a resolved thunk array")
+   assert(array_resolutions is 1, "values() should resolve its thunk array exactly once")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Test function ThunkControlFlow()
    -- Test thunk with if/else control flow
    thunk conditional(x):num
