@@ -16,9 +16,22 @@ static ERR lua_string_view(lua_State *Lua, int ValueIndex, std::string_view &Val
 
 inline ERR object_set_string(lua_State *Lua, OBJECTPTR Object, const Field *Field, int ValueIndex)
 {
-   std::string_view value;
-   if (auto error = lua_string_view(Lua, ValueIndex, value); error != ERR::Okay) return error;
-   return Object->set(Field, value);
+   if (lua_type(Lua, ValueIndex) IS LUA_TNUMBER) {
+      // lua_tolstring() converts numbers in place.  BC_OBSETF can pass a live source register, so convert a copy.
+      // Keep it anchored until the setter consumes the view, then restore the stack for initialiser-table iteration.
+      const int saved_top = lua_gettop(Lua);
+      lua_pushvalue(Lua, ValueIndex);
+      std::string_view value;
+      auto error = lua_string_view(Lua, saved_top + 1, value);
+      if (error IS ERR::Okay) error = Object->set(Field, value);
+      lua_settop(Lua, saved_top);
+      return error;
+   }
+   else {
+      std::string_view value;
+      if (auto error = lua_string_view(Lua, ValueIndex, value); error != ERR::Okay) return error;
+      return Object->set(Field, value);
+   }
 }
 
 //********************************************************************************************************************
