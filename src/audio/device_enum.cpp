@@ -2,7 +2,9 @@
 
 #include "device_enum.h"
 
+//********************************************************************************************************************
 // Core enumeration function - populates device info for a single card
+
 bool ALSADeviceEnumerator::populate_device_info(int card_number, ALSADeviceInfo& info)
 {
    std::string device_name = "hw:" + std::to_string(card_number);
@@ -45,7 +47,9 @@ bool ALSADeviceEnumerator::populate_device_info(int card_number, ALSADeviceInfo&
    return success;
 }
 
+//********************************************************************************************************************
 // Enumerate all available audio devices
+
 std::vector<ALSADeviceInfo> ALSADeviceEnumerator::enumerate_devices()
 {
    std::vector<ALSADeviceInfo> devices;
@@ -66,7 +70,9 @@ std::vector<ALSADeviceInfo> ALSADeviceEnumerator::enumerate_devices()
    return devices;
 }
 
+//********************************************************************************************************************
 // Find device by card ID
+
 ALSADeviceInfo ALSADeviceEnumerator::find_device_by_id(const std::string& device_id)
 {
    ALSADeviceInfo result;
@@ -87,19 +93,25 @@ ALSADeviceInfo ALSADeviceEnumerator::find_device_by_id(const std::string& device
    return result; // Empty result if not found
 }
 
+//********************************************************************************************************************
 // Default filter - excludes modems
+
 bool ALSADeviceEnumerator::default_filter(const ALSADeviceInfo& device)
 {
    return !device.is_modem;
 }
 
+//********************************************************************************************************************
 // Default device selector - chooses device with most mixer controls
+
 bool ALSADeviceEnumerator::default_selector(const ALSADeviceInfo& candidate, const ALSADeviceInfo& current_best)
 {
    return candidate.mixer_controls > current_best.mixer_controls;
 }
 
+//********************************************************************************************************************
 // Select best device using custom criteria
+
 ALSADeviceInfo ALSADeviceEnumerator::select_best_device(DeviceFilter filter, DeviceSelector selector)
 {
    auto devices = enumerate_devices();
@@ -120,7 +132,9 @@ ALSADeviceInfo ALSADeviceEnumerator::select_best_device(DeviceFilter filter, Dev
    return best_device;
 }
 
+//********************************************************************************************************************
 // Check if any genuine (non-modem) audio devices are available
+
 bool ALSADeviceEnumerator::has_genuine_devices()
 {
    auto devices = enumerate_devices();
@@ -134,7 +148,9 @@ bool ALSADeviceEnumerator::has_genuine_devices()
    return false;
 }
 
+//********************************************************************************************************************
 // Wait for audio devices to become available (with timeout)
+
 ERR ALSADeviceEnumerator::wait_for_devices(int timeout_ms)
 {
    kt::Log log(__FUNCTION__);

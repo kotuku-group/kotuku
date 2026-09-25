@@ -43,15 +43,12 @@ processing.sleep()  -- Wait for completion
 
 **********************************************************************************************************************
 
-NOTE: Ideally individual samples should always be played through the host's audio capabilities and not our internal
-mixer.  Our mixer is buffered and therefore always has a delay, whereas the host drivers should be able to play
-individual samples with more immediacy.
+All playback uses the shared mixer, so application and global effects also apply to ordinary playback.
 
 *********************************************************************************************************************/
 
 #include <array>
 
-constexpr int SECONDS_STREAM_BUFFER = 2;
 constexpr int SIZE_RIFF_CHUNK = 12;
 
 static ERR SOUND_GET_Active(extSound *, int *);
@@ -80,9 +77,6 @@ static const std::array<double, 12> glScale = {
 static OBJECTPTR clSound = nullptr;
 
 static ERR find_chunk(objFile *, std::string_view);
-#ifdef USE_WIN32_PLAYBACK
-static ERR win32_audio_stream(extSound *, int64_t, int64_t);
-#endif
 
 //********************************************************************************************************************
 // Send a callback to the client when playback stops.
@@ -107,7 +101,6 @@ static void sound_stopped_event(extSound *Self)
 
 //********************************************************************************************************************
 
-#ifndef USE_WIN32_PLAYBACK
 static int read_stream(int Handle, int Offset, APTR Buffer, int Length)
 {
    auto Self = (extSound *)CurrentContext();
@@ -132,87 +125,7 @@ static void onstop_event(int SampleHandle)
    sound_stopped_event((extSound *)CurrentContext());
 }
 
-#endif
-
 //********************************************************************************************************************
-// Called when the estimated time for playback is over.
-
-#ifdef _WIN32
-static ERR timer_playback_ended(extSound *Self, int64_t Elapsed, int64_t CurrentTime)
-{
-   kt::Log().detail("Sound streaming completed.");
-   sound_stopped_event(Self);
-   Self->PlaybackTimer = 0;
-   // NB: We don't manually stop the audio streamer, it will automatically stop once buffers are clear.
-   return ERR::Terminate;
-}
-#endif
-
-//********************************************************************************************************************
-// Configure a timer that will trigger when the playback is finished.  The Position cursor will be taken into account
-// in determining playback length.
-
-#ifdef USE_WIN32_PLAYBACK
-static ERR set_playback_trigger(extSound *Self)
-{
-   if ((Self->OnStop.defined()) or ((Self->Flags & SDF::LOOP) IS SDF::NIL)) {
-      kt::Log log(__FUNCTION__);
-      const int bytes_per_sample = ((((Self->Flags & SDF::STEREO) != SDF::NIL) ? 2 : 1) * (Self->BitsPerSample>>3));
-      const double playback_time = double((Self->Length - Self->Position) / bytes_per_sample) / double(Self->Playback);
-      if (playback_time < 0.01) {
-         if (Self->PlaybackTimer) { UpdateTimer(Self->PlaybackTimer, 0); Self->PlaybackTimer = 0; }
-         timer_playback_ended(Self, 0, 0);
-      }
-      else {
-         log.trace("Playback time period set to %.2fs", playback_time);
-         if (Self->PlaybackTimer) return UpdateTimer(Self->PlaybackTimer, playback_time + 0.01);
-         else return SubscribeTimer(playback_time + 0.01, C_FUNCTION(timer_playback_ended), &Self->PlaybackTimer);
-      }
-   }
-   return ERR::Okay;
-}
-#endif
-
-#ifdef _WIN32
-extern "C" void end_of_stream(OBJECTPTR Object, int BytesRemaining)
-{
-   if (Object->Class->BaseClassID IS CLASSID::SOUND) {
-      auto Self = (extSound *)Object;
-      if (Self->OnStop.defined()) {
-         kt::Log log(__FUNCTION__);
-         kt::SwitchContext context(Object);
-         const int bytes_per_sample = ((((Self->Flags & SDF::STEREO) != SDF::NIL) ? 2 : 1) * (Self->BitsPerSample>>3));
-         const double playback_time = (double(BytesRemaining / bytes_per_sample) / double(Self->Playback)) + 0.01;
-
-         if (!Self->PlaybackTimer) {
-            if (playback_time < 0.01) {
-               timer_playback_ended(Self, 0, 0);
-            }
-            else {
-               log.trace("Remaining time period set to %.2fs", playback_time);
-               SubscribeTimer(playback_time, C_FUNCTION(timer_playback_ended), &Self->PlaybackTimer);
-            }
-         }
-      }
-   }
-}
-#endif
-
-//********************************************************************************************************************
-// Stubs.
-
-[[maybe_unused]] static SFM sample_format(extSound *Self)
-{
-   if (Self->BitsPerSample IS 8) {
-      if ((Self->Flags & SDF::STEREO) != SDF::NIL) return SFM::U8_BIT_STEREO;
-      else return SFM::U8_BIT_MONO;
-   }
-   else if (Self->BitsPerSample IS 16) {
-      if ((Self->Flags & SDF::STEREO) != SDF::NIL) return SFM::S16_BIT_STEREO;
-      else return SFM::S16_BIT_MONO;
-   }
-   return SFM::NIL;
-}
 
 [[maybe_unused]] static ERR snd_init_audio(extSound *Self)
 {
@@ -282,19 +195,11 @@ static ERR sound_play_position(extSound *Self, int64_t *Value)
 
    if (Self->Length <= 0) return ERR::FieldNotSet;
 
-#ifdef USE_WIN32_PLAYBACK
-   if ((Self->Active) and (sndCheckActivity((PlatformData *)Self->PlatformData) > 0)) {
-      int64_t position;
-      if (sndGetPosition((PlatformData *)Self->PlatformData, &position) >= 0) {
-         *Value = clamp_sound_position(Self, position);
-      }
-   }
-#else
    if ((Self->ChannelIndex) and (Self->AudioID)) {
       kt::ScopedObjectLock<extAudio> audio(Self->AudioID);
       if (audio.granted()) {
          std::lock_guard mixer_lock(audio->MixerMutex);
-         #ifdef ALSA_ENABLED
+         #ifdef AUDIO_WORKER
          flush_audio_commands(*audio);
          #endif
          if (auto channel = audio->GetChannel(Self->ChannelIndex)) {
@@ -305,20 +210,23 @@ static ERR sound_play_position(extSound *Self, int64_t *Value)
                   ((int64_t(channel->PositionLow) << shift) >> 16);
 
                if (sample.Stream) {
-                  #ifdef ALSA_ENABLED
+                  #ifdef AUDIO_WORKER
                   position = sample.PlayPos;
                   #else
                   position = int64_t(sample.PlayPos) - int64_t(sample.BufferedLength) + position;
                   #endif
                }
 
+               #ifdef _WIN32
+               const int64_t queued = int64_t(audio->MixerLag() * channel->Frequency) << shift;
+               position = std::max(int64_t(0), position - queued);
+               #endif
                *Value = clamp_sound_position(Self, position);
             }
          }
       }
       else return ERR::AccessObject;
    }
-#endif
 
    return ERR::Okay;
 }
@@ -363,81 +271,6 @@ static ERR SOUND_Activate(extSound *Self)
       if ((SOUND_GET_Active(Self, &active) IS ERR::Okay) and (!active)) Self->Active = false;
    }
 
-#ifdef USE_WIN32_PLAYBACK
-   // Optimised playback for Windows - this does not use our internal mixer.
-
-   if (!Self->Active) {
-      int16_t channels = ((Self->Flags & SDF::STEREO) != SDF::NIL) ? 2 : 1;
-      WAVEFORMATEX wave = {
-         .Format            = WAVE_RAW,
-         .Channels          = channels,
-         .Frequency         = Self->Frequency,
-         .AvgBytesPerSecond = Self->BytesPerSecond,
-         .BlockAlign        = int16_t(channels * (Self->BitsPerSample>>3)),
-         .BitsPerSample     = int16_t(Self->BitsPerSample),
-         .ExtraLength       = 0
-      };
-
-      int buffer_len;
-      if ((Self->Stream IS STREAM::ALWAYS) and (Self->Length > 16 * 1024)) {
-         buffer_len = Self->BytesPerSecond * SECONDS_STREAM_BUFFER;
-      }
-      else if ((Self->Stream IS STREAM::SMART) and (Self->Length > 256 * 1024)) {
-         buffer_len = Self->BytesPerSecond * SECONDS_STREAM_BUFFER;
-      }
-      else buffer_len = Self->Length;
-
-      if (buffer_len > Self->Length) buffer_len = Self->Length;
-
-      CSTRING strerr;
-      if (Self->Length > buffer_len) {
-         log.msg("Streaming enabled because sample length %d exceeds buffer size %d.", Self->Length, buffer_len);
-         Self->Flags |= SDF::STREAM;
-         strerr = sndCreateBuffer(Self, &wave, buffer_len, Self->Length, (PlatformData *)Self->PlatformData, true);
-      }
-      else {
-         // Create the buffer and fill it completely with sample data.
-         buffer_len = Self->Length;
-         Self->Flags &= ~SDF::STREAM;
-         auto client_pos = Self->Position; // Save the seek cursor from pollution
-         if (client_pos) Self->seekStart(0);
-         strerr = sndCreateBuffer(Self, &wave, buffer_len, Self->Length, (PlatformData *)Self->PlatformData, false);
-         Self->seekStart(client_pos);
-      }
-
-      if (strerr) {
-         log.warning("Failed to create audio buffer, reason: %s (sample length %d)", strerr, Self->Length);
-         return ERR::CreateResource;
-      }
-
-      Self->Active = true;
-   }
-
-   if (Self->AudioID) {
-      kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 200);
-      if (audio.granted()) {
-         std::lock_guard mixer_lock(audio->MixerMutex);
-         #ifdef ALSA_ENABLED
-         flush_audio_commands(*audio);
-         #endif
-         sndVolume((PlatformData *)Self->PlatformData, audio->MasterVolume * Self->Volume);
-      }
-   }
-   else sndVolume((PlatformData *)Self->PlatformData, Self->Volume);
-
-   sndFrequency((PlatformData *)Self->PlatformData, Self->Playback);
-   sndPan((PlatformData *)Self->PlatformData, Self->Pan);
-
-   if ((Self->Flags & SDF::STREAM) != SDF::NIL) {
-      if (auto error = SubscribeTimer(0.25, C_FUNCTION(win32_audio_stream), &Self->StreamTimer); error != ERR::Okay) {
-         return log.warning(error);
-      }
-   }
-   else if (auto error = set_playback_trigger(Self); error != ERR::Okay) return log.warning(error);
-
-   auto error = (ERR)sndPlay((PlatformData *)Self->PlatformData, ((Self->Flags & SDF::LOOP) != SDF::NIL) ? true : false, Self->Position);
-   return (error != ERR::Okay) ? log.warning(error) : ERR::Okay;
-#else
 
    if ((!Self->Active) and (Self->Position >= Self->Length)) {
       if (Self->seekStart(0) != ERR::Okay) return log.warning(ERR::Seek);
@@ -549,7 +382,7 @@ static ERR SOUND_Activate(extSound *Self)
    kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 2000);
    if (audio.granted()) {
       std::lock_guard mixer_lock(audio->MixerMutex);
-      #ifdef ALSA_ENABLED
+      #ifdef AUDIO_WORKER
       flush_audio_commands(*audio);
       #endif
       // Restricted and streaming audio can be played on only one channel at any given time.  This search will check
@@ -573,9 +406,13 @@ static ERR SOUND_Activate(extSound *Self)
          Self->ChannelIndex &= 0xffff0000;
          int i;
          for (i=0; i < audio->MaxChannels; i++) {
-            if (auto channel = audio->GetChannel(Self->ChannelIndex)) {
-               if (channel->isStopped()) break;
-               else if (channel->Priority < Self->Priority) priority = channel;
+            if (auto candidate = audio->GetChannel(Self->ChannelIndex)) {
+               if (candidate->isStopped()) {
+                  channel = candidate;
+                  break;
+               }
+               else if ((candidate->Priority < Self->Priority) and
+                        ((!priority) or (candidate->Priority < priority->Priority))) priority = candidate;
             }
             Self->ChannelIndex++;
          }
@@ -588,6 +425,8 @@ static ERR SOUND_Activate(extSound *Self)
          }
       }
 
+      Self->ChannelIndex = channel->Handle;
+      channel->Priority = Self->Priority;
       snd::MixStop(*audio, Self->ChannelIndex);
 
       if (!snd::MixSample(*audio, Self->ChannelIndex, Self->Handle)) {
@@ -605,7 +444,6 @@ static ERR SOUND_Activate(extSound *Self)
       }
    }
    else return log.warning(ERR::AccessObject);
-#endif
 }
 
 //********************************************************************************************************************
@@ -629,19 +467,14 @@ static ERR SOUND_Deactivate(extSound *Self)
 
    log.branch();
 
-   if (Self->StreamTimer) { UpdateTimer(Self->StreamTimer, 0); Self->StreamTimer = 0; }
-   if (Self->PlaybackTimer) { UpdateTimer(Self->PlaybackTimer, 0); Self->PlaybackTimer = 0; }
 
    Self->Position = 0;
 
-#ifdef USE_WIN32_PLAYBACK
-   sndStop((PlatformData *)Self->PlatformData);
-#else
    if (Self->ChannelIndex) {
       kt::ScopedObjectLock<extAudio> audio(Self->AudioID);
       if (audio.granted()) {
          std::lock_guard mixer_lock(audio->MixerMutex);
-         #ifdef ALSA_ENABLED
+         #ifdef AUDIO_WORKER
          flush_audio_commands(*audio);
          #endif // Stop the sample if it's live.
          if (auto channel = audio->GetChannel(Self->ChannelIndex)) {
@@ -650,7 +483,6 @@ static ERR SOUND_Deactivate(extSound *Self)
       }
       else return log.warning(ERR::AccessObject);
    }
-#endif
 
    return ERR::Okay;
 }
@@ -669,25 +501,20 @@ static ERR SOUND_Disable(extSound *Self)
 
    int64_t position;
    if (sound_play_position(Self, &position) IS ERR::Okay) Self->Position = position;
-   if (Self->PlaybackTimer) { UpdateTimer(Self->PlaybackTimer, 0); Self->PlaybackTimer = 0; }
 
-#ifdef USE_WIN32_PLAYBACK
-   sndStop((PlatformData *)Self->PlatformData);
-#else
    if (!Self->ChannelIndex) return ERR::Okay;
 
    kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 5000);
    if (audio.granted()) {
       std::lock_guard mixer_lock(audio->MixerMutex);
-      #ifdef ALSA_ENABLED
+      #ifdef AUDIO_WORKER
       flush_audio_commands(*audio);
       #endif
       if (auto channel = audio->GetChannel(Self->ChannelIndex)) {
-         if (channel->SampleHandle IS Self->Handle) snd::MixStop(*audio, Self->ChannelIndex);
+         if (channel->SampleHandle IS Self->Handle) snd::pause_channel(*audio, Self->ChannelIndex);
       }
    }
    else return log.warning(ERR::AccessObject);
-#endif
 
    return ERR::Okay;
 }
@@ -703,20 +530,12 @@ static ERR SOUND_Enable(extSound *Self)
    kt::Log log;
    log.branch();
 
-#ifdef USE_WIN32_PLAYBACK
-   if (!Self->Handle) {
-      log.msg("Playing back from position %" PF64, (long long)Self->Position);
-      if ((Self->Flags & SDF::LOOP) != SDF::NIL) sndPlay((PlatformData *)Self->PlatformData, TRUE, Self->Position);
-      else sndPlay((PlatformData *)Self->PlatformData, FALSE, Self->Position);
-      if ((Self->Flags & SDF::STREAM) IS SDF::NIL) set_playback_trigger(Self);
-   }
-#else
    if (!Self->ChannelIndex) return ERR::Okay;
 
    kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 5000);
    if (audio.granted()) {
       std::lock_guard mixer_lock(audio->MixerMutex);
-      #ifdef ALSA_ENABLED
+      #ifdef AUDIO_WORKER
       flush_audio_commands(*audio);
       #endif
       if (auto channel = audio->GetChannel(Self->ChannelIndex)) {
@@ -724,7 +543,6 @@ static ERR SOUND_Enable(extSound *Self)
       }
    }
    else return log.warning(ERR::AccessObject);
-#endif
 
    return ERR::Okay;
 }
@@ -765,122 +583,6 @@ Init: Prepares a sound object for usage.
 -END-
 *********************************************************************************************************************/
 
-#ifdef USE_WIN32_PLAYBACK
-
-static ERR SOUND_Init(extSound *Self)
-{
-   kt::Log log;
-   int id, len;
-   ERR error;
-
-   // Find the local audio object or create one to ease the developer's workload.
-
-   if (!Self->AudioID) {
-      if ((error = snd_init_audio(Self)) != ERR::Okay) return error;
-   }
-
-   // Open channels for sound sample playback.
-
-   if (!(Self->ChannelIndex = glSoundChannels[Self->AudioID])) {
-      kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 3000);
-      if (audio.granted()) {
-         std::lock_guard mixer_lock(audio->MixerMutex);
-         #ifdef ALSA_ENABLED
-         flush_audio_commands(*audio);
-         #endif
-         if (!audio->openChannels(audio->MaxChannels, &Self->ChannelIndex)) {
-            glSoundChannels[Self->AudioID] = Self->ChannelIndex;
-         }
-         else {
-            log.warning("Failed to open audio channels.");
-            return ERR::CreateResource;
-         }
-      }
-      else return log.warning(ERR::AccessObject);
-   }
-
-   std::string_view path;
-   Self->getPath(path);
-   if (((Self->Flags & SDF::NEW) != SDF::NIL) or (path.empty())) {
-      // If the sample is new or no path has been specified, create an audio sample from scratch (e.g. to record
-      // audio to disk).
-
-      return ERR::Okay;
-   }
-
-   // Load the sound file's header and test it to see if it matches our supported file format.
-
-   if (!Self->File) {
-      auto file = objFile::create::local(fl::Path(path), fl::Flags(FL::READ|FL::APPROXIMATE));
-      if (!file) {
-         return log.warning(ERR::File);
-      }
-      Self->File.reset(file);
-   }
-   else Self->File->seekStart(0);
-
-   Self->File->read(std::span<int8_t>((int8_t *)Self->Header.data(), Self->Header.size()));
-
-   if ((std::string_view((char *)Self->Header.data(), 4) != "RIFF") or
-       (std::string_view((char *)Self->Header.data() + 8, 4) != "WAVE")) {
-      Self->File.reset();
-      return ERR::NoSupport;
-   }
-
-   // Read the RIFF header
-
-   Self->File->seekStart(12);
-   if (fl::ReadLE(Self->File.get(), &id) != ERR::Okay) return ERR::Read; // Contains the characters "fmt "
-   if (fl::ReadLE(Self->File.get(), &len) != ERR::Okay) return ERR::Read; // Length of data in this chunk
-
-   WAVEFormat WAVE;
-   int result;
-   if ((Self->File->read(std::span<int8_t>((int8_t *)&WAVE, len), &result) != ERR::Okay) or (result != len)) {
-      return log.warning(ERR::Read);
-   }
-
-   // Check the format of the sound file's data
-
-   if ((WAVE.Format != WAVE_ADPCM) and (WAVE.Format != WAVE_RAW)) {
-      log.msg("This file's WAVE data format is not supported (type %d).", WAVE.Format);
-      return ERR::InvalidData;
-   }
-
-   // Look for the "data" chunk
-
-   if (find_chunk(Self->File.get(), "data") != ERR::Okay) {
-      return log.warning(ERR::Read);
-   }
-
-   if (fl::ReadLE(Self->File.get(), &Self->Length) != ERR::Okay) return ERR::Read; // Length of audio data in this chunk
-
-   if (Self->Length & 1) Self->Length++;
-
-   // Setup the sound structure
-
-   int64_t file_pos;
-   Self->File->getPosition(file_pos);
-   Self->DataOffset = int(file_pos);
-
-   Self->Format         = WAVE.Format;
-   Self->BytesPerSecond = WAVE.AvgBytesPerSecond;
-   Self->BitsPerSample  = WAVE.BitsPerSample;
-   if (WAVE.Channels IS 2) Self->Flags |= SDF::STEREO;
-   if (Self->Frequency <= 0) Self->Frequency = WAVE.Frequency;
-   if (Self->Playback <= 0)  Self->Playback  = Self->Frequency;
-
-   if ((Self->Flags & SDF::NOTE) != SDF::NIL) {
-      if (auto field = FindField(Self, strhash("note"), nullptr)) Self->set(field, Self->Note);
-      Self->Flags &= ~SDF::NOTE;
-   }
-
-   log.trace("Bits: %d, Freq: %d, KBPS: %d, ByteLength: %d, DataOffset: %d", Self->BitsPerSample, Self->Frequency, Self->BytesPerSecond, Self->Length, Self->DataOffset);
-
-   return ERR::Okay;
-}
-
-#else // Use the internal mixer
-
 static ERR SOUND_Init(extSound *Self)
 {
    kt::Log log;
@@ -897,7 +599,7 @@ static ERR SOUND_Init(extSound *Self)
       kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 3000);
       if (audio.granted()) {
          std::lock_guard mixer_lock(audio->MixerMutex);
-         #ifdef ALSA_ENABLED
+         #ifdef AUDIO_WORKER
          flush_audio_commands(*audio);
          #endif
          if (!audio->openChannels(audio->MaxChannels, &Self->ChannelIndex)) {
@@ -1015,8 +717,6 @@ static ERR SOUND_Init(extSound *Self)
 
    return ERR::Okay;
 }
-
-#endif
 
 /*********************************************************************************************************************
 -ACTION-
@@ -1185,15 +885,9 @@ static ERR SOUND_Seek(extSound *Self, struct acSeek *Args)
    kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 2000);
    if (audio.granted()) {
       std::lock_guard mixer_lock(audio->MixerMutex);
-      #ifdef ALSA_ENABLED
+      #ifdef AUDIO_WORKER
       flush_audio_commands(*audio);
       #endif
-      #ifdef USE_WIN32_PLAYBACK
-         if (sndCheckActivity((PlatformData *)Self->PlatformData) > 0) {
-            set_playback_trigger(Self);
-            sndSetPosition((PlatformData *)Self->PlatformData, Self->Position);
-         }
-      #else
          if (Self->Handle and !Self->FeedingStream) {
             audio->Samples[Self->Handle].PlayPos = BYTELEN(Self->Position);
 
@@ -1211,7 +905,6 @@ static ERR SOUND_Seek(extSound *Self, struct acSeek *Args)
                }
             }
          }
-      #endif
    }
    else return log.warning(ERR::AccessObject);
 
@@ -1240,31 +933,13 @@ Active: Returns `true` if the sound sample is being played back.
 
 static ERR SOUND_GET_Active(extSound *Self, int *Value)
 {
-#ifdef USE_WIN32_PLAYBACK
-   kt::Log log;
-
-   if (Self->Active) {
-      int16_t status = sndCheckActivity((PlatformData *)Self->PlatformData);
-
-      if (status IS 0) *Value = FALSE;
-      else if (status > 0) *Value = TRUE;
-      else {
-         log.warning("Error retrieving active status.");
-         *Value = FALSE;
-      }
-   }
-   else *Value = FALSE;
-
-   Self->Active = *Value;
-   return ERR::Okay;
-#else
    *Value = FALSE;
 
    if (Self->ChannelIndex) {
       kt::ScopedObjectLock<extAudio> audio(Self->AudioID);
       if (audio.granted()) {
          std::lock_guard mixer_lock(audio->MixerMutex);
-         #ifdef ALSA_ENABLED
+         #ifdef AUDIO_WORKER
          flush_audio_commands(*audio);
          #endif
          if (auto channel = audio->GetChannel(Self->ChannelIndex)) {
@@ -1273,7 +948,6 @@ static ERR SOUND_GET_Active(extSound *Self, int *Value)
       }
       else return ERR::AccessObject;
    }
-#endif
 
    Self->Active = *Value;
    return ERR::Okay;
@@ -1398,17 +1072,11 @@ static ERR SOUND_SET_Length(extSound *Self, int Value)
    if (Value >= 0) {
       Self->Length = Value;
 
-      #ifdef USE_WIN32_PLAYBACK
-         if (Self->initialised()) {
-            sndLength((PlatformData *)Self->PlatformData, Value);
-         }
-         return ERR::Okay;
-      #else
          if ((Self->Handle) and (Self->AudioID)) {
             kt::ScopedObjectLock<extAudio> audio(Self->AudioID);
             if (audio.granted()) {
                std::lock_guard mixer_lock(audio->MixerMutex);
-               #ifdef ALSA_ENABLED
+               #ifdef AUDIO_WORKER
                flush_audio_commands(*audio);
                #endif
                return audio->setSampleLength(Self->Handle, Value);
@@ -1416,7 +1084,6 @@ static ERR SOUND_SET_Length(extSound *Self, int Value)
             else return log.warning(ERR::AccessObject);
          }
          else return ERR::Okay;
-      #endif
    }
    else return log.warning(ERR::InvalidValue);
 }
@@ -1559,23 +1226,17 @@ static ERR SOUND_SET_Note(extSound *Self, const std::string_view &Value)
 
    // If the sound is playing, set the new playback frequency immediately
 
-#ifdef USE_WIN32_PLAYBACK
-   if (Self->initialised()) {
-      sndFrequency((PlatformData *)Self->PlatformData, Self->Playback);
-   }
-#else
    if (Self->ChannelIndex) {
       kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 200);
       if (audio.granted()) {
          std::lock_guard mixer_lock(audio->MixerMutex);
-         #ifdef ALSA_ENABLED
+         #ifdef AUDIO_WORKER
          flush_audio_commands(*audio);
          #endif
          snd::MixFrequency(*audio, Self->ChannelIndex, Self->Playback);
       }
       else return ERR::AccessObject;
    }
-#endif
 
    return ERR::Okay;
 }
@@ -1661,23 +1322,17 @@ static ERR SOUND_SET_Pan(extSound *Self, double Value)
    if (Self->Pan < -1.0) Self->Pan = -1.0;
    else if (Self->Pan > 1.0) Self->Pan = 1.0;
 
-#ifdef USE_WIN32_PLAYBACK
-   if (Self->initialised()) {
-      sndPan((PlatformData *)Self->PlatformData, Self->Pan);
-   }
-#else
    if (Self->ChannelIndex) {
       kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 200);
       if (audio.granted()) {
          std::lock_guard mixer_lock(audio->MixerMutex);
-         #ifdef ALSA_ENABLED
+         #ifdef AUDIO_WORKER
          flush_audio_commands(*audio);
          #endif
          snd::MixPan(*audio, Self->ChannelIndex, Self->Pan);
       }
       else return ERR::AccessObject;
    }
-#endif
 
    return ERR::Okay;
 }
@@ -1707,24 +1362,17 @@ static ERR SOUND_SET_Playback(extSound *Self, int Value)
    Self->Playback = Value;
    Self->Flags &= ~SDF::NOTE;
 
-#ifdef USE_WIN32_PLAYBACK
-   if (Self->initialised()) {
-      sndFrequency((PlatformData *)Self->PlatformData, Self->Playback);
-      if (Self->PlaybackTimer) set_playback_trigger(Self);
-   }
-#else
    if (Self->ChannelIndex) {
       kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 200);
       if (audio.granted()) {
          std::lock_guard mixer_lock(audio->MixerMutex);
-         #ifdef ALSA_ENABLED
+         #ifdef AUDIO_WORKER
          flush_audio_commands(*audio);
          #endif
          snd::MixFrequency(*audio, Self->ChannelIndex, Self->Playback);
       }
       else return log.warning(ERR::AccessObject);
    }
-#endif
 
    return ERR::Okay;
 }
@@ -1854,30 +1502,17 @@ static ERR SOUND_SET_Volume(extSound *Self, double Value)
    else if (Value > 1.0) Value = 1.0;
    Self->Volume = Value;
 
-#ifdef USE_WIN32_PLAYBACK
-   if (Self->initialised()) {
-      kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 200);
-      if (audio.granted()) {
-         std::lock_guard mixer_lock(audio->MixerMutex);
-         #ifdef ALSA_ENABLED
-         flush_audio_commands(*audio);
-         #endif
-         sndVolume((PlatformData *)Self->PlatformData, audio->MasterVolume * Self->Volume);
-      }
-   }
-#else
    if (Self->ChannelIndex) {
       kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 200);
       if (audio.granted()) {
          std::lock_guard mixer_lock(audio->MixerMutex);
-         #ifdef ALSA_ENABLED
+         #ifdef AUDIO_WORKER
          flush_audio_commands(*audio);
          #endif
          snd::MixVolume(*audio, Self->ChannelIndex, Self->Volume);
       }
       else return ERR::AccessObject;
    }
-#endif
 
    return ERR::Okay;
 }
@@ -1903,35 +1538,10 @@ static ERR find_chunk(objFile *File, std::string_view ChunkName)
 
 //********************************************************************************************************************
 
-#ifdef USE_WIN32_PLAYBACK
-static ERR win32_audio_stream(extSound *Self, int64_t Elapsed, int64_t CurrentTime)
-{
-   kt::Log log(__FUNCTION__);
-
-   // See snd::StreamAudio() for further information on streaming in Win32
-
-   auto response = sndStreamAudio((PlatformData *)Self->PlatformData);
-   if (response IS -1) {
-      log.warning("Sound streaming failed.");
-      sound_stopped_event(Self);
-      if (Self->PlaybackTimer) { UpdateTimer(Self->PlaybackTimer, 0); Self->PlaybackTimer = 0; }
-      Self->StreamTimer = 0;
-      return ERR::Terminate;
-   }
-   else if (response IS 1) {
-      Self->StreamTimer = 0;
-      return ERR::Terminate;
-   }
-
-   return ERR::Okay;
-}
-#endif
 
 //********************************************************************************************************************
 
 extSound::~extSound() {
-   if (StreamTimer)   UpdateTimer(StreamTimer, 0);
-   if (PlaybackTimer) UpdateTimer(PlaybackTimer, 0);
 
    if (OnStop.defined()) {
       if (OnStop.isScript()) UnsubscribeAction(OnStop.Context, AC::Free);
@@ -1939,9 +1549,6 @@ extSound::~extSound() {
       OnStop.disable();
    }
 
-#ifdef USE_WIN32_PLAYBACK
-   if (!Handle) sndFree((::PlatformData *)PlatformData);
-#endif
 
    deactivate();
 
@@ -1949,7 +1556,7 @@ extSound::~extSound() {
       kt::ScopedObjectLock<extAudio> audio(AudioID);
       if (audio.granted()) {
          std::lock_guard mixer_lock(audio->MixerMutex);
-         #ifdef ALSA_ENABLED
+         #ifdef AUDIO_WORKER
          flush_audio_commands(*audio);
          #endif
          audio->removeSample(Handle);

@@ -4,10 +4,13 @@ using namespace kt;
 #include <variant>
 #include <mutex>
 #include <optional>
+#include <atomic>
+#ifdef _WIN32
+#include "wasapi.h"
+#endif
 #include <unordered_map>
 #ifdef ALSA_ENABLED
 #include <pthread.h>
-#include <atomic>
 #include <poll.h>
 #include <sys/eventfd.h>
 #endif
@@ -17,11 +20,7 @@ using namespace kt;
 #endif
 #include "mixer_dispatch.h"
 
-#ifdef _WIN32
-#define MIX_INTERVAL 0.1
-#else
 #define MIX_INTERVAL 0.01
-#endif
 
 enum SAMPLE : int {};
 enum BYTELEN : int {};
@@ -57,7 +56,8 @@ enum class CMD : int {
    PLAY,
    MUTE,
    SET_LENGTH,
-   CONTINUE
+   CONTINUE,
+   PAUSE
 };
 
 //********************************************************************************************************************
@@ -76,14 +76,7 @@ inline const int sample_shift(const SFM Type)
 
 //********************************************************************************************************************
 
-typedef struct _GUID {
-  unsigned long  Data1;
-  unsigned short Data2;
-  unsigned short Data3;
-  unsigned char  Data4[8];
-} GUID;
-
-typedef struct WAVEFormat {
+struct WAVEFormat {
    int16_t Format;            // Type of WAVE data in the chunk: RAW or ADPCM
    int16_t Channels;          // Number of channels, 1=mono, 2=stereo
    int Frequency;             // Playback frequency
@@ -91,7 +84,7 @@ typedef struct WAVEFormat {
    int16_t BlockAlign;        // Channels * (BitsPerSample / 8)
    int16_t BitsPerSample;     // Bits per sample
    int16_t ExtraLength;
-} WAVEFORMATEX;
+};
 
 // Function to set mixing step for thread-safe operation
 void set_mix_step(int step);
@@ -100,7 +93,6 @@ static const int16_t WAVE_RAW   = 0x0001;  // Uncompressed waveform data.
 static const int16_t WAVE_ADPCM = 0x0002;  // ADPCM compressed waveform data.
 static const int16_t WAVE_FLOAT = 0x0003;  // Uncompressed floating point waveform
 
-struct PlatformData { void *Void; };
 
 //********************************************************************************************************************
 
@@ -120,7 +112,7 @@ struct AudioSample {
    SFM      SampleType;   // Type of sample (bit format)
    LTYPE    Loop1Type;    // First loop type (unidirectional, bidirectional)
    LTYPE    Loop2Type;    // Second loop type (unidirectional, bidirectional)
-   #ifdef ALSA_ENABLED
+   #ifdef AUDIO_WORKER
    uint64_t Generation = 0;
    uint64_t DeferredStops = 0;
    int64_t DeferredStopDue = 0;
@@ -151,7 +143,7 @@ struct AudioSample {
    }
 
    void clear() {
-      #ifdef ALSA_ENABLED
+      #ifdef AUDIO_WORKER
       ++Generation;
       DeferredStops = 0;
       Ring.Read = Ring.Used = 0;
@@ -209,7 +201,9 @@ struct AudioChannel {
    double   Volume;         // Playing volume (0 - 1.0)
    double   Pan;            // Pan value (-1.0 - 1.0)
    int64_t  EndTime;        // Anticipated end-time of playing the current sample, if OnStop is defined in the sample.
+   uint64_t PlaybackGeneration; // Identifies the current use of this channel for deferred completion delivery.
    int      SampleHandle;   // Sample index, direct lookup into extAudio->Samples
+   int      Handle;         // Public channel handle used to validate deferred completion delivery.
    CHF      Flags;          // Special flags
    int      Position;       // Current playing/mixing byte position within Sample.
    int      Frequency;      // Playback frequency
@@ -357,32 +351,48 @@ class extAudio : public objAudio {
    std::vector<float> MixBuffer;
    APTR  TaskRemovedHandle;
    APTR  UserLoginHandle;
-   #ifdef _WIN32
-      uint8_t  PlatformData[128];  // Data area for holding platform/hardware specific information
-   #endif
    #ifdef ALSA_ENABLED
       pthread_t Worker{};
-      bool WorkerStarted = false;
-      std::atomic<bool> StopWorker{true};
-      std::atomic<int> WorkerError{0};
       int WakeFD = -1;
       int NotifyFD = -1;
       std::vector<pollfd> PollDescriptors;
+      AudioWorkerStats WorkerStats;
+      snd_pcm_t *Handle;
+      snd_mixer_t *MixHandle;
+      snd_output_t *sndlog;
+   #endif
+   #ifdef _WIN32
+      WasapiStream *RenderStream = nullptr;
+      unsigned QueuedFrames = 0;
+      int64_t QueuedAt = 0;
+      unsigned TailFrames = 0;
+      bool Reopening = false;
+      unsigned ReopenAttempts = 0;
+      int64_t ReopenAt = 0;
+      int64_t WorkerStartedAt = 0;
+      uint64_t MixerContentions = 0;
+   #endif
+   #ifdef AUDIO_WORKER
+      bool WorkerStarted = false;
+      std::atomic<bool> StopWorker{true};
+      std::atomic<int> WorkerError{0};
       std::array<AudioCommand, 1024> PendingCommands;
       size_t PendingCount = 0;
-      struct Notification { int Sample; uint64_t Generation; int64_t Due; };
+      struct Notification {
+         int Sample;
+         int Channel;
+         uint64_t SampleGeneration;
+         uint64_t PlaybackGeneration;
+         int64_t Due;
+      };
       std::array<Notification, 4096> Notifications;
       size_t NotificationCount = 0;
-      AudioWorkerStats WorkerStats;
       uint64_t Starvations = 0;
       float FilterHistory[4] = {};
-      snd_pcm_uframes_t PeriodFrames = 0;
-      snd_pcm_uframes_t BufferFrames = 0;
+      uint64_t PeriodFrames = 0;
+      uint64_t BufferFrames = 0;
       unsigned FrameBytes = 0;
       std::vector<uint8_t> AudioBuffer;
-      snd_pcm_t    *Handle;
-      snd_mixer_t  *MixHandle;
-      snd_output_t *sndlog;
    #endif
    double  MasterVolume;
    TIMER   Timer;
@@ -427,14 +437,9 @@ class extSound : public objSound {
    public:
    FUNCTION OnStop;
    std::array<uint8_t,32> Header;
-   #ifdef _WIN32
-   uint8_t  PlatformData[64];   // Data area for holding platform/hardware specific information
-   #endif
    ankerl::unordered_dense::map<std::string, std::string> Tags;
    std::unique_ptr<objFile, DeleteObject<objFile>> File;
    std::string Path;
-   TIMER StreamTimer;        // Timer to regularly trigger for provisioning streaming data.
-   TIMER PlaybackTimer;      // Timer to trigger when playback ends.
    int   Format;             // The format of the sound data
    int   DataOffset;         // Start of raw audio data within the source file
    int   Note;               // Note to play back (e.g. C, C#, G...)
@@ -456,29 +461,40 @@ class extSound : public objSound {
 
 //********************************************************************************************************************
 
-#ifdef ALSA_ENABLED
+#ifdef AUDIO_WORKER
 static thread_local bool glAudioWorker = false;
 
 static void wake_audio(extAudio *Self)
 {
+#ifdef _WIN32
+   wasapi_wake(Self->RenderStream);
+#else
    if (Self->WakeFD >= 0) {
       uint64_t value = 1;
       (void)write(Self->WakeFD, &value, sizeof(value));
    }
+#endif
 }
 
 static void notify_audio(extAudio *Self)
 {
+#ifdef _WIN32
+   wasapi_notify(Self->RenderStream);
+#else
    if (Self->NotifyFD >= 0) {
       uint64_t value = 1;
       (void)write(Self->NotifyFD, &value, sizeof(value));
    }
+#endif
 }
 
 static void execute_audio_command(extAudio *, const AudioCommand &);
 static ERR start_audio_worker(extAudio *);
 static void stop_audio_worker(extAudio *);
 static void request_stream(extAudio *, AudioSample &);
+#ifdef _WIN32
+static void reopen_windows_audio(extAudio *);
+#endif
 #endif
 
 //********************************************************************************************************************
@@ -488,7 +504,7 @@ class AudioLog {
    std::optional<kt::Log> logger;
 public:
    AudioLog(CSTRING Name) {
-      #ifdef ALSA_ENABLED
+      #ifdef AUDIO_WORKER
       if (glAudioWorker) return;
       #endif
       logger.emplace(Name);

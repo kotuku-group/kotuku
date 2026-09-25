@@ -11,8 +11,8 @@ Application chains process their channel set before it is added to the master mi
 master mix before the built-in output filter.  Lower #Order values run first; ties retain attachment order.
 
 Attachment, field changes and detachment are serialised with mixing.  Freeing an effect waits for any current mix
-window before detaching it.  Closing its channel set or freeing its Audio target disconnects the effect; a disconnected
-effect must be replaced to attach it again.  Global effects are immutable after initialisation.
+window before detaching it.  Closing its channel set or freeing its Audio target disconnects the effect; a
+disconnected effect must be replaced to attach it again.  Global effects are immutable after initialisation.
 
 <header>Parameter Schema</header>
 

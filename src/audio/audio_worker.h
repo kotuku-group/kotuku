@@ -3,8 +3,10 @@
 #include "audio_buffer.h"
 #include <cerrno>
 
+//********************************************************************************************************************
 // The PCM adapter owns device calls, waits and mixer access.  Keeping the loop independent of ALSA permits
 // deterministic failure injection without exposing test controls through the public Audio API.
+
 struct AudioWorkerStats {
    uint64_t Underruns = 0;
    uint64_t RecoveryFailures = 0;
@@ -19,6 +21,8 @@ struct AudioWorkerStats {
       DelayMaximum = std::max(DelayMaximum, uint64_t(Frames));
    }
 };
+
+//********************************************************************************************************************
 
 template<class Backend> AudioWorkerStats run_audio_worker(Backend &PCM)
 {

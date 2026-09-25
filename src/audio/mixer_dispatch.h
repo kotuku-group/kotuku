@@ -10,7 +10,9 @@ struct MixingParams {
    float **mix_dest;
 };
 
+//********************************************************************************************************************
 // Audio configuration structure
+
 struct AudioConfig {
    bool stereo_output;
    bool use_interpolation;
@@ -22,7 +24,9 @@ struct AudioConfig {
       : stereo_output(stereo_out), use_interpolation(interpolation) {}
 };
 
+//********************************************************************************************************************
 // Primary mixing dispatch function
+
 class AudioMixer {
 public:
    static int dispatch_mix(const AudioConfig& config, SFM sample_format, const MixingParams& params);

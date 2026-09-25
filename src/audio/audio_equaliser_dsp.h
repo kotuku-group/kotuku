@@ -60,6 +60,7 @@ private:
 public:
    // Caller holds the mixer lock.  Next and Origins are prepared beforehand and retire replaced storage on return.
    // Keep an in-flight fade intact; rapid edits coalesce into one queued target with composed entry origins.
+
    void update(std::vector<EQSection> &Next, std::vector<int> &Origins, double NextTrim) {
       if ((Rate < 2) or Owner->ResetPending) {
          Sections.swap(Next);
@@ -74,6 +75,7 @@ public:
                   pending_origins[origin] : -1;
             }
          }
+
          pending.swap(Next);
          pending_origins.swap(Origins);
          pending_trim = NextTrim;
@@ -102,6 +104,7 @@ public:
          sine / (2.0 * band.Q);
       const double root = 2.0 * std::sqrt(amplitude) * alpha;
       double b0 = 1, b1 = 0, b2 = 0, a0 = 1, a1 = 0, a2 = 0;
+
       switch (band.Type) {
          case EQB::PEAK:
             b0 = 1 + alpha * amplitude; b1 = -2 * cosine; b2 = 1 - alpha * amplitude;
@@ -143,6 +146,7 @@ public:
          Trim = pending_trim;
          has_pending = false;
       }
+
       transition_left = 0;
       Rate = Owner->OutputRate;
       Channels = Owner->Stereo ? 2 : 1;
@@ -158,6 +162,7 @@ public:
             start_transition(pending, pending_origins, pending_trim);
             has_pending = false;
          }
+
          const double blend = 1.0 - double(transition_left) / double(transition_frames);
          for (int channel = 0; channel < Channels; ++channel) {
             const double sample = Buffer[frame * Channels + channel];
@@ -166,8 +171,10 @@ public:
                const double old_output = filter(previous, sample, channel) * previous_trim;
                output = old_output + (output - old_output) * blend;
             }
+
             Buffer[frame * Channels + channel] = float(output);
          }
+
          if (transition_left) --transition_left;
       }
    }
@@ -190,6 +197,7 @@ inline void equaliser_magnitudes(const EqualiserProcessor &Model, std::span<cons
          const auto denominator = 1.0 + section.A1 * z1 + section.A2 * z2;
          magnitude *= std::abs(numerator) / std::abs(denominator);
       }
+
       Magnitudes[i] = 20.0 * std::log10(std::max(magnitude, 1e-15));
    }
 }

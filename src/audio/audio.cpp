@@ -40,8 +40,9 @@ Output behaviour differs by platform:
 <li><b>Linux (ALSA):</b> All playback, including @Sound objects, is mixed by the internal mixer and written by a
 dedicated worker thread.  Buffering is configured with the @Audio.Periods and @Audio.PeriodSize fields, and the
 ALSA mixer is used for system volume control.</li>
-<li><b>Windows (DirectSound):</b> Each @Sound object is given its own DirectSound buffer and bypasses the internal
-mixer.  Channels opened directly on an @Audio object are mixed internally and output at a fixed rate of 44.1 kHz.</li>
+<li><b>Windows (WASAPI):</b> All Sounds use the internal mixer and its application/global effects.  Each active
+Audio object owns an event-driven shared-mode stream at the endpoint mix rate.  IAudioClient3 uses the supported
+default period; event-driven IAudioClient is the compatibility fallback.  Windows 10 or later is supported.</li>
 </list>
 
 The @Sound.Stream field determines whether a sample is loaded into memory or streamed from its source.  With
@@ -54,7 +55,7 @@ Technical specifications:
 <list type="bullet">
 <li>Internal processing: 32-bit floating-point.</li>
 <li>Output formats: 8-bit and 16-bit integer, and 32-bit floating-point.</li>
-<li>Output rates: Up to 192 kHz, subject to hardware negotiation.  The Windows mixer output is fixed at 44.1 kHz.</li>
+<li>Output rates: Up to 192 kHz, subject to hardware negotiation.  Windows follows the endpoint mix rate.</li>
 <li>Channel configurations: Mono and stereo output.  Mono and stereo samples are converted to the output layout during
 mixing.</li>
 </list>
@@ -113,24 +114,16 @@ ERR add_sound_class(void);
 void free_audio_class(void);
 void free_sound_class(void);
 
-extern "C" void end_of_stream(OBJECTPTR, int);
-
 static void audio_stopped_event(extAudio &, int);
 static ERR set_channel_volume(extAudio *, struct AudioChannel *);
 static ERR init_audio(extAudio *);
-static ERR audio_timer(extAudio *, int64_t, int64_t);
 
+#if defined(_WIN32) or defined(ALSA_ENABLED)
+#define AUDIO_WORKER
+#endif
 #include "audio.h"
 
 //********************************************************************************************************************
-
-#ifdef _WIN32
-#define USE_WIN32_PLAYBACK TRUE // All Sound objects get an independent DirectSound channel if enabled
-#include "windows.h"
-
-extern "C" char * dsInitDevice(int);
-extern "C" void dsCloseDevice(void);
-#endif
 
 #ifdef ALSA_ENABLED
 static void free_alsa(extAudio *);
@@ -153,12 +146,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
    CoreBase = argCoreBase;
 
-#ifdef _WIN32
-   if (auto errstr = dsInitDevice(44100)) {
-      log.warning("DirectSound Failed: %s", errstr);
-      return ERR::NoSupport;
-   }
-#elif ALSA_ENABLED
+#if defined(_WIN32) or defined(ALSA_ENABLED)
    std::span<std::string> args;
    auto task = CurrentTask();
    if (!task->getParameters(args)) {
@@ -214,7 +202,9 @@ static ERR MODExpunge(void)
 #include "functions.cpp"
 #include "mixers.cpp"
 #include "commands.cpp"
+#include "render_client.cpp"
 #include "alsa_worker.cpp"
+#include "windows_worker.cpp"
 #include "audio_effect.cpp"
 #include "class_audioeffect.cpp"
 #include "class_audioequaliser.cpp"

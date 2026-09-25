@@ -34,15 +34,16 @@ field configures the filtering and oversampling flags as a group.</li>
 <li><b>Linux (ALSA):</b> All playback, including <class name="Sound">Sound</class> objects, is mixed by the internal mixer and written by a
 dedicated worker thread.  Buffering is configured with the <class name="Audio" field="Periods">Audio.Periods</class> and <class name="Audio" field="PeriodSize">Audio.PeriodSize</class> fields, and the
 ALSA mixer is used for system volume control.</li>
-<li><b>Windows (DirectSound):</b> Each <class name="Sound">Sound</class> object is given its own DirectSound buffer and bypasses the internal
-mixer.  Channels opened directly on an <class name="Audio">Audio</class> object are mixed internally and output at a fixed rate of 44.1 kHz.</li>
+<li><b>Windows (WASAPI):</b> All Sounds use the internal mixer and its application/global effects.  Each active
+Audio object owns an event-driven shared-mode stream at the endpoint mix rate.  IAudioClient3 uses the supported
+default period; event-driven IAudioClient is the compatibility fallback.  Windows 10 or later is supported.</li>
 </list>
 <p>The <class name="Sound" field="Stream">Sound.Stream</class> field determines whether a sample is loaded into memory or streamed from its source.  With <code>STREAM::SMART</code>, samples larger than 256KB are streamed; with <code>STREAM::ALWAYS</code>, samples larger than 16KB are streamed; with <code>STREAM::NEVER</code>, the sample is always memory-resident.  Loop points are preserved when a sample is streamed.</p>
 <p>Technical specifications:</p>
 <list type="bullet">
 <li>Internal processing: 32-bit floating-point.</li>
 <li>Output formats: 8-bit and 16-bit integer, and 32-bit floating-point.</li>
-<li>Output rates: Up to 192 kHz, subject to hardware negotiation.  The Windows mixer output is fixed at 44.1 kHz.</li>
+<li>Output rates: Up to 192 kHz, subject to hardware negotiation.  Windows follows the endpoint mix rate.</li>
 <li>Channel configurations: Mono and stereo output.  Mono and stereo samples are converted to the output layout during
 mixing.</li>
 </list></description>
