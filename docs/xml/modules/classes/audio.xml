@@ -343,7 +343,7 @@
       <access read="G">Get</access>
       <type>DOUBLE</type>
       <description>
-<p>On Windows this field estimates the outstanding submitted frames from the most recent endpoint padding and render time.  On ALSA it is the negotiated buffer size in frames divided by the output rate, and is zero while inactive. It excludes client scheduling, source starvation, and downstream sound-server or wireless-device buffering; it is not an acoustic latency guarantee.  Source prefetch uses the saved <code>StreamBufferMs</code> setting (100–10000ms, default 1000ms) independently of this value.</p>
+<p>On Windows this field estimates the outstanding submitted frames from the most recent endpoint padding and render time.  It can be zero while idle, so an idle reading is not a buffer-capacity or future callback-latency estimate. On ALSA it is the negotiated buffer size in frames divided by the output rate, and is zero while inactive. It excludes client scheduling, source starvation, and downstream sound-server or wireless-device buffering; it is not an acoustic latency guarantee.  Source prefetch uses the saved <code>StreamBufferMs</code> setting (100–10000ms, default 1000ms) independently of this value.</p>
       </description>
     </field>
 

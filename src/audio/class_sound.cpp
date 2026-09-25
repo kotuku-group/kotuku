@@ -1276,8 +1276,11 @@ OnStop: This callback is triggered when sample playback stops.
 Set OnStop to a callback function to receive an event trigger when sample playback stops.  The prototype for the
 function is `void OnStop(*Sound)`.
 
-The timing of this event does not guarantee precision, but should be accurate to approximately 1/100th of a second
-in most cases.
+This notification is approximate and does not guarantee that the final sample has reached the speakers.  On Windows,
+delivery accounts for the estimated device queue, rather than tracking the hardware playback position.  Timing can
+be early or late by approximately 10 ms in normal operation; buffering and client scheduling can add further delay.
+Allow a timing margin when comparing the callback time with #Duration, and start elapsed-time measurements before
+calling #Activate().  Do not use this callback for precise audiovisual synchronisation.
 
 *********************************************************************************************************************/
 

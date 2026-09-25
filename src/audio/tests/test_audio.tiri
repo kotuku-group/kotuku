@@ -13,8 +13,9 @@
    global glAudio = obj.new('audio', { name='SystemAudio' })
 
    check glAudio.acActivate()
-   global glLag = glAudio.mixerLag
-   logOutput('Audio mixer lag time measured as ' .. string.format('%.2fs', glLag))
+   -- MixerLag can be zero while idle.  Use the negotiated buffer, rounded up to whole periods on Windows.
+   global glBufferDuration = glAudio.periods * glAudio.periodSize / glAudio.outputRate
+   logOutput('Audio buffer timing allowance is ' .. string.format('%.3fs', glBufferDuration))
 end
 
 @AfterAll function cleanup()
@@ -39,6 +40,9 @@ end
 -- This test must result in playback of a low-tone, then followed by a high tone.
 
 @Test(priority=10) function SequentialPlayback()
+   -- OnStop is approximate: allow 10 ms early, or one buffer plus 20 ms for client scheduling when late.
+   early_margin = 0.01
+   late_margin = glBufferDuration + 0.02
    snd = obj.new('sound', { path=glFolder .. 'low-tone.wav', volume=0.25 })
    assert(snd, 'Failed to process low-tone wav file.')
 
@@ -52,13 +56,15 @@ end
    processing.collect()
 
    proc = processing.new({ signals = array<obj> { snd } })
-   check snd.acActivate()
    time = mSys.PreciseTime()
+   check snd.acActivate()
 
    proc.sleep()
 
-   assert(time_taken >= duration, 'End-of-sample occurred earlier than duration of ' .. duration .. ': ' .. time_taken)
-   assert(time_taken <  duration+glLag+0.02, 'End-of-sample exceeded duration of ' .. duration .. ': ' .. time_taken)
+   assert(time_taken >= duration-early_margin,
+      f'OnStop too early: duration={duration}s, elapsed={time_taken}s, margin={early_margin}s')
+   assert(time_taken < duration+late_margin,
+      f'OnStop too late: duration={duration}s, elapsed={time_taken}s, margin={late_margin}s')
 
    -- Second sample
 
@@ -73,13 +79,15 @@ end
    proc = processing.new({ signals = array<obj> { snd } })
 
    duration = snd.duration
-   check snd.acActivate()
    time = mSys.PreciseTime()
+   check snd.acActivate()
 
    proc.sleep()
 
-   assert(time_taken >= duration, 'End-of-sample occurred earlier than duration of ' .. duration .. ': ' .. time_taken)
-   assert(time_taken <  duration+glLag+0.02, 'End-of-sample exceeded duration of ' .. duration .. ': ' .. time_taken)
+   assert(time_taken >= duration-early_margin,
+      f'OnStop too early: duration={duration}s, elapsed={time_taken}s, margin={early_margin}s')
+   assert(time_taken < duration+late_margin,
+      f'OnStop too late: duration={duration}s, elapsed={time_taken}s, margin={late_margin}s')
 
    processing.halt(0.25)
 end
