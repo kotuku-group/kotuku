@@ -280,34 +280,25 @@ static ERR set_channel_volume(extAudio *Self, AudioChannel *Channel)
 [[maybe_unused]] static ERR process_commands(extAudio *Self, SAMPLE Elements)
 {
    for (int index=1; index < (int)Self->Sets.size(); index++) {
-      Self->Sets[index].MixLeft -= Elements;
-      if (Self->Sets[index].MixLeft <= 0) {
-         // Reset the amount of mixing elements left and execute the next set of channel commands
-
-         Self->Sets[index].MixLeft = Self->MixLeft(Self->Sets[index].UpdateRate);
-
-         if (Self->Sets[index].Commands.empty()) continue;
-
-         execute_next_audio_batch(Self->Sets[index], [Self](const AudioCommand &Command) {
-            #ifdef AUDIO_WORKER
-            execute_audio_command(Self, Command);
-            #else
-            switch (Command.CommandID) {
-               case CMD::CONTINUE: snd::MixContinue(Self, Command.Handle); break;
-               case CMD::MUTE: snd::MixMute(Self, Command.Handle, std::get<bool>(Command.Data)); break;
-               case CMD::PLAY: snd::MixPlay(Self, Command.Handle, std::get<int>(Command.Data)); break;
-               case CMD::FREQUENCY: snd::MixFrequency(Self, Command.Handle, std::get<int>(Command.Data)); break;
-               case CMD::PAN: snd::MixPan(Self, Command.Handle, std::get<double>(Command.Data)); break;
-               case CMD::RATE: snd::MixRate(Self, Command.Handle, std::get<int>(Command.Data)); break;
-               case CMD::SAMPLE: snd::MixSample(Self, Command.Handle, std::get<int>(Command.Data)); break;
-               case CMD::VOLUME: snd::MixVolume(Self, Command.Handle, std::get<double>(Command.Data)); break;
-               case CMD::STOP: snd::MixStop(Self, Command.Handle); break;
-               case CMD::STOP_LOOPING: snd::MixStopLoop(Self, Command.Handle); break;
-               default: break;
-            }
-            #endif
-         });
-      }
+      advance_audio_tick(Self->Sets[index], Elements, Self->OutputRate, [Self](const AudioCommand &Command) {
+         #ifdef AUDIO_WORKER
+         execute_audio_command(Self, Command);
+         #else
+         switch (Command.CommandID) {
+            case CMD::CONTINUE: snd::MixContinue(Self, Command.Handle); break;
+            case CMD::MUTE: snd::MixMute(Self, Command.Handle, std::get<bool>(Command.Data)); break;
+            case CMD::PLAY: snd::MixPlay(Self, Command.Handle, std::get<int>(Command.Data)); break;
+            case CMD::FREQUENCY: snd::MixFrequency(Self, Command.Handle, std::get<int>(Command.Data)); break;
+            case CMD::PAN: snd::MixPan(Self, Command.Handle, std::get<double>(Command.Data)); break;
+            case CMD::TEMPO: snd::MixTempo(Self, Command.Handle, std::get<int>(Command.Data)); break;
+            case CMD::SAMPLE: snd::MixSample(Self, Command.Handle, std::get<int>(Command.Data)); break;
+            case CMD::VOLUME: snd::MixVolume(Self, Command.Handle, std::get<double>(Command.Data)); break;
+            case CMD::STOP: snd::MixStop(Self, Command.Handle); break;
+            case CMD::STOP_LOOPING: snd::MixStopLoop(Self, Command.Handle); break;
+            default: break;
+         }
+         #endif
+      });
    }
 
    return ERR::Okay;

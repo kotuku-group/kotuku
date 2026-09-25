@@ -63,7 +63,7 @@ channels or numeric arguments reject the entire batch.  Sample availability and 
 execution time.
 
 Batches execute in submission order within their set, with one batch per mixer update boundary as determined by
-~MixRate().  Commands execute in array order without rendering frames.  Different sets have independent update
+~MixTempo().  Commands execute in array order without rendering frames.  Different sets have independent update
 boundaries.  On worker backends, individual Mix calls use a separate FIFO which is drained before rendering each
 period (and by synchronous Sound queries); they can overtake queued batches, even when submitted later.  On backends
 without a worker, individual Mix calls execute immediately.
@@ -578,20 +578,35 @@ ERR MixPlay(objAudio *Audio, int Handle, int Position)
 /*********************************************************************************************************************
 
 -FUNCTION-
-MixRate: Sets a new update rate for a channel.
+MixTempo: Sets the tracker tempo for a channel set.
 
-This function will set a new update rate for all channels, measured in milliseconds.  The default update rate is 125,
-which is equivalent to 5000Hz.
+Sets the tempo in beats per minute (BPM), with 24 mixer ticks per beat.  Each tick is one channel-set update
+boundary at which one queued batch can execute.  The default tempo is 125 BPM: 50 ticks per second, or 20 ms
+per tick before frame rounding.  This setting affects every channel in the selected set.
+
+The ideal tick length is OutputRate * 2.5 / Tempo frames.  Round to the nearest even frame count, with exact
+odd-frame ties rounded upwards, then enforce a minimum of two frames.  Equivalently:
+<pre>frames = max(2, 2 * floor((floor(OutputRate * 5 / (Tempo * 2)) + 1) / 2))</pre>
+The actual tick duration is frames / OutputRate seconds.  At 125 BPM, output rates of 22050, 44100 and 48000 Hz
+produce 442, 882 and 960 frames respectively.  At 44100 Hz and 128 BPM, each tick contains 862 frames.
+
+A change preserves the frames remaining in the current tick.  The next tick scheduled after the command executes
+uses the new tempo.  A tempo command inside ~MixSubmitBatch() therefore controls the interval immediately following
+that batch; if several tempo commands occur in a batch, the last one wins.  Worker-backed calls return `Okay` on
+queue admission and apply the command before a subsequent render period (or when a synchronous query drains the
+queue).  Already rendered audio is unaffected.  Other backends apply the command immediately.
 
 -INPUT-
 obj(Audio) Audio: The target Audio object.
-int Handle: The channel set allocated from OpenChannels().
-int Rate: The new update rate in milliseconds.
+int Handle: The channel set allocated from OpenChannels(), or any live channel in that set.
+int Tempo: Tracker tempo from 1 to 100000 BPM inclusive.
 
 -ERRORS-
 Okay
 NullArgs
 OutOfRange
+NotInitialised
+BufferOverflow
 
 -TAGS-
 mutates-object
@@ -599,19 +614,19 @@ mutates-object
 
 *********************************************************************************************************************/
 
-ERR MixRate(objAudio *Audio, int Handle, int Rate)
+ERR MixTempo(objAudio *Audio, int Handle, int Tempo)
 {
    if (!Audio or !Handle) return ERR::NullArgs;
    std::lock_guard mixer_lock(((extAudio *)Audio)->MixerMutex);
    if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
-   if (Rate < 1 or Rate > 100000) return ERR::OutOfRange;
+   if (Tempo < 1 or Tempo > 100000) return ERR::OutOfRange;
 
 #ifdef AUDIO_WORKER
    if (!glAudioWorker) {
       auto self = (extAudio *)Audio;
       if (self->StopWorker) return ERR::NotInitialised;
       if (self->PendingCount >= self->PendingCommands.size()) return ERR::BufferOverflow;
-      self->PendingCommands[self->PendingCount++] = AudioCommand(CMD::RATE, Handle, Rate);
+      self->PendingCommands[self->PendingCount++] = AudioCommand(CMD::TEMPO, Handle, Tempo);
       wake_audio(self);
       return ERR::Okay;
    }
@@ -623,11 +638,11 @@ ERR MixRate(objAudio *Audio, int Handle, int Rate)
 
    log.traceBranch("Audio: #%d, Channel: $%.8x", Audio->UID, Handle);
 
-   if ((Rate < 1) or (Rate > 100000)) return log.warning(ERR::OutOfRange);
+   if ((Tempo < 1) or (Tempo > 100000)) return log.warning(ERR::OutOfRange);
 
    int16_t index = Handle>>16;
    if ((index >= 0) and (index < (int)((extAudio *)Audio)->Sets.size())) {
-      ((extAudio *)Audio)->Sets[index].UpdateRate = Rate;
+      ((extAudio *)Audio)->Sets[index].Tempo = Tempo;
       return ERR::Okay;
    }
    else return log.warning(ERR::OutOfRange);

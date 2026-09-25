@@ -643,8 +643,8 @@ static ERR AUDIO_OpenChannels(extAudio *Self, struct snd::OpenChannels *Args)
    #else
    if ((Self->Flags & ADF::OVER_SAMPLING) != ADF::NIL) channels.Shadow.resize(Args->Total);
    #endif
-   channels.UpdateRate = 125;
-   channels.MixLeft = Self->MixLeft(channels.UpdateRate);
+   channels.Tempo = 125;
+   channels.MixLeft = channels.TickFrames(Self->OutputRate);
    channels.Commands.reserve(1024);
 
    std::vector<ChannelSet> set_slots;

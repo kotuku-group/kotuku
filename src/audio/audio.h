@@ -48,7 +48,7 @@ enum class CMD : int {
    VOLUME,
    PAN,
    FREQUENCY,
-   RATE,
+   TEMPO,
    STOP,
    STOP_LOOPING,
    POSITION,
@@ -278,7 +278,7 @@ struct ChannelSet {
    std::vector<AudioCommand> Commands; // Buffered commands.
    std::shared_ptr<AudioEffectChain> Effects;
    std::vector<float> ScratchBuffer;
-   int UpdateRate;   // Update rate, measured in milliseconds
+   int Tempo;        // Tracker tempo in beats per minute (24 ticks per beat)
    SAMPLE MixLeft;    // Amount of mix elements left before the next command-update occurs
 
    ChannelSet() {
@@ -294,13 +294,19 @@ struct ChannelSet {
       clear();
    }
 
+   SAMPLE TickFrames(int OutputRate) const {
+      if (Tempo <= 0 or OutputRate <= 0) return SAMPLE(0);
+      const auto frames = (int64_t(OutputRate) * 5 / (int64_t(Tempo) * 2) + 1) & ~int64_t(1);
+      return SAMPLE(std::max(int64_t(2), frames));
+   }
+
    void clear() {
       Channel.clear();
       Shadow.clear();
       Commands.clear();
       Effects.reset();
       ScratchBuffer.clear();
-      UpdateRate = 0;
+      Tempo = 0;
       MixLeft    = SAMPLE(0);
    }
 };
@@ -410,11 +416,6 @@ class extAudio : public objAudio {
 
    inline struct AudioChannel * GetShadow(int Handle) {
       return &this->Sets[Handle>>16].Shadow[Handle & 0xffff];
-   }
-
-   inline SAMPLE MixLeft(int Value) {
-      if (!Value) return SAMPLE(0);
-      return SAMPLE((((100 * (int64_t)OutputRate) / (Value * 40)) + 1) & 0xfffffffe);
    }
 
    inline double MixerLag();

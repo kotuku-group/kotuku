@@ -176,7 +176,7 @@ static void reopen_windows_audio(extAudio *Self)
       configure_effects(*Self->GlobalEffects, Self->OutputRate, Self->Stereo);
       for (auto &set : Self->Sets) {
          set.ScratchBuffer.resize(Self->MixBuffer.size());
-         set.MixLeft = Self->MixLeft(set.UpdateRate);
+         set.MixLeft = set.TickFrames(Self->OutputRate);
          if (set.Effects) configure_effects(*set.Effects, Self->OutputRate, Self->Stereo);
       }
       if (start_audio_worker(Self) IS ERR::Okay) {

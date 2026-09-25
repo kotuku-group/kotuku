@@ -175,7 +175,7 @@ enum class MIX : int {
    MUTE = 3,
    PAN = 4,
    PLAY = 5,
-   RATE = 6,
+   TEMPO = 6,
    SAMPLE = 7,
    STOP = 8,
    STOP_LOOP = 9,
@@ -958,7 +958,7 @@ struct AudioBase {
    ERR (*_MixMute)(objAudio *Audio, int Handle, int Mute);
    ERR (*_MixPan)(objAudio *Audio, int Handle, double Pan);
    ERR (*_MixPlay)(objAudio *Audio, int Handle, int Position);
-   ERR (*_MixRate)(objAudio *Audio, int Handle, int Rate);
+   ERR (*_MixTempo)(objAudio *Audio, int Handle, int Tempo);
    ERR (*_MixSample)(objAudio *Audio, int Handle, int Sample);
    ERR (*_MixStop)(objAudio *Audio, int Handle);
    ERR (*_MixStopLoop)(objAudio *Audio, int Handle);
@@ -975,7 +975,7 @@ inline ERR MixFrequency(objAudio *Audio, int Handle, int Frequency) { return Aud
 inline ERR MixMute(objAudio *Audio, int Handle, int Mute) { return AudioBase->_MixMute(Audio,Handle,Mute); }
 inline ERR MixPan(objAudio *Audio, int Handle, double Pan) { return AudioBase->_MixPan(Audio,Handle,Pan); }
 inline ERR MixPlay(objAudio *Audio, int Handle, int Position) { return AudioBase->_MixPlay(Audio,Handle,Position); }
-inline ERR MixRate(objAudio *Audio, int Handle, int Rate) { return AudioBase->_MixRate(Audio,Handle,Rate); }
+inline ERR MixTempo(objAudio *Audio, int Handle, int Tempo) { return AudioBase->_MixTempo(Audio,Handle,Tempo); }
 inline ERR MixSample(objAudio *Audio, int Handle, int Sample) { return AudioBase->_MixSample(Audio,Handle,Sample); }
 inline ERR MixStop(objAudio *Audio, int Handle) { return AudioBase->_MixStop(Audio,Handle); }
 inline ERR MixStopLoop(objAudio *Audio, int Handle) { return AudioBase->_MixStopLoop(Audio,Handle); }
@@ -989,7 +989,7 @@ extern ERR MixFrequency(objAudio *Audio, int Handle, int Frequency);
 extern ERR MixMute(objAudio *Audio, int Handle, int Mute);
 extern ERR MixPan(objAudio *Audio, int Handle, double Pan);
 extern ERR MixPlay(objAudio *Audio, int Handle, int Position);
-extern ERR MixRate(objAudio *Audio, int Handle, int Rate);
+extern ERR MixTempo(objAudio *Audio, int Handle, int Tempo);
 extern ERR MixSample(objAudio *Audio, int Handle, int Sample);
 extern ERR MixStop(objAudio *Audio, int Handle);
 extern ERR MixStopLoop(objAudio *Audio, int Handle);

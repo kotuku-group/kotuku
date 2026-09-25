@@ -71,8 +71,8 @@ end
    data.fill(128)
    err, sample = audio.mtAddSample(function(Audio, Handle) completed++ end, SFM_U8_BIT_MONO, data, nil)
    assert(err is ERR_Okay)
-   -- Prime the update interval to 500 ms.  Rate changes apply when the next boundary is scheduled.
-   check mAudio.MixSubmitBatch(audio, array<struct<AudioMixCommand>> { command(MIX_RATE, channel, 5) })
+   -- Prime the update interval to 500 ms.  Tempo changes apply when the next boundary is scheduled.
+   check mAudio.MixSubmitBatch(audio, array<struct<AudioMixCommand>> { command(MIX_TEMPO, channel, 5) })
    check mAudio.MixSubmitBatch(audio, array<struct<AudioMixCommand>> { command(MIX_MUTE, channel, 0) })
    processing.sleep(0.08)
    batch = array<struct<AudioMixCommand>> {
@@ -92,4 +92,19 @@ end
       processing.sleep(0.05)
    end
    assert(completed is 2, 'Both channels must play despite the failed command and later single command')
+end
+
+@Test function TempoUnitsAndLimits()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100 })
+   check audio.acActivate()
+   err, channel = audio.mtOpenChannels(2)
+   assert(err is ERR_Okay)
+   for _, tempo in array<int> { 1, 125, 100000 } do
+      check mAudio.MixTempo(audio, channel + 1, tempo)
+   end
+   for _, tempo in array<int> { -1, 0, 100001 } do
+      assert(mAudio.MixTempo(audio, channel, tempo) is ERR_OutOfRange)
+      assert(mAudio.MixSubmitBatch(audio,
+         array<struct<AudioMixCommand>> { command(MIX_TEMPO, channel, tempo) }) is ERR_OutOfRange)
+   end
 end

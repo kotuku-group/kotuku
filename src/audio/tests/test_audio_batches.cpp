@@ -66,6 +66,53 @@ int main()
    execute_next_audio_batch(set, apply);
    assert(applied.size() IS 4);
 
+   // Documented frame counts, including odd-frame ties and the minimum non-zero tick.
+   set.Tempo = 125;
+   assert(set.TickFrames(22050) IS SAMPLE(442));
+   assert(set.TickFrames(44100) IS SAMPLE(882));
+   assert(set.TickFrames(48000) IS SAMPLE(960));
+   set.Tempo = 128;
+   assert(set.TickFrames(44100) IS SAMPLE(862));
+   set.Tempo = 1;
+   assert(set.TickFrames(192000) IS SAMPLE(480000));
+   set.Tempo = 100000;
+   assert(set.TickFrames(8000) IS SAMPLE(2));
+   assert(set.TickFrames(192000) IS SAMPLE(4));
+
+   // A single command during playback preserves the current tick's remaining frames.
+   set.Tempo = 125;
+   set.MixLeft = set.TickFrames(44100);
+   auto apply_tempo = [&](const AudioCommand &Command) {
+      if (Command.CommandID IS CMD::TEMPO) set.Tempo = std::get<int>(Command.Data);
+      else applied.push_back(Command.Handle);
+   };
+   advance_audio_tick(set, SAMPLE(400), 44100, apply_tempo);
+   assert(set.MixLeft IS SAMPLE(482));
+   set.Tempo = 250;
+   advance_audio_tick(set, SAMPLE(481), 44100, apply_tempo);
+   assert(set.MixLeft IS SAMPLE(1));
+   advance_audio_tick(set, SAMPLE(1), 44100, apply_tempo);
+   assert(set.MixLeft IS SAMPLE(442));
+
+   // A batch tempo change schedules the immediately following tick; the last tempo wins.
+   batch = {{{ MIX::TEMPO, handle, 125, 0 }, { MIX::TEMPO, handle + 1, 128, 0 }}};
+   assert(submit_audio_batch(set, 1, batch) IS ERR::Okay);
+   std::array<AudioMixCommand, 1> following = {{{ MIX::STOP, handle, 0, 0 }}};
+   assert(submit_audio_batch(set, 1, following) IS ERR::Okay);
+   applied.clear();
+   advance_audio_tick(set, SAMPLE(442), 44100, apply_tempo);
+   assert(set.Tempo IS 128 and set.MixLeft IS SAMPLE(862));
+   assert(applied.empty() and set.Commands.size() IS 2);
+   advance_audio_tick(set, SAMPLE(861), 44100, apply_tempo);
+   assert(applied.empty());
+   advance_audio_tick(set, SAMPLE(1), 44100, apply_tempo);
+   assert(applied.size() IS 1 and set.Commands.empty());
+   for (int invalid : { 0, -1, 100001 }) {
+      batch[1].Integer = invalid;
+      assert(submit_audio_batch(set, 1, batch) IS ERR::OutOfRange);
+      assert(set.Commands.empty());
+   }
+
    // Both producers assemble their arrays before either submits.  Submission order can vary; boundaries cannot.
    std::mutex mutex;
    std::barrier ready(2);
