@@ -406,9 +406,13 @@ static ERR SOUND_Activate(extSound *Self)
          Self->ChannelIndex &= 0xffff0000;
          int i;
          for (i=0; i < audio->MaxChannels; i++) {
-            if (auto channel = audio->GetChannel(Self->ChannelIndex)) {
-               if (channel->isStopped()) break;
-               else if (channel->Priority < Self->Priority) priority = channel;
+            if (auto candidate = audio->GetChannel(Self->ChannelIndex)) {
+               if (candidate->isStopped()) {
+                  channel = candidate;
+                  break;
+               }
+               else if ((candidate->Priority < Self->Priority) and
+                        ((!priority) or (candidate->Priority < priority->Priority))) priority = candidate;
             }
             Self->ChannelIndex++;
          }
@@ -421,6 +425,8 @@ static ERR SOUND_Activate(extSound *Self)
          }
       }
 
+      Self->ChannelIndex = channel->Handle;
+      channel->Priority = Self->Priority;
       snd::MixStop(*audio, Self->ChannelIndex);
 
       if (!snd::MixSample(*audio, Self->ChannelIndex, Self->Handle)) {
