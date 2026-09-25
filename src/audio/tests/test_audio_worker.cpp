@@ -1,22 +1,11 @@
-// Test assertions must execute in Release builds too, including thread creation, wake and join calls.
-#ifdef NDEBUG
-#undef NDEBUG
-#endif
+// Included by audio.cpp to exercise the module implementation.
 
-#include <kotuku/main.h>
-#include "audio_worker.h"
-#include <array>
-#include <atomic>
-#include <cassert>
-#include <deque>
-#include <vector>
-#include <poll.h>
-#include <pthread.h>
-#include <sys/eventfd.h>
-#include <unistd.h>
+namespace audio_tests_audio_worker {
 
 // This adapter drives the same worker loop as the ALSA module, with no hardware or wall-clock playback.
 struct TestPCM {
+   AudioTestContext &Test;
+   explicit TestPCM(AudioTestContext &Context) : Test(Context) { }
    std::atomic<bool> Stop{false};
    std::atomic<bool> Playing{true};
    std::atomic<bool> Waiting{false};
@@ -76,7 +65,7 @@ struct TestPCM {
    }
    int64_t available() { return next(Available, 768); }
    int64_t write(size_t Offset, size_t Frames) {
-      if (Offset and !Commands.empty()) assert(Applied.empty());
+      if (Offset and !Commands.empty()) AUDIO_CHECK(Applied.empty());
       const auto result = next(Writes, Frames);
       if (result > 0 and size_t(result) <= Frames) {
          Accepted.insert(Accepted.end(), Buffer.begin() + Offset, Buffer.begin() + Offset + result);
@@ -102,7 +91,7 @@ struct TestPCM {
       ++Waits;
       if (InjectCommands) {
          // This happens while a partial period remains.  Neither command may execute until its suffix is accepted.
-         assert(Applied.empty());
+         AUDIO_CHECK(Applied.empty());
          Commands = {17, 23};
          InjectCommands = false;
       }
@@ -114,170 +103,181 @@ struct TestPCM {
             uint64_t value;
             (void)read(WakeFD, &value, sizeof(value));
          }
-         else if (!Device and Timeout < 0) assert(false and "Idle stop must wake the worker");
+         else if (!Device and Timeout < 0) AUDIO_CHECK(false and "Idle stop must wake the worker");
       }
       if (Waits >= WaitLimit) Stop = true;
       return WaitResult;
    }
 };
 
-static void retained_writes()
+static void retained_writes(AudioTestContext &Test)
 {
-   TestPCM pcm;
+   TestPCM pcm(Test);
    pcm.Writes = {37, -EAGAIN, 0, -EINTR, -EPIPE, 219, 256};
    pcm.InjectCommands = true;
    const auto stats = run_audio_worker(pcm);
-   assert(pcm.Error IS 0 and pcm.Produces IS 2);
-   assert(pcm.Applied IS std::vector<int>({17, 23}));
-   assert(pcm.Accepted.size() IS 512);
-   for (size_t i = 0; i < pcm.Accepted.size(); ++i) assert(pcm.Accepted[i] IS i);
-   assert(stats.Underruns IS 1 and stats.RecoveryFailures IS 0);
-   assert(pcm.Recoveries IS 1 and pcm.Starts IS 0); // Recovery needs fresh priming; retained suffix is only 219 frames.
+   AUDIO_CHECK(pcm.Error IS 0 and pcm.Produces IS 2);
+   AUDIO_CHECK(pcm.Applied IS std::vector<int>({17, 23}));
+   AUDIO_CHECK(pcm.Accepted.size() IS 512);
+   for (size_t i = 0; i < pcm.Accepted.size(); ++i) AUDIO_CHECK(pcm.Accepted[i] IS i);
+   AUDIO_CHECK(stats.Underruns IS 1 and stats.RecoveryFailures IS 0);
+   // Recovery needs fresh priming; the retained suffix is only 219 frames.
+   AUDIO_CHECK(pcm.Recoveries IS 1 and pcm.Starts IS 0);
 }
 
-static void recovery_paths()
+static void recovery_paths(AudioTestContext &Test)
 {
    for (int resumed : {0, -EAGAIN, -EINTR, -ENOSYS}) {
-      TestPCM pcm;
+      TestPCM pcm(Test);
       pcm.Writes = {37, -ESTRPIPE, 219, 256};
       pcm.ResumeResult = resumed;
       const auto stats = run_audio_worker(pcm);
-      assert(pcm.Error IS 0 and pcm.Resumes IS 1);
-      assert(pcm.Recoveries IS (resumed IS -ENOSYS ? 1 : 0));
-      assert(stats.RecoveryFailures IS 0 and pcm.Produces IS 2);
-      for (size_t i = 0; i < pcm.Accepted.size(); ++i) assert(pcm.Accepted[i] IS i);
+      AUDIO_CHECK(pcm.Error IS 0 and pcm.Resumes IS 1);
+      AUDIO_CHECK(pcm.Recoveries IS (resumed IS -ENOSYS ? 1 : 0));
+      AUDIO_CHECK(stats.RecoveryFailures IS 0 and pcm.Produces IS 2);
+      for (size_t i = 0; i < pcm.Accepted.size(); ++i) AUDIO_CHECK(pcm.Accepted[i] IS i);
    }
    for (int error : {-EPIPE, -ENODEV, -EBADFD}) {
-      TestPCM pcm;
+      TestPCM pcm(Test);
       pcm.Writes = {37, error};
       pcm.RecoveryResult = -ENODEV;
       const auto stats = run_audio_worker(pcm);
-      assert(pcm.Error < 0 and stats.RecoveryFailures IS 1);
-      assert(pcm.Accepted.size() IS 37 and pcm.Produces IS 1 and pcm.Drops IS 1);
+      AUDIO_CHECK(pcm.Error < 0 and stats.RecoveryFailures IS 1);
+      AUDIO_CHECK(pcm.Accepted.size() IS 37 and pcm.Produces IS 1 and pcm.Drops IS 1);
    }
-   TestPCM suspended;
+   TestPCM suspended(Test);
    suspended.Available = {-ESTRPIPE, -ESTRPIPE, -ESTRPIPE};
    suspended.ResumeResult = -EAGAIN;
    suspended.WaitLimit = 3;
    run_audio_worker(suspended);
-   assert(suspended.Resumes IS 3 and suspended.Produces IS 0 and suspended.Error IS 0);
+   AUDIO_CHECK(suspended.Resumes IS 3 and suspended.Produces IS 0 and suspended.Error IS 0);
 }
 
-static void state_transitions()
+static void state_transitions(AudioTestContext &Test)
 {
-   TestPCM full;
+   TestPCM full(Test);
    run_audio_worker(full);
-   assert(full.Starts IS 1 and full.Produces IS 2 and full.Accepted.size() IS 512);
+   AUDIO_CHECK(full.Starts IS 1 and full.Produces IS 2 and full.Accepted.size() IS 512);
 
-   TestPCM unavailable;
+   TestPCM unavailable(Test);
    unavailable.Available = {-EAGAIN, -EINTR, -EPIPE};
    const auto recovered = run_audio_worker(unavailable);
-   assert(recovered.Underruns IS 1 and unavailable.Produces IS 2 and unavailable.Starts IS 1);
+   AUDIO_CHECK(recovered.Underruns IS 1 and unavailable.Produces IS 2 and unavailable.Starts IS 1);
 
-   TestPCM start_failure;
+   TestPCM start_failure(Test);
    start_failure.StartResult = -ENODEV;
    run_audio_worker(start_failure);
-   assert(start_failure.Error IS -ENODEV);
+   AUDIO_CHECK(start_failure.Error IS -ENODEV);
 
-   TestPCM invalid_write;
+   TestPCM invalid_write(Test);
    invalid_write.Writes = {257};
    run_audio_worker(invalid_write);
-   assert(invalid_write.Error IS -EIO and invalid_write.Produces IS 1);
+   AUDIO_CHECK(invalid_write.Error IS -EIO and invalid_write.Produces IS 1);
 
-   TestPCM idle;
+   TestPCM idle(Test);
    idle.Playing = false;
    idle.WaitLimit = 2;
    run_audio_worker(idle);
-   assert(idle.Produces IS 0 and idle.Prepared IS 2 and idle.Starts IS 0);
+   AUDIO_CHECK(idle.Produces IS 0 and idle.Prepared IS 2 and idle.Starts IS 0);
 
-   TestPCM drain;
+   TestPCM drain(Test);
    drain.StopAfter = SIZE_MAX;
    drain.FinishAfter = 512;
    drain.Delays = {512, 256, 0};
    drain.WaitLimit = 3;
    const auto drained = run_audio_worker(drain);
-   assert(drain.Produces IS 2 and drain.Starts IS 1 and drain.Prepared IS 1);
-   assert(drained.DelaySamples IS 3 and drained.DelayTotal IS 768);
-   assert(drain.Accepted.size() IS 512); // Idle waits must not replenish silence.
+   AUDIO_CHECK(drain.Produces IS 2 and drain.Starts IS 1 and drain.Prepared IS 1);
+   AUDIO_CHECK(drained.DelaySamples IS 3 and drained.DelayTotal IS 768);
+   AUDIO_CHECK(drain.Accepted.size() IS 512); // Idle waits must not replenish silence.
 
-   TestPCM prepare_failure;
+   TestPCM prepare_failure(Test);
    prepare_failure.Playing = false;
    prepare_failure.PrepareResult = -ENODEV;
    run_audio_worker(prepare_failure);
-   assert(prepare_failure.Error IS -ENODEV and prepare_failure.Waits IS 0);
+   AUDIO_CHECK(prepare_failure.Error IS -ENODEV and prepare_failure.Waits IS 0);
 
-   TestPCM poll_failure;
+   TestPCM poll_failure(Test);
    poll_failure.StopAfter = 4096;
    poll_failure.WaitResult = -ENODEV;
    poll_failure.Delays = {512};
    const auto observed = run_audio_worker(poll_failure);
-   assert(poll_failure.Error IS -ENODEV);
-   assert(observed.DelaySamples IS 1 and observed.DelayMaximum IS 512 and observed.DelayTotal IS 512);
+   AUDIO_CHECK(poll_failure.Error IS -ENODEV);
+   AUDIO_CHECK(observed.DelaySamples IS 1 and observed.DelayMaximum IS 512 and observed.DelayTotal IS 512);
 }
 
-static void stop_and_join(bool Active, bool Recovering)
+static void stop_and_join(AudioTestContext &Test, bool Active, bool Recovering)
 {
-   TestPCM pcm;
+   TestPCM pcm(Test);
    pcm.Blocking = true;
    pcm.Playing = Active;
    pcm.StopAfter = SIZE_MAX;
    pcm.WakeFD = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
-   assert(pcm.WakeFD >= 0);
+   AUDIO_REQUIRE(pcm.WakeFD >= 0);
    if (Recovering) {
       pcm.Available = {-ESTRPIPE};
       pcm.ResumeResult = -EAGAIN;
    }
    pthread_t worker;
-   assert(pthread_create(&worker, nullptr, [](void *Data) -> void * {
+   const int created = pthread_create(&worker, nullptr, [](void *Data) -> void * {
       auto &pcm = *(TestPCM *)Data;
       pcm.Stats = run_audio_worker(pcm);
       return nullptr;
-   }, &pcm) IS 0);
+   }, &pcm);
+   if (!Test.check(created IS 0, "pthread_create", __FILE__, __LINE__)) {
+      close(pcm.WakeFD);
+      return;
+   }
    // Bounded handshake; the worker waits on the same eventfd used to wake it for shutdown.
    for (int i = 0; i < 1000 and !pcm.Waiting; ++i) usleep(1000);
-   assert(pcm.Waiting);
+   AUDIO_CHECK(pcm.Waiting);
    pcm.Stop = true;
    const uint64_t value = 1;
-   assert(write(pcm.WakeFD, &value, sizeof(value)) IS sizeof(value));
-   assert(pthread_join(worker, nullptr) IS 0);
+   AUDIO_CHECK(write(pcm.WakeFD, &value, sizeof(value)) IS sizeof(value));
+   AUDIO_CHECK(pthread_join(worker, nullptr) IS 0);
    close(pcm.WakeFD);
-   assert(pcm.Error IS 0 and pcm.Drops > 0);
-   if (!Active) assert(pcm.Produces IS 0);
-   if (Recovering) assert(pcm.Resumes > 0);
+   AUDIO_CHECK(pcm.Error IS 0 and pcm.Drops > 0);
+   if (!Active) AUDIO_CHECK(pcm.Produces IS 0);
+   if (Recovering) AUDIO_CHECK(pcm.Resumes > 0);
 }
 
-static void command_wakes_idle_worker()
+static void command_wakes_idle_worker(AudioTestContext &Test)
 {
-   TestPCM pcm;
+   TestPCM pcm(Test);
    pcm.Blocking = true;
    pcm.Playing = false;
    pcm.WakeFD = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
-   assert(pcm.WakeFD >= 0);
+   AUDIO_REQUIRE(pcm.WakeFD >= 0);
    pthread_t worker;
-   assert(pthread_create(&worker, nullptr, [](void *Data) -> void * {
+   const int created = pthread_create(&worker, nullptr, [](void *Data) -> void * {
       auto &pcm = *(TestPCM *)Data;
       pcm.Stats = run_audio_worker(pcm);
       return nullptr;
-   }, &pcm) IS 0);
+   }, &pcm);
+   if (!Test.check(created IS 0, "pthread_create", __FILE__, __LINE__)) {
+      close(pcm.WakeFD);
+      return;
+   }
    for (int i = 0; i < 1000 and !pcm.Waiting; ++i) usleep(1000);
-   assert(pcm.Waiting);
+   AUDIO_CHECK(pcm.Waiting);
    pcm.Playing = true;
    const uint64_t value = 1;
-   assert(write(pcm.WakeFD, &value, sizeof(value)) IS sizeof(value));
-   assert(pthread_join(worker, nullptr) IS 0);
+   AUDIO_CHECK(write(pcm.WakeFD, &value, sizeof(value)) IS sizeof(value));
+   AUDIO_CHECK(pthread_join(worker, nullptr) IS 0);
    close(pcm.WakeFD);
-   assert(pcm.Produces IS 2 and pcm.Accepted.size() IS 512 and pcm.Error IS 0);
+   AUDIO_CHECK(pcm.Produces IS 2 and pcm.Accepted.size() IS 512 and pcm.Error IS 0);
 }
 
-int main()
+static void run(AudioTestContext &Test)
 {
-   retained_writes();
-   recovery_paths();
-   state_transitions();
-   command_wakes_idle_worker();
+   retained_writes(Test);
+   recovery_paths(Test);
+   state_transitions(Test);
+   command_wakes_idle_worker(Test);
    for (int i = 0; i < 8; ++i) {
-      stop_and_join(false, false);
-      stop_and_join(true, false);
-      stop_and_join(true, true);
+      stop_and_join(Test, false, false);
+      stop_and_join(Test, true, false);
+      stop_and_join(Test, true, true);
    }
 }
+
+} // namespace audio_tests_audio_worker

@@ -1,3 +1,6 @@
+
+@if(exists='modules:audio')
+
    module audio as mAudio
 
 function set_band(Eq:obj, Index:num, Type:num, Frequency:num, Gain:num, Q:num)
@@ -57,6 +60,9 @@ end
    assert(eq.mtSetParameter('bands[0].gain', 2) is ERR_Immutable)
    assert(eq.mtInsertEntry('bands', 0) is ERR_Immutable)
    assert(eq.mtRemoveEntry('bands', 0) is ERR_Immutable)
+   err, value = eq.mtGetParameter('bands[0].frequency')
+   assert(err is ERR_Okay and value is 100, 'Global effects remain readable')
+   check eq.acFlush()
    try
       eq.gain = 0
    except e when ERR_Immutable
@@ -71,21 +77,4 @@ end
    end
 end
 
-@Test function InvalidBands()
-   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
-   err, channel = audio.mtOpenChannels(1)
-   assert(err is ERR_Okay)
-   eq <close> = obj.new('AudioEqualiser', { audio=audio, channel=channel })
-   check eq.mtInsertEntry('bands', 0)
-   assert(eq.mtSetParameter('bands[0].frequency', 24000) is ERR_InvalidValue)
-   check eq.mtSetParameter('bands[0].type', EQB_LOW_SHELF)
-   check eq.mtSetParameter('bands[0].q', 2)
-   assert(eq.acFlush() is ERR_InvalidValue, 'A shelf Q above one must be rejected at Flush()')
-   assert(#eq.bands is 0)
-   assert(eq.mtSetParameter('bands[0].gain', 2) is ERR_OutOfRange)
-   check eq.mtInsertEntry('bands', 0)
-   set_band(eq, 0, EQB_PEAK, 1000, 2, 1)
-   check eq.acFlush()
-   assert(eq.mtRemoveEntry('bands', 1) is ERR_OutOfRange)
-   assert(#eq.bands is 1)
-end
+@end

@@ -214,10 +214,58 @@ static ERR MODExpunge(void)
 
 //********************************************************************************************************************
 
+#ifdef UNIT_TESTS
+#include "tests/unit_tests.h"
+#include "tests/test_audio_batches.cpp"
+#include "tests/test_audio_buffer.cpp"
+#include "tests/test_audio_effect.cpp"
+#include "tests/test_audio_equaliser_dsp.cpp"
+#include "tests/test_mixers.cpp"
+#ifdef ALSA_ENABLED
+#include "tests/test_audio_worker.cpp"
+#endif
+#ifdef _WIN32
+#include "tests/test_wasapi_transport.cpp"
+#endif
+#undef AUDIO_CHECK
+#undef AUDIO_REQUIRE
+#endif
+
+static void MODTest(std::string_view Options, int *Passed, int *Total)
+{
+#ifdef UNIT_TESTS
+   AudioTestContext test;
+   auto run = [&test](const char *Name, auto Routine) {
+      kt::Log log("AudioTests");
+      log.branch("Running %s unit tests...", Name);
+      const int passed = test.Passed.load(), total = test.Total.load();
+      Routine(test);
+      log.msg("Passed %d of %d checks.", test.Passed.load() - passed, test.Total.load() - total);
+   };
+   run("batch", audio_tests_audio_batches::run);
+   run("buffer", audio_tests_audio_buffer::run);
+   run("effect chain", audio_tests_audio_effect::run);
+   run("equaliser DSP", audio_tests_audio_equaliser_dsp::run);
+   run("mixer", audio_tests_mixers::run);
+#ifdef ALSA_ENABLED
+   run("ALSA worker", audio_tests_audio_worker::run);
+#endif
+#ifdef _WIN32
+   run("WASAPI transport", audio_tests_wasapi_transport::run);
+#endif
+   *Passed += test.Passed.load();
+   *Total += test.Total.load();
+#else
+   kt::Log("AudioTests").warning("Unit tests are disabled in this build.");
+#endif
+}
+
+//********************************************************************************************************************
+
 static ModHeader::STRUCTS glStructures = {
    { "AudioMixCommand", { sizeof(AudioMixCommand), alignof(AudioMixCommand) } },
    { "AudioLoop", { sizeof(AudioLoop), alignof(AudioLoop) } }
 };
 
-KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, &glStructures)
+KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, MODTest, MOD_IDL, &glStructures)
 extern "C" struct ModHeader * register_audio_module() { return &ModHeader; }

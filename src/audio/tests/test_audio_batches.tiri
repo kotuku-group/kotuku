@@ -1,3 +1,6 @@
+
+@if(exists='modules:audio')
+
    module audio as mAudio
 
 function command(Operation, Handle, Integer, Value)
@@ -248,3 +251,5 @@ end
          array<struct<AudioMixCommand>> { command(MIX_TEMPO, channel, tempo) }) is ERR_OutOfRange)
    end
 end
+
+@end

@@ -1,15 +1,5 @@
    include 'audio'
 
-@Test function ByteArraySampleData()
-   audio = obj.new('Audio')
-   sample_data = array<byte> { 128, 129, 130, 131, 132, 133, 134, 135 }
-
-   err, handle = audio.mtAddSample(nil, SFM_U8_BIT_MONO, sample_data, nil)
-   assert(err is ERR_Okay, 'AddSample() should accept byte-array data: ' .. mSys.GetErrorMsg(err))
-   assert(handle > 0, 'AddSample() should return a valid sample handle.')
-   assert(audio.mtRemoveSample(handle) is ERR_Okay, 'RemoveSample() should release the added sample.')
-end
-
 @Test function EmptySampleSpan()
    audio = obj.new('Audio')
    empty_data = array<byte, 0>

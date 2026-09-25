@@ -1,0 +1,10 @@
+-- Call integrated unit tests in the Audio module; no playback device is required.
+
+@if(exists='modules:audio')
+@Test function UnitTests()
+   passed, total = mod.test('audio')
+   assert(total > 0, 'Audio unit tests are disabled in this build; enable UNIT_TESTS.')
+   assert(passed is total, f"Passed {passed} of {total} Audio unit tests.  Use --log-api for details.")
+   print(f'Passed all {total} embedded unit tests.')
+end
+@end
