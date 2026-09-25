@@ -150,12 +150,17 @@ extern "C" int lj_err_unwind_win(EXCEPTION_RECORD *rec, void* f, CONTEXT* ctx, U
       if (cf2 IS ERR_TRYHANDLER) {
          // A try-except handler was found. check_try_handler() only recorded
          // the handler PC. Now we need to set up the actual state.
+         void *handler_cframe = L->cframe;
+         while (cframe_raw(handler_cframe) != cf) handler_cframe = cframe_prev(handler_cframe);
 
          if (not is_lua_exception) {
             char message[128];
             lj_err_prepare_foreign_exception(L, win_exception_message(rec, message, sizeof(message)));
          }
          if (setup_try_handler(L)) {
+            // setup_try_handler() restores the language stack across native re-entries.  The unwind callbacks
+            // below skip normal frame processing, so restore the matching native chain here as well.
+            L->cframe = handler_cframe;
             // Resume execution at the handler PC using the VM entry point.
             // Use 'cf' (the current frame) as TargetFrame, matching the pattern
             // used by the standard exception handlers.

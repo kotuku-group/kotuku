@@ -75,6 +75,49 @@ end
 
 -----------------------------------------------------------------------------------------------------------------------
 
+@Test function TaskArgumentRoundTrip()
+   local arguments = array<str> {
+      'plain', 'two words', 'tab\tseparated', 'embedded"quote', '"surrounded"', "'single quotes'",
+      [[one\"quote]], [[two\\"quote]], [[C:\path with spaces\]], [[C:\path\\]], ''
+   }
+   local source = [[
+      for index in {0 to 11} do
+         local value = arg('case' .. index)
+         print('ARG<' .. #value .. ':' .. value .. '>')
+      end
+   ]]
+   local executable = processing.task().processPath .. 'origo'
+   if mSys.GetSystemState().platform is 'Windows' then executable ..= '.exe' end
+   local err, temp = mSys.ResolvePath('temp:', 0)
+   check err
+   local path = temp .. f'/task_arguments_{processing.task().id}_{mSys.PreciseTime()}.tiri'
+   do
+      local file <close> = obj.new('file', { path=path, flags=FL_NEW|FL_WRITE })
+      check file.acWrite(source)
+   end
+   defer check mSys.DeleteFile(path) end
+   local output = ''
+   local task <close> = obj.new('task', {
+      location=executable, flags=TSF_WAIT, timeout=20,
+      outputCallback=function(Task, Buffer) output ..= Buffer.getString() end,
+      errorCallback=function(Task, Buffer) output ..= Buffer.getString() end
+   })
+   for value in values(array<str> { path, '--log-warning', '--gfx-driver=headless' }) do
+      check task.mtAddArgument(value)
+   end
+   for index, value in arguments do
+      check task.mtAddArgument('case' .. index .. '=' .. value)
+   end
+   check task.acActivate()
+   assert(task.returnCode is 0, output)
+   for value in values(arguments) do
+      assert(output.find('ARG<' .. #value .. ':' .. value .. '>', 0, true) != nil,
+         'Child process received a changed argument: ' .. value .. '\n' .. output)
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
 function appendTaskFixtureHex(Bytes, Hex)
    local index = 0
    while index < #Hex do

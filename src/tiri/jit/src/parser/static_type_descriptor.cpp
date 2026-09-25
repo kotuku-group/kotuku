@@ -639,9 +639,16 @@ StaticResultSet describe_module_call_results(const FunctionField *Fields, lua_St
       ArrayElementDescriptor element;
       element.known = true;
       if (Field.Type & FD_STRUCT) {
-         element.storage = AET::STRUCT;
-         element.logical_type = TiriType::Struct;
-         element.struct_def = resolve_struct(Field);
+         if (Field.Type & FD_PTR) {
+            // Native vectors of structure pointers are copied into arrays of tables.
+            element.storage = AET::TABLE;
+            element.logical_type = TiriType::Table;
+         }
+         else {
+            element.storage = AET::STRUCT;
+            element.logical_type = TiriType::Struct;
+            element.struct_def = resolve_struct(Field);
+         }
       }
       else if (Field.Type & FD_OBJECT) {
          element.storage = AET::OBJECT;

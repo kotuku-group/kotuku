@@ -97,6 +97,8 @@ extern "C" void asm_capture_registers(RegisterSnapshot *Snapshot);
 extern "C" int asm_verify_registers(const RegisterSnapshot *Before, const RegisterSnapshot *After);
 extern "C" void asm_call_cpuid_and_capture(RegisterSnapshot *Before, RegisterSnapshot *After,
    int (*Function)(uint32_t, uint32_t *), uint32_t *Results);
+extern "C" double asm_call_round_and_capture(RegisterSnapshot *Before, RegisterSnapshot *After,
+   double (*Function)(double), double Input);
 
 static constexpr bool glHasRegisterCapture = true;
 
@@ -223,8 +225,28 @@ static bool verify_registers(const RegisterSnapshot *, const RegisterSnapshot *,
 
 #endif
 
+#if defined(TIRI_TEST_MSVC_X64)
+static bool test_round_register_preservation(kt::Log &Log, double (*Function)(double),
+   const std::array<double, 3> &Inputs, const std::array<double, 3> &Expected)
+{
+   for (size_t index = 0; index < Inputs.size(); ++index) {
+      RegisterSnapshot before, after;
+      double result = asm_call_round_and_capture(&before, &after, Function, Inputs[index]);
+      if (not verify_registers(&before, &after, Log)) return false;
+      if (result != Expected[index]) {
+         Log.error("Rounding %g returned %g, expected %g", Inputs[index], result, Expected[index]);
+         return false;
+      }
+   }
+   return true;
+}
+#endif
+
 static bool test_floor_register_preservation(kt::Log &Log)
 {
+#if defined(TIRI_TEST_MSVC_X64)
+   return test_round_register_preservation(Log, lj_vm_floor, { 3.7, -2.3, 0.0 }, { 3.0, -3.0, 0.0 });
+#else
    if constexpr (not glHasRegisterCapture) return true;
    RegisterSnapshot before, after;
    capture_registers(&before);
@@ -232,10 +254,14 @@ static bool test_floor_register_preservation(kt::Log &Log)
    (void)result;
    capture_registers(&after);
    return verify_registers(&before, &after, Log);
+#endif
 }
 
 static bool test_ceil_register_preservation(kt::Log &Log)
 {
+#if defined(TIRI_TEST_MSVC_X64)
+   return test_round_register_preservation(Log, lj_vm_ceil, { 3.2, -2.8, 0.0 }, { 4.0, -2.0, 0.0 });
+#else
    if constexpr (not glHasRegisterCapture) return true;
    RegisterSnapshot before, after;
    capture_registers(&before);
@@ -243,11 +269,15 @@ static bool test_ceil_register_preservation(kt::Log &Log)
    (void)result;
    capture_registers(&after);
    return verify_registers(&before, &after, Log);
+#endif
 }
 
 #if LJ_HASJIT
 static bool test_trunc_register_preservation(kt::Log &Log)
 {
+#if defined(TIRI_TEST_MSVC_X64)
+   return test_round_register_preservation(Log, lj_vm_trunc, { 3.9, -2.1, 0.0 }, { 3.0, -2.0, 0.0 });
+#else
    if constexpr (not glHasRegisterCapture) return true;
    RegisterSnapshot before, after;
    capture_registers(&before);
@@ -255,6 +285,7 @@ static bool test_trunc_register_preservation(kt::Log &Log)
    (void)result;
    capture_registers(&after);
    return verify_registers(&before, &after, Log);
+#endif
 }
 #endif
 

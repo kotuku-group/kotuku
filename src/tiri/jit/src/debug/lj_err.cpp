@@ -398,7 +398,7 @@ LJ_NOINLINE static void unwindstack(lua_State *L, TValue *Top)
 // Check if a try handler exists for the current error.  If found, returns true but does NOT modify L->base, L->top,
 // or the try stack.  The actual state modification is done by setup_try_handler().
 
-static bool check_try_handler(lua_State *L, int errcode)
+static bool check_try_handler(lua_State *L, int errcode, void *StopCatchFrame = nullptr)
 {
    kt::Log log(__FUNCTION__);
    log.trace("Starting check: try_stack.depth=%u, L->base=%p, errcode=%d", L->try_stack.depth, L->base, errcode);
@@ -453,6 +453,7 @@ static bool check_try_handler(lua_State *L, int errcode)
       }
 
       TValue *frame = L->base - 1;
+      void *frame_cframe = L->cframe;
       int frame_count = 0;
       bool found_try_func = false;
       lj_assertL(frame >= tvref(L->stack), "check_try_handler: initial frame below stack start");
@@ -479,9 +480,12 @@ static bool check_try_handler(lua_State *L, int errcode)
             break;
          }
 
-         // A language handler below a native re-entry must resume in its own VM C frame.  Let the platform unwinder
-         // discard the intervening C frame first.
-         if (frame_type IS FRAME_C or (frame_type IS FRAME_CONT and frame_iscont_fficb(frame))) return false;
+         // A language handler must resume in its own VM C frame.  Windows searches outer native frames before
+         // updating L->base, so walk past re-entries already passed by the SEH search without changing VM state.
+         if (frame_type IS FRAME_C or (frame_type IS FRAME_CONT and frame_iscont_fficb(frame))) {
+            if (not StopCatchFrame or cframe_raw(frame_cframe) IS StopCatchFrame) return false;
+            frame_cframe = cframe_prev(frame_cframe);
+         }
 
          if (frame_type IS FRAME_LUA or frame_type IS FRAME_LUAP) frame = frame_prevl(frame);
          else frame = frame_prevd(frame);
@@ -712,7 +716,11 @@ void * err_unwind(lua_State *L, void *StopCatchFrame, int errcode)
       // Use LUA_ERRRUN as default for search phase.
 
       int try_errcode = errcode ? errcode : LUA_ERRRUN;
+#ifdef _WIN32
+      if (check_try_handler(L, try_errcode, StopCatchFrame)) return ERR_TRYHANDLER;
+#else
       if (check_try_handler(L, try_errcode)) return ERR_TRYHANDLER;
+#endif
    }
 
    TValue *frame = L->base - 1;

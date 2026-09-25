@@ -635,6 +635,11 @@ static int values_array_iterator_next(lua_State* L)
 LJLIB_CF(values)
 {
    TValue* o = lj_lib_checkany(L, 1);
+   if (lj_is_thunk(o)) {
+      TValue *resolved = lj_thunk_resolve(L, udataV(o));
+      o = L->base;
+      copyTV(L, o, resolved);
+   }
 
    if (tvistab(o)) {
       GCtab *t = tabV(o);
@@ -688,7 +693,14 @@ static int keys_iterator_next(lua_State* L)
 
 LJLIB_CF(keys)
 {
-   GCtab *t = lj_lib_checktab(L, 1);
+   TValue *o = lj_lib_checkany(L, 1);
+   if (lj_is_thunk(o)) {
+      TValue *resolved = lj_thunk_resolve(L, udataV(o));
+      o = L->base;
+      copyTV(L, o, resolved);
+   }
+   if (not tvistab(o)) lj_err_argt(L, 1, LUA_TTABLE);
+   GCtab *t = tabV(o);
 
    // Push the table as upvalue 1
    settabV(L, L->top, t);
