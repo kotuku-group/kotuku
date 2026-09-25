@@ -43,8 +43,7 @@ inline void release_audio_callback(FUNCTION &Function)
 // Audio channel commands
 
 enum class CMD : int {
-   START_SEQUENCE=1,
-   END_SEQUENCE,
+   END_SEQUENCE=1,
    SAMPLE,
    VOLUME,
    PAN,
@@ -211,7 +210,6 @@ struct AudioChannel {
    int8_t   Priority;       // Priority of the sound that has been assigned to this channel
    CHS      State;          // Channel state
    int8_t   LoopIndex;      // The current active loop (either 0, 1 or 2)
-   bool     Buffering;
 
    bool active() {
       return Frequency ? true : false;

@@ -3,6 +3,7 @@ const double RAMPSPEED = 0.01;  // Default ramping speed - volume steps per outp
 
 #include <type_traits>  // For SFINAE and template metaprogramming
 #include "mixer_dispatch.h"
+#include "audio_batch.h"
 
 static void filter_float_mono(extAudio *, float *, int);
 static void filter_float_stereo(extAudio *, float *, int);
@@ -274,12 +275,10 @@ static ERR set_channel_volume(extAudio *Self, AudioChannel *Channel)
 }
 
 //********************************************************************************************************************
-// Process as many command batches as possible that will fit within MixLeft.
+// Execute one complete batch per channel set at its next mixer update boundary.
 
 [[maybe_unused]] static ERR process_commands(extAudio *Self, SAMPLE Elements)
 {
-   AudioLog log(__FUNCTION__);
-
    for (int index=1; index < (int)Self->Sets.size(); index++) {
       Self->Sets[index].MixLeft -= Elements;
       if (Self->Sets[index].MixLeft <= 0) {
@@ -288,43 +287,26 @@ static ERR set_channel_volume(extAudio *Self, AudioChannel *Channel)
          Self->Sets[index].MixLeft = Self->MixLeft(Self->Sets[index].UpdateRate);
 
          if (Self->Sets[index].Commands.empty()) continue;
-         #ifdef AUDIO_WORKER
-         const auto &commands = Self->Sets[index].Commands;
-         if (std::none_of(commands.begin(), commands.end(), [](const AudioCommand &Command) {
-               return Command.CommandID IS CMD::END_SEQUENCE;
-            })) continue;
-         #endif
 
-         int i;
-         bool stop = false;
-         auto &cmds = Self->Sets[index].Commands;
-         for (i=0; (i < (int)cmds.size()) and (!stop); i++) {
+         execute_next_audio_batch(Self->Sets[index], [Self](const AudioCommand &Command) {
             #ifdef AUDIO_WORKER
-            if (cmds[i].CommandID IS CMD::END_SEQUENCE) stop = true;
-            else execute_audio_command(Self, cmds[i]);
+            execute_audio_command(Self, Command);
             #else
-            switch(cmds[i].CommandID) {
-               case CMD::CONTINUE:     snd::MixContinue(Self, cmds[i].Handle); break;
-               case CMD::MUTE:         snd::MixMute(Self, cmds[i].Handle,  std::get<bool>(cmds[i].Data)); break;
-               case CMD::PLAY:         snd::MixPlay(Self, cmds[i].Handle, std::get<int>(cmds[i].Data)); break;
-               case CMD::FREQUENCY:    snd::MixFrequency(Self, cmds[i].Handle, std::get<int>(cmds[i].Data)); break;
-               case CMD::PAN:          snd::MixPan(Self, cmds[i].Handle, std::get<double>(cmds[i].Data)); break;
-               case CMD::RATE:         snd::MixRate(Self, cmds[i].Handle, std::get<int>(cmds[i].Data)); break;
-               case CMD::SAMPLE:       snd::MixSample(Self, cmds[i].Handle, std::get<int>(cmds[i].Data)); break;
-               case CMD::VOLUME:       snd::MixVolume(Self, cmds[i].Handle, std::get<double>(cmds[i].Data)); break;
-               case CMD::STOP:         snd::MixStop(Self, cmds[i].Handle); break;
-               case CMD::STOP_LOOPING: snd::MixStopLoop(Self, cmds[i].Handle); break;
-               case CMD::END_SEQUENCE: stop = true; break;
-
-               default:
-                  log.warning("Unrecognised command ID #%d at index %d.", int(cmds[i].CommandID), i);
-                  break;
+            switch (Command.CommandID) {
+               case CMD::CONTINUE: snd::MixContinue(Self, Command.Handle); break;
+               case CMD::MUTE: snd::MixMute(Self, Command.Handle, std::get<bool>(Command.Data)); break;
+               case CMD::PLAY: snd::MixPlay(Self, Command.Handle, std::get<int>(Command.Data)); break;
+               case CMD::FREQUENCY: snd::MixFrequency(Self, Command.Handle, std::get<int>(Command.Data)); break;
+               case CMD::PAN: snd::MixPan(Self, Command.Handle, std::get<double>(Command.Data)); break;
+               case CMD::RATE: snd::MixRate(Self, Command.Handle, std::get<int>(Command.Data)); break;
+               case CMD::SAMPLE: snd::MixSample(Self, Command.Handle, std::get<int>(Command.Data)); break;
+               case CMD::VOLUME: snd::MixVolume(Self, Command.Handle, std::get<double>(Command.Data)); break;
+               case CMD::STOP: snd::MixStop(Self, Command.Handle); break;
+               case CMD::STOP_LOOPING: snd::MixStopLoop(Self, Command.Handle); break;
+               default: break;
             }
             #endif
-         }
-
-         if (i IS (int)cmds.size()) cmds.clear();
-         else cmds.erase(cmds.begin(), cmds.begin()+i);
+         });
       }
    }
 

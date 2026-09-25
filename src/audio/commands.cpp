@@ -1,28 +1,3 @@
-// Buffered command handling.  The execution of these commands is managed by process_commands()
-
-#include <utility>
-
-template<typename... tArgs>
-static ERR add_command(objAudio* Audio, CMD Command, int Handle, tArgs&&... pArgs) {
-   auto ea = (extAudio *)(Audio);
-   int index = Handle >> 16;
-
-   AudioLog log(__FUNCTION__);
-   if ((index < 1) or (index >= int(ea->Sets.size()))) return log.warning(ERR::OutOfRange);
-   if (ea->Sets[index].Commands.capacity() IS 0) return log.warning(ERR::OutOfRange);
-   const size_t limit = Command IS CMD::END_SEQUENCE ? 1024 : 1023;
-   if (ea->Sets[index].Commands.size() >= limit) return log.warning(ERR::BufferOverflow);
-
-   if constexpr (sizeof...(pArgs) > 0) {
-      static_assert(sizeof...(pArgs) IS 1, "Command can only accept one data parameter");
-      ea->Sets[index].Commands.emplace_back(Command, Handle, std::forward<tArgs>(pArgs)...);
-   }
-   else {
-      ea->Sets[index].Commands.emplace_back(Command, Handle);
-   }
-   return ERR::Okay;
-}
-
 //********************************************************************************************************************
 // It is a requirement that VOL_RAMPING or OVER_SAMPLING flags have been set in the target Audio object.
 
@@ -77,112 +52,61 @@ static int queued_sample_handle(extAudio *Self, int Handle, int Current)
 /*********************************************************************************************************************
 
 -FUNCTION-
-MixStartSequence: Initiates buffering of mix commands.
+MixSubmitBatch: Submits an independently owned batch of mixer commands.
 
-Use this function to initiate the buffering of mix commands, up until a call to ~MixEndSequence() is made.  The
-buffering of mix commands makes it possible to create batches of commands that are executed at timed intervals
-as determined by ~MixRate().
+This function submits a list of mixer commands in a single batch.  `Commands` is an array of !AudioMixCommand
+records.  Submission takes a copy of the complete array, or rejects it without publishing any commands.
 
-<header>Command Buffering Architecture</header>
+All commands must address live channels in the same channel set.  At most 1023 commands can be submitted at once;
+the set's queue holds 1024 entries, including one internal boundary entry per batch.  Invalid command types,
+channels or numeric arguments reject the entire batch.  Sample availability and playback state are checked at
+execution time.
 
-When command buffering is activated, the mixer transitions to a batch processing mode with several key characteristics:
+Batches execute in submission order within their set, with one batch per mixer update boundary as determined by
+~MixRate().  Commands execute in array order without rendering frames.  Different sets have independent update
+boundaries.  On worker backends, individual Mix calls use a separate FIFO which is drained before rendering each
+period (and by synchronous Sound queries); they can overtake queued batches, even when submitted later.  On backends
+without a worker, individual Mix calls execute immediately.
 
-<list type="bullet">
-<li><b>Deferred Execution:</b> All mixer operations (~MixPlay(), ~MixVolume(), ~MixPan(), ~MixFrequency(), etc.) are queued rather than executed immediately</li>
-<li><b>Atomic Batch Processing:</b> Queued commands are processed synchronously during the next mixer update cycle, ensuring sample-accurate timing coordination</li>
-<li><b>Thread-Safe Queueing:</b> Commands can be safely queued from multiple threads without explicit synchronisation requirements</li>
-<li><b>Overflow Protection:</b> Command buffers include overflow detection to prevent memory exhaustion during extended buffering periods</li>
-</list>
-
-This feature can be used to implement complex sound mixes and digital music players.
-<header>Advanced Usage Patterns</header>
-
-<list type="ordered">
-<li><b>Sequence Initiation:</b> Call MixStartSequence() to begin command buffering for the target channel or channel set</li>
-<li><b>Command Queuing:</b> Issue multiple mixer commands (volume, pan, play, frequency adjustments, etc.) which are automatically queued</li>
-<li><b>Sequence Completion:</b> Call ~MixEndSequence() to mark the end of the command batch and schedule execution</li>
-<li><b>Automatic Execution:</b> Commands execute atomically at the next mixer update interval determined by ~MixRate()</li>
-</list>
+Successful submission means queue admission, not successful playback or audible output.  A failed command does not
+roll back earlier commands or prevent later commands in the batch from running.  Closing the channel set discards
+its queued batches.  Existing sample lifetime rules apply; keep referenced samples alive until execution.
 
 -INPUT-
 obj(Audio) Audio: The target Audio object.
-int Handle: The target channel.
-
--ERRORS-
-Okay: Command buffering successfully initiated.
-NullArgs: Required parameters are null or missing.
-
--TAGS-
-mutates-object
--END-
-
-*********************************************************************************************************************/
-
-ERR MixStartSequence(objAudio *Audio, int Handle)
-{
-   if (!Audio or !Handle) return ERR::NullArgs;
-   std::lock_guard mixer_lock(((extAudio *)Audio)->MixerMutex);
-   if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
-   #ifdef AUDIO_WORKER
-   if (((extAudio *)Audio)->StopWorker) return ERR::NotInitialised;
-   #endif
-
-   AudioLog log(__FUNCTION__);
-
-   if ((!Audio) or (!Handle)) return log.warning(ERR::NullArgs);
-
-   log.traceBranch("Audio: #%d, Channel: $%.8x", Audio->UID, Handle);
-
-   auto channel = ((extAudio *)Audio)->GetChannel(Handle);
-   channel->Buffering = true;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FUNCTION-
-MixEndSequence: Ends the buffering of mix commands.
-
-Use this function to end a buffered command sequence that was started by ~MixStartSequence().
-
--INPUT-
-obj(Audio) Audio: The target Audio object.
-int Handle: The target channel.
+array(struct(AudioMixCommand)) Commands: Commands to copy into one channel set's queue.
 
 -ERRORS-
 Okay
 NullArgs
+OutOfRange
+Args
+BufferOverflow
+NotInitialised
 
 -TAGS-
-mutates-object
+mutates-object, copies-input
 -END-
 
 *********************************************************************************************************************/
 
-ERR MixEndSequence(objAudio *Audio, int Handle)
+ERR MixSubmitBatch(objAudio *Audio, const std::span<const AudioMixCommand> &Commands)
 {
-   if (!Audio or !Handle) return ERR::NullArgs;
-   std::lock_guard mixer_lock(((extAudio *)Audio)->MixerMutex);
-   if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
-   #ifdef AUDIO_WORKER
-   if (((extAudio *)Audio)->StopWorker) return ERR::NotInitialised;
-   #endif
+   if (!Audio or Commands.empty()) return ERR::NullArgs;
+   auto self = (extAudio *)Audio;
+   std::lock_guard mixer_lock(self->MixerMutex);
 
-   AudioLog log(__FUNCTION__);
+#ifdef AUDIO_WORKER
+   if (self->StopWorker) return ERR::NotInitialised;
+#endif
 
-   if ((!Audio) or (!Handle)) return log.warning(ERR::NullArgs);
+   const auto index = unsigned(Commands.front().Handle) >> 16;
+   if (!index or index >= self->Sets.size()) return ERR::OutOfRange;
+   auto result = submit_audio_batch(self->Sets[index], index, Commands);
 
-   log.traceBranch("Audio: #%d, Channel: $%.8x", Audio->UID, Handle);
-
-   auto channel = ((extAudio *)Audio)->GetChannel(Handle);
-   channel->Buffering = false;
-
-   // Inserting an END_SEQUENCE informs the mixer that the instructions for this period have concluded.
-
-   auto result = add_command(Audio, CMD::END_SEQUENCE, Handle);
-   #ifdef AUDIO_WORKER
-   wake_audio((extAudio *)Audio);
-   #endif
+#ifdef AUDIO_WORKER
+   if (result IS ERR::Okay) wake_audio(self);
+#endif
    return result;
 }
 
@@ -214,7 +138,7 @@ ERR MixContinue(objAudio *Audio, int Handle)
    if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
 
 #ifdef AUDIO_WORKER
-   if (!glAudioWorker and !((extAudio *)Audio)->GetChannel(Handle)->Buffering) {
+   if (!glAudioWorker) {
       auto self = (extAudio *)Audio;
       if (self->StopWorker) return ERR::NotInitialised;
       if (self->PendingCount >= self->PendingCommands.size()) return ERR::BufferOverflow;
@@ -231,7 +155,6 @@ ERR MixContinue(objAudio *Audio, int Handle)
    if ((!Audio) or (!Handle)) return log.warning(ERR::NullArgs);
 
    auto channel = ((extAudio *)Audio)->GetChannel(Handle);
-   if (channel->Buffering) return add_command(Audio, CMD::CONTINUE, Handle);
 
    if (channel->State IS CHS::PLAYING) return ERR::Okay;
 
@@ -286,7 +209,7 @@ ERR MixMute(objAudio *Audio, int Handle, int Mute)
    if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
 
 #ifdef AUDIO_WORKER
-   if (!glAudioWorker and !((extAudio *)Audio)->GetChannel(Handle)->Buffering) {
+   if (!glAudioWorker) {
       auto self = (extAudio *)Audio;
       if (self->StopWorker) return ERR::NotInitialised;
       if (self->PendingCount >= self->PendingCommands.size()) return ERR::BufferOverflow;
@@ -304,9 +227,6 @@ ERR MixMute(objAudio *Audio, int Handle, int Mute)
 
    auto channel = ((extAudio *)Audio)->GetChannel(Handle);
 
-   if (channel->Buffering) {
-      return add_command(Audio, CMD::MUTE, Handle, bool(Mute));
-   }
 
    if (Mute != 0) channel->Flags |= CHF::MUTE;
    else channel->Flags &= ~CHF::MUTE;
@@ -346,7 +266,7 @@ ERR MixFrequency(objAudio *Audio, int Handle, int Frequency)
    if (Frequency < 0 or Frequency > 192000) return ERR::OutOfRange;
 
 #ifdef AUDIO_WORKER
-   if (!glAudioWorker and !((extAudio *)Audio)->GetChannel(Handle)->Buffering) {
+   if (!glAudioWorker) {
       auto self = (extAudio *)Audio;
       if (self->StopWorker) return ERR::NotInitialised;
       if (self->PendingCount >= self->PendingCommands.size()) return ERR::BufferOverflow;
@@ -363,7 +283,6 @@ ERR MixFrequency(objAudio *Audio, int Handle, int Frequency)
    log.traceBranch("Audio: #%d, Channel: $%.8x, Frequency: %d", Audio->UID, Handle, Frequency);
 
    auto channel = ((extAudio *)Audio)->GetChannel(Handle);
-   if (channel->Buffering) return add_command(Audio, CMD::FREQUENCY, Handle, Frequency);
 
    channel->Frequency = Frequency;
    return ERR::Okay;
@@ -398,7 +317,7 @@ ERR MixPan(objAudio *Audio, int Handle, double Pan)
    if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
 
 #ifdef AUDIO_WORKER
-   if (!glAudioWorker and !((extAudio *)Audio)->GetChannel(Handle)->Buffering) {
+   if (!glAudioWorker) {
       auto self = (extAudio *)Audio;
       if (self->StopWorker) return ERR::NotInitialised;
       if (self->PendingCount >= self->PendingCommands.size()) return ERR::BufferOverflow;
@@ -415,7 +334,6 @@ ERR MixPan(objAudio *Audio, int Handle, double Pan)
    log.traceBranch("Audio: #%d, Channel: $%.8x, Pan: %.2f", Audio->UID, Handle, Pan);
 
    auto channel = ((extAudio *)Audio)->GetChannel(Handle);
-   if (channel->Buffering) return add_command(Audio, CMD::PAN, Handle, Pan);
 
    if (Pan < -1.0) channel->Pan = -1.0;
    else if (Pan > 1.0) channel->Pan = 1.0;
@@ -459,7 +377,7 @@ ERR MixPlay(objAudio *Audio, int Handle, int Position)
    if (Position < 0) return ERR::OutOfRange;
 
 #ifdef AUDIO_WORKER
-   if (!glAudioWorker and !((extAudio *)Audio)->GetChannel(Handle)->Buffering) {
+   if (!glAudioWorker) {
       auto self = (extAudio *)Audio;
       if (self->StopWorker) return ERR::NotInitialised;
       const int sample_handle = queued_sample_handle(self, Handle, self->GetChannel(Handle)->SampleHandle);
@@ -488,9 +406,6 @@ ERR MixPlay(objAudio *Audio, int Handle, int Position)
 
    log.traceBranch("Audio: #%d, Channel: $%.8x, Position: %d", Audio->UID, Handle, Position);
 
-   if (channel->Buffering) {
-      return add_command(Audio, CMD::PLAY, Handle, Position);
-   }
 
    if (!channel->SampleHandle) { // A sample must be defined for the channel.
       log.warning("Channel not associated with a sample.");
@@ -692,7 +607,7 @@ ERR MixRate(objAudio *Audio, int Handle, int Rate)
    if (Rate < 1 or Rate > 100000) return ERR::OutOfRange;
 
 #ifdef AUDIO_WORKER
-   if (!glAudioWorker and !((extAudio *)Audio)->GetChannel(Handle)->Buffering) {
+   if (!glAudioWorker) {
       auto self = (extAudio *)Audio;
       if (self->StopWorker) return ERR::NotInitialised;
       if (self->PendingCount >= self->PendingCommands.size()) return ERR::BufferOverflow;
@@ -709,9 +624,6 @@ ERR MixRate(objAudio *Audio, int Handle, int Rate)
    log.traceBranch("Audio: #%d, Channel: $%.8x", Audio->UID, Handle);
 
    if ((Rate < 1) or (Rate > 100000)) return log.warning(ERR::OutOfRange);
-
-   auto channel = ((extAudio *)Audio)->GetChannel(Handle);
-   if (channel->Buffering) return add_command(Audio, CMD::RATE, Handle, Rate);
 
    int16_t index = Handle>>16;
    if ((index >= 0) and (index < (int)((extAudio *)Audio)->Sets.size())) {
@@ -758,7 +670,7 @@ ERR MixSample(objAudio *Audio, int Handle, int SampleIndex)
    if (SampleIndex <= 0 or size_t(SampleIndex) >= ((extAudio *)Audio)->Samples.size()) return ERR::OutOfRange;
 
 #ifdef AUDIO_WORKER
-   if (!glAudioWorker and !((extAudio *)Audio)->GetChannel(Handle)->Buffering) {
+   if (!glAudioWorker) {
       auto self = (extAudio *)Audio;
       if (self->StopWorker) return ERR::NotInitialised;
       const auto &sample = self->Samples[SampleIndex];
@@ -792,7 +704,6 @@ ERR MixSample(objAudio *Audio, int Handle, int SampleIndex)
    }
 
    auto channel = ((extAudio *)Audio)->GetChannel(Handle);
-   if (channel->Buffering) return add_command(Audio, CMD::SAMPLE, Handle, SampleIndex);
    if (channel->SampleHandle IS idx) return ERR::Okay; // Already associated?
 
    channel->SampleHandle = idx;     // Set new sample number to channel
@@ -842,7 +753,7 @@ ERR MixStop(objAudio *Audio, int Handle)
    if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
 
 #ifdef AUDIO_WORKER
-   if (!glAudioWorker and !((extAudio *)Audio)->GetChannel(Handle)->Buffering) {
+   if (!glAudioWorker) {
       auto self = (extAudio *)Audio;
       if (self->StopWorker) return ERR::NotInitialised;
       if (self->PendingCount >= self->PendingCommands.size()) return ERR::BufferOverflow;
@@ -859,7 +770,6 @@ ERR MixStop(objAudio *Audio, int Handle)
    if ((!Audio) or (!Handle)) return log.warning(ERR::NullArgs);
 
    auto channel = ((extAudio *)Audio)->GetChannel(Handle);
-   if (channel->Buffering) return add_command(Audio, CMD::STOP, Handle);
 
    ((extAudio *)Audio)->finish(*channel, true);
    channel->State = CHS::STOPPED;
@@ -885,14 +795,13 @@ static ERR pause_channel(objAudio *Audio, int Handle)
    if (!channel) return ERR::OutOfRange;
 
 #ifdef AUDIO_WORKER
-   if (!glAudioWorker and !channel->Buffering) {
+   if (!glAudioWorker) {
       if (self->StopWorker) return ERR::NotInitialised;
       if (self->PendingCount >= self->PendingCommands.size()) return ERR::BufferOverflow;
       self->PendingCommands[self->PendingCount++] = AudioCommand(CMD::PAUSE, Handle);
       wake_audio(self);
       return ERR::Okay;
    }
-   if (channel->Buffering) return add_command(Audio, CMD::PAUSE, Handle);
 #endif
 
    channel->State = CHS::STOPPED;
@@ -929,7 +838,7 @@ ERR MixStopLoop(objAudio *Audio, int Handle)
    if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
 
 #ifdef AUDIO_WORKER
-   if (!glAudioWorker and !((extAudio *)Audio)->GetChannel(Handle)->Buffering) {
+   if (!glAudioWorker) {
       auto self = (extAudio *)Audio;
       if (self->StopWorker) return ERR::NotInitialised;
       if (self->PendingCount >= self->PendingCommands.size()) return ERR::BufferOverflow;
@@ -946,7 +855,6 @@ ERR MixStopLoop(objAudio *Audio, int Handle)
    if ((!Audio) or (!Handle)) return log.warning(ERR::NullArgs);
 
    auto channel = ((extAudio *)Audio)->GetChannel(Handle);
-   if (channel->Buffering) return add_command(Audio, CMD::STOP_LOOPING, Handle);
    if (channel->State != CHS::PLAYING) return ERR::Okay;
 
    auto &sample = ((extAudio *)Audio)->Samples[channel->SampleHandle];
@@ -1004,7 +912,7 @@ ERR MixVolume(objAudio *Audio, int Handle, double Volume)
    if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
 
 #ifdef AUDIO_WORKER
-   if (!glAudioWorker and !((extAudio *)Audio)->GetChannel(Handle)->Buffering) {
+   if (!glAudioWorker) {
       auto self = (extAudio *)Audio;
       if (self->StopWorker) return ERR::NotInitialised;
       if (self->PendingCount >= self->PendingCommands.size()) return ERR::BufferOverflow;
@@ -1021,7 +929,6 @@ ERR MixVolume(objAudio *Audio, int Handle, double Volume)
    if ((!Audio) or (!Handle)) return log.warning(ERR::NullArgs);
 
    auto channel = ((extAudio *)Audio)->GetChannel(Handle);
-   if (channel->Buffering) return add_command(Audio, CMD::VOLUME, Handle, Volume);
 
    if (Volume > 1.0) channel->Volume = 1.0;
    else if (Volume < 0) channel->Volume = 0;

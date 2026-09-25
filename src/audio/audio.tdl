@@ -85,6 +85,25 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
    "RELEASED: Sample playing and note has been released.",
    "FADE_OUT: Playback is fading out.")
 
+  enums("MIX", { type="int", start=1, comment="Mixer batch operations." },
+    "CONTINUE: Resume playback; arguments ignored.",
+    "FREQUENCY: Set playback frequency using Integer (0 to 192000 Hz).",
+    "MUTE: Set mute using Integer (zero is unmuted).",
+    "PAN: Set pan using Value (-1 to 1, clamped).",
+    "PLAY: Start playback at byte position Integer (non-negative).",
+    "RATE: Set the channel set's update rate using Integer (1 to 100000).",
+    "SAMPLE: Select sample handle Integer (positive).",
+    "STOP: Stop playback; arguments ignored.",
+    "STOP_LOOP: Release looping; arguments ignored.",
+    "VOLUME: Set gain using Value (0 to 1, clamped).")
+
+  structdef("AudioMixCommand", { comment="One command in a caller-owned mixer batch." }, [[
+    int(MIX) Operation # Mixer operation
+    int Handle         # Target channel; all commands in a batch must use the same channel set
+    int Integer        # Integer argument for the selected operation; otherwise ignored
+    double Value       # Finite floating-point argument for PAN and VOLUME; otherwise ignored
+  ]])
+
   structdef("AudioLoop", { comment="Loop settings for the AddSample() method." }, [[
     short(LOOP) LoopMode    # Loop mode (single, double)
     char(LTYPE) Loop1Type   # First loop type (unidirectional, bidirectional)
@@ -182,7 +201,6 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
      "MixStop",
      "MixStopLoop",
      "MixVolume",
-     "MixStartSequence",
-     "MixEndSequence")
+     "MixSubmitBatch")
 
 end)

@@ -166,6 +166,29 @@ enum class CHS : int8_t {
    FADE_OUT = 4,
 };
 
+// Mixer batch operations.
+
+enum class MIX : int {
+   NIL = 0,
+   CONTINUE = 1,
+   FREQUENCY = 2,
+   MUTE = 3,
+   PAN = 4,
+   PLAY = 5,
+   RATE = 6,
+   SAMPLE = 7,
+   STOP = 8,
+   STOP_LOOP = 9,
+   VOLUME = 10,
+};
+
+struct AudioMixCommand {
+   MIX    Operation; // Mixer operation
+   int    Handle;    // Target channel; all commands in a batch must use the same channel set
+   int    Integer;   // Integer argument for the selected operation; otherwise ignored
+   double Value;     // Finite floating-point argument for PAN and VOLUME; otherwise ignored
+};
+
 struct AudioLoop {
    LOOP  LoopMode;   // Loop mode (single, double)
    LTYPE Loop1Type;  // First loop type (unidirectional, bidirectional)
@@ -940,8 +963,7 @@ struct AudioBase {
    ERR (*_MixStop)(objAudio *Audio, int Handle);
    ERR (*_MixStopLoop)(objAudio *Audio, int Handle);
    ERR (*_MixVolume)(objAudio *Audio, int Handle, double Volume);
-   ERR (*_MixStartSequence)(objAudio *Audio, int Handle);
-   ERR (*_MixEndSequence)(objAudio *Audio, int Handle);
+   ERR (*_MixSubmitBatch)(objAudio *Audio, const std::span<const struct AudioMixCommand> &Commands);
 #endif // KOTUKU_STATIC
 };
 
@@ -958,8 +980,7 @@ inline ERR MixSample(objAudio *Audio, int Handle, int Sample) { return AudioBase
 inline ERR MixStop(objAudio *Audio, int Handle) { return AudioBase->_MixStop(Audio,Handle); }
 inline ERR MixStopLoop(objAudio *Audio, int Handle) { return AudioBase->_MixStopLoop(Audio,Handle); }
 inline ERR MixVolume(objAudio *Audio, int Handle, double Volume) { return AudioBase->_MixVolume(Audio,Handle,Volume); }
-inline ERR MixStartSequence(objAudio *Audio, int Handle) { return AudioBase->_MixStartSequence(Audio,Handle); }
-inline ERR MixEndSequence(objAudio *Audio, int Handle) { return AudioBase->_MixEndSequence(Audio,Handle); }
+inline ERR MixSubmitBatch(objAudio *Audio, const std::span<const struct AudioMixCommand> &Commands) { return AudioBase->_MixSubmitBatch(Audio,Commands); }
 } // namespace
 #else
 namespace snd {
@@ -973,7 +994,6 @@ extern ERR MixSample(objAudio *Audio, int Handle, int Sample);
 extern ERR MixStop(objAudio *Audio, int Handle);
 extern ERR MixStopLoop(objAudio *Audio, int Handle);
 extern ERR MixVolume(objAudio *Audio, int Handle, double Volume);
-extern ERR MixStartSequence(objAudio *Audio, int Handle);
-extern ERR MixEndSequence(objAudio *Audio, int Handle);
+extern ERR MixSubmitBatch(objAudio *Audio, const std::span<const struct AudioMixCommand> &Commands);
 } // namespace
 #endif // KOTUKU_STATIC
