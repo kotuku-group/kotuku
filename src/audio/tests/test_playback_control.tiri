@@ -1,0 +1,159 @@
+-- Pause, resume, stop and release contracts.  Looping samples keep channels active until a command ends them, so
+-- these tests remain valid on unpaced null devices.
+   module audio as mAudio
+
+function new_audio()
+   audio = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   return audio
+end
+
+-- Adds a 4096 byte sample.  Its OnStop callback counts notifications in Counter[0].
+function looping_sample(Audio, Counter, Mode, LoopEnd)
+   data = array<byte, 4096>
+   data.fill(128)
+   loop = struct.new('AudioLoop', { loopMode=Mode, loop1Type=LTYPE_UNIDIRECTIONAL, loop1Start=0, loop1End=LoopEnd })
+   err, sample = Audio.mtAddSample(function(Audio, Handle) Counter[0]++ end, SFM_U8_BIT_MONO, data, loop)
+   assert(err is ERR_Okay)
+   return sample
+end
+
+function play(Audio, Sample)
+   err, channel = Audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(Audio, channel, Sample)
+   check mAudio.MixFrequency(Audio, channel, 44100)
+   check mAudio.MixPlay(Audio, channel, 0)
+   return channel
+end
+
+function await_count(Counter, Count)
+   for i in {0 to 100} do
+      if Counter[0] >= Count then return end
+      processing.sleep(0.01)
+   end
+   assert(false, f'Expected {Count} notifications, received {Counter[0]}')
+end
+
+@Test function IdleChannelsAcceptControlCommands()
+   audio <close> = new_audio()
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   check mAudio.MixPause(audio, channel)
+   check mAudio.MixContinue(audio, channel)
+   check mAudio.MixRelease(audio, channel)
+   check mAudio.MixStop(audio, channel)
+   assert(mAudio.MixPause(audio, channel + 1) is ERR_OutOfRange, 'Pause must validate the channel handle')
+   assert(mAudio.MixRelease(audio, channel + 1) is ERR_OutOfRange, 'Release must validate the channel handle')
+end
+
+@Test function StopIsTerminal()
+   audio <close> = new_audio()
+   stops = array<int> { 0 }
+   channel = play(audio, looping_sample(audio, stops, LOOP_SINGLE_RELEASE, 2048))
+   processing.sleep(0.03)
+   check mAudio.MixStop(audio, channel)
+   await_count(stops, 1)
+   -- If continue resumed the stopped channel, this release would play the tail and notify a second time.
+   check mAudio.MixContinue(audio, channel)
+   check mAudio.MixRelease(audio, channel)
+   processing.sleep(0.15)
+   assert(stops[0] is 1, 'A stopped channel must not resume or notify again')
+   check mAudio.MixStop(audio, channel)
+   processing.sleep(0.03)
+   assert(stops[0] is 1, 'Stopping an inactive channel must not notify')
+end
+
+@Test function PauseDoesNotNotifyAndStopWhilePausedNotifiesOnce()
+   audio <close> = new_audio()
+   stops = array<int> { 0 }
+   channel = play(audio, looping_sample(audio, stops, LOOP_SINGLE, 4096))
+   check mAudio.MixPause(audio, channel)
+   check mAudio.MixPause(audio, channel)
+   processing.sleep(0.05)
+   assert(stops[0] is 0, 'Pausing must not end the playback')
+   check mAudio.MixStop(audio, channel)
+   await_count(stops, 1)
+   processing.sleep(0.05)
+   assert(stops[0] is 1, 'Stopping a paused playback must notify exactly once')
+end
+
+@Test function ReleaseEndsSingleLoopNote()
+   audio <close> = new_audio()
+   stops = array<int> { 0 }
+   channel = play(audio, looping_sample(audio, stops, LOOP_SINGLE, 4096))
+   processing.sleep(0.05)
+   assert(stops[0] is 0, 'A single loop must play until released')
+   check mAudio.MixRelease(audio, channel)
+   await_count(stops, 1)
+   processing.sleep(0.05)
+   assert(stops[0] is 1, 'Releasing a single loop must end the note with one notification')
+end
+
+@Test function ReleaseSurvivesPause()
+   audio <close> = new_audio()
+   stops = array<int> { 0 }
+   channel = play(audio, looping_sample(audio, stops, LOOP_SINGLE_RELEASE, 2048))
+   check mAudio.MixRelease(audio, channel)
+   check mAudio.MixPause(audio, channel)
+   check mAudio.MixContinue(audio, channel)
+   await_count(stops, 1)
+end
+
+@Test function ReleaseWhilePausedAppliesOnResume()
+   audio <close> = new_audio()
+   stops = array<int> { 0 }
+   channel = play(audio, looping_sample(audio, stops, LOOP_SINGLE_RELEASE, 2048))
+   check mAudio.MixPause(audio, channel)
+   check mAudio.MixRelease(audio, channel)
+   processing.sleep(0.05)
+   assert(stops[0] is 0, 'A paused channel must not progress through its release')
+   check mAudio.MixContinue(audio, channel)
+   await_count(stops, 1)
+
+   -- A new playback starts unreleased, so the loop is honoured again.
+   check mAudio.MixPlay(audio, channel, 0)
+   processing.sleep(0.05)
+   assert(stops[0] is 1, 'Replaying must restore looping')
+   check mAudio.MixRelease(audio, channel)
+   await_count(stops, 2)
+end
+
+@Test function StreamReleaseKeepsLoopConfiguration()
+   audio <close> = new_audio()
+   stops = array<int> { 0 }
+   loop = struct.new('AudioLoop', { loopMode=LOOP_SINGLE, loop1Type=LTYPE_UNIDIRECTIONAL,
+      loop1Start=400, loop1End=800 })
+   err, sample = audio.mtAddStream(function(Handle, Offset, Buffer)
+      Buffer.fill(0)
+      return #Buffer
+   end, function(Audio, Handle) stops[0] = stops[0] + 1 end, SFM_S16_BIT_STEREO, 800, 0, loop)
+   assert(err is ERR_Okay)
+   channel = play(audio, sample)
+   processing.sleep(0.03)
+   check mAudio.MixRelease(audio, channel)
+   await_count(stops, 1)
+   check mAudio.MixPlay(audio, channel, 0)
+   processing.sleep(0.05)
+   assert(stops[0] is 1, 'Releasing a stream must not remove its loop from later playback')
+   check mAudio.MixRelease(audio, channel)
+   await_count(stops, 2)
+end
+
+@Test function BatchControlCommands()
+   audio <close> = new_audio()
+   stops = array<int> { 0 }
+   channel = play(audio, looping_sample(audio, stops, LOOP_SINGLE_RELEASE, 2048))
+   results = array<int>
+   check mAudio.MixSubmitBatch(audio, array<struct<AudioMixCommand>> {
+      struct.new('AudioMixCommand', { operation=MIX_PAUSE, handle=channel }),
+      struct.new('AudioMixCommand', { operation=MIX_RELEASE, handle=channel }),
+      struct.new('AudioMixCommand', { operation=MIX_CONTINUE, handle=channel })
+   }, function(Audio, Error, FailedCommand) results.push(Error) end)
+   await_count(stops, 1)
+   for i in {0 to 100} do
+      if #results > 0 then break end
+      processing.sleep(0.01)
+   end
+   assert(#results is 1 and results[0] is ERR_Okay, 'Batched pause, release and continue must succeed')
+end

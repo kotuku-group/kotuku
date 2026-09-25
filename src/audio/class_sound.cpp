@@ -514,7 +514,7 @@ static ERR SOUND_Disable(extSound *Self)
       flush_audio_commands(*audio);
       #endif
       if (auto channel = audio->GetChannel(Self->ChannelIndex)) {
-         if (channel->SampleHandle IS Self->Handle) snd::pause_channel(*audio, Self->ChannelIndex);
+         if (channel->SampleHandle IS Self->Handle) snd::MixPause(*audio, Self->ChannelIndex);
       }
    }
    else return log.warning(ERR::AccessObject);

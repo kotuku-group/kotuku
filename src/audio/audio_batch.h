@@ -20,8 +20,9 @@ static ERR submit_audio_batch(ChannelSet &Set, unsigned Index, std::span<const A
       const int64_t value = command.Integer;
       switch (command.Operation) {
          case MIX::CONTINUE: staged[count++] = AudioCommand(CMD::CONTINUE, handle); break;
+         case MIX::PAUSE: staged[count++] = AudioCommand(CMD::PAUSE, handle); break;
          case MIX::STOP: staged[count++] = AudioCommand(CMD::STOP, handle); break;
-         case MIX::STOP_LOOP: staged[count++] = AudioCommand(CMD::STOP_LOOPING, handle); break;
+         case MIX::RELEASE: staged[count++] = AudioCommand(CMD::RELEASE, handle); break;
          case MIX::MUTE: staged[count++] = AudioCommand(CMD::MUTE, handle, bool(value)); break;
          case MIX::FREQUENCY:
             if (value < 0 or value > 192000) return ERR::OutOfRange;

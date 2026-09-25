@@ -503,7 +503,7 @@ static bool handle_sample_end(extAudio *Self, AudioChannel &Channel)
          if ((bytes_read <= 0) or
              (sample.StreamLengthKnown and sample.PlayPos >= sample.StreamLength)) {
             // Loop back to the beginning if the client has defined a loop.  Otherwise finish.
-            if (sample.Loop2Type != LTYPE::NIL) {
+            if (sample.streamLoops()) {
                sample.PlayPos = BYTELEN(0);
                sample.BufferedLength = BYTELEN(0);
             }
@@ -694,12 +694,12 @@ static void mix_stream(extAudio *Self, AudioChannel &Channel, AudioSample &Sampl
       const size_t consumed = std::min(advance, Sample.Ring.Used);
       Sample.Ring.consume(consumed, Sample.Data.size(), frame_bytes);
       int64_t play_pos = int64_t(Sample.PlayPos) + consumed;
-      if (Sample.StreamLengthKnown and Sample.Loop2Type != LTYPE::NIL and play_pos >= Sample.StreamLength) {
+      if (Sample.StreamLengthKnown and Sample.streamLoops() and play_pos >= Sample.StreamLength) {
          const int64_t start = int64_t(Sample.Loop2Start) << sample_shift(Sample.SampleType);
          if (Sample.StreamLength > start) {
             play_pos = start + (play_pos - Sample.StreamLength) % (Sample.StreamLength - start);
          }
-         else Sample.Loop2Type = LTYPE::NIL;
+         else Sample.Released = true; // A degenerate loop ends this playback but keeps the configuration.
       }
 
       Sample.PlayPos = BYTELEN(play_pos);

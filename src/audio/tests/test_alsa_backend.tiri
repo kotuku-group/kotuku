@@ -200,7 +200,7 @@ end
    processing.sleep(0.03)
    assert(saw_loop, 'Stereo 16-bit loop offsets must remain byte positions')
    assert(completed is 0, 'A looping stream must remain active')
-   check mAudio.MixStopLoop(audio, channel)
+   check mAudio.MixRelease(audio, channel)
    deadline = mSys.PreciseTime() + 300000
    while completed is 0 and mSys.PreciseTime() < deadline do processing.sleep(0.005) end
    assert(completed is 1, 'Releasing a stream loop must drain and finish')
@@ -228,7 +228,7 @@ end
       'A stream length before the loop start is invalid')
    check audio.mtSetSampleLength(sample, 600)
    processing.sleep(0.02)
-   check mAudio.MixStopLoop(audio, channel)
+   check mAudio.MixRelease(audio, channel)
 end
 
 @Test function SoftwareMixerVolumeAndMuteSurviveActivation()

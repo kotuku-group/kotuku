@@ -174,12 +174,13 @@ enum class MIX : int {
    FREQUENCY = 2,
    MUTE = 3,
    PAN = 4,
-   PLAY = 5,
-   TEMPO = 6,
-   SAMPLE = 7,
-   STOP = 8,
-   STOP_LOOP = 9,
-   VOLUME = 10,
+   PAUSE = 5,
+   PLAY = 6,
+   RELEASE = 7,
+   TEMPO = 8,
+   SAMPLE = 9,
+   STOP = 10,
+   VOLUME = 11,
 };
 
 struct AudioMixCommand {
@@ -957,11 +958,12 @@ struct AudioBase {
    ERR (*_MixFrequency)(objAudio *Audio, int Handle, int Frequency);
    ERR (*_MixMute)(objAudio *Audio, int Handle, int Mute);
    ERR (*_MixPan)(objAudio *Audio, int Handle, double Pan);
+   ERR (*_MixPause)(objAudio *Audio, int Handle);
    ERR (*_MixPlay)(objAudio *Audio, int Handle, int64_t Position);
+   ERR (*_MixRelease)(objAudio *Audio, int Handle);
    ERR (*_MixTempo)(objAudio *Audio, int Handle, int Tempo);
    ERR (*_MixSample)(objAudio *Audio, int Handle, int Sample);
    ERR (*_MixStop)(objAudio *Audio, int Handle);
-   ERR (*_MixStopLoop)(objAudio *Audio, int Handle);
    ERR (*_MixVolume)(objAudio *Audio, int Handle, double Volume);
    ERR (*_MixSubmitBatch)(objAudio *Audio, const std::span<const struct AudioMixCommand> &Commands, FUNCTION *OnComplete);
 #endif // KOTUKU_STATIC
@@ -974,11 +976,12 @@ inline ERR MixContinue(objAudio *Audio, int Handle) { return AudioBase->_MixCont
 inline ERR MixFrequency(objAudio *Audio, int Handle, int Frequency) { return AudioBase->_MixFrequency(Audio,Handle,Frequency); }
 inline ERR MixMute(objAudio *Audio, int Handle, int Mute) { return AudioBase->_MixMute(Audio,Handle,Mute); }
 inline ERR MixPan(objAudio *Audio, int Handle, double Pan) { return AudioBase->_MixPan(Audio,Handle,Pan); }
+inline ERR MixPause(objAudio *Audio, int Handle) { return AudioBase->_MixPause(Audio,Handle); }
 inline ERR MixPlay(objAudio *Audio, int Handle, int64_t Position) { return AudioBase->_MixPlay(Audio,Handle,Position); }
+inline ERR MixRelease(objAudio *Audio, int Handle) { return AudioBase->_MixRelease(Audio,Handle); }
 inline ERR MixTempo(objAudio *Audio, int Handle, int Tempo) { return AudioBase->_MixTempo(Audio,Handle,Tempo); }
 inline ERR MixSample(objAudio *Audio, int Handle, int Sample) { return AudioBase->_MixSample(Audio,Handle,Sample); }
 inline ERR MixStop(objAudio *Audio, int Handle) { return AudioBase->_MixStop(Audio,Handle); }
-inline ERR MixStopLoop(objAudio *Audio, int Handle) { return AudioBase->_MixStopLoop(Audio,Handle); }
 inline ERR MixVolume(objAudio *Audio, int Handle, double Volume) { return AudioBase->_MixVolume(Audio,Handle,Volume); }
 inline ERR MixSubmitBatch(objAudio *Audio, const std::span<const struct AudioMixCommand> &Commands, FUNCTION *OnComplete) { return AudioBase->_MixSubmitBatch(Audio,Commands,OnComplete); }
 } // namespace
@@ -988,11 +991,12 @@ extern ERR MixContinue(objAudio *Audio, int Handle);
 extern ERR MixFrequency(objAudio *Audio, int Handle, int Frequency);
 extern ERR MixMute(objAudio *Audio, int Handle, int Mute);
 extern ERR MixPan(objAudio *Audio, int Handle, double Pan);
+extern ERR MixPause(objAudio *Audio, int Handle);
 extern ERR MixPlay(objAudio *Audio, int Handle, int64_t Position);
+extern ERR MixRelease(objAudio *Audio, int Handle);
 extern ERR MixTempo(objAudio *Audio, int Handle, int Tempo);
 extern ERR MixSample(objAudio *Audio, int Handle, int Sample);
 extern ERR MixStop(objAudio *Audio, int Handle);
-extern ERR MixStopLoop(objAudio *Audio, int Handle);
 extern ERR MixVolume(objAudio *Audio, int Handle, double Volume);
 extern ERR MixSubmitBatch(objAudio *Audio, const std::span<const struct AudioMixCommand> &Commands, FUNCTION *OnComplete);
 } // namespace

@@ -35,8 +35,6 @@ static ERR fade_out(extAudio *Audio, int Handle)
 
 namespace snd {
 
-static ERR pause_channel(objAudio *Audio, int Handle);
-
 #ifdef AUDIO_WORKER
 // A queued MixSample can precede MixPlay without having reached the mixer yet.
 static int queued_sample_handle(extAudio *Self, int Handle, int Current)
@@ -170,9 +168,17 @@ ERR MixSubmitBatch(objAudio *Audio, const std::span<const AudioMixCommand> &Comm
 /*********************************************************************************************************************
 
 -FUNCTION-
-MixContinue: Continue playing a stopped channel.
+MixContinue: Resumes playback of a paused channel.
 
-This function will continue playback on a channel that has previously been stopped.
+This function resumes a channel that was paused by ~MixPause().  Playback continues from the paused position with the
+same loop phase, direction and release state.  If the note was released before or during the pause, it remains
+released.
+
+Only paused channels are affected.  Calling this function on a channel that is playing, released, stopped by
+~MixStop() or finished has no effect and returns `Okay`.  Use ~MixPlay() to start a new playback after a stop or
+natural completion.
+
+On worker backends, `Okay` reports queue admission; the command is applied before a subsequent render period.
 
 -INPUT-
 obj(Audio) Audio: The target Audio object.
@@ -181,6 +187,9 @@ int Handle: The target channel.
 -ERRORS-
 Okay
 NullArgs
+OutOfRange
+NotInitialised
+BufferOverflow
 
 -TAGS-
 mutates-object
@@ -191,12 +200,13 @@ mutates-object
 ERR MixContinue(objAudio *Audio, int Handle)
 {
    if (!Audio or !Handle) return ERR::NullArgs;
-   std::lock_guard mixer_lock(((extAudio *)Audio)->MixerMutex);
-   if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
+   auto self = (extAudio *)Audio;
+   std::lock_guard mixer_lock(self->MixerMutex);
+   auto channel = self->GetChannel(Handle);
+   if (!channel) return ERR::OutOfRange;
 
 #ifdef AUDIO_WORKER
    if (!glAudioWorker) {
-      auto self = (extAudio *)Audio;
       if (self->StopWorker) return ERR::NotInitialised;
       if (self->PendingCount >= self->PendingCommands.size()) return ERR::BufferOverflow;
       self->PendingCommands[self->PendingCount++] = AudioCommand(CMD::CONTINUE, Handle);
@@ -209,30 +219,10 @@ ERR MixContinue(objAudio *Audio, int Handle)
 
    log.traceBranch("Audio: #%d, Channel: $%.8x", Audio->UID, Handle);
 
-   if ((!Audio) or (!Handle)) return log.warning(ERR::NullArgs);
+   if (!channel->Paused) return ERR::Okay;
 
-   auto channel = ((extAudio *)Audio)->GetChannel(Handle);
-
-   if (channel->State IS CHS::PLAYING) return ERR::Okay;
-
-   // Check if the read position is already at the end of the sample
-
-   auto &sample = ((extAudio *)Audio)->Samples[channel->SampleHandle];
-
-   if (sample.Stream and sample.StreamLengthKnown and sample.PlayPos >= sample.StreamLength) return ERR::Okay;
-   else if (channel->Position >= sample.SampleLength) return ERR::Okay;
-
-   fade_out((extAudio *)Audio, Handle);
-
-   ++channel->PlaybackGeneration;
-   channel->State = CHS::PLAYING;
-
-   if ((Audio->Flags & ADF::OVER_SAMPLING) != ADF::NIL) {
-      auto shadow = ((extAudio *)Audio)->GetShadow(Handle);
-      shadow->State = CHS::PLAYING;
-   }
-
-
+   channel->Paused = false;
+   channel->State  = channel->ResumeState;
    return ERR::Okay;
 }
 
@@ -405,8 +395,12 @@ ERR MixPan(objAudio *Audio, int Handle, double Pan)
 -FUNCTION-
 MixPlay: Commences channel playback at a set frequency.
 
-This function will start playback of the sound sample associated with the target mixer channel.  If the channel is
-already in playback mode, it will be stopped to facilitate the new playback request.
+This function will start playback of the sound sample associated with the target mixer channel.  Playback always
+starts in the first loop, unreleased.  This applies to every prior channel state: playing, released, paused, stopped
+and finished.  Replacing an active playback does not deliver the sample's `OnStop` notification for the replaced
+playback.
+
+For streams, a new playback also cancels any earlier ~MixRelease(), so a configured stream loop is honoured again.
 
 -INPUT-
 obj(Audio) Audio: The target Audio object.
@@ -490,6 +484,7 @@ ERR MixPlay(objAudio *Audio, int Handle, int64_t Position)
 
    if (sample.Stream) {
       if (sample.StreamLengthKnown and Position > sample.StreamLength) return log.warning(ERR::OutOfRange);
+      sample.Released = false;
 #ifdef AUDIO_WORKER
       ++sample.Generation;
       sample.DeferredStops = 0;
@@ -516,122 +511,60 @@ ERR MixPlay(objAudio *Audio, int Handle, int64_t Position)
    fade_out((extAudio *)Audio, Handle);
    ++channel->PlaybackGeneration;
 
-   // Check if sample has been changed, and if so, set the values to the channel structure
+   channel->Flags &= ~CHF::CHANGED;
 
-   if ((channel->Flags & CHF::CHANGED) != CHF::NIL) {
-      channel->Flags &= ~CHF::CHANGED;
+   // finish() has concluded any earlier playback, so a new playback always starts unreleased in the first loop.
 
-      // If channel status is released and the new sample does not have two loops, end the sample
-
-      if ((sample.LoopMode != LOOP::SINGLE_RELEASE) and (sample.LoopMode != LOOP::DOUBLE) and (channel->State IS CHS::RELEASED)) {
-         ((extAudio *)Audio)->finish(*channel, true);
-         return ERR::Okay;
+   if (sample.OnStop.defined()) {
+      double sec;
+      if (sample.Stream and sample.StreamLengthKnown) {
+         // NB: Accuracy is dependent on the StreamLength value being correct.  PlayPos already includes the
+         // buffered fill, which still has to be played, so it is added back to the anticipated time.
+         sec = double((sample.StreamLength - sample.PlayPos + sample.BufferedLength)>>sample_shift(sample.SampleType)) /
+            double(channel->Frequency);
       }
+      else if (!sample.Stream) sec = double(sample.SampleLength - bitpos) / double(channel->Frequency);
+      else sec = -1;
+      channel->EndTime = sec >= 0 ? PreciseTime() + std::lrint(sec * 1000000.0) : 0;
    }
+   else channel->EndTime = 0;
 
-   switch (channel->State) {
-      case CHS::FINISHED:
-      case CHS::PLAYING:
-         // Either playing sample before releasing, or playing has ended - check the first loop type.
-
-         if (sample.OnStop.defined()) {
-            double sec;
-            if (sample.Stream and sample.StreamLengthKnown) {
-               // NB: Accuracy is dependent on the StreamLength value being correct.  PlayPos already includes the
-               // buffered fill, which still has to be played, so it is added back to the anticipated time.
-               sec = double((sample.StreamLength - sample.PlayPos + sample.BufferedLength)>>sample_shift(sample.SampleType)) / double(channel->Frequency);
-            }
-            else if (!sample.Stream) sec = double(sample.SampleLength - bitpos) / double(channel->Frequency);
-            else sec = -1;
-            channel->EndTime = sec >= 0 ? PreciseTime() + std::lrint(sec * 1000000.0) : 0;
+   channel->LoopIndex = 1;
+   switch (sample.Loop1Type) {
+      case LTYPE::NIL:
+         // No looping - if position is below sample end, set it and start playing there
+         if (bitpos < sample.SampleLength) {
+            channel->Position    = bitpos;
+            channel->PositionLow = 0;
+            channel->State       = CHS::PLAYING;
+            channel->Flags       &= ~CHF::BACKWARD;
          }
-         else channel->EndTime = 0;
-
-         channel->LoopIndex = 1;
-         switch (sample.Loop1Type) {
-            case LTYPE::NIL:
-               // No looping - if position is below sample end, set it and start playing there
-               if (bitpos < sample.SampleLength) {
-                  channel->Position    = bitpos;
-                  channel->PositionLow = 0;
-                  channel->State       = CHS::PLAYING;
-                  channel->Flags       &= ~CHF::BACKWARD;
-               }
-               else ((extAudio *)Audio)->finish(*channel, true);
-               break;
-
-            case LTYPE::UNIDIRECTIONAL:
-               // Unidirectional looping - if position is below loop end, set it, otherwise set loop start as the
-               // new position. Start playing in any case.
-               if (bitpos < sample.Loop1End) channel->Position = bitpos;
-               else channel->Position = sample.Loop1Start;
-               channel->PositionLow = 0;
-               channel->State       = CHS::PLAYING;
-               channel->Flags      &= ~CHF::BACKWARD;
-               break;
-
-            case LTYPE::BIDIRECTIONAL:
-               // Bidirectional looping - if position is below loop end, set it and start playing forward, otherwise
-               // set loop end as the new position and start playing backwards.
-               if (bitpos < sample.Loop1End ) {
-                  channel->Position = bitpos;
-                  channel->Flags &= ~CHF::BACKWARD;
-               }
-               else {
-                  channel->Position = sample.Loop1End;
-                  channel->Flags |= CHF::BACKWARD;
-               }
-               channel->PositionLow = 0;
-               channel->State = CHS::PLAYING;
-         }
+         else ((extAudio *)Audio)->finish(*channel, true);
          break;
 
-      case CHS::RELEASED: // Playing after sample has been released - check second loop type.
-         channel->LoopIndex = 2;
-         switch (sample.Loop2Type) {
-            case LTYPE::NIL:
-               // No looping - if position is below sample end, set it and start playing there.
+      case LTYPE::UNIDIRECTIONAL:
+         // Unidirectional looping - if position is below loop end, set it, otherwise set loop start as the
+         // new position. Start playing in any case.
+         if (bitpos < sample.Loop1End) channel->Position = bitpos;
+         else channel->Position = sample.Loop1Start;
+         channel->PositionLow = 0;
+         channel->State       = CHS::PLAYING;
+         channel->Flags      &= ~CHF::BACKWARD;
+         break;
 
-               if (bitpos < sample.SampleLength ) {
-                  channel->Position    = bitpos;
-                  channel->PositionLow = 0;
-                  channel->State       = CHS::PLAYING;
-                  channel->Flags       &= ~CHF::BACKWARD;
-               }
-               else ((extAudio *)Audio)->finish(*channel, true);
-               break;
-
-            case LTYPE::UNIDIRECTIONAL:
-               // Unidirectional looping - if position is below loop end, set it, otherwise set loop start as the
-               // new position. Start playing in any case.
-               if (bitpos < sample.Loop2End) channel->Position = bitpos;
-               else channel->Position = sample.Loop2Start;
-               channel->PositionLow = 0;
-               channel->State = CHS::PLAYING;
-               channel->Flags &= ~CHF::BACKWARD;
-               break;
-
-            case LTYPE::BIDIRECTIONAL:
-               // Bidirectional looping - if position is below loop end, set it and start playing forward, otherwise
-               // set loop end as the new position and start playing backwards.
-
-               if (bitpos < sample.Loop2End) {
-                  channel->Position = bitpos;
-                  channel->Flags   &= ~CHF::BACKWARD;
-               }
-               else {
-                  channel->Position = sample.Loop2End;
-                  channel->Flags   |= CHF::BACKWARD;
-               }
-               channel->PositionLow = 0;
-               channel->State       = CHS::PLAYING;
+      case LTYPE::BIDIRECTIONAL:
+         // Bidirectional looping - if position is below loop end, set it and start playing forward, otherwise
+         // set loop end as the new position and start playing backwards.
+         if (bitpos < sample.Loop1End ) {
+            channel->Position = bitpos;
+            channel->Flags &= ~CHF::BACKWARD;
          }
-         break;
-
-      case CHS::STOPPED:
-      default:
-         // If sound has been stopped do nothing
-         break;
+         else {
+            channel->Position = sample.Loop1End;
+            channel->Flags |= CHF::BACKWARD;
+         }
+         channel->PositionLow = 0;
+         channel->State = CHS::PLAYING;
    }
 
    fade_in((extAudio *)Audio, channel);
@@ -808,9 +741,16 @@ ERR MixSample(objAudio *Audio, int Handle, int SampleIndex)
 /*********************************************************************************************************************
 
 -FUNCTION-
-MixStop: Stops all playback on a channel.
+MixStop: Terminates playback on a channel.
 
-This function will stop a channel that is currently playing.
+This function ends the current playback on a channel.  The stop is terminal: the channel cannot be resumed with
+~MixContinue(), and a new playback must be started with ~MixPlay().  The channel's sample selection and loop
+configuration are unaffected.  Output stops at the next render boundary without a fade-out.
+
+If the channel is playing, released or paused, the sample's `OnStop` notification is delivered once for the ended
+playback.  Stopping a channel that has already stopped or finished has no effect and delivers no notification.
+
+On worker backends, `Okay` reports queue admission; the command is applied before a subsequent render period.
 
 -INPUT-
 obj(Audio) Audio: The target Audio object.
@@ -819,6 +759,9 @@ int Handle: The target channel.
 -ERRORS-
 Okay
 NullArgs
+OutOfRange
+NotInitialised
+BufferOverflow
 
 -TAGS-
 mutates-object
@@ -829,12 +772,13 @@ mutates-object
 ERR MixStop(objAudio *Audio, int Handle)
 {
    if (!Audio or !Handle) return ERR::NullArgs;
-   std::lock_guard mixer_lock(((extAudio *)Audio)->MixerMutex);
-   if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
+   auto self = (extAudio *)Audio;
+   std::lock_guard mixer_lock(self->MixerMutex);
+   auto channel = self->GetChannel(Handle);
+   if (!channel) return ERR::OutOfRange;
 
 #ifdef AUDIO_WORKER
    if (!glAudioWorker) {
-      auto self = (extAudio *)Audio;
       if (self->StopWorker) return ERR::NotInitialised;
       if (self->PendingCount >= self->PendingCommands.size()) return ERR::BufferOverflow;
       self->PendingCommands[self->PendingCount++] = AudioCommand(CMD::STOP, Handle);
@@ -847,26 +791,54 @@ ERR MixStop(objAudio *Audio, int Handle)
 
    log.traceBranch("Audio: #%d, Channel: $%.8x", Audio->UID, Handle);
 
-   if ((!Audio) or (!Handle)) return log.warning(ERR::NullArgs);
-
-   auto channel = ((extAudio *)Audio)->GetChannel(Handle);
-
-   ((extAudio *)Audio)->finish(*channel, true);
+   // A paused playback has not concluded, so it still receives its single completion notification.
+   if (channel->Paused) channel->State = channel->ResumeState;
+   self->finish(*channel, true);
    channel->State = CHS::STOPPED;
 
    if ((Audio->Flags & ADF::OVER_SAMPLING) != ADF::NIL) {
-      auto shadow = ((extAudio *)Audio)->GetShadow(Handle);
+      auto shadow = self->GetShadow(Handle);
       shadow->State = CHS::STOPPED;
    }
 
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-// Pause a channel without completing its current playback.  This is internal because the public mixer API uses
-// MixStop() for terminal stops.
+/*********************************************************************************************************************
 
-static ERR pause_channel(objAudio *Audio, int Handle)
+-FUNCTION-
+MixPause: Suspends playback on a channel without ending it.
+
+This function suspends a playing or released channel.  The playback position, loop phase, direction and release state
+are preserved, and ~MixContinue() resumes from exactly that point.  No `OnStop` notification is delivered, because the
+playback has not ended.
+
+Pausing a channel that is already paused, stopped or finished has no effect and returns `Okay`.  While paused, a
+channel can still be released with ~MixRelease(), which takes effect on resumption (or ends the note immediately for
+loop modes where release ends it).  ~MixStop() terminates a paused playback, and ~MixPlay() replaces it.
+
+Streams continue to prefetch source data while paused.
+
+On worker backends, `Okay` reports queue admission; the command is applied before a subsequent render period.
+
+-INPUT-
+obj(Audio) Audio: The target Audio object.
+int Handle: The target channel.
+
+-ERRORS-
+Okay
+NullArgs
+OutOfRange
+NotInitialised
+BufferOverflow
+
+-TAGS-
+mutates-object
+-END-
+
+*********************************************************************************************************************/
+
+ERR MixPause(objAudio *Audio, int Handle)
 {
    if (!Audio or !Handle) return ERR::NullArgs;
    auto self = (extAudio *)Audio;
@@ -884,18 +856,41 @@ static ERR pause_channel(objAudio *Audio, int Handle)
    }
 #endif
 
-   channel->State = CHS::STOPPED;
-   if ((Audio->Flags & ADF::OVER_SAMPLING) != ADF::NIL) self->GetShadow(Handle)->State = CHS::STOPPED;
+   AudioLog log(__FUNCTION__);
+
+   log.traceBranch("Audio: #%d, Channel: $%.8x", Audio->UID, Handle);
+
+   if ((channel->State != CHS::PLAYING) and (channel->State != CHS::RELEASED)) return ERR::Okay;
+
+   channel->ResumeState = channel->State;
+   channel->State  = CHS::STOPPED;
+   channel->Paused = true;
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 
 -FUNCTION-
-MixStopLoop: Cancels any playback loop configured for a channel.
+MixRelease: Releases the note playing on a channel.
 
-This function will cancel the loop that is associated with the channel identified by Handle if in playback mode.
-The existing loop configuration will remain intact if playback is restarted.
+This function signals a note release (a 'key-off') to a playing or paused channel.  The effect depends on the loop
+mode of the channel's sample, as described by the !LOOP constants:
+
+<list type="bullet">
+<li>`SINGLE_RELEASE`: Playback leaves the loop when it next reaches the loop end, then plays the remaining sample
+data.</li>
+<li>`DOUBLE`: Playback moves to the second loop when it next reaches the end of the first loop.</li>
+<li>All other resident samples, including `SINGLE`, the Amiga modes and samples without a loop: the note ends
+immediately and the `OnStop` notification is delivered.  In oversampling mode the audible output fades out.</li>
+<li>Streams: playback leaves the stream loop and drains the remaining source data up to the loop end, then finishes.
+A stream without a loop is unaffected.</li>
+</list>
+
+A release applies to the current playback only.  The sample's loop configuration is never modified, and the next
+~MixPlay() starts unreleased in the first loop.  If the channel is paused, the release is retained and takes effect
+when ~MixContinue() resumes it.  A channel that is already released, stopped or finished is unaffected.
+
+On worker backends, `Okay` reports queue admission; the command is applied before a subsequent render period.
 
 -INPUT-
 obj(Audio) Audio: The target Audio object.
@@ -904,6 +899,9 @@ int Handle: The target channel.
 -ERRORS-
 Okay
 NullArgs
+OutOfRange
+NotInitialised
+BufferOverflow
 
 -TAGS-
 mutates-object
@@ -911,18 +909,19 @@ mutates-object
 
 *********************************************************************************************************************/
 
-ERR MixStopLoop(objAudio *Audio, int Handle)
+ERR MixRelease(objAudio *Audio, int Handle)
 {
    if (!Audio or !Handle) return ERR::NullArgs;
-   std::lock_guard mixer_lock(((extAudio *)Audio)->MixerMutex);
-   if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
+   auto self = (extAudio *)Audio;
+   std::lock_guard mixer_lock(self->MixerMutex);
+   auto channel = self->GetChannel(Handle);
+   if (!channel) return ERR::OutOfRange;
 
 #ifdef AUDIO_WORKER
    if (!glAudioWorker) {
-      auto self = (extAudio *)Audio;
       if (self->StopWorker) return ERR::NotInitialised;
       if (self->PendingCount >= self->PendingCommands.size()) return ERR::BufferOverflow;
-      self->PendingCommands[self->PendingCount++] = AudioCommand(CMD::STOP_LOOPING, Handle);
+      self->PendingCommands[self->PendingCount++] = AudioCommand(CMD::RELEASE, Handle);
       wake_audio(self);
       return ERR::Okay;
    }
@@ -932,18 +931,17 @@ ERR MixStopLoop(objAudio *Audio, int Handle)
 
    log.traceBranch("Audio: #%d, Channel: $%.8x", Audio->UID, Handle);
 
-   if ((!Audio) or (!Handle)) return log.warning(ERR::NullArgs);
+   const bool paused = channel->Paused;
+   if ((paused ? channel->ResumeState : channel->State) != CHS::PLAYING) return ERR::Okay;
 
-   auto channel = ((extAudio *)Audio)->GetChannel(Handle);
-   if (channel->State != CHS::PLAYING) return ERR::Okay;
+   auto &sample = self->Samples[channel->SampleHandle];
 
-   auto &sample = ((extAudio *)Audio)->Samples[channel->SampleHandle];
-
+   if (sample.Stream) { // Streams stay PLAYING; the release is tracked against the stream's current playback.
+      if (!sample.streamLoops()) return ERR::Okay;
+      sample.Released = true;
 #ifdef AUDIO_WORKER
-   if (sample.Stream) {
       ++sample.Generation;
       sample.DeferredStops = 0;
-      sample.Loop2Type = LTYPE::NIL;
       if (sample.StreamLengthKnown) {
          sample.Ring.Used = std::min(sample.Ring.Used,
             size_t(std::max<int64_t>(0, sample.StreamLength - sample.PlayPos)));
@@ -953,15 +951,26 @@ ERR MixStopLoop(objAudio *Audio, int Handle)
       sample.Refilling = sample.RefillPending = false;
       sample.EndOfSource = sample.StreamLengthKnown and sample.SourceOffset >= sample.StreamLength;
       sample.Prefilled = true;
-      if (!sample.EndOfSource) request_stream((extAudio *)Audio, sample);
+      if (!sample.EndOfSource) request_stream(self, sample);
+#endif
       return ERR::Okay;
    }
-#endif
 
    if ((sample.LoopMode IS LOOP::SINGLE_RELEASE) or (sample.LoopMode IS LOOP::DOUBLE)) {
-      channel->State = CHS::RELEASED;
+      if (paused) channel->ResumeState = CHS::RELEASED;
+      else channel->State = CHS::RELEASED;
+      return ERR::Okay;
    }
 
+   // Every other loop mode ends the note.  The fade-out copy belongs to the superseded generation so that only this
+   // playback's completion is notified.
+
+   if (paused) channel->State = channel->ResumeState;
+   else {
+      fade_out(self, Handle);
+      ++channel->PlaybackGeneration;
+   }
+   self->finish(*channel, true);
    return ERR::Okay;
 }
 

@@ -130,7 +130,10 @@ static void stop_audio_worker(extAudio *Self)
    }
    for (auto &set : Self->Sets) {
       set.Commands.clear();
-      for (auto &channel : set.Channel) channel.State = CHS::STOPPED;
+      for (auto &channel : set.Channel) {
+         channel.State = CHS::STOPPED;
+         channel.Paused = false;
+      }
       for (auto &channel : set.Shadow) channel.State = CHS::STOPPED;
    }
    Self->reset_lag();
