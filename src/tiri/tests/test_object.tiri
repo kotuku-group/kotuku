@@ -538,3 +538,39 @@ value = obj.new('file')
    broad = obj.new('file')
    assert(broad.class.name is 'File', 'An explicit obj annotation should accept either object class')
 end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Assigning a number to a string field converts a copy; the source variable must remain a number.  Previously the
+-- source register was rewritten in place, which also tripped the JIT recorder's slot type check in hot loops.
+
+@Test function StringFieldKeepsNumberSource()
+   local typed = obj.new('file')
+   local x = 5
+   typed.path = x
+   assert(type(x) is 'number' and x is 5, 'Fast-path field write changed the source to ' .. type(x))
+   assert(typed.path is '5', 'The field must receive the number converted to a string')
+
+   local dynamic:any = obj.new('file')
+   local y = 7.5
+   dynamic.path = y
+   assert(type(y) is 'number' and y is 7.5, 'Dynamic field write changed the source to ' .. type(y))
+   assert(dynamic.path is '7.5', 'Dynamic field write must convert the number to a string')
+
+   local total = 0
+   for i in {1 to 200} do
+      typed.path = i
+      total += i
+   end
+   assert(total is 19900, 'Loop variable must stay numeric while written to a string field')
+end
+
+@Test function StringFieldNumberInitialisers()
+   local source = 5
+   local config = obj.new('config', { name=source })
+   assert(config.name is '5', 'Object initialisation must convert a numeric string-field value')
+   assert(type(source) is 'number' and source is 5, 'Object initialisation must preserve the source number')
+
+   local child = config.new('config', { name=7 })
+   assert(child.name is '7', 'Child initialisation must convert a numeric string-field value')
+   assert(child.owner.id is config.id, 'Child initialisation must preserve the owner')
+end
