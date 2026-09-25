@@ -963,7 +963,7 @@ struct AudioBase {
    ERR (*_MixStop)(objAudio *Audio, int Handle);
    ERR (*_MixStopLoop)(objAudio *Audio, int Handle);
    ERR (*_MixVolume)(objAudio *Audio, int Handle, double Volume);
-   ERR (*_MixSubmitBatch)(objAudio *Audio, const std::span<const struct AudioMixCommand> &Commands);
+   ERR (*_MixSubmitBatch)(objAudio *Audio, const std::span<const struct AudioMixCommand> &Commands, FUNCTION *OnComplete);
 #endif // KOTUKU_STATIC
 };
 
@@ -980,7 +980,7 @@ inline ERR MixSample(objAudio *Audio, int Handle, int Sample) { return AudioBase
 inline ERR MixStop(objAudio *Audio, int Handle) { return AudioBase->_MixStop(Audio,Handle); }
 inline ERR MixStopLoop(objAudio *Audio, int Handle) { return AudioBase->_MixStopLoop(Audio,Handle); }
 inline ERR MixVolume(objAudio *Audio, int Handle, double Volume) { return AudioBase->_MixVolume(Audio,Handle,Volume); }
-inline ERR MixSubmitBatch(objAudio *Audio, const std::span<const struct AudioMixCommand> &Commands) { return AudioBase->_MixSubmitBatch(Audio,Commands); }
+inline ERR MixSubmitBatch(objAudio *Audio, const std::span<const struct AudioMixCommand> &Commands, FUNCTION *OnComplete) { return AudioBase->_MixSubmitBatch(Audio,Commands,OnComplete); }
 } // namespace
 #else
 namespace snd {
@@ -994,6 +994,6 @@ extern ERR MixSample(objAudio *Audio, int Handle, int Sample);
 extern ERR MixStop(objAudio *Audio, int Handle);
 extern ERR MixStopLoop(objAudio *Audio, int Handle);
 extern ERR MixVolume(objAudio *Audio, int Handle, double Volume);
-extern ERR MixSubmitBatch(objAudio *Audio, const std::span<const struct AudioMixCommand> &Commands);
+extern ERR MixSubmitBatch(objAudio *Audio, const std::span<const struct AudioMixCommand> &Commands, FUNCTION *OnComplete);
 } // namespace
 #endif // KOTUKU_STATIC

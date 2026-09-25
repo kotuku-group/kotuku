@@ -19,6 +19,7 @@ using namespace kt;
 #include "audio_worker.h"
 #endif
 #include "mixer_dispatch.h"
+#include "audio_completions.h"
 
 #define MIX_INTERVAL 0.01
 
@@ -171,6 +172,9 @@ struct AudioSample {
 //********************************************************************************************************************
 
 struct AudioCommand {
+   int CompletionSlot = -1;
+   int CommandIndex = 0;
+   ERR DeferredError = ERR::Okay;
    CMD  CommandID;    // Command ID
    int Handle;       // Channel handle
    std::variant<double,int,bool> Data; // Special data related to the command ID
@@ -347,6 +351,9 @@ class extAudio : public objAudio {
    std::recursive_mutex &MixerMutex = *MixerLock;
    std::shared_ptr<AudioEffectChain> GlobalEffects = std::make_shared<AudioEffectChain>(MixerLock);
    int StreamBufferMs = 1000; // Source prefetch duration; independent of output latency.
+   AudioCompletions BatchCompletions;
+   TIMER BatchTimer = nullptr;
+   bool DispatchingBatches = false;
    std::vector<ChannelSet> Sets; // Channels are grouped into sets.  Index 0 is a dummy entry.
    std::vector<AudioSample> Samples; // Buffered samples loaded into the audio object.
    std::vector<VolumeCtl> Volumes;
@@ -460,6 +467,10 @@ class extSound : public objSound {
 
 //********************************************************************************************************************
 
+static void execute_audio_command(extAudio *, const AudioCommand &);
+static void cancel_audio_batches(extAudio *, unsigned = 0);
+static ERR audio_batch_timer(extAudio *, int64_t, int64_t);
+
 #ifdef AUDIO_WORKER
 static thread_local bool glAudioWorker = false;
 
@@ -487,7 +498,6 @@ static void notify_audio(extAudio *Self)
 #endif
 }
 
-static void execute_audio_command(extAudio *, const AudioCommand &);
 static ERR start_audio_worker(extAudio *);
 static void stop_audio_worker(extAudio *);
 static void request_stream(extAudio *, AudioSample &);

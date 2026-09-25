@@ -69,12 +69,37 @@ period (and by synchronous Sound queries); they can overtake queued batches, eve
 without a worker, individual Mix calls execute immediately.
 
 Successful submission means queue admission, not successful playback or audible output.  A failed command does not
-roll back earlier commands or prevent later commands in the batch from running.  Closing the channel set discards
-its queued batches.  Existing sample lifetime rules apply; keep referenced samples alive until execution.
+roll back earlier commands or prevent later commands in the batch from running.
+
+The optional `OnComplete` callback receives `(Audio, Error, FailedCommand)` once all commands have executed or been
+cancelled.  `Error` is `Okay` on success and `FailedCommand` is -1.  Otherwise they identify the first failing command's
+error and zero-based array index.  Completion acknowledges application to mixer state, not audible output.  Native
+callbacks have the signature `void Callback(objAudio *Audio, ERR Error, int FailedCommand, APTR Meta)`.
+
+Callbacks run through the client event loop, outside the mixer mutex, never inline during submission or on the render
+worker.  They may submit more batches or deactivate Audio.  Notifications follow completion order; batches within a
+set execute FIFO, while different sets have independent boundaries.  Use a closure or native callback metadata to
+associate the notification with caller-owned batch state.  No callback is delivered for a rejected submission.
+
+Callback storage is reserved before admission.  Up to 1024 batches with callbacks may be awaiting execution or
+delivery per Audio object; exhaustion rejects admission with `BufferOverflow`.  Delivery releases storage
+automatically.  A `NULL` callback uses no completion slot.  The event loop must run to deliver notifications.
+
+Closing a channel set or deactivating Audio cancels its queued batches with `Cancelled` and failed index zero.
+Already completed results remain unchanged.  Notifications remain deliverable after deactivation and are independent
+of channel lifetime.  Removing a sample drains the single-command FIFO, then invalidates queued batch sample
+selections referencing it: they fail with `NoData` even if the sample slot is reused.  Other batch commands continue.
+Keep samples alive until completion when successful playback is required.
+
+The callback context is weakly pinned for stale-reference detection.  Destruction of that context suppresses delivery.
+Freeing Audio discards pending callbacks without invoking application code; deactivate Audio and process notifications
+before freeing it if cancellation reporting is required.  Device recovery may delay execution until it succeeds or
+shutdown cancels the queued batches.
 
 -INPUT-
 obj(Audio) Audio: The target Audio object.
 array(struct(AudioMixCommand)) Commands: Commands to copy into one channel set's queue.
+ptr(func) OnComplete: Optional completion callback; pass NULL when no execution acknowledgement is needed.
 
 -ERRORS-
 Okay
@@ -83,6 +108,8 @@ OutOfRange
 Args
 BufferOverflow
 NotInitialised
+InvalidState
+SystemLocked
 
 -TAGS-
 mutates-object, copies-input
@@ -90,11 +117,19 @@ mutates-object, copies-input
 
 *********************************************************************************************************************/
 
-ERR MixSubmitBatch(objAudio *Audio, const std::span<const AudioMixCommand> &Commands)
+ERR MixSubmitBatch(objAudio *Audio, const std::span<const AudioMixCommand> &Commands, FUNCTION *OnComplete)
 {
+   bool retained_callback = false;
+   auto consume_callback = kt::Defer([&]() {
+      if (OnComplete and !retained_callback) OnComplete->consume();
+   });
    if (!Audio or Commands.empty()) return ERR::NullArgs;
+   const bool callback = OnComplete and OnComplete->defined();
+   if (callback and (!OnComplete->Context or (!OnComplete->isC() and !OnComplete->isScript()))) return ERR::Args;
+   if (callback and OnComplete->stale()) return ERR::InvalidState;
    auto self = (extAudio *)Audio;
    std::lock_guard mixer_lock(self->MixerMutex);
+   if (self->collecting()) return ERR::InvalidState;
 
 #ifdef AUDIO_WORKER
    if (self->StopWorker) return ERR::NotInitialised;
@@ -102,7 +137,29 @@ ERR MixSubmitBatch(objAudio *Audio, const std::span<const AudioMixCommand> &Comm
 
    const auto index = unsigned(Commands.front().Handle) >> 16;
    if (!index or index >= self->Sets.size()) return ERR::OutOfRange;
-   auto result = submit_audio_batch(self->Sets[index], index, Commands);
+   if (callback and self->BatchCompletions.pending() >= 1024) return ERR::BufferOverflow;
+   auto &set = self->Sets[index];
+   const auto start = set.Commands.size();
+   auto result = submit_audio_batch(set, index, Commands);
+   if (result != ERR::Okay) return result;
+
+   if (callback) {
+      if (!self->BatchTimer) {
+         kt::SwitchContext context(self);
+         if (auto error = SubscribeTimer(0.01, C_FUNCTION(audio_batch_timer), &self->BatchTimer); error != ERR::Okay) {
+            set.Commands.resize(start);
+            return error;
+         }
+      }
+      // Capacity was checked under this same lock.  The worker only publishes outcomes into reserved slots.
+      const int slot = self->BatchCompletions.reserve(Commands.size(), *OnComplete);
+      OnComplete->pin();
+      retained_callback = true;
+      for (size_t i = 0; i < Commands.size(); ++i) {
+         set.Commands[start + i].CompletionSlot = slot;
+         set.Commands[start + i].CommandIndex = int(i);
+      }
+   }
 
 #ifdef AUDIO_WORKER
    if (result IS ERR::Okay) wake_audio(self);

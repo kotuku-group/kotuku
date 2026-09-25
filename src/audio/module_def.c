@@ -11,7 +11,7 @@ extern ERR MixSample(objAudio * Audio, int Handle, int Sample);
 extern ERR MixStop(objAudio * Audio, int Handle);
 extern ERR MixStopLoop(objAudio * Audio, int Handle);
 extern ERR MixVolume(objAudio * Audio, int Handle, double Volume);
-extern ERR MixSubmitBatch(objAudio * Audio, const std::span<const struct AudioMixCommand> &Commands);
+extern ERR MixSubmitBatch(objAudio * Audio, const std::span<const struct AudioMixCommand> &Commands, FUNCTION * OnComplete);
 
 } // namespace
 #ifndef FDEF
@@ -26,7 +26,7 @@ FDEF argsMixPlay[] = { { "Error", FD_INT|FD_ERROR }, { "Audio", FD_OBJECTPTR }, 
 FDEF argsMixSample[] = { { "Error", FD_INT|FD_ERROR }, { "Audio", FD_OBJECTPTR }, { "Handle", FD_INT }, { "Sample", FD_INT }, { 0, 0 } };
 FDEF argsMixStop[] = { { "Error", FD_INT|FD_ERROR }, { "Audio", FD_OBJECTPTR }, { "Handle", FD_INT }, { 0, 0 } };
 FDEF argsMixStopLoop[] = { { "Error", FD_INT|FD_ERROR }, { "Audio", FD_OBJECTPTR }, { "Handle", FD_INT }, { 0, 0 } };
-FDEF argsMixSubmitBatch[] = { { "Error", FD_INT|FD_ERROR }, { "Audio", FD_OBJECTPTR }, { "AudioMixCommand:Commands", FDF_SPAN|FD_STRUCT }, { 0, 0 } };
+FDEF argsMixSubmitBatch[] = { { "Error", FD_INT|FD_ERROR }, { "Audio", FD_OBJECTPTR }, { "AudioMixCommand:Commands", FDF_SPAN|FD_STRUCT }, { "OnComplete", FD_FUNCTIONPTR }, { 0, 0 } };
 FDEF argsMixTempo[] = { { "Error", FD_INT|FD_ERROR }, { "Audio", FD_OBJECTPTR }, { "Handle", FD_INT }, { "Tempo", FD_INT }, { 0, 0 } };
 FDEF argsMixVolume[] = { { "Error", FD_INT|FD_ERROR }, { "Audio", FD_OBJECTPTR }, { "Handle", FD_INT }, { "Volume", FD_DOUBLE }, { 0, 0 } };
 

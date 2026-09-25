@@ -11,6 +11,43 @@
 
 int main()
 {
+   // Completion storage is bounded and releases capacity only when delivery takes ownership.
+   AudioCompletions completions;
+   FUNCTION callback;
+   int first_slot = completions.reserve(3, callback);
+   int second_slot = completions.reserve(1, callback);
+   AudioCompletions::Entry result;
+   assert(!completions.take(result));
+   completions.complete(first_slot, 0, ERR::Okay);
+   completions.complete(first_slot, 1, ERR::NoData);
+   assert(!completions.take(result));
+   completions.complete(second_slot, 0, ERR::Okay);
+   completions.complete(first_slot, 2, ERR::Cancelled);
+   completions.complete(first_slot, 2, ERR::Cancelled); // Do not publish twice.
+   assert(completions.available() IS 2);
+   assert(completions.take(result) and result.Error IS ERR::Okay and result.FailedCommand IS -1);
+   assert(completions.take(result) and result.Error IS ERR::NoData and result.FailedCommand IS 1);
+   assert(completions.pending() IS 0 and !completions.take(result));
+   for (int i = 0; i < 1024; ++i) {
+      int slot = completions.reserve(1, callback);
+      assert(slot >= 0);
+      completions.complete(slot, 0, ERR::Cancelled);
+   }
+   assert(completions.reserve(1, callback) IS -1);
+   assert(completions.take(result) and result.Error IS ERR::Cancelled and result.FailedCommand IS 0);
+   int slot = completions.reserve(1, callback);
+   assert(slot >= 0);
+   completions.complete(slot, 0, ERR::Okay);
+   for (int i = 0; i < 1023; ++i) {
+      assert(completions.take(result) and result.Error IS ERR::Cancelled);
+   }
+   assert(completions.take(result) and result.Error IS ERR::Okay);
+   assert(completions.pending() IS 0);
+   assert(completions.reserve(1, callback) >= 0);
+   int released = 0;
+   completions.clear([&](FUNCTION &) { ++released; });
+   assert(released IS 1 and completions.pending() IS 0 and completions.available() IS 0);
+
    ChannelSet set;
    set.Channel.resize(2);
    set.Commands.reserve(1024);
