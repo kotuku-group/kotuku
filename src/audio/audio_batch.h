@@ -31,9 +31,9 @@ static ERR submit_audio_batch(ChannelSet &Set, unsigned Index, std::span<const A
             if (value < 0) return ERR::OutOfRange;
             staged[count++] = AudioCommand(CMD::PLAY, handle, value);
             break;
-         case MIX::RATE:
+         case MIX::TEMPO:
             if (value < 1 or value > 100000) return ERR::OutOfRange;
-            staged[count++] = AudioCommand(CMD::RATE, handle, value);
+            staged[count++] = AudioCommand(CMD::TEMPO, handle, value);
             break;
          case MIX::SAMPLE:
             if (value <= 0) return ERR::OutOfRange;
@@ -64,4 +64,15 @@ static void execute_next_audio_batch(ChannelSet &Set, ApplyCommand Apply)
       Apply(command);
    }
    Set.Commands.erase(Set.Commands.begin(), Set.Commands.begin() + count);
+}
+
+// Rendering stops at each boundary.  Apply its batch before scheduling the following tick.
+template<typename ApplyCommand>
+static void advance_audio_tick(ChannelSet &Set, SAMPLE Frames, int OutputRate, ApplyCommand Apply)
+{
+   if (Set.Channel.empty()) return;
+   Set.MixLeft -= Frames;
+   if (Set.MixLeft > 0) return;
+   execute_next_audio_batch(Set, Apply);
+   Set.MixLeft = Set.TickFrames(OutputRate);
 }

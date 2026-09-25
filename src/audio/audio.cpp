@@ -215,6 +215,7 @@ static ERR MODExpunge(void)
 //********************************************************************************************************************
 
 static ModHeader::STRUCTS glStructures = {
+   { "AudioMixCommand", { sizeof(AudioMixCommand), alignof(AudioMixCommand) } },
    { "AudioLoop", { sizeof(AudioLoop), alignof(AudioLoop) } }
 };
 

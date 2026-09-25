@@ -165,27 +165,6 @@ mixing.</li>
   </function>
 
   <function>
-    <name>MixRate</name>
-    <comment>Sets a new update rate for a channel.</comment>
-    <prototype>ERR snd::MixRate(objAudio * Audio, INT Handle, INT Rate)</prototype>
-    <tiriPrototype>err = MixRate(Audio:obj, Handle:num, Rate:num)</tiriPrototype>
-    <tags>mutates-object</tags>
-    <input>
-      <param type="objAudio *" name="Audio">The target Audio object.</param>
-      <param type="INT" name="Handle">The channel set allocated from OpenChannels().</param>
-      <param type="INT" name="Rate">The new update rate in milliseconds.</param>
-    </input>
-    <description>
-<p>This function will set a new update rate for all channels, measured in milliseconds.  The default update rate is 125, which is equivalent to 5000Hz.</p>
-    </description>
-    <result type="ERR">
-      <error code="Okay">Operation successful.</error>
-      <error code="OutOfRange">A value is outside of the valid range</error>
-      <error code="NullArgs">Function call missing argument value(s)</error>
-    </result>
-  </function>
-
-  <function>
     <name>MixSample</name>
     <comment>Associate a sound sample with a mixer channel.</comment>
     <prototype>ERR snd::MixSample(objAudio * Audio, INT Handle, INT Sample)</prototype>
@@ -258,14 +237,41 @@ mixing.</li>
       <param type="std::span&lt;const struct AudioMixCommand&gt;" name="Commands">Commands to copy into one channel set's queue.</param>
     </input>
     <description>
-<p>Commands is a caller-owned array of <st>AudioMixCommand</st> records.  Submission copies the complete array or rejects it without publishing any commands.  The caller can then modify or discard its array.  Constructing or abandoning an array does not change any channel state.  This replaces MixStartSequence() and MixEndSequence().</p>
+<p>This function submits a list of mixer commands in a single batch.  <code>Commands</code> is an array of <st>AudioMixCommand</st> records.  Submission takes a copy of the complete array, or rejects it without publishing any commands.</p>
 <p>All commands must address live channels in the same channel set.  At most 1023 commands can be submitted at once; the set's queue holds 1024 entries, including one internal boundary entry per batch.  Invalid command types, channels or numeric arguments reject the entire batch.  Sample availability and playback state are checked at execution time.</p>
-<p>Batches execute in submission order within their set, one batch per mixer update boundary determined by <function>MixRate</function>. Commands execute in array order without rendering frames or executing another producer's commands between them. Different sets have independent update boundaries.  On worker backends, individual Mix calls use a separate FIFO which is drained before rendering each period (and by synchronous Sound queries); they can overtake queued batches, even when submitted later.  On backends without a worker, individual Mix calls execute immediately.</p>
+<p>Batches execute in submission order within their set, with one batch per mixer update boundary as determined by <function>MixTempo</function>.  Commands execute in array order without rendering frames.  Different sets have independent update boundaries.  On worker backends, individual Mix calls use a separate FIFO which is drained before rendering each period (and by synchronous Sound queries); they can overtake queued batches, even when submitted later.  On backends without a worker, individual Mix calls execute immediately.</p>
 <p>Successful submission means queue admission, not successful playback or audible output.  A failed command does not roll back earlier commands or prevent later commands in the batch from running.  Closing the channel set discards its queued batches.  Existing sample lifetime rules apply; keep referenced samples alive until execution.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Args">Invalid arguments passed to function</error>
+      <error code="OutOfRange">A value is outside of the valid range</error>
+      <error code="BufferOverflow">A buffer overflow has occurred</error>
+      <error code="NotInitialised">The resource has not been initialised</error>
+      <error code="NullArgs">Function call missing argument value(s)</error>
+    </result>
+  </function>
+
+  <function>
+    <name>MixTempo</name>
+    <comment>Sets the tracker tempo for a channel set.</comment>
+    <prototype>ERR snd::MixTempo(objAudio * Audio, INT Handle, INT Tempo)</prototype>
+    <tiriPrototype>err = MixTempo(Audio:obj, Handle:num, Tempo:num)</tiriPrototype>
+    <tags>mutates-object</tags>
+    <input>
+      <param type="objAudio *" name="Audio">The target Audio object.</param>
+      <param type="INT" name="Handle">The channel set allocated from OpenChannels(), or any live channel in that set.</param>
+      <param type="INT" name="Tempo">Tracker tempo from 1 to 100000 BPM inclusive.</param>
+    </input>
+    <description>
+<p>Sets the tempo in beats per minute (BPM), with 24 mixer ticks per beat.  Each tick is one channel-set update boundary at which one queued batch can execute.  The default tempo is 125 BPM: 50 ticks per second, or 20 ms per tick before frame rounding.  This setting affects every channel in the selected set.</p>
+<p>The ideal tick length is OutputRate * 2.5 / Tempo frames.  Round to the nearest even frame count, with exact odd-frame ties rounded upwards, then enforce a minimum of two frames.  Equivalently:</p>
+<pre>frames = max(2, 2 * floor((floor(OutputRate * 5 / (Tempo * 2)) + 1) / 2))</pre>
+<p>The actual tick duration is frames / OutputRate seconds.  At 125 BPM, output rates of 22050, 44100 and 48000 Hz produce 442, 882 and 960 frames respectively.  At 44100 Hz and 128 BPM, each tick contains 862 frames.</p>
+<p>A change preserves the frames remaining in the current tick.  The next tick scheduled after the command executes uses the new tempo.  A tempo command inside <function>MixSubmitBatch</function> therefore controls the interval immediately following that batch; if several tempo commands occur in a batch, the last one wins.  Worker-backed calls return <code>Okay</code> on queue admission and apply the command before a subsequent render period (or when a synchronous query drains the queue).  Already rendered audio is unaffected.  Other backends apply the command immediately.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
       <error code="OutOfRange">A value is outside of the valid range</error>
       <error code="BufferOverflow">A buffer overflow has occurred</error>
       <error code="NotInitialised">The resource has not been initialised</error>
@@ -321,10 +327,10 @@ mixing.</li>
       <const name="MUTE">Set mute using Integer (zero is unmuted).</const>
       <const name="PAN">Set pan using Value (-1 to 1, clamped).</const>
       <const name="PLAY">Start playback at byte position Integer (non-negative).</const>
-      <const name="RATE">Set the channel set's update rate using Integer (1 to 100000).</const>
       <const name="SAMPLE">Select sample handle Integer (positive).</const>
       <const name="STOP">Stop playback; arguments ignored.</const>
       <const name="STOP_LOOP">Release looping; arguments ignored.</const>
+      <const name="TEMPO">Set channel-set tracker tempo using Integer (1 to 100000 BPM; 24 ticks per beat).</const>
       <const name="VOLUME">Set gain using Value (0 to 1, clamped).</const>
     </constants>
 

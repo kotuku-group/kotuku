@@ -15,7 +15,7 @@ static void execute_audio_command(extAudio *Self, const AudioCommand &Command)
       case CMD::PLAY: snd::MixPlay(Self, Command.Handle, std::get<int>(Command.Data)); break;
       case CMD::FREQUENCY: snd::MixFrequency(Self, Command.Handle, std::get<int>(Command.Data)); break;
       case CMD::PAN: snd::MixPan(Self, Command.Handle, std::get<double>(Command.Data)); break;
-      case CMD::RATE: snd::MixRate(Self, Command.Handle, std::get<int>(Command.Data)); break;
+      case CMD::TEMPO: snd::MixTempo(Self, Command.Handle, std::get<int>(Command.Data)); break;
       case CMD::SAMPLE: snd::MixSample(Self, Command.Handle, std::get<int>(Command.Data)); break;
       case CMD::VOLUME: snd::MixVolume(Self, Command.Handle, std::get<double>(Command.Data)); break;
       case CMD::STOP: snd::MixStop(Self, Command.Handle); break;
