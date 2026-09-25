@@ -410,7 +410,7 @@ static ERR SOUND_Activate(extSound *Self)
          int i;
          for (i=0; i < audio->MaxChannels; i++) {
             if (auto candidate = audio->GetChannel(Self->ChannelIndex)) {
-               if (candidate->isStopped()) {
+               if (candidate->isStopped() and !candidate->Paused) {
                   channel = candidate;
                   break;
                }
@@ -514,7 +514,7 @@ static ERR SOUND_Disable(extSound *Self)
       flush_audio_commands(*audio);
       #endif
       if (auto channel = audio->GetChannel(Self->ChannelIndex)) {
-         if (channel->SampleHandle IS Self->Handle) snd::pause_channel(*audio, Self->ChannelIndex);
+         if (channel->SampleHandle IS Self->Handle) snd::MixPause(*audio, Self->ChannelIndex);
       }
    }
    else return log.warning(ERR::AccessObject);
@@ -1587,8 +1587,10 @@ static const FieldArray clFields[] = {
    { "Volume",         FDF_DOUBLE|FDF_RW, nullptr, SOUND_SET_Volume },
    { "Pan",            FDF_DOUBLE|FDF_RW, nullptr, SOUND_SET_Pan },
    { "Position",       FDF_INT64|FDF_RW, nullptr, SOUND_SET_Position },
-   { "Priority",       FDF_INT|FDF_RW, nullptr, SOUND_SET_Priority },
    { "Length",         FDF_INT64|FDF_RW, nullptr, SOUND_SET_Length },
+   { "LoopStart",      FDF_INT64|FDF_RW },
+   { "LoopEnd",        FDF_INT64|FDF_RW },
+   { "Priority",       FDF_INT|FDF_RW, nullptr, SOUND_SET_Priority },
    { "Octave",         FDF_INT|FDF_RW, nullptr, SOUND_SET_Octave },
    { "Flags",          FDF_INTFLAGS|FDF_RW, nullptr, SOUND_SET_Flags, &clSoundFlags },
    { "Frequency",      FDF_INT|FDF_RI },
@@ -1597,8 +1599,6 @@ static const FieldArray clFields[] = {
    { "BytesPerSecond", FDF_INT|FDF_RW },
    { "BitsPerSample",  FDF_INT|FDF_RW },
    { "Audio",          FDF_OBJECTID|FDF_RI },
-   { "LoopStart",      FDF_INT64|FDF_RW },
-   { "LoopEnd",        FDF_INT64|FDF_RW },
    { "Stream",         FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clSoundStream },
    { "Handle",         FDF_INT|FDF_SYSTEM|FDF_R },
    { "ChannelIndex",   FDF_INT|FDF_R },

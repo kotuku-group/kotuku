@@ -47,6 +47,7 @@ flute_test (audio_add_sample_span "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_add_sa
 
 if (ALSA_INSTALLED OR WIN32)
    flute_test (audio_batches "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_audio_batches.tiri")
+   flute_test (audio_playback_control "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_playback_control.tiri")
    flute_test (audio_effect "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_audioeffect.tiri")
    flute_test (audio_equaliser "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_audioequaliser.tiri")
    flute_test (audio_effect_schema "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_audioeffect_schema.tiri")

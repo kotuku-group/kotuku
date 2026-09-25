@@ -59,6 +59,7 @@ inline double extAudio::MixerLag() {
 }
 
 inline void extAudio::finish(AudioChannel &Channel, bool Notify) {
+   Channel.Paused = false;
    if (!Channel.isStopped()) {
       Channel.State = CHS::FINISHED;
       if ((Channel.SampleHandle) and (Notify)) {
@@ -746,6 +747,7 @@ static ERR AUDIO_RemoveSample(extAudio *Self, struct snd::RemoveSample *Args)
       for (auto &channel : set.Channel) {
          if (channel.SampleHandle IS Args->Handle) {
             channel.State = CHS::STOPPED;
+            channel.Paused = false;
             channel.SampleHandle = 0;
          }
       }

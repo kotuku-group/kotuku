@@ -51,7 +51,7 @@ enum class CMD : int {
    FREQUENCY,
    TEMPO,
    STOP,
-   STOP_LOOPING,
+   RELEASE,
    POSITION,
    PLAY,
    MUTE,
@@ -127,7 +127,11 @@ struct AudioSample {
    bool EndOfSource = false;
    #endif
    bool     StreamLengthKnown = false; // True when StreamLength is a finite source boundary.
+   bool     Released = false; // Streams only.  Playback has left the stream loop; reset by MixPlay().
    bool     Stream;       // True if this is a stream
+
+   // Stream loops use Loop2; a release suspends it for the current playback without altering the configuration.
+   inline bool streamLoops() const { return (Loop2Type != LTYPE::NIL) and (!Released); }
 
    AudioSample() {
       Stream   = false;
@@ -165,6 +169,7 @@ struct AudioSample {
       PlayPos = BYTELEN(0);
       BufferedLength = BYTELEN(0);
       StreamLengthKnown = false;
+      Released     = false;
       SampleType   = SFM::NIL;
       LoopMode     = LOOP::NIL;
       Loop1Type    = LTYPE::NIL;
@@ -219,7 +224,9 @@ struct AudioChannel {
    int      PositionLow;    // Playing position, lower bits
    int8_t   Priority;       // Priority of the sound that has been assigned to this channel
    CHS      State;          // Channel state
+   CHS      ResumeState;    // PLAYING or RELEASED; restored by MixContinue() while Paused
    int8_t   LoopIndex;      // The current active loop (either 0, 1 or 2)
+   bool     Paused;         // State is STOPPED by MixPause(); cleared by any terminal transition
 
    bool active() {
       return Frequency ? true : false;

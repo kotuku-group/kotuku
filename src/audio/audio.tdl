@@ -86,15 +86,16 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
    "FADE_OUT: Playback is fading out.")
 
   enums("MIX", { type="int", start=1, comment="Mixer batch operations." },
-    "CONTINUE: Resume playback; arguments ignored.",
+    "CONTINUE: Resume a paused channel; arguments ignored.",
     "FREQUENCY: Set playback frequency using Integer (0 to 192000 Hz).",
     "MUTE: Set mute using Integer (zero is unmuted).",
     "PAN: Set pan using Value (-1 to 1, clamped).",
+    "PAUSE: Suspend playback, preserving position, loop and release state; arguments ignored.",
     "PLAY: Start playback at byte position Integer (non-negative).",
+    "RELEASE: Release the playing note according to the sample's loop mode; arguments ignored.",
     "TEMPO: Set channel-set tracker tempo using Integer (1 to 100000 BPM; 24 ticks per beat).",
     "SAMPLE: Select sample handle Integer (positive).",
-    "STOP: Stop playback; arguments ignored.",
-    "STOP_LOOP: Release looping; arguments ignored.",
+    "STOP: End playback terminally; arguments ignored.",
     "VOLUME: Set gain using Value (0 to 1, clamped).")
 
   structdef("AudioMixCommand", { comment="One command in a caller-owned mixer batch." }, [[
@@ -173,8 +174,10 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     double Volume      # Volume of sample (0 - 100%)
     double Pan         # Horizontal positioning for playback on stereo speakers (`-100` to `+100`)
     large Position     # Byte position to start playing from
-    int Priority       # Priority over other sounds
     large Length       # Length of sample data in bytes
+    large LoopStart    # Byte position of looping start
+    large LoopEnd      # Byte position of looping end
+    int Priority       # Priority over other sounds
     int Octave         # Current octave to use for playing back notes (defaults to zero)
     int(SDF) Flags     # Sound flags
     int Frequency      # Frequency of sampled sound (nb: does not affect playback - use the Playback field)
@@ -183,8 +186,6 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     int BytesPerSecond # Bytes per second, measured as `Frequency * BytesPerSample`
     int BitsPerSample  # Usually set to `8` or `16` bit
     oid Audio          # Reference to an @Audio object to use for audio output and input
-    large LoopStart    # Byte position of looping start
-    large LoopEnd      # Byte position of looping end
     int(STREAM) Stream # Streaming type (smart by default)
     int Handle         # Audio handle acquired at the audio object [Private - Available to child classes]
     int ChannelIndex   # Channel handle that the sound was last played on
@@ -195,11 +196,12 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
      "MixFrequency",
      "MixMute",
      "MixPan",
+     "MixPause",
      "MixPlay",
+     "MixRelease",
      "MixTempo",
      "MixSample",
      "MixStop",
-     "MixStopLoop",
      "MixVolume",
      "MixSubmitBatch")
 

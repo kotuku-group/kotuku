@@ -5,7 +5,7 @@ static ERR apply_audio_command(extAudio *Self, const AudioCommand &Command)
    if (Command.DeferredError != ERR::Okay) return Command.DeferredError;
    switch (Command.CommandID) {
       case CMD::CONTINUE: return snd::MixContinue(Self, Command.Handle);
-      case CMD::PAUSE: return snd::pause_channel(Self, Command.Handle);
+      case CMD::PAUSE: return snd::MixPause(Self, Command.Handle);
       case CMD::MUTE: return snd::MixMute(Self, Command.Handle, std::get<bool>(Command.Data));
       case CMD::PLAY: return snd::MixPlay(Self, Command.Handle, std::get<int64_t>(Command.Data));
       case CMD::FREQUENCY: return snd::MixFrequency(Self, Command.Handle, std::get<int>(Command.Data));
@@ -14,7 +14,7 @@ static ERR apply_audio_command(extAudio *Self, const AudioCommand &Command)
       case CMD::SAMPLE: return snd::MixSample(Self, Command.Handle, std::get<int>(Command.Data));
       case CMD::VOLUME: return snd::MixVolume(Self, Command.Handle, std::get<double>(Command.Data));
       case CMD::STOP: return snd::MixStop(Self, Command.Handle);
-      case CMD::STOP_LOOPING: return snd::MixStopLoop(Self, Command.Handle);
+      case CMD::RELEASE: return snd::MixRelease(Self, Command.Handle);
       default: return ERR::Args;
    }
 }
@@ -168,9 +168,9 @@ static void refill_audio_stream(extAudio *Self, int Handle)
       // Loop boundaries do not end pre-roll: keep filling until the ring is full or the producer gives a short read.
       sample.Prefilled |= sample.Ring.Used >= sample.Data.size() or size_t(bytes) < source.Data.size() or
          (sample.StreamLengthKnown and sample.SourceOffset >= sample.StreamLength and
-         sample.Loop2Type IS LTYPE::NIL);
+         !sample.streamLoops());
       if (sample.StreamLengthKnown and sample.SourceOffset >= sample.StreamLength) {
-         if (sample.Loop2Type != LTYPE::NIL) {
+         if (sample.streamLoops()) {
             sample.SourceSeek = true;
             sample.SourceOffset = int64_t(sample.Loop2Start) << sample_shift(sample.SampleType);
             request_stream(Self, sample);
