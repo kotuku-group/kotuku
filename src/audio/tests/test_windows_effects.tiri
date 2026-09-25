@@ -2,8 +2,7 @@
 @if(exists='modules:audio')
 
    module audio as mAudio
-
-extern logOutput
+   extern logOutput
 
 @BeforeAll function init(State)
    global glFolder = State.folder

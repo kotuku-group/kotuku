@@ -59,6 +59,22 @@ static void interpolation(AudioTestContext &Test)
    set_mix_step(65536);
 }
 
+static void channel_gain_contract(AudioTestContext &Test)
+{
+   // The documented linear balance law, including clamped finite boundaries and mono output ignoring pan.
+   struct Case { double Volume, Pan; bool Stereo; double Left, Right; };
+   const Case cases[] = {
+      { 1.0, 0, true, 1.0, 1.0 }, { 0.5, 0, true, 0.5, 0.5 }, { 0.8, -0.25, true, 0.8, 0.6 },
+      { 0.8, 0.25, true, 0.6, 0.8 }, { 1.0, -1.0, true, 1.0, 0 }, { 1.0, 1.0, true, 0, 1.0 },
+      { 2.0, -3.0, true, 1.0, 0 }, { -0.5, 0.5, true, 0, 0 }, { 0.5, 1.0, false, 0.5, 0.5 },
+      { 1.0, -0.0, true, 1.0, 1.0 }, { 1e308, 1e308, true, 0, 1.0 }
+   };
+   for (const auto &c : cases) {
+      auto gains = channel_gains(c.Volume, c.Pan, c.Stereo);
+      AUDIO_CHECK(std::abs(gains.Left - c.Left) < 1e-12 and std::abs(gains.Right - c.Right) < 1e-12);
+   }
+}
+
 static void run(AudioTestContext &Test)
 {
    struct RestoreStep {
@@ -71,6 +87,7 @@ static void run(AudioTestContext &Test)
    unsigned_stereo(Test);
    volume_accumulation_and_position(Test);
    interpolation(Test);
+   channel_gain_contract(Test);
 }
 
 } // namespace audio_tests_mixers

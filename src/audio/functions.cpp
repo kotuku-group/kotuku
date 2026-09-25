@@ -221,6 +221,22 @@ static BYTELEN fill_stream_buffer(int Handle, AudioSample &Sample, int64_t Offse
 }
 
 //********************************************************************************************************************
+// Linear gain with a linear balance pan law.  The side being panned towards keeps the full gain and the opposite side
+// is attenuated linearly, reaching silence at -1.0 or 1.0.  The centre therefore plays both sides at full gain
+// (not constant power).  Mono output ignores pan.  Inputs are clamped to 0 - 1.0 and -1.0 - 1.0 respectively;
+// callers must reject non-finite values.
+
+struct ChannelGains { double Left, Right; };
+
+static ChannelGains channel_gains(double Volume, double Pan, bool Stereo)
+{
+   const double volume = std::clamp(Volume, 0.0, 1.0);
+   const double pan = std::clamp(Pan, -1.0, 1.0);
+   if (!Stereo) return { volume, volume };
+   return { volume * (1.0 - std::max(pan, 0.0)), volume * (1.0 + std::min(pan, 0.0)) };
+}
+
+//********************************************************************************************************************
 // Defines the L/RVolume and Ramping values for an AudioChannel.  These values are derived from the Volume and Pan.
 
 static ERR set_channel_volume(extAudio *Self, AudioChannel *Channel)
@@ -229,26 +245,16 @@ static ERR set_channel_volume(extAudio *Self, AudioChannel *Channel)
 
    if ((!Self) or (!Channel)) return log.warning(ERR::NullArgs);
 
-   if (Channel->Volume > 1.0) Channel->Volume = 1.0;
-   else if (Channel->Volume < 0) Channel->Volume = 0;
-
-   if (Channel->Pan < -1.0) Channel->Pan = -1.0;
-   else if (Channel->Pan > 1.0) Channel->Pan = 1.0;
+   Channel->Volume = std::clamp(Channel->Volume, 0.0, 1.0);
+   Channel->Pan = std::clamp(Channel->Pan, -1.0, 1.0);
 
    // Convert the volume into left/right volume parameters
 
-   double leftvol, rightvol;
-   if ((Channel->Flags & CHF::MUTE) != CHF::NIL) {
-      leftvol  = 0;
-      rightvol = 0;
-   }
-   else {
-      leftvol  = Channel->Volume;
-      rightvol = Channel->Volume;
-
-      if (!Self->Stereo);
-      else if (Channel->Pan < 0) rightvol = (Channel->Volume * (1.0 + Channel->Pan));
-      else if (Channel->Pan > 0) leftvol  = (Channel->Volume * (1.0 - Channel->Pan));
+   double leftvol = 0, rightvol = 0;
+   if ((Channel->Flags & CHF::MUTE) IS CHF::NIL) {
+      auto gains = channel_gains(Channel->Volume, Channel->Pan, Self->Stereo);
+      leftvol  = gains.Left;
+      rightvol = gains.Right;
    }
 
    // Start volume ramping if necessary

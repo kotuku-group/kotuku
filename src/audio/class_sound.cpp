@@ -1318,15 +1318,15 @@ Pan: Determines the horizontal position of a sound when played through stereo sp
 The Pan field adjusts the "horizontal position" of a sample that is being played through stereo speakers.
 The default value for this field is zero, which plays the sound through both speakers at an equal level.  The minimum
 value is `-1.0` to force play through the left speaker and the maximum value is `1.0` for the right speaker.
+Finite values outside this range are clamped, and non-finite values are rejected with `OutOfRange`.  The pan law is
+described in the Audio module's `MixPan()` function.
 
 *********************************************************************************************************************/
 
 static ERR SOUND_SET_Pan(extSound *Self, double Value)
 {
-   Self->Pan = Value;
-
-   if (Self->Pan < -1.0) Self->Pan = -1.0;
-   else if (Self->Pan > 1.0) Self->Pan = 1.0;
+   if (!std::isfinite(Value)) return ERR::OutOfRange;
+   Self->Pan = std::clamp(Value, -1.0, 1.0);
 
    if (Self->ChannelIndex) {
       kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 200);
@@ -1500,17 +1500,17 @@ adapts to changing conditions and provides the best balance for most application
 -FIELD-
 Volume: The volume to use when playing the sound sample.
 
-The field specifies the volume of a sound in the range 0 - 1.0 (low to high).  Setting this field during sample
-playback will dynamically alter the volume.
+The field specifies the volume of a sound as a linear amplitude multiplier in the range 0 (silent) to 1.0 (unity
+gain).  Finite values outside this range are clamped, and non-finite values are rejected with `OutOfRange`.  Setting
+this field during sample playback will dynamically alter the volume.
 -END-
 
 *********************************************************************************************************************/
 
 static ERR SOUND_SET_Volume(extSound *Self, double Value)
 {
-   if (Value < 0) Value = 0;
-   else if (Value > 1.0) Value = 1.0;
-   Self->Volume = Value;
+   if (!std::isfinite(Value)) return ERR::OutOfRange;
+   Self->Volume = std::clamp(Value, 0.0, 1.0);
 
    if (Self->ChannelIndex) {
       kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 200);

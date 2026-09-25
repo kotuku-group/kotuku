@@ -340,7 +340,20 @@ ERR MixFrequency(objAudio *Audio, int Handle, int Frequency)
 -FUNCTION-
 MixPan: Sets a channel's panning value.
 
-Use this function to set a mixer channel's panning value.  Accepted values are between -1.0 (left) and 1.0 (right).
+Use this function to set a mixer channel's panning value, from -1.0 (left) through 0 (centre) to 1.0 (right).
+Finite values outside this range are clamped.  Non-finite values (NaN and infinities) are rejected with
+`OutOfRange` and the channel is not modified.
+
+Panning uses a linear balance law.  The side being panned towards keeps the channel's full volume, while the
+opposite side is attenuated linearly: for a volume `V` and a pan `P` below zero, the left gain is `V` and the right
+gain is `V * (1 + P)`; above zero, the left gain is `V * (1 - P)` and the right gain is `V`.  A centred channel is
+therefore played at full volume on both sides, not at constant power.  Pan has no effect when the Audio object
+outputs in mono.
+
+The pan applies from the next mixed frame, ramping towards the new gains if both `ADF::VOL_RAMPING` and
+`ADF::OVER_SAMPLING` are enabled.  When the
+mixer runs on a worker thread, `Okay` confirms that the command was accepted for application before the next period
+is rendered.
 
 -INPUT-
 obj(Audio) Audio: The target Audio object.
@@ -350,6 +363,7 @@ double Pan: The desired pan value between -1.0 and 1.0.
 -ERRORS-
 Okay
 NullArgs
+OutOfRange: The channel handle is invalid or `Pan` is not a finite number.
 
 -TAGS-
 mutates-object
@@ -360,6 +374,7 @@ mutates-object
 ERR MixPan(objAudio *Audio, int Handle, double Pan)
 {
    if (!Audio or !Handle) return ERR::NullArgs;
+   if (!std::isfinite(Pan)) return ERR::OutOfRange;
    std::lock_guard mixer_lock(((extAudio *)Audio)->MixerMutex);
    if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
 
@@ -979,17 +994,28 @@ ERR MixRelease(objAudio *Audio, int Handle)
 -FUNCTION-
 MixVolume: Changes the volume of a channel.
 
-This function will change the volume of the mixer channel identified by Handle.  Valid values are from 0 (silent)
-to 1.0 (maximum).
+This function will change the volume of the mixer channel identified by Handle.  Volume is a linear amplitude
+multiplier from 0 (silent) to 1.0 (unity gain).  It is not expressed in decibels; a value of 0.5 attenuates the
+channel by approximately 6 dB.  Finite values outside this range are clamped.  Non-finite values (NaN and
+infinities) are rejected with `OutOfRange` and the channel is not modified.
+
+The rendered gain of each side is the product of the channel volume, the pan attenuation described in
+~MixPan() and the Audio object's `MasterVolume`.  Stereo samples mixed to mono output are additionally halved.
+
+The volume applies from the next mixed frame, ramping towards the new gains if both `ADF::VOL_RAMPING` and
+`ADF::OVER_SAMPLING` are enabled.  When the
+mixer runs on a worker thread, `Okay` confirms that the command was accepted for application before the next period
+is rendered.
 
 -INPUT-
 obj(Audio) Audio: The target Audio object.
 int Handle: The target channel.
-double Volume: The new volume for the channel.
+double Volume: The new volume for the channel, from 0 to 1.0.
 
 -ERRORS-
 Okay
 NullArgs
+OutOfRange: The channel handle is invalid or `Volume` is not a finite number.
 
 -TAGS-
 mutates-object
@@ -1000,6 +1026,7 @@ mutates-object
 ERR MixVolume(objAudio *Audio, int Handle, double Volume)
 {
    if (!Audio or !Handle) return ERR::NullArgs;
+   if (!std::isfinite(Volume)) return ERR::OutOfRange;
    std::lock_guard mixer_lock(((extAudio *)Audio)->MixerMutex);
    if (!((extAudio *)Audio)->GetChannel(Handle)) return ERR::OutOfRange;
 
