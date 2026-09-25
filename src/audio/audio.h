@@ -23,13 +23,13 @@ using namespace kt;
 
 #define MIX_INTERVAL 0.01
 
-enum SAMPLE : int {};
-enum BYTELEN : int {};
+enum SAMPLE : int64_t {};
+enum BYTELEN : int64_t {};
 
-inline BYTELEN operator + (BYTELEN a, BYTELEN b) { return BYTELEN(((int)a) + ((int)b)); }
-inline BYTELEN &operator += (BYTELEN &a, BYTELEN b) { return (BYTELEN &)(((int &)a) += ((int)b)); }
+inline BYTELEN operator + (BYTELEN a, BYTELEN b) { return BYTELEN(int64_t(a) + int64_t(b)); }
+inline BYTELEN &operator += (BYTELEN &a, BYTELEN b) { a = a + b; return a; }
 
-inline SAMPLE &operator -= (SAMPLE &a, SAMPLE b) { return (SAMPLE &)(((int &)a) -= ((int)b)); }
+inline SAMPLE &operator -= (SAMPLE &a, SAMPLE b) { a = SAMPLE(int64_t(a) - int64_t(b)); return a; }
 
 inline void release_audio_callback(FUNCTION &Function)
 {
@@ -117,7 +117,7 @@ struct AudioSample {
    uint64_t DeferredStops = 0;
    int64_t DeferredStopDue = 0;
    AudioRingCursor Ring;
-   int SourceOffset = 0;
+   int64_t SourceOffset = 0;
    int64_t RetryAt = 0;
    bool Refilling = false;
    bool SourceSeek = true;
@@ -126,6 +126,7 @@ struct AudioSample {
    bool Starved = false;
    bool EndOfSource = false;
    #endif
+   bool     StreamLengthKnown = false; // True when StreamLength is a finite source boundary.
    bool     Stream;       // True if this is a stream
 
    AudioSample() {
@@ -161,7 +162,9 @@ struct AudioSample {
       Loop2Start   = SAMPLE(0);
       Loop2End     = SAMPLE(0);
       StreamLength = BYTELEN(0);
+      PlayPos = BYTELEN(0);
       BufferedLength = BYTELEN(0);
+      StreamLengthKnown = false;
       SampleType   = SFM::NIL;
       LoopMode     = LOOP::NIL;
       Loop1Type    = LTYPE::NIL;
@@ -177,7 +180,7 @@ struct AudioCommand {
    ERR DeferredError = ERR::Okay;
    CMD  CommandID;    // Command ID
    int Handle;       // Channel handle
-   std::variant<double,int,bool> Data; // Special data related to the command ID
+   std::variant<double,int,int64_t,bool> Data; // Special data related to the command ID
 
    AudioCommand(CMD pCommandID, int pHandle) :
       CommandID(pCommandID), Handle(pHandle), Data(double(0)) { }
@@ -186,6 +189,9 @@ struct AudioCommand {
       CommandID(pCommandID), Handle(pHandle), Data(pData) { }
 
    AudioCommand(CMD pCommandID, int pHandle, int pData) :
+      CommandID(pCommandID), Handle(pHandle), Data(pData) { }
+
+   AudioCommand(CMD pCommandID, int pHandle, int64_t pData) :
       CommandID(pCommandID), Handle(pHandle), Data(pData) { }
 
    AudioCommand(CMD pCommandID, int pHandle, bool pData) :
@@ -208,7 +214,7 @@ struct AudioChannel {
    int      SampleHandle;   // Sample index, direct lookup into extAudio->Samples
    int      Handle;         // Public channel handle used to validate deferred completion delivery.
    CHF      Flags;          // Special flags
-   int      Position;       // Current playing/mixing byte position within Sample.
+   int64_t  Position;       // Current playing/mixing frame position within Sample.
    int      Frequency;      // Playback frequency
    int      PositionLow;    // Playing position, lower bits
    int8_t   Priority;       // Priority of the sound that has been assigned to this channel

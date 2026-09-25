@@ -100,7 +100,7 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
   structdef("AudioMixCommand", { comment="One command in a caller-owned mixer batch." }, [[
     int(MIX) Operation # Mixer operation
     int Handle         # Target channel; all commands in a batch must use the same channel set
-    int Integer        # Integer argument for the selected operation; otherwise ignored
+    large Integer      # Integer argument for the selected operation; otherwise ignored
     double Value       # Finite floating-point argument for PAN and VOLUME; otherwise ignored
   ]])
 
@@ -108,10 +108,10 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     short(LOOP) LoopMode    # Loop mode (single, double)
     char(LTYPE) Loop1Type   # First loop type (unidirectional, bidirectional)
     char(LTYPE) Loop2Type   # Second loop type (unidirectional, bidirectional)
-    int Loop1Start          # Start of the first loop
-    int Loop1End            # End of the first loop
-    int Loop2Start          # Start of the second loop
-    int Loop2End            # End of the second loop
+    large Loop1Start        # Byte position at the start of the first loop
+    large Loop1End          # Byte position at the end of the first loop
+    large Loop2Start        # Byte position at the start of the second loop
+    large Loop2End          # Byte position at the end of the second loop
   ]])
 
   structdef("AudioEQBand", { comment="One parametric equaliser band." }, [[
@@ -174,7 +174,7 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     double Pan         # Horizontal positioning for playback on stereo speakers (`-100` to `+100`)
     large Position     # Byte position to start playing from
     int Priority       # Priority over other sounds
-    int Length         # Length of sample data in bytes
+    large Length       # Length of sample data in bytes
     int Octave         # Current octave to use for playing back notes (defaults to zero)
     int(SDF) Flags     # Sound flags
     int Frequency      # Frequency of sampled sound (nb: does not affect playback - use the Playback field)
@@ -183,8 +183,8 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     int BytesPerSecond # Bytes per second, measured as `Frequency * BytesPerSample`
     int BitsPerSample  # Usually set to `8` or `16` bit
     oid Audio          # Reference to an @Audio object to use for audio output and input
-    int LoopStart      # Byte position of looping start
-    int LoopEnd        # Byte position of looping end
+    large LoopStart    # Byte position of looping start
+    large LoopEnd      # Byte position of looping end
     int(STREAM) Stream # Streaming type (smart by default)
     int Handle         # Audio handle acquired at the audio object [Private - Available to child classes]
     int ChannelIndex   # Channel handle that the sound was last played on

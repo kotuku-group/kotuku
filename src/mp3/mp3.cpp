@@ -412,8 +412,9 @@ static ERR MP3_Init(objMP3 *Self)
       if (auto error = prv->File->seekStart(prv->SeekOffset); error != ERR::Okay) return init_error(Self, error);
    }
 
-   log.msg("File is MP3.  Stereo: %c, BytesPerSecond: %d, Freq: %d, Byte Length: %d",
-      ((Self->Flags & SDF::STEREO) != SDF::NIL) ? 'Y' : 'N', Self->BytesPerSecond, Self->Frequency, Self->Length);
+   log.msg("File is MP3.  Stereo: %c, BytesPerSecond: %d, Freq: %d, Byte Length: %" PF64,
+      ((Self->Flags & SDF::STEREO) != SDF::NIL) ? 'Y' : 'N', Self->BytesPerSecond, Self->Frequency,
+      (long long)Self->Length);
 
    return ERR::Okay;
 }
@@ -566,7 +567,9 @@ static ERR MP3_Read(objMP3 *Self, struct acRead *Args)
       // at the correct position.
 
       if (Self->Length != prv->WriteOffset) {
-         log.detail("Decode complete, changing sample length from %d to %" PF64 " bytes.  Decoded %d frames.", Self->Length, (long long)prv->WriteOffset, prv->FramesProcessed);
+         log.detail("Decode complete, changing sample length from %" PF64 " to %" PF64
+            " bytes.  Decoded %d frames.", (long long)Self->Length, (long long)prv->WriteOffset,
+            prv->FramesProcessed);
          Self->setLength(prv->WriteOffset);
       }
       else log.detail("Decoding of %d MP3 frames complete, output %" PF64 " bytes.", prv->FramesProcessed, (long long)prv->WriteOffset);

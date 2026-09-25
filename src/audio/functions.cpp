@@ -172,17 +172,18 @@ static void audio_stopped_event(extAudio &Audio, int SampleHandle)
 //********************************************************************************************************************
 // The callback must return the number of bytes written to the buffer.
 
-static BYTELEN fill_stream_buffer(int Handle, AudioSample &Sample, int Offset)
+static BYTELEN fill_stream_buffer(int Handle, AudioSample &Sample, int64_t Offset)
 {
    if (Sample.Callback.stale()) return BYTELEN(0);
 
    if (Sample.Callback.isC()) {
       kt::SwitchContext context(Sample.Callback.Context);
-      auto routine = (BYTELEN (*)(int, int, uint8_t *, int, APTR))Sample.Callback.Routine;
-      return routine(Handle, Offset, Sample.Data.data(), Sample.SampleLength<<sample_shift(Sample.SampleType), Sample.Callback.Meta);
+      auto routine = (int (*)(int, int64_t, uint8_t *, int, APTR))Sample.Callback.Routine;
+      return BYTELEN(routine(Handle, Offset, Sample.Data.data(),
+         int(Sample.SampleLength << sample_shift(Sample.SampleType)), Sample.Callback.Meta));
    }
    else if (Sample.Callback.isScript()) {
-      std::span span(Sample.Data.data(), Sample.SampleLength<<sample_shift(Sample.SampleType));
+      std::span span(Sample.Data.data(), size_t(Sample.SampleLength << sample_shift(Sample.SampleType)));
       const auto args = std::to_array<ScriptArg>({
          { "Handle", Handle },
          { "Offset", Offset },
@@ -195,7 +196,7 @@ static BYTELEN fill_stream_buffer(int Handle, AudioSample &Sample, int Offset)
       if (sc::Call(Sample.Callback, args, result) IS ERR::Okay and result IS ERR::Okay) {
          std::span<std::string> results;
          if (script->getResults(results) IS ERR::Okay and !results.empty()) {
-            return BYTELEN(std::clamp<long>(strtol(results[0].c_str(), nullptr, 10), 0, span.size()));
+            return BYTELEN(std::clamp<int64_t>(strtoll(results[0].c_str(), nullptr, 10), 0, span.size()));
          }
       }
       return BYTELEN(0);
@@ -309,7 +310,7 @@ static void convert_float(float *buf, int TotalSamples, float *dest) {
 
 // Template dispatch table for loop types with compile-time optimization
 template<LTYPE loop_type>
-static int samples_until_end_impl(int position, int sample_length, int lp_start, int lp_end,
+static int64_t samples_until_end_impl(int64_t position, int64_t sample_length, int64_t lp_start, int64_t lp_end,
    bool over_sampling, bool is_backward, int &next_offset)
 {
    next_offset = 1;
@@ -375,7 +376,7 @@ static int samples_until_end(extAudio *Self, AudioChannel &Channel, int &NextOff
    const bool is_backward = (Channel.Flags & CHF::BACKWARD) != CHF::NIL;
 
    // Template dispatch for compile-time optimization based on loop type
-   int num;
+   int64_t num;
    switch (lp_type) {
       case LTYPE::UNIDIRECTIONAL:
          num = samples_until_end_impl<LTYPE::UNIDIRECTIONAL>(
@@ -441,7 +442,7 @@ static bool amiga_change(extAudio *Self, AudioChannel &Channel)
 static bool handle_sample_end(extAudio *Self, AudioChannel &Channel)
 {
    AudioLog log(__FUNCTION__);
-   int lp_start, lp_end;
+   SAMPLE lp_start, lp_end;
    LTYPE lp_type;
 
    auto &sample = Self->Samples[Channel.SampleHandle];
@@ -477,7 +478,7 @@ static bool handle_sample_end(extAudio *Self, AudioChannel &Channel)
       // Going backwards - did we reach loop start? (signed comparison takes care of possible wraparound)
       if ((Channel.Position < lp_start) or ((Channel.Position IS lp_start) and (Channel.PositionLow IS 0)) ) {
          Channel.Flags &= ~CHF::BACKWARD;
-         int n = ((lp_start - Channel.Position) << 16) - Channel.PositionLow - 1;
+         int64_t n = ((lp_start - Channel.Position) << 16) - Channel.PositionLow - 1;
          // -1 is compensation for the fudge factor at loop end, see below
          Channel.Position = lp_start + (n>>16);
          Channel.PositionLow = n & 0xffff;
@@ -499,7 +500,8 @@ static bool handle_sample_end(extAudio *Self, AudioChannel &Channel)
             clearmem(sample.Data.data() + bytes_read, buffer_len - bytes_read);
          }
 
-         if ((bytes_read <= 0) or (sample.PlayPos >= sample.StreamLength)) {
+         if ((bytes_read <= 0) or
+             (sample.StreamLengthKnown and sample.PlayPos >= sample.StreamLength)) {
             // Loop back to the beginning if the client has defined a loop.  Otherwise finish.
             if (sample.Loop2Type != LTYPE::NIL) {
                sample.PlayPos = BYTELEN(0);
@@ -530,7 +532,7 @@ static bool handle_sample_end(extAudio *Self, AudioChannel &Channel)
       if (lp_type IS LTYPE::BIDIRECTIONAL ) {
          // Bidirectional loop - change direction
          Channel.Flags |= CHF::BACKWARD;
-         int n = ((Channel.Position - lp_end) << 16) + Channel.PositionLow + 1;
+         int64_t n = ((Channel.Position - lp_end) << 16) + Channel.PositionLow + 1;
 
          // +1 is a fudge factor to make sure we'll access the correct samples all the time - a similar adjustment is
          // also done at the other end of the loop. This screws up interpolation a little when sample rate IS mixing
@@ -692,8 +694,8 @@ static void mix_stream(extAudio *Self, AudioChannel &Channel, AudioSample &Sampl
       const size_t consumed = std::min(advance, Sample.Ring.Used);
       Sample.Ring.consume(consumed, Sample.Data.size(), frame_bytes);
       int64_t play_pos = int64_t(Sample.PlayPos) + consumed;
-      if (Sample.Loop2Type != LTYPE::NIL and play_pos >= Sample.StreamLength) {
-         const int start = Sample.Loop2Start << sample_shift(Sample.SampleType);
+      if (Sample.StreamLengthKnown and Sample.Loop2Type != LTYPE::NIL and play_pos >= Sample.StreamLength) {
+         const int64_t start = int64_t(Sample.Loop2Start) << sample_shift(Sample.SampleType);
          if (Sample.StreamLength > start) {
             play_pos = start + (play_pos - Sample.StreamLength) % (Sample.StreamLength - start);
          }
@@ -876,7 +878,8 @@ static void mix_channel(extAudio *Self, AudioChannel &Channel, int TotalSamples,
          Channel.Position = (mix_pos>>16) + ((MixSample - sample.Data.data()) / sample_size);
       }
       else if (mix_now < 0) {
-         log.warning("Detected invalid mix values; TotalSamples: %d, MixNow: %d, SUE: %d, NextOffset: %d, Step: %d, ChannelPos: %d", TotalSamples, mix_now, sue, next_offset, step, Channel.Position);
+         log.warning("Detected invalid mix values; TotalSamples: %d, MixNow: %d, SUE: %d, NextOffset: %d, Step: %d, "
+            "ChannelPos: %" PF64, TotalSamples, mix_now, sue, next_offset, step, (long long)Channel.Position);
          return;
       }
 

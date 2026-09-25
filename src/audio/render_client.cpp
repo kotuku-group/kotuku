@@ -7,7 +7,7 @@ static ERR apply_audio_command(extAudio *Self, const AudioCommand &Command)
       case CMD::CONTINUE: return snd::MixContinue(Self, Command.Handle);
       case CMD::PAUSE: return snd::pause_channel(Self, Command.Handle);
       case CMD::MUTE: return snd::MixMute(Self, Command.Handle, std::get<bool>(Command.Data));
-      case CMD::PLAY: return snd::MixPlay(Self, Command.Handle, std::get<int>(Command.Data));
+      case CMD::PLAY: return snd::MixPlay(Self, Command.Handle, std::get<int64_t>(Command.Data));
       case CMD::FREQUENCY: return snd::MixFrequency(Self, Command.Handle, std::get<int>(Command.Data));
       case CMD::PAN: return snd::MixPan(Self, Command.Handle, std::get<double>(Command.Data));
       case CMD::TEMPO: return snd::MixTempo(Self, Command.Handle, std::get<int>(Command.Data));
@@ -112,7 +112,7 @@ static void refill_audio_stream(extAudio *Self, int Handle)
 {
    AudioSample source;
    uint64_t generation;
-   int offset;
+   int64_t offset;
    bool seek;
    {
       std::lock_guard lock(Self->MixerMutex);
@@ -125,7 +125,9 @@ static void refill_audio_stream(extAudio *Self, int Handle)
       const int frame_bytes = 1 << sample_shift(sample.SampleType);
       int bytes = sample.Data.size() - sample.Ring.Used;
       if (bytes <= 0) return;
-      bytes = std::min(bytes, int(sample.StreamLength) - offset);
+      if (sample.StreamLengthKnown) {
+         bytes = int(std::clamp<int64_t>(sample.StreamLength - offset, 0, bytes));
+      }
       bytes -= bytes % frame_bytes;
       if (bytes <= 0 or sample.Callback.stale()) {
          sample.EndOfSource = true;
@@ -151,7 +153,9 @@ static void refill_audio_stream(extAudio *Self, int Handle)
       auto &sample = Self->Samples[Handle];
       if (sample.Generation != generation or !sample.Stream) return;
       sample.Refilling = false;
-      bytes = std::min(bytes, std::max(0, int(sample.StreamLength) - offset));
+      if (sample.StreamLengthKnown) {
+         bytes = int(std::min<int64_t>(bytes, std::max<int64_t>(0, sample.StreamLength - offset)));
+      }
       bytes -= bytes % (1 << sample_shift(sample.SampleType));
       const size_t write_pos = (sample.Ring.Read + sample.Ring.Used) % sample.Data.size();
       const size_t first = std::min(size_t(bytes), sample.Data.size() - write_pos);
@@ -163,11 +167,12 @@ static void refill_audio_stream(extAudio *Self, int Handle)
       sample.BufferedLength = BYTELEN(sample.Ring.Used);
       // Loop boundaries do not end pre-roll: keep filling until the ring is full or the producer gives a short read.
       sample.Prefilled |= sample.Ring.Used >= sample.Data.size() or size_t(bytes) < source.Data.size() or
-         (sample.SourceOffset >= sample.StreamLength and sample.Loop2Type IS LTYPE::NIL);
-      if (sample.SourceOffset >= sample.StreamLength) {
+         (sample.StreamLengthKnown and sample.SourceOffset >= sample.StreamLength and
+         sample.Loop2Type IS LTYPE::NIL);
+      if (sample.StreamLengthKnown and sample.SourceOffset >= sample.StreamLength) {
          if (sample.Loop2Type != LTYPE::NIL) {
             sample.SourceSeek = true;
-            sample.SourceOffset = sample.Loop2Start << sample_shift(sample.SampleType);
+            sample.SourceOffset = int64_t(sample.Loop2Start) << sample_shift(sample.SampleType);
             request_stream(Self, sample);
          }
          else sample.EndOfSource = true;

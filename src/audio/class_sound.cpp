@@ -101,7 +101,7 @@ static void sound_stopped_event(extSound *Self)
 
 //********************************************************************************************************************
 
-static int read_stream(int Handle, int Offset, APTR Buffer, int Length)
+static int read_stream(int Handle, int64_t Offset, APTR Buffer, int Length)
 {
    auto Self = (extSound *)CurrentContext();
 
@@ -295,10 +295,11 @@ static ERR SOUND_Activate(extSound *Self)
       else if ((Self->Stream IS STREAM::SMART) and (Self->Length > 256 * 1024)) Self->Flags |= SDF::STREAM;
 
       if ((Self->Flags & SDF::STREAM) != SDF::NIL) {
-         log.msg("Streaming enabled for playback in format $%.8x; Length: %d", int(sampleformat), Self->Length);
+         log.msg("Streaming enabled for playback in format $%.8x; Length: %" PF64, int(sampleformat),
+            (long long)Self->Length);
 
          struct snd::AddStream stream;
-         AudioLoop loop;
+         AudioLoop loop{};
          if ((Self->Flags & SDF::LOOP) != SDF::NIL) {
             loop.LoopMode   = LOOP::SINGLE;
             loop.Loop1Type  = LTYPE::UNIDIRECTIONAL;
@@ -330,20 +331,22 @@ static ERR SOUND_Activate(extSound *Self)
          }
          else return ERR::AccessObject;
       }
-      else if (void *buffer = malloc(Self->Length)) {
+      else if (Self->Length > INT_MAX) return log.warning(ERR::OutOfRange);
+      else if (void *buffer = malloc(size_t(Self->Length))) {
          auto dc = deferred_call([&buffer] { free(buffer); });
 
          auto client_pos = Self->Position;
          if (Self->Position) Self->seekStart(0); // Ensure we're reading the entire sample from the start
 
          int result;
-         if (!Self->read(std::span<int8_t>((int8_t *)buffer, Self->Length), &result)) {
-            if (result != Self->Length) log.warning("Expected %d bytes, read %d", Self->Length, result);
+         if (!Self->read(std::span<int8_t>((int8_t *)buffer, size_t(Self->Length)), &result)) {
+            if (result != Self->Length) log.warning("Expected %" PF64 " bytes, read %d",
+               (long long)Self->Length, result);
 
             Self->seekStart(client_pos);
 
             struct snd::AddSample add;
-            AudioLoop loop;
+            AudioLoop loop{};
 
             if ((Self->Flags & SDF::LOOP) != SDF::NIL) {
                loop.LoopMode   = LOOP::SINGLE;
@@ -360,7 +363,7 @@ static ERR SOUND_Activate(extSound *Self)
             else add.OnStop.clear();
 
             add.SampleFormat = sampleformat;
-            add.Data         = std::span<const int8_t>((int8_t *)buffer, Self->Length);
+            add.Data         = std::span<const int8_t>((int8_t *)buffer, size_t(Self->Length));
 
             kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 250);
             if (audio.granted()) {
@@ -693,7 +696,9 @@ static ERR SOUND_Init(extSound *Self)
 
    // Setup the sound structure
 
-   fl::ReadLE(Self->File.get(), &Self->Length); // Length of audio data in this chunk
+   uint32_t data_length;
+   fl::ReadLE(Self->File.get(), &data_length); // Length of audio data in this chunk
+   Self->Length = data_length;
 
    Self->File->getPosition(file_pos);
    Self->DataOffset = int(file_pos);
@@ -810,6 +815,7 @@ static ERR SOUND_SaveToObject(extSound *Self, struct acSaveToObject *Args)
    header.BlockAlign    = (header.NumChannels * header.BitsPerSample) / 8;
    header.ByteRate      = header.SampleRate * header.BlockAlign;
 
+   if (Self->Length > INT_MAX) return log.warning(ERR::OutOfRange);
    const int audio_data_size = Self->Length;
 
    header.DataChunkSize = audio_data_size;
@@ -863,9 +869,9 @@ static ERR SOUND_Seek(extSound *Self, struct acSeek *Args)
    if (!Args) return log.warning(ERR::NullArgs);
    if (!Self->initialised()) return log.warning(ERR::NotInitialised);
 
-   if (Args->Position IS SEEK::START)         Self->Position = int(Args->Offset);
-   else if (Args->Position IS SEEK::END)      Self->Position = Self->Length - int(Args->Offset);
-   else if (Args->Position IS SEEK::CURRENT)  Self->Position += int(Args->Offset);
+   if (Args->Position IS SEEK::START)         Self->Position = int64_t(Args->Offset);
+   else if (Args->Position IS SEEK::END)      Self->Position = Self->Length - int64_t(Args->Offset);
+   else if (Args->Position IS SEEK::CURRENT)  Self->Position += int64_t(Args->Offset);
    else if (Args->Position IS SEEK::RELATIVE) Self->Position = Self->Length * Args->Offset;
    else return log.warning(ERR::Args);
 
@@ -1066,7 +1072,7 @@ value by the #BytesPerSecond field.
 
 *********************************************************************************************************************/
 
-static ERR SOUND_SET_Length(extSound *Self, int Value)
+static ERR SOUND_SET_Length(extSound *Self, int64_t Value)
 {
    kt::Log log;
    if (Value >= 0) {
@@ -1582,7 +1588,7 @@ static const FieldArray clFields[] = {
    { "Pan",            FDF_DOUBLE|FDF_RW, nullptr, SOUND_SET_Pan },
    { "Position",       FDF_INT64|FDF_RW, nullptr, SOUND_SET_Position },
    { "Priority",       FDF_INT|FDF_RW, nullptr, SOUND_SET_Priority },
-   { "Length",         FDF_INT|FDF_RW, nullptr, SOUND_SET_Length },
+   { "Length",         FDF_INT64|FDF_RW, nullptr, SOUND_SET_Length },
    { "Octave",         FDF_INT|FDF_RW, nullptr, SOUND_SET_Octave },
    { "Flags",          FDF_INTFLAGS|FDF_RW, nullptr, SOUND_SET_Flags, &clSoundFlags },
    { "Frequency",      FDF_INT|FDF_RI },
@@ -1591,8 +1597,8 @@ static const FieldArray clFields[] = {
    { "BytesPerSecond", FDF_INT|FDF_RW },
    { "BitsPerSample",  FDF_INT|FDF_RW },
    { "Audio",          FDF_OBJECTID|FDF_RI },
-   { "LoopStart",      FDF_INT|FDF_RW },
-   { "LoopEnd",        FDF_INT|FDF_RW },
+   { "LoopStart",      FDF_INT64|FDF_RW },
+   { "LoopEnd",        FDF_INT64|FDF_RW },
    { "Stream",         FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clSoundStream },
    { "Handle",         FDF_INT|FDF_SYSTEM|FDF_R },
    { "ChannelIndex",   FDF_INT|FDF_R },

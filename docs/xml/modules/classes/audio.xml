@@ -108,21 +108,21 @@
     <method>
       <name>AddStream</name>
       <comment>Adds a new sample-stream to an Audio object for channel-based playback.</comment>
-      <prototype>ERR snd::AddStream(OBJECTPTR Object, FUNCTION Callback, FUNCTION OnStop, SFM SampleFormat, INT SampleLength, INT PlayOffset, struct AudioLoop * Loop, INT * Result)</prototype>
+      <prototype>ERR snd::AddStream(OBJECTPTR Object, FUNCTION Callback, FUNCTION OnStop, SFM SampleFormat, INT64 SampleLength, INT64 PlayOffset, struct AudioLoop * Loop, INT * Result)</prototype>
       <tiriPrototype>err, Result:num = AddStream(Callback:func, OnStop:func, SampleFormat:num, SampleLength:num, PlayOffset:num, Loop:any)</tiriPrototype>
       <input>
         <param type="FUNCTION" name="Callback">This callback function must be able to return raw audio data for streaming.  The function context will be pinned as a safety measure.</param>
         <param type="FUNCTION" name="OnStop">This optional callback function will be called when the stream stops playing.  The function context will be pinned as a safety measure.</param>
         <param type="SFM" name="SampleFormat" lookup="SFM">Indicates the format of the sample data that you are adding.</param>
-        <param type="INT" name="SampleLength">Total byte-length of the sample data that is being streamed.  May be set to zero if the length is infinite or unknown.</param>
-        <param type="INT" name="PlayOffset">Offset the playing position by this byte index.</param>
+        <param type="INT64" name="SampleLength">Total byte length of the stream, or <code>-1</code> when the length is unknown.  Zero is also accepted as the legacy unknown-length value.</param>
+        <param type="INT64" name="PlayOffset">Initial byte position.  It must be aligned to a complete source frame.</param>
         <param type="struct AudioLoop *" name="Loop">Refers to sample loop information, or <code>NULL</code> if no loop is required.</param>
         <param type="INT *" name="Result">The resulting sample handle will be returned in this parameter.</param>
       </input>
       <description>
 <p>Use AddStream to load large sound samples to an Audio object, allowing it to play those samples on the client machine without over-provisioning available resources.  For small samples under 256k consider using <method>AddSample</method> instead.</p>
-<p>The data source used for a stream will need to be provided by a client provided <code>Callback</code> function.  The prototype is <code>INT callback(INT SampleHandle, INT Offset, UINT8 *Buffer, INT BufferSize)</code>.</p>
-<p>The <code>Offset</code> reflects the retrieval point of the decoded data and is measured in bytes.  The <code>Buffer</code> and <code>BufferSize</code> reflect the target for the decoded data.  The function must return the total number of bytes that were written to the <code>Buffer</code>. If an error occurs, return zero.</p>
+<p>The data source used for a stream must be provided by a client callback.  The native prototype is <code>INT callback(INT SampleHandle, INT64 Offset, UINT8 *Buffer, INT BufferSize)</code>.</p>
+<p>The <code>Offset</code> is the 64-bit byte position of the decoded data.  The <code>Buffer</code> and <code>BufferSize</code> identify the destination. The callback must return the number of bytes written, or zero when no data is currently available.  Offset, stream length, play offset and loop boundaries must be aligned to a complete source frame.</p>
 <p>On ALSA and Windows, callbacks run on the client thread and fill a frame-aligned source ring.  The saved <code>StreamBufferMs</code> setting requests 100–10000 ms of source data at <fl>OutputRate</fl> (default 1000 ms), capped at 8 MiB per stream and 64 MiB per Audio object.  Refills are requested at half capacity.  Initial playback uses the first fill; a short fill permits playback with the available data.  A zero-byte result is retried without blocking other sounds.  If the ring empties, that source contributes silence and resumes from its preserved position when data arrives.  Source prefetch adds no output queue latency.  Sources played faster than <fl>OutputRate</fl> exhaust the ring proportionally sooner.</p>
 <p>When creating a new stream, pay attention to the audio format that is being used for the sample data. It is important to differentiate between 8-bit, 16-bit, mono and stereo, but also be aware of whether or not the data is little or big endian, and if the sample data consists of signed or unsigned values.  Because of the possible variations there are a number of sample formats, as illustrated in the following table:</p>
 <types lookup="SFM"/>
@@ -136,6 +136,7 @@
       <result>
         <error code="Okay">Stream successfully configured and added to the audio system.</error>
         <error code="Args">Invalid argument values provided.</error>
+        <error code="OutOfRange">A length, play offset or loop boundary is outside the stream.</error>
         <error code="AllocMemory">Failed to allocate the stream buffer.</error>
         <error code="NullArgs">Required parameters are null or missing.</error>
       </result>
@@ -242,6 +243,7 @@
         <error code="Okay">Operation successful.</error>
         <error code="Args">Invalid arguments passed to function</error>
         <error code="NoSupport">Sample is not a stream.</error>
+        <error code="OutOfRange">A value is outside of the valid range</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>mutates-object</tags>
@@ -341,7 +343,7 @@
       <access read="G">Get</access>
       <type>DOUBLE</type>
       <description>
-<p>On Windows this field estimates the outstanding submitted frames from the most recent endpoint padding and render time.  On ALSA it is the negotiated buffer size in frames divided by the output rate, and is zero while inactive.  It excludes client scheduling, source starvation, and downstream sound-server or wireless-device buffering; it is not an acoustic latency guarantee. Source prefetch uses the saved <code>StreamBufferMs</code> setting (100–10000 ms, default 1000 ms) independently of this value.</p>
+<p>On Windows this field estimates the outstanding submitted frames from the most recent endpoint padding and render time.  On ALSA it is the negotiated buffer size in frames divided by the output rate, and is zero while inactive. It excludes client scheduling, source starvation, and downstream sound-server or wireless-device buffering; it is not an acoustic latency guarantee.  Source prefetch uses the saved <code>StreamBufferMs</code> setting (100–10000ms, default 1000ms) independently of this value.</p>
       </description>
     </field>
 
@@ -463,10 +465,10 @@
       <field name="LoopMode" type="LOOP" lookup="LOOP">Loop mode (single, double)</field>
       <field name="Loop1Type" type="LTYPE" lookup="LTYPE">First loop type (unidirectional, bidirectional)</field>
       <field name="Loop2Type" type="LTYPE" lookup="LTYPE">Second loop type (unidirectional, bidirectional)</field>
-      <field name="Loop1Start" type="INT">Start of the first loop</field>
-      <field name="Loop1End" type="INT">End of the first loop</field>
-      <field name="Loop2Start" type="INT">Start of the second loop</field>
-      <field name="Loop2End" type="INT">End of the second loop</field>
+      <field name="Loop1Start" type="INT64">Byte position at the start of the first loop</field>
+      <field name="Loop1End" type="INT64">Byte position at the end of the first loop</field>
+      <field name="Loop2Start" type="INT64">Byte position at the start of the second loop</field>
+      <field name="Loop2End" type="INT64">Byte position at the end of the second loop</field>
     </struct>
 
   </structs>

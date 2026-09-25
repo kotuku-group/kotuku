@@ -17,7 +17,7 @@ static ERR submit_audio_batch(ChannelSet &Set, unsigned Index, std::span<const A
       if ((unsigned(handle) >> 16) != Index or size_t(handle & 0xffff) >= Set.Channel.size()) {
          return ERR::OutOfRange;
       }
-      const int value = command.Integer;
+      const int64_t value = command.Integer;
       switch (command.Operation) {
          case MIX::CONTINUE: staged[count++] = AudioCommand(CMD::CONTINUE, handle); break;
          case MIX::STOP: staged[count++] = AudioCommand(CMD::STOP, handle); break;
@@ -25,7 +25,7 @@ static ERR submit_audio_batch(ChannelSet &Set, unsigned Index, std::span<const A
          case MIX::MUTE: staged[count++] = AudioCommand(CMD::MUTE, handle, bool(value)); break;
          case MIX::FREQUENCY:
             if (value < 0 or value > 192000) return ERR::OutOfRange;
-            staged[count++] = AudioCommand(CMD::FREQUENCY, handle, value);
+            staged[count++] = AudioCommand(CMD::FREQUENCY, handle, int(value));
             break;
          case MIX::PLAY:
             if (value < 0) return ERR::OutOfRange;
@@ -33,11 +33,11 @@ static ERR submit_audio_batch(ChannelSet &Set, unsigned Index, std::span<const A
             break;
          case MIX::TEMPO:
             if (value < 1 or value > 100000) return ERR::OutOfRange;
-            staged[count++] = AudioCommand(CMD::TEMPO, handle, value);
+            staged[count++] = AudioCommand(CMD::TEMPO, handle, int(value));
             break;
          case MIX::SAMPLE:
             if (value <= 0) return ERR::OutOfRange;
-            staged[count++] = AudioCommand(CMD::SAMPLE, handle, value);
+            staged[count++] = AudioCommand(CMD::SAMPLE, handle, int(value));
             break;
          case MIX::PAN:
          case MIX::VOLUME:
