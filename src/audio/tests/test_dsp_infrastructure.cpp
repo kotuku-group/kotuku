@@ -7,12 +7,13 @@ class Delay final : public AudioEffectProcessor {
    int channels;
    int frames;
 public:
+   int Resets = 0;
    Delay(int Frames, int Channels) : storage(Frames * Channels), channels(Channels), frames(Frames) { }
    AudioTail tail() const override { return AudioTail::FINITE; }
    uint64_t tail_frames() const override { return frames; }
    int64_t latency() const override { return frames; }
    bool pending() const override { return occupied != 0; }
-   void reset() override { std::fill(storage.begin(), storage.end(), 0); cursor = occupied = 0; }
+   void reset() override { std::fill(storage.begin(), storage.end(), 0); cursor = occupied = 0; ++Resets; }
    void process(float *Buffer, int Frames) override {
       for (int i = 0; i < Frames * channels; ++i) {
          const float input = Buffer[i];
@@ -154,6 +155,24 @@ static void deadlines(AudioTestContext &Test)
    value = 0;
    render_effects(*untouched.Chain, &value, 1, 0, 100);
    AUDIO_CHECK(!effects_pending(*untouched.Chain) and untouched.Effect.Meter.Sequence IS 0);
+}
+
+static void upstream_silence(AudioTestContext &Test)
+{
+   class Clock final : public AudioEffectProcessor {
+   public:
+      int Frames = 0, Resets = 0;
+      void reset() override { Frames = 0; ++Resets; }
+      void process(float *Buffer, int Count) override { Frames += Count; }
+   };
+
+   auto processor = std::make_unique<Clock>();
+   auto clock = processor.get();
+   Fixture fixture(1000, 1, std::move(processor));
+   std::array<float, 17> silence{};
+   render_effects(*fixture.Chain, silence.data(), silence.size(), 0, 1000, false, 107, true);
+   AUDIO_CHECK(clock->Frames IS 17 and clock->Resets IS 1);
+   AUDIO_CHECK(fixture.Chain->State IS ADS::DRAINING);
 }
 
 static void meters(AudioTestContext &Test)
@@ -303,17 +322,23 @@ static void common_mixer(AudioTestContext &Test)
    audio->GlobalEffects->Effects.push_back(&global);
    set.Effects->Rate = audio->GlobalEffects->Rate = 1000;
    AUDIO_REQUIRE(application.set_processor(std::make_unique<Delay>(107, 1)) IS ERR::Okay);
-   AUDIO_REQUIRE(global.set_processor(std::make_unique<Delay>(71, 1)) IS ERR::Okay);
+   auto global_processor = std::make_unique<Delay>(71, 1);
+   auto global_delay = global_processor.get();
+   AUDIO_REQUIRE(global.set_processor(std::move(global_processor)) IS ERR::Okay);
    AUDIO_CHECK(audio_playing(audio));
    std::array<float, 17> output{};
    std::vector<float> rendered;
    audio->EffectConfigured = true;
    snd::GetEffectStatus status{};
    status.Channel = 1 << 16;
-   bool global_only = false;
+   bool global_only = false, upstream_silence = false;
    for (int period = 0; period < 20 and audio_playing(audio); ++period) {
       mix_data(audio, 17, output.data());
       rendered.insert(rendered.end(), output.begin(), output.end());
+      if (application.pending() and !global.pending() and channel.isStopped()) {
+         upstream_silence = true;
+         AUDIO_CHECK(global_delay->Resets IS 1);
+      }
       if (!application.pending() and global.pending() and channel.isStopped()) {
          global_only = true;
          AUDIO_CHECK(AUDIO_GetEffectStatus(audio, &status) IS ERR::Okay and status.State IS ADS::DRAINING);
@@ -321,12 +346,15 @@ static void common_mixer(AudioTestContext &Test)
    }
    AUDIO_REQUIRE(rendered.size() > 178);
    for (size_t i = 0; i < rendered.size(); ++i) AUDIO_CHECK(rendered[i] IS (i IS 178 ? 1.0f : 0.0f));
-   AUDIO_CHECK(global_only and !audio_playing(audio));
+   AUDIO_CHECK(upstream_silence and global_only and !audio_playing(audio));
    AUDIO_CHECK(AUDIO_GetEffectStatus(audio, &status) IS ERR::Okay);
    AUDIO_CHECK(status.Application IS 107 and status.Global IS 71 and status.Total IS 178);
    AUDIO_CHECK(status.State IS ADS::IDLE);
    audio->GlobalEffects->Truncated = true;
    AUDIO_CHECK(AUDIO_GetEffectStatus(audio, &status) IS ERR::Okay and status.Truncated IS 1);
+   auto application_effects = std::move(set.Effects);
+   AUDIO_CHECK(AUDIO_GetEffectStatus(audio, &status) IS ERR::Okay and status.Truncated IS 1);
+   set.Effects = std::move(application_effects);
    audio->GlobalEffects->Truncated = false;
    channel.State = CHS::PLAYING;
    AUDIO_CHECK(AUDIO_GetEffectStatus(audio, &status) IS ERR::Okay and status.State IS ADS::ACTIVE);
@@ -517,6 +545,7 @@ static void run(AudioTestContext &Test)
    preparation(Test);
    delays(Test);
    deadlines(Test);
+   upstream_silence(Test);
    meters(Test);
    equaliser_tail(Test);
    contention(Test);

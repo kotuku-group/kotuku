@@ -267,7 +267,9 @@
         <param type="INT" name="Channel">Channel-set handle, or zero for the global chain.</param>
       </input>
       <description>
-<p>Channel zero resets only the global chain.  A channel-set handle resets only that application's chain.  This control does not stop or reposition its Sounds and cannot selectively withdraw already submitted device audio. Stopping, pausing or seeking a Sound does not reset shared effects.  Hard bypass skips a processor and excludes its latency and pending output; re-enabling starts with cleared history.  Bypass, destruction and closing a set can therefore cut tails abruptly.  Global parameter immutability does not prevent this explicit history reset.</p>
+<p>ResetEffects() clears the internal state of every effect in one chain, such as filter history and buffered samples, so that subsequent audio is processed as if the chain had just been created.  Use it when switching to unrelated content, e.g. after seeking, so that residual output from the previous material does not bleed through.</p>
+<p>The chain is selected with <code>Channel</code>.  A channel-set handle selects that application's chain, while zero selects the global chain.  Only the selected chain is affected; resetting an application's chain does not reset the global chain. If the channel set has no effects attached, the call succeeds without doing anything.</p>
+<p>The reset is deferred to the mixer and each effect's history is cleared before it processes its next block of audio. Any pending effect tail is discarded rather than drained.  Effect parameters and bypass states are unchanged.  The chain's drain state returns to <code>ADS::IDLE</code>, its <code>Truncated</code> status is cleared, effect meters are restarted, and the <code>Generation</code> counter reported by <method>GetEffectStatus</method> is incremented.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -389,11 +391,13 @@
 
     <field>
       <name>MaxDrain</name>
-      <comment>Maximum automatic DSP drain time in seconds, default 30.</comment>
+      <comment>Limits the time that DSP effect chains can continue to produce output after their source audio ends.</comment>
       <access read="G" write="S">Get/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>Accepts finite values from 0.01 to 300 before device activation.  Each scope counts output frames from its last real source input; downstream tail output does not restart the deadline.  New source input resumes existing history and starts a new interval.  The final 10 ms fade to silence before remaining history is discarded. Unexcited effects do not keep playback awake.  Natural completion below the deadline does not request a fade. This safety limit also applies to indefinite feedback; unlimited keep-alive is not supported.</p>
+<p>When the sources feeding an effect chain stop, effects such as reverbs, delays and recursive filters can continue to produce output as their internal history decays.  This drain phase continues until the chain has no pending output, or until MaxDrain seconds of drain time have elapsed.  The limit applies independently to each application chain and to the global chain, and it resets when new source audio reaches a chain.</p>
+<p>If a chain reaches the deadline while effects still have pending output, the remaining output is faded out over approximately 10 ms and discarded, and the <code>Truncated</code> result of <method>GetEffectStatus</method> is set.  The limit acts as a safety net for effects that have no finite tail, such as an <class name="AudioEqualiser">AudioEqualiser</class> with long decays or feedback that never fully settles.</p>
+<p>The default is 30 seconds.  Valid values range from 0.01 to 300 seconds; <code>ERR::OutOfRange</code> is returned otherwise. The value can only be changed while effects are not configured, i.e. before the Audio object is activated or after it has been deactivated.  Otherwise, <code>ERR::InvalidState</code> is returned.</p>
       </description>
     </field>
 

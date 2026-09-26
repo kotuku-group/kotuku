@@ -1734,8 +1734,8 @@ static ERR AUDIO_GetEffectStatus(extAudio *Self, struct snd::GetEffectStatus *Ar
    Args->State = source_active ? ADS::ACTIVE :
       (path_pending ? ADS::DRAINING : ADS::IDLE);
 
+   Args->Truncated = (chain and chain->Truncated) or (Args->Channel and Self->GlobalEffects->Truncated);
    if (chain) {
-      Args->Truncated = chain->Truncated or (Args->Channel and Self->GlobalEffects->Truncated);
       if (Args->Channel) {
          auto error = chain->latency(Args->Application);
          if (error != ERR::Okay) return error;

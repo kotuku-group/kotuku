@@ -181,7 +181,7 @@ static void process_effects(AudioEffectChain &Chain, float *Buffer, int Frames)
 // SourceFrames is the last actual source frame in this window, not the last non-zero sample or upstream tail.
 // Every serial processor runs during drain, including when an upstream delay currently outputs silence.
 static void render_effects(AudioEffectChain &Chain, float *Buffer, int Frames, int SourceFrames, uint64_t Limit,
-   bool SourceActive, uint64_t UpstreamBound)
+   bool SourceActive, uint64_t UpstreamBound, bool UpstreamPending)
 {
    if (Chain.Effects.empty()) {
       if (SourceFrames) {
@@ -189,7 +189,7 @@ static void render_effects(AudioEffectChain &Chain, float *Buffer, int Frames, i
          Chain.Truncated = false;
       }
       else Chain.DrainFrames = std::min(Limit, Chain.DrainFrames + Frames);
-      Chain.State = SourceActive ? ADS::ACTIVE : ADS::IDLE;
+      Chain.State = SourceActive ? ADS::ACTIVE : (UpstreamPending ? ADS::DRAINING : ADS::IDLE);
       return;
    }
    const int channels = Chain.Stereo ? 2 : 1;
@@ -204,7 +204,7 @@ static void render_effects(AudioEffectChain &Chain, float *Buffer, int Frames, i
    if (Frames > 0) {
       bool input = false;
       for (int i = 0; i < Frames * channels; ++i) input |= Buffer[i] != 0;
-      if (!input and !Chain.pending()) {
+      if (!input and !Chain.pending() and !UpstreamPending) {
          Chain.DrainFrames = std::min(Limit, Chain.DrainFrames + Frames);
          Chain.State = ADS::IDLE;
          for (auto effect : Chain.Effects) {
@@ -234,9 +234,9 @@ static void render_effects(AudioEffectChain &Chain, float *Buffer, int Frames, i
          for (auto effect : Chain.Effects) effect->idle();
          Chain.State = ADS::IDLE;
       }
-      else Chain.State = Chain.pending() ? ADS::DRAINING : ADS::IDLE;
+      else Chain.State = Chain.pending() or UpstreamPending ? ADS::DRAINING : ADS::IDLE;
    }
-   if (!SourceActive and !Chain.pending()) Chain.State = ADS::IDLE;
+   if (!SourceActive and !Chain.pending() and !UpstreamPending) Chain.State = ADS::IDLE;
    else if (!SourceActive) Chain.State = ADS::DRAINING;
    if (Chain.State IS ADS::IDLE) {
       for (auto effect : Chain.Effects) effect->idle();

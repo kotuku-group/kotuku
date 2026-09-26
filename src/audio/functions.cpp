@@ -600,6 +600,7 @@ static bool handle_sample_end(extAudio *Self, AudioChannel &Channel)
 
       int source_frames = 0;
       bool source_active = false;
+      bool upstream_pending = false;
       uint64_t upstream_bound = 0;
       for (auto n=1; n < (int)Self->Sets.size(); n++) {
          auto &set = Self->Sets[n];
@@ -623,17 +624,19 @@ static bool handle_sample_end(extAudio *Self, AudioChannel &Channel)
          source_frames = std::max(source_frames, Self->SourceFrames);
 
          if (effects) {
+            const bool was_pending = set.Effects->pending();
             upstream_bound = std::max(upstream_bound, set.Effects->tail_bound());
             set.Effects->MeterScale = Self->BitDepth IS 32 ? 1.0 : 32768.0;
             render_effects(*set.Effects, buffer, window, Self->SourceFrames,
                uint64_t(Self->MaxDrain * Self->OutputRate), set_active);
+            upstream_pending |= was_pending or set.Effects->pending();
             for (int i = 0; i < window_size / int(sizeof(float)); ++i) Self->MixBuffer[i] += buffer[i];
          }
       }
 
       Self->GlobalEffects->MeterScale = Self->BitDepth IS 32 ? 1.0 : 32768.0;
       render_effects(*Self->GlobalEffects, Self->MixBuffer.data(), window, source_frames,
-         uint64_t(Self->MaxDrain * Self->OutputRate), source_active, upstream_bound);
+         uint64_t(Self->MaxDrain * Self->OutputRate), source_active, upstream_bound, upstream_pending);
 
       // Do optional post-processing
 

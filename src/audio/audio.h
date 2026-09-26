@@ -336,7 +336,8 @@ public:
 
 static void process_effects(AudioEffectChain &, float *, int);
 static ERR configure_effects(AudioEffectChain &, int, bool);
-static void render_effects(AudioEffectChain &, float *, int, int, uint64_t, bool = false, uint64_t = 0);
+static void render_effects(AudioEffectChain &, float *, int, int, uint64_t, bool = false, uint64_t = 0,
+   bool = false);
 static bool effects_pending(const AudioEffectChain &);
 
 //********************************************************************************************************************
