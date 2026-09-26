@@ -53,10 +53,17 @@ sibling named by `key` holds one of the listed `values`, the parameter is either
 (`inactive="1"`) or limited to a lower `max`.
 
 An `output` element names data that can be read back from the processor.  A `curve` output is read with
-#GetResponse().  Scalar outputs are read together with #GetMeters(), or individually with #GetOutput().  Their
-`label`, `description`, `unit`, `scope`, `semantics` and zero-based `slot` attributes describe the value and its
-snapshot location.  Slots are stable across layouts; right-channel outputs are omitted in mono.  Sample peaks
-are not true-peak measurements.  Gain reduction, where offered, is non-negative attenuation in decibels.
+#GetResponse().  Scalar outputs are meter values, read together with #ReadMeters() or individually with #GetOutput().
+Their `label`, `description`, `unit`, `scope`, `semantics` and zero-based `slot` attributes describe the value and its
+location in the current meter layout.  A `channel` scope identifies a value measured on one channel of the processing
+layout, and its `channel` attribute holds the channel identity from the `SPK` constants.  A `global` scope identifies a
+value that applies to every channel, such as linked gain reduction.  Keys are stable, e.g. `input_peak_left`, and only
+channels present in the processing layout are listed.  Sample peaks are not true-peak measurements.  Gain reduction,
+where offered, is non-negative attenuation in decibels.
+
+The `slot` attributes describe the meter layout that was current when the schema was read.  A change of processing
+layout replaces the meter layout; use #GetMeterLayout() to resolve keys to slots, and repeat the resolution whenever
+#ReadMeters() reports a different `ID`.
 
 Parameters are addressed by key-paths: `key` for a top-level parameter, or `group[index].key` for a group member, e.g.
 `bands[2].frequency`.  Values are always in real units, such as hertz or decibels; they are never normalised.
@@ -73,6 +80,23 @@ breaks any rule is rejected in full and the working copy is discarded.
 
 *********************************************************************************************************************/
 
+static ERR mr_free(ResourceRecord &Resource, APTR Address)
+{
+   ((struct MeterReading *)Address)->~MeterReading();
+   return ERR::Terminate;
+}
+
+static ResourceManager glMeterReadingHandler = { "MeterReading", &mr_free, false };
+
+static ERR ml_free(ResourceRecord &Resource, APTR Address)
+{
+   ((struct MeterLayout *)Address)->~MeterLayout();
+   return ERR::Terminate;
+}
+
+static ResourceManager glMeterLayoutHandler = { "MeterLayout", &ml_free, false };
+
+//********************************************************************************************************************
 // Returns an error if the effect's parameters cannot currently be changed.
 
 static ERR effect_mutable(extAudioEffect *Self)
@@ -252,9 +276,9 @@ static ERR AUDIOEFFECT_Init(extAudioEffect *Self)
    if (!Self->Channel and (Self->Flags != AEF::NIL)) return ERR::InvalidValue;
 
    kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 3000);
+
    if (!audio.granted()) return ERR::Search;
    if (audio->Class->BaseClassID != CLASSID::AUDIO) return ERR::InvalidObject;
-   if (!audio->initialised()) return ERR::NotInitialised;
 
    std::lock_guard mixer_lock(audio->MixerMutex);
    auto chain = audio->GlobalEffects;
@@ -269,12 +293,22 @@ static ERR AUDIOEFFECT_Init(extAudioEffect *Self)
       chain->Generation = audio->GlobalEffects->Generation;
    }
 
-   chain->Rate = audio->EffectConfigured ? audio->OutputRate : 0;
-   chain->Stereo = audio->MixBuffer.empty() ? ((audio->Flags & ADF::STEREO) != ADF::NIL) : audio->Stereo;
+   // A committed output configuration is adopted directly.  Otherwise the requested layout is provisional until the
+   // Audio object is activated, when every chain is configured with the committed layout.
 
+   chain->Rate = audio->EffectConfigured ? audio->OutputRate : 0;
+   if (audio->EffectConfigured) {
+      chain->Layout = audio->CommittedLayout;
+      chain->FormatGeneration = audio->OutputGeneration;
+   }
+   else chain->Layout = audio->OutputLayout;
+   chain->Stereo = chain->Layout.size() IS 2;
+
+   Self->OutputRate       = audio->OutputRate;
+   Self->FormatCommitted  = audio->EffectConfigured;
+   Self->FormatGeneration = audio->EffectConfigured ? audio->OutputGeneration : 0;
+   Self->set_layout(chain->Layout);
    Self->reset_meter(++*chain->Generation);
-   Self->OutputRate   = audio->OutputRate;
-   Self->Stereo       = audio->MixBuffer.empty() ? ((audio->Flags & ADF::STEREO) != ADF::NIL) : audio->Stereo;
    Self->ResetPending = true;
    Self->Sequence     = chain->NextSequence++;
    Self->Chain        = chain;
@@ -550,7 +584,8 @@ not change the target.  Freeing the target disconnects all its effects, includin
 Channel: Channel-set handle, or zero for the global chain.
 
 Set before initialisation.  Use the complete handle returned by @Audio.OpenChannels(), with a zero low word.
-Individual channel handles and closed channel sets are rejected.
+Individual channel handles and closed channel sets are rejected.  This identifies a set of voice channels, not a
+speaker; the effect always processes every speaker channel of its processing layout.
 
 -FIELD-
 Flags: Optional processing flags.
@@ -561,11 +596,9 @@ Lookup: AEF
 static ERR AUDIOEFFECT_SET_Flags(extAudioEffect *Self, AEF Value)
 {
    if ((Value & ~AEF::BYPASS) != AEF::NIL) return ERR::InvalidValue;
-   if (Self->initialised() and !Self->Channel) return ERR::Immutable;
 
    auto chain = Self->Chain.lock();
    if (!chain) {
-      if (Self->initialised()) return ERR::NotInitialised;
       Self->Flags = Value;
       return ERR::Okay;
    }
@@ -611,12 +644,14 @@ Global effects cannot change order after initialisation.
 static ERR AUDIOEFFECT_SET_Order(extAudioEffect *Self, int Value)
 {
    if (Self->initialised() and !Self->Channel) return ERR::Immutable;
+
    auto chain = Self->Chain.lock();
    if (!chain) {
       if (Self->initialised()) return ERR::NotInitialised;
       Self->Order = Value;
       return ERR::Okay;
    }
+
    std::lock_guard mixer_lock(*chain->Mutex);
    Self->Order = Value;
    sort_effects(*chain);
@@ -645,21 +680,61 @@ static ERR AUDIOEFFECT_GET_OutputRate(extAudioEffect *Self, int *Value)
 
 /*********************************************************************************************************************
 
--FIELD-
-Stereo: Read-only output layout; one for stereo and zero for mono.
+-METHOD-
+GetProcessingFormat: Reads the PCM format processed by the effect.
 
-Updated on device activation together with #OutputRate.
+GetProcessingFormat() reports the committed format of the audio that passes through the effect.  Effects process the
+Audio object's floating-point mix, so `SampleFormat` is always `ASF::F32` in native byte order.  The input and output
+layouts of an effect are always identical.  Channel identities are listed in interleaved frame order.
+
+The format is committed when the @Audio object is activated.  An effect attached to an inactive Audio object has no
+committed format until activation, in which case `State` is `AFS::UNAVAILABLE` and the remaining results are empty.
+After the Audio object is deactivated, or if the effect is disconnected, the last committed format remains available and
+`State` is `AFS::INACTIVE`.
+
+!AFS
+
+`Generation` identifies the committed output configuration and matches the value reported by
+@Audio.GetOutputFormat() for the same configuration.  It changes whenever the Audio object commits a new processing
+configuration, including reactivation with an unchanged layout.  Meter layouts follow the processing layout; see
+#GetMeterLayout().
+
+-INPUT-
+&int SampleRate: Frames per second, or zero if no format is available.
+&int(ASF) SampleFormat: Sample representation of the processed audio.
+^&vector(int) Layout: Receives the ordered channel identities from the `SPK` constants.
+&large Generation: Output configuration generation of the reported format.
+&int(AFS) State: Availability of the reported format.
+
+-ERRORS-
+Okay
+NullArgs
+
 -END-
 
 *********************************************************************************************************************/
 
-static ERR AUDIOEFFECT_GET_Stereo(extAudioEffect *Self, int *Value)
+static ERR AUDIOEFFECT_GetProcessingFormat(extAudioEffect *Self, struct fx::GetProcessingFormat *Args)
 {
-   if (auto chain = Self->Chain.lock()) {
-      std::lock_guard mixer_lock(*chain->Mutex);
-      *Value = Self->Stereo;
-   }
-   else *Value = Self->Stereo;
+   if (!Args) return ERR::NullArgs;
+
+   Args->SampleRate = 0;
+   Args->SampleFormat = ASF::NIL;
+   Args->Generation = 0;
+   Args->State = AFS::UNAVAILABLE;
+   if (Args->Layout) Args->Layout->clear();
+
+   auto chain = Self->Chain.lock();
+   std::unique_lock<std::recursive_mutex> lock;
+   if (chain) lock = std::unique_lock(*chain->Mutex);
+
+   if (!Self->FormatCommitted) return ERR::Okay;
+
+   Args->SampleRate   = Self->OutputRate;
+   Args->SampleFormat = ASF::F32;
+   Args->Generation   = Self->FormatGeneration;
+   Args->State        = (chain and chain->Rate > 0) ? AFS::ACTIVE : AFS::INACTIVE;
+   if (Args->Layout) Args->Layout->assign(Self->Layout.begin(), Self->Layout.end());
    return ERR::Okay;
 }
 
@@ -670,8 +745,8 @@ Schema: Read-only.  An XML description of the effect's parameters.
 
 The schema describes every parameter that can be read or changed with #GetParameter() and #SetParameter(), including
 units, ranges, defaults, repeated groups and the rules between parameters.  The format is described in the class
-documentation.  Right-channel scalar outputs are omitted for mono layouts.  Instance-specific bounds, such as the
-Nyquist frequency, are resolved against #OutputRate.
+documentation.  Scalar outputs are listed for the channels of the current processing layout, with slots from the
+current meter layout.  Instance-specific bounds, such as the Nyquist frequency, are resolved against #OutputRate.
 
 The value is empty if the class does not publish a schema.
 
@@ -679,97 +754,167 @@ The value is empty if the class does not publish a schema.
 
 static ERR AUDIOEFFECT_GET_Schema(extAudioEffect *Self, std::string_view &Value)
 {
+   // A document depends only on the schema and the processing layout, so it is cached per distinct pair.  Cached
+   // strings are never released, so a returned view remains valid.
+
    static std::mutex cache_lock;
-   static std::unordered_map<const AudioEffectSchema *, std::array<std::string, 2>> cache;
+   static std::map<std::pair<const AudioEffectSchema *, std::vector<int>>, std::string> cache;
 
    if (not Self->Schema) {
       Value = std::string_view();
       return ERR::Okay;
    }
 
-   int stereo;
-   AUDIOEFFECT_GET_Stereo(Self, &stereo);
+   std::vector<AudioMeterDesc> meters;
+   std::vector<int> layout;
+   {
+      auto chain = Self->Chain.lock();
+      std::unique_lock<std::recursive_mutex> mixer_lock;
+      if (chain) mixer_lock = std::unique_lock(*chain->Mutex);
+      meters = Self->Meters;
+      layout = Self->Layout;
+   }
+
    std::lock_guard lock(cache_lock);
-   auto &xml = cache[Self->Schema][stereo ? 1 : 0];
-   if (xml.empty()) xml = build_schema_xml(*Self->Schema, stereo != 0);
+   auto &xml = cache[{ Self->Schema, std::move(layout) }];
+   if (xml.empty()) xml = build_schema_xml(*Self->Schema, meters);
    Value = xml;
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 -METHOD-
-GetMeters: Reads a live snapshot of the latest measurement interval.
+GetMeterLayout: Describes the values published by the effect's meters.
 
-Call GetMeters() to monitor effect signal levels, typically to drive level meters in a user interface.  The
-effect measures the input and output peaks and its gain reduction in fixed intervals.  Each call returns the values
-of the most recent interval with their metadata as one consistent set, so that readings from different intervals are
-never mixed.  Use #GetOutput() instead when only one value is needed.
+Call GetMeterLayout() to discover the meter values that the effect measures, typically to build level meters in a user
+interface.  The result is a !MeterLayout snapshot containing a configuration identifier and a `Meters` array of
+!MeterInfo records in slot order.  The `Slot` of each record is the index of its value in the `Values` of a
+reading from #ReadMeters().
 
-For `Values`, pass an array of five elements.  Slots are input left, input right, output left, output right and gain
-reduction.  Only slots published as scalar outputs in #Schema are applicable.  Mono layouts omit right-channel
-descriptors.  Peaks are sample peaks in dBFS, floored at -120 dBFS; gain reduction is non-negative attenuation in dB.
+Each record gives the value's stable `Key`, a human-readable `Label`, its `Unit` (e.g. `dBFS`), a `Scope` of either
+`channel` or `global`, and the `Semantics` of the measurement (e.g. `sample-peak`).  Values measured on one channel
+carry that channel's identity from the `SPK` constants in `Channel`, while global values such as linked gain reduction
+have a `Channel` of zero.  Missing units or semantics are empty strings.
 
-Intervals contain `ceil(OutputRate / 20)` frames (50 ms rounded up).  Reads are non-destructive; slow readers can
-miss intervals.  Idle publishes a partial final interval.  Reset and reconfiguration invalidate measurements.
-`Sequence` increases on publication.  `Position` counts processed output frames since reset; `Interval` is the number
-of frames represented.  `Generation` identifies configuration and path changes, independently of schema version.
+Descriptors are published only for the channels in the effect's processing layout, e.g. `input_peak_left` and
+`input_peak_right` for stereo, or `input_peak_centre` for mono.  Slots are dense and stable within one layout
+configuration.  Stable keys and channel identities, not slot numbers, preserve a value's meaning when the layout changes.
 
-`Flags` reports the snapshot's validity and lifecycle state.  Bypassed and disconnected snapshots do not set `VALID`.
+`ID` is the configuration identifier that the descriptors belong to, and uses the same definition as the
+`ID` of a !MeterReading result.  Keep it with the descriptors and compare it with the `ID` of each
+reading from #ReadMeters().  If the two differ, call GetMeterLayout() again before interpreting the values.  Any change
+to the meter layout, e.g. activating the @Audio object with a different output layout, changes the ID.  Other
+configuration changes, such as committing a parameter or toggling bypass, change it too, so a client can re-read an
+unchanged layout; this is harmless.
 
-!AMF
-
-`Floor` has one bit per peak slot, set for values below -120 dBFS.
+The descriptors and their ID are copied together.  The snapshot owns its records and strings, so it remains
+valid after the effect's layout changes or the effect is freed.  The snapshot is allocated by the effect and must be
+released with ~Core.FreeResource() by C++ clients.
 
 -INPUT-
-^array(double) Values: Five-element array receiving the scalar values.
-&large Sequence:   Publication sequence number.
-&large Generation: Configuration generation.
-&large Position:   Processed-frame position at the interval end.
-&int Interval:     Measurement interval length in frames.
-&int(AMF) Flags:   Snapshot validity and lifecycle flags.
-&int Floor:        Below-floor bit mask.
+!struct(*MeterLayout) Layout: Receives an owned snapshot of the meter descriptors and their ID.
 
 -ERRORS-
 Okay
 NullArgs
-Args: Values must contain exactly five elements.
+AllocMemory
 
 -END-
 *********************************************************************************************************************/
 
-static AudioMeterSnapshot effect_meters(extAudioEffect *Self)
+static ERR AUDIOEFFECT_GetMeterLayout(extAudioEffect *Self, struct fx::GetMeterLayout *Args)
 {
-   auto chain = Self->Chain.lock();
+   kt::Log log;
 
-   if (!chain) {
-      AudioMeterSnapshot result;
-      result.Flags = Self->initialised() ? AMF::DISCONNECTED : AMF::NO_SAMPLES;
-      return result;
+   if (!Args) return log.warning(ERR::NullArgs);
+
+   Args->Layout = nullptr;
+
+   // Allocate before taking the mixer lock, as for ReadMeters().  Copy the descriptors while locked so no pointer
+   // into the effect's storage escapes to the caller or the script marshaller.
+
+   struct MeterLayout *layout;
+   if (AllocResource(sizeof(struct MeterLayout), MEM::NIL, (APTR *)&layout, &glMeterLayoutHandler) != ERR::Okay) {
+      return ERR::AllocMemory;
    }
+   new (layout) struct MeterLayout;
 
-   std::lock_guard lock(*chain->Mutex);
+   auto chain = Self->Chain.lock();
+   std::unique_lock<std::recursive_mutex> lock;
+   if (chain) lock = std::unique_lock(*chain->Mutex);
 
-   auto result = Self->Meter;
-   if ((result.Flags & AMF::VALID) IS AMF::NIL) result.Generation = *chain->Generation;
-   if ((Self->Flags & AEF::BYPASS) != AEF::NIL) result.Flags = AMF::BYPASSED;
-   else if ((result.Flags & AMF::VALID) IS AMF::NIL) result.Flags |= AMF::NO_SAMPLES;
-   return result;
+   layout->Meters.reserve(Self->Meters.size());
+   for (const auto &meter : Self->Meters) layout->Meters.push_back(meter);
+   layout->ID = int64_t(Self->meter_generation(chain.get()));
+   Args->Layout = layout;
+
+   return ERR::Okay;
 }
 
-static ERR AUDIOEFFECT_GetMeters(extAudioEffect *Self, struct fx::GetMeters *Args)
+/*********************************************************************************************************************
+-METHOD-
+ReadMeters: Reads one coherent measurement of every meter value.
+
+ReadMeters() returns the effect's latest measurement interval as a !MeterReading structure.  All values and metadata
+describe the same interval, so readings from different intervals are never mixed.  Use #GetOutput() instead when only
+one value is needed.
+
+`Values` holds one element per meter descriptor, indexed by the `Slot` of the descriptors from #GetMeterLayout().
+Compare the reading's `ID` with the ID returned by #GetMeterLayout().  If they differ, the layout may
+have changed since the descriptors were read, e.g. after a device reconfiguration, so call #GetMeterLayout() again
+before interpreting the values.
+
+Peaks are sample peaks in dBFS, floored at -120 dBFS.  Gain reduction is non-negative attenuation in dB.  The `Flags`
+of each element of `Values` is a combination of the following:
+
+!AMV
+
+Intervals contain `ceil(OutputRate / 20)` frames (50 ms rounded up).  Reads are non-destructive; slow readers can
+miss intervals.  Idle publishes a partial final interval.  Reset and reconfiguration invalidate measurements.
+`Sequence` increases on publication.  `Position` counts processed output frames since reset; `Interval` is the number
+of frames represented.  `ID` identifies configuration and path changes, including changes to the meter layout.
+
+The reading's `Flags` reports the snapshot's validity and lifecycle state.  Bypassed and disconnected snapshots do not
+set `VALID`, and none of their values are flagged as valid.
+
+!AMF
+
+The reading is allocated by the effect and must be released with ~Core.FreeResource() by C++ clients.
+
+-INPUT-
+!struct(*MeterReading) Reading: Receives the latest measurement.
+
+-ERRORS-
+Okay
+NullArgs
+AllocMemory
+NotInitialised: The effect has not been initialised.
+
+-END-
+*********************************************************************************************************************/
+
+static ERR AUDIOEFFECT_ReadMeters(extAudioEffect *Self, struct fx::ReadMeters *Args)
 {
-   if (!Args) return ERR::NullArgs;
-   if (Args->Values.size() != 5) return ERR::Args;
+   kt::Log log;
 
-   const auto snapshot = effect_meters(Self);
-   std::copy(snapshot.Values.begin(), snapshot.Values.end(), Args->Values.begin());
+   if (!Args) return log.warning(ERR::NullArgs);
 
-   Args->Sequence   = snapshot.Sequence;
-   Args->Generation = snapshot.Generation;
-   Args->Position   = snapshot.Position;
-   Args->Interval   = snapshot.Interval;
-   Args->Flags      = snapshot.Flags;
-   Args->Floor      = snapshot.Floor;
+   Args->Reading = nullptr;
+
+   // Allocate before taking the mixer lock, which the render thread also needs.
+
+   struct MeterReading *reading;
+   if (AllocResource(sizeof(struct MeterReading), MEM::NIL, (APTR *)&reading, &glMeterReadingHandler) != ERR::Okay) {
+      return ERR::AllocMemory;
+   }
+   new (reading) struct MeterReading;
+
+   auto chain = Self->Chain.lock();
+   std::unique_lock<std::recursive_mutex> lock;
+   if (chain) lock = std::unique_lock(*chain->Mutex);
+
+   Self->read_meter(chain.get(), *reading);
+   Args->Reading = reading;
    return ERR::Okay;
 }
 
@@ -777,17 +922,19 @@ static ERR AUDIOEFFECT_GetMeters(extAudioEffect *Self, struct fx::GetMeters *Arg
 -METHOD-
 GetOutput: Reads one value from a schema key.
 
-Returns the latest completed interval value for a `Key`.  Use #GetMeters() for multi-value reads and lifecycle flags.
-Curve outputs continue to use #GetResponse().
+Returns the latest completed interval value for a `Key`.  Keys are resolved against the current meter layout, so a
+key for a channel that is absent from the processing layout is not found.  GetOutput() is a convenience for reading a
+single value; use #ReadMeters() for coherent multi-value reads and lifecycle flags.  Curve outputs continue to use
+#GetResponse().
 
 -INPUT-
-strview Key: Scalar output key from #Schema.
+strview Key: Scalar output key from #Schema or #GetMeterLayout().
 &double Value: Latest value in the descriptor's units.
 
 -ERRORS-
 Okay
 NullArgs
-Search: Unknown key, including right-channel keys in a mono layout.
+Search: Unknown key, including keys for channels absent from the processing layout.
 NoSupport: The key names a curve or another unsupported output kind.
 NotInitialised: The effect is disconnected.
 InvalidState: No current valid measurement is available, or the effect is idle or bypassed.
@@ -801,13 +948,14 @@ static ERR AUDIOEFFECT_GetOutput(extAudioEffect *Self, struct fx::GetOutput *Arg
    auto chain = Self->Chain.lock();
    if (!chain) return ERR::NotInitialised;
    std::lock_guard lock(*chain->Mutex);
-   if (Self->Schema) for (const auto &output : Self->Schema->Outputs) {
-      if (Args->Key != output.Key) continue;
-      if (!Self->Stereo and output.Scope and std::string_view(output.Scope) IS "right") return ERR::Search;
-      if (output.Kind != AudioOutputKind::SCALAR or output.Slot < 0 or output.Slot >= 5) return ERR::NoSupport;
+   for (size_t slot = 0; slot < Self->Meters.size(); slot++) {
+      if (Args->Key != Self->Meters[slot].Key) continue;
       if ((Self->Flags & AEF::BYPASS) != AEF::NIL or Self->Meter.Flags != AMF::VALID) return ERR::InvalidState;
-      Args->Value = Self->Meter.Values[output.Slot];
+      Args->Value = Self->Meter.Values[slot];
       return ERR::Okay;
+   }
+   if (Self->Schema) for (const auto &output : Self->Schema->Outputs) {
+      if ((Args->Key IS output.Key) and (output.Kind IS AudioOutputKind::CURVE)) return ERR::NoSupport;
    }
    return ERR::Search;
 }
@@ -848,7 +996,6 @@ static const FieldArray clAudioEffectFields[] = {
    { "Order",      FDF_INT|FDF_RW, nullptr, AUDIOEFFECT_SET_Order },
    { "Flags",      FDF_INT|FDF_FLAGS|FDF_RW, nullptr, AUDIOEFFECT_SET_Flags, &clAudioEffectFlags },
    { "OutputRate", FDF_INT|FDF_R, AUDIOEFFECT_GET_OutputRate },
-   { "Stereo",     FDF_INT|FDF_R, AUDIOEFFECT_GET_Stereo },
    // Virtual fields
    { "Latency",    FDF_VIRTUAL|FDF_INT64|FDF_R, AUDIOEFFECT_GET_Latency },
    { "Mutable",    FDF_VIRTUAL|FDF_INT|FDF_R, AUDIOEFFECT_GET_Mutable },

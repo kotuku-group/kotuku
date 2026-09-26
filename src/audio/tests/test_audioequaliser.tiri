@@ -3,6 +3,10 @@
 
    module audio as mAudio
 
+function u8_mono()
+   return struct.new('AudioFormat', { sampleRate=44100, sampleFormat=ASF_U8, layout=array<int> { SPK_CENTRE } })
+end
+
 function set_band(Eq:obj, Index:num, Type:num, Frequency:num, Gain:num, Q:num)
    check Eq.mtSetParameter(f'bands[{Index}].type', Type)
    check Eq.mtSetParameter(f'bands[{Index}].frequency', Frequency)
@@ -34,7 +38,7 @@ end
    check audio.acActivate()
    data = array<byte, 4096>
    data.fill(128)
-   err, sample = audio.mtAddSample(nil, SFM_U8_BIT_MONO, data, nil)
+   err, sample = audio.mtAddSample(nil, u8_mono(), data, nil)
    assert(err is ERR_Okay)
    check mAudio.MixSample(audio, channel, sample)
    check mAudio.MixFrequency(audio, channel, 44100)

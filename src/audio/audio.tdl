@@ -5,7 +5,6 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     "OVER_SAMPLING: Enables oversampling for higher quality audio at the cost of slower mixing.",
     "FILTER_LOW: Enable a low level of output filtering to minimise distortion.",
     "FILTER_HIGH: Enable a high level of output filtering to minimise distortion.",
-    "STEREO: Enable stereo output (set by default if the platform supports stereo).  If not set, output is in mono.",
     "VOL_RAMPING: Enable volume ramping for softer playback when a sample is played multiple times (enabled by default).",
     "AUTO_SAVE: Save configuration information on exit.",
     "SYSTEM_WIDE: Mixer changes should be applied system-wide.")
@@ -19,6 +18,41 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     "BYPASSED: The effect is bypassed.  The VALID flag is not set.",
     "DISCONNECTED: The effect is not attached to an effect chain.  The VALID flag is not set.",
     "NO_SAMPLES: No samples have been measured yet.")
+
+  flags("AMV", { comment="Per-value flags returned by AudioEffect.ReadMeters()." },
+    "VALID: The value holds a measurement from the snapshot's interval.",
+    "FLOOR: The measured value was below the meter floor.  The reported value is the floor.")
+
+  enums("ASF", { type="int", start=1, comment="Sample representations, independent of the channel count." },
+    "U8: Unsigned 8-bit integer samples in one byte.  Silence is `128`.",
+    "S16: Signed 16-bit integer samples in two bytes.",
+    "F32: 32-bit IEEE-754 floating point samples in four bytes, with a nominal range of `-1.0` to `1.0`.")
+
+  flags("AFF", { comment="Optional AudioFormat flags." },
+    "BIG_ENDIAN_ORDER: Multi-byte samples are stored in big endian byte order.  Samples are little endian if this flag is not set.")
+
+  constants("SPK", { type="int", comment="Channel identities for the Layout of an AudioFormat." }, {
+    CENTRE      = "1: Front centre speaker.  An ordinary mono channel also uses this identity.",
+    FRONT_LEFT  = "2: Front left speaker.",
+    FRONT_RIGHT = "3: Front right speaker.",
+    LFE         = "4: Low-frequency effects channel.",
+    SIDE_LEFT   = "5: Side left speaker.",
+    SIDE_RIGHT  = "6: Side right speaker.",
+    REAR_LEFT   = "7: Rear left speaker.",
+    REAR_RIGHT  = "8: Rear right speaker.",
+    DISCRETE    = "0x10000: Base identity for a discrete channel that has no speaker position.  Add a zero-based index from `0` to `0xffff`."
+  })
+
+  enums("ACL", { type="int", start=1, comment="Named channel layout presets for ExpandLayout()." },
+    "MONO: `CENTRE`.",
+    "STEREO: `FRONT_LEFT`, `FRONT_RIGHT`.",
+    "SURROUND_5_1_SIDE: `FRONT_LEFT`, `FRONT_RIGHT`, `CENTRE`, `LFE`, `SIDE_LEFT`, `SIDE_RIGHT`.",
+    "SURROUND_5_1_REAR: `FRONT_LEFT`, `FRONT_RIGHT`, `CENTRE`, `LFE`, `REAR_LEFT`, `REAR_RIGHT`.")
+
+  enums("AFS", { type="int", start=0, comment="Availability of a reported processing format." },
+    "UNAVAILABLE: No processing format has been committed.  The format results are empty.",
+    "ACTIVE: The reported format is committed and in use.",
+    "INACTIVE: Processing has stopped.  The last committed format is reported.")
 
   enums("ADS", { type="int", start=0, comment="Effect drain states reported by GetEffectStatus()." },
     "IDLE: No sources are playing and no effect has pending output.",
@@ -35,8 +69,8 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
   flags("VCF", { comment="Volume control flags" },
     { PLAYBACK = "0x00000001: The mixer supports audio output." },
     { CAPTURE  = "0x00000010: The mixer supports audio input." },
-    { JOINED   = "0x00000100: The mixer channels are joined (e.g. left and right speakers cannot be adjusted separately)." },
-    { MONO     = "0x00001000: The mixer is restricted to mono input/output." },
+    { JOINED   = "0x00000100: The control's channels are joined and cannot be adjusted separately." },
+    { MONO     = "0x00001000: The control has a single channel.  Its absence does not imply exactly two channels." },
     { MUTE     = "0x00010000: The mixer is muted." },
     { SYNC     = "0x00100000: The mixer is synchronised." }
   )
@@ -56,20 +90,10 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
   flags("SDF", { type='int', comment="Sound flags" },
     "LOOP: Enables sample looping. The #LoopStart and #LoopEnd fields determine where the looping area lies within the sample data.",
     "NEW: Create the sample from scratch (e.g. for audio recording purposes).",
-    "STEREO: Indicates that the sound has multiple audio channels.",
     "RESTRICT_PLAY: Restricts playback so that the sound can never play on more than one channel at any given time.",
     { STREAM = "0x40000000: Read-Only. Indicates that streaming is enabled." },
     { NOTE = "0x80000000: Internal. Used for managing playback." }
   )
-
-  constants("SFM", { type="uint", comment="These audio bit formats are supported by AddSample and AddStream." }, {
-    U8_BIT_MONO    = "1: 8-bit mono unsigned sample.",
-    S16_BIT_MONO   = "2: 16-bit mono signed sample.",
-    U8_BIT_STEREO  = "3: 8-bit stereo unsigned sample.",
-    S16_BIT_STEREO = "4: 16-bit stereo signed sample.",
-    END            = "5: Private.",
-    F_BIG_ENDIAN   = "0x80000000: Combine this flag with any audio format to declare it as big endian."
-  })
 
   enums("LOOP", { type='short', start=1, comment="Loop modes for the AudioLoop structure." },
     "SINGLE: Single loop: Releasing will end the note.",
@@ -127,8 +151,44 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     large Loop2End          # Byte position at the end of the second loop
   ]])
 
+  structdef("AudioFormat", { comment="Describes interleaved PCM audio data." }, [[
+    int SampleRate          # Nominal sample rate in frames per second
+    int(ASF) SampleFormat   # Representation of each sample
+    int(AFF) Flags          # Optional format flags
+    vector(int) Layout      # Ordered channel identities from SPK; the length is the channel count
+  ]])
+
+  structdef("MeterInfo", { comment="Describes one value published by an effect's meters." }, [[
+    string Key         # Stable key, e.g. `input_peak_left`
+    string Label       # Human-readable label
+    string Unit        # Unit of measurement, e.g. `dBFS`, or empty
+    string Scope       # Either `channel` or `global`
+    string Semantics   # Kind of measurement, e.g. `sample-peak`, or empty
+    int Slot           # Index of the value in the Values of a MeterReading
+    int Channel        # Channel identity from SPK, or zero for a global value
+  ]])
+
+  structdef("MeterLayout", { comment="An owned snapshot of the descriptors returned by GetMeterLayout()." }, [[
+    large ID                              # Configuration identifier shared with the matching MeterReading
+    vector(struct(MeterInfo)) Meters # Meter descriptors in slot order
+  ]])
+
+  structdef("MeterValue", { comment="One meter value in a MeterReading." }, [[
+    double Value    # Measured value in the units of its MeterInfo descriptor
+    int(AMV) Flags  # Validity of the value
+  ]])
+
+  structdef("MeterReading", { comment="One coherent measurement of every meter value, from ReadMeters()." }, [[
+    large Sequence                    # Publication sequence number; increases with each published interval
+    large ID                          # Configuration identifier; compare with the ID from GetMeterLayout()
+    large Position                    # Processed-frame position at the end of the interval
+    int(AMF) Flags                    # Validity and lifecycle state of the reading
+    int Interval                      # Length of the measurement interval in frames
+    vector(struct(MeterValue)) Values # One value per meter descriptor, indexed by slot
+  ]])
+
   structdef("AudioEQBand", { comment="One parametric equaliser band." }, [[
-    int(EQB) Type       # Filter type
+    int(EQB) Type      # Filter type
     double Frequency   # Centre or corner frequency in hertz
     double Gain        # Band gain in decibels
     double Q           # Quality factor or shelf slope
@@ -144,11 +204,14 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     { id=7, name="Beep" },
     { id=8, name="SetVolume" },
     { id=9, name="GetEffectStatus" },
-    { id=10, name="ResetEffects" }
+    { id=10, name="ResetEffects" },
+    { id=11, name="GetOutputFormat" },
+    { id=12, name="GetVolumeChannels" }
   })
 
-  klass("Audio", { src="class_audio.cpp", output="class_audio_def.c", extended=true }, [[
+  klass("Audio", { version=1, src="class_audio.cpp", output="class_audio_def.c", extended=true }, [[
     ~double MaxDrain
+    ~array(int) OutputLayout
     int OutputRate
     int InputRate
     int Quality
@@ -165,17 +228,18 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     { id=4, name="RemoveEntry" },
     { id=5, name="GetResponse" },
     { id=6, name="GetGroupCount" },
-    { id=7, name="GetMeters" },
-    { id=8, name="GetOutput" }
+    { id=7, name="GetMeterLayout" },
+    { id=8, name="GetOutput" },
+    { id=9, name="ReadMeters" },
+    { id=10, name="GetProcessingFormat" }
   })
 
-  klass("AudioEffect", { src="class_audioeffect.cpp", output="class_audioeffect_def.c", extended=true }, [[
+  klass("AudioEffect", { version=1, src="class_audioeffect.cpp", output="class_audioeffect_def.c", extended=true }, [[
     oid Audio
     int Channel
     int Order
     int(AEF) Flags
     int OutputRate
-    int Stereo
     ~large Latency
     ~int Mutable
     ~string Schema
@@ -187,7 +251,11 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     ~double Gain
   ]])
 
-  klass("Sound", { src="class_sound.cpp", output="class_sound_def.c", extended=true }, [[
+  klass("Sound", { version=1, src="class_sound.cpp", output="class_sound_def.c", extended=true }, [[
+    ~struct(*AudioFormat) SourceFormat
+    ~int Channels
+    ~int FrameBytes
+    ~int SampleRate
     string Path
     double Volume      # Volume of sample (0 - 100%)
     double Pan         # Horizontal positioning for playback on stereo speakers (`-100` to `+100`)
@@ -198,11 +266,9 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     int Priority       # Priority over other sounds
     int Octave         # Current octave to use for playing back notes (defaults to zero)
     int(SDF) Flags     # Sound flags
-    int Frequency      # Frequency of sampled sound (nb: does not affect playback - use the Playback field)
     int Playback       # Frequency to use for sample playback
     int Compression    # Compression rating (0% none, 100% high)
-    int BytesPerSecond # Bytes per second, measured as `Frequency * BytesPerSample`
-    int BitsPerSample  # Usually set to `8` or `16` bit
+    int BytesPerSecond # Bytes per second, measured as `SampleRate * FrameBytes`
     oid Audio          # Reference to an @Audio object to use for audio output and input
     int(STREAM) Stream # Streaming type (smart by default)
     int Handle         # Audio handle acquired at the audio object [Private - Available to child classes]
@@ -221,6 +287,8 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
      "MixSample",
      "MixStop",
      "MixVolume",
-     "MixSubmitBatch")
+     "MixSubmitBatch",
+     "ExpandLayout",
+     "GetFrameBytes")
 
 end)

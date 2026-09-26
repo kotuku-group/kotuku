@@ -14,7 +14,12 @@
     <copyright>Paul Manias © 2002-2026</copyright>
     <description>
 <p>The Audio class provides a comprehensive audio service that works across multiple platforms and follows a client-server design model. It serves as the foundation for all audio operations in Kōtuku framework, managing hardware resources, sample mixing, and output buffering.</p>
-<p>The Audio class supports 8/16/32 bit output in stereo or mono configurations, with advanced features including oversampling for enhanced quality, intelligent streaming for large samples, multiple simultaneous audio channels, and command sequencing for precise timing control. The internal floating-point mixer ensures high-quality audio processing regardless of the target hardware bit depth.</p>
+<p>The Audio class supports 8/16/32 bit output, with advanced features including oversampling for enhanced quality, intelligent streaming for large samples, multiple simultaneous audio channels, and command sequencing for precise timing control. The internal floating-point mixer ensures high-quality audio processing regardless of the target hardware bit depth.</p>
+<header>Formats and Layouts</header>
+<p>PCM data is described by the <st>AudioFormat</st> structure, which separates the sample representation from the channel layout.  A layout is an ordered list of channel identities, one for each sample in an interleaved frame:</p>
+<types lookup="SPK"/>
+<p>Named layouts can be expanded with the ExpandLayout() function.  The output layout is requested with <fl>OutputLayout</fl> and the committed processing format is reported by <method>GetOutputFormat</method>.  The format model can describe layouts, such as 5.1, that the mixer cannot currently render.  Such layouts are rejected with <code>ERR::NoSupport</code> rather than being reinterpreted; the mixer currently renders mono (<code>CENTRE</code>) and stereo (<code>FRONT_LEFT</code>, <code>FRONT_RIGHT</code>) output.</p>
+<p>The term 'channel' has two meanings in the Audio API.  Voice channels, as allocated by <method>OpenChannels</method> and referenced by mixer handles, play one sample each.  Speaker channels are the members of a layout.  A voice channel playing a stereo sample contributes to two speaker channels.</p>
 <p>For straightforward audio playback requirements, we recommend using the <class name="Sound">Sound</class> class interface, which provides a simplified API whilst utilising the Audio class internally. Direct use of the Audio class is appropriate for applications requiring precise mixer control, multiple simultaneous samples, or custom audio processing workflows.</p>
 <p>Note: Support for audio recording is not currently available in this implementation.</p></description>
     <source>
@@ -32,10 +37,12 @@
 <p>An audio object must be activated before it can play audio samples. The activation process involves several critical steps: hardware resource acquisition, mixer buffer allocation, and platform-specific driver initialisation.</p>
 <p>Activation attempts to gain exclusive or shared access to the audio hardware device. On some platforms, this may fail if another process has obtained an exclusive lock on the audio device. The specific behaviour depends on the underlying audio system (ALSA on Linux, WASAPI on Windows).</p>
 <p>If activation fails, the audio object remains in an inactive state but retains its configuration. Common failure causes include hardware device unavailability, insufficient system resources, or driver compatibility issues.</p>
+<p>The <fl>OutputLayout</fl> is negotiated with the device during activation.  An explicitly requested layout is exact: if the mixer or device cannot provide it, activation fails with <code>ERR::NoSupport</code> and the previously committed format is unchanged.  The default stereo request can settle on mono output if the device only supports mono.  A successful activation commits a new processing configuration, which is reported by <method>GetOutputFormat</method>.</p>
 <p>All resources and device locks obtained during activation can be released through <action>Deactivate</action>. An inactive audio object can perform configuration operations but cannot process audio samples.</p>
       </description>
       <result>
         <error code="Okay">Hardware activation completed successfully.</error>
+        <error code="NoSupport">The requested output layout or format cannot be provided.</error>
         <error code="Activate">The hardware device could not begin playback.</error>
         <error code="CreateResource">The hardware audio buffer could not be created.</error>
       </result>
@@ -75,20 +82,24 @@
     <method>
       <name>AddSample</name>
       <comment>Adds a new sample to an audio object for channel-based playback.</comment>
-      <prototype>ERR snd::AddSample(OBJECTPTR Object, FUNCTION OnStop, SFM SampleFormat, std::span&lt;const int8_t&gt; Data, struct AudioLoop * Loop, INT * Result)</prototype>
-      <tiriPrototype>err, Result:num = AddSample(OnStop:func, SampleFormat:num, Data:array, Loop:any)</tiriPrototype>
+      <prototype>ERR snd::AddSample(OBJECTPTR Object, FUNCTION OnStop, struct AudioFormat * Format, std::span&lt;const int8_t&gt; Data, struct AudioLoop * Loop, INT * Result)</prototype>
+      <tiriPrototype>err, Result:num = AddSample(OnStop:func, Format:any, Data:array, Loop:any)</tiriPrototype>
       <input>
         <param type="FUNCTION" name="OnStop">This optional callback function will be called when the stream stops playing.</param>
-        <param type="SFM" name="SampleFormat" lookup="SFM">Indicates the format of the sample data that you are adding.</param>
+        <param type="struct AudioFormat *" name="Format">Describes the format of the sample data.</param>
         <param type="std::span&lt;const int8_t&gt;" name="Data">Points to the address of the sample data.</param>
         <param type="struct AudioLoop *" name="Loop">Optional sample loop information.</param>
         <param type="INT *" name="Result">The resulting sample handle will be returned in this parameter.</param>
       </input>
       <description>
 <p>Audio samples can be loaded into an Audio object for playback via the AddSample() or <method>AddStream</method> methods.  For small samples under 512k we recommend AddSample(), while anything larger should be supported through <method>AddStream</method>.</p>
-<p>When adding a sample, it is essential to select the correct bit format for the sample data.  While it is important to differentiate between simple attributes such as 8 or 16 bit data, mono or stereo format, you should also be aware of whether or not the data is little or big endian, and if the sample data consists of signed or unsigned values.  Because of the possible variations there are a number of sample formats, as illustrated in the following table:</p>
-<types lookup="SFM"/>
-<p>By default, all samples are assumed to be in little endian format, as supported by Intel CPU's.  If the data is in big endian format, logical-or the SampleFormat value with <code>SFM::F_BIG_ENDIAN</code>.</p>
+<p>The <code>Format</code> describes the sample data with an <st>AudioFormat</st> structure:</p>
+<struct lookup="AudioFormat"/>
+<p>The <code>SampleFormat</code> selects the representation of each sample, independently of the channel count:</p>
+<types lookup="ASF"/>
+<p>The <code>Layout</code> lists the identity of each channel in the order that its samples appear within a frame.  Use ExpandLayout() to obtain the layout of a named preset.  Multi-byte samples are little endian unless <code>AFF::BIG_ENDIAN_ORDER</code> is set in <code>Flags</code>.  The <code>SampleRate</code> records the nominal rate of the source.  It does not change the playback frequency, which is always set explicitly with <function>MixFrequency</function>.</p>
+<p>The format is copied, including its layout, so the client's descriptor does not need to outlive the call.  A malformed format is rejected with <code>ERR::Args</code>.  The mixer currently plays <code>ASF::U8</code> and <code>ASF::S16</code> samples in mono (<code>CENTRE</code>) or stereo (<code>FRONT_LEFT</code>, <code>FRONT_RIGHT</code>) layouts, and other valid formats are rejected with <code>ERR::NoSupport</code>.</p>
+<p>The byte length of <code>Data</code> and all loop boundaries must be multiples of the frame size, which is the number of channels multiplied by the container size of one sample.  <function>GetFrameBytes</function> returns this value for a format.</p>
 <p>It is also possible to supply loop information with the sample data.  This is achieved by configuring the <st>AudioLoop</st> structure:</p>
 <struct lookup="AudioLoop"/>
 <p>The types that can be specified in the <code>LoopMode</code> field are:</p>
@@ -98,7 +109,8 @@
       </description>
       <result>
         <error code="Okay">Sample successfully added to the audio system.</error>
-        <error code="Args">Invalid argument values provided.</error>
+        <error code="Args">The format is malformed, or the data length or a loop boundary is not aligned to a complete frame.</error>
+        <error code="NoSupport">The format is valid, but its representation or layout cannot be played.</error>
         <error code="AllocMemory">Failed to allocate enough memory to hold the sample data.</error>
         <error code="NullArgs">Required parameters are null or missing.</error>
       </result>
@@ -108,12 +120,12 @@
     <method>
       <name>AddStream</name>
       <comment>Adds a new sample-stream to an Audio object for channel-based playback.</comment>
-      <prototype>ERR snd::AddStream(OBJECTPTR Object, FUNCTION Callback, FUNCTION OnStop, SFM SampleFormat, INT64 SampleLength, INT64 PlayOffset, struct AudioLoop * Loop, INT * Result)</prototype>
-      <tiriPrototype>err, Result:num = AddStream(Callback:func, OnStop:func, SampleFormat:num, SampleLength:num, PlayOffset:num, Loop:any)</tiriPrototype>
+      <prototype>ERR snd::AddStream(OBJECTPTR Object, FUNCTION Callback, FUNCTION OnStop, struct AudioFormat * Format, INT64 SampleLength, INT64 PlayOffset, struct AudioLoop * Loop, INT * Result)</prototype>
+      <tiriPrototype>err, Result:num = AddStream(Callback:func, OnStop:func, Format:any, SampleLength:num, PlayOffset:num, Loop:any)</tiriPrototype>
       <input>
         <param type="FUNCTION" name="Callback">This callback function must be able to return raw audio data for streaming.  The function context will be pinned as a safety measure.</param>
         <param type="FUNCTION" name="OnStop">This optional callback function will be called when the stream stops playing.  The function context will be pinned as a safety measure.</param>
-        <param type="SFM" name="SampleFormat" lookup="SFM">Indicates the format of the sample data that you are adding.</param>
+        <param type="struct AudioFormat *" name="Format">Describes the format of the stream data.</param>
         <param type="INT64" name="SampleLength">Total byte length of the stream, or <code>-1</code> when the length is unknown.  Zero is also accepted as the legacy unknown-length value.</param>
         <param type="INT64" name="PlayOffset">Initial byte position.  It must be aligned to a complete source frame.</param>
         <param type="struct AudioLoop *" name="Loop">Refers to sample loop information, or <code>NULL</code> if no loop is required.</param>
@@ -122,11 +134,9 @@
       <description>
 <p>Use AddStream to load large sound samples to an Audio object, allowing it to play those samples on the client machine without over-provisioning available resources.  For small samples under 256k consider using <method>AddSample</method> instead.</p>
 <p>The data source used for a stream must be provided by a client callback.  The native prototype is <code>INT callback(INT SampleHandle, INT64 Offset, UINT8 *Buffer, INT BufferSize)</code>.</p>
-<p>The <code>Offset</code> is the 64-bit byte position of the decoded data.  The <code>Buffer</code> and <code>BufferSize</code> identify the destination. The callback must return the number of bytes written, or zero when no data is currently available.  Offset, stream length, play offset and loop boundaries must be aligned to a complete source frame.</p>
+<p>The <code>Offset</code> is the 64-bit byte position of the decoded data, or <code>-1</code> to continue from the end of the previous request.  The <code>Buffer</code> and <code>BufferSize</code> identify the destination.  <code>BufferSize</code> is always a whole number of frames.  The callback must return the number of bytes written, which should also be a whole number of frames, or zero when no data is currently available.  A result that ends with an incomplete frame is invalid: the incomplete frame is discarded and the next request specifies the <code>Offset</code> of the first missing frame explicitly.  Offset, stream length, play offset and loop boundaries must be aligned to a complete source frame.</p>
 <p>On ALSA and Windows, callbacks run on the client thread and fill a frame-aligned source ring.  The saved <code>StreamBufferMs</code> setting requests 100–10000 ms of source data at <fl>OutputRate</fl> (default 1000 ms), capped at 8 MiB per stream and 64 MiB per Audio object.  Refills are requested at half capacity.  Initial playback uses the first fill; a short fill permits playback with the available data.  A zero-byte result is retried without blocking other sounds.  If the ring empties, that source contributes silence and resumes from its preserved position when data arrives.  Source prefetch adds no output queue latency.  Sources played faster than <fl>OutputRate</fl> exhaust the ring proportionally sooner.</p>
-<p>When creating a new stream, pay attention to the audio format that is being used for the sample data. It is important to differentiate between 8-bit, 16-bit, mono and stereo, but also be aware of whether or not the data is little or big endian, and if the sample data consists of signed or unsigned values.  Because of the possible variations there are a number of sample formats, as illustrated in the following table:</p>
-<types lookup="SFM"/>
-<p>By default, all samples are assumed to be in little endian format, as supported by Intel CPU's.  If the data is in big endian format, logical-or the <code>SampleFormat</code> value with the flag <code>SFM::F_BIG_ENDIAN</code>.</p>
+<p>The <code>Format</code> describes the stream data as an !AudioFormat.  The rules are the same as for <method>AddSample</method>: the format is copied, malformed formats are rejected with <code>ERR::Args</code>, and valid formats that cannot be played are rejected with <code>ERR::NoSupport</code>.  A stream's format is fixed for its lifetime; create a new stream to change it.</p>
 <p>It is also possible to supply loop information with the stream.  The Audio class supports a number of different looping formats via the <st>AudioLoop</st> structure:</p>
 <struct lookup="AudioLoop"/>
 <p>There are three types of loop modes that can be specified in the <code>LoopMode</code> field:</p>
@@ -135,7 +145,8 @@
       </description>
       <result>
         <error code="Okay">Stream successfully configured and added to the audio system.</error>
-        <error code="Args">Invalid argument values provided.</error>
+        <error code="Args">The format is malformed, or an offset, length or loop boundary is not aligned to a complete frame.</error>
+        <error code="NoSupport">The format is valid, but its representation or layout cannot be played.</error>
         <error code="OutOfRange">A length, play offset or loop boundary is outside the stream.</error>
         <error code="AllocMemory">Failed to allocate the stream buffer.</error>
         <error code="NullArgs">Required parameters are null or missing.</error>
@@ -216,6 +227,58 @@
     </method>
 
     <method>
+      <name>GetOutputFormat</name>
+      <comment>Reads the committed PCM format processed by the mixer and effects.</comment>
+      <prototype>ERR snd::GetOutputFormat(OBJECTPTR Object, INT * SampleRate, ASF * SampleFormat, kt::vector&lt;int&gt; * Layout, INT64 * Generation, AFS * State)</prototype>
+      <tiriPrototype>err, SampleRate:num, SampleFormat:num, Layout:array, Generation:num, State:num = GetOutputFormat()</tiriPrototype>
+      <input>
+        <param type="INT *" name="SampleRate">Frames per second, or zero if no format is available.</param>
+        <param type="ASF *" name="SampleFormat" lookup="ASF">Sample representation of the processed audio.</param>
+        <param type="kt::vector&lt;int&gt; *" name="Layout">Receives the ordered channel identities from the <code>SPK</code> constants.</param>
+        <param type="INT64 *" name="Generation">Configuration generation of the reported format.</param>
+        <param type="AFS *" name="State" lookup="AFS">Availability of the reported format.</param>
+      </input>
+      <description>
+<p>GetOutputFormat() reports the processing format committed by the most recent successful activation.  This is the format of the mix that is processed by the effect chains, not the format of the physical endpoint.  The mixer works in floating point, so <code>SampleFormat</code> is always <code>ASF::F32</code> in native byte order.  An endpoint may have more channels or a different sample encoding than the processing format; for instance, a Windows endpoint with six channels receives a stereo mix on its front pair, and this method reports stereo.</p>
+<p>The requested <fl>OutputLayout</fl> is independent of the committed format.  No format is available before the first successful activation, in which case <code>State</code> is <code>AFS::UNAVAILABLE</code> and the remaining results are empty.  After deactivation the last committed format remains available and <code>State</code> is <code>AFS::INACTIVE</code>.  A failed activation does not change the committed format.</p>
+<types lookup="AFS"/>
+<p><code>Generation</code> is incremented whenever a processing configuration is committed, including reactivation with an unchanged layout and the automatic reopening of a Windows endpoint.  Effects report the same value through <class name="AudioEffect" method="GetProcessingFormat">AudioEffect.GetProcessingFormat()</class> once they have adopted the configuration, which occurs before processing resumes.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>mutates-input</tags>
+    </method>
+
+    <method>
+      <name>GetVolumeChannels</name>
+      <comment>Lists the channel selectors of a volume control.</comment>
+      <prototype>ERR snd::GetVolumeChannels(OBJECTPTR Object, INT Index, STRVIEW Name, kt::vector&lt;int&gt; * Channels, kt::vector&lt;int&gt; * Speakers, VCF * Flags)</prototype>
+      <tiriPrototype>err, Channels:array, Speakers:array, Flags:num = GetVolumeChannels(Index:num, Name:str)</tiriPrototype>
+      <input>
+        <param type="INT" name="Index">The index of the volume control, used if <code>Name</code> is empty.</param>
+        <param type="STRVIEW" name="Name">The name of the volume control, e.g. <code>Master</code>.</param>
+        <param type="kt::vector&lt;int&gt; *" name="Channels">Receives the valid channel selectors.</param>
+        <param type="kt::vector&lt;int&gt; *" name="Speakers">Receives the speaker identity of each selector, or zero if it is unknown.</param>
+        <param type="VCF *" name="Flags" lookup="VCF">Receives the control's flags.</param>
+      </input>
+      <description>
+<p>GetVolumeChannels() describes the channels of the mixer volume control that is selected by <code>Index</code> or <code>Name</code>, using the same rules as <method>SetVolume</method>.  Each entry of <code>Channels</code> is a valid <code>Channel</code> selector for <method>SetVolume</method>, and the matching entry of <code>Speakers</code> is the identity of the speaker that it addresses, from the <code>SPK</code> constants.  If the backend cannot identify a speaker, its identity is reported as zero rather than guessed.</p>
+<p>Channel selectors belong to the volume control.  They are not indices into the Audio object's output buffer or its <fl>OutputLayout</fl>.  A <code>Channel</code> of <code>-1</code> always selects every channel of the control.</p>
+<p>The control's flags are returned in <code>Flags</code>.  If <code>VCF::JOINED</code> is set, the channels cannot be adjusted independently and changing any selector changes all of them.  The absence of <code>VCF::MONO</code> does not imply that the control has exactly two channels.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Search">No control matches the <code>Name</code>.</error>
+        <error code="NoSupport">The Audio object has no volume controls.</error>
+        <error code="OutOfRange">The <code>Index</code> is out of range.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>mutates-input</tags>
+    </method>
+
+    <method>
       <name>OpenChannels</name>
       <comment>Allocates audio channels that can be used for sample playback.</comment>
       <prototype>ERR snd::OpenChannels(OBJECTPTR Object, INT Total, INT * Result)</prototype>
@@ -226,6 +289,7 @@
       </input>
       <description>
 <p>Use the OpenChannels method to open audio channels for sample playback.  Channels are allocated in sets with a size range between 1 and 64.  Channel sets make it easier to segregate playback between users of the same audio object.</p>
+<p>These are voice channels: each plays one sample at a time, whatever the number of channels in that sample's format. They are unrelated to the speaker channels of an output layout; a voice channel playing a stereo sample contributes to both front speakers.</p>
 <p>The resulting handle returned from this method is an integer consisting of two parts.  The upper word uniquely identifies the channel set that has been provided to you, while the lower word is used to refer to specific channel numbers.  If referring to a specific channel is required for a function, use the formula <code>Channel = Handle | ChannelNo</code>.</p>
 <p>To destroy allocated channels, use the <method>CloseChannels</method> method.</p>
       </description>
@@ -310,13 +374,13 @@
         <param type="INT" name="Index">The index of the mixer that you want to set.</param>
         <param type="STRVIEW" name="Name">If the correct index number is unknown, the name of the mixer may be set here.</param>
         <param type="SVF" name="Flags" lookup="SVF">Optional flags.</param>
-        <param type="INT" name="Channel">A specific channel to modify (e.g. <code>0</code> for left, <code>1</code> for right).  If <code>-1</code>, all channels are affected.</param>
+        <param type="INT" name="Channel">A channel selector reported by <method>GetVolumeChannels</method>.  If <code>-1</code>, all channels are affected.</param>
         <param type="DOUBLE" name="Volume">The volume to set for the mixer, from 0 to 1.0.  If <code>-1</code>, the current volume values are retained.</param>
       </input>
       <description>
 <p>To change volume and mixer levels, use the SetVolume method.  It is possible to make adjustments to any of the available mixers and for different channels per mixer - for instance you may set different volumes for left and right speakers.  Support is also provided for special options such as muting.</p>
 <p>To set the volume for a mixer, use its index or set its name (to change the master volume, use a name of <code>Master</code>).</p>
-<p>A target <code>Channel</code> such as the left <code>0</code> or right <code>1</code> speaker can be specified.  Set the <code>Channel</code> to <code>-1</code> if all channels should be the same value.</p>
+<p>A target <code>Channel</code> can be specified to change one channel of the mixer control.  Channel selectors belong to the control, not to the Audio object's output buffer; use <method>GetVolumeChannels</method> to list the valid selectors of a control and the speaker that each one addresses, where known.  Set the <code>Channel</code> to <code>-1</code> if all channels should be the same value. A control that reports <code>VCF::JOINED</code> cannot adjust its channels independently, so any selector applies to every channel.  The absence of <code>VCF::MONO</code> does not imply that a control has exactly two channels.</p>
 <p>The new mixer value is set in the <code>Volume</code> field.</p>
 <p>Optional flags may be set as follows:</p>
 <types lookup="SVF"/>
@@ -326,7 +390,7 @@
         <error code="Search">A search routine in this function failed</error>
         <error code="Args">Invalid arguments passed to function</error>
         <error code="NoSupport">Operation not supported</error>
-        <error code="OutOfRange">The <code>Volume</code> or <code>Index</code> is out of the acceptable range.</error>
+        <error code="OutOfRange">The <code>Volume</code>, <code>Index</code> or <code>Channel</code> is out of the acceptable range.</error>
         <error code="NotInitialised">The resource has not been initialised</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
@@ -422,6 +486,21 @@
     </field>
 
     <field>
+      <name>OutputLayout</name>
+      <comment>The requested output channel layout.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>INT[]</type>
+      <description>
+<p>OutputLayout lists the channel identities of the requested output, in interleaved frame order.  The default is stereo: <code>FRONT_LEFT</code>, <code>FRONT_RIGHT</code>.  Wider layouts are never enabled automatically.  Use ExpandLayout() to obtain the layout of a named preset:</p>
+<pre>err, layout = mAudio.ExpandLayout(ACL_MONO)
+audio = obj.new('Audio', { outputLayout=layout })
+</pre>
+<p>The request is applied when the Audio object is activated.  An explicitly set layout is exact: if it cannot be provided, activation fails with <code>ERR::NoSupport</code> rather than being downmixed or reinterpreted.  The mixer currently renders mono (<code>CENTRE</code>) and stereo (<code>FRONT_LEFT</code>, <code>FRONT_RIGHT</code>) output.  Only the default stereo request can settle on mono output for a device that only supports mono.</p>
+<p>The layout can be changed before activation and after deactivation.  Writes are rejected with <code>ERR::InvalidState</code> while the object is active.  A malformed layout, i.e. one that is empty, exceeds 64 channels or contains an invalid or duplicated identity, is rejected with <code>ERR::Args</code>.  Reading this field returns the request, not the negotiated result; use <method>GetOutputFormat</method> to read the committed processing format.</p>
+      </description>
+    </field>
+
+    <field>
       <name>OutputRate</name>
       <comment>Determines the frequency to use for the output of audio data.</comment>
       <access read="R" write="S">Read/Set</access>
@@ -477,13 +556,6 @@
       </description>
     </field>
 
-    <field>
-      <name>Stereo</name>
-      <comment>Set to <code>true</code> for stereo output and <code>false</code> for mono output.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
-    </field>
-
   </fields>
   <types>
     <constants lookup="ADF" comment="Optional flags for the Audio object.">
@@ -491,7 +563,6 @@
       <const name="FILTER_HIGH">Enable a high level of output filtering to minimise distortion.</const>
       <const name="FILTER_LOW">Enable a low level of output filtering to minimise distortion.</const>
       <const name="OVER_SAMPLING">Enables oversampling for higher quality audio at the cost of slower mixing.</const>
-      <const name="STEREO">Enable stereo output (set by default if the platform supports stereo).  If not set, output is in mono.</const>
       <const name="SYSTEM_WIDE">Mixer changes should be applied system-wide.</const>
       <const name="VOL_RAMPING">Enable volume ramping for softer playback when a sample is played multiple times (enabled by default).</const>
     </constants>
@@ -500,6 +571,22 @@
       <const name="ACTIVE">At least one source on the selected path is playing.</const>
       <const name="DRAINING">Sources have stopped, but one or more effects are still producing tail output.</const>
       <const name="IDLE">No sources are playing and no effect has pending output.</const>
+    </constants>
+
+    <constants lookup="AFF" comment="Optional AudioFormat flags.">
+      <const name="BIG_ENDIAN_ORDER">Multi-byte samples are stored in big endian byte order.  Samples are little endian if this flag is not set.</const>
+    </constants>
+
+    <constants lookup="AFS" comment="Availability of a reported processing format.">
+      <const name="ACTIVE">The reported format is committed and in use.</const>
+      <const name="INACTIVE">Processing has stopped.  The last committed format is reported.</const>
+      <const name="UNAVAILABLE">No processing format has been committed.  The format results are empty.</const>
+    </constants>
+
+    <constants lookup="ASF" comment="Sample representations, independent of the channel count.">
+      <const name="F32">32-bit IEEE-754 floating point samples in four bytes, with a nominal range of <code>-1.0</code> to <code>1.0</code>.</const>
+      <const name="S16">Signed 16-bit integer samples in two bytes.</const>
+      <const name="U8">Unsigned 8-bit integer samples in one byte.  Silence is <code>128</code>.</const>
     </constants>
 
     <constants lookup="LOOP" comment="Loop modes for the AudioLoop structure.">
@@ -515,12 +602,16 @@
       <const name="UNIDIRECTIONAL">The sample playback position returns to the byte position specified in the Loop1Start field.</const>
     </constants>
 
-    <constants lookup="SFM" comment="These audio bit formats are supported by AddSample and AddStream.">
-      <const name="F_BIG_ENDIAN">Combine this flag with any audio format to declare it as big endian.</const>
-      <const name="S16_BIT_MONO">16-bit mono signed sample.</const>
-      <const name="S16_BIT_STEREO">16-bit stereo signed sample.</const>
-      <const name="U8_BIT_MONO">8-bit mono unsigned sample.</const>
-      <const name="U8_BIT_STEREO">8-bit stereo unsigned sample.</const>
+    <constants lookup="SPK" comment="Channel identities for the Layout of an AudioFormat.">
+      <const name="CENTRE">Front centre speaker.  An ordinary mono channel also uses this identity.</const>
+      <const name="DISCRETE">Base identity for a discrete channel that has no speaker position.  Add a zero-based index from <code>0</code> to <code>0xffff</code>.</const>
+      <const name="FRONT_LEFT">Front left speaker.</const>
+      <const name="FRONT_RIGHT">Front right speaker.</const>
+      <const name="LFE">Low-frequency effects channel.</const>
+      <const name="REAR_LEFT">Rear left speaker.</const>
+      <const name="REAR_RIGHT">Rear right speaker.</const>
+      <const name="SIDE_LEFT">Side left speaker.</const>
+      <const name="SIDE_RIGHT">Side right speaker.</const>
     </constants>
 
     <constants lookup="SVF" comment="Flags for the SetVolume() method.">
@@ -529,8 +620,24 @@
       <const name="UNMUTE">Unmute the audio for this channel.</const>
     </constants>
 
+    <constants lookup="VCF" comment="Volume control flags">
+      <const name="CAPTURE">The mixer supports audio input.</const>
+      <const name="JOINED">The control's channels are joined and cannot be adjusted separately.</const>
+      <const name="MONO">The control has a single channel.  Its absence does not imply exactly two channels.</const>
+      <const name="MUTE">The mixer is muted.</const>
+      <const name="PLAYBACK">The mixer supports audio output.</const>
+      <const name="SYNC">The mixer is synchronised.</const>
+    </constants>
+
   </types>
   <structs>
+    <struct name="AudioFormat" comment="Describes interleaved PCM audio data.">
+      <field name="SampleRate" type="INT">Nominal sample rate in frames per second</field>
+      <field name="SampleFormat" type="ASF" lookup="ASF">Representation of each sample</field>
+      <field name="Flags" type="AFF" lookup="AFF">Optional format flags</field>
+      <field name="Layout" type="kt::vector&lt;int&gt;">Ordered channel identities from SPK; the length is the channel count</field>
+    </struct>
+
     <struct name="AudioLoop" comment="Loop settings for the AddSample() method.">
       <field name="LoopMode" type="LOOP" lookup="LOOP">Loop mode (single, double)</field>
       <field name="Loop1Type" type="LTYPE" lookup="LTYPE">First loop type (unidirectional, bidirectional)</field>

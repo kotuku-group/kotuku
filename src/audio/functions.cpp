@@ -34,44 +34,6 @@ inline bool adjust_volume_ramp(double &current, double target, double ramp_speed
 }
 
 //********************************************************************************************************************
-// Template-based sample format traits for compile-time optimization
-
-template<SFM format>
-struct SampleFormatTraits;
-
-template<>
-struct SampleFormatTraits<SFM::S16_BIT_STEREO> {
-   using type = int16_t;
-   static constexpr int size = sizeof(int16_t) * 2;
-   static constexpr double conversion = 1.0 / 32767.0;
-   static constexpr bool is_stereo = true;
-};
-
-template<>
-struct SampleFormatTraits<SFM::S16_BIT_MONO> {
-   using type = int16_t;
-   static constexpr int size = sizeof(int16_t);
-   static constexpr double conversion = 1.0 / 32767.0;
-   static constexpr bool is_stereo = false;
-};
-
-template<>
-struct SampleFormatTraits<SFM::U8_BIT_STEREO> {
-   using type = uint8_t;
-   static constexpr int size = sizeof(uint8_t) * 2;
-   static constexpr double conversion = 1.0 / 127.0;
-   static constexpr bool is_stereo = true;
-};
-
-template<>
-struct SampleFormatTraits<SFM::U8_BIT_MONO> {
-   using type = uint8_t;
-   static constexpr int size = sizeof(uint8_t);
-   static constexpr double conversion = 1.0 / 127.0;
-   static constexpr bool is_stereo = false;
-};
-
-//********************************************************************************************************************
 // Constexpr clamping functions for compile-time optimization
 
 template<typename T>
@@ -187,10 +149,10 @@ static BYTELEN fill_stream_buffer(int Handle, AudioSample &Sample, int64_t Offse
       kt::SwitchContext context(Sample.Callback.Context);
       auto routine = (int (*)(int, int64_t, uint8_t *, int, APTR))Sample.Callback.Routine;
       return BYTELEN(routine(Handle, Offset, Sample.Data.data(),
-         int(Sample.SampleLength << sample_shift(Sample.SampleType)), Sample.Callback.Meta));
+         int(int64_t(Sample.SampleLength) * Sample.FrameBytes), Sample.Callback.Meta));
    }
    else if (Sample.Callback.isScript()) {
-      std::span span(Sample.Data.data(), size_t(Sample.SampleLength << sample_shift(Sample.SampleType)));
+      std::span span(Sample.Data.data(), size_t(Sample.SampleLength) * Sample.FrameBytes);
       const auto args = std::to_array<ScriptArg>({
          { "Handle", Handle },
          { "Offset", Offset },
@@ -507,8 +469,10 @@ static bool handle_sample_end(extAudio *Self, AudioChannel &Channel)
       if (sample.Stream) {
          // Read the next set of stream data into our sample buffer
          BYTELEN bytes_read = fill_stream_buffer(Channel.SampleHandle, sample, -1);
+         bytes_read = BYTELEN(bytes_read - (bytes_read % sample.FrameBytes)); // Incomplete frames are discarded
+         if (sample.Swap) swap_samples_16(sample.Data.data(), bytes_read);
          sample.BufferedLength = bytes_read;
-         auto buffer_len = sample.SampleLength<<sample_shift(sample.SampleType);
+         auto buffer_len = int64_t(sample.SampleLength) * sample.FrameBytes;
          if (bytes_read < buffer_len) {
             clearmem(sample.Data.data() + bytes_read, buffer_len - bytes_read);
          }
@@ -671,7 +635,7 @@ static bool handle_sample_end(extAudio *Self, AudioChannel &Channel)
 // Consume only complete source frames.  Missing source data leaves this channel silent without advancing it.
 static void mix_stream(extAudio *Self, AudioChannel &Channel, AudioSample &Sample, int TotalSamples, float *Dest)
 {
-   const int frame_bytes = 1 << sample_shift(Sample.SampleType);
+   const int frame_bytes = Sample.FrameBytes;
    const int channels = Self->Stereo ? 2 : 1;
    const int64_t step = (int64_t(Channel.Frequency) << 16) / Self->OutputRate;
    if (step <= 0 or !Sample.Prefilled) return;
@@ -701,11 +665,9 @@ static void mix_stream(extAudio *Self, AudioChannel &Channel, AudioSample &Sampl
             Sample.Data[(Sample.Ring.Read + frame_bytes + byte) % Sample.Data.size()] : frames[byte];
       }
 
-      const bool source_stereo = Sample.SampleType IS SFM::U8_BIT_STEREO or
-         Sample.SampleType IS SFM::S16_BIT_STEREO;
+      const bool source_stereo = pcm_stereo(Sample.SampleType);
       double volume = Self->Mute ? 0 : Self->MasterVolume * ((!Self->Stereo and source_stereo) ? 0.5 : 1.0);
-      if (Self->BitDepth IS 32) volume /= Sample.SampleType IS SFM::S16_BIT_MONO or
-         Sample.SampleType IS SFM::S16_BIT_STEREO ? 32767.0 : 127.0;
+      if (Self->BitDepth IS 32) volume /= pcm_16bit(Sample.SampleType) ? 32767.0 : 127.0;
       auto dest = Dest + i * channels;
       set_mix_step(int(step));
 
@@ -727,7 +689,7 @@ static void mix_stream(extAudio *Self, AudioChannel &Channel, AudioSample &Sampl
       Sample.Ring.consume(consumed, Sample.Data.size(), frame_bytes);
       int64_t play_pos = int64_t(Sample.PlayPos) + consumed;
       if (Sample.StreamLengthKnown and Sample.streamLoops() and play_pos >= Sample.StreamLength) {
-         const int64_t start = int64_t(Sample.Loop2Start) << sample_shift(Sample.SampleType);
+         const int64_t start = int64_t(Sample.Loop2Start) * Sample.FrameBytes;
          if (Sample.StreamLength > start) {
             play_pos = start + (play_pos - Sample.StreamLength) % (Sample.StreamLength - start);
          }
@@ -763,33 +725,9 @@ static void mix_channel(extAudio *Self, AudioChannel &Channel, int TotalSamples,
 
    int step = ((int64_t(Channel.Frequency / Self->OutputRate) << 16) + (int64_t(Channel.Frequency % Self->OutputRate) << 16) / Self->OutputRate);
 
-   // Advanced template metaprogramming: constexpr format dispatch table
-   // This eliminates runtime switches with compile-time lookups
-   constexpr auto format_dispatch = [](SFM format) constexpr -> std::tuple<int, double, bool> {
-      // Using constexpr if-else chain for optimal code generation
-      if (format IS SFM::S16_BIT_STEREO) {
-         return {SampleFormatTraits<SFM::S16_BIT_STEREO>::size,
-                 SampleFormatTraits<SFM::S16_BIT_STEREO>::conversion,
-                 SampleFormatTraits<SFM::S16_BIT_STEREO>::is_stereo};
-      }
-      else if (format IS SFM::S16_BIT_MONO) {
-         return {SampleFormatTraits<SFM::S16_BIT_MONO>::size,
-                 SampleFormatTraits<SFM::S16_BIT_MONO>::conversion,
-                 SampleFormatTraits<SFM::S16_BIT_MONO>::is_stereo};
-      }
-      else if (format IS SFM::U8_BIT_STEREO) {
-         return {SampleFormatTraits<SFM::U8_BIT_STEREO>::size,
-                 SampleFormatTraits<SFM::U8_BIT_STEREO>::conversion,
-                 SampleFormatTraits<SFM::U8_BIT_STEREO>::is_stereo};
-      }
-      else {
-         return {SampleFormatTraits<SFM::U8_BIT_MONO>::size,
-                 SampleFormatTraits<SFM::U8_BIT_MONO>::conversion,
-                 SampleFormatTraits<SFM::U8_BIT_MONO>::is_stereo};
-      }
-   };
-
-   const auto [sample_size, conversion, sample_is_stereo] = format_dispatch(sample.SampleType);
+   const int sample_size = sample.FrameBytes;
+   const double conversion = pcm_16bit(sample.SampleType) ? 1.0 / 32767.0 : 1.0 / 127.0;
+   const bool sample_is_stereo = pcm_stereo(sample.SampleType);
 
    // Calculate stereo multiplier using template information
    const double stereo_mul = (!Self->Stereo and sample_is_stereo) ? 0.5 : 1.0;

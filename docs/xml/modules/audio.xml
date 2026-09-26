@@ -60,6 +60,48 @@ mixing.</li>
   </info>
 
   <function>
+    <name>ExpandLayout</name>
+    <comment>Expands a named channel layout preset into its ordered channel identities.</comment>
+    <prototype>ERR snd::ExpandLayout(ACL Layout, kt::vector&lt;int&gt; * Channels)</prototype>
+    <tiriPrototype>err, Channels:array = ExpandLayout(Layout:num)</tiriPrototype>
+    <tags>mutates-input</tags>
+    <input>
+      <param type="ACL" name="Layout" lookup="ACL">The preset to expand.</param>
+      <param type="kt::vector&lt;int&gt; *" name="Channels">Receives the ordered channel identities from the <code>SPK</code> constants.</param>
+    </input>
+    <description>
+<p>A preset such as <code>ACL::STEREO</code> names a speaker arrangement.  ExpandLayout() returns the identities of that arrangement in interleaved frame order, ready for use in the <code>Layout</code> of an <st>AudioFormat</st> or the <class name="Audio" field="OutputLayout">Audio.OutputLayout</class> field.  A channel count alone never selects a layout; for instance, both 5.1 presets have six channels but place the surround pair differently.</p>
+<types lookup="ACL"/>
+<p>Expanding a preset does not imply that it can be played.  Playback support is confirmed when a format is registered or an output layout is activated.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
+      <error code="Args">The preset is not recognised.</error>
+      <error code="NullArgs">Function call missing argument value(s)</error>
+    </result>
+  </function>
+
+  <function>
+    <name>GetFrameBytes</name>
+    <comment>Validates an AudioFormat and returns the byte size of one frame.</comment>
+    <prototype>ERR snd::GetFrameBytes(struct AudioFormat * Format, INT * Bytes)</prototype>
+    <tiriPrototype>err, Bytes:num = GetFrameBytes(Format:any)</tiriPrototype>
+    <input>
+      <param type="struct AudioFormat *" name="Format">The format to check.</param>
+      <param type="INT *" name="Bytes">Receives the size of one frame in bytes.</param>
+    </input>
+    <description>
+<p>A frame contains one sample for every channel in the format's <code>Layout</code>, so the frame size is the number of channels multiplied by the container size of one sample: one byte for <code>ASF::U8</code>, two for <code>ASF::S16</code> and four for <code>ASF::F32</code>. Byte offsets, lengths and loop boundaries passed to the Audio API must be multiples of this value.</p>
+<p>The format is checked for correctness, but not for playback support.  A format is malformed if its <code>SampleRate</code> is outside <code>1</code> to <code>768000</code>, its <code>SampleFormat</code> or <code>Flags</code> are invalid, or its <code>Layout</code> is empty, has more than 64 channels, or contains an invalid or duplicated channel identity.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
+      <error code="Args">The format is malformed.</error>
+      <error code="NullArgs">Function call missing argument value(s)</error>
+    </result>
+  </function>
+
+  <function>
     <name>MixContinue</name>
     <comment>Resumes playback of a paused channel.</comment>
     <prototype>ERR snd::MixContinue(objAudio * Audio, INT Handle)</prototype>
@@ -140,6 +182,7 @@ mixing.</li>
     <description>
 <p>Use this function to set a mixer channel's panning value, from -1.0 (left) through 0 (centre) to 1.0 (right). Finite values outside this range are clamped.  Non-finite values (NaN and infinities) are rejected with <code>OutOfRange</code> and the channel is not modified.</p>
 <p>Panning uses a linear balance law.  The side being panned towards keeps the channel's full volume, while the opposite side is attenuated linearly: for a volume <code>V</code> and a pan <code>P</code> below zero, the left gain is <code>V</code> and the right gain is <code>V * (1 + P)</code>; above zero, the left gain is <code>V * (1 - P)</code> and the right gain is <code>V</code>.  A centred channel is therefore played at full volume on both sides, not at constant power.  Pan has no effect when the Audio object outputs in mono.</p>
+<p>Pan is a mono/stereo balance control for the front speaker pair.  It is not an azimuth and does not address other speakers.  Mono and stereo sources in a wider output layout are placed on the front pair.  Sources with more than two channels require explicit routing, which is not yet available; such sources must use a neutral pan of zero.</p>
 <p>The pan applies from the next mixed frame, ramping towards the new gains if both <code>ADF::VOL_RAMPING</code> and <code>ADF::OVER_SAMPLING</code> are enabled.  When the mixer runs on a worker thread, <code>Okay</code> confirms that the command was accepted for application before the next period is rendered.</p>
     </description>
     <result type="ERR">
@@ -367,6 +410,36 @@ A stream without a loop is unaffected.</li>
   </function>
 
   <types>
+    <constants lookup="ACL" comment="Named channel layout presets for ExpandLayout().">
+      <const name="MONO"><code>CENTRE</code>.</const>
+      <const name="STEREO"><code>FRONT_LEFT</code>, <code>FRONT_RIGHT</code>.</const>
+      <const name="SURROUND_5_1_REAR"><code>FRONT_LEFT</code>, <code>FRONT_RIGHT</code>, <code>CENTRE</code>, <code>LFE</code>, <code>REAR_LEFT</code>, <code>REAR_RIGHT</code>.</const>
+      <const name="SURROUND_5_1_SIDE"><code>FRONT_LEFT</code>, <code>FRONT_RIGHT</code>, <code>CENTRE</code>, <code>LFE</code>, <code>SIDE_LEFT</code>, <code>SIDE_RIGHT</code>.</const>
+    </constants>
+
+    <constants lookup="AFF" comment="Optional AudioFormat flags.">
+      <const name="BIG_ENDIAN_ORDER">Multi-byte samples are stored in big endian byte order.  Samples are little endian if this flag is not set.</const>
+    </constants>
+
+    <constants lookup="AMF" comment="Audio meter snapshot flags.">
+      <const name="BYPASSED">The effect is bypassed.  The VALID flag is not set.</const>
+      <const name="DISCONNECTED">The effect is not attached to an effect chain.  The VALID flag is not set.</const>
+      <const name="IDLE">The measurement is idle or stale.</const>
+      <const name="NO_SAMPLES">No samples have been measured yet.</const>
+      <const name="VALID">The snapshot holds a valid measurement.</const>
+    </constants>
+
+    <constants lookup="AMV" comment="Per-value flags returned by AudioEffect.ReadMeters().">
+      <const name="FLOOR">The measured value was below the meter floor.  The reported value is the floor.</const>
+      <const name="VALID">The value holds a measurement from the snapshot's interval.</const>
+    </constants>
+
+    <constants lookup="ASF" comment="Sample representations, independent of the channel count.">
+      <const name="F32">32-bit IEEE-754 floating point samples in four bytes, with a nominal range of <code>-1.0</code> to <code>1.0</code>.</const>
+      <const name="S16">Signed 16-bit integer samples in two bytes.</const>
+      <const name="U8">Unsigned 8-bit integer samples in one byte.  Silence is <code>128</code>.</const>
+    </constants>
+
     <constants lookup="EQB" comment="Parametric equaliser band types.">
       <const name="HIGH_PASS">High-pass filter; gain is ignored.</const>
       <const name="HIGH_SHELF">High-frequency shelf with gain in decibels.</const>
@@ -411,6 +484,13 @@ A stream without a loop is unaffected.</li>
       <field name="Q" type="DOUBLE">Quality factor or shelf slope</field>
     </struct>
 
+    <struct name="AudioFormat" comment="Describes interleaved PCM audio data.">
+      <field name="SampleRate" type="INT">Nominal sample rate in frames per second</field>
+      <field name="SampleFormat" type="ASF" lookup="ASF">Representation of each sample</field>
+      <field name="Flags" type="AFF" lookup="AFF">Optional format flags</field>
+      <field name="Layout" type="kt::vector&lt;int&gt;">Ordered channel identities from SPK; the length is the channel count</field>
+    </struct>
+
     <struct name="AudioLoop" comment="Loop settings for the AddSample() method.">
       <field name="LoopMode" type="LOOP" lookup="LOOP">Loop mode (single, double)</field>
       <field name="Loop1Type" type="LTYPE" lookup="LTYPE">First loop type (unidirectional, bidirectional)</field>
@@ -426,6 +506,35 @@ A stream without a loop is unaffected.</li>
       <field name="Handle" type="INT">Target channel; all commands in a batch must use the same channel set</field>
       <field name="Integer" type="INT64">Integer argument for the selected operation; otherwise ignored</field>
       <field name="Value" type="DOUBLE">Finite floating-point argument for PAN and VOLUME; otherwise ignored</field>
+    </struct>
+
+    <struct name="MeterInfo" comment="Describes one value published by an effect's meters.">
+      <field name="Key" type="STRING">Stable key, e.g. <code>input_peak_left</code></field>
+      <field name="Label" type="STRING">Human-readable label</field>
+      <field name="Unit" type="STRING">Unit of measurement, e.g. <code>dBFS</code>, or empty</field>
+      <field name="Scope" type="STRING">Either <code>channel</code> or <code>global</code></field>
+      <field name="Semantics" type="STRING">Kind of measurement, e.g. <code>sample-peak</code>, or empty</field>
+      <field name="Slot" type="INT">Index of the value in the Values of a MeterReading</field>
+      <field name="Channel" type="INT">Channel identity from SPK, or zero for a global value</field>
+    </struct>
+
+    <struct name="MeterLayout" comment="An owned snapshot of the descriptors returned by GetMeterLayout().">
+      <field name="ID" type="INT64">Configuration identifier shared with the matching MeterReading</field>
+      <field name="Meters" type="kt::vector&lt;MeterInfo&gt;">Meter descriptors in slot order</field>
+    </struct>
+
+    <struct name="MeterReading" comment="One coherent measurement of every meter value, from ReadMeters().">
+      <field name="Sequence" type="INT64">Publication sequence number; increases with each published interval</field>
+      <field name="ID" type="INT64">Configuration identifier; compare with the ID from GetMeterLayout()</field>
+      <field name="Position" type="INT64">Processed-frame position at the end of the interval</field>
+      <field name="Flags" type="AMF" lookup="AMF">Validity and lifecycle state of the reading</field>
+      <field name="Interval" type="INT">Length of the measurement interval in frames</field>
+      <field name="Values" type="kt::vector&lt;MeterValue&gt;">One value per meter descriptor, indexed by slot</field>
+    </struct>
+
+    <struct name="MeterValue" comment="One meter value in a MeterReading.">
+      <field name="Value" type="DOUBLE">Measured value in the units of its MeterInfo descriptor</field>
+      <field name="Flags" type="AMV" lookup="AMV">Validity of the value</field>
     </struct>
 
   </structs>

@@ -21,7 +21,7 @@ enum class APB : int8_t { FIXED, NYQUIST };                      // Maximum boun
 // A member is ignored, or its maximum lowered, when the sibling named by Key holds one of Values.
 
 struct AudioParamRule {
-   CSTRING Key;
+   std::string_view Key;
    std::span<const int> Values;
    bool Inactive = false;  // True if the member is ignored by the DSP when the rule matches
    double CapMax = 0;      // Otherwise the member's maximum when the rule matches
@@ -29,15 +29,15 @@ struct AudioParamRule {
 
 struct AudioParamOption {
    int Value;
-   CSTRING Key;
-   CSTRING Label;
-   CSTRING Description = nullptr;  // Optional sentences suitable for presentation to the user
+   std::string_view Key;
+   std::string_view Label;
+   std::string_view Description;  // Optional sentences suitable for presentation to the user
 };
 
 struct AudioParamDesc {
-   CSTRING Key;
-   CSTRING Label;
-   CSTRING Description = nullptr;            // Optional sentences suitable for presentation to the user
+   std::string_view Key;
+   std::string_view Label;
+   std::string_view Description;             // Optional sentences suitable for presentation to the user
    APT Type = APT::DOUBLE;
    APU Unit = APU::NONE;
    APS Scale = APS::LINEAR;
@@ -50,9 +50,9 @@ struct AudioParamDesc {
 };
 
 struct AudioParamGroup {
-   CSTRING Key;
-   CSTRING Label;
-   CSTRING Description = nullptr;
+   std::string_view Key;
+   std::string_view Label;
+   std::string_view Description;
    int MinCount, MaxCount;
    std::span<const AudioParamDesc> Members;
 };
@@ -82,22 +82,35 @@ public:
 };
 
 enum class AudioOutputKind { CURVE, SCALAR };
+enum class AudioMeterSource : int8_t { INPUT_PEAK, OUTPUT_PEAK, GAIN_REDUCTION };
+
+// Scalar outputs are meter templates.  A `channel` scope publishes one value per channel of the processing layout, with
+// the channel's key and label appended, e.g. `input_peak_left`.  A `global` scope publishes a single value.
 
 struct AudioOutputDesc {
-   CSTRING Key;
+   std::string_view Key;
    AudioOutputKind Kind = AudioOutputKind::CURVE;
-   CSTRING Label = nullptr;
-   CSTRING Description = nullptr;
-   CSTRING Unit = nullptr;
-   CSTRING Scope = nullptr;
-   CSTRING Semantics = nullptr;
-   int Slot = -1;
+   std::string_view Label;
+   std::string_view Description;
+   std::string_view Unit;
+   std::string_view Scope;
+   std::string_view Semantics;
+   AudioMeterSource Source = AudioMeterSource::INPUT_PEAK;
+};
+
+// One entry of an effect's meter layout.  The public MeterInfo fields are returned by GetMeterLayout(); the
+// remainder are private to the effect.
+
+struct AudioMeterDesc : public MeterInfo {
+   std::string_view Description;
+   AudioMeterSource Source = AudioMeterSource::INPUT_PEAK;
+   int Index = -1; // Channel index within the processing layout, or -1 for a global value
 };
 
 struct AudioEffectSchema {
-   CSTRING ClassName;
+   std::string_view ClassName;
    int Version;
-   CSTRING Description = nullptr;
+   std::string_view Description;
    std::span<const AudioParamDesc> Params;
    std::span<const AudioParamGroup> Groups;
    std::span<const AudioOutputDesc> Outputs;
@@ -167,7 +180,7 @@ inline ERR check_rules(std::span<const AudioParamDesc> Members, std::span<const 
          if (rule.Inactive) continue;
 
          for (size_t s = 0; s < Members.size(); s++) {
-            if (std::string_view(Members[s].Key) != rule.Key) continue;
+            if (Members[s].Key != rule.Key) continue;
             for (auto v : rule.Values) {
                if ((double(v) IS Values[s]) and (Values[m] > rule.CapMax)) return ERR::InvalidValue;
             }
@@ -351,9 +364,9 @@ inline CSTRING unit_name(APU Unit)
 
 //********************************************************************************************************************
 
-inline void description(std::string &Out, CSTRING Description)
+inline void description(std::string &Out, std::string_view Description)
 {
-   if (Description and Description[0]) Out += std::format(" description=\"{}\"", escape(Description));
+   if (not Description.empty()) Out += std::format(" description=\"{}\"", escape(Description));
 }
 
 inline void param(std::string &Out, const AudioParamDesc &Desc, std::string_view Indent)
@@ -401,7 +414,9 @@ inline void param(std::string &Out, const AudioParamDesc &Desc, std::string_view
 
 //********************************************************************************************************************
 
-inline std::string build_schema_xml(const AudioEffectSchema &Schema, bool Stereo = true)
+// Scalar outputs are described by the effect's current meter layout, so every `slot` refers to that layout.
+
+inline std::string build_schema_xml(const AudioEffectSchema &Schema, std::span<const AudioMeterDesc> Meters)
 {
    std::string out = std::format("<effect class=\"{}\" version=\"{}\"", schema_xml::escape(Schema.ClassName),
       Schema.Version);
@@ -417,16 +432,22 @@ inline std::string build_schema_xml(const AudioEffectSchema &Schema, bool Stereo
       out += "  </group>\n";
    }
    for (const auto &output : Schema.Outputs) {
-      if (!Stereo and output.Scope and std::string_view(output.Scope) IS "right") continue;
-      out += std::format("  <output key=\"{}\" type=\"{}\"", schema_xml::escape(output.Key),
-         output.Kind IS AudioOutputKind::CURVE ? "curve" : "scalar");
-      if (output.Label) out += std::format(" label=\"{}\"", schema_xml::escape(output.Label));
+      if (output.Kind != AudioOutputKind::CURVE) continue;
+      out += std::format("  <output key=\"{}\" type=\"curve\"", schema_xml::escape(output.Key));
+      if (not output.Label.empty()) out += std::format(" label=\"{}\"", schema_xml::escape(output.Label));
       schema_xml::description(out, output.Description);
-      if (output.Unit) out += std::format(" unit=\"{}\"", schema_xml::escape(output.Unit));
-      if (output.Scope) out += std::format(" scope=\"{}\"", schema_xml::escape(output.Scope));
-      if (output.Semantics) out += std::format(" semantics=\"{}\"", schema_xml::escape(output.Semantics));
-      if (output.Slot >= 0) out += std::format(" slot=\"{}\"", output.Slot);
       out += "/>\n";
+   }
+   for (size_t slot = 0; slot < Meters.size(); slot++) {
+      const auto &meter = Meters[slot];
+      out += std::format("  <output key=\"{}\" type=\"scalar\"", schema_xml::escape(meter.Key));
+      if (not meter.Label.empty()) out += std::format(" label=\"{}\"", schema_xml::escape(meter.Label));
+      schema_xml::description(out, meter.Description);
+      if (not meter.Unit.empty()) out += std::format(" unit=\"{}\"", schema_xml::escape(meter.Unit));
+      if (not meter.Scope.empty()) out += std::format(" scope=\"{}\"", schema_xml::escape(meter.Scope));
+      if (meter.Channel) out += std::format(" channel=\"{}\"", meter.Channel);
+      if (not meter.Semantics.empty()) out += std::format(" semantics=\"{}\"", schema_xml::escape(meter.Semantics));
+      out += std::format(" slot=\"{}\"/>\n", slot);
    }
    out += "</effect>\n";
    return out;

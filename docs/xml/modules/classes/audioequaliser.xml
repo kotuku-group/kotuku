@@ -13,7 +13,8 @@
     <category>Audio</category>
     <copyright>Paul Manias © 2002-2026</copyright>
     <description>
-<p>Create as a child of an Audio object or set the inherited Audio field.  Use Channel to process one channel set, or leave it at zero to process the global mix.  Bands run in list order.  Application equalisers accept live changes; global equalisers become immutable after initialisation.</p>
+<p>Create as a child of an Audio object or set the inherited Audio field.  Use Channel to process one channel set, or leave it at zero to process the global mix.  Bands run in list order.</p>
+<p>The <fl>Bands</fl> and <fl>Gain</fl> form one configuration that is applied to every channel of the processing layout, with independent filter history for each channel.  The equaliser does not perform bass management and is not an automatic crossover for an LFE channel.  Application equalisers accept live changes; global equalisers become immutable after initialisation.</p>
 <p>The equaliser publishes its parameters through the inherited <class name="AudioEffect">AudioEffect</class> schema.  The top-level <code>gain</code> parameter is the output trim.  The <code>bands</code> group holds up to 64 bands, each with <code>type</code>, <code>frequency</code>, <code>gain</code> and <code>q</code> members.  Band gain is ignored by pass filters, and Q is limited to one for shelf filters, where it sets the shelf slope.  New bands are silent peak filters at 1000 Hz until they are edited.</p>
 <p>The following adds a bass shelf to a playing channel set.  The change is applied as a single step by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>:</p>
 <pre>eq.mtInsertEntry('bands', 0)

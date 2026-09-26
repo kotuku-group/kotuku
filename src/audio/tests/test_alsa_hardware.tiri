@@ -1,6 +1,10 @@
 -- Opt-in tests for a real ALSA PCM.  Silence/zero volume avoids audible test tones.
    module audio as mAudio
 
+function u8_mono()
+   return struct.new('AudioFormat', { sampleRate=44100, sampleFormat=ASF_U8, layout=array<int> { SPK_CENTRE } })
+end
+
 @BeforeAll function init(State)
    global glFolder = State.folder
 end
@@ -70,7 +74,7 @@ end
       reads++
       Buffer.fill(128)
       return #Buffer
-   end, function(Audio, Handle) completed++ end, SFM_U8_BIT_MONO, 48000, 0, nil)
+   end, function(Audio, Handle) completed++ end, u8_mono(), 48000, 0, nil)
    assert(err is ERR_Okay)
    err, channel = audio.mtOpenChannels(1)
    assert(err is ERR_Okay)

@@ -9,6 +9,7 @@ using namespace kt;
 #include "wasapi.h"
 #endif
 #include <unordered_map>
+#include <unordered_set>
 #ifdef ALSA_ENABLED
 #include <pthread.h>
 #include <poll.h>
@@ -18,6 +19,7 @@ using namespace kt;
 #ifdef ALSA_ENABLED
 #include "audio_worker.h"
 #endif
+#include "audio_format.h"
 #include "mixer_dispatch.h"
 #include "audio_completions.h"
 
@@ -60,22 +62,6 @@ enum class CMD : int {
    PAUSE
 };
 
-//********************************************************************************************************************
-// Sample shift - value used for converting total data size down to samples.
-
-inline const int sample_shift(const SFM Type)
-{
-   switch (Type) {
-      default: return 0;
-      case SFM::U8_BIT_STEREO:
-      case SFM::S16_BIT_MONO: return 1;
-      case SFM::S16_BIT_STEREO: return 2;
-   }
-   return 0;
-}
-
-//********************************************************************************************************************
-
 struct WAVEFormat {
    int16_t Format;            // Type of WAVE data in the chunk: RAW or ADPCM
    int16_t Channels;          // Number of channels, 1=mono, 2=stereo
@@ -92,6 +78,7 @@ void set_mix_step(int step);
 static const int16_t WAVE_RAW   = 0x0001;  // Uncompressed waveform data.
 static const int16_t WAVE_ADPCM = 0x0002;  // ADPCM compressed waveform data.
 static const int16_t WAVE_FLOAT = 0x0003;  // Uncompressed floating point waveform
+static const uint16_t WAVE_EXTENSIBLE = 0xfffe; // WAVE_FORMAT_EXTENSIBLE; the sub-format GUID holds the format tag.
 
 
 //********************************************************************************************************************
@@ -108,8 +95,11 @@ struct AudioSample {
    BYTELEN  StreamLength; // Streams only.  Total byte-length of the sample data that is being streamed.
    BYTELEN  PlayPos;      // Current read position relative to StreamLength/SampleLength, measured in bytes
    BYTELEN  BufferedLength; // Streams only.  Valid source bytes in the current rolling buffer.
+   PcmFormat Format;      // Registered source format, copied from the client's descriptor
    LOOP     LoopMode;     // Loop mode (single, double)
-   SFM      SampleType;   // Type of sample (bit format)
+   PCM      SampleType;   // Mixer representation of the source format
+   int      FrameBytes = 1; // Bytes per source frame
+   bool     Swap = false; // Streams only.  Callback data must be byte-swapped to native order.
    LTYPE    Loop1Type;    // First loop type (unidirectional, bidirectional)
    LTYPE    Loop2Type;    // Second loop type (unidirectional, bidirectional)
    #ifdef AUDIO_WORKER
@@ -170,7 +160,10 @@ struct AudioSample {
       BufferedLength = BYTELEN(0);
       StreamLengthKnown = false;
       Released     = false;
-      SampleType   = SFM::NIL;
+      Format       = PcmFormat();
+      SampleType   = PCM::NIL;
+      FrameBytes   = 1;
+      Swap         = false;
       LoopMode     = LOOP::NIL;
       Loop1Type    = LTYPE::NIL;
       Loop2Type    = LTYPE::NIL;
@@ -283,6 +276,8 @@ struct AudioEffectChain {
    bool Truncated = false;
    int Rate = 0;
    bool Stereo = false;
+   std::vector<int> Layout; // Committed processing layout; empty until configured
+   uint64_t FormatGeneration = 0; // Output configuration generation at the last commit
    double MeterScale = 1;
    bool pending() const;
    void reset();
@@ -292,10 +287,14 @@ struct AudioEffectChain {
    explicit AudioEffectChain(std::shared_ptr<std::recursive_mutex> Lock) : Mutex(std::move(Lock)) { }
 };
 
+// Snapshot storage is sized on the control thread when the meter layout changes.  The render thread only overwrites
+// existing elements, so publication never allocates.
+
 struct AudioMeterSnapshot {
-   std::array<double, 5> Values = {-120, -120, -120, -120, 0};
+   std::vector<double> Values;
+   std::vector<int> ValueFlags; // AMV flags, one element per value
    uint64_t Sequence = 0, Generation = 0, Position = 0;
-   int Interval = 0, Floor = 0;
+   int Interval = 0;
    AMF Flags = AMF::NIL;
 };
 
@@ -310,8 +309,17 @@ public:
    // Changes staged by SetParameter(), InsertEntry() and RemoveEntry() after initialisation, pending Flush().
    std::unique_ptr<AudioParamState> Pending;
 
+   std::vector<int> Layout;        // Processing layout.  Input and output layouts are always identical.
+   uint64_t FormatGeneration = 0;  // Output configuration generation of the committed layout
+   bool FormatCommitted = false;   // True once a processing layout has been committed by device activation
+   bool Stereo = false;            // Derived from Layout for the stereo-only DSP implementations
+
+   std::vector<AudioMeterDesc> Meters; // Current meter layout
+   std::vector<double> InputPeaks, OutputPeaks; // Per-channel accumulators for the current interval
+   double Reduction = 0;
+
    extAudioEffect(objMetaClass *ClassPtr, OBJECTID ObjectID) : objAudioEffect(ClassPtr, ObjectID) {
-      AudioID = Channel = Order = OutputRate = Stereo = 0;
+      AudioID = Channel = Order = OutputRate = 0;
       Flags = AEF::NIL;
    }
    ~extAudioEffect();
@@ -323,8 +331,10 @@ public:
    int64_t latency() const;
    void reset_meter(uint64_t Generation);
    void idle();
+   void set_layout(std::span<const int> Layout);
+   uint64_t meter_generation(const AudioEffectChain *Chain) const;
+   void read_meter(const AudioEffectChain *Chain, MeterReading &Reading) const;
    AudioMeterSnapshot Meter;
-   std::array<double, 5> Peaks = {};
    uint64_t MeterPosition = 0;
    int MeterFrames = 0;
    int64_t CommittedLatency = 0;
@@ -335,7 +345,9 @@ public:
 };
 
 static void process_effects(AudioEffectChain &, float *, int);
-static ERR configure_effects(AudioEffectChain &, int, bool);
+#ifdef UNIT_TESTS
+static ERR configure_effects(AudioEffectChain &, int, std::span<const int>, uint64_t = 0);
+#endif
 static void render_effects(AudioEffectChain &, float *, int, int, uint64_t, bool = false, uint64_t = 0,
    bool = false);
 static bool effects_pending(const AudioEffectChain &);
@@ -424,6 +436,12 @@ class extAudio : public objAudio {
 
    AudioCompletions BatchCompletions; // Pending batch callbacks; the worker completes and the client thread dispatches.
    AudioConfig MixConfig; // Stereo/oversampling configuration used to select the mixing routine.
+   std::vector<int> OutputLayout = { int(SPK::FRONT_LEFT), int(SPK::FRONT_RIGHT) }; // Requested output layout
+   std::vector<int> CommittedLayout; // Processing layout of the last successful activation; empty if none
+   int CommittedRate = 0; // Sample rate of the last successful activation, independent of device negotiation
+   uint64_t OutputGeneration = 0; // Incremented whenever a processing configuration is committed
+   bool LayoutExplicit = false; // True if OutputLayout was set by the client or configuration file
+   bool OutputActive = false;  // True between a successful activation and deactivation
    std::vector<ChannelSet> Sets; // Channels are grouped into sets.  Index 0 is a dummy entry.
    std::vector<AudioSample> Samples; // Buffered samples loaded into the audio object.
    std::vector<VolumeCtl> Volumes; // Mixer volume controls.  Index 0 is the master control.
@@ -508,6 +526,8 @@ class extAudio : public objAudio {
 
 //********************************************************************************************************************
 
+static ERR commit_audio_output(extAudio *, std::span<const int>, ERR (*)(extAudio *));
+
 class extSound : public objSound {
    public:
    FUNCTION OnStop;
@@ -515,6 +535,7 @@ class extSound : public objSound {
    ankerl::unordered_dense::map<std::string, std::string> Tags;
    std::unique_ptr<objFile, DeleteObject<objFile>> File;
    std::string Path;
+   AudioFormat SourceFormat; // Configured (new sounds) or decoded source format; SampleFormat is NIL if unknown
    int   Format;             // The format of the sound data
    int   DataOffset;         // Start of raw audio data within the source file
    int   Note;               // Note to play back (e.g. C, C#, G...)
@@ -529,6 +550,9 @@ class extSound : public objSound {
       Playback    = 0;
       Note        = NOTE_C; // Standard pitch
       Stream      = STREAM::SMART;
+      SourceFormat.SampleRate   = 0;
+      SourceFormat.SampleFormat = ASF::NIL; // Unknown until configured or decoded
+      SourceFormat.Flags        = AFF::NIL;
    }
 
    ~extSound();

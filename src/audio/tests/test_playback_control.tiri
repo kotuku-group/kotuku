@@ -2,6 +2,16 @@
 -- these tests remain valid on unpaced null devices.
    module audio as mAudio
 
+function u8_mono()
+   return struct.new('AudioFormat', { sampleRate=44100, sampleFormat=ASF_U8, layout=array<int> { SPK_CENTRE } })
+end
+
+function s16_stereo()
+   return struct.new('AudioFormat', {
+      sampleRate=44100, sampleFormat=ASF_S16, layout=array<int> { SPK_FRONT_LEFT, SPK_FRONT_RIGHT }
+   })
+end
+
 @BeforeAll function init(State)
    global glAudioTestFolder = State.folder
 end
@@ -17,7 +27,7 @@ function looping_sample(Audio, Counter, Mode, LoopEnd)
    data = array<byte, 4096>
    data.fill(128)
    loop = struct.new('AudioLoop', { loopMode=Mode, loop1Type=LTYPE_UNIDIRECTIONAL, loop1Start=0, loop1End=LoopEnd })
-   err, sample = Audio.mtAddSample(function(Audio, Handle) Counter[0]++ end, SFM_U8_BIT_MONO, data, loop)
+   err, sample = Audio.mtAddSample(function(Audio, Handle) Counter[0]++ end, u8_mono(), data, loop)
    assert(err is ERR_Okay)
    return sample
 end
@@ -145,7 +155,7 @@ end
    err, sample = audio.mtAddStream(function(Handle, Offset, Buffer)
       Buffer.fill(0)
       return #Buffer
-   end, function(Audio, Handle) stops[0] = stops[0] + 1 end, SFM_S16_BIT_STEREO, 800, 0, loop)
+   end, function(Audio, Handle) stops[0] = stops[0] + 1 end, s16_stereo(), 800, 0, loop)
    assert(err is ERR_Okay)
    channel = play(audio, sample)
    processing.sleep(0.03)

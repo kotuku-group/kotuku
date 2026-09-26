@@ -29,5 +29,5 @@ struct AudioConfig {
 
 class AudioMixer {
 public:
-   static int dispatch_mix(const AudioConfig& config, SFM sample_format, const MixingParams& params);
+   static int dispatch_mix(const AudioConfig& config, PCM sample_format, const MixingParams& params);
 };

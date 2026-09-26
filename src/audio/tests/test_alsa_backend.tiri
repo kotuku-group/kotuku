@@ -1,6 +1,16 @@
 -- The ALSA null PCM exercises the backend without making sound or requiring hardware.
    module audio as mAudio
 
+function u8_mono()
+   return struct.new('AudioFormat', { sampleRate=44100, sampleFormat=ASF_U8, layout=array<int> { SPK_CENTRE } })
+end
+
+function s16_stereo()
+   return struct.new('AudioFormat', {
+      sampleRate=44100, sampleFormat=ASF_S16, layout=array<int> { SPK_FRONT_LEFT, SPK_FRONT_RIGHT }
+   })
+end
+
 @Test function QueuedCommandsValidateBeforeReportingSuccess()
    audio <close> = obj.new('Audio', { device='null' })
    check audio.acActivate()
@@ -11,7 +21,7 @@
 
    data = array<byte, 512>
    data.fill(128)
-   err, sample = audio.mtAddSample(nil, SFM_U8_BIT_MONO, data, nil)
+   err, sample = audio.mtAddSample(nil, u8_mono(), data, nil)
    assert(err is ERR_Okay)
    check mAudio.MixSample(audio, channel, sample)
    assert(mAudio.MixPlay(audio, channel, 513) is ERR_OutOfRange,
@@ -30,7 +40,7 @@
    err, stream = audio.mtAddStream(function(Handle, Offset, Buffer)
       Buffer.fill(128)
       return #Buffer
-   end, nil, SFM_U8_BIT_MONO, 100, 0, nil)
+   end, nil, u8_mono(), 100, 0, nil)
    assert(err is ERR_Okay)
    check mAudio.MixSample(audio, channel, stream)
    assert(mAudio.MixPlay(audio, channel, 101) is ERR_OutOfRange,
@@ -59,7 +69,7 @@ end
    completed = 0
    data = array<byte, 4096>
    data.fill(128)
-   err, sample = audio.mtAddSample(function(Audio, Handle) completed++ end, SFM_U8_BIT_MONO, data, nil)
+   err, sample = audio.mtAddSample(function(Audio, Handle) completed++ end, u8_mono(), data, nil)
    assert(err is ERR_Okay)
    err, channel = audio.mtOpenChannels(1)
    assert(err is ERR_Okay)
@@ -85,11 +95,11 @@ end
          err, handle = audio.mtAddStream(function(Handle, Offset, Buffer)
             Buffer.fill(128)
             return #Buffer
-         end, nil, SFM_U8_BIT_MONO, #data, 0, nil)
+         end, nil, u8_mono(), #data, 0, nil)
          assert(err is ERR_Okay)
          sample = handle
       else
-         err, handle = audio.mtAddSample(nil, SFM_U8_BIT_MONO, data, nil)
+         err, handle = audio.mtAddSample(nil, u8_mono(), data, nil)
          assert(err is ERR_Okay)
          sample = handle
       end
@@ -102,7 +112,7 @@ end
       check audio.mtRemoveSample(sample)
 
       completed = 0
-      err, handle = audio.mtAddSample(function(Audio, Handle) completed++ end, SFM_U8_BIT_MONO, data, nil)
+      err, handle = audio.mtAddSample(function(Audio, Handle) completed++ end, u8_mono(), data, nil)
       assert(err is ERR_Okay)
       check mAudio.MixSample(audio, channel, handle)
       check mAudio.MixPlay(audio, channel, 0)
@@ -120,7 +130,7 @@ end
       reads++
       Buffer.fill(128)
       return #Buffer
-   end, function(Audio, Handle) completed++ end, SFM_U8_BIT_MONO, 100000, 0, nil)
+   end, function(Audio, Handle) completed++ end, u8_mono(), 100000, 0, nil)
    assert(err is ERR_Okay)
    err, channel = audio.mtOpenChannels(1)
    assert(err is ERR_Okay)
@@ -139,7 +149,7 @@ end
 end
 
 @Test function EmptyProducerResumes()
-   audio <close> = obj.new('Audio', { device='null', bitDepth=8, stereo=false })
+   audio <close> = obj.new('Audio', { device='null', bitDepth=8, outputLayout=array<int> { SPK_CENTRE } })
    check audio.acActivate()
    reads = 0
    completed = 0
@@ -148,7 +158,7 @@ end
       if reads < 3 then return 0 end
       Buffer.fill(128)
       return #Buffer
-   end, function(Audio, Handle) completed++ end, SFM_U8_BIT_MONO, 1000, 0, nil)
+   end, function(Audio, Handle) completed++ end, u8_mono(), 1000, 0, nil)
    assert(err is ERR_Okay)
    err, channel = audio.mtOpenChannels(1)
    assert(err is ERR_Okay)
@@ -168,7 +178,7 @@ end
       check audio.mtRemoveSample(Handle)
       removed = true
       return 0
-   end, nil, SFM_U8_BIT_MONO, 1000, 0, nil)
+   end, nil, u8_mono(), 1000, 0, nil)
    assert(err is ERR_Okay)
    err, channel = audio.mtOpenChannels(1)
    assert(err is ERR_Okay)
@@ -190,7 +200,7 @@ end
       if Offset is 400 then saw_loop = true end
       Buffer.fill(0)
       return #Buffer
-   end, function(Audio, Handle) completed++ end, SFM_S16_BIT_STEREO, 800, 0, loop)
+   end, function(Audio, Handle) completed++ end, s16_stereo(), 800, 0, loop)
    assert(err is ERR_Okay)
    err, channel = audio.mtOpenChannels(1)
    assert(err is ERR_Okay)
@@ -214,7 +224,7 @@ end
    err, sample = audio.mtAddStream(function(Handle, Offset, Buffer)
       Buffer.fill(0)
       return #Buffer
-   end, nil, SFM_S16_BIT_STEREO, 800, 0, loop)
+   end, nil, s16_stereo(), 800, 0, loop)
    assert(err is ERR_Okay)
    err, channel = audio.mtOpenChannels(1)
    assert(err is ERR_Okay)
@@ -267,7 +277,7 @@ end
    completed = 0
    data = array<byte, 512>
    data.fill(128)
-   err, sample = audio.mtAddSample(function(Audio, Handle) completed++ end, SFM_U8_BIT_MONO, data, nil)
+   err, sample = audio.mtAddSample(function(Audio, Handle) completed++ end, u8_mono(), data, nil)
    assert(err is ERR_Okay)
    err, channel = audio.mtOpenChannels(1)
    assert(err is ERR_Okay)
@@ -299,7 +309,7 @@ end
       supplied += #Buffer
       Buffer.fill(128)
       return #Buffer
-   end, function(Audio, Handle) stream_done++ end, SFM_U8_BIT_MONO, 100000, 0, nil)
+   end, function(Audio, Handle) stream_done++ end, u8_mono(), 100000, 0, nil)
    assert(err is ERR_Okay)
    err, channels = audio.mtOpenChannels(2)
    assert(err is ERR_Okay)
@@ -310,7 +320,7 @@ end
    assert(paused and stream_done is 0, 'An exhausted source must wait for its producer')
    data = array<byte, 512>
    data.fill(128)
-   err, resident = audio.mtAddSample(function(Audio, Handle) resident_done++ end, SFM_U8_BIT_MONO, data, nil)
+   err, resident = audio.mtAddSample(function(Audio, Handle) resident_done++ end, u8_mono(), data, nil)
    assert(err is ERR_Okay)
    check mAudio.MixSample(audio, channels + 1, resident)
    check mAudio.MixFrequency(audio, channels + 1, 44100)

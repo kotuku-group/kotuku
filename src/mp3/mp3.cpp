@@ -397,13 +397,20 @@ static ERR MP3_Init(objMP3 *Self)
 
    if (auto error = prv->File->seekStart(prv->SeekOffset); error != ERR::Okay) return init_error(Self, error);
 
-   if (prv->info.channels IS 2) Self->Flags |= SDF::STEREO;
    if (Self->Stream != STREAM::NEVER) Self->Flags |= SDF::STREAM;
 
-   Self->BytesPerSecond = int(prv->info.hz * prv->info.channels * sizeof(int16_t));
-   Self->BitsPerSample  = 16;
-   Self->Frequency      = prv->info.hz;
-   Self->Playback       = Self->Frequency;
+   // Publish the decoded PCM format.  MP3 frames decode to interleaved 16-bit mono or stereo.
+
+   if ((prv->info.channels < 1) or (prv->info.channels > 2)) return init_error(Self, log.warning(ERR::NoSupport));
+
+   AudioFormat format{};
+   format.SampleRate   = prv->info.hz;
+   format.SampleFormat = ASF::S16;
+   format.Flags        = AFF::NIL;
+   if (prv->info.channels IS 2) format.Layout = { int(SPK::FRONT_LEFT), int(SPK::FRONT_RIGHT) };
+   else format.Layout = { int(SPK::CENTRE) };
+   if (auto error = Self->setSourceFormat(&format); error != ERR::Okay) return init_error(Self, error);
+   Self->Playback = format.SampleRate;
 
    if (Self->Length <= 0) {
       int64_t length;
@@ -412,9 +419,8 @@ static ERR MP3_Init(objMP3 *Self)
       if (auto error = prv->File->seekStart(prv->SeekOffset); error != ERR::Okay) return init_error(Self, error);
    }
 
-   log.msg("File is MP3.  Stereo: %c, BytesPerSecond: %d, Freq: %d, Byte Length: %" PF64,
-      ((Self->Flags & SDF::STEREO) != SDF::NIL) ? 'Y' : 'N', Self->BytesPerSecond, Self->Frequency,
-      (long long)Self->Length);
+   log.msg("File is MP3.  Channels: %d, BytesPerSecond: %d, Rate: %d, Byte Length: %" PF64,
+      prv->info.channels, Self->BytesPerSecond, prv->info.hz, (long long)Self->Length);
 
    return ERR::Okay;
 }

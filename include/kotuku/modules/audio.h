@@ -20,10 +20,9 @@ enum class ADF : uint32_t {
    OVER_SAMPLING = 0x00000001,
    FILTER_LOW = 0x00000002,
    FILTER_HIGH = 0x00000004,
-   STEREO = 0x00000008,
-   VOL_RAMPING = 0x00000010,
-   AUTO_SAVE = 0x00000020,
-   SYSTEM_WIDE = 0x00000040,
+   VOL_RAMPING = 0x00000008,
+   AUTO_SAVE = 0x00000010,
+   SYSTEM_WIDE = 0x00000020,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(ADF)
@@ -49,6 +48,68 @@ enum class AMF : uint32_t {
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(AMF)
+
+// Per-value flags returned by AudioEffect.ReadMeters().
+
+enum class AMV : uint32_t {
+   NIL = 0,
+   VALID = 0x00000001,
+   FLOOR = 0x00000002,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(AMV)
+
+// Sample representations, independent of the channel count.
+
+enum class ASF : int {
+   NIL = 0,
+   U8 = 1,
+   S16 = 2,
+   F32 = 3,
+};
+
+// Optional AudioFormat flags.
+
+enum class AFF : uint32_t {
+   NIL = 0,
+   BIG_ENDIAN_ORDER = 0x00000001,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(AFF)
+
+// Channel identities for the Layout of an AudioFormat.
+
+enum class SPK : int {
+   NIL = 0,
+   DISCRETE = 0x10000,
+   CENTRE = 1,
+   FRONT_LEFT = 2,
+   FRONT_RIGHT = 3,
+   LFE = 4,
+   SIDE_LEFT = 5,
+   SIDE_RIGHT = 6,
+   REAR_LEFT = 7,
+   REAR_RIGHT = 8,
+};
+
+// Named channel layout presets for ExpandLayout().
+
+enum class ACL : int {
+   NIL = 0,
+   MONO = 1,
+   STEREO = 2,
+   SURROUND_5_1_SIDE = 3,
+   SURROUND_5_1_REAR = 4,
+};
+
+// Availability of a reported processing format.
+
+enum class AFS : int {
+   NIL = 0,
+   UNAVAILABLE = 0,
+   ACTIVE = 1,
+   INACTIVE = 2,
+};
 
 // Effect drain states reported by GetEffectStatus().
 
@@ -113,25 +174,12 @@ enum class SDF : uint32_t {
    NIL = 0,
    LOOP = 0x00000001,
    NEW = 0x00000002,
-   STEREO = 0x00000004,
-   RESTRICT_PLAY = 0x00000008,
+   RESTRICT_PLAY = 0x00000004,
    STREAM = 0x40000000,
    NOTE = 0x80000000,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(SDF)
-
-// These audio bit formats are supported by AddSample and AddStream.
-
-enum class SFM : uint32_t {
-   NIL = 0,
-   F_BIG_ENDIAN = 0x80000000,
-   U8_BIT_MONO = 1,
-   S16_BIT_MONO = 2,
-   U8_BIT_STEREO = 3,
-   S16_BIT_STEREO = 4,
-   END = 5,
-};
 
 // Loop modes for the AudioLoop structure.
 
@@ -222,6 +270,42 @@ struct AudioLoop {
    int64_t Loop2End;      // Byte position at the end of the second loop
 };
 
+struct AudioFormat {
+   int SampleRate;            // Nominal sample rate in frames per second
+   ASF SampleFormat;          // Representation of each sample
+   AFF Flags;                 // Optional format flags
+   kt::vector<int> Layout;    // Ordered channel identities from SPK; the length is the channel count
+};
+
+struct MeterInfo {
+   std::string Key;          // Stable key, e.g. input_peak_left
+   std::string Label;        // Human-readable label
+   std::string Unit;         // Unit of measurement, e.g. dBFS, or empty
+   std::string Scope;        // Either channel or global
+   std::string Semantics;    // Kind of measurement, e.g. sample-peak, or empty
+   int Slot;                 // Index of the value in the Values of a MeterReading
+   int Channel;              // Channel identity from SPK, or zero for a global value
+};
+
+struct MeterLayout {
+   int64_t ID;                      // Configuration identifier shared with the matching MeterReading
+   kt::vector<MeterInfo> Meters;    // Meter descriptors in slot order
+};
+
+struct MeterValue {
+   double Value;    // Measured value in the units of its MeterInfo descriptor
+   AMV    Flags;    // Validity of the value
+};
+
+struct MeterReading {
+   int64_t Sequence;                 // Publication sequence number; increases with each published interval
+   int64_t ID;                       // Configuration identifier; compare with the ID from GetMeterLayout()
+   int64_t Position;                 // Processed-frame position at the end of the interval
+   AMF     Flags;                    // Validity and lifecycle state of the reading
+   int     Interval;                 // Length of the measurement interval in frames
+   kt::vector<MeterValue> Values;    // One value per meter descriptor, indexed by slot
+};
+
 struct AudioEQBand {
    EQB    Type;         // Filter type
    double Frequency;    // Centre or corner frequency in hertz
@@ -238,14 +322,16 @@ struct AudioEQBand {
 namespace snd {
 struct OpenChannels { int Total; int Result; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct CloseChannels { int Handle; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct AddSample { FUNCTION OnStop; SFM SampleFormat; std::span<const int8_t> Data; struct AudioLoop *Loop; int Result; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddSample { FUNCTION OnStop; struct AudioFormat *Format; std::span<const int8_t> Data; struct AudioLoop *Loop; int Result; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct RemoveSample { int Handle; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetSampleLength { int Sample; int64_t Length; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct AddStream { FUNCTION Callback; FUNCTION OnStop; SFM SampleFormat; int64_t SampleLength; int64_t PlayOffset; struct AudioLoop *Loop; int Result; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddStream { FUNCTION Callback; FUNCTION OnStop; struct AudioFormat *Format; int64_t SampleLength; int64_t PlayOffset; struct AudioLoop *Loop; int Result; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Beep { int Pitch; int Duration; int Volume; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetVolume { int Index; std::string_view Name; SVF Flags; int Channel; double Volume; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct GetEffectStatus { int Channel; int64_t Application; int64_t Global; int64_t Total; int Rate; int64_t Generation; ADS State; int Truncated; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct ResetEffects { int Channel; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetOutputFormat { int SampleRate; ASF SampleFormat; kt::vector<int> *Layout; int64_t Generation; AFS State; static const AC id = AC(-11); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetVolumeChannels { int Index; std::string_view Name; kt::vector<int> *Channels; kt::vector<int> *Speakers; VCF Flags; static const AC id = AC(-12); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -285,8 +371,8 @@ class objAudio : public Object {
       struct snd::CloseChannels args = { Handle };
       return Action(AC(-2), this, &args);
    }
-   inline ERR addSample(FUNCTION OnStop, SFM SampleFormat, std::span<const int8_t> Data, struct AudioLoop * Loop, int * Result) noexcept {
-      struct snd::AddSample args = { OnStop, SampleFormat, Data, Loop, (int)0 };
+   inline ERR addSample(FUNCTION OnStop, struct AudioFormat * Format, std::span<const int8_t> Data, struct AudioLoop * Loop, int * Result) noexcept {
+      struct snd::AddSample args = { OnStop, Format, Data, Loop, (int)0 };
       ERR error = Action(AC(-3), this, &args);
       if (Result) *Result = args.Result;
       return error;
@@ -299,8 +385,8 @@ class objAudio : public Object {
       struct snd::SetSampleLength args = { Sample, Length };
       return Action(AC(-5), this, &args);
    }
-   inline ERR addStream(FUNCTION Callback, FUNCTION OnStop, SFM SampleFormat, int64_t SampleLength, int64_t PlayOffset, struct AudioLoop * Loop, int * Result) noexcept {
-      struct snd::AddStream args = { Callback, OnStop, SampleFormat, SampleLength, PlayOffset, Loop, (int)0 };
+   inline ERR addStream(FUNCTION Callback, FUNCTION OnStop, struct AudioFormat * Format, int64_t SampleLength, int64_t PlayOffset, struct AudioLoop * Loop, int * Result) noexcept {
+      struct snd::AddStream args = { Callback, OnStop, Format, SampleLength, PlayOffset, Loop, (int)0 };
       ERR error = Action(AC(-6), this, &args);
       if (Result) *Result = args.Result;
       return error;
@@ -329,6 +415,21 @@ class objAudio : public Object {
       struct snd::ResetEffects args = { Channel };
       return Action(AC(-10), this, &args);
    }
+   inline ERR getOutputFormat(int * SampleRate, ASF * SampleFormat, kt::vector<int> &Layout, int64_t * Generation, AFS * State) noexcept {
+      struct snd::GetOutputFormat args = { (int)0, (ASF)0, &Layout, (int64_t)0, (AFS)0 };
+      ERR error = Action(AC(-11), this, &args);
+      if (SampleRate) *SampleRate = args.SampleRate;
+      if (SampleFormat) *SampleFormat = args.SampleFormat;
+      if (Generation) *Generation = args.Generation;
+      if (State) *State = args.State;
+      return error;
+   }
+   inline ERR getVolumeChannels(int Index, const std::string_view &Name, kt::vector<int> &Channels, kt::vector<int> &Speakers, VCF * Flags) noexcept {
+      struct snd::GetVolumeChannels args = { Index, Name, &Channels, &Speakers, (VCF)0 };
+      ERR error = Action(AC(-12), this, &args);
+      if (Flags) *Flags = args.Flags;
+      return error;
+   }
 
    // Customised field getting
 
@@ -338,6 +439,12 @@ class objAudio : public Object {
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
+   }
+
+   inline ERR getOutputLayout(std::span<int> &Value) noexcept {
+      auto field = &this->Class->Dictionary[4];
+      auto get_field = (ERR (*)(APTR, std::span<int> &))field->GetValue;
+      return get_field(this, Value);
    }
 
    inline ERR getOutputRate(int &Value) noexcept {
@@ -402,17 +509,17 @@ class objAudio : public Object {
       return error;
    }
 
-   inline ERR getStereo(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[4];
-      return field->GetValue(this, &Value);
-   }
-
 
    // Customised field setting
 
    inline ERR setMaxDrain(const double Value) noexcept {
       auto field = &this->Class->Dictionary[0];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setOutputLayout(std::span<const int> Value) noexcept {
+      auto field = &this->Class->Dictionary[4];
+      return field->WriteValue(this, field, 0x40101308, &Value);
    }
 
    inline ERR setOutputRate(const int Value) noexcept {
@@ -467,11 +574,6 @@ class objAudio : public Object {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setStereo(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[4];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
 };
 
 // AudioEffect class definition
@@ -487,8 +589,10 @@ struct InsertEntry { std::string_view Group; int Index; static const AC id = AC(
 struct RemoveEntry { std::string_view Group; int Index; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct GetResponse { std::span<const double> Frequencies; std::span<double> Magnitudes; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct GetGroupCount { std::string_view Group; int Count; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct GetMeters { std::span<double> Values; int64_t Sequence; int64_t Generation; int64_t Position; int Interval; AMF Flags; int Floor; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetMeterLayout { struct MeterLayout *Layout; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct GetOutput { std::string_view Key; double Value; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ReadMeters { struct MeterReading *Reading; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetProcessingFormat { int SampleRate; ASF SampleFormat; kt::vector<int> *Layout; int64_t Generation; AFS State; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -505,7 +609,6 @@ class objAudioEffect : public Object {
    int      Order;    // Processing position within the chain.
    AEF      Flags;    // Optional processing flags.
    int      OutputRate; // Read-only output sample rate of the attached Audio object.
-   int      Stereo;   // Read-only output layout; one for stereo and zero for mono.
 
    // Action stubs
 
@@ -539,21 +642,31 @@ class objAudioEffect : public Object {
       if (Count) *Count = args.Count;
       return error;
    }
-   inline ERR getMeters(std::span<double> Values, int64_t * Sequence, int64_t * Generation, int64_t * Position, int * Interval, AMF * Flags, int * Floor) noexcept {
-      struct fx::GetMeters args = { Values, (int64_t)0, (int64_t)0, (int64_t)0, (int)0, (AMF)0, (int)0 };
+   inline ERR getMeterLayout(struct MeterLayout ** Layout) noexcept {
+      struct fx::GetMeterLayout args = { (struct MeterLayout *)0 };
       ERR error = Action(AC(-7), this, &args);
-      if (Sequence) *Sequence = args.Sequence;
-      if (Generation) *Generation = args.Generation;
-      if (Position) *Position = args.Position;
-      if (Interval) *Interval = args.Interval;
-      if (Flags) *Flags = args.Flags;
-      if (Floor) *Floor = args.Floor;
+      if (Layout) *Layout = args.Layout;
       return error;
    }
    inline ERR getOutput(const std::string_view &Key, double * Value) noexcept {
       struct fx::GetOutput args = { Key, (double)0 };
       ERR error = Action(AC(-8), this, &args);
       if (Value) *Value = args.Value;
+      return error;
+   }
+   inline ERR readMeters(struct MeterReading ** Reading) noexcept {
+      struct fx::ReadMeters args = { (struct MeterReading *)0 };
+      ERR error = Action(AC(-9), this, &args);
+      if (Reading) *Reading = args.Reading;
+      return error;
+   }
+   inline ERR getProcessingFormat(int * SampleRate, ASF * SampleFormat, kt::vector<int> &Layout, int64_t * Generation, AFS * State) noexcept {
+      struct fx::GetProcessingFormat args = { (int)0, (ASF)0, &Layout, (int64_t)0, (AFS)0 };
+      ERR error = Action(AC(-10), this, &args);
+      if (SampleRate) *SampleRate = args.SampleRate;
+      if (SampleFormat) *SampleFormat = args.SampleFormat;
+      if (Generation) *Generation = args.Generation;
+      if (State) *State = args.State;
       return error;
    }
 
@@ -580,15 +693,7 @@ class objAudioEffect : public Object {
    }
 
    inline ERR getOutputRate(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      auto error = field->GetValue(this, &Value);
-      RestoreObjectContext();
-      return error;
-   }
-
-   inline ERR getStereo(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[3];
+      auto field = &this->Class->Dictionary[4];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -596,7 +701,7 @@ class objAudioEffect : public Object {
    }
 
    inline ERR getLatency(int64_t &Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
+      auto field = &this->Class->Dictionary[6];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -604,7 +709,7 @@ class objAudioEffect : public Object {
    }
 
    inline ERR getMutable(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[12];
+      auto field = &this->Class->Dictionary[11];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -636,7 +741,7 @@ class objAudioEffect : public Object {
    }
 
    inline ERR setOrder(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[11];
+      auto field = &this->Class->Dictionary[10];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -666,13 +771,13 @@ class objAudioEqualiser : public objAudioEffect {
    // Customised field getting
 
    inline ERR getBands(std::span<struct AudioEQBand> &Value) noexcept {
-      auto field = &this->Class->Dictionary[15];
+      auto field = &this->Class->Dictionary[14];
       auto get_field = (ERR (*)(APTR, std::span<struct AudioEQBand> &))field->GetValue;
       return get_field(this, Value);
    }
 
    inline ERR getGain(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
+      auto field = &this->Class->Dictionary[13];
       return field->GetValue(this, &Value);
    }
 
@@ -680,12 +785,12 @@ class objAudioEqualiser : public objAudioEffect {
    // Customised field setting
 
    inline ERR setBands(std::span<const struct AudioEQBand> Value) noexcept {
-      auto field = &this->Class->Dictionary[15];
+      auto field = &this->Class->Dictionary[14];
       return field->WriteValue(this, field, 0x00101318, &Value);
    }
 
    inline ERR setGain(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
+      auto field = &this->Class->Dictionary[13];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -713,11 +818,9 @@ class objSound : public Object {
    int      Priority;   // The priority of a sound in relation to other sound samples being played.
    int      Octave;     // The octave to use for sample playback.
    SDF      Flags;      // Optional initialisation flags.
-   int      Frequency;  // The frequency of a sampled sound is specified here.
    int      Playback;   // The playback frequency of the sound sample can be defined here.
    int      Compression; // Determines the amount of compression used when saving an audio sample.
    int      BytesPerSecond; // The flow of bytes-per-second when the sample is played at normal frequency.
-   int      BitsPerSample; // Indicates the sample rate of the audio sample, typically 8 or 16 bit.
    OBJECTID AudioID;    // Refers to the audio object/device to use for playback.
    STREAM   Stream;     // Defines the preferred streaming method for the sample.
    int      Handle;     // Audio handle acquired at the audio object [Private - Available to child classes]
@@ -766,6 +869,26 @@ class objSound : public Object {
    }
 
    // Customised field getting
+
+   inline ERR getSourceFormat(struct AudioFormat * &Value) noexcept {
+      auto field = &this->Class->Dictionary[4];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getChannels(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[11];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getFrameBytes(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getSampleRate(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[15];
+      return field->GetValue(this, &Value);
+   }
 
    inline ERR getPath(std::string_view &Value) noexcept {
       Value = this->Path;
@@ -817,11 +940,6 @@ class objSound : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getFrequency(int &Value) noexcept {
-      Value = this->Frequency;
-      return ERR::Okay;
-   }
-
    inline ERR getPlayback(int &Value) noexcept {
       Value = this->Playback;
       return ERR::Okay;
@@ -834,11 +952,6 @@ class objSound : public Object {
 
    inline ERR getBytesPerSecond(int &Value) noexcept {
       Value = this->BytesPerSecond;
-      return ERR::Okay;
-   }
-
-   inline ERR getBitsPerSample(int &Value) noexcept {
-      Value = this->BitsPerSample;
       return ERR::Okay;
    }
 
@@ -858,7 +971,7 @@ class objSound : public Object {
    }
 
    inline ERR getActive(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[23];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -866,12 +979,12 @@ class objSound : public Object {
    }
 
    inline ERR getDuration(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[31];
+      auto field = &this->Class->Dictionary[33];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getElapsed(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
+      auto field = &this->Class->Dictionary[9];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -879,19 +992,19 @@ class objSound : public Object {
    }
 
    inline ERR getHeader(std::span<int8_t> &Value) noexcept {
-      auto field = &this->Class->Dictionary[3];
+      auto field = &this->Class->Dictionary[5];
       auto get_field = (ERR (*)(APTR, std::span<int8_t> &))field->GetValue;
       return get_field(this, Value);
    }
 
    inline ERR getOnStop(FUNCTION * &Value) noexcept {
-      auto field = &this->Class->Dictionary[29];
+      auto field = &this->Class->Dictionary[31];
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
       return get_field(this, Value);
    }
 
    inline ERR getPlayPosition(int64_t &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[19];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -899,7 +1012,7 @@ class objSound : public Object {
    }
 
    inline ERR getProgress(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
+      auto field = &this->Class->Dictionary[7];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -907,7 +1020,7 @@ class objSound : public Object {
    }
 
    inline ERR getRemaining(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[4];
+      auto field = &this->Class->Dictionary[6];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -915,7 +1028,7 @@ class objSound : public Object {
    }
 
    inline ERR getNote(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[30];
+      auto field = &this->Class->Dictionary[32];
       SetObjectContext(this, field, AC::NIL);
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
@@ -926,6 +1039,11 @@ class objSound : public Object {
 
    // Customised field setting
 
+   inline ERR setSourceFormat(struct AudioFormat * Value) noexcept {
+      auto field = &this->Class->Dictionary[4];
+      return field->WriteValue(this, field, 0x08100518, Value);
+   }
+
    inline ERR setPath(const std::string_view &Value) noexcept {
       if (this->initialised()) return ERR::ImmutableField;
       this->Path = Value;
@@ -933,22 +1051,22 @@ class objSound : public Object {
    }
 
    inline ERR setVolume(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[28];
+      auto field = &this->Class->Dictionary[30];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setPan(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setPosition(const int64_t Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_INT64, &Value);
    }
 
    inline ERR setLength(const int64_t Value) noexcept {
-      auto field = &this->Class->Dictionary[33];
+      auto field = &this->Class->Dictionary[35];
       return field->WriteValue(this, field, FD_INT64, &Value);
    }
 
@@ -963,43 +1081,27 @@ class objSound : public Object {
    }
 
    inline ERR setPriority(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
+      auto field = &this->Class->Dictionary[12];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setOctave(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
+      auto field = &this->Class->Dictionary[27];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setFlags(const SDF Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
+      auto field = &this->Class->Dictionary[3];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setFrequency(const int Value) noexcept {
-      if (this->initialised()) return ERR::ImmutableField;
-      this->Frequency = Value;
-      return ERR::Okay;
-   }
-
    inline ERR setPlayback(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[24];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setCompression(const int Value) noexcept {
       this->Compression = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setBytesPerSecond(const int Value) noexcept {
-      this->BytesPerSecond = Value;
-      return ERR::Okay;
-   }
-
-   inline ERR setBitsPerSample(const int Value) noexcept {
-      this->BitsPerSample = Value;
       return ERR::Okay;
    }
 
@@ -1015,12 +1117,12 @@ class objSound : public Object {
    }
 
    inline ERR setOnStop(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[29];
+      auto field = &this->Class->Dictionary[31];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
    inline ERR setNote(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[30];
+      auto field = &this->Class->Dictionary[32];
       return field->WriteValue(this, field, 0x00804308, &Value);
    }
 
@@ -1046,6 +1148,8 @@ struct AudioBase {
    ERR (*_MixStop)(objAudio *Audio, int Handle);
    ERR (*_MixVolume)(objAudio *Audio, int Handle, double Volume);
    ERR (*_MixSubmitBatch)(objAudio *Audio, const std::span<const struct AudioMixCommand> &Commands, FUNCTION *OnComplete);
+   ERR (*_ExpandLayout)(ACL Layout, kt::vector<int> *Channels);
+   ERR (*_GetFrameBytes)(struct AudioFormat *Format, int *Bytes);
 #endif // KOTUKU_STATIC
 };
 
@@ -1064,6 +1168,8 @@ inline ERR MixSample(objAudio *Audio, int Handle, int Sample) { return AudioBase
 inline ERR MixStop(objAudio *Audio, int Handle) { return AudioBase->_MixStop(Audio,Handle); }
 inline ERR MixVolume(objAudio *Audio, int Handle, double Volume) { return AudioBase->_MixVolume(Audio,Handle,Volume); }
 inline ERR MixSubmitBatch(objAudio *Audio, const std::span<const struct AudioMixCommand> &Commands, FUNCTION *OnComplete) { return AudioBase->_MixSubmitBatch(Audio,Commands,OnComplete); }
+inline ERR ExpandLayout(ACL Layout, kt::vector<int> *Channels) { return AudioBase->_ExpandLayout(Layout,Channels); }
+inline ERR GetFrameBytes(struct AudioFormat *Format, int *Bytes) { return AudioBase->_GetFrameBytes(Format,Bytes); }
 } // namespace
 #else
 namespace snd {
@@ -1079,5 +1185,7 @@ extern ERR MixSample(objAudio *Audio, int Handle, int Sample);
 extern ERR MixStop(objAudio *Audio, int Handle);
 extern ERR MixVolume(objAudio *Audio, int Handle, double Volume);
 extern ERR MixSubmitBatch(objAudio *Audio, const std::span<const struct AudioMixCommand> &Commands, FUNCTION *OnComplete);
+extern ERR ExpandLayout(ACL Layout, kt::vector<int> *Channels);
+extern ERR GetFrameBytes(struct AudioFormat *Format, int *Bytes);
 } // namespace
 #endif // KOTUKU_STATIC

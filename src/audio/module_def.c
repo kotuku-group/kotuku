@@ -13,12 +13,16 @@ extern ERR MixSample(objAudio * Audio, int Handle, int Sample);
 extern ERR MixStop(objAudio * Audio, int Handle);
 extern ERR MixVolume(objAudio * Audio, int Handle, double Volume);
 extern ERR MixSubmitBatch(objAudio * Audio, const std::span<const struct AudioMixCommand> &Commands, FUNCTION * OnComplete);
+extern ERR ExpandLayout(ACL Layout, kt::vector<int> * Channels);
+extern ERR GetFrameBytes(struct AudioFormat * Format, int * Bytes);
 
 } // namespace
 #ifndef FDEF
 #define FDEF static const struct FunctionField
 #endif
 
+FDEF argsExpandLayout[] = { { "Error", FD_INT|FD_ERROR }, { "Layout", FD_INT }, { "Channels", FD_RESULT|FDF_VECTOR|FD_MUTABLE|FD_INT }, { 0, 0 } };
+FDEF argsGetFrameBytes[] = { { "Error", FD_INT|FD_ERROR }, { "AudioFormat:Format", FD_PTR|FD_STRUCT }, { "Bytes", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF argsMixContinue[] = { { "Error", FD_INT|FD_ERROR }, { "Audio", FD_OBJECTPTR }, { "Handle", FD_INT }, { 0, 0 } };
 FDEF argsMixFrequency[] = { { "Error", FD_INT|FD_ERROR }, { "Audio", FD_OBJECTPTR }, { "Handle", FD_INT }, { "Frequency", FD_INT }, { 0, 0 } };
 FDEF argsMixMute[] = { { "Error", FD_INT|FD_ERROR }, { "Audio", FD_OBJECTPTR }, { "Handle", FD_INT }, { "Mute", FD_INT }, { 0, 0 } };
@@ -45,8 +49,10 @@ const struct Function glFunctions[] = {
    { (APTR)snd::MixStop, "MixStop", argsMixStop },
    { (APTR)snd::MixVolume, "MixVolume", argsMixVolume },
    { (APTR)snd::MixSubmitBatch, "MixSubmitBatch", argsMixSubmitBatch },
+   { (APTR)snd::ExpandLayout, "ExpandLayout", argsExpandLayout },
+   { (APTR)snd::GetFrameBytes, "GetFrameBytes", argsGetFrameBytes },
    { nullptr, nullptr, nullptr }
 };
 
 #undef MOD_IDL
-#define MOD_IDL "s.AudioMixCommand:lOperation,lHandle,xInteger,dValue\ns.AudioLoop:wLoopMode,cLoop1Type,cLoop2Type,xLoop1Start,xLoop1End,xLoop2Start,xLoop2End\ns.AudioEQBand:lType,dFrequency,dGain,dQ\nc.ADF:AUTO_SAVE=0x20,FILTER_HIGH=0x4,FILTER_LOW=0x2,OVER_SAMPLING=0x1,STEREO=0x8,SYSTEM_WIDE=0x40,VOL_RAMPING=0x10\nc.ADS:ACTIVE=0x1,DRAINING=0x2,IDLE=0x0\nc.AEF:BYPASS=0x1\nc.AMF:BYPASSED=0x4,DISCONNECTED=0x8,IDLE=0x2,NO_SAMPLES=0x10,VALID=0x1\nc.CHF:BACKWARD=0x2,CHANGED=0x8,MUTE=0x1,VOL_RAMP=0x4\nc.CHS:FADE_OUT=0x4,FINISHED=0x1,PLAYING=0x2,RELEASED=0x3,STOPPED=0x0\nc.EQB:HIGH_PASS=0x4,HIGH_SHELF=0x2,LOW_PASS=0x3,LOW_SHELF=0x1,PEAK=0x0\nc.LOOP:AMIGA=0x5,AMIGA_NONE=0x4,DOUBLE=0x3,SINGLE=0x1,SINGLE_RELEASE=0x2\nc.LTYPE:BIDIRECTIONAL=0x2,UNIDIRECTIONAL=0x1\nc.MIX:CONTINUE=0x1,FREQUENCY=0x2,MUTE=0x3,PAN=0x4,PAUSE=0x5,PLAY=0x6,RELEASE=0x7,SAMPLE=0x9,STOP=0xa,TEMPO=0x8,VOLUME=0xb\nc.NOTE:A=0x9,AS=0xa,B=0xb,C=0x0,CS=0x1,D=0x2,DS=0x3,E=0x4,F=0x5,FS=0x6,G=0x7,GS=0x8,OCTAVE=0xc\nc.SDF:LOOP=0x1,NEW=0x2,NOTE=0x80000000,RESTRICT_PLAY=0x8,STEREO=0x4,STREAM=0x40000000\nc.SFM:END=0x5,F_BIG_ENDIAN=0x80000000,S16_BIT_MONO=0x2,S16_BIT_STEREO=0x4,U8_BIT_MONO=0x1,U8_BIT_STEREO=0x3\nc.STREAM:ALWAYS=0x3,NEVER=0x1,SMART=0x2\nc.SVF:CAPTURE=0x10000,MUTE=0x100,UNMUTE=0x1000\nc.VCF:CAPTURE=0x10,JOINED=0x100,MONO=0x1000,MUTE=0x10000,PLAYBACK=0x1,SYNC=0x100000\n"
+#define MOD_IDL "s.AudioMixCommand:lOperation,lHandle,xInteger,dValue\ns.AudioLoop:wLoopMode,cLoop1Type,cLoop2Type,xLoop1Start,xLoop1End,xLoop2Start,xLoop2End\ns.AudioFormat:lSampleRate,lSampleFormat,lFlags,zlLayout[]\ns.MeterInfo:zsKey,zsLabel,zsUnit,zsScope,zsSemantics,lSlot,lChannel\ns.MeterLayout:xID,zeMeters:MeterInfo[]\ns.MeterValue:dValue,lFlags\ns.MeterReading:xSequence,xID,xPosition,lFlags,lInterval,zeValues:MeterValue[]\ns.AudioEQBand:lType,dFrequency,dGain,dQ\nc.ACL:MONO=0x1,STEREO=0x2,SURROUND_5_1_REAR=0x4,SURROUND_5_1_SIDE=0x3\nc.ADF:AUTO_SAVE=0x10,FILTER_HIGH=0x4,FILTER_LOW=0x2,OVER_SAMPLING=0x1,SYSTEM_WIDE=0x20,VOL_RAMPING=0x8\nc.ADS:ACTIVE=0x1,DRAINING=0x2,IDLE=0x0\nc.AEF:BYPASS=0x1\nc.AFF:BIG_ENDIAN_ORDER=0x1\nc.AFS:ACTIVE=0x1,INACTIVE=0x2,UNAVAILABLE=0x0\nc.AMF:BYPASSED=0x4,DISCONNECTED=0x8,IDLE=0x2,NO_SAMPLES=0x10,VALID=0x1\nc.AMV:FLOOR=0x2,VALID=0x1\nc.ASF:F32=0x3,S16=0x2,U8=0x1\nc.CHF:BACKWARD=0x2,CHANGED=0x8,MUTE=0x1,VOL_RAMP=0x4\nc.CHS:FADE_OUT=0x4,FINISHED=0x1,PLAYING=0x2,RELEASED=0x3,STOPPED=0x0\nc.EQB:HIGH_PASS=0x4,HIGH_SHELF=0x2,LOW_PASS=0x3,LOW_SHELF=0x1,PEAK=0x0\nc.LOOP:AMIGA=0x5,AMIGA_NONE=0x4,DOUBLE=0x3,SINGLE=0x1,SINGLE_RELEASE=0x2\nc.LTYPE:BIDIRECTIONAL=0x2,UNIDIRECTIONAL=0x1\nc.MIX:CONTINUE=0x1,FREQUENCY=0x2,MUTE=0x3,PAN=0x4,PAUSE=0x5,PLAY=0x6,RELEASE=0x7,SAMPLE=0x9,STOP=0xa,TEMPO=0x8,VOLUME=0xb\nc.NOTE:A=0x9,AS=0xa,B=0xb,C=0x0,CS=0x1,D=0x2,DS=0x3,E=0x4,F=0x5,FS=0x6,G=0x7,GS=0x8,OCTAVE=0xc\nc.SDF:LOOP=0x1,NEW=0x2,NOTE=0x80000000,RESTRICT_PLAY=0x4,STREAM=0x40000000\nc.SPK:CENTRE=0x1,DISCRETE=0x10000,FRONT_LEFT=0x2,FRONT_RIGHT=0x3,LFE=0x4,REAR_LEFT=0x7,REAR_RIGHT=0x8,SIDE_LEFT=0x5,SIDE_RIGHT=0x6\nc.STREAM:ALWAYS=0x3,NEVER=0x1,SMART=0x2\nc.SVF:CAPTURE=0x10000,MUTE=0x100,UNMUTE=0x1000\nc.VCF:CAPTURE=0x10,JOINED=0x100,MONO=0x1000,MUTE=0x10000,PLAYBACK=0x1,SYNC=0x100000\n"

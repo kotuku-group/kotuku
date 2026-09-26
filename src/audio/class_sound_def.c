@@ -3,8 +3,7 @@
 static const struct FieldDef clSoundFlags[] = {
    { "Loop", 0x00000001 },
    { "New", 0x00000002 },
-   { "Stereo", 0x00000004 },
-   { "RestrictPlay", 0x00000008 },
+   { "RestrictPlay", 0x00000004 },
    { "Stream", 0x40000000 },
    { "Note", (int)0x80000000 },
    { nullptr, 0 }

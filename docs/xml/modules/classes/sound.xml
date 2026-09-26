@@ -18,7 +18,9 @@
 <p>The Sound class provides a comprehensive, user-friendly interface for audio sample playback that abstracts the complexities of audio hardware management whilst delivering professional-quality results.  Designed as the primary interface for general-purpose audio operations, the Sound class automatically handles resource allocation, format detection, hardware abstraction, and intelligent streaming decisions to provide optimal performance across diverse system configurations.</p>
 <p>The Sound class implements robust file format support with automatic detection and validation:</p>
 <list type="bullet">
-<li><b>Native WAVE Support:</b> Complete support for WAVE format files including all standard PCM encodings, multiple bit depths (8/16-bit), and both mono and stereo configurations</li>
+<li><b>Native WAVE Support:</b> Support for WAVE files containing 8-bit unsigned or 16-bit signed PCM, in mono and
+stereo layouts.  Files with other layouts or 32-bit float data are described by <fl>SourceFormat</fl> but cannot currently be
+played</li>
 <li><b>Automatic Format Detection:</b> File format identification occurs automatically during initialisation based on file headers and content analysis</li>
 <li><b>Extensible Architecture:</b> Additional audio formats (MP3, OGG, FLAC, AAC) can be supported through Sound class extensions and codec plugins</li>
 <li><b>Validation and Error Handling:</b> Comprehensive file validation prevents playback of corrupted or unsupported audio data</li>
@@ -36,7 +38,10 @@
 
 snd.acActivate()
 processing.sleep()  -- Wait for completion
-</pre></description>
+</pre>
+<header>Source Format</header>
+<p>The decoded PCM format of a sound is described by the <fl>SourceFormat</fl> field, an <st>AudioFormat</st> that records the sample rate, sample representation and channel layout.  For file-backed sounds the format comes from the file or its decoder and is available after initialisation.  For sounds created with <code>SDF::NEW</code>, set the format before initialisation. <fl>Channels</fl>, <fl>SampleRate</fl> and <fl>FrameBytes</fl> are read-only conveniences derived from the <fl>SourceFormat</fl>.</p>
+<p>All byte positions and lengths, e.g. <fl>Position</fl>, <fl>Length</fl>, <fl>LoopStart</fl> and <fl>LoopEnd</fl>, are measured in bytes of decoded PCM and are aligned to complete frames of <fl>FrameBytes</fl>.</p></description>
     <source>
       <file>class_sound.cpp</file>
     </source>
@@ -50,7 +55,7 @@ processing.sleep()  -- Wait for completion
       <tiriPrototype>err = Object.acActivate()</tiriPrototype>
       <description>
 <p>Calling Activate will play the sample data from the current seek position defined by the <fl>Position</fl> field.  Playback continues asynchronously and the client can monitor its progress through the <fl>Position</fl> field, or receive an event notification through an <fl>OnStop</fl> callback once playback has stopped.</p>
-<p>The <fl>Length</fl> field must be set prior to activation, otherwise <code>ERR::FieldNotSet</code> is returned.</p>
+<p>The <fl>Length</fl> field must be set prior to activation, otherwise <code>ERR::FieldNotSet</code> is returned.  The <fl>SourceFormat</fl> must also be known.  A sound whose format is valid but cannot be played by the mixer, such as a 5.1 or floating point source, fails with <code>ERR::NoSupport</code>.</p>
 <p>On first activation the sample data is either loaded into an audio buffer in its entirety, or configured for streaming according to the <fl>Stream</fl> field.  Streaming is enabled automatically when <code>STREAM::ALWAYS</code> is set and the sample exceeds 16KB, or when <code>STREAM::SMART</code> is set and the sample exceeds 256KB.  Subsequent calls reuse the prepared buffer.</p>
 <p>If the <code>LOOP</code> flag is defined then the sample will loop continuously between <fl>LoopStart</fl> and <fl>LoopEnd</fl> (or the full sample length if <fl>LoopEnd</fl> is zero) until deactivated.</p>
 <p>The sound is assigned to the first available mixer channel.  If every channel is in use, a channel belonging to a sound of lower <fl>Priority</fl> may be reallocated for playback.  When no suitable channel can be obtained, <code>ERR::ArrayFull</code> is returned.  Samples flagged with <code>RESTRICT_PLAY</code> or configured for streaming are limited to a single active channel, so re-activating them will restart playback on that channel rather than mixing a second copy.</p>
@@ -173,19 +178,12 @@ processing.sleep()  -- Wait for completion
     </field>
 
     <field>
-      <name>BitsPerSample</name>
-      <comment>Indicates the sample rate of the audio sample, typically <code>8</code> or <code>16</code> bit.</comment>
-      <access read="R" write="W">Read/Write</access>
-      <type>INT</type>
-    </field>
-
-    <field>
       <name>BytesPerSecond</name>
       <comment>The flow of bytes-per-second when the sample is played at normal frequency.</comment>
-      <access read="R" write="W">Read/Write</access>
+      <access read="R">Read</access>
       <type>INT</type>
       <description>
-<p>This field is set on initialisation.  It indicates the total number of bytes per second that will be played if the sample is played back at its normal frequency.</p>
+<p>This read-only field is derived from the <fl>SourceFormat</fl> as <code>SampleRate * FrameBytes</code>.  It indicates the total number of bytes per second that will be played if the sample is played back at its nominal rate.  A format whose byte rate cannot be represented is rejected when the <fl>SourceFormat</fl> is set.</p>
       </description>
     </field>
 
@@ -195,8 +193,15 @@ processing.sleep()  -- Wait for completion
       <access read="R">Read</access>
       <type>INT</type>
       <description>
-<p>This field reflects the audio channel index that the sound is currently playing through, or has most recently played through.</p>
+<p>This field reflects the audio channel index that the sound is currently playing through, or has most recently played through.  It identifies a voice channel allocated by <class name="Audio" method="OpenChannels">Audio.OpenChannels()</class>, not a speaker.</p>
       </description>
+    </field>
+
+    <field>
+      <name>Channels</name>
+      <comment>Read-only.  The number of channels in the <fl>SourceFormat</fl> layout, or zero if the format is unknown.</comment>
+      <access read="G">Get</access>
+      <type>INT</type>
     </field>
 
     <field>
@@ -237,13 +242,12 @@ processing.sleep()  -- Wait for completion
     </field>
 
     <field>
-      <name>Frequency</name>
-      <comment>The frequency of a sampled sound is specified here.</comment>
-      <access read="R" write="I">Read/Init</access>
+      <name>FrameBytes</name>
+      <comment>Read-only.  The size of one frame of the <fl>SourceFormat</fl> in bytes, or zero if the format is unknown.</comment>
+      <access read="G">Get</access>
       <type>INT</type>
       <description>
-<p>This field specifies the frequency of the sampled sound data.  If the frequency cannot be determined from the source, this value will be zero.</p>
-<p>Note that if the playback frequency needs to be altered, set the <fl>Playback</fl> field.</p>
+<p>A frame contains one sample for every channel, so FrameBytes is the number of channels multiplied by the container size of one sample.  Byte positions and lengths are aligned to multiples of this value.</p>
       </description>
     </field>
 
@@ -331,7 +335,7 @@ processing.sleep()  -- Wait for completion
       <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>The Pan field adjusts the &quot;horizontal position&quot; of a sample that is being played through stereo speakers. The default value for this field is zero, which plays the sound through both speakers at an equal level.  The minimum value is <code>-1.0</code> to force play through the left speaker and the maximum value is <code>1.0</code> for the right speaker. Finite values outside this range are clamped, and non-finite values are rejected with <code>OutOfRange</code>.  The pan law is described in the Audio module's <code>MixPan()</code> function.</p>
+<p>The Pan field adjusts the &quot;horizontal position&quot; of a sample that is being played through stereo speakers. The default value for this field is zero, which plays the sound through both speakers at an equal level.  The minimum value is <code>-1.0</code> to force play through the left speaker and the maximum value is <code>1.0</code> for the right speaker. Finite values outside this range are clamped, and non-finite values are rejected with <code>OutOfRange</code>.  The pan law is described in the Audio module's <code>MixPan()</code> function.  Pan is a balance control for the front speaker pair, not an azimuth, and it cannot address other speakers.</p>
       </description>
     </field>
 
@@ -361,7 +365,7 @@ processing.sleep()  -- Wait for completion
       <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
-<p>Set this field to define the exact frequency of a sample's playback.  The playback frequency can be modified at any time, including during audio playback if real-time adjustments to a sample's audio output rate is desired.</p>
+<p>Set this field to define the exact frequency of a sample's playback.  The playback frequency can be modified at any time, including during audio playback if real-time adjustments to a sample's audio output rate is desired. It defaults to the nominal sample rate of the <fl>SourceFormat</fl>.  Changing the playback frequency never changes the <fl>SourceFormat</fl>.</p>
       </description>
     </field>
 
@@ -404,6 +408,27 @@ processing.sleep()  -- Wait for completion
     </field>
 
     <field>
+      <name>SampleRate</name>
+      <comment>Read-only.  The nominal sample rate of the <fl>SourceFormat</fl> in frames per second, or zero if unknown.</comment>
+      <access read="G">Get</access>
+      <type>INT</type>
+      <description>
+<p>To alter the rate of playback, set the <fl>Playback</fl> field.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>SourceFormat</name>
+      <comment>The decoded PCM format of the sound.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>struct AudioFormat *</type>
+      <description>
+<p>SourceFormat describes the sound's decoded PCM data as an !AudioFormat: its nominal sample rate, the representation of each sample, and the ordered channel layout.  For a sound loaded from a file, the format is resolved by the file parser or the decoder of a derived class during initialisation, and any value set beforehand is replaced.  Until then the format is unavailable and reading the field returns <code>ERR::FieldNotSet</code>.  For a new sound created with <code>SDF::NEW</code>, set SourceFormat before initialisation to describe the PCM data that the sound holds.</p>
+<p>The format is immutable after initialisation and writes return <code>ERR::Immutable</code>.  <fl>Channels</fl>, <fl>SampleRate</fl>, <fl>FrameBytes</fl> and <fl>BytesPerSecond</fl> are derived from it and cannot disagree with it.  A malformed format is rejected with <code>ERR::Args</code>.  A valid format can describe data that the mixer cannot currently play, such as a 5.1 layout; playing such a sound fails with <code>ERR::NoSupport</code>.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Stream</name>
       <comment>Defines the preferred streaming method for the sample.</comment>
       <access read="R" write="W">Read/Write</access>
@@ -430,6 +455,16 @@ processing.sleep()  -- Wait for completion
 
   </fields>
   <types>
+    <constants lookup="AFF" comment="Optional AudioFormat flags.">
+      <const name="BIG_ENDIAN_ORDER">Multi-byte samples are stored in big endian byte order.  Samples are little endian if this flag is not set.</const>
+    </constants>
+
+    <constants lookup="ASF" comment="Sample representations, independent of the channel count.">
+      <const name="F32">32-bit IEEE-754 floating point samples in four bytes, with a nominal range of <code>-1.0</code> to <code>1.0</code>.</const>
+      <const name="S16">Signed 16-bit integer samples in two bytes.</const>
+      <const name="U8">Unsigned 8-bit integer samples in one byte.  Silence is <code>128</code>.</const>
+    </constants>
+
     <constants lookup="NOTE" comment="Definitions for the Note field.  An 'S' indicates a sharp note.">
       <const name="A"/>
       <const name="AS"/>
@@ -450,7 +485,6 @@ processing.sleep()  -- Wait for completion
       <const name="LOOP">Enables sample looping. The <fl>LoopStart</fl> and <fl>LoopEnd</fl> fields determine where the looping area lies within the sample data.</const>
       <const name="NEW">Create the sample from scratch (e.g. for audio recording purposes).</const>
       <const name="RESTRICT_PLAY">Restricts playback so that the sound can never play on more than one channel at any given time.</const>
-      <const name="STEREO">Indicates that the sound has multiple audio channels.</const>
       <const name="STREAM">Read-Only. Indicates that streaming is enabled.</const>
     </constants>
 
@@ -462,5 +496,12 @@ processing.sleep()  -- Wait for completion
 
   </types>
   <structs>
+    <struct name="AudioFormat" comment="Describes interleaved PCM audio data.">
+      <field name="SampleRate" type="INT">Nominal sample rate in frames per second</field>
+      <field name="SampleFormat" type="ASF" lookup="ASF">Representation of each sample</field>
+      <field name="Flags" type="AFF" lookup="AFF">Optional format flags</field>
+      <field name="Layout" type="kt::vector&lt;int&gt;">Ordered channel identities from SPK; the length is the channel count</field>
+    </struct>
+
   </structs>
 </book>

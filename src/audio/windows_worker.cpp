@@ -59,7 +59,7 @@ static ERR init_audio(extAudio *Self)
 {
    WasapiFormat format;
    format.Rate = Self->OutputRate;
-   format.Channels = (Self->Flags & ADF::STEREO) != ADF::NIL ? 2 : 1;
+   format.Channels = unsigned(Self->OutputLayout.size());
    format.Period = Self->PeriodSize;
    Self->RenderStream = wasapi_open(Self->Device.c_str(), format, Self, windows_render, windows_failed);
    if (!Self->RenderStream) return ERR::NoSupport;
@@ -156,9 +156,17 @@ static void reopen_windows_audio(extAudio *Self)
    }
    Self->WorkerStarted = false;
    Self->QueuedFrames = 0;
+   {
+      std::lock_guard lock(Self->MixerMutex);
+      Self->OutputActive = false;
+      Self->EffectConfigured = false;
+      Self->GlobalEffects->Rate = 0;
+      for (auto &set : Self->Sets) if (set.Effects) set.Effects->Rate = 0;
+   }
    if (Self->ReopenAttempts >= 20) {
       kt::Log("Audio").warning("The audio endpoint could not be reopened after 20 attempts.");
       stop_audio_worker(Self);
+      Self->OutputActive = false;
       return;
    }
    ++Self->ReopenAttempts;
@@ -167,14 +175,13 @@ static void reopen_windows_audio(extAudio *Self)
       Self->MixElements = SAMPLE(Self->BufferFrames);
       Self->MixBuffer.resize(Self->BufferFrames * (Self->Stereo ? 2 : 1));
       Self->MixConfig = AudioConfig(Self->Stereo, (Self->Flags & ADF::OVER_SAMPLING) != ADF::NIL);
-      auto configured = configure_effects(*Self->GlobalEffects, Self->OutputRate, Self->Stereo) IS ERR::Okay;
-      for (auto &set : Self->Sets) {
-         if (!configured) break;
-         set.ScratchBuffer.resize(Self->MixBuffer.size());
-         set.MixLeft = set.TickFrames(Self->OutputRate);
-         configured = !set.Effects or configure_effects(*set.Effects, Self->OutputRate, Self->Stereo) IS ERR::Okay;
-      }
-      if (configured and start_audio_worker(Self) IS ERR::Okay) {
+
+      // A reopened endpoint must provide the committed layout; a changed layout is left to explicit reactivation.
+
+      const auto layout = Self->Stereo ? std::span<const int>(glLayoutStereo) : std::span<const int>(glLayoutMono);
+      for (auto &set : Self->Sets) set.MixLeft = set.TickFrames(Self->OutputRate);
+      if (layout_is(Self->CommittedLayout, layout) and
+          commit_audio_output(Self, layout, start_audio_worker) IS ERR::Okay) {
          Self->Reopening = false;
          return;
       }
