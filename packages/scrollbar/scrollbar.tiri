@@ -138,11 +138,11 @@ gui.scrollbar = function(Options)
 
          bar.sliderVP.dragCallback = function(Viewport:obj!, X:num!, Y:num!)
             slider_height = Viewport.height
-            host_height   = self.vbar.sliderHostVP.height
+            host_height   = &vbar.sliderHostVP.height
             Y = math.clamp(Y, 0, host_height - slider_height)
             if Viewport.y is Y then return end
 
-            if (Y != self.vbar.slider.offset) or (slider_height != self.vbar.slider.size) then
+            if (Y != &vbar.slider.offset) or (slider_height != &vbar.slider.size) then
                pct_pos = Y / (host_height - slider_height)
                lPage.y = -math.floor((lPage.height - lView.height) * pct_pos)
                lTarget.acDraw()
@@ -150,7 +150,7 @@ gui.scrollbar = function(Options)
          end
       else
          vp = lTarget.new('VectorViewport', { name='HBarVP', x = 0, xOffset = 0, yOffset = 0, height = lBreadth })
-         if self.vbar?.viewport.visibility is VIS_VISIBLE then vp.xOffset = lBreadth end
+         if &vbar?.viewport.visibility is VIS_VISIBLE then vp.xOffset = lBreadth end
 
          bar = vp.state()
          bar.viewport  = vp
@@ -163,11 +163,11 @@ gui.scrollbar = function(Options)
 
          bar.sliderVP.dragCallback = function(Viewport:obj!, X:num!, Y:num!)
             slider_width = Viewport.width
-            host_width   = self.hbar.sliderHostVP.width
+            host_width   = &hbar.sliderHostVP.width
             X = math.clamp(X, 0, host_width - slider_width)
             if Viewport.x is X then return end
 
-            if (X != self.hbar.slider.offset) or (slider_width != self.hbar.slider.size) then
+            if (X != &hbar.slider.offset) or (slider_width != &hbar.slider.size) then
                pct_pos = X / (host_width - slider_width)
                lPage.x = -math.floor((lPage.width - lView.width) * pct_pos)
                lTarget.acDraw()
@@ -185,15 +185,15 @@ gui.scrollbar = function(Options)
                if (Msg.type is JET_LMB) and (Msg.value > 0) then
                   if bar.direction is 'V' then
                      if Msg.y < bar.sliderVP.y then
-                        self.scrollPage(0, (lView.height * 0.9))
+                        &scrollPage(0, (lView.height * 0.9))
                      elseif (Msg.y > bar.sliderVP.y + bar.sliderVP.height) then
-                        self.scrollPage(0, -(lView.height * 0.9))
+                        &scrollPage(0, -(lView.height * 0.9))
                      end
                   else
                      if Msg.x < bar.sliderVP.x then
-                        self.scrollPage((lView.width * 0.9), 0)
+                        &scrollPage((lView.width * 0.9), 0)
                      elseif Msg.x > bar.sliderVP.x + bar.sliderVP.width then
-                        self.scrollPage(-(lView.width * 0.9), 0)
+                        &scrollPage(-(lView.width * 0.9), 0)
                      end
                   end
                end
@@ -328,17 +328,19 @@ gui.scrollbar = function(Options)
    assert(lView.xOffset is 0, 'The XOffset of the view must be set to zero.')
    assert(lView.yOffset is 0, 'The YOffset of the view must be set to zero.')
 
-   if Options.direction is 'all' then Options.direction = nil end
+   using self do
+      if Options.direction is 'all' then Options.direction = nil end
 
-   if Options.direction is 'vertical' or Options.direction is nil then
-      self.vbar = createScrollbar('V')
+      if Options.direction is 'vertical' or Options.direction is nil then
+         &vbar = createScrollbar('V')
+      end
+
+      if Options.direction is 'horizontal' or Options.direction is nil then
+         &hbar = createScrollbar('H')
+      end
+
+      doSubscriptions()
+
+      return &&
    end
-
-   if Options.direction is 'horizontal' or Options.direction is nil then
-      self.hbar = createScrollbar('H')
-   end
-
-   doSubscriptions()
-
-   return self
 end
