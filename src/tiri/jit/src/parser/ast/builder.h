@@ -125,8 +125,11 @@ private:
       return false;
    }
 
+   // Inline imports are expanded into the unit that ultimately owns them, so a library reached through a nested inline
+   // import must be recognised against the whole unit.  Otherwise it is inlined and executed a second time.
+
    [[nodiscard]] bool local_import_seen(uint32_t Hash) {
-      AstBuilder *scope = this->ctx.lex().diagnose_mode ? this->root_builder() : this;
+      AstBuilder *scope = this->ctx.lex().diagnose_mode ? this->root_builder() : this->unit_builder();
       if (std::ranges::find(scope->local_import_hashes, Hash) != scope->local_import_hashes.end()) return true;
       scope->local_import_hashes.push_back(Hash);
       return false;
@@ -151,6 +154,15 @@ private:
       AstBuilder *root = this;
       while (root->parent_builder) root = root->parent_builder;
       return root;
+   }
+
+   // Returns the builder that owns the current compilation unit.  Module initialisers are compiled and cached
+   // independently of their importer, so the search stops at the first one.
+
+   [[nodiscard]] AstBuilder * unit_builder() {
+      AstBuilder *unit = this;
+      while (unit->parent_builder and not unit->module_initialiser) unit = unit->parent_builder;
+      return unit;
    }
 
    [[nodiscard]] ImportModuleValidationSession &validation_session() {
