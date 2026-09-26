@@ -77,6 +77,21 @@ class AudioParamUpdate {
 public:
    virtual ~AudioParamUpdate() = default;
    virtual void publish(extAudioEffect *Effect) = 0;
+   // Latency-affecting edits must declare their prepared latency before publication; -1 preserves it.
+   virtual int64_t latency() const { return -1; }
+};
+
+enum class AudioOutputKind { CURVE, SCALAR };
+
+struct AudioOutputDesc {
+   CSTRING Key;
+   AudioOutputKind Kind = AudioOutputKind::CURVE;
+   CSTRING Label = nullptr;
+   CSTRING Description = nullptr;
+   CSTRING Unit = nullptr;
+   CSTRING Scope = nullptr;
+   CSTRING Semantics = nullptr;
+   int Slot = -1;
 };
 
 struct AudioEffectSchema {
@@ -85,7 +100,7 @@ struct AudioEffectSchema {
    CSTRING Description = nullptr;
    std::span<const AudioParamDesc> Params;
    std::span<const AudioParamGroup> Groups;
-   std::span<const CSTRING> Outputs;
+   std::span<const AudioOutputDesc> Outputs;
 
    // Read() snapshots committed parameters.  Apply() handles pre-initialisation edits and is the fallback commit
    // path for classes without Prepare().  Prepare() builds a validated update outside the mixer lock; publish()
@@ -386,7 +401,7 @@ inline void param(std::string &Out, const AudioParamDesc &Desc, std::string_view
 
 //********************************************************************************************************************
 
-inline std::string build_schema_xml(const AudioEffectSchema &Schema)
+inline std::string build_schema_xml(const AudioEffectSchema &Schema, bool Stereo = true)
 {
    std::string out = std::format("<effect class=\"{}\" version=\"{}\"", schema_xml::escape(Schema.ClassName),
       Schema.Version);
@@ -401,8 +416,17 @@ inline std::string build_schema_xml(const AudioEffectSchema &Schema)
       for (const auto &desc : group.Members) schema_xml::param(out, desc, "    ");
       out += "  </group>\n";
    }
-   for (auto output : Schema.Outputs) {
-      out += std::format("  <output key=\"{}\" type=\"curve\"/>\n", schema_xml::escape(output));
+   for (const auto &output : Schema.Outputs) {
+      if (!Stereo and output.Scope and std::string_view(output.Scope) IS "right") continue;
+      out += std::format("  <output key=\"{}\" type=\"{}\"", schema_xml::escape(output.Key),
+         output.Kind IS AudioOutputKind::CURVE ? "curve" : "scalar");
+      if (output.Label) out += std::format(" label=\"{}\"", schema_xml::escape(output.Label));
+      schema_xml::description(out, output.Description);
+      if (output.Unit) out += std::format(" unit=\"{}\"", schema_xml::escape(output.Unit));
+      if (output.Scope) out += std::format(" scope=\"{}\"", schema_xml::escape(output.Scope));
+      if (output.Semantics) out += std::format(" semantics=\"{}\"", schema_xml::escape(output.Semantics));
+      if (output.Slot >= 0) out += std::format(" slot=\"{}\"", output.Slot);
+      out += "/>\n";
    }
    out += "</effect>\n";
    return out;

@@ -30,6 +30,11 @@ crossfade replaces a single queued target, which starts its own crossfade when t
 reads and @AudioEffect.GetResponse() describe the latest committed target immediately, even during a transition.
 Device reactivation and leaving bypass reset filter history and apply the latest target without a crossfade.
 
+The equaliser has zero algorithmic latency but its recursive state can continue producing a decay after input
+ends.  Decay remains pending until all live filter states fall below 1e-12 internal sample units, then remaining
+history is discarded.  Arbitrary supported poles and live edits have no fixed finite bound, so @Audio.MaxDrain
+also limits this decay.  Hard bypass and destruction can cut it abruptly.
+
 -END-
 
 *********************************************************************************************************************/
@@ -100,7 +105,17 @@ static const AudioParamGroup glEqualiserGroups[] = {
      .MinCount = 0, .MaxCount = 64, .Members = glBandMembers }
 };
 
-static const CSTRING glEqualiserOutputs[] = { "response" };
+static const AudioOutputDesc glEqualiserOutputs[] = {
+   { "response" },
+   { "input_peak_left", AudioOutputKind::SCALAR,
+      "Input Peak Left", "Maximum input sample peak.", "dBFS", "left", "sample-peak", 0 },
+   { "input_peak_right", AudioOutputKind::SCALAR,
+      "Input Peak Right", "Maximum input sample peak.", "dBFS", "right", "sample-peak", 1 },
+   { "output_peak_left", AudioOutputKind::SCALAR,
+      "Output Peak Left", "Maximum output sample peak.", "dBFS", "left", "sample-peak", 2 },
+   { "output_peak_right", AudioOutputKind::SCALAR,
+      "Output Peak Right", "Maximum output sample peak.", "dBFS", "right", "sample-peak", 3 }
+};
 
 //********************************************************************************************************************
 

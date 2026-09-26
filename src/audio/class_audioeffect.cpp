@@ -17,7 +17,7 @@ disconnected effect must be replaced to attach it again.  Global effects are imm
 <header>Parameter Schema</header>
 
 Subclasses can publish their parameters in the #Schema field, so that a client can present and change any effect
-without knowing its class.  The schema is an XML document:
+without prior knowledge of class attributes.  The schema is an XML document:
 
 <pre>
 &lt;effect class="AudioEqualiser" version="1" description="A parametric equaliser."&gt;
@@ -53,7 +53,10 @@ sibling named by `key` holds one of the listed `values`, the parameter is either
 (`inactive="1"`) or limited to a lower `max`.
 
 An `output` element names data that can be read back from the processor.  A `curve` output is read with
-#GetResponse().
+#GetResponse().  Scalar outputs are read together with #GetMeters(), or individually with #GetOutput().  Their
+`label`, `description`, `unit`, `scope`, `semantics` and zero-based `slot` attributes describe the value and its
+snapshot location.  Slots are stable across layouts; right-channel outputs are omitted in mono.  Sample peaks
+are not true-peak measurements.  Gain reduction, where offered, is non-negative attenuation in decibels.
 
 Parameters are addressed by key-paths: `key` for a top-level parameter, or `group[index].key` for a group member, e.g.
 `bands[2].frequency`.  Values are always in real units, such as hertz or decibels; they are never normalised.
@@ -70,7 +73,6 @@ breaks any rule is rejected in full and the working copy is discarded.
 
 *********************************************************************************************************************/
 
-//********************************************************************************************************************
 // Returns an error if the effect's parameters cannot currently be changed.
 
 static ERR effect_mutable(extAudioEffect *Self)
@@ -114,7 +116,15 @@ static ERR effect_commit(extAudioEffect *Self, const AudioParamState &State)
 
    auto chain = Self->Chain.lock();
    for (;;) {
-      const int rate = effect_rate(Self);
+      int rate, stereo;
+      uint64_t generation = 0;
+      {
+         std::unique_lock<std::recursive_mutex> mixer_lock;
+         if (chain) mixer_lock = std::unique_lock(*chain->Mutex);
+         rate = Self->OutputRate;
+         stereo = Self->Stereo;
+         if (chain) generation = *chain->Generation;
+      }
       if (validate_state(*Self->Schema, State, rate, &committed) != ERR::Okay) {
          return ERR::InvalidValue;
       }
@@ -122,9 +132,18 @@ static ERR effect_commit(extAudioEffect *Self, const AudioParamState &State)
       {
          std::unique_lock<std::recursive_mutex> mixer_lock;
          if (chain) mixer_lock = std::unique_lock(*chain->Mutex);
-         if (Self->OutputRate != rate) continue;
+         if (Self->OutputRate != rate or Self->Stereo != stereo or
+             (chain and *chain->Generation != generation)) continue;
+         if (chain and chain->Rate > 0 and update and update->latency() >= 0 and
+             update->latency() != Self->CommittedLatency) {
+            return ERR::InvalidState;
+         }
          if (update) update->publish(Self);
          else Self->Schema->Apply(Self, State);
+         if (update and update->latency() >= 0 and update->latency() != Self->CommittedLatency) {
+            Self->CommittedLatency = update->latency();
+         }
+         if (chain) Self->reset_meter(++*chain->Generation);
       }
       return ERR::Okay;
    }
@@ -182,6 +201,7 @@ unchanged and `ERR::InvalidValue` is returned.  Calling Flush() with no staged c
 -ERRORS-
 Okay: The staged changes were applied, or there were none.
 InvalidValue: The staged changes break a rule or range.  Nothing was applied.
+InvalidState: A staged edit would change the configured processor instance's algorithmic latency.
 Immutable: The effect is attached to the global chain.
 NotInitialised: The effect has been disconnected from its Audio object.
 -END-
@@ -246,15 +266,22 @@ static ERR AUDIOEFFECT_Init(extAudioEffect *Self)
       if (!set.Effects) set.Effects = std::make_shared<AudioEffectChain>(audio->MixerLock);
       set.ScratchBuffer.resize(audio->MixBuffer.size());
       chain = set.Effects;
+      chain->Generation = audio->GlobalEffects->Generation;
    }
 
+   chain->Rate = audio->EffectConfigured ? audio->OutputRate : 0;
+   chain->Stereo = audio->MixBuffer.empty() ? ((audio->Flags & ADF::STEREO) != ADF::NIL) : audio->Stereo;
+
+   Self->reset_meter(++*chain->Generation);
    Self->OutputRate   = audio->OutputRate;
    Self->Stereo       = audio->MixBuffer.empty() ? ((audio->Flags & ADF::STEREO) != ADF::NIL) : audio->Stereo;
    Self->ResetPending = true;
    Self->Sequence     = chain->NextSequence++;
    Self->Chain        = chain;
+
    chain->Effects.push_back(Self);
    sort_effects(*chain);
+   ++*chain->Generation;
    return ERR::Okay;
 }
 
@@ -324,10 +351,15 @@ Search: The group is unknown.
 static ERR AUDIOEFFECT_GetGroupCount(extAudioEffect *Self, struct fx::GetGroupCount *Args)
 {
    if (not Args) return ERR::NullArgs;
+
    Args->Count = 0;
+
    if (not Self->Schema) return ERR::NoSupport;
+
    const auto group = find_group(*Self->Schema, Args->Group);
+
    if (group < 0) return ERR::Search;
+
    if (Self->Pending) Args->Count = int(Self->Pending->Groups[group].size());
    else if (Self->Schema->GroupCount) Args->Count = int(Self->Schema->GroupCount(Self, group));
    else {
@@ -335,6 +367,7 @@ static ERR AUDIOEFFECT_GetGroupCount(extAudioEffect *Self, struct fx::GetGroupCo
       Self->Schema->Read(Self, state);
       Args->Count = int(state.Groups[group].size());
    }
+
    return ERR::Okay;
 }
 
@@ -376,6 +409,7 @@ static ERR AUDIOEFFECT_GetResponse(extAudioEffect *Self, struct fx::GetResponse 
          return ERR::InvalidValue;
       }
    }
+
    return Self->Schema->Response(Self, Args->Frequencies, Args->Magnitudes);
 }
 
@@ -543,6 +577,7 @@ static ERR AUDIOEFFECT_SET_Flags(extAudioEffect *Self, AEF Value)
       Self->ResetPending = true;
    }
 
+   if (Self->Flags != Value) Self->reset_meter(++*chain->Generation);
    Self->Flags = Value;
    return ERR::Okay;
 }
@@ -585,6 +620,7 @@ static ERR AUDIOEFFECT_SET_Order(extAudioEffect *Self, int Value)
    std::lock_guard mixer_lock(*chain->Mutex);
    Self->Order = Value;
    sort_effects(*chain);
+   ++*chain->Generation;
    return ERR::Okay;
 }
 
@@ -634,8 +670,8 @@ Schema: Read-only.  An XML description of the effect's parameters.
 
 The schema describes every parameter that can be read or changed with #GetParameter() and #SetParameter(), including
 units, ranges, defaults, repeated groups and the rules between parameters.  The format is described in the class
-documentation.  The schema is the same for every instance of a class; instance-specific bounds, such as the Nyquist
-frequency, are resolved against #OutputRate.
+documentation.  Right-channel scalar outputs are omitted for mono layouts.  Instance-specific bounds, such as the
+Nyquist frequency, are resolved against #OutputRate.
 
 The value is empty if the class does not publish a schema.
 
@@ -644,17 +680,161 @@ The value is empty if the class does not publish a schema.
 static ERR AUDIOEFFECT_GET_Schema(extAudioEffect *Self, std::string_view &Value)
 {
    static std::mutex cache_lock;
-   static std::unordered_map<const AudioEffectSchema *, std::string> cache;
+   static std::unordered_map<const AudioEffectSchema *, std::array<std::string, 2>> cache;
 
    if (not Self->Schema) {
       Value = std::string_view();
       return ERR::Okay;
    }
 
+   int stereo;
+   AUDIOEFFECT_GET_Stereo(Self, &stereo);
    std::lock_guard lock(cache_lock);
-   auto it = cache.find(Self->Schema);
-   if (it IS cache.end()) it = cache.emplace(Self->Schema, build_schema_xml(*Self->Schema)).first;
-   Value = it->second;
+   auto &xml = cache[Self->Schema][stereo ? 1 : 0];
+   if (xml.empty()) xml = build_schema_xml(*Self->Schema, stereo != 0);
+   Value = xml;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-METHOD-
+GetMeters: Reads a live snapshot of the latest measurement interval.
+
+Call GetMeters() to monitor effect signal levels, typically to drive level meters in a user interface.  The
+effect measures the input and output peaks and its gain reduction in fixed intervals.  Each call returns the values
+of the most recent interval with their metadata as one consistent set, so that readings from different intervals are
+never mixed.  Use #GetOutput() instead when only one value is needed.
+
+For `Values`, pass an array of five elements.  Slots are input left, input right, output left, output right and gain
+reduction.  Only slots published as scalar outputs in #Schema are applicable.  Mono layouts omit right-channel
+descriptors.  Peaks are sample peaks in dBFS, floored at -120 dBFS; gain reduction is non-negative attenuation in dB.
+
+Intervals contain `ceil(OutputRate / 20)` frames (50 ms rounded up).  Reads are non-destructive; slow readers can
+miss intervals.  Idle publishes a partial final interval.  Reset and reconfiguration invalidate measurements.
+`Sequence` increases on publication.  `Position` counts processed output frames since reset; `Interval` is the number
+of frames represented.  `Generation` identifies configuration and path changes, independently of schema version.
+
+`Flags` reports the snapshot's validity and lifecycle state.  Bypassed and disconnected snapshots do not set `VALID`.
+
+!AMF
+
+`Floor` has one bit per peak slot, set for values below -120 dBFS.
+
+-INPUT-
+^array(double) Values: Five-element array receiving the scalar values.
+&large Sequence:   Publication sequence number.
+&large Generation: Configuration generation.
+&large Position:   Processed-frame position at the interval end.
+&int Interval:     Measurement interval length in frames.
+&int(AMF) Flags:   Snapshot validity and lifecycle flags.
+&int Floor:        Below-floor bit mask.
+
+-ERRORS-
+Okay
+NullArgs
+Args: Values must contain exactly five elements.
+
+-END-
+*********************************************************************************************************************/
+
+static AudioMeterSnapshot effect_meters(extAudioEffect *Self)
+{
+   auto chain = Self->Chain.lock();
+
+   if (!chain) {
+      AudioMeterSnapshot result;
+      result.Flags = Self->initialised() ? AMF::DISCONNECTED : AMF::NO_SAMPLES;
+      return result;
+   }
+
+   std::lock_guard lock(*chain->Mutex);
+
+   auto result = Self->Meter;
+   if ((result.Flags & AMF::VALID) IS AMF::NIL) result.Generation = *chain->Generation;
+   if ((Self->Flags & AEF::BYPASS) != AEF::NIL) result.Flags = AMF::BYPASSED;
+   else if ((result.Flags & AMF::VALID) IS AMF::NIL) result.Flags |= AMF::NO_SAMPLES;
+   return result;
+}
+
+static ERR AUDIOEFFECT_GetMeters(extAudioEffect *Self, struct fx::GetMeters *Args)
+{
+   if (!Args) return ERR::NullArgs;
+   if (Args->Values.size() != 5) return ERR::Args;
+
+   const auto snapshot = effect_meters(Self);
+   std::copy(snapshot.Values.begin(), snapshot.Values.end(), Args->Values.begin());
+
+   Args->Sequence   = snapshot.Sequence;
+   Args->Generation = snapshot.Generation;
+   Args->Position   = snapshot.Position;
+   Args->Interval   = snapshot.Interval;
+   Args->Flags      = snapshot.Flags;
+   Args->Floor      = snapshot.Floor;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-METHOD-
+GetOutput: Reads one value from a schema key.
+
+Returns the latest completed interval value for a `Key`.  Use #GetMeters() for multi-value reads and lifecycle flags.
+Curve outputs continue to use #GetResponse().
+
+-INPUT-
+strview Key: Scalar output key from #Schema.
+&double Value: Latest value in the descriptor's units.
+
+-ERRORS-
+Okay
+NullArgs
+Search: Unknown key, including right-channel keys in a mono layout.
+NoSupport: The key names a curve or another unsupported output kind.
+NotInitialised: The effect is disconnected.
+InvalidState: No current valid measurement is available, or the effect is idle or bypassed.
+
+-END-
+*********************************************************************************************************************/
+
+static ERR AUDIOEFFECT_GetOutput(extAudioEffect *Self, struct fx::GetOutput *Args)
+{
+   if (!Args) return ERR::NullArgs;
+   auto chain = Self->Chain.lock();
+   if (!chain) return ERR::NotInitialised;
+   std::lock_guard lock(*chain->Mutex);
+   if (Self->Schema) for (const auto &output : Self->Schema->Outputs) {
+      if (Args->Key != output.Key) continue;
+      if (!Self->Stereo and output.Scope and std::string_view(output.Scope) IS "right") return ERR::Search;
+      if (output.Kind != AudioOutputKind::SCALAR or output.Slot < 0 or output.Slot >= 5) return ERR::NoSupport;
+      if ((Self->Flags & AEF::BYPASS) != AEF::NIL or Self->Meter.Flags != AMF::VALID) return ERR::InvalidState;
+      Args->Value = Self->Meter.Values[output.Slot];
+      return ERR::Okay;
+   }
+   return ERR::Search;
+}
+
+/*********************************************************************************************************************
+-FIELD-
+Latency: Returns committed algorithmic delay in output frames.
+
+Latency reports the fixed delay, measured in frames at the #OutputRate, that the effect's processor adds to the signal
+path.  The value is committed when the processor is configured.  Parameter edits made before output starts may update
+it, but once the output rate is active, an edit that would change it is rejected by #Flush() with
+`ERR::InvalidState`.  Effects with no look-ahead or buffering, such as the equaliser, report zero.
+
+Setting the `BYPASS` flag reduces the reported latency to zero, because a bypassed effect does not delay the signal.
+The delay of a complete chain, including the global chain, can be read with the Audio class' `GetEffectStatus()`
+method.
+
+-END-
+*********************************************************************************************************************/
+
+static ERR AUDIOEFFECT_GET_Latency(extAudioEffect *Self, int64_t *Value)
+{
+   auto chain = Self->Chain.lock();
+   if (!chain) return ERR::NotInitialised;
+   std::lock_guard lock(*chain->Mutex);
+   if (!chain->Rate) return ERR::NotInitialised;
+   *Value = Self->latency();
    return ERR::Okay;
 }
 
@@ -670,6 +850,7 @@ static const FieldArray clAudioEffectFields[] = {
    { "OutputRate", FDF_INT|FDF_R, AUDIOEFFECT_GET_OutputRate },
    { "Stereo",     FDF_INT|FDF_R, AUDIOEFFECT_GET_Stereo },
    // Virtual fields
+   { "Latency",    FDF_VIRTUAL|FDF_INT64|FDF_R, AUDIOEFFECT_GET_Latency },
    { "Mutable",    FDF_VIRTUAL|FDF_INT|FDF_R, AUDIOEFFECT_GET_Mutable },
    { "Schema",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_R, AUDIOEFFECT_GET_Schema },
    END_FIELD

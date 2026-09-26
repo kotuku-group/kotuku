@@ -11,6 +11,8 @@ static void mix_channel(extAudio *, AudioChannel &, int, APTR);
 static ERR mix_data(extAudio *, int, APTR);
 static ERR process_commands(extAudio *, SAMPLE);
 
+//********************************************************************************************************************
+
 inline bool adjust_volume_ramp(double &current, double target, double ramp_speed) {
    if (current < target) {
       current += ramp_speed;
@@ -31,7 +33,9 @@ inline bool adjust_volume_ramp(double &current, double target, double ramp_speed
    return false;
 }
 
+//********************************************************************************************************************
 // Template-based sample format traits for compile-time optimization
+
 template<SFM format>
 struct SampleFormatTraits;
 
@@ -67,6 +71,7 @@ struct SampleFormatTraits<SFM::U8_BIT_MONO> {
    static constexpr bool is_stereo = false;
 };
 
+//********************************************************************************************************************
 // Constexpr clamping functions for compile-time optimization
 
 template<typename T>
@@ -87,6 +92,7 @@ void convert_samples(const InputType* input, int count, OutputType* output) {
 
    if constexpr (std::is_same_v<OutputType, uint8_t>) {
       // 8-bit conversion with loop unrolling
+
       while (input < unroll_end) {
          for (std::size_t i = 0; i < UnrollFactor; ++i) {
             const int sample = int(input[i]) >> 8;
@@ -97,6 +103,7 @@ void convert_samples(const InputType* input, int count, OutputType* output) {
       }
 
       // Handle remaining samples
+
       while (input < end) {
          const int sample = int(*input) >> 8;
          *output = uint8_t(128 + clamp_sample(sample, int(-128), int(127)));
@@ -591,12 +598,17 @@ static bool handle_sample_end(extAudio *Self, AudioChannel &Channel)
       int window_size = sizeof(float) * (Self->Stereo ? (window<<1) : window);
       clearmem(Self->MixBuffer.data(), window_size);
 
+      int source_frames = 0;
+      bool source_active = false;
+      bool upstream_pending = false;
+      uint64_t upstream_bound = 0;
       for (auto n=1; n < (int)Self->Sets.size(); n++) {
          auto &set = Self->Sets[n];
          const bool effects = set.Effects and !set.Effects->Effects.empty();
          auto buffer = effects ? set.ScratchBuffer.data() : Self->MixBuffer.data();
          if (effects) clearmem(buffer, window_size);
 
+         Self->SourceFrames = 0;
          for (auto &c : set.Channel) {
             if (c.active()) mix_channel(Self, c, window, buffer);
          }
@@ -605,13 +617,26 @@ static bool handle_sample_end(extAudio *Self, AudioChannel &Channel)
             if (c.active()) mix_channel(Self, c, window, buffer);
          }
 
+         bool set_active = false;
+         for (auto &channel : set.Channel) set_active |= channel.active() and !channel.isStopped();
+         for (auto &channel : set.Shadow) set_active |= channel.active() and !channel.isStopped();
+         source_active |= set_active;
+         source_frames = std::max(source_frames, Self->SourceFrames);
+
          if (effects) {
-            process_effects(*set.Effects, buffer, window);
+            const bool was_pending = set.Effects->pending();
+            upstream_bound = std::max(upstream_bound, set.Effects->tail_bound());
+            set.Effects->MeterScale = Self->BitDepth IS 32 ? 1.0 : 32768.0;
+            render_effects(*set.Effects, buffer, window, Self->SourceFrames,
+               uint64_t(Self->MaxDrain * Self->OutputRate), set_active);
+            upstream_pending |= was_pending or set.Effects->pending();
             for (int i = 0; i < window_size / int(sizeof(float)); ++i) Self->MixBuffer[i] += buffer[i];
          }
       }
 
-      process_effects(*Self->GlobalEffects, Self->MixBuffer.data(), window);
+      Self->GlobalEffects->MeterScale = Self->BitDepth IS 32 ? 1.0 : 32768.0;
+      render_effects(*Self->GlobalEffects, Self->MixBuffer.data(), window, source_frames,
+         uint64_t(Self->MaxDrain * Self->OutputRate), source_active, upstream_bound, upstream_pending);
 
       // Do optional post-processing
 
@@ -691,6 +716,7 @@ static void mix_stream(extAudio *Self, AudioChannel &Channel, AudioSample &Sampl
       };
 
       AudioMixer::dispatch_mix(Self->MixConfig, Sample.SampleType, params);
+      Self->SourceFrames = std::max(Self->SourceFrames, i + 1);
       if ((Channel.Flags & CHF::VOL_RAMP) != CHF::NIL) {
          const bool left = adjust_volume_ramp(Channel.LVolume, Channel.LVolumeTarget, RAMPSPEED);
          const bool right = adjust_volume_ramp(Channel.RVolume, Channel.RVolumeTarget, RAMPSPEED);
@@ -776,6 +802,7 @@ static void mix_channel(extAudio *Self, AudioChannel &Channel, int TotalSamples,
       mastervol *= conversion;
    }
 
+   const int requested_frames = TotalSamples;
    float *mix_dest = (float *)Dest;
    while (TotalSamples > 0) {
       if (Channel.isStopped()) return;
@@ -792,6 +819,7 @@ static void mix_channel(extAudio *Self, AudioChannel &Channel, int TotalSamples,
       TotalSamples -= mix_now;
 
       if (mix_now > 0) {
+         Self->SourceFrames = std::max(Self->SourceFrames, requested_frames - TotalSamples);
          if (Channel.PositionLow < 0) { // Sanity check
             log.warning("Detected invalid PositionLow value of %d", Channel.PositionLow);
             return;

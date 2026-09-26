@@ -184,6 +184,38 @@
     </method>
 
     <method>
+      <name>GetEffectStatus</name>
+      <comment>Reads DSP drain state and serial-path latency together.</comment>
+      <prototype>ERR snd::GetEffectStatus(OBJECTPTR Object, INT Channel, INT64 * Application, INT64 * Global, INT64 * Total, INT * Rate, INT64 * Generation, ADS * State, INT * Truncated)</prototype>
+      <tiriPrototype>err, Application:num, Global:num, Total:num, Rate:num, Generation:num, State:num, Truncated:num = GetEffectStatus(Channel:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="Channel">Channel-set handle, or zero for the global path.</param>
+        <param type="INT64 *" name="Application">Application-chain algorithmic latency.</param>
+        <param type="INT64 *" name="Global">Global-chain algorithmic latency.</param>
+        <param type="INT64 *" name="Total">Total algorithmic latency along this path.</param>
+        <param type="INT *" name="Rate">Negotiated output rate, or zero before configuration.</param>
+        <param type="INT64 *" name="Generation">Configuration generation shared by all paths.</param>
+        <param type="ADS *" name="State" lookup="ADS">Selected chain's drain state.</param>
+        <param type="INT *" name="Truncated">One if automatic drain reached its safety deadline.</param>
+      </input>
+      <description>
+<p>GetEffectStatus() returns a consistent snapshot of one signal path's effect latency and drain state, taken under the mixer lock so that all output values describe the same moment.</p>
+<p>The path is selected with <code>Channel</code>.  A channel-set handle selects that application's chain followed by the global chain.  Zero selects the global path, in which case <code>Application</code> is always zero and the drain state accounts for every application's sources and chains.  Latencies are expressed in frames at the returned <code>Rate</code>.  <code>Total</code> is the sum of <code>Application</code> and <code>Global</code>, and only includes effects that are not bypassed.</p>
+<p><code>State</code> takes one of the following values:</p>
+<types lookup="ADS"/>
+<p><code>Truncated</code> is set to 1 if the selected chain's automatic drain was cut short at the <fl>MaxDrain</fl> deadline while effects still had pending output.  It is cleared when new source audio reaches the chain or the chain is reset.</p>
+<p><code>Generation</code> is incremented whenever the effect configuration or DSP history of any path changes, and is written even when the call fails.  Compare it between calls to detect intervening resets or reconfiguration.  The remaining outputs are not meaningful if an error is returned.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Args">The channel-set handle is invalid or closed.</error>
+        <error code="OutOfRange">Serial latency cannot be represented in a signed 64-bit frame count.</error>
+        <error code="NotInitialised">No output configuration is available; Rate is zero.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+    </method>
+
+    <method>
       <name>OpenChannels</name>
       <comment>Allocates audio channels that can be used for sample playback.</comment>
       <prototype>ERR snd::OpenChannels(OBJECTPTR Object, INT Total, INT * Result)</prototype>
@@ -224,6 +256,26 @@
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>mutates-object</tags>
+    </method>
+
+    <method>
+      <name>ResetEffects</name>
+      <comment>Discards one chain's DSP history at its next render boundary.</comment>
+      <prototype>ERR snd::ResetEffects(OBJECTPTR Object, INT Channel)</prototype>
+      <tiriPrototype>err = ResetEffects(Channel:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="Channel">Channel-set handle, or zero for the global chain.</param>
+      </input>
+      <description>
+<p>ResetEffects() clears the internal state of every effect in one chain, such as filter history and buffered samples, so that subsequent audio is processed as if the chain had just been created.  Use it when switching to unrelated content, e.g. after seeking, so that residual output from the previous material does not bleed through.</p>
+<p>The chain is selected with <code>Channel</code>.  A channel-set handle selects that application's chain, while zero selects the global chain.  Only the selected chain is affected; resetting an application's chain does not reset the global chain. If the channel set has no effects attached, the call succeeds without doing anything.</p>
+<p>The reset is deferred to the mixer and each effect's history is cleared before it processes its next block of audio. Any pending effect tail is discarded rather than drained.  Effect parameters and bypass states are unchanged.  The chain's drain state returns to <code>ADS::IDLE</code>, its <code>Truncated</code> status is cleared, effect meters are restarted, and the <code>Generation</code> counter reported by <method>GetEffectStatus</method> is incremented.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Args">The channel-set handle is invalid or closed.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
     </method>
 
     <method>
@@ -338,6 +390,18 @@
     </field>
 
     <field>
+      <name>MaxDrain</name>
+      <comment>Limits the time that DSP effect chains can continue to produce output after their source audio ends.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>When the sources feeding an effect chain stop, effects such as reverbs, delays and recursive filters can continue to produce output as their internal history decays.  This drain phase continues until the chain has no pending output, or until MaxDrain seconds of drain time have elapsed.  The limit applies independently to each application chain and to the global chain, and it resets when new source audio reaches a chain.</p>
+<p>If a chain reaches the deadline while effects still have pending output, the remaining output is faded out over approximately 10 ms and discarded, and the <code>Truncated</code> result of <method>GetEffectStatus</method> is set.  The limit acts as a safety net for effects that have no finite tail, such as an <class name="AudioEqualiser">AudioEqualiser</class> with long decays or feedback that never fully settles.</p>
+<p>The default is 30 seconds.  Valid values range from 0.01 to 300 seconds; <code>ERR::OutOfRange</code> is returned otherwise. The value can only be changed while effects are not configured, i.e. before the Audio object is activated or after it has been deactivated.  Otherwise, <code>ERR::InvalidState</code> is returned.</p>
+      </description>
+    </field>
+
+    <field>
       <name>MixerLag</name>
       <comment>Returns the lag time of the internal mixer, measured in seconds.</comment>
       <access read="G">Get</access>
@@ -430,6 +494,12 @@
       <const name="STEREO">Enable stereo output (set by default if the platform supports stereo).  If not set, output is in mono.</const>
       <const name="SYSTEM_WIDE">Mixer changes should be applied system-wide.</const>
       <const name="VOL_RAMPING">Enable volume ramping for softer playback when a sample is played multiple times (enabled by default).</const>
+    </constants>
+
+    <constants lookup="ADS" comment="Effect drain states reported by GetEffectStatus().">
+      <const name="ACTIVE">At least one source on the selected path is playing.</const>
+      <const name="DRAINING">Sources have stopped, but one or more effects are still producing tail output.</const>
+      <const name="IDLE">No sources are playing and no effect has pending output.</const>
     </constants>
 
     <constants lookup="LOOP" comment="Loop modes for the AudioLoop structure.">
