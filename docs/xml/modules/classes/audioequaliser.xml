@@ -24,7 +24,8 @@ eq.mtSetParameter('bands[0].q', 0.7)
 eq.acFlush()
 </pre>
 <p>Assign the <fl>Bands</fl> field to replace every band at once.</p>
-<p>Live changes crossfade the old and new filter chains over 10 ms, including output trim changes.  An edit during a crossfade replaces a single queued target, which starts its own crossfade when the current one finishes.  Parameter reads and <class name="AudioEffect" method="GetResponse">AudioEffect.GetResponse()</class> describe the latest committed target immediately, even during a transition. Device reactivation and leaving bypass reset filter history and apply the latest target without a crossfade.</p></description>
+<p>Live changes crossfade the old and new filter chains over 10 ms, including output trim changes.  An edit during a crossfade replaces a single queued target, which starts its own crossfade when the current one finishes.  Parameter reads and <class name="AudioEffect" method="GetResponse">AudioEffect.GetResponse()</class> describe the latest committed target immediately, even during a transition. Device reactivation and leaving bypass reset filter history and apply the latest target without a crossfade.</p>
+<p>The equaliser has zero algorithmic latency but its recursive state can continue producing a decay after input ends.  Decay remains pending until all live filter states fall below 1e-12 internal sample units, then remaining history is discarded.  Arbitrary supported poles and live edits have no fixed finite bound, so <class name="Audio" field="MaxDrain">Audio.MaxDrain</class> also limits this decay.  Hard bypass and destruction can cut it abruptly.</p></description>
     <source>
       <file>class_audioequaliser.cpp</file>
     </source>

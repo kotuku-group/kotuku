@@ -37,6 +37,28 @@ enum class AEF : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(AEF)
 
+// Audio meter snapshot flags.
+
+enum class AMF : uint32_t {
+   NIL = 0,
+   VALID = 0x00000001,
+   IDLE = 0x00000002,
+   BYPASSED = 0x00000004,
+   DISCONNECTED = 0x00000008,
+   NO_SAMPLES = 0x00000010,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(AMF)
+
+// Effect drain states reported by GetEffectStatus().
+
+enum class ADS : int {
+   NIL = 0,
+   IDLE = 0,
+   ACTIVE = 1,
+   DRAINING = 2,
+};
+
 // Parametric equaliser band types.
 
 enum class EQB : int {
@@ -222,6 +244,8 @@ struct SetSampleLength { int Sample; int64_t Length; static const AC id = AC(-5)
 struct AddStream { FUNCTION Callback; FUNCTION OnStop; SFM SampleFormat; int64_t SampleLength; int64_t PlayOffset; struct AudioLoop *Loop; int Result; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Beep { int Pitch; int Duration; int Volume; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetVolume { int Index; std::string_view Name; SVF Flags; int Channel; double Volume; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetEffectStatus { int Channel; int64_t Application; int64_t Global; int64_t Total; int Rate; int64_t Generation; ADS State; int Truncated; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ResetEffects { int Channel; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -289,8 +313,32 @@ class objAudio : public Object {
       struct snd::SetVolume args = { Index, Name, Flags, Channel, Volume };
       return Action(AC(-8), this, &args);
    }
+   inline ERR getEffectStatus(int Channel, int64_t * Application, int64_t * Global, int64_t * Total, int * Rate, int64_t * Generation, ADS * State, int * Truncated) noexcept {
+      struct snd::GetEffectStatus args = { Channel, (int64_t)0, (int64_t)0, (int64_t)0, (int)0, (int64_t)0, (ADS)0, (int)0 };
+      ERR error = Action(AC(-9), this, &args);
+      if (Application) *Application = args.Application;
+      if (Global) *Global = args.Global;
+      if (Total) *Total = args.Total;
+      if (Rate) *Rate = args.Rate;
+      if (Generation) *Generation = args.Generation;
+      if (State) *State = args.State;
+      if (Truncated) *Truncated = args.Truncated;
+      return error;
+   }
+   inline ERR resetEffects(int Channel) noexcept {
+      struct snd::ResetEffects args = { Channel };
+      return Action(AC(-10), this, &args);
+   }
 
    // Customised field getting
+
+   inline ERR getMaxDrain(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[0];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
 
    inline ERR getOutputRate(int &Value) noexcept {
       Value = this->OutputRate;
@@ -328,13 +376,13 @@ class objAudio : public Object {
    }
 
    inline ERR getDevice(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
+      auto field = &this->Class->Dictionary[10];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       return get_field(this, Value);
    }
 
    inline ERR getMixerLag(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
+      auto field = &this->Class->Dictionary[7];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -342,12 +390,12 @@ class objAudio : public Object {
    }
 
    inline ERR getMasterVolume(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
+      auto field = &this->Class->Dictionary[3];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getMute(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[11];
+      auto field = &this->Class->Dictionary[12];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -355,15 +403,20 @@ class objAudio : public Object {
    }
 
    inline ERR getStereo(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[3];
+      auto field = &this->Class->Dictionary[4];
       return field->GetValue(this, &Value);
    }
 
 
    // Customised field setting
 
+   inline ERR setMaxDrain(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[0];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
    inline ERR setOutputRate(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
+      auto field = &this->Class->Dictionary[8];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -374,7 +427,7 @@ class objAudio : public Object {
    }
 
    inline ERR setQuality(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
+      auto field = &this->Class->Dictionary[14];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -385,37 +438,37 @@ class objAudio : public Object {
    }
 
    inline ERR setBitDepth(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[15];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setPeriods(const int Value) noexcept {
       auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
+   inline ERR setPeriods(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[17];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
    inline ERR setPeriodSize(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[4];
+      auto field = &this->Class->Dictionary[5];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setDevice(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
+      auto field = &this->Class->Dictionary[10];
       return field->WriteValue(this, field, 0x00904300, &Value);
    }
 
    inline ERR setMasterVolume(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[2];
+      auto field = &this->Class->Dictionary[3];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setMute(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[11];
+      auto field = &this->Class->Dictionary[12];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setStereo(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[3];
+      auto field = &this->Class->Dictionary[4];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -434,6 +487,8 @@ struct InsertEntry { std::string_view Group; int Index; static const AC id = AC(
 struct RemoveEntry { std::string_view Group; int Index; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct GetResponse { std::span<const double> Frequencies; std::span<double> Magnitudes; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct GetGroupCount { std::string_view Group; int Count; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetMeters { std::span<double> Values; int64_t Sequence; int64_t Generation; int64_t Position; int Interval; AMF Flags; int Floor; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetOutput { std::string_view Key; double Value; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -484,6 +539,23 @@ class objAudioEffect : public Object {
       if (Count) *Count = args.Count;
       return error;
    }
+   inline ERR getMeters(std::span<double> Values, int64_t * Sequence, int64_t * Generation, int64_t * Position, int * Interval, AMF * Flags, int * Floor) noexcept {
+      struct fx::GetMeters args = { Values, (int64_t)0, (int64_t)0, (int64_t)0, (int)0, (AMF)0, (int)0 };
+      ERR error = Action(AC(-7), this, &args);
+      if (Sequence) *Sequence = args.Sequence;
+      if (Generation) *Generation = args.Generation;
+      if (Position) *Position = args.Position;
+      if (Interval) *Interval = args.Interval;
+      if (Flags) *Flags = args.Flags;
+      if (Floor) *Floor = args.Floor;
+      return error;
+   }
+   inline ERR getOutput(const std::string_view &Key, double * Value) noexcept {
+      struct fx::GetOutput args = { Key, (double)0 };
+      ERR error = Action(AC(-8), this, &args);
+      if (Value) *Value = args.Value;
+      return error;
+   }
 
    // Customised field getting
 
@@ -523,8 +595,16 @@ class objAudioEffect : public Object {
       return error;
    }
 
+   inline ERR getLatency(int64_t &Value) noexcept {
+      auto field = &this->Class->Dictionary[7];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
    inline ERR getMutable(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[11];
+      auto field = &this->Class->Dictionary[12];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -556,7 +636,7 @@ class objAudioEffect : public Object {
    }
 
    inline ERR setOrder(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
+      auto field = &this->Class->Dictionary[11];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -586,13 +666,13 @@ class objAudioEqualiser : public objAudioEffect {
    // Customised field getting
 
    inline ERR getBands(std::span<struct AudioEQBand> &Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
+      auto field = &this->Class->Dictionary[15];
       auto get_field = (ERR (*)(APTR, std::span<struct AudioEQBand> &))field->GetValue;
       return get_field(this, Value);
    }
 
    inline ERR getGain(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
+      auto field = &this->Class->Dictionary[14];
       return field->GetValue(this, &Value);
    }
 
@@ -600,12 +680,12 @@ class objAudioEqualiser : public objAudioEffect {
    // Customised field setting
 
    inline ERR setBands(std::span<const struct AudioEQBand> Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
+      auto field = &this->Class->Dictionary[15];
       return field->WriteValue(this, field, 0x00101318, &Value);
    }
 
    inline ERR setGain(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
+      auto field = &this->Class->Dictionary[14];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 

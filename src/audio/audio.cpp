@@ -219,6 +219,7 @@ static ERR MODExpunge(void)
 #include "tests/test_audio_batches.cpp"
 #include "tests/test_audio_buffer.cpp"
 #include "tests/test_audio_effect.cpp"
+#include "tests/test_dsp_infrastructure.cpp"
 #include "tests/test_audio_equaliser_dsp.cpp"
 #include "tests/test_mixers.cpp"
 #ifdef ALSA_ENABLED
@@ -245,6 +246,7 @@ static void MODTest(std::string_view Options, int *Passed, int *Total)
    run("batch", audio_tests_audio_batches::run);
    run("buffer", audio_tests_audio_buffer::run);
    run("effect chain", audio_tests_audio_effect::run);
+   run("DSP infrastructure", audio_tests_dsp_infrastructure::run);
    run("equaliser DSP", audio_tests_audio_equaliser_dsp::run);
    run("mixer", audio_tests_mixers::run);
 #ifdef ALSA_ENABLED

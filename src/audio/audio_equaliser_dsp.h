@@ -25,7 +25,7 @@ public:
    int Channels = 2;
 
 private:
-   std::vector<EQSection> previous, pending;
+   std::vector<EQSection> previous, pending_sections;
    std::vector<int> pending_origins;
    double previous_trim = 1, pending_trim = 1;
    int transition_left = 0, transition_frames = 1;
@@ -76,7 +76,7 @@ public:
             }
          }
 
-         pending.swap(Next);
+         pending_sections.swap(Next);
          pending_origins.swap(Origins);
          pending_trim = NextTrim;
          has_pending = true;
@@ -140,9 +140,25 @@ public:
       Section.A1 = a1 / a0; Section.A2 = a2 / a0;
    }
 
+   // Recursive state, including both sides of a live crossfade, can produce output after source completion.
+   // Treat decay as indefinite: arbitrary supported poles and edits have no fixed finite bound. The mixer
+   // deadline caps it. Below 1e-12 internal sample units all state is discarded when the chain becomes idle.
+   AudioTail tail() const override { return AudioTail::INDEFINITE; }
+   bool pending() const override {
+      auto excited = [](const auto &Sections) {
+         for (const auto &section : Sections) {
+            for (int c = 0; c < 2; ++c) {
+               if (std::abs(section.Z1[c]) > 1e-12 or std::abs(section.Z2[c]) > 1e-12) return true;
+            }
+         }
+         return false;
+      };
+      return excited(Sections) or (transition_left and excited(previous));
+   }
+
    void reset() override {
       if (has_pending) {
-         Sections.swap(pending);
+         Sections.swap(pending_sections);
          Trim = pending_trim;
          has_pending = false;
       }
@@ -159,7 +175,7 @@ public:
    void process(float *Buffer, int Frames) override {
       for (int frame = 0; frame < Frames; ++frame) {
          if ((not transition_left) and has_pending) {
-            start_transition(pending, pending_origins, pending_trim);
+            start_transition(pending_sections, pending_origins, pending_trim);
             has_pending = false;
          }
 

@@ -164,16 +164,28 @@ static ERR AUDIO_Activate(extAudio *Self)
    Self->MixBuffer.resize(mix_buffer_size / sizeof(float));
    Self->MixElements = SAMPLE(mix_buffer_size / mixbitsize);
 
-   // Activation may negotiate a new rate/layout or resize the mix buffer after deactivation.
    {
-      std::lock_guard mixer_lock(Self->MixerMutex);
-      configure_effects(*Self->GlobalEffects, Self->OutputRate, Self->Stereo);
+      // Activation may negotiate a new rate/layout or resize the mix buffer after deactivation.
+
+      if (auto result = configure_effects(*Self->GlobalEffects, Self->OutputRate, Self->Stereo);
+          result != ERR::Okay) {
+         Self->Initialising = false;
+         acDeactivate(Self);
+         return result;
+      }
+
       for (auto &set : Self->Sets) {
          if (!set.Effects) continue;
          set.ScratchBuffer.resize(Self->MixBuffer.size());
-         configure_effects(*set.Effects, Self->OutputRate, Self->Stereo);
+         if (auto result = configure_effects(*set.Effects, Self->OutputRate, Self->Stereo); result != ERR::Okay) {
+            Self->Initialising = false;
+            acDeactivate(Self);
+            return result;
+         }
       }
    }
+
+   Self->EffectConfigured = true;
 
    // Configure the mixing system
 
@@ -430,12 +442,14 @@ static ERR AUDIO_AddStream(extAudio *Self, struct snd::AddStream *Args)
    std::vector<uint8_t> data(buffer_len);
    std::vector<AudioSample> sample_slots;
    if (Self->Samples.size() + 10 > Self->Samples.capacity()) sample_slots.reserve(Self->Samples.size() + 10);
+
    std::lock_guard mixer_lock(Self->MixerMutex);
-   #ifdef AUDIO_WORKER
+
+#ifdef AUDIO_WORKER
    size_t allocated = 0;
    for (const auto &entry : Self->Samples) if (entry.Stream) allocated += entry.Data.size();
    if (allocated + buffer_len > 64 * 1024 * 1024) return ERR::AllocMemory;
-   #endif
+#endif
 
    // Find an unused sample block.  If there is none, increase the size of the sample management area.
 
@@ -572,6 +586,7 @@ static ERR AUDIO_CloseChannels(extAudio *Self, struct snd::CloseChannels *Args)
    if ((index < 1) or (index >= std::ssize(Self->Sets))) return log.warning(ERR::Args);
 
    cancel_audio_batches(Self, unsigned(index));
+   ++*Self->GlobalEffects->Generation;
    Self->Sets[index].clear(); // We can't erase because that would mess up other channel handles.
    return ERR::Okay;
 }
@@ -605,6 +620,17 @@ static ERR AUDIO_Deactivate(extAudio *Self)
    cancel_audio_batches(Self);
 #endif
 
+   {
+      std::lock_guard lock(Self->MixerMutex);
+      Self->EffectConfigured = false;
+      Self->GlobalEffects->reset();
+      Self->GlobalEffects->Rate = 0;
+      for (auto &set : Self->Sets) if (set.Effects) {
+         set.Effects->reset();
+         set.Effects->Rate = 0;
+      }
+   }
+
 #ifdef ALSA_ENABLED
    free_alsa(Self);
 #endif
@@ -616,7 +642,6 @@ static ERR AUDIO_Deactivate(extAudio *Self)
 
 static ERR AUDIO_Init(extAudio *Self)
 {
-   std::lock_guard mixer_lock(Self->MixerMutex);
    kt::Log log;
 
 
@@ -1224,7 +1249,6 @@ ALSA supports `8`, `16` and `32` (floating point) output.  The recommended value
 
 static ERR SET_BitDepth(extAudio *Self, int Value)
 {
-   std::lock_guard mixer_lock(Self->MixerMutex);
    if (Value IS 16) Self->BitDepth = 16;
    else if (Value IS 8) Self->BitDepth = 8;
    else if (Value IS 24) Self->BitDepth = 24;
@@ -1250,7 +1274,6 @@ buffering, but may require exclusive access and stricter sample-format support.
 
 static ERR GET_Device(extAudio *Self, std::string_view &Value)
 {
-   std::lock_guard mixer_lock(Self->MixerMutex);
    Value = Self->Device;
    if (not Self->Device.empty()) return ERR::Okay;
    else return ERR::FieldNotSet;
@@ -1298,7 +1321,6 @@ a value between `0` and `1.0`.
 
 static ERR GET_MasterVolume(extAudio *Self, double *Value)
 {
-   std::lock_guard mixer_lock(Self->MixerMutex);
    *Value = Self->MasterVolume;
    return ERR::Okay;
 }
@@ -1344,7 +1366,6 @@ field to `false`.  Muting does not disable the audio system, which is achieved b
 
 static ERR GET_Mute(extAudio *Self, int *Value)
 {
-   std::lock_guard mixer_lock(Self->MixerMutex);
    *Value = FALSE;
    for (int i=0; i < std::ssize(Self->Volumes); i++) {
       if (iequals("Master", Self->Volumes[i].Name)) {
@@ -1374,7 +1395,6 @@ The OutputRate can only be set prior to initialisation, further attempts to set 
 
 static ERR SET_OutputRate(extAudio *Self, int Value)
 {
-   std::lock_guard mixer_lock(Self->MixerMutex);
    if (Value < 0) return ERR::OutOfRange;
    else if (Value > 192000) Self->OutputRate = 192000;
    else Self->OutputRate = Value;
@@ -1406,7 +1426,6 @@ audio consumption. More periods provide greater buffering security at the cost o
 
 static ERR SET_Periods(extAudio *Self, int Value)
 {
-   std::lock_guard mixer_lock(Self->MixerMutex);
    Self->Periods = audio_period_count(Value);
    return ERR::Okay;
 }
@@ -1425,7 +1444,6 @@ After activation this field reports the negotiated period size.
 
 static ERR SET_PeriodSize(extAudio *Self, int Value)
 {
-   std::lock_guard mixer_lock(Self->MixerMutex);
    Self->PeriodSize = audio_period_frames(Value);
    return ERR::Okay;
 }
@@ -1479,7 +1497,6 @@ Stereo: Set to `true` for stereo output and `false` for mono output.
 
 static ERR GET_Stereo(extAudio *Self, int *Value)
 {
-   std::lock_guard mixer_lock(Self->MixerMutex);
    if ((Self->Flags & ADF::STEREO) != ADF::NIL) *Value = TRUE;
    else *Value = FALSE;
    return ERR::Okay;
@@ -1627,7 +1644,185 @@ extAudio::~extAudio() {
 #endif
 }
 
-//********************************************************************************************************************
+/*********************************************************************************************************************
+-METHOD-
+GetEffectStatus: Reads DSP drain state and serial-path latency together.
+
+GetEffectStatus() returns a consistent snapshot of one signal path's effect latency and drain state, taken under the
+mixer lock so that all output values describe the same moment.
+
+The path is selected with `Channel`.  A channel-set handle selects that application's chain followed by the global
+chain.  Zero selects the global path, in which case `Application` is always zero and the drain state accounts for
+every application's sources and chains.  Latencies are expressed in frames at the returned `Rate`.  `Total` is the
+sum of `Application` and `Global`, and only includes effects that are not bypassed.
+
+`State` takes one of the following values:
+
+!ADS
+
+`Truncated` is set to 1 if the selected chain's automatic drain was cut short at the #MaxDrain deadline while effects
+still had pending output.  It is cleared when new source audio reaches the chain or the chain is reset.
+
+`Generation` is incremented whenever the effect configuration or DSP history of any path changes, and is written
+even when the call fails.  Compare it between calls to detect intervening resets or reconfiguration.  The remaining
+outputs are not meaningful if an error is returned.
+
+-INPUT-
+int Channel:        Channel-set handle, or zero for the global path.
+&large Application: Application-chain algorithmic latency.
+&large Global:      Global-chain algorithmic latency.
+&large Total:       Total algorithmic latency along this path.
+&int Rate:          Negotiated output rate, or zero before configuration.
+&large Generation:  Configuration generation shared by all paths.
+&int(ADS) State:    Selected chain's drain state.
+&int Truncated:     One if automatic drain reached its safety deadline.
+
+-ERRORS-
+Okay
+NullArgs
+Args: The channel-set handle is invalid or closed.
+NotInitialised: No output configuration is available; Rate is zero.
+OutOfRange: Serial latency cannot be represented in a signed 64-bit frame count.
+
+-END-
+*********************************************************************************************************************/
+
+static AudioEffectChain *effect_chain(extAudio *Self, int Channel)
+{
+   if (!Channel) return Self->GlobalEffects.get();
+   const auto index = unsigned(Channel) >> 16;
+   if (Channel < 0 or (Channel & 0xffff) or index >= Self->Sets.size() or
+       Self->Sets[index].Channel.empty()) return nullptr;
+   return Self->Sets[index].Effects.get();
+}
+
+static bool effect_channel_valid(extAudio *Self, int Channel)
+{
+   if (!Channel) return true;
+   const auto index = unsigned(Channel) >> 16;
+   return Channel > 0 and !(Channel & 0xffff) and index < Self->Sets.size() and
+      !Self->Sets[index].Channel.empty();
+}
+
+static ERR AUDIO_GetEffectStatus(extAudio *Self, struct snd::GetEffectStatus *Args)
+{
+   if (!Args) return ERR::NullArgs;
+
+   std::lock_guard lock(Self->MixerMutex);
+   Args->Application = Args->Global = Args->Total = 0;
+   Args->Rate = 0;
+   Args->Generation = *Self->GlobalEffects->Generation;
+   Args->State = ADS::IDLE;
+   Args->Truncated = 0;
+
+   if (!effect_channel_valid(Self, Args->Channel)) return ERR::Args;
+   if (!Self->EffectConfigured) return ERR::NotInitialised;
+
+   Args->Rate = Self->OutputRate;
+   bool source_active = false, upstream_pending = false;
+   for (size_t index = 1; index < Self->Sets.size(); ++index) {
+      if (Args->Channel and index != (unsigned(Args->Channel) >> 16)) continue;
+      auto &set = Self->Sets[index];
+      for (auto &channel : set.Channel) source_active |= channel.active() and !channel.isStopped();
+      for (auto &channel : set.Shadow) source_active |= channel.active() and !channel.isStopped();
+      if (!Args->Channel and set.Effects) upstream_pending |= set.Effects->pending();
+   }
+
+   auto chain = effect_chain(Self, Args->Channel);
+   bool path_pending = upstream_pending or (chain and chain->pending());
+   if (Args->Channel) path_pending |= Self->GlobalEffects->pending();
+   Args->State = source_active ? ADS::ACTIVE :
+      (path_pending ? ADS::DRAINING : ADS::IDLE);
+
+   if (chain) {
+      Args->Truncated = chain->Truncated or (Args->Channel and Self->GlobalEffects->Truncated);
+      if (Args->Channel) {
+         auto error = chain->latency(Args->Application);
+         if (error != ERR::Okay) return error;
+      }
+   }
+
+   if (auto error = Self->GlobalEffects->latency(Args->Global); error != ERR::Okay) return error;
+   if (Args->Application > INT64_MAX - Args->Global) return ERR::OutOfRange;
+   Args->Total = Args->Application + Args->Global;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-METHOD-
+ResetEffects: Discards one chain's DSP history at its next render boundary.
+
+ResetEffects() clears the internal state of every effect in one chain, such as filter history and buffered samples, so
+that subsequent audio is processed as if the chain had just been created.  Use it when switching to unrelated content,
+e.g. after seeking, so that residual output from the previous material does not bleed through.
+
+The chain is selected with `Channel`.  A channel-set handle selects that application's chain, while zero selects the
+global chain.  Only the selected chain is affected; resetting an application's chain does not reset the global chain.
+If the channel set has no effects attached, the call succeeds without doing anything.
+
+The reset is deferred to the mixer and each effect's history is cleared before it processes its next block of audio.
+Any pending effect tail is discarded rather than drained.  Effect parameters and bypass states are unchanged.  The
+chain's drain state returns to `ADS::IDLE`, its `Truncated` status is cleared, effect meters are restarted, and the
+`Generation` counter reported by #GetEffectStatus() is incremented.
+
+-INPUT-
+int Channel: Channel-set handle, or zero for the global chain.
+
+-ERRORS-
+Okay
+NullArgs
+Args: The channel-set handle is invalid or closed.
+-END-
+*********************************************************************************************************************/
+
+static ERR AUDIO_ResetEffects(extAudio *Self, struct snd::ResetEffects *Args)
+{
+   if (!Args) return ERR::NullArgs;
+
+   std::lock_guard lock(Self->MixerMutex);
+   if (!effect_channel_valid(Self, Args->Channel)) return ERR::Args;
+   if (auto chain = effect_chain(Self, Args->Channel)) {
+      chain->reset(); // Mark processors for reset; process() performs the bounded reset before the next sample.
+   }
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
+MaxDrain: Limits the time that DSP effect chains can continue to produce output after their source audio ends.
+
+When the sources feeding an effect chain stop, effects such as reverbs, delays and recursive filters can continue to
+produce output as their internal history decays.  This drain phase continues until the chain has no pending output,
+or until MaxDrain seconds of drain time have elapsed.  The limit applies independently to each application chain and
+to the global chain, and it resets when new source audio reaches a chain.
+
+If a chain reaches the deadline while effects still have pending output, the remaining output is faded out over
+approximately 10 ms and discarded, and the `Truncated` result of #GetEffectStatus() is set.  The limit acts as a
+safety net for effects that have no finite tail, such as an @AudioEqualiser with long decays or feedback that never
+fully settles.
+
+The default is 30 seconds.  Valid values range from 0.01 to 300 seconds; `ERR::OutOfRange` is returned otherwise.
+The value can only be changed while effects are not configured, i.e. before the Audio object is activated or
+after it has been deactivated.  Otherwise, `ERR::InvalidState` is returned.
+
+-END-
+*********************************************************************************************************************/
+
+static ERR GET_MaxDrain(extAudio *Self, double *Value)
+{
+   std::lock_guard lock(Self->MixerMutex);
+   *Value = Self->MaxDrain;
+   return ERR::Okay;
+}
+
+static ERR SET_MaxDrain(extAudio *Self, double Value)
+{
+   std::lock_guard lock(Self->MixerMutex);
+   if (Self->EffectConfigured) return ERR::InvalidState;
+   if (!std::isfinite(Value) or Value < 0.01 or Value > 300) return ERR::OutOfRange;
+   Self->MaxDrain = Value;
+   return ERR::Okay;
+}
 
 #include "class_audio_def.c"
 
@@ -1640,6 +1835,7 @@ static const FieldArray clAudioFields[] = {
    { "Periods",       FDF_INT|FDF_RI,      nullptr, SET_Periods },
    { "PeriodSize",    FDF_INT|FDF_RI,      nullptr, SET_PeriodSize },
    // VIRTUAL FIELDS
+   { "MaxDrain",      FDF_VIRTUAL|FDF_DOUBLE|FDF_RW, GET_MaxDrain, SET_MaxDrain },
    { "Device",        FDF_CPPSTRING|FDF_RW|FDF_PURE,  GET_Device, SET_Device },
    { "MixerLag",      FDF_DOUBLE|FDF_R,               GET_MixerLag },
    { "MasterVolume",  FDF_DOUBLE|FDF_RW|FDF_PURE,     GET_MasterVolume, SET_MasterVolume },

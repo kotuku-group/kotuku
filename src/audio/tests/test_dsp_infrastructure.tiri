@@ -1,0 +1,51 @@
+   module audio as mAudio
+
+@Test function StatusAndLifecycle()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000, maxDrain=0.1 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   eq <close> = obj.new('AudioEqualiser', { audio=audio, channel=channel })
+   assert(audio.maxDrain is 0.1)
+   err, app, master, total, rate, generation, state, truncated = audio.mtGetEffectStatus(channel)
+   assert(err is ERR_NotInitialised and rate is 0)
+   meter_values = array<double, 5>
+   err, sequence, meter_generation, position, interval, flags, floor = eq.mtGetMeters(meter_values)
+   assert(err is ERR_Okay and flags has AMF_NO_SAMPLES and sequence is 0)
+   assert(eq.mtGetOutput('unknown') is ERR_Search)
+   assert(eq.mtGetOutput('response') is ERR_NoSupport)
+   assert(eq.mtGetOutput('input_peak_left') is ERR_InvalidState)
+   check audio.acActivate()
+   err, app, master, total, rate, generation, state, truncated = audio.mtGetEffectStatus(channel)
+   assert(err is ERR_Okay and app is 0 and master is 0 and total is 0 and rate is 48000)
+   assert(state is 0 and truncated is 0 and eq.latency is 0)
+   previous = generation
+   eq.flags = AEF_BYPASS
+   err, sequence, meter_generation, position, interval, flags, floor = eq.mtGetMeters(meter_values)
+   assert(err is ERR_Okay and flags is AMF_BYPASSED)
+   eq.flags = 0
+   check audio.mtResetEffects(channel)
+   err, app, master, total, rate, generation, state, truncated = audio.mtGetEffectStatus(channel)
+   assert(err is ERR_Okay and generation > previous)
+   check audio.mtCloseChannels(channel)
+   assert(audio.mtGetEffectStatus(channel) is ERR_Args)
+   assert(audio.mtResetEffects(channel) is ERR_Args)
+   err, sequence, meter_generation, position, interval, flags, floor = eq.mtGetMeters(meter_values)
+   assert(err is ERR_Okay and flags is AMF_DISCONNECTED)
+   check audio.acDeactivate()
+   assert(audio.mtGetEffectStatus(0) is ERR_NotInitialised)
+end
+
+@Test function MonoDiscoveryAndGlobalReads()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100, flags=0 })
+   eq <close> = obj.new('AudioEqualiser', { audio=audio })
+   assert(eq.schema.find('key="response" type="curve"') != nil)
+   assert(eq.schema.find('key="input_peak_left" type="scalar"') != nil)
+   assert(eq.schema.find('input_peak_right') is nil)
+   assert(eq.mtGetOutput('input_peak_right') is ERR_Search)
+   meter_values = array<double, 5>
+   err, sequence, generation, position, interval, flags = eq.mtGetMeters(meter_values)
+   assert(err is ERR_Okay and flags has AMF_NO_SAMPLES)
+   assert(eq.mtSetParameter('gain', 1) is ERR_Immutable)
+   check audio.mtResetEffects(0)
+   assert(eq.mtGetMeters(array<double, 4>) is ERR_Args)
+end

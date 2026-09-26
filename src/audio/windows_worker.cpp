@@ -16,15 +16,6 @@ static bool windows_render(void *Context, float *Output, unsigned Frames, unsign
    flush_audio_commands(self);
    bool active = audio_playing(self);
    if (active) {
-      bool effects = !self->GlobalEffects->Effects.empty();
-      for (const auto &set : self->Sets) effects |= set.Effects and !set.Effects->Effects.empty();
-      self->TailFrames = effects ? self->OutputRate * 2 : 0;
-   }
-   else if (self->TailFrames) {
-      self->TailFrames -= std::min(self->TailFrames, Frames);
-      active = true;
-   }
-   if (active) {
       unsigned left = Frames;
       while (left) {
          SAMPLE boundary;
@@ -137,7 +128,7 @@ static void stop_audio_worker(extAudio *Self)
    Self->Reopening = false;
    cancel_audio_batches(Self);
    Self->PendingCount = Self->NotificationCount = 0;
-   Self->QueuedFrames = Self->TailFrames = 0;
+   Self->QueuedFrames = 0;
    for (auto &sample : Self->Samples) {
       ++sample.Generation;
       sample.DeferredStops = 0;
@@ -172,21 +163,25 @@ static void reopen_windows_audio(extAudio *Self)
    }
    ++Self->ReopenAttempts;
    if (init_audio(Self) IS ERR::Okay) {
-      std::lock_guard lock(Self->MixerMutex);
       Self->DriverBitSize = Self->FrameBytes;
       Self->MixElements = SAMPLE(Self->BufferFrames);
       Self->MixBuffer.resize(Self->BufferFrames * (Self->Stereo ? 2 : 1));
       Self->MixConfig = AudioConfig(Self->Stereo, (Self->Flags & ADF::OVER_SAMPLING) != ADF::NIL);
-      configure_effects(*Self->GlobalEffects, Self->OutputRate, Self->Stereo);
+      auto configured = configure_effects(*Self->GlobalEffects, Self->OutputRate, Self->Stereo) IS ERR::Okay;
       for (auto &set : Self->Sets) {
+         if (!configured) break;
          set.ScratchBuffer.resize(Self->MixBuffer.size());
          set.MixLeft = set.TickFrames(Self->OutputRate);
-         if (set.Effects) configure_effects(*set.Effects, Self->OutputRate, Self->Stereo);
+         configured = !set.Effects or configure_effects(*set.Effects, Self->OutputRate, Self->Stereo) IS ERR::Okay;
       }
-      if (start_audio_worker(Self) IS ERR::Okay) {
+      if (configured and start_audio_worker(Self) IS ERR::Okay) {
          Self->Reopening = false;
          return;
       }
+   }
+   if (Self->RenderStream) {
+      wasapi_close(Self->RenderStream);
+      Self->RenderStream = nullptr;
    }
    Self->ReopenAt = PreciseTime() + 250000;
 }

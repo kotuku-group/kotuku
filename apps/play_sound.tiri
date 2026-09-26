@@ -109,7 +109,9 @@ function parse_schema(Xml:str):table
          for member in values(tag.children) do group.members.insert(parse_param(member)) end
          schema.groups.insert(group)
       elseif name is 'output' then
-         schema.outputs.insert({ key=attrib(tag, 'key'), type=attrib(tag, 'type') })
+         schema.outputs.insert({ key=attrib(tag, 'key'), type=attrib(tag, 'type'), label=attrib(tag, 'label'),
+            description=attrib(tag, 'description'), unit=attrib(tag, 'unit'), scope=attrib(tag, 'scope'),
+            semantics=attrib(tag, 'semantics'), slot=tonumber(attrib(tag, 'slot')) })
       end
    end
    return schema

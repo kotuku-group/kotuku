@@ -13,6 +13,18 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
   flags("AEF", { comment="Audio effect flags." },
     "BYPASS: Skip an application effect.  Global effects cannot be bypassed.")
 
+  flags("AMF", { comment="Audio meter snapshot flags." },
+    "VALID: The snapshot holds a valid measurement.",
+    "IDLE: The measurement is idle or stale.",
+    "BYPASSED: The effect is bypassed.  The VALID flag is not set.",
+    "DISCONNECTED: The effect is not attached to an effect chain.  The VALID flag is not set.",
+    "NO_SAMPLES: No samples have been measured yet.")
+
+  enums("ADS", { type="int", start=0, comment="Effect drain states reported by GetEffectStatus()." },
+    "IDLE: No sources are playing and no effect has pending output.",
+    "ACTIVE: At least one source on the selected path is playing.",
+    "DRAINING: Sources have stopped, but one or more effects are still producing tail output.")
+
   enums("EQB", { type="int", start=0, comment="Parametric equaliser band types." },
     "PEAK: Bell filter with gain in decibels.",
     "LOW_SHELF: Low-frequency shelf with gain in decibels.",
@@ -130,10 +142,13 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     { id=5, name="SetSampleLength" },
     { id=6, name="AddStream" },
     { id=7, name="Beep" },
-    { id=8, name="SetVolume" }
+    { id=8, name="SetVolume" },
+    { id=9, name="GetEffectStatus" },
+    { id=10, name="ResetEffects" }
   })
 
   klass("Audio", { src="class_audio.cpp", output="class_audio_def.c", extended=true }, [[
+    ~double MaxDrain
     int OutputRate
     int InputRate
     int Quality
@@ -149,7 +164,9 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     { id=3, name="InsertEntry" },
     { id=4, name="RemoveEntry" },
     { id=5, name="GetResponse" },
-    { id=6, name="GetGroupCount" }
+    { id=6, name="GetGroupCount" },
+    { id=7, name="GetMeters" },
+    { id=8, name="GetOutput" }
   })
 
   klass("AudioEffect", { src="class_audioeffect.cpp", output="class_audioeffect_def.c", extended=true }, [[
@@ -159,6 +176,7 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     int(AEF) Flags
     int OutputRate
     int Stereo
+    ~large Latency
     ~int Mutable
     ~string Schema
   ]])

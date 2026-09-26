@@ -17,7 +17,7 @@
 <p>A zero <fl>Channel</fl> applies the effect universally.  Otherwise use the complete handle returned by <class name="Audio" method="OpenChannels">Audio.OpenChannels()</class>. Application chains process their channel set before it is added to the master mix.  The global chain processes the master mix before the built-in output filter.  Lower <fl>Order</fl> values run first; ties retain attachment order.</p>
 <p>Attachment, field changes and detachment are serialised with mixing.  Freeing an effect waits for any current mix window before detaching it.  Closing its channel set or freeing its Audio target disconnects the effect; a disconnected effect must be replaced to attach it again.  Global effects are immutable after initialisation.</p>
 <header>Parameter Schema</header>
-<p>Subclasses can publish their parameters in the <fl>Schema</fl> field, so that a client can present and change any effect without knowing its class.  The schema is an XML document:</p>
+<p>Subclasses can publish their parameters in the <fl>Schema</fl> field, so that a client can present and change any effect without prior knowledge of class attributes.  The schema is an XML document:</p>
 <pre>&lt;effect class=&quot;AudioEqualiser&quot; version=&quot;1&quot; description=&quot;A parametric equaliser.&quot;&gt;
   &lt;param key=&quot;gain&quot; label=&quot;Output Trim&quot; type=&quot;double&quot; unit=&quot;dB&quot; scale=&quot;linear&quot; min=&quot;-48&quot; max=&quot;48&quot; default=&quot;0&quot;/&gt;
   &lt;group key=&quot;bands&quot; label=&quot;Band&quot; min=&quot;0&quot; max=&quot;64&quot;&gt;
@@ -35,7 +35,7 @@
 <p>A <code>param</code> element describes one value.  Its <code>type</code> is <code>double</code>, <code>int</code>, <code>bool</code> or <code>enum</code>; enumerations list their values as <code>option</code> elements.  The <code>unit</code> attribute is omitted for unitless values.  The <code>scale</code> is <code>linear</code> or <code>log</code> and indicates how a control should map positions to values.  The <code>min</code> and <code>max</code> bounds are inclusive unless <code>min-exclusive</code> or <code>max-exclusive</code> is set.  A <code>max</code> of <code>nyquist</code> means half of the <fl>OutputRate</fl> and is always exclusive. A <code>step</code> is present only for stepped values.</p>
 <p>A <code>group</code> element describes a repeated structure, such as a list of equaliser bands, with <code>min</code> and <code>max</code> entry counts. Its entries are numbered from zero. Use <method>GetGroupCount</method> to read the number of entries, including staged insertions and removals.</p>
 <p>A <code>rule</code> element relates a parameter to a sibling in the same group, or to another top-level parameter.  If the sibling named by <code>key</code> holds one of the listed <code>values</code>, the parameter is either ignored by the processor (<code>inactive=&quot;1&quot;</code>) or limited to a lower <code>max</code>.</p>
-<p>An <code>output</code> element names data that can be read back from the processor.  A <code>curve</code> output is read with <method>GetResponse</method>.</p>
+<p>An <code>output</code> element names data that can be read back from the processor.  A <code>curve</code> output is read with <method>GetResponse</method>.  Scalar outputs are read together with <method>GetMeters</method>, or individually with <method>GetOutput</method>.  Their <code>label</code>, <code>description</code>, <code>unit</code>, <code>scope</code>, <code>semantics</code> and zero-based <code>slot</code> attributes describe the value and its snapshot location.  Slots are stable across layouts; right-channel outputs are omitted in mono.  Sample peaks are not true-peak measurements.  Gain reduction, where offered, is non-negative attenuation in decibels.</p>
 <p>Parameters are addressed by key-paths: <code>key</code> for a top-level parameter, or <code>group[index].key</code> for a group member, e.g. <code>bands[2].frequency</code>.  Values are always in real units, such as hertz or decibels; they are never normalised.</p>
 <header>Staged Changes</header>
 <p>Before initialisation, <method>SetParameter</method>, <method>InsertEntry</method> and <method>RemoveEntry</method> change the effect directly and <code>Init()</code> validates the result.  After initialisation they change a working copy instead, which is applied as a single change when the client calls <code>Flush()</code>.  This allows related changes, such as switching a band's type together with its Q, without the processor ever running the state between them.  <method>GetParameter</method> reports staged values.  A flush that breaks any rule is rejected in full and the working copy is discarded.</p></description>
@@ -57,6 +57,7 @@
       <result>
         <error code="Okay">The staged changes were applied, or there were none.</error>
         <error code="NotInitialised">The effect has been disconnected from its Audio object.</error>
+        <error code="InvalidState">A staged edit would change the configured processor instance's algorithmic latency.</error>
         <error code="InvalidValue">The staged changes break a rule or range.  Nothing was applied.</error>
         <error code="Immutable">The effect is attached to the global chain.</error>
       </result>
@@ -81,6 +82,58 @@
         <error code="Okay">Operation successful.</error>
         <error code="Search">The group is unknown.</error>
         <error code="NoSupport">The effect does not publish a schema.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+    </method>
+
+    <method>
+      <name>GetMeters</name>
+      <comment>Reads a live snapshot of the latest measurement interval.</comment>
+      <prototype>ERR fx::GetMeters(OBJECTPTR Object, std::span&lt;double&gt; Values, INT64 * Sequence, INT64 * Generation, INT64 * Position, INT * Interval, AMF * Flags, INT * Floor)</prototype>
+      <tiriPrototype>err, Sequence:num, Generation:num, Position:num, Interval:num, Flags:num, Floor:num = GetMeters(Values:array)</tiriPrototype>
+      <input>
+        <param type="std::span&lt;double&gt;" name="Values">Five-element array receiving the scalar values.</param>
+        <param type="INT64 *" name="Sequence">Publication sequence number.</param>
+        <param type="INT64 *" name="Generation">Configuration generation.</param>
+        <param type="INT64 *" name="Position">Processed-frame position at the interval end.</param>
+        <param type="INT *" name="Interval">Measurement interval length in frames.</param>
+        <param type="AMF *" name="Flags" lookup="AMF">Snapshot validity and lifecycle flags.</param>
+        <param type="INT *" name="Floor">Below-floor bit mask.</param>
+      </input>
+      <description>
+<p>Call GetMeters() to monitor effect signal levels, typically to drive level meters in a user interface.  The effect measures the input and output peaks and its gain reduction in fixed intervals.  Each call returns the values of the most recent interval with their metadata as one consistent set, so that readings from different intervals are never mixed.  Use <method>GetOutput</method> instead when only one value is needed.</p>
+<p>For <code>Values</code>, pass an array of five elements.  Slots are input left, input right, output left, output right and gain reduction.  Only slots published as scalar outputs in <fl>Schema</fl> are applicable.  Mono layouts omit right-channel descriptors.  Peaks are sample peaks in dBFS, floored at -120 dBFS; gain reduction is non-negative attenuation in dB.</p>
+<p>Intervals contain <code>ceil(OutputRate / 20)</code> frames (50 ms rounded up).  Reads are non-destructive; slow readers can miss intervals.  Idle publishes a partial final interval.  Reset and reconfiguration invalidate measurements. <code>Sequence</code> increases on publication.  <code>Position</code> counts processed output frames since reset; <code>Interval</code> is the number of frames represented.  <code>Generation</code> identifies configuration and path changes, independently of schema version.</p>
+<p><code>Flags</code> reports the snapshot's validity and lifecycle state.  Bypassed and disconnected snapshots do not set <code>VALID</code>.</p>
+<types lookup="AMF"/>
+<p><code>Floor</code> has one bit per peak slot, set for values below -120 dBFS.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Args">Values must contain exactly five elements.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>mutates-input</tags>
+    </method>
+
+    <method>
+      <name>GetOutput</name>
+      <comment>Reads one value from a schema key.</comment>
+      <prototype>ERR fx::GetOutput(OBJECTPTR Object, STRVIEW Key, DOUBLE * Value)</prototype>
+      <tiriPrototype>err, Value:num = GetOutput(Key:str)</tiriPrototype>
+      <input>
+        <param type="STRVIEW" name="Key">Scalar output key from <fl>Schema</fl>.</param>
+        <param type="DOUBLE *" name="Value">Latest value in the descriptor's units.</param>
+      </input>
+      <description>
+<p>Returns the latest completed interval value for a <code>Key</code>.  Use <method>GetMeters</method> for multi-value reads and lifecycle flags. Curve outputs continue to use <method>GetResponse</method>.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Search">Unknown key, including right-channel keys in a mono layout.</error>
+        <error code="NoSupport">The key names a curve or another unsupported output kind.</error>
+        <error code="NotInitialised">The effect is disconnected.</error>
+        <error code="InvalidState">No current valid measurement is available, or the effect is idle or bypassed.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>
@@ -234,6 +287,17 @@
     </field>
 
     <field>
+      <name>Latency</name>
+      <comment>Returns committed algorithmic delay in output frames.</comment>
+      <access read="G">Get</access>
+      <type>INT64</type>
+      <description>
+<p>Latency reports the fixed delay, measured in frames at the <fl>OutputRate</fl>, that the effect's processor adds to the signal path.  The value is committed when the processor is configured.  Parameter edits made before output starts may update it, but once the output rate is active, an edit that would change it is rejected by <action>Flush</action> with <code>ERR::InvalidState</code>.  Effects with no look-ahead or buffering, such as the equaliser, report zero.</p>
+<p>Setting the <code>BYPASS</code> flag reduces the reported latency to zero, because a bypassed effect does not delay the signal. The delay of a complete chain, including the global chain, can be read with the Audio class' <code>GetEffectStatus()</code> method.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Mutable</name>
       <comment>Read-only.  Zero if the effect's parameters can no longer be changed.</comment>
       <access read="G">Get</access>
@@ -269,7 +333,7 @@
       <access read="G">Get</access>
       <type>STRING</type>
       <description>
-<p>The schema describes every parameter that can be read or changed with <method>GetParameter</method> and <method>SetParameter</method>, including units, ranges, defaults, repeated groups and the rules between parameters.  The format is described in the class documentation.  The schema is the same for every instance of a class; instance-specific bounds, such as the Nyquist frequency, are resolved against <fl>OutputRate</fl>.</p>
+<p>The schema describes every parameter that can be read or changed with <method>GetParameter</method> and <method>SetParameter</method>, including units, ranges, defaults, repeated groups and the rules between parameters.  The format is described in the class documentation.  Right-channel scalar outputs are omitted for mono layouts.  Instance-specific bounds, such as the Nyquist frequency, are resolved against <fl>OutputRate</fl>.</p>
 <p>The value is empty if the class does not publish a schema.</p>
       </description>
     </field>
@@ -288,6 +352,14 @@
   <types>
     <constants lookup="AEF" comment="Audio effect flags.">
       <const name="BYPASS">Skip an application effect.  Global effects cannot be bypassed.</const>
+    </constants>
+
+    <constants lookup="AMF" comment="Audio meter snapshot flags.">
+      <const name="BYPASSED">The effect is bypassed.  The VALID flag is not set.</const>
+      <const name="DISCONNECTED">The effect is not attached to an effect chain.  The VALID flag is not set.</const>
+      <const name="IDLE">The measurement is idle or stale.</const>
+      <const name="NO_SAMPLES">No samples have been measured yet.</const>
+      <const name="VALID">The snapshot holds a valid measurement.</const>
     </constants>
 
   </types>
