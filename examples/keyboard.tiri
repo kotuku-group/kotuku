@@ -25,5 +25,18 @@
       viewport.acDraw()
    end)
 
+   input.subscribe(JTYPE_MOVEMENT | JTYPE_BUTTON | JTYPE_TOUCH, win.surface, 0, function(Surface, Events)
+      local event:any = Events
+      while event do
+         if event.flags has JTYPE_MOVEMENT then
+
+         elseif event.flags has JTYPE_BUTTON then
+            text.string = f'Flags: {string.format('0x%x', event.flags)}\nButton: {event.type}'
+         end
+         event = event.next
+      end
+      viewport.acDraw()
+   end)
+
    win.show()
    processing.sleep()
