@@ -223,7 +223,7 @@ static ERR audio_notification_timer(extAudio *Self, int64_t, int64_t)
 {
    dispatch_audio_client(Self);
    std::lock_guard lock(Self->MixerMutex);
-   bool pending = Self->NotificationCount != 0;
+   bool pending = Self->NotificationCount != 0 or !Self->DrainingNotifications.empty();
 
 #ifdef _WIN32
    pending |= Self->Reopening;
@@ -242,6 +242,28 @@ static bool voices_active(const ChannelSet &Set)
    for (const auto &channel : Set.Channel) if (channel.active() and !channel.isStopped()) return true;
    for (const auto &channel : Set.Shadow) if (channel.active() and !channel.isStopped()) return true;
    return false;
+}
+
+//********************************************************************************************************************
+// Move tail waits to client-owned storage.  Allocation occurs after releasing the mixer lock, and waiting tails no
+// longer occupy the bounded worker notification queue.
+
+static void transfer_draining_stops(extAudio *Self)
+{
+   std::array<Notification, 256> draining;
+   size_t count = 0;
+
+   {
+      std::lock_guard lock(Self->MixerMutex);
+      size_t retained = 0;
+      for (size_t i = 0; i < Self->NotificationCount; ++i) {
+         if (Self->Notifications[i].AwaitDrain) draining[count++] = Self->Notifications[i];
+         else Self->Notifications[retained++] = Self->Notifications[i];
+      }
+      Self->NotificationCount = retained;
+   }
+
+   for (size_t i = 0; i < count; ++i) Self->DrainingNotifications.push_back(draining[i]);
 }
 
 //********************************************************************************************************************
@@ -271,27 +293,32 @@ static ADS stop_path_state(extAudio *Self, size_t SetIndex)
 // estimated 60 dB decay has elapsed after the voice was last heard.  Deactivation and the deadline end the wait.
 // Caller holds the mixer lock.
 
+static void resolve_drained_stop(extAudio *Self, Notification &Event, int64_t Now)
+{
+   if (!Event.AwaitDrain) return;
+
+   const auto set = unsigned(Event.Channel) >> 16;
+   const auto state = Self->EffectConfigured ? stop_path_state(Self, set) : ADS::IDLE;
+   if ((state IS ADS::DRAINING) and (Now < Event.Deadline)) return;
+
+   Event.AwaitDrain = false;
+   if (!Self->EffectConfigured) Event.Due = Now;
+   else if ((state IS ADS::ACTIVE) and (Self->OutputRate > 0)) {
+      double frames = double(Self->GlobalEffects->decay_estimate());
+      if ((set < Self->Sets.size()) and Self->Sets[set].Effects) {
+         frames += double(Self->Sets[set].Effects->decay_estimate());
+      }
+      const double decay = std::min(frames * 1000000.0 / Self->OutputRate,
+         double(Event.Deadline - Event.Audible));
+      Event.Due = std::max(Now, Event.Audible + int64_t(std::max(0.0, decay)));
+   }
+   else Event.Due = Now + int64_t(Self->MixerLag() * 1000000);
+}
+
 static void resolve_drained_stops(extAudio *Self, int64_t Now)
 {
    for (size_t i = 0; i < Self->NotificationCount; ++i) {
-      auto &event = Self->Notifications[i];
-      if (!event.AwaitDrain) continue;
-
-      const auto set = unsigned(event.Channel) >> 16;
-      const auto state = Self->EffectConfigured ? stop_path_state(Self, set) : ADS::IDLE;
-      if ((state IS ADS::DRAINING) and (Now < event.Deadline)) continue;
-
-      event.AwaitDrain = false;
-      if (!Self->EffectConfigured) event.Due = Now;
-      else if ((state IS ADS::ACTIVE) and (Self->OutputRate > 0)) {
-         double frames = double(Self->GlobalEffects->decay_estimate());
-         if ((set < Self->Sets.size()) and Self->Sets[set].Effects) {
-            frames += double(Self->Sets[set].Effects->decay_estimate());
-         }
-         const double decay = std::min(frames * 1000000.0 / Self->OutputRate, double(event.Deadline - event.Audible));
-         event.Due = std::max(Now, event.Audible + int64_t(std::max(0.0, decay)));
-      }
-      else event.Due = Now + int64_t(Self->MixerLag() * 1000000);
+      resolve_drained_stop(Self, Self->Notifications[i], Now);
    }
 }
 
@@ -300,6 +327,8 @@ static void resolve_drained_stops(extAudio *Self, int64_t Now)
 static void dispatch_audio_client(extAudio *Self)
 {
    // Bound each dispatch: an unproductive/live producer must not spin the client event loop.
+
+   transfer_draining_stops(Self);
 
    size_t count;
 
@@ -312,11 +341,24 @@ static void dispatch_audio_client(extAudio *Self)
 
    for (int delivered = 0; delivered < 256; ++delivered) {
       int handle = 0;
+      size_t remove_draining = SIZE_MAX;
 
       {
          std::lock_guard lock(Self->MixerMutex);
          const auto now = PreciseTime();
          resolve_drained_stops(Self, now);
+         size_t draining = SIZE_MAX;
+         const auto draining_count = Self->DrainingNotifications.size();
+         size_t inspected = 0;
+         for (; inspected < draining_count and inspected < 256; ++inspected) {
+            const auto index = (Self->DrainingCursor + inspected) % draining_count;
+            resolve_drained_stop(Self, Self->DrainingNotifications[index], now);
+            if (Self->DrainingNotifications[index].Due <= now) {
+               draining = index;
+               break;
+            }
+         }
+         if (draining_count) Self->DrainingCursor = (Self->DrainingCursor + inspected) % draining_count;
          size_t index = 0;
          for (; index < Self->NotificationCount; ++index) {
             if (Self->Notifications[index].Due <= now) break;
@@ -328,6 +370,16 @@ static void dispatch_audio_client(extAudio *Self)
             std::move(Self->Notifications.begin() + index + 1,
                Self->Notifications.begin() + Self->NotificationCount, Self->Notifications.begin() + index);
             --Self->NotificationCount;
+
+            auto channel = Self->GetChannel(event.Channel);
+            if (size_t(event.Sample) < Self->Samples.size() and channel and
+                Self->Samples[event.Sample].Generation IS event.SampleGeneration and
+                channel->PlaybackGeneration IS event.PlaybackGeneration) handle = event.Sample;
+         }
+         else if (draining != SIZE_MAX and
+               Self->DrainingNotifications[draining].Due <= now) {
+            auto event = Self->DrainingNotifications[draining];
+            remove_draining = draining;
 
             auto channel = Self->GetChannel(event.Channel);
             if (size_t(event.Sample) < Self->Samples.size() and channel and
@@ -347,6 +399,11 @@ static void dispatch_audio_client(extAudio *Self)
          }
       }
 
+      if (remove_draining != SIZE_MAX) {
+         Self->DrainingNotifications.erase(Self->DrainingNotifications.begin() + remove_draining);
+         if (Self->DrainingNotifications.empty()) Self->DrainingCursor = 0;
+         else if (Self->DrainingCursor >= Self->DrainingNotifications.size()) Self->DrainingCursor = 0;
+      }
       if (handle) audio_stopped_event(*Self, handle);
    }
 
@@ -371,7 +428,7 @@ static void dispatch_audio_client(extAudio *Self)
 
    {
       std::lock_guard lock(Self->MixerMutex);
-      pending = Self->NotificationCount != 0;
+      pending = Self->NotificationCount != 0 or !Self->DrainingNotifications.empty();
 #ifdef _WIN32
       pending |= Self->Reopening;
 #endif

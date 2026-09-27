@@ -123,6 +123,8 @@ static void stop_audio_worker(extAudio *Self)
       }
    }
    if (Self->Timer) { UpdateTimer(Self->Timer, 0); Self->Timer = nullptr; }
+   Self->DrainingNotifications.clear();
+   Self->DrainingCursor = 0;
    std::lock_guard lock(Self->MixerMutex);
    Self->WorkerStarted = false;
    Self->Reopening = false;

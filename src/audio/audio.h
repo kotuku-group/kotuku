@@ -5,6 +5,7 @@ using namespace kt;
 #include <mutex>
 #include <optional>
 #include <atomic>
+#include <deque>
 #ifdef _WIN32
 #include "wasapi.h"
 #endif
@@ -493,6 +494,9 @@ class extAudio : public objAudio {
 
       std::array<Notification, 256> Notifications; // Sample completion events awaiting client-side dispatch.
       size_t   NotificationCount = 0;
+      // Client-owned tail waits are transferred out of Notifications so they cannot exhaust the worker's fixed queue.
+      std::deque<Notification> DrainingNotifications;
+      size_t DrainingCursor = 0;
       uint64_t Starvations = 0;  // Count of streamed samples that ran out of buffered data.
       uint64_t PeriodFrames = 0; // Frames per device period (ALSA).
       uint64_t BufferFrames = 0; // Total frames in the device buffer.

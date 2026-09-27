@@ -165,6 +165,13 @@ static void run(AudioTestContext &Test)
    ringing.reset();
    AUDIO_CHECK(ringing.decay_estimate() > 24000 and ringing.decay_estimate() < 192000); // Approximately 84000
 
+   // A slow filter queued behind a live transition includes both transitions and its own decay.
+   EqualiserProcessor queued(&effect, {}, 0);
+   queued.reset();
+   change(queued, {}, {}, 1);
+   change(queued, { narrow }, { -1 }, 0);
+   AUDIO_CHECK(queued.decay_estimate() > 24000 + 960);
+
    // Magnitude response against analytic values.
 
    const double frequencies[] = { 20, 1000, 20000 };

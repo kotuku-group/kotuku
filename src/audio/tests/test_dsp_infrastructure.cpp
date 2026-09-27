@@ -810,6 +810,20 @@ static void drained_stops(AudioTestContext &Test)
    const auto now = PreciseTime();
    resolve_drained_stops(audio, now);
    AUDIO_CHECK(event->AwaitDrain);
+
+   // Client storage releases worker queue capacity while preserving every tail wait.
+   audio->NotificationCount = 0;
+   for (size_t i = 0; i < audio->Notifications.size(); ++i) queue();
+   AUDIO_REQUIRE(audio->NotificationCount IS audio->Notifications.size());
+   transfer_draining_stops(audio);
+   AUDIO_CHECK(audio->NotificationCount IS 0);
+   AUDIO_CHECK(audio->DrainingNotifications.size() IS audio->Notifications.size());
+   event = queue();
+   AUDIO_CHECK(audio->NotificationCount IS 1 and event->AwaitDrain);
+   audio->DrainingNotifications.clear();
+   audio->NotificationCount = 0;
+   event = queue();
+
    for (int i = 0; i < 107; i++) {
       float silence = 0;
       effect.process(&silence, 1);
