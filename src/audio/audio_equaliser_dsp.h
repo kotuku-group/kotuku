@@ -31,6 +31,23 @@ private:
    int transition_left = 0, transition_frames = 1;
    bool has_pending = false;
 
+   uint64_t section_decay(const std::vector<EQSection> &Model) const {
+      double frames = 0;
+      for (const auto &section : Model) {
+         double radius;
+         const double discriminant = section.A1 * section.A1 - 4.0 * section.A2;
+         if (discriminant < 0) radius = std::sqrt(std::max(0.0, section.A2));
+         else {
+            const double root = std::sqrt(discriminant);
+            radius = std::max(std::abs(-section.A1 + root), std::abs(-section.A1 - root)) * 0.5;
+         }
+         if (radius >= 1.0) return uint64_t(Rate) * 60; // Not expected for supported bands; cap at one minute
+         if (radius > 0) frames += std::log(0.001) / std::log(radius);
+         frames += 2;
+      }
+      return uint64_t(std::ceil(frames));
+   }
+
    static double filter(std::vector<EQSection> &Sections, double Sample, int Channel) {
       for (auto &section : Sections) {
          const double output = section.B0 * Sample + section.Z1[Channel];
@@ -38,6 +55,7 @@ private:
          section.Z2[Channel] = section.B2 * Sample - section.A2 * output;
          Sample = output;
       }
+
       return Sample;
    }
 
@@ -49,6 +67,7 @@ private:
             Next[i].Z2 = Sections[origin].Z2;
          }
       }
+
       previous.swap(Sections);
       Sections.swap(Next);
       previous_trim = Trim;
@@ -143,7 +162,19 @@ public:
    // Recursive state, including both sides of a live crossfade, can produce output after source completion.
    // Treat decay as indefinite: arbitrary supported poles and edits have no fixed finite bound. The mixer
    // deadline caps it. Below 1e-12 internal sample units all state is discarded when the chain becomes idle.
+
    AudioTail tail() const override { return AudioTail::INDEFINITE; }
+
+   // Each section's slowest pole decays by 60 dB in ln(0.001) / ln(radius) frames; serial sections add together.
+   // A live crossfade can be heard for its remaining frames.
+
+   uint64_t decay_estimate() const override {
+      const auto current = section_decay(Sections) + uint64_t(transition_left);
+      if (!has_pending) return current;
+      const auto queued = uint64_t(transition_left) + uint64_t(transition_frames) + section_decay(pending_sections);
+      return std::max(current, queued);
+   }
+
    bool pending() const override {
       auto excited = [](const auto &Sections) {
          for (const auto &section : Sections) {

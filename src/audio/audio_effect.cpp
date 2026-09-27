@@ -56,6 +56,20 @@ uint64_t AudioEffectChain::tail_bound() const
 }
 
 //********************************************************************************************************************
+// Estimated frames for the chain's output to decay by 60 dB after input ends, including algorithmic latency.
+
+uint64_t AudioEffectChain::decay_estimate() const
+{
+   uint64_t frames = 0;
+   for (auto effect : Effects) {
+      if (!effect->processor or (effect->Flags & AEF::BYPASS) != AEF::NIL) continue;
+      const auto estimate = effect->processor->decay_estimate() + uint64_t(std::max(int64_t(0), effect->latency()));
+      frames = (estimate > UINT64_MAX - frames) ? UINT64_MAX : frames + estimate;
+   }
+   return frames;
+}
+
+//********************************************************************************************************************
 
 static double meter_default(const AudioMeterDesc &Desc)
 {

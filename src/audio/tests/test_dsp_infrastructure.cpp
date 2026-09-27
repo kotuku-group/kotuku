@@ -748,6 +748,181 @@ static void render_costs()
       metered.second * 1e6, none.second * 1e6);
 }
 
+#ifdef AUDIO_WORKER
+// Stop notifications on a path with effects wait for the tail, but not for audio that belongs to other voices.
+
+static void drained_stops(AudioTestContext &Test)
+{
+   extAudio *audio;
+   AUDIO_REQUIRE(NewObject(CLASSID::AUDIO, &audio) IS ERR::Okay);
+   std::unique_ptr<extAudio, DeleteObject<extAudio>> owner(audio);
+   AUDIO_REQUIRE(InitObject(audio) IS ERR::Okay);
+   audio->OutputRate = 1000;
+   audio->EffectConfigured = true;
+   audio->Samples.resize(2);
+   audio->Sets.resize(3);
+   for (int s = 1; s <= 2; s++) {
+      audio->Sets[s].Channel.resize(2);
+      for (int c = 0; c < 2; c++) {
+         auto &voice = audio->Sets[s].Channel[c];
+         voice.SampleHandle = 1;
+         voice.Handle = (s << 16) | c;
+         voice.State = CHS::STOPPED;
+         voice.Frequency = 0;
+      }
+   }
+
+   // Without effects the stop is due immediately after the device queue.
+   auto &voice = audio->Sets[1].Channel[0];
+   voice.State = CHS::PLAYING;
+   voice.Frequency = 1000;
+   audio->finish(voice, true);
+   AUDIO_REQUIRE(audio->NotificationCount IS 1);
+   AUDIO_CHECK((not audio->Notifications[0].AwaitDrain) and audio->Notifications[0].Due < INT64_MAX);
+   audio->NotificationCount = 0;
+
+   auto &set = audio->Sets[1];
+   set.Effects = std::make_shared<AudioEffectChain>(audio->MixerLock);
+   extAudioEffect effect(nullptr, 0);
+   effect.Chain = set.Effects;
+   effect.OutputRate = set.Effects->Rate = 1000;
+   set.Effects->Layout = { int(SPK::CENTRE) };
+   effect.set_layout(glLayoutMono);
+   set.Effects->Effects.push_back(&effect);
+   AUDIO_REQUIRE(effect.set_processor(std::make_unique<Delay>(107, 1)) IS ERR::Okay);
+
+   auto queue = [&]() {
+      voice.State = CHS::PLAYING;
+      voice.Frequency = 1000;
+      audio->finish(voice, true);
+      return &audio->Notifications[audio->NotificationCount - 1];
+   };
+
+   auto excite = [&]() {
+      float value = 1.0f;
+      effect.process(&value, 1);
+   };
+
+   // A pending tail holds the stop until the chain drains.
+   excite();
+   auto event = queue();
+   AUDIO_CHECK(event->AwaitDrain and event->Due IS INT64_MAX);
+   const auto now = PreciseTime();
+   resolve_drained_stops(audio, now);
+   AUDIO_CHECK(event->AwaitDrain);
+
+   // Client storage releases worker queue capacity while preserving every tail wait.
+   audio->NotificationCount = 0;
+   for (size_t i = 0; i < audio->Notifications.size(); ++i) queue();
+   AUDIO_REQUIRE(audio->NotificationCount IS audio->Notifications.size());
+   transfer_draining_stops(audio);
+   AUDIO_CHECK(audio->NotificationCount IS 0);
+   AUDIO_CHECK(audio->DrainingNotifications.size() IS audio->Notifications.size());
+   event = queue();
+   AUDIO_CHECK(audio->NotificationCount IS 1 and event->AwaitDrain);
+   audio->DrainingNotifications.clear();
+   audio->NotificationCount = 0;
+   event = queue();
+
+   for (int i = 0; i < 107; i++) {
+      float silence = 0;
+      effect.process(&silence, 1);
+   }
+   AUDIO_CHECK(not set.Effects->pending());
+   resolve_drained_stops(audio, now);
+   AUDIO_CHECK((not event->AwaitDrain) and event->Due >= now and event->Due < now + 1000000);
+   audio->NotificationCount = 0;
+
+   // Another voice on the set makes the tail inseparable, so the stop follows the path's estimated decay.  The
+   // delay contributes only its latency.
+   excite();
+   event = queue();
+   auto &other = set.Channel[1];
+   other.State = CHS::PLAYING;
+   other.Frequency = 1000;
+   resolve_drained_stops(audio, now);
+   AUDIO_CHECK((not event->AwaitDrain) and event->Due IS std::max(now, event->Audible + 107000));
+   audio->NotificationCount = 0;
+
+   class Ringing final : public AudioEffectProcessor {
+   public:
+      uint64_t Estimate = 500;
+      bool pending() const override { return true; }
+      uint64_t decay_estimate() const override { return Estimate; }
+      void reset() override { }
+      void process(float *, int) override { }
+   };
+
+   extAudioEffect ringing(nullptr, 0);
+   ringing.Chain = set.Effects;
+   ringing.OutputRate = 1000;
+   ringing.set_layout(glLayoutMono);
+   set.Effects->Effects.push_back(&ringing);
+   auto ringing_processor = std::make_unique<Ringing>();
+   auto ringer = ringing_processor.get();
+   AUDIO_REQUIRE(ringing.set_processor(std::move(ringing_processor)) IS ERR::Okay);
+   float input = 0;
+   ringing.process(&input, 1);
+
+   event = queue();
+   resolve_drained_stops(audio, event->Audible);
+   AUDIO_CHECK((not event->AwaitDrain) and event->Due IS event->Audible + 607000);
+
+   // An estimate that has already elapsed is due immediately, and no estimate exceeds the drain deadline.
+   event = queue();
+   resolve_drained_stops(audio, event->Audible + 900000);
+   AUDIO_CHECK(event->Due IS event->Audible + 900000);
+   ringer->Estimate = UINT64_MAX / 2;
+   event = queue();
+   resolve_drained_stops(audio, event->Audible);
+   AUDIO_CHECK(event->Due IS event->Deadline);
+
+   // Bypassed effects do not contribute.
+   ringing.Flags = AEF::BYPASS;
+   AUDIO_CHECK(set.Effects->decay_estimate() IS 107);
+   ringing.Flags = AEF::NIL;
+   std::erase(set.Effects->Effects, &ringing);
+   ringing.Chain.reset();
+   other.State = CHS::STOPPED;
+   other.Frequency = 0;
+   audio->NotificationCount = 0;
+
+   // The deadline and deactivation both end the wait while the tail is still pending.
+   event = queue();
+   AUDIO_CHECK(set.Effects->pending());
+   resolve_drained_stops(audio, event->Deadline);
+   AUDIO_CHECK(not event->AwaitDrain);
+   event = queue();
+   audio->EffectConfigured = false;
+   resolve_drained_stops(audio, now);
+   AUDIO_CHECK((not event->AwaitDrain) and event->Due IS now);
+   audio->EffectConfigured = true;
+   audio->NotificationCount = 0;
+
+   // A global tail is awaited only while no other set feeds the global chain.
+   set.Effects->Effects.clear();
+   effect.Chain = audio->GlobalEffects;
+   audio->GlobalEffects->Layout = { int(SPK::CENTRE) };
+   audio->GlobalEffects->Effects.push_back(&effect);
+   event = queue();
+   AUDIO_CHECK(event->AwaitDrain and audio->GlobalEffects->pending());
+   resolve_drained_stops(audio, now);
+   AUDIO_CHECK(event->AwaitDrain);
+   auto &elsewhere = audio->Sets[2].Channel[0];
+   elsewhere.State = CHS::PLAYING;
+   elsewhere.Frequency = 1000;
+   resolve_drained_stops(audio, now);
+   AUDIO_CHECK(not event->AwaitDrain);
+   elsewhere.State = CHS::STOPPED;
+   elsewhere.Frequency = 0;
+   audio->GlobalEffects->Effects.clear();
+   effect.Chain.reset();
+   audio->NotificationCount = 0;
+}
+#endif
+
+//********************************************************************************************************************
+
 static void run(AudioTestContext &Test)
 {
    render_costs();
@@ -762,6 +937,7 @@ static void run(AudioTestContext &Test)
    contention(Test);
 #ifdef AUDIO_WORKER
    common_mixer(Test);
+   drained_stops(Test);
 #endif
 }
 

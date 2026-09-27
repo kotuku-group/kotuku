@@ -11,6 +11,7 @@
 class objAudio;
 class objAudioEffect;
 class objAudioEqualiser;
+class objAudioReverb;
 class objSound;
 
 // Optional flags for the Audio object.
@@ -793,6 +794,29 @@ class objAudioEqualiser : public objAudioEffect {
       auto field = &this->Class->Dictionary[13];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
+
+};
+
+// AudioReverb class definition
+
+#define VER_AUDIOREVERB (1.000000)
+
+class objAudioReverb : public objAudioEffect {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::AUDIOREVERB;
+   static constexpr CSTRING CLASS_NAME = "AudioReverb";
+
+   using create = kt::Create<objAudioReverb>;
+   objAudioReverb(objMetaClass *pClass, OBJECTID pUID) noexcept : objAudioEffect(pClass, pUID) {}
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+
+   // Customised field setting
 
 };
 

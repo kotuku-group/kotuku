@@ -126,16 +126,23 @@ inline void extAudio::finish(AudioChannel &Channel, bool Notify) {
       Channel.State = CHS::FINISHED;
       if ((Channel.SampleHandle) and (Notify)) {
          #ifdef AUDIO_WORKER
+            // With effects on the voice's path, the due time is set once their tail has drained.
+            const auto now = PreciseTime();
+            const auto audible = now + int64_t(MixerLag() * 1000000);
+            const auto deadline = now + int64_t((MaxDrain * 2 + 1) * 1000000);
+            const auto &set = Sets[unsigned(Channel.Handle) >> 16];
+            const bool await = (set.Effects and !set.Effects->Effects.empty()) or
+               !GlobalEffects->Effects.empty();
             if (NotificationCount < Notifications.size()) {
                Notifications[NotificationCount++] = { Channel.SampleHandle, Channel.Handle,
                   Samples[Channel.SampleHandle].Generation, Channel.PlaybackGeneration,
-                  PreciseTime() + int64_t(MixerLag() * 1000000) };
+                  await ? INT64_MAX : audible, audible, deadline, await };
             }
             else {
                // Preserve completions during an extended client stall without allocating on the worker.
                auto &sample = Samples[Channel.SampleHandle];
                ++sample.DeferredStops;
-               sample.DeferredStopDue = PreciseTime() + int64_t(MixerLag() * 1000000);
+               sample.DeferredStopDue = std::max(sample.DeferredStopDue, await ? deadline : audible);
             }
             notify_audio(this);
          #else

@@ -553,8 +553,9 @@ Examples:
   origo apps/play_sound.tiri src=examples/data/alarm.mp3 seek=0.5
 ]] ..
          f'  origo apps/play_sound.tiri help={example_effect}\n' ..
-         f'  origo apps/play_sound.tiri describe {example_effect}=on\n',
-         f'  origo apps/play_sound.tiri src=examples/data/alarm.mp3 equaliser-bands[0].type=low_pass equaliser-bands[0].gain=10',
+         f'  origo apps/play_sound.tiri describe {example_effect}=on\n' ..
+         '  origo apps/play_sound.tiri src=examples/data/alarm.mp3 equaliser-bands[0].type=low_shelf ' ..
+         'equaliser-bands[0].gain=10',
       args = args
    })
 
@@ -601,7 +602,7 @@ Examples:
 
    proc = processing.new()
 
-   -- Subscribe to OnStop so that we can exit once the sample has fully played.
+   -- Subscribe to OnStop so that we can exit once the sample, including any effect tail, has fully played.
 
    player.onStop = function(Sound)
       proc.signal()
@@ -624,7 +625,7 @@ Examples:
       print('Press CTRL-C to exit or wait for sound sample to finish.  Duration: ' ..
          string.format('%.2fs', player.duration))
 
-      proc.sleep() -- This will wake on receipt of a signal.
+      proc.sleep() -- Wakes on receipt of a signal.  OnStop waits for the tail of any enabled effects.
 
       proc.sleep(player.audio.mixerLag) -- Slight pause to flush any buffered audio before exiting
    else
