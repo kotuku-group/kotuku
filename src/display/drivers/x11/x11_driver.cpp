@@ -1,5 +1,7 @@
 #include "x11_native.h"
 
+#include <X11/Xatom.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -97,6 +99,34 @@ static GC create_graphics_context(X11Driver::State *State, Drawable DrawableID)
    values.function = GXcopy;
    values.graphics_exposures = 0;
    return XCreateGC(State->Connection, DrawableID, GCGraphicsExposures|GCFunction, &values);
+}
+
+static void set_window_decorations(X11Driver::State *State, Window WindowID, bool Enabled)
+{
+   struct MotifHints {
+      unsigned long Flags;
+      unsigned long Functions;
+      unsigned long Decorations;
+      long InputMode;
+      unsigned long StatusValue;
+   };
+
+   static constexpr unsigned long motif_hints_decorations = 1 << 1;
+   auto property = XInternAtom(State->Connection, "_MOTIF_WM_HINTS", False);
+   MotifHints hints = {
+      .Flags = motif_hints_decorations,
+      .Decorations = Enabled ? 1UL : 0UL
+   };
+   XChangeProperty(State->Connection, WindowID, property, property, 32, PropModeReplace,
+      (const unsigned char *)&hints, 5);
+}
+
+static void hide_window_from_taskbar(X11Driver::State *State, Window WindowID)
+{
+   auto property = XInternAtom(State->Connection, "_NET_WM_STATE", False);
+   Atom states[] = { XInternAtom(State->Connection, "_NET_WM_STATE_SKIP_TASKBAR", False) };
+   XChangeProperty(State->Connection, WindowID, property, XA_ATOM, 32, PropModeReplace,
+      (const unsigned char *)states, std::ssize(states));
 }
 
 X11WindowRecord * x11_window(X11Driver::State *State, HOSTWINDOW WindowHandle)
@@ -238,7 +268,9 @@ static ERR create_window_record(X11Driver::State *State, extDisplay *DisplayObje
    attributes.bit_gravity = CenterGravity;
    attributes.win_gravity = CenterGravity;
    attributes.cursor = State->Cursors[0];
-   attributes.override_redirect = (DisplayObject->Flags & (SCR::BORDERLESS|SCR::COMPOSITE)) != SCR::NIL;
+   // Borderless windows remain managed so that they retain normal focus, stacking and taskbar behaviour.  Composite
+   // windows still need override-redirect because their alpha visual represents an application-managed pop-up.
+   attributes.override_redirect = (DisplayObject->Flags & SCR::COMPOSITE) != SCR::NIL;
    attributes.event_mask = ExposureMask|EnterWindowMask|LeaveWindowMask|PointerMotionMask|StructureNotifyMask|
       KeyPressMask|KeyReleaseMask|ButtonPressMask|ButtonReleaseMask|FocusChangeMask;
    int flags = CWEventMask|CWOverrideRedirect|CWCursor;
@@ -291,6 +323,8 @@ static ERR create_window_record(X11Driver::State *State, extDisplay *DisplayObje
    XSetWMProtocols(State->Connection, native, protocols, std::ssize(protocols));
    XSizeHints hints = { .flags = USPosition|USSize };
    XSetWMNormalHints(State->Connection, native, &hints);
+   set_window_decorations(State, native, (DisplayObject->Flags & SCR::BORDERLESS) IS SCR::NIL);
+   if ((not attributes.override_redirect) and (not State->TaskBar)) hide_window_from_taskbar(State, native);
    Record = record;
    return ERR::Okay;
 }
@@ -298,8 +332,6 @@ static ERR create_window_record(X11Driver::State *State, extDisplay *DisplayObje
 ERR X11Driver::createWindow(extDisplay *DisplayObject, HOSTWINDOW &Handle)
 {
    if ((not Data->Open) or (not DisplayObject)) return ERR::NotInitialised;
-   if (Data->WSLg and ((DisplayObject->Flags & (SCR::BORDERLESS|SCR::MAXIMISE)) IS
-         (SCR::BORDERLESS|SCR::MAXIMISE))) DisplayObject->Flags &= ~SCR::BORDERLESS;
    if (Data->Manager or ((DisplayObject->Flags & SCR::MAXIMISE) != SCR::NIL)) {
       DisplayObject->Width = Data->RootAttributes.width;
       DisplayObject->Height = Data->RootAttributes.height;

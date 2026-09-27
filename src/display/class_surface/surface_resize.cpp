@@ -156,8 +156,6 @@ static ERR SURFACE_SetDisplay(extSurface *Self, struct gfx::SetDisplay *Args)
    int newwidth  = (!Args->Width) ? Self->FixedWidth : int(Args->Width);
    int newheight = (!Args->Height) ? Self->FixedHeight : int(Args->Height);
 
-   //if ((newx IS Self->X) and (newy IS Self->Y) and (newwidth IS Self->Width) and (newheight IS Self->Height)) return ERR::Okay;
-
    log.branch("%dx%d,%dx%d, BPP %d", newx, newy, newwidth, newheight, Args->BitsPerPixel);
 
    ERR error = resize_layer(Self, newx, newy, newwidth, newheight,

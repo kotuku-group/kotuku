@@ -24,7 +24,7 @@ gui.tooltip = function(Options)
    self.surface = obj.new('surface', {
       name = 'rgnTip',
       x = ptr.x + 6, y = ptr.y, width = 300,
-      parent = 0, windowType = 'none',
+      parent = 0, presence = SPT_NONE,
       flags = RNF_STICK_TO_FRONT | RNF_COMPOSITE
    })
 

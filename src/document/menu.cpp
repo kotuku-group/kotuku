@@ -54,7 +54,7 @@ objSurface * doc_menu::create(double Width)
          fl::Name("menu"),
          fl::Parent(0),
          fl::Flags(RNF::STICK_TO_FRONT|RNF::COMPOSITE),
-         fl::WindowType(SWIN::NONE),
+         fl::Presence(SPT::NONE),
          fl::X(0), fl::Y(0), fl::Width(Width), fl::Height(height)
       }));
 

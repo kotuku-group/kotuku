@@ -821,7 +821,7 @@ ERR resize_layer(extSurface *Self, int X, int Y, int Width, int Height, int Insi
       }
    }
 
-   refresh_pointer(Self);
+   refresh_pointer();
    return ERR::Okay;
 }
 

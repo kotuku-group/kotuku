@@ -118,7 +118,7 @@ double glpRefreshRate = -1, glpGammaRed = 1, glpGammaGreen = 1, glpGammaBlue = 1
 int glpDisplayWidth = 1024, glpDisplayHeight = 768, glpDisplayX = 0, glpDisplayY = 0;
 int glpDisplayDepth = 0; // If zero, the display depth will be based on the hosted desktop's bit depth.
 int glpMaximise = FALSE, glpFullScreen = FALSE;
-SWIN glpWindowType = SWIN::HOST;
+SPT glpPresence = SPT::HOST;
 char glpDPMS[20] = "Standby";
 std::unique_ptr<std::array<uint16_t, 256 * 256>> glDemultiply;
 std::atomic<int> glLastPort = -1;

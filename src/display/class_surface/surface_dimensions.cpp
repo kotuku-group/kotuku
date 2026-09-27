@@ -168,6 +168,20 @@ static ERR SET_Height(extSurface *Self, Unit &Value)
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
+
+static void update_size_hints(extSurface *Self, bool Minimum)
+{
+   if (Self->ParentID or (not Self->DisplayID)) return;
+
+   if (kt::ScopedObjectLock<extDisplay> display(Self->DisplayID); display.granted()) {
+      display->sizeHints(Minimum ? Self->MinWidth : -1, Minimum ? Self->MinHeight : -1,
+         Minimum ? -1 : ((Self->MaxWidth > 0) ? Self->MaxWidth : -1),
+         Minimum ? -1 : ((Self->MaxHeight > 0) ? Self->MaxHeight : -1),
+         (Self->Flags & RNF::ASPECT_RATIO) != RNF::NIL);
+   }
+}
+
 /*********************************************************************************************************************
 
 -FIELD-
@@ -183,14 +197,7 @@ Direct writes to #Height bypass this limit.
 static ERR SET_MaxHeight(extSurface *Self, int Value)
 {
    Self->MaxHeight = Value;
-
-   if ((!Self->ParentID) and (Self->DisplayID)) {
-      kt::ScopedObjectLock<extDisplay> display(Self->DisplayID);
-      if (display.granted()) display->sizeHints(-1, -1,
-         (Self->MaxWidth > 0) ? (Self->MaxWidth) : -1,
-         (Self->MaxHeight > 0) ? (Self->MaxHeight) : -1,
-         (Self->Flags & RNF::ASPECT_RATIO) != RNF::NIL);
-   }
+   update_size_hints(Self, false);
 
    return ERR::Okay;
 }
@@ -210,15 +217,7 @@ Direct writes to #Width bypass this limit.
 static ERR SET_MaxWidth(extSurface *Self, int Value)
 {
    Self->MaxWidth = Value;
-
-   if ((!Self->ParentID) and (Self->DisplayID)) {
-      if (kt::ScopedObjectLock<extDisplay> display(Self->DisplayID); display.granted()) {
-         display->sizeHints(-1, -1,
-            (Self->MaxWidth > 0) ? (Self->MaxWidth) : -1,
-            (Self->MaxHeight > 0) ? (Self->MaxHeight) : -1,
-            (Self->Flags & RNF::ASPECT_RATIO) != RNF::NIL);
-      }
-   }
+   update_size_hints(Self, false);
 
    return ERR::Okay;
 }
@@ -239,13 +238,7 @@ static ERR SET_MinHeight(extSurface *Self, int Value)
 {
    Self->MinHeight = Value;
    if (Self->MinHeight < 1) Self->MinHeight = 1;
-
-   if ((!Self->ParentID) and (Self->DisplayID)) {
-      if (kt::ScopedObjectLock<extDisplay> display(Self->DisplayID); display.granted()) {
-         display->sizeHints(Self->MinWidth, Self->MinHeight,
-            -1, -1, (Self->Flags & RNF::ASPECT_RATIO) != RNF::NIL);
-      }
-   }
+   update_size_hints(Self, true);
 
    return ERR::Okay;
 }
@@ -266,13 +259,7 @@ static ERR SET_MinWidth(extSurface *Self, int Value)
 {
    Self->MinWidth = Value;
    if (Self->MinWidth < 1) Self->MinWidth = 1;
-
-   if ((!Self->ParentID) and (Self->DisplayID)) {
-      if (kt::ScopedObjectLock<extDisplay> display(Self->DisplayID); display.granted()) {
-         display->sizeHints(Self->MinWidth, Self->MinHeight,
-            -1, -1, (Self->Flags & RNF::ASPECT_RATIO) != RNF::NIL);
-      }
-   }
+   update_size_hints(Self, true);
 
    return ERR::Okay;
 }
@@ -663,11 +650,7 @@ static ERR SET_YOffset(extSurface *Self, Unit &Value)
 
       if (Self->Height.defined() and Self->ParentID) {
          if (ScopedObjectLock<extSurface> parent(Self->ParentID, 500); parent.granted()) {
-            if (not Self->Height.defined()) {
-               resize_layer(Self, Self->FixedX, Self->FixedY, 0,
-                  parent->FixedHeight - Self->FixedY - Self->FixedYO, 0, 0, 0, 0, 0);
-            }
-            else move_layer(Self, Self->FixedX, parent->FixedHeight - Self->FixedYO - Self->FixedHeight);
+            move_layer(Self, Self->FixedX, parent->FixedHeight - Self->FixedYO - Self->FixedHeight);
          }
          else return ERR::AccessObject;
       }

@@ -23,12 +23,14 @@ lStyle = (function()
 end)()
 
 gui.window = function(Options:table!)
-   self = setmetatable({ -- Public variables
+   self = setmetatable(entity {
+      -- Public variables
       events       = Options.events ?? { },
       aspectRatio  = Options.aspectRatio??,
       minimiseEnabled   = Options.minimise??,
       maximiseEnabled   = Options.maximise??,
       moveToBackEnabled = Options.moveToBack??,
+      presence     = Options.presence ?? SPT_HOST,
       theme        = nil,
       focus        = Options.focus??,
       quit         = Options.quit is false ? nil : true, -- Construction-only; defaults to true.
@@ -52,7 +54,7 @@ gui.window = function(Options:table!)
    -- Callbacks retain this record, not the public window table. Weak-value clearing may remove `window` before
    -- `__gc` runs, while the construction-time quit policy remains available to the surface free callback.
 
-   lifecycle = setmetatable({ window=self, quit=self.quit }, { __mode='v' })
+   lifecycle = setmetatable(entity { window=self, quit=self.quit }, { __mode='v' })
 
    self.clientViewport = function(Options:table):obj
       if self._clientViewport then return self._clientViewport end
@@ -241,8 +243,12 @@ gui.window = function(Options:table!)
       type      = RT_ROOT,
       modal     = Options.modal ?? false,
       popOver   = Options.popOver,
+      presence  = Options.presence, -- SPT HOST/NONE/TASKBAR/ICON_TRAY
       flags = (function()
          local flags = 0
+         if Options.composite then
+            flags = flags | RNF_COMPOSITE
+         end
          if Options.aspectRatio then
             flags = flags | RNF_ASPECT_RATIO
          end

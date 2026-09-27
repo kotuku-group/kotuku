@@ -207,7 +207,6 @@ ERR _expose_surface(OBJECTID SurfaceID, const SURFACELIST &List, int index, int 
 
                _expose_surface(List[i].SurfaceID, List, i, abs.Left, abs.Top, abs.Right, abs.Bottom, EXF::ABSOLUTE); // Redraw the surface, ignore children
 
-               //while (List[i].BitmapID IS List[i+1].BitmapID) i++; This only works if the surfaces being skipped are completely intersecting one another.
             }
          }
       }
@@ -632,7 +631,7 @@ void move_layer(extSurface *Self, int X, int Y)
       EXF::CHILDREN|EXF::REDRAW_VOLATILE);
    tlVolatileIndex = 0;
 
-   refresh_pointer(Self);
+   refresh_pointer();
 }
 
 /*********************************************************************************************************************

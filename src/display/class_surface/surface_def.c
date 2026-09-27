@@ -125,7 +125,7 @@ static const struct FieldDef clSurfaceJET[] = {
    { nullptr, 0 }
 };
 
-static const struct FieldDef clSurfaceSWIN[] = {
+static const struct FieldDef clSurfaceSPT[] = {
    { "Host", 0x00000000 },
    { "Taskbar", 0x00000001 },
    { "IconTray", 0x00000002 },

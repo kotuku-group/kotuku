@@ -248,7 +248,7 @@ gui.dropdown = function(Options)
    self.surface.flags      = RNF_STICK_TO_FRONT|RNF_COMPOSITE
    self.surface.x          = -10000
    self.surface.y          = -10000
-   self.surface.windowType = 'NONE'
+   self.surface.presence   = SPT_NONE
    self.surface.height     = 400
    self.surface.init()
 

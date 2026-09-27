@@ -386,14 +386,14 @@ gui.menu = function(Options)
 
    using self do
       &surface = obj.new('surface')
-      &surface.name       = 'menu'
-      &surface.width      = Options.width ?? 400
-      &surface.parent     = Options.target
-      &surface.flags      = RNF_STICK_TO_FRONT | RNF_COMPOSITE
-      &surface.x          = -10000
-      &surface.y          = -10000
-      &surface.windowType = 'NONE'
-      &surface.height     = 400
+      &surface.name     = 'menu'
+      &surface.width    = Options.width ?? 400
+      &surface.parent   = Options.target
+      &surface.flags    = RNF_STICK_TO_FRONT | RNF_COMPOSITE
+      &surface.x        = -10000
+      &surface.y        = -10000
+      &surface.presence = SPT_NONE
+      &surface.height   = 400
       &surface.init()
 
       &scene = obj.new('VectorScene', { flags=VPF_RESIZE, surface=&surface })

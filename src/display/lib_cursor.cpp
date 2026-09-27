@@ -89,7 +89,7 @@ ERR GetCursorInfo(CursorInfo *Info)
 
    Info->Width  = 32;
    Info->Height = 32;
-   Info->BitsPerPixel = 1;
+   Info->BitsPerPixel = 32;
    Info->Flags = 0;
    return ERR::Okay;
 }
