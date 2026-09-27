@@ -13,8 +13,9 @@
     <category>Audio</category>
     <copyright>Paul Manias © 2002-2026</copyright>
     <description>
-<p>Create as a child of an Audio object or set the inherited Audio field.  Use Channel to process one channel set, or leave it at zero to process the global mix.  Application reverbs accept live changes; global reverbs become immutable after initialisation.</p>
-<p>The reverberator is a feedback-delay network of eight delay lines mixed by an orthogonal matrix.  Its parameters are published through the inherited <class name="AudioEffect">AudioEffect</class> schema and are changed with <class name="AudioEffect" method="SetParameter">AudioEffect.SetParameter()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>:</p>
+<p>The reverberator is a feedback-delay network of eight delay lines mixed by an orthogonal matrix.</p>
+<p>Create new reverberator objects as a child of an <class name="Audio">Audio</class> object or set the inherited #Audio field.  Use #Channel to process one channel set, or leave it at zero to process the global mix.  Application reverberators accept live changes; global reverberators become immutable after initialisation.</p>
+<p>Parameters are published through the inherited <class name="AudioEffect">AudioEffect</class> schema and are changed with <class name="AudioEffect" method="SetParameter">AudioEffect.SetParameter()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>:</p>
 <list type="bullet">
 <li><code>decay</code>: the time, in milliseconds, for the reverberation to fall by 60 dB at low frequencies.</li>
 <li><code>size</code>: the scale of the simulated room from 0 to 100 percent.  Delay-line lengths range from approximately
@@ -42,7 +43,7 @@ reverb.acFlush()
 <p>Device reactivation, leaving bypass and reaching idle discard the reverberation and apply the latest parameters without a transition.</p>
 <header>Tail and Drain</header>
 <p>The reverb has zero algorithmic latency.  After its input stops, it remains pending until every value written to its delay memory has stayed at least 120 dB below the largest input sample since the last reset, for long enough to overwrite that memory.  This takes approximately 1.5 times the decay time after a short sound, and up to 2.5 times after a sustained tone, which builds up a higher internal level.  Add the pre-delay and 250 ms to both figures.  The residual is relative to the input, so it is independent of the output bit depth.</p>
-<p>When other audio shares the reverb, a stopped voice's tail is estimated as the pre-delay, the longest delay line and the decay time; see <class name="AudioEffect">AudioEffect</class>.  The published tail bound covers 180 dB of decay.  A 60 dB decay time is not a guarantee of complete silence: with long decay settings, draining can reach <class name="Audio" field="MaxDrain">Audio.MaxDrain</class>, which then fades and discards the remainder.  Hard bypass and destruction cut the tail abruptly.</p>
+<p>When other audio shares the reverb, a stopped voice's tail is estimated as the pre-delay, the longest delay line and the decay time.  The published tail bound covers 180 dB of decay.  A 60 dB decay time is not a guarantee of complete silence: with long decay settings, draining can reach <class name="Audio" field="MaxDrain">Audio.MaxDrain</class>, which then fades and discards the remainder.  Hard bypass and destruction cut the tail abruptly.</p>
 <p>Output rates from 8000 to 192000 Hz are supported.  Configuring the effect for any other rate fails with <code>ERR::NoSupport</code>.  Memory use is approximately 300 KB at 48 kHz in stereo, and scales in proportion to the output rate.</p></description>
     <source>
       <file>class_audioreverb.cpp</file>
