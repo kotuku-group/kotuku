@@ -5,18 +5,18 @@ static ERR apply_audio_command(extAudio *Self, const AudioCommand &Command)
    if (!channel) return ERR::OutOfRange;
    if (Command.DeferredError != ERR::Okay) return Command.DeferredError;
    switch (Command.CommandID) {
-      case CMD::CONTINUE: return snd::MixContinue(Self, Command.Handle);
-      case CMD::PAUSE: return snd::MixPause(Self, Command.Handle);
-      case CMD::MUTE: return snd::MixMute(Self, Command.Handle, std::get<bool>(Command.Data));
-      case CMD::PLAY: return snd::MixPlay(Self, Command.Handle, std::get<int64_t>(Command.Data));
+      case CMD::CONTINUE:  return snd::MixContinue(Self, Command.Handle);
+      case CMD::PAUSE:     return snd::MixPause(Self, Command.Handle);
+      case CMD::MUTE:      return snd::MixMute(Self, Command.Handle, std::get<bool>(Command.Data));
+      case CMD::PLAY:      return snd::MixPlay(Self, Command.Handle, std::get<int64_t>(Command.Data));
       case CMD::FREQUENCY: return snd::MixFrequency(Self, Command.Handle, std::get<int>(Command.Data));
-      case CMD::PAN: return snd::MixPan(Self, Command.Handle, std::get<double>(Command.Data));
-      case CMD::TEMPO: return snd::MixTempo(Self, Command.Handle, std::get<int>(Command.Data));
-      case CMD::SAMPLE: return snd::MixSample(Self, Command.Handle, std::get<int>(Command.Data));
-      case CMD::VOLUME: return snd::MixVolume(Self, Command.Handle, std::get<double>(Command.Data));
-      case CMD::STOP: return snd::MixStop(Self, Command.Handle);
-      case CMD::RELEASE: return snd::MixRelease(Self, Command.Handle);
-      default: return ERR::Args;
+      case CMD::PAN:       return snd::MixPan(Self, Command.Handle, std::get<double>(Command.Data));
+      case CMD::TEMPO:     return snd::MixTempo(Self, Command.Handle, std::get<int>(Command.Data));
+      case CMD::SAMPLE:    return snd::MixSample(Self, Command.Handle, std::get<int>(Command.Data));
+      case CMD::VOLUME:    return snd::MixVolume(Self, Command.Handle, std::get<double>(Command.Data));
+      case CMD::STOP:      return snd::MixStop(Self, Command.Handle);
+      case CMD::RELEASE:   return snd::MixRelease(Self, Command.Handle);
+      default:             return ERR::Args;
    }
 }
 
@@ -408,8 +408,7 @@ static void dispatch_audio_client(extAudio *Self)
    }
 
    if (int error = Self->WorkerError.exchange(0)) {
-      kt::Log log("Audio");
-      log.warning("Playback failed: %d", error);
+      kt::Log().warning("Playback failed: %d", error);
 #ifdef _WIN32
       Self->Reopening = true;
       if (PreciseTime() - Self->WorkerStartedAt >= 5000000) Self->ReopenAttempts = 0;

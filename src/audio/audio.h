@@ -251,6 +251,7 @@ public:
 class AudioEffectProcessor {
 public:
    virtual ~AudioEffectProcessor() = default;
+   // Buffers contain normalised floating-point audio: magnitude 1.0 is 0 dBFS, with finite headroom above unity.
    virtual void process(float *Buffer, int Frames) = 0;
    virtual void reset() = 0;
    virtual bool pending() const { return false; }
@@ -282,7 +283,6 @@ struct AudioEffectChain {
    bool Stereo = false;
    std::vector<int> Layout; // Committed processing layout; empty until configured
    uint64_t FormatGeneration = 0; // Output configuration generation at the last commit
-   double MeterScale = 1;
    bool pending() const;
    void reset();
    ERR latency(int64_t &Frames) const;

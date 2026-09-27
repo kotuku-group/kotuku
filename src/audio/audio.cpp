@@ -20,8 +20,9 @@ sequencing, and control over output rate, bit depth, buffering and mixing qualit
 object.</li>
 </list>
 
-The internal mixer processes all audio as 32-bit floating-point data regardless of the output bit depth.  The mixer
-supports:
+The internal mixer processes all audio as normalised 32-bit floating-point data regardless of the output bit depth.
+A magnitude of 1.0 is 0 dBFS, while intermediate buses retain finite values above unity as headroom.  The final output
+conversion is the only stage that clips and quantises samples for the selected hardware format.  The mixer supports:
 
 <list type="bullet">
 <li>Linear interpolation between sample frames when `ADF::OVER_SAMPLING` is enabled, reducing aliasing when samples are
@@ -53,7 +54,7 @@ streamed.
 Technical specifications:
 
 <list type="bullet">
-<li>Internal processing: 32-bit floating-point.</li>
+<li>Internal processing: Normalised 32-bit floating-point with headroom above 0 dBFS.</li>
 <li>Output formats: 8-bit and 16-bit integer, and 32-bit floating-point.</li>
 <li>Output rates: Up to 192 kHz, subject to hardware negotiation.  Windows follows the endpoint mix rate.</li>
 <li>Channel configurations: Mono and stereo output.  Mono and stereo samples are converted to the output layout during

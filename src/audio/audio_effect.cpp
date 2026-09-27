@@ -271,19 +271,18 @@ void extAudioEffect::process(float *Buffer, int Frames)
    }
 
    const int interval = std::max(1, (OutputRate + 19) / 20); // Ceiling: never shorter than 50 ms.
-   const double scale = chain ? chain->MeterScale : 1;
    while (Frames > 0) {
       const int count = std::min(Frames, interval - MeterFrames);
       for (int frame = 0; frame < count; ++frame) {
          for (int c = 0; c < channels; ++c) {
-            InputPeaks[c] = std::max(InputPeaks[c], std::abs(double(Buffer[frame * channels + c])) / scale);
+            InputPeaks[c] = std::max(InputPeaks[c], std::abs(double(Buffer[frame * channels + c])));
          }
       }
 
       processor->process(Buffer, count);
       for (int frame = 0; frame < count; ++frame) {
          for (int c = 0; c < channels; ++c) {
-            OutputPeaks[c] = std::max(OutputPeaks[c], std::abs(double(Buffer[frame * channels + c])) / scale);
+            OutputPeaks[c] = std::max(OutputPeaks[c], std::abs(double(Buffer[frame * channels + c])));
          }
       }
 

@@ -320,13 +320,6 @@ static void meters(AudioTestContext &Test)
    }
    AUDIO_CHECK(std::abs(wide_reading.Values[39] + 12.041199827) < 1e-6 and wide_reading.Flags[40] IS int(AMV::VALID));
 
-   Fixture integer_output(1000, 1, std::make_unique<Delay>(1, 1), &glMeterSchema);
-   integer_output.Chain->MeterScale = 32768; // Both integer output formats use 16-bit internal mixer units.
-   std::array<float, 50> integer_samples;
-   std::fill(integer_samples.begin(), integer_samples.end(), 16384);
-   integer_output.Effect.process(integer_samples.data(), integer_samples.size());
-   AUDIO_CHECK(std::abs(integer_output.Effect.Meter.Values[0] + 6.020599913) < 1e-6);
-
    Fixture reduction(1000, 1, std::make_unique<Feedback>(), &glMeterSchema);
    std::array<float, 50> input{};
    input[0] = 1;
@@ -426,6 +419,135 @@ static void contention(AudioTestContext &Test)
 }
 
 #ifdef AUDIO_WORKER
+struct ProbeObservation {
+   float Maximum = 0;
+   int ThresholdFrame = -1;
+};
+
+class AbsoluteProbe final : public AudioEffectProcessor {
+public:
+   AbsoluteProbe(float Gain, ProbeObservation &Observation) : observation(Observation), gain(Gain) { }
+
+   void reset() override { position = 0; }
+   void process(float *Buffer, int Frames) override {
+      for (int i = 0; i < Frames; ++i) {
+         const auto magnitude = std::abs(Buffer[i]);
+         observation.Maximum = std::max(observation.Maximum, magnitude);
+         if (observation.ThresholdFrame < 0 and magnitude >= 0.5f) observation.ThresholdFrame = position + i;
+         Buffer[i] *= gain;
+      }
+      position += Frames;
+   }
+
+private:
+   ProbeObservation &observation;
+   float gain;
+   int position = 0;
+};
+
+struct FormatContractResult {
+   std::array<float, 3> Output{};
+   float ApplicationMaximum = 0;
+   float GlobalMaximum = 0;
+   int ThresholdFrame = -1;
+   double ApplicationInputMeter = 0;
+   double GlobalInputMeter = 0;
+   double GlobalOutputMeter = 0;
+};
+
+static FormatContractResult render_format_contract(AudioTestContext &Test, int BitDepth)
+{
+   extAudio *audio;
+   if (!AUDIO_CHECK(NewObject(CLASSID::AUDIO, &audio) IS ERR::Okay)) return {};
+   std::unique_ptr<extAudio, DeleteObject<extAudio>> owner(audio);
+   if (!AUDIO_CHECK(InitObject(audio) IS ERR::Okay)) return {};
+   audio->Flags = ADF::NIL;
+   audio->OutputRate = 1000;
+   audio->BitDepth = BitDepth;
+   audio->DriverBitSize = BitDepth / 8;
+   audio->Stereo = false;
+   audio->MasterVolume = 1;
+   audio->MixElements = SAMPLE(3);
+   audio->MixBuffer.resize(3);
+   audio->MixConfig = AudioConfig(false, false);
+   audio->Samples.resize(2);
+   auto &sample = audio->Samples[1];
+   sample.SampleType = PCM::S16_MONO;
+   sample.FrameBytes = 2;
+   sample.SampleLength = SAMPLE(3);
+   const int16_t source[] = { 8192, 16384, 24576 };
+   sample.Data.resize(sizeof(source));
+   std::memcpy(sample.Data.data(), source, sizeof(source));
+
+   audio->Sets.resize(2);
+   auto &set = audio->Sets[1];
+   set.Channel.resize(2);
+   for (auto &channel : set.Channel) {
+      channel.SampleHandle = 1;
+      channel.Frequency = 1000;
+      channel.State = CHS::PLAYING;
+      channel.LVolume = channel.RVolume = 1;
+      channel.Handle = 1 << 16;
+   }
+   set.Effects = std::make_shared<AudioEffectChain>(audio->MixerLock);
+   set.Effects->Generation = audio->GlobalEffects->Generation;
+   set.ScratchBuffer.resize(3);
+
+   extAudioEffect application(nullptr, 0), global(nullptr, 0);
+   application.Chain = set.Effects;
+   global.Chain = audio->GlobalEffects;
+   application.Schema = global.Schema = &glMeterSchema;
+   application.OutputRate = global.OutputRate = 1000;
+   set.Effects->Layout = audio->GlobalEffects->Layout = { int(SPK::CENTRE) };
+   application.set_layout(glLayoutMono);
+   global.set_layout(glLayoutMono);
+   set.Effects->Effects.push_back(&application);
+   audio->GlobalEffects->Effects.push_back(&global);
+   set.Effects->Rate = audio->GlobalEffects->Rate = 1000;
+
+   ProbeObservation application_observation, global_observation;
+   auto application_processor = std::make_unique<AbsoluteProbe>(1.0f, application_observation);
+   if (!AUDIO_CHECK(application.set_processor(std::move(application_processor)) IS ERR::Okay)) return {};
+   auto global_processor = std::make_unique<AbsoluteProbe>(0.5f, global_observation);
+   if (!AUDIO_CHECK(global.set_processor(std::move(global_processor)) IS ERR::Okay)) return {};
+
+   alignas(4) std::array<uint8_t, 12> output{};
+   audio->EffectConfigured = true;
+   if (!AUDIO_CHECK(mix_data(audio, 3, output.data()) IS ERR::Okay)) return {};
+   FormatContractResult result;
+   result.ApplicationMaximum = application_observation.Maximum;
+   result.GlobalMaximum = global_observation.Maximum;
+   result.ThresholdFrame = application_observation.ThresholdFrame;
+   application.idle();
+   global.idle();
+   result.ApplicationInputMeter = application.Meter.Values[0];
+   result.GlobalInputMeter = global.Meter.Values[0];
+   result.GlobalOutputMeter = global.Meter.Values[1];
+   for (int i = 0; i < 3; ++i) {
+      if (BitDepth IS 8) result.Output[i] = (float(output[i]) - 128.0f) / 128.0f;
+      else if (BitDepth IS 16) result.Output[i] = float(((int16_t *)output.data())[i]) / 32768.0f;
+      else result.Output[i] = ((float *)output.data())[i];
+   }
+   return result;
+}
+
+static void format_independent_levels(AudioTestContext &Test)
+{
+   const auto result8 = render_format_contract(Test, 8);
+   const auto result16 = render_format_contract(Test, 16);
+   const auto result32 = render_format_contract(Test, 32);
+   const FormatContractResult *results[] = { &result8, &result16, &result32 };
+   const float expected[] = { 0.25f, 0.5f, 0.75f };
+   for (const auto result : results) {
+      AUDIO_CHECK(result->ApplicationMaximum IS 1.5f and result->GlobalMaximum IS 1.5f);
+      AUDIO_CHECK(result->ThresholdFrame IS 0);
+      AUDIO_CHECK(std::equal(result->Output.begin(), result->Output.end(), std::begin(expected)));
+      AUDIO_CHECK(std::abs(result->ApplicationInputMeter - 20.0 * std::log10(1.5)) < 1e-6);
+      AUDIO_CHECK(std::abs(result->GlobalInputMeter - result8.GlobalInputMeter) < 1e-6);
+      AUDIO_CHECK(std::abs(result->GlobalOutputMeter - result8.GlobalOutputMeter) < 1e-6);
+   }
+}
+
 static void common_mixer(AudioTestContext &Test)
 {
    extAudio *audio;
@@ -494,7 +616,9 @@ static void common_mixer(AudioTestContext &Test)
       }
    }
    AUDIO_REQUIRE(rendered.size() > 178);
-   for (size_t i = 0; i < rendered.size(); ++i) AUDIO_CHECK(rendered[i] IS (i IS 178 ? 1.0f : 0.0f));
+   for (size_t i = 0; i < rendered.size(); ++i) {
+      AUDIO_CHECK(rendered[i] IS (i IS 178 ? 32767.0f / 32768.0f : 0.0f));
+   }
    AUDIO_CHECK(upstream_silence and global_only and !audio_playing(audio));
    AUDIO_CHECK(AUDIO_GetEffectStatus(audio, &status) IS ERR::Okay);
    AUDIO_CHECK(status.Application IS 107 and status.Global IS 71 and status.Total IS 178);
@@ -936,6 +1060,7 @@ static void run(AudioTestContext &Test)
    equaliser_tail(Test);
    contention(Test);
 #ifdef AUDIO_WORKER
+   format_independent_levels(Test);
    common_mixer(Test);
    drained_stops(Test);
 #endif
