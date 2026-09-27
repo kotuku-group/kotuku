@@ -9,6 +9,9 @@
 
 inline constexpr int32_t CLASS_OFFSET = 96;
 
+// Audio module start
+// Audio module end
+
 // Display module start
 // Display module end
 

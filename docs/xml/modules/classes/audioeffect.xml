@@ -35,7 +35,8 @@
 <p>A <code>param</code> element describes one value.  Its <code>type</code> is <code>double</code>, <code>int</code>, <code>bool</code> or <code>enum</code>; enumerations list their values as <code>option</code> elements.  The <code>unit</code> attribute is omitted for unitless values.  The <code>scale</code> is <code>linear</code> or <code>log</code> and indicates how a control should map positions to values.  The <code>min</code> and <code>max</code> bounds are inclusive unless <code>min-exclusive</code> or <code>max-exclusive</code> is set.  A <code>max</code> of <code>nyquist</code> means half of the <fl>OutputRate</fl> and is always exclusive. A <code>step</code> is present only for stepped values.</p>
 <p>A <code>group</code> element describes a repeated structure, such as a list of equaliser bands, with <code>min</code> and <code>max</code> entry counts. Its entries are numbered from zero. Use <method>GetGroupCount</method> to read the number of entries, including staged insertions and removals.</p>
 <p>A <code>rule</code> element relates a parameter to a sibling in the same group, or to another top-level parameter.  If the sibling named by <code>key</code> holds one of the listed <code>values</code>, the parameter is either ignored by the processor (<code>inactive=&quot;1&quot;</code>) or limited to a lower <code>max</code>.</p>
-<p>An <code>output</code> element names data that can be read back from the processor.  A <code>curve</code> output is read with <method>GetResponse</method>.  Scalar outputs are read together with <method>GetMeters</method>, or individually with <method>GetOutput</method>.  Their <code>label</code>, <code>description</code>, <code>unit</code>, <code>scope</code>, <code>semantics</code> and zero-based <code>slot</code> attributes describe the value and its snapshot location.  Slots are stable across layouts; right-channel outputs are omitted in mono.  Sample peaks are not true-peak measurements.  Gain reduction, where offered, is non-negative attenuation in decibels.</p>
+<p>An <code>output</code> element names data that can be read back from the processor.  A <code>curve</code> output is read with <method>GetResponse</method>.  Scalar outputs are meter values, read together with <method>ReadMeters</method> or individually with <method>GetOutput</method>. Their <code>label</code>, <code>description</code>, <code>unit</code>, <code>scope</code>, <code>semantics</code> and zero-based <code>slot</code> attributes describe the value and its location in the current meter layout.  A <code>channel</code> scope identifies a value measured on one channel of the processing layout, and its <code>channel</code> attribute holds the channel identity from the <code>SPK</code> constants.  A <code>global</code> scope identifies a value that applies to every channel, such as linked gain reduction.  Keys are stable, e.g. <code>input_peak_left</code>, and only channels present in the processing layout are listed.  Sample peaks are not true-peak measurements.  Gain reduction, where offered, is non-negative attenuation in decibels.</p>
+<p>The <code>slot</code> attributes describe the meter layout that was current when the schema was read.  A change of processing layout replaces the meter layout; use <method>GetMeterLayout</method> to resolve keys to slots, and repeat the resolution whenever <method>ReadMeters</method> reports a different <code>ID</code>.</p>
 <p>Parameters are addressed by key-paths: <code>key</code> for a top-level parameter, or <code>group[index].key</code> for a group member, e.g. <code>bands[2].frequency</code>.  Values are always in real units, such as hertz or decibels; they are never normalised.</p>
 <header>Staged Changes</header>
 <p>Before initialisation, <method>SetParameter</method>, <method>InsertEntry</method> and <method>RemoveEntry</method> change the effect directly and <code>Init()</code> validates the result.  After initialisation they change a working copy instead, which is applied as a single change when the client calls <code>Flush()</code>.  This allows related changes, such as switching a band's type together with its Q, without the processor ever running the state between them.  <method>GetParameter</method> reports staged values.  A flush that breaks any rule is rejected in full and the working copy is discarded.</p></description>
@@ -87,33 +88,26 @@
     </method>
 
     <method>
-      <name>GetMeters</name>
-      <comment>Reads a live snapshot of the latest measurement interval.</comment>
-      <prototype>ERR fx::GetMeters(OBJECTPTR Object, std::span&lt;double&gt; Values, INT64 * Sequence, INT64 * Generation, INT64 * Position, INT * Interval, AMF * Flags, INT * Floor)</prototype>
-      <tiriPrototype>err, Sequence:num, Generation:num, Position:num, Interval:num, Flags:num, Floor:num = GetMeters(Values:array)</tiriPrototype>
+      <name>GetMeterLayout</name>
+      <comment>Describes the values published by the effect's meters.</comment>
+      <prototype>ERR fx::GetMeterLayout(OBJECTPTR Object, struct MeterLayout ** Layout)</prototype>
+      <tiriPrototype>err, Layout:any = GetMeterLayout()</tiriPrototype>
       <input>
-        <param type="std::span&lt;double&gt;" name="Values">Five-element array receiving the scalar values.</param>
-        <param type="INT64 *" name="Sequence">Publication sequence number.</param>
-        <param type="INT64 *" name="Generation">Configuration generation.</param>
-        <param type="INT64 *" name="Position">Processed-frame position at the interval end.</param>
-        <param type="INT *" name="Interval">Measurement interval length in frames.</param>
-        <param type="AMF *" name="Flags" lookup="AMF">Snapshot validity and lifecycle flags.</param>
-        <param type="INT *" name="Floor">Below-floor bit mask.</param>
+        <param type="struct MeterLayout **" name="Layout">Receives an owned snapshot of the meter descriptors and their ID.</param>
       </input>
       <description>
-<p>Call GetMeters() to monitor effect signal levels, typically to drive level meters in a user interface.  The effect measures the input and output peaks and its gain reduction in fixed intervals.  Each call returns the values of the most recent interval with their metadata as one consistent set, so that readings from different intervals are never mixed.  Use <method>GetOutput</method> instead when only one value is needed.</p>
-<p>For <code>Values</code>, pass an array of five elements.  Slots are input left, input right, output left, output right and gain reduction.  Only slots published as scalar outputs in <fl>Schema</fl> are applicable.  Mono layouts omit right-channel descriptors.  Peaks are sample peaks in dBFS, floored at -120 dBFS; gain reduction is non-negative attenuation in dB.</p>
-<p>Intervals contain <code>ceil(OutputRate / 20)</code> frames (50 ms rounded up).  Reads are non-destructive; slow readers can miss intervals.  Idle publishes a partial final interval.  Reset and reconfiguration invalidate measurements. <code>Sequence</code> increases on publication.  <code>Position</code> counts processed output frames since reset; <code>Interval</code> is the number of frames represented.  <code>Generation</code> identifies configuration and path changes, independently of schema version.</p>
-<p><code>Flags</code> reports the snapshot's validity and lifecycle state.  Bypassed and disconnected snapshots do not set <code>VALID</code>.</p>
-<types lookup="AMF"/>
-<p><code>Floor</code> has one bit per peak slot, set for values below -120 dBFS.</p>
+<p>Call GetMeterLayout() to discover the meter values that the effect measures, typically to build level meters in a user interface.  The result is a <st>MeterLayout</st> snapshot containing a configuration identifier and a <code>Meters</code> array of <st>MeterInfo</st> records in slot order.  The <code>Slot</code> of each record is the index of its value in the <code>Values</code> of a reading from <method>ReadMeters</method>.</p>
+<p>Each record gives the value's stable <code>Key</code>, a human-readable <code>Label</code>, its <code>Unit</code> (e.g. <code>dBFS</code>), a <code>Scope</code> of either <code>channel</code> or <code>global</code>, and the <code>Semantics</code> of the measurement (e.g. <code>sample-peak</code>).  Values measured on one channel carry that channel's identity from the <code>SPK</code> constants in <code>Channel</code>, while global values such as linked gain reduction have a <code>Channel</code> of zero.  Missing units or semantics are empty strings.</p>
+<p>Descriptors are published only for the channels in the effect's processing layout, e.g. <code>input_peak_left</code> and <code>input_peak_right</code> for stereo, or <code>input_peak_centre</code> for mono.  Slots are dense and stable within one layout configuration.  Stable keys and channel identities, not slot numbers, preserve a value's meaning when the layout changes.</p>
+<p><code>ID</code> is the configuration identifier that the descriptors belong to, and uses the same definition as the <code>ID</code> of a <st>MeterReading</st> result.  Keep it with the descriptors and compare it with the <code>ID</code> of each reading from <method>ReadMeters</method>.  If the two differ, call GetMeterLayout() again before interpreting the values.  Any change to the meter layout, e.g. activating the <class name="Audio">Audio</class> object with a different output layout, changes the ID.  Other configuration changes, such as committing a parameter or toggling bypass, change it too, so a client can re-read an unchanged layout; this is harmless.</p>
+<p>The descriptors and their ID are copied together.  The snapshot owns its records and strings, so it remains valid after the effect's layout changes or the effect is freed.  The snapshot is allocated by the effect and must be released with <function module="Core">FreeResource</function> by C++ clients.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Args">Values must contain exactly five elements.</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
-      <tags>mutates-input</tags>
+      <tags>caller-owns-result</tags>
     </method>
 
     <method>
@@ -122,15 +116,15 @@
       <prototype>ERR fx::GetOutput(OBJECTPTR Object, STRVIEW Key, DOUBLE * Value)</prototype>
       <tiriPrototype>err, Value:num = GetOutput(Key:str)</tiriPrototype>
       <input>
-        <param type="STRVIEW" name="Key">Scalar output key from <fl>Schema</fl>.</param>
+        <param type="STRVIEW" name="Key">Scalar output key from <fl>Schema</fl> or <method>GetMeterLayout</method>.</param>
         <param type="DOUBLE *" name="Value">Latest value in the descriptor's units.</param>
       </input>
       <description>
-<p>Returns the latest completed interval value for a <code>Key</code>.  Use <method>GetMeters</method> for multi-value reads and lifecycle flags. Curve outputs continue to use <method>GetResponse</method>.</p>
+<p>Returns the latest completed interval value for a <code>Key</code>.  Keys are resolved against the current meter layout, so a key for a channel that is absent from the processing layout is not found.  GetOutput() is a convenience for reading a single value; use <method>ReadMeters</method> for coherent multi-value reads and lifecycle flags.  Curve outputs continue to use <method>GetResponse</method>.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Search">Unknown key, including right-channel keys in a mono layout.</error>
+        <error code="Search">Unknown key, including keys for channels absent from the processing layout.</error>
         <error code="NoSupport">The key names a curve or another unsupported output kind.</error>
         <error code="NotInitialised">The effect is disconnected.</error>
         <error code="InvalidState">No current valid measurement is available, or the effect is idle or bypassed.</error>
@@ -157,6 +151,31 @@
         <error code="OutOfRange">The group index does not refer to an existing entry.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+    </method>
+
+    <method>
+      <name>GetProcessingFormat</name>
+      <comment>Reads the PCM format processed by the effect.</comment>
+      <prototype>ERR fx::GetProcessingFormat(OBJECTPTR Object, INT * SampleRate, ASF * SampleFormat, kt::vector&lt;int&gt; * Layout, INT64 * Generation, AFS * State)</prototype>
+      <tiriPrototype>err, SampleRate:num, SampleFormat:num, Layout:array, Generation:num, State:num = GetProcessingFormat()</tiriPrototype>
+      <input>
+        <param type="INT *" name="SampleRate">Frames per second, or zero if no format is available.</param>
+        <param type="ASF *" name="SampleFormat" lookup="ASF">Sample representation of the processed audio.</param>
+        <param type="kt::vector&lt;int&gt; *" name="Layout">Receives the ordered channel identities from the <code>SPK</code> constants.</param>
+        <param type="INT64 *" name="Generation">Output configuration generation of the reported format.</param>
+        <param type="AFS *" name="State" lookup="AFS">Availability of the reported format.</param>
+      </input>
+      <description>
+<p>GetProcessingFormat() reports the committed format of the audio that passes through the effect.  Effects process the Audio object's floating-point mix, so <code>SampleFormat</code> is always <code>ASF::F32</code> in native byte order.  The input and output layouts of an effect are always identical.  Channel identities are listed in interleaved frame order.</p>
+<p>The format is committed when the <class name="Audio">Audio</class> object is activated.  An effect attached to an inactive Audio object has no committed format until activation, in which case <code>State</code> is <code>AFS::UNAVAILABLE</code> and the remaining results are empty. After the Audio object is deactivated, or if the effect is disconnected, the last committed format remains available and <code>State</code> is <code>AFS::INACTIVE</code>.</p>
+<types lookup="AFS"/>
+<p><code>Generation</code> identifies the committed output configuration and matches the value reported by <class name="Audio" method="GetOutputFormat">Audio.GetOutputFormat()</class> for the same configuration.  It changes whenever the Audio object commits a new processing configuration, including reactivation with an unchanged layout.  Meter layouts follow the processing layout; see <method>GetMeterLayout</method>.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>mutates-input</tags>
     </method>
 
     <method>
@@ -203,6 +222,33 @@
         <error code="NullArgs">Function call missing argument value(s)</error>
         <error code="Immutable">The effect is attached to the global chain.</error>
       </result>
+    </method>
+
+    <method>
+      <name>ReadMeters</name>
+      <comment>Reads one coherent measurement of every meter value.</comment>
+      <prototype>ERR fx::ReadMeters(OBJECTPTR Object, struct MeterReading ** Reading)</prototype>
+      <tiriPrototype>err, Reading:any = ReadMeters()</tiriPrototype>
+      <input>
+        <param type="struct MeterReading **" name="Reading">Receives the latest measurement.</param>
+      </input>
+      <description>
+<p>ReadMeters() returns the effect's latest measurement interval as a <st>MeterReading</st> structure.  All values and metadata describe the same interval, so readings from different intervals are never mixed.  Use <method>GetOutput</method> instead when only one value is needed.</p>
+<p><code>Values</code> holds one element per meter descriptor, indexed by the <code>Slot</code> of the descriptors from <method>GetMeterLayout</method>. Compare the reading's <code>ID</code> with the ID returned by <method>GetMeterLayout</method>.  If they differ, the layout may have changed since the descriptors were read, e.g. after a device reconfiguration, so call <method>GetMeterLayout</method> again before interpreting the values.</p>
+<p>Peaks are sample peaks in dBFS, floored at -120 dBFS.  Gain reduction is non-negative attenuation in dB.  The <code>Flags</code> of each element of <code>Values</code> is a combination of the following:</p>
+<types lookup="AMV"/>
+<p>Intervals contain <code>ceil(OutputRate / 20)</code> frames (50 ms rounded up).  Reads are non-destructive; slow readers can miss intervals.  Idle publishes a partial final interval.  Reset and reconfiguration invalidate measurements. <code>Sequence</code> increases on publication.  <code>Position</code> counts processed output frames since reset; <code>Interval</code> is the number of frames represented.  <code>ID</code> identifies configuration and path changes, including changes to the meter layout.</p>
+<p>The reading's <code>Flags</code> reports the snapshot's validity and lifecycle state.  Bypassed and disconnected snapshots do not set <code>VALID</code>, and none of their values are flagged as valid.</p>
+<types lookup="AMF"/>
+<p>The reading is allocated by the effect and must be released with <function module="Core">FreeResource</function> by C++ clients.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
+        <error code="NotInitialised">The effect has not been initialised.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>caller-owns-result</tags>
     </method>
 
     <method>
@@ -272,7 +318,7 @@
       <access read="R" write="I">Read/Init</access>
       <type>INT</type>
       <description>
-<p>Set before initialisation.  Use the complete handle returned by <class name="Audio" method="OpenChannels">Audio.OpenChannels()</class>, with a zero low word. Individual channel handles and closed channel sets are rejected.</p>
+<p>Set before initialisation.  Use the complete handle returned by <class name="Audio" method="OpenChannels">Audio.OpenChannels()</class>, with a zero low word. Individual channel handles and closed channel sets are rejected.  This identifies a set of voice channels, not a speaker; the effect always processes every speaker channel of its processing layout.</p>
       </description>
     </field>
 
@@ -292,14 +338,14 @@
       <access read="G">Get</access>
       <type>INT64</type>
       <description>
-<p>Latency reports the fixed delay, measured in frames at the <fl>OutputRate</fl>, that the effect's processor adds to the signal path.  The value is committed when the processor is configured.  Parameter edits made before output starts may update it, but once the output rate is active, an edit that would change it is rejected by <action>Flush</action> with <code>ERR::InvalidState</code>.  Effects with no look-ahead or buffering, such as the equaliser, report zero.</p>
+<p>Latency reports the fixed delay, measured in frames at the <fl>OutputRate</fl>, that the effect's processor adds to the signal path.  The value should not be read until after the processor is configured.  Effects with no look-ahead or buffering, such as the equaliser, report zero.</p>
 <p>Setting the <code>BYPASS</code> flag reduces the reported latency to zero, because a bypassed effect does not delay the signal. The delay of a complete chain, including the global chain, can be read with the Audio class' <code>GetEffectStatus()</code> method.</p>
       </description>
     </field>
 
     <field>
       <name>Mutable</name>
-      <comment>Read-only.  Zero if the effect's parameters can no longer be changed.</comment>
+      <comment>Indicates whether the effect's parameters can be changed.</comment>
       <access read="G">Get</access>
       <type>INT</type>
       <description>
@@ -319,7 +365,7 @@
 
     <field>
       <name>OutputRate</name>
-      <comment>Read-only output sample rate of the attached Audio object.</comment>
+      <comment>Output sample rate of the attached Audio object.</comment>
       <access read="G">Get</access>
       <type>INT</type>
       <description>
@@ -329,22 +375,12 @@
 
     <field>
       <name>Schema</name>
-      <comment>Read-only.  An XML description of the effect's parameters.</comment>
+      <comment>An XML description of the effect's parameters.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
       <description>
-<p>The schema describes every parameter that can be read or changed with <method>GetParameter</method> and <method>SetParameter</method>, including units, ranges, defaults, repeated groups and the rules between parameters.  The format is described in the class documentation.  Right-channel scalar outputs are omitted for mono layouts.  Instance-specific bounds, such as the Nyquist frequency, are resolved against <fl>OutputRate</fl>.</p>
+<p>The schema describes every parameter that can be read or changed with <method>GetParameter</method> and <method>SetParameter</method>, including units, ranges, defaults, repeated groups and the rules between parameters.  The format is described in the class documentation.  Scalar outputs are listed for the channels of the current processing layout, with slots from the current meter layout.  Instance-specific bounds, such as the Nyquist frequency, are resolved against <fl>OutputRate</fl>.</p>
 <p>The value is empty if the class does not publish a schema.</p>
-      </description>
-    </field>
-
-    <field>
-      <name>Stereo</name>
-      <comment>Read-only output layout; one for stereo and zero for mono.</comment>
-      <access read="G">Get</access>
-      <type>INT</type>
-      <description>
-<p>Updated on device activation together with <fl>OutputRate</fl>.</p>
       </description>
     </field>
 
@@ -352,6 +388,12 @@
   <types>
     <constants lookup="AEF" comment="Audio effect flags.">
       <const name="BYPASS">Skip an application effect.  Global effects cannot be bypassed.</const>
+    </constants>
+
+    <constants lookup="AFS" comment="Availability of a reported processing format.">
+      <const name="ACTIVE">The reported format is committed and in use.</const>
+      <const name="INACTIVE">Processing has stopped.  The last committed format is reported.</const>
+      <const name="UNAVAILABLE">No processing format has been committed.  The format results are empty.</const>
     </constants>
 
     <constants lookup="AMF" comment="Audio meter snapshot flags.">
@@ -362,7 +404,42 @@
       <const name="VALID">The snapshot holds a valid measurement.</const>
     </constants>
 
+    <constants lookup="AMV" comment="Per-value flags returned by AudioEffect.ReadMeters().">
+      <const name="FLOOR">The measured value was below the meter floor.  The reported value is the floor.</const>
+      <const name="VALID">The value holds a measurement from the snapshot's interval.</const>
+    </constants>
+
+    <constants lookup="ASF" comment="Sample representations, independent of the channel count.">
+      <const name="F32">32-bit IEEE-754 floating point samples in four bytes, with a nominal range of <code>-1.0</code> to <code>1.0</code>.</const>
+      <const name="S16">Signed 16-bit integer samples in two bytes.</const>
+      <const name="U8">Unsigned 8-bit integer samples in one byte.  Silence is <code>128</code>.</const>
+    </constants>
+
   </types>
   <structs>
+    <struct name="MeterInfo" comment="Describes one value published by an effect's meters.">
+      <field name="Key" type="STRING">Stable key, e.g. <code>input_peak_left</code></field>
+      <field name="Label" type="STRING">Human-readable label</field>
+      <field name="Unit" type="STRING">Unit of measurement, e.g. <code>dBFS</code>, or empty</field>
+      <field name="Scope" type="STRING">Either <code>channel</code> or <code>global</code></field>
+      <field name="Semantics" type="STRING">Kind of measurement, e.g. <code>sample-peak</code>, or empty</field>
+      <field name="Slot" type="INT">Index of the value in the Values of a MeterReading</field>
+      <field name="Channel" type="INT">Channel identity from SPK, or zero for a global value</field>
+    </struct>
+
+    <struct name="MeterLayout" comment="An owned snapshot of the descriptors returned by GetMeterLayout().">
+      <field name="ID" type="INT64">Configuration identifier shared with the matching MeterReading</field>
+      <field name="Meters" type="kt::vector&lt;MeterInfo&gt;">Meter descriptors in slot order</field>
+    </struct>
+
+    <struct name="MeterReading" comment="One coherent measurement of every meter value, from ReadMeters().">
+      <field name="Sequence" type="INT64">Publication sequence number; increases with each published interval</field>
+      <field name="ID" type="INT64">Configuration identifier; compare with the ID from GetMeterLayout()</field>
+      <field name="Position" type="INT64">Processed-frame position at the end of the interval</field>
+      <field name="Flags" type="AMF" lookup="AMF">Validity and lifecycle state of the reading</field>
+      <field name="Interval" type="INT">Length of the measurement interval in frames</field>
+      <field name="Values" type="kt::vector&lt;MeterValue&gt;">One value per meter descriptor, indexed by slot</field>
+    </struct>
+
   </structs>
 </book>

@@ -16,7 +16,9 @@ abstraction, and intelligent streaming decisions to provide optimal performance 
 The Sound class implements robust file format support with automatic detection and validation:
 
 <list type="bullet">
-<li><b>Native WAVE Support:</b> Complete support for WAVE format files including all standard PCM encodings, multiple bit depths (8/16-bit), and both mono and stereo configurations</li>
+<li><b>Native WAVE Support:</b> Support for WAVE files containing 8-bit unsigned or 16-bit signed PCM, in mono and
+stereo layouts.  Files with other layouts or 32-bit float data are described by #SourceFormat but cannot currently be
+played</li>
 <li><b>Automatic Format Detection:</b> File format identification occurs automatically during initialisation based on file headers and content analysis</li>
 <li><b>Extensible Architecture:</b> Additional audio formats (MP3, OGG, FLAC, AAC) can be supported through Sound class extensions and codec plugins</li>
 <li><b>Validation and Error Handling:</b> Comprehensive file validation prevents playback of corrupted or unsupported audio data</li>
@@ -38,6 +40,16 @@ snd = obj.new('sound', {
 snd.acActivate()
 processing.sleep()  -- Wait for completion
 </pre>
+
+<header>Source Format</header>
+
+The decoded PCM format of a sound is described by the #SourceFormat field, an !AudioFormat that records the sample
+rate, sample representation and channel layout.  For file-backed sounds the format comes from the file or its decoder
+and is available after initialisation.  For sounds created with `SDF::NEW`, set the format before initialisation.
+#Channels, #SampleRate and #FrameBytes are read-only conveniences derived from the #SourceFormat.
+
+All byte positions and lengths, e.g. #Position, #Length, #LoopStart and #LoopEnd, are measured in bytes of decoded
+PCM and are aligned to complete frames of #FrameBytes.
 
 -END-
 
@@ -77,6 +89,16 @@ static const std::array<double, 12> glScale = {
 static OBJECTPTR clSound = nullptr;
 
 static ERR find_chunk(objFile *, std::string_view);
+
+// RIFF/WAVE stores multi-byte PCM and floating-point samples in little endian byte order.
+
+static bool wave_export_format_supported(const AudioFormat &Format)
+{
+   const auto layout = format_layout(Format);
+   return (Format.SampleFormat != ASF::NIL) and
+      ((sample_bytes(Format.SampleFormat) IS 1) or ((Format.Flags & AFF::BIG_ENDIAN_ORDER) IS AFF::NIL)) and
+      (layout_is(layout, glLayoutMono) or layout_is(layout, glLayoutStereo));
+}
 
 //********************************************************************************************************************
 // Send a callback to the client when playback stops.
@@ -162,7 +184,58 @@ static void onstop_event(int SampleHandle)
 
 static int sound_frame_size(extSound *Self)
 {
-   return (((Self->Flags & SDF::STEREO) != SDF::NIL) ? 2 : 1) * (Self->BitsPerSample>>3);
+   if (Self->SourceFormat.SampleFormat IS ASF::NIL) return 0;
+   return sample_bytes(Self->SourceFormat.SampleFormat) * int(Self->SourceFormat.Layout.size());
+}
+
+//********************************************************************************************************************
+// Convert a WAVE channel count and optional WAVE_FORMAT_EXTENSIBLE speaker mask to a layout.  Speakers without an
+// SPK identity, and channels beyond the mask, become discrete channels.  Without a mask, only mono and stereo imply
+// speaker positions; wider files are treated as discrete channels because a count alone does not identify a layout.
+
+static void wave_layout(int Channels, uint32_t Mask, kt::vector<int> &Layout)
+{
+   static const int speakers[] = {
+      int(SPK::FRONT_LEFT), int(SPK::FRONT_RIGHT), int(SPK::CENTRE), int(SPK::LFE), int(SPK::REAR_LEFT),
+      int(SPK::REAR_RIGHT), 0, 0, 0, int(SPK::SIDE_LEFT), int(SPK::SIDE_RIGHT)
+   };
+
+   Layout.clear();
+   if (!Mask) {
+      if (Channels IS 1) Layout.push_back(int(SPK::CENTRE));
+      else if (Channels IS 2) {
+         Layout.push_back(int(SPK::FRONT_LEFT));
+         Layout.push_back(int(SPK::FRONT_RIGHT));
+      }
+      else for (int c = 0; c < Channels; c++) Layout.push_back(int(SPK::DISCRETE) + c);
+      return;
+   }
+
+   int discrete = 0;
+   for (int bit = 0; (bit < 32) and (int(Layout.size()) < Channels); bit++) {
+      if (!(Mask & (uint32_t(1) << bit))) continue;
+      const int identity = (bit < std::ssize(speakers)) ? speakers[bit] : 0;
+      Layout.push_back(identity ? identity : int(SPK::DISCRETE) + discrete++);
+   }
+   while (int(Layout.size()) < Channels) Layout.push_back(int(SPK::DISCRETE) + discrete++);
+}
+
+//********************************************************************************************************************
+// Store a validated source format.  BytesPerSecond is derived with checked arithmetic.
+
+static ERR set_source_format(extSound *Self, const AudioFormat &Format)
+{
+   int frame_bytes;
+   if (auto error = format_frame_bytes(Format, frame_bytes); error != ERR::Okay) return error;
+   const int64_t bytes_per_second = int64_t(Format.SampleRate) * frame_bytes;
+   if (bytes_per_second > INT_MAX) return ERR::OutOfRange;
+
+   Self->SourceFormat.SampleRate   = Format.SampleRate;
+   Self->SourceFormat.SampleFormat = Format.SampleFormat;
+   Self->SourceFormat.Flags        = Format.Flags;
+   Self->SourceFormat.Layout.assign(Format.Layout.begin(), Format.Layout.end());
+   Self->BytesPerSecond = int(bytes_per_second);
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -170,7 +243,7 @@ static int sound_frame_size(extSound *Self)
 static double sound_seconds(extSound *Self, int64_t Position)
 {
    const int frame_size = sound_frame_size(Self);
-   const int rate = Self->Playback ? Self->Playback : Self->Frequency;
+   const int rate = Self->Playback ? Self->Playback : Self->SourceFormat.SampleRate;
 
    if ((frame_size <= 0) or (rate <= 0)) return 0;
    else return double(Position) / double(frame_size) / double(rate);
@@ -205,9 +278,8 @@ static ERR sound_play_position(extSound *Self, int64_t *Value)
          if (auto channel = audio->GetChannel(Self->ChannelIndex)) {
             if ((channel->SampleHandle IS Self->Handle) and (channel->State != CHS::STOPPED)) {
                auto &sample = audio->Samples[Self->Handle];
-               const int shift = sample_shift(sample.SampleType);
-               int64_t position = (int64_t(channel->Position) << shift) +
-                  ((int64_t(channel->PositionLow) << shift) >> 16);
+               const int64_t frame_bytes = sample.FrameBytes;
+               int64_t position = int64_t(channel->Position) * frame_bytes; // Whole frames only
 
                if (sample.Stream) {
                   #ifdef AUDIO_WORKER
@@ -218,7 +290,7 @@ static ERR sound_play_position(extSound *Self, int64_t *Value)
                }
 
                #ifdef _WIN32
-               const int64_t queued = int64_t(audio->MixerLag() * channel->Frequency) << shift;
+               const int64_t queued = int64_t(audio->MixerLag() * channel->Frequency) * frame_bytes;
                position = std::max(int64_t(0), position - queued);
                #endif
                *Value = clamp_sound_position(Self, position);
@@ -239,7 +311,9 @@ Calling Activate will play the sample data from the current seek position define
 continues asynchronously and the client can monitor its progress through the #Position field, or receive an event
 notification through an #OnStop callback once playback has stopped.
 
-The #Length field must be set prior to activation, otherwise `ERR::FieldNotSet` is returned.
+The #Length field must be set prior to activation, otherwise `ERR::FieldNotSet` is returned.  The #SourceFormat
+must also be known.  A sound whose format is valid but cannot be played by the mixer, such as a 5.1 or floating point
+source, fails with `ERR::NoSupport`.
 
 On first activation the sample data is either loaded into an audio buffer in its entirety, or configured for streaming
 according to the #Stream field.  Streaming is enabled automatically when `STREAM::ALWAYS` is set and the sample exceeds
@@ -277,17 +351,13 @@ static ERR SOUND_Activate(extSound *Self)
    }
 
    if (!Self->Handle) {
-      // Determine the sample type
+      // The source format must be known and playable.  Multichannel and floating point sources are described, but
+      // are rejected here rather than being played as mono or stereo.
 
-      auto sampleformat = SFM::NIL;
-      if (Self->BitsPerSample IS 8) {
-         sampleformat = ((Self->Flags & SDF::STEREO) != SDF::NIL) ? SFM::U8_BIT_STEREO : SFM::U8_BIT_MONO;
+      if (Self->SourceFormat.SampleFormat IS ASF::NIL) return log.warning(ERR::FieldNotSet);
+      if (playback_format(Self->SourceFormat.SampleFormat, format_layout(Self->SourceFormat)) IS PCM::NIL) {
+         return log.warning(ERR::NoSupport);
       }
-      else if (Self->BitsPerSample IS 16) {
-         sampleformat = ((Self->Flags & SDF::STEREO) != SDF::NIL) ? SFM::S16_BIT_STEREO : SFM::S16_BIT_MONO;
-      }
-
-      if (sampleformat IS SFM::NIL) return log.warning(ERR::InvalidData);
 
       // Create the audio buffer and fill it with sample data
 
@@ -295,8 +365,8 @@ static ERR SOUND_Activate(extSound *Self)
       else if ((Self->Stream IS STREAM::SMART) and (Self->Length > 256 * 1024)) Self->Flags |= SDF::STREAM;
 
       if ((Self->Flags & SDF::STREAM) != SDF::NIL) {
-         log.msg("Streaming enabled for playback in format $%.8x; Length: %" PF64, int(sampleformat),
-            (long long)Self->Length);
+         log.msg("Streaming enabled for playback of %d channels; Length: %" PF64,
+            int(Self->SourceFormat.Layout.size()), (long long)Self->Length);
 
          struct snd::AddStream stream;
          AudioLoop loop{};
@@ -316,7 +386,7 @@ static ERR SOUND_Activate(extSound *Self)
 
          stream.PlayOffset   = Self->Position;
          stream.Callback     = C_FUNCTION(read_stream);
-         stream.SampleFormat = sampleformat;
+         stream.Format       = &Self->SourceFormat;
          stream.SampleLength = Self->Length;
 
          kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 250);
@@ -362,7 +432,7 @@ static ERR SOUND_Activate(extSound *Self)
             if (Self->OnStop.defined()) add.OnStop = C_FUNCTION(onstop_event);
             else add.OnStop.clear();
 
-            add.SampleFormat = sampleformat;
+            add.Format       = &Self->SourceFormat;
             add.Data         = std::span<const int8_t>((int8_t *)buffer, size_t(Self->Length));
 
             kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 250);
@@ -653,18 +723,62 @@ static ERR SOUND_Init(extSound *Self)
    if (fl::ReadLE(Self->File.get(), &id) != ERR::Okay) return ERR::Read; // Contains the characters "fmt "
    if (fl::ReadLE(Self->File.get(), &len) != ERR::Okay) return ERR::Read; // Length of data in this chunk
 
-   WAVEFormat WAVE;
-   if ((Self->File->read(std::span<int8_t>((int8_t *)&WAVE, len), &result) != ERR::Okay) or (result < len)) {
-      log.warning("Failed to read WAVE format header (got %d, expected %d)", result, len);
+   // The format chunk is at least 16 bytes.  WAVE_FORMAT_EXTENSIBLE adds valid bits, a channel mask and a
+   // sub-format GUID.  Oversized chunks are read in part only.
+
+   if (len < 16) return log.warning(ERR::InvalidData);
+   std::array<uint8_t, 40> fmt{};
+   const int fmt_len = std::min(len, int(fmt.size()));
+   if ((Self->File->read(std::span<int8_t>((int8_t *)fmt.data(), fmt_len), &result) != ERR::Okay) or
+       (result < fmt_len)) {
+      log.warning("Failed to read WAVE format header (got %d, expected %d)", result, fmt_len);
       return ERR::Read;
+   }
+   if (len > fmt_len) Self->File->seekCurrent(len - fmt_len);
+
+   WAVEFormat WAVE;
+   auto le16 = [&](int Offset) { return int16_t(fmt[Offset] | (fmt[Offset + 1] << 8)); };
+   auto le32 = [&](int Offset) {
+      return int(uint32_t(fmt[Offset]) | (uint32_t(fmt[Offset + 1]) << 8) | (uint32_t(fmt[Offset + 2]) << 16) |
+         (uint32_t(fmt[Offset + 3]) << 24));
+   };
+   WAVE.Format            = le16(0);
+   WAVE.Channels          = le16(2);
+   WAVE.Frequency         = le32(4);
+   WAVE.AvgBytesPerSecond = le32(8);
+   WAVE.BlockAlign        = le16(12);
+   WAVE.BitsPerSample     = le16(14);
+
+   uint32_t channel_mask = 0;
+   bool has_mask = false;
+   if ((uint16_t(WAVE.Format) IS WAVE_EXTENSIBLE) and (fmt_len >= 40) and (le16(16) >= 22)) {
+      channel_mask = uint32_t(le32(20));
+      has_mask = channel_mask != 0;
+      WAVE.Format = le16(24); // The first two bytes of the sub-format GUID hold the format tag.
    }
 
    // Check the format of the sound file's data
 
-   if ((WAVE.Format != WAVE_ADPCM) and (WAVE.Format != WAVE_RAW)) {
+   if ((WAVE.Format != WAVE_RAW) and (WAVE.Format != WAVE_FLOAT)) {
       log.warning("This file's WAVE data format is not supported (type %d).", WAVE.Format);
-      return ERR::InvalidData;
+      return ERR::NoSupport;
    }
+
+   AudioFormat format{};
+   format.SampleRate = WAVE.Frequency;
+   if ((WAVE.Format IS WAVE_RAW) and (WAVE.BitsPerSample IS 8)) format.SampleFormat = ASF::U8;
+   else if ((WAVE.Format IS WAVE_RAW) and (WAVE.BitsPerSample IS 16)) format.SampleFormat = ASF::S16;
+   else if ((WAVE.Format IS WAVE_FLOAT) and (WAVE.BitsPerSample IS 32)) format.SampleFormat = ASF::F32;
+   else {
+      log.warning("Bits-Per-Sample of %d not supported.", WAVE.BitsPerSample);
+      return ERR::NoSupport;
+   }
+
+   if ((WAVE.Channels < 1) or (WAVE.Channels > MAX_FORMAT_CHANNELS)) return log.warning(ERR::InvalidData);
+   wave_layout(WAVE.Channels, has_mask ? channel_mask : 0, format.Layout);
+
+   if (WAVE.BlockAlign != WAVE.Channels * (WAVE.BitsPerSample / 8)) return log.warning(ERR::InvalidData);
+   if (auto error = set_source_format(Self, format); error != ERR::Okay) return log.warning(ERR::InvalidData);
 
    // TODO Look for the cue chunk for loop information
 
@@ -697,27 +811,18 @@ static ERR SOUND_Init(extSound *Self)
    // Setup the sound structure
 
    uint32_t data_length;
-   fl::ReadLE(Self->File.get(), &data_length); // Length of audio data in this chunk
+   if (fl::ReadLE(Self->File.get(), &data_length) != ERR::Okay) return log.warning(ERR::Read); // Length of audio data in this chunk
    Self->Length = data_length;
 
    Self->File->getPosition(file_pos);
    Self->DataOffset = int(file_pos);
 
-   Self->Format         = WAVE.Format;
-   Self->BytesPerSecond = WAVE.AvgBytesPerSecond;
-   Self->BitsPerSample  = WAVE.BitsPerSample;
-   if (WAVE.Channels IS 2)   Self->Flags |= SDF::STEREO;
-   if (Self->Frequency <= 0) Self->Frequency = WAVE.Frequency;
-   if (Self->Playback <= 0)  Self->Playback  = Self->Frequency;
+   Self->Format = WAVE.Format;
+   if (Self->Playback <= 0) Self->Playback = Self->SourceFormat.SampleRate;
 
    if ((Self->Flags & SDF::NOTE) != SDF::NIL) {
       SOUND_SET_Note(Self, Self->NoteString);
       Self->Flags &= ~SDF::NOTE;
-   }
-
-   if ((Self->BitsPerSample != 8) and (Self->BitsPerSample != 16)) {
-      log.warning("Bits-Per-Sample of %d not supported.", Self->BitsPerSample);
-      return ERR::InvalidData;
    }
 
    return ERR::Okay;
@@ -809,9 +914,15 @@ static ERR SOUND_SaveToObject(extSound *Self, struct acSaveToObject *Args)
       int     DataChunkSize;  // Size of data
    } header;
 
-   header.NumChannels   = ((Self->Flags & SDF::STEREO) != SDF::NIL) ? 2 : 1;
-   header.SampleRate    = Self->Frequency;
-   header.BitsPerSample = Self->BitsPerSample;
+   // Only the standard mono and stereo layouts can be written without a WAVE_FORMAT_EXTENSIBLE channel mask.
+
+   const auto layout = format_layout(Self->SourceFormat);
+   if (not wave_export_format_supported(Self->SourceFormat)) return log.warning(ERR::NoSupport);
+
+   header.AudioFormat   = Self->SourceFormat.SampleFormat IS ASF::F32 ? WAVE_FLOAT : WAVE_RAW;
+   header.NumChannels   = int16_t(layout.size());
+   header.SampleRate    = Self->SourceFormat.SampleRate;
+   header.BitsPerSample = int16_t(sample_bytes(Self->SourceFormat.SampleFormat) * 8);
    header.BlockAlign    = (header.NumChannels * header.BitsPerSample) / 8;
    header.ByteRate      = header.SampleRate * header.BlockAlign;
 
@@ -877,9 +988,8 @@ static ERR SOUND_Seek(extSound *Self, struct acSeek *Args)
 
    if (Self->Position < 0) Self->Position = 0;
    else if (Self->Position > Self->Length) Self->Position = Self->Length;
-   else { // Retain correct byte alignment.
-      int align = ((((Self->Flags & SDF::STEREO) != SDF::NIL) ? 2 : 1) * (Self->BitsPerSample>>3)) - 1;
-      Self->Position &= ~align;
+   else if (auto frame_bytes = sound_frame_size(Self); frame_bytes > 0) { // Retain frame alignment.
+      Self->Position -= Self->Position % frame_bytes;
    }
 
    log.traceBranch("Seek to %" PF64 " + %d", (long long)Self->Position, Self->DataOffset);
@@ -967,19 +1077,30 @@ Audio: Refers to the audio object/device to use for playback.
 Set this field if a specific @Audio object should be targeted when playing the sound sample.
 
 -FIELD-
-BitsPerSample: Indicates the sample rate of the audio sample, typically `8` or `16` bit.
-
--FIELD-
 BytesPerSecond: The flow of bytes-per-second when the sample is played at normal frequency.
 
-This field is set on initialisation.  It indicates the total number of bytes per second that will be played if the
-sample is played back at its normal frequency.
+This read-only field is derived from the #SourceFormat as `SampleRate * FrameBytes`.  It indicates the total number of
+bytes per second that will be played if the sample is played back at its nominal rate.  A format whose byte rate
+cannot be represented is rejected when the #SourceFormat is set.
+
+-FIELD-
+Channels: Read-only.  The number of channels in the #SourceFormat layout, or zero if the format is unknown.
+
+*********************************************************************************************************************/
+
+static ERR SOUND_GET_Channels(extSound *Self, int *Value)
+{
+   *Value = int(Self->SourceFormat.Layout.size());
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 
 -FIELD-
 ChannelIndex: Refers to the channel that the sound is playing through.
 
 This field reflects the audio channel index that the sound is currently playing through, or has most recently played
-through.
+through.  It identifies a voice channel allocated by @Audio.OpenChannels(), not a speaker.
 
 -FIELD-
 Compression: Determines the amount of compression used when saving an audio sample.
@@ -995,9 +1116,10 @@ Duration: Returns the duration of the sample, measured in seconds.
 
 static ERR SOUND_GET_Duration(extSound *Self, double *Value)
 {
-   if (Self->Length) {
-      const int bytes_per_sample = ((((Self->Flags & SDF::STEREO) != SDF::NIL) ? 2 : 1) * (Self->BitsPerSample>>3));
-      *Value = double(Self->Length / bytes_per_sample) / double(Self->Playback ? Self->Playback : Self->Frequency);
+   const int frame_bytes = sound_frame_size(Self);
+   const int rate = Self->Playback ? Self->Playback : Self->SourceFormat.SampleRate;
+   if ((Self->Length) and (frame_bytes > 0) and (rate > 0)) {
+      *Value = double(Self->Length / frame_bytes) / double(rate);
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -1039,12 +1161,20 @@ static ERR SOUND_SET_Flags(extSound *Self, int Value)
 /*********************************************************************************************************************
 
 -FIELD-
-Frequency: The frequency of a sampled sound is specified here.
+FrameBytes: Read-only.  The size of one frame of the #SourceFormat in bytes, or zero if the format is unknown.
 
-This field specifies the frequency of the sampled sound data.  If the frequency cannot be determined from the source,
-this value will be zero.
+A frame contains one sample for every channel, so FrameBytes is the number of channels multiplied by the container
+size of one sample.  Byte positions and lengths are aligned to multiples of this value.
 
-Note that if the playback frequency needs to be altered, set the #Playback field.
+*********************************************************************************************************************/
+
+static ERR SOUND_GET_FrameBytes(extSound *Self, int *Value)
+{
+   *Value = sound_frame_size(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 
 -FIELD-
 Header: Contains the first 128 bytes of data in a sample's file header.
@@ -1213,12 +1343,12 @@ static ERR SOUND_SET_Note(extSound *Self, const std::string_view &Value)
    if (Self->Octave < -5) Self->Octave = -5;
    else if (Self->Octave > 5) Self->Octave = 5;
 
-   // Return if there is no frequency setting yet
+   // Return if there is no sample rate yet
 
-   if (!Self->Frequency) return ERR::Okay;
+   if (!Self->SourceFormat.SampleRate) return ERR::Okay;
 
-   // Get the default frequency and adjust it to suit the requested octave/scale
-   Self->Playback = Self->Frequency;
+   // Get the nominal sample rate and adjust it to suit the requested octave/scale
+   Self->Playback = Self->SourceFormat.SampleRate;
    if (Self->Octave > 0) {
       for (i=0; i < Self->Octave; i++) Self->Playback = Self->Playback<<1;
    }
@@ -1322,7 +1452,8 @@ The Pan field adjusts the "horizontal position" of a sample that is being played
 The default value for this field is zero, which plays the sound through both speakers at an equal level.  The minimum
 value is `-1.0` to force play through the left speaker and the maximum value is `1.0` for the right speaker.
 Finite values outside this range are clamped, and non-finite values are rejected with `OutOfRange`.  The pan law is
-described in the Audio module's `MixPan()` function.
+described in the Audio module's `MixPan()` function.  Pan is a balance control for the front speaker pair, not an
+azimuth, and it cannot address other speakers.
 
 *********************************************************************************************************************/
 
@@ -1359,6 +1490,8 @@ Playback: The playback frequency of the sound sample can be defined here.
 
 Set this field to define the exact frequency of a sample's playback.  The playback frequency can be modified at
 any time, including during audio playback if real-time adjustments to a sample's audio output rate is desired.
+It defaults to the nominal sample rate of the #SourceFormat.  Changing the playback frequency never changes the
+#SourceFormat.
 
 *********************************************************************************************************************/
 
@@ -1474,6 +1607,56 @@ static ERR SOUND_GET_Remaining(extSound *Self, double *Value)
    *Value = sound_seconds(Self, Self->Length - position);
    if (*Value < 0) *Value = 0;
    return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+SampleRate: Read-only.  The nominal sample rate of the #SourceFormat in frames per second, or zero if unknown.
+
+To alter the rate of playback, set the #Playback field.
+
+*********************************************************************************************************************/
+
+static ERR SOUND_GET_SampleRate(extSound *Self, int *Value)
+{
+   *Value = Self->SourceFormat.SampleRate;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+SourceFormat: The decoded PCM format of the sound.
+
+SourceFormat describes the sound's decoded PCM data as an !AudioFormat: its nominal sample rate, the representation of
+each sample, and the ordered channel layout.  For a sound loaded from a file, the format is resolved by the file parser
+or the decoder of a derived class during initialisation, and any value set beforehand is replaced.  Until then the
+format is unavailable and reading the field returns `ERR::FieldNotSet`.  For a new sound created with `SDF::NEW`,
+set SourceFormat before initialisation to describe the PCM data that the sound holds.
+
+The format is immutable after initialisation and writes return `ERR::Immutable`.  #Channels, #SampleRate,
+#FrameBytes and #BytesPerSecond are derived from it and cannot disagree with it.  A malformed format is rejected with
+`ERR::Args`.  A valid format can describe data that the mixer cannot currently play, such as a 5.1 layout; playing
+such a sound fails with `ERR::NoSupport`.
+
+*********************************************************************************************************************/
+
+static ERR SOUND_GET_SourceFormat(extSound *Self, AudioFormat **Value)
+{
+   if (Self->SourceFormat.SampleFormat IS ASF::NIL) {
+      *Value = nullptr;
+      return ERR::FieldNotSet;
+   }
+   *Value = &Self->SourceFormat;
+   return ERR::Okay;
+}
+
+static ERR SOUND_SET_SourceFormat(extSound *Self, AudioFormat *Value)
+{
+   if (Self->initialised()) return ERR::Immutable;
+   if (!Value) return ERR::NullArgs;
+   return set_source_format(Self, *Value);
 }
 
 /*********************************************************************************************************************
@@ -1596,24 +1779,26 @@ static const FieldArray clFields[] = {
    { "Priority",       FDF_INT|FDF_RW, nullptr, SOUND_SET_Priority },
    { "Octave",         FDF_INT|FDF_RW, nullptr, SOUND_SET_Octave },
    { "Flags",          FDF_INTFLAGS|FDF_RW, nullptr, SOUND_SET_Flags, &clSoundFlags },
-   { "Frequency",      FDF_INT|FDF_RI },
    { "Playback",       FDF_INT|FDF_RW, nullptr, SOUND_SET_Playback },
    { "Compression",    FDF_INT|FDF_RW },
-   { "BytesPerSecond", FDF_INT|FDF_RW },
-   { "BitsPerSample",  FDF_INT|FDF_RW },
+   { "BytesPerSecond", FDF_INT|FDF_R },
    { "Audio",          FDF_OBJECTID|FDF_RI },
    { "Stream",         FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clSoundStream },
    { "Handle",         FDF_INT|FDF_SYSTEM|FDF_R },
    { "ChannelIndex",   FDF_INT|FDF_R },
    // Virtual fields
    { "Active",       FDF_VIRTUAL|FDF_INT|FDF_R,                     SOUND_GET_Active },
+   { "Channels",     FDF_VIRTUAL|FDF_INT|FDF_R|FDF_PURE,            SOUND_GET_Channels },
    { "Duration",     FDF_VIRTUAL|FDF_DOUBLE|FDF_R|FDF_PURE,         SOUND_GET_Duration },
    { "Elapsed",      FDF_VIRTUAL|FDF_DOUBLE|FDF_R,                  SOUND_GET_Elapsed },
+   { "FrameBytes",   FDF_VIRTUAL|FDF_INT|FDF_R|FDF_PURE,            SOUND_GET_FrameBytes },
    { "Header",       FDF_VIRTUAL|FDF_BYTE|FDF_ARRAY|FDF_R|FDF_PURE, SOUND_GET_Header },
    { "OnStop",       FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE,      SOUND_GET_OnStop, SOUND_SET_OnStop },
    { "PlayPosition", FDF_VIRTUAL|FDF_INT64|FDF_R,                   SOUND_GET_PlayPosition },
    { "Progress",     FDF_VIRTUAL|FDF_DOUBLE|FDF_R,                  SOUND_GET_Progress },
    { "Remaining",    FDF_VIRTUAL|FDF_DOUBLE|FDF_R,                  SOUND_GET_Remaining },
+   { "SampleRate",   FDF_VIRTUAL|FDF_INT|FDF_R|FDF_PURE,            SOUND_GET_SampleRate },
+   { "SourceFormat", FDF_VIRTUAL|FDF_POINTER|FDF_STRUCT|FDF_RI|FDF_PURE, SOUND_GET_SourceFormat, SOUND_SET_SourceFormat, "AudioFormat" },
    { "Note",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW,              SOUND_GET_Note, SOUND_SET_Note },
    END_FIELD
 };

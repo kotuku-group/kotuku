@@ -4,7 +4,11 @@
 AudioEqualiser: A parametric equaliser for an Audio mixing chain.
 
 Create as a child of an Audio object or set the inherited Audio field.  Use Channel to process one channel set, or
-leave it at zero to process the global mix.  Bands run in list order.  Application equalisers accept live changes;
+leave it at zero to process the global mix.  Bands run in list order.
+
+The #Bands and #Gain form one configuration that is applied to every channel of the processing layout, with
+independent filter history for each channel.  The equaliser does not perform bass management and is not an automatic
+crossover for an LFE channel.  Application equalisers accept live changes;
 global equalisers become immutable after initialisation.
 
 The equaliser publishes its parameters through the inherited @AudioEffect schema.  The top-level `gain` parameter is
@@ -107,14 +111,10 @@ static const AudioParamGroup glEqualiserGroups[] = {
 
 static const AudioOutputDesc glEqualiserOutputs[] = {
    { "response" },
-   { "input_peak_left", AudioOutputKind::SCALAR,
-      "Input Peak Left", "Maximum input sample peak.", "dBFS", "left", "sample-peak", 0 },
-   { "input_peak_right", AudioOutputKind::SCALAR,
-      "Input Peak Right", "Maximum input sample peak.", "dBFS", "right", "sample-peak", 1 },
-   { "output_peak_left", AudioOutputKind::SCALAR,
-      "Output Peak Left", "Maximum output sample peak.", "dBFS", "left", "sample-peak", 2 },
-   { "output_peak_right", AudioOutputKind::SCALAR,
-      "Output Peak Right", "Maximum output sample peak.", "dBFS", "right", "sample-peak", 3 }
+   { "input_peak", AudioOutputKind::SCALAR, "Input Peak", "Maximum input sample peak.", "dBFS", "channel",
+      "sample-peak", AudioMeterSource::INPUT_PEAK },
+   { "output_peak", AudioOutputKind::SCALAR, "Output Peak", "Maximum output sample peak.", "dBFS", "channel",
+      "sample-peak", AudioMeterSource::OUTPUT_PEAK }
 };
 
 //********************************************************************************************************************
@@ -124,6 +124,8 @@ static AudioEQBand entry_band(const AudioParamEntry &Entry)
    return AudioEQBand { EQB(int(Entry.Values[BAND_TYPE])), Entry.Values[BAND_FREQUENCY], Entry.Values[BAND_GAIN],
       Entry.Values[BAND_Q] };
 }
+
+//********************************************************************************************************************
 
 static void equaliser_read(extAudioEffect *Effect, AudioParamState &State)
 {
@@ -149,6 +151,7 @@ static void equaliser_apply(extAudioEffect *Effect, const AudioParamState &State
    Self->Gain = State.Params[EQ_GAIN];
 }
 
+//********************************************************************************************************************
 // Prepared storage is also the retirement container: swaps leave old allocations here to be freed after unlocking.
 
 class EqualiserUpdate final : public AudioParamUpdate {
@@ -223,6 +226,8 @@ static const AudioEffectSchema glEqualiserSchema = {
    .GroupCount  = equaliser_group_count
 };
 
+//********************************************************************************************************************
+
 extAudioEqualiser::extAudioEqualiser(objMetaClass *ClassPtr, OBJECTID ObjectID) : extAudioEffect(ClassPtr, ObjectID)
 {
    Schema = &glEqualiserSchema;
@@ -284,8 +289,6 @@ static ERR AUDIOEQUALISER_SET_Bands(extAudioEqualiser *Self, std::span<const Aud
 
 -FIELD-
 Gain: Output trim in decibels, applied after all bands.
-
-Writes return `ERR::InvalidState` while changes staged by @AudioEffect.SetParameter() are waiting for @AudioEffect.Flush().
 
 *********************************************************************************************************************/
 

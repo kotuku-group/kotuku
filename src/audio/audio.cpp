@@ -12,7 +12,7 @@ The Audio module manages the audio pipeline from sample loading through to hardw
 interfaces:
 
 <list type="bullet">
-<li>@Sound: High-level sample playback.  Loads WAVE files, manages its own resources and decides whether a sample is
+<li>@Sound: High-level sample playback.  Loads WAVE files by default and supports an MP3 extension; manages its own resources and decides whether a sample is
 played from memory or streamed.  This is the recommended interface for most applications.</li>
 <li>@Audio: Low-level mixer and device interface.  Provides channel sets, sample buffers and streams, command
 sequencing, and control over output rate, bit depth, buffering and mixing quality.</li>
@@ -222,6 +222,7 @@ static ERR MODExpunge(void)
 #include "tests/test_dsp_infrastructure.cpp"
 #include "tests/test_audio_equaliser_dsp.cpp"
 #include "tests/test_mixers.cpp"
+#include "tests/test_audio_format.cpp"
 #ifdef ALSA_ENABLED
 #include "tests/test_audio_worker.cpp"
 #endif
@@ -249,6 +250,7 @@ static void MODTest(std::string_view Options, int *Passed, int *Total)
    run("DSP infrastructure", audio_tests_dsp_infrastructure::run);
    run("equaliser DSP", audio_tests_audio_equaliser_dsp::run);
    run("mixer", audio_tests_mixers::run);
+   run("format", audio_tests_audio_format::run);
 #ifdef ALSA_ENABLED
    run("ALSA worker", audio_tests_audio_worker::run);
 #endif
@@ -266,7 +268,12 @@ static void MODTest(std::string_view Options, int *Passed, int *Total)
 
 static ModHeader::STRUCTS glStructures = {
    { "AudioMixCommand", { sizeof(AudioMixCommand), alignof(AudioMixCommand) } },
-   { "AudioLoop", { sizeof(AudioLoop), alignof(AudioLoop) } }
+   { "AudioLoop",       { sizeof(AudioLoop), alignof(AudioLoop) } },
+   { "AudioFormat",     { sizeof(AudioFormat), alignof(AudioFormat) } },
+   { "MeterInfo",       { sizeof(MeterInfo), alignof(MeterInfo) } },
+   { "MeterLayout",     { sizeof(MeterLayout), alignof(MeterLayout) } },
+   { "MeterReading",    { sizeof(MeterReading), alignof(MeterReading) } },
+   { "MeterValue",      { sizeof(MeterValue), alignof(MeterValue) } }
 };
 
 KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, MODTest, MOD_IDL, &glStructures)

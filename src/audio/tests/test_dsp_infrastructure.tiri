@@ -1,5 +1,18 @@
    module audio as mAudio
 
+-- Reads the current meter layout and one measurement.  Returns the descriptors, the value array, the reading's
+-- sequence and flags, and the layout generation.
+
+function read_meters(Effect:obj):<any, any, num, num, num>
+   err, layout = Effect.mtGetMeterLayout()
+   assert(err is ERR_Okay, 'GetMeterLayout() must succeed for an initialised effect')
+   meters, generation = layout.meters, layout.id
+   err, reading = Effect.mtReadMeters()
+   assert(err is ERR_Okay and #reading.values is #meters)
+   assert(reading.id is generation, 'A reading must match the generation of the current layout')
+   return meters, reading.values, reading.sequence, reading.flags, generation
+end
+
 @Test function StatusAndLifecycle()
    audio <close> = obj.new('Audio', { device='null', outputRate=48000, maxDrain=0.1 })
    err, channel = audio.mtOpenChannels(1)
@@ -8,9 +21,8 @@
    assert(audio.maxDrain is 0.1)
    err, app, master, total, rate, generation, state, truncated = audio.mtGetEffectStatus(channel)
    assert(err is ERR_NotInitialised and rate is 0)
-   meter_values = array<double, 5>
-   err, sequence, meter_generation, position, interval, flags, floor = eq.mtGetMeters(meter_values)
-   assert(err is ERR_Okay and flags has AMF_NO_SAMPLES and sequence is 0)
+   meters, meter_values, sequence, snapshot = read_meters(eq)
+   assert(snapshot has AMF_NO_SAMPLES and sequence is 0 and meter_values[0].flags is 0)
    assert(eq.mtGetOutput('unknown') is ERR_Search)
    assert(eq.mtGetOutput('response') is ERR_NoSupport)
    assert(eq.mtGetOutput('input_peak_left') is ERR_InvalidState)
@@ -20,8 +32,8 @@
    assert(state is 0 and truncated is 0 and eq.latency is 0)
    previous = generation
    eq.flags = AEF_BYPASS
-   err, sequence, meter_generation, position, interval, flags, floor = eq.mtGetMeters(meter_values)
-   assert(err is ERR_Okay and flags is AMF_BYPASSED)
+   meters, meter_values, sequence, snapshot = read_meters(eq)
+   assert(snapshot is AMF_BYPASSED)
    eq.flags = 0
    check audio.mtResetEffects(channel)
    err, app, master, total, rate, generation, state, truncated = audio.mtGetEffectStatus(channel)
@@ -29,23 +41,62 @@
    check audio.mtCloseChannels(channel)
    assert(audio.mtGetEffectStatus(channel) is ERR_Args)
    assert(audio.mtResetEffects(channel) is ERR_Args)
-   err, sequence, meter_generation, position, interval, flags, floor = eq.mtGetMeters(meter_values)
-   assert(err is ERR_Okay and flags is AMF_DISCONNECTED)
+   meters, meter_values, sequence, snapshot = read_meters(eq)
+   assert(snapshot is AMF_DISCONNECTED)
+   err, rate, format, layout, generation, state = eq.mtGetProcessingFormat()
+   assert(err is ERR_Okay and state is AFS_INACTIVE and #layout is 2, 'A disconnected effect keeps its last format')
    check audio.acDeactivate()
    assert(audio.mtGetEffectStatus(0) is ERR_NotInitialised)
 end
 
 @Test function MonoDiscoveryAndGlobalReads()
-   audio <close> = obj.new('Audio', { device='null', outputRate=44100, flags=0 })
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100, outputLayout=array<int> { SPK_CENTRE } })
    eq <close> = obj.new('AudioEqualiser', { audio=audio })
    assert(eq.schema.find('key="response" type="curve"') != nil)
-   assert(eq.schema.find('key="input_peak_left" type="scalar"') != nil)
-   assert(eq.schema.find('input_peak_right') is nil)
+   assert(eq.schema.find('key="input_peak_centre" type="scalar"') != nil)
+   assert(eq.schema.find('input_peak_left') is nil and eq.schema.find('input_peak_right') is nil)
    assert(eq.mtGetOutput('input_peak_right') is ERR_Search)
-   meter_values = array<double, 5>
-   err, sequence, generation, position, interval, flags = eq.mtGetMeters(meter_values)
-   assert(err is ERR_Okay and flags has AMF_NO_SAMPLES)
+   meters, meter_values, sequence, snapshot = read_meters(eq)
+   assert(#meters is 2 and meters[0].key is 'input_peak_centre' and meters[1].key is 'output_peak_centre')
+   assert(snapshot has AMF_NO_SAMPLES)
    assert(eq.mtSetParameter('gain', 1) is ERR_Immutable)
    check audio.mtResetEffects(0)
-   assert(eq.mtGetMeters(array<double, 4>) is ERR_Args)
+end
+
+@Test function MeterLayoutDescriptors()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   err, channel = audio.mtOpenChannels(1)
+   eq <close> = obj.new('AudioEqualiser', { audio=audio, channel=channel })
+   err, layout = eq.mtGetMeterLayout()
+   meters, generation = layout.meters, layout.id
+   assert(err is ERR_Okay and #meters is 4 and generation > 0)
+   assert(meters[0].key is 'input_peak_left' and meters[1].key is 'input_peak_right')
+   assert(meters[3].key is 'output_peak_right' and meters[3].slot is 3)
+   assert(meters[3].label is 'Output Peak Right' and meters[0].unit is 'dBFS' and meters[0].scope is 'channel')
+   assert(meters[0].semantics is 'sample-peak')
+   assert(meters[0].channel is SPK_FRONT_LEFT and meters[1].channel is SPK_FRONT_RIGHT)
+   stereo = meters
+   assert(eq.schema.find('key="input_peak_right" type="scalar" label="Input Peak Right"') != nil)
+   assert(eq.schema.find('channel="' .. SPK_FRONT_RIGHT .. '" semantics="sample-peak" slot="1"') != nil)
+
+   -- A reading reports the generation of the layout that it was measured in.
+
+   err, reading = eq.mtReadMeters()
+   assert(err is ERR_Okay and #reading.values is 4 and reading.id is generation)
+
+   -- Reactivating with a different layout replaces the descriptors.  Readings from the new layout report a new
+   -- generation, telling a client with stale descriptors to read the layout again.
+
+   check audio.acActivate()
+   check audio.acDeactivate()
+   audio.outputLayout = array<int> { SPK_CENTRE }
+   check audio.acActivate()
+   err, reading = eq.mtReadMeters()
+   assert(err is ERR_Okay and reading.id != generation and #reading.values is 2)
+   err, layout = eq.mtGetMeterLayout()
+   meters, mono = layout.meters, layout.id
+   assert(mono is reading.id and #meters is 2)
+   assert(meters[0].key is 'input_peak_centre' and meters[0].channel is SPK_CENTRE)
+   assert(stereo[1].key is 'input_peak_right' and stereo[1].slot is 1, 'Records copied to Tiri are unaffected by a layout change')
+   check audio.acDeactivate()
 end

@@ -41,18 +41,65 @@ public:
    }
 };
 
+static std::span<const int> test_layout(int Channels)
+{
+   return Channels IS 2 ? std::span<const int>(glLayoutStereo) : std::span<const int>(glLayoutMono);
+}
+
 struct Fixture {
    std::shared_ptr<std::recursive_mutex> Mutex = std::make_shared<std::recursive_mutex>();
    std::shared_ptr<AudioEffectChain> Chain = std::make_shared<AudioEffectChain>(Mutex);
    extAudioEffect Effect{nullptr, 0};
-   Fixture(int Rate, int Channels, std::unique_ptr<AudioEffectProcessor> Processor) {
+   Fixture(int Rate, int Channels, std::unique_ptr<AudioEffectProcessor> Processor,
+      const AudioEffectSchema *Schema = nullptr) {
       Effect.Chain = Chain;
+      Effect.Schema = Schema;
       Effect.OutputRate = Chain->Rate = Rate;
-      Effect.Stereo = Chain->Stereo = Channels IS 2;
+      Chain->Stereo = Channels IS 2;
+      Chain->Layout.assign(test_layout(Channels).begin(), test_layout(Channels).end());
+      Effect.set_layout(test_layout(Channels));
       Chain->Effects.push_back(&Effect);
       if (Processor) Effect.set_processor(std::move(Processor));
    }
 };
+
+// Scalar output templates for meter tests: per-channel peaks and one global value.
+
+static const AudioOutputDesc glMeterOutputs[] = {
+   { "input_peak", AudioOutputKind::SCALAR, "Input Peak", {}, "dBFS", "channel", "sample-peak",
+      AudioMeterSource::INPUT_PEAK },
+   { "output_peak", AudioOutputKind::SCALAR, "Output Peak", {}, "dBFS", "channel", "sample-peak",
+      AudioMeterSource::OUTPUT_PEAK },
+   { "gain_reduction", AudioOutputKind::SCALAR, "Gain Reduction", {}, "dB", "global", "gain-reduction",
+      AudioMeterSource::GAIN_REDUCTION }
+};
+
+static const AudioEffectSchema glMeterSchema = {
+   .ClassName = "MeterFixture", .Version = 1, .Outputs = glMeterOutputs,
+   .Read = [](extAudioEffect *, AudioParamState &) {}, .Apply = [](extAudioEffect *, const AudioParamState &) {}
+};
+
+struct Reading {
+   std::vector<double> Values;
+   std::vector<int> Flags;
+   MeterReading Meta;
+   ERR Error;
+};
+
+static Reading read(extAudioEffect &Effect)
+{
+   Reading result;
+   auto chain = Effect.Chain.lock();
+   std::unique_lock<std::recursive_mutex> lock;
+   if (chain) lock = std::unique_lock(*chain->Mutex);
+   Effect.read_meter(chain.get(), result.Meta);
+   for (const auto &value : result.Meta.Values) {
+      result.Values.push_back(value.Value);
+      result.Flags.push_back(int(value.Flags));
+   }
+   result.Error = ERR::Okay;
+   return result;
+}
 
 static void delays(AudioTestContext &Test)
 {
@@ -62,7 +109,7 @@ static void delays(AudioTestContext &Test)
       extAudioEffect second(nullptr, 0);
       second.Chain = fixture.Chain;
       second.OutputRate = rate;
-      second.Stereo = channels IS 2;
+      second.set_layout(test_layout(channels));
       chain.Effects.push_back(&second);
       AUDIO_REQUIRE(second.set_processor(std::make_unique<Delay>(71, channels)) IS ERR::Okay);
       int64_t latency;
@@ -177,45 +224,143 @@ static void upstream_silence(AudioTestContext &Test)
 
 static void meters(AudioTestContext &Test)
 {
-   Fixture fixture(44100, 2, std::make_unique<Delay>(1, 2));
+   Fixture fixture(44100, 2, std::make_unique<Delay>(1, 2), &glMeterSchema);
    auto &effect = fixture.Effect;
+
+   // Stereo publishes one peak per channel for input and output, then the global value.
+
+   AUDIO_REQUIRE(effect.Meters.size() IS 5);
+   AUDIO_CHECK(std::string_view(effect.Meters[0].Key) IS "input_peak_left");
+   AUDIO_CHECK(std::string_view(effect.Meters[1].Key) IS "input_peak_right");
+   AUDIO_CHECK(std::string_view(effect.Meters[2].Key) IS "output_peak_left");
+   AUDIO_CHECK(std::string_view(effect.Meters[3].Label) IS "Output Peak Right");
+   AUDIO_CHECK(effect.Meters[1].Channel IS int(SPK::FRONT_RIGHT) and effect.Meters[4].Channel IS 0);
+   AUDIO_CHECK(std::string_view(effect.Meters[4].Key) IS "gain_reduction");
+
    std::vector<float> samples(2205 * 2, 0.5f);
    for (size_t i = 1; i < samples.size(); i += 2) samples[i] = 0.25f;
    effect.process(samples.data(), 1000);
    AUDIO_CHECK(effect.Meter.Sequence IS 0);
    effect.process(samples.data() + 2000, 1205);
-   const auto snapshot = effect_meters(&effect);
-   AUDIO_CHECK(snapshot.Sequence IS 1 and snapshot.Interval IS 2205 and snapshot.Position IS 2205);
+   auto snapshot = read(effect);
+   AUDIO_REQUIRE(snapshot.Error IS ERR::Okay);
+   AUDIO_CHECK(snapshot.Meta.Sequence IS 1 and snapshot.Meta.Interval IS 2205 and snapshot.Meta.Position IS 2205);
    AUDIO_CHECK(std::abs(snapshot.Values[0] + 6.020599913) < 1e-6);
    AUDIO_CHECK(std::abs(snapshot.Values[1] + 12.041199827) < 1e-6);
-   AUDIO_CHECK(snapshot.Flags IS AMF::VALID and !snapshot.Floor);
-   AUDIO_CHECK(effect_meters(&effect).Sequence IS snapshot.Sequence);
+   AUDIO_CHECK(snapshot.Meta.Flags IS AMF::VALID);
+   for (auto flags : snapshot.Flags) AUDIO_CHECK(flags IS int(AMV::VALID));
+   AUDIO_CHECK(read(effect).Meta.Sequence IS snapshot.Meta.Sequence);
+
    std::array<float, 20> silence{};
    effect.process(silence.data(), 10);
    effect.idle();
    AUDIO_CHECK(effect.Meter.Sequence IS 2 and effect.Meter.Interval IS 10 and
       effect.Meter.Flags IS (AMF::VALID|AMF::IDLE));
-   AUDIO_CHECK(effect.Meter.Values[0] IS -120 and (effect.Meter.Floor & 3) IS 3);
-   fixture.Chain->reset();
-   AUDIO_CHECK((effect_meters(&effect).Flags & AMF::NO_SAMPLES) != AMF::NIL and effect.Meter.Interval IS 0);
-   effect.Flags = AEF::BYPASS;
-   AUDIO_CHECK(effect_meters(&effect).Flags IS AMF::BYPASSED);
-   effect.Flags = AEF::NIL;
-   effect.detach();
-   AUDIO_CHECK((effect_meters(&effect).Flags & AMF::VALID) IS AMF::NIL);
+   snapshot = read(effect);
+   AUDIO_CHECK(snapshot.Values[0] IS -120 and snapshot.Flags[0] IS int(AMV::VALID|AMV::FLOOR));
+   AUDIO_CHECK(snapshot.Flags[1] IS int(AMV::VALID|AMV::FLOOR) and snapshot.Flags[4] IS int(AMV::VALID));
 
-   Fixture integer_output(1000, 1, std::make_unique<Delay>(1, 1));
+   // A reading reports the same generation as GetMeterLayout(), so a client with current descriptors never re-reads.
+
+   AUDIO_CHECK(uint64_t(snapshot.Meta.ID) IS effect.meter_generation(fixture.Chain.get()));
+
+   fixture.Chain->reset();
+   snapshot = read(effect);
+   AUDIO_CHECK((snapshot.Meta.Flags & AMF::NO_SAMPLES) != AMF::NIL and effect.Meter.Interval IS 0);
+   for (auto value_flags : snapshot.Flags) AUDIO_CHECK(value_flags IS 0);
+   effect.Flags = AEF::BYPASS;
+   AUDIO_CHECK(read(effect).Meta.Flags IS AMF::BYPASSED);
+   effect.Flags = AEF::NIL;
+
+   // Reapplying the same layout keeps the descriptors in place; a different layout replaces them, and the reset that
+   // accompanies every layout change gives readings a new generation.
+
+   const auto stereo_generation = effect.meter_generation(fixture.Chain.get());
+   const auto stereo_descriptors = effect.Meters.data();
+   effect.set_layout(glLayoutStereo);
+   AUDIO_CHECK(effect.Meters.data() IS stereo_descriptors);
+   effect.set_layout(glLayoutMono);
+   fixture.Chain->reset();
+   AUDIO_CHECK(effect.Meters.size() IS 3);
+   AUDIO_CHECK(std::string_view(effect.Meters[0].Key) IS "input_peak_centre");
+   AUDIO_CHECK(effect.Meters[0].Channel IS int(SPK::CENTRE));
+   snapshot = read(effect);
+   AUDIO_CHECK(uint64_t(snapshot.Meta.ID) != stereo_generation and snapshot.Values.size() IS 3);
+   AUDIO_CHECK(uint64_t(snapshot.Meta.ID) IS effect.meter_generation(fixture.Chain.get()));
+
+   const auto xml = build_schema_xml(glMeterSchema, effect.Meters);
+   AUDIO_CHECK(xml.find("key=\"input_peak_centre\" type=\"scalar\" label=\"Input Peak Centre\" unit=\"dBFS\" "
+      "scope=\"channel\" channel=\"1\" semantics=\"sample-peak\" slot=\"0\"/>") != std::string::npos);
+   AUDIO_CHECK(xml.find("key=\"gain_reduction\"") != std::string::npos);
+   AUDIO_CHECK(xml.find("slot=\"2\"") != std::string::npos and xml.find("slot=\"3\"") IS std::string::npos);
+
+   effect.detach();
+   snapshot = read(effect);
+   AUDIO_CHECK(snapshot.Meta.Flags IS AMF::DISCONNECTED and (snapshot.Meta.Flags & AMF::VALID) IS AMF::NIL);
+
+   // More than 32 values remain addressable, with independent flags for each value.
+
+   std::vector<int> wide;
+   for (int c = 0; c < 20; c++) wide.push_back(int(SPK::DISCRETE) + c);
+   Fixture synthetic(1000, 1, nullptr, &glMeterSchema);
+   synthetic.Effect.set_layout(wide);
+   AUDIO_REQUIRE(synthetic.Effect.Meters.size() IS 41);
+   AUDIO_CHECK(std::string_view(synthetic.Effect.Meters[19].Key) IS "input_peak_discrete_19");
+   for (int c = 0; c < 20; c++) {
+      synthetic.Effect.InputPeaks[c] = (c % 2) ? 0.5 : 0;
+      synthetic.Effect.OutputPeaks[c] = (c % 3) ? 0.25 : 0;
+   }
+   synthetic.Effect.MeterFrames = 1;
+   synthetic.Effect.publish_meter(AMF::NIL);
+   auto wide_reading = read(synthetic.Effect);
+   AUDIO_REQUIRE(wide_reading.Error IS ERR::Okay and wide_reading.Values.size() IS 41);
+   for (int c = 0; c < 20; c++) {
+      AUDIO_CHECK(wide_reading.Flags[c] IS int((c % 2) ? AMV::VALID : (AMV::VALID|AMV::FLOOR)));
+      AUDIO_CHECK(wide_reading.Flags[20 + c] IS int((c % 3) ? AMV::VALID : (AMV::VALID|AMV::FLOOR)));
+   }
+   AUDIO_CHECK(std::abs(wide_reading.Values[39] + 12.041199827) < 1e-6 and wide_reading.Flags[40] IS int(AMV::VALID));
+
+   Fixture integer_output(1000, 1, std::make_unique<Delay>(1, 1), &glMeterSchema);
    integer_output.Chain->MeterScale = 32768; // Both integer output formats use 16-bit internal mixer units.
    std::array<float, 50> integer_samples;
    std::fill(integer_samples.begin(), integer_samples.end(), 16384);
    integer_output.Effect.process(integer_samples.data(), integer_samples.size());
    AUDIO_CHECK(std::abs(integer_output.Effect.Meter.Values[0] + 6.020599913) < 1e-6);
 
-   Fixture reduction(1000, 1, std::make_unique<Feedback>());
+   Fixture reduction(1000, 1, std::make_unique<Feedback>(), &glMeterSchema);
    std::array<float, 50> input{};
    input[0] = 1;
    reduction.Effect.process(input.data(), input.size());
-   AUDIO_CHECK(reduction.Effect.Meter.Values[4] IS 3);
+   AUDIO_CHECK(reduction.Effect.Meter.Values[2] IS 3);
+}
+
+static void meter_layout_lifetime(AudioTestContext &Test)
+{
+   auto release = [](MeterLayout *Layout) { if (Layout) FreeResource(Layout); };
+   std::unique_ptr<MeterLayout, decltype(release)> snapshot(nullptr, release);
+   {
+      Fixture fixture(48000, 2, nullptr, &glMeterSchema);
+      fx::GetMeterLayout args{};
+      AUDIO_REQUIRE(AUDIOEFFECT_GetMeterLayout(&fixture.Effect, &args) IS ERR::Okay);
+      snapshot.reset(args.Layout);
+      AUDIO_REQUIRE(snapshot and snapshot->Meters.size() IS 5);
+      const auto generation = snapshot->ID;
+      AUDIO_CHECK(snapshot->Meters[1].Key IS "input_peak_right");
+
+      fixture.Effect.set_layout(glLayoutMono);
+      fixture.Chain->reset();
+      AUDIO_CHECK(snapshot->ID IS generation and snapshot->Meters.size() IS 5);
+      AUDIO_CHECK(snapshot->Meters[1].Key IS "input_peak_right");
+      AUDIO_REQUIRE(AUDIOEFFECT_GetMeterLayout(&fixture.Effect, &args) IS ERR::Okay);
+      std::unique_ptr<MeterLayout, decltype(release)> mono(args.Layout, release);
+      AUDIO_CHECK(mono->ID != generation and mono->Meters.size() IS 3);
+      AUDIO_CHECK(mono->Meters[0].Key IS "input_peak_centre");
+   }
+   // Every descriptor field, including string storage, survives the destruction of the effect and its chain.
+   const auto &meter = snapshot->Meters[1];
+   AUDIO_CHECK(meter.Key IS "input_peak_right" and meter.Label IS "Input Peak Right");
+   AUDIO_CHECK(meter.Unit IS "dBFS" and meter.Scope IS "channel" and meter.Semantics IS "sample-peak");
+   AUDIO_CHECK(meter.Slot IS 1 and meter.Channel IS int(SPK::FRONT_RIGHT));
 }
 
 static void equaliser_tail(AudioTestContext &Test)
@@ -245,15 +390,15 @@ static void equaliser_tail(AudioTestContext &Test)
 
 static void contention(AudioTestContext &Test)
 {
-   Fixture fixture(48000, 2, std::make_unique<Delay>(128, 2));
+   Fixture fixture(48000, 2, std::make_unique<Delay>(128, 2), &glMeterSchema);
    std::atomic<bool> done{false};
    std::atomic<uint64_t> reads{0};
    auto reader = std::thread([&] {
       uint64_t sequence = 0;
       while (!done) {
-         auto snapshot = effect_meters(&fixture.Effect);
-         AUDIO_CHECK(snapshot.Sequence >= sequence);
-         sequence = snapshot.Sequence;
+         auto snapshot = read(fixture.Effect);
+         AUDIO_CHECK(uint64_t(snapshot.Meta.Sequence) >= sequence);
+         sequence = snapshot.Meta.Sequence;
          ++reads;
       }
    });
@@ -297,7 +442,8 @@ static void common_mixer(AudioTestContext &Test)
    audio->MixConfig = AudioConfig(false, false);
    audio->Samples.resize(2);
    auto &sample = audio->Samples[1];
-   sample.SampleType = SFM::S16_BIT_MONO;
+   sample.SampleType = PCM::S16_MONO;
+   sample.FrameBytes = 2;
    sample.SampleLength = SAMPLE(1);
    sample.Data.resize(4);
    const int16_t impulse = 32767;
@@ -318,6 +464,9 @@ static void common_mixer(AudioTestContext &Test)
    application.Chain = set.Effects;
    global.Chain = audio->GlobalEffects;
    application.OutputRate = global.OutputRate = 1000;
+   set.Effects->Layout = audio->GlobalEffects->Layout = { int(SPK::CENTRE) };
+   application.set_layout(glLayoutMono);
+   global.set_layout(glLayoutMono);
    set.Effects->Effects.push_back(&application);
    audio->GlobalEffects->Effects.push_back(&global);
    set.Effects->Rate = audio->GlobalEffects->Rate = 1000;
@@ -473,7 +622,7 @@ static void preparation(AudioTestContext &Test)
    Fixture fixture(44100, 1, std::move(processor));
    for (int rate : {44100, 48000, 96000}) for (bool stereo : {false, true}) {
       const auto generation = *fixture.Chain->Generation;
-      AUDIO_REQUIRE(configure_effects(*fixture.Chain, rate, stereo) IS ERR::Okay);
+      AUDIO_REQUIRE(configure_effects(*fixture.Chain, rate, test_layout(stereo ? 2 : 1)) IS ERR::Okay);
       AUDIO_CHECK(*fixture.Chain->Generation > generation);
       AUDIO_CHECK(fixture.Effect.CommittedLatency IS (rate + 999) / 1000);
       std::vector<float> samples(200 * (stereo ? 2 : 1));
@@ -485,7 +634,7 @@ static void preparation(AudioTestContext &Test)
    }
    const auto generation = *fixture.Chain->Generation;
    pointer->Reject = true;
-   AUDIO_CHECK(configure_effects(*fixture.Chain, 44100, false) IS ERR::InvalidValue);
+   AUDIO_CHECK(configure_effects(*fixture.Chain, 44100, glLayoutMono) IS ERR::InvalidValue);
    AUDIO_CHECK(*fixture.Chain->Generation IS generation and fixture.Effect.OutputRate IS 96000);
    AUDIO_CHECK(fixture.Effect.CommittedLatency IS 96);
 
@@ -505,6 +654,65 @@ static void preparation(AudioTestContext &Test)
    AUDIO_CHECK(*fixture.Chain->Generation IS generation and fixture.Effect.CommittedLatency IS 96);
 }
 
+// Device-independent failure injection covers the transaction shared by activation and Windows reopening.
+static void output_transaction(AudioTestContext &Test)
+{
+   extAudio *audio;
+   AUDIO_REQUIRE(NewObject(CLASSID::AUDIO, &audio) IS ERR::Okay);
+   std::unique_ptr<extAudio, DeleteObject<extAudio>> owner(audio);
+   AUDIO_REQUIRE(InitObject(audio) IS ERR::Okay);
+   audio->Sets.resize(2);
+   auto &set = audio->Sets[1];
+   set.Effects = std::make_shared<AudioEffectChain>(audio->MixerLock);
+   set.Effects->Generation = audio->GlobalEffects->Generation;
+
+   extAudioEffect global(nullptr, 0), application(nullptr, 0);
+   global.Chain = audio->GlobalEffects;
+   application.Chain = set.Effects;
+   audio->GlobalEffects->Effects.push_back(&global);
+   set.Effects->Effects.push_back(&application);
+   auto first = std::make_shared<PreparedDelay>();
+   auto second = std::make_shared<PreparedDelay>();
+   global.processor = first;
+   application.processor = second;
+   audio->OutputRate = 48000;
+
+   // A failure in the last chain must not publish the already prepared first chain, even on first activation.
+   second->Reject = true;
+   AUDIO_CHECK(commit_audio_output(audio, glLayoutStereo, nullptr) IS ERR::InvalidValue);
+   AUDIO_CHECK(audio->CommittedLayout.empty() and audio->OutputGeneration IS 0);
+   AUDIO_CHECK(!global.FormatCommitted and !application.FormatCommitted and first->latency() IS 0);
+   second->Reject = false;
+   AUDIO_REQUIRE(commit_audio_output(audio, glLayoutStereo, nullptr) IS ERR::Okay);
+   const auto generation = audio->OutputGeneration;
+   AUDIO_CHECK(global.FormatGeneration IS generation and application.FormatGeneration IS generation);
+   AUDIO_CHECK(audio->CommittedRate IS 48000 and audio->OutputActive);
+   AUDIO_REQUIRE(acDeactivate(audio) IS ERR::Okay);
+
+   audio->OutputRate = 96000; // A candidate rate negotiated by a replacement device.
+   second->Reject = true;
+   AUDIO_CHECK(commit_audio_output(audio, glLayoutMono, nullptr) IS ERR::InvalidValue);
+   second->Reject = false;
+   AUDIO_CHECK(commit_audio_output(audio, glLayoutMono, [](extAudio *) { return ERR::CreateResource; }) IS
+      ERR::CreateResource);
+   AUDIO_CHECK(!audio->OutputActive and !audio->EffectConfigured);
+   AUDIO_CHECK(audio->OutputGeneration IS generation and layout_is(audio->CommittedLayout, glLayoutStereo));
+   AUDIO_CHECK(global.FormatGeneration IS generation and application.FormatGeneration IS generation);
+   AUDIO_CHECK(global.OutputRate IS 48000 and application.OutputRate IS 48000);
+   AUDIO_CHECK(first->latency() IS 48 and second->latency() IS 48);
+   snd::GetOutputFormat output{};
+   AUDIO_REQUIRE(AUDIO_GetOutputFormat(audio, &output) IS ERR::Okay);
+   AUDIO_CHECK(output.SampleRate IS 48000 and output.State IS AFS::INACTIVE);
+   AUDIO_CHECK(uint64_t(output.Generation) IS generation);
+
+   AUDIO_REQUIRE(commit_audio_output(audio, glLayoutMono, nullptr) IS ERR::Okay);
+   AUDIO_CHECK(audio->OutputGeneration IS generation + 1 and audio->CommittedRate IS 96000);
+   AUDIO_CHECK(global.FormatGeneration IS audio->OutputGeneration and
+      application.FormatGeneration IS audio->OutputGeneration);
+   AUDIO_CHECK(global.Layout.size() IS 1 and application.Layout.size() IS 1);
+   AUDIO_CHECK(first->latency() IS 96 and second->latency() IS 96);
+}
+
 static void render_costs()
 {
    Fixture fixture(48000, 2, nullptr);
@@ -517,6 +725,7 @@ static void render_costs()
    AudioEffectChain empty(fixture.Mutex);
    empty.Rate = 48000;
    empty.Stereo = true;
+   empty.Layout.assign(std::begin(glLayoutStereo), std::end(glLayoutStereo));
    std::array<float, 512> buffer;
    auto measure = [&](auto Process) {
       double maximum = 0;
@@ -543,10 +752,12 @@ static void run(AudioTestContext &Test)
 {
    render_costs();
    preparation(Test);
+   output_transaction(Test);
    delays(Test);
    deadlines(Test);
    upstream_silence(Test);
    meters(Test);
+   meter_layout_lifetime(Test);
    equaliser_tail(Test);
    contention(Test);
 #ifdef AUDIO_WORKER

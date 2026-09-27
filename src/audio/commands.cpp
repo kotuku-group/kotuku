@@ -350,6 +350,10 @@ gain is `V * (1 + P)`; above zero, the left gain is `V * (1 - P)` and the right 
 therefore played at full volume on both sides, not at constant power.  Pan has no effect when the Audio object
 outputs in mono.
 
+Pan is a mono/stereo balance control for the front speaker pair.  It is not an azimuth and does not address other
+speakers.  Mono and stereo sources in a wider output layout are placed on the front pair.  Sources with more than two
+channels require explicit routing, which is not yet available; such sources must use a neutral pan of zero.
+
 The pan applies from the next mixed frame, ramping towards the new gains if both `ADF::VOL_RAMPING` and
 `ADF::OVER_SAMPLING` are enabled.  When the
 mixer runs on a worker thread, `Okay` confirms that the command was accepted for application before the next period
@@ -454,11 +458,11 @@ ERR MixPlay(objAudio *Audio, int Handle, int64_t Position)
       if (sample_handle < 0 or size_t(sample_handle) >= self->Samples.size()) return ERR::NoData;
       const auto &sample = self->Samples[sample_handle];
       if (sample.Data.empty()) return ERR::NoData;
-      if (Position % (int64_t(1) << sample_shift(sample.SampleType))) return ERR::Args;
+      if (Position % sample.FrameBytes) return ERR::Args;
       if (sample.Stream) {
          if (sample.StreamLengthKnown and Position > sample.StreamLength) return ERR::OutOfRange;
       }
-      else if (SAMPLE(Position >> sample_shift(sample.SampleType)) > sample.SampleLength) return ERR::OutOfRange;
+      else if (SAMPLE(Position / sample.FrameBytes) > sample.SampleLength) return ERR::OutOfRange;
       if (self->PendingCount >= self->PendingCommands.size()) return ERR::BufferOverflow;
       self->PendingCommands[self->PendingCount++] = AudioCommand(CMD::PLAY, Handle, Position);
       wake_audio(self);
@@ -486,11 +490,11 @@ ERR MixPlay(objAudio *Audio, int Handle, int64_t Position)
 
    auto &sample = ((extAudio *)Audio)->Samples[channel->SampleHandle];
 
-   if (Position % (int64_t(1) << sample_shift(sample.SampleType))) return log.warning(ERR::Args);
+   if (Position % sample.FrameBytes) return log.warning(ERR::Args);
 
    // Convert position from bytes to samples
 
-   auto bitpos = SAMPLE(Position >> sample_shift(sample.SampleType));
+   auto bitpos = SAMPLE(Position / sample.FrameBytes);
 
    if (sample.Data.empty()) { // The sample reference must be valid and not stale.
       log.warning("On channel %d, referenced sample %d is unconfigured.", Handle, channel->SampleHandle);
@@ -504,7 +508,6 @@ ERR MixPlay(objAudio *Audio, int Handle, int64_t Position)
       ++sample.Generation;
       sample.DeferredStops = 0;
       sample.Ring.Read = sample.Ring.Used = 0;
-      Position = (Position >> sample_shift(sample.SampleType)) << sample_shift(sample.SampleType);
       sample.SourceOffset = Position;
       sample.SourceSeek = true;
       sample.Refilling = false;
@@ -516,6 +519,8 @@ ERR MixPlay(objAudio *Audio, int Handle, int64_t Position)
       request_stream((extAudio *)Audio, sample);
 #else
       sample.BufferedLength = fill_stream_buffer(Handle, sample, Position);
+      sample.BufferedLength = BYTELEN(sample.BufferedLength - (sample.BufferedLength % sample.FrameBytes));
+      if (sample.Swap) swap_samples_16(sample.Data.data(), sample.BufferedLength);
       sample.PlayPos = BYTELEN(Position) + sample.BufferedLength;
 #endif
       Position = 0; // Internally we want to start from byte position zero in our stream buffer
@@ -535,7 +540,7 @@ ERR MixPlay(objAudio *Audio, int Handle, int64_t Position)
       if (sample.Stream and sample.StreamLengthKnown) {
          // NB: Accuracy is dependent on the StreamLength value being correct.  PlayPos already includes the
          // buffered fill, which still has to be played, so it is added back to the anticipated time.
-         sec = double((sample.StreamLength - sample.PlayPos + sample.BufferedLength)>>sample_shift(sample.SampleType)) /
+         sec = double((sample.StreamLength - sample.PlayPos + sample.BufferedLength) / sample.FrameBytes) /
             double(channel->Frequency);
       }
       else if (!sample.Stream) sec = double(sample.SampleLength - bitpos) / double(channel->Frequency);
@@ -1055,6 +1060,75 @@ ERR MixVolume(objAudio *Audio, int Handle, double Volume)
 
    set_channel_volume((extAudio *)Audio, channel);
    return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
+ExpandLayout: Expands a named channel layout preset into its ordered channel identities.
+
+A preset such as `ACL::STEREO` names a speaker arrangement.  ExpandLayout() returns the identities of that arrangement
+in interleaved frame order, ready for use in the `Layout` of an !AudioFormat or the @Audio.OutputLayout field.  A
+channel count alone never selects a layout; for instance, both 5.1 presets have six channels but place the surround
+pair differently.
+
+!ACL
+
+Expanding a preset does not imply that it can be played.  Playback support is confirmed when a format is registered
+or an output layout is activated.
+
+-INPUT-
+int(ACL) Layout: The preset to expand.
+^&vector(int) Channels: Receives the ordered channel identities from the `SPK` constants.
+
+-ERRORS-
+Okay
+NullArgs
+Args: The preset is not recognised.
+
+-END-
+
+*********************************************************************************************************************/
+
+ERR ExpandLayout(ACL Layout, kt::vector<int> *Channels)
+{
+   if (!Channels) return ERR::NullArgs;
+   auto layout = preset_layout(Layout);
+   if (layout.empty()) return ERR::Args;
+   Channels->assign(layout.begin(), layout.end());
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
+GetFrameBytes: Validates an AudioFormat and returns the byte size of one frame.
+
+A frame contains one sample for every channel in the format's `Layout`, so the frame size is the number of channels
+multiplied by the container size of one sample: one byte for `ASF::U8`, two for `ASF::S16` and four for `ASF::F32`.
+Byte offsets, lengths and loop boundaries passed to the Audio API must be multiples of this value.
+
+The format is checked for correctness, but not for playback support.  A format is malformed if its `SampleRate` is
+outside `1` to `768000`, its `SampleFormat` or `Flags` are invalid, or its `Layout` is empty, has more than 64
+channels, or contains an invalid or duplicated channel identity.
+
+-INPUT-
+struct(*AudioFormat) Format: The format to check.
+&int Bytes: Receives the size of one frame in bytes.
+
+-ERRORS-
+Okay
+NullArgs
+Args: The format is malformed.
+
+-END-
+
+*********************************************************************************************************************/
+
+ERR GetFrameBytes(AudioFormat *Format, int *Bytes)
+{
+   if ((!Format) or (!Bytes)) return ERR::NullArgs;
+   return format_frame_bytes(*Format, *Bytes);
 }
 
 } // namespace

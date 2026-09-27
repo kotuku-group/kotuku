@@ -34,7 +34,7 @@ static void test_schema_serialisation(AudioTestContext &Test)
    static const AudioEffectSchema schema = {
       .ClassName = "TestEffect", .Version = 1, .Description = "A test effect.", .Params = params
    };
-   const auto xml = build_schema_xml(schema);
+   const auto xml = build_schema_xml(schema, {});
    AUDIO_CHECK(xml.starts_with("<effect class=\"TestEffect\" version=\"1\" description=\"A test effect.\">\n"));
    AUDIO_CHECK(xml.find("label=\"Quoted &quot;steps&quot;\" description=\"Less &lt; more &amp; more\"") !=
       std::string::npos);
@@ -76,8 +76,9 @@ static void run(AudioTestContext &Test)
    samples[0] = 1;
    process_effects(*chain, samples, 1);
    AUDIO_CHECK(samples[0] IS 4 and gain_ptr->Calls IS 2);
-   configure_effects(*chain, 48000, true);
-   AUDIO_CHECK(first.OutputRate IS 48000 and first.Stereo IS 1);
+   configure_effects(*chain, 48000, glLayoutStereo, 7);
+   AUDIO_CHECK(first.OutputRate IS 48000 and first.Stereo and first.Layout.size() IS 2);
+   AUDIO_CHECK(first.FormatCommitted and first.FormatGeneration IS 7 and chain->FormatGeneration IS 7);
    first.Flags = AEF::NIL;
    samples[0] = 1;
    process_effects(*chain, samples, 1);

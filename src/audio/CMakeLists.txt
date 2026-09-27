@@ -69,6 +69,7 @@ if (AUDIO_TESTS)
       flute_test (audio_equaliser "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_audioequaliser.tiri")
       flute_test (audio_dsp_infrastructure "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_dsp_infrastructure.tiri")
       flute_test (audio_effect_schema "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_audioeffect_schema.tiri")
+      flute_test (audio_format_layout "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_format_layout.tiri")
    endif ()
 
    if (WIN32 AND BUILD_TESTS)

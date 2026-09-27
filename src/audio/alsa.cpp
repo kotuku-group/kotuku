@@ -264,16 +264,24 @@ static ERR init_audio(extAudio *Self)
 
    // Set number of channels
 
-   uint32_t channels = ((Self->Flags & ADF::STEREO) != ADF::NIL) ? 2 : 1;
-   if ((err = snd_pcm_hw_params_set_channels_near(pcmhandle, hwparams, &channels)) < 0) {
-      log.warning("set_channels_near(%d) %s", channels, snd_strerror(err));
+   // An explicit layout request must be matched exactly.  The default stereo request accepts the nearest of mono or
+   // stereo, and the negotiated layout is then committed by Activate().
+
+   uint32_t channels = uint32_t(Self->OutputLayout.size());
+   if (Self->LayoutExplicit) {
+      if ((err = snd_pcm_hw_params_set_channels(pcmhandle, hwparams, channels)) < 0) {
+         log.warning("set_channels(%u) %s", channels, snd_strerror(err));
+         return ERR::NoSupport;
+      }
+   }
+   else if ((err = snd_pcm_hw_params_set_channels_near(pcmhandle, hwparams, &channels)) < 0) {
+      log.warning("set_channels_near(%u) %s", channels, snd_strerror(err));
       return ERR::SystemCall;
    }
 
-   if (channels IS 2) Self->Stereo = true;
-   else Self->Stereo = false;
-
    if ((channels < 1) or (channels > 2)) return ERR::NoSupport;
+
+   Self->Stereo = channels IS 2;
 
    // Keep the format/rate/channel constraints for the single conservative retry.
    snd_pcm_hw_params_t *base;

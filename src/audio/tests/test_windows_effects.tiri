@@ -2,6 +2,10 @@
 @if(exists='modules:audio')
 
    module audio as mAudio
+
+function u8_mono()
+   return struct.new('AudioFormat', { sampleRate=44100, sampleFormat=ASF_U8, layout=array<int> { SPK_CENTRE } })
+end
    extern logOutput
 
 @BeforeAll function init(State)
@@ -121,7 +125,7 @@ end
    assert(err is ERR_Okay and isolated != first.channelIndex)
    data = array<byte, 48000>
    data.fill(160)
-   err, sample = audio.mtAddSample(nil, SFM_U8_BIT_MONO, data, nil)
+   err, sample = audio.mtAddSample(nil, u8_mono(), data, nil)
    assert(err is ERR_Okay)
    check mAudio.MixSample(audio, isolated, sample)
    check mAudio.MixFrequency(audio, isolated, 48000)
@@ -173,7 +177,7 @@ end
       if reads < 3 then return 0 end
       Buffer.fill(160)
       return #Buffer
-   end, nil, SFM_U8_BIT_MONO, 16000, 0, nil)
+   end, nil, u8_mono(), 16000, 0, nil)
    assert(err is ERR_Okay)
    err, channel = audio.mtOpenChannels(1)
    assert(err is ERR_Okay)

@@ -136,7 +136,7 @@ static void refill_audio_stream(extAudio *Self, int Handle)
       generation = sample.Generation;
       offset     = sample.SourceOffset;
       seek       = sample.SourceSeek;
-      const int frame_bytes = 1 << sample_shift(sample.SampleType);
+      const int frame_bytes = sample.FrameBytes;
 
       int bytes = sample.Data.size() - sample.Ring.Used;
       if (bytes <= 0) return;
@@ -157,14 +157,18 @@ static void refill_audio_stream(extAudio *Self, int Handle)
       source.Callback = sample.Callback;
       source.Callback.pin();
       source.SampleType = sample.SampleType;
+      source.FrameBytes = sample.FrameBytes;
+      source.Swap = sample.Swap;
       source.SampleLength = SAMPLE(bytes / frame_bytes);
    }
 
-   source.Data.resize(source.SampleLength << sample_shift(source.SampleType));
+   source.Data.resize(size_t(source.SampleLength) * source.FrameBytes);
    int bytes = fill_stream_buffer(Handle, source, seek ? offset : -1);
    source.Callback.unpin();
    bytes = std::clamp(bytes, 0, int(source.Data.size()));
-   bytes -= bytes % (1 << sample_shift(source.SampleType));
+   const bool partial = (bytes % source.FrameBytes) != 0;
+   bytes -= bytes % source.FrameBytes;
+   if (source.Swap) swap_samples_16(source.Data.data(), bytes);
 
    {
       std::lock_guard lock(Self->MixerMutex);
@@ -178,14 +182,14 @@ static void refill_audio_stream(extAudio *Self, int Handle)
          bytes = int(std::min<int64_t>(bytes, std::max<int64_t>(0, sample.StreamLength - offset)));
       }
 
-      bytes -= bytes % (1 << sample_shift(sample.SampleType));
+      bytes -= bytes % sample.FrameBytes;
       const size_t write_pos = (sample.Ring.Read + sample.Ring.Used) % sample.Data.size();
       const size_t first = std::min(size_t(bytes), sample.Data.size() - write_pos);
       std::copy_n(source.Data.data(), first, sample.Data.data() + write_pos);
       std::copy_n(source.Data.data() + first, bytes - first, sample.Data.data());
-      sample.Ring.publish(bytes, sample.Data.size(), 1 << sample_shift(sample.SampleType));
+      sample.Ring.publish(bytes, sample.Data.size(), sample.FrameBytes);
       sample.SourceOffset += bytes;
-      sample.SourceSeek = false;
+      sample.SourceSeek = partial; // Discarded partial-frame bytes are requested again from an explicit offset.
       sample.BufferedLength = BYTELEN(sample.Ring.Used);
 
       // Loop boundaries do not end pre-roll: keep filling until the ring is full or the producer gives a short read.
@@ -197,7 +201,7 @@ static void refill_audio_stream(extAudio *Self, int Handle)
       if (sample.StreamLengthKnown and sample.SourceOffset >= sample.StreamLength) {
          if (sample.streamLoops()) {
             sample.SourceSeek = true;
-            sample.SourceOffset = int64_t(sample.Loop2Start) << sample_shift(sample.SampleType);
+            sample.SourceOffset = int64_t(sample.Loop2Start) * sample.FrameBytes;
             request_stream(Self, sample);
          }
          else sample.EndOfSource = true;

@@ -11,8 +11,10 @@ FDEF maInsertEntry[] = { { "Group", FDF_CPPSTRING }, { "Index", FD_INT }, { 0, 0
 FDEF maRemoveEntry[] = { { "Group", FDF_CPPSTRING }, { "Index", FD_INT }, { 0, 0 } };
 FDEF maGetResponse[] = { { "Frequencies", FDF_SPAN|FD_DOUBLE }, { "Magnitudes", FDF_SPAN|FD_MUTABLE|FD_DOUBLE }, { 0, 0 } };
 FDEF maGetGroupCount[] = { { "Group", FDF_CPPSTRING }, { "Count", FD_RESULT|FD_INT }, { 0, 0 } };
-FDEF maGetMeters[] = { { "Values", FDF_SPAN|FD_MUTABLE|FD_DOUBLE }, { "Sequence", FD_RESULT|FD_INT64 }, { "Generation", FD_RESULT|FD_INT64 }, { "Position", FD_RESULT|FD_INT64 }, { "Interval", FD_RESULT|FD_INT }, { "Flags", FD_RESULT|FD_INT }, { "Floor", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF maGetMeterLayout[] = { { "MeterLayout:Layout", FD_RESULT|FD_PTR|FD_STRUCT|FD_ALLOC }, { 0, 0 } };
 FDEF maGetOutput[] = { { "Key", FDF_CPPSTRING }, { "Value", FD_RESULT|FD_DOUBLE }, { 0, 0 } };
+FDEF maReadMeters[] = { { "MeterReading:Reading", FD_RESULT|FD_PTR|FD_STRUCT|FD_ALLOC }, { 0, 0 } };
+FDEF maGetProcessingFormat[] = { { "SampleRate", FD_RESULT|FD_INT }, { "SampleFormat", FD_RESULT|FD_INT }, { "Layout", FD_RESULT|FDF_VECTOR|FD_MUTABLE|FD_INT }, { "Generation", FD_RESULT|FD_INT64 }, { "State", FD_RESULT|FD_INT }, { 0, 0 } };
 
 static const struct MethodEntry clAudioEffectMethods[] = {
    { AC(-1), (APTR)AUDIOEFFECT_SetParameter, "SetParameter", maSetParameter, sizeof(struct fx::SetParameter) },
@@ -21,8 +23,10 @@ static const struct MethodEntry clAudioEffectMethods[] = {
    { AC(-4), (APTR)AUDIOEFFECT_RemoveEntry, "RemoveEntry", maRemoveEntry, sizeof(struct fx::RemoveEntry) },
    { AC(-5), (APTR)AUDIOEFFECT_GetResponse, "GetResponse", maGetResponse, sizeof(struct fx::GetResponse) },
    { AC(-6), (APTR)AUDIOEFFECT_GetGroupCount, "GetGroupCount", maGetGroupCount, sizeof(struct fx::GetGroupCount) },
-   { AC(-7), (APTR)AUDIOEFFECT_GetMeters, "GetMeters", maGetMeters, sizeof(struct fx::GetMeters) },
+   { AC(-7), (APTR)AUDIOEFFECT_GetMeterLayout, "GetMeterLayout", maGetMeterLayout, sizeof(struct fx::GetMeterLayout) },
    { AC(-8), (APTR)AUDIOEFFECT_GetOutput, "GetOutput", maGetOutput, sizeof(struct fx::GetOutput) },
+   { AC(-9), (APTR)AUDIOEFFECT_ReadMeters, "ReadMeters", maReadMeters, sizeof(struct fx::ReadMeters) },
+   { AC(-10), (APTR)AUDIOEFFECT_GetProcessingFormat, "GetProcessingFormat", maGetProcessingFormat, sizeof(struct fx::GetProcessingFormat) },
    { AC::NIL, 0, 0, 0, 0 }
 };
 

@@ -4,23 +4,24 @@ static const struct FieldDef clAudioFlags[] = {
    { "OverSampling", 0x00000001 },
    { "FilterLow", 0x00000002 },
    { "FilterHigh", 0x00000004 },
-   { "Stereo", 0x00000008 },
-   { "VolRamping", 0x00000010 },
-   { "AutoSave", 0x00000020 },
-   { "SystemWide", 0x00000040 },
+   { "VolRamping", 0x00000008 },
+   { "AutoSave", 0x00000010 },
+   { "SystemWide", 0x00000020 },
    { nullptr, 0 }
 };
 
 FDEF maOpenChannels[] = { { "Total", FD_INT }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF maCloseChannels[] = { { "Handle", FD_INT }, { 0, 0 } };
-FDEF maAddSample[] = { { "OnStop", FD_FUNCTION }, { "SampleFormat", FD_INT }, { "Data", FDF_SPAN|FD_BYTE }, { "AudioLoop:Loop", FD_PTR|FD_STRUCT }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF maAddSample[] = { { "OnStop", FD_FUNCTION }, { "AudioFormat:Format", FD_PTR|FD_STRUCT }, { "Data", FDF_SPAN|FD_BYTE }, { "AudioLoop:Loop", FD_PTR|FD_STRUCT }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF maRemoveSample[] = { { "Handle", FD_INT }, { 0, 0 } };
 FDEF maSetSampleLength[] = { { "Sample", FD_INT }, { "Length", FD_INT64 }, { 0, 0 } };
-FDEF maAddStream[] = { { "Callback", FD_FUNCTION }, { "OnStop", FD_FUNCTION }, { "SampleFormat", FD_INT }, { "SampleLength", FD_INT64 }, { "PlayOffset", FD_INT64 }, { "AudioLoop:Loop", FD_PTR|FD_STRUCT }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF maAddStream[] = { { "Callback", FD_FUNCTION }, { "OnStop", FD_FUNCTION }, { "AudioFormat:Format", FD_PTR|FD_STRUCT }, { "SampleLength", FD_INT64 }, { "PlayOffset", FD_INT64 }, { "AudioLoop:Loop", FD_PTR|FD_STRUCT }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF maBeep[] = { { "Pitch", FD_INT }, { "Duration", FD_INT }, { "Volume", FD_INT }, { 0, 0 } };
 FDEF maSetVolume[] = { { "Index", FD_INT }, { "Name", FDF_CPPSTRING }, { "Flags", FD_INT }, { "Channel", FD_INT }, { "Volume", FD_DOUBLE }, { 0, 0 } };
 FDEF maGetEffectStatus[] = { { "Channel", FD_INT }, { "Application", FD_RESULT|FD_INT64 }, { "Global", FD_RESULT|FD_INT64 }, { "Total", FD_RESULT|FD_INT64 }, { "Rate", FD_RESULT|FD_INT }, { "Generation", FD_RESULT|FD_INT64 }, { "State", FD_RESULT|FD_INT }, { "Truncated", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF maResetEffects[] = { { "Channel", FD_INT }, { 0, 0 } };
+FDEF maGetOutputFormat[] = { { "SampleRate", FD_RESULT|FD_INT }, { "SampleFormat", FD_RESULT|FD_INT }, { "Layout", FD_RESULT|FDF_VECTOR|FD_MUTABLE|FD_INT }, { "Generation", FD_RESULT|FD_INT64 }, { "State", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF maGetVolumeChannels[] = { { "Index", FD_INT }, { "Name", FDF_CPPSTRING }, { "Channels", FD_RESULT|FDF_VECTOR|FD_MUTABLE|FD_INT }, { "Speakers", FD_RESULT|FDF_VECTOR|FD_MUTABLE|FD_INT }, { "Flags", FD_RESULT|FD_INT }, { 0, 0 } };
 
 static const struct MethodEntry clAudioMethods[] = {
    { AC(-1), (APTR)AUDIO_OpenChannels, "OpenChannels", maOpenChannels, sizeof(struct snd::OpenChannels) },
@@ -33,6 +34,8 @@ static const struct MethodEntry clAudioMethods[] = {
    { AC(-8), (APTR)AUDIO_SetVolume, "SetVolume", maSetVolume, sizeof(struct snd::SetVolume) },
    { AC(-9), (APTR)AUDIO_GetEffectStatus, "GetEffectStatus", maGetEffectStatus, sizeof(struct snd::GetEffectStatus) },
    { AC(-10), (APTR)AUDIO_ResetEffects, "ResetEffects", maResetEffects, sizeof(struct snd::ResetEffects) },
+   { AC(-11), (APTR)AUDIO_GetOutputFormat, "GetOutputFormat", maGetOutputFormat, sizeof(struct snd::GetOutputFormat) },
+   { AC(-12), (APTR)AUDIO_GetVolumeChannels, "GetVolumeChannels", maGetVolumeChannels, sizeof(struct snd::GetVolumeChannels) },
    { AC::NIL, 0, 0, 0, 0 }
 };
 
