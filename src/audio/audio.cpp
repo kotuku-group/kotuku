@@ -103,8 +103,10 @@ JUMPTABLE_CORE
 static OBJECTPTR clAudio = 0;
 static OBJECTPTR clAudioEffect = nullptr;
 static OBJECTPTR clAudioEqualiser = nullptr;
+static OBJECTPTR clAudioReverb = nullptr;
 static ERR add_audioeffect_class();
 static ERR add_audioequaliser_class();
+static ERR add_audioreverb_class();
 static ankerl::unordered_dense::map<OBJECTID, int> glSoundChannels;
 static std::string glAudioDevice;
 class extAudio;
@@ -168,6 +170,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    if (add_audio_class() != ERR::Okay) return ERR::AddClass;
    if (add_audioeffect_class() != ERR::Okay) return ERR::AddClass;
    if (add_audioequaliser_class() != ERR::Okay) return ERR::AddClass;
+   if (add_audioreverb_class() != ERR::Okay) return ERR::AddClass;
    if (add_sound_class() != ERR::Okay) return ERR::AddClass;
    return ERR::Okay;
 }
@@ -189,6 +192,7 @@ static ERR MODExpunge(void)
    }
    glSoundChannels.clear();
 
+   if (clAudioReverb) { FreeResource(clAudioReverb); clAudioReverb = nullptr; }
    if (clAudioEqualiser) { FreeResource(clAudioEqualiser); clAudioEqualiser = nullptr; }
    if (clAudioEffect) { FreeResource(clAudioEffect); clAudioEffect = nullptr; }
    free_audio_class();
@@ -208,6 +212,7 @@ static ERR MODExpunge(void)
 #include "audio_effect.cpp"
 #include "class_audioeffect.cpp"
 #include "class_audioequaliser.cpp"
+#include "class_audioreverb.cpp"
 #include "class_audio.cpp"
 #include "class_sound.cpp"
 #include "mixer_dispatch.cpp"
@@ -221,6 +226,7 @@ static ERR MODExpunge(void)
 #include "tests/test_audio_effect.cpp"
 #include "tests/test_dsp_infrastructure.cpp"
 #include "tests/test_audio_equaliser_dsp.cpp"
+#include "tests/test_audio_reverb_dsp.cpp"
 #include "tests/test_mixers.cpp"
 #include "tests/test_audio_format.cpp"
 #ifdef ALSA_ENABLED
@@ -249,6 +255,7 @@ static void MODTest(std::string_view Options, int *Passed, int *Total)
    run("effect chain", audio_tests_audio_effect::run);
    run("DSP infrastructure", audio_tests_dsp_infrastructure::run);
    run("equaliser DSP", audio_tests_audio_equaliser_dsp::run);
+   run("reverb DSP", audio_tests_audio_reverb_dsp::run);
    run("mixer", audio_tests_mixers::run);
    run("format", audio_tests_audio_format::run);
 #ifdef ALSA_ENABLED

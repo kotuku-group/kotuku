@@ -14,6 +14,13 @@ Attachment, field changes and detachment are serialised with mixing.  Freeing an
 window before detaching it.  Closing its channel set or freeing its Audio target disconnects the effect; a
 disconnected effect must be replaced to attach it again.  Global effects are immutable after initialisation.
 
+<header>Stop Notifications</header>
+
+Effects such as reverbs and delays continue to produce output after their source stops.  When a voice's path has
+effects, being its channel set's chain followed by the global chain, the sample's `OnStop` notification and the
+@Sound.OnStop callback are held until that output has drained.  They are then delivered after the device queue, as
+for a path without effects, so the callback marks the approximate end of everything that the voice made audible.
+
 <header>Parameter Schema</header>
 
 Subclasses can publish their parameters in the #Schema field, so that a client can present and change any effect

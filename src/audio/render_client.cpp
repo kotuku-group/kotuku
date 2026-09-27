@@ -237,6 +237,66 @@ static ERR audio_notification_timer(extAudio *Self, int64_t, int64_t)
 
 //********************************************************************************************************************
 
+static bool voices_active(const ChannelSet &Set)
+{
+   for (const auto &channel : Set.Channel) if (channel.active() and !channel.isStopped()) return true;
+   for (const auto &channel : Set.Shadow) if (channel.active() and !channel.isStopped()) return true;
+   return false;
+}
+
+//********************************************************************************************************************
+// Drain state of a stopped voice's effect path, being its channel set's chain followed by the global chain.  Other
+// audio on the path makes the tail inseparable, so it reports ACTIVE rather than waiting for a drain that may never
+// end.  Caller holds the mixer lock.
+
+static ADS stop_path_state(extAudio *Self, size_t SetIndex)
+{
+   if (SetIndex >= Self->Sets.size()) return ADS::IDLE;
+   const auto &set = Self->Sets[SetIndex];
+   if (voices_active(set)) return ADS::ACTIVE;
+   if (set.Effects and set.Effects->pending()) return ADS::DRAINING;
+   if (!Self->GlobalEffects->pending()) return ADS::IDLE;
+
+   for (size_t i = 1; i < Self->Sets.size(); ++i) {
+      if (i IS SetIndex) continue;
+      const auto &other = Self->Sets[i];
+      if (voices_active(other) or (other.Effects and other.Effects->pending())) return ADS::ACTIVE;
+   }
+   return ADS::DRAINING;
+}
+
+//********************************************************************************************************************
+// Set the due time of stops that are waiting for their effect path to drain.  A drained path is due after the device
+// queue.  If other audio keeps the path active, the voice's own tail cannot be observed, so it is due once the path's
+// estimated 60 dB decay has elapsed after the voice was last heard.  Deactivation and the deadline end the wait.
+// Caller holds the mixer lock.
+
+static void resolve_drained_stops(extAudio *Self, int64_t Now)
+{
+   for (size_t i = 0; i < Self->NotificationCount; ++i) {
+      auto &event = Self->Notifications[i];
+      if (!event.AwaitDrain) continue;
+
+      const auto set = unsigned(event.Channel) >> 16;
+      const auto state = Self->EffectConfigured ? stop_path_state(Self, set) : ADS::IDLE;
+      if ((state IS ADS::DRAINING) and (Now < event.Deadline)) continue;
+
+      event.AwaitDrain = false;
+      if (!Self->EffectConfigured) event.Due = Now;
+      else if ((state IS ADS::ACTIVE) and (Self->OutputRate > 0)) {
+         double frames = double(Self->GlobalEffects->decay_estimate());
+         if ((set < Self->Sets.size()) and Self->Sets[set].Effects) {
+            frames += double(Self->Sets[set].Effects->decay_estimate());
+         }
+         const double decay = std::min(frames * 1000000.0 / Self->OutputRate, double(event.Deadline - event.Audible));
+         event.Due = std::max(Now, event.Audible + int64_t(std::max(0.0, decay)));
+      }
+      else event.Due = Now + int64_t(Self->MixerLag() * 1000000);
+   }
+}
+
+//********************************************************************************************************************
+
 static void dispatch_audio_client(extAudio *Self)
 {
    // Bound each dispatch: an unproductive/live producer must not spin the client event loop.
@@ -256,6 +316,7 @@ static void dispatch_audio_client(extAudio *Self)
       {
          std::lock_guard lock(Self->MixerMutex);
          const auto now = PreciseTime();
+         resolve_drained_stops(Self, now);
          size_t index = 0;
          for (; index < Self->NotificationCount; ++index) {
             if (Self->Notifications[index].Due <= now) break;

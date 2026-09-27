@@ -55,6 +55,7 @@ mixing.</li>
       <class>Audio</class>
       <class>AudioEffect</class>
       <class>AudioEqualiser</class>
+      <class>AudioReverb</class>
       <class>Sound</class>
     </classes>
   </info>

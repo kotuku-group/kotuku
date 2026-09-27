@@ -1,0 +1,193 @@
+@if(exists='modules:audio')
+
+   module audio as mAudio
+
+@BeforeAll function init(State)
+   global glFolder = State.folder
+end
+
+-- Published parameters in schema order, with their defaults and units.
+
+PARAMS = {
+   { key='decay', default=1500, unit='ms', min=100, max=20000 },
+   { key='size', default=50, unit='%', min=0, max=100 },
+   { key='pre_delay', default=20, unit='ms', min=0, max=250 },
+   { key='damping', default=50, unit='%', min=0, max=100 },
+   { key='diffusion', default=70, unit='%', min=0, max=100 },
+   { key='mix', default=20, unit='%', min=0, max=100 }
+}
+
+function u8_mono()
+   return struct.new('AudioFormat', { sampleRate=44100, sampleFormat=ASF_U8, layout=array<int> { SPK_CENTRE } })
+end
+
+function new_reverb(Audio:obj):<obj, num>
+   err, channel = Audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   return obj.new('AudioReverb', { audio=Audio, channel=channel }), channel
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function SchemaDiscovery()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   reverb <close> = new_reverb(audio)
+   schema = reverb.schema
+   assert(schema.find('<effect class="AudioReverb" version="1"') != nil, 'The schema must identify the class')
+   assert(schema.find('<group') is nil, 'The reverb has no parameter groups')
+   assert(schema.find('type="curve"') is nil, 'The reverb does not publish a response curve')
+   for p in values(PARAMS) do
+      assert(schema.find(f'<param key="{p.key}"') != nil, f'{p.key} must be published')
+      err, value = reverb.mtGetParameter(p.key)
+      assert(err is ERR_Okay and value is p.default, f'{p.key} should default to {p.default}, got {value}')
+   end
+   assert(schema.find('unit="ms" scale="log" min="100" max="20000" default="1500"') != nil)
+   assert(schema.find('key="input_peak_left" type="scalar"') != nil)
+   assert(schema.find('key="output_peak_right" type="scalar"') != nil)
+   assert(reverb.mtGetOutput('response') is ERR_Search)
+   assert(reverb.mtGetGroupCount('bands') is ERR_Search)
+   assert(reverb.mtInsertEntry('bands', 0) is ERR_Search)
+end
+
+@Test function StagedChangesAndValidation()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   reverb <close> = new_reverb(audio)
+   assert(reverb.mutable is 1)
+
+   -- Every bound is inclusive; values outside it are rejected immediately.
+
+   for p in values(PARAMS) do
+      check reverb.mtSetParameter(p.key, p.min)
+      check reverb.mtSetParameter(p.key, p.max)
+      assert(reverb.mtSetParameter(p.key, p.min - 1) is ERR_InvalidValue, f'{p.key} below {p.min} must fail')
+      assert(reverb.mtSetParameter(p.key, p.max + 1) is ERR_InvalidValue, f'{p.key} above {p.max} must fail')
+   end
+   assert(reverb.mtSetParameter('unknown', 1) is ERR_Search)
+   check reverb.acFlush()
+
+   -- Staged values are visible before Flush() and committed together.
+
+   check reverb.mtSetParameter('decay', 3200)
+   check reverb.mtSetParameter('size', 85)
+   check reverb.mtSetParameter('pre_delay', 45)
+   err, value = reverb.mtGetParameter('size')
+   assert(err is ERR_Okay and value is 85, 'Staged values must be readable')
+   check reverb.acFlush()
+   for key, expected in pairs({ decay=3200, size=85, pre_delay=45 }) do
+      err, value = reverb.mtGetParameter(key)
+      assert(err is ERR_Okay and value is expected, f'{key} should be {expected} after Flush(), got {value}')
+   end
+end
+
+@Test function ConfigureBeforeInit()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   reverb <close> = obj.new('AudioReverb')
+   reverb.audio = audio
+   reverb.channel = channel
+   check reverb.mtSetParameter('decay', 900)
+   check reverb.mtSetParameter('mix', 35)
+   reverb.init()
+   err, value = reverb.mtGetParameter('mix')
+   assert(err is ERR_Okay and value is 35)
+   err, value = reverb.mtGetParameter('decay')
+   assert(err is ERR_Okay and value is 900)
+end
+
+@Test function LivePlayback()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   reverb, channel = new_reverb(audio)
+   check audio.acActivate()
+   assert(reverb.latency is 0, 'The reverb adds no algorithmic latency')
+   err, rate, format, layout, generation, state = reverb.mtGetProcessingFormat()
+   assert(err is ERR_Okay and rate is 48000 and #layout is 2)
+
+   data = array<byte, 8192>
+   for i in {0 to 8192} do data[i] = (i % 64 < 32) ? 160 : 96 end
+   err, sample = audio.mtAddSample(nil, u8_mono(), data, nil)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(audio, channel, sample)
+   check mAudio.MixFrequency(audio, channel, 44100)
+   check mAudio.MixPlay(audio, channel, 0)
+
+   -- Ordinary edits, a size transition and a queued edit behind it.
+
+   check reverb.mtSetParameter('decay', 4000)
+   check reverb.mtSetParameter('damping', 20)
+   check reverb.acFlush()
+   check reverb.mtSetParameter('size', 90)
+   check reverb.acFlush()
+   check reverb.mtSetParameter('size', 10)
+   check reverb.mtSetParameter('pre_delay', 150)
+   check reverb.acFlush()
+
+   err, layout = reverb.mtGetMeterLayout()
+   assert(err is ERR_Okay and #layout.meters is 4)
+   assert(layout.meters[0].key is 'input_peak_left' and layout.meters[3].key is 'output_peak_right')
+
+   reverb.flags = AEF_BYPASS
+   err, reading = reverb.mtReadMeters()
+   assert(err is ERR_Okay and reading.flags is AMF_BYPASSED)
+   reverb.flags = 0
+
+   check audio.mtCloseChannels(channel)
+   assert(reverb.mtSetParameter('mix', 50) is ERR_NotInitialised)
+   reverb.free()
+end
+
+@Test function MonoAndGlobalImmutability()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100, outputLayout=array<int> { SPK_CENTRE } })
+   reverb = audio.new('AudioReverb')
+   check reverb.mtSetParameter('size', 70)
+   reverb.init()
+   assert(reverb.mutable is 0)
+   assert(reverb.mtSetParameter('size', 20) is ERR_Immutable)
+   err, value = reverb.mtGetParameter('size')
+   assert(err is ERR_Okay and value is 70, 'Global effects remain readable')
+   check audio.acActivate()
+   err, layout = reverb.mtGetMeterLayout()
+   assert(err is ERR_Okay and #layout.meters is 2)
+   assert(layout.meters[0].key is 'input_peak_centre' and layout.meters[1].key is 'output_peak_centre')
+   assert(reverb.schema.find('input_peak_right') is nil, 'Mono must not publish a right channel')
+   check audio.acDeactivate()
+end
+
+-- OnStop is held until the reverb's tail has drained from the Sound's channel set.
+
+@Test function SoundStopWaitsForTail()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   stops = 0
+   state_at_stop = -1
+   sound <close> = obj.new('Sound', { audio=audio, path=glFolder .. 'low-tone.wav',
+      onStop=function(Sound)
+         stops++
+         err, _, _, _, _, _, state = audio.mtGetEffectStatus(Sound.channelIndex & 0xffff0000)
+         state_at_stop = state
+      end })
+   reverb <close> = obj.new('AudioReverb', { audio=audio, channel=sound.channelIndex & 0xffff0000 })
+   check reverb.mtSetParameter('decay', 2000)
+   check reverb.mtSetParameter('mix', 50)
+   check reverb.acFlush()
+   check sound.acActivate()
+   deadline = mSys.PreciseTime() + 20000000
+   while (stops is 0) and (mSys.PreciseTime() < deadline) do processing.sleep(0.01) end
+   assert(stops is 1, 'OnStop must be delivered once')
+   assert(state_at_stop is ADS_IDLE, f'The reverb tail must have drained before OnStop, state {state_at_stop}')
+   check audio.acDeactivate()
+end
+
+@Test function UnsupportedRate()
+   audio <close> = obj.new('Audio', { device='null', outputRate=4000 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   try
+      reverb = obj.new('AudioReverb', { audio=audio, channel=channel })
+   except e when ERR_NoSupport
+   success
+      raise 'An output rate below 8000 Hz must be rejected'
+   end
+end
+
+@end

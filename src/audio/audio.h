@@ -221,11 +221,11 @@ struct AudioChannel {
    int8_t   LoopIndex;      // The current active loop (either 0, 1 or 2)
    bool     Paused;         // State is STOPPED by MixPause(); cleared by any terminal transition
 
-   bool active() {
+   bool active() const {
       return Frequency ? true : false;
    }
 
-   inline bool isStopped() {
+   inline bool isStopped() const {
       return ((State IS CHS::STOPPED) or (State IS CHS::FINISHED));
    }
 };
@@ -257,6 +257,9 @@ public:
    // A processor with NONE may still have buffered output (for example a lookahead limiter).
    virtual AudioTail tail() const { return AudioTail::NONE; }
    virtual uint64_t tail_frames() const { return 0; }
+   // Typical frames, excluding latency(), for output from input entering now to decay by 60 dB.  Unlike the
+   // conservative tail_frames() bound, this estimates the audible tail of one voice among others on a shared chain.
+   virtual uint64_t decay_estimate() const { return 0; }
    virtual int64_t latency() const { return 0; }
    virtual double gain_reduction() const { return 0; }
    // Called off the render thread and outside the mixer mutex. Read only immutable configuration here;
@@ -283,6 +286,7 @@ struct AudioEffectChain {
    void reset();
    ERR latency(int64_t &Frames) const;
    uint64_t tail_bound() const;
+   uint64_t decay_estimate() const;
 
    explicit AudioEffectChain(std::shared_ptr<std::recursive_mutex> Lock) : Mutex(std::move(Lock)) { }
 };
@@ -414,12 +418,17 @@ struct VolumeCtl {
 
 //********************************************************************************************************************
 
+// A stop whose path has effects waits for their tail before its due time is set; see resolve_drained_stops().
+
 struct Notification {
    int Sample;
    int Channel;
    uint64_t SampleGeneration;
    uint64_t PlaybackGeneration;
-   int64_t Due;
+   int64_t Due;              // PreciseTime() at which the callback is delivered, once not awaiting a drain
+   int64_t Audible = 0;      // PreciseTime() at which the voice's final source frame is expected to be heard
+   int64_t Deadline = 0;     // Latest PreciseTime() to wait for a drain
+   bool AwaitDrain = false;  // True while the voice's effect path is still producing its tail
 };
 
 //********************************************************************************************************************

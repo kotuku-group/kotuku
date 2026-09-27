@@ -1406,6 +1406,11 @@ OnStop: This callback is triggered when sample playback stops.
 Set OnStop to a callback function to receive an event trigger when sample playback stops.  The prototype for the
 function is `void OnStop(*Sound)`.
 
+If effects are attached to the sound's channel set or the global chain, the callback is held until their tail has
+drained, so a reverb's decay is heard in full before it arrives.  If other sounds are playing through the same effects,
+this sound's tail cannot be measured separately, and the callback follows the effects' estimated decay time instead.
+Refer to @AudioEffect for details.
+
 This notification is approximate and does not guarantee that the final sample has reached the speakers.  On Windows,
 delivery accounts for the estimated device queue, rather than tracking the hardware playback position.  Timing can
 be early or late by approximately 10 ms in normal operation; buffering and client scheduling can add further delay.

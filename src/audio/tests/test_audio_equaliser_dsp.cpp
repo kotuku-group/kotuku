@@ -152,6 +152,19 @@ static void run(AudioTestContext &Test)
    for (int i = 240; i < 480; ++i) output_energy += tone[i] * tone[i];
    AUDIO_CHECK(output_energy / input_energy > 3.8 and output_energy / input_energy < 4.1);
 
+   // Decay estimates follow the slowest pole: a narrow low-frequency peak rings far longer than a pass filter.
+
+   EqualiserProcessor flat(&effect, {}, 0);
+   flat.reset();
+   AUDIO_CHECK(flat.decay_estimate() IS 0);
+   low.reset();
+   const auto pass_estimate = low.decay_estimate();
+   AUDIO_CHECK(pass_estimate > 2 and pass_estimate < 480);
+   AudioEQBand narrow { EQB::PEAK, 50, 12, 20 };
+   EqualiserProcessor ringing(&effect, { narrow }, 0);
+   ringing.reset();
+   AUDIO_CHECK(ringing.decay_estimate() > 24000 and ringing.decay_estimate() < 192000); // Approximately 84000
+
    // Magnitude response against analytic values.
 
    const double frequencies[] = { 20, 1000, 20000 };

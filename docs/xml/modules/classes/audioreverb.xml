@@ -1,0 +1,53 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>AudioReverb</name>
+    <type>class</type>
+    <module>Audio</module>
+    <comment>An algorithmic reverberator that simulates room ambience.</comment>
+    <version>1</version>
+    <id>6e30bc98</id>
+    <idstring>AUDIOREVERB</idstring>
+    <category>Audio</category>
+    <copyright>Paul Manias © 2002-2026</copyright>
+    <description>
+<p>Create as a child of an Audio object or set the inherited Audio field.  Use Channel to process one channel set, or leave it at zero to process the global mix.  Application reverbs accept live changes; global reverbs become immutable after initialisation.</p>
+<p>The reverberator is a feedback-delay network of eight delay lines mixed by an orthogonal matrix.  Its parameters are published through the inherited <class name="AudioEffect">AudioEffect</class> schema and are changed with <class name="AudioEffect" method="SetParameter">AudioEffect.SetParameter()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>:</p>
+<list type="bullet">
+<li><code>decay</code>: the time, in milliseconds, for the reverberation to fall by 60 dB at low frequencies.</li>
+<li><code>size</code>: the scale of the simulated room from 0 to 100 percent.  Delay-line lengths range from approximately
+9-18 ms at zero to 43-90 ms at 100 percent.</li>
+<li><code>pre_delay</code>: a gap of up to 250 ms that is inserted before the input reaches the reverberator.</li>
+<li><code>damping</code>: how much faster high frequencies decay than low frequencies.  The decay time at 4 kHz is reduced by
+0.9% for every percent of damping, so 100 percent decays 4 kHz ten times faster than low frequencies.  At output
+rates below 10 kHz the reference frequency is 40% of the output rate.</li>
+<li><code>diffusion</code>: the density of the reflections, controlled by four all-pass diffusers on each input channel.  Their
+coefficient is 0.75 at 100 percent.</li>
+<li><code>mix</code>: the linear blend of dry and wet signals.  Zero passes the input unchanged and 100 percent outputs only
+the reverberation.</li>
+</list>
+<p>The wet signal is normalised so that its energy is close to that of the input, whatever the decay and size.  Longer decays therefore spread the same energy over a longer time rather than becoming louder.  Damping removes energy and is not compensated.  The normalisation holds on average across frequencies, but the reverberation's response is uneven, so a sustained tone can emerge up to about 10 dB above its input level.  Leave headroom at high mix settings, or place an effect that limits peaks after the reverb.</p>
+<p>The following creates a large hall for a playing channel set, then lengthens its decay as a single change:</p>
+<pre>reverb = obj.new('AudioReverb', { audio=audio, channel=channel })
+reverb.mtSetParameter('size', 90)
+reverb.mtSetParameter('decay', 3500)
+reverb.mtSetParameter('mix', 30)
+reverb.acFlush()
+</pre>
+<p>A mono output is processed as a single channel.  A stereo input feeds alternate delay lines from each channel, and the two outputs are taken from orthogonal combinations of every line, so the wet signal is decorrelated between the speakers.</p>
+<header>Live Changes</header>
+<p>Changes to decay, damping, diffusion and mix ramp linearly over 10 ms and preserve the reverberation that is already present.  A pre-delay change crossfades from the old to the new delay over 10 ms, avoiding a pitch sweep.  A size change crossfades the input to a second network over 10 ms, while the output of the previous network fades out over 100 ms. Both networks are allocated when the processor is configured, so edits never allocate memory, and processing cost is up to twice the normal level during a size transition.  An edit that arrives during a pre-delay crossfade or a size transition replaces a single queued target, which is applied when the current transition finishes.</p>
+<p>Device reactivation, leaving bypass and reaching idle discard the reverberation and apply the latest parameters without a transition.</p>
+<header>Tail and Drain</header>
+<p>The reverb has zero algorithmic latency.  After its input stops, it remains pending until every value written to its delay memory has stayed at least 120 dB below the largest input sample since the last reset, for long enough to overwrite that memory.  This takes approximately 1.5 times the decay time after a short sound, and up to 2.5 times after a sustained tone, which builds up a higher internal level.  Add the pre-delay and 250 ms to both figures.  The residual is relative to the input, so it is independent of the output bit depth.</p>
+<p>When other audio shares the reverb, a stopped voice's tail is estimated as the pre-delay, the longest delay line and the decay time; see <class name="AudioEffect">AudioEffect</class>.  The published tail bound covers 180 dB of decay.  A 60 dB decay time is not a guarantee of complete silence: with long decay settings, draining can reach <class name="Audio" field="MaxDrain">Audio.MaxDrain</class>, which then fades and discards the remainder.  Hard bypass and destruction cut the tail abruptly.</p>
+<p>Output rates from 8000 to 192000 Hz are supported.  Configuring the effect for any other rate fails with <code>ERR::NoSupport</code>.  Memory use is approximately 300 KB at 48 kHz in stereo, and scales in proportion to the output rate.</p></description>
+    <source>
+      <file>class_audioreverb.cpp</file>
+    </source>
+  </info>
+  <structs>
+  </structs>
+</book>
