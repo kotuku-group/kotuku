@@ -608,7 +608,7 @@ class objAudioEffect : public Object {
    int      Channel;  // Channel-set handle, or zero for the global chain.
    int      Order;    // Processing position within the chain.
    AEF      Flags;    // Optional processing flags.
-   int      OutputRate; // Read-only output sample rate of the attached Audio object.
+   int      OutputRate; // Output sample rate of the attached Audio object.
 
    // Action stubs
 

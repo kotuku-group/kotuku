@@ -12,7 +12,7 @@ The Audio module manages the audio pipeline from sample loading through to hardw
 interfaces:
 
 <list type="bullet">
-<li>@Sound: High-level sample playback.  Loads WAVE files, manages its own resources and decides whether a sample is
+<li>@Sound: High-level sample playback.  Loads WAVE files by default and supports an MP3 extension; manages its own resources and decides whether a sample is
 played from memory or streamed.  This is the recommended interface for most applications.</li>
 <li>@Audio: Low-level mixer and device interface.  Provides channel sets, sample buffers and streams, command
 sequencing, and control over output rate, bit depth, buffering and mixing quality.</li>

@@ -90,6 +90,16 @@ static OBJECTPTR clSound = nullptr;
 
 static ERR find_chunk(objFile *, std::string_view);
 
+// RIFF/WAVE stores multi-byte PCM and floating-point samples in little endian byte order.
+
+static bool wave_export_format_supported(const AudioFormat &Format)
+{
+   const auto layout = format_layout(Format);
+   return (Format.SampleFormat != ASF::NIL) and
+      ((sample_bytes(Format.SampleFormat) IS 1) or ((Format.Flags & AFF::BIG_ENDIAN_ORDER) IS AFF::NIL)) and
+      (layout_is(layout, glLayoutMono) or layout_is(layout, glLayoutStereo));
+}
+
 //********************************************************************************************************************
 // Send a callback to the client when playback stops.
 
@@ -907,10 +917,7 @@ static ERR SOUND_SaveToObject(extSound *Self, struct acSaveToObject *Args)
    // Only the standard mono and stereo layouts can be written without a WAVE_FORMAT_EXTENSIBLE channel mask.
 
    const auto layout = format_layout(Self->SourceFormat);
-   if ((Self->SourceFormat.SampleFormat IS ASF::NIL) or
-       ((!layout_is(layout, glLayoutMono)) and (!layout_is(layout, glLayoutStereo)))) {
-      return log.warning(ERR::NoSupport);
-   }
+   if (not wave_export_format_supported(Self->SourceFormat)) return log.warning(ERR::NoSupport);
 
    header.AudioFormat   = Self->SourceFormat.SampleFormat IS ASF::F32 ? WAVE_FLOAT : WAVE_RAW;
    header.NumChannels   = int16_t(layout.size());
@@ -1791,8 +1798,7 @@ static const FieldArray clFields[] = {
    { "Progress",     FDF_VIRTUAL|FDF_DOUBLE|FDF_R,                  SOUND_GET_Progress },
    { "Remaining",    FDF_VIRTUAL|FDF_DOUBLE|FDF_R,                  SOUND_GET_Remaining },
    { "SampleRate",   FDF_VIRTUAL|FDF_INT|FDF_R|FDF_PURE,            SOUND_GET_SampleRate },
-   { "SourceFormat", FDF_VIRTUAL|FDF_POINTER|FDF_STRUCT|FDF_RI|FDF_PURE, SOUND_GET_SourceFormat,
-      SOUND_SET_SourceFormat, "AudioFormat" },
+   { "SourceFormat", FDF_VIRTUAL|FDF_POINTER|FDF_STRUCT|FDF_RI|FDF_PURE, SOUND_GET_SourceFormat, SOUND_SET_SourceFormat, "AudioFormat" },
    { "Note",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW,              SOUND_GET_Note, SOUND_SET_Note },
    END_FIELD
 };

@@ -95,11 +95,21 @@ static void wave_layouts(AudioTestContext &Test)
    AUDIO_CHECK(validate_layout(std::span<const int>(layout.data(), layout.size())) IS ERR::Okay);
 }
 
+static void wave_export_formats(AudioTestContext &Test)
+{
+   AUDIO_CHECK(wave_export_format_supported(make_format(ASF::U8, glLayoutMono, AFF::BIG_ENDIAN_ORDER)));
+   AUDIO_CHECK(!wave_export_format_supported(make_format(ASF::S16, glLayoutMono, AFF::BIG_ENDIAN_ORDER)));
+   AUDIO_CHECK(!wave_export_format_supported(make_format(ASF::F32, glLayoutStereo, AFF::BIG_ENDIAN_ORDER)));
+   AUDIO_CHECK(wave_export_format_supported(make_format(ASF::S16, glLayoutStereo)));
+   AUDIO_CHECK(!wave_export_format_supported(make_format(ASF::S16, glLayoutSide)));
+}
+
 static void run(AudioTestContext &Test)
 {
    validation(Test);
    byte_order(Test);
    wave_layouts(Test);
+   wave_export_formats(Test);
 }
 
 } // namespace audio_tests_audio_format

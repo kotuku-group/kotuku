@@ -338,14 +338,14 @@
       <access read="G">Get</access>
       <type>INT64</type>
       <description>
-<p>Latency reports the fixed delay, measured in frames at the <fl>OutputRate</fl>, that the effect's processor adds to the signal path.  The value is committed when the processor is configured.  Parameter edits made before output starts may update it, but once the output rate is active, an edit that would change it is rejected by <action>Flush</action> with <code>ERR::InvalidState</code>.  Effects with no look-ahead or buffering, such as the equaliser, report zero.</p>
+<p>Latency reports the fixed delay, measured in frames at the <fl>OutputRate</fl>, that the effect's processor adds to the signal path.  The value should not be read until after the processor is configured.  Effects with no look-ahead or buffering, such as the equaliser, report zero.</p>
 <p>Setting the <code>BYPASS</code> flag reduces the reported latency to zero, because a bypassed effect does not delay the signal. The delay of a complete chain, including the global chain, can be read with the Audio class' <code>GetEffectStatus()</code> method.</p>
       </description>
     </field>
 
     <field>
       <name>Mutable</name>
-      <comment>Read-only.  Zero if the effect's parameters can no longer be changed.</comment>
+      <comment>Indicates whether the effect's parameters can be changed.</comment>
       <access read="G">Get</access>
       <type>INT</type>
       <description>
@@ -365,7 +365,7 @@
 
     <field>
       <name>OutputRate</name>
-      <comment>Read-only output sample rate of the attached Audio object.</comment>
+      <comment>Output sample rate of the attached Audio object.</comment>
       <access read="G">Get</access>
       <type>INT</type>
       <description>
@@ -375,7 +375,7 @@
 
     <field>
       <name>Schema</name>
-      <comment>Read-only.  An XML description of the effect's parameters.</comment>
+      <comment>An XML description of the effect's parameters.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
       <description>

@@ -125,6 +125,8 @@ static AudioEQBand entry_band(const AudioParamEntry &Entry)
       Entry.Values[BAND_Q] };
 }
 
+//********************************************************************************************************************
+
 static void equaliser_read(extAudioEffect *Effect, AudioParamState &State)
 {
    auto Self = (extAudioEqualiser *)Effect;
@@ -149,6 +151,7 @@ static void equaliser_apply(extAudioEffect *Effect, const AudioParamState &State
    Self->Gain = State.Params[EQ_GAIN];
 }
 
+//********************************************************************************************************************
 // Prepared storage is also the retirement container: swaps leave old allocations here to be freed after unlocking.
 
 class EqualiserUpdate final : public AudioParamUpdate {
@@ -223,6 +226,8 @@ static const AudioEffectSchema glEqualiserSchema = {
    .GroupCount  = equaliser_group_count
 };
 
+//********************************************************************************************************************
+
 extAudioEqualiser::extAudioEqualiser(objMetaClass *ClassPtr, OBJECTID ObjectID) : extAudioEffect(ClassPtr, ObjectID)
 {
    Schema = &glEqualiserSchema;
@@ -284,8 +289,6 @@ static ERR AUDIOEQUALISER_SET_Bands(extAudioEqualiser *Self, std::span<const Aud
 
 -FIELD-
 Gain: Output trim in decibels, applied after all bands.
-
-Writes return `ERR::InvalidState` while changes staged by @AudioEffect.SetParameter() are waiting for @AudioEffect.Flush().
 
 *********************************************************************************************************************/
 
