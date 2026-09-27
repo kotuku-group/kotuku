@@ -3,13 +3,14 @@
 -CLASS-
 AudioReverb: An algorithmic reverberator that simulates room ambience.
 
-Create as a child of an Audio object or set the inherited Audio field.  Use Channel to process one channel set, or
-leave it at zero to process the global mix.  Application reverbs accept live changes; global reverbs become immutable
-after initialisation.
+The reverberator is a feedback-delay network of eight delay lines mixed by an orthogonal matrix.
 
-The reverberator is a feedback-delay network of eight delay lines mixed by an orthogonal matrix.  Its parameters are
-published through the inherited @AudioEffect schema and are changed with @AudioEffect.SetParameter() followed by
-@AudioEffect.Flush():
+Create new reverberator objects as a child of an @Audio object or set the inherited #AudioEffect.Audio field.
+Use #AudioEffect.Channel to process one channel set, or leave it at zero to process the global mix.  Application
+reverberators accept live changes; global reverberators become immutable after initialisation.
+
+Parameters are published through the inherited @AudioEffect schema and are changed with
+@AudioEffect.SetParameter() followed by @AudioEffect.Flush():
 
 <list type="bullet">
 <li>`decay`: the time, in milliseconds, for the reverberation to fall by 60 dB at low frequencies.</li>

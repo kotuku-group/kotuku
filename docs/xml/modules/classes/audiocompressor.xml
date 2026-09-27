@@ -1,0 +1,56 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>AudioCompressor</name>
+    <type>class</type>
+    <module>Audio</module>
+    <comment>A peak compressor that reduces the dynamic range of audio above a threshold.</comment>
+    <version>1</version>
+    <id>7fb1a909</id>
+    <idstring>AUDIOCOMPRESSOR</idstring>
+    <category>Audio</category>
+    <copyright>Paul Manias © 2002-2026</copyright>
+    <description>
+<p>The compressor reduces the level of audio that exceeds a threshold, making quiet and loud passages more consistent. It is commonly used to improve the intelligibility of dialogue and to control the dynamics of mixed playback.</p>
+<p>Create new compressor objects as a child of an <class name="Audio">Audio</class> object or set the inherited <class name="AudioEffect" field="Audio">AudioEffect.Audio</class> field.  Use <class name="AudioEffect" field="Channel">AudioEffect.Channel</class> to process one channel set, or leave it at zero to process the global mix.  Application compressors accept live changes; global compressors become immutable after initialisation.</p>
+<p>Parameters are published through the inherited <class name="AudioEffect">AudioEffect</class> schema and are changed with <class name="AudioEffect" method="SetParameter">AudioEffect.SetParameter()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>:</p>
+<list type="bullet">
+<li><code>threshold</code>: the detector level, in dB relative to full scale, above which compression is applied.</li>
+<li><code>ratio</code>: the slope of the transfer curve above the threshold.  At 4, a signal that rises 4 dB above the threshold
+leaves the compressor only 1 dB above it.  A ratio of 1 disables compression.</li>
+<li><code>attack</code>: the time constant, in milliseconds, with which gain reduction increases.</li>
+<li><code>release</code>: the time constant, in milliseconds, with which gain reduction recovers.</li>
+<li><code>knee</code>: the width, in dB, of a soft transition centred on the threshold.  Zero selects a hard knee.</li>
+<li><code>makeup</code>: a gain, in dB, that is applied to the compressed signal to restore its loudness.</li>
+<li><code>mix</code>: the linear blend of the dry input and the compressed signal.  Zero passes the input unchanged and values
+between zero and 100 percent provide parallel compression.</li>
+</list>
+<p>The following compresses dialogue on a playing channel set and adds makeup gain as a single change:</p>
+<pre>comp = obj.new('AudioCompressor', { audio=audio, channel=channel })
+comp.mtSetParameter('threshold', -24)
+comp.mtSetParameter('ratio', 3)
+comp.mtSetParameter('makeup', 6)
+comp.acFlush()
+</pre>
+<header>Detection and Transfer Curve</header>
+<p>The detector measures the absolute value of every sample.  In stereo, the greater of the two channel magnitudes is used and the resulting gain is applied equally to both channels, so the louder channel controls compression and the stereo image does not move.  Levels are measured in dBFS, where a magnitude of 1.0 is 0 dBFS, independently of the output format.</p>
+<p>For a detector level <code>x</code>, threshold <code>T</code>, ratio <code>R</code> and knee width <code>W</code>, the target gain reduction <code>g</code> in dB is zero below the knee and <code>(1 - 1/R) * (x - T)</code> above it.  Within a soft knee, where <code>x</code> is between <code>T - W/2</code> and <code>T + W/2</code>, the reduction is <code>(1 - 1/R) * (x - T + W/2)^2 / 2W</code>.  This curve is continuous in value and slope at both edges of the knee.</p>
+<header>Timing</header>
+<p>The target reduction is smoothed in the dB domain.  When the target exceeds the current reduction the attack time constant is used, otherwise the release time constant.  Each is an exponential time constant: after that duration, 63.2% of a change in the target has been traversed.</p>
+<p>The compressor has zero lookahead and zero latency.  The gain for each sample is computed from that sample, so the leading edge of a transient passes before the attack has taken effect and can exceed the static transfer curve.  Place a limiter later in the chain if a strict peak ceiling is required.  The compressor never produces output in response to silence, so it has no tail and never delays the completion of a sound.</p>
+<header>Makeup and Mix</header>
+<p>The compressed branch is <code>input * gain * makeup</code> and the output is <code>input + mix * (compressed - input)</code>, where <code>mix</code> is a proportion from 0 to 1.  This is a linear amplitude crossfade.  Makeup gain does not affect the detector or the reported gain reduction.  Makeup gain and parallel mixing can raise the output above 0 dBFS; the mixer retains that headroom until final conversion to the output format.</p>
+<header>Meters</header>
+<p>In addition to the standard input and output peaks for each channel, the compressor publishes a <code>gain_reduction</code> meter.  It reports the greatest gain reduction, in dB, reached during the meter interval, before makeup gain and dry/wet mixing.  A reading of zero means that no attenuation was applied.</p>
+<header>Live Changes</header>
+<p>Changes to every parameter ramp linearly over 10 ms, so edits do not click, and the gain reduction then follows the new transfer curve at the current attack and release rates.  An edit that arrives during a ramp starts a new ramp from the current values.  Device reactivation, leaving bypass and reaching idle discard the gain reduction and apply the latest parameters without a transition.</p>
+<p>Output rates from 8000 to 192000 Hz are supported.  Configuring the effect for any other rate fails with <code>ERR::NoSupport</code>.</p></description>
+    <source>
+      <file>class_audiocompressor.cpp</file>
+    </source>
+  </info>
+  <structs>
+  </structs>
+</book>

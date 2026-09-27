@@ -85,7 +85,7 @@
       <prototype>ERR snd::AddSample(OBJECTPTR Object, FUNCTION OnStop, struct AudioFormat * Format, std::span&lt;const int8_t&gt; Data, struct AudioLoop * Loop, INT * Result)</prototype>
       <tiriPrototype>err, Result:num = AddSample(OnStop:func, Format:any, Data:array, Loop:any)</tiriPrototype>
       <input>
-        <param type="FUNCTION" name="OnStop">This optional callback function will be called when the stream stops playing.  If effects are attached to the path, the callback waits for their tail; see <class name="AudioEffect">AudioEffect</class>.</param>
+        <param type="FUNCTION" name="OnStop">This optional callback function will be called when the stream stops playing.</param>
         <param type="struct AudioFormat *" name="Format">Describes the format of the sample data.</param>
         <param type="std::span&lt;const int8_t&gt;" name="Data">Points to the address of the sample data.</param>
         <param type="struct AudioLoop *" name="Loop">Optional sample loop information.</param>
@@ -124,7 +124,7 @@
       <tiriPrototype>err, Result:num = AddStream(Callback:func, OnStop:func, Format:any, SampleLength:num, PlayOffset:num, Loop:any)</tiriPrototype>
       <input>
         <param type="FUNCTION" name="Callback">This callback function must be able to return raw audio data for streaming.  The function context will be pinned as a safety measure.</param>
-        <param type="FUNCTION" name="OnStop">This optional callback function will be called when the stream stops playing.  If effects are attached to the path, the callback waits for their tail; see <class name="AudioEffect">AudioEffect</class>.  The function context will be pinned as a safety measure.</param>
+        <param type="FUNCTION" name="OnStop">This optional callback function will be called when the stream stops playing.  The function context will be pinned as a safety measure.</param>
         <param type="struct AudioFormat *" name="Format">Describes the format of the stream data.</param>
         <param type="INT64" name="SampleLength">Total byte length of the stream, or <code>-1</code> when the length is unknown.  Zero is also accepted as the legacy unknown-length value.</param>
         <param type="INT64" name="PlayOffset">Initial byte position.  It must be aligned to a complete source frame.</param>

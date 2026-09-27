@@ -12,6 +12,7 @@ class objAudio;
 class objAudioEffect;
 class objAudioEqualiser;
 class objAudioReverb;
+class objAudioCompressor;
 class objSound;
 
 // Optional flags for the Audio object.
@@ -808,6 +809,29 @@ class objAudioReverb : public objAudioEffect {
 
    using create = kt::Create<objAudioReverb>;
    objAudioReverb(objMetaClass *pClass, OBJECTID pUID) noexcept : objAudioEffect(pClass, pUID) {}
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+
+   // Customised field setting
+
+};
+
+// AudioCompressor class definition
+
+#define VER_AUDIOCOMPRESSOR (1.000000)
+
+class objAudioCompressor : public objAudioEffect {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::AUDIOCOMPRESSOR;
+   static constexpr CSTRING CLASS_NAME = "AudioCompressor";
+
+   using create = kt::Create<objAudioCompressor>;
+   objAudioCompressor(objMetaClass *pClass, OBJECTID pUID) noexcept : objAudioEffect(pClass, pUID) {}
 
    // Action stubs
 

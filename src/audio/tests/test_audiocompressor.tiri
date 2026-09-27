@@ -1,0 +1,203 @@
+@if(exists='modules:audio')
+
+   module audio as mAudio
+
+-- Published parameters in schema order, with their defaults, units and scales.
+
+PARAMS = {
+   { key='threshold', default=-18, unit='dB', scale='linear', min=-60, max=0 },
+   { key='ratio', default=4, unit='ratio', scale='log', min=1, max=20 },
+   { key='attack', default=10, unit='ms', scale='log', min=0.1, max=200 },
+   { key='release', default=100, unit='ms', scale='log', min=5, max=2000 },
+   { key='knee', default=6, unit='dB', scale='linear', min=0, max=24 },
+   { key='makeup', default=0, unit='dB', scale='linear', min=-24, max=24 },
+   { key='mix', default=100, unit='%', scale='linear', min=0, max=100 }
+}
+
+function u8_mono()
+   return struct.new('AudioFormat', { sampleRate=44100, sampleFormat=ASF_U8, layout=array<int> { SPK_CENTRE } })
+end
+
+function new_compressor(Audio:obj):<obj, num>
+   err, channel = Audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   return obj.new('AudioCompressor', { audio=Audio, channel=channel }), channel
+end
+
+function meter_layout(Effect:obj):<any>
+   err, layout = Effect.mtGetMeterLayout()
+   assert(err is ERR_Okay, 'GetMeterLayout() must succeed for an initialised effect')
+   return layout.meters
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function SchemaDiscovery()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   comp <close> = new_compressor(audio)
+   schema = comp.schema
+   assert(schema.find('<effect class="AudioCompressor" version="1"') != nil, 'The schema must identify the class')
+   assert(schema.find('<group') is nil, 'The compressor has no parameter groups')
+   assert(schema.find('type="curve"') is nil, 'The compressor does not publish a response curve')
+
+   -- Parameters appear in the published order with their declared attributes.
+
+   position = 0
+   for p in values(PARAMS) do
+      attributes = f'unit="{p.unit}" scale="{p.scale}" min="{p.min}" max="{p.max}" default="{p.default}"'
+      start = schema.find(f'<param key="{p.key}"')
+      assert(start != nil and start > position, f'{p.key} must be published in order')
+      position = start
+      assert(schema.find(attributes, start) != nil, f'{p.key} must publish {attributes}')
+      err, value = comp.mtGetParameter(p.key)
+      assert(err is ERR_Okay and value is p.default, f'{p.key} should default to {p.default}, got {value}')
+   end
+
+   assert(schema.find('key="gain_reduction" type="scalar" label="Gain Reduction"') != nil)
+   assert(schema.find('unit="dB" scope="global" semantics="maximum-attenuation" slot="4"') != nil)
+   assert(comp.mtGetOutput('response') is ERR_Search)
+   assert(comp.mtGetGroupCount('bands') is ERR_Search)
+   assert(comp.mtInsertEntry('bands', 0) is ERR_Search)
+
+   -- Stereo expands the channel templates before the global reduction value.
+
+   meters = meter_layout(comp)
+   expected = array<str> { 'input_peak_left', 'input_peak_right', 'output_peak_left', 'output_peak_right',
+      'gain_reduction' }
+   assert(#meters is 5, f'Stereo must publish five meters, got {#meters}')
+   for i in {0 to 5} do
+      assert(meters[i].key is expected[i] and meters[i].slot is i,
+         f'Meter {i} should be {expected[i]}, got {meters[i].key}')
+   end
+   assert(meters[4].unit is 'dB' and meters[4].scope is 'global' and meters[4].semantics is 'maximum-attenuation')
+   assert(meters[4].channel is 0 and meters[4].label is 'Gain Reduction')
+end
+
+@Test function StagedChangesAndValidation()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   comp <close> = new_compressor(audio)
+   assert(comp.mutable is 1)
+
+   -- Every bound is inclusive; values outside it and non-finite values are rejected immediately.
+
+   for p in values(PARAMS) do
+      check comp.mtSetParameter(p.key, p.min)
+      check comp.mtSetParameter(p.key, p.max)
+      assert(comp.mtSetParameter(p.key, p.min - 0.001) is ERR_InvalidValue, f'{p.key} below {p.min} must fail')
+      assert(comp.mtSetParameter(p.key, p.max + 0.001) is ERR_InvalidValue, f'{p.key} above {p.max} must fail')
+      assert(comp.mtSetParameter(p.key, math.huge) is ERR_InvalidValue, f'{p.key} must reject infinity')
+      assert(comp.mtSetParameter(p.key, math.sqrt(-1)) is ERR_InvalidValue, f'{p.key} must reject NaN')
+   end
+   assert(comp.mtSetParameter('unknown', 1) is ERR_Search)
+   check comp.acFlush()
+
+   -- Staged values are readable before Flush(); a rejected value leaves earlier staged changes intact, and Flush()
+   -- commits them together.
+
+   check comp.mtSetParameter('threshold', -30)
+   check comp.mtSetParameter('ratio', 8)
+   assert(comp.mtSetParameter('knee', 30) is ERR_InvalidValue)
+   check comp.mtSetParameter('makeup', 4.5)
+   err, value = comp.mtGetParameter('ratio')
+   assert(err is ERR_Okay and value is 8, 'Staged values must be readable')
+   check comp.acFlush()
+   for key, expected in pairs({ threshold=-30, ratio=8, knee=24, makeup=4.5 }) do
+      err, value = comp.mtGetParameter(key)
+      assert(err is ERR_Okay and value is expected, f'{key} should be {expected} after Flush(), got {value}')
+   end
+end
+
+@Test function ConfigureBeforeInit()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   comp <close> = obj.new('AudioCompressor')
+   comp.audio = audio
+   comp.channel = channel
+   check comp.mtSetParameter('attack', 0.5)
+   check comp.mtSetParameter('mix', 35)
+   assert(comp.mtSetParameter('ratio', 0.5) is ERR_InvalidValue)
+   comp.init()
+   err, value = comp.mtGetParameter('mix')
+   assert(err is ERR_Okay and value is 35)
+   err, value = comp.mtGetParameter('attack')
+   assert(err is ERR_Okay and value is 0.5)
+end
+
+@Test function LivePlayback()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   comp, channel = new_compressor(audio)
+   check audio.acActivate()
+   assert(comp.latency is 0, 'The compressor adds no latency')
+   err, rate, format, layout, generation, state = comp.mtGetProcessingFormat()
+   assert(err is ERR_Okay and rate is 48000 and #layout is 2)
+
+   data = array<byte, 8192>
+   for i in {0 to 8192} do data[i] = (i % 64 < 32) ? 250 : 6 end
+   err, sample = audio.mtAddSample(nil, u8_mono(), data, nil)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(audio, channel, sample)
+   check mAudio.MixFrequency(audio, channel, 44100)
+   check mAudio.MixPlay(audio, channel, 0)
+
+   -- Live edits to every parameter, including an edit that replaces one still ramping.
+
+   check comp.mtSetParameter('threshold', -40)
+   check comp.mtSetParameter('ratio', 10)
+   check comp.mtSetParameter('knee', 0)
+   check comp.acFlush()
+   check comp.mtSetParameter('attack', 1)
+   check comp.mtSetParameter('release', 500)
+   check comp.mtSetParameter('makeup', 12)
+   check comp.mtSetParameter('mix', 50)
+   check comp.acFlush()
+
+   assert(#meter_layout(comp) is 5)
+
+   comp.flags = AEF_BYPASS
+   err, reading = comp.mtReadMeters()
+   assert(err is ERR_Okay and reading.flags is AMF_BYPASSED)
+   comp.flags = 0
+   check comp.mtSetParameter('ratio', 2)
+   check comp.acFlush()
+
+   -- Closing the channel set disconnects the effect.
+
+   check audio.mtCloseChannels(channel)
+   err, reading = comp.mtReadMeters()
+   assert(err is ERR_Okay and reading.flags is AMF_DISCONNECTED)
+   assert(comp.mtSetParameter('mix', 50) is ERR_NotInitialised)
+   comp.free()
+end
+
+@Test function MonoAndGlobalImmutability()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100, outputLayout=array<int> { SPK_CENTRE } })
+   comp = audio.new('AudioCompressor')
+   check comp.mtSetParameter('threshold', -24)
+   comp.init()
+   assert(comp.mutable is 0)
+   assert(comp.mtSetParameter('threshold', -12) is ERR_Immutable)
+   err, value = comp.mtGetParameter('threshold')
+   assert(err is ERR_Okay and value is -24, 'Global effects remain readable')
+   check audio.acActivate()
+   meters = meter_layout(comp)
+   assert(#meters is 3, f'Mono must publish three meters, got {#meters}')
+   assert(meters[0].key is 'input_peak_centre' and meters[1].key is 'output_peak_centre')
+   assert(meters[2].key is 'gain_reduction' and meters[2].slot is 2)
+   assert(comp.schema.find('input_peak_right') is nil, 'Mono must not publish a right channel')
+   check audio.acDeactivate()
+end
+
+@Test function UnsupportedRate()
+   audio <close> = obj.new('Audio', { device='null', outputRate=4000 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   try
+      comp = obj.new('AudioCompressor', { audio=audio, channel=channel })
+   except e when ERR_NoSupport
+   success
+      raise 'An output rate below 8000 Hz must be rejected'
+   end
+end
+
+@end

@@ -255,6 +255,10 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     output="class_audioreverb_def.c", extended=true }, [[
   ]])
 
+  klass("AudioCompressor", { base="AudioEffect", src="class_audiocompressor.cpp",
+    output="class_audiocompressor_def.c", extended=true }, [[
+  ]])
+
   klass("Sound", { version=1, src="class_sound.cpp", output="class_sound_def.c", extended=true }, [[
     ~struct(*AudioFormat) SourceFormat
     ~int Channels

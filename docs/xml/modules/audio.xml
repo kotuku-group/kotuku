@@ -18,7 +18,7 @@ sequencing, and control over output rate, bit depth, buffering and mixing qualit
 <li><class name="AudioEffect">AudioEffect</class>: Base class for DSP processors that attach to a channel set or to the global mix of an <class name="Audio">Audio</class>
 object.</li>
 </list>
-<p>The internal mixer processes all audio as 32-bit floating-point data regardless of the output bit depth.  The mixer supports:</p>
+<p>The internal mixer processes all audio as normalised 32-bit floating-point data regardless of the output bit depth. A magnitude of 1.0 is 0 dBFS, while intermediate buses retain finite values above unity as headroom.  The final output conversion is the only stage that clips and quantises samples for the selected hardware format.  The mixer supports:</p>
 <list type="bullet">
 <li>Linear interpolation between sample frames when <code>ADF::OVER_SAMPLING</code> is enabled, reducing aliasing when samples are
 played at rates that differ from the output rate.</li>
@@ -41,7 +41,7 @@ default period; event-driven IAudioClient is the compatibility fallback.  Window
 <p>The <class name="Sound" field="Stream">Sound.Stream</class> field determines whether a sample is loaded into memory or streamed from its source.  With <code>STREAM::SMART</code>, samples larger than 256KB are streamed; with <code>STREAM::ALWAYS</code>, samples larger than 16KB are streamed; with <code>STREAM::NEVER</code>, the sample is always memory-resident.  Loop points are preserved when a sample is streamed.</p>
 <p>Technical specifications:</p>
 <list type="bullet">
-<li>Internal processing: 32-bit floating-point.</li>
+<li>Internal processing: Normalised 32-bit floating-point with headroom above 0 dBFS.</li>
 <li>Output formats: 8-bit and 16-bit integer, and 32-bit floating-point.</li>
 <li>Output rates: Up to 192 kHz, subject to hardware negotiation.  Windows follows the endpoint mix rate.</li>
 <li>Channel configurations: Mono and stereo output.  Mono and stereo samples are converted to the output layout during
@@ -53,6 +53,7 @@ mixing.</li>
     </source>
     <classes>
       <class>Audio</class>
+      <class>AudioCompressor</class>
       <class>AudioEffect</class>
       <class>AudioEqualiser</class>
       <class>AudioReverb</class>
