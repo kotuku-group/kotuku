@@ -80,6 +80,21 @@ static void test_configuration(AudioTestContext &Test)
    const auto &target = typical.Processor.Target;
    AUDIO_CHECK(typical.Processor.decay_estimate() IS uint64_t(960 + target.Lengths[REVERB_LINES - 1] + 72000));
 
+   // A queued size target includes the current transition's remainder and the full fade that follows it.
+   auto first = ReverbSettings();
+   first.Size = 80;
+   typical.change(first);
+   float silence[1200 * 2] = {};
+   typical.Processor.process(silence, 1200);
+   auto queued = first;
+   queued.Size = 20;
+   queued.Decay = 100;
+   typical.change(queued);
+   ReverbTarget first_target;
+   AUDIO_CHECK(reverb_target(first, 48000, first_target));
+   AUDIO_CHECK(typical.Processor.decay_estimate() IS
+      uint64_t(3600 + 4800 + 960 + first_target.Lengths[REVERB_LINES - 1] + 4800));
+
    // Lengths are distinct primes, scale with rate and size, and never exceed the size-100 capacity.
    std::array<int, REVERB_LINES> small, large, capacity, fast;
    reverb_lengths(0, 48000, small);

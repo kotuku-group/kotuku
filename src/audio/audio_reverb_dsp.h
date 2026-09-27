@@ -463,8 +463,8 @@ public:
       return active and ((transition_left > 0) or (quiet < memory));
    }
 
-   // Pre-delay and the first pass through the longest line, then the 60 dB decay time.  Queued targets are included,
-   // so the estimate covers the settings that will apply once current transitions finish.
+   // Pre-delay and the first pass through the longest line, then the 60 dB decay time.  A queued size target cannot
+   // start until the current fade finishes and then starts another full fade, so both intervals precede its tail.
 
    uint64_t decay_estimate() const override {
       if (not active) return 0;
@@ -474,7 +474,8 @@ public:
          longest = std::max(longest, networks[current].Length[i]);
          if (has_pending_network) longest = std::max(longest, pending_target.Lengths[i]);
       }
-      return uint64_t(predelay) + uint64_t(longest) + uint64_t(std::ceil(Target.DecayFrames));
+      const uint64_t transitions = has_pending_network ? uint64_t(transition_left + transition_frames) : 0;
+      return transitions + uint64_t(predelay) + uint64_t(longest) + uint64_t(std::ceil(Target.DecayFrames));
    }
 
    void reset() override {
