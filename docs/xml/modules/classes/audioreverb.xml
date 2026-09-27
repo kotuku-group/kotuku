@@ -14,7 +14,7 @@
     <copyright>Paul Manias © 2002-2026</copyright>
     <description>
 <p>The reverberator is a feedback-delay network of eight delay lines mixed by an orthogonal matrix.</p>
-<p>Create new reverberator objects as a child of an <class name="Audio">Audio</class> object or set the inherited #Audio field.  Use #Channel to process one channel set, or leave it at zero to process the global mix.  Application reverberators accept live changes; global reverberators become immutable after initialisation.</p>
+<p>Create new reverberator objects as a child of an <class name="Audio">Audio</class> object or set the inherited <class name="AudioEffect" field="Audio">AudioEffect.Audio</class> field. Use <class name="AudioEffect" field="Channel">AudioEffect.Channel</class> to process one channel set, or leave it at zero to process the global mix.  Application reverberators accept live changes; global reverberators become immutable after initialisation.</p>
 <p>Parameters are published through the inherited <class name="AudioEffect">AudioEffect</class> schema and are changed with <class name="AudioEffect" method="SetParameter">AudioEffect.SetParameter()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>:</p>
 <list type="bullet">
 <li><code>decay</code>: the time, in milliseconds, for the reverberation to fall by 60 dB at low frequencies.</li>

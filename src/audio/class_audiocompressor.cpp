@@ -6,9 +6,9 @@ AudioCompressor: A peak compressor that reduces the dynamic range of audio above
 The compressor reduces the level of audio that exceeds a threshold, making quiet and loud passages more consistent.
 It is commonly used to improve the intelligibility of dialogue and to control the dynamics of mixed playback.
 
-Create new compressor objects as a child of an @Audio object or set the inherited #Audio field.  Use #Channel
-to process one channel set, or leave it at zero to process the global mix.  Application compressors accept live
-changes; global compressors become immutable after initialisation.
+Create new compressor objects as a child of an @Audio object or set the inherited #AudioEffect.Audio field.  Use
+#AudioEffect.Channel to process one channel set, or leave it at zero to process the global mix.  Application
+compressors accept live changes; global compressors become immutable after initialisation.
 
 Parameters are published through the inherited @AudioEffect schema and are changed with @AudioEffect.SetParameter()
 followed by @AudioEffect.Flush():
