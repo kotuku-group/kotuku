@@ -57,8 +57,8 @@ void convert_samples(const InputType* input, int count, OutputType* output) {
 
       while (input < unroll_end) {
          for (std::size_t i = 0; i < UnrollFactor; ++i) {
-            const int sample = int(input[i]) >> 8;
-            output[i] = uint8_t(128 + clamp_sample(sample, int(-128), int(127)));
+            const auto sample = clamp_sample(InputType(input[i]), InputType(-1), InputType(127.0 / 128.0));
+            output[i] = uint8_t((sample + InputType(1)) * InputType(128));
          }
          input += UnrollFactor;
          output += UnrollFactor;
@@ -67,8 +67,8 @@ void convert_samples(const InputType* input, int count, OutputType* output) {
       // Handle remaining samples
 
       while (input < end) {
-         const int sample = int(*input) >> 8;
-         *output = uint8_t(128 + clamp_sample(sample, int(-128), int(127)));
+         const auto sample = clamp_sample(InputType(*input), InputType(-1), InputType(127.0 / 128.0));
+         *output = uint8_t((sample + InputType(1)) * InputType(128));
          ++input; ++output;
       }
    }
@@ -76,16 +76,16 @@ void convert_samples(const InputType* input, int count, OutputType* output) {
       // 16-bit conversion with loop unrolling
       while (input < unroll_end) {
          for (std::size_t i = 0; i < UnrollFactor; ++i) {
-            const int sample = int(input[i]);
-            output[i] = int16_t(clamp_sample(sample, int(-32768), int(32767)));
+            const auto sample = clamp_sample(InputType(input[i]), InputType(-1), InputType(32767.0 / 32768.0));
+            output[i] = int16_t(sample * InputType(32768));
          }
          input += UnrollFactor;
          output += UnrollFactor;
       }
 
       while (input < end) {
-         const int sample = int(*input);
-         *output = int16_t(clamp_sample(sample, int(-32768), int(32767)));
+         const auto sample = clamp_sample(InputType(*input), InputType(-1), InputType(32767.0 / 32768.0));
+         *output = int16_t(sample * InputType(32768));
          ++input; ++output;
       }
    }
@@ -590,7 +590,6 @@ static bool handle_sample_end(extAudio *Self, AudioChannel &Channel)
          if (effects) {
             const bool was_pending = set.Effects->pending();
             upstream_bound = std::max(upstream_bound, set.Effects->tail_bound());
-            set.Effects->MeterScale = Self->BitDepth IS 32 ? 1.0 : 32768.0;
             render_effects(*set.Effects, buffer, window, Self->SourceFrames,
                uint64_t(Self->MaxDrain * Self->OutputRate), set_active);
             upstream_pending |= was_pending or set.Effects->pending();
@@ -598,7 +597,6 @@ static bool handle_sample_end(extAudio *Self, AudioChannel &Channel)
          }
       }
 
-      Self->GlobalEffects->MeterScale = Self->BitDepth IS 32 ? 1.0 : 32768.0;
       render_effects(*Self->GlobalEffects, Self->MixBuffer.data(), window, source_frames,
          uint64_t(Self->MaxDrain * Self->OutputRate), source_active, upstream_bound, upstream_pending);
 
@@ -666,8 +664,8 @@ static void mix_stream(extAudio *Self, AudioChannel &Channel, AudioSample &Sampl
       }
 
       const bool source_stereo = pcm_stereo(Sample.SampleType);
-      double volume = Self->Mute ? 0 : Self->MasterVolume * ((!Self->Stereo and source_stereo) ? 0.5 : 1.0);
-      if (Self->BitDepth IS 32) volume /= pcm_16bit(Sample.SampleType) ? 32767.0 : 127.0;
+      const double volume = Self->Mute ? 0 :
+         Self->MasterVolume * ((!Self->Stereo and source_stereo) ? 0.5 : 1.0);
       auto dest = Dest + i * channels;
       set_mix_step(int(step));
 
@@ -726,19 +724,11 @@ static void mix_channel(extAudio *Self, AudioChannel &Channel, int TotalSamples,
    int step = ((int64_t(Channel.Frequency / Self->OutputRate) << 16) + (int64_t(Channel.Frequency % Self->OutputRate) << 16) / Self->OutputRate);
 
    const int sample_size = sample.FrameBytes;
-   const double conversion = pcm_16bit(sample.SampleType) ? 1.0 / 32767.0 : 1.0 / 127.0;
    const bool sample_is_stereo = pcm_stereo(sample.SampleType);
 
    // Calculate stereo multiplier using template information
    const double stereo_mul = (!Self->Stereo and sample_is_stereo) ? 0.5 : 1.0;
    double mastervol = Self->Mute ? 0 : Self->MasterVolume * stereo_mul;
-
-   if (Self->BitDepth IS 32) {
-      // If our hardware output format is floating point, the values need to range from -1.0 to 1.0.
-      // The application of the conversion value to mastervol allows us to achieve this optimally
-      // and we won't need to apply any further conversions.
-      mastervol *= conversion;
-   }
 
    const int requested_frames = TotalSamples;
    float *mix_dest = (float *)Dest;

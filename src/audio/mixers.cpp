@@ -4,6 +4,10 @@
 // Thread-local step value for mixing (temporary solution)
 thread_local int MixStep = 1;
 
+static constexpr double PCM_U8_OFFSET = 128.0;
+static constexpr double PCM_U8_SCALE = 1.0 / 128.0;
+static constexpr double PCM_S16_SCALE = 1.0 / 32768.0;
+
 // Function to set the mixing step (called from functions.cpp)
 void set_mix_step(int step) {
    MixStep = step;
@@ -14,22 +18,15 @@ struct SampleTraits;
 
 template<>
 struct SampleTraits<uint8_t> {
-   static constexpr double SCALE = 256.0;
-   static constexpr double OFFSET = 128.0;
-
    static inline double normalize(uint8_t value) {
-      return SCALE * (value - OFFSET);
+      return (double(value) - PCM_U8_OFFSET) * PCM_U8_SCALE;
    }
 };
 
 template<>
 struct SampleTraits<int16_t> {
-   static constexpr double SCALE = 1.0;
-   static constexpr double OFFSET = 0.0;
-   static constexpr double MAX_VALUE = 32767.0;
-
    static inline double normalize(int16_t value) {
-      return double(value);
+      return double(value) * PCM_S16_SCALE;
    }
 };
 
@@ -161,45 +158,20 @@ static int mix_vectorized_mono_to_stereo(APTR Src, int SrcPos, int TotalSamples,
    auto dest = *MixDest;
    auto sample = (SampleType *)Src;
 
-   const __m256 leftVol = _mm256_set1_ps(LeftVol);
-   const __m256 rightVol = _mm256_set1_ps(RightVol);
-
-   // Process 4 samples at a time (AVX can handle 8 floats, we need 2 per sample for stereo)
+   // Process four source samples into eight interleaved destination samples at a time.
    while (TotalSamples >= 4) {
-      // Load 4 samples
-      __m128i samples;
-      if constexpr (std::is_same_v<SampleType, uint8_t>) {
-         samples = _mm_set_epi32(sample[(SrcPos + 3*MixStep) >> 16],
-                                sample[(SrcPos + 2*MixStep) >> 16],
-                                sample[(SrcPos + MixStep) >> 16],
-                                sample[SrcPos >> 16]);
-      } else {
-         samples = _mm_set_epi32(sample[(SrcPos + 3*MixStep) >> 16],
-                                sample[(SrcPos + 2*MixStep) >> 16],
-                                sample[(SrcPos + MixStep) >> 16],
-                                sample[SrcPos >> 16]);
-      }
+      const __m128 normalized = _mm_set_ps(
+         float(SampleTraits<SampleType>::normalize(sample[(SrcPos + 3 * MixStep) >> 16])),
+         float(SampleTraits<SampleType>::normalize(sample[(SrcPos + 2 * MixStep) >> 16])),
+         float(SampleTraits<SampleType>::normalize(sample[(SrcPos + MixStep) >> 16])),
+         float(SampleTraits<SampleType>::normalize(sample[SrcPos >> 16])));
+      const __m128 left = _mm_mul_ps(normalized, _mm_set1_ps(LeftVol));
+      const __m128 right = _mm_mul_ps(normalized, _mm_set1_ps(RightVol));
+      const __m128 interleaved_lo = _mm_unpacklo_ps(left, right);
+      const __m128 interleaved_hi = _mm_unpackhi_ps(left, right);
 
-      // Convert to float and apply normalization
-      __m256 normalized;
-      if constexpr (std::is_same_v<SampleType, uint8_t>) {
-         __m256 temp = _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(samples));
-         normalized = _mm256_mul_ps(_mm256_sub_ps(temp, _mm256_set1_ps(128.0f)), _mm256_set1_ps(256.0f));
-      } else {
-         normalized = _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(samples));
-      }
-
-      // Create left and right channels
-      __m256 left = _mm256_mul_ps(normalized, leftVol);
-      __m256 right = _mm256_mul_ps(normalized, rightVol);
-
-      // Interleave and store
-      __m256 destVec = _mm256_loadu_ps(dest);
-      __m256 interleaved_lo = _mm256_unpacklo_ps(left, right);
-      __m256 interleaved_hi = _mm256_unpackhi_ps(left, right);
-
-      _mm256_storeu_ps(dest, _mm256_add_ps(destVec, interleaved_lo));
-      _mm256_storeu_ps(dest + 4, _mm256_add_ps(_mm256_loadu_ps(dest + 4), interleaved_hi));
+      _mm_storeu_ps(dest, _mm_add_ps(_mm_loadu_ps(dest), interleaved_lo));
+      _mm_storeu_ps(dest + 4, _mm_add_ps(_mm_loadu_ps(dest + 4), interleaved_hi));
 
       dest += 8;
       SrcPos += 4 * MixStep;
