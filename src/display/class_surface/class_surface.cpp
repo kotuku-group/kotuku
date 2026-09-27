@@ -37,9 +37,6 @@ static ERR SET_Opacity(extSurface *, double);
 static ERR SET_XOffset(extSurface *, Unit &);
 static ERR SET_YOffset(extSurface *, Unit &);
 
-constexpr int MOVE_VERTICAL   = 0x0001;
-constexpr int MOVE_HORIZONTAL = 0x0002;
-
 static ERR consume_input_events(const InputEvent *, int);
 static void draw_region(extSurface *, extSurface *, extBitmap *);
 static ERR redraw_timer(extSurface *, int64_t, int64_t);
@@ -74,7 +71,7 @@ static ERR refresh_pointer_timer(OBJECTPTR Task, int64_t Elapsed, int64_t Curren
    return ERR::Terminate; // Timer is only called once
 }
 
-void refresh_pointer(extSurface *Self)
+void refresh_pointer()
 {
    if (!glRefreshPointerTimer) {
       kt::SwitchContext context(glModule);
@@ -99,7 +96,7 @@ static ERR access_video(OBJECTID DisplayID, objDisplay **Display, objBitmap **Bi
          }
       }
 
-      if (Bitmap) *Bitmap = Display[0]->Bitmap;
+      *Bitmap = Display[0]->Bitmap;
       return ERR::Okay;
    }
    else return ERR::AccessObject;
@@ -334,7 +331,7 @@ static void expose_buffer(const SURFACELIST &list, int Limit, int Index, int Sca
 */
 
 static void invalidate_overlap(extSurface *Self, const SURFACELIST &list, int OldIndex, int Index,
-   const ClipRectangle &Area, objBitmap *Bitmap)
+   const ClipRectangle &Area)
 {
    kt::Log log(__FUNCTION__);
    int j;
@@ -625,8 +622,6 @@ static ERR SURFACE_AddCallback(extSurface *Self, struct drw::AddCallback *Args)
    auto consume_callback = kt::Defer([&]() {
       if (not retained_callback) Args->Callback.consume();
    });
-
-   log.msg("Count: %d", int(Self->Callback.size()));
 
    // Check if the subscription is already registered
 
@@ -994,7 +989,7 @@ static ERR SURFACE_Hide(extSurface *Self)
       gfx::SetModalSurface(0);
    }
 
-   refresh_pointer(Self);
+   refresh_pointer();
    return ERR::Okay;
 }
 
@@ -1174,33 +1169,29 @@ static ERR SURFACE_Init(extSurface *Self)
 
       SCR scrflags = SCR::NIL;
 
-      if ((Self->Type & RT::ROOT) != RT::NIL) {
-         gfx::SetHostOption(HOST::TASKBAR, 1);
-         gfx::SetHostOption(HOST::TRAY_ICON, 0);
-      }
-      else switch(Self->WindowType) {
-         default: // SWIN::HOST
+      switch(Self->Presence) {
+         default: // SPT::HOST
             log.trace("Enabling standard hosted window mode.");
             gfx::SetHostOption(HOST::TASKBAR, 1);
             break;
 
-         case SWIN::TASKBAR:
+         case SPT::TASKBAR:
             log.trace("Enabling borderless taskbar based surface.");
-            scrflags |= SCR::BORDERLESS; // Stop the display from creating a host window for the surface
+            scrflags |= SCR::BORDERLESS; // Request an undecorated host window for the surface
             if ((Self->Flags & RNF::HOST) != RNF::NIL) scrflags |= SCR::MAXIMISE;
             gfx::SetHostOption(HOST::TASKBAR, 1);
             break;
 
-         case SWIN::ICON_TRAY:
+         case SPT::ICON_TRAY:
             log.trace("Enabling borderless icon-tray based surface.");
-            scrflags |= SCR::BORDERLESS; // Stop the display from creating a host window for the surface
+            scrflags |= SCR::BORDERLESS; // Request an undecorated host window for the surface
             if ((Self->Flags & RNF::HOST) != RNF::NIL) scrflags |= SCR::MAXIMISE;
             gfx::SetHostOption(HOST::TRAY_ICON, 1);
             break;
 
-         case SWIN::NONE:
+         case SPT::NONE:
             log.trace("Enabling borderless, presence-less surface.");
-            scrflags |= SCR::BORDERLESS; // Stop the display from creating a host window for the surface
+            scrflags |= SCR::BORDERLESS; // Request an undecorated host window for the surface
             if ((Self->Flags & RNF::HOST) != RNF::NIL) scrflags |= SCR::MAXIMISE;
             gfx::SetHostOption(HOST::TASKBAR, 0);
             gfx::SetHostOption(HOST::TRAY_ICON, 0);
@@ -1314,8 +1305,7 @@ static ERR SURFACE_Init(extSurface *Self)
 
          acFlush(display);
 
-         // For hosted environments, record the window handle (NB: this is doubling up the display handle, we should
-         // just make the window handle a virtual field so that we don't need a permanent record of it).
+         // Cache the hosted window handle for parent inheritance and driver callback lookup.
 
          display->getWindowHandle(Self->DisplayWindow);
 
@@ -1459,19 +1449,6 @@ focus, the action returns without further notification.
 
 static ERR SURFACE_LostFocus(extSurface *Self)
 {
-#if 0
-   if (auto msg = GetActionMsg()) {
-      // This is a message - in which case it could have been delayed and thus superseded by a more recent call.
-
-      if (msg->Time < glLastFocusTime) {
-         FOCUSMSG("Ignoring superseded focus message.");
-         return ERR::Okay|ERR::Notified;
-      }
-   }
-
-   glLastFocusTime = PreciseTime();
-#endif
-
    if (Self->hasFocus()) {
       Self->Flags &= ~RNF::HAS_FOCUS;
       UpdateSurfaceField(Self, &SurfaceRecord::Flags, Self->Flags);
@@ -1642,7 +1619,7 @@ static ERR SURFACE_MoveToBack(extSurface *Self)
          Self->FixedHeight, EXF::CHILDREN|EXF::REDRAW_VOLATILE_OVERLAP);
    }
 
-   refresh_pointer(Self);
+   refresh_pointer();
 
    return ERR::Okay;
 }
@@ -1747,7 +1724,7 @@ static ERR SURFACE_MoveToFront(extSurface *Self)
 
       if (kt::ScopedObjectLock<objBitmap> bitmap(Self->BufferID, 5000); bitmap.granted()) {
          auto area = ClipRectangle(cplist[i].Left, cplist[i].Top, cplist[i].Right, cplist[i].Bottom);
-         invalidate_overlap(Self, cplist, currentindex, i, area, *bitmap);
+         invalidate_overlap(Self, cplist, currentindex, i, area);
       }
 
       if (check_volatile(cplist, i)) {
@@ -1773,7 +1750,7 @@ static ERR SURFACE_MoveToFront(extSurface *Self)
       }
    }
 
-   refresh_pointer(Self);
+   refresh_pointer();
    return ERR::Okay;
 }
 
@@ -2152,15 +2129,12 @@ static ERR SURFACE_Show(extSurface *Self)
    log.traceBranch("%dx%d, %dx%d, Parent: %d, Modal: %d", Self->FixedX, Self->FixedY, Self->FixedWidth,
       Self->FixedHeight, Self->ParentID, Self->Modal);
 
-   ERR notified;
-   if (Self->visible()) {
-      notified = ERR::Notified;
-      return ERR::Okay|ERR::Notified;
-   }
-   else notified = ERR::NIL;
+   if (Self->visible()) return ERR::Okay|ERR::Notified;
 
    if (!Self->ParentID) {
       kt::ScopedObjectLock display(Self->DisplayID);
+      if (not display.granted()) return log.warning(display.error);
+
       if (auto error = acShow(*display); !error) {
          Self->Flags |= RNF::VISIBLE;
          if (Self->hasFocus()) acFocus(*display);
@@ -2171,17 +2145,15 @@ static ERR SURFACE_Show(extSurface *Self)
 
    if (Self->Modal) Self->PrevModalID = gfx::SetModalSurface(Self->UID);
 
-   if (notified IS ERR::NIL) {
-      UpdateSurfaceField(Self, &SurfaceRecord::Flags, Self->Flags);
+   UpdateSurfaceField(Self, &SurfaceRecord::Flags, Self->Flags);
 
-      RedrawSurface(Self->UID, 0, 0, Self->FixedWidth, Self->FixedHeight, IRF::RELATIVE);
-      gfx::ExposeSurface(Self->UID, 0, 0, Self->FixedWidth, Self->FixedHeight,
-         EXF::CHILDREN|EXF::REDRAW_VOLATILE_OVERLAP);
-   }
+   RedrawSurface(Self->UID, 0, 0, Self->FixedWidth, Self->FixedHeight, IRF::RELATIVE);
+   gfx::ExposeSurface(Self->UID, 0, 0, Self->FixedWidth, Self->FixedHeight,
+      EXF::CHILDREN|EXF::REDRAW_VOLATILE_OVERLAP);
 
-   refresh_pointer(Self);
+   refresh_pointer();
 
-   return ERR::Okay|notified;
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -2397,7 +2369,7 @@ static const FieldArray clSurfaceFields[] = {
    { "MaxHeight",    FDF_INT|FDF_RW,  nullptr, SET_MaxHeight },
    { "Display",      FDF_OBJECTID|FDF_R, nullptr, nullptr, CLASSID::DISPLAY },
    { "Flags",        FDF_INTFLAGS|FDF_RW, nullptr, SET_Flags, &clSurfaceFlags },
-   { "RootLayer",    FDF_OBJECTID|FDF_RW, nullptr, SET_RootLayer },
+   { "Root",         FDF_OBJECTID|FDF_RW, nullptr, SET_Root },
    { "DragStatus",   FDF_INT|FDF_LOOKUP|FDF_R, nullptr, nullptr, &clSurfaceDragStatus },
    { "Cursor",       FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, SET_Cursor, &clSurfaceCursor },
    { "Colour",       FDF_STRUCT|FDF_RW, nullptr, nullptr, "RGB8" },
@@ -2413,7 +2385,7 @@ static const FieldArray clSurfaceFields[] = {
    { "Right",         FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_R,  GET_Right },
    { "UserFocus",     FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_R,  GET_UserFocus },
    { "Visible",       FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_RW, GET_Visible, SET_Visible },
-   { "WindowType",    FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_PURE|FDF_RW, GET_WindowType, SET_WindowType, &clSurfaceSWIN },
+   { "Presence",      FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_PURE|FDF_RW, GET_Presence, SET_Presence, &clSurfaceSPT },
    { "WindowHandle",  FDF_VIRTUAL|FDF_POINTER|FDF_PURE|FDF_RW, GET_WindowHandle, SET_WindowHandle },
    END_FIELD
 };

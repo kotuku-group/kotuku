@@ -308,14 +308,91 @@ static ERR SET_RevertFocus(extSurface *Self, OBJECTID Value)
 /*********************************************************************************************************************
 
 -FIELD-
-RootLayer: Private
+Presence: Defines how a top-level surface is represented by a hosted desktop.
+Lookup: SPT
+
+This field affects hosted desktops such as Windows and X11.  It only applies to top-level surfaces that have no parent.
+Child surfaces ignore this field, and surfaces created inside the desktop area treat the desktop as their parent.
+
+Custom surfaces remain responsible for their own window controls, such as title bars and resize borders.
+
+On Wayland, normal hosted windows use compositor decorations when available and client-side decorations otherwise.
+`SPT::ICON_TRAY` reports `ERR::NoSupport`; tray icons require separate desktop integration.  `SPT::NONE` requires
+a #PopOver parent and creates a popup relative to that parent's content area.  The parent must be mapped before the
+popup is created or shown.  Hiding the parent also hides its popups; show the parent before showing them again.
+Changing a hosted window's type after initialisation reports `ERR::NoSupport` on Wayland.
 
 *********************************************************************************************************************/
 
-static ERR SET_RootLayer(extSurface *Self, OBJECTID Value)
+static ERR GET_Presence(extSurface *Self, SPT *Value)
+{
+   *Value = Self->Presence;
+   return ERR::Okay;
+}
+
+static ERR SET_Presence(extSurface *Self, SPT Value)
+{
+   if (Self->initialised() and (not Self->ParentID) and (gfx::GetDisplayType() IS DT::WAYLAND) and
+         (Self->Presence != Value)) return ERR::NoSupport;
+
+   if (Self->initialised()) {
+      kt::Log log;
+
+      if (Self->Presence IS Value) {
+         log.trace("Presence == %d", Value);
+         return ERR::Okay;
+      }
+
+      if (Self->DisplayID) {
+         if (ScopedObjectLock<objDisplay> display(Self->DisplayID, 2000); display.granted()) {
+            log.trace("Changing window type to %d.", Value);
+
+            bool border;
+            switch(Value) {
+               case SPT::TASKBAR:
+               case SPT::ICON_TRAY:
+               case SPT::NONE:
+                  border = false;
+                  break;
+               default:
+                  border = true;
+                  break;
+            }
+
+            SCR flags;
+            if (border) {
+               if ((display->Flags & SCR::BORDERLESS) != SCR::NIL) {
+                  flags = display->Flags & (~SCR::BORDERLESS);
+                  display->setFlags(flags);
+               }
+            }
+            else if ((display->Flags & SCR::BORDERLESS) IS SCR::NIL) {
+               flags = display->Flags | SCR::BORDERLESS;
+               display->setFlags(flags);
+            }
+
+            Self->Presence = Value;
+         }
+         else return ERR::AccessObject;
+      }
+      else return log.warning(ERR::NoSupport);
+   }
+   else Self->Presence = Value;
+
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+Root: Private
+
+*********************************************************************************************************************/
+
+static ERR SET_Root(extSurface *Self, OBJECTID Value)
 {
    Self->RootID = Value;
-   UpdateSurfaceField(Self, &SurfaceRecord::RootID, Value); // Update RootLayer
+   UpdateSurfaceField(Self, &SurfaceRecord::RootID, Value);
    return ERR::Okay;
 }
 
@@ -331,7 +408,7 @@ Returns the object ID of the surface that has the primary user focus.  Returns z
 static ERR GET_UserFocus(extSurface *Self, OBJECTID *Value)
 {
    const std::lock_guard<std::recursive_mutex> lock(glFocusLock);
-   *Value = glFocusList[0];
+   *Value = glFocusList.empty() ? 0 : glFocusList[0];
    return ERR::Okay;
 }
 
@@ -360,74 +437,6 @@ static ERR SET_Visible(extSurface *Self, int Value)
 {
    if (Value) acShow(Self);
    else acHide(Self);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-WindowType: Defines how a top-level surface is represented by a hosted desktop.
-Lookup: SWIN
-
-This field affects hosted desktops such as Windows and X11.  It only applies to top-level surfaces that have no parent.
-Child surfaces ignore this field, and surfaces created inside the desktop area treat the desktop as their parent.
-
-Custom surfaces remain responsible for their own window controls, such as title bars and resize borders.
-
-*********************************************************************************************************************/
-
-static ERR GET_WindowType(extSurface *Self, SWIN *Value)
-{
-   *Value = Self->WindowType;
-   return ERR::Okay;
-}
-
-static ERR SET_WindowType(extSurface *Self, SWIN Value)
-{
-   if (Self->initialised()) {
-      kt::Log log;
-
-      if (Self->WindowType IS Value) {
-         log.trace("WindowType == %d", Value);
-         return ERR::Okay;
-      }
-
-      if (Self->DisplayID) {
-         if (ScopedObjectLock<objDisplay> display(Self->DisplayID, 2000); display.granted()) {
-            log.trace("Changing window type to %d.", Value);
-
-            bool border;
-            switch(Value) {
-               case SWIN::TASKBAR:
-               case SWIN::ICON_TRAY:
-               case SWIN::NONE:
-                  border = false;
-                  break;
-               default:
-                  border = true;
-                  break;
-            }
-
-            SCR flags;
-            if (border) {
-               if ((display->Flags & SCR::BORDERLESS) != SCR::NIL) {
-                  flags = display->Flags & (~SCR::BORDERLESS);
-                  display->setFlags(flags);
-               }
-            }
-            else if ((display->Flags & SCR::BORDERLESS) IS SCR::NIL) {
-               flags = display->Flags | SCR::BORDERLESS;
-               display->setFlags(flags);
-            }
-
-            Self->WindowType = Value;
-         }
-         else return ERR::AccessObject;
-      }
-      else return log.warning(ERR::NoSupport);
-   }
-   else Self->WindowType = Value;
-
    return ERR::Okay;
 }
 

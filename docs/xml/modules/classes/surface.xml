@@ -523,6 +523,7 @@ the surface area first).</li>
       <description>
 <p>Use <code>Flags</code> to enable optional surface behaviours.  Preserve existing flags when updating this field, typically by combining the current value with the flags being added.</p>
 <p>Read-only flags cannot be changed by writing this field.  Initialisation-only flags can be set before the surface is initialised, but are preserved once the surface is active.</p>
+<p>On Wayland, top-level surfaces reject <code>RNF::STICK_TO_FRONT</code> and <code>RNF::STICK_TO_BACK</code> with <code>ERR::NoSupport</code>. These flags remain available for ordering child surfaces within their container.</p>
 <types lookup="RNF"/>
       </description>
     </field>
@@ -632,17 +633,23 @@ the surface area first).</li>
     </field>
 
     <field>
+      <name>Presence</name>
+      <comment>Defines how a top-level surface is represented by a hosted desktop.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type lookup="SPT">SPT</type>
+      <description>
+<p>This field affects hosted desktops such as Windows and X11.  It only applies to top-level surfaces that have no parent. Child surfaces ignore this field, and surfaces created inside the desktop area treat the desktop as their parent.</p>
+<p>Custom surfaces remain responsible for their own window controls, such as title bars and resize borders.</p>
+<p>On Wayland, normal hosted windows use compositor decorations when available and client-side decorations otherwise. <code>SPT::ICON_TRAY</code> reports <code>ERR::NoSupport</code>; tray icons require separate desktop integration.  <code>SPT::NONE</code> requires a <fl>PopOver</fl> parent and creates a popup relative to that parent's content area.  The parent must be mapped before the popup is created or shown.  Hiding the parent also hides its popups; show the parent before showing them again. Changing a hosted window's type after initialisation reports <code>ERR::NoSupport</code> on Wayland.</p>
+<types lookup="SPT"/>
+      </description>
+    </field>
+
+    <field>
       <name>Right</name>
       <comment>Returns the right-most coordinate of a surface object, <code>X + Width</code>.</comment>
       <access read="G">Get</access>
       <type>INT</type>
-    </field>
-
-    <field>
-      <name>Root</name>
-      <comment>Surface that is acting as a root for many surface children (useful when applying translucency)</comment>
-      <access>-/-</access>
-      <type>OBJECTID</type>
     </field>
 
     <field>
@@ -689,18 +696,6 @@ the surface area first).</li>
       <description>
 <p>This field exposes the host window handle for platforms that provide one.  It is currently relevant when creating a primary surface within an X11 window manager or Microsoft Windows.</p>
 <p>Set <code>WindowHandle</code> before initialisation to attach the surface to an existing native window.  The field is immutable after initialisation.</p>
-      </description>
-    </field>
-
-    <field>
-      <name>WindowType</name>
-      <comment>Defines how a top-level surface is represented by a hosted desktop.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type lookup="SWIN">SWIN</type>
-      <description>
-<p>This field affects hosted desktops such as Windows and X11.  It only applies to top-level surfaces that have no parent. Child surfaces ignore this field, and surfaces created inside the desktop area treat the desktop as their parent.</p>
-<p>Custom surfaces remain responsible for their own window controls, such as title bars and resize borders.</p>
-<types lookup="SWIN"/>
       </description>
     </field>
 
@@ -881,7 +876,7 @@ the surface area first).</li>
       <const name="ROOT">Can be used by window surfaces to identify themselves as a root layer.</const>
     </constants>
 
-    <constants lookup="SWIN" comment="Options for the Surface WindowType field.">
+    <constants lookup="SPT" comment="Options for the Surface Presence field.">
       <const name="HOST">Default to the standard hosted window mode with full titlebar, borders and taskbar representation.</const>
       <const name="ICON_TRAY">Create a borderless (custom) window with icon tray representation.</const>
       <const name="NONE">Create a borderless (custom) window with no UI representation.</const>

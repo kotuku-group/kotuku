@@ -58,7 +58,7 @@ module({
     "NO_DRAW: Drawing and exposures are disabled",
     "NO_EXPOSE: Drawing is enabled, exposures are disabled")
 
-  enums("SWIN", { type="int", start=0, comment="Options for the Surface WindowType field." },
+  enums("SPT", { type="int", start=0, comment="Options for the Surface Presence field." },
     "HOST: Default to the standard hosted window mode with full titlebar, borders and taskbar representation.",
     "TASKBAR: Create a borderless (custom) window with taskbar representation.",
     "ICON_TRAY: Create a borderless (custom) window with icon tray representation.",
@@ -222,7 +222,8 @@ module({
     "NATIVE: The selected display driver uses no platform-specific hosted backend.",
     "X11: The display is driven by the X Window System (X11, X.Org, XFree86)",
     "WINGDI: The display is driven by Microsoft Windows drivers.",
-    "GLES: The selected display driver uses OpenGL ES.")
+    "GLES: The selected display driver uses OpenGL ES.",
+    "WAYLAND: The display is driven by a native Wayland compositor.")
 
   enums("DPMS", { type="int", start=0, comment="Possible modes for the Display class' PowerMode field." },
     "DEFAULT: Use the default DPMS mode as defined by the display driver.",
@@ -592,7 +593,7 @@ module({
     { id=9, name='ScheduleRedraw' }
   })
 
-  klass('Surface', { references={ 'JTYPE', 'JET', 'SWIN', 'InputEvent' }, extended=true, src={
+  klass('Surface', { references={ 'JTYPE', 'JET', 'SPT', 'InputEvent' }, extended=true, src={
       'class_surface/class_surface.cpp',
       'class_surface/surface_dimensions.cpp',
       'class_surface/surface_drawing.cpp',
@@ -615,13 +616,13 @@ module({
     int MaxHeight         # Maximum height setting
     oid Display           # Refers to the Display object that is managing the surface's graphics.
     int(RNF) Flags        # Special flags
-    oid Root              # Surface that is acting as a root for many surface children (useful when applying translucency)
+    oid Root              # Surface that acts as a root for child surfaces when applying translucency
     int(DRAG) DragStatus  # Indicates the draggable state when dragging is enabled.
     int(PTC) Cursor       # The preferred cursor image to use when the pointer is over the surface
     struct(RGB8) Colour   # Background colour specification
     int(RT) Type          # Internal surface type flags
     int Modal             # Set to 1 to enable modal mode
-    ~int(SWIN) WindowType
+    ~int(SPT) Presence    # Defines how the surface is presented on the host
   ]],
   nil,
   [[
@@ -692,7 +693,7 @@ module({
 namespace fl {
    using namespace kt;
 
-[[nodiscard]] constexpr FieldValue WindowType(SWIN Value) { return FieldValue(strhash("windowType"), int(Value)); }
+[[nodiscard]] constexpr FieldValue Presence(SPT Value) { return FieldValue(strhash("presence"), int(Value)); }
 [[nodiscard]] constexpr FieldValue MemType(BMT Value) { return FieldValue(strhash("memType"), int(Value)); }
 
 } // namespace

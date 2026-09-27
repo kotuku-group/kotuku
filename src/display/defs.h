@@ -88,7 +88,7 @@ constexpr int BLEND_MIN_THRESHOLD = 1;
 using namespace kt;
 class extBitmap;
 
-extern SWIN glpWindowType;
+extern SPT glpPresence;
 extern PTC get_cursor_id(std::string_view Name);
 
 #define UpdateSurfaceRecord(a) update_surface_copy(a)
@@ -337,7 +337,7 @@ class extSurface : public objSurface {
    int      LineWidth;            // Bitmap line width, in bytes
    int      ListIndex;            // Last known list index
    int      InputHandle;          // Input handler for dragging of surfaces
-   SWIN     WindowType;           // See SWIN constants
+   SPT      Presence;             // See SPT constants
    TIMER    RedrawTimer;          // For ScheduleRedraw()
    int16_t FixedWidth, FixedHeight, FixedX, FixedY, FixedXO, FixedYO;
    uint16_t InheritedRoot:1;      // TRUE if the user set the RootLayer manually
@@ -351,7 +351,7 @@ class extSurface : public objSurface {
 
    extSurface(objMetaClass *ClassPtr, OBJECTID ObjectID) : objSurface(ClassPtr, ObjectID) {
       Opacity    = 1.0;
-      WindowType = glpWindowType;
+      Presence = glpPresence;
    }
 
    ~extSurface();
@@ -472,7 +472,7 @@ extern void move_layer(extSurface *, int, int);
 extern void move_layer_pos(SURFACELIST &, int, int);
 extern void prepare_background(extSurface *, const SURFACELIST &, int, extBitmap *, const ClipRectangle &, int8_t);
 extern void process_surface_callbacks(extSurface *, extBitmap *);
-extern void refresh_pointer(extSurface *Self);
+extern void refresh_pointer();
 extern ERR  track_layer(extSurface *);
 extern void untrack_layer(OBJECTID);
 extern int8_t restrict_region_to_parents(const SURFACELIST &, int, ClipRectangle &, bool);

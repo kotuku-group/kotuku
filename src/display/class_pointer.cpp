@@ -635,16 +635,18 @@ static ERR POINTER_MoveToPoint(extPointer *Self, struct acMoveToPoint *Args)
    }
 */
    if (glDriver) {
-      if ((Args->Flags & MTF::X) != MTF::NIL) Self->X = Args->X;
-      if ((Args->Flags & MTF::Y) != MTF::NIL) Self->Y = Args->Y;
-      if (Self->X < 0) Self->X = 0;
-      if (Self->Y < 0) Self->Y = 0;
+      double target_x = ((Args->Flags & MTF::X) != MTF::NIL) ? Args->X : Self->X;
+      double target_y = ((Args->Flags & MTF::Y) != MTF::NIL) ? Args->Y : Self->Y;
+      if (target_x < 0) target_x = 0;
+      if (target_y < 0) target_y = 0;
 
       HOSTWINDOW window;
       if (auto error = pointer_window(Self->SurfaceID, window); error != ERR::Okay) return log.warning(error)|ERR::Notified;
-      if (auto error = glDriver->warpPointer(window, Self->X, Self->Y); error != ERR::Okay) {
+      if (auto error = glDriver->warpPointer(window, target_x, target_y); error != ERR::Okay) {
          return log.warning(error)|ERR::Notified;
       }
+      Self->X = target_x;
+      Self->Y = target_y;
       Self->HostX = Self->X;
       Self->HostY = Self->Y;
    }
