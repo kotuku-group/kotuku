@@ -393,7 +393,7 @@ Draw: Renders the scene to a bitmap.
 The Draw action will render the scene to the target #Bitmap immediately.  If #Bitmap is NULL, an error will be
 returned.
 
-In addition, the #RenderTime field will be updated if the `RENDER_TIME` flag is defined.
+The #RenderTime field will be updated if the `RENDER_TIME` flag is defined.
 
 -ERRORS-
 Okay
@@ -403,15 +403,21 @@ FieldNotSet: The Bitmap field is NULL.
 
 static ERR VECTORSCENE_Draw(extVectorScene *Self, struct acDraw *Args)
 {
-   if (!Self->Bitmap) {
-      kt::Log log;
-      return log.warning(ERR::FieldNotSet);
+   if (not Self->Bitmap) return kt::Log().warning(ERR::FieldNotSet);
+
+   if (Self->ProcessingMessages) return kt::Log().warning(ERR::Recursion);
+   Self->ProcessingMessages = true;
+
+   // Any pending resize messages for viewports must be processed prior to drawing.
+
+   process_resize_msgs(Self);
+   send_dummy_input_event(Self);
+
+   if (Self->Bitmap) { // Intentional secondary check after callbacks
+      render_scene_from_viewport(Self, Self->Bitmap, Self->Viewport);
    }
 
-   acFlush(Self);
-
-   render_scene_from_viewport(Self, Self->Bitmap, Self->Viewport);
-
+   Self->ProcessingMessages = false;
    return ERR::Okay;
 }
 
@@ -476,14 +482,13 @@ static ERR VECTORSCENE_FindDef(extVectorScene *Self, struct sc::FindDef *Args)
 
 static ERR VECTORSCENE_Flush(extVectorScene *Self)
 {
-   static bool recurse = false;
-   if (recurse) return ERR::Recursion;
-   recurse = true;
+   if (Self->ProcessingMessages) return ERR::Recursion;
+   Self->ProcessingMessages = true;
 
    process_resize_msgs(Self);
    send_dummy_input_event(Self);
 
-   recurse = false;
+   Self->ProcessingMessages = false;
    return ERR::Okay;
 }
 
