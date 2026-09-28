@@ -912,6 +912,7 @@ class extVectorScene : public objVectorScene {
    bool RefreshCursor;
    bool SubtreeDirty; // True if any vector in this scene's tree has been marked dirty since the last completed draw.
    bool ProcessingMessages;
+   bool BorderlessSurface;
    uint8_t BufferCount; // Active tally of viewports that are buffered.
 
    extVectorScene(objMetaClass *ClassPtr, OBJECTID ObjectID) :
