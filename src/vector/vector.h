@@ -908,9 +908,10 @@ class extVectorScene : public objVectorScene {
    OBJECTID ActiveVector; // The most recent vector to have received an input movement event.
    int InputHandle;
    PTC Cursor; // Current cursor image
-   bool RefreshCursor;
    uint64_t ShareVersion; // Incremented whenever a shareable object has been modified.
+   bool RefreshCursor;
    bool SubtreeDirty; // True if any vector in this scene's tree has been marked dirty since the last completed draw.
+   bool ProcessingMessages;
    uint8_t BufferCount; // Active tally of viewports that are buffered.
 
    extVectorScene(objMetaClass *ClassPtr, OBJECTID ObjectID) :
