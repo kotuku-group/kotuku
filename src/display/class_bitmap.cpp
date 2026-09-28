@@ -1130,8 +1130,9 @@ static ERR BITMAP_Resize(extBitmap *Self, struct acResize *Args)
    if ((Self->Flags & BMF::NO_DATA) != BMF::NIL);
    else if ((Self->Data) and (Self->prvAFlags & BF_DATA)) {
       uint8_t *data;
-      if ((size <= Self->Size) and (size / Self->Size > 0.5)) { // Do nothing when shrinking unless able to save considerable resources
-         size = Self->Size;
+      // Do nothing when shrinking unless able to save considerable resources
+      if ((size <= Self->Size) and (double(size) / Self->Size > 0.5)) {
+         size = Self->Size; // Size reflects the retained allocation
       }
       else if ((data = (uint8_t *)malloc(size))) {
          if (Self->Data) free(Self->Data);

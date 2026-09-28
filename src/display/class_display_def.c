@@ -33,6 +33,7 @@ static const struct FieldDef clDisplayDisplayType[] = {
    { "X11", 0x00000002 },
    { "Wingdi", 0x00000003 },
    { "Gles", 0x00000004 },
+   { "Wayland", 0x00000005 },
    { nullptr, 0 }
 };
 

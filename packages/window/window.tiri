@@ -23,7 +23,7 @@ lStyle = (function()
 end)()
 
 gui.window = function(Options:table!)
-   self = setmetatable(entity {
+   self = setmetatable({
       -- Public variables
       events       = Options.events ?? { },
       aspectRatio  = Options.aspectRatio??,
