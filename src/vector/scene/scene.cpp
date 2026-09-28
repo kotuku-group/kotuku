@@ -83,7 +83,40 @@ static ERR VECTORSCENE_Reset(extVectorScene *);
 
 void apply_focus(extVectorScene *, extVector *);
 static void scene_key_event(evKey *, int, extVectorScene *);
-static void process_resize_msgs(extVectorScene *);
+static bool process_resize_msgs(extVectorScene *);
+
+//********************************************************************************************************************
+// Send a dummy input event to the mouse cursor to ensure that changes to underlying vector paths will generate the
+// necessary crossing events.
+
+static void send_dummy_input_event(extVectorScene *Self)
+{
+   if ((Self->SurfaceID) and (Self->RefreshCursor)) {
+      double abs_x, abs_y;
+      int s_x, s_y;
+
+      Self->RefreshCursor = false;
+      gfx::GetSurfaceCoords(Self->SurfaceID, nullptr, nullptr, &s_x, &s_y, nullptr, nullptr);
+      gfx::GetCursorPos(&abs_x, &abs_y);
+
+      const InputEvent event = {
+         .Next        = nullptr,
+         .Value       = 0,
+         .Timestamp   = 0,
+         .RecipientID = Self->SurfaceID,
+         .OverID      = Self->SurfaceID,
+         .AbsX        = abs_x,
+         .AbsY        = abs_y,
+         .X           = abs_x - s_x,
+         .Y           = abs_y - s_y,
+         .DeviceID    = 0,
+         .Type        = JET::ABS_XY,
+         .Flags       = JTYPE::MOVEMENT,
+         .Mask        = JTYPE::MOVEMENT
+      };
+      scene_input_events(&event, 0);
+   }
+}
 
 //********************************************************************************************************************
 
@@ -439,48 +472,16 @@ static ERR VECTORSCENE_FindDef(extVectorScene *Self, struct sc::FindDef *Args)
 }
 
 //********************************************************************************************************************
-// Flush pending activity messages.  This should always be performed prior to drawing.
+// Flush pending activity messages.
 
 static ERR VECTORSCENE_Flush(extVectorScene *Self)
 {
-   // Protect against recursion from client callbacks.
-
    static bool recurse = false;
    if (recurse) return ERR::Recursion;
    recurse = true;
 
-   // Any pending resize messages for viewports must be processed prior to drawing.
-
    process_resize_msgs(Self);
-
-   // Send a dummy input event to the mouse cursor to ensure that changes to underlying
-   // vector paths will generate the necessary crossing events.
-
-   if ((Self->SurfaceID) and (Self->RefreshCursor)) {
-      double abs_x, abs_y;
-      int s_x, s_y;
-
-      Self->RefreshCursor = false;
-      gfx::GetSurfaceCoords(Self->SurfaceID, nullptr, nullptr, &s_x, &s_y, nullptr, nullptr);
-      gfx::GetCursorPos(&abs_x, &abs_y);
-
-      const InputEvent event = {
-         .Next        = nullptr,
-         .Value       = 0,
-         .Timestamp   = 0,
-         .RecipientID = Self->SurfaceID,
-         .OverID      = Self->SurfaceID,
-         .AbsX        = abs_x,
-         .AbsY        = abs_y,
-         .X           = abs_x - s_x,
-         .Y           = abs_y - s_y,
-         .DeviceID    = 0,
-         .Type        = JET::ABS_XY,
-         .Flags       = JTYPE::MOVEMENT,
-         .Mask        = JTYPE::MOVEMENT
-      };
-      scene_input_events(&event, 0);
-   }
+   send_dummy_input_event(Self);
 
    recurse = false;
    return ERR::Okay;
@@ -839,10 +840,11 @@ void apply_focus(extVectorScene *Scene, extVector *Vector)
 
 //********************************************************************************************************************
 
-static void process_resize_msgs(extVectorScene *Self)
+static bool process_resize_msgs(extVectorScene *Self)
 {
    kt::Log log(__FUNCTION__);
 
+   bool callback_made = false;
    if (Self->PendingResizeMsgs.size() > 0) {
       for (auto it=Self->PendingResizeMsgs.begin(); it != Self->PendingResizeMsgs.end(); it++) {
          extVectorViewport *view = *it;
@@ -875,6 +877,8 @@ static void process_resize_msgs(extVectorScene *Self)
                continue;
             }
 
+            callback_made = true;
+
             if (sub.isC()) {
                kt::SwitchContext ctx(sub.Context);
                auto callback = (ERR (*)(extVectorViewport *, objVector *, double, double, double, double, APTR))sub.Routine;
@@ -896,6 +900,8 @@ static void process_resize_msgs(extVectorScene *Self)
 
       Self->PendingResizeMsgs.clear();
    }
+
+   return callback_made;
 }
 
 //********************************************************************************************************************
