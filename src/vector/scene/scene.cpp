@@ -407,6 +407,7 @@ The #RenderTime field will be updated if the `RENDER_TIME` flag is defined.
 -ERRORS-
 Okay
 FieldNotSet: The Bitmap field is NULL.
+Recursion: The scene is already drawing or dispatching callbacks.
 
 *********************************************************************************************************************/
 
@@ -864,10 +865,14 @@ static bool process_resize_msgs(extVectorScene *Self)
 
    bool callback_made = false;
    if (Self->PendingResizeMsgs.size() > 0) {
-      for (auto it=Self->PendingResizeMsgs.begin(); it != Self->PendingResizeMsgs.end(); it++) {
-         extVectorViewport *view = *it;
+      std::unordered_set<extVectorViewport *> pending;
+      pending.swap(Self->PendingResizeMsgs);
 
-         auto list = Self->ResizeSubscriptions[view]; // take copy
+      for (auto view : pending) {
+         auto subscriptions = Self->ResizeSubscriptions.find(view);
+         if (subscriptions IS Self->ResizeSubscriptions.end()) continue;
+
+         auto list = subscriptions->second; // Take a copy because callbacks can change subscriptions.
          for (auto &record : list) {
             ERR result;
             auto vector = record.first;
@@ -915,8 +920,6 @@ static bool process_resize_msgs(extVectorScene *Self)
             }
          }
       }
-
-      Self->PendingResizeMsgs.clear();
    }
 
    return callback_made;
