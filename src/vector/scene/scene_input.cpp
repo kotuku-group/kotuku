@@ -264,7 +264,9 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
 
                if (cursor IS PTC::NIL) cursor = PTC::DEFAULT;
                bool processed = false;
-               for (auto it = Self->InputBoundaries.rbegin(); it != Self->InputBoundaries.rend(); it++) {
+               // Iterate over a copy because callbacks can redraw the scene, which replaces InputBoundaries.
+               auto boundaries = Self->InputBoundaries;
+               for (auto it = boundaries.rbegin(); it != boundaries.rend(); it++) {
                   auto &bounds = *it;
 
                   if ((processed) and (bounds.cursor IS PTC::NIL)) continue;
@@ -323,7 +325,10 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
       else if ((input->Flags & (JTYPE::ANCHORED|JTYPE::MOVEMENT)) != JTYPE::NIL) {
          if (cursor IS PTC::NIL) cursor = PTC::DEFAULT;
          bool processed = false;
-         for (auto it = Self->InputBoundaries.rbegin(); it != Self->InputBoundaries.rend(); it++) {
+         // Iterate over a copy because callbacks can redraw the scene (e.g. by resizing the surface), which replaces
+         // InputBoundaries and would invalidate the iterator.
+         auto boundaries = Self->InputBoundaries;
+         for (auto it = boundaries.rbegin(); it != boundaries.rend(); it++) {
             auto &bounds = *it;
 
             if ((processed) and (bounds.cursor IS PTC::NIL)) continue;
