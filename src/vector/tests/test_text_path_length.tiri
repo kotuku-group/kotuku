@@ -1,0 +1,42 @@
+   include 'vector'
+
+glPoints = { }
+
+function tracePoint(Vector, Index, Command, X, Y)
+   glPoints.insert({ x=X, y=Y })
+   return ERR_Okay
+end
+
+function traceText(PathLength, String)
+   local scene <close> = obj.new('VectorScene', { pageWidth=300, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width=300, height=100 })
+   local guide = viewport.new('VectorPath', { sequence='M 0 50 L 200 50', pathLength=PathLength })
+   local text = viewport.new('VectorText', { string=String, fontSize=20, face='DejaVu Sans', guidePath=guide })
+   glPoints = { }
+   check text.mtTrace(tracePoint, 1.0, false)
+   return glPoints
+end
+
+@Test function PathLengthDoesNotScaleGlyphs()
+   local short_length = traceText(100, 'A')
+   local long_length = traceText(200, 'A')
+   assert(#short_length is #long_length, 'Glyph outlines should have same number of vertices')
+   for i in {0 to #short_length} do
+      assert(math.abs(short_length[i].x - long_length[i].x) < 0.000001, 'Glyph X should not scale')
+      assert(math.abs(short_length[i].y - long_length[i].y) < 0.000001, 'Glyph Y should not scale')
+   end
+end
+
+@Test function PathLengthCalibratesAdvance()
+   local short_length = traceText(100, 'AA')
+   local long_length = traceText(200, 'AA')
+   local short_max = -10000
+   local long_max = -10000
+   for i in {0 to #short_length} do
+      if short_length[i].x > short_max then short_max = short_length[i].x end
+   end
+   for i in {0 to #long_length} do
+      if long_length[i].x > long_max then long_max = long_length[i].x end
+   end
+   assert(short_max > long_max + 5, 'Shorter declared length should spread glyph advances farther')
+end
