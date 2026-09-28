@@ -400,6 +400,8 @@ void _redraw_surface_do(extSurface *Self, const SURFACELIST &list, int Index, Cl
    }
    else data = DestBitmap->Data;
 
+   auto drawn_data = DestBitmap->Data;
+
    DestBitmap->Clip.Left   = Area.Left - list[Index].Left - xo; // Untested
    DestBitmap->Clip.Top    = Area.Top - list[Index].Top - yo;
    DestBitmap->Clip.Right  = Area.Right - list[Index].Left - xo;
@@ -459,7 +461,10 @@ void _redraw_surface_do(extSurface *Self, const SURFACELIST &list, int Index, Cl
       }
    }
 
-   DestBitmap->Data = data;
+   // Client callbacks can resize the bitmap while it is being drawn.  If that happened then the original pointer is
+   // stale and must not be restored.
+
+   if (DestBitmap->Data IS drawn_data) DestBitmap->Data = data;
 }
 
 //********************************************************************************************************************

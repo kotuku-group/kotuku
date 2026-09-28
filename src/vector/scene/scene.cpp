@@ -96,6 +96,14 @@ static void send_dummy_input_event(extVectorScene *Self)
       int s_x, s_y;
 
       Self->RefreshCursor = false;
+
+      if (Self->ButtonLock) {
+         // A captured vector is already tracking real pointer movement.  Sending a
+         // synthetic movement event here can feed resizing back into scene drawing.
+         // Button-release handling recalculates the active vector and cursor later.
+         return;
+      }
+
       gfx::GetSurfaceCoords(Self->SurfaceID, nullptr, nullptr, &s_x, &s_y, nullptr, nullptr);
       gfx::GetCursorPos(&abs_x, &abs_y);
 
@@ -122,6 +130,7 @@ static void send_dummy_input_event(extVectorScene *Self)
 
 static void render_to_surface(extVectorScene *Self, objSurface *Surface, objBitmap *Bitmap)
 {
+   auto prev_bitmap = Self->Bitmap;
    Self->Bitmap = Bitmap;
 
    if ((!Self->PageWidth) or (!Self->PageHeight)) {
@@ -130,7 +139,7 @@ static void render_to_surface(extVectorScene *Self, objSurface *Surface, objBitm
 
    acDraw(Self);
 
-   Self->Bitmap = nullptr;
+   Self->Bitmap = prev_bitmap;
 }
 
 //********************************************************************************************************************
@@ -403,21 +412,25 @@ FieldNotSet: The Bitmap field is NULL.
 
 static ERR VECTORSCENE_Draw(extVectorScene *Self, struct acDraw *Args)
 {
-   if (not Self->Bitmap) return kt::Log().warning(ERR::FieldNotSet);
+   kt::Log log;
 
-   if (Self->ProcessingMessages) return kt::Log().warning(ERR::Recursion);
-   Self->ProcessingMessages = true;
+   if (not Self->Bitmap) return log.warning(ERR::FieldNotSet);
 
-   // Any pending resize messages for viewports must be processed prior to drawing.
+   if (!Self->ProcessingMessages) {
+      Self->ProcessingMessages = true;
 
-   process_resize_msgs(Self);
-   send_dummy_input_event(Self);
+      // Any pending resize messages for viewports must be processed prior to drawing.
+
+      process_resize_msgs(Self);
+      send_dummy_input_event(Self);
+      Self->ProcessingMessages = false;
+   }
 
    if (Self->Bitmap) { // Intentional secondary check after callbacks
       render_scene_from_viewport(Self, Self->Bitmap, Self->Viewport);
    }
+   else log.warning(ERR::FieldNotSet);
 
-   Self->ProcessingMessages = false;
    return ERR::Okay;
 }
 

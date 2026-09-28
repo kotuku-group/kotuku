@@ -2203,6 +2203,7 @@ static void draw_region(extSurface *Self, extSurface *Parent, extBitmap *Bitmap)
    // Adjust clipping and offset values to match the absolute coordinates of our surface object
 
    auto data = Bitmap->offset(Self->FixedX, Self->FixedY);
+   auto drawn_data = Bitmap->Data;
 
    // Adjust the clipping region of our parent so that it is relative to our surface area
 
@@ -2229,8 +2230,13 @@ static void draw_region(extSurface *Self, extSurface *Parent, extBitmap *Bitmap)
       process_surface_callbacks(Self, Bitmap);
    }
 
-   Bitmap->Clip = clip;
-   Bitmap->Data = data;
+   // Client callbacks can resize the bitmap while it is being drawn.  If that happened then the original pointer and
+   // clipping region are stale and must not be restored.
+
+   if (Bitmap->Data IS drawn_data) {
+      Bitmap->Clip = clip;
+      Bitmap->Data = data;
+   }
 }
 
 //********************************************************************************************************************
