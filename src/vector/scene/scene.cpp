@@ -417,20 +417,37 @@ static ERR VECTORSCENE_Draw(extVectorScene *Self, struct acDraw *Args)
 
    if (not Self->Bitmap) return log.warning(ERR::FieldNotSet);
 
-   if (!Self->ProcessingMessages) {
-      Self->ProcessingMessages = true;
+   if (Self->BorderlessSurface) {
+      // Borderless surfaces get a slightly different approach that cuts down on jitter
+      if (!Self->ProcessingMessages) {
+         Self->ProcessingMessages = true;
+         process_resize_msgs(Self); // All pending resize messages are processed prior to drawing.
+         send_dummy_input_event(Self); // Process cursor crossing events
+         Self->ProcessingMessages = false;
+      }
 
-      // Any pending resize messages for viewports must be processed prior to drawing.
-
-      process_resize_msgs(Self);
-      send_dummy_input_event(Self);
-      Self->ProcessingMessages = false;
-   }
-
-   if (Self->Bitmap) { // Intentional secondary check after callbacks
       render_scene_from_viewport(Self, Self->Bitmap, Self->Viewport);
    }
-   else log.warning(ERR::FieldNotSet);
+   else {
+      if (!Self->ProcessingMessages) {
+         Self->ProcessingMessages = true;
+
+         // Generate current viewport geometry before dispatching resize callbacks.  The callbacks can then update
+         // dependent vectors using the current dimensions rather than values retained from the previous frame.
+
+         render_scene_from_viewport(Self, Self->Bitmap, Self->Viewport);
+
+         if (process_resize_msgs(Self) and Self->Bitmap) {
+            // Resize callbacks may have dirtied vectors, so redraw the backing bitmap before it is exposed.
+            render_scene_from_viewport(Self, Self->Bitmap, Self->Viewport);
+         }
+
+         send_dummy_input_event(Self);
+
+         Self->ProcessingMessages = false;
+      }
+      else return log.warning(ERR::Recursion);
+   }
 
    return ERR::Okay;
 }
@@ -565,6 +582,11 @@ static ERR VECTORSCENE_Init(extVectorScene *Self)
 
          if (surface->hasFocus()) {
             SubscribeEvent(EVID_IO_KEYBOARD_KEYPRESS, C_FUNCTION(scene_key_event, Self), &Self->KeyHandle);
+         }
+
+         SPT presence;
+         if ((!surface->getPresence(presence)) and (presence != SPT::HOST)) {
+            Self->BorderlessSurface = true;
          }
       }
 
