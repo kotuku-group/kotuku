@@ -1058,12 +1058,14 @@ static ERR SURFACE_Init(extSurface *Self)
    if (Self->isCursor()) Self->Flags |= RNF::STICK_TO_FRONT;
 
    // If no parent surface is set, check if the client has set the FULL_SCREEN flag.  If not, try to give the
-   // surface a parent.
+   // surface a parent.  Headless displays are memory bitmaps, so in the absence of a desktop each root surface
+   // receives a display of its own, as it would in a hosted environment.  Falling back to the first surface would
+   // otherwise nest secondary windows inside the first window and clip them to its area.
 
    if ((!Self->ParentID) and (gfx::GetDisplayType() IS DT::NATIVE)) {
       if ((Self->Flags & RNF::FULL_SCREEN) IS RNF::NIL) {
          if (FindObject("desktop", CLASSID::SURFACE, &Self->ParentID) != ERR::Okay) {
-            if (!glSurfaces.empty()) Self->ParentID = glSurfaces[0].SurfaceID;
+            if ((!glHeadless) and (!glSurfaces.empty())) Self->ParentID = glSurfaces[0].SurfaceID;
          }
       }
    }

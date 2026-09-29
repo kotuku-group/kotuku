@@ -383,6 +383,7 @@ class extDisplay : public objDisplay {
    std::string Chipset;
    std::string Display;
    std::string DisplayMfr;
+   std::string Title;        // Retained for headless displays, which have no host window to store it
    double Opacity;
 
    double Gamma[3];          // Red, green, blue gamma radioactivity indicator
