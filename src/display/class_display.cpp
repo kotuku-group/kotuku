@@ -1941,7 +1941,11 @@ static std::string glWindowTitle;
 
 static ERR GET_Title(extDisplay *Self, std::string_view &Value)
 {
-   if (glDriver) {
+   if (glHeadless) {
+      Value = Self->Title;
+      return ERR::Okay;
+   }
+   else if (glDriver) {
       if (auto error = glDriver->windowTitle(Self->WindowHandle, glWindowTitle); error != ERR::Okay) return error;
       Value = glWindowTitle;
       return ERR::Okay;
@@ -1951,7 +1955,11 @@ static ERR GET_Title(extDisplay *Self, std::string_view &Value)
 
 static ERR SET_Title(extDisplay *Self, const std::string_view &Value)
 {
-   if (glDriver) return glDriver->setWindowTitle(Self->WindowHandle, Value.data());
+   if (glHeadless) {
+      Self->Title = Value;
+      return ERR::Okay;
+   }
+   else if (glDriver) return glDriver->setWindowTitle(Self->WindowHandle, Value.data());
    return ERR::NoSupport;
 }
 
