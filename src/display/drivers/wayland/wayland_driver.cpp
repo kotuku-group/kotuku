@@ -865,7 +865,8 @@ static void update_scale(WaylandWindow *Window)
 {
    int scale = 1;
    for (auto output : Window->Outputs) scale = std::max(scale, std::min(8, output->Scale));
-   if (wl_surface_get_version(Window->Surface) < WL_SURFACE_SET_BUFFER_SCALE_SINCE_VERSION) scale = 1;
+   if ((not Window->Surface) or
+         (wl_surface_get_version(Window->Surface) < WL_SURFACE_SET_BUFFER_SCALE_SINCE_VERSION)) scale = 1;
    int scale_120 = scale * 120;
 #ifdef WAYLAND_FRACTIONAL_SCALE
    if (Window->Viewport and (Window->PreferredScale120 > 0)) scale_120 = Window->PreferredScale120;
