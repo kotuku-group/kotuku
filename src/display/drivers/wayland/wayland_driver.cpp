@@ -735,12 +735,15 @@ static void try_present(WaylandWindow *Window)
    buffer->Busy = true;
    Window->Presented = Window->Staged;
    Window->Dirty = false;
-   wl_surface_set_buffer_scale(Window->Surface, Window->Scale);
+   if (wl_surface_get_version(Window->Surface) >= WL_SURFACE_SET_BUFFER_SCALE_SINCE_VERSION)
+      wl_surface_set_buffer_scale(Window->Surface, Window->Scale);
 #ifdef WAYLAND_FRACTIONAL_SCALE
    if (Window->Viewport) wp_viewport_set_destination(Window->Viewport, frame.Width, frame.Height);
 #endif
    wl_surface_attach(Window->Surface, buffer->Handle, 0, 0);
-   wl_surface_damage_buffer(Window->Surface, 0, 0, buffer->Width, buffer->Height);
+   if (wl_surface_get_version(Window->Surface) >= WL_SURFACE_DAMAGE_BUFFER_SINCE_VERSION)
+      wl_surface_damage_buffer(Window->Surface, 0, 0, buffer->Width, buffer->Height);
+   else wl_surface_damage(Window->Surface, 0, 0, frame.Width, frame.Height);
    Window->Frame = wl_surface_frame(Window->Surface);
    if (Window->Frame) wl_callback_add_listener(Window->Frame, &frame_listener, Window);
    wl_surface_commit(Window->Surface);
@@ -862,6 +865,7 @@ static void update_scale(WaylandWindow *Window)
 {
    int scale = 1;
    for (auto output : Window->Outputs) scale = std::max(scale, std::min(8, output->Scale));
+   if (wl_surface_get_version(Window->Surface) < WL_SURFACE_SET_BUFFER_SCALE_SINCE_VERSION) scale = 1;
    int scale_120 = scale * 120;
 #ifdef WAYLAND_FRACTIONAL_SCALE
    if (Window->Viewport and (Window->PreferredScale120 > 0)) scale_120 = Window->PreferredScale120;
@@ -1594,12 +1598,11 @@ static void seat_capabilities(void *Data, wl_seat *Handle, uint32_t Capabilities
       if (seat->Relative) { zwp_relative_pointer_v1_destroy(seat->Relative); seat->Relative = nullptr; }
 #endif
       seat->LockedWindow = nullptr;
+      pointer_leave(seat, seat->Pointer, 0, nullptr);
       release_pointer(seat->Pointer);
       seat->Pointer = nullptr;
       if (seat->CursorSurface) wl_surface_destroy(seat->CursorSurface);
       seat->CursorSurface = nullptr;
-      seat->PointerWindow = nullptr;
-      seat->PointerSerial = 0;
    }
    if ((Capabilities & WL_SEAT_CAPABILITY_KEYBOARD) and (not seat->Keyboard)) {
       seat->Keyboard = wl_seat_get_keyboard(Handle);
