@@ -22,6 +22,7 @@
 #include <wayland-client.h>
 #include <wayland-cursor.h>
 #include <xkbcommon/xkbcommon.h>
+#include <xkbcommon/xkbcommon-compose.h>
 #include <linux/input-event-codes.h>
 #include <algorithm>
 #include <cerrno>
@@ -196,8 +197,11 @@ struct WaylandSeat {
    xkb_context *Context = nullptr;
    xkb_keymap *Keymap = nullptr;
    xkb_state *KeyState = nullptr;
+   xkb_compose_table *ComposeTable = nullptr;
+   xkb_compose_state *ComposeState = nullptr;
    std::unordered_set<KEY> HeldModifiers;
    uint32_t RepeatKey = UINT32_MAX;
+   uint32_t RepeatUnicode = 0;
    int RepeatRate = 0;
    int RepeatDelay = 0;
    int TimerFD = -1;
@@ -220,6 +224,7 @@ struct WaylandDriver::State {
    std::string ClipboardUris;
    bool ClipboardIsFiles = false;
    uint64_t ClipboardGeneration = 0;
+   uint64_t SelectionGeneration = 0;
    std::vector<struct WaylandOffer *> Offers;
    std::vector<struct WaylandSource *> Sources;
    std::vector<struct WaylandTransfer *> Transfers;
@@ -287,6 +292,7 @@ struct WaylandTransfer {
    OBJECTID SurfaceID = 0;
    bool Dropped = false;
    bool Sending = false;
+   uint64_t SelectionGeneration = 0;
    WaylandOffer *Offer = nullptr;
 };
 
@@ -297,7 +303,10 @@ static void finish_transfer(WaylandTransfer *Transfer, bool Success)
    auto state = Transfer->Owner;
    DeregisterFD(Transfer->FD);
    close(Transfer->FD);
-   if (Success and not Transfer->Sending and state->Callbacks and state->Callbacks->ClipboardData)
+   const bool current_selection = Transfer->Dropped or
+      (Transfer->SelectionGeneration IS state->SelectionGeneration);
+   if (Success and not Transfer->Sending and current_selection and state->Callbacks and
+         state->Callbacks->ClipboardData)
       state->Callbacks->ClipboardData(Transfer->Mime.c_str(), Transfer->Data.data(), Transfer->Data.size(),
          Transfer->Dropped, Transfer->SurfaceID);
    if (Transfer->Offer) {
@@ -425,6 +434,7 @@ static void receive_offer(WaylandSeat *Seat, WaylandOffer *Offer, bool Dropped)
    transfer->FD = pipes[0];
    transfer->Mime = mime;
    transfer->Dropped = Dropped;
+   transfer->SelectionGeneration = Seat->Owner->SelectionGeneration;
    if (Dropped) transfer->Offer = Offer;
    transfer->SurfaceID = Dropped and Seat->DragWindow ? Seat->DragWindow->SurfaceID : 0;
    if (not watch_transfer(transfer)) {
@@ -510,6 +520,7 @@ static void data_selection(void *Data, wl_data_device *, wl_data_offer *Handle)
 {
    auto seat = (WaylandSeat *)Data;
    if (seat->SelectionOffer and (seat->SelectionOffer->Handle IS Handle)) return;
+   seat->Owner->SelectionGeneration++;
    if (seat->SelectionOffer) dispose_offer(seat->SelectionOffer);
    seat->SelectionOffer = find_offer(seat, Handle);
    if (seat->SelectionOffer) {
@@ -1047,10 +1058,32 @@ static KQ key_qualifiers(WaylandSeat *Seat)
 static void stop_repeat(WaylandSeat *Seat)
 {
    Seat->RepeatKey = UINT32_MAX;
+   Seat->RepeatUnicode = 0;
    if (Seat->TimerFD >= 0) {
       itimerspec timer = {};
       timerfd_settime(Seat->TimerFD, 0, &timer, nullptr);
    }
+}
+
+static uint32_t key_unicode(WaylandSeat *Seat, xkb_keycode_t Code)
+{
+   if (not Seat->ComposeState) return xkb_state_key_get_utf32(Seat->KeyState, Code);
+   xkb_compose_state_feed(Seat->ComposeState, xkb_state_key_get_one_sym(Seat->KeyState, Code));
+   switch (xkb_compose_state_get_status(Seat->ComposeState)) {
+      case XKB_COMPOSE_COMPOSING:
+         return 0;
+      case XKB_COMPOSE_COMPOSED: {
+         const auto unicode = xkb_keysym_to_utf32(xkb_compose_state_get_one_sym(Seat->ComposeState));
+         xkb_compose_state_reset(Seat->ComposeState);
+         return unicode;
+      }
+      case XKB_COMPOSE_CANCELLED:
+         xkb_compose_state_reset(Seat->ComposeState);
+         [[fallthrough]];
+      case XKB_COMPOSE_NOTHING:
+         return xkb_state_key_get_utf32(Seat->KeyState, Code);
+   }
+   return 0;
 }
 
 static void repeat_event(HOSTHANDLE, APTR Data)
@@ -1062,7 +1095,7 @@ static void repeat_event(HOSTHANDLE, APTR Data)
          (not seat->Owner->Callbacks)) return;
    const auto code = seat->RepeatKey + 8;
    const auto key = key_from_code(seat, code);
-   const auto unicode = xkb_state_key_get_utf32(seat->KeyState, code);
+   const auto unicode = seat->RepeatUnicode;
    auto flags = key_qualifiers(seat)|KQ::REPEAT;
    if (((int(key) >= int(KEY::NP_0)) and (int(key) <= int(KEY::NP_DIVIDE))) or (key IS KEY::NP_ENTER))
       flags |= KQ::NUM_PAD;
@@ -1082,6 +1115,7 @@ static void keymap_event(void *Data, wl_keyboard *, uint32_t Format, int FD, uin
             auto state = xkb_state_new(keymap);
             if (state) {
                stop_repeat(seat);
+               if (seat->ComposeState) xkb_compose_state_reset(seat->ComposeState);
                if (seat->KeyState) xkb_state_unref(seat->KeyState);
                if (seat->Keymap) xkb_keymap_unref(seat->Keymap);
                seat->Keymap = keymap;
@@ -1117,6 +1151,7 @@ static void keyboard_leave(void *Data, wl_keyboard *, uint32_t, wl_surface *)
    seat->KeyboardWindow = nullptr;
    seat->KeyboardSerial = 0;
    seat->HeldModifiers.clear();
+   if (seat->ComposeState) xkb_compose_state_reset(seat->ComposeState);
    if (window and window->SurfaceID and seat->Owner->Callbacks)
       seat->Owner->Callbacks->FocusState(window->SurfaceID, false);
 }
@@ -1136,9 +1171,11 @@ static void keyboard_key(void *Data, wl_keyboard *, uint32_t Serial, uint32_t, u
    if (((int(key) >= int(KEY::NP_0)) and (int(key) <= int(KEY::NP_DIVIDE))) or (key IS KEY::NP_ENTER))
       flags |= KQ::NUM_PAD;
    if (State IS WL_KEYBOARD_KEY_STATE_PRESSED) {
-      seat->Owner->Callbacks->KeyPressed(flags, key, xkb_state_key_get_utf32(seat->KeyState, code));
+      const auto unicode = key_unicode(seat, code);
+      seat->Owner->Callbacks->KeyPressed(flags, key, unicode);
       if (seat->RepeatRate > 0 and xkb_keymap_key_repeats(seat->Keymap, code)) {
          seat->RepeatKey = Key;
+         seat->RepeatUnicode = unicode;
          itimerspec timer = {};
          timer.it_value.tv_sec = seat->RepeatDelay / 1000;
          timer.it_value.tv_nsec = (seat->RepeatDelay % 1000) * 1000000;
@@ -1450,6 +1487,8 @@ static void touch_down(void *Data, wl_touch *, uint32_t Serial, uint32_t, wl_sur
    int32_t ID, wl_fixed_t X, wl_fixed_t Y)
 {
    auto seat = (WaylandSeat *)Data;
+   seat->SelectionSerial = Serial;
+   publish_selection(seat);
    auto window = surface_window(seat->Owner, Surface);
    if ((not window) or (not window->SurfaceID)) return;
    if (auto previous = seat->TouchPoints.find(ID); previous != seat->TouchPoints.end()) {
@@ -1629,10 +1668,22 @@ static void registry_global(void *Data, wl_registry *Registry, uint32_t Name, co
       seat->Name = Name;
       seat->Handle = (wl_seat *)wl_registry_bind(Registry, Name, &wl_seat_interface, std::min(Version, 5u));
       seat->Context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+      if (seat->Context) {
+         const char *locale = std::getenv("LC_ALL");
+         if ((not locale) or (not locale[0])) locale = std::getenv("LC_CTYPE");
+         if ((not locale) or (not locale[0])) locale = std::getenv("LANG");
+         if ((not locale) or (not locale[0])) locale = "C";
+         seat->ComposeTable = xkb_compose_table_new_from_locale(seat->Context, locale,
+            XKB_COMPOSE_COMPILE_NO_FLAGS);
+         if (seat->ComposeTable) seat->ComposeState = xkb_compose_state_new(seat->ComposeTable,
+            XKB_COMPOSE_STATE_NO_FLAGS);
+      }
       seat->TimerFD = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC|TFD_NONBLOCK);
       if ((not seat->Handle) or (not seat->Context) or (seat->TimerFD < 0) or
             (RegisterFD(seat->TimerFD, RFD::READ, repeat_event, seat) != ERR::Okay)) {
          if (seat->TimerFD >= 0) close(seat->TimerFD);
+         if (seat->ComposeState) xkb_compose_state_unref(seat->ComposeState);
+         if (seat->ComposeTable) xkb_compose_table_unref(seat->ComposeTable);
          if (seat->Context) xkb_context_unref(seat->Context);
          if (seat->Handle) release_seat(seat->Handle);
          delete seat;
@@ -1700,6 +1751,8 @@ static void dispose_seat(WaylandSeat *Seat)
    if (Seat->Handle) release_seat(Seat->Handle);
    if (Seat->KeyState) xkb_state_unref(Seat->KeyState);
    if (Seat->Keymap) xkb_keymap_unref(Seat->Keymap);
+   if (Seat->ComposeState) xkb_compose_state_unref(Seat->ComposeState);
+   if (Seat->ComposeTable) xkb_compose_table_unref(Seat->ComposeTable);
    if (Seat->Context) xkb_context_unref(Seat->Context);
    delete Seat;
 }
@@ -1968,8 +2021,9 @@ ERR WaylandDriver::close()
       delete transfer;
    }
    Data->Transfers.clear();
-   for (auto seat : Data->Seats) dispose_seat(seat);
-   Data->Seats.clear();
+   std::vector<WaylandSeat *> seats;
+   seats.swap(Data->Seats);
+   for (auto seat : seats) dispose_seat(seat);
    while (not Data->Offers.empty()) dispose_offer(Data->Offers.back());
    for (auto source : Data->Sources) { wl_data_source_destroy(source->Handle); delete source; }
    Data->Sources.clear();
