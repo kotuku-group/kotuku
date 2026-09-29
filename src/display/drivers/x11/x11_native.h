@@ -94,7 +94,6 @@ X11BitmapRecord * x11_bitmap(extBitmap *Bitmap);
 void x11_process_events(X11Driver::State *State);
 void x11_begin_frame(X11Driver::State *State, X11WindowRecord *Window);
 void x11_end_frame(X11Driver::State *State, X11WindowRecord *Window);
-void x11_end_open_frames(X11Driver::State *State);
 void x11_install_bitmap_routines(extBitmap *Bitmap);
 
 void handle_button_press(XEvent *Event);

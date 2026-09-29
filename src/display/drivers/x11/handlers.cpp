@@ -47,8 +47,6 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
 
    if (not XDisplay) return;
 
-   x11_end_open_frames(glEventState);
-
    while (XPending(XDisplay)) {
       processed_events = true;
       XNextEvent(XDisplay, &xevent);
@@ -115,9 +113,10 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
 
                const std::lock_guard lock(glEventState->NativeLock);
                if (auto it = glEventState->Windows.find(xevent.xclient.window); it != glEventState->Windows.end()) {
-                  it->second->SyncRequest = (int64_t(xevent.xclient.data.l[3]) << 32) |
-                     int64_t(uint32_t(xevent.xclient.data.l[2]));
+                  it->second->SyncRequest = int64_t((uint64_t(uint32_t(xevent.xclient.data.l[3])) << 32) |
+                     uint64_t(uint32_t(xevent.xclient.data.l[2])));
                   it->second->SyncRequestExtended = xevent.xclient.data.l[4] != 0;
+                  if (it->second->SyncRequestExtended) x11_begin_frame(glEventState, it->second);
                }
             }
             break;
