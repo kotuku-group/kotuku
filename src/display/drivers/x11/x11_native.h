@@ -8,6 +8,7 @@
 #include <X11/Xutil.h>
 #include <X11/cursorfont.h>
 #include <X11/extensions/XShm.h>
+#include <X11/extensions/sync.h>
 #ifdef XRANDR_ENABLED
 #include <X11/extensions/Xrandr.h>
 #endif
@@ -26,6 +27,12 @@ struct X11WindowRecord {
    GC GraphicsContext = 0;
    extDisplay *Display = nullptr;
    OBJECTID SurfaceID = 0;
+   XSyncCounter BasicCounter = 0;  // _NET_WM_SYNC_REQUEST_COUNTER pair; the extended counter drives frame sync
+   XSyncCounter FrameCounter = 0;
+   int64_t FrameValue = 0;         // Current value of FrameCounter; odd while a frame is being drawn
+   int64_t SyncRequest = 0;        // Value from a pending _NET_WM_SYNC_REQUEST message, or zero
+   bool SyncRequestExtended = false;
+   bool FrameOpen = false;
    bool Owned = false;
    bool Root = false;
    bool Visible = false;
@@ -61,8 +68,11 @@ struct X11Driver::State {
    std::array<uint8_t, int(KEY::LIST_END)> KeyHeld = {};
    KQ KeyFlags = KQ::NIL;
    Atom SurfaceAtom = 0;
+   Atom ProtocolsAtom = 0;
    Atom DeleteAtom = 0;
    Atom TakeFocusAtom = 0;
+   Atom SyncRequestAtom = 0;
+   Atom SyncCounterAtom = 0;
    GC GraphicsContext = 0;
    GC ClipGraphicsContext = 0;
    int ConnectionFD = -1;
@@ -72,6 +82,7 @@ struct X11Driver::State {
    bool SharedImages = false;
    bool Composite = false;
    bool RandR = false;
+   bool FrameSync = false; // True if the XSync extension is available for compositor frame synchronisation
    bool Closing = false;
    bool TrayIcon = false;
    bool TaskBar = false;
@@ -81,6 +92,9 @@ struct X11Driver::State {
 X11WindowRecord * x11_window(X11Driver::State *State, HOSTWINDOW Window);
 X11BitmapRecord * x11_bitmap(extBitmap *Bitmap);
 void x11_process_events(X11Driver::State *State);
+void x11_begin_frame(X11Driver::State *State, X11WindowRecord *Window);
+void x11_end_frame(X11Driver::State *State, X11WindowRecord *Window);
+void x11_end_open_frames(X11Driver::State *State);
 void x11_install_bitmap_routines(extBitmap *Bitmap);
 
 void handle_button_press(XEvent *Event);

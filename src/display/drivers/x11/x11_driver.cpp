@@ -138,6 +138,70 @@ X11WindowRecord * x11_window(X11Driver::State *State, HOSTWINDOW WindowHandle)
    return nullptr;
 }
 
+//********************************************************************************************************************
+// Compositor frame synchronisation, per the extended _NET_WM_SYNC_REQUEST_COUNTER protocol.  An odd counter value
+// tells the compositor that a frame is being drawn, so it continues to show the last complete frame.  Setting an
+// even value completes the frame.  Frames are opened when the window is resized and closed once the new content has
+// been presented, which prevents the compositor from showing the resized window with stale content.
+
+static void set_sync_counter(X11Driver::State *State, XSyncCounter Counter, int64_t Value)
+{
+   XSyncValue value;
+   XSyncIntsToValue(&value, uint32_t(Value & 0xffffffff), int(Value >> 32));
+   XSyncSetCounter(State->Connection, Counter, value);
+}
+
+void x11_begin_frame(X11Driver::State *State, X11WindowRecord *Window)
+{
+   const std::lock_guard lock(State->NativeLock);
+   if ((not Window) or (not Window->FrameCounter) or Window->FrameOpen or (not Window->Visible)) return;
+   Window->FrameValue++;
+   Window->FrameOpen = true;
+   set_sync_counter(State, Window->FrameCounter, Window->FrameValue);
+}
+
+// Completes an open frame, or acknowledges a _NET_WM_SYNC_REQUEST from the window manager by advancing the counter
+// to the requested value.
+
+void x11_end_frame(X11Driver::State *State, X11WindowRecord *Window)
+{
+   const std::lock_guard lock(State->NativeLock);
+   if ((not Window) or (not Window->FrameCounter)) return;
+   if ((not Window->FrameOpen) and (not Window->SyncRequest)) return;
+
+   bool update_frame_counter = Window->FrameOpen;
+   if (Window->SyncRequest) {
+      if (Window->SyncRequestExtended) {
+         if (Window->FrameValue <= Window->SyncRequest) Window->FrameValue = Window->SyncRequest + 1;
+         update_frame_counter = true;
+      }
+      else set_sync_counter(State, Window->BasicCounter, Window->SyncRequest);
+   }
+
+   if (update_frame_counter) {
+      if (Window->FrameValue & 1) Window->FrameValue++;
+      set_sync_counter(State, Window->FrameCounter, Window->FrameValue);
+   }
+
+   Window->SyncRequest = 0;
+   Window->SyncRequestExtended = false;
+   Window->FrameOpen = false;
+   XFlush(State->Connection);
+}
+
+// Fallback for frames that were opened but not followed by a present(), e.g. because drawing was suppressed.  A
+// frame that is never closed would freeze the window on screen.
+
+void x11_end_open_frames(X11Driver::State *State)
+{
+   const std::lock_guard lock(State->NativeLock);
+   for (auto &[native, record] : State->Windows) {
+      if (record->FrameOpen or record->SyncRequest) x11_end_frame(State, record);
+   }
+}
+
+//********************************************************************************************************************
+
 X11BitmapRecord * x11_bitmap(extBitmap *Bitmap)
 {
    return Bitmap ? (X11BitmapRecord *)Bitmap->DriverData : nullptr;
@@ -170,23 +234,29 @@ ERR X11Driver::open(const DriverCallbacks &Callbacks)
    XGCValues values = {};
    Window root = 0;
    int major = 0, minor = 0, pixmaps = 0;
+
 #ifdef XRANDR_ENABLED
    int event_base = 0, error_base = 0;
 #endif
+
    if (Data->Open) return ERR::DoubleInit;
    if (Callbacks.Version != DISPLAY_DRIVER_INTERFACE_VERSION) return ERR::WrongVersion;
    if (auto error = isAvailable(); error != ERR::Okay) return error;
+
    auto display_name = std::getenv("KOTUKU_XDISPLAY");
    if ((not display_name) or (not display_name[0])) display_name = std::getenv("DISPLAY");
+
    Data->Callbacks = &Callbacks;
    Data->Closing = false;
    Data->Manager = true;
    Data->WSLg = detect_wslg();
    Data->Connection = XOpenDisplay(display_name);
    if (not Data->Connection) goto fail;
+
    glX11State = Data;
    Data->PreviousErrorHandler = XSetErrorHandler(Data->WSLg ? catch_x_error : catch_redirect_error);
    Data->PreviousIOErrorHandler = XSetIOErrorHandler(catch_xio_error);
+
    if (Data->WSLg) Data->Manager = false;
    else {
       XSelectInput(Data->Connection, DefaultRootWindow(Data->Connection),
@@ -194,35 +264,56 @@ ERR X11Driver::open(const DriverCallbacks &Callbacks)
          KeyPressMask|ButtonPressMask|ButtonReleaseMask);
       XSync(Data->Connection, 0);
    }
+
    XSetErrorHandler(catch_x_error);
    Data->ConnectionFD = XConnectionNumber(Data->Connection);
    fcntl(Data->ConnectionFD, F_SETFD, FD_CLOEXEC);
+
    if (RegisterFD(Data->ConnectionFD, RFD::READ|RFD::ALWAYS_CALL, event_loop, Data) != ERR::Okay) goto fail;
+
    values.function = GXcopy;
    values.graphics_exposures = 0;
    root = DefaultRootWindow(Data->Connection);
    Data->GraphicsContext = XCreateGC(Data->Connection, root, GCGraphicsExposures|GCFunction, &values);
    Data->ClipGraphicsContext = XCreateGC(Data->Connection, root, GCGraphicsExposures|GCFunction, &values);
    if ((not Data->GraphicsContext) or (not Data->ClipGraphicsContext)) goto fail;
+
    Data->SharedImages = XShmQueryVersion(Data->Connection, &major, &minor, &pixmaps) != 0;
+   Data->ProtocolsAtom = XInternAtom(Data->Connection, "WM_PROTOCOLS", 0);
    Data->DeleteAtom = XInternAtom(Data->Connection, "WM_DELETE_WINDOW", 0);
    Data->TakeFocusAtom = XInternAtom(Data->Connection, "WM_TAKE_FOCUS", 0);
    Data->SurfaceAtom = XInternAtom(Data->Connection, "KOTUKU_SCREENID", 0);
+
+   {
+      int sync_event = 0, sync_error = 0, sync_major = 0, sync_minor = 0;
+      Data->FrameSync = XSyncQueryExtension(Data->Connection, &sync_event, &sync_error) and
+         XSyncInitialize(Data->Connection, &sync_major, &sync_minor);
+   }
+
+   if (Data->FrameSync) {
+      Data->SyncRequestAtom = XInternAtom(Data->Connection, "_NET_WM_SYNC_REQUEST", 0);
+      Data->SyncCounterAtom = XInternAtom(Data->Connection, "_NET_WM_SYNC_REQUEST_COUNTER", 0);
+   }
+
    XGetWindowAttributes(Data->Connection, root, &Data->RootAttributes);
    Data->Composite = XMatchVisualInfo(Data->Connection, DefaultScreen(Data->Connection), 32, TrueColor,
       &Data->AlphaVisual) != 0;
+
 #ifdef XRANDR_ENABLED
    Data->RandR = XRRQueryExtension(Data->Connection, &event_base, &error_base) != 0;
 #endif
+
    for (size_t i=0; i < CURSORS.size(); i++) {
       Data->Cursors[i] = CURSORS[i].first IS PTC::INVISIBLE ? blank_cursor(Data) :
          XCreateFontCursor(Data->Connection, CURSORS[i].second);
    }
+
    if (not std::getenv("KOTUKU_XDISPLAY")) setenv("KOTUKU_XDISPLAY", display_name, 0);
    if (Data->Manager) setenv("DISPLAY", ":10", 1);
    seteuid(getuid());
    Data->Open = true;
    return ERR::Okay;
+
 fail:
    close();
    return ERR::SystemCall;
@@ -241,6 +332,8 @@ ERR X11Driver::close()
          if (window->Background) XFreePixmap(Data->Connection, window->Background);
          if (window->GraphicsContext) XFreeGC(Data->Connection, window->GraphicsContext);
          if (window->CompositeMap) XFreeColormap(Data->Connection, window->CompositeMap);
+         if (window->FrameCounter) XSyncDestroyCounter(Data->Connection, window->FrameCounter);
+         if (window->BasicCounter) XSyncDestroyCounter(Data->Connection, window->BasicCounter);
          if (window->Owned and (not window->Root)) XDestroyWindow(Data->Connection, native);
          delete window;
       }
@@ -265,18 +358,21 @@ static ERR create_window_record(X11Driver::State *State, extDisplay *DisplayObje
    X11WindowRecord *&Record)
 {
    XSetWindowAttributes attributes = {};
-   attributes.bit_gravity = CenterGravity;
+   attributes.bit_gravity = NorthWestGravity; // Retain content in place on resize; new areas are exposed
    attributes.win_gravity = CenterGravity;
    attributes.cursor = State->Cursors[0];
+
    // Borderless windows remain managed so that they retain normal focus, stacking and taskbar behaviour.  Composite
    // windows still need override-redirect because their alpha visual represents an application-managed pop-up.
+
    attributes.override_redirect = (DisplayObject->Flags & SCR::COMPOSITE) != SCR::NIL;
    attributes.event_mask = ExposureMask|EnterWindowMask|LeaveWindowMask|PointerMotionMask|StructureNotifyMask|
       KeyPressMask|KeyReleaseMask|ButtonPressMask|ButtonReleaseMask|FocusChangeMask;
-   int flags = CWEventMask|CWOverrideRedirect|CWCursor;
+   int flags = CWEventMask|CWOverrideRedirect|CWCursor|CWBitGravity;
    int depth = CopyFromParent;
    Visual *visual = CopyFromParent;
    Colormap colormap = 0;
+
    if (attributes.override_redirect and State->Composite) {
       colormap = XCreateColormap(State->Connection, DefaultRootWindow(State->Connection), State->AlphaVisual.visual,
          AllocNone);
@@ -289,17 +385,21 @@ static ERR create_window_record(X11Driver::State *State, extDisplay *DisplayObje
       DisplayObject->Bitmap->BitsPerPixel = 32;
       DisplayObject->Bitmap->BytesPerPixel = 4;
    }
+
    const bool root_parent = Parent IS DefaultRootWindow(State->Connection);
    auto native = XCreateWindow(State->Connection, Parent, root_parent ? DisplayObject->X : 0,
       root_parent ? DisplayObject->Y : 0, DisplayObject->Width, DisplayObject->Height, 0, depth, InputOutput, visual,
       flags, &attributes);
+
    if (not native) { if (colormap) XFreeColormap(State->Connection, colormap); return ERR::SystemCall; }
+
    auto graphics_context = create_graphics_context(State, native);
    if (not graphics_context) {
       XDestroyWindow(State->Connection, native);
       if (colormap) XFreeColormap(State->Connection, colormap);
       return ERR::SystemCall;
    }
+
    auto record = new(std::nothrow) X11WindowRecord;
    if (not record) {
       XFreeGC(State->Connection, graphics_context);
@@ -307,20 +407,38 @@ static ERR create_window_record(X11Driver::State *State, extDisplay *DisplayObje
       if (colormap) XFreeColormap(State->Connection, colormap);
       return ERR::AllocMemory;
    }
+
    record->Native = native;
    record->CompositeMap = colormap;
    record->GraphicsContext = graphics_context;
    record->Display = DisplayObject;
    record->Owned = true;
+
    {
       const std::lock_guard lock(State->NativeLock);
       State->Windows[native] = record;
    }
+
    std::string_view title;
    CurrentTask()->getName(title);
    XStoreName(State->Connection, native, title.empty() ? "Kotuku" : title.data());
-   Atom protocols[] = { State->DeleteAtom, State->TakeFocusAtom };
-   XSetWMProtocols(State->Connection, native, protocols, std::ssize(protocols));
+   Atom protocols[] = { State->DeleteAtom, State->TakeFocusAtom, State->SyncRequestAtom };
+   XSetWMProtocols(State->Connection, native, protocols, State->FrameSync ? 3 : 2);
+
+   // Advertising a basic and an extended counter enables frame synchronisation with a compositing window manager.
+   // While the extended counter is odd, the compositor holds the last complete frame on screen, including the
+   // window's previous size.  See x11_begin_frame().
+
+   if (State->FrameSync) {
+      XSyncValue zero;
+      XSyncIntToValue(&zero, 0);
+      record->BasicCounter = XSyncCreateCounter(State->Connection, zero);
+      record->FrameCounter = XSyncCreateCounter(State->Connection, zero);
+      long counters[] = { long(record->BasicCounter), long(record->FrameCounter) };
+      XChangeProperty(State->Connection, native, State->SyncCounterAtom, XA_CARDINAL, 32, PropModeReplace,
+         (unsigned char *)counters, std::ssize(counters));
+   }
+
    XSizeHints hints = { .flags = USPosition|USSize };
    XSetWMNormalHints(State->Connection, native, &hints);
    set_window_decorations(State, native, (DisplayObject->Flags & SCR::BORDERLESS) IS SCR::NIL);
@@ -373,9 +491,11 @@ ERR X11Driver::createWindow(extDisplay *DisplayObject, HOSTWINDOW &Handle)
    }
    else if (Data->StickToFront) XSetTransientForHint(Data->Connection, record->Native,
       DefaultRootWindow(Data->Connection));
+
    if (auto bitmap = x11_bitmap((extBitmap *)DisplayObject->Bitmap)) {
       bitmap->WindowID = record->Native;
       bitmap->WindowGraphicsContext = record->GraphicsContext;
+
       if ((DisplayObject->Bitmap->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL) bitmap->DrawableID = record->Native;
       else {
          bitmap->PixmapWidth = std::max(DisplayObject->Width, Data->RootAttributes.width);
@@ -383,15 +503,18 @@ ERR X11Driver::createWindow(extDisplay *DisplayObject, HOSTWINDOW &Handle)
          auto depth = DefaultDepth(Data->Connection, DefaultScreen(Data->Connection));
          record->Background = XCreatePixmap(Data->Connection, record->Native, bitmap->PixmapWidth,
             bitmap->PixmapHeight, depth);
+
          if (not record->Background) {
             destroyWindow(record);
             Handle = nullptr;
             return ERR::SystemCall;
          }
+
          bitmap->DrawableID = record->Background;
          XSetWindowBackgroundPixmap(Data->Connection, record->Native, record->Background);
       }
    }
+
    return ERR::Okay;
 }
 
@@ -401,6 +524,7 @@ ERR X11Driver::adoptWindow(extDisplay *DisplayObject, APTR NativeHandle, HOSTWIN
    X11WindowRecord *record = nullptr;
    if (auto error = create_window_record(Data, DisplayObject, Window(uintptr_t(NativeHandle)), record);
          error != ERR::Okay) return error;
+
    record->Adopted = true;
    Handle = record;
    DisplayObject->Flags |= SCR::HOSTED;
@@ -425,6 +549,7 @@ ERR X11Driver::destroyWindow(HOSTWINDOW WindowHandle)
    auto window = x11_window(Data, WindowHandle);
    if (not window) return WindowHandle ? ERR::NoSupport : ERR::Okay;
    Data->Windows.erase(window->Native);
+
    if (window->Display and window->Display->Bitmap) {
       if (auto bitmap = x11_bitmap((extBitmap *)window->Display->Bitmap);
             bitmap and (bitmap->WindowID IS window->Native)) {
@@ -432,9 +557,12 @@ ERR X11Driver::destroyWindow(HOSTWINDOW WindowHandle)
          bitmap->WindowGraphicsContext = 0;
       }
    }
+
    if (window->Background) XFreePixmap(Data->Connection, window->Background);
    if (window->GraphicsContext) XFreeGC(Data->Connection, window->GraphicsContext);
    if (window->CompositeMap) XFreeColormap(Data->Connection, window->CompositeMap);
+   if (window->FrameCounter) XSyncDestroyCounter(Data->Connection, window->FrameCounter);
+   if (window->BasicCounter) XSyncDestroyCounter(Data->Connection, window->BasicCounter);
    if (window->Owned and (not window->Root)) XDestroyWindow(Data->Connection, window->Native);
    delete window;
    return ERR::Okay;
@@ -456,6 +584,7 @@ ERR X11Driver::showWindow(HOSTWINDOW WindowHandle, bool)
 ERR X11Driver::hideWindow(HOSTWINDOW WindowHandle)
 {
    auto window = x11_window(Data, WindowHandle); if (not window) return ERR::NoSupport;
+   x11_end_frame(Data, window);
    XUnmapWindow(Data->Connection, window->Native); window->Visible = false; return ERR::Okay;
 }
 
@@ -479,6 +608,10 @@ ERR X11Driver::resizeWindow(HOSTWINDOW WindowHandle, int X, int Y, int Width, in
    if (window->Display and (window->Display->Width IS Width) and (window->Display->Height IS Height) and
          (((X IS 0x7fffffff) and (Y IS 0x7fffffff)) or
             ((window->Display->X IS X) and (window->Display->Y IS Y)))) return ERR::Okay;
+   // The frame for the new size is drawn after this call returns and is closed by present(), so the compositor
+   // shows the new size and its content together.
+
+   x11_begin_frame(Data, window);
    if ((X != 0x7fffffff) and (Y != 0x7fffffff)) XMoveWindow(Data->Connection, window->Native, X, Y);
    XResizeWindow(Data->Connection, window->Native, Width, Height); return ERR::Okay;
 }
@@ -744,6 +877,7 @@ ERR X11Driver::present(HOSTWINDOW WindowHandle, extBitmap *Source, int X, int Y,
    }
    else return ERR::NoSupport;
    if (window->Background) XClearArea(Data->Connection, window->Native, XDest, YDest, Width, Height, 0);
+   x11_end_frame(Data, window);
    return ERR::Okay;
 }
 
