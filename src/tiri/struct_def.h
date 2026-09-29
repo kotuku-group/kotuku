@@ -46,12 +46,17 @@ struct struct_field {
    bool TrivialElements = false; // Struct vectors may use type-erased ownership only when validated as trivial
    NativeStructType NativeType = NativeStructType::Legacy;
 
-   void precomputeNameHash() { NameHash = kt::strihash(Name); }
+   void precomputeNameHash() { NameHash = kt::strhash(Name); }
    [[nodiscard]] uint32_t nameHash() const { return NameHash; }
 
    private:
-   uint32_t NameHash = 0;     // Lowercase hash of the field name
+   uint32_t NameHash = 0;     // Case-sensitive hash of the canonical field name
 };
+
+[[nodiscard]] inline bool struct_field_matches(const struct_field &Field, std::string_view Name) noexcept
+{
+   return (Field.nameHash() IS kt::strhash(Name)) and (Field.Name IS Name);
+}
 
 inline constexpr uint8_t STRUCT_MANIFEST_VERSION = 1;
 inline constexpr uint32_t STRUCT_MANIFEST_MAX_DEFINITIONS = 1024;
@@ -98,7 +103,7 @@ struct struct_record {
    return true;
 }
 
-// Struct names are case-sensitive.  Field names remain case-insensitive via struct_field::precomputeNameHash().
+// Struct and field names are case-sensitive.  MAKESTRUCT canonicalises its field names before hashing them.
 
 [[nodiscard]] constexpr inline uint32_t struct_key(std::string_view Name) noexcept
 {

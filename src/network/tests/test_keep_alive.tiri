@@ -114,7 +114,7 @@ end
 
    dest = struct.new('IPAddress')
    check mNet.StrToAddress('127.0.0.1', dest)
-   dest.Port = glPort
+   dest.port = glPort
 
    proc = processing.new({ timeout = 5.0, signals = array<obj> { server } })
    err, sent = client.mtSendTo(dest, 'udp-keep-alive')

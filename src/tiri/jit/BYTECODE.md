@@ -584,8 +584,9 @@ Both instructions use ABCP format. B identifies the struct register, C is the ne
 `TGETS`, and A is the destination for `STGETF` or source value for `STSETF`. P starts at `0xFFFFFFFF` and caches the
 index into `GCstruct.def->Fields`.
 
-Every cache hit validates both the index and the field's case-insensitive `strihash`. A miss performs a linear lookup
-and replaces P, so a single polymorphic instruction site can safely alternate between different struct definitions.
+Every cache hit validates both the index and the field's case-sensitive hash and complete stored name. A miss performs
+an exact-name linear lookup and replaces P, so a single polymorphic instruction site can safely alternate between
+different struct definitions, including layouts whose fields differ only by letter case.
 
 ### 6.3 Interpreter Semantics
 

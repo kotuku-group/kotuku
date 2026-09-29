@@ -29,6 +29,11 @@ struct JITValidatedStructFields
    Unsigned: uint8
 end
 
+struct JITCaseSensitiveFields
+   Value: int
+   value: int
+end
+
 struct JITPhaseFiveScalarFields
    Flag: bool
    CharValue: char
@@ -78,6 +83,14 @@ function SetupJitTests()
       'lPadding,lValue,dRatio,xLarge,fSingle,fIntegral,wWord,bByte,uwUnsignedWord,ucUnsignedByte')
    MAKESTRUCT('JITStructTraceChild', 'lValue')
    MAKESTRUCT('JITStructComplexFields', 'zsName,lValues[2],eChild:JITStructTraceChild,oOwner')
+end
+
+@Test(hotpath=100) function JITStructFieldsRetainExactCase()
+   local value = struct<JITCaseSensitiveFields> { Value=3, value=5 }
+   value.Value += 7
+   value.value += 11
+   assert(value.Value is 10 and value.value is 16,
+      'JIT struct access should keep fields that differ only by case independent')
 end
 
 -----------------------------------------------------------------------------------------------------------------------

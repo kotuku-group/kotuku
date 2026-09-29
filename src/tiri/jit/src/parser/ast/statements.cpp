@@ -434,11 +434,10 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
       if (not field_token.ok()) return ParserResult<StmtNodePtr>::failure(field_token.error_ref());
       GCstr *field_symbol = field_token.value_ref().identifier();
       std::string field_name(strdata(field_symbol), field_symbol->len);
-      uint32_t field_hash = kt::strihash(field_name);
       for (const auto &existing : record.Fields) {
-         if (existing.nameHash() IS field_hash) {
+         if (existing.Name IS field_name) {
             return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, field_token.value_ref(),
-               std::format("Struct fields '{}' and '{}' collide case-insensitively", existing.Name, field_name));
+               std::format("Struct field '{}' is declared more than once", field_name));
          }
       }
 
@@ -2275,7 +2274,7 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
 
    if (not final_ns.empty()) {
       Identifier ns_id;
-      ns_id.symbol    = lj_str_new(L, final_ns.c_str(), final_ns.size());
+      ns_id.symbol    = this->ctx.lex().keepstr(final_ns);
       ns_id.span      = ImportToken.span();
       ns_id.has_const = true;
       entry.namespace_name = std::move(ns_id);

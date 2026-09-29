@@ -3,6 +3,11 @@ struct DeclaredChild
    Value: int
 end
 
+struct CaseSensitiveFields
+   Value: int
+   value: int
+end
+
 struct DeclaredUser
    -- User-facing name retained as parser tooling metadata.
    Name: str -- Owned string storage.
@@ -107,8 +112,7 @@ end
    assert('Age' in declared and 'Name' in declared and 'Child' in declared and 'ChildPointer' in declared and
       'Object' in declared,
       'Declared scalar, embedded and pointer fields should be present regardless of their stored values')
-   assert(declared.name is '' and 'name' in declared,
-      'Membership should use the same case-insensitive field-name matching as ordinary struct access')
+   assert(not ('name' in declared), 'Membership should reject a field with the wrong letter case')
    assert(not ('Missing' in declared) and not (not ('Name' in declared)),
       'Negated membership should invert presence for declared struct fields')
 
@@ -116,8 +120,8 @@ end
    local legacy = struct.new('MembershipLegacyLayout')
    assert(legacy.zero is 0 and legacy.empty is '' and legacy.pointer is nil,
       'Legacy membership fixtures should retain zero, empty and nil field values')
-   assert('Zero' in legacy and 'empty' in legacy and 'Pointer' in legacy,
-      'MAKESTRUCT definitions and struct.new() values should report fields from their layout')
+   assert('zero' in legacy and 'empty' in legacy and 'pointer' in legacy and not ('Zero' in legacy),
+      'MAKESTRUCT definitions should expose only their canonical lower camel-case field names')
 
    local nil_candidate:any = nil
    local number_candidate:any = 1
@@ -126,6 +130,68 @@ end
    assert(not (nil_candidate in declared) and not (number_candidate in declared) and
       not (bool_candidate in declared) and not (table_candidate in declared),
       'Non-string struct membership candidates should return false without raising')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function StructFieldNamesAreCaseSensitive()
+   local value = struct<CaseSensitiveFields> { Value=17, value=29 }
+   assert(value.Value is 17 and value.value is 29,
+      'Fields differing only by case should retain independent values')
+   assert(value['Value'] is 17 and value['value'] is 29,
+      'Bracket access should use the exact declared spelling')
+   assert('Value' in value and 'value' in value and not ('VALUE' in value),
+      'Membership should distinguish exact field spellings')
+
+   local seen_upper = false
+   local seen_lower = false
+   for name, field_value in pairs(value) do
+      if name is 'Value' then seen_upper = field_value is 17
+      elseif name is 'value' then seen_lower = field_value is 29 end
+   end
+   assert(seen_upper and seen_lower, 'pairs() should yield case-distinct fields separately')
+
+   expect_struct_error(() => do local _ = value.VALUE end, ERR_FieldNotFound,
+      'Dot reads should reject the wrong field case')
+   expect_struct_error(() => do local _ = value['VALUE'] end, ERR_FieldNotFound,
+      'Bracket reads should reject the wrong field case')
+   expect_struct_error(() => do value.VALUE = 41 end, ERR_Exception,
+      'Dot writes should reject the wrong field case')
+   expect_struct_error(() => do value['VALUE'] = 43 end, ERR_Exception,
+      'Bracket writes should reject the wrong field case')
+   assert(value.Value is 17 and value.value is 29, 'Wrong-case writes should not modify either exact field')
+
+   local dynamic = struct.new('CaseSensitiveFields', { VALUE=53 })
+   assert(dynamic.Value is 0 and dynamic.value is 0,
+      'struct.new() should treat a wrong-case initialiser as an unknown field')
+   local explicit = struct<CaseSensitiveFields> { VALUE=59 }
+   assert(explicit.Value is 0 and explicit.value is 0,
+      'struct<Name> should treat a wrong-case initialiser as an unknown field')
+
+   try
+      exec([[struct ExactDuplicate Value: int, Value: int end]])
+   success
+      assert(false, 'An exactly repeated declarative field should fail to compile')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function MakeStructFieldNamesUseCanonicalCase()
+   MAKESTRUCT('CanonicalFieldNames', 'lValue,lIPAddress,lID')
+   local value = struct.new('CanonicalFieldNames', { value=7, ipAddress=11, id=13 })
+   assert(value.value is 7 and value.ipAddress is 11 and value.id is 13,
+      'MAKESTRUCT should preserve its established lower camel-case conversion')
+   assert(not ('Value' in value) and not ('IPAddress' in value) and not ('ID' in value),
+      'Pre-conversion MAKESTRUCT spellings should not remain as aliases')
+   expect_struct_error(() => do local _ = value.Value end, ERR_FieldNotFound,
+      'MAKESTRUCT fields should reject non-canonical case')
+
+   try
+      MAKESTRUCT('DuplicateCanonicalFields', 'lValue,lvalue')
+   success
+      assert(false, 'MAKESTRUCT should reject duplicate names after canonical conversion')
+   end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -461,9 +527,9 @@ end
 @Test function NativeStructElementVectorRoundTrips()
    local value = struct<DeclaredVectorFields> { }
    value.Points = array<table> {
-      { red=1, green=2, blue=3 },
-      { red=4, green=5, blue=6 },
-      { red=7, green=8, blue=9 }
+      { Red=1, Green=2, Blue=3 },
+      { Red=4, Green=5, Blue=6 },
+      { Red=7, Green=8, Blue=9 }
    }
 
    local points = value.Points
@@ -473,7 +539,7 @@ end
    local clone = struct.clone(value)
    local copy = struct<DeclaredVectorFields> { }
    struct.copy(copy, value)
-   value.Points = array<table> { { red=20, green=21, blue=22 } }
+   value.Points = array<table> { { Red=20, Green=21, Blue=22 } }
    assert(#clone.Points is 3 and clone.Points[2].Blue is 9,
       'clone() should deep-copy trivially owned struct vectors')
    assert(#copy.Points is 3 and copy.Points[1].Green is 5,
@@ -600,11 +666,9 @@ assert(value.Value is 12)
       assert(false, 'Forward struct references should fail')
    end
 
-   try
-      exec([[struct BadCaseCollision Value: int, value: int end]])
-   success
-      assert(false, 'Case-insensitive field-name collisions should fail')
-   end
+   exec([[struct CaseDistinctDeclaration Value: int, value: int end
+local case_distinct = struct<CaseDistinctDeclaration> { Value=3, value=5 }
+assert(case_distinct.Value is 3 and case_distinct.value is 5)]])
 
    try
       exec([[struct BadArrayDimensionRange Values: int[4294967296] end]])
@@ -708,7 +772,7 @@ end
    assert(type(palette) is 'struct', 'Expected struct.new() to return the native struct type')
    assert(#palette is 2, 'Expected the structure to report its field count')
    assert(struct.size(palette) > 0, 'Expected the structure to report its byte size')
-   colours = palette.Col
+   colours = palette.col
 
    assert(#colours is 2, 'Expected the embedded struct array to expose two elements, got ' .. #colours)
    assert(colours[1].red is 0,
@@ -913,7 +977,7 @@ end
    value.wide     = 9007199
    value.integer  = 12345
    value.word     = 2345
-   value.uword    = 32767
+   value.uWord    = 32767
    value.byte     = 231
    value.text     = string.toArray('fast')
    value.pointer  = nil
@@ -923,11 +987,11 @@ end
    assert(value.wide is 9007199, 'FD_INT64 should round-trip through STSETF/STGETF')
    assert(value.integer is 12345, 'FD_INT should round-trip through STSETF/STGETF')
    assert(value.word is 2345, 'FD_WORD should round-trip through STSETF/STGETF')
-   assert(value.uword is 32767, 'Unsigned FD_WORD should retain 0x7fff through STSETF/STGETF')
-   value.uword = 32768
-   assert(value.uword is 32768, 'Unsigned FD_WORD should retain 0x8000 through STSETF/STGETF')
-   value.uword = 65535
-   assert(value.uword is 65535, 'Unsigned FD_WORD should retain 0xffff through STSETF/STGETF')
+   assert(value.uWord is 32767, 'Unsigned FD_WORD should retain 0x7fff through STSETF/STGETF')
+   value.uWord = 32768
+   assert(value.uWord is 32768, 'Unsigned FD_WORD should retain 0x8000 through STSETF/STGETF')
+   value.uWord = 65535
+   assert(value.uWord is 65535, 'Unsigned FD_WORD should retain 0xffff through STSETF/STGETF')
    assert(value.byte is 231, 'FD_BYTE should round-trip through STSETF/STGETF')
    assert(value.text is 'fast', 'FD_CUSTOM byte arrays should continue to read as strings')
    assert(value.pointer is nil, 'A null FD_POINTER should read as nil')

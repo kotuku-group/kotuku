@@ -758,8 +758,9 @@ StaticValueDescriptor describe_struct_field(const struct_record *StructDef, GCst
    StaticValueDescriptor result;
    if (not StructDef or not FieldName) return result;
 
+   const std::string_view field_name(strdata(FieldName), FieldName->len);
    for (const auto &field : StructDef->Fields) {
-      if (field.nameHash() != kt::strihash(strdata(FieldName))) continue;
+      if (not struct_field_matches(field, field_name)) continue;
       result.proof = StaticProof::Trusted;
       if (field.Type & (FD_ARRAY|FD_VECTOR)) {
          result.primary = TiriType::Array;

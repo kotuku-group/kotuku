@@ -370,6 +370,19 @@ print(u.Mis|sing)
    assert(not hover, 'Unknown struct fields should not produce hover content.')
 end
 
+@Test function StructFieldHoverRequiresExactCase()
+   hover, token = hoverAt([[
+struct User
+   Name: str -- Exact-case field
+end
+u = struct.new('User')
+print(u.na|me)
+]])
+
+   assert(token and token.text is 'name', 'Token extraction should preserve the requested field case.')
+   assert(not hover, 'A wrong-case declared struct field should not produce hover content.')
+end
+
 @Test function LaterStructAssignmentDoesNotAffectEarlierHover()
    hover, token = hoverAt([[
 struct A
