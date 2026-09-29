@@ -68,6 +68,9 @@ GetDisplayType: Returns the selected display driver's backend type.
 This function reports the backend identity of the driver selected during Display module initialisation.  Explicit and
 automatic driver selection therefore return the same type when they resolve to the same backend.  Current values are:
 
+On desktop Linux, automatic selection tries Wayland when `WAYLAND_DISPLAY` and `XDG_RUNTIME_DIR` are set, then X11
+when available, and finally the headless driver.  The headless driver reports `DT::NATIVE`.
+
 <types lookup="DT"/>
 
 -RESULT-

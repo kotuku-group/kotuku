@@ -1,0 +1,63 @@
+-- Manual Wayland input and cursor check. Run with --gfx-driver=wayland under a desktop compositor.
+
+   import 'gui/window'
+   module display as mGfx
+
+   local window = gui.window({ title='Wayland input check', insideWidth=520, insideHeight=250 })
+   local viewport = window.clientViewport({ aspectRatio=ARF_MEET })
+   local status = viewport.new('VectorText', {
+      string='B: bitmap  C: crosshair  D: default  L: lock  U: unlock',
+      face='Noto Sans', fontSize=18, x=20, y=30, fill='rgb(0,0,0)'
+   })
+   local clear = struct.new('RGB8', { red=0, green=0, blue=0, alpha=0 })
+   local cursor_bitmap = obj.new('bitmap', { width=32, height=32, bitsPerPixel=32, bkgd=clear })
+   check cursor_bitmap.acClear()
+   local _, cursor_colour = cursor_bitmap.mtGetColour(255, 40, 40, 255)
+   check cursor_bitmap.mtDrawRectangle(4, 4, 24, 24, cursor_colour, BAF_FILL)
+
+glLastMessage = ''
+
+function show_status(Message)
+   if Message is glLastMessage then return end
+   glLastMessage = Message
+   print(Message)
+   status.string = Message
+   viewport.acDraw()
+end
+
+   viewport.mtSubscribeKeyboard(function(Viewport, Flags, Code, Unicode)
+      if Flags has KQ_PRESSED then
+         if Code is KEY_B then
+            show_status(f'Bitmap cursor: {mGfx.SetCustomCursor(window.surface, 0, cursor_bitmap, 4, 4, 0)}')
+         elseif Code is KEY_C then
+            show_status(f'Crosshair: {mGfx.SetCursor(window.surface, 0, PTC_CROSSHAIR, "", 0)}')
+         elseif Code is KEY_D then
+            show_status(f'Default cursor: {mGfx.SetCursor(window.surface, 0, PTC_DEFAULT, "", 0)}')
+         elseif Code is KEY_L then
+            show_status(f'Pointer lock: {mGfx.LockCursor(window.surface)}')
+         elseif Code is KEY_U then
+            show_status(f'Pointer unlock: {mGfx.UnlockCursor(window.surface)}')
+         else
+            show_status(f'Key {Code}, Unicode {Unicode}, flags {Flags}')
+         end
+      end
+   end)
+
+   input.subscribe(JTYPE_MOVEMENT | JTYPE_BUTTON | JTYPE_TOUCH, window.surface, 0, function(Surface, Events)
+      local event:any = Events
+      while event do
+         if event.type is JET_ABS_XY then
+            show_status(f'Pointer: {event.absX}, {event.absY}; movement/local: {event.x}, {event.y}')
+         elseif event.type >= JET_BUTTON_1 and event.type <= JET_BUTTON_5 then
+            show_status(f'Button {event.type}: {event.value}')
+         elseif event.type is JET_TOUCH_DOWN then
+            show_status(f'Touch down, contact {event.value}: {event.x}, {event.y}')
+         elseif event.type is JET_TOUCH_MOTION or event.type is JET_TOUCH_UP or event.type is JET_TOUCH_CANCEL then
+            show_status(f'Touch {event.type}, contact {event.value}: {event.x}, {event.y}')
+         end
+         event = event.next
+      end
+   end)
+
+   window.show()
+   processing.sleep()

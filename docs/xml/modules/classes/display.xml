@@ -110,6 +110,7 @@
       </input>
       <description>
 <p>Move adjusts the hosted window or native display position by the supplied delta values.  Hosted drivers interpret the movement in window-manager coordinates.</p>
+<p>Wayland does not provide absolute top-level coordinates.  Move returns <code>ERR::NoSupport</code> for a Wayland window.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -126,6 +127,7 @@
       <tiriPrototype>err = Object.acMoveToBack()</tiriPrototype>
       <description>
 <p>This action lowers the host window where the active platform supports window stacking.</p>
+<p>Wayland does not expose top-level stacking control, so this action returns <code>ERR::NoSupport</code> there.</p>
       </description>
     </action>
 
@@ -136,6 +138,7 @@
       <tiriPrototype>err = Object.acMoveToFront()</tiriPrototype>
       <description>
 <p>This action raises the host window where the active platform supports window stacking.</p>
+<p>Wayland does not expose top-level stacking control, so this action returns <code>ERR::NoSupport</code> there.</p>
       </description>
     </action>
 
@@ -154,6 +157,7 @@
 <p>MoveToPoint moves the display to an absolute position.  The <code>MTF::X</code> and <code>MTF::Y</code> flags determine which coordinates are applied.</p>
 <p>In a hosted environment, the supplied coordinates describe the host window position.  The <fl>LeftMargin</fl> and <fl>TopMargin</fl> fields can be used when translating between host window coordinates and client-area coordinates.</p>
 <p>For full-screen displays, MoveToPoint can alter the screen position for the hardware device managing the display output.  This is a rare feature that requires hardware support.  <code>ERR::NoSupport</code> is returned if this feature is unavailable.</p>
+<p>Wayland does not expose absolute top-level positions.  This action returns <code>ERR::NoSupport</code> there and leaves the display coordinates unchanged.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -191,6 +195,7 @@
       <description>
 <p>Resize changes the display viewport size and resizes the underlying <fl>Bitmap</fl>.  If a display buffer is active, it is reallocated after the resize.</p>
 <p>For hosted displays, <code>Width</code> and <code>Height</code> describe the client area inside the host window, not the full outer window including frame decorations.</p>
+<p>On Wayland, a normal window changes size when the client commits a buffer of the requested dimensions.  A compositor resize is applied when its configure event is acknowledged.  Maximised and full-screen windows cannot be resized by this action until restored.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -219,6 +224,7 @@
       <tiriPrototype>err = Object.acSaveSettings()</tiriPrototype>
       <description>
 <p>SaveSettings stores supported window and display preferences, such as window position, size, DPMS setting and full-screen state, in the user display configuration.</p>
+<p>Wayland stores the normal window size and full-screen or maximised preference without saving a top-level position.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -278,6 +284,7 @@
       <description>
 <p>If a display is hosted in a desktop window, Minimise() performs the platform's default minimise action for that window. On Microsoft Windows this normally minimises the window to the taskbar.  On X11 the current implementation unmaps the window.</p>
 <p>Calling Minimise() on a display that is already minimised may restore the host window on some platforms.  Treat that behaviour as platform dependent.</p>
+<p>On Wayland, the compositor decides whether and when to minimise the window.  Showing the window again does not guarantee that it will be restored.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -303,6 +310,7 @@
       </input>
       <description>
 <p>SetDisplay() changes the active display mode or hosted display size, depending on the platform.  It can alter display position, viewport dimensions, bit depth and refresh rate when the active display driver supports those features.  The new settings are applied immediately, although the graphics card, monitor or host window manager may introduce a short delay.</p>
+<p>On Wayland, X and Y must match the current display coordinates.  A size change takes effect when the client commits new content.  Compositor-initiated size changes arrive through configure events.</p>
 <p>To keep any of the display settings at their current value, set the appropriate parameters to zero to leave them unchanged.  Only the parameters that you set will be used.</p>
 <p>If a requested full-screen mode is not available, the driver may choose the closest supported mode.</p>
 <p>Only the original owner of the display object is allowed to change the display settings.</p>
@@ -404,6 +412,7 @@
       </input>
       <description>
 <p>If a display is hosted in a desktop window, it may be possible to enforce size restrictions that prevent the window from being shrunk or expanded beyond a certain size.  This feature is platform dependent and <code>ERR::NoSupport</code> will be returned if it is not implemented.</p>
+<p>Wayland applies minimum and maximum dimensions.  It cannot enforce an aspect ratio through xdg-shell; if <code>EnforceAspect</code> is true, the size limits are still applied and <code>ERR::NoSupport</code> is returned.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -528,7 +537,7 @@
       <access read="R">Read</access>
       <type lookup="DT">DT</type>
       <description>
-<p>This field reports the display driver type, such as native, X11, Windows GDI or OpenGL ES.</p>
+<p>This field reports the selected display driver type, including native Wayland, X11, Windows GDI and OpenGL ES.</p>
 <types lookup="DT"/>
       </description>
     </field>
@@ -540,6 +549,7 @@
       <type lookup="SCR">SCR</type>
       <description>
 <p>Display flags configure hosted-window behaviour, buffering, visibility, controller grabbing and driver-reported capabilities.  After initialisation, only a limited subset can be changed and support for changing window style is platform dependent.</p>
+<p>On Wayland, changing <code>SCR::BORDERLESS</code> requests full-screen mode.  The compositor determines the resulting size.</p>
 <types lookup="SCR"/>
       </description>
     </field>
@@ -788,6 +798,7 @@
       <description>
 <p>The X field defines the horizontal coordinate of the display.  On native full-screen drivers this is a hardware offset and should normally remain zero unless the output device requires adjustment.</p>
 <p>On hosted displays, prior to initialisation the coordinate will reflect the position of the display window when it is created.  After initialisation, the coordinate is altered to reflect the absolute position of the client area of the display window.  The <fl>LeftMargin</fl> can be used to determine the actual position of the host window.</p>
+<p>Wayland does not report global top-level coordinates.  Setting this field after initialisation returns <code>ERR::NoSupport</code> on Wayland.</p>
 <p>To adjust the position of the display, use the <action>MoveToPoint</action> action rather than setting this field directly.</p>
       </description>
     </field>
@@ -800,6 +811,7 @@
       <description>
 <p>The Y field defines the vertical coordinate of the display.  On native full-screen drivers this is a hardware offset and should normally remain zero unless the output device requires adjustment.</p>
 <p>On hosted displays, prior to initialisation the coordinate will reflect the position of the display window when it is created.  After initialisation, the coordinate is altered to reflect the absolute position of the client area of the display window.  The <fl>TopMargin</fl> can be used to determine the actual position of the host window.</p>
+<p>Wayland does not report global top-level coordinates.  Setting this field after initialisation returns <code>ERR::NoSupport</code> on Wayland.</p>
 <p>To adjust the position of the display, use the <action>MoveToPoint</action> action rather than setting this field directly.</p>
       </description>
     </field>

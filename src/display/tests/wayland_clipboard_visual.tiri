@@ -1,0 +1,58 @@
+-- Manual Wayland clipboard check. Run under a desktop compositor with --gfx-driver=wayland.
+-- Press C, then paste into another application. Copy text in that application, return here and press V.
+-- Press F, then paste into a file manager to check the URI list. Drag a file onto the blank window area.
+-- With nested Weston, paste into a client of that Weston instance. Host X11 clients use a separate selection.
+
+   import 'gui/window'
+   module display as mGfx
+
+   local clipboard = obj.new('Clipboard', { })
+   local window = gui.window({ title='Wayland clipboard check', insideWidth=620, insideHeight=230 })
+   local viewport = window.clientViewport({ aspectRatio=ARF_MEET })
+   local status = viewport.new('VectorText', {
+      string='C: copy text  V: read selection  F: copy file URI',
+      face='Noto Sans', fontSize=18, x=20, y=30, fill='rgb(0,0,0)'
+   })
+
+function show_status(Message)
+   print(Message)
+   status.string = Message
+   viewport.acDraw()
+end
+
+   viewport.mtSubscribeKeyboard(function(Viewport, Flags, Code, Unicode)
+      if not (Flags has KQ_PRESSED) or (Flags has KQ_REPEAT) then return end
+      if Code is KEY_C then
+         local err = clipboard.mtAddText('Kōtuku Wayland clipboard ✓')
+         show_status(f'Copied UTF-8 text: {err}. Paste into another application.')
+      elseif Code is KEY_F then
+         local err = clipboard.mtAddFile(CLIPTYPE_FILE, 'examples/keyboard.tiri', 0)
+         show_status(f'Copied file URI: {err}. Paste into a file manager.')
+      elseif Code is KEY_V then
+         local err, datatype, files, flags = clipboard.mtGetFiles(0, 0)
+         if err is ERR_Okay then
+            if datatype is CLIPTYPE_TEXT then
+               local file = obj.new('File', { path=files[0] })
+               local buffer = array<byte, file.size>
+               check mSys.ReadFileToBuffer(files[0], buffer)
+               show_status(f'Received text: {buffer.getString()}')
+            else
+               show_status(f'Received {#files} file URI(s); first path: {files[0]}')
+            end
+         else
+            show_status(f'No completed selection yet: {err}. Press V again.')
+         end
+      end
+   end)
+
+   viewport.subscribe('dragdrop', function(ScriptID, Args, Reference)
+      show_status('File drop received; requesting data')
+      input.requestItem(Args.source, Args.item, 'file', function(Items)
+         if #Items > 0 then show_status(f'Dropped file: {Items[0].path}')
+         else show_status('Drop supplied no local file path')
+         end
+      end)
+   end)
+
+   window.show()
+   processing.sleep()

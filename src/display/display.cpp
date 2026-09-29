@@ -130,6 +130,9 @@ namespace display {
 void DriverKeyPress(KQ Flags, KEY Value, int Printable);
 void DriverKeyRelease(KQ Flags, KEY Value);
 void DriverMovement(OBJECTID SurfaceID, double AbsX, double AbsY, bool NonClient);
+void DriverRelativeMovement(OBJECTID SurfaceID, double DX, double DY);
+void DriverPointerLockLost(OBJECTID SurfaceID);
+void DriverTouchInput(OBJECTID SurfaceID, uint32_t SeatID, int32_t ContactID, JET Type, double X, double Y);
 void DriverWheelMovement(OBJECTID SurfaceID, float Wheel);
 void DriverButtonInput(int Buttons, bool State);
 void DriverCrossing(OBJECTID SurfaceID, bool Entered, double AbsX, double AbsY);
@@ -139,9 +142,12 @@ void DriverWindowResized(OBJECTID SurfaceID, int WinX, int WinY, int WinWidth, i
 void DriverExposeRegion(OBJECTID SurfaceID, int X, int Y, int Width, int Height);
 ERR DriverWindowClose(OBJECTID SurfaceID);
 void DriverWindowDestroyed(OBJECTID SurfaceID);
+void DriverWindowHidden(OBJECTID SurfaceID);
 void DriverDPIChanged(OBJECTID SurfaceID);
 void DriverSetFocus(OBJECTID SurfaceID);
 void DriverClipboardUpdated();
+void DriverClipboardData(CSTRING Mime, CSTRING Data, size_t Length, bool Dropped, OBJECTID SurfaceID);
+void DriverClipboardLost();
 ERR DriverEnableDragDrop(APTR HostHandle);
 void DriverDisableDragDrop(APTR HostHandle);
 void DriverDragDropped(OBJECTID SurfaceID, CSTRING Datatypes);
@@ -157,6 +163,9 @@ const DriverCallbacks glDriverCallbacks = {
    .KeyPressed = display::DriverKeyPress,
    .KeyReleased = display::DriverKeyRelease,
    .Movement = display::DriverMovement,
+   .RelativeMovement = display::DriverRelativeMovement,
+   .PointerLockLost = display::DriverPointerLockLost,
+   .TouchInput = display::DriverTouchInput,
    .WheelMovement = display::DriverWheelMovement,
    .ButtonInput = display::DriverButtonInput,
    .Crossing = display::DriverCrossing,
@@ -165,9 +174,12 @@ const DriverCallbacks glDriverCallbacks = {
    .ExposeRegion = display::DriverExposeRegion,
    .WindowClose = display::DriverWindowClose,
    .WindowDestroyed = display::DriverWindowDestroyed,
+   .WindowHidden = display::DriverWindowHidden,
    .DPIChanged = display::DriverDPIChanged,
    .SetFocus = display::DriverSetFocus,
    .ClipboardUpdated = display::DriverClipboardUpdated,
+   .ClipboardData = display::DriverClipboardData,
+   .ClipboardLost = display::DriverClipboardLost,
    .EnableDragDrop = display::DriverEnableDragDrop,
    .DisableDragDrop = display::DriverDisableDragDrop,
    .DragDropped = display::DriverDragDropped,
@@ -461,6 +473,16 @@ static ERR select_display_driver(CSTRING RequestedName)
          return open_driver_candidate(candidate, true);
       }
 #endif
+#if defined(DISPLAY_WAYLAND_DRIVER)
+      if (iequals(RequestedName, "wayland")) {
+         const DriverCandidate candidate = { "wayland", "display-wayland"
+#ifdef KOTUKU_STATIC
+            , display::create_wayland_display_driver, display::destroy_wayland_display_driver
+#endif
+         };
+         return open_driver_candidate(candidate, true);
+      }
+#endif
 #if defined(DISPLAY_WINDOWS_DRIVER)
       if (iequals(RequestedName, "windows")) {
          const DriverCandidate candidate = { "windows", "display-windows"
@@ -484,12 +506,23 @@ static ERR select_display_driver(CSTRING RequestedName)
       return ERR::NoSupport;
    }
 
+#if defined(DISPLAY_WAYLAND_DRIVER) or defined(DISPLAY_X11_DRIVER)
+   const DriverCandidate candidates[] = {
+#if defined(DISPLAY_WAYLAND_DRIVER)
+      { "wayland", "display-wayland"
+#ifdef KOTUKU_STATIC
+         , display::create_wayland_display_driver, display::destroy_wayland_display_driver
+#endif
+      },
+#endif
 #if defined(DISPLAY_X11_DRIVER)
-   const DriverCandidate candidates[] = {{ "x11", "display-x11"
+      { "x11", "display-x11"
 #ifdef KOTUKU_STATIC
       , display::create_x11_display_driver, display::destroy_x11_display_driver
 #endif
-   }};
+      },
+#endif
+   };
 #endif
 #if defined(DISPLAY_WINDOWS_DRIVER)
    const DriverCandidate candidates[] = {{ "windows", "display-windows"
@@ -507,13 +540,19 @@ static ERR select_display_driver(CSTRING RequestedName)
 #endif
 
    auto error = ERR::NoSupport;
-#if defined(DISPLAY_X11_DRIVER) or defined(DISPLAY_WINDOWS_DRIVER) or defined(DISPLAY_ANDROID_DRIVER)
+#if defined(DISPLAY_WAYLAND_DRIVER) or defined(DISPLAY_X11_DRIVER) or \
+   defined(DISPLAY_WINDOWS_DRIVER) or defined(DISPLAY_ANDROID_DRIVER)
    for (const auto &candidate : candidates) {
       error = open_driver_candidate(candidate, false);
       if (error IS ERR::Okay) return error;
    }
 #endif
-   return error;
+   const DriverCandidate headless = { "headless", nullptr
+#ifdef KOTUKU_STATIC
+      , nullptr, nullptr
+#endif
+   };
+   return open_driver_candidate(headless, false);
 }
 
 //********************************************************************************************************************
@@ -617,7 +656,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    if (auto config = objConfig::create { fl::Path("user:config/display.cfg") }; config.ok()) {
       config->read("DISPLAY", "Maximise", glpMaximise);
 
-      if ((glDisplayType IS DT::X11) or (glDisplayType IS DT::WINGDI)) {
+      if ((glDisplayType IS DT::X11) or (glDisplayType IS DT::WINGDI) or (glDisplayType IS DT::WAYLAND)) {
          log.msg("Using hosted window dimensions: %dx%d,%dx%d", glpDisplayX, glpDisplayY, glpDisplayWidth, glpDisplayHeight);
          if ((config->read("DISPLAY", "WindowWidth", glpDisplayWidth) != ERR::Okay) or (!glpDisplayWidth)) {
             config->read("DISPLAY", "Width", glpDisplayWidth);
@@ -627,8 +666,10 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
             config->read("DISPLAY", "Height", glpDisplayHeight);
          }
 
-         config->read("DISPLAY", "WindowX", glpDisplayX);
-         config->read("DISPLAY", "WindowY", glpDisplayY);
+         if (glDisplayType != DT::WAYLAND) {
+            config->read("DISPLAY", "WindowX", glpDisplayX);
+            config->read("DISPLAY", "WindowY", glpDisplayY);
+         }
          config->read("DISPLAY", "FullScreen", glpFullScreen);
       }
       else {

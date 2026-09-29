@@ -1,0 +1,47 @@
+   module display as mGfx
+
+function read_file(Path:str):str
+   local file = obj.new('File', { path=Path })
+   local buffer = array<byte, file.size>
+   check mSys.ReadFileToBuffer(Path, buffer)
+   return buffer.getString()
+end
+
+@Test; @Requires(display=true, linux_platform=true)
+function LocalClipboardCache()
+   if mGfx.GetDisplayType() != DT_WAYLAND then return end
+   local clipboard = obj.new('Clipboard', { flags=CPF_HISTORY_BUFFER })
+   defer clipboard.acClear() end
+
+   check clipboard.mtAddText('Wayland text ✓')
+   local err, datatype, files, flags = clipboard.mtGetFiles(CLIPTYPE_TEXT, 0)
+   assert(err is ERR_Okay and datatype is CLIPTYPE_TEXT, 'Text clip was not stored')
+   assert(#files is 1 and read_file(files[0]) is 'Wayland text ✓', 'Stored text differs from the source')
+
+   local first = 'temp:wayland_clipboard_first.txt'
+   local second = 'temp:wayland_clipboard_second.txt'
+   local source = obj.new('File', { path=first, flags=FL_NEW|FL_WRITE })
+   check source.acWrite('first')
+   source.free()
+   source = obj.new('File', { path=second, flags=FL_NEW|FL_WRITE })
+   check source.acWrite('second')
+   source.free()
+   defer mSys.DeleteFile(first); mSys.DeleteFile(second) end
+
+   check clipboard.mtAddFile(CLIPTYPE_FILE, first, 0)
+   check clipboard.mtAddFile(CLIPTYPE_FILE, second, CEF_EXTEND)
+   err, datatype, files, flags = clipboard.mtGetFiles(CLIPTYPE_FILE, 0)
+   assert(err is ERR_Okay and datatype is CLIPTYPE_FILE, 'File clip was not stored')
+   assert(#files is 2 and files[0] is first and files[1] is second,
+      'Extended file clip lost a path or changed its order')
+
+   err, datatype, files, flags = clipboard.mtGetFiles(0, 1)
+   assert(err is ERR_Okay and datatype is CLIPTYPE_TEXT, 'Clipboard history lost the text clip')
+   assert(#files is 1 and read_file(files[0]) is 'Wayland text ✓', 'Clipboard history deleted cached text')
+   err = clipboard.mtGetFiles(0, 2)
+   assert(err is ERR_OutOfRange, 'History lookup beyond the retained clips must fail')
+
+   check clipboard.acClear()
+   assert(read_file(first) is 'first' and read_file(second) is 'second',
+      'Clearing clipboard must not delete files supplied by the caller')
+end

@@ -1163,6 +1163,15 @@ static ERR SURFACE_Init(extSurface *Self)
    else {
       log.trace("This surface object will be display-based.");
 
+      if (gfx::GetDisplayType() IS DT::WAYLAND) {
+         // Tray integration and persistent desktop stacking are outside the ordinary Wayland client contract.
+         if ((Self->Presence IS SPT::ICON_TRAY) or
+               ((Self->Flags & (RNF::STICK_TO_FRONT|RNF::STICK_TO_BACK)) != RNF::NIL))
+            return log.warning(ERR::NoSupport);
+         // Presence-less windows need a popup parent; they must not accidentally become fullscreen toplevels.
+         if ((Self->Presence IS SPT::NONE) and (not Self->PopOverID)) return log.warning(ERR::NoSupport);
+      }
+
       // Turn off any flags that may not be used for the top-most layer
 
       Self->Flags &= ~(RNF::TRANSPARENT|RNF::PRECOPY|RNF::AFTER_COPY);
@@ -1200,9 +1209,13 @@ static ERR SURFACE_Init(extSurface *Self)
 
       if (gfx::GetDisplayType() IS DT::NATIVE) Self->Flags &= ~(RNF::COMPOSITE);
 
-      if (((gfx::GetDisplayType() IS DT::WINGDI) or (gfx::GetDisplayType() IS DT::X11)) and ((Self->Flags & RNF::HOST) != RNF::NIL)) {
+      if (((gfx::GetDisplayType() IS DT::WINGDI) or (gfx::GetDisplayType() IS DT::X11) or
+            (gfx::GetDisplayType() IS DT::WAYLAND)) and ((Self->Flags & RNF::HOST) != RNF::NIL)) {
          if (glpMaximise) scrflags |= SCR::MAXIMISE;
-         if (glpFullScreen) scrflags |= SCR::MAXIMISE|SCR::BORDERLESS;
+         if (glpFullScreen) {
+            if (gfx::GetDisplayType() IS DT::WAYLAND) scrflags |= SCR::BORDERLESS;
+            else scrflags |= SCR::MAXIMISE|SCR::BORDERLESS;
+         }
       }
 
       if (not Self->Width.defined()) Self->Width = Unit(glpDisplayWidth);

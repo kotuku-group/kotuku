@@ -4,6 +4,7 @@
 #include <kotuku/system/errors.h>
 
 #include <cstdint>
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -16,6 +17,7 @@ enum class DPMS : int;
 enum class DT : int;
 enum class HOST : int;
 enum class KEY : int;
+enum class JET : int;
 enum class KQ : uint32_t;
 enum class PTC : int;
 struct ColourFormat;
@@ -23,7 +25,7 @@ struct DisplayInfo;
 struct resolution;
 class DisplayDriver;
 
-constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 5;
+constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 10;
 
 using CreateDisplayDriver = DisplayDriver *(*)(uint32_t InterfaceVersion, struct CoreBase *Core);
 using DestroyDisplayDriver = void (*)(DisplayDriver *Driver);
@@ -73,6 +75,9 @@ struct DriverCallbacks {
    void (*KeyPressed)(KQ Qualifiers, KEY Code, int Unicode);
    void (*KeyReleased)(KQ Qualifiers, KEY Code);
    void (*Movement)(OBJECTID SurfaceID, double AbsX, double AbsY, bool NonClient);
+   void (*RelativeMovement)(OBJECTID SurfaceID, double DX, double DY);
+   void (*PointerLockLost)(OBJECTID SurfaceID);
+   void (*TouchInput)(OBJECTID SurfaceID, uint32_t SeatID, int32_t ContactID, JET Type, double X, double Y);
    void (*WheelMovement)(OBJECTID SurfaceID, float Delta);
    void (*ButtonInput)(int Buttons, bool Pressed);
    void (*Crossing)(OBJECTID SurfaceID, bool Entered, double AbsX, double AbsY);
@@ -82,9 +87,12 @@ struct DriverCallbacks {
    void (*ExposeRegion)(OBJECTID SurfaceID, int X, int Y, int Width, int Height);
    ERR (*WindowClose)(OBJECTID SurfaceID);
    void (*WindowDestroyed)(OBJECTID SurfaceID);
+   void (*WindowHidden)(OBJECTID SurfaceID);
    void (*DPIChanged)(OBJECTID SurfaceID);
    void (*SetFocus)(OBJECTID SurfaceID);
    void (*ClipboardUpdated)();
+   void (*ClipboardData)(CSTRING Mime, CSTRING Data, size_t Length, bool Dropped, OBJECTID SurfaceID);
+   void (*ClipboardLost)();
    ERR (*EnableDragDrop)(APTR HostHandle);
    void (*DisableDragDrop)(APTR HostHandle);
    void (*DragDropped)(OBJECTID SurfaceID, CSTRING Datatypes);
@@ -118,6 +126,8 @@ public:
    virtual ERR raiseWindow(HOSTWINDOW Window) = 0;
    virtual ERR lowerWindow(HOSTWINDOW Window) = 0;
    virtual ERR minimiseWindow(HOSTWINDOW Window) = 0;
+   virtual ERR setFullscreen(HOSTWINDOW Window, bool Enabled) { return ERR::NoSupport; }
+   virtual ERR normalWindowSize(HOSTWINDOW Window, int &Width, int &Height) { return ERR::NoSupport; }
    virtual ERR setWindowTitle(HOSTWINDOW Window, CSTRING Title) = 0;
    virtual ERR setSizeHints(HOSTWINDOW Window, int MinW, int MinH, int MaxW, int MaxH, bool EnforceAspect) = 0;
    virtual ERR windowCoords(HOSTWINDOW Window, int &X, int &Y, int &Width, int &Height) = 0;
@@ -247,6 +257,8 @@ void destroy_win32_display_driver(DisplayDriver *Driver);
 #ifdef __linux__
 DisplayDriver * create_x11_display_driver(uint32_t InterfaceVersion, struct CoreBase *Core);
 void destroy_x11_display_driver(DisplayDriver *Driver);
+DisplayDriver * create_wayland_display_driver(uint32_t InterfaceVersion, struct CoreBase *Core);
+void destroy_wayland_display_driver(DisplayDriver *Driver);
 #endif
 
 #ifdef __ANDROID__

@@ -236,8 +236,9 @@ namespace std {
 struct ClipItem {
    std::string Path; // Path to a file containing the data.
    std::vector<char> Data; // Vector containing raw data.
+   bool Owned = false; // Only generated clipboard cache files are removed with their record.
 
-   ClipItem(std::string pPath) : Path(pPath) { }
+   ClipItem(std::string pPath, bool pOwned = false) : Path(pPath), Owned(pOwned) { }
 };
 
 struct ClipRecord {
@@ -515,6 +516,10 @@ extern std::unique_ptr<std::array<uint16_t, 256 * 256>> glDemultiply;
 extern std::array<uint8_t, 256 * 256> glAlphaLookup;
 extern std::list<ClipRecord> glClips;
 extern std::recursive_mutex glClipboardLock;
+extern void receive_host_clipboard(CSTRING Mime, std::string_view Data, bool Dropped, OBJECTID SurfaceID);
+extern void lose_host_clipboard();
+extern ERR respond_wayland_drop_request(OBJECTPTR Display, OBJECTPTR Requester, int Item, char Preference);
+namespace display { void DriverDragDropped(OBJECTID SurfaceID, CSTRING Datatypes); }
 extern std::atomic<int> glLastPort;
 
 extern ankerl::unordered_dense::map<WinHook, FUNCTION> glWindowHooks;
