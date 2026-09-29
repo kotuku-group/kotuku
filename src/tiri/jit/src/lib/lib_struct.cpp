@@ -24,6 +24,7 @@
 #include <kotuku/main.h>
 
 #include "../../defs.h"
+#include "../../protected_call.h"
 
 #define LJLIB_MODULE_struct
 
@@ -463,7 +464,8 @@ static GCstruct * push_external_struct(lua_State *L, APTR Address, std::string_v
    struct_record *StructDef = nullptr, Object *Lifecycle = nullptr, GCstruct *Parent = nullptr)
 {
    if (auto def = StructDef ? StructDef : find_struct(L, StructName)) {
-      return lua_pushstruct(L, *def, Address, 0, Lifecycle, Parent);
+      auto access = Parent and Parent->is_readonly() ? StructAccess::ReadOnly : StructAccess::Writable;
+      return lua_pushstruct(L, *def, Address, StructPayloadPolicy::Borrowed, access, Lifecycle, Parent);
    }
    return nullptr;
 }
@@ -618,8 +620,11 @@ void lj_struct_getfield_core(lua_State *L, GCstruct *Struct, struct_field &Field
             else lua_createarray(L, array_size, ff_to_element(Field.Type), (APTR *)Address, ARRAY_CACHED,
                field_def->Name, field_def);
          }
-         else if (not push_external_struct(L, ((APTR *)Address)[0], field_def->Name, field_def,
-               Struct->lifecycle)) {
+         GCstruct *parent = nullptr;
+         if (gcref(Struct->parent)) parent = structref(Struct->parent);
+         else parent = Struct;
+         if (not push_external_struct(L, ((APTR *)Address)[0], field_def->Name, field_def,
+               Struct->lifecycle, parent)) {
             struct_field_error(L, CurrentFrame, ERR::Search,
                "Failed to find struct referenced by field '%s'.", Field.Name.c_str());
          }
@@ -672,12 +677,8 @@ void lj_struct_getfield_core(lua_State *L, GCstruct *Struct, struct_field &Field
             "Failed to find struct referenced by field '%s'.", Field.Name.c_str());
       }
       GCstruct *parent = nullptr;
-      if (not Struct->is_lifecycle_bound()) {
-         if (Struct->is_external()) {
-            if (gcref(Struct->parent)) parent = structref(Struct->parent);
-         }
-         else parent = Struct;
-      }
+      if (gcref(Struct->parent)) parent = structref(Struct->parent);
+      else parent = Struct;
       if (not push_external_struct(L, Address, field_def->Name, field_def, Struct->lifecycle, parent)) {
          struct_field_error(L, CurrentFrame, ERR::Search,
             "Failed to find struct referenced by field '%s'.", Field.Name.c_str());
@@ -709,8 +710,12 @@ void lj_struct_getfield_core(lua_State *L, GCstruct *Struct, struct_field &Field
       "Field '%s' does not use a supported type of %x", Field.Name.c_str(), Field.Type);
 }
 
-void lj_struct_setfield_core(lua_State *L, GCstruct *, struct_field &Field, APTR Address, bool CurrentFrame)
+void lj_struct_setfield_core(lua_State *L, GCstruct *Struct, struct_field &Field, APTR Address, bool CurrentFrame)
 {
+   if (Struct->is_readonly()) {
+      struct_field_error(L, CurrentFrame, ERR::ReadOnly,
+         "Cannot modify field '%s' on a read-only struct.", Field.Name.c_str());
+   }
    write_field(L, Address, Field, -1, Field.Name.c_str(), CurrentFrame);
    lua_pop(L, 1);
 }
@@ -758,6 +763,7 @@ static int struct_set(lua_State *L)
 static void copy_struct_payload(lua_State *L, GCstruct *Dest, GCstruct *Source)
 {
    if (Dest->def != Source->def) luaL_error(L, ERR::Mismatch, "Struct definitions must match for copying.");
+   if (Dest->is_readonly()) luaL_error(L, ERR::ReadOnly, "Cannot copy into a read-only struct.");
    lj_struct_check_lifecycle(L, Dest, "copy destination");
    lj_struct_check_lifecycle(L, Source, "copy source");
    if ((not Dest->data) or (not Source->data)) luaL_error(L, ERR::NotInitialised, "Cannot copy a null struct payload.");
@@ -800,6 +806,25 @@ LJLIB_CF(struct_clone)
    return 1;
 }
 
+LJLIB_CF(struct_toTable)
+{
+   auto source = lj_lib_checkstruct(L, 1);
+   lj_struct_check_lifecycle(L, source, "toTable source");
+   if (not source->data) luaL_error(L, ERR::NotInitialised, "Cannot convert a null struct payload.");
+
+   ERR error = ERR::Okay;
+   int status;
+   {
+      std::vector<lua_ref> references;
+      auto convert = [&]() { error = struct_to_table(L, references, *source->def, source->data); };
+      status = protected_tiri_call(L, convert);
+      unref_struct_references(L, references);
+   }
+   if (status) lj_err_throw(L, status);
+   if (error != ERR::Okay) luaL_error(L, error, "Failed to convert struct '%s' to a table.", source->def->Name.c_str());
+   return 1;
+}
+
 #include "lj_libdef.h"
 
 extern "C" int luaopen_struct(lua_State *L)
@@ -832,5 +857,7 @@ extern "C" int luaopen_struct(lua_State *L)
       { TiriType::Struct }, { TiriType::Struct, TiriType::Struct });
    reg_iface_method(L, "struct", "clone", TiriType::Struct, builtin_callable_id(FastFunc::struct_clone),
       { TiriType::Struct }, { TiriType::Struct });
+   reg_iface_method(L, "struct", "toTable", TiriType::Struct, builtin_callable_id(FastFunc::struct_toTable),
+      { TiriType::Table }, { TiriType::Struct });
    return 1;
 }

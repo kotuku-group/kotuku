@@ -979,15 +979,18 @@ extern void lua_createarray(lua_State *L, int64_t Length, AET Type, void *Data, 
 
 //********************************************************************************************************************
 // Create native struct and push onto stack.  With Data null a zeroed inline payload is allocated; otherwise the
-// struct references the external Data (pass STRUCT_DEALLOCATE in Flags to transfer ownership to the GC).
+// struct references external Data using an explicit payload and access policy.
 // Lifecycle optionally binds the view to a Kotuku object whose destruction invalidates the payload; see
 // lj_struct_new_external() for the weak pin contract.
 
-extern GCstruct * lua_pushstruct(lua_State *L, struct_record &Def, void *Data, uint8_t Flags, Object *Lifecycle,
-   GCstruct *Parent)
+extern GCstruct * lua_pushstruct(lua_State *L, struct_record &Def, void *Data, StructPayloadPolicy Policy,
+   StructAccess Access, Object *Lifecycle, GCstruct *Parent)
 {
+   lj_assertL((Data and (Policy != StructPayloadPolicy::Inline)) or
+      ((not Data) and (Policy IS StructPayloadPolicy::Inline) and (Access IS StructAccess::Writable) and (not Parent)),
+      "contradictory struct payload policy");
    lj_gc_check(L);
-   auto s = Data ? lj_struct_new_external(L, Def, Data, Flags, Lifecycle, Parent) : lj_struct_new(L, Def);
+   auto s = Data ? lj_struct_new_external(L, Def, Data, Policy, Access, Lifecycle, Parent) : lj_struct_new(L, Def);
    setstructV(L, L->top, s);
    incr_top(L);
    return s;

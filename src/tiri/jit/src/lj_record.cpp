@@ -4397,11 +4397,15 @@ static TRef rec_object_set(jit_State *J, RecordOps *ops)
 // Non-lifecycle scalar fields are loaded and stored directly after guarding the immutable definition and payload.
 // Lifecycle-bound structs and complex field types retain the helper path and its full access semantics.
 
-static TRef rec_struct_payload_guard(jit_State *J, TRef StructRef, GCstruct *Value)
+static TRef rec_struct_payload_guard(jit_State *J, TRef StructRef, GCstruct *Value, bool Writable = false)
 {
    TRef flags_ref = emitir(IRT(IR_FLOAD, IRT_U8), StructRef, IRFL_STRUCT_FLAGS);
    TRef lifecycle_ref = emitir(IRTI(IR_BAND), flags_ref, lj_ir_kint(J, STRUCT_LIFECYCLE));
    emitir(IRTGI(IR_EQ), lifecycle_ref, lj_ir_kint(J, 0));
+   if (Writable) {
+      TRef readonly_ref = emitir(IRTI(IR_BAND), flags_ref, lj_ir_kint(J, STRUCT_READ_ONLY));
+      emitir(IRTGI(IR_EQ), readonly_ref, lj_ir_kint(J, 0));
+   }
 
    TRef def_ref = emitir(IRT(IR_FLOAD, IRT_PTR), StructRef, IRFL_STRUCT_DEF);
    emitir(IRTG(IR_EQ, IRT_PTR), def_ref, lj_ir_kkptr(J, Value->def));
@@ -4611,8 +4615,9 @@ static void rec_struct_set(jit_State *J, RecordOps *ops)
 
    TRef val_ref = ops->ra;
    const auto scalar_type = effective_scalar_type(field_flags, native_type);
-   if (not value->is_lifecycle_bound() and rec_struct_scalar_field(field_flags, native_type)) {
-      TRef data_ref = rec_struct_payload_guard(J, struct_ref, value);
+   if (not value->is_lifecycle_bound() and not value->is_readonly() and
+         rec_struct_scalar_field(field_flags, native_type)) {
+      TRef data_ref = rec_struct_payload_guard(J, struct_ref, value, true);
       TRef addr_ref = emitir(IRT(IR_ADD, IRT_PTR), data_ref, lj_ir_kintp(J, field_offset));
 
       if (scalar_type IS NativeStructType::Bool and (val_ref IS TREF_TRUE or val_ref IS TREF_FALSE)) {

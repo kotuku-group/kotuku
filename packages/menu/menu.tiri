@@ -305,7 +305,9 @@ gui.menu = function(Options)
          err, target = mGfx.GetSurfaceInfo(&relative.scene.surface)
          if err is ERR_Okay then
             rel = { absX = target.absX, absY = target.absY }
-            target = { absX = 0, absY = 0, height = 4096 }
+            target.absX = 0
+            target.absY = 0
+            target.height = 4096
 
             if Options.target then
                err, target = mGfx.GetSurfaceInfo(Options.target)

@@ -795,8 +795,10 @@ static int object_get_struct(lua_State *Lua, const obj_read &Handle, GCobject *D
                // no dependency and skip it, and a JIT-compiled access would compile the guard out in that case.
                bool is_resource = Field->Flags & FD_RESOURCE;
                bool owns_copy = is_resource and (Field->Flags & FD_STORE);
-               if (not push_struct(Lua->script, result, uint32_t(Field->Arg), owns_copy, is_resource,
-                     owns_copy ? nullptr : Object)) {
+               auto policy = owns_copy ? StructPayloadPolicy::AdoptedResource : StructPayloadPolicy::Borrowed;
+               if (not push_struct(Lua->script, result, uint32_t(Field->Arg), policy, StructAccess::Writable,
+                     is_resource, owns_copy ? nullptr : Object)) {
+                  if (owns_copy) FreeResource(result);
                   error = ERR::Search;
                }
             }

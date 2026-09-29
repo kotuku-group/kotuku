@@ -545,7 +545,7 @@ StaticResultSet describe_native_prototype_results(const fprototype *Prototype)
    return result;
 }
 
-StaticResultSet describe_object_call_results(const FunctionField *Fields)
+StaticResultSet describe_object_call_results(const FunctionField *Fields, lua_State *State)
 {
    StaticResultSet result;
 
@@ -579,8 +579,13 @@ StaticResultSet describe_object_call_results(const FunctionField *Fields)
          value.nullable = not (type & FD_CPP) or (type & FD_MUTABLE);
       }
       else if (type & FD_STRUCT) {
-         value.primary = (type & FD_RESOURCE) ? TiriType::Struct : TiriType::Table;
+         value.primary = TiriType::Struct;
          value.nullable = true;
+         if (State and Fields[i].Name and valid_struct_name(Fields[i].Name)) {
+            auto name = struct_name_prefix(Fields[i].Name);
+            value.struct_def = (type & FD_RESOURCE) ? find_registered_resource_struct(State, name) :
+               find_struct(State, name);
+         }
       }
       else if (type & FD_FUNCTION) {
          continue;
@@ -619,7 +624,8 @@ StaticResultSet describe_module_call_results(const FunctionField *Fields, lua_St
 
    auto resolve_struct = [State](const FunctionField &Field) -> struct_record * {
       if (not State or not Field.Name or not valid_struct_name(Field.Name)) return nullptr;
-      return find_struct(State, struct_name_prefix(Field.Name));
+      auto name = struct_name_prefix(Field.Name);
+      return (Field.Type & FD_RESOURCE) ? find_registered_resource_struct(State, name) : find_struct(State, name);
    };
 
    auto describe_pointer = [&resolve_struct](const FunctionField &Field) {
@@ -628,7 +634,7 @@ StaticResultSet describe_module_call_results(const FunctionField *Fields, lua_St
       value.nullable = true;
       if (Field.Type & FD_OBJECT) value.primary = TiriType::Object;
       else if (Field.Type & FD_STRUCT) {
-         value.primary = (Field.Type & FD_RESOURCE) ? TiriType::Struct : TiriType::Table;
+         value.primary = TiriType::Struct;
          value.struct_def = resolve_struct(Field);
       }
       else value.primary = TiriType::Userdata;
@@ -829,9 +835,15 @@ std::optional<ArrayElementDescriptor> describe_array_element(const struct_field 
    result.logical_type = TiriType::Num;
 
    if ((Field.Type & FD_STRUCT) and not (Field.Type & FD_POINTER)) {
-      result.storage = AET::STRUCT;
-      result.logical_type = TiriType::Struct;
-      result.struct_def = Field.StructDefinition;
+      if (Field.TrivialElements) {
+         result.storage = AET::STRUCT;
+         result.logical_type = TiriType::Struct;
+         result.struct_def = Field.StructDefinition;
+      }
+      else {
+         result.storage = AET::TABLE;
+         result.logical_type = TiriType::Table;
+      }
    }
    else if (Field.Type & FD_FLOAT) result.storage = AET::FLOAT;
    else if (Field.Type & FD_DOUBLE) result.storage = AET::DOUBLE;

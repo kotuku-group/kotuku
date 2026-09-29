@@ -197,7 +197,16 @@ end
    err, info = time_obj.mtGetTimeZoneInfo(nil, 2024, 2025)
 
    assert(err is ERR_Okay, 'Local GetTimeZoneInfo() failed: ' .. mSys.GetErrorMsg(err))
-   assert(info != nil, 'Local GetTimeZoneInfo() did not return an info table.')
+   assert(info != nil, 'Local GetTimeZoneInfo() did not return an info structure.')
+   assert(type(info) is 'struct', 'TimeZoneInfo must retain its native identity')
+   snapshot = info.toTable()
+   assert(type(snapshot) is 'table' and snapshot.zoneID is info.zoneID, 'TimeZoneInfo detached snapshot')
+   try
+      info.startYear = 2000
+   except e when ERR_ReadOnly
+   success
+      assert(false, 'Allocated TimeZoneInfo results must be read-only')
+   end
    assert(info.zoneID??, 'Local time zone should report a zone ID.')
    assert(info.nativeID??, 'Local time zone should report a native ID.')
    assert((info.source is 'win32') or (info.source is 'tzif') or (info.source is 'utc'), 'Unexpected local time zone source: ' .. tostring(info.source))
@@ -211,7 +220,7 @@ end
    err, info = time_obj.mtGetTimeZoneInfo('', 2024, 2024)
 
    assert(err is ERR_Okay, 'Empty ZoneID should request local time zone info: ' .. mSys.GetErrorMsg(err))
-   assert(info != nil, 'Empty ZoneID local query did not return an info table.')
+   assert(info != nil, 'Empty ZoneID local query did not return an info structure.')
    assert(info.isLocal is 1, 'Empty ZoneID query should set IsLocal.')
    assert(info.startYear is 2024, 'Empty ZoneID query did not preserve StartYear.')
    assert(info.endYear is 2024, 'Empty ZoneID query did not preserve EndYear.')

@@ -2,6 +2,12 @@
 
 module display as mGfx
 
+-- ReadRGBPixel reuses its result storage on the next call, so keep a copy of each sample.
+function readPixel(Bitmap, X, Y)
+   local pixel = mGfx.ReadRGBPixel(Bitmap, X, Y)
+   return { red=pixel.red, green=pixel.green, blue=pixel.blue, alpha=pixel.alpha }
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- Validation of the signed distance field (distal) gradient render path (VGT::DISTAL).  A distal gradient is signed:
 -- the path outline is pinned to the centre of the colour ramp, the interior shades through one half of the ramp and
@@ -173,7 +179,7 @@ end
    drawScene(scene, bmp)
 
    -- Sample a few pixels just inside the top edge (y just below 20) along the horizontal centre.
-   local edge = mGfx.ReadRGBPixel(bmp, 60, 22)
+   local edge = readPixel(bmp, 60, 22)
    assert((edge.green > edge.red) and (edge.green > edge.blue),
       'Path outline should map to the green ramp midpoint (got ' ..
       edge.red .. ',' .. edge.green .. ',' .. edge.blue .. ')')
@@ -189,7 +195,7 @@ end
    drawScene(scene, bmp)
 
    -- The centre of the rectangle is the deepest interior point and should be clearly blue-dominant.
-   local centre = mGfx.ReadRGBPixel(bmp, 60, 60)
+   local centre = readPixel(bmp, 60, 60)
    assert((centre.blue > centre.green) and (centre.blue > centre.red),
       'Rectangle centre (deepest interior) should reach toward the blue first stop (got ' ..
       centre.red .. ',' .. centre.green .. ',' .. centre.blue .. ')')
@@ -199,7 +205,7 @@ end
    local prev_blue = -1
    local prev_green = 1000
    for y in {24 into 60 by 4} do
-      local c = mGfx.ReadRGBPixel(bmp, 60, y)
+      local c = readPixel(bmp, 60, y)
       assert(c.blue >= prev_blue - 6, 'Blue channel should rise monotonically toward the interior (y=' .. y .. ')')
       assert(c.green <= prev_green + 6, 'Green channel should fall monotonically toward the interior (y=' .. y .. ')')
       prev_blue = c.blue
@@ -227,13 +233,13 @@ end
    drawScene(scene, bmp)
 
    -- A point just outside the ellipse edge must be painted with the green outline colour (green-dominant).
-   local just_outside = mGfx.ReadRGBPixel(bmp, 60, 26)  -- just above the top of the ellipse (edge ~30)
+   local just_outside = readPixel(bmp, 60, 26)  -- just above the top of the ellipse (edge ~30)
    assert((just_outside.green > just_outside.red) and (just_outside.green > just_outside.blue),
       'Exterior glow should hold the green outline colour (got ' ..
       just_outside.red .. ',' .. just_outside.green .. ',' .. just_outside.blue .. ')')
 
    -- The centre must be painted (interior half).
-   local centre = mGfx.ReadRGBPixel(bmp, 60, 60)
+   local centre = readPixel(bmp, 60, 60)
    assert((centre.red + centre.green + centre.blue) > 0, 'Distal fill should draw inside the target path')
 end
 
@@ -250,7 +256,7 @@ end
    local bmp = newWhiteBitmap(160, 160)
    drawScene(scene, bmp)
 
-   local exterior = mGfx.ReadRGBPixel(bmp, 80, 30)
+   local exterior = readPixel(bmp, 80, 30)
    assert((exterior.red < 245) and (exterior.green < 245) and (exterior.blue < 245),
       'Scaled Radius should pad against the vector bounds (got ' ..
       exterior.red .. ',' .. exterior.green .. ',' .. exterior.blue .. ')')
@@ -264,11 +270,11 @@ end
    local bmp = newBitmap(120, 120)
    drawScene(scene, bmp)
 
-   local just_outside = mGfx.ReadRGBPixel(bmp, 60, 26) -- just above the top of the ellipse (edge ~30)
+   local just_outside = readPixel(bmp, 60, 26) -- just above the top of the ellipse (edge ~30)
    assert((just_outside.red is 0) and (just_outside.green is 0) and (just_outside.blue is 0),
       'SpreadMethod.CLIP should leave pixels outside the target path untouched')
 
-   local centre = mGfx.ReadRGBPixel(bmp, 60, 60)
+   local centre = readPixel(bmp, 60, 60)
    assert((centre.red + centre.green + centre.blue) > 0,
       'SpreadMethod.CLIP should still render inside the target path')
 end
@@ -286,13 +292,13 @@ end
    -- shows through the fading green) must rise monotonically.
    local prev_red = -1
    for y in {28 into 14 by -2} do
-      local c = mGfx.ReadRGBPixel(bmp, 60, y)
+      local c = readPixel(bmp, 60, y)
       assert(c.red >= prev_red - 4, 'Exterior glow should fade outward (red rising toward white) at y=' .. y)
       prev_red = c.red
    end
 
    -- The far corner is well past the padding edge and must be left as the untouched white background.
-   local corner = mGfx.ReadRGBPixel(bmp, 4, 4)
+   local corner = readPixel(bmp, 4, 4)
    assert((corner.red > 250) and (corner.green > 250) and (corner.blue > 250),
       'Beyond the padding edge the glow must contribute nothing (got ' ..
       corner.red .. ',' .. corner.green .. ',' .. corner.blue .. ')')
@@ -306,20 +312,20 @@ end
    local bmp = newWhiteBitmap(120, 160)
    drawScene(scene, bmp)
 
-   local near_a = mGfx.ReadRGBPixel(bmp, 60, 55)
-   local near_b = mGfx.ReadRGBPixel(bmp, 60, 41)
+   local near_a = readPixel(bmp, 60, 55)
+   local near_b = readPixel(bmp, 60, 41)
    assert((near_a.red is near_b.red) and (near_a.green is near_b.green) and (near_a.blue is near_b.blue),
       'Exterior pixels in the same evenly spaced resolution band should share one alpha step (got ' ..
       near_a.red .. ',' .. near_a.green .. ',' .. near_a.blue .. ' and ' ..
       near_b.red .. ',' .. near_b.green .. ',' .. near_b.blue .. ')')
 
-   local next_band = mGfx.ReadRGBPixel(bmp, 60, 38)
+   local next_band = readPixel(bmp, 60, 38)
    assert(next_band.red > near_a.red + 20,
       'The next evenly spaced exterior band should step to a visibly lower alpha (near red ' .. near_a.red ..
       ', next red ' .. next_band.red .. ')')
 
-   local far_a = mGfx.ReadRGBPixel(bmp, 60, 35)
-   local far_b = mGfx.ReadRGBPixel(bmp, 60, 21)
+   local far_a = readPixel(bmp, 60, 35)
+   local far_b = readPixel(bmp, 60, 21)
    assert((far_a.red is far_b.red) and (far_a.green is far_b.green) and (far_a.blue is far_b.blue),
       'The outermost resolution band should also keep an even width before the padding edge (got ' ..
       far_a.red .. ',' .. far_a.green .. ',' .. far_a.blue .. ' and ' ..
@@ -346,12 +352,12 @@ end
    check scene.acDraw()
 
    -- Just outside the edge the glow is clearly green-tinted (not yet white).
-   local near = mGfx.ReadRGBPixel(bmp, 240, 250)
+   local near = readPixel(bmp, 240, 250)
    assert(near.green > near.red + 20, 'Glow should be green-tinted just outside a deep-interior shape (got ' ..
       near.red .. ',' .. near.green .. ',' .. near.blue .. ')')
 
    -- At the padding edge the glow must have fully faded back to the white background (no hard cut-off).
-   local at_edge = mGfx.ReadRGBPixel(bmp, 272, 250)
+   local at_edge = readPixel(bmp, 272, 250)
    assert((at_edge.red > 250) and (at_edge.green > 250) and (at_edge.blue > 250),
       'Glow must fade to transparent by the padding edge for a deep-interior shape (got ' ..
       at_edge.red .. ',' .. at_edge.green .. ',' .. at_edge.blue .. ')')
@@ -374,8 +380,8 @@ end
    local bmp = newWhiteBitmap(160, 160)
    drawScene(scene, bmp)
 
-   local left = mGfx.ReadRGBPixel(bmp, 36, 80)
-   local top = mGfx.ReadRGBPixel(bmp, 80, 36)
+   local left = readPixel(bmp, 36, 80)
+   local top = readPixel(bmp, 80, 36)
 
    assert((left.green > left.red) and (left.green > left.blue),
       'Distal glow should remain visible at the left edge of a VectorShape')
@@ -414,8 +420,8 @@ end
 
    -- The rectangle centre is the deepest interior point, so it should stay strongly blue in both renders.  A large
    -- exterior radius must not dilute the interior ramp toward the outline colour.
-   local small_centre = mGfx.ReadRGBPixel(small_bmp, 60, 60)
-   local large_centre = mGfx.ReadRGBPixel(large_bmp, 60, 60)
+   local small_centre = readPixel(small_bmp, 60, 60)
+   local large_centre = readPixel(large_bmp, 60, 60)
    assert(small_centre.blue > 220,
       'Light radius should let the deepest interior reach the blue first stop (got ' .. small_centre.blue .. ')')
    assert(large_centre.blue > 220,
@@ -453,10 +459,10 @@ end
    local bmp = newWhiteBitmap(120, 120)
    drawScene(scene, bmp)
 
-   local edge = mGfx.ReadRGBPixel(bmp, 60, 22)
+   local edge = readPixel(bmp, 60, 22)
    assert(edge.red < 120, 'InnerRadius should keep the outline side of the fill opaque (got red ' .. edge.red .. ')')
 
-   local centre = mGfx.ReadRGBPixel(bmp, 60, 60)
+   local centre = readPixel(bmp, 60, 60)
    assert((centre.red > 245) and (centre.green > 245) and (centre.blue > 245),
       'InnerRadius should fade the deep interior to transparent (got ' ..
       centre.red .. ',' .. centre.green .. ',' .. centre.blue .. ')')
@@ -492,8 +498,8 @@ end
    drawScene(exteriorScene(GFALL_QUADRATIC), quad_bmp)
 
    -- Mid-way through the exterior padding band (edge ~30, padding 20 -> ~y=20 at the top).
-   local linear = mGfx.ReadRGBPixel(linear_bmp, 60, 20)
-   local quad = mGfx.ReadRGBPixel(quad_bmp, 60, 20)
+   local linear = readPixel(linear_bmp, 60, 20)
+   local quad = readPixel(quad_bmp, 60, 20)
    assert(quad.red > linear.red,
       'A quadratic OuterFall should fade faster than linear, showing more background (linear red ' ..
       linear.red .. ', quadratic red ' .. quad.red .. ')')
@@ -518,17 +524,17 @@ end
    drawScene(clearScene(GFALL_CLEAR), clear_bmp)
 
    -- Exterior band just outside the outline (edge ~30).  Normal fall paints it; CLEAR leaves it transparent.
-   local normal_ext = mGfx.ReadRGBPixel(normal_bmp, 60, 24)
+   local normal_ext = readPixel(normal_bmp, 60, 24)
    assert((normal_ext.red + normal_ext.green + normal_ext.blue) > 0,
       'A normal OuterFall should paint the exterior band')
 
-   local clear_ext = mGfx.ReadRGBPixel(clear_bmp, 60, 24)
+   local clear_ext = readPixel(clear_bmp, 60, 24)
    assert((clear_ext.red is 0) and (clear_ext.green is 0) and (clear_ext.blue is 0),
       'OuterFall=CLEAR should leave the exterior fully transparent (got ' ..
       clear_ext.red .. ',' .. clear_ext.green .. ',' .. clear_ext.blue .. ')')
 
    -- The interior must still render with OuterFall=CLEAR.
-   local clear_int = mGfx.ReadRGBPixel(clear_bmp, 60, 38)
+   local clear_int = readPixel(clear_bmp, 60, 38)
    assert((clear_int.red + clear_int.green + clear_int.blue) > 0,
       'OuterFall=CLEAR must leave the interior intact (got ' ..
       clear_int.red .. ',' .. clear_int.green .. ',' .. clear_int.blue .. ')')
@@ -553,17 +559,17 @@ end
    drawScene(clearScene(GFALL_CLEAR), clear_bmp)
 
    -- Interior point just inside the outline (edge ~30).  Normal fall paints it; CLEAR leaves it transparent.
-   local normal_int = mGfx.ReadRGBPixel(normal_bmp, 60, 38)
+   local normal_int = readPixel(normal_bmp, 60, 38)
    assert((normal_int.red + normal_int.green + normal_int.blue) > 0,
       'A normal InnerFall should paint the interior fade')
 
-   local clear_int = mGfx.ReadRGBPixel(clear_bmp, 60, 38)
+   local clear_int = readPixel(clear_bmp, 60, 38)
    assert((clear_int.red is 0) and (clear_int.green is 0) and (clear_int.blue is 0),
       'InnerFall=CLEAR should leave the interior fully transparent (got ' ..
       clear_int.red .. ',' .. clear_int.green .. ',' .. clear_int.blue .. ')')
 
    -- The exterior must still render with InnerFall=CLEAR.
-   local clear_ext = mGfx.ReadRGBPixel(clear_bmp, 60, 24)
+   local clear_ext = readPixel(clear_bmp, 60, 24)
    assert((clear_ext.red + clear_ext.green + clear_ext.blue) > 0,
       'InnerFall=CLEAR must leave the exterior intact (got ' ..
       clear_ext.red .. ',' .. clear_ext.green .. ',' .. clear_ext.blue .. ')')
@@ -586,12 +592,12 @@ end
    drawScene(scene, bmp)
 
    -- Exterior point just outside the ellipse, on the clipped (left) side: should be painted.
-   local left_exterior = mGfx.ReadRGBPixel(bmp, 28, 60)
+   local left_exterior = readPixel(bmp, 28, 60)
    assert((left_exterior.red + left_exterior.green + left_exterior.blue) > 0,
       'Exterior distal fill should appear inside the clip region')
 
    -- The same kind of exterior point on the unclipped (right) side must remain background.
-   local right_exterior = mGfx.ReadRGBPixel(bmp, 92, 60)
+   local right_exterior = readPixel(bmp, 92, 60)
    assert((right_exterior.red is 0) and (right_exterior.green is 0) and (right_exterior.blue is 0),
       'A clip-path must still constrain the exterior distal fill (right side should be clear)')
 end
@@ -609,13 +615,13 @@ end
    drawScene(rep_scene, rep_bmp)
 
    -- Edge ~y=85; sample ~3 cycles out (y=40, ~45px past the edge).  PAD has fully faded to white here.
-   local pad_far = mGfx.ReadRGBPixel(pad_bmp, 100, 40)
+   local pad_far = readPixel(pad_bmp, 100, 40)
    assert((pad_far.red > 250) and (pad_far.green > 250) and (pad_far.blue > 250),
       'PAD should leave white several Radius cycles out (got ' ..
       pad_far.red .. ',' .. pad_far.green .. ',' .. pad_far.blue .. ')')
 
    -- REPEAT must still tile colour out to the same point: green-dominant, not the white background.
-   local rep_far = mGfx.ReadRGBPixel(rep_bmp, 100, 40)
+   local rep_far = readPixel(rep_bmp, 100, 40)
    assert((rep_far.green > rep_far.red) and (rep_far.green > rep_far.blue),
       'REPEAT should tile the exterior fade out past the first cycle (got ' ..
       rep_far.red .. ',' .. rep_far.green .. ',' .. rep_far.blue .. ')')
@@ -638,7 +644,7 @@ end
    local found_white = false
    local restart_red = 999
    for y in {84 into 64 by -1} do
-      local c = mGfx.ReadRGBPixel(bmp, 100, y)
+      local c = readPixel(bmp, 100, y)
       if (not found_white) then
          if c.red > 245 then found_white = true end -- cycle tail faded to (near) white
       elseif c.red < restart_red then restart_red = c.red -- after the boundary: track the most opaque row
@@ -664,8 +670,8 @@ end
 
    -- Just inside the second cycle (y=68, ~17px past the y=85 edge).  REPEAT has restarted opaque; REFLECT is ramping
    -- back up from transparent, so REFLECT shows more white (a higher red channel) than REPEAT at the same point.
-   local rep = mGfx.ReadRGBPixel(rep_bmp, 100, 68)
-   local ref = mGfx.ReadRGBPixel(ref_bmp, 100, 68)
+   local rep = readPixel(rep_bmp, 100, 68)
+   local ref = readPixel(ref_bmp, 100, 68)
    assert(ref.red > rep.red,
       'REFLECT should ramp up from transparent at a cycle boundary where REPEAT restarts opaque (reflect red ' ..
       ref.red .. ', repeat red ' .. rep.red .. ')')
@@ -687,7 +693,7 @@ end
    drawScene(scene, bmp)
 
    -- A far exterior point: with OPAQUE the alpha never tapers, so no white background bleeds through.
-   local far = mGfx.ReadRGBPixel(bmp, 100, 40)
+   local far = readPixel(bmp, 100, 40)
    assert((far.red + far.green + far.blue) > 0, 'OPAQUE OuterFall with REPEAT should still paint a far exterior point')
    assert((far.red < 250) or (far.green < 250) or (far.blue < 250),
       'OPAQUE OuterFall should hold full alpha, not fade to the white background (got ' ..
@@ -710,13 +716,13 @@ end
    drawScene(scene, bmp)
 
    -- Just outside the edge (within one Radius) the OPAQUE fill is painted solidly (green outline colour).
-   local near = mGfx.ReadRGBPixel(bmp, 100, 80) -- ~5px past the y=85 edge, inside the single padding cycle
+   local near = readPixel(bmp, 100, 80) -- ~5px past the y=85 edge, inside the single padding cycle
    assert((near.green > near.red) and (near.green > near.blue),
       'PAD with OPAQUE should paint solidly within the padding distance (got ' ..
       near.red .. ',' .. near.green .. ',' .. near.blue .. ')')
 
    -- Well beyond one Radius past the edge the PAD fill must have stopped, leaving the white background untouched.
-   local far = mGfx.ReadRGBPixel(bmp, 100, 60) -- ~25px past the edge, > one Radius out
+   local far = readPixel(bmp, 100, 60) -- ~25px past the edge, > one Radius out
    assert((far.red > 250) and (far.green > 250) and (far.blue > 250),
       'PAD must cut to transparent at the padding edge even with OPAQUE OuterFall (got ' ..
       far.red .. ',' .. far.green .. ',' .. far.blue .. ')')

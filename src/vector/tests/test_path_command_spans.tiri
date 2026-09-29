@@ -14,6 +14,7 @@ end
 function assertCommand(Path, Index, Type, X, Y)
    err, command = Path.mtGetCommand(Index)
    assert(err is ERR_Okay, f'GetCommand({Index}) failed: {mSys.GetErrorMsg(err)}')
+   assert(type(command) is 'struct', 'GetCommand() must preserve PathCommand identity')
    assert(command.type is Type, f'Command {Index} has the wrong type.')
    assert(command.x ≈ X and command.y ≈ Y, f'Command {Index} has the wrong coordinates.')
 end
@@ -30,6 +31,18 @@ end
    assert(path.totalCommands is 3, 'SetCommandList() should accept a typed PathCommand array.')
    assertCommand(path, 0, PE_Move, 10, 20)
    assertCommand(path, 2, PE_Line, 50, 60)
+
+   err, returned = path.mtGetCommand(1)
+   writable = returned.clone()
+   writable.x = 35
+   check path.mtSetCommand(1, array<struct<PathCommand>> { writable })
+   assertCommand(path, 1, PE_Line, 35, 40)
+   try
+      returned.x = 0
+   except e when ERR_ReadOnly
+   success
+      assert(false, 'A returned PathCommand view must be read-only')
+   end
 
    one_command = array<struct<PathCommand>> {
       struct.new('PathCommand', { type=PE_Move, x=70, y=80 })

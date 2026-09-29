@@ -875,7 +875,7 @@ global function klass(Name:str, Options:table, Spec:str, Private:str, Custom:str
       output(f'#define VER_{Name.upper()} ({string.format("%f", Options.version ?? 1.0)})')
       output()
 
-      if mSys.GetSystemState().StaticBuild is 0 then
+      if mSys.GetSystemState().staticBuild is 0 then
          -- Attempt to load the class into memory.  This introduces a circular reference when the module is not yet
          -- compiled, so the meta information may only be used for phase 2 output (i.e. documentation).
 

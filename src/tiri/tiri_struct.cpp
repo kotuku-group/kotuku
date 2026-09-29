@@ -116,10 +116,10 @@ CPTR trivial_struct_vector_data(CPTR Address)
    return ((const trivial_struct_vector *)Address)->Elements;
 }
 
-inline GCstruct * push_struct_def(lua_State *Lua, APTR Address, struct_record &StructDef, bool Deallocate,
-   OBJECTPTR Lifecycle = nullptr)
+inline GCstruct * push_struct_def(lua_State *Lua, APTR Address, struct_record &StructDef, StructPayloadPolicy Policy,
+   StructAccess Access, OBJECTPTR Lifecycle = nullptr)
 {
-   return lua_pushstruct(Lua, StructDef, Address, Deallocate ? STRUCT_DEALLOCATE : 0, Lifecycle);
+   return lua_pushstruct(Lua, StructDef, Address, Policy, Access, Lifecycle);
 }
 
 // Handles both construction and destruction of std::string usage in a structure.
@@ -616,15 +616,15 @@ static ERR value_to_cpp_vector(lua_State *Lua, int StackIndex, const struct_fiel
 //********************************************************************************************************************
 // Use this for creating a struct on the Lua stack.
 
-GCstruct * push_struct(extTiri *Self, APTR Address, std::string_view StructName, bool Deallocate, bool AllowEmpty,
-   OBJECTPTR Lifecycle)
+GCstruct * push_struct(extTiri *Self, APTR Address, std::string_view StructName, StructPayloadPolicy Policy,
+   StructAccess Access, bool AllowEmpty, OBJECTPTR Lifecycle)
 {
    kt::Log log(__FUNCTION__);
 
-   log.traceBranch("Struct: %s, Address: %p, Deallocate: %d", StructName.data(), Address, Deallocate);
+   log.traceBranch("Struct: %s, Address: %p, Policy: %d", StructName.data(), Address, int(Policy));
 
    if (auto def = find_struct(Self->Lua, StructName)) {
-      return push_struct_def(Self->Lua, Address, *def, Deallocate, Lifecycle);
+      return push_struct_def(Self->Lua, Address, *def, Policy, Access, Lifecycle);
    }
    else if (AllowEmpty) {
       // The AllowEmpty option is useful in situations where a successful API call returns a structure that is strictly
@@ -632,10 +632,9 @@ GCstruct * push_struct(extTiri *Self, APTR Address, std::string_view StructName,
       // an empty structure declaration.
 
       static struct_record empty("");
-      return push_struct_def(Self->Lua, Address, empty, Deallocate, Lifecycle);
+      return push_struct_def(Self->Lua, Address, empty, Policy, Access, Lifecycle);
    }
    else {
-      if (Deallocate) FreeResource(Address);
       log.warning("Unrecognised struct '%s'", StructName.data());
       return nullptr;
    }
@@ -644,27 +643,50 @@ GCstruct * push_struct(extTiri *Self, APTR Address, std::string_view StructName,
 //********************************************************************************************************************
 // Use this for creating a struct on the Lua stack from a pre-hashed structure name.
 
-GCstruct * push_struct(extTiri *Self, APTR Address, uint32_t StructKey, bool Deallocate, bool AllowEmpty,
-   OBJECTPTR Lifecycle)
+GCstruct * push_struct(extTiri *Self, APTR Address, uint32_t StructKey, StructPayloadPolicy Policy,
+   StructAccess Access, bool AllowEmpty, OBJECTPTR Lifecycle)
 {
    kt::Log log(__FUNCTION__);
 
-   log.traceBranch("Struct: $%.8x, Address: %p, Deallocate: %d", StructKey, Address, Deallocate);
+   log.traceBranch("Struct: $%.8x, Address: %p, Policy: %d", StructKey, Address, int(Policy));
 
    if (auto def = find_struct(Self->Lua, StructKey)) {
-      return push_struct_def(Self->Lua, Address, *def, Deallocate, Lifecycle);
+      return push_struct_def(Self->Lua, Address, *def, Policy, Access, Lifecycle);
    }
    else if (AllowEmpty) {
       // Preserve the name-based overload's fallback for resource structs that Tiri does not know about.
 
       static struct_record empty("");
-      return push_struct_def(Self->Lua, Address, empty, Deallocate, Lifecycle);
+      return push_struct_def(Self->Lua, Address, empty, Policy, Access, Lifecycle);
    }
    else {
-      if (Deallocate) FreeResource(Address);
       log.warning("Unrecognised struct hash $%.8x", StructKey);
       return nullptr;
    }
+}
+
+// Push one scalar native structure result.  FD_ALLOC transfers a registered Kōtuku resource to the wrapper only after
+// the GCstruct is safely on the Tiri stack.  FD_RESOURCE preserves the deliberately writable resource interface;
+// ordinary informational and allocated results are read-only regardless of ownership.
+
+[[nodiscard]] ERR push_native_struct_result(extTiri *Self, const FunctionField &Field, APTR &Address)
+{
+   if (not Field.Name or not valid_struct_name(Field.Name)) return ERR::Search;
+
+   auto name = struct_name_prefix(Field.Name);
+   auto def = (Field.Type & FD_RESOURCE) ? find_registered_resource_struct(Self->Lua, name) :
+      find_struct(Self->Lua, name);
+   if (not def) return ERR::Search;
+   if (not Address) {
+      lua_pushnil(Self->Lua);
+      return ERR::Okay;
+   }
+
+   auto policy = (Field.Type & FD_ALLOC) ? StructPayloadPolicy::AdoptedResource : StructPayloadPolicy::Borrowed;
+   auto access = (Field.Type & FD_RESOURCE) ? StructAccess::Writable : StructAccess::ReadOnly;
+   push_struct_def(Self->Lua, Address, *def, policy, access);
+   if (policy IS StructPayloadPolicy::AdoptedResource) Address = nullptr;
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -1015,6 +1037,31 @@ void remove_struct(std::string_view StructName)
 [[nodiscard]] struct_record * find_struct(lua_State *Lua, std::string_view Name)
 {
    return find_struct(Lua, struct_key(Name));
+}
+
+// Resolve a published definition, or create a named opaque definition for a structure that is present in Core's
+// native structure registry but deliberately omitted from Tiri's field declarations.  This fallback is restricted to
+// FD_RESOURCE bridges by callers: ordinary missing definitions remain interface errors.  The native byte size still
+// gives opaque wrappers exact identity and makes round-trip validation safe without exposing private fields.
+
+[[nodiscard]] struct_record * find_registered_resource_struct(lua_State *Lua, std::string_view Name)
+{
+   if (auto existing = find_struct(Lua, Name)) return existing;
+   if (not glStructSizes or not valid_struct_name(Name)) return nullptr;
+
+   const auto key = struct_key(Name);
+   const std::lock_guard lock(glStructMutex);
+   if (auto existing = glStructs.find(key); existing != glStructs.end()) return &existing->second;
+
+   auto native = glStructSizes->find(key);
+   if ((native IS glStructSizes->end()) or (native->second.Name != Name) or (native->second.Size IS 0)) return nullptr;
+
+   auto [record, inserted] = glStructs.try_emplace(key, Name);
+   if (not inserted) return &record->second;
+   record->second.Size = native->second.Size;
+   record->second.Alignment = std::max<int>(1, native->second.Alignment);
+   record->second.DeclarationSource = "<native resource registry>";
+   return &record->second;
 }
 
 [[nodiscard]] struct_record * find_struct_reference(lua_State *Lua, const struct_record &Owner, uint32_t Key)

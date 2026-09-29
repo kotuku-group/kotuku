@@ -60,11 +60,17 @@ static int object_action_call_args(lua_State *Lua)
    // function entry and the action can return results legitimately even if an error code is returned - e.g.
    // quite common when returning ERR::Terminate).
 
-   lua_pushinteger(Lua, int(error));
-   results += get_results(Lua, glActions[int(action_id)].Args, argbuffer.get());
+   int conversion_status = 0;
+   auto convert = [&]() {
+      lua_pushinteger(Lua, int(error));
+      results += get_results(Lua, glActions[int(action_id)].Args, argbuffer.get());
+   };
+   conversion_status = protected_tiri_call(Lua, convert);
+   cleanup_unclaimed_struct_results(glActions[int(action_id)].Args, argbuffer.get());
 
    if (release) release_object(obj_ref);
    argbuffer.reset();
+   if (conversion_status) lj_err_throw(Lua, conversion_status);
    report_action_error(Lua, obj_ref, glActions[int(action_id)].Name, error);
    return results;
 }
@@ -115,12 +121,17 @@ static int object_method_call_args(lua_State *Lua)
 
    error = dispatch_action(def, method->MethodID, argbuffer.get(), release);
 
-   lua_pushinteger(Lua, int(error));
-
-   results += get_results(Lua, method->Args, (const int8_t *)argbuffer.get());
+   int conversion_status = 0;
+   auto convert = [&]() {
+      lua_pushinteger(Lua, int(error));
+      results += get_results(Lua, method->Args, argbuffer.get());
+   };
+   conversion_status = protected_tiri_call(Lua, convert);
+   cleanup_unclaimed_struct_results(method->Args, argbuffer.get());
 
    if (release) release_object(def);
    argbuffer.reset();
+   if (conversion_status) lj_err_throw(Lua, conversion_status);
    report_action_error(Lua, def, method->Name, error);
    return results;
 }
@@ -813,6 +824,31 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
       }
       else if (Args[i].Type & FD_PTR) {
          j = ALIGN64(j);
+         auto native_struct = lua_isstruct(Lua, n) ? lua_tostruct(Lua, n) : nullptr;
+         if (Args[i].Type & FD_STRUCT) {
+            if (not native_struct and (type != LUA_TNIL) and (type != LUA_TNONE)) {
+               return fail_arg(n, "Matching struct required.");
+            }
+
+            if (native_struct) {
+               auto expected = (Args[i].Name and valid_struct_name(Args[i].Name)) ?
+                  find_struct(Lua, struct_name_prefix(Args[i].Name)) : nullptr;
+
+               if (not expected) return fail(ERR::Search);
+
+               if (lj_struct_stale(native_struct)) {
+                  return fail_arg(n, "Struct's providing object has been destroyed.");
+               }
+
+               if ((native_struct->def != expected) or
+                     (native_struct->structsize != uint32_t(expected->Size))) {
+                  return fail_arg(n, "Struct definition does not match the native parameter.");
+               }
+
+               if (not native_struct->data) return fail_arg(n, "Struct storage is unavailable.");
+            }
+         }
+
          if (Args[i].Type & FD_OBJECT) {
             if (auto obj_ref = lj_lib_optobject(Lua, n, false)) { // Performs thunk resolution
                OBJECTPTR ptr_obj;
@@ -836,10 +872,12 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          }
          else if (type IS LUA_TSTRING) {
             //log.trace("Arg: %s, Value: Pointer (Source is String)", Args[i].Name);
+
             auto string = strV(Lua->base + n - 1);
             if ((Args[i].Type & FD_MUTABLE) and (not lj_str_ismutable(string))) {
                return fail_arg(n, "Mutable buffer required.");
             }
+
             ((CSTRING *)(ArgBuffer + j))[0] = (Args[i].Type & FD_MUTABLE) ? strdatawr(string) : strdata(string);
          }
          else if (type IS LUA_TNUMBER) {
@@ -852,7 +890,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          else {
             //log.trace("Arg: %s, Value: Pointer, SrcType: %s", Args[i].Name, lua_typename(Lua, type));
 
-            if (auto native_struct = lua_isstruct(Lua, n) ? lua_tostruct(Lua, n) : nullptr) {
+            if (native_struct) {
                // Guard specific to lifecycle-bound struct views; structs without an object dependency skip it.
                if (lj_struct_stale(native_struct)) return fail_arg(n, "Struct's providing object has been destroyed.");
                ((APTR *)(ArgBuffer + j))[0] = native_struct->data;
@@ -926,7 +964,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
 //********************************************************************************************************************
 // Note: Please refer to process_results() in tiri_module.c for the 'official' take on result handling.
 
-static int get_results(lua_State *Lua, const FunctionField *Args, const int8_t *ArgBuf)
+static int get_results(lua_State *Lua, const FunctionField *Args, int8_t *ArgBuf)
 {
    kt::Log log(__FUNCTION__);
    int i;
@@ -1009,19 +1047,11 @@ static int get_results(lua_State *Lua, const FunctionField *Args, const int8_t *
          if (type & FD_RESULT) {
             APTR ptr_struct = ((APTR *)(ArgBuf + of))[0];
             RMSG("Result-Arg: %s, Struct: %p", Args[i].Name, ptr_struct);
-            if (ptr_struct) {
-               if (type & FD_RESOURCE) {
-                  push_struct(Lua->script, ptr_struct, Args[i].Name, (type & FD_ALLOC) ? true : false, false);
-               }
-               else {
-                  if (named_struct_to_table(Lua, Args[i].Name, ptr_struct) != ERR::Okay) {
-                     luaL_error(Lua, ERR::CreateResource, "Failed to create struct for %s, %p", Args[i].Name, ptr_struct);
-                     return total;
-                  }
-                  if (type & FD_ALLOC) FreeResource(ptr_struct);
-               }
+            if (auto error = push_native_struct_result(Lua->script, Args[i], ptr_struct); error != ERR::Okay) {
+               luaL_error(Lua, error, "Callable references unknown result structure '%s'.",
+                  Args[i].Name ? Args[i].Name : "");
             }
-            else lua_pushnil(Lua);
+            ((APTR *)(ArgBuf + of))[0] = ptr_struct;
 
             total++;
          }
@@ -1093,4 +1123,42 @@ static int get_results(lua_State *Lua, const FunctionField *Args, const int8_t *
 
    RMSG("get_results: Wrote %d Args.", total);
    return total;
+}
+
+// Release allocated scalar structure outputs that were not transferred to a GCstruct.  Result conversion runs under
+// a protected Tiri call, so this scan also executes after allocation errors that bypass ordinary C++ unwinding.
+
+static void cleanup_unclaimed_struct_results(const FunctionField *Args, int8_t *ArgBuf)
+{
+   int offset = 0;
+   for (int i = 0; Args[i].Name; ++i) {
+      const int type = Args[i].Type;
+      if ((type & FDF_SPAN) IS FDF_SPAN) {
+         size_t aligned_offset, end_offset;
+         if (span_storage_bounds(size_t(offset), size_t(std::numeric_limits<int>::max()), &aligned_offset,
+             &end_offset) != ERR::Okay) return;
+         offset = int(end_offset);
+      }
+      else if ((type & FDF_VECTOR) IS FDF_VECTOR) offset = ALIGN64(offset) + sizeof(APTR);
+      else if (type & FD_STR) {
+         offset = ALIGN64(offset);
+         if ((type & FD_CPP) and not (type & FD_MUTABLE)) offset += sizeof(std::string_view);
+         else offset += sizeof(STRING);
+      }
+      else if (type & FD_STRUCT) {
+         offset = ALIGN64(offset);
+         if ((type & FD_RESULT) and (type & FD_ALLOC)) {
+            auto &address = ((APTR *)(ArgBuf + offset))[0];
+            if (address) { FreeResource(address); address = nullptr; }
+         }
+         offset += sizeof(APTR);
+      }
+      else if (type & FD_FUNCTION) offset = ALIGN64(offset) + sizeof(FUNCTION);
+      else if (type & FD_PTR) offset = ALIGN64(offset) + sizeof(APTR);
+      else if (type & FD_INT) offset += sizeof(int);
+      else if (type & FD_DOUBLE) offset = ALIGN64(offset) + sizeof(double);
+      else if (type & FD_INT64) offset = ALIGN64(offset) + sizeof(int64_t);
+      else if (type & FD_TAGS) return;
+      else return;
+   }
 }

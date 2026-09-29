@@ -1,6 +1,9 @@
    include 'display', 'vector'
+   module display as mGfx
 
-module display as mGfx
+function readPixel(Bitmap, X, Y)
+   return struct.toTable(mGfx.ReadRGBPixel(Bitmap, X, Y))
+end
 
 function newBitmap(Width: num, Height: num)
    local bmp = obj.new('bitmap', { width=Width, height=Height, bitsPerPixel=32, bkgd='0,0,0,255' })
@@ -80,8 +83,8 @@ end
    local bmp = newBitmap(100, 100)
    drawScene(scene, bmp)
 
-   local left = mGfx.ReadRGBPixel(bmp, 10, 50)
-   local right = mGfx.ReadRGBPixel(bmp, 90, 50)
+   local left = readPixel(bmp, 10, 50)
+   local right = readPixel(bmp, 90, 50)
 
    assert(left.red > 200 and left.blue < 50,
       f"Left region should be predominantly red (r={left.red} b={left.blue})")
@@ -98,13 +101,13 @@ end
    local bmp = newBitmap(100, 100)
    drawScene(scene, bmp)
 
-   local above = mGfx.ReadRGBPixel(bmp, 50, 5)
+   local above = readPixel(bmp, 50, 5)
    assert(above.red > 40 and above.blue > 40,
       f"Open space above the curve should blend both sides (r={above.red} b={above.blue})")
 
    -- Directly adjacent to the curve the separation must remain sharp.
-   local near_left = mGfx.ReadRGBPixel(bmp, 40, 50)
-   local near_right = mGfx.ReadRGBPixel(bmp, 60, 50)
+   local near_left = readPixel(bmp, 40, 50)
+   local near_right = readPixel(bmp, 60, 50)
    assert(near_left.red > near_left.blue + 100,
       f"Left of the curve should stay red-dominant (r={near_left.red} b={near_left.blue})")
    assert(near_right.blue > near_right.red + 100,
@@ -120,8 +123,8 @@ end
    local bmp = newBitmap(100, 100)
    drawScene(scene, bmp)
 
-   local top = mGfx.ReadRGBPixel(bmp, 40, 8)
-   local bottom = mGfx.ReadRGBPixel(bmp, 40, 92)
+   local top = readPixel(bmp, 40, 8)
+   local bottom = readPixel(bmp, 40, 92)
 
    assert(top.red > top.blue + 80,
       f"Left side near the curve start should be red-dominant (r={top.red} b={top.blue})")
@@ -154,8 +157,8 @@ end
    drawScene(bb_scene, bb_bmp)
 
    for _, point in ipairs({ { 10, 50 }, { 90, 50 }, { 30, 20 }, { 70, 80 } }) do
-      local a = mGfx.ReadRGBPixel(user_bmp, point[0], point[1])
-      local b = mGfx.ReadRGBPixel(bb_bmp, point[0], point[1])
+      local a = readPixel(user_bmp, point[0], point[1])
+      local b = readPixel(bb_bmp, point[0], point[1])
       local dr = math.abs(a.red - b.red)
       local db = math.abs(a.blue - b.blue)
       assert(dr <= 12 and db <= 12,
@@ -194,7 +197,7 @@ end
    local bmp = newBitmap(100, 100)
    drawScene(scene, bmp)
 
-   local sample = mGfx.ReadRGBPixel(bmp, 50, 50)
+   local sample = readPixel(bmp, 50, 50)
    assert(sample.red is 0 and sample.green is 0 and sample.blue is 0,
       f"An empty curve set should render nothing (r={sample.red} g={sample.green} b={sample.blue})")
 end
@@ -208,8 +211,8 @@ end
    local bmp = newBitmap(100, 100)
    drawScene(scene, bmp)
 
-   local left = mGfx.ReadRGBPixel(bmp, 10, 50)
-   local right = mGfx.ReadRGBPixel(bmp, 90, 50)
+   local left = readPixel(bmp, 10, 50)
+   local right = readPixel(bmp, 90, 50)
    assert(left.red > 200, f"Valid curve should still render with a degenerate sibling (r={left.red})")
    assert(right.blue > 200, f"Valid curve should still render with a degenerate sibling (b={right.blue})")
 end
@@ -219,7 +222,7 @@ end
    local bmp = newBitmap(100, 100)
    drawScene(scene, bmp)
 
-   local sample = mGfx.ReadRGBPixel(bmp, 90, 50)
+   local sample = readPixel(bmp, 90, 50)
    assert(sample.red is 0 and sample.green is 0 and sample.blue is 0,
       f"An off-domain curve should not constrain the field (r={sample.red} g={sample.green} b={sample.blue})")
 end
@@ -228,11 +231,11 @@ end
    local scene, gradient, rect = newDiffusionScene(verticalCurves())
    local bmp = newBitmap(100, 100)
    drawScene(scene, bmp)
-   local full = mGfx.ReadRGBPixel(bmp, 10, 50).red
+   local full = readPixel(bmp, 10, 50).red
 
    rect.fillOpacity = 0.5
    drawScene(scene, bmp)
-   local half = mGfx.ReadRGBPixel(bmp, 10, 50).red
+   local half = readPixel(bmp, 10, 50).red
 
    -- The renderer composites in linear-light, so 50% alpha over black yields ~181 for a 249 source rather
    -- than a naive sRGB halving; require a meaningful darkening instead of an exact ratio.
@@ -253,8 +256,8 @@ end
    drawScene(srgb_scene, srgb_bmp)
    drawScene(linear_scene, linear_bmp)
 
-   local srgb_mix = mGfx.ReadRGBPixel(srgb_bmp, 50, 5)
-   local linear_mix = mGfx.ReadRGBPixel(linear_bmp, 50, 5)
+   local srgb_mix = readPixel(srgb_bmp, 50, 5)
+   local linear_mix = readPixel(linear_bmp, 50, 5)
 
    local srgb_sum = srgb_mix.red + srgb_mix.blue
    local linear_sum = linear_mix.red + linear_mix.blue

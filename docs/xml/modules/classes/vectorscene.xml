@@ -36,11 +36,12 @@
       </input>
       <description>
 <p>The Draw action will render the scene to the target <fl>Bitmap</fl> immediately.  If <fl>Bitmap</fl> is NULL, an error will be returned.</p>
-<p>In addition, the <fl>RenderTime</fl> field will be updated if the <code>RENDER_TIME</code> flag is defined.</p>
+<p>The <fl>RenderTime</fl> field will be updated if the <code>RENDER_TIME</code> flag is defined.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="FieldNotSet">The Bitmap field is NULL.</error>
+        <error code="Recursion">The scene is already drawing or dispatching callbacks.</error>
       </result>
     </action>
 

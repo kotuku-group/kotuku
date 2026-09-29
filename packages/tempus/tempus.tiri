@@ -666,7 +666,7 @@ function convert_time_zone_transition(Transition:table!):table
    }
 end
 
-function convert_time_zone_info(Info:table!):table
+function convert_time_zone_info(Info:struct<TimeZoneInfo>!):table
    local transitions = array<table> {}
    local source_transitions:array<table> = Info.transitions
    if source_transitions is nil then source_transitions = array<table> {} end

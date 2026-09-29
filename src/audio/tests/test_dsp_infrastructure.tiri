@@ -6,8 +6,10 @@
 function read_meters(Effect:obj):<any, any, num, num, num>
    err, layout = Effect.mtGetMeterLayout()
    assert(err is ERR_Okay, 'GetMeterLayout() must succeed for an initialised effect')
+   assert(type(layout) is 'struct', 'MeterLayout must retain its native identity')
    meters, generation = layout.meters, layout.id
    err, reading = Effect.mtReadMeters()
+   assert(type(reading) is 'struct', 'MeterReading must retain its native identity')
    assert(err is ERR_Okay and #reading.values is #meters)
    assert(reading.id is generation, 'A reading must match the generation of the current layout')
    return meters, reading.values, reading.sequence, reading.flags, generation
