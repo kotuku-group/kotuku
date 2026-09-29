@@ -21,8 +21,10 @@ exchange those datatypes with native Windows applications.  If `CPF::HISTORY_BUF
 monitors host changes and caches copied data in the local `clipboard:` volume.  This enables limited history at the
 cost of additional monitoring and storage overhead.
 
-On Linux and other non-Windows builds, clipboard storage is local to Kōtuku applications unless platform-specific host
-integration is supplied by the display driver.
+On Wayland, plain UTF-8 text and local file references are exchanged with other desktop applications through the
+compositor's data device.  Incoming transfers complete asynchronously; GetFiles() may return `ERR::NoData` until a new
+selection has finished transferring.  Other non-Windows builds keep clipboard data local unless their display driver
+provides host integration.
 
 When history buffering is active, a fixed number of clip groups is retained and the oldest group is removed when the
 limit is exceeded.  Cached clipboard files are kept under `clipboard:` and stale generated files are cleaned up during
@@ -33,6 +35,7 @@ display initialisation.
 
 #include "defs.h"
 #include <kotuku/modules/time.h>
+#include <fstream>
 
 #ifdef _WIN32
 using namespace display;
@@ -55,6 +58,10 @@ std::recursive_mutex glClipboardLock;
 static int glCounter = 1;
 static int glHistoryLimit = 1;
 static std::string glProcessID;
+static std::atomic_bool glHostSelectionGone = false;
+static CLIPTYPE glDropType = CLIPTYPE::NIL;
+static std::vector<std::string> glDropPaths;
+static std::string glDropText;
 #ifdef _WIN32
 static int glLastClipID = -1;
 #endif
@@ -142,11 +149,7 @@ void clean_clipboard(void)
 ClipRecord::~ClipRecord() {
    kt::Log log(__FUNCTION__);
 
-   if (Datatype != CLIPTYPE::FILE) {
-      log.branch("Deleting clip files for %s datatype.", get_datatype(Datatype).c_str());
-      for (auto &item : Items) DeleteFile(item.Path, nullptr);
-   }
-   else log.branch("Datatype: File");
+   for (auto &item : Items) if (item.Owned) DeleteFile(item.Path, nullptr);
 }
 
 //********************************************************************************************************************
@@ -187,6 +190,13 @@ static ERR add_file_to_host(objClipboard *Self, const std::vector<ClipItem> &Ite
    if (error != ERR::Okay) log.warning(error);
    return error;
 #else
+   if (glDriver and (glDriver->capabilities() & DCAP::CLIPBOARD) != DCAP::NIL) {
+      std::vector<std::string> paths;
+      for (auto &item : Items) paths.push_back(item.Path);
+      auto error = glDriver->clipboardAddFiles(CLIPTYPE::FILE, paths, Cut);
+      if (error IS ERR::Okay) glHostSelectionGone = false;
+      return error;
+   }
    return ERR::NoSupport;
 #endif
 }
@@ -209,6 +219,11 @@ static ERR add_text_to_host(objClipboard *Self, std::string_view String)
    if (error != ERR::Okay) log.warning(error);
    return error;
 #else
+   if (glDriver and (glDriver->capabilities() & DCAP::CLIPBOARD) != DCAP::NIL) {
+      auto error = glDriver->clipboardAddText(std::string(String).c_str());
+      if (error IS ERR::Okay) glHostSelectionGone = false;
+      return error;
+   }
    return ERR::NoSupport;
 #endif
 }
@@ -260,8 +275,44 @@ static ERR CLIPBOARD_AddFile(objClipboard *Self, struct clip::AddFile *Args)
    log.branch("Path: %s", path.c_str());
 
    std::vector<ClipItem> items = { path };
-   if (!add_file_to_host(Self, items, ((Args->Flags & CEF::DELETE) != CEF::NIL) ? true : false)) {
-      if (glHistoryLimit <= 1) return ERR::Okay;
+   if (glDriver and (glDriver->displayType() IS DT::WAYLAND) and
+         ((Self->Flags & CPF::DRAG_DROP) IS CPF::NIL)) {
+      if (auto error = add_clip(Args->Datatype, items, Args->Flags & (CEF::DELETE|CEF::EXTEND));
+            error != ERR::Okay) return error;
+      if (Args->Datatype IS CLIPTYPE::FILE) {
+         std::vector<ClipItem> current;
+         {
+            const std::lock_guard<std::recursive_mutex> lock(glClipboardLock);
+            if (not glClips.empty() and (glClips.front().Datatype IS CLIPTYPE::FILE)) current = glClips.front().Items;
+         }
+         add_file_to_host(Self, current, ((Args->Flags & CEF::DELETE) != CEF::NIL));
+      }
+      else if (Args->Datatype IS CLIPTYPE::TEXT) {
+         std::string resolved;
+         if (ResolvePath(path, RSF::NIL, &resolved) IS ERR::Okay) {
+            std::ifstream stream(resolved, std::ios::binary);
+            if (stream) {
+               std::string content((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+               add_text_to_host(Self, content);
+            }
+         }
+      }
+      return ERR::Okay;
+   }
+   if (Args->Datatype IS CLIPTYPE::TEXT and glDriver and
+         (glDriver->capabilities() & DCAP::CLIPBOARD) != DCAP::NIL) {
+      std::string resolved;
+      if (ResolvePath(path, RSF::NIL, &resolved) IS ERR::Okay) {
+         std::ifstream stream(resolved, std::ios::binary);
+         if (stream) {
+            std::string content((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+            glDriver->clipboardAddText(content.c_str());
+            glHostSelectionGone = false;
+         }
+      }
+   }
+   else if (!add_file_to_host(Self, items, ((Args->Flags & CEF::DELETE) != CEF::NIL) ? true : false)) {
+      if (glHistoryLimit <= 1 and glDriver and (glDriver->displayType() != DT::WAYLAND)) return ERR::Okay;
    }
 
    return add_clip(Args->Datatype, items, Args->Flags & (CEF::DELETE|CEF::EXTEND));
@@ -329,11 +380,13 @@ static ERR CLIPBOARD_AddObjects(objClipboard *Self, struct clip::AddObjects *Arg
 
             char idx[5];
             snprintf(idx, sizeof(idx), ".%.3d", i);
-            auto path = std::string("clipboard:") + glProcessID + "_" + get_datatype(datatype) + std::to_string(counter) + idx;
+            auto path = std::string("clipboard:") + glProcessID + "_" + get_datatype(datatype) +
+               std::to_string(counter) + idx;
 
             auto file = objFile::create { fl::Path(path), fl::Flags(FL::WRITE|FL::NEW) };
             if (file.ok()) {
                if (auto error = acSaveToObject(*object, *file); error != ERR::Okay) return log.warning(error);
+               items.emplace_back(path, true);
             }
             else return ERR::CreateFile;
          }
@@ -342,7 +395,7 @@ static ERR CLIPBOARD_AddObjects(objClipboard *Self, struct clip::AddObjects *Arg
    }
 
    if (!add_file_to_host(Self, items, ((Args->Flags & CEF::DELETE) != CEF::NIL) ? true : false)) {
-      if (glHistoryLimit <= 1) return ERR::Okay;
+      if (glHistoryLimit <= 1 and glDriver and (glDriver->displayType() != DT::WAYLAND)) return ERR::Okay;
    }
 
    return add_clip(datatype, items, Args->Flags & CEF::EXTEND);
@@ -379,9 +432,7 @@ static ERR CLIPBOARD_AddText(objClipboard *Self, struct clip::AddText *Args)
    if (not Args) return log.warning(ERR::NullArgs);
    if (Args->String.empty()) return ERR::Okay;
 
-   if (!add_text_to_host(Self, Args->String)) {
-      if (glHistoryLimit <= 1) return ERR::Okay;
-   }
+   add_text_to_host(Self, Args->String);
 
    return add_clip(Args->String);
 }
@@ -398,6 +449,7 @@ Clear deletes the generated clipboard cache and removes all clip records tracked
 
 static ERR CLIPBOARD_Clear(objClipboard *Self)
 {
+   if (glDriver and (glDriver->capabilities() & DCAP::CLIPBOARD) != DCAP::NIL) glDriver->clipboardClear();
    std::string path;
    if (!ResolvePath("clipboard:", RSF::NO_FILE_CHECK, &path)) {
       DeleteFile(path, nullptr);
@@ -449,9 +501,11 @@ static ERR CLIPBOARD_DataFeed(objClipboard *Self, struct acDataFeed *Args)
          return log.warning(error);
       }
 
-      std::vector<ClipItem> items = { std::string("clipboard:") + glProcessID + "_text" + std::to_string(glCounter++) + std::string(".000") };
+      std::vector<ClipItem> items = { ClipItem(std::string("clipboard:") + glProcessID + "_text" +
+         std::to_string(glCounter++) + std::string(".000"), true) };
       if (auto error = add_clip(CLIPTYPE::TEXT, items); !error) {
-         auto file = objFile::create { fl::Path(items[0].Path), fl::Flags(FL::NEW|FL::WRITE), fl::Permissions(PERMIT::READ|PERMIT::WRITE) };
+         auto file = objFile::create { fl::Path(items[0].Path), fl::Flags(FL::NEW|FL::WRITE),
+            fl::Permissions(PERMIT::READ|PERMIT::WRITE) };
          if (file.ok()) {
             if (file->write(Args->Buffer) != ERR::Okay) {
                return log.warning(ERR::Write);
@@ -527,6 +581,8 @@ Without history buffering, only the most recent clip group is available.  With h
 On success, `Datatype` reports the datatype of the returned clip and `Files` receives the matching file paths.  How the
 caller reads each file depends on `Datatype`; ~Core.IdentifyFile() can also be used to find a class that supports the
 data.  `Files` must refer to an empty caller-owned array and remains owned by the caller after the method returns.
+On Wayland, an incoming selection is copied asynchronously into the local file cache.  This method returns
+`ERR::NoData` while that transfer is pending when history buffering is disabled.
 
 If `CEF::DELETE` is returned in `Flags`, the caller must delete the source files after successfully copying the data in
 order to complete a cut operation.  When cutting and pasting files within the same file system, ~Core.MoveFile() is
@@ -566,6 +622,8 @@ static ERR CLIPBOARD_GetFiles(objClipboard *Self, struct clip::GetFiles *Args)
 #endif
    }
 
+   if (glHostSelectionGone and (Self->Flags & CPF::HISTORY_BUFFER) IS CPF::NIL) return ERR::NoData;
+
    const std::lock_guard<std::recursive_mutex> lock(glClipboardLock);
 
    if (glClips.empty()) return ERR::NoData;
@@ -575,9 +633,11 @@ static ERR CLIPBOARD_GetFiles(objClipboard *Self, struct clip::GetFiles *Args)
    // Find the first clipboard entry to match what has been requested
 
    if ((Self->Flags & CPF::HISTORY_BUFFER) != CPF::NIL) {
-      if (Args->Filter IS CLIPTYPE::NIL) { // Retrieve the most recent clip item, or the one indicated in the Index parameter.
+      if (Args->Filter IS CLIPTYPE::NIL) { // Return the newest clip or the item at Index.
          if ((Args->Index < 0) or (Args->Index >= int(glClips.size()))) return log.warning(ERR::OutOfRange);
-         std::advance(clip, Args->Index);
+         auto selected = glClips.begin();
+         std::advance(selected, Args->Index);
+         clip = &*selected;
       }
       else {
          bool found = false;
@@ -659,6 +719,8 @@ static ERR CLIPBOARD_Remove(objClipboard *Self, struct clip::Remove *Args)
             #ifdef _WIN32
             winClearClipboard();
             #endif
+            if (glDriver and (glDriver->capabilities() & DCAP::CLIPBOARD) != DCAP::NIL)
+               glDriver->clipboardClear();
          }
          it = glClips.erase(it);
       }
@@ -734,13 +796,8 @@ static ERR add_clip(CLIPTYPE Datatype, const std::vector<ClipItem> &Items, CEF F
          if (it->Datatype IS Datatype) {
             log.msg("Extending existing clip record for datatype $%x.", int(Datatype));
 
-            auto clip = *it;
-            clip.Items.insert(clip.Items.end(), Items.begin(), Items.end());
-
-            // Move clip to the front of the queue.
-
-            glClips.erase(it);
-            glClips.insert(glClips.begin(), clip);
+            it->Items.insert(it->Items.end(), Items.begin(), Items.end());
+            glClips.splice(glClips.begin(), glClips, it);
             return ERR::Okay;
          }
       }
@@ -753,7 +810,7 @@ static ERR add_clip(CLIPTYPE Datatype, const std::vector<ClipItem> &Items, CEF F
       else it++;
    }
 
-   if (int(glClips.size()) > glHistoryLimit) glClips.pop_back(); // Remove oldest clip if history buffer is full.
+   if (int(glClips.size()) >= glHistoryLimit) glClips.pop_back(); // Remove oldest clip if history buffer is full.
 
    glClips.emplace_front(Datatype, Flags & CEF::DELETE, Items);
    return ERR::Okay;
@@ -766,9 +823,11 @@ static ERR add_clip(std::string_view String)
    kt::Log log(__FUNCTION__);
    log.branch();
 
-   std::vector<ClipItem> items = { std::string("clipboard:") + glProcessID + "_text" + std::to_string(glCounter++) + ".000" };
+   std::vector<ClipItem> items = { ClipItem(std::string("clipboard:") + glProcessID + "_text" +
+      std::to_string(glCounter++) + ".000", true) };
    if (auto error = add_clip(CLIPTYPE::TEXT, items); !error) {
-      kt::Create<objFile> file = { fl::Path(items[0].Path), fl::Flags(FL::WRITE|FL::NEW), fl::Permissions(PERMIT::READ|PERMIT::WRITE) };
+      kt::Create<objFile> file = { fl::Path(items[0].Path), fl::Flags(FL::WRITE|FL::NEW),
+         fl::Permissions(PERMIT::READ|PERMIT::WRITE) };
       if (file.ok()) {
          if (auto error = file->write(std::span<const int8_t>((const int8_t *)String.data(), String.size()));
              error != ERR::Okay) return log.warning(error);
@@ -777,6 +836,110 @@ static ERR add_clip(std::string_view String)
       else return log.warning(ERR::CreateFile);
    }
    else return log.warning(error);
+}
+
+static int hex_digit(char Value)
+{
+   if ((Value >= '0') and (Value <= '9')) return Value - '0';
+   if ((Value >= 'a') and (Value <= 'f')) return Value - 'a' + 10;
+   if ((Value >= 'A') and (Value <= 'F')) return Value - 'A' + 10;
+   return -1;
+}
+
+void lose_host_clipboard()
+{
+   glHostSelectionGone = true;
+}
+
+void receive_host_clipboard(CSTRING Mime, std::string_view Data, bool Dropped, OBJECTID SurfaceID)
+{
+   if (not Mime) return;
+   const std::lock_guard<std::recursive_mutex> lock(glClipboardLock);
+   if (Dropped) { glDropType = CLIPTYPE::NIL; glDropPaths.clear(); glDropText.clear(); }
+   if (std::string_view(Mime) IS "text/uri-list") {
+      std::vector<ClipItem> items;
+      size_t start = 0;
+      while (start < Data.size()) {
+         auto end = Data.find_first_of("\r\n", start);
+         if (end IS std::string_view::npos) end = Data.size();
+         auto line = Data.substr(start, end - start);
+         start = Data.find_first_not_of("\r\n", end);
+         if (start IS std::string_view::npos) start = Data.size();
+         if (not line.starts_with("file://")) continue;
+         line.remove_prefix(7);
+         if (line.starts_with("localhost")) line.remove_prefix(9);
+         if (line.empty() or (line[0] != '/')) continue;
+         std::string path;
+         for (size_t i=0; i < line.size(); i++) {
+            if ((line[i] IS '%') and (i + 2 < line.size())) {
+               auto hi = hex_digit(line[i + 1]);
+               auto lo = hex_digit(line[i + 2]);
+               if ((hi >= 0) and (lo >= 0)) {
+                  auto ch = char((hi << 4) | lo);
+                  if (ch IS 0) { path.clear(); break; }
+                  path.push_back(ch);
+                  i += 2;
+                  continue;
+               }
+            }
+            path.push_back(line[i]);
+         }
+         if (not path.empty()) items.emplace_back(path);
+      }
+      if (not items.empty()) {
+         if (Dropped) {
+            glDropPaths.clear();
+            for (auto &item : items) glDropPaths.push_back(item.Path);
+            glDropType = CLIPTYPE::FILE;
+         }
+         else if (add_clip(CLIPTYPE::FILE, items) IS ERR::Okay) glHostSelectionGone = false;
+      }
+   }
+   else if ((std::string_view(Mime) IS "text/plain") or
+         (std::string_view(Mime) IS "text/plain;charset=utf-8")) {
+      if (Dropped) { glDropText = Data; glDropType = CLIPTYPE::TEXT; }
+      else if (add_clip(Data) IS ERR::Okay) glHostSelectionGone = false;
+   }
+   if (Dropped and SurfaceID and glDropType != CLIPTYPE::NIL) {
+      const char datatype[] = { char(glDropType IS CLIPTYPE::FILE ? DATA::FILE : DATA::TEXT), 0 };
+      display::DriverDragDropped(SurfaceID, datatype);
+   }
+}
+
+static void append_xml(std::string &Output, std::string_view Text)
+{
+   for (char ch : Text) {
+      if (ch IS '&') Output.append("&amp;");
+      else if (ch IS '<') Output.append("&lt;");
+      else if (ch IS '>') Output.append("&gt;");
+      else if (ch IS '"') Output.append("&quot;");
+      else Output.push_back(ch);
+   }
+}
+
+ERR respond_wayland_drop_request(OBJECTPTR Display, OBJECTPTR Requester, int Item, char Preference)
+{
+   if ((not Display) or (not Requester)) return ERR::NullArgs;
+   const std::lock_guard<std::recursive_mutex> lock(glClipboardLock);
+   std::string xml = "<receipt totalitems=\"";
+   if ((glDropType IS CLIPTYPE::FILE) and (Preference IS char(DATA::FILE))) {
+      xml.append(std::to_string(glDropPaths.size()));
+      xml.append("\" id=\"").append(std::to_string(Item)).append("\">");
+      for (auto &path : glDropPaths) {
+         xml.append("<file path=\"");
+         append_xml(xml, path);
+         xml.append("\"/>");
+      }
+   }
+   else if ((glDropType IS CLIPTYPE::TEXT) and (Preference IS char(DATA::TEXT))) {
+      xml.append("1\" id=\"").append(std::to_string(Item)).append("\"><text>");
+      append_xml(xml, glDropText);
+      xml.append("</text>");
+   }
+   else return ERR::NoSupport;
+   xml.append("</receipt>");
+   return acDataFeed(Requester, Display, DATA::RECEIPT,
+      std::span<const int8_t>((const int8_t *)xml.data(), xml.size()));
 }
 
 //********************************************************************************************************************

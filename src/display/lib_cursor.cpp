@@ -180,9 +180,10 @@ LockCursor: Anchors the cursor so that it cannot move without explicit movement 
 
 The LockCursor() function will lock the current pointer position and pass UserMovement signals to the surface
 referenced in the `Surface` parameter.  The pointer will not move unless the ~SetCursorPos() function is called.
-The anchor is granted on a time-limited basis.  It is necessary to reissue the anchor every time that a UserMovement
-signal is intercepted.  Failure to reissue the anchor will return the pointer to its normal state, typically within 200
-microseconds.
+On Wayland, this uses the compositor's pointer-constraints and relative-pointer protocols.  The cursor is locked to
+the host surface while relative movement is delivered to the named surface.  Locking does not move the system pointer,
+and the compositor may release the lock at any time.  The call returns `NoSupport` if either protocol is unavailable or
+the pointer has not entered the host surface.
 
 The anchor can be released at any time by calling the ~UnlockCursor() function.
 
@@ -196,7 +197,17 @@ NoSupport: The pointer cannot be locked due to system limitations.
 
 ERR LockCursor(OBJECTID SurfaceID)
 {
-   return ERR::NoSupport;
+   if ((not SurfaceID) or (not glDriver) or (glDriver->displayType() != DT::WAYLAND)) return ERR::NoSupport;
+   HOSTWINDOW window;
+   if (auto error = pointer_window(SurfaceID, window); error != ERR::Okay) return error;
+   if (auto error = glDriver->grabPointer(window); error != ERR::Okay) return error;
+   if (auto pointer = (extPointer *)gfx::AccessPointer()) {
+      pointer->AnchorID = SurfaceID;
+      ReleaseObject(pointer);
+      return ERR::Okay;
+   }
+   glDriver->ungrabPointer();
+   return ERR::AccessObject;
 }
 
 /*********************************************************************************************************************
@@ -492,8 +503,24 @@ mutates-object, blocking
 
 ERR SetCustomCursor(OBJECTID ObjectID, CRF Flags, objBitmap *Bitmap, int HotX, int HotY, OBJECTID OwnerID)
 {
-   // If the driver doesn't support custom cursors then divert to gfx::SetCursor()
-   return gfx::SetCursor(ObjectID, Flags, PTC::DEFAULT, "", OwnerID);
+   if ((not glDriver) or ((glDriver->capabilities() & DCAP::CUSTOM_CURSORS) IS DCAP::NIL))
+      return gfx::SetCursor(ObjectID, Flags, PTC::DEFAULT, "", OwnerID);
+   if (not Bitmap) return ERR::NullArgs;
+   auto pointer = (extPointer *)gfx::AccessPointer();
+   if (not pointer) return ERR::AccessObject;
+   if (pointer->CursorOwnerID and pointer->CursorOwnerID != OwnerID) {
+      ReleaseObject(pointer);
+      return ERR::LockFailed;
+   }
+   HOSTWINDOW window;
+   auto error = pointer_window(ObjectID ? ObjectID : pointer->SurfaceID, window);
+   if (error IS ERR::Okay) error = glDriver->setCustomCursor(window, (extBitmap *)Bitmap, HotX, HotY);
+   if (error IS ERR::Okay) {
+      pointer->CursorID = PTC::CUSTOM;
+      pointer->CursorOwnerID = OwnerID;
+   }
+   ReleaseObject(pointer);
+   return error;
 }
 
 /*********************************************************************************************************************
@@ -502,6 +529,7 @@ ERR SetCustomCursor(OBJECTID ObjectID, CRF Flags, objBitmap *Bitmap, int HotX, i
 SetCursorPos: Changes the position of the pointer cursor.
 
 Changes the position of the pointer cursor using coordinates relative to the entire display.
+Wayland does not permit this operation and returns `NoSupport`.
 
 -INPUT-
 double X: The new horizontal coordinate for the pointer.
@@ -509,6 +537,7 @@ double Y: The new vertical coordinate for the pointer.
 
 -ERRORS-
 Okay:
+NoSupport: The display driver cannot warp the system pointer.
 
 -TAGS-
 mutates-object, blocking, callback-inlines
@@ -517,10 +546,12 @@ mutates-object, blocking, callback-inlines
 
 ERR SetCursorPos(double X, double Y)
 {
+   if ((not glDriver) or ((glDriver->capabilities() & DCAP::POINTER_WARP) IS DCAP::NIL)) return ERR::NoSupport;
    struct acMoveToPoint move = { X, Y, 0, MTF::X|MTF::Y };
    if (auto pointer = gfx::AccessPointer()) {
-      Action(AC::MoveToPoint, pointer, &move);
+      auto result = Action(AC::MoveToPoint, pointer, &move);
       ReleaseObject(pointer);
+      return result;
    }
    else QueueAction(AC::MoveToPoint, glPointerID, &move);
 
@@ -650,7 +681,7 @@ ERR UnlockCursor(OBJECTID SurfaceID)
       if (pointer->AnchorID IS SurfaceID) {
          pointer->AnchorID = 0;
          ReleaseObject(pointer);
-         return ERR::Okay;
+         return glDriver ? glDriver->ungrabPointer() : ERR::NoSupport;
       }
       else {
          ReleaseObject(pointer);

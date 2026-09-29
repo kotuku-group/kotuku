@@ -131,6 +131,15 @@ static ERR DISPLAY_DataFeed(extDisplay *Self, struct acDataFeed *Args)
 
    if (not Args) return log.warning(ERR::NullArgs);
 
+#ifdef __linux__
+   if (glDriver and (glDriver->displayType() IS DT::WAYLAND) and (Args->Datatype IS DATA::REQUEST)) {
+      if ((not Args->Object) or (Args->Buffer.size() < sizeof(struct dcRequest))) return ERR::NullArgs;
+      struct dcRequest request;
+      copymem(Args->Buffer.data(), &request, sizeof(request));
+      return respond_wayland_drop_request(Self, Args->Object, request.Item, request.Preference[0]);
+   }
+#endif
+
 #ifdef _WIN32
    if (Args->Datatype IS DATA::REQUEST) {
       // Supported for handling the windows clipboard
@@ -436,8 +445,15 @@ static ERR DISPLAY_Init(extDisplay *Self)
       if (InitObject(bmp) != ERR::Okay) return log.warning(ERR::Init);
    }
    else if ((glDriver) and (not glHeadless)) {
-      bmp->Flags |= BMF::NO_DATA;
-      bmp->MemType = BMT::VIDEO;
+      if (glDriver->displayType() IS DT::WAYLAND) {
+         bmp->BitsPerPixel = 32;
+         bmp->BytesPerPixel = 4;
+         bmp->MemType = BMT::DATA;
+      }
+      else {
+         bmp->Flags |= BMF::NO_DATA;
+         bmp->MemType = BMT::VIDEO;
+      }
 
       if (InitObject(bmp) != ERR::Okay) return log.warning(ERR::Init);
 
@@ -480,6 +496,9 @@ window.
 
 Calling Minimise() on a display that is already minimised may restore the host window on some platforms.  Treat that
 behaviour as platform dependent.
+
+On Wayland, the compositor decides whether and when to minimise the window.  Showing the window again does not
+guarantee that it will be restored.
 
 -ERRORS-
 Okay
@@ -527,6 +546,8 @@ Move: Moves the display by a relative offset.
 Move adjusts the hosted window or native display position by the supplied delta values.  Hosted drivers interpret the
 movement in window-manager coordinates.
 
+Wayland does not provide absolute top-level coordinates.  Move returns `ERR::NoSupport` for a Wayland window.
+
 -ERRORS-
 Okay
 NullArgs
@@ -544,9 +565,9 @@ static ERR DISPLAY_Move(extDisplay *Self, struct acMove *Args)
    //log.branch("Moving display by %dx%d", (LONG)Args->DeltaX, (LONG)Args->DeltaY);
 
    if (glDriver) {
-   if (glDriver->moveWindow(Self->WindowHandle,
+   if (auto error = glDriver->moveWindow(Self->WindowHandle,
       Self->X + Self->LeftMargin + Args->DeltaX,
-      Self->Y + Self->TopMargin + Args->DeltaY) != ERR::Okay) return ERR::SystemCall;
+      Self->Y + Self->TopMargin + Args->DeltaY); error != ERR::Okay) return error;
 
    return ERR::Okay;
    }
@@ -570,6 +591,8 @@ MoveToBack: Moves the hosted display window behind other windows.
 
 This action lowers the host window where the active platform supports window stacking.
 
+Wayland does not expose top-level stacking control, so this action returns `ERR::NoSupport` there.
+
 -END-
 *********************************************************************************************************************/
 
@@ -588,6 +611,8 @@ static ERR DISPLAY_MoveToBack(extDisplay *Self)
 MoveToFront: Moves the hosted display window in front of other windows.
 
 This action raises the host window where the active platform supports window stacking.
+
+Wayland does not expose top-level stacking control, so this action returns `ERR::NoSupport` there.
 
 -END-
 *********************************************************************************************************************/
@@ -614,6 +639,9 @@ For full-screen displays, MoveToPoint can alter the screen position for the hard
 output.  This is a rare feature that requires hardware support.  `ERR::NoSupport` is returned if this feature is
 unavailable.
 
+Wayland does not expose absolute top-level positions.  This action returns `ERR::NoSupport` there and leaves the
+display coordinates unchanged.
+
 -ERRORS-
 Okay
 NullArgs
@@ -631,10 +659,11 @@ static ERR DISPLAY_MoveToPoint(extDisplay *Self, struct acMoveToPoint *Args)
    log.traceBranch("Moving display to %dx%d", int(Args->X), int(Args->Y));
 
    if (glDriver) {
-   if (glDriver->moveWindow(Self->WindowHandle,
+   if (auto error = glDriver->moveWindow(Self->WindowHandle,
          ((Args->Flags & MTF::X) != MTF::NIL) ? Args->X : int(Self->X) + Self->LeftMargin,
-         ((Args->Flags & MTF::Y) != MTF::NIL) ? Args->Y : int(Self->Y) + Self->TopMargin) != ERR::Okay) {
-      return ERR::SystemCall;
+         ((Args->Flags & MTF::Y) != MTF::NIL) ? Args->Y : int(Self->Y) + Self->TopMargin);
+         error != ERR::Okay) {
+      return error;
    }
 
    if ((Args->Flags & MTF::X) != MTF::NIL) Self->X = int(Args->X) + Self->LeftMargin;
@@ -673,6 +702,10 @@ reallocated after the resize.
 For hosted displays, `Width` and `Height` describe the client area inside the host window, not the full outer window
 including frame decorations.
 
+On Wayland, a normal window changes size when the client commits a buffer of the requested dimensions.  A compositor
+resize is applied when its configure event is acknowledged.  Maximised and full-screen windows cannot be resized by
+this action until restored.
+
 -ERRORS-
 Okay
 NullArgs
@@ -692,14 +725,16 @@ static ERR DISPLAY_Resize(extDisplay *Self, struct acResize *Args)
    if (not Self->initialised()) return log.warning(ERR::NotInitialised);
 
    if (glDriver) {
-      if (glDriver->resizeWindow(Self->WindowHandle, 0x7fffffff, 0x7fffffff,
-            Args->Width, Args->Height) != ERR::Okay) {
-         return ERR::Resize;
-      }
+      if (auto error = glDriver->resizeWindow(Self->WindowHandle, 0x7fffffff, 0x7fffffff,
+            Args->Width, Args->Height); error != ERR::Okay) return error;
 
       if (auto error = Action(AC::Resize, Self->Bitmap, Args); error != ERR::Okay) return error;
       Self->Width = Self->Bitmap->Width;
       Self->Height = Self->Bitmap->Height;
+      if (glDriver->displayType() IS DT::WAYLAND) {
+         release_stale_resize_feedback(Self);
+         resize_feedback(&Self->ResizeFeedback, Self->UID, Self->X, Self->Y, Self->Width, Self->Height);
+      }
    }
 #if   __snap__
 
@@ -784,6 +819,8 @@ SaveSettings: Saves the current display settings as defaults.
 SaveSettings stores supported window and display preferences, such as window position, size, DPMS setting and
 full-screen state, in the user display configuration.
 
+Wayland stores the normal window size and full-screen or maximised preference without saving a top-level position.
+
 -ERRORS-
 Okay
 CreateObject
@@ -799,13 +836,20 @@ static ERR DISPLAY_SaveSettings(extDisplay *Self)
       if (not config.ok()) return log.warning(ERR::CreateObject);
 
       int x, y, width, height;
-      if (glDriver->windowCoords(Self->WindowHandle, x, y, width, height) IS ERR::Okay) {
+      if ((glDriver->displayType() IS DT::WAYLAND) or
+            (glDriver->windowCoords(Self->WindowHandle, x, y, width, height) IS ERR::Okay)) {
+         if (glDriver->displayType() IS DT::WAYLAND) {
+            if (glDriver->normalWindowSize(Self->WindowHandle, width, height) != ERR::Okay) return ERR::NoSupport;
+         }
          config->write("DISPLAY", "WindowWidth", std::to_string(width));
          config->write("DISPLAY", "WindowHeight", std::to_string(height));
-         config->write("DISPLAY", "WindowX", std::to_string(x));
-         config->write("DISPLAY", "WindowY", std::to_string(y));
+         if (glDriver->displayType() != DT::WAYLAND) {
+            config->write("DISPLAY", "WindowX", std::to_string(x));
+            config->write("DISPLAY", "WindowY", std::to_string(y));
+         }
          config->write("DISPLAY", "Maximise", ((Self->Flags & SCR::MAXIMISE) != SCR::NIL) ? "1" : "0");
-         config->write("DISPLAY", "DPMS", dpms_name(Self->PowerMode));
+         if (glDriver->displayType() != DT::WAYLAND)
+            config->write("DISPLAY", "DPMS", dpms_name(Self->PowerMode));
          config->write("DISPLAY", "FullScreen", ((Self->Flags & SCR::BORDERLESS) != SCR::NIL) ? "1" : "0");
          acSaveSettings(*config);
       }
@@ -824,6 +868,9 @@ SizeHints: Sets the width and height restrictions for the host window (hosted en
 If a display is hosted in a desktop window, it may be possible to enforce size restrictions that prevent the window
 from being shrunk or expanded beyond a certain size.  This feature is platform dependent and `ERR::NoSupport`
 will be returned if it is not implemented.
+
+Wayland applies minimum and maximum dimensions.  It cannot enforce an aspect ratio through xdg-shell; if
+`EnforceAspect` is true, the size limits are still applied and `ERR::NoSupport` is returned.
 
 -INPUT-
 int MinWidth: The minimum width of the window.
@@ -864,6 +911,9 @@ SetDisplay() changes the active display mode or hosted display size, depending o
 position, viewport dimensions, bit depth and refresh rate when the active display driver supports those features.  The
 new settings are applied immediately, although the graphics card, monitor or host window manager may introduce a short
 delay.
+
+On Wayland, X and Y must match the current display coordinates.  A size change takes effect when the client commits
+new content.  Compositor-initiated size changes arrive through configure events.
 
 To keep any of the display settings at their current value, set the appropriate parameters to zero to leave them
 unchanged.  Only the parameters that you set will be used.
@@ -907,13 +957,16 @@ static ERR DISPLAY_SetDisplay(extDisplay *Self, gfx::SetDisplay *Args)
 
    log.msg(VLF::BRANCH|VLF::DETAIL, "%dx%d, %dx%d", Args->X, Args->Y, Args->Width, Args->Height);
 
-   if (glDriver->resizeWindow(Self->WindowHandle, Args->X, Args->Y, Args->Width, Args->Height) != ERR::Okay) {
-      return log.warning(ERR::Resize);
-   }
+   const int x = (glDriver->displayType() IS DT::WAYLAND) and (Args->X IS Self->X) ? 0x7fffffff : Args->X;
+   const int y = (glDriver->displayType() IS DT::WAYLAND) and (Args->Y IS Self->Y) ? 0x7fffffff : Args->Y;
+   const int width = (glDriver->displayType() IS DT::WAYLAND) and (not Args->Width) ? Self->Width : Args->Width;
+   const int height = (glDriver->displayType() IS DT::WAYLAND) and (not Args->Height) ? Self->Height : Args->Height;
+   if (auto error = glDriver->resizeWindow(Self->WindowHandle, x, y,
+         width, height); error != ERR::Okay) return log.warning(error);
 
    log.trace("Resizing the video bitmap.");
 
-   acResize(Self->Bitmap, Args->Width, Args->Height, 0);
+   if (auto error = acResize(Self->Bitmap, width, height, 0); error != ERR::Okay) return error;
    Self->Width = Self->Bitmap->Width;
    Self->Height = Self->Bitmap->Height;
    return ERR::Okay;
@@ -1492,7 +1545,7 @@ This string names the manufacturer of the user's display device.
 DisplayType: Identifies the active display backend.
 Lookup: DT
 
-This field reports the display driver type, such as native, X11, Windows GDI or OpenGL ES.
+This field reports the selected display driver type, including native Wayland, X11, Windows GDI and OpenGL ES.
 
 -FIELD-
 Flags: Optional flag settings.
@@ -1501,6 +1554,8 @@ Lookup: SCR
 Display flags configure hosted-window behaviour, buffering, visibility, controller grabbing and driver-reported
 capabilities.  After initialisation, only a limited subset can be changed and support for changing window style is
 platform dependent.
+
+On Wayland, changing `SCR::BORDERLESS` requests full-screen mode.  The compositor determines the resulting size.
 
 *********************************************************************************************************************/
 
@@ -1519,7 +1574,13 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
          glDriver->setWindowControllers(Self->WindowHandle, (Self->Flags & SCR::GRAB_CONTROLLERS) != SCR::NIL);
       }
 
-      if ((((Self->Flags & SCR::BORDERLESS) != SCR::NIL) and ((Value & SCR::BORDERLESS) IS SCR::NIL)) or
+      if ((glDriver) and (glDriver->displayType() IS DT::WAYLAND) and
+            (((Self->Flags & SCR::BORDERLESS) != SCR::NIL) != ((Value & SCR::BORDERLESS) != SCR::NIL))) {
+         if (auto error = glDriver->setFullscreen(Self->WindowHandle,
+               (Value & SCR::BORDERLESS) != SCR::NIL); error != ERR::Okay) return error;
+         Self->Flags = Self->Flags ^ SCR::BORDERLESS;
+      }
+      else if ((((Self->Flags & SCR::BORDERLESS) != SCR::NIL) and ((Value & SCR::BORDERLESS) IS SCR::NIL)) or
           (((Self->Flags & SCR::BORDERLESS) IS SCR::NIL) and ((Value & SCR::BORDERLESS) != SCR::NIL))) {
          if (glDriver) {
             log.msg("Switching window type.");
@@ -1905,6 +1966,9 @@ On hosted displays, prior to initialisation the coordinate will reflect the posi
 created.  After initialisation, the coordinate is altered to reflect the absolute position of the client area of the
 display window.  The #LeftMargin can be used to determine the actual position of the host window.
 
+Wayland does not report global top-level coordinates.  Setting this field after initialisation returns
+`ERR::NoSupport` on Wayland.
+
 To adjust the position of the display, use the #MoveToPoint() action rather than setting this field directly.
 
 *********************************************************************************************************************/
@@ -1928,6 +1992,9 @@ and should normally remain zero unless the output device requires adjustment.
 On hosted displays, prior to initialisation the coordinate will reflect the position of the display window when it is
 created.  After initialisation, the coordinate is altered to reflect the absolute position of the client area of the
 display window.  The #TopMargin can be used to determine the actual position of the host window.
+
+Wayland does not report global top-level coordinates.  Setting this field after initialisation returns
+`ERR::NoSupport` on Wayland.
 
 To adjust the position of the display, use the #MoveToPoint() action rather than setting this field directly.
 -END-

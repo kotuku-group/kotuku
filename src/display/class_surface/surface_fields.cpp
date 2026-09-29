@@ -128,10 +128,16 @@ combining the current value with the flags being added.
 Read-only flags cannot be changed by writing this field.  Initialisation-only flags can be set before the surface is
 initialised, but are preserved once the surface is active.
 
+On Wayland, top-level surfaces reject `RNF::STICK_TO_FRONT` and `RNF::STICK_TO_BACK` with `ERR::NoSupport`.
+These flags remain available for ordering child surfaces within their container.
+
 *********************************************************************************************************************/
 
 static ERR SET_Flags(extSurface *Self, RNF Value)
 {
+   if (Self->initialised() and (not Self->ParentID) and (gfx::GetDisplayType() IS DT::WAYLAND) and
+         ((Value & (RNF::STICK_TO_FRONT|RNF::STICK_TO_BACK)) != RNF::NIL)) return ERR::NoSupport;
+
    auto flags = (Self->Flags & RNF::READ_ONLY) | (Value & (~RNF::READ_ONLY));
 
    if (Self->initialised()) flags = flags & (~RNF::INIT_ONLY);

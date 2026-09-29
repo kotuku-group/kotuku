@@ -72,6 +72,60 @@ void DriverMovement(OBJECTID SurfaceID, double AbsX, double AbsY, bool NonClient
 
 //********************************************************************************************************************
 
+void DriverRelativeMovement(OBJECTID SurfaceID, double DX, double DY)
+{
+   if (auto pointer = gfx::AccessPointer(); pointer) {
+      if (pointer->AnchorID IS SurfaceID) {
+         InputEvent input = {};
+         input.Type = JET::ABS_XY;
+         input.Flags = JTYPE::MOVEMENT;
+         input.Mask = JTYPE::MOVEMENT;
+         input.Timestamp = PreciseTime();
+         input.RecipientID = SurfaceID;
+         input.OverID = SurfaceID;
+         input.AbsX = pointer->X;
+         input.AbsY = pointer->Y;
+         input.X = DX;
+         input.Y = DY;
+         const std::lock_guard<std::recursive_mutex> lock(glInputLock);
+         glInputEvents.push_back(input);
+      }
+      ReleaseObject(pointer);
+   }
+}
+
+//********************************************************************************************************************
+
+void DriverPointerLockLost(OBJECTID SurfaceID)
+{
+   if (auto pointer = (extPointer *)gfx::AccessPointer(); pointer) {
+      if (pointer->AnchorID IS SurfaceID) pointer->AnchorID = 0;
+      ReleaseObject(pointer);
+   }
+}
+
+//********************************************************************************************************************
+
+void DriverTouchInput(OBJECTID SurfaceID, uint32_t SeatID, int32_t ContactID, JET Type, double X, double Y)
+{
+   if (not SurfaceID) return;
+   InputEvent input = {};
+   input.Type = Type;
+   input.Flags = JTYPE::TOUCH;
+   input.Mask = JTYPE::TOUCH;
+   input.Timestamp = PreciseTime();
+   input.RecipientID = SurfaceID;
+   input.OverID = SurfaceID;
+   input.DeviceID = OBJECTID(SeatID);
+   input.Value = ContactID;
+   input.AbsX = input.X = X;
+   input.AbsY = input.Y = Y;
+   const std::lock_guard<std::recursive_mutex> lock(glInputLock);
+   glInputEvents.push_back(input);
+}
+
+//********************************************************************************************************************
+
 void DriverWheelMovement(OBJECTID SurfaceID, float Wheel)
 {
    if (!glPointerID) {
@@ -411,6 +465,13 @@ void DriverWindowDestroyed(OBJECTID SurfaceID)
 
 //********************************************************************************************************************
 
+void DriverWindowHidden(OBJECTID SurfaceID)
+{
+   if (kt::ScopedObjectLock<extSurface> surface(SurfaceID, 2000); surface.granted()) acHide(*surface);
+}
+
+//********************************************************************************************************************
+
 void MsgShowObject(OBJECTID ObjectID)
 {
    kt::ScopedObjectLock obj(ObjectID);
@@ -427,6 +488,16 @@ void DriverClipboardUpdated()
    #ifdef _WIN32
       if (winClipboardChanged()) win_clipboard_updated();
    #endif
+}
+
+void DriverClipboardData(CSTRING Mime, CSTRING Data, size_t Length, bool Dropped, OBJECTID SurfaceID)
+{
+   receive_host_clipboard(Mime, std::string_view(Data, Length), Dropped, SurfaceID);
+}
+
+void DriverClipboardLost()
+{
+   lose_host_clipboard();
 }
 
 //********************************************************************************************************************
@@ -464,6 +535,20 @@ void DriverDragDropped(OBJECTID SurfaceID, CSTRING Datatypes)
 {
    #ifdef _WIN32
       winDragDropFromHost_Drop(SurfaceID, (char *)Datatypes);
+   #else
+      if (auto pointer = gfx::AccessPointer()) {
+         auto target_id = pointer->OverObjectID ? pointer->OverObjectID : SurfaceID;
+         kt::ScopedObjectLock target(target_id);
+         kt::ScopedObjectLock surface(SurfaceID);
+         if (target.granted() and surface.granted()) {
+            SURFACEINFO *info;
+            if (gfx::GetSurfaceInfo(SurfaceID, &info) IS ERR::Okay) {
+               kt::ScopedObjectLock display(info->DisplayID);
+               if (display.granted()) acDragDrop(*target, *display, -1, Datatypes);
+            }
+         }
+         ReleaseObject(pointer);
+      }
    #endif
 }
 

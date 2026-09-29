@@ -347,6 +347,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <tags>pure-query</tags>
     <description>
 <p>This function reports the backend identity of the driver selected during Display module initialisation.  Explicit and automatic driver selection therefore return the same type when they resolve to the same backend.  Current values are:</p>
+<p>On desktop Linux, automatic selection tries Wayland when <code>WAYLAND_DISPLAY</code> and <code>XDG_RUNTIME_DIR</code> are set, then X11 when available, and finally the headless driver.  The headless driver reports <code>DT::NATIVE</code>.</p>
 <types lookup="DT"/>
     </description>
     <result type="DT" lookup="DT">Returns an integer indicating the display type.</result>
@@ -522,7 +523,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <param type="OBJECTID" name="Surface">Refers to the surface object that the pointer should send movement signals to.</param>
     </input>
     <description>
-<p>The LockCursor() function will lock the current pointer position and pass UserMovement signals to the surface referenced in the <code>Surface</code> parameter.  The pointer will not move unless the <function>SetCursorPos</function> function is called. The anchor is granted on a time-limited basis.  It is necessary to reissue the anchor every time that a UserMovement signal is intercepted.  Failure to reissue the anchor will return the pointer to its normal state, typically within 200 microseconds.</p>
+<p>The LockCursor() function will lock the current pointer position and pass UserMovement signals to the surface referenced in the <code>Surface</code> parameter.  The pointer will not move unless the <function>SetCursorPos</function> function is called. On Wayland, this uses the compositor's pointer-constraints and relative-pointer protocols.  The cursor is locked to the host surface while relative movement is delivered to the named surface.  Locking does not move the system pointer, and the compositor may release the lock at any time.  The call returns <code>NoSupport</code> if either protocol is unavailable or the pointer has not entered the host surface.</p>
 <p>The anchor can be released at any time by calling the <function>UnlockCursor</function> function.</p>
     </description>
     <result type="ERR">
@@ -688,10 +689,11 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <param type="DOUBLE" name="Y">The new vertical coordinate for the pointer.</param>
     </input>
     <description>
-<p>Changes the position of the pointer cursor using coordinates relative to the entire display.</p>
+<p>Changes the position of the pointer cursor using coordinates relative to the entire display. Wayland does not permit this operation and returns <code>NoSupport</code>.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="NoSupport">The display driver cannot warp the system pointer.</error>
     </result>
   </function>
 

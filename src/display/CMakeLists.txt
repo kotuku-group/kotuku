@@ -183,6 +183,172 @@ else ()
 
    target_sources (${MOD} PRIVATE ${FUNCTIONS} ${DISPLAY_DRIVERS} ${CLASSES} "linux/controller.cpp")
 
+   # Wayland support
+
+   find_package (PkgConfig QUIET)
+
+   if (PkgConfig_FOUND)
+      pkg_check_modules (WAYLAND_CLIENT QUIET IMPORTED_TARGET wayland-client)
+      pkg_check_modules (WAYLAND_CURSOR QUIET IMPORTED_TARGET wayland-cursor)
+      pkg_check_modules (XKBCOMMON QUIET IMPORTED_TARGET xkbcommon)
+      pkg_check_modules (WAYLAND_PROTOCOLS QUIET wayland-protocols)
+   endif ()
+
+   find_program (WAYLAND_SCANNER wayland-scanner)
+
+   if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND WAYLAND_CLIENT_FOUND AND WAYLAND_CURSOR_FOUND
+         AND XKBCOMMON_FOUND AND WAYLAND_PROTOCOLS_FOUND
+         AND WAYLAND_SCANNER)
+
+      set (XDG_SHELL_XML "${WAYLAND_PROTOCOLS_PREFIX}/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml")
+
+      if (EXISTS "${XDG_SHELL_XML}")
+         set (XDG_SHELL_HEADER "${CMAKE_CURRENT_BINARY_DIR}/xdg-shell-client-protocol.h")
+         set (XDG_SHELL_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/xdg-shell-protocol.c")
+         set (XDG_DECORATION_XML
+            "${WAYLAND_PROTOCOLS_PREFIX}/share/wayland-protocols/unstable/xdg-decoration/xdg-decoration-unstable-v1.xml")
+         set (WAYLAND_EXTRA_SOURCES)
+
+         foreach (PROTOCOL pointer-constraints relative-pointer)
+            set (PROTOCOL_XML "${WAYLAND_PROTOCOLS_PREFIX}/share/wayland-protocols/unstable/${PROTOCOL}/${PROTOCOL}-unstable-v1.xml")
+            if (EXISTS "${PROTOCOL_XML}")
+               set (PROTOCOL_HEADER "${CMAKE_CURRENT_BINARY_DIR}/${PROTOCOL}-client-protocol.h")
+               set (PROTOCOL_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/${PROTOCOL}-protocol.c")
+               add_custom_command (OUTPUT "${PROTOCOL_HEADER}" "${PROTOCOL_SOURCE}"
+                  COMMAND ${WAYLAND_SCANNER} client-header "${PROTOCOL_XML}" "${PROTOCOL_HEADER}"
+                  COMMAND ${WAYLAND_SCANNER} private-code "${PROTOCOL_XML}" "${PROTOCOL_SOURCE}"
+                  DEPENDS "${PROTOCOL_XML}" VERBATIM)
+               list (APPEND WAYLAND_EXTRA_SOURCES "${PROTOCOL_HEADER}" "${PROTOCOL_SOURCE}")
+               if (PROTOCOL STREQUAL "pointer-constraints")
+                  set (WAYLAND_POINTER_CONSTRAINTS_AVAILABLE TRUE)
+               else ()
+                  set (WAYLAND_RELATIVE_POINTER_AVAILABLE TRUE)
+               endif ()
+            endif ()
+         endforeach ()
+
+         set (CURSOR_SHAPE_XML
+            "${WAYLAND_PROTOCOLS_PREFIX}/share/wayland-protocols/staging/cursor-shape/cursor-shape-v1.xml")
+         set (TABLET_XML "${WAYLAND_PROTOCOLS_PREFIX}/share/wayland-protocols/unstable/tablet/tablet-unstable-v2.xml")
+         if (EXISTS "${CURSOR_SHAPE_XML}" AND EXISTS "${TABLET_XML}")
+            set (CURSOR_SHAPE_HEADER "${CMAKE_CURRENT_BINARY_DIR}/cursor-shape-client-protocol.h")
+            set (CURSOR_SHAPE_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/cursor-shape-protocol.c")
+            add_custom_command (OUTPUT "${CURSOR_SHAPE_HEADER}" "${CURSOR_SHAPE_SOURCE}"
+               COMMAND ${WAYLAND_SCANNER} client-header "${CURSOR_SHAPE_XML}" "${CURSOR_SHAPE_HEADER}"
+               COMMAND ${WAYLAND_SCANNER} private-code "${CURSOR_SHAPE_XML}" "${CURSOR_SHAPE_SOURCE}"
+               DEPENDS "${CURSOR_SHAPE_XML}" VERBATIM)
+            list (APPEND WAYLAND_EXTRA_SOURCES "${CURSOR_SHAPE_HEADER}" "${CURSOR_SHAPE_SOURCE}")
+            set (TABLET_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/tablet-v2-protocol.c")
+            add_custom_command (OUTPUT "${TABLET_SOURCE}"
+               COMMAND ${WAYLAND_SCANNER} private-code "${TABLET_XML}" "${TABLET_SOURCE}"
+               DEPENDS "${TABLET_XML}" VERBATIM)
+            list (APPEND WAYLAND_EXTRA_SOURCES "${TABLET_SOURCE}")
+            set (WAYLAND_CURSOR_SHAPE_AVAILABLE TRUE)
+         endif ()
+
+         if (EXISTS "${XDG_DECORATION_XML}")
+            set (XDG_DECORATION_HEADER "${CMAKE_CURRENT_BINARY_DIR}/xdg-decoration-client-protocol.h")
+            set (XDG_DECORATION_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/xdg-decoration-protocol.c")
+            add_custom_command (OUTPUT "${XDG_DECORATION_HEADER}" "${XDG_DECORATION_SOURCE}"
+               COMMAND ${WAYLAND_SCANNER} client-header "${XDG_DECORATION_XML}" "${XDG_DECORATION_HEADER}"
+               COMMAND ${WAYLAND_SCANNER} private-code "${XDG_DECORATION_XML}" "${XDG_DECORATION_SOURCE}"
+               DEPENDS "${XDG_DECORATION_XML}" VERBATIM)
+            list (APPEND WAYLAND_EXTRA_SOURCES "${XDG_DECORATION_HEADER}" "${XDG_DECORATION_SOURCE}")
+            set (WAYLAND_XDG_DECORATION_AVAILABLE TRUE)
+         endif ()
+
+         set (FRACTIONAL_SCALE_XML
+            "${WAYLAND_PROTOCOLS_PREFIX}/share/wayland-protocols/staging/fractional-scale/fractional-scale-v1.xml")
+         set (VIEWPORTER_XML
+            "${WAYLAND_PROTOCOLS_PREFIX}/share/wayland-protocols/stable/viewporter/viewporter.xml")
+         if (EXISTS "${FRACTIONAL_SCALE_XML}" AND EXISTS "${VIEWPORTER_XML}")
+            foreach (PROTOCOL fractional-scale viewporter)
+               if (PROTOCOL STREQUAL "fractional-scale")
+                  set (PROTOCOL_XML "${FRACTIONAL_SCALE_XML}")
+               else ()
+                  set (PROTOCOL_XML "${VIEWPORTER_XML}")
+               endif ()
+               set (PROTOCOL_HEADER "${CMAKE_CURRENT_BINARY_DIR}/${PROTOCOL}-client-protocol.h")
+               set (PROTOCOL_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/${PROTOCOL}-protocol.c")
+               add_custom_command (OUTPUT "${PROTOCOL_HEADER}" "${PROTOCOL_SOURCE}"
+                  COMMAND ${WAYLAND_SCANNER} client-header "${PROTOCOL_XML}" "${PROTOCOL_HEADER}"
+                  COMMAND ${WAYLAND_SCANNER} private-code "${PROTOCOL_XML}" "${PROTOCOL_SOURCE}"
+                  DEPENDS "${PROTOCOL_XML}" VERBATIM)
+               list (APPEND WAYLAND_EXTRA_SOURCES "${PROTOCOL_HEADER}" "${PROTOCOL_SOURCE}")
+            endforeach ()
+            set (WAYLAND_FRACTIONAL_SCALE_AVAILABLE TRUE)
+         endif ()
+
+         add_custom_command (OUTPUT "${XDG_SHELL_HEADER}" "${XDG_SHELL_SOURCE}"
+            COMMAND ${WAYLAND_SCANNER} client-header "${XDG_SHELL_XML}" "${XDG_SHELL_HEADER}"
+            COMMAND ${WAYLAND_SCANNER} private-code "${XDG_SHELL_XML}" "${XDG_SHELL_SOURCE}"
+            DEPENDS "${XDG_SHELL_XML}" VERBATIM)
+
+         target_compile_definitions (${MOD} PRIVATE DISPLAY_WAYLAND_DRIVER)
+         add_library (display-wayland)
+         if (WAYLAND_POINTER_CONSTRAINTS_AVAILABLE)
+            target_compile_definitions (display-wayland PRIVATE WAYLAND_POINTER_CONSTRAINTS)
+         endif ()
+         if (WAYLAND_RELATIVE_POINTER_AVAILABLE)
+            target_compile_definitions (display-wayland PRIVATE WAYLAND_RELATIVE_POINTER)
+         endif ()
+         if (WAYLAND_CURSOR_SHAPE_AVAILABLE)
+            target_compile_definitions (display-wayland PRIVATE WAYLAND_CURSOR_SHAPE)
+         endif ()
+         if (WAYLAND_FRACTIONAL_SCALE_AVAILABLE)
+            target_compile_definitions (display-wayland PRIVATE WAYLAND_FRACTIONAL_SCALE)
+         endif ()
+
+         target_include_directories (display-wayland PRIVATE "${PROJECT_SOURCE_DIR}/include"
+            "${CMAKE_CURRENT_BINARY_DIR}")
+
+         set_target_properties (display-wayland PROPERTIES CXX_STANDARD 20
+            CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
+
+         add_dependencies (display-wayland ${REQUIRED_MODS})
+
+         target_sources (display-wayland PRIVATE "drivers/wayland/module.cpp"
+            "drivers/wayland/wayland_driver.cpp"
+            "${XDG_SHELL_SOURCE}" "${XDG_SHELL_HEADER}"
+            ${WAYLAND_EXTRA_SOURCES})
+
+         if (NOT KOTUKU_STATIC)
+            target_sources (display-wayland PRIVATE "driver/headless.cpp")
+         endif ()
+
+         if (WAYLAND_XDG_DECORATION_AVAILABLE)
+            target_compile_definitions (display-wayland PRIVATE WAYLAND_XDG_DECORATION)
+         endif ()
+
+         target_link_libraries (display-wayland PRIVATE PkgConfig::WAYLAND_CLIENT
+            PkgConfig::WAYLAND_CURSOR PkgConfig::XKBCOMMON)
+
+         if (UNIT_TESTS)
+            add_executable (test_display_wayland_decorations "tests/test_wayland_decorations.cpp")
+            add_dependencies (test_display_wayland_decorations display-wayland)
+            target_include_directories (test_display_wayland_decorations PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+            target_link_libraries (test_display_wayland_decorations PRIVATE PkgConfig::WAYLAND_CLIENT)
+            set_target_properties (test_display_wayland_decorations PROPERTIES CXX_STANDARD 20)
+            add_test (NAME display_wayland_decorations COMMAND test_display_wayland_decorations)
+            set_tests_properties (display_wayland_decorations PROPERTIES LABELS display)
+         endif ()
+
+         if (KOTUKU_STATIC)
+            target_link_libraries (${MOD} PRIVATE display-wayland)
+         else ()
+            target_link_options (display-wayland PRIVATE
+               "LINKER:--version-script=${CMAKE_CURRENT_SOURCE_DIR}/drivers/wayland/exports.map")
+            set_target_properties (display-wayland PROPERTIES PREFIX "" POSITION_INDEPENDENT_CODE ON
+               LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/release/lib"
+               RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/release/lib")
+            if (KOTUKU_INSTALL)
+               install (TARGETS display-wayland RUNTIME DESTINATION "${LIB_TARGET}"
+                  ARCHIVE DESTINATION "${LIB_TARGET}" LIBRARY DESTINATION "${LIB_TARGET}")
+            endif ()
+         endif ()
+      endif ()
+   endif ()
+
    if (X11_FOUND)
       # Apt package requirements: libxrandr-dev libxxf86vm-dev
 
@@ -238,3 +404,7 @@ else ()
       endif ()
    endif ()
 endif ()
+
+# Flute runs under headless mode - these tests have to be run manually.
+# "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_wayland_window_state.tiri")
+# "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_wayland_clipboard.tiri")
