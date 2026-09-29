@@ -39,6 +39,20 @@ static ResourceManager glArrayResourceManager = {
    false
 };
 
+static std::atomic_int glStructResourceFrees = 0;
+
+static ERR struct_test_resource_free(ResourceRecord &, APTR)
+{
+   glStructResourceFrees.fetch_add(1, std::memory_order_relaxed);
+   return ERR::Terminate;
+}
+
+static ResourceManager glStructResourceManager = {
+   "TiriStructTest",
+   &struct_test_resource_free,
+   false
+};
+
 // Helper: dostring equivalent - loads and executes a string
 static int dostring(lua_State *L, const char* s)
 {
@@ -806,6 +820,63 @@ static bool test_array_external_resource(kt::Log &Log)
    return true;
 }
 
+static bool test_struct_payload_policies_and_nested_owner(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) return false;
+
+   struct_record child("PolicyChild");
+   child.Size = sizeof(int32_t);
+   struct_record root("PolicyRoot");
+   root.Size = sizeof(int32_t);
+   struct_field field;
+   field.Name = "value";
+   field.Type = FD_STRUCT;
+   field.StructDefinition = &child;
+   field.precomputeNameHash();
+   root.Fields.push_back(field);
+
+   int32_t borrowed_value = 17;
+   glStructResourceFrees.store(0, std::memory_order_relaxed);
+   lua_pushstruct(lua, child, &borrowed_value, StructPayloadPolicy::Borrowed, StructAccess::ReadOnly);
+   lua_settop(lua, 0);
+   lua_gc(lua, LUA_GCCOLLECT);
+   if (glStructResourceFrees.load(std::memory_order_relaxed) != 0) {
+      Log.error("a borrowed struct payload was released");
+      return false;
+   }
+
+   APTR memory = nullptr;
+   if (AllocResource(sizeof(int32_t), MEM::NIL, &memory, &glStructResourceManager) != ERR::Okay) return false;
+   ((int32_t *)memory)[0] = 29;
+   auto root_wrapper = lua_pushstruct(lua, root, memory, StructPayloadPolicy::AdoptedResource,
+      StructAccess::ReadOnly);
+   lj_struct_getfield_core(lua, root_wrapper, root.Fields[0], memory);
+   auto child_wrapper = lua_tostruct(lua, -1);
+   if (not child_wrapper or not child_wrapper->is_readonly() or not gcref(child_wrapper->parent)) {
+      Log.error("a nested struct view did not inherit access policy and its owning root");
+      return false;
+   }
+
+   lua_replace(lua, 1); // Retain only the nested view; its parent must keep the adopted root alive.
+   lua_gc(lua, LUA_GCCOLLECT);
+   if ((glStructResourceFrees.load(std::memory_order_relaxed) != 0) or
+       (((int32_t *)child_wrapper->data)[0] != 29)) {
+      Log.error("an adopted struct root was released while a nested view remained live");
+      return false;
+   }
+
+   lua_settop(lua, 0);
+   lua_gc(lua, LUA_GCCOLLECT);
+   lua_gc(lua, LUA_GCCOLLECT);
+   if (glStructResourceFrees.load(std::memory_order_relaxed) != 1) {
+      Log.error("an adopted struct resource was not released exactly once");
+      return false;
+   }
+   return true;
+}
+
 //********************************************************************************************************************
 
 static bool test_array_unsupported_storage_contract(kt::Log &Log)
@@ -1099,7 +1170,7 @@ static bool test_arr_getidx_noalloc(kt::Log &Log)
 
 void array_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 19> Tests = { {
+   constexpr std::array<TestCase, 20> Tests = { {
       // Core Data Structures
       { "array_recursive_identity", test_array_recursive_identity },
       { "array_strided_copy", test_array_strided_copy },
@@ -1113,6 +1184,7 @@ void array_unit_tests(int &Passed, int &Total)
       { "array_elemsize", test_array_elemsize },
       { "array_external_unmanaged", test_array_external_unmanaged },
       { "array_external_resource", test_array_external_resource },
+      { "struct_payload_policies_and_nested_owner", test_struct_payload_policies_and_nested_owner },
       { "array_unsupported_storage_contract", test_array_unsupported_storage_contract },
       { "array_type_tag", test_array_type_tag },
       // VM Type System

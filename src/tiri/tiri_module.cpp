@@ -363,7 +363,7 @@ static int module_call(lua_State *);
 static lua_CFunction module_call_entry();
 #endif
 static ERR module_call_inner(lua_State *, std::string &, int &, int &);
-static int process_results(extTiri *, APTR, const FunctionField *);
+static int process_results(extTiri *, APTR, const FunctionField *, CSTRING CallableName);
 
 static std::unique_ptr<const static_module_signature> make_module_signature(
    std::string_view Name, const Function *Functions)
@@ -2050,6 +2050,34 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          else if (argtype & FD_PTR) {
             resolve_index(Lua, i); // Resolve thunks so the resolved value is marshalled, not the thunk userdata.
             auto arg_type = lua_type(Lua, i);
+            auto native_struct = lua_isstruct(Lua, i) ? lua_tostruct(Lua, i) : nullptr;
+            if (argtype & FD_STRUCT) {
+               if (not native_struct and (arg_type != LUA_TNIL) and (arg_type != LUA_TNONE)) {
+                  ErrorMsg = std::format("Arg #{} ({}) requires a matching structure.", i, args[i].Name);
+                  return ERR::InvalidType;
+               }
+               if (native_struct) {
+                  auto expected = (args[i].Name and valid_struct_name(args[i].Name)) ?
+                     find_struct(Lua, struct_name_prefix(args[i].Name)) : nullptr;
+                  if (not expected) {
+                     ErrorMsg = std::format("Arg #{} ({}) references an unknown structure.", i, args[i].Name);
+                     return ERR::Search;
+                  }
+                  if (lj_struct_stale(native_struct)) {
+                     ErrorMsg = "A struct argument's providing object has been destroyed.";
+                     return ERR::DoesNotExist;
+                  }
+                  if ((native_struct->def != expected) or
+                        (native_struct->structsize != uint32_t(expected->Size))) {
+                     ErrorMsg = std::format("Arg #{} ({}) requires struct<{}>.", i, args[i].Name, expected->Name);
+                     return ERR::InvalidType;
+                  }
+                  if (not native_struct->data) {
+                     ErrorMsg = std::format("Arg #{} ({}) structure storage is unavailable.", i, args[i].Name);
+                     return ERR::InvalidData;
+                  }
+               }
+            }
             if (arg_type IS LUA_TSTRING) {
                // Lua strings need to be converted to C strings
                auto string = string_arg(Lua, i);
@@ -2063,7 +2091,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                in++;
                j += sizeof(CSTRING);
             }
-            else if (auto native_struct = lua_isstruct(Lua, i) ? lua_tostruct(Lua, i) : nullptr) {
+            else if (native_struct) {
                // Guard specific to lifecycle-bound struct views; structs without an object dependency skip it.
                if (lj_struct_stale(native_struct)) {
                   ErrorMsg = "A struct argument's providing object has been destroyed.";
@@ -2205,32 +2233,13 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          }
          else if (restype & FD_PTR) {
             if (restype & FD_STRUCT) {
-               if (auto structptr = (APTR)rc.Arg) {
-                  ERR error;
-                  // A resource structure is returned as an accessible struct pointer, typically
-                  // needed when a struct's use is beyond informational and can be passed to other functions.
-                  //
-                  // Otherwise, the default behaviour is to convert the struct's content to a regular Lua table.
-                  if (restype & FD_RESOURCE) {
-                     auto structure = push_struct(Lua->script, structptr, args->Name, false, true);
-                     if (restype & FD_ALLOC) { structure->flags |= STRUCT_DEALLOCATE; rc.Arg = 0; }
-                  }
-                  else if ((error = named_struct_to_table(Lua, args->Name, structptr)) != ERR::Okay) {
-                     if (error IS ERR::Search) {
-                        // Unknown structs are returned as pointers - this is mainly to indicate that there is a value
-                        // and not a nil.
-                        lua_pushlightuserdata(Lua, (APTR)structptr);
-                        rc.Arg = 0; // Legacy raw-pointer ownership passes to the caller.
-                     }
-                     else {
-                        ErrorMsg = std::format("Failed to resolve struct {}, error: {}",
-                           args->Name, GetErrorMsg(error));
-                        return ERR::Search;
-                     }
-                  }
-                  if ((restype & FD_ALLOC) and rc.Arg) { FreeResource((APTR)rc.Arg); rc.Arg = 0; }
+               APTR address = (APTR)rc.Arg;
+               if (auto error = push_native_struct_result(Lua->script, args[0], address); error != ERR::Okay) {
+                  ErrorMsg = std::format("Function '{}' references unknown result structure '{}'.", callable->Name,
+                     args->Name ? args->Name : "");
+                  return error;
                }
-               else lua_pushnil(Lua);
+               rc.Arg = (intptr_t)address;
             }
             else {
                if ((APTR)rc.Arg) lua_pushlightuserdata(Lua, (APTR)rc.Arg);
@@ -2244,7 +2253,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          // Void functions don't push anything to the stack
       }
 
-      Results = process_results(tiri, buffer, args) + result;
+      Results = process_results(tiri, buffer, args, callable->Name) + result;
       return ERR::Okay;
    };
 
@@ -2258,7 +2267,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 // Convert FD_RESULT parameters to the equivalent Tiri result value.
 // Also takes care of any cleanup code for dynamically allocated values.
 
-static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *args)
+static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *args, CSTRING CallableName)
 {
    kt::Log log(__FUNCTION__);
 
@@ -2328,24 +2337,11 @@ static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *
                   else lua_pushnil(lua);
                }
                else if (argtype & FD_STRUCT) {
-                  if (((APTR *)var)[0]) {
-                     if (argtype & FD_RESOURCE) {
-                        // Resource structures are managed with direct data addresses.
-                        auto structure = push_struct(Tiri, ((APTR *)var)[0], args[i].Name, false, true);
-                        if (argtype & FD_ALLOC) {
-                           structure->flags |= STRUCT_DEALLOCATE;
-                           ((APTR *)var)[0] = nullptr;
-                        }
-                     }
-                     else {
-                        if (named_struct_to_table(lua, args[i].Name, ((APTR *)var)[0]) != ERR::Okay) lua_pushnil(lua);
-                        if (argtype & FD_ALLOC) {
-                           FreeResource(((APTR *)var)[0]);
-                           ((APTR *)var)[0] = nullptr;
-                        }
-                     }
+                  APTR &address = ((APTR *)var)[0];
+                  if (auto error = push_native_struct_result(Tiri, args[i], address); error != ERR::Okay) {
+                     luaL_error(lua, error, "Function '%s' references unknown result structure '%s'.",
+                        CallableName, args[i].Name ? args[i].Name : "");
                   }
-                  else lua_pushnil(lua);
                }
                else if (argtype & FD_ALLOC) {
                   // Misconfigured or unsupported parameter

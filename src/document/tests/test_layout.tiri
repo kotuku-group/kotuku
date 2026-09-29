@@ -59,7 +59,7 @@ function crcTest(Name:str, Path:str, ExpectedCRC:any, TimeLimit:num)
                f'expected {string.format("0x%.8x", crc)}'
          end
 
-         if TimeLimit and (timeTaken > TimeLimit) and (mSys.GetSystemState().ReleaseBuild is 1) then
+         if TimeLimit and (timeTaken > TimeLimit) and (mSys.GetSystemState().releaseBuild is 1) then
             raise f'File "{Path}" @ page width {res} took {timeTaken}s to render, expected {TimeLimit}s'
          end
       end
@@ -82,7 +82,7 @@ function crcTest(Name:str, Path:str, ExpectedCRC:any, TimeLimit:num)
       --saveBitmap(bmp, Name)
    end
 
-   if TimeLimit and (timeTaken > TimeLimit) and (mSys.GetSystemState().ReleaseBuild is 1) then
+   if TimeLimit and (timeTaken > TimeLimit) and (mSys.GetSystemState().releaseBuild is 1) then
       raise f'File "{Path}" took {timeTaken}s to render, expected {TimeLimit}s'
    end
 end

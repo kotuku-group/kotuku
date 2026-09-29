@@ -72,7 +72,7 @@ static_assert(FF__MAX < builtin_callable_index(BuiltinCallableID::ImportModuleAc
 static_assert(FF__MAX - 1 <= (std::numeric_limits<uint16_t>::max)());
 static_assert(builtin_callable_index(BuiltinCallableID::Invalid) >= FF__MAX);
 #ifdef FFDEF_BFUNC_ABI
-static_assert(builtin_callable_abi_fingerprint() IS 0x0fb4eae36e100111ull,
+static_assert(builtin_callable_abi_fingerprint() IS 0x34bc777d02ca4120ull,
    "fast-function ordering changed: bump BCDUMP_VERSION and update the BC_BFUNC ABI fingerprint");
 #endif
 

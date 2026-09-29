@@ -42,8 +42,9 @@ GCstruct * lj_struct_new(lua_State *L, struct_record &Def)
 }
 
 //********************************************************************************************************************
-// Create a GCstruct header that references externally managed memory.  Pass STRUCT_DEALLOCATE in Flags if the
-// memory ownership transfers to the GC and can be removed with FreeResource().
+// Create a GCstruct header that references external memory.  AdoptedResource delegates the complete destructor to
+// the registered ResourceManager.  ManagedExternal is reserved for raw storage whose described C++ fields must be
+// destroyed by Tiri before FreeResource() releases the allocation.
 //
 // If the payload's validity depends on a Kotuku object staying alive (e.g. live views of object struct fields),
 // pass that object as Lifecycle.  The view takes a weak pin so that the object's header remains testable after
@@ -52,12 +53,15 @@ GCstruct * lj_struct_new(lua_State *L, struct_record &Def)
 //
 // Parent optionally anchors the inline GCstruct that owns Data for interior embedded-struct views.
 
-GCstruct * lj_struct_new_external(lua_State *L, struct_record &Def, void *Data, uint8_t Flags, Object *Lifecycle,
-   GCstruct *Parent)
+GCstruct * lj_struct_new_external(lua_State *L, struct_record &Def, void *Data, StructPayloadPolicy Policy,
+   StructAccess Access, Object *Lifecycle, GCstruct *Parent)
 {
    auto s = (GCstruct *)lj_mem_newgco(L, sizeof(GCstruct));
    s->gct        = ~LJ_TSTRUCT;
-   s->flags      = uint8_t(Flags | STRUCT_EXTERNAL);
+   s->flags      = STRUCT_EXTERNAL;
+   if (Policy IS StructPayloadPolicy::AdoptedResource) s->flags |= STRUCT_ADOPTED;
+   else if (Policy IS StructPayloadPolicy::ManagedExternal) s->flags |= STRUCT_MANAGED;
+   if (Access IS StructAccess::ReadOnly) s->flags |= STRUCT_READ_ONLY;
    s->unused1    = 0;
    s->structsize = uint32_t(Def.Size);
    s->data       = Data;
@@ -75,19 +79,19 @@ GCstruct * lj_struct_new_external(lua_State *L, struct_record &Def, void *Data, 
 }
 
 //********************************************************************************************************************
-// Free a GCstruct during the GC sweep phase.  C++ string fields are destroyed only when the payload is owned
-// (inline, or external with deallocation) - this mirrors the ownership condition of the legacy struct_destruct().
+// Free a GCstruct during the GC sweep phase.  Exactly one payload finalisation path is selected.  Adopted Kōtuku
+// resources rely solely on their ResourceManager, avoiding duplicate destruction of strings and vectors.
 
 void lj_struct_free(global_State *g, GCstruct *s)
 {
    // The main-thread lua_State shares the ~LJ_TSTRUCT gct but is LJ_GC_FIXED and never swept.
    lj_assertG(obj2gco(s) != obj2gco(mainthread(g)), "attempt to free main thread as struct");
 
-   if (s->def and s->data and (s->is_deallocate() or (s->data IS (void *)(s + 1)))) {
+   if (s->def and s->data and (s->is_managed_external() or (s->data IS (void *)(s + 1)))) {
       destroy_struct_cpp_strings(mainthread(g), *s->def, s->data);
    }
 
-   if (s->is_deallocate()) { FreeResource(s->data); s->data = nullptr; }
+   if (s->is_adopted() or s->is_managed_external()) { FreeResource(s->data); s->data = nullptr; }
 
    // Releasing the last weak pin collects the zombie header if the object was destroyed while this view lived.
    if (s->is_lifecycle_bound()) {
@@ -282,6 +286,9 @@ extern "C" void bc_struct_setfield(lua_State *L, GCstruct *Struct, GCstr *Key, T
 
    const auto field_name = strdata(Key);
    lj_struct_check_lifecycle(L, Struct, field_name, true);
+   if (Struct->is_readonly()) {
+      luaL_error_current(L, ERR::ReadOnly, "Cannot modify field '%s' on a read-only struct.", field_name);
+   }
    if (not Struct->data) {
       luaL_error_current(L, ERR::Exception, "Cannot reference field '%s' because struct address is NULL.", field_name);
    }

@@ -42,6 +42,7 @@
 #include <kotuku/strings.hpp>
 
 #include "../../defs.h"
+#include "../../protected_call.h"
 
 #define LJLIB_MODULE_object
 
@@ -56,7 +57,8 @@ template<class... Args> void RMSG(Args...) {
 [[nodiscard]] static int object_method_call_args(lua_State *);
 [[nodiscard]] static int object_action_call(lua_State *);
 [[nodiscard]] static int object_method_call(lua_State *);
-[[nodiscard]] static int get_results(lua_State *, const FunctionField *, const int8_t *);
+[[nodiscard]] static int get_results(lua_State *, const FunctionField *, int8_t *);
+static void cleanup_unclaimed_struct_results(const FunctionField *, int8_t *);
 [[nodiscard]] static ERR set_object_field(lua_State *, OBJECTPTR, uint32_t, int, const Field ** = nullptr);
 
 [[nodiscard]] static int object_children(lua_State *);

@@ -755,11 +755,19 @@ end
 function ProbeStruct()
    local meta = mSys.FindClass('task'.hash(), 0)
    local err, field = meta.mtFindField('args'.hash())
-   assert(type(field) is 'table', 'Failed to find args field in task class')
+   assert(type(field) is 'struct', 'Failed to find native Field result in task class')
    assert(field.name is 'Args', 'Expected string type for field name')
    assert(field.fieldID > 0, 'Expected fieldID to be greater than zero')
    assert(field.index > 0, 'Expected field index to be greater than zero')
    assert(type(field.writeValue) is 'userdata', 'Expected writeValue to be a function pointer')
+   local detached = field.toTable()
+   assert(type(detached) is 'table' and detached.name is field.name, 'Field snapshot conversion')
+   try
+      field.index = 0
+   except e when ERR_ReadOnly
+   success
+      assert(false, 'Object method structure results must be read-only')
+   end
 end
 
 -----------------------------------------------------------------------------------------------------------------------

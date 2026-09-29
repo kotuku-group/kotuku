@@ -70,6 +70,7 @@ end
       return ERR_Okay
    end)
    assert(err is ERR_Okay, 'AddMsgHandler() failed: ' .. mSys.GetErrorMsg(err))
+   assert(rawtype(handler) is 'struct<MsgHandler>', 'Opaque native resources must retain exact struct identity')
 
    check mSys.SendMessage(msg_id, 0, 'first')
    check mSys.SendMessage(msg_id, MSF_NO_DUPLICATE, 'second')

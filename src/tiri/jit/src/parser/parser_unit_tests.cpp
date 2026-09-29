@@ -8778,6 +8778,9 @@ static bool test_builtin_method_runtime(kt::Log &Log)
 
 static bool test_object_call_result_descriptors(kt::Log &Log)
 {
+   LuaStateHolder state;
+   if (not state.get() or make_struct(state.get(), "ObjectResultResource", "lValue") != ERR::Okay or
+       make_struct(state.get(), "ObjectResultRecord", "lValue") != ERR::Okay) return false;
    if (classify_object_call_member("acGetKey") != ObjectCallMemberKind::Action or
        classify_object_call_member("mtGetEnv") != ObjectCallMemberKind::Method or
        classify_object_call_member("account") != ObjectCallMemberKind::None or
@@ -8792,8 +8795,8 @@ static bool test_object_call_result_descriptors(kt::Log &Log)
       { "Input", FDF_CPPSTRING },
       { "Vector", FDF_VECTOR|FD_RESULT },
       { "Text", FDF_CPPSTRING|FD_MUTABLE|FD_RESULT },
-      { "Resource", FD_STRUCT|FD_RESOURCE|FD_RESULT },
-      { "Record", FD_STRUCT|FD_RESULT },
+      { "ObjectResultResource", FD_STRUCT|FD_RESOURCE|FD_RESULT },
+      { "ObjectResultRecord", FD_STRUCT|FD_RESULT },
       { "Object", FD_PTR|FD_OBJECT|FD_RESULT },
       { "Pointer", FD_PTR|FD_RESULT },
       { "Integer", FD_INT|FD_RESULT },
@@ -8801,9 +8804,9 @@ static bool test_object_call_result_descriptors(kt::Log &Log)
       { "Large", FD_INT64|FD_RESULT },
       { nullptr, 0 }
    };
-   StaticResultSet results = describe_object_call_results(fields);
+   StaticResultSet results = describe_object_call_results(fields, state.get());
    constexpr std::array<TiriType, 10> expected = {
-      TiriType::Num, TiriType::Array, TiriType::Str, TiriType::Struct, TiriType::Table,
+      TiriType::Num, TiriType::Array, TiriType::Str, TiriType::Struct, TiriType::Struct,
       TiriType::Object, TiriType::Userdata, TiriType::Num, TiriType::Num, TiriType::Num
    };
    if (results.declared_count != expected.size() or
@@ -8822,6 +8825,12 @@ static bool test_object_call_result_descriptors(kt::Log &Log)
    if (results.value_at(0).nullable or not results.value_at(1).nullable or
        not results.value_at(2).nullable or results.value_at(7).nullable) {
       Log.error("object call result nullability did not match runtime storage");
+      return false;
+   }
+   if (not results.value_at(3).struct_def or not results.value_at(4).struct_def or
+       results.value_at(3).struct_def->Name != "ObjectResultResource" or
+       results.value_at(4).struct_def->Name != "ObjectResultRecord") {
+      Log.error("object structure results did not retain their exact registered definitions");
       return false;
    }
 
@@ -8874,12 +8883,15 @@ static bool test_object_call_result_descriptors(kt::Log &Log)
 
 static bool test_module_call_result_descriptors(kt::Log &Log)
 {
+   LuaStateHolder state;
+   if (not state.get() or make_struct(state.get(), "ModuleResultResource", "lValue") != ERR::Okay or
+       make_struct(state.get(), "ModuleResultRecord", "lValue") != ERR::Okay) return false;
    constexpr FunctionField fields[] = {
       { "Error", FD_ERROR|FD_INT },
       { "Text", FD_RESULT|FD_STR },
       { "Object", FD_RESULT|FD_PTR|FD_OBJECT },
-      { "Resource:Handle", FD_RESULT|FD_PTR|FD_STRUCT|FD_RESOURCE },
-      { "Record:Value", FD_RESULT|FD_PTR|FD_STRUCT },
+      { "ModuleResultResource:Handle", FD_RESULT|FD_PTR|FD_STRUCT|FD_RESOURCE },
+      { "ModuleResultRecord:Value", FD_RESULT|FD_PTR|FD_STRUCT },
       { "Pointer", FD_RESULT|FD_PTR },
       { "Allocated", FD_RESULT|FD_PTR|FD_ALLOC },
       { "Integer", FD_RESULT|FD_INT },
@@ -8887,9 +8899,9 @@ static bool test_module_call_result_descriptors(kt::Log &Log)
       { "Large", FD_RESULT|FD_INT64 },
       { nullptr, 0 }
    };
-   StaticResultSet results = describe_module_call_results(fields);
+   StaticResultSet results = describe_module_call_results(fields, state.get());
    constexpr std::array<TiriType, 10> expected = {
-      TiriType::Num, TiriType::Str, TiriType::Object, TiriType::Struct, TiriType::Table,
+      TiriType::Num, TiriType::Str, TiriType::Object, TiriType::Struct, TiriType::Struct,
       TiriType::Userdata, TiriType::Nil, TiriType::Num, TiriType::Num, TiriType::Num
    };
    if (results.declared_count != expected.size() or results.dynamic or results.variadic) {
@@ -8907,6 +8919,12 @@ static bool test_module_call_result_descriptors(kt::Log &Log)
    if (results.value_at(0).nullable or not results.value_at(1).nullable or
        not results.value_at(9).nullable) {
       Log.error("module result nullability did not match direct and appended result behaviour");
+      return false;
+   }
+   if (not results.value_at(3).struct_def or not results.value_at(4).struct_def or
+       results.value_at(3).struct_def->Name != "ModuleResultResource" or
+       results.value_at(4).struct_def->Name != "ModuleResultRecord") {
+      Log.error("module structure results did not retain their exact registered definitions");
       return false;
    }
 

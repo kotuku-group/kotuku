@@ -490,6 +490,7 @@ static bool test_owned_outputs(kt::Log &Log)
 
    // Resource transfer commits only after the wrapper is pushed.  Later failures must keep the transferred
    // wrapper alive while releasing the remaining native allocation, then let GC release the transferred value.
+   if (make_struct(lua, "Arg2", "lValue") != ERR::Okay) return false;
    for (int allocation : { -1, 0, 1, 2 }) {
       glOwnership = { };
       glOwnership.FailAfter = allocation;
@@ -565,9 +566,8 @@ static bool test_owned_outputs(kt::Log &Log)
       }
    }
 
-   // A registered output structure creates registry references while it is copied.  Fail after reference capture,
-   // while another owned result is still pending, and verify both the reference graph and native allocations.
-   if (make_struct(lua, "Arg2", "lValue") != ERR::Okay) return false;
+   // An ordinary allocated structure is now an adopted, read-only GCstruct.  Fail around wrapper creation while
+   // another owned result is pending and verify exact-once native cleanup and detached conversion.
    for (int allocation : { -1, 0, 1, 2, 3 }) {
       glOwnership = { };
       glOwnership.FailAfter = allocation;
@@ -579,9 +579,17 @@ static bool test_owned_outputs(kt::Log &Log)
          copied_types, true, false, R"(
          try
             local err, value, text = syntheticZero(0)
-            assert(err is ERR_Okay and type(value) is 'table' and #text is 255)
+            assert(err is ERR_Okay and type(value) is 'struct' and #text is 255)
+            assert(type(value.toTable()) is 'table', 'Explicit conversion produces a detached table')
+            try
+               value.value = 1
+            except e when ERR_ReadOnly
+            success
+               assert(false, 'Ordinary native results are read-only')
+            end
          except e when ERR_NoMemory
          end
+         processing.collect()
       )", false);
       glOwnership.PendingFailure = -1;
       lua_setallocf(lua, glOwnership.Allocator, glOwnership.AllocatorData);

@@ -171,7 +171,7 @@ enum class ObjectCallMemberKind : uint8_t {
 };
 [[nodiscard]] ObjectCallMemberKind classify_object_call_member(std::string_view);
 [[nodiscard]] StaticResultSet describe_native_prototype_results(const fprototype *);
-[[nodiscard]] StaticResultSet describe_object_call_results(const FunctionField *);
+[[nodiscard]] StaticResultSet describe_object_call_results(const FunctionField *, lua_State *State = nullptr);
 [[nodiscard]] StaticResultSet describe_module_call_results(
    const FunctionField *, lua_State *State = nullptr);
 [[nodiscard]] StaticValueDescriptor describe_struct_field(const struct_record *, GCstr *);

@@ -9,8 +9,8 @@
 struct struct_field;
 
 extern GCstruct * lj_struct_new(lua_State *, struct struct_record &);
-extern GCstruct * lj_struct_new_external(lua_State *, struct struct_record &, void *Data, uint8_t Flags,
-   struct Object *Lifecycle = nullptr, GCstruct *Parent = nullptr);
+extern GCstruct * lj_struct_new_external(lua_State *, struct struct_record &, void *Data,
+   StructPayloadPolicy, StructAccess, struct Object *Lifecycle = nullptr, GCstruct *Parent = nullptr);
 extern void lj_struct_free(global_State *, GCstruct *);
 extern bool lj_struct_stale(GCstruct *);
 

@@ -39,13 +39,25 @@ end
    local err, classes = mCore.ClassDatabase()
    assert(err is ERR_Okay and #actions > 0 and #classes > 0, 'Supported structure-pointer vectors')
    local state = mCore.GetSystemState()
-   assert(type(state) is 'table', 'System state is copied to a table')
+   assert(type(state) is 'struct', 'System state is exposed as its native structure')
+   local snapshot = state.toTable()
+   assert(type(snapshot) is 'table' and snapshot.platform is state.platform,
+      'toTable() creates a detached structure projection')
+   for pass in {0 to 2} do
+      if pass is 1 then jit.on() else jit.off() end
+      try
+         state.consoleFD = 1
+      except e when ERR_ReadOnly
+      success
+         assert(false, 'Borrowed native results must reject writes')
+      end
+   end
    do
       local directory_err, directory = mCore.OpenDir('temp:', 0)
       assert(directory_err is ERR_Okay and directory != nil, 'Directory result transfers ownership')
    end
    processing.collect()
-   assert(#actions > 0 and #classes > 0 and type(state) is 'table', 'Results outlive conversion temporaries')
+   assert(#actions > 0 and #classes > 0 and type(state) is 'struct', 'Results outlive conversion temporaries')
 end
 
 @Test function StructurePointerVectorWithBlankAssignment()
@@ -90,14 +102,15 @@ end
 @end
 
 @Test; @Requires(display=true)
-function MixedAssignmentPreservesTableBackedStructureMetadata()
+function MixedAssignmentPreservesNativeStructureMetadata()
    local surface <close> = obj.new('Surface')
 
    err, surface_info = mGfx.GetSurfaceInfo(surface)
    err, display_info = mGfx.GetDisplayInfo(0)
 
    assert(err is ERR_Okay, 'Display information should be available')
-   assert(type(display_info) is 'table', 'A non-resource structure result should remain a table')
+   assert((surface_info is nil) and type(display_info) is 'struct',
+      'Nullable non-resource structure results retain their native identities')
    assert(display_info.width > 0 and display_info.height > 0,
       'Static structure metadata should preserve access to the display dimensions')
 end

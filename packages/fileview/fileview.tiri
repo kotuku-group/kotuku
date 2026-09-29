@@ -6,15 +6,8 @@ Enhances any view object, such as listview or columnview to create a file system
 Documentation is available in the Kotuku Wiki.
 --]]
 
-   import 'gui'
-   import 'gui/menu'
-   import 'gui/dialog'
-   import 'gui/toolbar'
-   import 'gui/columnview'
-   import 'gui/listview'
-   import 'gui/fontdialog'
-   import 'io/filemgr'
-   import 'json'
+   import 'gui', 'gui/menu', 'gui/dialog', 'gui/toolbar', 'gui/columnview', 'gui/listview'
+   import 'gui/fontdialog', 'io/filemgr', 'json'
    include 'vector'
 
    namespace gui

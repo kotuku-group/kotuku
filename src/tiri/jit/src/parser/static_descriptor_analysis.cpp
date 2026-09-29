@@ -1014,7 +1014,7 @@ private:
             for (size_t i = 1; glActions[i].Name; ++i) {
                if (std::string_view(glActions[i].Name) IS native_name) {
                   fields = glActions[i].Args;
-                  return this->catalogue_.add_results(describe_object_call_results(fields));
+                  return this->catalogue_.add_results(describe_object_call_results(fields, &this->context_.lua()));
                }
             }
             return {};
@@ -1029,7 +1029,7 @@ private:
          for (size_t i = 1; i < methods.size(); ++i) {
             if (methods[i].Name and std::string_view(methods[i].Name) IS native_name) {
                fields = methods[i].Args;
-               return this->catalogue_.add_results(describe_object_call_results(fields));
+               return this->catalogue_.add_results(describe_object_call_results(fields, &this->context_.lua()));
             }
          }
          return {};

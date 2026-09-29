@@ -1736,20 +1736,23 @@ static_assert(offsetof(GCobject, gclist) == offsetof(GCtab, gclist));
 inline GCobject* objectref(GCRef r) noexcept;
 
 //********************************************************************************************************************
-// Native struct object.  Wraps a C structure described by a struct_record definition.  The payload either follows
-// the header inline (owned mode) or lives in externally managed memory (STRUCT_EXTERNAL).
+// Native struct object.  Wraps a C structure described by a struct_record definition.  Payload ownership and access
+// are deliberately independent: an adopted external resource can be read-only, while a borrowed resource view can
+// remain writable where its native descriptor explicitly promises that behaviour.
 //
 // NB: The TValue tag LJ_TSTRUCT (~6u) is shared with the single main-thread lua_State; GC sites that dispatch on
 // gct must discriminate via pointer-compare with mainthread(g).
 
 // Flags for GCstruct.flags
 inline constexpr uint8_t STRUCT_EXTERNAL   = 0x01;  // Payload is externally managed (data does not follow header)
-inline constexpr uint8_t STRUCT_DEALLOCATE = 0x02;  // FreeResource(data) when the struct is collected
+inline constexpr uint8_t STRUCT_ADOPTED    = 0x02;  // FreeResource(data) only; its manager owns complete destruction
 inline constexpr uint8_t STRUCT_LIFECYCLE  = 0x04;  // Payload validity depends on a weak-pinned Kotuku object
+inline constexpr uint8_t STRUCT_READ_ONLY  = 0x08;  // Field stores are rejected independently of ownership
+inline constexpr uint8_t STRUCT_MANAGED    = 0x10;  // Destroy described C++ fields, then FreeResource(data)
 
 struct GCstruct {
    GCHeader;                    // [0]  nextgc, marked, gct (10 bytes)
-   uint8_t flags;               // [10] Struct flags (STRUCT_EXTERNAL, STRUCT_DEALLOCATE, STRUCT_LIFECYCLE)
+   uint8_t flags;               // [10] Payload, access and lifecycle flags
    uint8_t unused1;             // [11] Reserved for alignment
    uint32_t structsize;         // [12] Byte size of the structure payload (def->Size at creation time)
    void *data;                  // [16] Pointer to the structure data (this+1 for inline payloads)
@@ -1757,11 +1760,13 @@ struct GCstruct {
    GCRef metatable;             // [32] Optional metatable (must match GCtab.metatable)
    struct struct_record *def;   // [40] Structure definition owned by a state-local or global registry
    struct Object *lifecycle;    // [48] Weak-pinned object that owns the payload (STRUCT_LIFECYCLE only)
-   GCRef parent;                // [56] Owning inline GCstruct for an interior payload view
+   GCRef parent;                // [56] Owning root GCstruct for an interior payload view
 
    [[nodiscard]] inline bool is_external() const noexcept { return (flags & STRUCT_EXTERNAL) != 0; }
-   [[nodiscard]] inline bool is_deallocate() const noexcept { return (flags & STRUCT_DEALLOCATE) != 0; }
+   [[nodiscard]] inline bool is_adopted() const noexcept { return (flags & STRUCT_ADOPTED) != 0; }
+   [[nodiscard]] inline bool is_managed_external() const noexcept { return (flags & STRUCT_MANAGED) != 0; }
    [[nodiscard]] inline bool is_lifecycle_bound() const noexcept { return (flags & STRUCT_LIFECYCLE) != 0; }
+   [[nodiscard]] inline bool is_readonly() const noexcept { return (flags & STRUCT_READ_ONLY) != 0; }
 
    // Allocation size must match lj_struct_new()/lj_struct_new_external() exactly or g->gc.total drifts.
    [[nodiscard]] inline size_t alloc_size() const noexcept {
