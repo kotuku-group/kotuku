@@ -13,6 +13,8 @@ namespace display {
 
 static X11Driver::State *glX11State = nullptr;
 
+//********************************************************************************************************************
+
 static void x11_colour_component(int SourceMask, uint8_t &Mask, uint8_t &Position, uint8_t &Shift)
 {
    Position = 0;
@@ -25,6 +27,8 @@ static void x11_colour_component(int SourceMask, uint8_t &Mask, uint8_t &Positio
    for (int bit = 0x80; bit and (not (bit & Mask)); bit >>= 1) Shift++;
 }
 
+//********************************************************************************************************************
+
 static void x11_colour_format(ColourFormat &Format, int BitsPerPixel, int RedMask, int GreenMask, int BlueMask,
    int AlphaMask)
 {
@@ -34,6 +38,8 @@ static void x11_colour_format(ColourFormat &Format, int BitsPerPixel, int RedMas
    x11_colour_component(AlphaMask, Format.AlphaMask, Format.AlphaPos, Format.AlphaShift);
    Format.BitsPerPixel = BitsPerPixel;
 }
+
+//********************************************************************************************************************
 
 static constexpr std::array<std::pair<PTC, unsigned int>, 23> CURSORS = {{
    { PTC::DEFAULT, XC_left_ptr }, { PTC::SIZE_BOTTOM_LEFT, XC_bottom_left_corner },
@@ -47,17 +53,23 @@ static constexpr std::array<std::pair<PTC, unsigned int>, 23> CURSORS = {{
    { PTC::STOP, XC_left_ptr }, { PTC::INVISIBLE, XC_dot }, { PTC::DRAGGABLE, XC_sizing }
 }};
 
+//********************************************************************************************************************
+
 static bool detect_wslg()
 {
    if (auto enabled = std::getenv("WSL2_GUI_APPS_ENABLED"); enabled and (enabled[0] IS '1')) return true;
    return access("/mnt/wslg", F_OK) IS 0;
 }
 
+//********************************************************************************************************************
+
 static int catch_redirect_error(Display *, XErrorEvent *)
 {
    if (glX11State) glX11State->Manager = false;
    return 0;
 }
+
+//********************************************************************************************************************
 
 static int catch_x_error(Display *Connection, XErrorEvent *Event)
 {
@@ -67,13 +79,19 @@ static int catch_x_error(Display *Connection, XErrorEvent *Event)
    return 0;
 }
 
+//********************************************************************************************************************
+
 static int catch_xio_error(Display *)
 {
    kt::Log("X11").error("The X11 connection was terminated.");
    return 0;
 }
 
+//********************************************************************************************************************
+
 static void event_loop(HOSTHANDLE, APTR Data) { x11_process_events((X11Driver::State *)Data); }
+
+//********************************************************************************************************************
 
 static Cursor blank_cursor(X11Driver::State *State)
 {
@@ -87,11 +105,15 @@ static Cursor blank_cursor(X11Driver::State *State)
    return cursor;
 }
 
+//********************************************************************************************************************
+
 static Cursor cursor_for(X11Driver::State *State, PTC CursorID)
 {
    for (size_t i=0; i < CURSORS.size(); i++) if (CURSORS[i].first IS CursorID) return State->Cursors[i];
    return State->Cursors[0];
 }
+
+//********************************************************************************************************************
 
 static GC create_graphics_context(X11Driver::State *State, Drawable DrawableID)
 {
@@ -100,6 +122,8 @@ static GC create_graphics_context(X11Driver::State *State, Drawable DrawableID)
    values.graphics_exposures = 0;
    return XCreateGC(State->Connection, DrawableID, GCGraphicsExposures|GCFunction, &values);
 }
+
+//********************************************************************************************************************
 
 static void set_window_decorations(X11Driver::State *State, Window WindowID, bool Enabled)
 {
@@ -121,6 +145,8 @@ static void set_window_decorations(X11Driver::State *State, Window WindowID, boo
       (const unsigned char *)&hints, 5);
 }
 
+//********************************************************************************************************************
+
 static void hide_window_from_taskbar(X11Driver::State *State, Window WindowID)
 {
    auto property = XInternAtom(State->Connection, "_NET_WM_STATE", False);
@@ -128,6 +154,8 @@ static void hide_window_from_taskbar(X11Driver::State *State, Window WindowID)
    XChangeProperty(State->Connection, WindowID, property, XA_ATOM, 32, PropModeReplace,
       (const unsigned char *)states, std::ssize(states));
 }
+
+//********************************************************************************************************************
 
 X11WindowRecord * x11_window(X11Driver::State *State, HOSTWINDOW WindowHandle)
 {
@@ -138,15 +166,82 @@ X11WindowRecord * x11_window(X11Driver::State *State, HOSTWINDOW WindowHandle)
    return nullptr;
 }
 
+//********************************************************************************************************************
+// Compositor frame synchronisation, per the extended _NET_WM_SYNC_REQUEST_COUNTER protocol.  An odd counter value
+// tells the compositor that a frame is being drawn, so it continues to show the last complete frame.  Setting an
+// even value completes the frame.  Frames are opened when the window is resized and closed once the new content has
+// been presented, which prevents the compositor from showing the resized window with stale content.
+
+static void set_sync_counter(X11Driver::State *State, XSyncCounter Counter, int64_t Value)
+{
+   XSyncValue value;
+   XSyncIntsToValue(&value, uint32_t(Value & 0xffffffff), int(Value >> 32));
+   XSyncSetCounter(State->Connection, Counter, value);
+}
+
+//********************************************************************************************************************
+
+void x11_begin_frame(X11Driver::State *State, X11WindowRecord *Window)
+{
+   const std::lock_guard lock(State->NativeLock);
+   if ((not Window) or (not Window->FrameCounter) or Window->FrameOpen or (not Window->Visible)) return;
+
+   if (Window->SyncRequest and Window->SyncRequestExtended and (Window->FrameValue <= Window->SyncRequest)) {
+      Window->FrameValue = Window->SyncRequest;
+      if (Window->FrameValue & 1) Window->FrameValue++;
+   }
+
+   Window->FrameValue++;
+   Window->FrameOpen = true;
+   set_sync_counter(State, Window->FrameCounter, Window->FrameValue);
+   XFlush(State->Connection);
+}
+
+//********************************************************************************************************************
+// Completes an open frame, or acknowledges a _NET_WM_SYNC_REQUEST from the window manager by advancing the counter
+// to the requested value.
+
+void x11_end_frame(X11Driver::State *State, X11WindowRecord *Window)
+{
+   const std::lock_guard lock(State->NativeLock);
+   if ((not Window) or (not Window->FrameCounter)) return;
+   if ((not Window->FrameOpen) and (not Window->SyncRequest)) return;
+
+   bool update_frame_counter = Window->FrameOpen;
+   if (Window->SyncRequest) {
+      if (Window->SyncRequestExtended) {
+         if (Window->FrameValue <= Window->SyncRequest) Window->FrameValue = Window->SyncRequest + 1;
+         update_frame_counter = true;
+      }
+      else set_sync_counter(State, Window->BasicCounter, Window->SyncRequest);
+   }
+
+   if (update_frame_counter) {
+      if (Window->FrameValue & 1) Window->FrameValue++;
+      set_sync_counter(State, Window->FrameCounter, Window->FrameValue);
+   }
+
+   Window->SyncRequest = 0;
+   Window->SyncRequestExtended = false;
+   Window->FrameOpen = false;
+   XFlush(State->Connection);
+}
+
+//********************************************************************************************************************
+
 X11BitmapRecord * x11_bitmap(extBitmap *Bitmap)
 {
    return Bitmap ? (X11BitmapRecord *)Bitmap->DriverData : nullptr;
 }
 
+//********************************************************************************************************************
+
 X11Driver::X11Driver() : Data(new State) { }
 X11Driver::~X11Driver() { delete Data; }
 CSTRING X11Driver::name() const { return "x11"; }
 DT X11Driver::displayType() const { return DT::X11; }
+
+//********************************************************************************************************************
 
 DCAP X11Driver::capabilities() const
 {
@@ -158,6 +253,8 @@ DCAP X11Driver::capabilities() const
    return result;
 }
 
+//********************************************************************************************************************
+
 ERR X11Driver::isAvailable() const
 {
    if (auto value = std::getenv("KOTUKU_XDISPLAY"); value and value[0]) return ERR::Okay;
@@ -165,28 +262,36 @@ ERR X11Driver::isAvailable() const
    return ERR::NoSupport;
 }
 
+//********************************************************************************************************************
+
 ERR X11Driver::open(const DriverCallbacks &Callbacks)
 {
    XGCValues values = {};
    Window root = 0;
    int major = 0, minor = 0, pixmaps = 0;
+
 #ifdef XRANDR_ENABLED
    int event_base = 0, error_base = 0;
 #endif
+
    if (Data->Open) return ERR::DoubleInit;
    if (Callbacks.Version != DISPLAY_DRIVER_INTERFACE_VERSION) return ERR::WrongVersion;
    if (auto error = isAvailable(); error != ERR::Okay) return error;
+
    auto display_name = std::getenv("KOTUKU_XDISPLAY");
    if ((not display_name) or (not display_name[0])) display_name = std::getenv("DISPLAY");
+
    Data->Callbacks = &Callbacks;
    Data->Closing = false;
    Data->Manager = true;
    Data->WSLg = detect_wslg();
    Data->Connection = XOpenDisplay(display_name);
    if (not Data->Connection) goto fail;
+
    glX11State = Data;
    Data->PreviousErrorHandler = XSetErrorHandler(Data->WSLg ? catch_x_error : catch_redirect_error);
    Data->PreviousIOErrorHandler = XSetIOErrorHandler(catch_xio_error);
+
    if (Data->WSLg) Data->Manager = false;
    else {
       XSelectInput(Data->Connection, DefaultRootWindow(Data->Connection),
@@ -194,39 +299,62 @@ ERR X11Driver::open(const DriverCallbacks &Callbacks)
          KeyPressMask|ButtonPressMask|ButtonReleaseMask);
       XSync(Data->Connection, 0);
    }
+
    XSetErrorHandler(catch_x_error);
    Data->ConnectionFD = XConnectionNumber(Data->Connection);
    fcntl(Data->ConnectionFD, F_SETFD, FD_CLOEXEC);
+
    if (RegisterFD(Data->ConnectionFD, RFD::READ|RFD::ALWAYS_CALL, event_loop, Data) != ERR::Okay) goto fail;
+
    values.function = GXcopy;
    values.graphics_exposures = 0;
    root = DefaultRootWindow(Data->Connection);
    Data->GraphicsContext = XCreateGC(Data->Connection, root, GCGraphicsExposures|GCFunction, &values);
    Data->ClipGraphicsContext = XCreateGC(Data->Connection, root, GCGraphicsExposures|GCFunction, &values);
    if ((not Data->GraphicsContext) or (not Data->ClipGraphicsContext)) goto fail;
+
    Data->SharedImages = XShmQueryVersion(Data->Connection, &major, &minor, &pixmaps) != 0;
+   Data->ProtocolsAtom = XInternAtom(Data->Connection, "WM_PROTOCOLS", 0);
    Data->DeleteAtom = XInternAtom(Data->Connection, "WM_DELETE_WINDOW", 0);
    Data->TakeFocusAtom = XInternAtom(Data->Connection, "WM_TAKE_FOCUS", 0);
    Data->SurfaceAtom = XInternAtom(Data->Connection, "KOTUKU_SCREENID", 0);
+
+   {
+      int sync_event = 0, sync_error = 0, sync_major = 0, sync_minor = 0;
+      Data->FrameSync = XSyncQueryExtension(Data->Connection, &sync_event, &sync_error) and
+         XSyncInitialize(Data->Connection, &sync_major, &sync_minor);
+   }
+
+   if (Data->FrameSync) {
+      Data->SyncRequestAtom = XInternAtom(Data->Connection, "_NET_WM_SYNC_REQUEST", 0);
+      Data->SyncCounterAtom = XInternAtom(Data->Connection, "_NET_WM_SYNC_REQUEST_COUNTER", 0);
+   }
+
    XGetWindowAttributes(Data->Connection, root, &Data->RootAttributes);
    Data->Composite = XMatchVisualInfo(Data->Connection, DefaultScreen(Data->Connection), 32, TrueColor,
       &Data->AlphaVisual) != 0;
+
 #ifdef XRANDR_ENABLED
    Data->RandR = XRRQueryExtension(Data->Connection, &event_base, &error_base) != 0;
 #endif
+
    for (size_t i=0; i < CURSORS.size(); i++) {
       Data->Cursors[i] = CURSORS[i].first IS PTC::INVISIBLE ? blank_cursor(Data) :
          XCreateFontCursor(Data->Connection, CURSORS[i].second);
    }
+
    if (not std::getenv("KOTUKU_XDISPLAY")) setenv("KOTUKU_XDISPLAY", display_name, 0);
    if (Data->Manager) setenv("DISPLAY", ":10", 1);
    seteuid(getuid());
    Data->Open = true;
    return ERR::Okay;
+
 fail:
    close();
    return ERR::SystemCall;
 }
+
+//********************************************************************************************************************
 
 ERR X11Driver::close()
 {
@@ -241,6 +369,8 @@ ERR X11Driver::close()
          if (window->Background) XFreePixmap(Data->Connection, window->Background);
          if (window->GraphicsContext) XFreeGC(Data->Connection, window->GraphicsContext);
          if (window->CompositeMap) XFreeColormap(Data->Connection, window->CompositeMap);
+         if (window->FrameCounter) XSyncDestroyCounter(Data->Connection, window->FrameCounter);
+         if (window->BasicCounter) XSyncDestroyCounter(Data->Connection, window->BasicCounter);
          if (window->Owned and (not window->Root)) XDestroyWindow(Data->Connection, native);
          delete window;
       }
@@ -261,22 +391,27 @@ ERR X11Driver::close()
    return was_open ? ERR::DoNotExpunge : ERR::Okay;
 }
 
+//********************************************************************************************************************
+
 static ERR create_window_record(X11Driver::State *State, extDisplay *DisplayObject, Window Parent,
    X11WindowRecord *&Record)
 {
    XSetWindowAttributes attributes = {};
-   attributes.bit_gravity = CenterGravity;
+   attributes.bit_gravity = NorthWestGravity; // Retain content in place on resize; new areas are exposed
    attributes.win_gravity = CenterGravity;
    attributes.cursor = State->Cursors[0];
+
    // Borderless windows remain managed so that they retain normal focus, stacking and taskbar behaviour.  Composite
    // windows still need override-redirect because their alpha visual represents an application-managed pop-up.
+
    attributes.override_redirect = (DisplayObject->Flags & SCR::COMPOSITE) != SCR::NIL;
    attributes.event_mask = ExposureMask|EnterWindowMask|LeaveWindowMask|PointerMotionMask|StructureNotifyMask|
       KeyPressMask|KeyReleaseMask|ButtonPressMask|ButtonReleaseMask|FocusChangeMask;
-   int flags = CWEventMask|CWOverrideRedirect|CWCursor;
+   int flags = CWEventMask|CWOverrideRedirect|CWCursor|CWBitGravity;
    int depth = CopyFromParent;
    Visual *visual = CopyFromParent;
    Colormap colormap = 0;
+
    if (attributes.override_redirect and State->Composite) {
       colormap = XCreateColormap(State->Connection, DefaultRootWindow(State->Connection), State->AlphaVisual.visual,
          AllocNone);
@@ -289,17 +424,21 @@ static ERR create_window_record(X11Driver::State *State, extDisplay *DisplayObje
       DisplayObject->Bitmap->BitsPerPixel = 32;
       DisplayObject->Bitmap->BytesPerPixel = 4;
    }
+
    const bool root_parent = Parent IS DefaultRootWindow(State->Connection);
    auto native = XCreateWindow(State->Connection, Parent, root_parent ? DisplayObject->X : 0,
       root_parent ? DisplayObject->Y : 0, DisplayObject->Width, DisplayObject->Height, 0, depth, InputOutput, visual,
       flags, &attributes);
+
    if (not native) { if (colormap) XFreeColormap(State->Connection, colormap); return ERR::SystemCall; }
+
    auto graphics_context = create_graphics_context(State, native);
    if (not graphics_context) {
       XDestroyWindow(State->Connection, native);
       if (colormap) XFreeColormap(State->Connection, colormap);
       return ERR::SystemCall;
    }
+
    auto record = new(std::nothrow) X11WindowRecord;
    if (not record) {
       XFreeGC(State->Connection, graphics_context);
@@ -307,20 +446,38 @@ static ERR create_window_record(X11Driver::State *State, extDisplay *DisplayObje
       if (colormap) XFreeColormap(State->Connection, colormap);
       return ERR::AllocMemory;
    }
+
    record->Native = native;
    record->CompositeMap = colormap;
    record->GraphicsContext = graphics_context;
    record->Display = DisplayObject;
    record->Owned = true;
+
    {
       const std::lock_guard lock(State->NativeLock);
       State->Windows[native] = record;
    }
+
    std::string_view title;
    CurrentTask()->getName(title);
    XStoreName(State->Connection, native, title.empty() ? "Kotuku" : title.data());
-   Atom protocols[] = { State->DeleteAtom, State->TakeFocusAtom };
-   XSetWMProtocols(State->Connection, native, protocols, std::ssize(protocols));
+   Atom protocols[] = { State->DeleteAtom, State->TakeFocusAtom, State->SyncRequestAtom };
+   XSetWMProtocols(State->Connection, native, protocols, State->FrameSync ? 3 : 2);
+
+   // Advertising a basic and an extended counter enables frame synchronisation with a compositing window manager.
+   // While the extended counter is odd, the compositor holds the last complete frame on screen, including the
+   // window's previous size.  See x11_begin_frame().
+
+   if (State->FrameSync) {
+      XSyncValue zero;
+      XSyncIntToValue(&zero, 0);
+      record->BasicCounter = XSyncCreateCounter(State->Connection, zero);
+      record->FrameCounter = XSyncCreateCounter(State->Connection, zero);
+      long counters[] = { long(record->BasicCounter), long(record->FrameCounter) };
+      XChangeProperty(State->Connection, native, State->SyncCounterAtom, XA_CARDINAL, 32, PropModeReplace,
+         (unsigned char *)counters, std::ssize(counters));
+   }
+
    XSizeHints hints = { .flags = USPosition|USSize };
    XSetWMNormalHints(State->Connection, native, &hints);
    set_window_decorations(State, native, (DisplayObject->Flags & SCR::BORDERLESS) IS SCR::NIL);
@@ -329,34 +486,44 @@ static ERR create_window_record(X11Driver::State *State, extDisplay *DisplayObje
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
+
 ERR X11Driver::createWindow(extDisplay *DisplayObject, HOSTWINDOW &Handle)
 {
    if ((not Data->Open) or (not DisplayObject)) return ERR::NotInitialised;
+
    if (Data->Manager or ((DisplayObject->Flags & SCR::MAXIMISE) != SCR::NIL)) {
       DisplayObject->Width = Data->RootAttributes.width;
       DisplayObject->Height = Data->RootAttributes.height;
    }
+
    X11WindowRecord *record = nullptr;
    if (Data->Manager) {
       record = new(std::nothrow) X11WindowRecord;
       if (not record) return ERR::AllocMemory;
+
       record->Native = DefaultRootWindow(Data->Connection);
       record->Display = DisplayObject;
       record->Root = true;
       record->GraphicsContext = create_graphics_context(Data, record->Native);
+
       if (not record->GraphicsContext) { delete record; return ERR::SystemCall; }
+
       {
          const std::lock_guard lock(Data->NativeLock);
          Data->Windows[record->Native] = record;
       }
+
       XSetWindowAttributes attributes = {
          .event_mask = ExposureMask|EnterWindowMask|LeaveWindowMask|PointerMotionMask|StructureNotifyMask|
             KeyPressMask|KeyReleaseMask|ButtonPressMask|ButtonReleaseMask|FocusChangeMask
       };
+
       XChangeWindowAttributes(Data->Connection, record->Native, CWEventMask, &attributes);
    }
    else if (auto error = create_window_record(Data, DisplayObject, DefaultRootWindow(Data->Connection), record);
          error != ERR::Okay) return error;
+
    Handle = record;
    DisplayObject->Flags |= SCR::HOSTED;
    if (DisplayObject->PopOverID) {
@@ -371,36 +538,41 @@ ERR X11Driver::createWindow(extDisplay *DisplayObject, HOSTWINDOW &Handle)
          return ERR::AccessObject;
       }
    }
-   else if (Data->StickToFront) XSetTransientForHint(Data->Connection, record->Native,
-      DefaultRootWindow(Data->Connection));
+   else if (Data->StickToFront) XSetTransientForHint(Data->Connection, record->Native, DefaultRootWindow(Data->Connection));
+
    if (auto bitmap = x11_bitmap((extBitmap *)DisplayObject->Bitmap)) {
       bitmap->WindowID = record->Native;
       bitmap->WindowGraphicsContext = record->GraphicsContext;
+
       if ((DisplayObject->Bitmap->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL) bitmap->DrawableID = record->Native;
       else {
          bitmap->PixmapWidth = std::max(DisplayObject->Width, Data->RootAttributes.width);
          bitmap->PixmapHeight = std::max(DisplayObject->Height, Data->RootAttributes.height);
          auto depth = DefaultDepth(Data->Connection, DefaultScreen(Data->Connection));
-         record->Background = XCreatePixmap(Data->Connection, record->Native, bitmap->PixmapWidth,
-            bitmap->PixmapHeight, depth);
+         record->Background = XCreatePixmap(Data->Connection, record->Native, bitmap->PixmapWidth, bitmap->PixmapHeight, depth);
+
          if (not record->Background) {
             destroyWindow(record);
             Handle = nullptr;
             return ERR::SystemCall;
          }
+
          bitmap->DrawableID = record->Background;
          XSetWindowBackgroundPixmap(Data->Connection, record->Native, record->Background);
       }
    }
+
    return ERR::Okay;
 }
+
+//********************************************************************************************************************
 
 ERR X11Driver::adoptWindow(extDisplay *DisplayObject, APTR NativeHandle, HOSTWINDOW &Handle)
 {
    if (not NativeHandle) return ERR::NullArgs;
    X11WindowRecord *record = nullptr;
-   if (auto error = create_window_record(Data, DisplayObject, Window(uintptr_t(NativeHandle)), record);
-         error != ERR::Okay) return error;
+   if (auto error = create_window_record(Data, DisplayObject, Window(uintptr_t(NativeHandle)), record); error != ERR::Okay) return error;
+
    record->Adopted = true;
    Handle = record;
    DisplayObject->Flags |= SCR::HOSTED;
@@ -411,6 +583,8 @@ ERR X11Driver::adoptWindow(extDisplay *DisplayObject, APTR NativeHandle, HOSTWIN
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
+
 ERR X11Driver::nativeWindowHandle(HOSTWINDOW WindowHandle, APTR &NativeHandle)
 {
    auto window = x11_window(Data, WindowHandle);
@@ -419,12 +593,15 @@ ERR X11Driver::nativeWindowHandle(HOSTWINDOW WindowHandle, APTR &NativeHandle)
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
+
 ERR X11Driver::destroyWindow(HOSTWINDOW WindowHandle)
 {
    const std::lock_guard lock(Data->NativeLock);
    auto window = x11_window(Data, WindowHandle);
    if (not window) return WindowHandle ? ERR::NoSupport : ERR::Okay;
    Data->Windows.erase(window->Native);
+
    if (window->Display and window->Display->Bitmap) {
       if (auto bitmap = x11_bitmap((extBitmap *)window->Display->Bitmap);
             bitmap and (bitmap->WindowID IS window->Native)) {
@@ -432,13 +609,18 @@ ERR X11Driver::destroyWindow(HOSTWINDOW WindowHandle)
          bitmap->WindowGraphicsContext = 0;
       }
    }
+
    if (window->Background) XFreePixmap(Data->Connection, window->Background);
    if (window->GraphicsContext) XFreeGC(Data->Connection, window->GraphicsContext);
    if (window->CompositeMap) XFreeColormap(Data->Connection, window->CompositeMap);
+   if (window->FrameCounter) XSyncDestroyCounter(Data->Connection, window->FrameCounter);
+   if (window->BasicCounter) XSyncDestroyCounter(Data->Connection, window->BasicCounter);
    if (window->Owned and (not window->Root)) XDestroyWindow(Data->Connection, window->Native);
    delete window;
    return ERR::Okay;
 }
+
+//********************************************************************************************************************
 
 ERR X11Driver::showWindow(HOSTWINDOW WindowHandle, bool)
 {
@@ -453,11 +635,16 @@ ERR X11Driver::showWindow(HOSTWINDOW WindowHandle, bool)
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
+
 ERR X11Driver::hideWindow(HOSTWINDOW WindowHandle)
 {
    auto window = x11_window(Data, WindowHandle); if (not window) return ERR::NoSupport;
+   x11_end_frame(Data, window);
    XUnmapWindow(Data->Connection, window->Native); window->Visible = false; return ERR::Okay;
 }
+
+//********************************************************************************************************************
 
 ERR X11Driver::focusWindow(HOSTWINDOW WindowHandle)
 {
@@ -465,11 +652,15 @@ ERR X11Driver::focusWindow(HOSTWINDOW WindowHandle)
    XSetInputFocus(Data->Connection, window->Native, RevertToNone, CurrentTime); return ERR::Okay;
 }
 
+//********************************************************************************************************************
+
 ERR X11Driver::moveWindow(HOSTWINDOW WindowHandle, int X, int Y)
 {
    auto window = x11_window(Data, WindowHandle); if ((not window) or Data->Manager) return ERR::NoSupport;
    XMoveWindow(Data->Connection, window->Native, X, Y); return ERR::Okay;
 }
+
+//********************************************************************************************************************
 
 ERR X11Driver::resizeWindow(HOSTWINDOW WindowHandle, int X, int Y, int Width, int Height)
 {
@@ -479,9 +670,15 @@ ERR X11Driver::resizeWindow(HOSTWINDOW WindowHandle, int X, int Y, int Width, in
    if (window->Display and (window->Display->Width IS Width) and (window->Display->Height IS Height) and
          (((X IS 0x7fffffff) and (Y IS 0x7fffffff)) or
             ((window->Display->X IS X) and (window->Display->Y IS Y)))) return ERR::Okay;
+   // The frame for the new size is drawn after this call returns and is closed by present(), so the compositor
+   // shows the new size and its content together.
+
+   x11_begin_frame(Data, window);
    if ((X != 0x7fffffff) and (Y != 0x7fffffff)) XMoveWindow(Data->Connection, window->Native, X, Y);
    XResizeWindow(Data->Connection, window->Native, Width, Height); return ERR::Okay;
 }
+
+//********************************************************************************************************************
 
 ERR X11Driver::raiseWindow(HOSTWINDOW WindowHandle)
 {
@@ -489,11 +686,15 @@ ERR X11Driver::raiseWindow(HOSTWINDOW WindowHandle)
    XRaiseWindow(Data->Connection, window->Native); return ERR::Okay;
 }
 
+//********************************************************************************************************************
+
 ERR X11Driver::lowerWindow(HOSTWINDOW WindowHandle)
 {
    auto window = x11_window(Data, WindowHandle); if (not window) return ERR::NoSupport;
    XLowerWindow(Data->Connection, window->Native); return ERR::Okay;
 }
+
+//********************************************************************************************************************
 
 ERR X11Driver::minimiseWindow(HOSTWINDOW WindowHandle)
 {
@@ -501,11 +702,15 @@ ERR X11Driver::minimiseWindow(HOSTWINDOW WindowHandle)
    XIconifyWindow(Data->Connection, window->Native, DefaultScreen(Data->Connection)); return ERR::Okay;
 }
 
+//********************************************************************************************************************
+
 ERR X11Driver::setWindowTitle(HOSTWINDOW WindowHandle, CSTRING Title)
 {
    auto window = x11_window(Data, WindowHandle); if ((not window) or (not Title)) return ERR::NullArgs;
    XStoreName(Data->Connection, window->Native, Title); return ERR::Okay;
 }
+
+//********************************************************************************************************************
 
 ERR X11Driver::windowTitle(HOSTWINDOW WindowHandle, std::string &Title)
 {
@@ -513,6 +718,8 @@ ERR X11Driver::windowTitle(HOSTWINDOW WindowHandle, std::string &Title)
    char *title = nullptr; if (not XFetchName(Data->Connection, window->Native, &title)) return ERR::SystemCall;
    Title = title ? title : ""; if (title) XFree(title); return ERR::Okay;
 }
+
+//********************************************************************************************************************
 
 ERR X11Driver::setSizeHints(HOSTWINDOW WindowHandle, int MinW, int MinH, int MaxW, int MaxH, bool EnforceAspect)
 {
@@ -526,6 +733,8 @@ ERR X11Driver::setSizeHints(HOSTWINDOW WindowHandle, int MinW, int MinH, int Max
    XSetWMNormalHints(Data->Connection, window->Native, &hints); return ERR::Okay;
 }
 
+//********************************************************************************************************************
+
 ERR X11Driver::windowCoords(HOSTWINDOW WindowHandle, int &X, int &Y, int &Width, int &Height)
 {
    auto window = x11_window(Data, WindowHandle); if (not window) return ERR::NoSupport;
@@ -534,6 +743,8 @@ ERR X11Driver::windowCoords(HOSTWINDOW WindowHandle, int &X, int &Y, int &Width,
    Window child; XTranslateCoordinates(Data->Connection, window->Native, DefaultRootWindow(Data->Connection), 0, 0,
       &X, &Y, &child); Width = attributes.width; Height = attributes.height; return ERR::Okay;
 }
+
+//********************************************************************************************************************
 
 ERR X11Driver::frameMargins(HOSTWINDOW WindowHandle, int &Left, int &Top, int &Right, int &Bottom)
 {
@@ -550,6 +761,8 @@ ERR X11Driver::frameMargins(HOSTWINDOW WindowHandle, int &Left, int &Top, int &R
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
+
 ERR X11Driver::setWindowSurface(HOSTWINDOW WindowHandle, OBJECTID SurfaceID)
 {
    auto window = x11_window(Data, WindowHandle); if (not window) return ERR::NoSupport;
@@ -558,12 +771,15 @@ ERR X11Driver::setWindowSurface(HOSTWINDOW WindowHandle, OBJECTID SurfaceID)
       (uint8_t *)&SurfaceID, 1); return ERR::Okay;
 }
 
+//********************************************************************************************************************
+
 ERR X11Driver::windowSurface(HOSTWINDOW WindowHandle, OBJECTID &SurfaceID)
 {
    auto window = x11_window(Data, WindowHandle); if (not window) return ERR::NoSupport;
    SurfaceID = window->SurfaceID; return ERR::Okay;
 }
 
+//********************************************************************************************************************
 // Unlike the Win32 device context, the X11 drawable is owned by the window for as long as the window exists, so
 // there is no matching release operation.  Tearing the drawable down between paint cycles would leave the display
 // bitmap unusable for host-side blits, fills and resizes.
@@ -576,6 +792,8 @@ ERR X11Driver::acquireWindowBitmap(HOSTWINDOW WindowHandle, extBitmap *Bitmap)
    bitmap->WindowGraphicsContext = window->GraphicsContext;
    return ERR::Okay;
 }
+
+//********************************************************************************************************************
 
 ERR X11Driver::displayInfo(DisplayInfo &Info)
 {
@@ -602,11 +820,15 @@ ERR X11Driver::displayInfo(DisplayInfo &Info)
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
+
 ERR X11Driver::density(HOSTWINDOW, int &Horizontal, int &Vertical)
 {
    Horizontal = Vertical = 96;
    return Data->Open ? ERR::Okay : ERR::NotInitialised;
 }
+
+//********************************************************************************************************************
 
 ERR X11Driver::resolutions(std::vector<resolution> &List)
 {
@@ -627,6 +849,8 @@ ERR X11Driver::resolutions(std::vector<resolution> &List)
       DefaultDepth(Data->Connection, DefaultScreen(Data->Connection)));
    return ERR::Okay;
 }
+
+//********************************************************************************************************************
 
 ERR X11Driver::setDisplayMode(int &Width, int &Height, int &BitsPerPixel, double)
 {
@@ -656,8 +880,13 @@ ERR X11Driver::setDisplayMode(int &Width, int &Height, int &BitsPerPixel, double
 #endif
 }
 
+//********************************************************************************************************************
+
 ERR X11Driver::setGamma(double, double, double) { return ERR::NoSupport; }
+
 ERR X11Driver::setPowerMode(DPMS) { return ERR::NoSupport; }
+
+//********************************************************************************************************************
 
 ERR X11Driver::pixelFormat(ColourFormat &Format)
 {
@@ -679,6 +908,8 @@ ERR X11Driver::pixelFormat(ColourFormat &Format)
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
+
 static void initialise_image(extBitmap *Bitmap, X11BitmapRecord *Record)
 {
    Record->Image = {};
@@ -697,6 +928,8 @@ static void initialise_image(extBitmap *Bitmap, X11BitmapRecord *Record)
    if (Record->SharedImage) Record->Image.obdata = (char *)&Record->Shm;
    XInitImage(&Record->Image);
 }
+
+//********************************************************************************************************************
 
 static ERR upload_bitmap(X11Driver::State *State, Drawable DrawableID, GC GraphicsContext, extBitmap *Bitmap,
    X11BitmapRecord *Record, int X, int Y, int Width, int Height, int XDest, int YDest)
@@ -719,6 +952,8 @@ static ERR upload_bitmap(X11Driver::State *State, Drawable DrawableID, GC Graphi
    if (convert_alpha) return Bitmap->demultiply();
    return ERR::Okay;
 }
+
+//********************************************************************************************************************
 
 ERR X11Driver::present(HOSTWINDOW WindowHandle, extBitmap *Source, int X, int Y, int Width, int Height,
    int XDest, int YDest)
@@ -744,8 +979,11 @@ ERR X11Driver::present(HOSTWINDOW WindowHandle, extBitmap *Source, int X, int Y,
    }
    else return ERR::NoSupport;
    if (window->Background) XClearArea(Data->Connection, window->Native, XDest, YDest, Width, Height, 0);
+   x11_end_frame(Data, window);
    return ERR::Okay;
 }
+
+//********************************************************************************************************************
 
 ERR X11Driver::blitBitmap(extBitmap *Destination, extBitmap *Source, BAF Flags, int X, int Y, int Width, int Height,
    int XDest, int YDest)
@@ -776,6 +1014,8 @@ ERR X11Driver::blitBitmap(extBitmap *Destination, extBitmap *Source, BAF Flags, 
    return ERR::NoSupport;
 }
 
+//********************************************************************************************************************
+
 ERR X11Driver::fillBitmap(extBitmap *Destination, int X, int Y, int Width, int Height, uint32_t Colour)
 {
    auto bitmap = x11_bitmap(Destination);
@@ -786,6 +1026,8 @@ ERR X11Driver::fillBitmap(extBitmap *Destination, int X, int Y, int Width, int H
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
+
 ERR X11Driver::flush()
 {
    if (not Data->Open) return ERR::NotInitialised;
@@ -793,17 +1035,22 @@ ERR X11Driver::flush()
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
+
 ERR X11Driver::allocBitmap(extBitmap *Bitmap)
 {
    const std::lock_guard lock(Data->NativeLock);
    if (not Bitmap) return ERR::NullArgs;
    if (Bitmap->DriverData) return ERR::Okay;
+
    if ((Bitmap->MemType IS BMT::TEXTURE) or
          ((Bitmap->MemType IS BMT::VIDEO) and ((Bitmap->Flags & BMF::NO_DATA) IS BMF::NIL))) {
       Bitmap->MemType = BMT::DATA;
    }
+
    auto record = new(std::nothrow) X11BitmapRecord;
    if (not record) return ERR::AllocMemory;
+
    record->Connection = Data->Connection;
    record->DefaultGraphicsContext = Data->GraphicsContext;
    if (Data->SharedImages and (Bitmap->MemType IS BMT::DATA) and (not Bitmap->Data) and
@@ -813,16 +1060,19 @@ ERR X11Driver::allocBitmap(extBitmap *Bitmap)
          delete record;
          return ERR::Memory;
       }
+
       record->Shm.shmaddr = (char *)shmat(record->Shm.shmid, nullptr, 0);
       if (record->Shm.shmaddr IS (char *)-1) {
          shmctl(record->Shm.shmid, IPC_RMID, nullptr);
          delete record;
          return ERR::LockFailed;
       }
+
       record->Shm.readOnly = 0;
       Bitmap->Data = (uint8_t *)record->Shm.shmaddr;
       initialise_image(Bitmap, record);
       record->Image.obdata = (char *)&record->Shm;
+
       if (XShmAttach(Data->Connection, &record->Shm)) record->SharedImage = true;
       else {
          shmdt(record->Shm.shmaddr);
@@ -831,13 +1081,17 @@ ERR X11Driver::allocBitmap(extBitmap *Bitmap)
          delete record;
          return ERR::SystemCall;
       }
+
       if (record->SharedImage) Bitmap->prvAFlags |= BF_DRIVER_DATA;
    }
+
    Bitmap->DriverData = record;
    Data->Bitmaps.insert(Bitmap);
    if (Bitmap->MemType IS BMT::VIDEO) Bitmap->prvAFlags |= BF_WINVIDEO;
    return ERR::Okay;
 }
+
+//********************************************************************************************************************
 
 ERR X11Driver::freeBitmap(extBitmap *Bitmap)
 {
@@ -845,6 +1099,7 @@ ERR X11Driver::freeBitmap(extBitmap *Bitmap)
    auto record = x11_bitmap(Bitmap);
    if (not record) return ERR::Okay;
    const bool clear_data = record->SharedImage or record->Readable;
+
    if (Data->Connection) {
       if (record->SharedImage) {
          XShmDetach(Data->Connection, &record->Shm);
@@ -853,9 +1108,11 @@ ERR X11Driver::freeBitmap(extBitmap *Bitmap)
          shmctl(record->Shm.shmid, IPC_RMID, nullptr);
          Bitmap->Data = nullptr;
       }
+
       if (record->Readable) XDestroyImage(record->Readable);
       if (record->OwnsDrawable and record->DrawableID) XFreePixmap(Data->Connection, record->DrawableID);
    }
+
    delete record;
    Bitmap->DriverData = nullptr;
    if (clear_data) Bitmap->Data = nullptr;
@@ -863,11 +1120,15 @@ ERR X11Driver::freeBitmap(extBitmap *Bitmap)
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
+
 ERR X11Driver::resizeBitmap(extBitmap *Bitmap, int Width, int Height)
 {
    const std::lock_guard lock(Data->NativeLock);
+
    auto record = x11_bitmap(Bitmap);
    if (not record) return ERR::NoSupport;
+
    if (record->DrawableID and record->WindowID) {
       auto window_it = Data->Windows.find(record->WindowID);
       if ((window_it IS Data->Windows.end()) or (not window_it->second->Background)) return ERR::NoSupport;
@@ -888,11 +1149,14 @@ ERR X11Driver::resizeBitmap(extBitmap *Bitmap, int Width, int Height)
       Bitmap->Clip.Bottom = Height;
       return ERR::Okay;
    }
+
    if (not record->SharedImage) return ERR::NoSupport;
+
    const int byte_width = Bitmap->Type IS BMP::PLANAR ? (Width + 7) / 8 : Width * Bitmap->BytesPerPixel;
    const int line_width = ALIGN32(byte_width);
    const int plane_mod = line_width * Height;
    const int size = Bitmap->Type IS BMP::PLANAR ? plane_mod * Bitmap->BitsPerPixel : plane_mod;
+
    XShmSegmentInfo next = {};
    next.shmid = shmget(IPC_PRIVATE, size, IPC_CREAT|IPC_EXCL|0600);
    if (next.shmid IS -1) return ERR::Memory;
@@ -901,6 +1165,7 @@ ERR X11Driver::resizeBitmap(extBitmap *Bitmap, int Width, int Height)
       shmctl(next.shmid, IPC_RMID, nullptr);
       return ERR::LockFailed;
    }
+
    next.readOnly = 0;
    if (not XShmAttach(Data->Connection, &next)) {
       shmdt(next.shmaddr);
@@ -926,6 +1191,7 @@ ERR X11Driver::resizeBitmap(extBitmap *Bitmap, int Width, int Height)
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
 // Copy the clipped region of the drawable into the readable image so that the caller observes the current content
 // of the host surface rather than a snapshot taken by an earlier lock.
 
@@ -937,6 +1203,8 @@ static void refresh_readable(X11Driver::State *State, extBitmap *Bitmap, X11Bitm
    XGetSubImage(State->Connection, Record->DrawableID, Bitmap->Clip.Left, Bitmap->Clip.Top, width, height,
       0xffffffff, ZPixmap, Record->Readable, Bitmap->Clip.Left, Bitmap->Clip.Top);
 }
+
+//********************************************************************************************************************
 
 ERR X11Driver::lockBitmap(extBitmap *Bitmap, int16_t Access)
 {
@@ -980,7 +1248,11 @@ ERR X11Driver::lockBitmap(extBitmap *Bitmap, int16_t Access)
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
+
 ERR X11Driver::unlockBitmap(extBitmap *) { return ERR::Okay; }
+
+//********************************************************************************************************************
 
 ERR X11Driver::bitmapRoutines(extBitmap *Bitmap)
 {
@@ -992,6 +1264,8 @@ ERR X11Driver::bitmapRoutines(extBitmap *Bitmap)
    x11_install_bitmap_routines(Bitmap);
    return ERR::Okay;
 }
+
+//********************************************************************************************************************
 
 ERR X11Driver::setCursor(HOSTWINDOW WindowHandle, PTC CursorID)
 {
@@ -1015,18 +1289,26 @@ ERR X11Driver::setCursor(HOSTWINDOW WindowHandle, PTC CursorID)
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
+
 ERR X11Driver::setCustomCursor(HOSTWINDOW, extBitmap *, int, int) { return ERR::NoSupport; }
+
+//********************************************************************************************************************
 
 ERR X11Driver::showCursor(HOSTWINDOW WindowHandle, bool Visible)
 {
    return setCursor(WindowHandle, Visible ? PTC::DEFAULT : PTC::INVISIBLE);
 }
 
+//********************************************************************************************************************
+
 ERR X11Driver::warpPointer(HOSTWINDOW WindowHandle, int X, int Y)
 {
    auto window = x11_window(Data, WindowHandle); if (not window) return ERR::NoSupport;
    XWarpPointer(Data->Connection, None, window->Native, 0, 0, 0, 0, X, Y); XFlush(Data->Connection); return ERR::Okay;
 }
+
+//********************************************************************************************************************
 
 ERR X11Driver::pointerPosition(double &X, double &Y)
 {
@@ -1037,6 +1319,8 @@ ERR X11Driver::pointerPosition(double &X, double &Y)
    X = root_x; Y = root_y; return ERR::Okay;
 }
 
+//********************************************************************************************************************
+
 ERR X11Driver::grabPointer(HOSTWINDOW WindowHandle)
 {
    auto window = x11_window(Data, WindowHandle); if (not window) return ERR::NoSupport;
@@ -1044,11 +1328,15 @@ ERR X11Driver::grabPointer(HOSTWINDOW WindowHandle)
       GrabModeAsync, GrabModeAsync, window->Native, None, CurrentTime) IS GrabSuccess ? ERR::Okay : ERR::SystemCall;
 }
 
+//********************************************************************************************************************
+
 ERR X11Driver::ungrabPointer()
 {
    if (not Data->Open) return ERR::NotInitialised;
    XUngrabPointer(Data->Connection, CurrentTime); return ERR::Okay;
 }
+
+//********************************************************************************************************************
 
 ERR X11Driver::setHostOption(HOST Option, int64_t Value)
 {

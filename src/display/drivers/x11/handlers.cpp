@@ -94,12 +94,30 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
          }
 
          case ClientMessage:
+            // Only WM_PROTOCOLS messages carry a protocol atom in l[0].  Other messages, such as the compositor's
+            // _NET_WM_FRAME_DRAWN, carry arbitrary values there that can coincide with a protocol atom.
+
+            if (xevent.xclient.message_type != glEventState->ProtocolsAtom) break;
+
             if (Atom(xevent.xclient.data.l[0]) IS XWADeleteWindow) {
                auto surface_id = resolve_surface(xevent.xany.window);
                if (glDriverCallbacks.WindowClose(surface_id) IS ERR::Cancelled) break;
             }
             else if (Atom(xevent.xclient.data.l[0]) IS XWATakeFocus) {
                XSetInputFocus(XDisplay, xevent.xclient.window, RevertToParent, Time(xevent.xclient.data.l[1]));
+            }
+            else if ((glEventState->SyncRequestAtom) and
+                  (Atom(xevent.xclient.data.l[0]) IS glEventState->SyncRequestAtom)) {
+               // The window manager is about to configure the window and will wait for the counter to reach this
+               // value, which is set once the next frame has been presented.
+
+               const std::lock_guard lock(glEventState->NativeLock);
+               if (auto it = glEventState->Windows.find(xevent.xclient.window); it != glEventState->Windows.end()) {
+                  it->second->SyncRequest = int64_t((uint64_t(uint32_t(xevent.xclient.data.l[3])) << 32) |
+                     uint64_t(uint32_t(xevent.xclient.data.l[2])));
+                  it->second->SyncRequestExtended = xevent.xclient.data.l[4] != 0;
+                  if (it->second->SyncRequestExtended) x11_begin_frame(glEventState, it->second);
+               }
             }
             break;
 
@@ -222,7 +240,6 @@ void handle_configure_notify(XConfigureEvent *xevent)
 
 void handle_exposure(XExposeEvent *event)
 {
-   kt::Log log(__FUNCTION__);
    XEvent xevent;
    while (XCheckWindowEvent(XDisplay, event->window, ExposureMask, &xevent) IS True);
    glDriverCallbacks.ExposeRegion(resolve_surface(event->window), event->x, event->y, event->width, event->height);
