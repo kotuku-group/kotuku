@@ -172,8 +172,8 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 function buildColourReport(Painter)
-   nrgb  = Painter.Colour -- Normalised RGB
-   rgb   = gui.nrgb(nrgb.Red, nrgb.Green, nrgb.Blue, nrgb.Alpha)
+   nrgb  = Painter.colour -- Normalised RGB
+   rgb   = gui.nrgb(nrgb.red, nrgb.green, nrgb.blue, nrgb.alpha)
    oklab = rgb.toOKLab()
    oklch = rgb.toOKLCH()
    hsl   = rgb.toHSL()
@@ -398,8 +398,8 @@ end
 
          col = buffer.sub(start, stop)
          err = mVec.ReadPainter(nil, col, painter)
-         nrgb = painter.Colour -- Normalised RGB
-         out ..= segment .. convert(gui.nrgb(nrgb.Red, nrgb.Green, nrgb.Blue, nrgb.Alpha))
+         nrgb = painter.colour -- Normalised RGB
+         out ..= segment .. convert(gui.nrgb(nrgb.red, nrgb.green, nrgb.blue, nrgb.alpha))
          index = stop
       end
       out ..= buffer.sub(index)
@@ -412,8 +412,8 @@ end
 
          col = buffer.sub(start, stop)
          err = mVec.ReadPainter(nil, col, painter)
-         nrgb = painter.Colour -- Normalised RGB
-         out ..= segment .. convert(gui.nrgb(nrgb.Red, nrgb.Green, nrgb.Blue, nrgb.Alpha))
+         nrgb = painter.colour -- Normalised RGB
+         out ..= segment .. convert(gui.nrgb(nrgb.red, nrgb.green, nrgb.blue, nrgb.alpha))
          index = stop
       end
       out ..= buffer.sub(index)
