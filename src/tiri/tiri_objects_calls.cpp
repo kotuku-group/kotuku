@@ -829,20 +829,26 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
             if (not native_struct and (type != LUA_TNIL) and (type != LUA_TNONE)) {
                return fail_arg(n, "Matching struct required.");
             }
+
             if (native_struct) {
                auto expected = (Args[i].Name and valid_struct_name(Args[i].Name)) ?
                   find_struct(Lua, struct_name_prefix(Args[i].Name)) : nullptr;
+
                if (not expected) return fail(ERR::Search);
+
                if (lj_struct_stale(native_struct)) {
                   return fail_arg(n, "Struct's providing object has been destroyed.");
                }
+
                if ((native_struct->def != expected) or
                      (native_struct->structsize != uint32_t(expected->Size))) {
                   return fail_arg(n, "Struct definition does not match the native parameter.");
                }
+
                if (not native_struct->data) return fail_arg(n, "Struct storage is unavailable.");
             }
          }
+
          if (Args[i].Type & FD_OBJECT) {
             if (auto obj_ref = lj_lib_optobject(Lua, n, false)) { // Performs thunk resolution
                OBJECTPTR ptr_obj;
@@ -866,10 +872,12 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          }
          else if (type IS LUA_TSTRING) {
             //log.trace("Arg: %s, Value: Pointer (Source is String)", Args[i].Name);
+
             auto string = strV(Lua->base + n - 1);
             if ((Args[i].Type & FD_MUTABLE) and (not lj_str_ismutable(string))) {
                return fail_arg(n, "Mutable buffer required.");
             }
+
             ((CSTRING *)(ArgBuffer + j))[0] = (Args[i].Type & FD_MUTABLE) ? strdatawr(string) : strdata(string);
          }
          else if (type IS LUA_TNUMBER) {

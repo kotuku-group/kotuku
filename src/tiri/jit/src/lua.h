@@ -155,6 +155,7 @@ struct struct_record;
 
 // Payload ownership and field access are independent properties of a native structure wrapper.  In particular,
 // adopting a Kōtuku resource never grants write access and delegates complete destruction to FreeResource().
+
 enum class StructPayloadPolicy : uint8_t {
    Inline,
    Borrowed,

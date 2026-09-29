@@ -1,19 +1,22 @@
    include 'display', 'vector'
+   module display as mGfx
 
-module display as mGfx
+function readPixel(Bitmap, X, Y)
+   return struct.toTable(mGfx.ReadRGBPixel(Bitmap, X, Y))
+end
 
 -- These tests exercise the Gradient.Matrices field, which holds gradientTransform values in contiguous
 -- kt::vector<VectorMatrix> storage.  The transform is consumed by the renderer via apply_transforms(), so a
 -- transformed gradient must produce a measurably different result to an untransformed one.
 
 function newBitmap(Width, Height)
-   local bmp = obj.new('bitmap', { width=Width, height=Height, bitsPerPixel=32, bkgd='0,0,0,255' })
+   bmp = obj.new('bitmap', { width=Width, height=Height, bitsPerPixel=32, bkgd='0,0,0,255' })
    bmp.acClear()
    return bmp
 end
 
 function stop(Offset, R, G, B)
-   local s = struct.new('GradientStop')
+   s = struct<GradientStop>
    s.offset    = Offset
    s.rgb.red   = R
    s.rgb.green = G
@@ -23,19 +26,19 @@ function stop(Offset, R, G, B)
 end
 
 function rampStops()
-   return { stop(0.0, 1.0, 0.0, 0.0), stop(1.0, 0.0, 0.0, 1.0) }
+   return array<struct<GradientStop>> { stop(0.0, 1.0, 0.0, 0.0), stop(1.0, 0.0, 0.0, 1.0) }
 end
 
 -- A horizontal user-space linear gradient running red (left) to blue (right) across a 100x100 area.
 
 function newLinearScene(Transform)
-   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
-   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
 
-   local fields = { units=VUNIT_USERSPACE, x1=0, y1=50, x2=100, y2=50, stops=rampStops() }
+   fields = { units=VUNIT_USERSPACE, x1=0, y1=50, x2=100, y2=50, stops=rampStops() }
    if Transform then fields.transform = Transform end
 
-   local gradient = scene.new('GradientLinear', fields)
+   gradient = scene.new('GradientLinear', fields)
    check scene.mtAddDef('grad', gradient)
 
    viewport.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='url(#grad)' })
@@ -54,12 +57,12 @@ function drawHash(Scene, Bitmap)
 end
 
 @Test function PlainGradientRunsLeftToRight()
-   local scene = newLinearScene(nil)
-   local bmp = newBitmap(100, 100)
+   scene = newLinearScene(nil)
+   bmp = newBitmap(100, 100)
    drawScene(scene, bmp)
 
-   local left  = mGfx.ReadRGBPixel(bmp, 10, 50)
-   local right = mGfx.ReadRGBPixel(bmp, 90, 50)
+   left  = readPixel(bmp, 10, 50)
+   right = readPixel(bmp, 90, 50)
 
    assert((left.red > left.blue) and (left.red > 180),
       'The untransformed gradient should be red-dominant on the left (got ' ..
@@ -73,10 +76,10 @@ end
    -- A transformed gradient must hash differently to an untransformed one, proving the Matrices field is
    -- consumed by the renderer.
 
-   local plain_scene = newLinearScene(nil)
-   local rot_scene   = newLinearScene('rotate(90 50 50)')
-   local plain_bmp = newBitmap(100, 100)
-   local rot_bmp   = newBitmap(100, 100)
+   plain_scene = newLinearScene(nil)
+   rot_scene   = newLinearScene('rotate(90 50 50)')
+   plain_bmp = newBitmap(100, 100)
+   rot_bmp   = newBitmap(100, 100)
 
    assert(drawHash(plain_scene, plain_bmp) != drawHash(rot_scene, rot_bmp),
       'A gradientTransform must change the rendered output')
@@ -85,12 +88,12 @@ end
 @Test function RotateReorientsAxis()
    -- rotate(90) about the centre turns the horizontal ramp into a vertical one: red at the top, blue at the bottom.
 
-   local scene = newLinearScene('rotate(90 50 50)')
-   local bmp = newBitmap(100, 100)
+   scene = newLinearScene('rotate(90 50 50)')
+   bmp = newBitmap(100, 100)
    drawScene(scene, bmp)
 
-   local top    = mGfx.ReadRGBPixel(bmp, 50, 10)
-   local bottom = mGfx.ReadRGBPixel(bmp, 50, 90)
+   top    = readPixel(bmp, 50, 10)
+   bottom = readPixel(bmp, 50, 90)
 
    assert((top.red > top.blue) and (top.red > 180),
       'A 90-degree rotation should place the start colour (red) at the top (got ' ..
@@ -105,12 +108,12 @@ end
    -- (the ResetMatrix branch) rather than accumulate.  Rotating by 90 then back to 0 must restore the
    -- original left-to-right rendering.
 
-   local plain_scene = newLinearScene(nil)
-   local reset_scene, gradient = newLinearScene('rotate(90 50 50)')
+   plain_scene = newLinearScene(nil)
+   reset_scene, gradient = newLinearScene('rotate(90 50 50)')
    gradient.transform = 'rotate(0 50 50)'
 
-   local plain_bmp = newBitmap(100, 100)
-   local reset_bmp = newBitmap(100, 100)
+   plain_bmp = newBitmap(100, 100)
+   reset_bmp = newBitmap(100, 100)
 
    assert(drawHash(plain_scene, plain_bmp) is drawHash(reset_scene, reset_bmp),
       'Re-assigning a zero rotation should restore the untransformed rendering')
