@@ -122,7 +122,7 @@ end
 
 function printableTime(Time):str
    return string.format('%04d-%02d-%02d %02d:%02d:%02d',
-      Time.Year, Time.Month, Time.Day, Time.Hour, Time.Minute, Time.Second)
+      Time.year, Time.month, Time.day, Time.hour, Time.minute, Time.second)
 end
 
 -- Returns the surface that is acting as the window.  Returns 0 if no window surface is detected.

@@ -136,7 +136,7 @@ void lj_struct_check_lifecycle(lua_State *L, GCstruct *Struct, const char *Field
 
 //********************************************************************************************************************
 // Resolve a struct field and maintain the instruction's P32 inline cache.  Struct definitions are stable for the
-// lifetime of the Lua state, but the hash is checked on every hit so polymorphic access sites self-heal.
+// lifetime of the Lua state, but the exact name is checked on every hit so polymorphic access sites self-heal.
 
 NativeStructType effective_scalar_type(uint32_t FieldFlags, NativeStructType NativeType) noexcept
 {
@@ -161,15 +161,15 @@ static struct_field * find_cached_field(GCstruct *Struct, GCstr *Key, BCIns *Ins
    if (not Struct->def) return nullptr;
 
    auto &fields = Struct->def->Fields;
-   const auto field_hash = strihash(strdata(Key));
+   const std::string_view field_name(strdata(Key), Key->len);
    if (Ins) {
       const uint32_t cached = bc_p32(*Ins);
       if ((cached != 0xFFFFFFFFu) and (cached < fields.size()) and
-            (fields[cached].nameHash() IS field_hash)) return &fields[cached];
+            struct_field_matches(fields[cached], field_name)) return &fields[cached];
    }
 
    for (uint32_t i = 0; i < fields.size(); i++) {
-      if (fields[i].nameHash() IS field_hash) {
+      if (struct_field_matches(fields[i], field_name)) {
          if (Ins) setbc_p32(Ins, i);
          return &fields[i];
       }

@@ -11,14 +11,14 @@ end
 function lineEdge(Patch, Prefix, X0, Y0, X1, Y1)
    local dx = X1 - X0
    local dy = Y1 - Y0
-   Patch[Prefix].StartX = X0
-   Patch[Prefix].StartY = Y0
-   Patch[Prefix].X1 = X0 + (dx / 3.0)
-   Patch[Prefix].Y1 = Y0 + (dy / 3.0)
-   Patch[Prefix].X2 = X0 + (dx * 2.0 / 3.0)
-   Patch[Prefix].Y2 = Y0 + (dy * 2.0 / 3.0)
-   Patch[Prefix].EndX = X1
-   Patch[Prefix].EndY = Y1
+   Patch[Prefix].startX = X0
+   Patch[Prefix].startY = Y0
+   Patch[Prefix].x1 = X0 + (dx / 3.0)
+   Patch[Prefix].y1 = Y0 + (dy / 3.0)
+   Patch[Prefix].x2 = X0 + (dx * 2.0 / 3.0)
+   Patch[Prefix].y2 = Y0 + (dy * 2.0 / 3.0)
+   Patch[Prefix].endX = X1
+   Patch[Prefix].endY = Y1
 end
 
 function setColour(Patch, Prefix, Red, Green, Blue)
@@ -96,10 +96,10 @@ end
 
 function curvedTopPatch()
    local patch = struct.new('MeshPatchRecord')
-   patch.top.StartX = 0;  patch.top.StartY = 0
-   patch.top.X1 = 33;     patch.top.Y1 = 50
-   patch.top.X2 = 66;     patch.top.Y2 = 50
-   patch.top.EndX = 100;  patch.top.EndY = 0
+   patch.top.startX = 0;  patch.top.startY = 0
+   patch.top.x1 = 33;     patch.top.y1 = 50
+   patch.top.x2 = 66;     patch.top.y2 = 50
+   patch.top.endX = 100;  patch.top.endY = 0
    lineEdge(patch, 'right', 100, 0, 100, 100)
    lineEdge(patch, 'bottom', 100, 100, 0, 100)
    lineEdge(patch, 'left', 0, 100, 0, 0)

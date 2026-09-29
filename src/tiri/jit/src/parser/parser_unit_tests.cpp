@@ -5186,7 +5186,7 @@ static bool test_state_local_struct_declarations(kt::Log &Log)
 static bool test_named_struct_bytecode_manifest(kt::Log &Log)
 {
    constexpr std::string_view source =
-      "struct BytecodeLeaf Value: int end\n"
+      "struct BytecodeLeaf Value: int, value: int end\n"
       "struct BytecodeMiddle Leaf: struct<BytecodeLeaf> end\n"
       "struct BytecodeRoot Middle: struct<BytecodeMiddle>, Numbers: int[3], "
          "Leaves: array<struct<BytecodeLeaf>>, Name: str, Clock: obj<Time>, Link: ptr<BytecodeLeaf> end\n"
@@ -5194,8 +5194,9 @@ static bool test_named_struct_bytecode_manifest(kt::Log &Log)
       "local function identity(Value:struct<BytecodeRoot>):struct<BytecodeRoot> return Value end\n"
       "local item = struct<BytecodeRoot> { }\n"
       "item.Middle.Leaf.Value = 42\n"
+      "item.Middle.Leaf.value = 17\n"
       "item.Name = 'fresh'\n"
-      "return identity(item).Middle.Leaf.Value\n";
+      "return identity(item).Middle.Leaf.Value + identity(item).Middle.Leaf.value\n";
 
    LuaStateHolder producer;
    lua_State *source_state = producer.get();
@@ -5363,7 +5364,7 @@ static bool test_named_struct_bytecode_manifest(kt::Log &Log)
          lua_State *redump_target = redump_consumer.get();
          luaL_openlibs(redump_target);
          if (lua_load(redump_target, redump, "struct-bytecode-redump") or
-             lua_pcall(redump_target, 0, 1, 0) or lua_tointeger(redump_target, -1) != 42) {
+             lua_pcall(redump_target, 0, 1, 0) or lua_tointeger(redump_target, -1) != 59) {
             Log.error("a raw re-dump did not retain its portable struct manifest");
             return false;
          }
@@ -5374,12 +5375,14 @@ static bool test_named_struct_bytecode_manifest(kt::Log &Log)
       if (not loaded_root or not loaded_middle or not loaded_leaf or find_struct(target, "BytecodeUnused") or
           loaded_root->Fields.size() != 6 or loaded_root->Fields[0].StructDefinition != loaded_middle or
           loaded_middle->Fields[0].StructDefinition != loaded_leaf or
+          loaded_leaf->Fields.size() != 2 or loaded_leaf->Fields[0].Name != "Value" or
+          loaded_leaf->Fields[1].Name != "value" or
           loaded_root->Fields[4].ObjectClassName != "Time") {
          Log.error("%s struct dump reconstructed the wrong dependency graph or field semantics",
             strip ? "stripped" : "unstripped");
          return false;
       }
-      if (lua_pcall(target, 0, 1, 0) or lua_tointeger(target, -1) != 42) {
+      if (lua_pcall(target, 0, 1, 0) or lua_tointeger(target, -1) != 59) {
          Log.error("%s struct dump did not execute with reconstructed layouts: %s",
             strip ? "stripped" : "unstripped", lua_tostring(target, -1));
          return false;
@@ -10005,12 +10008,12 @@ static bool test_type_guided_emission(kt::Log &Log)
       "   Double:double\n"
       "end\n"
       "global glContractElisionValue = struct<ContractElisionFields> {\n"
-      "   integer=1, wide=2, float=3.5, double=4.5\n"
+      "   Integer=1, Wide=2, Float=3.5, Double=4.5\n"
       "}\n"
       "local function accumulate():num\n"
       "   local count = 0\n"
-      "   count += glContractElisionValue.integer + glContractElisionValue.wide +\n"
-      "      glContractElisionValue.float + glContractElisionValue.double\n"
+      "   count += glContractElisionValue.Integer + glContractElisionValue.Wide +\n"
+      "      glContractElisionValue.Float + glContractElisionValue.Double\n"
       "   return count\n"
       "end\n"
       "return accumulate\n";

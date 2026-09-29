@@ -6,26 +6,26 @@ function assertMatrix(Matrix, ScaleX, ShearY, ShearX, ScaleY, TranslateX, Transl
       assert(Actual ≈ Expected, f'{Message}: expected {Expected}, got {Actual}')
    end
 
-   near(Matrix.ScaleX, ScaleX, f'{Message} ScaleX')
-   near(Matrix.ShearY, ShearY, f'{Message} ShearY')
-   near(Matrix.ShearX, ShearX, f'{Message} ShearX')
-   near(Matrix.ScaleY, ScaleY, f'{Message} ScaleY')
-   near(Matrix.TranslateX, TranslateX, f'{Message} TranslateX')
-   near(Matrix.TranslateY, TranslateY, f'{Message} TranslateY')
+   near(Matrix.scaleX, ScaleX, f'{Message} ScaleX')
+   near(Matrix.shearY, ShearY, f'{Message} ShearY')
+   near(Matrix.shearX, ShearX, f'{Message} ShearX')
+   near(Matrix.scaleY, ScaleY, f'{Message} ScaleY')
+   near(Matrix.translateX, TranslateX, f'{Message} TranslateX')
+   near(Matrix.translateY, TranslateY, f'{Message} TranslateY')
 end
 
 function setNonIdentity(Matrix)
-   Matrix.ScaleX = 2
-   Matrix.ShearY = 3
-   Matrix.ShearX = 4
-   Matrix.ScaleY = 5
-   Matrix.TranslateX = 6
-   Matrix.TranslateY = 7
+   Matrix.scaleX = 2
+   Matrix.shearY = 3
+   Matrix.shearX = 4
+   Matrix.scaleY = 5
+   Matrix.translateX = 6
+   Matrix.translateY = 7
 end
 
 function isIdentity(Matrix)
-   return (Matrix.ScaleX ≈ 1) and (Matrix.ShearY ≈ 0) and (Matrix.ShearX ≈ 0) and
-      (Matrix.ScaleY ≈ 1) and (Matrix.TranslateX ≈ 0) and (Matrix.TranslateY ≈ 0)
+   return (Matrix.scaleX ≈ 1) and (Matrix.shearY ≈ 0) and (Matrix.shearX ≈ 0) and
+      (Matrix.scaleY ≈ 1) and (Matrix.translateX ≈ 0) and (Matrix.translateY ≈ 0)
 end
 
 function parseTransform(Transform)

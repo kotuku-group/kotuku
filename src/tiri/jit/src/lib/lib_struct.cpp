@@ -452,9 +452,8 @@ template <typename T> static void push_vector_array(lua_State *L, APTR Address, 
    CSTRING FieldName)
 {
    if (auto def = Struct->def) {
-      auto field_hash = strihash(FieldName);
       for (auto &field : def->Fields) {
-         if (field.nameHash() IS field_hash) return std::ref(field);
+         if (struct_field_matches(field, FieldName)) return std::ref(field);
       }
    }
    return std::nullopt;

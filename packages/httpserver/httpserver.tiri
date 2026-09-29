@@ -1065,7 +1065,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 function printableTime(Time):str
-   return tempus.localDateTime(Time.Year, Time.Month, Time.Day, Time.Hour, Time.Minute, Time.Second).format(
+   return tempus.localDateTime(Time.year, Time.month, Time.day, Time.hour, Time.minute, Time.second).format(
       'yyyy-MM-dd HH:mm:ss')
 end
 
@@ -1114,7 +1114,7 @@ a:hover { text-decoration: underline; }
       maxEntries = 1000 -- Limit directory entries to prevent DoS
       while mSys.ScanDir(dir) is ERR_Okay and count < maxEntries do
          info = dir.info
-         name = info.Name
+         name = info.name
 
          -- Skip hidden files and system files for security
          if not name.startsWith('.') then

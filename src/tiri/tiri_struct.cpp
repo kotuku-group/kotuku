@@ -415,9 +415,8 @@ static ERR value_to_cpp_vector(lua_State *Lua, int StackIndex, const struct_fiel
    while (lua_next(Lua, -2) != 0) { // Pops the current key and pushes the k,v pair.
       if (auto field_name = lua_tostring(Lua, -2)) {
          // Find matching field in struct definition
-         auto field_hash = strihash(field_name);
          for (auto &field : struct_def.Fields) {
-            if (field.nameHash() IS field_hash) {
+            if (struct_field_matches(field, field_name)) {
                APTR address = memory.get() + field.Offset;
                auto type = field.Type;
 
@@ -872,6 +871,10 @@ static bool struct_is_trivial(lua_State *Lua, const struct_record &Record, std::
       make_camel_case(field.Name);
       field.precomputeNameHash();
 
+      for (const auto &existing : Record.Fields) {
+         if (existing.Name IS field.Name) return ERR::Exists;
+      }
+
       // Manage fields that are based on fixed array sizes.  NOTE: An array size of zero, i.e. [0] is an indicator
       // that the field is a pointer to a null terminated array.
       //
@@ -1315,7 +1318,7 @@ ERR load_declared_struct_manifest(lua_State *Lua, std::string_view Manifest, std
       PendingRecord pending;
       pending.record.Name = name;
       pending.references.reserve(field_count);
-      std::unordered_set<uint32_t> field_names;
+      std::unordered_set<std::string> field_names;
       for (uint32_t f = 0; f < field_count; ++f) {
          struct_field field;
          uint8_t native;
@@ -1323,7 +1326,7 @@ ERR load_declared_struct_manifest(lua_State *Lua, std::string_view Manifest, std
          uint32_t dimension;
          std::string reference;
          if (not reader.string(field.Name) or not valid_field_name(field.Name) or
-             not field_names.insert(kt::strihash(field.Name)).second or not reader.byte(native) or
+             not field_names.insert(field.Name).second or not reader.byte(native) or
              native <= uint8_t(NativeStructType::Legacy) or native > uint8_t(NativeStructType::Function) or
              not reader.uleb(flags) or (flags & ~portable_struct_flags) or not reader.uleb(dimension) or
              not reader.string(reference) or not reader.string(field.ObjectClassName)) {

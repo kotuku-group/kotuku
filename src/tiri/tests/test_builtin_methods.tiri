@@ -2,7 +2,7 @@
 
 struct BuiltinMethodRecord
    Value: int
-   Size: int
+   size: int
 end
 
 @BeforeEach(hotpath=true)
@@ -74,7 +74,7 @@ end
       text='AB',
       values=array<int> { 1 },
       sequence={0 to 3},
-      record=struct<BuiltinMethodRecord> { Value=9, Size=5 },
+      record=struct<BuiltinMethodRecord> { Value=9, size=5 },
       file=obj.new('file')
    }
    local first, second = holder.text.byte(0, 2)
@@ -235,7 +235,7 @@ end
 end
 
 @Test function StructMethods()
-   local source = struct<BuiltinMethodRecord> { Value=42, Size=17 }
+   local source = struct<BuiltinMethodRecord> { Value=42, size=17 }
    assert(source.size is 17, 'A size field should remain readable when size() is a built-in method')
    assert(source.size() is struct.size(source) and source.size() is struct.size('BuiltinMethodRecord'),
       'Struct size should support equivalent instance, reference and definition-name calls')

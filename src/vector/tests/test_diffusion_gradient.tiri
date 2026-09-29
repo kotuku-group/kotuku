@@ -15,14 +15,14 @@ function lineCurve(X0: num, Y0: num, X1: num, Y1: num, LeftStart: table, LeftEnd
    local rec = struct.new('DiffusionCurveRecord')
    local dx = X1 - X0
    local dy = Y1 - Y0
-   rec.curve.StartX = X0
-   rec.curve.StartY = Y0
-   rec.curve.X1 = X0 + (dx / 3.0)
-   rec.curve.Y1 = Y0 + (dy / 3.0)
-   rec.curve.X2 = X0 + (dx * 2.0 / 3.0)
-   rec.curve.Y2 = Y0 + (dy * 2.0 / 3.0)
-   rec.curve.EndX = X1
-   rec.curve.EndY = Y1
+   rec.curve.startX = X0
+   rec.curve.startY = Y0
+   rec.curve.x1 = X0 + (dx / 3.0)
+   rec.curve.y1 = Y0 + (dy / 3.0)
+   rec.curve.x2 = X0 + (dx * 2.0 / 3.0)
+   rec.curve.y2 = Y0 + (dy * 2.0 / 3.0)
+   rec.curve.endX = X1
+   rec.curve.endY = Y1
 
    local function setColour(Field, Colour: table)
       Field.red   = Colour[0]

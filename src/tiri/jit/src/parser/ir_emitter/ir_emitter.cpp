@@ -4210,9 +4210,10 @@ static void apply_struct_field_metadata(ExpDesc &Expression, struct_record *Stru
 {
    if (not StructDef or not FieldName) return;
 
+   const std::string_view field_name(strdata(FieldName), FieldName->len);
    for (uint32_t i = 0; i < StructDef->Fields.size(); i++) {
       auto &field = StructDef->Fields[i];
-      if (field.nameHash() != kt::strihash(strdata(FieldName))) continue;
+      if (not struct_field_matches(field, field_name)) continue;
 
       Expression.struct_field_index = i;
       Expression.result_type = TiriType::Any;

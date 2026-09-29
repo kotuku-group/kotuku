@@ -402,7 +402,7 @@ gui.strToRGB = function(Value:str!):table
 
    try<trace>
       mVec.ReadPainter(nil, Value, glPainter)
-      nrgb = glPainter.Colour
+      nrgb = glPainter.colour
       return setmetatable({
          r = math.clamp(nrgb.red, 0, 1),
          g = math.clamp(nrgb.green, 0, 1),
@@ -677,7 +677,7 @@ end
 
 function modifyAlpha(Colour:str!, Alpha:num!):str
    mVec.ReadPainter(nil, Colour, glPainter)
-   nrgb = glPainter.Colour
+   nrgb = glPainter.colour
    rgb = gui.nrgb(nrgb.red, nrgb.green, nrgb.blue, nrgb.alpha)
    return tostring(rgb.withAlpha(Alpha))
 end
