@@ -523,6 +523,7 @@ the surface area first).</li>
       <description>
 <p>Use <code>Flags</code> to enable optional surface behaviours.  Preserve existing flags when updating this field, typically by combining the current value with the flags being added.</p>
 <p>Read-only flags cannot be changed by writing this field.  Initialisation-only flags can be set before the surface is initialised, but are preserved once the surface is active.</p>
+<p>On Wayland, top-level surfaces reject <code>RNF::STICK_TO_FRONT</code> and <code>RNF::STICK_TO_BACK</code> with <code>ERR::NoSupport</code>. These flags remain available for ordering child surfaces within their container.</p>
 <types lookup="RNF"/>
       </description>
     </field>

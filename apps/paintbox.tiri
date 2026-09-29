@@ -377,8 +377,8 @@ end
 
       err, result = mSys.ReadFileToBuffer(input_file, buffer)
 
-      rx_hex = regex.new('#[a-fA-F0-9]{6,8}')
-      rx_rgb = regex.new([[rgb\(.+?\)]])
+      rx_hex = r'#[a-fA-F0-9]{6,8}'
+      rx_rgb = r[[rgb\(.+?\)]]
 
       out = ''
       index = 0
