@@ -8,6 +8,22 @@ module({ name="Crypto", copyright="Paul Manias © 2026", version=1.0, timestamp=
   enums("CSIG", { type="int", start=1, comment="Supported public signature algorithms." },
     "RS256: RSASSA-PKCS1-v1_5 signature with a SHA-256 digest.")
 
+  enums("HASH", { type="int", start=1, comment="Supported message digest algorithms." },
+    "MD5: MD5 (compatibility only; not suitable for security purposes).",
+    "SHA1: SHA-1 (compatibility only; not suitable for security purposes).",
+    "SHA256: SHA-256.",
+    "SHA512: SHA-512.")
+
+  methods("Hash", "Hsh", {
+    { id=1, name="Update" },
+    { id=2, name="Digest" }
+  })
+
+  klass("Hash", { src="class_hash.cpp", output="class_hash_def.c", extended=true }, [[
+    int(HASH) Algorithm # Message digest algorithm selected before initialisation.
+    ~array(char) Key    # Optional HMAC key selected before initialisation.
+  ]])
+
   functionNames("crypto",
     "RandomBytes",
     "SHA256",
@@ -15,5 +31,7 @@ module({ name="Crypto", copyright="Paul Manias © 2026", version=1.0, timestamp=
     "Base64Decode",
     "ConstantTimeEqual",
     "VerifyJWK",
-    "WriteProtectedFile")
+    "WriteProtectedFile",
+    "Hash",
+    "HMAC")
 end)

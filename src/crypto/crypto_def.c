@@ -8,6 +8,8 @@ extern ERR Base64Decode(const std::span<const int8_t> &Input, CC Mode, const std
 extern ERR ConstantTimeEqual(const std::span<const int8_t> &A, const std::span<const int8_t> &B, int * Equal);
 extern ERR VerifyJWK(CSIG Algorithm, const std::string_view & N, const std::string_view & E, const std::span<const int8_t> &Message, const std::span<const int8_t> &Signature);
 extern ERR WriteProtectedFile(const std::string_view & Path, const std::span<const int8_t> &Data);
+extern ERR Hash(HASH Algorithm, const std::span<const int8_t> &Input, const std::span<int8_t> &Output);
+extern ERR HMAC(HASH Algorithm, const std::span<const int8_t> &Key, const std::span<const int8_t> &Input, const std::span<int8_t> &Output);
 
 } // namespace
 #ifndef FDEF
@@ -17,6 +19,8 @@ extern ERR WriteProtectedFile(const std::string_view & Path, const std::span<con
 FDEF argsBase64Decode[] = { { "Error", FD_INT|FD_ERROR }, { "Input", FDF_SPAN|FD_BYTE }, { "Mode", FD_INT }, { "Output", FDF_SPAN|FD_MUTABLE|FD_BYTE }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF argsBase64Encode[] = { { "Error", FD_INT|FD_ERROR }, { "Input", FDF_SPAN|FD_BYTE }, { "Mode", FD_INT }, { "Output", FDF_SPAN|FD_MUTABLE|FD_BYTE }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF argsConstantTimeEqual[] = { { "Error", FD_INT|FD_ERROR }, { "A", FDF_SPAN|FD_BYTE }, { "B", FDF_SPAN|FD_BYTE }, { "Equal", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF argsHMAC[] = { { "Error", FD_INT|FD_ERROR }, { "Algorithm", FD_INT }, { "Key", FDF_SPAN|FD_BYTE }, { "Input", FDF_SPAN|FD_BYTE }, { "Output", FDF_SPAN|FD_MUTABLE|FD_BYTE }, { 0, 0 } };
+FDEF argsHash[] = { { "Error", FD_INT|FD_ERROR }, { "Algorithm", FD_INT }, { "Input", FDF_SPAN|FD_BYTE }, { "Output", FDF_SPAN|FD_MUTABLE|FD_BYTE }, { 0, 0 } };
 FDEF argsRandomBytes[] = { { "Error", FD_INT|FD_ERROR }, { "Output", FDF_SPAN|FD_MUTABLE|FD_BYTE }, { 0, 0 } };
 FDEF argsSHA256[] = { { "Error", FD_INT|FD_ERROR }, { "Input", FDF_SPAN|FD_BYTE }, { "Output", FDF_SPAN|FD_MUTABLE|FD_BYTE }, { 0, 0 } };
 FDEF argsVerifyJWK[] = { { "Error", FD_INT|FD_ERROR }, { "Algorithm", FD_INT }, { "N", FDF_CPPSTRING }, { "E", FDF_CPPSTRING }, { "Message", FDF_SPAN|FD_BYTE }, { "Signature", FDF_SPAN|FD_BYTE }, { 0, 0 } };
@@ -30,8 +34,10 @@ const struct Function glFunctions[] = {
    { (APTR)crypto::ConstantTimeEqual, "ConstantTimeEqual", argsConstantTimeEqual },
    { (APTR)crypto::VerifyJWK, "VerifyJWK", argsVerifyJWK },
    { (APTR)crypto::WriteProtectedFile, "WriteProtectedFile", argsWriteProtectedFile },
+   { (APTR)crypto::Hash, "Hash", argsHash },
+   { (APTR)crypto::HMAC, "HMAC", argsHMAC },
    { nullptr, nullptr, nullptr }
 };
 
 #undef MOD_IDL
-#define MOD_IDL "c.CC:STANDARD=0x1,URL=0x2\nc.CSIG:RS256=0x1\n"
+#define MOD_IDL "c.CC:STANDARD=0x1,URL=0x2\nc.CSIG:RS256=0x1\nc.HASH:MD5=0x1,SHA1=0x2,SHA256=0x3,SHA512=0x4\n"

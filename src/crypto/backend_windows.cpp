@@ -5,10 +5,134 @@
 #include <aclapi.h>
 #include <array>
 #include <cstring>
+#include <new>
 #include <string>
 #include <vector>
 
 namespace crypto_backend {
+
+static LPCWSTR algorithm_name(HASH Algorithm) {
+   switch (Algorithm) {
+      case HASH::MD5:    return BCRYPT_MD5_ALGORITHM;
+      case HASH::SHA1:   return BCRYPT_SHA1_ALGORITHM;
+      case HASH::SHA256: return BCRYPT_SHA256_ALGORITHM;
+      case HASH::SHA512: return BCRYPT_SHA512_ALGORITHM;
+      default:           return nullptr;
+   }
+}
+
+size_t digest_size(HASH Algorithm) {
+   switch (Algorithm) {
+      case HASH::MD5:    return 16;
+      case HASH::SHA1:   return 20;
+      case HASH::SHA256: return 32;
+      case HASH::SHA512: return 64;
+      default:           return 0;
+   }
+}
+
+class WindowsHashContext final : public HashContext {
+   BCRYPT_ALG_HANDLE algorithm = nullptr;
+   BCRYPT_HASH_HANDLE hash_handle = nullptr;
+   std::vector<uint8_t> key;
+   bool use_hmac;
+
+   bool create_hash() {
+      PUCHAR key_data = key.empty() ? nullptr : key.data();
+      return BCRYPT_SUCCESS(BCryptCreateHash(algorithm, &hash_handle, nullptr, 0, key_data, ULONG(key.size()), 0));
+   }
+
+public:
+   WindowsHashContext(HASH Algorithm, std::span<const int8_t> Key, bool UseHMAC) :
+      use_hmac(UseHMAC) {
+      if (not Key.empty()) key.assign((const uint8_t *)Key.data(), (const uint8_t *)Key.data() + Key.size());
+      auto name = algorithm_name(Algorithm);
+      ULONG flags = use_hmac ? BCRYPT_ALG_HANDLE_HMAC_FLAG : 0;
+      if ((not name) or (not BCRYPT_SUCCESS(BCryptOpenAlgorithmProvider(&algorithm, name, nullptr, flags))) or
+          (not create_hash())) {
+         if (hash_handle) BCryptDestroyHash(hash_handle);
+         if (algorithm) BCryptCloseAlgorithmProvider(algorithm, 0);
+         hash_handle = nullptr;
+         algorithm = nullptr;
+      }
+   }
+
+   ~WindowsHashContext() override {
+      if (hash_handle) BCryptDestroyHash(hash_handle);
+      if (algorithm) BCryptCloseAlgorithmProvider(algorithm, 0);
+      if (not key.empty()) SecureZeroMemory(key.data(), key.size());
+   }
+
+   bool valid() const { return hash_handle != nullptr; }
+
+   ERR update(std::span<const int8_t> Input) override {
+      uint8_t empty = 0;
+      PUCHAR input = Input.empty() ? &empty : (PUCHAR)Input.data();
+      return BCRYPT_SUCCESS(BCryptHashData(hash_handle, input, ULONG(Input.size()), 0)) ? ERR::Okay : ERR::Failed;
+   }
+
+   ERR digest(std::span<int8_t> Output) override {
+      BCRYPT_HASH_HANDLE copy = nullptr;
+      if (not BCRYPT_SUCCESS(BCryptDuplicateHash(hash_handle, &copy, nullptr, 0, 0))) {
+         SecureZeroMemory(Output.data(), Output.size());
+         return ERR::Failed;
+      }
+      auto result = BCRYPT_SUCCESS(BCryptFinishHash(copy, (PUCHAR)Output.data(), ULONG(Output.size()), 0)) ?
+         ERR::Okay : ERR::Failed;
+      BCryptDestroyHash(copy);
+      if (result != ERR::Okay) SecureZeroMemory(Output.data(), Output.size());
+      return result;
+   }
+
+   ERR reset() override {
+      if (hash_handle) BCryptDestroyHash(hash_handle);
+      hash_handle = nullptr;
+      return create_hash() ? ERR::Okay : ERR::Failed;
+   }
+};
+
+std::unique_ptr<HashContext> make_hash_context(HASH Algorithm, std::span<const int8_t> Key, bool UseHMAC) {
+   if (not algorithm_name(Algorithm)) return {};
+   auto context = std::unique_ptr<WindowsHashContext>(
+      new (std::nothrow) WindowsHashContext(Algorithm, Key, UseHMAC));
+   if ((not context) or (not context->valid())) return {};
+   return context;
+}
+
+ERR hash(HASH Algorithm, std::span<const int8_t> Input, std::span<int8_t> Output) {
+   return checked_output(Output, [&]() {
+      BCRYPT_ALG_HANDLE algorithm = nullptr;
+      BCRYPT_HASH_HANDLE hash_handle = nullptr;
+      uint8_t empty = 0;
+      PUCHAR input = Input.empty() ? &empty : (PUCHAR)Input.data();
+      bool success = BCRYPT_SUCCESS(BCryptOpenAlgorithmProvider(&algorithm, algorithm_name(Algorithm), nullptr, 0)) and
+         BCRYPT_SUCCESS(BCryptCreateHash(algorithm, &hash_handle, nullptr, 0, nullptr, 0, 0)) and
+         BCRYPT_SUCCESS(BCryptHashData(hash_handle, input, ULONG(Input.size()), 0)) and
+         BCRYPT_SUCCESS(BCryptFinishHash(hash_handle, (PUCHAR)Output.data(), ULONG(Output.size()), 0));
+      if (hash_handle) BCryptDestroyHash(hash_handle);
+      if (algorithm) BCryptCloseAlgorithmProvider(algorithm, 0);
+      return success;
+   }, [](std::span<int8_t> Bytes) { SecureZeroMemory(Bytes.data(), Bytes.size()); });
+}
+
+ERR hmac(HASH Algorithm, std::span<const int8_t> Key, std::span<const int8_t> Input,
+   std::span<int8_t> Output) {
+   return checked_output(Output, [&]() {
+      BCRYPT_ALG_HANDLE algorithm = nullptr;
+      BCRYPT_HASH_HANDLE hash_handle = nullptr;
+      uint8_t empty = 0;
+      PUCHAR key = Key.empty() ? &empty : (PUCHAR)Key.data();
+      PUCHAR input = Input.empty() ? &empty : (PUCHAR)Input.data();
+      bool success = BCRYPT_SUCCESS(BCryptOpenAlgorithmProvider(&algorithm, algorithm_name(Algorithm), nullptr,
+            BCRYPT_ALG_HANDLE_HMAC_FLAG)) and
+         BCRYPT_SUCCESS(BCryptCreateHash(algorithm, &hash_handle, nullptr, 0, key, ULONG(Key.size()), 0)) and
+         BCRYPT_SUCCESS(BCryptHashData(hash_handle, input, ULONG(Input.size()), 0)) and
+         BCRYPT_SUCCESS(BCryptFinishHash(hash_handle, (PUCHAR)Output.data(), ULONG(Output.size()), 0));
+      if (hash_handle) BCryptDestroyHash(hash_handle);
+      if (algorithm) BCryptCloseAlgorithmProvider(algorithm, 0);
+      return success;
+   }, [](std::span<int8_t> Bytes) { SecureZeroMemory(Bytes.data(), Bytes.size()); });
+}
 
 static ERR file_error(DWORD Error) {
    if ((Error IS ERROR_ACCESS_DENIED) or (Error IS ERROR_PRIVILEGE_NOT_HELD) or
@@ -87,22 +211,6 @@ ERR random(std::span<int8_t> Output) {
    }, [](std::span<int8_t> Bytes) { SecureZeroMemory(Bytes.data(), Bytes.size()); });
 }
 
-ERR sha256(std::span<const int8_t> Input, std::span<int8_t> Output) {
-   return checked_output(Output, [&]() {
-      BCRYPT_ALG_HANDLE alg = nullptr;
-      BCRYPT_HASH_HANDLE hash = nullptr;
-      uint8_t empty = 0;
-      PUCHAR input = Input.empty() ? &empty : (PUCHAR)Input.data();
-      bool success = BCRYPT_SUCCESS(BCryptOpenAlgorithmProvider(&alg, BCRYPT_SHA256_ALGORITHM, nullptr, 0)) and
-         BCRYPT_SUCCESS(BCryptCreateHash(alg, &hash, nullptr, 0, nullptr, 0, 0)) and
-         BCRYPT_SUCCESS(BCryptHashData(hash, input, ULONG(Input.size()), 0)) and
-         BCRYPT_SUCCESS(BCryptFinishHash(hash, (PUCHAR)Output.data(), ULONG(Output.size()), 0));
-      if (hash) BCryptDestroyHash(hash);
-      if (alg) BCryptCloseAlgorithmProvider(alg, 0);
-      return success;
-   }, [](std::span<int8_t> Bytes) { SecureZeroMemory(Bytes.data(), Bytes.size()); });
-}
-
 ERR verify_rs256(std::span<const uint8_t> Modulus, std::span<const uint8_t> Exponent,
    std::span<const int8_t> Message, std::span<const int8_t> Signature) {
    BCRYPT_ALG_HANDLE alg = nullptr;
@@ -120,7 +228,7 @@ ERR verify_rs256(std::span<const uint8_t> Modulus, std::span<const uint8_t> Expo
    memcpy(blob.data() + sizeof(*header), Exponent.data(), Exponent.size());
    memcpy(blob.data() + sizeof(*header) + Exponent.size(), Modulus.data(), Modulus.size());
    std::array<int8_t, 32> digest{};
-   if (sha256(Message, digest) != ERR::Okay) return ERR::Failed;
+   if (hash(HASH::SHA256, Message, digest) != ERR::Okay) return ERR::Failed;
    if (BCRYPT_SUCCESS(BCryptOpenAlgorithmProvider(&alg, BCRYPT_RSA_ALGORITHM, nullptr, 0)) and
        BCRYPT_SUCCESS(BCryptImportKeyPair(alg, nullptr, BCRYPT_RSAPUBLIC_BLOB, &key, blob.data(),
           ULONG(blob_size), 0))) {

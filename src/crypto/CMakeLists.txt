@@ -26,7 +26,14 @@ else ()
       backend_bearssl.cpp
       "${BEARSSL_ROOT}/src/codec/ccopy.c"
       "${BEARSSL_ROOT}/src/codec/dec32be.c"
+      "${BEARSSL_ROOT}/src/codec/dec32le.c"
+      "${BEARSSL_ROOT}/src/codec/dec64be.c"
       "${BEARSSL_ROOT}/src/codec/enc32be.c"
+      "${BEARSSL_ROOT}/src/codec/enc32le.c"
+      "${BEARSSL_ROOT}/src/codec/enc64be.c"
+      "${BEARSSL_ROOT}/src/hash/md5.c"
+      "${BEARSSL_ROOT}/src/hash/sha1.c"
+      "${BEARSSL_ROOT}/src/hash/sha2big.c"
       "${BEARSSL_ROOT}/src/hash/sha2small.c"
       "${BEARSSL_ROOT}/src/int/i31_add.c"
       "${BEARSSL_ROOT}/src/int/i31_bitlen.c"
@@ -41,6 +48,7 @@ else ()
       "${BEARSSL_ROOT}/src/int/i31_sub.c"
       "${BEARSSL_ROOT}/src/int/i31_tmont.c"
       "${BEARSSL_ROOT}/src/int/i32_div32.c"
+      "${BEARSSL_ROOT}/src/mac/hmac.c"
       "${BEARSSL_ROOT}/src/rsa/rsa_i31_pkcs1_vrfy.c"
       "${BEARSSL_ROOT}/src/rsa/rsa_i31_pub.c"
       "${BEARSSL_ROOT}/src/rsa/rsa_pkcs1_sig_unpad.c")

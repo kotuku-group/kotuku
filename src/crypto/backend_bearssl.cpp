@@ -1,6 +1,7 @@
 #include "crypto_internal.h"
 
 #include <bearssl_hash.h>
+#include <bearssl_hmac.h>
 #include <bearssl_rsa.h>
 
 #include <sys/random.h>
@@ -10,6 +11,7 @@
 
 #include <array>
 #include <cerrno>
+#include <new>
 #include <string>
 
 namespace crypto_backend {
@@ -17,6 +19,97 @@ namespace crypto_backend {
 static void secure_clear(std::span<int8_t> Bytes) {
    volatile int8_t *output = Bytes.data();
    for (size_t i=0; i < Bytes.size(); i++) output[i] = 0;
+}
+
+static const br_hash_class * hash_vtable(HASH Algorithm) {
+   switch (Algorithm) {
+      case HASH::MD5:    return &br_md5_vtable;
+      case HASH::SHA1:   return &br_sha1_vtable;
+      case HASH::SHA256: return &br_sha256_vtable;
+      case HASH::SHA512: return &br_sha512_vtable;
+      default:           return nullptr;
+   }
+}
+
+size_t digest_size(HASH Algorithm) {
+   switch (Algorithm) {
+      case HASH::MD5:    return 16;
+      case HASH::SHA1:   return 20;
+      case HASH::SHA256: return 32;
+      case HASH::SHA512: return 64;
+      default:           return 0;
+   }
+}
+
+class BearHashContext final : public HashContext {
+   const br_hash_class *vtable;
+   br_hash_compat_context hash_context{};
+   br_hmac_key_context hmac_key{};
+   br_hmac_context hmac_context{};
+   bool use_hmac;
+
+public:
+   BearHashContext(const br_hash_class *VTable, std::span<const int8_t> Key, bool UseHMAC) :
+      vtable(VTable), use_hmac(UseHMAC) {
+      if (use_hmac) {
+         br_hmac_key_init(&hmac_key, vtable, Key.data(), Key.size());
+         br_hmac_init(&hmac_context, &hmac_key, 0);
+      }
+      else vtable->init(&hash_context.vtable);
+   }
+
+   ~BearHashContext() override {
+      secure_clear(std::span<int8_t>((int8_t *)&hash_context, sizeof(hash_context)));
+      secure_clear(std::span<int8_t>((int8_t *)&hmac_key, sizeof(hmac_key)));
+      secure_clear(std::span<int8_t>((int8_t *)&hmac_context, sizeof(hmac_context)));
+   }
+
+   ERR update(std::span<const int8_t> Input) override {
+      if (use_hmac) br_hmac_update(&hmac_context, Input.data(), Input.size());
+      else vtable->update(&hash_context.vtable, Input.data(), Input.size());
+      return ERR::Okay;
+   }
+
+   ERR digest(std::span<int8_t> Output) override {
+      if (use_hmac) br_hmac_out(&hmac_context, Output.data());
+      else vtable->out(&hash_context.vtable, Output.data());
+      return ERR::Okay;
+   }
+
+   ERR reset() override {
+      if (use_hmac) br_hmac_init(&hmac_context, &hmac_key, 0);
+      else vtable->init(&hash_context.vtable);
+      return ERR::Okay;
+   }
+};
+
+std::unique_ptr<HashContext> make_hash_context(HASH Algorithm, std::span<const int8_t> Key, bool UseHMAC) {
+   auto vtable = hash_vtable(Algorithm);
+   if (not vtable) return {};
+   return std::unique_ptr<HashContext>(new (std::nothrow) BearHashContext(vtable, Key, UseHMAC));
+}
+
+ERR hash(HASH Algorithm, std::span<const int8_t> Input, std::span<int8_t> Output) {
+   auto vtable = hash_vtable(Algorithm);
+   if (not vtable) {
+      secure_clear(Output);
+      return ERR::Failed;
+   }
+   BearHashContext context(vtable, {}, false);
+   context.update(Input);
+   return context.digest(Output);
+}
+
+ERR hmac(HASH Algorithm, std::span<const int8_t> Key, std::span<const int8_t> Input,
+   std::span<int8_t> Output) {
+   auto vtable = hash_vtable(Algorithm);
+   if (not vtable) {
+      secure_clear(Output);
+      return ERR::Failed;
+   }
+   BearHashContext context(vtable, Key, true);
+   context.update(Input);
+   return context.digest(Output);
 }
 
 //********************************************************************************************************************
@@ -51,19 +144,11 @@ ERR random(std::span<int8_t> Output) {
    }, secure_clear);
 }
 
-ERR sha256(std::span<const int8_t> Input, std::span<int8_t> Output) {
-   br_sha256_context context;
-   br_sha256_init(&context);
-   br_sha256_update(&context, Input.data(), Input.size());
-   br_sha256_out(&context, Output.data());
-   return ERR::Okay;
-}
-
 ERR verify_rs256(std::span<const uint8_t> Modulus, std::span<const uint8_t> Exponent,
    std::span<const int8_t> Message, std::span<const int8_t> Signature) {
    std::array<int8_t, 32> digest{};
    std::array<int8_t, 32> signed_digest{};
-   if (sha256(Message, digest) != ERR::Okay) return ERR::Failed;
+   if (hash(HASH::SHA256, Message, digest) != ERR::Okay) return ERR::Failed;
 
    br_rsa_public_key key = {
       (unsigned char *)Modulus.data(), Modulus.size(),

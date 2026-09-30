@@ -122,4 +122,5 @@ enum class CLASSID : uint32_t {
    NETCLIENT = 0x34852165UL,
    XQUERY = 0x58128f50UL,
    LZMASTREAM = 0xea1b1936UL,
+   HASH = 0x21613d4dUL,
 };

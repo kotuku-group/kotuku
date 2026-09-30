@@ -13,7 +13,9 @@ Crypto: Provides hashing, secure random data, base64 coding, RSA signature verif
 
 The Crypto module provides a small set of cryptographic primitives for binary data.  All inputs are treated as raw
 byte arrays and may contain null bytes.  Hashing and signature verification use BearSSL on Linux and CNG on Windows;
-random data is obtained from the host platform.
+random data is obtained from the host platform.  MD5 and SHA-1 are available only for compatibility uses such as
+checksums, ETags, git object identifiers, UUID version 5 and HTTP digest authentication.  They are not suitable for
+security purposes; use SHA-256 or SHA-512 for new designs.
 
 Each input array argument is limited to 1 MiB (1048576 bytes).  The functions do not allocate memory for results; any
 output is written to an array supplied by the caller.
@@ -33,12 +35,15 @@ security-sensitive records that need owner-only access and atomic replacement.
 
 #include <array>
 #include <string_view>
+#include <vector>
 
 #include "crypto_internal.h"
 
 static ERR MODInit(OBJECTPTR, struct CoreBase *);
 static ERR MODExpunge(void);
 static ERR MODOpen(OBJECTPTR);
+static ERR init_hash(void);
+static OBJECTPTR clHash = nullptr;
 
 #include "crypto_def.c"
 
@@ -122,7 +127,7 @@ static ERR decoded_size(std::span<const int8_t> Input, CC Mode, size_t *Size)
 static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 {
    CoreBase = argCoreBase;
-   return ERR::Okay;
+   return init_hash();
 }
 
 static ERR MODOpen(OBJECTPTR Module)
@@ -133,10 +138,95 @@ static ERR MODOpen(OBJECTPTR Module)
 
 static ERR MODExpunge(void)
 {
+   if (clHash) { FreeResource(clHash); clHash = nullptr; }
    return ERR::Okay;
 }
 
 namespace crypto {
+
+/*********************************************************************************************************************
+
+-FUNCTION-
+Hash: Computes a message digest in one operation.
+
+Computes the digest selected by `Algorithm` and writes the binary result to `Output`.  `Input` may be empty.  The
+required output length is 16 bytes for MD5, 20 for SHA-1, 32 for SHA-256 and 64 for SHA-512.
+
+MD5 and SHA-1 are provided for compatibility with existing formats and protocols.  They are not suitable for security
+purposes.  Use SHA-256 or SHA-512 for new designs.
+
+`Output` must have exactly the required length and must not share memory with `Input`.  If hashing fails, `Output` is
+zeroed by the platform backend.
+
+-INPUT-
+int(HASH) Algorithm: The message digest algorithm.
+array(char) Input: The data to hash, up to 1 MiB.
+^array(char) Output: Receives the binary digest.
+
+-ERRORS-
+Okay
+Args: `Input` exceeds 1 MiB, `Output` has the wrong length, or the arrays overlap.
+NoSupport: `Algorithm` is not supported.
+Failed: The hashing provider failed.
+
+-TAGS-
+thread-safe
+
+-END-
+
+*********************************************************************************************************************/
+
+ERR Hash(HASH Algorithm, const std::span<const int8_t> &Input, const std::span<int8_t> &Output)
+{
+   auto size = crypto_backend::digest_size(Algorithm);
+   if (not size) return ERR::NoSupport;
+   if ((Input.size() > MAX_CRYPTO_INPUT) or (Output.size() != size) or (overlaps(Input, Output))) return ERR::Args;
+   return crypto_backend::hash(Algorithm, Input, Output);
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
+HMAC: Computes a keyed-hash message authentication code in one operation.
+
+Computes HMAC with the digest selected by `Algorithm` and writes the binary result to `Output`.  `Key` and `Input` may
+be empty.  The required output length is the digest length: 16 bytes for MD5, 20 for SHA-1, 32 for SHA-256 and 64 for
+SHA-512.
+
+HMAC-MD5 and HMAC-SHA1 are provided for compatibility with existing protocols and must not be selected for new security
+designs.  Prefer HMAC-SHA256 or HMAC-SHA512.
+
+`Output` must have exactly the required length and must not share memory with `Key` or `Input`.  If the operation fails,
+`Output` is zeroed by the platform backend.
+
+-INPUT-
+int(HASH) Algorithm: The message digest algorithm.
+array(char) Key: The authentication key, up to 1 MiB.
+array(char) Input: The data to authenticate, up to 1 MiB.
+^array(char) Output: Receives the binary authentication code.
+
+-ERRORS-
+Okay
+Args: An input exceeds 1 MiB, `Output` has the wrong length, or it overlaps an input.
+NoSupport: `Algorithm` is not supported.
+Failed: The cryptography provider failed.
+
+-TAGS-
+thread-safe
+
+-END-
+
+*********************************************************************************************************************/
+
+ERR HMAC(HASH Algorithm, const std::span<const int8_t> &Key, const std::span<const int8_t> &Input,
+   const std::span<int8_t> &Output)
+{
+   auto size = crypto_backend::digest_size(Algorithm);
+   if (not size) return ERR::NoSupport;
+   if ((Key.size() > MAX_CRYPTO_INPUT) or (Input.size() > MAX_CRYPTO_INPUT) or (Output.size() != size) or
+       (overlaps(Key, Output)) or (overlaps(Input, Output))) return ERR::Args;
+   return crypto_backend::hmac(Algorithm, Key, Input, Output);
+}
 
 /*********************************************************************************************************************
 
@@ -199,9 +289,7 @@ thread-safe
 
 ERR SHA256(const std::span<const int8_t> &Input, const std::span<int8_t> &Output)
 {
-   if ((Input.size() > MAX_CRYPTO_INPUT) or (Output.size() != 32) or (overlaps(Input, Output))) return ERR::Args;
-
-   return crypto_backend::sha256(Input, Output);
+   return Hash(HASH::SHA256, Input, Output);
 }
 
 /*********************************************************************************************************************
@@ -556,6 +644,10 @@ ERR WriteProtectedFile(const std::string_view &Path, const std::span<const int8_
 }
 
 } // namespace
+
+//********************************************************************************************************************
+
+#include "class_hash.cpp"
 
 //********************************************************************************************************************
 
