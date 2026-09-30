@@ -10,6 +10,6 @@ add_library (${MOD})
 set_module_defaults (${MOD} "Mp3")
 target_sources (${MOD} PRIVATE "mp3.cpp")
 
-# MP3 tests should be manually enabled if working on the MP3 module.
-# flute_test (mp3_audio "tests/test-mp3.tiri")
+# MP3 playback needs to be run manually when working on the MP3 module.
+# flute_test (mp3_audio "tests/test_mp3_playback.tiri")
 flute_test (mp3_decoder "tests/test_decoder.tiri")

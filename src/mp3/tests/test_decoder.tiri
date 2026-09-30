@@ -1,4 +1,7 @@
 -- Deterministic MP3 decoder regressions; the null audio device keeps these tests silent.
+
+@if(exists='modules:audio')
+
    include 'audio', 'mp3'
 
 @BeforeAll function setup(State)
@@ -110,3 +113,5 @@ end
    check snd.acRead(later)
    assert(first.getString() != later.getString(), 'Seeking with an unusable TOC must move past the stream start')
 end
+
+@end

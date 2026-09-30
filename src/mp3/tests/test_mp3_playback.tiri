@@ -2,6 +2,8 @@
 -- Flute tests for MP3 playback.
 -- These are audible tests that require human verification to confirm a full pass.
 
+@if(exists='modules:audio')
+
 @BeforeAll function setup(State:table)
    global glFolder = State.folder
    global glAudio = obj.new('audio', { name='SystemAudio' })
@@ -85,3 +87,5 @@ end
    assert(wait_error is ERR_Okay, 'Timed out waiting for tolerance playback to finish.')
    processing.halt(0.25)
 end
+
+@end
