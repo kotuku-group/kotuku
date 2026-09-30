@@ -253,6 +253,8 @@ public:
    virtual ~AudioEffectProcessor() = default;
    // Buffers contain normalised floating-point audio: magnitude 1.0 is 0 dBFS, with finite headroom above unity.
    virtual void process(float *Buffer, int Frames) = 0;
+   // Notify observers of output frames that bypass processing or belong to an idle chain.
+   virtual void skip(int Frames) { }
    virtual void reset() = 0;
    virtual bool pending() const { return false; }
    // Queries are bounded and allocation-free. FINITE bounds include buffered output and serial internal stages.
@@ -332,6 +334,7 @@ public:
    // Subclasses publish a fully configured processor as their final Init step.  No subsequent unsynchronised writes.
    ERR set_processor(std::unique_ptr<AudioEffectProcessor> Processor);
    void process(float *Buffer, int Frames);
+   void skip(int Frames);
    bool pending() const;
    int64_t latency() const;
    void reset_meter(uint64_t Generation);
@@ -526,6 +529,7 @@ class extAudio : public objAudio {
    }
 
    inline double MixerLag();
+   inline double SubmitLag();
    void reset_lag() { mixerLag = 0; }
 
    inline void finish(AudioChannel &Channel, bool Notify);
@@ -553,6 +557,7 @@ class extSound : public objSound {
    int   DataOffset;         // Start of raw audio data within the source file
    int   Note;               // Note to play back (e.g. C, C#, G...)
    std::string NoteString;
+   int64_t StreamOffset = -1; // Byte offset of the next data that read_stream() will produce, or -1 if unknown
    bool  FeedingStream = false;
    bool  Active;             // True once the sound is registered with the audio driver or mixer.
 

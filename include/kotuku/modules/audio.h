@@ -13,6 +13,7 @@ class objAudioEffect;
 class objAudioEqualiser;
 class objAudioReverb;
 class objAudioCompressor;
+class objAudioAnalyser;
 class objSound;
 
 // Optional flags for the Audio object.
@@ -836,6 +837,45 @@ class objAudioCompressor : public objAudioEffect {
    // Action stubs
 
    inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+
+   // Customised field setting
+
+};
+
+// AudioAnalyser class definition
+
+#define VER_AUDIOANALYSER (1.000000)
+
+// AudioAnalyser methods
+
+namespace ana {
+struct GetSpectrum { std::span<const double> Frequencies; std::span<double> Levels; static const AC id = AC(-30); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetWaveform { std::span<float> Samples; static const AC id = AC(-31); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+
+} // namespace
+
+class objAudioAnalyser : public objAudioEffect {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::AUDIOANALYSER;
+   static constexpr CSTRING CLASS_NAME = "AudioAnalyser";
+
+   using create = kt::Create<objAudioAnalyser>;
+   objAudioAnalyser(objMetaClass *pClass, OBJECTID pUID) noexcept : objAudioEffect(pClass, pUID) {}
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+   inline ERR getSpectrum(std::span<const double> Frequencies, std::span<double> Levels) noexcept {
+      struct ana::GetSpectrum args = { Frequencies, Levels };
+      return Action(AC(-30), this, &args);
+   }
+   inline ERR getWaveform(std::span<float> Samples) noexcept {
+      struct ana::GetWaveform args = { Samples };
+      return Action(AC(-31), this, &args);
+   }
 
    // Customised field getting
 

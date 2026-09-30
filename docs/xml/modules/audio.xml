@@ -53,6 +53,7 @@ mixing.</li>
     </source>
     <classes>
       <class>Audio</class>
+      <class>AudioAnalyser</class>
       <class>AudioCompressor</class>
       <class>AudioEffect</class>
       <class>AudioEqualiser</class>

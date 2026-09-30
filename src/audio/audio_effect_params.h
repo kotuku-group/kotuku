@@ -81,7 +81,20 @@ public:
    virtual int64_t latency() const { return -1; }
 };
 
-enum class AudioOutputKind { CURVE, SCALAR };
+// CURVE is read with GetResponse(), SPECTRUM and WAVEFORM with the methods of the publishing class, and SCALAR with the
+// meter methods.
+
+enum class AudioOutputKind { CURVE, SCALAR, SPECTRUM, WAVEFORM };
+
+inline std::string_view output_kind_name(AudioOutputKind Kind)
+{
+   switch (Kind) {
+      case AudioOutputKind::CURVE:    return "curve";
+      case AudioOutputKind::SPECTRUM: return "spectrum";
+      case AudioOutputKind::WAVEFORM: return "waveform";
+      default:                        return "scalar";
+   }
+}
 enum class AudioMeterSource : int8_t { INPUT_PEAK, OUTPUT_PEAK, GAIN_REDUCTION };
 
 // Scalar outputs are meter templates.  A `channel` scope publishes one value per channel of the processing layout, with
@@ -432,8 +445,9 @@ inline std::string build_schema_xml(const AudioEffectSchema &Schema, std::span<c
       out += "  </group>\n";
    }
    for (const auto &output : Schema.Outputs) {
-      if (output.Kind != AudioOutputKind::CURVE) continue;
-      out += std::format("  <output key=\"{}\" type=\"curve\"", schema_xml::escape(output.Key));
+      if (output.Kind IS AudioOutputKind::SCALAR) continue;
+      out += std::format("  <output key=\"{}\" type=\"{}\"", schema_xml::escape(output.Key),
+         output_kind_name(output.Kind));
       if (not output.Label.empty()) out += std::format(" label=\"{}\"", schema_xml::escape(output.Label));
       schema_xml::description(out, output.Description);
       out += "/>\n";

@@ -1,0 +1,171 @@
+-- AudioAnalyser: schema, argument validation and live capture on the null device.  The null device is unpaced, so
+-- live tests play a looping tone and poll until a reading reflects it.
+
+@if(exists='modules:audio')
+
+   module audio as mAudio
+
+EDGES = array<double> { 20, 250, 500, 2000, 4000, 8000, 20000 }
+TONE_BAND = 2 -- The 500 to 2000 Hz band contains the 1 kHz test tone
+
+-- A looping 1 kHz sine at half of full scale.  4410 frames at 44.1 kHz hold exactly 100 cycles, so it loops seamlessly.
+
+function tone_sample(Audio:obj):num
+   frames = 4410
+   data = array<byte, 8820>
+   for i in {0 to frames} do
+      value = math.floor(16384 * math.sin(2 * math.pi * 1000 * i / 44100))
+      if value < 0 then value += 65536 end
+      data[i * 2] = value & 0xff
+      data[(i * 2) + 1] = (value >> 8) & 0xff
+   end
+   format = struct.new('AudioFormat', { sampleRate=44100, sampleFormat=ASF_S16, layout=array<int> { SPK_CENTRE } })
+   loop = struct.new('AudioLoop', { loopMode=LOOP_SINGLE, loop1Type=LTYPE_UNIDIRECTIONAL, loop1Start=0,
+      loop1End=frames * 2 })
+   err, sample = Audio.mtAddSample(nil, format, data, loop)
+   assert(err is ERR_Okay, f'AddSample() failed: {err}')
+   return sample
+end
+
+function play_tone(Audio:obj, Channel:num)
+   check mAudio.MixSample(Audio, Channel, tone_sample(Audio))
+   check mAudio.MixFrequency(Audio, Channel, 44100)
+   check mAudio.MixVolume(Audio, Channel, 1)
+   check mAudio.MixPlay(Audio, Channel, 0)
+end
+
+-- Poll until the tone band dominates the spectrum, and return the final levels.
+
+function await_tone(Analyser:obj):array<double>
+   levels = array<double, 6>
+   for attempt in {0 to 200} do
+      err = Analyser.mtGetSpectrum(EDGES, levels)
+      assert(err is ERR_Okay, f'GetSpectrum() failed: {err}')
+      if levels[TONE_BAND] > -40 then return levels end
+      processing.sleep(0.01)
+   end
+   assert(false, f'The tone was not measured; its band reads {levels[TONE_BAND]} dBFS')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function SchemaAndMeters()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   analyser <close> = audio.new('AudioAnalyser', { })
+   schema = analyser.schema
+   assert(schema.find('<effect class="AudioAnalyser" version="1"') != nil, 'The schema must identify the class')
+   assert(schema.find('<param') is nil, 'The analyser has no parameters')
+   assert(schema.find('<output key="spectrum" type="spectrum"') != nil, 'The spectrum output must be published')
+   assert(schema.find('<output key="waveform" type="waveform"') != nil, 'The waveform output must be published')
+   assert(analyser.mtGetOutput('spectrum') is ERR_NoSupport, 'Spectrum data is not a scalar output')
+   assert(analyser.mtGetOutput('waveform') is ERR_NoSupport, 'Waveform data is not a scalar output')
+   err, layout = analyser.mtGetMeterLayout()
+   assert(err is ERR_Okay)
+   expected = array<str> { 'input_peak_left', 'input_peak_right', 'output_peak_left', 'output_peak_right' }
+   assert(#layout.meters is #expected, f'Stereo must publish four meters, got {#layout.meters}')
+   for i in {0 to #expected} do
+      assert(layout.meters[i].key is expected[i], f'Meter {i} should be {expected[i]}, got {layout.meters[i].key}')
+   end
+end
+
+@Test function ArgumentValidation()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   analyser <close> = audio.new('AudioAnalyser', { })
+   levels = array<double, 2>
+
+   -- Readings are available, and silent, before the Audio object is activated.
+
+   check analyser.mtGetSpectrum(array<double> { 100, 200, 300 }, levels)
+   assert(levels[0] is -120 and levels[1] is -120, 'Readings must be silent before activation')
+   check analyser.mtGetWaveform(array<float, 64>)
+
+   check audio.acActivate()
+   assert(analyser.latency is 0, 'The analyser adds no latency')
+   check analyser.mtGetSpectrum(array<double> { 0, 12000, 24000 }, levels)
+
+   assert(analyser.mtGetSpectrum(array<double> { 100 }, array<double, 0>) is ERR_Args, 'One edge defines no band')
+   assert(analyser.mtGetSpectrum(array<double> { 100, 200, 300 }, array<double, 3>) is ERR_Args,
+      'Levels must have one entry less than the edges')
+   too_many = array<double, 1026>
+   for i in {0 to 1026} do too_many[i] = 10 + i end
+   assert(analyser.mtGetSpectrum(too_many, array<double, 1025>) is ERR_Args, 'At most 1024 bands are supported')
+   assert(analyser.mtGetSpectrum(array<double> { 200, 100, 300 }, levels) is ERR_InvalidValue,
+      'Edges must ascend')
+   assert(analyser.mtGetSpectrum(array<double> { 100, 100, 300 }, levels) is ERR_InvalidValue,
+      'Edges must be distinct')
+   assert(analyser.mtGetSpectrum(array<double> { -1, 100, 300 }, levels) is ERR_InvalidValue,
+      'Edges must not be negative')
+   assert(analyser.mtGetSpectrum(array<double> { 100, 200, 24001 }, levels) is ERR_InvalidValue,
+      'Edges must not exceed Nyquist')
+
+   assert(analyser.mtGetWaveform(array<float, 0>) is ERR_Args, 'An empty waveform request is rejected')
+   assert(analyser.mtGetWaveform(array<float, 16385>) is ERR_Args, 'At most 16384 samples can be read')
+   check analyser.mtGetWaveform(array<float, 16384>)
+
+   -- Without a source, readings are silent.
+
+   check analyser.mtGetSpectrum(array<double> { 100, 200, 300 }, levels)
+   assert(levels[0] is -120 and levels[1] is -120, f'Silence must read the floor, got {levels[0]}, {levels[1]}')
+end
+
+@Test function LiveCapture()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   analyser = obj.new('AudioAnalyser', { audio=audio, channel=channel })
+   check audio.acActivate()
+   play_tone(audio, channel)
+
+   levels = await_tone(analyser)
+   for b in {0 to #levels} do
+      if b != TONE_BAND then
+         assert(levels[b] < levels[TONE_BAND] - 30,
+            f'Band {b} ({levels[b]} dBFS) must be well below the tone band ({levels[TONE_BAND]} dBFS)')
+      end
+   end
+
+   -- The waveform holds the tone: 1024 frames at 48 kHz contain about 21 cycles, i.e. about 43 zero crossings.
+
+   wave = array<float, 1024>
+   check analyser.mtGetWaveform(wave)
+   crossings = 0
+   peak = 0
+   for i in {1 to 1024} do
+      if (wave[i - 1] < 0) != (wave[i] < 0) then crossings++ end
+      peak = math.max(peak, math.abs(wave[i]))
+   end
+   assert(peak > 0.01 and peak < 1, f'The waveform peak should reflect the tone, got {peak}')
+   assert(crossings >= 40 and crossings <= 46, f'Expected about 43 zero crossings, got {crossings}')
+
+   -- Closing the channel set disconnects the analyser.
+
+   check audio.mtCloseChannels(channel)
+   assert(analyser.mtGetSpectrum(EDGES, levels) is ERR_NotInitialised)
+   assert(analyser.mtGetWaveform(wave) is ERR_NotInitialised)
+   analyser.free()
+end
+
+@Test function GlobalMix()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100, outputLayout=array<int> { SPK_CENTRE } })
+   analyser <close> = audio.new('AudioAnalyser', { order=100 })
+   check audio.acActivate()
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   play_tone(audio, channel)
+   await_tone(analyser)
+   check audio.acDeactivate()
+end
+
+@Test function UnsupportedRate()
+   audio <close> = obj.new('Audio', { device='null', outputRate=4000 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   try
+      analyser = obj.new('AudioAnalyser', { audio=audio, channel=channel })
+   except e when ERR_NoSupport
+   success
+      raise 'An output rate below 8000 Hz must be rejected'
+   end
+end
+
+@end

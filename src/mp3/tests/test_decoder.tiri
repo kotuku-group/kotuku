@@ -1,0 +1,117 @@
+-- Deterministic MP3 decoder regressions; the null audio device keeps these tests silent.
+
+@if(exists='modules:audio')
+
+   include 'audio', 'mp3'
+
+@BeforeAll function setup(State)
+   global glMP3Folder = State.folder
+   global glMP3Audio = obj.new('Audio', { device='null' })
+   check glMP3Audio.acActivate()
+   global glMP3Temp = f'temp:mp3_decoder_{mSys.PreciseTime()}/'
+   folder <close> = obj.new('File', { path=glMP3Temp, flags=FL_NEW|FL_FOLDER })
+end
+
+@AfterAll function cleanup()
+   check mSys.DeleteFile(glMP3Temp)
+   glMP3Audio = nil
+end
+
+function source_bytes(Name)
+   source <close> = obj.new('File', { path=glMP3Folder .. Name, flags=FL_READ })
+   data = array<byte, source.size>
+   err, count = source.acRead(data)
+   assert(err is ERR_Okay and count is #data, 'The compressed fixture must be read in full')
+   return data
+end
+
+function write_fixture(Name, Data, Copies)
+   file <close> = obj.new('File', { path=glMP3Temp .. Name, flags=FL_NEW|FL_WRITE })
+   for i in {0 to Copies} do check file.acWrite(Data) end
+   return glMP3Temp .. Name
+end
+
+@Test function EmptyObjectsRejectDecoderActions()
+   snd <close> = obj.new('MP3', { audio=glMP3Audio, flags=SDF_NEW })
+   data = array<byte, 16>
+   assert(snd.acRead(data) is ERR_FieldNotSet, 'Read without an MP3 source must return an error')
+   assert(snd.acSeek(0, SEEK_START) is ERR_FieldNotSet, 'Seek without an MP3 source must return an error')
+end
+
+@Test function SoundSelectsTheMP3Codec()
+   snd <close> = obj.new('Sound', { audio=glMP3Audio, path=glMP3Folder .. 'synth-cbr-mono-192k.mp3' })
+   assert(snd.channels is 1 and snd.frameBytes is 2, 'Sound must publish the derived MP3 format')
+   err, count = snd.acRead(array<byte, 4096>)
+   assert(err is ERR_Okay and count is 4096, 'Automatic MP3 class selection must initialise the decoder')
+end
+
+@Test function BufferedSeekReadsTheRequestedPCM()
+   snd <close> = obj.new('MP3', {
+      audio=glMP3Audio, path=glMP3Folder .. 'synth-cbr-joint-192k.mp3', stream=STREAM_NEVER
+   })
+   reference = array<byte, 65536>
+   err, count = snd.acRead(reference)
+   assert(err is ERR_Okay and count is #reference)
+   for _, offset in ipairs({ 4096, 0, 32768, 8192 }) do
+      check snd.acSeek(offset, SEEK_START)
+      actual = array<byte, 4096>
+      err, count = snd.acRead(actual)
+      assert(err is ERR_Okay and count is #actual)
+      for i in {0 to #actual} do
+         assert(actual[i] is reference[offset + i], f'PCM differs after seeking to {offset}, byte {i}')
+      end
+      assert(snd.position is offset + count, 'Position must follow the requested decoded offset')
+   end
+   check snd.acSeek(snd.length, SEEK_START)
+   assert(snd.acRead(array<byte, 16>) is ERR_Okay)
+   check snd.acSeek(0, SEEK_START)
+   err, count = snd.acRead(array<byte, 16>)
+   assert(err is ERR_Okay and count is 16, 'Rewinding after EOF must allow reads again')
+end
+
+@Test function HeaderlessLengthCountsEveryFrame()
+   for _, name in ipairs({ 'synth-cbr-joint-192k.mp3', 'synth-vbr-joint-190k.mp3' }) do
+      compressed = source_bytes(name)
+      -- Both fixtures have a 46-byte ID3v2 tag; their metadata frames use different bitrates.
+      header_size = name.startsWith('synth-vbr') ? 417 : 626
+      payload = compressed.slice({46 + header_size to #compressed})
+      path = write_fixture(name, payload, 4)
+      snd <close> = obj.new('MP3', { audio=glMP3Audio, path=path, stream=STREAM_NEVER })
+      expected = 4 * 192 * 1152 * 4
+      assert(snd.length is expected, f'Length must count all frames in {name}, got {snd.length}')
+      assert(snd.length % snd.frameBytes is 0, 'Length must contain complete PCM frames')
+      decoded = array<byte, expected>
+      err, count = snd.acRead(decoded)
+      assert(err is ERR_Okay and count is expected, 'Decoding must reach the final audio frame')
+   end
+end
+
+@Test function VBRSeekPositionUsesTimeFraction()
+   snd <close> = obj.new('MP3', {
+      audio=glMP3Audio, path=glMP3Folder .. 'synth-vbr-joint-190k.mp3', stream=STREAM_ALWAYS
+   })
+   check snd.acSeek(0.25, SEEK_RELATIVE)
+   assert(snd.position is 48 * 1152 * 4, 'The 25% time position must use frame 48, irrespective of compressed bytes')
+   check snd.acSeek(1, SEEK_RELATIVE)
+   err, count = snd.acRead(array<byte, 4096>)
+   assert(err is ERR_Okay and count is 0 and snd.position is snd.length, 'Seeking to EOF must exhaust the stream')
+   check snd.acSeek(0, SEEK_START)
+   err, count = snd.acRead(array<byte, 4096>)
+   assert(err is ERR_Okay and count is 4096, 'Rewinding a stream after EOF must restore the decoder')
+end
+
+@Test function TOCWithoutByteCountFallsBackToFileSize()
+   compressed = source_bytes('synth-vbr-joint-190k.mp3')
+   for i in {94 to 98} do compressed[i] = 0 end -- Zero the Xing compressed byte count.
+   path = write_fixture('missing_size.mp3', compressed, 1)
+   snd <close> = obj.new('MP3', { audio=glMP3Audio, path=path, stream=STREAM_ALWAYS })
+   first = array<byte, 4096>
+   check snd.acRead(first)
+   check snd.acSeek(0.25, SEEK_RELATIVE)
+   assert(snd.position is 48 * 1152 * 4, 'Missing Xing byte counts must retain time-based seek accounting')
+   later = array<byte, 4096>
+   check snd.acRead(later)
+   assert(first.getString() != later.getString(), 'Seeking with an unusable TOC must move past the stream start')
+end
+
+@end

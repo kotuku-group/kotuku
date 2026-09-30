@@ -259,6 +259,17 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     output="class_audiocompressor_def.c", extended=true }, [[
   ]])
 
+  -- AudioAnalyser method IDs start high enough to give a cushion from inherited AudioEffect methods.
+
+  methods("AudioAnalyser", "Ana", {
+    { id=30, name="GetSpectrum" },
+    { id=31, name="GetWaveform" }
+  })
+
+  klass("AudioAnalyser", { base="AudioEffect", src="class_audioanalyser.cpp",
+    output="class_audioanalyser_def.c", extended=true }, [[
+  ]])
+
   klass("Sound", { version=1, src="class_sound.cpp", output="class_sound_def.c", extended=true }, [[
     ~struct(*AudioFormat) SourceFormat
     ~int Channels

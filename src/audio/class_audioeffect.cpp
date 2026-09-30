@@ -60,7 +60,8 @@ sibling named by `key` holds one of the listed `values`, the parameter is either
 (`inactive="1"`) or limited to a lower `max`.
 
 An `output` element names data that can be read back from the processor.  A `curve` output is read with
-#GetResponse().  Scalar outputs are meter values, read together with #ReadMeters() or individually with #GetOutput().
+#GetResponse().  The `spectrum` and `waveform` outputs of an @AudioAnalyser are read with its own methods.  Scalar
+outputs are meter values, read together with #ReadMeters() or individually with #GetOutput().
 Their `label`, `description`, `unit`, `scope`, `semantics` and zero-based `slot` attributes describe the value and its
 location in the current meter layout.  A `channel` scope identifies a value measured on one channel of the processing
 layout, and its `channel` attribute holds the channel identity from the `SPK` constants.  A `global` scope identifies a
@@ -666,7 +667,7 @@ static ERR AUDIOEFFECT_GetOutput(extAudioEffect *Self, struct fx::GetOutput *Arg
    }
 
    if (Self->Schema) for (const auto &output : Self->Schema->Outputs) {
-      if ((Args->Key IS output.Key) and (output.Kind IS AudioOutputKind::CURVE)) return ERR::NoSupport;
+      if ((Args->Key IS output.Key) and (output.Kind != AudioOutputKind::SCALAR)) return ERR::NoSupport;
    }
 
    return ERR::Search;
