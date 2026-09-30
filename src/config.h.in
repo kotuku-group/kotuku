@@ -25,6 +25,7 @@
 #cmakedefine INC_MOD_LZMA
 #cmakedefine INC_MOD_MP3
 #cmakedefine INC_MOD_NETWORK
+#cmakedefine INC_MOD_CRYPTO
 #cmakedefine INC_MOD_IMAGE
 #cmakedefine INC_MOD_REGEX
 #cmakedefine INC_MOD_SCINTILLA

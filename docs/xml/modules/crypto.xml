@@ -1,0 +1,188 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="module.xsl"?>
+
+<book>
+  <info>
+    <name>Crypto</name>
+    <type>module</type>
+    <comment>Provides hashing, secure random data, base64 coding and RSA signature verification.</comment>
+    <version>1</version>
+    <copyright>Paul Manias © 2026</copyright>
+    <description>
+<p>The Crypto module provides a small set of cryptographic primitives for binary data.  All inputs are treated as raw byte arrays and may contain null bytes.  Hashing and signature verification use BearSSL on Linux and CNG on Windows; random data is obtained from the host platform.</p>
+<p>Each array argument is limited to 1 MiB (1048576 bytes).  The functions do not allocate memory for results; any output is written to an array supplied by the caller.</p></description>
+    <source>
+      <file path="src/crypto/">crypto.cpp</file>
+    </source>
+  </info>
+
+  <function>
+    <name>Base64Decode</name>
+    <comment>Decodes base64 or base64url text to binary data.</comment>
+    <prototype>ERR crypto::Base64Decode(const std::span&lt;const int8_t&gt; &amp;Input, CC Mode, const std::span&lt;int8_t&gt; &amp;Output, INT * Result)</prototype>
+    <tiriPrototype>err, Result:num = Base64Decode(Input:array, Mode:num, Output:array)</tiriPrototype>
+    <tags>thread-safe, mutates-input</tags>
+    <input>
+      <param type="std::span&lt;const int8_t&gt;" name="Input">The text to decode, up to 1 MiB.</param>
+      <param type="CC" name="Mode" lookup="CC">The encoding used by <code>Input</code>.</param>
+      <param type="std::span&lt;int8_t&gt;" name="Output">Receives the decoded data.  Pass an empty array to query the required size.</param>
+      <param type="INT *" name="Result">Receives the length of the decoded data, or the required size if <code>Output</code> is empty.</param>
+    </input>
+    <description>
+<p>Decodes <code>Input</code> and writes the binary result to <code>Output</code>.  <code>Mode</code> selects the alphabet and padding rules that <code>Input</code> must follow:</p>
+<types lookup="CC"/>
+<p>Decoding is strict, and only the canonical encoding of a value is accepted.  <code>Input</code> is rejected if it contains whitespace, line breaks or characters outside the selected alphabet, if its padding is missing or misplaced in <code>STANDARD</code> mode, if it contains padding in <code>URL</code> mode, or if the unused bits of its final character are not zero.</p>
+<p>To find the required output size, call the function with an empty <code>Output</code> array.  <code>Result</code> receives the size and nothing is written.  Otherwise <code>Output</code> must be at least that size; the decoded data is written from the start of the array and <code>Result</code> receives its length.</p>
+<p><code>Input</code> is fully validated before any output is written.  If the function fails, <code>Result</code> is set to zero and no decoded data is left in <code>Output</code>.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
+      <error code="InvalidData"><code>Input</code> is not a canonical encoding in the selected alphabet.</error>
+      <error code="Args"><code>Result</code> is <code>NULL</code>, <code>Mode</code> is invalid, <code>Input</code> exceeds 1 MiB, or <code>Input</code> and <code>Output</code> overlap.</error>
+      <error code="LowCapacity"><code>Output</code> is too small to hold the decoded data.</error>
+    </result>
+  </function>
+
+  <function>
+    <name>Base64Encode</name>
+    <comment>Encodes binary data as base64 or base64url text.</comment>
+    <prototype>ERR crypto::Base64Encode(const std::span&lt;const int8_t&gt; &amp;Input, CC Mode, const std::span&lt;int8_t&gt; &amp;Output, INT * Result)</prototype>
+    <tiriPrototype>err, Result:num = Base64Encode(Input:array, Mode:num, Output:array)</tiriPrototype>
+    <tags>thread-safe, mutates-input</tags>
+    <input>
+      <param type="std::span&lt;const int8_t&gt;" name="Input">The data to encode, up to 1 MiB.</param>
+      <param type="CC" name="Mode" lookup="CC">The encoding to produce.</param>
+      <param type="std::span&lt;int8_t&gt;" name="Output">Receives the encoded text.  Pass an empty array to query the required size.</param>
+      <param type="INT *" name="Result">Receives the length of the encoded text, or the required size if <code>Output</code> is empty.</param>
+    </input>
+    <description>
+<p>Encodes <code>Input</code> as text, using the alphabet and padding rules selected by <code>Mode</code>:</p>
+<types lookup="CC"/>
+<p>To find the required output size, call the function with an empty <code>Output</code> array.  <code>Result</code> receives the size and nothing is written.  Otherwise <code>Output</code> must be at least that size; the encoded text is written from the start of the array and <code>Result</code> receives its length.  The text is not null-terminated.</p>
+<p><code>Result</code> is set to zero if the function fails.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
+      <error code="Args"><code>Result</code> is <code>NULL</code>, <code>Mode</code> is invalid, <code>Input</code> exceeds 1 MiB, or <code>Input</code> and <code>Output</code> overlap.</error>
+      <error code="LowCapacity"><code>Output</code> is too small to hold the encoded text.</error>
+    </result>
+  </function>
+
+  <function>
+    <name>ConstantTimeEqual</name>
+    <comment>Compares two byte arrays in constant time.</comment>
+    <prototype>ERR crypto::ConstantTimeEqual(const std::span&lt;const int8_t&gt; &amp;A, const std::span&lt;const int8_t&gt; &amp;B, INT * Equal)</prototype>
+    <tiriPrototype>err, Equal:num = ConstantTimeEqual(A:array, B:array)</tiriPrototype>
+    <tags>pure-query, thread-safe</tags>
+    <input>
+      <param type="std::span&lt;const int8_t&gt;" name="A">The first array, up to 1 MiB.</param>
+      <param type="std::span&lt;const int8_t&gt;" name="B">The second array, up to 1 MiB.</param>
+      <param type="INT *" name="Equal">Receives <code>1</code> if the arrays are identical, otherwise <code>0</code>.</param>
+    </input>
+    <description>
+<p>Compares <code>A</code> with <code>B</code> and sets <code>Equal</code> to <code>1</code> if they are identical, otherwise <code>0</code>.  When the arrays are the same length, the time taken depends only on that length and not on the content.  This makes the function suitable for comparing secret values such as message authentication codes and access tokens, where a timing difference could reveal how many leading bytes matched.</p>
+<p>Array lengths are not treated as secret.  Arrays of different lengths are reported as unequal without comparing their content.  Two empty arrays are equal.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">The comparison completed and the outcome is in <code>Equal</code>.</error>
+      <error code="Args"><code>Equal</code> is <code>NULL</code>, or either array exceeds 1 MiB.</error>
+    </result>
+  </function>
+
+  <function>
+    <name>RandomBytes</name>
+    <comment>Fills a byte array with cryptographically secure random data.</comment>
+    <prototype>ERR crypto::RandomBytes(const std::span&lt;int8_t&gt; &amp;Output)</prototype>
+    <tiriPrototype>err = RandomBytes(Output:array)</tiriPrototype>
+    <tags>thread-safe, mutates-input</tags>
+    <input>
+      <param type="std::span&lt;int8_t&gt;" name="Output">The array to fill, up to 1 MiB.</param>
+    </input>
+    <description>
+<p>Fills <code>Output</code> with bytes from the host's cryptographically secure random number generator.  The size of <code>Output</code> determines how many bytes are generated.  An empty array is accepted and left unchanged.</p>
+<p>If the generator fails, <code>Output</code> is zeroed.  The content of <code>Output</code> must not be used unless the function returns <code>ERR::Okay</code>.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
+      <error code="Failed">The random number generator failed.</error>
+      <error code="Args"><code>Output</code> exceeds 1 MiB.</error>
+    </result>
+  </function>
+
+  <function>
+    <name>SHA256</name>
+    <comment>Computes the SHA-256 digest of a byte array.</comment>
+    <prototype>ERR crypto::SHA256(const std::span&lt;const int8_t&gt; &amp;Input, const std::span&lt;int8_t&gt; &amp;Output)</prototype>
+    <tiriPrototype>err = SHA256(Input:array, Output:array)</tiriPrototype>
+    <tags>thread-safe, mutates-input</tags>
+    <input>
+      <param type="std::span&lt;const int8_t&gt;" name="Input">The data to hash, up to 1 MiB.</param>
+      <param type="std::span&lt;int8_t&gt;" name="Output">A 32-byte array that receives the digest.</param>
+    </input>
+    <description>
+<p>Computes the SHA-256 digest of <code>Input</code> and writes the 32-byte binary result to <code>Output</code>.  <code>Input</code> may be empty.  The digest is not converted to text; use <function>Base64Encode</function> if a text representation is required.</p>
+<p><code>Output</code> must be exactly 32 bytes long and must not share memory with <code>Input</code>.  If hashing fails, <code>Output</code> is zeroed.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
+      <error code="Failed">The hashing provider failed.</error>
+      <error code="Args"><code>Input</code> exceeds 1 MiB, <code>Output</code> is not 32 bytes long, or the arrays overlap.</error>
+    </result>
+  </function>
+
+  <function>
+    <name>VerifyJWK</name>
+    <comment>Verifies an RS256 signature against an RSA public key in JSON Web Key format.</comment>
+    <prototype>ERR crypto::VerifyJWK(CSIG Algorithm, STRVIEW N, STRVIEW E, const std::span&lt;const int8_t&gt; &amp;Message, const std::span&lt;const int8_t&gt; &amp;Signature)</prototype>
+    <tiriPrototype>err = VerifyJWK(Algorithm:num, N:str, E:str, Message:array, Signature:array)</tiriPrototype>
+    <tags>pure-query, thread-safe</tags>
+    <input>
+      <param type="CSIG" name="Algorithm" lookup="CSIG">The signature algorithm.  Only <code>RS256</code> is supported.</param>
+      <param type="STRVIEW" name="N">The JWK <code>n</code> member, containing the RSA modulus.</param>
+      <param type="STRVIEW" name="E">The JWK <code>e</code> member, containing the RSA public exponent.</param>
+      <param type="std::span&lt;const int8_t&gt;" name="Message">The signed data, up to 1 MiB.</param>
+      <param type="std::span&lt;const int8_t&gt;" name="Signature">The raw signature bytes.</param>
+    </input>
+    <description>
+<p>Checks that <code>Signature</code> is a valid RS256 signature of <code>Message</code> for an RSA public key.  The key is supplied as the <code>n</code> and <code>e</code> members of a JSON Web Key (JWK), which encode the modulus and public exponent in unpadded base64url.</p>
+<p>The key is rejected with <code>ERR::InvalidData</code> unless all of the following are true:</p>
+<list type="bullet">
+<li><code>N</code> and <code>E</code> are canonical unpadded base64url values with no leading zero bytes.</li>
+<li>The modulus is odd, and its length is a multiple of 8 bits between 2048 and 4096 bits.</li>
+<li>The public exponent is odd and between 3 and 2^32-1.</li>
+<li><code>Signature</code> is the same length as the modulus.</li>
+</list>
+<p>The function examines only the key material.  The caller is responsible for parsing the JWK and checking its other members before calling this function, including:</p>
+<list type="bullet">
+<li>Confirming that <code>kty</code> is <code>RSA</code>.</li>
+<li>Confirming that <code>alg</code>, <code>use</code> and <code>key_ops</code>, where present, permit RS256 signature verification.</li>
+<li>Rejecting a JWK that contains duplicate members or private key members such as <code>d</code>.</li>
+<li>Selecting the key unambiguously, for example by matching its <code>kid</code> member.</li>
+</list>
+<p>A successful result proves only that <code>Message</code> was signed with the private key that matches this public key.  It does not validate token claims such as the issuer, audience or expiry time, and it does not establish whether the key should be trusted.</p>
+<p>To verify a JSON Web Token, pass the encoded header and payload joined by a period, exactly as received, in <code>Message</code>. Decode the token's base64url signature segment and pass the raw bytes in <code>Signature</code>.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">The signature is valid.</error>
+      <error code="Failed">The cryptography provider failed to complete the verification.</error>
+      <error code="InvalidData">The key or signature does not meet the requirements listed above.</error>
+      <error code="Args"><code>Message</code> exceeds 1 MiB.</error>
+      <error code="NoSupport"><code>Algorithm</code> is not <code>RS256</code>.</error>
+      <error code="Mismatch">The signature is not valid for <code>Message</code> and the given key.</error>
+    </result>
+  </function>
+
+  <types>
+    <constants lookup="CC" comment="Canonical base64 alphabet and padding mode.">
+      <const name="STANDARD">Standard base64 alphabet (RFC 4648 section 4), padded to a multiple of four characters.</const>
+      <const name="URL">URL and filename safe base64url alphabet (RFC 4648 section 5), without padding.</const>
+    </constants>
+
+    <constants lookup="CSIG" comment="Supported public signature algorithms.">
+      <const name="RS256">RSASSA-PKCS1-v1_5 signature with a SHA-256 digest.</const>
+    </constants>
+
+  </types>
+  <structs>
+  </structs>
+</book>
