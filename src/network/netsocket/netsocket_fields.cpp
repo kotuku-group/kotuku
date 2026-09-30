@@ -74,6 +74,29 @@ static ERR SET_Feedback(extNetSocket *Self, FUNCTION *Value)
 Flags: Optional flags.
 
 -FIELD-
+Handle: Platform specific reference to the network socket handle.
+
+*********************************************************************************************************************/
+
+static ERR GET_Handle(extNetSocket *Self, APTR *Value)
+{
+   *Value = (APTR)(MAXINT)Self->Handle.socket();
+   return ERR::Okay;
+}
+
+static ERR SET_Handle(extNetSocket *Self, APTR Value)
+{
+   // The user can set Handle prior to initialisation in order to create a NetSocket object that is linked to a
+   // socket created from outside the core platform code base.
+
+   Self->Handle = SocketHandle(SOCKET_HANDLE((MAXINT)Value));
+   Self->ExternalSocket = true;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 Incoming: Callback that is triggered when the socket receives data.
 
 The Incoming field can be set with a custom function that will be called whenever the socket receives data.  The
@@ -211,30 +234,8 @@ static ERR GET_OutQueueSize(extNetSocket *Self, int *Value)
 Port: The port number to use for connections.
 
 For NetSocket clients, this is the remote port used by #Connect().  For @NetServer listeners, this inherited field is
-the local port to bind during initialisation.
-
--FIELD-
-Handle: Platform specific reference to the network socket handle.
-
-*********************************************************************************************************************/
-
-static ERR GET_Handle(extNetSocket *Self, APTR *Value)
-{
-   *Value = (APTR)(MAXINT)Self->Handle.socket();
-   return ERR::Okay;
-}
-
-static ERR SET_Handle(extNetSocket *Self, APTR Value)
-{
-   // The user can set Handle prior to initialisation in order to create a NetSocket object that is linked to a
-   // socket created from outside the core platform code base.
-
-   Self->Handle = SocketHandle(SOCKET_HANDLE((MAXINT)Value));
-   Self->ExternalSocket = true;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
+the local port to bind during initialisation.  A value of zero requests an ephemeral port from the operating
+system; after initialisation this field contains the selected port.
 
 -FIELD-
 State: The current connection state of the NetSocket object.

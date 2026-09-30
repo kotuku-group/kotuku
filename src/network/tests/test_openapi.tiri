@@ -1,0 +1,435 @@
+-- OpenAPI Parser Test Suite
+--
+-- This test verifies the OpenAPI parser functionality including:
+-- - Basic OpenAPI specification parsing
+-- - Handler injection and management
+-- - Security handlers integration
+-- - Middleware injection
+-- - Mock data generation
+-- - Parameter conversion
+-- - Error handling
+
+   include 'network'
+   import 'net/openapi'
+   import 'json'
+
+@AfterAll
+function cleanup()
+   mSys.DeleteFile('temp:test-api-spec.json')
+   mSys.DeleteFile('temp:invalid-spec.json')
+   mSys.DeleteFile('temp:incomplete-spec.json')
+end
+
+-- Helper function to check if table contains value
+function tableContains(table, value)
+   for _, v in ipairs(table) do
+      if v is value then return true end
+   end
+   return false
+end
+
+-- Create test OpenAPI specification
+testSpec = {
+   openapi = '3.0.3',
+   info = {
+      title = 'Test API',
+      version = '1.0.0',
+      description = 'Test API for OpenAPI parser'
+   },
+   paths = {
+      ['/users'] = {
+         get = {
+            operationId = 'listUsers',
+            summary = 'List users',
+            tags = array<str> {'users', 'public'},
+            responses = {
+               ['200'] = {
+                  description = 'Success',
+                  content = {
+                     ['application/json'] = {
+                        schema = {
+                           type = 'array',
+                           items = {
+                              ['$ref'] = '#/components/schemas/User'
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+         },
+         post = {
+            operationId = 'createUser',
+            summary = 'Create user',
+            tags = array<str> {'users', 'admin'},
+            security = array<table> {
+               {bearerAuth = array<str> {}}
+            },
+            responses = {
+               ['201'] = {description = 'Created'}
+            }
+         }
+      },
+      ['/users/{id}'] = {
+         parameters = array<table> {
+            {
+               name = 'id',
+               ['in'] = 'path',
+               required = true,
+               schema = {type = 'integer'}
+            }
+         },
+         get = {
+            operationId = 'getUser',
+            summary = 'Get user by ID',
+            tags = array<str> {'users', 'public'},
+            responses = {
+               ['200'] = {description = 'Success'},
+               ['404'] = {description = 'Not found'}
+            }
+         },
+         delete = {
+            operationId = 'deleteUser',
+            summary = 'Delete user',
+            tags = array<str> {'users', 'admin'},
+            security = array<table> {
+               {bearerAuth = array<str> {}},
+               {apiKey = array<str> {}}
+            },
+            responses = {
+               ['204'] = {description = 'Deleted'}
+            }
+         }
+      }
+   },
+   components = {
+      securitySchemes = {
+         bearerAuth = {
+            type = 'http',
+            scheme = 'bearer'
+         },
+         apiKey = {
+            type = 'apiKey',
+            ['in'] = 'header',
+            name = 'X-API-Key'
+         }
+      },
+      schemas = {
+         User = {
+            type = 'object',
+            properties = {
+               id = {type = 'integer'},
+               username = {type = 'string'},
+               email = {type = 'string', format = 'email'}
+            }
+         }
+      }
+   }
+}
+
+-- Write test spec to temporary file
+function createTestSpec()
+   specPath = 'temp:test-api-spec.json'
+   specFile = obj.new('file', {path = specPath, flags = FL_NEW|FL_WRITE })
+   specJson = json.encode(testSpec)
+   assert(specFile.acWrite(specJson) is ERR_Okay, 'Failed to write test spec')
+   return specPath
+end
+
+-- Mock handlers
+testHandlers = {
+   listUsers = function(req, res)
+      res.json({users = {}, total = 0})
+   end,
+
+   getUser = function(req, res)
+      userId = req.params.id
+      res.json({id = userId, username = 'test', email = 'test@example.com'})
+   end,
+
+   createUser = function(req, res)
+      res.status(201).json({id = 1, username = 'new', email = 'new@example.com'})
+   end
+}
+
+-- Mock security handlers
+mockSecurityHandlers = {
+   bearerAuth = {
+      type = 'http',
+      scheme = 'bearer',
+      handler = function(req, scopes)
+         auth = req.headers.authorization
+         auth ?! return false, 'Missing authorization header'
+
+         token = auth:match('Bearer (.+)')
+         if token is 'valid-token' then
+            req.user = {id = 1, username = 'testuser'}
+            return true
+         else
+            return false, 'Invalid token'
+         end
+      end
+   },
+
+   apiKey = {
+      type = 'apiKey',
+      ['in'] = 'header',
+      name = 'X-API-Key',
+      handler = function(req, scopes)
+         apiKey = req.headers['x-api-key']
+         if apiKey is 'valid-key' then
+            req.client = {id = 'client1'}
+            return true
+         else
+            return false, 'Invalid API key'
+         end
+      end
+   }
+}
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function BasicParsing()
+   specPath = createTestSpec()
+   api = openapi.parse(specPath)
+
+   assert(api != nil, 'API object should be created')
+   assert(api.info.title is 'Test API', 'Should parse info section')
+   assert(api.info.version is '1.0.0', 'Should parse version')
+   assert(#api.routes > 0, 'Should generate routes')
+
+   -- Should have 4 routes: GET/POST /users, GET/DELETE /users/{id}
+   assert(#api.routes is 4, 'Should generate 4 routes, got ' .. #api.routes)
+end
+
+@Test function RouteGeneration()
+   specPath = createTestSpec()
+   api = openapi.parse(specPath)
+
+   getUserRoute = nil
+   for _, route in ipairs(api.routes) do
+      if route.metadata.operationId is 'getUser' then
+         getUserRoute = route
+         break
+      end
+   end
+
+   assert(getUserRoute != nil, 'Should find getUser route')
+   assert(getUserRoute.method is 'GET', 'Should have correct method')
+   assert(getUserRoute.pattern is '/users/{id}', 'Should have correct pattern')
+   assert(#getUserRoute.metadata.tags is 2, 'Should have correct tags')
+end
+
+@Test function HandlerInjection()
+   specPath = createTestSpec()
+   api = openapi.parse(specPath, {
+      handlers = testHandlers
+   })
+
+   bound = api.handlers.getBound()
+   assert(#bound is 3, 'Should have 3 bound handlers')
+   assert(tableContains(bound, 'listUsers'), 'Should bind listUsers')
+   assert(tableContains(bound, 'getUser'), 'Should bind getUser')
+   assert(tableContains(bound, 'createUser'), 'Should bind createUser')
+
+   -- Test post-parse binding
+   api2 = openapi.parse(specPath)
+   api2.handlers.bind('listUsers', testHandlers.listUsers)
+   api2.handlers.bindMany({
+      getUser = testHandlers.getUser,
+      createUser = testHandlers.createUser
+   })
+
+   bound2 = api2.handlers.getBound()
+   assert(#bound2 is 3, 'Should have 3 bound handlers after post-parse binding')
+
+   -- Test missing handlers identification
+   api3 = openapi.parse(specPath, {
+      handlers = {listUsers = testHandlers.listUsers}
+   })
+
+   missing = api3.handlers.getMissing()
+   assert(#missing is 3, 'Should have 3 missing handlers') -- All except listUsers
+   assert(tableContains(missing, 'getUser'), 'Should identify getUser as missing')
+   assert(tableContains(missing, 'createUser'), 'Should identify createUser as missing')
+end
+
+@Test function SecurityHandlers()
+   specPath = createTestSpec()
+   api = openapi.parse(specPath, {
+      securityHandlers = mockSecurityHandlers,
+      handlers = testHandlers
+   })
+
+   assert(api != nil, 'API should be created with security handlers')
+
+   -- Check that secured routes are properly configured
+   createUserRoute = nil
+   for _, route in ipairs(api.routes) do
+      if route.metadata.operationId is 'createUser' then
+         createUserRoute = route
+         break
+      end
+   end
+
+   assert(createUserRoute != nil, 'Should find createUser route')
+   assert(#createUserRoute.metadata.security > 0, 'Should have security requirements')
+end
+
+@Test function MiddlewareInjection()
+   corsMiddleware = function(req, res, next) next() end
+   adminMiddleware = function(req, res, next) next() end
+
+   specPath = createTestSpec()
+   api = openapi.parse(specPath, {
+      middleware = {
+         ['global'] = {corsMiddleware},
+         tags = {
+            admin = {adminMiddleware}
+         }
+      }
+   })
+
+   -- All routes should have global middleware
+   for _, route in ipairs(api.routes) do
+      assert(#route.middleware >= 1, 'Route should have at least 1 middleware (global)')
+   end
+
+   -- Check that admin routes have admin middleware
+   createUserRoute = nil
+   for _, route in ipairs(api.routes) do
+      if route.metadata.operationId is 'createUser' then
+         createUserRoute = route
+         break
+      end
+   end
+
+   assert(createUserRoute != nil, 'Should find createUser route')
+   assert(tableContains(createUserRoute.metadata.tags, 'admin'), 'Route should have admin tag')
+end
+
+@Test function MockGenerators()
+   specPath = createTestSpec()
+   api = openapi.parse(specPath, {
+      onMissingHandler = 'mock',
+      mockGenerators = {
+         schemas = {
+            User = function(example)
+               return {
+                  id = 999,
+                  username = 'mockuser',
+                  email = 'mock@example.com'
+               }
+            end
+         }
+      }
+   })
+
+   assert(api != nil, 'API should be created with mock generators')
+
+   -- Mock response should be available for unbound handlers
+   missing = api.handlers.getMissing()
+   assert(#missing > 0, 'Should have missing handlers that will use mocks')
+end
+
+@Test function ParameterConverters()
+   specPath = createTestSpec()
+   api = openapi.parse(specPath, {
+      parameterConverters = {
+         named = {
+            id = function(value, schema)
+               return tonumber(value)
+            end
+         },
+         types = {
+            integer = function(value)
+               return math.floor(tonumber(value) or 0)
+            end
+         }
+      }
+   })
+
+   assert(api != nil, 'API should be created with parameter converters')
+end
+
+@Test function IntegrationFeatures()
+   specPath = createTestSpec()
+   api = openapi.parse(specPath, {
+      handlers = testHandlers,
+      middleware = {
+         ['global'] = {function(req, res, next) next() end}
+      }
+   })
+
+   serverConfig = api.toServerConfig()
+   assert(serverConfig != nil, 'Should provide server config')
+   assert(serverConfig.routes != nil, 'Should include routes')
+   assert(serverConfig.middleware != nil, 'Should include middleware')
+
+   getUserOp = api.getOperation('getUser')
+   assert(getUserOp != nil, 'Should find operation by ID')
+   assert(getUserOp.operationId is 'getUser', 'Should return correct operation')
+   assert(#getUserOp.tags is 2, 'Should include metadata')
+
+   missingOp = api.getOperation('nonexistent')
+   assert(missingOp is nil, 'Should return nil for missing operation')
+
+   -- Test mock mode toggle
+   api.enableMocks()
+   assert(api._mockMode is true, 'Should enable mock mode')
+
+   api.disableMocks()
+   assert(api._mockMode is false, 'Should disable mock mode')
+end
+
+@Test function ErrorHandling()
+   -- Test missing file
+   missing_file_failed = false
+   err = ''
+   try
+      openapi.parse('nonexistent.json')
+   except ex
+      missing_file_failed = true
+      err = tostring(ex)
+   end
+
+   assert(missing_file_failed is true, 'Should throw error for missing file')
+   -- Check for either "Failed to open" (from our code) or "File not found" (from system)
+   assert(string.find(err, 'Failed to open') or string.find(err, 'File not found'), 'Should indicate file access failure')
+
+   -- Test invalid JSON
+   invalidSpecPath = 'temp:invalid-spec.json'
+   invalidFile = obj.new('file', {path = invalidSpecPath, flags = 'NEW|WRITE'})
+   assert(invalidFile.acWrite('invalid json content') is ERR_Okay, 'Should write invalid spec')
+
+   invalid_json_failed = false
+   err2 = ''
+   try
+      openapi.parse(invalidSpecPath)
+   except ex
+      invalid_json_failed = true
+      err2 = tostring(ex)
+   end
+
+   assert(invalid_json_failed is true, 'Should throw error for invalid JSON')
+   assert(string.find(err2, 'Failed to parse'), 'Should indicate parse failure')
+
+   -- Test missing OpenAPI fields
+   incompleteSpec = {paths = {}}
+   incompleteSpecPath = 'temp:incomplete-spec.json'
+   incompleteFile = obj.new('file', {path = incompleteSpecPath, flags = 'NEW|WRITE'})
+   incompleteJson = json.encode(incompleteSpec)
+   assert(incompleteFile.acWrite(incompleteJson) is ERR_Okay, 'Should write incomplete spec')
+
+   incomplete_spec_failed = false
+   err3 = ''
+   try
+      openapi.parse(incompleteSpecPath)
+   except ex
+      incomplete_spec_failed = true
+      err3 = tostring(ex)
+   end
+
+   assert(incomplete_spec_failed is true, 'Should throw error for missing openapi field')
+   assert(string.find(err3, 'missing openapi field'), 'Should indicate missing field')
+end

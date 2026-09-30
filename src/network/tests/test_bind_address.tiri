@@ -40,6 +40,28 @@
 end
 
 ------------------------------------------------------------------------------------------------------------------------
+-- Test binding to an operating-system selected port
+
+@Test function BindEphemeralPort()
+   signal = obj.new('time', { })
+   proc = processing.new({ timeout = 3.0, signals = array<obj> { signal } })
+   server = obj.new('netserver', { port = 0, address = '127.0.0.1' })
+
+   assert(server.port > 0 and server.port <= 65535, 'NetServer did not publish its selected ephemeral port')
+
+   client = obj.new('netsocket', {
+      address = '127.0.0.1',
+      port = server.port,
+      feedback = function(Socket, State)
+         if State is NTC_CONNECTED then signal.acSignal() end
+      end,
+   })
+
+   check proc.sleep()
+   assert(client.state is NTC_CONNECTED, 'Client failed to connect to the selected ephemeral port')
+end
+
+------------------------------------------------------------------------------------------------------------------------
 -- Test binding to all interfaces (0.0.0.0)
 
 @Test function BindAllInterfaces()

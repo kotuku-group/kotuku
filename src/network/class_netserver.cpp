@@ -8,6 +8,9 @@ each accepted connection is represented by a ClientSocket and grouped by client 
 For UDP listeners, incoming datagrams are received through the inherited `Incoming` callback and can be read with
 `RecvFrom()`.
 
+Set the inherited `Port` field to zero to request an ephemeral port from the operating system.  After initialisation,
+`Port` contains the selected port and can be used to construct a callback or discovery address.
+
 <header>SSL Server Certificates</>
 
 For SSL NetServer listeners, custom certificates can be specified using the #SSLCertificate field.  Both PEM and PKCS#12
@@ -291,6 +294,13 @@ static ERR activate_server_socket(extNetServer *Self, const NetworkEndpoint &End
       return error;
    }
 
+   if (not Self->Port) {
+      IPAddress local_address;
+      if (auto error = network_platform().get_local_ip(Self->Handle, local_address); error != ERR::Okay) return error;
+      if (local_address.Port <= 0) return ERR::InvalidState;
+      Self->Port = local_address.Port;
+   }
+
    if ((Self->Flags & NSF::UDP) IS NSF::NIL) {
       if (auto error = network_platform().listen(Self->Handle, Self->Backlog); error != ERR::Okay) {
          log.warning("Listen failed on port %d, error: %s", Self->Port, GetErrorMsg(error));
@@ -308,7 +318,7 @@ static ERR setup_server_socket(extNetServer *Self)
 {
    kt::Log log(__FUNCTION__);
 
-   if (not Self->Port) return log.warning(ERR::FieldNotSet);
+   if ((Self->Port < 0) or (Self->Port > 65535)) return log.warning(ERR::OutOfRange);
 
    Self->State = NTC::MULTISTATE; // Permanent value to indicate that the socket serves multiple clients.
 
