@@ -86,9 +86,15 @@ end
 end
 
 @Test function OAuthCallbackBuffersSeparateReads()
-   client = oauth2.Client({ clientID = 'offline-client', scope = 'openid', custom_endpoints = {
-      auth_endpoint = 'https://issuer.invalid/authorize', supports_pkce = true
-   } })
+   client = oauth2.Client({ clientID = 'offline-client', scope = 'api', authorizationTimeout = 5,
+      custom_endpoints = {
+         auth_endpoint = 'https://issuer.invalid/authorize', token_endpoint = 'https://issuer.invalid/token'
+      },
+      transport = function(Request:table):table
+         assert(Request.form.code is 'fixture+code', 'The callback must preserve and decode fragments')
+         return { status = 200, body = json.encode({ access_token = 'fixture-token', token_type = 'Bearer' }) }
+      end
+   })
    socket = nil
    response = ''
    response_proc = processing.new({ timeout = 3.0 })
@@ -115,14 +121,11 @@ end
       check socket.acWrite('GET ' .. redirect.path .. '?code=fixture')
       processing.new({ timeout = 0.05 }).sleep()
       assert(response is '', 'A partial request line must not produce a response')
-      check socket.acWrite('%2Bcode&state=' .. auth_params.state .. ' HTTP/1.1\r\nHost: 127.0.0.1\r\n')
+      check socket.acWrite('%2Bcode&state=' .. auth_params.state .. ' HTTP/1.1\r\nHost: 127.0.0.1:' ..
+         redirect.port .. '\r\n')
       processing.new({ timeout = 0.05 }).sleep()
       assert(response is '', 'Incomplete headers must not complete authorisation')
       check socket.acWrite('\r\n')
-   end
-   client.exchangeCodeForTokens = function(Code:str):table
-      assert(Code is 'fixture+code', 'The callback must preserve and decode fragments')
-      return { access_token = 'fixture-token' }
    end
    token, err = client.authorizeWeb()
    assert(token and token.access_token is 'fixture-token' and err is nil, 'Fragmented callbacks must complete')
@@ -200,32 +203,46 @@ end
 @Test function OAuthExpiryUsesUnixTimeInEveryTokenFlow()
    server = hslib.start({ port = 0, bind = '127.0.0.1', folder = 'temp:', routes = {
       { method = 'POST', pattern = '/token', handler = function(Req, Res)
-         Res.json({ access_token = 'fixture-token', expires_in = 3600 })
+         Res.json({ access_token = 'fixture-token', token_type = 'Bearer', expires_in = 3600 })
       end },
       { method = 'POST', pattern = '/device', handler = function(Req, Res)
          Res.json({ device_code = 'fixture-code', user_code = 'fixture', verification_uri = 'https://issuer.invalid',
-            interval = 0.001, expires_in = 10 })
+            interval = 1, expires_in = 10 })
       end }
    } })
    defer server.stop() end
    endpoint = 'http://127.0.0.1:' .. server.port
-   client = oauth2.Client({ clientID = 'offline-client', scope = 'openid', custom_endpoints = {
-      token_endpoint = endpoint .. '/token', device_endpoint = endpoint .. '/device',
-      supports_pkce = true, supports_device_flow = true
-   } })
+   client = oauth2.Client({ clientID = 'offline-client', scope = 'api', testLoopback = true,
+      redirectURI = 'http://127.0.0.1:12345/callback', authorizationTimeout = 5,
+      presentDevice = function(Instructions:table)
+         assert(Instructions.user_code is 'fixture', 'Device flow must present the fixture user code')
+      end,
+      custom_endpoints = {
+         auth_endpoint = 'https://issuer.invalid/authorize',
+         token_endpoint = endpoint .. '/token', device_endpoint = endpoint .. '/device',
+         supports_device_flow = true
+      }
+   })
    clock <close> = obj.new('time')
    check clock.acQuery()
    before = clock.systemTime / 1000000
    for acquire in values(array<any> {
       function():table return client.refreshToken('fixture-refresh') end,
-      function():table return client.exchangeCodeForTokens('fixture-code') end,
+      function():table
+         client.buildAuthUrl()
+         return client.exchangeCodeForTokens('fixture-code')
+      end,
       function():table return client.authorizeDevice() end
    }) do
+      check clock.acQuery()
+      before = clock.systemTime / 1000000
       token = acquire()
       check clock.acQuery()
       after = clock.systemTime / 1000000
-      assert(token and token.expires_at >= before + 3540 and token.expires_at <= after + 3540,
-         'Every token flow must store Unix expiry seconds with the 60-second buffer')
+      assert(token and token.expires_at >= before + 3600 and token.expires_at <= after + 3600,
+         'Every token flow must store the actual Unix expiry timestamp')
+      assert(token.refresh_at is token.expires_at - 60,
+         'The refresh threshold must remain separate from actual token expiry')
       assert(client.validateToken(json.decode(json.encode(token))), 'A persisted fresh token must remain valid')
    end
    assert(not client.validateToken({ access_token = 'expired', expires_at = before - 1 }),
