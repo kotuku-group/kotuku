@@ -3,6 +3,7 @@
 #include <kotuku/main.h>
 #include <span>
 #include <cstdint>
+#include <string_view>
 
 namespace crypto_backend {
 template<class Operation, class Wipe>
@@ -16,4 +17,5 @@ ERR random(std::span<int8_t> Output);
 ERR sha256(std::span<const int8_t> Input, std::span<int8_t> Output);
 ERR verify_rs256(std::span<const uint8_t> Modulus, std::span<const uint8_t> Exponent,
    std::span<const int8_t> Message, std::span<const int8_t> Signature);
+ERR write_protected_file(std::string_view Path, std::span<const int8_t> Data);
 }

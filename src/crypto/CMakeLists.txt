@@ -12,7 +12,7 @@ target_sources (${MOD} PRIVATE crypto.cpp)
 
 if (WIN32)
    target_sources (${MOD} PRIVATE backend_windows.cpp)
-   target_link_libraries (${MOD} PRIVATE bcrypt)
+   target_link_libraries (${MOD} PRIVATE bcrypt advapi32)
 else ()
    include (FetchContent)
    FetchContent_Declare (bearssl
@@ -51,6 +51,7 @@ endif ()
 
 if (BUILD_TESTS)
    flute_test (crypto_primitives "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_crypto.tiri")
+
 endif ()
 
 if (UNIT_TESTS)

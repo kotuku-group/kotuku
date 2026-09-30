@@ -14,5 +14,6 @@ module({ name="Crypto", copyright="Paul Manias © 2026", version=1.0, timestamp=
     "Base64Encode",
     "Base64Decode",
     "ConstantTimeEqual",
-    "VerifyJWK")
+    "VerifyJWK",
+    "WriteProtectedFile")
 end)
