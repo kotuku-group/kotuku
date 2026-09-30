@@ -383,6 +383,64 @@ end
    assert(counter.count is 3, 'struct field += through a temporary base should update the struct')
 end
 
+@Test function ArrayPostfixExpressionSlots()
+   local m = array<double, 20>
+   local a = 1
+   local k = 1
+   m[2] = 5
+   function pair(First:num, Second:num):<num, num> return First, Second end
+   function triple(First:num, Second:num, Third:num):<num, num, num> return First, Second, Third end
+
+   local first, second = pair(m[a + k]++, 99)
+   assert(first is 5 and second is 99 and m[2] is 6,
+      'computed array postfix should preserve the old value and following argument')
+   local before, value, after = triple(77, m[a + k]++, 99)
+   assert(before is 77 and value is 6 and after is 99 and m[2] is 7,
+      'computed array postfix should preserve arguments on both sides')
+   local total = 100 + m[a + k]++ + m[a + k]++
+   assert(total is 115 and m[2] is 9, 'array postfix arithmetic should preserve both old values')
+
+   local first_update, second_update = pair(m[a + k]++, m[a + k]++)
+   assert(first_update is 9 and second_update is 10 and m[2] is 11,
+      'adjacent array postfix arguments should each occupy one expression slot')
+   first, second = pair(++m[a + k], 99)
+   assert(first is 12 and second is 99 and m[2] is 12,
+      'computed array prefix should return the updated value and preserve the following argument')
+end
+
+@Test function TemporaryBaseUpdateExpressionSlots()
+   local counter = struct<CompoundCounter> { count=5 }
+   local values = array<double> { 5 }
+   local entries = { count=5 }
+   function get_counter():struct<CompoundCounter> return counter end
+   function get_values():array<double> return values end
+   function get_entries():table return entries end
+   function triple(First:num, Second:num, Third:num):<num, num, num> return First, Second, Third end
+
+   local before, value, after = triple(77, get_counter().count++, 99)
+   assert(before is 77 and value is 5 and after is 99 and counter.count is 6,
+      'temporary struct postfix should preserve surrounding arguments')
+   before, value, after = triple(77, get_values()[0]++, 99)
+   assert(before is 77 and value is 5 and after is 99 and values[0] is 6,
+      'temporary array postfix should preserve surrounding arguments')
+   before, value, after = triple(77, get_entries().count++, 99)
+   assert(before is 77 and value is 5 and after is 99 and entries.count is 6,
+      'temporary table postfix should preserve surrounding arguments')
+   before, value, after = triple(77, ++get_counter().count, 99)
+   assert(before is 77 and value is 7 and after is 99 and counter.count is 7,
+      'temporary struct prefix should return the updated value and preserve surrounding arguments')
+end
+
+@Test function ObjectTemporaryBasePostfixExpressionSlots()
+   local clock = obj.new('time', { second=5 })
+   function get_clock():obj return clock end
+   function triple(First:num, Second:num, Third:num):<num, num, num> return First, Second, Third end
+
+   local before, value, after = triple(77, get_clock().second++, 99)
+   assert(before is 77 and value is 5 and after is 99 and clock.second is 6,
+      'temporary object postfix should preserve surrounding arguments')
+end
+
 @Test function FieldWithFunctionRHS()
    store = { count = 5 }
    function delta()
