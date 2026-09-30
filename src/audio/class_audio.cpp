@@ -120,6 +120,19 @@ inline double extAudio::MixerLag() {
    #endif
 }
 
+// The device queue in seconds immediately after the most recent submission.  Unlike MixerLag(), time elapsed since the
+// submission is not deducted.
+
+inline double extAudio::SubmitLag() {
+   #ifdef _WIN32
+   return audio_latency(QueuedFrames, OutputRate);
+   #elif defined(ALSA_ENABLED)
+   return audio_latency(BufferFrames, OutputRate);
+   #else
+   return 0;
+   #endif
+}
+
 inline void extAudio::finish(AudioChannel &Channel, bool Notify) {
    Channel.Paused = false;
    if (!Channel.isStopped()) {

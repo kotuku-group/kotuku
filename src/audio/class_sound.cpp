@@ -128,14 +128,22 @@ static int read_stream(int Handle, int64_t Offset, APTR Buffer, int Length)
    auto Self = (extSound *)CurrentContext();
 
    if (Length > 0) {
+      // The source is only repositioned if it is not already at the requested Offset.  StreamOffset is compared
+      // rather than Position, because Position does not always track the source.  Disable and Deactivate set it to
+      // the playback position, which lags the source by the stream's prefetched data.
+      //
       // Client-side producer seeks must not restart the consuming mixer channel.
 
-      Self->FeedingStream = true;
-      if ((Offset >= 0) and (Self->Position != Offset)) Self->seekStart(Offset);
-      Self->FeedingStream = false;
+      if ((Offset >= 0) and (Offset != Self->StreamOffset)) {
+         Self->FeedingStream = true;
+         Self->seekStart(Offset);
+         Self->FeedingStream = false;
+         Self->StreamOffset = Self->Position; // Derived decoders may settle close to, rather than at, Offset
+      }
 
-      int result;
+      int result = 0;
       Self->read(std::span<int8_t>((int8_t *)Buffer, Length), &result);
+      if (Self->StreamOffset >= 0) Self->StreamOffset += result;
       return result;
    }
 
@@ -276,7 +284,10 @@ static ERR sound_play_position(extSound *Self, int64_t *Value)
          flush_audio_commands(*audio);
          #endif
          if (auto channel = audio->GetChannel(Self->ChannelIndex)) {
-            if ((channel->SampleHandle IS Self->Handle) and (channel->State != CHS::STOPPED)) {
+            // A paused channel retains its position.  Position is not used for it, because a paused stream continues
+            // to prefetch and advance it.
+
+            if ((channel->SampleHandle IS Self->Handle) and ((channel->State != CHS::STOPPED) or (channel->Paused))) {
                auto &sample = audio->Samples[Self->Handle];
                const int64_t frame_bytes = sample.FrameBytes;
                int64_t position = int64_t(channel->Position) * frame_bytes; // Whole frames only
@@ -686,6 +697,8 @@ static ERR SOUND_Init(extSound *Self)
       else return log.warning(ERR::AccessObject);
    }
 
+   if (Self->isDerived()) return ERR::Okay; // The derived codec initialises its own file and decoded format.
+
    std::string_view path;
    Self->getPath(path);
 
@@ -967,6 +980,7 @@ Seek: Moves the cursor position for reading data.
 
 Use Seek to move the read cursor within the decoded audio stream and update #Position.  This will affect the
 Read action.  If the sample is in active playback at the time of the call, the playback position will also be moved.
+If the sample is paused, it remains paused and resumes from the new position when it is enabled.
 
 -END-
 *********************************************************************************************************************/
@@ -975,21 +989,26 @@ static ERR SOUND_Seek(extSound *Self, struct acSeek *Args)
 {
    kt::Log log;
 
-   // NB: Derived -classes may divert their functionality to this routine if the sample is fully buffered.
+   // NB: Derived classes divert to this routine by returning ERR::NoAction.  A fully buffered sample is positioned
+   // here as normal.  A streamed sample has already been positioned by the derived class's decoder, which leaves the
+   // achieved offset in Position, so that only the channel is moved here.  Position must not be recomputed in that
+   // case, because stream reads are only consistent while it matches the decoder.
 
    if (!Args) return log.warning(ERR::NullArgs);
    if (!Self->initialised()) return log.warning(ERR::NotInitialised);
 
-   if (Args->Position IS SEEK::START)         Self->Position = int64_t(Args->Offset);
-   else if (Args->Position IS SEEK::END)      Self->Position = Self->Length - int64_t(Args->Offset);
-   else if (Args->Position IS SEEK::CURRENT)  Self->Position += int64_t(Args->Offset);
-   else if (Args->Position IS SEEK::RELATIVE) Self->Position = Self->Length * Args->Offset;
-   else return log.warning(ERR::Args);
+   if ((!Self->isDerived()) or ((Self->Flags & SDF::STREAM) IS SDF::NIL)) {
+      if (Args->Position IS SEEK::START)         Self->Position = int64_t(Args->Offset);
+      else if (Args->Position IS SEEK::END)      Self->Position = Self->Length - int64_t(Args->Offset);
+      else if (Args->Position IS SEEK::CURRENT)  Self->Position += int64_t(Args->Offset);
+      else if (Args->Position IS SEEK::RELATIVE) Self->Position = Self->Length * Args->Offset;
+      else return log.warning(ERR::Args);
 
-   if (Self->Position < 0) Self->Position = 0;
-   else if (Self->Position > Self->Length) Self->Position = Self->Length;
-   else if (auto frame_bytes = sound_frame_size(Self); frame_bytes > 0) { // Retain frame alignment.
-      Self->Position -= Self->Position % frame_bytes;
+      if (Self->Position < 0) Self->Position = 0;
+      else if (Self->Position > Self->Length) Self->Position = Self->Length;
+      else if (auto frame_bytes = sound_frame_size(Self); frame_bytes > 0) { // Retain frame alignment.
+         Self->Position -= Self->Position % frame_bytes;
+      }
    }
 
    log.traceBranch("Seek to %" PF64 " + %d", (long long)Self->Position, Self->DataOffset);
@@ -997,6 +1016,10 @@ static ERR SOUND_Seek(extSound *Self, struct acSeek *Args)
    if ((Self->File) and (!Self->isDerived())) {
       Self->File->seekStart(Self->DataOffset + Self->Position);
    }
+
+   // A client seek moves the source independently of the stream, so the stream's next request must reposition it.
+
+   if (!Self->FeedingStream) Self->StreamOffset = -1;
 
    kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 2000);
    if (audio.granted()) {
@@ -1007,16 +1030,29 @@ static ERR SOUND_Seek(extSound *Self, struct acSeek *Args)
          if (Self->Handle and !Self->FeedingStream) {
             audio->Samples[Self->Handle].PlayPos = BYTELEN(Self->Position);
 
-            if (Self->Active) {
-               // Adjust the playback position now if the sample is in playback.  Streams are restarted so that the
-               // buffer is refilled from the new position and the channel's anticipated end-time is recomputed;
-               // otherwise stale buffered audio continues to play and the OnStop event is mistimed.
+            // Adjust the playback position now if the sample is in playback.  Streams are restarted so that the
+            // buffer is refilled from the new position and the channel's anticipated end-time is recomputed;
+            // otherwise stale buffered audio continues to play and the OnStop event is mistimed.
+            //
+            // A paused playback is replaced in the same way and paused again, otherwise it would resume from its
+            // original position.  The mixer lock is held throughout, so no audio is rendered between the two
+            // commands.  Replacing a playback does not deliver an OnStop notification.
+            //
+            // The channel state is checked directly because the Active field is not maintained while paused.
 
-               if (Self->ChannelIndex) {
-                  if (auto channel = audio->GetChannel(Self->ChannelIndex)) {
-                     if (!channel->isStopped()) {
-                        snd::MixPlay(*audio, Self->ChannelIndex, Self->Position);
+            if (Self->ChannelIndex) {
+               auto channel = audio->GetChannel(Self->ChannelIndex);
+               if ((channel) and (channel->SampleHandle IS Self->Handle)) {
+                  if (channel->Paused) {
+                     if (auto error = snd::MixPlay(*audio, Self->ChannelIndex, Self->Position); error != ERR::Okay) {
+                        return log.warning(error);
                      }
+                     if (auto error = snd::MixPause(*audio, Self->ChannelIndex); error != ERR::Okay) {
+                        return log.warning(error);
+                     }
+                  }
+                  else if (!channel->isStopped()) {
+                     snd::MixPlay(*audio, Self->ChannelIndex, Self->Position);
                   }
                }
             }

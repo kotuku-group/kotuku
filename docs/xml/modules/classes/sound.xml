@@ -142,7 +142,7 @@ processing.sleep()  -- Wait for completion
         <param type="POS" name="Position">The position that defines the starting point for Offset.</param>
       </input>
       <description>
-<p>Use Seek to move the read cursor within the decoded audio stream and update <fl>Position</fl>.  This will affect the Read action.  If the sample is in active playback at the time of the call, the playback position will also be moved.</p>
+<p>Use Seek to move the read cursor within the decoded audio stream and update <fl>Position</fl>.  This will affect the Read action.  If the sample is in active playback at the time of the call, the playback position will also be moved. If the sample is paused, it remains paused and resumes from the new position when it is enabled.</p>
       </description>
     </action>
 

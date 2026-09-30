@@ -250,7 +250,11 @@ void AudioEffectChain::reset()
 
 void extAudioEffect::process(float *Buffer, int Frames)
 {
-   if ((Flags & AEF::BYPASS) != AEF::NIL or !processor) return;
+   if (!processor) return;
+   if ((Flags & AEF::BYPASS) != AEF::NIL) {
+      skip(Frames);
+      return;
+   }
    auto chain = Chain.lock();
 
    if (ResetPending) {
@@ -295,6 +299,11 @@ void extAudioEffect::process(float *Buffer, int Frames)
       Buffer += count * channels;
       Frames -= count;
    }
+}
+
+void extAudioEffect::skip(int Frames)
+{
+   if (processor and (Frames > 0)) processor->skip(Frames);
 }
 
 ERR extAudioEffect::set_processor(std::unique_ptr<AudioEffectProcessor> Processor)
@@ -369,6 +378,7 @@ static void render_effects(AudioEffectChain &Chain, float *Buffer, int Frames, i
          Chain.DrainFrames = std::min(Limit, Chain.DrainFrames + Frames);
          Chain.State = ADS::IDLE;
          for (auto effect : Chain.Effects) {
+            effect->skip(Frames);
             if (effect->MeterFrames or (effect->Meter.Flags & AMF::IDLE) IS AMF::NIL) effect->idle();
          }
          return;
@@ -394,7 +404,10 @@ static void render_effects(AudioEffectChain &Chain, float *Buffer, int Frames, i
       if (Chain.DrainFrames >= Limit) {
          if (Chain.pending()) Chain.Truncated = true;
          std::fill_n(Buffer + count * channels, (Frames - count) * channels, 0.0f);
-         for (auto effect : Chain.Effects) effect->idle();
+         for (auto effect : Chain.Effects) {
+            effect->skip(Frames - count);
+            effect->idle();
+         }
          Chain.State = ADS::IDLE;
       }
       else Chain.State = Chain.pending() or UpstreamPending ? ADS::DRAINING : ADS::IDLE;
