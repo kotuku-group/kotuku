@@ -424,3 +424,22 @@ end
    check script.acActivate()
    assert(script.error is 0, script.errorMessage)
 end
+
+@Test function CapturedTablesAliasConstructorAllocations()
+   script = obj.new('tiri', { statement=[[
+function response():table
+   result = { status = 200, body = false }
+   result.setStatus = function(Status:num):table result.status = Status return result end
+   result.setBody = function(Body:str) result.body = Body end
+   return result
+end
+jit.opt.start('hotloop=1', 'hotexit=1')
+for index in {0 to 200} do
+   res = response()
+   res.setStatus(500).setBody('error')
+   assert(res.status is 500 and res.body is 'error', 'Captured writes must invalidate constructor values')
+end
+]] })
+   check script.acActivate()
+   assert(script.error is 0, script.errorMessage)
+end

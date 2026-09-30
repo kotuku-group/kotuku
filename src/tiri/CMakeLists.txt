@@ -985,7 +985,7 @@ set (TIRI_TESTS
    type_guided_emission type_guided_jit_signatures
    context_access contextual_member_calls contextual_designation context_blocks context_materialisation
    gc_lifecycle
-   metamethod_context_dispatch stack_growth function_callback_context
+   metamethod_context_dispatch stack_growth function_callback_context setter_error_registers
 )
 
 foreach (TEST_NAME ${TIRI_TESTS})

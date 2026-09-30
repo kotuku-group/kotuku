@@ -5,6 +5,13 @@
    import 'json'
    include 'http'
 
+function parseRegressionSpec(Spec:table, Options:table):table
+   path = 'temp:openapi-component-regression.json'
+   defer mSys.DeleteFile(path) end
+   io.writeAll(path, json.encode(Spec))
+   return openapi.parse(path, Options)
+end
+
 function regressionAPI(Options:table):table
    path = 'temp:openapi-route-regression.json'
    defer mSys.DeleteFile(path) end
@@ -30,18 +37,16 @@ end
    end } })
    config = api.toServerConfig()
    assert(config.routes[0].pattern is '/users/:id/items/:item', 'OpenAPI paths must use HTTP router parameters')
-   do
-      probe <close> = obj.new('netserver', { port = 0, address = '127.0.0.1' })
-      config.port = probe.port
-   end
+   config.port = 0
    config.bind = '127.0.0.1'
    config.folder = 'temp:'
    server = hslib.start(config)
    defer server.stop() end
+   assert(server.port > 0 and server.port is server._socket.port, 'The server must publish its bound port')
    proc = processing.new({ timeout = 3.0 })
    body = ''
    http <close> = obj.new('http', {
-      src = 'http://127.0.0.1:' .. server._socket.port .. '/users/42/items/abc',
+      src = 'http://127.0.0.1:' .. server.port .. '/users/42/items/abc',
       incoming = function(HTTP, Buffer) body ..= Buffer.getString() end,
       stateChanged = function(HTTP, State)
          if State is HGS_COMPLETED or State is HGS_TERMINATED then proc.signal() end
@@ -55,7 +60,9 @@ end
 end
 
 @Test function MockTogglesAffectExistingHandlers()
-   for mode in values(array<str> { 'error', 'stub', 'mock' }) do
+   modes = array<str> { 'error', 'stub', 'mock' }
+   for iteration in {0 to 120} do
+      mode = modes[iteration % #modes]
       api = regressionAPI({ onMissingHandler = mode })
       handler = api.routes[0].handler
       res = regressionResponse()
@@ -121,4 +128,106 @@ end
    assert(token and token.access_token is 'fixture-token' and err is nil, 'Fragmented callbacks must complete')
    check response_proc.sleep()
    assert(response.startsWith('HTTP/1.1 200 OK\r\n'), 'The browser must receive a successful response')
+end
+
+@Test function LiteralRoutesPrecedeParametersAndWildcards()
+   paths = {}
+   for i in {0 to 12} do
+      prefix = '/x' .. i
+      paths[prefix .. '/{id}'] = { get = { operationId = 'parameter' .. i } }
+      paths[prefix .. '/me'] = { get = { operationId = 'literal' .. i } }
+      paths[prefix .. '/*'] = { get = { operationId = 'wildcard' .. i } }
+   end
+   paths['/{group}/me'] = { get = { operationId = 'group' } }
+   api = parseRegressionSpec({ openapi = '3.0.3', paths = paths }, {})
+   positions = {}
+   for i, route in ipairs(api.toServerConfig().routes) do positions[route.metadata.operationId] = i end
+   for i in {0 to 12} do
+      assert(positions['literal' .. i] < positions['parameter' .. i], 'Literal routes must win over parameters')
+      assert(positions['parameter' .. i] < positions['wildcard' .. i], 'Parameters must win over wildcards')
+      assert(positions['parameter' .. i] < positions.group, 'Specificity must be compared from the first segment')
+   end
+end
+
+@Test function ComponentSchemasGenerateMockResponses()
+   components = { schemas = {
+      Name = { type = 'string', example = 'Ada' },
+      User = { type = 'object', required = array<str> { 'name', 'children' }, properties = {
+         name = { ['$ref'] = '#/components/schemas/Name' },
+         children = { type = 'array', minItems = 2, maxItems = 2, items = { ['$ref'] = '#/components/schemas/Name' } },
+         parent = { ['$ref'] = '#/components/schemas/User' }
+      } },
+      Alias = { ['$ref'] = '#/components/schemas/User' },
+      ['Slash/Name~'] = { type = 'string', example = 'escaped' },
+      Loop = { ['$ref'] = '#/components/schemas/Loop' }
+   } }
+   paths = {}
+   for name, reference in pairs({ user = 'Alias', escaped = 'Slash~1Name~0', loop = 'Loop', missing = 'Absent' }) do
+      schema = { ['$ref'] = '#/components/schemas/' .. reference }
+      paths['/' .. name] = { get = { operationId = name, responses = {
+         ['200'] = { content = { ['application/json'] = { schema = schema } } }
+      } } }
+   end
+   spec = { openapi = '3.0.3', paths = paths, components = components }
+   api = parseRegressionSpec(spec, { onMissingHandler = 'mock' })
+   for route in values(api.routes) do
+      res = regressionResponse()
+      route.handler({}, res)
+      name = route.metadata.operationId
+      if name is 'user' then
+         assert(res.body.name is 'Ada', 'Nested component properties must resolve')
+         assert(#res.body.children is 2 and res.body.children[0] is 'Ada' and res.body.children[1] is 'Ada',
+            'Repeated array references must each generate a value')
+         assert(res.body.parent is nil, 'Recursive schemas must terminate')
+      elseif name is 'escaped' then
+         assert(res.body is 'escaped', 'JSON pointer escapes must resolve')
+      else
+         assert(res.body.message is 'Mock response for ' .. name, 'Invalid or cyclic references must use the fallback')
+      end
+   end
+   api = parseRegressionSpec(spec, { onMissingHandler = 'mock', mockGenerators = { schemas = {
+      User = function(Example:any):table return { name = 'custom' } end
+   } } })
+   for route in values(api.routes) do
+      if route.metadata.operationId is 'user' then
+         res = regressionResponse()
+         route.handler({}, res)
+         assert(res.body.name is 'custom', 'Component references must select their named schema generator')
+      end
+   end
+end
+
+@Test function OAuthExpiryUsesUnixTimeInEveryTokenFlow()
+   server = hslib.start({ port = 0, bind = '127.0.0.1', folder = 'temp:', routes = {
+      { method = 'POST', pattern = '/token', handler = function(Req, Res)
+         Res.json({ access_token = 'fixture-token', expires_in = 3600 })
+      end },
+      { method = 'POST', pattern = '/device', handler = function(Req, Res)
+         Res.json({ device_code = 'fixture-code', user_code = 'fixture', verification_uri = 'https://issuer.invalid',
+            interval = 0.001, expires_in = 10 })
+      end }
+   } })
+   defer server.stop() end
+   endpoint = 'http://127.0.0.1:' .. server.port
+   client = oauth2.Client({ clientID = 'offline-client', scope = 'openid', custom_endpoints = {
+      token_endpoint = endpoint .. '/token', device_endpoint = endpoint .. '/device',
+      supports_pkce = true, supports_device_flow = true
+   } })
+   clock <close> = obj.new('time')
+   check clock.acQuery()
+   before = clock.systemTime / 1000000
+   for acquire in values(array<any> {
+      function():table return client.refreshToken('fixture-refresh') end,
+      function():table return client.exchangeCodeForTokens('fixture-code') end,
+      function():table return client.authorizeDevice() end
+   }) do
+      token = acquire()
+      check clock.acQuery()
+      after = clock.systemTime / 1000000
+      assert(token and token.expires_at >= before + 3540 and token.expires_at <= after + 3540,
+         'Every token flow must store Unix expiry seconds with the 60-second buffer')
+      assert(client.validateToken(json.decode(json.encode(token))), 'A persisted fresh token must remain valid')
+   end
+   assert(not client.validateToken({ access_token = 'expired', expires_at = before - 1 }),
+      'Persisted tokens with past Unix expiry timestamps must be rejected')
 end

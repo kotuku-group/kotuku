@@ -1,0 +1,136 @@
+-- Regression coverage for native field setter errors preserving live registers and reporting the assignment line.
+-- bc_object_setfield() must retain its synchronised stack until raising and report the active Tiri frame.
+-- Task.affinityMask rejects values <= 0 with ERR_InvalidValue and needs no other modules.
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Each test function is its own frame, so the first local declared in a test occupies register slot 0.
+
+@Test function BugSetterErrorOverwritesFirstLocal()
+   local first = 'sentinel'
+   local task = obj.new('task', { })
+   local raised = false
+   try
+      task.affinityMask = -1
+   except ex
+      assert(ex.code is ERR_InvalidValue, 'The setter must retain its native error code')
+      raised = true
+   end
+   assert(raised, 'Setting affinityMask to -1 must raise')
+   assert(first is 'sentinel', f'The first local was overwritten with: {tostring(first)}')
+end
+
+@Test function BugSetterErrorOverwritesObjectLocal()
+   local task = obj.new('task', { })
+   local raised = false
+   try
+      task.affinityMask = -1
+   except ex
+      raised = true
+   end
+   assert(raised, 'Setting affinityMask to -1 must raise')
+   assert(type(task) is 'object', f'The object local was overwritten with a {type(task)}: {tostring(task)}')
+end
+
+@Test function BugSetterErrorReportsCallerLine()
+   local slot0 = 'sentinel'
+   local task = obj.new('task', { })
+   local marker_line = 0
+   local setter_line = 0
+   try
+      raise 'marker' -- The assignment below is 5 lines further down
+   except ex
+      marker_line = ex.line
+   end
+   try
+      task.affinityMask = -1
+   except ex
+      setter_line = ex.line
+   end
+   assert(marker_line > 0, 'The marker exception must report a line')
+   assert(setter_line is marker_line + 5,
+      f'The setter error must report line {marker_line + 5} (the assignment), got {setter_line}')
+   assert(slot0 is 'sentinel', 'Reporting the setter location must preserve the first local')
+end
+
+@Test function SetterErrorsAllowCachedWritesAndRecovery()
+   local first = 'sentinel'
+   local task = obj.new('task', { })
+   local affinity_mask = task.affinityMask
+   local caught = 0
+   for index in {0 to 10} do
+      try
+         task.affinityMask = -1
+      except ex when ERR_InvalidValue
+         caught++
+      end
+      task.affinityMask = affinity_mask
+      assert(task.affinityMask is affinity_mask, 'A valid write must succeed after a cached setter error')
+      assert(first is 'sentinel', 'Repeated setter errors must preserve the first local')
+   end
+   assert(caught is 10, 'Each cached invalid write must raise ERR_InvalidValue')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Controls: other error sources in the same frame leave the first local intact.
+
+@Test function ControlRaisePreservesFirstLocal()
+   local first = 'sentinel'
+   local raised = false
+   try
+      raise ERR_InvalidValue
+   except ex
+      raised = true
+   end
+   assert(raised, 'raise must be caught')
+   assert(first is 'sentinel', f'The first local was overwritten with: {tostring(first)}')
+end
+
+@Test function ControlReadOnlyFieldPreservesFirstLocal()
+   local first = 'sentinel'
+   local config = obj.new('config', { })
+   local raised = false
+   try
+      config.totalGroups = 5
+   except ex
+      raised = true
+   end
+   assert(raised, 'Writing a read-only field must raise')
+   assert(first is 'sentinel', f'The first local was overwritten with: {tostring(first)}')
+end
+
+@Test function ControlUnknownFieldPreservesFirstLocal()
+   local first = 'sentinel'
+   local task = obj.new('task', { })
+   local raised = false
+   try
+      task.noSuchField = 5
+   except ex
+      raised = true
+   end
+   assert(raised, 'Writing an unknown field must raise')
+   assert(first is 'sentinel', f'The first local was overwritten with: {tostring(first)}')
+end
+
+@Test function ControlSetterErrorInCalledFramePreservesFirstLocal()
+   local first = 'sentinel'
+   local raised = false
+   local set_mask = function(Task:obj, Value:num)
+      Task.affinityMask = Value
+   end
+   try
+      set_mask(obj.new('task', { }), -1)
+   except ex
+      raised = true
+   end
+   assert(raised, 'The setter error must propagate from the called frame')
+   assert(first is 'sentinel', f'The first local was overwritten with: {tostring(first)}')
+end
+
+@Test function ControlSuccessfulSetPreservesFirstLocal()
+   local first = 'sentinel'
+   local task = obj.new('task', { })
+   local affinity_mask = task.affinityMask
+   task.affinityMask = affinity_mask
+   assert(task.affinityMask is affinity_mask, 'A successful write must preserve the current CPU affinity')
+   assert(first is 'sentinel', f'The first local was overwritten with: {tostring(first)}')
+end
