@@ -126,6 +126,19 @@ end
       'Streaming input beyond 1 MiB')
 end
 
+@Test function StreamingHmacKeyReplacement()
+   hmac <close> = obj.new('Hash')
+   hmac.algorithm = HASH_SHA256
+   hmac.key = array<byte> { 111, 108, 100 }
+   hmac.key = array<byte> { 107, 101, 121 }
+   check hmac.init()
+   check hmac.mtUpdate('The quick brown fox jumps over the lazy dog')
+   digest = array<byte, 32>
+   check hmac.mtDigest(digest)
+   assertHex(digest, 'f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8',
+      'Replacement-key HMAC-SHA256')
+end
+
 @Test function VerifyPublicRs256Fixture()
    path = 'sdk:src/crypto/tests/fixtures/rs256.json'
    file <close> = obj.new('file', { path=path })

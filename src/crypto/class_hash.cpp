@@ -24,6 +24,12 @@ a new message while retaining the selected algorithm and key.
 
 #define PRV_HASH
 
+static void clear_key(std::vector<int8_t> &Key)
+{
+   volatile int8_t *key = Key.data();
+   for (size_t i=0; i < Key.size(); i++) key[i] = 0;
+}
+
 class extHash : public objHash {
 public:
    std::vector<int8_t> KeyData;
@@ -31,10 +37,7 @@ public:
    bool KeySet = false;
 
    extHash(objMetaClass *ClassPtr, OBJECTID ObjectID) : objHash(ClassPtr, ObjectID) { }
-   ~extHash() {
-      volatile int8_t *key = KeyData.data();
-      for (size_t i=0; i < KeyData.size(); i++) key[i] = 0;
-   }
+   ~extHash() { clear_key(KeyData); }
 };
 
 /*********************************************************************************************************************
@@ -157,6 +160,7 @@ static ERR SET_Key(extHash *Self, const std::span<const int8_t> &Value)
 {
    if (Self->initialised()) return ERR::NoFieldAccess;
    if (Value.size() > MAX_CRYPTO_INPUT) return ERR::Args;
+   clear_key(Self->KeyData);
    Self->KeyData.assign(Value.begin(), Value.end());
    Self->KeySet = true;
    return ERR::Okay;
