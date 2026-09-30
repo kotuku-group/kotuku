@@ -105,6 +105,13 @@ function generateRandomString(Length:num):str
    return encoded.getString(0, Length)
 end
 
+-- Persistent token expiry uses Unix seconds; polling deadlines continue to use the monotonic clock.
+function tokenTime():num
+   clock <close> = obj.new('time')
+   check clock.acQuery()
+   return clock.systemTime / 1000000
+end
+
 -- Generate PKCE code verifier and challenge
 
 function generatePKCE()
@@ -261,7 +268,7 @@ oauth2.Client = function(Config:table)
       if not token.access_token then return false, 'Access token missing' end
 
       -- Check expiration
-      if token.expires_at and token.expires_at <= mSys.PreciseTime() / 1000000 then
+      if token.expires_at and token.expires_at <= tokenTime() then
          return false, 'Access token expired'
       end
 
@@ -312,7 +319,7 @@ oauth2.Client = function(Config:table)
 
       -- Calculate expiration time
       if token_data.expires_in then
-         token_data.expires_at = (mSys.PreciseTime() / 1000000) + token_data.expires_in - 60 -- 60s buffer
+         token_data.expires_at = tokenTime() + token_data.expires_in - 60 -- 60s buffer
       end
 
       -- Keep original refresh token if not provided
@@ -403,7 +410,7 @@ oauth2.Client = function(Config:table)
 
             if response.status is 200 and token_data and token_data.access_token then -- Success
                if token_data.expires_in then
-                  token_data.expires_at = (mSys.PreciseTime() / 1000000) + token_data.expires_in - 60
+                  token_data.expires_at = tokenTime() + token_data.expires_in - 60
                end
 
                logMessage('INFO', 'Device flow completed successfully')
@@ -679,7 +686,7 @@ oauth2.Client = function(Config:table)
 
       -- Calculate expiration time
       if token_data.expires_in then
-         token_data.expires_at = (mSys.PreciseTime() / 1000000) + token_data.expires_in - 60 -- 60s buffer
+         token_data.expires_at = tokenTime() + token_data.expires_in - 60 -- 60s buffer
       end
 
       logMessage('INFO', 'Web flow completed successfully')

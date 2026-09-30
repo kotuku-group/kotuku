@@ -125,7 +125,7 @@ end
 
 function validatePort(port:num!):bool
    port_num = port
-   if not port_num or port_num < 1 or port_num > 65535 then
+   if not port_num or port_num < 0 or port_num > 65535 then
       return false
    end
    return true
@@ -1933,7 +1933,7 @@ hslib.start = function(Options)
       if validatePort(Options.port) then
          self.port = tonumber(Options.port)
       else
-         raise f'Invalid port number: {Options.port}. Port must be between 1 and 65535.'
+         raise f'Invalid port number: {Options.port}. Port must be between 0 and 65535.'
       end
    end
 
@@ -2105,6 +2105,7 @@ hslib.start = function(Options)
    end
 
    self._socket = obj.new('netserver', cfg)
+   self.port = self._socket.port
 
    self.stop = function()
       if self._socket then

@@ -27,8 +27,8 @@
   "files": [
     {
       "path": "openapi.tiri",
-      "size": 21168,
-      "sha256": "0943f627fa4c4c27f562c2b569df9c09822bae0da27fecdcd380e36ce29c191c",
+      "size": 22993,
+      "sha256": "479b98132536390a818e5ef00eae21502637350f1063fb78d24f77bb2b8d25fc",
       "mediaType": "application/vnd.kotuku.tiri"
     }
   ]

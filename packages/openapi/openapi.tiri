@@ -249,8 +249,46 @@ function executeSecurityHandlers(securityRequirements, securityHandlers, req)
    return false, 'Authentication failed'
 end
 
+-- Resolve local JSON pointers without expanding recursive component schemas.
+function resolveSchema(Schema:table, Spec:table):<table, str>
+   seen = {}
+   schema_name = nil
+   while Schema['$ref'] do
+      reference = Schema['$ref']
+      if not reference.startsWith('#/') or seen[reference] then return nil end
+      seen[reference] = true
+      target = Spec
+      for part in values(reference.sub(2).split('/')) do
+         key = part.replace('~1', '/').replace('~0', '~')
+         target = target[key]
+         if target != <table> then return nil end
+      end
+      if reference.startsWith('#/components/schemas/') then
+         schema_name = reference.sub(21).replace('~1', '/').replace('~0', '~')
+      end
+      Schema = target
+   end
+   return Schema, schema_name
+end
+
+-- Compare path segments so literal routes precede parameters, which precede wildcards.
+function routePrecedes(A:table, B:table):bool
+   a_parts = A.pattern.split('/')
+   b_parts = B.pattern.split('/')
+   for i in {0 to math.min(#a_parts, #b_parts)} do
+      a_rank = a_parts[i].find('*') != nil ? 2 : (a_parts[i].find(':') != nil ? 1 : 0)
+      b_rank = b_parts[i].find('*') != nil ? 2 : (b_parts[i].find(':') != nil ? 1 : 0)
+      if a_rank != b_rank then return a_rank < b_rank end
+   end
+   if #a_parts != #b_parts then return #a_parts > #b_parts end
+   if A.pattern != B.pattern then return A.pattern < B.pattern end
+   return A.method < B.method
+end
+
 -- Mock data generator
-function generateMockData(schema, mockGenerators, visitedSchemas):any
+function generateMockData(schema, mockGenerators, visitedSchemas, Spec:table):any
+   schema, schema_name = resolveSchema(schema, Spec)
+   if not schema then return nil end
    mockGenerators.schemas ?= {}
    mockGenerators.formats ?= {}
    mockGenerators.types ?= {}
@@ -266,6 +304,10 @@ function generateMockData(schema, mockGenerators, visitedSchemas):any
    -- Use example if provided
    if schema.example != nil then
       return schema.example
+   end
+
+   if schema_name and mockGenerators.schemas[schema_name] then
+      return mockGenerators.schemas[schema_name](schema.example)
    end
 
    -- Check for schema-level mock generators
@@ -315,7 +357,7 @@ function generateMockData(schema, mockGenerators, visitedSchemas):any
    elseif schema.type is 'array' then
       if mockGenerators.types.array then
          generateItem = function(itemSchema)
-            return generateMockData(itemSchema, mockGenerators, visitedSchemas)
+            return generateMockData(itemSchema, mockGenerators, visitedSchemas, Spec)
          end
          return mockGenerators.types.array(schema, generateItem)
       else
@@ -325,7 +367,7 @@ function generateMockData(schema, mockGenerators, visitedSchemas):any
          items = array<any>
          if schema.items then
             for i in {1 into count} do
-               item = generateMockData(schema.items, mockGenerators, visitedSchemas)
+               item = generateMockData(schema.items, mockGenerators, visitedSchemas, Spec)
                items.push(item)
             end
          end
@@ -335,7 +377,7 @@ function generateMockData(schema, mockGenerators, visitedSchemas):any
    elseif schema.type is 'object' then
       if mockGenerators.types.object then
          generateProperty = function(propSchema)
-            return generateMockData(propSchema, mockGenerators, visitedSchemas)
+            return generateMockData(propSchema, mockGenerators, visitedSchemas, Spec)
          end
          return mockGenerators.types.object(schema, generateProperty)
       else
@@ -343,9 +385,9 @@ function generateMockData(schema, mockGenerators, visitedSchemas):any
          if schema.properties then
             for propName, propSchema in pairs(schema.properties) do
                if schema.required and tableContains(schema.required, propName) then
-                  obj[propName] = generateMockData(propSchema, mockGenerators, visitedSchemas)
+                  obj[propName] = generateMockData(propSchema, mockGenerators, visitedSchemas, Spec)
                elseif math.random() > 0.3 then -- 70% chance for optional properties
-                  obj[propName] = generateMockData(propSchema, mockGenerators, visitedSchemas)
+                  obj[propName] = generateMockData(propSchema, mockGenerators, visitedSchemas, Spec)
                end
             end
          end
@@ -427,7 +469,7 @@ function createOperationHandler(operationSpec, userHandler, options, API:table)
             response_spec = operationSpec.responses['200']
             json_content = response_spec.content and response_spec.content['application/json']
             if json_content and json_content.schema then
-               mock_response = generateMockData(json_content.schema, options.mockGenerators or {})
+               mock_response = generateMockData(json_content.schema, options.mockGenerators or {}, nil, API.spec)
             end
          end
 
@@ -587,6 +629,8 @@ function openapi.parse(specPath, options)
          end
       end
    end
+
+   table.sort(api.routes, routePrecedes)
 
    -- Handler management functions
    api.handlers.bind = function(operationId, handler)
