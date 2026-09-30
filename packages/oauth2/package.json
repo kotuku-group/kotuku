@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "name": "net/httpserver",
+  "name": "net/oauth2",
   "version": "1.0",
-  "description": "Event-driven HTTP server library for Tiri applications.",
-  "entry": "httpserver.tiri",
+  "description": "OAuth 2.0 client helpers for device, web and token-refresh authentication flows.",
+  "entry": "oauth2.tiri",
   "authors": [
     {
       "name": "Paul Manias",
@@ -12,25 +12,25 @@
   ],
   "copyright": "Copyright © 2025-2026 Paul Manias",
   "license": "LGPL-2.1",
-  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-HTTP-Server-API",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-OAuth-API",
   "repository": "https://github.com/kotuku-group/kotuku.git",
   "keywords": [
-    "http",
+    "authentication",
     "network",
-    "server"
+    "oauth2"
   ],
   "requires": {
     "tiri": "1.0"
   },
   "dependencies": {
     "json": "1.0",
-    "tempus": "1.0"
+    "net/url": "1.0"
   },
   "files": [
     {
-      "path": "httpserver.tiri",
-      "size": 74597,
-      "sha256": "fe612d9120d4b01cfe35abd51b69d46aee93990874250bede266773e3db6c0f1",
+      "path": "oauth2.tiri",
+      "size": 24162,
+      "sha256": "82996d5c113cc1c25681f75aebaf1a6608c4c9fc3942f6f0daef4eeb671519c7",
       "mediaType": "application/vnd.kotuku.tiri"
     }
   ]

@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "name": "net/httpserver",
+  "name": "net/openapi",
   "version": "1.0",
-  "description": "Event-driven HTTP server library for Tiri applications.",
-  "entry": "httpserver.tiri",
+  "description": "OpenAPI 3.0 and 3.1 parser with HTTP handler, security, middleware and mock integration.",
+  "entry": "openapi.tiri",
   "authors": [
     {
       "name": "Paul Manias",
@@ -12,25 +12,23 @@
   ],
   "copyright": "Copyright © 2025-2026 Paul Manias",
   "license": "LGPL-2.1",
-  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-HTTP-Server-API",
   "repository": "https://github.com/kotuku-group/kotuku.git",
   "keywords": [
+    "api",
     "http",
-    "network",
-    "server"
+    "openapi"
   ],
   "requires": {
     "tiri": "1.0"
   },
   "dependencies": {
-    "json": "1.0",
-    "tempus": "1.0"
+    "json": "1.0"
   },
   "files": [
     {
-      "path": "httpserver.tiri",
-      "size": 74597,
-      "sha256": "fe612d9120d4b01cfe35abd51b69d46aee93990874250bede266773e3db6c0f1",
+      "path": "openapi.tiri",
+      "size": 22993,
+      "sha256": "479b98132536390a818e5ef00eae21502637350f1063fb78d24f77bb2b8d25fc",
       "mediaType": "application/vnd.kotuku.tiri"
     }
   ]

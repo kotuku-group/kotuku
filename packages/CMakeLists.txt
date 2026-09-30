@@ -4,8 +4,8 @@
 
 set (BUNDLED_PACKAGES
    benchmark button checkbox colourdialog combobox config dialog divider dropdown filedialog filemgr filesearch
-   fileview fontdialog git gui httpserver icon input json menu menubar options proxyserver scrollbar slider tempus
-   toolbar tooltip url vfx view window)
+   fileview fontdialog git gui httpserver icon input json menu menubar oauth2 openapi options proxyserver scrollbar
+   slider tempus toolbar tooltip url vfx view window)
 
 set (PACKAGE_MANIFESTS)
 

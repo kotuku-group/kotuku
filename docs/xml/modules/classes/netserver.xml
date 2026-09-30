@@ -14,6 +14,7 @@
     <copyright>Paul Manias © 2005-2026</copyright>
     <description>
 <p>The NetServer class extends NetSocket with local bind, listen and accepted-client management.  For TCP listeners, each accepted connection is represented by a ClientSocket and grouped by client IP address in NetClient records. For UDP listeners, incoming datagrams are received through the inherited <code>Incoming</code> callback and can be read with <code>RecvFrom()</code>.</p>
+<p>Set the inherited <code>Port</code> field to zero to request an ephemeral port from the operating system.  After initialisation, <code>Port</code> contains the selected port and can be used to construct a callback or discovery address.</p>
 <header>SSL Server Certificates</header>
 <p>For SSL NetServer listeners, custom certificates can be specified using the <fl>SSLCertificate</fl> field.  Both PEM and PKCS#12 formats are supported across all platforms.</p>
 <p>Example with PKCS#12 certificate:</p>

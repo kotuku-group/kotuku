@@ -1,6 +1,7 @@
-include 'crypto'
-module crypto as mCrypto
-import 'json'
+
+   module crypto as mCrypto
+   import 'json'
+   include 'crypto'
 
 function bytesFromHex(Hex:str):array<byte>
    bytes = array<byte>
