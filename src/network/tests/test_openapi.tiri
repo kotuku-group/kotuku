@@ -216,7 +216,7 @@ end
 
    assert(getUserRoute != nil, 'Should find getUser route')
    assert(getUserRoute.method is 'GET', 'Should have correct method')
-   assert(getUserRoute.pattern is '/users/{id}', 'Should have correct pattern')
+   assert(getUserRoute.pattern is '/users/:id', 'Should use HTTP router parameter syntax')
    assert(#getUserRoute.metadata.tags is 2, 'Should have correct tags')
 end
 

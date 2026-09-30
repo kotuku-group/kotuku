@@ -8,7 +8,7 @@
    namespace openapi { }
 
 -- Deferred regex patterns
-rxOpenApiParam     = <{ regex.new([[{([^}]+)}]]) }>
+rxOpenApiParam     = <{ regex.new([[\{([^\}]+)\}]]) }>
 rxOpenApiParamSub  = <{ regex.new([[{[^}]+}]]) }>
 rxModuleFunction   = <{ regex.new([[([^.]+)\.(.+)]]) }>
 
@@ -381,7 +381,7 @@ function convertParameter(value, paramSpec, converters):any
 end
 
 -- Create wrapper handler for operations
-function createOperationHandler(operationSpec, userHandler, options)
+function createOperationHandler(operationSpec, userHandler, options, API:table)
    return function(req, res):any
       -- Extract path parameters
       if operationSpec.parameters then
@@ -420,7 +420,7 @@ function createOperationHandler(operationSpec, userHandler, options)
       -- Call user handler or mock
       if userHandler then
          return userHandler(req, res)
-      elseif options.onMissingHandler is 'mock' then
+      elseif API._mockMode then
          -- Generate mock response
          mock_response:any = {}
          if operationSpec.responses and operationSpec.responses['200'] then
@@ -523,7 +523,7 @@ function openapi.parse(specPath, options)
       routes   = {},
       handlers = {},
       _boundHandlers = {},
-      _mockMode      = false,
+      _mockMode      = options.onMissingHandler is 'mock',
       _options       = options
    }
 
@@ -559,7 +559,7 @@ function openapi.parse(specPath, options)
             end
 
             -- Create wrapped handler
-            wrappedHandler = createOperationHandler(operationSpec, userHandler, options)
+            wrappedHandler = createOperationHandler(operationSpec, userHandler, options, api)
 
             -- Resolve middleware
             operationMiddleware = {}
@@ -570,7 +570,7 @@ function openapi.parse(specPath, options)
             -- Create route entry
             route = {
                method = method.upper(),
-               pattern = path,
+               pattern = rxOpenApiParam.replace(path, ':$1'),
                handler = wrappedHandler,
                middleware = operationMiddleware,
                metadata = {
@@ -594,7 +594,7 @@ function openapi.parse(specPath, options)
       -- Update the route handler
       for _, route in ipairs(api.routes) do
          if route.metadata.operationId is operationId then
-            route.handler = createOperationHandler(route.metadata, handler, options)
+            route.handler = createOperationHandler(route.metadata, handler, options, api)
             break
          end
       end

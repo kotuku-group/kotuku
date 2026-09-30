@@ -1,0 +1,124 @@
+   import 'net/openapi'
+   import 'net/oauth2'
+   import 'net/httpserver'
+   import 'net/url'
+   import 'json'
+   include 'http'
+
+function regressionAPI(Options:table):table
+   path = 'temp:openapi-route-regression.json'
+   defer mSys.DeleteFile(path) end
+   io.writeAll(path, json.encode({ openapi = '3.0.3', paths = {
+      ['/users/{id}/items/{item}'] = { get = { operationId = 'getItem', responses = {
+         ['200'] = { content = { ['application/json'] = { schema = { type = 'string', example = 'mock' } } } }
+      } } }
+   } }))
+   return openapi.parse(path, Options)
+end
+
+function regressionResponse():table
+   res = { statusCode = 200 }
+   res.status = function(Code:num):table res.statusCode = Code return res end
+   res.json = function(Data:any) res.body = Data end
+   return res
+end
+
+@Test function OpenApiParametersReachHttpHandlers()
+   api = regressionAPI({ handlers = { getItem = function(Req, Res)
+      assert(Req.params.id is '42' and Req.params.item is 'abc', 'Both path parameters must reach the handler')
+      Res.json({ id = Req.params.id, item = Req.params.item })
+   end } })
+   config = api.toServerConfig()
+   assert(config.routes[0].pattern is '/users/:id/items/:item', 'OpenAPI paths must use HTTP router parameters')
+   do
+      probe <close> = obj.new('netserver', { port = 0, address = '127.0.0.1' })
+      config.port = probe.port
+   end
+   config.bind = '127.0.0.1'
+   config.folder = 'temp:'
+   server = hslib.start(config)
+   defer server.stop() end
+   proc = processing.new({ timeout = 3.0 })
+   body = ''
+   http <close> = obj.new('http', {
+      src = 'http://127.0.0.1:' .. server._socket.port .. '/users/42/items/abc',
+      incoming = function(HTTP, Buffer) body ..= Buffer.getString() end,
+      stateChanged = function(HTTP, State)
+         if State is HGS_COMPLETED or State is HGS_TERMINATED then proc.signal() end
+      end
+   })
+   check http.acActivate()
+   check proc.sleep()
+   assert(http.status is 200, 'A concrete request must match the generated parameter route')
+   data = json.decode(body)
+   assert(data.id is '42' and data.item is 'abc', 'The response must come from the parameterised handler')
+end
+
+@Test function MockTogglesAffectExistingHandlers()
+   for mode in values(array<str> { 'error', 'stub', 'mock' }) do
+      api = regressionAPI({ onMissingHandler = mode })
+      handler = api.routes[0].handler
+      res = regressionResponse()
+      handler({}, res)
+      expected = mode is 'mock' ? 200 : (mode is 'stub' ? 501 : 500)
+      assert(res.statusCode is expected, 'Initial missing-handler policy must be preserved')
+      api.enableMocks()
+      res = regressionResponse()
+      handler({}, res)
+      assert(res.statusCode is 200 and res.body is 'mock', 'Enabling mocks must affect existing closures')
+      api.disableMocks()
+      res = regressionResponse()
+      handler({}, res)
+      assert(res.statusCode is (mode is 'stub' ? 501 : 500), 'Disabling mocks must stop mock responses')
+      api.handlers.bind('getItem', function(Req, Res) Res.json('real') end)
+      api.enableMocks()
+      res = regressionResponse()
+      api.routes[0].handler({}, res)
+      assert(res.body is 'real', 'Mock mode must preserve bound user handlers')
+   end
+end
+
+@Test function OAuthCallbackBuffersSeparateReads()
+   client = oauth2.Client({ clientID = 'offline-client', scope = 'openid', custom_endpoints = {
+      auth_endpoint = 'https://issuer.invalid/authorize', supports_pkce = true
+   } })
+   socket = nil
+   response = ''
+   response_proc = processing.new({ timeout = 3.0 })
+   defer socket = nil end
+   client.open_browser = function(AuthURL:str)
+      auth_params = url.parseQuery(url.parse(AuthURL).query)
+      redirect = url.parse(auth_params.redirect_uri)
+      connected = processing.new({ timeout = 3.0 })
+      socket = obj.new('netsocket', {
+         feedback = function(Socket, State)
+            if State is NTC_CONNECTED then connected.signal() end
+         end,
+         incoming = function(Socket)
+            buffer = string.alloc(8192)
+            err, count = Socket.acRead(buffer)
+            if err is ERR_Okay then
+               response ..= buffer.sub(0, count)
+               if response.find('</html>') != nil then response_proc.signal() end
+            end
+         end
+      })
+      check socket.mtConnect('127.0.0.1', redirect.port, 3.0)
+      check connected.sleep()
+      check socket.acWrite('GET ' .. redirect.path .. '?code=fixture')
+      processing.new({ timeout = 0.05 }).sleep()
+      assert(response is '', 'A partial request line must not produce a response')
+      check socket.acWrite('%2Bcode&state=' .. auth_params.state .. ' HTTP/1.1\r\nHost: 127.0.0.1\r\n')
+      processing.new({ timeout = 0.05 }).sleep()
+      assert(response is '', 'Incomplete headers must not complete authorisation')
+      check socket.acWrite('\r\n')
+   end
+   client.exchangeCodeForTokens = function(Code:str):table
+      assert(Code is 'fixture+code', 'The callback must preserve and decode fragments')
+      return { access_token = 'fixture-token' }
+   end
+   token, err = client.authorizeWeb()
+   assert(token and token.access_token is 'fixture-token' and err is nil, 'Fragmented callbacks must complete')
+   check response_proc.sleep()
+   assert(response.startsWith('HTTP/1.1 200 OK\r\n'), 'The browser must receive a successful response')
+end

@@ -502,11 +502,17 @@ oauth2.Client = function(Config:table)
             end
          end,
          incoming = function(Socket, Client)
+            client_state = Client.state()
+            if client_state.oauth_complete then return end
             buffer = string.alloc(8192)
             err, read_len = Client.acRead(buffer)
 
             if err is ERR_Okay and read_len > 0 then
-               request = buffer.sub(0, read_len)
+               client_state.oauth_request = (client_state.oauth_request or '') .. buffer.sub(0, read_len)
+               if client_state.oauth_request.find('\r\n\r\n') is nil then return end
+               request = client_state.oauth_request
+               client_state.oauth_request = nil
+               client_state.oauth_complete = true
                logMessage('DEBUG', 'OAuth2 callback request received')
 
                -- Parse HTTP request
@@ -515,7 +521,7 @@ oauth2.Client = function(Config:table)
                   local method, path, version = rxHttpRequestParts.extract(request_line)
 
                   rxCallbackPath = regex.new('^' .. regex.escape(callback_path))
-                  if method is 'GET' and rxCallbackPath.test(path) then
+                  if method is 'GET' and path and rxCallbackPath.test(path) then
                      -- Extract query parameters
                      query_start = path.find('?')
                      if query_start then
