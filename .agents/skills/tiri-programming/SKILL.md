@@ -21,9 +21,14 @@ project-specific syntax, runtime behaviour, API bindings, typing, and testing co
    - `tools/*.tiri` for file, process, and utility scripts
    - `tools/idl/idl-c.tiri` for extensive file I/O and API usage
 3. Consult `docs/tiri/tiri-reference/book.adoc` and its included chapters for language details that are not
-   summarised here. The `docs/wiki/Tiri-*.md` guides and Tiri LSP can help with specific APIs and editor behaviour.
+   summarised here. Prefer these maintained chapters to the older `docs/wiki/Tiri-Reference-Manual.md` where they
+   disagree. The other `docs/wiki/Tiri-*.md` guides and Tiri LSP can help with specific APIs and editor behaviour.
 4. Consult `docs/xml/modules` and `docs/xml/modules/classes` for generated class and module API documentation.
 5. Deal with uncertainty over language and API behaviour by running `origo` with the `--statement` option to run micro tests.
+
+Read [language details](references/language_details.md) when working with enums, structs, native buffer views,
+metamethods, lazy evaluation, `choose` patterns, package metadata, or async coordination. It links the relevant
+manual chapters rather than duplicating the full reference.
 
 ## Core Rules
 
@@ -31,18 +36,26 @@ project-specific syntax, runtime behaviour, API bindings, typing, and testing co
 - The runtime recognises `.tiri` source and `.tbc` bytecode by extension. The optional `-- $TIRI` comment helps editors
   identify source when the filename is unavailable; it does not affect runtime recognition.
 - Script named arguments are read with `arg(Name, Default)`. Argument values arrive as strings.
+- Arithmetic and bitwise operators do not coerce numeric strings; convert input with `tonumber()` and handle `nil`
+  for an invalid conversion.
 - Variables and functions are local by default and scoped to their statement block. Use `global` before first use only when a symbol must be exported. Use `local` to shadow a visible name with a new binding.
+- Use `extern Name` for globals provided by the embedding host or separately parsed code. Unknown reads are compile
+  errors, and protected built-ins require explicit `local` shadowing rather than reassignment.
+- `await`, `class`, `export`, `extends`, `interface`, `record`, `where`, and `yield` are reserved without implemented
+  syntax. Do not use them as variable names or invent language constructs from them; table member names are allowed.
 - Use upper camel-case for function arguments and lower snake-case for local variables.
 - Use three spaces for indentation.
-- Use zero-based indexing for tables and string functions.
+- Use zero-based indexing for tables, arrays, and string functions. Strings are indexed and measured in bytes.
 - Prefer arrays for sequential data. Arrays are a distinct, typed, JIT-friendly container.
 - The Tiri object interface is case sensitive. Object fields use lower camel-case; preserve acronym capitals, for
   example `surfaceID` and `vectorObject`.
 - Tiri uses `is` instead of `==`. Avoid deprecated `==` and `~=`.
 - Use `!=` for not-equal.
 - Use `try-except-when`, `checkall`, `check`, and `raise` instead of deprecated `pcall()` and `xpcall()`.
-- Use `load()` instead of `loadstring()`, `loadFile()` instead of `dofile()`, and result masks instead of `select()`.
+- Use `exec()` to parse and execute source strings, `loadFile()` instead of `dofile()`, and result filters instead
+  of `select()`. Do not assume Lua's `loadstring()` contract.
 - Lua `package`, `os`, and introspective `debug` library assumptions often do not apply; use Kotuku APIs.
+- Lua `coroutine.*` is removed; use stateful iterator closures, event processing, or `async` for the actual task.
 
 ## Syntax Differences From Lua
 
@@ -54,9 +67,10 @@ Recognise and use these Tiri extensions where they match local code style:
 - String append: `..=`
 - Postfix increment: `++`
 - C-style bitwise operators: `&`, `|`, `^`, `~`, `<<`, `>>`
+- Exponentiation: `**`; `^` is XOR. `%` is truncating remainder (`-7 % 3` is `-1`), not Lua floor modulo.
 - C-style ternary operator: `condition ? true_val : false_val`
-- Falsey checks and defaults: `??`, `??=`, and `value1 ?? value2`
-- Nil assignment shorthand: `?=`
+- Presence check: `value??` (adjacent); default: `value ?? fallback` (whitespace before `??` is significant).
+- Default assignments: `??=` uses extended falsiness; `?=` assigns only for `nil`, preserving `false`, `0`, and `""`.
 - Safe navigation: `obj?.field`, `obj?.method()`, `obj?[key]`
 - Deferred cleanup: `defer ... end`
 - To-be-closed variables: `resource <close> = acquire_resource()`
@@ -74,14 +88,44 @@ search tools, and mixed editor environments.
 
 ## Typing And Scope
 
-- Local variables use sticky types: the first non-`nil` assignment fixes the variable's type.
+- Locals, captured upvalues, and declared globals use sticky types when the compiler can infer a concrete type.
+  A declaration starting as `nil` defers fixing until a concrete non-`nil` assignment.
 - Assigning `nil` clears a value but does not clear its fixed type.
+- An initializer with an unprovable type can prevent later non-`nil` assignment. Annotate with the expected type or
+  `:any` when reassignment is needed. Table field reads are variant and do not impose sticky field types.
 - Use `:any` only when a variable or result genuinely needs mixed types.
 - Use parameter and return annotations for public/library functions and recursive functions.
-- Supported type names include `any`, `nil`, `num`, `str`, `bool`, `table`, `array`, `func`, `thread`, and `obj`.
+- Native annotation names include `any`, `nil`, `num`, `str`, `bool`, `table`, `array`, `func`, `obj`, `range`,
+  `struct`, and `userdata`; `thread` is not a supported native annotation. Storage types such as `int` and `double`
+  belong to array elements and struct fields, not scalar variable annotations.
+- Annotations accept `nil` and missing arguments/results by default. Use `str!`, `num!`, or `any!` on parameters
+  and declared results when presence is required; `!` is invalid on local/global annotations.
+- `array<int>` constrains element identity and `struct<Name>` constrains layout identity. `array<any>` accepts any
+  array at an annotation boundary; constructing `array<any>` still creates a container for mixed values.
+- Use `value is <num>` or `value is <array int>` for native type tests. Annotation and descriptor spellings differ.
+  `type()` returns display names such as `"number"`, `"string"`, and `"bool"` and can be overridden by `__name`;
+  use native type tests or `rawtype()` when dispatch requires the actual category.
+- An annotation or attribute without `local` cannot redeclare a visible name. Use plain assignment to update it,
+  or explicit `local` to shadow it. `<const>` protects the binding, not table/object contents.
 - Multi-result return annotations use angle brackets, for example `function split(Line: str):<str, str>`.
 - Recursive and mutually recursive functions require explicit return types.
 - Use `_` as the blank identifier to intentionally discard assignment, return, or loop values. It cannot be read.
+
+## Calls And Entity Context
+
+- Use `receiver.method(...)`; Lua's colon calls and implicit `self` parameter are unavailable. Built-in dot methods
+  pass the receiver automatically; ordinary Tiri table functions do not receive it as an extra argument.
+- Use `entity { ... }` for a table whose methods need receiver context. Inside a contextual call, `&field` accesses
+  the receiver's field and `&&` yields the receiver. Ordinary table calls inherit the caller's context.
+- `using table_reference do ... end` temporarily activates a table context. It restores the previous context on
+  all exit paths and does not make an ordinary table an entity. At top level the root context is `_G`.
+- Extracting `fn = entity.method` loses the receiver; closures also inherit context when called. Keep the member
+  call inside a closure when binding a particular receiver is required.
+- Framework callback registrations capture the context active at registration, not the table from which a function
+  was extracted. Establish the intended context before registration; unregistering releases the captured table.
+- Built-in methods take precedence over fields in immediate dot calls. Avoid custom table method names such as
+  `insert` or `sort`; computed field calls or `(receiver.method)(...)` explicitly select a shadowing field.
+- Separate bitwise `&` from an identifier with whitespace: `mask & flags`; `&flags` is a contextual field read.
 
 ## Control Flow And Errors
 
@@ -92,6 +136,9 @@ search tools, and mixed editor environments.
 - Put filtered `except e when ERR_Name` handlers before any catch-all `except e` handler.
 - Use `try<trace>` only when stack traces are needed; normal `try` avoids trace overhead.
 - Use `check` with API calls returning `ERR` codes, and `raise ERR_Name` for explicit error-code exceptions.
+- `check` forwards every result, including the error code. To check and retain payloads use `_, data = check call()`.
+  A result filter alone does not check errors. Safe codes such as `ERR_False`, `ERR_Cancelled`, and
+  `ERR_EndOfSequence` do not raise; handle them explicitly when they matter.
 - Use `raise Message` for generic script exceptions and `raise ERR_Name, Message` for coded exceptions with a custom
   message.  In expression branches, use the non-returning `raise(Value)` or `raise(Code, Message)` form.
 - Use bare `raise` in an `except` handler to rethrow the current exception while preserving its code, message, source,
@@ -100,25 +147,46 @@ search tools, and mixed editor environments.
 - The global `error()` built-in has been removed.  Its `Level` argument has no `raise` equivalent, and `raise` is
   not first-class; wrap it in an ordinary function when an API requires a failure callback.
 - There is no `finally`; use `defer`, `<close>`, or object lifetime management for cleanup.
-- `defer` executes on normal scope exit, `return`, `break`, and `continue`. `<close>` handlers run before defers.
+- `defer` executes on normal scope exit, `return`, `break`, `continue`, and exception unwinding. Within each scope,
+  `<close>` handlers run before defers, with each group running in reverse registration order.
+- Plain `defer` sees upvalues at cleanup time. Use `defer(Saved) ... end(Value)` to snapshot a value at registration.
+  A cleanup exception replaces the propagating error; catch cleanup failures when the original error must survive.
+- `checkall` does not promote calls in deferred blocks; use explicit `check` there when needed.
 - `??` treats `nil`, `false`, `0`, `{}` and `""` as empty. Tables and arrays are tested for empty. Standard `or` only treats `nil` and `false` as falsey.
 - `?!` guards control flow, for example `value ?! return ERR_InvalidInput`.
 
 ## Ranges And Collections
 
+- Bare array loops yield index then value: `for _, value in items do`. A single variable receives the index.
+  Bare table loops yield key then value; range loops yield values. `values(items)` iterates elements alone.
+- `forEach(Target, Callback)` uses that same order (`Index, Value` for arrays), while `arr.each()` uses
+  `Value, Index`. Either traversal stops only when the callback returns `false`.
+- `#table` returns `nil` after any store through a non-numeric, negative, or fractional key, even after deletion or
+  `clear()`. Sequence tables with holes have an unspecified boundary. Use `table.size()` for entry count and
+  `table.empty()` for emptiness; `rawlen()` measures only the array part. Prefer arrays for reliable sequence length.
+- `key in table` tests raw key presence, including fields holding `false`; it does not search table values or `__index`.
+  Arrays test element membership and strings test substrings; `__contains` can customise membership.
 - Range literals use `{Start to Stop}` for exclusive stop and `{Start into Stop}` for inclusive stop.
 - Range literals support finite fractional bounds and steps, for example `{0 to 1 by 0.2}`.
 - Range operands and steps can be general expressions.
 - Negative indices in slicing count from the end and preserve `..` exclusive or `...` inclusive stop semantics.
+- `Start, Stop` API pairs use half-open spans: `Stop` is excluded, even after resolving a negative index.
+  String and regex search positions can feed directly into `sub(Start, Stop)`; `text.sub(-5)` takes the final five
+  bytes, whereas `text.sub(-5, -1)` excludes the last byte.
 - Ranges can iterate, slice strings/tables/arrays, test membership with `in`, and provide functional methods such as
   `each`, `map`, `filter`, `reduce`, `take`, `any`, `all`, and `find`.
 - Use native arrays for sequential data and buffers:
   - `array<type>`, `array<type, size>`, `array<type> { values... }`
   - common element types include `byte`, `int16`, `int`, `int64`, `float`, `double`, `str`, `obj`, `struct<Name>`,
-    `table`, `array`, and `any`
+    `int8`, `uint8`, `uint16`, `uint`, `uint64`, `table`, `array`, and `any`
   - useful methods include `push`, `pop`, `clear`, `resize`, `fill`, `insert`, `remove`, `reverse`, `sort`,
     `contains`, `first`, `last`, `find`, `copy`, `getString`, `setString`, `slice`, `concat`, `clone`,
     `each`, `map`, `filter`, `reduce`, `any`, and `all`
+- Array writes enforce element categories without string/number coercion. Integer elements truncate then wrap to
+  their storage width; bitwise operands instead round to nearest even. Validate numeric bounds when wrapping is unwanted.
+- `arr.map()` produces `array<any>` unless an element type is supplied; `arr.mapSame()` retains the source type.
+- Assignment aliases tables, arrays, and structs; use their copy/clone APIs for independent data. Array `is` compares
+  supported element types by contents; use `rawequal()` for identity. Tables and structs use identity by default.
 
 ## Strings And Regex
 
@@ -126,10 +194,13 @@ search tools, and mixed editor environments.
   `string.gmatch()`.
 - Useful string helpers include `alloc`, `cap`, `count`, `decap`, `escXML`, `hash`, `join`, `pop`, `replace`,
   `trim`, `rtrim`, `split`, `startsWith`, `sub`, `endsWith`, and `unescapeXML`.
-- Use f-strings for readable formatting. Add `??` fallbacks when interpolating externally sourced values.
+- Use f-strings for readable formatting; expressions are automatically stringified, including `nil` as `"nil"`.
+  Escape literal braces as `{{` and `}}`; `f[[...]]` is invalid. Choose fallbacks deliberately: `??` replaces valid
+  zero/false/empty values as well as `nil`. String `find()` is a literal search, not a Lua pattern search.
 
 Regex uses compiled ECMAScript-compatible objects. Compile once and reuse; wrap untrusted patterns in `try`.
-Use raw regex literals such as `r'\d+'` or long strings such as `[[\d+]]` to avoid doubling backslashes.
+Use `r'\d+'` to construct a compiled regex directly, or pass `[[\d+]]` to `regex.new()` to avoid doubling backslashes.
+An `r` literal is a regex object, not a pattern string.
 
 Available regex signatures:
 
@@ -187,13 +258,16 @@ Regex object properties: `pattern`, `flags`, and `error`.
 
 ## Async, Processing, And Events
 
-- `async.script(Statement, Callback)` runs code in a separate script state. It cannot see caller variables directly;
-  find shared objects with `obj.find()`.
+- `async.script(Script, [Callback])` takes an `obj<Tiri>` object, not source text. Its separate state cannot see caller
+  variables; pass named data with `Script.setKey()` and read it with `arg()`, or find shared objects with `obj.find()`.
+  The completion callback receives `Script`; check its `error` and `errorMessage` for execution failures.
 - `async.action(Object, Action, Callback, Key, Args...)` and `async.method(...)` run object calls in a thread. Keep
   the target object alive until the callback runs.
 - Async callbacks run on the next message processing cycle, so scripts commonly call `processing.sleep()`.
-- Use `processing.sleep([Timeout], [WakeOnSignal=true])` for passive wait loops and event-driven examples.
-- Use `processing.new({ timeout=..., signals={...} })` when coordinating multiple signal objects.
+- Use `processing.sleep([Seconds])` to dispatch messages and wait; `processing.sleep(0)` pumps pending messages.
+  Handle `ERR_Timeout` and `ERR_Terminate` according to the intended loop behavior.
+- Use `processing.new({ timeout=..., signals=array<obj> { ... }, mode='all' })` to coordinate signals. `mode='any'`
+  wakes on the first signal; `proc.flush()` clears monitored signals before reuse.
 - Use `processing.delayedCall(Function)` to schedule work for the next message processing cycle.
 - Use `subscribeEvent(EventName, Function)` and `unsubscribeEvent(Handle)` for system-wide events.
 
