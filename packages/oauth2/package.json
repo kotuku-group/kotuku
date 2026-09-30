@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "name": "net/oauth2",
+  "version": "1.0",
+  "description": "OAuth 2.0 client helpers for device, web and token-refresh authentication flows.",
+  "entry": "oauth2.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2025-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-OAuth-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "authentication",
+    "network",
+    "oauth2"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "json": "1.0",
+    "net/url": "1.0"
+  },
+  "files": [
+    {
+      "path": "oauth2.tiri",
+      "size": 23606,
+      "sha256": "169b39da156ba6aed6c926558bc15b86a27d113ceeed635c0c5549f821268716",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

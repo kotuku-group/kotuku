@@ -1,0 +1,709 @@
+@Package(name="net/oauth2", version="1.0")
+
+--[[
+OAuth2 Authentication Library
+
+Provides comprehensive OAuth2 client functionality for token acquisition and management.
+Supports device flow, web flow, and token refresh patterns for various OAuth2 providers.
+
+Usage:
+  oauth2 = import 'net/oauth2'
+
+  -- Device flow (for CLI applications)
+  client = oauth2.Client({
+     provider = 'google',
+     clientID = 'your-client-id',
+     clientSecret = 'your-client-secret',
+     scope = 'https://mail.google.com/'
+  })
+  tokens = client.authorizeDevice()
+
+  -- Web flow (opens browser)
+  tokens = client.authorizeWeb()
+
+  -- Use with email
+  email = import 'net/email'
+  smtp = email.SMTPClient({
+     provider = 'gmail',
+     oauth2 = tokens
+  })
+--]]
+
+   include 'network', 'http'
+   module crypto as mCrypto
+
+   import 'net/url' as url
+   import 'json'
+
+   namespace oauth2 { }
+
+rxRequestLine      = <{ r[[([^\r\n]+)]] }>
+rxHttpRequestParts = <{ r[[(\S+)\s+(\S+)\s+(\S+)]] }>
+
+OAUTH2_PROVIDERS = {
+   google = {
+      name = 'Google',
+      auth_endpoint = 'https://accounts.google.com/o/oauth2/v2/auth',
+      token_endpoint = 'https://oauth2.googleapis.com/token',
+      device_endpoint = 'https://oauth2.googleapis.com/device/code',
+      revoke_endpoint = 'https://oauth2.googleapis.com/revoke',
+      scope_separator = ' ',
+      supports_pkce = true,
+      supports_device_flow = true,
+      default_scopes = {
+         email = 'https://mail.google.com/',
+         profile = 'openid profile email'
+      }
+   },
+   microsoft = {
+      name = 'Microsoft',
+      auth_endpoint = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+      token_endpoint = 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+      device_endpoint = 'https://login.microsoftonline.com/common/oauth2/v2.0/devicecode',
+      revoke_endpoint = 'https://login.microsoftonline.com/common/oauth2/v2.0/logout',
+      scope_separator = ' ',
+      supports_pkce = true,
+      supports_device_flow = true,
+      default_scopes = {
+         email = 'https://outlook.office.com/SMTP.Send',
+         profile = 'openid profile email'
+      }
+   }
+}
+
+OAUTH2_ERRORS <const> = {
+   INVALID_REQUEST = 'invalid_request',
+   INVALID_CLIENT = 'invalid_client',
+   INVALID_GRANT = 'invalid_grant',
+   UNAUTHORIZED_CLIENT = 'unauthorized_client',
+   UNSUPPORTED_GRANT_TYPE = 'unsupported_grant_type',
+   INVALID_SCOPE = 'invalid_scope',
+   ACCESS_DENIED = 'access_denied',
+   AUTHORIZATION_PENDING = 'authorization_pending',
+   SLOW_DOWN = 'slow_down',
+   EXPIRED_TOKEN = 'expired_token'
+}
+
+----------------------------------------------------------------------------------------------------------------------
+-- Utility Functions
+
+function logMessage(level, message)
+   msg('[OAuth2][' .. level .. '] ' .. message)
+end
+
+function generateRandomString(Length:num):str
+   if Length <= 0 then return '' end
+
+   byte_count   = math.ceil(Length * 3 / 4)
+   random_bytes = array<byte, byte_count>
+   check mCrypto.RandomBytes(random_bytes)
+
+   encoded_count = math.ceil(byte_count / 3) * 4
+   encoded       = array<byte, encoded_count>
+   err, written  = mCrypto.Base64Encode(random_bytes, CC_URL, encoded)
+   if err != ERR_Okay or written < Length then raise ERR_Failed, 'Unable to encode secure random data' end
+   return encoded.getString(0, Length)
+end
+
+-- Generate PKCE code verifier and challenge
+
+function generatePKCE()
+   code_verifier = generateRandomString(128)
+   digest = array<byte, 32>
+   check mCrypto.SHA256(code_verifier, digest)
+   challenge = array<byte, 43>
+   err, written = mCrypto.Base64Encode(digest, CC_URL, challenge)
+   if err != ERR_Okay or written != 43 then raise ERR_Failed, 'Unable to encode the PKCE challenge' end
+   code_challenge = challenge.getString(0, written)
+
+   return {
+      code_verifier = code_verifier,
+      code_challenge = code_challenge,
+      code_challenge_method = 'S256'
+   }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- HTTP Request Utilities
+
+function makeHTTPRequest(Method:str!, URL:str!, Params:table)
+   local proc = processing.new({ timeout = Params.timeout or 30.0 })
+   local config
+
+   defer
+      config = nil
+      processing.collect()
+   end
+
+   response_data    = ''
+   response_headers = {}
+   http_error       = nil
+   status_code      = nil
+
+   config = {
+      src = URL,
+      method = Method.lower(),
+      flags = HTF_NO_HEAD,
+      connectTimeout = 10,
+      stateChanged = function(HTTP, State)
+         if State is HGS_COMPLETED then
+            status_code = HTTP.status
+            logMessage('DEBUG', Method .. ' ' .. URL .. ' -> ' .. status_code)
+         elseif State is HGS_TERMINATED then
+            http_error = HTTP.error
+         end
+
+         if State is HGS_COMPLETED or State is HGS_TERMINATED then
+            proc.signal()
+         end
+      end,
+      incoming = function(HTTP, Buffer)
+         response_data ..= Buffer.getString()
+      end
+   }
+
+   -- Set content type for POST requests
+
+   if Method.upper() is 'POST' then
+      if Params.json then
+         config.contentType = 'application/json'
+         config.inputFile   = 'string:' .. json.encode(Params.json)
+         config.size        = #json.encode(Params.json)
+      elseif Params.form then
+         config.contentType = 'application/x-www-form-urlencoded'
+         form_data          = url.buildQuery(Params.form)
+         config.inputFile   = 'string:' .. form_data
+         config.size        = #form_data
+      end
+   end
+
+   -- Add custom headers
+
+   if Params.headers then
+      for key, value in pairs(Params.headers) do
+         config[key.lower()] = value
+      end
+   end
+
+   local http <close> = obj.new('http', config)
+   err = http.acActivate()
+   if err != ERR_Okay then
+      return nil, 'Failed to activate HTTP request: ' .. mSys.GetErrorMsg(err)
+   end
+
+   err = proc.sleep()
+   if err != ERR_Okay then
+      return nil, 'HTTP request timeout: ' .. mSys.GetErrorMsg(err)
+   end
+
+   if http_error and http_error != ERR_Okay then
+      return nil, 'HTTP request failed: ' .. mSys.GetErrorMsg(http_error)
+   end
+
+   return {
+      status  = status_code or 0,
+      body    = response_data,
+      headers = response_headers
+   }, nil
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- OAuth2 Client Class
+
+oauth2.Client = function(Config:table)
+   self = entity {
+      clientID         = Config.clientID,
+      clientSecret     = Config.clientSecret,
+      redirectURI     = Config.redirectURI or 'http://127.0.0.1:0/callback',
+      scope            = Config.scope,
+      provider         = Config.provider,
+      custom_endpoints = Config.custom_endpoints,
+      open_browser     = Config.open_browser,
+
+      -- Internal state
+      provider_config = nil,
+      pkce = nil,
+      state = nil
+   }
+
+   using self do
+      -- Initialize provider configuration
+
+      if &provider and OAUTH2_PROVIDERS[&provider] then
+         &provider_config = OAUTH2_PROVIDERS[&provider]
+      elseif Config.custom_endpoints then
+         &provider_config = Config.custom_endpoints
+      else
+         raise 'OAuth2 provider "' .. (&provider or 'unknown') .. '" not supported'
+      end
+
+      -- Validate required configuration
+
+      if not &clientID then
+         raise 'OAuth2 clientID is required'
+      end
+
+      if not &clientSecret and not &provider_config.supports_pkce then
+         raise 'OAuth2 clientSecret is required for this provider'
+      end
+
+      -- Set default scope if not provided
+      if not &scope and &provider_config.default_scopes then
+         &scope = &provider_config.default_scopes.email
+      end
+   end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Token Management Methods
+
+   self.validateToken = function(token)
+      if not token then return false, 'Token is nil' end
+      if not token.access_token then return false, 'Access token missing' end
+
+      -- Check expiration
+      if token.expires_at and token.expires_at <= mSys.PreciseTime() / 1000000 then
+         return false, 'Access token expired'
+      end
+
+      return true, 'Token valid'
+   end
+
+   self.refreshToken = function(refresh_token)
+      if not refresh_token then
+         return nil, 'Refresh token required'
+      end
+
+      logMessage('INFO', 'Refreshing access token')
+
+      params = {
+         grant_type    = 'refresh_token',
+         refresh_token = refresh_token,
+         client_id     = &clientID
+      }
+
+      if &clientSecret then
+         params.client_secret = &clientSecret
+      end
+
+      response, err = makeHTTPRequest('POST', &provider_config.token_endpoint, {
+         form    = params,
+         timeout = 30.0
+      })
+
+      if err then
+         return nil, 'Token refresh failed: ' .. err
+      end
+
+      if response.status != 200 then
+         error_info = 'HTTP ' .. response.status
+         if response.body then
+            parsed = json.decode(response.body)
+            if parsed and parsed.error then
+               error_info = error_info .. ': ' .. (parsed.error_description or parsed.error)
+            end
+         end
+         return nil, 'Token refresh failed: ' .. error_info
+      end
+
+      token_data = json.decode(response.body)
+      if not token_data or not token_data.access_token then
+         return nil, 'Invalid token response'
+      end
+
+      -- Calculate expiration time
+      if token_data.expires_in then
+         token_data.expires_at = (mSys.PreciseTime() / 1000000) + token_data.expires_in - 60 -- 60s buffer
+      end
+
+      -- Keep original refresh token if not provided
+      token_data.refresh_token ?= refresh_token
+
+      logMessage('INFO', 'Access token refreshed successfully')
+      return token_data, nil
+   end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Device Flow Implementation
+
+   self.authorizeDevice = function():<table, str>
+      if not &provider_config.supports_device_flow then
+         return nil, 'Device flow not supported by provider'
+      end
+
+      logMessage('INFO', 'Starting OAuth2 device flow for ' .. (&provider_config.name or 'provider'))
+
+      -- Step 1: Request device code
+
+      device_params = {
+         client_id = &clientID,
+         scope     = &scope
+      }
+
+      response, err = makeHTTPRequest('POST', &provider_config.device_endpoint, {
+         form = device_params,
+         timeout = 30.0
+      })
+
+      if err then
+         return nil, 'Device code request failed: ' .. err
+      end
+
+      if response.status != 200 then
+         return nil, 'Device code request failed: HTTP ' .. response.status
+      end
+
+      device_data = json.decode(response.body)
+      if not device_data or not device_data.device_code then
+         return nil, 'Invalid device code response'
+      end
+
+      -- Step 2: Display user instructions
+
+      print('')
+      print('OAuth2 Device Authorization Required')
+      print('==================================')
+      print('1. Open this URL in your browser:')
+      print('   ' .. device_data.verification_uri)
+      print('')
+      print('2. Enter this code when prompted:')
+      print('   ' .. device_data.user_code)
+      print('')
+      print('Waiting for authorization...')
+      print('')
+
+      -- Step 3: Poll for authorization
+
+      interval = device_data.interval or 5
+      expires_in = device_data.expires_in or 1800 -- 30 minutes default
+      start_time = mSys.PreciseTime() / 1000000
+
+      token_params = {
+         grant_type  = 'urn:ietf:params:oauth:grant-type:device_code',
+         device_code = device_data.device_code,
+         client_id   = &clientID
+      }
+
+      if &clientSecret then
+         token_params.client_secret = &clientSecret
+      end
+
+      while (mSys.PreciseTime() / 1000000 - start_time) < expires_in do
+         processing.sleep(interval)
+
+         response, err = makeHTTPRequest('POST', &provider_config.token_endpoint, {
+            form = token_params,
+            timeout = 30.0
+         })
+
+         if err then
+            logMessage('ERROR', 'Token polling failed: ' .. err)
+            processing.sleep(interval)
+         else
+            token_data = json.decode(response.body)
+
+            if response.status is 200 and token_data and token_data.access_token then -- Success
+               if token_data.expires_in then
+                  token_data.expires_at = (mSys.PreciseTime() / 1000000) + token_data.expires_in - 60
+               end
+
+               logMessage('INFO', 'Device flow completed successfully')
+               return token_data, nil
+            elseif token_data and token_data.error then
+               if token_data.error is OAUTH2_ERRORS.AUTHORIZATION_PENDING then
+                  -- Still waiting for user authorization
+               elseif token_data.error is OAUTH2_ERRORS.SLOW_DOWN then
+                  -- Increase polling interval
+                  interval = interval + 5
+               elseif token_data.error is OAUTH2_ERRORS.EXPIRED_TOKEN then
+                  return nil, 'Device code expired. Please try again.'
+               elseif token_data.error is OAUTH2_ERRORS.ACCESS_DENIED then
+                  return nil, 'Authorization denied by user'
+               else
+                  return nil, 'Authorization failed: ' .. (token_data.error_description or token_data.error)
+               end
+            end
+         end
+      end
+
+      return nil, 'Device authorization timeout'
+   end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Authorization URL Building
+
+   self.buildAuthUrl = function(ExtraParams)
+      &state = generateRandomString(32)
+
+      params = {
+         response_type = 'code',
+         client_id     = &clientID,
+         redirect_uri  = &redirectURI,
+         scope         = &scope,
+         state         = &state,
+         access_type   = 'offline', -- Request refresh token
+         prompt        = 'consent'  -- Force consent screen
+      }
+
+      -- Add PKCE if supported
+
+      if &provider_config.supports_pkce then
+         &pkce = generatePKCE()
+         params.code_challenge = &pkce.code_challenge
+         params.code_challenge_method = &pkce.code_challenge_method
+      end
+
+      -- Add extra parameters
+
+      if ExtraParams then
+         for key, value in pairs(ExtraParams) do
+            params[key] = value
+         end
+      end
+
+      query_string = url.buildQuery(params)
+      return &provider_config.auth_endpoint .. '?' .. query_string
+   end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Web Flow Implementation
+
+   self.authorizeWeb = function():<table, str>
+      logMessage('INFO', 'Starting OAuth2 web flow for ' .. (&provider_config.name or 'provider'))
+
+      -- Parse redirect URI to get port
+
+      redirect_parts = url.parse(&redirectURI)
+      if not redirect_parts or not redirect_parts.host then
+         return nil, 'Invalid redirect URI: ' .. &redirectURI
+      end
+
+      if redirect_parts.scheme != 'http' or redirect_parts.host != '127.0.0.1' then
+         return nil, 'Web-flow redirect URI must use http://127.0.0.1'
+      end
+
+      port = redirect_parts.port or 8080
+      callback_path = redirect_parts.path or '/callback'
+
+      -- Start HTTP server
+
+      server_result = {}
+      server_error = nil
+      local proc = processing.new({ timeout = 300.0 }) -- 5 minute timeout
+
+      local server <close> = obj.new('netserver', {
+         name     = 'OAuth2Server',
+         port     = port,
+         address  = '127.0.0.1',
+         feedback = function(Socket, Client, State)
+            if State is NTC_CONNECTED then
+               logMessage('DEBUG', 'OAuth2 callback connection received')
+            elseif State is NTC_DISCONNECTED then
+               logMessage('DEBUG', 'OAuth2 callback connection closed')
+            end
+         end,
+         incoming = function(Socket, Client)
+            buffer = string.alloc(8192)
+            err, read_len = Client.acRead(buffer)
+
+            if err is ERR_Okay and read_len > 0 then
+               request = buffer.sub(0, read_len)
+               logMessage('DEBUG', 'OAuth2 callback request received')
+
+               -- Parse HTTP request
+               request_line = rxRequestLine.extract(request)
+               if request_line then
+                  local method, path, version = rxHttpRequestParts.extract(request_line)
+
+                  rxCallbackPath = regex.new('^' .. regex.escape(callback_path))
+                  if method is 'GET' and rxCallbackPath.test(path) then
+                     -- Extract query parameters
+                     query_start = path.find('?')
+                     if query_start then
+                        query_string = path.sub(query_start + 1)
+                        local params = url.parseQuery(query_string)
+
+                        -- Check for authorization code or error
+                        if params.error then
+                           server_error = 'Authorization failed: ' .. (params.error_description or params.error)
+                        elseif params.code and params.state then
+                           if params.state is &state then
+                              server_result.code = params.code
+                              server_result.state = params.state
+                           else
+                              server_error = 'Invalid state parameter - potential CSRF attack'
+                           end
+                        else
+                           server_error = 'Missing authorization code or error parameter'
+                        end
+
+                        -- Send response to browser
+                        response_body = ''
+                        response_status = ''
+
+                        if server_error then
+                           response_status = 'HTTP/1.1 400 Bad Request'
+                           response_body = '<html><body><h1>Authorization Failed</h1><p>' .. server_error ..
+                              '</p></body></html>'
+                        else
+                           response_status = 'HTTP/1.1 200 OK'
+                           response_body = '<html><body><h1>Authorization Successful</h1>' ..
+                              '<p>You can now close this window and return to your application.</p></body></html>'
+                        end
+
+                        response = response_status .. '\r\n' ..
+                           'Content-Type: text/html\r\n' ..
+                           'Content-Length: ' .. #response_body .. '\r\n' ..
+                           'Connection: close\r\n' ..
+                           '\r\n' .. response_body
+
+                        Client.acWrite(response)
+                        proc.signal()
+                     else
+                        -- Send error for invalid request
+                        error_response = 'HTTP/1.1 400 Bad Request\r\n' ..
+                           'Content-Type: text/plain\r\n' ..
+                           'Connection: close\r\n' ..
+                           '\r\nInvalid OAuth2 callback request'
+                        Client.acWrite(error_response)
+                     end
+                  else
+                     -- Send 404 for other paths
+                     not_found_response = 'HTTP/1.1 404 Not Found\r\n' ..
+                        'Content-Type: text/plain\r\n' ..
+                        'Connection: close\r\n' ..
+                        '\r\nNot Found'
+                     Client.acWrite(not_found_response)
+                  end
+               end
+            end
+         end
+      })
+
+      if not server then
+         return nil, 'Failed to create OAuth2 callback server on port ' .. port
+      end
+
+      if port is 0 then
+         redirect_parts.port = server.port
+         &redirectURI = url.unparse(redirect_parts)
+      end
+
+      -- Build and display authorization URL
+      auth_url = &buildAuthUrl()
+
+      print('')
+      print('OAuth2 Web Authorization')
+      print('========================')
+      print('Opening your web browser for authorization...')
+      print('')
+      print('If your browser does not open automatically, please visit:')
+      print(auth_url)
+      print('')
+      print('Waiting for authorization callback...')
+
+      if &open_browser then &open_browser(auth_url) end
+
+      -- Wait for callback or timeout
+      err = proc.sleep()
+      server = nil -- Close server
+      proc = nil
+      processing.collect()
+
+      if err is ERR_TimeOut then
+         return nil, 'Authorization timeout after 5 minutes'
+      elseif err != ERR_Okay then
+         return nil, 'Authorization failed: ' .. mSys.GetErrorMsg(err)
+      end
+
+      if server_error then
+         return nil, server_error
+      end
+
+      if not server_result.code then
+         return nil, 'No authorization code received'
+      end
+
+      -- Exchange authorization code for tokens
+      return &exchangeCodeForTokens(server_result.code)
+   end
+
+   self.exchangeCodeForTokens = function(Code:str):<table, str>
+      logMessage('INFO', 'Exchanging authorization code for tokens')
+
+      token_params = {
+         grant_type   = 'authorization_code',
+         client_id    = &clientID,
+         code         = Code,
+         redirect_uri = &redirectURI
+      }
+
+      if &clientSecret then
+         token_params.client_secret = &clientSecret
+      end
+
+      -- Add PKCE verifier if used
+      if &pkce then
+         token_params.code_verifier = &pkce.code_verifier
+      end
+
+      response, err = makeHTTPRequest('POST', &provider_config.token_endpoint, {
+         form = token_params,
+         timeout = 30.0
+      })
+
+      if err then
+         return nil, 'Token exchange failed: ' .. err
+      end
+
+      if response.status != 200 then
+         error_info = 'HTTP ' .. response.status
+         if response.body then
+            parsed = json.decode(response.body)
+            if parsed and parsed.error then
+               error_info = error_info .. ': ' .. (parsed.error_description or parsed.error)
+            end
+         end
+         return nil, 'Token exchange failed: ' .. error_info
+      end
+
+      token_data = json.decode(response.body)
+      if not token_data or not token_data.access_token then
+         return nil, 'Invalid token response'
+      end
+
+      -- Calculate expiration time
+      if token_data.expires_in then
+         token_data.expires_at = (mSys.PreciseTime() / 1000000) + token_data.expires_in - 60 -- 60s buffer
+      end
+
+      logMessage('INFO', 'Web flow completed successfully')
+      return token_data, nil
+   end
+
+   return self
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Convenience Functions
+
+function oauth2.getGoogleTokens(ClientID:str, ClientSecret:str, Scope:str):<table, str>
+   client = oauth2.Client({
+      provider      = 'google',
+      clientID      = ClientID,
+      clientSecret  = ClientSecret,
+      scope         = Scope ?? 'https://mail.google.com/'
+   })
+
+   return client.authorizeDevice()
+end
+
+function oauth2.getMicrosoftTokens(ClientID:str, ClientSecret:str, Scope:str):<table, str>
+   client = oauth2.Client({
+      provider      = 'microsoft',
+      clientID      = ClientID,
+      clientSecret  = ClientSecret,
+      scope         = Scope ?? 'https://outlook.office.com/SMTP.Send'
+   })
+
+   return client.authorizeDevice()
+end

@@ -1,0 +1,662 @@
+@Package(name="net/openapi", version="1.0")
+
+-- OpenAPI 3.0/3.1 specification parser for HTTP server integration
+-- Provides comprehensive injection system for handlers, security, middleware, mocks, and parameter conversion
+
+   import 'json'
+
+   namespace openapi { }
+
+-- Deferred regex patterns
+rxOpenApiParam     = <{ regex.new([[{([^}]+)}]]) }>
+rxOpenApiParamSub  = <{ regex.new([[{[^}]+}]]) }>
+rxModuleFunction   = <{ regex.new([[([^.]+)\.(.+)]]) }>
+
+-- Default faker implementation for mock data generation.  Declared before the constructor so
+-- that the closures within it can self-reference the table.
+global faker
+faker = {
+   uuid = function()
+      -- Simple UUID v4 generator
+      chars = '0123456789abcdef'
+      uuid = ''
+      for i in {1 into 36} do
+         if i is 9 or i is 14 or i is 19 or i is 24 then
+            uuid = uuid .. '-'
+         elseif i is 15 then
+            uuid = uuid .. '4'
+         elseif i is 20 then
+            uuid = uuid .. chars.sub(math.random(0, 2), math.random(1, 2)) -- 8, 9, a, b
+         else
+            uuid = uuid .. chars.sub(math.random(0, 16), math.random(1, 16))
+         end
+      end
+      return uuid
+   end,
+
+   username = function()
+      prefixes = {'user', 'admin', 'guest', 'test', 'demo'}
+      return prefixes[math.random(#prefixes)] .. math.random(1000, 9999)
+   end,
+
+   email = function()
+      domains = {'example.com', 'test.org', 'demo.net', 'sample.co'}
+      names = {'john', 'jane', 'test', 'admin', 'user'}
+      return names[math.random(#names)] .. math.random(100, 999) .. '@' .. domains[math.random(#domains)]
+   end,
+
+   name = function()
+      first = {'John', 'Jane', 'Bob', 'Alice', 'Charlie', 'Diana'}
+      last = {'Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia'}
+      return first[math.random(#first)] .. ' ' .. last[math.random(#last)]
+   end,
+
+   word = function()
+      words = {'lorem', 'ipsum', 'dolor', 'sit', 'amet', 'consectetur', 'adipiscing', 'elit'}
+      return words[math.random(#words)]
+   end,
+
+   sentence = function()
+      sentence = faker.word().sub(0,1).upper() .. faker.word().sub(1)
+      for i in {1 into math.random(3, 8)} do
+         sentence = sentence .. ' ' .. faker.word()
+      end
+      return sentence .. '.'
+   end,
+
+   date = function()
+      year = math.random(2020, 2025)
+      month = math.random(1, 12)
+      day = math.random(1, 28)
+      return string.format('%04d-%02d-%02d', year, month, day)
+   end,
+
+   productName = function()
+      adjectives = {'Premium', 'Deluxe', 'Standard', 'Professional', 'Ultimate'}
+      nouns = {'Widget', 'Gadget', 'Tool', 'Device', 'System'}
+      return adjectives[math.random(#adjectives)] .. ' ' .. nouns[math.random(#nouns)]
+   end,
+
+   price = function(min, max)
+      return math.random(min or 1, max or 1000)
+   end,
+
+   choice = function(items)
+      return items[math.random(#items)]
+   end,
+
+   string = function(length)
+      chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+      result = ''
+      for i in {1 into length} do
+         pos = math.random(0, #chars-1)
+         result = result .. chars.sub(pos, pos+1)
+      end
+      return result
+   end,
+
+   url = function()
+      protocols = {'http', 'https'}
+      domains = {'example.com', 'test.org', 'demo.net'}
+      paths = {'/api/v1', '/docs', '/health', '/status'}
+      return protocols[math.random(#protocols)] .. '://' .. domains[math.random(#domains)] .. paths[math.random(#paths)]
+   end,
+
+   domainName = function()
+      domains = {'example.com', 'test.org', 'demo.net', 'sample.co'}
+      return domains[math.random(#domains)]
+   end,
+
+   ipv4 = function()
+      return math.random(1, 255) .. '.' .. math.random(0, 255) .. '.' .. math.random(0, 255) .. '.' .. math.random(1, 255)
+   end,
+
+   ipv6 = function()
+      segments = {}
+      for i in {1 into 8} do
+         table.insert(segments, string.format('%04x', math.random(0, 65535)))
+      end
+      return table.concat(segments, ':')
+   end,
+
+   password = function():any
+      return faker.string(math.random(8, 16))
+   end,
+
+   bytes = function(length)
+      result = {}
+      for i in {1 into length} do
+         table.insert(result, math.random(0, 255))
+      end
+      return result
+   end
+}
+
+-- Simple base64 encode/decode for mock data
+base64 = {
+   encode = function(data)
+      -- Simplified base64 encoding
+      return 'base64_encoded_data'
+   end,
+
+   decode = function(str)
+      -- Simplified base64 decoding
+      return 'decoded_binary_data'
+   end
+}
+
+-- Utility functions
+function deepCopy(t):any
+   if t is <array> then
+      copy = array<any>
+      for value in values(t) do
+         copy.push(deepCopy(value))
+      end
+      return copy
+   end
+   if t != <table> then return t end
+   copy = {}
+   for k, v in pairs(t) do
+      copy[deepCopy(k)] = deepCopy(v)
+   end
+   return copy
+end
+
+function mergeParameters(PathParameters:any, OperationParameters:any):array<table>
+   parameters = array<table>
+   indices = {}
+   for list in values({ PathParameters or {}, OperationParameters or {} }) do
+      for param in values(list) do
+         copied = deepCopy(param)
+         key = (param.name or param['$ref'] or '') .. ':' .. (param['in'] or '')
+         index = indices[key]
+         if index != nil then
+            parameters[index] = copied
+         else
+            indices[key] = #parameters
+            parameters.push(copied)
+         end
+      end
+   end
+   return parameters
+end
+
+function tableContains(table, value)
+   for _, v in ipairs(table) do
+      if v is value then return true end
+   end
+   return false
+end
+
+-- Parameter extraction from path patterns
+function extractParamsFromPath(pattern, path)
+   params = {}
+
+   -- Convert OpenAPI path parameters {param} to regex capture groups
+   regexPattern = rxOpenApiParamSub.replace(pattern, '([^/]+)')
+   regexPattern = '^' .. regexPattern .. '$'
+
+   -- Create a temporary regex to extract parameter values from path
+   local pathRx = regex.new(regexPattern)
+   local start, stop, captures = pathRx.findFirst(path)
+
+   if captures and #captures > 0 then
+      -- Extract parameter names from pattern using findAll
+      paramNames = {}
+      for _, _, cap in rxOpenApiParam.findAll(pattern) do
+         table.insert(paramNames, cap[0])
+      end
+
+      for i, paramName in ipairs(paramNames) do
+         if captures[i-1] then
+            params[paramName] = captures[i-1]
+         end
+      end
+   end
+
+   return params
+end
+
+-- Security handler execution
+function executeSecurityHandlers(securityRequirements, securityHandlers, req)
+   if not securityRequirements or #securityRequirements is 0 then
+      return true -- No security required
+   end
+
+   -- OpenAPI security is an array of objects (OR) where each object has AND requirements
+   for _, securityOption in ipairs(securityRequirements) do
+      allSchemesValid = true
+
+      for schemeName, scopes in pairs(securityOption) do
+         handler = securityHandlers[schemeName]
+         if not handler then
+            allSchemesValid = false
+            break
+         end
+
+         local succeeded, error = handler.handler(req, scopes)
+         if not succeeded then
+            allSchemesValid = false
+            break
+         end
+      end
+
+      if allSchemesValid then
+         return true -- This security option succeeded
+      end
+   end
+
+   return false, 'Authentication failed'
+end
+
+-- Mock data generator
+function generateMockData(schema, mockGenerators, visitedSchemas):any
+   mockGenerators.schemas ?= {}
+   mockGenerators.formats ?= {}
+   mockGenerators.types ?= {}
+   visitedSchemas = visitedSchemas or {}
+
+   -- Prevent infinite recursion with circular references
+   if visitedSchemas[schema] then
+      return nil
+   end
+   visitedSchemas[schema] = true
+   defer visitedSchemas[schema] = nil end
+
+   -- Use example if provided
+   if schema.example != nil then
+      return schema.example
+   end
+
+   -- Check for schema-level mock generators
+   if schema['x-mock-generator'] and mockGenerators.schemas[schema['x-mock-generator']] then
+      return mockGenerators.schemas[schema['x-mock-generator']](schema.example)
+   end
+
+   -- Handle different types
+   if schema.type is 'string' then
+      if schema.format and mockGenerators.formats[schema.format] then
+         return mockGenerators.formats[schema.format]()
+      elseif mockGenerators.types.string then
+         return mockGenerators.types.string(schema)
+      else
+         if schema.enum then
+            return schema.enum[math.random(#schema.enum)]
+         else
+            return faker.word()
+         end
+      end
+
+   elseif schema.type is 'integer' then
+      if mockGenerators.types.integer then
+         return mockGenerators.types.integer(schema)
+      else
+         min = schema.minimum or 0
+         max = schema.maximum or 1000000
+         return math.random(min, max)
+      end
+
+   elseif schema.type is 'number' then
+      if mockGenerators.types.number then
+         return mockGenerators.types.number(schema)
+      else
+         min = schema.minimum or 0
+         max = schema.maximum or 1000000
+         return math.random() * (max - min) + min
+      end
+
+   elseif schema.type is 'boolean' then
+      if mockGenerators.types.boolean then
+         return mockGenerators.types.boolean(schema)
+      else
+         return math.random() > 0.5
+      end
+
+   elseif schema.type is 'array' then
+      if mockGenerators.types.array then
+         generateItem = function(itemSchema)
+            return generateMockData(itemSchema, mockGenerators, visitedSchemas)
+         end
+         return mockGenerators.types.array(schema, generateItem)
+      else
+         min = schema.minItems or 0
+         max = schema.maxItems or 5
+         count = math.random(min, max)
+         items = array<any>
+         if schema.items then
+            for i in {1 into count} do
+               item = generateMockData(schema.items, mockGenerators, visitedSchemas)
+               items.push(item)
+            end
+         end
+         return items
+      end
+
+   elseif schema.type is 'object' then
+      if mockGenerators.types.object then
+         generateProperty = function(propSchema)
+            return generateMockData(propSchema, mockGenerators, visitedSchemas)
+         end
+         return mockGenerators.types.object(schema, generateProperty)
+      else
+         local obj = {}
+         if schema.properties then
+            for propName, propSchema in pairs(schema.properties) do
+               if schema.required and tableContains(schema.required, propName) then
+                  obj[propName] = generateMockData(propSchema, mockGenerators, visitedSchemas)
+               elseif math.random() > 0.3 then -- 70% chance for optional properties
+                  obj[propName] = generateMockData(propSchema, mockGenerators, visitedSchemas)
+               end
+            end
+         end
+         return obj
+      end
+   end
+
+   -- Fallback for unknown types
+   return nil
+end
+
+-- Parameter conversion
+function convertParameter(value, paramSpec, converters):any
+   -- Try named converter first
+   if paramSpec.name and converters.named[paramSpec.name] then
+      return converters.named[paramSpec.name](value, paramSpec.schema or paramSpec)
+   end
+
+   schema = paramSpec.schema or paramSpec
+
+   -- Try format-specific converter
+   if schema.format and converters.formats[schema.format] then
+      return converters.formats[schema.format](value)
+   end
+
+   -- Try type-specific converter
+   if schema.type and converters.types[schema.type] then
+      return converters.types[schema.type](value, schema)
+   end
+
+   -- No conversion needed
+   return value
+end
+
+-- Create wrapper handler for operations
+function createOperationHandler(operationSpec, userHandler, options)
+   return function(req, res):any
+      -- Extract path parameters
+      if operationSpec.parameters then
+         req.params = req.params or {}
+         for _, param in ipairs(operationSpec.parameters) do
+            if param['in'] is 'path' and req.params[param.name] then
+               -- Convert parameter if converters are available
+               if options.parameterConverters then
+                  try
+                     converted = convertParameter(req.params[param.name], param, options.parameterConverters)
+                     req.params[param.name] = converted
+                  end
+               end
+            end
+         end
+      end
+
+      -- Handle security if configured
+      if operationSpec.security then
+         local succeeded, error = executeSecurityHandlers(operationSpec.security, options.securityHandlers or {}, req)
+         if not succeeded then
+            if options.onSecurityFailure is 'continue' then
+               -- Continue but mark as unauthorized
+               req.unauthorized = true
+            elseif options.onSecurityFailure is 'mock' then
+               -- Return mock response
+               res.status(401).json({error = 'Authentication required'})
+               return
+            else -- default: reject
+               res.status(401).json({error = error or 'Authentication failed'})
+               return
+            end
+         end
+      end
+
+      -- Call user handler or mock
+      if userHandler then
+         return userHandler(req, res)
+      elseif options.onMissingHandler is 'mock' then
+         -- Generate mock response
+         mock_response:any = {}
+         if operationSpec.responses and operationSpec.responses['200'] then
+            response_spec = operationSpec.responses['200']
+            json_content = response_spec.content and response_spec.content['application/json']
+            if json_content and json_content.schema then
+               mock_response = generateMockData(json_content.schema, options.mockGenerators or {})
+            end
+         end
+
+         -- Simulate delay if configured
+         if options.mockGenerators and options.mockGenerators.mockDelay then
+            delay = options.mockGenerators.mockDelay(operationSpec, req.method)
+            if delay > 0 then
+               -- Note: In a real implementation, you'd want actual delay here
+               -- For now, just log it
+               print('Mock delay: ' .. delay .. 'ms')
+            end
+         end
+
+         if mock_response is nil then
+            mock_response = { message = 'Mock response for ' .. operationSpec.operationId }
+         end
+         res.json(mock_response)
+      elseif options.onMissingHandler is 'stub' then
+         res.status(501).json({error = 'Handler not implemented for ' .. operationSpec.operationId})
+      else
+         res.status(500).json({error = 'No handler configured for ' .. operationSpec.operationId})
+      end
+   end
+end
+
+-- Resolve middleware for an operation
+function resolveMiddleware(operationSpec, middlewareConfig)
+   middlewares = {}
+
+   -- Add tag-based middleware
+   if operationSpec.tags and middlewareConfig.tags then
+      for _, tag in ipairs(operationSpec.tags) do
+         if middlewareConfig.tags[tag] then
+            for _, middleware in ipairs(middlewareConfig.tags[tag]) do
+               table.insert(middlewares, middleware)
+            end
+         end
+      end
+   end
+
+   -- Add operation-specific middleware
+   if operationSpec.operationId and middlewareConfig.operations and middlewareConfig.operations[operationSpec.operationId] then
+      for _, middleware in ipairs(middlewareConfig.operations[operationSpec.operationId]) do
+         table.insert(middlewares, middleware)
+      end
+   end
+
+   -- Use middleware resolver if provided
+   if middlewareConfig.middlewareResolver then
+      resolvedMiddlewares = middlewareConfig.middlewareResolver(operationSpec.operationId, operationSpec)
+      if resolvedMiddlewares then
+         for _, middleware in ipairs(resolvedMiddlewares) do
+            table.insert(middlewares, middleware)
+         end
+      end
+   end
+
+   return middlewares
+end
+
+-- Main parse function
+function openapi.parse(specPath, options)
+   options = options or {}
+
+   -- Read and parse the OpenAPI specification
+   local specContent
+   try
+      specContent = io.readAll(specPath)
+   except ex
+      raise 'Failed to read OpenAPI specification: ' .. specPath .. ': ' .. ex.message
+   end
+   if not specContent or specContent is '' then
+      raise 'OpenAPI specification file is empty'
+   end
+
+   local spec
+   try
+      spec = json.decode(specContent)
+   except ex
+      raise 'Failed to parse OpenAPI JSON: ' .. ex.message
+   end
+
+   -- Validate basic OpenAPI structure
+
+   assert(spec.openapi, 'Invalid OpenAPI specification: missing openapi field')
+   assert(spec.paths, 'Invalid OpenAPI specification: missing paths')
+
+   -- Create API object
+
+   api = {
+      spec     = spec,
+      info     = spec.info or {},
+      routes   = {},
+      handlers = {},
+      _boundHandlers = {},
+      _mockMode      = false,
+      _options       = options
+   }
+
+   -- Process each path and operation
+   for path, pathItem in pairs(spec.paths) do
+      -- Handle path-level parameters
+      pathParameters = pathItem.parameters or {}
+
+      -- Process each HTTP method
+      for method, operationSpec in pairs(pathItem) do
+         if operationSpec is <table> and operationSpec.operationId then
+            operationId = operationSpec.operationId
+
+            -- Combine path and operation parameters
+            operationSpec.parameters = mergeParameters(pathParameters, operationSpec.parameters)
+            operationSpec.security ?= spec.security
+
+            -- Resolve handler
+            userHandler = nil
+            if options.handlers and options.handlers[operationId] then
+               if options.handlers[operationId] is <func> then
+                  userHandler = options.handlers[operationId]
+               elseif options.handlers[operationId] is <str> then
+                  -- Module path resolution
+                  modulePath, functionName = rxModuleFunction.extract(options.handlers[operationId])
+                  if modulePath and functionName then
+                     module = loadFile(modulePath)
+                     userHandler = module[functionName]
+                  end
+               end
+            elseif options.handlerResolver then
+               userHandler = options.handlerResolver(operationId, path, method.upper(), operationSpec)
+            end
+
+            -- Create wrapped handler
+            wrappedHandler = createOperationHandler(operationSpec, userHandler, options)
+
+            -- Resolve middleware
+            operationMiddleware = {}
+            if options.middleware then
+               operationMiddleware = resolveMiddleware(operationSpec, options.middleware)
+            end
+
+            -- Create route entry
+            route = {
+               method = method.upper(),
+               pattern = path,
+               handler = wrappedHandler,
+               middleware = operationMiddleware,
+               metadata = {
+                  operationId = operationId,
+                  tags = operationSpec.tags or {},
+                  parameters = operationSpec.parameters or {},
+                  responses = operationSpec.responses or {},
+                  security = operationSpec.security or spec.security or {}
+               }
+            }
+
+            table.insert(api.routes, route)
+            api._boundHandlers[operationId] = userHandler != nil
+         end
+      end
+   end
+
+   -- Handler management functions
+   api.handlers.bind = function(operationId, handler)
+      api._boundHandlers[operationId] = true
+      -- Update the route handler
+      for _, route in ipairs(api.routes) do
+         if route.metadata.operationId is operationId then
+            route.handler = createOperationHandler(route.metadata, handler, options)
+            break
+         end
+      end
+   end
+
+   api.handlers.bindMany = function(handlersTable)
+      for operationId, handler in pairs(handlersTable) do
+         api.handlers.bind(operationId, handler)
+      end
+   end
+
+   api.handlers.loadFrom = function(moduleName)
+      module = loadFile(moduleName)
+      api.handlers.bindMany(module)
+   end
+
+   api.handlers.getMissing = function()
+      missing = {}
+      for _, route in ipairs(api.routes) do
+         operationId = route.metadata.operationId
+         if not api._boundHandlers[operationId] then
+            table.insert(missing, operationId)
+         end
+      end
+      return missing
+   end
+
+   api.handlers.getBound = function()
+      bound = {}
+      for operationId, isBound in pairs(api._boundHandlers) do
+         if isBound then
+            table.insert(bound, operationId)
+         end
+      end
+      return bound
+   end
+
+   -- Mock mode management
+   api.enableMocks = function()
+      api._mockMode = true
+   end
+
+   api.disableMocks = function()
+      api._mockMode = false
+   end
+
+   -- Utility functions
+   api.getOperation = function(operationId)
+      for _, route in ipairs(api.routes) do
+         if route.metadata.operationId is operationId then
+            return route.metadata
+         end
+      end
+      return nil
+   end
+
+   api.toServerConfig = function()
+      return {
+         routes = api.routes,
+         middleware = options.middleware and options.middleware.global or {}
+      }
+   end
+
+   return api
+end

@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "name": "net/openapi",
+  "version": "1.0",
+  "description": "OpenAPI 3.0 and 3.1 parser with HTTP handler, security, middleware and mock integration.",
+  "entry": "openapi.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2025-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "api",
+    "http",
+    "openapi"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "json": "1.0"
+  },
+  "files": [
+    {
+      "path": "openapi.tiri",
+      "size": 21168,
+      "sha256": "0943f627fa4c4c27f562c2b569df9c09822bae0da27fecdcd380e36ce29c191c",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}
