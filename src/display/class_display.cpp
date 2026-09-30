@@ -16,6 +16,13 @@ display mode, palette, gamma or hardware-facing bitmap.
 *********************************************************************************************************************/
 
 #include "defs.h"
+#include <kotuku/modules/vector.h>
+#include <kotuku/modules/svg.h>
+
+#if defined(__linux__) and not defined(__ANDROID__)
+ #define DESKTOP_ENTRIES
+ #include "linux/desktop_entry.h"
+#endif
 
 
 // Class definition at end of this source file.
@@ -24,6 +31,7 @@ static ERR DISPLAY_Resize(extDisplay *, struct acResize *);
 [[maybe_unused]] static CSTRING dpms_name(DPMS Index);
 
 static void alloc_display_buffer(extDisplay *Self);
+static void apply_window_icon(extDisplay *Self);
 
 
 
@@ -464,6 +472,8 @@ static ERR DISPLAY_Init(extDisplay *Self)
       if (window_error != ERR::Okay) return log.warning(window_error);
       Self->WindowHandle = window;
       Self->Flags |= SCR::HOSTED;
+
+      if (not Self->IconImages.empty()) apply_window_icon(Self);
 
       glDriver->frameMargins(Self->WindowHandle, Self->LeftMargin, Self->TopMargin,
          Self->RightMargin, Self->BottomMargin);
@@ -1597,6 +1607,7 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
             if (auto error = glDriver->createWindow(Self, window); error != ERR::Okay) return error;
             Self->WindowHandle = window;
             if (not title.empty()) glDriver->setWindowTitle(Self->WindowHandle, title.c_str());
+            if (not Self->IconImages.empty()) apply_window_icon(Self);
             glDriver->setWindowSurface(Self->WindowHandle, surface_id);
             glDriver->frameMargins(Self->WindowHandle, Self->LeftMargin, Self->TopMargin,
                Self->RightMargin, Self->BottomMargin);
@@ -1672,6 +1683,314 @@ height of the window can be calculated by reading the #TopMargin and #BottomMarg
 static ERR SET_Height(extDisplay *Self, int Value)
 {
    if (Value > 0) Self->Height = Value;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+Icon: Defines the icon that represents the display's host window.
+
+Setting the Icon assigns an image to the host window, which the desktop environment may use to represent the window in
+its title bar, taskbar and task switcher.  The value is a path to an SVG file, or to a bitmap image in any format that
+is supported by the @Image class.
+
+The icon is rendered at a range of sizes, from 16 to 256 pixels, at the time that the field is set.  This allows the
+host to select the most appropriate size for each context in which the icon is shown.  SVG sources are rendered
+directly from their vector data.  Bitmap sources are loaded at their native resolution and resampled by the vector
+renderer, which produces a higher quality result than simple pixel scaling.  Sources that are not square are centred
+and scaled to fit, preserving their aspect ratio.
+
+The Icon can be set before or after initialisation, and is automatically reapplied if the host window is recreated.
+Setting an empty string removes the icon.
+
+Window icons are currently supported by the X11 driver only.  On other platforms the icon source is validated and
+retained, but has no visible effect.
+
+GNOME 46 and later ignore window icons, and display the icon of the `.desktop` application entry that matches the
+window's X11 class or Wayland app ID.  Kōtuku windows match the installed `org.kotuku.Origo` entry by default.  When
+running under GNOME, setting the Icon also publishes a hidden entry named `org.kotuku.Origo.Icon-<hash>.desktop` in
+`$XDG_DATA_HOME/applications`, with a copy of the icon in `$XDG_DATA_HOME/kotuku/icons`, and assigns the matching
+class to the window.  The hash is derived from the icon's path, so windows that use the same icon share an entry.
+Generated entries are retained after the process exits, and are marked with `X-Kotuku-Generated=true`.
+
+*********************************************************************************************************************/
+
+// Icons are rendered at a range of sizes so that the host can choose the most appropriate size for each context.
+
+static constexpr int glIconSizes[] = { 16, 24, 32, 48, 64, 128, 256 };
+
+static std::string escape_xml_attrib(std::string_view Value)
+{
+   std::string result;
+   result.reserve(Value.size());
+   for (auto ch : Value) {
+      switch (ch) {
+         case '&':  result += "&amp;"; break;
+         case '<':  result += "&lt;"; break;
+         case '>':  result += "&gt;"; break;
+         case '"':  result += "&quot;"; break;
+         case '\'': result += "&apos;"; break;
+         default:   result += ch; break;
+      }
+   }
+   return result;
+}
+
+static ERR render_icon(const std::string &Path, std::vector<DisplayIcon> &Icons)
+{
+   kt::Log log(__FUNCTION__);
+
+   log.branch("%s", Path.c_str());
+
+   // Bitmap sources are hosted in an SVG document so that resizing benefits from the vector renderer's resampling.
+   // The image is loaded at its native resolution and fitted to the page with its aspect ratio preserved.  As the
+   // SVG parser treats a failed image load as non-fatal, the image ID is checked to confirm that a VectorImage was
+   // registered for the source; on failure the ID refers to the image's placeholder rectangle instead.
+
+   const bool is_svg = wildcmp("*.svg|*.svgz", Path);
+   std::string statement;
+   if (not is_svg) {
+      statement = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\">"
+         "<image id=\"display_icon\" href=\"" + escape_xml_attrib(Path) + "\" width=\"256\" height=\"256\"/></svg>";
+   }
+
+   objSVG::create svg = is_svg ?
+      objSVG::create { fl::Path(Path) } :
+      objSVG::create { fl::Statement(statement), fl::Flags(SVF::AUTOSCALE) };
+
+   if (not svg.ok()) return log.warning(ERR::CreateObject);
+
+   if (is_svg and svg->Viewport) {
+      auto viewport = svg->Viewport;
+      double view_width, view_height;
+      if (auto error = viewport->getViewWidth(view_width); error != ERR::Okay) return log.warning(error);
+      if (auto error = viewport->getViewHeight(view_height); error != ERR::Okay) return log.warning(error);
+
+      // Autoscaling changes the target size only.  Without a viewBox, retain the intrinsic dimensions as the
+      // source area before replacing the target dimensions, otherwise small icons crop the original artwork.
+
+      if ((view_width <= 0) and (view_height <= 0)) {
+         Unit width(0, FD_PURE), height(0, FD_PURE);
+         if (auto error = viewport->getWidth(width); error != ERR::Okay) return log.warning(error);
+         if (auto error = viewport->getHeight(height); error != ERR::Okay) return log.warning(error);
+         if (width.defined() and height.defined() and (not width.scaled()) and (not height.scaled()) and
+               (double(width) > 0) and (double(height) > 0)) {
+            if (auto error = viewport->setViewWidth(width); error != ERR::Okay) return log.warning(error);
+            if (auto error = viewport->setViewHeight(height); error != ERR::Okay) return log.warning(error);
+         }
+      }
+
+      if (auto error = viewport->setWidth(Unit(1.0, FD_SCALED)); error != ERR::Okay) return log.warning(error);
+      if (auto error = viewport->setHeight(Unit(1.0, FD_SCALED)); error != ERR::Okay) return log.warning(error);
+   }
+
+   if (not is_svg) {
+      OBJECTPTR def = nullptr;
+      if ((svg->Scene->findDef("display_icon", &def) != ERR::Okay) or (def->classID() != CLASSID::VECTORIMAGE)) {
+         log.warning("Unable to load \"%s\" as an image.", Path.c_str());
+         return ERR::File;
+      }
+   }
+
+   std::vector<DisplayIcon> icons;
+   icons.reserve(std::size(glIconSizes));
+
+   for (auto size : glIconSizes) {
+      objBitmap::create bmp { fl::Width(size), fl::Height(size), fl::BitsPerPixel(32),
+         fl::Flags(BMF::ALPHA_CHANNEL) };
+      if (not bmp.ok()) return log.warning(ERR::CreateObject);
+
+      clearmem(bmp->Data, bmp->LineWidth * bmp->Height);
+
+      if (auto error = svg->render(*bmp, 0, 0, size, size); error != ERR::Okay) return log.warning(error);
+
+      if ((bmp->Flags & BMF::PREMUL) != BMF::NIL) bmp->demultiply();
+
+      auto &icon = icons.emplace_back();
+      icon.Width  = size;
+      icon.Height = size;
+      icon.Pixels.reserve(size * size);
+
+      for (int y=0; y < size; y++) {
+         auto row = (uint32_t *)(bmp->Data + (y * bmp->LineWidth));
+         for (int x=0; x < size; x++) {
+            auto pixel = row[x];
+            icon.Pixels.push_back((uint32_t(bmp->unpackAlpha(pixel)) << 24) | (uint32_t(bmp->unpackRed(pixel)) << 16) |
+               (uint32_t(bmp->unpackGreen(pixel)) << 8) | uint32_t(bmp->unpackBlue(pixel)));
+         }
+      }
+   }
+
+   Icons = std::move(icons);
+   return ERR::Okay;
+}
+
+#ifdef DESKTOP_ENTRIES
+
+// GNOME 46 and later ignore window icons, and resolve a window's icon from the .desktop entry that matches its X11
+// class or Wayland app ID.  When running under GNOME, a custom Icon is therefore published as a generated entry in
+// $XDG_DATA_HOME/applications, with a window class derived from the icon source.  The session type does not change
+// during the lifetime of the process, so it is evaluated once.
+
+static bool gnome_integration()
+{
+   static const bool gnome = []() {
+      auto current = std::getenv("XDG_CURRENT_DESKTOP");
+      return desktop_entry::is_gnome_desktop(current ? current : "");
+   }();
+
+   if ((not gnome) or (not glDriver) or glHeadless) return false;
+   return (glDriver->displayType() IS DT::X11) or (glDriver->displayType() IS DT::WAYLAND);
+}
+
+// Saves an icon image as a PNG file.  It is written under a temporary name and renamed into place, so that the
+// desktop never reads a partial file.
+
+static ERR save_icon_png(const DisplayIcon &Icon, const std::filesystem::path &Path)
+{
+   // FORCE_ALPHA_32 stores alpha in the bitmap's pixel data, which the PNG encoder writes directly.  PCF::ALPHA would
+   // instead save the alpha from a separate mask bitmap.
+
+   objImage::create pic { fl::Width(Icon.Width), fl::Height(Icon.Height), fl::BitsPerPixel(32),
+      fl::Flags(PCF::NEW|PCF::FORCE_ALPHA_32) };
+   if (not pic.ok()) return ERR::CreateObject;
+
+   auto bmp = pic->Bitmap;
+   for (int y=0; y < Icon.Height; y++) {
+      auto row = (uint32_t *)(bmp->Data + (y * bmp->LineWidth));
+      for (int x=0; x < Icon.Width; x++) {
+         auto pixel = Icon.Pixels[(y * Icon.Width) + x];
+         row[x] = bmp->packPixel(uint8_t(pixel >> 16), uint8_t(pixel >> 8), uint8_t(pixel), uint8_t(pixel >> 24));
+      }
+   }
+
+   if (not desktop_entry::create_folders(Path.parent_path())) return ERR::CreateFile;
+
+   std::error_code fs_error;
+   auto temp = Path.parent_path() / ("." + Path.filename().string() + ".tmp-" + std::to_string(getpid()));
+
+   {
+      objFile::create file { fl::Path(temp.string()), fl::Flags(FL::NEW|FL::WRITE) };
+      if (not file.ok()) return ERR::CreateFile;
+      if (auto error = acSaveImage(*pic, *file); error != ERR::Okay) {
+         file->del({});
+         return error;
+      }
+   }
+
+   // The core clears the process umask, so the mode is set explicitly to prevent a world-writable file.
+
+   std::filesystem::permissions(temp, std::filesystem::perms(0644), fs_error);
+   if (not fs_error) std::filesystem::rename(temp, Path, fs_error);
+   if (fs_error) {
+      std::filesystem::remove(temp, fs_error);
+      return ERR::File;
+   }
+   return ERR::Okay;
+}
+
+// Publishes the icon as a generated .desktop entry and records the matching window class.  Files are only rewritten
+// when their content has changed, which avoids needless reloads by the desktop.  Failures are non-fatal, in which
+// case the window keeps the default identity.
+
+static void update_desktop_identity(extDisplay *Self)
+{
+   Self->WindowClass.clear();
+   if ((not Self->WindowHandle) or Self->IconImages.empty() or (not gnome_integration())) return;
+
+   kt::Log log(__FUNCTION__);
+
+   auto data_home = desktop_entry::data_home();
+   if (data_home.empty()) return;
+
+   std::string source;
+   if (ResolvePath(Self->Icon, RSF::NO_FILE_CHECK, &source) != ERR::Okay) source = Self->Icon;
+
+   std::string title;
+   if ((glDriver->windowTitle(Self->WindowHandle, title) != ERR::Okay) or title.empty()) return;
+
+   std::error_code fs_error;
+   auto exe = std::filesystem::read_symlink("/proc/self/exe", fs_error);
+
+   auto &largest = Self->IconImages.back();
+   desktop_entry::Entry entry;
+   entry.AppID    = desktop_entry::app_id(source);
+   entry.Name     = title;
+   entry.Exec     = fs_error ? "origo" : exe.string();
+   entry.Icon     = (data_home / "kotuku" / "icons" / (entry.AppID + ".png")).string();
+   entry.Source   = Self->Icon;
+   entry.IconHash = desktop_entry::fnv1a(std::string_view((const char *)largest.Pixels.data(),
+      largest.Pixels.size() * sizeof(uint32_t)));
+
+   // Retain an established name to avoid desktop reloads when a title changes between runs.  Older entries may
+   // contain the fallback name from an icon assigned before window creation; replace it when a title is available.
+
+   auto entry_path = data_home / "applications" / (entry.AppID + ".desktop");
+   if (auto name = desktop_entry::read_key(entry_path, "Name");
+         (not name.empty()) and ((name != "Origo") or title.empty())) entry.Name = name;
+   auto text = desktop_entry::format_entry(entry);
+
+   if ((not desktop_entry::file_matches(entry_path, text)) or (not std::filesystem::exists(entry.Icon, fs_error))) {
+      if (auto error = save_icon_png(largest, entry.Icon); error != ERR::Okay) {
+         log.warning("Failed to save icon \"%s\": %s", entry.Icon.c_str(), GetErrorMsg(error));
+         return;
+      }
+
+      if (not desktop_entry::write_atomic(entry_path, text)) {
+         log.warning("Failed to write desktop entry \"%s\"", entry_path.c_str());
+         return;
+      }
+
+      log.msg("Published desktop entry %s", entry_path.c_str());
+   }
+
+   Self->WindowClass = entry.AppID;
+}
+
+#endif
+
+// Drivers that do not support window icons are ignored, as the icon is a cosmetic hint to the host.
+
+static void apply_window_icon(extDisplay *Self)
+{
+   if ((not glDriver) or (not Self->WindowHandle)) return;
+
+   if (auto error = glDriver->setWindowIcon(Self->WindowHandle, Self->IconImages);
+         (error != ERR::Okay) and (error != ERR::NoSupport)) {
+      kt::Log(__FUNCTION__).warning(error);
+   }
+
+#ifdef DESKTOP_ENTRIES
+   if (gnome_integration()) {
+      update_desktop_identity(Self);
+      glDriver->setWindowClass(Self->WindowHandle, Self->WindowClass.c_str());
+   }
+#endif
+}
+
+static ERR GET_Icon(extDisplay *Self, std::string_view &Value)
+{
+   Value = Self->Icon;
+   return ERR::Okay;
+}
+
+static ERR SET_Icon(extDisplay *Self, const std::string_view &Value)
+{
+   kt::Log log;
+
+   if (Value.empty()) {
+      Self->Icon.clear();
+      Self->IconImages.clear();
+   }
+   else {
+      std::vector<DisplayIcon> icons;
+      if (auto error = render_icon(std::string(Value), icons); error != ERR::Okay) return log.warning(error);
+      Self->Icon = Value;
+      Self->IconImages = std::move(icons);
+   }
+
+   apply_window_icon(Self);
    return ERR::Okay;
 }
 
@@ -1959,7 +2278,15 @@ static ERR SET_Title(extDisplay *Self, const std::string_view &Value)
       Self->Title = Value;
       return ERR::Okay;
    }
-   else if (glDriver) return glDriver->setWindowTitle(Self->WindowHandle, Value.data());
+   else if (glDriver) {
+      auto error = glDriver->setWindowTitle(Self->WindowHandle, Value.data());
+#ifdef DESKTOP_ENTRIES
+      if ((error IS ERR::Okay) and Self->WindowClass.empty() and (not Self->IconImages.empty())) {
+         apply_window_icon(Self);
+      }
+#endif
+      return error;
+   }
    return ERR::NoSupport;
 }
 
@@ -2079,6 +2406,7 @@ static const FieldArray DisplayFields[] = {
    { "Gamma",            FDF_VIRTUAL|FDF_DOUBLE|FDF_ARRAY|FDF_PURE|FDF_RI, GET_Gamma, SET_Gamma },
    { "HDensity",         FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_RW,       GET_HDensity, SET_HDensity },
    { "VDensity",         FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_RW,       GET_VDensity, SET_VDensity },
+   { "Icon",             FDF_VIRTUAL|FDF_CPPSTRING|FDF_PURE|FDF_RW, GET_Icon, SET_Icon },
    { "InsideWidth",      FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_R,        GET_InsideWidth },
    { "InsideHeight",     FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_R,        GET_InsideHeight },
    { "ResizeFeedback",   FDF_VIRTUAL|FDF_FUNCTION|FDF_PURE|FDF_RW,  GET_ResizeFeedback, SET_ResizeFeedback },

@@ -392,6 +392,22 @@ ERR X11Driver::close()
 }
 
 //********************************************************************************************************************
+// WM_CLASS links the window to a .desktop entry through its StartupWMClass key.  Desktop environments such as GNOME
+// rely on this link for the application name, icon and window grouping.  The instance name is the lower-case form
+// of the class, following convention.  A null or empty Class applies the default identity.
+
+static void set_window_class(Display *Connection, Window Native, CSTRING Class)
+{
+   std::string res_class = (Class and Class[0]) ? Class : DEFAULT_WM_CLASS;
+   std::string res_name = res_class;
+   std::transform(res_name.begin(), res_name.end(), res_name.begin(),
+      [](char Ch) { return ((Ch >= 'A') and (Ch <= 'Z')) ? char(Ch - 'A' + 'a') : Ch; });
+
+   XClassHint class_hint = { res_name.data(), res_class.data() };
+   XSetClassHint(Connection, Native, &class_hint);
+}
+
+//********************************************************************************************************************
 
 static ERR create_window_record(X11Driver::State *State, extDisplay *DisplayObject, Window Parent,
    X11WindowRecord *&Record)
@@ -461,7 +477,10 @@ static ERR create_window_record(X11Driver::State *State, extDisplay *DisplayObje
    std::string_view title;
    CurrentTask()->getName(title);
    XStoreName(State->Connection, native, title.empty() ? "Kotuku" : title.data());
-   Atom protocols[] = { State->DeleteAtom, State->TakeFocusAtom, State->SyncRequestAtom };
+
+   set_window_class(State->Connection, native, nullptr);
+
+   Atom protocols[] ={ State->DeleteAtom, State->TakeFocusAtom, State->SyncRequestAtom };
    XSetWMProtocols(State->Connection, native, protocols, State->FrameSync ? 3 : 2);
 
    // Advertising a basic and an extended counter enables frame synchronisation with a compositing window manager.
@@ -708,6 +727,54 @@ ERR X11Driver::setWindowTitle(HOSTWINDOW WindowHandle, CSTRING Title)
 {
    auto window = x11_window(Data, WindowHandle); if ((not window) or (not Title)) return ERR::NullArgs;
    XStoreName(Data->Connection, window->Native, Title); return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// _NET_WM_ICON is an array of CARDINALs containing each image's width and height followed by its ARGB pixels.  Xlib
+// expects 32-bit property data to be supplied as an array of longs, regardless of the size of a long.  Images that
+// would exceed the server's maximum request size are skipped, which is only likely if BIG-REQUESTS is unavailable.
+
+ERR X11Driver::setWindowIcon(HOSTWINDOW WindowHandle, const std::vector<DisplayIcon> &Icons)
+{
+   auto window = x11_window(Data, WindowHandle); if (not window) return ERR::NullArgs;
+
+   auto property = XInternAtom(Data->Connection, "_NET_WM_ICON", False);
+
+   if (Icons.empty()) {
+      XDeleteProperty(Data->Connection, window->Native, property);
+      return ERR::Okay;
+   }
+
+   long max_request = XExtendedMaxRequestSize(Data->Connection);
+   if (not max_request) max_request = XMaxRequestSize(Data->Connection);
+   const size_t max_cardinals = size_t(max_request) - 64; // Allow for the request header
+
+   size_t total = 0;
+   for (auto &icon : Icons) total += 2 + icon.Pixels.size();
+
+   std::vector<long> data;
+   data.reserve(std::min(total, max_cardinals));
+   for (auto &icon : Icons) {
+      if (data.size() + 2 + icon.Pixels.size() > max_cardinals) continue;
+      data.push_back(icon.Width);
+      data.push_back(icon.Height);
+      for (auto pixel : icon.Pixels) data.push_back(long(pixel));
+   }
+
+   XChangeProperty(Data->Connection, window->Native, property, XA_CARDINAL, 32, PropModeReplace,
+      (unsigned char *)data.data(), int(data.size()));
+   XFlush(Data->Connection);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+ERR X11Driver::setWindowClass(HOSTWINDOW WindowHandle, CSTRING Class)
+{
+   auto window = x11_window(Data, WindowHandle); if (not window) return ERR::NullArgs;
+   set_window_class(Data->Connection, window->Native, Class);
+   XFlush(Data->Connection);
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************

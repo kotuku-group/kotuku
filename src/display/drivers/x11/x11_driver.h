@@ -31,6 +31,8 @@ public:
    ERR lowerWindow(HOSTWINDOW Window) override;
    ERR minimiseWindow(HOSTWINDOW Window) override;
    ERR setWindowTitle(HOSTWINDOW Window, CSTRING Title) override;
+   ERR setWindowIcon(HOSTWINDOW Window, const std::vector<DisplayIcon> &Icons) override;
+   ERR setWindowClass(HOSTWINDOW Window, CSTRING Class) override;
    ERR setSizeHints(HOSTWINDOW Window, int MinW, int MinH, int MaxW, int MaxH, bool EnforceAspect) override;
    ERR windowCoords(HOSTWINDOW Window, int &X, int &Y, int &Width, int &Height) override;
    ERR frameMargins(HOSTWINDOW Window, int &Left, int &Top, int &Right, int &Bottom) override;

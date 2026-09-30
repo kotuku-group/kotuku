@@ -1298,7 +1298,7 @@ class objDisplay : public Object {
    }
 
    inline ERR getGamma(std::span<double> &Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[23];
       auto get_field = (ERR (*)(APTR, std::span<double> &))field->GetValue;
       return get_field(this, Value);
    }
@@ -1313,13 +1313,19 @@ class objDisplay : public Object {
       return field->GetValue(this, &Value);
    }
 
+   inline ERR getIcon(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[17];
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      return get_field(this, Value);
+   }
+
    inline ERR getInsideWidth(int &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getInsideHeight(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[33];
+      auto field = &this->Class->Dictionary[34];
       return field->GetValue(this, &Value);
    }
 
@@ -1330,18 +1336,18 @@ class objDisplay : public Object {
    }
 
    inline ERR getWindowHandle(APTR &Value) noexcept {
-      auto field = &this->Class->Dictionary[34];
+      auto field = &this->Class->Dictionary[35];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getTitle(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
+      auto field = &this->Class->Dictionary[24];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       return get_field(this, Value);
    }
 
    inline ERR getTotalResolutions(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       return field->GetValue(this, &Value);
    }
 
@@ -1359,17 +1365,17 @@ class objDisplay : public Object {
    }
 
    inline ERR setWidth(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[28];
+      auto field = &this->Class->Dictionary[29];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setHeight(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[35];
+      auto field = &this->Class->Dictionary[36];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setX(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
+      auto field = &this->Class->Dictionary[25];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -1399,12 +1405,12 @@ class objDisplay : public Object {
    }
 
    inline ERR setOpacity(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
+      auto field = &this->Class->Dictionary[26];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setGamma(std::span<const double> Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, 0x80101508, &Value);
    }
 
@@ -1418,18 +1424,23 @@ class objDisplay : public Object {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
+   inline ERR setIcon(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[17];
+      return field->WriteValue(this, field, 0x00904308, &Value);
+   }
+
    inline ERR setResizeFeedback(const FUNCTION Value) noexcept {
       auto field = &this->Class->Dictionary[8];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
    inline ERR setWindowHandle(APTR Value) noexcept {
-      auto field = &this->Class->Dictionary[34];
+      auto field = &this->Class->Dictionary[35];
       return field->WriteValue(this, field, 0x08100308, Value);
    }
 
    inline ERR setTitle(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
+      auto field = &this->Class->Dictionary[24];
       return field->WriteValue(this, field, 0x00904308, &Value);
    }
 

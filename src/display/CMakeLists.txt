@@ -182,6 +182,9 @@ else ()
 	set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-strict-overflow")
 
    target_sources (${MOD} PRIVATE ${FUNCTIONS} ${DISPLAY_DRIVERS} ${CLASSES} "linux/controller.cpp")
+   if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+      target_sources (${MOD} PRIVATE "linux/desktop_entry.cpp")
+   endif ()
 
    # Wayland support
 

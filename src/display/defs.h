@@ -384,6 +384,9 @@ class extDisplay : public objDisplay {
    std::string Display;
    std::string DisplayMfr;
    std::string Title;        // Retained for headless displays, which have no host window to store it
+   std::string Icon;         // Path to the window icon source
+   std::vector<DisplayIcon> IconImages; // The Icon rendered at each supported size, retained for window recreation
+   std::string WindowClass;  // Generated window class for GNOME desktop entry matching; empty for the default
    double Opacity;
 
    double Gamma[3];          // Red, green, blue gamma radioactivity indicator
