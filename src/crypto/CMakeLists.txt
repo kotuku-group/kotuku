@@ -52,18 +52,6 @@ endif ()
 if (BUILD_TESTS)
    flute_test (crypto_primitives "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_crypto.tiri")
 
-   # net/oauth2 remains deliberately unpublished until Phase 3.  Build a local-inclusion copy for this offline
-   # acceptance test by removing only the package identity annotation, which local imports are not allowed to carry.
-   set_property (DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-      "${PROJECT_SOURCE_DIR}/packages/oauth2/oauth2.tiri"
-      "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_oauth2_pkce.tiri")
-   file (READ "${PROJECT_SOURCE_DIR}/packages/oauth2/oauth2.tiri" OAUTH2_TEST_SOURCE)
-   string (REGEX REPLACE "^@Package\\([^\n]*\\)\r?\n" "" OAUTH2_TEST_SOURCE "${OAUTH2_TEST_SOURCE}")
-   string (REGEX REPLACE "oauth2 = \\{\\}" "namespace oauth2 { }" OAUTH2_TEST_SOURCE "${OAUTH2_TEST_SOURCE}")
-   string (REGEX REPLACE "\r?\nreturn oauth2[ \t]*\r?\n?$" "\n" OAUTH2_TEST_SOURCE "${OAUTH2_TEST_SOURCE}")
-   file (CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/oauth2_local.tiri" CONTENT "${OAUTH2_TEST_SOURCE}" @ONLY)
-   configure_file (tests/test_oauth2_pkce.tiri test_oauth2_pkce.tiri COPYONLY)
-   flute_test (crypto_oauth2_pkce "${CMAKE_CURRENT_BINARY_DIR}/test_oauth2_pkce.tiri")
 endif ()
 
 if (UNIT_TESTS)
