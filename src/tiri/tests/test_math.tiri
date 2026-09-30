@@ -24,6 +24,35 @@ end
    assert(2 ** 3 ** 2 is 512, 'The power operator should remain right-associative')
 end
 
+@Test function PowerOperandRegisters()
+   local x = 190
+   local b = 2
+   local literal_result = 2 ** (x / 19)
+   assert(literal_result is 1024, 'A literal base must not leave the exponent in the assignment slot')
+   local variable_result = b ** (x / 19)
+   assert(variable_result is 1024, 'A variable base must preserve the power result')
+   local temporary_result = (b + 0) ** (x / 19)
+   assert(temporary_result is 1024, 'Two temporary operands must preserve the power result')
+   local shared_result = b ** b
+   assert(shared_result is 4, 'Operands sharing a local register must remain intact')
+   local nested_result = 2 ** (b ** (x / 95))
+   assert(nested_result is 16, 'Nested powers must release all operand temporaries')
+end
+
+@Test function PowerCallArguments()
+   function capture(First:any, Second:any, Third:any):<any, any, any>
+      return First, Second, Third
+   end
+
+   local x = 190
+   local first:any, second:any, third:any = capture(2 ** (x / 19))
+   assert(first is 1024 and second is nil and third is nil,
+      'A power expression must supply exactly one argument with the correct value')
+   first, second, third = capture('before', 2 ** (x / 19), 'after')
+   assert(first is 'before' and second is 1024 and third is 'after',
+      'A power expression must preserve neighbouring arguments')
+end
+
 @Test function Round()
    assert(math.round(3.7) is 4, 'math.round(3.7) should be 4')
    assert(math.round(3.2) is 3, 'math.round(3.2) should be 3')

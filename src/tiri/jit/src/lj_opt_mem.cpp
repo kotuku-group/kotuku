@@ -47,6 +47,10 @@ static AliasRet aa_escape(jit_State* J, IRIns* ir, IRIns* stop)
       // which can store the reference in an opaque data structure (e.g. native arrays).
       if (ir->op1 == ref and ir->o == IR_TMPREF)
          return ALIAS_MAY;  //  Reference passed to C call and might alias.
+      // Local closures capture stack slots through the frame pointer rather than an explicit USTORE.
+      // A subsequently loaded upvalue can therefore alias any allocation live at closure creation.
+      if (ir->o IS IR_CALLA and ir->op2 IS IRCALL_lj_func_newL_local)
+         return ALIAS_MAY;
    }
    return ALIAS_NO;  //  Reference was not stored.
 }

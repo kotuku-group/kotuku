@@ -138,9 +138,15 @@ static void bcemit_arith(FuncState* fs, BinOpr opr, ExpDesc* e1, ExpDesc* e2)
       }
    }
 
-   // Release operand registers through allocator
-   allocator.release_expression(e2);
-   allocator.release_expression(e1);
+   // Release the highest operand register first.  POW may materialise a literal base after its exponent.
+   if (e1->k IS ExpKind::NonReloc and e2->k IS ExpKind::NonReloc and e1->u.s.info > e2->u.s.info) {
+      allocator.release_expression(e1);
+      allocator.release_expression(e2);
+   }
+   else {
+      allocator.release_expression(e2);
+      allocator.release_expression(e1);
+   }
    e1->u.s.info = bcemit_ABC(fs, op, 0, rb, rc);
    e1->k = ExpKind::Relocable;
    e1->result_type = TiriType::Num;  // Arithmetic operations always return number

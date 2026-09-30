@@ -10,6 +10,7 @@
 #include "lj_bc.h"
 #include "lj_object.h"
 #include "lj_str.h"
+#include "lj_err.h"
 #include "../../defs.h"
 
 //********************************************************************************************************************
@@ -297,7 +298,7 @@ LJ_NORET static void object_write_field_error(lua_State *L, GCobject *Obj, GCstr
 {
    auto error = classify_object_write_miss(Obj->classptr, Key->hash);
 
-   luaL_error(L, error, "%s: %s.%s", GetErrorMsg(error),
+   luaL_error_current(L, error, "%s: %s.%s", GetErrorMsg(error),
       Obj->classptr ? Obj->classptr->ClassName.c_str() : "?", strdata(Key));
 }
 
@@ -339,7 +340,7 @@ extern "C" void bc_object_setfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
    // Deliberately redundant with the access_object() failure below: testing here yields a precise DoesNotExist
    // message instead of a generic ERR::AccessObject.  Do not remove as an optimisation.
 
-   if (object_is_dead(Obj)) luaL_error(L, ERR::DoesNotExist, "Object dereferenced, unable to write field.");
+   if (object_is_dead(Obj)) luaL_error_current(L, ERR::DoesNotExist, "Object dereferenced, unable to write field.");
 
    auto write_table = get_write_table(Obj->classptr);
    auto wt_data = write_table->data();
@@ -372,13 +373,17 @@ extern "C" void bc_object_setfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
    if (auto error = access_object(Obj, pobj); !error) {
       auto stack_idx = int(val_ptr - L->base) + 1;
       error = func->Call(L, pobj, func->Field, stack_idx);
-      L->base = restorestack(L, saved_base);
-      L->top = restorestack(L, saved_top);
       release_object(Obj);
 
-      if (error >= ERR::ExceptionThreshold) luaL_error(L, error);
+      // Keep the active frame synchronised while raising: restoring a stale top here would overwrite live registers.
+      // This VM helper adds no C frame, so the exception must describe the current Tiri instruction.
+
+      if (error >= ERR::ExceptionThreshold) lj_err_currentmsg(L, error, GetErrorMsg(error));
+
+      L->base = restorestack(L, saved_base);
+      L->top = restorestack(L, saved_top);
    }
-   else luaL_error(L, error);
+   else lj_err_currentmsg(L, error, GetErrorMsg(error));
 }
 
 //********************************************************************************************************************
