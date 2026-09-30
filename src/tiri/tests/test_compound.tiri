@@ -3,6 +3,10 @@
 @BeforeEach(hotpath=true)
 function enforce_hotpath() end
 
+struct CompoundCounter
+   count: double
+end
+
 function max_call_c_operand(Func)
    local info = jit.util.funcInfo(Func, 0)
    local largest: any = nil
@@ -332,6 +336,51 @@ end
    end
    t[i] += add_three(4)
    assert(t[1] is 9, 'indexed += with function RHS should preserve base/index registers')
+end
+
+-- Loading the current element must not reuse a temporary register that holds the array index, otherwise the result
+-- is stored at an index equal to the result value.
+
+@Test function ArrayComputedIndexCompound()
+   local m = array<double, 20>
+   local a = 10
+   local k = 3
+   m[a + k] += 1
+   assert(m[13] is 1 and m[1] is 0, 'array += with a computed index should update the indexed element')
+   m[a + k] -= 3
+   assert(m[13] is -2, 'array -= with a computed index should update the indexed element')
+   m[a + k] *= 4
+   assert(m[13] is -8, 'array *= with a computed index should update the indexed element')
+   m[a + k]++
+   assert(m[13] is -7, 'array ++ with a computed index should update the indexed element')
+   m[#m - 1] += 2
+   assert(m[19] is 2, 'array += indexed by a length expression should update the last element')
+   function thirteen() return 13 end
+   m[thirteen()] += 10
+   assert(m[13] is 3, 'array += indexed by a call result should update the indexed element')
+
+   local ints = array<int, 4>
+   for i in {0 to 100} do ints[(i % 4) + 0] += i end
+   assert(ints[0] is 1200 and ints[1] is 1225 and ints[2] is 1250 and ints[3] is 1275,
+      'array += with a computed index should accumulate correctly in a hot loop')
+end
+
+@Test function ArrayComputedIndexConditionalAssignment()
+   local m = array<double, 8>
+   local a = 2
+   m[a + 1] ??= 5
+   assert(m[3] is 5 and m[5] is 0, 'array ??= with a computed index should update the indexed element')
+
+   local values = array<any, 8>
+   values[a + 1] ?= 'set'
+   assert(values[3] is 'set', 'array ?= with a computed index should update the indexed element')
+end
+
+@Test function StructFieldTemporaryBaseCompound()
+   local counter = struct<CompoundCounter> { count=1 }
+   function get_counter():struct<CompoundCounter> return counter end
+   get_counter().count += 2
+   assert(counter.count is 3, 'struct field += through a temporary base should update the struct')
 end
 
 @Test function FieldWithFunctionRHS()

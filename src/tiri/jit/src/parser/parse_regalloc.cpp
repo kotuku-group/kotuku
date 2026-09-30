@@ -161,15 +161,29 @@ void RegisterAllocator::collapse_freereg(BCReg ResultReg)
    }
 }
 
+// Copy the base and register index of an indexed expression, so that loading its current value for an update such as
+// `t[i] += 1` cannot release and reuse the registers that the subsequent store depends on.  Typed accesses (arrays,
+// objects and structs) are copied only when an operand is a temporary, because only temporaries are released.
+
 TableOperandCopies RegisterAllocator::duplicate_table_operands(const ExpDesc &Expression)
 {
    TableOperandCopies copies{};
    copies.duplicated = Expression;
 
-   if (Expression.k IS ExpKind::Indexed) {
+   const bool typed = Expression.k IS ExpKind::IndexedArray or Expression.k IS ExpKind::SafeIndexedArray or
+      Expression.k IS ExpKind::IndexedObject or Expression.k IS ExpKind::IndexedStruct;
+
+   if (Expression.k IS ExpKind::Indexed or typed) {
       uint32_t original_aux = Expression.u.s.aux;
       BCREG duplicate_count = 1;
       bool has_register_index = IndexOperand(original_aux).is_register();
+
+      if (typed) {
+         const bool temp_base = this->func_state->is_temp_register(BCReg(Expression.u.s.info));
+         const bool temp_index = has_register_index and
+            this->func_state->is_temp_register(BCReg(IndexOperand(original_aux).register_index()));
+         if (not (temp_base or temp_index)) return copies;
+      }
 
       if (has_register_index) duplicate_count++;
 
