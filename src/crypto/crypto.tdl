@@ -1,0 +1,18 @@
+--$TIRI:Include
+
+module({ name="Crypto", copyright="Paul Manias © 2026", version=1.0, timestamp=20240611, src="crypto.cpp" }, function()
+  enums("CC", { type="int", start=1, comment="Canonical base64 alphabet and padding mode." },
+    "STANDARD: Standard base64 alphabet (RFC 4648 section 4), padded to a multiple of four characters.",
+    "URL: URL and filename safe base64url alphabet (RFC 4648 section 5), without padding.")
+
+  enums("CSIG", { type="int", start=1, comment="Supported public signature algorithms." },
+    "RS256: RSASSA-PKCS1-v1_5 signature with a SHA-256 digest.")
+
+  functionNames("crypto",
+    "RandomBytes",
+    "SHA256",
+    "Base64Encode",
+    "Base64Decode",
+    "ConstantTimeEqual",
+    "VerifyJWK")
+end)

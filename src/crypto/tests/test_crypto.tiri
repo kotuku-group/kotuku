@@ -1,0 +1,187 @@
+include 'crypto'
+module crypto as mCrypto
+import 'json'
+
+function bytesFromHex(Hex:str):array<byte>
+   bytes = array<byte>
+   for i in {0 to #Hex by 2} do
+      bytes.push(tonumber(Hex.sub(i, i + 2), 16))
+   end
+   return bytes
+end
+
+@Test function BinaryDigestAndComparison()
+   source_bytes = array<byte> { 97, 98, 99 }
+   digest = array<byte, 32>
+   assert(mCrypto.SHA256(source_bytes, digest) is ERR_Okay, 'SHA256 should hash abc')
+   expected = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+   for i in {0 to 32} do
+      value = tonumber(expected.sub(i * 2, i * 2 + 2), 16)
+      assert(digest[i] is value, 'Published SHA-256 vector differs at byte ' .. i)
+   end
+   equal = nil
+   error, equal = mCrypto.ConstantTimeEqual(source_bytes, array<byte> { 97, 98, 99 })
+   assert(error is ERR_Okay and equal is 1, 'Equal byte arrays should compare equal')
+   error, equal = mCrypto.ConstantTimeEqual(source_bytes, array<byte> { 97, 0, 99 })
+   assert(error is ERR_Okay and equal is 0, 'Embedded NUL mismatch should be found')
+   error, equal = mCrypto.ConstantTimeEqual(source_bytes, array<byte> { 0, 98, 99 })
+   assert(error is ERR_Okay and equal is 0, 'First-byte mismatch should be found')
+   error, equal = mCrypto.ConstantTimeEqual(source_bytes, array<byte> { 97, 98 })
+   assert(error is ERR_Okay and equal is 0, 'Different lengths should compare unequal')
+   error, equal = mCrypto.ConstantTimeEqual(array<byte>, array<byte>)
+   assert(error is ERR_Okay and equal is 1, 'Empty byte arrays should compare equal')
+end
+
+@Test function VerifyPublicRs256Fixture()
+   path = 'sdk:src/crypto/tests/fixtures/rs256.json'
+   file <close> = obj.new('file', { path=path })
+   raw = array<byte, file.size>
+   assert(mSys.ReadFileToBuffer(path, raw) is ERR_Okay, 'Public fixture should load')
+   fixture = json.decode(raw.getString(0, #raw))
+   message = bytesFromHex(fixture.message_hex)
+   signature = bytesFromHex(fixture.signature_hex)
+   err = mCrypto.VerifyJWK(CSIG_RS256, fixture.n, fixture.e, message, signature)
+   assert(err is ERR_Okay, 'Independent RS256 signature should verify')
+   message[0] = message[0] ^ 1
+   err = mCrypto.VerifyJWK(CSIG_RS256, fixture.n, fixture.e, message, signature)
+   assert(err is ERR_Mismatch, 'Modified signing bytes must fail verification')
+   message[0] = message[0] ^ 1
+   pss_signature = bytesFromHex(fixture.pss_signature_hex)
+   err = mCrypto.VerifyJWK(CSIG_RS256, fixture.n, fixture.e, message, pss_signature)
+   assert(err is ERR_Mismatch, 'RSA-PSS signature must not verify as RS256')
+   signature[0] = signature[0] ^ 1
+   err = mCrypto.VerifyJWK(CSIG_RS256, fixture.n, fixture.e, message, signature)
+   assert(err is ERR_Mismatch, 'Altered signature must fail verification')
+   signature[0] = signature[0] ^ 1
+   err = mCrypto.VerifyJWK(CSIG_RS256, fixture.n, 'Aw', message, signature)
+   assert(err is ERR_Mismatch, 'Wrong public exponent must fail verification')
+   signature.pop()
+   err = mCrypto.VerifyJWK(CSIG_RS256, fixture.n, fixture.e, message, signature)
+   assert(err is ERR_InvalidData, 'Truncated signature must fail before backend verification')
+end
+
+@Test function JwkDescriptorFailsClosed()
+   path = 'sdk:src/crypto/tests/fixtures/rs256.json'
+   file <close> = obj.new('file', { path=path })
+   raw = array<byte, file.size>
+   assert(mSys.ReadFileToBuffer(path, raw) is ERR_Okay, 'Public fixture should load')
+   fixture = json.decode(raw.getString(0, #raw))
+   message = bytesFromHex(fixture.message_hex)
+   signature = bytesFromHex(fixture.signature_hex)
+   err = mCrypto.VerifyJWK(2, fixture.n, fixture.e, message, signature)
+   assert(err is ERR_NoSupport, 'Unknown numeric algorithm must fail')
+   err = mCrypto.VerifyJWK(CSIG_RS256, 'AA', fixture.e, message, signature)
+   assert(err is ERR_InvalidData, 'Short modulus must fail')
+   err = mCrypto.VerifyJWK(CSIG_RS256, fixture.n, 'Ag', message, signature)
+   assert(err is ERR_InvalidData, 'Even exponent must fail')
+   err = mCrypto.VerifyJWK(CSIG_RS256, string.rep('A', 684), fixture.e, message, signature)
+   assert(err is ERR_InvalidData, 'Oversized modulus must fail as invalid key material')
+   err = mCrypto.VerifyJWK(CSIG_RS256, fixture.n, 'AQABAQE', message, signature)
+   assert(err is ERR_InvalidData, 'Oversized exponent must fail as invalid key material')
+end
+
+@Test function RandomAndCapacityBehaviour()
+   random_bytes = array<byte, 32>
+   assert(mCrypto.RandomBytes(random_bytes) is ERR_Okay, 'System random source should fill the buffer')
+   assert(mCrypto.RandomBytes(array<byte>) is ERR_Okay, 'Zero-byte random request should succeed')
+   empty = array<byte>
+   err, required = mCrypto.Base64Encode(array<byte> { 255 }, CC_URL, empty)
+   assert(err is ERR_Okay and required is 2, 'Sizing query should return exact unpadded length')
+   output = array<byte, 1>
+   err, written = mCrypto.Base64Encode(array<byte> { 255 }, CC_URL, output)
+   assert(err is ERR_LowCapacity and written is 0, 'Undersized destination should fail without output')
+end
+
+@Test function StrictBase64RoundTrip()
+   source_bytes = array<byte> { 0, 128, 255, 65 }
+   encoded = array<byte, 8>
+   err, count = mCrypto.Base64Encode(source_bytes, CC_STANDARD, encoded)
+   assert(err is ERR_Okay and count is 8, 'Padded encoded size should be eight')
+   assert(encoded.getString(0, count) is 'AID/QQ==', 'Padded base64 should preserve binary input')
+   decoded = array<byte, 4>
+   err, count = mCrypto.Base64Decode(encoded, CC_STANDARD, decoded)
+   assert(err is ERR_Okay and count is 4, 'Decoded size should be four')
+   assert(decoded[0] is 0 and decoded[1] is 128 and decoded[2] is 255 and decoded[3] is 65,
+      'Decoded bytes should match the original')
+   err, count = mCrypto.Base64Decode('Zh==', CC_STANDARD, decoded)
+   assert(err is ERR_InvalidData, 'Non-zero unused bits must be rejected')
+   err, count = mCrypto.Base64Decode('Zg=', CC_STANDARD, decoded)
+   assert(err is ERR_InvalidData, 'Incomplete padding must be rejected')
+end
+
+@Test function CanonicalEncodingRejections()
+   destination = array<byte> { 170, 170, 170 }
+   standard_bad = array<str> { 'Zg', 'Zg=', 'Zh==', 'Zg==\n', 'Zg==A', 'Zg-_', 'Z===', '====' }
+   for i in {0 to #standard_bad} do
+      err, written = mCrypto.Base64Decode(standard_bad[i], CC_STANDARD, destination)
+      assert(err is ERR_InvalidData and written is 0, 'Malformed standard encoding was accepted: ' .. standard_bad[i])
+      assert(destination[0] is 170, 'Failed decode must not expose partial bytes')
+   end
+   url_bad = array<str> { 'Zg==', 'Zg+', 'Zg/', 'Zh', 'Z', 'Zg\n' }
+   for i in {0 to #url_bad} do
+      err, written = mCrypto.Base64Decode(url_bad[i], CC_URL, destination)
+      assert(err is ERR_InvalidData and written is 0, 'Malformed URL encoding was accepted: ' .. url_bad[i])
+   end
+   err, written = mCrypto.Base64Decode('', CC_URL, array<byte>)
+   assert(err is ERR_Okay and written is 0, 'Empty base64url input should decode to empty bytes')
+   err, written = mCrypto.Base64Decode('Zg', CC_URL, destination)
+   assert(err is ERR_Okay and written is 1 and destination[0] is 102, 'Canonical unpadded URL input should decode')
+end
+
+@Test function UnspecifiedModeIsRejected()
+   err, written = mCrypto.Base64Encode(array<byte> { 102 }, 0, array<byte, 4>)
+   assert(err is ERR_Args and written is 0, 'Encoding without a mode must fail')
+   err, written = mCrypto.Base64Decode('Zg==', 0, array<byte, 1>)
+   assert(err is ERR_Args and written is 0, 'Decoding without a mode must fail')
+end
+
+@Test function DecodeAllRemainders()
+   source_bytes = array<byte> { 0, 131, 255, 128, 65, 251 }
+   modes = array<int> { CC_STANDARD, CC_URL }
+   for length in {1 into 6} do
+      source = source_bytes.slice({0 to length})
+      for m in {0 to #modes} do
+         encoded = array<byte, 8>
+         err, encoded_size = mCrypto.Base64Encode(source, modes[m], encoded)
+         assert(err is ERR_Okay, f'Encoding {length} bytes should succeed')
+         decoded = array<byte, 6>
+         err, decoded_size = mCrypto.Base64Decode(encoded.slice({0 to encoded_size}), modes[m], decoded)
+         assert(err is ERR_Okay and decoded_size is length, f'Decoding {length} bytes should restore the length')
+         for i in {0 to length} do
+            assert(decoded[i] is source[i], f'Round trip of {length} bytes differs at byte {i}')
+         end
+      end
+   end
+end
+
+@Test function BinaryHashPreservesHighBytes()
+   source_bytes = array<byte> { 0, 128, 255, 65 }
+   digest = array<byte, 32>
+   processing.collect()
+   assert(mCrypto.SHA256(source_bytes, digest) is ERR_Okay, 'Binary SHA-256 should succeed')
+   expected = bytesFromHex('78a11bc94dd1062333933e91f3d90051ceecef81bf2172116e0f6a305699000c')
+   for i in {0 to 32} do
+      assert(digest[i] is expected[i], 'Binary SHA-256 differs at byte ' .. i)
+   end
+end
+
+@Test function MultiBlockSha256Vector()
+   message = 'abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq'
+   digest = array<byte, 32>
+   assert(mCrypto.SHA256(message, digest) is ERR_Okay, 'Multi-block SHA-256 should succeed')
+   expected = bytesFromHex('248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1')
+   for i in {0 to 32} do
+      assert(digest[i] is expected[i], 'Published multi-block SHA-256 vector differs at byte ' .. i)
+   end
+end
+
+@Test function PkceS256Vector()
+   verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'
+   digest = array<byte, 32>
+   assert(mCrypto.SHA256(verifier, digest) is ERR_Okay, 'PKCE verifier should hash')
+   challenge = array<byte, 43>
+   err, count = mCrypto.Base64Encode(digest, CC_URL, challenge)
+   assert(err is ERR_Okay and count is 43, 'S256 challenge should have 43 bytes')
+   assert(challenge.getString(0, count) is 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+      'RFC 7636 S256 example should match')
+end

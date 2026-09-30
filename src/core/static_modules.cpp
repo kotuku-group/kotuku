@@ -13,6 +13,7 @@ extern "C" ModHeader * register_json_module();
 extern "C" ModHeader * register_lzma_module();
 extern "C" ModHeader * register_mp3_module();
 extern "C" ModHeader * register_network_module();
+extern "C" ModHeader * register_crypto_module();
 extern "C" ModHeader * register_image_module();
 extern "C" ModHeader * register_regex_module();
 extern "C" ModHeader * register_scintilla_module();
@@ -72,6 +73,10 @@ static void register_static_modules(void)
 
    #ifdef INC_MOD_NETWORK
    glStaticModules["network"] = register_network_module();
+   #endif
+
+   #ifdef INC_MOD_CRYPTO
+   glStaticModules["crypto"] = register_crypto_module();
    #endif
 
    #ifdef INC_MOD_IMAGE
