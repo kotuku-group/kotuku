@@ -9,12 +9,15 @@
     <version>1</version>
     <copyright>Paul Manias © 2026</copyright>
     <description>
-<p>The Crypto module provides a small set of cryptographic primitives for binary data.  All inputs are treated as raw byte arrays and may contain null bytes.  Hashing and signature verification use BearSSL on Linux and CNG on Windows; random data is obtained from the host platform.</p>
+<p>The Crypto module provides a small set of cryptographic primitives for binary data.  All inputs are treated as raw byte arrays and may contain null bytes.  Hashing and signature verification use BearSSL on Linux and CNG on Windows; random data is obtained from the host platform.  MD5 and SHA-1 are available only for compatibility uses such as checksums, ETags, git object identifiers, UUID version 5 and HTTP digest authentication.  They are not suitable for security purposes; use SHA-256 or SHA-512 for new designs.</p>
 <p>Each input array argument is limited to 1 MiB (1048576 bytes).  The functions do not allocate memory for results; any output is written to an array supplied by the caller.</p>
 <p><function>WriteProtectedFile</function> is the exception to the otherwise in-memory API.  It is a small persistence primitive for security-sensitive records that need owner-only access and atomic replacement.</p></description>
     <source>
       <file path="src/crypto/">crypto.cpp</file>
     </source>
+    <classes>
+      <class>Hash</class>
+    </classes>
   </info>
 
   <function>
@@ -87,6 +90,55 @@
     <result type="ERR">
       <error code="Okay">The comparison completed and the outcome is in <code>Equal</code>.</error>
       <error code="Args"><code>Equal</code> is <code>NULL</code>, or either array exceeds 1 MiB.</error>
+    </result>
+  </function>
+
+  <function>
+    <name>HMAC</name>
+    <comment>Computes a keyed-hash message authentication code in one operation.</comment>
+    <prototype>ERR crypto::HMAC(HASH Algorithm, const std::span&lt;const int8_t&gt; &amp;Key, const std::span&lt;const int8_t&gt; &amp;Input, const std::span&lt;int8_t&gt; &amp;Output)</prototype>
+    <tiriPrototype>err = HMAC(Algorithm:num, Key:array, Input:array, Output:array)</tiriPrototype>
+    <tags>thread-safe, mutates-input</tags>
+    <input>
+      <param type="HASH" name="Algorithm" lookup="HASH">The message digest algorithm.</param>
+      <param type="std::span&lt;const int8_t&gt;" name="Key">The authentication key, up to 1 MiB.</param>
+      <param type="std::span&lt;const int8_t&gt;" name="Input">The data to authenticate, up to 1 MiB.</param>
+      <param type="std::span&lt;int8_t&gt;" name="Output">Receives the binary authentication code.</param>
+    </input>
+    <description>
+<p>Computes HMAC with the digest selected by <code>Algorithm</code> and writes the binary result to <code>Output</code>.  <code>Key</code> and <code>Input</code> may be empty.  The required output length is the digest length: 16 bytes for MD5, 20 for SHA-1, 32 for SHA-256 and 64 for SHA-512.</p>
+<p>HMAC-MD5 and HMAC-SHA1 are provided for compatibility with existing protocols and must not be selected for new security designs.  Prefer HMAC-SHA256 or HMAC-SHA512.</p>
+<p><code>Output</code> must have exactly the required length and must not share memory with <code>Key</code> or <code>Input</code>.  If the operation fails, <code>Output</code> is zeroed by the platform backend.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
+      <error code="Failed">The cryptography provider failed.</error>
+      <error code="Args">An input exceeds 1 MiB, <code>Output</code> has the wrong length, or it overlaps an input.</error>
+      <error code="NoSupport"><code>Algorithm</code> is not supported.</error>
+    </result>
+  </function>
+
+  <function>
+    <name>Hash</name>
+    <comment>Computes a message digest in one operation.</comment>
+    <prototype>ERR crypto::Hash(HASH Algorithm, const std::span&lt;const int8_t&gt; &amp;Input, const std::span&lt;int8_t&gt; &amp;Output)</prototype>
+    <tiriPrototype>err = Hash(Algorithm:num, Input:array, Output:array)</tiriPrototype>
+    <tags>thread-safe, mutates-input</tags>
+    <input>
+      <param type="HASH" name="Algorithm" lookup="HASH">The message digest algorithm.</param>
+      <param type="std::span&lt;const int8_t&gt;" name="Input">The data to hash, up to 1 MiB.</param>
+      <param type="std::span&lt;int8_t&gt;" name="Output">Receives the binary digest.</param>
+    </input>
+    <description>
+<p>Computes the digest selected by <code>Algorithm</code> and writes the binary result to <code>Output</code>.  <code>Input</code> may be empty.  The required output length is 16 bytes for MD5, 20 for SHA-1, 32 for SHA-256 and 64 for SHA-512.</p>
+<p>MD5 and SHA-1 are provided for compatibility with existing formats and protocols.  They are not suitable for security purposes.  Use SHA-256 or SHA-512 for new designs.</p>
+<p><code>Output</code> must have exactly the required length and must not share memory with <code>Input</code>.  If hashing fails, <code>Output</code> is zeroed by the platform backend.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
+      <error code="Failed">The hashing provider failed.</error>
+      <error code="Args"><code>Input</code> exceeds 1 MiB, <code>Output</code> has the wrong length, or the arrays overlap.</error>
+      <error code="NoSupport"><code>Algorithm</code> is not supported.</error>
     </result>
   </function>
 
@@ -206,6 +258,13 @@
 
     <constants lookup="CSIG" comment="Supported public signature algorithms.">
       <const name="RS256">RSASSA-PKCS1-v1_5 signature with a SHA-256 digest.</const>
+    </constants>
+
+    <constants lookup="HASH" comment="Supported message digest algorithms.">
+      <const name="MD5">MD5 (compatibility only; not suitable for security purposes).</const>
+      <const name="SHA1">SHA-1 (compatibility only; not suitable for security purposes).</const>
+      <const name="SHA256">SHA-256.</const>
+      <const name="SHA512">SHA-512.</const>
     </constants>
 
   </types>

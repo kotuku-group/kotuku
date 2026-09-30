@@ -11,6 +11,14 @@ function bytesFromHex(Hex:str):array<byte>
    return bytes
 end
 
+function assertHex(Bytes:array<byte>, Hex:str, Message:str)
+   expected = bytesFromHex(Hex)
+   assert(#Bytes is #expected, Message .. ': length differs')
+   for i in {0 to #expected} do
+      assert(Bytes[i] is expected[i], Message .. ': byte ' .. i .. ' differs')
+   end
+end
+
 @Test function BinaryDigestAndComparison()
    source_bytes = array<byte> { 97, 98, 99 }
    digest = array<byte, 32>
@@ -31,6 +39,91 @@ end
    assert(error is ERR_Okay and equal is 0, 'Different lengths should compare unequal')
    error, equal = mCrypto.ConstantTimeEqual(array<byte>, array<byte>)
    assert(error is ERR_Okay and equal is 1, 'Empty byte arrays should compare equal')
+end
+
+@Test function PublishedDigestVectors()
+   vectors = array<table> {
+      { algorithm=HASH_MD5, size=16, expected='900150983cd24fb0d6963f7d28e17f72' },
+      { algorithm=HASH_SHA1, size=20, expected='a9993e364706816aba3e25717850c26c9cd0d89d' },
+      { algorithm=HASH_SHA256, size=32,
+        expected='ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad' },
+      { algorithm=HASH_SHA512, size=64,
+        expected='ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a' ..
+           '2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f' }
+   }
+   for _, vector in vectors do
+      output = array<byte, vector.size>
+      assert(mCrypto.Hash(vector.algorithm, 'abc', output) is ERR_Okay, 'Published digest should succeed')
+      assertHex(output, vector.expected, 'Published digest')
+   end
+   assert(mCrypto.Hash(HASH_SHA512, 'abc', array<byte, 63>) is ERR_Args,
+      'A digest destination must have the exact size')
+   assert(mCrypto.Hash(0, 'abc', array<byte, 16>) is ERR_NoSupport, 'An unknown digest must be rejected')
+end
+
+@Test function PublishedHmacVectors()
+   key = array<byte, 20>
+   key.fill(0x0b)
+   vectors = array<table> {
+      { algorithm=HASH_MD5, key=key.slice({0 to 16}), size=16,
+        expected='9294727a3638bb1c13f48ef8158bfc9d' },
+      { algorithm=HASH_SHA1, key=key, size=20, expected='b617318655057264e28bc0b6fb378c8ef146be00' },
+      { algorithm=HASH_SHA256, key=key, size=32,
+        expected='b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7' },
+      { algorithm=HASH_SHA512, key=key, size=64,
+        expected='87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cde' ..
+           'daa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854' }
+   }
+   for _, vector in vectors do
+      output = array<byte, vector.size>
+      assert(mCrypto.HMAC(vector.algorithm, vector.key, 'Hi There', output) is ERR_Okay,
+         'Published HMAC should succeed')
+      assertHex(output, vector.expected, 'Published HMAC')
+   end
+end
+
+@Test function StreamingHashLifecycle()
+   hash <close> = obj.new('Hash', { algorithm=HASH_SHA256 })
+   check hash.mtUpdate('abc')
+   check hash.mtUpdate('def')
+   digest = array<byte, 32>
+   check hash.mtDigest(digest)
+   assertHex(digest, 'bef57ec7f53a6d40beb640a780a639c83bc29ac8a9816f1fc6c5c6dcd93c4721',
+      'Chunked SHA-256')
+
+   -- Digest is non-destructive, and Reset starts a fresh message.
+
+   check hash.mtUpdate('ghi')
+   check hash.acReset()
+   check hash.mtUpdate('abc')
+   check hash.mtDigest(digest)
+   assertHex(digest, 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+      'Reset SHA-256')
+end
+
+@Test function StreamingHmacAndLargeInput()
+   hmac <close> = obj.new('Hash', { algorithm=HASH_SHA256, key=array<byte> { 107, 101, 121 } })
+   check hmac.mtUpdate('The quick brown ')
+   check hmac.mtUpdate('fox jumps over the lazy dog')
+   digest = array<byte, 32>
+   check hmac.mtDigest(digest)
+   assertHex(digest, 'f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8',
+      'Chunked HMAC-SHA256')
+
+   empty_hmac <close> = obj.new('Hash', { algorithm=HASH_SHA256, key=array<byte> })
+   check empty_hmac.mtUpdate('abc')
+   check empty_hmac.mtDigest(digest)
+   assertHex(digest, 'fd7adb152c05ef80dccf50a1fa4c05d5a3ec6da95575fc312ae7c5d091836351',
+      'Explicit empty-key HMAC-SHA256')
+
+   large_hash <close> = obj.new('Hash', { algorithm=HASH_SHA256 })
+   chunk = array<byte, 1048576>
+   chunk.fill(0)
+   check large_hash.mtUpdate(chunk)
+   check large_hash.mtUpdate('x')
+   check large_hash.mtDigest(digest)
+   assertHex(digest, '3cd07772d955581e0debcca858b6d7c81da4e6c88aff072bd1953af8c500b9a6',
+      'Streaming input beyond 1 MiB')
 end
 
 @Test function VerifyPublicRs256Fixture()
