@@ -1001,13 +1001,15 @@ static UnsupportedNodeRecorder glUnsupportedNodes;
 //********************************************************************************************************************
 // Release registers held by an indexed expression's base and key after they are no longer needed.
 
-static void release_indexed_original(FuncState &func_state, const ExpDesc &original)
+static void release_indexed_original(FuncState &State, const ExpDesc &Original)
 {
-   if (original.k IS ExpKind::Indexed) {
-      RegisterAllocator allocator(&func_state);
-      IndexOperand original_key(original.u.s.aux);
+   if (Original.k IS ExpKind::Indexed or Original.k IS ExpKind::IndexedArray or
+       Original.k IS ExpKind::SafeIndexedArray or Original.k IS ExpKind::IndexedObject or
+       Original.k IS ExpKind::IndexedStruct) {
+      RegisterAllocator allocator(&State);
+      IndexOperand original_key(Original.u.s.aux);
       if (original_key.is_register()) allocator.release_register(BCReg(original_key.register_index()));
-      allocator.release_register(BCReg(original.u.s.info));
+      allocator.release_register(BCReg(Original.u.s.info));
    }
 }
 
@@ -3507,6 +3509,9 @@ ParserResult<ExpDesc> IrEmitter::emit_update_expr(const UpdateExprPayload &Paylo
 {
    if (not Payload.target) return this->unsupported_expr(AstNodeKind::UpdateExpr, SourceSpan{});
 
+   RegisterGuard register_guard(&this->func_state);
+   BCReg result_reg = register_guard.saved();
+
    // For update expressions, do not create a new local for unscoped variables.  The variable must already exist.
 
    auto target_result = this->emit_lvalue_expr(*Payload.target, false);
@@ -3541,16 +3546,23 @@ ParserResult<ExpDesc> IrEmitter::emit_update_expr(const UpdateExprPayload &Paylo
    this->operator_emitter.emit_binary_arith(op, ExprValue(&infix), delta);
 
    bcemit_store(&this->func_state, &target, &infix);
+   allocator.release(copies.reserved);
    release_indexed_original(this->func_state, target);
 
+   ExpDesc result = infix;
    if (Payload.is_postfix) {
-      allocator.collapse_freereg(BCReg(saved_reg));
-      ExpDesc result;
       result.init(ExpKind::NonReloc, saved_reg);
-      return ParserResult<ExpDesc>::success(result);
    }
 
-   return ParserResult<ExpDesc>::success(infix);
+   // Move the value below the now-dead target operands and copies.  Preserve the enclosing expression's registers
+   // and leave exactly one result slot, so subsequent arguments and operands remain contiguous.
+   if (this->func_state.freereg <= result_reg.raw()) {
+      allocator.reserve(BCReg(result_reg.raw() + 1 - this->func_state.freereg));
+   }
+   expr_toreg(&this->func_state, &result, result_reg.raw());
+   register_guard.release_to(BCReg(result_reg.raw() + 1));
+   register_guard.disarm();
+   return ParserResult<ExpDesc>::success(result);
 }
 
 //********************************************************************************************************************
