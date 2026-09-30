@@ -5,12 +5,13 @@
   <info>
     <name>Crypto</name>
     <type>module</type>
-    <comment>Provides hashing, secure random data, base64 coding and RSA signature verification.</comment>
+    <comment>Provides hashing, secure random data, base64 coding, RSA signature verification and protected persistence.</comment>
     <version>1</version>
     <copyright>Paul Manias © 2026</copyright>
     <description>
 <p>The Crypto module provides a small set of cryptographic primitives for binary data.  All inputs are treated as raw byte arrays and may contain null bytes.  Hashing and signature verification use BearSSL on Linux and CNG on Windows; random data is obtained from the host platform.</p>
-<p>Each array argument is limited to 1 MiB (1048576 bytes).  The functions do not allocate memory for results; any output is written to an array supplied by the caller.</p></description>
+<p>Each input array argument is limited to 1 MiB (1048576 bytes).  The functions do not allocate memory for results; any output is written to an array supplied by the caller.</p>
+<p><function>WriteProtectedFile</function> is the exception to the otherwise in-memory API.  It is a small persistence primitive for security-sensitive records that need owner-only access and atomic replacement.</p></description>
     <source>
       <file path="src/crypto/">crypto.cpp</file>
     </source>
@@ -169,6 +170,31 @@
       <error code="Args"><code>Message</code> exceeds 1 MiB.</error>
       <error code="NoSupport"><code>Algorithm</code> is not <code>RS256</code>.</error>
       <error code="Mismatch">The signature is not valid for <code>Message</code> and the given key.</error>
+    </result>
+  </function>
+
+  <function>
+    <name>WriteProtectedFile</name>
+    <comment>Atomically writes an owner-only file.</comment>
+    <prototype>ERR crypto::WriteProtectedFile(STRVIEW Path, const std::span&lt;const int8_t&gt; &amp;Data)</prototype>
+    <tiriPrototype>err = WriteProtectedFile(Path:str, Data:array)</tiriPrototype>
+    <tags>thread-safe</tags>
+    <input>
+      <param type="STRVIEW" name="Path">Destination file path.</param>
+      <param type="std::span&lt;const int8_t&gt;" name="Data">Complete file content, up to 1 MiB.</param>
+    </input>
+    <description>
+<p>Writes <code>Data</code> to a new temporary file in the destination directory, flushes it to durable storage, restricts access to the current user and atomically replaces <code>Path</code>.  On systems that support directory synchronisation, the containing directory is also flushed before the function returns.  Existing readers may continue to observe the old file while new readers observe the replacement.</p>
+<p>The destination must resolve to a host filesystem path.  The function does not create missing parent directories. Temporary files are removed after a failed write and are never returned to the caller.  A failed call leaves an existing destination unchanged unless the platform reports a failure after its atomic replacement operation has already completed.</p>
+<p>On Linux, the resulting mode is <code>0600</code>.  On Windows, the temporary file is created with a protected DACL granting full access only to the current process user, and that descriptor is retained by the replacement file.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
+      <error code="Failed">A temporary file, flush or atomic replacement operation failed.</error>
+      <error code="Args"><code>Path</code> is empty or <code>Data</code> exceeds 1 MiB.</error>
+      <error code="NoPermission">The directory or destination cannot be accessed with the required protection.</error>
+      <error code="ResolvePath"><code>Path</code> cannot be resolved to a host path.</error>
+      <error code="OutOfSpace">The data cannot be written because storage is full.</error>
     </result>
   </function>
 

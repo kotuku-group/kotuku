@@ -9,7 +9,7 @@ Windows.
 **********************************************************************************************************************
 
 -MODULE-
-Crypto: Provides hashing, secure random data, base64 coding and RSA signature verification.
+Crypto: Provides hashing, secure random data, base64 coding, RSA signature verification and protected persistence.
 
 The Crypto module provides a small set of cryptographic primitives for binary data.  All inputs are treated as raw
 byte arrays and may contain null bytes.  Hashing and signature verification use BearSSL on Linux and CNG on Windows;
@@ -17,6 +17,9 @@ random data is obtained from the host platform.
 
 Each input array argument is limited to 1 MiB (1048576 bytes).  The functions do not allocate memory for results; any
 output is written to an array supplied by the caller.
+
+~WriteProtectedFile() is the exception to the otherwise in-memory API.  It is a small persistence primitive for
+security-sensitive records that need owner-only access and atomic replacement.
 
 -END-
 
@@ -505,6 +508,51 @@ ERR VerifyJWK(CSIG Algorithm, const std::string_view &N, const std::string_view 
 
    return crypto_backend::verify_rs256(std::span<const uint8_t>(modulus.data(), n_size),
       std::span<const uint8_t>(exponent.data(), e_size), Message, Signature);
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
+WriteProtectedFile: Atomically writes an owner-only file.
+
+Writes `Data` to a new temporary file in the destination directory, flushes it to durable storage, restricts access
+to the current user and atomically replaces `Path`.  On systems that support directory synchronisation, the containing
+directory is also flushed before the function returns.  Existing readers may continue to observe the old file while
+new readers observe the replacement.
+
+The destination must resolve to a host filesystem path.  The function does not create missing parent directories.
+Temporary files are removed after a failed write and are never returned to the caller.  A failed call leaves an
+existing destination unchanged unless the platform reports a failure after its atomic replacement operation has
+already completed.
+
+On Linux, the resulting mode is `0600`.  On Windows, the temporary file is created with a protected DACL granting full
+access only to the current process user, and that descriptor is retained by the replacement file.
+
+-INPUT-
+strview Path: Destination file path.
+array(char) Data: Complete file content, up to 1 MiB.
+
+-ERRORS-
+Okay
+Args: `Path` is empty or `Data` exceeds 1 MiB.
+ResolvePath: `Path` cannot be resolved to a host path.
+NoPermission: The directory or destination cannot be accessed with the required protection.
+OutOfSpace: The data cannot be written because storage is full.
+Failed: A temporary file, flush or atomic replacement operation failed.
+
+-TAGS-
+thread-safe
+
+-END-
+
+*********************************************************************************************************************/
+
+ERR WriteProtectedFile(const std::string_view &Path, const std::span<const int8_t> &Data) {
+   if (Path.empty() or (Data.size() > MAX_CRYPTO_INPUT)) return ERR::Args;
+
+   std::string resolved;
+   if (ResolvePath(Path, RSF::NO_FILE_CHECK, &resolved) != ERR::Okay) return ERR::ResolvePath;
+   return crypto_backend::write_protected_file(resolved, Data);
 }
 
 } // namespace

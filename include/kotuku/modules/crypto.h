@@ -37,6 +37,7 @@ struct CryptoBase {
    ERR (*_Base64Decode)(const std::span<const int8_t> &Input, CC Mode, const std::span<int8_t> &Output, int *Result);
    ERR (*_ConstantTimeEqual)(const std::span<const int8_t> &A, const std::span<const int8_t> &B, int *Equal);
    ERR (*_VerifyJWK)(CSIG Algorithm, const std::string_view &N, const std::string_view &E, const std::span<const int8_t> &Message, const std::span<const int8_t> &Signature);
+   ERR (*_WriteProtectedFile)(const std::string_view &Path, const std::span<const int8_t> &Data);
 #endif // KOTUKU_STATIC
 };
 
@@ -49,6 +50,7 @@ inline ERR Base64Encode(const std::span<const int8_t> &Input, CC Mode, const std
 inline ERR Base64Decode(const std::span<const int8_t> &Input, CC Mode, const std::span<int8_t> &Output, int *Result) { return CryptoBase->_Base64Decode(Input,Mode,Output,Result); }
 inline ERR ConstantTimeEqual(const std::span<const int8_t> &A, const std::span<const int8_t> &B, int *Equal) { return CryptoBase->_ConstantTimeEqual(A,B,Equal); }
 inline ERR VerifyJWK(CSIG Algorithm, const std::string_view &N, const std::string_view &E, const std::span<const int8_t> &Message, const std::span<const int8_t> &Signature) { return CryptoBase->_VerifyJWK(Algorithm,N,E,Message,Signature); }
+inline ERR WriteProtectedFile(const std::string_view &Path, const std::span<const int8_t> &Data) { return CryptoBase->_WriteProtectedFile(Path,Data); }
 } // namespace
 #else
 namespace crypto {
@@ -58,5 +60,6 @@ extern ERR Base64Encode(const std::span<const int8_t> &Input, CC Mode, const std
 extern ERR Base64Decode(const std::span<const int8_t> &Input, CC Mode, const std::span<int8_t> &Output, int *Result);
 extern ERR ConstantTimeEqual(const std::span<const int8_t> &A, const std::span<const int8_t> &B, int *Equal);
 extern ERR VerifyJWK(CSIG Algorithm, const std::string_view &N, const std::string_view &E, const std::span<const int8_t> &Message, const std::span<const int8_t> &Signature);
+extern ERR WriteProtectedFile(const std::string_view &Path, const std::span<const int8_t> &Data);
 } // namespace
 #endif // KOTUKU_STATIC

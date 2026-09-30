@@ -185,3 +185,35 @@ end
    assert(challenge.getString(0, count) is 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
       'RFC 7636 S256 example should match')
 end
+
+@Test function ProtectedFileReplacement()
+   path = 'temp:crypto-protected-record.json'
+   defer mSys.DeleteFile(path) end
+   mSys.DeleteFile(path)
+
+   first = '{"generation":1}'
+   assert(mCrypto.WriteProtectedFile(path, first) is ERR_Okay, 'Initial protected write should succeed')
+   file <close> = obj.new('file', { path=path })
+   content = array<byte, file.size>
+   assert(mSys.ReadFileToBuffer(path, content) is ERR_Okay, 'Protected file should be readable by its owner')
+   assert(content.getString() is first, 'Initial protected content differs')
+   file = nil
+
+   second = '{"generation":2,"complete":true}'
+   assert(mCrypto.WriteProtectedFile(path, second) is ERR_Okay, 'Protected replacement should succeed')
+   replacement <close> = obj.new('file', { path=path })
+   content = array<byte, replacement.size>
+   assert(mSys.ReadFileToBuffer(path, content) is ERR_Okay, 'Protected replacement should be readable')
+   assert(content.getString() is second, 'Protected replacement exposed incomplete or stale content')
+
+   oversized = array<byte, 1048577>
+   assert(mCrypto.WriteProtectedFile(path, oversized) is ERR_Args, 'Oversized protected content must be rejected')
+   unchanged = array<byte, replacement.size>
+   assert(mSys.ReadFileToBuffer(path, unchanged) is ERR_Okay, 'Rejected write should leave the destination readable')
+   assert(unchanged.getString() is second, 'Rejected write must leave the existing destination unchanged')
+
+   @if(platform="linux")
+      assert((replacement.permissions & (PERMIT_GROUP|PERMIT_OTHERS)) is 0,
+         'Protected file must not grant group or other permissions')
+   @end
+end
