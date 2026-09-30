@@ -18,9 +18,9 @@ namespace gfx {
 -FUNCTION-
 GetDisplayInfo: Retrieves display information.
 
-The GetDisplayInfo() function returns information about a display, which includes information such as its size and bit
-depth.  If the system is running on a hosted display (e.g. Windows or X11) then GetDisplayInfo() can also be used to
-retrieve information about the default monitor by using a Display of zero.
+The GetDisplayInfo() function returns information about a display, such as its size and bit depth.  If the system is
+running on a hosted display (e.g. Windows or X11) then GetDisplayInfo() can also be used to retrieve information
+about the default monitor by using a Display of zero.
 
 The resulting !DisplayInfo structure values remain good until the next call to this function, at which point they will
 be overwritten.

@@ -25,7 +25,7 @@ struct DisplayInfo;
 struct resolution;
 class DisplayDriver;
 
-constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 10;
+constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 11;
 
 using CreateDisplayDriver = DisplayDriver *(*)(uint32_t InterfaceVersion, struct CoreBase *Core);
 using DestroyDisplayDriver = void (*)(DisplayDriver *Driver);
@@ -67,6 +67,21 @@ constexpr DCAP &operator|=(DCAP &A, DCAP B) { return A = A | B; }
 constexpr DCAP &operator&=(DCAP &A, DCAP B) { return A = A & B; }
 
 using HOSTWINDOW = APTR;
+
+// The default window identity matches the installed org.kotuku.Origo.desktop entry: Wayland app IDs are matched to
+// the entry's file name, and X11 classes to its StartupWMClass key.
+
+constexpr CSTRING DEFAULT_APP_ID = "org.kotuku.Origo";
+constexpr CSTRING DEFAULT_WM_CLASS = "Origo";
+
+// A window icon image in 32-bit ARGB format (0xAARRGGBB) with straight (non-premultiplied) alpha.  Pixels are stored
+// in row-major order with no padding.
+
+struct DisplayIcon {
+   int Width = 0;
+   int Height = 0;
+   std::vector<uint32_t> Pixels;
+};
 
 // The module owns this immutable table and keeps it alive until the driver has closed.  Driver callbacks may be
 // invoked only while open() is active.  Callback implementations acquire any object and global locks they require.
@@ -129,6 +144,16 @@ public:
    virtual ERR setFullscreen(HOSTWINDOW Window, bool Enabled) { return ERR::NoSupport; }
    virtual ERR normalWindowSize(HOSTWINDOW Window, int &Width, int &Height) { return ERR::NoSupport; }
    virtual ERR setWindowTitle(HOSTWINDOW Window, CSTRING Title) = 0;
+
+   // Icons is a list of the same image rendered at a range of sizes, from which the driver selects the sizes that
+   // the host requires.  An empty list removes any icon previously assigned to the window.
+
+   virtual ERR setWindowIcon(HOSTWINDOW Window, const std::vector<DisplayIcon> &Icons) { return ERR::NoSupport; }
+
+   // Sets the X11 class or Wayland app ID that desktop environments use to match the window to a .desktop entry.  A
+   // null or empty Class restores the default identity, which matches the installed org.kotuku.Origo entry.
+
+   virtual ERR setWindowClass(HOSTWINDOW Window, CSTRING Class) { return ERR::NoSupport; }
    virtual ERR setSizeHints(HOSTWINDOW Window, int MinW, int MinH, int MaxW, int MaxH, bool EnforceAspect) = 0;
    virtual ERR windowCoords(HOSTWINDOW Window, int &X, int &Y, int &Width, int &Height) = 0;
    virtual ERR frameMargins(HOSTWINDOW Window, int &Left, int &Top, int &Right, int &Bottom) = 0;

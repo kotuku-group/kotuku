@@ -26,6 +26,7 @@ public:
    ERR setFullscreen(HOSTWINDOW Window, bool Enabled) override;
    ERR normalWindowSize(HOSTWINDOW Window, int &Width, int &Height) override;
    ERR setWindowTitle(HOSTWINDOW Window, CSTRING Title) override;
+   ERR setWindowClass(HOSTWINDOW Window, CSTRING Class) override;
    ERR setSizeHints(HOSTWINDOW Window, int MinW, int MinH, int MaxW, int MaxH, bool EnforceAspect) override;
    ERR windowCoords(HOSTWINDOW Window, int &X, int &Y, int &Width, int &Height) override;
    ERR frameMargins(HOSTWINDOW Window, int &Left, int &Top, int &Right, int &Bottom) override;

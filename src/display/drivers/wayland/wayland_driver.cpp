@@ -83,6 +83,7 @@ struct WaylandWindow {
    extDisplay *Display = nullptr;
    OBJECTID SurfaceID = 0;
    std::string Title;
+   std::string AppID; // Empty for the default identity; see setWindowClass()
    std::vector<WaylandBuffer *> Buffers;
    std::vector<uint8_t> Staged;
    std::vector<uint8_t> Presented;
@@ -1926,6 +1927,7 @@ static ERR create_protocol_window(WaylandWindow *Window, bool Maximise)
    else {
       xdg_toplevel_add_listener(Window->TopLevel, &top_listener, Window);
       xdg_toplevel_set_title(Window->TopLevel, Window->Title.c_str());
+      xdg_toplevel_set_app_id(Window->TopLevel, Window->AppID.empty() ? DEFAULT_APP_ID : Window->AppID.c_str());
       set_size_hints(Window);
       if (Maximise or Window->RequestedMaximised) xdg_toplevel_set_maximized(Window->TopLevel);
       if (Window->RequestedFullscreen) xdg_toplevel_set_fullscreen(Window->TopLevel, nullptr);
@@ -2227,6 +2229,21 @@ ERR WaylandDriver::setWindowTitle(HOSTWINDOW Window, CSTRING Title)
    wl_display_flush(Data->Connection);
    return ERR::Okay;
 }
+// The app ID is matched to a .desktop entry by name or by its StartupWMClass key.  The default matches the installed
+// org.kotuku.Origo.desktop entry.
+
+ERR WaylandDriver::setWindowClass(HOSTWINDOW Window, CSTRING Class)
+{
+   auto window = (WaylandWindow *)Window;
+   if (not Data->Windows.contains(window)) return ERR::NullArgs;
+   window->AppID = Class ? Class : "";
+   if (window->TopLevel) {
+      xdg_toplevel_set_app_id(window->TopLevel, window->AppID.empty() ? DEFAULT_APP_ID : window->AppID.c_str());
+      wl_display_flush(Data->Connection);
+   }
+   return ERR::Okay;
+}
+
 ERR WaylandDriver::windowTitle(HOSTWINDOW Window, std::string &Title)
 {
    auto window = (WaylandWindow *)Window;

@@ -14,6 +14,25 @@ Documentation is available in the Kotuku Wiki.
 DEFAULT_WIDTH  <const> = 600
 DEFAULT_HEIGHT <const> = 400
 
+-- The host window icon is represented in the desktop taskbar and task switcher.  Icon names in the format
+-- 'category/name' are resolved to the icons: volume, while paths that include a volume are used as-is.
+--
+-- The assignment is isolated in this function because a failing field setter currently overwrites the first local of
+-- the frame that catches the error (see src/tiri/tests/test_setter_error_registers.tiri).
+
+function setDisplayIcon(Display:obj, Icon:str)
+   local path = Icon
+   if not (path.find(':', 0, true) or path.startsWith('/')) then
+      path = f'icons:{path}.svg'
+   end
+
+   try
+      Display.icon = path
+   except ex
+      msg(f'Failed to set window icon "{path}": {ex.message}')
+   end
+end
+
 lStyle = (function()
    if mSys.AnalysePath('style:window.tiri') is ERR_Okay then
       return loadFile('style:window.tiri')
@@ -318,6 +337,8 @@ gui.window = function(Options:table!)
    })
 
    self.surface.display.title = self.title
+
+   if self.icon then setDisplayIcon(self.surface.display, self.icon) end
 
    if self.surface.popOver != 0 then
       -- If a pop-over surface is stick-to-front, we also need that status to avoid being behind it.
