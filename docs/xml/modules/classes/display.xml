@@ -504,10 +504,10 @@
     <field>
       <name>Chipset</name>
       <comment>String describing the graphics chipset.</comment>
-      <access read="R">Read</access>
+      <access read="G">Get</access>
       <type>STRING</type>
       <description>
-<p>This string describes the graphic card's chipset, if known.</p>
+<p>This string describes the graphic card's chipset, if known.  On Linux the chipset of the primary graphics device is resolved from the system's PCI ID database, e.g. <code>TU106 [GeForce RTX 2060 Rev. A]</code>.  If the device is not listed, its PCI vendor and device IDs are reported instead.</p>
       </description>
     </field>
 
@@ -635,10 +635,10 @@
     <field>
       <name>Manufacturer</name>
       <comment>String describing the manufacturer of the graphics hardware.</comment>
-      <access read="R">Read</access>
+      <access read="G">Get</access>
       <type>STRING</type>
       <description>
-<p>The string in this field returns the name of the manufacturer that created the user's graphics card.  If this information is not detectable, a <code>NULL</code> pointer is returned.</p>
+<p>The string in this field returns the name of the manufacturer that created the user's graphics card.  On Linux the manufacturer of the primary graphics device is resolved from the system's PCI ID database.  If this information is not detectable, a placeholder such as <code>N/A</code> or <code>Unknown</code> is returned.</p>
       </description>
     </field>
 
@@ -718,10 +718,10 @@
     <field>
       <name>RefreshRate</name>
       <comment>Active display refresh rate.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="G" write="S">Get/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>This field reflects the refresh rate of the currently active full-screen display mode where the driver can report it. Hosted display drivers may leave this value unset or set it to a sentinel value.</p>
+<p>This field reflects the refresh rate of the active display mode, measured in Hz.  For a hosted display, this is the refresh rate of the monitor that the window is currently positioned on, and it can change if the window is moved to another monitor.  A value of <code>-1</code> is returned if the driver cannot report the refresh rate.</p>
       </description>
     </field>
 

@@ -398,7 +398,14 @@ ERR Win32Driver::displayInfo(DisplayInfo &Info)
    if (not Info.BytesPerPixel) Info.BytesPerPixel = bytes;
    if (not Info.AmtColours) Info.AmtColours = colours;
    Info.AccelFlags = ACF(-1);
-   density(window, Info.HDensity, Info.VDensity);
+
+   if ((not Info.HDensity) or (not Info.VDensity)) {
+      // Densities that are already defined are preserved because they include any user override from the style.
+      int horizontal, vertical;
+      density(window, horizontal, vertical);
+      if (not Info.HDensity) Info.HDensity = horizontal;
+      if (not Info.VDensity) Info.VDensity = vertical;
+   }
 
    if (refresh_rate > 1.0) {
       Info.RefreshRate = float(refresh_rate);

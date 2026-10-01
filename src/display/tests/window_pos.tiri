@@ -4,7 +4,7 @@
 
    module display as mGfx
 
-   win = gui.window({ title='Keyboard Example', insideWidth=400, insideHeight=200,
+   win = gui.window({ title='Window & Display Info', insideWidth=400, insideHeight=200,
       maxWidth=600, maxHeight=300, minWidth=400, minHeight=200 })
 
    viewport = win.clientViewport({ aspectRatio = ARF_MEET })
@@ -21,14 +21,13 @@ function get_display_info()
 
    err, info = mGfx.GetDisplayInfo(display)
    if err is ERR_Okay then
-      str ..= f'Refresh Rate Range: {info.minRefresh} - {info.maxRefresh}\n'
-      str ..= f'Refresh Rate: {info.refreshRate}\n'
-      str ..= f'Display ID: #{info.display}\n'
-      str ..= f'Surface: {surface.x}x{surface.y} {surface.width}x{surface.height}\n'
-      str ..= f'Display Size: {info.width}x{info.height}\n'
-      str ..= f'Host X/Y: {info.hostedX}x{info.hostedY}\n'
-      str ..= f'Monitor Size: {info.monitorX}x{info.monitorY} {info.monitorWidth}x{info.monitorHeight}\n'
-      str ..= f'Virtual Size: {info.virtualX}x{info.virtualY} {info.virtualWidth}x{info.virtualHeight}\n'
+      str ..= f'Refresh Rate:  {info.refreshRate} of {info.minRefresh} - {info.maxRefresh}\n'
+      str ..= f'Display ID:    #{info.display}\n'
+      str ..= f'Surface:       {surface.x}x{surface.y} {surface.width}x{surface.height}\n'
+      str ..= f'Display Size:  {info.width}x{info.height}\n'
+      str ..= f'Host X/Y:      {info.hostedX}x{info.hostedY}\n'
+      str ..= f'Monitor Size:  {info.monitorX}x{info.monitorY} {info.monitorWidth}x{info.monitorHeight}\n'
+      str ..= f'Virtual Size:  {info.virtualX}x{info.virtualY} {info.virtualWidth}x{info.virtualHeight}\n'
       str ..= f'Physical Size: {info.physicalWidth}mm x {info.physicalHeight} mm'
    end
 
