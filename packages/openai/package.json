@@ -31,22 +31,10 @@
   },
   "files": [
     {
-      "path": "README.md",
-      "size": 4192,
-      "sha256": "52464cec3ffb594f44a79771167c1868b538b6fac7e83742febb2b5e3753800f",
-      "mediaType": "text/markdown"
-    },
-    {
       "path": "bounded_json.tiri",
       "size": 5270,
       "sha256": "3830dfd2d9aaf92a668432d9749bbd405dba62136033d0bfb916d9e22448b0b7",
       "mediaType": "application/vnd.kotuku.tiri"
-    },
-    {
-      "path": "chatgpt/README.md",
-      "size": 3436,
-      "sha256": "41b7ad8e66f79d273d99a31c28016eea8401d3792c044db5731eb80bc55693e2",
-      "mediaType": "text/markdown"
     },
     {
       "path": "chatgpt/chatgpt.tiri",
@@ -80,8 +68,8 @@
     },
     {
       "path": "sse.tiri",
-      "size": 5336,
-      "sha256": "e7d4041c906672186141c827ab168ebc61b62c35bdf3fadf19adee0ed9c62d04",
+      "size": 5584,
+      "sha256": "4d9cd55be68eeefe8e0aa0cfa780b202f69dfca20f9fd148dbffb8cf5ac796c4",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {

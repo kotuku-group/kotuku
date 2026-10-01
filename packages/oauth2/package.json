@@ -28,12 +28,6 @@
   },
   "files": [
     {
-      "path": "README.md",
-      "size": 12621,
-      "sha256": "63fca971c4995b9d18d0dd894283870d45bffe6d6c906e1b587203539bff0a38",
-      "mediaType": "text/markdown"
-    },
-    {
       "path": "callback.tiri",
       "size": 2637,
       "sha256": "02d76348417682ae60be8c072effe2038539d209ac128facb0878f0d815214d6",
