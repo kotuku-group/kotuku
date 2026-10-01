@@ -196,6 +196,18 @@ oauth2.Client = function(Config:table!):table
    auth_params = {}
    for key, value in pairs(source.auth_params or {}) do auth_params[key] = value end
 
+   token_params = {}
+   for key, value in pairs(Config.tokenParams or {}) do
+      if not (key is <str>) or not r'^[A-Za-z][A-Za-z0-9._~\-]{0,127}$'.test(key) or
+         not oauth_wire.text(value, 4096) or r'[\x00-\x1f\x7f]'.test(value) or
+         key is 'grant_type' or key is 'client_id' or
+         key is 'client_secret' or key is 'code' or key is 'code_verifier' or key is 'redirect_uri' or
+         key is 'refresh_token' then
+         raise 'Invalid or reserved token parameter'
+      end
+      token_params[key] = value
+   end
+
    -- Transport options shared by every request that this client makes.
 
    options = {
@@ -321,10 +333,17 @@ oauth2.Client = function(Config:table!):table
       -- Expiry is left unknown if the provider does not state a lifetime.
 
       expires_at:num = nil
+      earliest_refresh_at:num = nil
       now = wallTime()
       if Data.expires_in != nil then
          if not oauth_wire.number(Data.expires_in, 0, 315360000) then raise 'Invalid token lifetime' end
          expires_at = now + Data.expires_in
+      end
+      if Data.earliest_refresh_at != nil then
+         if not oauth_wire.number(Data.earliest_refresh_at, 0, 9007199254740991) then
+            raise 'Invalid earliest refresh time'
+         end
+         earliest_refresh_at = Data.earliest_refresh_at
       end
 
       -- Granted scopes must be a subset of those requested and include every required scope.  An omitted scope means
@@ -360,15 +379,19 @@ oauth2.Client = function(Config:table!):table
 
       -- Whitelist output fields: provider-controlled identity/expiry fields cannot masquerade as validated data.
 
+      refresh_at = expires_at and math.max(now, expires_at - math.min(60, Data.expires_in / 10))
+      if earliest_refresh_at != nil then refresh_at = math.max(refresh_at or now, earliest_refresh_at) end
+
       return {
          access_token   = Data.access_token,
          token_type     = 'Bearer',
          refresh_token  = Data.refresh_token or (Previous and Previous.refresh_token),
          expires_in     = Data.expires_in,
          expires_at     = expires_at,
-         refresh_at     = expires_at and math.max(now, expires_at - math.min(60, Data.expires_in / 10)),
+         refresh_at     = refresh_at,
+         earliest_refresh_at = earliest_refresh_at,
          scope          = granted,
-         id_token       = Data.id_token,
+         id_token       = Data.id_token or (Previous and Previous.id_token),
          identity       = identity,
          clientID       = Expected.clientID,
          validated_oidc = identity != nil,
@@ -379,6 +402,7 @@ oauth2.Client = function(Config:table!):table
    -- Posts a grant to the token endpoint and returns a token record, or the standard failure results.
 
    function tokenRequest(Form:table, Expected:table, Previous:table):<table, str, table>
+      for key, value in pairs(token_params) do Form[key] = value end
       data, err = request('POST', endpoints.token_endpoint, Form)
       if not data then return returnedFailure(err) end
 

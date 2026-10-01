@@ -68,16 +68,46 @@ function itemKind(Type:str):str
    return known[Type] or 'unknown'
 end
 
+@Doc(text=[[
+Wraps a raw Responses Item in a typed table without discarding any provider data.
+
+The `kind` field names the Item type when it is known to this package, or is `unknown` for future types.  Common
+fields (`id`, `role`, `status`, `content`, `name`, `namespace`, `arguments`, `call_id` and `output`) are lifted for
+convenience.  The complete Item, including unknown fields and content parts, is kept as a private copy in `raw`.
+
+-INPUT-
+Raw: A JSON-compatible Item table.
+
+-RESULTS-
+table: The typed Item, with `type`, `kind` and `raw` fields.
+]])
 openai_responses.item = function(Raw:table):table
    raw = openai_responses.copy(Raw)
    item = { type=raw.type is <str> and raw.type or 'unknown', raw=raw }
    item.kind = itemKind(item.type)
-   for key in values(array<str> { 'id', 'role', 'status', 'content', 'name', 'arguments', 'call_id', 'output' }) do
+   for key in values(array<str> { 'id', 'role', 'status', 'content', 'name', 'namespace', 'arguments', 'call_id',
+      'output' }) do
       item[key] = raw[key]
    end
    return item
 end
 
+@Doc(text=[[
+Wraps a raw Responses object in the response table returned by non-streaming and streaming requests.
+
+The response exposes `id`, `object`, `status`, `model`, `usage`, `error`, `incompleteDetails`, `output` (an array of
+typed Items) and `raw` (a private copy of the complete payload).  Three helper methods are provided:
+
+* `outputText()` concatenates the `output_text` parts of message Items and ignores every other Item type.
+* `functionCalls()` returns the typed function_call Items.
+* `inputItems()` returns copies of the raw output Items, ready for replay in a later request's input.
+
+-INPUT-
+Raw: A JSON-compatible Responses object.
+
+-RESULTS-
+table: The response wrapper.
+]])
 openai_responses.response = function(Raw:table):table
    raw = openai_responses.copy(Raw)
    response = { raw=raw, id=raw.id, object=raw.object, status=raw.status, model=raw.model,
@@ -167,6 +197,55 @@ function strictSchema(Schema:any, Path:str, Depth:num):table
    return nil
 end
 
+-- Validates a tools array.  Namespaces group function and custom tools and cannot be nested.  Function names must be
+-- unique within each scope because a function_call Item is matched by its namespace and name.
+
+function validateTools(Tools:any, Path:str, InNamespace:bool):table
+   if not (Tools is <array>) then
+      return { code='invalid_tools', message='Responses tools must be an array', path=Path }
+   end
+   names = {}
+   for tool in values(Tools) do
+      if not (tool is <table>) or not (tool.type is <str>) then
+         return { code='invalid_tool', message='Every Responses tool requires a type', path=Path }
+      end
+      if tool.type is 'namespace' then
+         if InNamespace then
+            return { code='invalid_tool', message='Tool namespaces cannot be nested', path=Path }
+         end
+         if not validName(tool.name) or not (tool.tools is <array>) or #tool.tools is 0 then
+            return { code='invalid_tool', message='Tool namespaces require a valid name and a tools array',
+               path=Path }
+         end
+         for nested in values(tool.tools) do
+            if not (nested is <table>) or (nested.type != 'function' and nested.type != 'custom') then
+               return { code='invalid_tool', message='Tool namespaces may only contain function and custom tools',
+                  path=Path .. '.' .. tool.name }
+            end
+         end
+         err = validateTools(tool.tools, Path .. '.' .. tool.name, true)
+         if err then return err end
+      elseif tool.type is 'function' then
+         if not validName(tool.name) or not (tool.parameters is <table>) then
+            return { code='invalid_tool', message='Function tools require a valid name and parameters schema',
+               path=Path }
+         end
+         if tool.strict is true then
+            err = strictSchema(tool.parameters, Path .. '.' .. tool.name, 0)
+            if err then return err end
+         end
+      end
+      if (tool.type is 'function' or tool.type is 'custom' or tool.type is 'namespace') and tool.name is <str> then
+         if names[tool.name] then
+            return { code='duplicate_tool', message='Tool names must be unique within their scope',
+               path=Path .. '.' .. tool.name }
+         end
+         names[tool.name] = true
+      end
+   end
+   return nil
+end
+
 openai_responses.validate = function(Request:any):<table, table>
    if not (Request is <table>) then
       return nil, { code='invalid_request', message='Responses request must be a table' }
@@ -193,19 +272,14 @@ openai_responses.validate = function(Request:any):<table, table>
       end
    end
    if Request.tools != nil then
-      if not (Request.tools is <array>) then
-         return nil, { code='invalid_tools', message='Responses tools must be an array' }
-      end
-      for tool in values(Request.tools) do
-         if not (tool is <table>) or not (tool.type is <str>) then
-            return nil, { code='invalid_tool', message='Every Responses tool requires a type' }
-         end
-         if tool.type is 'function' and (not validName(tool.name) or not (tool.parameters is <table>)) then
-            return nil, { code='invalid_tool', message='Function tools require a valid name and parameters schema' }
-         end
-         if tool.type is 'function' and tool.strict is true then
-            schema_err = strictSchema(tool.parameters, '$.tools.' .. tool.name, 0)
-            if schema_err then return nil, schema_err end
+      tools_err = validateTools(Request.tools, '$.tools', false)
+      if tools_err then return nil, tools_err end
+   end
+   if Request.input is <array> then
+      for index, item in Request.input do
+         if item is <table> and item.type is 'additional_tools' then
+            tools_err = validateTools(item.tools, f'$.input[{index}].tools', false)
+            if tools_err then return nil, tools_err end
          end
       end
    end
@@ -404,80 +478,211 @@ function schemaValue(Value:any, Schema:table, Path:str, Depth:num):table
    return nil
 end
 
+-- Registry keys combine the optional namespace and the function name.  Neither may contain '/'.
+
+function toolKey(Namespace:str, Name:str):str
+   return (Namespace or '') .. '/' .. Name
+end
+
+@Doc(text=[[
+Creates an allow-list of Tiri functions that the model may request through function_call Items.
+
+Only registered functions can be dispatched.  dispatch() validates the function name, optional namespace and JSON
+arguments against the registered schema before any application callback runs.  Functions registered as consequential
+also require the `approve` callback to return `true`.  The registry never dispatches a call automatically; the
+application decides which function_call Items to pass to dispatch() and when.
+
+Callbacks run synchronously on the calling thread.  The handler receives a private copy of the decoded arguments and
+the raw function_call Item.  It may return a string, which is sent verbatim, or a JSON-compatible value, which is
+encoded.
+
+-INPUT-
+Options: Optional table.  `approve(Info)` is called for consequential functions with `name`, `namespace`, `callID` and a
+copy of `arguments`, and must return `true` to allow the call.  `maxArgumentBytes` (default 262144) and
+`maxArgumentDepth` (default 32) limit the decoded arguments.
+
+-RESULTS-
+table: The registry, providing `register()`, `describeNamespace()`, `declarations()` and `dispatch()`.
+]])
 openai_responses.ToolRegistry = function(Options:table):table
    options = Options or {}
    entries = {}
+   namespaces = {}
    self = {}
+
+   @Doc(text=[[
+Registers a function that the model is allowed to call.
+
+The parameters schema is copied.  Functions are strict by default, so their schema must declare every property as
+required and set `additionalProperties=false` on every object.  Registration raises an exception for an invalid name,
+an invalid strict schema or a duplicate registration.
+
+Set the `namespace` option to group the function in a Responses `namespace` tool.  A namespaced function is only
+dispatched for a function_call Item whose `namespace` and `name` both match, and an un-namespaced function is never
+matched by a namespaced call.  The ChatGPT-plan route expects function tools to be grouped in namespaces.
+
+-INPUT-
+Name: Function name of 1 to 64 letters, digits, underscores or hyphens.
+Parameters: JSON Schema for the arguments object.
+Handler: Function called as `Handler(Arguments, Call)` after validation and any required approval.
+ToolOptions: Optional table with `description`, `strict` (default `true`), `consequential` (default `false`) and
+`namespace`.
+
+-RESULTS-
+table: The registry, allowing calls to be chained.
+]])
    self.register = function(Name:str!, Parameters:table!, Handler:func!, ToolOptions:table):table
       if not validName(Name) then raise 'Invalid OpenAI function name' end
-      if entries[Name] then raise 'OpenAI function is already registered' end
       opts = ToolOptions or {}
-      entry = { name=Name, parameters=openai_responses.copy(Parameters), handler=Handler,
+      if opts.namespace != nil and not validName(opts.namespace) then raise 'Invalid OpenAI tool namespace' end
+      key = toolKey(opts.namespace, Name)
+      if entries[key] then raise 'OpenAI function is already registered' end
+      entry = { name=Name, namespace=opts.namespace, parameters=openai_responses.copy(Parameters), handler=Handler,
          description=opts.description, strict=opts.strict is nil and true or opts.strict,
          consequential=opts.consequential or false }
       if entry.strict then
          schema_err = strictSchema(entry.parameters, '$.' .. Name, 0)
          if schema_err then raise schema_err.message .. ' at ' .. schema_err.path end
       end
-      entries[Name] = entry
+      entries[key] = entry
+      if entry.namespace then namespaces[entry.namespace] ?= { description=nil } end
       return self
    end
+
+   @Doc(text=[[
+Sets the description that declarations() gives to a namespace tool.
+
+-INPUT-
+Namespace: Namespace name, using the same rules as function names.
+Description: Description of the group of functions, shown to the model.
+
+-RESULTS-
+table: The registry, allowing calls to be chained.
+]])
+   self.describeNamespace = function(Namespace:str!, Description:str):table
+      if not validName(Namespace) then raise 'Invalid OpenAI tool namespace' end
+      namespaces[Namespace] ?= {}
+      namespaces[Namespace].description = Description
+      return self
+   end
+
+   @Doc(text=[[
+Returns the Responses tool declarations for every registered function.
+
+Un-namespaced functions are returned as `function` tools.  Namespaced functions are grouped into one `namespace` tool
+per namespace.  Declarations are sorted by name and are independent copies, so they can be placed in a request's
+`tools` array or in an `additional_tools` input Item.
+
+-RESULTS-
+array: Tool declaration tables.
+]])
    self.declarations = function():array<table>
       declarations = array<table>
-      for _, entry in pairs(entries) do declarations.push({ type='function', name=entry.name,
-         description=entry.description, parameters=openai_responses.copy(entry.parameters), strict=entry.strict }) end
-      declarations.sort(function(A, B) return A.name < B.name end)
+      grouped = {}
+      for _, entry in pairs(entries) do
+         declaration = { type='function', name=entry.name, description=entry.description,
+            parameters=openai_responses.copy(entry.parameters), strict=entry.strict }
+         if entry.namespace then
+            if not grouped[entry.namespace] then
+               grouped[entry.namespace] = { type='namespace', name=entry.namespace,
+                  description=namespaces[entry.namespace]?.description, tools=array<table> }
+               declarations.push(grouped[entry.namespace])
+            end
+            grouped[entry.namespace].tools.push(declaration)
+         else
+            declarations.push(declaration)
+         end
+      end
+      function byName(A:table, B:table):bool return A.name < B.name end
+      for group in values(grouped) do group.tools.sort(byName) end
+      declarations.sort(byName)
       return declarations
    end
+
+   @Doc(text=[[
+Validates and runs one function_call Item, returning its function_call_output Item.
+
+Checks are applied in this order: the Item shape, the allow-list (namespace and name), strict JSON decoding of the
+arguments, schema validation, and approval for consequential functions.  The handler only runs if every check
+passes.  Handler exceptions are caught and reported without their message.
+
+-INPUT-
+Call: A function_call Item, either raw or as returned by `response.functionCalls()`.
+
+-RESULTS-
+table: A `function_call_output` Item with the original `call_id`, or `nil` on failure.
+table: On failure, an error with `kind='tool'`, a `code` such as `tool_not_allowed`, `invalid_arguments`,
+`argument_type` or `approval_required`, and the `name`, `namespace` and `callID` of the call.
+]])
    self.dispatch = function(Call:table):<table, table>
       raw = Call.raw or Call
-      if raw.type != 'function_call' or not validName(raw.name) or not (raw.call_id is <str>) or raw.call_id is '' then
+      call_namespace:any = raw.namespace
+      if call_namespace is json.null then call_namespace = nil end
+      if raw.type != 'function_call' or not validName(raw.name) or not (raw.call_id is <str>) or raw.call_id is '' or
+         (call_namespace != nil and not validName(call_namespace)) then
          return nil, { kind='tool', code='invalid_call', message='Invalid function call Item' }
       end
-      entry = entries[raw.name]
-      if not entry then return nil, { kind='tool', code='tool_not_allowed', message='Function is not registered',
-         name=raw.name, callID=raw.call_id } end
-      if not (raw.arguments is <str>) then return nil, { kind='tool', code='invalid_arguments',
-         message='Function arguments must be JSON text', name=raw.name, callID=raw.call_id } end
+      function failure(Code:str, Message:str):table
+         return { kind='tool', code=Code, message=Message, name=raw.name, namespace=call_namespace,
+            callID=raw.call_id }
+      end
+      entry = entries[toolKey(call_namespace, raw.name)]
+      if not entry then return nil, failure('tool_not_allowed', 'Function is not registered') end
+      if not (raw.arguments is <str>) then
+         return nil, failure('invalid_arguments', 'Function arguments must be JSON text')
+      end
       arguments:any = nil
       try arguments = openai_json.decode(raw.arguments, options.maxArgumentBytes or 262144,
          options.maxArgumentDepth or 32) end
-      if not (arguments is <table>) or arguments is json.null then return nil, { kind='tool',
-         code='invalid_arguments', message='Function arguments must decode to an object', name=raw.name,
-         callID=raw.call_id } end
+      if not (arguments is <table>) or arguments is json.null then
+         return nil, failure('invalid_arguments', 'Function arguments must decode to an object')
+      end
       validation = schemaValue(arguments, entry.parameters, '$', 0)
       if validation then
-         validation.kind = 'tool'; validation.name = raw.name; validation.callID = raw.call_id
+         validation.kind = 'tool'; validation.name = raw.name; validation.namespace = call_namespace
+         validation.callID = raw.call_id
          return nil, validation
       end
       if entry.consequential then
          approved = false
          if options.approve then
-            try approved = options.approve({ name=raw.name, callID=raw.call_id,
+            try approved = options.approve({ name=raw.name, namespace=call_namespace, callID=raw.call_id,
                arguments=openai_responses.copy(arguments) }) is true end
          end
-         if not approved then
-            return nil, { kind='tool', code='approval_required', message='Function call was not approved',
-               name=raw.name, callID=raw.call_id }
-         end
+         if not approved then return nil, failure('approval_required', 'Function call was not approved') end
       end
       local output:any
       try output = entry.handler(openai_responses.copy(arguments), raw)
       except e
-         return nil, { kind='tool', code='handler_failed', message='Function handler failed', name=raw.name,
-            callID=raw.call_id }
+         return nil, failure('handler_failed', 'Function handler failed')
       end
       local encoded:str
       try encoded = output is <str> and output or openai_responses.encode(output)
       except e
-         return nil, { kind='tool', code='invalid_output', message='Function handler returned a non-JSON value',
-            name=raw.name, callID=raw.call_id }
+         return nil, failure('invalid_output', 'Function handler returned a non-JSON value')
       end
       return { type='function_call_output', call_id=raw.call_id, output=encoded }
    end
    return self
 end
 
+@Doc(text=[[
+Creates a caller-managed conversation history for replay in the `input` of later requests.
+
+The history stores private copies of every Item it is given, including reasoning, function_call and
+function_call_output Items, which some models require for the next turn.  It provides `append(Item)`,
+`appendResponse(Response)`, `functionOutput(CallID, Output)`, `items()`, `reset()` and `count()`.  `items()` returns a
+copy, so later changes by the caller do not alter the history.
+
+Every replay sends the complete history again, so input token use, latency and cost grow with the length of the
+conversation.  Trimming is the caller's decision.
+
+-INPUT-
+Initial: Optional array of Items or typed Items to start with.
+
+-RESULTS-
+table: The history object.
+]])
 openai_responses.History = function(Initial:array<any>):table
    state = array<table>
    for item in values(Initial or array<table>) do state.push(openai_responses.copy(item.raw or item)) end

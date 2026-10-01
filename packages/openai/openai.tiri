@@ -165,9 +165,49 @@ function staticCredential(Kind:str, Token:str):table
    return provider
 end
 
+@Doc(text=[[
+Creates a credential provider for an OpenAI API key.
+
+The key is held privately by the provider and is sent only as a bearer Authorization header to the client's base URL.
+It is never included in errors or diagnostics.  Obtain the key from the user's configuration or environment; never
+embed it in source code.
+
+-INPUT-
+Key: The API key.  It must be non-empty and must not contain line breaks.
+
+-RESULTS-
+table: The credential provider, for use as the `credential` option of Client().
+]])
 openai.apiKey = function(Key:str!):table return staticCredential('api_key', Key) end
+@Doc(text=[[
+Creates a credential provider for a fixed OAuth bearer token.
+
+Use refreshableBearer() for tokens that expire during the life of the client.
+
+-INPUT-
+Token: The bearer token.  It must be non-empty and must not contain line breaks.
+
+-RESULTS-
+table: The credential provider, for use as the `credential` option of Client().
+]])
 openai.bearerToken = function(Token:str!):table return staticCredential('bearer', Token) end
 
+@Doc(text=[[
+Creates a credential provider that obtains a bearer token from a callback before every request.
+
+The callback owns token storage, expiry and refresh, so refresh timing remains under the application's control.  It
+is called on the calling thread as `Callback(Previous)`, where Previous is the value it returned for the last
+successful request.  It may return a token string or a table with an `accessToken`, `access_token` or `token` field.
+A callback exception or invalid result fails the request with an `authentication` error and no request is sent.
+The provider's `invalidate()` method discards the remembered previous value.
+
+-INPUT-
+Callback: Function returning the current access token.
+Options: Reserved for future use.
+
+-RESULTS-
+table: The credential provider, for use as the `credential` option of Client().
+]])
 openai.refreshableBearer = function(Callback:func!, Options:table):table
    options = Options or {}
    cached:any = nil
@@ -191,6 +231,22 @@ openai.refreshableBearer = function(Callback:func!, Options:table):table
    return provider
 end
 
+@Doc(text=[[
+Builds a Responses `function` tool declaration.
+
+The parameters schema is copied.  Strict mode is enabled unless Strict is `false`.  When enabled, the schema must
+satisfy the strict rules checked by `responses.create()`.  Use ToolRegistry() when the application also needs to
+dispatch the resulting function calls.
+
+-INPUT-
+Name: Function name of 1 to 64 letters, digits, underscores or hyphens.
+Description: Optional description shown to the model.
+Parameters: JSON Schema for the arguments object.
+Strict: Optional; defaults to `true`.
+
+-RESULTS-
+table: The tool declaration.
+]])
 openai.functionTool = function(Name:str!, Description:str, Parameters:table!, Strict:bool):table
    return { type='function', name=Name, description=Description, parameters=openai_responses.copy(Parameters),
       strict=Strict is nil and true or Strict }
@@ -213,6 +269,47 @@ function mergeCapabilities(Base:table, Policy:table):table
    return result
 end
 
+function applyErrorPolicy(Policy:table, Error:table):table
+   if Policy and Policy.translateError and Error then
+      translated:any = nil
+      try translated = Policy.translateError(Error) end
+      if translated is <table> then return translated end
+   end
+   return Error
+end
+
+@Doc(text=[[
+Creates a client for the OpenAI Models and Responses HTTP APIs.
+
+The client holds no process-global state.  Requests are copied and validated before they are sent, so caller tables are
+never modified.  Model identifiers are always chosen by the caller.
+
+Non-streaming operations are synchronous: they process messages on the calling thread until the request completes,
+fails or reaches `timeout`.  Streaming requests return a stream object immediately and deliver events from message
+processing on the same thread.  Credential, policy and stream callbacks always run on the thread that created the
+request.
+
+Failures are returned as an error table rather than raised.  Every error has `kind`, `code`, `message` and
+`retryable`, and may add `httpStatus`, `requestID`, `param`, a bounded and redacted `diagnostic`, and policy fields
+such as `category`.  The `kind` is one of `authentication`, `rate_limit`, `not_found`, `invalid_request`, `server`,
+`response`, `transport`, `timeout`, `stream_interrupted`, `cancelled`, `capability` or `http`.  Bearer tokens and
+common credential fields are redacted from messages and diagnostics.
+
+Retryable failures of non-streaming requests are retried immediately, up to `retry.maxAttempts`.  A retried
+`responses.create()` request can be billed more than once if the first attempt reached the server, so set
+`retry={ maxAttempts=1 }` when duplicate inference is unacceptable.  Streams are never retried.
+
+-INPUT-
+Options: Client options.  `credential` is required and must be a provider from apiKey(), bearerToken(),
+refreshableBearer() or a library such as `ai/chatgpt`.  Optional fields are `baseURL` (HTTPS only, default
+`https://api.openai.com/v1`), `timeout` (seconds, default 60), `retry` (`{ maxAttempts=1..10 }`, default 2),
+`headers` (extra headers; Authorization is reserved), `maxResponseBytes` (default 16 MiB), `diagnosticBytes`
+(default 4096), `streamLimits` (`maxBytes`, `maxEventBytes`, `maxEvents`, `maxJSONDepth`, `diagnosticBytes`) and
+`policy` (a request policy such as `chatgpt.Policy()`).
+
+-RESULTS-
+table: The client, providing `capabilities()`, `models.list()` and `responses.create()`.
+]])
 openai.Client = function(Options:table):table
    options = Options or {}
    credential = options.credential
@@ -248,8 +345,10 @@ openai.Client = function(Options:table):table
    function request(Method:str, Path:str, Body:str):<table, table>
       attempt = 0
       last_err:any = nil
+      translate_error = false
       while attempt < max_attempts do
          attempt++
+         translate_error = false
          request_headers, auth_err = headers()
          if auth_err then return nil, auth_err end
          response, transport_err = wireRequest({ method=Method, url=base_url .. Path,
@@ -262,12 +361,26 @@ openai.Client = function(Options:table):table
             return response
          else
             last_err = decodeHTTPError(response, options.diagnosticBytes or 4096)
+            translate_error = true
          end
-         if not last_err.retryable or attempt >= max_attempts then return nil, last_err end
+         if not last_err.retryable or attempt >= max_attempts then
+            return nil, translate_error and applyErrorPolicy(options.policy, last_err) or last_err
+         end
       end
-      return nil, last_err
+      return nil, translate_error and applyErrorPolicy(options.policy, last_err) or last_err
    end
 
+   @Doc(text=[[
+Describes what this client supports, for adapting an application's user interface.
+
+The result reports transport and feature flags, such as `streaming`, `nonStreaming`, `previousResponseID`,
+`structuredOutputs`, `customFunctions`, `webSearch` and `hostedTools`, and the credential's capabilities in
+`credential`.  Background Responses, Conversations, WebSocket and Realtime are reported as unsupported.  An attached
+policy can narrow the result; for example, a ChatGPT-plan client reports `nonStreaming=false`.
+
+-RESULTS-
+table: A new capability table.
+]])
    self.capabilities = function():table
       base = { transport='http', streaming=true, nonStreaming=true, cancellation=true, modelListing=true,
          manualHistory=true, previousResponseID=true, structuredOutputs=true, customFunctions=true,
@@ -278,21 +391,43 @@ openai.Client = function(Options:table):table
    end
 
    self.models = {}
+   @Doc(text=[[
+Lists the models visible to the credential.
+
+Both the public `data` array and the ChatGPT-plan `models` array are accepted.  Each entry is normalised to `id` and
+`slug` (the identifier to pass to `responses.create()`), `displayName`, `created`, `ownedBy`, `visibility` and `object`,
+with the complete provider entry in `raw`.  Server order is preserved.
+
+-INPUT-
+ListOptions: Optional table.  `filter(Model)` returns `true` to keep a normalised entry.
+
+-RESULTS-
+array: Normalised model tables, or `nil` on failure.
+table: Error table on failure.
+]])
    self.models.list = function(ListOptions:table):<array<table>, table>
       response, err = request('GET', '/models')
       if err then return nil, err end
       raw:any = nil
       try raw = openai_json.decode(response.body, options.maxResponseBytes or 16777216, 32) end
-      if not (raw is <table>) or not (raw.data is <array>) then
+      if not (raw is <table>) then
+         return nil, clientError('response', 'invalid_models_response', 'OpenAI models response is malformed',
+            { httpStatus=response.status, requestID=[*_]responseMetadata(response) })
+      end
+      entries = raw.models or raw.data
+      if not (entries is <array>) then
          return nil, clientError('response', 'invalid_models_response', 'OpenAI models response is malformed',
             { httpStatus=response.status, requestID=[*_]responseMetadata(response) })
       end
       models = array<table>
       filter = ListOptions?.filter
-      for model in values(raw.data) do
-         if model is <table> and model.id is <str> and model.id != '' then
-            normal = { id=model.id, object=model.object, created=model.created, ownedBy=model.owned_by,
-               displayName=model.display_name or model.name or model.id, raw=openai_responses.copy(model) }
+      for model in values(entries) do
+         if model is <table> then
+            model_id = model.slug or model.id
+            if not (model_id is <str>) or model_id is '' then continue end
+            normal = { id=model_id, slug=model_id, object=model.object, created=model.created,
+               ownedBy=model.owned_by, visibility=model.visibility,
+               displayName=model.display_name or model.name or model_id, raw=openai_responses.copy(model) }
             if not filter or filter(normal) then models.push(normal) end
          end
       end
@@ -300,6 +435,36 @@ openai.Client = function(Options:table):table
    end
 
    self.responses = {}
+   @Doc(text=[[
+Creates a model response.
+
+The request is validated and copied, then checked by any attached policy.  `model` must be a non-empty string and
+`input` must be a string or an Item array.  Structured output uses the native `text.format` field.  Function tools
+are checked for valid names and, when strict, for strict schemas.  Tools can be grouped in `namespace` tools or added
+with `additional_tools` input Items.
+
+Without `stream=true` the call blocks and returns a response table (see `openai.response()`).  With `stream=true` it
+returns a stream object at once.  Its methods are:
+
+* `onEvent(Callback)` subscribes to events in order and returns a subscription with `close()`.  Each event has
+  `type`, `sequenceNumber`, `delta`, typed `item` and `response` fields where present, and the complete event in
+  `raw`.
+* `state()` returns `pending`, `open`, `completed`, `failed`, `incomplete`, `interrupted`, `cancelled` or `closed`.
+* `result()` returns the final response and error once the stream is terminal.  Only `completed` indicates success.
+  If a provider omits `output` from the terminal payload, completed Items received through
+  `response.output_item.done` are restored in output-index order.
+* `cancel()` and `close()` stop the request.  Both are idempotent and safe to call from an event callback.
+
+Process messages, for example with `processing.sleep()`, to receive events.  Subscriptions are released when the
+stream becomes terminal.  An exception raised by a subscriber closes only that subscription.
+
+-INPUT-
+Request: Responses request table.
+
+-RESULTS-
+table: A response table or stream, or `nil` on failure.
+table: Error table on failure.
+]])
    self.responses.create = function(Request:table):<table, table>
       validated, validation_err = openai_responses.validate(Request)
       if validation_err then
@@ -323,6 +488,9 @@ openai.Client = function(Options:table):table
             timeout=options.timeout or 60, testLoopback=options.testLoopback, limits=limits }
          stream_options.limits.responseDecoder = openai_responses.response
          stream_options.limits.itemDecoder = openai_responses.item
+         if options.policy and options.policy.translateError then
+            stream_options.limits.errorTranslator = options.policy.translateError
+         end
          if options.streamTransport then return options.streamTransport(stream_options) end
          return openai_stream.request(stream_options)
       end

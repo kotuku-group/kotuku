@@ -14,7 +14,7 @@ openai_sse.Parser = function(Options:table):table
       pending='', data=array<str>, eventName='', lastID='', eventBytes=0, bytes=0, events=0, finished=false,
       afterCR=false, atStart=true,
       maxBytes=options.maxBytes or 16777216, maxEventBytes=options.maxEventBytes or 1048576,
-      maxEvents=options.maxEvents or 10000, onEvent=options.onEvent
+      maxEvents=options.maxEvents or 100000, onEvent=options.onEvent
    }
 
    if state.maxBytes < 1 or state.maxEventBytes < 1 or state.maxEvents < 1 or not state.onEvent then

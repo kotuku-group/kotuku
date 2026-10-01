@@ -1,0 +1,409 @@
+import 'ai/chatgpt'
+import 'json'
+import '../openai/stream'
+
+function memoryStore(Initial:table):table
+   saved:any = Initial
+   self = {}
+   self.loadState = function():table return saved and json.decode(json.encode(saved)) or nil end
+   self.saveState = function(State:table):bool saved = json.decode(json.encode(State)); return true end
+   self.value = function():table return saved end
+   return self
+end
+
+function signedInState():table
+   return {
+      schemaVersion=1, hostID='urn:uuid:00000000-0000-4000-8000-000000000001', activeID='account-1',
+      accounts=array<table> { {
+         id='account-1', clientID='oaiapp_fixture', subject='subject-1', email='person@example.test',
+         label='person@example.test', status=chatgpt.status.enabled,
+         token={ access_token='fixture-access', refresh_token='fixture-refresh', id_token='fixture-id',
+            token_type='Bearer', scope='openid profile email offline_access resource.invoke ' ..
+               'chatgpt.tokens.use.direct', expires_at=9007199254740000, refresh_at=9007199254740000,
+            clientID='oaiapp_fixture', validated_oidc=true, nonce='fixture-nonce',
+            identity={ issuer='https://auth.openai.com', subject='subject-1', clientID='oaiapp_fixture',
+               claims={ sub='subject-1', email='person@example.test' } } }
+      } }
+   }
+end
+
+function twoAccountState():table
+   state = signedInState()
+   state.accounts.push({
+      id='account-2', clientID='oaiapp_fixture_2', subject='subject-2', email='person@example.test',
+      label='Workspace registration', status=chatgpt.status.enabled,
+      token={ access_token='fixture-access-2', refresh_token='fixture-refresh-2', id_token='fixture-id-2',
+         token_type='Bearer', scope='openid profile email offline_access resource.invoke ' ..
+            'chatgpt.tokens.use.direct', expires_at=9007199254740000, refresh_at=9007199254740000,
+         clientID='oaiapp_fixture_2', validated_oidc=true, nonce='fixture-nonce-2',
+         identity={ issuer='https://auth.openai.com', subject='subject-2', clientID='oaiapp_fixture_2',
+            claims={ sub='subject-2', email='person@example.test' } } }
+   })
+   return state
+end
+
+function planRequest():table
+   return { model='model-a', input=array<table> { { role='user', content='Hello' } } }
+end
+
+@Test function StableHostAndPolicyValidation()
+   store = memoryStore()
+   manager = chatgpt.AccountManager({ applicationName='Fixture', storage=store })
+   host_id = store.value().hostID
+   assert(host_id.startsWith('urn:uuid:') and #host_id is 45, 'A random UUID host ID is persisted immediately')
+   chatgpt.AccountManager({ applicationName='Fixture', storage=store })
+   assert(store.value().hostID is host_id, 'The installation host ID remains stable')
+
+   policy = chatgpt.Policy()
+   request, err = policy.validate({ model='model-a', input=array<table> { { role='user', content='Hello' } } })
+   assert(not err and request.store is false and request.stream is true,
+      'ChatGPT policy normalises mandatory stateless streaming fields')
+   _, err = policy.validate({ model='model-a', input=array<table> { { role='user', content='Hello' } },
+      temperature=0.2 })
+   assert(err.category is 'unsupported_capability' and err.param is 'temperature',
+      'Unsupported fields fail locally with capability details')
+   _, err = policy.validate({ model='model-a', input=array<table> { { role='system', content='No' } } })
+   assert(err.category is 'unsupported_capability' and err.param is 'input',
+      'System message Items are rejected before transport')
+end
+
+@Test function PolicyRejectsEveryFrozenUnsupportedCapability()
+   policy = chatgpt.Policy()
+   for field in values(array<str> { 'background', 'conversation', 'max_output_tokens', 'max_tool_calls', 'metadata',
+      'moderation', 'multi_agent', 'previous_response_id', 'prompt', 'prompt_cache_retention', 'safety_identifier',
+      'temperature', 'top_logprobs', 'top_p', 'truncation', 'user' }) do
+      request = planRequest()
+      request[field] = field is 'previous_response_id' ? 'response-1' : true
+      _, err = policy.validate(request)
+      assert(err and err.category is 'unsupported_capability' and err.param is field,
+         f'Frozen unsupported field {field} must fail before transport')
+   end
+   for tool_type in values(array<str> { 'image_generation', 'file_search', 'code_interpreter', 'computer_use',
+      'hosted_mcp', 'connectors', 'tool_search', 'programmatic_tool_calling' }) do
+      request = planRequest()
+      request.tools = array<table> { { type=tool_type } }
+      _, err = policy.validate(request)
+      assert(err and err.category is 'unsupported_capability' and err.param is 'tools',
+         f'Frozen unsupported tool {tool_type} must fail before transport')
+   end
+   for name, value in pairs({ store=true, stream=false }) do
+      request = planRequest()
+      request[name] = value
+      _, err = policy.validate(request)
+      assert(err and err.param is name, f'Mandatory ChatGPT-plan field {name} cannot be overridden')
+   end
+end
+
+@Test function AccountModelsPolicyAndErrorStates()
+   store = memoryStore(signedInState())
+   captured:any = nil
+   manager = chatgpt.AccountManager({ applicationName='Fixture', storage=store,
+      apiTransport=function(Request)
+         assert(Request.headers.Authorization is 'Bearer fixture-access', 'Selected account owns authorization')
+         return { status=200, body=json.encode({ models=array<table> {
+            { slug='visible-model', display_name='Visible model', visibility='list' },
+            { slug='hidden-model', display_name='Hidden model', visibility='hide' }
+         } }) }
+      end,
+      streamTransport=function(Options)
+         captured = json.decode(Options.body)
+         return { fixture=true }
+      end })
+   account = manager.active()
+   models, err = account.models()
+   assert(not err and #models is 1 and models[0].id is 'visible-model' and
+      models[0].displayName is 'Visible model', 'Account model listing keeps visible slugs and display names')
+
+   client = account.openAI()
+   stream, err = client.responses.create({ model='visible-model',
+      input=array<table> { { role='user', content='Hello' } } })
+   assert(not err and stream.fixture and captured.store is false and captured.stream is true,
+      'Account OpenAI clients always apply the ChatGPT-plan policy')
+
+   failing = account.openAI({ retry={ maxAttempts=1 }, transport=function(Request)
+      return { status=403, body='{"error":{"code":"subscription_sharing_user_not_eligible"}}' }
+   end })
+   _, err = failing.models.list()
+   assert(err.category is 'ineligible' and account.status() is chatgpt.status.ineligible,
+      'Documented sharing errors become actionable account states')
+end
+
+@Test function CredentialsShareDecoderAndStreamingFailuresUpdateAccountState()
+   function completedTransport(Options:table):table
+      stream = openai_stream.Stream(Options.limits)
+      stream.feed('data: {"type":"response.output_item.added","item":{"type":"future_item","x":1}}\n\n')
+      stream.feed('data: {"type":"response.completed","response":{"id":"completed","output":[' ..
+         '{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}]}}\n\n')
+      return stream
+   end
+
+   store = memoryStore(signedInState())
+   manager = chatgpt.AccountManager({ applicationName='Fixture', storage=store })
+   api_client = manager.apiKeyClient('explicit-key', { baseURL='http://127.0.0.1:12345/v1', testLoopback=true,
+      streamTransport=completedTransport })
+   plan_client = manager.active().openAI({ streamTransport=completedTransport })
+   api_stream = api_client.responses.create({ model='model-a', input='Hello', stream=true })
+   plan_stream = plan_client.responses.create(planRequest())
+   api_response, api_error = api_stream.result()
+   plan_response, plan_error = plan_stream.result()
+   assert(not api_error and not plan_error and api_response.outputText() is 'ok' and
+      plan_response.outputText() is 'ok', 'API-key and OAuth credentials drive the same typed Responses decoder')
+
+   function failedTransport(Options:table):table
+      stream = openai_stream.Stream(Options.limits)
+      stream.feed('data: {"type":"response.failed","response":{"error":{' ..
+         '"code":"subscription_sharing_usage_limit_exceeded","message":"limited"}}}\n\n')
+      return stream
+   end
+   failed_stream = manager.active().openAI({ streamTransport=failedTransport }).responses.create(planRequest())
+   _, err = failed_stream.result()
+   assert(err.category is chatgpt.status.usageLimited and manager.active().status() is chatgpt.status.usageLimited,
+      'A streamed failure is terminal, classified, and reflected in account status')
+end
+
+@Test function AccountSwitchRefreshesModelsAndKeepsRegistrationsDistinct()
+   authorizations = array<str>
+   manager = chatgpt.AccountManager({ applicationName='Fixture', storage=memoryStore(twoAccountState()),
+      apiTransport=function(Request)
+         authorizations.push(Request.headers.Authorization)
+         suffix = Request.headers.Authorization.endsWith('-2') ? 'two' : 'one'
+         return { status=200, body=json.encode({ models=array<table> {
+            { slug='model-' .. suffix, display_name='Model ' .. suffix, visibility='list' }
+         } }) }
+      end })
+   first = manager.active()
+   first_models = first.models()
+   second = manager.select('account-2')
+   second_models = second.models()
+   accounts = manager.accounts()
+   assert(first_models[0].id is 'model-one' and second_models[0].id is 'model-two' and
+      authorizations[0] is 'Bearer fixture-access' and authorizations[1] is 'Bearer fixture-access-2',
+      'Switching accounts refreshes models with the selected account credential')
+   assert(#accounts is 2 and accounts[0].email is accounts[1].email and accounts[0].id != accounts[1].id and
+      accounts[1].active, 'Registrations sharing an email remain distinct and explicitly selectable')
+end
+
+@Test function TerminalRefreshFailureClearsCredentialsAndSerializesRefresh()
+   state = signedInState()
+   state.accounts[0].token.refresh_at = 0
+   store = memoryStore(state)
+   nested_error:any = nil
+   account:any = nil
+   manager = chatgpt.AccountManager({ applicationName='Fixture', storage=store,
+      authTransport=function(Request)
+         _, nested_error = account.refresh()
+         return { status=400, body='{"error":"invalid_grant","error_description":"expired"}' }
+      end })
+   account = manager.active()
+   _, err = account.models()
+   saved = store.value().accounts[0]
+   assert(nested_error.code is 'refresh_in_progress' and nested_error.retryable,
+      'A second refresh for the same account is serialized')
+   assert(err.category is chatgpt.status.reauthorisationRequired and saved.token is nil and
+      saved.status is chatgpt.status.reauthorisationRequired,
+      'An unusable rotating refresh token clears local bearer credentials and requires sign-in')
+end
+
+@Test function IdentityOnlyAndTemporaryFailuresDoNotLeakOrDiscardCredentials()
+   state = signedInState()
+   state.accounts[0].token.scope = 'openid profile email offline_access resource.invoke'
+   store = memoryStore(state)
+   called = false
+   manager = chatgpt.AccountManager({ applicationName='Fixture', storage=store,
+      apiTransport=function(Request) called = true; return { status=500, body='' } end })
+   _, err = manager.active().models()
+   assert(err.category is chatgpt.status.identityOnly and not called,
+      'Identity-only grants cannot reach ChatGPT-plan inference')
+
+   state = signedInState()
+   store = memoryStore(state)
+   manager = chatgpt.AccountManager({ applicationName='Fixture', storage=store })
+   account = manager.active()
+   failing = account.openAI({ retry={ maxAttempts=1 }, transport=function(Request)
+      return { status=503, body='{"detail":"temporarily unavailable"}' }
+   end })
+   _, err = failing.models.list()
+   assert(err.category is chatgpt.status.temporarilyUnavailable and err.retryable and store.value().accounts[0].token,
+      'Temporary direct-admission failures retain credentials for bounded retry')
+end
+
+@Test function SuccessfulRetryDoesNotPersistTransientFailureState()
+   store = memoryStore(signedInState())
+   attempts = 0
+   manager = chatgpt.AccountManager({ applicationName='Fixture', storage=store })
+   account = manager.active()
+   client = account.openAI({ transport=function(Request)
+      attempts++
+      if attempts is 1 then return { status=503, body='{"detail":"temporarily unavailable"}' } end
+      return { status=200, body='{"models":[]}' }
+   end })
+   models, err = client.models.list()
+   assert(not err and #models is 0 and attempts is 2, 'A temporary admission failure is retried successfully')
+   assert(account.status() is chatgpt.status.enabled and store.value().accounts[0].status is chatgpt.status.enabled,
+      'An intermediate retry failure does not persist a transient account status')
+end
+
+@Test function RefreshFloorAndClientConfigurationPreserveCredentials()
+   state = signedInState()
+   state.accounts[0].token.earliest_refresh_at = 9007199254740000
+   store = memoryStore(state)
+   called = false
+   manager = chatgpt.AccountManager({ applicationName='Fixture', storage=store,
+      authTransport=function(Request) called = true; return { status=500, body='' } end })
+   account = manager.active()
+   _, err = account.refresh()
+   assert(err.code is 'refresh_not_available' and err.retryAt is 9007199254740000 and not called,
+      'Explicit refresh honours the provider refresh floor without contacting the token endpoint')
+   assert(account.status() is chatgpt.status.enabled and store.value().accounts[0].token,
+      'An early manual refresh leaves a still-valid account enabled')
+
+   state = signedInState()
+   state.accounts[0].token.refresh_at = 0
+   store = memoryStore(state)
+   manager = chatgpt.AccountManager({ applicationName='Fixture', storage=store,
+      authTransport=function(Request)
+         return { status=400, body='{"error":"invalid_client","error_description":"configuration"}' }
+      end })
+   account = manager.active()
+   _, err = account.refresh()
+   assert(err.category is 'client_configuration' and err.code is 'invalid_client',
+      'Invalid-client refresh failures are reported as configuration errors')
+   assert(account.status() is chatgpt.status.enabled and store.value().accounts[0].token,
+      'A client-configuration failure does not discard otherwise valid credentials')
+end
+
+@Test function DisconnectClearsCredentialsAfterSuccessOrNetworkFailure()
+   for succeeds in values(array<any> { true, false }) do
+      store = memoryStore(signedInState())
+      manager = chatgpt.AccountManager({ applicationName='Fixture', storage=store,
+         authTransport=function(Request)
+            assert(Request.form.token is 'fixture-refresh' and Request.form.token_type_hint is 'refresh_token',
+               'Sign-out revokes the account refresh token')
+            if not succeeds then raise 'fixture network failure' end
+            return { status=200, body='' }
+         end })
+      revoked, err = manager.disconnect('account-1')
+      saved = store.value().accounts[0]
+      assert(saved.token is nil and saved.status is chatgpt.status.signedOut and store.value().activeID is nil,
+         'Sign-out always clears local bearer credentials')
+      if succeeds then assert(revoked and not err, 'Confirmed revocation succeeds')
+      else assert(not revoked and err.localCredentialsCleared and not err.remoteRevocationConfirmed,
+         'Network failure reports unconfirmed revocation after clearing local credentials') end
+   end
+end
+
+@Test function AuthorizationHintsAndBearerValuesStayOutOfErrors()
+   captured = ''
+   manager = chatgpt.AccountManager({ applicationName='Fixture', storage=memoryStore(signedInState()),
+      openBrowser=function(URL)
+         captured = URL
+         raise 'fixture-id fixture-access fixture-refresh'
+      end })
+   _, err = manager.reauthorise('account-1')
+   assert(captured.find('id_token_hint=fixture-id') and err.code is 'web_flow_failed' and
+      not err.message.find('fixture-id') and not err.message.find('fixture-access') and
+      not err.message.find('fixture-refresh'), 'Authorization hints and bearer tokens never enter raised diagnostics')
+end
+
+@Test function ApiKeyFallbackIsExplicitAndIndependent()
+   manager = chatgpt.AccountManager({ applicationName='Fixture', storage=memoryStore() })
+   client = manager.apiKeyClient('explicit-key', { baseURL='http://127.0.0.1:12345/v1', testLoopback=true,
+      retry={ maxAttempts=1 }, transport=function(Request)
+         assert(Request.headers.Authorization is 'Bearer explicit-key', 'Explicit fallback uses the supplied API key')
+         return { status=200, body='{"object":"list","data":[]}' }
+      end })
+   models, err = client.models.list()
+   assert(not err and #models is 0 and client.capabilities().nonStreaming,
+      'API-key fallback retains normal OpenAI capabilities and is never selected implicitly')
+end
+
+@Test function SharingErrorsHaveStableCategories()
+   fixtures = array<table> {
+      { code='subscription_sharing_user_not_eligible', category='ineligible', retryable=false },
+      { code='subscription_sharing_usage_limit_exceeded', category='usage_limited', retryable=false },
+      { code='subscription_sharing_usage_unavailable', category='temporarily_unavailable', retryable=true },
+      { code='subscription_sharing_unsupported_capability', category='unsupported_capability', retryable=false },
+      { code='subscription_sharing_route_not_supported', category='unsupported_capability', retryable=false },
+      { code='subscription_sharing_invalid_user', category='revoked', retryable=false },
+      { code='chatpass_v2_scope_not_authorized', category='invalid_authorization_context', retryable=false },
+      { code='chatpass_v2_invalid_authorization_context', category='invalid_authorization_context', retryable=false },
+      { code='subscription_sharing_user_unavailable', category='temporarily_unavailable', retryable=true },
+      { code='invalid_client', category='client_configuration', retryable=false }
+   }
+   for fixture in values(fixtures) do
+      classified = chatgpt.classifyError({ code=fixture.code })
+      assert(classified.category is fixture.category and classified.retryable is fixture.retryable,
+         f'Error {fixture.code} must map exactly to {fixture.category}')
+   end
+   for status, expected in pairs({ [401]='invalid_authorization_context', [403]='ineligible',
+      [503]='temporarily_unavailable' }) do
+      classified = chatgpt.classifyError({ code='http_status', httpStatus=status })
+      assert(classified.category is expected, f'Direct admission HTTP {status} must map to {expected}')
+   end
+end
+
+@Test function PolicyAcceptsNamespacedAndAdditionalTools()
+   policy = chatgpt.Policy()
+   function lookup(Name:str):table
+      return { type='function', name=Name, parameters={ type='object', properties={}, required=array<str>,
+         additionalProperties=false }, strict=true }
+   end
+
+   request = planRequest()
+   request.tools = array<table> { { type='namespace', name='player', description='Player controls',
+      tools=array<table> { lookup('state'), { type='custom', name='note' } } }, { type='web_search' } }
+   request.input.push({ type='additional_tools', role='developer', tools=array<table> { lookup('later') } })
+   validated, err = policy.validate(request)
+   assert(not err and validated.stream is true, 'Documented namespace and additional_tools declarations are accepted')
+
+   request = planRequest()
+   request.tools = array<table> { { type='namespace', name='hosted', tools=array<table> { { type='file_search' } } } }
+   _, err = policy.validate(request)
+   assert(err and err.category is 'unsupported_capability' and err.param is 'tools',
+      'Hosted tools cannot be smuggled into a namespace')
+
+   for tool_type in values(array<str> { 'web_search', 'image_generation', 'code_interpreter' }) do
+      request = planRequest()
+      request.input.push({ type='additional_tools', tools=array<table> { { type=tool_type } } })
+      _, err = policy.validate(request)
+      assert(err and err.category is 'unsupported_capability',
+         f'additional_tools Items only carry function, custom and namespace tools, not {tool_type}')
+   end
+end
+
+@Test function PlanClientsAlwaysUseTheAPIResource()
+   manager = chatgpt.AccountManager({ applicationName='Fixture', storage=memoryStore(signedInState()) })
+   account = manager.active()
+   try
+      account.openAI({ baseURL='https://collector.example/v1' })
+      assert(false, 'A ChatGPT-plan client must not accept a foreign base URL')
+   except e
+      assert(e.message.find('OpenAI API resource'), 'The base URL rejection explains the restriction')
+   end
+   seen:any = nil
+   client = account.openAI({ baseURL='https://api.openai.com/v1', testLoopback=true, retry={ maxAttempts=1 },
+      transport=function(Request)
+         seen = Request.url
+         return { status=200, body='{"models":[]}' }
+      end })
+   client.models.list()
+   assert(seen is 'https://api.openai.com/v1/models', 'The documented API resource remains permitted')
+end
+
+@Test function RefreshGuardIsReleasedWhenRefreshRaises()
+   state = signedInState()
+   state.accounts[0].token.refresh_at = 0
+   manager = chatgpt.AccountManager({ applicationName='Fixture', storage=memoryStore(state),
+      redirectURI='http://localhost/auth/callback' })
+   account = manager.active()
+   for attempt in {0 to 2} do
+      try
+         account.refresh()
+         assert(false, 'The fixture refresh must raise')
+      except e
+         assert(not e.message.find('already being refreshed'), f'Refresh attempt {attempt} must not be blocked')
+      end
+      assert(account.status() is chatgpt.status.enabled,
+         f'The transient refreshing status is restored after exception {attempt}')
+   end
+end

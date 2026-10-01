@@ -69,6 +69,7 @@ the three presentation callbacks on the returned client can be replaced.  Public
 | `oidc` | Trusted issuer configuration below. |
 | `allowIssuedClientID` | Explicit adapter permission for a registered client ID issued during consent; defaults to false. |
 | `resolveClientID` | Optional trusted adapter callback receiving the state-validated browser callback parameters; returns the issued client ID.  Requires `allowIssuedClientID`. |
+| `tokenParams` | Optional fixed string fields added to authorization-code and refresh token requests. Protocol and credential fields are reserved and cannot be replaced. |
 | `testLoopback` | Explicit fixture-only permission for HTTP endpoints on literal `127.0.0.1`.  Does not disable HTTPS certificate checking. |
 | `transport` | Optional trusted synchronous transport for fixtures/embedding: `Request => {status, body, headers}`.  Request contains `method`, `url`, `form`, `deadline`.  It receives credentials and must enforce its deadline, TLS policy, bounded I/O and no redirects.  Cancellation is checked before/after it returns. |
 
@@ -106,7 +107,8 @@ DNS/IPv4 authority without credentials or fragments; IPv6 endpoint literals are 
   prove remote validity, signature or identity.
 
 Token records contain `access_token`, canonical `token_type='Bearer'`, optional `refresh_token`, `expires_in`,
-`expires_at` (Unix seconds), `refresh_at` (a separate suggested refresh time), granted `scope`, `clientID`, optional
+`expires_at` (Unix seconds), `refresh_at` (a separate suggested refresh time), optional provider-supplied
+`earliest_refresh_at`, granted `scope`, `clientID`, optional
 `id_token`, original `nonce`, `validated_oidc`, and optional `identity={issuer, subject, clientID, claims}`.  Missing
 expiry stays unknown; it is not invented.  OAuth-only records never claim a verified identity.  Identity claims and
 credentials are sensitive.  Provider-defined response fields are not copied into the validated record.
