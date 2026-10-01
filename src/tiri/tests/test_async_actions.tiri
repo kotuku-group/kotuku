@@ -58,6 +58,9 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 
 @Test(priority=1); @Requires(display=true) function Parallel()
+   task = mSys.CurrentTask()
+   original_path = task.path
+
    initImages()
 
    glPicsProcessed = 0
@@ -77,6 +80,10 @@ end
    end
 
    freeImages()
+
+   -- SVG parsing must resolve resources from the SVG's own path without changing the process-wide task path.
+
+   assert(task.path is original_path, 'Parallel SVG loading changed the current task path.')
 end
 
 -----------------------------------------------------------------------------------------------------------------------

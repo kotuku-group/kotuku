@@ -16,9 +16,7 @@ Name: Objects
 #endif
 #endif
 
-#include <chrono>
 #include <thread>
-#include <ranges>
 
 #include "defs.h"
 
@@ -49,37 +47,33 @@ static std::mutex glmAsyncWait;
 
 void stop_async_actions(void)
 {
+   decltype(glAsyncThreads) async_threads;
    {
       std::lock_guard<std::recursive_mutex> lock(glmAsyncActions);
-      if (not glAsyncThreads.empty()) {
-         kt::Log log(__FUNCTION__);
-         log.msg("Stopping %d async action threads...", int(glAsyncThreads.size()));
+      async_threads.swap(glAsyncThreads);
+   }
 
-         for (auto &thread_ptr : glAsyncThreads) {
-            if (thread_ptr and thread_ptr->joinable()) {
-               thread_ptr->request_stop();
-            }
-         }
+   if (not async_threads.empty()) {
+      kt::Log(__FUNCTION__).msg("Stopping %d async action threads...", int(async_threads.size()));
 
-         // Give threads time to respond to stop request
-         constexpr auto STOP_TIMEOUT = std::chrono::milliseconds(2000);
-         constexpr auto POLL_INTERVAL = std::chrono::milliseconds(50);
-         auto start_time = std::chrono::steady_clock::now();
+      for (auto &thread : async_threads) {
+         if (thread and thread->Thread.joinable()) thread->Thread.request_stop();
+      }
 
-         while (not glAsyncThreads.empty() and (std::chrono::steady_clock::now() - start_time) < STOP_TIMEOUT) {
-            // Remove completed threads
-            std::erase_if(glAsyncThreads, [](const auto &ptr) { return !ptr or !ptr->joinable(); });
+      // Wake actions blocked in WaitTime() so that they can observe the stop request.  Threads executing other actions
+      // are joined below and cannot outlive core shutdown.
 
-            if (not glAsyncThreads.empty()) {
-               std::this_thread::sleep_for(POLL_INTERVAL);
-            }
-         }
+      std::vector<int> thread_ids;
+      {
+         std::lock_guard<std::mutex> lock(glmActionQueue);
+         thread_ids.reserve(glAsyncObjectThreads.size());
+         for (auto &entry : glAsyncObjectThreads) thread_ids.push_back(entry.second);
+      }
 
-         if (not glAsyncThreads.empty()) {
-            log.warning("%d action threads failed to stop in time.", int(glAsyncThreads.size()));
-         }
+      for (auto thread_id : thread_ids) WakeThread(thread_id, true);
 
-         glAsyncThreads.clear();
+      for (auto &thread : async_threads) {
+         if (thread and thread->Thread.joinable()) thread->Thread.join();
       }
    }
 
@@ -805,103 +799,113 @@ static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSiz
    std::vector<int8_t> Parameters, FUNCTION Callback)
 {
    auto object_uid = Object->UID;
+   std::vector<std::shared_ptr<AsyncThread>> finished_threads;
+   auto thread = std::make_shared<AsyncThread>();
 
-   // Lock global async now so that we don't incur the unlikely event of the thread executing
-   // and removing itself from the group before we've managed to add it.
+   // Retain joinable threads until a subsequent launch or shutdown can join them.  A detached worker could otherwise
+   // continue using core state after CloseCore() starts tearing that state down.
 
-   std::lock_guard<std::recursive_mutex> lock(glmAsyncActions);
+   {
+      std::lock_guard<std::recursive_mutex> lock(glmAsyncActions);
 
-   auto thread_ptr = std::make_shared<std::jthread>();
-
-   *thread_ptr = std::jthread([Object, ActionID, ArgsSize, Fields, Parameters = std::move(Parameters), Callback,
-      object_uid, thread_ptr](std::stop_token stop_token) mutable {
-
-      // Cleanup function to remove thread from tracking
-      auto cleanup = [thread_ptr, object_uid]() {
-         {
-            std::lock_guard<std::mutex> lock(glmActionQueue);
-            glAsyncObjectThreads.erase(object_uid);
+      for (auto it = glAsyncThreads.begin(); it != glAsyncThreads.end();) {
+         if ((*it)->Finished.load(std::memory_order_acquire)) {
+            finished_threads.push_back(*it);
+            it = glAsyncThreads.erase(it);
          }
-         deregister_thread();
-         std::lock_guard<std::recursive_mutex> lock(glmAsyncActions);
-         glAsyncThreads.erase(thread_ptr);
-      };
-
-      // Check for stop request before proceeding
-
-      auto thread_rec = get_thread_record();
-
-      // Register the mapping from object ID to thread ID so that AsyncCancel() can target this thread.
-      {
-         std::lock_guard<std::mutex> lock(glmActionQueue);
-         glAsyncObjectThreads[object_uid] = GetThreadID();
+         else ++it;
       }
 
-      auto is_stopping = [&stop_token, &thread_rec]() {
-         return stop_token.stop_requested()
-            or (thread_rec and thread_rec->state.load(std::memory_order_acquire) IS TSTATE::STOPPING);
-      };
+      thread->Thread = std::jthread([Object, ActionID, ArgsSize, Fields, Parameters = std::move(Parameters), Callback,
+         object_uid, thread_state = thread.get()](std::stop_token stop_token) mutable {
 
-      auto is_cancelled = [object_uid]() {
-         std::lock_guard<std::mutex> lock(glmActionQueue);
-         return glCancelledAsyncObjects.contains(object_uid);
-      };
+         auto cleanup = [thread_state, object_uid]() {
+            {
+               std::lock_guard<std::mutex> lock(glmActionQueue);
+               glAsyncObjectThreads.erase(object_uid);
+            }
+            deregister_thread();
+            thread_state->Finished.store(true, std::memory_order_release);
+         };
 
-      FUNCTION deferred_function;
+         // Check for stop request before proceeding
 
-      if (is_stopping() or is_cancelled()) {
-         release_copied_args(Fields, ArgsSize, Parameters.data(), true, &deferred_function);
+         auto thread_rec = get_thread_record();
+
+         // Register the mapping from object ID to thread ID so that AsyncCancel() can target this thread.
+         {
+            std::lock_guard<std::mutex> lock(glmActionQueue);
+            glAsyncObjectThreads[object_uid] = GetThreadID();
+         }
+
+         auto is_stopping = [&stop_token, &thread_rec]() {
+            return stop_token.stop_requested()
+               or (thread_rec and thread_rec->state.load(std::memory_order_acquire) IS TSTATE::STOPPING);
+         };
+
+         auto is_cancelled = [object_uid]() {
+            std::lock_guard<std::mutex> lock(glmActionQueue);
+            return glCancelledAsyncObjects.contains(object_uid);
+         };
+
+         FUNCTION deferred_function;
+
+         if (is_stopping() or is_cancelled()) {
+            release_copied_args(Fields, ArgsSize, Parameters.data(), true, &deferred_function);
+            ThreadActionMessage msg = {
+               .ActionID = ActionID,
+               .ObjectID = object_uid,
+               .Error    = ERR::Cancelled,
+               .Callback = Callback,
+               .DeferredFunction = deferred_function
+            };
+            SendMessage(MSGID::THREAD_ACTION, MSF::NIL, std::span((const int8_t *)&msg, sizeof(msg)));
+            cleanup();
+            return;
+         }
+
+         ERR error;
+         bool executed = false;
+         if (error = LockObject(Object, 5000); !error) { // Access the object and process the action.
+            // Check for stop request before executing action
+            if ((not is_stopping()) and (not is_cancelled())) {
+               error = Action(ActionID, Object, ArgsSize ? (APTR)Parameters.data() : nullptr);
+               executed = true;
+            }
+
+            if (Object->terminating()) {
+               ReleaseObject(Object);
+               // NOTE: The Object will be deleted on release.
+            }
+            else ReleaseObject(Object);
+         }
+
+         release_copied_args(Fields, ArgsSize, Parameters.data(), not executed, &deferred_function);
+
+         // Always send a completion message so that msg_threadaction() can dispatch the next queued action.
+         // Preserve the callback on cancellation so script-side cleanup still runs.
+
+         auto completion_error = error;
+         if (is_stopping() or is_cancelled()) completion_error = ERR::Cancelled;
+
          ThreadActionMessage msg = {
             .ActionID = ActionID,
             .ObjectID = object_uid,
-            .Error    = ERR::Cancelled,
+            .Error    = completion_error,
             .Callback = Callback,
             .DeferredFunction = deferred_function
          };
          SendMessage(MSGID::THREAD_ACTION, MSF::NIL, std::span((const int8_t *)&msg, sizeof(msg)));
+
          cleanup();
-         return;
-      }
+      });
 
-      ERR error;
-      bool executed = false;
-      if (error = LockObject(Object, 5000); !error) { // Access the object and process the action.
-         // Check for stop request before executing action
-         if ((not is_stopping()) and (not is_cancelled())) {
-            error = Action(ActionID, Object, ArgsSize ? (APTR)Parameters.data() : nullptr);
-            executed = true;
-         }
+      glAsyncThreads.insert(thread);
+   }
 
-         if (Object->terminating()) {
-            ReleaseObject(Object);
-            // NOTE: The Object will be deleted on release.
-         }
-         else ReleaseObject(Object);
-      }
-
-      release_copied_args(Fields, ArgsSize, Parameters.data(), not executed, &deferred_function);
-
-      // Always send a completion message so that msg_threadaction() can dispatch the next queued action.
-      // Preserve the callback on cancellation so script-side cleanup still runs.
-
-      auto completion_error = error;
-      if (is_stopping() or is_cancelled()) completion_error = ERR::Cancelled;
-
-      ThreadActionMessage msg = {
-         .ActionID = ActionID,
-         .ObjectID = object_uid,
-         .Error    = completion_error,
-         .Callback = Callback,
-         .DeferredFunction = deferred_function
-      };
-      SendMessage(MSGID::THREAD_ACTION, MSF::NIL, std::span((const int8_t *)&msg, sizeof(msg)));
-
-      cleanup();
-   });
-
-   glAsyncThreads.insert(thread_ptr);
-
-   thread_ptr->detach();
+   for (auto &finished : finished_threads) {
+      if (finished->Thread.joinable()) finished->Thread.join();
+   }
 }
 
 /*********************************************************************************************************************
@@ -1636,6 +1640,8 @@ api-owns-result, nullable-result, blocking
 
 objMetaClass * FindClass(CLASSID ClassID)
 {
+   std::lock_guard<std::recursive_mutex> lock(glmClassMap);
+
    auto it = glClassMap.find(ClassID);
    if (it != glClassMap.end()) return it->second;
 

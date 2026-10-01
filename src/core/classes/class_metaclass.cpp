@@ -234,7 +234,10 @@ void init_metaclass(void)
 
    glMetaClass.Dictionary = glMetaClass.FieldLookup.data();
 
-   glClassMap[CLASSID::METACLASS] = &glMetaClass;
+   {
+      std::lock_guard<std::recursive_mutex> lock(glmClassMap);
+      glClassMap[CLASSID::METACLASS] = &glMetaClass;
+   }
 }
 
 /*********************************************************************************************************************
@@ -280,6 +283,8 @@ ERR CLASS_FindField(extMetaClass *Self, struct mc::FindField *Args)
 
 ERR CLASS_Free(extMetaClass *Self)
 {
+   std::lock_guard<std::recursive_mutex> lock(glmClassMap);
+
    if (Self->ClassID != CLASSID::NIL) glClassMap.erase(Self->ClassID);
 
    if (not Self->SubClasses.empty()) {
@@ -337,6 +342,7 @@ ERR CLASS_GetMembers(extMetaClass *Self, struct mc::GetMembers *Args)
 ERR CLASS_Init(extMetaClass *Self)
 {
    kt::Log log;
+   std::lock_guard<std::recursive_mutex> lock(glmClassMap);
 
    if (Self->ClassName.empty()) return log.warning(ERR::MissingClassName);
 
