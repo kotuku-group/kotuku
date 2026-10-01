@@ -563,8 +563,9 @@ void AstBuilder::publish_dependency_descriptors()
 {
    if (this->module_dependencies.empty()) return;
 
+   AstBuilder *unit = this->unit_builder();
    auto &target = this->ctx.func();
-   auto &descriptors = this->module_initialiser ? this->published_module_descriptors : target.module_descriptors;
+   auto &descriptors = unit->module_initialiser ? unit->published_module_descriptors : target.module_descriptors;
    const size_t descriptor_base = std::ranges::count_if(descriptors, [](const auto &Descriptor) {
       return not Descriptor.compile_time_only;
    });

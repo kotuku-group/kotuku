@@ -78,6 +78,21 @@ static int load(lua_State *Lua, std::string_view Source, CSTRING SourceName, Byt
    BytecodeLoadMetadata completed;
    if (not status and Metadata and ls->is_bytecode) {
       completed.ImportedModules = std::move(ls->bytecode_import_module_records);
+      completed.Sources.reserve(ls->compilation_sources.size());
+      for (size_t i = 0; i < ls->compilation_sources.size(); ++i) {
+         const auto &source = ls->compilation_sources[i];
+         tiri::import_cache::SourceDescriptor descriptor;
+         descriptor.ResolvedPath = source.canonical_path;
+         descriptor.Filename = source.display_filename;
+         descriptor.DeclaredNamespace = source.declared_namespace;
+         descriptor.FirstLine = source.first_line.lineNumber();
+         descriptor.TotalLines = source.total_lines.lineNumber();
+         descriptor.ImportLine = source.import_line.lineNumber();
+         if (source.parent < i) {
+            descriptor.ParentResolvedPath = ls->compilation_sources[source.parent].canonical_path;
+         }
+         completed.Sources.push_back(std::move(descriptor));
+      }
       completed.Package = std::move(ls->bytecode_package_identity);
       completed.CompatibilityManifest.assign((const char *)ls->bytecode_compatibility_manifest.data(),
          ls->bytecode_compatibility_manifest.size());

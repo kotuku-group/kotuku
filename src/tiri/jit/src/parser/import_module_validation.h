@@ -47,5 +47,6 @@ private:
       const tiri::import_cache::Identity &, std::string &);
    [[nodiscard]] const tiri::ResolvedImport &resolve_library(std::string_view, std::string_view);
    [[nodiscard]] bool validate_payload(std::string_view, std::string &,
-      std::vector<tiri::import_cache::RootModuleRecord> *, std::optional<tiri::PackageIdentity> *, std::string *);
+      std::vector<tiri::import_cache::RootModuleRecord> *, std::vector<tiri::import_cache::SourceDescriptor> *,
+      std::optional<tiri::PackageIdentity> *, std::string *);
 };

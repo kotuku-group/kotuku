@@ -62,6 +62,19 @@ function assert_run(Output:str, Value:num)
       'Each fresh Script must activate twice while each imported body initialises once: ' .. Output)
 end
 
+function package_import(Packages:str, Statement:str):<num, str>
+   return child(array<str> {
+      '--statement', Statement, '--log-trace', '--gfx-driver=headless',
+      '--set-volume', 'packages=' .. Packages, '--set-volume', 'temp=' .. glRoot
+   })
+end
+
+function assert_valid_cache_graph(Output:str)
+   assert(Output.find('Invalid module dependency descriptor') is nil, Output)
+   assert(Output.find('Cannot load malformed bytecode') is nil, Output)
+   assert(Output.find('conflicts with the active registration') is nil, Output)
+end
+
 function fixtures():<str, str, str>
    local stem = path('.unicode-ā.main')
    local source = stem .. '.tiri'
@@ -110,6 +123,75 @@ function fixtures():<str, str, str>
       end
    ]])
    return source, nested_path, runner
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- A cached package must preserve native dependencies declared by relative helpers, every helper source needed by a
+-- dependent cache entry, and declared namespaces when the same transitive dependency is loaded through two branches.
+
+@Test function CachedRelativeImportMetadataRemainsComplete()
+   local packages = glRoot .. 'cache-graph-packages/'
+   local package_root <close> = obj.new('file', { path=packages, flags=FL_NEW|FL_FOLDER })
+   local names = array<str> { 'cache-dependency', 'cache-a', 'cache-b', 'cache-top' }
+   for name in values(names) do
+      local folder <close> = obj.new('file', { path=packages .. name .. '/', flags=FL_NEW|FL_FOLDER })
+      local version <close> = obj.new('file', { path=packages .. name .. '/1/', flags=FL_NEW|FL_FOLDER })
+   end
+
+   write_file(packages .. 'index.cfg', '[cache-dependency]\n1 = cache-dependency/1/main.tiri\n' ..
+      '[cache-a]\n1 = cache-a/1/main.tiri\n[cache-b]\n1 = cache-b/1/main.tiri\n' ..
+      '[cache-top]\n1 = cache-top/1/main.tiri\n')
+   write_file(packages .. 'cache-dependency/1/helper.tiri', [[
+      global function cache_dependency_helper():num
+         return mSys.PreciseTime() > 0 ? 17 : 0
+      end
+   ]])
+   write_file(packages .. 'cache-dependency/1/main.tiri', [[
+      @Package(name="cache-dependency", version="1")
+      import './helper'
+      namespace cache_dependency { }
+      cache_dependency.value = cache_dependency_helper()
+   ]])
+   write_file(packages .. 'cache-a/1/main.tiri', [[
+      @Package(name="cache-a", version="1")
+      import 'cache-dependency'
+      namespace cache_a { }
+      cache_a.value = cache_dependency.value + 1
+   ]])
+   write_file(packages .. 'cache-b/1/main.tiri', [[
+      @Package(name="cache-b", version="1")
+      import 'cache-dependency'
+      namespace cache_b { }
+      cache_b.value = cache_dependency.value + 2
+   ]])
+   write_file(packages .. 'cache-top/1/main.tiri', [[
+      @Package(name="cache-top", version="1")
+      import 'cache-a', 'cache-b'
+      namespace cache_top { }
+      cache_top.value = cache_a.value + cache_b.value
+   ]])
+
+   local statements = array<str> {
+      "import 'cache-dependency'; print('CACHE_GRAPH_VALUE:' .. cache_dependency.value)",
+      "import 'cache-dependency'; print('CACHE_GRAPH_VALUE:' .. cache_dependency.value)",
+      "import 'cache-a'; print('CACHE_GRAPH_VALUE:' .. cache_a.value)",
+      "import 'cache-a'; print('CACHE_GRAPH_VALUE:' .. cache_a.value)",
+      "import 'cache-b'; print('CACHE_GRAPH_VALUE:' .. cache_b.value)",
+      "import 'cache-b'; print('CACHE_GRAPH_VALUE:' .. cache_b.value)",
+      "import 'cache-top'; print('CACHE_GRAPH_VALUE:' .. cache_top.value)",
+      "import 'cache-top'; print('CACHE_GRAPH_VALUE:' .. cache_top.value)"
+   }
+   local expected = array<int> { 17, 17, 18, 18, 19, 19, 37, 37 }
+
+   for index, statement in statements do
+      local code, output = package_import(packages, statement)
+      assert(code is 0 and output.find('CACHE_GRAPH_VALUE:' .. tostring(expected[index])) != nil, output)
+      assert_valid_cache_graph(output)
+      if index is 1 or index is 3 or index is 5 or index is 7 then
+         assert(output.find('source-compilations=0 publications=0') != nil,
+            'A warm package graph must load entirely from cache: ' .. output)
+      end
+   end
 end
 
 ----------------------------------------------------------------------------------------------------------------------

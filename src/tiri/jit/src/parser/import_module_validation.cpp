@@ -173,6 +173,7 @@ bool ImportModuleValidationSession::validate_identity(
 
 bool ImportModuleValidationSession::validate_payload(std::string_view Payload, std::string &Reason,
    std::vector<tiri::import_cache::RootModuleRecord> *EmbeddedModules,
+   std::vector<tiri::import_cache::SourceDescriptor> *Sources,
    std::optional<tiri::PackageIdentity> *Package, std::string *CompatibilityManifest)
 {
    std::unique_ptr<lua_State, decltype(&lua_close)> validation(luaL_newstate(this->lua.script), lua_close);
@@ -208,6 +209,7 @@ bool ImportModuleValidationSession::validate_payload(std::string_view Payload, s
    this->counters.ExecutableDirectoryAllocations += operations.executable_directory_allocations;
    this->counters.PayloadBundleDecodes++;
    if (EmbeddedModules) *EmbeddedModules = std::move(metadata.ImportedModules);
+   if (Sources) *Sources = std::move(metadata.Sources);
    if (Package) *Package = std::move(metadata.Package);
    if (CompatibilityManifest) *CompatibilityManifest = std::move(metadata.CompatibilityManifest);
    return true;
@@ -253,11 +255,12 @@ ERR ImportModuleValidationSession::ensure_validated(
       return this->validate_identity(IdentityValue, Reason);
    };
    std::vector<tiri::import_cache::RootModuleRecord> embedded_modules;
+   std::vector<tiri::import_cache::SourceDescriptor> sources;
    std::optional<tiri::PackageIdentity> payload_package;
    std::string payload_compatibility;
    auto payload_validator = [&](std::string_view Payload, std::string &Reason) {
       return this->validate_payload(
-         Payload, Reason, &embedded_modules, &payload_package, &payload_compatibility);
+         Payload, Reason, &embedded_modules, &sources, &payload_package, &payload_compatibility);
    };
 
    auto error = tiri::import_cache::lookup_module(
@@ -291,7 +294,10 @@ ERR ImportModuleValidationSession::ensure_validated(
       }
    }
 
-   if (node->Lookup.Cached.CacheHit) node->Lookup.EmbeddedModules = std::move(embedded_modules);
+   if (node->Lookup.Cached.CacheHit) {
+      node->Lookup.Sources = std::move(sources);
+      node->Lookup.EmbeddedModules = std::move(embedded_modules);
+   }
 
    node->State = node->Lookup.Cached.CacheHit ? NodeState::VALID : NodeState::INVALID;
    Output = node->Lookup;
