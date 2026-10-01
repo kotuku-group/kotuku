@@ -78,7 +78,6 @@ PooledMap<RESOURCEID, ResourceRecord> glResources; // Pointer stable collection
 PooledMap<OBJECTID, ObjectRecord> glObjects; // Pointer stable collection
 #endif
 
-
 std::set<std::shared_ptr<AsyncThread>> glAsyncThreads;
 
 std::mutex glmActionQueue;
@@ -86,6 +85,7 @@ std::unordered_map<OBJECTID, std::deque<QueuedAction>> glActionQueues;
 std::unordered_set<OBJECTID> glActiveAsyncObjects;
 std::unordered_set<OBJECTID> glCancelledAsyncObjects;
 std::unordered_map<OBJECTID, int> glAsyncObjectThreads;
+bool glAsyncActionsClosed = false; // Async submission state — guarded by glmAsyncActions.
 
 // Registers a built-in struct as { name-hash, { sizeof, alignof } }.  The alignment is required so that the
 // metaclass can position FD_STRUCT fields at the offsets the compiler actually uses (alignment cannot be

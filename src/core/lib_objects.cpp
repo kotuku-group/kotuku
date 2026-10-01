@@ -46,9 +46,6 @@ static std::atomic<bool> glAsyncWaiting;
 static ankerl::unordered_dense::set<OBJECTID> glAsyncWaitTargets;
 static std::mutex glmAsyncWait;
 
-// Async submission state — guarded by glmAsyncActions.
-static bool glAsyncActionsClosed = false;
-
 //********************************************************************************************************************
 
 void stop_async_actions(void)
