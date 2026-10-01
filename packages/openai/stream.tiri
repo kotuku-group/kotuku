@@ -56,7 +56,9 @@ openai_stream.Stream = function(Options:table):table
 
    function translated(Error:table):table
       if options.errorTranslator and Error then
-         try return options.errorTranslator(Error) end
+         translated_error:any = nil
+         try translated_error = options.errorTranslator(Error) end
+         if translated_error is <table> then return translated_error end
       end
       return Error
    end

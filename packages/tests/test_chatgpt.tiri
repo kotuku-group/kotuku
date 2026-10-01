@@ -272,6 +272,24 @@ end
       'A client-configuration failure does not discard otherwise valid credentials')
 end
 
+@Test function ExpiredAccessReportsRefreshFloorWithoutTransport()
+   state = signedInState()
+   state.accounts[0].token.expires_at = 0
+   state.accounts[0].token.earliest_refresh_at = 9007199254740000
+   store = memoryStore(state)
+   called = false
+   manager = chatgpt.AccountManager({ applicationName='Fixture', storage=store,
+      authTransport=function(Request) called = true; return { status=500, body='' } end,
+      apiTransport=function(Request) called = true; return { status=500, body='' } end })
+   account = manager.active()
+   _, err = account.models()
+   assert(err and err.code is 'refresh_not_available' and err.retryable and
+      err.retryAt is state.accounts[0].token.earliest_refresh_at and not called,
+      'Expired access reports when refresh becomes available without contacting either endpoint')
+   assert(account.status() is chatgpt.status.temporarilyUnavailable and store.value().accounts[0].token,
+      'Blocked refresh preserves credentials and marks the account temporarily unavailable')
+end
+
 @Test function DisconnectClearsCredentialsAfterSuccessOrNetworkFailure()
    for succeeds in values(array<any> { true, false }) do
       store = memoryStore(signedInState())

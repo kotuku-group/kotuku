@@ -266,7 +266,8 @@ chatgpt.AccountManager = function(Options:table):table
          if account_record.token.earliest_refresh_at and now < account_record.token.earliest_refresh_at then
             return nil, applyFailure(account_record, publicError('refresh_not_available',
                'Token refresh is not available yet',
-               { category=chatgpt.status.temporarilyUnavailable, retryable=true }))
+               { category=chatgpt.status.temporarilyUnavailable, retryable=true,
+                 retryAt=account_record.token.earliest_refresh_at }))
          end
          return nil, applyFailure(account_record, publicError('token_expired', 'ChatGPT access token expired',
             { category=chatgpt.status.reauthorisationRequired }))
