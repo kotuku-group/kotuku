@@ -477,9 +477,6 @@ static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffe
    if (!NewLocalObject(CLASSID::XML, &xml)) {
       xml->setFlags(XMF::NAMESPACE_AWARE|XMF::WELL_FORMED);
 
-      objTask *task = CurrentTask();
-      std::string working_path;
-
       if (not Path.empty()) {
          if (wildcmp("*.svgz", Path)) {
             if (auto file = objFile::create::global(fl::Owner(xml->UID), fl::Path(Path), fl::Flags(FL::READ))) {
@@ -500,15 +497,6 @@ static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffe
             }
          }
          else xml->setPath(Path);
-
-         std::string_view working_path_view;
-         if (!task->getPath(working_path_view)) working_path.assign(working_path_view);
-
-         // Set a new working path based on the path
-
-         if (auto last = Path.find_last_of("/\\:"); last != std::string::npos) {
-            task->setPath(Path.substr(0, last + 1));
-         }
       }
       else if (not Buffer.empty()) xml->setStatement(Buffer);
 
@@ -557,8 +545,6 @@ static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffe
          }
       }
       else error = ERR::Init;
-
-      if (not working_path.empty()) task->setPath(working_path);
    }
    else error = ERR::NewObject;
 

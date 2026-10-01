@@ -260,6 +260,7 @@ extern std::recursive_mutex glmResources; // Must be acquired before glmObjects 
 extern std::recursive_mutex glmObjects;
 extern std::recursive_mutex glmMsgHandler;
 extern std::recursive_mutex glmAsyncActions;
+extern std::recursive_mutex glmClassMap;
 
 extern std::mutex glmActionQueue;
 extern std::unordered_map<OBJECTID, std::deque<QueuedAction>> glActionQueues;
@@ -785,7 +786,13 @@ extern ankerl::unordered_dense::map<std::string, struct ModHeader *> glStaticMod
 extern ankerl::unordered_dense::map<CLASSID, extClassRecord> glClassDB; // Class DB populated either by static_modules.cpp or by pre-generated file if modular.
 extern ankerl::unordered_dense::map<CLASSID, extMetaClass *> glClassMap;
 extern ankerl::unordered_dense::map<uint32_t, std::string> glFields; // Reverse lookup for converting field hashes back to their respective names.
-extern std::set<std::shared_ptr<std::jthread>> glAsyncThreads;
+
+struct AsyncThread {
+   std::jthread Thread;
+   std::atomic<bool> Finished = false;
+};
+
+extern std::set<std::shared_ptr<AsyncThread>> glAsyncThreads;
 extern OBJECTLOOKUP glObjectLookup;  // Locked with glmObjectlookup
 
 extern PooledMap<RESOURCEID, ResourceRecord> glResources; // Locked with glmResources.

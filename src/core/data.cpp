@@ -79,7 +79,7 @@ PooledMap<OBJECTID, ObjectRecord> glObjects; // Pointer stable collection
 #endif
 
 
-std::set<std::shared_ptr<std::jthread>> glAsyncThreads;
+std::set<std::shared_ptr<AsyncThread>> glAsyncThreads;
 
 std::mutex glmActionQueue;
 std::unordered_map<OBJECTID, std::deque<QueuedAction>> glActionQueues;
@@ -162,6 +162,7 @@ std::recursive_mutex glmResources; // For glResources; acquire before glmObjects
 std::recursive_mutex glmObjects; // For glObjects; never acquire glmResources whilst this mutex is held
 std::recursive_mutex glmMsgHandler;
 std::recursive_mutex glmAsyncActions;
+std::recursive_mutex glmClassMap;
 std::shared_timed_mutex glmObjectLookup; // For glObjectLookup
 std::recursive_timed_mutex glmTimer;
 std::timed_mutex glmClassDB;
