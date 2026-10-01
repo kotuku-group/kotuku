@@ -11,10 +11,20 @@ openai_sse.parser = function(Options:table):table
    utf8_bom = '\xef\xbb\xbf'
    options = Options or {}
    state = {
-      pending='', data=array<str>, eventName='', lastID='', eventBytes=0, bytes=0, events=0, finished=false,
-      afterCR=false, atStart=true,
-      maxBytes=options.maxBytes or 16777216, maxEventBytes=options.maxEventBytes or 1048576,
-      maxEvents=options.maxEvents or 100000, onEvent=options.onEvent
+      pending       = '',
+      data          = array<str>,
+      eventName     = '',
+      lastID        = '',
+      eventBytes    = 0,
+      bytes         = 0,
+      events        = 0,
+      finished      = false,
+      afterCR       = false,
+      atStart       = true,
+      maxBytes      = options.maxBytes or 16777216,
+      maxEventBytes = options.maxEventBytes or 1048576,
+      maxEvents     = options.maxEvents or 100000,
+      onEvent       = options.onEvent
    }
 
    if state.maxBytes < 1 or state.maxEventBytes < 1 or state.maxEvents < 1 or not state.onEvent then
@@ -34,15 +44,25 @@ openai_sse.parser = function(Options:table):table
          state.eventBytes = 0
          return nil
       end
-      if state.events >= state.maxEvents then return fail('event_limit', 'SSE event limit exceeded') end
+
+      if state.events >= state.maxEvents then
+         return fail('event_limit', 'SSE event limit exceeded')
+      end
+
       state.events++
-      event = { data=state.data.concat('\n'), event=state.eventName != '' and state.eventName or 'message',
-         id=state.lastID, index=state.events }
-      state.data = array<str>
-      state.eventName = ''
+      event = {
+         data  = state.data.concat('\n'),
+         event = state.eventName != '' and state.eventName or 'message',
+         id    = state.lastID,
+         index = state.events
+      }
+      state.data       = array<str>
+      state.eventName  = ''
       state.eventBytes = 0
       result = state.onEvent(event)
+
       if result is false then state.finished = true end
+
       return result is <table> ? result : nil
    end
 
@@ -52,10 +72,13 @@ openai_sse.parser = function(Options:table):table
       if state.eventBytes > state.maxEventBytes then
          return fail('event_byte_limit', 'SSE event byte limit exceeded')
       end
+
       if Line.sub(0, 1) is ':' then return nil end
+
       colon = Line.find(':')
       field = ''
       value = ''
+
       if colon is nil then
          field = Line
       else
@@ -63,6 +86,7 @@ openai_sse.parser = function(Options:table):table
          value = Line.sub(colon + 1)
          if value.sub(0, 1) is ' ' then value = value.sub(1) end
       end
+
       if field is 'data' then
          state.data.push(value)
       elseif field is 'event' then
@@ -70,6 +94,7 @@ openai_sse.parser = function(Options:table):table
       elseif field is 'id' and value.find('\0') is nil then
          state.lastID = value
       end
+
       return nil
    end
 
@@ -85,10 +110,12 @@ openai_sse.parser = function(Options:table):table
             state.atStart = false
          end
       end
+
       if state.afterCR and state.pending != '' then
          state.afterCR = false
          if state.pending.startsWith('\n') then state.pending = state.pending.sub(1) end
       end
+
       while not state.finished do
          newline = state.pending.find('\n')
          carriage = state.pending.find('\r')
@@ -98,6 +125,7 @@ openai_sse.parser = function(Options:table):table
             end
             return nil
          end
+
          delimiter = newline
          delimiterBytes = 1
          if carriage != nil and (delimiter is nil or carriage < delimiter) then
@@ -108,11 +136,13 @@ openai_sse.parser = function(Options:table):table
                state.afterCR = true
             end
          end
+
          current = state.pending.sub(0, delimiter)
          state.pending = state.pending.sub(delimiter + delimiterBytes)
          err = line(current)
          if err then return err end
       end
+
       return nil
    end
 
@@ -120,6 +150,7 @@ openai_sse.parser = function(Options:table):table
       if state.finished then return parserFailure('parser_closed', 'SSE parser is closed', state) end
       if not (Chunk is <str>) then return fail('invalid_chunk', 'SSE input must be a byte string') end
       if #Chunk > state.maxBytes - state.bytes then return fail('byte_limit', 'SSE stream byte limit exceeded') end
+
       state.bytes += #Chunk
       state.pending ..= Chunk
       return consume()
@@ -127,6 +158,7 @@ openai_sse.parser = function(Options:table):table
 
    self.finish = function():table
       if state.finished then return nil end
+
       if state.pending != '' then
          current = state.pending
          state.pending = ''
@@ -134,6 +166,7 @@ openai_sse.parser = function(Options:table):table
          err = line(current)
          if err then return err end
       end
+
       err = dispatch()
       state.finished = true
       return err
