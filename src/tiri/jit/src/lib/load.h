@@ -3,6 +3,7 @@
 #include "../../../packaging/package_identity.h"
 #include "../../../packaging/version_constraints.h"
 #include "../../../packaging/import_module_bundle.h"
+#include "../../../packaging/import_module_format.h"
 
 #include <string_view>
 #include <optional>
@@ -28,6 +29,7 @@ struct BytecodeLoadOperationCounters {
 // imported-module graph from source input or a failed load.
 struct BytecodeLoadMetadata {
    std::vector<tiri::import_cache::RootModuleRecord> ImportedModules;
+   std::vector<tiri::import_cache::SourceDescriptor> Sources;
    std::optional<tiri::PackageIdentity> Package;
    std::string CompatibilityManifest;
    BytecodeLoadOperationCounters Operations;

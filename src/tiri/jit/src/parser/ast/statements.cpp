@@ -2098,7 +2098,8 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
       uint8_t primary_index = register_file_source(L, primary_path, primary->Filename,
          BCLine(primary->FirstLine), BCLine(primary->TotalLines), parent_index, import_line);
       const uint8_t primary_descriptor = this->record_import_source(primary->ResolvedPath, primary->Filename,
-         BCLine(primary->TotalLines), this->ctx.lex().current_source_descriptor, import_line, primary_index);
+         primary->DeclaredNamespace, BCLine(primary->TotalLines), this->ctx.lex().current_source_descriptor,
+         import_line, primary_index);
 
       if (not primary->DeclaredNamespace.empty()) {
          set_file_source_namespace(L, primary_index, primary->DeclaredNamespace);
@@ -2116,8 +2117,9 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
          if (not source.DeclaredNamespace.empty()) {
             set_file_source_namespace(L, source_index, source.DeclaredNamespace);
          }
-         (void)this->record_import_source(source.ResolvedPath, source.Filename, BCLine(source.TotalLines),
-            primary_descriptor, BCLine(source.ImportLine ? source.ImportLine : 1), source_index);
+         (void)this->record_import_source(source.ResolvedPath, source.Filename, source.DeclaredNamespace,
+            BCLine(source.TotalLines), primary_descriptor, BCLine(source.ImportLine ? source.ImportLine : 1),
+            source_index);
       }
 
       std::string diagnostic;
@@ -2140,9 +2142,9 @@ ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &Imp
       }
       const FileSource *source = get_file_source(&this->ctx.lua(), module_unit->file_source_idx);
       if (source) {
-         (void)this->record_import_source(path, source->filename, source->total_lines.lineNumber(),
-            this->ctx.lex().current_source_descriptor, ImportToken.span().line.lineNumber(),
-            module_unit->file_source_idx);
+         (void)this->record_import_source(path, source->filename, source->declared_namespace,
+            source->total_lines.lineNumber(), this->ctx.lex().current_source_descriptor,
+            ImportToken.span().line.lineNumber(), module_unit->file_source_idx);
       }
    }
    else {
@@ -2473,7 +2475,6 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(
       }
 
       if (Lookup->Cached.CacheHit) {
-         const auto &portable = Lookup->Cached.CompileTimeInterface->descriptors();
          if (DeclaredPackage) *DeclaredPackage = Lookup->Cached.CompilationIdentity.DeclaredPackage;
          if (ImportRequirement and *ImportRequirement) {
             tiri::PackageImportFailure failure;
@@ -2499,36 +2500,49 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(
 
          uint8_t new_file_index = register_file_source(L, Path, filename, 1, source_lines, parent_index, import_line);
 
-         const uint8_t source_descriptor = this->record_import_source(
-            Path, filename, source_lines, this->ctx.lex().current_source_descriptor, import_line, new_file_index);
+         const auto primary = std::ranges::find(Lookup->Sources, Path,
+            &tiri::import_cache::SourceDescriptor::ResolvedPath);
+         const std::string_view declared_namespace = primary IS Lookup->Sources.end() ? std::string_view() :
+            std::string_view(primary->DeclaredNamespace);
+         const uint8_t source_descriptor = this->record_import_source(Path, filename, declared_namespace,
+            source_lines, this->ctx.lex().current_source_descriptor, import_line, new_file_index);
 
-         for (auto &record : Lookup->EmbeddedModules) {
-            tiri::import_cache::Interface nested_interface;
-            if (tiri::import_cache::decode_interface(record.InterfaceBytes, nested_interface) !=
-                tiri::cache::FormatError::OKAY or nested_interface.Sources.empty()) continue;
-            const auto &nested_source = nested_interface.Sources.front();
-            auto nested_index = find_file_source(L, nested_source.ResolvedPath);
-            uint8_t runtime_index = 0;
+         for (const auto &cached_source : Lookup->Sources) {
+            if (cached_source.ResolvedPath IS Path) continue;
 
-            if (nested_index.has_value()) runtime_index = nested_index.value();
-            else {
-               std::string nested_path = nested_source.ResolvedPath;
-               runtime_index = register_file_source(L, nested_path, nested_source.Filename, nested_source.FirstLine,
-                  nested_source.TotalLines, new_file_index, nested_source.ImportLine ? nested_source.ImportLine : 1,
-                  true);
+            const auto parent_source = std::ranges::find(Lookup->Sources, cached_source.ParentResolvedPath,
+               &tiri::import_cache::SourceDescriptor::ResolvedPath);
+            const uint8_t runtime_parent = parent_source IS Lookup->Sources.end() ? new_file_index :
+               find_file_source(L, parent_source->ResolvedPath).value_or(new_file_index);
+            const auto parent_record = std::ranges::find(
+               this->root_builder()->ctx.lex().compilation_sources, cached_source.ParentResolvedPath,
+               &CompilationSourceRecord::canonical_path);
+            const uint8_t descriptor_parent = parent_record IS
+               this->root_builder()->ctx.lex().compilation_sources.end() ? source_descriptor :
+               uint8_t(parent_record - this->root_builder()->ctx.lex().compilation_sources.begin());
+            auto existing = find_file_source(L, cached_source.ResolvedPath);
+            std::string cached_path = cached_source.ResolvedPath;
+            const BCLine cached_import_line(cached_source.ImportLine ? cached_source.ImportLine : 1);
+            const uint8_t runtime_index = existing.has_value() ? existing.value() :
+               register_file_source(L, cached_path, cached_source.Filename, BCLine(cached_source.FirstLine),
+                  BCLine(cached_source.TotalLines), runtime_parent, cached_import_line, true);
+
+            if (not cached_source.DeclaredNamespace.empty()) {
+               set_file_source_namespace(L, runtime_index, cached_source.DeclaredNamespace);
             }
-
-            record.SourceIndex = runtime_index;
-            (void)this->record_import_source(nested_source.ResolvedPath, nested_source.Filename,
-               nested_source.TotalLines, source_descriptor, nested_source.ImportLine ? nested_source.ImportLine : 1,
-               runtime_index);
+            (void)this->record_import_source(cached_source.ResolvedPath, cached_source.Filename,
+               cached_source.DeclaredNamespace, BCLine(cached_source.TotalLines), descriptor_parent,
+               cached_import_line, runtime_index);
          }
 
-         for (const auto &source : portable.Sources) {
-            if (source.ResolvedPath IS Path and not source.DeclaredNamespace.empty()) {
-               set_file_source_namespace(L, new_file_index, source.DeclaredNamespace);
-               break;
-            }
+         if (primary != Lookup->Sources.end() and not primary->DeclaredNamespace.empty()) {
+            set_file_source_namespace(L, new_file_index, primary->DeclaredNamespace);
+         }
+
+         for (auto &record : Lookup->EmbeddedModules) {
+            if (record.SourceIndex >= Lookup->Sources.size()) continue;
+            const auto &module_source = Lookup->Sources[record.SourceIndex];
+            record.SourceIndex = find_file_source(L, module_source.ResolvedPath).value_or(new_file_index);
          }
 
          if (auto manifest = this->cache_manifest()) {
@@ -2643,7 +2657,7 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(
    uint8_t new_file_index = existing_index.has_value() ? existing_index.value()
       : register_file_source(L, Path, filename, 1, source_lines, parent_index, import_line);
    const uint8_t source_descriptor = this->record_import_source(
-      Path, filename, source_lines, this->ctx.lex().current_source_descriptor, import_line, new_file_index);
+      Path, filename, {}, source_lines, this->ctx.lex().current_source_descriptor, import_line, new_file_index);
 
    if (file_size IS 0) {
       this->ctx.pop_import();
@@ -2750,8 +2764,8 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(
 
 //********************************************************************************************************************
 
-uint8_t AstBuilder::record_import_source(const std::string &Path, const std::string &Filename, BCLine SourceLines,
-   uint8_t Parent, BCLine ImportLine, uint8_t RuntimeIndex)
+uint8_t AstBuilder::record_import_source(const std::string &Path, const std::string &Filename,
+   std::string_view DeclaredNamespace, BCLine SourceLines, uint8_t Parent, BCLine ImportLine, uint8_t RuntimeIndex)
 {
    AstBuilder *root = this->root_builder();
    auto &sources = root->ctx.lex().compilation_sources;
@@ -2761,14 +2775,15 @@ uint8_t AstBuilder::record_import_source(const std::string &Path, const std::str
    if (sources.size() >= FILESOURCE_MAX_COUNT) return FILESOURCE_OVERFLOW_INDEX;
 
    sources.push_back(CompilationSourceRecord{
-      .role             = CompilationSourceRole::Import,
-      .canonical_path   = Path,
-      .display_filename = Filename,
-      .first_line       = 1,
-      .total_lines      = SourceLines,
-      .import_line      = ImportLine,
-      .runtime_index    = RuntimeIndex,
-      .parent           = Parent
+      .role               = CompilationSourceRole::Import,
+      .canonical_path     = Path,
+      .display_filename   = Filename,
+      .declared_namespace = std::string(DeclaredNamespace),
+      .first_line         = 1,
+      .total_lines        = SourceLines,
+      .import_line        = ImportLine,
+      .runtime_index      = RuntimeIndex,
+      .parent             = Parent
    });
 
    return uint8_t(sources.size() - 1);

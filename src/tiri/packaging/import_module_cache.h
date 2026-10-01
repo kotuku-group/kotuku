@@ -66,6 +66,7 @@ struct ModuleLookup {
    Identity ExpectedIdentity;                      // Identifies the module expected by the caller.
    std::string Source;                             // Stores the source used for the lookup.
    CompiledModule Cached;                          // Holds the cached module, when one was found.
+   std::vector<SourceDescriptor> Sources;           // Holds the validated bytecode source map.
    std::vector<RootModuleRecord> EmbeddedModules;  // Holds root modules embedded in the cached payload.
 };
 
