@@ -906,6 +906,7 @@ class extVectorScene : public objVectorScene {
    ankerl::unordered_dense::map<extVectorViewport *, ankerl::unordered_dense::map<extVector *, FUNCTION>> ResizeSubscriptions;
    OBJECTID ButtonLock; // The vector currently holding a button lock
    OBJECTID ActiveVector; // The most recent vector to have received an input movement event.
+   OBJECTID LastFocusID; // The foreground vector that held the focus when the surface last lost it.
    int InputHandle;
    PTC Cursor; // Current cursor image
    uint64_t ShareVersion; // Incremented whenever a shareable object has been modified.

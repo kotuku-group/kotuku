@@ -252,18 +252,27 @@ static void notify_redimension(OBJECTPTR Object, ACTIONID ActionID, ERR Result, 
 }
 
 //********************************************************************************************************************
-// Called when the subscribed Surface loses the focus.
+// Called when the subscribed Surface loses the focus.  The focused vector is recorded so that it can be restored when
+// the surface regains the focus.  The focus list is left alone if it belongs to another scene, as that scene's surface
+// may already have received the focus.
 
 static void notify_lostfocus(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
    auto Self = (extVectorScene *)CurrentContext();
    if (Self->KeyHandle) { UnsubscribeEvent(Self->KeyHandle); Self->KeyHandle = nullptr; }
 
-   apply_focus(Self, nullptr);
+   const std::lock_guard<std::recursive_mutex> lock(glVectorFocusLock);
+   if ((not glVectorFocusList.empty()) and ((extVectorScene *)glVectorFocusList.front()->Scene IS Self)) {
+      Self->LastFocusID = glVectorFocusList.front()->UID;
+      apply_focus(Self, nullptr);
+   }
 }
 
 //********************************************************************************************************************
-// Called when the subscribed Surface receives the focus.
+// Called when the subscribed Surface receives the focus.  Keyboard events are only delivered to vectors in the focus
+// list, so if none of this scene's vectors has the focus, it is restored to the vector that last held it.  Failing
+// that, the first keyboard subscriber in tab order receives the focus.  This ensures that a window receiving the focus
+// from the desktop, rather than a click, can process keyboard input.
 
 static void notify_focus(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
@@ -271,6 +280,19 @@ static void notify_focus(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR A
    if (!Self->KeyHandle) {
       SubscribeEvent(EVID_IO_KEYBOARD_KEYPRESS, C_FUNCTION(scene_key_event, Self), &Self->KeyHandle);
    }
+
+   const std::lock_guard<std::recursive_mutex> lock(glVectorFocusLock);
+   if ((not glVectorFocusList.empty()) and ((extVectorScene *)glVectorFocusList.front()->Scene IS Self)) return;
+
+   if (Self->LastFocusID) {
+      kt::ScopedObjectLock<extVector> last(Self->LastFocusID, 1000);
+      if ((last.granted()) and ((extVectorScene *)last.obj->Scene IS Self)) {
+         apply_focus(Self, last.obj);
+         return;
+      }
+   }
+
+   if (not Self->KeyboardSubscriptions.empty()) apply_focus(Self, *Self->KeyboardSubscriptions.begin());
 }
 
 /*********************************************************************************************************************
