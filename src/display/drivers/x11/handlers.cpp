@@ -1,5 +1,7 @@
 #include "x11_native.h"
 
+#include <X11/Xatom.h>
+
 namespace display {
 
 static X11Driver::State *glEventState = nullptr;
@@ -36,6 +38,31 @@ static inline bool adopted_window(Window Window)
 }
 
 //********************************************************************************************************************
+// X11 desktop environments announce a change of display scaling by updating Xft.dpi in the root window's resource
+// database.  As with WM_DPICHANGED on Windows, the surface of each window is notified so that its display discards
+// the cached density.
+
+static void handle_resource_change()
+{
+   auto dpi = x11_read_dpi(glEventState);
+   if (glEventState->DPI.exchange(dpi) IS dpi) return;
+
+   kt::Log log("X11Mgr");
+   log.msg("Desktop DPI changed to %d.", dpi);
+   if (not glDriverCallbacks.DPIChanged) return;
+
+   std::vector<Window> windows;
+   {
+      const std::lock_guard lock(glEventState->NativeLock);
+      for (auto &[native, record] : glEventState->Windows) windows.push_back(native);
+   }
+
+   for (auto window : windows) {
+      if (auto surface_id = resolve_surface(window)) glDriverCallbacks.DPIChanged(surface_id);
+   }
+}
+
+//********************************************************************************************************************
 
 void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
 {
@@ -66,6 +93,11 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
          case KeyPress:         handle_key_press(&xevent); break;
          case KeyRelease:       handle_key_release(&xevent); break;
          case CirculateNotify:  handle_stack_change(&xevent.xcirculate); break;
+
+         case PropertyNotify:
+            if ((xevent.xproperty.window IS DefaultRootWindow(XDisplay)) and
+                (xevent.xproperty.atom IS XA_RESOURCE_MANAGER)) handle_resource_change();
+            break;
 
          case MotionNotify:
             // Handling of motion events is delayed in case there is a long series of them
@@ -133,15 +165,22 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
       }
 
       #ifdef XRANDR_ENABLED
-      if ((glEventState->RandR) and (XRRUpdateConfiguration(&xevent))) {
-         // If randr indicates that the display has been resized, we must adjust the system display to match.  Refer to
+      // XRRUpdateConfiguration() refreshes Xlib's cached screen size and must see every screen change event.
+
+      if ((glEventState->RandR) and XRRUpdateConfiguration(&xevent) and
+          (xevent.type IS glEventState->RandREventBase + RRScreenChangeNotify)) {
+         XGetWindowAttributes(XDisplay, DefaultRootWindow(XDisplay), &glEventState->RootAttributes);
+         log.msg("Screen size changed to %dx%d.", glEventState->RootAttributes.width,
+            glEventState->RootAttributes.height);
+
+         // If the root window hosts a display (full-screen mode), resize the display to match.  Refer to
          // SetDisplay() for more information.
 
          auto notify = (XRRScreenChangeNotifyEvent *)&xevent;
-
-         auto surface_id = resolve_surface(xevent.xany.window);
-         glDriverCallbacks.WindowResized(surface_id, 0, 0, notify->width, notify->height,
-            0, 0, notify->width, notify->height);
+         if (auto surface_id = resolve_surface(xevent.xany.window)) {
+            glDriverCallbacks.WindowResized(surface_id, 0, 0, notify->width, notify->height,
+               0, 0, notify->width, notify->height);
+         }
       }
       #endif
    }

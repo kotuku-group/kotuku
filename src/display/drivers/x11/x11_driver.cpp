@@ -300,6 +300,12 @@ ERR X11Driver::open(const DriverCallbacks &Callbacks)
       XSync(Data->Connection, 0);
    }
 
+   // Without the window manager role, the root window is monitored passively so that changes to the desktop's
+   // resource database (which declares Xft.dpi) are reported.  The selection above cannot be relied upon for this
+   // because it fails as a whole if another client holds SubstructureRedirect.
+
+   if (not Data->Manager) XSelectInput(Data->Connection, DefaultRootWindow(Data->Connection), PropertyChangeMask);
+
    XSetErrorHandler(catch_x_error);
    Data->ConnectionFD = XConnectionNumber(Data->Connection);
    fcntl(Data->ConnectionFD, F_SETFD, FD_CLOEXEC);
@@ -336,7 +342,17 @@ ERR X11Driver::open(const DriverCallbacks &Callbacks)
 
 #ifdef XRANDR_ENABLED
    Data->RandR = XRRQueryExtension(Data->Connection, &event_base, &error_base) != 0;
+   if (Data->RandR) {
+      Data->RandREventBase = event_base;
+      XRRSelectInput(Data->Connection, root, RRScreenChangeNotifyMask);
+      int major = 0, minor = 0;
+      if (XRRQueryVersion(Data->Connection, &major, &minor)) {
+         Data->RandRMonitors = (major > 1) or ((major IS 1) and (minor >= 5));
+      }
+   }
 #endif
+
+   Data->DPI = x11_read_dpi(Data);
 
    for (size_t i=0; i < CURSORS.size(); i++) {
       Data->Cursors[i] = CURSORS[i].first IS PTC::INVISIBLE ? blank_cursor(Data) :
@@ -533,9 +549,11 @@ ERR X11Driver::createWindow(extDisplay *DisplayObject, HOSTWINDOW &Handle)
          Data->Windows[record->Native] = record;
       }
 
+      // PropertyChangeMask is retained so that changes to the desktop's resource database (Xft.dpi) are reported.
+
       XSetWindowAttributes attributes = {
          .event_mask = ExposureMask|EnterWindowMask|LeaveWindowMask|PointerMotionMask|StructureNotifyMask|
-            KeyPressMask|KeyReleaseMask|ButtonPressMask|ButtonReleaseMask|FocusChangeMask
+            KeyPressMask|KeyReleaseMask|ButtonPressMask|ButtonReleaseMask|FocusChangeMask|PropertyChangeMask
       };
 
       XChangeWindowAttributes(Data->Connection, record->Native, CWEventMask, &attributes);
@@ -862,16 +880,145 @@ ERR X11Driver::acquireWindowBitmap(HOSTWINDOW WindowHandle, extBitmap *Bitmap)
 
 //********************************************************************************************************************
 
+#ifdef XRANDR_ENABLED
+// Returns the refresh rate of the mode that is active on an output's CRTC, or zero if it cannot be determined.
+
+static double output_refresh_rate(Display *Connection, RROutput Output)
+{
+   double rate = 0;
+   auto resources = XRRGetScreenResourcesCurrent(Connection, DefaultRootWindow(Connection));
+   if (not resources) return 0;
+
+   if (auto output = XRRGetOutputInfo(Connection, resources, Output)) {
+      if (output->crtc) {
+         if (auto crtc = XRRGetCrtcInfo(Connection, resources, output->crtc)) {
+            for (int i=0; i < resources->nmode; i++) {
+               auto &mode = resources->modes[i];
+               if ((mode.id IS crtc->mode) and mode.hTotal and mode.vTotal) {
+                  rate = double(mode.dotClock) / (double(mode.hTotal) * double(mode.vTotal));
+                  if (mode.modeFlags & RR_DoubleScan) rate *= 0.5;
+                  if (mode.modeFlags & RR_Interlace) rate *= 2.0;
+                  break;
+               }
+            }
+            XRRFreeCrtcInfo(crtc);
+         }
+      }
+      XRRFreeOutputInfo(output);
+   }
+
+   XRRFreeScreenResources(resources);
+   return rate;
+}
+#endif
+
+//********************************************************************************************************************
+// Monitor geometry follows the Win32 model.  The monitor fields describe the monitor that has the largest overlap with
+// the display's window (or the nearest monitor if there is no overlap), or the primary monitor if no display is
+// specified.  The virtual fields describe the bounding rectangle of all active monitors.  If RandR 1.5 is unavailable,
+// the root window is reported for both.
+
 ERR X11Driver::displayInfo(DisplayInfo &Info)
 {
    if (not Data->Open) return ERR::NotInitialised;
-   if (not Info.Width) Info.Width = Data->RootAttributes.width;
-   if (not Info.Height) Info.Height = Data->RootAttributes.height;
-   Info.MonitorWidth = Info.VirtualWidth = Data->RootAttributes.width;
-   Info.MonitorHeight = Info.VirtualHeight = Data->RootAttributes.height;
-   Info.PhysicalWidth = DisplayWidthMM(Data->Connection, DefaultScreen(Data->Connection));
-   Info.PhysicalHeight = DisplayHeightMM(Data->Connection, DefaultScreen(Data->Connection));
-   Info.HDensity = Info.VDensity = 96;
+
+   auto screen = DefaultScreen(Data->Connection);
+   Info.MonitorX = Info.MonitorY = Info.VirtualX = Info.VirtualY = 0;
+   Info.MonitorWidth = Info.VirtualWidth = DisplayWidth(Data->Connection, screen);
+   Info.MonitorHeight = Info.VirtualHeight = DisplayHeight(Data->Connection, screen);
+   Info.PhysicalWidth = DisplayWidthMM(Data->Connection, screen);
+   Info.PhysicalHeight = DisplayHeightMM(Data->Connection, screen);
+
+#ifdef XRANDR_ENABLED
+   int count = 0;
+   XRRMonitorInfo *monitors = Data->RandRMonitors ?
+      XRRGetMonitors(Data->Connection, DefaultRootWindow(Data->Connection), 1, &count) : nullptr;
+
+   if (monitors and (count > 0)) {
+      // Resolve the window area from the display, if one was specified.
+
+      bool has_window = false;
+      int wx = 0, wy = 0, ww = 0, wh = 0;
+      if (Info.DisplayID) {
+         if (ScopedObjectLock<extDisplay> display(Info.DisplayID, 5000); display.granted()) {
+            has_window = windowCoords(display->WindowHandle, wx, wy, ww, wh) IS ERR::Okay;
+         }
+      }
+
+      int left = monitors[0].x, top = monitors[0].y;
+      int right = left + monitors[0].width, bottom = top + monitors[0].height;
+      int selected = 0;
+      int64_t best_area = -1;
+      int64_t best_distance = INT64_MAX;
+
+      for (int i=0; i < count; i++) {
+         auto &m = monitors[i];
+         left   = std::min(left, m.x);
+         top    = std::min(top, m.y);
+         right  = std::max(right, m.x + m.width);
+         bottom = std::max(bottom, m.y + m.height);
+
+         if (has_window) {
+            auto ox = std::min(wx + ww, m.x + m.width) - std::max(wx, m.x);
+            auto oy = std::min(wy + wh, m.y + m.height) - std::max(wy, m.y);
+            if ((ox > 0) and (oy > 0)) {
+               if (int64_t(ox) * oy > best_area) { best_area = int64_t(ox) * oy; selected = i; }
+            }
+            else if (best_area < 0) {
+               // No overlap; measure the gap between the window and the monitor.
+               int64_t dx = std::max({ m.x - (wx + ww), wx - (m.x + m.width), 0 });
+               int64_t dy = std::max({ m.y - (wy + wh), wy - (m.y + m.height), 0 });
+               if (dx * dx + dy * dy < best_distance) { best_distance = dx * dx + dy * dy; selected = i; }
+            }
+         }
+         else if (m.primary) selected = i;
+      }
+
+      auto &monitor = monitors[selected];
+      Info.MonitorX      = monitor.x;
+      Info.MonitorY      = monitor.y;
+      Info.MonitorWidth  = monitor.width;
+      Info.MonitorHeight = monitor.height;
+      Info.VirtualX      = left;
+      Info.VirtualY      = top;
+      Info.VirtualWidth  = right - left;
+      Info.VirtualHeight = bottom - top;
+      if ((monitor.mwidth > 0) and (monitor.mheight > 0)) {
+         Info.PhysicalWidth  = monitor.mwidth;
+         Info.PhysicalHeight = monitor.mheight;
+      }
+
+      if (monitor.noutput > 0) {
+         if (auto rate = output_refresh_rate(Data->Connection, monitor.outputs[0]); rate > 1.0) {
+            Info.RefreshRate = Info.MinRefresh = Info.MaxRefresh = float(rate);
+         }
+      }
+   }
+
+   if (monitors) XRRFreeMonitors(monitors);
+
+   if ((Info.RefreshRate <= 1.0) and Data->RandR) {
+      // Fallback for servers without RandR 1.5, which only report an integer rate for the screen as a whole.
+
+      if (auto config = XRRGetScreenInfo(Data->Connection, DefaultRootWindow(Data->Connection))) {
+         if (auto rate = XRRConfigCurrentRate(config); rate > 1) {
+            Info.RefreshRate = Info.MinRefresh = Info.MaxRefresh = float(rate);
+         }
+         XRRFreeScreenConfigInfo(config);
+      }
+   }
+#endif
+
+   if (not Info.Width) Info.Width = Info.MonitorWidth;
+   if (not Info.Height) Info.Height = Info.MonitorHeight;
+   if ((not Info.HDensity) or (not Info.VDensity)) {
+      // Densities that are already defined are preserved because they include any user override from the style.
+      int horizontal, vertical;
+      density(nullptr, horizontal, vertical);
+      if (not Info.HDensity) Info.HDensity = horizontal;
+      if (not Info.VDensity) Info.VDensity = vertical;
+   }
+
    Info.BitsPerPixel = DefaultDepth(Data->Connection, DefaultScreen(Data->Connection));
    Info.BytesPerPixel = Info.BitsPerPixel <= 8 ? 1 : Info.BitsPerPixel <= 16 ? 2 : Info.BitsPerPixel <= 24 ? 3 : 4;
    int format_count = 0;
@@ -889,18 +1036,97 @@ ERR X11Driver::displayInfo(DisplayInfo &Info)
 
 //********************************************************************************************************************
 
+// Xft.dpi is the X11 counterpart of the Windows system DPI: desktop environments set it to reflect the user's scaling
+// preference.  As on Windows, values below 96 are not reported.
+
 ERR X11Driver::density(HOSTWINDOW, int &Horizontal, int &Vertical)
 {
-   Horizontal = Vertical = 96;
-   return Data->Open ? ERR::Okay : ERR::NotInitialised;
+   if (not Data->Open) return ERR::NotInitialised;
+   Horizontal = Vertical = std::max(96, Data->DPI.load());
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
+// Reads Xft.dpi from the root window's RESOURCE_MANAGER property, or returns zero if it is undefined.
+// XResourceManagerString() is not used because it is a snapshot taken when the connection was opened.
+
+int x11_read_dpi(X11Driver::State *State)
+{
+   constexpr std::string_view KEY = "Xft.dpi:";
+   Atom type; int format; unsigned long count, remaining; unsigned char *value = nullptr;
+   int dpi = 0;
+
+   if ((XGetWindowProperty(State->Connection, DefaultRootWindow(State->Connection), XA_RESOURCE_MANAGER, 0,
+         0x10000, 0, XA_STRING, &type, &format, &count, &remaining, &value) IS Success) and value and
+         (format IS 8)) {
+      std::string_view resources((const char *)value, count);
+      for (size_t pos=0; pos < resources.size();) {
+         auto end = resources.find('\n', pos);
+         if (end IS std::string_view::npos) end = resources.size();
+         if (auto line = resources.substr(pos, end - pos); line.starts_with(KEY)) {
+            auto number = std::strtod(std::string(line.substr(KEY.size())).c_str(), nullptr);
+            if ((number > 0) and (number < 10000)) dpi = int(std::lround(number));
+            break;
+         }
+         pos = end + 1;
+      }
+   }
+
+   if (value) XFree(value);
+   return dpi;
+}
+
+//********************************************************************************************************************
+
+// Hosted windows list the primary monitor's modes in the server's order of preference.  In window manager mode,
+// list the whole-screen sizes used by setDisplayMode().  These sizes are also the fallback for older servers.
 
 ERR X11Driver::resolutions(std::vector<resolution> &List)
 {
    if (not Data->Open) return ERR::NotInitialised;
 #ifdef XRANDR_ENABLED
+   auto root = DefaultRootWindow(Data->Connection);
+   auto depth = DefaultDepth(Data->Connection, DefaultScreen(Data->Connection));
+
+   if ((not Data->Manager) and Data->RandRMonitors) {
+      if (auto resources = XRRGetScreenResourcesCurrent(Data->Connection, root)) {
+         // Use the primary output, or the first connected output if no primary has been nominated.
+
+         XRROutputInfo *output = nullptr;
+         if (auto primary = XRRGetOutputPrimary(Data->Connection, root)) {
+            output = XRRGetOutputInfo(Data->Connection, resources, primary);
+         }
+
+         for (int i=0; (not output) and (i < resources->noutput); i++) {
+            output = XRRGetOutputInfo(Data->Connection, resources, resources->outputs[i]);
+            if (output and ((output->connection != RR_Connected) or (not output->crtc))) {
+               XRRFreeOutputInfo(output);
+               output = nullptr;
+            }
+         }
+
+         if (output) {
+            for (int m=0; m < output->nmode; m++) {
+               for (int i=0; i < resources->nmode; i++) {
+                  auto &mode = resources->modes[i];
+                  if (mode.id != output->modes[m]) continue;
+                  if ((mode.width >= 640) and (mode.height >= 480) and
+                      std::none_of(List.begin(), List.end(), [&](const resolution &Res) {
+                         return (Res.width IS int(mode.width)) and (Res.height IS int(mode.height));
+                      })) {
+                     List.emplace_back(mode.width, mode.height, depth);
+                  }
+                  break;
+               }
+            }
+            XRRFreeOutputInfo(output);
+         }
+
+         XRRFreeScreenResources(resources);
+         if (not List.empty()) return ERR::Okay;
+      }
+   }
+
    int count = 0;
    if (Data->RandR) {
       if (auto sizes = XRRSizes(Data->Connection, DefaultScreen(Data->Connection), &count); sizes and count) {

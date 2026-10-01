@@ -1173,8 +1173,11 @@ class objDisplay : public Object {
    // Customised field getting
 
    inline ERR getRefreshRate(double &Value) noexcept {
-      Value = this->RefreshRate;
-      return ERR::Okay;
+      auto field = &this->Class->Dictionary[2];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
    }
 
    inline ERR getBitmap(objBitmap * &Value) noexcept {
@@ -1273,13 +1276,21 @@ class objDisplay : public Object {
    }
 
    inline ERR getManufacturer(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET + 96));
-      return ERR::Okay;
+      auto field = &this->Class->Dictionary[40];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
    }
 
    inline ERR getChipset(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET + 128));
-      return ERR::Okay;
+      auto field = &this->Class->Dictionary[12];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
    }
 
    inline ERR getDisplay(std::string_view &Value) noexcept {

@@ -14,6 +14,7 @@
 #endif
 
 #include <array>
+#include <atomic>
 #include <mutex>
 #include <unordered_map>
 #include <unordered_set>
@@ -82,6 +83,9 @@ struct X11Driver::State {
    bool SharedImages = false;
    bool Composite = false;
    bool RandR = false;
+   bool RandRMonitors = false; // True if the server supports RandR 1.5 monitor enumeration
+   int RandREventBase = 0;
+   std::atomic<int> DPI = 0;   // Logical DPI declared by Xft.dpi, or zero if the desktop does not define it
    bool FrameSync = false; // True if the XSync extension is available for compositor frame synchronisation
    bool Closing = false;
    bool TrayIcon = false;
@@ -91,6 +95,7 @@ struct X11Driver::State {
 
 X11WindowRecord * x11_window(X11Driver::State *State, HOSTWINDOW Window);
 X11BitmapRecord * x11_bitmap(extBitmap *Bitmap);
+int x11_read_dpi(X11Driver::State *State);
 void x11_process_events(X11Driver::State *State);
 void x11_begin_frame(X11Driver::State *State, X11WindowRecord *Window);
 void x11_end_frame(X11Driver::State *State, X11WindowRecord *Window);

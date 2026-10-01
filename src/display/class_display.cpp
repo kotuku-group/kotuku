@@ -22,6 +22,7 @@ display mode, palette, gamma or hardware-facing bitmap.
 #if defined(__linux__) and not defined(__ANDROID__)
  #define DESKTOP_ENTRIES
  #include "linux/desktop_entry.h"
+ #include "linux/graphics_hardware.h"
 #endif
 
 
@@ -1431,7 +1432,25 @@ and the bottom window edge.
 -FIELD-
 Chipset: String describing the graphics chipset.
 
-This string describes the graphic card's chipset, if known.
+This string describes the graphic card's chipset, if known.  On Linux the chipset of the primary graphics device is
+resolved from the system's PCI ID database, e.g. `TU106 [GeForce RTX 2060 Rev. A]`.  If the device is not listed, its
+PCI vendor and device IDs are reported instead.
+
+*********************************************************************************************************************/
+
+static ERR GET_Chipset(extDisplay *Self, std::string_view &Value)
+{
+#ifdef DESKTOP_ENTRIES
+   if (auto &device = graphics_hardware::primary_device(); (not glHeadless) and (not device.Device.empty())) {
+      Value = device.Device;
+      return ERR::Okay;
+   }
+#endif
+   Value = Self->Chipset;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 
 -FIELD-
 HDensity: Returns the horizontal pixel density for the display.
@@ -2037,8 +2056,25 @@ the left window edge.
 -FIELD-
 Manufacturer: String describing the manufacturer of the graphics hardware.
 
-The string in this field returns the name of the manufacturer that created the user's graphics card.  If this
-information is not detectable, a `NULL` pointer is returned.
+The string in this field returns the name of the manufacturer that created the user's graphics card.  On Linux the
+manufacturer of the primary graphics device is resolved from the system's PCI ID database.  If this information is
+not detectable, a placeholder such as `N/A` or `Unknown` is returned.
+
+*********************************************************************************************************************/
+
+static ERR GET_Manufacturer(extDisplay *Self, std::string_view &Value)
+{
+#ifdef DESKTOP_ENTRIES
+   if (auto &device = graphics_hardware::primary_device(); (not glHeadless) and (not device.Vendor.empty())) {
+      Value = device.Vendor;
+      return ERR::Okay;
+   }
+#endif
+   Value = Self->Manufacturer;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 
 -FIELD-
 MaxHScan: The maximum horizontal scan rate of the display output device.
@@ -2129,10 +2165,27 @@ DPMS is normally user-configurable, so applications should avoid changing PowerM
 -FIELD-
 RefreshRate: Active display refresh rate.
 
-This field reflects the refresh rate of the currently active full-screen display mode where the driver can report it.
-Hosted display drivers may leave this value unset or set it to a sentinel value.
+This field reflects the refresh rate of the active display mode, measured in Hz.  For a hosted display, this is the
+refresh rate of the monitor that the window is currently positioned on, and it can change if the window is moved to
+another monitor.  A value of `-1` is returned if the driver cannot report the refresh rate.
 
 *********************************************************************************************************************/
+
+static ERR GET_RefreshRate(extDisplay *Self, double *Value)
+{
+   if ((glDriver) and (Self->WindowHandle)) {
+      DisplayInfo info;
+      clearmem(&info, sizeof(info));
+      info.DisplayID = Self->UID;
+      if ((glDriver->displayInfo(info) IS ERR::Okay) and (info.RefreshRate > 1.0)) {
+         *Value = info.RefreshRate;
+         return ERR::Okay;
+      }
+   }
+
+   *Value = Self->RefreshRate;
+   return ERR::Okay;
+}
 
 static ERR SET_RefreshRate(extDisplay *Self, double Value)
 {
@@ -2375,7 +2428,7 @@ void alloc_display_buffer(extDisplay *Self)
 
 static const FieldArray DisplayFields[] = {
    // Re-compile the TDL if making changes
-   { "RefreshRate",    FDF_DOUBLE|FDF_RW, nullptr, SET_RefreshRate },
+   { "RefreshRate",    FDF_DOUBLE|FDF_RW, GET_RefreshRate, SET_RefreshRate },
    { "Bitmap",         FDF_LOCAL|FDF_R, nullptr, nullptr, CLASSID::BITMAP },
    { "Flags",          FDF_INTFLAGS|FDF_RW, nullptr, SET_Flags, &clDisplayFlags },
    { "Width",          FDF_INT|FDF_RW, nullptr, SET_Width },
@@ -2398,8 +2451,8 @@ static const FieldArray DisplayFields[] = {
    { "TopMargin",      FDF_INT|FDF_R },
    { "BottomMargin",   FDF_INT|FDF_R },
    // Virtual fields
-   { "Manufacturer",     FDF_CPPSTRING|FDF_R },
-   { "Chipset",          FDF_CPPSTRING|FDF_R },
+   { "Manufacturer",     FDF_CPPSTRING|FDF_R, GET_Manufacturer },
+   { "Chipset",          FDF_CPPSTRING|FDF_R, GET_Chipset },
    { "Display",          FDF_CPPSTRING|FDF_R },
    { "DisplayMfr",       FDF_CPPSTRING|FDF_R },
    { "Opacity",          FDF_DOUBLE|FDF_RW, nullptr, SET_Opacity },

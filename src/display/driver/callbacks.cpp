@@ -323,6 +323,16 @@ void DriverDPIChanged(OBJECTID SurfaceID)
       if (ScopedObjectLock<objDisplay> display(display_id, 3000); display.granted()) {
          display->setHDensity(0);
          display->setVDensity(0);
+
+         // ScaleToDPI() reads the system display cache rather than the display's density fields.
+
+         if (display_id IS glDisplayInfo.DisplayID) {
+            int horizontal = 0, vertical = 0;
+            display->getHDensity(horizontal);
+            display->getVDensity(vertical);
+            glDisplayInfo.HDensity = horizontal;
+            glDisplayInfo.VDensity = vertical;
+         }
       }
    }
 }

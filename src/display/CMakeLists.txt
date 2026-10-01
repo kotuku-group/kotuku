@@ -183,7 +183,7 @@ else ()
 
    target_sources (${MOD} PRIVATE ${FUNCTIONS} ${DISPLAY_DRIVERS} ${CLASSES} "linux/controller.cpp")
    if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-      target_sources (${MOD} PRIVATE "linux/desktop_entry.cpp")
+      target_sources (${MOD} PRIVATE "linux/desktop_entry.cpp" "linux/graphics_hardware.cpp")
    endif ()
 
    # Wayland support
