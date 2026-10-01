@@ -226,3 +226,4 @@ flute_test (package_openapi "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_openapi.tiri
 flute_test (package_oauth2 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_oauth2.tiri")
 flute_test (package_openai_streaming "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_openai_streaming.tiri")
 flute_test (package_openai "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_openai.tiri")
+flute_test (package_chatgpt "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_chatgpt.tiri")

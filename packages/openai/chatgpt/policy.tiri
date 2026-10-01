@@ -1,0 +1,162 @@
+-- ChatGPT-plan Responses policy and stable error classification.
+
+   namespace chatgpt_policy { }
+
+unsupported_fields <const> = {
+   background=true, conversation=true, max_output_tokens=true, max_tool_calls=true, metadata=true,
+   moderation=true, multi_agent=true, previous_response_id=true, prompt=true, prompt_cache_retention=true,
+   safety_identifier=true, temperature=true, top_logprobs=true, top_p=true, truncation=true, user=true
+}
+
+unsupported_tools <const> = {
+   image_generation=true, file_search=true, code_interpreter=true, computer_use=true, computer=true,
+   hosted_mcp=true, mcp=true, connectors=true, connector=true, tool_search=true,
+   programmatic_tool_calling=true
+}
+
+function capability(Message:str, Param:str):table
+   return { kind='capability', category='unsupported_capability', code='unsupported_capability', message=Message,
+      param=Param, retryable=false }
+end
+
+-- Permits function and custom tools, namespaces of them, and (in top-level tools only) policy-controlled web search.
+-- The ai/openai request validator has already checked the shape of each tool and namespace.
+
+function checkTools(Tools:any, TopLevel:bool):table
+   for tool in values(Tools or array<table>) do
+      tool_type = tool.type
+      permitted = tool_type is 'function' or tool_type is 'custom' or tool_type is 'namespace' or
+         (TopLevel and tool_type is 'web_search')
+      if unsupported_tools[tool_type] or not permitted then
+         return capability('The ChatGPT-plan route does not support tool type ' .. tostring(tool_type), 'tools')
+      end
+      if tool_type is 'namespace' then
+         for nested in values(tool.tools or array<table>) do
+            if nested.type != 'function' and nested.type != 'custom' then
+               return capability('ChatGPT-plan tool namespaces may only contain function and custom tools', 'tools')
+            end
+         end
+      end
+   end
+   return nil
+end
+
+@Doc(text=[[
+Classifies an error from `ai/openai` or `net/oauth2` into a stable ChatGPT-plan category.
+
+A copy of the error is returned with `category` and `retryable` set for documented codes.  Categories are
+`ineligible`, `usage_limited`, `temporarily_unavailable`, `unsupported_capability`, `invalid_authorization_context`,
+`revoked`, `reauthorisation_required` and `client_configuration`.  Unknown codes are returned without a category.
+Only `temporarily_unavailable` is retryable, and callers should apply bounded backoff instead of retrying in a loop.
+
+-INPUT-
+Error: Error table with `code` and optionally `httpStatus`.
+
+-RESULTS-
+table: The classified copy.
+]])
+function classify(Error:table):table
+   result = {}
+   for key, value in pairs(Error or {}) do result[key] = value end
+   code = result.code
+   status = result.httpStatus or result.status or 0
+
+   if code is 'subscription_sharing_user_not_eligible' then
+      result.category = 'ineligible'; result.retryable = false
+   elseif code is 'subscription_sharing_usage_limit_exceeded' then
+      result.category = 'usage_limited'; result.retryable = false
+   elseif code is 'subscription_sharing_usage_unavailable' or
+      code is 'subscription_sharing_user_unavailable' or (code is 'http_status' and status is 503) then
+      result.category = 'temporarily_unavailable'; result.retryable = true
+   elseif code is 'subscription_sharing_unsupported_capability' or
+      code is 'subscription_sharing_route_not_supported' then
+      result.category = 'unsupported_capability'; result.retryable = false
+   elseif code is 'chatpass_v2_scope_not_authorized' or
+      code is 'chatpass_v2_invalid_authorization_context' then
+      result.category = 'invalid_authorization_context'; result.retryable = false
+   elseif code is 'subscription_sharing_invalid_user' then
+      result.category = 'revoked'; result.retryable = false
+   elseif code is 'invalid_grant' or code is 'invalid_refresh_token' or code is 'token_expired' or
+      code is 'refresh_token_expired' or code is 'refresh_token_invalidated' or code is 'refresh_token_reused' then
+      result.category = 'reauthorisation_required'; result.retryable = false
+   elseif code is 'invalid_client' then
+      -- The provider documents this as a client configuration failure, not an unusable refresh-token response.
+      result.category = 'client_configuration'; result.retryable = false
+   elseif code is 'http_status' and status is 401 then
+      result.category = 'invalid_authorization_context'; result.retryable = false
+   elseif code is 'http_status' and status is 403 then
+      result.category = 'ineligible'; result.retryable = false
+   end
+   return result
+end
+
+chatgpt_policy.translateError = classify
+
+@Doc(text=[[
+Creates the ChatGPT-plan request policy that AccountManager attaches to each account's `ai/openai` client.
+
+`validate(Request)` rejects fields and tools that the preview route does not support before anything is sent, then sets
+`store=false` and `stream=true`.  Input must be an Item array holding the complete conversation, system-role Items
+are rejected, and only function, custom and namespace tools are permitted, plus top-level `web_search`.
+`additional_tools` input Items may carry only function, custom and namespace tools.  The policy does not check
+that the model is visible to the account; select model slugs from `account.models()`.
+
+`translateError(Error)` classifies errors as described for `chatgpt.classifyError()`.
+
+-INPUT-
+Options: Optional table.  `onError(Error)` receives every classified error.
+
+-RESULTS-
+table: The policy, with `capabilities()`, `validate()` and `translateError()`.
+]])
+chatgpt_policy.Policy = function(Options:table):table
+   options = Options or {}
+   self = {}
+
+   self.capabilities = function():table
+      return { nonStreaming=false, previousResponseID=false, background=false, conversations=false,
+         hostedTools=false, webSearch=true, chatGPTPlan=true, statelessHTTP=true }
+   end
+
+   self.validate = function(Request:table):<table, table>
+      for field in pairs(unsupported_fields) do
+         if Request[field] != nil then
+            return nil, capability('The ChatGPT-plan route does not support Responses field ' .. field, field)
+         end
+      end
+      if not (Request.input is <array>) then
+         return nil, capability('The ChatGPT-plan route requires complete conversation context in an input array',
+            'input')
+      end
+      for item in values(Request.input) do
+         if item is <table> and item.role is 'system' then
+            return nil, capability('Use instructions or a developer message instead of a system message Item',
+               'input')
+         end
+      end
+      tools_err = checkTools(Request.tools, true)
+      if tools_err then return nil, tools_err end
+      for item in values(Request.input) do
+         if item is <table> and item.type is 'additional_tools' then
+            tools_err = checkTools(item.tools, false)
+            if tools_err then return nil, tools_err end
+         end
+      end
+      if Request.store != nil and Request.store != false then
+         return nil, capability('The ChatGPT-plan route requires store=false', 'store')
+      end
+      if Request.stream != nil and Request.stream != true then
+         return nil, capability('The ChatGPT-plan route requires stream=true', 'stream')
+      end
+      Request.store = false
+      Request.stream = true
+      return Request
+   end
+
+   self.translateError = function(Error:table):table
+      translated = classify(Error)
+      if options.onError then options.onError(translated) end
+      return translated
+   end
+   return self
+end

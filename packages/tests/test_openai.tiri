@@ -108,6 +108,19 @@ end
       'Invalid arguments are rejected before approval or invocation')
    _, err = registry.dispatch({ type='function_call', name='not_registered', call_id='call-x', arguments='{}' })
    assert(err.code is 'tool_not_allowed', 'Model-selected names are constrained by the allow-list')
+   _, err = registry.dispatch({ type='function_call', name='lookup', call_id='call-malformed', arguments='{"id":' })
+   assert(err.code is 'invalid_arguments' and approvals is 1 and invocations is 1,
+      'Malformed arguments are rejected before approval or invocation')
+
+   rejecting = openai.ToolRegistry({ approve=function(Info) return false end })
+   rejecting.register('lookup', { type='object', properties={ id={ type='integer' } },
+      required=array<str> { 'id' }, additionalProperties=false }, function(Arguments)
+         raise 'Rejected tools must never run'
+      end, { consequential=true })
+   _, err = rejecting.dispatch({ type='function_call', name='lookup', call_id='call-rejected',
+      arguments='{"id":7}' })
+   assert(err.code is 'approval_required' and err.callID is 'call-rejected',
+      'Consequential tools require explicit caller approval')
 end
 
 @Test function ToolRegistryEnforcesSchemaConstraintsBeforeCallbacks()
@@ -179,14 +192,112 @@ end
       not err.diagnostic.find('secret-value'), 'Errors retain diagnostics metadata while classifying and redacting')
 end
 
+@Test function ResponseLimitsAndMalformedPayloadsFailClosed()
+   oversized = fixtureClient(function(Request)
+      return { status=200, headers={ ['x-request-id']='request-large' }, body=string.rep('x', 33) }
+   end, { maxResponseBytes=32 })
+   _, err = oversized.responses.create({ model='model-a', input='Hello' })
+   assert(err.code is 'response_limit' and err.kind is 'transport' and err.httpStatus is 200,
+      'Oversized non-streaming payloads are rejected before decoding')
+
+   malformed = fixtureClient(function(Request)
+      return { status=200, headers={ ['x-request-id']='request-malformed' }, body='{"id":' }
+   end)
+   _, err = malformed.responses.create({ model='model-a', input='Hello' })
+   assert(err.code is 'invalid_response' and err.requestID is 'request-malformed',
+      'Malformed successful Responses payloads preserve request metadata')
+end
+
 @Test function StreamingUsesTypedResponseAndItemDecoders()
    stream = openai_stream.Stream({ responseDecoder=openai.response, itemDecoder=openai.item })
    seen:any = nil
-   stream.onEvent(function(Event) seen = Event end)
+   stream.onEvent(function(Event)
+      seen = Event
+      if Event.type is 'response.output_item.done' then Event.item.type = 'subscriber_mutation' end
+   end)
    stream.feed('data: {"type":"response.output_item.added","item":{"type":"future_item","x":1}}\n\n')
    assert(seen.item.kind is 'unknown' and seen.item.raw.x is 1, 'Streaming events preserve unknown typed Items')
+   stream.feed('data: {"type":"response.output_item.done","output_index":1,"item":{' ..
+      '"type":"reasoning","id":"reason-1","status":"completed"}}\n\n')
+   stream.feed('data: {"type":"response.output_item.done","output_index":0,"item":{' ..
+      '"type":"message","role":"assistant","status":"completed","content":[' ..
+      '{"type":"output_text","text":"assembled"}]}}\n\n')
    stream.feed('data: {"type":"response.completed","response":{"id":"done","output":[]}}\n\n')
    response, err = stream.result()
-   assert(not err and response.id is 'done' and response.outputText() is '',
-      'Streaming completion returns the same typed response shape as non-streaming')
+   assert(not err and response.id is 'done' and response.outputText() is 'assembled' and
+      response.inputItems()[0].content[0].text is 'assembled' and response.output[1].type is 'reasoning',
+      'Streaming completion restores isolated Items in output-index order when terminal output is empty')
+
+   authoritative = openai_stream.Stream({ responseDecoder=openai.response, itemDecoder=openai.item })
+   authoritative.feed('data: {"type":"response.output_item.done","output_index":0,"item":{' ..
+      '"type":"message","content":[{"type":"output_text","text":"event"}]}}\n\n')
+   authoritative.feed('data: {"type":"response.completed","response":{"id":"authoritative","output":[' ..
+      '{"type":"message","content":[{"type":"output_text","text":"terminal"}]}]}}\n\n')
+   authoritative_response, authoritative_err = authoritative.result()
+   assert(not authoritative_err and authoritative_response.outputText() is 'terminal' and
+      #authoritative_response.output is 1, 'Non-empty terminal output remains authoritative')
+end
+
+@Test function NamespacedToolsValidateDeclareAndDispatchByNamespace()
+   schema = { type='object', properties={ id={ type='integer' } }, required=array<str> { 'id' },
+      additionalProperties=false }
+   calls = array<str>
+   approvals = array<table>
+   registry = openai.ToolRegistry({ approve=function(Info) approvals.push(Info); return true end })
+   registry.register('lookup', schema, function(Arguments) calls.push('top'); return 'top' end)
+   registry.register('lookup', schema, function(Arguments) calls.push('crm'); return 'crm' end,
+      { namespace='crm', consequential=true })
+   registry.describeNamespace('crm', 'Customer tools')
+
+   declarations = registry.declarations()
+   assert(#declarations is 2 and declarations[0].type is 'namespace' and declarations[0].name is 'crm' and
+      declarations[0].description is 'Customer tools' and #declarations[0].tools is 1 and
+      declarations[0].tools[0].name is 'lookup' and declarations[1].type is 'function',
+      'Namespaced functions are grouped into a namespace declaration')
+
+   captured:any = nil
+   client = fixtureClient(function(Request)
+      captured = json.decode(Request.body)
+      return { status=200, body='{"id":"resp","output":[{"type":"function_call","namespace":"crm",' ..
+         '"name":"lookup","call_id":"c1","arguments":"{\\"id\\":1}"}]}' }
+   end)
+   response, err = client.responses.create({ model='model-a', input=array<table> { { role='user', content='Hi' },
+      { type='additional_tools', role='developer', tools=declarations } }, tools=declarations })
+   assert(not err and captured.tools[0].tools[0].name is 'lookup' and captured.input[1].type is 'additional_tools',
+      'Namespace tools and additional_tools Items pass validation unchanged')
+
+   call = response.functionCalls()[0]
+   assert(call.namespace is 'crm', 'Typed function_call Items expose their namespace')
+   output, err = registry.dispatch(call)
+   assert(not err and output.output is 'crm' and calls[0] is 'crm' and approvals[0].namespace is 'crm',
+      'A namespaced call dispatches only to the matching namespaced function')
+   output, err = registry.dispatch({ type='function_call', name='lookup', call_id='c2', arguments='{"id":1}' })
+   assert(not err and output.output is 'top' and #approvals is 1, 'An un-namespaced call never matches a namespace')
+   _, err = registry.dispatch({ type='function_call', namespace='other', name='lookup', call_id='c3',
+      arguments='{"id":1}' })
+   assert(err.code is 'tool_not_allowed' and err.namespace is 'other' and #calls is 2,
+      'An unregistered namespace is outside the allow-list')
+   _, err = registry.dispatch({ type='function_call', namespace='bad/name', name='lookup', call_id='c4',
+      arguments='{"id":1}' })
+   assert(err.code is 'invalid_call', 'Malformed namespace values are rejected')
+
+   function rejected(Tools:array<table>, Code:str, Message:str)
+      _, request_err = client.responses.create({ model='model-a', input='x', tools=Tools })
+      assert(request_err and request_err.code is Code, Message)
+   end
+   function fn(Name:str):table return { type='function', name=Name, parameters=schema, strict=true } end
+   rejected(array<table> { { type='namespace', name='outer', tools=array<table> {
+      { type='namespace', name='inner', tools=array<table> { fn('a') } } } } }, 'invalid_tool',
+      'Namespaces cannot be nested')
+   rejected(array<table> { { type='namespace', name='mixed', tools=array<table> { { type='web_search' } } } },
+      'invalid_tool', 'Namespaces only contain function and custom tools')
+   rejected(array<table> { { type='namespace', name='empty', tools=array<table> } }, 'invalid_tool',
+      'Namespaces require at least one tool')
+   rejected(array<table> { fn('same'), fn('same') }, 'duplicate_tool', 'Function names are unique in a scope')
+   rejected(array<table> { { type='namespace', name='strict', tools=array<table> { { type='function', name='loose',
+      strict=true, parameters={ type='object', properties={ id={ type='integer' } } } } } } },
+      'invalid_strict_schema', 'Strict schemas inside namespaces are validated')
+   _, err = client.responses.create({ model='model-a', input=array<table> {
+      { type='additional_tools', tools=array<table> { fn('dup'), fn('dup') } } } })
+   assert(err and err.code is 'duplicate_tool', 'additional_tools Items are validated like top-level tools')
 end

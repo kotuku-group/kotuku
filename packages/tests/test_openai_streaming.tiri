@@ -69,6 +69,36 @@ end
       f'One-byte chunks must complete without buffering: {stream.state()}/{err?.code}/{response?.id}/{seen}')
 end
 
+@Test function ErrorTranslationPreservesFailuresWithoutAReplacementTable()
+   for fixture in values(array<table> { {}, { value=false }, { value='invalid' }, { value=42 } }) do
+      original:any = nil
+      stream = openai_stream.Stream({ errorTranslator=function(Error):any
+         original = Error
+         return fixture.value
+      end })
+      stream.feed(eventWire('response.failed', { response={ error={ code='provider_error', message='failed' } } }))
+      response, err = stream.result()
+      assert(stream.state() is 'failed' and response is nil and err and err is original and
+         err.code is 'provider_error', 'A translator without a replacement table preserves the original failure')
+   end
+
+   original:any = nil
+   stream = openai_stream.Stream({ errorTranslator=function(Error)
+      original = Error
+      raise 'fixture translation failure'
+   end })
+   stream.feed(eventWire('response.failed', { response={ error={ code='provider_error', message='failed' } } }))
+   _, err = stream.result()
+   assert(err and err is original and err.code is 'provider_error',
+      'A translator exception preserves the original stream failure')
+
+   replacement = { kind='response', code='translated_error', message='translated' }
+   translated = openai_stream.Stream({ errorTranslator=function(Error) return replacement end })
+   translated.feed(eventWire('response.failed', { response={ error={ code='provider_error', message='failed' } } }))
+   _, translated_error = translated.result()
+   assert(translated_error is replacement, 'A replacement error table is retained')
+end
+
 @Test function TerminalPathsRemainDistinct()
    fixtures = array<table> {
       { wire=eventWire('response.completed', { response={ id='ok' } }), state='completed', code=nil },

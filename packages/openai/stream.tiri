@@ -46,12 +46,22 @@ openai_stream.Stream = function(Options:table):table
    state = {
       value='pending', terminal=false, closed=false, response=nil, error=nil, subscriptions=array<table>,
       eventIndex=0, diagnostic='', diagnosticLimit=options.diagnosticBytes or 4096, diagnosticTruncated=false,
-      http=nil, httpStatus=0, requestID=nil, contentType=nil, inCallback=false
+      http=nil, httpStatus=0, requestID=nil, contentType=nil, inCallback=false,
+      completedItems={}, completedItemCount=0, completedItemMax=-1
    }
 
    if state.diagnosticLimit < 0 then raise 'Invalid stream diagnostic limit' end
 
    self = {}
+
+   function translated(Error:table):table
+      if options.errorTranslator and Error then
+         translated_error:any = nil
+         try translated_error = options.errorTranslator(Error) end
+         if translated_error is <table> then return translated_error end
+      end
+      return Error
+   end
 
    function detachHTTP()
       http = state.http
@@ -67,7 +77,28 @@ openai_stream.Stream = function(Options:table):table
       state.terminal = true
       state.value = StateName
       state.response = Response
-      state.error = Error
+      state.error = translated(Error)
+   end
+
+   function rememberCompletedItem(Raw:table)
+      output_index = Raw.output_index
+      if not options.itemDecoder or not (output_index is <num>) or output_index < 0 or output_index % 1 != 0 or
+         output_index >= (options.maxEvents or 100000) or not (Raw.item is <table>) or Raw.item is json.null then
+         return
+      end
+      if state.completedItems[output_index] is nil then state.completedItemCount++ end
+      -- Decode a private copy so a subscriber may alter its event Item without changing result().
+      state.completedItems[output_index] = options.itemDecoder(Raw.item)
+      if output_index > state.completedItemMax then state.completedItemMax = output_index end
+   end
+
+   function restoreCompletedItems(Response:table)
+      if not Response or not (Response.output is <array>) or #Response.output > 0 or
+         state.completedItemCount is 0 then return end
+      for output_index in {0 into state.completedItemMax} do
+         item = state.completedItems[output_index]
+         if item then Response.output.push(item) end
+      end
    end
 
    function releaseSubscriptions()
@@ -119,6 +150,8 @@ openai_stream.Stream = function(Options:table):table
       decoded_item = raw.item
       if decoded_item is <table> and options.itemDecoder then decoded_item = options.itemDecoder(decoded_item) end
 
+      if raw.type is 'response.output_item.done' then rememberCompletedItem(raw) end
+
       event = {
          type=raw.type, sequenceNumber=raw.sequence_number or raw.sequenceNumber,
          response=decoded_response, item=decoded_item, delta=raw.delta, raw=raw, eventID=SSEEvent.id,
@@ -126,6 +159,7 @@ openai_stream.Stream = function(Options:table):table
       }
 
       if raw.type is 'response.completed' then
+         restoreCompletedItems(decoded_response)
          complete('completed', decoded_response or raw, nil)
       elseif raw.type is 'response.failed' then
          provider = raw.response?.error or raw.error or {}
@@ -238,8 +272,15 @@ openai_stream.Stream = function(Options:table):table
       end
 
       if state.httpStatus < 200 or state.httpStatus >= 300 then
-         complete('failed', nil, streamError('http', 'http_status', 'HTTP streaming request failed', state,
-            { retryable=state.httpStatus is 408 or state.httpStatus is 429 or state.httpStatus >= 500 }))
+         provider:any = nil
+         try provider = openai_json.decode(state.diagnostic, state.diagnosticLimit, 32) end
+         detail = provider?.error or provider or {}
+         code = detail.code is <str> and detail.code or 'http_status'
+         message = detail.message is <str> and redactDiagnostic(detail.message).sub(0, 1024) or
+            'HTTP streaming request failed'
+         complete('failed', nil, streamError(code is 'http_status' ? 'http' : apiKind(code), code, message, state,
+            { param=detail.param is <str> and detail.param or nil,
+              retryable=state.httpStatus is 408 or state.httpStatus is 429 or state.httpStatus >= 500 }))
          releaseSubscriptions()
       elseif Terminated and HTTP.error is ERR_TimeOut then
          finish('timeout')

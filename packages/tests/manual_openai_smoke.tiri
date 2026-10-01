@@ -1,0 +1,123 @@
+-- Manually enabled live smoke test.  This file is intentionally not registered with CTest.
+
+   import 'ai/chatgpt'
+   import 'ai/openai'
+
+   if arg('enabled', 'false').lower() != 'true' then
+      raise 'Live OpenAI smoke test is disabled; pass enabled=true explicitly'
+   end
+
+   mode = arg('mode', 'chatgpt').lower()
+   model = arg('model', '')
+   default_message <const> = 'This is a Kotuku OpenAI smoke test. Please reply with a short confirmation.'
+   message = arg('message', default_message)
+   verbose = arg('verbose', 'false').lower() is 'true'
+   client:table = nil
+
+   if message.trim() is '' then raise 'The smoke-test message must not be empty' end
+
+   function raiseFailure(Error:table)
+      if verbose then
+         print(f'Error: {Error.kind}/{Error.code}, HTTP {Error.httpStatus}, parameter {Error.param}')
+         print(f'Request ID: {Error.requestID}')
+         if Error.diagnostic then print(f'Diagnostic: {Error.diagnostic}') end
+      end
+      raise Error.message
+   end
+
+   if mode is 'chatgpt' then
+      accounts = chatgpt.AccountManager({
+         applicationName = 'Kotuku OpenAI smoke test',
+         presentAuthorization = function(URL)
+            print('Open this authorization URL in a browser. The URL is not retained or logged by the test:')
+            print(URL)
+         end
+      })
+
+      account = accounts.active()
+
+      if not account or account.status() is chatgpt.status.signedOut or
+         account.status() is chatgpt.status.reauthorisationRequired then
+         account, err = accounts.signIn()
+         if err then raiseFailure(err) end
+      end
+
+      if model is '' then
+         models, err = account.models()
+         if err then raiseFailure(err) end
+         if #models is 0 then raise 'The selected ChatGPT account returned no visible models' end
+         model = models[0].id
+      end
+
+      client = account.openAI()
+   elseif mode is 'api-key' then
+      if model is '' then
+         raise 'API-key smoke tests require model=<account-visible-model>'
+      end
+
+      env_err, key = mSys.CurrentTask().mtGetEnv('OPENAI_API_KEY')
+      if env_err != ERR_Okay or key is '' then
+         raise 'OPENAI_API_KEY is not configured'
+      end
+
+      client = openai.Client({ credential=openai.apiKey(key) })
+   else
+      raise 'mode must be chatgpt or api-key'
+   end
+
+   print(f'Sending smoke-test message to OpenAI model {model}...')
+
+   stream, err = client.responses.create({
+      model=model,
+      input=array<table> { { role='user', content=message } },
+      store=false,
+      stream=true
+   })
+
+   if err then raiseFailure(err) end
+
+   event_types = array<str>
+   streamed_text = array<str>
+   stream.onEvent(function(Event)
+      event_types.push(Event.type)
+      if Event.type is 'response.output_text.delta' and Event.delta is <str> then
+         streamed_text.push(Event.delta)
+      end
+   end)
+
+   deadline = mSys.PreciseTime() + 120000000
+   while stream.state() is 'pending' or stream.state() is 'open' do
+      if mSys.PreciseTime() >= deadline then
+         stream.cancel()
+         raise 'Live OpenAI smoke test timed out'
+      end
+
+      processing.sleep(0.1)
+   end
+
+   response, err = stream.result()
+   if err then
+      if verbose then
+         print(f'Model: {model}')
+         print(f'Stream state: {stream.state()}')
+      end
+      raiseFailure(err)
+   end
+   response_text = response and response.outputText() or ''
+   delta_text = streamed_text.concat()
+   if verbose then
+      print(f'Model: {model}')
+      print(f'Stream state: {stream.state()}')
+      print(f'Events: {event_types.concat(", ")}')
+      print(f'Delta text bytes: {#delta_text}')
+      print(f'Terminal text bytes: {#response_text}')
+      print(f'Terminal output items: {response and #response.output or 0}')
+      if response then
+         for index, item in response.output do
+            print(f'Output item {index}: {item.type}/{item.status}')
+         end
+      end
+   end
+   if response_text.trim() is '' then raise 'Live OpenAI response contained no text' end
+   print('Agent response:')
+   print(response_text)

@@ -84,6 +84,7 @@ end
    rejects(function() offlineClient({ scope='openid' }) end)
    rejects(function() offlineClient({ client_id='obsolete' }) end)
    rejects(function() offlineClient({ redirectURI='http://localhost:12345/callback' }) end)
+   rejects(function() offlineClient({ tokenParams={ refresh_token='override' } }) end)
 end
 
 @Test function CallbackRejectsInvalidBindingAndFraming()
@@ -119,24 +120,28 @@ end
 
 @Test function TokenExchangeRefreshAndErrors()
    calls = array<table>
-   reply = { status=200, headers={}, body='{"access_token":"secret","token_type":"Bearer","expires_in":10}' }
+   reply = { status=200, headers={}, body='{"access_token":"secret","token_type":"Bearer","expires_in":10,' ..
+      '"earliest_refresh_at":9007199254740000}' }
    client = offlineClient({ transport=function(Request)
       calls.push(Request)
       return reply
-   end })
+   end, tokenParams={ resource='https://resource.invalid/v1' } })
    client.buildAuthUrl()
    verifier = client.pkce.code_verifier
    client.redirectURI = 'http://127.0.0.1:9/changed'
    token, message = client.exchangeCodeForTokens('code')
    assert(token and token.access_token is 'secret', message or 'Exchange failed')
    assert(calls[0].form.code_verifier is verifier and
-      calls[0].form.redirect_uri is 'http://127.0.0.1:12345/callback', 'Exchange uses private binding')
-   assert(token.expires_at - token.refresh_at is 1 and client.validateToken(token), 'Short lifetime remains usable')
+      calls[0].form.redirect_uri is 'http://127.0.0.1:12345/callback' and
+      calls[0].form.resource is 'https://resource.invalid/v1', 'Exchange uses private binding and fixed parameters')
+   assert(token.refresh_at is token.earliest_refresh_at and client.validateToken(token),
+      'Provider refresh floor is retained and honoured')
    assert(token.validated_oidc is false and client.pkce is nil, 'OAuth is not verified identity; secrets cleared')
    _, _, err = client.exchangeCodeForTokens('code')
    assert(err.code is 'no_attempt', 'Attempt consumed once')
    refreshed = client.refreshToken('refresh')
-   assert(refreshed.refresh_token is 'refresh' and calls[1].form.grant_type is 'refresh_token', 'Retain refresh token')
+   assert(refreshed.refresh_token is 'refresh' and calls[1].form.grant_type is 'refresh_token' and
+      calls[1].form.resource is 'https://resource.invalid/v1', 'Retain refresh token and fixed refresh parameters')
    for body in values(array<str> { '<html>secret</html>', '{"access_token":"secret"}',
       '{"access_token":"secret","token_type":"Bearer","expires_in":-1}',
       '{"access_token":"secret\\n","token_type":"Bearer"}',

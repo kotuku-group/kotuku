@@ -51,6 +51,7 @@
 /tests/
 
 /3rdparty/zlib-*/
+/3rdparty/bearssl/
 .idea/
 local/
 build/

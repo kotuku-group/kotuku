@@ -29,8 +29,8 @@
   "files": [
     {
       "path": "README.md",
-      "size": 12572,
-      "sha256": "d77e8f6f140e0400fe77cf727e3f12fa19c8ed1f681cd305b6be0003d254a2bd",
+      "size": 12795,
+      "sha256": "dd6c56c341318260830c9f7f4b7f387c47bbb029668f613733f624f8e1fb32c4",
       "mediaType": "text/markdown"
     },
     {
@@ -41,8 +41,8 @@
     },
     {
       "path": "oauth2.tiri",
-      "size": 38104,
-      "sha256": "3820604f2a9068661846af009a58d57bf9e2e806233a7725746dbb81e372886e",
+      "size": 39234,
+      "sha256": "3776eec8967afe1946a5a000b6176e03b5d1c594d0747b2c76cc2c56dada2af9",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {

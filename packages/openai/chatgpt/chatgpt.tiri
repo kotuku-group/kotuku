@@ -1,0 +1,555 @@
+@Package(name="ai/openai", version="1.0")
+
+-- ChatGPT-plan authentication and restricted Responses policy.  It does not expose the Codex agent runtime.
+
+   import 'ai/openai'
+   import 'net/oauth2'
+   import 'json'
+   module crypto as mCrypto
+   import './policy', './storage'
+
+   namespace chatgpt { }
+
+AUTH_ENDPOINT <const> = 'https://auth.openai.com/api/accounts/authorize'
+TOKEN_ENDPOINT <const> = 'https://auth.openai.com/api/accounts/oauth/token'
+REVOKE_ENDPOINT <const> = 'https://auth.openai.com/api/accounts/oauth/revoke'
+ISSUER <const> = 'https://auth.openai.com'
+RESOURCE <const> = 'https://api.openai.com/v1'
+DYNAMIC_CLIENT <const> = 'dynamic_agent_client'
+SCOPES <const> = 'openid profile email offline_access resource.invoke chatgpt.tokens.use.direct'
+PLAN_SCOPE <const> = 'chatgpt.tokens.use.direct'
+USAGE_SETTINGS <const> = 'https://chatgpt.com/#settings/Usage'
+
+chatgpt.status = {
+   signedOut='signed_out', identityOnly='identity_only', enabled='plan_usage_enabled', refreshing='refreshing',
+   temporarilyUnavailable='temporarily_unavailable', usageLimited='usage_limited', ineligible='ineligible',
+   revoked='revoked', reauthorisationRequired='reauthorisation_required'
+}
+
+chatgpt.usageSettingsURL = USAGE_SETTINGS
+chatgpt.Policy = chatgpt_policy.Policy
+chatgpt.classifyError = chatgpt_policy.translateError
+function randomBytes(Buffer:any):num return mCrypto.RandomBytes(Buffer) end
+function writeProtectedFile(Path:str, Data:any):num return mCrypto.WriteProtectedFile(Path, Data) end
+
+@Doc(text=[[
+Creates the default file-backed credential store used by AccountManager().
+
+Every save validates the complete account state and replaces the file atomically with owner-only permissions through
+the Crypto module.  Loading rejects files larger than 1 MiB and any record that fails validation.  The store does not
+coordinate refreshes between processes; run one AccountManager per credential file.
+
+-INPUT-
+Path: Optional file path.  Defaults to `user:config/ai_chatgpt_credentials.json`.
+
+-RESULTS-
+table: A store with `loadState()` and `saveState(State)` functions.
+]])
+chatgpt.ProtectedStore = function(Path:str):table
+   return chatgpt_storage.ProtectedStore(Path, writeProtectedFile)
+end
+
+function wallTime():num
+   clock <close> = obj.new('time')
+   check clock.acQuery()
+   return clock.systemTime / 1000000
+end
+
+function clone(Value:any):any return json.decode(json.encode(Value)) end
+
+function scopeHas(Scope:any, Required:str):bool
+   if not (Scope is <str>) then return false end
+   for item in values(Scope.split(' ')) do if item is Required then return true end end
+   return false
+end
+
+function publicError(Code:str, Message:str, Extra:table):table
+   result = { kind='authentication', code=Code, message=Message, retryable=false }
+   for key, value in pairs(Extra or {}) do result[key] = value end
+   return result
+end
+
+function accountView(Record:table, Active:bool):table
+   return { id=Record.id, clientID=Record.clientID, subject=Record.subject, email=Record.email,
+      label=Record.label or Record.email or Record.subject, status=Record.status, active=Active,
+      planUsage=Record.status is chatgpt.status.enabled }
+end
+
+@Doc(text=[[
+Creates a manager for Sign in with ChatGPT registrations and their ChatGPT-plan credentials.
+
+The manager loads its state when created, generating and saving a stable random `ext_agent_host_id` for the
+installation if none exists.  Each registration keeps its own issued client ID, verified subject, email and token set,
+even when two registrations share an email address.  Refresh and ID tokens never leave the manager; applications
+receive account objects, credential providers and `ai/openai` clients.
+
+Sign-in, refresh and revocation are synchronous.  They process messages on the calling thread, and the `openBrowser`,
+`presentAuthorization` and `openSettings` callbacks run on that thread.  The authorisation URL passed to the browser
+callback contains single-use values and, for returning accounts, an `id_token_hint`; never log or store it.
+
+Refreshes are serialised per account within this process, honour `earliest_refresh_at` and replace the rotating token
+set in a single atomic save.  Cross-process coordination is the store's responsibility.
+
+Methods return `nil` (or `false`) and an error table on failure.  Errors have `kind`, `code`, `message` and
+`retryable`, and ChatGPT-plan failures add a stable `category` matching a `chatgpt.status` value or
+`unsupported_capability`, `invalid_authorization_context` or `client_configuration`.  A refresh blocked by
+`earliest_refresh_at` also reports that Unix timestamp as `retryAt`.
+
+-INPUT-
+Options: `applicationName` is required (at most 128 bytes) and is sent as the registration name hint.
+`openBrowser(URL)` or `presentAuthorization(URL)` presents the sign-in page.  `storage` replaces the default
+ProtectedStore() and `storagePath` changes its file.  Optional `openSettings(URL)` opens the ChatGPT usage settings.
+`authTimeout` and `authorizationTimeout` bound the OAuth requests and the browser sign-in (defaults 30 and 300
+seconds).
+
+-RESULTS-
+table: The account manager.
+]])
+chatgpt.AccountManager = function(Options:table):table
+   options = Options or {}
+   if not (options.applicationName is <str>) or options.applicationName is '' or
+      #options.applicationName > 128 or r'[\x00-\x1f\x7f]'.test(options.applicationName) then
+      raise 'AccountManager requires a valid applicationName'
+   end
+   store = options.storage or chatgpt_storage.ProtectedStore(options.storagePath, writeProtectedFile)
+   load_state:any = store.loadState or store['load']
+   save_state:any = store.saveState or store['save']
+   if not (load_state is <func>) or not (save_state is <func>) then
+      raise 'AccountManager storage requires loadState and saveState functions'
+   end
+
+   loaded = load_state()
+   state:table = nil
+   if loaded then state = chatgpt_storage.validate(loaded) else state = chatgpt_storage.newState(randomBytes) end
+   if not loaded then save_state(state) end
+   refreshing = {}
+   self = {}
+
+   function findRecord(AccountID:str, Source:table):<table, num>
+      for index, account_record in (Source or state).accounts do
+         if account_record.id is AccountID then return account_record, index end
+      end
+      return nil
+   end
+
+   function commit(NewState:table)
+      chatgpt_storage.validate(NewState)
+      save_state(NewState)
+      state = NewState
+   end
+
+   function oauthEndpoints(AuthParams:table):table
+      if options.endpoints != nil and options.testLoopback != true then
+         raise 'Custom ai/chatgpt endpoints are fixture-only'
+      end
+      endpoints = options.endpoints or {
+         auth_endpoint=AUTH_ENDPOINT, token_endpoint=TOKEN_ENDPOINT, revoke_endpoint=REVOKE_ENDPOINT
+      }
+      result = {}
+      for key, value in pairs(endpoints) do result[key] = value end
+      result.auth_params = AuthParams
+      return result
+   end
+
+   function oauthClient(ClientID:str, AuthParams:table, ResolveClientID:func):table
+      return oauth2.Client({
+         clientID=ClientID, scope=SCOPES, requiredScopes=array<str> { 'openid' },
+         redirectURI=options.redirectURI or 'http://127.0.0.1:0/auth/callback',
+         custom_endpoints=oauthEndpoints(AuthParams), tokenParams={ resource=RESOURCE },
+         oidc={ issuer=ISSUER, discoveryURL=options.discoveryURL,
+            jwksURL=options.jwksURL, clockSkew=options.clockSkew },
+         allowIssuedClientID=ResolveClientID != nil, resolveClientID=ResolveClientID,
+         open_browser=options.openBrowser, presentAuthorization=options.presentAuthorization,
+         timeout=options.authTimeout or 30, authorizationTimeout=options.authorizationTimeout or 300,
+         maxResponseBytes=options.maxAuthResponseBytes or 262144,
+         testLoopback=options.testLoopback is true, transport=options.authTransport
+      })
+   end
+
+   function applyFailure(Record:table, Failure:table)
+      classified = chatgpt_policy.translateError(Failure or {})
+      if not Record or not classified.category then return classified end
+      status:any = nil
+      if classified.category is 'invalid_authorization_context' then
+         status = chatgpt.status.reauthorisationRequired
+      elseif classified.category is chatgpt.status.ineligible or classified.category is chatgpt.status.usageLimited or
+         classified.category is chatgpt.status.temporarilyUnavailable or classified.category is chatgpt.status.revoked or
+         classified.category is chatgpt.status.reauthorisationRequired then
+         status = classified.category
+      end
+      if not status then return classified end
+      next_state = clone(state)
+      target = findRecord(Record.id, next_state)
+      if target then
+         target.status = status
+         if status is chatgpt.status.revoked or status is chatgpt.status.reauthorisationRequired then
+            target.token = nil
+         end
+         commit(next_state)
+      end
+      return classified
+   end
+
+   function refreshRecord(AccountID:str):<table, table>
+      account_record = findRecord(AccountID)
+      if not account_record then
+         return nil, publicError('account_not_found', 'ChatGPT account registration was not found')
+      end
+      if refreshing[AccountID] then
+         return nil, publicError('refresh_in_progress', 'ChatGPT credentials are already being refreshed',
+            { retryable=true })
+      end
+      if not account_record.token or not account_record.token.refresh_token then
+         return nil, applyFailure(account_record, publicError('reauthorisation_required',
+            'Sign in with ChatGPT again', { category=chatgpt.status.reauthorisationRequired }))
+      end
+
+      now = wallTime()
+      if account_record.token.earliest_refresh_at and now < account_record.token.earliest_refresh_at then
+         refresh_error = publicError('refresh_not_available', 'Token refresh is not available yet',
+            { category=chatgpt.status.temporarilyUnavailable, retryable=true,
+              retryAt=account_record.token.earliest_refresh_at })
+         if account_record.token.expires_at and now >= account_record.token.expires_at then
+            return nil, applyFailure(account_record, refresh_error)
+         end
+         return nil, refresh_error
+      end
+
+      -- The guard and transient status are restored on every exit path, including exceptions raised while the
+      -- OAuth client is created or the refresh is running.
+
+      refreshing[AccountID] = true
+      previous_status = account_record.status
+      account_record.status = chatgpt.status.refreshing
+      defer
+         refreshing[AccountID] = nil
+         if account_record.status is chatgpt.status.refreshing then account_record.status = previous_status end
+      end
+
+      auth_params = { resource=RESOURCE, ext_agent_host_id=state.hostID }
+      client = oauthClient(account_record.clientID, auth_params)
+      token, message, details = client.refreshToken(account_record.token)
+      if not token then return nil, applyFailure(account_record, details) end
+      if not token.identity or token.identity.subject != account_record.subject then
+         return nil, applyFailure(account_record, publicError('identity_mismatch',
+            'Refreshed ChatGPT identity does not match the selected account',
+            { category=chatgpt.status.reauthorisationRequired }))
+      end
+
+      next_state = clone(state)
+      target = findRecord(AccountID, next_state)
+      target.token = token
+      target.email = token.identity.claims?.email or target.email
+      target.status = scopeHas(token.scope, PLAN_SCOPE) ? chatgpt.status.enabled : chatgpt.status.identityOnly
+      commit(next_state)
+      refreshed_record = findRecord(AccountID)
+      return refreshed_record
+   end
+
+   function ensureAccess(AccountID:str):<str, table>
+      account_record = findRecord(AccountID)
+      if not account_record or not account_record.token then
+         return nil, publicError('reauthorisation_required', 'Sign in with ChatGPT again',
+            { category=chatgpt.status.reauthorisationRequired })
+      end
+      if not scopeHas(account_record.token.scope, PLAN_SCOPE) then
+         return nil, publicError('plan_usage_not_enabled', 'ChatGPT plan usage is not enabled for this account',
+            { category=chatgpt.status.identityOnly, settingsURL=USAGE_SETTINGS })
+      end
+      now = wallTime()
+      refresh_at = account_record.token.refresh_at or account_record.token.expires_at
+      if refresh_at and now >= refresh_at then
+         account_record, err = refreshRecord(AccountID)
+         if err then return nil, err end
+      end
+      if account_record.token.expires_at and now >= account_record.token.expires_at then
+         if account_record.token.earliest_refresh_at and now < account_record.token.earliest_refresh_at then
+            return nil, applyFailure(account_record, publicError('refresh_not_available',
+               'Token refresh is not available yet',
+               { category=chatgpt.status.temporarilyUnavailable, retryable=true,
+                 retryAt=account_record.token.earliest_refresh_at }))
+         end
+         return nil, applyFailure(account_record, publicError('token_expired', 'ChatGPT access token expired',
+            { category=chatgpt.status.reauthorisationRequired }))
+      end
+      if not (account_record.token.access_token is <str>) or account_record.token.access_token is '' or
+         r'[\r\n]'.test(account_record.token.access_token) then
+         return nil, applyFailure(account_record, publicError('reauthorisation_required',
+            'Stored ChatGPT credentials are invalid', { category=chatgpt.status.reauthorisationRequired }))
+      end
+      return account_record.token.access_token
+   end
+
+   function credential(AccountID:str):table
+      provider = { kind='chatgpt_plan' }
+      provider.authorization = function():<str, table>
+         token, err = ensureAccess(AccountID)
+         if err then return nil, err end
+         return 'Bearer ' .. token
+      end
+      provider.capabilities = function():table
+         return { kind='chatgpt_plan', refreshable=true, billing='chatgpt_plan' }
+      end
+      return provider
+   end
+
+   function setErrorStatus(AccountID:str, Error:table)
+      account_record = findRecord(AccountID)
+      if account_record and Error.category then applyFailure(account_record, Error) end
+   end
+
+   function accountObject(AccountID:str):table
+      account_record = findRecord(AccountID)
+      if not account_record then return nil end
+      account = {}
+      account.info = function():table
+         current = findRecord(AccountID)
+         return current and accountView(current, state.activeID is AccountID) or nil
+      end
+      account.status = function():str
+         current = findRecord(AccountID)
+         return current and current.status or chatgpt.status.signedOut
+      end
+      account.credential = function():table return credential(AccountID) end
+      account.openAI = function(ClientOptions:table):table
+         supplied = ClientOptions or {}
+         client_options = {}
+         for key, value in pairs(supplied) do client_options[key] = value end
+         if client_options.credential or client_options.policy then
+            raise 'ChatGPT-plan client credential and policy are account-owned'
+         end
+         -- The bearer token is only valid for the OpenAI API resource, so it is never sent to another base URL.
+         -- Loopback fixtures are permitted only when the manager itself was created for testing.
+
+         if client_options.baseURL != nil and client_options.baseURL != RESOURCE and options.testLoopback != true then
+            raise 'ChatGPT-plan clients always use the OpenAI API resource'
+         end
+         client_options.credential = credential(AccountID)
+         client_options.policy = chatgpt_policy.Policy({ onError=function(Error) setErrorStatus(AccountID, Error) end })
+         client_options.baseURL ?= RESOURCE
+         client_options.transport ?= options.apiTransport
+         client_options.streamTransport ?= options.streamTransport
+         client_options.testLoopback = options.testLoopback is true
+         return openai.Client(client_options)
+      end
+      account.models = function():<array<table>, table>
+         client = account.openAI()
+         return client.models.list({ filter=function(Model) return Model.visibility is 'list' end })
+      end
+      account.refresh = function():<table, table>
+         refreshed, err = refreshRecord(AccountID)
+         return refreshed and accountObject(AccountID) or nil, err
+      end
+      return account
+   end
+
+   @Doc(text=[[
+Lists every stored registration for account selection.
+
+Each entry has `id`, `clientID`, `subject`, `email`, `label`, `status`, `active` and `planUsage`.  Entries never
+contain tokens.
+
+-RESULTS-
+array: Account summary tables.
+]])
+   self.accounts = function():array<table>
+      result = array<table>
+      for account_record in values(state.accounts) do
+         result.push(accountView(account_record, state.activeID is account_record.id))
+      end
+      return result
+   end
+
+   @Doc(text=[[
+Returns the selected account object, or `nil` if none is selected.
+
+Account objects provide `info()`, `status()`, `models()`, `openAI(ClientOptions)`, `credential()` and `refresh()`.
+`models()` lists only models with `visibility='list'`; pass their `slug` to requests unchanged.  `openAI()` always
+attaches this account's credential and the ChatGPT-plan policy and always uses the OpenAI API resource; its options
+cannot replace the credential, policy or base URL.
+]])
+   self.active = function():table return state.activeID and accountObject(state.activeID) or nil end
+
+   @Doc(text=[[
+Selects a stored account and saves the selection.  Applications should list models again after switching, because
+model visibility is account-specific.
+
+-INPUT-
+AccountID: The `id` of a stored account.
+
+-RESULTS-
+table: The account object, or `nil` if the account was not found.
+table: Error table on failure.
+]])
+   self.select = function(AccountID:str):<table, table>
+      if not findRecord(AccountID) then
+         return nil, publicError('account_not_found', 'ChatGPT account registration was not found')
+      end
+      next_state = clone(state)
+      next_state.activeID = AccountID
+      commit(next_state)
+      return accountObject(AccountID)
+   end
+   self.switch = self.select
+
+   @Doc(text=[[
+Signs in with ChatGPT through the system browser and a bounded `127.0.0.1` loopback callback.
+
+Without AccountID, a new registration is created with `dynamic_agent_client`, and the issued `oaiapp_...` client ID
+from the callback is saved.  With AccountID, the saved issued client ID, ID token hint and email login hint are used,
+and the signed-in subject must match the stored account.  The ID token is validated against OpenAI's JWKS before any
+state is saved.  The account becomes `identity_only` if `chatgpt.tokens.use.direct` was not granted.
+
+-INPUT-
+AccountID: Optional stored account to sign in again.
+SignInOptions: Optional table.  `consent=true` requests the consent screen; `forceReconsent=true` adds
+`force_reconsent`, which must only be used when OpenAI has confirmed it for the integration.
+
+-RESULTS-
+table: The signed-in account object, which becomes active, or `nil` on failure.
+table: Error table on failure.  Declined consent returns the `access_denied` code.
+]])
+   self.signIn = function(AccountID:str, SignInOptions:table):<table, table>
+      signin = SignInOptions or {}
+      existing = AccountID and findRecord(AccountID) or nil
+      if AccountID and not existing then
+         return nil, publicError('account_not_found', 'ChatGPT account registration was not found')
+      end
+
+      auth_params = { resource=RESOURCE, ext_agent_host_id=state.hostID }
+      client_id = existing and existing.clientID or DYNAMIC_CLIENT
+      if existing then
+         if existing.token?.id_token then auth_params.id_token_hint = existing.token.id_token end
+         if existing.email then auth_params.login_hint = existing.email end
+         if signin.consent is true then auth_params.prompt = 'consent' end
+         if signin.forceReconsent is true then auth_params.force_reconsent = 'true' end
+      else
+         auth_params.agent_name_hint = options.applicationName
+      end
+
+      resolver:func = nil
+      if not existing then
+         resolver = function(Callback:table):str
+            issued = Callback.client_id
+            if not (issued is <str>) or issued is '' or issued is DYNAMIC_CLIENT then return nil end
+            return issued
+         end
+      end
+      oauth = oauthClient(client_id, auth_params, resolver)
+      token, message, details = oauth.authorizeWeb()
+      if not token then return nil, chatgpt_policy.translateError(details) end
+      if token.clientID is DYNAMIC_CLIENT or not token.identity or not token.identity.subject then
+         return nil, publicError('invalid_registration', 'ChatGPT registration did not return a valid issued client')
+      end
+      if existing and token.identity.subject != existing.subject then
+         return nil, publicError('identity_mismatch', 'The signed-in ChatGPT account does not match the selection')
+      end
+
+      next_state = clone(state)
+      target:table = nil
+      if existing then target = findRecord(existing.id, next_state) end
+      if not target then
+         target = { id=chatgpt_storage.hostID(randomBytes), clientID=token.clientID,
+            subject=token.identity.subject }
+         next_state.accounts.push(target)
+      end
+      target.clientID = token.clientID
+      target.subject = token.identity.subject
+      target.email = token.identity.claims?.email
+      target.label = target.email or target.subject
+      target.token = token
+      target.status = scopeHas(token.scope, PLAN_SCOPE) ? chatgpt.status.enabled : chatgpt.status.identityOnly
+      next_state.activeID = target.id
+      commit(next_state)
+      return accountObject(target.id)
+   end
+
+   @Doc(text=[[
+Signs in to a stored account again.  This is signIn() with a required AccountID; pass `{ consent=true }` to show the
+consent screen, for example after the user has changed plan usage permissions.
+]])
+   self.reauthorise = function(AccountID:str, ReauthOptions:table):<table, table>
+      return self.signIn(AccountID, ReauthOptions)
+   end
+
+   @Doc(text=[[
+Signs out of an account.
+
+The refresh token is revoked remotely when possible, and local bearer credentials are then removed whether or not
+revocation succeeded.  The registration (issued client ID and subject) is kept for a later sign-in unless
+`forget=true` is given.
+
+-INPUT-
+AccountID: The stored account.
+DisconnectOptions: Optional table.  `forget=true` deletes the registration as well.
+
+-RESULTS-
+bool: `true` if remote revocation was confirmed, otherwise `false` or `nil`.
+table: Error table when revocation was not confirmed.  `localCredentialsCleared` is `true` and
+`remoteRevocationConfirmed` is `false`.
+]])
+   self.disconnect = function(AccountID:str, DisconnectOptions:table):<bool, table>
+      account_record = findRecord(AccountID)
+      if not account_record then
+         return nil, publicError('account_not_found', 'ChatGPT account registration was not found')
+      end
+      revoke_error:table = nil
+      if account_record.token?.refresh_token then
+         client = oauthClient(account_record.clientID, { resource=RESOURCE, ext_agent_host_id=state.hostID })
+         revoked, message, details = client.revokeToken(account_record.token.refresh_token, 'refresh_token')
+         if not revoked then revoke_error = chatgpt_policy.translateError(details) end
+      end
+      next_state = clone(state)
+      target, index = findRecord(AccountID, next_state)
+      if DisconnectOptions?.forget is true then
+         next_state.accounts.remove(index)
+      else
+         target.token = nil
+         target.status = chatgpt.status.signedOut
+      end
+      if next_state.activeID is AccountID then next_state.activeID = nil end
+      commit(next_state)
+      if revoke_error then
+         revoke_error.localCredentialsCleared = true
+         revoke_error.remoteRevocationConfirmed = false
+         return false, revoke_error
+      end
+      return true
+   end
+
+   @Doc(text=[[
+Opens the ChatGPT usage settings page through `openSettings` or `openBrowser`, if configured, and returns its URL.
+Users manage each application's access to their ChatGPT plan on this page.
+]])
+   self.usageSettings = function():str
+      callback = options.openSettings or options.openBrowser
+      if callback then callback(USAGE_SETTINGS) end
+      return USAGE_SETTINGS
+   end
+
+   @Doc(text=[[
+Creates an ordinary `ai/openai` client that uses an OpenAI API key and is billed to the API account.
+
+This is the explicit fallback for when ChatGPT-plan usage is unavailable.  The manager never switches billing paths on
+its own; call this only after the user has chosen API-key billing.
+
+-INPUT-
+Key: The user's API key.
+ClientOptions: Optional `openai.Client()` options other than `credential`.
+
+-RESULTS-
+table: The API-key client.
+]])
+   self.apiKeyClient = function(Key:str!, ClientOptions:table):table
+      supplied = ClientOptions or {}
+      client_options = {}
+      for key, value in pairs(supplied) do client_options[key] = value end
+      if client_options.credential then raise 'API-key fallback credential is supplied explicitly as Key' end
+      client_options.credential = openai.apiKey(Key)
+      return openai.Client(client_options)
+   end
+
+   return self
+end
+
+jit.off(chatgpt.AccountManager, true)

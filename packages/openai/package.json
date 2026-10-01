@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "name": "ai/openai",
   "version": "1.0",
-  "description": "Bounded OpenAI Models and Responses API client with streaming, structured output and custom tools.",
+  "description": "Bounded OpenAI Responses client with streaming, structured output, custom tools and Sign in with ChatGPT.",
   "entry": "openai.tiri",
   "authors": [
     {
@@ -16,6 +16,8 @@
   "repository": "https://github.com/kotuku-group/kotuku.git",
   "keywords": [
     "ai",
+    "chatgpt",
+    "oauth2",
     "openai",
     "responses"
   ],
@@ -24,13 +26,14 @@
   },
   "dependencies": {
     "json": "1.0",
+    "net/oauth2": "1.0",
     "net/url": "1.0"
   },
   "files": [
     {
       "path": "README.md",
-      "size": 3239,
-      "sha256": "70430d60eb47018807c17e9f8b43278634cb15fd62b89eb92fdbb8d8c19db0a3",
+      "size": 4192,
+      "sha256": "62d15773db05b7b76d40c8c40d96b500bb7dd3691749a42917ff9c19c73f4ccc",
       "mediaType": "text/markdown"
     },
     {
@@ -40,28 +43,60 @@
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
+      "path": "chatgpt/README.md",
+      "size": 3436,
+      "sha256": "77cf8228231c522676a93f79ab5be72d091a961a883d7cbd9d0078f52cfebaf6",
+      "mediaType": "text/markdown"
+    },
+    {
+      "path": "chatgpt/chatgpt.tiri",
+      "size": 25513,
+      "sha256": "145fa4954e92e95c721eefa733d4931a84a6c52a068aac0b753e2da87a88b31b",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "chatgpt/policy.tiri",
+      "size": 7584,
+      "sha256": "381a5054836481ef5f71ce41c4bdd630be9a28d2ade4390d1b31e204368a9d31",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "chatgpt/storage.tiri",
+      "size": 4866,
+      "sha256": "bc71af60df369aaf221cb897f6b6cad8813eb28f7401014c165a3821fda15e71",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
       "path": "openai.tiri",
-      "size": 15760,
-      "sha256": "2df64f1913f8cf84d2a529216bdd4a4727fdaaf39f3e1cafeead973ceb4e7b8d",
+      "size": 24103,
+      "sha256": "3798091deb9e53b60b7fc8d97ed18f1dd7727980cbfcc3cbd48965b0efd807fb",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
       "path": "responses.tiri",
-      "size": 22864,
-      "sha256": "eac3a74b5b27331d1b7350d58fee7888a25b7ee3fc73147d626f07993f40fbb9",
+      "size": 32069,
+      "sha256": "a585ad2a8c888755025627bdb0880b6222ef9ab587ddd33b4fb01a405b7e8dd6",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
       "path": "sse.tiri",
-      "size": 5335,
-      "sha256": "1a0225947690399a84caaf13dd27be82099a2a60155fbbef858a05216553b875",
+      "size": 5336,
+      "sha256": "1dc3121a7fe96dc6de703f5996deb988f8d33e4a0056c5757d1264c52a21a75b",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
       "path": "stream.tiri",
-      "size": 11999,
-      "sha256": "b33897fec279b7d6a630ba4b576fe88987b8ee49a9055a17718e7882245fa40e",
+      "size": 13921,
+      "sha256": "634fee69bea60858a18d95acb3c6ce6948b75d70ff8de132178a21e0ef7b36f5",
       "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ],
+  "exports": [
+    {
+      "ai/openai": "openai.tiri"
+    },
+    {
+      "ai/chatgpt": "chatgpt/chatgpt.tiri"
     }
   ]
 }
