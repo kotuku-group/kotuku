@@ -110,6 +110,50 @@ end
    assert(err.code is 'tool_not_allowed', 'Model-selected names are constrained by the allow-list')
 end
 
+@Test function ToolRegistryEnforcesSchemaConstraintsBeforeCallbacks()
+   approvals = 0
+   invocations = 0
+   registry = openai.ToolRegistry({ approve=function(Info) approvals++; return true end })
+   properties = {
+      n={ type='integer', minimum=1, maximum=5 },
+      ratio={ type='number', exclusiveMinimum=0, exclusiveMaximum=1, multipleOf=0.25 },
+      code={ type='string', minLength=2, maxLength=4, pattern='^[A-Z]+$' },
+      tags={ type='array', items={ type='string' }, minItems=1, maxItems=2, uniqueItems=true },
+      mode={ anyOf=array<table> { { const='fast' }, { const='safe' } } }
+   }
+   registry.register('constrained', { type='object', properties=properties,
+      required=array<str> { 'n', 'ratio', 'code', 'tags', 'mode' }, additionalProperties=false },
+      function(Arguments):any invocations++; return Arguments end, { consequential=true })
+   valid = { n=2, ratio=0.5, code='OK', tags=array<str> { 'one' }, mode='safe' }
+   output, err = registry.dispatch({ type='function_call', name='constrained', call_id='valid',
+      arguments=json.encode(valid) })
+   assert(not err and output.call_id is 'valid' and approvals is 1 and invocations is 1,
+      'Arguments satisfying every constraint reach approval and the handler')
+   fixtures = array<table> {
+      { field='n', value=0, code='argument_minimum' },
+      { field='n', value=6, code='argument_maximum' },
+      { field='ratio', value=0, code='argument_exclusive_minimum' },
+      { field='ratio', value=1, code='argument_exclusive_maximum' },
+      { field='ratio', value=0.3, code='argument_multiple_of' },
+      { field='code', value='A', code='argument_min_length' },
+      { field='code', value='ABCDE', code='argument_max_length' },
+      { field='code', value='no', code='argument_pattern' },
+      { field='tags', value=array<str>, code='argument_min_items' },
+      { field='tags', value=array<str> { 'one', 'two', 'three' }, code='argument_max_items' },
+      { field='tags', value=array<str> { 'same', 'same' }, code='argument_unique_items' },
+      { field='mode', value='unsafe', code='argument_any_of' }
+   }
+   for index, fixture in fixtures do
+      arguments = {}
+      for key, value in pairs(valid) do arguments[key] = value end
+      arguments[fixture.field] = fixture.value
+      _, err = registry.dispatch({ type='function_call', name='constrained', call_id='invalid-' .. index,
+         arguments=json.encode(arguments) })
+      assert(err and err.code is fixture.code and approvals is 1 and invocations is 1,
+         f'{fixture.code} must reject arguments before approval or handler invocation at fixture {index}')
+   end
+end
+
 @Test function HistoryRetainsReasoningAndCallPairs()
    history = openai.History(array<table> { { role='user', content='Question' } })
    raw = { id='resp', output=array<table> { { type='reasoning', id='r1' },

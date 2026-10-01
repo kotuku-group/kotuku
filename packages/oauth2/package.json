@@ -59,8 +59,8 @@
     },
     {
       "path": "transport.tiri",
-      "size": 5956,
-      "sha256": "a295c55045e57247945128903566867482262e8e335bdd8492d0b457eae8f6a4",
+      "size": 5975,
+      "sha256": "40551fbe1e4eda7273f423538205ed38bba12d80056a246476668f36bd2d2cfb",
       "mediaType": "application/vnd.kotuku.tiri"
     }
   ]

@@ -8,10 +8,11 @@ function parserFailure(Code:str, Message:str, State:table):table
 end
 
 openai_sse.Parser = function(Options:table):table
+   utf8_bom = '\xef\xbb\xbf'
    options = Options or {}
    state = {
       pending='', data=array<str>, eventName='', lastID='', eventBytes=0, bytes=0, events=0, finished=false,
-      afterCR=false,
+      afterCR=false, atStart=true,
       maxBytes=options.maxBytes or 16777216, maxEventBytes=options.maxEventBytes or 1048576,
       maxEvents=options.maxEvents or 10000, onEvent=options.onEvent
    }
@@ -73,6 +74,17 @@ openai_sse.Parser = function(Options:table):table
    end
 
    function consume():table
+      if state.atStart then
+         prefix_bytes = #state.pending < #utf8_bom ? #state.pending : #utf8_bom
+         if state.pending.sub(0, prefix_bytes) != utf8_bom.sub(0, prefix_bytes) then
+            state.atStart = false
+         elseif #state.pending < #utf8_bom then
+            return nil
+         else
+            state.pending = state.pending.sub(#utf8_bom)
+            state.atStart = false
+         end
+      end
       if state.afterCR and state.pending != '' then
          state.afterCR = false
          if state.pending.startsWith('\n') then state.pending = state.pending.sub(1) end

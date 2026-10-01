@@ -231,15 +231,129 @@ function typeMatches(Value:any, Expected:any):bool
    return false
 end
 
+function schemaError(Path:str):table
+   return { code='argument_schema', message='Tool argument schema contains an invalid constraint', path=Path }
+end
+
+function jsonEqual(Left:any, Right:any, Depth:num):bool
+   if Depth > 32 then return false end
+   if Left is json.null or Right is json.null then return Left is Right end
+   if Left is <array> or Right is <array> then
+      if not (Left is <array>) or not (Right is <array>) or #Left != #Right then return false end
+      for index, value in Left do
+         if not jsonEqual(value, Right[index], Depth + 1) then return false end
+      end
+      return true
+   end
+   if Left is <table> or Right is <table> then
+      if not (Left is <table>) or not (Right is <table>) or table.size(Left) != table.size(Right) then return false end
+      for key, value in pairs(Left) do
+         if not (key in Right) or not jsonEqual(value, Right[key], Depth + 1) then return false end
+      end
+      return true
+   end
+   return Left is Right
+end
+
+function schemaIntegerConstraint(Value:any):bool
+   return Value is <num> and Value >= 0 and Value is math.floor(Value)
+end
+
 function schemaValue(Value:any, Schema:table, Path:str, Depth:num):table
    if Depth > 32 then return { code='argument_depth', message='Tool arguments exceed the nesting limit', path=Path } end
    if Schema.type != nil and not typeMatches(Value, Schema.type) then
       return { code='argument_type', message='Tool argument has the wrong type', path=Path }
    end
-   if Schema.enum is <array> and not (Value in Schema.enum) then
-      return { code='argument_enum', message='Tool argument is not an allowed value', path=Path }
+   if Schema.enum != nil then
+      if not (Schema.enum is <array>) then return schemaError(Path) end
+      enum_match = false
+      for allowed in values(Schema.enum) do
+         if jsonEqual(Value, allowed, 0) then enum_match = true; break end
+      end
+      if not enum_match then
+         return { code='argument_enum', message='Tool argument is not an allowed value', path=Path }
+      end
+   end
+   if Schema.const != nil and not jsonEqual(Value, Schema.const, 0) then
+      return { code='argument_const', message='Tool argument does not match the required value', path=Path }
+   end
+   if Schema.anyOf != nil then
+      if not (Schema.anyOf is <array>) or #Schema.anyOf is 0 then return schemaError(Path) end
+      any_match = false
+      for candidate in values(Schema.anyOf) do
+         if not (candidate is <table>) then return schemaError(Path) end
+         if not schemaValue(Value, candidate, Path, Depth + 1) then any_match = true; break end
+      end
+      if not any_match then
+         return { code='argument_any_of', message='Tool argument does not match any allowed schema', path=Path }
+      end
+   end
+   if Value is <num> then
+      for constraint in values(array<array> {
+         array<any> { 'minimum', 'argument_minimum', 'Tool argument is below the minimum' },
+         array<any> { 'maximum', 'argument_maximum', 'Tool argument is above the maximum' },
+         array<any> { 'exclusiveMinimum', 'argument_exclusive_minimum',
+            'Tool argument is not above the exclusive minimum' },
+         array<any> { 'exclusiveMaximum', 'argument_exclusive_maximum',
+            'Tool argument is not below the exclusive maximum' }
+      }) do
+         keyword = constraint[0]
+         code = constraint[1]
+         message = constraint[2]
+         limit = Schema[keyword]
+         if limit != nil then
+            if not (limit is <num>) then return schemaError(Path) end
+            invalid = keyword is 'minimum' ? Value < limit : keyword is 'maximum' ? Value > limit :
+               keyword is 'exclusiveMinimum' ? Value <= limit : Value >= limit
+            if invalid then return { code=code, message=message, path=Path } end
+         end
+      end
+      if Schema.multipleOf != nil then
+         multiple = Schema.multipleOf
+         if not (multiple is <num>) or multiple <= 0 then return schemaError(Path) end
+         quotient = Value / multiple
+         nearest = math.floor(quotient + 0.5)
+         if math.abs(quotient - nearest) > 1e-12 then
+            return { code='argument_multiple_of', message='Tool argument is not a permitted multiple', path=Path }
+         end
+      end
+   elseif Value is <str> then
+      string_length = #r'[\s\S]'.search(Value)
+      if Schema.minLength != nil then
+         if not schemaIntegerConstraint(Schema.minLength) then return schemaError(Path) end
+         if string_length < Schema.minLength then
+            return { code='argument_min_length', message='Tool argument is shorter than the minimum length', path=Path }
+         end
+      end
+      if Schema.maxLength != nil then
+         if not schemaIntegerConstraint(Schema.maxLength) then return schemaError(Path) end
+         if string_length > Schema.maxLength then
+            return { code='argument_max_length', message='Tool argument exceeds the maximum length', path=Path }
+         end
+      end
+      if Schema.pattern != nil then
+         if not (Schema.pattern is <str>) then return schemaError(Path) end
+         local pattern:any
+         try pattern = regex.new(Schema.pattern)
+         except e return schemaError(Path) end
+         if not pattern.test(Value) then
+            return { code='argument_pattern', message='Tool argument does not match the required pattern', path=Path }
+         end
+      end
    end
    if Value is <table> and Value != json.null and Schema.properties is <table> then
+      if Schema.minProperties != nil then
+         if not schemaIntegerConstraint(Schema.minProperties) then return schemaError(Path) end
+         if table.size(Value) < Schema.minProperties then
+            return { code='argument_min_properties', message='Tool argument has too few properties', path=Path }
+         end
+      end
+      if Schema.maxProperties != nil then
+         if not schemaIntegerConstraint(Schema.maxProperties) then return schemaError(Path) end
+         if table.size(Value) > Schema.maxProperties then
+            return { code='argument_max_properties', message='Tool argument has too many properties', path=Path }
+         end
+      end
       for name in values(Schema.required or array<str>) do
          if not (name in Value) then return { code='argument_required', message='Required tool argument is missing',
             path=Path .. '.' .. name } end
@@ -254,10 +368,37 @@ function schemaValue(Value:any, Schema:table, Path:str, Depth:num):table
             if err then return err end
          end
       end
-   elseif Value is <array> and Schema.items is <table> then
-      for index, child in Value do
-         err = schemaValue(child, Schema.items, Path .. '[' .. index .. ']', Depth + 1)
-         if err then return err end
+   elseif Value is <array> then
+      if Schema.minItems != nil then
+         if not schemaIntegerConstraint(Schema.minItems) then return schemaError(Path) end
+         if #Value < Schema.minItems then
+            return { code='argument_min_items', message='Tool argument has too few items', path=Path }
+         end
+      end
+      if Schema.maxItems != nil then
+         if not schemaIntegerConstraint(Schema.maxItems) then return schemaError(Path) end
+         if #Value > Schema.maxItems then
+            return { code='argument_max_items', message='Tool argument has too many items', path=Path }
+         end
+      end
+      if Schema.uniqueItems != nil then
+         if not (Schema.uniqueItems is <bool>) then return schemaError(Path) end
+         if Schema.uniqueItems then
+            for left in {0 to #Value} do
+               for right in {left + 1 to #Value} do
+                  if jsonEqual(Value[left], Value[right], 0) then
+                     return { code='argument_unique_items', message='Tool argument items must be unique', path=Path }
+                  end
+               end
+            end
+         end
+      end
+      if Schema.items != nil then
+         if not (Schema.items is <table>) then return schemaError(Path) end
+         for index, child in Value do
+            err = schemaValue(child, Schema.items, Path .. '[' .. index .. ']', Depth + 1)
+            if err then return err end
+         end
       end
    end
    return nil

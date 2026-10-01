@@ -48,6 +48,15 @@ end
    end)
 end
 
+@Test function InitialBOMIsIgnored()
+   wire = '\xef\xbb\xbf' .. eventWire('response.completed', { response={ id='bom' } })
+   fragmentEveryBoundary(wire, function(Stream, Seen, Split)
+      response, err = Stream.result()
+      assert(not err and response.id is 'bom' and #Seen is 1,
+         f'An initial UTF-8 BOM must be ignored at split {Split}')
+   end)
+end
+
 @Test function OneByteChunksRemainIncremental()
    wire = eventWire('response.output_text.delta', { sequence_number=1, delta='A' }) ..
       eventWire('response.completed', { response={ id='one-byte' } })
