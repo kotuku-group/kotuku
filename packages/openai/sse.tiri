@@ -7,7 +7,7 @@ function parserFailure(Code:str, Message:str, State:table):table
    return { kind='transport', code=Code, message=Message, bytes=State.bytes, events=State.events }
 end
 
-openai_sse.Parser = function(Options:table):table
+openai_sse.parser = function(Options:table):table
    utf8_bom = '\xef\xbb\xbf'
    options = Options or {}
    state = {
@@ -145,4 +145,4 @@ end
 
 -- Parser factories create stateful closure families.  Keep their allocation and captured state off traces.
 
-jit.off(openai_sse.Parser, true)
+jit.off(openai_sse.parser, true)

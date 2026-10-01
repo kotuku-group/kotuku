@@ -6,7 +6,7 @@ function fixtureClient(Transport:func, Extra:table):table
    options = { credential=openai.apiKey('fixture-key'), baseURL='http://127.0.0.1:12345/v1',
       testLoopback=true, retry={ maxAttempts=1 }, transport=Transport }
    for key, value in pairs(Extra or {}) do options[key] = value end
-   return openai.Client(options)
+   return openai.client(options)
 end
 
 @Test function CredentialsAndCapabilities()
@@ -16,7 +16,7 @@ end
       return { accessToken='rotating-' .. callbacks }
    end)
    authorizations = array<str>
-   client = openai.Client({ credential=credential, baseURL='http://127.0.0.1:12345/v1', testLoopback=true,
+   client = openai.client({ credential=credential, baseURL='http://127.0.0.1:12345/v1', testLoopback=true,
       retry={ maxAttempts=1 }, transport=function(Request)
          authorizations.push(Request.headers.Authorization)
          return { status=200, body='{"object":"list","data":[]}' }
@@ -88,7 +88,7 @@ end
 @Test function ToolRegistryAllowListValidationAndApproval()
    approvals = 0
    invocations = 0
-   registry = openai.ToolRegistry({ approve=function(Info)
+   registry = openai.toolRegistry({ approve=function(Info)
       approvals++
       return Info.arguments.id is 7
    end })
@@ -112,7 +112,7 @@ end
    assert(err.code is 'invalid_arguments' and approvals is 1 and invocations is 1,
       'Malformed arguments are rejected before approval or invocation')
 
-   rejecting = openai.ToolRegistry({ approve=function(Info) return false end })
+   rejecting = openai.toolRegistry({ approve=function(Info) return false end })
    rejecting.register('lookup', { type='object', properties={ id={ type='integer' } },
       required=array<str> { 'id' }, additionalProperties=false }, function(Arguments)
          raise 'Rejected tools must never run'
@@ -126,7 +126,7 @@ end
 @Test function ToolRegistryEnforcesSchemaConstraintsBeforeCallbacks()
    approvals = 0
    invocations = 0
-   registry = openai.ToolRegistry({ approve=function(Info) approvals++; return true end })
+   registry = openai.toolRegistry({ approve=function(Info) approvals++; return true end })
    properties = {
       n={ type='integer', minimum=1, maximum=5 },
       ratio={ type='number', exclusiveMinimum=0, exclusiveMaximum=1, multipleOf=0.25 },
@@ -168,7 +168,7 @@ end
 end
 
 @Test function HistoryRetainsReasoningAndCallPairs()
-   history = openai.History(array<table> { { role='user', content='Question' } })
+   history = openai.history(array<table> { { role='user', content='Question' } })
    raw = { id='resp', output=array<table> { { type='reasoning', id='r1' },
       { type='function_call', call_id='c1', name='lookup', arguments='{}' } } }
    history.appendResponse(openai.response(raw)).functionOutput('c1', { ok=true })
@@ -209,7 +209,7 @@ end
 end
 
 @Test function StreamingUsesTypedResponseAndItemDecoders()
-   stream = openai_stream.Stream({ responseDecoder=openai.response, itemDecoder=openai.item })
+   stream = openai_stream.stream({ responseDecoder=openai.response, itemDecoder=openai.item })
    seen:any = nil
    stream.onEvent(function(Event)
       seen = Event
@@ -228,7 +228,7 @@ end
       response.inputItems()[0].content[0].text is 'assembled' and response.output[1].type is 'reasoning',
       'Streaming completion restores isolated Items in output-index order when terminal output is empty')
 
-   authoritative = openai_stream.Stream({ responseDecoder=openai.response, itemDecoder=openai.item })
+   authoritative = openai_stream.stream({ responseDecoder=openai.response, itemDecoder=openai.item })
    authoritative.feed('data: {"type":"response.output_item.done","output_index":0,"item":{' ..
       '"type":"message","content":[{"type":"output_text","text":"event"}]}}\n\n')
    authoritative.feed('data: {"type":"response.completed","response":{"id":"authoritative","output":[' ..
@@ -243,7 +243,7 @@ end
       additionalProperties=false }
    calls = array<str>
    approvals = array<table>
-   registry = openai.ToolRegistry({ approve=function(Info) approvals.push(Info); return true end })
+   registry = openai.toolRegistry({ approve=function(Info) approvals.push(Info); return true end })
    registry.register('lookup', schema, function(Arguments) calls.push('top'); return 'top' end)
    registry.register('lookup', schema, function(Arguments) calls.push('crm'); return 'crm' end,
       { namespace='crm', consequential=true })

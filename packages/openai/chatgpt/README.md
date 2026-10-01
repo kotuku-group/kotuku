@@ -10,7 +10,7 @@ Create an account manager with an application name and an injected browser callb
 ```tiri
 import 'ai/chatgpt'
 
-accounts = chatgpt.AccountManager({
+accounts = chatgpt.accountManager({
    applicationName='My application',
    openBrowser=function(URL)
       -- Open URL in the system browser without logging it.

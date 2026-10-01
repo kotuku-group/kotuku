@@ -16,7 +16,6 @@ store, including across processes when applicable.
 | Refresh | OAuth refresh token or prior OIDC token record; rotating refresh tokens are returned to the caller. |
 | Revocation | Explicit RFC 7009 endpoint; HTTP 200 succeeds even with an empty body. |
 | Google/Microsoft presets | Endpoint/default-scope configuration for code flow.  No live provider certification is claimed. |
-| Legacy `getGoogleTokens()` / `getMicrosoftTokens()` | Return `unsupported_provider_flow`.  Their device flows have not been validated with suitable registrations/scopes. |
 | Microsoft logout | Not token revocation; no revocation endpoint is supplied by the preset. |
 | OIDC device, implicit/hybrid grants, non-RS256 signatures, IPv6 callbacks | Unsupported. |
 
@@ -32,7 +31,7 @@ adapter, not a global provider preset.
 ```tiri
 import 'net/oauth2'
 
-client = oauth2.Client({
+client = oauth2.client({
    clientID = 'registered-public-client',
    scope = 'api',
    custom_endpoints = {
@@ -47,7 +46,7 @@ client = oauth2.Client({
 })
 ```
 
-`Client(Config)` validates configuration and raises on invalid configuration.  Policy options are copied at creation;
+`client(Config)` validates configuration and raises on invalid configuration.  Policy options are copied at creation;
 the three presentation callbacks on the returned client can be replaced.  Public `clientID`, `scope`, `redirectURI`,
 `state` and `pkce` fields are informational; changing them does not change a private attempt's binding.  `state` and
 `pkce` are cleared when the attempt is consumed or cancelled.  Do not log them.

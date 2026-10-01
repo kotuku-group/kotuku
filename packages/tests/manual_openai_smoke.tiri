@@ -26,7 +26,7 @@
    end
 
    if mode is 'chatgpt' then
-      accounts = chatgpt.AccountManager({
+      accounts = chatgpt.accountManager({
          applicationName = 'Kotuku OpenAI smoke test',
          presentAuthorization = function(URL)
             print('Open this authorization URL in a browser. The URL is not retained or logged by the test:')
@@ -60,7 +60,7 @@
          raise 'OPENAI_API_KEY is not configured'
       end
 
-      client = openai.Client({ credential=openai.apiKey(key) })
+      client = openai.client({ credential=openai.apiKey(key) })
    else
       raise 'mode must be chatgpt or api-key'
    end

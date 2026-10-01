@@ -4,7 +4,7 @@
 --
 -- Usage:
 --   import 'net/oauth2'
---   client = oauth2.Client({ clientID='...', provider='google', presentAuthorization=showSignInLink })
+--   client = oauth2.client({ clientID='...', provider='google', presentAuthorization=showSignInLink })
 --   token, message, details = client.authorizeWeb()
 --
 -- This file defines the public oauth2 namespace.  Supporting code is kept in private imports:
@@ -16,7 +16,9 @@
 -- Refer to README.md for the full configuration reference, support boundaries and security notes.
 
    include 'network'
+
    module crypto as mCrypto
+
    import 'net/url'
 
    import './transport', './oidc', './callback'
@@ -38,21 +40,26 @@ end
 -- Monotonic time in seconds, used for deadlines and polling intervals.
 
 function monotonicTime():num
-   raw_time = mSys.PreciseTime()
-   return raw_time / 1000000
+   return mSys.PreciseTime() / 1000000
 end
 
 crypto_api <const> = {
-   RandomBytes=function(Buffer:any):num return mCrypto.RandomBytes(Buffer) end,
-   SHA256=function(Input:any, Output:any):num return mCrypto.SHA256(Input, Output) end,
-   Base64Encode=function(Input:any, Mode:num, Output:any):<num, num>
+   RandomBytes = function(Buffer:any):num
+      return mCrypto.RandomBytes(Buffer)
+   end,
+   SHA256 = function(Input:any, Output:any):num
+      return mCrypto.SHA256(Input, Output)
+   end,
+   Base64Encode = function(Input:any, Mode:num, Output:any):<num, num>
       return mCrypto.Base64Encode(Input, Mode, Output)
    end,
-   Base64Decode=function(Input:any, Mode:num, Output:any):<num, num>
+   Base64Decode = function(Input:any, Mode:num, Output:any):<num, num>
       return mCrypto.Base64Decode(Input, Mode, Output)
    end,
-   ConstantTimeEqual=function(A:any, B:any):<num, num> return mCrypto.ConstantTimeEqual(A, B) end,
-   VerifyJWK=function(Alg:num, N:str, E:str, Input:any, Signature:any):num
+   ConstantTimeEqual = function(A:any, B:any):<num, num>
+      return mCrypto.ConstantTimeEqual(A, B)
+   end,
+   VerifyJWK = function(Alg:num, N:str, E:str, Input:any, Signature:any):num
       return mCrypto.VerifyJWK(Alg, N, E, Input, Signature)
    end
 }
@@ -93,9 +100,7 @@ function secureString(Count:num):str
 
    capacity = math.ceil(Count / 3) * 4
    encoded = array<byte, capacity>
-   err, size = crypto_api.Base64Encode(bytes, CC_URL, encoded)
-   if err != ERR_Okay then raise 'Secure random encoding failed' end
-
+   _, size = check crypto_api.Base64Encode(bytes, CC_URL, encoded)
    return encoded.getString(0, size)
 end
 
@@ -107,8 +112,8 @@ function pkceChallenge(Verifier:str):str
    check crypto_api.SHA256(Verifier, digest)
 
    encoded = array<byte, 43>
-   err, count = crypto_api.Base64Encode(digest, CC_URL, encoded)
-   if err != ERR_Okay or count != 43 then raise 'PKCE encoding failed' end
+   _, count = check crypto_api.Base64Encode(digest, CC_URL, encoded)
+   if count != 43 then raise 'PKCE encoding failed' end
 
    return encoded.getString()
 end
@@ -163,7 +168,7 @@ Config: Client configuration.  `clientID` is required, along with either `provid
 -RESULTS-
 table: The new client.
 ]])
-oauth2.Client = function(Config:table!):table
+oauth2.client = function(Config:table!):table
    if Config.client_id != nil or Config.client_secret != nil or Config.redirect_uri != nil then
       raise 'Use clientID, clientSecret and redirectURI; snake-case options are unsupported'
    end
@@ -280,7 +285,7 @@ oauth2.Client = function(Config:table!):table
    attempt:table = nil
    control:table = nil
 
-   self = {
+   self = entity {
       clientID             = client_id,
       scope                = scope,
       redirectURI          = redirect_template,
@@ -332,13 +337,15 @@ oauth2.Client = function(Config:table!):table
 
       -- Expiry is left unknown if the provider does not state a lifetime.
 
-      expires_at:num = nil
-      earliest_refresh_at:num = nil
-      now = wallTime()
+      local expires_at:num
+      local earliest_refresh_at:num
+      local now = wallTime()
+
       if Data.expires_in != nil then
          if not oauth_wire.number(Data.expires_in, 0, 315360000) then raise 'Invalid token lifetime' end
          expires_at = now + Data.expires_in
       end
+
       if Data.earliest_refresh_at != nil then
          if not oauth_wire.number(Data.earliest_refresh_at, 0, 9007199254740991) then
             raise 'Invalid earliest refresh time'
@@ -363,7 +370,7 @@ oauth2.Client = function(Config:table!):table
 
       -- Identity.  A returned ID token is always verified; a refresh without one keeps the previous identity.
 
-      identity:table = nil
+      local identity:table
       if Data.id_token != nil then
          if not validator or not oauth_wire.text(Data.id_token, 65536) then raise 'Unverifiable ID token' end
          Expected.accessToken = Data.access_token

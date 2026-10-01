@@ -8,7 +8,7 @@ restricted policy are provided by the `ai/chatgpt` export of this package (see [
 ```tiri
 import 'ai/openai'
 
-client = openai.Client({ credential=openai.apiKey(ApiKey) })
+client = openai.client({ credential=openai.apiKey(ApiKey) })
 response, err = client.responses.create({ model=Model, input='Explain the result briefly.' })
 if err then raise err.message end
 print(response.outputText())
@@ -32,14 +32,14 @@ the complete provider payload remains in `raw`, including unknown Items, content
 provider omits Items from the terminal payload, the stream restores completed `response.output_item.done` Items in
 output-index order while leaving `raw` unchanged.
 
-`openai.ToolRegistry()` is an explicit allow-list. Register a name, JSON Schema, handler, and optional
+`openai.toolRegistry()` is an explicit allow-list. Register a name, JSON Schema, handler, and optional
 `consequential=true` and `namespace`. Dispatch strictly decodes and validates function arguments, rejects unregistered
 names and namespaces, invokes the registry approval callback before consequential handlers, and emits a
 `function_call_output` with the original `call_id`. `declarations()` groups namespaced functions into `namespace`
 tools, which may be sent in `tools` or in an `additional_tools` input Item. Applications remain responsible for
 deciding when to dispatch model requests.
 
-`openai.History()` stores copied input and output Items, including reasoning and function-call Items. Replaying full
+`openai.history()` stores copied input and output Items, including reasoning and function-call Items. Replaying full
 history is caller-managed: pass `history.items()` as the next request's `input`. Every replay sends those Items again,
 so input token use, latency, and API cost generally grow with conversation length. Preserve all reasoning and
 function-call/output pairs required by the selected model; trim or summarise only when the application accepts the

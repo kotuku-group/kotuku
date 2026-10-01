@@ -504,7 +504,7 @@ copy of `arguments`, and must return `true` to allow the call.  `maxArgumentByte
 -RESULTS-
 table: The registry, providing `register()`, `describeNamespace()`, `declarations()` and `dispatch()`.
 ]])
-openai_responses.ToolRegistry = function(Options:table):table
+openai_responses.toolRegistry = function(Options:table):table
    options = Options or {}
    entries = {}
    namespaces = {}
@@ -683,7 +683,7 @@ Initial: Optional array of Items or typed Items to start with.
 -RESULTS-
 table: The history object.
 ]])
-openai_responses.History = function(Initial:array<any>):table
+openai_responses.history = function(Initial:array<any>):table
    state = array<table>
    for item in values(Initial or array<table>) do state.push(openai_responses.copy(item.raw or item)) end
    self = {}

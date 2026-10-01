@@ -40,7 +40,7 @@ function apiKind(Code:any):str
    return 'response'
 end
 
-openai_stream.Stream = function(Options:table):table
+openai_stream.stream = function(Options:table):table
    options = Options or {}
 
    state = {
@@ -178,7 +178,7 @@ openai_stream.Stream = function(Options:table):table
       return not state.terminal and not state.closed
    end
 
-   parser = openai_sse.Parser({
+   parser = openai_sse.parser({
       maxBytes=options.maxBytes, maxEventBytes=options.maxEventBytes,
       maxEvents=options.maxEvents, onEvent=decoded
    })
@@ -299,7 +299,7 @@ openai_stream.Stream = function(Options:table):table
    return self
 end
 
-jit.off(openai_stream.Stream, true)
+jit.off(openai_stream.stream, true)
 
 openai_stream.request = function(Options:table):<table, table>
    if not Options or not (Options.url is <str>) or Options.url is '' then
@@ -307,7 +307,7 @@ openai_stream.request = function(Options:table):<table, table>
    end
 
    stream_options = Options.limits or {}
-   stream = openai_stream.Stream(stream_options)
+   stream = openai_stream.stream(stream_options)
    body = Options.body or ''
    method = (Options.method or 'POST').lower()
 
