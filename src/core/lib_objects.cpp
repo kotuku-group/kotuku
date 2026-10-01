@@ -17,6 +17,9 @@ Name: Objects
 #endif
 
 #include <thread>
+#ifdef UNIT_TESTS
+#include <semaphore>
+#endif
 
 #include "defs.h"
 
@@ -43,6 +46,9 @@ static std::atomic<bool> glAsyncWaiting;
 static ankerl::unordered_dense::set<OBJECTID> glAsyncWaitTargets;
 static std::mutex glmAsyncWait;
 
+// Async submission state — guarded by glmAsyncActions.
+static bool glAsyncActionsClosed = false;
+
 //********************************************************************************************************************
 
 void stop_async_actions(void)
@@ -50,6 +56,7 @@ void stop_async_actions(void)
    decltype(glAsyncThreads) async_threads;
    {
       std::lock_guard<std::recursive_mutex> lock(glmAsyncActions);
+      glAsyncActionsClosed = true;
       async_threads.swap(glAsyncThreads);
    }
 
@@ -793,7 +800,8 @@ static void drain_action_queue(OBJECTID ObjectID, bool Terminating, bool Preserv
 }
 
 //********************************************************************************************************************
-// Helper to launch an async action thread for an object.
+// Helper to launch an async action thread for an object.  Queued dispatch can reach this function after shutdown
+// closes submissions, so rejected launches must release the resources already retained by the queue.
 
 static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSize, const FunctionField *Fields,
    std::vector<int8_t> Parameters, FUNCTION Callback)
@@ -806,7 +814,14 @@ static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSiz
    // continue using core state after CloseCore() starts tearing that state down.
 
    {
-      std::lock_guard<std::recursive_mutex> lock(glmAsyncActions);
+      std::unique_lock<std::recursive_mutex> lock(glmAsyncActions);
+      if (glAsyncActionsClosed) {
+         lock.unlock();
+         release_copied_args(Fields, ArgsSize, Parameters.data(), true);
+         release_owned_callback(Callback);
+         drain_action_queue(object_uid);
+         return;
+      }
 
       for (auto it = glAsyncThreads.begin(); it != glAsyncThreads.end();) {
          if ((*it)->Finished.load(std::memory_order_acquire)) {
@@ -1180,6 +1195,11 @@ ERR AsyncAction(ACTIONID ActionID, OBJECTPTR Object, APTR Parameters, FUNCTION *
 
    if ((ActionID IS AC::NIL) or (not Object)) return ERR::NullArgs;
 
+   // Serialise the entire submission with shutdown, including argument retention and the queued-action path.
+   // A worker registered before submissions close is included in the shutdown snapshot.
+   std::lock_guard<std::recursive_mutex> submission_lock(glmAsyncActions);
+   if (glAsyncActionsClosed) return ERR::Cancelled;
+
    SharedObjectAccess objref(Object);
    if (not objref.granted()) return ERR::MarkedForDeletion;
    auto object_id = Object->UID;
@@ -1249,6 +1269,99 @@ ERR AsyncAction(ACTIONID ActionID, OBJECTPTR Object, APTR Parameters, FUNCTION *
 
    return error;
 }
+
+#ifdef UNIT_TESTS
+//********************************************************************************************************************
+// A worker submits new and queued work only after shutdown requests its stop, which is after the worker snapshot.
+// Keep the core alive for this check and restore submission state afterwards so the remaining tests can run.
+
+void async_shutdown_unit_tests(int &Passed, int &Total)
+{
+   kt::Log log("AsyncShutdown");
+   Total++;
+
+   {
+      std::lock_guard<std::recursive_mutex> lock(glmAsyncActions);
+      if (glAsyncActionsClosed or (not glAsyncThreads.empty())) {
+         log.warning("Async shutdown tests require an idle async runtime.");
+         return;
+      }
+   }
+
+   OBJECTPTR first = nullptr;
+   OBJECTPTR second = nullptr;
+   auto cleanup = kt::Defer([&]() {
+      if (first) FreeResource(first);
+      if (second) FreeResource(second);
+      std::lock_guard<std::recursive_mutex> lock(glmAsyncActions);
+      glAsyncActionsClosed = false;
+   });
+
+   if ((NewObject(CLASSID::TIME, NF::NIL, &first) != ERR::Okay) or
+       (NewObject(CLASSID::TIME, NF::NIL, &second) != ERR::Okay) or
+       (InitObject(first) != ERR::Okay) or (InitObject(second) != ERR::Okay)) {
+      log.warning("Failed to initialise async shutdown test objects.");
+      return;
+   }
+
+   // Mark the second object active to exercise the queued-submission path independently of the launch path.
+   {
+      std::lock_guard<std::mutex> lock(glmActionQueue);
+      glActiveAsyncObjects.insert(second->UID);
+   }
+
+   ERR launch_error = ERR::Okay;
+   ERR queue_error = ERR::Okay;
+   auto worker = std::make_shared<AsyncThread>();
+   {
+      std::lock_guard<std::recursive_mutex> lock(glmAsyncActions);
+      worker->Thread = std::jthread([&](std::stop_token StopToken) {
+         std::binary_semaphore stopped(0);
+         std::stop_callback on_stop(StopToken, [&]() { stopped.release(); });
+         stopped.acquire();
+         launch_error = AsyncAction(AC::Signal, first, nullptr, nullptr);
+         queue_error = AsyncAction(AC::Signal, second, nullptr, nullptr);
+         deregister_thread();
+      });
+      glAsyncThreads.insert(worker);
+   }
+
+   stop_async_actions();
+
+   bool okay = (launch_error IS ERR::Cancelled) and (queue_error IS ERR::Cancelled);
+   {
+      std::lock_guard<std::recursive_mutex> lock(glmAsyncActions);
+      okay = okay and glAsyncThreads.empty();
+   }
+   {
+      std::lock_guard<std::mutex> lock(glmActionQueue);
+      okay = okay and glActionQueues.empty() and glActiveAsyncObjects.empty();
+   }
+
+   // Also verify that a submission remains rejected after shutdown has finished joining the snapshot.
+   okay = (AsyncAction(AC::Signal, first, nullptr, nullptr) IS ERR::Cancelled) and okay;
+
+   // Simulate queued dispatch that reaches the launch helper after submissions have closed.
+   first->setFlag(NF::ASYNC_ACTIVE);
+   {
+      std::lock_guard<std::mutex> lock(glmActionQueue);
+      glActiveAsyncObjects.insert(first->UID);
+   }
+   launch_async_thread(first, AC::Signal, 0, nullptr, {}, {});
+   {
+      std::lock_guard<std::recursive_mutex> lock(glmAsyncActions);
+      okay = okay and glAsyncThreads.empty();
+   }
+   {
+      std::lock_guard<std::mutex> lock(glmActionQueue);
+      okay = okay and (not glActiveAsyncObjects.contains(first->UID)) and (not first->defined(NF::ASYNC_ACTIVE));
+   }
+   stop_async_actions(); // Clean up any worker admitted by a regressed implementation.
+
+   if (okay) Passed++;
+   else log.warning("Async shutdown admitted work after taking its worker snapshot.");
+}
+#endif
 
 /*********************************************************************************************************************
 
