@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "name": "net/oauth2",
   "version": "1.0",
-  "description": "OAuth 2.0 client helpers for device, web and token-refresh authentication flows.",
+  "description": "Bounded OAuth 2.0 code/PKCE, device, refresh and revocation flows with RS256 OIDC validation.",
   "entry": "oauth2.tiri",
   "authors": [
     {
@@ -28,9 +28,39 @@
   },
   "files": [
     {
+      "path": "README.md",
+      "size": 12572,
+      "sha256": "d77e8f6f140e0400fe77cf727e3f12fa19c8ed1f681cd305b6be0003d254a2bd",
+      "mediaType": "text/markdown"
+    },
+    {
+      "path": "callback.tiri",
+      "size": 2637,
+      "sha256": "02d76348417682ae60be8c072effe2038539d209ac128facb0878f0d815214d6",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
       "path": "oauth2.tiri",
-      "size": 24162,
-      "sha256": "82996d5c113cc1c25681f75aebaf1a6608c4c9fc3942f6f0daef4eeb671519c7",
+      "size": 38104,
+      "sha256": "3820604f2a9068661846af009a58d57bf9e2e806233a7725746dbb81e372886e",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "oidc.tiri",
+      "size": 7839,
+      "sha256": "fcf77c38087a4986eb91c79660e4b17ff17e201f94ebb634dc24a9d59bbfb49f",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "strict_json.tiri",
+      "size": 4927,
+      "sha256": "a7b43cf4f4ef74ac162aecd33403c284fa27b021058ef2b9974680139a03a05c",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "transport.tiri",
+      "size": 5975,
+      "sha256": "40551fbe1e4eda7273f423538205ed38bba12d80056a246476668f36bd2d2cfb",
       "mediaType": "application/vnd.kotuku.tiri"
     }
   ]

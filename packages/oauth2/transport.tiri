@@ -1,0 +1,146 @@
+   include 'http'
+   import 'json'
+   import 'net/url'
+   import './strict_json'
+   namespace oauth_wire { }
+
+oauth_wire.number = function(Value:any, Minimum:num, Maximum:num):bool
+   return Value is <num> and Value is Value and Value >= Minimum and Value <= Maximum
+end
+
+oauth_wire.text = function(Value:any, Limit:num):bool
+   return Value is <str> and #Value > 0 and #Value <= (Limit or 8192)
+end
+
+-- Deliberately narrow URI grammar: no credentials, fragments, backslashes or encoded authority.
+
+oauth_wire.endpoint = function(URL:any, TestLoopback:bool):bool
+   if not oauth_wire.text(URL, 4096) or r'[\x00-\x20\x7f\\]'.test(URL) then return false end
+
+   scheme, host, port = r'^(https?)://([A-Za-z0-9.\-]+)(:[0-9]+)?(?:/[^#]*)?$'.extract(URL)
+
+   if not scheme or not host then return false end
+
+   if port and port != '' then
+      number = tonumber(port.sub(1))
+      if not number or number < 1 or number > 65535 then return false end
+   end
+
+   return scheme is 'https' or (TestLoopback and host is '127.0.0.1')
+end
+
+oauth_wire.failure = function(Code:str, Status:num, Body:str):table
+   -- Raw provider text is untrusted and can echo credentials.  Only retain shape and size.
+   return { code=Code, status=Status or 0, bodyBytes=Body and #Body or 0,
+      message='OAuth request failed (' .. Code .. ')' }
+end
+
+oauth_wire.request = function(Method:str, URL:str, Form:table, Options:table, Control:table):<table, table>
+   if not oauth_wire.endpoint(URL, Options.testLoopback) then
+      return nil, oauth_wire.failure('invalid_endpoint')
+   end
+
+   if Control and Control.cancelled then return nil, oauth_wire.failure('cancelled') end
+
+   deadline = Options.elapsed() + (Options.timeout or 30)
+
+   if Control and Control.deadline then deadline = math.min(deadline, Control.deadline) end
+
+   if deadline <= Options.elapsed() then return nil, oauth_wire.failure('timeout') end
+
+   local response:table
+
+   try
+      if Options.transport then
+         response = Options.transport({ method=Method, url=URL, form=Form, deadline=deadline })
+      else
+         body = ''
+         done = false
+         too_large = false
+         failed = false
+         status = 0
+         headers = {}
+         proc = processing.new({ timeout=0.05 })
+         form = Form and url.buildQuery(Form) or ''
+         http <close> = obj.new('http', {
+            src=URL, method=Method.lower(), flags=HTF_NO_HEAD|HTF_NO_AUTO_REDIRECT|HTF_NO_DIALOG,
+            connectTimeout=math.min(10, Options.timeout or 30),
+            contentType='application/x-www-form-urlencoded',
+            inputFile=Method is 'POST' ? 'string:' .. form : nil,
+            size=Method is 'POST' ? #form : 0,
+            incoming=function(HTTP, Buffer)
+               if #body + #Buffer > (Options.maxResponseBytes or 262144) then
+                  too_large = true
+                  done = true
+                  proc.signal()
+                  return ERR_Terminate
+               end
+               body ..= Buffer.getString()
+            end,
+            stateChanged=function(HTTP, State)
+               if State is HGS_COMPLETED or State is HGS_TERMINATED then
+                  status = HTTP.status
+                  failed = State is HGS_TERMINATED
+                  -- Retain only non-secret protocol metadata.  Never expose arbitrary server headers.
+                  for name in values(array<str> { 'cache-control', 'age', 'retry-after', 'content-type' }) do
+                     err, val = HTTP.acGetKey(name)
+                     if err is ERR_Okay and #val <= 256 then headers[name] = val end
+                  end
+                  done = true
+                  proc.signal()
+               end
+            end
+         })
+         if http.acActivate() != ERR_Okay then return nil, oauth_wire.failure('transport') end
+         while not done and Options.elapsed() < deadline and not (Control and Control.cancelled) do proc.sleep() end
+         if Control and Control.cancelled then return nil, oauth_wire.failure('cancelled') end
+         if too_large then return nil, oauth_wire.failure('response_limit', status) end
+         if not done then return nil, oauth_wire.failure('timeout', status) end
+         if failed and status is 0 then return nil, oauth_wire.failure('transport') end
+         response = { status=status, body=body, headers=headers }
+      end
+   except e
+      return nil, oauth_wire.failure('transport')
+   end
+
+   if Control and Control.cancelled then return nil, oauth_wire.failure('cancelled') end
+
+   if Options.elapsed() >= deadline then return nil, oauth_wire.failure('timeout') end
+
+   if not response or not oauth_wire.number(response.status, 100, 599) or not (response.body is <str>) then
+      return nil, oauth_wire.failure('invalid_response')
+   end
+
+   if #response.body > (Options.maxResponseBytes or 262144) then
+      return nil, oauth_wire.failure('response_limit', response.status)
+   end
+
+   response.headers ?= {}
+   return response
+end
+
+oauth_wire.decode = function(Response:table):<table, table>
+   data:any = nil
+   try
+      data = oauth_json.decode(Response.body)
+   end
+
+   if Response.status != 200 then
+      code = 'http_error'
+      if data is <table> then
+         -- Only known error codes are safe to surface; arbitrary descriptions are deliberately discarded.
+         allowed = { invalid_request=true, invalid_client=true, invalid_grant=true, invalid_scope=true,
+            unauthorized_client=true, unsupported_grant_type=true, access_denied=true, authorization_pending=true,
+            slow_down=true, expired_token=true, temporarily_unavailable=true, server_error=true }
+         if data.error is <str> and allowed[data.error] then code = data.error end
+      end
+
+      return nil, oauth_wire.failure(code, Response.status, Response.body)
+   end
+
+   if not (data is <table>) or data is json.null or data.error != nil then
+      return nil, oauth_wire.failure('invalid_response', Response.status, Response.body)
+   end
+
+   return data
+end

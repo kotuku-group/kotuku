@@ -1,0 +1,148 @@
+-- Private incremental Server-Sent Events parser.  Input strings may contain arbitrary bytes and are copied before
+-- returning to the HTTP callback.
+
+   namespace openai_sse { }
+
+function parserFailure(Code:str, Message:str, State:table):table
+   return { kind='transport', code=Code, message=Message, bytes=State.bytes, events=State.events }
+end
+
+openai_sse.Parser = function(Options:table):table
+   utf8_bom = '\xef\xbb\xbf'
+   options = Options or {}
+   state = {
+      pending='', data=array<str>, eventName='', lastID='', eventBytes=0, bytes=0, events=0, finished=false,
+      afterCR=false, atStart=true,
+      maxBytes=options.maxBytes or 16777216, maxEventBytes=options.maxEventBytes or 1048576,
+      maxEvents=options.maxEvents or 10000, onEvent=options.onEvent
+   }
+
+   if state.maxBytes < 1 or state.maxEventBytes < 1 or state.maxEvents < 1 or not state.onEvent then
+      raise 'Invalid SSE parser options'
+   end
+
+   self = {}
+
+   function fail(Code:str, Message:str):table
+      state.finished = true
+      return parserFailure(Code, Message, state)
+   end
+
+   function dispatch():table
+      if #state.data is 0 then
+         state.eventName = ''
+         state.eventBytes = 0
+         return nil
+      end
+      if state.events >= state.maxEvents then return fail('event_limit', 'SSE event limit exceeded') end
+      state.events++
+      event = { data=state.data.concat('\n'), event=state.eventName != '' and state.eventName or 'message',
+         id=state.lastID, index=state.events }
+      state.data = array<str>
+      state.eventName = ''
+      state.eventBytes = 0
+      result = state.onEvent(event)
+      if result is false then state.finished = true end
+      return result is <table> ? result : nil
+   end
+
+   function line(Line:str):table
+      if Line is '' then return dispatch() end
+      state.eventBytes += #Line + 1
+      if state.eventBytes > state.maxEventBytes then
+         return fail('event_byte_limit', 'SSE event byte limit exceeded')
+      end
+      if Line.sub(0, 1) is ':' then return nil end
+      colon = Line.find(':')
+      field = ''
+      value = ''
+      if colon is nil then
+         field = Line
+      else
+         field = Line.sub(0, colon)
+         value = Line.sub(colon + 1)
+         if value.sub(0, 1) is ' ' then value = value.sub(1) end
+      end
+      if field is 'data' then
+         state.data.push(value)
+      elseif field is 'event' then
+         state.eventName = value
+      elseif field is 'id' and value.find('\0') is nil then
+         state.lastID = value
+      end
+      return nil
+   end
+
+   function consume():table
+      if state.atStart then
+         prefix_bytes = #state.pending < #utf8_bom ? #state.pending : #utf8_bom
+         if state.pending.sub(0, prefix_bytes) != utf8_bom.sub(0, prefix_bytes) then
+            state.atStart = false
+         elseif #state.pending < #utf8_bom then
+            return nil
+         else
+            state.pending = state.pending.sub(#utf8_bom)
+            state.atStart = false
+         end
+      end
+      if state.afterCR and state.pending != '' then
+         state.afterCR = false
+         if state.pending.startsWith('\n') then state.pending = state.pending.sub(1) end
+      end
+      while not state.finished do
+         newline = state.pending.find('\n')
+         carriage = state.pending.find('\r')
+         if newline is nil and carriage is nil then
+            if #state.pending + state.eventBytes > state.maxEventBytes then
+               return fail('event_byte_limit', 'SSE event byte limit exceeded')
+            end
+            return nil
+         end
+         delimiter = newline
+         delimiterBytes = 1
+         if carriage != nil and (delimiter is nil or carriage < delimiter) then
+            delimiter = carriage
+            if carriage + 1 < #state.pending and state.pending.sub(carriage + 1, carriage + 2) is '\n' then
+               delimiterBytes = 2
+            elseif carriage + 1 is #state.pending then
+               state.afterCR = true
+            end
+         end
+         current = state.pending.sub(0, delimiter)
+         state.pending = state.pending.sub(delimiter + delimiterBytes)
+         err = line(current)
+         if err then return err end
+      end
+      return nil
+   end
+
+   self.feed = function(Chunk:str):table
+      if state.finished then return parserFailure('parser_closed', 'SSE parser is closed', state) end
+      if not (Chunk is <str>) then return fail('invalid_chunk', 'SSE input must be a byte string') end
+      if #Chunk > state.maxBytes - state.bytes then return fail('byte_limit', 'SSE stream byte limit exceeded') end
+      state.bytes += #Chunk
+      state.pending ..= Chunk
+      return consume()
+   end
+
+   self.finish = function():table
+      if state.finished then return nil end
+      if state.pending != '' then
+         current = state.pending
+         state.pending = ''
+         if current.endsWith('\r') then current = current.sub(0, -1) end
+         err = line(current)
+         if err then return err end
+      end
+      err = dispatch()
+      state.finished = true
+      return err
+   end
+
+   self.stats = function():table return { bytes=state.bytes, events=state.events } end
+   return self
+end
+
+-- Parser factories create stateful closure families.  Keep their allocation and captured state off traces.
+
+jit.off(openai_sse.Parser, true)

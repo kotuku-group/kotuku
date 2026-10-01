@@ -59,7 +59,7 @@ endif ()
 
 if (BUILD_TESTS)
    flute_test (crypto_primitives "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_crypto.tiri")
-
+   flute_test (crypto_oauth2_pkce "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_oauth2_pkce.tiri")
 endif ()
 
 if (UNIT_TESTS)

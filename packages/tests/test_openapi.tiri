@@ -1,0 +1,168 @@
+   import 'net/openapi'
+   import 'json'
+
+function parseFixture(Spec:table, Options:table):table
+   path = 'temp:openapi-regression-' .. mSys.PreciseTime() .. '.json'
+   defer mSys.DeleteFile(path) end
+   io.writeAll(path, json.encode(Spec))
+   return openapi.parse(path, Options)
+end
+
+function fixture():table
+   return {
+      openapi = '3.0.0',
+      paths = {
+         ['/items/{id}'] = {
+            get = { operationId = 'getItem', responses = {} }
+         }
+      }
+   }
+end
+
+function response():table
+   res = { statusCode = 200 }
+   res.status = function(Code:num):table
+      res.statusCode = Code
+      return res
+   end
+   res.json = function(Data:any)
+      res.body = Data
+   end
+   return res
+end
+
+@Test function InheritedSecurityRejectsRequests()
+   spec = fixture()
+   spec.security = array<table> { { bearer = array<str> { 'read' } } }
+   security_calls = 0
+   handler_calls = 0
+   options = {
+      handlers = { getItem = function(Req, Res) handler_calls++ end },
+      securityHandlers = {
+         bearer = {
+            handler = function(Req, Scopes):bool
+               security_calls++
+               assert(Scopes[0] is 'read', 'Inherited scopes must reach the security handler')
+               return false
+            end
+         }
+      }
+   }
+   api = parseFixture(spec, options)
+   res = response()
+   api.routes[0].handler({}, res)
+   assert(security_calls is 1, 'Global security must run for an initially bound handler')
+   assert(handler_calls is 0 and res.statusCode is 401, 'Denied requests must not reach the handler')
+
+   api.handlers.bind('getItem', options.handlers.getItem)
+   api.routes[0].handler({}, response())
+   assert(security_calls is 2 and handler_calls is 0, 'Rebinding must preserve inherited security')
+end
+
+@Test function SecurityFailsClosedWithoutHandlers()
+   spec = fixture()
+   spec.security = array<table> { { bearer = array<str> } }
+   api = parseFixture(spec, { handlers = { getItem = function(Req, Res)
+      assert(false, 'Protected handler must not run without a security handler')
+   end } })
+   res = response()
+   api.routes[0].handler({}, res)
+   assert(res.statusCode is 401, 'Missing security handlers must reject protected requests')
+end
+
+@Test function EmptyOperationSecurityOverridesGlobalSecurity()
+   spec = fixture()
+   spec.security = array<table> { { bearer = array<str> } }
+   spec.paths['/items/{id}'].get.security = array<table>
+   called = false
+   api = parseFixture(spec, { handlers = { getItem = function(Req, Res) called = true end } })
+   api.routes[0].handler({}, response())
+   assert(called, 'An explicit empty security array must permit an unauthenticated operation')
+end
+
+@Test function ParameterArraysMergeWithOperationOverrides()
+   spec = fixture()
+   path_item = spec.paths['/items/{id}']
+   path_item.parameters = array<table> {
+      { name = 'id', ['in'] = 'path', required = true, schema = { type = 'string' } },
+      { name = 'limit', ['in'] = 'query', schema = { type = 'integer', maximum = 10 } }
+   }
+   path_item.get.parameters = array<table> {
+      { name = 'limit', ['in'] = 'query', schema = { type = 'integer', maximum = 20 } },
+      { name = 'limit', ['in'] = 'header', schema = { type = 'string' } }
+   }
+   api = parseFixture(spec)
+   params = api.getOperation('getItem').parameters
+   assert(#params is 3, 'Override matching must use both parameter name and location')
+   assert(params[0].name is 'id', 'Path parameters must survive the merge')
+   assert(params[1].schema.maximum is 20, 'Operation parameters must override path parameters')
+   assert(params[2]['in'] is 'header', 'The same name in another location is a distinct parameter')
+   assert(api.spec.paths['/items/{id}'].parameters[1].schema.maximum is 10,
+      'Merging must not mutate the path-level definitions')
+end
+
+function mockResponse(Schema:table, Generators:table):any
+   spec = fixture()
+   spec.paths['/items/{id}'].get.responses = {
+      ['200'] = { content = { ['application/json'] = { schema = Schema } } }
+   }
+   api = parseFixture(spec, { onMissingHandler = 'mock', mockGenerators = Generators })
+   res = response()
+   api.routes[0].handler({}, res)
+   return res.body
+end
+
+@Test function DefaultMocksSupportPrimitiveSchemas()
+   assert(mockResponse({ type = 'string' }) is <str>, 'Default string mocks must work without generators')
+   assert(mockResponse({ type = 'integer', minimum = 7, maximum = 7 }) is 7,
+      'Default integer mocks must respect bounds')
+   assert(mockResponse({ type = 'number', minimum = 7, maximum = 7 }) is 7,
+      'Default number mocks must respect bounds')
+   assert(mockResponse({ type = 'boolean' }) is <bool>, 'Default boolean mocks must work without generators')
+   assert(mockResponse({ type = 'boolean', example = false }) is false, 'False mock values must reach the response')
+   data = mockResponse({ type = 'object', required = array<str> { 'id' },
+      properties = { id = { type = 'integer', minimum = 7, maximum = 7 } } })
+   assert(data.id is 7, 'Default object mocks must generate required properties')
+end
+
+@Test function ArrayMocksGenerateEveryItem()
+   data = mockResponse({ type = 'array', minItems = 3, maxItems = 3,
+      items = { type = 'string', example = 'item' } })
+   assert(data is <array> and #data is 3, 'Array mocks must contain all requested items')
+   assert(json.encode(data) is '["item", "item", "item"]', 'Array mocks must serialise as JSON arrays')
+   assert(mockResponse({ type = 'string' }, { types = { string = function(Schema):str return 'custom' end } })
+      is 'custom', 'Partial generator configurations must retain defaults for omitted collections')
+end
+
+@Test function GlobalMiddlewareIsRegisteredOnce()
+   global_middleware = function(Req, Res, Next) Next() end
+   route_middleware = function(Req, Res, Next) Next() end
+   api = parseFixture(fixture(), { middleware = {
+      global = { global_middleware }, operations = { getItem = { route_middleware } }
+   } })
+   config = api.toServerConfig()
+   assert(#config.middleware is 1 and config.middleware[0] is global_middleware,
+      'Global middleware must be exported at server level')
+   assert(#config.routes[0].middleware is 1 and config.routes[0].middleware[0] is route_middleware,
+      'Routes must contain only their own middleware')
+end
+
+@Test function LargeSpecificationsAreReadCompletely()
+   spec = fixture()
+   spec.info = { title = 'Large fixture', version = '1.0', description = string.rep('x', 70000) }
+   api = parseFixture(spec)
+   assert(#api.info.description is 70000 and #api.routes is 1, 'Specifications over 64 KiB must parse completely')
+end
+
+@Test function InvalidJsonPreservesTheParseError()
+   path = 'temp:openapi-invalid-regression.json'
+   defer mSys.DeleteFile(path) end
+   io.writeAll(path, '{')
+   try
+      openapi.parse(path)
+   except ex
+      assert(ex.message.startsWith('Failed to parse OpenAPI JSON:'), 'Invalid JSON must report a parse error')
+   success
+      assert(false, 'Invalid JSON must be rejected')
+   end
+end

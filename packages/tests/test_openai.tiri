@@ -1,0 +1,192 @@
+import 'ai/openai'
+import '../openai/stream'
+import 'json'
+
+function fixtureClient(Transport:func, Extra:table):table
+   options = { credential=openai.apiKey('fixture-key'), baseURL='http://127.0.0.1:12345/v1',
+      testLoopback=true, retry={ maxAttempts=1 }, transport=Transport }
+   for key, value in pairs(Extra or {}) do options[key] = value end
+   return openai.Client(options)
+end
+
+@Test function CredentialsAndCapabilities()
+   callbacks = 0
+   credential = openai.refreshableBearer(function(Previous)
+      callbacks++
+      return { accessToken='rotating-' .. callbacks }
+   end)
+   authorizations = array<str>
+   client = openai.Client({ credential=credential, baseURL='http://127.0.0.1:12345/v1', testLoopback=true,
+      retry={ maxAttempts=1 }, transport=function(Request)
+         authorizations.push(Request.headers.Authorization)
+         return { status=200, body='{"object":"list","data":[]}' }
+      end })
+   client.models.list()
+   client.models.list()
+   assert(callbacks is 2 and authorizations[0] is 'Bearer rotating-1' and authorizations[1] is 'Bearer rotating-2',
+      'Refreshable bearer callback supplies every request without exposing token fields')
+   caps = client.capabilities()
+   assert(caps.streaming and caps.nonStreaming and caps.credential.refreshable and not caps.background,
+      'Capabilities describe transport, credentials and deferred features')
+end
+
+@Test function ModelListingPreservesProviderFields()
+   client = fixtureClient(function(Request)
+      assert(Request.method is 'GET' and Request.url.endsWith('/models'), 'Model listing uses the models endpoint')
+      return { status=200, body=json.encode({ object='list', data=array<table> {
+         { id='model-a', object='model', created=123, owned_by='owner', future_field={ enabled=true } },
+         { id='hidden', object='model' }, { object='model' }
+      } }) }
+   end)
+   models, err = client.models.list({ filter=function(Model) return Model.id != 'hidden' end })
+   assert(not err and #models is 1 and models[0].id is 'model-a' and models[0].ownedBy is 'owner' and
+      models[0].raw.future_field.enabled, 'Model normalisation remains useful without discarding unknown fields')
+end
+
+@Test function ResponsesValidationEncodingAndItems()
+   captured:any = nil
+   client = fixtureClient(function(Request)
+      captured = json.decode(Request.body)
+      return { status=200, headers={ ['x-request-id']='request-1' }, body=json.encode({ id='resp-1',
+         object='response', status='completed', model='model-a', output=array<table> {
+            { type='reasoning', id='reason-1', summary=array<table> },
+            { type='message', role='assistant', content=array<table> {
+               { type='output_text', text='Hello ' }, { type='future_content', value=9 },
+               { type='output_text', text='world' } }, future_item=true },
+            { type='future_item', payload={ retained=true } },
+            { type='function_call', call_id='call-1', name='lookup', arguments='{"id":7}' }
+         } }) }
+   end)
+   request = { model='model-a', input=array<table> { { role='user', content='Hi' } },
+      metadata={ nullable=json.null },
+      text={ format={ type='json_schema', name='answer', strict=true,
+         schema={ type='object', properties={ answer={ type='string' } }, required=array<str> { 'answer' },
+            additionalProperties=false } } },
+      tools=array<table> { openai.functionTool('lookup', 'Lookup an item', { type='object',
+         properties={ id={ type='integer' } }, required=array<str> { 'id' }, additionalProperties=false }) } }
+   response, err = client.responses.create(request)
+   request.model = 'mutated'
+   assert(not err and response.outputText() is 'Hello world' and #response.functionCalls() is 1,
+      'Response convenience accessors traverse typed Items')
+   assert(response.output[2].kind is 'unknown' and response.output[2].raw.payload.retained and
+      response.output[1].raw.future_item, 'Unknown Items and fields retain their complete payload')
+   assert(captured.model is 'model-a' and captured.text.format.type is 'json_schema' and
+      captured.tools[0].strict and captured.metadata.nullable is json.null,
+      'Validated request preserves JSON null and structured output stays under text.format')
+   assert(#response.inputItems() is 4, 'Every output Item remains available for caller-managed replay')
+
+   _, invalid = client.responses.create({ model='', input='x' })
+   assert(invalid.kind is 'invalid_request' and invalid.code is 'invalid_model',
+      'Malformed requests fail before transport')
+   _, invalid = client.responses.create({ model='model-a', input='x', tools=array<table> {
+      { type='function', name='unsafe_schema', strict=true,
+         parameters={ type='object', properties={ value={ type='string' } } } }
+   } })
+   assert(invalid.code is 'invalid_strict_schema', 'Invalid strict function schemas fail before transport')
+end
+
+@Test function ToolRegistryAllowListValidationAndApproval()
+   approvals = 0
+   invocations = 0
+   registry = openai.ToolRegistry({ approve=function(Info)
+      approvals++
+      return Info.arguments.id is 7
+   end })
+   registry.register('lookup', { type='object', properties={ id={ type='integer' } },
+      required=array<str> { 'id' }, additionalProperties=false }, function(Arguments)
+         invocations++
+         return { found=Arguments.id }
+      end, { description='Lookup', consequential=true })
+   assert(#registry.declarations() is 1 and registry.declarations()[0].strict,
+      'Registry emits strict function declarations')
+   output, err = registry.dispatch({ type='function_call', name='lookup', call_id='call-7', arguments='{"id":7}' })
+   assert(not err and output.call_id is 'call-7' and json.decode(output.output).found is 7 and
+      approvals is 1 and invocations is 1, 'Approved dispatch validates arguments and matches call_id')
+   _, err = registry.dispatch({ type='function_call', name='lookup', call_id='call-extra',
+      arguments='{"id":7,"extra":true}' })
+   assert(err.code is 'argument_additional' and approvals is 1 and invocations is 1,
+      'Invalid arguments are rejected before approval or invocation')
+   _, err = registry.dispatch({ type='function_call', name='not_registered', call_id='call-x', arguments='{}' })
+   assert(err.code is 'tool_not_allowed', 'Model-selected names are constrained by the allow-list')
+end
+
+@Test function ToolRegistryEnforcesSchemaConstraintsBeforeCallbacks()
+   approvals = 0
+   invocations = 0
+   registry = openai.ToolRegistry({ approve=function(Info) approvals++; return true end })
+   properties = {
+      n={ type='integer', minimum=1, maximum=5 },
+      ratio={ type='number', exclusiveMinimum=0, exclusiveMaximum=1, multipleOf=0.25 },
+      code={ type='string', minLength=2, maxLength=4, pattern='^[A-Z]+$' },
+      tags={ type='array', items={ type='string' }, minItems=1, maxItems=2, uniqueItems=true },
+      mode={ anyOf=array<table> { { const='fast' }, { const='safe' } } }
+   }
+   registry.register('constrained', { type='object', properties=properties,
+      required=array<str> { 'n', 'ratio', 'code', 'tags', 'mode' }, additionalProperties=false },
+      function(Arguments):any invocations++; return Arguments end, { consequential=true })
+   valid = { n=2, ratio=0.5, code='OK', tags=array<str> { 'one' }, mode='safe' }
+   output, err = registry.dispatch({ type='function_call', name='constrained', call_id='valid',
+      arguments=json.encode(valid) })
+   assert(not err and output.call_id is 'valid' and approvals is 1 and invocations is 1,
+      'Arguments satisfying every constraint reach approval and the handler')
+   fixtures = array<table> {
+      { field='n', value=0, code='argument_minimum' },
+      { field='n', value=6, code='argument_maximum' },
+      { field='ratio', value=0, code='argument_exclusive_minimum' },
+      { field='ratio', value=1, code='argument_exclusive_maximum' },
+      { field='ratio', value=0.3, code='argument_multiple_of' },
+      { field='code', value='A', code='argument_min_length' },
+      { field='code', value='ABCDE', code='argument_max_length' },
+      { field='code', value='no', code='argument_pattern' },
+      { field='tags', value=array<str>, code='argument_min_items' },
+      { field='tags', value=array<str> { 'one', 'two', 'three' }, code='argument_max_items' },
+      { field='tags', value=array<str> { 'same', 'same' }, code='argument_unique_items' },
+      { field='mode', value='unsafe', code='argument_any_of' }
+   }
+   for index, fixture in fixtures do
+      arguments = {}
+      for key, value in pairs(valid) do arguments[key] = value end
+      arguments[fixture.field] = fixture.value
+      _, err = registry.dispatch({ type='function_call', name='constrained', call_id='invalid-' .. index,
+         arguments=json.encode(arguments) })
+      assert(err and err.code is fixture.code and approvals is 1 and invocations is 1,
+         f'{fixture.code} must reject arguments before approval or handler invocation at fixture {index}')
+   end
+end
+
+@Test function HistoryRetainsReasoningAndCallPairs()
+   history = openai.History(array<table> { { role='user', content='Question' } })
+   raw = { id='resp', output=array<table> { { type='reasoning', id='r1' },
+      { type='function_call', call_id='c1', name='lookup', arguments='{}' } } }
+   history.appendResponse(openai.response(raw)).functionOutput('c1', { ok=true })
+   items = history.items()
+   items[0].content = 'changed'
+   assert(history.count() is 4 and history.items()[0].content is 'Question' and
+      history.items()[3].call_id is 'c1', 'History copies caller data and preserves reasoning/call/output Items')
+end
+
+@Test function ErrorsAreClassifiedRetriedAndRedacted()
+   attempts = 0
+   client = fixtureClient(function(Request)
+      attempts++
+      if attempts is 1 then return { status=500, body='temporary' } end
+      return { status=429, headers={ ['x-request-id']='request-rate' },
+         body='{"error":{"code":"rate_limit_exceeded","message":"Bearer secret-value","param":"model"}}' }
+   end, { retry={ maxAttempts=2 } })
+   _, err = client.responses.create({ model='model-a', input='Hello' })
+   assert(attempts is 2 and err.kind is 'rate_limit' and err.code is 'rate_limit_exceeded' and
+      err.requestID is 'request-rate' and err.param is 'model' and not err.message.find('secret-value') and
+      not err.diagnostic.find('secret-value'), 'Errors retain diagnostics metadata while classifying and redacting')
+end
+
+@Test function StreamingUsesTypedResponseAndItemDecoders()
+   stream = openai_stream.Stream({ responseDecoder=openai.response, itemDecoder=openai.item })
+   seen:any = nil
+   stream.onEvent(function(Event) seen = Event end)
+   stream.feed('data: {"type":"response.output_item.added","item":{"type":"future_item","x":1}}\n\n')
+   assert(seen.item.kind is 'unknown' and seen.item.raw.x is 1, 'Streaming events preserve unknown typed Items')
+   stream.feed('data: {"type":"response.completed","response":{"id":"done","output":[]}}\n\n')
+   response, err = stream.result()
+   assert(not err and response.id is 'done' and response.outputText() is '',
+      'Streaming completion returns the same typed response shape as non-streaming')
+end

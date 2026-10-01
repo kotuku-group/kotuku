@@ -1,0 +1,308 @@
+-- Private Responses streaming transport.  HTTP callbacks and user callbacks run serially on the processing thread.
+
+   import 'json'
+   import './sse', './bounded_json'
+
+   namespace openai_stream { }
+
+function redactDiagnostic(Text:str):str
+   -- SSE bodies should not contain credentials, but redact common JSON bearer fields before exposing diagnostics.
+   secret = regex.new('("(?:access_token|refresh_token|id_token|api_key|authorization)"\\s*:\\s*")[^"]*"',
+      regex.ICASE)
+   bearer = regex.new('Bearer\\s+\\S+', regex.ICASE)
+   return bearer.replace(secret.replace(Text, '$1[redacted]"'), 'Bearer [redacted]')
+end
+
+function streamError(Kind:str, Code:str, Message:str, State:table, Extra:table):table
+   err = { kind=Kind, code=Code, message=Message, httpStatus=State.httpStatus or nil,
+      requestID=State.requestID, diagnostic=State.diagnostic != '' and redactDiagnostic(State.diagnostic) or nil,
+      diagnosticTruncated=State.diagnosticTruncated, retryable=false }
+   for key, value in pairs(Extra or {}) do err[key] = value end
+   return err
+end
+
+function addDiagnostic(State:table, Text:str)
+   limit = State.diagnosticLimit
+   if limit is 0 or Text is '' then return end
+   available = limit - #State.diagnostic
+   if available <= 0 then State.diagnosticTruncated = true; return end
+   State.diagnostic ..= Text.sub(0, available)
+   if #Text > available then State.diagnosticTruncated = true end
+end
+
+function apiKind(Code:any):str
+   if not (Code is <str>) then return 'response' end
+   lower = Code.lower()
+   if lower.find('rate_limit') or lower.find('quota') or lower.find('usage_limit') then return 'rate_limit' end
+   if lower.find('auth') or lower.find('token') or lower.find('permission') then return 'authentication' end
+   if lower.find('invalid') or lower.find('unsupported') then return 'invalid_request' end
+   if lower.find('server') or lower.find('unavailable') then return 'server' end
+   return 'response'
+end
+
+openai_stream.Stream = function(Options:table):table
+   options = Options or {}
+
+   state = {
+      value='pending', terminal=false, closed=false, response=nil, error=nil, subscriptions=array<table>,
+      eventIndex=0, diagnostic='', diagnosticLimit=options.diagnosticBytes or 4096, diagnosticTruncated=false,
+      http=nil, httpStatus=0, requestID=nil, contentType=nil, inCallback=false
+   }
+
+   if state.diagnosticLimit < 0 then raise 'Invalid stream diagnostic limit' end
+
+   self = {}
+
+   function detachHTTP()
+      http = state.http
+      if not http then return end
+      http.incoming = nil
+      http.stateChanged = nil
+      state.http = nil
+      http.acDeactivate()
+   end
+
+   function complete(StateName:str, Response:table, Error:table)
+      if state.terminal then return end
+      state.terminal = true
+      state.value = StateName
+      state.response = Response
+      state.error = Error
+   end
+
+   function releaseSubscriptions()
+      for subscription in values(state.subscriptions) do
+         subscription.closed = true
+         subscription.callback = nil
+      end
+   end
+
+   function notify(Event:table)
+      for subscription in values(state.subscriptions) do
+         if state.closed then break end
+         if not subscription.closed then
+            state.inCallback = true
+            try
+               subscription.callback(Event)
+            except e
+               subscription.closed = true
+               subscription.callback = nil
+            end
+            state.inCallback = false
+         end
+      end
+      if state.terminal or state.closed then releaseSubscriptions() end
+   end
+
+   function decoded(SSEEvent:table):any
+      if state.terminal or state.closed then return false end
+
+      raw:any = nil
+
+      try
+         raw = openai_json.decode(SSEEvent.data, options.maxEventBytes, options.maxJSONDepth)
+      end
+
+      if not (raw is <table>) or raw is json.null or not (raw.type is <str>) or raw.type is '' then
+         addDiagnostic(state, SSEEvent.data)
+         complete('failed', nil, streamError('transport', 'malformed_event', 'Malformed streaming event', state))
+         releaseSubscriptions()
+         return false
+      end
+
+      state.eventIndex++
+
+      decoded_response = raw.response
+      if decoded_response is <table> and options.responseDecoder then
+         decoded_response = options.responseDecoder(decoded_response)
+      end
+      decoded_item = raw.item
+      if decoded_item is <table> and options.itemDecoder then decoded_item = options.itemDecoder(decoded_item) end
+
+      event = {
+         type=raw.type, sequenceNumber=raw.sequence_number or raw.sequenceNumber,
+         response=decoded_response, item=decoded_item, delta=raw.delta, raw=raw, eventID=SSEEvent.id,
+         eventName=SSEEvent.event, index=state.eventIndex
+      }
+
+      if raw.type is 'response.completed' then
+         complete('completed', decoded_response or raw, nil)
+      elseif raw.type is 'response.failed' then
+         provider = raw.response?.error or raw.error or {}
+         addDiagnostic(state, SSEEvent.data)
+         complete('failed', nil, streamError(apiKind(provider.code), provider.code or 'response_failed',
+            provider.message is <str> and redactDiagnostic(provider.message).sub(0, 1024) or 'Response failed',
+            state, { param=provider.param }))
+      elseif raw.type is 'response.incomplete' then
+         details = raw.response?.incomplete_details or raw.incomplete_details or {}
+         addDiagnostic(state, SSEEvent.data)
+         complete('incomplete', nil, streamError('response', details.reason or 'response_incomplete',
+            'Response incomplete', state))
+      end
+
+      notify(event)
+      return not state.terminal and not state.closed
+   end
+
+   parser = openai_sse.Parser({
+      maxBytes=options.maxBytes, maxEventBytes=options.maxEventBytes,
+      maxEvents=options.maxEvents, onEvent=decoded
+   })
+
+   function feed(Chunk:str):bool
+      if state.terminal or state.closed then return false end
+      if state.value is 'pending' then state.value = 'open' end
+      err = parser.feed(Chunk)
+      if err and not state.terminal then
+         complete('failed', nil, streamError('transport', err.code, err.message, state))
+         releaseSubscriptions()
+      end
+
+      return not state.terminal and not state.closed
+   end
+
+   function finish(Reason:str)
+      if state.terminal or state.closed then return end
+
+      if Reason is nil or Reason is 'eof' then
+         err = parser.finish()
+         if err and not state.terminal then
+            complete('failed', nil, streamError('transport', err.code, err.message, state))
+         end
+         if state.terminal then releaseSubscriptions(); return end
+      end
+
+      if Reason is 'timeout' then
+         complete('interrupted', nil, streamError('timeout', 'timeout', 'Streaming request timed out', state,
+            { retryable=true }))
+      elseif Reason is 'connection_terminated' then
+         complete('interrupted', nil, streamError('transport', 'connection_terminated',
+            'Streaming connection terminated', state, { retryable=true }))
+      else
+         complete('interrupted', nil, streamError('stream_interrupted', 'missing_terminal_event',
+            'Stream ended without a terminal event', state, { retryable=true }))
+      end
+
+      releaseSubscriptions()
+   end
+
+   self.feed = feed
+   self.finish = finish
+
+   self.cancel = function()
+      if state.terminal or state.closed then return end
+      complete('cancelled', nil, streamError('cancelled', 'cancelled', 'Streaming request cancelled', state))
+      if not state.inCallback then releaseSubscriptions() end
+      if not state.inCallback then detachHTTP() end
+   end
+
+   self.close = function()
+      if state.closed then return end
+      if not state.terminal then self.cancel() end
+      state.closed = true
+      state.value = 'closed'
+      if not state.inCallback then releaseSubscriptions() end
+      if not state.inCallback then detachHTTP() end
+   end
+
+   self.state = function():str return state.value end
+   self.result = function():<table, table>
+      if not state.terminal then
+         return nil, streamError('transport', 'not_terminal', 'Stream has not reached a terminal state', state)
+      end
+      return state.response, state.error
+   end
+
+   self.onEvent = function(Callback:func!):table
+      subscription = { callback=(state.terminal or state.closed) and nil or Callback,
+         closed=state.terminal or state.closed }
+      subscription.close = function() subscription.closed = true; subscription.callback = nil end
+      state.subscriptions.push(subscription)
+      return subscription
+   end
+
+   self._attachHTTP = function(HTTP:obj)
+      if state.terminal or state.closed then HTTP.acDeactivate(); return end
+      state.http = HTTP
+   end
+
+   self._httpEnded = function(HTTP:obj, Terminated:bool)
+      if state.terminal or state.closed then state.http = nil; return end
+      state.httpStatus = HTTP.status
+      for name in values(array<str> { 'x-request-id', 'request-id', 'content-type' }) do
+         err, value = HTTP.acGetKey(name)
+         if err is ERR_Okay and #value <= 512 then
+            if name is 'content-type' then state.contentType = value
+            elseif not state.requestID then state.requestID = value end
+         end
+      end
+
+      if state.httpStatus < 200 or state.httpStatus >= 300 then
+         complete('failed', nil, streamError('http', 'http_status', 'HTTP streaming request failed', state,
+            { retryable=state.httpStatus is 408 or state.httpStatus is 429 or state.httpStatus >= 500 }))
+         releaseSubscriptions()
+      elseif Terminated and HTTP.error is ERR_TimeOut then
+         finish('timeout')
+      elseif Terminated then
+         finish('connection_terminated')
+      else
+         finish('eof')
+      end
+      state.http = nil
+   end
+
+   self._captureHTTPError = function(HTTP:obj, Chunk:str)
+      state.httpStatus = HTTP.status
+      addDiagnostic(state, Chunk)
+   end
+   return self
+end
+
+jit.off(openai_stream.Stream, true)
+
+openai_stream.request = function(Options:table):<table, table>
+   if not Options or not (Options.url is <str>) or Options.url is '' then
+      return nil, { kind='transport', code='invalid_request', message='A streaming URL is required', retryable=false }
+   end
+
+   stream_options = Options.limits or {}
+   stream = openai_stream.Stream(stream_options)
+   body = Options.body or ''
+   method = (Options.method or 'POST').lower()
+
+   http = obj.new('http', { src=Options.url, method=method,
+      flags = HTF_NO_HEAD|HTF_NO_AUTO_REDIRECT|HTF_NO_DIALOG,
+      connectTimeout = Options.connectTimeout or math.min(10, Options.timeout or 60),
+      dataTimeout = Options.timeout or 60, contentType=Options.contentType or 'application/json',
+      inputFile = (method is 'post' or method is 'put' or method is 'patch') ? 'string:' .. body : nil,
+      size = (method is 'post' or method is 'put' or method is 'patch') ? #body : 0,
+      incoming = function(HTTP, Buffer)
+         chunk = Buffer.getString()
+         if HTTP.status < 200 or HTTP.status >= 300 then
+            stream._captureHTTPError(HTTP, chunk)
+         elseif not stream.feed(chunk) then
+            return ERR_Terminate
+         end
+      end,
+      stateChanged = function(HTTP, State)
+         if State is HGS_COMPLETED or State is HGS_TERMINATED then
+            stream._httpEnded(HTTP, State is HGS_TERMINATED)
+         end
+      end
+   })
+
+   stream._attachHTTP(http)
+   for name, value in pairs(Options.headers or {}) do
+      if not (name is <str>) or not (value is <str>) or http.acSetKey(name, value) != ERR_Okay then
+         stream.close()
+         return nil, { kind='transport', code='invalid_header', message='Invalid HTTP request header', retryable=false }
+      end
+   end
+
+   if http.acActivate() != ERR_Okay then
+      stream.close()
+      return nil, { kind='transport', code='activation_failed', message='Unable to start HTTP request', retryable=true }
+   end
+
+   return stream
+end

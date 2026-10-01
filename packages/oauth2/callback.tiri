@@ -1,0 +1,66 @@
+   import 'net/url'
+   import './transport'
+   namespace oauth_callback { }
+
+-- Parsing is kept separate from the socket so every fragmentation boundary uses the same validation.
+
+oauth_callback.parse = function(Request:str, Attempt:table, Crypto:table):<table, str>
+   finish = Request.find('\r\n\r\n')
+   if finish is nil or finish + 4 != #Request then return nil, 'invalid_callback' end
+
+   lines = Request.sub(0, finish).split('\r\n')
+   method, target, version = r'^(GET) ([^ ]+) (HTTP/1\.[01])$'.extract(lines[0])
+   if not method then return nil, 'invalid_callback' end
+
+   parts = url.parse(Attempt.redirectURI)
+   expected_host = '127.0.0.1:' .. parts.port
+   headers = {}
+
+   for i in {1 to #lines} do
+      name, value = r'^([A-Za-z0-9!#$%&\x27*+.^_`\|~\-]+):[ \t]*([^\r\n]*)$'.extract(lines[i])
+      if not name or r'[\x00-\x08\x0a-\x1f\x7f]'.test(value) then return nil, 'invalid_callback' end
+      name = name.lower()
+      if headers[name] != nil then return nil, 'invalid_callback' end
+      headers[name] = value.rtrim(' \t')
+   end
+
+   if headers.host != expected_host or headers['transfer-encoding'] != nil or
+      (headers['content-length'] != nil and headers['content-length'] != '0') then
+      return nil, 'invalid_callback'
+   end
+
+   query_at = target.find('?')
+   if query_at is nil or target.sub(0, query_at) != parts.path then return nil, 'invalid_callback' end
+
+   query = target.sub(query_at + 1)
+   if query.find('#') != nil or r'%(?![0-9A-Fa-f]{2})'.test(query) then return nil, 'invalid_callback' end
+
+   params = {}
+   for pair in values(query.split('&')) do
+      equals = pair.find('=')
+      if equals is nil or equals is 0 then return nil, 'invalid_callback' end
+      key = url.decodePlus(pair.sub(0, equals))
+      value = url.decodePlus(pair.sub(equals + 1))
+      if params[key] != nil or r'[\x00-\x1f\x7f]'.test(key .. value) then return nil, 'invalid_callback' end
+      params[key] = value
+   end
+
+   if not oauth_wire.text(params.state, 128) then return nil, 'invalid_state' end
+
+   err, equal = Crypto.ConstantTimeEqual(params.state, Attempt.state)
+
+   if err != ERR_Okay or equal != 1 then return nil, 'invalid_state' end
+
+   if Attempt.issuer and params.iss != nil and params.iss != Attempt.issuer then return nil, 'invalid_issuer' end
+
+   if Attempt.requireIssuer and params.iss != Attempt.issuer then return nil, 'invalid_issuer' end
+
+   if params.error != nil then
+      if params.code != nil then return nil, 'invalid_callback' end
+      return { denied=true }, nil
+   end
+
+   if not oauth_wire.text(params.code, 4096) then return nil, 'invalid_callback' end
+
+   return params
+end

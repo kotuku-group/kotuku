@@ -1,0 +1,188 @@
+include 'http'
+import '../openai/sse'
+import '../openai/stream'
+import 'json'
+import 'net/httpserver'
+
+function eventWire(Type:str, Extra:table):str
+   value = { type=Type }
+   for key, item in pairs(Extra or {}) do value[key] = item end
+   return 'data: ' .. json.encode(value) .. '\n\n'
+end
+
+function fragmentEveryBoundary(Wire:str, Verify:func!)
+   for split in {0 into #Wire} do
+      stream = openai_stream.Stream({ maxBytes=65536, maxEventBytes=8192, maxEvents=32, diagnosticBytes=128 })
+      seen = array<table>
+      stream.onEvent(function(Event) seen.push(Event) end)
+      stream.feed(Wire.sub(0, split))
+      stream.feed(Wire.sub(split))
+      stream.finish('eof')
+      Verify(stream, seen, split)
+   end
+end
+
+@Test function SSEGrammarAndFragmentation()
+   wire = ': comment\r\nid: sequence-7\r\nevent: response\r\ndata: {"type":"response.output_text.delta",\r\n' ..
+      'data: "sequence_number":7,"delta":"ok"}\r\n\r\n' ..
+      'data:{"type":"response.completed","response":{"id":"response-1"}}'
+   fragmentEveryBoundary(wire, function(Stream, Seen, Split)
+      response, err = Stream.result()
+      assert(not err and response.id is 'response-1', f'Final unterminated event must complete at split {Split}')
+      assert(#Seen is 2 and Seen[0].delta is 'ok' and Seen[0].sequenceNumber is 7,
+         f'Repeated data fields and sequence numbers must survive fragmentation at split {Split}')
+      assert(Seen[0].eventID is 'sequence-7' and Seen[0].eventName is 'response',
+         f'SSE event and persistent ID fields must be preserved at split {Split}: ' ..
+         f'{Seen[0].eventID}/{Seen[0].eventName}')
+   end)
+end
+
+@Test function CRLineEndingsRemainIncremental()
+   wire = eventWire('response.output_text.delta', { sequence_number=1, delta='CR' }).replace('\n', '\r') ..
+      eventWire('response.completed', { response={ id='cr-only' } }).replace('\n', '\r')
+   fragmentEveryBoundary(wire, function(Stream, Seen, Split)
+      response, err = Stream.result()
+      assert(not err and response.id is 'cr-only', f'CR-only framing must complete at split {Split}')
+      assert(#Seen is 2 and Seen[0].delta is 'CR',
+         f'CR-only framing must dispatch separate events at split {Split}')
+   end)
+end
+
+@Test function InitialBOMIsIgnored()
+   wire = '\xef\xbb\xbf' .. eventWire('response.completed', { response={ id='bom' } })
+   fragmentEveryBoundary(wire, function(Stream, Seen, Split)
+      response, err = Stream.result()
+      assert(not err and response.id is 'bom' and #Seen is 1,
+         f'An initial UTF-8 BOM must be ignored at split {Split}')
+   end)
+end
+
+@Test function OneByteChunksRemainIncremental()
+   wire = eventWire('response.output_text.delta', { sequence_number=1, delta='A' }) ..
+      eventWire('response.completed', { response={ id='one-byte' } })
+   stream = openai_stream.Stream({})
+   seen = 0
+   stream.onEvent(function(Event) seen++ end)
+   for index in {0 to #wire} do stream.feed(wire.sub(index, index + 1)) end
+   response, err = stream.result()
+   assert(not err and response.id is 'one-byte' and seen is 2,
+      f'One-byte chunks must complete without buffering: {stream.state()}/{err?.code}/{response?.id}/{seen}')
+end
+
+@Test function TerminalPathsRemainDistinct()
+   fixtures = array<table> {
+      { wire=eventWire('response.completed', { response={ id='ok' } }), state='completed', code=nil },
+      { wire=eventWire('response.failed', { response={ error={ code='provider_error', message='failed' } } }),
+         state='failed', code='provider_error' },
+      { wire=eventWire('response.incomplete', { response={ incomplete_details={ reason='max_output_tokens' } } }),
+         state='incomplete', code='max_output_tokens' },
+      { wire='data: not-json\n\n', state='failed', code='malformed_event' },
+      { wire=eventWire('response.output_text.delta', { delta='partial' }), state='interrupted',
+         code='missing_terminal_event' }
+   }
+   for fixture in values(fixtures) do
+      fragmentEveryBoundary(fixture.wire, function(Stream, Seen, Split)
+         _, err = Stream.result()
+         assert(Stream.state() is fixture.state,
+            f'Terminal state must remain distinct at split {Split}: {Stream.state()} != {fixture.state}')
+         assert((err and err.code or nil) is fixture.code, 'Terminal error code must remain distinct')
+      end)
+   end
+   for reason, code in pairs({ timeout='timeout', connection_terminated='connection_terminated' }) do
+      stream = openai_stream.Stream({})
+      stream.feed(eventWire('response.output_text.delta', { delta='partial' }))
+      stream.finish(reason)
+      _, err = stream.result()
+      assert(stream.state() is 'interrupted' and err.code is code, 'Transport termination must be classified')
+   end
+end
+
+@Test function CancellationAndSubscriptionLifetime()
+   stream = openai_stream.Stream({})
+   calls = 0
+   subscription = stream.onEvent(function(Event) calls++ end)
+   stream.cancel()
+   stream.cancel()
+   stream.feed(eventWire('response.completed', {}))
+   _, err = stream.result()
+   assert(stream.state() is 'cancelled' and err.kind is 'cancelled' and calls is 0,
+      'Cancellation must be idempotent and suppress later callbacks')
+   subscription.close()
+   subscription.close()
+   stream.close()
+   stream.close()
+   assert(stream.state() is 'closed', 'Close must be idempotent')
+end
+
+@Test function ConfigurableLimitsAndBoundedDiagnostics()
+   for fixture in values(array<table> {
+      { options={ maxBytes=4 }, wire='12345', expected='byte_limit' },
+      { options={ maxEventBytes=8 }, wire='data: 123456789\n\n', expected='event_byte_limit' },
+      { options={ maxEvents=1 }, wire=eventWire('unknown.one', {}) .. eventWire('unknown.two', {}),
+         expected='event_limit' }
+   }) do
+      stream = openai_stream.Stream(fixture.options)
+      stream.feed(fixture.wire)
+      _, err = stream.result()
+      assert(stream.state() is 'failed' and err.code is fixture.expected, 'Configured SSE limit must fail closed')
+   end
+   stream = openai_stream.Stream({ diagnosticBytes=12 })
+   stream.feed('data: this-is-not-json\n\n')
+   _, err = stream.result()
+   assert(#err.diagnostic <= 12 and err.diagnosticTruncated, 'Diagnostic capture must remain bounded')
+   for malformed in values(array<str> {
+      'data: {"type":"delta"} trailing\n\n',
+      'data: {"type":"first","type":"second"}\n\n',
+      'data: {"type":"delta","nested":[[[[0]]]]}\n\n'
+   }) do
+      stream = openai_stream.Stream({ maxJSONDepth=2 })
+      stream.feed(malformed)
+      _, err = stream.result()
+      assert(err.code is 'malformed_event', 'Strict bounded JSON must reject ambiguous or excessive input')
+   end
+end
+
+@Test function EventOrderingAndCallbackCancellation()
+   stream = openai_stream.Stream({})
+   order = array<int>
+   stream.onEvent(function(Event)
+      order.push(Event.sequenceNumber)
+      if Event.sequenceNumber is 2 then stream.cancel() end
+   end)
+   stream.feed(eventWire('delta', { sequence_number=1 }) .. eventWire('delta', { sequence_number=2 }) ..
+      eventWire('delta', { sequence_number=3 }))
+   assert(#order is 2 and order[0] is 1 and order[1] is 2 and stream.state() is 'cancelled',
+      'Events must remain ordered and cancellation from a callback must stop delivery')
+end
+
+@Test; @Requires(network=true) function HTTPAdapterStreamsAndPreservesMetadata()
+   server = hslib.start({ port=0, bind='127.0.0.1', folder='temp:', routes={
+      { method='POST', pattern='/complete', handler=function(Req, Res)
+         Res.header('Content-Type', 'text/event-stream').header('x-request-id', 'fixture-request').send(
+            eventWire('response.completed', { response={ id='http-ok' } }))
+      end },
+      { method='POST', pattern='/error', handler=function(Req, Res)
+         Res.status(429).header('x-request-id', 'fixture-error').send(
+            '{"error":{"message":"Bearer should-not-escape"}}')
+      end }
+   } })
+   defer server.stop() end
+   for path in values(array<str> { 'complete', 'error' }) do
+      stream, start_err = openai_stream.request({ url='http://127.0.0.1:' .. server.port .. '/' .. path,
+         body='{}', timeout=2 })
+      assert(stream and not start_err, 'HTTP stream must activate')
+      deadline = mSys.PreciseTime() + 3000000
+      while stream.state() is 'pending' or stream.state() is 'open' do
+         assert(mSys.PreciseTime() < deadline, 'HTTP fixture timed out')
+         processing.sleep(0.001)
+      end
+      response, err = stream.result()
+      if path is 'complete' then
+         assert(response.id is 'http-ok' and not err, 'HTTP adapter must decode a completed SSE response')
+      else
+         assert(err.kind is 'http' and err.httpStatus is 429 and err.requestID is 'fixture-error' and
+            not err.diagnostic.find('should-not-escape'), 'HTTP errors must preserve metadata and redact diagnostics')
+      end
+      stream.close()
+   end
+end

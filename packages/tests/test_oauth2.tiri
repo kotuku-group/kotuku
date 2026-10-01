@@ -1,0 +1,482 @@
+import 'net/oauth2'
+import 'net/url'
+import 'net/httpserver'
+import 'json'
+module crypto as mCrypto
+import '../oauth2/strict_json'
+import '../oauth2/callback'
+import '../oauth2/oidc'
+
+function fixtureOptions(Transport:func):table
+   return { transport=Transport, elapsed=function():num
+      raw_time = mSys.PreciseTime()
+      return raw_time / 1000000
+   end, now=function():num
+      clock <close> = obj.new('time')
+      check clock.acQuery()
+      return clock.systemTime / 1000000
+   end, crypto={
+      Base64Decode=function(Input:any, Mode:num, Output:any):<num, num>
+         return mCrypto.Base64Decode(Input, Mode, Output)
+      end,
+      Base64Encode=function(Input:any, Mode:num, Output:any):<num, num>
+         return mCrypto.Base64Encode(Input, Mode, Output)
+      end,
+      SHA256=function(Input:any, Output:any):num return mCrypto.SHA256(Input, Output) end,
+      ConstantTimeEqual=function(A:any, B:any):<num, num> return mCrypto.ConstantTimeEqual(A, B) end,
+      VerifyJWK=function(Alg:num, N:str, E:str, Input:any, Signature:any):num
+         return mCrypto.VerifyJWK(Alg, N, E, Input, Signature)
+      end
+   } }
+end
+
+function offlineClient(Options:table):table
+   config = { clientID='offline-client', scope='api', redirectURI='http://127.0.0.1:12345/callback',
+      custom_endpoints={ auth_endpoint='https://issuer.invalid/authorize',
+         token_endpoint='https://issuer.invalid/token' } }
+   for key, value in pairs(Options or {}) do config[key] = value end
+   return oauth2.Client(config)
+end
+
+function rejects(Callback:func)
+   rejected = false
+   try Callback() except e
+      rejected = true
+   end
+   assert(rejected, 'Expected rejection')
+end
+
+@Test function StrictJsonRejectsAmbiguityAndLimits()
+   for bad in values(array<str> { '{"a":1,"a":2}', '{"a":1,"\\u0061":2}', '{"a":null,"a":2}',
+      '{"a":1,}', '[1,]', '01', '1e9999', 'true false', '"\\q"', '"\\uD800"', '"\\uDC00"',
+      '"line\nbreak"', '{1:2}', '"' .. string.char(192, 128) .. '"', '"' .. string.char(255) .. '"' }) do
+      rejects(function() oauth_json.decode(bad) end)
+   end
+   rejects(function() oauth_json.decode(string.rep('[', 26) .. '0' .. string.rep(']', 26)) end)
+   rejects(function() oauth_json.decode('"12345"', 4) end)
+   data = oauth_json.decode('{"null":null,"false":false,"n":-1.25e2,"s":"\\u0061\\uD83D\\uDE00"}')
+   assert(data.null is json.null and data['false'] is false and data.n is -125, 'Preserve JSON scalar types')
+   assert(data.s is 'a😀', 'Decode Unicode including surrogate pairs')
+end
+
+@Test function AttemptBindingAndNativePkce()
+   client = offlineClient()
+   first = client.buildAuthUrl()
+   state = client.state
+   verifier = client.pkce.code_verifier
+   assert(#verifier is 128 and #state is 32, 'Use high-entropy unpadded values')
+   digest = array<byte, 32>
+   check mCrypto.SHA256(verifier, digest)
+   encoded = array<byte, 43>
+   check mCrypto.Base64Encode(digest, CC_URL, encoded)
+   assert(client.pkce.code_challenge is encoded.getString(), 'PKCE must use native S256')
+   rejects(function() client.buildAuthUrl() end)
+   client.cancel()
+   for field in values(array<str> { 'state', 'client_id', 'redirect_uri', 'nonce', 'code_challenge', 'scope' }) do
+      rejects(function() client.buildAuthUrl({ [field]='override' }) end)
+   end
+   client.buildAuthUrl()
+   assert(client.state != state and client.pkce.code_verifier != verifier, 'Fresh attempt after cancellation')
+   client.cancel()
+   assert(client.state is nil and client.pkce is nil, 'Clear attempt secrets')
+   _, _, err = client.exchangeCodeForTokens('replay')
+   assert(err.code is 'no_attempt', 'No exchange without attempt')
+   rejects(function() offlineClient({ scope='openid' }) end)
+   rejects(function() offlineClient({ client_id='obsolete' }) end)
+   rejects(function() offlineClient({ redirectURI='http://localhost:12345/callback' }) end)
+end
+
+@Test function CallbackRejectsInvalidBindingAndFraming()
+   crypto = fixtureOptions().crypto
+   attempt = { redirectURI='http://127.0.0.1:12345/callback', state='expected', issuer='https://issuer.invalid' }
+   function request(Target:str, Headers:str):str
+      return 'GET ' .. Target .. ' HTTP/1.1\r\n' .. (Headers or 'Host: 127.0.0.1:12345') .. '\r\n\r\n'
+   end
+   valid = request('/callback?code=hello%2Bworld&state=expected')
+   parsed = oauth_callback.parse(valid, attempt, crypto)
+   assert(parsed and parsed.code is 'hello+world', 'Valid exact callback accepted')
+   for target in values(array<str> { '/callback/suffix?code=x&state=expected',
+      '/callback?code=x&state=wrong', '/callback?error=access_denied',
+      '/callback?code=x&state=expected&state=expected', '/callback?code=x&state=expected&error=x',
+      '/callback?code=%Q1&state=expected', '/callback?code=%00&state=expected',
+      '/callback?code=x&state=expected&iss=https%3A%2F%2Fevil.invalid' }) do
+      assert(oauth_callback.parse(request(target), attempt, crypto) is nil, 'Reject malformed callback')
+   end
+   for headers in values(array<str> { 'Host: evil.invalid', 'Host: 127.0.0.1',
+      'Host: 127.0.0.1:12345\r\nHost: 127.0.0.1:12345',
+      'Host: 127.0.0.1:12345\r\nContent-Length: 1',
+      'Host: 127.0.0.1:12345\r\nTransfer-Encoding: chunked' }) do
+      assert(oauth_callback.parse(request('/callback?code=x&state=expected', headers), attempt, crypto) is nil,
+         'Reject invalid Host and framing')
+   end
+   assert(oauth_callback.parse(valid .. 'x', attempt, crypto) is nil, 'Reject trailing body/pipelined request')
+   denied = oauth_callback.parse(request('/callback?error=access_denied&state=expected'), attempt, crypto)
+   assert(denied.denied, 'State-bound denial is terminal')
+   for size in {0 to #valid} do
+      assert(oauth_callback.parse(valid.sub(0, size), attempt, crypto) is nil, 'Incomplete request cannot succeed')
+   end
+end
+
+@Test function TokenExchangeRefreshAndErrors()
+   calls = array<table>
+   reply = { status=200, headers={}, body='{"access_token":"secret","token_type":"Bearer","expires_in":10}' }
+   client = offlineClient({ transport=function(Request)
+      calls.push(Request)
+      return reply
+   end })
+   client.buildAuthUrl()
+   verifier = client.pkce.code_verifier
+   client.redirectURI = 'http://127.0.0.1:9/changed'
+   token, message = client.exchangeCodeForTokens('code')
+   assert(token and token.access_token is 'secret', message or 'Exchange failed')
+   assert(calls[0].form.code_verifier is verifier and
+      calls[0].form.redirect_uri is 'http://127.0.0.1:12345/callback', 'Exchange uses private binding')
+   assert(token.expires_at - token.refresh_at is 1 and client.validateToken(token), 'Short lifetime remains usable')
+   assert(token.validated_oidc is false and client.pkce is nil, 'OAuth is not verified identity; secrets cleared')
+   _, _, err = client.exchangeCodeForTokens('code')
+   assert(err.code is 'no_attempt', 'Attempt consumed once')
+   refreshed = client.refreshToken('refresh')
+   assert(refreshed.refresh_token is 'refresh' and calls[1].form.grant_type is 'refresh_token', 'Retain refresh token')
+   for body in values(array<str> { '<html>secret</html>', '{"access_token":"secret"}',
+      '{"access_token":"secret","token_type":"Bearer","expires_in":-1}',
+      '{"access_token":"secret\\n","token_type":"Bearer"}',
+      '{"access_token":"secret","token_type":"Bearer","scope":false}',
+      '{"access_token":"secret","token_type":"Bearer","scope":"extra"}' }) do
+      reply.body = body
+      _, _, err = client.refreshToken('refresh')
+      assert(err and not json.encode(err).find('secret'), 'Invalid token must not leak response data')
+   end
+   reply.status = 400
+   reply.body = '{"error":"invalid_grant","error_description":"secret"}'
+   _, _, err = client.refreshToken('refresh')
+   assert(err.code is 'invalid_grant' and err.status is 400 and not json.encode(err).find('secret'),
+      'Preserve safe OAuth code and HTTP status')
+   reply.body = '<html>secret</html>'
+   _, _, err = client.refreshToken('refresh')
+   assert(err.code is 'http_error' and err.bodyBytes is #reply.body, 'Handle non-JSON errors')
+end
+
+@Test function NativeTransportAndRedirects()
+   count = 0
+   status = 200
+   payload = '{"access_token":"fixture","token_type":"Bearer","expires_in":3600}'
+   server = hslib.start({ port=0, bind='127.0.0.1', folder='temp:', routes={
+      { method='POST', pattern='/token', handler=function(Req, Res)
+         count++
+         assert(Req.parsedBody.refresh_token is 'fixture-refresh', 'Native form upload')
+         Res.status(status).header('Location', '/stolen').send(payload)
+      end },
+      { method='POST', pattern='/stolen', handler=function(Req, Res)
+         raise 'Credential redirect followed'
+      end }
+   } })
+   defer server.stop() end
+   client = offlineClient({ testLoopback=true, custom_endpoints={ auth_endpoint='https://issuer.invalid/authorize',
+      token_endpoint='http://127.0.0.1:' .. server.port .. '/token' } })
+   token, message = client.refreshToken('fixture-refresh')
+   assert(token and token.access_token is 'fixture', message or 'Native request failed')
+   for redirect in values(array<int> { 301, 302, 303, 307, 308 }) do
+      status = redirect
+      _, _, err = client.refreshToken('fixture-refresh')
+      assert(err and err.status is redirect, 'Redirect must be surfaced without following')
+   end
+   assert(count is 6, 'Exactly one request per operation')
+   status = 200
+   payload = string.rep('x', 262145)
+   _, _, err = client.refreshToken('fixture-refresh')
+   assert(err.code is 'response_limit', 'Bound native response buffering')
+end
+
+@Test function WebFlowFragmentationAndCleanup()
+   client:table = nil
+   socket:obj = nil
+   response = ''
+   used_port = 0
+   client = offlineClient({ redirectURI='http://127.0.0.1:0/callback', authorizationTimeout=2,
+      transport=function(Request)
+         assert(Request.form.code is 'fixture+code', 'Callback decoded correctly')
+         return { status=200, body='{"access_token":"fixture","token_type":"Bearer"}' }
+      end,
+      open_browser=function(AuthURL:str)
+         params = url.parseQuery(url.parse(AuthURL).query)
+         redirect = url.parse(params.redirect_uri)
+         used_port = redirect.port
+         wire = 'GET /callback?code=fixture%2Bcode&state=' .. params.state .. ' HTTP/1.1\r\nHost: 127.0.0.1:' ..
+            redirect.port .. '\r\n\r\n'
+         socket = obj.new('netsocket', { incoming=function(Socket)
+            buffer = string.alloc(2048)
+            _, size = Socket.acRead(buffer)
+            response ..= buffer.sub(0, size)
+         end })
+         check socket.mtConnect('127.0.0.1', used_port, 1)
+         -- Send through real processing cycles to avoid relying on a single read.
+         for i in {0 to #wire} do check socket.acWrite(wire.sub(i, i + 1)); processing.sleep(0.001) end
+      end })
+   defer socket = nil end
+   token, message = client.authorizeWeb()
+   assert(token and token.access_token is 'fixture', message or 'Web flow failed')
+   processing.sleep(0.01)
+   assert(response.startsWith('HTTP/1.1 200 OK'), 'Callback response')
+   assert(client.state is nil and client.pkce is nil, 'Attempt cleaned')
+   probe <close> = obj.new('netserver', { address='127.0.0.1', port=used_port })
+   assert(probe.port is used_port, 'Listener released promptly')
+   probe = nil
+   client.open_browser = function(URL) client.cancel() end
+   _, _, err = client.authorizeWeb()
+   assert(err.code is 'cancelled', 'Presentation callback can cancel')
+   client.open_browser = function(URL) raise 'secret-browser-error' end
+   _, message, err = client.authorizeWeb()
+   assert(err.code is 'web_flow_failed' and not message.find('secret'), 'Browser exception redacted')
+end
+
+@Test function DeviceFlowSuccessAndCancellation()
+   polls = 0
+   presented = false
+   config = { authorizationTimeout=3, custom_endpoints={ auth_endpoint='https://issuer.invalid/auth',
+      token_endpoint='https://issuer.invalid/token', device_endpoint='https://issuer.invalid/device',
+      supports_device_flow=true }, presentDevice=function(Info)
+         assert(Info.device_code is nil and Info.user_code is 'USER', 'Expose only presentation fields')
+         presented = true
+      end,
+      transport=function(Request)
+         if Request.url.endsWith('/device') then
+            return { status=200, body='{"device_code":"secret","user_code":"USER",' ..
+               '"verification_uri":"https://issuer.invalid/verify","expires_in":10,"interval":1}' }
+         end
+         polls++
+         if polls is 1 then return { status=400, body='{"error":"authorization_pending"}' } end
+         return { status=200, body='{"access_token":"device","token_type":"Bearer"}' }
+      end }
+   client = offlineClient(config)
+   token, message = client.authorizeDevice()
+   assert(token and token.access_token is 'device' and presented and polls is 2, message or 'Device flow failed')
+   client.presentDevice = function(Info) client.cancel() end
+   _, _, err = client.authorizeDevice()
+   assert(err.code is 'cancelled' and polls is 2, 'No polling after cancellation')
+end
+
+@Test function OidcSignatureClaimsAndCacheRotation()
+   fixture = json.decode(io.readAll('sdk:packages/tests/fixtures/oauth_oidc.json'))
+   calls = array<str>
+   rotated = false
+   config = { issuer='https://issuer.invalid', clockSkew=0 }
+   function transport(Request:table):table
+      calls.push(Request.url)
+      if Request.url.endsWith('/.well-known/openid-configuration') then
+         return { status=200, headers={ ['cache-control']='max-age=300' }, body=json.encode({
+            issuer=config.issuer, jwks_uri='https://issuer.invalid/jwks',
+            id_token_signing_alg_values_supported=array<str> { 'RS256' } }) }
+      end
+      jwk = {}
+      for k, v in pairs(fixture.jwk) do jwk[k] = v end
+      if rotated then jwk.kid = 'rotated' end
+      return { status=200, headers={ ['cache-control']='max-age=300' },
+         body=json.encode({ keys=array<table> { jwk } }) }
+   end
+   validator = oauth_oidc.validator(config, fixtureOptions(transport))
+   expected = { clientID='offline-client', nonce='fixture-nonce', subject='subject' }
+   identity = validator.verify(fixture.valid, expected)
+   assert(identity.subject is 'subject' and identity.issuer is config.issuer, 'Verify real RS256 fixture')
+   assert(#calls is 2, 'Fetch discovery and JWKS once')
+   validator.verify(fixture.multi_audience, expected)
+   assert(#calls is 2, 'Reuse bounded trusted cache')
+   for name in values(array<str> { 'wrong_signature', 'wrong_issuer', 'wrong_audience', 'expired', 'future_iat',
+      'future_nbf', 'wrong_nonce', 'wrong_subject', 'missing_azp', 'wrong_azp', 'duplicate_claim', 'remote_jku',
+      'unsupported_alg' }) do
+      rejects(function() validator.verify(fixture[name], expected) end)
+   end
+   assert(#calls is 2, 'Untrusted header cannot trigger arbitrary fetch')
+   rotated = true
+   assert(validator.verify(fixture.unknown_kid, expected).subject is 'subject', 'Refresh once for rotated kid')
+   assert(#calls is 3, 'Unknown kid forces only JWKS refresh')
+   rejects(function() validator.verify(fixture.valid, expected) end)
+   assert(#calls is 3, 'Throttle repeated unknown kids across attempts')
+end
+
+@Test function OidcRejectsUntrustedDiscoveryAndKeys()
+   fixture = json.decode(io.readAll('sdk:packages/tests/fixtures/oauth_oidc.json'))
+   for mode in values(array<str> { 'issuer', 'jwks_uri', 'duplicate', 'key_use', 'key_ops', 'key_alg' }) do
+      requests = 0
+      validator = oauth_oidc.validator({ issuer='https://issuer.invalid' }, fixtureOptions(function(Request)
+         requests++
+         if requests is 1 then
+            return { status=200, body=json.encode({ issuer=mode is 'issuer' ? 'https://evil.invalid' :
+               'https://issuer.invalid', jwks_uri=mode is 'jwks_uri' ? 'https://evil.invalid/jwks' :
+               'https://issuer.invalid/jwks', id_token_signing_alg_values_supported=array<str> { 'RS256' } }) }
+         end
+         jwk = {}
+         for k, v in pairs(fixture.jwk) do jwk[k] = v end
+         if mode is 'key_use' then jwk.use = 'enc' end
+         if mode is 'key_ops' then jwk.key_ops = array<str> { 'sign' } end
+         if mode is 'key_alg' then jwk.alg = 'RS512' end
+         set = array<table> { jwk }
+         if mode is 'duplicate' then set.push(jwk) end
+         return { status=200, body=json.encode({ keys=set }) }
+      end))
+      rejects(function() validator.verify(fixture.valid, { clientID='offline-client', nonce='fixture-nonce' }) end)
+      if mode is 'issuer' or mode is 'jwks_uri' then assert(requests is 1, 'Reject before untrusted JWKS fetch') end
+   end
+end
+
+@Test function WebTimeoutOversizeAndBrowserFailure()
+   socket:obj = nil
+   port = 0
+   client = offlineClient({ redirectURI='http://127.0.0.1:0/callback', authorizationTimeout=0.15,
+      open_browser=function(URL)
+         redirect = url.parse(url.parseQuery(url.parse(URL).query).redirect_uri)
+         port = redirect.port
+         socket = obj.new('netsocket', { feedback=function(Socket, State)
+            if State is NTC_CONNECTED then Socket.acWrite('GET /' .. string.rep('x', 9000)) end
+         end })
+         check socket.mtConnect('127.0.0.1', port, 1)
+      end })
+   defer socket = nil end
+   _, _, err = client.authorizeWeb()
+   assert(err.code is 'timeout', 'Oversized callback must not complete authorisation')
+   probe <close> = obj.new('netserver', { address='127.0.0.1', port=port })
+   assert(probe.port is port, 'Timeout releases listener')
+   probe = nil
+   client.open_browser = function(URL) return false end
+   _, _, err = client.authorizeWeb()
+   assert(err.code is 'browser_failed' and client.state is nil, 'Explicit browser failure cleans attempt')
+end
+
+@Test function CancelDuringTransportAndRefreshRotation()
+   client:table = nil
+   cancelled = true
+   client = offlineClient({ transport=function(Request)
+      if cancelled then client.cancel() end
+      return { status=200, body='{"access_token":"new","token_type":"Bearer","refresh_token":"rotated"}' }
+   end })
+   _, _, err = client.refreshToken('old')
+   assert(err.code is 'cancelled', 'Cancellation rejects even a completed injected response')
+   cancelled = false
+   result = client.refreshToken('old')
+   assert(result.refresh_token is 'rotated', 'Return rotating credential instead of the old refresh token')
+   prior = { refresh_token='old', identity={ subject='forged' }, clientID='offline-client' }
+   result = client.refreshToken(prior)
+   assert(result.validated_oidc is false and result.identity is nil, 'OAuth-only refresh cannot inherit an identity')
+end
+
+@Test function DeviceSlowDownAndInvalidResponses()
+   polls = 0
+   first_poll = 0
+   client = offlineClient({ authorizationTimeout=2.2, presentDevice=function(Info) end,
+      custom_endpoints={ auth_endpoint='https://issuer.invalid/auth', token_endpoint='https://issuer.invalid/token',
+         device_endpoint='https://issuer.invalid/device', supports_device_flow=true },
+      transport=function(Request)
+         if Request.url.endsWith('/device') then return { status=200, body='{"device_code":"secret",' ..
+            '"user_code":"CODE","verification_uri":"https://issuer.invalid/verify","expires_in":10,"interval":1}' }
+         end
+         polls++
+         return { status=400, body='{"error":"slow_down"}' }
+      end })
+   _, _, err = client.authorizeDevice()
+   assert(err.code is 'timeout' and polls is 1, 'slow_down increases interval by five seconds')
+end
+
+@Test function OidcRefreshNonceAndBoundedCache()
+   fixture = json.decode(io.readAll('sdk:packages/tests/fixtures/oauth_oidc.json'))
+   calls = 0
+   config = { issuer='https://issuer.invalid', cacheSeconds=0 }
+   validator = oauth_oidc.validator(config, fixtureOptions(function(Request)
+         calls++
+         if Request.url.endsWith('/jwks') then
+            return { status=200, body=json.encode({ keys=array<table> { fixture.jwk } }) }
+         end
+         return { status=200, body=json.encode({ issuer='https://issuer.invalid',
+            jwks_uri='https://issuer.invalid/jwks', id_token_signing_alg_values_supported=array<str> { 'RS256' } }) }
+      end))
+   expected = { clientID='offline-client', nonce='fixture-nonce', subject='subject', refresh=true }
+   assert(validator.verify(fixture.no_nonce_refresh, expected).subject is 'subject', 'Refresh may omit nonce')
+   validator.verify(fixture.valid, expected)
+   assert(calls is 4, 'Expired discovery and key caches are not reused')
+   rejects(function() validator.verify(fixture.wrong_nonce, expected) end)
+   rejects(function() validator.verify(fixture.wrong_subject, expected) end)
+end
+
+@Test function OpenidAttemptsAndIssuedClientBinding()
+   client = offlineClient({ scope='openid', oidc={ issuer='https://issuer.invalid' }, allowIssuedClientID=true,
+      transport=function(Request)
+         assert(Request.form.client_id is 'issued-client', 'Use explicit issued client ID for code redemption')
+         return { status=200, body='{"access_token":"fixture","token_type":"Bearer"}' }
+      end })
+   params = url.parseQuery(url.parse(client.buildAuthUrl()).query)
+   assert(#params.nonce is 32, 'OIDC attempt includes fresh nonce')
+   nonce = params.nonce
+   client.cancel()
+   params = url.parseQuery(url.parse(client.buildAuthUrl()).query)
+   assert(params.nonce != nonce, 'OIDC nonce is fresh per attempt')
+   _, _, err = client.exchangeCodeForTokens('code', 'issued-client')
+   assert(err.code is 'invalid_token', 'Never return an OIDC record without a verified ID token')
+end
+
+@Test function ProviderCodeFlowConfigurationRegression()
+   for provider in values(array<str> { 'google', 'microsoft' }) do
+      client = oauth2.Client({ provider=provider, clientID='provider-client', clientSecret='provider-secret',
+         redirectURI='http://127.0.0.1:12345/callback', transport=function(Request)
+            assert(Request.form.client_id is 'provider-client' and Request.form.client_secret is 'provider-secret',
+               'Provider token request keeps configured credentials')
+            assert(Request.url is (provider is 'google' ? 'https://oauth2.googleapis.com/token' :
+               'https://login.microsoftonline.com/common/oauth2/v2.0/token'), 'Provider token endpoint')
+            return { status=200, body='{"access_token":"fixture","token_type":"Bearer"}' }
+         end })
+      params = url.parseQuery(url.parse(client.buildAuthUrl()).query)
+      assert(params.prompt is nil and params.code_challenge_method is 'S256', 'Never force provider consent')
+      if provider is 'google' then assert(params.access_type is 'offline', 'Google offline policy')
+      else assert(params.access_type is nil, 'Google policy must not leak to Microsoft') end
+      assert(client.exchangeCodeForTokens('code'), 'Provider code exchange fixture')
+      assert(client.refreshToken('refresh'), 'Provider refresh fixture')
+   end
+end
+
+@Test function OidcRefreshRecordsRemainAccountBound()
+   fixture = json.decode(io.readAll('sdk:packages/tests/fixtures/oauth_oidc.json'))
+   token_variant = fixture.valid
+   client = offlineClient({ scope='openid', oidc={ issuer='https://issuer.invalid' }, transport=function(Request)
+      if Request.method is 'POST' then
+         return { status=200, body=json.encode({ access_token='new', token_type='Bearer', id_token=token_variant,
+            refresh_token='rotated' }) }
+      elseif Request.url.endsWith('/jwks') then
+         return { status=200, body=json.encode({ keys=array<table> { fixture.jwk } }) }
+      end
+      return { status=200, body=json.encode({ issuer='https://issuer.invalid', jwks_uri='https://issuer.invalid/jwks',
+         id_token_signing_alg_values_supported=array<str> { 'RS256' } }) }
+   end })
+   prior = { refresh_token='old', scope='openid', clientID='offline-client', nonce='fixture-nonce', validated_oidc=true,
+      identity={ issuer='https://issuer.invalid', clientID='offline-client', subject='subject', claims={} } }
+   refreshed, message = client.refreshToken(prior)
+   assert(refreshed and refreshed.validated_oidc and refreshed.identity.subject is 'subject',
+      message or 'Validated OIDC refresh should succeed')
+   assert(refreshed.refresh_token is 'rotated' and prior.refresh_token is 'old', 'Caller owns atomic replacement')
+   token_variant = fixture.wrong_subject
+   _, _, err = client.refreshToken(prior)
+   assert(err.code is 'invalid_token', 'Reject account substitution during refresh')
+   token_variant = nil
+   refreshed = client.refreshToken(prior)
+   assert(refreshed.identity.subject is 'subject', 'Refresh without ID token retains prior verified identity')
+   _, _, err = client.refreshToken('unbound-refresh')
+   assert(err.code is 'identity_required', 'OIDC refresh requires the original account record')
+end
+
+@Test function DeviceDenialExpiryAndMalformedReplies()
+   for mode in values(array<str> { 'access_denied', 'expired_token', 'invalid', 'non_json' }) do
+      polls = 0
+      client = offlineClient({ authorizationTimeout=2, presentDevice=function(Info) end,
+         custom_endpoints={ auth_endpoint='https://issuer.invalid/auth', token_endpoint='https://issuer.invalid/token',
+            device_endpoint='https://issuer.invalid/device', supports_device_flow=true },
+         transport=function(Request)
+            if Request.url.endsWith('/device') then
+               return { status=200, body='{"device_code":"secret","user_code":"CODE",' ..
+                  '"verification_uri":"https://issuer.invalid/verify","expires_in":10,"interval":' ..
+                  (mode is 'invalid' ? '0' : '1') .. '}' }
+            end
+            polls++
+            return { status=400, body=mode is 'non_json' ? '<html>secret</html>' : json.encode({ error=mode }) }
+         end })
+      _, _, err = client.authorizeDevice()
+      expected = mode is 'invalid' ? 'invalid_device_response' : (mode is 'non_json' ? 'http_error' : mode)
+      assert(err.code is expected, 'Device failure should be terminal and classified')
+      assert(polls is (mode is 'invalid' ? 0 : 1), 'No retry after terminal error')
+   end
+end
