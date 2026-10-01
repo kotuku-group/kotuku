@@ -1,8 +1,8 @@
-include 'http'
-import 'json'
-import 'net/url'
-import './strict_json'
-namespace oauth_wire { }
+   include 'http'
+   import 'json'
+   import 'net/url'
+   import './strict_json'
+   namespace oauth_wire { }
 
 oauth_wire.number = function(Value:any, Minimum:num, Maximum:num):bool
    return Value is <num> and Value is Value and Value >= Minimum and Value <= Maximum
@@ -16,12 +16,16 @@ end
 
 oauth_wire.endpoint = function(URL:any, TestLoopback:bool):bool
    if not oauth_wire.text(URL, 4096) or r'[\x00-\x20\x7f\\]'.test(URL) then return false end
+
    scheme, host, port = r'^(https?)://([A-Za-z0-9.\-]+)(:[0-9]+)?(?:/[^#]*)?$'.extract(URL)
+
    if not scheme or not host then return false end
+
    if port and port != '' then
       number = tonumber(port.sub(1))
       if not number or number < 1 or number > 65535 then return false end
    end
+
    return scheme is 'https' or (TestLoopback and host is '127.0.0.1')
 end
 
@@ -117,7 +121,9 @@ end
 
 oauth_wire.decode = function(Response:table):<table, table>
    data:any = nil
-   try data = oauth_json.decode(Response.body) except e end
+   try
+      data = oauth_json.decode(Response.body)
+   end
 
    if Response.status != 200 then
       code = 'http_error'

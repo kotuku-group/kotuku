@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "name": "ai/openai",
+  "version": "1.0",
+  "description": "Bounded OpenAI Models and Responses API client with streaming, structured output and custom tools.",
+  "entry": "openai.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-OpenAI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "ai",
+    "openai",
+    "responses"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "json": "1.0",
+    "net/url": "1.0"
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "size": 3239,
+      "sha256": "70430d60eb47018807c17e9f8b43278634cb15fd62b89eb92fdbb8d8c19db0a3",
+      "mediaType": "text/markdown"
+    },
+    {
+      "path": "bounded_json.tiri",
+      "size": 5270,
+      "sha256": "3830dfd2d9aaf92a668432d9749bbd405dba62136033d0bfb916d9e22448b0b7",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "openai.tiri",
+      "size": 15760,
+      "sha256": "2df64f1913f8cf84d2a529216bdd4a4727fdaaf39f3e1cafeead973ceb4e7b8d",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "responses.tiri",
+      "size": 16281,
+      "sha256": "379c715b538425c383fd3f4f5512314d06ffd36a5bfc54838b266c9566d17e66",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "sse.tiri",
+      "size": 4222,
+      "sha256": "0d63c270d803c16cc4027b5e679f14c483f026f462b51e0c0c7a3e02b677ea3a",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "stream.tiri",
+      "size": 11999,
+      "sha256": "b33897fec279b7d6a630ba4b576fe88987b8ee49a9055a17718e7882245fa40e",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

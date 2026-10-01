@@ -1,3 +1,4 @@
+include 'http'
 import '../openai/sse'
 import '../openai/stream'
 import 'json'
@@ -33,6 +34,17 @@ end
       assert(Seen[0].eventID is 'sequence-7' and Seen[0].eventName is 'response',
          f'SSE event and persistent ID fields must be preserved at split {Split}: ' ..
          f'{Seen[0].eventID}/{Seen[0].eventName}')
+   end)
+end
+
+@Test function CRLineEndingsRemainIncremental()
+   wire = eventWire('response.output_text.delta', { sequence_number=1, delta='CR' }).replace('\n', '\r') ..
+      eventWire('response.completed', { response={ id='cr-only' } }).replace('\n', '\r')
+   fragmentEveryBoundary(wire, function(Stream, Seen, Split)
+      response, err = Stream.result()
+      assert(not err and response.id is 'cr-only', f'CR-only framing must complete at split {Split}')
+      assert(#Seen is 2 and Seen[0].delta is 'CR',
+         f'CR-only framing must dispatch separate events at split {Split}')
    end)
 end
 

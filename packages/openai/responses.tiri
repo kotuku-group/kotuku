@@ -1,0 +1,360 @@
+-- Responses value normalisation, request validation, history and custom tool dispatch.
+
+   import 'json'
+   import './bounded_json'
+
+   namespace openai_responses { }
+
+function copyValue(Value:any, Depth:num):any
+   if Depth > 64 then raise 'OpenAI value nesting exceeds the supported limit' end
+   if Value is json.null then return json.null end
+   if Value is <array> then
+      result = array<any>
+      for item in values(Value) do result.push(copyValue(item, Depth + 1)) end
+      return result
+   end
+   if Value is <table> then
+      result = {}
+      for key, item in pairs(Value) do
+         if not (key is <str>) and not (key is <num>) then raise 'OpenAI object keys must be strings or numbers' end
+         result[key] = copyValue(item, Depth + 1)
+      end
+      return result
+   end
+   if Value is <str> or Value is <num> or Value is <bool> or Value is <nil> then return Value end
+   raise 'OpenAI values must be JSON-compatible'
+end
+
+openai_responses.copy = function(Value:any):any return copyValue(Value, 0) end
+
+function encodeValue(Value:any, Depth:num):str
+   if Depth > 64 then raise 'OpenAI value nesting exceeds the supported limit' end
+   if Value is json.null then return 'null' end
+   if Value is <array> then
+      pieces = array<str> { '[' }
+      for index, item in Value do
+         if index > 0 then pieces.push(',') end
+         pieces.push(encodeValue(item, Depth + 1))
+      end
+      pieces.push(']')
+      return pieces.concat()
+   end
+   if Value is <table> then
+      pieces = array<str> { '{' }
+      first = true
+      for key, item in pairs(Value) do
+         if not (key is <str>) and not (key is <num>) then raise 'OpenAI object keys must be strings or numbers' end
+         if not first then pieces.push(',') end
+         first = false
+         pieces.push(json.encode(key, nil, true), ':', encodeValue(item, Depth + 1))
+      end
+      pieces.push('}')
+      return pieces.concat()
+   end
+   if Value is <num> and (Value != Value or Value is math.huge or Value is -math.huge) then
+      raise 'OpenAI numbers must be finite'
+   end
+   if Value is <str> or Value is <num> or Value is <bool> or Value is <nil> then return json.encode(Value) end
+   raise 'OpenAI values must be JSON-compatible'
+end
+
+openai_responses.encode = function(Value:any):str return encodeValue(Value, 0) end
+
+function itemKind(Type:str):str
+   known = { message='message', reasoning='reasoning', function_call='function_call',
+      function_call_output='function_call_output', file_search_call='file_search_call',
+      web_search_call='web_search_call', computer_call='computer_call', image_generation_call='image_generation_call',
+      code_interpreter_call='code_interpreter_call', local_shell_call='local_shell_call' }
+   return known[Type] or 'unknown'
+end
+
+openai_responses.item = function(Raw:table):table
+   raw = openai_responses.copy(Raw)
+   item = { type=raw.type is <str> and raw.type or 'unknown', raw=raw }
+   item.kind = itemKind(item.type)
+   for key in values(array<str> { 'id', 'role', 'status', 'content', 'name', 'arguments', 'call_id', 'output' }) do
+      item[key] = raw[key]
+   end
+   return item
+end
+
+openai_responses.response = function(Raw:table):table
+   raw = openai_responses.copy(Raw)
+   response = { raw=raw, id=raw.id, object=raw.object, status=raw.status, model=raw.model,
+      usage=raw.usage, error=raw.error, incompleteDetails=raw.incomplete_details, output=array<table> }
+   if raw.output is <array> then
+      for value in values(raw.output) do
+         if value is <table> and value != json.null then response.output.push(openai_responses.item(value)) end
+      end
+   end
+   response.outputText = function():str
+      text = array<str>
+      for item in values(response.output) do
+         if item.type is 'message' and item.content is <array> then
+            for part in values(item.content) do
+               if part is <table> and part.type is 'output_text' and part.text is <str> then text.push(part.text) end
+            end
+         end
+      end
+      return text.concat()
+   end
+   response.functionCalls = function():array<table>
+      calls = array<table>
+      for item in values(response.output) do if item.type is 'function_call' then calls.push(item) end end
+      return calls
+   end
+   response.inputItems = function():array<table>
+      items = array<table>
+      for item in values(response.output) do items.push(openai_responses.copy(item.raw)) end
+      return items
+   end
+   return response
+end
+
+openai_responses.event = function(Event:table):table
+   raw = Event.raw
+   result = Event
+   if raw?.item is <table> and raw.item != json.null then result.item = openai_responses.item(raw.item) end
+   if raw?.response is <table> and raw.response != json.null then
+      result.response = openai_responses.response(raw.response)
+   end
+   result.kind = result.type
+   return result
+end
+
+function validName(Name:any):bool
+   return Name is <str> and #Name > 0 and #Name <= 64 and r'^[A-Za-z0-9_\-]+$'.test(Name)
+end
+
+function validateFormat(Format:table):table
+   if not (Format.type is <str>) or not (Format.type is 'text' or Format.type is 'json_object' or
+      Format.type is 'json_schema') then
+      return { code='invalid_text_format', message='Unsupported text.format type' }
+   end
+   if Format.type is 'json_schema' and (not validName(Format.name) or not (Format.schema is <table>)) then
+      return { code='invalid_text_format', message='json_schema text.format requires a name and schema' }
+   end
+   return nil
+end
+
+function strictSchema(Schema:any, Path:str, Depth:num):table
+   if not (Schema is <table>) or Schema is json.null or Depth > 32 then
+      return { code='invalid_strict_schema', message='Strict JSON Schema is malformed', path=Path }
+   end
+   if Schema.type is 'object' then
+      if not (Schema.properties is <table>) or Schema.additionalProperties != false or
+         not (Schema.required is <array>) then
+         return { code='invalid_strict_schema',
+            message='Strict object schemas require properties, required and additionalProperties=false', path=Path }
+      end
+      for name, child in pairs(Schema.properties) do
+         if not (name in Schema.required) then
+            return { code='invalid_strict_schema', message='Every strict object property must be required',
+               path=Path .. '.' .. name }
+         end
+         err = strictSchema(child, Path .. '.' .. name, Depth + 1)
+         if err then return err end
+      end
+   elseif Schema.type is 'array' and Schema.items != nil then
+      return strictSchema(Schema.items, Path .. '[]', Depth + 1)
+   end
+   if Schema.anyOf is <array> then
+      for index, child in Schema.anyOf do
+         err = strictSchema(child, Path .. '.anyOf[' .. index .. ']', Depth + 1)
+         if err then return err end
+      end
+   end
+   return nil
+end
+
+openai_responses.validate = function(Request:any):<table, table>
+   if not (Request is <table>) then
+      return nil, { code='invalid_request', message='Responses request must be a table' }
+   end
+   if not (Request.model is <str>) or Request.model is '' or #Request.model > 512 then
+      return nil, { code='invalid_model', message='Responses request requires a model identifier' }
+   end
+   if Request.input is nil or not (Request.input is <str>) and not (Request.input is <array>) then
+      return nil, { code='invalid_input', message='Responses input must be a string or Item array' }
+   end
+   if Request.stream != nil and not (Request.stream is <bool>) then
+      return nil, { code='invalid_stream', message='Responses stream must be boolean' }
+   end
+   if Request.text != nil then
+      if not (Request.text is <table>) then
+         return nil, { code='invalid_text', message='Responses text must be a table' }
+      end
+      if Request.text.format != nil then
+         if not (Request.text.format is <table>) then
+            return nil, { code='invalid_text_format', message='Responses text.format must be a table' }
+         end
+         format_err = validateFormat(Request.text.format)
+         if format_err then return nil, format_err end
+      end
+   end
+   if Request.tools != nil then
+      if not (Request.tools is <array>) then
+         return nil, { code='invalid_tools', message='Responses tools must be an array' }
+      end
+      for tool in values(Request.tools) do
+         if not (tool is <table>) or not (tool.type is <str>) then
+            return nil, { code='invalid_tool', message='Every Responses tool requires a type' }
+         end
+         if tool.type is 'function' and (not validName(tool.name) or not (tool.parameters is <table>)) then
+            return nil, { code='invalid_tool', message='Function tools require a valid name and parameters schema' }
+         end
+         if tool.type is 'function' and tool.strict is true then
+            schema_err = strictSchema(tool.parameters, '$.tools.' .. tool.name, 0)
+            if schema_err then return nil, schema_err end
+         end
+      end
+   end
+   local copied:table
+   try copied = openai_responses.copy(Request) except e
+      return nil, { code='invalid_json_value', message='Responses request contains a non-JSON value' }
+   end
+   return copied
+end
+
+function typeMatches(Value:any, Expected:any):bool
+   if Expected is <array> then
+      for candidate in values(Expected) do if typeMatches(Value, candidate) then return true end end
+      return false
+   end
+   if Expected is 'object' then return Value is <table> and Value != json.null end
+   if Expected is 'array' then return Value is <array> end
+   if Expected is 'string' then return Value is <str> end
+   if Expected is 'number' then return Value is <num> end
+   if Expected is 'integer' then return Value is <num> and Value is math.floor(Value) end
+   if Expected is 'boolean' then return Value is <bool> end
+   if Expected is 'null' then return Value is json.null end
+   return false
+end
+
+function schemaValue(Value:any, Schema:table, Path:str, Depth:num):table
+   if Depth > 32 then return { code='argument_depth', message='Tool arguments exceed the nesting limit', path=Path } end
+   if Schema.type != nil and not typeMatches(Value, Schema.type) then
+      return { code='argument_type', message='Tool argument has the wrong type', path=Path }
+   end
+   if Schema.enum is <array> and not (Value in Schema.enum) then
+      return { code='argument_enum', message='Tool argument is not an allowed value', path=Path }
+   end
+   if Value is <table> and Value != json.null and Schema.properties is <table> then
+      for name in values(Schema.required or array<str>) do
+         if not (name in Value) then return { code='argument_required', message='Required tool argument is missing',
+            path=Path .. '.' .. name } end
+      end
+      for name, child in pairs(Value) do
+         property = Schema.properties[name]
+         if not property then
+            if Schema.additionalProperties is false then return { code='argument_additional',
+               message='Unexpected tool argument', path=Path .. '.' .. name } end
+         elseif property is <table> then
+            err = schemaValue(child, property, Path .. '.' .. name, Depth + 1)
+            if err then return err end
+         end
+      end
+   elseif Value is <array> and Schema.items is <table> then
+      for index, child in Value do
+         err = schemaValue(child, Schema.items, Path .. '[' .. index .. ']', Depth + 1)
+         if err then return err end
+      end
+   end
+   return nil
+end
+
+openai_responses.ToolRegistry = function(Options:table):table
+   options = Options or {}
+   entries = {}
+   self = {}
+   self.register = function(Name:str!, Parameters:table!, Handler:func!, ToolOptions:table):table
+      if not validName(Name) then raise 'Invalid OpenAI function name' end
+      if entries[Name] then raise 'OpenAI function is already registered' end
+      opts = ToolOptions or {}
+      entry = { name=Name, parameters=openai_responses.copy(Parameters), handler=Handler,
+         description=opts.description, strict=opts.strict is nil and true or opts.strict,
+         consequential=opts.consequential or false }
+      if entry.strict then
+         schema_err = strictSchema(entry.parameters, '$.' .. Name, 0)
+         if schema_err then raise schema_err.message .. ' at ' .. schema_err.path end
+      end
+      entries[Name] = entry
+      return self
+   end
+   self.declarations = function():array<table>
+      declarations = array<table>
+      for _, entry in pairs(entries) do declarations.push({ type='function', name=entry.name,
+         description=entry.description, parameters=openai_responses.copy(entry.parameters), strict=entry.strict }) end
+      declarations.sort(function(A, B) return A.name < B.name end)
+      return declarations
+   end
+   self.dispatch = function(Call:table):<table, table>
+      raw = Call.raw or Call
+      if raw.type != 'function_call' or not validName(raw.name) or not (raw.call_id is <str>) or raw.call_id is '' then
+         return nil, { kind='tool', code='invalid_call', message='Invalid function call Item' }
+      end
+      entry = entries[raw.name]
+      if not entry then return nil, { kind='tool', code='tool_not_allowed', message='Function is not registered',
+         name=raw.name, callID=raw.call_id } end
+      if not (raw.arguments is <str>) then return nil, { kind='tool', code='invalid_arguments',
+         message='Function arguments must be JSON text', name=raw.name, callID=raw.call_id } end
+      arguments:any = nil
+      try arguments = openai_json.decode(raw.arguments, options.maxArgumentBytes or 262144,
+         options.maxArgumentDepth or 32) end
+      if not (arguments is <table>) or arguments is json.null then return nil, { kind='tool',
+         code='invalid_arguments', message='Function arguments must decode to an object', name=raw.name,
+         callID=raw.call_id } end
+      validation = schemaValue(arguments, entry.parameters, '$', 0)
+      if validation then
+         validation.kind = 'tool'; validation.name = raw.name; validation.callID = raw.call_id
+         return nil, validation
+      end
+      if entry.consequential then
+         approved = false
+         if options.approve then
+            try approved = options.approve({ name=raw.name, callID=raw.call_id,
+               arguments=openai_responses.copy(arguments) }) is true end
+         end
+         if not approved then
+            return nil, { kind='tool', code='approval_required', message='Function call was not approved',
+               name=raw.name, callID=raw.call_id }
+         end
+      end
+      local output:any
+      try output = entry.handler(openai_responses.copy(arguments), raw)
+      except e
+         return nil, { kind='tool', code='handler_failed', message='Function handler failed', name=raw.name,
+            callID=raw.call_id }
+      end
+      local encoded:str
+      try encoded = output is <str> and output or openai_responses.encode(output)
+      except e
+         return nil, { kind='tool', code='invalid_output', message='Function handler returned a non-JSON value',
+            name=raw.name, callID=raw.call_id }
+      end
+      return { type='function_call_output', call_id=raw.call_id, output=encoded }
+   end
+   return self
+end
+
+openai_responses.History = function(Initial:array<any>):table
+   state = array<table>
+   for item in values(Initial or array<table>) do state.push(openai_responses.copy(item.raw or item)) end
+   self = {}
+   self.append = function(Item:table):table state.push(openai_responses.copy(Item.raw or Item)); return self end
+   self.appendResponse = function(Response:table):table
+      source = Response.raw and Response.raw.output or Response.output
+      for item in values(source or array<table>) do state.push(openai_responses.copy(item.raw or item)) end
+      return self
+   end
+   self.functionOutput = function(CallID:str!, Output:any):table
+      if CallID is '' then raise 'Function output requires a call_id' end
+      state.push({ type='function_call_output', call_id=CallID,
+         output=Output is <str> and Output or openai_responses.encode(Output) })
+      return self
+   end
+   self.items = function():array<any> return openai_responses.copy(state) end
+   self.reset = function() state.clear(); return self end
+   self.count = function():num return #state end
+   return self
+end

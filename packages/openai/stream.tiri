@@ -1,6 +1,5 @@
 -- Private Responses streaming transport.  HTTP callbacks and user callbacks run serially on the processing thread.
 
-   include 'http'
    import 'json'
    import './sse', './bounded_json'
 
@@ -31,13 +30,23 @@ function addDiagnostic(State:table, Text:str)
    if #Text > available then State.diagnosticTruncated = true end
 end
 
+function apiKind(Code:any):str
+   if not (Code is <str>) then return 'response' end
+   lower = Code.lower()
+   if lower.find('rate_limit') or lower.find('quota') or lower.find('usage_limit') then return 'rate_limit' end
+   if lower.find('auth') or lower.find('token') or lower.find('permission') then return 'authentication' end
+   if lower.find('invalid') or lower.find('unsupported') then return 'invalid_request' end
+   if lower.find('server') or lower.find('unavailable') then return 'server' end
+   return 'response'
+end
+
 openai_stream.Stream = function(Options:table):table
    options = Options or {}
 
-   state = { 
+   state = {
       value='pending', terminal=false, closed=false, response=nil, error=nil, subscriptions=array<table>,
       eventIndex=0, diagnostic='', diagnosticLimit=options.diagnosticBytes or 4096, diagnosticTruncated=false,
-      http=nil, httpStatus=0, requestID=nil, contentType=nil, inCallback=false 
+      http=nil, httpStatus=0, requestID=nil, contentType=nil, inCallback=false
    }
 
    if state.diagnosticLimit < 0 then raise 'Invalid stream diagnostic limit' end
@@ -90,8 +99,8 @@ openai_stream.Stream = function(Options:table):table
 
       raw:any = nil
 
-      try 
-         raw = openai_json.decode(SSEEvent.data, options.maxEventBytes, options.maxJSONDepth) 
+      try
+         raw = openai_json.decode(SSEEvent.data, options.maxEventBytes, options.maxJSONDepth)
       end
 
       if not (raw is <table>) or raw is json.null or not (raw.type is <str>) or raw.type is '' then
@@ -103,23 +112,31 @@ openai_stream.Stream = function(Options:table):table
 
       state.eventIndex++
 
-      event = { 
+      decoded_response = raw.response
+      if decoded_response is <table> and options.responseDecoder then
+         decoded_response = options.responseDecoder(decoded_response)
+      end
+      decoded_item = raw.item
+      if decoded_item is <table> and options.itemDecoder then decoded_item = options.itemDecoder(decoded_item) end
+
+      event = {
          type=raw.type, sequenceNumber=raw.sequence_number or raw.sequenceNumber,
-         response=raw.response, item=raw.item, delta=raw.delta, raw=raw, eventID=SSEEvent.id,
-         eventName=SSEEvent.event, index=state.eventIndex 
+         response=decoded_response, item=decoded_item, delta=raw.delta, raw=raw, eventID=SSEEvent.id,
+         eventName=SSEEvent.event, index=state.eventIndex
       }
 
       if raw.type is 'response.completed' then
-         complete('completed', raw.response or raw, nil)
+         complete('completed', decoded_response or raw, nil)
       elseif raw.type is 'response.failed' then
          provider = raw.response?.error or raw.error or {}
          addDiagnostic(state, SSEEvent.data)
-         complete('failed', nil, streamError('api', provider.code or 'response_failed', 'Response failed', state,
-            { param=provider.param }))
+         complete('failed', nil, streamError(apiKind(provider.code), provider.code or 'response_failed',
+            provider.message is <str> and redactDiagnostic(provider.message).sub(0, 1024) or 'Response failed',
+            state, { param=provider.param }))
       elseif raw.type is 'response.incomplete' then
          details = raw.response?.incomplete_details or raw.incomplete_details or {}
          addDiagnostic(state, SSEEvent.data)
-         complete('incomplete', nil, streamError('api', details.reason or 'response_incomplete',
+         complete('incomplete', nil, streamError('response', details.reason or 'response_incomplete',
             'Response incomplete', state))
       end
 
@@ -127,9 +144,9 @@ openai_stream.Stream = function(Options:table):table
       return not state.terminal and not state.closed
    end
 
-   parser = openai_sse.Parser({ 
+   parser = openai_sse.Parser({
       maxBytes=options.maxBytes, maxEventBytes=options.maxEventBytes,
-      maxEvents=options.maxEvents, onEvent=decoded 
+      maxEvents=options.maxEvents, onEvent=decoded
    })
 
    function feed(Chunk:str):bool

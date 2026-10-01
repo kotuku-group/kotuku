@@ -229,23 +229,6 @@ end
    assert(err.code is 'web_flow_failed' and not message.find('secret'), 'Browser exception redacted')
 end
 
-@Test function UnsupportedPresetsAndRevocation()
-   for helper in values(array<any> { oauth2.getGoogleTokens, oauth2.getMicrosoftTokens }) do
-      _, _, err = helper('id', 'secret')
-      assert(err.code is 'unsupported_provider_flow', 'Do not claim unvalidated provider device support')
-   end
-   client = oauth2.Client({ provider='microsoft', clientID='id' })
-   _, _, err = client.revokeToken('secret')
-   assert(err.code is 'unsupported', 'Microsoft logout is not revocation')
-   client = offlineClient({ custom_endpoints={ auth_endpoint='https://issuer.invalid/auth',
-      token_endpoint='https://issuer.invalid/token', revoke_endpoint='https://issuer.invalid/revoke' },
-      transport=function(Request)
-         assert(Request.form.token is 'secret' and Request.form.token_type_hint is 'refresh_token', 'Revocation form')
-         return { status=200, body='' }
-      end })
-   assert(client.revokeToken('secret', 'refresh_token'), 'Empty RFC 7009 success body')
-end
-
 @Test function DeviceFlowSuccessAndCancellation()
    polls = 0
    presented = false

@@ -11,6 +11,7 @@ openai_sse.Parser = function(Options:table):table
    options = Options or {}
    state = {
       pending='', data=array<str>, eventName='', lastID='', eventBytes=0, bytes=0, events=0, finished=false,
+      afterCR=false,
       maxBytes=options.maxBytes or 16777216, maxEventBytes=options.maxEventBytes or 1048576,
       maxEvents=options.maxEvents or 10000, onEvent=options.onEvent
    }
@@ -72,17 +73,31 @@ openai_sse.Parser = function(Options:table):table
    end
 
    function consume():table
+      if state.afterCR and state.pending != '' then
+         state.afterCR = false
+         if state.pending.startsWith('\n') then state.pending = state.pending.sub(1) end
+      end
       while not state.finished do
          newline = state.pending.find('\n')
-         if newline is nil then
+         carriage = state.pending.find('\r')
+         if newline is nil and carriage is nil then
             if #state.pending + state.eventBytes > state.maxEventBytes then
                return fail('event_byte_limit', 'SSE event byte limit exceeded')
             end
             return nil
          end
-         current = state.pending.sub(0, newline)
-         state.pending = state.pending.sub(newline + 1)
-         if current.endsWith('\r') then current = current.sub(0, -1) end
+         delimiter = newline
+         delimiterBytes = 1
+         if carriage != nil and (delimiter is nil or carriage < delimiter) then
+            delimiter = carriage
+            if carriage + 1 < #state.pending and state.pending.sub(carriage + 1, carriage + 2) is '\n' then
+               delimiterBytes = 2
+            elseif carriage + 1 is #state.pending then
+               state.afterCR = true
+            end
+         end
+         current = state.pending.sub(0, delimiter)
+         state.pending = state.pending.sub(delimiter + delimiterBytes)
          err = line(current)
          if err then return err end
       end
