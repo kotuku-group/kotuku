@@ -268,19 +268,18 @@ function inferredEntry(PackageName:str!, Files:array<table>!):str
       if file.path is preferred then return preferred end
       if not first_tiri and file.path.endsWith('.tiri') then first_tiri = file.path end
    end
-   if not first_tiri then raise f'Package "{PackageName}" has no Tiri entry point.' end
    return first_tiri
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function mockManifest(PackageName:str!, Files:array<table>!):table
+function mockManifest(PackageName:str!, Entry:str!, Files:array<table>!):table
    return {
       schemaVersion = 1,
       name = PackageName,
       version = '1.0',
       description = 'TODO: Describe this package.',
-      entry = inferredEntry(PackageName, Files),
+      entry = Entry,
       authors = array<table> { { name = 'TODO' } },
       copyright = 'TODO',
       files = Files
@@ -308,7 +307,10 @@ function updatePackage(PackagePath:str!, PackageName:str!):str
       manifest.files = files
       action = 'Updated'
    elseif manifest_error is ERR_FileNotFound then
-      manifest = mockManifest(PackageName, files)
+      -- Folders without a Tiri entry point are not packages that can be manifested, so they are skipped.
+      local entry = inferredEntry(PackageName, files)
+      if not entry then return 'Skipped' end
+      manifest = mockManifest(PackageName, entry, files)
       action = 'Created'
    else
       raise manifest_error, f'Unable to inspect manifest "{manifest_path}".'
@@ -367,7 +369,9 @@ Examples:
       scanHidden = true,
       strict = true,
       matchFeedback = function(Path:str!, FileName:str!, File:obj!)
-         glPackageFolders.push({ name=packageName(File.path), path=normaliseFolderPath(File.path) })
+         local name = packageName(File.path)
+         if name is 'tests' then return end -- Package test suites are not a package
+         glPackageFolders.push({ name=name, path=normaliseFolderPath(File.path) })
       end
    })
 

@@ -1,0 +1,146 @@
+-- Private bounded JSON decoder for streaming events.  Error messages never include untrusted input.
+
+   import 'json'
+   namespace openai_json { }
+
+function jsonFailure():nil
+   raise 'Invalid or excessive streaming JSON input'
+end
+
+function utf8Scalar(Value:num):str
+   if Value < 128 then return string.char(Value) end
+   if Value < 2048 then return string.char(192 + (Value >> 6), 128 + (Value & 63)) end
+   if Value < 65536 then
+      return string.char(224 + (Value >> 12), 128 + ((Value >> 6) & 63), 128 + (Value & 63))
+   end
+   return string.char(240 + (Value >> 18), 128 + ((Value >> 12) & 63),
+      128 + ((Value >> 6) & 63), 128 + (Value & 63))
+end
+
+openai_json.decode = function(Text:str!, ByteLimit:num, DepthLimit:num):any
+   if #Text > (ByteLimit or 1048576) then jsonFailure() end
+   depth_limit = DepthLimit or 32
+   if depth_limit < 1 or depth_limit > 128 then jsonFailure() end
+   pos = 0
+
+   function space()
+      while pos < #Text do
+         byte = string.byte(Text, pos)
+         if byte != 32 and byte != 9 and byte != 10 and byte != 13 then return end
+         pos++
+      end
+   end
+
+   function hex4():num
+      hex = Text.sub(pos, pos + 4)
+      if #hex != 4 or not r'^[0-9a-fA-F]{4}$'.test(hex) then jsonFailure() end
+      pos += 4
+      return tonumber(hex, 16)
+   end
+
+   function quoted():str
+      if Text.sub(pos, pos + 1) != '"' then jsonFailure() end
+      pos++
+      pieces = array<str>
+      while pos < #Text do
+         byte = string.byte(Text, pos)
+         pos++
+         if byte is 34 then return pieces.concat() end
+         if byte < 32 then jsonFailure() end
+         if byte is 92 then
+            escape = Text.sub(pos, pos + 1)
+            pos++
+            if escape is 'u' then
+               scalar = hex4()
+               if scalar >= 55296 and scalar <= 56319 then
+                  if Text.sub(pos, pos + 2) != '\\u' then jsonFailure() end
+                  pos += 2
+                  low = hex4()
+                  if low < 56320 or low > 57343 then jsonFailure() end
+                  scalar = 65536 + (scalar - 55296) * 1024 + low - 56320
+               elseif scalar >= 56320 and scalar <= 57343 then
+                  jsonFailure()
+               end
+               pieces.push(utf8Scalar(scalar))
+            else
+               escapes = { ['"']='"', ['\\']='\\', ['/']='/', b='\b', f='\f', n='\n', r='\r', t='\t' }
+               if not escapes[escape] then jsonFailure() end
+               pieces.push(escapes[escape])
+            end
+         elseif byte < 128 then
+            pieces.push(string.char(byte))
+         else
+            count = byte >= 194 and byte <= 223 ? 1 :
+               (byte >= 224 and byte <= 239 ? 2 : (byte >= 240 and byte <= 244 ? 3 : 0))
+            if count is 0 or pos + count > #Text then jsonFailure() end
+            scalar = byte & (count is 1 ? 31 : (count is 2 ? 15 : 7))
+            for index in {0 to count} do
+               next_byte = string.byte(Text, pos + index)
+               if next_byte < 128 or next_byte > 191 then jsonFailure() end
+               scalar = scalar * 64 + next_byte - 128
+            end
+            if scalar < (count is 1 ? 128 : (count is 2 ? 2048 : 65536)) or scalar > 1114111 or
+               (scalar >= 55296 and scalar <= 57343) then jsonFailure() end
+            pieces.push(Text.sub(pos - 1, pos + count))
+            pos += count
+         end
+      end
+      jsonFailure()
+   end
+
+   function value(Depth:num):any
+      if Depth > depth_limit then jsonFailure() end
+      space()
+      character = Text.sub(pos, pos + 1)
+
+      if character is '"' then return quoted() end
+
+      if character is '{' or character is '[' then
+         object = character is '{'
+         result:any = object ? {} : array<any>
+         seen = {}
+         stop_character = object ? '}' : ']'
+         pos++
+         space()
+         if Text.sub(pos, pos + 1) is stop_character then pos++; return result end
+
+         while true do
+            space()
+            key = ''
+            if object then
+               key = quoted()
+               if seen[key] then jsonFailure() end
+               seen[key] = true
+               space()
+               if Text.sub(pos, pos + 1) != ':' then jsonFailure() end
+               pos++
+            end
+            item:any = value(Depth + 1)
+            if object then result[key] = item else result.push(item) end
+            space()
+            delimiter = Text.sub(pos, pos + 1)
+            pos++
+            if delimiter is stop_character then return result end
+            if delimiter != ',' then jsonFailure() end
+         end
+      end
+
+      for literal, decoded in pairs({ ['true']=true, ['false']=false, ['null']=json.null }) do
+         if Text.sub(pos, pos + #literal) is literal then pos += #literal; return decoded end
+      end
+
+      start, stop = r'-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+\-]?[0-9]+)?'.findFirst(Text, pos)
+      if start != pos then jsonFailure() end
+      number = tonumber(Text.sub(start, stop))
+      if not number or number != number or math.abs(number) is math.huge then jsonFailure() end
+      pos = stop
+      return number
+   end
+
+   result:any = value(0)
+   space()
+   if pos != #Text then jsonFailure() end
+   return result
+end
+
+jit.off(openai_json.decode, true)
