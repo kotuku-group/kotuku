@@ -12,7 +12,7 @@ end
 
 function fragmentEveryBoundary(Wire:str, Verify:func!)
    for split in {0 into #Wire} do
-      stream = openai_stream.Stream({ maxBytes=65536, maxEventBytes=8192, maxEvents=32, diagnosticBytes=128 })
+      stream = openai_stream.stream({ maxBytes=65536, maxEventBytes=8192, maxEvents=32, diagnosticBytes=128 })
       seen = array<table>
       stream.onEvent(function(Event) seen.push(Event) end)
       stream.feed(Wire.sub(0, split))
@@ -60,7 +60,7 @@ end
 @Test function OneByteChunksRemainIncremental()
    wire = eventWire('response.output_text.delta', { sequence_number=1, delta='A' }) ..
       eventWire('response.completed', { response={ id='one-byte' } })
-   stream = openai_stream.Stream({})
+   stream = openai_stream.stream({})
    seen = 0
    stream.onEvent(function(Event) seen++ end)
    for index in {0 to #wire} do stream.feed(wire.sub(index, index + 1)) end
@@ -72,7 +72,7 @@ end
 @Test function ErrorTranslationPreservesFailuresWithoutAReplacementTable()
    for fixture in values(array<table> { {}, { value=false }, { value='invalid' }, { value=42 } }) do
       original:any = nil
-      stream = openai_stream.Stream({ errorTranslator=function(Error):any
+      stream = openai_stream.stream({ errorTranslator=function(Error):any
          original = Error
          return fixture.value
       end })
@@ -83,7 +83,7 @@ end
    end
 
    original:any = nil
-   stream = openai_stream.Stream({ errorTranslator=function(Error)
+   stream = openai_stream.stream({ errorTranslator=function(Error)
       original = Error
       raise 'fixture translation failure'
    end })
@@ -93,7 +93,7 @@ end
       'A translator exception preserves the original stream failure')
 
    replacement = { kind='response', code='translated_error', message='translated' }
-   translated = openai_stream.Stream({ errorTranslator=function(Error) return replacement end })
+   translated = openai_stream.stream({ errorTranslator=function(Error) return replacement end })
    translated.feed(eventWire('response.failed', { response={ error={ code='provider_error', message='failed' } } }))
    _, translated_error = translated.result()
    assert(translated_error is replacement, 'A replacement error table is retained')
@@ -119,7 +119,7 @@ end
       end)
    end
    for reason, code in pairs({ timeout='timeout', connection_terminated='connection_terminated' }) do
-      stream = openai_stream.Stream({})
+      stream = openai_stream.stream({})
       stream.feed(eventWire('response.output_text.delta', { delta='partial' }))
       stream.finish(reason)
       _, err = stream.result()
@@ -128,7 +128,7 @@ end
 end
 
 @Test function CancellationAndSubscriptionLifetime()
-   stream = openai_stream.Stream({})
+   stream = openai_stream.stream({})
    calls = 0
    subscription = stream.onEvent(function(Event) calls++ end)
    stream.cancel()
@@ -151,12 +151,12 @@ end
       { options={ maxEvents=1 }, wire=eventWire('unknown.one', {}) .. eventWire('unknown.two', {}),
          expected='event_limit' }
    }) do
-      stream = openai_stream.Stream(fixture.options)
+      stream = openai_stream.stream(fixture.options)
       stream.feed(fixture.wire)
       _, err = stream.result()
       assert(stream.state() is 'failed' and err.code is fixture.expected, 'Configured SSE limit must fail closed')
    end
-   stream = openai_stream.Stream({ diagnosticBytes=12 })
+   stream = openai_stream.stream({ diagnosticBytes=12 })
    stream.feed('data: this-is-not-json\n\n')
    _, err = stream.result()
    assert(#err.diagnostic <= 12 and err.diagnosticTruncated, 'Diagnostic capture must remain bounded')
@@ -165,7 +165,7 @@ end
       'data: {"type":"first","type":"second"}\n\n',
       'data: {"type":"delta","nested":[[[[0]]]]}\n\n'
    }) do
-      stream = openai_stream.Stream({ maxJSONDepth=2 })
+      stream = openai_stream.stream({ maxJSONDepth=2 })
       stream.feed(malformed)
       _, err = stream.result()
       assert(err.code is 'malformed_event', 'Strict bounded JSON must reject ambiguous or excessive input')
@@ -173,7 +173,7 @@ end
 end
 
 @Test function EventOrderingAndCallbackCancellation()
-   stream = openai_stream.Stream({})
+   stream = openai_stream.stream({})
    order = array<int>
    stream.onEvent(function(Event)
       order.push(Event.sequenceNumber)

@@ -6,7 +6,7 @@ rxVerifier <const> = <{ regex.new([[^[A-Za-z0-9_\-]{128}$]]) }>
 rxChallenge <const> = <{ regex.new([[^[A-Za-z0-9_\-]{43}$]]) }>
 
 @Test function NativePkceGeneration()
-   client = oauth2.Client({
+   client = oauth2.client({
       clientID = 'offline-test-client',
       scope = 'api',
       redirectURI = 'http://127.0.0.1:12345/callback',

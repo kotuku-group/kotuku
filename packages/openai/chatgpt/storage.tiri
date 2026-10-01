@@ -37,6 +37,7 @@ function validated(State:any):table
       not (State.accounts is <array>) or #State.accounts > 64 then
       raise 'Invalid ai/chatgpt credential store'
    end
+
    seen = {}
    for account_record in values(State.accounts) do
       if not (account_record is <table>) or not validText(account_record.id, 128) or seen[account_record.id] or
@@ -44,13 +45,16 @@ function validated(State:any):table
          not validText(account_record.subject, 255) then
          raise 'Invalid ai/chatgpt account record'
       end
+
       seen[account_record.id] = true
       if account_record.email != nil and not validText(account_record.email, 1024) then
          raise 'Invalid ai/chatgpt account email'
       end
+
       if account_record.label != nil and not validText(account_record.label, 1024) then
          raise 'Invalid ai/chatgpt account label'
       end
+
       token = account_record.token
       if token != nil then
          identity = token.identity
@@ -68,9 +72,11 @@ function validated(State:any):table
          end
       end
    end
+
    if State.activeID != nil and (not validText(State.activeID, 128) or not seen[State.activeID]) then
       raise 'Invalid ai/chatgpt active account'
    end
+
    return State
 end
 
@@ -78,7 +84,7 @@ chatgpt_storage.newState = function(RandomBytes:func!):table
    return { schemaVersion=1, hostID=chatgpt_storage.hostID(RandomBytes), activeID=nil, accounts=array<table> }
 end
 
-chatgpt_storage.ProtectedStore = function(Path:str, WriteProtectedFile:func!):table
+chatgpt_storage.protectedStore = function(Path:str, WriteProtectedFile:func!):table
    path = Path or 'user:config/ai_chatgpt_credentials.json'
    if not validText(path, 4096) then raise 'Invalid ai/chatgpt credential path' end
    self = { path=path }

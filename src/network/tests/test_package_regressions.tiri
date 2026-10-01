@@ -86,7 +86,7 @@ end
 end
 
 @Test function OAuthCallbackBuffersSeparateReads()
-   client = oauth2.Client({ clientID = 'offline-client', scope = 'api', authorizationTimeout = 5,
+   client = oauth2.client({ clientID = 'offline-client', scope = 'api', authorizationTimeout = 5,
       custom_endpoints = {
          auth_endpoint = 'https://issuer.invalid/authorize', token_endpoint = 'https://issuer.invalid/token'
       },
@@ -212,7 +212,7 @@ end
    } })
    defer server.stop() end
    endpoint = 'http://127.0.0.1:' .. server.port
-   client = oauth2.Client({ clientID = 'offline-client', scope = 'api', testLoopback = true,
+   client = oauth2.client({ clientID = 'offline-client', scope = 'api', testLoopback = true,
       redirectURI = 'http://127.0.0.1:12345/callback', authorizationTimeout = 5,
       presentDevice = function(Instructions:table)
          assert(Instructions.user_code is 'fixture', 'Device flow must present the fixture user code')

@@ -18,7 +18,7 @@ function validEndpoint(URL:any, TestLoopback:bool):bool
    if not (URL is <str>) or URL is '' or #URL > 4096 or r'[\x00-\x20\x7f\\]'.test(URL) then return false end
    scheme, host, port = r'^(https?)://([A-Za-z0-9.\-]+)(:[0-9]+)?(?:/[^#]*)?$'.extract(URL)
    if not scheme or not host then return false end
-   if port and port != '' then
+   if port?? then
       number = tonumber(port.sub(1))
       if not number or number < 1 or number > 65535 then return false end
    end
@@ -61,11 +61,11 @@ function decodeHTTPError(Response:table, Limit:num):table
    diagnostic = Response.body.sub(0, Limit or 4096)
    provider:any = nil
    try provider = openai_json.decode(Response.body, Limit or 1048576, 32) end
-   detail = provider?.error or provider or {}
-   code = detail.code is <str> and detail.code or 'http_status'
-   param = detail.param is <str> and detail.param or nil
+   detail  = provider?.error or provider or {}
+   code    = detail.code is <str> and detail.code or 'http_status'
+   param   = detail.param is <str> and detail.param or nil
    message = detail.message is <str> and redact(detail.message).sub(0, 1024) or 'OpenAI request failed'
-   status = Response.status
+   status  = Response.status
    return wireError(classify(status, code), code, message, status, request_id, diagnostic,
       status is 408 or status is 409 or status is 429 or status >= 500, { param=param })
 end
@@ -95,21 +95,25 @@ function wireRequest(Options:table):<table, table>
       return injected
    end
 
-   body = ''
-   done = false
+   body       = ''
+   done       = false
    terminated = false
-   too_large = false
-   status = 0
-   headers = {}
-   proc = processing.new({ timeout=0.05 })
-   method = (Options.method or 'GET').lower()
+   too_large  = false
+   status     = 0
+   headers    = {}
+   proc       = processing.new({ timeout=0.05 })
+   method     = (Options.method or 'GET').lower()
+
    http <close> = obj.new('http', {
-      src=Options.url, method=method, flags=HTF_NO_HEAD|HTF_NO_AUTO_REDIRECT|HTF_NO_DIALOG,
-      connectTimeout=math.min(10, Options.timeout or 60), dataTimeout=Options.timeout or 60,
-      contentType='application/json',
-      inputFile=(method is 'post' or method is 'put' or method is 'patch') ? 'string:' .. (Options.body or '') : nil,
-      size=(method is 'post' or method is 'put' or method is 'patch') ? #(Options.body or '') : 0,
-      incoming=function(HTTP, Buffer)
+      src    = Options.url,
+      method = method,
+      flags  = HTF_NO_HEAD|HTF_NO_AUTO_REDIRECT|HTF_NO_DIALOG,
+      connectTimeout = math.min(10, Options.timeout or 60),
+      dataTimeout    = Options.timeout or 60,
+      contentType    = 'application/json',
+      inputFile = (method is 'post' or method is 'put' or method is 'patch') ? 'string:' .. (Options.body or '') : nil,
+      size      = (method is 'post' or method is 'put' or method is 'patch') ? #(Options.body or '') : 0,
+      incoming = function(HTTP, Buffer)
          if #body + #Buffer > (Options.maxResponseBytes or 16777216) then
             too_large = true
             done = true
@@ -118,7 +122,7 @@ function wireRequest(Options:table):<table, table>
          end
          body ..= Buffer.getString()
       end,
-      stateChanged=function(HTTP, State)
+      stateChanged = function(HTTP, State)
          if State is HGS_COMPLETED or State is HGS_TERMINATED then
             status = HTTP.status
             terminated = State is HGS_TERMINATED
@@ -131,23 +135,33 @@ function wireRequest(Options:table):<table, table>
          end
       end
    })
+
    for name, value in pairs(Options.headers or {}) do
       if not (name is <str>) or not (value is <str>) or http.acSetKey(name, value) != ERR_Okay then
          return nil, wireError('invalid_request', 'invalid_header', 'Invalid HTTP request header')
       end
    end
+
    if http.acActivate() != ERR_Okay then
       return nil, wireError('transport', 'activation_failed', 'Unable to start OpenAI request',
          nil, nil, nil, true)
    end
+
    deadline = mSys.PreciseTime() + (Options.timeout or 60) * 1000000
    while not done and mSys.PreciseTime() < deadline do proc.sleep() end
-   if too_large then return nil, wireError('transport', 'response_limit',
-      'OpenAI response exceeded the byte limit', status) end
-   if not done then return nil, wireError('timeout', 'timeout', 'OpenAI request timed out',
-      status, nil, nil, true) end
-   if terminated and status is 0 then return nil, wireError('transport', 'transport',
-      'OpenAI connection terminated', nil, nil, nil, true) end
+
+   if too_large then
+      return nil, wireError('transport', 'response_limit', 'OpenAI response exceeded the byte limit', status)
+   end
+
+   if not done then
+      return nil, wireError('timeout', 'timeout', 'OpenAI request timed out', status, nil, nil, true)
+   end
+
+   if terminated and status is 0 then
+      return nil, wireError('transport', 'transport', 'OpenAI connection terminated', nil, nil, nil, true)
+   end
+
    return { status=status, body=body, headers=headers }
 end
 
@@ -158,6 +172,7 @@ end
 
 function staticCredential(Kind:str, Token:str):table
    if not (Token is <str>) or Token is '' or r'[\r\n]'.test(Token) then raise 'Invalid OpenAI credential' end
+
    provider = {}
    provider.kind = Kind
    provider.authorization = function():<str, table> return 'Bearer ' .. Token end
@@ -176,7 +191,7 @@ embed it in source code.
 Key: The API key.  It must be non-empty and must not contain line breaks.
 
 -RESULTS-
-table: The credential provider, for use as the `credential` option of Client().
+table: The credential provider, for use as the `credential` option of client().
 ]])
 openai.apiKey = function(Key:str!):table return staticCredential('api_key', Key) end
 @Doc(text=[[
@@ -188,7 +203,7 @@ Use refreshableBearer() for tokens that expire during the life of the client.
 Token: The bearer token.  It must be non-empty and must not contain line breaks.
 
 -RESULTS-
-table: The credential provider, for use as the `credential` option of Client().
+table: The credential provider, for use as the `credential` option of client().
 ]])
 openai.bearerToken = function(Token:str!):table return staticCredential('bearer', Token) end
 
@@ -206,28 +221,41 @@ Callback: Function returning the current access token.
 Options: Reserved for future use.
 
 -RESULTS-
-table: The credential provider, for use as the `credential` option of Client().
+table: The credential provider, for use as the `credential` option of client().
 ]])
 openai.refreshableBearer = function(Callback:func!, Options:table):table
-   options = Options or {}
-   cached:any = nil
+   local options = Options or {}
+   local cached:any = nil
+
    provider = { kind='refreshable_bearer' }
    provider.invalidate = function() cached = nil end
+
    provider.authorization = function():<str, table>
       local supplied:any
-      try supplied = Callback(cached) except e
+      try
+         supplied = Callback(cached)
+      except e
          return nil, credentialError('credential_callback_failed', 'Bearer credential callback failed')
       end
+
       token:any = supplied
-      if supplied is <table> then token = supplied.accessToken or supplied.access_token or supplied.token end
+      if supplied is <table> then
+         token = supplied.accessToken or supplied.access_token or supplied.token
+      end
+
       if not (token is <str>) or token is '' or r'[\r\n]'.test(token) then
          return nil, credentialError('credential_unavailable', 'Bearer credential callback returned no valid token')
       end
+
       cached = supplied
       return 'Bearer ' .. token
    end
-   provider.capabilities = function():table return { kind='refreshable_bearer', refreshable=true,
-      callbackManaged=true } end
+
+   provider.capabilities = function():table
+      return {
+         kind = 'refreshable_bearer', refreshable = true, callbackManaged = true
+      }
+   end
    return provider
 end
 
@@ -235,7 +263,7 @@ end
 Builds a Responses `function` tool declaration.
 
 The parameters schema is copied.  Strict mode is enabled unless Strict is `false`.  When enabled, the schema must
-satisfy the strict rules checked by `responses.create()`.  Use ToolRegistry() when the application also needs to
+satisfy the strict rules checked by `responses.create()`.  Use toolRegistry() when the application also needs to
 dispatch the resulting function calls.
 
 -INPUT-
@@ -252,20 +280,24 @@ openai.functionTool = function(Name:str!, Description:str, Parameters:table!, St
       strict=Strict is nil and true or Strict }
 end
 
-openai.ToolRegistry = openai_responses.ToolRegistry
-openai.History = openai_responses.History
+openai.toolRegistry = openai_responses.toolRegistry
+openai.history = openai_responses.history
 openai.item = openai_responses.item
 openai.response = openai_responses.response
 
 function clientError(Kind:str, Code:str, Message:str, Extra:table):table
    result = { kind=Kind, code=Code, message=Message, retryable=false }
-   for key, value in pairs(Extra or {}) do result[key] = value end
+   for key, value in pairs(Extra or {}) do
+      result[key] = value
+   end
    return result
 end
 
 function mergeCapabilities(Base:table, Policy:table):table
    result = openai_responses.copy(Base)
-   for key, value in pairs(Policy or {}) do result[key] = openai_responses.copy(value) end
+   for key, value in pairs(Policy or {}) do
+      result[key] = openai_responses.copy(value)
+   end
    return result
 end
 
@@ -305,18 +337,24 @@ refreshableBearer() or a library such as `ai/chatgpt`.  Optional fields are `bas
 `https://api.openai.com/v1`), `timeout` (seconds, default 60), `retry` (`{ maxAttempts=1..10 }`, default 2),
 `headers` (extra headers; Authorization is reserved), `maxResponseBytes` (default 16 MiB), `diagnosticBytes`
 (default 4096), `streamLimits` (`maxBytes`, `maxEventBytes`, `maxEvents`, `maxJSONDepth`, `diagnosticBytes`) and
-`policy` (a request policy such as `chatgpt.Policy()`).
+`policy` (a request policy such as `chatgpt.policy()`).
 
 -RESULTS-
 table: The client, providing `capabilities()`, `models.list()` and `responses.create()`.
 ]])
-openai.Client = function(Options:table):table
+openai.client = function(Options:table):table
    options = Options or {}
    credential = options.credential
+
    if not credential or not credential.authorization then raise 'OpenAI Client requires a credential provider' end
+
    base_url = options.baseURL or 'https://api.openai.com/v1'
    while base_url.endsWith('/') do base_url = base_url.sub(0, -1) end
-   if not validEndpoint(base_url, options.testLoopback) then raise 'Invalid OpenAI base URL' end
+
+   if not validEndpoint(base_url, options.testLoopback) then
+      raise 'Invalid OpenAI base URL'
+   end
+
    retry = options.retry or {}
    max_attempts = retry.maxAttempts or 2
    if not (max_attempts is <num>) or max_attempts < 1 or max_attempts > 10 then raise 'Invalid OpenAI retry limit' end
@@ -326,35 +364,48 @@ openai.Client = function(Options:table):table
    function headers():<table, table>
       authorization, auth_err = credential.authorization()
       if auth_err then return nil, auth_err end
+
       if not (authorization is <str>) or not authorization.startsWith('Bearer ') or r'[\r\n]'.test(authorization) then
          return nil, credentialError('credential_unavailable', 'Credential provider returned invalid authorization')
       end
+
       result = { Authorization=authorization, Accept='application/json' }
       for name, value in pairs(options.headers or {}) do
          if not (name is <str>) or not (value is <str>) or r'[\r\n]'.test(name) or r'[\r\n]'.test(value) then
             return nil, clientError('invalid_request', 'invalid_header', 'Invalid custom OpenAI header')
          end
+
          if name.lower() is 'authorization' then
             return nil, clientError('invalid_request', 'reserved_header', 'Authorization header is credential-owned')
          end
+
          result[name] = value
       end
+
       return result
    end
 
    function request(Method:str, Path:str, Body:str):<table, table>
       attempt = 0
-      last_err:any = nil
+      local last_err:any
       translate_error = false
       while attempt < max_attempts do
          attempt++
          translate_error = false
          request_headers, auth_err = headers()
          if auth_err then return nil, auth_err end
-         response, transport_err = wireRequest({ method=Method, url=base_url .. Path,
-            headers=request_headers, body=Body or '', timeout=options.timeout or 60,
-            maxResponseBytes=options.maxResponseBytes or 16777216, testLoopback=options.testLoopback,
-            transport=options.transport })
+
+         response, transport_err = wireRequest({
+            method  = Method,
+            url     = base_url .. Path,
+            headers = request_headers,
+            body    = Body or '',
+            timeout = options.timeout or 60,
+            maxResponseBytes = options.maxResponseBytes or 16777216,
+            testLoopback     = options.testLoopback,
+            transport        = options.transport
+         })
+
          if transport_err then
             last_err = transport_err
          elseif response.status >= 200 and response.status < 300 then
@@ -363,6 +414,7 @@ openai.Client = function(Options:table):table
             last_err = decodeHTTPError(response, options.diagnosticBytes or 4096)
             translate_error = true
          end
+
          if not last_err.retryable or attempt >= max_attempts then
             return nil, translate_error and applyErrorPolicy(options.policy, last_err) or last_err
          end
@@ -382,10 +434,24 @@ policy can narrow the result; for example, a ChatGPT-plan client reports `nonStr
 table: A new capability table.
 ]])
    self.capabilities = function():table
-      base = { transport='http', streaming=true, nonStreaming=true, cancellation=true, modelListing=true,
-         manualHistory=true, previousResponseID=true, structuredOutputs=true, customFunctions=true,
-         webSearch=true, hostedTools=false, background=false, conversations=false, websocket=false, realtime=false,
-         credential=credential.capabilities and credential.capabilities() or { kind=credential.kind or 'custom' } }
+      base = {
+         transport          = 'http',
+         streaming          = true,
+         nonStreaming       = true,
+         cancellation       = true,
+         modelListing       = true,
+         manualHistory      = true,
+         previousResponseID = true,
+         structuredOutputs  = true,
+         customFunctions    = true,
+         webSearch     = true,
+         hostedTools   = false,
+         background    = false,
+         conversations = false,
+         websocket     = false,
+         realtime      = false,
+         credential    = credential.capabilities and credential.capabilities() or { kind=credential.kind or 'custom' }
+      }
       policy_caps = options.policy and options.policy.capabilities and options.policy.capabilities() or nil
       return mergeCapabilities(base, policy_caps)
    end
@@ -408,26 +474,41 @@ table: Error table on failure.
    self.models.list = function(ListOptions:table):<array<table>, table>
       response, err = request('GET', '/models')
       if err then return nil, err end
-      raw:any = nil
-      try raw = openai_json.decode(response.body, options.maxResponseBytes or 16777216, 32) end
+      local raw:any
+
+      try
+         raw = openai_json.decode(response.body, options.maxResponseBytes or 16777216, 32)
+      end
+
       if not (raw is <table>) then
          return nil, clientError('response', 'invalid_models_response', 'OpenAI models response is malformed',
             { httpStatus=response.status, requestID=[*_]responseMetadata(response) })
       end
+
       entries = raw.models or raw.data
       if not (entries is <array>) then
          return nil, clientError('response', 'invalid_models_response', 'OpenAI models response is malformed',
             { httpStatus=response.status, requestID=[*_]responseMetadata(response) })
       end
+
       models = array<table>
       filter = ListOptions?.filter
       for model in values(entries) do
          if model is <table> then
             model_id = model.slug or model.id
             if not (model_id is <str>) or model_id is '' then continue end
-            normal = { id=model_id, slug=model_id, object=model.object, created=model.created,
-               ownedBy=model.owned_by, visibility=model.visibility,
-               displayName=model.display_name or model.name or model_id, raw=openai_responses.copy(model) }
+
+            normal = {
+               id          = model_id,
+               slug        = model_id,
+               object      = model.object,
+               created     = model.created,
+               ownedBy     = model.owned_by,
+               visibility  = model.visibility,
+               displayName = model.display_name or model.name or model_id,
+               raw         = openai_responses.copy(model)
+            }
+
             if not filter or filter(normal) then models.push(normal) end
          end
       end
@@ -435,6 +516,7 @@ table: Error table on failure.
    end
 
    self.responses = {}
+
    @Doc(text=[[
 Creates a model response.
 
@@ -471,41 +553,63 @@ table: Error table on failure.
          validation_err.kind = 'invalid_request'; validation_err.retryable = false
          return nil, validation_err
       end
+
       if options.policy and options.policy.validate then
          policy_request, policy_err = options.policy.validate(validated)
          if policy_err then return nil, policy_err end
          validated = policy_request
       end
+
       body = ''
       try body = openai_responses.encode(validated) except e
          return nil, clientError('invalid_request', 'json_encoding', 'Unable to encode Responses request')
       end
+
       if validated.stream is true then
          request_headers, auth_err = headers()
          if auth_err then return nil, auth_err end
          limits = openai_responses.copy(options.streamLimits or {})
-         stream_options = { url=base_url .. '/responses', method='POST', headers=request_headers, body=body,
-            timeout=options.timeout or 60, testLoopback=options.testLoopback, limits=limits }
+         stream_options = {
+            url          = base_url .. '/responses',
+            method       = 'POST',
+            headers      = request_headers,
+            body         = body,
+            timeout      = options.timeout or 60,
+            testLoopback = options.testLoopback,
+            limits       = limits
+         }
+
          stream_options.limits.responseDecoder = openai_responses.response
          stream_options.limits.itemDecoder = openai_responses.item
+
          if options.policy and options.policy.translateError then
             stream_options.limits.errorTranslator = options.policy.translateError
          end
-         if options.streamTransport then return options.streamTransport(stream_options) end
+
+         if options.streamTransport then
+            return options.streamTransport(stream_options)
+         end
+
          return openai_stream.request(stream_options)
       end
+
       response, err = request('POST', '/responses', body)
       if err then return nil, err end
-      raw:any = nil
-      try raw = openai_json.decode(response.body, options.maxResponseBytes or 16777216, 64) end
+
+      local raw:any
+      try
+         raw = openai_json.decode(response.body, options.maxResponseBytes or 16777216, 64)
+      end
+
       if not (raw is <table>) or raw is json.null or not (raw.id is <str>) then
          return nil, clientError('response', 'invalid_response', 'OpenAI Responses payload is malformed',
             { httpStatus=response.status, requestID=[*_]responseMetadata(response) })
       end
+
       return openai_responses.response(raw)
    end
 
    return self
 end
 
-jit.off(openai.Client, true)
+jit.off(openai.client, true)

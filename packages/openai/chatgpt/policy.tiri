@@ -27,9 +27,11 @@ function checkTools(Tools:any, TopLevel:bool):table
       tool_type = tool.type
       permitted = tool_type is 'function' or tool_type is 'custom' or tool_type is 'namespace' or
          (TopLevel and tool_type is 'web_search')
+
       if unsupported_tools[tool_type] or not permitted then
          return capability('The ChatGPT-plan route does not support tool type ' .. tostring(tool_type), 'tools')
       end
+
       if tool_type is 'namespace' then
          for nested in values(tool.tools or array<table>) do
             if nested.type != 'function' and nested.type != 'custom' then
@@ -38,6 +40,7 @@ function checkTools(Tools:any, TopLevel:bool):table
          end
       end
    end
+
    return nil
 end
 
@@ -93,7 +96,7 @@ end
 chatgpt_policy.translateError = classify
 
 @Doc(text=[[
-Creates the ChatGPT-plan request policy that AccountManager attaches to each account's `ai/openai` client.
+Creates the ChatGPT-plan request policy that accountManager attaches to each account's `ai/openai` client.
 
 `validate(Request)` rejects fields and tools that the preview route does not support before anything is sent, then sets
 `store=false` and `stream=true`.  Input must be an Item array holding the complete conversation, system-role Items
@@ -109,7 +112,7 @@ Options: Optional table.  `onError(Error)` receives every classified error.
 -RESULTS-
 table: The policy, with `capabilities()`, `validate()` and `translateError()`.
 ]])
-chatgpt_policy.Policy = function(Options:table):table
+chatgpt_policy.policy = function(Options:table):table
    options = Options or {}
    self = {}
 
@@ -124,30 +127,37 @@ chatgpt_policy.Policy = function(Options:table):table
             return nil, capability('The ChatGPT-plan route does not support Responses field ' .. field, field)
          end
       end
+
       if not (Request.input is <array>) then
          return nil, capability('The ChatGPT-plan route requires complete conversation context in an input array',
             'input')
       end
+
       for item in values(Request.input) do
          if item is <table> and item.role is 'system' then
             return nil, capability('Use instructions or a developer message instead of a system message Item',
                'input')
          end
       end
+
       tools_err = checkTools(Request.tools, true)
       if tools_err then return nil, tools_err end
+
       for item in values(Request.input) do
          if item is <table> and item.type is 'additional_tools' then
             tools_err = checkTools(item.tools, false)
             if tools_err then return nil, tools_err end
          end
       end
+
       if Request.store != nil and Request.store != false then
          return nil, capability('The ChatGPT-plan route requires store=false', 'store')
       end
+
       if Request.stream != nil and Request.stream != true then
          return nil, capability('The ChatGPT-plan route requires stream=true', 'stream')
       end
+
       Request.store = false
       Request.stream = true
       return Request

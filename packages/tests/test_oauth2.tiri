@@ -35,7 +35,7 @@ function offlineClient(Options:table):table
       custom_endpoints={ auth_endpoint='https://issuer.invalid/authorize',
          token_endpoint='https://issuer.invalid/token' } }
    for key, value in pairs(Options or {}) do config[key] = value end
-   return oauth2.Client(config)
+   return oauth2.client(config)
 end
 
 function rejects(Callback:func)
@@ -418,7 +418,7 @@ end
 
 @Test function ProviderCodeFlowConfigurationRegression()
    for provider in values(array<str> { 'google', 'microsoft' }) do
-      client = oauth2.Client({ provider=provider, clientID='provider-client', clientSecret='provider-secret',
+      client = oauth2.client({ provider=provider, clientID='provider-client', clientSecret='provider-secret',
          redirectURI='http://127.0.0.1:12345/callback', transport=function(Request)
             assert(Request.form.client_id is 'provider-client' and Request.form.client_secret is 'provider-secret',
                'Provider token request keeps configured credentials')
