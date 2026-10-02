@@ -806,8 +806,7 @@ static ERR DISPLAY_Resize(extDisplay *Self, struct acResize *Args)
 
    update_displayinfo(Self);
 
-   Self->HDensity = 0; // DPI needs to be recalculated.
-   Self->VDensity = 0;
+   Self->invalidateDensity(); // Automatic DPI values need to be recalculated.
 
    return ERR::Okay;
 }
@@ -1473,7 +1472,7 @@ ERR GET_HDensity(extDisplay *Self, int *Value)
       return ERR::Okay;
    }
 
-      Self->HDensity = 96; // Standard PC DPI, matches Windows
+   *Value = Self->HDensity = 96; // Standard PC DPI, matches Windows
 
    // If the user has overridden the DPI with a preferred value, we have to use it.
 
@@ -1486,13 +1485,17 @@ ERR GET_HDensity(extDisplay *Self, int *Value)
             *Value = strtol(strdpi.c_str(), nullptr, 0);
             Self->HDensity = *Value; // Store for future use.
             if (not Self->VDensity) Self->VDensity = Self->HDensity;
+            if (*Value >= 96) return ERR::Okay;
          }
-         if (*Value >= 96) return ERR::Okay;
       }
    }
 
-
-   if (glDriver) glDriver->density(Self->WindowHandle, Self->HDensity, Self->VDensity);
+   if (glDriver) {
+      int horizontal = 96, vertical = 96;
+      glDriver->density(Self->WindowHandle, horizontal, vertical);
+      Self->HDensity = horizontal;
+      if (not Self->VDensity) Self->VDensity = vertical;
+   }
 
    *Value = Self->HDensity;
    return ERR::Okay;
@@ -1501,6 +1504,7 @@ ERR GET_HDensity(extDisplay *Self, int *Value)
 static ERR SET_HDensity(extDisplay *Self, int Value)
 {
    Self->HDensity = Value;
+   Self->CustomHDensity = Value != 0;
    return ERR::Okay;
 }
 
@@ -1527,7 +1531,7 @@ ERR GET_VDensity(extDisplay *Self, int *Value)
       return ERR::Okay;
    }
 
-      Self->VDensity = 96; // Standard PC DPI, matches Windows
+   *Value = Self->VDensity = 96; // Standard PC DPI, matches Windows
 
    // If the user has overridden the DPI with a preferred value, we have to use it.
 
@@ -1540,13 +1544,17 @@ ERR GET_VDensity(extDisplay *Self, int *Value)
             *Value = strtol(strdpi.c_str(), nullptr, 0);
             Self->VDensity = *Value;
             if (not Self->HDensity) Self->HDensity = Self->VDensity;
+            if (*Value >= 96) return ERR::Okay;
          }
-         if (*Value >= 96) return ERR::Okay;
       }
    }
 
-
-   if (glDriver) glDriver->density(Self->WindowHandle, Self->HDensity, Self->VDensity);
+   if (glDriver) {
+      int horizontal = 96, vertical = 96;
+      glDriver->density(Self->WindowHandle, horizontal, vertical);
+      Self->VDensity = vertical;
+      if (not Self->HDensity) Self->HDensity = horizontal;
+   }
 
    *Value = Self->VDensity;
    return ERR::Okay;
@@ -1555,6 +1563,7 @@ ERR GET_VDensity(extDisplay *Self, int *Value)
 static ERR SET_VDensity(extDisplay *Self, int Value)
 {
    Self->VDensity = Value;
+   Self->CustomVDensity = Value != 0;
    return ERR::Okay;
 }
 
