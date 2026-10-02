@@ -395,6 +395,8 @@ class extDisplay : public objDisplay {
    int  ControllerPorts;
    int  VDensity;          // Cached DPI value, if calculable.
    int  HDensity;
+   bool CustomHDensity = false;
+   bool CustomVDensity = false;
    HOSTWINDOW WindowHandle;
    APTR PendingNativeWindow;
 
@@ -449,6 +451,11 @@ class extDisplay : public objDisplay {
    }
 
    ~extDisplay();
+
+   void invalidateDensity() {
+      if (not CustomHDensity) HDensity = 0;
+      if (not CustomVDensity) VDensity = 0;
+   }
 };
 
 extern void clean_clipboard(void);
