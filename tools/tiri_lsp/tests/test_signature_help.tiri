@@ -1,5 +1,5 @@
 global glSignatureHelpTestUri = nil
-extern lspInitDocs, lspPathToUri, resolveSignatureHelp, registerCoreHandlers
+extern lspMountDocs, lspInitDocs, lspPathToUri, resolveSignatureHelp, registerCoreHandlers
 
 @BeforeAll function SetupSignatureHelpTests(State)
    local err, sdk_path = mSys.ResolvePath(State.folder .. '../../../')
@@ -7,7 +7,8 @@ extern lspInitDocs, lspPathToUri, resolveSignatureHelp, registerCoreHandlers
    mSys.SetVolume('sdk', sdk_path)
 
    loadFile('sdk:tools/tiri_lsp/include/lsp_lib.tiri')
-   assert(lspInitDocs('sdk:docs/xml/'), 'Failed to initialise LSP documentation cache.')
+   assert(lspMountDocs('sdk:docs/xml/'), 'Failed to mount the SDK documentation.')
+   assert(lspInitDocs('sdk-docs:'), 'Failed to initialise LSP documentation cache.')
    glSignatureHelpTestUri = lspPathToUri('sdk:tools/tiri_lsp/tests/test_signature_help.tiri')
    assert(glSignatureHelpTestUri, 'Failed to create test document URI.')
 

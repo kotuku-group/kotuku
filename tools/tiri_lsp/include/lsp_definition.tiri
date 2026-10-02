@@ -30,6 +30,8 @@ rx_def_class_string   <const> = <{ regex.new([=[^\s*['"]([^'"]+)['"]]=]) }>
 rx_def_action_prefix  <const> = <{ regex.new([=[^ac[A-Z]]=]) }>
 rx_def_method_prefix  <const> = <{ regex.new([=[^mt[A-Z]]=]) }>
 
+SOURCE_URI <const> = 'https://github.com/kotuku-group/kotuku/blob/master/src/'
+
 ----------------------------------------------------------------------------------------------------------------------
 -- URI and Path Helpers
 
@@ -127,30 +129,6 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Location Helpers
 
-function offsetToPosition(Content:str, Offset:num):table
-   line = 0
-   character = 0
-   pos = 0
-   limit = Offset
-   if limit > #Content then limit = #Content end
-
-   -- Character is reported as a UTF-16 column, so advance by whole UTF-8 sequences and count their unit width.
-   while pos < limit do
-      c = Content.sub(pos, pos + 1)
-      if c is '\n' then
-         line++
-         character = 0
-         pos++
-      else
-         seq = utf8SequenceLength(Content.byte(pos))   -- .byte() is 0-based
-         character += (seq is 4) and 2 or 1
-         pos += seq
-      end
-   end
-
-   return { line = line, character = character }
-end
-
 function makeLocation(Path:str, StartLine:num, StartChar:num, EndLine:num, EndChar:num):table
    uri = lspPathToUri(Path)
    uri ?! return nil
@@ -174,21 +152,22 @@ function makeDocLocation(Doc:table, StartLine:num, StartChar:num, EndLine:num, E
    }
 end
 
-function makeOffsetLocation(Path:str, ByteStart:num, ByteEnd:num):table
-   ByteStart ?= 0
-   ByteEnd ?= ByteStart
-
-   content = io.readAll(Path)
-   if not content then return makeLocation(Path, 0, 0, 0, 0) end
-
-   start_pos = offsetToPosition(content, ByteStart)
-   end_pos = offsetToPosition(content, ByteEnd)
-   return makeLocation(Path, start_pos.line, start_pos.character, end_pos.line, end_pos.character)
+function makeWebLocation(Uri:str):table
+   return {
+      uri = Uri,
+      range = {
+         start = { line = 0, character = 0 },
+         ['end'] = { line = 0, character = 0 }
+      }
+   }
 end
 
-function makeXmlLocation(Entry:table, ByteStart:num, ByteEnd:num):table
-   if not Entry or not Entry.file or not glDocCache then return nil end
-   return makeOffsetLocation(glDocCache.sdkPath .. Entry.file, ByteStart or Entry.byteStart or 0, ByteEnd or Entry.byteEnd or 0)
+-- Kotuku API definitions resolve to the website, which mirrors the documentation layout with HTML pages.  Entry.file
+-- is relative to the documentation root, e.g. 'modules/classes/file.xml'.  Suffix selects a section of the page.
+
+function makeApiDocLocation(Entry:table, Suffix:str):table
+   if not Entry or not Entry.file or not Entry.file.startsWith('modules/') then return nil end
+   return makeWebLocation(HTML_URI .. Entry.file.sub(8).replace('.xml', '.html') .. (Suffix or ''))
 end
 
 function pushLocation(Locations:array<table>, Location:table)
@@ -611,8 +590,7 @@ function resolveLoaderDefinition(Doc:table, Position:table):array<table>
    if string_info.keyword is 'include' then
       module_name = normaliseModuleName(string_info.text)
       if module_name then
-         module_doc = glDocCache.modules[module_name]
-         pushLocation(locations, makeXmlLocation(module_doc, module_doc.byteStart, module_doc.byteEnd))
+         pushLocation(locations, makeApiDocLocation(glDocCache.modules[module_name]))
       end
    else
       pushLocation(locations, resolveScriptImport(Doc, string_info))
@@ -686,20 +664,25 @@ function buildDefinitionTypeMap(Doc:table, Position:table):table
    return type_map
 end
 
-function addSourceFallback(Locations:array<table>, ApiEntry:table)
-   if not ApiEntry or not ApiEntry.sources or not ApiEntry.module then return end
+-- Returns the repository path of the first source file for a documented class, e.g. 'core/classes/class_file.cpp'.
+-- Source paths are relative to the module folder, except that a '../' prefix is relative to the module's defs/ folder.
 
-   module_folder = ApiEntry.module.lower()
+global function lspApiSourcePath(ApiEntry:table):str
+   if not ApiEntry or not ApiEntry.sources or not ApiEntry.module then return nil end
+
    for source in values(ApiEntry.sources) do
       if source.file and source.file != '' then
-         candidate = 'sdk:src/' .. module_folder .. '/' .. (source.path or '') .. source.file
-         resolved = resolveExistingPath(candidate)
-         if resolved then
-            pushLocation(Locations, makeLocation(resolved, 0, 0, 0, 0))
-            return
-         end
+         local path = source.path or ''
+         if path.startsWith('../') then path = path.sub(3) end
+         return ApiEntry.module.lower() .. '/' .. path .. source.file
       end
    end
+   return nil
+end
+
+function addSourceFallback(Locations:array<table>, ApiEntry:table)
+   local source_path = lspApiSourcePath(ApiEntry)
+   if source_path then pushLocation(Locations, makeWebLocation(SOURCE_URI .. source_path)) end
 end
 
 function resolveClassDefinition(ClassName:str):array<table>
@@ -708,7 +691,7 @@ function resolveClassDefinition(ClassName:str):array<table>
 
    class_doc = glDocCache.classes[class_name]
    locations = array<table>
-   pushLocation(locations, makeXmlLocation(class_doc, class_doc.byteStart, class_doc.byteEnd))
+   pushLocation(locations, makeApiDocLocation(class_doc))
    addSourceFallback(locations, class_doc)
    return #locations > 0 and locations or nil
 end
@@ -729,39 +712,33 @@ function resolveApiMemberDefinition(Doc:table, TokenInfo:table, Position:table):
          if rx_def_action_prefix.test(token) then
             action_name = token.sub(2)
             if class_doc.actions and class_doc.actions[action_name] then
-               action_doc = class_doc.actions[action_name]
-               pushLocation(locations, makeXmlLocation(class_doc, action_doc.byteStart, action_doc.byteEnd))
+               pushLocation(locations, makeApiDocLocation(class_doc, '#ta-' .. action_name))
             end
          end
 
          if #locations is 0 and rx_def_method_prefix.test(token) then
             method_name = token.sub(2)
             if class_doc.methods and class_doc.methods[method_name] then
-               method_doc = class_doc.methods[method_name]
-               pushLocation(locations, makeXmlLocation(class_doc, method_doc.byteStart, method_doc.byteEnd))
+               pushLocation(locations, makeApiDocLocation(class_doc, '#tm-' .. method_name))
             end
          end
 
          if #locations is 0 and class_doc.methods and class_doc.methods[token] then
-            method_doc = class_doc.methods[token]
-            pushLocation(locations, makeXmlLocation(class_doc, method_doc.byteStart, method_doc.byteEnd))
+            pushLocation(locations, makeApiDocLocation(class_doc, '#tm-' .. token))
          end
 
          if #locations is 0 and class_doc.actions and class_doc.actions[token] then
-            action_doc = class_doc.actions[token]
-            pushLocation(locations, makeXmlLocation(class_doc, action_doc.byteStart, action_doc.byteEnd))
+            pushLocation(locations, makeApiDocLocation(class_doc, '#ta-' .. token))
          end
 
          if #locations is 0 and class_doc.fields then
-            field_doc = class_doc.fields[token]
-            if not field_doc then
+            field_name = token
+            if not class_doc.fields[field_name] then
                field_name = token.sub(0, 1).upper() .. token.sub(1)
-               field_doc = class_doc.fields[field_name]
             end
 
-            if field_doc then
-               decoded_field = decodeField(field_doc)
-               pushLocation(locations, makeXmlLocation(class_doc, decoded_field.byteStart, decoded_field.byteEnd))
+            if class_doc.fields[field_name] then
+               pushLocation(locations, makeApiDocLocation(class_doc, '#tf-' .. field_name))
             end
          end
 
@@ -774,11 +751,9 @@ function resolveApiMemberDefinition(Doc:table, TokenInfo:table, Position:table):
 
    module_doc = moduleDocumentForNamespace(Doc, object_name)
    if module_doc then
-      func_doc = module_doc?.functions?[token]
-      if func_doc then
-         decoded_func = func_doc
+      if module_doc?.functions?[token] then
          locations = array<table>
-         pushLocation(locations, makeXmlLocation(module_doc, decoded_func.byteStart, decoded_func.byteEnd))
+         pushLocation(locations, makeApiDocLocation(module_doc, '?page=' .. token))
          return #locations > 0 and locations or nil
       end
    end

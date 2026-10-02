@@ -1,5 +1,5 @@
 global glModuleNamespaceLspUri = nil
-extern lspInitDocs, lspPathToUri, markLineIndex, moduleDeclarationsForDocument, modulePrefixesForDocument,
+extern lspMountDocs, lspInitDocs, lspPathToUri, markLineIndex, moduleDeclarationsForDocument, modulePrefixesForDocument,
    resolveModuleCompletion, resolveModuleRename, registerCoreHandlers, resolveBuiltinCompletion,
    resolveConstantCompletion
 
@@ -9,7 +9,8 @@ extern lspInitDocs, lspPathToUri, markLineIndex, moduleDeclarationsForDocument, 
    mSys.SetVolume('sdk', sdk_path)
 
    loadFile('sdk:tools/tiri_lsp/include/lsp_lib.tiri')
-   assert(lspInitDocs('sdk:docs/xml/'), 'Failed to initialise LSP documentation cache.')
+   assert(lspMountDocs('sdk:docs/xml/'), 'Failed to mount the SDK documentation.')
+   assert(lspInitDocs('sdk-docs:'), 'Failed to initialise LSP documentation cache.')
    glModuleNamespaceLspUri = lspPathToUri('sdk:tools/tiri_lsp/tests/test_module_namespaces.tiri')
 end
 

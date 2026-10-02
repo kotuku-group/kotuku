@@ -686,6 +686,7 @@ global function computeDiagnostics(Doc:table)
    return { uri = Doc.uri, version = Doc.version, diagnostics = lsp_diags }
 end
 
+   import './lsp_defs'
    import './lsp_cache'
    import './lsp_hover'
    import './lsp_definition'
@@ -697,44 +698,50 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Public API
 
+-- Mount the API documentation as the 'sdk-docs:' volume.  Path refers to an api-docs.zip archive, which is read in
+-- place through the archive: volume, or to a folder of XML documentation such as docs/xml/ in the SDK.
+-- Returns true if successful
+
+global glDocsArchive = nil
+
+global function lspMountDocs(Path:str):bool
+   Path ?! return false
+
+   local err, location = mSys.AnalysePath(Path)
+   if err != ERR_Okay then return false end
+
+   if glDocsArchive then
+      glDocsArchive.free()
+      glDocsArchive = nil
+   end
+
+   local volume_path
+   if location is LOC_FOLDER then
+      volume_path = Path
+      if not (volume_path.endsWith('/') or volume_path.endsWith('\\')) then volume_path ..= '/' end
+   else
+      try
+         glDocsArchive = obj.new('compression', { path = Path, archiveName = 'api-docs' })
+      except ex
+         print(f'Failed to open documentation archive {Path}: {ex.message}')
+         return false
+      end
+      volume_path = 'archive:api-docs/'
+   end
+
+   err = mSys.SetVolume('sdk-docs', volume_path, nil, nil, nil, VOLUME_REPLACE)
+   return err is ERR_Okay
+end
+
 -- Initialize the documentation system for hover support
--- DocPath: Path to the XML document folder (e.g., 'sdk:docs/xml/')
+-- DocPath: Path to the XML document folder (normally 'sdk-docs:' after a call to lspMountDocs())
 -- Returns true if successful
 
 global function lspInitDocs(DocPath)
    DocPath ?! return false
 
-   if not (string.endsWith(DocPath, '/') or string.endsWith(DocPath, '\\')) then -- Ensure path ends with separator
-      DocPath ..= '/'
-   end
-
-   -- Load static definitions (builtins, keywords)
-   defsPath = nil
-
-   try
-      defsPath = glSelf.workingPath .. 'include/lsp_defs.tiri'
-   end
-
-   if not defsPath or mSys.AnalysePath(defsPath) != ERR_Okay then
-      try
-         defsPath = glSelf.workingPath .. '../lsp_defs.tiri'
-      except ex
-         defsPath = nil
-      end
-   end
-
-   if not defsPath or mSys.AnalysePath(defsPath) != ERR_Okay then
-      defsPath = 'sdk:tools/tiri_lsp/include/lsp_defs.tiri'
-   end
-
-   local result
-   try
-      result = loadFile(defsPath)
-   except ex
-      print('Failed to load static definitions from ' .. defsPath)
-   success
-      glDefs = result
-      print('Loaded static definitions')
+   if not (string.endsWith(DocPath, '/') or string.endsWith(DocPath, '\\') or string.endsWith(DocPath, ':')) then
+      DocPath ..= '/' -- Ensure path ends with separator
    end
 
    -- Try to load cached documentation
@@ -745,10 +752,11 @@ global function lspInitDocs(DocPath)
    else
       -- Build cache if not found or invalid
       glDocCache = buildDocCache(DocPath)
-      if glDocCache then
+      if glDocCache and validateDocCache(glDocCache, DocPath, glDocCache.sourceManifest) then
          saveDocCache(CACHE_PATH, glDocCache)
          print('Documentation cache built and saved')
       else
+         glDocCache = nil
          print('Failed to build documentation cache')
       end
    end
