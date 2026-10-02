@@ -89,9 +89,9 @@ gui.mtHSV = { -- HSV metatable
    end,
    __tostring = function():str -- Returns an SVG compliant colour string
       if &a is 1 or &a is nil then
-         return string.format('hsv(%g %g %g)', &h, &s, &v)
+         return string.format('hsv(%g,%g%%,%g%%)', &h, &s * 100, &v * 100)
       else
-         return string.format('hsv(%g %g %g / %g)', &h, &s, &v, &a)
+         return string.format('hsv(%g,%g%%,%g%%,%g)', &h, &s * 100, &v * 100, &a)
       end
    end
 }
