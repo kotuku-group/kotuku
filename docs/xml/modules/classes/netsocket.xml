@@ -397,7 +397,7 @@ initially fill the internal write buffer, thereafter it will be called whenever 
       <access read="R" write="I">Read/Init</access>
       <type>INT</type>
       <description>
-<p>For NetSocket clients, this is the remote port used by <method>Connect</method>.  For <class name="NetServer">NetServer</class> listeners, this inherited field is the local port to bind during initialisation.  A NetServer port of zero requests an ephemeral port from the operating system; after initialisation this field contains the selected port.</p>
+<p>For NetSocket clients, this is the remote port used by <method>Connect</method>.  For <class name="NetServer">NetServer</class> listeners, this inherited field is the local port to bind during initialisation.  A value of zero requests an ephemeral port from the operating system; after initialisation this field contains the selected port.</p>
       </description>
     </field>
 
