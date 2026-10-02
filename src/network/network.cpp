@@ -48,6 +48,7 @@ sockets and HTTP, please refer to the @NetSocket, @NetServer and @HTTP classes.
     #include <openssl/rsa.h>
     #include <openssl/evp.h>
     #include <openssl/x509.h>
+    #include <openssl/x509v3.h>
     #include <openssl/pem.h>
     #include <openssl/pkcs12.h>
   #endif
