@@ -302,19 +302,17 @@ gui.menu = function(Options)
       elseif &relative then
          -- Correct the position of the menu according to the relative vector that it is offset from.
 
-         err, target = mGfx.GetSurfaceInfo(&relative.scene.surface)
+         err, relative_info = mGfx.GetSurfaceInfo(&relative.scene.surface)
          if err is ERR_Okay then
-            rel = { absX = target.absX, absY = target.absY }
-            target.absX = 0
-            target.absY = 0
-            target.height = 4096
+            rel = { absX = relative_info.absX, absY = relative_info.absY }
+            target = { absX = 0, absY = 0, height = 4096 }
 
             if Options.target then
-               err, target = mGfx.GetSurfaceInfo(Options.target)
+               err, info = mGfx.GetSurfaceInfo(Options.target)
                if err is ERR_Okay then
-                  target.absX   = target.absX
-                  target.absY   = target.absY
-                  target.height = target.height
+                  target.absX   = info.absX
+                  target.absY   = info.absY
+                  target.height = info.height
                end
             else
                err, display = mGfx.GetDisplayInfo(0)

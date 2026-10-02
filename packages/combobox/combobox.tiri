@@ -1,4 +1,4 @@
-@Package(name="gui/combobox", version="1.0")
+@Package(name='gui/combobox', version='1.0')
 
 --[[
 The gui.combobox API creates and manages combobox boxes in the user interface.
@@ -6,8 +6,7 @@ The gui.combobox API creates and manages combobox boxes in the user interface.
 Documentation is available in the Kotuku Wiki.
 --]]
 
-   import 'gui'
-   import 'gui/dropdown'
+   import 'gui', 'gui/dropdown'
 
    namespace gui
 
@@ -224,7 +223,7 @@ gui.combobox = function(Options)
          end
       end)
 
-      &inputViewport.mtSubscribeInput(JTYPE_BUTTON, function(Viewport:obj, Msg)
+      &inputViewport.mtSubscribeInput(JTYPE_BUTTON, function(Viewport:obj!, Msg:any!)
          repeat
             if (Msg.type is JET_LMB) and (Msg.value > 0) then
                toggleMenu()
@@ -238,10 +237,12 @@ gui.combobox = function(Options)
          client    = &inputViewport,
          config    = Options.items,
          lineLimit = 8,
-         feedback = function(Menu, Item)
-            &text.string = Item.item
-            reportFeedback()
-            &viewport.acDraw()
+         feedback = function(Menu:table!, Item:table!)
+            using self do
+               &text.string = Item.item
+               reportFeedback()
+               &viewport.acDraw()
+            end
          end
       })
 
