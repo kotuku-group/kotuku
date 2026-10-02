@@ -1,10 +1,15 @@
-extern buildDocCache, buildDocManifest, validateDocCache, loadDocCache, CACHE_PATH
+extern buildDocCache, buildDocManifest, validateDocCache, loadDocCache, lspMountDocs, CACHE_PATH, glDocsArchive
 
 @BeforeAll function SetupCacheTests(State)
    local err, sdk_path = mSys.ResolvePath(State.folder .. '../../../')
    assert(err is ERR_Okay, 'Failed to resolve SDK path for LSP cache tests.')
    mSys.SetVolume('sdk', sdk_path)
    loadFile('sdk:tools/tiri_lsp/include/lsp_lib.tiri')
+end
+
+@AfterAll function CleanupCacheTests()
+   glDocsArchive = nil
+   mSys.DeleteFile('temp:tiri_lsp_api_docs.zip')
 end
 
 function makeManifest():table
@@ -107,4 +112,36 @@ end
    io.writeAll(cache_path, 'return nil\n')
    CACHE_PATH = cache_path
    assert(not loadDocCache('sdk:docs/xml/'), 'A cache returning nil should be rebuilt.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- The documentation is distributed as api-docs.zip and is read in place through the 'sdk-docs:' volume.  Every XML
+-- file must be indexed with the same content as the SDK folder from which the archive was built.
+
+@Test function ArchivedDocsMatchFolder()
+   local archive_path = 'temp:tiri_lsp_api_docs.zip'
+   mSys.DeleteFile(archive_path)
+   local writer = obj.new('compression', { path=archive_path, flags=FL_NEW })
+   check writer.mtCompressFile('sdk:docs/xml/modules/', 'modules')
+   writer = nil
+   processing.collect() -- Flush the archive to disk
+
+   assert(lspMountDocs(archive_path), 'Failed to mount the documentation archive.')
+   local archived = buildDocManifest('sdk-docs:')
+   local expected = buildDocManifest('sdk:docs/xml/')
+   assert(table.size(expected) > 50, f'Only {table.size(expected)} XML files were found in the SDK documentation.')
+   assert(table.size(archived) is table.size(expected),
+      f'The archive indexed {table.size(archived)} files, expected {table.size(expected)}.')
+
+   for path, entry in pairs(expected) do
+      local archived_entry = archived[path]
+      assert(archived_entry, f'{path} is missing from the archive.')
+      assert(archived_entry.size is entry.size and archived_entry.hash is entry.hash,
+         f'{path} differs when read from the archive.')
+   end
+end
+
+@Test function MountRejectsMissingDocs()
+   assert(not lspMountDocs('temp:tiri_lsp_missing_docs.zip'), 'A missing archive should not be mounted.')
+   assert(not lspMountDocs(nil), 'A nil path should not be mounted.')
 end

@@ -4,6 +4,11 @@ set(TIRI_LSP_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set(TIRI_LSP_VSCODE_PLUGIN_DIR "${TIRI_LSP_DIR}/vscode_plugin")
 set(TIRI_LSP_VSCODE_BUNDLE "${TIRI_LSP_VSCODE_PLUGIN_DIR}/dist/extension.js")
 set(TIRI_LSP_VSCODE_VSIX "${TIRI_LSP_VSCODE_PLUGIN_DIR}/tiri-language-0.1.0.vsix")
+set(TIRI_LSP_API_DOCS_ZIP "${TIRI_LSP_VSCODE_PLUGIN_DIR}/api-docs.zip")
+
+# The VSIX packages the XML API documentation as api-docs.zip, which is created by the plugin's prepublish script.
+
+file(GLOB_RECURSE TIRI_LSP_API_DOCS CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/docs/xml/modules/*.xml")
 
 find_program(NPM_EXECUTABLE NAMES npm.cmd npm)
 
@@ -34,10 +39,12 @@ if (NPM_EXECUTABLE)
 
    add_custom_command(
       OUTPUT "${TIRI_LSP_VSCODE_VSIX}"
+      BYPRODUCTS "${TIRI_LSP_API_DOCS_ZIP}"
       COMMAND "${NPM_EXECUTABLE}" exec --yes -- vsce package
       WORKING_DIRECTORY "${TIRI_LSP_VSCODE_PLUGIN_DIR}"
       DEPENDS
          tiri_lsp_vscode_plugin
+         ${TIRI_LSP_API_DOCS}
          "${TIRI_LSP_VSCODE_PLUGIN_DIR}/.vscodeignore"
          "${TIRI_LSP_VSCODE_PLUGIN_DIR}/README.md"
          "${TIRI_LSP_VSCODE_PLUGIN_DIR}/images/tiri.png"
@@ -52,7 +59,7 @@ else ()
 endif ()
 
 if (KOTUKU_INSTALL)
-   install (FILES "${TIRI_LSP_VSCODE_VSIX}"
+   install (FILES "${TIRI_LSP_VSCODE_VSIX}" "${TIRI_LSP_API_DOCS_ZIP}"
       DESTINATION "${SHARE_TARGET}/tools/tiri_lsp"
       OPTIONAL)
 endif ()

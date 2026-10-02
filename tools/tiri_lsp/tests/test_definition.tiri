@@ -1,5 +1,6 @@
 global glDefinitionTestUri
-extern lspInitDocs, lspPathToUri, resolveDefinition, registerCoreHandlers, lspUriToPath
+extern lspMountDocs, lspInitDocs, lspPathToUri, resolveDefinition, registerCoreHandlers, lspUriToPath, lspApiSourcePath,
+   glDocCache
 
 @BeforeAll function SetupDefinitionTests(State)
    local err, sdk_path = mSys.ResolvePath(State.folder .. '../../../')
@@ -7,7 +8,8 @@ extern lspInitDocs, lspPathToUri, resolveDefinition, registerCoreHandlers, lspUr
    mSys.SetVolume('sdk', sdk_path)
 
    loadFile('sdk:tools/tiri_lsp/include/lsp_lib.tiri')
-   assert(lspInitDocs('sdk:docs/xml/'), 'Failed to initialise LSP documentation cache.')
+   assert(lspMountDocs('sdk:docs/xml/'), 'Failed to mount the SDK documentation.')
+   assert(lspInitDocs('sdk-docs:'), 'Failed to initialise LSP documentation cache.')
    glDefinitionTestUri = lspPathToUri('sdk:tools/tiri_lsp/tests/test_definition.tiri')
    assert(glDefinitionTestUri, 'Failed to create test document URI.')
 end
@@ -35,6 +37,11 @@ function assertUriContains(Locations:array<table>, Needle:str, Message:str)
    local linked_path = installed_path.replace('/1.0/', '/')
    assert(uri.find(installed_path, 0, true) or uri.find(linked_path, 0, true),
       f'{Message}: expected URI to contain {installed_path} or {linked_path}, got {Locations[0].uri}')
+end
+
+function assertUriIs(Locations:array<table>, Uri:str, Message:str)
+   assert(Locations and #Locations > 0, Message .. ': expected at least one location.')
+   assert(Locations[0].uri is Uri, f'{Message}: expected {Uri}, got {Locations[0].uri}')
 end
 
 @Test function CurrentDocumentFunction()
@@ -137,95 +144,94 @@ end
 @Test function IncludeModuleResolution()
    doc = makeDoc("include 'network'\n")
    locations = resolveDefinition(doc, { line = 0, character = 10 })
-   assertUriContains(locations, '/docs/xml/modules/network.xml', 'Include should resolve to module documentation')
+   assertUriIs(locations, 'https://kotuku.dev/modules/network.html', 'Include should resolve to module documentation')
 end
 
 @Test function ObjectClassResolution()
    doc = makeDoc("xml = obj.new('xml')\n")
    locations = resolveDefinition(doc, { line = 0, character = 16 })
-   assertUriContains(locations, '/docs/xml/modules/classes/xml.xml', 'obj.new class literal should resolve to class docs')
+   assertUriIs(locations, 'https://kotuku.dev/modules/classes/xml.html', 'obj.new class literal should resolve to class docs')
 end
 
 @Test function ObjectConstructorClassResolution()
    doc = makeDoc('clock = obj<Time> {}\n')
    locations = resolveDefinition(doc, { line = 0, character = 13 })
-   assertUriContains(locations, '/docs/xml/modules/classes/time.xml',
+   assertUriIs(locations, 'https://kotuku.dev/modules/classes/time.html',
       'obj<Class> names should resolve to class documentation')
 end
 
 @Test function ObjectConstructorMemberResolution()
    doc = makeDoc('clock = obj<Time> {}\nclock.year\n')
    locations = resolveDefinition(doc, { line = 1, character = 7 })
-   assertUriContains(locations, '/docs/xml/modules/classes/time.xml',
+   assertUriIs(locations, 'https://kotuku.dev/modules/classes/time.html#tf-Year',
       'Members after obj<Class> construction should resolve through the constructed class')
 end
 
 @Test function LatestObjectConstructorAssignmentControlsMemberResolution()
    doc = makeDoc("value = obj<Time> {}\nvalue = obj.new('File', {})\nvalue.Path\n")
    locations = resolveDefinition(doc, { line = 2, character = 7 })
-   assertUriContains(locations, '/docs/xml/modules/classes/file.xml',
+   assertUriIs(locations, 'https://kotuku.dev/modules/classes/file.html#tf-Path',
       'The later obj.new() assignment should replace the earlier obj<Class> type for member definitions')
 end
 
 @Test function FutureObjectConstructorAssignmentDoesNotControlMemberResolution()
    doc = makeDoc('value = obj<Time> {}\nvalue.Year\nvalue = obj<File> {}\n')
    locations = resolveDefinition(doc, { line = 1, character = 7 })
-   assertUriContains(locations, '/docs/xml/modules/classes/time.xml',
+   assertUriIs(locations, 'https://kotuku.dev/modules/classes/time.html#tf-Year',
       'An assignment after the cursor must not change the inferred type for member definitions')
 end
 
 @Test function TrailingCommentConstructorDoesNotOverrideMemberResolution()
    doc = makeDoc("value = obj.new('File', {}) -- value = obj.new('Time')\nvalue.Path\n")
    locations = resolveDefinition(doc, { line = 1, character = 7 })
-   assertUriContains(locations, '/docs/xml/modules/classes/file.xml',
+   assertUriIs(locations, 'https://kotuku.dev/modules/classes/file.html#tf-Path',
       'A constructor inside a trailing comment must not override the real assignment')
 end
 
 @Test function QuotedConstructorDoesNotOverrideMemberResolution()
    doc = makeDoc("value = obj.new('File', {})\nnote = \"value = obj.new('Time')\"\nvalue.Path\n")
    locations = resolveDefinition(doc, { line = 2, character = 7 })
-   assertUriContains(locations, '/docs/xml/modules/classes/file.xml',
+   assertUriIs(locations, 'https://kotuku.dev/modules/classes/file.html#tf-Path',
       'A constructor inside a string literal must not override the real assignment')
 end
 
 @Test function BlockCommentConstructorDoesNotOverrideMemberResolution()
    doc = makeDoc("value = obj.new('File', {})\n--[[\nvalue = obj.new('Time')\n]]\nvalue.Path\n")
    locations = resolveDefinition(doc, { line = 4, character = 7 })
-   assertUriContains(locations, '/docs/xml/modules/classes/file.xml',
+   assertUriIs(locations, 'https://kotuku.dev/modules/classes/file.html#tf-Path',
       'A constructor inside a block comment must not override the real assignment')
 end
 
 @Test function MultiLineObjectConstructorResolvesMember()
    doc = makeDoc("value = obj.new(\n   'File', {})\nvalue.Path\n")
    locations = resolveDefinition(doc, { line = 2, character = 7 })
-   assertUriContains(locations, '/docs/xml/modules/classes/file.xml',
+   assertUriIs(locations, 'https://kotuku.dev/modules/classes/file.html#tf-Path',
       'A constructor whose class name is on the following line should still infer a type')
 end
 
 @Test function CommentedMultiLineObjectConstructorIsIgnored()
    doc = makeDoc("value = obj<Time> {}\n-- value = obj.new(\n--    'File', {})\nvalue.Year\n")
    locations = resolveDefinition(doc, { line = 3, character = 7 })
-   assertUriContains(locations, '/docs/xml/modules/classes/time.xml',
+   assertUriIs(locations, 'https://kotuku.dev/modules/classes/time.html#tf-Year',
       'A commented-out multi-line constructor must not override the real assignment')
 end
 
 @Test function ObjectActionResolution()
    doc = makeDoc("xml = obj.new('xml')\nxml.acClear()\n")
    locations = resolveDefinition(doc, { line = 1, character = 6 })
-   assertUriContains(locations, '/docs/xml/modules/classes/xml.xml', 'Object action should resolve to class docs')
-   assert(locations[0].range.start.line > 25, f'Object action should resolve below the XML class info section, got {locations[0].range.start.line}.')
+   assertUriIs(locations, 'https://kotuku.dev/modules/classes/xml.html#ta-Clear', 'Object action should resolve to class docs')
 end
 
 @Test function ModuleFunctionResolution()
    doc = makeDoc('mSys.WaitTime(0.1)\n')
    locations = resolveDefinition(doc, { line = 0, character = 7 })
-   assertUriContains(locations, '/docs/xml/modules/core.xml', 'Module function should resolve to module docs')
+   assertUriIs(locations, 'https://kotuku.dev/modules/core.html?page=WaitTime', 'Module function should resolve to module docs')
 end
 
 @Test function DeclaredModuleFunctionResolution()
    doc = makeDoc('module core as runtimeCore\nruntimeCore.WaitTime(0.1)\n')
    locations = resolveDefinition(doc, { line = 1, character = 14 })
-   assertUriContains(locations, '/docs/xml/modules/core.xml',
+   assertUriIs(locations, 'https://kotuku.dev/modules/core.html?page=WaitTime',
       'Declared module function should resolve to module docs')
 end
 
@@ -322,4 +328,37 @@ end
    locations = resolveDefinition(doc, { line = 0, character = 9 })
    assertUriContains(locations, '/packages/json/1.0/json.tiri',
       'Every version comparison should participate in indexed navigation')
+end
+
+@Test function ClassDefinitionIncludesRepositorySource()
+   doc = makeDoc("xml = obj.new('xml')\n")
+   locations = resolveDefinition(doc, { line = 0, character = 16 })
+   assert(locations and #locations is 2, 'Class definitions should resolve to the API page and the class source.')
+   assert(locations[1].uri is 'https://github.com/kotuku-group/kotuku/blob/master/src/xml/xml_class.cpp',
+      f'Unexpected class source location {locations[1].uri}')
+end
+
+@Test function ClassSourceDefsRelativePath()
+   doc = makeDoc('clock = obj<Time> {}\n')
+   locations = resolveDefinition(doc, { line = 0, character = 13 })
+   assert(locations and #locations is 2, 'Class definitions should resolve to the API page and the class source.')
+   assert(locations[1].uri is 'https://github.com/kotuku-group/kotuku/blob/master/src/core/classes/class_time.cpp',
+      f'A source path relative to the defs folder should resolve from the module folder, got {locations[1].uri}')
+end
+
+-- Repository links cannot be checked by the server, so confirm that every documented class maps to a file in the
+-- source tree.
+
+@Test function ClassSourcePathsExist()
+   local missing = ''
+   local checked = 0
+   for class_name, class_doc in pairs(glDocCache.classes) do
+      local source_path = lspApiSourcePath(class_doc)
+      if source_path then
+         checked++
+         if mSys.AnalysePath('sdk:src/' .. source_path) != ERR_Okay then missing ..= f'\n{class_name}: src/{source_path}' end
+      end
+   end
+   assert(checked > 50, f'Only {checked} documented classes declare a source file.')
+   assert(missing is '', 'Class sources are missing from the source tree:' .. missing)
 end

@@ -6,10 +6,18 @@ const { LanguageClient } = require('vscode-languageclient/node');
 const { spawn } = require('child_process');
 const net = require('net');
 const path = require('path');
+const fs = require('fs');
 
 let client;
 let outputChannel;
 let serverProcess;
+let extensionPath;
+
+// Kotuku API definitions resolve to web pages (the API documentation and the GitHub source).  The editor cannot open
+// these as documents, so they are presented under this scheme and handed to the browser when the user navigates to one.
+// Definition previews, such as Ctrl+hover and peek, display the URL instead.
+
+const WEB_SCHEME = 'tiri-web';
 
 function getSettings() {
    const config = vscode.workspace.getConfiguration('tiri.lsp');
@@ -21,7 +29,8 @@ function getSettings() {
       origoPath: config.get('origoPath', 'origo'),
       serverScript: config.get('serverScript', 'tools/tiri_lsp/server.tiri'),
       logApi: config.get('logApi', false),
-      logFile: config.get('logFile', '')
+      logFile: config.get('logFile', ''),
+      sdkDocs: config.get('sdkDocs', '')
    };
 }
 
@@ -50,6 +59,29 @@ function resolveServerScript(serverScript) {
    return undefined;
 }
 
+// Returns the server script path, or reports why it is unusable and returns undefined.  A missing script must be
+// caught here because origo exits cleanly when its script is absent, which the client only sees as a broken pipe.
+
+function findServerScript(settings) {
+   const serverScript = resolveServerScript(settings.serverScript);
+   let problem;
+   if (!serverScript) {
+      problem = 'server script is relative and no workspace is open';
+   }
+   else if (!fs.existsSync(serverScript)) {
+      problem = `server script not found at ${serverScript}`;
+   }
+   else {
+      return serverScript;
+   }
+
+   outputChannel.appendLine(`Cannot start Tiri LSP server: ${problem}`);
+   vscode.window.showWarningMessage(
+      `Tiri LSP: ${problem}. Set tiri.lsp.serverScript to an absolute path, or open the Kōtuku workspace.`
+   );
+   return undefined;
+}
+
 function wait(ms) {
    return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -68,9 +100,23 @@ function getLogFilePath(settings, port) {
    return '';
 }
 
+// Returns the API documentation for the server: a configured archive or folder, otherwise the api-docs.zip archive
+// that is packaged with this extension.
+
+function getDocsPath(settings) {
+   const configuredPath = settings.sdkDocs && settings.sdkDocs.trim();
+   if (configuredPath) {
+      return configuredPath;
+   }
+
+   const bundledPath = path.join(extensionPath, 'api-docs.zip');
+   return fs.existsSync(bundledPath) ? bundledPath : '';
+}
+
 function getServerArgs(settings, serverScript, port) {
    const args = [];
    const logFile = getLogFilePath(settings, port);
+   const docsPath = getDocsPath(settings);
 
    if (settings.logApi) {
       args.push('--log-api');
@@ -81,6 +127,11 @@ function getServerArgs(settings, serverScript, port) {
    }
 
    args.push(serverScript, `port=${port}`);
+
+   if (docsPath) {
+      args.push(`sdk-docs=${docsPath}`);
+   }
+
    return args;
 }
 
@@ -108,12 +159,8 @@ function startServerProcess(settings) {
       return;
    }
 
-   const serverScript = resolveServerScript(settings.serverScript);
+   const serverScript = findServerScript(settings);
    if (!serverScript) {
-      outputChannel.appendLine('Cannot auto-start Tiri LSP server: server script is relative and no workspace is open');
-      vscode.window.showWarningMessage(
-         'Tiri LSP: Set tiri.lsp.serverScript to an absolute path, or open the Kōtuku workspace.'
-      );
       return;
    }
 
@@ -186,12 +233,8 @@ async function connectToServer(settings) {
 }
 
 function createStdioServerOptions(settings) {
-   const serverScript = resolveServerScript(settings.serverScript);
+   const serverScript = findServerScript(settings);
    if (!serverScript) {
-      outputChannel.appendLine('Cannot start Tiri LSP server: server script is relative and no workspace is open');
-      vscode.window.showWarningMessage(
-         'Tiri LSP: Set tiri.lsp.serverScript to an absolute path, or open the Kōtuku workspace.'
-      );
       throw new Error('Unable to resolve Tiri LSP server script');
    }
 
@@ -206,6 +249,52 @@ function createStdioServerOptions(settings) {
          windowsHide: true
       }
    };
+}
+
+function toWebLocation(location) {
+   if (location.targetUri) {
+      if (location.targetUri.scheme !== 'https') return location;
+      return { ...location, targetUri: location.targetUri.with({ scheme: WEB_SCHEME }) };
+   }
+
+   if (!location.uri || location.uri.scheme !== 'https') return location;
+   return new vscode.Location(location.uri.with({ scheme: WEB_SCHEME }), location.range);
+}
+
+function fromWebUri(uri) {
+   return uri.with({ scheme: 'https' });
+}
+
+async function provideDefinition(document, position, token, next) {
+   const result = await next(document, position, token);
+   if (!result) return result;
+   return Array.isArray(result) ? result.map(toWebLocation) : toWebLocation(result);
+}
+
+const webContentProvider = {
+   provideTextDocumentContent(uri) {
+      return `${fromWebUri(uri).toString(true)}\n\nThis page opens in your web browser.\n`;
+   }
+};
+
+// Navigating to a web definition opens a tab for it.  The page is opened in the browser and the tab is closed.
+
+const closingTabs = new Set();
+
+async function openWebTabs(event) {
+   for (const tab of [...event.opened, ...event.changed]) {
+      const uri = tab.input && tab.input.uri;
+      if (uri && uri.scheme === WEB_SCHEME && !closingTabs.has(tab)) {
+         closingTabs.add(tab);
+         try {
+            await vscode.window.tabGroups.close(tab);
+            await vscode.env.openExternal(fromWebUri(uri));
+         }
+         finally {
+            closingTabs.delete(tab);
+         }
+      }
+   }
 }
 
 async function stopLanguageClient() {
@@ -226,6 +315,9 @@ function createLanguageClient(settings) {
          { scheme: 'file', language: 'tiri' }
       ],
       outputChannel: outputChannel,
+      middleware: {
+         provideDefinition: provideDefinition
+      },
       synchronize: {
          fileEvents: vscode.workspace.createFileSystemWatcher('**/*.tiri')
       }
@@ -286,6 +378,7 @@ async function restartLanguageClient() {
 }
 
 function activate(context) {
+   extensionPath = context.extensionPath;
    outputChannel = vscode.window.createOutputChannel('Tiri LSP');
    outputChannel.appendLine('Tiri extension activated');
 
@@ -303,6 +396,8 @@ function activate(context) {
 
    context.subscriptions.push(restartCommand);
    context.subscriptions.push(configWatcher);
+   context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider(WEB_SCHEME, webContentProvider));
+   context.subscriptions.push(vscode.window.tabGroups.onDidChangeTabs(openWebTabs));
    context.subscriptions.push(outputChannel);
 }
 

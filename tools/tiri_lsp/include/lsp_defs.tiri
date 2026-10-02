@@ -1,7 +1,8 @@
 -- Tiri LSP Static Definitions
 --
 -- Contains hover documentation for Tiri built-in functions and keywords.
--- These are static definitions that don't need to be rebuilt from XML docs.
+-- These are static definitions that don't need to be rebuilt from XML docs.  The file is imported by lsp_lib.tiri,
+-- which declares glDefs.
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Built-in Functions
@@ -290,7 +291,7 @@ glModulePrefixes = {
 
 ----------------------------------------------------------------------------------------------------------------------
 
-   return {
+   glDefs = {
       builtins = glBuiltins,
       keywords = glKeywords,
       parserAnnotations = glParserAnnotations,
